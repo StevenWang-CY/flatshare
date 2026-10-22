@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "LifecycleEvent",
-  "description": "What happened, with the fields of that event type.",
+  "description": "One lifecycle event of one session.",
   "type": "object",
   "properties": {
     "at_ms": {
@@ -11,7 +11,7 @@
       "minimum": 0
     },
     "event_id": {
-      "description": "Idempotency key, 1 to 128 characters, unique per emitter. A repeated id is acknowledged and ignored.",
+      "description": "Idempotency key, 1 to 128 bytes, unique per emitter. A repeated id is acknowledged and ignored.",
       "type": "string"
     },
     "session_id": {

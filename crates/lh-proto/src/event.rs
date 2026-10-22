@@ -1,8 +1,8 @@
 //! Lifecycle events: what tells the control plane when a session will next need its KV.
 //!
 //! One schema serves every workload. A tool return and a user's speech onset are two triggers of the same
-//! prefetch-and-headroom mechanism. Events arrive at `POST /v1/events`, idempotent by `event_id`, or the
-//! control plane infers them from the traffic it proxies.
+//! prefetch-and-headroom mechanism. Events arrive at `POST /v1/events`, idempotent by `(source, event_id)`,
+//! or the control plane infers them from the traffic it proxies.
 //!
 //! On the wire an event is one flat JSON object; `type` selects the variant and its fields:
 //!
@@ -16,9 +16,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::SessionId;
 
+/// One lifecycle event of one session.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LifecycleEvent {
-    /// Idempotency key, 1 to 128 characters, unique per emitter. A repeated id is acknowledged and ignored.
+    /// Idempotency key, 1 to 128 bytes, unique per emitter. A repeated id is acknowledged and ignored.
     pub event_id: String,
     pub session_id: SessionId,
     /// When the emitter observed the event, in Unix epoch milliseconds. The control plane also stamps its own

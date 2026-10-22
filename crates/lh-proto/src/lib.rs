@@ -4,19 +4,20 @@
 //! - [`event`]: lifecycle events (`POST /v1/events`), one schema for agents and voice;
 //! - [`headers`]: the HTTP headers and body fields the control plane reads, sets and strips;
 //! - [`hint`]: the lease hint carried to the engine in `kv_transfer_params`;
-//! - [`ledger`]: one recompute-ledger row per upstream request.
+//! - [`ledger`]: one recompute-ledger row per upstream request;
+//! - [`class`] and [`session`]: the SLO class and the session id the others carry.
 //!
-//! Python components consume the JSON Schemas generated from these types (`schema/`, written by the
-//! `lh-proto-schema` binary).
+//! The JSON Schemas generated from these types (`schema/`, written by the `lh-proto-schema` binary) are
+//! the reference for the Python components; today the engine plugins' contract test reads the lease hint's.
 
 pub mod class;
 pub mod event;
 pub mod headers;
 pub mod hint;
 pub mod ledger;
-mod session;
+pub mod session;
 
-pub use class::SloClass;
+pub use class::{SloClass, UnknownClass};
 pub use event::{EventKind, EventSource, LifecycleEvent, StopReason};
 pub use hint::{EngineLeaseHint, HintOp};
 pub use ledger::{LedgerError, LedgerRow, Outcome, RecomputeCause, RecomputeSpan};

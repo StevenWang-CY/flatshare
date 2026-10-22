@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{SessionId, SloClass};
 
+/// The ledger row of one upstream request.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LedgerRow {
     pub request_id: String,
@@ -60,6 +61,7 @@ pub struct LedgerRow {
     pub total_ms: Option<f64>,
 }
 
+/// How the upstream request ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
@@ -76,6 +78,7 @@ pub struct RecomputeSpan {
     pub cause: RecomputeCause,
 }
 
+/// Why a span of prompt tokens was recomputed; on the wire, `cause` selects the variant.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "cause", rename_all = "snake_case")]
 pub enum RecomputeCause {
@@ -125,14 +128,17 @@ impl RecomputeCause {
 impl LedgerRow {
     /// Prompt tokens computed by this request: new tokens plus recomputed ones.
     pub fn uncached_tokens(&self) -> u32 {
-        self.prompt_tokens
-            .saturating_sub(self.cached_device_tokens + self.cached_host_tokens)
+        self.prompt_tokens.saturating_sub(
+            self.cached_device_tokens
+                .saturating_add(self.cached_host_tokens),
+        )
     }
 
-    /// Checks the accounting identities every writer must uphold.
+    /// Checks the accounting identities every writer must uphold. Sums are taken in `u64`, so a row with
+    /// out-of-range counts is rejected rather than wrapping past the checks.
     pub fn check(&self) -> Result<(), LedgerError> {
-        let cached = self.cached_device_tokens + self.cached_host_tokens;
-        if cached > self.prompt_tokens {
+        let cached = u64::from(self.cached_device_tokens) + u64::from(self.cached_host_tokens);
+        if cached > u64::from(self.prompt_tokens) {
             return Err(LedgerError::CachedExceedsPrompt);
         }
         if self.expected_reusable_tokens > self.prompt_tokens {
@@ -141,8 +147,12 @@ impl LedgerRow {
         if self.recomputed_tokens > self.expected_reusable_tokens {
             return Err(LedgerError::RecomputedExceedsReusable);
         }
-        let attributed: u32 = self.recompute.iter().map(|span| span.tokens).sum();
-        if attributed != self.recomputed_tokens {
+        let attributed: u64 = self
+            .recompute
+            .iter()
+            .map(|span| u64::from(span.tokens))
+            .sum();
+        if attributed != u64::from(self.recomputed_tokens) {
             return Err(LedgerError::UnattributedTokens {
                 recomputed: self.recomputed_tokens,
                 attributed,
@@ -152,12 +162,13 @@ impl LedgerRow {
     }
 }
 
+/// An accounting identity a [`LedgerRow`] breaks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LedgerError {
     CachedExceedsPrompt,
     ReusableExceedsPrompt,
     RecomputedExceedsReusable,
-    UnattributedTokens { recomputed: u32, attributed: u32 },
+    UnattributedTokens { recomputed: u32, attributed: u64 },
 }
 
 impl fmt::Display for LedgerError {
