@@ -1,4 +1,4 @@
-"""Background engine load for latency probes, and the helpers the probes share.
+"""Background engine load for latency probes, and the helpers the bench tools share.
 
 A :class:`LoadSpec` such as ``prefill:8192x2`` keeps two requests of 8,192 random token ids in
 flight, each asking for one token: back-to-back cold prefills, the agent work that delays a voice
@@ -14,7 +14,7 @@ import math
 import random
 import statistics
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import AsyncIterator, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Self
 
@@ -30,20 +30,28 @@ def random_prompt(rng: random.Random, tokens: int) -> list[int]:
     return [rng.randrange(_TOKEN_LOW, _TOKEN_HIGH) for _ in range(tokens)]
 
 
+async def stream_chunks(response: httpx.Response) -> AsyncIterator[dict[str, Any]]:
+    """The JSON chunks of an OpenAI-compatible SSE stream; ``data: [DONE]`` is skipped.
+
+    The stream is read to its end, so the connection goes back to the pool for the next request.
+    """
+    async for line in response.aiter_lines():
+        if line.startswith("data:") and (data := line[5:].lstrip()).startswith("{"):
+            yield orjson.loads(data)
+
+
+PERCENTILES = (10, 50, 90, 95, 99)
+"""Reported by :func:`summarize`; the SLOs are set at p95 (docs/SLO.md)."""
+
+
 def summarize(values: Iterable[float]) -> dict[str, float | int]:
-    """Count, mean and p10/p50/p90/p99 of a sample (inclusive interpolation)."""
+    """Count, mean and :data:`PERCENTILES` of a sample (inclusive interpolation)."""
     xs = sorted(values)
     if not xs:
         return {"n": 0}
     qs = [xs[0]] * 99 if len(xs) == 1 else statistics.quantiles(xs, n=100, method="inclusive")
-    return {
-        "n": len(xs),
-        "mean": round(statistics.fmean(xs), 2),
-        "p10": round(qs[9], 2),
-        "p50": round(qs[49], 2),
-        "p90": round(qs[89], 2),
-        "p99": round(qs[98], 2),
-    }
+    cell: dict[str, float | int] = {"n": len(xs), "mean": round(statistics.fmean(xs), 2)}
+    return cell | {f"p{p}": round(qs[p - 1], 2) for p in PERCENTILES}
 
 
 @dataclass(frozen=True)
@@ -163,9 +171,8 @@ class BackgroundLoad:
         usage: dict[str, Any] = {}
         async with self.client.stream("POST", self.url, json=body) as response:
             response.raise_for_status()
-            async for line in response.aiter_lines():
-                if line.startswith("data: {") and '"usage"' in line:
-                    usage = orjson.loads(line[6:]).get("usage") or usage
+            async for chunk in stream_chunks(response):
+                usage = chunk.get("usage") or usage
         return usage
 
     def summary(self) -> dict[str, Any]:

@@ -36,6 +36,7 @@ from typing import IO, Any
 import httpx
 import orjson
 
+from leaseholder_bench.load import stream_chunks, summarize
 from leaseholder_bench.protocol import SessionTagger
 from leaseholder_bench.traces import common_prefix_len
 
@@ -65,7 +66,7 @@ WORDS = tuple(_WORD_LIST.split())
 """256 words that Qwen3's tokenizer encodes as one token each, with a leading space."""
 
 
-@dataclass
+@dataclass(frozen=True)
 class ReplayConfig:
     url: str = DEFAULT_URL
     model: str = DEFAULT_MODEL
@@ -151,7 +152,10 @@ class Session:
         new = hash_ids[chain.covered :]
         if new:
             chain.segments.append(Segment({"role": "user", "content": self.text(new)}, len(new)))
-        chain.last, chain.covered = hash_ids, len(hash_ids)
+            chain.covered = len(hash_ids)
+        # Otherwise the last reply stands for more blocks than this request adds. ``covered`` keeps
+        # the excess, so the next request's new blocks start after it instead of resending it.
+        chain.last = hash_ids
         return [segment.message for segment in chain.segments]
 
     def add_reply(self, chain: Chain, reply: str, out_tokens: int) -> None:
@@ -295,13 +299,7 @@ class Replayer:
                 if status != 200:
                     error = (await response.aread()).decode(errors="replace")[:300]
                 else:
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data = line[5:].strip()
-                        if data == "[DONE]":
-                            break
-                        chunk = orjson.loads(data)
+                    async for chunk in stream_chunks(response):
                         if "error" in chunk:  # vLLM reports a failure inside a 200 stream
                             error = str(chunk["error"])[:300]
                             break
@@ -345,13 +343,14 @@ class Replayer:
 
     def summary(self) -> str:
         ok = [s for s in self.stats if s.ok]
-        ttfts = sorted(s.ttft_ms for s in ok if s.ttft_ms is not None)
+        ttft = summarize(s.ttft_ms for s in ok if s.ttft_ms is not None)
         prompt = sum(s.prompt_tokens for s in ok)
         cached = sum(s.cached_tokens for s in ok)
-        lines = [f"requests: {len(self.stats)} ok, {len(self.stats) - len(ok)} failed"]
-        if ttfts:
-            p50, p99 = (ttfts[min(len(ttfts) - 1, int(q * len(ttfts)))] for q in (0.5, 0.99))
-            lines.append(f"ttft_ms: p50 {p50:.1f}, p99 {p99:.1f}")
+        lines = [f"requests: {len(ok)} ok, {len(self.stats) - len(ok)} failed"]
+        if ttft["n"]:
+            lines.append(
+                f"ttft_ms: p50 {ttft['p50']:.1f}, p95 {ttft['p95']:.1f}, p99 {ttft['p99']:.1f}"
+            )
         if prompt:
             lines.append(f"cached prompt tokens: {cached}/{prompt} ({cached / prompt:.1%})")
         return "\n".join(lines)
@@ -373,7 +372,11 @@ async def replay(
     trace_files = sorted(traces.glob("*.json"))
     if not trace_files:
         raise ValueError(f"no trace files (*.json) in {traces}")
-    limits = httpx.Limits(max_connections=None, max_keepalive_connections=None)
+    # Idle connections go before a server's keep-alive closes them (uvicorn's and so vLLM's default is
+    # 5 s, as httpx's own expiry), or a request after a think time of about 5 s can meet a closing one.
+    limits = httpx.Limits(
+        max_connections=None, max_keepalive_connections=None, keepalive_expiry=4.0
+    )
     timeout = httpx.Timeout(config.timeout, connect=10.0)
     out.parent.mkdir(parents=True, exist_ok=True)
     async with httpx.AsyncClient(timeout=timeout, limits=limits, transport=transport) as client:

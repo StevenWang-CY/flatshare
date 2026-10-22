@@ -21,7 +21,7 @@ import asyncio
 import math
 import platform
 import random
-import re
+import statistics
 import time
 from collections import defaultdict
 from collections.abc import Sequence
@@ -32,32 +32,29 @@ from typing import Any
 import httpx
 import orjson
 
+from leaseholder_bench.kv_metrics import metric_samples
 from leaseholder_bench.load import BackgroundLoad, LoadSpec, random_prompt, summarize
+from leaseholder_bench.protocol import ENGINE_PRIORITY, SloClass
 
 TIERS = ("recompute", "gpu", "cpu")
 GPU_HITS = "vllm:prefix_cache_hits_total"
 CPU_HITS = "vllm:external_prefix_cache_hits_total"
-_SAMPLE = re.compile(r"^(?P<name>[\w:]+)(?:\{(?P<labels>[^}]*)\})?\s+(?P<value>\S+)$")
-_LABEL = re.compile(r'(\w+)="([^"]*)"')
 FLUSH_CHUNK = 16_384
 
 
 def read_counters(exposition: str) -> dict[str, float]:
     """The two hit counters of a Prometheus exposition, summed over label sets."""
     totals = {GPU_HITS: 0.0, CPU_HITS: 0.0}
-    for line in exposition.splitlines():
-        m = _SAMPLE.match(line)
-        if m and m["name"] in totals:
-            totals[m["name"]] += float(m["value"])
+    for name, _, value in metric_samples(exposition):
+        if name in totals:
+            totals[name] += value
     return totals
 
 
 def pool_tokens(exposition: str) -> int | None:
     """GPU KV pool size in tokens, from vLLM's ``cache_config_info`` labels."""
-    for line in exposition.splitlines():
-        m = _SAMPLE.match(line)
-        if m and m["name"] == "vllm:cache_config_info" and m["labels"]:
-            labels = dict(_LABEL.findall(m["labels"]))
+    for name, labels, _ in metric_samples(exposition):
+        if name == "vllm:cache_config_info":
             try:
                 return int(labels["num_gpu_blocks"]) * int(labels["block_size"])
             except (KeyError, ValueError):
@@ -160,12 +157,10 @@ class TierProbe:
         return rows
 
 
-def _linear(xs: Sequence[float], ys: Sequence[float]) -> tuple[float, float]:
-    """Least-squares intercept and slope."""
-    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
-    sxx = sum((x - mx) ** 2 for x in xs)
-    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / sxx if sxx else 0.0
-    return my - slope * mx, slope
+def _line(tokens: Sequence[float], ms: Sequence[float]) -> dict[str, float]:
+    """The least-squares line through (tokens, ms): an intercept in ms and a slope per token."""
+    fit = statistics.linear_regression(tokens, ms)
+    return {"ms": round(fit.intercept, 2), "us_per_token": round(fit.slope * 1000, 3)}
 
 
 def _quadratic(xs: Sequence[float], ys: Sequence[float]) -> tuple[float, float, float]:
@@ -185,7 +180,8 @@ def _quadratic(xs: Sequence[float], ys: Sequence[float]) -> tuple[float, float, 
 
 
 def summarize_samples(samples: Sequence[Sample]) -> dict[str, Any]:
-    """Per tier and length: latency percentiles of valid samples; linear fits of the medians."""
+    """Per tier and length: latency percentiles of valid samples, and fits of the medians (linear
+    for the GPU and CPU tiers, quadratic for recompute)."""
     by_cell: dict[tuple[str, int], list[float]] = defaultdict(list)
     invalid: dict[str, int] = defaultdict(int)
     for s in samples:
@@ -202,12 +198,10 @@ def summarize_samples(samples: Sequence[Sample]) -> dict[str, Any]:
     fits: dict[str, Any] = {}
     for tier in ("gpu", "cpu"):
         if len(p50[tier]) >= 2:
-            a, b = _linear(list(p50[tier]), list(p50[tier].values()))
-            fits[tier] = {"ms": round(a, 2), "us_per_token": round(b * 1000, 3)}
+            fits[tier] = _line(list(p50[tier]), list(p50[tier].values()))
     common = sorted(set(p50["gpu"]) & set(p50["cpu"]))
     if len(common) >= 2:
-        a, b = _linear(common, [p50["cpu"][n] - p50["gpu"][n] for n in common])
-        fits["cpu_over_gpu"] = {"ms": round(a, 2), "us_per_token": round(b * 1000, 3)}
+        fits["cpu_over_gpu"] = _line(common, [p50["cpu"][n] - p50["gpu"][n] for n in common])
     if len(p50["recompute"]) >= 3:
         a, b, c = _quadratic(list(p50["recompute"]), list(p50["recompute"].values()))
         fits["recompute"] = {
@@ -269,12 +263,13 @@ async def run_tiers(config: TiersConfig, out_dir: Path) -> dict[str, Any]:
             if config.background is None:
                 await measure_all()
             else:
+                priority = None if config.priority is None else ENGINE_PRIORITY[SloClass.BACKGROUND]
                 async with BackgroundLoad(
                     client,
                     "/v1/completions",
                     config.model,
                     config.background,
-                    priority=None if config.priority is None else 2,
+                    priority=priority,
                     decode_tokens=config.decode_tokens,
                     seed=config.seed + 2,
                 ) as load:

@@ -122,6 +122,16 @@ def test_priority_and_ignore_eos_can_be_left_out():
     assert "ignore_eos" not in server.seen[0]["body"]
 
 
+def test_a_reply_longer_than_the_next_extension_is_not_sent_twice():
+    # The first reply stands for 3 blocks, but the next request adds only 1. The request after
+    # that starts its new blocks after the reply's whole share, so its prompt matches the trace.
+    server = FakeServer()
+    t = trace("t", [request(0, H[:10], 6), request(1, H[:11], 2), request(2, H[:20], 1)])
+    play(t, server)
+    third = server.messages(2)
+    assert sum(len(words(m)) for m in third[1:]) == 2 * 20  # the trace's `in`, session line aside
+
+
 def test_compaction_keeps_the_messages_inside_the_shared_prefix():
     server = FakeServer()
     keeps_reply = [*H[:14], 70, 71]  # cuts inside the second user message, after the reply
@@ -218,6 +228,22 @@ def test_failed_request_is_recorded_and_its_reply_not_fed_back():
     assert third[len(second) :] == [{"role": "user", "content": session.text(H[18:])}]
 
 
+def test_summary_counts_failed_requests_apart():
+    server = FakeServer(fail={1})
+    t = trace("t", [request(0, H[:10], 3), request(1, H[:18], 5), request(2, H, 2)])
+
+    async def run() -> str:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(server)) as client:
+            config = ReplayConfig(url="http://bench.test/v1/chat/completions")
+            replayer = Replayer(config, SessionTagger(), client, io.BytesIO())
+            await replayer.play(t)
+        return replayer.summary()
+
+    lines = asyncio.run(run()).splitlines()
+    assert lines[0] == "requests: 2 ok, 1 failed"
+    assert lines[1].startswith("ttft_ms: p50 ") and ", p95 " in lines[1]
+
+
 def test_error_inside_a_stream_counts_as_a_failure():
     def server(_: httpx.Request) -> httpx.Response:
         body = b'data: {"error": {"message": "engine died", "code": 500}}\n\ndata: [DONE]\n\n'
@@ -257,6 +283,23 @@ def test_run_cycles_traces_until_the_deadline(tmp_path):
     assert {r["trace_id"] for r in records} == {"trace-a", "trace-b"}
     assert all(r["status"] == 200 and r["error"] is None for r in records)
     assert "requests:" in replayer.summary() and "cached prompt tokens" in replayer.summary()
+
+
+@pytest.mark.parametrize(("status", "exit_code"), [(200, 0), (503, 1)])
+def test_cli_fails_only_when_no_request_succeeds(tmp_path, monkeypatch, status, exit_code):
+    import leaseholder_bench.replay as replay_module
+    from leaseholder_bench.cli import main
+
+    server = FakeServer() if status == 200 else (lambda _: httpx.Response(status))
+    real = replay_module.replay
+    monkeypatch.setattr(
+        replay_module,
+        "replay",
+        lambda *args, **kwargs: real(*args, transport=httpx.MockTransport(server), **kwargs),
+    )
+    traces = write_traces(tmp_path / "traces", trace("t", [request(0, H[:4], 1)]))
+    out = tmp_path / "out.jsonl"
+    assert main(["replay", str(traces), "--out", str(out), "--duration", "0.1"]) == exit_code
 
 
 def test_empty_trace_directory_is_an_error(tmp_path):

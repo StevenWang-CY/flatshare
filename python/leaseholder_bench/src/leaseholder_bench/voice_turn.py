@@ -26,7 +26,7 @@ from typing import Any
 import httpx
 import orjson
 
-from leaseholder_bench.load import BackgroundLoad, LoadSpec, summarize
+from leaseholder_bench.load import BackgroundLoad, LoadSpec, stream_chunks, summarize
 from leaseholder_bench.protocol import CLASS_HEADER, ENGINE_PRIORITY, SloClass
 
 SENTENCE_END = re.compile(r"[.!?][\"')\]]*(?:\s|$)")
@@ -139,10 +139,8 @@ class VoiceTurn:
         tts: asyncio.Task[float] | None = None
         async with self.llm.stream("POST", "/chat/completions", headers=headers, json=body) as r:
             r.raise_for_status()
-            async for line in r.aiter_lines():
-                if not line.startswith("data: {"):
-                    continue
-                choices = orjson.loads(line[6:]).get("choices") or [{}]
+            async for chunk in stream_chunks(r):
+                choices = chunk.get("choices") or [{}]
                 delta = (choices[0].get("delta") or {}).get("content") or ""
                 if delta and t_first is None:
                     t_first = time.perf_counter()
@@ -232,13 +230,13 @@ async def run_voice_turns(config: VoiceTurnConfig, out_dir: Path) -> dict[str, A
 
 
 def render(summary: dict[str, Any]) -> str:
-    rows = ["stage                    n     p50     p90     p99"]
+    quantiles = ("p50", "p90", "p95", "p99")
+    rows = [f"{'stage':<22} {'n':>3} " + " ".join(f"{q:>7}" for q in quantiles)]
     for stage in STAGES:
         cell = summary[stage]
         if cell.get("n"):
-            rows.append(
-                f"{stage:<22} {cell['n']:>3} {cell['p50']:>7.1f} {cell['p90']:>7.1f} {cell['p99']:>7.1f}"
-            )
+            values = " ".join(f"{cell[q]:>7.1f}" for q in quantiles)
+            rows.append(f"{stage:<22} {cell['n']:>3} {values}")
     if summary.get("background"):
         rows.append(f"background: {summary['background']}")
     return "\n".join(rows)

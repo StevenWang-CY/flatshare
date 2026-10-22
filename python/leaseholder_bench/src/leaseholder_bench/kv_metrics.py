@@ -13,22 +13,45 @@ from __future__ import annotations
 
 import math
 import re
-import urllib.request
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+
+import httpx
 
 REUSE_GAP = "vllm:kv_block_reuse_gap_seconds"
 IDLE_BEFORE_EVICT = "vllm:kv_block_idle_before_evict_seconds"
 LIFETIME = "vllm:kv_block_lifetime_seconds"
 HISTOGRAMS = (REUSE_GAP, IDLE_BEFORE_EVICT, LIFETIME)
 
-_BUCKET = re.compile(r"^(?P<name>[\w:]+)_bucket\{(?P<labels>[^}]*)\}\s+(?P<value>\S+)$")
-_LE = re.compile(r'le="([^"]+)"')
+_SAMPLE = re.compile(r"^(?P<name>[\w:]+)(?:\{(?P<labels>[^}]*)\})?\s+(?P<value>\S+)$")
+_LABEL = re.compile(r'(\w+)="([^"]*)"')
 
 
 def fetch(url: str, timeout: float = 10.0) -> str:
     """The Prometheus text exposition at ``url`` (an engine's ``/metrics``)."""
-    with urllib.request.urlopen(url, timeout=timeout) as response:
-        return response.read().decode()
+    response = httpx.get(url, timeout=timeout)
+    response.raise_for_status()
+    return response.text
+
+
+def metric_samples(exposition: str) -> Iterator[tuple[str, dict[str, str], float]]:
+    """Every sample of a Prometheus text exposition as ``(name, labels, value)``."""
+    for line in exposition.splitlines():
+        if m := _SAMPLE.match(line):
+            yield m["name"], dict(_LABEL.findall(m["labels"] or "")), float(m["value"])
+
+
+Labels = tuple[tuple[str, str], ...]
+"""A sample's labels as sorted ``(name, value)`` pairs."""
+
+
+def samples(exposition: str, name: str) -> dict[Labels, float]:
+    """The samples of metric ``name``, by label set; empty when the exposition has none."""
+    return {
+        tuple(sorted(labels.items())): value
+        for sample, labels, value in metric_samples(exposition)
+        if sample == name
+    }
 
 
 @dataclass(frozen=True)
@@ -39,18 +62,15 @@ class Histogram:
     counts: tuple[float, ...]
 
     @classmethod
-    def parse(cls, text: str, name: str) -> Histogram:
-        """Read one histogram from an exposition, summing its label sets."""
+    def parse(cls, text: str, name: str, match: Mapping[str, str] | None = None) -> Histogram:
+        """Read one histogram from an exposition, summing its label sets (those that carry every
+        label in ``match``)."""
         totals: dict[float, float] = {}
-        for line in text.splitlines():
-            m = _BUCKET.match(line)
-            if m is None or m["name"] != name:
-                continue
-            le = _LE.search(m["labels"])
-            if le is None:
-                continue
-            bound = math.inf if le[1] == "+Inf" else float(le[1])
-            totals[bound] = totals.get(bound, 0.0) + float(m["value"])
+        wanted = (match or {}).items()
+        for sample, labels, value in metric_samples(text):
+            if sample == f"{name}_bucket" and "le" in labels and labels.items() >= wanted:
+                bound = float(labels["le"])  # "+Inf" parses as math.inf
+                totals[bound] = totals.get(bound, 0.0) + value
         bounds = tuple(sorted(totals))
         return cls(bounds, tuple(totals[b] for b in bounds))
 
