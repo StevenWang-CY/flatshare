@@ -40,10 +40,6 @@ use crate::sanitize::{
 use crate::server::App;
 use crate::usage::Scanner;
 
-/// Idle upstream connections close after this. vLLM closes them after `VLLM_HTTP_TIMEOUT_KEEP_ALIVE` (5 s by
-/// default), and a request sent on a connection the server is closing fails, so the gateway lets go first.
-const UPSTREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(4);
-
 /// The pooled HTTP/1.1 client to the engine.
 #[derive(Debug)]
 pub(crate) struct Upstream {
@@ -52,12 +48,14 @@ pub(crate) struct Upstream {
 }
 
 impl Upstream {
-    pub fn new(authority: Authority) -> Self {
+    /// A client that keeps idle connections for `idle_timeout`. The engine closes idle connections after its
+    /// keep-alive, and a request sent on a connection it is closing fails, so the gateway must let go first.
+    pub fn new(authority: Authority, idle_timeout: Duration) -> Self {
         let mut connector = HttpConnector::new();
         connector.set_nodelay(true);
         let client = Client::builder(TokioExecutor::new())
             .pool_timer(TokioTimer::new())
-            .pool_idle_timeout(UPSTREAM_IDLE_TIMEOUT)
+            .pool_idle_timeout(idle_timeout)
             .build(connector);
         Self { client, authority }
     }
@@ -116,6 +114,10 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         Ok(body) => body,
         Err((status, code, message)) => return ex.error(status, code, message),
     };
+    // The overhead starts once the body is in: until then the gateway waits on the client, as the engine
+    // would.
+    let read = Instant::now();
+    shared.metrics.request_body(route, read - ex.received);
     let body = match rewrite_body(&body, &tenant.cache_salt, &shared.metrics) {
         Ok(body) => body,
         Err(err) => return ex.error(StatusCode::BAD_REQUEST, "invalid_json", err.to_string()),
@@ -127,7 +129,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     ex.session = Some(session);
 
-    let sent = (ex.received, shared.metrics.overhead(route));
+    let sent = (read, shared.metrics.overhead(route));
     let body = UpstreamBody {
         data: Some(body.json),
         sent: Some(sent),
@@ -298,7 +300,8 @@ async fn pump(
 }
 
 /// The body of an upstream request. Its first poll happens when hyper writes the request to a pooled
-/// connection, which is where the gateway's overhead for the request ends.
+/// connection, which is where the gateway's overhead for the request ends; it started when the client's body
+/// was complete.
 #[derive(Debug)]
 pub(crate) struct UpstreamBody {
     data: Option<Bytes>,
