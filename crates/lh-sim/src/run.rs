@@ -46,6 +46,7 @@ pub enum Arm {
 }
 
 impl Arm {
+    /// Every arm, in the order a run reports them by default.
     pub const ALL: [Self; 4] = [
         Self::GpuLru,
         Self::LruCpu,
@@ -53,6 +54,7 @@ impl Arm {
         Self::Clairvoyant,
     ];
 
+    /// The name on the command line and in the results.
     pub const fn name(self) -> &'static str {
         match self {
             Self::GpuLru => "gpu-lru",
@@ -245,7 +247,7 @@ pub fn clairvoyant(
                     adm,
                     cfg.replay.block_tokens as u64,
                 );
-                if let Some(rec) = records.get_mut(r.record) {
+                if let Some(rec) = r.record.map(|k| &mut records[k]) {
                     rec.sources = adm.sources;
                     rec.recomputed = recomputed;
                     rec.ttft_ns = rec.admitted_ns - rec.issued_ns

@@ -47,6 +47,8 @@ pub struct Tokens {
 }
 
 impl Tokens {
+    /// Panics unless both sizes are positive and a hash block spans at most 16 engine blocks, the
+    /// most a [`block_id`] can address.
     pub fn new(hash_block: u32, engine_block: u32) -> Self {
         assert!(hash_block > 0 && engine_block > 0);
         assert!(
@@ -66,42 +68,21 @@ impl Tokens {
 }
 
 /// Every prompt of one trace as a trie over hash ids; node 0 is the empty prefix.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct PrefixTree {
     parent: Vec<NodeId>,
     depth: Vec<u32>,
 }
 
 impl PrefixTree {
-    pub fn len(&self) -> usize {
-        self.parent.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.parent.len() <= 1
-    }
-
+    /// Hash blocks on the path from the root to `node`.
     pub fn depth(&self, node: NodeId) -> u32 {
         self.depth[node as usize]
     }
 
+    /// The node one hash block shorter than `node` (the root's parent is the root).
     pub fn parent(&self, node: NodeId) -> NodeId {
         self.parent[node as usize]
-    }
-
-    /// Hash blocks shared by the prompts ending at `a` and `b`.
-    pub fn common_prefix(&self, mut a: NodeId, mut b: NodeId) -> u32 {
-        while self.depth(a) > self.depth(b) {
-            a = self.parent(a);
-        }
-        while self.depth(b) > self.depth(a) {
-            b = self.parent(b);
-        }
-        while a != b {
-            a = self.parent(a);
-            b = self.parent(b);
-        }
-        self.depth(a)
     }
 
     /// Writes the path from the root to `end` into `path` (`path[d]` is the node at depth `d + 1`).
@@ -230,7 +211,9 @@ impl Hasher for IdHasher {
     }
 }
 
+/// A map keyed by block ids or other spread integers, hashed with [`IdHasher`].
 pub type IdMap<V> = HashMap<u64, V, BuildHasherDefault<IdHasher>>;
+/// A set of block ids or other spread integers, hashed with [`IdHasher`].
 pub type IdSet = HashSet<u64, BuildHasherDefault<IdHasher>>;
 
 #[cfg(test)]
@@ -252,10 +235,11 @@ mod tests {
     #[test]
     fn shared_prefixes_share_nodes() {
         let (t, ends) = tree(&[&[1, 2, 3], &[1, 2, 3, 4], &[1, 2, 9], &[5]]);
-        assert_eq!(t.len(), 1 + 4 + 1 + 1);
-        assert_eq!(t.common_prefix(ends[0], ends[1]), 3);
-        assert_eq!(t.common_prefix(ends[1], ends[2]), 2);
-        assert_eq!(t.common_prefix(ends[2], ends[3]), 0);
+        // The root, 1-2-3-4, the fork at 9, and 5.
+        assert_eq!(t.parent.len(), 1 + 4 + 1 + 1);
+        assert_eq!(t.parent(ends[1]), ends[0]);
+        assert_eq!(t.parent(ends[2]), t.parent(ends[0]));
+        assert_eq!((t.depth(ends[2]), t.parent(ends[3])), (3, 0));
         // Inserting an existing prompt adds nothing.
         let mut b = PrefixTreeBuilder::default();
         let first = b.insert(&[1, 2, 3]);
@@ -323,14 +307,20 @@ mod tests {
     }
 
     #[test]
-    fn id_maps_spread_structured_keys() {
-        let mut m: IdMap<u32> = IdMap::default();
-        for play in 0..100u64 {
-            for node in 0..100u32 {
-                m.insert(block_id(play, 0, node, 0), node);
-            }
-        }
-        assert_eq!(m.len(), 10_000);
-        assert_eq!(m[&block_id(42, 0, 7, 0)], 7);
+    fn the_id_hasher_spreads_keys_that_differ_only_in_high_bits() {
+        // One node's block in 1,024 plays: the ids differ only above bit 36. A hash map picks the
+        // bucket from the low bits of the hash and tags entries with the top 7, so both must vary.
+        let hashes: Vec<u64> = (0..1024)
+            .map(|play| {
+                let mut h = IdHasher::default();
+                h.write_u64(block_id(play, 0, 7, 0));
+                h.finish()
+            })
+            .collect();
+        let low: IdSet = hashes.iter().map(|h| h & 1023).collect();
+        let top: IdSet = hashes.iter().map(|h| h >> 57).collect();
+        // A random function fills about 647 of 1,024 buckets and all 128 tags; the identity fills one.
+        assert!(low.len() > 600, "{} low-bit buckets", low.len());
+        assert!(top.len() > 120, "{} top-bit tags", top.len());
     }
 }

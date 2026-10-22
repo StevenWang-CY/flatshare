@@ -51,6 +51,7 @@ impl Default for PlanOptions {
     }
 }
 
+/// What a conversation replays: the main agent, a subagent's chain, or a flattened agent chain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConvKind {
     Root,
@@ -86,6 +87,7 @@ pub struct Turn {
     pub inner: Option<u32>,
 }
 
+/// Child conversations the root spawns together (AIPerf's SPAWN branch).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Branch {
     /// AIPerf's branch id, e.g. `<trace>:spawn:<agent id>`.
@@ -94,14 +96,15 @@ pub struct Branch {
     pub children: Vec<u32>,
     /// No root turn waits for it.
     pub background: bool,
-    /// Recorded spawn time in ms.
-    pub start_ms: Option<f64>,
+    /// Recorded spawn time in ms: the earliest start among its members.
+    pub start_ms: f64,
     /// The root turn that spawns it.
     pub spawn_turn: u32,
     /// The root turn that waits for it.
     pub join_turn: Option<u32>,
 }
 
+/// One replayed stream of requests.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Conversation {
     /// AIPerf's conversation (session) id: the trace id for the root, with a `::sa:`, `::fa:`,
@@ -135,16 +138,14 @@ pub struct ReplayPlan {
 }
 
 impl ReplayPlan {
+    /// The main agent's conversation.
     pub fn root(&self) -> &Conversation {
         &self.convs[0]
     }
 
+    /// The index of the conversation with AIPerf's id `id`.
     pub fn conv_index(&self, id: &str) -> Option<u32> {
         self.convs.iter().position(|c| c.id == id).map(|i| i as u32)
-    }
-
-    pub fn requests(&self) -> usize {
-        self.convs.iter().map(|c| c.turns.len()).sum()
     }
 
     /// Builds the plan of `trace`.
@@ -547,7 +548,7 @@ impl<'a> Builder<'a> {
                 id: format!("{}:spawn:{}", self.trace_id, first.agent_id),
                 children,
                 background: join.is_none(),
-                start_ms: Some(start_s * 1e3),
+                start_ms: start_s * 1e3,
                 spawn_turn: *spawn as u32,
                 join_turn: join.map(|j| j as u32),
             });
@@ -581,7 +582,7 @@ impl<'a> Builder<'a> {
                 ),
                 children: members.iter().map(|&m| flat_convs[m]).collect(),
                 background: join.is_none(),
-                start_ms: Some(start_s * 1e3),
+                start_ms: start_s * 1e3,
                 spawn_turn: *spawn as u32,
                 join_turn: join.map(|j| j as u32),
             });
@@ -838,7 +839,7 @@ mod tests {
             (b.id.as_str(), b.spawn_turn, b.join_turn, b.background),
             ("t:flatspawn:0", 1, None, true)
         );
-        assert_eq!(b.start_ms, Some(3000.0));
+        assert_eq!(b.start_ms, 3000.0);
         // Root turn 2 (t=20) follows the flat chain's turn 0 (ended t=4); flat turn 1 (t=30) follows
         // root turn 2 (ended t=21); flat turn 0 (t=3) follows root turn 0 (ended t=1).
         assert_eq!(p.root().turns[2].preds, vec![(1, 0)]);
