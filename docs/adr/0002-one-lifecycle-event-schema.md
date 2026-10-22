@@ -15,12 +15,12 @@ Separate mechanisms per workload would duplicate the prefetch and headroom logic
 
 - Define one `LifecycleEvent` type in `crates/lh-proto`. It is a flat JSON object whose `type` selects the variant and its fields (`turn_finished`, `tool_wait_started`, `user_speech_started`, `interrupted`, and the rest; see [PROTOCOL.md](../PROTOCOL.md)).
 - Generate JSON Schemas from the Rust types for the Python components (`crates/lh-proto/schema/`). A test fails when the checked-in schemas fall behind the code.
-- Events arrive at `POST /v1/events`, idempotent by `event_id`, or the control plane infers them from the traffic it proxies.
+- Events arrive at `POST /v1/events`, idempotent by `(source, event_id)`, or the control plane infers them from the traffic it proxies.
 - Readers ignore fields they do not know, so newer emitters do not break older control planes. They reject unknown event types, so a typo cannot silently change behavior.
 
 ## Consequences
 
 - A tool return and a speech onset drive the same lease transitions and the same prefetch.
 - Adding a workload means emitting events, not adding a mechanism.
-- One example file, `crates/lh-proto/testdata/events.jsonl`, pins the wire format for both languages.
+- One example file, `crates/lh-proto/testdata/events.jsonl`, pins the wire format. The Rust tests read it; the Python emitters are to test against it once they send events (W3).
 - The schema is a public interface. Changes to it are additive, or they get a new event type.
