@@ -1,0 +1,320 @@
+"""The ``lh-bench`` command line: trace scaling, replays, latency probes and engine metrics."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import dataclasses
+import os
+import sys
+from pathlib import Path
+
+from leaseholder_bench.load import LoadSpec, parse_lengths
+from leaseholder_bench.protocol import SessionTagger, SloClass, load_class_map
+
+
+def _scale(args: argparse.Namespace) -> int:
+    from leaseholder_bench.traces import scale_corpus
+
+    ids = None
+    if args.ids is not None:
+        ids = {line.strip() for line in args.ids.read_text().splitlines() if line.strip()}
+    summary = scale_corpus(args.src, args.out_dir, args.factor, ids=ids, limit=args.limit)
+    print(
+        f"wrote {summary.traces} traces ({summary.requests} requests) to {args.out_dir}; "
+        f"largest in+out is {summary.peak_tokens} tokens"
+    )
+    if ids is not None and summary.traces < len(ids):
+        print(
+            f"warning: {len(ids) - summary.traces} listed trace ids were not found", file=sys.stderr
+        )
+    return 0
+
+
+def _replay(args: argparse.Namespace) -> int:
+    from leaseholder_bench.replay import ReplayConfig, replay
+
+    tagger = SessionTagger.from_env()
+    if args.slo_class is not None:
+        tagger = dataclasses.replace(tagger, default_class=args.slo_class)
+    if args.class_map is not None:
+        tagger = dataclasses.replace(tagger, trace_classes=load_class_map(args.class_map))
+    if args.no_priority:
+        tagger = dataclasses.replace(tagger, send_priority=False)
+    config = ReplayConfig(
+        url=args.url,
+        model=args.model,
+        sessions=args.sessions,
+        duration=args.duration,
+        grace=args.grace,
+        think_cap=args.think_cap,
+        timeout=args.timeout,
+        ignore_eos=not args.no_ignore_eos,
+        seed=args.seed,
+    )
+    replayer = asyncio.run(replay(config, tagger, args.traces, args.out))
+    print(replayer.summary())
+    return 0 if replayer.stats else 1
+
+
+def _mock(args: argparse.Namespace) -> int:
+    from leaseholder_bench.mock_server import serve
+
+    options = {
+        "model": args.model,
+        "ttft_ms": args.ttft_ms,
+        "itl_ms": args.itl_ms,
+        "max_tokens": args.max_tokens,
+    }
+    if args.log is None:
+        serve(args.port, None, **options)
+        return 0
+    args.log.parent.mkdir(parents=True, exist_ok=True)
+    with args.log.open("ab") as log:
+        serve(args.port, log, **options)
+    return 0
+
+
+def _kv_metrics(args: argparse.Namespace) -> int:
+    from leaseholder_bench.kv_metrics import compare, fetch
+
+    if args.action == "snapshot":
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(fetch(args.url))
+        return 0
+    print(compare(args.before.read_text(), args.after.read_text()))
+    return 0
+
+
+def _tiers(args: argparse.Namespace) -> int:
+    from leaseholder_bench.tiers import TiersConfig, render, run_tiers
+
+    config = TiersConfig(
+        url=args.url,
+        model=args.model,
+        lengths=parse_lengths(args.lengths),
+        reps=args.reps,
+        background=args.background,
+        decode_tokens=args.decode_tokens,
+        priority=None if args.no_priority else args.priority,
+        seed=args.seed,
+    )
+    summary = asyncio.run(run_tiers(config, args.out))
+    print(render(summary))
+    return 0 if not summary["invalid"] else 3
+
+
+def _voice_turn(args: argparse.Namespace) -> int:
+    from leaseholder_bench.voice_turn import VoiceTurnConfig, render, run_voice_turns
+
+    config = VoiceTurnConfig(
+        stt_url=args.stt_url,
+        llm_url=args.llm_url,
+        tts_url=args.tts_url,
+        stt_model=args.stt_model,
+        llm_model=args.llm_model,
+        tts_model=args.tts_model,
+        voice=args.voice,
+        audio=args.audio,
+        reps=args.reps,
+        warm=args.warm,
+        concurrency=args.concurrency,
+        max_tokens=args.max_tokens,
+        slo_class=args.slo_class,
+        send_priority=not args.no_priority,
+        background=args.background,
+        decode_tokens=args.decode_tokens,
+    )
+    print(render(asyncio.run(run_voice_turns(config, args.out))))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    from leaseholder_bench.replay import DEFAULT_MODEL, DEFAULT_URL
+
+    parser = argparse.ArgumentParser(prog="lh-bench", description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    scale = commands.add_parser(
+        "scale-traces",
+        help="shrink Weka traces by a factor of tokens per hash block",
+        description="Shrink every request of a Weka trace corpus by the same factor, keeping "
+        "hash ids, sessions, subagents and think times. Writes one <trace id>.json per trace.",
+    )
+    scale.add_argument("src", type=Path, help="Weka traces: a .jsonl file or a directory of *.json")
+    scale.add_argument("out_dir", type=Path)
+    scale.add_argument(
+        "--factor",
+        type=int,
+        default=32,
+        help="tokens-per-block shrink factor: 32 fits a 32k context, 64 a 16k one (default 32)",
+    )
+    scale.add_argument("--ids", type=Path, help="keep only the trace ids listed in this file")
+    scale.add_argument("--limit", type=int, help="stop after this many traces")
+    scale.set_defaults(func=_scale)
+
+    replay = commands.add_parser(
+        "replay",
+        help="replay scaled traces, feeding each live reply into the next turn",
+        description="Closed-loop replay of scaled traces with recorded think times and "
+        "subagents. Each turn's history carries the model's actual reply. Writes one JSON "
+        "line per request.",
+    )
+    replay.add_argument("traces", type=Path, help="directory of scaled trace *.json files")
+    replay.add_argument("--out", type=Path, required=True, help="per-request JSONL file")
+    replay.add_argument(
+        "--url",
+        default=os.environ.get("LH_BENCH_URL", DEFAULT_URL),
+        help="chat completions URL (env LH_BENCH_URL; default %(default)s)",
+    )
+    replay.add_argument(
+        "--model",
+        default=os.environ.get("LH_BENCH_MODEL", DEFAULT_MODEL),
+        help="model name sent in each request (env LH_BENCH_MODEL; default %(default)s)",
+    )
+    replay.add_argument("--sessions", type=int, default=4, help="concurrent session trees")
+    replay.add_argument("--duration", type=float, default=60.0, help="seconds to send requests")
+    replay.add_argument(
+        "--grace", type=float, default=30.0, help="seconds to let in-flight requests finish"
+    )
+    replay.add_argument(
+        "--think-cap", type=float, default=600.0, help="cap on each think time in seconds"
+    )
+    replay.add_argument("--timeout", type=float, default=300.0, help="per-request timeout")
+    replay.add_argument(
+        "--class",
+        dest="slo_class",
+        type=SloClass,
+        choices=list(SloClass),
+        help="SLO class of every session (env LH_BENCH_CLASS; default background)",
+    )
+    replay.add_argument(
+        "--class-map", type=Path, help="JSON object of trace id -> class (env LH_BENCH_CLASS_MAP)"
+    )
+    replay.add_argument(
+        "--no-priority",
+        action="store_true",
+        help="omit the vLLM priority field (needed against a server without priority scheduling)",
+    )
+    replay.add_argument(
+        "--no-ignore-eos", action="store_true", help="let the model stop before the trace's out"
+    )
+    replay.add_argument("--seed", type=int, default=0, help="seed for the trace order")
+    replay.set_defaults(func=_replay)
+
+    mock = commands.add_parser(
+        "mock-server",
+        help="run a recording OpenAI-compatible mock on 127.0.0.1",
+        description="Streaming chat-completions mock bound to 127.0.0.1 that logs every "
+        "request's headers and body fields.",
+    )
+    mock.add_argument("--port", type=int, default=8000)
+    mock.add_argument("--log", type=Path, help="append one JSON line per request to this file")
+    mock.add_argument("--model", default="mock", help="model id listed by /v1/models")
+    mock.add_argument("--ttft-ms", type=float, default=20.0)
+    mock.add_argument("--itl-ms", type=float, default=2.0)
+    mock.add_argument("--max-tokens", type=int, default=64, help="cap on streamed tokens")
+    mock.set_defaults(func=_mock)
+
+    kv = commands.add_parser(
+        "kv-metrics",
+        help="snapshot vLLM's /metrics, or compare KV block lifecycle histograms across a run",
+        description="Snapshot an engine's /metrics before and after a run, then compare vLLM's "
+        "KV block reuse-gap, idle-before-evict and lifetime histograms over that interval "
+        "(the engine needs --kv-cache-metrics).",
+    )
+    actions = kv.add_subparsers(dest="action", required=True)
+    snap = actions.add_parser("snapshot", help="save the exposition at URL to a file")
+    snap.add_argument("url", help="metrics URL, e.g. http://127.0.0.1:8000/metrics")
+    snap.add_argument("out", type=Path)
+    cmp_ = actions.add_parser("compare", help="report the histograms between two snapshots")
+    cmp_.add_argument("before", type=Path)
+    cmp_.add_argument("after", type=Path)
+    kv.set_defaults(func=_kv_metrics)
+
+    tiers = commands.add_parser(
+        "tiers",
+        help="measure the time to first token from the GPU pool, the CPU tier and recompute (E0)",
+        description="For each prompt length, send a unique prompt three times: cold (recomputed), "
+        "again (GPU prefix-cache hit), and after flushing the GPU pool (restored from the CPU "
+        "tier). vLLM's prefix-cache counters verify each request's source. Writes run.json, "
+        "samples.jsonl and summary.json.",
+    )
+    tiers.add_argument(
+        "--url",
+        default="http://127.0.0.1:8000",
+        help="engine base URL (default %(default)s); the engine needs /metrics and an offload tier",
+    )
+    tiers.add_argument("--model", default=DEFAULT_MODEL)
+    tiers.add_argument(
+        "--lengths",
+        default="1024,2048,4096,8192,16384,24576,31744",
+        help="comma-separated prompt lengths in tokens (default %(default)s)",
+    )
+    tiers.add_argument("--reps", type=int, default=5, help="samples per length (default 5)")
+    tiers.add_argument("--out", type=Path, required=True, help="run directory")
+    tiers.add_argument("--seed", type=int, default=0)
+    _add_load_arguments(tiers, default_priority=1)
+    tiers.set_defaults(func=_tiers)
+
+    turn = commands.add_parser(
+        "voice-turn",
+        help="time server-side voice turns: STT, LLM first sentence, TTS first audio",
+        description="Run voice turns against OpenAI-compatible STT, LLM and TTS servers and time "
+        "each stage; with --background, while agent load keeps the LLM busy. Writes run.json, "
+        "turns.jsonl and summary.json.",
+    )
+    turn.add_argument("--stt-url", default="http://127.0.0.1:8100/v1")
+    turn.add_argument("--llm-url", default="http://127.0.0.1:8000/v1")
+    turn.add_argument("--tts-url", default="http://127.0.0.1:8880/v1")
+    turn.add_argument("--stt-model", default="openai/whisper-large-v3-turbo")
+    turn.add_argument("--llm-model", default=DEFAULT_MODEL)
+    turn.add_argument("--tts-model", default="kokoro")
+    turn.add_argument("--voice", default="af_heart")
+    turn.add_argument(
+        "--audio", type=Path, action="append", required=True, help="utterance WAV (repeatable)"
+    )
+    turn.add_argument("--reps", type=int, default=20, help="measured turns per caller")
+    turn.add_argument("--warm", type=int, default=2, help="unmeasured warm-up turns per caller")
+    turn.add_argument("--concurrency", type=int, default=1, help="callers taking turns at once")
+    turn.add_argument("--max-tokens", type=int, default=60)
+    turn.add_argument(
+        "--class", dest="slo_class", type=SloClass, choices=list(SloClass), default="realtime"
+    )
+    turn.add_argument("--out", type=Path, required=True, help="run directory")
+    _add_load_arguments(turn, default_priority=None)
+    turn.set_defaults(func=_voice_turn)
+    return parser
+
+
+def _add_load_arguments(parser: argparse.ArgumentParser, default_priority: int | None) -> None:
+    parser.add_argument(
+        "--background",
+        type=LoadSpec.parse,
+        help="agent load while measuring: prefill:<tokens>x<concurrency> (cold prefills) or "
+        "decode:<tokens>x<concurrency> (long decodes)",
+    )
+    parser.add_argument(
+        "--decode-tokens", type=int, default=1024, help="output tokens per decode-load request"
+    )
+    if default_priority is not None:
+        parser.add_argument(
+            "--priority",
+            type=int,
+            default=default_priority,
+            help="vLLM priority of the probe requests (default %(default)s); load runs at 2",
+        )
+    parser.add_argument(
+        "--no-priority",
+        action="store_true",
+        help="omit the vLLM priority field (needed against a server without priority scheduling)",
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
