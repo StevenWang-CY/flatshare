@@ -2,6 +2,8 @@
 
 Leaseholder's engine-side plugins for vLLM 0.32. They are loaded by vLLM's own extension points, so the engine stays stock.
 
+**Not used.** They were built for E1's lease-aware CPU-tier policy, and E1 found no regime that needs it (a negative result), so the frozen box runs the stock `OffloadingConnector`. They were tested against vLLM's real offload manager and checked live on the GPU, and are removed after v0.3 ([ADR-0006](../../docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)).
+
 | Module | Plugs into | What it does |
 |---|---|---|
 | `leaseholder_vllm.policy.LeasePolicy` | the native CPU offload tier (`cache_policy_module_path`) | Soft leases over LRU. Chunks without a live lease are evicted first; leased chunks go only when nothing else is evictable, lowest class first. A store is refused only where plain LRU would refuse it too |
@@ -27,7 +29,7 @@ kv-transfer-config:
     cache_policy_module_path: leaseholder_vllm.policy
 ```
 
-The frozen box ships the stock `OffloadingConnector` with LRU. The policy is switched on only where the simulator shows that CPU-tier eviction binds (the G-sim gate of [E1](../../docs/EXPERIMENTS.md#e1-parking)).
+The frozen box ships the stock `OffloadingConnector` with LRU. The policy was to be switched on only where the simulator showed that CPU-tier eviction binds (the G-sim gate of [E1](../../docs/EXPERIMENTS.md#e1-parking)); G-sim took its negative branch in W2, so the policy stays off.
 
 ## Tests
 

@@ -94,7 +94,7 @@ lh-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl      # a mea
 lh-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl --timed --csv w0-timed.csv
 ```
 
-The replay options default to `configs/agentic_replay.yaml` with the W0 settings: 16 lanes, 600 s plus a 60 s grace, a 120 s think-time cap, seed 11, start ratios 0 to 1, burst starts and a 10 s idle cap. Capacities default to the frozen box (`--pool-tokens 36400`, a 20 GiB CPU tier; `--cpu-ratio` or `--cpu-gib` change it), costs to the E0 fits (`--costs` takes the `summary.json` of `lh-bench tiers`; `--itl-ms` sets the idle service's decode rate) and the step-time model to the frozen box's fit (`--step-costs`). `run` writes a JSON summary (`--json`), one CSV row per arm and capacity (`--csv`) and one CSV row per request (`--requests`). `--token-scale 32` replays a 32× corpus at its original token counts.
+The replay options are the fields of `lh-bench`'s `configs/agentic_replay.yaml`, but they default to the W0 settings, not to that file's (1,800 s plus a 120 s grace and a 600 s think-time cap): 16 lanes, 600 s plus a 60 s grace, a 120 s think-time cap, seed 11, start ratios 0 to 1, burst starts and a 10 s idle cap. Capacities default to the frozen box (`--pool-tokens 36400`, a 20 GiB CPU tier; `--cpu-ratio` or `--cpu-gib` change it), costs to the E0 fits (`--costs` takes the `summary.json` of `lh-bench tiers`; `--itl-ms` sets the idle service's decode rate) and the step-time model to the frozen box's fit (`--step-costs`). `run` writes a JSON summary (`--json`), one CSV row per arm and capacity (`--csv`) and one CSV row per request (`--requests`). `--token-scale 32` replays a 32× corpus at its original token counts.
 
 `regime` runs `lru-cpu`, the E1 arms and the reference in every cell of `--sessions` (5, 8, 12, 16, 24, 32, 40), `--cpu-ratio` (2, 4, 8) and `--pause-sources` (trace, tracelab), on `--jobs` threads (default: every core). It writes one CSV row per cell and arm (`--csv`) and the regime map (`--markdown`): per cell, the coordinates, `lru-cpu`'s, the reference's and the oracle's resume TTFT, the oracle's gain, and the share of the clairvoyant gap each level closes at p90. A share is `(lru − arm) / (lru − clairvoyant)`, left empty where the reference is less than 5% faster than `lru-cpu`.
 
@@ -172,7 +172,7 @@ The measured split is the engine's `prompt_tokens_cached_by_source` counters ove
 
 With trace pauses up to 24 sessions, `mori` loses 1–15% at p50 and 10–24% at p90 against `lru-cpu` (ranking by noisy predicted returns evicts sessions that come back), and `infercept` 18–36% at p50 (its swaps turn GPU hits into restores, and the pool has no use for the memory they free).
 
-**The realistic regime.** The frozen box with the traces' think times and the CPU tier at 4× (π about 16, against 2–4 times production's per PLAN §3.2), over 20 seeds (11–30); gain over `lru-cpu`, mean (median) [range]:
+**The realistic regime.** The frozen box with the traces' think times and the CPU tier at 4× (π about 16, within 2–4 times production's), over 20 seeds (11–30); gain over `lru-cpu`, mean (median) [range]:
 
 | Sessions | Pressure | `lru-cpu` resume p50 / p90 | `oracle-prefetch` p50 | p90 | `clairvoyant` p50 / p90 | Best history arm, p90 |
 |---|---|---|---|---|---|---|
@@ -205,7 +205,7 @@ Three sequences: the 32× replay; the same admission order with every prompt cut
 
 ## Other hardware, modeled
 
-Every cost above is measured on one RTX 5060 Ti. No datacenter GPU is available (O6), so `lh-sim hardware` places other GPUs on the same map with costs modeled from their published specifications. The box's rows use its measured costs (its placement is simulated like the others'); every other row is labeled modeled.
+Every cost above is measured on one RTX 5060 Ti. No datacenter GPU is available, so `lh-sim hardware` places other GPUs on the same map with costs modeled from their published specifications. The box's rows use its measured costs (its placement is simulated like the others'); every other row is labeled modeled.
 
 **Costs.** A GPU's profile is its published peaks: memory, memory bandwidth, dense FP8 and BF16 tensor throughput, and the host link. The peaks are used only as ratios to the box's: each measured cost term is divided by the ratio of the published peaks of the kind that bounds it (bandwidth to bandwidth, FP8 to FP8, link to link), so the box's measured efficiency carries over.
 - **Memory bandwidth** scales the fixed step term and the KV reads. The fixed term is mostly the weight read: Qwen3-4B-FP8 reads 4.41 GB a step (3.63 G FP8 linear weights and the 0.78 GB BF16 embedding, tied to the LM head), 9.8 ms of the 11.56 ms at 448 GB/s.
@@ -308,7 +308,7 @@ Rows whose resume TTFT runs to seconds are saturated, and there the running shar
 **What each GPU's regime means for a realtime tier beside agents.**
 - **RTX 5060 Ti (measured costs).** From 8 sessions the agents' working set leaves less than two calls' KV free all the time, so a voice turn's KV always displaces cached agent KV. Running agents hold the pool against a voice turn 0–4% of the time up to the box's 16-session operating point, 12% at 24 sessions and 25–33% at 32–40.
   - Up to 16 sessions, a realtime tier on the box meets compute interference. It waits behind a 56–66 ms prefill chunk, which the step cap bounds and priority orders.
-  - From 24 sessions, it is in #40004's regime an eighth to a third of the time, where only KV freed for it helps: headroom held ahead of the turn, or preempting running work (make-room).
+  - From 24 sessions, it is in #40004's regime an eighth to a third of the time, where it needs KV freed for it. In E2's discriminating scenario (24 session trees of the longest-context traces), freeing KV was not enough: the engine also had to keep lower-priority prefill out of the turn's first tokens (make-room's budget cap), and headroom held ahead of the turn added nothing measurable ([EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)).
   - π is 16–21 and ρ 0.25–0.27. Lifecycle information buys 22–26% at p90 at pressures 1.8–2.6 and 8% at 3.6, and it loses from 4.7 (the E1 map).
 - **L4 (modeled).** Against the box it has 2.6× the pool, a 4× faster link and 1.3× (FP8) and 2.6× (BF16) the tensor throughput, but two thirds of the memory bandwidth: its decode steps are slower and its prefill faster.
   - On the 32× replay, running agents never block two calls up to 24 sessions. π rises to 45–68 (restores four times cheaper per token) and ρ falls to 0.09–0.10, so restoring beats recomputing about ten to one.
