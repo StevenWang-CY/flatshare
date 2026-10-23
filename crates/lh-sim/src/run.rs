@@ -14,6 +14,10 @@
 //!   (a request takes the blocks its footprint needs minus those it shares with running requests,
 //!   whatever the policy), so every admission of the first pass fits in the second.
 //!
+//! The E1 arms add a retention policy to `lru-cpu` ([`crate::retention`]): `ttl-5`, `ttl-30` and
+//! `ttl-120` (Continuum's hold), `history-prefetch`, `oracle-prefetch`, `tokencake`, `mori` (with
+//! its idleness-ranked pool) and `infercept`.
+//!
 //! The clairvoyant reference is not a bound on what the arms can achieve: MIN per tier ignores that
 //! a block's hit counts only when its whole prefix hits, that a CPU copy is worthless while the GPU
 //! holds the block, that faster service would change which requests overlap, and PCIe limits. It is
@@ -33,7 +37,10 @@ use crate::engine::oracle::Oracle;
 use crate::engine::{CpuPolicyKind, Engine, EngineConfig, EngineRequest, GpuPolicyKind};
 use crate::metrics::{self, Summary};
 use crate::prefix::IdSet;
-use crate::replay::{self, Replay, ReplayConfig, ReplayOutput, RequestRecord, TimelineEvent};
+use crate::replay::{
+    self, Replay, ReplayConfig, ReplayOutput, RequestRecord, Service, TimelineEvent,
+};
+use crate::retention::Retention;
 
 /// A cache-policy arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
@@ -43,15 +50,52 @@ pub enum Arm {
     LruCpu,
     S3FifoCpu,
     Clairvoyant,
+    Ttl5,
+    Ttl30,
+    Ttl120,
+    HistoryPrefetch,
+    OraclePrefetch,
+    Tokencake,
+    Mori,
+    InferCept,
 }
 
 impl Arm {
-    /// Every arm, in the order a run reports them by default.
-    pub const ALL: [Self; 4] = [
+    /// The stock arms and the reference, in the order a run reports them by default.
+    pub const STOCK: [Self; 4] = [
         Self::GpuLru,
         Self::LruCpu,
         Self::S3FifoCpu,
         Self::Clairvoyant,
+    ];
+
+    /// The E1 information ladder: `lru-cpu`, the retention arms, and the reference.
+    pub const E1: [Self; 10] = [
+        Self::LruCpu,
+        Self::Ttl5,
+        Self::Ttl30,
+        Self::Ttl120,
+        Self::HistoryPrefetch,
+        Self::OraclePrefetch,
+        Self::Tokencake,
+        Self::Mori,
+        Self::InferCept,
+        Self::Clairvoyant,
+    ];
+
+    pub const ALL: [Self; 12] = [
+        Self::GpuLru,
+        Self::LruCpu,
+        Self::S3FifoCpu,
+        Self::Clairvoyant,
+        Self::Ttl5,
+        Self::Ttl30,
+        Self::Ttl120,
+        Self::HistoryPrefetch,
+        Self::OraclePrefetch,
+        Self::Tokencake,
+        Self::Mori,
+        Self::InferCept,
     ];
 
     /// The name on the command line and in the results.
@@ -61,6 +105,29 @@ impl Arm {
             Self::LruCpu => "lru-cpu",
             Self::S3FifoCpu => "s3fifo-cpu",
             Self::Clairvoyant => "clairvoyant",
+            Self::Ttl5 => "ttl-5",
+            Self::Ttl30 => "ttl-30",
+            Self::Ttl120 => "ttl-120",
+            Self::HistoryPrefetch => "history-prefetch",
+            Self::OraclePrefetch => "oracle-prefetch",
+            Self::Tokencake => "tokencake",
+            Self::Mori => "mori",
+            Self::InferCept => "infercept",
+        }
+    }
+
+    /// What the arm does with a pausing session's KV.
+    pub const fn retention(self) -> Retention {
+        match self {
+            Self::GpuLru | Self::LruCpu | Self::S3FifoCpu | Self::Clairvoyant => Retention::None,
+            Self::Ttl5 => Retention::Ttl(5.0),
+            Self::Ttl30 => Retention::Ttl(30.0),
+            Self::Ttl120 => Retention::Ttl(120.0),
+            Self::HistoryPrefetch => Retention::HistoryPrefetch,
+            Self::OraclePrefetch => Retention::OraclePrefetch,
+            Self::Tokencake => Retention::Tokencake,
+            Self::Mori => Retention::Mori,
+            Self::InferCept => Retention::InferCept,
         }
     }
 }
@@ -90,18 +157,20 @@ impl FromStr for Arm {
 pub struct RunConfig {
     pub replay: ReplayConfig,
     pub cost: TierCost,
+    pub service: Service,
     pub geometry: KvGeometry,
     /// The arm whose timeline the clairvoyant reference replays.
     pub reference: Arm,
 }
 
 impl RunConfig {
-    /// The W0 replay on the frozen box: [`ReplayConfig::default`], the E0 costs, Qwen3-4B KV, and
-    /// the clairvoyant reference on the `lru-cpu` timeline.
+    /// The W0 replay on the frozen box: [`ReplayConfig::default`], the E0 costs, the step loop
+    /// under contention, Qwen3-4B KV, and the clairvoyant reference on the `lru-cpu` timeline.
     pub fn frozen_box(replay: ReplayConfig) -> Self {
         Self {
             replay,
             cost: TierCost::frozen_box(),
+            service: Service::frozen_box(),
             geometry: KvGeometry::QWEN3_4B_BF16,
             reference: Arm::LruCpu,
         }
@@ -113,7 +182,7 @@ impl RunConfig {
         let gpu_only = match arm {
             Arm::GpuLru => true,
             Arm::Clairvoyant => self.reference == Arm::GpuLru,
-            Arm::LruCpu | Arm::S3FifoCpu => false,
+            _ => false,
         };
         TierCapacity {
             gpu_blocks: capacity.gpu_blocks,
@@ -124,9 +193,10 @@ impl RunConfig {
     /// The engine of `arm` at `capacity`.
     pub fn engine_config(&self, arm: Arm, capacity: TierCapacity) -> EngineConfig {
         let (gpu_policy, cpu_policy) = match arm {
-            Arm::GpuLru | Arm::LruCpu => (GpuPolicyKind::Lru, CpuPolicyKind::Lru),
             Arm::S3FifoCpu => (GpuPolicyKind::Lru, CpuPolicyKind::S3Fifo),
             Arm::Clairvoyant => (GpuPolicyKind::Clairvoyant, CpuPolicyKind::Clairvoyant),
+            Arm::Mori => (GpuPolicyKind::IdleRanked, CpuPolicyKind::Lru),
+            _ => (GpuPolicyKind::Lru, CpuPolicyKind::Lru),
         };
         let capacity = self.effective(arm, capacity);
         EngineConfig {
@@ -139,7 +209,7 @@ impl RunConfig {
     }
 
     fn check(&self) -> Result<(), String> {
-        if self.reference == Arm::Clairvoyant {
+        if !matches!(self.reference, Arm::GpuLru | Arm::LruCpu | Arm::S3FifoCpu) {
             return Err("the clairvoyant reference needs a stock arm as its reference".into());
         }
         if self.geometry.block_tokens != self.replay.block_tokens as u64 {
@@ -186,6 +256,8 @@ pub fn run_arm(
         corpus,
         engine,
         cfg.cost.clone(),
+        cfg.service.clone(),
+        arm.retention(),
         timeline,
     )
     .run()?;
@@ -248,14 +320,26 @@ pub fn clairvoyant(
                     cfg.replay.block_tokens as u64,
                 );
                 if let Some(rec) = r.record.map(|k| &mut records[k]) {
+                    rec.ttft_ns = match &cfg.service {
+                        Service::Idle => {
+                            rec.blocked_ns + cfg.cost.ttft(adm.sources).as_nanos() as u64
+                        }
+                        // The reference's queueing stays; the request's own service is re-priced.
+                        Service::Contention { budget, steps } => {
+                            let alone = |s| {
+                                let ms =
+                                    steps.alone_ttft_ms(&cfg.cost, s, budget.max_batched_tokens);
+                                (ms * 1e6).round() as u64
+                            };
+                            (rec.ttft_ns + alone(adm.sources)).saturating_sub(alone(rec.sources))
+                        }
+                    };
                     rec.sources = adm.sources;
                     rec.recomputed = recomputed;
-                    rec.ttft_ns = rec.admitted_ns - rec.issued_ns
-                        + cfg.cost.ttft(adm.sources).as_nanos() as u64;
                 }
             }
             TimelineEvent::Finish(i) => {
-                engine.finish(i as u64);
+                engine.finish(i as u64, 0);
             }
         }
     }

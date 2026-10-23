@@ -109,6 +109,10 @@ pub struct Summary {
     pub resume_ttft_ms: Percentiles,
     /// KV bytes restored from the CPU tier over PCIe.
     pub pcie_restored_bytes: u64,
+    /// KV bytes loaded from the CPU tier ahead of requests (prefetch), warmup included; left out of
+    /// the JSON when zero.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub pcie_prefetched_bytes: u64,
     /// KV bytes written to the CPU tier.
     pub pcie_stored_bytes: u64,
     pub gpu_evictions: u64,
@@ -119,6 +123,10 @@ pub struct Summary {
     pub regime: Regime,
     pub replay: ReplayStats,
     pub engine: EngineStats,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// Summarizes the profiling requests of a run.
@@ -167,9 +175,9 @@ pub fn summarize(
         if r.turn > 0 {
             resume.push(ms);
         }
-        if r.admitted_ns > r.issued_ns {
+        if r.blocked_ns > 0 {
             s.stalls += 1;
-            s.stall_s += (r.admitted_ns - r.issued_ns) as f64 / 1e9;
+            s.stall_s += r.blocked_ns as f64 / 1e9;
         }
         prompts.push(r.prompt_tokens as f64);
         if let Some(d) = r.delay_ms {
@@ -189,6 +197,7 @@ pub fn summarize(
     s.ttft_ms = Percentiles::of(ttft);
     s.resume_ttft_ms = Percentiles::of(resume);
     s.pcie_restored_bytes = geometry.bytes_for_tokens(s.cpu_tokens);
+    s.pcie_prefetched_bytes = engine.prefetched_blocks * geometry.block_bytes();
     s.pcie_stored_bytes = engine.cpu_stored_blocks * geometry.block_bytes();
     s.gpu_evictions = engine.gpu_evictions;
     s.cpu_evictions = engine.cpu_evictions;

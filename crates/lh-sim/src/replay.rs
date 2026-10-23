@@ -20,21 +20,59 @@
 //!   period are dropped from the results. When no request is in flight, pending scheduler timers are
 //!   pulled forward so the engine idles at most `system_idle_cap` seconds.
 //!
-//! The engine serves requests without mutual queueing: a request's time to first token is the cost
-//! model's for its hit pattern, then it decodes at a constant inter-token latency. It waits only for
-//! free GPU blocks.
+//! The engine serves requests in one of two ways ([`Service`]). Under contention, a request reaches
+//! vLLM's step loop ([`crate::scheduler`]) after its host time and shares every step with the
+//! requests running beside it. Idle (v0), its time to first token is E0's cost for its hit pattern
+//! after any wait for free blocks, then it decodes at a constant inter-token latency, with no
+//! queueing behind other requests.
+//!
+//! A session pauses between turns for the trace's delay, or for a TraceLab tool wait in its place
+//! ([`Pauses`]); a [`Retention`] arm acts on its KV meanwhile ([`crate::retention`]).
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap, HashSet};
 use std::rc::Rc;
 
-use lh_core::{PromptSources, TierCost};
+use lh_core::{PromptSources, StepCost, TierCost};
 use serde::Serialize;
 
 use crate::aiperf::{ConvKind, ReplayPlan, snapshot};
 use crate::corpus::Corpus;
 use crate::engine::{Admission, Engine, EngineRequest};
+use crate::pauses::ToolPauses;
 use crate::prefix::{BlockId, IdMap, IdSet, MAX_MODELS, MAX_PLAYS, NodeId, Tokens};
+use crate::retention::{Interception, PauseHistory, Retention, intercept};
+use crate::scheduler::{Outcome, Scheduler, StepBudget};
+
+/// How the engine serves the requests it admits.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Service {
+    /// v0: E0's idle-box cost per request ([`TierCost`]), with no queueing behind other requests.
+    Idle,
+    /// vLLM's step loop with the step-time model.
+    Contention { budget: StepBudget, steps: StepCost },
+}
+
+impl Service {
+    /// The step loop on the frozen box: its 512/256 step budget and the fitted step-time model.
+    pub const fn frozen_box() -> Self {
+        Self::Contention {
+            budget: StepBudget::FROZEN_BOX,
+            steps: StepCost::frozen_box(),
+        }
+    }
+}
+
+/// Where the pauses between a session's turns come from.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Pauses {
+    /// The traces' delays (AIPerf's think times).
+    Trace,
+    /// A TraceLab tool wait ([`ToolPauses`]) in place of every delay, capped at `cap_s`.
+    TraceLab { cap_s: Option<f64> },
+}
 
 /// How the replay is driven: the `phases` section of `configs/agentic_replay.yaml`.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -61,6 +99,7 @@ pub struct ReplayConfig {
     /// Multiplies the tokens of every hash block and every output: 32 replays a 32x-scaled corpus at
     /// its original token counts (output lengths come back rounded up to a multiple of 32).
     pub token_scale: u32,
+    pub pauses: Pauses,
 }
 
 impl Default for ReplayConfig {
@@ -79,6 +118,7 @@ impl Default for ReplayConfig {
             model_namespaces: true,
             block_tokens: 16,
             token_scale: 1,
+            pauses: Pauses::Trace,
         }
     }
 }
@@ -100,9 +140,12 @@ pub struct RequestRecord {
     /// The think-time delay that preceded this turn, in ms.
     pub delay_ms: Option<f64>,
     pub issued_ns: u64,
+    /// When the engine took its blocks.
     pub admitted_ns: u64,
+    /// How long it waited for free blocks.
+    pub blocked_ns: u64,
     pub done_ns: u64,
-    /// Time to first token as the client sees it: waiting for blocks plus the modeled prefill.
+    /// Time to first token as the client sees it.
     pub ttft_ns: u64,
 }
 
@@ -197,8 +240,40 @@ enum Event {
         stream: u32,
         turn: u32,
     },
+    /// Idle service: a request's last token.
     Complete(u64),
+    /// Contention: a request reaches the scheduler after its host time.
+    Arrive(u64),
+    /// Contention: the step loop runs (a step ends, or a restore finishes on an idle engine).
+    Step,
     Recycle(usize),
+    /// A retention timer of pause `pause` of `stream`.
+    Retain {
+        stream: u32,
+        pause: u64,
+        step: RetainStep,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+enum RetainStep {
+    /// The pause's hold ends: a TTL, or the session is late.
+    Release,
+    /// Start loading the session's blocks from the CPU tier.
+    Prefetch,
+    /// The load has ended: the blocks are in the pool, held for the session.
+    Prefetched,
+}
+
+/// A session between its turns, until its next turn is admitted.
+#[derive(Debug)]
+struct Paused {
+    id: u64,
+    since: u64,
+    /// The tool it waits for, when the pauses name one.
+    tool: Option<u16>,
+    /// The engine's hold on its KV.
+    hold: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -242,6 +317,8 @@ struct Stream {
     done: bool,
     /// The blocks of its latest prompt, counted in the live working set.
     context: Vec<BlockId>,
+    /// Between turns, with a retention arm.
+    paused: Option<Paused>,
 }
 
 /// One branch a gated root turn waits for.
@@ -304,7 +381,7 @@ struct Play {
     overlap_spawned: Vec<u32>,
 }
 
-/// A request in the engine, or waiting for its blocks.
+/// A request on its way to the engine, in it, or waiting for its blocks.
 #[derive(Debug)]
 struct InFlight {
     stream: u32,
@@ -312,6 +389,9 @@ struct InFlight {
     warmup: bool,
     issued: u64,
     admitted: u64,
+    blocked: u64,
+    /// When its first token came out, under contention.
+    first_token: u64,
     prompt: Vec<BlockId>,
     prompt_tokens: u64,
     output_tokens: u64,
@@ -366,6 +446,18 @@ pub struct Replay<'a> {
     corpus: &'a mut Corpus,
     engine: Engine,
     cost: TierCost,
+    /// The step loop under contention; `None` for the idle service.
+    scheduler: Option<Scheduler>,
+    /// When the step loop runs next: a `Step` event due at another time is stale.
+    step_at: Option<u64>,
+    /// A reused buffer for the step loop's outcomes.
+    outcomes: Vec<Outcome>,
+    retention: Retention,
+    /// The share of a restore for which the step loop stalls: the step model's, 1 when idle.
+    restore_stall: f64,
+    /// Every session's past pauses: the history information level.
+    history: PauseHistory,
+    next_pause: u64,
     now: u64,
     /// Insertion counter: breaks ties between events due at the same time.
     seq: u64,
@@ -406,19 +498,36 @@ pub struct Replay<'a> {
 }
 
 impl<'a> Replay<'a> {
-    /// A replay of `corpus` through `engine`; with `record`, the output keeps the engine's timeline.
+    /// A replay of `corpus` through `engine` with `retention` acting on pausing sessions; with
+    /// `record`, the output keeps the engine's timeline.
     pub fn new(
         cfg: ReplayConfig,
         corpus: &'a mut Corpus,
         engine: Engine,
         cost: TierCost,
+        service: Service,
+        retention: Retention,
         record: bool,
     ) -> Self {
+        let (scheduler, restore_stall) = match service {
+            Service::Idle => (None, 1.0),
+            Service::Contention { budget, steps } => {
+                let stall = steps.restore_stall;
+                (Some(Scheduler::new(budget, steps, cost.clone())), stall)
+            }
+        };
         Self {
             cfg,
             corpus,
             engine,
             cost,
+            scheduler,
+            step_at: None,
+            outcomes: Vec::new(),
+            retention,
+            restore_stall,
+            history: PauseHistory::default(),
+            next_pause: 0,
             now: 0,
             seq: 0,
             shift: 0,
@@ -483,7 +592,15 @@ impl<'a> Replay<'a> {
                 } => self.submit(stream, turn, kind, delay_ms),
                 Event::Warm { stream, turn } => self.issue(stream, turn, true, None),
                 Event::Complete(id) => self.complete(id)?,
+                Event::Arrive(id) => self.arrive(id)?,
+                Event::Step if self.step_at == Some(at) => self.run_steps()?,
+                Event::Step => {}
                 Event::Recycle(lane) => self.recycle(lane)?,
+                Event::Retain {
+                    stream,
+                    pause,
+                    step,
+                } => self.retain(stream, pause, step)?,
             }
             if from_timers {
                 self.enforce_idle_cap(false);
@@ -610,6 +727,7 @@ impl<'a> Replay<'a> {
             joins: Vec::new(),
             done: false,
             context: Vec::new(),
+            paused: None,
         });
         self.streams.len() as u32 - 1
     }
@@ -917,10 +1035,16 @@ impl<'a> Replay<'a> {
         } else {
             t.max_tokens as u64 * scale as u64
         };
+        self.pause_ends(stream);
         self.set_context(stream, &prompt);
         let id = self.next_request;
         self.next_request += 1;
         self.idle_since = None;
+        let req = EngineRequest {
+            prompt: prompt.clone(),
+            prompt_tokens,
+            output_tokens,
+        };
         self.in_flight.insert(
             id,
             InFlight {
@@ -929,7 +1053,9 @@ impl<'a> Replay<'a> {
                 warmup,
                 issued: self.now,
                 admitted: 0,
-                prompt: prompt.clone(),
+                blocked: 0,
+                first_token: 0,
+                prompt,
                 prompt_tokens,
                 output_tokens,
                 delay_ms,
@@ -938,32 +1064,90 @@ impl<'a> Replay<'a> {
                 timeline: None,
             },
         );
-        if let Some(adm) = self.engine.submit(
-            id,
-            EngineRequest {
-                prompt,
-                prompt_tokens,
-                output_tokens,
-            },
-        ) {
-            self.admitted(id, adm);
+        match &mut self.scheduler {
+            None => {
+                if let Some(adm) = self.engine.submit(id, req) {
+                    self.admitted(id, adm, 0);
+                }
+            }
+            Some(s) => {
+                if !self.engine.reject_oversized(&req) {
+                    let at = self.now + s.host_ns(prompt_tokens, self.now);
+                    self.push_fixed(at, Event::Arrive(id));
+                }
+            }
         }
         if !warmup && depth == 0 {
             self.on_root_issued(play_id, turn);
         }
     }
 
-    fn admitted(&mut self, id: u64, adm: Admission) {
+    /// Contention: request `id` reaches the scheduler, which runs at once if it is idle.
+    fn arrive(&mut self, id: u64) -> Result<(), String> {
+        let f = &self.in_flight[&id];
+        let req = EngineRequest {
+            prompt: f.prompt.clone(),
+            prompt_tokens: f.prompt_tokens,
+            output_tokens: f.output_tokens,
+        };
+        let s = self
+            .scheduler
+            .as_mut()
+            .expect("arrivals happen under contention");
+        s.arrive(id, req);
+        if s.busy() {
+            return Ok(());
+        }
+        self.run_steps()
+    }
+
+    /// Contention: runs the step loop now and applies what happened.
+    fn run_steps(&mut self) -> Result<(), String> {
+        let mut out = std::mem::take(&mut self.outcomes);
+        let next = self
+            .scheduler
+            .as_mut()
+            .expect("steps run under contention")
+            .run(self.now, &mut self.engine, &mut out);
+        for outcome in out.drain(..) {
+            match outcome {
+                Outcome::Admitted {
+                    id,
+                    admission,
+                    blocked_ns,
+                } => self.admitted(id, admission, blocked_ns),
+                Outcome::FirstToken(id) => {
+                    self.in_flight
+                        .get_mut(&id)
+                        .expect("a request with a first token is in flight")
+                        .first_token = self.now;
+                }
+                Outcome::Finished(id) => self.complete(id)?,
+            }
+        }
+        self.outcomes = out;
+        self.step_at = next;
+        if let Some(at) = next {
+            self.push_fixed(at, Event::Step);
+        }
+        Ok(())
+    }
+
+    fn admitted(&mut self, id: u64, adm: Admission, blocked: u64) {
         let now = self.now;
         let f = self
             .in_flight
             .get_mut(&id)
             .expect("admitted request is in flight");
         f.admitted = now;
+        f.blocked = blocked;
         f.admission = Some(adm);
         f.recomputed =
             recomputed_tokens(&mut self.seen, &f.prompt, adm, self.cfg.block_tokens as u64);
-        let done = now + self.cost.service(adm.sources, f.output_tokens).as_nanos() as u64;
+        let done = self
+            .scheduler
+            .is_none()
+            .then(|| now + self.cost.service(adm.sources, f.output_tokens).as_nanos() as u64);
         if let Some(tl) = &mut self.timeline {
             let stream = &self.streams[f.stream as usize];
             let play = &self.plays[stream.play as usize];
@@ -983,9 +1167,27 @@ impl<'a> Replay<'a> {
                 model: if self.cfg.model_namespaces { model } else { 0 },
             });
         }
-        self.push_fixed(done, Event::Complete(id));
+        let (stream, turn) = (f.stream, f.turn);
+        if let Some(done) = done {
+            self.push_fixed(done, Event::Complete(id));
+        }
+        if self.retention == Retention::Mori
+            && let Some(pause) = self.predicted_pause(stream, turn + 1)
+        {
+            self.engine.expect_pause(id, ns(pause));
+        }
+        // Its hits are pinned now; the pause's hold can go.
+        if let Some(hold) = self.streams[stream as usize]
+            .paused
+            .take()
+            .and_then(|p| p.hold)
+        {
+            self.release(hold);
+        }
     }
 
+    /// Request `id` returned its last token. Under contention the scheduler has already finished it
+    /// in the engine.
     fn complete(&mut self, id: u64) -> Result<(), String> {
         let f = self
             .in_flight
@@ -994,8 +1196,12 @@ impl<'a> Replay<'a> {
         if let (Some(tl), Some(i)) = (&mut self.timeline, f.timeline) {
             tl.events.push(TimelineEvent::Finish(i));
         }
-        for (qid, adm) in self.engine.finish(id) {
-            self.admitted(qid, adm);
+        if self.scheduler.is_none() {
+            // The idle engine queues a request only while it waits for blocks.
+            for (qid, adm) in self.engine.finish(id, self.now) {
+                let blocked = self.now - self.in_flight[&qid].issued;
+                self.admitted(qid, adm, blocked);
+            }
         }
         let s = &self.streams[f.stream as usize];
         let plan = self.plays[s.play as usize].plan.clone();
@@ -1007,7 +1213,10 @@ impl<'a> Replay<'a> {
             if let (Some(tl), Some(i)) = (&mut self.timeline, f.timeline) {
                 tl.requests[i].record = Some(self.records.len());
             }
-            let ttft = f.admitted - f.issued + self.cost.ttft(adm.sources).as_nanos() as u64;
+            let ttft = match self.scheduler {
+                None => f.admitted - f.issued + self.cost.ttft(adm.sources).as_nanos() as u64,
+                Some(_) => f.first_token - f.issued,
+            };
             self.records.push(RequestRecord {
                 trace: self.plays[s.play as usize].trace,
                 conv: s.conv,
@@ -1021,6 +1230,7 @@ impl<'a> Replay<'a> {
                 delay_ms: f.delay_ms,
                 issued_ns: f.issued - self.profiling_start,
                 admitted_ns: f.admitted - self.profiling_start,
+                blocked_ns: f.blocked,
                 done_ns: self.now - self.profiling_start,
                 ttft_ns: ttft,
             });
@@ -1074,7 +1284,7 @@ impl<'a> Replay<'a> {
             return;
         }
         let next = turn + 1;
-        let delay = plan.convs[conv as usize].turns[next as usize].delay_ms;
+        let (delay, tool) = self.delay(stream, next);
         let kind = if depth == 0 {
             Kind::RootNext
         } else {
@@ -1092,8 +1302,188 @@ impl<'a> Replay<'a> {
                         delay_ms: Some(d),
                     },
                 );
+                self.pause(stream, at, tool);
             }
             _ => self.submit(stream, next, kind, delay),
+        }
+    }
+
+    /// The delay before turn `turn` of `stream` and the tool it waits for: the trace's, or a
+    /// TraceLab draw in its place (the same for every arm).
+    fn delay(&self, stream: u32, turn: u32) -> (Option<f64>, Option<u16>) {
+        let s = &self.streams[stream as usize];
+        let play = &self.plays[s.play as usize];
+        let delay = play.plan.convs[s.conv as usize].turns[turn as usize].delay_ms;
+        match (self.cfg.pauses, delay) {
+            (Pauses::TraceLab { cap_s }, Some(d)) if d > 0.0 => {
+                let key = self.cfg.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    ^ (u64::from(play.trace) << 40)
+                    ^ (u64::from(s.conv) << 20)
+                    ^ u64::from(turn);
+                let (tool, ms) = ToolPauses::tracelab().draw(key);
+                (Some(cap_s.map_or(ms, |cap| ms.min(cap * 1e3))), Some(tool))
+            }
+            _ => (delay, None),
+        }
+    }
+
+    /// What the history level predicts for the pause before turn `turn` of `stream`, in ms.
+    fn predicted_pause(&self, stream: u32, turn: u32) -> Option<f64> {
+        let s = &self.streams[stream as usize];
+        let turns = self.plays[s.play as usize].plan.convs[s.conv as usize]
+            .turns
+            .len();
+        let tool = if (turn as usize) < turns {
+            self.delay(stream, turn).1
+        } else {
+            None
+        };
+        self.history.predict(stream, tool)
+    }
+
+    /// `stream` pauses until its next turn, due at `at`, after calling `tool`: the retention arm
+    /// acts on its KV, its latest prompt.
+    fn pause(&mut self, stream: u32, at: u64, tool: Option<u16>) {
+        // A turn that was never admitted (larger than the pool) leaves its pause behind.
+        if let Some(hold) = self.streams[stream as usize]
+            .paused
+            .take()
+            .and_then(|p| p.hold)
+        {
+            self.release(hold);
+        }
+        self.next_pause += 1;
+        let id = self.next_pause;
+        let context = self.streams[stream as usize].context.clone();
+        let tokens = context.len() as u64 * self.cfg.block_tokens as u64;
+        let predicted = self.history.predict(stream, tool).map(ns);
+        let mut hold = None;
+        let mut back = None;
+        match self.retention {
+            Retention::None | Retention::Mori => {}
+            Retention::Ttl(ttl_s) => {
+                hold = self.engine.hold(&context);
+                let end = self.now + ns(ttl_s * 1e3);
+                self.retain_at(end, stream, id, RetainStep::Release);
+            }
+            Retention::HistoryPrefetch => back = predicted.map(|p| self.now + p),
+            Retention::OraclePrefetch => back = Some(at.max(self.now)),
+            Retention::Tokencake => {
+                self.engine.demote(&context);
+                back = predicted.map(|p| self.now + p);
+            }
+            Retention::InferCept => {
+                let restore = self.cost.restore_ms(tokens);
+                let choice = predicted.map(|p| {
+                    intercept(
+                        tokens,
+                        p as f64 / 1e6,
+                        self.engine.running_tokens(),
+                        self.restore_stall * restore,
+                        self.cost.recompute_ms(tokens),
+                        self.engine.has_cpu_tier(),
+                    )
+                });
+                if choice == Some(Interception::Preserve) {
+                    hold = self.engine.hold(&context);
+                    back = predicted.map(|p| self.now + p);
+                } else {
+                    self.engine.demote(&context);
+                }
+            }
+        }
+        if let Some(back) = back {
+            if self.retention != Retention::InferCept {
+                // Start the load so that it ends just before the session returns.
+                let lead = ns(self.cost.restore_ms(tokens) + 1.0);
+                let start = back.saturating_sub(lead).max(self.now);
+                self.retain_at(start, stream, id, RetainStep::Prefetch);
+            }
+            // A session later than twice its expected pause is not coming back soon.
+            let late = back + (back - self.now);
+            self.retain_at(late, stream, id, RetainStep::Release);
+        }
+        self.streams[stream as usize].paused = Some(Paused {
+            id,
+            since: self.now,
+            tool,
+            hold,
+        });
+    }
+
+    /// `stream` sends its next turn: the history learns how long it paused. A prefetch that lands
+    /// before the turn is admitted still serves it.
+    fn pause_ends(&mut self, stream: u32) {
+        if let Some(p) = &self.streams[stream as usize].paused {
+            let ms = (self.now - p.since) as f64 / 1e6;
+            self.history.observe(stream, p.tool, ms);
+        }
+    }
+
+    fn retain_at(&mut self, at: u64, stream: u32, pause: u64, step: RetainStep) {
+        self.push_fixed(
+            at,
+            Event::Retain {
+                stream,
+                pause,
+                step,
+            },
+        );
+    }
+
+    /// A retention timer; stale once the turn after its pause has been admitted.
+    fn retain(&mut self, stream: u32, pause: u64, step: RetainStep) -> Result<(), String> {
+        let s = stream as usize;
+        if self.streams[s]
+            .paused
+            .as_ref()
+            .is_none_or(|p| p.id != pause)
+        {
+            return Ok(());
+        }
+        match step {
+            RetainStep::Release => {
+                let hold = self.streams[s].paused.as_mut().and_then(|p| p.hold.take());
+                if let Some(hold) = hold {
+                    self.release(hold);
+                    self.kick()?;
+                }
+            }
+            RetainStep::Prefetch => {
+                let context = &self.streams[s].context;
+                let tokens =
+                    self.engine.prefetchable(context) as u64 * self.cfg.block_tokens as u64;
+                let end = match &mut self.scheduler {
+                    Some(s) if tokens > 0 => s.load(self.now, tokens),
+                    _ => self.now + ns(self.cost.restore_ms(tokens)),
+                };
+                self.retain_at(end, stream, pause, RetainStep::Prefetched);
+            }
+            RetainStep::Prefetched => {
+                let stream = &mut self.streams[s];
+                let hold = self.engine.prefetch(&stream.context);
+                let p = stream.paused.as_mut().expect("checked above");
+                debug_assert!(p.hold.is_none());
+                p.hold = hold;
+            }
+        }
+        Ok(())
+    }
+
+    /// Ends an engine hold; the idle engine admits what now fits.
+    fn release(&mut self, hold: u64) {
+        let now = self.now;
+        for (qid, adm) in self.engine.release(hold) {
+            let blocked = now - self.in_flight[&qid].issued;
+            self.admitted(qid, adm, blocked);
+        }
+    }
+
+    /// Contention: runs an idle step loop, which may now admit what waits for blocks.
+    fn kick(&mut self) -> Result<(), String> {
+        match &self.scheduler {
+            Some(s) if !s.busy() => self.run_steps(),
+            _ => Ok(()),
         }
     }
 
@@ -1302,24 +1692,38 @@ mod tests {
     const S: u64 = 1_000_000_000;
 
     fn run(traces: &[&str], cfg: ReplayConfig) -> ReplayOutput {
+        let engine = EngineConfig {
+            gpu_blocks: 4096,
+            cpu_blocks: 0,
+            block_tokens: 16,
+            gpu_policy: GpuPolicyKind::Lru,
+            cpu_policy: CpuPolicyKind::Lru,
+        };
+        run_with(traces, cfg, &engine, Retention::None)
+    }
+
+    fn run_with(
+        traces: &[&str],
+        cfg: ReplayConfig,
+        engine: &EngineConfig,
+        retention: Retention,
+    ) -> ReplayOutput {
         let traces = traces
             .iter()
             .map(|t| Trace::from_json(t.as_bytes()).unwrap())
             .collect();
         let mut corpus = Corpus::new(TraceSource::from_traces(traces), PlanOptions::default());
-        let engine = Engine::new(
-            &EngineConfig {
-                gpu_blocks: 4096,
-                cpu_blocks: 0,
-                block_tokens: 16,
-                gpu_policy: GpuPolicyKind::Lru,
-                cpu_policy: CpuPolicyKind::Lru,
-            },
-            None,
-        );
-        Replay::new(cfg, &mut corpus, engine, TierCost::frozen_box(), false)
-            .run()
-            .unwrap()
+        Replay::new(
+            cfg,
+            &mut corpus,
+            Engine::new(engine, None),
+            TierCost::frozen_box(),
+            Service::Idle,
+            retention,
+            false,
+        )
+        .run()
+        .unwrap()
     }
 
     /// Lanes that start at their traces' first requests and play each trace once, with nothing
@@ -1417,6 +1821,84 @@ mod tests {
         assert_eq!(a0.kind, ConvKind::Subagent);
         // The parent's next turn joins both children: it goes when the last one finishes.
         assert_eq!(find(&out, 0, 1).issued_ns, a1.done_ns.max(b1.done_ns));
+    }
+
+    /// Session A pauses 5 s twice. During its second pause session C sends a request (leaving cached
+    /// blocks newer than A's), then session B one of `b_blocks` blocks, in an 11-block pool with a
+    /// 64-block CPU tier. Returns A's third turn under `retention`.
+    fn third_turn_after_pauses(retention: Retention, b_blocks: u64) -> RequestRecord {
+        let a = r#"{"id": "a", "block_size": 16, "requests": [
+            {"t": 0, "type": "n", "model": "m", "in": 64, "out": 1, "hash_ids": [1, 2, 3, 4], "api_time": 0.1},
+            {"t": 5, "type": "n", "model": "m", "in": 80, "out": 1, "hash_ids": [1, 2, 3, 4, 5], "think_time": 5.0},
+            {"t": 10, "type": "n", "model": "m", "in": 96, "out": 1, "hash_ids": [1, 2, 3, 4, 5, 6], "think_time": 5.0}
+        ]}"#;
+        let ids: Vec<String> = (101..101 + b_blocks).map(|i| i.to_string()).collect();
+        let b = format!(
+            r#"{{"id": "b", "block_size": 16, "requests": [
+                {{"t": 0, "type": "n", "model": "m", "in": 16, "out": 1, "hash_ids": [100], "api_time": 0.1}},
+                {{"t": 8, "type": "n", "model": "m", "in": {}, "out": 1, "hash_ids": [{}], "think_time": 8.0}}
+            ]}}"#,
+            16 * b_blocks,
+            ids.join(",")
+        );
+        let c = r#"{"id": "c", "block_size": 16, "requests": [
+            {"t": 0, "type": "n", "model": "m", "in": 16, "out": 1, "hash_ids": [200], "api_time": 0.1},
+            {"t": 6.5, "type": "n", "model": "m", "in": 48, "out": 1, "hash_ids": [200, 201, 202], "think_time": 6.5}
+        ]}"#;
+        let engine = EngineConfig {
+            gpu_blocks: 12,
+            cpu_blocks: 64,
+            block_tokens: 16,
+            gpu_policy: GpuPolicyKind::Lru,
+            cpu_policy: CpuPolicyKind::Lru,
+        };
+        let out = run_with(&[a, &b, c], from_start(3), &engine, retention);
+        assert_eq!(out.records.len(), 7);
+        out.records
+            .iter()
+            .find(|r| (r.trace, r.turn) == (0, 2))
+            .expect("A's third turn ran")
+            .clone()
+    }
+
+    fn sources(r: &RequestRecord) -> (u64, u64) {
+        (r.sources.gpu, r.sources.cpu)
+    }
+
+    #[test]
+    fn a_ttl_hold_keeps_a_paused_session_over_newer_cached_blocks() {
+        // LRU evicts A's newest block for B's 4 blocks, before C's newer ones; the hold keeps it.
+        assert_eq!(
+            sources(&third_turn_after_pauses(Retention::None, 4)),
+            (64, 16)
+        );
+        assert_eq!(
+            sources(&third_turn_after_pauses(Retention::Ttl(30.0), 4)),
+            (80, 0)
+        );
+        // A hold shorter than the pause has ended by then.
+        assert_eq!(
+            sources(&third_turn_after_pauses(Retention::Ttl(1.0), 4)),
+            (64, 16)
+        );
+    }
+
+    #[test]
+    fn a_prefetch_brings_an_evicted_session_back_before_it_returns() {
+        // B's 11 blocks evict everything; A's blocks come back from the CPU tier.
+        assert_eq!(
+            sources(&third_turn_after_pauses(Retention::None, 11)),
+            (0, 80)
+        );
+        for retention in [
+            Retention::OraclePrefetch,
+            // A's first pause predicts its second exactly.
+            Retention::HistoryPrefetch,
+            Retention::Tokencake,
+        ] {
+            let r = third_turn_after_pauses(retention, 11);
+            assert_eq!(sources(&r), (80, 0), "{retention:?}");
+        }
     }
 
     #[test]

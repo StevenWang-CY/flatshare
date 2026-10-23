@@ -4,15 +4,18 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand};
-use lh_core::{FROZEN_BOX_CPU_BYTES, FROZEN_BOX_POOL_TOKENS, KvGeometry, TierCapacity, TierCost};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use lh_core::{
+    FROZEN_BOX_CPU_BYTES, FROZEN_BOX_POOL_TOKENS, KvGeometry, StepCost, TierCapacity, TierCost,
+};
 use lh_sim::aiperf::{ConvKind, PlanOptions, reference};
 use lh_sim::corpus::Corpus;
 use lh_sim::engine::Engine;
-use lh_sim::replay::ReplayConfig;
+use lh_sim::replay::{Pauses, ReplayConfig, Service};
 use lh_sim::replay_log;
 use lh_sim::run::{self, Arm, ArmResult, RunConfig};
-use lh_sim::{metrics, mrc};
+use lh_sim::scheduler::{Scheduler, StepBudget};
+use lh_sim::{metrics, mrc, regime};
 use serde_json::json;
 
 #[derive(Parser)]
@@ -35,6 +38,9 @@ enum Command {
     Mrc(MrcArgs),
     /// Replays a measured AIPerf run (its profile_export.jsonl) through the engine model alone.
     ReplayLog(LogArgs),
+    /// Runs the E1 information ladder over a grid of session counts, CPU tier sizes and pause
+    /// sources: a CSV of every arm in every cell, and a Markdown regime map.
+    Regime(RegimeArgs),
     /// Dumps AIPerf's replay structure and lane plan as the simulator builds it, in the format of
     /// scripts/aiperf_reference.py, to check the port against AIPerf.
     #[command(hide = true)]
@@ -84,9 +90,28 @@ struct ReplayArgs {
     /// counts.
     #[arg(long, default_value_t = 1)]
     token_scale: u32,
+    /// The pauses between a session's turns: the traces' delays, or TraceLab's tool waits in their
+    /// place (capped by --think-cap).
+    #[arg(long, value_enum, default_value_t = PausesArg::Trace)]
+    pauses: PausesArg,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum PausesArg {
+    Trace,
+    Tracelab,
 }
 
 impl ReplayArgs {
+    fn pauses(&self, source: PausesArg) -> Pauses {
+        match source {
+            PausesArg::Trace => Pauses::Trace,
+            PausesArg::Tracelab => Pauses::TraceLab {
+                cap_s: (self.think_cap > 0.0).then_some(self.think_cap),
+            },
+        }
+    }
+
     fn plan_options(&self) -> PlanOptions {
         PlanOptions {
             think_cap_s: (self.think_cap > 0.0).then_some(self.think_cap),
@@ -107,6 +132,7 @@ impl ReplayArgs {
             max_sessions: self.max_sessions,
             model_namespaces: !self.shared_models,
             token_scale: self.token_scale,
+            pauses: self.pauses(self.pauses),
             ..ReplayConfig::default()
         }
     }
@@ -116,17 +142,41 @@ impl ReplayArgs {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum ServiceArg {
+    /// vLLM's step loop with the fitted step-time model.
+    Contention,
+    /// v0: E0's idle-box cost per request, with no queueing behind other requests.
+    Idle,
+}
+
 #[derive(Args)]
 struct CostArgs {
+    /// How the engine serves requests.
+    #[arg(long, value_enum, default_value_t = ServiceArg::Contention)]
+    service: ServiceArg,
     /// The E0 tier fits: the summary.json that `lh-bench tiers` writes. Default: the frozen box.
     #[arg(long)]
     costs: Option<PathBuf>,
-    /// Decode inter-token latency in ms. Default: 15.6 (the W0 replay's p50).
+    /// The step-time model, a JSON object with `StepCost`'s fields. Default: the frozen box's fit.
+    #[arg(long)]
+    step_costs: Option<PathBuf>,
+    /// Decode inter-token latency in ms, for the idle service. Default: 15.6 (the W0 replay's p50).
     #[arg(long)]
     itl_ms: Option<f64>,
 }
 
 impl CostArgs {
+    fn service(&self) -> Result<Service, String> {
+        Ok(match self.service {
+            ServiceArg::Idle => Service::Idle,
+            ServiceArg::Contention => Service::Contention {
+                budget: StepBudget::FROZEN_BOX,
+                steps: step_cost(self.step_costs.as_deref())?,
+            },
+        })
+    }
+
     fn cost(&self) -> Result<TierCost, String> {
         let mut cost = match &self.costs {
             Some(path) => {
@@ -141,6 +191,15 @@ impl CostArgs {
         }
         Ok(cost)
     }
+}
+
+/// The step-time model in `path`, or the frozen box's.
+fn step_cost(path: Option<&Path>) -> Result<StepCost, String> {
+    let Some(path) = path else {
+        return Ok(StepCost::frozen_box());
+    };
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 #[derive(Args)]
@@ -186,7 +245,9 @@ struct RunArgs {
     capacity: CapacityArgs,
     #[command(flatten)]
     cost: CostArgs,
-    /// Arms to run, comma separated: gpu-lru, lru-cpu, s3fifo-cpu, clairvoyant. Default: all.
+    /// Arms to run, comma separated: gpu-lru, lru-cpu, s3fifo-cpu, clairvoyant, or the E1 arms
+    /// (ttl-5, ttl-30, ttl-120, history-prefetch, oracle-prefetch, tokencake, mori, infercept).
+    /// Default: the stock arms and the clairvoyant reference.
     #[arg(long = "arms", value_delimiter = ',')]
     arms: Vec<Arm>,
     /// The arm whose timeline the clairvoyant reference replays.
@@ -227,6 +288,38 @@ struct MrcArgs {
 }
 
 #[derive(Args)]
+struct RegimeArgs {
+    /// The workload; --concurrency and --pauses give way to --sessions and --pause-sources.
+    #[command(flatten)]
+    replay: ReplayArgs,
+    #[command(flatten)]
+    cost: CostArgs,
+    /// Session counts (AIPerf's lanes): the KV pressure grows with them.
+    #[arg(long, value_delimiter = ',', default_value = "5,8,12,16,24,32,40")]
+    sessions: Vec<usize>,
+    /// CPU tier sizes as multiples of the GPU pool.
+    #[arg(long = "cpu-ratio", value_delimiter = ',', default_value = "2,4,8")]
+    cpu_ratios: Vec<f64>,
+    /// Pause sources: trace, tracelab.
+    #[arg(
+        long,
+        value_enum,
+        value_delimiter = ',',
+        default_value = "trace,tracelab"
+    )]
+    pause_sources: Vec<PausesArg>,
+    /// Cells to run at once. Default: the machine's cores.
+    #[arg(long)]
+    jobs: Option<usize>,
+    /// Write one row per cell and arm to this CSV file.
+    #[arg(long)]
+    csv: Option<PathBuf>,
+    /// Write the regime map to this Markdown file.
+    #[arg(long)]
+    markdown: Option<PathBuf>,
+}
+
+#[derive(Args)]
 struct LogArgs {
     /// The Weka traces the run replayed.
     traces: PathBuf,
@@ -237,6 +330,13 @@ struct LogArgs {
     /// The engine policy: gpu-lru, lru-cpu or s3fifo-cpu.
     #[arg(long, default_value_t = Arm::LruCpu)]
     arm: Arm,
+    /// Send each request at its measured start and serve it with the step loop, instead of holding
+    /// it in the engine from its measured start to its measured end; reports time to first token.
+    #[arg(long)]
+    timed: bool,
+    /// The step-time model for `--timed`, as for `run`.
+    #[arg(long, requires = "timed")]
+    step_costs: Option<PathBuf>,
     /// Write one CSV row per request to this file.
     #[arg(long)]
     csv: Option<PathBuf>,
@@ -273,6 +373,7 @@ fn main() -> ExitCode {
         Command::Run(args) => run(args),
         Command::Mrc(args) => mrc(args),
         Command::ReplayLog(args) => replay_log(args),
+        Command::Regime(args) => regime(args),
         Command::AiperfPlan(args) => aiperf_plan(args),
     };
     match result {
@@ -291,12 +392,13 @@ fn write(path: &Path, text: &str) -> Result<(), String> {
 fn run(args: RunArgs) -> Result<(), String> {
     let mut cfg = RunConfig::frozen_box(args.replay.config());
     cfg.cost = args.cost.cost()?;
+    cfg.service = args.cost.service()?;
     cfg.reference = args.reference;
     let capacities = args
         .capacity
         .capacities(&cfg.geometry, cfg.replay.token_scale as u64);
     let arms = if args.arms.is_empty() {
-        Arm::ALL.to_vec()
+        Arm::STOCK.to_vec()
     } else {
         args.arms.clone()
     };
@@ -407,7 +509,7 @@ fn row(r: &ArmResult) -> String {
         pct(s.shares.computed),
         ms(&s.ttft_ms),
         ms(&s.resume_ttft_ms),
-        s.pcie_restored_bytes as f64 / 1e9,
+        (s.pcie_restored_bytes + s.pcie_prefetched_bytes) as f64 / 1e9,
         s.stalls,
         s.replay.lanes,
         r.wall_s
@@ -430,6 +532,7 @@ fn mrc(args: MrcArgs) -> Result<(), String> {
         return Err("mrc scales tokens itself; leave --token-scale at 1".into());
     }
     cfg.cost = args.cost.cost()?;
+    cfg.service = args.cost.service()?;
     let capacity = args.capacity.capacities(&cfg.geometry, 1)[0];
     let mut corpus = args.replay.corpus()?;
     let factor = match args.unscale {
@@ -555,6 +658,52 @@ fn mrc(args: MrcArgs) -> Result<(), String> {
     Ok(())
 }
 
+fn regime(args: RegimeArgs) -> Result<(), String> {
+    let mut cfg = RunConfig::frozen_box(args.replay.config());
+    cfg.cost = args.cost.cost()?;
+    cfg.service = args.cost.service()?;
+    let mut cells = Vec::new();
+    for &source in &args.pause_sources {
+        for &sessions in &args.sessions {
+            for &cpu_ratio in &args.cpu_ratios {
+                let pool = FROZEN_BOX_POOL_TOKENS * cfg.replay.token_scale as u64;
+                cells.push(regime::Cell {
+                    pauses: args.replay.pauses(source),
+                    sessions,
+                    cpu_ratio,
+                    capacity: TierCapacity::with_cpu_ratio(&cfg.geometry, pool, cpu_ratio),
+                });
+            }
+        }
+    }
+    let jobs = args.jobs.unwrap_or_else(|| {
+        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+    });
+    let start = std::time::Instant::now();
+    let results = regime::sweep(
+        &args.replay.traces,
+        args.replay.plan_options(),
+        &cfg,
+        &cells,
+        jobs,
+    )?;
+    let map = regime::markdown(&results);
+    print!("{map}");
+    println!(
+        "{} cells x {} arms in {:.1} s on {jobs} threads",
+        cells.len(),
+        Arm::E1.len(),
+        start.elapsed().as_secs_f64()
+    );
+    if let Some(path) = &args.csv {
+        write(path, &regime::csv(&results))?;
+    }
+    if let Some(path) = &args.markdown {
+        write(path, &map)?;
+    }
+    Ok(())
+}
+
 fn replay_log(args: LogArgs) -> Result<(), String> {
     if args.arm == Arm::Clairvoyant {
         return Err("replay-log runs a stock arm".into());
@@ -563,7 +712,14 @@ fn replay_log(args: LogArgs) -> Result<(), String> {
     let capacity = args.capacity.capacities(&cfg.geometry, 1)[0];
     let engine = Engine::new(&cfg.engine_config(args.arm, capacity), None);
     let mut corpus = Corpus::open(&args.traces, PlanOptions::default())?;
-    let out = replay_log::replay(&mut corpus, &args.log, engine, cfg.replay.block_tokens)?;
+    let block_tokens = cfg.replay.block_tokens;
+    let out = if args.timed {
+        let steps = step_cost(args.step_costs.as_deref())?;
+        let scheduler = Scheduler::new(StepBudget::FROZEN_BOX, steps, cfg.cost.clone());
+        replay_log::replay_timed(&mut corpus, &args.log, engine, block_tokens, scheduler)?
+    } else {
+        replay_log::replay(&mut corpus, &args.log, engine, block_tokens)?
+    };
     let prompt = out.prompt_tokens.max(1) as f64;
     let pct = |x: u64, of: f64| 100.0 * x as f64 / of;
     println!(
@@ -592,12 +748,29 @@ fn replay_log(args: LogArgs) -> Result<(), String> {
         100.0 * out.mean_abs_cached_share_error
     );
     println!("stalls                    {}", out.stalls);
+    if args.timed {
+        let resumed = |f: &dyn Fn(&replay_log::LoggedRequest) -> f64| {
+            let values = out.requests.iter().filter(|r| !r.warmup && r.turn > 0);
+            metrics::Percentiles::of(values.map(f).collect())
+        };
+        let measured = resumed(&|r| r.measured_ttft_ms);
+        let simulated = resumed(&|r| r.ttft_ms.unwrap_or(f64::NAN));
+        println!(
+            "resume ttft p50/p90/p99   measured {:.0}/{:.0}/{:.0} ms  simulated {:.0}/{:.0}/{:.0} ms",
+            measured.p50, measured.p90, measured.p99, simulated.p50, simulated.p90, simulated.p99
+        );
+    }
     if let Some(path) = &args.csv {
         let mut text = String::from(
-            "conversation,turn,warmup,measured_prompt_tokens,measured_cached_tokens,prompt_tokens,output_tokens,gpu_tokens,cpu_tokens,computed_tokens\n",
+            "conversation,turn,warmup,measured_prompt_tokens,measured_cached_tokens,prompt_tokens,output_tokens,gpu_tokens,cpu_tokens,computed_tokens",
         );
+        text.push_str(if args.timed {
+            ",measured_ttft_ms,ttft_ms\n"
+        } else {
+            "\n"
+        });
         for r in &out.requests {
-            writeln!(
+            write!(
                 text,
                 "{},{},{},{},{},{},{},{},{},{}",
                 r.conversation,
@@ -612,6 +785,11 @@ fn replay_log(args: LogArgs) -> Result<(), String> {
                 r.sources.computed
             )
             .expect("writing to a String");
+            if args.timed {
+                let ttft = r.ttft_ms.map_or(String::new(), |t| format!("{t:.3}"));
+                write!(text, ",{:.3},{ttft}", r.measured_ttft_ms).expect("writing to a String");
+            }
+            text.push('\n');
         }
         write(path, &text)?;
     }
