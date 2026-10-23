@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use http::uri::{Authority, Scheme, Uri};
+use lh_core::FROZEN_BOX_POOL_TOKENS;
+use lh_core::admission::{Ceilings, Policy};
 use lh_proto::SloClass;
 use serde::Deserialize;
 
@@ -19,6 +21,10 @@ pub struct Config {
     /// How long an idle upstream connection is kept for reuse. It must be shorter than the engine's own
     /// keep-alive, or a request can be sent on a connection the engine is closing.
     pub upstream_idle_timeout: Duration,
+    /// How a request's class reaches the upstream as a priority.
+    pub upstream_priority: PrioritySignals,
+    /// The admission point; `None` (policy "none") sends every request upstream at once.
+    pub admission: Option<Admission>,
     pub listeners: Vec<Listen>,
     pub tenants: Vec<Tenant>,
     /// Largest accepted request body; larger requests get 413.
@@ -65,6 +71,38 @@ pub struct Tenant {
     pub default_class: SloClass,
     /// The strictest class the tenant may use; a stricter request is clamped to it.
     pub max_class: SloClass,
+}
+
+/// `upstream_priority`: where the class's priority goes in each upstream request. Engines and routers read it
+/// in different places, and a stock deployment sends none, so each is a choice.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PrioritySignals {
+    /// `X-Vllm-Priority`, the class's engine priority (realtime 0, interactive 1, background 2), which vLLM's
+    /// priority scheduling reads.
+    pub vllm_header: bool,
+    /// The same number as the body's `priority`, which SGLang's priority scheduling reads.
+    pub body: bool,
+    /// `X-SMG-Priority`: `system`, `interactive` or `bulk`, which SMG's priority scheduler reads.
+    pub smg_header: bool,
+}
+
+/// `[admission]`: the policy that decides when a request goes upstream, and the bounds of its queues.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Admission {
+    pub policy: Policy,
+    /// The requests each class's queue may hold; a request that would wait beyond them gets 429.
+    pub queue_limit: usize,
+    /// How long a request may wait before it gets 503.
+    pub queue_timeout: Duration,
+}
+
+/// One entry of `upstream_priority`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum PrioritySignal {
+    VllmHeader,
+    Body,
+    SmgHeader,
 }
 
 /// `log_format`: human-readable lines, or one JSON object per line.
@@ -123,6 +161,8 @@ impl std::error::Error for ConfigError {
 struct RawConfig {
     upstream: String,
     upstream_idle_timeout_s: f64,
+    upstream_priority: Vec<PrioritySignal>,
+    admission: RawAdmission,
     listen: Vec<RawListen>,
     tenants: BTreeMap<String, RawTenant>,
     max_body_bytes: usize,
@@ -142,6 +182,8 @@ impl Default for RawConfig {
             upstream: String::new(),
             // vLLM closes idle connections after VLLM_HTTP_TIMEOUT_KEEP_ALIVE, 5 s by default.
             upstream_idle_timeout_s: 4.0,
+            upstream_priority: vec![PrioritySignal::VllmHeader],
+            admission: RawAdmission::default(),
             listen: Vec::new(),
             tenants: BTreeMap::new(),
             max_body_bytes: 32 << 20,
@@ -153,6 +195,51 @@ impl Default for RawConfig {
             event_dedup_ttl_s: 600.0,
             log_format: LogFormat::Text,
             log_level: LogLevel::Info,
+        }
+    }
+}
+
+/// `[admission]` as written. Each key but `policy` belongs to some of the policies, and setting it for another
+/// one is an error, so no setting silently does nothing.
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RawAdmission {
+    policy: PolicyName,
+    background_max_in_flight: Option<u32>,
+    pool_tokens: Option<u64>,
+    reserved_tokens: Option<u64>,
+    ceilings: Option<RawCeilings>,
+    queue_limit: Option<usize>,
+    queue_timeout_s: Option<f64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCeilings {
+    realtime: u32,
+    interactive: u32,
+    background: u32,
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum PolicyName {
+    #[default]
+    None,
+    StaticCap,
+    TokenReservation,
+    FlowControl,
+    PreemptResubmit,
+}
+
+impl PolicyName {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::StaticCap => "static-cap",
+            Self::TokenReservation => "token-reservation",
+            Self::FlowControl => "flow-control",
+            Self::PreemptResubmit => "preempt-resubmit",
         }
     }
 }
@@ -197,6 +284,8 @@ impl Config {
 impl RawConfig {
     fn validate(self) -> Result<Config, String> {
         let upstream = parse_upstream(&self.upstream)?;
+        let upstream_priority = priority_signals(&self.upstream_priority)?;
+        let admission = self.admission.validate()?;
 
         let mut tenants = Vec::with_capacity(self.tenants.len());
         let mut digests = HashSet::new();
@@ -276,6 +365,8 @@ impl RawConfig {
                 "upstream_idle_timeout_s",
                 self.upstream_idle_timeout_s,
             )?,
+            upstream_priority,
+            admission,
             listeners,
             tenants,
             max_body_bytes: self.max_body_bytes,
@@ -288,6 +379,106 @@ impl RawConfig {
             log_format: self.log_format,
             log_level: self.log_level,
         })
+    }
+}
+
+impl RawAdmission {
+    fn validate(self) -> Result<Option<Admission>, String> {
+        let name = self.policy.as_str();
+        let reads: &[&str] = match self.policy {
+            PolicyName::None => &[],
+            PolicyName::StaticCap => {
+                &["background_max_in_flight", "queue_limit", "queue_timeout_s"]
+            }
+            PolicyName::TokenReservation => &[
+                "pool_tokens",
+                "reserved_tokens",
+                "queue_limit",
+                "queue_timeout_s",
+            ],
+            PolicyName::FlowControl => &["ceilings", "queue_limit", "queue_timeout_s"],
+            PolicyName::PreemptResubmit => &["queue_limit", "queue_timeout_s"],
+        };
+        let set = [
+            (
+                "background_max_in_flight",
+                self.background_max_in_flight.is_some(),
+            ),
+            ("pool_tokens", self.pool_tokens.is_some()),
+            ("reserved_tokens", self.reserved_tokens.is_some()),
+            ("ceilings", self.ceilings.is_some()),
+            ("queue_limit", self.queue_limit.is_some()),
+            ("queue_timeout_s", self.queue_timeout_s.is_some()),
+        ];
+        if let Some((key, _)) = set.iter().find(|(key, set)| *set && !reads.contains(key)) {
+            return Err(format!("admission.{key} does not apply to policy {name}"));
+        }
+        let needs = |key: &str| format!("admission: policy {name} needs {key}");
+        let policy = match self.policy {
+            PolicyName::None => return Ok(None),
+            PolicyName::StaticCap => {
+                let cap = self
+                    .background_max_in_flight
+                    .ok_or_else(|| needs("background_max_in_flight"))?;
+                if cap == 0 {
+                    return Err("admission.background_max_in_flight must be positive".into());
+                }
+                Policy::StaticCap {
+                    background_max_in_flight: cap,
+                }
+            }
+            PolicyName::TokenReservation => {
+                let pool_tokens = self.pool_tokens.unwrap_or(FROZEN_BOX_POOL_TOKENS);
+                let reserved_tokens = self
+                    .reserved_tokens
+                    .ok_or_else(|| needs("reserved_tokens"))?;
+                if reserved_tokens >= pool_tokens {
+                    return Err(format!(
+                        "admission.reserved_tokens ({reserved_tokens}) must be less than pool_tokens \
+                         ({pool_tokens})"
+                    ));
+                }
+                Policy::TokenReservation {
+                    pool_tokens,
+                    reserved_tokens,
+                }
+            }
+            PolicyName::FlowControl => {
+                let RawCeilings {
+                    realtime,
+                    interactive,
+                    background,
+                } = self.ceilings.ok_or_else(|| needs("ceilings"))?;
+                if background == 0 {
+                    return Err("admission.ceilings must be positive".into());
+                }
+                if realtime < interactive || interactive < background {
+                    return Err(
+                        "admission.ceilings must not increase from realtime to background: the lower \
+                         classes are held back first"
+                            .into(),
+                    );
+                }
+                Policy::FlowControl {
+                    ceilings: Ceilings {
+                        realtime,
+                        interactive,
+                        background,
+                    },
+                }
+            }
+            PolicyName::PreemptResubmit => Policy::PreemptResubmit,
+        };
+        Ok(Some(Admission {
+            policy,
+            // SMG's bulk class queues 1,024 requests. A minute ends a wait well before clients give up on their
+            // own (AIPerf's replay after 300 s, OpenAI's SDK after 600 s).
+            queue_limit: self.queue_limit.unwrap_or(1024),
+            queue_timeout: seconds(
+                "admission.queue_timeout_s",
+                self.queue_timeout_s.unwrap_or(60.0),
+            )?,
+        }))
     }
 }
 
@@ -343,6 +534,21 @@ fn parse_upstream(raw: &str) -> Result<Authority, String> {
     }
 }
 
+fn priority_signals(listed: &[PrioritySignal]) -> Result<PrioritySignals, String> {
+    let mut signals = PrioritySignals::default();
+    for signal in listed {
+        let (set, name) = match signal {
+            PrioritySignal::VllmHeader => (&mut signals.vllm_header, "vllm-header"),
+            PrioritySignal::Body => (&mut signals.body, "body"),
+            PrioritySignal::SmgHeader => (&mut signals.smg_header, "smg-header"),
+        };
+        if std::mem::replace(set, true) {
+            return Err(format!("upstream_priority lists {name} twice"));
+        }
+    }
+    Ok(signals)
+}
+
 fn parse_digest(hex: &str) -> Option<[u8; 32]> {
     if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
@@ -381,6 +587,11 @@ mod tests {
         let config = config("", &format!("[tenants.agents]\nkeys_sha256 = [\"{KEY}\"]")).unwrap();
         assert_eq!(config.upstream.as_str(), "127.0.0.1:18000");
         assert_eq!(config.upstream_idle_timeout, Duration::from_secs(4));
+        let vllm = PrioritySignals {
+            vllm_header: true,
+            ..PrioritySignals::default()
+        };
+        assert_eq!(config.upstream_priority, vllm);
         assert_eq!(
             (config.max_body_bytes, config.stream_buffer_frames),
             (32 << 20, 64)
@@ -424,6 +635,12 @@ mod tests {
             ),
             ("stall_timeout = 5", &a, "unknown field"),
             (
+                "upstream_priority = [\"body\", \"body\"]",
+                &a,
+                "lists body twice",
+            ),
+            ("upstream_priority = [\"sglang\"]", &a, "unknown variant"),
+            (
                 "stall_timeout_s = 0",
                 &a,
                 "stall_timeout_s must be a positive",
@@ -447,6 +664,128 @@ mod tests {
         );
         let err = Config::from_toml(&https).unwrap_err().to_string();
         assert!(err.contains("http://host:port"), "{err}");
+    }
+
+    #[test]
+    fn upstream_priority_is_a_set_of_signals() {
+        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
+        let none = config("upstream_priority = []", &a).unwrap();
+        assert_eq!(none.upstream_priority, PrioritySignals::default());
+        let all = config(
+            "upstream_priority = [\"smg-header\", \"body\", \"vllm-header\"]",
+            &a,
+        )
+        .unwrap();
+        assert_eq!(
+            all.upstream_priority,
+            PrioritySignals {
+                vllm_header: true,
+                body: true,
+                smg_header: true
+            }
+        );
+    }
+
+    #[test]
+    fn admission_policies_take_their_own_keys_and_defaults() {
+        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
+        let admission = |keys: &str| config(&format!("[admission]\n{keys}"), &a);
+        assert_eq!(config("", &a).unwrap().admission, None);
+        assert_eq!(admission("policy = \"none\"").unwrap().admission, None);
+        let cap = admission("policy = \"static-cap\"\nbackground_max_in_flight = 4").unwrap();
+        assert_eq!(
+            cap.admission,
+            Some(Admission {
+                policy: Policy::StaticCap {
+                    background_max_in_flight: 4
+                },
+                queue_limit: 1024,
+                queue_timeout: Duration::from_secs(60),
+            })
+        );
+        let reservation = admission(
+            "policy = \"token-reservation\"\nreserved_tokens = 2048\nqueue_limit = 8\nqueue_timeout_s = 290",
+        )
+        .unwrap()
+        .admission
+        .unwrap();
+        assert_eq!(
+            reservation.policy,
+            Policy::TokenReservation {
+                pool_tokens: FROZEN_BOX_POOL_TOKENS,
+                reserved_tokens: 2048
+            }
+        );
+        assert_eq!(
+            (reservation.queue_limit, reservation.queue_timeout),
+            (8, Duration::from_secs(290))
+        );
+        let flow = admission(
+            "policy = \"flow-control\"\nceilings = { realtime = 16, interactive = 12, background = 8 }",
+        )
+        .unwrap()
+        .admission
+        .unwrap();
+        let ceilings = Ceilings {
+            realtime: 16,
+            interactive: 12,
+            background: 8,
+        };
+        assert_eq!(flow.policy, Policy::FlowControl { ceilings });
+        let preempt = admission("policy = \"preempt-resubmit\"")
+            .unwrap()
+            .admission;
+        assert_eq!(preempt.map(|a| a.policy), Some(Policy::PreemptResubmit));
+
+        for (keys, cause) in [
+            ("policy = \"static_cap\"", "unknown variant"),
+            (
+                "policy = \"none\"\nqueue_limit = 4",
+                "queue_limit does not apply to policy none",
+            ),
+            (
+                "policy = \"static-cap\"",
+                "static-cap needs background_max_in_flight",
+            ),
+            (
+                "policy = \"static-cap\"\nbackground_max_in_flight = 0",
+                "must be positive",
+            ),
+            (
+                "policy = \"static-cap\"\nbackground_max_in_flight = 2\nreserved_tokens = 1",
+                "reserved_tokens does not apply to policy static-cap",
+            ),
+            (
+                "policy = \"static-cap\"\nbackground_max_in_flight = 2\nqueue_timeout_s = 0",
+                "queue_timeout_s must be a positive",
+            ),
+            ("policy = \"token-reservation\"", "needs reserved_tokens"),
+            (
+                "policy = \"token-reservation\"\nreserved_tokens = 40000",
+                "must be less than pool_tokens (36400)",
+            ),
+            ("polcy = \"none\"", "unknown field"),
+            ("policy = \"flow-control\"", "flow-control needs ceilings"),
+            (
+                "policy = \"flow-control\"\nceilings = { realtime = 8, background = 4 }",
+                "missing field `interactive`",
+            ),
+            (
+                "policy = \"flow-control\"\nceilings = { realtime = 4, interactive = 8, background = 4 }",
+                "must not increase",
+            ),
+            (
+                "policy = \"flow-control\"\nceilings = { realtime = 4, interactive = 4, background = 0 }",
+                "must be positive",
+            ),
+            (
+                "policy = \"preempt-resubmit\"\nbackground_max_in_flight = 4",
+                "does not apply to policy preempt-resubmit",
+            ),
+        ] {
+            let err = admission(keys).unwrap_err();
+            assert!(err.contains(cause), "{keys}: {err}");
+        }
     }
 
     #[test]

@@ -24,11 +24,17 @@ use hyper_util::rt::TokioIo;
 use lh_gateway::{AcceptedEvent, Config, EventSink, ListenAddr, LogSink, Server};
 use sha2::{Digest, Sha256};
 use tokio::net::{TcpListener, TcpStream, UnixStream};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Semaphore, mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 pub const AGENTS_KEY: &str = "agents-key";
 pub const BENCH_KEY: &str = "bench-key";
+
+/// A request header naming the request, for [`Mock::tags`] and [`Mock::dropped`].
+pub const TAG: &str = "x-mock-tag";
+/// A request header that makes the mock engine hold its answer until [`Mock::release`]: a JSON response's
+/// headers, or an event stream's first chunk, as an engine holds them through a prefill.
+pub const GATE: &str = "x-mock-gate";
 
 /// How the mock engine answers inference requests.
 #[derive(Clone, Debug)]
@@ -70,22 +76,28 @@ struct MockState {
     script: Script,
     requests: Mutex<Vec<Recorded>>,
     healthy: AtomicBool,
-    dropped: mpsc::UnboundedSender<Instant>,
+    /// The permits gated answers wait for, granted in the order they began to wait.
+    gate: Semaphore,
+    dropped: mpsc::UnboundedSender<(Instant, Option<String>)>,
 }
 
 /// An in-process engine on 127.0.0.1.
 pub struct Mock {
     pub addr: SocketAddr,
     state: Arc<MockState>,
-    dropped: mpsc::UnboundedReceiver<Instant>,
+    dropped: mpsc::UnboundedReceiver<(Instant, Option<String>)>,
 }
 
-/// Sends the time it is dropped: held by a response body, or by a handler that has not answered yet.
-struct DropSignal(mpsc::UnboundedSender<Instant>);
+/// Sends the time it is dropped, with the request's tag: held by a response body, or by a handler that has
+/// not answered yet.
+struct DropSignal(
+    mpsc::UnboundedSender<(Instant, Option<String>)>,
+    Option<String>,
+);
 
 impl Drop for DropSignal {
     fn drop(&mut self) {
-        let _ = self.0.send(Instant::now());
+        let _ = self.0.send((Instant::now(), self.1.take()));
     }
 }
 
@@ -96,6 +108,7 @@ impl Mock {
             script,
             requests: Mutex::default(),
             healthy: AtomicBool::new(true),
+            gate: Semaphore::new(0),
             dropped: dropped_tx,
         });
         let app = Router::new()
@@ -145,10 +158,57 @@ impl Mock {
             .await
             .expect("the mock engine's response was not dropped in time")
             .unwrap()
+            .0
+    }
+
+    /// When the response of the request tagged `tag` was dropped; drops of other requests are skipped.
+    pub async fn dropped(&mut self, tag: &str, within: Duration) -> Instant {
+        let deadline = tokio::time::Instant::now() + within;
+        loop {
+            let (at, dropped) = tokio::time::timeout_at(deadline, self.dropped.recv())
+                .await
+                .unwrap_or_else(|_| panic!("the response of {tag} was not dropped in time"))
+                .unwrap();
+            if dropped.as_deref() == Some(tag) {
+                return at;
+            }
+        }
+    }
+
+    /// Lets `n` gated answers go on, the longest waiting first.
+    pub fn release(&self, n: usize) {
+        self.state.gate.add_permits(n);
+    }
+
+    /// The tags of the requests received, in order of arrival.
+    pub fn tags(&self) -> Vec<String> {
+        self.requests()
+            .iter()
+            .filter_map(|r| r.header(TAG).map(str::to_owned))
+            .collect()
+    }
+
+    /// Waits until the mock engine has received `n` requests in all.
+    pub async fn await_requests(&self, n: usize) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while self.requests().len() < n {
+            assert!(
+                Instant::now() < deadline,
+                "{} requests reached the mock engine, expected {n}: {:?}",
+                self.requests().len(),
+                self.tags()
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
     }
 }
 
 impl MockState {
+    /// Waits for a permit of the gate.
+    async fn pass(&self) {
+        self.gate.acquire().await.unwrap().forget();
+    }
+
     async fn record(&self, request: Request) {
         let (parts, body) = request.into_parts();
         let body = body.collect().await.unwrap().to_bytes();
@@ -166,24 +226,35 @@ async fn models(State(state): State<Arc<MockState>>, request: Request) -> &'stat
 }
 
 async fn answer(State(state): State<Arc<MockState>>, request: Request) -> Response {
-    let guard = DropSignal(state.dropped.clone());
+    let headers = request.headers();
+    let tag = headers.get(TAG).map(|v| v.to_str().unwrap().to_owned());
+    let gated = headers.contains_key(GATE);
+    let guard = DropSignal(state.dropped.clone(), tag);
     state.record(request).await;
     match state.script.clone() {
-        Script::Json(json) => ([(CONTENT_TYPE, "application/json")], json).into_response(),
+        Script::Json(json) => {
+            if gated {
+                state.pass().await;
+            }
+            ([(CONTENT_TYPE, "application/json")], json).into_response()
+        }
         Script::Slow(delay) => {
             tokio::time::sleep(delay).await;
             drop(guard);
             ([(CONTENT_TYPE, "application/json")], "{}").into_response()
         }
         Script::Sse { chunks, gap } => {
+            let gate = gated.then_some(state);
             let chunks = stream::unfold(
-                (chunks.into_iter(), guard, true),
-                move |(mut chunks, guard, first)| async move {
+                (chunks.into_iter(), guard, gate, true),
+                move |(mut chunks, guard, gate, first)| async move {
                     let chunk = chunks.next()?;
                     if !first {
                         tokio::time::sleep(gap).await;
+                    } else if let Some(state) = &gate {
+                        state.pass().await;
                     }
-                    Some((Ok::<_, Infallible>(chunk), (chunks, guard, false)))
+                    Some((Ok::<_, Infallible>(chunk), (chunks, guard, gate, false)))
                 },
             );
             event_stream(Body::from_stream(chunks))
@@ -390,6 +461,16 @@ pub async fn call(
         headers: parts.headers,
         body: body.collect().await.unwrap().to_bytes(),
     }
+}
+
+/// Sends a chat completion on a new connection in the background; the handle gives the whole response.
+pub fn spawn_call(
+    target: &Target,
+    headers: Vec<(&'static str, &'static str)>,
+    body: &'static str,
+) -> JoinHandle<Reply> {
+    let target = target.clone();
+    tokio::spawn(async move { call(&target, "POST", "/v1/chat/completions", &headers, body).await })
 }
 
 /// Sends one request on a new connection and returns the response head with its connection task. Aborting

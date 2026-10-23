@@ -12,7 +12,7 @@ use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use lh_proto::{SessionId, SloClass};
 use tracing::Level;
 
-use crate::metrics::{Metrics, Outcome, Route};
+use crate::metrics::{Metrics, Outcome, Refusal, Route};
 use crate::sanitize::{REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
 use crate::usage::Summary;
 
@@ -33,6 +33,10 @@ pub(crate) struct Exchange {
     pub status: Option<StatusCode>,
     /// Whether the request was sent upstream, which makes it count towards outcomes.
     pub forwarded: bool,
+    /// How long the request waited at the admission point; `None` without one.
+    pub admission_wait: Option<Duration>,
+    /// How many times it was sent upstream again after a preemption.
+    pub resubmits: u32,
     pub first_byte: Option<Duration>,
     pub summary: Summary,
     outcome: Option<Outcome>,
@@ -51,6 +55,8 @@ impl Exchange {
             session: None,
             status: None,
             forwarded: false,
+            admission_wait: None,
+            resubmits: 0,
             first_byte: None,
             summary: Summary::default(),
             outcome: None,
@@ -85,12 +91,13 @@ impl Exchange {
         let kind = match status {
             StatusCode::UNAUTHORIZED => "authentication_error",
             StatusCode::FORBIDDEN => "permission_error",
+            StatusCode::TOO_MANY_REQUESTS => "rate_limit_error",
             s if s.is_server_error() => "server_error",
             _ => "invalid_request_error",
         };
         let body = serde_json::json!({"error": {"message": message, "type": kind, "code": code}});
         if self.forwarded {
-            self.outcome = Some(Outcome::Error);
+            self.outcome.get_or_insert(Outcome::Error);
         }
         self.error = Some(message);
         self.respond(status, &body)
@@ -102,6 +109,35 @@ impl Exchange {
             StatusCode::UNAUTHORIZED,
             "invalid_api_key",
             "missing or unknown API key",
+        )
+    }
+
+    /// The error for a request the admission point refused: 429 when its class's queue was full, 503 when it
+    /// was not admitted in time.
+    pub fn refused(self, refusal: Refusal) -> Response {
+        let class = self.class.map_or("", SloClass::as_str);
+        match refusal {
+            Refusal::QueueFull => self.error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "queue_full",
+                format!("the admission queue of {class} requests is full"),
+            ),
+            Refusal::Timeout => self.error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "queue_timeout",
+                format!("the {class} request was not admitted within queue_timeout_s"),
+            ),
+        }
+    }
+
+    /// The 429 for a request the admission policy shed before its response began: its place went to a
+    /// stricter class.
+    pub fn shed(mut self) -> Response {
+        self.outcome = Some(Outcome::Shed);
+        self.error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "shed",
+            "shed by the admission policy to make room for a stricter class",
         )
     }
 
@@ -145,6 +181,8 @@ impl Drop for Exchange {
                     route = self.route.as_str(),
                     status,
                     outcome = outcome.map(Outcome::as_str),
+                    admission_wait_ms = self.admission_wait.map(ms),
+                    resubmits = (self.resubmits > 0).then_some(self.resubmits),
                     first_byte_ms = self.first_byte.map(ms),
                     total_ms = ms(total),
                     prompt_tokens = usage.map(|u| u.prompt),

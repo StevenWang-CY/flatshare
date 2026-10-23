@@ -31,13 +31,14 @@ use prometheus_client::metrics::histogram::Histogram;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 
+use crate::admission::Ticket;
 use crate::exchange::Exchange;
-use crate::metrics::{Outcome, Route, UpstreamError};
+use crate::metrics::{Outcome, Refusal, Route, UpstreamError};
 use crate::sanitize::{
     REQUEST_ID, resolve_class, resolve_session, rewrite_body, sanitize_headers, set_engine_headers,
     strip_hop_by_hop,
 };
-use crate::server::App;
+use crate::server::{App, Shared};
 use crate::usage::Scanner;
 
 /// The pooled HTTP/1.1 client to the engine.
@@ -118,23 +119,46 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     // would.
     let read = Instant::now();
     shared.metrics.request_body(route, read - ex.received);
-    let body = match rewrite_body(&body, &tenant.cache_salt, &shared.metrics) {
+    let signals = shared.upstream_priority;
+    let priority = signals.body.then(|| class.engine_priority());
+    let body = match rewrite_body(&body, &tenant.cache_salt, priority, &shared.metrics) {
         Ok(body) => body,
         Err(err) => return ex.error(StatusCode::BAD_REQUEST, "invalid_json", err.to_string()),
     };
     let session = resolve_session(&tenant.name, &inputs, body.prompt_cache_key.as_deref());
-    set_engine_headers(&mut parts.headers, &session, class, &ex.id);
+    set_engine_headers(&mut parts.headers, &session, class, &ex.id, signals);
     parts
         .headers
         .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    ex.session = Some(session);
+    let session = &*ex.session.insert(session);
 
-    let sent = (read, shared.metrics.overhead(route));
+    // The admission point. Its decisions are the gateway's overhead; the time a request waits there is not.
+    let mut start = read;
+    let ticket = match &shared.admission {
+        None => None,
+        Some(admission) => {
+            let arrived = Instant::now();
+            match admission.admit(class, session, body.json.len()).await {
+                Ok(ticket) => {
+                    let waited = ticket.as_ref().map_or(Duration::ZERO, Ticket::waited);
+                    ex.admission_wait = Some(waited);
+                    start += waited;
+                    ticket
+                }
+                Err(refusal) => {
+                    ex.admission_wait = Some(arrived.elapsed());
+                    return ex.refused(refusal);
+                }
+            }
+        }
+    };
+
+    let sent = (start, shared.metrics.overhead(route));
     let body = UpstreamBody {
         data: Some(body.json),
         sent: Some(sent),
     };
-    forward(&app, ex, parts, body).await
+    forward(&app, ex, parts, body, ticket).await
 }
 
 /// `GET /v1/models`: authenticated and sanitized, with no session or class.
@@ -151,7 +175,7 @@ pub(crate) async fn models(app: App, request: Request) -> Response {
     ex.tenant = Some(Arc::clone(&tenant.name));
     sanitize_headers(&mut parts.headers, tenant.trusted, &shared.metrics);
     parts.headers.insert(REQUEST_ID.clone(), ex.id.clone());
-    forward(&app, ex, parts, UpstreamBody::empty()).await
+    forward(&app, ex, parts, UpstreamBody::empty(), None).await
 }
 
 /// Reads a request body of at most `limit` bytes.
@@ -181,12 +205,15 @@ pub(crate) async fn read_body(
     }
 }
 
-/// Sends the request upstream and relays the response.
+/// Sends the request upstream and relays the response. An admitted request's ticket goes with the relay and
+/// is given back when the response ends. A request shed before its response answers 429; one preempted
+/// before its first byte is sent again.
 async fn forward(
     app: &App,
     mut ex: Exchange,
     mut parts: http::request::Parts,
     body: UpstreamBody,
+    mut ticket: Option<Ticket>,
 ) -> Response {
     let shared = &app.shared;
     let path = parts.uri.path_and_query().cloned();
@@ -195,41 +222,42 @@ async fn forward(
         .uri(path.unwrap_or_else(|| PathAndQuery::from_static("/")));
     parts.version = Version::HTTP_11;
     parts.extensions.clear();
-    let request = http::Request::from_parts(parts, body);
 
     ex.forwarded = true;
-    let timeout = shared.first_byte_timeout;
-    let response =
-        match tokio::time::timeout(timeout, shared.upstream.client.request(request)).await {
-            Ok(Ok(response)) => response,
-            Ok(Err(err)) => {
-                let kind = if err.is_connect() {
-                    UpstreamError::Connect
-                } else {
-                    UpstreamError::Request
-                };
-                shared.metrics.upstream_error(kind);
-                let mut message = format!("upstream request failed: {err}");
-                let mut source = err.source();
-                while let Some(cause) = source {
-                    message.push_str(&format!(": {cause}"));
-                    source = cause.source();
-                }
-                return ex.error(StatusCode::BAD_GATEWAY, "upstream_unavailable", message);
+    let sent = match &mut ticket {
+        Some(ticket) if ticket.preemptible() => {
+            resubmitting(shared, &mut ex, parts, body, ticket).await
+        }
+        Some(ticket) if ticket.sheddable() => {
+            let request = http::Request::from_parts(parts, body);
+            tokio::select! {
+                sent = send(shared, request) => sent.map(|response| (response, None)),
+                // Dropping the request future closes its connection, which aborts the engine request.
+                () = ticket.shed() => return ex.shed(),
             }
-            Err(_) => {
-                shared.metrics.upstream_error(UpstreamError::Timeout);
-                let message = format!("no response headers from the upstream within {timeout:?}");
-                return ex.error(StatusCode::GATEWAY_TIMEOUT, "upstream_timeout", message);
-            }
-        };
+        }
+        _ => send(shared, http::Request::from_parts(parts, body))
+            .await
+            .map(|response| (response, None)),
+    };
+    let (response, first) = match sent {
+        Ok(sent) => sent,
+        Err(failure) => return failure.answer(ex, shared),
+    };
 
     let (mut parts, upstream_body) = response.into_parts();
     strip_hop_by_hop(&mut parts.headers);
     ex.decorate(&mut parts.headers);
     ex.status = Some(parts.status);
-    let scanner = Scanner::for_content_type(parts.headers.get(CONTENT_TYPE));
+    let mut scanner = Scanner::for_content_type(parts.headers.get(CONTENT_TYPE));
     let (frames, receiver) = mpsc::channel(shared.stream_buffer_frames);
+    // The first frame of a preemptible response, read before the client was answered.
+    if let Some(first) = first {
+        scanner.feed(&first);
+        frames
+            .try_send(first)
+            .expect("a new channel has room for a frame");
+    }
     let aborted = Arc::new(AtomicBool::new(false));
     tokio::spawn(pump(
         upstream_body,
@@ -238,6 +266,7 @@ async fn forward(
         ex,
         scanner,
         shared.stall_timeout,
+        ticket,
     ));
     let body = ClientBody {
         frames: receiver,
@@ -246,7 +275,133 @@ async fn forward(
     Response::from_parts(parts, Body::new(body))
 }
 
-/// Relays an upstream body into the client's channel until either side ends.
+/// Why a request has no response to relay.
+#[derive(Debug)]
+enum Failure {
+    /// The connection failed, or closed before the response headers (502).
+    Upstream(hyper_util::client::legacy::Error),
+    /// Nothing within the first-byte timeout (504): no response headers, or for a preemptible request, no
+    /// first body frame.
+    Timeout(&'static str),
+    /// A preemptible request's response broke off before its first body frame (502).
+    Body,
+    /// A preempted request was not admitted again in time (503).
+    Refused(Refusal),
+}
+
+impl Failure {
+    fn answer(self, ex: Exchange, shared: &Shared) -> Response {
+        let metrics = &shared.metrics;
+        match self {
+            Self::Upstream(err) => {
+                let kind = if err.is_connect() {
+                    UpstreamError::Connect
+                } else {
+                    UpstreamError::Request
+                };
+                metrics.upstream_error(kind);
+                let mut message = format!("upstream request failed: {err}");
+                let mut source = err.source();
+                while let Some(cause) = source {
+                    message.push_str(&format!(": {cause}"));
+                    source = cause.source();
+                }
+                ex.error(StatusCode::BAD_GATEWAY, "upstream_unavailable", message)
+            }
+            Self::Timeout(awaited) => {
+                metrics.upstream_error(UpstreamError::Timeout);
+                let timeout = shared.first_byte_timeout;
+                let message = format!("no {awaited} from the upstream within {timeout:?}");
+                ex.error(StatusCode::GATEWAY_TIMEOUT, "upstream_timeout", message)
+            }
+            Self::Body => {
+                metrics.upstream_error(UpstreamError::Body);
+                let message = "the upstream response broke off before its first byte";
+                ex.error(StatusCode::BAD_GATEWAY, "upstream_unavailable", message)
+            }
+            Self::Refused(refusal) => ex.refused(refusal),
+        }
+    }
+}
+
+/// Sends a request upstream and waits for its response headers, for at most the first-byte timeout.
+async fn send(
+    shared: &Shared,
+    request: http::Request<UpstreamBody>,
+) -> Result<http::Response<Incoming>, Failure> {
+    let response = shared.upstream.client.request(request);
+    match tokio::time::timeout(shared.first_byte_timeout, response).await {
+        Ok(response) => response.map_err(Failure::Upstream),
+        Err(_) => Err(Failure::Timeout("response headers")),
+    }
+}
+
+/// Sends a preemptible request and holds its response back until the first body frame. A preemption before
+/// that frame drops the attempt, which closes its connection and aborts the engine request, and the request
+/// goes again once it is admitted again. The client has seen nothing of the dropped attempt, so it gets one
+/// response whose first byte comes later. Each attempt has the first-byte timeout to its first frame.
+async fn resubmitting(
+    shared: &Shared,
+    ex: &mut Exchange,
+    parts: http::request::Parts,
+    body: UpstreamBody,
+    ticket: &mut Ticket,
+) -> Result<(http::Response<Incoming>, Option<Bytes>), Failure> {
+    let again = (parts.clone(), body.data.clone());
+    let mut request = http::Request::from_parts(parts, body);
+    loop {
+        tokio::select! {
+            attempt = first_frame(shared, request) => {
+                let (response, first) = attempt?;
+                // A frame that arrives as the request is preempted belongs to the dropped attempt.
+                if first.is_none() || ticket.first_byte() {
+                    if first.is_some() {
+                        ex.first_byte = Some(ex.received.elapsed());
+                    }
+                    return Ok((response, first));
+                }
+            }
+            () = ticket.preempted() => {}
+        }
+        ticket.readmitted().await.map_err(Failure::Refused)?;
+        ex.resubmits += 1;
+        let (parts, data) = again.clone();
+        request = http::Request::from_parts(parts, UpstreamBody { data, sent: None });
+    }
+}
+
+/// Sends a request and reads its response to the first body frame, or to the end of a body without one.
+async fn first_frame(
+    shared: &Shared,
+    request: http::Request<UpstreamBody>,
+) -> Result<(http::Response<Incoming>, Option<Bytes>), Failure> {
+    let attempt = async {
+        let response = shared
+            .upstream
+            .client
+            .request(request)
+            .await
+            .map_err(Failure::Upstream)?;
+        let (parts, mut body) = response.into_parts();
+        let first = loop {
+            match body.frame().await {
+                Some(Ok(frame)) => match frame.into_data() {
+                    Ok(data) => break Some(data),
+                    Err(_) => continue,
+                },
+                Some(Err(_)) => return Err(Failure::Body),
+                None => break None,
+            }
+        };
+        Ok((http::Response::from_parts(parts, body), first))
+    };
+    tokio::time::timeout(shared.first_byte_timeout, attempt)
+        .await
+        .unwrap_or(Err(Failure::Timeout("first byte")))
+}
+
+/// Relays an upstream body into the client's channel until either side ends, or until the admission policy
+/// sheds the request.
 async fn pump(
     mut upstream: Incoming,
     frames: mpsc::Sender<Bytes>,
@@ -254,12 +409,15 @@ async fn pump(
     mut ex: Exchange,
     mut scanner: Scanner,
     stall_timeout: Duration,
+    mut ticket: Option<Ticket>,
 ) {
     let _active = ex.class.map(|class| ex.metrics().stream_started(class));
+    let sheddable = ticket.as_ref().is_some_and(Ticket::sheddable);
     let outcome = loop {
         let frame = tokio::select! {
             biased;
             () = frames.closed() => break Outcome::Cancelled,
+            () = shed(&mut ticket), if sheddable => break Outcome::Shed,
             frame = upstream.frame() => frame,
         };
         let data = match frame {
@@ -274,14 +432,25 @@ async fn pump(
                 Err(_) => continue,
             },
         };
-        ex.first_byte.get_or_insert_with(|| ex.received.elapsed());
+        if ex.first_byte.is_none() {
+            ex.first_byte = Some(ex.received.elapsed());
+            // A realtime request's first byte frees the background work preempt-resubmit holds back for it.
+            if let Some(ticket) = &mut ticket {
+                ticket.first_byte();
+            }
+        }
         let scanned = data.clone();
         if let Err(err) = frames.try_send(data) {
             let data = match err {
                 TrySendError::Full(data) => data,
                 TrySendError::Closed(_) => break Outcome::Cancelled,
             };
-            match tokio::time::timeout(stall_timeout, frames.send(data)).await {
+            let sent = tokio::select! {
+                biased;
+                () = shed(&mut ticket), if sheddable => break Outcome::Shed,
+                sent = tokio::time::timeout(stall_timeout, frames.send(data)) => sent,
+            };
+            match sent {
                 Ok(Ok(())) => {}
                 Ok(Err(_)) => break Outcome::Cancelled,
                 Err(_) => break Outcome::Stalled,
@@ -289,14 +458,27 @@ async fn pump(
         }
         scanner.feed(&scanned);
     };
-    if matches!(outcome, Outcome::Stalled | Outcome::Error) {
+    if matches!(outcome, Outcome::Stalled | Outcome::Error | Outcome::Shed) {
         aborted.store(true, Ordering::Release);
     }
     // An unfinished upstream body closes its connection when dropped, which aborts the engine request.
     drop(upstream);
     drop(frames);
     ex.summary = scanner.finish();
+    // The request leaves the admission point once its upstream connection is gone.
+    if let Some(mut ticket) = ticket {
+        ticket.prompt_tokens = ex.summary.usage.map(|usage| usage.prompt);
+        drop(ticket);
+    }
     ex.finish(outcome);
+}
+
+/// Completes when the admission policy sheds the request.
+async fn shed(ticket: &mut Option<Ticket>) {
+    match ticket {
+        Some(ticket) => ticket.shed().await,
+        None => std::future::pending().await,
+    }
 }
 
 /// The body of an upstream request. Its first poll happens when hyper writes the request to a pooled
@@ -344,8 +526,8 @@ impl http_body::Body for UpstreamBody {
 #[derive(Debug)]
 struct ClientBody {
     frames: mpsc::Receiver<Bytes>,
-    /// Set by the pump before it stops on a stall or an upstream error, so the client sees an error instead of
-    /// a clean end: a truncated response must not look complete.
+    /// Set by the pump before it stops on a stall, an upstream error or a shed, so the client sees an error
+    /// instead of a clean end: a truncated response must not look complete.
     aborted: Arc<AtomicBool>,
 }
 

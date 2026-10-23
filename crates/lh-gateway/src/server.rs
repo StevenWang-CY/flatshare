@@ -19,8 +19,9 @@ use tokio::net::{TcpListener, UnixListener, UnixStream};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 
+use crate::admission::Admission;
 use crate::auth::Tenants;
-use crate::config::{Config, ListenAddr};
+use crate::config::{Config, ListenAddr, PrioritySignals};
 use crate::events::{self, EventSink, Events};
 use crate::exchange::Exchange;
 use crate::metrics::{Metrics, Route};
@@ -34,6 +35,9 @@ const READY_WINDOW: Duration = Duration::from_secs(1);
 pub(crate) struct Shared {
     pub tenants: Tenants,
     pub upstream: Upstream,
+    pub upstream_priority: PrioritySignals,
+    /// `None` under policy "none": requests go upstream at once.
+    pub admission: Option<Arc<Admission>>,
     pub metrics: Arc<Metrics>,
     pub events: Events,
     pub max_body_bytes: usize,
@@ -94,10 +98,15 @@ impl Server {
             };
             listeners.push((listener, tenant));
         }
+        let metrics = Arc::new(Metrics::new());
         let shared = Shared {
             tenants,
             upstream: Upstream::new(config.upstream, config.upstream_idle_timeout),
-            metrics: Arc::new(Metrics::new()),
+            upstream_priority: config.upstream_priority,
+            admission: config
+                .admission
+                .map(|admission| Arc::new(Admission::new(&admission, Arc::clone(&metrics)))),
+            metrics,
             events: Events::new(config.event_dedup_capacity, config.event_dedup_ttl, sink),
             max_body_bytes: config.max_body_bytes,
             stream_buffer_frames: config.stream_buffer_frames,
@@ -130,6 +139,7 @@ impl Server {
         tracing::info!(
             upstream = %self.shared.upstream.authority(),
             listeners = ?self.local_addrs().unwrap_or_default(),
+            admission = ?self.shared.admission.as_ref().map(|admission| admission.policy()),
             "lh-gateway serving"
         );
         // Dropping `stop` tells every listener to shut down.
