@@ -16,7 +16,7 @@ the tier cost model (E0) and server-side voice turns.
 | `lh-bench tiers` | `tiers.py` | E0: time to first token from the GPU pool, the CPU tier and recompute, verified per sample by vLLM's prefix-cache counters; optional background load |
 | `lh-bench voice-turn` | `voice_turn.py` | One server-side voice turn timed per stage (STT, LLM first sentence, TTS first audio); optional background load |
 | `lh-bench kv-metrics` | `kv_metrics.py` | KV block lifecycle histograms compared across a run |
-| `lh-bench e2` | `e2.py`, `frontier.py` | E2 points: one measured from its arm file on cyan (`run`), and the frontier across points (`report`) |
+| `lh-bench e2` | `e2.py`, `frontier.py` | E2 points: one measured from its arm file on cyan (`run`), the frontier across points (`report`), and their compact records (`export`) |
 | background load | `load.py` | `prefill:<tokens>x<n>` (cold prefills) or `decode:<tokens>x<n>` (long decodes) beside a probe |
 
 Python 3.12, pinned to `aiperf==0.13.0`. Installing the package registers both AIPerf plugins
@@ -248,8 +248,13 @@ When evicted blocks were idle for less time than blocks typically wait between r
 
 ```bash
 lh-bench e2 run ~/leaseholder/src/benchmarks/e2/arms/a1-voice.toml --out ~/leaseholder/runs/e2/w2/a1-voice
+lh-bench e2 run ~/leaseholder/src/benchmarks/e2/arms/disc-a9-s24.toml --out ~/leaseholder/runs/e2/demo/disc-a9-s24 \
+  --save-audio                           # the callers save each call's audio, for the demo video
 lh-bench e2 engine a2-stock-s16.toml     # the engine an arm needs, as variant.sh use takes it
 lh-bench e2 report ~/leaseholder/runs/e2/w2/{a1-voice,a2-stock-s16} --out ~/leaseholder/runs/e2/first
+lh-bench e2 report ~/leaseholder/runs/e2/{w2c,a9,r1,r2}/disc-* --out ~/leaseholder/runs/e2/disc \
+  --waterfall disc-frozen-s24 --waterfall disc-a9-s24   # repeats across rounds; two configurations' waterfall
+lh-bench e2 export ~/leaseholder/runs/e2/w2b/* --out benchmarks/results/2026-10-23-e2   # compact records
 lh-bench e2 reset                        # cyan's units as gateway.toml and the worker's defaults have them
 ```
 
@@ -258,7 +263,7 @@ A point runs in this order:
 2. **cyan's units.** SMG runs only for `router = "smg"`. With a `[gateway]` table the gateway runs on `~/.config/leaseholder/gateway-e2.toml` (`gateway.toml` with the table merged in, mode 600) through the `e2-gateway` drop-in, and without one on `gateway.toml`. The voice worker's preemptive generation is switched with the `no-preemptive-generation` drop-in, and its lifecycle events with `no-events`. Only a unit whose configuration changes restarts, and the worker must register again within 90 s. The worker must end turns with fixed endpointing (`vad-turns`), or nothing runs.
 3. **A cold start.** The engine's prefix cache, and vLLM's CPU tier, are emptied.
 4. **The replay.** With agent sessions, AIPerf starts on cores 16–23 and the calls wait for its profiling phase plus the warm-up.
-5. **The window.** The gateway's and the engine's `/metrics` are saved, `lh-voice bots` runs in the voice-plane namespace on cores 24–31, and they are saved again. The calls are the window every metric covers; AIPerf must outlast them.
+5. **The window.** The gateway's and the engine's `/metrics` are saved, `lh-voice bots` runs in the voice-plane namespace on cores 24–31, and they are saved again. The calls are the window every metric covers; AIPerf must outlast them. With `--save-audio`, a run option rather than the arm's, the callers also save each call's audio for the demo video (`lh-voice bots --save-audio`), which measures nothing differently.
 6. **The end.** AIPerf gets SIGINT, cancels its requests and writes its exports. The gateway's request lines for the window go to `gateway.jsonl`, and the voice worker's journal from the start of the calls to `voice-worker.log`, once every call's session has logged its end (at most 30 s). Then `summary.json` is written.
 
 **The arm file.** Unknown keys and wrong types are errors. The point is named after the file.
@@ -289,11 +294,11 @@ A point runs in this order:
 | File | Contents |
 |---|---|
 | `arm.toml` | The arm file as run |
-| `run.json` | `status` (`running`, then `complete`, or `failed` with the `error`); the host; start and end; the arm as read; versions (the deployed commit from `~/leaseholder/src/DEPLOYED`, `leaseholder-bench`, AIPerf, `lh-gateway`); the engine (server, version, KV pool, flags checked and unchecked); what cyan ran (which units restarted, the gateway's configuration without key digests); the window; AIPerf's exit status |
+| `run.json` | `status` (`running`, then `complete`, or `failed` with the `error`); the host; start and end; the arm as read; `save_audio`, the run option; versions (the deployed commit from `~/leaseholder/src/DEPLOYED`, `leaseholder-bench`, AIPerf, `lh-gateway`); the engine (server, version, KV pool, flags checked and unchecked); what cyan ran (which units restarted, the gateway's configuration without key digests); the window; AIPerf's exit status |
 | `run.log` | Each step, timestamped |
 | `engine.json` | The engine's whole configuration from `/server_info`, without credentials |
 | `aiperf.log`, `aiperf/` | AIPerf's output and artifacts: `profile_export.jsonl` holds one record per request |
-| `bots.log`, `bots/` | The callers' output and run directory (`turns.jsonl`, `summary.json`) |
+| `bots.log`, `bots/` | The callers' output and run directory (`turns.jsonl`, `summary.json`, and with `--save-audio` each call's `call-<i>.wav` and `call-<i>.json`) |
 | `metrics/` | `gateway-start.prom`, `gateway-end.prom`, `engine-start.prom`, `engine-end.prom` |
 | `gateway.jsonl` | The gateway's request lines for the window (`journalctl --user -u lh-gateway --since --until`, the JSON lines whose message is `request`): class, status, outcome, `first_byte_ms`, `total_ms`, `admission_wait_ms` and tokens of each request. Absent when the gateway logs text |
 | `voice-worker.log` | The voice worker's journal from the start of the calls: a line per turn with its stage times, and a line per session at its end with its lifecycle-event counts ([`leaseholder-voice`](../leaseholder_voice/README.md#lifecycle-events-and-turn-lines)) |
@@ -312,12 +317,18 @@ A component that fails fails the point: `run.json` keeps `failed` and the error,
 | `background` | Null for voice alone. From AIPerf's records of the agent requests that ended during the calls: requests, errors (failed and cancelled requests count as lost), requests/s, prompt, completion and total tokens/s from the server's usage counts, and `ttft_ms` |
 | `gateway` | `realtime_first_byte_ms` and `background_first_byte_ms` (n, mean, p50, p95, p99): exact, from `gateway.jsonl` (`"source": "log"`), or interpolated inside the first-byte histogram's buckets, whose bounds are 0.1, 0.25, 0.5 and 1 s in the range that matters for voice (`"source": "histogram"`, without the log); what its admission point shed, refused and resubmitted, and the prompt tokens of the attempts it dropped; `background_tokens_per_s`, its own count from response usage; and every counter that moved |
 | `engine` | vLLM's preemptions, prompt tokens by source (local compute, GPU-pool and CPU-tier hits) and queue-limit rejections |
+| `gpu` | Only in a compact record (`lh-bench e2 export`): from `gpu.csv`, the GPU's median SM clock (`sm_clock_p50_mhz`) and highest temperature (`temperature_max_c`) during the calls |
 
 The background goodput comes from AIPerf's records rather than from the gateway's request outcomes, whose `completed` counts a response relayed in full whatever its status: it cannot tell a request the engine refused from one it served. The gateway's token rate stays beside it as a check.
 
-**The report.** `lh-bench e2 report RUN_DIR... --out DIR` writes `frontier.csv`, `frontier.md` (a table per arm, ordered by background goodput) and, where matplotlib is installed (AIPerf brings it), `frontier.svg`. A point is on its arm's frontier when no other point of the arm harvests at least as much background goodput at a V2V p95 at least as low, and one of the two strictly better. Run directories without a complete point are named and left out.
+**The report.** `lh-bench e2 report RUN_DIR... --out DIR` writes `frontier.csv`, `frontier.md` and, where matplotlib is installed (AIPerf brings it), a frontier figure per workload and `waterfall.svg`. A point's workload is the agents' corpus (`[agents] data`) and the number of callers (`frontier.csv`'s `workload`, such as `weka-x32, 2 callers`), and points of different workloads are never compared: a point is on its arm's frontier when no other point of the arm and workload harvests at least as much background goodput at a V2V p95 at least as low, and one of the two strictly better. `frontier.md` has a section per workload, which opens with its voice SLO and the name of its figure, with a table per arm in it, ordered by background goodput. Run directories without a complete point are named and left out.
+- **The frontier figures.** `frontier.svg` draws the arm file's own workload (`weka-x32`, 2 callers); another workload's figure is named after its corpus and its callers where they differ (`frontier-weka-x32-long.svg`, `frontier-4-callers.svg`). A line joins each arm's frontier, open markers are its dominated configurations, and the arm's name sits by the last point of its frontier, at the end of a leader line where points crowd (arms whose points coincide share one, `6, 8b`). The color is the arm's family: stock vLLM (arms 1–5), the baseline, in dark gray; operator answers (6), engines (7), routers (8), Leaseholder (9, blue) and MPS (10) in five hues that stay apart from one another in every pair, as a scatter needs, for color-blind readers too. The marker tells the arms of a family apart. A dashed line marks the voice SLO: 250 ms above voice alone (arm 1) with as many callers, from whichever corpus, since voice alone replays none; a workload without that point says so. A configuration past its workload's fence for far outliers (three interquartile ranges above the upper quartile of the V2V p95s) is left off the scale and named with its numbers, so that one collapse does not flatten the rest.
+- **Repeats.** Points measured from the same arm file in several campaigns, under the same point name, are repeats of one configuration. `frontier.md` keeps a row per run, named by its campaign (`frontier.csv`'s `campaign`: the directory that holds the run directory), then gives the configuration's median and range (min–max) of V2V p50/p95/p99, background tokens/s, the realtime first byte p95 and failed turns, with its run count. The frontier places the configuration at its medians, and its figure draws it there with whiskers over its runs' range on both axes: one marker per configuration keeps each frontier a line through what `frontier.md` marks, and a run that collapsed still shows as a long whisker. A configuration measured once is shown as before.
 - **The realtime first byte** is exact from the run directory's `gateway.jsonl`, even one fetched after the run (from the journal, for the window in `run.json`), and otherwise the summary's; `realtime_first_byte_source` says which, and `frontier.md` marks an interpolated value with `~`.
-- **Columns only some points have** appear when one of the points has them: the worker's stage times (p50 and p95 of each, in a table of their own in `frontier.md`) and event counts, and, from `gpu.csv`, the GPU's median SM clock and highest temperature during the calls.
+- **The stage waterfall** (`waterfall.svg`, and its table in `frontier.md`) splits each configuration's voice turn into stages that follow one another, as means over the replies of its runs: endpointing (`end_of_turn_ms`), the reply to its first sentence (`turn_to_first_sentence_ms`) and TTS to first audio (`tts_first_audio_ms`), from the worker's turn lines, then the rest of the callers' V2V, transport and playout (the mean V2V less the three). So a bar is as long as the mean V2V; a line marks the median V2V and a triangle the p95, over the callers' samples in `bots/turns.jsonl`. A thin bar under it is the LLM's own time to first token (`llm_ttft_ms`), from its request: under preemptive generation the request starts at the final transcript, before the end of the turn, so it lies across the first two stages. `--waterfall POINT` (repeatable) draws only those configurations, in that order; by default every one with turn lines.
+- **Columns only some points have** appear when one of the points has them: the worker's stage times (p50 and p95 of each, in a table of their own in `frontier.md`) and event counts, and, from `gpu.csv` (or a compact record's summary), the GPU's median SM clock and highest temperature during the calls.
+
+**The compact record.** `lh-bench e2 export RUN_DIR... --out DIR` writes each complete point's record into `DIR/CAMPAIGN/POINT`, where its run directory sits in its campaign: `run.json`, `arm.toml`, the callers' `summary.json` and `turns.jsonl`, a `summary.json` that keeps what the report takes from the files the record leaves out (the first bytes of both classes exactly from `gateway.jsonl`, `"source": "log"`, and from `gpu.csv` the GPU's clock and temperature, `gpu`), and an `engine.json` reduced to what says which engine the point ran on. For vLLM that is the model by its Hugging Face id and revision, `max_model_len`, dtype and quantization; from `cache_config` the block size, prefix caching, the KV dtype and the pool (`kv_cache_memory_bytes`, `num_gpu_blocks`); from `scheduler_config` the policy, `max_num_batched_tokens`, `long_prefill_token_threshold`, `max_num_seqs`, async scheduling, `watermark` and `max_num_queued_tokens`, the settings `e2 run` checks the arms' flags against; the CPU tier's connector with its `kv_connector_extra_config`; and `additional_config`. For SGLang it is the same of its server arguments (`SGLANG_ENGINE` in `frontier.py`). Any path under a home directory is written from `~`. A record is about 15 kB and holds no credential: the callers' `run.json`, which names LiveKit's API key, stays out. The report gives the same tables and figures from the records as from the run directories, byte for byte (its figures carry no date), so the records are what goes into the repository, under [`benchmarks/results/2026-10-23-e2`](../../benchmarks/results/2026-10-23-e2/README.md), and `make reproduce-e2` regenerates the report from them with this venv. The raw records (the gateway's request log, AIPerf's exports, the metric snapshots, the worker's journal, the GPU's samples, the tools' logs) are published as an asset of the GitHub release that carries the results.
 
 ## Mock server
 
@@ -393,5 +404,12 @@ processes (`tests/fakes/`): the sequence, the units each arm restarts, the engin
 at each step with every process stopped, the point directory's rules, the committed arm files, and
 the logs a point keeps: the gateway's request lines and the worker's journal, waiting for its
 sessions to end only when they will. `tests/test_frontier.py` covers the summary over the window,
-the exact first bytes from a request log, the Pareto marking, the report's columns that only some
-points have, and the names of the lines the voice worker writes.
+the exact first bytes from a request log, the Pareto marking within each arm and workload, each
+workload's section, voice SLO and figure (its families, the arms' names and what it leaves off its
+scale), repeated points placed at their medians with every run kept, the stage waterfall's means
+and V2V marks, the report's columns that only some points have, compact records that give the
+report of their run directories byte for byte, the committed records (complete, without
+credentials, reported as `make reproduce-e2` reports them), and the names of the lines the voice
+worker writes. `tests/test_demo.py` runs the demo
+video's renderer on a synthetic pair of calls ([`benchmarks/e2`](../../benchmarks/e2/README.md#the-demo-video));
+its encoding test is marked `integration` and left out of CI.

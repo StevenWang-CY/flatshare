@@ -376,7 +376,7 @@ def _add_voice_turn(commands: Commands) -> None:
 
 def _e2(args: argparse.Namespace) -> int:
     from leaseholder_bench.e2 import E2Error, Host, Systemd, load_arm, reset_cyan, run_point
-    from leaseholder_bench.frontier import load_points, render, write_report
+    from leaseholder_bench.frontier import export_point, load_points, render, write_report
 
     try:
         if args.action == "engine":
@@ -390,11 +390,22 @@ def _e2(args: argparse.Namespace) -> int:
             signal.signal(signal.SIGHUP, signal.SIG_IGN)
             signal.signal(signal.SIGTERM, _interrupted)
             try:
-                summary = run_point(args.arm, args.out)
+                summary = run_point(args.arm, args.out, save_audio=args.save_audio)
             except KeyboardInterrupt:
                 print(f"lh-bench e2: {args.arm.stem} interrupted", file=sys.stderr)
                 return 130
             print(render(summary))
+        elif args.action == "export":
+            records = []
+            for run_dir in args.run_dirs:
+                if (record := export_point(run_dir, args.out)) is None:
+                    print(f"lh-bench e2: {run_dir}: the point did not complete", file=sys.stderr)
+                else:
+                    records.append(record)
+                    print(record)
+            if not records:
+                print("lh-bench e2: no complete point to export", file=sys.stderr)
+                return 1
         else:
             rows, incomplete = load_points(args.run_dirs)
             for run_dir in incomplete:
@@ -402,7 +413,12 @@ def _e2(args: argparse.Namespace) -> int:
             if not rows:
                 print("lh-bench e2: no complete point to report", file=sys.stderr)
                 return 1
-            for path in write_report(rows, args.out):
+            try:
+                written = write_report(rows, args.out, args.waterfall)
+            except ValueError as exc:  # a --waterfall point without turn lines
+                print(f"lh-bench e2: {exc}", file=sys.stderr)
+                return 1
+            for path in written:
                 print(path)
     except E2Error as exc:
         print(f"lh-bench e2: {exc}", file=sys.stderr)
@@ -430,13 +446,39 @@ def _add_e2(commands: Commands) -> None:
     )
     run.add_argument("arm", type=Path, help="arm file (TOML); the point is named after the file")
     run.add_argument("--out", type=Path, required=True, help="run directory")
+    run.add_argument(
+        "--save-audio",
+        action="store_true",
+        help="have the callers save each call's audio (lh-voice bots --save-audio), for the demo "
+        "video; recorded in run.json",
+    )
     report = actions.add_parser(
         "report",
         help="build the frontier from run directories",
-        description="Write frontier.csv, frontier.md and, with matplotlib, frontier.svg.",
+        description="Write frontier.csv, frontier.md and, with matplotlib, frontier.svg and the "
+        "stage waterfall of the points with turn lines, waterfall.svg.",
     )
     report.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
     report.add_argument("--out", type=Path, required=True, help="report directory")
+    report.add_argument(
+        "--waterfall",
+        action="append",
+        default=[],
+        metavar="POINT",
+        help="draw only this point's configuration in waterfall.svg (repeatable, in this order; "
+        "default every one with turn lines)",
+    )
+    export = actions.add_parser(
+        "export",
+        help="write the compact records of run directories, from which report gives the same tables",
+        description="Write each complete point's compact record into DIR/CAMPAIGN/POINT: its "
+        "run.json and arm.toml, the callers' summary.json and turns.jsonl, a summary.json with "
+        "the first bytes taken exactly from the request log and the GPU's clocks, and an "
+        "engine.json reduced to the engine the point ran on; no request log, AIPerf export, "
+        "journal, credential or home path.",
+    )
+    export.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
+    export.add_argument("--out", type=Path, required=True, help="records directory")
     engine = actions.add_parser(
         "engine",
         help="print the engine an arm file needs, as deploy/phastform/variant.sh use takes it",

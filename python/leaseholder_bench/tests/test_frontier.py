@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import ast
 import csv
+import importlib.util
 import json
+import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,27 +15,38 @@ from typing import Any
 import pytest
 
 from leaseholder_bench.cli import main
+from leaseholder_bench.e2 import SECRETS, Agents, Voice
 from leaseholder_bench.frontier import (
     COLUMNS,
     GPU_COLUMNS,
+    RECORD,
     SESSIONS_LOGGER,
+    SGLANG_ENGINE,
+    STACKED,
+    STANDARD_WORKLOAD,
     TURNS_LOGGER,
     WATERFALL,
     WORKER_COLUMNS,
     background,
+    configurations,
     engine_counts,
+    engine_settings,
+    figure_name,
     first_byte_ms,
     gateway_counts,
     gateway_requests,
     load_points,
     mark_frontier,
+    stage_waterfall,
     summarize_point,
     write_report,
 )
 
 T0 = 1_800_000_000.0  # the calls run from T0 to T0 + 100 s
-VOICE = Path(__file__).resolve().parents[3] / "python" / "leaseholder_voice"
+REPO = Path(__file__).resolve().parents[3]
+VOICE = REPO / "python" / "leaseholder_voice"
 VOICE_EVENTS = VOICE / "src" / "leaseholder_voice" / "events.py"
+RESULTS = REPO / "benchmarks" / "results" / "2026-10-23-e2"
 
 
 def record(end: float, *, phase: str = "profiling", ttft: float = 100.0, **extra: Any) -> str:
@@ -236,6 +250,9 @@ def point(
     tokens_per_s: float | None,
     p95: float,
     status: str = "complete",
+    *,
+    callers: int = 2,
+    data: str = "weka-x32",
 ) -> Path:
     """A run directory as lh-bench e2 run leaves it."""
     run_dir = root / name
@@ -244,8 +261,8 @@ def point(
         "arm": arm,
         "label": f"{name} label",
         "router": None,
-        "voice": {"callers": 2, "preemptive_generation": True},
-        "agents": {"sessions": 0 if tokens_per_s is None else 16},
+        "voice": {"callers": callers, "preemptive_generation": True},
+        "agents": {"sessions": 0 if tokens_per_s is None else 16, "data": data},
         "engine": {"variant": "frozen", "flags": ["--max-num-seqs", "12"]},
     }
     run = {"kind": "e2-point", "name": name, "status": status, "arm": settings}
@@ -283,7 +300,7 @@ def point(
     return run_dir
 
 
-def test_each_arm_has_its_own_frontier(tmp_path: Path) -> None:
+def test_each_arm_has_its_own_frontier_in_each_workload(tmp_path: Path) -> None:
     dirs = [
         point(tmp_path, "a1-voice", "1", None, 1760),
         point(tmp_path, "a2-s8", "2", 3000, 2000),
@@ -291,15 +308,20 @@ def test_each_arm_has_its_own_frontier(tmp_path: Path) -> None:
         point(tmp_path, "a2-s24", "2", 4500, 3000),  # less goodput at a worse p95
         point(tmp_path, "a7a-seqs12", "7a", 4000, 3100),  # beaten by arm 2, but on its own frontier
         point(tmp_path, "a2-failed", "2", None, 0, status="failed"),
+        # Arm 2 again, each beating every point above, but measured on another workload.
+        point(tmp_path, "disc-a2", "2", 6000, 1900, data="weka-x32-long"),
+        point(tmp_path, "calls4-a2", "2", 5500, 1950, callers=4),
     ]
     rows, incomplete = load_points(dirs)
     assert incomplete == [tmp_path / "a2-failed"]
-    assert [(r["point"], r["frontier"]) for r in rows] == [
-        ("a1-voice", True),
-        ("a2-s8", True),
-        ("a2-s24", False),
-        ("a2-s16", True),
-        ("a7a-seqs12", True),
+    assert [(r["point"], r["workload"], r["frontier"]) for r in rows] == [
+        ("a1-voice", "weka-x32, 2 callers", True),
+        ("a2-s8", "weka-x32, 2 callers", True),
+        ("a2-s24", "weka-x32, 2 callers", False),
+        ("a2-s16", "weka-x32, 2 callers", True),
+        ("a7a-seqs12", "weka-x32, 2 callers", True),
+        ("calls4-a2", "weka-x32, 4 callers", True),  # the arm file's own corpus first
+        ("disc-a2", "weka-x32-long, 2 callers", True),
     ]
     assert rows[0]["background_tokens_per_s"] == 0.0 and rows[0]["agent_ttft_p50_ms"] is None
     assert rows[1]["engine"] == "frozen --max-num-seqs 12"
@@ -307,12 +329,57 @@ def test_each_arm_has_its_own_frontier(tmp_path: Path) -> None:
 
 def test_ties_are_not_dominated() -> None:
     rows = [
-        {"arm": "4", "background_tokens_per_s": 100.0, "v2v_p95_ms": 2000.0},
-        {"arm": "4", "background_tokens_per_s": 100.0, "v2v_p95_ms": 2000.0},
-        {"arm": "4", "background_tokens_per_s": 50.0, "v2v_p95_ms": None},
+        {"arm": "4", "workload": "w", "background_tokens_per_s": 100.0, "v2v_p95_ms": 2000.0},
+        {"arm": "4", "workload": "w", "background_tokens_per_s": 100.0, "v2v_p95_ms": 2000.0},
+        {"arm": "4", "workload": "w", "background_tokens_per_s": 50.0, "v2v_p95_ms": None},
     ]
     mark_frontier(rows)
     assert [r.get("frontier") for r in rows] == [True, True, None]
+
+
+def test_each_workload_has_its_section_its_voice_slo_and_its_figure(tmp_path: Path) -> None:
+    dirs = [
+        point(tmp_path, "a1-voice", "1", None, 1760),
+        point(tmp_path, "a2-s16", "2", 5000, 2600),
+        point(tmp_path, "calls4-s16", "4-calls", 5000, 2700, callers=4),
+        point(tmp_path, "disc-a4", "4", 4000, 9000, data="weka-x32-long"),
+    ]
+    rows, _ = load_points(dirs)
+    out = tmp_path / "report"
+    written = write_report(rows, out)
+    with (out / "frontier.csv").open() as f:
+        assert [r["workload"] for r in csv.DictReader(f)] == [
+            "weka-x32, 2 callers",
+            "weka-x32, 2 callers",
+            "weka-x32, 4 callers",
+            "weka-x32-long, 2 callers",
+        ]
+    table = (out / "frontier.md").read_text()
+    sections = [line for line in table.splitlines() if line.startswith("## Workload: ")]
+    assert sections == [
+        "## Workload: weka-x32, 2 callers",
+        "## Workload: weka-x32, 4 callers",
+        "## Workload: weka-x32-long, 2 callers",
+    ]
+    assert "### Arm 4-calls" in table and "### Arm 2" in table
+    # Voice alone replays no corpus: with as many callers, it sets every corpus's SLO.
+    slo = (
+        "The voice SLO allows a V2V p95 of 2,010 ms, 250 ms above voice alone with as many callers"
+    )
+    assert f"{slo} (a1-voice: 1,760 ms). Figure: `frontier.svg`." in table
+    assert f"{slo} (a1-voice: 1,760 ms). Figure: `frontier-weka-x32-long.svg`." in table
+    assert "No point of voice alone with 4 callers sets a voice SLO." in table
+    assert (Agents.data, Voice.callers) == STANDARD_WORKLOAD  # an arm file that names neither
+    assert figure_name("weka-x32", 4) == "frontier-4-callers.svg"
+    assert figure_name("traces/long", 6) == "frontier-traces-long-6-callers.svg"
+    if importlib.util.find_spec("matplotlib"):
+        figures = ["frontier.svg", "frontier-4-callers.svg", "frontier-weka-x32-long.svg"]
+        assert [p.name for p in written if p.suffix == ".svg"] == figures
+        texts = {name: (out / name).read_text() for name in figures}
+        assert "E2 frontier: weka-x32, 2 callers" in texts["frontier.svg"]
+        assert "Voice SLO, 2,010 ms: voice alone + 250 ms" in texts["frontier-weka-x32-long.svg"]
+        assert "a1-voice" not in texts["frontier-weka-x32-long.svg"]  # only its workload's points
+        assert "No point of voice alone with 4 callers" in texts["frontier-4-callers.svg"]
 
 
 def test_the_report_writes_the_table_and_the_csv(tmp_path: Path, capsys) -> None:
@@ -339,7 +406,8 @@ def test_the_report_writes_the_table_and_the_csv(tmp_path: Path, capsys) -> None
         "histogram",
     )
     table = (out / "frontier.md").read_text()
-    assert "## Arm 2" in table and "## Arm 10" in table
+    assert "\n## Workload: weka-x32, 2 callers\n" in table
+    assert "\n### Arm 2\n" in table and "\n### Arm 10\n" in table
     assert "| a2-s8: a2-s8 label | • | 16 | 3,000 | 3.00 | 1,600 | 2,000 | 2,500 |" in table
     assert "| 0 of 50 | 140 / 8,000 | ~120 | 4 | — / 3 / — |" in table
     assert "Voice turn stages" not in table and "SM clock" not in table
@@ -398,6 +466,290 @@ def test_the_report_shows_stages_and_clocks_only_for_points_that_have_them(tmp_p
     assert "| a2-s8 | — / — |" in table
 
 
+def rewrite(run_dir: Path, change: Callable[[dict[str, Any]], None]) -> None:
+    summary = json.loads((run_dir / "summary.json").read_text())
+    change(summary)
+    (run_dir / "summary.json").write_text(json.dumps(summary))
+
+
+def spread(median: str, low: str, high: str) -> str:
+    """A repeated configuration's cell in frontier.md: its median, then its runs' range."""
+    return f"{median} ({low}\N{EN DASH}{high})"
+
+
+def test_repeats_of_a_point_are_one_configuration_placed_at_their_medians(tmp_path: Path) -> None:
+    # Three runs of disc-frozen; one of them alone would beat disc-wide, their medians do not.
+    dirs = [
+        point(tmp_path / "w2c", "disc-frozen", "4", 5000, 2000),
+        point(tmp_path / "r1", "disc-frozen", "4", 3000, 4000),
+        point(tmp_path / "r2", "disc-frozen", "4", 4000, 3000),
+        point(tmp_path / "w2c", "disc-wide", "4", 4500, 2500),
+        point(tmp_path / "w2c", "disc-cap2", "6", 2000, 2200),
+    ]
+    rewrite(dirs[1], lambda s: s["voice"].update(errors=3))
+    rewrite(dirs[2], lambda s: s["voice"].update(errors=2))
+    stages = {s: {"n": 50, "mean": 100.0, "p50": 100.0, "p95": 150.0} for s in WATERFALL}
+    rewrite(dirs[0], lambda s: s.update(worker={"turns": 50, "waterfall": stages}))
+    rows, _ = load_points(dirs)
+    assert [(r["point"], r["campaign"], r["frontier"]) for r in rows] == [
+        ("disc-frozen", "r1", False),  # the configuration's runs together, at its median goodput
+        ("disc-frozen", "r2", False),
+        ("disc-frozen", "w2c", False),
+        ("disc-wide", "w2c", True),
+        ("disc-cap2", "w2c", True),
+    ]
+    [frozen, wide, cap2] = configurations(rows)
+    assert (frozen["background_tokens_per_s"], frozen["v2v_p95_ms"], frozen["voice_errors"]) == (
+        4000,
+        3000,
+        2,
+    )
+    assert (len(wide["runs"]), wide["v2v_p95_ms"], cap2["frontier"]) == (1, 2500, True)
+    out = tmp_path / "report"
+    write_report(rows, out)
+    with (out / "frontier.csv").open() as f:
+        assert [r["campaign"] for r in csv.DictReader(f)] == ["r1", "r2", "w2c", "w2c", "w2c"]
+    table = (out / "frontier.md").read_text()
+    assert "lists each run by its campaign, then the median and range" in table
+    # Each run by its campaign, every one of them kept, then the configuration's medians and range.
+    assert "| disc-frozen (r1) |  | 16 | 3,000 | 3.00 | 1,600 | 4,000 | 4,500 | 3 of 50 |" in table
+    assert "| disc-frozen (w2c) |  | 16 | 5,000 | 5.00 | 1,600 | 2,000 | 2,500 | 0 of 50 |" in table
+    medians = (
+        f"| disc-frozen: disc-frozen label; median (range) of 3 runs |  | 16 "
+        f"| {spread('4,000', '3,000', '5,000')} | | {spread('1,600', '1,600', '1,600')} "
+        f"| {spread('3,000', '2,000', '4,000')} | {spread('3,500', '2,500', '4,500')} "
+        f"| {spread('2', '0', '3')} | | ~{spread('120', '120', '120')} | | |"
+    )
+    lines = table.splitlines()
+    assert lines[lines.index(medians) - 1].startswith("| disc-frozen (w2c) |")  # after its runs
+    assert "| disc-wide: disc-wide label | • | 16 | 4,500 |" in table  # measured once: as before
+    assert "| disc-frozen (w2c) | 100 / 150 |" in table and "| disc-wide | — / — |" in table
+
+
+def test_a_median_between_two_runs_keeps_its_half(tmp_path: Path) -> None:
+    dirs = [point(tmp_path / c, "disc-frozen", "4", 4000, 3000) for c in ("w2c", "r1")]
+    rewrite(dirs[1], lambda s: s["voice"].update(errors=1))
+    rows, _ = load_points(dirs)
+    table = write_report(rows, tmp_path / "report")[1].read_text()
+    assert f"| {spread('0.5', '0', '1')} |" in table
+    assert f"| • | 16 | {spread('4,000', '4,000', '4,000')} |" in table
+
+
+def turn_lines(run_dir: Path, stages: dict[str, float], turns: int, v2v: list[dict]) -> None:
+    """A run directory's turn lines: the worker's stage means over ``turns`` turns, and the callers'
+    turns.jsonl."""
+    waterfall = {stage: {"n": turns, "mean": mean} for stage, mean in stages.items()}
+    rewrite(run_dir, lambda s: s.update(worker={"turns": turns, "waterfall": waterfall}))
+    (run_dir / "bots").mkdir()
+    (run_dir / "bots" / "turns.jsonl").write_text("".join(json.dumps(t) + "\n" for t in v2v))
+
+
+def answered(*v2v_ms: float) -> list[dict[str, Any]]:
+    return [
+        {"caller": 0, "turn": n, "v2v_ms": ms, "barge_in": False} for n, ms in enumerate(v2v_ms)
+    ]
+
+
+def test_the_stage_waterfall_stacks_each_configurations_stages_to_its_mean_v2v(
+    tmp_path: Path, capsys
+) -> None:
+    frozen = [point(tmp_path / c, "disc-frozen", "4", 3700, 10800) for c in ("w2c", "r1")]
+    barged = {"caller": 1, "turn": 0, "v2v_ms": 5000.0, "barge_in": True}
+    turn_lines(
+        frozen[0],
+        {"transcript_ms": 790, "end_of_turn_ms": 800, "llm_ttft_ms": 2500}
+        | {"turn_to_first_sentence_ms": 3000, "tts_first_audio_ms": 300},
+        4,
+        [*answered(4000, 4400), barged | {"v2v_after_barge_in_ms": 4600}, {"error": "timeout"}],
+    )
+    turn_lines(
+        frozen[1],
+        {"transcript_ms": 810, "end_of_turn_ms": 820, "llm_ttft_ms": 2100}
+        | {"turn_to_first_sentence_ms": 2600, "tts_first_audio_ms": 280},
+        4,
+        answered(3800, 4200, 4100, 4300),
+    )
+    cap2 = point(tmp_path / "w2c", "disc-cap2", "6", 3500, 8500)
+    turn_lines(
+        cap2,
+        {"transcript_ms": 820, "end_of_turn_ms": 830, "llm_ttft_ms": 1500}
+        | {"turn_to_first_sentence_ms": 2000, "tts_first_audio_ms": 250},
+        2,
+        answered(3300, 3500),
+    )
+    run = json.loads((cap2 / "run.json").read_text())
+    run["arm"]["voice"]["preemptive_generation"] = False
+    (cap2 / "run.json").write_text(json.dumps(run))
+    voice = point(tmp_path / "w2", "a1-voice", "1", None, 1760)  # no turn lines
+    rows, _ = load_points([*frozen, cap2, voice])
+    [disc, capped] = stage_waterfall(rows)
+    # Each stage's mean over both runs' turns; the V2V samples pooled as the callers pool them.
+    assert {k: disc[k] for k in ("runs", "replies", *(s for s, _ in STACKED))} == {
+        "runs": 2,
+        "replies": 8,
+        "end_of_turn_ms": 810,
+        "turn_to_first_sentence_ms": 2800,
+        "tts_first_audio_ms": 290,
+    }
+    assert (disc["v2v_mean_ms"], disc["v2v_p50_ms"], disc["v2v_p95_ms"]) == (4300, 4250, 4860)
+    assert disc["transport_ms"] == 400  # the rest of the mean V2V
+    # Under preemptive generation the LLM request starts at the final transcript.
+    assert (disc["llm_request_ms"], disc["llm_ttft_ms"]) == (800, 2300)
+    assert (capped["llm_request_ms"], capped["transport_ms"]) == (830, 320)
+    out = tmp_path / "report"
+    write_report(rows, out)
+    table = (out / "frontier.md").read_text()
+    assert (
+        "| disc-frozen: disc-frozen label | 2 | 8 | 810 | 2,800 | 290 | 400 | 4,300 | 4,250 | 4,860 "
+        "| 2,300 |"
+    ) in table
+    assert "| disc-cap2: disc-cap2 label | 1 | 2 | 830 | 2,000 | 250 | 320 | 3,400 |" in table
+    assert "a1-voice: a1-voice label | 1 |" not in table
+    with pytest.raises(ValueError, match="no turn lines of a1-voice"):
+        write_report(rows, out, ["disc-cap2", "a1-voice"])
+    args = ["e2", "report", *map(str, [*frozen, cap2, voice]), "--out", str(out)]
+    assert main([*args, "--waterfall", "a1-voice"]) == 1
+    assert "lh-bench e2: the report has no turn lines of a1-voice" in capsys.readouterr().err
+    if importlib.util.find_spec("matplotlib"):
+        assert main([*args, "--waterfall", "disc-cap2"]) == 0
+        figure = (out / "waterfall.svg").read_text()
+        assert "disc-cap2" in figure and "disc-frozen" not in figure
+        write_report(rows, out)
+        figure = (out / "waterfall.svg").read_text()
+        assert "disc-frozen (2 runs)" in figure and "a1-voice" not in figure
+
+
+SNAPSHOT = (
+    "/home/alice/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/859180"
+)
+VLLM_CONFIG = {
+    "model_config": {"model": SNAPSHOT, "tokenizer": SNAPSHOT, "revision": None, "hf_token": None}
+    | {"max_model_len": 32768, "dtype": "torch.bfloat16", "quantization": "fp8"},
+    "cache_config": {"block_size": 16, "enable_prefix_caching": True, "cache_dtype": "auto"}
+    | {"kv_cache_memory_bytes": 5368709120, "num_gpu_blocks": 2275, "gpu_memory_utilization": 0.7},
+    "scheduler_config": {"policy": "priority", "max_num_batched_tokens": 512, "max_num_seqs": 256}
+    | {"long_prefill_token_threshold": 256, "async_scheduling": True, "watermark": 0.1}
+    | {"max_num_queued_tokens": None, "enable_chunked_prefill": True},
+    "kv_transfer_config": {"kv_connector": "OffloadingConnector", "kv_role": "kv_both"}
+    | {"kv_connector_extra_config": {"cpu_bytes_to_use": 21474836480, "spill": "/home/alice/kv"}},
+    "additional_config": {"make_room": {"max_preemptions_per_step": 2}},
+    "compilation_config": {"cache_dir": "/home/alice/.cache/vllm/torch_compile_cache"},
+    "lora_config": None,
+}
+"""A vLLM engine's configuration as /server_info gives it, in a few of its 30-odd sections."""
+
+
+def test_a_records_engine_json_says_what_the_point_ran_on() -> None:
+    assert engine_settings(VLLM_CONFIG) == {
+        "model_config": {"model": "Qwen/Qwen3-4B-Instruct-2507-FP8", "revision": "859180"}
+        | {"max_model_len": 32768, "dtype": "torch.bfloat16", "quantization": "fp8"},
+        "cache_config": {"block_size": 16, "enable_prefix_caching": True, "cache_dtype": "auto"}
+        | {"kv_cache_memory_bytes": 5368709120, "num_gpu_blocks": 2275},
+        "scheduler_config": {"policy": "priority", "max_num_batched_tokens": 512}
+        | {"long_prefill_token_threshold": 256, "max_num_seqs": 256, "async_scheduling": True}
+        | {"watermark": 0.1, "max_num_queued_tokens": None},
+        "kv_transfer_config": {"kv_connector": "OffloadingConnector"}
+        | {"kv_connector_extra_config": {"cpu_bytes_to_use": 21474836480, "spill": "~/kv"}},
+        "additional_config": {"make_room": {"max_preemptions_per_step": 2}},
+    }
+    bare = engine_settings({"model_config": {"model": "Qwen/Qwen3-4B"}, "kv_transfer_config": None})
+    assert bare["model_config"]["model"] == "Qwen/Qwen3-4B" and bare["kv_transfer_config"] is None
+    sglang = {"model_path": "/Users/bob/models/qwen", "context_length": 32768, "api_key": None}
+    settings = engine_settings(sglang | {"chunked_prefill_size": 512, "port": 8000})
+    assert list(settings) == list(SGLANG_ENGINE) and settings["model_path"] == "~/models/qwen"
+    assert (settings["chunked_prefill_size"], settings["page_size"]) == (512, None)
+
+
+def whole(run_dir: Path) -> Path:
+    """A run directory with everything lh-bench e2 run and campaign.sh leave in one."""
+    turn_lines(
+        run_dir,
+        {"transcript_ms": 790, "end_of_turn_ms": 800, "llm_ttft_ms": 2500}
+        | {"turn_to_first_sentence_ms": 3000, "tts_first_audio_ms": 300, "e2e_ms": 4110},
+        2,
+        answered(4400, 4500),
+    )
+    (run_dir / "gateway.jsonl").write_text(REQUESTS + "\n")  # exact first bytes; p95 955 ms
+    samples = [smi(T0 + 10, "2805 MHz", "61"), smi(T0 + 20, "2745 MHz", "71")]
+    (run_dir / "gpu.csv").write_text("\n".join(samples) + "\n")
+    (run_dir / "voice-worker.log").write_text("registered worker\n")
+    (run_dir / "arm.toml").write_text('arm = 4\nlabel = "x"\n')
+    (run_dir / "engine.json").write_text(json.dumps(VLLM_CONFIG))
+    (run_dir / "bots" / "summary.json").write_text(json.dumps({"turns": 2, "errors": 0}))
+    callers = {"config": {"api_key": "APIexample000000", "api_secret": "<redacted>"}}
+    (run_dir / "bots" / "run.json").write_text(json.dumps(callers))
+    for name in ("aiperf/profile_export.jsonl", "metrics/gateway-end.prom", "bots.log"):
+        (run_dir / name).parent.mkdir(exist_ok=True)
+        (run_dir / name).write_text("raw\n")
+    return run_dir
+
+
+def test_a_compact_record_gives_the_report_of_its_run_directory(tmp_path: Path, capsys) -> None:
+    runs = tmp_path / "runs"
+    dirs = [
+        whole(point(runs / "w2c", "disc-frozen", "4", 3700, 10800)),
+        whole(point(runs / "r1", "disc-frozen", "4", 3500, 9800)),
+        point(runs / "w2c", "disc-cap2", "6", 3400, 8500),  # a summary from before the logs
+        point(runs / "w2c", "disc-cap8", "6", None, 0, status="failed"),
+    ]
+    out = tmp_path / "records"
+    assert main(["e2", "export", *map(str, dirs), "--out", str(out)]) == 0
+    records = [out / "w2c" / "disc-frozen", out / "r1" / "disc-frozen", out / "w2c" / "disc-cap2"]
+    printed = capsys.readouterr()
+    assert printed.out.split() == [str(record) for record in records]  # CAMPAIGN/POINT
+    assert "disc-cap8: the point did not complete" in printed.err
+    record = records[0]
+    kept = sorted(str(p.relative_to(record)) for p in record.rglob("*") if p.is_file())
+    assert kept == sorted([*RECORD, "summary.json", "engine.json"])
+    assert json.loads((record / "engine.json").read_text()) == engine_settings(VLLM_CONFIG)
+    written = [p.read_text() for p in out.rglob("*") if p.is_file()]
+    assert not any("APIexample000000" in text or "/home/" in text for text in written)
+    summary = json.loads((record / "summary.json").read_text())
+    assert summary["gateway"]["realtime_first_byte_ms"]["p95"] == 955.0  # exact, from the log
+    assert summary["gateway"]["background_first_byte_ms"]["source"] == "log"
+    assert summary["gpu"] == {"sm_clock_p50_mhz": 2775, "temperature_max_c": 71}
+    full, _ = load_points(dirs[:3])
+    compact, _ = load_points(records)
+    assert compact == full
+    assert full[0]["campaign"] == "r1" and full[0]["gpu_sm_clock_p50_mhz"] == 2775
+    reports = [write_report(rows, tmp_path / name) for name, rows in (("a", full), ("b", compact))]
+    for a, b in zip(*reports, strict=True):
+        assert a.read_bytes() == b.read_bytes(), a.name  # the figures too: same bytes every time
+    assert main(["e2", "export", str(dirs[3]), "--out", str(out)]) == 1
+    assert "no complete point to export" in capsys.readouterr().err
+
+
+def unredacted(data: Any) -> list[str]:
+    """The credential settings (e2.SECRETS) in a JSON document that hold anything but a redaction."""
+    if isinstance(data, list):
+        return [key for item in data for key in unredacted(item)]
+    if not isinstance(data, dict):
+        return []
+    found = [
+        key
+        for key, value in data.items()
+        if key in SECRETS and value and value not in ("<redacted>", ["<redacted>"] * len(value))
+    ]
+    return found + [key for value in data.values() for key in unredacted(value)]
+
+
+def test_the_committed_records_give_the_report_and_hold_no_credential(tmp_path: Path) -> None:
+    assert unredacted({"tenants": {"a": {"keys_sha256": ["<sha256>"]}}}) == ["keys_sha256"]
+    dirs = sorted(run.parent for run in RESULTS.glob("*/*/run.json"))  # as make reproduce-e2 does
+    assert dirs
+    rows, incomplete = load_points(dirs)
+    assert len(rows) == len(dirs) and not incomplete
+    for run_dir in dirs:
+        kept = sorted(str(p.relative_to(run_dir)) for p in run_dir.rglob("*") if p.is_file())
+        assert kept == sorted([*RECORD, "summary.json", "engine.json"]), run_dir
+        for path in run_dir.rglob("*.json"):
+            assert not unredacted(json.loads(path.read_text())), path
+        for path in (p for p in run_dir.rglob("*") if p.is_file()):
+            assert not re.search(r"/(home|Users|root)/", path.read_text()), path  # no account
+    write_report(rows, tmp_path)
+    assert (tmp_path / "frontier.md").read_text().startswith("# E2 frontier")
+
+
 def test_the_report_reads_the_lines_the_voice_worker_writes() -> None:
     source = VOICE_EVENTS.read_text()
     [stages] = [
@@ -423,7 +775,35 @@ def test_the_figure_needs_matplotlib(tmp_path: Path) -> None:
     rows, _ = load_points(dirs)
     written = write_report(rows, tmp_path / "report")
     assert (tmp_path / "report" / "frontier.svg") in written
-    assert "<svg" in (tmp_path / "report" / "frontier.svg").read_text()
+    figure = (tmp_path / "report" / "frontier.svg").read_text()
+    assert "<svg" in figure and "whiskers" not in figure
+    assert "stock vLLM" not in figure  # one family: the arms' names, no legend
+    repeated = point(tmp_path / "r1", "a2-s16", "2", 4000, 3000)
+    rows, _ = load_points([*dirs, repeated])
+    write_report(rows, tmp_path / "report")
+    assert "whiskers span repeated runs" in (tmp_path / "report" / "frontier.svg").read_text()
+
+
+def test_the_figure_draws_families_and_leaves_a_collapse_off_its_scale(tmp_path: Path) -> None:
+    pytest.importorskip("matplotlib")
+    dirs = [
+        point(tmp_path, "a1-voice", "1", None, 1760),
+        point(tmp_path, "a2-s8", "2", 3000, 2000),
+        point(tmp_path, "a3-s8", "3", 3000, 2100),
+        point(tmp_path, "a2-s16", "2", 5000, 2600),
+        point(tmp_path, "a8a-s16", "8a", 5000, 2500),
+        point(tmp_path, "a7b-s16", "7b", 5000, 9000),  # past the far outliers' fence, 4,225 ms
+    ]
+    rows, _ = load_points(dirs)
+    write_report(rows, tmp_path / "report")
+    figure = (tmp_path / "report" / "frontier.svg").read_text()
+    # One color per family, named in the legend; the arms by their names.
+    legend = ("stock vLLM (arms 1\N{EN DASH}5)", "engines (arm 7)", "routers (arm 8)")
+    assert all(f"<!-- {family} -->" in figure for family in legend)
+    assert all(f"<!-- {arm} -->" in figure for arm in ("1", "2", "3", "8a"))
+    assert "Off the scale: a7b-s16, 9,000 ms at 5,000 tokens/s." in figure
+    assert "<!-- 7b -->" not in figure  # its only point is off the scale
+    assert "Voice SLO, 2,010 ms" in figure
 
 
 def test_a_point_summary_reads_its_run_directory(tmp_path: Path) -> None:
