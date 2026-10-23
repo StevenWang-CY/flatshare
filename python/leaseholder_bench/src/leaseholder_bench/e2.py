@@ -8,13 +8,14 @@ gateway's configuration and the engine the GPU node runs. The point is named aft
    arm's ``[engine]`` against it;
 2. it makes cyan's units serve the point: the router (SMG, for arm 8b), the gateway's configuration
    (``gateway.toml`` with the arm's ``[gateway]`` table merged in) and the voice agent's preemptive
-   generation, restarting only the units whose configuration changes;
+   generation and lifecycle events, restarting only the units whose configuration changes;
 3. it empties the engine's prefix cache, so that every point starts from the same state, and, with
    agent sessions, starts AIPerf's ``agentic_replay`` (``configs/agentic_replay.yaml``) on the
    load-generator cores and waits for its profiling phase and a warm-up;
 4. it snapshots the gateway's and the engine's ``/metrics``, runs ``lh-voice bots`` inside the
    voice-plane namespace and snapshots again: the calls are the measurement window;
-5. it stops AIPerf and writes ``summary.json``.
+5. it stops AIPerf, keeps the gateway's request log of the calls and the voice worker's journal of
+   them (its turn lines and its sessions' event counts), and writes ``summary.json``.
 
 The GPU node's engine is switched by ``benchmarks/e2/campaign.sh`` (``variant.sh use``), never here.
 A failure ends the point: ``run.json`` keeps ``"status": "failed"`` and the error, and every process
@@ -47,7 +48,12 @@ from typing import Any
 import httpx
 import orjson
 
-from leaseholder_bench.frontier import render, summarize_point
+from leaseholder_bench.frontier import (
+    gateway_request_lines,
+    render,
+    summarize_point,
+    worker_lines,
+)
 from leaseholder_bench.kv_metrics import fetch
 from leaseholder_bench.tiers import pool_tokens
 
@@ -66,12 +72,16 @@ CALL_TURN_S = 130.0
 """The longest a call's turn can take: the line, a reply, a barge-in and a reply, the quiet wait."""
 POLL_S = 1.0
 """How often a run checks on the tools and services it waits for."""
+SESSIONS_END_S = 30.0
+"""How long the calls' sessions may take to log their end once the callers have left: a session ends
+when its room is deleted, and its job's shutdown, which sends the last events, may take 10 s."""
 
 SMG = "lh-smg"
 GATEWAY = "lh-gateway"
 WORKER = "lh-voice-worker"
 E2_GATEWAY = "e2-gateway"
 NO_PREEMPTIVE = "no-preemptive-generation"
+NO_EVENTS = "no-events"
 """Drop-ins under deploy/cyan/variants/ that e2 run links into cyan's units as ``variant-NAME.conf``."""
 
 SGLANG = "sglang"
@@ -100,6 +110,8 @@ class Voice:
     seed: int = 0
     preemptive_generation: bool = True
     """LiveKit's preemptive generation (``LH_PREEMPTIVE_GENERATION`` of the voice worker)."""
+    events: bool = True
+    """The voice worker's lifecycle events to the gateway (``LH_EVENTS``)."""
 
 
 @dataclass(frozen=True)
@@ -318,8 +330,10 @@ class Systemd:
             env[name] = value
         return env
 
-    def journal(self, unit: str, since: float) -> str:
+    def journal(self, unit: str, since: float, until: float | None = None) -> str:
         command = ["journalctl", "--user", "--unit", unit, "--since", f"@{int(since)}", "-o", "cat"]
+        if until is not None:
+            command += ["--until", f"@{math.ceil(until)}"]
         return subprocess.run(command, capture_output=True, text=True).stdout
 
 
@@ -332,19 +346,19 @@ def configure_cyan(arm: Arm, host: Host, systemd: Systemd) -> dict[str, Any]:
             f"{WORKER} ends turns with LiveKit's end-of-turn model; E2 points need fixed endpointing: "
             "link deploy/cyan/variants/vad-turns (ops/RUNBOOK.md)"
         )
-    applied = _apply(host, systemd, arm.router, arm.gateway, arm.voice.preemptive_generation)
+    applied = _apply(host, systemd, arm.router, arm.gateway, arm.voice)
     return applied | {"llm_path": env.get("LH_LLM_UDS")}
 
 
 def reset_cyan(host: Host, systemd: Systemd) -> dict[str, Any]:
     """Undo what e2 run changes on cyan: SMG stopped, the gateway back on gateway.toml, preemptive
-    generation on."""
+    generation and lifecycle events on."""
     with _exclusive(host):
-        return _apply(host, systemd, None, {}, True)
+        return _apply(host, systemd, None, {}, Voice())
 
 
 def _apply(
-    host: Host, systemd: Systemd, router: str | None, overlay: Mapping[str, Any], preemptive: bool
+    host: Host, systemd: Systemd, router: str | None, overlay: Mapping[str, Any], voice: Voice
 ) -> dict[str, Any]:
     if router == "smg":
         systemd("start", SMG)  # returns once SMG answers /health
@@ -356,7 +370,11 @@ def _apply(
         gateway |= _write_private(
             host.config / "gateway-e2.toml", GATEWAY_HEADER + toml_text(config)
         )
-    worker = _link(host, WORKER, NO_PREEMPTIVE, not preemptive)
+    links = [
+        _link(host, WORKER, NO_PREEMPTIVE, not voice.preemptive_generation),
+        _link(host, WORKER, NO_EVENTS, not voice.events),
+    ]
+    worker = any(links)
     if gateway or worker:
         systemd("daemon-reload")
     if gateway:
@@ -380,7 +398,11 @@ def _apply(
     return {
         "router": router,
         "gateway": {"restarted": gateway, "config": _redacted(config)},
-        "worker": {"restarted": worker, "preemptive_generation": preemptive},
+        "worker": {
+            "restarted": worker,
+            "preemptive_generation": voice.preemptive_generation,
+            "events": voice.events,
+        },
     }
 
 
@@ -743,6 +765,8 @@ def _measure(
         record["aiperf"] = {"exit_status": aiperf.stop(AIPERF_STOP_S)}
         if aiperf.status:
             raise aiperf.failure("failed when stopped")
+    _gateway_log(systemd, out, start, end)
+    _worker_journal(systemd, out, start, arm.voice.callers)
     try:
         metrics = summarize_point(out, start, end, agents=bool(arm.agents.sessions))
     except ValueError as exc:
@@ -811,6 +835,27 @@ def _call(
     if bots.stop() not in (0, 3):  # 3: some turns failed, which the summary counts
         raise bots.failure("failed")
     return end
+
+
+def _gateway_log(systemd: Systemd, out: Path, start: float, end: float) -> None:
+    """Keep the gateway's request lines of the calls (gateway.jsonl), from which the summary takes the
+    first bytes exactly; none when the gateway logs text."""
+    if lines := gateway_request_lines(systemd.journal(GATEWAY, start, until=end)):
+        (out / "gateway.jsonl").write_text("".join(f"{line}\n" for line in lines))
+
+
+def _worker_journal(systemd: Systemd, out: Path, since: float, calls: int) -> None:
+    """Keep the voice worker's journal from the start of the calls (voice-worker.log): a line per
+    turn, and one per session as it ends, with its event counts. Waits until every call's session
+    has ended, unless the worker logs neither kind of line."""
+    deadline = time.monotonic() + SESSIONS_END_S
+    while True:
+        journal = systemd.journal(WORKER, since, until=time.time())
+        turns, sessions = worker_lines(journal)
+        if len(sessions) >= calls or not (turns or sessions) or time.monotonic() > deadline:
+            break
+        time.sleep(POLL_S)
+    (out / "voice-worker.log").write_text(journal)
 
 
 def _ready(url: str) -> bool:

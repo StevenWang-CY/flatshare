@@ -11,14 +11,14 @@ benchmarks/e2/campaign.sh --pause benchmarks/e2/w2.campaign     # measure, then 
 For each point whose run directory on cyan is not complete, `campaign.sh`:
 
 1. switches the GPU node to the arm's engine with [`variant.sh use`](../../deploy/phastform/variants/README.md), which restarts only what changes and returns once the engine answers `/health`;
-2. runs `lh-bench e2 run` on cyan, into `~/leaseholder/runs/e2/CAMPAIGN/POINT`;
+2. runs `lh-bench e2 run` on cyan, into `~/leaseholder/runs/e2/CAMPAIGN/POINT`. Meanwhile it samples the GPU node's `nvidia-smi` once a second (SM and memory clocks, temperature, power and clock event reasons, timestamps in UTC), because a consumer card's boost clock follows its temperature, and puts the samples into that directory as `gpu.csv` when the point ends, failed or not;
 3. fetches that directory into `$LH_E2_RESULTS/CAMPAIGN/POINT` (default `~/leaseholder/runs/e2`), without AIPerf's `inputs.json`.
 
 A complete point is skipped, so running a stopped campaign again resumes it. The first failure stops the campaign, with the partial run directory fetched and its `run.json` saying what failed. At the end, `lh-bench e2 report` writes the frontier of the campaign's points (fetched into `CAMPAIGN/report`: `frontier.md`, `frontier.csv`, `frontier.svg`) and `lh-bench e2 reset` puts cyan's units back. `--pause` then stops the GPU node's units, which nothing should hold while idle. `campaign.log` beside the points keeps every step.
 
 Points that share an engine go together in a campaign file: a switch restarts the engine, about 2 minutes with warm caches. A point takes about 12 minutes: AIPerf builds its dataset for about 4 (its cache does not apply to this dataset type, see `configs/aiperf.env`), then a minute of warm-up and the calls.
 
-**Stopping.** Ctrl-C stops `campaign.sh`, but a point already running on cyan goes on to its end: closing its SSH session does not stop it. To stop it as well, send SIGINT to its pid, which `~/leaseholder/runs/.lh-bench-e2.lock` holds on cyan; `lh-bench e2 run` then stops AIPerf and the callers and marks the point failed. While a point runs, `campaign.sh` refuses to switch the engine under it.
+**Stopping.** Ctrl-C stops `campaign.sh` and its sampling of the GPU, but a point already running on cyan goes on to its end: closing its SSH session does not stop it. To stop it as well, send SIGINT to its pid, which `~/leaseholder/runs/.lh-bench-e2.lock` holds on cyan; `lh-bench e2 run` then stops AIPerf and the callers and marks the point failed. While a point runs, `campaign.sh` refuses to switch the engine under it.
 
 ## Before the first campaign
 
@@ -54,6 +54,12 @@ The other arms take an earlier arm's winner, so their files are written from its
 | factor, frozen and best stock | `[voice] preemptive_generation = false`, `arm = "<arm>-no-preemptive"` |
 | calls, best stock | `[voice] callers = 4` (6), at 0 and 16 sessions, `arm = "<arm>-calls"` |
 | discriminating scenario | `[agents] sessions = 24` and `data` naming a corpus with longer contexts (`lh-bench scale-traces` with a smaller factor) |
+
+[`w2b.campaign`](w2b.campaign) holds W2's second batch, written from the first batch's results. At 16 sessions the best arm 4 cells, step cap 1024 with no long-prefill threshold and the frozen box (512/256), were within noise of each other (V2V p95 2,167 and 2,215 ms over 50 turns, background goodput within 4%), so both are measured again at 24 sessions, and the frozen box, the configuration every earlier result was measured on, is the engine of the other points: arm 5 (`--watermark 0.1`; `--max-num-queued-tokens 8192`, about 1.6 s of prefill at the step cap), arm 6 (caps of 2 and 8; a reservation of 2,048 tokens, two concurrent voice turns at their longest), arms 8a–8c (flow-control ceilings 6/6/6, so that background fills at most 6 and a realtime request sheds), preemptive generation off, and 4 and 6 callers. The admission arms wait at most 240 s, below the replay's 300 s request timeout.
+
+**The discriminating scenario** (PLAN §3.1) replays only the traces with the largest contexts, so that agents fill the KV pool while voice turns keep arriving. `weka-x32-long` on cyan holds the 48 traces of `weka-x32` whose main agent has the largest median input (13,326 tokens a request, against 4,784 for the whole corpus; 23,848 main-agent requests), linked by [`long_traces.py`](long_traces.py): `python benchmarks/e2/long_traces.py ~/leaseholder/data/weka-x32 ~/leaseholder/data/weka-x32-long 48`. Its points are named `disc-*`.
+
+[`w2c.campaign`](w2c.campaign) holds W2's third batch: arms 4 to 8 in the discriminating scenario, one run each (the arm files `disc-<arm>-s24.toml` are the 16- or 24-session arms with `sessions = 24` and `data = "weka-x32-long"`), and SGLang with its host tier (`--enable-hierarchical-cache --hicache-ratio 4 --hicache-write-policy write_through`) at 8 and 16 sessions, for parity with vLLM's write-through CPU tier. W4 repeats the best of each arm beside arm 9. [`a9.campaign`](a9.campaign) holds arm 9, Leaseholder, in the same scenario: the gateway's policy `leaseholder` (`[gateway.admission]`: 1,024 tokens of KV headroom per armed session, a 150 ms critical-window budget of predicted background prefill, a 16-token reply cap when the headroom was not kept), the engine's `make-room` variant and the voice worker's lifecycle events; its knob, the critical-window budget at 0 and 500 ms; and one run of each single-mechanism ablation (`disc-a9-no-*`, `trigger-request`, `gateway-only`, `engine-only`). A switched-off mechanism's keys are left out: the gateway refuses them.
 
 The `[admission]` keys are those of `lh-gateway`'s configuration ([its README](../../crates/lh-gateway/README.md)); `lh-bench e2 run` passes the `[gateway]` table through as it is.
 
