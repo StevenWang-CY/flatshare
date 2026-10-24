@@ -1,17 +1,18 @@
 # Prior art
 
-*Checked against primary sources (papers, issue and PR threads, release notes, documentation, code) on 2026-10-22. Status is as of that date. Dates are UTC.*
+*Checked against primary sources (papers, issue and PR threads, release notes, documentation, code) on 2026-10-22. Status is as of that date, except for Leaseholder's own upstream work, as of 2026-10-23: vLLM #63350 and #63351, opened that day, and a comment with Leaseholder's data on #40004. Dates are UTC.*
 
-This page is for engineers asking "how is this different from X?". Leaseholder serves a realtime tier that is never shed (voice turns) beside a best-effort tier that is harvested (background agents), on one vLLM replica. It times the protection from lifecycle events: speech onset, end of turn and barge-in for voice, and tool waits for agents.
+This page is for engineers asking "how is this different from X?". Leaseholder serves a realtime tier that is never shed (voice turns) beside a best-effort tier that is harvested (background agents), on one vLLM replica. It was built to time the protection from lifecycle events: speech onset, end of turn and barge-in for voice, and tool waits for agents. In E2's discriminating scenario that protection could not act from a control plane in front, while an engine change takes the voice tail from 10.1 s to within 0.2 s of the SLO; in the simulator (E1), knowing when agents return bought under 7% of resume latency.
 
 ## Positioning
 
 > Leaseholder applies known co-serving and KV-tiering mechanisms to a workload pair published systems have not measured together, a cascaded voice pipeline beside long-context agents on one GPU, and measures when lifecycle timing beats static reservation and engine priority, and when it does not.
 
-**Claimed.** Three parts, argued in [What is distinctive](#what-is-distinctive):
-1. **Lifecycle-timed headroom, freed by parking.** GPU room for the next realtime turn is held before the request exists, from speech onset or end of turn. It is counted in KV tokens and made by parking background sessions in host RAM rather than killing their requests.
-2. **The engine "make room" fix.** A waiting high-priority request may preempt running work when the KV cache is full, keeping or offloading the victim's KV. Neither vLLM nor SGLang does this today.
-3. **The validated recompute ledger.** Every recomputed prompt token is attributed to a cause, and the attribution is checked by injecting causes.
+**Claimed.** Two parts, argued in [What is distinctive](#what-is-distinctive):
+1. **Lifecycle-timed headroom, freed by parking: a measured negative result.** GPU room for the next realtime turn is held before the request exists, from speech onset or end of turn. It is counted in KV tokens and made by parking background sessions in host RAM rather than killing their requests. In E2's discriminating scenario it could not act: running agent requests held the pool, which the headroom can protect only by deferring new requests, so it was never there (degrade capped every reply), and room came from the engine change (2.). E2 shows that a control plane in front cannot make room while running work holds the KV; whether the timing helps where the mechanism engages was not isolated.
+2. **The engine "make room" fix.** A waiting high-priority request may preempt running work when the KV cache is full, and with a write-through CPU tier the victim resumes from host RAM instead of recomputing; neither vLLM nor SGLang preempts for a waiting request today. Lower-priority prefill also sits out the steps of the request's first tokens, the part E2 found necessary; the KV preemption, or a class-aware KV reserve in its place, does the rest.
+
+**Dropped:** a recompute ledger that attributes every recomputed prompt token to a cause, checked by injecting causes, which went with leases ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)).
 
 Everything else is a baseline or a reference: [At a glance](#at-a-glance) lists each mechanism and where it exists, and [What we do not claim](#what-we-do-not-claim) gathers them.
 
@@ -26,14 +27,14 @@ In the tables, **Relation** says how an item bears on Leaseholder:
 |---|---|---|
 | A latency class co-served with best-effort work | ConServe, HyGen, BROS, Niyama; Valve in production on 8,054 GPUs | Not claimed |
 | Priority classes, budgets, aging, queue TTLs, in-flight eviction | llm-d v1.0 flow control, SMG, Dynamo, AIBrix | Not claimed; llm-d flow control (emulated) and SMG are E2 baselines |
-| Headroom held back for priority work | Static: SMG reserved slots, llm-d holdback ceilings, vLLM `watermark` (class-blind). Tied to a running request: Llumnix. Sized from load or the agent graph: Valve, Tokencake | An equal-size static reservation is a baseline; timing it from voice events is claimed |
+| Headroom held back for priority work | Static: SMG reserved slots, llm-d holdback ceilings, vLLM `watermark` (class-blind). Tied to a running request: Llumnix. Sized from load or the agent graph: Valve, Tokencake | An equal-size static reservation is a baseline; timing it from voice events is measured, with no gain in E2 |
 | Engine priority preemption | vLLM among running requests; SGLang at the request cap | Baseline; the KV-full case is the claimed fix |
 | Parking KV during a tool call, prefetching before the return | Tokencake, KVFlow, CacheScout, MORI; proposed for vLLM (#57103, #58198) | Not claimed; E1 measures what lifecycle information adds |
 | TTL holds and leases | Continuum, TensorRT-LLM retention, vLLM #37003, llm-d-router #2273, AIBrix #2814 | Not claimed; Continuum's TTL hold is an E1 baseline |
 | Program- or session-level admission | Autellix, Parrot, ThunderAgent, vllm-project/router Progress-TTL | Not claimed |
 | Starting the LLM before the turn ends | LiveKit preemptive generation (on by default), Endpoint Anticipation, PredGen | Triggers to compare, not claimed |
 | Gap between LRU and Belady on prefix caches | "When Fancy Eviction Fails", LPC | Not claimed; E1 reports the gap closed per level of information |
-| Recomputed tokens attributed to causes | Not found | Claimed |
+| Recomputed tokens attributed to causes | Not found | Not claimed: dropped with leases |
 | Cascaded voice beside long-context agents on one GPU, measured | Not found; NVIDIA's single-GPU voice-agent profile documents the regression | The measured workload |
 
 ## Co-serving latency-critical and best-effort work
@@ -72,7 +73,7 @@ These ship classes, admission and eviction today.
   - [#428](https://github.com/vllm-project/router/issues/428): workflow output-length hints that produce a bounded prefetch or offload hint before a tool returns, acknowledged by the backend and evaluated in shadow mode first.
   - [#435](https://github.com/vllm-project/router/issues/435): worker overload admission, bounded backpressure and load shedding.
 
-  Relation: complement. These threads are where Leaseholder's agent-side lease and prefetch policy is to be proposed; `LeaseConnector`'s per-request hit receipts are one form of the acknowledgement #427 asks for.
+  Relation: complement. E1's gate G-sim was negative, so Leaseholder proposes no agent-side lease or prefetch policy here; E1's regime map and negative result go to #428 instead ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)). `LeaseConnector`'s per-request hit receipts are one form of the acknowledgement #427 asks for.
 
 ## Engines
 
@@ -92,7 +93,7 @@ Checked in the v0.32.0 source:
   - `prefill_schedule_interval`: admits new prefills only every N engine steps. In v0.32.0 only the data-parallel MoE engine applies it; [#54627](https://github.com/vllm-project/vllm/pull/54627) (merged 2026-10-15, after the v0.32.0 tag) applies it to a single engine.
 - **Priority does not reach retention.** [#47802](https://github.com/vllm-project/vllm/issues/47802) (open) reports that priority is not reflected in KV retention under cache pressure.
 
-**Relation.** Baselines: priority scheduling with the step cap, `watermark`, `max_num_queued_tokens`, `prefill_schedule_interval` on a build that includes #54627, and vLLM with #54530 applied. The KV-full case is the claimed fix, planned as a vLLM PR under #40004 that keeps or offloads the victim's KV.
+**Relation.** Baselines: priority scheduling with the step cap, `watermark`, `max_num_queued_tokens`, `prefill_schedule_interval` on a build that includes #54627, and vLLM with #54530 applied. The KV-full case is the claimed fix, opened on 2026-10-23 as vLLM [#63350](https://github.com/vllm-project/vllm/pull/63350) under #40004, which keeps or offloads the victim's KV, with the budget cap in [#63351](https://github.com/vllm-project/vllm/pull/63351), stacked on it.
 
 ### SGLang 0.5.22 (2026-10-19)
 
@@ -223,16 +224,16 @@ Belady's MIN over fixed-size blocks is exact only for single-tier hit counts. Wi
 ## What is distinctive
 
 Each point below rests on the sources above, as of 2026-10-22.
-1. **Headroom timed by voice lifecycle events and freed by parking.**
+1. **Headroom timed by voice lifecycle events and freed by parking: a measured negative result.**
    - Capacity held back for priority work exists. It is static (SMG reserved slots, llm-d holdback ceilings, vLLM `watermark`), tied to a running request (Llumnix), or sized from load or the agent graph (Valve's dynamic memory reservation; Tokencake, which keeps GPU memory for critical-path agents).
    - llm-d's in-flight eviction reacts to demand that is already queued, and Dynamo's priority "does not reserve capacity".
    - In shipping systems, making room means ending background work (llm-d's 429 eviction, SMG's cancel before the first byte, Gemini Flex's preemption with client retries) or engine preemption that frees the victim's blocks. Keeping the victim's KV is published (ConServe) and proposed for SGLang (`--preempt-keep-kv`, draft #45686) and llm-d (deferred partial eviction).
-   - We found no system that holds KV headroom for a realtime turn from a voice event that precedes the request, such as speech onset or end of turn. The claim is about timing: E2 compares it with an equal-size static reservation and with engine priority, and reports where it does not help.
+   - We found no system that holds KV headroom for a realtime turn from a voice event that precedes the request, such as speech onset or end of turn. The claim is about timing, and in E2's discriminating scenario the mechanism could not act: running agents held the pool, and the headroom, which can only defer new requests, was never there (degrade capped every reply). Arm 9's ablations (headroom armed from speech onset, armed only by the request, or left out) therefore land within the spread of its own runs, and on the stock engine the gateway's policy leaves voice where stock vLLM does. A control plane in front cannot make room there; the engine change (2.) does. Where the mechanism engages, it was not isolated.
 2. **The engine "make room" fix.**
    - vLLM preempts among running requests but never for a waiting one (#40004, open since 2026-04-16); its open fixes cover only the `max_num_seqs` cap.
    - SGLang's priority preemption does not fire when KV memory runs out; the fix is a draft opened on 2026-10-21 (#45686).
-   - Leaseholder's version is planned as a vLLM PR under #40004 that keeps or offloads the victim's KV. Preempting work and resuming it from kept KV is published (ConServe); the contribution is the change to vLLM's scheduler, not the idea.
-3. **A recompute ledger validated by injected causes.** The stacks above expose per-request cached-token counts (vLLM) or a cache-discontinuity log (vllm-project/router Progress-TTL). We found none that attributes recomputed tokens to causes. This is observability, not a research result.
+   - Leaseholder's version is proposed as vLLM [#63350](https://github.com/vllm-project/vllm/pull/63350) under #40004, a victim's KV kept in the CPU tier when an offloading connector is configured, with [#63351](https://github.com/vllm-project/vllm/pull/63351) holding lower-priority prefill out of the request's first tokens. Preempting work and resuming it from kept KV is published (ConServe); the contribution is the change to vLLM's scheduler, not the idea.
+3. **A recompute ledger validated by injected causes** (*dropped with leases*). The stacks above expose per-request cached-token counts (vLLM) or a cache-discontinuity log (vllm-project/router Progress-TTL). We found none that attributes recomputed tokens to causes. This is observability, not a research result.
 
 Two measurements carry the rest:
 - **The workload pair.** We found no published system that measures a cascaded voice pipeline beside long-context agent traffic on one GPU, with voice-to-voice latency taken from waveforms. ConServe, HyGen, BROS, Niyama and Valve co-serve online and offline LLM requests. Metronome, Voice-Light and Unmute measure voice workloads alone. NVIDIA's single-GPU profile documents the regression.
@@ -254,6 +255,6 @@ One lifecycle-event schema for both workloads is an engineering choice with litt
   - starting the LLM before the turn ends (LiveKit preemptive generation, Endpoint Anticipation, PredGen);
   - a gap between LRU and Belady on prefix caches ("When Fancy Eviction Fails", LPC).
 - **A cache residency guarantee.** Providers promise billing eligibility, not residency, and Leaseholder reports an honor rate instead.
-- **A better router.** `lh-gateway` is a small harness for experiments on one GPU without Kubernetes, and the `lh-core` policy is to run inside it from W3. The policy is to be proposed upstream: a vLLM scheduler PR, the agent-side lease and prefetch policy on vllm-project/router RFCs #427 and #428, and the lifecycle-event sink in agentic-api.
+- **A better router.** `lh-gateway` is a small harness for experiments on one GPU without Kubernetes, and the `lh-core` policy has run inside it since W3. What goes upstream: the scheduler change, as vLLM #63350 and #63351 (opened 2026-10-23); E1's negative result for an agent-side lease and prefetch policy, on vLLM #57103 and vllm-project/router #428; and the lifecycle-event sink in agentic-api.
 - **Measured results on datacenter GPUs.** Measurements on one 16 GB consumer GPU with a 4B model and traces block-scaled 32× are stated in dimensionless terms (KV pressure, pause over restore time, restore over recompute time), and `lh-sim` places datacenter configurations on that map from modeled cost fits, labeled as modeled.
 - **Precedence.** Nothing here claims to be first or the only one. This page is a positioning statement, and each comparison rests on the sources cited.

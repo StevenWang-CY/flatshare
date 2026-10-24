@@ -1,6 +1,6 @@
 # ADR-0003: Realtime is never shed
 
-- **Status:** accepted, 2026-10-22
+- **Status:** accepted, 2026-10-22; the room is made in the engine ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md))
 - **Deciders:** Chuyue Wang
 
 ## Context
@@ -28,3 +28,7 @@ Background traffic absorbs the overload. It keeps a minimum share and ages, so i
 - Background goodput becomes the measure of how well the GPU is used. The E2 frontier plots it against voice V2V p95.
 - Rejections exist only for `interactive` (a deadline can be missed) and for `background` (deferral beyond its age bound). Both are reported as their own metrics.
 - The decision binds Leaseholder's own admission policy. E2's baseline policies emulate what others ship (W2): llm-d's flow control, for one, can make a realtime request wait or refuse it when realtime and interactive requests fill its ceiling, and those outcomes are measured, not prevented.
+
+## Later
+
+Under the `leaseholder` policy a realtime request is never queued or refused. Its make-room steps in the control plane (the prefill budget and the KV headroom) could not act in E2's discriminating scenario, where running agent requests held the pool; the room is made in the engine ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)). Degrade is built as a 16-token `max_tokens`, and a filler phrase and prefetch are not; a 48-token first-tokens window fits full replies instead, about 140 ms later at p95 (2,193 and 2,205 ms against 2,057), and is what [PRODUCTION.md](../PRODUCTION.md) recommends.

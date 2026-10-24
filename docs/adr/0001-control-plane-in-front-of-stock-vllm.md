@@ -1,6 +1,6 @@
 # ADR-0001: A session-aware control plane in front of stock vLLM
 
-- **Status:** accepted, 2026-10-22
+- **Status:** accepted, 2026-10-22; superseded in part by [ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md): the deployment's realtime tier is carried by an engine change, and this control plane is the experiment harness
 - **Deciders:** Chuyue Wang
 
 ## Context
@@ -31,12 +31,7 @@ Build option 3: a Rust service (tokio, hyper/axum, tower).
 - The control plane adds one hop. Its budget is ≤ 2 ms per request at p99, and it is measured on every run.
 - Rust matches agentic-api, the API layer in front of it, and keeps the data path cheap on slow hosts.
 
-## Update (2026-10-22, goal-fit review)
+## Later
 
-The decision stands: the control plane stays in front of stock vLLM, and its policy lives in `lh-core` so routers that already run in production can adopt it. The one engine change Leaseholder needs, letting a waiting high-priority request preempt running work under KV pressure while keeping the victim's KV ([vLLM #40004](https://github.com/vllm-project/vllm/issues/40004)), is proposed upstream as a vLLM PR rather than carried as a fork.
-
-## Update (2026-10-23, W3)
-
-- **No trait.** The policies are variants of one enum in `lh_core::admission`, driven by a pure state machine (arrivals, first bytes, departures and the realtime sessions' turns) that the gateway feeds and whose waits it carries out. A closed set of policies at one admission point needed no trait; another router embeds the state machine as the gateway does.
-- **The engine fix for E2** runs as a generated scheduler module, the `make-room` variant: built from vLLM 0.32.0's source at each start with asserted anchors and loaded with `--scheduler-cls`, so the box stays a stock install and the change is exactly the one proposed upstream.
-
+- **No trait** (2026-10-23). The policies are variants of one enum in `lh_core::admission`, driven by a pure state machine (arrivals, first bytes, departures and the realtime sessions' turns) that the gateway feeds and whose waits it carries out.
+- **The engine change** (2026-10-23/24). The consequence that the control plane compensates with admission and headroom did not hold: in E2 only an engine change moved the voice tail. It runs as the generated `make-room` variant on vLLM 0.32.0 and is proposed upstream as #63350 and #63351 ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)).
