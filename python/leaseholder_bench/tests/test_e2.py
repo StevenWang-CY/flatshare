@@ -3,6 +3,8 @@ and stand-ins for AIPerf and the callers that run as real processes, so stopping
 
 from __future__ import annotations
 
+import hashlib
+import itertools
 import json
 import os
 import re
@@ -175,16 +177,104 @@ def test_a_wrong_arm_file_says_what_is_wrong(tmp_path: Path, text: str, error: s
         load_arm(write(tmp_path, "a2.toml", text))
 
 
+def campaign_lines(campaign: Path) -> list[str]:
+    """A campaign file's lines as campaign.sh reads them: comments and blank lines left out."""
+    lines = (line.split("#")[0].strip() for line in campaign.read_text().splitlines())
+    return list(filter(None, lines))
+
+
 def test_the_campaigns_name_arm_files_that_load() -> None:
     campaigns = sorted(BENCHMARKS.glob("*.campaign"))
     assert campaigns
     for campaign in campaigns:
-        lines = (line.split("#")[0].strip() for line in campaign.read_text().splitlines())
-        for line in filter(None, lines):
+        lines = campaign_lines(campaign)
+        seeds = [line for line in lines if line.startswith("agents-seed")]
+        assert len(seeds) <= 1 and all(re.fullmatch(r"agents-seed\s+\d+", s) for s in seeds)
+        for line in (line for line in lines if line not in seeds):
             arm = load_arm(campaign.parent / line)
             variant = arm.engine.variant
             assert variant == "frozen" or (PHASTFORM / "variants" / variant).is_dir(), line
     assert all(load_arm(path) for path in (BENCHMARKS / "arms").glob("*.toml"))
+
+
+V03_BUILD_SHA256 = "ba7bbe076530311b37f91aa07ac24489904a120c983f495c66f876fd7221a3cd"
+V03_CONF_SHA256 = "853dacb1a096a97e2a06762ac7ca6f875c35550d3a386dc59edb2c6ab9dbee85"
+"""The sha256 of make-room's build.py and lh-engine.conf at the v0.3 tag."""
+
+
+def test_the_w5_control_is_make_room_as_v03_built_it() -> None:
+    control = PHASTFORM / "variants" / "make-room-v03"
+    assert hashlib.sha256((control / "build.py").read_bytes()).hexdigest() == V03_BUILD_SHA256
+    # v0.3's lh-engine.conf with a first line saying what it is, its own build.py and cache directory,
+    # and its module renamed, so that the engine's scheduler_cls tells it from make-room's.
+    first, rest = (control / "lh-engine.conf").read_text().split("\n", 1)
+    assert first.startswith("# W5's control: make-room as the v0.3 tag has it")
+    cache = "%h/leaseholder/cache/make-room-v03"
+    rename = f"ExecStartPre=/bin/mv -f {cache}/lh_make_room_scheduler.py {cache}/lh_make_room_v03_scheduler.py\n"
+    assert rest.count(rename) == 1
+    v03 = (
+        rest.replace(rename, "")
+        .replace("lh_make_room_v03_scheduler", "lh_make_room_scheduler")
+        .replace("make-room-v03", "make-room")
+    )
+    assert hashlib.sha256(v03.encode()).hexdigest() == V03_CONF_SHA256
+    assert f"variants/make-room-v03/build.py {cache}" in rest
+    assert f"Environment=PYTHONPATH={cache}" in rest
+    assert e2.variant_flags("make-room-v03") == (
+        "--scheduler-cls", "lh_make_room_v03_scheduler.AsyncScheduler",
+        "--additional-config.make_room.max_preemptions_per_step", "2",
+        "--additional-config.make_room.budget_cap", "true",
+        "--additional-config.make_room.reserve_tokens", "2048",
+    )  # fmt: skip
+
+
+def test_the_engine_check_tells_the_w5_control_from_make_room() -> None:
+    # The control runs make-room's switches under a scheduler class of its own, so that a point on the
+    # other module fails before anything starts.
+    switches = {"make_room": MAKE_ROOM}
+    final = vllm(switches, scheduler_cls=MAKE_ROOM_CLS)
+    control = vllm(switches, scheduler_cls="lh_make_room_v03_scheduler.AsyncScheduler")
+    check_engine(Engine("make-room", ()), final)
+    check_engine(Engine("make-room-v03", ()), control)
+    with pytest.raises(E2Error, match=r"use make-room-v03$"):
+        check_engine(Engine("make-room-v03", ()), final)
+    with pytest.raises(E2Error, match=r"use make-room$"):
+        check_engine(Engine("make-room", ()), control)
+
+
+W5 = ("w5-a1-voice", "w5-disc-frozen-s24", "w5-disc-pr-ab48-s24", "w5-disc-pr-ab48-v03-s24")
+"""W5's four configurations, each the W4 one it re-measures with a warm-up turn opening each call."""
+W4 = {
+    "w5-a1-voice": "a1-voice",
+    "w5-disc-frozen-s24": "disc-frozen-s24",
+    "w5-disc-pr-ab48-s24": "disc-pr-ab48-s24",
+    "w5-disc-pr-ab48-v03-s24": "disc-pr-ab48-s24",
+}
+
+
+def test_the_w5_campaign_rotates_its_four_configurations_over_five_seeded_rounds() -> None:
+    rounds = [campaign_lines(BENCHMARKS / f"w5-r{r}.campaign") for r in range(1, 6)]
+    assert [lines[0] for lines in rounds] == [f"agents-seed {seed}" for seed in range(11, 16)]
+    orders = [[Path(line).stem for line in lines[1:]] for lines in rounds]
+    assert all(sorted(order) == sorted(W5) for order in orders)
+    for order, then in itertools.pairwise(orders):
+        assert then == [*order[1:], order[0]]  # rotated by one from round to round
+    assert all({order[place] for order in orders} == set(W5) for place in range(4))
+    for name in W5:
+        arm, before = (
+            load_arm(BENCHMARKS / "arms" / f"{name}.toml"),
+            load_arm(BENCHMARKS / "arms" / f"{W4[name]}.toml"),
+        )
+        assert arm.voice == replace(before.voice, warmup_turns=1)
+        assert (arm.agents, arm.gateway, arm.router) == (
+            before.agents,
+            before.gateway,
+            before.router,
+        )
+        assert arm.engine.flags == before.engine.flags
+    variants = {name: load_arm(BENCHMARKS / "arms" / f"{name}.toml").engine.variant for name in W5}
+    assert variants["w5-disc-pr-ab48-s24"] == "make-room"
+    assert variants["w5-disc-pr-ab48-v03-s24"] == "make-room-v03"
 
 
 def test_flag_values_pair_each_flag_with_its_value() -> None:
@@ -606,7 +696,8 @@ class FakeHost(Host):
 class FakeSystemd(Systemd):
     """Records systemctl calls; the worker runs with fixed endpointing and registers at once. A unit
     in ``failing`` does not start, and its log says why. ``journals`` gives a unit's journal from
-    ``since`` to ``until``; any other unit's holds only the worker's registration."""
+    ``since`` to ``until``; otherwise the gateway's holds the request lines of ten realtime requests
+    (GATEWAY_FIRST_BYTES) and any other unit's only the worker's registration."""
 
     def __init__(self, env: dict[str, str] | None = None) -> None:
         self.calls: list[tuple[str, ...]] = []
@@ -635,7 +726,16 @@ class FakeSystemd(Systemd):
             return f"{unit}: starting\n{unit}: config: unknown field `upstream_priority`\n"
         if unit in self.journals:
             return self.journals[unit](since, until)
+        if unit == "lh-gateway":
+            return "\n".join(
+                logged_request(since + n / 100, "realtime", first_byte)
+                for n, first_byte in enumerate(GATEWAY_FIRST_BYTES, 1)
+            )
         return "registered worker"
+
+
+GATEWAY_FIRST_BYTES = (50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 110.0, 120.0, 130.0, 140.0)
+"""The first bytes of the realtime requests the fake gateway logs during the calls."""
 
 
 @dataclass
@@ -717,10 +817,10 @@ def test_voice_alone_runs_the_calls_against_the_box_as_it_is(cyan: Cyan) -> None
     assert summary["name"] == "a1-voice" and summary["background"] is None
     assert summary["voice"]["v2v_ms"]["p95"] == 1800.0
     assert summary["engine"]["preemptions"] == 1  # one scrape apart
-    # This gateway logs no JSON request lines, so the first byte comes from its histogram.
-    assert not (out / "gateway.jsonl").exists()
+    # Exactly from the gateway's request lines of the calls, which the run keeps.
+    assert len((out / "gateway.jsonl").read_text().splitlines()) == len(GATEWAY_FIRST_BYTES)
     assert summary["gateway"]["realtime_first_byte_ms"] == {
-        "n": 10, "mean": 90.0, "p50": 62.5, "p95": 400.0, "p99": 480.0, "source": "histogram",
+        "n": 10, "mean": 95.0, "p50": 95.0, "p95": 135.5, "p99": 139.1, "source": "log",
     }  # fmt: skip
     assert summary["worker"] is None  # nor does this worker log turn lines
     assert json.loads((out / "summary.json").read_text()) == summary
@@ -773,6 +873,23 @@ def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(cy
     assert 100 <= background["ttft_ms"]["p50"] <= 109
     window = run_json["window"]
     assert 0.3 <= window["end"] - window["start"] < 5
+
+
+def test_a_campaign_sets_the_agents_seed_and_run_json_keeps_it(cyan: Cyan) -> None:
+    arm_file = write(cyan.arms, "a2-stock-s4.toml", ARM)
+    cyan.scheduler.update(STOCK_SCHEDULER)
+    runs = cyan.host.root / "runs"
+    for out, seed, used in (("own", None, 11), ("campaign", 13, 13)):
+        run_point(arm_file, runs / out, cyan.host, cyan.systemd, agents_seed=seed)
+        run_json = json.loads((runs / out / "run.json").read_text())
+        env = json.loads((runs / out / "aiperf" / "env.json").read_text())
+        assert (env["LH_BENCH_SEED"], run_json["agents_seed"]) == (str(used), used)
+        assert run_json["arm"]["agents"]["seed"] == 11  # the arm as read
+    cyan.scheduler.update(FROZEN_SCHEDULER)
+    run(cyan, "a1-voice", VOICE_ALONE)  # no replay, no seed
+    assert record(cyan, "a1-voice")["agents_seed"] is None
+    with pytest.raises(E2Error, match="the agents' seed cannot be negative"):
+        run_point(arm_file, runs / "negative", cyan.host, cyan.systemd, agents_seed=-1)
 
 
 def test_the_same_arm_again_restarts_nothing(cyan: Cyan) -> None:
@@ -899,6 +1016,15 @@ def test_a_call_opens_with_its_warm_up_turns_which_nothing_measures(cyan: Cyan) 
     waterfall = summary["worker"]["waterfall"]["e2e_ms"]
     assert (summary["worker"]["turns"], waterfall["n"], waterfall["p50"]) == (6, 6, 1200.0)
     assert "calls: 2 callers, 3 turns each after 1 warm-up" in (out / "run.log").read_text()
+
+
+def test_a_gateway_that_logs_no_request_lines_fails_the_point(cyan: Cyan) -> None:
+    cyan.systemd.journals = {"lh-gateway": lambda since, until: "lh-gateway serving"}  # text
+    with pytest.raises(E2Error, match="the gateway logged no request line for the calls"):
+        run(cyan, "a1-voice", VOICE_ALONE)
+    run_json = record(cyan, "a1-voice")
+    assert run_json["status"] == "failed" and 'log_format = "json"' in run_json["error"]
+    assert not (cyan.host.root / "runs" / "a1-voice" / "summary.json").exists()
 
 
 def test_the_worker_journal_waits_only_for_sessions_that_end(

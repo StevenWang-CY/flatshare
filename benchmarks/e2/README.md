@@ -1,6 +1,6 @@
 # E2 campaigns
 
-An E2 point is one arm file in [`arms/`](arms): the calls, the agent replay beside them, the gateway's configuration and the engine ([the arm-file reference](../../python/leaseholder_bench/README.md#e2-points)). `lh-bench e2 run` measures one point on cyan. A campaign file lists arm files, and `campaign.sh` measures them in order from a workstation with SSH to the hosts, the way `deploy/deploy.sh` deploys.
+An E2 point is one arm file in [`arms/`](arms): the calls, the agent replay beside them, the gateway's configuration and the engine ([the arm-file reference](../../python/leaseholder_bench/README.md#e2-points)). `lh-bench e2 run` measures one point on cyan. A campaign file lists arm files, and `campaign.sh` measures them in order from a workstation with SSH to the hosts, the way `deploy/deploy.sh` deploys. A line `agents-seed N` in it sets AIPerf's seed for all of its points, in place of each arm file's `[agents] seed`, so that each round of a repeated campaign replays a workload sample of its own while its points stay paired.
 
 ```sh
 export LH_SSH="ssh -F $HOME/.ssh/penn_config"                  # your SSH command for the hosts, as for deploy.sh
@@ -68,6 +68,8 @@ The other arms take an earlier arm's winner, so their files are written from its
 [`a9-window.campaign`](a9-window.campaign) measures arm 9 without degrade and with make-room's first-tokens window at 48 tokens, after `s2`: without degrade, a reply's first sentence can outrun the default 16-token window, and degrade's 16-token cap, which keeps it inside, capped every reply in the discriminating scenario.
 
 [`upstream.campaign`](upstream.campaign) measures the engine as the vLLM PRs propose it, without the reserve and behind the gateway without an admission policy: the KV preemption alone, with the budget cap, and with a 48-token window. [`upstream-r1.campaign`](upstream-r1.campaign) and [`upstream-r2.campaign`](upstream-r2.campaign) repeat these three and arm 9's 48-token window, so that each has three runs, as each of arm 9's ablations has: a configuration that misses the SLO moved by up to 1.9 s in p95 from round to round.
+
+[`w5-r1.campaign`](w5-r1.campaign) to [`w5-r5.campaign`](w5-r5.campaign) re-measure, after W5's fixes to make-room, the PRs' configuration with a 48-token window (`arms/w5-disc-pr-ab48-s24.toml`) beside its control, the same on make-room as v0.3 built it (`w5-disc-pr-ab48-v03-s24.toml`, on the `make-room-v03` variant: v0.3's `build.py` and `lh-engine.conf`), and beside voice alone and the frozen box (`w5-a1-voice.toml`, `w5-disc-frozen-s24.toml`) in the same rounds. Each arm file is its W4 one with each call opening with an unmeasured warm-up turn (`[voice] warmup_turns = 1`). Each round replays a sample of the agents of its own (`agents-seed` 11 to 15) and runs the four in an order rotated by one from round to round, so that each runs in each place. `lh-bench e2 run`'s engine check cannot tell `make-room-v03` from `make-room`: both load `lh_make_room_scheduler.AsyncScheduler` with the same switches, so `variant.sh use`, which `campaign.sh` runs before each point, is what sets the module.
 
 The `[admission]` keys are those of `lh-gateway`'s configuration ([its README](../../crates/lh-gateway/README.md)); `lh-bench e2 run` passes the `[gateway]` table through as it is.
 

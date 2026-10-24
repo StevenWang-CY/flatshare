@@ -31,9 +31,9 @@ from leaseholder_bench.e2.record import (
     engine_counts,
     engine_settings,
     export_point,
-    first_byte_ms,
     gateway_counts,
     gateway_requests,
+    logged_first_byte,
     summarize_point,
 )
 from leaseholder_bench.e2.report import (
@@ -45,6 +45,7 @@ from leaseholder_bench.e2.report import (
     NODE_COLUMNS,
     STACKED,
     STANDARD_WORKLOAD,
+    WINDOW_COLUMNS,
     WORKER_COLUMNS,
     configurations,
     figure_name,
@@ -97,6 +98,36 @@ def test_background_goodput_counts_the_requests_completed_during_the_calls(tmp_p
         background(tmp_path / "missing.jsonl", T0, T0 + 100)
 
 
+def test_the_fixed_window_counts_the_requests_completed_in_the_calls_first_240_s(
+    tmp_path: Path,
+) -> None:
+    # 300 s of calls, a request a second: 2,020 tokens each for the first 100 s, 1,020 after.
+    lines = [
+        record(T0 + i).replace('"value": 1000}', '"value": 2000}' if i <= 100 else '"value": 1000}')
+        for i in range(1, 301)
+    ]
+    lines += [record(T0 + 120, error={"code": 500}), record(T0 + 250, meta={"was_cancelled": True})]
+    path = tmp_path / "profile_export.jsonl"
+    path.write_text("\n".join(lines) + "\n")
+    cell = background(path, T0, T0 + 300)
+    assert (cell["requests"], cell["errors"], cell["tokens_per_s"]) == (300, 2, 1353.3)
+    # The first 240 s: 100 requests of 2,020 tokens and 140 of 1,020; the failed one is lost.
+    assert cell["fixed_window"] == {
+        "seconds": 240.0,
+        "requests": 240,
+        "requests_per_s": 1.0,
+        "tokens_per_s": 1436.7,
+    }
+    # Calls that lasted less than the window give their whole goodput, over their own seconds.
+    short = background(path, T0, T0 + 200.0004)
+    assert short["fixed_window"] == {
+        "seconds": 200.0,
+        "requests": 200,
+        "requests_per_s": 1.0,
+        "tokens_per_s": 1520.0,
+    }
+
+
 GATEWAY_BEFORE = """\
 lh_gateway_first_byte_seconds_bucket{class="realtime",le="0.1"} 10
 lh_gateway_first_byte_seconds_bucket{class="realtime",le="0.5"} 10
@@ -137,18 +168,20 @@ lh_gateway_admission_discarded_tokens_total{class="background"} 2500
 """
 
 
-def test_the_gateway_counts_cover_the_window() -> None:
-    cell = gateway_counts(GATEWAY_BEFORE, GATEWAY_AFTER, 100.0)
-    # Realtime only: 8 of 10 within 100 ms, 2 more within 500 ms, interpolated inside the buckets.
-    assert cell["realtime_first_byte_ms"] == {
-        "n": 10,
-        "mean": 90.0,
-        "p50": 62.5,
-        "p95": 400.0,
-        "p99": 480.0,
-        "source": "histogram",
+def test_the_gateway_counts_cover_the_window(tmp_path: Path) -> None:
+    (tmp_path / "gateway.jsonl").write_text(REQUESTS + "\n")
+    requests = gateway_requests(tmp_path, T0, T0 + 100)
+    cell = gateway_counts(GATEWAY_BEFORE, GATEWAY_AFTER, 100.0, requests)
+    # The first bytes exactly from the request lines, whatever the histogram says.
+    assert cell["realtime_first_byte_ms"] == logged_first_byte(requests, "realtime")
+    assert cell["background_first_byte_ms"] == {
+        "n": 1,
+        "mean": 2500.0,
+        "p50": 2500.0,
+        "p95": 2500.0,
+        "p99": 2500.0,
+        "source": "log",
     }
-    assert cell["background_first_byte_ms"]["n"] == 40
     assert (cell["shed"], cell["refused"], cell["resubmitted"]) == (3, 6, 5)
     assert cell["discarded_tokens"] == 2500
     assert cell["background_tokens_per_s"] == 1020.0  # prompt and completion, background only
@@ -163,7 +196,7 @@ def test_the_gateway_counts_cover_the_window() -> None:
     assert len(cell["counters"]) == 10  # every counter series that moved
     restarted = GATEWAY_AFTER.replace('completed"} 140', 'completed"} 2')
     with pytest.raises(ValueError, match="went down during the calls: the gateway restarted"):
-        gateway_counts(GATEWAY_BEFORE, restarted, 100.0)
+        gateway_counts(GATEWAY_BEFORE, restarted, 100.0, requests)
 
 
 def test_a_gateway_without_an_admission_point_counts_none_of_its_outcomes() -> None:
@@ -173,7 +206,7 @@ def test_a_gateway_without_an_admission_point_counts_none_of_its_outcomes() -> N
         )
         for text in (GATEWAY_BEFORE, GATEWAY_AFTER)
     )
-    cell = gateway_counts(before, after, 100.0)
+    cell = gateway_counts(before, after, 100.0, [])
     assert (cell["shed"], cell["refused"], cell["resubmitted"], cell["discarded_tokens"]) == (
         None,
         None,
@@ -181,8 +214,8 @@ def test_a_gateway_without_an_admission_point_counts_none_of_its_outcomes() -> N
         None,
     )
     assert cell["background_tokens_per_s"] == 1020.0
-    empty = gateway_counts("", "", 100.0)
-    assert empty["realtime_first_byte_ms"] == {"n": 0, "source": "histogram"}
+    empty = gateway_counts("", "", 100.0, [])
+    assert empty["realtime_first_byte_ms"] == {"n": 0, "source": "log"}
     assert empty["background_tokens_per_s"] is None
 
 
@@ -219,8 +252,7 @@ def test_the_first_bytes_come_exactly_from_the_request_log(tmp_path: Path) -> No
     (tmp_path / "gateway.jsonl").write_text(REQUESTS + "\n")
     requests = gateway_requests(tmp_path, T0, T0 + 100)
     assert requests is not None and len(requests) == 13
-    # The histogram of the same window says p95 400 ms, interpolated inside its 0.1-0.5 s bucket.
-    assert first_byte_ms(GATEWAY_BEFORE, GATEWAY_AFTER, "realtime", requests) == {
+    assert logged_first_byte(requests, "realtime") == {
         "n": 10,
         "mean": 550.0,
         "p50": 550.0,
@@ -228,7 +260,7 @@ def test_the_first_bytes_come_exactly_from_the_request_log(tmp_path: Path) -> No
         "p99": 991.0,
         "source": "log",
     }
-    assert first_byte_ms("", "", "background", requests)["p50"] == 2500.0
+    assert logged_first_byte(requests, "background")["p50"] == 2500.0
     assert gateway_requests(tmp_path / "missing", T0, T0 + 100) is None
     (tmp_path / "gateway.jsonl").write_text("lh-gateway serving\n")  # a gateway that logs text
     assert gateway_requests(tmp_path, T0, T0 + 100) is None
@@ -313,7 +345,7 @@ def point(
         },
         "background": bg,
         "gateway": {
-            "realtime_first_byte_ms": {"n": 60, "p95": 120.0, "source": "histogram"},
+            "realtime_first_byte_ms": {"n": 60, "p95": 120.0, "source": "log"},
             "shed": None,
             "refused": 2,
             "resubmitted": None,
@@ -434,18 +466,56 @@ def test_the_report_writes_the_table_and_the_csv(tmp_path: Path, capsys) -> None
     assert rows[0]["v2v_p95_ms"] == "2000.0" and rows[0]["frontier"] == "True"
     assert rows[0]["refused"] == "3"  # 2 by the gateway's admission point, 1 by the engine
     assert rows[0]["gateway_background_tokens_per_s"] == "3000"
-    # A summary from before the request log took the first byte from the histogram.
     assert (rows[0]["realtime_first_byte_p95_ms"], rows[0]["realtime_first_byte_source"]) == (
         "120.0",
-        "histogram",
+        "log",
     )
     table = (out / "frontier.md").read_text()
     assert "\n## Workload: weka-x32, 2 callers\n" in table
     assert "\n### Arm 2\n" in table and "\n### Arm 10\n" in table
-    assert "| a2-s8: a2-s8 label | • | 16 | 3,000 | 3.00 | 1,600 | 2,000 | 2,500 |" in table
-    assert "| 0 of 50 | 140 / 8,000 | ~120 | 4 | — / 3 / — |" in table
+    # Each arm has one configuration here, on its own frontier: no mark says so.
+    assert "| a2-s8: a2-s8 label |  | 16 | 3,000 | 3.00 | 1,600 | 2,000 | 2,500 |" in table
+    assert "| 0 of 50 | 140 / 8,000 | 120 | 4 | — / 3 / — |" in table
+    assert "•" not in table.split("## Workload")[1] and "~" not in table
     assert "Voice turn stages" not in table and "SM clock" not in table
     assert main(["e2", "report", str(dirs[2]), "--out", str(out)]) == 1
+
+
+def test_the_report_gives_the_fixed_window_beside_the_whole_calls(tmp_path: Path) -> None:
+    def windowed(run_dir: Path, tokens_per_s: float, seconds: float) -> Path:
+        window = {
+            "seconds": seconds,
+            "requests": 1,
+            "requests_per_s": 1.0,
+            "tokens_per_s": tokens_per_s,
+        }
+        rewrite(run_dir, lambda s: s["background"].update(fixed_window=window))
+        return run_dir
+
+    dirs = [
+        windowed(point(tmp_path / "r1", "disc-frozen", "4", 3710, 10000), 3580, 240.0),
+        windowed(point(tmp_path / "r2", "disc-frozen", "4", 3726, 9000), 3600, 240.0),
+        windowed(point(tmp_path / "r1", "disc-pr", "9-pr-ab48", 3430, 2200), 3400, 230.0),
+        point(tmp_path / "r1", "a1-voice", "1", None, 1767),
+    ]
+    rows, _ = load_points(dirs)
+    table = write_report(rows, tmp_path / "report")[1].read_text()
+    assert "goodput over their first 240 s, the same span for every point; † marks one" in table
+    assert "| Background tokens/s | First 240 s | Requests/s |" in table
+    assert "| disc-frozen (r1) |  | 16 | 3,710 | 3,580 | 3.71 |" in table
+    assert "| disc-pr: disc-pr label |  | 16 | 3,430 | 3,400 † | 3.43 |" in table
+    assert "| a1-voice: a1-voice label |  | 0 | 0 | — | 0.00 |" in table
+    medians = f"| {spread('3,718', '3,710', '3,726')} | {spread('3,590', '3,580', '3,600')} | |"
+    assert medians in table
+    with (tmp_path / "report" / "frontier.csv").open() as f:
+        written = {r["point"]: r for r in csv.DictReader(f)}
+    assert (
+        written["disc-pr"]["fixed_window_tokens_per_s"],
+        written["disc-pr"]["fixed_window_s"],
+    ) == (
+        "3400",
+        "230.0",
+    )
 
 
 def test_the_report_takes_a_request_log_fetched_after_the_run(tmp_path: Path) -> None:
@@ -552,7 +622,8 @@ def test_repeats_of_a_point_are_one_configuration_placed_at_their_medians(tmp_pa
         f"| disc-frozen: disc-frozen label; median (range) of 3 runs |  | 16 "
         f"| {spread('4,000', '3,000', '5,000')} | | {spread('1,600', '1,600', '1,600')} "
         f"| {spread('3,000', '2,000', '4,000')} | {spread('3,500', '2,500', '4,500')} "
-        f"| {spread('2', '0', '3')} | | ~{spread('120', '120', '120')} | | |"
+        f"| {spread('2', '0', '3')} | {spread('140', '140', '140')} / {spread('8,000', '8,000', '8,000')} "
+        f"| {spread('120', '120', '120')} | | |"
     )
     lines = table.splitlines()
     assert lines[lines.index(medians) - 1].startswith("| disc-frozen (w2c) |")  # after its runs
@@ -825,9 +896,13 @@ def whole(run_dir: Path) -> Path:
     (run_dir / "bots" / "summary.json").write_text(json.dumps({"turns": 2, "errors": 0}))
     callers = {"config": {"api_key": "APIexample000000", "api_secret": "<redacted>"}}
     (run_dir / "bots" / "run.json").write_text(json.dumps(callers))
-    for name in ("aiperf/profile_export.jsonl", "metrics/gateway-end.prom", "bots.log"):
+    for name in ("metrics/gateway-end.prom", "bots.log"):
         (run_dir / name).parent.mkdir(exist_ok=True)
         (run_dir / name).write_text("raw\n")
+    # AIPerf's records: 50 agent requests of 1,020 tokens over the calls' 100 s, and one after them.
+    (run_dir / "aiperf").mkdir()
+    lines = [record(T0 + 2 * n) for n in range(1, 51)] + [record(T0 + 101)]
+    (run_dir / "aiperf" / "profile_export.jsonl").write_text("\n".join(lines) + "\n")
     return run_dir
 
 
@@ -871,6 +946,13 @@ def test_a_compact_record_gives_the_report_of_its_run_directory(tmp_path: Path, 
     assert summary["gateway"]["realtime_first_byte_ms"]["p95"] == 955.0  # exact, from the log
     assert summary["gateway"]["background_first_byte_ms"]["source"] == "log"
     assert summary["gpu"] == {"sm_clock_p50_mhz": 2775, "temperature_max_c": 71}
+    # From AIPerf's records, over the calls' 100 s, which are shorter than the fixed window.
+    assert summary["background"]["fixed_window"] == {
+        "seconds": 100.0,
+        "requests": 50,
+        "requests_per_s": 0.5,
+        "tokens_per_s": 510.0,
+    }
     full, _ = load_points(dirs[:3])
     compact, _ = load_points(records)
     assert compact == full
@@ -914,7 +996,12 @@ def test_the_report_gives_the_cpu_tiers_loads_and_stores_in_tokens(tmp_path: Pat
     out = tmp_path / "report"
     write_report(rows, out)
     with (out / "frontier.csv").open() as f:
-        assert list(next(csv.DictReader(f))) == [*COLUMNS, *GPU_COLUMNS, *CPU_TIER_COLUMNS]
+        assert list(next(csv.DictReader(f))) == [
+            *COLUMNS,
+            *GPU_COLUMNS,
+            *CPU_TIER_COLUMNS,
+            *WINDOW_COLUMNS,
+        ]
     section = (
         (out / "frontier.md").read_text().split("## The engine's prompt tokens and its CPU tier")[1]
     )
@@ -1104,11 +1191,10 @@ def test_a_point_on_two_gpu_nodes_reports_its_totals_and_each_nodes_share(tmp_pa
         147_456 * 30,
         147_456 * 10,
     )
-    # Without the gateway's request log, or the worker's placements, those shares are unknown.
-    (run_dir / "gateway.jsonl").unlink()
+    # Without the worker's placements, the nodes' shares of the calls are unknown.
     (run_dir / "voice-worker.log").unlink()
     a = summarize_point(run_dir, T0, T0 + 100, agents=False, nodes=("a", "b"))["nodes"]["a"]
-    assert (a["voice"], a["background"], a["realtime_first_byte_ms"]) == (None, None, None)
+    assert (a["voice"], a["background"]["requests"]) == (None, 0)
 
 
 def on_two_nodes(run_dir: Path, **share: Any) -> Path:
@@ -1168,7 +1254,7 @@ def test_a_repeated_point_on_two_gpu_nodes_names_each_run_by_its_campaign(tmp_pa
     rows, _ = load_points(dirs)
     write_report(rows, tmp_path / "report")
     table = (tmp_path / "report" / "frontier.md").read_text()
-    assert "| a4-pool: a4-pool label (2 GPU nodes); median (range) of 2 runs | • |" in table
+    assert "| a4-pool: a4-pool label (2 GPU nodes); median (range) of 2 runs |  |" in table
     assert "| a4-pool (r2) | phastform | — | — | — | — | — |" in table
     assert "| a4-pool (w4) | gray | — |" in table
 
@@ -1265,7 +1351,15 @@ def test_a_point_summary_reads_its_run_directory(tmp_path: Path) -> None:
     for when, text in (("start", GATEWAY_BEFORE), ("end", GATEWAY_AFTER)):
         (run_dir / "metrics" / f"gateway-{when}.prom").write_text(text)
         (run_dir / "metrics" / f"engine-{when}.prom").write_text("")
+    # Without the gateway's request lines of the calls, the point has no first byte: it fails.
+    with pytest.raises(ValueError, match="the gateway logged no request line for the calls"):
+        summarize_point(run_dir, T0, T0 + 321.04, agents=False)
+    (run_dir / "gateway.jsonl").write_text("lh-gateway serving\n")  # a gateway that logs text
+    with pytest.raises(ValueError, match="the gateway logged no request line for the calls"):
+        summarize_point(run_dir, T0, T0 + 321.04, agents=False)
+    (run_dir / "gateway.jsonl").write_text(REQUESTS + "\n")
     summary = summarize_point(run_dir, T0, T0 + 321.04, agents=False)
+    assert summary["gateway"]["realtime_first_byte_ms"]["p95"] == 955.0
     assert summary["window_s"] == 321.0 and summary["background"] is None
     assert summary["gateway"]["background_tokens_per_s"] == 317.7  # 102,000 tokens over the window
     assert summary["voice"] == {k: bots[k] for k in summary["voice"]}
