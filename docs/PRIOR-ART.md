@@ -9,7 +9,7 @@ This page is for engineers asking "how is this different from X?". Leaseholder s
 > Leaseholder applies known co-serving and KV-tiering mechanisms to a workload pair published systems have not measured together, a cascaded voice pipeline beside long-context agents on one GPU, and measures when lifecycle timing beats static reservation and engine priority, and when it does not.
 
 **Claimed.** Two parts, argued in [What is distinctive](#what-is-distinctive):
-1. **Lifecycle-timed headroom, freed by parking: a measured negative result.** GPU room for the next realtime turn is held before the request exists, from speech onset or end of turn. It is counted in KV tokens and made by parking background sessions in host RAM rather than killing their requests. In E2's discriminating scenario it could not act: running agent requests held the pool, which the headroom can protect only by deferring new requests, so it was never there (degrade capped every reply), and room came from the engine change (2.). E2 shows that a control plane in front cannot make room while running work holds the KV; whether the timing helps where the mechanism engages was not isolated.
+1. **Lifecycle-timed headroom, freed by parking: a measured negative result.** GPU room for the next realtime turn is held before the request exists, from speech onset or end of turn. It is counted in KV tokens and held by deferring new background requests (parking sessions in host RAM was the lease design, which was dropped). In E2's discriminating scenario it could not act: running agent requests held the pool, which the headroom can protect only by deferring new requests, so it was never there (degrade capped every reply), and room came from the engine change (2.). E2 shows that a control plane in front cannot make room while running work holds the KV; whether the timing helps where the mechanism engages was not isolated.
 2. **The engine "make room" fix.** A waiting high-priority request may preempt running work when the KV cache is full, and with a write-through CPU tier the victim resumes from host RAM instead of recomputing; neither vLLM nor SGLang preempts for a waiting request today. Lower-priority prefill also sits out the steps of the request's first tokens, the part E2 found necessary; the KV preemption, or a class-aware KV reserve in its place, does the rest.
 
 **Dropped:** a recompute ledger that attributes every recomputed prompt token to a cause, checked by injecting causes, which went with leases ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)).
@@ -27,7 +27,7 @@ In the tables, **Relation** says how an item bears on Leaseholder:
 |---|---|---|
 | A latency class co-served with best-effort work | ConServe, HyGen, BROS, Niyama; Valve in production on 8,054 GPUs | Not claimed |
 | Priority classes, budgets, aging, queue TTLs, in-flight eviction | llm-d v1.0 flow control, SMG, Dynamo, AIBrix | Not claimed; llm-d flow control (emulated) and SMG are E2 baselines |
-| Headroom held back for priority work | Static: SMG reserved slots, llm-d holdback ceilings, vLLM `watermark` (class-blind). Tied to a running request: Llumnix. Sized from load or the agent graph: Valve, Tokencake | An equal-size static reservation is a baseline; timing it from voice events is measured, with no gain in E2 |
+| Headroom held back for priority work | Static: SMG reserved slots, llm-d holdback ceilings, vLLM `watermark` (class-blind). Tied to a running request: Llumnix. Sized from load or the agent graph: Valve, Tokencake | An equal-size static reservation is a baseline; timing it from voice events was measured, and in E2 it could not act, since running agents held the KV |
 | Engine priority preemption | vLLM among running requests; SGLang at the request cap | Baseline; the KV-full case is the claimed fix |
 | Parking KV during a tool call, prefetching before the return | Tokencake, KVFlow, CacheScout, MORI; proposed for vLLM (#57103, #58198) | Not claimed; E1 measures what lifecycle information adds |
 | TTL holds and leases | Continuum, TensorRT-LLM retention, vLLM #37003, llm-d-router #2273, AIBrix #2814 | Not claimed; Continuum's TTL hold is an E1 baseline |
@@ -73,7 +73,7 @@ These ship classes, admission and eviction today.
   - [#428](https://github.com/vllm-project/router/issues/428): workflow output-length hints that produce a bounded prefetch or offload hint before a tool returns, acknowledged by the backend and evaluated in shadow mode first.
   - [#435](https://github.com/vllm-project/router/issues/435): worker overload admission, bounded backpressure and load shedding.
 
-  Relation: complement. E1's gate G-sim was negative, so Leaseholder proposes no agent-side lease or prefetch policy here; E1's regime map and negative result go to #428 instead ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)). `LeaseConnector`'s per-request hit receipts are one form of the acknowledgement #427 asks for.
+  Relation: complement. E1's gate G-sim was negative, so Leaseholder proposes no agent-side lease or prefetch policy here; E1's regime map and negative result go to #428 instead ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)). `LeaseConnector`'s per-request hit receipts, in v0.3, were one form of the acknowledgement #427 asks for.
 
 ## Engines
 
@@ -219,7 +219,7 @@ Belady's MIN over fixed-size blocks is exact only for single-tier hit counts. Wi
 | Google Gemini | [Priority](https://blog.google/innovation-and-ai/technology/developers-tools/introducing-flex-and-priority-inference/) (2026-04-02), at a premium; overflow is "automatically served at the Standard tier instead of failing" | [Flex](https://ai.google.dev/gemini-api/docs/flex-inference): 50% off, on "sheddable" capacity; requests "may be preempted or evicted to ensure capacity for high-priority users"; a 1–15 minute target; clients retry with backoff | [Implicit caching](https://ai.google.dev/gemini-api/docs/caching) is on by default for Gemini 2.5 and later, with no hit guarantee |
 | AWS Bedrock | [Priority](https://aws.amazon.com/about-aws/whats-new/2025/11/amazon-bedrock-priority-flex-inference-service-tiers) (2025-11-18): up to 25% better output tokens per second, at a premium | Flex, at a discount, for workloads that tolerate longer latency | — |
 
-**Relation.** Complement. Providers sell the two tiers Leaseholder runs on one replica, and they harvest the cheap tier by shedding it and having clients retry. Their cache TTLs are billing terms, not residency promises. Leaseholder maps Anthropic `cache_control` TTLs to lease floors, reports Anthropic's usage fields (a cache read only for a real hit), and treats the honor rate inside the TTL as an SLI. The OpenAI contract is deferred.
+**Relation.** Complement. Providers sell the two tiers Leaseholder runs on one replica, and they harvest the cheap tier by shedding it and having clients retry. Their cache TTLs are billing terms, not residency promises. Leaseholder's lease design would have mapped Anthropic `cache_control` TTLs to lease floors and reported the honor rate inside the TTL; it was dropped with leases ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)), and the gateway relays only the engine's OpenAI-compatible API.
 
 ## What is distinctive
 
@@ -254,7 +254,7 @@ One lifecycle-event schema for both workloads is an engineering choice with litt
   - program- or session-level admission (Autellix, ThunderAgent, Progress-TTL);
   - starting the LLM before the turn ends (LiveKit preemptive generation, Endpoint Anticipation, PredGen);
   - a gap between LRU and Belady on prefix caches ("When Fancy Eviction Fails", LPC).
-- **A cache residency guarantee.** Providers promise billing eligibility, not residency, and Leaseholder reports an honor rate instead.
+- **A cache residency guarantee.** Providers promise billing eligibility, not residency, and Leaseholder makes no cache promise: the honor rate it planned to report went with leases.
 - **A better router.** `lh-gateway` is a small harness for experiments on one GPU without Kubernetes, and the `lh-core` policy has run inside it since W3. What goes upstream: the scheduler change, as vLLM #63350 and #63351 (opened 2026-10-23); E1's negative result for an agent-side lease and prefetch policy, on vLLM #57103 and vllm-project/router #428; and the lifecycle-event sink in agentic-api.
 - **Measured results on datacenter GPUs.** Measurements on one 16 GB consumer GPU with a 4B model and traces block-scaled 32× are stated in dimensionless terms (KV pressure, pause over restore time, restore over recompute time), and `lh-sim` places datacenter configurations on that map from modeled cost fits, labeled as modeled.
 - **Precedence.** Nothing here claims to be first or the only one. This page is a positioning statement, and each comparison rests on the sources cited.
