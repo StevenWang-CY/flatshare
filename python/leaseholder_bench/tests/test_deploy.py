@@ -1,10 +1,11 @@
-"""The deployment: what the GPU nodes serve and the tunnels reach, and the script that authorizes cyan's
-tunnel key on a GPU node, run against a stand-in for ssh."""
+"""The deployment: what the GPU nodes serve and the tunnels reach, cyan's install, and the script that
+authorizes cyan's tunnel key on a GPU node, run against stand-ins for ssh and systemd."""
 
 from __future__ import annotations
 
 import os
 import re
+import stat
 import subprocess
 from pathlib import Path
 
@@ -14,6 +15,8 @@ SERVICES = {8000, 8100, 8880}
 """A GPU node's services on its loopback: the engine, STT and TTS."""
 KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMa9oQ1uNw4Z5fT1n2x0bq7d1H0mGJ1s7mYcQjv8Yw5k"
 """A tunnel key's type and blob, as ssh-keygen writes them before the comment."""
+LOGIN = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB7m2Qp9xR4tYc3vLk8wNs6fJd0aHe5uPq1zXo2iGb4M me@laptop"
+"""Another key in a GPU node's authorized_keys: its user's own."""
 
 FAKE_SSH = """\
 #!/bin/sh
@@ -24,10 +27,13 @@ cd "$FAKE_HOSTS/$host" && exec sh -c "$*"
 """
 
 
-def authorize(tmp_path: Path, public_key: str, authorized_keys: str = "") -> tuple[str, str]:
-    """Runs authorize-tunnel.sh from cyan to phastform, cyan's tunnel key being ``public_key`` and
-    phastform's authorized_keys ``authorized_keys``; returns what it prints and the file it leaves."""
-    hosts, bin_dir = tmp_path / "hosts", tmp_path / "bin"
+def authorize(
+    work: Path, public_key: str, authorized_keys: str = ""
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    """Runs authorize-tunnel.sh from cyan to phastform, hosts kept under ``work``, cyan's tunnel key
+    being ``public_key`` and phastform's authorized_keys ``authorized_keys``; returns the run and the
+    file it leaves."""
+    hosts, bin_dir = work / "hosts", work / "bin"
     for host in ("cyan", "phastform"):
         (hosts / host / ".ssh").mkdir(parents=True)
     (hosts / "cyan" / ".ssh" / "lh_tunnel_ed25519.pub").write_text(f"{public_key}\n")
@@ -46,9 +52,8 @@ def authorize(tmp_path: Path, public_key: str, authorized_keys: str = "") -> tup
         env=env,
         capture_output=True,
         text=True,
-        check=True,
     )
-    return done.stdout, authorized.read_text()
+    return done, authorized.read_text()
 
 
 def permitted(authorized_keys: str) -> set[int]:
@@ -72,5 +77,46 @@ def test_the_gpu_nodes_publish_no_kv_events_and_the_tunnels_reach_only_their_ser
     audited = re.search(r"grep -E ':\(([\d|]+)\)\$'", smoke)
     assert audited is not None
     assert {int(port) for port in audited.group(1).split("|")} == SERVICES
-    _, authorized = authorize(tmp_path, f"{KEY} lh-tunnel@cyan")
+    done, authorized = authorize(tmp_path, f"{KEY} lh-tunnel@cyan")
+    assert done.returncode == 0, done.stderr
     assert permitted(authorized) == SERVICES
+
+
+def test_the_tunnel_key_may_forward_to_the_services_and_listen_nowhere(tmp_path: Path) -> None:
+    earlier = f'restrict,port-forwarding,permitopen="127.0.0.1:5558" {KEY} lh-tunnel@cyan'
+    options = (
+        'restrict,port-forwarding,permitopen="127.0.0.1:8000",permitopen="127.0.0.1:8100",'
+        'permitopen="127.0.0.1:8880",permitlisten="127.0.0.1:1",command="/bin/false"'
+    )
+    # The key as ssh-keygen writes it, and without its comment, which is optional.
+    for name, public_key in (("commented", f"{KEY} lh-tunnel@cyan"), ("bare", KEY)):
+        done, authorized = authorize(tmp_path / name, public_key, f"{LOGIN}\n{earlier}\n")
+        # The earlier entry for the key is replaced; every other key stays.
+        assert authorized.splitlines() == [LOGIN, f"{options} {public_key}"], name
+        assert done.stdout == f"authorized: {public_key.rsplit(' ', 1)[-1]} (1 entry)\n", name
+    # A client without a key changes nothing.
+    done, authorized = authorize(tmp_path / "empty", "", f"{LOGIN}\n")
+    assert done.returncode == 2 and "no public key" in done.stderr
+    assert authorized == f"{LOGIN}\n"
+
+
+def test_cyans_install_makes_the_gateways_cache_salt_secret_once(tmp_path: Path) -> None:
+    home, bin_dir = tmp_path / "home", tmp_path / "bin"
+    home.mkdir()
+    bin_dir.mkdir()
+    for tool in ("systemctl", "loginctl"):  # cyan's user manager, which the test leaves alone
+        (bin_dir / tool).write_text("#!/bin/sh\n")
+        (bin_dir / tool).chmod(0o755)
+    env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    install = ["bash", str(DEPLOY / "cyan" / "install.sh")]
+    subprocess.run(install, env=env, check=True, capture_output=True)
+    secret = home / ".config" / "leaseholder" / "cache-salt-secret"
+    made = secret.read_text()
+    assert re.fullmatch(r"[0-9a-f]{64}\n", made)
+    assert (
+        stat.S_IMODE(secret.stat().st_mode) == 0o600
+    )  # the gateway refuses any other user's access
+    # A new secret would change every tenant's cache salt: the next install keeps it.
+    subprocess.run(install, env=env, check=True, capture_output=True)
+    assert secret.read_text() == made
+    assert [p.name for p in secret.parent.iterdir()] == ["cache-salt-secret"]

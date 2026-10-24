@@ -65,11 +65,19 @@ reply that never came counts as a sample censored at this value, in every V2V pe
 
 
 def summarize_point(
-    run_dir: Path, start: float, end: float, *, agents: bool, nodes: Sequence[str] = ()
+    run_dir: Path,
+    start: float,
+    end: float,
+    *,
+    agents: bool,
+    nodes: Sequence[str] = (),
+    warmup_turns: int = 0,
 ) -> dict[str, Any]:
     """The E2 metrics of the window ``start``..``end`` (epoch seconds) from a run directory. Raises
     ``ValueError`` when the point measured nothing to place on the frontier. A point on several GPU
-    ``nodes`` adds up their engines' counters and reports each node's share under ``nodes``."""
+    ``nodes`` adds up their engines' counters and reports each node's share under ``nodes``. The
+    ``warmup_turns`` that open each call are measured by nothing: the callers leave them out, and so
+    does the worker's account of the turns."""
     bots = orjson.loads((run_dir / "bots" / "summary.json").read_bytes())
     if bots["v2v_ms"].get("n", 0) <= bots["v2v_ms"].get("censored", 0):
         raise ValueError(f"the calls measured no voice-to-voice latency ({bots['errors']} failed)")
@@ -81,7 +89,7 @@ def summarize_point(
     summary = {
         "window_s": round(end - start, 1),
         "voice": {key: bots[key] for key in voice},
-        "worker": worker(run_dir / "voice-worker.log"),
+        "worker": worker(run_dir / "voice-worker.log", warmup_turns),
         "background": background(records, start, end) if agents else None,
         "gateway": gateway_counts(*_snapshots(metrics, "gateway"), end - start, requests),
         "engine": (
@@ -112,7 +120,8 @@ def node_shares(
     its journal places none), the agent requests and the first bytes of the realtime requests the
     gateway sent it (None without its request log), and its engine's counters."""
     placed = call_nodes(run_dir)
-    turns = list(_json_lines((run_dir / "bots" / "turns.jsonl").read_text())) if placed else []
+    turns = _json_lines((run_dir / "bots" / "turns.jsonl").read_text()) if placed else ()
+    turns = measured_turns(turns)
     shares = {}
     for node, engine in engines.items():
         sent = None if requests is None else [r for r in requests if r.get("node") == node]
@@ -147,10 +156,17 @@ def call_nodes(run_dir: Path) -> dict[int, str]:
     return nodes
 
 
+def measured_turns(turns: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """The callers' measured turns (bots/turns.jsonl): all but the warm-up turns that open each call,
+    whose lines say ``"warmup": true`` (``[voice] warmup_turns``)."""
+    return [turn for turn in turns if not turn.get("warmup")]
+
+
 def call_turns(turns: Sequence[Mapping[str, Any]], calls: int) -> dict[str, Any]:
-    """Some of the calls' numbers from their callers' turns (bots/turns.jsonl), counted as ``lh-voice
-    bots`` sums up all of them: voice-to-voice over every reply, the reply to an interruption too,
-    and a reply or a silence a timeout cut short censored at REPLY_TIMEOUT_MS."""
+    """Some of the calls' numbers from their callers' measured turns (bots/turns.jsonl), counted as
+    ``lh-voice bots`` sums up all of them: voice-to-voice over every reply, the reply to an
+    interruption too, and a reply or a silence a timeout cut short censored at REPLY_TIMEOUT_MS."""
+    turns = measured_turns(turns)
     silence = [t["barge_in_to_silence_ms"] for t in turns if "barge_in_to_silence_ms" in t]
     silence += [
         REPLY_TIMEOUT_MS
@@ -168,11 +184,11 @@ def call_turns(turns: Sequence[Mapping[str, Any]], calls: int) -> dict[str, Any]
 
 
 def turn_samples(turns: Iterable[Mapping[str, Any]]) -> tuple[list[float], int]:
-    """The voice-to-voice samples of the callers' turns (bots/turns.jsonl) and how many are censored:
-    each turn's reply and, after a barge-in, the reply to the interruption, as ``lh-voice bots`` pools
-    them; a reply that never came (a failed turn) stands at REPLY_TIMEOUT_MS."""
+    """The voice-to-voice samples of the callers' measured turns (bots/turns.jsonl) and how many are
+    censored: each turn's reply and, after a barge-in, the reply to the interruption, as ``lh-voice
+    bots`` pools them; a reply that never came (a failed turn) stands at REPLY_TIMEOUT_MS."""
     samples, censored = [], 0
-    for turn in turns:
+    for turn in measured_turns(turns):
         wanted = ["v2v_ms", *(["v2v_after_barge_in_ms"] if turn.get("barge_in") else [])]
         for key in wanted:
             censored += key not in turn
@@ -209,16 +225,19 @@ def _json_lines(text: str) -> Iterator[dict[str, Any]]:
             yield record
 
 
-def worker(journal: Path) -> dict[str, Any] | None:
+def worker(journal: Path, warmup_turns: int = 0) -> dict[str, Any] | None:
     """The voice worker's own account of the calls, from its journal (voice-worker.log): each stage
     of the waterfall over the turns, and the lifecycle events its sessions sent, dropped and failed
     to deliver. None without a turn or session line in it; the events are None when no session sent
-    any (``LH_EVENTS=off``, or an LLM that bypasses the gateway)."""
+    any (``LH_EVENTS=off``, or an LLM that bypasses the gateway). The first ``warmup_turns`` turn
+    lines of each session are the replies to the call's warm-up turns, which have no interruption to
+    add a reply, and are left out."""
     if not journal.exists():
         return None
     turns, sessions = worker_lines(journal.read_text(errors="replace"))
     if not turns and not sessions:
         return None
+    turns = [t for t in turns if t.get("turn", warmup_turns) >= warmup_turns]
     counted = [s for s in sessions if "events_sent" in s]
     events = {
         kind: sum(s[f"events_{kind}"] for s in counted) for kind in ("sent", "dropped", "failed")
@@ -357,6 +376,15 @@ def gateway_counts(
     }
 
 
+CPU_TIER = {
+    "kv_offload_load_bytes": "vllm:kv_offload_load_bytes_total",
+    "kv_offload_store_bytes": "vllm:kv_offload_store_bytes_total",
+}
+"""The CPU tier's own counts (vLLM's OffloadingConnector): the bytes of every load into the GPU pool and
+of every store from it, a preempted request's resume included, which the prompt-token sources leave
+out."""
+
+
 def added_engine_counts(counts: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     """Several engines' :func:`engine_counts` added up; a count that no engine keeps stays None."""
     counts = list(counts)
@@ -375,11 +403,15 @@ def added_engine_counts(counts: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
         "preemptions": measured_sum(*(c["preemptions"] for c in counts)),
         "prompt_tokens_by_source": added("prompt_tokens_by_source"),
         "refused": added("refused"),
+        **{key: measured_sum(*(c.get(key) for c in counts)) for key in CPU_TIER},
     }
 
 
 def engine_counts(before: str, after: str) -> dict[str, Any]:
-    """vLLM's preemptions, prompt tokens by source and refused requests over the window."""
+    """vLLM's preemptions, prompt tokens by source, refused requests and the CPU tier's loads and
+    stores in bytes over the window. vLLM 0.32 counts a request's prompt tokens by source only at its
+    first scheduling, so a preempted request's resume is in none of them; the CPU tier's counts have
+    every load and store."""
 
     def by(label: str, name: str) -> dict[str, int] | None:
         series = deltas(before, after, name, "engine")
@@ -391,11 +423,15 @@ def engine_counts(before: str, after: str) -> dict[str, Any]:
             totals[key] = totals.get(key, 0) + round(value)
         return totals
 
-    preemptions = deltas(before, after, "vllm:num_preemptions_total", "engine")
+    def total(name: str) -> int | None:
+        series = deltas(before, after, name, "engine")
+        return None if series is None else round(sum(series.values()))
+
     return {
-        "preemptions": None if preemptions is None else round(sum(preemptions.values())),
+        "preemptions": total("vllm:num_preemptions_total"),
         "prompt_tokens_by_source": by("source", "vllm:prompt_tokens_by_source_total"),
         "refused": by("reason", "vllm:admission_rejections_total"),
+        **{key: total(name) for key, name in CPU_TIER.items()},
     }
 
 
@@ -532,8 +568,9 @@ def measured_sum(*counts: int | None) -> int | None:
 # The compact record
 
 RECORD = ("run.json", "arm.toml", "bots/summary.json", "bots/turns.jsonl")
-"""What a point's compact record (``lh-bench e2 export``) copies from its run directory, beside its
-summary.json and a reduced engine.json (engine-NODE.json for each of several GPU nodes). Left out:
+"""What a point's compact record (``lh-bench e2 export``) keeps of its run directory's files, its
+run.json as :func:`compact` gives it, beside its summary.json and a reduced engine.json
+(engine-NODE.json for each of several GPU nodes). Left out:
 the gateway's request log and the GPU's samples, whose numbers the record's summary keeps; AIPerf's
 exports, the metric snapshots, the worker's journal and the tools' logs; and the callers' run.json,
 which names LiveKit's API key."""
@@ -555,12 +592,14 @@ VLLM_ENGINE = {
         "async_scheduling",
         "watermark",
         "max_num_queued_tokens",
+        "scheduler_cls",
     ),
     "kv_transfer_config": ("kv_connector", "kv_connector_extra_config"),
 }
 """What a record keeps of a vLLM engine's configuration, beside all of its additional_config: the
-settings lh-bench e2 run checks the arms' flags against, and what it takes to serve the same engine
-again (the model and its revision, the context, dtype and quantization, the KV pool, the CPU tier)."""
+settings lh-bench e2 run checks the arms' flags against, the scheduler class among them (a variant's
+module, or None for vLLM's own), and what it takes to serve the same engine again (the model and its
+revision, the context, dtype and quantization, the KV pool, the CPU tier)."""
 SGLANG_ENGINE = (
     "model_path",
     "revision",
@@ -592,15 +631,21 @@ _HOME = re.compile(r"/(?:home|Users)/[^/\s]+|/root(?=/)")
 def compact(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]] | None:
     """The run.json and summary.json of the compact record of the point in ``run_dir``, a run
     directory or a record (whose own it returns); None for a point that did not complete. The
-    summary takes the first bytes of both classes exactly from the request log, and the GPU's median
-    SM clock and highest temperature from gpu.csv (``gpu``; on several GPU nodes over all of their
-    gpu-NODE.csv, and each node's in its share): what a record keeps of the files it leaves out.
-    The report reads every point through it, so a run directory and its record give the same
-    tables."""
+    run.json is the run's, its ``versions`` naming the GPU nodes' deployed revisions as null where
+    the run did not record them (``gpu_source``). The summary takes the first bytes of both classes
+    exactly from the request log, and the GPU's median SM clock and highest temperature from gpu.csv
+    (``gpu``; on several GPU nodes over all of their gpu-NODE.csv, and each node's in its share): what
+    a record keeps of the files it leaves out. The report reads every point through it, so a run
+    directory and its record give the same tables."""
     run_file = run_dir / "run.json"
     run = orjson.loads(run_file.read_bytes()) if run_file.exists() else {}
     if run.get("status") != "complete":
         return None
+    if "versions" in run and "gpu_source" not in run["versions"]:
+        # Points measured before e2 run recorded it: beside cyan's revision, as e2 run writes it.
+        versions = list(run["versions"].items())
+        at = 1 + next((i for i, (key, _) in enumerate(versions) if key == "source"), -1)
+        run["versions"] = dict([*versions[:at], ("gpu_source", None), *versions[at:]])
     summary = orjson.loads((run_dir / "summary.json").read_bytes())
     window = run.get("window")
     requests = gateway_requests(run_dir, window["start"], window["end"]) if window else None
@@ -620,7 +665,46 @@ def compact(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]] | None:
     for node, share in nodes.items():
         if (run_dir / f"gpu-{node}.csv").exists():
             share["gpu"] = clocks([f"gpu-{node}.csv"])
+    # The CPU tier's loads and stores, from the engines' /metrics snapshots: points measured before
+    # the summary kept them gain them, and the summary's other counts stay as they are.
+    snapshots = {node: f"engine-{node}" for node in nodes} or {None: "engine"}
+    metrics = run_dir / "metrics"
+    if all(
+        (metrics / f"{name}-{when}.prom").exists()
+        for name in snapshots.values()
+        for when in ("start", "end")
+    ):
+        counts = {
+            node: engine_counts(*_snapshots(metrics, name)) for node, name in snapshots.items()
+        }
+        for node, share in nodes.items():
+            share["engine"] |= {key: counts[node][key] for key in CPU_TIER}
+        totals = added_engine_counts(counts.values()) if nodes else counts[None]
+        summary["engine"] |= {key: totals[key] for key in CPU_TIER}
     return run, summary
+
+
+def point_engines(run_dir: Path, nodes: Sequence[str]) -> dict[str | None, dict[str, Any] | None]:
+    """The engine of a point (by node on several GPU nodes, else under None) as its record keeps it
+    (:func:`engine_settings`), from a run directory's engine.json or a record's; None without one."""
+    engines: dict[str | None, dict[str, Any] | None] = {}
+    for node in [*nodes] or [None]:
+        path = run_dir / (f"engine-{node}.json" if node else "engine.json")
+        engines[node] = engine_settings(orjson.loads(path.read_bytes())) if path.exists() else None
+    return engines
+
+
+def kv_token_bytes(engine: Mapping[str, Any] | None) -> float | None:
+    """The bytes of KV a token takes in an engine's pool, which the CPU tier moves as they are: its KV
+    cache's bytes over its tokens, from vLLM's cache_config (``kv_cache_memory_bytes`` over
+    ``num_gpu_blocks`` times ``block_size``). The bytes left over by the whole blocks that fit, less
+    than one block's, make it high by under one part in ``num_gpu_blocks`` (0.02% on the frozen box:
+    147,492 bytes against Qwen3-4B's 147,456). None without them (SGLang)."""
+    cache = (engine or {}).get("cache_config") or {}
+    try:
+        return cache["kv_cache_memory_bytes"] / (cache["num_gpu_blocks"] * cache["block_size"])
+    except (KeyError, TypeError, ZeroDivisionError):
+        return None
 
 
 def export_point(run_dir: Path, out: Path) -> Path | None:
@@ -630,13 +714,15 @@ def export_point(run_dir: Path, out: Path) -> Path | None:
     several nodes) keeps only what says which engine the point ran on (:func:`engine_settings`)."""
     if (point := compact(run_dir)) is None:
         return None
-    summary = point[1]
+    run, summary = point
     nodes = summary.get("nodes") or {}
     record = out / run_dir.absolute().parent.name / run_dir.absolute().name
     (record / "bots").mkdir(parents=True, exist_ok=True)
     for name in RECORD:
-        if (run_dir / name).exists():
+        if name != "run.json" and (run_dir / name).exists():
             shutil.copyfile(run_dir / name, record / name)
+    # As e2 run writes them, so that a run.json the record keeps as it was stays the same bytes.
+    (record / "run.json").write_bytes(orjson.dumps(run, option=orjson.OPT_INDENT_2) + b"\n")
     (record / "summary.json").write_bytes(orjson.dumps(summary, option=orjson.OPT_INDENT_2) + b"\n")
     for name in [f"engine-{node}.json" for node in nodes] or ["engine.json"]:
         if (engine := run_dir / name).exists():

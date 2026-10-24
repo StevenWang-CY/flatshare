@@ -51,13 +51,25 @@ from typing import Any
 import httpx
 import orjson
 
-from leaseholder_bench.e2.arm import Arm, E2Error, Engine, Voice, flag_values, gpu_nodes, load_arm
+from leaseholder_bench.e2.arm import (
+    NODE_NAME,
+    Arm,
+    E2Error,
+    Engine,
+    Voice,
+    flag_values,
+    gpu_nodes,
+    load_arm,
+)
 from leaseholder_bench.e2.record import gateway_request_lines, render, summarize_point, worker_lines
 from leaseholder_bench.kv_metrics import fetch
 from leaseholder_bench.tiers import pool_tokens
 
 CONFIGS = Path(__file__).resolve().parents[3] / "configs"
 """The AIPerf configuration, from the source tree (``uv sync`` installs the package editable)."""
+VARIANTS = Path(__file__).resolve().parents[5] / "deploy" / "phastform" / "variants"
+"""The GPU node's engine variants, from the same source tree: what each adds to the engine's command
+line, which the engine check expects."""
 
 PROFILING = "Credit phase start: profiling"
 """AIPerf's log line when its measured phase begins, after the dataset is built and warmed up."""
@@ -446,19 +458,60 @@ def describe_engine(url: str) -> EngineInfo:
     raise E2Error(f"{url}/server_info is neither vLLM's nor SGLang's")
 
 
-def check_engine(engine: Engine, info: EngineInfo) -> dict[str, list[str]]:
-    """Check the arm's engine against what the engine reports: its flags and, on vLLM, the frozen
-    box's scheduler settings it keeps. A flag whose setting the engine does not report is listed as
-    unchecked."""
+SCHEDULER = "--scheduler-cls"
+ADDITIONAL = "--additional-config."
+"""vLLM's flags that name the scheduler class and set one key of ``additional_config`` (make-room's
+switches, ``--additional-config.make_room.reserve_tokens 0``)."""
+
+
+def variant_flags(variant: str, variants: Path = VARIANTS) -> tuple[str, ...]:
+    """The engine flags a variant gives its engine (frozen: none): those of the command its
+    lh-engine.conf starts (the last ``ExecStart=``), from its first flag on, without ``--config`` (the
+    frozen box's engine.yaml, whose settings FROZEN has) and without ``$LH_ENGINE_FLAGS``, where
+    ``variant.sh use`` puts the arm's flags, after the variant's."""
+    if variant == "frozen":
+        return ()
+    if not (variants / variant).is_dir():
+        raise E2Error(f"no engine variant {variant} in {variants}")
+    conf = variants / variant / "lh-engine.conf"
+    if not conf.exists():
+        return ()  # a variant that leaves the engine's command line alone (mps)
+    # systemd joins a line that ends in a backslash with the next one.
+    lines = conf.read_text().replace("\\\n", " ").splitlines()
+    starts = [line.partition("=")[2] for line in lines if line.startswith("ExecStart=")]
+    words = shlex.split(starts[-1]) if starts else []
+    first = next((i for i, word in enumerate(words) if word.startswith("--")), len(words))
+    flags: list[str] = []
+    for word in words[first:]:
+        if flags and flags[-1] == "--config":
+            flags.pop()
+        elif not word.startswith("$"):
+            flags.append(word)
+    return tuple(flags)
+
+
+def check_engine(
+    engine: Engine, info: EngineInfo, variants: Path = VARIANTS
+) -> dict[str, list[str]]:
+    """Check the arm's engine against what the engine reports. The point expects the engine's command
+    line as ``variant.sh use`` makes it: on vLLM the frozen box's scheduler settings, then the
+    variant's flags (:func:`variant_flags`), then the arm's, the last of a repeated flag winning. Each
+    flag's setting must match; on vLLM the scheduler class (``scheduler_cls``) must be the one
+    ``--scheduler-cls`` names, vLLM's own without it, and ``additional_config`` must be exactly what the
+    ``--additional-config.KEY`` flags build, so that frozen, make-room and pr54530 engines, and
+    make-room with another switch, cannot pass for one another. A flag whose setting the engine does
+    not report is listed as unchecked."""
     expected = SGLANG if engine.variant == SGLANG else "vllm"
     switch = f"switch it with deploy/phastform/variant.sh use {engine}"
     if info.server != expected:
         raise E2Error(f"the engine is {info.server}, the arm file needs {expected}: {switch}")
-    wanted = flag_values(engine.flags)
+    wanted = flag_values(variant_flags(engine.variant, variants)) | flag_values(engine.flags)
     if expected == "vllm":
         wanted = flag_values(FROZEN) | wanted
     checked, unchecked = [], []
     for flag, value in wanted.items():
+        if expected == "vllm" and (flag == SCHEDULER or flag.startswith(ADDITIONAL)):
+            continue  # checked as a whole below
         key = SETTING_NAMES.get(flag, flag.removeprefix("--").replace("-", "_"))
         if key not in info.settings:
             unchecked.append(flag)
@@ -469,7 +522,70 @@ def check_engine(engine: Engine, info: EngineInfo) -> dict[str, list[str]]:
             raise E2Error(
                 f"the engine runs {key} = {reported!r}, the point needs {flag} {value}: {switch}"
             )
+    if expected == "vllm":
+        scheduler = [SCHEDULER] if SCHEDULER in wanted else []
+        if "scheduler_cls" not in info.settings:
+            unchecked += scheduler
+        elif info.settings["scheduler_cls"] != wanted.get(SCHEDULER):
+            needs = f"{SCHEDULER} {wanted[SCHEDULER]}" if scheduler else "vLLM's own scheduler"
+            raise E2Error(
+                f"the engine runs scheduler_cls = {info.settings['scheduler_cls']!r}, the point "
+                f"needs {needs}: {switch}"
+            )
+        else:
+            checked += scheduler
+        additional = [flag for flag in wanted if flag.startswith(ADDITIONAL)]
+        if not isinstance(info.config.get("additional_config"), Mapping):
+            unchecked += additional
+        else:
+            built = _additional_config({flag: wanted[flag] for flag in additional})
+            if problem := _differs(info.config["additional_config"], built, ()):
+                raise E2Error(f"{problem}: {switch}")
+            checked += additional
     return {"checked": checked, "unchecked": unchecked}
+
+
+def _additional_config(flags: Mapping[str, str]) -> dict[str, Any]:
+    """The ``additional_config`` that ``--additional-config.KEY`` flags build: KEY's dots nest tables,
+    and each value stays the flag's text."""
+    config: dict[str, Any] = {}
+    for flag, value in flags.items():
+        *tables, key = flag.removeprefix(ADDITIONAL).split(".")
+        table = config
+        for name in tables:
+            table = table.setdefault(name, {})
+            if not isinstance(table, dict):
+                raise E2Error(f"{flag} sets a key inside a value of another flag")
+        if isinstance(table.get(key), dict):
+            raise E2Error(f"{flag} sets a value where other flags set keys")
+        table[key] = value
+    return config
+
+
+def _differs(reported: Mapping[str, Any], built: Mapping[str, Any], path: tuple[str, ...]) -> str:
+    """Where the engine's ``additional_config`` (``reported``) is not the one the point's flags build,
+    said for ``e2 run``'s error; empty when it is."""
+    for key in [*built, *(key for key in reported if key not in built)]:
+        name, flag = ".".join((*path, key)), ADDITIONAL + ".".join((*path, key))
+        if key not in reported:
+            needs = _flag_line(flag, built[key])
+            return f"the engine's additional_config has no {name}, the point needs {needs}"
+        runs = f"the engine runs additional_config {name} = {reported[key]!r}"
+        if key not in built:
+            return f"{runs}, which the point's flags do not set"
+        if isinstance(built[key], dict) and isinstance(reported[key], Mapping):
+            if problem := _differs(reported[key], built[key], (*path, key)):
+                return problem
+        elif isinstance(built[key], dict) or not _same(reported[key], built[key]):
+            return f"{runs}, the point needs {_flag_line(flag, built[key])}"
+    return ""
+
+
+def _flag_line(flag: str, value: Any) -> str:
+    """A built ``additional_config`` value as the flags that set it."""
+    if not isinstance(value, dict):
+        return f"{flag} {value}"
+    return " ".join(_flag_line(f"{flag}.{key}", item) for key, item in value.items())
 
 
 def _same(reported: Any, text: str) -> bool:
@@ -606,11 +722,14 @@ def run_point(
     systemd: Systemd | None = None,
     *,
     save_audio: bool = False,
+    gpu_source: Mapping[str, str | None] | None = None,
 ) -> dict[str, Any]:
     """Measure the point of ``arm_file`` into the directory ``out``; returns the summary. A
     directory with a complete point is never overwritten, and an earlier attempt that did not
     complete is kept beside it. ``save_audio``, a run option rather than the arm's, has the callers
-    save each call's audio (``lh-voice bots --save-audio``)."""
+    save each call's audio (``lh-voice bots --save-audio``). ``gpu_source`` is each GPU node's
+    deployed revision (its ~/leaseholder/src/DEPLOYED, None where it has none), which campaign.sh
+    reads over its SSH at the point's start and run.json keeps beside cyan's; None when unknown."""
     if not hasattr(os, "waitid"):
         raise E2Error(NEEDS_WAITID)
     arm = load_arm(arm_file)
@@ -619,7 +738,7 @@ def run_point(
     with _exclusive(host):
         _fresh(out)
         shutil.copyfile(arm_file, out / "arm.toml")
-        record = _Record(out, arm, host)
+        record = _Record(out, arm, host, gpu_source)
         record["save_audio"] = save_audio
         # Under the lock no other run's tools are alive: a marked process is left from a run that
         # was killed before it could stop them.
@@ -673,7 +792,12 @@ def _measure(
     _worker_journal(systemd, out, start, arm.voice.callers)
     try:
         metrics = summarize_point(
-            out, start, end, agents=bool(arm.agents.sessions), nodes=tuple(nodes)
+            out,
+            start,
+            end,
+            agents=bool(arm.agents.sessions),
+            nodes=tuple(nodes),
+            warmup_turns=arm.voice.warmup_turns,
         )
     except ValueError as exc:
         raise E2Error(str(exc)) from None
@@ -740,13 +864,16 @@ def _call(
 ) -> float:
     """Run the calls; returns when they ended. The replay must outlast them."""
     voice = arm.voice
-    record.say(f"calls: {voice.callers} callers, {voice.turns} turns each")
+    warmup = f" after {voice.warmup_turns} warm-up" if voice.warmup_turns else ""
+    record.say(f"calls: {voice.callers} callers, {voice.turns} turns each{warmup}")
     options = {
         "--corpus": host.root / "data" / "callers",
         "--callers": voice.callers,
         "--turns": voice.turns,
         "--barge-in": voice.barge_in,
         "--seed": voice.seed,
+        # Only when there are some, as the callers before the option took no such flag.
+        **({"--warmup-turns": voice.warmup_turns} if voice.warmup_turns else {}),
         "--out": out / "bots",
     }
     command = [*host.bots(), *(str(word) for option in options.items() for word in option)]
@@ -755,7 +882,7 @@ def _call(
     env = os.environ | read_env(host.config / "livekit.env")
     bots = Process("lh-voice bots", command, out / "bots.log", env)
     running.callback(bots.stop, 30.0)
-    deadline = time.monotonic() + CALL_TURN_S * voice.turns + 120
+    deadline = time.monotonic() + CALL_TURN_S * (voice.warmup_turns + voice.turns) + 120
     while not bots.exited():
         if aiperf is not None and aiperf.exited():
             raise aiperf.failure("exited while the calls ran, so its load did not cover them")
@@ -890,7 +1017,9 @@ def _fresh(out: Path) -> None:
 class _Record:
     """run.json, rewritten at each step so that a point that dies keeps its status, and run.log."""
 
-    def __init__(self, out: Path, arm: Arm, host: Host) -> None:
+    def __init__(
+        self, out: Path, arm: Arm, host: Host, gpu_source: Mapping[str, str | None] | None
+    ) -> None:
         self.path = out / "run.json"
         self.log = out / "run.log"
         self.data: dict[str, Any] = {
@@ -900,7 +1029,7 @@ class _Record:
             "host": platform.node(),
             "started": time.time(),
             "arm": asdict(arm),
-            "versions": _versions(host),
+            "versions": _versions(host, gpu_source),
         }
         self._write()
 
@@ -930,7 +1059,7 @@ class _Record:
         _write_json(self.path, self.data)
 
 
-def _versions(host: Host) -> dict[str, str | None]:
+def _versions(host: Host, gpu_source: Mapping[str, str | None] | None) -> dict[str, Any]:
     deployed = host.root / "src" / "DEPLOYED"  # deploy/deploy.sh records the commit it synced
     gateway = host.root / "bin" / "lh-gateway"
     lh_gateway = None
@@ -939,10 +1068,28 @@ def _versions(host: Host) -> dict[str, str | None]:
         lh_gateway = shown.stdout.strip() or None
     return {
         "source": deployed.read_text().strip() if deployed.exists() else None,
+        "gpu_source": None if gpu_source is None else dict(gpu_source),
         "leaseholder_bench": metadata.version("leaseholder-bench"),
         "aiperf": metadata.version("aiperf"),
         "lh_gateway": lh_gateway,
     }
+
+
+_REVISION = re.compile(r"[A-Za-z0-9._+-]*")
+"""A deployed revision as deploy/deploy.sh writes it (``git describe --always --dirty``)."""
+
+
+def gpu_sources(values: Sequence[str]) -> dict[str, str | None]:
+    """``NODE=REVISION`` values (``lh-bench e2 run --gpu-source``) by node, an empty revision None."""
+    sources: dict[str, str | None] = {}
+    for value in values:
+        node, sep, revision = value.partition("=")
+        if not sep or not NODE_NAME.fullmatch(node) or not _REVISION.fullmatch(revision):
+            raise E2Error(f"--gpu-source {value!r} is not NODE=REVISION")
+        if node in sources:
+            raise E2Error(f"--gpu-source names {node} twice")
+        sources[node] = revision or None
+    return sources
 
 
 def _write_json(path: Path, data: Any) -> None:

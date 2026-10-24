@@ -31,6 +31,7 @@ from leaseholder_bench.e2.run import (
     Process,
     Systemd,
     check_engine,
+    gpu_sources,
     read_env,
     reset_cyan,
     run_point,
@@ -41,6 +42,7 @@ FAKES = Path(__file__).parent / "fakes"
 REPO = Path(__file__).resolve().parents[3]
 EXAMPLE = REPO / "deploy" / "cyan" / "gateway.example.toml"
 BENCHMARKS = REPO / "benchmarks" / "e2"
+RESULTS = REPO / "benchmarks" / "results" / "2026-10-23-e2"
 PHASTFORM = REPO / "deploy" / "phastform"
 needs_waitid = pytest.mark.skipif(not hasattr(os, "waitid"), reason=e2.NEEDS_WAITID)
 
@@ -120,6 +122,7 @@ def test_an_arm_file_fills_in_the_defaults(tmp_path: Path) -> None:
     arm = load_arm(write(tmp_path, "a1-voice.toml", VOICE_ALONE))
     assert (arm.name, arm.arm, arm.label) == ("a1-voice", "1", "voice alone")
     assert arm.voice == Voice(callers=2, turns=25, barge_in=0.25, preemptive_generation=True)
+    assert arm.voice.warmup_turns == 0  # the arm files measured before warm-up turns stay as run
     assert (arm.agents.sessions, arm.agents.think_cap) == (0, 120.0)
     assert (arm.gateway, arm.engine, arm.router) == ({}, Engine("frozen", ()), None)
 
@@ -156,6 +159,7 @@ def test_an_arm_file_says_everything_about_its_point(tmp_path: Path) -> None:
         ('arm = "7z1"\nlabel = "x"\n', "arm is E2's arm"),
         ('arm = 2\nlabel = "x"\nrouter = "nginx"\n', "router can only be smg"),
         ('arm = 2\nlabel = "x"\n[voice]\nbarge_in = 1.5\n', "barge_in is a share"),
+        ('arm = 2\nlabel = "x"\n[voice]\nwarmup_turns = -1\n', "warmup_turns cannot be negative"),
         ('arm = 2\nlabel = "x"\n[engine]\nflags = ["--a b"]\n', "is not a plain word"),
         ('arm = 2\nlabel = "x"\n[engine]\nflags = ["512"]\n', "follows no flag"),
         ('arm = 2\nlabel = "x"\n[engine]\nflags = "--a"\n', "flags must be list"),
@@ -236,6 +240,7 @@ FROZEN_SCHEDULER = {
     "policy": "priority",
     "max_num_batched_tokens": 512,
     "long_prefill_token_threshold": 256,
+    "scheduler_cls": None,  # vLLM's own
 }
 STOCK_SCHEDULER = {
     "policy": "fcfs",
@@ -244,12 +249,16 @@ STOCK_SCHEDULER = {
 }
 
 
-def vllm(**scheduler: Any) -> EngineInfo:
+def vllm(additional_config: dict[str, Any] | None = None, **scheduler: Any) -> EngineInfo:
+    """A vLLM engine as its /server_info reports it: the frozen box, with ``scheduler`` settings and
+    ``additional_config`` changed."""
     settings = FROZEN_SCHEDULER | {"watermark": 0.0} | scheduler
-    return EngineInfo("vllm", "0.32.0", 36400, settings, {})
+    return EngineInfo(
+        "vllm", "0.32.0", 36400, settings, {"additional_config": additional_config or {}}
+    )
 
 
-def test_the_engine_check_compares_each_flag_with_the_engines_setting() -> None:
+def test_the_engine_check_compares_each_flag_with_the_engines_setting(tmp_path: Path) -> None:
     engine = Engine("frozen", ("--max-num-batched-tokens", "1024", "--watermark", "0", "--kv-x"))
     frozen = ["--scheduling-policy", "--max-num-batched-tokens", "--long-prefill-token-threshold"]
     assert check_engine(engine, vllm(max_num_batched_tokens=1024)) == {
@@ -260,17 +269,187 @@ def test_the_engine_check_compares_each_flag_with_the_engines_setting() -> None:
         check_engine(engine, vllm())
     with pytest.raises(E2Error, match="the engine is vllm, the arm file needs sglang"):
         check_engine(Engine("sglang", ()), vllm())
+    variants = write_variant(tmp_path, "sglang", "python -m sglang.launch_server --page-size 16")
     sglang = EngineInfo("sglang", "0.5.22", 36400, {"chunked_prefill_size": 512}, {})
-    assert check_engine(Engine("sglang", ("--chunked-prefill-size", "512")), sglang) == {
+    flags = ("--chunked-prefill-size", "512")
+    assert check_engine(Engine("sglang", flags), sglang, variants) == {
         "checked": ["--chunked-prefill-size"],
-        "unchecked": [],
+        "unchecked": ["--page-size"],  # the variant's own flag, which this engine does not report
     }
 
 
-def test_a_vllm_point_needs_the_frozen_settings_its_flags_keep() -> None:
+def write_variant(variants: Path, name: str, command: str) -> Path:
+    """An engine variant whose lh-engine.conf starts ``command`` as the frozen box's does, before the
+    arm's flags; returns the variants directory."""
+    (variants / name).mkdir(parents=True)
+    (variants / name / "lh-engine.conf").write_text(
+        f"# Variant {name}\n[Service]\nExecStart=\nExecStart={command} $LH_ENGINE_FLAGS\n"
+    )
+    return variants
+
+
+VLLM_SERVE = "%h/leaseholder/venvs/engine/bin/vllm serve --config %h/leaseholder/src/engine.yaml"
+MAKE_ROOM = {"max_preemptions_per_step": 2, "budget_cap": True, "reserve_tokens": 2048}
+MAKE_ROOM_CLS = "lh_make_room_scheduler.AsyncScheduler"
+
+
+def variants_of_the_box(tmp_path: Path) -> Path:
+    """make-room and pr54530 as the frozen box's variants start the engine, and mps, which leaves its
+    command line alone."""
+    write_variant(
+        tmp_path,
+        "make-room",
+        f"{VLLM_SERVE} --scheduler-cls {MAKE_ROOM_CLS} "
+        "--additional-config.make_room.max_preemptions_per_step 2 \\\n"
+        "  --additional-config.make_room.budget_cap true "
+        "--additional-config.make_room.reserve_tokens 2048",
+    )
+    write_variant(
+        tmp_path,
+        "pr54530",
+        f"{VLLM_SERVE} --scheduler-cls lh_pr54530_scheduler.AsyncScheduler --max-num-seqs 12",
+    )
+    (tmp_path / "mps").mkdir()
+    (tmp_path / "mps" / "lh-stt.conf").write_text("[Service]\nEnvironment=X=1\n")
+    return tmp_path
+
+
+def test_a_variants_flags_are_those_of_the_engine_command_it_starts(tmp_path: Path) -> None:
+    variants = variants_of_the_box(tmp_path)
+    assert e2.variant_flags("make-room", variants) == (
+        "--scheduler-cls", MAKE_ROOM_CLS,
+        "--additional-config.make_room.max_preemptions_per_step", "2",
+        "--additional-config.make_room.budget_cap", "true",
+        "--additional-config.make_room.reserve_tokens", "2048",
+    )  # fmt: skip
+    assert e2.variant_flags("frozen", variants) == e2.variant_flags("mps", variants) == ()
+    with pytest.raises(E2Error, match="no engine variant nope in"):
+        e2.variant_flags("nope", variants)
+    # The repository's variants: each names its scheduler class, and its flags pair up.
+    for variant in (PHASTFORM / "variants").iterdir():
+        if variant.is_dir():
+            flag_values(e2.variant_flags(variant.name))
+    assert dict(pairs(e2.variant_flags("make-room")))["--scheduler-cls"] == MAKE_ROOM_CLS
+    assert dict(pairs(e2.variant_flags("pr54530"))) == {
+        "--scheduler-cls": "lh_pr54530_scheduler.AsyncScheduler",
+        "--max-num-seqs": "12",
+    }
+
+
+def pairs(flags: tuple[str, ...]) -> list[tuple[str, str]]:
+    return list(flag_values(flags).items())
+
+
+def test_the_engine_check_tells_the_variants_apart(tmp_path: Path) -> None:
+    variants = variants_of_the_box(tmp_path)
+    frozen = vllm()
+    make_room = vllm({"make_room": MAKE_ROOM}, scheduler_cls=MAKE_ROOM_CLS)
+    pr54530 = vllm(scheduler_cls="lh_pr54530_scheduler.AsyncScheduler", max_num_seqs=12)
+    engines = {"frozen": frozen, "make-room": make_room, "pr54530": pr54530}
+    for variant, info in engines.items():
+        check_engine(Engine(variant, ()), info, variants)  # each passes for itself
+    assert check_engine(Engine("make-room", ()), make_room, variants)["checked"] == [
+        "--scheduling-policy",
+        "--max-num-batched-tokens",
+        "--long-prefill-token-threshold",
+        "--scheduler-cls",
+        "--additional-config.make_room.max_preemptions_per_step",
+        "--additional-config.make_room.budget_cap",
+        "--additional-config.make_room.reserve_tokens",
+    ]
+    for variant in engines:
+        for other, info in engines.items():
+            if other != variant:  # and none for another
+                with pytest.raises(E2Error, match=f"use {variant}$"):
+                    check_engine(Engine(variant, ()), info, variants)
+    with pytest.raises(
+        E2Error, match=f"scheduler_cls = None, the point needs --scheduler-cls {MAKE_ROOM_CLS}"
+    ):
+        check_engine(Engine("make-room", ()), frozen, variants)
+    with pytest.raises(
+        E2Error, match=f"scheduler_cls = '{MAKE_ROOM_CLS}', the point needs vLLM's own"
+    ):
+        check_engine(Engine("frozen", ()), make_room, variants)
+
+
+def test_the_engine_runs_exactly_the_switches_its_flags_set(tmp_path: Path) -> None:
+    variants = variants_of_the_box(tmp_path)
+    no_reserve = Engine("make-room", ("--additional-config.make_room.reserve_tokens", "0"))
+    reserve0 = vllm({"make_room": MAKE_ROOM | {"reserve_tokens": 0}}, scheduler_cls=MAKE_ROOM_CLS)
+    assert (
+        "--additional-config.make_room.reserve_tokens"
+        in (check_engine(no_reserve, reserve0, variants)["checked"])
+    )
+    reserve = vllm({"make_room": MAKE_ROOM}, scheduler_cls=MAKE_ROOM_CLS)
+    window = vllm({"make_room": MAKE_ROOM | {"budget_cap_tokens": 48}}, scheduler_cls=MAKE_ROOM_CLS)
+    unset = vllm({"make_room": {"budget_cap": True}}, scheduler_cls=MAKE_ROOM_CLS)
+    for engine, info, error in (
+        # an ablation on an engine that still runs the switch it turns off
+        (no_reserve, reserve, "runs additional_config make_room.reserve_tokens = 2048, the point "
+         "needs --additional-config.make_room.reserve_tokens 0"),
+        # arm 9 on an engine left with a 48-token window
+        (Engine("make-room", ()), window, "runs additional_config make_room.budget_cap_tokens = 48, "
+         "which the point's flags do not set"),
+        (Engine("make-room", ()), unset, "additional_config has no "
+         "make_room.max_preemptions_per_step, the point needs "
+         "--additional-config.make_room.max_preemptions_per_step 2"),
+        # the frozen box's scheduler, with make-room's switches left over: they would act on nothing,
+        # but the engine is not the one the arm file names
+        (Engine("frozen", ()), vllm({"make_room": MAKE_ROOM}), "runs additional_config make_room = "
+         "{'max_preemptions_per_step': 2, 'budget_cap': True, 'reserve_tokens': 2048}, which the "
+         "point's flags do not set"),
+        # flags that set a table and a value in the same place
+        (Engine("make-room", ("--additional-config.make_room", "0")), reserve,
+         "--additional-config.make_room sets a value where other flags set keys"),
+        (Engine("make-room", ("--additional-config.make_room.budget_cap.x", "0")), reserve,
+         "--additional-config.make_room.budget_cap.x sets a key inside a value of another flag"),
+        # a value where the point sets a table
+        (Engine("make-room", ()), vllm({"make_room": 0}, scheduler_cls=MAKE_ROOM_CLS), "runs "
+         "additional_config make_room = 0, the point needs "
+         "--additional-config.make_room.max_preemptions_per_step 2 "
+         "--additional-config.make_room.budget_cap true "
+         "--additional-config.make_room.reserve_tokens 2048"),
+    ):  # fmt: skip
+        with pytest.raises(E2Error, match=re.escape(error)):
+            check_engine(engine, info, variants)
+    # An engine that reports neither leaves them unchecked.
+    bare = EngineInfo(
+        "vllm",
+        "0.32.0",
+        36400,
+        {k: v for k, v in reserve.settings.items() if k != "scheduler_cls"},
+        {},
+    )
+    assert check_engine(no_reserve, bare, variants)["unchecked"] == [
+        "--scheduler-cls",
+        "--additional-config.make_room.max_preemptions_per_step",
+        "--additional-config.make_room.budget_cap",
+        "--additional-config.make_room.reserve_tokens",
+    ]
+
+
+def test_the_committed_points_ran_the_engines_their_arm_files_name() -> None:
+    """Each vLLM point of the committed records passes the engine check of its arm file, its scheduler
+    class among what is checked: the check refuses none of the engines the variants start."""
+    checked = 0
+    for engine_json in sorted(RESULTS.glob("*/*/engine.json")):
+        config = json.loads(engine_json.read_text())
+        if "scheduler_config" not in config:
+            continue  # SGLang's
+        arm = load_arm(engine_json.with_name("arm.toml"))
+        settings = config["cache_config"] | config["scheduler_config"]
+        flags = check_engine(arm.engine, EngineInfo("vllm", "0.32.0", 36400, settings, config))
+        assert "--scheduler-cls" not in flags["unchecked"], engine_json
+        checked += 1
+    assert checked == 119
+
+
+def test_a_vllm_point_needs_the_frozen_settings_its_flags_keep(tmp_path: Path) -> None:
     with pytest.raises(E2Error, match="policy = 'fcfs', the point needs --scheduling-policy prio"):
         check_engine(Engine("frozen", ()), vllm(**STOCK_SCHEDULER))  # left over from arm 2
-    assert check_engine(Engine("pr54530", ()), vllm())["unchecked"] == []
+    variants = variants_of_the_box(tmp_path)
+    pr54530 = vllm(scheduler_cls="lh_pr54530_scheduler.AsyncScheduler", max_num_seqs=12)
+    assert check_engine(Engine("pr54530", ()), pr54530, variants)["unchecked"] == []
     engine_yaml = (PHASTFORM / "engine.yaml").read_text()
     for flag, value in flag_values(e2.FROZEN).items():
         assert re.search(rf"^{flag.removeprefix('--')}: {value}$", engine_yaml, re.M), flag
@@ -398,7 +577,11 @@ def engine_metrics(n: int) -> tuple[int, str]:
 def fake_engine(scheduler: dict[str, Any]) -> Service:
     """vLLM on a GPU node: ``scheduler`` is what its /server_info reports, as variant.sh use would
     leave it."""
-    vllm_config = {"scheduler_config": scheduler, "model_config": {"hf_token": "hf_secret"}}
+    vllm_config = {
+        "scheduler_config": scheduler,
+        "model_config": {"hf_token": "hf_secret"},
+        "additional_config": {},
+    }
     return Service(
         {
             "/health": lambda n: (200, ""),
@@ -523,10 +706,14 @@ def test_voice_alone_runs_the_calls_against_the_box_as_it_is(cyan: Cyan) -> None
     assert engine["model_config"]["hf_token"] == "<redacted>"
     assert run_json["cyan"]["llm_path"].endswith("gateway.sock")
     assert run_json["versions"]["aiperf"] == "0.13.0"
+    # No campaign named the GPU node's revision; it goes beside cyan's.
+    assert list(run_json["versions"])[:2] == ["source", "gpu_source"]
+    assert run_json["versions"]["gpu_source"] is None
     assert (out / "arm.toml").read_text().startswith("arm = 1")
     args = json.loads((out / "bots.args").read_text())
     assert args[args.index("--turns") + 1] == "25" and args[args.index("--callers") + 1] == "2"
     assert "--save-audio" not in args and run_json["save_audio"] is False
+    assert "--warmup-turns" not in args  # an arm without warm-up turns runs the callers as before
     assert summary["name"] == "a1-voice" and summary["background"] is None
     assert summary["voice"]["v2v_ms"]["p95"] == 1800.0
     assert summary["engine"]["preemptions"] == 1  # one scrape apart
@@ -691,6 +878,29 @@ def test_a_point_keeps_the_gateways_requests_and_the_workers_lines(cyan: Cyan) -
     assert worker_summary["waterfall"]["end_of_turn_ms"] == {"n": 0}
 
 
+def test_a_call_opens_with_its_warm_up_turns_which_nothing_measures(cyan: Cyan) -> None:
+    def worker(since: float, until: float | None) -> str:
+        lines = ["registered worker"]
+        for session in ("s0", "s1"):  # each session's reply to the warm-up line comes first
+            for turn, e2e in ((0, 9000.0), (1, 1000.0), (2, 1200.0), (3, 1400.0)):
+                lines.append(worker_line(TURNS, "turn", session_id=session, turn=turn, e2e_ms=e2e))
+            lines.append(worker_line(SESSIONS, "session ended", session_id=session))
+        return "\n".join(lines)
+
+    cyan.systemd.journals = {"lh-voice-worker": worker}
+    arm = VOICE_ALONE + "[voice]\ncallers = 2\nturns = 3\nwarmup_turns = 1\n"
+    summary = run(cyan, "a1-warm", arm)
+    out = cyan.host.root / "runs" / "a1-warm"
+    args = json.loads((out / "bots.args").read_text())
+    assert args[args.index("--warmup-turns") + 1] == "1"
+    assert record(cyan, "a1-warm")["arm"]["voice"]["warmup_turns"] == 1
+    turns = [json.loads(line) for line in (out / "bots" / "turns.jsonl").read_text().splitlines()]
+    assert [t["turn"] for t in turns if t.get("warmup")] == [0, 0]  # one a call, kept, marked
+    waterfall = summary["worker"]["waterfall"]["e2e_ms"]
+    assert (summary["worker"]["turns"], waterfall["n"], waterfall["p50"]) == (6, 6, 1200.0)
+    assert "calls: 2 callers, 3 turns each after 1 warm-up" in (out / "run.log").read_text()
+
+
 def test_the_worker_journal_waits_only_for_sessions_that_end(
     cyan: Cyan, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -717,6 +927,28 @@ def test_the_worker_journal_waits_only_for_sessions_that_end(
     summary = run(cyan, "a1-voice", VOICE_ALONE, out="again")
     assert len(reads) >= 3
     assert (summary["worker"]["sessions"], summary["worker"]["events"]) == (1, None)
+
+
+def test_run_json_keeps_each_gpu_nodes_deployed_revision(cyan: Cyan, capsys) -> None:
+    arm_file = write(cyan.arms, "a1-voice.toml", VOICE_ALONE)
+    out = cyan.host.root / "runs" / "a1-voice"
+    sources = gpu_sources(["phastform=v0.3-30-g6851e13", "gray="])
+    assert sources == {"phastform": "v0.3-30-g6851e13", "gray": None}
+    run_point(arm_file, out, cyan.host, cyan.systemd, gpu_source=sources)
+    assert record(cyan, "a1-voice")["versions"]["gpu_source"] == sources
+    for values, error in (
+        (["phastform"], "'phastform' is not NODE=REVISION"),
+        (["phastform=v0.3 dirty"], "is not NODE=REVISION"),
+        (["a b=v0.3"], "is not NODE=REVISION"),
+        (["gray=a", "gray=b"], "names gray twice"),
+    ):
+        with pytest.raises(E2Error, match=re.escape(error)):
+            gpu_sources(values)
+    # The command line refuses one before it measures anything.
+    args = ["e2", "run", str(arm_file), "--out", str(out.with_name("again"))]
+    assert main([*args, "--gpu-source", "phastform"]) == 1
+    assert "--gpu-source 'phastform' is not NODE=REVISION" in capsys.readouterr().err
+    assert not out.with_name("again").exists()
 
 
 def test_the_callers_save_their_audio_when_the_run_asks(cyan: Cyan) -> None:
@@ -885,6 +1117,16 @@ def test_a_wrong_engine_fails_before_anything_starts(cyan: Cyan) -> None:
     run_json = record(cyan, "a4")
     assert run_json["status"] == "failed" and run_json["engine"]["server"] == "vllm"
     assert (out / "engine.json").exists()
+
+
+def test_a_point_on_make_room_fails_on_the_frozen_box(cyan: Cyan) -> None:
+    error = (
+        f"the engine runs scheduler_cls = None, the point needs --scheduler-cls {MAKE_ROOM_CLS}: "
+        "switch it with deploy/phastform/variant.sh use make-room"
+    )
+    with pytest.raises(E2Error, match=re.escape(error)):
+        run(cyan, "a9", 'arm = 9\nlabel = "x"\n[engine]\nvariant = "make-room"\n')
+    assert cyan.systemd.calls == [] and record(cyan, "a9")["status"] == "failed"
 
 
 def test_a_gateway_that_refuses_its_configuration_says_why(cyan: Cyan) -> None:

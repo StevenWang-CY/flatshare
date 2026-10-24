@@ -26,6 +26,8 @@ from leaseholder_bench.e2.record import (
     TURNS_LOGGER,
     WATERFALL,
     background,
+    call_turns,
+    compact,
     engine_counts,
     engine_settings,
     export_point,
@@ -38,6 +40,7 @@ from leaseholder_bench.e2.report import (
     ADMISSION_COLUMNS,
     COLUMNS,
     CONFIGURATION_ARMS,
+    CPU_TIER_COLUMNS,
     GPU_COLUMNS,
     NODE_COLUMNS,
     STACKED,
@@ -236,22 +239,33 @@ vllm:num_preemptions_total{{engine="0",model_name="m"}} {preemptions}
 vllm:prompt_tokens_by_source_total{{engine="0",model_name="m",source="local_compute"}} {computed}
 vllm:prompt_tokens_by_source_total{{engine="0",model_name="m",source="local_cache_hit"}} {gpu}
 vllm:admission_rejections_total{{model_name="m",reason="max_num_queued_tokens"}} {refused}
+vllm:kv_offload_load_bytes_total{{engine="0",model_name="m"}} {loaded}
+vllm:kv_offload_store_bytes_total{{engine="0",model_name="m"}} {stored}
 """
 
 
 def test_the_engine_counts_cover_the_window_and_null_what_it_does_not_export() -> None:
-    before = ENGINE.format(preemptions=2, computed=100, gpu=1000, refused=0)
-    after = ENGINE.format(preemptions=5, computed=400, gpu=9000, refused=7)
+    before = ENGINE.format(
+        preemptions=2, computed=100, gpu=1000, refused=0, loaded="1.47456e+08", stored=0
+    )
+    after = ENGINE.format(
+        preemptions=5, computed=400, gpu=9000, refused=7, loaded="4.42368e+08", stored=2.9491e9
+    )
     assert engine_counts(before, after) == {
         "preemptions": 3,
         "prompt_tokens_by_source": {"local_compute": 300, "local_cache_hit": 8000},
         "refused": {"max_num_queued_tokens": 7},
+        # The CPU tier's own counts, in bytes: 2,000 tokens loaded, about 20,000 stored.
+        "kv_offload_load_bytes": 294_912_000,
+        "kv_offload_store_bytes": 2_949_100_000,
     }
     sglang = "sglang:num_running_reqs 3\n"  # SGLang exports none of vLLM's counters
     assert engine_counts(sglang, sglang) == {
         "preemptions": None,
         "prompt_tokens_by_source": None,
         "refused": None,
+        "kv_offload_load_bytes": None,
+        "kv_offload_store_bytes": None,
     }
 
 
@@ -661,6 +675,23 @@ def answered(*v2v_ms: float) -> list[dict[str, Any]]:
     ]
 
 
+def test_the_warm_up_turns_are_in_no_voice_to_voice_sample(tmp_path: Path) -> None:
+    run_dir = point(tmp_path, "a9-warm", "9", 3400, 2000)
+    stages = {"end_of_turn_ms": 800, "turn_to_first_sentence_ms": 400, "tts_first_audio_ms": 200}
+    warm = [
+        {"caller": c, "turn": 0, "v2v_ms": 9000.0, "barge_in": False, "warmup": True}
+        for c in (0, 1)
+    ]
+    turn_lines(run_dir, stages, 4, [*warm, *answered(1700, 1800, 1900, 2000)])
+    [row], _ = load_points([run_dir])
+    assert row["v2v_samples"] == [1700, 1800, 1900, 2000] and row["v2v_p95_ms"] == 1985.0
+    [cell] = stage_waterfall([row])
+    assert (cell["replies"], cell["v2v_mean_ms"]) == (4, 1850)
+    # A node's share counts only its calls' measured turns too.
+    share = call_turns([*warm, *answered(1700, 1800)], 2)
+    assert (share["turns"], share["v2v_ms"]["n"], share["v2v_ms"]["p50"]) == (2, 2, 1750.0)
+
+
 def test_the_stage_waterfall_stacks_each_configurations_stages_to_its_mean_v2v(
     tmp_path: Path, capsys
 ) -> None:
@@ -739,6 +770,7 @@ VLLM_CONFIG = {
     "cache_config": {"block_size": 16, "enable_prefix_caching": True, "cache_dtype": "auto"}
     | {"kv_cache_memory_bytes": 5368709120, "num_gpu_blocks": 2275, "gpu_memory_utilization": 0.7},
     "scheduler_config": {"policy": "priority", "max_num_batched_tokens": 512, "max_num_seqs": 256}
+    | {"scheduler_cls": "lh_make_room_scheduler.AsyncScheduler"}
     | {"long_prefill_token_threshold": 256, "async_scheduling": True, "watermark": 0.1}
     | {"max_num_queued_tokens": None, "enable_chunked_prefill": True},
     "kv_transfer_config": {"kv_connector": "OffloadingConnector", "kv_role": "kv_both"}
@@ -758,7 +790,8 @@ def test_a_records_engine_json_says_what_the_point_ran_on() -> None:
         | {"kv_cache_memory_bytes": 5368709120, "num_gpu_blocks": 2275},
         "scheduler_config": {"policy": "priority", "max_num_batched_tokens": 512}
         | {"long_prefill_token_threshold": 256, "max_num_seqs": 256, "async_scheduling": True}
-        | {"watermark": 0.1, "max_num_queued_tokens": None},
+        | {"watermark": 0.1, "max_num_queued_tokens": None}
+        | {"scheduler_cls": "lh_make_room_scheduler.AsyncScheduler"},
         "kv_transfer_config": {"kv_connector": "OffloadingConnector"}
         | {"kv_connector_extra_config": {"cpu_bytes_to_use": 21474836480, "spill": "~/kv"}},
         "additional_config": {"make_room": {"max_preemptions_per_step": 2}},
@@ -786,6 +819,9 @@ def whole(run_dir: Path) -> Path:
     (run_dir / "voice-worker.log").write_text("registered worker\n")
     (run_dir / "arm.toml").write_text('arm = 4\nlabel = "x"\n')
     (run_dir / "engine.json").write_text(json.dumps(VLLM_CONFIG))
+    run = json.loads((run_dir / "run.json").read_text())  # as e2 run wrote it before gpu_source
+    run["versions"] = {"source": "03af728", "leaseholder_bench": "0.3.0", "aiperf": "0.13.0"}
+    (run_dir / "run.json").write_text(json.dumps(run, indent=2) + "\n")
     (run_dir / "bots" / "summary.json").write_text(json.dumps({"turns": 2, "errors": 0}))
     callers = {"config": {"api_key": "APIexample000000", "api_secret": "<redacted>"}}
     (run_dir / "bots" / "run.json").write_text(json.dumps(callers))
@@ -813,6 +849,22 @@ def test_a_compact_record_gives_the_report_of_its_run_directory(tmp_path: Path, 
     kept = sorted(str(p.relative_to(record)) for p in record.rglob("*") if p.is_file())
     assert kept == sorted([*RECORD, "summary.json", "engine.json"])
     assert json.loads((record / "engine.json").read_text()) == engine_settings(VLLM_CONFIG)
+    # The run's run.json, the GPU node's revision null beside cyan's: it was not recorded then.
+    run = json.loads((dirs[0] / "run.json").read_text())
+    recorded = json.loads((record / "run.json").read_text())
+    assert recorded["versions"] == {
+        "source": "03af728",
+        "gpu_source": None,
+        "leaseholder_bench": "0.3.0",
+        "aiperf": "0.13.0",
+    }
+    assert {k: v for k, v in recorded.items() if k != "versions"} == {
+        k: v for k, v in run.items() if k != "versions"
+    }
+    run["versions"]["gpu_source"] = {"phastform": "v0.3-30-g6851e13"}  # a run that recorded it
+    (dirs[0] / "run.json").write_text(json.dumps(run))
+    again = export_point(dirs[0], tmp_path / "again")
+    assert json.loads((again / "run.json").read_text())["versions"] == run["versions"]
     written = [p.read_text() for p in out.rglob("*") if p.is_file()]
     assert not any("APIexample000000" in text or "/home/" in text for text in written)
     summary = json.loads((record / "summary.json").read_text())
@@ -828,6 +880,55 @@ def test_a_compact_record_gives_the_report_of_its_run_directory(tmp_path: Path, 
         assert a.read_bytes() == b.read_bytes(), a.name  # the figures too: same bytes every time
     assert main(["e2", "export", str(dirs[3]), "--out", str(out)]) == 1
     assert "no complete point to export" in capsys.readouterr().err
+
+
+def test_the_report_gives_the_cpu_tiers_loads_and_stores_in_tokens(tmp_path: Path) -> None:
+    # A point measured before the summary kept the CPU tier's counts: its snapshots have them.
+    run_dir = whole(point(tmp_path / "runs" / "r1", "disc-a9-s24", "9", 3400, 2057))
+    sources = {"local_compute": 931_816, "local_cache_hit": 17_776, "external_kv_transfer": 44_432}
+    rewrite(run_dir, lambda s: s["engine"].update(prompt_tokens_by_source=sources, preemptions=38))
+    per_token = 5368709120 / (2275 * 16)  # VLLM_CONFIG's pool: 147,492.0 bytes a token
+    for when, loaded, stored in (("start", 0, 0), ("end", 100_000, 1_000_000)):
+        counts = {"preemptions": 0, "computed": 0, "gpu": 0, "refused": 0}
+        engine = ENGINE.format(
+            **counts, loaded=round(loaded * per_token), stored=stored * per_token
+        )
+        (run_dir / "metrics" / f"engine-{when}.prom").write_text(engine)
+    old = json.loads((run_dir / "summary.json").read_text())
+    _, summary = compact(run_dir)
+    assert summary["engine"] == old["engine"] | {
+        "kv_offload_load_bytes": round(100_000 * per_token),
+        "kv_offload_store_bytes": round(1_000_000 * per_token),
+    }  # the summary's own counts as they were, the CPU tier's after them
+    sglang = point(tmp_path / "runs" / "r1", "disc-a7b-sglang-s24", "7b", 4700, 9000)
+    rows, _ = load_points([run_dir, sglang])
+    a9 = next(r for r in rows if r["point"] == "disc-a9-s24")
+    assert {column: a9[column] for column in CPU_TIER_COLUMNS} == {
+        "first_schedule_computed_tokens": 931_816,
+        "first_schedule_gpu_hit_tokens": 17_776,
+        "first_schedule_cpu_hit_tokens": 44_432,
+        "cpu_tier_loaded_tokens": 100_000,
+        "cpu_tier_stored_tokens": 1_000_000,
+        "kv_bytes_per_token": 147_492.0,
+    }
+    out = tmp_path / "report"
+    write_report(rows, out)
+    with (out / "frontier.csv").open() as f:
+        assert list(next(csv.DictReader(f))) == [*COLUMNS, *GPU_COLUMNS, *CPU_TIER_COLUMNS]
+    section = (
+        (out / "frontier.md").read_text().split("## The engine's prompt tokens and its CPU tier")[1]
+    )
+    assert "| Computed at first scheduling | GPU-pool hits at first scheduling |" in section
+    # 100,000 tokens loaded, 44,432 of them at first scheduling: 55,568 at resumes.
+    assert (
+        "| disc-a9-s24 | 38 | 931,816 | 17,776 | 44,432 | 100,000 | 55,568 | 1,000,000 |" in section
+    )
+    assert "disc-a7b-sglang-s24" not in section.split("## Stage waterfall")[0]  # SGLang keeps none
+    # The record keeps them, and gives the same report.
+    record = export_point(run_dir, tmp_path / "records")
+    assert json.loads((record / "summary.json").read_text())["engine"] == summary["engine"]
+    again, _ = load_points([record, sglang])
+    assert again == rows
 
 
 def unredacted(data: Any) -> list[str]:
@@ -943,7 +1044,10 @@ def test_a_point_on_two_gpu_nodes_reports_its_totals_and_each_nodes_share(tmp_pa
         (run_dir / "metrics" / f"gateway-{when}.prom").write_text(text)
     for node, counts in {"a": (2, 5), "b": (0, 1)}.items():
         for when, n in zip(("start", "end"), counts, strict=True):
-            engine = ENGINE.format(preemptions=n, computed=100 * n, gpu=0, refused=n)
+            loaded = 147_456 * 10 * n  # ten tokens a preemption
+            engine = ENGINE.format(
+                preemptions=n, computed=100 * n, gpu=0, refused=n, loaded=loaded, stored=0
+            )
             (run_dir / "metrics" / f"engine-{node}-{when}.prom").write_text(engine)
     served = {"prompt_tokens": 5000, "completion_tokens": 100}
     requests = [
@@ -965,6 +1069,8 @@ def test_a_point_on_two_gpu_nodes_reports_its_totals_and_each_nodes_share(tmp_pa
         "preemptions": 4,
         "prompt_tokens_by_source": {"local_compute": 400, "local_cache_hit": 0},
         "refused": {"max_num_queued_tokens": 4},
+        "kv_offload_load_bytes": 147_456 * 40,  # node a's 30 tokens and node b's 10
+        "kv_offload_store_bytes": 0,
     }
     a, b = summary["nodes"]["a"], summary["nodes"]["b"]
     # Node a has caller 0's call; caller 2's room is another run's, so its call is in the totals only.
@@ -994,6 +1100,10 @@ def test_a_point_on_two_gpu_nodes_reports_its_totals_and_each_nodes_share(tmp_pa
         300.0,
     )
     assert (a["engine"]["preemptions"], b["engine"]["refused"]) == (3, {"max_num_queued_tokens": 1})
+    assert (a["engine"]["kv_offload_load_bytes"], b["engine"]["kv_offload_load_bytes"]) == (
+        147_456 * 30,
+        147_456 * 10,
+    )
     # Without the gateway's request log, or the worker's placements, those shares are unknown.
     (run_dir / "gateway.jsonl").unlink()
     (run_dir / "voice-worker.log").unlink()
