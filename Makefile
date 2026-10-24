@@ -1,18 +1,21 @@
-# Development tasks. Each Python package is tested in its own uv environment, because the engine plugins, the
-# benchmark tools and the voice worker have disjoint dependencies (vLLM, AIPerf, LiveKit).
+# Development tasks. Each Python package is tested in its own uv environment, because the engine variants'
+# tests, the benchmark tools and the voice worker have disjoint dependencies (a vLLM checkout, AIPerf, LiveKit).
 
 RUFF := uvx ruff@0.17.1
 VLLM_REF := v0.32.0
 VLLM_SRC ?= $(HOME)/.cache/leaseholder/vllm-$(VLLM_REF)
-# Every Python package except the engine plugins (tested by test-vllm); each one has a `test` extra.
+# Every Python package except the engine variants' tests (test-vllm); each one has a `test` extra.
 PY_PACKAGES := $(filter-out python/leaseholder_vllm,$(patsubst %/pyproject.toml,%,$(wildcard python/*/pyproject.toml)))
+# The Python that make lint checks: the packages, and the scripts of lh-sim, E2 and the engine variants (not the
+# recorded runs' own scripts under benchmarks/results).
+PY_SOURCES := python crates/lh-sim/scripts $(wildcard benchmarks/e2/*.py deploy/phastform/variants/*/*.py)
 # E2's committed records (lh-bench e2 export), one directory per point under its campaign, and where
 # reproduce-e2 writes their report.
 E2_RESULTS := benchmarks/results/2026-10-23-e2
 E2_REPORT ?= build/reproduce-e2
 
-.PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-python schema reproduce-e1 reproduce-e2 \
-  e2-figures
+.PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-python schema reproduce-e1 \
+  reproduce-calibration reproduce-e2 e2-figures
 
 check: lint test
 
@@ -23,20 +26,20 @@ lint-rust:
 	cargo clippy --all-targets --locked -- -D warnings
 
 lint-python:
-	$(RUFF) check python
-	$(RUFF) format --check python
+	$(RUFF) check $(PY_SOURCES)
+	$(RUFF) format --check $(PY_SOURCES)
 
 fmt:
 	cargo fmt --all
-	$(RUFF) check --fix python
-	$(RUFF) format python
+	$(RUFF) check --fix $(PY_SOURCES)
+	$(RUFF) format $(PY_SOURCES)
 
 test: test-rust test-vllm test-python
 
 test-rust:
 	cargo test --locked
 
-# The offload manager is plain Python, so the plugin tests load it from a vLLM source checkout: no GPU or torch.
+# The engine variants' build tests read vLLM's scheduler from a source checkout: no GPU or torch.
 $(VLLM_SRC):
 	git -c advice.detachedHead=false clone -q --depth 1 --branch $(VLLM_REF) --filter=blob:none --sparse https://github.com/vllm-project/vllm $@
 	git -C $@ sparse-checkout set vllm
@@ -70,6 +73,18 @@ reproduce-e1:
 	$(E1_SIM) hardware $(CORPUS) --fit --csv $(E1_REPORT)/hardware-fit.csv --markdown $(E1_REPORT)/hardware-fit.md \
 	  >/dev/null
 	@ls $(E1_REPORT)/*.md
+
+# The simulator's calibration and its validation against W0 (crates/lh-sim/README.md, and BENCHMARKS' table of W2's points)
+# from six measured runs' AIPerf exports and /metrics snapshots, one directory per run as `scripts/calibration.py export`
+# writes them, and the 32x corpus. Usage: make reproduce-calibration EXPORTS=<dir> CORPUS=<dir>.
+CALIBRATION_REPORT ?= build/reproduce-calibration
+reproduce-calibration:
+	@test -n "$(EXPORTS)" -a -n "$(CORPUS)" || \
+	  { echo "usage: make reproduce-calibration EXPORTS=<the runs' exports> CORPUS=<the 32x corpus directory>" >&2; exit 2; }
+	cargo build --release --locked -p lh-sim
+	uv run -q --no-project python crates/lh-sim/scripts/calibration.py report $(EXPORTS) $(CORPUS) $(E1_SIM) \
+	  $(CALIBRATION_REPORT) >/dev/null
+	@ls $(CALIBRATION_REPORT)/calibration.md
 
 # E2's report (frontier.md, frontier.csv, frontier.svg, waterfall.svg) from the committed records, with the bench
 # venv; it prints the files it writes.
