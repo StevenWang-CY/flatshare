@@ -1,0 +1,8 @@
+# E2 W5 calls per GPU (w5-cap-r1.campaign to w5-cap-r3.campaign): 6 callers on the frozen box with no agents, the
+# reference of the SLO for 6 callers, each call opening with an unmeasured warm-up turn.
+arm = "1-calls"
+label = "frozen box, 6 callers, voice alone, a warm-up turn opening each call"
+
+[voice]
+callers = 6
+warmup_turns = 1

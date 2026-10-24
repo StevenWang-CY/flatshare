@@ -272,6 +272,125 @@ def _add_voice_turn(commands: Commands) -> None:
     turn.set_defaults(func=_voice_turn)
 
 
+def _drill(args: argparse.Namespace) -> int:
+    import httpx
+    import orjson
+
+    from leaseholder_bench.drills import (
+        DrillConfig,
+        agents_key,
+        clients,
+        default_uds,
+        fill_cpu_tier,
+        report,
+        run_streams,
+        start_phases,
+    )
+    from leaseholder_bench.e2.arm import E2Error
+    from leaseholder_bench.e2.run import Host, exclusive
+
+    if args.action == "streams":
+        config = DrillConfig(
+            realtime=args.realtime,
+            background=args.background,
+            max_tokens=args.max_tokens,
+            deadline_s=args.deadline,
+            probe_interval_s=args.probe_interval,
+        )
+        voice, agents = clients(config, args.gateway, args.uds or default_uds())
+        host = Host()
+        try:
+            with exclusive(host):  # never beside an E2 point
+                asyncio.run(run_streams(config, voice, agents, agents_key(host), args.out))
+        except E2Error as exc:
+            print(f"lh-bench drill: {exc}", file=sys.stderr)
+            return 1
+        return 0
+    if args.action == "cpu-tier":
+        try:
+            with exclusive(Host()):  # nothing else may use the engine meanwhile
+                engine = httpx.AsyncClient(base_url=args.engine, timeout=300.0)
+                record = asyncio.run(fill_cpu_tier(engine, args.out, factor=args.factor))
+        except E2Error as exc:
+            print(f"lh-bench drill: {exc}", file=sys.stderr)
+            return 1
+        print(orjson.dumps(record, option=orjson.OPT_INDENT_2).decode())
+        return 0 if record["passed"] else 1
+    if args.action == "start":
+        for journal in args.journal:
+            print(f"{journal.name}:")
+            for phase, seconds in start_phases(journal.read_text()):
+                print(f"  {seconds:7.1f} s  {phase}")
+        return 0
+    print(report(orjson.loads(args.record.read_bytes()), args.event, args.label))
+    return 0
+
+
+def _add_drill(commands: Commands) -> None:
+    drill = commands.add_parser(
+        "drill",
+        help="the client side of a failure drill (ops/drills/drill.sh) and its summary",
+        description="streams: open streaming completions through the gateway (realtime on the voice plane's "
+        "socket, background on its TCP port with the agents tenant's key), print 'streaming' once each has its "
+        "first byte, read each to its end, then send a one-token completion every PROBE_INTERVAL seconds until "
+        "one succeeds; writes the record to OUT. report: summarize a record. start: time a server's start "
+        "from its journal.",
+    )
+    actions = drill.add_subparsers(dest="action", required=True)
+    streams = actions.add_parser(
+        "streams", help="open the streams, then probe until a request succeeds"
+    )
+    streams.add_argument(
+        "--gateway", default="http://127.0.0.1:18080", help="the gateway (default %(default)s)"
+    )
+    streams.add_argument(
+        "--uds",
+        type=Path,
+        help="the gateway's voice-plane socket (default $XDG_RUNTIME_DIR/lh/gateway.sock)",
+    )
+    streams.add_argument(
+        "--realtime", type=int, default=2, help="realtime streams (default %(default)s)"
+    )
+    streams.add_argument(
+        "--background", type=int, default=4, help="background streams (default %(default)s)"
+    )
+    streams.add_argument(
+        "--max-tokens", type=int, default=2000, help="each stream's (default %(default)s)"
+    )
+    streams.add_argument(
+        "--deadline",
+        type=float,
+        default=600.0,
+        help="seconds for the streams, then the probe (default %(default)s)",
+    )
+    streams.add_argument(
+        "--probe-interval",
+        type=float,
+        default=1.0,
+        help="seconds between probes (default %(default)s)",
+    )
+    streams.add_argument("--out", type=Path, required=True, help="the record (JSON)")
+    summary = actions.add_parser("report", help="summarize a drill's record")
+    summary.add_argument("record", type=Path)
+    summary.add_argument("--event", type=float, help="the kill's or the restart's wall-clock time")
+    summary.add_argument(
+        "--label", default="the event", help="what --event names (default %(default)s)"
+    )
+    tier = actions.add_parser(
+        "cpu-tier", help="fill the engine's CPU tier past its capacity and check what it then holds"
+    )
+    tier.add_argument("--engine", default="http://127.0.0.1:18000", help="(default %(default)s)")
+    tier.add_argument(
+        "--factor", type=float, default=2.0, help="the tier's capacity stored (default %(default)s)"
+    )
+    tier.add_argument("--out", type=Path, required=True, help="the record (JSON)")
+    start = actions.add_parser(
+        "start", help="the phases of a server's start, from its journal (journalctl -o short-unix)"
+    )
+    start.add_argument("journal", type=Path, nargs="+")
+    drill.set_defaults(func=_drill)
+
+
 def _e2(args: argparse.Namespace) -> int:
     from leaseholder_bench.e2.arm import E2Error, load_arm
     from leaseholder_bench.e2.record import export_point, render
@@ -442,6 +561,7 @@ def build_parser() -> argparse.ArgumentParser:
         _add_tiers,
         _add_voice_turn,
         _add_e2,
+        _add_drill,
     ):
         add(commands)
     return parser

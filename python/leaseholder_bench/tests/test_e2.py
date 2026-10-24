@@ -277,6 +277,105 @@ def test_the_w5_campaign_rotates_its_four_configurations_over_five_seeded_rounds
     assert variants["w5-disc-pr-ab48-v03-s24"] == "make-room-v03"
 
 
+W5_PR = {"w5-disc-pr-a-s24": "disc-pr-a-s24", "w5-disc-pr-ab-s24": "disc-pr-ab-s24"}
+"""The PRs' other two configurations W5 re-measures, each with the W4 one it re-measures."""
+W5_PR_ROUNDS = ("w5-disc-frozen-s24", *W5_PR, "w5-disc-pr-ab48-s24")
+"""The PR campaign's four configurations: the two, and two of W5's campaign beside them."""
+
+
+def test_the_w5_pr_campaign_rotates_the_prs_configurations_beside_the_frozen_box() -> None:
+    rounds = [campaign_lines(BENCHMARKS / f"w5-pr-r{r}.campaign") for r in range(1, 6)]
+    assert [lines[0] for lines in rounds] == [f"agents-seed {seed}" for seed in range(11, 16)]
+    orders = [[Path(line).stem for line in lines[1:]] for lines in rounds]
+    assert orders[0] == list(W5_PR_ROUNDS)
+    for order, then in itertools.pairwise(orders):
+        assert then == [*order[1:], order[0]]  # rotated by one from round to round
+    assert all({order[place] for order in orders} == set(W5_PR_ROUNDS) for place in range(4))
+    for name, w4 in W5_PR.items():
+        arm, before = (
+            load_arm(BENCHMARKS / "arms" / f"{name}.toml"),
+            load_arm(BENCHMARKS / "arms" / f"{w4}.toml"),
+        )
+        assert arm.voice == replace(before.voice, warmup_turns=1)
+        # The same agents, gateway, router and engine: make-room, now as W5's fixes leave it.
+        assert (arm.agents, arm.gateway, arm.router, arm.engine) == (
+            before.agents,
+            before.gateway,
+            before.router,
+            before.engine,
+        )
+
+
+W5_EXT = {
+    "w5-disc-a8c-resubmit-s24": "disc-a8c-resubmit-s24",
+    "w5-std-frozen-s16": "a4-b512-t256-s16",
+    "w5-std-pr-ab48-s16": "a4-b512-t256-s16",
+}
+"""The W5 extension's new configurations, each with the W4 arm whose agents, gateway and router it keeps."""
+W5_EXT_GROUPS = (
+    ("w5-disc-a8c-resubmit-s24",),
+    ("w5-std-frozen-s16",),
+    ("w5-std-pr-ab48-s16", "w5-disc-pr-ab48-s24"),
+)
+"""Its engine groups, in round 1's order: the PRs' two points share their engine, the second W5's own."""
+
+
+def test_the_w5_extension_rotates_its_engine_groups_over_w5s_seeds() -> None:
+    rounds = [campaign_lines(BENCHMARKS / f"w5-ext-r{r}.campaign") for r in range(1, 6)]
+    assert [lines[0] for lines in rounds] == [f"agents-seed {seed}" for seed in range(11, 16)]
+    orders = [[Path(line).stem for line in lines[1:]] for lines in rounds]
+    for r, order in enumerate(orders):
+        groups = W5_EXT_GROUPS[r % 3 :] + W5_EXT_GROUPS[: r % 3]  # rotated by one group a round
+        assert order == [point for group in groups for point in group]
+    for name, w4 in W5_EXT.items():
+        arm, before = (
+            load_arm(BENCHMARKS / "arms" / f"{name}.toml"),
+            load_arm(BENCHMARKS / "arms" / f"{w4}.toml"),
+        )
+        assert arm.voice == replace(before.voice, warmup_turns=1)
+        assert (arm.agents, arm.gateway, arm.router) == (
+            before.agents,
+            before.gateway,
+            before.router,
+        )
+    # The standard scenario's PR point runs the engine of W5's discriminating one, so the two need no switch.
+    engine = load_arm(BENCHMARKS / "arms" / "w5-std-pr-ab48-s16.toml").engine
+    assert engine == load_arm(BENCHMARKS / "arms" / "w5-disc-pr-ab48-s24.toml").engine
+    assert (
+        load_arm(BENCHMARKS / "arms" / "w5-disc-a8c-resubmit-s24.toml").engine.variant == "frozen"
+    )
+
+
+W5_CAP = {
+    "w5-a1-voice-c4": ("w5-a1-voice", 4),
+    "w5-a1-voice-c6": ("w5-a1-voice", 6),
+    "w5-disc-pr-ab48-c4-s24": ("w5-disc-pr-ab48-s24", 4),
+    "w5-disc-pr-ab48-c6-s24": ("w5-disc-pr-ab48-s24", 6),
+}
+"""The calls-per-GPU configurations: each a W5 arm with more callers."""
+
+
+def test_the_calls_per_gpu_rounds_alternate_their_engine_groups_and_caller_counts() -> None:
+    rounds = [campaign_lines(BENCHMARKS / f"w5-cap-r{r}.campaign") for r in range(1, 4)]
+    assert [lines[0] for lines in rounds] == [f"agents-seed {seed}" for seed in range(11, 14)]
+    orders = [[Path(line).stem for line in lines[1:]] for lines in rounds]
+    assert all(sorted(order) == sorted(W5_CAP) for order in orders)
+    for order, then in itertools.pairwise(orders):
+        assert then == order[::-1]  # the groups and the caller counts in each swap places
+    for name, (w5, callers) in W5_CAP.items():
+        arm, before = (
+            load_arm(BENCHMARKS / "arms" / f"{name}.toml"),
+            load_arm(BENCHMARKS / "arms" / f"{w5}.toml"),
+        )
+        assert arm.voice == replace(before.voice, callers=callers)
+        assert (arm.agents, arm.gateway, arm.router, arm.engine) == (
+            before.agents,
+            before.gateway,
+            before.router,
+            before.engine,
+        )
+
+
 def test_flag_values_pair_each_flag_with_its_value() -> None:
     flags = ["--max-num-seqs", "12", "--no-async-scheduling", "--watermark", "0.1", "--x"]
     assert flag_values(flags) == {
@@ -892,6 +991,40 @@ def test_a_campaign_sets_the_agents_seed_and_run_json_keeps_it(cyan: Cyan) -> No
         run_point(arm_file, runs / "negative", cyan.host, cyan.systemd, agents_seed=-1)
 
 
+def stale_metadata(monkeypatch: pytest.MonkeyPatch) -> str:
+    """lh-bench's installed metadata as an editable install left it before a version change; returns
+    the version of the source it runs."""
+    versions = {"leaseholder-bench": "0.1.0"}
+    real = e2.metadata.version
+    monkeypatch.setattr(e2.metadata, "version", lambda name: versions.get(name) or real(name))
+    return tomllib.loads(e2.PYPROJECT.read_text())["project"]["version"]
+
+
+def test_an_install_older_than_its_source_is_named(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # This test's own venv is synced from the source it runs.
+    assert e2._stale_install() is None
+    source = stale_metadata(monkeypatch)
+    assert e2._stale_install() == (
+        f"lh-bench's venv was installed at version 0.1.0 and its source is {source}: sync the venv "
+        "(deploy/cyan/bootstrap.sh) so that run.json names the version that runs"
+    )
+    # An installed wheel has no pyproject.toml beside it: its metadata is its source's.
+    assert e2._stale_install(tmp_path / "pyproject.toml") is None
+
+
+def test_a_point_on_an_install_older_than_its_source_is_refused_before_it_starts(
+    cyan: Cyan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arm_file = write(cyan.arms, "a2-stock-s4.toml", ARM)
+    source = stale_metadata(monkeypatch)
+    out = cyan.host.root / "runs" / "stale"
+    with pytest.raises(E2Error, match=re.escape(f"version 0.1.0 and its source is {source}")):
+        run_point(arm_file, out, cyan.host, cyan.systemd)
+    assert not out.exists() and cyan.systemd.calls == []  # nothing made, nothing switched
+
+
 def test_the_same_arm_again_restarts_nothing(cyan: Cyan) -> None:
     run_stock(cyan)
     cyan.systemd.calls.clear()
@@ -1293,7 +1426,7 @@ def test_a_complete_point_is_kept_and_an_incomplete_one_moved_aside(
 
 def test_one_point_at_a_time(cyan: Cyan) -> None:
     lock = cyan.host.root / "runs" / ".lh-bench-e2.lock"
-    with e2._exclusive(cyan.host):
+    with e2.exclusive(cyan.host):
         with pytest.raises(E2Error, match="another lh-bench e2 run"):
             run(cyan, "a1-voice", VOICE_ALONE)
         assert lock.read_text() == f"{os.getpid()}\n"  # the holder's, kept through the refusal

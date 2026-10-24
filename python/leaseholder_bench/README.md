@@ -16,6 +16,7 @@ the tier cost model (E0) and server-side voice turns.
 | `lh-bench voice-turn` | `voice_turn.py` | One server-side voice turn timed per stage (STT, LLM first sentence, TTS first audio); optional background load |
 | `lh-bench kv-metrics` | `kv_metrics.py` | KV block lifecycle histograms compared across a run |
 | `lh-bench e2` | `e2/` (`arm.py`, `run.py`, `record.py`, `report.py`, `figures.py`) | E2 points: one measured from its arm file on cyan (`run`), the frontier across points (`report`), and their compact records (`export`) |
+| `lh-bench drill` | `drills.py` | The client side of the failure drills (`ops/drills`): streams through the gateway while the engine dies or the gateway restarts, the recovery probe and the summary (`streams`, `report`); the CPU tier filled past its capacity (`cpu-tier`); a server's start timed from its journal (`start`) |
 | background load | `load.py` | `prefill:<tokens>x<n>` (cold prefills) or `decode:<tokens>x<n>` (long decodes) beside a probe |
 
 Python 3.12, pinned to `aiperf==0.13.0`. Installing the package registers both AIPerf plugins

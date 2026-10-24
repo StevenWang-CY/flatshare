@@ -1,0 +1,18 @@
+# E2 W5 extension, round 5 of 5: preempt-resubmit and the PRs' 48-token configuration in the discriminating
+# scenario, and the frozen box and the PRs' 48-token configuration in the standard scenario (16 session trees
+# of the whole corpus), on the fixed make-room, every call opening with a warm-up turn. Round N replays w5-rN's
+# sample of the agents (seeds 11 to 15) and runs three engine groups in an order rotated by one group from
+# round to round; the PRs' two points share their engine.
+#   benchmarks/e2/campaign.sh benchmarks/e2/w5-ext-r5.campaign
+
+agents-seed 15
+
+# engine frozen
+arms/w5-std-frozen-s16.toml
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+arms/w5-std-pr-ab48-s16.toml
+arms/w5-disc-pr-ab48-s24.toml
+
+# engine frozen
+arms/w5-disc-a8c-resubmit-s24.toml

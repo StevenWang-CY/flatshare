@@ -1,0 +1,16 @@
+# E2 W5 calls per GPU: the PRs' 48-token configuration, as w5-disc-pr-ab48-s24.toml, with 4 callers beside the
+# discriminating scenario's 24 session trees, each call opening with an unmeasured warm-up turn.
+arm = "9-pr-ab48-calls"
+label = "vLLM PRs A and B with a 48-token window, no gateway policy, 4 callers, a warm-up turn opening each call"
+
+[voice]
+callers = 4
+warmup_turns = 1
+
+[agents]
+sessions = 24
+data = "weka-x32-long"
+
+[engine]
+variant = "make-room"
+flags = ["--additional-config.make_room.reserve_tokens", "0", "--additional-config.make_room.budget_cap_tokens", "48"]

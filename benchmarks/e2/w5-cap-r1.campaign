@@ -1,0 +1,15 @@
+# E2 W5 calls per GPU, round 1 of 3: voice alone with 4 and with 6 callers (the SLO's references) and the PRs'
+# 48-token configuration with 4 and with 6 callers beside the discriminating scenario's 24 session trees, on the
+# fixed make-room, every call opening with a warm-up turn. Round N replays w5-rN's sample of the agents and
+# alternates the order of its two engine groups, and of the caller counts within each.
+#   benchmarks/e2/campaign.sh benchmarks/e2/w5-cap-r1.campaign
+
+agents-seed 11
+
+# engine frozen
+arms/w5-a1-voice-c4.toml
+arms/w5-a1-voice-c6.toml
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+arms/w5-disc-pr-ab48-c4-s24.toml
+arms/w5-disc-pr-ab48-c6-s24.toml

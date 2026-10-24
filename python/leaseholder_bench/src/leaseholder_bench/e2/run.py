@@ -192,7 +192,7 @@ def configure_cyan(arm: Arm, host: Host, systemd: Systemd) -> dict[str, Any]:
 def reset_cyan(host: Host, systemd: Systemd) -> dict[str, Any]:
     """Undo what e2 run changes on cyan: SMG stopped, the gateway back on gateway.toml, preemptive
     generation and lifecycle events on, and the voice worker on one GPU node."""
-    with _exclusive(host):
+    with exclusive(host):
         return _apply(host, systemd, None, {}, Voice(), ())
 
 
@@ -735,13 +735,15 @@ def run_point(
     seed`` for AIPerf; run.json keeps the seed the replay ran with (``agents_seed``)."""
     if not hasattr(os, "waitid"):
         raise E2Error(NEEDS_WAITID)
+    if stale := _stale_install():
+        raise E2Error(stale)
     if agents_seed is not None and agents_seed < 0:
         raise E2Error(f"the agents' seed cannot be negative: {agents_seed}")
     arm = load_arm(arm_file)
     seed = arm.agents.seed if agents_seed is None else agents_seed
     host = host or Host()
     systemd = systemd or Systemd()
-    with _exclusive(host):
+    with exclusive(host):
         _fresh(out)
         shutil.copyfile(arm_file, out / "arm.toml")
         record = _Record(out, arm, host, gpu_source)
@@ -995,8 +997,8 @@ def _aiperf_env(arm: Arm, host: Host, out: Path, seed: int) -> dict[str, str]:
 
 
 @contextlib.contextmanager
-def _exclusive(host: Host) -> Iterator[None]:
-    """One e2 run (or reset) at a time: they share cyan's units and cores. The lock file names the
+def exclusive(host: Host) -> Iterator[None]:
+    """One e2 run, reset or drill at a time: they share cyan's units and cores. The lock file names the
     holder's pid, to stop it by."""
     path = host.root / "runs" / ".lh-bench-e2.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1067,6 +1069,26 @@ class _Record:
 
     def _write(self) -> None:
         _write_json(self.path, self.data)
+
+
+PYPROJECT = Path(__file__).resolve().parents[3] / "pyproject.toml"
+"""lh-bench's own pyproject.toml, where it runs from its source tree (bootstrap.sh's editable install)."""
+
+
+def _stale_install(pyproject: Path = PYPROJECT) -> str | None:
+    """Why lh-bench's install does not match the source it runs, or None. An editable install runs the
+    source tree but keeps the metadata of its install, the version run.json records among it: until
+    the venv is synced again, a version change in pyproject.toml would leave every record naming the
+    old one. An installed wheel has no pyproject.toml beside it and its own metadata."""
+    if not pyproject.exists():
+        return None
+    source = tomllib.loads(pyproject.read_text())["project"]["version"]
+    if (installed := metadata.version("leaseholder-bench")) != source:
+        return (
+            f"lh-bench's venv was installed at version {installed} and its source is {source}: sync "
+            "the venv (deploy/cyan/bootstrap.sh) so that run.json names the version that runs"
+        )
+    return None
 
 
 def _versions(host: Host, gpu_source: Mapping[str, str | None] | None) -> dict[str, Any]:
