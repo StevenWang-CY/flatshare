@@ -1,6 +1,6 @@
 # lh-gateway
 
-`lh-gateway` is the process in front of one vLLM engine, or of a few GPU nodes with an engine each. It carries Leaseholder's request contract: who a request belongs to, which session and SLO class it has, and which engine inputs a client may not set. It relays responses byte for byte, cancels the engine request when the client leaves, and ingests lifecycle events. Its admission point runs `lh-core`'s admission policies: the E2 baselines it emulates, and Leaseholder's own, policy `leaseholder` (the gateway half of E2 arm 9: KV headroom timed by lifecycle events, a prefill budget in the critical window, a realtime class that is never shed and degrades instead). E2's ablations found its lifecycle timing adding nothing measurable ([what E2 measured](#policy-leaseholder)). With several nodes it places each session on one of them and keeps it there, by `lh-core`'s placement policies ([Placement](#placement)). Leases and the recompute ledger are to follow.
+`lh-gateway` is the process in front of one vLLM engine, or of a few GPU nodes with an engine each. It carries Leaseholder's request contract: who a request belongs to, which session and SLO class it has, and which engine inputs a client may not set. It relays responses byte for byte, cancels the engine request when the client leaves, and ingests lifecycle events. Its admission point runs `lh-core`'s admission policies: the E2 baselines it emulates, and Leaseholder's own, policy `leaseholder` (the gateway half of E2 arm 9: KV headroom timed by lifecycle events, a prefill budget in the critical window, a realtime class that is never shed and degrades instead). In E2's discriminating scenario its lifecycle-timed mechanisms could not act, since running agent requests held the KV ([what E2 measured](#policy-leaseholder)). With several nodes it places each session on one of them and keeps it there, by `lh-core`'s placement policies ([Placement](#placement)). Leases and the recompute ledger are to follow.
 
 It is a harness, not a general-purpose router: one upstream or a few nodes, loopback listeners, and nothing a stock proxy would not need besides the contract above. Its cost is measured below.
 
@@ -22,7 +22,7 @@ It is a harness, not a general-purpose router: one upstream or a few nodes, loop
 
 ## What it does not do
 
-- Leases, prefetch or the ledger, which are to come from `lh-core`; nor admission for interactive requests by predicted time to first token. Policy `leaseholder` does not hold interactive requests.
+- Leases, prefetch or a recompute ledger: the lease design was not pursued ([ADR-0006](../../docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)). Nor admission for interactive requests by predicted time to first token: policy `leaseholder` does not hold interactive requests.
 - Retries, or balancing single requests: with `[nodes]` a session is placed once and lives on the node that holds its KV. KV never moves between nodes.
 - TLS. Every listener binds loopback or a private socket, and the upstream is the loopback end of an SSH tunnel.
 - The Anthropic Messages API: agentic-api translates it and calls the gateway.
@@ -134,7 +134,7 @@ The first four policies are E2's baselines, the simple answers an operator would
 - **What each switch ablates in E2.** `headroom = false`: no KV headroom in the gateway, as with only the engine's class-aware reserve (the make-room variant) or none; `trigger = "request"`: the headroom from the end of the turn instead of from speech onset; `throttle = false`: background prefill unbudgeted in the critical window; `degrade = false`: realtime replies never capped. With all three off the policy holds nothing back and only follows the sessions.
 - **What it counts.** Background requests deferred, by what held them back when they arrived (the headroom first, then the critical window), and how long they waited; aged admissions, oversize ones apart; degraded replies; sessions by state, and state timeouts. And *false alarms*: armings of the headroom that no realtime request of the session followed before the session left the armed states (by an event, a timeout or its close), with the token-seconds of background work the headroom held back meanwhile, the estimated tokens of the background requests waiting for it integrated over time. While other sessions are armed as well, that cost is an upper bound.
 - **What it leaves out.** Interactive requests are not held. The headroom works from the gateway's estimate of the background requests' KV, as token-reservation does (their prompts, not their decode growth, with shared prefixes counted for each request), where the engine's own reserve counts blocks exactly. No event says that speech ended without a turn, so a false alarm keeps its headroom until `state_timeout_s`.
-- **What E2 measured** (2026-10-23, its discriminating scenario). With the engine change, arm 9 without the headroom, the throttle or the events, or with `trigger = "request"`, lands within the spread of arm 9's own runs, and on the stock engine this policy leaves voice where stock vLLM does: the lifecycle timing adds nothing measurable. Degrade capped every reply there, and the tail depends on it, since the engine's budget cap protects only a reply's first 16 tokens ([EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)).
+- **What E2 measured** (2026-10-23, its discriminating scenario). With the engine change, arm 9 without the headroom, the throttle or the events, or with `trigger = "request"`, lands within the spread of arm 9's own runs, and on the stock engine this policy leaves voice where stock vLLM does. Its mechanisms could not act there: running agent requests held the pool, which the headroom can protect only by deferring new requests, so degrade capped every reply and the throttle deferred nothing while the headroom ran. The tail depends on degrade, since the engine's budget cap protects only a reply's first 16 tokens ([EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)).
 
 ## Placement
 
@@ -242,9 +242,9 @@ What the numbers say:
 - **Streamed chunks cost about the same as the bare hop:** 65 against 61 µs at p50 for one stream.
 - **The same benchmark on an Apple M5 Max** (18 cores, macOS 26.6) adds 39 µs at one client, and 0.82 ms at most at p99. cyan's 2.1 GHz Xeon costs several times more per request.
 
-**In place on cyan**, with the voice agent and the agent replay as clients ([BENCHMARKS](../../docs/BENCHMARKS.md#the-control-plane-lh-gateway-in-front-of-the-engine)):
-- the gateway's own time is 0.13 ms on average for voice requests;
-- paired against the engine's own socket, the gateway adds 0.38 ms to a voice request's first token.
+**In place on cyan**, on the W1 build (2026-10-22, before the admission policies and placement), with the voice agent and the agent replay as clients ([BENCHMARKS](../../docs/BENCHMARKS.md#the-control-plane-lh-gateway-in-front-of-the-engine)):
+- the gateway's own time was 0.13 ms on average for voice requests;
+- paired against the engine's own socket, the gateway added 0.38 ms to a voice request's first token.
 
 **Admission policies.** The benchmark's second table prices each policy: background requests, which every policy holds, through one gateway per policy, with limits the runs never reach so that a policy adds its bookkeeping and never a wait, and through a gateway without a policy, which runs the same requests just before. Each gateway's own histogram follows the table. It has not run on cyan yet. On the M5 Max, the medians of eight runs on 2026-10-22, with the machine busy with other work, for the 2 KiB non-streaming rows:
 
