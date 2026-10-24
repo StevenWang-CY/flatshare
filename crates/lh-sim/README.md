@@ -4,7 +4,7 @@
 
 ## The replay
 
-- **Traces.** A directory of `<trace id>.json` as `lh-bench scale-traces` writes it, or the original JSONL. A prompt is `len(hash_ids) × block_size` tokens; the raw `in` field overcounts.
+- **Traces.** A directory of `<trace id>.json` as `lh-bench scale-traces` writes it, or the original JSONL. A prompt is `len(hash_ids) × block_size` tokens, which is the trace's `in` on every request of the corpus (98,827 of 98,827).
 - **AIPerf's structure, ported.** The Weka loader's chain detection splits each trace into the main agent, flattened agent chains and subagent chains, with their think-time delays (`useThinkTimeOnly`, capped at `interTurnDelayCapSeconds`), SPAWN branches and joins, and the cross-stream replay barriers. `TrajectorySource` gives each lane its start instant `t*` (SHA-256 of seed, trace and lane, then numpy's PCG64) and the streams live at `t*`. `scripts/aiperf_reference.py` dumps AIPerf's own plan with prompt synthesis stubbed out, and `lh-sim aiperf-plan` dumps the port's: they agree field for field on the full 32× corpus (9,843 conversations, 98,827 turns) for 393 lanes with seed 11 and for 450 lanes with seed 7, start ratios 0.25–0.75 and a 30 s cap. The test subset's plan is pinned in `testdata/aiperf-0.13.0-sub16.json`.
 - **Dispatch.** `concurrency` lanes take traces from AIPerf's sequential sampler. Every stream live at `t*` first sends its last earlier request with `max_tokens = 1`, all at once; profiling starts when the last of these returns. Each lane then sends its earliest live turn at once and the others at their recorded offsets. A turn's successor goes its delay after the turn returns; a root turn spawns its children when it returns (when it is sent, if the recorded spawn overlapped the request), each at its recorded offset from the spawn; a joining turn waits for its children; a turn whose replay predecessors have not completed is held. A lane whose session tree has drained starts the next trace from its first turn, under a fresh KV namespace (AIPerf's cache-bust marker). No request is sent after the duration, requests still running at the end of the grace period are dropped, and when nothing is in flight the pending think-time timers are pulled forward so the engine idles at most `systemIdleGapCapSeconds`.
 - **Pauses.** A turn's delay is the trace's think time (`--pauses trace`, the default), or, with `--pauses tracelab`, a TraceLab tool wait drawn in its place and capped the same way: a tool by its share of TraceLab's tool rounds, then a wait from that tool's percentiles (`data/tracelab-pauses.tsv`, below). Every arm draws the same pause for the same turn.
@@ -91,7 +91,7 @@ lh-sim regime DATA/weka-x32 --csv regime.csv --markdown regime.md         # the 
 lh-sim regime DATA/weka-x32 --sessions 8,12,16,24 --cpu-ratio 4 --pause-sources trace --seeds $(seq 11 30 | paste -sd, -)
 lh-sim hardware DATA/weka-x32 --csv hw.csv --markdown hw.md               # other GPUs, modeled
 lh-sim hardware DATA/weka-x32 --fit --csv hw-fit.csv --markdown hw-fit.md # each at its own scaling
-lh-sim mrc DATA/weka-x32 --service idle --csv mrc.csv                     # miss-ratio curves (the table below)
+lh-sim mrc DATA/weka-x32 --service idle --csv mrc.csv --markdown mrc.md   # miss-ratio curves (the table below)
 lh-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl      # a measured run through the engine model
 lh-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl --timed --csv w0-timed.csv
 ```
@@ -193,7 +193,7 @@ With trace pauses up to 24 sessions, `mori` loses 1–15% at p50 and 10–24% at
 
 ## Miss-ratio curves
 
-`lh-sim mrc` computes curves for the GPU tier alone on the reference arm's admission sequence: LRU at 41 capacities from 1/16 to 64 times the pool in one pass of Mattson stack distances, and MIN at chosen capacities. Each request looks up its blocks, then its blocks become the most recent in the order vLLM frees them. Hits are token weighted, per block and per prefix (a block counts only when its whole prefix hits). MIN's per-block hit ratio is a bound: no policy hits more blocks of this sequence at that capacity. Its prefix hit ratio is a reference.
+`lh-sim mrc` computes curves for the GPU tier alone on the reference arm's admission sequence: LRU at 41 capacities from 1/16 to 64 times the pool in one pass of Mattson stack distances, and MIN at chosen capacities. Each request looks up its blocks, then its blocks become the most recent in the order vLLM frees them. Hits are token weighted, per block and per prefix (a block counts only when its whole prefix hits). MIN's per-block hit ratio is a bound: no policy hits more blocks of this sequence at that capacity. Its prefix hit ratio is a reference. `--markdown` writes the table below: the per-block miss ratios, at `--min-at`'s multiples of the pool, of the replay and of the same order at the original token counts; `make reproduce-e1` writes it with the idle service.
 
 Three sequences: the 32× replay; the same admission order with every prompt cut at its original token counts (64-token hash blocks, outputs ×32, capacities ×32); and the replay run again at the original token counts. Miss ratios on the W0 configuration, with the idle service:
 
