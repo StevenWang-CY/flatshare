@@ -8,11 +8,11 @@
 - **AIPerf's structure, ported.** The Weka loader's chain detection splits each trace into the main agent, flattened agent chains and subagent chains, with their think-time delays (`useThinkTimeOnly`, capped at `interTurnDelayCapSeconds`), SPAWN branches and joins, and the cross-stream replay barriers. `TrajectorySource` gives each lane its start instant `t*` (SHA-256 of seed, trace and lane, then numpy's PCG64) and the streams live at `t*`. `scripts/aiperf_reference.py` dumps AIPerf's own plan with prompt synthesis stubbed out, and `lh-sim aiperf-plan` dumps the port's: they agree field for field on the full 32× corpus (9,843 conversations, 98,827 turns) for 393 lanes with seed 11 and for 450 lanes with seed 7, start ratios 0.25–0.75 and a 30 s cap. The test subset's plan is pinned in `testdata/aiperf-0.13.0-sub16.json`.
 - **Dispatch.** `concurrency` lanes take traces from AIPerf's sequential sampler. Every stream live at `t*` first sends its last earlier request with `max_tokens = 1`, all at once; profiling starts when the last of these returns. Each lane then sends its earliest live turn at once and the others at their recorded offsets. A turn's successor goes its delay after the turn returns; a root turn spawns its children when it returns (when it is sent, if the recorded spawn overlapped the request), each at its recorded offset from the spawn; a joining turn waits for its children; a turn whose replay predecessors have not completed is held. A lane whose session tree has drained starts the next trace from its first turn, under a fresh KV namespace (AIPerf's cache-bust marker). No request is sent after the duration, requests still running at the end of the grace period are dropped, and when nothing is in flight the pending think-time timers are pulled forward so the engine idles at most `systemIdleGapCapSeconds`.
 - **Pauses.** A turn's delay is the trace's think time (`--pauses trace`, the default), or, with `--pauses tracelab`, a TraceLab tool wait drawn in its place and capped the same way: a tool by its share of TraceLab's tool rounds, then a wait from that tool's percentiles (`data/tracelab-pauses.tsv`, below). Every arm draws the same pause for the same turn.
-- **Service.** Under contention (`--service contention`, the default) a request reaches vLLM's step loop after its host time and shares every step with the requests beside it (the contention model below). `--service idle` is v0: a request's time to first token is E0's cost for its hit pattern after any wait for free blocks, then it decodes at a constant inter-token latency, with no queueing behind other requests; it reproduces v0's outputs exactly.
+- **Service.** Under contention (`--service contention`, the default) a request reaches vLLM's step loop after its host time and shares every step with the requests beside it (the contention model below). `--service idle` is v0: a request's time to first token is E0's cost for its hit pattern after any wait for free blocks, then it decodes at a constant inter-token latency, with no queueing behind other requests; it reproduces v0's outputs exactly (the tests pin v0's subset run).
 
 ## The engine model
 
-- **Blocks.** Prompts are cut into 16-token blocks. A block's identity is its exact prefix: the trace's hash-id trie node its last token falls in, its offset inside that hash block, the session play and, by default, the model. Two prompts share a block iff they share every token up to its end, which is vLLM's chained block hashing without collisions. `--shared-models` drops the model from the identity, as an AIPerf replay against one served model does.
+- **Blocks.** Prompts are cut into 16-token blocks. A block's identity is its exact prefix: the trace's hash-id trie node its last token falls in, its offset inside that hash block, and the session play. Two prompts share a block iff they share every token up to its end, which is vLLM's chained block hashing without collisions. Every request goes to one served model, as in an AIPerf replay, so requests the traces sent to different models share KV.
 - **GPU pool.** 2,275 blocks (36,400 tokens) on the frozen box, one of them vLLM's null block. A request takes the longest cached prefix of its full blocks, at most `⌊(L − 1) / 16⌋` blocks, because vLLM always computes the last prompt token. Running requests pin their blocks (reference counted, shared by common prefixes). A finished request frees its blocks in reverse order: cached blocks join the back of the free queue, so the end of a prefix is evicted before its start, and the partial last block joins the front. A block recomputed while a copy is cached is cached a second time, as vLLM keeps every block per hash. A hit takes a copy that running requests already pin when there is one, where vLLM takes the first copy cached; the two differ only for such recomputed blocks, and the clairvoyant pass relies on the rule (see below).
 - **CPU tier.** 9,102 blocks (20 GiB at 144 KiB per token) on the frozen box, or a ratio of the pool. After the GPU hit, the tier extends it with the following blocks it holds; they are restored into new GPU blocks. When a request finishes, every full block it holds, prompt and output (`offload_prompt_only: false`), is offered to the tier: from the start of the prompt, or from past the restored blocks when it restored any (vLLM's chunk-level store index). LRU follows vLLM's `LRUCachePolicy`: blocks become most recent when stored and when a request that used them finishes, in reverse prefix order. A store never evicts a block it offers, and stores nothing when it cannot make room.
 - **Output KV.** Output tokens take blocks and are written through, but they are never reused: AIPerf synthesizes each turn's history from the trace, not from what the model generated.
@@ -44,7 +44,6 @@
 |---|---|---|---|
 | `gpu-lru` | vLLM's LRU free queue | none | nothing |
 | `lru-cpu` | vLLM's LRU free queue | `LRUCachePolicy`, write-through: the frozen box | nothing |
-| `s3fifo-cpu` | vLLM's LRU free queue | S3-FIFO: a 10% probationary FIFO, a main FIFO with reinsertion, and ghost entries | nothing |
 | `clairvoyant` | Belady's MIN | Belady's MIN, with bypass | nothing |
 | `ttl-5`, `ttl-30`, `ttl-120` | LRU | LRU | hold its cached blocks for the TTL |
 | `history-prefetch` | LRU | LRU | prefetch it to end as the history predicts it returns |
@@ -53,7 +52,7 @@
 | `mori` | the free block expected back last | LRU | nothing |
 | `infercept` | LRU | LRU | hold it or offload it, by minimum waste |
 
-`run` runs the first four by default; `--arms` picks any, and `regime` runs `lru-cpu`, the E1 arms and the reference.
+`run` runs the first three by default; `--arms` picks any, and `regime` runs `lru-cpu`, the E1 arms and the reference.
 
 The **clairvoyant reference** runs in two passes. The first runs the reference arm (`lru-cpu` unless `--reference` says otherwise) and records the order in which the engine admitted and finished requests. The second replays that fixed order with farthest-next-use eviction in each tier: the pool reuses the free block whose next use is farthest, and the CPU tier keeps the blocks with the nearest next uses, declining to store a block whose next use is farther than every block it holds. A block's next use is the next request whose prompt holds it, whichever tier serves that request. Waits for free blocks, and so the whole timeline, are the reference arm's; time to first token is re-priced from the new hit pattern (under contention, the reference run's queueing stays and each request's own service, as it would take alone, is re-priced). Under any eviction policy a request takes the blocks its footprint needs minus those it shares with running requests (because a hit takes a pinned copy when one exists), so every admission of the first pass fits in the second.
 
@@ -74,29 +73,32 @@ A hold also ends once its session is later than twice its predicted pause. A pre
 - **Tokens.** Requests and prompt tokens, and the shares served from the GPU pool, restored from the CPU tier and computed. Computed tokens split into cold first turns of conversations, new context (blocks the run had not seen), and recomputed blocks (seen before, since evicted from every tier, plus the last block of a fully cached block-aligned prompt): the avoidable recompute.
 - **Latency.** Time to first token p50/p90/p99, overall and for resumed turns.
 - **Traffic.** PCIe bytes restored, prefetched and stored, GPU and CPU evictions, and stalls (requests that waited for free blocks, and the total wait). Under contention `engine` also counts the steps run, their tokens and their total time.
-- **Regime.** KV pressure, the live working set (distinct blocks in the latest prompt of every live stream) over the pool, as a time-weighted mean and a peak; π, the median pause over the restore time of the median prompt (E0's restore extra over a GPU hit); ρ, that restore time over the recompute time of the median prompt.
+- **Regime.** KV pressure, the live working set (distinct blocks in the latest prompt of every live stream) over the pool, as a time-weighted mean and a peak; π, the median pause (over the turns that pause: a turn sent at once has no pause) over the restore time of the median prompt (E0's restore extra over a GPU hit); ρ, that restore time over the recompute time of the median prompt.
 
 Shares, latencies, restored bytes and stalls cover the profiling requests that completed, as AIPerf's results do; store, prefetch and eviction counts cover the whole run.
 
 ## Usage
 
+`DATA/weka-x32` is the 32× corpus: SemiAnalysis's traces as `lh-bench scale-traces` writes them ([how](../../python/leaseholder_bench/README.md#trace-scaling); the download is in its quickstart). It stays outside the repository.
+
 ```sh
 cargo build --release -p lh-sim
-lh-sim run DATA/weka-x32 --shared-models --json w0.json --csv w0.csv     # the W0 configuration, the stock arms
+lh-sim run DATA/weka-x32 --json w0.json --csv w0.csv                      # the W0 configuration, the stock arms
 lh-sim run DATA/weka-x32 --cpu-ratio 2,4,8 --arms lru-cpu,clairvoyant    # CPU tier at 2x, 4x and 8x the pool
-lh-sim run DATA/weka-x32 --shared-models --service idle                   # v0's idle-box service
-lh-sim run DATA/weka-x32 --shared-models --pauses tracelab --arms lru-cpu,oracle-prefetch
-lh-sim regime DATA/weka-x32 --shared-models --csv regime.csv --markdown regime.md
-lh-sim hardware DATA/weka-x32 --shared-models --csv hw.csv --markdown hw.md  # other GPUs, modeled
-lh-sim hardware DATA/weka-x32 --shared-models --fit --csv hw-fit.csv --markdown hw-fit.md  # each at its own scaling
-lh-sim mrc DATA/weka-x32 --shared-models --csv mrc.csv                    # miss-ratio curves
+lh-sim run DATA/weka-x32 --service idle                                   # v0's idle-box service
+lh-sim run DATA/weka-x32 --pauses tracelab --arms lru-cpu,oracle-prefetch
+lh-sim regime DATA/weka-x32 --csv regime.csv --markdown regime.md         # the regime map, seeds 11-13
+lh-sim regime DATA/weka-x32 --sessions 8,12,16,24 --cpu-ratio 4 --pause-sources trace --seeds $(seq 11 30 | paste -sd, -)
+lh-sim hardware DATA/weka-x32 --csv hw.csv --markdown hw.md               # other GPUs, modeled
+lh-sim hardware DATA/weka-x32 --fit --csv hw-fit.csv --markdown hw-fit.md # each at its own scaling
+lh-sim mrc DATA/weka-x32 --csv mrc.csv                                    # miss-ratio curves
 lh-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl      # a measured run through the engine model
 lh-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl --timed --csv w0-timed.csv
 ```
 
 The replay options are the fields of `lh-bench`'s `configs/agentic_replay.yaml`, but they default to the W0 settings, not to that file's (1,800 s plus a 120 s grace and a 600 s think-time cap): 16 lanes, 600 s plus a 60 s grace, a 120 s think-time cap, seed 11, start ratios 0 to 1, burst starts and a 10 s idle cap. Capacities default to the frozen box (`--pool-tokens 36400`, a 20 GiB CPU tier; `--cpu-ratio` or `--cpu-gib` change it), costs to the E0 fits (`--costs` takes the `summary.json` of `lh-bench tiers`; `--itl-ms` sets the idle service's decode rate) and the step-time model to the frozen box's fit (`--step-costs`). `run` writes a JSON summary (`--json`), one CSV row per arm and capacity (`--csv`) and one CSV row per request (`--requests`). `--token-scale 32` replays a 32× corpus at its original token counts.
 
-`regime` runs `lru-cpu`, the E1 arms and the reference in every cell of `--sessions` (5, 8, 12, 16, 24, 32, 40), `--cpu-ratio` (2, 4, 8) and `--pause-sources` (trace, tracelab), on `--jobs` threads (default: every core). It writes one CSV row per cell and arm (`--csv`) and the regime map (`--markdown`): per cell, the coordinates, `lru-cpu`'s, the reference's and the oracle's resume TTFT, the oracle's gain, and the share of the clairvoyant gap each level closes at p90. A share is `(lru − arm) / (lru − clairvoyant)`, left empty where the reference is less than 5% faster than `lru-cpu`.
+`regime` runs `lru-cpu`, the E1 arms and the reference in every cell of `--sessions` (5, 8, 12, 16, 24, 32, 40), `--cpu-ratio` (2, 4, 8) and `--pause-sources` (trace, tracelab), at each of `--seeds` (11, 12, 13), on `--jobs` threads (default: every core). It writes one CSV row per cell, seed and arm (`--csv`), with the share of the clairvoyant gap each arm closes, `(lru − arm) / (lru − clairvoyant)`, left empty where the reference is less than 5% faster than `lru-cpu`. The Markdown (`--markdown`) is the regime map below, one table per CPU tier: per cell, the coordinates and each arm's gain over `lru-cpu`, the mean over the seeds. With several seeds a table per pause source and tier gives their spread, as the realistic regime's below. `make reproduce-e1 CORPUS=DATA/weka-x32` writes every E1 table in this README to `build/reproduce-e1`.
 
 `hardware` runs the same arms on each of `--gpus` (`rtx-5060-ti`, the frozen box with its measured costs; `l4` and `h100-sxm`, modeled: see [Other hardware, modeled](#other-hardware-modeled)) over `--sessions` and `--seeds` (11, 12, 13), with the CPU tier at `--cpu-ratio` (4) times each GPU's pool and a realtime tier of `--calls` (2) voice calls. The sessions are the regime map's and 64, 96, 128, 192 and 256, of which a GPU whose pool holds r times the box's, in the replay's tokens, runs those up to 40·r: the box runs 5 to 40. Every GPU replays the corpus at `--token-scale`, which unlike `regime`'s scales no pool, or with `--fit` at its own scaling. It writes one CSV row per cell and arm (`--csv`: `regime`'s columns, after the GPU, its costs' label, the token scale, the pool and the seed, and before the peak pressure, the median prompt, the realtime tier's two shares and the chunk) and the GPUs' costs and placements (`--markdown`), each cell the mean over the seeds.
 
@@ -104,7 +106,7 @@ The replay options are the fields of `lh-bench`'s `configs/agentic_replay.yaml`,
 
 ## Calibration against the GPU operating points
 
-Three operating points on the frozen box, each on a freshly started engine: AIPerf `agentic_replay` at 8, 16 and 24 sessions (the 32× corpus, 120 s think cap, 600 s plus 60 s grace, seed 11, burst starts, straight to the engine as W0). The simulator runs `lh-sim run DATA/weka-x32 --shared-models --arms lru-cpu --concurrency N`. Measured shares are the engine's `prompt_tokens_cached_by_source` counters over the profiling phase (the counters' deltas less the warm-up requests' own tokens); simulated shares cover the profiling requests. Resume TTFT covers profiling requests after a conversation's first turn.
+Three operating points on the frozen box, each on a freshly started engine: AIPerf `agentic_replay` at 8, 16 and 24 sessions (the 32× corpus, 120 s think cap, 600 s plus 60 s grace, seed 11, burst starts, straight to the engine as W0). The simulator runs `lh-sim run DATA/weka-x32 --arms lru-cpu --concurrency N`. Measured shares are the engine's `prompt_tokens_cached_by_source` counters over the profiling phase (the counters' deltas less the warm-up requests' own tokens); simulated shares cover the profiling requests. Resume TTFT covers profiling requests after a conversation's first turn.
 
 | Point | | Requests | Resume TTFT p50 / p90 / p99 (ms) | GPU / CPU / computed (%) |
 |---|---|---|---|---|
@@ -129,7 +131,7 @@ Leave-one-out refits every coefficient on the other two points and predicts the 
 
 ## Validation against W0 (v0, the idle service)
 
-W0 replayed the full 32× corpus against the frozen box: AIPerf's sequential sampler gave its 16 lanes the first 16 traces in name order, and its 10 recycled plays the next 10. The simulator runs the same configuration with seed 11 and shared models (one served model), here with `--service idle`. `replay-log` feeds the engine model W0's own requests at their measured start and end times, which separates the cache model from the replay timing.
+W0 replayed the full 32× corpus against the frozen box: AIPerf's sequential sampler gave its 16 lanes the first 16 traces in name order, and its 10 recycled plays the next 10. The simulator runs the same configuration with seed 11, here with `--service idle`. `replay-log` feeds the engine model W0's own requests at their measured start and end times, which separates the cache model from the replay timing.
 
 | | W0, measured | Engine model on W0's timeline | Full simulation |
 |---|---|---|---|
@@ -151,37 +153,43 @@ The measured split is the engine's `prompt_tokens_cached_by_source` counters ove
 
 ## The E1 regime map
 
-`lh-sim regime DATA/weka-x32 --shared-models` at seeds 11, 12 and 13: resume TTFT gain over `lru-cpu` (1 − arm / `lru-cpu`) at p50 / p90, the mean over the seeds, with the CPU tier at 4× the pool. ρ is 0.25–0.28 in every cell. The CSV has the 2× and 8× tiers, the other arms, avoidable recompute and PCIe bytes.
+`lh-sim regime DATA/weka-x32`, at its default seeds 11, 12 and 13 (`make reproduce-e1` writes this as `regime.md`): resume TTFT gain over `lru-cpu` (1 − arm / `lru-cpu`) at p50 / p90, the mean over the seeds, with the CPU tier at 4× the pool. ρ is 0.25–0.27 in every cell. The Markdown has the 2× and 8× tiers too, and the CSV the other arms, avoidable recompute and PCIe bytes.
 
 | Pauses | Sessions | Pressure | π | `oracle-prefetch` | `history-prefetch` | `tokencake` | `ttl-30` | `clairvoyant` |
 |---|---|---|---|---|---|---|---|---|
-| trace | 5 | 1.3 | 20.6 | +0 / +1% | −1 / +0% | −5 / −9% | −1 / +2% | +1 / +7% |
-| trace | 8 | 1.8 | 19.1 | −0 / +22% | +1 / +11% | −6 / −8% | +1 / +4% | +1 / +27% |
-| trace | 12 | 2.6 | 16.1 | +5 / +26% | −1 / −6% | −10 / −21% | +0 / −2% | +0 / +7% |
-| trace | 16 | 3.6 | 15.9 | +13 / +8% | −11 / −27% | −27 / −22% | +2 / −5% | +2 / +8% |
-| trace | 24 | 4.7 | 15.9 | −25 / −14% | −31 / −22% | −60 / −23% | +5 / −3% | +3 / +8% |
-| trace | 32 | 6.2 | 16.9 | −48 / −24% | −40 / −17% | −37 / −11% | −7 / +1% | +3 / +2% |
-| trace | 40 | 7.5 | 17.5 | −55 / −27% | −46 / −29% | −47 / −22% | +4 / +6% | +1 / +1% |
-| tracelab | 5 | 1.2 | 2.0 | −1 / +1% | −0 / −2% | −5 / −7% | −1 / +1% | +0 / +1% |
-| tracelab | 8 | 1.8 | 0.9 | −0 / +3% | −2 / −3% | −6 / −14% | +1 / +3% | +1 / +4% |
-| tracelab | 12 | 2.4 | 1.0 | +1 / +6% | −3 / −9% | −13 / −18% | +0 / +0% | +0 / +7% |
-| tracelab | 16 | 3.4 | 1.1 | −29 / −51% | −39 / −42% | −30 / −41% | +7 / −2% | +4 / +2% |
-| tracelab | 24 | 4.7 | 1.1 | −81 / −25% | −80 / −27% | −86 / −27% | +13 / +1% | +2 / +0% |
-| tracelab | 32 | 6.1 | 1.2 | −30 / −21% | −30 / −26% | −32 / −27% | −0 / −0% | +1 / +1% |
-| tracelab | 40 | 7.3 | 1.1 | −11 / −4% | −20 / −3% | −14 / −4% | +0 / +0% | +1 / +1% |
+| trace | 5 | 1.3 | 27.0 | +2 / +13% | −1 / +0% | −5 / −9% | −1 / +2% | +1 / +7% |
+| trace | 8 | 1.8 | 29.6 | +3 / +40% | +1 / +11% | −6 / −8% | +1 / +4% | +1 / +27% |
+| trace | 12 | 2.6 | 21.4 | +5 / +32% | −1 / −6% | −10 / −21% | +0 / −2% | +0 / +7% |
+| trace | 16 | 3.6 | 23.4 | +15 / +10% | −11 / −27% | −27 / −22% | +2 / −5% | +2 / +8% |
+| trace | 24 | 4.7 | 23.9 | −25 / −14% | −31 / −22% | −60 / −23% | +5 / −3% | +3 / +8% |
+| trace | 32 | 6.2 | 23.5 | −48 / −24% | −40 / −17% | −37 / −11% | −7 / +1% | +3 / +2% |
+| trace | 40 | 7.5 | 22.9 | −55 / −27% | −46 / −29% | −47 / −22% | +4 / +6% | +1 / +1% |
+| tracelab | 5 | 1.2 | 3.2 | −0 / +1% | −0 / −2% | −5 / −7% | −1 / +1% | +0 / +1% |
+| tracelab | 8 | 1.8 | 2.9 | +1 / +6% | −2 / −3% | −6 / −14% | +0 / +3% | +1 / +4% |
+| tracelab | 12 | 2.4 | 2.7 | +2 / +7% | −3 / −9% | −13 / −18% | +0 / +0% | +0 / +7% |
+| tracelab | 16 | 3.4 | 2.6 | −29 / −51% | −39 / −42% | −30 / −41% | +7 / −2% | +4 / +2% |
+| tracelab | 24 | 4.7 | 2.9 | −81 / −25% | −80 / −27% | −86 / −27% | +13 / +1% | +2 / +0% |
+| tracelab | 32 | 6.1 | 3.3 | −30 / −21% | −30 / −26% | −32 / −27% | −0 / −0% | +1 / +1% |
+| tracelab | 40 | 7.3 | 2.8 | −11 / −4% | −20 / −3% | −14 / −4% | +0 / +0% | +1 / +1% |
 
 With trace pauses up to 24 sessions, `mori` loses 1–15% at p50 and 10–24% at p90 against `lru-cpu` (ranking by noisy predicted returns evicts sessions that come back), and `infercept` 18–36% at p50 (its swaps turn GPU hits into restores, and the pool has no use for the memory they free).
 
-**The realistic regime.** The frozen box with the traces' think times and the CPU tier at 4× (π about 16, within 2–4 times production's), over 20 seeds (11–30); gain over `lru-cpu`, mean (median) [range]:
+**The realistic regime.** The frozen box with the traces' think times and the CPU tier at 4× (π about 23), over 20 seeds (11–30; `realistic.md`): gain over `lru-cpu`, the mean of the per-seed gains, their median (in parentheses) and range [in brackets], and the oracle's gain on the seeds' mean latencies:
 
-| Sessions | Pressure | `lru-cpu` resume p50 / p90 | `oracle-prefetch` p50 | p90 | `clairvoyant` p50 / p90 | Best history arm, p90 |
-|---|---|---|---|---|---|---|
-| 8 | 1.6 | 86 / 267 ms | +0.7% (+0.6) [−2, +3] | +11.3% (+10.2) [−4, +26] | +1.3 / +15.5% | `history-prefetch` +3.6% |
-| 12 | 2.4 | 103 / 299 ms | +2.6% (+2.3) [−1, +7] | +23.3% (+22.9) [+11, +37] | +0.5 / +8.0% | `history-prefetch` −9.5% |
-| 16 | 3.2 | 139 / 895 ms | +6.8% (+3.9) [−0, +23] | +7.7% (+16.6) [−43, +37] | +1.7 / +9.4% | `infercept` −9.8% |
-| 24 | 4.4 | 208 / 1,645 ms | −2.3% (+6.2) [−103, +20] | −17.0% (−15.2) [−61, +14] | +2.3 / +10.9% | `infercept` −7.0% |
+| Sessions | Pressure | π | `lru-cpu` resume p50 / p90 | `oracle-prefetch` p50 | p90 | `oracle-prefetch` on mean latencies, p50 / p90 | `clairvoyant` p50 / p90 | Best history arm, p90 |
+|---|---|---|---|---|---|---|---|---|
+| 8 | 1.6 | 28.6 | 86 / 267 ms | +3.4% (+3.2) [−3, +11] | +28.0% (+28.0) [+12, +48] | +3.5 / +29.3% | +1.4 / +15.5% | `history-prefetch` +3.6% |
+| 12 | 2.4 | 20.6 | 103 / 299 ms | +3.3% (+3.0) [−1, +9] | +28.8% (+29.4) [+16, +40] | +3.4 / +29.6% | +0.5 / +8.0% | `history-prefetch` −9.5% |
+| 16 | 3.2 | 21.3 | 139 / 895 ms | +8.2% (+6.5) [−0, +25] | +13.2% (+21.9) [−43, +50] | +10.4 / −2.9% | +1.7 / +9.4% | `infercept` −9.8% |
+| 24 | 4.4 | 23.3 | 208 / 1,645 ms | −2.4% (+5.9) [−103, +20] | −16.9% (−15.2) [−61, +21] | −24.4 / −23.7% | +2.3 / +10.9% | `infercept` −7.0% |
 
-**G-sim.** The oracle level does not close 10% of resume TTFT across the realistic regime. At p50 it closes under 7% at every point: the median resumed turn is a GPU hit or a short restore, and a restore turned into a hit saves only its transfer and the two steps it waits after it. At p90 it closes 11% and 23% at 8 and 12 sessions (pressure 1.6–2.4), 8% on average at W0's 16 sessions with a seed range wider than the effect (−43 to +37%), and it is 17% worse at 24 sessions (pressure 4.4), where its loads queue with the demand restores on the one load stream and stall the step loop as they do. The clairvoyant gap itself is 0.5–2.3% at p50 and 8–16% at p90. The history level closes nothing: its best arm gains 3.6% at p90 at 8 sessions and loses 7–10% from 12 sessions on, its prefetches mistimed by heavy-tailed pauses. With TraceLab's tool pauses (π about 1, a pause as long as the restore) the oracle gains at most 6% (p90, 12 sessions) and loses from 16 sessions on. Caveat: the model under-predicts restores at 24 sessions (above), and a dearer restore at high pressure would raise both what prefetching saves and what its loads cost.
+**G-sim.** The gate is read at p50. There the oracle level closes under 9% of resume TTFT across the realistic regime by the mean of the per-seed gains, and 10% at W0's 16 sessions by the gain of the seeds' mean latencies: at the gate, not clearly under it. Below, gains are means of the per-seed gains, with the gain of the mean latencies in parentheses where the two differ by more than two points.
+- **p50.** +3% at 8 and 12 sessions, +8% at 16 (+10%: 139 to 125 ms) and −2% at 24 (−24%). The median resumed turn is a GPU hit or a short restore, and a restore turned into a hit saves only its transfer and the two steps it waits after it.
+- **p90.** +28% at 8 and 12 sessions (pressure 1.6–2.4: 78 and 88 ms of `lru-cpu`'s 267 and 299 ms) and +13% at W0's 16 sessions (−3%), whose seed range is wider than the effect (−43 to +50%). At 24 sessions (pressure 4.4) it is −17% (−24%): its loads queue with the demand restores on the one load stream and stall the step loop as they do.
+- **The reference.** The clairvoyant gap itself is 0.5–2.3% at p50 and 8–16% at p90. The oracle passes it at 8 and 12 sessions at both percentiles: a prefetch hides a restore inside the pause, which no eviction order can.
+- **The history level**, the information a deployment has without tools that report when they will return, closes nothing: its best arm gains 3.6% at p90 at 8 sessions and loses 7–10% from 12 sessions on, its prefetches mistimed by heavy-tailed pauses.
+- **TraceLab's tool pauses** (π about 3, a pause about three restores long): the oracle gains at most 7% (p90, 12 sessions) and loses from 16 sessions on.
+- **Caveat.** The model under-predicts restores at 24 sessions (above), and a dearer restore at high pressure would raise both what prefetching saves and what its loads cost.
 
 ## Miss-ratio curves
 
@@ -251,54 +259,54 @@ Means over seeds 11, 12 and 13, trace pauses. Pressure is mean / peak; the voice
 
 | GPU | Sessions | Pressure | π | ρ | Voice KV short | Chunk | `lru-cpu` | `clairvoyant` | `oracle-prefetch` | `history-prefetch` | `tokencake` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| RTX 5060 Ti 16 GB (measured), 32× | 5 | 1.3 / 1.5 | 20.6 | 0.26 | 94 / 0% | 64 | 90 / 243 | +1 / +7% | +0 / +1% | −1 / +0% | −5 / −9% |
-|  | 8 | 1.8 / 2.0 | 19.1 | 0.27 | 100 / 0% | 56 | 86 / 355 | +1 / +27% | −0 / +22% | +1 / +11% | −6 / −8% |
-|  | 12 | 2.6 / 3.1 | 16.1 | 0.25 | 100 / 1% | 64 | 113 / 340 | +0 / +7% | +5 / +26% | −1 / −6% | −10 / −21% |
-|  | 16 | 3.6 / 4.1 | 16.0 | 0.25 | 100 / 4% | 66 | 180 / 1,399 | +2 / +8% | +13 / +8% | −11 / −27% | −27 / −22% |
-|  | 24 | 4.7 / 5.4 | 15.9 | 0.26 | 100 / 12% | 61 | 364 / 2,334 | +3 / +8% | −25 / −14% | −31 / −22% | −60 / −23% |
-|  | 32 | 6.2 / 6.8 | 16.9 | 0.26 | 100 / 25% | 64 | 1,849 / 9,109 | +3 / +2% | −48 / −24% | −40 / −17% | −37 / −11% |
-|  | 40 | 7.5 / 8.1 | 17.5 | 0.26 | 100 / 33% | 63 | 8,216 / 19,336 | +1 / +1% | −55 / −27% | −46 / −29% | −47 / −22% |
-| L4 24 GB (modeled), 32× | 5 | 0.5 / 0.6 | 59.1 | 0.09 | 0 / 0% | 49 | 97 / 196 | +0 / +0% | +0 / +0% | +0 / +0% | −4 / −9% |
-|  | 8 | 0.7 / 0.8 | 52.5 | 0.10 | 0 / 0% | 46 | 90 / 189 | +0 / +0% | +0 / +0% | +0 / +0% | −2 / −12% |
-|  | 12 | 1.0 / 1.2 | 46.8 | 0.09 | 58 / 0% | 49 | 119 / 217 | +1 / +2% | +1 / +3% | +1 / +1% | −6 / −19% |
-|  | 16 | 1.4 / 1.6 | 48.1 | 0.09 | 100 / 0% | 50 | 147 / 301 | +1 / +5% | +2 / +9% | +1 / +3% | −11 / −13% |
-|  | 24 | 1.8 / 2.1 | 45.2 | 0.10 | 100 / 0% | 48 | 148 / 314 | +0 / +1% | +2 / +11% | −1 / +0% | −18 / −15% |
-|  | 32 | 2.4 / 2.7 | 53.8 | 0.09 | 100 / 2% | 50 | 199 / 503 | +0 / +2% | +7 / +16% | −4 / −7% | −27 / −10% |
-|  | 40 | 2.9 / 3.2 | 56.5 | 0.09 | 100 / 4% | 49 | 279 / 896 | +2 / +1% | +15 / +5% | −8 / −7% | −23 / −14% |
-|  | 64 | 4.8 / 5.2 | 58.0 | 0.10 | 100 / 24% | 49 | 3,724 / 10,779 | +1 / +2% | −18 / −14% | −15 / −13% | −14 / −12% |
-|  | 96 | 6.7 / 6.9 | 67.6 | 0.10 | 100 / 5% | 47 | 48,244 / 80,778 | +0 / +1% | −26 / −3% | −31 / −4% | −11 / −2% |
-| H100 SXM 80 GB (modeled), 32× | 5 | 0.1 / 0.1 | 94.2 | 0.32 | 0 / 0% | 5 | 62 / 133 | +0 / +0% | +0 / +0% | +0 / +0% | −2 / −12% |
-|  | 8 | 0.1 / 0.1 | 65.4 | 0.34 | 0 / 0% | 5 | 54 / 126 | +0 / +0% | +0 / +0% | +0 / +0% | −8 / −7% |
-|  | 12 | 0.2 / 0.2 | 73.8 | 0.32 | 0 / 0% | 5 | 65 / 127 | +0 / +0% | +0 / +0% | +0 / +0% | −7 / −9% |
-|  | 16 | 0.3 / 0.3 | 73.5 | 0.32 | 0 / 0% | 5 | 70 / 164 | +0 / +0% | +0 / +0% | +0 / +0% | −10 / −11% |
-|  | 24 | 0.3 / 0.4 | 66.3 | 0.33 | 0 / 0% | 5 | 67 / 143 | +0 / +0% | +0 / +0% | +0 / +0% | −11 / −14% |
-|  | 32 | 0.5 / 0.5 | 83.4 | 0.32 | 0 / 0% | 5 | 81 / 205 | +0 / +0% | +0 / +0% | +0 / +0% | −13 / −6% |
-|  | 40 | 0.5 / 0.6 | 86.4 | 0.32 | 0 / 0% | 5 | 84 / 251 | +0 / +0% | +0 / +0% | +0 / +0% | −15 / −7% |
-|  | 64 | 0.9 / 1.0 | 97.2 | 0.32 | 0 / 0% | 5 | 102 / 566 | +1 / +1% | +2 / +1% | +0 / −0% | −14 / −6% |
-|  | 96 | 1.3 / 1.4 | 85.1 | 0.33 | 100 / 0% | 5 | 158 / 1,419 | +1 / +0% | +1 / +1% | +0 / +1% | −12 / +2% |
-|  | 128 | 1.7 / 1.8 | 85.4 | 0.33 | 100 / 0% | 5 | 481 / 2,996 | +1 / +0% | −1 / +0% | −2 / −0% | −29 / −10% |
-|  | 192 | 2.6 / 2.8 | 90.5 | 0.33 | 100 / 0% | 5 | 4,756 / 7,599 | +0 / +0% | −2 / −3% | −8 / −5% | −12 / −10% |
-|  | 256 | 3.5 / 3.6 | 88.6 | 0.33 | 100 / 0% | 5 | 12,192 / 13,843 | +0 / +0% | −5 / −6% | −6 / −7% | −9 / −12% |
+| RTX 5060 Ti 16 GB (measured), 32× | 5 | 1.3 / 1.5 | 27.0 | 0.26 | 94 / 0% | 64 | 90 / 243 | +1 / +7% | +2 / +13% | −1 / +0% | −5 / −9% |
+|  | 8 | 1.8 / 2.0 | 29.6 | 0.27 | 100 / 0% | 56 | 86 / 355 | +1 / +27% | +3 / +40% | +1 / +11% | −6 / −8% |
+|  | 12 | 2.6 / 3.1 | 21.4 | 0.25 | 100 / 1% | 64 | 113 / 340 | +0 / +7% | +5 / +32% | −1 / −6% | −10 / −21% |
+|  | 16 | 3.6 / 4.1 | 23.4 | 0.25 | 100 / 4% | 66 | 180 / 1,399 | +2 / +8% | +15 / +10% | −11 / −27% | −27 / −22% |
+|  | 24 | 4.7 / 5.4 | 23.9 | 0.26 | 100 / 12% | 61 | 364 / 2,334 | +3 / +8% | −25 / −14% | −31 / −22% | −60 / −23% |
+|  | 32 | 6.2 / 6.8 | 23.5 | 0.26 | 100 / 25% | 64 | 1,849 / 9,109 | +3 / +2% | −48 / −24% | −40 / −17% | −37 / −11% |
+|  | 40 | 7.5 / 8.1 | 22.9 | 0.26 | 100 / 33% | 63 | 8,216 / 19,336 | +1 / +1% | −55 / −27% | −46 / −29% | −47 / −22% |
+| L4 24 GB (modeled), 32× | 5 | 0.5 / 0.6 | 77.9 | 0.09 | 0 / 0% | 49 | 97 / 196 | +0 / +0% | +0 / +0% | +0 / +0% | −4 / −9% |
+|  | 8 | 0.7 / 0.8 | 83.7 | 0.10 | 0 / 0% | 46 | 90 / 189 | +0 / +0% | +0 / +0% | +0 / +0% | −2 / −12% |
+|  | 12 | 1.0 / 1.2 | 62.3 | 0.09 | 58 / 0% | 49 | 119 / 217 | +1 / +2% | +2 / +3% | +1 / +1% | −6 / −19% |
+|  | 16 | 1.4 / 1.6 | 70.4 | 0.09 | 100 / 0% | 50 | 147 / 301 | +1 / +5% | +3 / +9% | +1 / +3% | −11 / −13% |
+|  | 24 | 1.8 / 2.1 | 68.5 | 0.10 | 100 / 0% | 48 | 148 / 314 | +0 / +1% | +2 / +11% | −1 / +0% | −18 / −15% |
+|  | 32 | 2.4 / 2.7 | 70.9 | 0.09 | 100 / 2% | 50 | 199 / 503 | +0 / +2% | +7 / +16% | −4 / −7% | −27 / −10% |
+|  | 40 | 2.9 / 3.2 | 71.0 | 0.09 | 100 / 4% | 49 | 279 / 896 | +2 / +1% | +15 / +5% | −8 / −7% | −23 / −14% |
+|  | 64 | 4.8 / 5.2 | 74.9 | 0.10 | 100 / 24% | 49 | 3,724 / 10,779 | +1 / +2% | −18 / −14% | −15 / −13% | −14 / −12% |
+|  | 96 | 6.7 / 6.9 | 98.1 | 0.10 | 100 / 5% | 47 | 48,244 / 80,778 | +0 / +1% | −26 / −3% | −31 / −4% | −11 / −2% |
+| H100 SXM 80 GB (modeled), 32× | 5 | 0.1 / 0.1 | 124.4 | 0.32 | 0 / 0% | 5 | 62 / 133 | +0 / +0% | +0 / +0% | +0 / +0% | −2 / −12% |
+|  | 8 | 0.1 / 0.1 | 102.8 | 0.34 | 0 / 0% | 5 | 54 / 126 | +0 / +0% | +0 / +0% | +0 / +0% | −8 / −7% |
+|  | 12 | 0.2 / 0.2 | 100.0 | 0.32 | 0 / 0% | 5 | 65 / 127 | +0 / +0% | +0 / +0% | +0 / +0% | −7 / −9% |
+|  | 16 | 0.3 / 0.3 | 109.4 | 0.32 | 0 / 0% | 5 | 70 / 164 | +0 / +0% | +0 / +0% | +0 / +0% | −10 / −11% |
+|  | 24 | 0.3 / 0.4 | 106.2 | 0.33 | 0 / 0% | 5 | 67 / 143 | +0 / +0% | +0 / +0% | +0 / +0% | −11 / −14% |
+|  | 32 | 0.5 / 0.5 | 108.6 | 0.32 | 0 / 0% | 5 | 81 / 205 | +0 / +0% | +0 / +0% | +0 / +0% | −13 / −6% |
+|  | 40 | 0.5 / 0.6 | 108.1 | 0.32 | 0 / 0% | 5 | 84 / 251 | +0 / +0% | +0 / +0% | +0 / +0% | −15 / −7% |
+|  | 64 | 0.9 / 1.0 | 126.8 | 0.32 | 0 / 0% | 5 | 102 / 566 | +1 / +1% | +2 / +1% | +0 / −0% | −14 / −6% |
+|  | 96 | 1.3 / 1.4 | 116.4 | 0.33 | 100 / 0% | 5 | 158 / 1,419 | +1 / +0% | +1 / +1% | +0 / +1% | −12 / +2% |
+|  | 128 | 1.7 / 1.8 | 120.1 | 0.33 | 100 / 0% | 5 | 481 / 2,996 | +1 / +0% | −1 / +0% | −2 / −0% | −29 / −10% |
+|  | 192 | 2.6 / 2.8 | 131.3 | 0.33 | 100 / 0% | 5 | 4,756 / 7,599 | +0 / +0% | −2 / −3% | −8 / −5% | −12 / −10% |
+|  | 256 | 3.5 / 3.6 | 129.4 | 0.33 | 100 / 0% | 5 | 12,192 / 13,843 | +0 / +0% | −5 / −6% | −6 / −7% | −9 / −12% |
 
 At each GPU's own scaling (`--fit`; the box's rows are those above):
 
 | GPU | Sessions | Pressure | π | ρ | Voice KV short | Chunk | `lru-cpu` | `clairvoyant` | `oracle-prefetch` | `history-prefetch` | `tokencake` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| L4 24 GB (modeled), 16× | 5 | 0.9 / 1.1 | 42.6 | 0.07 | 38 / 0% | 63 | 159 / 398 | +0 / +1% | +0 / +0% | −0 / +1% | −11 / −6% |
-|  | 8 | 1.4 / 1.6 | 42.1 | 0.09 | 100 / 1% | 55 | 161 / 460 | +1 / +4% | +3 / +10% | +1 / +3% | −4 / −6% |
-|  | 12 | 2.0 / 2.3 | 26.8 | 0.08 | 100 / 2% | 60 | 215 / 604 | +0 / +2% | +5 / +18% | −0 / −3% | −10 / −9% |
-|  | 16 | 2.8 / 3.1 | 28.4 | 0.08 | 100 / 9% | 62 | 1,142 / 6,996 | +2 / +0% | +3 / −8% | −7 / −4% | −13 / −6% |
-|  | 24 | 3.7 / 4.0 | 27.3 | 0.08 | 100 / 18% | 59 | 4,526 / 15,018 | +1 / +0% | −4 / −9% | −16 / −8% | −12 / −14% |
-|  | 32 | 4.7 / 5.0 | 24.0 | 0.08 | 100 / 23% | 57 | 13,435 / 32,779 | +1 / +1% | −2 / −9% | −5 / −4% | −7 / −5% |
-|  | 40 | 5.7 / 6.0 | 28.3 | 0.08 | 100 / 17% | 57 | 35,410 / 72,140 | +0 / +1% | −6 / −2% | −4 / −2% | −4 / −2% |
-| H100 SXM 80 GB (modeled), 4× | 5 | 0.7 / 0.8 | 25.5 | 0.15 | 0 / 0% | 16 | 327 / 1,017 | +0 / +1% | +0 / +0% | +0 / +0% | −3 / −1% |
-|  | 8 | 1.0 / 1.2 | 20.2 | 0.19 | 69 / 0% | 12 | 288 / 1,095 | +0 / +3% | +0 / +5% | +1 / +1% | −1 / −1% |
-|  | 12 | 1.5 / 1.8 | 15.0 | 0.16 | 100 / 1% | 14 | 426 / 1,321 | +0 / +2% | +2 / +7% | −2 / +8% | −0 / +3% |
-|  | 16 | 2.1 / 2.3 | 15.3 | 0.16 | 100 / 2% | 15 | 1,223 / 8,026 | +1 / +0% | +1 / +4% | −1 / +0% | −3 / −1% |
-|  | 24 | 2.8 / 3.0 | 15.1 | 0.17 | 100 / 6% | 14 | 4,531 / 14,102 | +1 / +0% | −13 / −4% | −15 / −3% | −25 / −2% |
-|  | 32 | 3.6 / 3.8 | 13.6 | 0.17 | 100 / 7% | 13 | 11,191 / 29,027 | +0 / +0% | −10 / −13% | −14 / −11% | −11 / −12% |
-|  | 40 | 4.3 / 4.6 | 15.9 | 0.17 | 100 / 6% | 13 | 30,759 / 50,569 | +0 / +0% | −14 / −5% | −15 / −7% | −15 / −6% |
-|  | 64 | 7.2 / 7.4 | 28.8 | 0.15 | 100 / 1% | 16 | 266,358 / 329,898 | +0 / +0% | −2 / −2% | −2 / −2% | −2 / −2% |
+| L4 24 GB (modeled), 16× | 5 | 0.9 / 1.1 | 52.7 | 0.07 | 38 / 0% | 63 | 159 / 398 | +0 / +1% | +1 / +3% | −0 / +1% | −11 / −6% |
+|  | 8 | 1.4 / 1.6 | 51.4 | 0.09 | 100 / 1% | 55 | 161 / 460 | +1 / +4% | +5 / +14% | +1 / +3% | −4 / −6% |
+|  | 12 | 2.0 / 2.3 | 38.1 | 0.08 | 100 / 2% | 60 | 215 / 604 | +0 / +2% | +5 / +18% | −0 / −3% | −10 / −9% |
+|  | 16 | 2.8 / 3.1 | 38.7 | 0.08 | 100 / 9% | 62 | 1,142 / 6,996 | +2 / +0% | +3 / −8% | −7 / −4% | −13 / −6% |
+|  | 24 | 3.7 / 4.0 | 39.4 | 0.08 | 100 / 18% | 59 | 4,526 / 15,018 | +1 / +0% | −4 / −9% | −16 / −8% | −12 / −14% |
+|  | 32 | 4.7 / 5.0 | 38.5 | 0.08 | 100 / 23% | 57 | 13,435 / 32,779 | +1 / +1% | −2 / −9% | −5 / −4% | −7 / −5% |
+|  | 40 | 5.7 / 6.0 | 44.2 | 0.08 | 100 / 17% | 57 | 35,410 / 72,140 | +0 / +1% | −6 / −2% | −4 / −2% | −4 / −2% |
+| H100 SXM 80 GB (modeled), 4× | 5 | 0.7 / 0.8 | 29.1 | 0.15 | 0 / 0% | 16 | 327 / 1,017 | +0 / +1% | +0 / +0% | +0 / +0% | −3 / −1% |
+|  | 8 | 1.0 / 1.2 | 30.5 | 0.19 | 69 / 0% | 12 | 288 / 1,095 | +0 / +3% | −1 / +6% | +1 / +1% | −1 / −1% |
+|  | 12 | 1.5 / 1.8 | 21.5 | 0.16 | 100 / 1% | 14 | 426 / 1,321 | +0 / +2% | +2 / +7% | −2 / +8% | −0 / +3% |
+|  | 16 | 2.1 / 2.3 | 21.1 | 0.16 | 100 / 2% | 15 | 1,223 / 8,026 | +1 / +0% | +1 / +4% | −1 / +0% | −3 / −1% |
+|  | 24 | 2.8 / 3.0 | 21.6 | 0.17 | 100 / 6% | 14 | 4,531 / 14,102 | +1 / +0% | −13 / −4% | −15 / −3% | −25 / −2% |
+|  | 32 | 3.6 / 3.8 | 21.5 | 0.17 | 100 / 7% | 13 | 11,191 / 29,027 | +0 / +0% | −10 / −13% | −14 / −11% | −11 / −12% |
+|  | 40 | 4.3 / 4.6 | 25.3 | 0.17 | 100 / 6% | 13 | 30,759 / 50,569 | +0 / +0% | −14 / −5% | −15 / −7% | −15 / −6% |
+|  | 64 | 7.2 / 7.4 | 43.3 | 0.15 | 100 / 1% | 16 | 266,358 / 329,898 | +0 / +0% | −2 / −2% | −2 / −2% | −2 / −2% |
 
 Rows whose resume TTFT runs to seconds are saturated, and there the running share falls, as requests queue before admission. The modeled GPUs saturate at these points:
 - **The L4** saturates its compute from 64 sessions at 32× (93% busy) and from 16 sessions at 16× (89%).
@@ -309,14 +317,14 @@ Rows whose resume TTFT runs to seconds are saturated, and there the running shar
 - **RTX 5060 Ti (measured costs).** From 8 sessions the agents' working set leaves less than two calls' KV free all the time, so a voice turn's KV always displaces cached agent KV. Running agents hold the pool against a voice turn 0–4% of the time up to the box's 16-session operating point, 12% at 24 sessions and 25–33% at 32–40.
   - Up to 16 sessions, a realtime tier on the box meets compute interference. It waits behind a 56–66 ms prefill chunk, which the step cap bounds and priority orders.
   - From 24 sessions, it is in #40004's regime an eighth to a third of the time, where it needs KV freed for it. In E2's discriminating scenario (24 session trees of the longest-context traces), freeing KV was not enough: the engine also had to keep lower-priority prefill out of the turn's first tokens (make-room's budget cap), and headroom held ahead of the turn added nothing measurable ([EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)).
-  - π is 16–21 and ρ 0.25–0.27. Lifecycle information buys 22–26% at p90 at pressures 1.8–2.6 and 8% at 3.6, and it loses from 4.7 (the E1 map).
+  - π is 21–30 and ρ 0.25–0.27. Lifecycle information buys 13% at p90 at pressure 1.3, 32–40% at 1.8–2.6 and 10% at 3.6, and it loses from 4.7 (the E1 map).
 - **L4 (modeled).** Against the box it has 2.6× the pool, a 4× faster link and 1.3× (FP8) and 2.6× (BF16) the tensor throughput, but two thirds of the memory bandwidth: its decode steps are slower and its prefill faster.
-  - On the 32× replay, running agents never block two calls up to 24 sessions. π rises to 45–68 (restores four times cheaper per token) and ρ falls to 0.09–0.10, so restoring beats recomputing about ten to one.
-  - At its own 16×, it sits where the box sits at fewer sessions: pressure 0.9–2.8 at 5–16 sessions, π 27–43. Its compute runs out first (86% busy at 12 sessions, resume TTFT p50 1.1 s at 16), where running agents block two calls 9% of the time.
+  - On the 32× replay, running agents never block two calls up to 24 sessions. π rises to 62–98 (restores four times cheaper per token) and ρ falls to 0.09–0.10, so restoring beats recomputing about ten to one.
+  - At its own 16×, it sits where the box sits at fewer sessions: pressure 0.9–2.8 at 5–16 sessions, π 38–53. Its compute runs out first (86% busy at 12 sessions, resume TTFT p50 1.1 s at 16), where running agents block two calls 9% of the time.
   - A realtime tier on an L4 meets compute interference with box-sized chunks (55–63 ms) until the agents saturate the card, from 12 to 16 sessions.
 - **H100 SXM (modeled).**
-  - **The 32× replay cannot fill it.** Pressure stays under 1 up to 64 sessions, and running agents never block two calls (nor 28) at any count. The chunk is 5 ms, π 65–97 and ρ 0.32–0.34, and the clairvoyant reference gains at most 1%: lifecycle information has nothing to buy.
-  - **At its own 4×**, its π (14–26 up to 40 sessions) is near the box's and its ρ lower (0.15–0.19). Long recomputes are dear in attention while the Gen5 link keeps restores cheap. Its compute saturates from 16 sessions, at pressure 2.
+  - **The 32× replay cannot fill it.** Pressure stays under 1 up to 64 sessions, and running agents never block two calls (nor 28) at any count. The chunk is 5 ms, π 100–131 and ρ 0.32–0.34, and the clairvoyant reference gains at most 1%: lifecycle information has nothing to buy.
+  - **At its own 4×**, its π (21–31 up to 40 sessions) is near the box's and its ρ lower (0.15–0.19). Long recomputes are dear in attention while the Gen5 link keeps restores cheap. Its compute saturates from 16 sessions, at pressure 2.
   - **A small realtime tier** meets compute interference with 12–16 ms chunks, a quarter of the box's; running agents block two calls 0–7% of the time.
   - **A realtime tier sized like the box's** (28 calls, the 5.6% of the pool that two calls are of the box's) is blocked 25% of the time at 16 sessions and 49–65% at 24–32, more often than on the box.
   - So the KV-blocking regime follows the agents' context lengths against the pool, and the realtime tier's share of it, not the consumer card.
@@ -337,21 +345,23 @@ Rows whose resume TTFT runs to seconds are saturated, and there the running shar
 
 ## Runtime
 
-Release builds on the full corpus (393 traces, 98,827 requests, 1.7 GB of JSON), one core unless noted, on an Apple M5 Max. The full-corpus runs use `--duration 100000000 --grace 0 --max-sessions 393 --start-max 0`, so every trace plays once from its start.
+Release builds on the full corpus (393 traces, 98,827 requests, 1.7 GB of JSON), on an Apple M5 Max. Times are the whole process's CPU time (user and system), with the wall time on 18 threads and the peak memory for the runs that use every core; each time is the lower of two runs, each peak the higher. Other work loaded the machine while they were measured (load average 15 to 49), and that moved even CPU time by up to a quarter between two runs. The full-corpus runs use `--duration 100000000 --grace 0 --max-sessions 393 --start-max 0`, so every trace plays once from its start.
 
 | Run | Contention | Idle |
 |---|---|---|
-| The W0 configuration, the four stock arms | 0.23 s | 0.20 s |
-| The W0 configuration, `lru-cpu`, the E1 arms and the reference | 0.29 s | — |
-| Every trace through 16 recycling lanes, the four stock arms | 11.5 s | 10.5 s |
-| `regime`, 42 cells × 10 arms | 10.6 s (2.1 s on 18 cores) | — |
-| `hardware`, the 32× replay on three GPUs, 84 cells × 10 arms | 15–20 s on 18 cores, 4.0 GB | — |
-| `hardware --fit`, 66 cells × 10 arms | 15–17 s on 18 cores, 2.1 GB | — |
+| The W0 configuration, the three stock arms | 0.22 s | 0.22 s |
+| The W0 configuration, `lru-cpu`, the E1 arms and the reference | 0.33 s | — |
+| Every trace through 16 recycling lanes, the three stock arms | 13.2 s | 13.5 s |
+| `regime` at one seed on one thread, 42 cells × 10 arms | 13.6 s | — |
+| `regime`, 42 cells × 3 seeds × 10 arms | 89 s (9.7 s on 18 threads, 2.2 GB) | — |
+| The realistic regime, 4 cells × 20 seeds × 10 arms | 41 s (4.0 s on 18 threads, 2.2 GB) | — |
+| `hardware`, the 32× replay on three GPUs, 84 cells × 10 arms | 165 s (19 s on 18 threads, 3.7 GB) | — |
+| `hardware --fit`, 66 cells × 10 arms | 107 s (14 s on 18 threads, 2.2 GB) | — |
 
-W1 measured the idle runs on cyan (Xeon Silver 4310 at 2.1 GHz, Linux) too, with identical results: 0.53 s for the W0 configuration and 29.7 s through 16 recycling lanes.
+`make reproduce-e1` runs the last four in about a minute. W1 measured the idle runs on cyan (Xeon Silver 4310 at 2.1 GHz, Linux) too, with identical results: 0.53 s for the W0 configuration and 29.7 s through 16 recycling lanes, then with four stock arms.
 
 ## Tests
 
-`cargo test -p lh-sim`: block identity and namespacing; LRU tail-first freeing, pinning, recomputed copies, CPU write-through and restore; holds, their release under pressure, prefetch, demotion and the idleness ranking; S3-FIFO; both clairvoyant tiers and MIN against exhaustive search on small sequences; Mattson stack distances against a direct LRU simulation; the step loop against hand-computed schedules (budget and cap, decodes behind prefills, head-of-line blocking, restore loads, stalls and the two-step lag, mixed steps, the serialized host); the replay scheduler on small synthetic traces (the think-time and idle caps, concurrent subagents and joins, recycling, the TTL hold and the prefetches on a paused session, and the time a realtime tier is short of KV); the history predictor and InferCept's choice; the TraceLab table and its draws; the regime table; the GPU profiles (the box's gives its measured costs and pool back exactly, each peak scales only its own terms, the modeled cold prefill follows the scaled step loop, the fitted scales and the session counts) and their tables; the command line; AIPerf's seed derivation against numpy; and, on the 16-trace subset, the plan against AIPerf's, every stock arm end to end, the E1 arms under TraceLab pauses, twice, with identical results, and the box placed by `hardware` exactly as `regime` runs it.
+`cargo test -p lh-sim`: block identity and namespacing; LRU tail-first freeing, pinning, recomputed copies, CPU write-through and restore; holds, their release under pressure, prefetch, demotion and the idleness ranking; both clairvoyant tiers and MIN against exhaustive search on small sequences; Mattson stack distances against a direct LRU simulation; the step loop against hand-computed schedules (budget and cap, decodes behind prefills, head-of-line blocking, restore loads, stalls and the two-step lag, mixed steps, the serialized host); the replay scheduler on small synthetic traces (the think-time and idle caps, concurrent subagents and joins, recycling, the TTL hold and the prefetches on a paused session, and the time a realtime tier is short of KV); the history predictor and InferCept's choice; the TraceLab table and its draws; the regime map and its spread over seeds; the GPU profiles (the box's gives its measured costs and pool back exactly, each peak scales only its own terms, the modeled cold prefill follows the scaled step loop, the fitted scales and the session counts) and their tables; the command line; AIPerf's seed derivation against numpy; and, on the 16-trace subset, the plan against AIPerf's, every stock arm end to end, v0's run under the idle service, the E1 arms under TraceLab pauses, twice, with identical results, the box placed by `hardware` exactly as `regime` runs it, and `replay-log` on a record of AIPerf's own and on a simulated run written as AIPerf's export, where every request finds the sources the simulation gave it.
 
-`testdata/weka-x32-sub16` holds 16 traces of [semianalysisai/cc-traces-weka-062126](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126) (Apache-2.0), block-scaled 32× by `lh-bench scale-traces`. To regenerate the pinned AIPerf plan, see `scripts/aiperf_reference.py`. `data/tracelab-pauses.tsv` holds the percentiles of the wait between a coding agent's tool calls and their results, per tool, derived by `scripts/tracelab_pauses.py` from the [TraceLab](https://github.com/uw-syfi/TraceLab) public coding-agent trace dataset v0.0.2 (CC BY 4.0); the dataset itself is not in the repository.
+`testdata/aiperf-0.13.0-record.jsonl` is one record of W0's AIPerf export, on a trace of the subset. `testdata/weka-x32-sub16` holds 16 traces of [semianalysisai/cc-traces-weka-062126](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126) (Apache-2.0), block-scaled 32× by `lh-bench scale-traces`. To regenerate the pinned AIPerf plan, see `scripts/aiperf_reference.py`. `data/tracelab-pauses.tsv` holds the percentiles of the wait between a coding agent's tool calls and their results, per tool, derived by `scripts/tracelab_pauses.py` from the [TraceLab](https://github.com/uw-syfi/TraceLab) public coding-agent trace dataset v0.0.2 (CC BY 4.0); the dataset itself is not in the repository.

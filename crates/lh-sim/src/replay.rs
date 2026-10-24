@@ -40,7 +40,7 @@ use crate::aiperf::{ConvKind, ReplayPlan, snapshot};
 use crate::corpus::Corpus;
 use crate::engine::{Admission, Engine, EngineRequest};
 use crate::pauses::ToolPauses;
-use crate::prefix::{BlockId, IdMap, IdSet, MAX_MODELS, MAX_PLAYS, NodeId, Tokens};
+use crate::prefix::{BlockId, IdMap, IdSet, MAX_PLAYS, NodeId, Tokens};
 use crate::retention::{Interception, PauseHistory, Retention, intercept};
 use crate::scheduler::{Outcome, Scheduler, StepBudget};
 
@@ -91,9 +91,6 @@ pub struct ReplayConfig {
     pub seed: u64,
     /// Stop starting sessions after this many (the initial lanes count). `None` for no limit.
     pub max_sessions: Option<u64>,
-    /// Requests to different models never share KV. Off reproduces an AIPerf replay, which sends
-    /// every request to one served model.
-    pub model_namespaces: bool,
     /// Tokens per engine block.
     pub block_tokens: u32,
     /// Multiplies the tokens of every hash block and every output: 32 replays a 32x-scaled corpus at
@@ -123,7 +120,6 @@ impl Default for ReplayConfig {
             system_idle_cap_s: Some(10.0),
             seed: 11,
             max_sessions: None,
-            model_namespaces: true,
             block_tokens: 16,
             token_scale: 1,
             pauses: Pauses::Trace,
@@ -178,12 +174,11 @@ pub struct TimelineRequest {
     pub record: Option<usize>,
     pub warmup: bool,
     /// Where the prompt comes from: the corpus trace, its conversation and turn, and the KV
-    /// namespace (session play and model) its blocks were cut in.
+    /// namespace (the session play) its blocks were cut in.
     pub trace: u32,
     pub conv: u32,
     pub turn: u32,
     pub play: u64,
-    pub model: u8,
 }
 
 /// An admission or a finish of a [`Timeline`] request, by its index.
@@ -480,12 +475,17 @@ pub struct Replay<'a> {
     now: u64,
     /// Insertion counter: breaks ties between events due at the same time.
     seq: u64,
-    /// How far the idle cap has pulled `timers` forward: a timer stored at `at` fires at `at - shift`.
+    /// How far the idle cap has pulled `timers` and `following` forward: an entry stored at `at` fires
+    /// at `at - shift`.
     shift: u64,
     /// The scheduler's timers (spread warmup, first dispatches, think times, recycling), which the idle
     /// cap pulls forward.
     timers: BinaryHeap<Entry>,
-    /// Events the idle cap leaves in place: request completions and children's first turns.
+    /// Timers the idle cap pulls forward with the scheduler's but leaves out of its test for the next
+    /// one: the oracle's prefetches, which follow the dispatch they foresee.
+    following: BinaryHeap<Entry>,
+    /// Events the idle cap leaves in place: request arrivals, steps and completions, children's first
+    /// turns, and the other retention timers, on the engine's clock.
     fixed: BinaryHeap<Entry>,
     phase: Phase,
     profiling_start: u64,
@@ -557,6 +557,7 @@ impl<'a> Replay<'a> {
             seq: 0,
             shift: 0,
             timers: BinaryHeap::new(),
+            following: BinaryHeap::new(),
             fixed: BinaryHeap::new(),
             phase: Phase::Warmup,
             profiling_start: 0,
@@ -588,25 +589,30 @@ impl<'a> Replay<'a> {
     pub fn run(mut self) -> Result<ReplayOutput, String> {
         self.start_lanes()?;
         loop {
-            let timer = self.timers.peek().map(|e| (e.at - self.shift, e.seq));
-            let fixed = self.fixed.peek().map(|e| (e.at, e.seq));
-            let from_timers = match (timer, fixed) {
-                (None, None) => break,
-                (Some(_), None) => true,
-                (None, Some(_)) => false,
-                (Some(t), Some(f)) => t <= f,
+            let (now, shift) = (self.now, self.shift);
+            let heads = [
+                self.timers.peek().map(|e| (e.at - shift, e.seq)),
+                // A prefetch the cap pulls into the past starts at once.
+                self.following
+                    .peek()
+                    .map(|e| (e.at.saturating_sub(shift).max(now), e.seq)),
+                self.fixed.peek().map(|e| (e.at, e.seq)),
+            ];
+            let Some((heap, (at, _))) = heads
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, head)| Some((i, head?)))
+                .min_by_key(|&(_, head)| head)
+            else {
+                break;
             };
-            let entry = if from_timers {
-                self.timers.pop()
-            } else {
-                self.fixed.pop()
+            let from_timers = heap == 0;
+            let entry = match heap {
+                0 => self.timers.pop(),
+                1 => self.following.pop(),
+                _ => self.fixed.pop(),
             }
             .expect("peeked");
-            let at = if from_timers {
-                entry.at - self.shift
-            } else {
-                entry.at
-            };
             if self.phase == Phase::Profiling && at > self.grace_end {
                 break;
             }
@@ -697,6 +703,15 @@ impl<'a> Replay<'a> {
         });
     }
 
+    fn push_following(&mut self, at: u64, event: Event) {
+        self.seq += 1;
+        self.following.push(Entry {
+            at: at + self.shift,
+            seq: self.seq,
+            event,
+        });
+    }
+
     fn push_fixed(&mut self, at: u64, event: Event) {
         self.seq += 1;
         self.fixed.push(Entry {
@@ -735,12 +750,6 @@ impl<'a> Replay<'a> {
         let namespace = self.plays.len() as u64;
         if namespace >= MAX_PLAYS {
             return Err("too many session plays for the block namespace".into());
-        }
-        if self.cfg.model_namespaces && plan.models.len() > MAX_MODELS {
-            return Err(format!(
-                "trace {} has more than {MAX_MODELS} models",
-                plan.trace_id
-            ));
         }
         self.plays.push(Play {
             plan,
@@ -1056,11 +1065,6 @@ impl<'a> Replay<'a> {
         let t = &plan.convs[conv as usize].turns[turn as usize];
         let scale = self.cfg.token_scale.max(1);
         let tokens = Tokens::new(plan.block_size * scale, self.cfg.block_tokens);
-        let model = if self.cfg.model_namespaces {
-            t.model
-        } else {
-            0
-        };
         let prompt_tokens = tokens.prompt_tokens(t.hash_blocks);
         let mut prompt =
             Vec::with_capacity((prompt_tokens / self.cfg.block_tokens as u64) as usize);
@@ -1068,7 +1072,6 @@ impl<'a> Replay<'a> {
             t.prompt_end,
             tokens,
             play.namespace,
-            model,
             &mut self.scratch,
             &mut prompt,
         );
@@ -1193,7 +1196,6 @@ impl<'a> Replay<'a> {
         if let Some(tl) = &mut self.timeline {
             let stream = &self.streams[f.stream as usize];
             let play = &self.plays[stream.play as usize];
-            let model = play.plan.convs[stream.conv as usize].turns[f.turn as usize].model;
             f.timeline = Some(tl.requests.len());
             tl.events.push(TimelineEvent::Admit(tl.requests.len()));
             tl.requests.push(TimelineRequest {
@@ -1206,7 +1208,6 @@ impl<'a> Replay<'a> {
                 conv: stream.conv,
                 turn: f.turn,
                 play: play.namespace,
-                model: if self.cfg.model_namespaces { model } else { 0 },
             });
         }
         let (stream, turn) = (f.stream, f.turn);
@@ -1436,10 +1437,21 @@ impl<'a> Replay<'a> {
         }
         if let Some(back) = back {
             if self.retention != Retention::InferCept {
-                // Start the load so that it ends just before the session returns.
+                // Start the load so that it ends just before the session returns. The oracle knows
+                // when the turn is sent, so its load moves with the dispatch when the idle cap pulls
+                // that forward; the history level predicts the engine's time.
                 let lead = ns(self.cost.restore_ms(tokens) + 1.0);
                 let start = back.saturating_sub(lead).max(self.now);
-                self.retain_at(start, stream, id, RetainStep::Prefetch);
+                let prefetch = Event::Retain {
+                    stream,
+                    pause: id,
+                    step: RetainStep::Prefetch,
+                };
+                if self.retention == Retention::OraclePrefetch {
+                    self.push_following(start, prefetch);
+                } else {
+                    self.push_fixed(start, prefetch);
+                }
             }
             // A session later than twice its expected pause is not coming back soon.
             let late = back + (back - self.now);
@@ -1672,8 +1684,9 @@ impl<'a> Replay<'a> {
         }
     }
 
-    /// `enforce_system_idle_cap`: with nothing in flight, pull every pending scheduler timer forward
-    /// by the same amount so the next one fires within the cap.
+    /// `enforce_system_idle_cap`: with nothing in flight, pull every pending scheduler timer, and the
+    /// timers that follow them, forward by the same amount so the next scheduler timer fires within
+    /// the cap.
     fn enforce_idle_cap(&mut self, follows_return: bool) {
         let Some(cap) = self.cfg.system_idle_cap_s else {
             return;
@@ -1940,6 +1953,56 @@ mod tests {
         ] {
             let r = third_turn_after_pauses(retention, 11);
             assert_eq!(sources(&r), (80, 0), "{retention:?}");
+        }
+    }
+
+    #[test]
+    fn the_oracle_prefetch_moves_with_a_turn_the_idle_cap_pulls_forward() {
+        // A pauses 60 s. B's second turn evicts A's blocks from an 11-block pool; then nothing is in
+        // flight, and with the cap A's next turn goes 10 s after B's returns.
+        let a = r#"{"id": "a", "block_size": 16, "requests": [
+            {"t": 0, "type": "n", "model": "m", "in": 64, "out": 1, "hash_ids": [1, 2, 3, 4], "api_time": 0.1},
+            {"t": 60, "type": "n", "model": "m", "in": 80, "out": 1, "hash_ids": [1, 2, 3, 4, 5], "think_time": 60.0}
+        ]}"#;
+        let ids: Vec<String> = (101..112).map(|i| i.to_string()).collect();
+        let b = format!(
+            r#"{{"id": "b", "block_size": 16, "requests": [
+                {{"t": 0, "type": "n", "model": "m", "in": 16, "out": 1, "hash_ids": [100], "api_time": 0.1}},
+                {{"t": 1, "type": "n", "model": "m", "in": 176, "out": 1, "hash_ids": [{}], "think_time": 1.0}}
+            ]}}"#,
+            ids.join(",")
+        );
+        let engine = EngineConfig {
+            gpu_blocks: 12,
+            cpu_blocks: 64,
+            block_tokens: 16,
+            gpu_policy: GpuPolicyKind::Lru,
+            cpu_policy: CpuPolicyKind::Lru,
+        };
+        for cap in [None, Some(10.0)] {
+            let cfg = ReplayConfig {
+                system_idle_cap_s: cap,
+                ..from_start(2)
+            };
+            for (retention, expected) in [
+                (Retention::None, (0, 64)),
+                (Retention::OraclePrefetch, (64, 0)),
+            ] {
+                let out = run_with(&[a, &b], cfg.clone(), &engine, retention);
+                let turn = |trace, turn| {
+                    out.records
+                        .iter()
+                        .find(|r| (r.trace, r.turn) == (trace, turn))
+                        .expect("the turn ran")
+                };
+                let (a0, a1, b1) = (turn(0, 0), turn(0, 1), turn(1, 1));
+                let pause = match cap {
+                    None => 60 * S,
+                    Some(_) => b1.done_ns + 10 * S - a0.done_ns,
+                };
+                assert_eq!(a1.issued_ns - a0.done_ns, pause, "{cap:?}");
+                assert_eq!(sources(a1), expected, "{retention:?}, cap {cap:?}");
+            }
         }
     }
 
