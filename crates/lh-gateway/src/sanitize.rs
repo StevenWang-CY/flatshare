@@ -164,18 +164,21 @@ pub(crate) fn resolve_class(
 }
 
 /// The session of a request, from the first present source in PROTOCOL.md's order: a trusted `X-Session-ID`,
-/// `X-Claude-Code-Session-ID`, the body's `prompt_cache_key`. A source that is not a valid session id is hashed
-/// into one, scoped to the tenant; with no source the gateway mints one.
+/// `X-Claude-Code-Session-ID`, the body's `prompt_cache_key`. A trusted tenant's valid session id is used as it
+/// is. Any other source is hashed into one, scoped to the tenant: every source of an untrusted tenant, so that it
+/// cannot name another tenant's session, and a source that is not a valid session id. With no source the gateway
+/// mints one.
 pub(crate) fn resolve_session(
-    tenant: &str,
+    tenant: &Tenant,
     inputs: &ClientInputs,
     prompt_cache_key: Option<&str>,
 ) -> SessionId {
     match session_source(inputs, prompt_cache_key) {
         Some(raw) => std::str::from_utf8(raw)
             .ok()
+            .filter(|_| tenant.trusted)
             .and_then(|id| SessionId::new(id).ok())
-            .unwrap_or_else(|| hashed_session(tenant, raw)),
+            .unwrap_or_else(|| hashed_session(&tenant.name, raw)),
         None => new_id("m-", &random_hex()),
     }
 }
@@ -423,19 +426,27 @@ mod tests {
         }
     }
 
+    fn named(name: &str, trusted: bool) -> Tenant {
+        Tenant {
+            name: name.into(),
+            ..tenant(trusted, SloClass::Interactive, SloClass::Interactive)
+        }
+    }
+
     fn header(value: &str) -> Option<HeaderValue> {
         Some(HeaderValue::from_str(value).unwrap())
     }
 
     #[test]
     fn sessions_resolve_in_protocol_order() {
+        let agents = named("agents", true);
         let all = ClientInputs {
             session_id: header("voice-RM_a1B2c3"),
             claude_code_session_id: header("0f3c2a9e-5b1d-4c8e-9a77-2d6f1e0b8c41"),
             class: None,
         };
         assert_eq!(
-            resolve_session("t", &all, Some("pck")).as_str(),
+            resolve_session(&agents, &all, Some("pck")).as_str(),
             "voice-RM_a1B2c3"
         );
         let claude = ClientInputs {
@@ -443,11 +454,11 @@ mod tests {
             ..all
         };
         assert_eq!(
-            resolve_session("t", &claude, Some("pck")).as_str(),
+            resolve_session(&agents, &claude, Some("pck")).as_str(),
             "0f3c2a9e-5b1d-4c8e-9a77-2d6f1e0b8c41"
         );
         assert_eq!(
-            resolve_session("t", &ClientInputs::default(), Some("pck")).as_str(),
+            resolve_session(&agents, &ClientInputs::default(), Some("pck")).as_str(),
             "pck"
         );
         // An empty source is absent.
@@ -455,30 +466,66 @@ mod tests {
             session_id: header(""),
             ..ClientInputs::default()
         };
-        assert_eq!(resolve_session("t", &empty, Some("pck")).as_str(), "pck");
+        assert_eq!(
+            resolve_session(&agents, &empty, Some("pck")).as_str(),
+            "pck"
+        );
     }
 
     #[test]
     fn invalid_sources_are_hashed_per_tenant_and_missing_ones_minted() {
-        let inputs = ClientInputs::default();
-        let hashed = resolve_session("agents", &inputs, Some("has spaces/and slashes"));
+        let (agents, inputs) = (named("agents", true), ClientInputs::default());
+        let hashed = resolve_session(&agents, &inputs, Some("has spaces/and slashes"));
         // `printf 'agents\0has spaces/and slashes' | shasum -a 256 | cut -c1-32`
         assert_eq!(hashed.as_str(), "h-dc629ca91b9da396f87344e8a3e8ecbd");
         assert_ne!(
-            resolve_session("bench", &inputs, Some("has spaces/and slashes")),
+            resolve_session(
+                &named("bench", true),
+                &inputs,
+                Some("has spaces/and slashes")
+            ),
             hashed
         );
         let long = "a".repeat(SessionId::MAX_LEN + 1);
         assert!(
-            resolve_session("agents", &inputs, Some(&long))
+            resolve_session(&agents, &inputs, Some(&long))
                 .as_str()
                 .starts_with("h-")
         );
 
-        let minted = resolve_session("agents", &inputs, None);
+        let minted = resolve_session(&agents, &inputs, None);
         assert!(minted.as_str().starts_with("m-") && minted.as_str().len() == 34);
         assert!(minted.as_str()[2..].bytes().all(|b| b.is_ascii_hexdigit()));
-        assert_ne!(minted, resolve_session("agents", &inputs, None));
+        assert_ne!(minted, resolve_session(&agents, &inputs, None));
+    }
+
+    #[test]
+    fn an_untrusted_tenant_names_only_sessions_of_its_own() {
+        let bench = named("bench", false);
+        let claude = ClientInputs {
+            claude_code_session_id: header("voice-RM_victim"),
+            ..ClientInputs::default()
+        };
+        // A valid session id from an untrusted tenant is hashed with the tenant all the same:
+        // `printf 'bench\0voice-RM_victim' | shasum -a 256 | cut -c1-32`.
+        assert_eq!(
+            resolve_session(&bench, &claude, None).as_str(),
+            "h-468e550b540d0075ae9e649823e0977e"
+        );
+        // `printf 'bench\0bench-7' | shasum -a 256 | cut -c1-32`
+        assert_eq!(
+            resolve_session(&bench, &ClientInputs::default(), Some("bench-7")).as_str(),
+            "h-17636c9ec78323ab9bd295ae7d8a40c1"
+        );
+        // The same source names a trusted tenant's session as it is, and another untrusted tenant's own one.
+        assert_eq!(
+            resolve_session(&named("voice", true), &claude, None).as_str(),
+            "voice-RM_victim"
+        );
+        assert_ne!(
+            resolve_session(&named("other", false), &claude, None),
+            resolve_session(&bench, &claude, None)
+        );
     }
 
     #[test]
@@ -503,7 +550,10 @@ mod tests {
         let metrics = Metrics::new();
         let body = br#"{"model":"m","pri\u006frity":-9,"messages":[{"role":"user","content":"hi \"priority\""}],
             "session_id":"x","kv_transfer_params":{"a":1},"cache_salt":"theirs","request_id":"r",
-            "vllm_xargs":{"session_id":"y"},"prompt_cache_key":"pck-1","stream":true}"#;
+            "vllm_xargs":{"session_id":"y"},"rid":"theirs","extra_key":"other-tenant",
+            "session_params":{"id":"s"},"custom_labels":{"x":"y"},"routed_dp_rank":1,"data_parallel_rank":1,
+            "disagg_prefill_dp_rank":0,"bootstrap_host":"h","bootstrap_port":1,"bootstrap_room":7,
+            "prompt_cache_key":"pck-1","stream":true}"#;
         let out = rewrite_body(body, "0123", None, &metrics).unwrap();
         let value: Value = serde_json::from_slice(&out.json).unwrap();
         assert_eq!(

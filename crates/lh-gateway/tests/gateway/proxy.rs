@@ -34,10 +34,12 @@ async fn engine_inputs_from_clients_are_replaced_by_the_gateways() {
     let request_id = reply.header("x-request-id").unwrap();
     assert!(request_id.len() == 32 && request_id != "theirs");
     assert_eq!(seen.header("x-request-id"), Some(request_id));
-    // An untrusted tenant's X-Session-ID and X-LH-Class are ignored: the session comes from prompt_cache_key
-    // and the class is the tenant's default, interactive.
-    assert_eq!(seen.header("x-session-id"), Some("bench-7"));
-    assert_eq!(reply.header("x-lh-session-id"), Some("bench-7"));
+    // An untrusted tenant's X-Session-ID and X-LH-Class are ignored: the session comes from prompt_cache_key,
+    // hashed with the tenant (`printf 'bench\0bench-7' | shasum -a 256 | cut -c1-32`), and the class is the
+    // tenant's default, interactive.
+    let session = "h-17636c9ec78323ab9bd295ae7d8a40c1";
+    assert_eq!(seen.header("x-session-id"), Some(session));
+    assert_eq!(reply.header("x-lh-session-id"), Some(session));
     assert_eq!(seen.header("x-vllm-priority"), Some("1"));
     assert_eq!(seen.header("content-type"), Some("application/json"));
     assert_eq!(seen.header("x-trace"), Some("kept"));
@@ -75,6 +77,23 @@ async fn engine_inputs_from_clients_are_replaced_by_the_gateways() {
         let series = format!("lh_gateway_sanitized_total{{field=\"{field}\"}}");
         assert_eq!(metric(&metrics, &series), Some(1.0), "{series}");
     }
+}
+
+#[tokio::test]
+async fn sglangs_engine_fields_are_removed_as_well() {
+    // E2's arm 7b runs SGLang behind the gateway, which sends the class's priority in the body.
+    let mock = Mock::start(Script::Json("{}")).await;
+    let gw = Gateway::start(mock.addr, "upstream_priority = [\"body\"]").await;
+    let body = r#"{"model":"qwen","messages":[],"rid":"someone-elses-id","extra_key":"other-tenant",
+        "session_params":{"id":"s"},"custom_labels":{"x":"y"},"routed_dp_rank":1,"data_parallel_rank":1,
+        "disagg_prefill_dp_rank":0,"bootstrap_host":"h","bootstrap_port":1,"bootstrap_room":7,"priority":-100}"#;
+    let reply = call(&gw.tcp, "POST", "/v1/chat/completions", &[BENCH_AUTH], body).await;
+    assert_eq!(reply.status, 200);
+    // SGLang reads its request id, cache namespace, session and routing from these fields: none is the client's.
+    assert_eq!(
+        mock.last().json(),
+        json!({"model": "qwen", "messages": [], "priority": 1, "cache_salt": BENCH_SALT})
+    );
 }
 
 #[tokio::test]
