@@ -11,12 +11,11 @@ the tier cost model (E0) and server-side voice turns.
 | AIPerf loader `weka_trace_scaled` | `aiperf_plugin.py` | AIPerf's Weka loader, fixed to read each trace's own block size |
 | AIPerf endpoint `leaseholder_chat` | `aiperf_plugin.py` | Chat completions plus `X-Session-ID`, `X-LH-Class`, `prompt_cache_key` and `priority` |
 | `configs/agentic_replay.yaml`, `configs/aiperf.env` | | AIPerf `agentic_replay` run: steady-state session trees with recycling |
-| `lh-bench replay` | `replay.py` | Live-reply driver: feeds the model's actual reply into the next turn |
 | `lh-bench mock-server` | `mock_server.py` | Recording OpenAI-compatible mock on 127.0.0.1 for CPU-only dry runs |
 | `lh-bench tiers` | `tiers.py` | E0: time to first token from the GPU pool, the CPU tier and recompute, verified per sample by vLLM's prefix-cache counters; optional background load |
 | `lh-bench voice-turn` | `voice_turn.py` | One server-side voice turn timed per stage (STT, LLM first sentence, TTS first audio); optional background load |
 | `lh-bench kv-metrics` | `kv_metrics.py` | KV block lifecycle histograms compared across a run |
-| `lh-bench e2` | `e2.py`, `frontier.py` | E2 points: one measured from its arm file on cyan (`run`), the frontier across points (`report`), and their compact records (`export`) |
+| `lh-bench e2` | `e2/` (`arm.py`, `run.py`, `record.py`, `report.py`, `figures.py`) | E2 points: one measured from its arm file on cyan (`run`), the frontier across points (`report`), and their compact records (`export`) |
 | background load | `load.py` | `prefill:<tokens>x<n>` (cold prefills) or `decode:<tokens>x<n>` (long decodes) beside a probe |
 
 Python 3.12, pinned to `aiperf==0.13.0`. Installing the package registers both AIPerf plugins
@@ -27,6 +26,9 @@ development:
 ```bash
 uv sync --python 3.12 --extra test      # in python/leaseholder_bench: its own .venv, from uv.lock
 ```
+
+On macOS, use Python 3.13 (`--python 3.13`): `lh-bench e2 run` needs `os.waitid`, which macOS has from
+3.13 on. On 3.12 it refuses to start, and its tests skip with that reason.
 
 ## Trace scaling
 
@@ -58,25 +60,22 @@ The full corpus takes about 22 s and 1.8 GB of RAM per factor on cyan; each outp
 
 ## Wire metadata
 
-Both the AIPerf endpoint and the replay driver render requests through
-`leaseholder_bench.protocol.SessionTagger`, so they send identical metadata. Names and values
-mirror the Rust crate `lh-proto`.
+The AIPerf endpoint renders each request's metadata through
+`leaseholder_bench.protocol.SessionTagger`. Names and values mirror the Rust crate `lh-proto`.
 
 | Field | Value |
 |---|---|
-| Header `X-Session-ID` | The session-tree root: a parent agent and all of its subagents share it. AIPerf mints one per session play (`root_correlation_id`); the driver mints a UUID per play |
+| Header `X-Session-ID` | The session-tree root: a parent agent and all of its subagents share it. AIPerf mints one per session play (`root_correlation_id`) |
 | Header `X-LH-Class` | `realtime`, `interactive` or `background` |
 | Body `prompt_cache_key` | The session id |
 | Body `priority` | vLLM priority from `ENGINE_PRIORITY`: realtime 0, interactive 1, background 2. vLLM schedules lower values first |
 
-Agent replay defaults to `background`. Configuration, read from the environment by the AIPerf
-plugin (AIPerf builds the endpoint itself, in every worker) and by `lh-bench replay`, whose
-`--class`, `--class-map` and `--no-priority` flags override it:
+Agent replay defaults to `background`. The plugin reads its configuration from the environment,
+since AIPerf builds the endpoint itself, in every worker:
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `LH_BENCH_CLASS` | `background` | Class of every session |
-| `LH_BENCH_CLASS_MAP` | unset | JSON file `{trace id: class}`; overrides the default per trace |
 | `LH_BENCH_SEND_PRIORITY` | `true` | `false` sends no `priority`, as a plain client would. vLLM 0.32 acts on it only under `--scheduling-policy priority`; its FCFS scheduler ignores it |
 
 AIPerf also sends its own `X-Correlation-ID` and `X-Session-Affinity`, which identify each agent
@@ -136,65 +135,11 @@ Things to know:
   which in `agentic_replay` is nearly always.
 - **vLLM flags.** Cached-token counts need `--enable-prompt-tokens-details`; the `priority` field
   takes effect only with `--scheduling-policy priority`.
-- AIPerf replays a synthesized assistant history, never the model's reply. See below.
-
-## Live-reply driver
-
-AIPerf's history replays assistant content synthesized from hash blocks, so the KV the model
-writes while decoding turn k is never matched by turn k+1, as it is when a real agent resends its
-own output. E1 and E3 need that reuse. Options considered:
-
-- **SGLang's multi-turn benchmarks.** `benchmark/hicache/bench_multiturn.py` and
-  `python -m sglang.benchmark.serving --dataset-name agentic-trace` both append the generated
-  text to the next round. Neither can replay this workload. `bench_multiturn.py` synthesizes
-  random or ShareGPT rounds of set lengths at a global Poisson rate. `agentic-trace` needs full
-  message text (OpenHands-style JSON) and sends rounds back to back with one output length for
-  every turn. Neither has per-session think time, subagents or per-session headers, and both
-  import the `sglang` package.
-- **An AIPerf option.** There is none for Weka traces. AIPerf threads live replies into history
-  only in the `deltas_without_responses` context mode. The Weka loader hardcodes
-  `deltas_with_responses`, whose deltas already carry synthesized assistant blocks, and no
-  setting changes it. The live-reply mode also assumes linear traversal, which `agentic_replay`'s
-  mid-trace starts break. Using it would mean forking AIPerf's Weka reconstruction (about 3,600
-  lines).
-- **Our own thin driver.** It reads the same scaled trace files and keeps their structure,
-  in one module of under 400 lines.
-
-**Decision: our own driver, `lh-bench replay`.** AIPerf stays the tool for steady-state
-background load (`agentic_replay`, E2). The driver serves E1 and E3, where decode-written KV
-reuse, `offload_prompt_only` and chat-template re-render breaks matter. On cyan, 248 of 248
-driver requests with assistant history carried the model's earlier replies; 0 of 197 AIPerf
-requests did.
-
-How it works:
-
-- **Prompt text.** Each hash block becomes `block_size` words, seeded by trace and hash id. Equal
-  hash ids give equal text, so block-level prefix identity holds on the wire. Every word is a
-  single Qwen3 token, so prompts track the trace's `in`. A per-play system line keeps two plays
-  of one trace from sharing KV.
-- **History.** Each request continues the chain of its agent whose last prompt shares the
-  longest hash prefix with it, or starts a new one, as AIPerf does for interleaved side chains.
-  If the request extends that prompt, the live reply stands for the first `ceil(out / block_size)`
-  new blocks and the rest become one user message; a reply longer than the extension counts
-  against the next request's new blocks. If it keeps only part of it (a compaction or an edit),
-  the messages inside the shared prefix stay and the rest is resent.
-- **Decode length.** Each request asks for the trace's `out` tokens with `ignore_eos`, so
-  contexts grow as recorded (`--no-ignore-eos` to let the model stop).
-- **Timing.** Think times are waited out, capped by `--think-cap`. Subagents run concurrently
-  under the parent's session id. A parent waits for a subagent only where the trace shows it
-  did, that is, the subagent ended before the parent's next request.
-- **Load.** `--sessions` lanes each replay one trace at a time from turn 0, cycling through the
-  directory in seeded random order. No new request starts after `--duration`, and in-flight
-  requests are cancelled after `--grace`.
-
-Output: one JSON line per request with `start` (wall-clock send time), `session_id`, `trace_id`,
-`agent_id` (null for the main agent), `chain`, `turn`, `class`, `status`, `error`, `trace_in`,
-`trace_out`, `messages`, `prompt_tokens`, `cached_tokens`
-(`usage.prompt_tokens_details.cached_tokens`), `completion_tokens`, `ttft_ms` and `latency_ms`.
-A summary prints at the end, and the command exits 1 if no request succeeded.
-
-Not yet: mid-trace starts (sessions start at turn 0, so a run should span several session
-lengths), and parallel replay of side chains within one agent (they run in recorded order).
+- **Assistant history.** AIPerf replays assistant content synthesized from hash blocks, never the
+  model's reply, so the KV the model writes while decoding turn k is never matched by turn k+1, as
+  it is when a real agent resends its own output. AIPerf 0.13.0 threads live replies into history
+  only in the `deltas_without_responses` context mode, and the Weka loader hardcodes
+  `deltas_with_responses`.
 
 ## Latency probes (`lh-bench tiers`, `lh-bench voice-turn`)
 
@@ -280,15 +225,13 @@ A point runs in this order:
 | `[voice] seed` | 0 | The callers' seed |
 | `[voice] preemptive_generation` | `true` | LiveKit's preemptive generation in the voice worker (`LH_PREEMPTIVE_GENERATION`) |
 | `[voice] events` | `true` | The voice worker's lifecycle events to the gateway (`LH_EVENTS`); `false` measures a point without them |
-| `[agents] sessions` | 0 | Session trees AIPerf keeps live; 0 is voice alone |
-| `[agents] target` | `"gateway"` | `"gateway"`, as the `agents` tenant with `LH_GATEWAY_AGENTS_KEY` from `~/.config/leaseholder/gateway-keys.env`, or `"engine"`, straight through the tunnel |
+| `[agents] sessions` | 0 | Session trees AIPerf keeps live, through the gateway as the `agents` tenant with `LH_GATEWAY_AGENTS_KEY` from `~/.config/leaseholder/gateway-keys.env`; 0 is voice alone |
 | `[agents] think_cap` | 120 | Cap on each recorded think time, in seconds |
 | `[agents] warmup` | 60 | Seconds of profiling before the calls start |
 | `[agents] data` | `"weka-x32"` | The corpus, a `scale-traces` directory under `~/leaseholder/data` |
 | `[agents] seed` | 11 | AIPerf's seed |
-| `[agents] send_priority` | `true` | The plugin's body `priority`. The gateway strips it, so it reaches only an engine targeted directly |
 | `[gateway]` | none | Merged into `gateway.toml` as it is, tables key by key: `upstream`, `upstream_priority`, `[gateway.admission]` and any other key of [`lh-gateway`'s configuration](../../crates/lh-gateway/README.md) |
-| `[gateway.nodes.<name>]`, `[gateway.placement]` | none | A point on several GPU nodes: two or more, each with an `http://` `upstream`, and how the gateway places sessions on them ([placement](../../crates/lh-gateway/README.md#placement)). Its agents go through the gateway, and it takes no `router` |
+| `[gateway.nodes.<name>]`, `[gateway.placement]` | none | A point on several GPU nodes: two or more, each with an `http://` `upstream`, and how the gateway places sessions on them ([placement](../../crates/lh-gateway/README.md#placement)). It takes no `router` |
 | `[engine] variant` | `"frozen"` | A directory of [`deploy/phastform/variants`](../../deploy/phastform/variants/README.md), or `frozen` |
 | `[engine] flags` | `[]` | Engine flags, each a plain word, added to its command line |
 
@@ -327,7 +270,7 @@ The background goodput comes from AIPerf's records rather than from the gateway'
 
 **The report.** `lh-bench e2 report RUN_DIR... --out DIR` writes `frontier.csv`, `frontier.md` and, where matplotlib is installed (AIPerf brings it), a frontier figure per workload and `waterfall.svg`. A point's workload is the agents' corpus (`[agents] data`) and the number of callers (`frontier.csv`'s `workload`, such as `weka-x32, 2 callers`), and points of different workloads are never compared: a point is on its arm's frontier when no other point of the arm and workload harvests at least as much background goodput at a V2V p95 at least as low, and one of the two strictly better. `frontier.md` has a section per workload, which opens with its voice SLO and the name of its figure, with a table per arm in it, ordered by background goodput. Run directories without a complete point are named and left out.
 - **The frontier figures.** `frontier.svg` draws the arm file's own workload (`weka-x32`, 2 callers); another workload's figure is named after its corpus and its callers where they differ (`frontier-weka-x32-long.svg`, `frontier-4-callers.svg`). An arm's frontier is drawn in its family's color with the arm's marker and joined by a line where it spans load levels (the session trees an arm is swept over); configurations at one load, as in the discriminating scenario, are markers. Open markers are an arm's dominated configurations, and the arm's name sits by the last point of its frontier, at the end of a leader line where points crowd (arms whose points coincide share one, `6, 8b`; the names of an arm's variants that find no clear place are left out, and the figure's notes say how many). The color is the arm's family: stock vLLM (arms 1–5), the baseline, in dark gray; operator answers (6), engines (7), routers (8), Leaseholder (9, blue) and MPS (10) in five hues that stay apart from one another in every pair, as a scatter needs, for color-blind readers too. The marker tells the arms of a family apart. A dashed line marks the voice SLO: 250 ms above voice alone (arm 1) with as many callers, from whichever corpus, since voice alone replays none; a workload without that point says so. A configuration past its workload's fence for far outliers (three interquartile ranges above the upper quartile of the V2V p95s) is left off the scale and named with its numbers, so that one collapse does not flatten the rest.
-- **Configurations of their own.** Arm 9's ablations and the vLLM PRs' configurations say `arm = 9` in their arm files, as run, but each is a configuration of its own: the report gives each its own arm (`9-no-headroom`, `9-pr-ab48`; `CONFIGURATION_ARMS` in `frontier.py`), so that none is placed on arm 9's frontier or joined to it. The records stay as run.
+- **Configurations of their own.** Arm 9's ablations and the vLLM PRs' configurations say `arm = 9` in their arm files, as run, but each is a configuration of its own: the report gives each its own arm (`9-no-headroom`, `9-pr-ab48`; `CONFIGURATION_ARMS` in `e2/report.py`), so that none is placed on arm 9's frontier or joined to it. The records stay as run.
 - **Repeats.** Points measured from the same arm file in several campaigns, under the same point name, are repeats of one configuration. `frontier.md` keeps a row per run, named by its campaign (`frontier.csv`'s `campaign`: the directory that holds the run directory), then gives the configuration's median and range (min–max) of V2V p50/p95/p99, background tokens/s, the realtime first byte p95 and failed turns, with its run count. The frontier places the configuration at its medians, and its figure draws it there with whiskers over its runs' range on both axes: one marker per configuration keeps each frontier a line through what `frontier.md` marks, and a run that collapsed still shows as a long whisker. A configuration measured once is shown as before.
 - **Failed turns.** V2V comes from the callers' `bots/turns.jsonl`, where a turn the agent did not answer within the callers' reply timeout counts as a sample censored at 30,000 ms, in every percentile: `frontier.md` marks a percentile such a sample sets with `≥`. A configuration with failed turns is not placed on the frontier and keeps no other point off it; its figure draws it as a cross and its notes name it with its failed turns, and the stage waterfall leaves its runs out.
 - **The realtime first byte** is exact from the run directory's `gateway.jsonl`, even one fetched after the run (from the journal, for the window in `run.json`), and otherwise the summary's; `realtime_first_byte_source` says which, and `frontier.md` marks an interpolated value with `~`.
@@ -335,16 +278,14 @@ The background goodput comes from AIPerf's records rather than from the gateway'
 - **Columns only some points have** appear when one of the points has them: the worker's stage times (p50 and p95 of each, in a table of their own in `frontier.md`) and event counts; from `gpu.csv` (or a compact record's summary), the GPU's median SM clock and highest temperature during the calls; and under the gateway's policy `leaseholder`, from its counters, what the policy did: the background requests it deferred by what held them back when they arrived (`deferred_headroom`, `deferred_critical`) and the realtime replies it capped (`degraded_replies` of `realtime_replies`, `degraded_share`), in a table of their own in `frontier.md`. A mechanism that deferred or capped nothing in a point did not act there.
 - **A point on several GPU nodes** is placed by its totals, and says so: its label in `frontier.md` gives the number of nodes, the `nodes` column of `frontier.csv` names them, a table of its own in `frontier.md` gives each node's share (a line per run and node, named by its campaign when the point is repeated), and its GPU columns cover every node's GPU.
 
-**The compact record.** `lh-bench e2 export RUN_DIR... --out DIR` writes each complete point's record into `DIR/CAMPAIGN/POINT`, where its run directory sits in its campaign: `run.json`, `arm.toml`, the callers' `summary.json` and `turns.jsonl`, a `summary.json` that keeps what the report takes from the files the record leaves out (the first bytes of both classes exactly from `gateway.jsonl`, `"source": "log"`, and from `gpu.csv` the GPU's clock and temperature, `gpu`), and an `engine.json` reduced to what says which engine the point ran on. For vLLM that is the model by its Hugging Face id and revision, `max_model_len`, dtype and quantization; from `cache_config` the block size, prefix caching, the KV dtype and the pool (`kv_cache_memory_bytes`, `num_gpu_blocks`); from `scheduler_config` the policy, `max_num_batched_tokens`, `long_prefill_token_threshold`, `max_num_seqs`, async scheduling, `watermark` and `max_num_queued_tokens`, the settings `e2 run` checks the arms' flags against; the CPU tier's connector with its `kv_connector_extra_config`; and `additional_config`. For SGLang it is the same of its server arguments (`SGLANG_ENGINE` in `frontier.py`). A point on several GPU nodes keeps an `engine-NODE.json` for each node, and its summary the clock and temperature of every node's GPU together (`gpu`) and of each in the node's share. Any path under a home directory is written from `~`. A record is about 15 kB and holds no credential: the callers' `run.json`, which names LiveKit's API key, stays out. The report gives the same tables and figures from the records as from the run directories, byte for byte (its figures carry no date), so the records are what goes into the repository, under [`benchmarks/results/2026-10-23-e2`](../../benchmarks/results/2026-10-23-e2/README.md), and `make reproduce-e2` regenerates the report from them with this venv. The raw records (the gateway's request log, AIPerf's exports, the metric snapshots, the worker's journal, the GPU's samples, the tools' logs) will be published as an asset of the GitHub release that carries the results.
+**The compact record.** `lh-bench e2 export RUN_DIR... --out DIR` writes each complete point's record into `DIR/CAMPAIGN/POINT`, where its run directory sits in its campaign: `run.json`, `arm.toml`, the callers' `summary.json` and `turns.jsonl`, a `summary.json` that keeps what the report takes from the files the record leaves out (the first bytes of both classes exactly from `gateway.jsonl`, `"source": "log"`, and from `gpu.csv` the GPU's clock and temperature, `gpu`), and an `engine.json` reduced to what says which engine the point ran on. For vLLM that is the model by its Hugging Face id and revision, `max_model_len`, dtype and quantization; from `cache_config` the block size, prefix caching, the KV dtype and the pool (`kv_cache_memory_bytes`, `num_gpu_blocks`); from `scheduler_config` the policy, `max_num_batched_tokens`, `long_prefill_token_threshold`, `max_num_seqs`, async scheduling, `watermark` and `max_num_queued_tokens`, the settings `e2 run` checks the arms' flags against; the CPU tier's connector with its `kv_connector_extra_config`; and `additional_config`. For SGLang it is the same of its server arguments (`SGLANG_ENGINE` in `e2/record.py`). A point on several GPU nodes keeps an `engine-NODE.json` for each node, and its summary the clock and temperature of every node's GPU together (`gpu`) and of each in the node's share. Any path under a home directory is written from `~`. A record is about 15 kB and holds no credential: the callers' `run.json`, which names LiveKit's API key, stays out. The report gives the same tables and figures from the records as from the run directories, byte for byte (its figures carry no date), so the records are what goes into the repository, under [`benchmarks/results/2026-10-23-e2`](../../benchmarks/results/2026-10-23-e2/README.md), and `make reproduce-e2` regenerates the report from them with this venv. The raw run directories (the gateway's request log, AIPerf's exports, the metric snapshots, the worker's journal, the GPU's samples, the tools' logs) are an asset of the [v0.3 release](https://github.com/StevenWang-CY/leaseholder/releases/tag/v0.3), `leaseholder-e2-runs-2026-10-24.tar.gz`.
 
 ## Mock server
 
 `lh-bench mock-server --port P --log FILE` binds 127.0.0.1 only and streams chat completions.
 Each request appends one JSON line to the log: arrival and end times, every header, every body
-field except `messages`, a role/size digest of the messages, `cached_tokens` (the longest prefix
-shared with one of the session's recent prompts, also returned in `usage`), and `echoed_replies`
-(assistant messages that repeat a reply it streamed to the same session). The replay tests use
-the same recorder in process.
+field except `messages`, a role/size digest of the messages, and `cached_tokens` (the longest
+prefix shared with one of the session's recent prompts, also returned in `usage`).
 
 ## Quickstart (cyan)
 
@@ -361,7 +302,7 @@ lh-bench scale-traces cc-traces-weka-062126/traces.jsonl weka-x64 --factor 64
 # A quick-check subset; sub16.ids lists 16 short traces, one id per line (8 with subagents)
 lh-bench scale-traces cc-traces-weka-062126/traces.jsonl weka-x32-sub16 --factor 32 --ids sub16.ids
 
-# Mock on loopback (keep clear of cyan's deployed ports 18000, 18080, 18100, 18880, 15558 and 17880-17882)
+# Mock on loopback (keep clear of cyan's deployed ports 18000, 18080, 18100, 18880 and 17880-17882)
 mkdir -p ~/leaseholder/runs/w0-e2e && cd ~/leaseholder/runs/w0-e2e
 setsid nohup lh-bench mock-server --port 19180 --log $PWD/mock-aiperf.jsonl < /dev/null > mock.out 2>&1 &
 echo $! > mock.pid
@@ -375,10 +316,6 @@ LH_BENCH_SESSIONS=8 LH_BENCH_DURATION=60 LH_BENCH_GRACE=15 LH_BENCH_THINK_CAP=3 
 LH_BENCH_ARTIFACTS=$HOME/leaseholder/runs/w0-e2e/aiperf \
   aiperf profile --config configs/agentic_replay.yaml
 
-# Live-reply driver, 60 s (restart the mock with --log .../mock-replay.jsonl to keep the logs apart)
-lh-bench replay ~/leaseholder/data/weka-x32-sub16 --url http://127.0.0.1:19180/v1/chat/completions \
-  --sessions 8 --duration 60 --grace 15 --think-cap 3 --out ~/leaseholder/runs/w0-e2e/replay/requests.jsonl
-
 # What reached the server
 python -c 'import json,sys; r=json.loads(open(sys.argv[1]).readlines()[-1]); print(r["headers"], r["body"])' \
   ~/leaseholder/runs/w0-e2e/mock-aiperf.jsonl
@@ -387,10 +324,9 @@ kill $(cat ~/leaseholder/runs/w0-e2e/mock.pid)
 
 Results on 2026-10-22, against the mock:
 
-| Run | Requests | Every request carries the four fields | `X-Session-ID` is the tree root | Assistant history that is the live reply |
-|---|---|---|---|---|
-| AIPerf, 8 session trees, 60 s | 7 warmup + 236, 0 errors | 243/243 | 243/243 (103 subagent requests) | 0/197 |
-| `lh-bench replay`, 8 sessions, 60 s | 345, 0 errors | 345/345 | yes (158 subagent requests) | 248/248 |
+| Run | Requests | Every request carries the four fields | `X-Session-ID` is the tree root |
+|---|---|---|---|
+| AIPerf, 8 session trees, 60 s | 7 warmup + 236, 0 errors | 243/243 | 243/243 (103 subagent requests) |
 
 ## Tests
 
@@ -403,20 +339,19 @@ uv run --extra test pytest      # in python/leaseholder_bench
 They cover the scaling math and schema, the loader's prefix reproduction (both loaders, through
 AIPerf's own reconstruction with a tokenizer-free prompt generator), the plugin's headers and
 body as AIPerf's transport sends them, the wire names and class-to-priority mapping against
-`lh-proto`, the YAML template, the probes against in-process fake servers, and the driver against
-an in-process server: live replies, compaction cuts, side chains, subagent joins, think-time caps
-and failures. `tests/test_e2.py` runs whole E2 points against a fake gateway and engine on
+`lh-proto`, the YAML template and the probes against in-process fake servers. `tests/test_e2.py`
+runs whole E2 points against a fake gateway and engine on
 loopback, a recording `systemctl` and stand-ins for AIPerf and the callers that run as real
 processes (`tests/fakes/`): the sequence, the units each arm restarts, the engine check, failures
 at each step with every process stopped, the point directory's rules, the committed arm files, and
 the logs a point keeps: the gateway's request lines and the worker's journal, waiting for its
-sessions to end only when they will. `tests/test_frontier.py` covers the summary over the window,
+sessions to end only when they will. `tests/test_e2_results.py` covers the summary over the window,
 the exact first bytes from a request log, the Pareto marking within each arm and workload, each
 workload's section, voice SLO and figure (its families, the arms' names and what it leaves off its
 scale), repeated points placed at their medians with every run kept, the stage waterfall's means
 and V2V marks, the report's columns that only some points have, compact records that give the
 report of their run directories byte for byte, the committed records (complete, without
-credentials, reported as `make reproduce-e2` reports them), and the names of the lines the voice
+credentials, exported again to themselves, and reported as `make reproduce-e2` reports them), and the names of the lines the voice
 worker writes. `tests/test_demo.py` runs the demo
 video's renderer on a synthetic pair of calls ([`benchmarks/e2`](../../benchmarks/e2/README.md#the-demo-video));
 its encoding test is marked `integration` and left out of CI.

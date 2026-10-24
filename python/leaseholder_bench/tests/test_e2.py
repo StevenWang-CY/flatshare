@@ -22,18 +22,15 @@ from typing import Any
 
 import pytest
 
-from leaseholder_bench import e2
 from leaseholder_bench.cli import main
-from leaseholder_bench.e2 import (
-    E2Error,
-    Engine,
+from leaseholder_bench.e2 import run as e2
+from leaseholder_bench.e2.arm import E2Error, Engine, Voice, flag_values, load_arm
+from leaseholder_bench.e2.run import (
     EngineInfo,
     Host,
     Process,
     Systemd,
     check_engine,
-    flag_values,
-    load_arm,
     read_env,
     reset_cyan,
     run_point,
@@ -45,6 +42,7 @@ REPO = Path(__file__).resolve().parents[3]
 EXAMPLE = REPO / "deploy" / "cyan" / "gateway.example.toml"
 BENCHMARKS = REPO / "benchmarks" / "e2"
 PHASTFORM = REPO / "deploy" / "phastform"
+needs_waitid = pytest.mark.skipif(not hasattr(os, "waitid"), reason=e2.NEEDS_WAITID)
 
 ARM = """\
 arm = 2
@@ -121,8 +119,8 @@ def _quick(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_an_arm_file_fills_in_the_defaults(tmp_path: Path) -> None:
     arm = load_arm(write(tmp_path, "a1-voice.toml", VOICE_ALONE))
     assert (arm.name, arm.arm, arm.label) == ("a1-voice", "1", "voice alone")
-    assert arm.voice == e2.Voice(callers=2, turns=25, barge_in=0.25, preemptive_generation=True)
-    assert (arm.agents.sessions, arm.agents.target, arm.agents.think_cap) == (0, "gateway", 120.0)
+    assert arm.voice == Voice(callers=2, turns=25, barge_in=0.25, preemptive_generation=True)
+    assert (arm.agents.sessions, arm.agents.think_cap) == (0, 120.0)
     assert (arm.gateway, arm.engine, arm.router) == ({}, Engine("frozen", ()), None)
 
 
@@ -157,7 +155,6 @@ def test_an_arm_file_says_everything_about_its_point(tmp_path: Path) -> None:
         ('arm = 11\nlabel = "x"\n', "arm is E2's arm"),
         ('arm = "7z1"\nlabel = "x"\n', "arm is E2's arm"),
         ('arm = 2\nlabel = "x"\nrouter = "nginx"\n', "router can only be smg"),
-        ('arm = 2\nlabel = "x"\n[agents]\ntarget = "tunnel"\n', "target is gateway or engine"),
         ('arm = 2\nlabel = "x"\n[voice]\nbarge_in = 1.5\n', "barge_in is a share"),
         ('arm = 2\nlabel = "x"\n[engine]\nflags = ["--a b"]\n', "is not a plain word"),
         ('arm = 2\nlabel = "x"\n[engine]\nflags = ["512"]\n', "follows no flag"),
@@ -167,7 +164,6 @@ def test_an_arm_file_says_everything_about_its_point(tmp_path: Path) -> None:
         ('arm = 2\nlabel = "x"\n' + NODES.replace("nodes.b", 'nodes."b c"'), "'b c' needs a name"),
         ('arm = 2\nlabel = "x"\n' + NODES.replace("http://", "unix:"), "an http:// upstream"),
         ('arm = 2\nlabel = "x"\nrouter = "smg"\n' + NODES, "a router fronts one engine"),
-        ('arm = 2\nlabel = "x"\n[agents]\ntarget = "engine"\n' + NODES, "go through the gateway"),
     ],
 )
 def test_a_wrong_arm_file_says_what_is_wrong(tmp_path: Path, text: str, error: str) -> None:
@@ -283,6 +279,7 @@ def test_a_vllm_point_needs_the_frozen_settings_its_flags_keep() -> None:
 # Processes
 
 
+@needs_waitid
 def test_stopping_a_tool_kills_its_whole_process_group(tmp_path: Path) -> None:
     artifacts = tmp_path / "aiperf"
     env = os.environ | {"LH_BENCH_ARTIFACTS": str(artifacts), "FAKE_AIPERF": "stubborn"}
@@ -298,6 +295,7 @@ PROC = pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="reads
 
 
 @PROC
+@needs_waitid
 def test_stopping_a_tool_kills_what_it_started_in_a_session_of_its_own(tmp_path: Path) -> None:
     """AIPerf starts some services with setsid, out of its process group: its mark reaches them."""
     artifacts = tmp_path / "aiperf"
@@ -470,6 +468,8 @@ class Cyan:
 
 @pytest.fixture
 def cyan(tmp_path: Path) -> Iterator[Cyan]:
+    if not hasattr(os, "waitid"):
+        pytest.skip(e2.NEEDS_WAITID)  # every point runs its tools
     home = tmp_path / "home"
     config = home / ".config" / "leaseholder"
     config.mkdir(parents=True)
@@ -564,7 +564,7 @@ def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(cy
     env = json.loads((out / "aiperf" / "env.json").read_text())
     assert env["LH_BENCH_URL"] == f"{cyan.gateway.url}/v1/chat/completions"
     assert env["LH_BENCH_API_KEY"] == "agents-key"
-    assert (env["LH_BENCH_SESSIONS"], env["LH_BENCH_SEND_PRIORITY"]) == ("4", "true")
+    assert env["LH_BENCH_SESSIONS"] == "4"
     assert env["AIPERF_HTTP_X_SESSION_ID_FROM_CORRELATION_ID"] == "false"  # from configs/aiperf.env
     run_json = record(cyan, "a2-stock-s4")
     assert run_json["aiperf"] == {"exit_status": 0}
