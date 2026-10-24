@@ -17,8 +17,10 @@ import pytest
 from leaseholder_bench.cli import main
 from leaseholder_bench.e2 import SECRETS, Agents, Voice
 from leaseholder_bench.frontier import (
+    ADMISSION_COLUMNS,
     CALLER_ROOM,
     COLUMNS,
+    CONFIGURATION_ARMS,
     GPU_COLUMNS,
     NODE_COLUMNS,
     PLACEMENT_LOGGER,
@@ -39,6 +41,7 @@ from leaseholder_bench.frontier import (
     gateway_counts,
     gateway_requests,
     load_points,
+    load_sweep,
     mark_frontier,
     stage_waterfall,
     summarize_point,
@@ -539,7 +542,98 @@ def test_a_median_between_two_runs_keeps_its_half(tmp_path: Path) -> None:
     rows, _ = load_points(dirs)
     table = write_report(rows, tmp_path / "report")[1].read_text()
     assert f"| {spread('0.5', '0', '1')} |" in table
-    assert f"| • | 16 | {spread('4,000', '4,000', '4,000')} |" in table
+    # A run's failed turn keeps its configuration off the frontier.
+    assert f"|  | 16 | {spread('4,000', '4,000', '4,000')} |" in table
+
+
+def test_a_failed_turn_is_censored_and_keeps_its_configuration_off_the_frontier(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("matplotlib")
+    stages = {"end_of_turn_ms": 800, "turn_to_first_sentence_ms": 300, "tts_first_audio_ms": 200}
+    ok = point(tmp_path, "a5-ok-s24", "5", 4000, 2000)
+    turn_lines(ok, stages, 3, answered(1900, 2000, 2100))
+    # vLLM's queued-token limit refused 48 of the 50 turns: they count at the reply timeout.
+    refusing = point(tmp_path, "a5-queued-s24", "5", 5600, 2013)
+    failed = [
+        {"caller": 0, "turn": n, "error": "the agent did not start speaking"} for n in range(48)
+    ]
+    turn_lines(refusing, stages, 2, [*answered(1797, 2013), *failed])
+    rewrite(refusing, lambda s: s["voice"].update(errors=48))
+    rows, _ = load_points([point(tmp_path, "a1-voice", "1", None, 1760), ok, refusing])
+    by = {r["point"]: r for r in rows}
+    assert (by["a5-queued-s24"]["v2v_p50_ms"], by["a5-queued-s24"]["v2v_p95_ms"]) == (
+        30_000,
+        30_000,
+    )
+    # Its V2V is censored, not measured: off the frontier, and no rival of the measured point.
+    assert not by["a5-queued-s24"]["frontier"] and by["a5-ok-s24"]["frontier"]
+    assert [c["point"] for c in stage_waterfall(rows)] == ["a5-ok-s24"]
+    out = tmp_path / "report"
+    write_report(rows, out)
+    table = (out / "frontier.md").read_text()
+    assert "| a5-queued-s24: a5-queued-s24 label |  | 16 | 5,600 |" in table
+    assert "| ≥30,000 | ≥30,000 | ≥30,000 | 48 of 50 |" in table
+    figure = (out / "frontier.svg").read_text()
+    assert (
+        "Failed turns: a5-queued-s24, 48 of 50, its V2V censored at 30 s, off the scale" in figure
+    )
+
+
+def test_policy_leaseholder_shows_what_it_deferred_and_what_it_capped(tmp_path: Path) -> None:
+    a9 = point(tmp_path, "disc-a9-s24", "9", 3400, 2057)
+    run = json.loads((a9 / "run.json").read_text())
+    run["arm"]["gateway"] = {"admission": {"policy": "leaseholder", "headroom_tokens": 1024}}
+    (a9 / "run.json").write_text(json.dumps(run))
+    counters = {
+        'lh_gateway_admission_admitted_total{class="realtime"}': 60,
+        'lh_gateway_admission_deferred_total{reason="headroom"}': 41,
+        "lh_gateway_admission_degraded_total": 60,
+    }  # a counter that did not move is not kept: the critical window deferred nothing
+    rewrite(a9, lambda s: s["gateway"].update(counters=counters))
+    rows, _ = load_points([a9, point(tmp_path, "disc-frozen-s24", "4", 3700, 10138)])
+    by = {r["point"]: r for r in rows}
+    assert {column: by["disc-a9-s24"][column] for column in ADMISSION_COLUMNS} == {
+        "deferred_headroom": 41,
+        "deferred_critical": 0,
+        "degraded_replies": 60,
+        "realtime_replies": 60,
+        "degraded_share": 1.0,
+    }
+    assert all(by["disc-frozen-s24"][column] is None for column in ADMISSION_COLUMNS)
+    out = tmp_path / "report"
+    write_report(rows, out)
+    section = (out / "frontier.md").read_text().split("## Policy leaseholder")[1]
+    assert "| disc-a9-s24 | 41 | 0 | 60 of 60 (100%) |" in section
+    assert "disc-frozen-s24" not in section  # a point without the policy has no line
+    with (out / "frontier.csv").open() as f:
+        shares = {r["point"]: r["degraded_share"] for r in csv.DictReader(f)}
+    assert shares == {"disc-a9-s24": "1.0", "disc-frozen-s24": ""}
+
+
+def test_arm_9s_ablations_and_the_prs_are_configurations_of_their_own(tmp_path: Path) -> None:
+    # As run, their arm files say arm 9; the report gives each its own arm, so none is placed on arm
+    # 9's frontier or joined to it, and the records stay as they are.
+    dirs = [
+        point(tmp_path, "disc-a9-s24", "9", 3400, 2057),
+        point(tmp_path, "disc-pr-ab48-s24", "9", 3500, 2193),
+        point(tmp_path, "disc-a9-gateway-only-s24", "9", 3700, 10993),
+    ]
+    rows, _ = load_points(dirs)
+    arms = {r["point"]: (r["arm"], r["frontier"]) for r in rows}
+    assert arms == {
+        "disc-a9-s24": ("9", True),
+        "disc-pr-ab48-s24": ("9-pr-ab48", True),
+        "disc-a9-gateway-only-s24": ("9-gateway-only", True),
+    }
+    assert all(arm.startswith("9-") for arm in CONFIGURATION_ARMS.values())
+
+
+def test_a_line_joins_an_arms_frontier_only_across_load_levels() -> None:
+    def at(*sessions: int) -> list[dict[str, Any]]:
+        return [{"runs": [{"sessions": n}]} for n in sessions]
+
+    assert load_sweep(at(8, 16, 24)) and not load_sweep(at(24, 24)) and not load_sweep(at(24))
 
 
 def turn_lines(run_dir: Path, stages: dict[str, float], turns: int, v2v: list[dict]) -> None:
@@ -567,7 +661,7 @@ def test_the_stage_waterfall_stacks_each_configurations_stages_to_its_mean_v2v(
         {"transcript_ms": 790, "end_of_turn_ms": 800, "llm_ttft_ms": 2500}
         | {"turn_to_first_sentence_ms": 3000, "tts_first_audio_ms": 300},
         4,
-        [*answered(4000, 4400), barged | {"v2v_after_barge_in_ms": 4600}, {"error": "timeout"}],
+        [*answered(4000, 4400), barged | {"v2v_after_barge_in_ms": 4600}],
     )
     turn_lines(
         frozen[1],
@@ -858,7 +952,9 @@ def test_a_point_on_two_gpu_nodes_reports_its_totals_and_each_nodes_share(tmp_pa
     }
     assert (a["voice"]["v2v_ms"]["n"], a["voice"]["v2v_ms"]["p50"]) == (3, 1600.0)  # with the reply
     assert a["voice"]["barge_in_to_silence_ms"]["p50"] == 600.0
-    assert (b["voice"]["turns"], b["voice"]["errors"], b["voice"]["v2v_ms"]["n"]) == (2, 1, 1)
+    # Node b's failed turn counts at the reply timeout, censored.
+    assert (b["voice"]["turns"], b["voice"]["errors"], b["voice"]["v2v_ms"]["n"]) == (2, 1, 2)
+    assert b["voice"]["v2v_ms"]["p99"] == pytest.approx(30_000, abs=300)
     assert b["background"] == {
         "requests": 2,
         "errors": 1,
