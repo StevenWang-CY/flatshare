@@ -98,7 +98,9 @@ class VoiceTurn:
         return response.json()["text"].strip()
 
     async def first_audio(self, text: str) -> float:
-        """Milliseconds from the TTS request to its first audio byte."""
+        """Milliseconds from the TTS request to its first audio byte. The rest of the audio is read too, as the voice
+        worker plays it, so the connection goes back to the pool: a response dropped part-read closes its connection,
+        and through lh-tunnel each new one is an SSH session (about 10 ms)."""
         payload = {
             "model": self.config.tts_model,
             "input": text,
@@ -107,12 +109,15 @@ class VoiceTurn:
             "stream": True,
         }
         started = time.perf_counter()
+        first: float | None = None
         async with self.tts.stream("POST", "/v1/audio/speech", json=payload) as response:
             response.raise_for_status()
             async for chunk in response.aiter_raw():
-                if chunk:
-                    return (time.perf_counter() - started) * 1000
-        raise RuntimeError("the TTS server returned no audio")
+                if chunk and first is None:
+                    first = (time.perf_counter() - started) * 1000
+        if first is None:
+            raise RuntimeError("the TTS server returned no audio")
+        return first
 
     def chat_request(self, transcript: str) -> tuple[dict[str, str], dict[str, Any]]:
         config = self.config

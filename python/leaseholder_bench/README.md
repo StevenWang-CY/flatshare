@@ -154,7 +154,8 @@ vLLM's `prefix_cache_hits` and `external_prefix_cache_hits` counters, read aroun
 `voice-turn` times one turn of the cascade a voice agent runs:
 - STT on the utterance;
 - the LLM's first sentence, counted once it reaches 20 characters as in LiveKit's tokenizer;
-- TTS first audio for that sentence, sent while the reply is still streaming.
+- TTS first audio for that sentence, sent while the reply is still streaming; the rest of its audio is read as the
+  worker plays it, so the next turn reuses the connection (through the tunnel a new one is an SSH session).
 
 Both take `--background prefill:8192x1` or `decode:1024x8` to measure under agent load. They write `run.json`, the samples and `summary.json` to `--out`; each summary cell has the count, the mean and p10, p50, p90, p95 (where the SLOs are set) and p99. `tiers` exits 3 if any sample was invalid.
 

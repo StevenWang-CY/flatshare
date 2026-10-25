@@ -226,6 +226,8 @@ def voice_stack(seen: dict[str, list]) -> web.Application:
 
     async def speech(request: web.Request) -> web.StreamResponse:
         seen["tts"].append((await request.json())["input"])
+        # Each connection is held here, so no two of them share an id.
+        seen.setdefault("tts_connections", []).append(request.transport)
         response = web.StreamResponse()
         await response.prepare(request)
         await response.write(b"\x00\x01" * 2400)
@@ -261,6 +263,29 @@ def test_voice_turn_times_every_stage_and_speaks_the_first_sentence(tmp_path: Pa
     assert header == "realtime" and body["priority"] == 0 and body["stream"] is True
     assert body["messages"][1] == {"role": "user", "content": "What time do you close tonight?"}
     assert len(seen["stt"]) == 8  # (1 warm-up + 3 measured) x 2 callers
+
+
+@pytest.mark.parametrize("transport", ["tcp", "unix"])
+def test_voice_turn_reuses_its_tts_connection_from_turn_to_turn(tmp_path: Path, transport: str):
+    # The voice worker's pooled clients keep their connections between turns; through lh-tunnel a new one is a new SSH
+    # session, about 10 ms (cyan, 2026-10-25), which a probe that dropped each one paid on every TTS request.
+    seen: dict[str, list] = {"stt": [], "chat": [], "tts": []}
+    wav = tmp_path / "turn.wav"
+    wav.write_bytes(b"RIFF....WAVE")
+
+    async def main() -> None:
+        async with serving(voice_stack(seen), transport) as url:
+            config = VoiceTurnConfig(
+                stt=url, llm=url, tts=url,
+                stt_model="whisper", llm_model="m", tts_model="kokoro", voice="af_heart",
+                audio=[wav], reps=3, warm=1, concurrency=2, gap_s=0.0,
+            )  # fmt: skip
+            await run_voice_turns(config, tmp_path / "run")
+
+    run(main)
+    assert len(seen["tts"]) == 8
+    connections = {id(connection) for connection in seen["tts_connections"]}
+    assert len(connections) <= 2  # one per caller at most
 
 
 def test_first_sentence_holds_short_sentences_back_like_livekit():
