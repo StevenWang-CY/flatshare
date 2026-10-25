@@ -19,7 +19,7 @@
 //!   request can name the session the gateway minted for it.
 //! - **No waiting.** A request of a placed session reads the placements under a shared lock and counts itself on
 //!   its node with atomics, and its end takes no lock: requests do not wait on each other here. Placing a
-//!   session, the events and the expiry write the placements.
+//!   session, a batch of events that closes one and the expiry write the placements; other events read them.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -240,9 +240,13 @@ impl Placement {
     }
 
     /// Lifecycle events, in the order the gateway received them, to the admission point of their session's node.
-    /// The events of a session without a node reach none, and `session_closed` ends a session's placement.
+    /// The events of a session without a node reach none, and `session_closed` ends a session's placement. Only a
+    /// batch that closes a session writes the placements; any other reads them, as a placed session's requests do.
     pub fn events(&self, nodes: &[Node], events: &[LifecycleEvent]) {
-        let nodes_of: Vec<Option<usize>> = {
+        let closes = events
+            .iter()
+            .any(|event| matches!(event.kind, EventKind::SessionClosed));
+        let nodes_of: Vec<Option<usize>> = if closes {
             let mut table = self.write();
             events
                 .iter()
@@ -253,6 +257,12 @@ impl Placement {
                     }
                     node
                 })
+                .collect()
+        } else {
+            let table = self.read();
+            events
+                .iter()
+                .map(|event| table.sessions.get(&event.session_id).map(|s| s.node))
                 .collect()
         };
         for (index, node) in nodes.iter().enumerate() {
