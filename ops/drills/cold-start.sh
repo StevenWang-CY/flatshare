@@ -50,19 +50,26 @@ Environment=TRITON_CACHE_DIR=%h/$caches/triton
 EOF
   $ssh "$gpu" 'systemctl --user daemon-reload'
 fi
-units=lh-engine target=lh-engine
+units=lh-engine target=lh-engine stops=lh-engine
 if [[ $what == box ]]; then
-  units="lh-stt lh-tts lh-engine" target=leaseholder.target
+  # Stopping leaseholder.target alone returns once the target is down, before its units (the engine first, then the
+  # audio servers): a start right after it cancels the audio servers' pending stops. Naming every unit makes systemctl
+  # wait for each one's stop.
+  units="lh-stt lh-tts lh-engine" target=leaseholder.target stops="leaseholder.target lh-stt lh-tts lh-engine"
 fi
 # The journals are fetched whatever the start did: for a start that fails they are the record that matters.
 before=$(date +%s)
 status=0
 event=$($ssh "$gpu" "date +%s.%N; systemctl --user reset-failed $units 2>/dev/null || true
-  systemctl --user stop $target; systemctl --user start $target" | sed -n 1p) || status=$?
+  systemctl --user stop $stops; systemctl --user start $target" | sed -n 1p) || status=$?
 event=${event:-$before}
-# leaseholder.target only Wants= its units, so its start succeeds without them: each must be active.
+# leaseholder.target only Wants= its units, so its start succeeds without them: each must be active, and must have
+# become active after the restart, not stayed up through it.
 for unit in $units; do
-  $ssh "$gpu" "systemctl --user is-active --quiet $unit" || { log "$unit is not active after the start"; status=1; }
+  since=$($ssh "$gpu" "systemctl --user is-active --quiet $unit &&
+    date -d \"\$(systemctl --user show $unit -p ActiveEnterTimestamp --value)\" +%s") ||
+    { log "$unit is not active after the start"; status=1; continue; }
+  ((since >= ${event%.*})) || { log "$unit did not restart: active since $since, before the restart at $event"; status=1; }
 done
 if ((status)); then
   log "$what restarted at $event$caches_note, and its start FAILED (exit status $status)"
