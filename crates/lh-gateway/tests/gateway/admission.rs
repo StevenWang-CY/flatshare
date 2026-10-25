@@ -202,6 +202,90 @@ async fn token_reservation_admits_background_while_its_estimate_fits() {
     assert_eq!(mock.tags(), ["bg1", "bg2", "s1", "bg3", "s2"]);
 }
 
+/// Token reservation on a 1,000-token pool, 200 of it reserved, where every answer reports 50 prompt tokens, and a
+/// body of about 2,400 bytes, 600 tokens at 4 bytes a token: one fits beside the reservation, two do not, and one
+/// priced at its session's 50 fits beside another.
+async fn reservation(top: &str) -> (Mock, Gateway, &'static str) {
+    let usage = r#"{"choices":[],"usage":{"prompt_tokens":50,"completion_tokens":1}}"#;
+    let mock = Mock::start(Script::Json(usage)).await;
+    let admission =
+        "[admission]\npolicy = \"token-reservation\"\npool_tokens = 1000\nreserved_tokens = 200";
+    let gw = Gateway::start(mock.addr, &format!("{admission}\n{top}")).await;
+    let body = format!(r#"{{"model":"qwen","prompt":"{}"}}"#, "x".repeat(2_350)).leak();
+    (mock, gw, body)
+}
+
+/// A background request of the agents' session agent-7, named `tag`, whose answer the mock engine holds.
+fn agent_7(tag: &'static str) -> Vec<(&'static str, &'static str)> {
+    vec![
+        AGENTS_AUTH,
+        ("x-session-id", "agent-7"),
+        (TAG, tag),
+        (GATE, "1"),
+    ]
+}
+
+/// The agents' session agent-7 sends a request, which reports 50 prompt tokens, and leaves the admission point.
+async fn learn(mock: &Mock, gw: &Gateway, body: &'static str) {
+    let learn = spawn_call(&gw.tcp, agent_7("learn"), body);
+    mock.await_requests(1).await;
+    mock.release(1);
+    assert_eq!(learn.await.unwrap().status, 200);
+    let series = "lh_gateway_request_outcomes_total{class=\"background\",outcome=\"completed\"}";
+    gw.await_metric(series, 1.0).await;
+}
+
+#[tokio::test]
+async fn a_sessions_usage_prices_only_its_own_tenants_requests() {
+    let (mock, gw, body) = reservation("").await;
+    learn(&mock, &gw, body).await;
+    // The voice tenant's agent-7 is a session of its own, without a usage: about 600 tokens, which wait.
+    let other = spawn_call(&gw.tcp, background("bg"), body);
+    mock.await_requests(2).await;
+    let voice = vec![
+        ("x-session-id", "agent-7"),
+        ("x-lh-class", "background"),
+        (TAG, "voice"),
+        (GATE, "1"),
+    ];
+    let voice = spawn_call(&gw.unix, voice, body);
+    gw.await_metric(WAITING, 1.0).await;
+    mock.release(1);
+    assert_eq!(other.await.unwrap().status, 200);
+    mock.await_requests(3).await;
+    mock.release(1);
+    assert_eq!(voice.await.unwrap().status, 200);
+    assert_eq!(mock.tags(), ["learn", "bg", "voice"]);
+}
+
+#[tokio::test]
+async fn an_untrusted_flood_of_sessions_leaves_the_trusted_tenants_usage() {
+    let flood = format!(
+        "[tenants.flood]\nkeys_sha256 = [\"{}\"]\ndefault_class = \"background\"",
+        key_digest("flood-key")
+    );
+    let (mock, gw, body) = reservation(&flood).await;
+    learn(&mock, &gw, body).await;
+    // An untrusted tenant names 4,096 sessions, one prompt_cache_key each, as many as the table holds.
+    for n in 0..4096 {
+        let request = format!(r#"{{"model":"qwen","prompt":"x","prompt_cache_key":"k-{n}"}}"#);
+        let auth = ("authorization", "Bearer flood-key");
+        let reply = call(&gw.tcp, "POST", "/v1/completions", &[auth], &request).await;
+        assert_eq!(reply.status, 200);
+    }
+    let series = "lh_gateway_request_outcomes_total{class=\"background\",outcome=\"completed\"}";
+    gw.await_metric(series, 4097.0).await;
+    // agent-7's usage is still remembered: at 50 tokens, its request goes beside another.
+    let other = spawn_call(&gw.tcp, background("bg"), body);
+    mock.await_requests(4098).await;
+    let priced = spawn_call(&gw.tcp, agent_7("priced"), body);
+    mock.await_requests(4099).await;
+    mock.release(2);
+    for reply in [other, priced] {
+        assert_eq!(reply.await.unwrap().status, 200);
+    }
+}
+
 /// An interactive request of the agents tenant, named `tag`, whose answer the mock engine holds.
 fn interactive(tag: &'static str) -> Vec<(&'static str, &'static str)> {
     vec![

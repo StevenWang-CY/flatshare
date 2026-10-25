@@ -111,7 +111,7 @@
       ]
     },
     {
-      "description": "Voice activity onset: a turn is coming, and policy `leaseholder` (`trigger = \"onset\"`) arms its KV headroom.",
+      "description": "Voice activity onset: a turn is coming, and the lifecycle policy (`trigger = \"onset\"`) arms its KV headroom.",
       "type": "object",
       "properties": {
         "type": {
@@ -169,7 +169,7 @@
       ]
     },
     {
-      "description": "The user barged in, `played_ms` into the reply: policy `leaseholder` takes it as the user speaking again.\nThe voice agent ends the reply's stream itself.",
+      "description": "The user barged in, `played_ms` into the reply: the lifecycle policy takes it as the user speaking again.\nThe voice agent ends the reply's stream itself.",
       "type": "object",
       "properties": {
         "played_ms": {
@@ -188,7 +188,7 @@
       ]
     },
     {
-      "description": "The session ended: the gateway forgets its turn state and, with several GPU nodes, its placement.",
+      "description": "The session ended: the gateway forgets its turn state.",
       "type": "object",
       "properties": {
         "type": {

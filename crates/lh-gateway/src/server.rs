@@ -22,12 +22,12 @@ use tokio::net::{TcpListener, UnixListener, UnixStream};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 
-use crate::auth::{self, Tenants};
+use crate::auth::{self, Tenant, Tenants};
 use crate::config::{Config, ListenAddr, MetricsKey, PrioritySignals};
 use crate::events::{self, EventSink, Events};
 use crate::exchange::Exchange;
+use crate::harness::Admission;
 use crate::metrics::{Metrics, Route};
-use crate::placement::{self, Node, Placement};
 use crate::proxy::{self, Upstream};
 use crate::systemd::Inherited;
 
@@ -41,14 +41,16 @@ const ENGINE_METRICS_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug)]
 pub(crate) struct Shared {
     pub tenants: Tenants,
-    /// The GPU nodes: the one `upstream`, or `[nodes]` by name.
-    pub nodes: Vec<Node>,
-    /// With `[nodes]`, the sessions placed on them.
-    pub placement: Option<Arc<Placement>>,
+    /// The engine.
+    pub upstream: Upstream,
+    /// The admission point; `None` under policy "none", where requests go upstream at once.
+    pub admission: Option<Arc<Admission>>,
     pub upstream_priority: PrioritySignals,
     pub metrics: Arc<Metrics>,
     pub events: Events,
     pub max_body_bytes: usize,
+    /// The cap on every realtime reply, in tokens.
+    pub realtime_max_tokens: Option<u32>,
     pub stream_buffer_frames: usize,
     pub stall_timeout: Duration,
     pub first_byte_timeout: Duration,
@@ -60,16 +62,10 @@ pub(crate) struct Shared {
 }
 
 impl Shared {
-    /// Accepted lifecycle events, in the order they were received, to the admission point of their session's
-    /// node.
-    pub fn lifecycle(&self, events: &[LifecycleEvent]) {
-        match &self.placement {
-            None => {
-                if let Some(admission) = &self.nodes[0].admission {
-                    admission.events(events);
-                }
-            }
-            Some(placement) => placement.events(&self.nodes, events),
+    /// Accepted lifecycle events of `tenant`'s sessions, in the order they were received, to the admission point.
+    pub fn lifecycle(&self, tenant: &Tenant, events: &[LifecycleEvent]) {
+        if let Some(admission) = &self.admission {
+            admission.events(tenant, events);
         }
     }
 }
@@ -220,44 +216,26 @@ impl Server {
             };
             listeners.push((listener, tenant));
         }
-        let idle_timeout = config.upstream_idle_timeout;
-        let admission = config.admission.as_ref();
-        let (metrics, nodes, placement) = match &config.placement {
-            None => {
-                let metrics = Arc::new(Metrics::new());
-                let upstream = Upstream::new(config.upstream, idle_timeout);
-                let node = Node::new(None, upstream, admission, Arc::clone(&metrics), [true; 3]);
-                (metrics, vec![node], None)
-            }
-            Some(placement) => {
-                let names: Vec<Arc<str>> = placement
-                    .nodes
-                    .iter()
-                    .map(|node| node.name.as_str().into())
-                    .collect();
-                let metrics = Arc::new(Metrics::with_nodes(&names, placement.policy));
-                let nodes: Vec<Node> = placement
-                    .nodes
-                    .iter()
-                    .zip(names)
-                    .map(|(node, name)| {
-                        let upstream = Upstream::new(node.upstream.clone(), idle_timeout);
-                        let own = Arc::new(metrics.on(&name));
-                        Node::new(Some(name), upstream, admission, own, node.serves)
-                    })
-                    .collect();
-                let placement = Placement::new(placement, &nodes, Arc::clone(&metrics));
-                (metrics, nodes, Some(placement))
-            }
-        };
+        // The harness, and its metric families, only with an admission policy.
+        let admission = config.admission.as_ref().map(Admission::new);
+        let metrics = Arc::new(match &admission {
+            Some(admission) => Metrics::with_harness(admission.metrics()),
+            None => Metrics::new(),
+        });
+        let upstream = Upstream::new(
+            config.upstream,
+            config.upstream_idle_timeout,
+            metrics.node_ready(),
+        );
         let shared = Shared {
             tenants,
-            nodes,
-            placement,
+            upstream,
+            admission,
             upstream_priority: config.upstream_priority,
             metrics,
             events: Events::new(config.event_dedup_capacity, config.event_dedup_ttl, sink),
             max_body_bytes: config.max_body_bytes,
+            realtime_max_tokens: config.realtime_max_tokens,
             stream_buffer_frames: config.stream_buffer_frames,
             stall_timeout: config.stall_timeout,
             first_byte_timeout: config.first_byte_timeout,
@@ -313,44 +291,18 @@ impl Server {
     /// it bound itself are removed before it returns, unless a successor serves them ([`Server::handover`]).
     pub async fn run(self, shutdown: impl Future<Output = ()>) {
         let shared = &self.shared;
-        let admission = shared.nodes[0].admission.as_ref();
-        let admission = admission.map(|admission| admission.policy());
+        let admission = shared
+            .admission
+            .as_ref()
+            .map(|admission| admission.policy());
         let listeners = self.local_addrs().unwrap_or_default();
-        match &shared.placement {
-            None => tracing::info!(
-                upstream = %shared.nodes[0].upstream.addr(),
-                listeners = ?listeners,
-                inherited = self.inherited,
-                admission = ?admission,
-                "lh-gateway serving"
-            ),
-            Some(placement) => {
-                let nodes: Vec<String> = shared
-                    .nodes
-                    .iter()
-                    .map(|node| {
-                        format!(
-                            "{}={}",
-                            node.name.as_deref().unwrap_or_default(),
-                            node.upstream.addr()
-                        )
-                    })
-                    .collect();
-                tracing::info!(
-                    nodes = ?nodes,
-                    placement = placement.policy().as_str(),
-                    listeners = ?listeners,
-                    inherited = self.inherited,
-                    admission = ?admission,
-                    "lh-gateway serving"
-                );
-                for index in 0..shared.nodes.len() {
-                    let probe =
-                        placement::probe(Arc::downgrade(shared), index, placement.probe_interval());
-                    tokio::spawn(probe);
-                }
-            }
-        }
+        tracing::info!(
+            upstream = %shared.upstream.addr(),
+            listeners = ?listeners,
+            inherited = self.inherited,
+            admission = ?admission,
+            "lh-gateway serving"
+        );
         // Dropping `stop` tells every listener to shut down.
         let (stop, stopped) = watch::channel(());
         let mut serving = JoinSet::new();
@@ -428,12 +380,7 @@ where
 }
 
 fn router(app: App) -> Router {
-    let mut router = Router::new();
-    // Only a gateway with [nodes] places sessions: with one upstream, /v1/sessions is no route, as before.
-    if app.shared.placement.is_some() {
-        router = router.route("/v1/sessions", post(placement::post));
-    }
-    router
+    Router::new()
         .route("/v1/chat/completions", inference(Route::ChatCompletions))
         .route("/v1/completions", inference(Route::Completions))
         .route("/v1/responses", inference(Route::Responses))
@@ -511,65 +458,30 @@ async fn metrics(State(app): State<App>, headers: HeaderMap) -> Response {
 }
 
 /// `GET /metrics/engine`: the engine's own `/metrics`, under the rule of the gateway's, so that a scraper reaches
-/// the engine without a TCP route to it. With `[nodes]`, `?node=NAME` names the engine.
-async fn engine_metrics(State(app): State<App>, headers: HeaderMap, uri: Uri) -> Response {
+/// the engine without a TCP route to it.
+async fn engine_metrics(State(app): State<App>, headers: HeaderMap) -> Response {
     if let Some(refused) = metrics_refused(&app, &headers) {
         return refused;
     }
     let shared = &app.shared;
-    let fail = |status, code, message: String| {
-        Exchange::new(&shared.metrics, Route::Other).error(status, code, message)
-    };
-    let named = uri
-        .query()
-        .and_then(|query| query.split('&').find_map(|pair| pair.strip_prefix("node=")));
-    let node = match (&shared.placement, named) {
-        (None, None) => &shared.nodes[0],
-        (Some(_), Some(name)) => match shared
-            .nodes
-            .iter()
-            .find(|n| n.name.as_deref() == Some(name))
-        {
-            Some(node) => node,
-            None => {
-                return fail(
-                    StatusCode::NOT_FOUND,
-                    "not_found",
-                    format!("no node {name:?}"),
-                );
-            }
-        },
-        (Some(_), None) => {
-            let message = "the gateway fronts several nodes: name one, /metrics/engine?node=NAME";
-            return fail(StatusCode::BAD_REQUEST, "invalid_request", message.into());
-        }
-        (None, Some(_)) => {
-            let message = "the gateway fronts one engine, which has no node name";
-            return fail(StatusCode::BAD_REQUEST, "invalid_request", message.into());
-        }
-    };
-    match node.upstream.metrics(ENGINE_METRICS_TIMEOUT).await {
+    match shared.upstream.metrics(ENGINE_METRICS_TIMEOUT).await {
         Ok(response) => response,
-        Err(message) => fail(StatusCode::BAD_GATEWAY, "upstream_unavailable", message),
+        Err(message) => Exchange::new(&shared.metrics, Route::Other).error(
+            StatusCode::BAD_GATEWAY,
+            "upstream_unavailable",
+            message,
+        ),
     }
 }
 
 /// 200 while the upstream's `/health` has answered within [`READY_WINDOW`]; otherwise it asks once more. 503 at once
-/// while a request has found the upstream broken and its probe has not answered since (placement::recover). With
-/// `[nodes]`, 200 while a node answers its readiness probe.
+/// while a request has found the upstream broken and its probe has not answered since ([`proxy::recover`]).
 async fn ready(State(app): State<App>) -> Response {
     let shared = &app.shared;
-    if shared.placement.is_some() {
-        return if shared.nodes.iter().any(Node::ready) {
-            (StatusCode::OK, "ready\n").into_response()
-        } else {
-            (StatusCode::SERVICE_UNAVAILABLE, "no node is ready\n").into_response()
-        };
-    }
-    if !shared.nodes[0].ready() {
+    if !shared.upstream.ready() {
         return (StatusCode::SERVICE_UNAVAILABLE, "upstream not ready\n").into_response();
     }
-    let upstream = &shared.nodes[0].upstream;
+    let upstream = &shared.upstream;
     let last = *shared
         .healthy_at
         .lock()

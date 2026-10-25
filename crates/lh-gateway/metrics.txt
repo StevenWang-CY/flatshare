@@ -300,7 +300,7 @@ lh_gateway_usage_tokens_total{class="interactive",kind="prompt"} 0
 lh_gateway_usage_tokens_total{class="realtime",kind="cached"} 0
 lh_gateway_usage_tokens_total{class="realtime",kind="completion"} 0
 lh_gateway_usage_tokens_total{class="realtime",kind="prompt"} 0
-# HELP lh_gateway_admission_admitted Requests the admission point let go upstream, by class (none without an admission policy).
+# HELP lh_gateway_admission_admitted Requests the admission point let go upstream, by class.
 # TYPE lh_gateway_admission_admitted counter
 lh_gateway_admission_admitted_total{class="background"} 0
 lh_gateway_admission_admitted_total{class="interactive"} 0
@@ -388,11 +388,11 @@ lh_gateway_admission_resubmits_total{class="realtime"} 0
 lh_gateway_admission_discarded_tokens_total{class="background"} 0
 lh_gateway_admission_discarded_tokens_total{class="interactive"} 0
 lh_gateway_admission_discarded_tokens_total{class="realtime"} 0
-# HELP lh_gateway_admission_deferred Background requests policy leaseholder deferred, by what held them back when they arrived: the headroom of the armed realtime sessions, or the critical window's prefill budget.
+# HELP lh_gateway_admission_deferred Background requests the lifecycle policy deferred, by what held them back when they arrived: the headroom of the armed realtime sessions, or the critical window's prefill budget.
 # TYPE lh_gateway_admission_deferred counter
 lh_gateway_admission_deferred_total{reason="critical"} 0
 lh_gateway_admission_deferred_total{reason="headroom"} 0
-# HELP lh_gateway_admission_deferral_seconds Time from arrival to admission of the background requests policy leaseholder deferred, by what held them back when they arrived.
+# HELP lh_gateway_admission_deferral_seconds Time from arrival to admission of the background requests the lifecycle policy deferred, by what held them back when they arrived.
 # TYPE lh_gateway_admission_deferral_seconds histogram
 # UNIT lh_gateway_admission_deferral_seconds seconds
 lh_gateway_admission_deferral_seconds_sum{reason="critical"} 0.0
@@ -437,7 +437,7 @@ lh_gateway_admission_deferral_seconds_bucket{le="+Inf",reason="headroom"} 0
 # TYPE lh_gateway_admission_aged counter
 lh_gateway_admission_aged_total{oversize="false"} 0
 lh_gateway_admission_aged_total{oversize="true"} 0
-# HELP lh_gateway_admission_degraded Realtime requests whose reply policy leaseholder capped, because the background requests in flight left less than one turn's headroom free.
+# HELP lh_gateway_admission_degraded Realtime requests whose reply the lifecycle policy capped, because the background requests in flight left less than one turn's headroom free.
 # TYPE lh_gateway_admission_degraded counter
 lh_gateway_admission_degraded_total 0
 # HELP lh_gateway_admission_false_alarms Headroom armings that no realtime request of their session followed: the session left the armed states, timed out or closed first.
@@ -446,7 +446,7 @@ lh_gateway_admission_false_alarms_total 0
 # HELP lh_gateway_admission_false_alarm_token_seconds Estimated background tokens the headroom held back during false alarms, times how long.
 # TYPE lh_gateway_admission_false_alarm_token_seconds counter
 lh_gateway_admission_false_alarm_token_seconds_total 0.0
-# HELP lh_gateway_realtime_sessions Realtime sessions policy leaseholder follows, by the state of their turn.
+# HELP lh_gateway_realtime_sessions Realtime sessions the lifecycle policy follows, by the state of their turn.
 # TYPE lh_gateway_realtime_sessions gauge
 lh_gateway_realtime_sessions{state="critical"} 0
 lh_gateway_realtime_sessions{state="idle"} 0
@@ -457,7 +457,7 @@ lh_gateway_realtime_sessions{state="user_speaking"} 0
 lh_gateway_realtime_state_timeouts_total{state="critical"} 0
 lh_gateway_realtime_state_timeouts_total{state="playback"} 0
 lh_gateway_realtime_state_timeouts_total{state="user_speaking"} 0
-# HELP lh_gateway_node_ready Whether a node answers its readiness probe (1), or takes no new sessions (0); with one upstream, whether it is ready (1), or a request found it broken and its /health has not answered since (0), while its requests are answered 503.
+# HELP lh_gateway_node_ready Whether the engine is ready (1), or a request found it broken and its /health has not answered since (0), while its requests are answered 503.
 # TYPE lh_gateway_node_ready gauge
 lh_gateway_node_ready 0
 # EOF

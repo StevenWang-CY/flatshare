@@ -17,12 +17,13 @@
 //!   request evicts the newest background requests.
 //! - [`Policy::PreemptResubmit`]: abort-and-resubmit. A realtime arrival preempts the background requests that
 //!   have no first byte yet, and background waits until the realtime request has its own.
-//! - [`Policy::Leaseholder`]: Leaseholder's own (E2 arm 9). Realtime requests go upstream at once and are never
-//!   refused. Background requests yield to the realtime sessions' turns, which the caller tracks from lifecycle
-//!   events and reports as counts ([`Admission::set_turns`]): they leave KV headroom free while a turn is
-//!   imminent, and share a budget of predicted prefill time in each critical window. A realtime request that
-//!   finds the headroom not kept has its reply capped. A request the caller has let wait long enough is admitted
-//!   regardless ([`Admission::age`]).
+//! - [`Policy::Lifecycle`]: the lifecycle policy, which E2's arm 9 runs with make-room (a measured negative
+//!   result). Realtime requests go upstream at once and are never refused. Background requests yield to the
+//!   realtime sessions' turns, which the caller tracks from lifecycle events and reports as counts
+//!   ([`Admission::set_turns`]): they leave KV headroom free while a turn is imminent, and share a budget of
+//!   predicted prefill time in each critical window. A realtime request that finds the headroom not kept has its
+//!   reply capped. A request the caller has let wait long enough is admitted regardless ([`Admission::age`]). Its
+//!   state is the admission point's only under this policy.
 //!
 //! In every policy, the waiting requests of a class are admitted in arrival order, and none goes ahead of a
 //! waiting request of a stricter class.
@@ -41,7 +42,7 @@ pub type RequestId = u64;
 /// per token.
 pub const BYTES_PER_TOKEN: u64 = 4;
 
-/// What a background request's prefill costs the engine, for policy leaseholder's critical-window throttle: the
+/// What a background request's prefill costs the engine, for the lifecycle policy's critical-window throttle: the
 /// steps a lone prefill of its new tokens takes after the rest of its prompt.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PrefillCost {
@@ -81,14 +82,14 @@ pub enum Policy {
     /// A realtime arrival preempts the background requests in flight that have no first byte yet: they wait
     /// at the front of the queue, and background requests wait while any realtime request has none.
     PreemptResubmit,
-    /// Realtime requests go upstream at once and are never refused; background requests yield to the
-    /// realtime sessions' turns ([`Leaseholder`]). Interactive requests are not held.
-    Leaseholder(Leaseholder),
+    /// The lifecycle policy: realtime requests go upstream at once and are never refused; background requests
+    /// yield to the realtime sessions' turns ([`Lifecycle`]). Interactive requests are not held.
+    Lifecycle(Lifecycle),
 }
 
-/// Policy leaseholder's mechanisms. Each one can be switched off on its own, for E2's ablations.
+/// The lifecycle policy's mechanisms. Each one can be switched off on its own, for E2's ablations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Leaseholder {
+pub struct Lifecycle {
     /// The KV pool, in tokens.
     pub pool_tokens: u64,
     /// The KV of one realtime turn, its prompt and its reply, in tokens.
@@ -127,7 +128,7 @@ impl Trigger {
     }
 }
 
-/// How many realtime sessions are in the phases of a turn that policy leaseholder acts on. The caller tracks
+/// How many realtime sessions are in the phases of a turn that the lifecycle policy acts on. The caller tracks
 /// each session from lifecycle events and from its realtime requests.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Turns {
@@ -138,7 +139,7 @@ pub struct Turns {
     pub critical: u32,
 }
 
-/// Why policy leaseholder holds a background request back.
+/// Why the lifecycle policy holds a background request back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Deferral {
     /// The headroom of the armed realtime sessions.
@@ -189,7 +190,7 @@ impl Policy {
                 matches!(class, SloClass::Background)
             }
             Self::FlowControl { .. } => true,
-            Self::PreemptResubmit | Self::Leaseholder(_) => !matches!(class, SloClass::Interactive),
+            Self::PreemptResubmit | Self::Lifecycle(_) => !matches!(class, SloClass::Interactive),
         }
     }
 }
@@ -213,10 +214,10 @@ pub struct Arrival {
     pub admitted: bool,
     /// What the arrival did to other held requests.
     pub actions: Vec<Action>,
-    /// Why policy leaseholder holds a waiting request back: what holds the first of the waiting requests of
+    /// Why the lifecycle policy holds a waiting request back: what holds the first of the waiting requests of
     /// its class, which may be the request itself.
     pub deferred: Option<Deferral>,
-    /// The reply cap of a realtime request policy leaseholder degraded.
+    /// The reply cap of a realtime request the lifecycle policy degraded.
     pub reply_cap: Option<u32>,
 }
 
@@ -243,9 +244,17 @@ pub struct Admission {
     background_tokens: u64,
     /// Admitted realtime requests without a first byte (preempt-resubmit).
     realtime_pending: u32,
-    /// What policy leaseholder's throttle prices a background prefill by.
+    /// The lifecycle policy's own state; `None` under every other policy.
+    lifecycle: Option<LifecycleState>,
+}
+
+/// What the lifecycle policy keeps at its admission point beside what every policy does.
+#[derive(Debug)]
+struct LifecycleState {
+    policy: Lifecycle,
+    /// What the throttle prices a background prefill by.
     prefill_cost: Option<PrefillCost>,
-    /// The realtime sessions' turns (policy leaseholder).
+    /// The realtime sessions' turns.
     turns: Turns,
     /// The predicted prefill time of the background requests admitted in the current critical window.
     window_prefill: Duration,
@@ -255,7 +264,8 @@ pub struct Admission {
 struct Held {
     class: SloClass,
     tokens: u64,
-    /// The predicted prefill time of a background request that policy leaseholder's throttle prices.
+    /// The predicted prefill time of a background request, which the lifecycle policy's throttle prices; zero
+    /// otherwise.
     prefill: Duration,
     admitted: bool,
     first_byte: bool,
@@ -265,30 +275,39 @@ impl Admission {
     /// An admission point holding nothing, whose class queues hold at most `queue_limit` requests each.
     ///
     /// # Panics
-    /// Under policy leaseholder with its throttle on, which prices prefills: that admission point is made with
+    /// Under the lifecycle policy with its throttle on, which prices prefills: that admission point is made with
     /// [`Admission::with_prefill_cost`].
     pub fn new(policy: Policy, queue_limit: usize) -> Self {
         let throttle = matches!(
             policy,
-            Policy::Leaseholder(Leaseholder {
+            Policy::Lifecycle(Lifecycle {
                 critical_prefill_budget: Some(_),
                 ..
             })
         );
         assert!(
             !throttle,
-            "policy leaseholder's throttle prices prefills: use Admission::with_prefill_cost"
+            "the lifecycle policy's throttle prices prefills: use Admission::with_prefill_cost"
         );
         Self::build(policy, queue_limit, None)
     }
 
     /// An admission point holding nothing, whose class queues hold at most `queue_limit` requests each, and
-    /// where policy leaseholder's throttle prices a background request's prefill by `cost`.
+    /// where the lifecycle policy's throttle prices a background request's prefill by `cost`.
     pub fn with_prefill_cost(policy: Policy, queue_limit: usize, cost: PrefillCost) -> Self {
         Self::build(policy, queue_limit, Some(cost))
     }
 
     fn build(policy: Policy, queue_limit: usize, prefill_cost: Option<PrefillCost>) -> Self {
+        let lifecycle = match policy {
+            Policy::Lifecycle(policy) => Some(LifecycleState {
+                policy,
+                prefill_cost: prefill_cost.filter(|_| policy.critical_prefill_budget.is_some()),
+                turns: Turns::default(),
+                window_prefill: Duration::ZERO,
+            }),
+            _ => None,
+        };
         Self {
             policy,
             queue_limit,
@@ -300,9 +319,7 @@ impl Admission {
             background: Vec::new(),
             background_tokens: 0,
             realtime_pending: 0,
-            prefill_cost,
-            turns: Turns::default(),
-            window_prefill: Duration::ZERO,
+            lifecycle,
         }
     }
 
@@ -354,30 +371,34 @@ impl Admission {
         })
     }
 
-    /// The realtime sessions' turns changed (policy leaseholder). A critical window opens with its whole
-    /// prefill budget, and what the change frees goes upstream.
+    /// The realtime sessions' turns changed (the lifecycle policy; no other policy reads them). A critical window
+    /// opens with its whole prefill budget, and what the new counts free goes upstream.
     pub fn set_turns(&mut self, turns: Turns) -> Vec<Action> {
-        if self.turns.critical == 0 && turns.critical > 0 {
-            self.window_prefill = Duration::ZERO;
-        }
-        self.turns = turns;
         let mut actions = Vec::new();
+        let Some(lifecycle) = &mut self.lifecycle else {
+            return actions;
+        };
+        if lifecycle.turns.critical == 0 && turns.critical > 0 {
+            lifecycle.window_prefill = Duration::ZERO;
+        }
+        lifecycle.turns = turns;
         self.dispatch(&mut actions);
         actions
     }
 
     /// The waiting request has waited as long as the caller lets a request be deferred: it is admitted
     /// regardless, so that background work is never starved. Admitting it frees nothing, so no other request
-    /// follows it. Returns whether it was `oversize`, its estimate alone over what policy leaseholder's
+    /// follows it. Returns whether it was `oversize`, its estimate alone over what the lifecycle policy's
     /// headroom leaves the background requests while the sessions armed now stay armed, so that only aging
     /// could admit it meanwhile; `None` if it is not waiting.
     pub fn age(&mut self, id: RequestId) -> Option<bool> {
         let held = self.held.get(&id).filter(|held| !held.admitted)?;
         let (class, tokens) = (held.class, held.tokens);
-        let oversize = match self.policy {
-            Policy::Leaseholder(lh) => self.headroom_limit(&lh).is_some_and(|limit| tokens > limit),
-            _ => false,
-        };
+        let oversize = self
+            .lifecycle
+            .as_ref()
+            .and_then(LifecycleState::headroom_limit)
+            .is_some_and(|limit| tokens > limit);
         self.waiting[index(class)].retain(|&waiting| waiting != id);
         if class == SloClass::Background {
             self.waiting_tokens -= tokens;
@@ -386,14 +407,14 @@ impl Admission {
         Some(oversize)
     }
 
-    /// The estimated tokens of the background requests policy leaseholder's headroom holds back now: every
+    /// The estimated tokens of the background requests the lifecycle policy's headroom holds back now: every
     /// waiting one, while the first of them waits for the headroom.
     pub fn held_back(&self) -> u64 {
-        let Policy::Leaseholder(lh) = self.policy else {
+        let Some(lifecycle) = &self.lifecycle else {
             return 0;
         };
         match self.waiting[index(SloClass::Background)].front() {
-            Some(id) if self.blocking(&lh, &self.held[id]) == Some(Deferral::Headroom) => {
+            Some(id) if self.blocking(lifecycle, &self.held[id]) == Some(Deferral::Headroom) => {
                 self.waiting_tokens
             }
             _ => 0,
@@ -474,72 +495,62 @@ impl Admission {
             }
             Policy::FlowControl { ceilings } => self.in_flight() < ceilings.of(class),
             Policy::PreemptResubmit => !background || self.realtime_pending == 0,
-            Policy::Leaseholder(lh) => !background || self.blocking(&lh, held).is_none(),
+            Policy::Lifecycle(_) => {
+                !background
+                    || self
+                        .lifecycle
+                        .as_ref()
+                        .is_none_or(|lifecycle| self.blocking(lifecycle, held).is_none())
+            }
         }
     }
 
-    /// What holds a background request back under policy leaseholder, if anything: the headroom first, then
+    /// What holds a background request back under the lifecycle policy, if anything: the headroom first, then
     /// the critical window's prefill budget.
-    fn blocking(&self, lh: &Leaseholder, held: &Held) -> Option<Deferral> {
-        if self
-            .headroom_limit(lh)
+    fn blocking(&self, lifecycle: &LifecycleState, held: &Held) -> Option<Deferral> {
+        if lifecycle
+            .headroom_limit()
             .is_some_and(|limit| self.background_tokens + held.tokens > limit)
         {
             return Some(Deferral::Headroom);
         }
-        if let Some(budget) = lh.critical_prefill_budget
-            && self.turns.critical > 0
-            && self.window_prefill + held.prefill > budget
+        if let Some(budget) = lifecycle.policy.critical_prefill_budget
+            && lifecycle.turns.critical > 0
+            && lifecycle.window_prefill + held.prefill > budget
         {
             return Some(Deferral::Critical);
         }
         None
     }
 
-    /// The tokens the background requests in flight may hold while the headroom keeps room for the armed
-    /// sessions; `None` while none is armed, or with the headroom off.
-    fn headroom_limit(&self, lh: &Leaseholder) -> Option<u64> {
-        let armed = lh.headroom?.armed(self.turns);
-        (armed > 0).then(|| {
-            lh.pool_tokens
-                .saturating_sub(lh.headroom_tokens.saturating_mul(u64::from(armed)))
-        })
-    }
-
-    /// Why a request that is to wait waits under policy leaseholder: what holds the first waiting request of
+    /// Why a request that is to wait waits under the lifecycle policy: what holds the first waiting request of
     /// its class back, or the request itself when none waits.
     fn deferral(&self, held: &Held) -> Option<Deferral> {
-        let Policy::Leaseholder(lh) = self.policy else {
-            return None;
-        };
+        let lifecycle = self.lifecycle.as_ref()?;
         let first = self.waiting[index(held.class)]
             .front()
             .map_or(held, |id| &self.held[id]);
-        self.blocking(&lh, first)
+        self.blocking(lifecycle, first)
     }
 
-    /// The reply cap of a realtime request arriving now: policy leaseholder degrades it when the background
+    /// The reply cap of a realtime request arriving now: the lifecycle policy degrades it when the background
     /// requests in flight leave less than one turn's headroom free.
     fn reply_cap(&self, class: SloClass) -> Option<u32> {
-        match self.policy {
-            Policy::Leaseholder(lh) if class == SloClass::Realtime => lh
-                .degrade_max_tokens
-                .filter(|_| self.background_tokens + lh.headroom_tokens > lh.pool_tokens),
-            _ => None,
-        }
+        let policy = self.lifecycle.as_ref()?.policy;
+        policy
+            .degrade_max_tokens
+            .filter(|_| class == SloClass::Realtime)
+            .filter(|_| self.background_tokens + policy.headroom_tokens > policy.pool_tokens)
     }
 
-    /// The predicted prefill time of a request that policy leaseholder's throttle prices.
+    /// The predicted prefill time of a request that the lifecycle policy's throttle prices.
     fn prefill(&self, class: SloClass, estimate: Estimate) -> Duration {
-        let throttle = matches!(
-            self.policy,
-            Policy::Leaseholder(Leaseholder {
-                critical_prefill_budget: Some(_),
-                ..
-            })
-        );
-        match &self.prefill_cost {
-            Some(cost) if throttle && class == SloClass::Background => cost.of(estimate),
+        let cost = self
+            .lifecycle
+            .as_ref()
+            .and_then(|l| l.prefill_cost.as_ref());
+        match cost {
+            Some(cost) if class == SloClass::Background => cost.of(estimate),
             _ => Duration::ZERO,
         }
     }
@@ -614,8 +625,10 @@ impl Admission {
             SloClass::Background => {
                 self.background.push(id);
                 self.background_tokens += held.tokens;
-                if self.turns.critical > 0 {
-                    self.window_prefill += held.prefill;
+                if let Some(lifecycle) = &mut self.lifecycle
+                    && lifecycle.turns.critical > 0
+                {
+                    lifecycle.window_prefill += held.prefill;
                 }
             }
             SloClass::Realtime if self.policy == Policy::PreemptResubmit => {
@@ -642,6 +655,19 @@ impl Admission {
 
     fn in_flight(&self) -> u32 {
         self.admitted.iter().sum()
+    }
+}
+
+impl LifecycleState {
+    /// The tokens the background requests in flight may hold while the headroom keeps room for the armed
+    /// sessions; `None` while none is armed, or with the headroom off.
+    fn headroom_limit(&self) -> Option<u64> {
+        let armed = self.policy.headroom?.armed(self.turns);
+        (armed > 0).then(|| {
+            self.policy
+                .pool_tokens
+                .saturating_sub(self.policy.headroom_tokens.saturating_mul(u64::from(armed)))
+        })
     }
 }
 
@@ -921,10 +947,10 @@ mod tests {
     const POOL: u64 = 10_000;
     const TURN: u64 = 1_000;
 
-    /// Policy leaseholder with every mechanism on: the headroom armed from speech onset, 300 ms of prefill in a
+    /// The lifecycle policy with every mechanism on: the headroom armed from speech onset, 300 ms of prefill in a
     /// critical window, replies capped at 16 tokens.
-    fn leaseholder() -> Leaseholder {
-        Leaseholder {
+    fn lifecycle() -> Lifecycle {
+        Lifecycle {
             pool_tokens: POOL,
             headroom_tokens: TURN,
             headroom: Some(Trigger::Onset),
@@ -974,7 +1000,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "use Admission::with_prefill_cost")]
     fn a_throttle_needs_a_prefill_cost() {
-        Admission::new(Policy::Leaseholder(leaseholder()), 8);
+        Admission::new(Policy::Lifecycle(lifecycle()), 8);
     }
 
     /// 512 new tokens after `context` cached ones: 38 ms of prefill on an empty context, 269 ms after 30,000.
@@ -987,7 +1013,7 @@ mod tests {
 
     #[test]
     fn realtime_goes_upstream_at_once_whatever_waits() {
-        let policy = Policy::Leaseholder(leaseholder());
+        let policy = Policy::Lifecycle(lifecycle());
         assert!(policy.holds(Realtime) && policy.holds(Background) && !policy.holds(Interactive));
         let mut a = priced(policy, 1);
         assert_eq!(a.set_turns(turns(0, 1)), []);
@@ -1004,10 +1030,10 @@ mod tests {
 
     #[test]
     fn the_headroom_defers_background_while_a_turn_is_imminent() {
-        let policy = Policy::Leaseholder(Leaseholder {
+        let policy = Policy::Lifecycle(Lifecycle {
             critical_prefill_budget: None,
             degrade_max_tokens: None,
-            ..leaseholder()
+            ..lifecycle()
         });
         let mut a = priced(policy, 8);
         // With no session armed, background holds what it will.
@@ -1031,10 +1057,10 @@ mod tests {
 
     #[test]
     fn the_request_trigger_arms_only_the_critical_window() {
-        let policy = Policy::Leaseholder(Leaseholder {
+        let policy = Policy::Lifecycle(Lifecycle {
             headroom: Some(Trigger::Request),
             critical_prefill_budget: None,
-            ..leaseholder()
+            ..lifecycle()
         });
         let mut a = priced(policy, 8);
         assert_eq!(a.set_turns(turns(2, 0)), []);
@@ -1047,10 +1073,10 @@ mod tests {
 
     #[test]
     fn the_critical_window_spends_a_budget_of_predicted_prefill_time() {
-        let policy = Policy::Leaseholder(Leaseholder {
+        let policy = Policy::Lifecycle(Lifecycle {
             headroom: None,
             degrade_max_tokens: None,
-            ..leaseholder()
+            ..lifecycle()
         });
         let mut a = priced(policy, 8);
         // Admitted before the window, so not charged to it.
@@ -1082,7 +1108,7 @@ mod tests {
 
     #[test]
     fn aging_admits_a_deferred_request_regardless() {
-        let mut a = priced(Policy::Leaseholder(leaseholder()), 8);
+        let mut a = priced(Policy::Lifecycle(lifecycle()), 8);
         // Four armed sessions leave background 6,000 tokens: 7,000 cannot go even alone.
         assert_eq!(a.set_turns(turns(4, 0)), []);
         let oversize = waits(&mut a, Background, 7_000);
@@ -1100,7 +1126,7 @@ mod tests {
 
     #[test]
     fn an_aged_prefill_spends_the_critical_window_budget() {
-        let mut a = priced(Policy::Leaseholder(leaseholder()), 8);
+        let mut a = priced(Policy::Lifecycle(lifecycle()), 8);
         assert_eq!(a.set_turns(turns(0, 1)), []);
         // A cold 4,000-token prefill takes more than the window's 300 ms; a 100-token one would fit.
         let cold = a.arrive(Background, estimate(4_000)).unwrap();
@@ -1114,10 +1140,10 @@ mod tests {
     #[test]
     fn degrade_caps_a_realtime_reply_when_the_headroom_was_not_kept() {
         // Degrade alone: nothing keeps background from filling the pool while a turn is imminent.
-        let policy = Policy::Leaseholder(Leaseholder {
+        let policy = Policy::Lifecycle(Lifecycle {
             headroom: None,
             critical_prefill_budget: None,
-            ..leaseholder()
+            ..lifecycle()
         });
         let mut a = priced(policy, 8);
         assert_eq!(a.set_turns(turns(1, 0)), []);
@@ -1133,9 +1159,9 @@ mod tests {
             "one turn's 1,000 tokens are free"
         );
 
-        let off = Policy::Leaseholder(Leaseholder {
+        let off = Policy::Lifecycle(Lifecycle {
             degrade_max_tokens: None,
-            ..leaseholder()
+            ..lifecycle()
         });
         let mut a = priced(off, 8);
         admitted(&mut a, Background, POOL);
@@ -1144,11 +1170,11 @@ mod tests {
 
     #[test]
     fn with_every_mechanism_off_background_is_never_held() {
-        let policy = Policy::Leaseholder(Leaseholder {
+        let policy = Policy::Lifecycle(Lifecycle {
             headroom: None,
             critical_prefill_budget: None,
             degrade_max_tokens: None,
-            ..leaseholder()
+            ..lifecycle()
         });
         let mut a = priced(policy, 8);
         assert_eq!(a.set_turns(turns(3, 3)), []);
@@ -1161,7 +1187,7 @@ mod tests {
 
     #[test]
     fn the_headroom_and_the_throttle_together() {
-        let mut a = priced(Policy::Leaseholder(leaseholder()), 8);
+        let mut a = priced(Policy::Lifecycle(lifecycle()), 8);
         assert_eq!(a.set_turns(turns(0, 1)), []);
         // 8,000 cold tokens fit beside one turn's headroom, but their prefill does not fit the window.
         let cold = a.arrive(Background, estimate(8_000)).unwrap();
@@ -1193,7 +1219,7 @@ mod tests {
 
     #[test]
     fn the_background_tokens_held_are_reported_in_flight_and_waiting() {
-        let mut a = priced(Policy::Leaseholder(leaseholder()), 8);
+        let mut a = priced(Policy::Lifecycle(lifecycle()), 8);
         let running = admitted(&mut a, Background, 6_000);
         assert_eq!(a.set_turns(turns(1, 0)), []);
         // 6,000 + 4,000 leave less than one turn's 1,000 free: it waits.

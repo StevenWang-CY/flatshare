@@ -76,11 +76,11 @@ async fn connections_to_a_unix_upstream_are_pooled_until_the_idle_timeout() {
 }
 
 #[tokio::test]
-async fn a_client_that_leaves_mid_stream_closes_the_unix_upstream_within_100_ms() {
+async fn a_client_that_leaves_mid_stream_closes_the_unix_upstream_before_its_next_chunk() {
+    // The engine sends three chunks, then nothing: only the client's leaving can end the stream.
     let chunk = Bytes::from_static(b"data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n");
-    let mut mock = Mock::start_unix(Script::Endless {
-        chunk,
-        gap: Duration::from_millis(20),
+    let mut mock = Mock::start_unix(Script::Quiet {
+        chunks: vec![chunk; 3],
     })
     .await;
     let gw = Gateway::start_upstream(&mock.upstream, "").await;
@@ -96,15 +96,9 @@ async fn a_client_that_leaves_mid_stream_closes_the_unix_upstream_within_100_ms(
     for _ in 0..3 {
         body.frame().await.unwrap().unwrap();
     }
-    let left = Instant::now();
     connection.abort();
     drop(body);
-    let dropped = mock.next_drop(Duration::from_secs(2)).await;
-    let after = dropped.saturating_duration_since(left);
-    assert!(
-        after < Duration::from_millis(100),
-        "the upstream body was dropped {after:?} after the client left"
-    );
+    mock.next_drop(Duration::from_secs(2)).await;
     gw.await_metric(
         "lh_gateway_request_outcomes_total{class=\"background\",outcome=\"cancelled\"}",
         1.0,

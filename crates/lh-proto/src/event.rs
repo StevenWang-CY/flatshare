@@ -1,8 +1,8 @@
 //! Lifecycle events: what tells the control plane when a session will next need its KV.
 //!
-//! One schema serves every workload (ADR-0002). Policy `leaseholder` follows the voice sessions' turns by their
-//! events, which time its KV headroom and its critical window; the agents' events are recorded, and nothing acts
-//! on them. Trusted clients post them to `POST /v1/events`, idempotent by `(tenant, source, event_id)`; the
+//! One schema serves every workload (ADR-0002). The gateway's lifecycle policy follows the voice sessions' turns by
+//! their events, which time its KV headroom and its critical window; the agents' events are recorded, and nothing
+//! acts on them. Trusted clients post them to `POST /v1/events`, idempotent by `(tenant, source, event_id)`; the
 //! control plane infers none from the traffic it proxies.
 //!
 //! On the wire an event is one flat JSON object; `type` selects the variant and its fields:
@@ -86,7 +86,7 @@ pub enum EventKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool: Option<String>,
     },
-    /// Voice activity onset: a turn is coming, and policy `leaseholder` (`trigger = "onset"`) arms its KV headroom.
+    /// Voice activity onset: a turn is coming, and the lifecycle policy (`trigger = "onset"`) arms its KV headroom.
     UserSpeechStarted,
     /// The end-of-turn detector decided the user has finished; the realtime request follows within
     /// milliseconds.
@@ -95,10 +95,10 @@ pub enum EventKind {
     PlaybackStarted,
     /// The agent finished speaking.
     PlaybackEnded { played_ms: u64 },
-    /// The user barged in, `played_ms` into the reply: policy `leaseholder` takes it as the user speaking again.
+    /// The user barged in, `played_ms` into the reply: the lifecycle policy takes it as the user speaking again.
     /// The voice agent ends the reply's stream itself.
     Interrupted { played_ms: u64 },
-    /// The session ended: the gateway forgets its turn state and, with several GPU nodes, its placement.
+    /// The session ended: the gateway forgets its turn state.
     SessionClosed,
 }
 

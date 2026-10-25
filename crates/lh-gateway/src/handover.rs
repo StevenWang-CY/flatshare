@@ -8,7 +8,10 @@
 //! the predecessor serves on.
 //!
 //! The predecessor watches its successor only until it takes over, and never reaps it after that: once the
-//! predecessor exits, systemd, a subreaper, adopts the successor and sees its exit, as a main process's.
+//! predecessor exits, the service manager, a subreaper, adopts the successor and reaps it when it exits. That does
+//! not make systemd count it as a main process it can watch: the successor was not its child when it said
+//! `MAINPID=`, and systemd 249 keeps that against it, so a stop would send it SIGKILL at once instead of waiting
+//! for its drain. The unit's `ExecStop` waits instead (`deploy/bin/lh-gateway-stop`).
 
 use std::io;
 use std::os::fd::{OwnedFd, RawFd};

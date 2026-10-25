@@ -179,12 +179,6 @@ pub(crate) fn resolve_session(
     }
 }
 
-/// Whether a request names its session, so that its next requests can name the same one; a minted session is
-/// the request's own.
-pub(crate) fn names_session(inputs: &ClientInputs, prompt_cache_key: Option<&str>) -> bool {
-    session_source(inputs, prompt_cache_key).is_some()
-}
-
 /// The first present source of a request's session, in PROTOCOL.md's order.
 fn session_source<'a>(
     inputs: &'a ClientInputs,
@@ -318,8 +312,9 @@ pub(crate) fn rewrite_body(
 /// `max_tokens`, which Completions reads, and the Responses API's `max_output_tokens`.
 const REPLY_CAPS: [&str; 3] = ["max_completion_tokens", "max_tokens", "max_output_tokens"];
 
-/// Caps the reply of a degraded request at `cap` tokens in a body [`rewrite_body`] wrote: each of the body's
-/// reply caps is lowered to `cap` if it is above it or not a count, and a body with none gets the route's own.
+/// Caps a request's reply at `cap` tokens (`realtime_max_tokens`, or degrade's cap) in a body [`rewrite_body`]
+/// wrote: each of the body's reply caps is lowered to `cap` if it is above it or not a count, and a body with none
+/// gets the route's own.
 pub(crate) fn cap_reply(body: &[u8], route: Route, cap: u32) -> Bytes {
     let TopLevel(fields) =
         serde_json::from_slice(body).expect("the gateway writes bodies as JSON objects");

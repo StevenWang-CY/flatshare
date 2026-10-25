@@ -1,6 +1,6 @@
 //! Lifecycle events: `POST /v1/events` from trusted tenants, deduplicated by `(tenant, source, event_id)` within a
-//! bounded window, then handed to the admission point of each one's node, where policy leaseholder follows the
-//! realtime sessions' turns by them, and to an [`EventSink`], which records them ([`LogSink`]).
+//! bounded window, then handed to the admission point, where the lifecycle policy follows the realtime sessions'
+//! turns by them, and to an [`EventSink`], which records them ([`LogSink`]).
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -181,7 +181,7 @@ pub(crate) async fn post(State(app): State<App>, request: Request) -> Response {
         shared
             .events
             .ingest(&tenant.name, events, &shared.metrics, |fresh| {
-                shared.lifecycle(fresh)
+                shared.lifecycle(tenant, fresh)
             });
     let body = serde_json::json!({"accepted": accepted, "duplicates": duplicates});
     ex.respond(StatusCode::ACCEPTED, &body)

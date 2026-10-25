@@ -11,8 +11,8 @@ use std::future::Future;
 use std::io;
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, ready};
 use std::time::{Duration, Instant};
 
@@ -29,30 +29,43 @@ use hyper::body::Incoming;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::{Client, ResponseFuture};
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
+use lh_proto::SloClass;
+use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::metrics::histogram::Histogram;
 use tokio::net::UnixStream;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, watch};
+use tokio::time::MissedTickBehavior;
 
-use crate::admission::Ticket;
 use crate::config::UpstreamAddr;
 use crate::exchange::Exchange;
-use crate::metrics::{ErrorEvent, Outcome, Refusal, Route, UpstreamError};
-use crate::placement::{self, InFlight, Node};
+use crate::harness::{Refusal, Ticket};
+use crate::metrics::{ErrorEvent, Outcome, Route, UpstreamError};
 use crate::sanitize::{
-    REQUEST_ID, cap_reply, names_session, resolve_class, resolve_session, rewrite_body,
-    sanitize_headers, set_engine_headers, strip_hop_by_hop,
+    REQUEST_ID, cap_reply, resolve_class, resolve_session, rewrite_body, sanitize_headers,
+    set_engine_headers, strip_hop_by_hop,
 };
 use crate::server::{self, App, Shared};
 use crate::usage::Scanner;
 
-/// The pooled HTTP/1.1 client to the engine, over TCP or its Unix socket.
+/// How often the engine is probed while a request has found it broken, and the `Retry-After` of the requests
+/// answered meanwhile.
+pub(crate) const RECOVERY_PROBE: Duration = Duration::from_secs(1);
+
+/// The engine: its pooled HTTP/1.1 client, over TCP or its Unix socket, and whether its requests go to it.
 #[derive(Debug)]
 pub(crate) struct Upstream {
     pool: Pool,
     addr: UpstreamAddr,
     /// The authority of the requests' URIs: the engine's `host:port`, or `localhost` on a socket.
     authority: Authority,
+    /// Whether its requests go to it. It starts ready; a request that finds it broken starts its probe
+    /// ([`recover`]), and until its `/health` answers, its requests are answered 503 without going upstream.
+    ready: AtomicBool,
+    /// Whether [`recover`] runs.
+    recovering: AtomicBool,
+    /// `lh_gateway_node_ready`: 1 while it is ready.
+    ready_gauge: Gauge,
 }
 
 /// One connection pool, keyed by the requests' authority; a socket's client connects every request to it.
@@ -93,7 +106,8 @@ impl tower_service::Service<Uri> for UnixConnector {
 impl Upstream {
     /// A client that keeps idle connections for `idle_timeout`. The engine closes idle connections after its
     /// keep-alive, and a request sent on a connection it is closing fails, so the gateway must let go first.
-    pub fn new(addr: UpstreamAddr, idle_timeout: Duration) -> Self {
+    /// `ready_gauge` says whether its requests go to it.
+    pub fn new(addr: UpstreamAddr, idle_timeout: Duration, ready_gauge: Gauge) -> Self {
         let builder = || {
             let mut builder = Client::builder(TokioExecutor::new());
             builder
@@ -113,15 +127,46 @@ impl Upstream {
                 (Pool::Unix(builder().build(connector)), localhost)
             }
         };
+        ready_gauge.set(1);
         Self {
             pool,
             addr,
             authority,
+            ready: AtomicBool::new(true),
+            recovering: AtomicBool::new(false),
+            ready_gauge,
         }
     }
 
     pub fn addr(&self) -> &UpstreamAddr {
         &self.addr
+    }
+
+    /// Whether its requests go to it.
+    pub fn ready(&self) -> bool {
+        self.ready.load(Ordering::Relaxed)
+    }
+
+    /// Records whether its `/health` answers, logging a change.
+    fn set_ready(&self, ready: bool) {
+        self.ready_gauge.set(i64::from(ready));
+        if self.ready.swap(ready, Ordering::Relaxed) == ready {
+            return;
+        }
+        if ready {
+            tracing::info!("the upstream is ready again: its /health answers");
+        } else {
+            tracing::warn!(
+                "the upstream is not ready: a request found it broken and its /health does not answer; requests \
+                 are answered 503 until it does"
+            );
+        }
+    }
+
+    /// Whether the caller, whose request found the engine broken, is to start its probe ([`recover`]): false while
+    /// one runs.
+    pub fn start_recovery(&self) -> bool {
+        !self.recovering.swap(true, Ordering::AcqRel)
     }
 
     fn uri(&self, path_and_query: PathAndQuery) -> Uri {
@@ -179,7 +224,29 @@ impl Upstream {
     }
 }
 
-/// The message of the 503 that a request gets while the one upstream is not ready.
+/// Probes the engine's `/health` after a request found it broken: at once, and every [`RECOVERY_PROBE`] until it
+/// answers. A failed probe makes it not ready, so that its requests are answered 503 without going upstream, and the
+/// probe that answers makes it ready again and ends the task. One request that fails on an engine that serves (a
+/// connection that broke) makes no request wait: the first probe answers.
+pub(crate) async fn recover(shared: Weak<Shared>) {
+    let mut ticks = tokio::time::interval(RECOVERY_PROBE);
+    ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticks.tick().await;
+        let Some(shared) = shared.upgrade() else {
+            return;
+        };
+        let upstream = &shared.upstream;
+        if upstream.healthy(RECOVERY_PROBE).await {
+            upstream.recovering.store(false, Ordering::Release);
+            upstream.set_ready(true);
+            return;
+        }
+        upstream.set_ready(false);
+    }
+}
+
+/// The message of the 503 that a request gets while the engine is not ready.
 const NOT_READY: &str =
     "the engine is not ready: a request found it broken and its /health has not answered since";
 
@@ -227,30 +294,14 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     parts
         .headers
         .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    // The session's node with `[nodes]`, placed now if it has none; otherwise the one upstream.
-    let mut node = &shared.nodes[0];
-    let mut placed = None;
-    if let Some(placement) = &shared.placement {
-        let named = names_session(&inputs, body.prompt_cache_key.as_deref());
-        let Some(in_flight) =
-            placement.request(&shared.nodes, &session, class, named, tenant.trusted)
-        else {
-            ex.session = Some(session);
-            let message = format!("no ready node takes {class} requests");
-            return ex.not_ready("no_ready_node", message, placement.probe_interval());
-        };
-        node = &shared.nodes[in_flight.node()];
-        ex.on_node(node);
-        placed = Some(in_flight);
-    } else if !node.ready() {
-        ex.session = Some(session);
-        return ex.not_ready("upstream_not_ready", NOT_READY, placement::RECOVERY_PROBE);
-    }
     let session = &*ex.session.insert(session);
+    if !shared.upstream.ready() {
+        return ex.not_ready("upstream_not_ready", NOT_READY, RECOVERY_PROBE);
+    }
 
     // The admission point. Its decisions are the gateway's overhead; the time a request waits there is not.
     let mut start = read;
-    let ticket = match &node.admission {
+    let ticket = match &shared.admission {
         None => None,
         Some(admission) => {
             let arrived = Instant::now();
@@ -259,7 +310,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
             let admitted = tokio::select! {
                 biased;
                 () = server::cut(&mut cut) => None,
-                admitted = admission.admit(class, session, body.json.len()) => Some(admitted),
+                admitted = admission.admit(tenant, class, session, body.json.len()) => Some(admitted),
             };
             let Some(admitted) = admitted else {
                 ex.admission_wait = Some(arrived.elapsed());
@@ -272,10 +323,6 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
                     if let Some(ticket) = &ticket {
                         ex.deferred = ticket.deferred();
                         ex.aged = ticket.aged();
-                        if let Some(cap) = ticket.reply_cap() {
-                            body.json = cap_reply(&body.json, route, cap);
-                            ex.degraded = true;
-                        }
                     }
                     start += waited;
                     ticket
@@ -288,12 +335,22 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         }
     };
 
+    // The reply cap: the deployment's on every realtime reply, and degrade's, the lower of the two.
+    let degrade = ticket.as_ref().and_then(Ticket::reply_cap);
+    let realtime = shared
+        .realtime_max_tokens
+        .filter(|_| class == SloClass::Realtime);
+    if let Some(cap) = realtime.into_iter().chain(degrade).min() {
+        body.json = cap_reply(&body.json, route, cap);
+    }
+    ex.degraded = degrade.is_some();
+
     let sent = (start, shared.metrics.overhead(route));
     let body = UpstreamBody {
         data: Some(body.json),
         sent: Some(sent),
     };
-    forward(&app, node, ex, parts, body, ticket, placed).await
+    forward(&app, ex, parts, body, ticket).await
 }
 
 /// `GET /v1/models`: authenticated and sanitized, with no session or class.
@@ -310,20 +367,10 @@ pub(crate) async fn models(app: App, request: Request) -> Response {
     ex.tenant = Some(Arc::clone(&tenant.name));
     sanitize_headers(&mut parts.headers, tenant.trusted, &shared.metrics);
     parts.headers.insert(REQUEST_ID.clone(), ex.id.clone());
-    // With `[nodes]`, any ready node knows the model.
-    let Some(node) = shared.nodes.iter().find(|node| node.ready()) else {
-        return match &shared.placement {
-            Some(placement) => {
-                let message = "no node is ready";
-                ex.not_ready("no_ready_node", message, placement.probe_interval())
-            }
-            None => ex.not_ready("upstream_not_ready", NOT_READY, placement::RECOVERY_PROBE),
-        };
-    };
-    if shared.placement.is_some() {
-        ex.on_node(node);
+    if !shared.upstream.ready() {
+        return ex.not_ready("upstream_not_ready", NOT_READY, RECOVERY_PROBE);
     }
-    forward(&app, node, ex, parts, UpstreamBody::empty(), None, None).await
+    forward(&app, ex, parts, UpstreamBody::empty(), None).await
 }
 
 /// Reads a request body of at most `limit` bytes.
@@ -353,20 +400,18 @@ pub(crate) async fn read_body(
     }
 }
 
-/// Sends the request to `node` and relays the response. An admitted request's ticket and its place on its node
-/// go with the relay, and are given back when the response ends. A request shed before its response answers
-/// 429; one preempted before its first byte is sent again.
+/// Sends the request upstream and relays the response. An admitted request's ticket goes with the relay, and is
+/// given back when the response ends. A request shed before its response answers 429; one preempted before its
+/// first byte is sent again.
 async fn forward(
     app: &App,
-    node: &Node,
     mut ex: Exchange,
     mut parts: http::request::Parts,
     body: UpstreamBody,
     mut ticket: Option<Ticket>,
-    placed: Option<InFlight>,
 ) -> Response {
     let shared = &app.shared;
-    let upstream = &node.upstream;
+    let upstream = &shared.upstream;
     let path = parts.uri.path_and_query().cloned();
     parts.uri = upstream.uri(path.unwrap_or_else(|| PathAndQuery::from_static("/")));
     parts.version = Version::HTTP_11;
@@ -401,10 +446,10 @@ async fn forward(
     let (response, first) = match sent {
         Ok(sent) => sent,
         Err(failure) => {
-            // The one upstream that a request found broken is probed until it answers; meanwhile its requests
-            // are answered 503 (placement::recover). With `[nodes]`, each node's probe runs all along.
-            if failure.broken() && shared.placement.is_none() && node.start_recovery() {
-                tokio::spawn(placement::recover(Arc::downgrade(&app.shared)));
+            // An engine that a request found broken is probed until it answers; meanwhile its requests are
+            // answered 503 ([`recover`]).
+            if failure.broken() && upstream.start_recovery() {
+                tokio::spawn(recover(Arc::downgrade(&app.shared)));
             }
             return failure.answer(ex, shared);
         }
@@ -432,7 +477,6 @@ async fn forward(
         scanner,
         shared.stall_timeout,
         ticket,
-        placed,
         (cut, shared.drain.grace),
     ));
     let body = ClientBody {
@@ -468,7 +512,7 @@ impl Failure {
         matches!(self, Self::Upstream(_) | Self::Body)
     }
 
-    /// The client's answer; the upstream error counts on the request's node.
+    /// The client's answer, with the upstream error counted.
     fn answer(self, ex: Exchange, shared: &Shared) -> Response {
         match self {
             Self::Upstream(err) => {
@@ -579,7 +623,6 @@ async fn first_frame(
 
 /// Relays an upstream body into the client's channel until either side ends, until the admission policy sheds
 /// the request, or until a drain's cut ends a background one (`drain`: what it waits on, and the grace it had).
-/// The request's place on its node ends with the relay.
 #[allow(clippy::too_many_arguments)]
 async fn pump(
     mut upstream: Incoming,
@@ -589,7 +632,6 @@ async fn pump(
     mut scanner: Scanner,
     stall_timeout: Duration,
     mut ticket: Option<Ticket>,
-    _placed: Option<InFlight>,
     drain: (Option<watch::Receiver<bool>>, Duration),
 ) {
     let _active = ex.class.map(|class| ex.metrics().stream_started(class));

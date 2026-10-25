@@ -13,8 +13,8 @@ use lh_core::admission::Deferral;
 use lh_proto::{SessionId, SloClass};
 use tracing::Level;
 
-use crate::metrics::{Metrics, Outcome, Refusal, Route};
-use crate::placement::Node;
+use crate::harness::Refusal;
+use crate::metrics::{Metrics, Outcome, Route};
 use crate::sanitize::{REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
 use crate::usage::Summary;
 
@@ -31,19 +31,17 @@ pub(crate) struct Exchange {
     pub tenant: Option<Arc<str>>,
     pub class: Option<SloClass>,
     pub session: Option<SessionId>,
-    /// The node the request was placed on, with `[nodes]`.
-    pub node: Option<Arc<str>>,
     /// The status sent to the client; `None` until a response exists.
     pub status: Option<StatusCode>,
     /// Whether the request was sent upstream, which makes it count towards outcomes.
     pub forwarded: bool,
     /// How long the request waited at the admission point; `None` without one.
     pub admission_wait: Option<Duration>,
-    /// Why policy leaseholder deferred it.
+    /// Why the lifecycle policy deferred it.
     pub deferred: Option<Deferral>,
-    /// Whether policy leaseholder admitted it regardless, after `max_defer_s`.
+    /// Whether the lifecycle policy admitted it regardless, after `max_defer_s`.
     pub aged: bool,
-    /// Whether policy leaseholder capped its reply.
+    /// Whether the lifecycle policy's degrade capped its reply.
     pub degraded: bool,
     /// How many times it was sent upstream again after a preemption.
     pub resubmits: u32,
@@ -63,7 +61,6 @@ impl Exchange {
             tenant: None,
             class: None,
             session: None,
-            node: None,
             status: None,
             forwarded: false,
             admission_wait: None,
@@ -80,12 +77,6 @@ impl Exchange {
 
     pub fn metrics(&self) -> &Metrics {
         &self.metrics
-    }
-
-    /// The request was placed on `node`: its log line names the node, and its upstream errors count there.
-    pub fn on_node(&mut self, node: &Node) {
-        self.node.clone_from(&node.name);
-        self.metrics = Arc::clone(&node.metrics);
     }
 
     /// Adds the request id and, once resolved, the session id to response headers.
@@ -221,7 +212,6 @@ impl Drop for Exchange {
                     request_id = self.id.to_str().unwrap_or_default(),
                     tenant = self.tenant.as_deref(),
                     session = self.session.as_ref().map(SessionId::as_str),
-                    node = self.node.as_deref(),
                     class = self.class.map(SloClass::as_str),
                     route = self.route.as_str(),
                     status,

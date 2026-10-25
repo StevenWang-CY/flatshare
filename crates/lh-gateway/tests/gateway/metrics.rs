@@ -63,48 +63,9 @@ async fn the_engines_metrics_are_relayed_under_the_same_rule() {
     }
     // Only the path is the engine's: a request's headers do not reach it.
     assert!(mock.requests().is_empty());
-    let reply = call(
-        &gw.tcp,
-        "GET",
-        "/metrics/engine?node=a",
-        &[METRICS_AUTH],
-        "",
-    )
-    .await;
-    assert_eq!(reply.status, 400);
 
     let gone = Gateway::start_upstream(&format!("unix:{}", socket_path().display()), "").await;
     let reply = call(&gone.tcp, "GET", "/metrics/engine", &[METRICS_AUTH], "").await;
     assert_eq!(reply.status, 502);
     assert_eq!(reply.json()["error"]["code"], "upstream_unavailable");
-}
-
-#[tokio::test]
-async fn each_nodes_engine_metrics_are_relayed_by_its_name() {
-    let (a, b) = (
-        Mock::start(Script::Json("{}")).await,
-        Mock::start_unix(Script::Json("{}")).await,
-    );
-    let gw = Gateway::start_nodes(&format!(
-        "[nodes.a]\nupstream = \"http://{}\"\n[nodes.b]\nupstream = \"{}\"",
-        a.addr, b.upstream
-    ))
-    .await;
-    for node in ["a", "b"] {
-        let path = format!("/metrics/engine?node={node}");
-        let reply = call(&gw.tcp, "GET", &path, &[METRICS_AUTH], "").await;
-        assert_eq!(reply.status, 200, "{node}");
-        assert_eq!(&reply.body[..], ENGINE_METRICS.as_bytes());
-    }
-    let reply = call(&gw.tcp, "GET", "/metrics/engine", &[METRICS_AUTH], "").await;
-    assert_eq!(reply.status, 400);
-    let reply = call(
-        &gw.tcp,
-        "GET",
-        "/metrics/engine?node=c",
-        &[METRICS_AUTH],
-        "",
-    )
-    .await;
-    assert_eq!(reply.status, 404);
 }

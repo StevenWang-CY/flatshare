@@ -4,12 +4,12 @@
   "description": "The SLO class of a request: which clock it runs on. Classes order from strictest to most lenient.",
   "oneOf": [
     {
-      "description": "Voice turns, at engine priority 0. Policy `leaseholder` never holds or refuses them, and may cap a reply.",
+      "description": "Voice turns, at engine priority 0. The lifecycle policy never holds or refuses them, and may cap a reply.",
       "type": "string",
       "const": "realtime"
     },
     {
-      "description": "Agent loops with a person waiting, at engine priority 1. Policy `leaseholder` does not hold them.",
+      "description": "Agent loops with a person waiting, at engine priority 1. The lifecycle policy does not hold them.",
       "type": "string",
       "const": "interactive"
     },

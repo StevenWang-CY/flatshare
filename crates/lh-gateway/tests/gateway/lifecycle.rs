@@ -1,4 +1,4 @@
-//! Policy leaseholder: lifecycle events through `/v1/events`, then requests. The pool is 1,000 tokens and a turn's
+//! The lifecycle policy: lifecycle events through `/v1/events`, then requests. The pool is 1,000 tokens and a turn's
 //! headroom 200, so one armed session leaves background requests 800; a background request of about 600 tokens
 //! fits alone, and two do not.
 
@@ -22,9 +22,17 @@ fn nine_hundred() -> &'static str {
     format!(r#"{{"model":"qwen","prompt":"{}"}}"#, "x".repeat(3_550)).leak()
 }
 
-/// Policy leaseholder on a 1,000-token pool, with its mechanisms' keys.
-fn leaseholder(keys: &str) -> String {
-    format!("[admission]\npolicy = \"leaseholder\"\npool_tokens = 1000\n{keys}")
+/// The lifecycle policy on a 1,000-token pool, with its mechanisms' keys.
+fn lifecycle(keys: &str) -> String {
+    format!("[admission]\npolicy = \"lifecycle\"\npool_tokens = 1000\n{keys}")
+}
+
+/// The lifecycle policy's throttle alone, which reads no pool, with a budget of `budget_ms`.
+fn throttle_alone(budget_ms: u32) -> String {
+    format!(
+        "[admission]\npolicy = \"lifecycle\"\nheadroom = false\ndegrade = false\n\
+         critical_prefill_budget_ms = {budget_ms}"
+    )
 }
 
 /// A background request of the agents tenant, named `tag`, whose answer the mock engine holds.
@@ -68,7 +76,7 @@ fn deferred(reason: &str) -> String {
 #[tokio::test]
 async fn background_waits_while_a_turn_is_imminent_and_goes_after_it() {
     let mock = Mock::start(Script::Json("{}")).await;
-    let gw = Gateway::start(mock.addr, &leaseholder(HEADROOM)).await;
+    let gw = Gateway::start(mock.addr, &lifecycle(HEADROOM)).await;
     let running = spawn_call(&gw.tcp, background("bg1"), six_hundred());
     mock.await_requests(1).await;
 
@@ -124,8 +132,7 @@ async fn background_waits_while_a_turn_is_imminent_and_goes_after_it() {
 async fn the_critical_window_spends_a_budget_of_predicted_prefill_time() {
     let mock = Mock::start(Script::Json("{}")).await;
     // The throttle alone: 100 ms of prefill per window, and each cold 600-token prompt takes 55 ms.
-    let keys = "headroom = false\ndegrade = false\ncritical_prefill_budget_ms = 100";
-    let gw = Gateway::start(mock.addr, &leaseholder(keys)).await;
+    let gw = Gateway::start(mock.addr, &throttle_alone(100)).await;
     post(&gw, &[("vw-1", "user_turn_ended")]).await;
     gw.await_metric(&sessions("critical"), 1.0).await;
     let first = spawn_call(&gw.tcp, background("bg1"), six_hundred());
@@ -148,7 +155,7 @@ async fn aging_admits_a_deferred_request_after_max_defer_s() {
     let mock = Mock::start(Script::Json("{}")).await;
     let gw = Gateway::start(
         mock.addr,
-        &leaseholder(&format!("{HEADROOM}\nmax_defer_s = 0.3")),
+        &lifecycle(&format!("{HEADROOM}\nmax_defer_s = 0.3")),
     )
     .await;
     post(&gw, &[("vw-1", "user_speech_started")]).await;
@@ -183,7 +190,7 @@ async fn degrade_caps_a_realtime_reply_when_the_headroom_was_not_kept() {
     let mock = Mock::start(Script::Json("{}")).await;
     // Degrade alone: nothing keeps the background request from taking the pool.
     let keys = "headroom = false\nthrottle = false\nheadroom_tokens = 200\ndegrade_max_tokens = 16";
-    let gw = Gateway::start(mock.addr, &leaseholder(keys)).await;
+    let gw = Gateway::start(mock.addr, &lifecycle(keys)).await;
     let large = spawn_call(&gw.tcp, background("bg"), nine_hundred());
     mock.await_requests(1).await;
     let voice = call(
@@ -227,11 +234,48 @@ async fn degrade_caps_a_realtime_reply_when_the_headroom_was_not_kept() {
 }
 
 #[tokio::test]
+async fn a_degraded_reply_takes_the_lower_of_its_caps() {
+    let mock = Mock::start(Script::Json("{}")).await;
+    let keys = "headroom = false\nthrottle = false\nheadroom_tokens = 200\ndegrade_max_tokens = 16";
+    let top = format!("realtime_max_tokens = 64\n{}", lifecycle(keys));
+    let gw = Gateway::start(mock.addr, &top).await;
+    let asked = r#"{"model":"qwen","messages":[{"role":"user","content":"hi"}],"max_tokens":200}"#;
+    // With the pool free, the deployment's cap.
+    let voice = call(
+        &gw.unix,
+        "POST",
+        "/v1/chat/completions",
+        &realtime("rt1", false),
+        asked,
+    )
+    .await;
+    assert_eq!(voice.status, 200);
+    assert_eq!(mock.last().json()["max_tokens"], 64);
+    // With the pool taken, degrade's, the lower.
+    let large = spawn_call(&gw.tcp, background("bg"), nine_hundred());
+    mock.await_requests(2).await;
+    let voice = call(
+        &gw.unix,
+        "POST",
+        "/v1/chat/completions",
+        &realtime("rt2", false),
+        asked,
+    )
+    .await;
+    assert_eq!(voice.status, 200);
+    assert_eq!(mock.last().json()["max_tokens"], 16);
+    gw.await_metric("lh_gateway_admission_degraded_total", 1.0)
+        .await;
+    mock.release(1);
+    assert_eq!(large.await.unwrap().status, 200);
+}
+
+#[tokio::test]
 async fn a_state_no_event_ends_times_out_and_its_arming_is_a_false_alarm() {
     let mock = Mock::start(Script::Json("{}")).await;
     let gw = Gateway::start(
         mock.addr,
-        &leaseholder(&format!("{HEADROOM}\nstate_timeout_s = 0.3")),
+        &lifecycle(&format!("{HEADROOM}\nstate_timeout_s = 0.3")),
     )
     .await;
     let running = spawn_call(&gw.tcp, background("bg1"), six_hundred());
@@ -269,8 +313,7 @@ async fn a_state_no_event_ends_times_out_and_its_arming_is_a_false_alarm() {
 async fn without_events_a_realtime_request_is_its_own_critical_window() {
     let mock = Mock::start(Script::Json("{}")).await;
     // The throttle admits no background prefill in a window.
-    let keys = "headroom = false\ndegrade = false\ncritical_prefill_budget_ms = 0";
-    let gw = Gateway::start(mock.addr, &leaseholder(keys)).await;
+    let gw = Gateway::start(mock.addr, &throttle_alone(0)).await;
     let voice = spawn_call(&gw.unix, realtime("rt", true), CHAT);
     mock.await_requests(1).await;
     gw.await_metric(&sessions("critical"), 1.0).await;
@@ -287,11 +330,42 @@ async fn without_events_a_realtime_request_is_its_own_critical_window() {
 }
 
 #[tokio::test]
+async fn a_new_session_in_a_full_table_takes_the_place_of_one_idle_session() {
+    let mock = Mock::start(Script::Json("{}")).await;
+    let gw = Gateway::start(mock.addr, &lifecycle(HEADROOM)).await;
+    post(&gw, &[("vw-1", "user_speech_started")]).await;
+    // 4,095 more sessions, idle, fill the table.
+    let idle: Vec<String> = (1..4096)
+        .map(|n| {
+            format!(
+                r#"{{"event_id":"idle-{n}","session_id":"voice-{n}","at_ms":1792650010000,"source":"voice-worker",
+                    "type":"playback_ended","played_ms":0}}"#
+            )
+        })
+        .collect();
+    let batch = format!("[{}]", idle.join(","));
+    let reply = call(&gw.unix, "POST", "/v1/events", &[], &batch).await;
+    assert_eq!(reply.status, 202, "{:?}", reply.body);
+    gw.await_metric(&sessions("idle"), 4095.0).await;
+    // A new session's turn takes the place of one idle session, not of all of them.
+    let new = r#"{"event_id":"new-1","session_id":"voice-new","at_ms":1792650010000,"source":"voice-worker",
+                  "type":"user_turn_ended"}"#;
+    let reply = call(&gw.unix, "POST", "/v1/events", &[], new).await;
+    assert_eq!(reply.status, 202, "{:?}", reply.body);
+    let metrics = gw.metrics().await;
+    let count = |state: &str| metric(&metrics, &sessions(state));
+    assert_eq!(
+        [count("idle"), count("user_speaking"), count("critical")],
+        [Some(4094.0), Some(1.0), Some(1.0)]
+    );
+}
+
+#[tokio::test]
 async fn realtime_is_never_queued_or_refused() {
     let mock = Mock::start(Script::Json("{}")).await;
     let gw = Gateway::start(
         mock.addr,
-        &leaseholder(&format!("{HEADROOM}\nqueue_limit = 1")),
+        &lifecycle(&format!("{HEADROOM}\nqueue_limit = 1")),
     )
     .await;
     post(

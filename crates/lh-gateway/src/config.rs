@@ -9,21 +9,19 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use http::uri::{Authority, Scheme, Uri};
-use lh_core::FROZEN_BOX_POOL_TOKENS;
-use lh_core::admission::{Ceilings, Leaseholder, Policy, Trigger};
-use lh_core::placement;
 use lh_proto::SloClass;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
+/// `[admission]`, which E2's harness reads (`harness`).
+pub use crate::harness::config::Admission;
+use crate::harness::config::RawAdmission;
+
 /// A validated configuration.
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// The engine, spoken to over plain HTTP/1.1; with `[nodes]`, the first node's.
+    /// The engine, spoken to over plain HTTP/1.1.
     pub upstream: UpstreamAddr,
-    /// `[nodes]` and `[placement]`: several GPU nodes and how sessions are placed on them; `None` for one
-    /// `upstream`.
-    pub placement: Option<Placement>,
     /// How long an idle upstream connection is kept for reuse. It must be shorter than the engine's own
     /// keep-alive, or a request can be sent on a connection the engine is closing.
     pub upstream_idle_timeout: Duration,
@@ -40,6 +38,10 @@ pub struct Config {
     pub metrics_key: Option<MetricsKey>,
     /// Largest accepted request body; larger requests get 413.
     pub max_body_bytes: usize,
+    /// The cap on every realtime reply, in tokens (`realtime_max_tokens`): each of a realtime request's reply caps
+    /// above it is lowered to it, and a body with none gets the route's own, as degrade caps a reply under the
+    /// lifecycle policy. `None` caps no reply.
+    pub realtime_max_tokens: Option<u32>,
     /// Frames buffered between the upstream and a client before backpressure reaches the upstream.
     pub stream_buffer_frames: usize,
     /// How long a full stream buffer may stay full before the stream is aborted as stalled.
@@ -138,46 +140,6 @@ pub struct PrioritySignals {
     pub smg_header: bool,
 }
 
-/// `[admission]`: the policy that decides when a request goes upstream, and the bounds of its queues.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Admission {
-    pub policy: Policy,
-    /// The requests each class's queue may hold; a request that would wait beyond them gets 429.
-    pub queue_limit: usize,
-    /// How long a request may wait: `queue_timeout_s`, after which it gets 503, or under policy leaseholder,
-    /// which refuses no request for its wait, `max_defer_s`, after which it is admitted regardless.
-    pub max_wait: Duration,
-    /// How long a realtime session stays in a state of its turn that no event moves it on from
-    /// (`state_timeout_s`). Only policy leaseholder keeps the sessions' states.
-    pub state_timeout: Option<Duration>,
-    /// The engine's step budget (`max_num_batched_tokens`), in whose steps policy leaseholder's throttle prices a
-    /// background request's prefill; `None` without the throttle.
-    pub step_tokens: Option<u64>,
-}
-
-/// `[nodes]` and `[placement]`: the GPU nodes, and how sessions are placed on them.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Placement {
-    pub policy: placement::Policy,
-    /// The nodes, by name.
-    pub nodes: Vec<Node>,
-    /// How long a session keeps its node without a request (`idle_s`); its next request is placed again.
-    pub idle: Duration,
-    /// How often each node's `/health` is probed (`probe_interval_s`). A node takes no new sessions once three
-    /// probes in a row fail.
-    pub probe_interval: Duration,
-}
-
-/// One of `[nodes]`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Node {
-    pub name: String,
-    pub upstream: UpstreamAddr,
-    /// Whether it serves each class, strictest first: those `classes` names under placement dedicated, and
-    /// every class under the others.
-    pub serves: [bool; 3],
-}
-
 /// One entry of `upstream_priority`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -244,14 +206,13 @@ struct RawConfig {
     upstream: String,
     upstream_idle_timeout_s: f64,
     upstream_priority: Vec<PrioritySignal>,
-    nodes: BTreeMap<String, RawNode>,
-    placement: Option<RawPlacement>,
     admission: RawAdmission,
     listen: Vec<RawListen>,
     tenants: BTreeMap<String, RawTenant>,
     cache_salt_secret_file: Option<PathBuf>,
     metrics_key_file: Option<PathBuf>,
     max_body_bytes: usize,
+    realtime_max_tokens: Option<u32>,
     stream_buffer_frames: usize,
     stall_timeout_s: f64,
     first_byte_timeout_s: f64,
@@ -270,14 +231,13 @@ impl Default for RawConfig {
             // vLLM closes idle connections after VLLM_HTTP_TIMEOUT_KEEP_ALIVE, 5 s by default.
             upstream_idle_timeout_s: 4.0,
             upstream_priority: vec![PrioritySignal::VllmHeader],
-            nodes: BTreeMap::new(),
-            placement: None,
             admission: RawAdmission::default(),
             listen: Vec::new(),
             tenants: BTreeMap::new(),
             cache_salt_secret_file: None,
             metrics_key_file: None,
             max_body_bytes: 32 << 20,
+            realtime_max_tokens: None,
             stream_buffer_frames: 64,
             stall_timeout_s: 30.0,
             first_byte_timeout_s: 600.0,
@@ -289,71 +249,6 @@ impl Default for RawConfig {
             log_level: LogLevel::Info,
         }
     }
-}
-
-/// `[admission]` as written. Each key but `policy` belongs to some of the policies, and setting it for another
-/// one is an error, so no setting silently does nothing; nor is a key of a mechanism switched off.
-#[derive(Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct RawAdmission {
-    policy: PolicyName,
-    background_max_in_flight: Option<u32>,
-    pool_tokens: Option<u64>,
-    reserved_tokens: Option<u64>,
-    ceilings: Option<RawCeilings>,
-    headroom: Option<bool>,
-    headroom_tokens: Option<u64>,
-    trigger: Option<TriggerName>,
-    throttle: Option<bool>,
-    critical_prefill_budget_ms: Option<f64>,
-    max_num_batched_tokens: Option<u64>,
-    degrade: Option<bool>,
-    degrade_max_tokens: Option<u32>,
-    max_defer_s: Option<f64>,
-    state_timeout_s: Option<f64>,
-    queue_limit: Option<usize>,
-    queue_timeout_s: Option<f64>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawCeilings {
-    realtime: u32,
-    interactive: u32,
-    background: u32,
-}
-
-#[derive(Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum PolicyName {
-    #[default]
-    None,
-    StaticCap,
-    TokenReservation,
-    FlowControl,
-    PreemptResubmit,
-    Leaseholder,
-}
-
-impl PolicyName {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::StaticCap => "static-cap",
-            Self::TokenReservation => "token-reservation",
-            Self::FlowControl => "flow-control",
-            Self::PreemptResubmit => "preempt-resubmit",
-            Self::Leaseholder => "leaseholder",
-        }
-    }
-}
-
-/// `trigger`: what arms policy leaseholder's headroom.
-#[derive(Clone, Copy, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum TriggerName {
-    Onset,
-    Request,
 }
 
 #[derive(Deserialize)]
@@ -372,41 +267,6 @@ struct RawTenant {
     default_class: SloClass,
     /// Defaults to `default_class`: a tenant gets no stricter class unless the file says so.
     max_class: Option<SloClass>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawNode {
-    upstream: String,
-    /// Placement dedicated only.
-    classes: Option<Vec<SloClass>>,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct RawPlacement {
-    policy: PlacementName,
-    idle_s: Option<f64>,
-    probe_interval_s: Option<f64>,
-}
-
-#[derive(Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum PlacementName {
-    Dedicated,
-    #[default]
-    LeastLoaded,
-    Leaseholder,
-}
-
-impl From<PlacementName> for placement::Policy {
-    fn from(name: PlacementName) -> Self {
-        match name {
-            PlacementName::Dedicated => Self::Dedicated,
-            PlacementName::LeastLoaded => Self::LeastLoaded,
-            PlacementName::Leaseholder => Self::Leaseholder,
-        }
-    }
 }
 
 impl Config {
@@ -430,19 +290,9 @@ impl Config {
 
 impl RawConfig {
     fn validate(self) -> Result<Config, String> {
-        // One engine is `upstream`; several are `[nodes]`, without it.
-        let upstream = match self.nodes.iter().next() {
-            None => parse_upstream(&self.upstream)?,
-            Some(_) if !self.upstream.is_empty() => {
-                return Err(
-                    "set upstream for one engine or [nodes.<name>] for several, not both".into(),
-                );
-            }
-            Some((name, node)) => node_upstream(name, &node.upstream)?,
-        };
+        let upstream = parse_upstream(&self.upstream)?;
         let upstream_priority = priority_signals(&self.upstream_priority)?;
         let admission = self.admission.validate()?;
-        let placement = placement(self.nodes, self.placement, admission.as_ref())?;
 
         let mut tenants = Vec::with_capacity(self.tenants.len());
         let mut digests = HashSet::new();
@@ -521,6 +371,9 @@ impl RawConfig {
         if self.max_body_bytes == 0 {
             return Err("max_body_bytes must be positive".into());
         }
+        if self.realtime_max_tokens == Some(0) {
+            return Err("realtime_max_tokens must be positive".into());
+        }
         if self.stream_buffer_frames == 0 {
             return Err("stream_buffer_frames must be positive".into());
         }
@@ -539,7 +392,6 @@ impl RawConfig {
             })?;
         Ok(Config {
             upstream,
-            placement,
             upstream_idle_timeout: seconds(
                 "upstream_idle_timeout_s",
                 self.upstream_idle_timeout_s,
@@ -551,6 +403,7 @@ impl RawConfig {
             cache_salt_secret,
             metrics_key,
             max_body_bytes: self.max_body_bytes,
+            realtime_max_tokens: self.realtime_max_tokens,
             stream_buffer_frames: self.stream_buffer_frames,
             stall_timeout: seconds("stall_timeout_s", self.stall_timeout_s)?,
             first_byte_timeout: seconds("first_byte_timeout_s", self.first_byte_timeout_s)?,
@@ -560,252 +413,6 @@ impl RawConfig {
             event_dedup_ttl: seconds("event_dedup_ttl_s", self.event_dedup_ttl_s)?,
             log_format: self.log_format,
             log_level: self.log_level,
-        })
-    }
-}
-
-impl RawAdmission {
-    fn validate(self) -> Result<Option<Admission>, String> {
-        let name = self.policy.as_str();
-        let reads: &[&str] = match self.policy {
-            PolicyName::None => &[],
-            PolicyName::StaticCap => {
-                &["background_max_in_flight", "queue_limit", "queue_timeout_s"]
-            }
-            PolicyName::TokenReservation => &[
-                "pool_tokens",
-                "reserved_tokens",
-                "queue_limit",
-                "queue_timeout_s",
-            ],
-            PolicyName::FlowControl => &["ceilings", "queue_limit", "queue_timeout_s"],
-            PolicyName::PreemptResubmit => &["queue_limit", "queue_timeout_s"],
-            PolicyName::Leaseholder => &[
-                "pool_tokens",
-                "headroom",
-                "headroom_tokens",
-                "trigger",
-                "throttle",
-                "critical_prefill_budget_ms",
-                "max_num_batched_tokens",
-                "degrade",
-                "degrade_max_tokens",
-                "max_defer_s",
-                "state_timeout_s",
-                "queue_limit",
-            ],
-        };
-        let set = [
-            (
-                "background_max_in_flight",
-                self.background_max_in_flight.is_some(),
-            ),
-            ("pool_tokens", self.pool_tokens.is_some()),
-            ("reserved_tokens", self.reserved_tokens.is_some()),
-            ("ceilings", self.ceilings.is_some()),
-            ("headroom", self.headroom.is_some()),
-            ("headroom_tokens", self.headroom_tokens.is_some()),
-            ("trigger", self.trigger.is_some()),
-            ("throttle", self.throttle.is_some()),
-            (
-                "critical_prefill_budget_ms",
-                self.critical_prefill_budget_ms.is_some(),
-            ),
-            (
-                "max_num_batched_tokens",
-                self.max_num_batched_tokens.is_some(),
-            ),
-            ("degrade", self.degrade.is_some()),
-            ("degrade_max_tokens", self.degrade_max_tokens.is_some()),
-            ("max_defer_s", self.max_defer_s.is_some()),
-            ("state_timeout_s", self.state_timeout_s.is_some()),
-            ("queue_limit", self.queue_limit.is_some()),
-            ("queue_timeout_s", self.queue_timeout_s.is_some()),
-        ];
-        if let Some((key, _)) = set.iter().find(|(key, set)| *set && !reads.contains(key)) {
-            return Err(format!("admission.{key} does not apply to policy {name}"));
-        }
-        // SMG's bulk class queues 1,024 requests.
-        let queue_limit = self.queue_limit.unwrap_or(1024);
-        if let PolicyName::Leaseholder = self.policy {
-            return self.leaseholder(queue_limit).map(Some);
-        }
-        let needs = |key: &str| format!("admission: policy {name} needs {key}");
-        let policy = match self.policy {
-            PolicyName::None => return Ok(None),
-            PolicyName::StaticCap => {
-                let cap = self
-                    .background_max_in_flight
-                    .ok_or_else(|| needs("background_max_in_flight"))?;
-                if cap == 0 {
-                    return Err("admission.background_max_in_flight must be positive".into());
-                }
-                Policy::StaticCap {
-                    background_max_in_flight: cap,
-                }
-            }
-            PolicyName::TokenReservation => {
-                let pool_tokens = self.pool_tokens.unwrap_or(FROZEN_BOX_POOL_TOKENS);
-                let reserved_tokens = self
-                    .reserved_tokens
-                    .ok_or_else(|| needs("reserved_tokens"))?;
-                if reserved_tokens >= pool_tokens {
-                    return Err(format!(
-                        "admission.reserved_tokens ({reserved_tokens}) must be less than pool_tokens \
-                         ({pool_tokens})"
-                    ));
-                }
-                Policy::TokenReservation {
-                    pool_tokens,
-                    reserved_tokens,
-                }
-            }
-            PolicyName::FlowControl => {
-                let RawCeilings {
-                    realtime,
-                    interactive,
-                    background,
-                } = self.ceilings.ok_or_else(|| needs("ceilings"))?;
-                if background == 0 {
-                    return Err("admission.ceilings must be positive".into());
-                }
-                if realtime < interactive || interactive < background {
-                    return Err(
-                        "admission.ceilings must not increase from realtime to background: the lower \
-                         classes are held back first"
-                            .into(),
-                    );
-                }
-                Policy::FlowControl {
-                    ceilings: Ceilings {
-                        realtime,
-                        interactive,
-                        background,
-                    },
-                }
-            }
-            PolicyName::PreemptResubmit => Policy::PreemptResubmit,
-            PolicyName::Leaseholder => unreachable!("validated above"),
-        };
-        Ok(Some(Admission {
-            policy,
-            queue_limit,
-            // A minute ends a wait well before clients give up on their own (AIPerf's replay after 300 s,
-            // OpenAI's SDK after 600 s).
-            max_wait: seconds(
-                "admission.queue_timeout_s",
-                self.queue_timeout_s.unwrap_or(60.0),
-            )?,
-            state_timeout: None,
-            step_tokens: None,
-        }))
-    }
-
-    /// Policy leaseholder. Each mechanism is on unless switched off, needs its own keys while it is on, and
-    /// takes none while it is off.
-    fn leaseholder(self, queue_limit: usize) -> Result<Admission, String> {
-        let headroom = self.headroom.unwrap_or(true);
-        let throttle = self.throttle.unwrap_or(true);
-        let degrade = self.degrade.unwrap_or(true);
-        let sizing = headroom || degrade;
-        for (key, set, on, off) in [
-            (
-                "trigger",
-                self.trigger.is_some(),
-                headroom,
-                "headroom = false",
-            ),
-            (
-                "critical_prefill_budget_ms",
-                self.critical_prefill_budget_ms.is_some(),
-                throttle,
-                "throttle = false",
-            ),
-            (
-                "max_num_batched_tokens",
-                self.max_num_batched_tokens.is_some(),
-                throttle,
-                "throttle = false",
-            ),
-            (
-                "degrade_max_tokens",
-                self.degrade_max_tokens.is_some(),
-                degrade,
-                "degrade = false",
-            ),
-            (
-                "headroom_tokens",
-                self.headroom_tokens.is_some(),
-                sizing,
-                "headroom = false and degrade = false",
-            ),
-        ] {
-            if set && !on {
-                return Err(format!("admission.{key} does not apply with {off}"));
-            }
-        }
-        let needs = |key: &str, off: &str| {
-            format!("admission: policy leaseholder needs {key}, unless {off}")
-        };
-        let pool_tokens = self.pool_tokens.unwrap_or(FROZEN_BOX_POOL_TOKENS);
-        let headroom_tokens = match self.headroom_tokens {
-            Some(tokens) if (1..pool_tokens).contains(&tokens) => tokens,
-            Some(tokens) => {
-                return Err(format!(
-                    "admission.headroom_tokens ({tokens}) must be positive and less than pool_tokens \
-                     ({pool_tokens})"
-                ));
-            }
-            None if sizing => {
-                return Err(needs(
-                    "headroom_tokens",
-                    "headroom = false and degrade = false",
-                ));
-            }
-            None => 0,
-        };
-        let critical_prefill_budget = match self.critical_prefill_budget_ms {
-            Some(ms) => Some(Duration::try_from_secs_f64(ms / 1e3).map_err(|_| {
-                "admission.critical_prefill_budget_ms must be a number of milliseconds, 0 or more"
-            })?),
-            None if throttle => {
-                return Err(needs("critical_prefill_budget_ms", "throttle = false"));
-            }
-            None => None,
-        };
-        // The frozen box's `--max-num-batched-tokens`.
-        let step_tokens = match self.max_num_batched_tokens {
-            Some(0) => return Err("admission.max_num_batched_tokens must be positive".into()),
-            tokens => throttle.then(|| tokens.unwrap_or(512)),
-        };
-        let degrade_max_tokens = match self.degrade_max_tokens {
-            Some(0) => return Err("admission.degrade_max_tokens must be positive".into()),
-            None if degrade => return Err(needs("degrade_max_tokens", "degrade = false")),
-            cap => cap,
-        };
-        let trigger = match self.trigger {
-            None | Some(TriggerName::Onset) => Trigger::Onset,
-            Some(TriggerName::Request) => Trigger::Request,
-        };
-        let policy = Policy::Leaseholder(Leaseholder {
-            pool_tokens,
-            headroom_tokens,
-            headroom: headroom.then_some(trigger),
-            critical_prefill_budget,
-            degrade_max_tokens,
-        });
-        // Longer than an E2 caller's turn is armed (about 4 s from speech onset to the reply's first audio), so
-        // aging admits only what a stuck or unbroken arming holds back.
-        let max_defer_s = self.max_defer_s.unwrap_or(10.0);
-        // Longer than any state of an E2 caller's turn lasts (lines of 2 to 3 s, replies of a few seconds of
-        // audio), so only a lost event ends a state by timeout.
-        let state_timeout_s = self.state_timeout_s.unwrap_or(10.0);
-        Ok(Admission {
-            policy,
-            queue_limit,
-            max_wait: seconds("admission.max_defer_s", max_defer_s)?,
-            state_timeout: Some(seconds("admission.state_timeout_s", state_timeout_s)?),
-            step_tokens,
         })
     }
 }
@@ -844,118 +451,13 @@ impl RawTenant {
     }
 }
 
-/// `[nodes]` and `[placement]`. Without nodes there is nothing to place; with them, a node's `classes` belong to
-/// placement dedicated alone, and setting them for another policy is an error, as under `[admission]`.
-fn placement(
-    nodes: BTreeMap<String, RawNode>,
-    raw: Option<RawPlacement>,
-    admission: Option<&Admission>,
-) -> Result<Option<Placement>, String> {
-    if nodes.is_empty() {
-        return match raw {
-            None => Ok(None),
-            Some(_) => Err("[placement] needs [nodes.<name>]: one engine is upstream".into()),
-        };
-    }
-    if nodes.len() == 1 {
-        return Err("[nodes] needs two nodes or more: one engine is upstream".into());
-    }
-    let raw = raw.unwrap_or_default();
-    let policy = placement::Policy::from(raw.policy);
-    let dedicated = policy == placement::Policy::Dedicated;
-    let leaseholder = matches!(
-        admission,
-        Some(Admission {
-            policy: Policy::Leaseholder(_),
-            ..
-        })
-    );
-    if policy == placement::Policy::Leaseholder && !leaseholder {
-        return Err(
-            "placement leaseholder reads policy leaseholder's state: set [admission] policy = \
-             \"leaseholder\""
-                .into(),
-        );
-    }
-    let mut validated: Vec<Node> = Vec::with_capacity(nodes.len());
-    for (name, node) in nodes {
-        if !valid_name(&name) {
-            return Err(format!(
-                "node name {name:?}: use 1 to 64 characters from [A-Za-z0-9._-]"
-            ));
-        }
-        let upstream = node_upstream(&name, &node.upstream)?;
-        if let Some(other) = validated.iter().find(|other| other.upstream == upstream) {
-            return Err(format!(
-                "nodes.{} and nodes.{name} have the same upstream",
-                other.name
-            ));
-        }
-        let serves = match (node.classes, dedicated) {
-            (None, false) => [true; 3],
-            (Some(_), false) => {
-                return Err(format!(
-                    "nodes.{name}.classes applies only to placement dedicated"
-                ));
-            }
-            (None, true) => {
-                return Err(format!(
-                    "nodes.{name}: placement dedicated needs the classes it serves"
-                ));
-            }
-            (Some(classes), true) => {
-                let mut serves = [false; 3];
-                for class in classes {
-                    if std::mem::replace(&mut serves[class as usize], true) {
-                        return Err(format!("nodes.{name}.classes lists {class} twice"));
-                    }
-                }
-                if serves == [false; 3] {
-                    return Err(format!("nodes.{name}.classes is empty"));
-                }
-                serves
-            }
-        };
-        validated.push(Node {
-            name,
-            upstream,
-            serves,
-        });
-    }
-    let unserved = SloClass::ALL
-        .into_iter()
-        .find(|&class| !validated.iter().any(|node| node.serves[class as usize]));
-    if let Some(class) = unserved {
-        return Err(format!(
-            "placement dedicated: no node serves {class} requests"
-        ));
-    }
-    Ok(Some(Placement {
-        policy,
-        nodes: validated,
-        // Anthropic's prompt cache keeps a prefix for 5 minutes after its last use; E2's agents think for at most
-        // 2 minutes, and a call's turns are seconds apart.
-        idle: seconds("placement.idle_s", raw.idle_s.unwrap_or(300.0))?,
-        // The window of the gateway's own /ready.
-        probe_interval: seconds(
-            "placement.probe_interval_s",
-            raw.probe_interval_s.unwrap_or(1.0),
-        )?,
-    }))
-}
-
-/// A tenant or node name: 1 to 64 characters from `[A-Za-z0-9._-]`, which metric labels, socket files and unit
-/// names can carry.
+/// A tenant name: 1 to 64 characters from `[A-Za-z0-9._-]`, which metric labels can carry.
 fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-}
-
-fn node_upstream(name: &str, raw: &str) -> Result<UpstreamAddr, String> {
-    parse_upstream(raw).map_err(|e| format!("nodes.{name}: {e}"))
 }
 
 fn parse_upstream(raw: &str) -> Result<UpstreamAddr, String> {
@@ -1078,7 +580,7 @@ fn parse_digest(hex: &str) -> Option<[u8; 32]> {
     Some(digest)
 }
 
-fn seconds(key: &str, value: f64) -> Result<Duration, String> {
+pub(crate) fn seconds(key: &str, value: f64) -> Result<Duration, String> {
     Duration::try_from_secs_f64(value)
         .ok()
         .filter(|d| !d.is_zero())
@@ -1233,6 +735,19 @@ mod tests {
     }
 
     #[test]
+    fn a_deployment_may_cap_every_realtime_reply() {
+        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
+        assert_eq!(config("", &a).unwrap().realtime_max_tokens, None);
+        let capped = config("realtime_max_tokens = 64", &a).unwrap();
+        assert_eq!(capped.realtime_max_tokens, Some(64));
+        let err = config("realtime_max_tokens = 0", &a).unwrap_err();
+        assert!(
+            err.contains("realtime_max_tokens must be positive"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn background_requests_may_be_cut_from_the_drains_start_to_its_end() {
         let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
         let at_once = config("background_drain_s = 0", &a).unwrap();
@@ -1286,31 +801,6 @@ mod tests {
                 "{err}"
             );
         }
-
-        // Nodes take either kind, and two nodes never share a socket.
-        let nodes = |gray: &str| {
-            Config::from_toml(&format!(
-                "{}\n[nodes.phastform]\nupstream = \"unix:{socket}\"\n[nodes.gray]\nupstream = \"{gray}\"\n\
-                 [[listen]]\ntcp = \"127.0.0.1:0\"\n{a}",
-                secret_file(&SECRET_FILE)
-            ))
-            .map_err(|e| e.to_string())
-        };
-        let placement = nodes("http://127.0.0.1:28000").unwrap().placement.unwrap();
-        let upstreams: Vec<_> = placement
-            .nodes
-            .iter()
-            .map(|n| n.upstream.to_string())
-            .collect();
-        assert_eq!(
-            upstreams,
-            ["http://127.0.0.1:28000", &format!("unix:{socket}")]
-        );
-        let err = nodes(&format!("unix:{socket}")).unwrap_err();
-        assert!(
-            err.contains("nodes.gray and nodes.phastform have the same upstream"),
-            "{err}"
-        );
     }
 
     #[test]
@@ -1478,456 +968,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn admission_policies_take_their_own_keys_and_defaults() {
-        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
-        let admission = |keys: &str| config(&format!("[admission]\n{keys}"), &a);
-        assert_eq!(config("", &a).unwrap().admission, None);
-        assert_eq!(admission("policy = \"none\"").unwrap().admission, None);
-        let cap = admission("policy = \"static-cap\"\nbackground_max_in_flight = 4").unwrap();
-        assert_eq!(
-            cap.admission,
-            Some(Admission {
-                policy: Policy::StaticCap {
-                    background_max_in_flight: 4
-                },
-                queue_limit: 1024,
-                max_wait: Duration::from_secs(60),
-                state_timeout: None,
-                step_tokens: None,
-            })
-        );
-        let reservation = admission(
-            "policy = \"token-reservation\"\nreserved_tokens = 2048\nqueue_limit = 8\nqueue_timeout_s = 290",
-        )
-        .unwrap()
-        .admission
-        .unwrap();
-        assert_eq!(
-            reservation.policy,
-            Policy::TokenReservation {
-                pool_tokens: FROZEN_BOX_POOL_TOKENS,
-                reserved_tokens: 2048
-            }
-        );
-        assert_eq!(
-            (reservation.queue_limit, reservation.max_wait),
-            (8, Duration::from_secs(290))
-        );
-        let flow = admission(
-            "policy = \"flow-control\"\nceilings = { realtime = 16, interactive = 12, background = 8 }",
-        )
-        .unwrap()
-        .admission
-        .unwrap();
-        let ceilings = Ceilings {
-            realtime: 16,
-            interactive: 12,
-            background: 8,
-        };
-        assert_eq!(flow.policy, Policy::FlowControl { ceilings });
-        let preempt = admission("policy = \"preempt-resubmit\"")
-            .unwrap()
-            .admission;
-        assert_eq!(preempt.map(|a| a.policy), Some(Policy::PreemptResubmit));
-
-        for (keys, cause) in [
-            ("policy = \"static_cap\"", "unknown variant"),
-            (
-                "policy = \"none\"\nqueue_limit = 4",
-                "queue_limit does not apply to policy none",
-            ),
-            (
-                "policy = \"static-cap\"",
-                "static-cap needs background_max_in_flight",
-            ),
-            (
-                "policy = \"static-cap\"\nbackground_max_in_flight = 0",
-                "must be positive",
-            ),
-            (
-                "policy = \"static-cap\"\nbackground_max_in_flight = 2\nreserved_tokens = 1",
-                "reserved_tokens does not apply to policy static-cap",
-            ),
-            (
-                "policy = \"static-cap\"\nbackground_max_in_flight = 2\nqueue_timeout_s = 0",
-                "queue_timeout_s must be a positive",
-            ),
-            ("policy = \"token-reservation\"", "needs reserved_tokens"),
-            (
-                "policy = \"token-reservation\"\nreserved_tokens = 40000",
-                "must be less than pool_tokens (36400)",
-            ),
-            ("polcy = \"none\"", "unknown field"),
-            ("policy = \"flow-control\"", "flow-control needs ceilings"),
-            (
-                "policy = \"flow-control\"\nceilings = { realtime = 8, background = 4 }",
-                "missing field `interactive`",
-            ),
-            (
-                "policy = \"flow-control\"\nceilings = { realtime = 4, interactive = 8, background = 4 }",
-                "must not increase",
-            ),
-            (
-                "policy = \"flow-control\"\nceilings = { realtime = 4, interactive = 4, background = 0 }",
-                "must be positive",
-            ),
-            (
-                "policy = \"preempt-resubmit\"\nbackground_max_in_flight = 4",
-                "does not apply to policy preempt-resubmit",
-            ),
-        ] {
-            let err = admission(keys).unwrap_err();
-            assert!(err.contains(cause), "{keys}: {err}");
-        }
-    }
-
-    #[test]
-    fn policy_leaseholder_switches_each_mechanism_with_its_own_keys() {
-        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
-        let admission = |keys: &str| {
-            config(
-                &format!("[admission]\npolicy = \"leaseholder\"\n{keys}"),
-                &a,
-            )
-            .map(|config| config.admission.unwrap())
-        };
-        let all =
-            "headroom_tokens = 1024\ncritical_prefill_budget_ms = 250\ndegrade_max_tokens = 24";
-        let arm9 = admission(all).unwrap();
-        let full = Leaseholder {
-            pool_tokens: FROZEN_BOX_POOL_TOKENS,
-            headroom_tokens: 1024,
-            headroom: Some(Trigger::Onset),
-            critical_prefill_budget: Some(Duration::from_millis(250)),
-            degrade_max_tokens: Some(24),
-        };
-        assert_eq!(
-            arm9,
-            Admission {
-                policy: Policy::Leaseholder(full),
-                queue_limit: 1024,
-                max_wait: Duration::from_secs(10),
-                state_timeout: Some(Duration::from_secs(10)),
-                step_tokens: Some(512),
-            }
-        );
-        let tuned = admission(&format!(
-            "{all}\ntrigger = \"request\"\npool_tokens = 20000\nmax_defer_s = 4.5\nstate_timeout_s = 30\n\
-             queue_limit = 16\nmax_num_batched_tokens = 1024"
-        ))
-        .unwrap();
-        let request = Leaseholder {
-            pool_tokens: 20_000,
-            headroom: Some(Trigger::Request),
-            ..full
-        };
-        assert_eq!(tuned.policy, Policy::Leaseholder(request));
-        assert_eq!(
-            (tuned.queue_limit, tuned.max_wait, tuned.state_timeout),
-            (
-                16,
-                Duration::from_secs_f64(4.5),
-                Some(Duration::from_secs(30))
-            )
-        );
-        assert_eq!(tuned.step_tokens, Some(1024));
-
-        // The ablations: each mechanism off, without its keys.
-        let ablation = |keys: &str| match admission(keys).unwrap().policy {
-            Policy::Leaseholder(lh) => lh,
-            other => panic!("{other:?}"),
-        };
-        let no_throttle = "headroom_tokens = 1024\ndegrade_max_tokens = 24\nthrottle = false";
-        assert_eq!(
-            ablation(no_throttle),
-            Leaseholder {
-                critical_prefill_budget: None,
-                ..full
-            }
-        );
-        assert_eq!(admission(no_throttle).unwrap().step_tokens, None);
-        let no_headroom = "headroom = false\nheadroom_tokens = 1024\ncritical_prefill_budget_ms = 250\n\
-                           degrade_max_tokens = 24";
-        assert_eq!(
-            ablation(no_headroom),
-            Leaseholder {
-                headroom: None,
-                ..full
-            }
-        );
-        let no_degrade =
-            "headroom_tokens = 1024\ncritical_prefill_budget_ms = 250\ndegrade = false";
-        assert_eq!(
-            ablation(no_degrade),
-            Leaseholder {
-                degrade_max_tokens: None,
-                ..full
-            }
-        );
-        let throttle_alone = "headroom = false\ndegrade = false\ncritical_prefill_budget_ms = 0";
-        assert_eq!(
-            ablation(throttle_alone),
-            Leaseholder {
-                headroom_tokens: 0,
-                headroom: None,
-                critical_prefill_budget: Some(Duration::ZERO),
-                degrade_max_tokens: None,
-                ..full
-            }
-        );
-
-        for (keys, cause) in [
-            (
-                "",
-                "leaseholder needs headroom_tokens, unless headroom = false and degrade = false",
-            ),
-            (
-                "headroom_tokens = 1024\ndegrade_max_tokens = 24",
-                "needs critical_prefill_budget_ms, unless throttle = false",
-            ),
-            (
-                "headroom_tokens = 1024\ncritical_prefill_budget_ms = 250",
-                "needs degrade_max_tokens, unless degrade = false",
-            ),
-            (
-                &format!("{all}\nthrottle = false"),
-                "critical_prefill_budget_ms does not apply with throttle = false",
-            ),
-            (
-                &format!("{all}\ndegrade = false"),
-                "degrade_max_tokens does not apply with degrade = false",
-            ),
-            (
-                "headroom_tokens = 1024\ndegrade_max_tokens = 24\nthrottle = false\nmax_num_batched_tokens = 512",
-                "max_num_batched_tokens does not apply with throttle = false",
-            ),
-            (
-                &format!("{all}\nmax_num_batched_tokens = 0"),
-                "max_num_batched_tokens must be positive",
-            ),
-            (
-                &format!("{all}\nheadroom = false\ntrigger = \"onset\""),
-                "trigger does not apply with headroom = false",
-            ),
-            (
-                "headroom = false\ndegrade = false\nheadroom_tokens = 1\ncritical_prefill_budget_ms = 1",
-                "headroom_tokens does not apply with headroom = false and degrade = false",
-            ),
-            (
-                &format!("{all}\nqueue_timeout_s = 60"),
-                "queue_timeout_s does not apply to policy leaseholder",
-            ),
-            (
-                "headroom_tokens = 36400\ncritical_prefill_budget_ms = 250\ndegrade_max_tokens = 24",
-                "must be positive and less than pool_tokens (36400)",
-            ),
-            (
-                "headroom_tokens = 1024\ncritical_prefill_budget_ms = -1\ndegrade_max_tokens = 24",
-                "a number of milliseconds, 0 or more",
-            ),
-            (
-                "headroom_tokens = 1024\ncritical_prefill_budget_ms = 250\ndegrade_max_tokens = 0",
-                "degrade_max_tokens must be positive",
-            ),
-            (
-                &format!("{all}\nmax_defer_s = 0"),
-                "max_defer_s must be a positive",
-            ),
-            (&format!("{all}\ntrigger = \"speech\""), "unknown variant"),
-        ] {
-            let err = admission(keys).unwrap_err();
-            assert!(err.contains(cause), "{keys}: {err}");
-        }
-        let err = config(
-            "[admission]\npolicy = \"static-cap\"\nbackground_max_in_flight = 1\nmax_defer_s = 1",
-            &a,
-        )
-        .unwrap_err();
-        assert!(
-            err.contains("max_defer_s does not apply to policy static-cap"),
-            "{err}"
-        );
-    }
-
-    /// A configuration with two GPU nodes, one TCP listener, a tenant, and more tables.
-    fn nodes(tables: &str) -> Result<Config, String> {
-        Config::from_toml(&format!(
-            "{}\n[nodes.phastform]\nupstream = \"http://127.0.0.1:18000\"\n\
-             [nodes.gray]\nupstream = \"http://127.0.0.1:28000\"\n\
-             [[listen]]\ntcp = \"127.0.0.1:0\"\n[tenants.a]\nkeys_sha256 = [\"{KEY}\"]\n{tables}",
-            secret_file(&SECRET_FILE)
-        ))
-        .map_err(|e| e.to_string())
-    }
-
-    #[test]
-    fn nodes_and_placement_take_their_own_keys_and_defaults() {
-        assert_eq!(
-            config("", &format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]"))
-                .unwrap()
-                .placement,
-            None
-        );
-        let pool = nodes("").unwrap();
-        let placement = pool.placement.unwrap();
-        assert_eq!(placement.policy, placement::Policy::LeastLoaded);
-        assert_eq!(
-            (placement.idle, placement.probe_interval),
-            (Duration::from_secs(300), Duration::from_secs(1))
-        );
-        // By name, every class served; the configuration's upstream is the first node's.
-        let names: Vec<_> = placement
-            .nodes
-            .iter()
-            .map(|n| (n.name.as_str(), n.upstream.to_string(), n.serves))
-            .collect();
-        assert_eq!(
-            names,
-            [
-                ("gray", "http://127.0.0.1:28000".to_owned(), [true; 3]),
-                ("phastform", "http://127.0.0.1:18000".to_owned(), [true; 3])
-            ]
-        );
-        assert_eq!(pool.upstream.to_string(), "http://127.0.0.1:28000");
-
-        let dedicated = Config::from_toml(&format!(
-            "{}\n[nodes.voice]\nupstream = \"http://127.0.0.1:18000\"\nclasses = [\"realtime\"]\n\
-             [nodes.agents]\nupstream = \"http://127.0.0.1:28000\"\nclasses = [\"background\", \"interactive\"]\n\
-             [placement]\npolicy = \"dedicated\"\nidle_s = 60\nprobe_interval_s = 0.25\n\
-             [[listen]]\ntcp = \"127.0.0.1:0\"\n[tenants.a]\nkeys_sha256 = [\"{KEY}\"]\n",
-            secret_file(&SECRET_FILE)
-        ))
-        .unwrap()
-        .placement
-        .unwrap();
-        assert_eq!(dedicated.policy, placement::Policy::Dedicated);
-        let serves: Vec<_> = dedicated
-            .nodes
-            .iter()
-            .map(|n| (n.name.as_str(), n.serves))
-            .collect();
-        assert_eq!(
-            serves,
-            [
-                ("agents", [false, true, true]),
-                ("voice", [true, false, false])
-            ]
-        );
-        assert_eq!(
-            (dedicated.idle, dedicated.probe_interval),
-            (Duration::from_secs(60), Duration::from_millis(250))
-        );
-
-        let arm9 = "[admission]\npolicy = \"leaseholder\"\nheadroom_tokens = 1024\n\
-                    critical_prefill_budget_ms = 150\ndegrade_max_tokens = 16";
-        let leaseholder = nodes(&format!("[placement]\npolicy = \"leaseholder\"\n{arm9}")).unwrap();
-        assert_eq!(
-            leaseholder.placement.unwrap().policy,
-            placement::Policy::Leaseholder
-        );
-    }
-
-    #[test]
-    fn placement_mistakes_are_rejected_with_their_cause() {
-        let a =
-            format!("[[listen]]\ntcp = \"127.0.0.1:0\"\n[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
-        let one = "[nodes.phastform]\nupstream = \"http://127.0.0.1:18000\"";
-        let dedicated = "[placement]\npolicy = \"dedicated\"";
-        for (text, cause) in [
-            (
-                format!("upstream = \"http://127.0.0.1:18000\"\n{one}\n{a}"),
-                "set upstream for one engine or [nodes.<name>] for several, not both",
-            ),
-            (format!("{one}\n{a}"), "[nodes] needs two nodes or more"),
-            (
-                format!(
-                    "upstream = \"http://127.0.0.1:18000\"\n[placement]\npolicy = \"dedicated\"\n{a}"
-                ),
-                "[placement] needs [nodes.<name>]",
-            ),
-        ] {
-            let err = Config::from_toml(&text).unwrap_err().to_string();
-            assert!(err.contains(cause), "{text}: {err}");
-        }
-        for (tables, cause) in [
-            ("[placement]\npolicy = \"round-robin\"", "unknown variant"),
-            ("[placement]\nidle = 60", "unknown field"),
-            (
-                "[placement]\nidle_s = 0",
-                "placement.idle_s must be a positive",
-            ),
-            (
-                "[placement]\nprobe_interval_s = -1",
-                "placement.probe_interval_s must be a positive",
-            ),
-            ("[nodes.gray.extra]\n", "unknown field"),
-            (
-                "[nodes.\"a b\"]\nupstream = \"http://127.0.0.1:38000\"",
-                "node name \"a b\"",
-            ),
-            (
-                "[nodes.three]\nupstream = \"http://127.0.0.1:18000\"",
-                "nodes.phastform and nodes.three have the same upstream",
-            ),
-            (
-                "[nodes.three]\nupstream = \"http://engine:8000/v1\"",
-                "nodes.three: upstream \"http://engine:8000/v1\"",
-            ),
-            ("[nodes.three]", "missing field `upstream`"),
-            (
-                "[nodes.three]\nupstream = \"http://127.0.0.1:38000\"\nclasses = [\"realtime\"]",
-                "nodes.three.classes applies only to placement dedicated",
-            ),
-            (
-                dedicated,
-                "nodes.gray: placement dedicated needs the classes it serves",
-            ),
-            (
-                "[placement]\npolicy = \"leaseholder\"",
-                "placement leaseholder reads policy leaseholder's state",
-            ),
-            (
-                "[placement]\npolicy = \"leaseholder\"\n\
-                 [admission]\npolicy = \"static-cap\"\nbackground_max_in_flight = 4",
-                "placement leaseholder reads policy leaseholder's state",
-            ),
-        ] {
-            let err = nodes(tables).unwrap_err();
-            assert!(err.contains(cause), "{tables}: {err}");
-        }
-        let classes = |gray: &str, phastform: &str| {
-            Config::from_toml(&format!(
-                "{}\n[nodes.phastform]\nupstream = \"http://127.0.0.1:18000\"\nclasses = {phastform}\n\
-                 [nodes.gray]\nupstream = \"http://127.0.0.1:28000\"\nclasses = {gray}\n{dedicated}\n{a}",
-                secret_file(&SECRET_FILE)
-            ))
-            .map_err(|e| e.to_string())
-        };
-        assert!(classes("[\"background\", \"interactive\"]", "[\"realtime\"]").is_ok());
-        for (gray, phastform, cause) in [
-            (
-                "[\"background\"]",
-                "[\"realtime\"]",
-                "no node serves interactive requests",
-            ),
-            (
-                "[\"background\", \"background\"]",
-                "[\"realtime\"]",
-                "nodes.gray.classes lists background twice",
-            ),
-            (
-                "[]",
-                "[\"realtime\", \"interactive\", \"background\"]",
-                "nodes.gray.classes is empty",
-            ),
-            ("[\"bulk\"]", "[\"realtime\"]", "unknown variant"),
-        ] {
-            let err = classes(gray, phastform).unwrap_err();
-            assert!(err.contains(cause), "{gray} {phastform}: {err}");
-        }
-    }
-
     const DEPLOY_EXAMPLE: &str = include_str!("../../../deploy/cyan/gateway.example.toml");
 
     /// The deploy example with its placeholders filled in.
@@ -1999,10 +1039,6 @@ mod tests {
                 continue;
             };
             let mut config: toml::Table = deploy_example().parse().unwrap();
-            // An arm's nodes replace the one engine.
-            if overlay.contains_key("nodes") {
-                config.remove("upstream");
-            }
             merge(&mut config, overlay);
             if let Err(err) = Config::from_toml(&toml::to_string(&config).unwrap()) {
                 panic!("{}: {err}", path.display());

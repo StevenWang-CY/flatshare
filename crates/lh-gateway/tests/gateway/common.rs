@@ -63,6 +63,11 @@ pub enum Script {
         chunk: Bytes,
         gap: Duration,
     },
+    /// `text/event-stream`: the chunks at once, then nothing more until the response is dropped, as an engine
+    /// still working on its next token sends.
+    Quiet {
+        chunks: Vec<Bytes>,
+    },
     /// JSON, but the response headers come only after this delay.
     Slow(Duration),
     /// A body of `content_type`: the chunks, `gap` apart, then the connection breaks, as a killed engine's does.
@@ -357,6 +362,18 @@ async fn answer(State(state): State<Arc<MockState>>, request: Request) -> Respon
             );
             ([(CONTENT_TYPE, content_type)], Body::from_stream(chunks)).into_response()
         }
+        Script::Quiet { chunks } => {
+            let chunks = stream::unfold(
+                (chunks.into_iter(), guard),
+                |(mut chunks, guard)| async move {
+                    match chunks.next() {
+                        Some(chunk) => Some((Ok::<_, Infallible>(chunk), (chunks, guard))),
+                        None => std::future::pending().await,
+                    }
+                },
+            );
+            event_stream(Body::from_stream(chunks))
+        }
         Script::Endless { chunk, gap } => {
             let chunks = stream::unfold(guard, move |guard| {
                 let chunk = chunk.clone();
@@ -482,12 +499,6 @@ pub fn listeners_toml(
     toml.replace("tcp = \"127.0.0.1:0\"", &format!("tcp = \"{tcp}\""))
 }
 
-/// The test configuration of a gateway on GPU nodes instead of one upstream: `tables` holds `[nodes.<name>]`,
-/// `[placement]` and any other table.
-pub fn nodes_toml(socket: &std::path::Path, tables: &str) -> String {
-    harness_toml(socket, tables)
-}
-
 /// The test configuration's listeners and tenants, after `top`.
 fn harness_toml(socket: &std::path::Path, top: &str) -> String {
     format!(
@@ -538,12 +549,6 @@ impl Gateway {
     /// A gateway whose `upstream` is `upstream` as written, such as a mock's [`Mock::upstream`].
     pub async fn start_upstream(upstream: &str, top: &str) -> Self {
         let config = Config::from_toml(&upstream_toml(upstream, &socket_path(), top)).unwrap();
-        Self::from_config(config, Arc::new(LogSink)).await
-    }
-
-    /// A gateway on GPU nodes: `tables` holds `[nodes.<name>]`, `[placement]` and any other table.
-    pub async fn start_nodes(tables: &str) -> Self {
-        let config = Config::from_toml(&nodes_toml(&socket_path(), tables)).unwrap();
         Self::from_config(config, Arc::new(LogSink)).await
     }
 

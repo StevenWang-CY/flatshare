@@ -6,8 +6,8 @@
 //! runtime with 4 worker threads, over loopback TCP with pooled keep-alive connections. Every scenario runs three
 //! times: direct to the engine; through a bare reverse proxy on the same stack (axum server, hyper-util client,
 //! bodies passed through untouched), which is the cost of the HTTP hop itself; and through `lh-gateway`.
-//! "Added" is the gateway's quantile minus the direct one. The gateway formats its per-request log line, into
-//! a sink, as it does in production.
+//! "Added" is the gateway's quantile minus the direct one, as measured: negative where the gateway's came out
+//! lower. The gateway formats its per-request log line, into a sink, as it does in production.
 //! - Non-streaming: request sent to full response received, with a 2 KiB chat body and with a 64 KiB one.
 //! - Streaming, first byte: request sent to the first SSE chunk received.
 //! - Streaming, per chunk: the engine stamps each chunk as it writes it; the latency is stamp to receipt.
@@ -19,20 +19,13 @@
 //! gateway per policy with limits the runs never reach, so that what a policy adds is its bookkeeping and never
 //! a wait. "Added" there is over a gateway without a policy, which runs the same requests just before; each
 //! gateway's `lh_gateway_overhead_seconds` follows. Its realtime rows send voice requests, which flow control,
-//! preempt-resubmit and policy leaseholder hold. Policy leaseholder runs twice: alone, where no realtime session
+//! preempt-resubmit and the lifecycle policy hold. The lifecycle policy runs twice: alone, where no realtime session
 //! is in a turn, and with events, while a task posts a lifecycle event every millisecond (four voice sessions in
 //! turn, through speech onset, end of turn, playback and its end), so that requests are decided beside sessions
 //! that speak and are in their critical windows.
 //!
 //! A third table times `POST /v1/events`, batches of one and four events, through a gateway without a policy
-//! and through policy leaseholder, which moves its sessions by each event under the admission lock.
-//!
-//! A fourth prices placement: the same requests through a gateway on two nodes, each a mock engine of its own,
-//! and through a gateway on one with the same admission policy, the two started together so that they serve the
-//! same requests: without an admission policy (placement least-loaded) and with policy leaseholder (placement
-//! leaseholder). Every request names the same session, so all but the first are requests of a placed session,
-//! which find their node in the placement table and keep it. The second engine and these gateways start once
-//! the first three tables have run, so those run in the process they always had.
+//! and through the lifecycle policy, which moves its sessions by each event under the admission lock.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -90,8 +83,8 @@ const POLICIES: [(&str, &str); 5] = [
     ),
     ("preempt-resubmit", "policy = \"preempt-resubmit\""),
     (
-        "leaseholder",
-        "policy = \"leaseholder\"\npool_tokens = 1000000000\nheadroom_tokens = 1024\n\
+        "lifecycle",
+        "policy = \"lifecycle\"\npool_tokens = 1000000000\nheadroom_tokens = 1024\n\
          critical_prefill_budget_ms = 1000000000\ndegrade_max_tokens = 64",
     ),
 ];
@@ -139,13 +132,12 @@ fn main() {
         addr: bare_rt.block_on(start_bare_proxy(engine)),
         runtime: Some(bare_rt.handle().clone()),
     };
-    let gateway_on = |engines: &[SocketAddr], config: &str| Target {
-        addr: gateway_rt.block_on(start_gateway(engines, config)),
+    let gateway = |config: &str| Target {
+        addr: gateway_rt.block_on(start_gateway(engine, config)),
         runtime: Some(gateway_rt.handle().clone()),
     };
-    let gateway = |config: &str| gateway_on(&[engine], config);
     let targets = [direct, bare, gateway("")];
-    // A gateway without a policy for the policy table, with its own overhead histogram, and policy leaseholder
+    // A gateway without a policy for the policy table, with its own overhead histogram, and the lifecycle policy
     // once more for the run with events. These gateways have a voice tenant too.
     let voice = format!(
         "[tenants.voice]\nkeys_sha256 = [\"{}\"]\ntrusted = true\ndefault_class = \"realtime\"",
@@ -160,10 +152,10 @@ fn main() {
             events: false,
         })
         .collect();
-    let leaseholder = POLICIES[POLICIES.len() - 1].1;
+    let lifecycle = POLICIES[POLICIES.len() - 1].1;
     policies.push(Priced {
-        name: "leaseholder, with events",
-        target: gateway(&format!("{voice}\n[admission]\n{leaseholder}")),
+        name: "lifecycle, with events",
+        target: gateway(&format!("{voice}\n[admission]\n{lifecycle}")),
         events: true,
     });
     client_rt.block_on(async {
@@ -171,38 +163,6 @@ fn main() {
         price_policies(&policies).await;
         time_events(&[&policies[0], &policies[POLICIES.len()]]).await;
     });
-    // The placement table's second engine and its gateways start only now, so that the tables above run in the
-    // process they ran in before placement. Each gateway on two nodes is priced against one on a single node
-    // with its admission policy.
-    let engines = [engine, engine_rt.block_on(start_engine())];
-    let priced = |name, engines: &[SocketAddr], config: String| Priced {
-        name,
-        target: gateway_on(engines, &format!("{voice}\n{config}")),
-        events: false,
-    };
-    let pairs = [
-        (
-            priced("one node, none", &engines[..1], String::new()),
-            priced(
-                "two nodes, least-loaded",
-                &engines,
-                "[placement]\npolicy = \"least-loaded\"".into(),
-            ),
-        ),
-        (
-            priced(
-                "one node, leaseholder",
-                &engines[..1],
-                format!("[admission]\n{leaseholder}"),
-            ),
-            priced(
-                "two nodes, leaseholder",
-                &engines,
-                format!("[placement]\npolicy = \"leaseholder\"\n[admission]\n{leaseholder}"),
-            ),
-        ),
-    ];
-    client_rt.block_on(price_placement(&pairs));
     let _ = std::fs::remove_file(salt_secret());
     let _ = std::fs::remove_file(metrics_key());
 }
@@ -254,8 +214,8 @@ async fn serve(app: Router) -> SocketAddr {
     addr
 }
 
-/// The mock engine: JSON at once, or `CHUNKS` stamped SSE chunks `CHUNK_GAP` apart (the first at once). Its
-/// `/health` answers the probes of a gateway on nodes.
+/// The mock engine: JSON at once, or `CHUNKS` stamped SSE chunks `CHUNK_GAP` apart (the first at once), and an
+/// answering `/health`.
 async fn start_engine() -> SocketAddr {
     let app = Router::new().route("/health", get(|| async {}));
     serve(app.route(
@@ -311,24 +271,13 @@ fn digest(key: &str) -> String {
         .collect()
 }
 
-/// A gateway in front of `engines`, its upstream if there is one and nodes `a` and `b` if there are two, with
-/// `extra` (more tenants, `[admission]` and `[placement]` tables, or nothing) in its configuration.
-async fn start_gateway(engines: &[SocketAddr], extra: &str) -> SocketAddr {
-    let (upstream, nodes) = match engines {
-        [engine] => (format!("upstream = \"http://{engine}\""), String::new()),
-        _ => (
-            String::new(),
-            engines
-                .iter()
-                .zip(["a", "b"])
-                .map(|(engine, name)| format!("[nodes.{name}]\nupstream = \"http://{engine}\"\n"))
-                .collect(),
-        ),
-    };
+/// A gateway in front of `engine`, with `extra` (more tenants, an `[admission]` table, or nothing) in its
+/// configuration.
+async fn start_gateway(engine: SocketAddr, extra: &str) -> SocketAddr {
     let config = Config::from_toml(&format!(
-        "{upstream}\ncache_salt_secret_file = \"{}\"\nmetrics_key_file = \"{}\"\n[[listen]]\ntcp = \"127.0.0.1:0\"\n\
-         [tenants.agents]\nkeys_sha256 = [\"{}\"]\ntrusted = true\ndefault_class = \"background\"\n\
-         max_class = \"interactive\"\n{nodes}{extra}",
+        "upstream = \"http://{engine}\"\ncache_salt_secret_file = \"{}\"\nmetrics_key_file = \"{}\"\n\
+         [[listen]]\ntcp = \"127.0.0.1:0\"\n[tenants.agents]\nkeys_sha256 = [\"{}\"]\ntrusted = true\n\
+         default_class = \"background\"\nmax_class = \"interactive\"\n{extra}",
         salt_secret().display(),
         metrics_key().display(),
         digest(KEY)
@@ -542,8 +491,8 @@ async fn price_policies(gateways: &[Priced]) {
             } else {
                 format!(
                     "{:.0} / {:.0}",
-                    (us(0.5) - base.0).max(0.0),
-                    (us(0.99) - base.1).max(0.0)
+                    measured(us(0.5) - base.0),
+                    measured(us(0.99) - base.1)
                 )
             };
             println!(
@@ -557,95 +506,6 @@ async fn price_policies(gateways: &[Priced]) {
     }
     println!();
     for gateway in gateways {
-        report_gateway_metric(&client, &gateway.target, gateway.name).await;
-    }
-}
-
-/// The fourth table: each pair's gateway on two nodes against its gateway on one, in the policy table's request
-/// scenarios. The two runs of a scenario alternate, the one-node run first, and the CPU columns are each run's.
-/// Each gateway's `lh_gateway_overhead_seconds` follows.
-async fn price_placement(pairs: &[(Priced, Priced)]) {
-    let client = http_client();
-    let small = chat_body(2 << 10, false);
-    // Warm every path, and place the session.
-    for (one, two) in pairs {
-        for gateway in [one, two] {
-            run(
-                &client,
-                &gateway.target,
-                &small,
-                Kind::Json,
-                8,
-                2_000,
-                BACKGROUND,
-            )
-            .await;
-            run(
-                &client,
-                &gateway.target,
-                &small,
-                Kind::Json,
-                8,
-                2_000,
-                REALTIME,
-            )
-            .await;
-        }
-    }
-    println!(
-        "\nPlacement: the requests of one placed session, through two nodes and through one. Microseconds, p50 / p99.\n"
-    );
-    println!(
-        "| Gateway | Scenario | Concurrency | One node | Two nodes | Added by placement | CPU per request, one / two |"
-    );
-    println!("|---|---|---:|---:|---:|---:|---:|");
-    let scenarios: [(&str, usize, usize, &str); 5] = [
-        ("Non-streaming, 2 KiB body", 1, 5_000, BACKGROUND),
-        ("Non-streaming, 2 KiB body", 8, 40_000, BACKGROUND),
-        ("Non-streaming, 2 KiB body", 64, 40_000, BACKGROUND),
-        ("Realtime, non-streaming, 2 KiB body", 1, 5_000, REALTIME),
-        ("Realtime, non-streaming, 2 KiB body", 8, 40_000, REALTIME),
-    ];
-    for (scenario, concurrency, count, class) in scenarios {
-        for (one, two) in pairs {
-            let base = run(
-                &client,
-                &one.target,
-                &small,
-                Kind::Json,
-                concurrency,
-                count,
-                class,
-            )
-            .await;
-            let placed = run(
-                &client,
-                &two.target,
-                &small,
-                Kind::Json,
-                concurrency,
-                count,
-                class,
-            )
-            .await;
-            let us = |samples: &Samples, q: f64| quantile(&samples.requests, q) as f64 / 1e3;
-            let cpu = |samples: &Samples| samples.busy.as_secs_f64() * 1e6 / count as f64;
-            println!(
-                "| {} | {scenario} | {concurrency} | {:.0} / {:.0} | {:.0} / {:.0} | {:.0} / {:.0} | {:.0} / {:.0} |",
-                two.name,
-                us(&base, 0.5),
-                us(&base, 0.99),
-                us(&placed, 0.5),
-                us(&placed, 0.99),
-                us(&placed, 0.5) - us(&base, 0.5),
-                us(&placed, 0.99) - us(&base, 0.99),
-                cpu(&base),
-                cpu(&placed),
-            );
-        }
-    }
-    println!();
-    for gateway in pairs.iter().flat_map(|(one, two)| [one, two]) {
         report_gateway_metric(&client, &gateway.target, gateway.name).await;
     }
 }
@@ -671,7 +531,7 @@ fn flow_events(
     (stop, poster)
 }
 
-/// The third table: `POST /v1/events` through a gateway without a policy and through policy leaseholder.
+/// The third table: `POST /v1/events` through a gateway without a policy and through the lifecycle policy.
 async fn time_events(gateways: &[&Priced]) {
     let client = http_client();
     for gateway in gateways {
@@ -780,7 +640,7 @@ fn row(
     };
     let (direct, bare, gateway) = (&runs[0], &runs[1], &runs[2]);
     let added =
-        |q: f64| (us(quantile(samples(gateway), q)) - us(quantile(samples(direct), q))).max(0.0);
+        |q: f64| measured(us(quantile(samples(gateway), q)) - us(quantile(samples(direct), q)));
     let cpu = |s: &Samples| s.busy.as_secs_f64() * 1e6 / count as f64;
     println!(
         "| {scenario} | {concurrency} | {} | {} | {} | {} | {:.0} / {:.0} | {:.0} / {:.0} |",
@@ -793,6 +653,11 @@ fn row(
         cpu(bare),
         cpu(gateway),
     );
+}
+
+/// A difference in microseconds as measured, rounded to a whole one, without a negative zero.
+fn measured(us: f64) -> f64 {
+    us.round() + 0.0
 }
 
 fn quantile(sorted: &[u64], q: f64) -> u64 {
