@@ -329,7 +329,7 @@ def main() -> None:
     alone = [e for n, e in hits if n == 0]
     stalls = restore_stalls(runs, model)
     stall = statistics.median(stalls)
-    q = statistics.quantiles(stalls, n=4)
+    q = statistics.quantiles(stalls, n=4, method="inclusive")
     print(f"mixed steps: {len(mixed)}, median excess {mixed_ms:.1f} ms", file=sys.stderr)
     print(
         f"hits: {len(beside)} beside decodes, {per_decode:.1f} ms per decode; {len(alone)} alone, median excess "

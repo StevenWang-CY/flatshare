@@ -1,7 +1,8 @@
 """Recompute the make-room probe tables of docs/BENCHMARKS.md from the outputs in this directory.
 
-Each row names the files (and, in a driver's log, the section) its runs are in. A call-tail row gives tail.py's summary
-line and recomputes it from the run's per-turn lines, as tail.py computes it; the per-turn lines are rounded to the
+Each row names the files (and, in a driver's log, the section) its runs are in. A call-tail row computes the run's
+percentiles from its per-turn lines by the inclusive method, as E2's report does, and checks the run's summary line
+against them by the exclusive method tail.py used when these runs were made; the per-turn lines are rounded to the
 millisecond and the summary is not, so the two may differ by 1 ms.
 """
 
@@ -112,6 +113,12 @@ def half_up(x: float) -> int:
     return int(x + 0.5)
 
 
+def tail(ok: list[float], method: str) -> tuple[int, float, float, float, float]:
+    """The sorted turns' count, p50, p90, p95 and max, by the given percentile method."""
+    q = statistics.quantiles(ok, n=20, method=method)
+    return len(ok), statistics.median(ok), q[17], q[18], ok[-1]
+
+
 def spread(values: list[int]) -> str:
     """As the tables give a row: each run, or the median and range from four runs on."""
     v = sorted(values)
@@ -148,17 +155,23 @@ def main() -> int:
         text = (HERE / path).read_text().splitlines()
         turns = [float(m[1]) for line in text if (m := TURN.search(line))]
         ok = sorted(t for t in turns if t == t)
-        q = statistics.quantiles(ok, n=20)
-        mine = (len(ok), statistics.median(ok), q[17], q[18], ok[-1])
         summary = next(
             tuple(int(g) for g in m.groups()) for line in text if (m := SUMMARY.match(line))
         )
-        agrees = mine[0] == summary[0] and all(abs(mine[i] - summary[i]) <= 1 for i in range(1, 5))
+        logged = tail(ok, "exclusive")
+        agrees = logged[0] == summary[0] and all(
+            abs(logged[i] - summary[i]) <= 1 for i in range(1, 5)
+        )
         failures += not agrees
         failed = len(turns) - len(ok)
-        check = "the per-turn lines agree" if agrees else f"the per-turn lines DISAGREE: {mine}"
+        check = (
+            "its summary line agrees"
+            if agrees
+            else f"its summary line {summary} DISAGREES: {logged}"
+        )
+        shown = tail(ok, "inclusive")
         print(
-            f"  {name}, {prompts}: {summary[0]} turns ({failed} failed), {' / '.join(f'{x:,}' for x in summary[1:])} ms; {check}"
+            f"  {name}, {prompts}: {shown[0]} turns ({failed} failed), {' / '.join(f'{half_up(x):,}' for x in shown[1:])} ms; {check}"
         )
     return 1 if failures else 0
 

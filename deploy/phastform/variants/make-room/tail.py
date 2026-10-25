@@ -119,7 +119,7 @@ async def call(
 
 def summary(ttfts: list[float | None], agents_ran: list[bool]) -> str:
     """The calls' first-token tail, a failed turn counted at TIMEOUT_MS (≥ marks a percentile one sets), and how
-    many turns failed and agents stopped early."""
+    many turns failed and agents stopped early. The percentiles are inclusive, as E2's report computes them."""
     samples = sorted(TIMEOUT_MS if ttft is None else ttft for ttft in ttfts)
     failed = sum(ttft is None for ttft in ttfts)
     stopped = sum(not ran for ran in agents_ran)
@@ -130,7 +130,7 @@ def summary(ttfts: list[float | None], agents_ran: list[bool]) -> str:
     def ms(value: float) -> str:
         return ("≥" if value >= TIMEOUT_MS else "") + f"{value:.0f}"
 
-    q = statistics.quantiles(samples, n=20)
+    q = statistics.quantiles(samples, n=20, method="inclusive")
     return (
         f"calls: {len(samples)} turns, {failed} failed (counted at {TIMEOUT_MS:,.0f} ms), TTFT p50 "
         f"{ms(statistics.median(samples))} p90 {ms(q[17])} p95 {ms(q[18])} max {ms(samples[-1])} ms; {agents}"

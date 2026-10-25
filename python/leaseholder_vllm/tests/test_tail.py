@@ -1,6 +1,7 @@
 """The make-room variant's load check (deploy/phastform/variants/make-room/tail.py): a failed call turn counts at the
-timeout, as E2's report censors a reply that never came, and the turns that failed and the agents that stopped early
-are printed. It needs aiohttp, which the engine environment has; without it, as in CI, these tests skip."""
+timeout, as E2's report censors a reply that never came, the percentiles are inclusive, as E2's report computes them,
+and the turns that failed and the agents that stopped early are printed. It needs aiohttp, which the engine environment
+has; without it, as in CI, these tests skip."""
 
 import asyncio
 import importlib.util
@@ -87,10 +88,10 @@ def test_an_agent_stops_at_its_first_failed_request(tail):
 def test_the_summary_counts_failed_turns_at_the_timeout_and_stopped_agents(tail):
     ttfts = [100.0 + i for i in range(18)] + [None, None]
     assert tail.summary(ttfts, [True] * 11 + [False]) == (
-        "calls: 20 turns, 2 failed (counted at 30,000 ms), TTFT p50 110 p90 27012 p95 ≥30000 max ≥30000 ms; "
+        "calls: 20 turns, 2 failed (counted at 30,000 ms), TTFT p50 110 p90 3105 p95 ≥30000 max ≥30000 ms; "
         "agents: 1 of 12 stopped early"
     )
     assert tail.summary([100.0 + i for i in range(20)], [True]) == (
-        "calls: 20 turns, 0 failed (counted at 30,000 ms), TTFT p50 110 p90 118 p95 119 max 119 ms; "
+        "calls: 20 turns, 0 failed (counted at 30,000 ms), TTFT p50 110 p90 117 p95 118 max 119 ms; "
         "agents: 0 of 1 stopped early"
     )

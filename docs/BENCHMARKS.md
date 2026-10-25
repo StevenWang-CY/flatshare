@@ -355,21 +355,21 @@ The rows name `make-room`'s switches: the KV preemption (at most 2 victims a ste
 
 | Scheduler | Agents' prompts | Call turns | TTFT p50 / p90 / p95 / max |
 |---|---|---:|---|
-| Stock vLLM 0.32.0, priority scheduling (the frozen box) | fresh | 47 | 3,081 / 6,894 / 9,067 / 11,094 ms |
-| Stock vLLM 0.32.0, priority scheduling (the frozen box) | growing | 50 | 1,359 / 6,894 / 7,942 / 8,692 ms |
-| `make-room`, the KV preemption alone (#63350) | fresh | 60 | 643 / 1,900 / 2,980 / 6,298 ms |
-| `make-room`, the KV preemption alone (#63350) | growing | 60 | 540 / 1,226 / 2,342 / 3,325 ms |
-| `make-room` with the reserve, before its KV-load rule | fresh | 68 | 361 / 1,897 / 3,176 / 4,120 ms |
-| `make-room` with the reserve, before its KV-load rule | growing | 70 | 424 / 619 / 3,311 / 3,544 ms |
-| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | fresh | 73 | 257 / 347 / 357 / 370 ms |
-| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | growing | 73 | 261 / 403 / 439 / 604 ms |
-| `make-room` as arm 9 runs it, with the reserve | fresh | 73 | 202 / 291 / 324 / 398 ms |
-| `make-room` as arm 9 runs it, with the reserve | growing | 73 | 202 / 291 / 336 / 678 ms |
+| Stock vLLM 0.32.0, priority scheduling (the frozen box) | fresh | 47 | 3,081 / 6,529 / 8,239 / 11,094 ms |
+| Stock vLLM 0.32.0, priority scheduling (the frozen box) | growing | 50 | 1,359 / 6,816 / 7,258 / 8,692 ms |
+| `make-room`, the KV preemption alone (#63350) | fresh | 60 | 643 / 1,715 / 2,730 / 6,298 ms |
+| `make-room`, the KV preemption alone (#63350) | growing | 60 | 540 / 1,102 / 1,950 / 3,325 ms |
+| `make-room` with the reserve, before its KV-load rule | fresh | 68 | 361 / 1,546 / 2,812 / 4,120 ms |
+| `make-room` with the reserve, before its KV-load rule | growing | 70 | 425 / 605 / 2,395 / 3,544 ms |
+| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | fresh | 73 | 257 / 346 / 353 / 370 ms |
+| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | growing | 73 | 261 / 387 / 434 / 604 ms |
+| `make-room` as arm 9 runs it, with the reserve | fresh | 73 | 202 / 283 / 316 / 398 ms |
+| `make-room` as arm 9 runs it, with the reserve | growing | 73 | 202 / 289 / 324 / 678 ms |
 
-The rows before the KV-load rule ran with the scheduler's state logged for each call that waited over 0.3 s; the stock rows' p95 is that of E2's frozen box in the discriminating scenario (the realtime first byte, 8,556 ms). Each row is one run.
+The rows before the KV-load rule ran with the scheduler's state logged for each call that waited over 0.3 s; the stock rows' p95 is near that of E2's frozen box in the discriminating scenario (the realtime first byte, 8,556 ms). Each row is one run; the percentiles are inclusive, as E2's report computes them, from the run's per-turn lines.
 
 - **Why.** Between a call's turns, the agents' prefills cycle the GPU's free blocks, so the turn's prefix is evicted and loads back from the CPU tier, asynchronously. Every slow turn was in `WAITING_FOR_REMOTE_KVS` (the scheduler's state logged each step), with KV to spare. Once its load is done, a request waits for the waiting loop to promote it, and the waiting loop runs only on budget the running loop leaves; the agents' 512-token chunks left none. The budget cap now holds lower-priority prefill while a higher-priority request loads, as while it prefills.
-- **Each switch's share.** The KV preemption alone takes the calls' p95 from 7.9–9.1 s to 2.3–3.0 s, since a turn no longer waits for an agent request to finish; the budget cap takes it under 0.5 s. With the reserve as well, the median is lower (202 against 257 and 261 ms).
+- **Each switch's share.** The KV preemption alone takes the calls' p95 from 7.26–8.24 s to 1.95–2.73 s, since a turn no longer waits for an agent request to finish; the budget cap takes it under 0.5 s. With the reserve as well, the median is lower (202 against 257 and 261 ms).
 - **E2's points show the same tail:** disc-a9-s24 on the module before this rule had its first token after 334 ms at the median and 2,146 ms at p95, against preempt-resubmit's 251 and 394 ms; its turns loaded about 40k tokens from the CPU tier, about their own prefixes.
 
 ## Agent replay on the frozen box: a first retention-headroom signal
