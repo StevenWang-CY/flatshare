@@ -38,8 +38,9 @@ ENGINE_PRIORITY: Final[Mapping[SloClass, int]] = MappingProxyType(
 )
 """vLLM ``priority`` per class (``SloClass::engine_priority`` in ``lh-proto``).
 
-vLLM schedules lower values first. It rejects any value other than 0 unless the server runs with
-``--scheduling-policy priority``, so turn ``send_priority`` off against a FCFS server.
+vLLM schedules lower values first, and acts on them only under ``--scheduling-policy priority``:
+vLLM 0.32's FCFS scheduler ignores them, although its OpenAI protocol says a value other than 0
+raises an error there. Turn ``send_priority`` off to send none, as a plain client would.
 """
 
 

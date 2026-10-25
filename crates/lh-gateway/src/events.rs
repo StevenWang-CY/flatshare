@@ -34,7 +34,7 @@ pub trait EventSink: Send + Sync + std::fmt::Debug + 'static {
     fn accept(&self, event: AcceptedEvent);
 }
 
-/// The v0 sink: one structured log line per event (target `lh_gateway::events`).
+/// The gateway's sink: one structured log line per event (target `lh_gateway::events`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LogSink;
 

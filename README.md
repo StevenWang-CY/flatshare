@@ -128,10 +128,9 @@ docs/                     architecture, protocol, SLOs, experiments, benchmarks,
   - measured negatives: lifecycle-timed headroom and throttling beside that change (E2), lifecycle-informed retention and prefetch of agents' KV (E1).
 - **The gateway is a harness.** `lh-gateway` is a small Rust proxy for experiments on one GPU without Kubernetes. It does not compete with fleet routers. What goes where production runs:
   - the engine change, as two vLLM scheduler PRs under #40004: [#63350](https://github.com/vllm-project/vllm/pull/63350) lets a waiting request preempt lower-priority work for KV, and [#63351](https://github.com/vllm-project/vllm/pull/63351) holds lower-priority prefill out of its first tokens;
-  - E1's negative result for agent-side retention and prefetch, on vLLM #57103 and vllm-project/router #428;
-  - agentic-api's benchmark sweep ([#478](https://github.com/vllm-project/agentic-api/pull/478)), and the lifecycle-event sink and cache-control pass-through proposed there (#364, #330).
+  - E1's negative result for agent-side retention and prefetch, on vLLM #57103 and vllm-project/router #428.
 
-  None of these is merged yet.
+  None of these is merged yet. Independent of them, this work proposed to agentic-api a benchmark sweep ([#478](https://github.com/vllm-project/agentic-api/pull/478)), a lifecycle-event sink (#364) and cache-control pass-through (#330), likewise not merged.
 
 See [docs/PRIOR-ART.md](docs/PRIOR-ART.md) for sources and status.
 

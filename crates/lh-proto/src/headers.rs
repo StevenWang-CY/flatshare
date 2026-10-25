@@ -46,7 +46,7 @@ pub const ENGINE_CONTROL_HEADERS: [&str; 4] =
 /// namespace, `session_params` to continue a session's KV, `custom_labels` as metric labels, and the routing
 /// fields a router injects: the data-parallel rank (`routed_dp_rank`, and the deprecated `data_parallel_rank`)
 /// and the prefill-decode disaggregation fields. The control plane removes them from client bodies and sets its
-/// own; each tenant's `cache_salt` is derived from the tenant's name.
+/// own; each tenant's `cache_salt` is an HMAC of the tenant's name under a secret only the control plane reads.
 pub const ENGINE_CONTROL_BODY_FIELDS: [&str; 17] = [
     "session_id",
     "priority",
