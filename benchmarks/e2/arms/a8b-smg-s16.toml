@@ -9,5 +9,5 @@ router = "smg"
 sessions = 16
 
 [gateway]
-upstream = "http://127.0.0.1:18090"
+upstream = "unix:/run/user/1007/lh/smg.sock"
 upstream_priority = ["smg-header"]

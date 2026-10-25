@@ -16,7 +16,7 @@ import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 
-import httpx
+from leaseholder_bench.transport import client
 
 REUSE_GAP = "vllm:kv_block_reuse_gap_seconds"
 IDLE_BEFORE_EVICT = "vllm:kv_block_idle_before_evict_seconds"
@@ -27,11 +27,13 @@ _SAMPLE = re.compile(r"^(?P<name>[\w:]+)(?:\{(?P<labels>[^}]*)\})?\s+(?P<value>\
 _LABEL = re.compile(r'(\w+)="([^"]*)"')
 
 
-def fetch(url: str, timeout: float = 10.0) -> str:
-    """The Prometheus text exposition at ``url`` (an engine's ``/metrics``)."""
-    response = httpx.get(url, timeout=timeout)
-    response.raise_for_status()
-    return response.text
+def fetch(address: str, timeout: float = 10.0) -> str:
+    """The ``/metrics`` exposition of the server at ``address`` (:mod:`leaseholder_bench.transport`): an engine's,
+    or the gateway's on its socket."""
+    with client(address, timeout=timeout) as http:
+        response = http.get("/metrics")
+        response.raise_for_status()
+        return response.text
 
 
 def metric_samples(exposition: str) -> Iterator[tuple[str, dict[str, str], float]]:

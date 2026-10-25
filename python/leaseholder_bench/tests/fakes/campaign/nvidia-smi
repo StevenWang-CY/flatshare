@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# nvidia-smi in the campaign.sh tests: a sample of campaign.sh's query every 0.1 s until it is stopped.
+# nvidia-smi in the campaign.sh tests: a sample of campaign.sh's query every 0.1 s until it is stopped, ending in the
+# GPU's name and UUID when the query asks for them; after the first, it logs how it was asked (nvidia-smi.log in the
+# host's home).
+sample="2026/10/24 15:00:00.000, 2805 MHz, 13801 MHz, 61, 150.21 W, 0x0000000000000000"
+[[ $* == *",name"[,\ ]* || $* == *",name" ]] && sample+=", NVIDIA GeForce RTX 5060 Ti"
+[[ $* == *",uuid "* || $* == *",uuid" ]] && sample+=", GPU-5060"
+echo "$sample"
+echo "nvidia-smi $*" >>nvidia-smi.log
 while :; do
-  echo "2026/10/24 15:00:00.000, 2805 MHz, 13801 MHz, 61, 150.21 W, 0x0000000000000000"
   sleep 0.1
+  echo "$sample"
 done

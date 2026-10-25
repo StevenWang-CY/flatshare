@@ -23,7 +23,9 @@ as fit in ``--seconds``. Turn k of both starts at the same moment, so the same l
 side by side, and the call that is ahead waits in silence before its next line: only a caller's
 pause between turns is stretched, never a measured wait. The soundtrack is one call at a time, the
 left one for the first half and the right one for the second, and the side playing is
-highlighted. ``--gif`` also writes a short, small GIF of the start, for a README.
+highlighted. ``--title LINE`` (repeatable) opens the video with a card of those lines, its first as
+the heading, for ``--title-seconds`` of silence. ``--gif`` also writes a short, small GIF of the
+calls' start, for a README: silent, so its frames have no sound cues.
 
 The video is 1280x720 H.264 with AAC sound, encoded by the ffmpeg that imageio-ffmpeg bundles.
 """
@@ -36,7 +38,9 @@ import json
 import subprocess
 import sys
 import tempfile
+import textwrap
 import wave
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -241,16 +245,17 @@ class Panel:
 
 
 class Frames:
-    """The video's frames: both calls' panels at a moment of the video, as RGBA pixels."""
+    """The video's frames: both calls' panels at a moment of the video, as RGBA pixels. Without
+    ``sound`` (the GIF's), no side is marked as the one heard."""
 
     STEP_S = 0.1
     """The time step of the goodput's live rate."""
 
-    def __init__(self, timeline: Timeline) -> None:
+    def __init__(self, timeline: Timeline, sound: bool = True) -> None:
         from matplotlib.backends.backend_agg import FigureCanvasAgg
         from matplotlib.figure import Figure
 
-        self.timeline = timeline
+        self.timeline, self.sound = timeline, sound
         self.figure = Figure(figsize=(WIDTH / 100, HEIGHT / 100), dpi=100, facecolor=SURFACE)
         self.canvas = FigureCanvasAgg(self.figure)
         self.waits = [timeline.waits(side) for side in (0, 1)]
@@ -266,7 +271,7 @@ class Frames:
             0.04,
             "V2V: from the end of the caller's speech to the agent's first audio, as the callers "
             "measured it.\nEach pair of turns starts together, and the call that is ahead waits in "
-            "silence. Sound: the left call, then the right one.",
+            "silence." + (" Sound: the left call, then the right one." if sound else ""),
             color=MUTED,
             fontsize=9,
             ha="center",
@@ -360,7 +365,7 @@ class Frames:
 
     def draw(self, t: float) -> np.ndarray:
         """The frame at video time t."""
-        playing = 0 if t < self.timeline.seconds / 2 else 1
+        playing = (0 if t < self.timeline.seconds / 2 else 1) if self.sound else None
         for side, panel in enumerate(self.panels):
             panel.box.set_facecolor(PLANE if side == playing else SURFACE)
             panel.box.set_edgecolor(SECONDARY if side == playing else GRID)
@@ -390,20 +395,54 @@ class Frames:
         return np.asarray(self.canvas.buffer_rgba())
 
 
+def title_card(lines: Sequence[str]) -> np.ndarray:
+    """A title card's pixels: its first line as the heading, the others beneath it."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    figure = Figure(figsize=(WIDTH / 100, HEIGHT / 100), dpi=100, facecolor=SURFACE)
+    canvas = FigureCanvasAgg(figure)
+    heading, *rest = lines
+    # Wrapped by characters, not at the frame's edge: about 50 of the heading's fit its width.
+    figure.text(0.08, 0.6, textwrap.fill(heading, 50), color=INK, fontsize=26, va="bottom")
+    for row, line in enumerate(rest):
+        top = 0.52 - row * 0.065
+        figure.text(0.08, top, textwrap.fill(line, 95), color=SECONDARY, fontsize=15, va="top")
+    canvas.draw()
+    return np.asarray(canvas.buffer_rgba()).copy()
+
+
+def title_frames(title: Sequence[str], title_s: float, fps: float) -> int:
+    """The frames a title card of ``title_s`` seconds takes (none without a title): a whole number,
+    which the soundtrack's silence then matches exactly."""
+    return round(title_s * fps) if title else 0
+
+
 def render(
-    timeline: Timeline, out: Path, *, fps: float = 30, gif: Path | None = None, gif_s: float = 10
+    timeline: Timeline,
+    out: Path,
+    *,
+    fps: float = 30,
+    gif: Path | None = None,
+    gif_s: float = 10,
+    title: Sequence[str] = (),
+    title_s: float = 5.0,
 ) -> int:
-    """Write the video, and the GIF of its first ``gif_s`` seconds; returns the video's frames."""
+    """Write the video, opened by a card of the ``title`` lines if any, and a GIF of the calls' first
+    ``gif_s`` seconds from silent frames (no side marked as heard); returns the video's frames."""
     import imageio_ffmpeg
 
     frames = Frames(timeline)
-    count = round(timeline.seconds * fps)
+    lead = title_frames(title, title_s, fps)
+    rate = timeline.calls[0].rate
+    count = lead + round(timeline.seconds * fps)
     with tempfile.TemporaryDirectory() as scratch:
         sound = Path(scratch) / "soundtrack.wav"
         with wave.open(str(sound), "wb") as wav:
             wav.setnchannels(1)
             wav.setsampwidth(2)
-            wav.setframerate(timeline.calls[0].rate)
+            wav.setframerate(rate)
+            wav.writeframes(np.zeros(round(lead / fps * rate), dtype=np.int16).tobytes())
             wav.writeframes(soundtrack(timeline).tobytes())
         writer = imageio_ffmpeg.write_frames(
             str(out),
@@ -416,18 +455,31 @@ def render(
             audio_codec="aac",
         )
         writer.send(None)
-        for index in range(count):
+        if lead:
+            card = title_card(title)
+            for _ in range(lead):
+                writer.send(card)
+        for index in range(count - lead):
             writer.send(frames.draw(index / fps))
         writer.close()
     if gif is not None:
+        silent, gif_fps = Frames(timeline, sound=False), 10.0
         palette = (
-            "fps=10,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:"
+            "scale=640:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:"
             "stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle"
         )
-        command = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-v", "error", "-t", f"{gif_s:g}"]
-        subprocess.run(
-            [*command, "-i", str(out), "-vf", palette, "-loop", "0", str(gif)], check=True
-        )
+        with tempfile.TemporaryDirectory() as scratch:
+            clip = Path(scratch) / "silent.mp4"
+            writer = imageio_ffmpeg.write_frames(
+                str(clip), (WIDTH, HEIGHT), pix_fmt_in="rgba", fps=gif_fps, quality=9,
+                ffmpeg_log_level="error",
+            )  # fmt: skip
+            writer.send(None)
+            for index in range(round(min(gif_s, timeline.seconds) * gif_fps)):
+                writer.send(silent.draw(index / gif_fps))
+            writer.close()
+            command = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-v", "error", "-i", str(clip)]
+            subprocess.run([*command, "-vf", palette, "-loop", "0", str(gif)], check=True)
     return count
 
 
@@ -444,6 +496,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--turns", type=int, help="the turns shown (default: as many as fit)")
     parser.add_argument("--seconds", type=float, default=90.0, help="the video's most (default 90)")
     parser.add_argument("--fps", type=float, default=30.0, help="frames a second (default 30)")
+    parser.add_argument(
+        "--title", action="append", default=[], metavar="LINE",
+        help="a line of the opening card, the first its heading (repeatable; default no card)",
+    )  # fmt: skip
+    parser.add_argument(
+        "--title-seconds", type=float, default=5.0, help="the card's length (default 5)"
+    )
     args = parser.parse_args(argv)
     labels = args.labels or (None, None)
     try:
@@ -455,9 +514,17 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, KeyError, ValueError) as exc:
         print(f"demo.py: {exc}", file=sys.stderr)
         return 1
-    count = render(timeline, args.out, fps=args.fps, gif=args.gif, gif_s=args.gif_seconds)
+    count = render(
+        timeline, args.out, fps=args.fps, gif=args.gif, gif_s=args.gif_seconds,
+        title=args.title, title_s=args.title_seconds,
+    )  # fmt: skip
     last = args.first_turn + len(timeline.spans[0]) - 1
-    print(f"{args.out}: {count} frames, {timeline.seconds:.1f} s, turns {args.first_turn}-{last}")
+    card = title_frames(args.title, args.title_seconds, args.fps)
+    opening = f", after a {card / args.fps:g} s title card" if card else ""
+    print(
+        f"{args.out}: {count} frames, {timeline.seconds:.1f} s of calls{opening}, "
+        f"turns {args.first_turn}-{last}"
+    )
     if args.gif is not None:
         print(f"{args.gif}: its first {min(args.gif_seconds, timeline.seconds):g} s")
     return 0

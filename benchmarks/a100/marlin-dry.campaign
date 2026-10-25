@@ -1,0 +1,11 @@
+# The Marlin dry run's one E2 point (docs/HARDWARE.md, the Marlin dry run, session 2, step 3), on the box: the PRs'
+# values with the linear layers on Marlin, the agents' sample of W5's round 1, and no KV sampler, as W5's points
+# ran, since the point is read against W5's. From the workstation, with the box's hosts as for W5:
+#   benchmarks/e2/campaign.sh benchmarks/a100/marlin-dry.campaign
+
+agents-seed 11
+kv-sample-s 0
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+#   --linear-backend marlin
+arms/marlin-dry-pr-ab48-s24.toml

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -160,14 +161,23 @@ class FakeEngine:
 
 
 @asynccontextmanager
-async def serving(app: web.Application) -> AsyncIterator[str]:
+async def serving(app: web.Application, transport: str = "tcp") -> AsyncIterator[str]:
+    """``app`` on loopback TCP or on a Unix socket of its own, as the probes reach an engine on cyan
+    (the tunnel's socket); yields its address."""
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", 0)
+    if transport == "unix":
+        path = f"{tempfile.mkdtemp(prefix='lh-probe-')}/engine.sock"
+        site: web.BaseSite = web.UnixSite(runner, path)
+        address = f"unix:{path}"
+    else:
+        site = web.TCPSite(runner, "127.0.0.1", 0)
     await site.start()
-    port = site._server.sockets[0].getsockname()[1]  # type: ignore[union-attr]
+    if transport != "unix":
+        port = site._server.sockets[0].getsockname()[1]  # type: ignore[union-attr]
+        address = f"http://127.0.0.1:{port}"
     try:
-        yield f"http://127.0.0.1:{port}"
+        yield address
     finally:
         await runner.cleanup()
 
@@ -176,11 +186,12 @@ def run(coro: Callable[[], Awaitable[None]]) -> None:
     asyncio.run(coro())
 
 
-def test_tiers_measures_each_tier_against_a_fake_engine(tmp_path: Path):
+@pytest.mark.parametrize("transport", ["tcp", "unix"])
+def test_tiers_measures_each_tier_against_a_fake_engine(tmp_path: Path, transport: str):
     engine = FakeEngine(capacity=64)
 
     async def main() -> None:
-        async with serving(engine.app()) as url:
+        async with serving(engine.app(), transport) as url:
             config = TiersConfig(url=url, model="m", lengths=[16, 32], reps=2)
             summary = await run_tiers(config, tmp_path)
         assert summary["invalid"] == {}
@@ -227,15 +238,16 @@ def voice_stack(seen: dict[str, list]) -> web.Application:
     return app
 
 
-def test_voice_turn_times_every_stage_and_speaks_the_first_sentence(tmp_path: Path):
+@pytest.mark.parametrize("transport", ["tcp", "unix"])
+def test_voice_turn_times_every_stage_and_speaks_the_first_sentence(tmp_path: Path, transport: str):
     seen: dict[str, list] = {"stt": [], "chat": [], "tts": []}
     wav = tmp_path / "turn.wav"
     wav.write_bytes(b"RIFF....WAVE")
 
     async def main() -> None:
-        async with serving(voice_stack(seen)) as url:
+        async with serving(voice_stack(seen), transport) as url:
             config = VoiceTurnConfig(
-                stt_url=f"{url}/v1", llm_url=f"{url}/v1", tts_url=f"{url}/v1",
+                stt=url, llm=url, tts=url,
                 stt_model="whisper", llm_model="m", tts_model="kokoro", voice="af_heart",
                 audio=[wav], reps=3, warm=1, concurrency=2, gap_s=0.0,
             )  # fmt: skip

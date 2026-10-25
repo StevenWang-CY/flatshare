@@ -1,8 +1,9 @@
 """E2's frontier across points (``lh-bench e2 report``).
 
 :func:`write_report` places the points on E2's frontier: background goodput on x, voice-to-voice
-p95 on y, one frontier per arm and workload (the agents' corpus and the number of callers, since
-points of different workloads are never compared). A point is on its arm's frontier when no other
+p95 on y, one frontier per arm and workload (the agents' corpus and the number of callers, and the GPU
+and the model where they are not the frozen box's, since points of different workloads are never
+compared). A point is on its arm's frontier when no other
 point of the arm and workload harvests at least as much background goodput at a V2V p95 at least as
 low, and one of the two strictly better. A point on several GPU nodes is placed by its totals.
 Points measured from the same arm file in several campaigns are repeats of one configuration, which
@@ -18,6 +19,7 @@ from __future__ import annotations
 import csv
 import re
 import statistics
+import tomllib
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -30,6 +32,7 @@ from leaseholder_bench.e2.record import (
     REPLY_TIMEOUT_MS,
     WATERFALL,
     compact,
+    engine_model,
     kv_token_bytes,
     measured_sum,
     point_engines,
@@ -100,6 +103,11 @@ configuration of its own, never a point on arm 9's frontier. The records stay as
 STANDARD_WORKLOAD = ("weka-x32", 2)
 """The corpus and callers of an arm file that names neither (e2's Agents.data and Voice.callers):
 the workload drawn in frontier.svg."""
+BOX_GPU = "NVIDIA GeForce RTX 5060 Ti"
+BOX_MODEL = "Qwen/Qwen3-4B-Instruct-2507-FP8"
+"""The frozen box's GPU, as nvidia-smi names it in campaign.sh's samples, and its model: a point's
+workload names its GPU and its model only where they are not these. A record that names no GPU ran
+on the box, as every point did before the samples named it."""
 NODE_COLUMNS = ("nodes",)
 WORKER_COLUMNS = (
     *(f"{stage.removesuffix('_ms')}_{q}_ms" for stage in WATERFALL for q in ("p50", "p95")),
@@ -159,9 +167,16 @@ def load_points(run_dirs: Iterable[Path]) -> tuple[list[dict[str, Any]], list[Pa
 
     def order(r: Mapping[str, Any]) -> tuple[Any, ...]:
         goodput = placed[_configuration(r)]["background_tokens_per_s"]
-        # The arm file's own workload first, then the rest of its corpus, then the other corpora.
+        # The box's workloads first; among them the arm file's own, then the rest of its corpus, then
+        # the other corpora.
         data, callers = r["data"], r["callers"]
-        first = ((data, callers) != STANDARD_WORKLOAD, data != STANDARD_WORKLOAD[0], data, callers)
+        first = (
+            r.get("hardware", ""),
+            (data, callers) != STANDARD_WORKLOAD,
+            data != STANDARD_WORKLOAD[0],
+            data,
+            callers,
+        )
         return (*first, arm_order(r["arm"]), goodput, r["point"], r["campaign"])
 
     rows.sort(key=order)
@@ -173,9 +188,17 @@ def _configuration(row: Mapping[str, Any]) -> tuple[str, str, str]:
     return row["workload"], row["arm"], row["point"]
 
 
-def _workload(data: str, callers: int) -> str:
-    """A workload's name, as frontier.csv and frontier.md give it."""
-    return f"{data}, {callers} caller{'' if callers == 1 else 's'}"
+def _workload(data: str, callers: int, on: str = "") -> str:
+    """A workload's name, as frontier.csv and frontier.md give it; ``on`` is :func:`hardware`'s."""
+    return f"{data}, {callers} caller{'' if callers == 1 else 's'}" + (f", {on}" if on else "")
+
+
+def hardware(gpu_name: str | None, model: str | None) -> str:
+    """What a point's workload names beside its corpus and callers: its GPU and its model where they
+    are not the frozen box's (BOX_GPU, BOX_MODEL); nothing on the box."""
+    return ", ".join(
+        name for name, box in ((gpu_name, BOX_GPU), (model, BOX_MODEL)) if name and name != box
+    )
 
 
 def _row(run_dir: Path, run: Mapping[str, Any], summary: Mapping[str, Any]) -> dict[str, Any]:
@@ -190,9 +213,13 @@ def _row(run_dir: Path, run: Mapping[str, Any], summary: Mapping[str, Any]) -> d
     # V2V from the callers' turns, where a failed turn counts at the reply timeout.
     samples = v2v_samples(run_dir / "bots" / "turns.jsonl")
     v2v = percentiles(samples)
+    nodes = summary.get("nodes") or {}
+    engines = point_engines(run_dir, list(nodes))
+    model = next((m for e in engines.values() if (m := engine_model(e))), None)
+    on = hardware((summary.get("gpu") or {}).get("name"), model)
     row = {
         "arm": CONFIGURATION_ARMS.get(run["name"], str(arm["arm"])),
-        "workload": _workload(arm["agents"]["data"], arm["voice"]["callers"]),
+        "workload": _workload(arm["agents"]["data"], arm["voice"]["callers"], on),
         "point": run["name"],
         "campaign": run_dir.absolute().parent.name,
         "label": arm["label"],
@@ -235,12 +262,12 @@ def _row(run_dir: Path, run: Mapping[str, Any], summary: Mapping[str, Any]) -> d
     # What frontier.csv leaves out: the corpus, which the workload names, and the stage waterfall's
     # inputs, the count and mean of each of the worker's stages and the callers' V2V samples.
     row["data"] = arm["agents"]["data"]
+    row["hardware"] = on
     row["stage_means"] = {s: (c["n"], c["mean"]) for s, c in waterfall.items() if "mean" in c}
     row["v2v_samples"] = samples
-    nodes = summary.get("nodes") or {}
     row["nodes"] = " ".join(nodes) or None
     row["by_node"] = [_node_row(node, share) for node, share in nodes.items()]
-    row |= cpu_tier(engine, nodes, point_engines(run_dir, list(nodes)))
+    row |= cpu_tier(engine, nodes, engines)
     window = background.get("fixed_window") or {}
     row |= {
         "fixed_window_tokens_per_s": window.get("tokens_per_s"),
@@ -409,15 +436,19 @@ SLO_MARGIN_MS = 250.0
 """The voice V2V target (docs/SLO.md): p95 at most 250 ms above voice alone."""
 
 
-def voice_slo(groups: Sequence[Mapping[str, Any]], callers: int) -> tuple[float, list[str]] | None:
-    """The V2V p95 that the voice SLO allows with ``callers`` callers, and the configurations of
-    voice alone it is read against: arm 1's with as many callers, from whichever corpus, since
-    voice alone replays none. Their median V2V p95 plus SLO_MARGIN_MS; None without one."""
+def voice_slo(
+    groups: Sequence[Mapping[str, Any]], callers: int, on: str = ""
+) -> tuple[float, list[str]] | None:
+    """The V2V p95 that the voice SLO allows with ``callers`` callers on the GPU and model ``on``
+    names (:func:`hardware`; the box's when empty), and the configurations of voice alone it is read
+    against: arm 1's with as many callers on the same hardware, from whichever corpus, since voice
+    alone replays none. Their median V2V p95 plus SLO_MARGIN_MS; None without one."""
     alone = [
         g
         for g in groups
         if arm_order(g["arm"])[0] == 1
         and g["runs"][0]["callers"] == callers
+        and g["runs"][0].get("hardware", "") == on
         and g["v2v_p95_ms"] is not None
     ]
     if not alone:
@@ -485,15 +516,42 @@ def _pooled(runs: Iterable[Mapping[str, Any]], stage: str) -> float | None:
     return sum(n * mean for n, mean in counted) / turns if turns else None
 
 
+def read_dots(path: Path) -> list[dict[str, Any]]:
+    """The rows of voice-p95.svg from a TOML file: one ``[[row]]`` table each, with the point's name
+    (``point``), the row's label (``label``) and whether it runs the engine change (``change``,
+    false by default), in the file's order. A ValueError names what is wrong."""
+    try:
+        rows = tomllib.loads(path.read_text()).get("row")
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ValueError(f"{path}: {exc}") from exc
+    if not rows:
+        raise ValueError(f"{path}: no [[row]] tables")
+    for row in rows:
+        if not isinstance(row.get("point"), str) or not isinstance(row.get("label"), str):
+            raise ValueError(f"{path}: a row without a point or a label: {row}")
+        if set(row) - {"point", "label", "change"}:
+            raise ValueError(f"{path}: a row with keys other than point, label and change: {row}")
+        if not isinstance(row.get("change", False), bool):
+            raise ValueError(f"{path}: a row whose change is not true or false: {row}")
+    return rows
+
+
 def write_report(
-    rows: Sequence[Mapping[str, Any]], out_dir: Path, waterfall: Sequence[str] = ()
+    rows: Sequence[Mapping[str, Any]],
+    out_dir: Path,
+    waterfall: Sequence[str] = (),
+    dots: Sequence[Mapping[str, Any]] = (),
 ) -> list[Path]:
     """frontier.csv, frontier.md and, when matplotlib is installed, a frontier figure per workload
-    (:func:`figure_name`) and waterfall.svg: the stage waterfall of the points ``waterfall`` names,
-    in its order, or of every configuration with turn lines. Naming a point without turn lines in
-    the report is a ValueError."""
+    (:func:`figure_name`), waterfall.svg: the stage waterfall of the points ``waterfall`` names,
+    in its order, or of every configuration with turn lines, and with ``dots`` voice-p95.svg: the
+    V2V p95 of the configurations of the points it names (``{"point", "label", "change"}`` each,
+    in its order; see :func:`~leaseholder_bench.e2.figures.plot_dots`), against their workload's
+    SLO. Naming a point without turn lines, or a dots point the report lacks or that two
+    workloads measured, is a ValueError."""
     from leaseholder_bench.e2.figures import (  # figures.py builds on this module
         plot,
+        plot_dots,
         plot_waterfall,
     )
 
@@ -513,12 +571,29 @@ def write_report(
     written[1].write_text(markdown(rows))
     groups = configurations(rows)
     for members in _by_workload(rows):
-        slo = voice_slo(groups, members[0]["callers"])
-        figure = out_dir / figure_name(members[0]["data"], members[0]["callers"])
+        first = members[0]
+        on = first.get("hardware", "")
+        slo = voice_slo(groups, first["callers"], on)
+        figure = out_dir / figure_name(first["data"], first["callers"], on)
         if plot(members, figure, None if slo is None else slo[0]):
             written.append(figure)
     if cells and plot_waterfall(cells, out_dir / "waterfall.svg"):
         written.append(out_dir / "waterfall.svg")
+    if dots:
+        chosen = []
+        for dot in dots:
+            found = [g for g in groups if g["point"] == dot["point"]]
+            if len(found) != 1:
+                raise ValueError(
+                    f"{len(found)} configurations of {dot['point']} in the report, not 1"
+                )
+            chosen.append((found[0], dot["label"], bool(dot.get("change", False))))
+        slo = voice_slo(groups, chosen[0][0]["runs"][0]["callers"])
+        alone = None
+        if slo is not None:
+            alone = statistics.median(g["v2v_p95_ms"] for g in groups if g["point"] in slo[1])
+        if plot_dots(chosen, out_dir / "voice-p95.svg", *((slo[0], alone) if slo else ())):
+            written.append(out_dir / "voice-p95.svg")
     return written
 
 
@@ -530,14 +605,17 @@ def _by_workload(rows: Sequence[Mapping[str, Any]]) -> list[list[Mapping[str, An
     return list(members.values())
 
 
-def figure_name(data: str, callers: int) -> str:
-    """A workload's frontier figure: frontier.svg for STANDARD_WORKLOAD, else named after the
-    corpus when it is another (frontier-weka-x32-long.svg) and the callers when they are."""
+def figure_name(data: str, callers: int, on: str = "") -> str:
+    """A workload's frontier figure: frontier.svg for STANDARD_WORKLOAD on the box, else named after
+    the corpus when it is another (frontier-weka-x32-long.svg), the callers when they are, and the GPU
+    and model off the box (frontier-weka-x32-long-nvidia-a100-sxm4-40gb.svg)."""
     name = "frontier"
     if data != STANDARD_WORKLOAD[0]:
         name += "-" + data.replace("/", "-")
     if callers != STANDARD_WORKLOAD[1]:
         name += f"-{callers}-callers"
+    if on:
+        name += "-" + re.sub(r"[^a-z0-9]+", "-", on.lower()).strip("-")
     return name + ".svg"
 
 
@@ -629,8 +707,9 @@ def _slo_line(
     row: Mapping[str, Any], groups: Mapping[tuple[str, str, str], Mapping[str, Any]]
 ) -> str:
     """The sentence that opens the section of ``row``'s workload: its voice SLO, and its figure."""
-    callers, figure = row["callers"], figure_name(row["data"], row["callers"])
-    slo = voice_slo(list(groups.values()), callers)
+    on = row.get("hardware", "")
+    callers, figure = row["callers"], figure_name(row["data"], row["callers"], on)
+    slo = voice_slo(list(groups.values()), callers, on)
     if slo is None:
         return (
             f"No point of voice alone with {callers} callers sets a voice SLO. Figure: `{figure}`."

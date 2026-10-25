@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# systemctl in the A100 CPU dry run: logs each call to systemctl.log in the home; every unit is active.
+echo "systemctl $*" >>"$HOME/systemctl.log"

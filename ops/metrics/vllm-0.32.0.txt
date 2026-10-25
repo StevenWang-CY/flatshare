@@ -1,0 +1,64 @@
+# The metric families vLLM 0.32.0 exports from the frozen box's engine and STT, by name and type, read from its source:
+# vllm/v1/metrics/loggers.py (PrometheusStatLogger), the OffloadingConnector's
+# (vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py) and its CPU tier's (vllm/v1/kv_offload/cpu/spec.py).
+# A counter's samples end in _total, a histogram's are _bucket, _sum and _count. ops/'s tests check that every metric a
+# dashboard or rule names is here, in the gateway's crates/lh-gateway/metrics.txt or in the voice worker's.
+vllm:admission_rejections counter
+vllm:cache_config_info gauge
+vllm:corrupted_requests counter
+vllm:engine_sleep_state gauge
+vllm:external_prefix_cache_hits counter
+vllm:external_prefix_cache_queries counter
+vllm:generation_tokens counter
+vllm:inter_token_latency_seconds histogram
+vllm:iteration_tokens_total histogram
+vllm:kv_block_idle_before_evict_seconds histogram
+vllm:kv_block_lifetime_seconds histogram
+vllm:kv_block_reuse_gap_seconds histogram
+vllm:kv_cache_usage_perc gauge
+vllm:kv_offload_allocation_failure counter
+vllm:kv_offload_cpu_allocation_size histogram
+vllm:kv_offload_cpu_cache_read_usage_perc gauge
+vllm:kv_offload_cpu_cache_usage_perc gauge
+vllm:kv_offload_cpu_cache_write_usage_perc gauge
+vllm:kv_offload_load_bytes counter
+vllm:kv_offload_load_size histogram
+vllm:kv_offload_load_time counter
+vllm:kv_offload_lookup_async_delay_seconds histogram
+vllm:kv_offload_lookup_sync_delay_seconds histogram
+vllm:kv_offload_size histogram
+vllm:kv_offload_store_bytes counter
+vllm:kv_offload_store_size histogram
+vllm:kv_offload_store_time counter
+vllm:kv_offload_stores_skipped counter
+vllm:kv_offload_total_bytes counter
+vllm:kv_offload_total_time counter
+vllm:lora_requests_info gauge
+vllm:mm_cache_hits counter
+vllm:mm_cache_queries counter
+vllm:num_preemptions counter
+vllm:num_requests_kv_fetch_by_stage gauge
+vllm:num_requests_running gauge
+vllm:num_requests_waiting gauge
+vllm:num_requests_waiting_by_reason gauge
+vllm:prefix_cache_hits counter
+vllm:prefix_cache_queries counter
+vllm:prompt_tokens counter
+vllm:prompt_tokens_by_source counter
+vllm:prompt_tokens_cached counter
+vllm:prompt_tokens_cached_by_source counter
+vllm:request_decode_time_seconds histogram
+vllm:request_generation_tokens histogram
+vllm:request_inference_time_seconds histogram
+vllm:request_max_num_generation_tokens histogram
+vllm:request_num_preemptions histogram
+vllm:request_params_max_tokens histogram
+vllm:request_params_n histogram
+vllm:request_prefill_kv_computed_tokens histogram
+vllm:request_prefill_time_seconds histogram
+vllm:request_prompt_tokens histogram
+vllm:request_queue_time_seconds histogram
+vllm:request_success counter
+vllm:request_time_per_output_token_seconds histogram
+vllm:time_to_first_token_seconds histogram
+vllm:watermark_requests counter

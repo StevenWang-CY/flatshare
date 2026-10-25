@@ -7,6 +7,7 @@ import csv
 import importlib.util
 import json
 import re
+import tomllib
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,7 +16,7 @@ from typing import Any
 import pytest
 
 from leaseholder_bench.cli import main
-from leaseholder_bench.e2.arm import Agents, Voice
+from leaseholder_bench.e2.arm import Agents, Voice, flag_values
 from leaseholder_bench.e2.figures import load_sweep
 from leaseholder_bench.e2.record import (
     CALLER_ROOM,
@@ -33,9 +34,12 @@ from leaseholder_bench.e2.record import (
     export_point,
     gateway_counts,
     gateway_requests,
+    kv_samples,
+    kv_values,
     logged_first_byte,
     summarize_point,
 )
+from leaseholder_bench.e2.record import gpu as gpu_samples
 from leaseholder_bench.e2.report import (
     ADMISSION_COLUMNS,
     COLUMNS,
@@ -49,12 +53,15 @@ from leaseholder_bench.e2.report import (
     WORKER_COLUMNS,
     configurations,
     figure_name,
+    hardware,
     load_points,
     mark_frontier,
+    read_dots,
     stage_waterfall,
+    voice_slo,
     write_report,
 )
-from leaseholder_bench.e2.run import SECRETS
+from leaseholder_bench.e2.run import SCHEDULER, SECRETS, variant_flags
 
 T0 = 1_800_000_000.0  # the calls run from T0 to T0 + 100 s
 REPO = Path(__file__).resolve().parents[3]
@@ -62,7 +69,9 @@ VOICE = REPO / "python" / "leaseholder_voice"
 VOICE_EVENTS = VOICE / "src" / "leaseholder_voice" / "events.py"
 VOICE_PLACEMENT = VOICE / "src" / "leaseholder_voice" / "placement.py"
 VOICE_BOTS = VOICE / "src" / "leaseholder_voice" / "bots.py"
+# The committed E2 records: W4's, then W5's re-measure.
 RESULTS = REPO / "benchmarks" / "results" / "2026-10-23-e2"
+W5_RESULTS = REPO / "benchmarks" / "results" / "2026-10-24-e2-w5"
 
 
 def record(end: float, *, phase: str = "profiling", ttft: float = 100.0, **extra: Any) -> str:
@@ -92,6 +101,7 @@ def test_background_goodput_counts_the_requests_completed_during_the_calls(tmp_p
     assert (cell["prompt_tokens_per_s"], cell["completion_tokens_per_s"]) == (1000.0, 20.0)
     assert cell["tokens_per_s"] == 1020.0
     assert cell["ttft_ms"]["n"] == 100 and cell["ttft_ms"]["p50"] == 150.5
+    assert cell["itl_ms"] == {"n": 0}  # these requests streamed one token each
     with pytest.raises(ValueError, match="completed no request"):
         background(path, T0 + 200, T0 + 300)
     with pytest.raises(ValueError, match="no per-request records"):
@@ -568,6 +578,95 @@ def test_the_report_shows_stages_and_clocks_only_for_points_that_have_them(tmp_p
     assert "| a2-s16 | 100 / 150 | 200 / 300 | 300 / 450 |" in table
     assert "| 700 / 1,050 | 300 / 0 / 1 |" in table
     assert "| a2-s8 | — / — |" in table
+
+
+def test_the_kv_samples_give_the_time_running_requests_leave_two_calls_short(
+    tmp_path: Path,
+) -> None:
+    exposition = (
+        'vllm:kv_cache_usage_perc{engine="0",model_name="m"} 0.9\n'
+        'vllm:num_requests_running{engine="0",model_name="m"} 3\n'
+        'vllm:num_requests_waiting{engine="0",model_name="m"} 1\n'
+        'vllm:num_requests_waiting{engine="1",model_name="m"} 2\n'
+    )
+    assert kv_values(exposition) == (0.9, 3.0, 3.0)
+    assert kv_values("vllm:num_requests_running 3\n") is None  # no KV use: not vLLM's metrics
+    path = tmp_path / "engine-kv.csv"
+    rows = [
+        (T0 - 1, 1.0, 9, 9),  # before the calls
+        *((T0 + i, 0.97, 4, 2) for i in range(1, 4)),  # 68 of 2,274 blocks free: short of 128
+        *((T0 + i, 0.5, 2, 0) for i in range(4, 8)),
+    ]
+    lines = ["time,kv_cache_usage,running,waiting", *(",".join(map(str, row)) for row in rows)]
+    path.write_text("\n".join([*lines, f"{T0 + 9},0.4"]) + "\n")  # the last cut short
+    engine = {"cache_config": {"block_size": 16, "num_gpu_blocks": 2275}}
+    assert kv_samples(path, {"start": T0, "end": T0 + 100}, engine) == {
+        "samples": 7,
+        "running_share": 0.4286,
+        "free_blocks": {"p50": 1137, "min": 68},
+        "running": {"p50": 2.0, "max": 4.0},
+        "waiting": {"p50": 0.0, "max": 2.0},
+    }
+    assert kv_samples(path, {"start": T0 + 50, "end": T0 + 100}, engine) is None  # none inside
+    assert kv_samples(path, {"start": T0, "end": T0 + 100}, {"cache_config": {}}) is None
+    assert kv_samples(tmp_path / "none.csv", {"start": T0, "end": T0 + 100}, engine) is None
+
+
+def named(at: float, clock: str, gpu: str) -> str:
+    """A sample of campaign.sh's query from 2026-10-25 on, which ends in the GPU's name."""
+    return f"{smi(at, clock, '60')}, {gpu}"
+
+
+def test_a_point_off_the_box_is_a_workload_of_its_own(tmp_path: Path) -> None:
+    a100, box = "NVIDIA A100-SXM4-40GB", "NVIDIA GeForce RTX 5060 Ti"
+    assert hardware(None, None) == hardware(box, "Qwen/Qwen3-4B-Instruct-2507-FP8") == ""
+    assert hardware(a100, "Qwen/Qwen3-14B-FP8") == f"{a100}, Qwen/Qwen3-14B-FP8"
+    dirs = {
+        "a1-voice": point(tmp_path / "box", "a1-voice", "1", None, 2000),
+        "a2-s16": point(tmp_path / "box", "a2-s16", "2", 5000, 2600),
+        "a2-s8": point(
+            tmp_path / "box", "a2-s8", "2", 3000, 2300
+        ),  # its samples name the box's GPU
+        "a100-voice": point(tmp_path / "a100", "a1-voice", "1", None, 1700),
+        "a100-a2": point(tmp_path / "a100", "a2-s16", "2", 9000, 1900),
+        "14b-a2": point(tmp_path / "14b", "a2-s16", "2", 7000, 2100),
+    }
+    for name, gpu in (("a2-s8", box), ("a100-voice", a100), ("a100-a2", a100), ("14b-a2", a100)):
+        samples = [named(T0 + 10, "1410 MHz", gpu), named(T0 + 20, "1395 MHz", gpu)]
+        (dirs[name] / "gpu.csv").write_text("\n".join(samples) + "\n")
+    fourteen = {"model_config": {"model": "Qwen/Qwen3-14B-FP8", "revision": "abc"}}
+    (dirs["14b-a2"] / "engine.json").write_text(json.dumps(fourteen))
+    rows, _ = load_points(list(dirs.values()))
+    workloads = {(r["campaign"], r["point"]): r["workload"] for r in rows}
+    assert workloads == {
+        ("box", "a1-voice"): "weka-x32, 2 callers",
+        ("box", "a2-s16"): "weka-x32, 2 callers",
+        ("box", "a2-s8"): "weka-x32, 2 callers",
+        ("a100", "a1-voice"): f"weka-x32, 2 callers, {a100}",
+        ("a100", "a2-s16"): f"weka-x32, 2 callers, {a100}",
+        ("14b", "a2-s16"): f"weka-x32, 2 callers, {a100}, Qwen/Qwen3-14B-FP8",
+    }
+    assert [r["hardware"] for r in rows][:3] == ["", "", ""]  # the box's first
+    # Each GPU reads its voice SLO against its own voice alone.
+    groups = configurations(rows)
+    assert voice_slo(groups, 2) == (2250.0, ["a1-voice"])
+    assert voice_slo(groups, 2, a100) == (1950.0, ["a1-voice"])
+    assert voice_slo(groups, 2, f"{a100}, Qwen/Qwen3-14B-FP8") is None  # C' needs its own
+    write_report(rows, tmp_path / "report")
+    table = (tmp_path / "report" / "frontier.md").read_text()
+    assert f"## Workload: weka-x32, 2 callers, {a100}\n" in table
+    assert (
+        "allows a V2V p95 of 1,950 ms" in table and "`frontier-nvidia-a100-sxm4-40gb.svg`" in table
+    )
+    assert figure_name("weka-x32", 2) == "frontier.svg"
+
+
+def test_a_records_engine_json_keeps_the_linear_kernel_where_the_engine_reported_it() -> None:
+    kernel = {"linear_backend": "marlin", "moe_backend": "auto"}
+    assert engine_settings(VLLM_CONFIG | {"kernel_config": kernel})["kernel_config"] == {
+        "linear_backend": "marlin"
+    }
+    assert "kernel_config" not in engine_settings(VLLM_CONFIG)  # as records before it
 
 
 def rewrite(run_dir: Path, change: Callable[[dict[str, Any]], None]) -> None:
@@ -1050,9 +1149,12 @@ def unredacted(data: Any) -> list[str]:
     return found + [key for value in data.values() for key in unredacted(value)]
 
 
-def test_the_committed_records_give_the_report_and_hold_no_credential(tmp_path: Path) -> None:
+@pytest.mark.parametrize("results", [RESULTS, W5_RESULTS], ids=lambda p: p.name)
+def test_the_committed_records_give_the_report_and_hold_no_credential(
+    tmp_path: Path, results: Path
+) -> None:
     assert unredacted({"tenants": {"a": {"keys_sha256": ["<sha256>"]}}}) == ["keys_sha256"]
-    dirs = sorted(run.parent for run in RESULTS.glob("*/*/run.json"))  # as make reproduce-e2 does
+    dirs = sorted(run.parent for run in results.glob("*/*/run.json"))  # as make reproduce-e2 does
     assert dirs
     rows, incomplete = load_points(dirs)
     assert len(rows) == len(dirs) and not incomplete
@@ -1067,18 +1169,35 @@ def test_the_committed_records_give_the_report_and_hold_no_credential(tmp_path: 
     assert (tmp_path / "frontier.md").read_text().startswith("# E2 frontier")
 
 
-def test_a_committed_record_exports_to_itself(tmp_path: Path) -> None:
+@pytest.mark.parametrize("results", [RESULTS, W5_RESULTS], ids=lambda p: p.name)
+def test_a_committed_record_exports_to_itself(tmp_path: Path, results: Path) -> None:
     # A record leaves out the files compact() reads beside run.json and summary.json, so exporting it
     # gives it back byte for byte: lh-bench e2 report reads records and run directories alike.
-    records = sorted(run.parent for run in RESULTS.glob("*/*/run.json"))
+    records = sorted(run.parent for run in results.glob("*/*/run.json"))
     assert records
     for record in records:
         again = export_point(record, tmp_path)
-        assert again is not None and again.relative_to(tmp_path) == record.relative_to(RESULTS)
+        assert again is not None and again.relative_to(tmp_path) == record.relative_to(results)
         files = sorted(p.relative_to(record) for p in record.rglob("*") if p.is_file())
         assert sorted(p.relative_to(again) for p in again.rglob("*") if p.is_file()) == files
         for name in files:
             assert (again / name).read_bytes() == (record / name).read_bytes(), record / name
+
+
+def test_each_w5_record_ran_the_scheduler_its_variant_loads_on_the_revision_it_names() -> None:
+    # W5's harness checked the engine's scheduler class before each point, so that make-room as W5
+    # fixed it and as v0.3 built it (make-room-v03) cannot pass for one another, and each record names
+    # the revision deployed on the GPU node: the one cyan ran.
+    runs = sorted(W5_RESULTS.glob("*/*/run.json"))
+    assert len(runs) == 72
+    for path in runs:
+        run = json.loads(path.read_text())
+        variant = tomllib.loads((path.parent / "arm.toml").read_text()).get("engine", {})
+        loads = flag_values(variant_flags(variant.get("variant", "frozen"))).get(SCHEDULER)
+        engine = json.loads((path.parent / "engine.json").read_text())
+        assert engine["scheduler_config"]["scheduler_cls"] == loads, path
+        assert (SCHEDULER in run["engine"]["flags"]["checked"]) == (loads is not None), path
+        assert run["versions"]["gpu_source"] == {"phastform": run["versions"]["source"]}, path
 
 
 def test_the_report_reads_the_lines_the_voice_worker_writes() -> None:
@@ -1353,6 +1472,56 @@ def test_the_figure_draws_families_and_leaves_a_collapse_off_its_scale(tmp_path:
     assert "The dashed line is the voice SLO, 2,010 ms" in figure
 
 
+def test_the_dot_figure_draws_the_named_configurations_in_order(tmp_path: Path, capsys) -> None:
+    pytest.importorskip("matplotlib")
+    dirs = [
+        point(tmp_path / "r1", "w5-a1-voice", "1", None, 1760),
+        point(tmp_path / "r1", "w5-frozen", "2", 3300, 10000),
+        point(tmp_path / "r2", "w5-frozen", "2", 3400, 11000),
+        point(tmp_path / "r1", "w5-pr", "9", 3200, 2200),
+        point(tmp_path / "r2", "w5-pr", "9", 3100, 2300),
+    ]
+    for run_dir in dirs[
+        1:
+    ]:  # the agents' tokens/s over the fixed window, as W5's records have them
+        summary = json.loads((run_dir / "summary.json").read_text())
+        bg = summary["background"]
+        bg["fixed_window"] = {"tokens_per_s": bg["tokens_per_s"], "seconds": 240.0}
+        (run_dir / "summary.json").write_text(json.dumps(summary))
+    rows, _ = load_points(dirs)
+    figure_toml = tmp_path / "figure.toml"
+    figure_toml.write_text(
+        '[[row]]\npoint = "w5-frozen"\nlabel = "Tuned vLLM"\n\n'
+        '[[row]]\npoint = "w5-pr"\nlabel = "Both PRs"\nchange = true\n'
+    )
+    out = tmp_path / "report"
+    assert out / "voice-p95.svg" in write_report(rows, out, dots=read_dots(figure_toml))
+    figure = (out / "voice-p95.svg").read_text()
+    # The rows in the file's order with their runs, each one's goodput against the first row's
+    # (3,150 against 3,350 tokens/s), and the SLO that voice alone sets.
+    assert figure.index("<!-- Tuned vLLM (2 runs) -->") < figure.index("<!-- Both PRs (2 runs) -->")
+    assert "<!-- 100% -->" in figure and "<!-- 94% -->" in figure
+    assert "<!-- the SLO: voice alone (1.76 s) + 250 ms -->" in figure
+    write_report(rows, tmp_path / "again", dots=read_dots(figure_toml))
+    assert (tmp_path / "again" / "voice-p95.svg").read_bytes() == figure.encode()
+    # A point the report lacks, or a row the file gets wrong, names what is wrong.
+    figure_toml.write_text('[[row]]\npoint = "w5-gone"\nlabel = "Gone"\n')
+    with pytest.raises(ValueError, match="0 configurations of w5-gone in the report, not 1"):
+        write_report(rows, out, dots=read_dots(figure_toml))
+    for bad, error in (
+        ('[[row]]\npoint = "w5-pr"\n', "a row without a point or a label"),
+        ('[[row]]\npoint = "w5-pr"\nlabel = "PR"\ncolor = "blue"\n', "keys other than"),
+        ('[[row]]\npoint = "w5-pr"\nlabel = "PR"\nchange = "yes"\n', "not true or false"),
+        ("", "no \\[\\[row\\]\\] tables"),
+    ):
+        figure_toml.write_text(bad)
+        with pytest.raises(ValueError, match=error):
+            read_dots(figure_toml)
+    args = ["e2", "report", *map(str, dirs), "--out", str(out), "--dots", str(figure_toml)]
+    assert main(args) == 1
+    assert "no [[row]] tables" in capsys.readouterr().err
+
+
 def test_a_point_summary_reads_its_run_directory(tmp_path: Path) -> None:
     run_dir = tmp_path / "a1"
     (run_dir / "bots").mkdir(parents=True)
@@ -1386,3 +1555,41 @@ def test_a_point_summary_reads_its_run_directory(tmp_path: Path) -> None:
     (run_dir / "bots" / "summary.json").write_text(json.dumps(bots))
     with pytest.raises(ValueError, match="measured no voice-to-voice latency"):
         summarize_point(run_dir, T0, T0 + 321, agents=False)
+
+
+def test_the_gpu_columns_read_the_lent_gpu_of_several_alone(tmp_path: Path) -> None:
+    # A sampler file from a host with four GPUs, the point's at 1,410 MHz and three idle at 210: the file's header
+    # names the lent one, whose rows alone count; with no header the GPUs are not mixed (nothing is kept), and a
+    # file of one GPU, a UUID or not (the box's records), reads as before.
+    start = datetime(2026, 10, 25, 9, 0, 0, tzinfo=UTC).timestamp()
+    window = {"start": start, "end": start + 60}
+    rows = []
+    for second in range(3):
+        for index, (clock, temperature) in enumerate(((1410, 61), (210, 34), (210, 34), (210, 35))):
+            rows.append(
+                f"2026/10/25 09:00:0{second}.000, {clock} MHz, 1215 MHz, {temperature}, 55.00 W, "
+                f"0x0000000000000000, NVIDIA A100-SXM4-40GB, GPU-{index}"
+            )
+    named = tmp_path / "named.csv"
+    named.write_text("# gpu GPU-0\n" + "\n".join(rows) + "\n")
+    assert gpu_samples([named], window) == {
+        "gpu_sm_clock_p50_mhz": 1410,
+        "gpu_temperature_max_c": 61,
+        "gpu_name": "NVIDIA A100-SXM4-40GB",
+    }
+    unnamed = tmp_path / "unnamed.csv"
+    unnamed.write_text("\n".join(rows) + "\n")
+    assert gpu_samples([unnamed], window) == {
+        "gpu_sm_clock_p50_mhz": None,
+        "gpu_temperature_max_c": None,
+    }
+    one = tmp_path / "one.csv"
+    one.write_text("\n".join(row.rsplit(", GPU-", 1)[0] for row in rows[::4]) + "\n")
+    assert gpu_samples([one], window)["gpu_sm_clock_p50_mhz"] == 1410
+    # The sampler before it named the GPU in each row: several rows a second are several GPUs, none of them named.
+    old = tmp_path / "old.csv"
+    old.write_text("\n".join(row.rsplit(", GPU-", 1)[0] for row in rows) + "\n")
+    assert gpu_samples([old], window) == {
+        "gpu_sm_clock_p50_mhz": None,
+        "gpu_temperature_max_c": None,
+    }

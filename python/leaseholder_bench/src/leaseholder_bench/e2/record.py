@@ -2,8 +2,8 @@
 
 :func:`summarize_point` reads one run directory of ``lh-bench e2 run``: the callers' summary, the
 per-request records of the AIPerf replay, the gateway's request lines of the calls, the ``/metrics``
-snapshots taken when the calls started and ended, and the voice worker's journal of the calls. Every
-metric covers that window. A metric
+snapshots taken when the calls started and ended and, on an agent point, the engines' KV samples
+through them, and the voice worker's journal of the calls. Every metric covers that window. A metric
 that the gateway or the engine does not export is null, never zero, and a counter that went down
 (its process restarted during the calls) is an error. A point on several GPU nodes reports its
 totals as a point on one does, its engines' counters added up, and each node's share.
@@ -67,6 +67,13 @@ point whose calls lasted less gives its goodput over its whole calls instead."""
 REPLY_TIMEOUT_MS = 30_000.0
 """How long ``lh-voice bots`` waits for a reply (its ``reply_timeout``), after which the turn fails: a
 reply that never came counts as a sample censored at this value, in every V2V percentile."""
+KV_GAUGES = ("vllm:kv_cache_usage_perc", "vllm:num_requests_running", "vllm:num_requests_waiting")
+"""What ``lh-bench e2 run`` samples from each engine's ``/metrics`` during an agent point's calls,
+into metrics/engine-kv.csv (engine-NODE-kv.csv on several GPU nodes), one line a sample: its time,
+then these."""
+REALTIME_TIER_TOKENS = 2 * 1024
+"""lh-sim's realtime tier, two calls of 1,024 tokens (crates/lh-sim, ``hardware::TOKENS_PER_CALL``):
+the running share is the time the KV that running requests hold leaves less than this free."""
 
 
 def summarize_point(
@@ -111,7 +118,63 @@ def summarize_point(
     }
     if nodes:
         summary["nodes"] = node_shares(run_dir, end - start, requests, engines)
+    # The engines' KV use while the calls ran, which e2 run samples on agent points.
+    window = {"start": start, "end": end}
+    kept = point_engines(run_dir, nodes)
+    if nodes:
+        for node, share in summary["nodes"].items():
+            share["kv"] = kv_samples(metrics / f"engine-{node}-kv.csv", window, kept.get(node))
+    else:
+        summary["kv"] = kv_samples(metrics / "engine-kv.csv", window, kept.get(None))
     return summary
+
+
+def kv_values(exposition: str) -> tuple[float, float, float] | None:
+    """An engine's KV use (0 to 1, the mean over its series) and its running and waiting requests
+    (summed) in a ``/metrics`` exposition, as KV_GAUGES orders them; None when it lacks one (SGLang)."""
+    found: dict[str, list[float]] = {name: [] for name in KV_GAUGES}
+    for name, _, value in metric_samples(exposition):
+        if name in found:
+            found[name].append(value)
+    if not all(found.values()):
+        return None
+    usage, running, waiting = (found[name] for name in KV_GAUGES)
+    return statistics.fmean(usage), sum(running), sum(waiting)
+
+
+def kv_samples(
+    path: Path, window: Mapping[str, float], engine: Mapping[str, Any] | None
+) -> dict[str, Any] | None:
+    """An engine's KV samples of the calls (``path``, as KV_GAUGES describes it): how many, and the
+    share of them in which the KV that running requests hold left less than REALTIME_TIER_TOKENS free
+    (the measured running share, lh-sim's ``realtime_blocked_share``: vLLM's usage counts a cached
+    block whose requests are gone as free, since a request that needs it may evict it), with the free
+    blocks' median and least and the running and waiting requests' median and most. None without
+    samples in the window, or without the pool's size in the engine's record (``engine``)."""
+    cache = (engine or {}).get("cache_config") or {}
+    blocks, block_size = cache.get("num_gpu_blocks"), cache.get("block_size")
+    if not path.exists() or not blocks or not block_size:
+        return None
+    pool = blocks - 1  # vLLM's usage leaves out its null block (BlockPool.get_usage)
+    rows = []
+    for line in path.read_text(errors="replace").splitlines()[1:]:
+        try:
+            at, usage, running, waiting = (float(field) for field in line.split(","))
+        except ValueError:
+            continue  # a line cut short when the sampling stopped
+        if window["start"] <= at <= window["end"]:
+            rows.append(((1 - usage) * pool, running, waiting))
+    if not rows:
+        return None
+    free, running, waiting = (sorted(column) for column in zip(*rows, strict=True))
+    short = REALTIME_TIER_TOKENS / block_size
+    return {
+        "samples": len(rows),
+        "running_share": round(sum(f < short for f in free) / len(rows), 4),
+        "free_blocks": {"p50": round(statistics.median(free)), "min": round(free[0])},
+        "running": {"p50": statistics.median(running), "max": running[-1]},
+        "waiting": {"p50": statistics.median(waiting), "max": waiting[-1]},
+    }
 
 
 def _snapshots(metrics: Path, name: str) -> tuple[str, str]:
@@ -280,6 +343,11 @@ def gateway_request_lines(journal: str) -> list[str]:
     return [line for line in journal.splitlines() if _request(line) is not None]
 
 
+def logged_requests(journal: str) -> list[tuple[float, dict[str, Any]]]:
+    """The gateway's request lines in its journal, each with when its request ended."""
+    return [request for request in map(_request, journal.splitlines()) if request is not None]
+
+
 def gateway_requests(run_dir: Path, start: float, end: float) -> list[dict[str, Any]] | None:
     """The requests the gateway logged as ending within ``start``..``end``, from the run's
     gateway.jsonl; None without one, or with one that holds no request (the calls make some)."""
@@ -332,8 +400,20 @@ def background(records: Path, start: float, end: float) -> dict[str, Any]:
         "completion_tokens_per_s": round(completion / seconds, 1),
         "tokens_per_s": round((prompt + completion) / seconds, 1),
         "ttft_ms": summarize(ttft),
+        "itl_ms": agent_itl(ok),
         "fixed_window": fixed_window(ended, start, end),
     }
+
+
+def agent_itl(records: Iterable[Mapping[str, Any]]) -> dict[str, float | int]:
+    """The agent requests' inter-token latency in ms, AIPerf's per request (the time after the first
+    token over the tokens after it), over the requests that streamed two tokens or more: the step time
+    a decoding agent sees (P-1's per-step overhead at the point's batch)."""
+    return summarize(
+        r["metrics"]["inter_token_latency"]["value"]
+        for r in records
+        if "inter_token_latency" in r["metrics"]
+    )
 
 
 def profiling_requests(records: Path, start: float, end: float) -> list[dict[str, Any]]:
@@ -544,17 +624,29 @@ def _gpu_samples(nodes: Iterable[str]) -> list[str]:
     return [f"gpu-{node}.csv" for node in nodes] or ["gpu.csv"]
 
 
-def gpu(files: Sequence[Path], window: Mapping[str, float] | None) -> dict[str, int | None]:
+def gpu(files: Sequence[Path], window: Mapping[str, float] | None) -> dict[str, Any]:
     """The GPUs' median SM clock (MHz) and highest temperature (°C) during the calls, from the samples
     campaign.sh takes once a second on each GPU node (gpu.csv; gpu-NODE.csv for a point on several);
-    None without them."""
+    None without them. Where the samples name the GPU, also its name (``gpu_name``). A file whose rows
+    carry several GPUs' UUIDs (a host's other GPUs) counts the rows of the one its ``# gpu UUID`` line
+    names, the point's, alone, and none where it names none; one from before the rows named their GPU
+    with several rows a second (several GPUs) counts none: the GPUs are not mixed."""
     clocks: list[float] = []
     temperatures: list[float] = []
+    names: list[str] = []
     for path in files:
         if not path.exists() or not window:
             continue
-        for line in path.read_text(errors="replace").splitlines():
-            fields = [field.strip() for field in line.split(",")]
+        text = path.read_text(errors="replace").splitlines()
+        lent = next((line.split()[2] for line in text if line.startswith("# gpu ")), None)
+        rows = [[field.strip() for field in line.split(",")] for line in text]
+        uuids = {row[7] for row in rows if len(row) > 7}
+        stamps = [row[0] for row in rows if len(row) > 1 and len(row) <= 7]
+        if len(stamps) != len(set(stamps)):
+            continue  # several GPUs a second, unnamed
+        for fields in rows:
+            if len(uuids) > 1 and (len(fields) <= 7 or fields[7] != lent):
+                continue
             try:
                 at = datetime.strptime(fields[0], GPU_TIME).replace(tzinfo=UTC).timestamp()
             except ValueError:
@@ -565,10 +657,16 @@ def gpu(files: Sequence[Path], window: Mapping[str, float] | None) -> dict[str, 
                 clocks.append(clock)
             if (temperature := _number(fields, 3)) is not None:
                 temperatures.append(temperature)
-    return {
+            if len(fields) > 6 and fields[6]:
+                names.append(fields[6])
+    kept: dict[str, Any] = {
         "gpu_sm_clock_p50_mhz": round(statistics.median(clocks)) if clocks else None,
         "gpu_temperature_max_c": round(max(temperatures)) if temperatures else None,
     }
+    # The GPU's name, nvidia-smi's, where the samples carry it: campaign.sh's from 2026-10-25 on.
+    if names:
+        kept["gpu_name"] = statistics.mode(names)
+    return kept
 
 
 def _number(fields: Sequence[str], index: int) -> float | None:
@@ -620,6 +718,10 @@ VLLM_ENGINE = {
 settings lh-bench e2 run checks the arms' flags against, the scheduler class among them (a variant's
 module, or None for vLLM's own), and what it takes to serve the same engine again (the model and its
 revision, the context, dtype and quantization, the KV pool, the CPU tier)."""
+VLLM_ENGINE_REPORTED = {"kernel_config": ("linear_backend",)}
+"""What a record keeps of a vLLM engine's configuration where its engine.json has it, which those
+before 2026-10-25 do not: the linear kernel the point asked for (``--linear-backend``; ``auto``
+lets vLLM choose by the GPU, Marlin for this checkpoint on sm80 and sm89)."""
 SGLANG_ENGINE = (
     "model_path",
     "revision",
@@ -677,7 +779,7 @@ def compact(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]] | None:
                 requests, slo_class
             )
 
-    def clocks(names: Sequence[str]) -> dict[str, int | None]:
+    def clocks(names: Sequence[str]) -> dict[str, Any]:
         columns = gpu([run_dir / name for name in names], window)
         return {column.removeprefix("gpu_"): value for column, value in columns.items()}
 
@@ -694,6 +796,8 @@ def compact(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]] | None:
     if summary.get("background") and window and records.exists():
         ended = profiling_requests(records, window["start"], window["end"])
         summary["background"]["fixed_window"] = fixed_window(ended, window["start"], window["end"])
+        ok = [r for r in ended if not r.get("error") and not r["metadata"].get("was_cancelled")]
+        summary["background"]["itl_ms"] = agent_itl(ok)
     snapshots = {node: f"engine-{node}" for node in nodes} or {None: "engine"}
     metrics = run_dir / "metrics"
     if all(
@@ -770,11 +874,35 @@ def engine_settings(config: Mapping[str, Any]) -> dict[str, Any]:
         section: None if config.get(section) is None else {k: config[section].get(k) for k in keys}
         for section, keys in VLLM_ENGINE.items()
     }
+    settings |= {
+        section: {k: config[section].get(k) for k in keys}
+        for section, keys in VLLM_ENGINE_REPORTED.items()
+        if isinstance(config.get(section), Mapping)
+    }
     settings["additional_config"] = config.get("additional_config")
     model = settings["model_config"]
-    if model and (cached := _SNAPSHOT.search(str(model["model"]))):
-        model |= {"model": cached["name"].replace("--", "/", 1), "revision": cached["revision"]}
+    if model:
+        model |= dict(zip(("model", "revision"), model_id(model), strict=True))
     return _home(settings)
+
+
+def model_id(model_config: Mapping[str, Any]) -> tuple[Any, Any]:
+    """A vLLM engine's model and revision as its configuration names them, by the Hugging Face id and
+    revision rather than its path in the cache, where vLLM's offline mode put that path in place of
+    the id (``models--ORG--NAME/snapshots/REVISION``)."""
+    model, revision = model_config.get("model"), model_config.get("revision")
+    if cached := _SNAPSHOT.search(str(model)):
+        return cached["name"].replace("--", "/", 1), cached["revision"]
+    return model, revision
+
+
+def engine_model(engine: Mapping[str, Any] | None) -> str | None:
+    """The model a point's engine served, from its record (:func:`engine_settings`): vLLM's or SGLang's."""
+    if not engine:
+        return None
+    if "model_config" in engine:
+        return (engine["model_config"] or {}).get("model")
+    return engine.get("model_path")
 
 
 def _home(value: Any) -> Any:

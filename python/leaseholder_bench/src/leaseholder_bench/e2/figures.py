@@ -22,14 +22,14 @@ FAMILIES = (
     ("operator answers", 6, 6, "#1baf7a"),
     ("engines", 7, 7, "#eda100"),
     ("routers", 8, 8, "#e87ba4"),
-    ("Leaseholder", 9, 9, "#2a78d6"),
+    ("make-room", 9, 9, "#2a78d6"),
     ("MPS", 10, 10, "#008300"),
 )
 """E2's arms by family (docs/EXPERIMENTS.md): its name, its first and last arm, and the color the
 frontier figures draw it in. Any two families can meet on a scatter, and no six of the palette's
 hues stay apart pair by pair, so stock vLLM, the baseline the others are read against, takes the
 secondary ink, and five hues that do (with the markers and the arms' names beside them) take the
-rest: blue, the first, for Leaseholder, then the others in E2's order."""
+rest: blue, the first, for make-room, then the others in E2's order."""
 _MARKERS = (("o", 8.0), ("s", 7.1), ("^", 10.0), ("D", 7.1), ("v", 10.0), ("P", 9.5))
 """The markers of the arms of a family, counted by number (stock vLLM's 1 to 5), then by letter,
 each in the size (points) that gives it the circle's area: 8 px inside its 2 px ring."""
@@ -391,5 +391,123 @@ def plot_waterfall(cells: Sequence[Mapping[str, Any]], path: Path) -> bool:
     for text in legend.get_texts():
         text.set_color(_INK)
     _save_svg(fig, path, bbox_inches="tight", pad_inches=0.1)  # the rows and the legend, no more
+    plt.close(fig)
+    return True
+
+
+def plot_dots(
+    rows: Sequence[tuple[Mapping[str, Any], str, bool]],
+    path: Path,
+    slo: float | None = None,
+    alone: float | None = None,
+) -> bool:
+    """voice-p95.svg: one row per configuration, ``(configuration, label, change)`` in the given
+    order: each run's V2V p95 as an open dot on the runs' range and their median as a ringed dot,
+    in the first hue where ``change`` marks a row that runs the engine change and in the secondary
+    ink otherwise; at the right, the configuration's agents' tokens/s over the fixed window as a
+    share of the first row's (a dash where either was not measured). A dashed line marks the voice SLO, ``slo`` ms, which voice alone
+    (``alone`` ms) sets. A configuration with failed turns says so by its label, since its V2V is
+    censored. False without matplotlib."""
+    try:
+        import matplotlib
+    except ImportError:
+        return False
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    base = rows[0][0]["fixed_window_tokens_per_s"]
+    fig, ax = plt.subplots(
+        figsize=(7.5, 1.9 + 0.45 * len(rows)), facecolor=_SURFACE, layout="constrained"
+    )
+    ax.set_facecolor(_SURFACE)
+    labels = []
+    for y, (group, label, change) in enumerate(rows):
+        color = _SERIES[0] if change else _SECONDARY
+        runs = sorted(r["v2v_p95_ms"] / 1000 for r in group["runs"] if r["v2v_p95_ms"] is not None)
+        ax.plot(
+            [runs[0], runs[-1]],
+            [y, y],
+            color=color,
+            linewidth=2,
+            alpha=0.35,
+            solid_capstyle="round",
+        )
+        ax.scatter(
+            runs,
+            [y] * len(runs),
+            s=22,
+            facecolors=_SURFACE,
+            edgecolors=color,
+            linewidths=1.25,
+            zorder=3,
+        )
+        ax.scatter(
+            group["v2v_p95_ms"] / 1000,
+            y,
+            s=64,
+            color=color,
+            edgecolors=_SURFACE,
+            linewidths=2,
+            zorder=4,
+        )
+        count = len(group["runs"])
+        runs_text = f"{count} run{'s' if count > 1 else ''}"
+        if group["failed_turns"]:
+            runs_text += f", {group['failed_turns']} of {group['turns']} turns failed"
+        labels.append(f"{label} ({runs_text})")
+        tokens = group["fixed_window_tokens_per_s"]
+        share = "\N{EN DASH}" if tokens is None or not base else f"{tokens / base:.0%}"
+        ax.text(1.03, y, share, transform=ax.get_yaxis_transform(), va="center", color=_INK)
+    ax.text(
+        1.03,
+        -0.75,
+        "Agents'\ntokens/s",
+        transform=ax.get_yaxis_transform(),
+        va="center",
+        color=_SECONDARY,
+        fontsize="small",
+    )
+    handles = [
+        Line2D(
+            [],
+            [],
+            linestyle="none",
+            marker="o",
+            markersize=5,
+            markerfacecolor=_SURFACE,
+            markeredgecolor=_SECONDARY,
+            markeredgewidth=1.25,
+        ),
+        Line2D([], [], linestyle="none", marker="o", markersize=8, color=_SECONDARY),
+    ]
+    names = ["a run", "the median of the runs"]
+    if slo is not None:
+        ax.axvline(slo / 1000, color=_INK, linewidth=0.75, linestyle=(0, (4, 3)), zorder=1.5)
+        handles.append(Line2D([], [], color=_INK, linewidth=0.75, linestyle=(0, (4, 3))))
+        names.append(
+            "the SLO" + ("" if alone is None else f": voice alone ({alone / 1000:.2f} s) + 250 ms")
+        )
+    ax.set_yticks(range(len(rows)), labels)
+    ax.set_ylim(len(rows) - 0.5, -1.2)  # the given order, top to bottom, under the column's head
+    ax.set_xlim(0, None)
+    ax.set_xlabel("Voice-to-voice p95 (s)", color=_INK)
+    fig.suptitle(
+        "Voice-to-voice p95, two calls beside 24 coding-agent sessions",
+        x=0.01,
+        ha="left",
+        color=_INK,
+    )
+    ax.grid(axis="x", color=_GRID, linewidth=0.75)
+    ax.set_axisbelow(True)
+    ax.tick_params(colors=_MUTED)
+    ax.tick_params(axis="y", length=0, labelcolor=_INK)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
+    ax.spines["bottom"].set_color(_AXIS)
+    legend = fig.legend(handles, names, loc="outside lower left", ncols=3, frameon=False)
+    for text in legend.get_texts():
+        text.set_color(_INK)
+    _save_svg(fig, path, bbox_inches="tight", pad_inches=0.1)
     plt.close(fig)
     return True

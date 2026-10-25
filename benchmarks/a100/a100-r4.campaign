@@ -1,0 +1,19 @@
+# The A100 run's E2 core, round 4 of 5 (docs/HARDWARE.md, the core block by block): W5's three arm files as the box ran
+# them, the frozen engine and the PRs' values (make-room on vLLM 0.32.0 with the PRs' switch values: at most 2
+# preemptions a step, the budget cap with a 48-token window, no reserve) at 24 sessions of weka-x32-long, and voice
+# alone, each call opening with a warm-up turn. Round N replays the agents' sample of seed 10 + N; the engine groups
+# alternate from round to round so that each round starts on the engine the last one ended on (round 1 on block 3's). On
+# the A100 host, from the home directory:
+#   LH_NODE_DIR=leaseholder/node leaseholder/src/benchmarks/e2/campaign.sh --local \
+#     leaseholder/src/benchmarks/a100/a100-r4.campaign
+
+agents-seed 14
+
+# engine frozen
+../e2/arms/w5-disc-frozen-s24.toml
+
+# engine frozen (voice alone: the round's SLO reference)
+../e2/arms/w5-a1-voice.toml
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+../e2/arms/w5-disc-pr-ab48-s24.toml

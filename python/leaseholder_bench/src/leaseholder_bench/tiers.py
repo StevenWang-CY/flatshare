@@ -35,6 +35,7 @@ import orjson
 from leaseholder_bench.kv_metrics import metric_samples
 from leaseholder_bench.load import BackgroundLoad, LoadSpec, random_prompt, summarize
 from leaseholder_bench.protocol import ENGINE_PRIORITY, SloClass
+from leaseholder_bench.transport import async_client
 
 TIERS = ("recompute", "gpu", "cpu")
 GPU_HITS = "vllm:prefix_cache_hits_total"
@@ -65,7 +66,8 @@ def pool_tokens(exposition: str) -> int | None:
 @dataclass(frozen=True)
 class TiersConfig:
     url: str
-    """Engine base URL, e.g. ``http://127.0.0.1:18000``."""
+    """The engine's address (:mod:`leaseholder_bench.transport`): on cyan,
+    ``unix:/run/user/1007/lh/phastform-engine.sock``, the tunnel's socket."""
     model: str
     lengths: Sequence[int]
     reps: int = 5
@@ -237,7 +239,7 @@ async def run_tiers(config: TiersConfig, out_dir: Path) -> dict[str, Any]:
     ``run.json`` (configuration, host, engine, times), ``samples.jsonl`` and ``summary.json``."""
     out_dir.mkdir(parents=True, exist_ok=True)
     started = time.time()
-    async with httpx.AsyncClient(base_url=config.url, timeout=config.timeout) as client:
+    async with async_client(config.url, timeout=config.timeout) as client:
         probe = TierProbe(client, config)
         exposition = await probe.metrics()
         probe.pool = pool_tokens(exposition) or 0

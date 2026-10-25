@@ -1,0 +1,8 @@
+{
+  "hostname": "a100-vm",
+  "gpu": {"name": "NVIDIA A100-SXM4-40GB", "memory_mib": 40960, "compute_cap": "8.0", "numa_node": null},
+  "cpus": {"0": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]},
+  "memory": {"total_bytes": 214748364800, "available_bytes": 204010946560, "nodes": {}},
+  "shm": {"path": "/dev/shm", "total_bytes": 107374182400, "free_bytes": 107374182400},
+  "cuda_toolkit": null
+}

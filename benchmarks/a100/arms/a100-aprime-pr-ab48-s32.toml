@@ -1,0 +1,17 @@
+# The A100 run's optional arm 5, A' (docs/HARDWARE.md, the optional arms): the PRs' values at the box's pool with 32
+# sessions in place of 24, where the forecast puts the A100 closest to the box's regime (a running share of 18% against
+# the box's 17%, benchmarks/a100/forecast.md). Otherwise w5-disc-pr-ab48-s24.toml, as the core runs it; the calibration
+# (block 5) checks the session count before A' runs.
+arm = "9-pr-ab48"
+label = "vLLM PRs A and B with a 48-token window, no gateway policy, a warm-up turn opening each call, 32 sessions"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 32
+data = "weka-x32-long"
+
+[engine]
+variant = "make-room"
+flags = ["--additional-config.make_room.reserve_tokens", "0", "--additional-config.make_room.budget_cap_tokens", "48"]

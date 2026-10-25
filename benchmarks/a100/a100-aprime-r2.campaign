@@ -1,0 +1,13 @@
+# The A100 run's optional arm 5, A' (docs/HARDWARE.md, the optional arms), round 2 of 2: the box's pool at 32 sessions,
+# the frozen engine and the PRs' values, round 1 with its voice alone; the agents' sample of seed 10 + N. Round 1 starts
+# on the frozen engine the core's round 5 ended on, round 2 on the PRs' values round 1 ended on. On the A100 host:
+#   LH_NODE_DIR=leaseholder/node leaseholder/src/benchmarks/e2/campaign.sh --local \
+#     leaseholder/src/benchmarks/a100/a100-aprime-r2.campaign
+
+agents-seed 12
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+arms/a100-aprime-pr-ab48-s32.toml
+
+# engine frozen
+arms/a100-aprime-frozen-s32.toml

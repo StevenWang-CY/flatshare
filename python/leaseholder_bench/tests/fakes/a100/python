@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# The engine venv's Python in the A100 CPU dry run (test_a100_dry_run.py): probe.py and tail.py print their result
+# lines as on a GPU, the voice turn's first token about 1.6 s behind running agents on the frozen engine and about
+# 0.15 s on make-room (the engine variant.sh last started, from variant.log in the home); everything else runs on the
+# test's own Python ($FAKE_PYTHON). FAKE_PROBE_FAIL_AT=N fails the Nth probe of the run, as a probe killed with its
+# engine. Each probe goes to probe-calls in the home.
+case ${1##*/} in
+  probe.py | tail.py) ;;
+  *) exec "$FAKE_PYTHON" "$@" ;;
+esac
+calls=$HOME/probe-calls
+echo "${1##*/} ${*:2}" >>"$calls"
+n=$(wc -l <"$calls")
+if [[ $n -eq ${FAKE_PROBE_FAIL_AT:-0} ]]; then
+  echo "probe: the engine went away" >&2
+  exit 1
+fi
+engine=$(grep '^variant.sh use ' "$HOME/variant.log" | tail -1)
+ttft=1650 t16=1750 p95=1850
+if [[ $engine == *make-room* ]]; then ttft=150 t16=240 p95=320; fi
+if [[ ${1##*/} == probe.py ]]; then
+  case=$3
+  echo "$case: priority-0 TTFT $((ttft + n)) ms, 16 tokens $((t16 + n)) ms, for 761 prompt tokens, sent with 2" \
+    "priority-2 requests of 17999 tokens running and 24 of 2274 blocks free; after it, 2 running and 0 waiting"
+else
+  echo "tail: 12 agents with fresh prompts of 6,000-30,000 tokens beside 2 calls with 40-token replies, for $3 s"
+  echo "replies: 40 turns, 16 tokens p50 $t16 p90 $t16 p95 $t16 max $t16 ms, 40 tokens p50 900 p90 950 p95 990 max 1000 ms"
+  echo "agents: 100 requests in $3 s, 0.42 a second, with 7,000 prompt and 20 output tokens a second"
+  echo "calls: 40 turns, 0 failed (counted at 30,000 ms), TTFT p50 $ttft p90 $p95 p95 $((p95 + n)) max 2000 ms;" \
+    "agents: 0 of 12 stopped early"
+fi

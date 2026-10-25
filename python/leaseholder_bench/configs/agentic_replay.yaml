@@ -10,8 +10,9 @@
 # AIPerf's dataset cache, which AIPerf can only take from the environment.
 #
 #   . configs/aiperf.env
-#   LH_BENCH_URL=http://127.0.0.1:18000/v1/chat/completions LH_BENCH_DATA=~/leaseholder/data/weka-x32 \
-#     aiperf profile --config configs/agentic_replay.yaml
+#   LH_BENCH_URL=http://127.0.0.1:18080/v1/chat/completions LH_BENCH_API_KEY=<the agents key> \
+#     LH_BENCH_DATA=~/leaseholder/data/weka-x32 aiperf profile --config configs/agentic_replay.yaml
+# On cyan the gateway is the only way to the engine over TCP: the engine serves its tunnel's socket.
 schemaVersion: "2.0"
 randomSeed: "${LH_BENCH_SEED:11}"
 benchmark:

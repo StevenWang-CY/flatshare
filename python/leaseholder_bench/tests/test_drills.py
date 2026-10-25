@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -16,6 +18,7 @@ from leaseholder_bench.drills import (
     DONE,
     ERROR_EVENT,
     HTTP_ERROR,
+    Clients,
     DrillConfig,
     StreamRecord,
     fill_cpu_tier,
@@ -30,13 +33,16 @@ CHUNK = b'data: {"choices": [{"delta": {"content": "1\\n"}}]}\n\n'
 
 
 class Body(httpx.AsyncByteStream):
-    """A streamed body of ``chunks`` that then ends, or breaks off as a connection that closes mid-body does."""
+    """A streamed body of ``chunks``, ``gap`` apart, that then ends, or breaks off as a connection that closes
+    mid-body does."""
 
-    def __init__(self, chunks: list[bytes], *, broken: bool = False) -> None:
-        self.chunks, self.broken = chunks, broken
+    def __init__(self, chunks: list[bytes], *, broken: bool = False, gap: float = 0.0) -> None:
+        self.chunks, self.broken, self.gap = chunks, broken, gap
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        for chunk in self.chunks:
+        for i, chunk in enumerate(self.chunks):
+            if i and self.gap:
+                await asyncio.sleep(self.gap)
             yield chunk
         if self.broken:
             raise httpx.RemoteProtocolError(
@@ -74,50 +80,77 @@ def test_a_stream_that_ends_without_done_is_broken() -> None:
 
 def test_an_error_event_ends_the_stream_with_its_type() -> None:
     event = (
-        b'data: {"error": {"type": "upstream_unavailable", "message": "the engine went away"}}\n\n'
+        b'data: {"error": {"message": "the engine went away", "type": "upstream_unavailable", '
+        b'"param": null, "code": 502}}\n\n'
     )
     record = asyncio.run(one(httpx.Response(200, stream=Body([CHUNK, event]))))
     assert (record.end, record.chunks) == (ERROR_EVENT, 1)
     assert record.error == "upstream_unavailable: the engine went away"
 
 
-def test_an_error_answer_is_an_http_error_with_its_type() -> None:
+def test_an_error_answer_is_an_http_error_with_its_code() -> None:
+    # The gateway's own errors: the type is OpenAI's class of error, the code names it.
     body = {
-        "error": {"type": "upstream_unavailable", "message": "upstream request failed: connect"}
+        "error": {
+            "message": "upstream request failed: connect",
+            "type": "server_error",
+            "code": "upstream_unavailable",
+        }
     }
     record = asyncio.run(one(httpx.Response(502, json=body)))
     assert (record.status, record.end, record.first_byte) == (502, HTTP_ERROR, None)
     assert record.error == "upstream_unavailable: upstream request failed: connect"
 
 
+def gateway_error(status: int, code: str) -> httpx.Response:
+    error = {"message": "down", "type": "server_error", "code": code}
+    return httpx.Response(status, json={"error": error})
+
+
 def test_the_probe_retries_until_a_request_succeeds() -> None:
-    answers = iter(
-        [
-            httpx.ConnectError("refused"),
-            httpx.Response(
-                502, json={"error": {"type": "upstream_unavailable", "message": "down"}}
-            ),
-            httpx.Response(200, json={"choices": []}),
-        ]
-    )
+    answers = [
+        httpx.ConnectError("refused"),
+        gateway_error(502, "upstream_unavailable"),
+        gateway_error(503, "upstream_not_ready"),
+    ]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        answer = next(answers)
+        answer = answers.pop(0) if answers else httpx.Response(200, json={"choices": []})
         if isinstance(answer, Exception):
             raise answer
         return answer
 
     async def go():
         async with client(handler) as c:
-            return await probe(c, "/v1/chat/completions", {}, DrillConfig(probe_interval_s=0.0))
+            planes = [("background", c, {})]
+            return await probe(planes, lambda: True, DrillConfig(probe_interval_s=0.01))
 
     found = asyncio.run(go())
-    assert [outcome for _, outcome in found.attempts] == [
+    assert [a.outcome for a in found.attempts] == [
         "ConnectError",
         "http 502 upstream_unavailable",
+        "http 503 upstream_not_ready",
         "ok",
     ]
-    assert found.recovered == found.attempts[-1][0]
+    assert all(a.slo_class == "background" and a.answered >= a.sent for a in found.attempts)
+
+
+def drill_clients(voice, agents) -> Clients:
+    """The drill's clients on two handlers: the voice plane's and the agents'."""
+    return Clients(
+        voice=client(voice),
+        agents=client(agents),
+        voice_probe=client(voice),
+        agents_probe=client(agents),
+    )
+
+
+async def write_event(path: Path, after: float) -> float:
+    """Writes the event's time to ``path`` ``after`` seconds from now, as the drill script does; returns it."""
+    await asyncio.sleep(after)
+    event = time.time()
+    path.write_text(f"{event:.6f}\n")
+    return event
 
 
 def test_the_drill_records_each_class_and_the_probe(tmp_path: Path, capsys) -> None:
@@ -125,7 +158,9 @@ def test_the_drill_records_each_class_and_the_probe(tmp_path: Path, capsys) -> N
 
     def voice(request: httpx.Request) -> httpx.Response:
         seen.append(("voice", json.loads(request.content)))
-        return httpx.Response(200, stream=Body([CHUNK, b"data: [DONE]\n\n"]))
+        if json.loads(request.content).get("stream"):
+            return httpx.Response(200, stream=Body([CHUNK, b"data: [DONE]\n\n"]))
+        return httpx.Response(200, json={"choices": []})
 
     def agents(request: httpx.Request) -> httpx.Response:
         seen.append(("agents", json.loads(request.content)))
@@ -134,16 +169,84 @@ def test_the_drill_records_each_class_and_the_probe(tmp_path: Path, capsys) -> N
             return httpx.Response(200, stream=Body([CHUNK], broken=True))
         return httpx.Response(200, json={"choices": []})
 
-    config = DrillConfig(realtime=1, background=2, max_tokens=5, probe_interval_s=0.0)
+    config = DrillConfig(realtime=1, background=2, max_tokens=5, probe_interval_s=0.01)
+    (tmp_path / "event").write_text("1792900000.5\n")
     record = asyncio.run(
-        run_streams(config, client(voice), client(agents), "k", tmp_path / "drill.json")
+        run_streams(
+            config, drill_clients(voice, agents), "k", tmp_path / "drill.json", tmp_path / "event"
+        )
     )
     assert [s["end"] for s in record["streams"]] == [DONE, BROKEN, BROKEN]
     assert [s["slo_class"] for s in record["streams"]] == ["realtime", "background", "background"]
-    assert record["probe"]["recovered"] is not None
+    assert record["event"] == 1792900000.5
+    assert {a["slo_class"] for a in record["probe"]["attempts"]} == {"realtime", "background"}
+    assert all(a["outcome"] == "ok" for a in record["probe"]["attempts"])
+    assert record["engine"] == []
     assert json.loads((tmp_path / "drill.json").read_text()) == json.loads(json.dumps(record))
     assert all(body["max_tokens"] == 5 and body["stream"] for who, body in seen[:3])
-    assert "streaming" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "streaming" in out and "event 1792900000.500" in out
+
+
+def test_the_probe_starts_at_the_event_and_runs_beside_the_streams_until_requests_succeed(
+    tmp_path: Path,
+) -> None:
+    # A gateway that refuses every connection for 0.3 s from the event, as one restarting without its socket
+    # unit would, while the streams it already serves go on.
+    event: list[float] = []
+
+    def gateway(request: httpx.Request) -> httpx.Response:
+        if json.loads(request.content).get("stream"):
+            chunks = [CHUNK] * 12 + [b"data: [DONE]\n\n"]
+            return httpx.Response(200, stream=Body(chunks, gap=0.05))
+        if not event or time.time() < event[0] + 0.3:
+            raise httpx.ConnectError("refused")
+        return httpx.Response(200, json={"choices": []})
+
+    running = iter([6, 6, 6, 4, 2, 0])
+
+    def engine(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/metrics"
+        n = next(running, 0)
+        return httpx.Response(
+            200,
+            text=f'vllm:num_requests_running{{engine="0"}} {n}.0\nvllm:num_requests_waiting{{engine="0"}} 0.0\n',
+        )
+
+    async def go():
+        config = DrillConfig(
+            realtime=1, background=1, probe_interval_s=0.05, sample_interval_s=0.05, deadline_s=10
+        )
+        writer = asyncio.create_task(write_event(tmp_path / "event", 0.15))
+        writer.add_done_callback(lambda task: event.append(task.result()))
+        record = await run_streams(
+            config,
+            drill_clients(gateway, gateway),
+            "k",
+            tmp_path / "drill.json",
+            tmp_path / "event",
+            client(engine),
+        )
+        return record, await writer
+
+    record, at = asyncio.run(go())
+    attempts = record["probe"]["attempts"]
+    assert record["event"] == pytest.approx(at, abs=1e-6)
+    assert attempts and all(a["sent"] >= at for a in attempts), "nothing before the event"
+    ended = max(s["ended"] for s in record["streams"])
+    assert all(s["end"] == DONE for s in record["streams"])
+    assert any(a["sent"] < ended for a in attempts), "probes while the streams ran"
+    for slo_class in ("realtime", "background"):
+        mine = [a for a in attempts if a["slo_class"] == slo_class]
+        assert mine[0]["outcome"] == "ConnectError" and mine[-1]["outcome"] == "ok"
+        assert all(a["outcome"] == "ok" for a in mine if a["sent"] >= at + 0.35)
+    # The engine's samples: stamped, from the first bytes on.
+    samples = record["engine"]
+    assert [s["running"] for s in samples[:6]] == [6, 6, 6, 4, 2, 0]
+    assert all(b["at"] > a["at"] for a, b in itertools.pairwise(samples))
+    text = report(record, label="the restart")
+    assert "probe, realtime: " in text and "probe, background: " in text
+    assert "ConnectError)" in text and "the first success answered" in text
 
 
 def test_the_report_counts_the_ends_and_times_them_from_the_event(tmp_path: Path, capsys) -> None:
@@ -180,6 +283,41 @@ def test_the_report_counts_the_ends_and_times_them_from_the_event(tmp_path: Path
     path.write_text(json.dumps(record))
     assert main(["drill", "report", str(path), "--event", "100", "--label", "the kill"]) == 0
     assert capsys.readouterr().out.strip() == text
+
+
+def test_the_report_names_each_planes_failures_and_when_the_engine_emptied() -> None:
+    record = {
+        "event": 100.0,
+        "streams": [{"slo_class": "realtime", "end": DONE, "ended": 101.0, "error": None}],
+        "probe": {
+            "attempts": [
+                {
+                    "slo_class": "realtime",
+                    "sent": 100.1,
+                    "answered": 100.15,
+                    "outcome": "ConnectError",
+                },
+                {"slo_class": "background", "sent": 100.1, "answered": 100.3, "outcome": "ok"},
+                {"slo_class": "realtime", "sent": 100.2, "answered": 100.6, "outcome": "ok"},
+            ]
+        },
+        "engine": [
+            {"at": 99.5, "running": 6.0, "waiting": 0.0, "error": None},
+            {"at": 100.1, "running": None, "waiting": None, "error": "RemoteProtocolError"},
+            {"at": 100.6, "running": None, "waiting": None, "error": "RemoteProtocolError"},
+            {"at": 101.0, "running": 0.0, "waiting": 0.0, "error": None},
+        ],
+    }
+    lines = report(record, label="the kill").splitlines()
+    assert lines[1:] == [
+        "  ended 1,000 ms after the kill at the median, 1,000 ms at most",
+        "probe, realtime: 2 attempts (1 ConnectError); the first success answered 0.6 s after the kill, "
+        "the last failure sent 0.1 s after it; the slowest took 0.40 s",
+        "probe, background: 1 attempts, none failed; the first success answered 0.3 s after the kill; "
+        "the slowest took 0.20 s",
+        "engine: 6 running and 0 waiting before the kill; no answer from 0.1 to 0.6 s after it "
+        "(RemoteProtocolError); none running from 1.0 s after it",
+    ]
 
 
 @pytest.mark.parametrize("realtime", [0, 1])

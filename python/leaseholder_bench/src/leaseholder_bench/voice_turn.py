@@ -28,6 +28,7 @@ import orjson
 
 from leaseholder_bench.load import BackgroundLoad, LoadSpec, stream_chunks, summarize
 from leaseholder_bench.protocol import CLASS_HEADER, ENGINE_PRIORITY, SloClass
+from leaseholder_bench.transport import async_client
 
 SENTENCE_END = re.compile(r"[.!?][\"')\]]*(?:\s|$)")
 MIN_SENTENCE_CHARS = 20
@@ -58,10 +59,11 @@ def first_sentence(text: str) -> str | None:
 
 @dataclass(frozen=True)
 class VoiceTurnConfig:
-    stt_url: str
-    """STT base URL, e.g. ``http://127.0.0.1:18100/v1``."""
-    llm_url: str
-    tts_url: str
+    stt: str
+    """The STT server's address (:mod:`leaseholder_bench.transport`), whose OpenAI API is at ``/v1``: on
+    cyan, ``unix:/run/user/1007/lh/phastform-stt.sock``, the tunnel's socket."""
+    llm: str
+    tts: str
     stt_model: str
     llm_model: str
     tts_model: str
@@ -88,7 +90,7 @@ class VoiceTurn:
 
     async def transcribe(self, wav: bytes) -> str:
         response = await self.stt.post(
-            "/audio/transcriptions",
+            "/v1/audio/transcriptions",
             files={"file": ("turn.wav", wav, "audio/wav")},
             data={"model": self.config.stt_model, "language": "en", "response_format": "json"},
         )
@@ -105,7 +107,7 @@ class VoiceTurn:
             "stream": True,
         }
         started = time.perf_counter()
-        async with self.tts.stream("POST", "/audio/speech", json=payload) as response:
+        async with self.tts.stream("POST", "/v1/audio/speech", json=payload) as response:
             response.raise_for_status()
             async for chunk in response.aiter_raw():
                 if chunk:
@@ -137,7 +139,7 @@ class VoiceTurn:
         sentence: str | None = None
         t_first = t_sentence = None
         tts: asyncio.Task[float] | None = None
-        async with self.llm.stream("POST", "/chat/completions", headers=headers, json=body) as r:
+        async with self.llm.stream("POST", "/v1/chat/completions", headers=headers, json=body) as r:
             r.raise_for_status()
             async for chunk in stream_chunks(r):
                 choices = chunk.get("choices") or [{}]
@@ -180,9 +182,9 @@ async def run_voice_turns(config: VoiceTurnConfig, out_dir: Path) -> dict[str, A
     rows: list[dict[str, Any]] = []
     load_summary = None
     async with (
-        httpx.AsyncClient(base_url=config.stt_url, timeout=timeout) as stt,
-        httpx.AsyncClient(base_url=config.llm_url, timeout=timeout) as llm,
-        httpx.AsyncClient(base_url=config.tts_url, timeout=timeout) as tts,
+        async_client(config.stt, timeout=timeout) as stt,
+        async_client(config.llm, timeout=timeout) as llm,
+        async_client(config.tts, timeout=timeout) as tts,
     ):
         turn = VoiceTurn(config, stt, llm, tts)
         with (out_dir / "turns.jsonl").open("wb") as log:
@@ -205,7 +207,7 @@ async def run_voice_turns(config: VoiceTurnConfig, out_dir: Path) -> dict[str, A
             else:
                 async with BackgroundLoad(
                     llm,
-                    "/completions",
+                    "/v1/completions",
                     config.llm_model,
                     config.background,
                     priority=ENGINE_PRIORITY[SloClass.BACKGROUND] if config.send_priority else None,

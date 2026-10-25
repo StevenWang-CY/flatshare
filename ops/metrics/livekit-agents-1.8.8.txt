@@ -1,0 +1,6 @@
+# The metric families of the voice worker, LiveKit Agents 1.8.8 (livekit/agents/telemetry/metrics.py), by name and type,
+# served only when the worker has a prometheus_port. As ops/metrics/vllm-0.32.0.txt.
+lk_agents_active_job_count gauge
+lk_agents_child_process_count gauge
+lk_agents_proc_initialize_duration_seconds histogram
+lk_agents_worker_load gauge

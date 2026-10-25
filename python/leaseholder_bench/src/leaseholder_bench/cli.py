@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
 import signal
 import sys
 from pathlib import Path
 
 from leaseholder_bench.load import LoadSpec, parse_lengths
 from leaseholder_bench.protocol import DEFAULT_MODEL, SloClass
+from leaseholder_bench.transport import runtime_socket
+
+ADDRESS = "http://host:port, or unix: and a socket's path"
 
 Commands = argparse._SubParsersAction  # what add_subparsers returns
 
@@ -105,7 +109,7 @@ def _kv_metrics(args: argparse.Namespace) -> int:
 
     if args.action == "snapshot":
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(fetch(args.url))
+        args.out.write_text(fetch(args.address))
         return 0
     print(compare(args.before.read_text(), args.after.read_text()))
     return 0
@@ -120,8 +124,11 @@ def _add_kv_metrics(commands: Commands) -> None:
         "(the engine needs --kv-cache-metrics).",
     )
     actions = kv.add_subparsers(dest="action", required=True)
-    snap = actions.add_parser("snapshot", help="save the exposition at URL to a file")
-    snap.add_argument("url", help="metrics URL, e.g. http://127.0.0.1:8000/metrics")
+    snap = actions.add_parser("snapshot", help="save a server's /metrics to a file")
+    snap.add_argument(
+        "address",
+        help=f"the server ({ADDRESS}), e.g. {runtime_socket('phastform-engine.sock')}, the engine's tunnel",
+    )
     snap.add_argument("out", type=Path)
     cmp_ = actions.add_parser("compare", help="report the histograms between two snapshots")
     cmp_.add_argument("before", type=Path)
@@ -158,8 +165,9 @@ def _add_tiers(commands: Commands) -> None:
     )
     tiers.add_argument(
         "--url",
-        default="http://127.0.0.1:8000",
-        help="engine base URL (default %(default)s); the engine needs /metrics and an offload tier",
+        default=runtime_socket("phastform-engine.sock"),
+        help=f"the engine ({ADDRESS}; default %(default)s, its tunnel on cyan); it needs /metrics and "
+        "an offload tier",
     )
     tiers.add_argument("--model", default=DEFAULT_MODEL, help="model name (default %(default)s)")
     tiers.add_argument(
@@ -192,9 +200,9 @@ def _voice_turn(args: argparse.Namespace) -> int:
     from leaseholder_bench.voice_turn import VoiceTurnConfig, render, run_voice_turns
 
     config = VoiceTurnConfig(
-        stt_url=args.stt_url,
-        llm_url=args.llm_url,
-        tts_url=args.tts_url,
+        stt=args.stt,
+        llm=args.llm,
+        tts=args.tts,
         stt_model=args.stt_model,
         llm_model=args.llm_model,
         tts_model=args.tts_model,
@@ -221,15 +229,17 @@ def _add_voice_turn(commands: Commands) -> None:
         "each stage; with --background, while agent load keeps the LLM busy. Writes run.json, "
         "turns.jsonl and summary.json.",
     )
-    turn.add_argument(
-        "--stt-url", default="http://127.0.0.1:8100/v1", help="STT base URL (default %(default)s)"
-    )
-    turn.add_argument(
-        "--llm-url", default="http://127.0.0.1:8000/v1", help="LLM base URL (default %(default)s)"
-    )
-    turn.add_argument(
-        "--tts-url", default="http://127.0.0.1:8880/v1", help="TTS base URL (default %(default)s)"
-    )
+    for server, socket in (
+        ("stt", "phastform-stt.sock"),
+        ("llm", "phastform-engine.sock"),
+        ("tts", "phastform-tts.sock"),
+    ):
+        turn.add_argument(
+            f"--{server}",
+            default=runtime_socket(socket),
+            help=f"the {server.upper()} server ({ADDRESS}), its OpenAI API at /v1 (default %(default)s, "
+            "its tunnel on cyan)",
+        )
     turn.add_argument(
         "--stt-model",
         default="openai/whisper-large-v3-turbo",
@@ -273,7 +283,6 @@ def _add_voice_turn(commands: Commands) -> None:
 
 
 def _drill(args: argparse.Namespace) -> int:
-    import httpx
     import orjson
 
     from leaseholder_bench.drills import (
@@ -288,6 +297,7 @@ def _drill(args: argparse.Namespace) -> int:
     )
     from leaseholder_bench.e2.arm import E2Error
     from leaseholder_bench.e2.run import Host, exclusive
+    from leaseholder_bench.transport import async_client
 
     if args.action == "streams":
         config = DrillConfig(
@@ -297,19 +307,23 @@ def _drill(args: argparse.Namespace) -> int:
             deadline_s=args.deadline,
             probe_interval_s=args.probe_interval,
         )
-        voice, agents = clients(config, args.gateway, args.uds or default_uds())
-        host = Host()
+        drill_clients = clients(config, args.gateway, args.uds or default_uds())
+        engine = async_client(args.engine, timeout=10.0)
+        host = Host.load()
         try:
             with exclusive(host):  # never beside an E2 point
-                asyncio.run(run_streams(config, voice, agents, agents_key(host), args.out))
+                key = agents_key(host)
+                asyncio.run(
+                    run_streams(config, drill_clients, key, args.out, args.event_file, engine)
+                )
         except E2Error as exc:
             print(f"lh-bench drill: {exc}", file=sys.stderr)
             return 1
         return 0
     if args.action == "cpu-tier":
         try:
-            with exclusive(Host()):  # nothing else may use the engine meanwhile
-                engine = httpx.AsyncClient(base_url=args.engine, timeout=300.0)
+            with exclusive(Host.load()):  # nothing else may use the engine meanwhile
+                engine = async_client(args.engine, timeout=300.0)
                 record = asyncio.run(fill_cpu_tier(engine, args.out, factor=args.factor))
         except E2Error as exc:
             print(f"lh-bench drill: {exc}", file=sys.stderr)
@@ -332,13 +346,15 @@ def _add_drill(commands: Commands) -> None:
         help="the client side of a failure drill (ops/drills/drill.sh) and its summary",
         description="streams: open streaming completions through the gateway (realtime on the voice plane's "
         "socket, background on its TCP port with the agents tenant's key), print 'streaming' once each has its "
-        "first byte, read each to its end, then send a one-token completion every PROBE_INTERVAL seconds until "
-        "one succeeds; writes the record to OUT. report: summarize a record. start: time a server's start "
-        "from its journal.",
+        "first byte, and read each to its end; from the moment EVENT_FILE holds the event's time, send a "
+        "one-token completion on each plane every PROBE_INTERVAL seconds, each on a new connection, until every "
+        "stream has ended and each plane's latest one succeeded; sample the engine's running and waiting "
+        "requests meanwhile; writes the record to OUT. report: summarize a record. start: time a server's "
+        "start from its journal.",
     )
     actions = drill.add_subparsers(dest="action", required=True)
     streams = actions.add_parser(
-        "streams", help="open the streams, then probe until a request succeeds"
+        "streams", help="open the streams, and probe from the event until requests succeed again"
     )
     streams.add_argument(
         "--gateway", default="http://127.0.0.1:18080", help="the gateway (default %(default)s)"
@@ -369,17 +385,36 @@ def _add_drill(commands: Commands) -> None:
         default=1.0,
         help="seconds between probes (default %(default)s)",
     )
+    streams.add_argument(
+        "--event-file",
+        type=Path,
+        required=True,
+        help="where the drill script writes the event's wall-clock time as the event happens",
+    )
+    streams.add_argument(
+        "--engine",
+        default=runtime_socket("phastform-engine.sock"),
+        help=f"the engine, for its running requests ({ADDRESS}; default %(default)s, its tunnel on cyan)",
+    )
     streams.add_argument("--out", type=Path, required=True, help="the record (JSON)")
     summary = actions.add_parser("report", help="summarize a drill's record")
     summary.add_argument("record", type=Path)
-    summary.add_argument("--event", type=float, help="the kill's or the restart's wall-clock time")
+    summary.add_argument(
+        "--event",
+        type=float,
+        help="the event's wall-clock time (default: the record's, as the client read it)",
+    )
     summary.add_argument(
         "--label", default="the event", help="what --event names (default %(default)s)"
     )
     tier = actions.add_parser(
         "cpu-tier", help="fill the engine's CPU tier past its capacity and check what it then holds"
     )
-    tier.add_argument("--engine", default="http://127.0.0.1:18000", help="(default %(default)s)")
+    tier.add_argument(
+        "--engine",
+        default=runtime_socket("phastform-engine.sock"),
+        help=f"the engine ({ADDRESS}; default %(default)s, its tunnel on cyan)",
+    )
     tier.add_argument(
         "--factor", type=float, default=2.0, help="the tier's capacity stored (default %(default)s)"
     )
@@ -394,14 +429,14 @@ def _add_drill(commands: Commands) -> None:
 def _e2(args: argparse.Namespace) -> int:
     from leaseholder_bench.e2.arm import E2Error, load_arm
     from leaseholder_bench.e2.record import export_point, render
-    from leaseholder_bench.e2.report import load_points, write_report
+    from leaseholder_bench.e2.report import load_points, read_dots, write_report
     from leaseholder_bench.e2.run import Host, Systemd, gpu_sources, reset_cyan, run_point
 
     try:
         if args.action == "engine":
             print(load_arm(args.arm).engine)
         elif args.action == "reset":
-            applied = reset_cyan(Host(), Systemd())
+            applied = reset_cyan(Host.load(), Systemd())
             for unit in ("gateway", "worker"):
                 print(f"{unit}: {'restarted' if applied[unit]['restarted'] else 'unchanged'}")
         elif args.action == "run":
@@ -409,13 +444,18 @@ def _e2(args: argparse.Namespace) -> int:
             signal.signal(signal.SIGHUP, signal.SIG_IGN)
             signal.signal(signal.SIGTERM, _interrupted)
             sources = gpu_sources(args.gpu_source) if args.gpu_source else None
+            host = Host.load()
+            if args.profile:
+                host = dataclasses.replace(host, profile=args.profile)
             try:
                 summary = run_point(
                     args.arm,
                     args.out,
+                    host,
                     save_audio=args.save_audio,
                     gpu_source=sources,
                     agents_seed=args.agents_seed,
+                    kv_sample_s=args.kv_sample_s,
                 )
             except KeyboardInterrupt:
                 print(f"lh-bench e2: {args.arm.stem} interrupted", file=sys.stderr)
@@ -440,8 +480,9 @@ def _e2(args: argparse.Namespace) -> int:
                 print("lh-bench e2: no complete point to report", file=sys.stderr)
                 return 1
             try:
-                written = write_report(rows, args.out, args.waterfall)
-            except ValueError as exc:  # a --waterfall point without turn lines
+                dots = read_dots(args.dots) if args.dots else ()
+                written = write_report(rows, args.out, args.waterfall, dots)
+            except ValueError as exc:  # a --waterfall point without turn lines, a bad --dots file
                 print(f"lh-bench e2: {exc}", file=sys.stderr)
                 return 1
             for path in written:
@@ -454,6 +495,17 @@ def _e2(args: argparse.Namespace) -> int:
 
 def _interrupted(signum: int, _frame: object) -> None:
     raise KeyboardInterrupt(signal.Signals(signum).name)
+
+
+def _seconds(text: str) -> float:
+    """An interval in seconds, 0 or more."""
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number of seconds") from None
+    if not 0 <= value < float("inf"):
+        raise argparse.ArgumentTypeError(f"{text!r}: an interval is 0 or more seconds")
+    return value
 
 
 def _add_e2(commands: Commands) -> None:
@@ -486,6 +538,22 @@ def _add_e2(commands: Commands) -> None:
         "agents-seed line sets it for its points; run.json keeps the seed the replay ran with",
     )
     run.add_argument(
+        "--kv-sample-s",
+        type=_seconds,
+        default=0.5,
+        metavar="SECONDS",
+        help="how often an agent point samples each engine's KV use and requests from its /metrics "
+        "while the calls run, for the measured running share (default %(default)s); 0 samples "
+        "nothing, as W5's points ran; run.json keeps the interval",
+    )
+    run.add_argument(
+        "--profile",
+        metavar="NAME",
+        help="the GPU nodes' hardware profile (deploy/profiles/NAME.toml), whose model and scheduler "
+        "settings the engine check expects; default the host's (~/.config/leaseholder/e2-host.toml), "
+        "else the frozen box's",
+    )
+    run.add_argument(
         "--gpu-source",
         action="append",
         default=[],
@@ -509,6 +577,14 @@ def _add_e2(commands: Commands) -> None:
         metavar="POINT",
         help="draw only this point's configuration in waterfall.svg (repeatable, in this order; "
         "default every one with turn lines)",
+    )
+    report.add_argument(
+        "--dots",
+        type=Path,
+        metavar="FILE",
+        help="also draw voice-p95.svg: the V2V p95 of the configurations a TOML file names, one "
+        '[[row]] each (point = "...", label = "...", change = true for the engine change\'s rows), '
+        "in its order",
     )
     export = actions.add_parser(
         "export",

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -153,6 +154,32 @@ def test_a_frame_shows_the_live_wait_and_each_reply(pair: tuple[Path, Path]) -> 
     assert left.wait.get_text() == "2.50 s" and len(left.bars) == 3
 
 
+def test_the_gifs_silent_frames_mark_no_side_as_heard(pair: tuple[Path, Path]) -> None:
+    pytest.importorskip("matplotlib")
+    timeline = demo.Timeline.choose((demo.Call.load(pair[0]), demo.Call.load(pair[1])), turns=2)
+    frames = demo.Frames(timeline, sound=False)
+    footer = " ".join(text.get_text() for text in frames.figure.texts)
+    assert "Each pair of turns starts together" in footer and "Sound:" not in footer
+    for t in (1.0, timeline.seconds - 0.1):  # each half, which the video's soundtrack splits
+        frames.draw(t)
+        assert not any(panel.tag.get_visible() for panel in frames.panels)
+        assert {panel.box.get_facecolor() for panel in frames.panels} == {
+            frames.panels[0].box.get_facecolor()
+        }
+
+
+def test_the_title_card_draws_its_lines_and_takes_whole_frames() -> None:
+    pytest.importorskip("matplotlib")
+    card = demo.title_card(["Two calls beside coding agents", "left: tuned vLLM", "right: the PRs"])
+    assert card.shape == (demo.HEIGHT, demo.WIDTH, 4) and card.dtype == np.uint8
+    surface = card[0, 0].copy()
+    inked = np.any(card != surface, axis=2)
+    heading, lines = inked[: demo.HEIGHT // 2], inked[demo.HEIGHT // 2 :]
+    assert heading.any() and lines.any()  # the heading above the middle, its lines below
+    assert demo.title_frames(["a title"], 2.0, 10.0) == 20 and demo.title_frames([], 2.0, 10.0) == 0
+    assert demo.title_frames(["a title"], 1.04, 30.0) == 31  # whole frames: 31.2 rounds to 31
+
+
 @pytest.mark.integration
 def test_the_script_renders_a_video_and_a_gif(pair: tuple[Path, Path], tmp_path: Path) -> None:
     uv = shutil.which("uv")
@@ -170,3 +197,19 @@ def test_the_script_renders_a_video_and_a_gif(pair: tuple[Path, Path], tmp_path:
     assert f"{out}: " in done.stdout and "turns 0-0" in done.stdout
     assert out.read_bytes()[4:8] == b"ftyp" and gif.read_bytes()[:6] == b"GIF89a"
     assert gif.stat().st_size < 2_000_000
+    # With a title card: its frames come first, and the calls' as many as without it.
+    titled = tmp_path / "titled.mp4"
+    command = [uv, "run", "-q", str(DEMO), *map(str, pair), "--out", str(titled)]
+    again = subprocess.run(
+        [*command, "--seconds", "12", "--fps", "10", "--title", "A title", "--title", "a line",
+         "--title-seconds", "2"],
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )  # fmt: skip
+    assert again.returncode == 0, again.stderr
+    calls = re.findall(r": (\d+) frames, ([\d.]+) s of calls", done.stdout)
+    frames, seconds = (float(x) for x in calls[0])
+    line = f"{titled}: {frames + 20:.0f} frames, {seconds:.1f} s of calls, after a 2 s title card"
+    assert line in again.stdout
+    assert titled.stat().st_size > out.stat().st_size // 2

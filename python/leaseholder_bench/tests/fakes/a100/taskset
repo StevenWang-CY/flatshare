@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# taskset in the A100 CPU dry run: `taskset -c CPUS COMMAND...` logs the CPUs and runs COMMAND.
+echo "taskset $1 $2" >>"$HOME/taskset.log"
+shift 2
+exec "$@"

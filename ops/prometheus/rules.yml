@@ -1,0 +1,138 @@
+# Recording and alert rules for Leaseholder on cyan (ops/prometheus/prometheus.example.yml loads them). The SLIs are the
+# gateway's: every voice request and every agent request passes it. docs/SLO.md has the objectives; the burn-rate
+# alerts are the multiwindow ones of Google's SRE workbook over a 30-day budget: a page when an hour burns 14.4 times
+# the budget's rate (2% of it) or six hours burn 6 times (5%), each confirmed by a window a twelfth as long, and a
+# ticket when three days burn it at 1 times. Severity is a label: page or ticket. ops/'s tests check that every metric
+# named here exists in the gateway's, vLLM 0.32.0's or the voice worker's metric set (ops/metrics).
+groups:
+  - name: lh-sli
+    rules:
+      # The realtime first byte: the share of realtime requests whose first byte took longer than 250 ms (objective:
+      # at most 5%).
+      - record: lh:realtime_first_byte_slow:ratio_rate5m
+        expr: |
+          1 - sum(rate(lh_gateway_first_byte_seconds_bucket{class="realtime",le="0.25"}[5m]))
+            / sum(rate(lh_gateway_first_byte_seconds_count{class="realtime"}[5m]))
+      - record: lh:realtime_first_byte_slow:ratio_rate30m
+        expr: |
+          1 - sum(rate(lh_gateway_first_byte_seconds_bucket{class="realtime",le="0.25"}[30m]))
+            / sum(rate(lh_gateway_first_byte_seconds_count{class="realtime"}[30m]))
+      - record: lh:realtime_first_byte_slow:ratio_rate1h
+        expr: |
+          1 - sum(rate(lh_gateway_first_byte_seconds_bucket{class="realtime",le="0.25"}[1h]))
+            / sum(rate(lh_gateway_first_byte_seconds_count{class="realtime"}[1h]))
+      - record: lh:realtime_first_byte_slow:ratio_rate6h
+        expr: |
+          1 - sum(rate(lh_gateway_first_byte_seconds_bucket{class="realtime",le="0.25"}[6h]))
+            / sum(rate(lh_gateway_first_byte_seconds_count{class="realtime"}[6h]))
+      - record: lh:realtime_first_byte_slow:ratio_rate3d
+        expr: |
+          1 - sum(rate(lh_gateway_first_byte_seconds_bucket{class="realtime",le="0.25"}[3d]))
+            / sum(rate(lh_gateway_first_byte_seconds_count{class="realtime"}[3d]))
+      # The control plane's overhead: the share of requests the gateway itself held longer than 2 ms (objective: at
+      # most 1%, the SLO's p99 of 2 ms).
+      - record: lh:overhead_slow:ratio_rate5m
+        expr: |
+          1 - sum(rate(lh_gateway_overhead_seconds_bucket{le="0.002"}[5m]))
+            / sum(rate(lh_gateway_overhead_seconds_count[5m]))
+      - record: lh:overhead_slow:ratio_rate30m
+        expr: |
+          1 - sum(rate(lh_gateway_overhead_seconds_bucket{le="0.002"}[30m]))
+            / sum(rate(lh_gateway_overhead_seconds_count[30m]))
+      - record: lh:overhead_slow:ratio_rate1h
+        expr: |
+          1 - sum(rate(lh_gateway_overhead_seconds_bucket{le="0.002"}[1h]))
+            / sum(rate(lh_gateway_overhead_seconds_count[1h]))
+      - record: lh:overhead_slow:ratio_rate6h
+        expr: |
+          1 - sum(rate(lh_gateway_overhead_seconds_bucket{le="0.002"}[6h]))
+            / sum(rate(lh_gateway_overhead_seconds_count[6h]))
+      - record: lh:overhead_slow:ratio_rate3d
+        expr: |
+          1 - sum(rate(lh_gateway_overhead_seconds_bucket{le="0.002"}[3d]))
+            / sum(rate(lh_gateway_overhead_seconds_count[3d]))
+      # For the dashboard: each class's first byte at p95, and the tokens each class completes a second.
+      - record: lh:first_byte_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum by (class, le) (rate(lh_gateway_first_byte_seconds_bucket[5m])))
+      - record: lh:usage_tokens:rate5m
+        expr: sum by (class, kind) (rate(lh_gateway_usage_tokens_total[5m]))
+
+  - name: lh-slo
+    rules:
+      - alert: LhRealtimeFirstByteBudgetBurn
+        expr: |
+          (lh:realtime_first_byte_slow:ratio_rate1h > 14.4 * 0.05 and lh:realtime_first_byte_slow:ratio_rate5m > 14.4 * 0.05)
+          or
+          (lh:realtime_first_byte_slow:ratio_rate6h > 6 * 0.05 and lh:realtime_first_byte_slow:ratio_rate30m > 6 * 0.05)
+        labels:
+          severity: page
+        annotations:
+          summary: Voice turns' first bytes burn the realtime class's budget (95% within 250 ms) fast
+          description: >-
+            {{ $value | humanizePercentage }} of realtime first bytes took over 250 ms. Look at the engine's KV usage
+            and waiting requests (background KV filling the pool) and at lh_gateway_node_ready.
+      - alert: LhRealtimeFirstByteBudgetSlowBurn
+        expr: lh:realtime_first_byte_slow:ratio_rate3d > 0.05 and lh:realtime_first_byte_slow:ratio_rate6h > 0.05
+        labels:
+          severity: ticket
+        annotations:
+          summary: Three days of voice turns spend the realtime first byte's budget faster than it lasts
+      - alert: LhOverheadBudgetBurn
+        expr: |
+          (lh:overhead_slow:ratio_rate1h > 14.4 * 0.01 and lh:overhead_slow:ratio_rate5m > 14.4 * 0.01)
+          or
+          (lh:overhead_slow:ratio_rate6h > 6 * 0.01 and lh:overhead_slow:ratio_rate30m > 6 * 0.01)
+        labels:
+          severity: page
+        annotations:
+          summary: The gateway itself holds requests over 2 ms, fast enough to spend the overhead SLO's budget
+          description: >-
+            {{ $value | humanizePercentage }} of requests spent over 2 ms in the gateway (the SLO's p99). Its CPU (cores
+            0-7 on cyan) or its admission policy's decisions are the suspects.
+      - alert: LhOverheadBudgetSlowBurn
+        expr: lh:overhead_slow:ratio_rate3d > 0.01 and lh:overhead_slow:ratio_rate6h > 0.01
+        labels:
+          severity: ticket
+        annotations:
+          summary: Three days of requests spend the gateway overhead SLO's budget faster than it lasts
+
+  - name: lh-health
+    rules:
+      - alert: LhGatewayDown
+        expr: up{job="lh-gateway"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: Prometheus cannot read the gateway's /metrics on cyan
+      - alert: LhEngineNotReady
+        expr: lh_gateway_node_ready == 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: The gateway finds the engine down and answers its requests 503 (upstream_not_ready or no_ready_node)
+          description: >-
+            A request found the engine broken and its /health has not answered since. An engine restart takes about
+            two minutes (the W8 drill: 112 s); a tunnel down shows in lh-tunnel@NODE's journal.
+      - alert: LhEngineMetricsDown
+        expr: up{job="lh-engine"} == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: The gateway cannot relay the engine's /metrics (the engine or its tunnel is down)
+      - alert: LhStreamsBroken
+        expr: sum(increase(lh_gateway_error_events_total{type="upstream_unavailable"}[10m])) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: The upstream broke off event streams, which their clients saw end with an error event
+      - alert: LhKvPoolFullWithWaiting
+        expr: max(vllm:kv_cache_usage_perc) > 0.95 and sum(vllm:num_requests_waiting) > 0
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: The engine's KV pool is full while requests wait, the regime where voice turns need the engine change
+          description: See docs/PRODUCTION.md, "Is your deployment in this regime?".

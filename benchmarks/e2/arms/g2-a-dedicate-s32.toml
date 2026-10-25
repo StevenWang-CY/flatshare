@@ -10,11 +10,11 @@ callers = 4
 sessions = 32
 
 [gateway.nodes.phastform]
-upstream = "http://127.0.0.1:18000"
+upstream = "unix:/run/user/1007/lh/phastform-engine.sock"
 classes = ["realtime"]
 
 [gateway.nodes.gray]
-upstream = "http://127.0.0.1:28000"
+upstream = "unix:/run/user/1007/lh/gray-engine.sock"
 classes = ["interactive", "background"]
 
 [gateway.placement]

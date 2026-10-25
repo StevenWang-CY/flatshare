@@ -52,6 +52,7 @@ with (artifacts / "profile_export.jsonl").open("w") as records:
             sys.exit(4)
         metrics = {
             "time_to_first_token": {"value": 100.0 + n % 10, "unit": "ms"},
+            "inter_token_latency": {"value": 20.0 + n % 5, "unit": "ms"},
             "usage_prompt_tokens": {"value": 1000, "unit": "tokens"},
             "usage_completion_tokens": {"value": 10, "unit": "tokens"},
         }

@@ -13,6 +13,8 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
+from leaseholder_bench.transport import socket_path
+
 _FLAG = re.compile(r"[A-Za-z0-9._:/=,+-]+")
 """Engine flags travel through ssh and a systemd environment line, so each is one plain word."""
 _ARM = re.compile(r"(10|[1-9])[a-z]?(-[a-z0-9]+)*")
@@ -144,27 +146,35 @@ def _engine(top: _Table) -> Engine:
 
 
 def gpu_nodes(arm: Arm) -> dict[str, str]:
-    """The GPU nodes of a point on several, by name, with their engines' URLs (the ``upstream`` of each of
-    ``[gateway.nodes]``, the cyan end of its tunnel); empty for a point on one."""
+    """The GPU nodes of a point on several, by name, with their engines' addresses (the ``upstream`` of each
+    of ``[gateway.nodes]``, the cyan end of its tunnel: its socket, or a port); empty for a point on one."""
     nodes = arm.gateway.get("nodes")
     if nodes is None:
         return {}
     where = f"{arm.name}.toml [gateway.nodes]"
     if not isinstance(nodes, Mapping) or len(nodes) < 2:
         raise E2Error(f"{where} names two GPU nodes or more, as tables")
-    urls = {}
+    addresses = {}
     for name, node in nodes.items():
-        url = node.get("upstream") if isinstance(node, Mapping) else None
-        if (
-            not NODE_NAME.fullmatch(name)
-            or not isinstance(url, str)
-            or not url.startswith("http://")
-        ):
+        address = node.get("upstream") if isinstance(node, Mapping) else None
+        if not NODE_NAME.fullmatch(name) or not _is_address(address):
             raise E2Error(
-                f"{where}: {name!r} needs a name from [A-Za-z0-9._-] and an http:// upstream"
+                f"{where}: {name!r} needs a name from [A-Za-z0-9._-] and an upstream: http://host:port, "
+                "or unix: and a socket path"
             )
-        urls[name] = url.rstrip("/")
-    return urls
+        addresses[name] = address.rstrip("/")
+    return addresses
+
+
+def _is_address(value: Any) -> bool:
+    """Whether ``value`` is a server's address: ``http://host:port``, or ``unix:`` and a socket path."""
+    if not isinstance(value, str):
+        return False
+    try:
+        socket_path(value)
+    except ValueError:
+        return False
+    return True
 
 
 def load_arm(path: Path) -> Arm:

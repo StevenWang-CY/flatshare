@@ -1,0 +1,11 @@
+# The A100 run's optional arm 3 (docs/HARDWARE.md, the optional arms): the stock frozen engine behind the gateway's
+# preempt-resubmit, the best arm without an engine change on the box (W5's extension), one point of the agents' sample
+# of seed 15. The three campaigns, seeds 13 to 15, run on the frozen engine with no switch between them. On the A100
+# host, from the home directory:
+#   LH_NODE_DIR=leaseholder/node leaseholder/src/benchmarks/e2/campaign.sh --local \
+#     leaseholder/src/benchmarks/a100/a100-resubmit-r5.campaign
+
+agents-seed 15
+
+# engine frozen
+../e2/arms/w5-disc-a8c-resubmit-s24.toml

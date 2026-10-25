@@ -1,7 +1,8 @@
 """``lh-bench e2 run`` measures one E2 point on cyan, the control host, from its arm file:
 
 1. it records the engine behind the tunnel from the engine's own ``/server_info`` and checks the
-   arm's ``[engine]`` against it;
+   arm's ``[engine]`` against it and the GPU node's hardware profile (the frozen box's, unless the
+   host's settings or ``--profile`` name another);
 2. it makes cyan's units serve the point: the router (SMG, for arm 8b), the gateway's configuration
    (``gateway.toml`` with the arm's ``[gateway]`` table merged in) and the voice agent's preemptive
    generation and lifecycle events, restarting only the units whose configuration changes;
@@ -10,15 +11,21 @@
    load-generator cores and waits for its profiling phase and a warm-up;
 4. it snapshots the gateway's and the engine's ``/metrics``, runs ``lh-voice bots`` inside the
    voice-plane namespace (``--save-audio`` has them save each call's audio, for the demo video) and
-   snapshots again: the calls are the measurement window;
+   snapshots again: the calls are the measurement window, through which an agent point samples each
+   engine's KV use and requests every half second (``--kv-sample-s``; 0 samples nothing, as W5's points
+   ran: the sampler came after them), on one connection to each engine that it keeps for the window;
 5. it stops AIPerf, keeps the gateway's request log of the calls and the voice worker's journal of
    them (its turn lines and its sessions' event counts), and writes ``summary.json``.
 
 An arm whose ``[gateway]`` names GPU nodes (``[gateway.nodes.<name>]``, with ``[gateway.placement]``)
 is a point on several nodes, each running the arm's ``[engine]``: the run starts each node's tunnel
-(``lh-tunnel-<name>``), checks, resets and snapshots each node's engine, tells the voice worker the
+(``lh-tunnel@<name>``), checks, resets and snapshots each node's engine, tells the voice worker the
 nodes (``LH_NODES``, so that each call's STT and TTS follow its node), and reports each node and the
 total.
+
+The run reaches every engine by its address (:mod:`leaseholder_bench.transport`): on cyan, the tunnel's
+socket. Its engine check and cache resets need vLLM's development routes, which only the measurement
+drop-in serves (``deploy/phastform/variant.sh measure on``, which ``benchmarks/e2/campaign.sh`` runs).
 
 The GPU nodes' engines are switched by ``benchmarks/e2/campaign.sh`` (``variant.sh use``), never here.
 A failure ends the point: ``run.json`` keeps ``"status": "failed"`` and the error, and every process
@@ -40,10 +47,11 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import tomllib
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -61,15 +69,34 @@ from leaseholder_bench.e2.arm import (
     gpu_nodes,
     load_arm,
 )
-from leaseholder_bench.e2.record import gateway_request_lines, render, summarize_point, worker_lines
-from leaseholder_bench.kv_metrics import fetch
+from leaseholder_bench.e2.record import (
+    OUTCOMES,
+    gateway_request_lines,
+    kv_values,
+    logged_requests,
+    model_id,
+    render,
+    summarize_point,
+    worker_lines,
+)
+from leaseholder_bench.kv_metrics import fetch, metric_samples
 from leaseholder_bench.tiers import pool_tokens
+from leaseholder_bench.transport import client, runtime_socket
 
 CONFIGS = Path(__file__).resolve().parents[3] / "configs"
 """The AIPerf configuration, from the source tree (``uv sync`` installs the package editable)."""
 VARIANTS = Path(__file__).resolve().parents[5] / "deploy" / "phastform" / "variants"
 """The GPU node's engine variants, from the same source tree: what each adds to the engine's command
 line, which the engine check expects."""
+PROFILES = Path(__file__).resolve().parents[5] / "deploy" / "profiles"
+"""The GPU nodes' hardware profiles (deploy/profile.py renders a node's deployment from one), from the
+same source tree: the model and the scheduler settings a node's engine.yaml gives its engine, which
+the engine check expects."""
+BOX_PROFILE = "rtx-5060-ti"
+"""The frozen box's profile: Phastform's, and Gray's."""
+HOST_FILE = Path(".config") / "leaseholder" / "e2-host.toml"
+"""Where a control host other than cyan sets :class:`Host`'s fields, under its home directory: a
+single host its cores from its profile's core plan, and its profile. cyan has none."""
 
 PROFILING = "Credit phase start: profiling"
 """AIPerf's log line when its measured phase begins, after the dataset is built and warmed up."""
@@ -90,8 +117,8 @@ when its room is deleted, and its job's shutdown, which sends the last events, m
 SMG = "lh-smg"
 GATEWAY = "lh-gateway"
 WORKER = "lh-voice-worker"
-TUNNEL = "lh-tunnel-{}"
-"""A GPU node's tunnel unit on cyan (deploy/cyan/systemd), by the node's name."""
+TUNNEL = "lh-tunnel@{}"
+"""A GPU node's tunnel on cyan: the instance of deploy/cyan/systemd/lh-tunnel@.service named after it."""
 E2_GATEWAY = "e2-gateway"
 NO_PREEMPTIVE = "no-preemptive-generation"
 NO_EVENTS = "no-events"
@@ -100,6 +127,13 @@ NODES = "nodes"
 """The worker drop-in e2 run writes for a point on several GPU nodes, ``variant-nodes.conf``."""
 ENGINE_UP_S = 60.0
 """How long a node's engine may take to answer through a tunnel that was just started."""
+GATEWAY_IDLE_S = 30.0
+"""How long the gateway may take to end its requests once a point's tools have stopped."""
+KV_SAMPLE_S = 0.5
+"""How often an agent point samples each engine's KV use and its running and waiting requests from its
+``/metrics`` while the calls run (P-1's sampler; record.KV_GAUGES), from which the summary takes the
+measured running share; ``lh-bench e2 run --kv-sample-s`` sets another, 0 none (W5's points ran without
+it)."""
 
 SGLANG = "sglang"
 """The one engine variant that serves SGLang; every other variant serves vLLM."""
@@ -110,15 +144,42 @@ SGLANG = "sglang"
 
 @dataclass(frozen=True)
 class Host:
-    """cyan (ops/RUNBOOK.md): its service ports, its paths and how to run the tools. The tests swap
-    the tools for fakes."""
+    """cyan (ops/RUNBOOK.md): its servers' addresses (``http://host:port``, or ``unix:`` and a socket's
+    path), its paths and how to run the tools. The tests swap the tools for fakes."""
 
     home: Path = field(default_factory=Path.home)
     gateway_url: str = "http://127.0.0.1:18080"
-    engine_url: str = "http://127.0.0.1:18000"
-    """The engine through the tunnel."""
+    """The gateway's TCP listener, AIPerf's way in, with the agents tenant's key."""
+    gateway_socket: str = field(default_factory=lambda: runtime_socket("gateway.sock"))
+    """The gateway's socket, private to this user, from which a point reads its metrics with no key."""
+    engine_url: str = field(default_factory=lambda: runtime_socket("phastform-engine.sock"))
+    """The engine through the tunnel: its socket on cyan."""
     aiperf_cores: str = "16-23"
     caller_cores: str = "24-31"
+    profile: str = BOX_PROFILE
+    """The GPU nodes' hardware profile (deploy/profiles/NAME.toml), whose engine settings the engine
+    check expects."""
+    preflight: str = ""
+    """A single host's preflight.json (deploy/a100/host.py preflight), whose degraded and refused checks
+    each point's run.json keeps; cyan has none."""
+
+    @classmethod
+    def load(cls, home: Path | None = None) -> Host:
+        """The host's settings: the defaults, and the fields its HOST_FILE sets, if it has one."""
+        home = home or Path.home()
+        path = home / HOST_FILE
+        if not path.exists():
+            return cls(home=home)
+        try:
+            table = tomllib.loads(path.read_text())
+        except tomllib.TOMLDecodeError as exc:
+            raise E2Error(f"{path}: {exc}") from None
+        names = [f.name for f in fields(cls) if f.name != "home"]
+        if unknown := sorted(set(table) - set(names)):
+            raise E2Error(f"{path} sets {', '.join(unknown)}; a host sets {', '.join(names)}")
+        if wrong := sorted(key for key, value in table.items() if not isinstance(value, str)):
+            raise E2Error(f"{path}: {', '.join(wrong)} must be strings")
+        return cls(home=home, **table)
 
     @property
     def root(self) -> Path:
@@ -442,20 +503,75 @@ equal). A vLLM point expects them wherever its flags say nothing else, so it can
 earlier point left on the box."""
 
 
-def describe_engine(url: str) -> EngineInfo:
-    """vLLM (``/server_info`` needs VLLM_SERVER_DEV_MODE=1, which lh-engine.service sets) or SGLang."""
-    info = _get_json(f"{url}/server_info", params={"config_format": "json"})
+MEASURE = (
+    "vLLM serves /server_info and the cache resets only in its development mode, which the measurement "
+    "drop-in sets: deploy/phastform/variant.sh measure on"
+)
+
+
+def load_profile(name: str, profiles: Path = PROFILES) -> dict[str, Any]:
+    """A hardware profile, its base's values under its own where its [profile] table names a base, as
+    deploy/profile.py loads it."""
+    path = profiles / f"{name}.toml"
+    if not path.is_file():
+        raise E2Error(f"no hardware profile {name} in {profiles}")
+    profile = tomllib.loads(path.read_text())
+    base = profile.get("profile", {}).pop("base", None)
+    if base is None:
+        return profile
+    merged = load_profile(base, profiles)
+    for section, table in profile.items():
+        merged[section] = merged.get(section, {}) | table if isinstance(table, dict) else table
+    return merged
+
+
+def profile_flags(name: str, profiles: Path = PROFILES) -> tuple[str, ...]:
+    """The flags a GPU node's engine.yaml amounts to, by its hardware profile, among those the engine
+    reports: FROZEN's scheduler settings as the profile sets them, and its model, revision and context.
+    A vLLM point expects them wherever its flags say nothing else."""
+    profile = load_profile(name, profiles)
+    model, engine = profile["model"], profile["engine"]
+    return (
+        "--scheduling-policy", "priority",  # engine.yaml's for every profile (deploy/templates)
+        "--max-num-batched-tokens", str(engine["max_num_batched_tokens"]),
+        "--long-prefill-token-threshold", str(engine["long_prefill_token_threshold"]),
+        "--model", model["name"],
+        "--revision", model["revision"],
+        "--max-model-len", str(model["max_model_len"]),
+    )  # fmt: skip
+
+
+def describe_engine(engine: str) -> EngineInfo:
+    """The engine at the address ``engine``: vLLM (whose ``/server_info`` needs its development mode, from
+    the measurement drop-in) or SGLang. A vLLM engine's settings are its cache, scheduler and kernel
+    configuration's, and its model, revision and context."""
+    info = _get_json(engine, "/server_info", params={"config_format": "json"}, missing=MEASURE)
     if "vllm_config" in info:
         config = info["vllm_config"]
-        settings = {**config.get("cache_config", {}), **config.get("scheduler_config", {})}
-        version = _get_json(f"{url}/version").get("version")
-        return EngineInfo("vllm", version, pool_tokens(fetch(f"{url}/metrics")), settings, config)
+        model = config.get("model_config") or {}
+        name, revision = model_id(model)
+        settings = {
+            **config.get("cache_config", {}),
+            **config.get("scheduler_config", {}),
+            **(config.get("kernel_config") or {}),
+            **{
+                key: value
+                for key, value in (
+                    ("model", name),
+                    ("revision", revision),
+                    ("max_model_len", model.get("max_model_len")),
+                )
+                if value is not None
+            },
+        }
+        version = _get_json(engine, "/version").get("version")
+        return EngineInfo("vllm", version, pool_tokens(fetch(engine)), settings, config)
     if "internal_states" in info:
         config = {k: v for k, v in info.items() if k != "internal_states"}
         return EngineInfo(
             SGLANG, info.get("version"), info.get("max_total_num_tokens"), config, config
         )
-    raise E2Error(f"{url}/server_info is neither vLLM's nor SGLang's")
+    raise E2Error(f"{engine}: /server_info is neither vLLM's nor SGLang's")
 
 
 SCHEDULER = "--scheduler-cls"
@@ -467,8 +583,9 @@ switches, ``--additional-config.make_room.reserve_tokens 0``)."""
 def variant_flags(variant: str, variants: Path = VARIANTS) -> tuple[str, ...]:
     """The engine flags a variant gives its engine (frozen: none): those of the command its
     lh-engine.conf starts (the last ``ExecStart=``), from its first flag on, without ``--config`` (the
-    frozen box's engine.yaml, whose settings FROZEN has) and without ``$LH_ENGINE_FLAGS``, where
-    ``variant.sh use`` puts the arm's flags, after the variant's."""
+    frozen box's engine.yaml, whose settings FROZEN has), ``--uds`` (the engine's socket: its transport,
+    not one of its settings) and ``$LH_ENGINE_FLAGS``, where ``variant.sh use`` puts the arm's flags,
+    after the variant's."""
     if variant == "frozen":
         return ()
     if not (variants / variant).is_dir():
@@ -483,7 +600,7 @@ def variant_flags(variant: str, variants: Path = VARIANTS) -> tuple[str, ...]:
     first = next((i for i, word in enumerate(words) if word.startswith("--")), len(words))
     flags: list[str] = []
     for word in words[first:]:
-        if flags and flags[-1] == "--config":
+        if flags and flags[-1] in ("--config", "--uds"):
             flags.pop()
         elif not word.startswith("$"):
             flags.append(word)
@@ -491,12 +608,13 @@ def variant_flags(variant: str, variants: Path = VARIANTS) -> tuple[str, ...]:
 
 
 def check_engine(
-    engine: Engine, info: EngineInfo, variants: Path = VARIANTS
+    engine: Engine, info: EngineInfo, variants: Path = VARIANTS, base: Sequence[str] = FROZEN
 ) -> dict[str, list[str]]:
     """Check the arm's engine against what the engine reports. The point expects the engine's command
-    line as ``variant.sh use`` makes it: on vLLM the frozen box's scheduler settings, then the
-    variant's flags (:func:`variant_flags`), then the arm's, the last of a repeated flag winning. Each
-    flag's setting must match; on vLLM the scheduler class (``scheduler_cls``) must be the one
+    line as ``variant.sh use`` makes it: on vLLM ``base``, the node's engine.yaml (the frozen box's
+    scheduler settings, or :func:`profile_flags`), then the variant's flags (:func:`variant_flags`),
+    then the arm's, the last of a repeated flag winning. Each flag's setting must match; on vLLM the
+    scheduler class (``scheduler_cls``) must be the one
     ``--scheduler-cls`` names, vLLM's own without it, and ``additional_config`` must be exactly what the
     ``--additional-config.KEY`` flags build, so that frozen, make-room and pr54530 engines, and
     make-room with another switch, cannot pass for one another. A flag whose setting the engine does
@@ -507,7 +625,7 @@ def check_engine(
         raise E2Error(f"the engine is {info.server}, the arm file needs {expected}: {switch}")
     wanted = flag_values(variant_flags(engine.variant, variants)) | flag_values(engine.flags)
     if expected == "vllm":
-        wanted = flag_values(FROZEN) | wanted
+        wanted = flag_values(base) | wanted
     checked, unchecked = [], []
     for flag, value in wanted.items():
         if expected == "vllm" and (flag == SCHEDULER or flag.startswith(ADDITIONAL)):
@@ -599,13 +717,16 @@ def _same(reported: Any, text: str) -> bool:
     return str(reported) == text
 
 
-def reset_prefix_cache(url: str, server: str, timeout: float = 120.0) -> None:
-    """Empty the engine's prefix cache (and vLLM's CPU tier). Both engines refuse while requests run
-    or KV transfers are in flight, so this retries."""
+def reset_prefix_cache(engine: str, server: str, timeout: float = 120.0) -> None:
+    """Empty the prefix cache (and vLLM's CPU tier) of the engine at ``engine``. Both engines refuse
+    while requests run or KV transfers are in flight, so this retries."""
     path = "/reset_prefix_cache?reset_external=true" if server == "vllm" else "/flush_cache"
 
     def done() -> bool:
-        response = httpx.post(f"{url}{path}", timeout=30)
+        with client(engine, timeout=30) as http:
+            response = http.post(path)
+        if response.status_code == 404:
+            raise E2Error(f"{engine}: no {path.split('?')[0]}. {MEASURE}")
         if server == "vllm":
             return response.status_code == 200 and response.json().get("success") is True
         return response.status_code == 200
@@ -613,13 +734,17 @@ def reset_prefix_cache(url: str, server: str, timeout: float = 120.0) -> None:
     _until(done, timeout, f"the engine did not reset its prefix cache within {timeout:.0f} s")
 
 
-def _get_json(url: str, **kwargs: Any) -> dict[str, Any]:
+def _get_json(address: str, path: str, missing: str | None = None, **kwargs: Any) -> dict[str, Any]:
+    """The JSON of ``GET path`` from the server at ``address``; ``missing`` says why a 404 may come."""
     try:
-        response = httpx.get(url, timeout=30, **kwargs)
+        with client(address, timeout=30) as http:
+            response = http.get(path, **kwargs)
+        if response.status_code == 404 and missing:
+            raise E2Error(f"{address}: no {path}. {missing}")
         response.raise_for_status()
         return response.json()
     except (httpx.HTTPError, json.JSONDecodeError) as exc:
-        raise E2Error(f"GET {url}: {exc}") from None
+        raise E2Error(f"GET {path} from {address}: {exc}") from None
 
 
 # Processes
@@ -724,6 +849,7 @@ def run_point(
     save_audio: bool = False,
     gpu_source: Mapping[str, str | None] | None = None,
     agents_seed: int | None = None,
+    kv_sample_s: float | None = KV_SAMPLE_S,
 ) -> dict[str, Any]:
     """Measure the point of ``arm_file`` into the directory ``out``; returns the summary. A
     directory with a complete point is never overwritten, and an earlier attempt that did not
@@ -732,16 +858,22 @@ def run_point(
     deployed revision (its ~/leaseholder/src/DEPLOYED, None where it has none), which campaign.sh
     reads over its SSH at the point's start and run.json keeps beside cyan's; None when unknown.
     ``agents_seed``, a campaign's (``agents-seed`` in its file), replaces the arm file's ``[agents]
-    seed`` for AIPerf; run.json keeps the seed the replay ran with (``agents_seed``)."""
+    seed`` for AIPerf; run.json keeps the seed the replay ran with (``agents_seed``). An agent point
+    samples each engine's KV every ``kv_sample_s`` while the calls run; 0 or None samples nothing (W5's
+    points ran without the sampler, and tests whose fake engines count their /metrics reads), and
+    run.json keeps the interval the point sampled at (``kv_sample_s``, null when it did not)."""
     if not hasattr(os, "waitid"):
         raise E2Error(NEEDS_WAITID)
     if stale := _stale_install():
         raise E2Error(stale)
     if agents_seed is not None and agents_seed < 0:
         raise E2Error(f"the agents' seed cannot be negative: {agents_seed}")
+    if kv_sample_s is not None and kv_sample_s < 0:
+        raise E2Error(f"the KV sampler's interval cannot be negative: {kv_sample_s}")
+    kv_sample_s = kv_sample_s or None  # 0 samples nothing
     arm = load_arm(arm_file)
     seed = arm.agents.seed if agents_seed is None else agents_seed
-    host = host or Host()
+    host = host or Host.load()
     systemd = systemd or Systemd()
     with exclusive(host):
         _fresh(out)
@@ -750,6 +882,8 @@ def run_point(
         record["save_audio"] = save_audio
         # The seed AIPerf replays with: the campaign's when it set one, else the arm file's.
         record["agents_seed"] = seed if arm.agents.sessions else None
+        # The KV sampler's interval, null where the point did not sample (voice alone, or 0).
+        record["kv_sample_s"] = kv_sample_s if arm.agents.sessions else None
         # Under the lock no other run's tools are alive: a marked process is left from a run that
         # was killed before it could stop them.
         if leftovers := kill_marked():
@@ -757,7 +891,9 @@ def run_point(
             record.say(f"killed {len(leftovers)} processes left by an earlier run: {leftovers}")
         try:
             with contextlib.ExitStack() as running:
-                summary = _measure(arm, out, host, systemd, record, running, save_audio, seed)
+                summary = _measure(
+                    arm, out, host, systemd, record, running, save_audio, seed, kv_sample_s
+                )
         except BaseException as exc:
             record.fail(exc)
             raise
@@ -774,12 +910,17 @@ def _measure(
     running: contextlib.ExitStack,
     save_audio: bool,
     seed: int,
+    kv_sample_s: float | None,
 ) -> dict[str, Any]:
     nodes = gpu_nodes(arm)
     engines: dict[str | None, str] = dict(nodes) or {None: host.engine_url}
     if nodes:
         _start_tunnels(nodes, systemd, record)
-    servers = _check_engines(arm, engines, out, record)
+    base = profile_flags(host.profile)
+    record["profile"] = host.profile
+    if host.preflight:
+        record["preflight"] = preflight_summary(Path(host.preflight))
+    servers = _check_engines(arm, engines, out, record, base)
     record.say(f"configuring cyan for {arm.name}")
     record["cyan"] = configure_cyan(arm, host, systemd)
     _until(
@@ -789,9 +930,22 @@ def _measure(
     )
     for node, url in engines.items():
         reset_prefix_cache(url, servers[node])
-    aiperf = _start_aiperf(arm, host, out, record, running, seed) if arm.agents.sessions else None
+    # Before the replay and the calls the gateway is idle: the base of the check that its journal kept a
+    # line for every request it ended.
+    idle = (time.time(), _ended(host))
+    # The model the replay asks for: the engine's, as the node's profile and the arm's flags start it.
+    model = (flag_values(base) | flag_values(arm.engine.flags))["--model"]
+    aiperf = (
+        _start_aiperf(arm, host, out, record, running, seed, model) if arm.agents.sessions else None
+    )
     start = _snapshot(host, out, "start", engines)
+    sampler = None
+    if aiperf is not None and kv_sample_s is not None:
+        sampler = _KvSampler(engines, out / "metrics", kv_sample_s)
+        running.callback(sampler.stop)
     end = _call(arm, host, out, record, running, aiperf, save_audio)
+    if sampler is not None:
+        sampler.stop()
     _snapshot(host, out, "end", engines)
     record["window"] = {"start": start, "end": end}
     if aiperf is not None:
@@ -800,6 +954,7 @@ def _measure(
         if aiperf.status:
             raise aiperf.failure("failed when stopped")
     _gateway_log(systemd, out, start, end)
+    record["gateway_log"] = _check_gateway_log(host, systemd, idle)
     _worker_journal(systemd, out, start, arm.voice.callers)
     try:
         metrics = summarize_point(
@@ -819,7 +974,11 @@ def _measure(
 
 
 def _check_engines(
-    arm: Arm, engines: Mapping[str | None, str], out: Path, record: _Record
+    arm: Arm,
+    engines: Mapping[str | None, str],
+    out: Path,
+    record: _Record,
+    base: Sequence[str] = FROZEN,
 ) -> dict[str | None, str]:
     """Record each engine (``engine.json``, ``engine-NODE.json`` on several GPU nodes, and run.json's
     ``engine``, by node on several) and check it against the arm's; returns each engine's server."""
@@ -836,17 +995,24 @@ def _check_engines(
         _write_json(out / _engine_file(node, "json"), _redacted(info.config))
         engine = {"server": info.server, "version": info.version, "pool_tokens": info.pool_tokens}
         keep(node, engine)  # recorded before the check, which fails on a wrong engine
-        keep(node, engine | {"flags": check_engine(arm.engine, info)})
+        keep(node, engine | {"flags": check_engine(arm.engine, info, base=base)})
     return servers
 
 
 def _start_aiperf(
-    arm: Arm, host: Host, out: Path, record: _Record, running: contextlib.ExitStack, seed: int
+    arm: Arm,
+    host: Host,
+    out: Path,
+    record: _Record,
+    running: contextlib.ExitStack,
+    seed: int,
+    model: str,
 ) -> Process:
-    """Start the replay with ``seed`` and return once it has been profiling for the warm-up."""
+    """Start the replay with ``seed``, asking for ``model``, and return once it has been profiling for
+    the warm-up."""
     agents = arm.agents
     record.say(f"AIPerf: {agents.sessions} session trees through the gateway, seed {seed}")
-    env = _aiperf_env(arm, host, out, seed)
+    env = _aiperf_env(arm, host, out, seed, model)
     aiperf = Process("AIPerf", host.aiperf(), out / "aiperf.log", env)
     running.callback(aiperf.stop, AIPERF_STOP_S)
     deadline = time.monotonic() + PROFILING_TIMEOUT_S
@@ -914,6 +1080,55 @@ def _gateway_log(systemd: Systemd, out: Path, start: float, end: float) -> None:
         (out / "gateway.jsonl").write_text("".join(f"{line}\n" for line in lines))
 
 
+def _ended(host: Host) -> tuple[float, float]:
+    """From the gateway's metrics: the requests it has ended (``lh_gateway_request_outcomes_total``, every
+    class and outcome), and those it is relaying or holding at its admission point."""
+    exposition = fetch(host.gateway_socket)
+    ended = busy = 0.0
+    for name, _, value in metric_samples(exposition):
+        if name == OUTCOMES:
+            ended += value
+        elif name in ("lh_gateway_streams_active", "lh_gateway_admission_waiting"):
+            busy += value
+    return ended, busy
+
+
+def _check_gateway_log(
+    host: Host, systemd: Systemd, base: tuple[float, tuple[float, float]]
+) -> dict[str, int]:
+    """Check that the gateway's journal kept a request line for every request the gateway ended since
+    ``base``, the time and counters of a moment it was idle: the first bytes come from those lines, and
+    journald drops what comes faster than its rate limit, which for a user unit is journald.conf's. Waits
+    until the gateway is idle again, so that both counts end at the same moment."""
+    since, (before, _) = base
+    deadline = time.monotonic() + GATEWAY_IDLE_S
+    last = None
+    while True:
+        ended, busy = _ended(host)
+        if busy == 0 and ended == last:
+            break
+        if time.monotonic() > deadline:
+            raise E2Error(
+                f"the gateway did not go idle within {GATEWAY_IDLE_S:.0f} s after the point's tools stopped"
+            )
+        last = ended
+        time.sleep(POLL_S)
+    until = time.time()
+    # Requests that went upstream with a class, as the counter counts them.
+    lines = [
+        record
+        for at, record in logged_requests(systemd.journal(GATEWAY, since, until=until))
+        if since < at <= until and "class" in record and "outcome" in record
+    ]
+    counted = round(ended - before)
+    if len(lines) != counted:
+        raise E2Error(
+            f"the gateway's journal kept {len(lines)} request lines of the {counted} requests it ended "
+            "during the point: journald dropped some, and the first bytes would come from the rest"
+        )
+    return {"request_lines": len(lines), "requests_ended": counted}
+
+
 def _worker_journal(systemd: Systemd, out: Path, since: float, calls: int) -> None:
     """Keep the voice worker's journal from the start of the calls (voice-worker.log): a line per
     turn, and one per session as it ends, with its event counts. Waits until every call's session
@@ -928,9 +1143,9 @@ def _worker_journal(systemd: Systemd, out: Path, since: float, calls: int) -> No
     (out / "voice-worker.log").write_text(journal)
 
 
-def _ready(url: str, path: str = "/ready") -> bool:
-    with contextlib.suppress(httpx.HTTPError):
-        return httpx.get(f"{url}{path}", timeout=5).status_code == 200
+def _ready(address: str, path: str = "/ready") -> bool:
+    with contextlib.suppress(httpx.HTTPError), client(address, timeout=5) as http:
+        return http.get(path).status_code == 200
     return False
 
 
@@ -938,14 +1153,73 @@ def _start_tunnels(nodes: Mapping[str, str], systemd: Systemd, record: _Record) 
     """Start each GPU node's tunnel (one that runs is left alone; none is stopped after the point) and
     wait until the node's engine answers through it."""
     record.say(f"GPU nodes: {', '.join(nodes)}")
-    for node, url in nodes.items():
+    for node, address in nodes.items():
         systemd("start", TUNNEL.format(node))
         _until(
-            lambda url=url: _ready(url, "/health"),
+            lambda address=address: _ready(address, "/health"),
             ENGINE_UP_S,
-            f"the engine of GPU node {node} did not answer at {url} within {ENGINE_UP_S:.0f} s: "
+            f"the engine of GPU node {node} did not answer at {address} within {ENGINE_UP_S:.0f} s: "
             f"is the node running, and {TUNNEL.format(node)} up?",
         )
+
+
+class _KvSampler:
+    """Each engine's KV use and running and waiting requests (record.KV_GAUGES) from its ``/metrics``
+    every ``interval`` seconds, from its start until :meth:`stop`, a line a sample (its time, then the
+    three) into ``metrics``' engine-kv.csv (engine-NODE-kv.csv on several GPU nodes). A sample the
+    engine does not answer in time is left out; the summary counts the samples it has. Each engine has
+    one client for the whole run, its connection kept alive between samples (the engines keep an idle
+    one 60 s): through cyan's tunnel a new connection is a new SSH session on the GPU node, about 12 ms
+    of its CPU, which a client a sample would cost it twice a second while it measures. A request
+    that fails drops its client, and the next sample opens another."""
+
+    def __init__(
+        self, engines: Mapping[str | None, str], metrics: Path, interval: float = KV_SAMPLE_S
+    ) -> None:
+        self.interval = interval
+        self._stopped = threading.Event()
+        metrics.mkdir(exist_ok=True)
+        self._threads = [
+            threading.Thread(
+                target=self._sample,
+                args=(address, metrics / _engine_file(node, "csv", "kv")),
+                daemon=True,
+            )
+            for node, address in engines.items()
+        ]
+        for thread in self._threads:
+            thread.start()
+
+    def _sample(self, address: str, path: Path) -> None:
+        http: httpx.Client | None = None
+        with path.open("w") as samples:
+            samples.write("time,kv_cache_usage,running,waiting\n")
+            try:
+                while not self._stopped.is_set():
+                    at = time.time()
+                    values = None
+                    try:
+                        http = http or client(address, timeout=2.0)
+                        response = http.get("/metrics")
+                        response.raise_for_status()
+                        values = kv_values(response.text)
+                    except httpx.HTTPError:
+                        if http is not None:
+                            http.close()
+                        http = None
+                    if values is not None:
+                        samples.write(f"{at:.6f}," + ",".join(f"{v:g}" for v in values) + "\n")
+                        samples.flush()
+                    self._stopped.wait(max(0.0, at + self.interval - time.time()))
+            finally:
+                if http is not None:
+                    http.close()
+
+    def stop(self) -> None:
+        """Stop sampling once each engine's sample in flight is written; stopping twice is stopping."""
+        self._stopped.set()
+        for thread in self._threads:
+            thread.join()
 
 
 def _engine_file(node: str | None, suffix: str, when: str | None = None) -> str:
@@ -954,20 +1228,21 @@ def _engine_file(node: str | None, suffix: str, when: str | None = None) -> str:
 
 
 def _snapshot(host: Host, out: Path, when: str, engines: Mapping[str | None, str]) -> float:
-    """Save the gateway's and each engine's ``/metrics``; returns the time it finished."""
+    """Save the gateway's ``/metrics`` (from its socket, which asks for no key) and each engine's;
+    returns the time it finished."""
     metrics = out / "metrics"
     metrics.mkdir(exist_ok=True)
-    files = {f"gateway-{when}.prom": host.gateway_url}
-    files |= {_engine_file(node, "prom", when): url for node, url in engines.items()}
-    for name, url in files.items():
+    files = {f"gateway-{when}.prom": host.gateway_socket}
+    files |= {_engine_file(node, "prom", when): address for node, address in engines.items()}
+    for name, address in files.items():
         try:
-            (metrics / name).write_text(fetch(f"{url}/metrics"))
+            (metrics / name).write_text(fetch(address))
         except httpx.HTTPError as exc:
-            raise E2Error(f"GET {url}/metrics: {exc}") from None
+            raise E2Error(f"GET /metrics from {address}: {exc}") from None
     return time.time()
 
 
-def _aiperf_env(arm: Arm, host: Host, out: Path, seed: int) -> dict[str, str]:
+def _aiperf_env(arm: Arm, host: Host, out: Path, seed: int, model: str) -> dict[str, str]:
     agents = arm.agents
     data = host.root / "data" / agents.data
     if not data.is_dir():
@@ -992,6 +1267,8 @@ def _aiperf_env(arm: Arm, host: Host, out: Path, seed: int) -> dict[str, str]:
         "LH_BENCH_SEED": str(seed),
         "LH_BENCH_CLASS": "background",
         "LH_BENCH_ARTIFACTS": str(out / "aiperf"),
+        "LH_BENCH_MODEL": model,
+        "LH_BENCH_TOKENIZER": model,
     }
     return env
 
@@ -1089,6 +1366,25 @@ def _stale_install(pyproject: Path = PYPROJECT) -> str | None:
             "the venv (deploy/cyan/bootstrap.sh) so that run.json names the version that runs"
         )
     return None
+
+
+def preflight_summary(path: Path) -> dict[str, Any]:
+    """What a point keeps of its host's preflight: when it ran and each check that was not ok, with
+    its reason and what it changes in what the results mean (docs/HARDWARE.md, the preflight)."""
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"path": str(path), "error": f"{type(exc).__name__}: {exc}"}
+    return {
+        "path": str(path),
+        "time": data.get("time"),
+        "counts": data.get("counts"),
+        "not_ok": [
+            {key: check.get(key) for key in ("check", "status", "value", "reason", "effect")}
+            for check in data.get("checks", [])
+            if check.get("status") != "ok"
+        ],
+    }
 
 
 def _versions(host: Host, gpu_source: Mapping[str, str | None] | None) -> dict[str, Any]:

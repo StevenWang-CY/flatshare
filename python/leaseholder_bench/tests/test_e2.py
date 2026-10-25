@@ -6,11 +6,15 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+import math
 import os
 import re
+import signal
+import socketserver
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import tomllib
@@ -28,12 +32,14 @@ from leaseholder_bench.cli import main
 from leaseholder_bench.e2 import run as e2
 from leaseholder_bench.e2.arm import E2Error, Engine, Voice, flag_values, load_arm
 from leaseholder_bench.e2.run import (
+    FROZEN,
     EngineInfo,
     Host,
     Process,
     Systemd,
     check_engine,
     gpu_sources,
+    profile_flags,
     read_env,
     reset_cyan,
     run_point,
@@ -168,7 +174,11 @@ def test_an_arm_file_says_everything_about_its_point(tmp_path: Path) -> None:
         ("arm = \n", "a2.toml"),
         ('arm = 2\nlabel = "x"\n' + NODES.split("[gateway.nodes.b]")[0], "two GPU nodes or more"),
         ('arm = 2\nlabel = "x"\n' + NODES.replace("nodes.b", 'nodes."b c"'), "'b c' needs a name"),
-        ('arm = 2\nlabel = "x"\n' + NODES.replace("http://", "unix:"), "an http:// upstream"),
+        ('arm = 2\nlabel = "x"\n' + NODES.replace("http://", "unix:"), "and an upstream: http://"),
+        (
+            'arm = 2\nlabel = "x"\n' + NODES.replace("http://", "https://"),
+            "and an upstream: http://",
+        ),
         ('arm = 2\nlabel = "x"\nrouter = "smg"\n' + NODES, "a router fronts one engine"),
     ],
 )
@@ -188,9 +198,14 @@ def test_the_campaigns_name_arm_files_that_load() -> None:
     assert campaigns
     for campaign in campaigns:
         lines = campaign_lines(campaign)
+        # The two settings campaign.sh reads, each at most once: the agents' seed and the KV sampler's interval.
         seeds = [line for line in lines if line.startswith("agents-seed")]
         assert len(seeds) <= 1 and all(re.fullmatch(r"agents-seed\s+\d+", s) for s in seeds)
-        for line in (line for line in lines if line not in seeds):
+        sampling = [line for line in lines if line.startswith("kv-sample-s")]
+        assert len(sampling) <= 1 and all(
+            re.fullmatch(r"kv-sample-s\s+\d+(\.\d+)?", s) for s in sampling
+        )
+        for line in (line for line in lines if line not in seeds + sampling):
             arm = load_arm(campaign.parent / line)
             variant = arm.engine.variant
             assert variant == "frozen" or (PHASTFORM / "variants" / variant).is_dir(), line
@@ -212,8 +227,10 @@ def test_the_w5_control_is_make_room_as_v03_built_it() -> None:
     cache = "%h/leaseholder/cache/make-room-v03"
     rename = f"ExecStartPre=/bin/mv -f {cache}/lh_make_room_scheduler.py {cache}/lh_make_room_v03_scheduler.py\n"
     assert rest.count(rename) == 1
+    # Like every engine since, it serves on its socket.
     v03 = (
         rest.replace(rename, "")
+        .replace(" --uds ${LH_ENGINE_SOCKET}", "")
         .replace("lh_make_room_v03_scheduler", "lh_make_room_scheduler")
         .replace("make-room-v03", "make-room")
     )
@@ -392,7 +409,7 @@ def test_flag_values_pair_each_flag_with_its_value() -> None:
 def test_the_gateway_configuration_merges_the_arm_and_round_trips(tmp_path: Path) -> None:
     base = tomllib.loads(EXAMPLE.read_text())
     overlay = {
-        "upstream": "http://127.0.0.1:18090",
+        "upstream": "unix:/run/user/1007/lh/smg.sock",
         "upstream_priority": ["smg-header"],
         "admission": {"policy": "flow-control", "ttft_target_ms": {"realtime": 300.0}},
         "tenants": {"agents": {"max_class": "background"}},
@@ -477,7 +494,10 @@ def write_variant(variants: Path, name: str, command: str) -> Path:
     return variants
 
 
-VLLM_SERVE = "%h/leaseholder/venvs/engine/bin/vllm serve --config %h/leaseholder/src/engine.yaml"
+VLLM_SERVE = (
+    "%h/leaseholder/venvs/engine/bin/vllm serve --config %h/leaseholder/src/engine.yaml "
+    "--uds ${LH_ENGINE_SOCKET}"
+)
 MAKE_ROOM = {"max_preemptions_per_step": 2, "budget_cap": True, "reserve_tokens": 2048}
 MAKE_ROOM_CLS = "lh_make_room_scheduler.AsyncScheduler"
 
@@ -644,6 +664,105 @@ def test_a_vllm_point_needs_the_frozen_settings_its_flags_keep(tmp_path: Path) -
         assert re.search(rf"^{flag.removeprefix('--')}: {value}$", engine_yaml, re.M), flag
 
 
+def rendered_engine_yaml(tmp_path: Path, name: str) -> str:
+    """A profile's engine.yaml as deploy/profile.py renders it, on an A100 host's facts."""
+    facts = json.loads((FAKES / "a100-host.json").read_text())
+    host_file = tmp_path / "host.json"
+    host_file.write_text(json.dumps(facts))
+    out = tmp_path / name
+    render = [sys.executable, str(REPO / "deploy" / "profile.py"), "render", name]
+    done = subprocess.run(
+        [*render, "--host", str(host_file), "--out", str(out)], capture_output=True, text=True
+    )
+    assert done.returncode == 0, done.stderr
+    return (out / "engine.yaml").read_text()
+
+
+def test_a_profile_gives_the_engine_settings_its_engine_yaml_sets(tmp_path: Path) -> None:
+    box = profile_flags("rtx-5060-ti")
+    assert box[: len(FROZEN)] == FROZEN  # the frozen box's scheduler settings, then its model
+    assert flag_values(box[len(FROZEN) :]) == {
+        "--model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+        "--revision": REVISION,
+        "--max-model-len": "32768",
+    }
+    for name in ("rtx-5060-ti", "a100-40gb"):
+        engine_yaml = (
+            (PHASTFORM / "engine.yaml").read_text()
+            if name == "rtx-5060-ti"
+            else rendered_engine_yaml(tmp_path, name)
+        )
+        for flag, value in flag_values(profile_flags(name)).items():
+            line = rf"^{flag.removeprefix('--')}: {re.escape(value)}$"
+            assert re.search(line, engine_yaml, re.M), (name, flag)
+    with pytest.raises(E2Error, match="no hardware profile h100"):
+        profile_flags("h100")
+
+
+def test_the_engine_check_holds_the_profiles_model_and_the_kernels(tmp_path: Path) -> None:
+    box = profile_flags("rtx-5060-ti")
+    model = {
+        "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+        "revision": REVISION,
+        "max_model_len": 32768,
+    }
+    engine = vllm(**model, linear_backend="auto")
+    frozen = ["--scheduling-policy", "--max-num-batched-tokens", "--long-prefill-token-threshold"]
+    assert check_engine(Engine("frozen", ()), engine, base=box) == {
+        "checked": [*frozen, "--model", "--revision", "--max-model-len"],
+        "unchecked": [],
+    }
+    # Another model, as an arm that switches it names it, against the box's.
+    other = ("--model", "Qwen/Qwen3-14B-FP8", "--revision", "abc", "--max-model-len", "32768")
+    with pytest.raises(
+        E2Error,
+        match="model = 'Qwen/Qwen3-4B-Instruct-2507-FP8', the point needs --model Qwen/Qwen3-14B",
+    ):
+        check_engine(Engine("frozen", other), engine, base=box)
+    # The linear kernel an arm asks for is kernel_config's.
+    marlin = Engine("frozen", ("--linear-backend", "marlin"))
+    assert (
+        "--linear-backend"
+        in check_engine(marlin, vllm(**model, linear_backend="marlin"), base=box)["checked"]
+    )
+    with pytest.raises(
+        E2Error, match="linear_backend = 'auto', the point needs --linear-backend marlin"
+    ):
+        check_engine(marlin, engine, base=box)
+
+
+def test_an_engines_settings_name_its_model_by_its_id_and_hold_its_kernels() -> None:
+    engine = fake_engine(dict(FROZEN_SCHEDULER))
+    try:
+        info = e2.describe_engine(engine.url)
+    finally:
+        engine.shutdown()
+    # Offline mode reports the model by its path in the cache; the settings name it by its id.
+    assert (info.settings["model"], info.settings["revision"]) == (
+        "Qwen/Qwen3-4B-Instruct-2507-FP8",
+        REVISION,
+    )
+    assert info.settings["max_model_len"] == 32768 and info.settings["linear_backend"] == "auto"
+    assert info.settings["policy"] == "priority" and info.pool_tokens == 36400
+
+
+def test_a_host_file_sets_the_hosts_fields(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    assert Host.load(home) == Host(home=home)  # cyan: no file, the defaults
+    path = home / ".config" / "leaseholder" / "e2-host.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text('profile = "a100-40gb"\naiperf_cores = "21-27"\ncaller_cores = "28-31"\n')
+    host = Host.load(home)
+    assert (host.profile, host.aiperf_cores, host.caller_cores) == ("a100-40gb", "21-27", "28-31")
+    assert host.engine_url == Host().engine_url and host.home == home
+    path.write_text('profile = "a100-40gb"\nengine_cores = "0-7"\n')
+    with pytest.raises(E2Error, match="sets engine_cores; a host sets"):
+        Host.load(home)
+    path.write_text("aiperf_cores = 21\n")
+    with pytest.raises(E2Error, match="aiperf_cores must be strings"):
+        Host.load(home)
+
+
 # Processes
 
 
@@ -710,10 +829,13 @@ def gone(pid: int, timeout: float = 5.0) -> bool:
 # A point, against fakes
 
 
+Routes = dict[str, Callable[[int], tuple[int, Any]]]
+
+
 class Service(ThreadingHTTPServer):
     """An HTTP service on loopback; each route answers from the number of requests it has had."""
 
-    def __init__(self, routes: dict[str, Callable[[int], tuple[int, Any]]]) -> None:
+    def __init__(self, routes: Routes) -> None:
         self.routes = routes
         self.hits: Counter[str] = Counter()
         super().__init__(("127.0.0.1", 0), _Handler)
@@ -724,8 +846,71 @@ class Service(ThreadingHTTPServer):
         return f"http://127.0.0.1:{self.server_address[1]}"
 
 
+class UnixService(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    """The same service on a Unix socket of its own, as the engine through the tunnel, or the gateway's
+    socket; its address is ``unix:`` and the socket's path."""
+
+    daemon_threads = True
+
+    def __init__(self, routes: Routes) -> None:
+        self.routes = routes
+        self.hits: Counter[str] = Counter()
+        # A short path: a socket's must fit sun_path, which a test's tmp_path may not.
+        self.path = Path(tempfile.mkdtemp(prefix="lh-e2-")) / "s.sock"
+        super().__init__(str(self.path), _Handler)
+        threading.Thread(target=self.serve_forever, daemon=True).start()
+
+    @property
+    def url(self) -> str:
+        return f"unix:{self.path}"
+
+
+class CountingEngine(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    """An engine's /metrics on a Unix socket, as the tunnel's on cyan, that counts the connections it accepts and
+    keeps each one open between requests (HTTP/1.1), as vLLM does for 60 s; the requests numbered in ``drop`` get
+    no answer, and lose their connection."""
+
+    daemon_threads = True
+
+    def __init__(self, drop: frozenset[int] = frozenset()) -> None:
+        self.accepted = self.requests = 0
+        self.drop = drop
+        # A short path: a socket's must fit sun_path, which a test's tmp_path may not.
+        self.path = Path(tempfile.mkdtemp(prefix="lh-kv-")) / "s.sock"
+        super().__init__(str(self.path), _KeepAlive)
+        threading.Thread(target=self.serve_forever, daemon=True).start()
+
+    def get_request(self):
+        request = super().get_request()
+        self.accepted += 1
+        return request
+
+
+class _KeepAlive(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server: CountingEngine
+
+    def do_GET(self) -> None:
+        self.server.requests += 1
+        if self.server.requests in self.server.drop:
+            self.close_connection = True
+            return
+        body = (
+            b'vllm:kv_cache_usage_perc{engine="0"} 0.5\n'
+            b'vllm:num_requests_running{engine="0"} 2\n'
+            b'vllm:num_requests_waiting{engine="0"} 0\n'
+        )
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args: object) -> None:
+        pass
+
+
 class _Handler(BaseHTTPRequestHandler):
-    server: Service
+    server: Service | UnixService
 
     def answer(self) -> None:
         path = self.path.split("?")[0]
@@ -744,8 +929,10 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
-def gateway_metrics(n: int) -> tuple[int, str]:
+def gateway_metrics(n: int, ended: int = 0) -> tuple[int, str]:
+    """The gateway's metrics at its ``n``-th scrape, when it had ended ``ended`` requests."""
     return 200, (
+        f'lh_gateway_request_outcomes_total{{class="realtime",outcome="completed"}} {ended}\n'
         f'lh_gateway_requests_total{{class="realtime",status="200"}} {10 * n}\n'
         f'lh_gateway_first_byte_seconds_bucket{{class="realtime",le="0.1"}} {8 * n}\n'
         f'lh_gateway_first_byte_seconds_bucket{{class="realtime",le="0.5"}} {10 * n}\n'
@@ -763,15 +950,26 @@ def engine_metrics(n: int) -> tuple[int, str]:
     )
 
 
-def fake_engine(scheduler: dict[str, Any]) -> Service:
-    """vLLM on a GPU node: ``scheduler`` is what its /server_info reports, as variant.sh use would
-    leave it."""
+REVISION = "8591804019c8b22094c3b5b4454e0edc05dffc98"
+"""The frozen box's model revision (deploy/profiles/rtx-5060-ti.toml)."""
+
+
+def fake_engine(scheduler: dict[str, Any]) -> UnixService:
+    """vLLM on a GPU node, through its tunnel's socket: ``scheduler`` is what its /server_info reports,
+    as variant.sh use would leave it."""
     vllm_config = {
         "scheduler_config": scheduler,
-        "model_config": {"hf_token": "hf_secret"},
+        # The model as vLLM's offline mode names it: by its path in the Hugging Face cache.
+        "model_config": {
+            "model": f"/home/alice/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/{REVISION}",
+            "revision": REVISION,
+            "max_model_len": 32768,
+            "hf_token": "hf_secret",
+        },
+        "kernel_config": {"linear_backend": "auto", "moe_backend": "auto"},
         "additional_config": {},
     }
-    return Service(
+    return UnixService(
         {
             "/health": lambda n: (200, ""),
             "/metrics": engine_metrics,
@@ -796,13 +994,16 @@ class FakeSystemd(Systemd):
     """Records systemctl calls; the worker runs with fixed endpointing and registers at once. A unit
     in ``failing`` does not start, and its log says why. ``journals`` gives a unit's journal from
     ``since`` to ``until``; otherwise the gateway's holds the request lines of ten realtime requests
-    (GATEWAY_FIRST_BYTES) and any other unit's only the worker's registration."""
+    (GATEWAY_FIRST_BYTES) and any other unit's only the worker's registration. ``ended`` counts the
+    requests the gateway's journal reads show ending, which the fake gateway's metrics report: a point
+    reads its base before the journal and its last count before the check reads it again."""
 
     def __init__(self, env: dict[str, str] | None = None) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.running: set[str] = set()
         self.failing: set[str] = set()
         self.journals: dict[str, Callable[[float, float | None], str]] = {}
+        self.ended = 0
         self.env = env or {"LH_TURN_DETECTION": "vad", "LH_LLM_UDS": "/run/user/1/lh/gateway.sock"}
 
     def __call__(self, *args: str) -> str:
@@ -824,13 +1025,32 @@ class FakeSystemd(Systemd):
         if unit in self.failing:
             return f"{unit}: starting\n{unit}: config: unknown field `upstream_priority`\n"
         if unit in self.journals:
-            return self.journals[unit](since, until)
-        if unit == "lh-gateway":
-            return "\n".join(
+            text = self.journals[unit](since, until)
+        elif unit == "lh-gateway":
+            text = "\n".join(
                 logged_request(since + n / 100, "realtime", first_byte)
                 for n, first_byte in enumerate(GATEWAY_FIRST_BYTES, 1)
             )
-        return "registered worker"
+        else:
+            return "registered worker"
+        if unit == "lh-gateway":
+            self.ended += ended_requests(text, since, until)
+        return text
+
+
+def ended_requests(journal: str, since: float, until: float | None) -> int:
+    """The requests that went upstream with a class (a ``class`` and an ``outcome``) whose lines in a
+    fake gateway journal end within ``since``..``until``."""
+    ended = 0
+    for line in journal.splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if record.get("message") == "request" and "class" in record and "outcome" in record:
+            at = datetime.fromisoformat(record["timestamp"]).timestamp()
+            ended += since < at <= (until or math.inf)
+    return ended
 
 
 GATEWAY_FIRST_BYTES = (50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 110.0, 120.0, 130.0, 140.0)
@@ -842,7 +1062,8 @@ class Cyan:
     host: FakeHost
     systemd: FakeSystemd
     gateway: Service
-    engine: Service
+    gateway_socket: UnixService
+    engine: UnixService
     scheduler: dict[str, Any]
     """What the engine's /server_info reports, as variant.sh use would leave it: the frozen box."""
     arms: Path
@@ -860,19 +1081,27 @@ def cyan(tmp_path: Path) -> Iterator[Cyan]:
     (config / "livekit.env").write_text("LIVEKIT_API_KEY=k\nLIVEKIT_API_SECRET=s\n")
     (home / "leaseholder" / "data" / "corpus").mkdir(parents=True)
     scheduler = dict(FROZEN_SCHEDULER)
-    gateway = Service({"/metrics": gateway_metrics, "/ready": lambda n: (200, "")})
+    systemd = FakeSystemd()
+    # AIPerf's TCP listener, and the socket from which a point reads the gateway's metrics.
+    gateway = Service({"/ready": lambda n: (200, "")})
+    socket = UnixService({"/metrics": lambda n: gateway_metrics(n, systemd.ended)})
     engine = fake_engine(scheduler)
-    host = FakeHost(home=home, gateway_url=gateway.url, engine_url=engine.url)
+    host = FakeHost(
+        home=home, gateway_url=gateway.url, gateway_socket=socket.url, engine_url=engine.url
+    )
     arms = tmp_path / "arms"
     arms.mkdir()
-    yield Cyan(host, FakeSystemd(), gateway, engine, scheduler, arms)
-    gateway.shutdown()
-    engine.shutdown()
+    yield Cyan(host, systemd, gateway, socket, engine, scheduler, arms)
+    for service in (gateway, socket, engine):
+        service.shutdown()
 
 
 def run(cyan: Cyan, name: str, text: str, out: str | None = None) -> dict[str, Any]:
+    """A point on the fake cyan, without the KV sampler, whose /metrics reads the fake engine's
+    counters would count (test_an_agent_point_samples_the_engines_kv runs it)."""
     arm_file = write(cyan.arms, f"{name}.toml", text)
-    return run_point(arm_file, cyan.host.root / "runs" / (out or name), cyan.host, cyan.systemd)
+    path = cyan.host.root / "runs" / (out or name)
+    return run_point(arm_file, path, cyan.host, cyan.systemd, kv_sample_s=None)
 
 
 def run_stock(cyan: Cyan, out: str | None = None) -> dict[str, Any]:
@@ -894,12 +1123,14 @@ def test_voice_alone_runs_the_calls_against_the_box_as_it_is(cyan: Cyan) -> None
     run_json = record(cyan, "a1-voice")
     assert run_json["status"] == "complete"
     frozen = ["--scheduling-policy", "--max-num-batched-tokens", "--long-prefill-token-threshold"]
+    model = ["--model", "--revision", "--max-model-len"]  # the box's profile's
     assert run_json["engine"] == {
         "server": "vllm",
         "version": "0.32.0",
         "pool_tokens": 36400,
-        "flags": {"checked": frozen, "unchecked": []},
+        "flags": {"checked": [*frozen, *model], "unchecked": []},
     }
+    assert run_json["profile"] == "rtx-5060-ti"
     engine = json.loads((out / "engine.json").read_text())
     assert engine["scheduler_config"] == FROZEN_SCHEDULER
     assert engine["model_config"]["hf_token"] == "<redacted>"
@@ -951,6 +1182,8 @@ def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(cy
     assert env["LH_BENCH_URL"] == f"{cyan.gateway.url}/v1/chat/completions"
     assert env["LH_BENCH_API_KEY"] == "agents-key"
     assert env["LH_BENCH_SESSIONS"] == "4"
+    # The model the engine serves, by the box's profile: the arm's flags name none.
+    assert env["LH_BENCH_MODEL"] == env["LH_BENCH_TOKENIZER"] == "Qwen/Qwen3-4B-Instruct-2507-FP8"
     assert env["AIPERF_HTTP_X_SESSION_ID_FROM_CORRELATION_ID"] == "false"  # from configs/aiperf.env
     run_json = record(cyan, "a2-stock-s4")
     assert run_json["aiperf"] == {"exit_status": 0}
@@ -970,8 +1203,118 @@ def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(cy
         background["requests_per_s"] * 1010, rel=0.01
     )
     assert 100 <= background["ttft_ms"]["p50"] <= 109
+    assert 20 <= background["itl_ms"]["p50"] <= 24  # AIPerf's per request
     window = run_json["window"]
     assert 0.3 <= window["end"] - window["start"] < 5
+
+
+def test_an_agent_point_samples_the_engines_kv(cyan: Cyan) -> None:
+    # The engine's pool full on every other /metrics read (0.999 of 2,274 blocks in use: 2 free, under
+    # two calls' 128) and half used on the others; its counters stand still.
+    def metrics(n: int) -> tuple[int, str]:
+        _, counters = engine_metrics(1)
+        full = n % 2 == 1
+        return 200, counters + (
+            f'vllm:kv_cache_usage_perc{{engine="0"}} {0.999 if full else 0.5}\n'
+            f'vllm:num_requests_running{{engine="0"}} {4 if full else 2}\n'
+            'vllm:num_requests_waiting{engine="0"} 1\n'
+        )
+
+    model = {
+        "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+        "revision": REVISION,
+        "max_model_len": 32768,
+    }
+    config = {
+        "model_config": model,
+        "cache_config": {"block_size": 16, "num_gpu_blocks": 2275},
+        "scheduler_config": cyan.scheduler,
+        "additional_config": {},
+    }
+    cyan.engine.routes["/metrics"] = metrics
+    cyan.engine.routes["/server_info"] = lambda n: (200, {"vllm_config": config})
+    cyan.scheduler.update(STOCK_SCHEDULER)
+    arm_file = write(cyan.arms, "a2-stock-s4.toml", ARM)
+    out = cyan.host.root / "runs" / "a2-stock-s4"
+    summary = run_point(arm_file, out, cyan.host, cyan.systemd, kv_sample_s=0.02)
+    assert record(cyan, "a2-stock-s4")["kv_sample_s"] == 0.02
+    lines = (out / "metrics" / "engine-kv.csv").read_text().splitlines()
+    assert lines[0] == "time,kv_cache_usage,running,waiting"
+    window = record(cyan, "a2-stock-s4")["window"]
+    times = [float(line.split(",")[0]) for line in lines[1:]]
+    assert times == sorted(times) and window["start"] <= times[0]
+    kv = summary["kv"]
+    assert kv["samples"] >= 5 and 0.25 <= kv["running_share"] <= 0.75
+    assert kv["free_blocks"]["min"] == 2 and kv["running"]["max"] == 4
+    assert kv["waiting"] == {"p50": 1, "max": 1}
+    # A voice-alone point has no agents, and so no samples.
+    cyan.scheduler.update(FROZEN_SCHEDULER)
+    alone = run_point(
+        write(cyan.arms, "a1-voice.toml", VOICE_ALONE),
+        cyan.host.root / "runs" / "a1-voice",
+        cyan.host,
+        cyan.systemd,
+        kv_sample_s=0.02,
+    )
+    assert (
+        alone["kv"] is None
+        and not (cyan.host.root / "runs" / "a1-voice" / "metrics" / "engine-kv.csv").exists()
+    )
+    assert record(cyan, "a1-voice")["kv_sample_s"] is None
+    # An interval of 0 samples nothing, as W5's points ran.
+    cyan.scheduler.update(STOCK_SCHEDULER)
+    unsampled = cyan.host.root / "runs" / "a2-stock-s4-w5"
+    plain = run_point(
+        write(cyan.arms, "a2-stock-s4-w5.toml", ARM),
+        unsampled,
+        cyan.host,
+        cyan.systemd,
+        kv_sample_s=0,
+    )
+    assert plain["kv"] is None and not (unsampled / "metrics" / "engine-kv.csv").exists()
+    assert record(cyan, "a2-stock-s4-w5")["kv_sample_s"] is None
+
+
+def test_the_kv_sampler_keeps_one_connection_to_each_engine(tmp_path: Path) -> None:
+    # Through cyan's tunnel each new connection is a new SSH session on the GPU node: the sampler holds one per
+    # engine for its run, and opens another only after a request failed (engine a's 4th, which loses its own).
+    engines = {"a": CountingEngine(drop=frozenset({4})), "b": CountingEngine()}
+    sampler = e2._KvSampler({node: f"unix:{e.path}" for node, e in engines.items()}, tmp_path, 0.01)
+    deadline = time.monotonic() + 20
+    while min(e.requests for e in engines.values()) < 10 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    sampler.stop()
+    for engine in engines.values():
+        engine.shutdown()
+    assert min(e.requests for e in engines.values()) >= 10
+    assert (engines["a"].accepted, engines["b"].accepted) == (2, 1)
+    for node, engine in engines.items():
+        rows = (tmp_path / f"engine-{node}-kv.csv").read_text().splitlines()[1:]
+        assert len(rows) == engine.requests - len(
+            engine.drop
+        )  # every answered sample, the failed one left out
+
+
+def test_e2_run_takes_the_kv_samplers_interval(tmp_path: Path, monkeypatch) -> None:
+    seen: list[float] = []
+
+    def recorded(arm_file, out, host, **options):
+        seen.append(options["kv_sample_s"])
+        raise E2Error("recorded")
+
+    monkeypatch.setattr(e2, "run_point", recorded)
+    monkeypatch.setenv("HOME", str(tmp_path))  # Host.load reads the host's settings from the home
+    handlers = {signum: signal.getsignal(signum) for signum in (signal.SIGHUP, signal.SIGTERM)}
+    arm = write(tmp_path, "a2-stock-s4.toml", ARM)
+    try:
+        for extra in ([], ["--kv-sample-s", "0"], ["--kv-sample-s", "2.5"]):
+            assert main(["e2", "run", str(arm), "--out", str(tmp_path / "out"), *extra]) == 1
+        with pytest.raises(SystemExit):
+            main(["e2", "run", str(arm), "--out", str(tmp_path / "out"), "--kv-sample-s", "-1"])
+    finally:
+        for signum, handler in handlers.items():
+            signal.signal(signum, handler)
+    assert seen == [0.5, 0.0, 2.5]
 
 
 def test_a_campaign_sets_the_agents_seed_and_run_json_keeps_it(cyan: Cyan) -> None:
@@ -1151,6 +1494,39 @@ def test_a_call_opens_with_its_warm_up_turns_which_nothing_measures(cyan: Cyan) 
     assert "calls: 2 callers, 3 turns each after 1 warm-up" in (out / "run.log").read_text()
 
 
+def test_a_point_checks_that_the_journal_kept_every_request_line(cyan: Cyan) -> None:
+    run(cyan, "a1-voice", VOICE_ALONE)
+    # Ten requests ended between the idle moments before and after the point, and the journal has their lines.
+    assert record(cyan, "a1-voice")["gateway_log"] == {"request_lines": 10, "requests_ended": 10}
+
+    # journald dropped a line: what the check reads lacks one of the requests the gateway counted.
+    reads = itertools.count()
+
+    def dropping(since: float, until: float | None) -> str:
+        n = 10 if next(reads) == 0 else 9
+        return "\n".join(
+            logged_request(since + i / 100, "realtime", 100.0) for i in range(1, n + 1)
+        )
+
+    cyan.systemd.journals["lh-gateway"] = dropping
+    with pytest.raises(E2Error, match="kept 9 request lines of the 10 requests it ended"):
+        run(cyan, "a1-voice", VOICE_ALONE, out="dropped")
+    assert record(cyan, "dropped")["status"] == "failed"
+
+
+def test_a_gateway_that_does_not_go_idle_fails_the_point(
+    cyan: Cyan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(e2, "GATEWAY_IDLE_S", 0.2)
+    cyan.gateway_socket.routes["/metrics"] = lambda n: (
+        200,
+        f'lh_gateway_request_outcomes_total{{class="background",outcome="completed"}} {n}\n'
+        'lh_gateway_streams_active{class="background"} 1\n',
+    )
+    with pytest.raises(E2Error, match="the gateway did not go idle within"):
+        run(cyan, "a1-voice", VOICE_ALONE)
+
+
 def test_a_gateway_that_logs_no_request_lines_fails_the_point(cyan: Cyan) -> None:
     cyan.systemd.journals = {"lh-gateway": lambda since, until: "lh-gateway serving"}  # text
     with pytest.raises(E2Error, match="the gateway logged no request line for the calls"):
@@ -1259,8 +1635,8 @@ def test_a_point_on_two_gpu_nodes_checks_resets_and_reports_each_node(cyan: Cyan
     out = cyan.host.root / "runs" / "a4-pool"
     # Each node's tunnel starts first; each engine is checked, recorded and emptied.
     assert cyan.systemd.calls == [
-        ("start", "lh-tunnel-phastform"),
-        ("start", "lh-tunnel-gray"),
+        ("start", "lh-tunnel@phastform"),
+        ("start", "lh-tunnel@gray"),
         ("daemon-reload",),
         ("restart", "lh-gateway"),
         ("restart", "lh-voice-worker"),
@@ -1305,8 +1681,8 @@ def test_a_gpu_node_that_does_not_answer_fails_the_point(
     cyan: Cyan, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(e2, "ENGINE_UP_S", 0.2)
-    arm = TWO_NODES.format(phastform=cyan.engine.url, gray="http://127.0.0.1:9")
-    with pytest.raises(E2Error, match=r"GPU node gray did not answer .* lh-tunnel-gray up"):
+    arm = TWO_NODES.format(phastform=cyan.engine.url, gray="unix:/nonexistent/gray-engine.sock")
+    with pytest.raises(E2Error, match=r"GPU node gray did not answer .* lh-tunnel@gray up"):
         run(cyan, "a4-pool", arm)
     assert record(cyan, "a4-pool")["status"] == "failed"
     assert ("restart", "lh-gateway") not in cyan.systemd.calls
@@ -1378,6 +1754,17 @@ def test_a_wrong_engine_fails_before_anything_starts(cyan: Cyan) -> None:
     assert (out / "engine.json").exists()
 
 
+@pytest.mark.parametrize("route", ["/server_info", "/reset_prefix_cache"])
+def test_an_engine_without_the_measurement_drop_in_fails_the_point_and_says_so(
+    cyan: Cyan, route: str
+) -> None:
+    # A production box: vLLM without its development mode has neither route.
+    del cyan.engine.routes[route]
+    with pytest.raises(E2Error, match=f"no {route}.*variant.sh measure on"):
+        run(cyan, "a1-voice", VOICE_ALONE)
+    assert record(cyan, "a1-voice")["status"] == "failed"
+
+
 def test_a_point_on_make_room_fails_on_the_frozen_box(cyan: Cyan) -> None:
     error = (
         f"the engine runs scheduler_cls = None, the point needs --scheduler-cls {MAKE_ROOM_CLS}: "
@@ -1441,7 +1828,7 @@ def test_the_engine_command_prints_what_variant_sh_use_takes(tmp_path: Path, cap
 
 
 def test_the_record_keeps_a_failed_step_even_when_the_engine_is_down(cyan: Cyan) -> None:
-    host = replace(cyan.host, engine_url="http://127.0.0.1:9")  # nothing listens there
+    host = replace(cyan.host, engine_url="unix:/nonexistent/engine.sock")  # nothing listens there
     with pytest.raises(E2Error, match="/server_info"):
         run_point(
             write(cyan.arms, "a1.toml", VOICE_ALONE), host.root / "runs" / "a1", host, cyan.systemd

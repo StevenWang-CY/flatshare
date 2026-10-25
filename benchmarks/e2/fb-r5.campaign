@@ -1,0 +1,17 @@
+# E2 FB, round 5 of 5: voice alone, the frozen box and the PRs' 48-token configuration on the final code, with
+# W5's arm files, every call opening with a warm-up turn and no KV sampler, as W5's points ran. Round N replays
+# w5-rN's sample of the agents (seed 10 + N) and runs the three in an order rotated by one from round to round,
+# so that FB compares with W5 round by round.
+#   benchmarks/e2/campaign.sh benchmarks/e2/fb-r5.campaign
+
+agents-seed 15
+kv-sample-s 0
+
+# engine frozen
+arms/w5-disc-frozen-s24.toml
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+arms/w5-disc-pr-ab48-s24.toml
+
+# engine frozen
+arms/w5-a1-voice.toml

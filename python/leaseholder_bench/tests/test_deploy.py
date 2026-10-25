@@ -1,20 +1,32 @@
 """The deployment: what the GPU nodes serve and the tunnels reach, cyan's install, and the script that
-authorizes cyan's tunnel key on a GPU node, run against stand-ins for ssh and systemd."""
+authorizes cyan's tunnel keys on a GPU node, run against stand-ins for ssh and systemd."""
 
 from __future__ import annotations
 
 import os
 import re
+import socketserver
 import stat
 import subprocess
+import sys
+import tempfile
+import threading
+import time
+import tomllib
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 DEPLOY = REPO / "deploy"
-SERVICES = {8000, 8100, 8880}
-"""A GPU node's services on its loopback: the engine, STT and TTS."""
-KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMa9oQ1uNw4Z5fT1n2x0bq7d1H0mGJ1s7mYcQjv8Yw5k"
-"""A tunnel key's type and blob, as ssh-keygen writes them before the comment."""
+KEYS = {
+    "engine": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMa9oQ1uNw4Z5fT1n2x0bq7d1H0mGJ1s7mYcQjv8Yw5k",
+    "stt": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK3fW8pQ2nV7xZ1cR5tY9uB4mE6hJ0aLsD2gF8kN3qPw",
+    "tts": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHq2wE4rT6yU8iO0pA1sD3fG5hJ7kL9zX2cV4bN6mQ8w",
+}
+"""cyan's tunnel keys, by the socket each one reaches: their type and blob, as ssh-keygen writes them before the
+comment."""
+FORMER = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPz4xY6wQ8eR0tU2iO4pA6sD8fG0hJ2kL4zX6cV8bN0mQ2e"
+"""cyan's former tunnel key, which forwarded the node's ports."""
 LOGIN = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB7m2Qp9xR4tYc3vLk8wNs6fJd0aHe5uPq1zXo2iGb4M me@laptop"
 """Another key in a GPU node's authorized_keys: its user's own."""
 
@@ -25,23 +37,37 @@ host=$1
 shift
 cd "$FAKE_HOSTS/$host" && exec sh -c "$*"
 """
+OPENBSD_NC = """\
+#!/bin/sh
+# nc -h on a GPU node: OpenBSD's netcat, as Ubuntu's netcat-openbsd prints its usage.
+echo "OpenBSD netcat (Debian patchlevel 1.218-4ubuntu1)" >&2
+exit 1
+"""
 
 
 def authorize(
-    work: Path, public_key: str, authorized_keys: str = ""
+    work: Path,
+    keys: dict[str, str],
+    authorized_keys: str = "",
+    former: str | None = None,
+    nc: str = OPENBSD_NC,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
-    """Runs authorize-tunnel.sh from cyan to phastform, hosts kept under ``work``, cyan's tunnel key
-    being ``public_key`` and phastform's authorized_keys ``authorized_keys``; returns the run and the
-    file it leaves."""
+    """Runs authorize-tunnel.sh from cyan to phastform, hosts kept under ``work``: cyan's tunnel keys are
+    ``keys`` by socket (and its former key ``former``), phastform's authorized_keys ``authorized_keys``
+    and its nc ``nc``. Returns the run and the file it leaves."""
     hosts, bin_dir = work / "hosts", work / "bin"
     for host in ("cyan", "phastform"):
         (hosts / host / ".ssh").mkdir(parents=True)
-    (hosts / "cyan" / ".ssh" / "lh_tunnel_ed25519.pub").write_text(f"{public_key}\n")
+    for name, key in keys.items():
+        (hosts / "cyan" / ".ssh" / f"lh_tunnel_{name}_ed25519.pub").write_text(f"{key}\n")
+    if former is not None:
+        (hosts / "cyan" / ".ssh" / "lh_tunnel_ed25519.pub").write_text(f"{former}\n")
     authorized = hosts / "phastform" / ".ssh" / "authorized_keys"
     authorized.write_text(authorized_keys)
     bin_dir.mkdir()
-    (bin_dir / "fake-ssh").write_text(FAKE_SSH)
-    (bin_dir / "fake-ssh").chmod(0o755)
+    for tool, text in (("fake-ssh", FAKE_SSH), ("nc", nc)):
+        (bin_dir / tool).write_text(text)
+        (bin_dir / tool).chmod(0o755)
     env = os.environ | {
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "FAKE_HOSTS": str(hosts),
@@ -56,51 +82,61 @@ def authorize(
     return done, authorized.read_text()
 
 
-def permitted(authorized_keys: str) -> set[int]:
-    """The loopback ports authorized_keys lets a key forward to."""
-    return {int(port) for port in re.findall(r'permitopen="127\.0\.0\.1:(\d+)"', authorized_keys)}
-
-
-def test_the_gpu_nodes_publish_no_kv_events_and_the_tunnels_reach_only_their_services(
-    tmp_path: Path,
-) -> None:
+def test_the_gpu_nodes_publish_no_kv_events_and_cyan_reaches_them_only_through_the_tunnel() -> None:
     # vLLM's KV-event publisher connects to a TCP endpoint and serves a replay of the events, which carry
     # every cached block's token ids and session id: on a shared host any user could bind or ask for them,
     # and nothing of the deployment reads them.
     engine = (DEPLOY / "phastform" / "engine.yaml").read_text()
     assert "kv-events-config" not in engine and "tcp://" not in engine
-    for unit in ("lh-tunnel-phastform", "lh-tunnel-gray"):
-        text = (DEPLOY / "cyan" / "systemd" / f"{unit}.service").read_text()
-        forwarded = {int(forward.rsplit(":", 1)[1]) for forward in re.findall(r"-L (\S+)", text)}
-        assert forwarded == SERVICES, unit
-    smoke = (DEPLOY / "phastform" / "smoke.sh").read_text()
-    audited = re.search(r"grep -E ':\(([\d|]+)\)\$'", smoke)
-    assert audited is not None
-    assert {int(port) for port in audited.group(1).split("|")} == SERVICES
-    done, authorized = authorize(tmp_path, f"{KEY} lh-tunnel@cyan")
-    assert done.returncode == 0, done.stderr
-    assert permitted(authorized) == SERVICES
+    cyan = DEPLOY / "cyan" / "systemd"
+    tunnel = (cyan / "lh-tunnel@.service").read_text()
+    assert exec_lines(tunnel, "ExecStart") == [
+        "/usr/bin/python3 %h/leaseholder/src/deploy/bin/lh-tunnel %i"
+    ]
+    assert "EnvironmentFile=%h/.config/leaseholder/tunnel-%i.env" in tunnel.splitlines()
+    # One template for every GPU node: no unit forwards a port, or names a tunnel unit that is gone.
+    for unit in cyan.iterdir():
+        text = unit.read_text()
+        assert "ssh " not in text and "lh-tunnel-" not in text, unit.name
 
 
-def test_the_tunnel_key_may_forward_to_the_services_and_listen_nowhere(tmp_path: Path) -> None:
-    earlier = f'restrict,port-forwarding,permitopen="127.0.0.1:5558" {KEY} lh-tunnel@cyan'
-    options = (
-        'restrict,port-forwarding,permitopen="127.0.0.1:8000",permitopen="127.0.0.1:8100",'
-        'permitopen="127.0.0.1:8880",permitlisten="127.0.0.1:1",command="/bin/false"'
+def test_each_tunnel_key_may_only_bridge_its_session_to_its_socket(tmp_path: Path) -> None:
+    lh = f"/run/user/{os.getuid()}/lh"
+    earlier = (
+        f'restrict,port-forwarding,permitopen="127.0.0.1:5558" {KEYS["stt"]} lh-tunnel-stt@cyan'
     )
-    # The key as ssh-keygen writes it, and without its comment, which is optional.
-    for name, public_key in (("commented", f"{KEY} lh-tunnel@cyan"), ("bare", KEY)):
-        done, authorized = authorize(tmp_path / name, public_key, f"{LOGIN}\n{earlier}\n")
-        # The earlier entry for the key is replaced; every other key stays.
-        assert authorized.splitlines() == [LOGIN, f"{options} {public_key}"], name
-        assert done.stdout == f"authorized: {public_key.rsplit(' ', 1)[-1]} (1 entry)\n", name
-    # A client without a key changes nothing.
-    done, authorized = authorize(tmp_path / "empty", "", f"{LOGIN}\n")
-    assert done.returncode == 2 and "no public key" in done.stderr
+    former = f'restrict,port-forwarding,permitopen="127.0.0.1:8000",command="/bin/false" {FORMER} lh-tunnel@cyan'
+    # The keys as ssh-keygen writes them, and without their comments, which are optional.
+    for case, comment in (("commented", " lh-tunnel-{}@cyan"), ("bare", "")):
+        keys = {name: key + comment.format(name) for name, key in KEYS.items()}
+        done, authorized = authorize(
+            tmp_path / case, keys, f"{LOGIN}\n{earlier}\n{former}\n", former=FORMER
+        )
+        assert done.returncode == 0, done.stderr
+        # The earlier entry for a key and the former key's go; every other key stays. Each entry allows its
+        # key's sessions one command, the bridge to the node's socket of its name, and no forwarding.
+        assert authorized.splitlines() == [LOGIN] + [
+            f'restrict,command="exec nc -q0 -U {lh}/{name}.sock" {keys[name]}' for name in KEYS
+        ], case
+        assert done.stdout == f"authorized: engine, stt and tts on {lh} (3 entries)\n", case
+
+
+def test_authorizing_needs_all_three_keys_and_openbsd_netcat(tmp_path: Path) -> None:
+    # A client without one of the keys changes nothing.
+    done, authorized = authorize(tmp_path / "missing", {"engine": KEYS["engine"]}, f"{LOGIN}\n")
+    assert (
+        done.returncode == 2
+        and "no public key in cyan's .ssh/lh_tunnel_stt_ed25519.pub" in done.stderr
+    )
+    assert authorized == f"{LOGIN}\n"
+    # Nor does a node whose nc cannot bridge a session to a socket.
+    gnu = "#!/bin/sh\necho 'GNU netcat 0.7.1, a rewrite of the famous networking tool.'\n"
+    done, authorized = authorize(tmp_path / "gnu", KEYS, f"{LOGIN}\n", nc=gnu)
+    assert done.returncode == 2 and "is not OpenBSD netcat" in done.stderr
     assert authorized == f"{LOGIN}\n"
 
 
-def test_cyans_install_makes_the_gateways_cache_salt_secret_once(tmp_path: Path) -> None:
+def test_cyans_install_makes_the_gateways_secret_and_metrics_key_once(tmp_path: Path) -> None:
     home, bin_dir = tmp_path / "home", tmp_path / "bin"
     home.mkdir()
     bin_dir.mkdir()
@@ -110,13 +146,653 @@ def test_cyans_install_makes_the_gateways_cache_salt_secret_once(tmp_path: Path)
     env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
     install = ["bash", str(DEPLOY / "cyan" / "install.sh")]
     subprocess.run(install, env=env, check=True, capture_output=True)
-    secret = home / ".config" / "leaseholder" / "cache-salt-secret"
-    made = secret.read_text()
-    assert re.fullmatch(r"[0-9a-f]{64}\n", made)
-    assert (
-        stat.S_IMODE(secret.stat().st_mode) == 0o600
-    )  # the gateway refuses any other user's access
-    # A new secret would change every tenant's cache salt: the next install keeps it.
+    config = home / ".config" / "leaseholder"
+    files = [config / "cache-salt-secret", config / "metrics-key"]
+    made = [path.read_text() for path in files]
+    for path, text in zip(files, made, strict=True):
+        assert re.fullmatch(r"[0-9a-f]{64}\n", text), path
+        # The gateway refuses a file that another user may open.
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert made[0] != made[1]
+    # A new secret would change every tenant's cache salt, a new key every scraper's: the next install keeps them.
     subprocess.run(install, env=env, check=True, capture_output=True)
-    assert secret.read_text() == made
-    assert [p.name for p in secret.parent.iterdir()] == ["cache-salt-secret"]
+    assert [path.read_text() for path in files] == made
+    assert sorted(p.name for p in config.iterdir()) == ["cache-salt-secret", "metrics-key"]
+
+
+FAKE_SYSTEMCTL = """\
+#!/bin/sh
+# systemctl --user ...: a GPU node's user manager, every unit running; logs each call that changes something.
+shift
+if [ "$1" = is-active ]; then
+  shift
+  [ "$1" = -q ] || for unit; do echo active; done
+  exit 0
+fi
+echo "$*" >>"$HOME/systemctl.log"
+"""
+
+
+def test_the_engine_serves_its_development_routes_only_with_the_measurement_drop_in(
+    tmp_path: Path,
+) -> None:
+    unit = (DEPLOY / "phastform" / "systemd" / "lh-engine.service").read_text()
+    assert "VLLM_SERVER_DEV_MODE" not in unit
+    measure = DEPLOY / "phastform" / "measure" / "lh-engine.conf"
+    assert "Environment=VLLM_SERVER_DEV_MODE=1" in measure.read_text().splitlines()
+
+    home, bin_dir = tmp_path / "home", tmp_path / "bin"
+    home.mkdir()
+    bin_dir.mkdir()
+    (bin_dir / "systemctl").write_text(FAKE_SYSTEMCTL)
+    (bin_dir / "systemctl").chmod(0o755)
+    env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    drop_in = home / ".config" / "systemd" / "user" / "lh-engine.service.d" / "measure.conf"
+    log = home / "systemctl.log"
+
+    def variant(*args: str) -> str:
+        done = subprocess.run(
+            ["bash", str(DEPLOY / "phastform" / "variant.sh"), *args],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert done.returncode == 0, done.stderr
+        return done.stdout
+
+    # On: linked, and the running engine restarts to take it; asking again changes nothing.
+    variant("measure", "on")
+    assert drop_in.resolve() == measure
+    assert log.read_text().splitlines() == [
+        "daemon-reload",
+        "reset-failed lh-engine",
+        "restart lh-engine",
+    ]
+    log.unlink()
+    assert variant("measure", "on") == "variant: the measurement drop-in is already on\n"
+    assert not log.exists()
+    # Switching the engine's variant keeps it.
+    variant("use", "pr54530")
+    assert drop_in.resolve() == measure
+    assert (drop_in.parent / "variant-pr54530.conf").exists()
+    variant("use", "frozen")
+    assert drop_in.resolve() == measure
+    # Off: removed, and the engine restarts without the development routes.
+    log.unlink()
+    variant("measure", "off")
+    assert not drop_in.exists()
+    assert log.read_text().splitlines() == [
+        "daemon-reload",
+        "reset-failed lh-engine",
+        "restart lh-engine",
+    ]
+
+
+class _Health(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        self.send_response(200 if self.path == "/health" else 404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *args: object) -> None:
+        pass
+
+
+class _UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+
+
+def test_wait_healthy_reaches_a_server_on_its_unix_socket() -> None:
+    wait = ["bash", str(DEPLOY / "bin" / "wait-healthy")]
+    # A short path: a socket's must fit sun_path, which pytest's tmp_path may not.
+    socket = Path(tempfile.mkdtemp(prefix="lh-wait-")) / "engine.sock"
+    server = _UnixServer(str(socket), _Health)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        done = subprocess.run(
+            [*wait, "--unix-socket", str(socket), "http://localhost/health", "5"],
+            capture_output=True,
+            text=True,
+        )
+        assert done.returncode == 0, done.stderr
+        assert done.stdout.startswith(f"wait-healthy: http://localhost/health on {socket} healthy")
+    finally:
+        server.shutdown()
+    # Nobody serves the socket now: it gives up after its timeout.
+    done = subprocess.run(
+        [*wait, "--unix-socket", str(socket), "http://localhost/health", "0"],
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 1
+    assert f"on {socket} not healthy after 0s" in done.stderr
+    # --pid=PID, the unit's main process ($MAINPID): an empty one is no PID, as before.
+    done = subprocess.run(
+        [*wait, "--unix-socket", str(socket), "--pid=", "http://localhost/health", "0"],
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 1 and "not healthy after 0s" in done.stderr
+
+
+def test_wait_healthy_gives_up_once_the_server_it_waits_for_is_gone() -> None:
+    # A server that dies in its start (a model that does not fit, a library that does not load) fails the start at
+    # once, not after the unit's whole timeout (1,200 s for the engine), whether it was reaped already or is a
+    # zombie its supervisor has not reaped yet (lh-svc's runner reaps its main process only after ExecStartPost).
+    wait = ["bash", str(DEPLOY / "bin" / "wait-healthy")]
+    nobody = "http://127.0.0.1:9/health"  # the discard port: never healthy
+    gone = subprocess.Popen(["true"])
+    gone.wait()
+    zombie = subprocess.Popen(["true"])
+    time.sleep(0.5)  # it has exited, unreaped
+    try:
+        for pid in (gone.pid, zombie.pid):
+            start = time.monotonic()
+            done = subprocess.run(
+                [*wait, f"--pid={pid}", nobody, "60"], capture_output=True, text=True
+            )
+            assert done.returncode == 1, done.stderr
+            assert f"the server (pid {pid}) exited before {nobody} was healthy" in done.stderr
+            assert time.monotonic() - start < 10
+    finally:
+        zombie.wait()
+    alive = subprocess.Popen(["sleep", "30"])
+    try:
+        done = subprocess.run(
+            [*wait, f"--pid={alive.pid}", nobody, "0"], capture_output=True, text=True
+        )
+        assert (
+            done.returncode == 1 and "not healthy after 0s" in done.stderr
+        )  # its own timeout, as before
+    finally:
+        alive.kill()
+        alive.wait()
+
+
+FAKE_SS = """\
+#!/bin/sh
+# ss -H -lntup | -lxp: the listeners in $FAKE_SS, as ss prints them.
+case $2 in
+  -lntup) cat "$FAKE_SS/inet" ;;
+  -lxp) cat "$FAKE_SS/unix" ;;
+esac
+"""
+
+
+class Listeners:
+    """A host for audit-listeners: what ``ss`` lists, and the processes' cgroups and commands under a
+    fake /proc. Each process of ours is in an lh-*.service unit."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.runtime = root / "run"
+        (self.runtime / "lh").mkdir(parents=True)
+        (self.runtime / "lh").chmod(0o700)
+        self.ss = root / "ss"
+        self.ss.mkdir()
+        self.proc = root / "proc"
+        self.inet: list[str] = []
+        self.unix: list[str] = []
+        self.pids = 0
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "ss").write_text(FAKE_SS)
+        (bin_dir / "ss").chmod(0o755)
+        self.env = os.environ | {
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "FAKE_SS": str(self.ss),
+            "LH_AUDIT_PROC": str(self.proc),
+            "XDG_RUNTIME_DIR": str(self.runtime),
+        }
+
+    def process(
+        self,
+        unit: str | None,
+        command: str = "vllm serve",
+        lh_svc: bool = False,
+        env: dict[str, str] | None = None,
+    ) -> str:
+        """A process, in ``unit`` or (None) another user's session; returns ss's note of it. Under systemd a
+        unit's process is in the unit's cgroup; under deploy/bin/lh-svc (``lh_svc``) it stays in the SSH
+        session's, and lh-svc names its unit in its environment (LH_SVC_UNIT), beside ``env``."""
+        self.pids += 1
+        pid = str(1000 + self.pids)
+        (self.proc / pid).mkdir(parents=True)
+        if lh_svc:
+            cgroup = "/user.slice/user-1007.slice/session-4.scope"
+        elif unit:
+            cgroup = f"/user.slice/user-1007.slice/user@1007.service/app.slice/{unit}"
+        else:
+            cgroup = "/init.scope"
+        (self.proc / pid / "cgroup").write_text(f"0::{cgroup}\n")
+        (self.proc / pid / "cmdline").write_bytes(command.replace(" ", "\0").encode())
+        environ = (
+            {"HOME": "/home/lh"} | ({"LH_SVC_UNIT": unit} if lh_svc and unit else {}) | (env or {})
+        )
+        (self.proc / pid / "environ").write_bytes(
+            b"".join(f"{k}={v}\0".encode() for k, v in environ.items())
+        )
+        return f'users:(("python3",pid={pid},fd=3))'
+
+    def manager(self) -> str:
+        """The user manager, systemd --user, which holds socket units' sockets; returns ss's note of it."""
+        self.pids += 1
+        pid = str(1000 + self.pids)
+        (self.proc / pid).mkdir(parents=True)
+        (self.proc / pid / "cgroup").write_text(
+            "0::/user.slice/user-1007.slice/user@1007.service/init.scope\n"
+        )
+        (self.proc / pid / "cmdline").write_bytes(b"/lib/systemd/systemd\0--user")
+        return f'users:(("systemd",pid={pid},fd=40))'
+
+    def tcp(self, address: str, unit: str | None, command: str = "vllm serve", **how) -> None:
+        held = (
+            self.process(unit, command, **how) if unit else ""
+        )  # ss shows no process of another user's
+        self.inet.append(f"tcp LISTEN 0 4096 {address} 0.0.0.0:* {held}")
+
+    def udp(self, address: str, unit: str | None, command: str = "livekit-server", **how) -> None:
+        held = self.process(unit, command, **how) if unit else ""
+        self.inet.append(f"udp UNCONN 0 0 {address} 0.0.0.0:* {held}")
+
+    def socket(self, path: str, unit: str | None, **how) -> None:
+        held = self.process(unit, **how) if unit else ""
+        self.unix.append(f"u_str LISTEN 0 4096 {path} 362417538 * 0 {held}")
+
+    def audit(self, *args: str) -> subprocess.CompletedProcess[str]:
+        (self.ss / "inet").write_text("".join(f"{line}\n" for line in self.inet))
+        (self.ss / "unix").write_text("".join(f"{line}\n" for line in self.unix))
+        return subprocess.run(
+            [sys.executable, str(DEPLOY / "bin" / "audit-listeners"), *args],
+            env=self.env,
+            capture_output=True,
+            text=True,
+        )
+
+
+def test_the_audit_passes_a_gpu_node_whose_servers_listen_on_their_sockets(tmp_path: Path) -> None:
+    host = Listeners(tmp_path)
+    lh = host.runtime / "lh"
+    for unit, name in (("lh-engine", "engine"), ("lh-stt", "stt"), ("lh-tts", "tts")):
+        host.socket(f"{lh}/{name}.sock", f"{unit}.service")
+    host.socket(f"{lh}/8c3f0b2e-0d2c-4a51-9d55-0f6a2c0b7f3e", "lh-engine.service")  # vLLM's ZMQ IPC
+    host.tcp("127.0.0.1:631", None)  # another user's
+    host.socket("/run/systemd/private", None)
+    sockets = [f"{lh}/{name}.sock" for name in ("engine", "stt", "tts")]
+    done = host.audit(*(arg for path in sockets for arg in ("--expect", path)))
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == (
+        f"audit-listeners: ok: the box's units hold 4 Unix sockets, all in {host.runtime}, "
+        "and 0 TCP or UDP listeners, all allowed\n"
+    )
+
+
+def test_the_audit_fails_on_any_listener_of_ours_outside_the_allowed_set(tmp_path: Path) -> None:
+    host = Listeners(tmp_path)
+    # Today's box: each server on a loopback port that every user of the host reaches.
+    host.tcp("127.0.0.1:8000", "lh-engine.service")
+    host.tcp("127.0.0.1:8100", "lh-stt.service")
+    host.tcp("127.0.0.1:8880", "lh-tts.service")
+    host.socket("/tmp/8c3f0b2e-0d2c-4a51-9d55-0f6a2c0b7f3e", "lh-engine.service")
+    host.socket("@lh-abstract", "lh-tts.service")
+    host.runtime.joinpath("lh").chmod(0o755)
+    done = host.audit("--expect", f"{host.runtime}/lh/engine.sock")
+    assert done.returncode == 1
+    assert done.stderr.splitlines() == [
+        f"audit-listeners: {host.runtime}/lh is mode 755, owned by uid {os.getuid()}: it must be 0700 and ours",
+        "audit-listeners: lh-engine.service listens on tcp 127.0.0.1:8000",
+        "audit-listeners: lh-stt.service listens on tcp 127.0.0.1:8100",
+        "audit-listeners: lh-tts.service listens on tcp 127.0.0.1:8880",
+        "audit-listeners: lh-engine.service listens on a socket outside "
+        f"{host.runtime}: /tmp/8c3f0b2e-0d2c-4a51-9d55-0f6a2c0b7f3e",
+        f"audit-listeners: lh-tts.service listens on an abstract socket outside {host.runtime}: @lh-abstract",
+        f"audit-listeners: nothing listens on {host.runtime}/lh/engine.sock",
+    ]
+
+
+def test_the_audit_allows_the_gateways_port_and_an_sglang_engine_on_loopback(
+    tmp_path: Path,
+) -> None:
+    host = Listeners(tmp_path)
+    host.tcp("127.0.0.1:18080", "lh-gateway.service")
+    host.tcp("127.0.0.1:8000", "lh-engine.service", "python -m sglang.launch_server")
+    host.socket(f"{host.runtime}/lh/phastform-engine.sock", "lh-tunnel@phastform.service")
+    assert host.audit().returncode == 0
+    # Beyond loopback, and under any other unit, the same addresses fail.
+    host.tcp("0.0.0.0:29500", "lh-engine.service", "python -m sglang.launch_server")
+    host.tcp("127.0.0.1:18000", "lh-tunnel-phastform.service", "ssh -N")
+    done = host.audit()
+    assert done.returncode == 1
+    assert done.stderr.splitlines() == [
+        "audit-listeners: lh-engine.service listens on tcp 0.0.0.0:29500",
+        "audit-listeners: lh-tunnel-phastform.service listens on tcp 127.0.0.1:18000",
+    ]
+
+
+def test_the_audit_takes_the_user_managers_hold_on_the_gateways_port_for_lh_gateway_socket(
+    tmp_path: Path,
+) -> None:
+    host = Listeners(tmp_path)
+    # lh-gateway.socket's port, held by the user manager and the gateway that inherited it; then by the manager
+    # alone, while no gateway runs. Both are the gateway's.
+    gateway = host.process("lh-gateway.service", "lh-gateway --config gateway.toml")
+    both = f"{host.manager()[:-1]},{gateway.removeprefix('users:(')}"
+    host.inet.append(f"tcp LISTEN 0 1024 127.0.0.1:18080 0.0.0.0:* {both}")
+    host.socket(f"{host.runtime}/lh/gateway.sock", "lh-gateway.service")
+    assert host.audit().returncode == 0
+    host.inet = [f"tcp LISTEN 0 1024 127.0.0.1:18080 0.0.0.0:* {host.manager()}"]
+    done = host.audit()
+    assert done.returncode == 0, done.stderr
+    # Another socket unit of the user's, elsewhere, is not ours to judge.
+    host.inet.append(f"tcp LISTEN 0 128 127.0.0.1:9100 0.0.0.0:* {host.manager()}")
+    assert host.audit().returncode == 0
+
+
+def test_the_audit_fails_when_another_user_holds_the_gateways_port(tmp_path: Path) -> None:
+    host = Listeners(tmp_path)
+    host.tcp("127.0.0.1:18080", None)
+    done = host.audit()
+    assert done.returncode == 1
+    assert done.stderr == (
+        "audit-listeners: 127.0.0.1:18080 is held by a process that is not lh-gateway.service's: "
+        "another user's?\n"
+    )
+
+
+def test_the_audit_tells_lh_svcs_units_by_the_unit_their_environment_names(tmp_path: Path) -> None:
+    # Under deploy/bin/lh-svc a unit's processes stay in the SSH session's cgroup, and the gateway binds its own
+    # listeners (no socket unit holds them): lh-svc's LH_SVC_UNIT in a process's environment names its unit, as
+    # gpu-guard reads it, so the gateway's port is the gateway's, and the GPU servers' sockets are judged.
+    host = Listeners(tmp_path)
+    lh = host.runtime / "lh"
+    host.tcp(
+        "127.0.0.1:18080", "lh-gateway.service", "lh-gateway --config gateway.toml", lh_svc=True
+    )
+    host.socket(f"{lh}/gateway.sock", "lh-gateway.service", lh_svc=True)
+    for unit, name in (("lh-engine", "engine"), ("lh-stt", "stt"), ("lh-tts", "tts")):
+        host.socket(f"{lh}/{name}.sock", f"{unit}.service", lh_svc=True)
+    host.tcp("127.0.0.1:631", None)  # another user's
+    done = host.audit("--expect", f"{lh}/engine.sock")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == (
+        f"audit-listeners: ok: the box's units hold 4 Unix sockets, all in {host.runtime}, "
+        "and 1 TCP or UDP listeners, all allowed\n"
+    )
+    # And a unit of lh-svc's fails where it would under systemd: on a port, or a socket outside the directory.
+    host.tcp("127.0.0.1:8000", "lh-engine.service", lh_svc=True)
+    host.socket("/tmp/lh-stt.sock", "lh-stt.service", lh_svc=True)
+    done = host.audit()
+    assert done.returncode == 1
+    assert done.stderr.splitlines() == [
+        "audit-listeners: lh-engine.service listens on tcp 127.0.0.1:8000",
+        f"audit-listeners: lh-stt.service listens on a socket outside {host.runtime}: /tmp/lh-stt.sock",
+    ]
+
+
+def test_the_audit_accepts_the_voice_plane_in_the_hosts_namespace_where_in_voicenet_ran_it_there(
+    tmp_path: Path,
+) -> None:
+    # On a host whose kernel refuses unprivileged user namespaces the voice plane runs in the host's network
+    # namespace (LH_VOICENET=host, the preflight's degraded path), and in-voicenet marks its processes so: there
+    # its listeners show, where in its own namespace they do not. Its UDP sockets (the WebRTC candidates, on the
+    # host's interfaces), its loopback TCP listeners and its file sockets are accepted, under either supervisor.
+    host = Listeners(tmp_path)
+    marked = {"LH_VOICENET": "host"}
+    host.tcp("127.0.0.1:17880", "lh-livekit.service", "livekit-server", lh_svc=True, env=marked)
+    host.udp("127.0.0.1:17882", "lh-livekit.service", "livekit-server", lh_svc=True, env=marked)
+    host.udp("10.0.0.5:51234", "lh-voice-worker.service", "lh-voice-worker", env=marked)
+    host.tcp("127.0.0.1:41003", "lh-voice-worker.service", "lh-voice-worker", env=marked)
+    host.socket(
+        "/tmp/pymp-k2j/listener-q8w", "lh-voice-worker.service", env=marked
+    )  # its forkserver's
+    host.tcp("127.0.0.1:18080", "lh-gateway.service", "lh-gateway", lh_svc=True)
+    done = host.audit()
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == (
+        f"audit-listeners: ok: the box's units hold 0 Unix sockets, all in {host.runtime}, "
+        "and 1 TCP or UDP listeners, all allowed; the voice plane runs in the host's network namespace "
+        "(LH_VOICENET=host) with 5 listeners: 2 UDP sockets, 2 loopback TCP listeners and 1 file socket\n"
+    )
+    # Unmarked, the same listeners are refused; marked, a voice-plane listener beyond what the degraded path
+    # allows (TCP off loopback, an abstract socket, which any user of the host's namespace reaches) is refused,
+    # and a unit of the GPU node's is no voice plane, marked or not.
+    host = Listeners(tmp_path / "unmarked")
+    host.tcp("127.0.0.1:17880", "lh-livekit.service", "livekit-server", lh_svc=True)
+    host.udp("10.0.0.5:51234", "lh-voice-worker.service", "lh-voice-worker")
+    host.tcp("0.0.0.0:7881", "lh-livekit.service", "livekit-server", env=marked)
+    host.socket("@livekit-rtc", "lh-voice-worker.service", env=marked)
+    host.tcp("127.0.0.1:8000", "lh-engine.service", env=marked)
+    done = host.audit()
+    assert done.returncode == 1
+    assert done.stderr.splitlines() == [
+        "audit-listeners: lh-livekit.service listens on tcp 127.0.0.1:17880",
+        "audit-listeners: lh-voice-worker.service listens on udp 10.0.0.5:51234",
+        "audit-listeners: lh-livekit.service listens on tcp 0.0.0.0:7881",
+        "audit-listeners: lh-engine.service listens on tcp 127.0.0.1:8000",
+        f"audit-listeners: lh-voice-worker.service listens on an abstract socket outside {host.runtime}: "
+        "@livekit-rtc",
+    ]
+
+
+def test_in_voicenet_marks_what_it_runs_in_the_hosts_namespace(tmp_path: Path) -> None:
+    lh = tmp_path / "lh"
+    lh.mkdir()
+    (lh / "voicenet.pid").write_text("host\n")
+    show = [sys.executable, "-c", "import os; print(os.environ.get('LH_VOICENET'))"]
+    done = subprocess.run(
+        ["bash", str(DEPLOY / "bin" / "in-voicenet"), *show],
+        env={k: v for k, v in os.environ.items() if k != "LH_VOICENET"}
+        | {"XDG_RUNTIME_DIR": str(tmp_path)},
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 0 and done.stdout.strip() == "host", done.stderr
+
+
+def test_the_gateways_socket_unit_listens_where_gateway_toml_does() -> None:
+    systemd = DEPLOY / "cyan" / "systemd"
+    socket = (systemd / "lh-gateway.socket").read_text()
+    listens = {
+        line.partition("=")[2] for line in socket.splitlines() if line.startswith("ListenStream=")
+    }
+    example = tomllib.loads((DEPLOY / "cyan" / "gateway.example.toml").read_text())
+    entries = {entry.get("tcp") or entry["unix"] for entry in example["listen"]}
+    # The gateway refuses an inherited socket that no [[listen]] entry names; %t is cyan's /run/user/1007.
+    assert {listen.replace("%t", "/run/user/1007") for listen in listens} == entries
+    service = (systemd / "lh-gateway.service").read_text()
+    for line in ("Type=notify", "NotifyAccess=all", "Requires=lh-gateway.socket"):
+        assert line in service.splitlines(), line
+    assert "lh-gateway.socket" in exec_lines(service, "After")[0].split()
+    assert exec_lines(service, "ExecReload") == [
+        "%h/leaseholder/src/deploy/bin/lh-gateway-reload %n $MAINPID"
+    ]
+
+
+GATEWAY = """\
+import signal, sys, time
+signal.signal(signal.SIGHUP, lambda *_: open(sys.argv[1], "w").write("reload"))
+print("up", flush=True)
+time.sleep(30)
+"""
+"""A gateway's main process to the reload helper: it marks a SIGHUP in a file."""
+
+
+def reload_gateway(work: Path, takes_over: bool) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Runs deploy/bin/lh-gateway-reload against a main process that marks SIGHUP, with a systemctl whose MainPID
+    changes once the mark is there if ``takes_over``, as when the successor tells systemd it is the main process."""
+    marked = work / "sighup"
+    gateway = subprocess.Popen(
+        [sys.executable, "-c", GATEWAY, str(marked)], stdout=subprocess.PIPE, text=True
+    )
+    assert gateway.stdout.readline() == "up\n"
+    successor = "4242" if takes_over else str(gateway.pid)
+    bin_dir = work / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "systemctl").write_text(
+        "#!/bin/sh\n"
+        f'[ "$*" = "--user show --property MainPID --value lh-gateway.service" ] || exit 2\n'
+        f"if [ -e {marked} ]; then echo {successor}; else echo {gateway.pid}; fi\n"
+    )
+    (bin_dir / "systemctl").chmod(0o755)
+    env = os.environ | {
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "LH_GATEWAY_RELOAD_WAIT_S": "1",
+    }
+    try:
+        done = subprocess.run(
+            [DEPLOY / "bin" / "lh-gateway-reload", "lh-gateway.service", str(gateway.pid)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    finally:
+        gateway.kill()
+        gateway.wait()
+    return done, marked
+
+
+def test_a_reload_succeeds_once_the_successor_is_the_main_process(tmp_path: Path) -> None:
+    done, marked = reload_gateway(tmp_path, takes_over=True)
+    assert marked.read_text() == "reload", "the main process got SIGHUP"
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.endswith(
+        "lh-gateway.service's main process is 4242, after " + done.args[2] + "\n"
+    )
+
+
+def test_a_reload_fails_while_the_old_process_is_still_the_main_one(tmp_path: Path) -> None:
+    done, marked = reload_gateway(tmp_path, takes_over=False)
+    assert marked.exists()
+    assert done.returncode == 1
+    assert "main process is still" in done.stderr and "after 1 s" in done.stderr
+
+
+def exec_lines(text: str, key: str) -> list[str]:
+    """The values of a unit's ``key=`` lines, continued lines joined."""
+    lines = text.replace("\\\n", " ").splitlines()
+    return [line.partition("=")[2] for line in lines if line.startswith(f"{key}=")]
+
+
+def test_the_gpu_nodes_servers_listen_on_their_sockets_in_a_private_directory() -> None:
+    phastform = DEPLOY / "phastform"
+    for config in ("engine.yaml", "stt.yaml"):
+        keys = re.findall(r"^([a-z-]+):", (phastform / config).read_text(), re.M)
+        assert "host" not in keys and "port" not in keys, config
+    sockets = {
+        "lh-engine": "${LH_ENGINE_SOCKET}",
+        "lh-stt": "${LH_STT_SOCKET}",
+        "lh-tts": "%t/lh/tts.sock",
+    }
+    for unit, socket in sockets.items():
+        text = (phastform / "systemd" / f"{unit}.service").read_text()
+        [start] = exec_lines(text, "ExecStart")
+        assert f"--uds {socket}" in start and "--port" not in start and "--host" not in start, unit
+        pre = exec_lines(text, "ExecStartPre")
+        assert pre[0] == "/usr/bin/install -d -m 0700 %t/lh", unit
+        if (
+            unit != "lh-tts"
+        ):  # vLLM leaves a killed server's socket file; uvicorn replaces it itself
+            assert f"/usr/bin/rm -f {socket}" in pre, unit
+        [ready] = exec_lines(text, "ExecStartPost")
+        assert ready.startswith(
+            f"%h/leaseholder/src/deploy/bin/wait-healthy --unix-socket {socket} --pid=${{MAINPID}} "
+        ), unit
+    engine = (phastform / "systemd" / "lh-engine.service").read_text()
+    assert "Environment=LH_ENGINE_SOCKET=%t/lh/engine.sock" in engine.splitlines()
+    # Every variant that starts its own vLLM serves the same socket; SGLang, which cannot, gets a proxy to its port.
+    for conf in (phastform / "variants").glob("*/lh-engine.conf"):
+        starts = exec_lines(conf.read_text(), "ExecStart")
+        if not starts:
+            continue
+        if "sglang" in starts[-1]:
+            assert "Wants=lh-engine-proxy.socket" in conf.read_text().splitlines(), conf
+        else:
+            assert "--uds ${LH_ENGINE_SOCKET} $LH_ENGINE_FLAGS" in starts[-1], conf
+    proxy = (phastform / "systemd" / "lh-engine-proxy.socket").read_text().splitlines()
+    assert "ListenStream=%t/lh/engine.sock" in proxy and "BindsTo=lh-engine.service" in proxy
+    smoke = (phastform / "smoke.sh").read_text()
+    for name in ("engine", "stt", "tts"):
+        assert f"${{lh}}/{name}.sock" in smoke or f"$lh/{name}.sock" in smoke, name
+    assert '"$(dirname "$0")/../bin/audit-listeners"' in smoke
+
+
+def test_smgs_arm_listens_on_no_tcp_port_of_cyans_network() -> None:
+    # SMG takes only http:// workers and serves TCP only: it runs in the voice-plane namespace, between a proxy
+    # from the gateway's socket and one to the engine's tunnel socket.
+    unit = (DEPLOY / "cyan" / "systemd" / "lh-smg.service").read_text()
+    assert exec_lines(unit, "ExecStart") == [
+        "%h/leaseholder/src/deploy/bin/in-voicenet %h/leaseholder/src/deploy/cyan/smg.sh"
+    ]
+    assert "BindsTo=lh-voicenet.service" in unit.splitlines()
+    smg = (DEPLOY / "cyan" / "smg.sh").read_text()
+    assert '-l 127.0.0.1:18000 "$proxy" "$lh/phastform-engine.sock"' in smg
+    assert '-l "$lh/smg.sock" "$proxy" 127.0.0.1:18090' in smg
+    assert "--worker-urls http://127.0.0.1:18000" in smg and "--prometheus-host 127.0.0.1" in smg
+    arms = [arm for arm in (REPO / "benchmarks" / "e2" / "arms").glob("*.toml")]
+    smg_arms = [arm for arm in arms if 'router = "smg"' in arm.read_text()]
+    assert smg_arms
+    for arm in smg_arms:
+        assert 'upstream = "unix:/run/user/1007/lh/smg.sock"' in arm.read_text(), arm.name
+
+
+def test_the_gpu_nodes_servers_keep_idle_connections_for_60_s() -> None:
+    # Through the tunnel each new connection is a new SSH session, so the servers keep theirs between turns.
+    systemd = DEPLOY / "phastform" / "systemd"
+    for unit in ("lh-engine", "lh-stt"):
+        text = (systemd / f"{unit}.service").read_text()
+        assert "Environment=VLLM_HTTP_TIMEOUT_KEEP_ALIVE=60" in text.splitlines(), unit
+    [start] = exec_lines((systemd / "lh-tts.service").read_text(), "ExecStart")
+    assert "--timeout-keep-alive 60" in start
+
+
+FAKES = Path(__file__).parent / "fakes" / "campaign"
+"""Stand-ins for ssh and rsync between directories, one per host (the campaign tests' own)."""
+
+
+def git(repo: Path, *args: str) -> str:
+    command = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", *args]
+    return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def test_deploy_syncs_the_commit_alone_and_refuses_changes_it_would_not_carry(
+    tmp_path: Path,
+) -> None:
+    repo, hosts = tmp_path / "repo", tmp_path / "hosts"
+    (repo / "deploy" / "phastform").mkdir(parents=True)
+    (repo / "deploy" / "bin").mkdir()
+    (repo / "deploy" / "deploy.sh").write_text((DEPLOY / "deploy.sh").read_text())
+    (repo / "deploy" / "phastform" / "install.sh").write_text(
+        'echo installed >>"$HOME/install.log"\n'
+    )
+    (repo / "deploy" / "bin" / "audit-listeners").write_text('print("audit-listeners: ok")\n')
+    (repo / ".gitignore").write_text("__pycache__/\n")
+    git(repo, "init", "-q")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "first")
+    (repo / "deploy" / "__pycache__").mkdir()  # ignored: never synced
+    (repo / "deploy" / "__pycache__" / "x.pyc").write_bytes(b"")
+    # The host has a file of an earlier commit, which goes.
+    src = hosts / "phastform" / "leaseholder" / "src"
+    src.mkdir(parents=True)
+    (src / "gone.py").write_text("")
+    env = os.environ | {
+        "PATH": f"{FAKES}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_HOSTS": str(hosts),
+        "LH_SSH": str(FAKES / "ssh"),
+    }
+    deploy = ["bash", str(repo / "deploy" / "deploy.sh"), "phastform"]
+    done = subprocess.run(deploy, env=env, capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    synced = sorted(str(p.relative_to(src)) for p in src.rglob("*") if p.is_file())
+    assert synced == sorted([*git(repo, "ls-files").splitlines(), "DEPLOYED"])
+    assert (src / "DEPLOYED").read_text() == git(repo, "describe", "--always") + "\n"
+    assert (hosts / "phastform" / "install.log").read_text() == "installed\n"
+    # A change the sync would not carry, committed or not, is refused before anything moves.
+    (repo / "deploy" / "phastform" / "install.sh").write_text("echo changed\n")
+    (repo / "new.txt").write_text("")
+    done = subprocess.run(deploy, env=env, capture_output=True, text=True)
+    assert done.returncode == 2
+    assert "changes the sync would not carry" in done.stderr
+    assert " M deploy/phastform/install.sh" in done.stderr and "?? new.txt" in done.stderr
+    assert (src / "deploy" / "phastform" / "install.sh").read_text().startswith("echo installed")

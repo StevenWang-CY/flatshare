@@ -1,0 +1,31 @@
+# Prometheus on cyan, scraping the gateway and, through it, the engine. Copy to the Prometheus configuration and replace
+# <home> with the deploy user's home directory. Prometheus runs as that user (a user unit, like the box's), since the
+# metrics key is a file only its owner may open: on the gateway's TCP listener, which every user of cyan reaches,
+# GET /metrics and /metrics/engine need it (deploy/cyan/install.sh writes it once). The engine listens on its tunnel's
+# socket, which Prometheus cannot scrape, so the gateway relays its /metrics. The voice worker runs in the voice-plane
+# namespace, which has no route in: its LiveKit metrics are not scraped.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+rule_files:
+  - <home>/leaseholder/src/ops/prometheus/rules.yml
+
+scrape_configs:
+  - job_name: lh-gateway
+    metrics_path: /metrics
+    authorization:
+      credentials_file: <home>/.config/leaseholder/metrics-key
+    static_configs:
+      - targets: ["127.0.0.1:18080"]
+
+  # The engine's own /metrics, relayed. With [nodes] in gateway.toml (two GPU nodes), one job per node instead, each
+  # with `params: {node: [phastform]}` and a `node` label of the same name.
+  - job_name: lh-engine
+    metrics_path: /metrics/engine
+    authorization:
+      credentials_file: <home>/.config/leaseholder/metrics-key
+    static_configs:
+      - targets: ["127.0.0.1:18080"]
+        labels:
+          node: phastform
