@@ -9,8 +9,9 @@ A container, or a host where lingering cannot be turned on, has no systemd user 
 deploy/bin/shims first on PATH, `systemctl` and `journalctl` are this program, so that variant.sh, install.sh,
 campaign.sh and lh-bench e2 run work unchanged. It reads each unit and its drop-ins (UNIT.d/*.conf, in name order)
 from ~/.config/systemd/user, where install.sh and variant.sh link them, afresh at every command, and implements the
-directives the repository's units use: Type=exec, simple or notify (the main process's READY=1 on NOTIFY_SOCKET is
-its start, as sd_notify sends it); ExecStartPre, ExecStart, ExecStartPost, ExecStop and
+directives the repository's units use: Type=exec or simple (the main process's execution is its start, even if it
+exits at once) or notify (the main process's READY=1 on NOTIFY_SOCKET is its start, as sd_notify sends it);
+ExecStartPre, ExecStart, ExecStartPost, ExecStop and
 ExecStopPost (an empty assignment resets the list; a leading `-` ignores a command's failure); Environment and
 EnvironmentFile (`-` for an optional file); WorkingDirectory; CPUAffinity; NUMAPolicy=preferred with NUMAMask
 (through numactl, when the host has it; otherwise the journal says it was not applied); KillSignal, TimeoutStartSec
@@ -27,7 +28,14 @@ fail at the stop, with the unit's processes running.
 
 Each started unit has a runner (`lh-svc run UNIT`, in a session of its own) that runs its commands, with
 LH_SVC_UNIT=UNIT in their environment where systemd would put them in the unit's cgroup, relays their output into
-the unit's journal with UTC times, restarts it as Restart says and stops it on SIGTERM. `start` returns
+the unit's journal with UTC times, restarts it as Restart says and stops it on SIGTERM. When the main process
+exits on its own, what is left of its group is ended as a stop ends it (KillSignal, then SIGKILL after
+TimeoutStopSec) before ExecStopPost and any restart, as systemd ends what is left of the unit's cgroup: an engine
+core that outlived its server would otherwise hold the GPU, and the restart's gpu-guard refuse to start beside it. The
+unit is deactivating meanwhile, as systemd's is, and a start waits for that to be over. On Linux the runner is the
+subreaper of the unit's processes, and reaps those whose parent exited before them, as systemd's manager does: left to
+init, which in a container may reap none, each would stay a member of its group as a zombie, and every restart and stop
+would wait out TimeoutStopSec and more. `start` returns
 once a unit's ExecStartPost commands have succeeded, as systemd's does, and fails as systemd's does when it cannot;
 `stop` returns only once every process it stops has exited: the unit's own (ExecStop, then KillSignal, then SIGKILL
 after TimeoutStopSec, the signals and ExecStopPost also when ExecStop fails or cannot run, the unit then ending
@@ -41,6 +49,8 @@ it before any venv exists. Linux applies CPUAffinity; elsewhere (the tests' host
 from __future__ import annotations
 
 import contextlib
+import ctypes
+import errno
 import fcntl
 import json
 import os
@@ -270,6 +280,19 @@ def command(line: str, env: dict[str, str], name: str) -> tuple[list[str], bool]
     return argv, ignore
 
 
+def executable(name: str, env: dict[str, str], cwd: str) -> str:
+    """The file that the exec of a command NAME runs, found as Popen and execvp(3) find it: a name with a slash from
+    the working directory, a bare one on the command's PATH. Where there is none, it raises the error that exec fails
+    with: ENOENT, or EACCES for a file that is there but cannot be executed."""
+    places = [name] if "/" in name else [os.path.join(d, name) for d in os.get_exec_path(env)]
+    paths = [os.path.join(cwd, place) for place in places]
+    for path in paths:
+        if os.access(path, os.X_OK) and not os.path.isdir(path):
+            return path
+    code = errno.EACCES if any(os.path.exists(path) for path in paths) else errno.ENOENT
+    raise OSError(code, os.strerror(code), name)
+
+
 def cpus(text: str) -> set[int]:
     chosen: set[int] = set()
     for part in text.replace(",", " ").split():
@@ -309,10 +332,12 @@ def started_at(pid: object) -> str | None:
     if not isinstance(pid, int) or not pid:
         return None
     try:
-        stat = Path(f"/proc/{pid}/stat").read_text()
+        # Bytes, read past the name's last ") ": the kernel keeps 15 bytes of a name, which may end inside a
+        # character, and a name may hold ") " itself.
+        stat = Path(f"/proc/{pid}/stat").read_bytes()
     except OSError:
         return None
-    return stat.rsplit(") ", 1)[1].split()[19]
+    return stat.rsplit(b") ", 1)[1].split()[19].decode()
 
 
 def write_state(name: str, **values: object) -> None:
@@ -321,11 +346,16 @@ def write_state(name: str, **values: object) -> None:
         if key in values:
             values[f"{key}_start"] = started_at(values[key])
     values["boot"] = boot_id()
-    state = read_state(name) | values
-    path = state_path(name)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state))
-    temporary.replace(path)
+    # The read, the merge and the rename under a lock of the state's own, not the unit's, which a start holds while it
+    # writes: a client and its runner writing at once lost each other's fields, or the one found the other's temporary
+    # file renamed.
+    with open(state_dir() / f"{name}.state.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = read_state(name) | values
+        path = state_path(name)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(state))
+        temporary.replace(path)
 
 
 def alive(pid: int | None) -> bool:
@@ -337,9 +367,8 @@ def alive(pid: int | None) -> bool:
         return False
     except PermissionError:
         return True
-    try:  # a zombie child of a runner that is gone is not alive
-        with open(f"/proc/{pid}/stat") as stat:
-            return stat.read().split(") ", 1)[1][0] != "Z"
+    try:  # a zombie child of a runner that is gone is not alive (its state read as started_at reads its start)
+        return Path(f"/proc/{pid}/stat").read_bytes().rsplit(b") ", 1)[1][:1] != b"Z"
     except OSError:
         return True
 
@@ -427,14 +456,63 @@ class Notify:
         shutil.rmtree(self.dir, ignore_errors=True)
 
 
+PR_SET_CHILD_SUBREAPER = 36
+"""prctl(2)'s option (Linux): a process whose parent exits goes to its nearest subreaper ancestor, not to init."""
+
+
+def subreaper() -> bool:
+    """Make this process a subreaper, as systemd's manager is of its units' processes; whether it now is (Linux only:
+    elsewhere every orphan goes to init)."""
+    if sys.platform != "linux":
+        return False
+    with contextlib.suppress(OSError, AttributeError):
+        return ctypes.CDLL(None).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
+    return False
+
+
+LOOK_DELAY = "LH_SVC_LOOK_DELAY"
+"""The tests' stand-in for a loaded host: seconds a runner waits, once it has started a unit's main process, before it
+first looks at it, where a busy host can deschedule it for longer than a main process that exits at once lives."""
+SPAWN_DELAY = "LH_SVC_SPAWN_DELAY"
+"""The same for a start: seconds the client waits between spawning a unit's runner and writing its pid, where a busy
+host can deschedule it for as long as the runner takes to start the unit."""
+
+
+class Stopping:
+    """A stop asked of a runner, which its SIGTERM handler asks for: a flag, which the handler sets taking no lock. A
+    Python signal handler runs in the main thread between two of its bytecodes, inside threading.Event.wait's hold of
+    the Event's own lock too, where Event.set() would wait for that lock for good, the runner frozen and its unit left
+    running."""
+
+    def __init__(self) -> None:
+        self.asked = False
+
+    def set(self) -> None:
+        self.asked = True
+
+    def is_set(self) -> bool:
+        return self.asked
+
+    def wait(self, seconds: float) -> bool:
+        """Whether a stop is asked within ``seconds``, looked at every 50 ms."""
+        deadline = time.monotonic() + seconds
+        while not self.asked and (left := deadline - time.monotonic()) > 0:
+            time.sleep(min(left, 0.05))
+        return self.asked
+
+
 class Runner:
     def __init__(self, name: str) -> None:
         self.name = unit_name(name)
         self.journal = Journal(self.name)
-        self.stopping = threading.Event()
+        self.stopping = Stopping()
         self.main: subprocess.Popen | None = None
         self.stop_failed = False
         """Whether the last stop's ExecStop failed: the unit then ends failed, not inactive."""
+        self.subreaper = False
+        """Whether the unit's orphans are this runner's to reap: on Linux, once run() has made it their subreaper."""
+        self.spawned: list[subprocess.Popen] = []
+        """The processes spawn() started that their Popens have yet to reap, which reap() leaves to them."""
 
     def say(self, message: str) -> None:
         self.journal.write(os.getpid(), f"lh-svc: {message}")
@@ -442,15 +520,16 @@ class Runner:
     def spawn(self, unit: Unit, line: str, env: dict[str, str]) -> tuple[subprocess.Popen, bool]:
         """Start one of the unit's commands in a process group of its own, its output into the journal."""
         argv, ignore = command(line, env, unit.name)
+        wrapper: list[str] = []
         if affinity := unit.last("CPUAffinity"):
             if shutil.which("taskset"):
-                argv = ["taskset", "-c", ",".join(map(str, sorted(cpus(affinity)))), *argv]
+                wrapper = ["taskset", "-c", ",".join(map(str, sorted(cpus(affinity))))]
             else:
                 self.say(f"CPUAffinity={affinity} not applied: the host has no taskset")
         policy, mask = unit.last("NUMAPolicy"), unit.last("NUMAMask")
         if policy == "preferred" and mask:
             if shutil.which("numactl"):
-                argv = ["numactl", f"--preferred={min(cpus(mask))}", "--", *argv]
+                wrapper = ["numactl", f"--preferred={min(cpus(mask))}", "--", *wrapper]
             else:
                 self.say(
                     f"NUMAPolicy=preferred NUMAMask={mask} not applied: the host has no numactl"
@@ -458,11 +537,17 @@ class Runner:
         workdir = specifiers(unit.last("WorkingDirectory"), unit.name)
         if workdir.startswith("-"):
             workdir = workdir[1:] if Path(workdir[1:]).is_dir() else ""
+        cwd = workdir or str(home())
         try:
+            # A wrapper execs the command only once it runs itself: a command that is not there was then the
+            # wrapper's exit, which a Type=simple or exec unit's start took for a started unit's. Found first, as
+            # its exec alone would find it, it fails as that exec does.
+            if wrapper:
+                executable(argv[0], env, cwd)
             process = subprocess.Popen(
-                argv,
+                [*wrapper, *argv],
                 env=env,
-                cwd=workdir or str(home()),
+                cwd=cwd,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -470,8 +555,26 @@ class Runner:
             )
         except OSError as exc:
             raise ServiceError(f"{argv[0]}: {exc}") from None
+        # Those their Popens have reaped leave the list: an orphan may hold their pids now.
+        self.spawned = [p for p in self.spawned if p.returncode is None] + [process]
         self.journal.relay(process.stdout, process.pid)
         return process, ignore
+
+    def reap(self) -> None:
+        """Reap the unit's processes that have exited and that this runner adopted as their subreaper, as systemd's
+        manager reaps a unit's: a zombie stays a member of its group, which a restart or a stop waits to be gone.
+        Each by its pid, and never one that spawn() started: its Popen reads its status."""
+        if not self.subreaper:
+            return
+        while True:
+            try:  # the first child that has exited, left waitable
+                info = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            except ChildProcessError:
+                return  # no child at all
+            # None has exited; or the first is spawn()'s, which waitid gives again until its Popen reaps it.
+            if info is None or info.si_pid in {p.pid for p in self.spawned if p.returncode is None}:
+                return
+            os.waitpid(info.si_pid, 0)
 
     def control(self, unit: Unit, key: str, env: dict[str, str], deadline: float) -> bool:
         """Run each of a unit's KEY commands to its end; False at the first that fails or outlasts the deadline."""
@@ -494,6 +597,11 @@ class Runner:
 
     def run(self) -> int:
         signal.signal(signal.SIGTERM, lambda *_: self.stop())
+        self.subreaper = subreaper()
+        if not self.subreaper and sys.platform == "linux":
+            self.say(
+                "not the subreaper of the unit's processes (prctl failed): their orphans go to init"
+            )
         starts: list[float] = []
         while True:
             unit = load(self.name)
@@ -531,6 +639,8 @@ class Runner:
         """One start: the unit's exit status, or None when it was stopped."""
         env = environment(unit)
         deadline = time.time() + unit.seconds("TimeoutStartSec", 90.0)
+        # Its own pid too, the one its client writes: a client killed between the spawn and that write would otherwise
+        # leave a runner that no stop finds. It writes no other runner but None, at its end.
         write_state(self.name, state="activating", runner=os.getpid(), main=None)
         self.say(f"Starting {self.name}")
         if not self.control(unit, "ExecStartPre", env, deadline):
@@ -540,21 +650,28 @@ class Runner:
         if len(lines) != 1:
             self.say(f"{self.name} has {len(lines)} ExecStart= lines, not one")
             return 1
-        notify = Notify() if unit.last("Type", "simple") == "notify" else None
+        kind = unit.last("Type", "simple")
+        notify = Notify() if kind == "notify" else None
         try:
             main_env = env | {"NOTIFY_SOCKET": notify.path} if notify else env
             self.main, _ = self.spawn(unit, lines[0], main_env)
             write_state(self.name, main=self.main.pid)
+            if delay := os.environ.get(LOOK_DELAY):
+                time.sleep(float(delay))
             ready = notify is None or self.ready(notify, deadline)
         finally:
             if notify is not None:
                 notify.close()
         # The control commands know the main process, as systemd's do ($MAINPID: wait-healthy --pid=${MAINPID}).
         env = env | {"MAINPID": str(self.main.pid)}
+        # A Type=simple or exec unit with no ExecStartPost has started once its main process has been executed, which
+        # spawn() returns after, as systemd's has: one that exits at once, gone before the runner first looks at it on a
+        # busy host, is a started unit's, whose exit Restart= and the start limit take, and not a failed start.
+        executed = kind in ("simple", "exec") and not unit.values.get("ExecStartPost")
         if (
             not ready
             or not self.control(unit, "ExecStartPost", env, deadline)
-            or self.main.poll() is not None
+            or (not executed and self.main.poll() is not None)
         ):
             self.say("start failed")
             self.terminate(unit)
@@ -563,6 +680,7 @@ class Runner:
         write_state(self.name, state="active", since=time.time())
         self.say(f"Started {self.name}")
         while self.main.poll() is None and not self.stopping.is_set():
+            self.reap()  # the orphans that exit while the unit runs, which would otherwise pile up as zombies
             self.stopping.wait(0.2)
         if self.stopping.is_set():
             write_state(self.name, state="deactivating")
@@ -588,7 +706,11 @@ class Runner:
                 write_state(self.name, state="failed", result="exit-code", runner=None, main=None)
             return None
         status = self.main.returncode
+        # Deactivating, as systemd's unit is while what is left of its cgroup is ended: not active, and a start waits
+        # for it. Written before the journal's line, as a stop's is: who reads the line finds the unit deactivating.
+        write_state(self.name, state="deactivating")
         self.say(f"Main process exited, status={status}")
+        self.terminate(unit)  # what is left of its group
         self.control(unit, "ExecStopPost", env, time.time() + 30)
         return 0 if status == 0 else 1
 
@@ -605,27 +727,39 @@ class Runner:
         return True
 
     def terminate(self, unit: Unit) -> None:
-        """KillSignal to the main process's group, then SIGKILL after TimeoutStopSec; returns once it is gone."""
-        if self.main is None or self.main.poll() is not None:
-            group_gone(self.main.pid if self.main else None, 0)
+        """KillSignal to the main process's group, what is left of it too once the main process has exited, then
+        SIGKILL after TimeoutStopSec; returns once the group is gone."""
+        if self.main is None:
             return
         signum = getattr(signal, unit.last("KillSignal", "SIGTERM"), signal.SIGTERM)
-        kill_group(self.main.pid, signum)
-        try:
-            self.main.wait(timeout=unit.seconds("TimeoutStopSec", 90.0))
-        except subprocess.TimeoutExpired:
-            self.say("stop timed out: killing")
-            kill_group(self.main.pid, signal.SIGKILL)
-            self.main.wait()
-        group_gone(self.main.pid, 5.0)
+        timeout = unit.seconds("TimeoutStopSec", 90.0)
+        exited = self.main.poll() is not None
+        self.reap()  # an orphan of the group that has exited is no longer what is left of it
+        if kill_group(self.main.pid, signum) and exited:
+            self.say(
+                f"Killing what is left of process group {self.main.pid} with signal {signum.name}."
+            )
+        if not exited:
+            try:
+                self.main.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                self.say("State 'stop-sigterm' timed out. Killing.")
+                kill_group(self.main.pid, signal.SIGKILL)
+                self.main.wait()
+            timeout = 5.0
+        group_gone(self.main.pid, timeout, self)
 
     def stop(self) -> None:
         self.stopping.set()
 
 
-def kill_group(pid: int, signum: int) -> None:
-    with contextlib.suppress(ProcessLookupError, PermissionError):
+def kill_group(pid: int, signum: int) -> bool:
+    """Whether the group had a process to signal."""
+    try:
         os.killpg(pid, signum)
+    except (ProcessLookupError, PermissionError):
+        return False
+    return True
 
 
 KILLED_GONE_S = 30.0
@@ -633,16 +767,19 @@ KILLED_GONE_S = 30.0
 (an engine core its GPU memory and /dev/shm region), and is gone once its parent has reaped it."""
 
 
-def group_gone(pgid: int | None, timeout: float) -> None:
+def group_gone(pgid: int | None, timeout: float, runner: Runner | None = None) -> None:
     """Wait for every process of the group ``pgid`` (the main process's own) to exit, SIGKILL what is left after
     ``timeout``, and wait for that to be gone too: a stop returns once the unit's processes have exited, as systemd's
-    once the unit's cgroup is empty, so that the next start does not meet the last one's engine still exiting."""
+    once the unit's cgroup is empty, so that the next start does not meet the last one's engine still exiting. The
+    unit's ``runner``, where it waits, reaps the members it adopted meanwhile, and its journal says when it kills."""
     if not pgid:
         return
 
     def wait(seconds: float) -> bool:
         deadline = time.time() + seconds
         while True:
+            if runner:
+                runner.reap()
             try:
                 os.killpg(pgid, 0)
             except ProcessLookupError:
@@ -654,6 +791,8 @@ def group_gone(pgid: int | None, timeout: float) -> None:
             time.sleep(0.05)
 
     if not wait(timeout):
+        if runner:
+            runner.say("State 'stop-sigterm' timed out. Killing.")
         kill_group(pgid, signal.SIGKILL)
         wait(KILLED_GONE_S)
 
@@ -724,13 +863,19 @@ def start(names: list[str]) -> int:
         if needs & failed:
             failed.add(name)
             continue
-        # The lock covers the decision and the runner's spawn, not the wait: a stop meanwhile takes the lock and
-        # ends the start, as systemd's cancels the start job, rather than waiting out its TimeoutStartSec.
+        # The lock covers the decision and the runner's spawn, not the start's wait: a stop meanwhile takes the lock
+        # and ends the start, as systemd's cancels the start job, rather than waiting out its TimeoutStartSec.
         with locked(name):
             if unit.passive:
                 write_state(name, state="active", since=time.time())
                 continue
-            state = current(name)
+            # While what is left of the unit's last run is ended (deactivating), the decision waits, as systemd's start
+            # job does: the start then joins the restart that follows, or starts the unit afresh. Locked, so that a
+            # stop meanwhile ends what the start began rather than see it undone; at most the runner's longest,
+            # TimeoutStopSec, the SIGKILL's KILLED_GONE_S and ExecStopPost's 30 s, and a margin.
+            settled = time.time() + unit.seconds("TimeoutStopSec", 90.0) + KILLED_GONE_S + 40
+            while (state := current(name)) == "deactivating" and time.time() < settled:
+                time.sleep(0.05)
             if state == "active":
                 continue
             # Started is having reached active since this request, as systemd's start of a unit that exits
@@ -741,7 +886,13 @@ def start(names: list[str]) -> int:
                 return values.get("state") == "active" or (values.get("since") or 0) >= asked
 
             runner = None
-            if state != "activating":
+            # A live runner's start, or its deactivation still past its time: joined, never a second runner.
+            if state not in ("activating", "deactivating"):
+                # The start's state before the runner runs, and after its spawn the runner's pid alone: a runner that
+                # wrote its main process, or active, before this client's next write (on a busy host) keeps them.
+                # Until the spawn the client stands for its runner, so that the unit reads activating meanwhile, not
+                # failed, as an activating unit whose runner is gone reads.
+                write_state(name, state="activating", runner=os.getpid(), main=None, result=None)
                 runner = subprocess.Popen(
                     [sys.executable, os.path.abspath(__file__), "run", name],
                     stdin=subprocess.DEVNULL,
@@ -749,7 +900,9 @@ def start(names: list[str]) -> int:
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
                 )
-                write_state(name, state="activating", runner=runner.pid, main=None, result=None)
+                if delay := os.environ.get(SPAWN_DELAY):
+                    time.sleep(float(delay))
+                write_state(name, runner=runner.pid)
         # The wait, unlocked.
         deadline = time.time() + unit.seconds("TimeoutStartSec", 90.0) + 10
         while time.time() < deadline:
