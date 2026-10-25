@@ -22,6 +22,9 @@ cache_salt_secret_file = "<home>/.config/leaseholder/cache-salt-secret"
 # mode 600, which deploy/cyan/install.sh writes once. Prometheus reads the same file (ops/prometheus); on the
 # voice plane's socket, private to this user, no key is asked for.
 metrics_key_file = "<home>/.config/leaseholder/metrics-key"
+# A cap on every realtime reply, in tokens, with or without an admission policy; none by default. Undegraded, E2's
+# voice agent's replies ran 20 tokens at the median and 39 at most.
+# realtime_max_tokens = 64
 
 # The host network. Other users of cyan can reach loopback, so requests here need a key.
 [[listen]]
@@ -67,9 +70,10 @@ default_class = "background"
 #
 # policy = "preempt-resubmit"
 #
-# Leaseholder's own policy (E2 arm 9). headroom_tokens is one voice turn at its longest, for each armed session:
-# arm 1 averaged 646 prompt and 23 completion tokens a turn.
-# policy = "leaseholder"
+# The lifecycle policy (policy = "lifecycle"; E2's arm files spell it "leaseholder"), which E2's arm 9 runs with
+# make-room. headroom_tokens is one voice turn at its longest, for each armed session: arm 1 averaged 646 prompt and
+# 23 completion tokens a turn.
+# policy = "lifecycle"
 # headroom_tokens = 1024
 # critical_prefill_budget_ms = 150
 # degrade_max_tokens = 16
@@ -79,22 +83,10 @@ default_class = "background"
 # max_defer_s = 10
 # state_timeout_s = 10
 # An ablation switches one mechanism off and drops its keys: headroom = false (and trigger), throttle = false
-# (and critical_prefill_budget_ms, max_num_batched_tokens), degrade = false (and degrade_max_tokens).
+# (and critical_prefill_budget_ms, max_num_batched_tokens), degrade = false (and degrade_max_tokens). With two off,
+# the keys only they read go too: pool_tokens and headroom_tokens without the headroom and degrade, max_defer_s and
+# queue_limit without the headroom and the throttle.
 #
-# Every policy's queues (leaseholder refuses no request for its wait, and takes no queue_timeout_s):
+# Every policy's queues (lifecycle refuses no request for its wait, and takes no queue_timeout_s):
 # queue_limit = 1024
 # queue_timeout_s = 60
-
-# Two GPU nodes instead of one upstream (crates/lh-gateway/README.md#placement): leave `upstream` out, name each node
-# with its tunnel's socket, and choose how sessions are placed. E2's two-node points set this in their arm files.
-# [nodes.phastform]
-# upstream = "unix:/run/user/1007/lh/phastform-engine.sock"
-# [nodes.gray]
-# upstream = "unix:/run/user/1007/lh/gray-engine.sock"
-#
-# [placement]
-# policy = "least-loaded"
-# idle_s = 300
-# probe_interval_s = 1
-# Placement leaseholder needs [admission] policy = "leaseholder". Placement dedicated needs each node's classes:
-# classes = ["realtime"] in one node's table and classes = ["interactive", "background"] in the other's.

@@ -21,6 +21,14 @@ ExecReload=%h/leaseholder/src/deploy/bin/lh-gateway-reload %n $MAINPID
 CPUAffinity=0-7
 # Stopping sends SIGTERM: the gateway stops accepting and drains in-flight requests, background ones for
 # background_drain_s (5 s) and the rest for up to drain_timeout_s (30 s), well inside systemd's 90 s stop timeout.
+# ExecStop sends it and waits for the gateway to exit, because after a reload systemd would not: the successor was its
+# predecessor's child when it said MAINPID=, and systemd 249 then never waits for that main process ("Supervising
+# process ... which is not our child" in the journal) and stops it with SIGKILL at once. ExecStop waits 45 s at most
+# (--wait: the drain's 30 s and a margin; raise it with drain_timeout_s), then sends SIGKILL and fails, so that a
+# gateway hung in its drain holds a stop up that long, not for twice the stop timeout (ExecStop's, then that of
+# systemd's own SIGTERM). On a single host deploy/bin/lh-svc runs the line as systemd does, %n included, and sends
+# the SIGTERM itself if it fails.
+ExecStop=%h/leaseholder/src/deploy/bin/lh-gateway-stop --wait 45 %n $MAINPID
 # lh-gateway.socket listens on meanwhile, so the connections made until the next gateway serves wait in its backlog
 # and none is refused. That is also why a crashed gateway starts again after a second, not five: systemd's start
 # limit (5 starts in 10 s) still ends a crash loop, and the socket unit then stops listening.

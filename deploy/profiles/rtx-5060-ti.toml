@@ -11,6 +11,8 @@ node = "Phastform"
 dir = "deploy/phastform"
 deploy_dir = "%h/leaseholder/src/deploy/phastform"
 compute_cap = "12.0"
+# The card as nvidia-smi shows it, which R2 checks the budgets against (deploy/profile.py).
+memory_mib = 16311
 
 [model]
 name = "Qwen/Qwen3-4B-Instruct-2507-FP8"
@@ -27,7 +29,14 @@ cpu_bytes_to_use = 21474836480
 extra = ""
 
 [stt]
+# The pool the 0.15 gave Whisper at the box's start of 2026-10-25, 4,020 tokens, fixed (deploy/templates/stt.yaml).
+kv_cache_memory = 458752000
 gpu_memory_utilization = "0.15"
+
+# R2's input beside the two budgets: the TTS's share of the card, Kokoro's footprint on the box, 1,104 MiB
+# (nvidia-smi --query-compute-apps, 2026-10-25) [measured].
+[budgets]
+tts_gib = 1.08
 
 [units]
 cuda_home = "/usr/local/cuda-13.0"
@@ -45,6 +54,8 @@ audio_numa = "0"
 
 # The comment lines that state the node's own facts.
 [text]
+# The engine's start order beside the audio servers' (lh-engine.service): none, the three at once.
+engine_order = ''
 engine_header = '''
 # Frozen-box LLM engine on Phastform: vLLM 0.32.0 on one RTX 5060 Ti 16 GB, beside the STT and TTS servers.'''
 stt_header = '''

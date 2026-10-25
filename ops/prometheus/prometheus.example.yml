@@ -19,8 +19,7 @@ scrape_configs:
     static_configs:
       - targets: ["127.0.0.1:18080"]
 
-  # The engine's own /metrics, relayed. With [nodes] in gateway.toml (two GPU nodes), one job per node instead, each
-  # with `params: {node: [phastform]}` and a `node` label of the same name.
+  # The engine's own /metrics, relayed.
   - job_name: lh-engine
     metrics_path: /metrics/engine
     authorization:

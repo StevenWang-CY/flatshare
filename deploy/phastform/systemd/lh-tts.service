@@ -18,10 +18,11 @@ Environment=WEB_PLAYER_PATH=%h/leaseholder/vendor/Kokoro-FastAPI/web
 # On a Unix socket in a directory only this user may enter, as the engine (lh-engine.service says why). uvicorn
 # replaces a stale socket file itself and makes the new one 0666 (uvicorn 0.34.0, server.py), so the directory's mode is
 # what keeps the host's other users out. Idle connections stay 60 s (uvicorn's default is 5 s), as the engine's: through
-# the tunnel each new connection is a new SSH session, about 12 ms.
+# the tunnel each new connection is a new SSH session, about 12 ms. In a network namespace of its own, as the
+# engine (lh-engine.service says why): CUDA's abstract sockets are the TTS's too.
 ExecStartPre=/usr/bin/install -d -m 0700 %t/lh
 ExecStartPre=%h/leaseholder/src/deploy/bin/gpu-guard
-ExecStart=%h/leaseholder/venvs/tts/bin/uvicorn api.src.main:app --uds %t/lh/tts.sock --timeout-keep-alive 60 --no-access-log
+ExecStart=%h/leaseholder/src/deploy/bin/in-private-net %h/leaseholder/venvs/tts/bin/uvicorn api.src.main:app --uds %t/lh/tts.sock --timeout-keep-alive 60 --no-access-log
 ExecStartPost=%h/leaseholder/src/deploy/bin/wait-healthy --unix-socket %t/lh/tts.sock --pid=${MAINPID} http://localhost/health 600
 # NUMA node 0 (cores 0-7) for the audio servers; node 1, local to the GPU, is the engine's.
 CPUAffinity=0-7

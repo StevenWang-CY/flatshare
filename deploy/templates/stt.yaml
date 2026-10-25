@@ -4,6 +4,11 @@ model: openai/whisper-large-v3-turbo
 # The measured weights, pinned as in engine.yaml.
 revision: 41f01f3fe87f28c78e2fbf8b568835947dd65ed9
 # No host or port: lh-stt.service serves it on its Unix socket (--uds).
+# The KV pool is fixed, on every card, at what the box's 0.15 gave Whisper: 1,400 blocks, 437.5 MiB, which vLLM
+# counts as 4,020 tokens (a 448-token request takes 28 blocks and its cross-attention 128). Fixed, it makes the STT
+# profile no memory at start, so it starts beside the engine (lh-engine.service says why that is safe). vLLM still
+# requires utilization x total memory to be free at start.
+kv-cache-memory: {{stt.kv_cache_memory}}
 gpu-memory-utilization: {{stt.gpu_memory_utilization}}
 max-num-seqs: 8
 disable-uvicorn-access-log: true

@@ -14,7 +14,18 @@ plane's namespace on cyan has no route in, and its listeners do not show. On a h
 user namespaces the voice plane runs in the host's namespace instead (LH_VOICENET=host, the single host's degraded
 path, which its preflight reports), and in-voicenet marks its processes LH_VOICENET=host: there its units' UDP sockets
 (the WebRTC candidates, on the host's interfaces), loopback TCP listeners and file sockets are accepted, and counted
-apart. deploy/phastform/smoke.sh runs it on a GPU node, and deploy/deploy.sh after each install.
+apart.
+
+The GPU node's servers run in network namespaces of their own (deploy/bin/in-private-net), which ss here does not
+list either: their listeners there, the engine cores' loopback ones and CUDA's abstract sockets, are read from the
+namespaces' own tables (/proc/PID/net) and accepted, since no other user reaches a namespace of ours, but their file
+sockets are reached through the file system from any namespace and are judged as here. Where the kernel refuses
+unprivileged user namespaces they run in the host's namespace (LH_PRIVATE_NET=host, which the host's drop-ins set
+and in-private-net honours): there their engine cores' loopback TCP listeners on ephemeral ports (torch's gloo groups)
+and CUDA's @cuda-uvmfd- sockets are accepted, and counted apart, and anything else of theirs is judged as everywhere.
+The host's namespace is this user's manager's (systemd --user), or the audit's own where none runs (lh-svc): run in
+another, the audit judges nothing and exits 2, and a process of ours whose namespace it cannot read fails it.
+deploy/phastform/smoke.sh runs it on a GPU node, and deploy/deploy.sh after each install.
 """
 
 from __future__ import annotations
@@ -34,11 +45,16 @@ SVC_UNIT = re.compile(rb"LH_SVC_UNIT=(lh-[A-Za-z0-9@._-]+\.service)")
 """deploy/bin/lh-svc's name for the unit a process runs in, in its environment."""
 VOICE = {"lh-livekit.service", "lh-voice-worker.service", "lh-voicenet.service"}
 """The voice plane's units, which in-voicenet runs in its namespace, or, with LH_VOICENET=host, in the host's."""
+PRIVATE = {"lh-engine.service", "lh-stt.service", "lh-tts.service"}
+"""The GPU node's server units, which in-private-net runs in a network namespace of their own, or, with
+LH_PRIVATE_NET=host, in the host's."""
 MANAGER = re.compile(r"/user@\d+\.service/init\.scope$")
 """The cgroup of the user manager itself."""
 ALLOWED = {"lh-gateway.service": {"127.0.0.1:18080"}}
 """The TCP and UDP listeners each unit may have: the gateway's, for AIPerf and the agents, with their keys."""
 LOOPBACK = re.compile(r"^(127\.\d+\.\d+\.\d+|\[::1\]|localhost)(%\w+)?:\d+$")
+CUDA_ABSTRACT = "@cuda-uvmfd-"
+"""CUDA's abstract sockets, which the GPU servers keep wherever they run."""
 
 
 def environ(pid: str) -> list[bytes]:
@@ -69,6 +85,109 @@ def in_host_namespace(unit: str, pids: list[str]) -> bool:
     """Whether ``unit`` is the voice plane's and in-voicenet ran each of its processes ``pids`` in the host's network
     namespace (LH_VOICENET=host)."""
     return unit in VOICE and bool(pids) and all(b"LH_VOICENET=host" in environ(pid) for pid in pids)
+
+
+def marked_private(unit: str, pids: list[str]) -> bool:
+    """Whether ``unit`` is a GPU server's and in-private-net ran each of its processes ``pids`` in the host's network
+    namespace (LH_PRIVATE_NET=host)."""
+    return (
+        unit in PRIVATE
+        and bool(pids)
+        and all(b"LH_PRIVATE_NET=host" in environ(pid) for pid in pids)
+    )
+
+
+class Unreadable(Exception):
+    """A process of ours whose network namespace the audit may not read."""
+
+
+def netns(pid: str) -> str | None:
+    """Process ``pid``'s network namespace (``net:[INODE]``), or None when it is gone. A process whose namespace
+    cannot be read raises Unreadable: the audit cannot say where it listens."""
+    try:
+        return os.readlink(PROC / pid / "ns" / "net")
+    except FileNotFoundError:
+        return None
+    except OSError as err:
+        raise Unreadable(f"{pid}: {err.strerror}") from err
+
+
+def ephemeral(address: str) -> bool:
+    """Whether ``address``'s port is in the kernel's ephemeral range (ip_local_port_range), where torch's gloo groups
+    bind theirs."""
+    try:
+        low, high = map(int, (PROC / "sys/net/ipv4/ip_local_port_range").read_text().split())
+    except (OSError, ValueError):
+        low, high = 32768, 60999  # Linux's default
+    return low <= int(address.rsplit(":", 1)[1]) <= high
+
+
+def owned(pid: str) -> bool:
+    """Whether process ``pid`` is this user's (another user's are not ours to judge, nor to read)."""
+    try:
+        return (PROC / pid).stat().st_uid == os.getuid()
+    except OSError:
+        return False
+
+
+def host_netns() -> str | None:
+    """The host's network namespace: this user's manager's (systemd --user), where one runs, else the audit's own
+    (lh-svc's hosts)."""
+    for entry in PROC.iterdir():
+        pid = entry.name
+        if pid.isdigit() and is_manager(pid) and owned(pid) and (space := netns(pid)):
+            return space
+    return netns("self")
+
+
+def socket_inodes(pid: str) -> set[str]:
+    """The inodes of the sockets process ``pid`` holds."""
+    try:
+        fds = list((PROC / pid / "fd").iterdir())
+    except OSError:
+        return set()
+    inodes = set()
+    for fd in fds:
+        try:
+            target = os.readlink(fd)
+        except OSError:
+            continue
+        if target.startswith("socket:["):
+            inodes.add(target[len("socket:[") : -1])
+    return inodes
+
+
+def namespace_listeners(pid: str) -> list[tuple[str, str, str]]:
+    """The listeners of process ``pid``'s network namespace, from its own tables (/proc/PID/net): each one's kind
+    (inet for TCP and UDP, unix), its address for a Unix socket (a path, or @NAME for an abstract one) and its inode."""
+    found = []
+    for table, listening in (("tcp", "0A"), ("tcp6", "0A"), ("udp", "07"), ("udp6", "07")):
+        try:
+            rows = (PROC / pid / "net" / table).read_text().splitlines()[1:]
+        except OSError:
+            continue
+        for row in rows:
+            fields = row.split()  # sl local_address rem_address st ... uid timeout inode
+            if len(fields) > 9 and fields[3] == listening:
+                found.append(("inet", fields[1], fields[9]))
+    try:
+        rows = (PROC / pid / "net" / "unix").read_text().splitlines()[1:]
+    except OSError:
+        rows = []
+    for row in rows:
+        fields = row.split()  # Num RefCount Protocol Flags Type St Inode Path
+        if len(fields) >= 8 and int(fields[3], 16) & 0x10000:  # __SO_ACCEPTCON: it listens
+            found.append(("unix", fields[7], fields[6]))
+    return found
+
+
+def our_processes() -> dict[str, str]:
+    """Every process of this user's in an lh-*.service unit, with its unit."""
+    found = {}
+    for entry in PROC.iterdir():
+        if entry.name.isdigit() and owned(entry.name) and (unit := unit_of(entry.name)):
+            found[entry.name] = unit
+    return found
 
 
 def is_manager(pid: str) -> bool:
@@ -118,6 +237,19 @@ def main(argv: list[str]) -> int:
     )
     expected = parser.parse_args(argv).expect
     runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    # ss lists the audit's own namespace: anywhere but the host's it would judge another namespace's listeners.
+    try:
+        host, here = host_netns(), netns("self")
+    except Unreadable as err:
+        print(f"audit-listeners: cannot read the network namespaces: {err}", file=sys.stderr)
+        return 2
+    if not host or host != here:
+        print(
+            f"audit-listeners: run it in the host's network namespace ({host}, the user manager's): this one is "
+            f"{here}",
+            file=sys.stderr,
+        )
+        return 2
     problems = []
     lh = Path(runtime, "lh")
     if lh.exists():
@@ -129,6 +261,7 @@ def main(argv: list[str]) -> int:
 
     ours = {"tcp": 0, "unix": 0}
     voice = {"udp": 0, "tcp": 0, "unix": 0}
+    degraded = {"tcp": 0, "abstract": 0}
     held: dict[str, set[str]] = {}
     for kind, address, pids in listeners("-lntup"):
         by_unit = units_of(pids)
@@ -143,6 +276,14 @@ def main(argv: list[str]) -> int:
                 kind == "udp" or LOOPBACK.match(address)
             ):
                 voice["udp" if kind == "udp" else "tcp"] += 1
+                continue
+            if (
+                marked_private(unit, by_unit.get(unit, []))
+                and kind == "tcp"
+                and LOOPBACK.match(address)
+                and ephemeral(address)
+            ):
+                degraded["tcp"] += 1
                 continue
             ours["tcp"] += 1
             sglang = unit == "lh-engine.service" and any(map(is_sglang, pids))
@@ -165,10 +306,44 @@ def main(argv: list[str]) -> int:
                 # would be any user's here.
                 voice["unix"] += 1
                 continue
+            if marked_private(unit, its) and path.startswith(CUDA_ABSTRACT):
+                degraded["abstract"] += 1
+                continue
             ours["unix"] += 1
             if not path.startswith(f"{runtime}/"):
                 where = "an abstract socket" if path.startswith("@") else "a socket"
                 problems.append(f"{unit} listens on {where} outside {runtime}: {path}")
+    # Our units' processes in a network namespace other than the host's (the voice plane's aside, as above).
+    spaces: dict[str, list[tuple[str, str]]] = {}
+    unreadable = []
+    for pid, unit in our_processes().items():
+        try:
+            space = netns(pid)
+        except Unreadable as err:
+            unreadable.append(f"{unit} ({err})")
+            continue
+        if space and space != host and unit not in VOICE:
+            spaces.setdefault(space, []).append((pid, unit))
+    if unreadable:
+        problems.append(f"cannot read the network namespace of {', '.join(unreadable)}")
+    isolated = {"inet": 0, "abstract": 0}
+    for _space, members in sorted(spaces.items()):
+        holders: dict[str, set[str]] = {}
+        for pid, unit in members:
+            for inode in socket_inodes(pid):
+                holders.setdefault(inode, set()).add(unit)
+        for kind, address, inode in namespace_listeners(members[0][0]):
+            units = holders.get(inode)
+            if not units:
+                continue  # none of ours holds it
+            if kind == "inet" or address.startswith("@"):
+                isolated["abstract" if kind == "unix" else "inet"] += 1
+                continue
+            unix_paths.add(address)
+            for unit in sorted(units):
+                ours["unix"] += 1
+                if not address.startswith(f"{runtime}/"):
+                    problems.append(f"{unit} listens on a socket outside {runtime}: {address}")
     for path in expected:
         if path not in unix_paths:
             problems.append(f"nothing listens on {path}")
@@ -184,9 +359,23 @@ def main(argv: list[str]) -> int:
             f"{sum(voice.values())} listeners: {voice['udp']} UDP sockets, {voice['tcp']} loopback TCP listeners "
             f"and {voice['unix']} file socket{'s' if voice['unix'] != 1 else ''}"
         )
+    own = ""
+    if spaces:
+        units = sorted(
+            {unit.removesuffix(".service") for members in spaces.values() for _, unit in members}
+        )
+        own = (
+            f"; {', '.join(units)} in network namespaces of their own, with {isolated['inet']} TCP or UDP "
+            f"listeners and {isolated['abstract']} abstract sockets there"
+        )
+    if any(degraded.values()):
+        own = (
+            "; the GPU servers run in the host's network namespace (LH_PRIVATE_NET=host) with "
+            f"{degraded['tcp']} loopback TCP listeners and {degraded['abstract']} abstract sockets"
+        )
     print(
         f"audit-listeners: ok: the box's units hold {ours['unix']} Unix sockets, all in {runtime}, "
-        f"and {ours['tcp']} TCP or UDP listeners, all allowed{plane}"
+        f"and {ours['tcp']} TCP or UDP listeners, all allowed{own}{plane}"
     )
     return 0
 

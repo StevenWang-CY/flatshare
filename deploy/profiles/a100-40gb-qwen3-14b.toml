@@ -18,13 +18,19 @@ max_model_len = 32768
 [engine]
 # lh-sim's sizing of the 14B's own pool on this card (benchmarks/a100/forecast.md) [modeled]: what the box keeps
 # beside its pool, with the 14B's 16.3 GB of weights in place of the 4B's 4.4 GB, left to the 14B's 160 KiB of BF16 KV
-# a token in whole blocks, 7,334 blocks of 16 (117,344 tokens). cprime.sh's first start checks that it fits.
+# a token in whole blocks, 7,334 blocks of 16 (117,344 tokens). cprime.sh's first start checks that it fits. The
+# engine outgrows its budget then, which R2's sum of the budgets does not see (docs/HARDWARE.md, R2).
 kv_cache_memory = 19225640960
 extra = '''
 # Qwen3-14B thinks before it answers by default; here, as Qwen3-4B-Instruct-2507 does, it answers at once.
 default-chat-template-kwargs: {"enable_thinking": false}'''
 
 [text]
+engine_order = '''
+# On this node the engine starts after the audio servers instead: its pool and weights outgrow its budget, which R2's
+# sum does not cover, so each audio server checks free memory before the engine's large allocation, and the engine's
+# own check sees them resident, as in every measured start of the box before the three started at once.
+After=lh-stt.service lh-tts.service'''
 pool = '''
 # The KV pool is Qwen3-14B-FP8's own on this card, 7,334 blocks (117,344 tokens), by lh-sim's sizing. vLLM still
 # requires utilization x total memory to be free at start: {{derived.engine_budget}} of the card's

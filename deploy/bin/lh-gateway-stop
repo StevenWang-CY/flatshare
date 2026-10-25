@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""lh-gateway-stop [--wait SECONDS] UNIT [PID]: the gateway unit's ExecStop. Sends SIGTERM to UNIT's main process,
+PID, and returns once it has exited, after its drain (crates/lh-gateway, Lifecycle); systemd waits for this command up
+to the unit's TimeoutStopSec, then stops what is left of the unit as it would without it.
+
+systemd does not wait for that drain itself once the gateway has been reloaded: the successor that takes the sockets
+over is its predecessor's child when it tells systemd that it is the main process (MAINPID=), and systemd 249 marks
+such a main process as one it cannot watch for as long as it runs (neither the predecessor's exit, after which the
+manager adopts the successor, nor a second MAINPID= of the same process clears the mark), and at a stop sends it
+SIGKILL at once instead of waiting. Waiting here holds whatever systemd makes of the main process.
+
+The wait has a bound: a process still running SECONDS after the SIGTERM (45 by default; the gateway's drain ends by
+its drain_timeout_s, 30 s, so only a hung gateway runs on) gets SIGKILL, and the command fails once it has exited.
+Without the bound, a hung gateway would hold every stop for twice TimeoutStopSec (90 s by default): this command's,
+then that of the SIGTERM that systemd sends to what is left of the unit.
+
+The process is held by a pidfd from the start and signaled through it only once it is known to run in UNIT (its
+cgroup, or the LH_SVC_UNIT that deploy/bin/lh-svc puts in its environment): neither the signal nor the wait can reach
+a process that reused the number. Without a PID (no main process), or with one that is gone or not UNIT's, there is
+nothing to stop.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import errno
+import math
+import os
+import select
+import signal
+import sys
+from pathlib import Path
+
+PROC = Path("/proc")
+WAIT_S = 45.0
+"""How long the gateway has to exit after SIGTERM: its drain's limit, drain_timeout_s (30 s), and a margin."""
+USAGE = "usage: lh-gateway-stop [--wait SECONDS] UNIT [PID]"
+
+
+def runs_in(pid: int, unit: str) -> bool:
+    """Whether process ``pid`` runs in ``unit``: in its cgroup, or under lh-svc with LH_SVC_UNIT=``unit``."""
+    try:
+        cgroup = (PROC / str(pid) / "cgroup").read_text()
+        environ = (PROC / str(pid) / "environ").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    in_cgroup = any(line.endswith(f"/{unit}") for line in cgroup.splitlines())
+    return in_cgroup or f"LH_SVC_UNIT={unit}".encode() in environ
+
+
+def seconds(text: str) -> float | None:
+    """``text`` as a positive, finite number of seconds; None if it is not one."""
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return value if 0 < value < math.inf else None
+
+
+def main(argv: list[str]) -> int:
+    wait_s: float | None = WAIT_S
+    if argv[:1] == ["--wait"]:
+        wait_s = seconds(argv[1]) if len(argv) > 1 else None
+        argv = argv[2:]
+    if wait_s is None or len(argv) not in (1, 2) or (len(argv) == 2 and not argv[1].isdigit()):
+        print(USAGE, file=sys.stderr)
+        return 2
+    if len(argv) == 1:
+        return 0  # $MAINPID is empty: the unit has no main process
+    unit, pid = argv[0], int(argv[1])
+    try:
+        pidfd = os.pidfd_open(pid)
+    except OSError as exc:
+        # ESRCH: gone. EINVAL: gone too, its number not free yet, or a thread's: no main process either way.
+        if exc.errno in (errno.ESRCH, errno.EINVAL):
+            return 0
+        raise
+    try:
+        if not runs_in(pid, unit):
+            print(
+                f"lh-gateway-stop: process {pid} is not {unit}'s: nothing to stop", file=sys.stderr
+            )
+            return 0
+        try:
+            signal.pidfd_send_signal(pidfd, signal.SIGTERM)
+        except ProcessLookupError:
+            return 0
+        if select.select([pidfd], [], [], wait_s)[0]:  # readable once the process has exited
+            return 0
+        print(
+            f"lh-gateway-stop: process {pid} of {unit} did not exit within {wait_s:g} s of SIGTERM: "
+            "sending SIGKILL",
+            file=sys.stderr,
+        )
+        with contextlib.suppress(ProcessLookupError):
+            signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+        select.select([pidfd], [], [])
+        return 1
+    finally:
+        os.close(pidfd)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

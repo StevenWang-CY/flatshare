@@ -18,16 +18,20 @@ and TimeoutStopSec; Restart (no, on-failure, always), RestartSec, StartLimitInte
 Wants, Requires, BindsTo, PartOf and After among the units, a target's Wants included; a unit that Wants= names and
 that does not exist is left out, as systemd leaves it (a tunnel a single host has none of), where one Requires=
 or BindsTo= names fails the start. A socket unit starts and stops as a target does, holding no listener: the
-service it would pass its sockets to binds its own (the gateway does without LISTEN_FDS). The specifiers %h,
-%t, %u, %U and %% and systemd's $NAME (a word of its own, split at whitespace) and ${NAME} (in place) expansions
-apply to the command lines.
+service it would pass its sockets to binds its own (the gateway does without LISTEN_FDS). The specifiers %n and %N
+(the unit's name, and that name without its suffix), %h, %t, %u, %U and %% and systemd's $NAME (a word of its own,
+split at whitespace) and ${NAME} (in place) expansions apply to the command lines. A start refuses a unit with
+any other specifier in a command line (ExecReload's too, although lh-svc runs no reload) before anything of the start
+runs, as systemd will not start a unit whose lines it cannot expand: a line that only a stop runs would otherwise
+fail at the stop, with the unit's processes running.
 
 Each started unit has a runner (`lh-svc run UNIT`, in a session of its own) that runs its commands, with
 LH_SVC_UNIT=UNIT in their environment where systemd would put them in the unit's cgroup, relays their output into
 the unit's journal with UTC times, restarts it as Restart says and stops it on SIGTERM. `start` returns
 once a unit's ExecStartPost commands have succeeded, as systemd's does, and fails as systemd's does when it cannot;
-`stop` returns only once every process it stops has exited: the unit's own (KillSignal, then SIGKILL after
-TimeoutStopSec), those of the units bound to it or part of it, and a target's units with the target. The state is in
+`stop` returns only once every process it stops has exited: the unit's own (ExecStop, then KillSignal, then SIGKILL
+after TimeoutStopSec, the signals and ExecStopPost also when ExecStop fails or cannot run, the unit then ending
+failed), those of the units bound to it or part of it, and a target's units with the target. The state is in
 $XDG_STATE_HOME/lh-svc (default ~/.local/state/lh-svc): UNIT.json and the journals, log/UNIT.log.
 
 Standard library only, for a bare host, and the host's own python3, 3.10 (Ubuntu 22.04's) or newer: the shims run
@@ -60,6 +64,7 @@ LISTS = {
     "ExecStartPre",
     "ExecStart",
     "ExecStartPost",
+    "ExecReload",
     "ExecStop",
     "ExecStopPost",
     "Environment",
@@ -72,6 +77,8 @@ LISTS = {
     "Before",
 }
 """Directives that accumulate over the unit file and its drop-ins; an empty assignment clears them."""
+EXEC = ("ExecStartPre", "ExecStart", "ExecStartPost", "ExecReload", "ExecStop", "ExecStopPost")
+"""A unit's command lines, which a start checks for specifiers."""
 SECONDS = re.compile(r"(\d+(?:\.\d+)?)\s*(ms|s|sec|min|m|h)?$")
 NAME = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
 ACTIVE = ("active", "activating", "deactivating", "reloading")
@@ -175,8 +182,11 @@ def load(name: str) -> Unit:
     return unit
 
 
-def specifiers(text: str) -> str:
+def specifiers(text: str, name: str) -> str:
+    """``text``, unit ``name``'s, with its specifiers expanded as systemd expands them; any other one raises."""
     replace = {
+        "n": name,  # lh-gateway.service
+        "N": name.rpartition(".")[0],  # lh-gateway
         "h": str(home()),
         "t": str(runtime_dir()),
         "u": pwd.getpwuid(os.getuid()).pw_name,
@@ -190,6 +200,16 @@ def specifiers(text: str) -> str:
         return replace[match[1]]
 
     return re.sub(r"%(.)", one, text)
+
+
+def check_specifiers(unit: Unit) -> None:
+    """Raises if one of ``unit``'s command lines holds a specifier that lh-svc does not expand."""
+    for key in EXEC:
+        for line in unit.values.get(key, []):
+            try:
+                specifiers(line, unit.name)
+            except ServiceError as exc:
+                raise ServiceError(f"{unit.name}: {key}={line}: {exc}") from None
 
 
 def environment(unit: Unit) -> dict[str, str]:
@@ -208,7 +228,7 @@ def environment(unit: Unit) -> dict[str, str]:
     }
     for value in unit.values.get("EnvironmentFile", []):
         optional = value.startswith("-")
-        path = Path(specifiers(value.removeprefix("-")))
+        path = Path(specifiers(value.removeprefix("-"), unit.name))
         if not path.exists():
             if optional:
                 continue
@@ -224,21 +244,21 @@ def environment(unit: Unit) -> dict[str, str]:
                     item = item[1:-1]
                 env[key.strip()] = item
     for value in unit.values.get("Environment", []):
-        for assignment in shlex.split(specifiers(value)):
+        for assignment in shlex.split(specifiers(value, unit.name)):
             key, sep, item = assignment.partition("=")
             if sep:
                 env[key] = item
     return env
 
 
-def command(line: str, env: dict[str, str]) -> tuple[list[str], bool]:
-    """An Exec line as argv, and whether its failure is ignored (a leading `-`)."""
+def command(line: str, env: dict[str, str], name: str) -> tuple[list[str], bool]:
+    """An Exec line of unit ``name``'s as argv, and whether its failure is ignored (a leading `-`)."""
     ignore = False
     while line and line[0] in "-@+!:":
         ignore = ignore or line[0] == "-"
         line = line[1:]
     argv: list[str] = []
-    for word in shlex.split(specifiers(line)):
+    for word in shlex.split(specifiers(line, name)):
         whole = NAME.fullmatch(word)
         if whole and whole[2]:  # $NAME, a word of its own: its value split at whitespace
             argv += env.get(whole[2], "").split()
@@ -413,13 +433,15 @@ class Runner:
         self.journal = Journal(self.name)
         self.stopping = threading.Event()
         self.main: subprocess.Popen | None = None
+        self.stop_failed = False
+        """Whether the last stop's ExecStop failed: the unit then ends failed, not inactive."""
 
     def say(self, message: str) -> None:
         self.journal.write(os.getpid(), f"lh-svc: {message}")
 
     def spawn(self, unit: Unit, line: str, env: dict[str, str]) -> tuple[subprocess.Popen, bool]:
         """Start one of the unit's commands in a process group of its own, its output into the journal."""
-        argv, ignore = command(line, env)
+        argv, ignore = command(line, env, unit.name)
         if affinity := unit.last("CPUAffinity"):
             if shutil.which("taskset"):
                 argv = ["taskset", "-c", ",".join(map(str, sorted(cpus(affinity)))), *argv]
@@ -433,7 +455,7 @@ class Runner:
                 self.say(
                     f"NUMAPolicy=preferred NUMAMask={mask} not applied: the host has no numactl"
                 )
-        workdir = specifiers(unit.last("WorkingDirectory"))
+        workdir = specifiers(unit.last("WorkingDirectory"), unit.name)
         if workdir.startswith("-"):
             workdir = workdir[1:] if Path(workdir[1:]).is_dir() else ""
         try:
@@ -485,7 +507,8 @@ class Runner:
                 return 1
             outcome = self.once(unit)
             if self.stopping.is_set() or outcome is None:
-                write_state(self.name, state="inactive", runner=None, main=None)
+                if not self.stop_failed:  # once() recorded a failed stop itself
+                    write_state(self.name, state="inactive", runner=None, main=None)
                 return 0
             restart = unit.last("Restart", "no")
             if restart == "always" or (restart == "on-failure" and outcome != 0):
@@ -544,11 +567,25 @@ class Runner:
         if self.stopping.is_set():
             write_state(self.name, state="deactivating")
             self.say(f"Stopping {self.name}")
-            self.control(unit, "ExecStop", env, time.time() + unit.seconds("TimeoutStopSec", 90.0))
-            self.terminate(unit)
-            self.control(unit, "ExecStopPost", env, time.time() + 30)
+            stopped = False
+            try:
+                stopped = self.control(
+                    unit, "ExecStop", env, time.time() + unit.seconds("TimeoutStopSec", 90.0)
+                )
+            finally:
+                # Whatever became of ExecStop (it failed, or could not run), the main process gets its
+                # KillSignal and TimeoutStopSec and ExecStopPost runs, as under systemd, rather than the
+                # client's SIGKILL 5 s on.
+                self.stop_failed = not stopped
+                self.terminate(unit)
+                self.control(unit, "ExecStopPost", env, time.time() + 30)
             self.say(f"Stopped {self.name}")
-            write_state(self.name, state="inactive", runner=None, main=None)
+            # A failed ExecStop (lh-gateway-stop killing a gateway still running at the end of its wait) leaves
+            # the unit failed, as systemd's does, so that is-failed shows a stop that did not drain.
+            if stopped:
+                write_state(self.name, state="inactive", runner=None, main=None)
+            else:
+                write_state(self.name, state="failed", result="exit-code", runner=None, main=None)
             return None
         status = self.main.returncode
         self.say(f"Main process exited, status={status}")
@@ -675,6 +712,10 @@ def ordered(names: list[str], tolerant: bool = False) -> list[str]:
 def start(names: list[str]) -> int:
     requested = [unit_name(n) for n in names]
     pulled = closure(requested, ("Wants", "Requires", "BindsTo"))
+    # Before any unit runs: a unit whose lines lh-svc cannot expand fails the start, as systemd refuses it.
+    for name in pulled:
+        if not passive(name):
+            check_specifiers(load(name))
     failed: set[str] = set()
     status = 0
     for name in ordered(pulled):
@@ -790,7 +831,7 @@ def show(names: list[str], properties: list[str], value_only: bool) -> int:
                 text = " ".join(
                     shlex.quote(assignment)
                     for value in unit.values.get("Environment", [])
-                    for assignment in shlex.split(specifiers(value))
+                    for assignment in shlex.split(specifiers(value, unit.name))
                 )
             elif prop == "ActiveState":
                 text = current(unit.name)

@@ -11,6 +11,9 @@ EnvironmentFile=%h/.config/leaseholder/tunnel-%i.env
 ExecStart=/usr/bin/python3 %h/leaseholder/src/deploy/bin/lh-tunnel %i
 Restart=always
 RestartSec=5
+# Its SSH sessions carry every byte to and from the node: on the control plane's cores 0-7, as the gateway (the voice
+# plane has 32-47).
+CPUAffinity=0-7
 
 [Install]
 WantedBy=default.target

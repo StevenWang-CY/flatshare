@@ -21,7 +21,8 @@ Environment=VLLM_RPC_BASE_PATH=%t/lh
 ExecStartPre=/usr/bin/install -d -m 0700 %t/lh
 ExecStartPre=/usr/bin/rm -f ${LH_STT_SOCKET}
 ExecStartPre=%h/leaseholder/src/deploy/bin/gpu-guard
-ExecStart=%h/leaseholder/venvs/engine/bin/vllm serve --config %h/leaseholder/src/deploy/phastform/stt.yaml --uds ${LH_STT_SOCKET}
+# In a network namespace of its own, as the engine (lh-engine.service says why).
+ExecStart=%h/leaseholder/src/deploy/bin/in-private-net %h/leaseholder/venvs/engine/bin/vllm serve --config %h/leaseholder/src/deploy/phastform/stt.yaml --uds ${LH_STT_SOCKET}
 ExecStartPost=%h/leaseholder/src/deploy/bin/wait-healthy --unix-socket ${LH_STT_SOCKET} --pid=${MAINPID} http://localhost/health 900
 # NUMA node 0 (cores 0-7) for the audio servers; node 1, local to the GPU, is the engine's.
 CPUAffinity=0-7

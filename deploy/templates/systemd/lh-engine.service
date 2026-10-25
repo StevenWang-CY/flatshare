@@ -2,8 +2,15 @@
 Description=Leaseholder LLM engine: vLLM 0.32, {{model.title}} on %t/lh/engine.sock
 Documentation=https://github.com/StevenWang-CY/leaseholder/blob/main/ops/RUNBOOK.md
 PartOf=leaseholder.target
-# Start after the audio servers so vLLM's free-memory check sees them resident.
-After=lh-stt.service lh-tts.service
+# No After= on the audio servers: leaseholder.target starts the three at once. Neither vLLM server sizes its pool from
+# the memory free at its start, both KV pools being fixed (kv-cache-memory), so their order matters only to each one's
+# free-memory check at start, and that passes in any order wherever starting the audio servers first passed: the
+# engine's worst case, the audio servers resident, is that order's, and the STT's, the engine resident, holds while the
+# two budgets and the TTS's share fit the card together, the engine within its budget, which deploy/profile.py checks
+# (R2). A server starting still peaks above its steady state (vLLM's profiling pass and graph capture): a check that
+# meets that peak has the margin the budgets leave (on the box 1.1 GiB at the engine's, 1.9 GiB at the STT's), and
+# Restart=on-failure starts a server that lost again.
+{{text.engine_order}}
 StartLimitIntervalSec=1800
 StartLimitBurst=3
 
@@ -38,10 +45,13 @@ Environment=VLLM_RPC_BASE_PATH=%t/lh
 ExecStartPre=/usr/bin/install -d -m 0700 %t/lh
 ExecStartPre=/usr/bin/rm -f ${LH_ENGINE_SOCKET}
 ExecStartPre=%h/leaseholder/src/deploy/bin/gpu-guard
+# The engine runs in a network namespace of its own (deploy/bin/in-private-net), where no other user of the host
+# reaches the listeners its engine core keeps on the loopback (torch's gloo groups) or CUDA's abstract sockets; its
+# socket is a file, which every namespace reaches. A variant that replaces ExecStart keeps the wrapper.
 # Variants add engine flags in LH_ENGINE_FLAGS (deploy/phastform/variant.sh use NAME FLAG...); flags on the command
 # line beat engine.yaml.
 Environment=LH_ENGINE_FLAGS=
-ExecStart=%h/leaseholder/venvs/engine/bin/vllm serve --config {{profile.deploy_dir}}/engine.yaml --uds ${LH_ENGINE_SOCKET} $LH_ENGINE_FLAGS
+ExecStart=%h/leaseholder/src/deploy/bin/in-private-net %h/leaseholder/venvs/engine/bin/vllm serve --config {{profile.deploy_dir}}/engine.yaml --uds ${LH_ENGINE_SOCKET} $LH_ENGINE_FLAGS
 ExecStartPost=%h/leaseholder/src/deploy/bin/wait-healthy --unix-socket ${LH_ENGINE_SOCKET} --pid=${MAINPID} http://localhost/health 1200
 {{text.engine_numa}}
 CPUAffinity={{units.engine_cpus}}

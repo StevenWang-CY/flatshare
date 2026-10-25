@@ -25,7 +25,14 @@ venv's Python on a GPU host.
 The rules (docs/HARDWARE.md):
 - R2, memory budgets: vLLM refuses a start whose free memory is below gpu_memory_utilization x total, with
   kv-cache-memory set too, so the box's budgets in GiB carry over: utilization = budget / the card's memory, rounded
-  up to 0.01.
+  up to 0.01. Both vLLM servers fix their KV pools, so neither sizes its pool from the memory free at its start and
+  the three servers start at once: each one's check passes in any order wherever starting the audio servers first
+  passed, since the engine's worst case, the audio servers resident, is that order's, and the STT's, the engine
+  resident, holds while the two budgets and the TTS's share (budgets.tts_gib) fit the card together, the engine
+  within its budget; a server's start-up peak (profiling pass, graph capture) meets the margin they leave. A profile
+  where they take more than 0.95 of it, the ceiling of one budget alone, is refused: vLLM's total is the card's memory
+  less the driver's reserve. A node whose engine outgrows its budget (C''s 14B) starts it after the audio servers
+  instead (text.engine_order).
 - R3, the CPU tier: the box's ratio to the pool (20 GiB over 5 GiB), bounded by /dev/shm (less 2 GiB) and by the RAM
   available less what a single host keeps for its other processes, in whole GiB; below the pool's own size it is
   refused, since a tier no larger than the pool only mirrors it.
@@ -427,14 +434,47 @@ def detect(peer: str | None = None) -> dict:
 # The rules.
 
 
+CARD_SHARE = 0.95
+"""R2's ceiling: the share of a card's memory, as nvidia-smi shows it, that one budget, or the two vLLM servers'
+budgets and the TTS's share together, may take. vLLM's total is the card's memory less the driver's reserve: on the
+box 15,852 of nvidia-smi's 16,311 MiB."""
+
+
 def utilization(budget_gib: float, memory_mib: int) -> str:
     """R2: `budget_gib` of a card of `memory_mib`, rounded up to 0.01."""
     u = math.ceil(budget_gib / (memory_mib / 1024) * 100 - 1e-9) / 100
-    if u > 0.95:
+    if u > CARD_SHARE:
         raise ProfileError(
             f"{budget_gib} GiB is {u:.2f} of a {memory_mib} MiB card: too small a card"
         )
     return f"{u:.2f}"
+
+
+def card_share(profile: dict, values: dict[str, str], memory_mib: int | str | None) -> str:
+    """R2: the share of a card of `memory_mib` that the engine's and the STT's budgets (their resolved
+    gpu_memory_utilization) and the TTS's share take together. The three servers start at once, so the last to
+    check its free memory may find the other two resident: above CARD_SHARE, the profile is refused."""
+    name = values["profile.name"]
+    tts_gib = profile.get("budgets", {}).get("tts_gib")
+    missing = [
+        key
+        for key, value in (("budgets.tts_gib", tts_gib), ("profile.memory_mib", memory_mib))
+        if value is None
+    ]
+    if missing:
+        raise ProfileError(
+            f"{name} names no {' and no '.join(missing)}: R2 checks the budgets and the TTS's share against the card"
+        )
+    engine = float(values["engine.gpu_memory_utilization"])
+    stt = float(values["stt.gpu_memory_utilization"])
+    share = engine + stt + float(tts_gib) / (int(memory_mib) / 1024)
+    if share > CARD_SHARE + 1e-9:
+        raise ProfileError(
+            f"refused: the engine's {engine:.2f} and the STT's {stt:.2f} of the card and the TTS's {tts_gib:g} GiB are "
+            f"{share:.2f} of the {memory_mib} MiB card, above {CARD_SHARE}: the servers start at once, so the last to "
+            "start may find the others resident and too little free for vLLM's check"
+        )
+    return f"{share:.2f}"
 
 
 def install_path(host: dict) -> tuple[str, str]:
@@ -616,6 +656,7 @@ def resolve(profile: dict, host: dict | None) -> tuple[dict[str, str], dict | No
     values = flatten(profile)
     autos = sorted(k for k, v in values.items() if v == "auto")
     if not autos:
+        values["derived.card_share"] = card_share(profile, values, values.get("profile.memory_mib"))
         return values, None, []
     name = values["profile.name"]
     if host is None:
@@ -650,6 +691,7 @@ def resolve(profile: dict, host: dict | None) -> tuple[dict[str, str], dict | No
         )
     if values.get("stt.gpu_memory_utilization") == "auto":
         values["stt.gpu_memory_utilization"] = utilization(budgets["stt_gib"], gpu["memory_mib"])
+    derived["card_share"] = card_share(profile, values, gpu["memory_mib"])
     derived["total_gib"] = f"{gpu['memory_mib'] / 1024:.1f}"
     derived["engine_budget"] = f"{budgets.get('engine_gib', 0):.2f} GiB"
     pool = int(values["engine.kv_cache_memory"])

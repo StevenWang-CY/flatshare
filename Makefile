@@ -10,7 +10,7 @@ PY_PACKAGES := $(filter-out python/leaseholder_vllm,$(patsubst %/pyproject.toml,
 # single host's supervisor and forwarder among them, which have no suffix) and the engine variants (not the recorded
 # runs' own scripts under benchmarks/results).
 PY_SOURCES := python crates/lh-sim/scripts $(wildcard benchmarks/e2/*.py benchmarks/a100/*.py deploy/*.py deploy/bin/*.py \
-  deploy/a100/*.py deploy/phastform/variants/*/*.py) deploy/bin/lh-forward deploy/bin/lh-svc
+  deploy/a100/*.py deploy/phastform/variants/*/*.py) deploy/bin/lh-forward deploy/bin/lh-gateway-stop deploy/bin/lh-svc
 # E2's committed records (lh-bench e2 export), one directory per point under its campaign, and where
 # reproduce-e2 writes their report.
 E2_RESULTS := benchmarks/results/2026-10-23-e2
@@ -65,7 +65,7 @@ test-make-room: $(VLLM_SRC)
 	@test -n "$(TORCH_PYTHON)" || { echo "usage: make test-make-room TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies>" >&2; exit 2; }
 	@$(CPU_SUITE_IMPORTS)
 	cd python/leaseholder_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
-	  tests/test_make_room.py
+	  tests/test_make_room.py tests/test_perf_schedule.py
 
 # make-room against the PRs' own patches, step for step, on the same CPU environment (python/leaseholder_vllm/README.md):
 # the trace that keeps the variant equal to #63350 and #63351, with the PRs' one-line mutants as its negative control.
@@ -94,6 +94,36 @@ test-python:
 	@for pkg in $(PY_PACKAGES); do \
 	  echo "== $$pkg"; (cd $$pkg && uv run -q --extra test pytest -q -m "not integration") || exit 1; \
 	done
+
+# The engine change's upkeep checks, outside make check (python/leaseholder_vllm/README.md says how to read them).
+.PHONY: perf-make-room compat-upstream
+
+# The change's cost per step: Scheduler.schedule() on CPU for stock vLLM and for make-room with its switches off and in
+# the configuration to deploy, in the 13 steady states of the PRs' cost tables (tests/perf_schedule.py; on a 2.1 GHz
+# Xeon 14 minutes, and 22 for a baseline, the negative control included). It prints the tables, writes PERF_OUT, fails
+# a state whose off/stock or on/off grew past PERF_BASELINE's tolerance (measured again first), and then runs the
+# check's negative control against the same baseline. UPDATE=1 measures a new baseline into PERF_BASELINE instead and
+# needs PERF_BESIDE, what else ran on the machine. The tracked baseline is peacock's; another machine's goes under
+# build/, as build/perf-baseline.json.
+PERF_BASELINE ?= benchmarks/perf/make-room-schedule.json
+PERF_OUT ?= build/perf-make-room.json
+perf-make-room: $(VLLM_SRC)
+	@test -n "$(TORCH_PYTHON)" || { echo "usage: make perf-make-room TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies> [PERF_BASELINE=FILE] [UPDATE=1 PERF_BESIDE=TEXT]" >&2; exit 2; }
+	@if [ "$(filter 1,$(UPDATE))" = 1 ] && [ -z "$(strip $(PERF_BESIDE))" ]; then \
+	  echo "make perf-make-room UPDATE=1 needs PERF_BESIDE=<what else ran on the machine>" >&2; exit 2; fi
+	cd python/leaseholder_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) tests/perf_schedule.py \
+	  $(if $(filter 1,$(UPDATE)),baseline $(abspath $(PERF_BASELINE)) --beside "$(PERF_BESIDE)",check $(abspath $(PERF_BASELINE)) --out $(abspath $(PERF_OUT)))
+	cd python/leaseholder_vllm && LH_PERF=1 LH_PERF_BASELINE=$(abspath $(PERF_BASELINE)) VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) \
+	  $(TORCH_PYTHON) -m pytest -q -s -p no:cacheprovider tests/test_perf_control.py
+
+# Whether #63350 and #63351 merge into vLLM's main and, with TORCH_PYTHON (an interpreter for vLLM main's scheduler and
+# tests), pass their tests there on CPU; and whether make-room's patches apply to vLLM's newest release. It keeps a
+# blobless vLLM clone in VLLM_UPSTREAM, and needs the network and git 2.38 or newer (GIT names one).
+VLLM_UPSTREAM ?= $(HOME)/.cache/leaseholder/vllm-upstream
+GIT ?= git
+compat-upstream:
+	uv run -q --no-project --python 3.12 python python/leaseholder_vllm/scripts/compat_upstream.py --clone $(VLLM_UPSTREAM) \
+	  --git $(GIT) $(if $(TORCH_PYTHON),--python $(TORCH_PYTHON))
 
 schema:
 	cargo run -q -p lh-proto --bin lh-proto-schema
@@ -166,8 +196,9 @@ reproduce-calibration:
 	  $(CALIBRATION_REPORT) >/dev/null
 	@ls $(CALIBRATION_REPORT)/calibration.md
 
-# E2's report (frontier.md, frontier.csv, frontier.svg, waterfall.svg) from the committed records, with the bench
-# venv; it prints the files it writes.
+# E2's report from the committed records, with the bench venv: frontier.md, frontier.csv, a frontier figure per workload
+# (W4's four, W5's six) and waterfall.svg, the files each set of records keeps in its report/, which the bench's tests
+# check and E2_REPORT=<that report/> rewrites. It prints the files it writes.
 reproduce-e2:
 	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
 	  $(abspath $(dir $(wildcard $(E2_RESULTS)/*/*/run.json))) --out $(abspath $(E2_REPORT))

@@ -99,7 +99,9 @@ WORKER_VARIANTS = ("vad-turns",)
 SUPERVISORS = ("auto", "lh-svc", "systemd")
 """LH_SUPERVISOR's values: auto, the host's facts decide; lh-svc, deploy/bin/lh-svc runs the units where systemd
 could. env.sh records the supervisor a stage chose, lh-svc or systemd, which the later stages keep (bootstrap.sh)."""
-UNITS = ("leaseholder.target", "lh-engine.service", "lh-stt.service", "lh-tts.service", *CONTROL)
+PRIVATE_SERVERS = ("lh-engine.service", "lh-stt.service", "lh-tts.service")
+"""The GPU node's servers, each of which deploy/bin/in-private-net runs in a network namespace of its own."""
+UNITS = ("leaseholder.target", *PRIVATE_SERVERS, *CONTROL)
 """Every unit of this host's: the GPU node's and the control plane's."""
 GATEWAY_URL = "http://127.0.0.1:18080"
 """The gateway's TCP listener, AIPerf's way in (gateway.toml's first [[listen]])."""
@@ -325,7 +327,8 @@ def active_elsewhere(host: dict) -> tuple[str, list[str]]:
 
 
 def drop_ins(node: Node) -> dict[str, str]:
-    """This host's drop-in for each control-plane unit that needs one."""
+    """This host's drop-in for each unit that needs one: the control plane's cores and, where the kernel refuses
+    unprivileged user namespaces, the voice plane's and the GPU servers' mark for the host's network namespace."""
     plan = node.plan
     header = "# Single host (deploy/a100/host.py units, from the node's core plan in node.json).\n"
     cores = lambda cpus: f"CPUAffinity=\nCPUAffinity={cpus}\n"  # noqa: E731
@@ -344,6 +347,13 @@ def drop_ins(node: Node) -> dict[str, str]:
             "network\n# namespace (deploy/bin/voicenet-holder), which the preflight reports.\n"
             "[Service]\nEnvironment=LH_VOICENET=host\n"
         )
+        for server in PRIVATE_SERVERS:
+            out[server] = (
+                header
+                + "# The kernel refuses unprivileged user namespaces here: the GPU server runs in the host's "
+                "network\n# namespace (deploy/bin/in-private-net), which the preflight reports.\n"
+                "[Service]\nEnvironment=LH_PRIVATE_NET=host\n"
+            )
     return out
 
 
@@ -1397,7 +1407,11 @@ def preflight(
     else:
         add("One supervisor", "ok", f"{supervisor(host)}, none of the units under {other}")
     if host.get("userns") is True:
-        add("User namespaces", "ok", "the voice plane in its own network namespace")
+        add(
+            "User namespaces",
+            "ok",
+            "the voice plane in a network namespace of its own, and each GPU server in one of its own",
+        )
     else:
         # The voice plane in the host's namespace, under either supervisor: smoke.sh's listener audit
         # (deploy/bin/audit-listeners) accepts what it holds there by the LH_VOICENET=host that in-voicenet marks its
@@ -1414,8 +1428,12 @@ def preflight(
                 else ""
             )
             + "; smoke.sh's listener audit accepts its UDP sockets, loopback TCP listeners and file sockets there "
-            "(LH_VOICENET=host) and nothing else of ours; allowing unprivileged user namespaces gives it its own "
-            "(Ubuntu 24.04: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0, then bootstrap.sh stage)",
+            "(LH_VOICENET=host) and nothing else of ours; the GPU servers run there too, by their drop-ins' "
+            "LH_PRIVATE_NET=host (deploy/bin/in-private-net), where the audit accepts their engine cores' loopback "
+            "TCP listeners on ephemeral ports and CUDA's abstract sockets, which any user of the host reaches, and "
+            "nothing else of theirs; allowing unprivileged user namespaces gives "
+            "each its own (Ubuntu 24.04: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0, then "
+            "bootstrap.sh stage)",
             "none on latency; isolation differs",
         )
     # smoke.sh (block 0) audits the listening sockets with ss on the GPU node.

@@ -52,9 +52,8 @@ EOF
 fi
 units=lh-engine target=lh-engine stops=lh-engine
 if [[ $what == box ]]; then
-  # Stopping leaseholder.target alone returns once the target is down, before its units (the engine first, then the
-  # audio servers): a start right after it cancels the audio servers' pending stops. Naming every unit makes systemctl
-  # wait for each one's stop.
+  # Stopping leaseholder.target alone returns once the target is down, before its units: a start right after it
+  # cancels their pending stops. Naming every unit makes systemctl wait for each one's stop.
   units="lh-stt lh-tts lh-engine" target=leaseholder.target stops="leaseholder.target lh-stt lh-tts lh-engine"
 fi
 # The journals are fetched whatever the start did: for a start that fails they are the record that matters.

@@ -30,6 +30,8 @@ cpu_bytes_to_use = "auto"
 extra = ""
 
 [stt]
+# The box's pool, fixed (deploy/templates/stt.yaml): Whisper's need does not grow with the card.
+kv_cache_memory = 458752000
 gpu_memory_utilization = "auto"
 
 [units]
@@ -48,15 +50,19 @@ audio_numa = "auto"
 
 # The rules' inputs, from the box.
 [budgets]
-# The box's 0.70 and 0.15 of the 15.47 GiB torch reports: the engine's budget for vLLM's free-memory check, and
-# Whisper's, which sizes its own KV from it.
+# The box's 0.70 and 0.15 of the 15.47 GiB torch reports: the engine's and Whisper's budgets for vLLM's free-memory
+# check at start (both pools are fixed).
 engine_gib = 10.83
 stt_gib = 2.32
+# The TTS's share beside them, whatever the card: Kokoro's footprint on the box, 1,104 MiB (2026-10-25) [measured].
+tts_gib = 1.08
 # The box's 20 GiB CPU tier over its 5 GiB pool, and the RAM a single host keeps for its other processes.
 cpu_tier_ratio = 4
 host_reserve_gib = 25
 
 [text]
+# The engine's start order beside the audio servers' (lh-engine.service): none, the three at once.
+engine_order = ''
 engine_header = '''
 # LLM engine on {{profile.node}}: vLLM 0.32.0 on one {{profile.gpu}}, beside the STT and TTS servers, rendered
 # from deploy/profiles/{{profile.name}}.toml.'''
