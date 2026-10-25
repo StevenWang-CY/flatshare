@@ -9,10 +9,14 @@ stdin and stdout to the node's socket of the same name, under `restrict`, which 
 connection accepted on a socket here becomes one SSH session of its key, `ssh -T -S CONTROL TARGET`, whose stdin and
 stdout are the connection itself: the ssh client hands them to its master (ssh -M), which relays them, so this
 process copies no byte. Each master is one authenticated connection to the node and carries at most
-LH_TUNNEL_SESSIONS sessions at a time (sshd's MaxSessions, 10 by default). A socket opens another master before its
-masters are full, and a connection that finds none ready, or whose session the master is refused, connects on its
-own. A new session costs about 12 ms where a new connection costs about 165 ms (OpenSSH 8.9 on loopback), so the
-servers keep their connections open between requests.
+LH_TUNNEL_SESSIONS sessions at a time (sshd's MaxSessions, 10 by default). A connection's session counts against its
+master from the moment it is accepted, so that a burst of connections spreads over the masters, and a socket keeps
+enough masters opening for the connections waiting, with a session to spare. A connection that finds no master with
+room waits for one: were each to connect on its own, a burst would make as many SSH handshakes at once as it has
+connections, and sshd drops those past its MaxStartups (10 at once by default), so a gateway restarted with a
+backlog of requests lost some (the restart drill). It connects on its own only after WAIT_S without room, or when its
+master refuses the session. A new session costs about 12 ms where a new connection costs about 165 ms (OpenSSH 8.9
+on loopback), so the servers keep their connections open between requests.
 
 The environment (the unit's EnvironmentFile, ~/.config/leaseholder/tunnel-NODE.env) names the node, LH_TUNNEL_TARGET
 (user@host), and may set LH_TUNNEL_SESSIONS. It tells systemd it is ready (Type=notify) once its sockets listen. On
@@ -33,7 +37,12 @@ from pathlib import Path
 
 SOCKETS = ("engine", "stt", "tts")
 MASTERS = 8
-"""Masters per socket at most: with sshd's default MaxSessions, 80 connections at once; more connect on their own."""
+"""Masters per socket at most: with sshd's default MaxSessions, 80 connections at once; more wait for room."""
+OPENING = 3
+"""Masters opening at once per socket at most: the three sockets' handshakes together stay under the 10 at once that
+sshd's default MaxStartups takes before it drops new connections."""
+WAIT_S = 10.0
+"""How long a connection waits for a master with room (one opens in about 165 ms) before it connects on its own."""
 BACKOFF_S = (1.0, 2.0, 5.0, 10.0, 30.0)
 """How long a socket waits to open a master again after failures in a row, by their number."""
 
@@ -81,6 +90,8 @@ class Tunnel:
         self.listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.tasks: set[asyncio.Task] = set()
         self.sessions: set[asyncio.subprocess.Process] = set()
+        self.waiting = 0
+        self.change = asyncio.Event()
         self.closing = False
 
     def listen(self) -> None:
@@ -98,6 +109,7 @@ class Tunnel:
     def close(self) -> None:
         """Stops accepting and ends the masters and the sessions; nothing opens from here on."""
         self.closing = True
+        self.wake()
         asyncio.get_running_loop().remove_reader(self.listener.fileno())
         self.listener.close()
         with contextlib.suppress(FileNotFoundError):
@@ -118,20 +130,28 @@ class Tunnel:
     def backoff(self) -> float:
         return BACKOFF_S[min(self.failures, len(BACKOFF_S)) - 1] if self.failures else 0.0
 
-    def open_master(self) -> None:
-        """One more master, unless the socket closes, has its most or waits out failures."""
+    def wake(self) -> None:
+        """Tells the connections waiting for room to look again: a master's sessions, or the masters, changed."""
+        self.change.set()
+        self.change = asyncio.Event()
+
+    def open_master(self) -> bool:
+        """One more master, unless the socket closes, has its most, has its most opening or waits out failures;
+        whether it opened one."""
         if (
             self.closing
             or len(self.masters) >= MASTERS
+            or sum(not master.ready for master in self.masters) >= OPENING
             or time.monotonic() - self.opened < self.backoff()
         ):
-            return
+            return False
         self.opened = time.monotonic()
         used = {master.control.name for master in self.masters}
         name = next(f"{self.name}-{i}" for i in range(MASTERS) if f"{self.name}-{i}" not in used)
         master = Master(self.controls / name)
         self.masters.append(master)
         self.spawn(self.run_master(master))
+        return True
 
     async def run_master(self, master: Master) -> None:
         with contextlib.suppress(FileNotFoundError):
@@ -154,6 +174,9 @@ class Tunnel:
         self.failures = 0 if master.ready and lasted > 60 else self.failures + 1
         reason = error.decode(errors="replace").strip() or f"exit status {status}"
         log(f"{self.path.name}: master {master.control.name} ended after {lasted:.0f} s: {reason}")
+        self.wake()
+        if self.failures:  # the connections waiting look again once another may open
+            asyncio.get_running_loop().call_later(self.backoff(), self.wake)
         if not self.masters and not self.closing:
             await asyncio.sleep(self.backoff())
             self.open_master()  # keep one ready
@@ -165,13 +188,42 @@ class Tunnel:
         master.ready = True
         self.failures = 0
         log(f"{self.path.name}: master {master.control.name} connected to {self.target}")
+        self.wake()
 
-    def choose(self) -> Master | None:
-        """The ready master with the fewest sessions, if it has room; opens another before all are full."""
+    def free(self) -> int:
+        """The sessions the masters can still take: a ready one's room, an opening one's whole."""
+        return sum(self.limit - m.sessions if m.ready else self.limit for m in self.masters)
+
+    def take(self) -> Master | None:
+        """The ready master with the fewest sessions, if one has room, with a session counted against it at once; and
+        enough masters opening for the connections still waiting, with a session to spare."""
         ready = [master for master in self.masters if master.ready and master.sessions < self.limit]
-        if not ready or min(master.sessions for master in ready) + 1 >= self.limit:
-            self.open_master()
-        return min(ready, key=lambda master: master.sessions, default=None)
+        master = min(ready, key=lambda master: master.sessions, default=None)
+        if master:
+            master.sessions += 1
+        waiting = self.waiting - 1 if master else self.waiting
+        while self.free() <= waiting and self.open_master():
+            pass
+        return master
+
+    async def room(self) -> Master | None:
+        """A master with room for one more session, counted against it, waiting up to WAIT_S for one; None after
+        that, or once the socket closes."""
+        deadline = time.monotonic() + WAIT_S
+        self.waiting += 1
+        try:
+            while not self.closing:
+                change = self.change
+                master = self.take()
+                left = deadline - time.monotonic()
+                if master or left <= 0:
+                    return master
+                # asyncio's TimeoutError: Python 3.10's is not the builtin one.
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(change.wait(), left)
+            return None
+        finally:
+            self.waiting -= 1
 
     def accept(self) -> None:
         while True:
@@ -182,28 +234,32 @@ class Tunnel:
             self.spawn(self.relay(connection))
 
     async def relay(self, connection: socket.socket) -> None:
-        master = self.choose()
-        # Without a ready master the session connects on its own (ControlPath none).
-        control = str(master.control) if master else "none"
+        master = await self.room()
+        session = None
         try:
-            session = await asyncio.create_subprocess_exec(
-                "ssh", "-T", "-S", control, "-o", "ControlMaster=no", *self.options, self.target,
-                stdin=connection.fileno(), stdout=connection.fileno(), stderr=asyncio.subprocess.PIPE,
-            )  # fmt: skip
-        finally:
-            connection.close()  # the session holds the connection now
-        self.sessions.add(session)
-        if self.closing:  # closed while it started
-            end(session)
-        if master:
-            master.sessions += 1
-        try:
+            if self.closing:
+                connection.close()
+                return
+            # Without a master that has room the session connects on its own (ControlPath none).
+            control = str(master.control) if master else "none"
+            try:
+                session = await asyncio.create_subprocess_exec(
+                    "ssh", "-T", "-S", control, "-o", "ControlMaster=no", *self.options, self.target,
+                    stdin=connection.fileno(), stdout=connection.fileno(), stderr=asyncio.subprocess.PIPE,
+                )  # fmt: skip
+            finally:
+                connection.close()  # the session holds the connection now
+            self.sessions.add(session)
+            if self.closing:  # closed while it started
+                end(session)
             error = await session.stderr.read() if session.stderr else b""
             status = await session.wait()
         finally:
-            self.sessions.discard(session)
+            if session is not None:
+                self.sessions.discard(session)
             if master:
                 master.sessions -= 1
+                self.wake()
         # nc exits 1 when the node's server does not answer, which the client sees as a closed connection; any other
         # failure is the tunnel's.
         if status not in (0, 1):

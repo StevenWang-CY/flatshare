@@ -1,6 +1,7 @@
 """deploy/bin/lh-tunnel against a real sshd on loopback, as a GPU node authorizes cyan's tunnel keys: each key's every
-session is `exec nc -q0 -U SOCKET` under `restrict`. Needs Linux, OpenSSH's sshd and OpenBSD's netcat (as the GPU
-nodes have); skipped without them."""
+session is `exec nc -q0 -U SOCKET` under `restrict`. The tunnel runs on the host's /usr/bin/python3 where there is one,
+as its unit runs it (3.10 on Ubuntu 22.04). Needs Linux, OpenSSH's sshd and OpenBSD's netcat (as the GPU nodes have);
+skipped without them."""
 
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 TUNNEL = REPO / "deploy" / "bin" / "lh-tunnel"
+PYTHON = "/usr/bin/python3" if Path("/usr/bin/python3").exists() else sys.executable
 SSHD = Path("/usr/sbin/sshd")
 SOCKETS = ("engine", "stt", "tts")
 
@@ -122,7 +124,8 @@ def node() -> Iterator[dict]:
     (root / "sshd_config").write_text(
         f"Port {port}\nListenAddress 127.0.0.1\nHostKey {root}/host\nPidFile {root}/sshd.pid\n"
         f"AuthorizedKeysFile {root}/authorized_keys\nUsePAM no\nPasswordAuthentication no\n"
-        "KbdInteractiveAuthentication no\nStrictModes no\nMaxSessions 3\nLogLevel VERBOSE\n"
+        "KbdInteractiveAuthentication no\nStrictModes no\nMaxSessions 3\nMaxStartups 6:100:6\n"
+        "LogLevel VERBOSE\n"
     )
     sshd = subprocess.Popen([SSHD, "-D", "-f", root / "sshd_config", "-E", root / "sshd.log"])
     (root / "ssh_config").write_text(
@@ -169,7 +172,7 @@ def masters(node: dict) -> list[Path]:
 
 def start(node: dict) -> subprocess.Popen:
     tunnel = subprocess.Popen(
-        [sys.executable, TUNNEL, "phastform"], env=node["env"], stderr=subprocess.PIPE, text=True
+        [PYTHON, TUNNEL, "phastform"], env=node["env"], stderr=subprocess.PIPE, text=True
     )
     for name in SOCKETS:
         path = node["runtime"] / "lh" / f"phastform-{name}.sock"
@@ -213,6 +216,52 @@ def test_connections_beyond_a_masters_sessions_go_through_more_masters(node: dic
         tunnel.send_signal(signal.SIGTERM)
         tunnel.wait(10)
     assert masters(node) == [], "every master ends with the tunnel"
+
+
+def test_a_burst_of_connections_waits_for_masters_rather_than_connect_on_its_own(
+    node: dict,
+) -> None:
+    # A gateway restarted with a backlog of requests opens its upstream connections at once: about 40 through the
+    # engine's socket in the restart drill, where the node's sshd refused the sessions past a master's and dropped the
+    # connections they then made on their own past its MaxStartups. sshd here takes 3 sessions a connection and 6
+    # handshakes at once (MaxStartups 6:100:6): 12 connections held at once need 4 masters, and as many connections
+    # each connecting on its own would be dropped.
+    tunnel = start(node)
+    burst = 12
+    go, done = threading.Barrier(burst), threading.Event()
+    answers: list[bytes] = []
+    errors: list[Exception] = []
+
+    def one() -> None:
+        try:
+            go.wait(10)
+            body, connection = get(engine)
+            answers.append(body)
+            done.wait(30)  # held, as the gateway's pooled connections are
+            connection.close()
+        except Exception as exc:
+            errors.append(exc)
+
+    try:
+        engine = node["runtime"] / "lh" / "phastform-engine.sock"
+        get(engine)[1].close()  # the first master is up
+        threads = [threading.Thread(target=one) for _ in range(burst)]
+        for thread in threads:
+            thread.start()
+        wait_for(
+            lambda: len(answers) + len(errors) == burst, "every connection answered or failed", 30
+        )
+        done.set()
+        for thread in threads:
+            thread.join(10)
+        assert not errors and answers == [b"engine"] * burst, errors
+        assert "past MaxStartups" not in (node["root"] / "sshd.log").read_text()
+    finally:
+        done.set()
+        tunnel.send_signal(signal.SIGTERM)
+        tunnel.wait(10)
+    # No master refused a session (its client would have connected on its own); a stop ends sessions with 255.
+    assert "session request failed" not in tunnel.stderr.read()
 
 
 def test_a_dead_server_on_the_node_closes_the_connection_without_an_answer(node: dict) -> None:
