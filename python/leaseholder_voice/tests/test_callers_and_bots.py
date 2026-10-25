@@ -316,6 +316,50 @@ def test_a_call_opens_with_its_warm_up_turns_and_measures_the_same_turns_after_t
     assert [json.loads(line) for line in logged] == warmed
 
 
+def test_a_failed_turn_leaves_the_turns_after_it_as_they_were(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A turn whose reply never came drew no interruption, so the turns after it played other lines
+    # and interruptions than the same call answered: a failing point's calls were not the others'.
+    # The caller's audio is stood in for, each line answered as it ends but the failing one.
+    monkeypatch.setattr(audio.rtc, "AudioSource", Line().source)
+    lines = [line_clip(f"turn-{n:02}", 0.2) for n in range(8)]
+    barges = [line_clip(f"barge-{n}", 0.2) for n in range(4)]
+    corpus = SimpleNamespace(turns=lines, barge_ins=barges)
+
+    async def call(seed: int, unanswered: int | None) -> list[tuple[str | None, str | None]]:
+        config = BotsConfig(
+            "ws://fake", "key", "secret", tmp_path, turns=8, barge_in=0.5, seed=seed
+        )
+        config = dataclasses.replace(config, barge_in_delay=(0.0, 0.0), think=(0.0, 0.0))
+        caller = Caller(config, corpus, 0, "t")
+
+        async def play(clip: Clip) -> dict[str, float]:
+            return dict.fromkeys(("start", "onset", "speech_end", "end"), time.monotonic())
+
+        async def first_onset_after(t: float, timeout: float) -> float:
+            if max(caller.moments) == unanswered:
+                raise TimeoutError("the agent did not start speaking")
+            return t
+
+        async def silent_after(t: float, quiet: float, timeout: float) -> float:
+            return t
+
+        monkeypatch.setattr(caller.microphone, "play", play)
+        monkeypatch.setattr(caller.agent_audio, "first_onset_after", first_onset_after)
+        monkeypatch.setattr(caller.agent_audio, "silent_after", silent_after)
+        rows: list[dict[str, Any]] = []
+        with (tmp_path / "turns.jsonl").open("w") as log:
+            await caller.play(rows, log)
+        assert ("error" in rows[2]) == (unanswered == 2)
+        return [(row.get("clip"), row.get("barge_in_clip")) for row in rows]
+
+    for seed in range(10):
+        answered, failed = (asyncio.run(call(seed, turn)) for turn in (None, 2))
+        assert failed[3:] == answered[3:], seed  # the same lines and interruptions after it
+        assert any(barge for _, barge in answered) and not all(barge for _, barge in answered)
+
+
 class FirstReplyOnly(Line):
     """The fake agent answers the first line it hears and never the interruption after it."""
 

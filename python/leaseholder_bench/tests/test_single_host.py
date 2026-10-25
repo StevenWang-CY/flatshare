@@ -89,6 +89,24 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notify:
 while True:
     time.sleep(0.05)
 """
+DRAINING = """\
+import os, signal, socket, sys, time
+from pathlib import Path
+# The gateway as its unit runs it (Type=notify): READY=1 once it serves, its pid in sys.argv[1]; at a SIGTERM it
+# drains for 1.5 s, a second SIGTERM swallowed as lh-gateway's handler swallows it, marks in sys.argv[2] that it
+# drained and exits 0.
+def drain(*_):
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    time.sleep(1.5)
+    Path(sys.argv[2]).write_text("drained")
+    sys.exit(0)
+signal.signal(signal.SIGTERM, drain)
+Path(sys.argv[1]).write_text(str(os.getpid()))
+with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notify:
+    notify.sendto(b"READY=1", os.environ["NOTIFY_SOCKET"])
+while True:
+    time.sleep(0.05)
+"""
 
 
 SMOKE_SERVER = """\
@@ -512,6 +530,156 @@ def test_a_notify_unit_starts_at_ready_with_its_socket_unit_and_without_a_missin
     assert ctl(host, "is-active", "gw.service", "gw.socket").stdout.split() == ["inactive"] * 2
 
 
+@pytest.mark.skipif(
+    not hasattr(os, "pidfd_open"),
+    reason="the unit's ExecStop, lh-gateway-stop, holds the gateway by a pidfd (Linux)",
+)
+def test_cyans_gateway_unit_drains_at_a_stop_under_lh_svc(host: dict) -> None:
+    # cyan's lh-gateway.service as the single host links it, only its ExecStart replaced by a stand-in that drains:
+    # the stop runs the unit's own ExecStop (lh-gateway-stop with %n and $MAINPID), which sends the SIGTERM and
+    # waits for the drain, and the unit ends inactive. Without %n, lh-svc's runner died at the ExecStop line: the
+    # gateway, never signaled, was killed 5 s into the stop and the unit left failed.
+    units, home, py = host["units"], host["home"], sys.executable
+    for name in ("lh-gateway.service", "lh-gateway.socket"):
+        (units / name).symlink_to(REPO / "deploy" / "cyan" / "systemd" / name)
+    (units / "lh-gateway.service.d").mkdir()
+    (units / "lh-gateway.service.d" / "stand-in.conf").write_text(
+        f"[Service]\nExecStart=\nExecStart={py} %h/gateway.py %h/gateway.pid %h/gateway.drained\n"
+    )
+    (home / "gateway.py").write_text(DRAINING)
+    (home / "leaseholder").mkdir()
+    (home / "leaseholder" / "src").symlink_to(REPO)  # the unit's ExecStop and ExecReload
+    try:
+        done = ctl(host, "--user", "start", "lh-gateway.service")
+        assert done.returncode == 0, done.stderr
+        pid = int((home / "gateway.pid").read_text())
+        begun = time.monotonic()
+        done = ctl(host, "--user", "stop", "lh-gateway.service")
+        took = time.monotonic() - begun
+        assert done.returncode == 0, done.stderr
+        drained = (home / "gateway.drained").exists()
+        assert drained and gone(pid), (drained, took)
+        assert 1.5 <= took < 4, took  # the drain's 1.5 s, not lh-svc's SIGKILL 5 s on
+        state = ctl(host, "--user", "is-active", "lh-gateway.service").stdout.strip()
+        journal = ctl(host, "-u", "lh-gateway", "-o", "cat", tool="journalctl").stdout
+        assert state == "inactive", journal
+        assert "ExecStop failed" not in journal and "lh-svc: Stopped lh-gateway.service" in journal
+    finally:
+        ctl(host, "--user", "stop", "lh-gateway.service", "lh-gateway.socket")
+
+
+def test_a_stop_signals_the_main_process_when_exec_stop_cannot_run(host: dict) -> None:
+    # As under systemd, a stop whose ExecStop fails, or cannot run at all (a command that is not there), still
+    # sends the main process its KillSignal, and it drains. lh-svc's runner used to die at the command it could not
+    # run, and the main process was killed 5 s into the stop, undrained.
+    units, home, py = host["units"], host["home"], sys.executable
+    (home / "gateway.py").write_text(DRAINING)
+    (units / "drains.service").write_text(
+        f"[Service]\nType=notify\nExecStart={py} %h/gateway.py %h/gateway.pid %h/gateway.drained\n"
+        "ExecStop=%h/no-such-command $MAINPID\nExecStopPost=/usr/bin/touch %h/post.ran\n"
+    )
+    try:
+        assert ctl(host, "--user", "start", "drains.service").returncode == 0
+        pid = int((home / "gateway.pid").read_text())
+        begun = time.monotonic()
+        done = ctl(host, "--user", "stop", "drains.service")
+        took = time.monotonic() - begun
+        assert done.returncode == 0, done.stderr
+        drained = (home / "gateway.drained").exists()
+        assert drained and gone(pid), (drained, took)
+        assert took < 4, took
+        # ExecStopPost runs all the same, as systemd runs it.
+        assert (home / "post.ran").exists()
+        # The unit ends failed, as systemd's does when its ExecStop cannot run, with the cause in its journal.
+        assert ctl(host, "--user", "is-active", "drains.service").stdout.strip() == "failed"
+        journal = ctl(host, "-u", "drains", "-o", "cat", tool="journalctl").stdout
+        assert f"lh-svc: {home}/no-such-command: " in journal, journal
+    finally:
+        ctl(host, "--user", "stop", "drains.service")
+
+
+def test_a_failed_exec_stop_leaves_the_unit_failed(host: dict) -> None:
+    # An ExecStop that runs and fails, as lh-gateway-stop does when it kills a gateway still running at the end of
+    # its wait, leaves the unit failed, as systemd's does, so that is-failed shows the stop that did not drain; the
+    # main process still gets its KillSignal and ExecStopPost runs.
+    units, home, py = host["units"], host["home"], sys.executable
+    (home / "gateway.py").write_text(DRAINING)
+    (units / "drains.service").write_text(
+        f"[Service]\nType=notify\nExecStart={py} %h/gateway.py %h/gateway.pid %h/gateway.drained\n"
+        f"ExecStop={py} -c 'raise SystemExit(1)'\nExecStopPost=/usr/bin/touch %h/post.ran\n"
+    )
+    try:
+        assert ctl(host, "--user", "start", "drains.service").returncode == 0
+        pid = int((home / "gateway.pid").read_text())
+        done = ctl(host, "--user", "stop", "drains.service")
+        assert done.returncode == 0, done.stderr
+        assert (home / "gateway.drained").exists() and gone(pid)
+        assert (home / "post.ran").exists()
+        assert ctl(host, "--user", "is-active", "drains.service").stdout.strip() == "failed"
+        assert ctl(host, "--user", "is-failed", "drains.service").returncode == 0
+        # A start clears it.
+        assert ctl(host, "--user", "start", "drains.service").returncode == 0
+        assert ctl(host, "--user", "is-active", "drains.service").stdout.strip() == "active"
+    finally:
+        ctl(host, "--user", "stop", "drains.service")
+
+
+def test_lh_svc_expands_the_units_name(host: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    # %n and %N, the unit's name with and without its suffix, as the gateway's ExecReload and ExecStop pass it.
+    units, py = host["units"], sys.executable
+    (units / "named.service").write_text(
+        f"[Service]\nEnvironment=READY=%h/named.ready\nExecStart={py} %h/svc.py %n %N\n"
+        f"ExecStartPost={py} %h/wait.py %h/named.ready\n"
+    )
+    try:
+        assert ctl(host, "--user", "start", "named.service").returncode == 0
+        journal = ctl(host, "-u", "named", "-o", "cat", tool="journalctl").stdout
+        assert "argv ['named.service', 'named']" in journal, journal
+    finally:
+        ctl(host, "--user", "stop", "named.service")
+    for name, value in host["env"].items():
+        monkeypatch.setenv(name, value)
+    lh_svc = _module("lh_svc", BIN / "lh-svc")
+    assert lh_svc.specifiers("%n %N %%n", "lh-tunnel@phastform.service") == (
+        "lh-tunnel@phastform.service lh-tunnel@phastform %n"
+    )
+
+
+def test_a_start_refuses_a_unit_whose_lines_hold_a_specifier_lh_svc_does_not_expand(
+    host: dict,
+) -> None:
+    # systemd will not start a unit whose lines it cannot expand, and neither does lh-svc, whichever command line
+    # holds the specifier (%S, the state directory, which none of the repository's units uses): a line that only a
+    # stop or a reload runs fails the start, where starts are tested, rather than the stop, with the unit running.
+    units, home, py = host["units"], host["home"], sys.executable
+    good = f"Environment=READY=%h/refused.ready\nExecStart={py} %h/svc.py refused\n"
+    keys = ("ExecStartPre", "ExecStart", "ExecStartPost", "ExecReload", "ExecStop", "ExecStopPost")
+    for key in keys:
+        bad = f"{key}=/bin/echo %S\n"
+        (units / "refused.service").write_text(
+            "[Service]\n" + (bad if key == "ExecStart" else good + bad)
+        )
+        try:
+            done = ctl(host, "--user", "start", "refused.service")
+            assert done.returncode == 5, (key, done.returncode, done.stderr)
+            assert (
+                f"refused.service: {key}=/bin/echo %S: specifier %S is not supported" in done.stderr
+            ), (key, done.stderr)
+            assert not (home / "refused.ready").exists(), key  # nothing ran
+            assert ctl(host, "--user", "is-active", "refused").stdout.strip() == "inactive", key
+        finally:
+            ctl(host, "--user", "stop", "refused.service")
+    # Also when the start only pulls it in, as lh-voice-worker's Wants= pulls the gateway: nothing of it starts.
+    (units / "refused.service").write_text("[Service]\n" + good + "ExecStop=/bin/echo %S\n")
+    (units / "pulls.target").write_text("[Unit]\nWants=svc-b.service refused.service\n")
+    try:
+        done = ctl(host, "--user", "start", "pulls.target")
+        assert done.returncode == 5 and "specifier %S is not supported" in done.stderr, done.stderr
+        assert not (home / "b.ready").exists() and not (home / "refused.ready").exists()
+    finally:
+        ctl(host, "--user", "stop", "pulls.target", "svc-b.service", "refused.service")
+
+
 def test_variant_sh_runs_on_the_supervisor(host: dict, tmp_path: Path) -> None:
     # The box's variant.sh with stand-in units: lh-engine runs a make-room drop-in's command, and the flags'
     # drop-in it writes, with the audio servers left running.
@@ -887,7 +1055,9 @@ def test_block_0s_smoke_test_passes_its_listener_audit_under_lh_svc(host: dict) 
     # Block 0 runs the box's smoke.sh, whose listener audit reads the host's listeners (a stand-in ss lists them,
     # held by the units' real processes) and attributes each to its unit by /proc. Under lh-svc every process is in
     # the session's cgroup and the gateway binds 127.0.0.1:18080 itself; the voice plane runs in the host's network
-    # namespace (the kernel refuses user namespaces: voicenet-holder with LH_VOICENET=host, in-voicenet).
+    # namespace (the kernel refuses user namespaces: voicenet-holder with LH_VOICENET=host, in-voicenet), and so do
+    # the GPU servers, started through in-private-net as the rendered units start them, with the mark host.py's
+    # drop-ins give them (LH_PRIVATE_NET=host): the engine core's gloo listener and CUDA's socket are accepted there.
     units, home, py = host["units"], host["home"], sys.executable
     run = Path(host["env"]["XDG_RUNTIME_DIR"])
     (run / "lh").mkdir(mode=0o700)
@@ -895,7 +1065,8 @@ def test_block_0s_smoke_test_passes_its_listener_audit_under_lh_svc(host: dict) 
     for name in ("engine", "stt", "tts"):
         (units / f"lh-{name}.service").write_text(
             f"[Unit]\nPartOf=leaseholder.target\n[Service]\nEnvironment=READY=%h/lh-{name}.ready\n"
-            f"ExecStart={py} %h/smoke_server.py %t/lh/{name}.sock\n"
+            "Environment=LH_PRIVATE_NET=host\n"
+            f"ExecStart={BIN}/in-private-net {py} %h/smoke_server.py %t/lh/{name}.sock\n"
             f"ExecStartPost={py} %h/wait.py %h/lh-{name}.ready\n"
         )
     (units / "leaseholder.target").write_text(
@@ -929,12 +1100,14 @@ def test_block_0s_smoke_test_passes_its_listener_audit_under_lh_svc(host: dict) 
             f"tcp LISTEN 0 4096 127.0.0.1:17880 0.0.0.0:* {held('livekit')}\n"
             f"udp UNCONN 0 0 127.0.0.1:17882 0.0.0.0:* {held('livekit')}\n"
             f"udp UNCONN 0 0 10.0.0.5:51234 0.0.0.0:* {held('voice-worker')}\n"
+            f"tcp LISTEN 0 128 127.0.1.1:36087 0.0.0.0:* {held('engine')}\n"
         )
         (listed / "unix").write_text(
             "".join(
                 f"u_str LISTEN 0 4096 {run}/lh/{name}.sock 3624 * 0 {held(name)}\n"
                 for name in ("engine", "stt", "tts")
             )
+            + f"u_str LISTEN 0 4096 @cuda-uvmfd-4026531836-1@ 3625 * 0 {held('stt')}\n"
         )
         tools = home / "tools"
         tools.mkdir()
@@ -958,7 +1131,9 @@ def test_block_0s_smoke_test_passes_its_listener_audit_under_lh_svc(host: dict) 
         )
         assert (
             f"ok: the box's units hold 3 Unix sockets, all in {run}, and 1 TCP or UDP listeners, all allowed; "
-            "the voice plane runs in the host's network namespace (LH_VOICENET=host) with 3 listeners"
+            "the GPU servers run in the host's network namespace (LH_PRIVATE_NET=host) with 1 loopback TCP "
+            "listeners and 1 abstract sockets; the voice plane runs in the host's network namespace "
+            "(LH_VOICENET=host) with 3 listeners"
         ) in audit
         assert smoke.stdout.rstrip().endswith("smoke: ok")
     finally:

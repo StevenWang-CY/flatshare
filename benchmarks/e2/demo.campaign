@@ -1,0 +1,14 @@
+# E2's demo video for v1.0: the frozen box and the PRs' 48-token configuration in the discriminating scenario, on
+# W5's round-1 sample of the agents (seed 11), each call's audio saved for benchmarks/e2/demo.py, which renders the
+# two points as benchmarks/e2/README.md's demo section does:
+#   benchmarks/e2/campaign.sh benchmarks/e2/demo.campaign
+
+agents-seed 11
+kv-sample-s 0
+save-audio
+
+# engine frozen
+arms/w5-disc-frozen-s24.toml
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+arms/w5-disc-pr-ab48-s24.toml

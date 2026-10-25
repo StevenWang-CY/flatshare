@@ -1,6 +1,6 @@
 # E2 campaigns
 
-An E2 point is one arm file in [`arms/`](arms): the calls, the agent replay beside them, the gateway's configuration and the engine ([the arm-file reference](../../python/leaseholder_bench/README.md#e2-points)). `lh-bench e2 run` measures one point on cyan. A campaign file lists arm files, and `campaign.sh` measures them in order from a workstation with SSH to the hosts, the way `deploy/deploy.sh` deploys. A line `agents-seed N` in it sets AIPerf's seed for all of its points, in place of each arm file's `[agents] seed`, so that each round of a repeated campaign replays a workload sample of its own while its points stay paired. A line `kv-sample-s SECONDS` sets `lh-bench e2 run --kv-sample-s` for its points: how often an agent point samples each engine's KV use and requests for the measured running share (0.5 s by default, on one connection to each engine that it keeps for the calls); `kv-sample-s 0` samples nothing, as W5's points ran, the sampler having come after them, so that a campaign read against W5's matches its instrumentation (the Marlin dry run's point, `benchmarks/a100/marlin-dry.campaign`).
+An E2 point is one arm file in [`arms/`](arms): the calls, the agent replay beside them, the gateway's configuration and the engine ([the arm-file reference](../../python/leaseholder_bench/README.md#e2-points)). `lh-bench e2 run` measures one point on cyan. A campaign file lists arm files, and `campaign.sh` measures them in order from a workstation with SSH to the hosts, the way `deploy/deploy.sh` deploys. A line `agents-seed N` in it sets AIPerf's seed for all of its points, in place of each arm file's `[agents] seed`, so that each round of a repeated campaign replays a workload sample of its own while its points stay paired. A line `kv-sample-s SECONDS` sets `lh-bench e2 run --kv-sample-s` for its points: how often an agent point samples the engine's KV use and requests for the measured running share (0.5 s by default, on one connection to the engine that it keeps for the calls); `kv-sample-s 0` samples nothing, as W5's points ran, the sampler having come after them, so that a campaign read against W5's matches its instrumentation (the Marlin dry run's point, `benchmarks/a100/marlin-dry.campaign`). A line `save-audio` has the callers save each call's audio, for [the demo video](#the-demo-video) (`lh-bench e2 run --save-audio`).
 
 ```sh
 export LH_SSH="ssh -F $HOME/.ssh/penn_config"                  # your SSH command for the hosts, as for deploy.sh
@@ -11,10 +11,10 @@ benchmarks/e2/campaign.sh --pause benchmarks/e2/w2.campaign     # measure, then 
 For each point whose run directory on cyan is not complete, `campaign.sh`:
 
 1. switches the GPU node to the arm's engine with [`variant.sh use`](../../deploy/phastform/variants/README.md), which restarts only what changes and returns once the engine answers `/health`;
-2. runs `lh-bench e2 run` on cyan, into `~/leaseholder/runs/e2/CAMPAIGN/POINT`, with each GPU node's deployed revision, its `~/leaseholder/src/DEPLOYED` read over SSH as the point starts, which `run.json` keeps beside cyan's (`--gpu-source`). Meanwhile it samples the GPU node's `nvidia-smi` once a second (SM and memory clocks, temperature, power and clock event reasons, timestamps in UTC, and the GPU's name, so that a record says which card it ran on), because a consumer card's boost clock follows its temperature, and puts the samples into that directory as `gpu.csv` when the point ends, failed or not;
+2. runs `lh-bench e2 run` on cyan, into `~/leaseholder/runs/e2/CAMPAIGN/POINT`, with the GPU node's deployed revision, its `~/leaseholder/src/DEPLOYED` read over SSH as the point starts, which `run.json` keeps beside cyan's (`--gpu-source`). Meanwhile it samples the GPU node's `nvidia-smi` once a second (SM and memory clocks, temperature, power and clock event reasons, timestamps in UTC, and the GPU's name, so that a record says which card it ran on), because a consumer card's boost clock follows its temperature, and puts the samples into that directory as `gpu.csv` when the point ends, failed or not;
 3. fetches that directory into `$LH_E2_RESULTS/CAMPAIGN/POINT` (default `~/leaseholder/runs/e2`), without AIPerf's `inputs.json`.
 
-A complete point is skipped, so running a stopped campaign again resumes it. The first failure stops the campaign, with the partial run directory fetched and its `run.json` saying what failed. At the end, `lh-bench e2 report` writes the frontier of the campaign's points (fetched into `CAMPAIGN/report`: `frontier.md`, `frontier.csv` and a figure per workload, `frontier.svg` for the arm files' own) and `lh-bench e2 reset` puts cyan's units back. `--pause` then stops the GPU node's units, which nothing should hold while idle. `campaign.log` beside the points keeps every step.
+A complete point is skipped, so running a stopped campaign again resumes it. The first failure stops the campaign, with the partial run directory fetched and its `run.json` saying what failed. At the end, `lh-bench e2 report` writes the frontier of the campaign's points (fetched into `CAMPAIGN/report`: `frontier.md`, `frontier.csv` and a figure per workload, `frontier.svg` for the arm files' own) and `lh-bench e2 reset` puts cyan's units back. `--pause` then stops the GPU node's units, which nothing should hold while idle. A campaign that fails once it has switched the node does both on its way out too, unless a point may still be running on cyan, which a reset or a pause would spoil: its lock is held, or the connection to cyan was lost (ssh's exit status 255, which `campaign.sh` reports as such rather than as the answer of the probe it cut). It then leaves cyan's units and the node as they are, and says so. `campaign.log` beside the points keeps every step.
 
 Points that share an engine go together in a campaign file: a switch restarts the engine, about 2 minutes with warm caches. A point takes about 12 minutes: AIPerf builds its dataset for about 4 (its cache does not apply to this dataset type, see `configs/aiperf.env`), then a minute of warm-up and the calls.
 
@@ -61,7 +61,7 @@ The other arms take an earlier arm's winner, so their files are written from its
 
 **The discriminating scenario** replays only the traces with the largest contexts, so that agents fill the KV pool while voice turns keep arriving. `weka-x32-long` on cyan holds the 48 traces of `weka-x32` whose main agent has the largest median input (the median trace's median is 13,326 tokens against 4,784 for the whole corpus; per request, 13,927 tokens against 7,940; 23,848 main-agent requests), linked by [`long_traces.py`](long_traces.py): `python benchmarks/e2/long_traces.py ~/leaseholder/data/weka-x32 ~/leaseholder/data/weka-x32-long 48`. Its points are named `disc-*`.
 
-[`w2c.campaign`](w2c.campaign) holds W2's third batch: arms 4 to 8 in the discriminating scenario, one run each (the arm files `disc-<arm>-s24.toml` are the 16- or 24-session arms with `sessions = 24` and `data = "weka-x32-long"`), and SGLang with its host tier (`--enable-hierarchical-cache --hicache-ratio 4 --hicache-write-policy write_through`) at 8 and 16 sessions, for parity with vLLM's write-through CPU tier. W4 repeats the best of each arm beside arm 9. [`a9.campaign`](a9.campaign) holds arm 9, Leaseholder, in the same scenario: the gateway's policy `leaseholder` (`[gateway.admission]`: 1,024 tokens of KV headroom per armed session, a 150 ms critical-window budget of predicted background prefill, a 16-token reply cap when the headroom was not kept), the engine's `make-room` variant and the voice worker's lifecycle events; its knob, the critical-window budget at 0 and 500 ms; and one run of each single-mechanism ablation (`disc-a9-no-*`, `trigger-request`, `gateway-only`, `engine-only`). A switched-off mechanism's keys are left out: the gateway refuses them.
+[`w2c.campaign`](w2c.campaign) holds W2's third batch: arms 4 to 8 in the discriminating scenario, one run each (the arm files `disc-<arm>-s24.toml` are the 16- or 24-session arms with `sessions = 24` and `data = "weka-x32-long"`), and SGLang with its host tier (`--enable-hierarchical-cache --hicache-ratio 4 --hicache-write-policy write_through`) at 8 and 16 sessions, for parity with vLLM's write-through CPU tier. W4 repeats the best of each arm beside arm 9. [`a9.campaign`](a9.campaign) holds arm 9, Leaseholder, in the same scenario: the gateway's lifecycle policy (`[gateway.admission]` with `policy = "lifecycle"`, which E2's arm files spell `leaseholder`: 1,024 tokens of KV headroom per armed session, a 150 ms critical-window budget of predicted background prefill, a 16-token reply cap when the headroom was not kept), the engine's `make-room` variant and the voice worker's lifecycle events; its knob, the critical-window budget at 0 and 500 ms; and one run of each single-mechanism ablation (`disc-a9-no-*`, `trigger-request`, `gateway-only`, `engine-only`). A switched-off mechanism's keys are left out: the gateway refuses them.
 
 [`r1.campaign`](r1.campaign) to [`r4.campaign`](r4.campaign) repeat the discriminating scenario in rounds, so that each headline configuration has five runs (w2c and a9 are round 0) and each of arm 9's ablations three (rounds 1 and 2). The headline configurations are the best of each arm in round 0: the frozen box and the best step-cap cell (`disc-a4-b1024-t0-s24`), the static reservation, preempt-resubmit, SGLang with its host tier, and arm 9. A round groups its points by engine, and the groups' order rotates from round to round, so that no configuration always runs at the same hour of a campaign that takes hours. Rounds 3 and 4 and both standard rounds (below) also measure voice alone (`a1-voice`), the reference every point's SLO is read against, which W2 measured once: arm 9's runs land just above that SLO, by about the spread of one point's p95, with degrade capping every reply, so the reference itself needs repeats.
 
@@ -83,45 +83,38 @@ The other arms take an earlier arm's winner, so their files are written from its
 
 The `[admission]` keys are those of `lh-gateway`'s configuration ([its README](../../crates/lh-gateway/README.md)); `lh-bench e2 run` passes the `[gateway]` table through as it is.
 
-## Two GPU nodes: dedicate vs pool
-
-A point on two GPU nodes (PLAN §3.4) names them in its arm file's `[gateway]`, with the cyan end of each node's tunnel (its engine's socket, which `lh-tunnel@NODE` serves), and how the gateway places sessions on them ([placement](../../crates/lh-gateway/README.md#placement)). Every node runs the arm's `[engine]`.
-
-```toml
-[gateway.nodes.phastform]
-upstream = "unix:/run/user/1007/lh/phastform-engine.sock"   # lh-tunnel@phastform
-[gateway.nodes.gray]
-upstream = "unix:/run/user/1007/lh/gray-engine.sock"        # lh-tunnel@gray
-
-[gateway.placement]
-policy = "least-loaded"
-```
-
-`LH_GPU` names the nodes' hosts, separated by commas, and `campaign.sh` then switches the engine on each node for every point, samples each node's GPU into `gpu-<node>.csv`, and with `--pause` pauses each. A node is named after its host's first label, as the arm file names it:
-
-```sh
-LH_GPU=phastform,gray benchmarks/e2/campaign.sh --pause benchmarks/e2/NAME.campaign
-```
-
-`LH_PROFILE` names the GPU nodes' hardware profile ([`deploy/profiles`](../../deploy/profiles)) when it is not the frozen box's: `lh-bench e2 run --profile` then holds each engine to that profile's model and scheduler settings, and the report gives the points a workload of their own, by the GPU and the model their records name.
-
-`lh-bench e2 run` starts each node's tunnel and leaves it running (stop `lh-tunnel@gray` after the window), checks, empties and snapshots each node's engine, and tells the voice worker the nodes, so that each call's STT and TTS follow it. The summary keeps the totals a point on one node has, the engines' counters added up, and each node's share; the report places the point by its totals and gives each node's share in a table of its own ([the summary and the report](../../python/leaseholder_bench/README.md#e2-points)).
-
-The three ways to run voice and agents on two equal GPUs, at equal load: 4 callers and 32 agent sessions of `weka-x32` (twice the 16 of one node), 3 repeats each. [`g2-r1.campaign`](g2-r1.campaign) to [`g2-r3.campaign`](g2-r3.campaign) are the three rounds, each over A, B and C (`arms/g2-a-dedicate-s32.toml`, `g2-b-pool-s32.toml`, `g2-c-leaseholder-s32.toml`), grouped by engine with the groups' order rotated.
-
-| Point | `[gateway.placement] policy` | The nodes | `[gateway.admission]` | `[engine]` |
-|---|---|---|---|---|
-| A, dedicate | `"dedicated"` | `classes = ["realtime"]` on phastform, `classes = ["interactive", "background"]` on gray | as configured | frozen |
-| B, pool under tuned stock | `"least-loaded"` | every class on both | as configured | frozen |
-| C, pool under Leaseholder | `"leaseholder"` | every class on both | arm 9's: `policy = "leaseholder"`, `headroom_tokens = 1024`, `critical_prefill_budget_ms = 150`, `degrade_max_tokens = 16` | `variant = "make-room"` |
-
-Before the first two-node campaign: Gray is deployed (`deploy/deploy.sh gray`) and authorizes cyan's tunnel key; cyan has Gray's SSH target in `~/.config/leaseholder/tunnel-gray.env` (`LH_TUNNEL_TARGET`), runs an `lh-gateway` build that knows `[nodes]`, and runs the voice worker from a deployed source that knows `LH_NODES` (restart `lh-voice-worker` after deploying).
+`LH_PROFILE` names the GPU node's hardware profile ([`deploy/profiles`](../../deploy/profiles)) when it is not the frozen box's: `lh-bench e2 run --profile` then holds the engine to that profile's model and scheduler settings, and the report gives the points a workload of their own, by the GPU and the model their records name.
 
 **SMG as shipped (arm 8b).** `lh-smg.service` runs SMG 1.13.0's priority scheduler with its defaults. A vLLM worker behind its `openai` backend reports no capacity, so SMG sizes its pool at 64 slots, and its built-in reservations (system 32, interactive at least 128, default 10%) do not fit: it scales them down to system 19, interactive 39 and default 4, which leaves 2 slots for the bulk class, where the gateway sends background requests. Measured against `lh-bench mock-server`, 40 concurrent bulk requests went through 2 at a time, and the others wait in SMG's bulk queue (1,024 deep, 503 after 300 s). As shipped, arm 8b therefore caps the agents at 2 requests in flight; reservations that fit the pool take a `--priority-scheduler-config` file.
 
+## The headline configurations
+
+The configurations the docs' tables report, by the arm file each ran from and the campaigns whose records hold its runs, in the discriminating scenario unless the row says otherwise. W4's records are in [`benchmarks/results/2026-10-23-e2`](../results/2026-10-23-e2/README.md) and W5's re-measure in [`benchmarks/results/2026-10-24-e2-w5`](../results/2026-10-24-e2-w5/README.md), each W5 arm file its W4 one with a warm-up turn opening each call.
+
+| Configuration | W4: arm file, campaigns | W5: arm file, campaigns |
+|---|---|---|
+| Voice alone, the SLO's reference | `a1-voice`: w2, s1, s2, r3, r4 | `w5-a1-voice`: w5-r1 to w5-r5 |
+| The frozen box | `disc-frozen-s24`: w2c, r1 to r4 | `w5-disc-frozen-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5 |
+| Step cap 1,024, no threshold | `disc-a4-b1024-t0-s24`: w2c, r1 to r4 | |
+| Static reservation, 2,048 tokens | `disc-a6-reserve2048-s24`: w2c, r1 to r4 | |
+| SGLang with HiCache | `disc-a7b-sglang-hicache-s24`: w2c, r1 to r4 | |
+| Preempt-resubmit before the first byte | `disc-a8c-resubmit-s24`: w2c, r1 to r4 | `w5-disc-a8c-resubmit-s24`: w5-ext-r1 to w5-ext-r5 |
+| Arm 9 | `disc-a9-s24`: a9, r1 to r4 | |
+| #63350 alone (KV preemption) | `disc-pr-a-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-a-s24`: w5-pr-r1 to w5-pr-r5 |
+| #63350 + #63351 (the budget cap, 16 tokens) | `disc-pr-ab-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab-s24`: w5-pr-r1 to w5-pr-r5 |
+| #63350 + #63351, a 48-token window | `disc-pr-ab48-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab48-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5, w5-ext-r1 to w5-ext-r5 |
+| The same on make-room as v0.3 built it (W5's control) | | `w5-disc-pr-ab48-v03-s24`: w5-r1 to w5-r5 |
+| Standard scenario (16 agent sessions): the frozen box | `a4-b512-t256-s16`: w2, s1, s2 | `w5-std-frozen-s16`: w5-ext-r1 to w5-ext-r5 |
+| Standard scenario: arm 9 | `a9-s16`: a9-standard, s1, s2 | |
+| Standard scenario: #63350 + #63351, a 48-token window | | `w5-std-pr-ab48-s16`: w5-ext-r1 to w5-ext-r5 |
+| 4 and 6 callers: #63350 + #63351, a 48-token window | | `w5-disc-pr-ab48-c4-s24`, `w5-disc-pr-ab48-c6-s24`: w5-cap-r1 to w5-cap-r3 |
+| 4 and 6 callers: voice alone | | `w5-a1-voice-c4`, `w5-a1-voice-c6`: w5-cap-r1 to w5-cap-r3 |
+
+The points on two GPU nodes (PLAN §3.4: a voice node and an agent node, against two pooled nodes under tuned stock and under Leaseholder) never ran: no second GPU is free before v1.0. Their arm files and campaigns, with the code that runs them (the gateway's `[nodes]` and `[placement]`, the voice worker's `LH_NODES`, `lh-bench e2 run`'s points on several nodes and `campaign.sh`'s several GPU nodes), are on the `two-node` branch.
+
 ## Results
 
-`lh-bench e2 report RUN_DIR... --out DIR` builds a frontier from any set of run directories, across campaigns too. It compares points only within a workload, the agents' corpus and the number of callers: the discriminating scenario (`weka-x32-long`) and the calls-per-GPU points (4 and 6 callers) each get their own section of `frontier.md`, with the voice SLO they are read against (250 ms above voice alone with as many callers), and their own figure (`frontier-weka-x32-long.svg`, `frontier-4-callers.svg`), beside `frontier.svg` for the standard one ([the figures](../../python/leaseholder_bench/README.md#e2-points)). A point measured in several campaigns (W4's rounds of the discriminating scenario reuse w2c's and a9's arm files) is one configuration: the report keeps each run, gives the configuration's median and range, and places it on the frontier at its medians. `waterfall.svg` splits each configuration's voice turn into its stages (endpointing, the reply to its first sentence, TTS first audio, transport and playout), stacked to its mean V2V, with the median and p95 marked; `--waterfall POINT` picks the configurations it draws.
+`lh-bench e2 report RUN_DIR... --out DIR` builds a frontier from any set of run directories, across campaigns too. It compares points only within a workload: the agents' corpus and the number of callers, the GPU and the model where they are not the frozen box's, and the warm-up turns that open each call where the points differ in them (W4's records with W5's). The discriminating scenario (`weka-x32-long`) and the calls-per-GPU points (4 and 6 callers) each get their own section of `frontier.md`, with the voice SLO they are read against (250 ms above voice alone with as many callers and warm-up turns), and their own figure (`frontier-weka-x32-long.svg`, `frontier-4-callers.svg`), beside `frontier.svg` for the standard one ([the figures](../../python/leaseholder_bench/README.md#e2-points)). A point measured in several campaigns (W4's rounds of the discriminating scenario reuse w2c's and a9's arm files) is one configuration: the report keeps each run, gives the configuration's median and range, and places it on the frontier at its medians. `waterfall.svg` splits each configuration's voice turn into its stages (endpointing, the reply to its first sentence, TTS first audio, transport and playout), stacked to its mean V2V, with the median and p95 marked; `--waterfall POINT` picks the configurations it draws.
 
 The repository keeps a compact record of each point, not its run directory: `lh-bench e2 export RUN_DIR... --out DIR` writes the few small files the report reads (about 15 kB a point, no credential and no home path) into `DIR/CAMPAIGN/POINT`, and the report gives the same tables and figures from them as from the run directories ([the compact record](../../python/leaseholder_bench/README.md#e2-points)). E2's records are in [`benchmarks/results/2026-10-23-e2`](../results/2026-10-23-e2/README.md), and `make reproduce-e2` regenerates the report from them into `build/reproduce-e2` (`E2_REPORT=DIR` to choose), with the bench venv:
 
@@ -134,24 +127,23 @@ The run directories themselves, with the raw records the report does not need (t
 
 ## The demo video
 
-Two calls side by side, one stuttering and one smooth, while background agents run: [`demo.py`](demo.py) renders them from two points measured with `lh-bench e2 run --save-audio`, which has the callers save each call's audio and the times of its turns ([`lh-voice bots --save-audio`](../../python/leaseholder_voice/README.md#measurement-callers)). `campaign.sh` does not pass the option, so the two points are measured by hand, each after switching the GPU node to its engine as `campaign.sh` does (`variant.sh use` with what `lh-bench e2 engine ARM` prints), for example the frozen box and the vLLM PRs' configuration with a 48-token window in the discriminating scenario:
+Two calls side by side, one stuttering and one smooth, while background agents run: [`demo.py`](demo.py) renders them from two points measured with `lh-bench e2 run --save-audio`, which has the callers save each call's audio and the times of its turns ([`lh-voice bots --save-audio`](../../python/leaseholder_voice/README.md#measurement-callers)). [`demo.campaign`](demo.campaign) measures two such points with its `save-audio` line: the frozen box and the vLLM PRs' configuration with a 48-token window in the discriminating scenario, on W5's round-1 sample of the agents:
 
 ```sh
-lh-bench e2 run ~/leaseholder/src/benchmarks/e2/arms/disc-frozen-s24.toml --out ~/leaseholder/runs/e2/demo/disc-frozen-s24 --save-audio
-lh-bench e2 run ~/leaseholder/src/benchmarks/e2/arms/disc-pr-ab48-s24.toml --out ~/leaseholder/runs/e2/demo/disc-pr-ab48-s24 --save-audio
+benchmarks/e2/campaign.sh benchmarks/e2/demo.campaign
 ```
 
 Then, on a workstation with the two run directories fetched (`uv` installs the script's pinned numpy, matplotlib and imageio-ffmpeg, whose ffmpeg encodes):
 
 ```sh
-uv run benchmarks/e2/demo.py $LH_E2_RESULTS/demo/disc-frozen-s24 $LH_E2_RESULTS/demo/disc-pr-ab48-s24 \
+uv run benchmarks/e2/demo.py $LH_E2_RESULTS/demo/w5-disc-frozen-s24 $LH_E2_RESULTS/demo/w5-disc-pr-ab48-s24 \
   --labels "vLLM 0.32, tuned" "With #63350 and #63351" --out demo.mp4
-uv run benchmarks/e2/demo.py $LH_E2_RESULTS/demo/disc-frozen-s24 $LH_E2_RESULTS/demo/disc-pr-ab48-s24 \
+uv run benchmarks/e2/demo.py $LH_E2_RESULTS/demo/w5-disc-frozen-s24 $LH_E2_RESULTS/demo/w5-disc-pr-ab48-s24 \
   --labels "vLLM 0.32, tuned" "With #63350 and #63351" --first-turn 1 --seconds 30 --out turn1.mp4 \
   --gif docs/figures/e2-demo.gif --gif-seconds 15
 ```
 
-The v0.3 release has the video rendered so, from the two points measured on 2026-10-24 (V2V p95 10,851 and 2,202 ms; they are not in the tables, and the release has their run directories). [`docs/figures/e2-demo.gif`](../../docs/figures/e2-demo.gif) is the second command's: the calls' second turn, the first 15 s.
+The v0.3 release has the video rendered so, from two such points measured by hand on 2026-10-24 (`disc-frozen-s24` and `disc-pr-ab48-s24`, V2V p95 10,851 and 2,202 ms; they are not in the tables, and the release has their run directories). [`docs/figures/e2-demo.gif`](../../docs/figures/e2-demo.gif) is the second command's: the calls' second turn, the first 15 s.
 
 The video is 1280×720 at 30 frames a second. Each side shows its point's first call (`--caller`): its scrolling waveform, the caller above and the agent below; the current turn's wait, from the end of the caller's speech to the agent's first audio, counting live; each reply's V2V as the callers measured it, in a bar that grows while the caller waits; and the background goodput, the point's over its calls and the last 10 s of AIPerf's completed requests on the wall clock. Both calls show the same turns from `--first-turn` (default 0): `--turns` of them, by default as many as fit in `--seconds` (default 90). Turn k of both starts at the same moment, so the same line is answered side by side, and the call that is ahead waits in silence before its next line: only a caller's pause between turns is stretched, never a measured wait. The soundtrack is one call at a time, the left one for the first half and the right one for the second, and the side playing is highlighted. `--gif` writes the first 10 s (`--gif-seconds`) as a 640×360 GIF at 10 frames a second, for a README, from frames of their own without the soundtrack's cues (no side marked as heard). A 90-second video takes two to three minutes to render.
 

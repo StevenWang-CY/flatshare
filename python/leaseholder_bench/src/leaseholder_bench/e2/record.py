@@ -2,11 +2,10 @@
 
 :func:`summarize_point` reads one run directory of ``lh-bench e2 run``: the callers' summary, the
 per-request records of the AIPerf replay, the gateway's request lines of the calls, the ``/metrics``
-snapshots taken when the calls started and ended and, on an agent point, the engines' KV samples
+snapshots taken when the calls started and ended and, on an agent point, the engine's KV samples
 through them, and the voice worker's journal of the calls. Every metric covers that window. A metric
 that the gateway or the engine does not export is null, never zero, and a counter that went down
-(its process restarted during the calls) is an error. A point on several GPU nodes reports its
-totals as a point on one does, its engines' counters added up, and each node's share.
+(its process restarted during the calls) is an error.
 
 :func:`export_point` writes a point's compact record (``lh-bench e2 export``): the few small files
 the report reads. :func:`compact` gives the record's run.json and summary.json from a run directory
@@ -25,8 +24,8 @@ from typing import Any
 
 import orjson
 
-from leaseholder_bench.kv_metrics import Labels, metric_samples, samples
-from leaseholder_bench.load import summarize
+from leaseholder_bench.kv_metrics import Labels, samples
+from leaseholder_stats import metric_samples, summarize, v2v_samples
 
 OUTCOMES = "lh_gateway_request_outcomes_total"
 """By class and outcome; ``shed`` is a request the admission point gave up for a stricter class."""
@@ -36,17 +35,11 @@ DISCARDED = "lh_gateway_admission_discarded_tokens_total"
 """The prompt tokens of the attempts preempt-resubmit dropped: at most the prefill they discarded."""
 USAGE = "lh_gateway_usage_tokens_total"
 """Tokens from response usage, by class and kind, counted as each response ends."""
-PLACEMENT_ROUTE = "/v1/sessions"
-"""The gateway's placement route, whose request lines name a class but no inference request."""
 
 TURNS_LOGGER = "leaseholder_voice.turns"
 SESSIONS_LOGGER = "leaseholder_voice.events"
 """The voice worker's loggers (leaseholder_voice.events): a line per turn, and one per session as it
 ends ("session ended")."""
-PLACEMENT_LOGGER = "leaseholder_voice.placement"
-"""The voice worker's logger of each call's GPU node on several ("session placed", with its room)."""
-CALLER_ROOM = re.compile(r"lh-bot-(?P<run_id>[0-9a-f]+)-(?P<caller>\d+)")
-"""How ``lh-voice bots`` names each caller's room: after its run (bots/run.json) and the caller."""
 WATERFALL = (
     "transcript_ms",
     "end_of_turn_ms",
@@ -68,9 +61,8 @@ REPLY_TIMEOUT_MS = 30_000.0
 """How long ``lh-voice bots`` waits for a reply (its ``reply_timeout``), after which the turn fails: a
 reply that never came counts as a sample censored at this value, in every V2V percentile."""
 KV_GAUGES = ("vllm:kv_cache_usage_perc", "vllm:num_requests_running", "vllm:num_requests_waiting")
-"""What ``lh-bench e2 run`` samples from each engine's ``/metrics`` during an agent point's calls,
-into metrics/engine-kv.csv (engine-NODE-kv.csv on several GPU nodes), one line a sample: its time,
-then these."""
+"""What ``lh-bench e2 run`` samples from the engine's ``/metrics`` during an agent point's calls,
+into metrics/engine-kv.csv, one line a sample: its time, then these."""
 REALTIME_TIER_TOKENS = 2 * 1024
 """lh-sim's realtime tier, two calls of 1,024 tokens (crates/lh-sim, ``hardware::TOKENS_PER_CALL``):
 the running share is the time the KV that running requests hold leaves less than this free."""
@@ -82,15 +74,13 @@ def summarize_point(
     end: float,
     *,
     agents: bool,
-    nodes: Sequence[str] = (),
     warmup_turns: int = 0,
 ) -> dict[str, Any]:
     """The E2 metrics of the window ``start``..``end`` (epoch seconds) from a run directory. Raises
-    ``ValueError`` when the point measured nothing to place on the frontier. A point on several GPU
-    ``nodes`` adds up their engines' counters and reports each node's share under ``nodes``. The
-    ``warmup_turns`` that open each call are measured by nothing: the callers leave them out, and so
-    does the worker's account of the turns. The first bytes come from the gateway's request lines of
-    the calls (gateway.jsonl), without which the point fails."""
+    ``ValueError`` when the point measured nothing to place on the frontier. The ``warmup_turns`` that
+    open each call are measured by nothing: the callers leave them out, and so does the worker's
+    account of the turns. The first bytes come from the gateway's request lines of the calls
+    (gateway.jsonl), without which the point fails."""
     bots = orjson.loads((run_dir / "bots" / "summary.json").read_bytes())
     if bots["v2v_ms"].get("n", 0) <= bots["v2v_ms"].get("censored", 0):
         raise ValueError(f"the calls measured no voice-to-voice latency ({bots['errors']} failed)")
@@ -102,7 +92,6 @@ def summarize_point(
             "the gateway logged no request line for the calls (gateway.jsonl): the first bytes come "
             'from them, with its log_format = "json"'
         )
-    engines = {node: engine_counts(*_snapshots(metrics, f"engine-{node}")) for node in nodes}
     voice = ("turns", "errors", "v2v_ms", "barge_in_to_silence_ms", "barge_ins")
     summary = {
         "window_s": round(end - start, 1),
@@ -110,22 +99,11 @@ def summarize_point(
         "worker": worker(run_dir / "voice-worker.log", warmup_turns),
         "background": background(records, start, end) if agents else None,
         "gateway": gateway_counts(*_snapshots(metrics, "gateway"), end - start, requests),
-        "engine": (
-            added_engine_counts(engines.values())
-            if nodes
-            else engine_counts(*_snapshots(metrics, "engine"))
-        ),
+        "engine": engine_counts(*_snapshots(metrics, "engine")),
     }
-    if nodes:
-        summary["nodes"] = node_shares(run_dir, end - start, requests, engines)
-    # The engines' KV use while the calls ran, which e2 run samples on agent points.
+    # The engine's KV use while the calls ran, which e2 run samples on agent points.
     window = {"start": start, "end": end}
-    kept = point_engines(run_dir, nodes)
-    if nodes:
-        for node, share in summary["nodes"].items():
-            share["kv"] = kv_samples(metrics / f"engine-{node}-kv.csv", window, kept.get(node))
-    else:
-        summary["kv"] = kv_samples(metrics / "engine-kv.csv", window, kept.get(None))
+    summary["kv"] = kv_samples(metrics / "engine-kv.csv", window, point_engine(run_dir))
     return summary
 
 
@@ -178,56 +156,9 @@ def kv_samples(
 
 
 def _snapshots(metrics: Path, name: str) -> tuple[str, str]:
-    """The ``/metrics`` of ``name`` (``gateway``, ``engine``, ``engine-NODE``) as the calls started and
-    ended."""
+    """The ``/metrics`` of ``name`` (``gateway`` or ``engine``) as the calls started and ended."""
     start, end = ((metrics / f"{name}-{when}.prom").read_text() for when in ("start", "end"))
     return start, end
-
-
-def node_shares(
-    run_dir: Path,
-    seconds: float,
-    requests: Sequence[Mapping[str, Any]],
-    engines: Mapping[str, dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
-    """Each GPU node's share of a point on several: the calls the voice worker placed on it (None when
-    its journal places none), the agent requests and the first bytes of the realtime requests the
-    gateway sent it, from its request lines of the calls, and its engine's counters."""
-    placed = call_nodes(run_dir)
-    turns = _json_lines((run_dir / "bots" / "turns.jsonl").read_text()) if placed else ()
-    turns = measured_turns(turns)
-    shares = {}
-    for node, engine in engines.items():
-        sent = [r for r in requests if r.get("node") == node]
-        callers = {caller for caller, on in placed.items() if on == node}
-        shares[node] = {
-            "voice": (
-                call_turns([t for t in turns if t.get("caller") in callers], len(callers))
-                if placed
-                else None
-            ),
-            "background": logged_background(sent, seconds),
-            "realtime_first_byte_ms": logged_first_byte(sent, "realtime"),
-            "engine": engine,
-        }
-    return shares
-
-
-def call_nodes(run_dir: Path) -> dict[int, str]:
-    """Each call's GPU node, by caller: the voice worker's journal names the room of each call it placed,
-    and the callers named their rooms after their run."""
-    journal, bots = run_dir / "voice-worker.log", run_dir / "bots" / "run.json"
-    if not journal.exists() or not bots.exists():
-        return {}
-    run_id = orjson.loads(bots.read_bytes())["run_id"]
-    nodes = {}
-    for record in _json_lines(journal.read_text(errors="replace")):
-        if record.get("name") != PLACEMENT_LOGGER or record.get("message") != "session placed":
-            continue
-        room = CALLER_ROOM.fullmatch(str(record.get("room")))
-        if room and room["run_id"] == run_id:
-            nodes[int(room["caller"])] = record["node"]
-    return nodes
 
 
 def measured_turns(turns: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
@@ -236,56 +167,11 @@ def measured_turns(turns: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]
     return [turn for turn in turns if not turn.get("warmup")]
 
 
-def call_turns(turns: Sequence[Mapping[str, Any]], calls: int) -> dict[str, Any]:
-    """Some of the calls' numbers from their callers' measured turns (bots/turns.jsonl), counted as
-    ``lh-voice bots`` sums up all of them: voice-to-voice over every reply, the reply to an
-    interruption too, and a reply or a silence a timeout cut short censored at REPLY_TIMEOUT_MS."""
-    turns = measured_turns(turns)
-    silence = [t["barge_in_to_silence_ms"] for t in turns if "barge_in_to_silence_ms" in t]
-    silence += [
-        REPLY_TIMEOUT_MS
-        for t in turns
-        if t.get("interrupted_speech") and "barge_in_to_silence_ms" not in t
-    ]
-    return {
-        "calls": calls,
-        "turns": len(turns),
-        "errors": sum(1 for t in turns if "error" in t),
-        "v2v_ms": summarize(turn_samples(turns)[0]),
-        "barge_in_to_silence_ms": summarize(silence),
-        "barge_ins": sum(1 for t in turns if t.get("barge_in")),
-    }
-
-
 def turn_samples(turns: Iterable[Mapping[str, Any]]) -> tuple[list[float], int]:
     """The voice-to-voice samples of the callers' measured turns (bots/turns.jsonl) and how many are
     censored: each turn's reply and, after a barge-in, the reply to the interruption, as ``lh-voice
     bots`` pools them; a reply that never came (a failed turn) stands at REPLY_TIMEOUT_MS."""
-    samples, censored = [], 0
-    for turn in measured_turns(turns):
-        wanted = ["v2v_ms", *(["v2v_after_barge_in_ms"] if turn.get("barge_in") else [])]
-        for key in wanted:
-            censored += key not in turn
-            samples.append(turn.get(key, REPLY_TIMEOUT_MS))
-    return samples, censored
-
-
-def logged_background(requests: Iterable[Mapping[str, Any]], seconds: float) -> dict[str, Any]:
-    """The agent requests among the gateway's request lines, counted as :func:`background` counts
-    AIPerf's records: the goodput of those served (completed with status 200: the gateway completes a
-    response it relays in full whatever its status), the others as lost, and their first byte."""
-    ended = [
-        r for r in requests if r.get("class") == "background" and r.get("route") != PLACEMENT_ROUTE
-    ]
-    ok = [r for r in ended if r.get("outcome") == "completed" and r.get("status") == 200]
-    tokens = sum(r.get("prompt_tokens", 0) + r.get("completion_tokens", 0) for r in ok)
-    return {
-        "requests": len(ok),
-        "errors": len(ended) - len(ok),
-        "requests_per_s": round(len(ok) / seconds, 3),
-        "tokens_per_s": round(tokens / seconds, 1),
-        "first_byte_ms": logged_first_byte(ok, "background"),
-    }
+    return v2v_samples(measured_turns(turns), REPLY_TIMEOUT_MS)
 
 
 def _json_lines(text: str) -> Iterator[dict[str, Any]]:
@@ -480,7 +366,9 @@ def gateway_counts(
             return None
         return round(sum(v for k, v in counters[name].items() if dict(k).items() >= match.items()))
 
-    admission = REFUSED in counters  # its series exist from the gateway's start
+    # A gateway with an admission point exports its series from its start, at zero; one without has
+    # none, and its shed count, from a family every gateway has, is null rather than zero.
+    admission = REFUSED in counters
     prompt = total(USAGE, {"class": "background", "kind": "prompt"})
     completion = total(USAGE, {"class": "background", "kind": "completion"})
     return {
@@ -511,28 +399,6 @@ CPU_TIER = {
 """The CPU tier's own counts (vLLM's OffloadingConnector): the bytes of every load into the GPU pool and
 of every store from it, a preempted request's resume included, which the prompt-token sources leave
 out."""
-
-
-def added_engine_counts(counts: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
-    """Several engines' :func:`engine_counts` added up; a count that no engine keeps stays None."""
-    counts = list(counts)
-
-    def added(key: str) -> dict[str, int] | None:
-        kept = [c[key] for c in counts if c[key] is not None]
-        if not kept:
-            return None
-        totals: dict[str, int] = {}
-        for by in kept:
-            for name, value in by.items():
-                totals[name] = totals.get(name, 0) + value
-        return totals
-
-    return {
-        "preemptions": measured_sum(*(c["preemptions"] for c in counts)),
-        "prompt_tokens_by_source": added("prompt_tokens_by_source"),
-        "refused": added("refused"),
-        **{key: measured_sum(*(c.get(key) for c in counts)) for key in CPU_TIER},
-    }
 
 
 def engine_counts(before: str, after: str) -> dict[str, Any]:
@@ -607,58 +473,26 @@ def render(summary: Mapping[str, Any]) -> str:
         ttft = "/".join(str(background["ttft_ms"].get(p)) for p in ("p50", "p99"))
         line += f"; background {background['requests_per_s']} requests/s"
         line += f", {background['tokens_per_s']:,.0f} tokens/s, agent TTFT p50/p99 {ttft} ms"
-    for node, share in (summary.get("nodes") or {}).items():
-        parts = []
-        if calls := share["voice"]:
-            parts.append(f"{calls['calls']} calls, V2V p95 {calls['v2v_ms'].get('p95')} ms")
-        if served := share["background"]:
-            parts.append(f"{served['tokens_per_s']:,.0f} background tokens/s")
-        if parts:
-            line += f"; {node}: {', '.join(parts)}"
     return line
 
 
-def _gpu_samples(nodes: Iterable[str]) -> list[str]:
-    """The files of GPU samples campaign.sh leaves in a run directory: gpu.csv, or gpu-NODE.csv for
-    each of several GPU nodes."""
-    return [f"gpu-{node}.csv" for node in nodes] or ["gpu.csv"]
-
-
-def gpu(files: Sequence[Path], window: Mapping[str, float] | None) -> dict[str, Any]:
-    """The GPUs' median SM clock (MHz) and highest temperature (°C) during the calls, from the samples
-    campaign.sh takes once a second on each GPU node (gpu.csv; gpu-NODE.csv for a point on several);
-    None without them. Where the samples name the GPU, also its name (``gpu_name``). A file whose rows
-    carry several GPUs' UUIDs (a host's other GPUs) counts the rows of the one its ``# gpu UUID`` line
-    names, the point's, alone, and none where it names none; one from before the rows named their GPU
-    with several rows a second (several GPUs) counts none: the GPUs are not mixed."""
+def gpu(path: Path, window: Mapping[str, float] | None) -> dict[str, Any]:
+    """The GPU's median SM clock (MHz) and highest temperature (°C) during the calls, from the samples
+    campaign.sh takes once a second on the GPU node (gpu.csv); None without them. Where the samples
+    name the GPU, also its name (``gpu_name``). A file whose rows carry several GPUs' UUIDs (a host's
+    other GPUs) counts the rows of the one its ``# gpu UUID`` line names, the point's, alone, and none
+    where it names none; one from before the rows named their GPU with several rows a second (several
+    GPUs) counts none: the GPUs are not mixed."""
     clocks: list[float] = []
     temperatures: list[float] = []
     names: list[str] = []
-    for path in files:
-        if not path.exists() or not window:
-            continue
-        text = path.read_text(errors="replace").splitlines()
-        lent = next((line.split()[2] for line in text if line.startswith("# gpu ")), None)
-        rows = [[field.strip() for field in line.split(",")] for line in text]
-        uuids = {row[7] for row in rows if len(row) > 7}
-        stamps = [row[0] for row in rows if len(row) > 1 and len(row) <= 7]
-        if len(stamps) != len(set(stamps)):
-            continue  # several GPUs a second, unnamed
-        for fields in rows:
-            if len(uuids) > 1 and (len(fields) <= 7 or fields[7] != lent):
-                continue
-            try:
-                at = datetime.strptime(fields[0], GPU_TIME).replace(tzinfo=UTC).timestamp()
-            except ValueError:
-                continue  # a line cut short when the sampling stopped
-            if not window["start"] <= at <= window["end"]:
-                continue
-            if (clock := _number(fields, 1)) is not None:
-                clocks.append(clock)
-            if (temperature := _number(fields, 3)) is not None:
-                temperatures.append(temperature)
-            if len(fields) > 6 and fields[6]:
-                names.append(fields[6])
+    for fields in _gpu_rows(path, window):
+        if (clock := _number(fields, 1)) is not None:
+            clocks.append(clock)
+        if (temperature := _number(fields, 3)) is not None:
+            temperatures.append(temperature)
+        if len(fields) > 6 and fields[6]:
+            names.append(fields[6])
     kept: dict[str, Any] = {
         "gpu_sm_clock_p50_mhz": round(statistics.median(clocks)) if clocks else None,
         "gpu_temperature_max_c": round(max(temperatures)) if temperatures else None,
@@ -667,6 +501,29 @@ def gpu(files: Sequence[Path], window: Mapping[str, float] | None) -> dict[str, 
     if names:
         kept["gpu_name"] = statistics.mode(names)
     return kept
+
+
+def _gpu_rows(path: Path, window: Mapping[str, float] | None) -> Iterator[list[str]]:
+    """The fields of the point's GPU's samples in gpu.csv taken during the calls, as :func:`gpu`
+    counts them."""
+    if not path.exists() or not window:
+        return
+    text = path.read_text(errors="replace").splitlines()
+    lent = next((line.split()[2] for line in text if line.startswith("# gpu ")), None)
+    rows = [[field.strip() for field in line.split(",")] for line in text]
+    uuids = {row[7] for row in rows if len(row) > 7}
+    stamps = [row[0] for row in rows if len(row) > 1 and len(row) <= 7]
+    if len(stamps) != len(set(stamps)):
+        return  # several GPUs a second, unnamed
+    for fields in rows:
+        if len(uuids) > 1 and (len(fields) <= 7 or fields[7] != lent):
+            continue
+        try:
+            at = datetime.strptime(fields[0], GPU_TIME).replace(tzinfo=UTC).timestamp()
+        except ValueError:
+            continue  # a line cut short when the sampling stopped
+        if window["start"] <= at <= window["end"]:
+            yield fields
 
 
 def _number(fields: Sequence[str], index: int) -> float | None:
@@ -687,8 +544,7 @@ def measured_sum(*counts: int | None) -> int | None:
 
 RECORD = ("run.json", "arm.toml", "bots/summary.json", "bots/turns.jsonl")
 """What a point's compact record (``lh-bench e2 export``) keeps of its run directory's files, its
-run.json as :func:`compact` gives it, beside its summary.json and a reduced engine.json
-(engine-NODE.json for each of several GPU nodes). Left out:
+run.json as :func:`compact` gives it, beside its summary.json and a reduced engine.json. Left out:
 the gateway's request log and the GPU's samples, whose numbers the record's summary keeps; AIPerf's
 exports, the metric snapshots, the worker's journal and the tools' logs; and the callers' run.json,
 which names LiveKit's API key."""
@@ -753,12 +609,11 @@ _HOME = re.compile(r"/(?:home|Users)/[^/\s]+|/root(?=/)")
 def compact(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]] | None:
     """The run.json and summary.json of the compact record of the point in ``run_dir``, a run
     directory or a record (whose own it returns); None for a point that did not complete. The
-    run.json is the run's, its ``versions`` naming the GPU nodes' deployed revisions as null where
-    the run did not record them (``gpu_source``). The summary takes the first bytes of both classes
-    exactly from the request log, the GPU's median SM clock and highest temperature from gpu.csv
-    (``gpu``; on several GPU nodes over all of their gpu-NODE.csv, and each node's in its share), the
-    background goodput over the calls' first GOODPUT_WINDOW_S from AIPerf's records, and the CPU
-    tier's loads and stores from the engines' metric snapshots: what a record keeps of the files it
+    run.json is the run's, its ``versions`` naming the GPU node's deployed revision as null where the
+    run did not record it (``gpu_source``). The summary takes the first bytes of both classes exactly
+    from the request log, the GPU's median SM clock and highest temperature from gpu.csv (``gpu``),
+    the background goodput over the calls' first GOODPUT_WINDOW_S from AIPerf's records, and the CPU
+    tier's loads and stores from the engine's metric snapshots: what a record keeps of the files it
     leaves out. The report reads every point through it, so a run directory and its record give the
     same tables."""
     run_file = run_dir / "run.json"
@@ -779,18 +634,11 @@ def compact(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]] | None:
                 requests, slo_class
             )
 
-    def clocks(names: Sequence[str]) -> dict[str, Any]:
-        columns = gpu([run_dir / name for name in names], window)
-        return {column.removeprefix("gpu_"): value for column, value in columns.items()}
-
-    nodes = summary.get("nodes") or {}
-    if any((run_dir / name).exists() for name in _gpu_samples(nodes)):
-        summary["gpu"] = clocks(_gpu_samples(nodes))
-    for node, share in nodes.items():
-        if (run_dir / f"gpu-{node}.csv").exists():
-            share["gpu"] = clocks([f"gpu-{node}.csv"])
+    if (samples := run_dir / "gpu.csv").exists():
+        columns = gpu(samples, window)
+        summary["gpu"] = {column.removeprefix("gpu_"): value for column, value in columns.items()}
     # The goodput over the calls' first GOODPUT_WINDOW_S, from AIPerf's records, and the CPU tier's
-    # loads and stores, from the engines' /metrics snapshots: points measured before the summary
+    # loads and stores, from the engine's /metrics snapshots: points measured before the summary
     # kept them gain them, and the summary's other numbers stay as they are.
     records = run_dir / "aiperf" / "profile_export.jsonl"
     if summary.get("background") and window and records.exists():
@@ -798,31 +646,18 @@ def compact(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]] | None:
         summary["background"]["fixed_window"] = fixed_window(ended, window["start"], window["end"])
         ok = [r for r in ended if not r.get("error") and not r["metadata"].get("was_cancelled")]
         summary["background"]["itl_ms"] = agent_itl(ok)
-    snapshots = {node: f"engine-{node}" for node in nodes} or {None: "engine"}
     metrics = run_dir / "metrics"
-    if all(
-        (metrics / f"{name}-{when}.prom").exists()
-        for name in snapshots.values()
-        for when in ("start", "end")
-    ):
-        counts = {
-            node: engine_counts(*_snapshots(metrics, name)) for node, name in snapshots.items()
-        }
-        for node, share in nodes.items():
-            share["engine"] |= {key: counts[node][key] for key in CPU_TIER}
-        totals = added_engine_counts(counts.values()) if nodes else counts[None]
-        summary["engine"] |= {key: totals[key] for key in CPU_TIER}
+    if all((metrics / f"engine-{when}.prom").exists() for when in ("start", "end")):
+        counts = engine_counts(*_snapshots(metrics, "engine"))
+        summary["engine"] |= {key: counts[key] for key in CPU_TIER}
     return run, summary
 
 
-def point_engines(run_dir: Path, nodes: Sequence[str]) -> dict[str | None, dict[str, Any] | None]:
-    """The engine of a point (by node on several GPU nodes, else under None) as its record keeps it
-    (:func:`engine_settings`), from a run directory's engine.json or a record's; None without one."""
-    engines: dict[str | None, dict[str, Any] | None] = {}
-    for node in [*nodes] or [None]:
-        path = run_dir / (f"engine-{node}.json" if node else "engine.json")
-        engines[node] = engine_settings(orjson.loads(path.read_bytes())) if path.exists() else None
-    return engines
+def point_engine(run_dir: Path) -> dict[str, Any] | None:
+    """The engine of a point as its record keeps it (:func:`engine_settings`), from a run directory's
+    engine.json or a record's; None without one."""
+    path = run_dir / "engine.json"
+    return engine_settings(orjson.loads(path.read_bytes())) if path.exists() else None
 
 
 def kv_token_bytes(engine: Mapping[str, Any] | None) -> float | None:
@@ -842,12 +677,11 @@ def export_point(run_dir: Path, out: Path) -> Path | None:
     """Write the compact record of the point in ``run_dir`` into ``out``, at CAMPAIGN/POINT as the
     run directory sits in its campaign, and return its directory; None for a point that did not
     complete. Its run.json and summary.json are :func:`compact`'s, the run.json with every path under
-    a home directory written from ``~``. Its engine.json (engine-NODE.json for each of several nodes)
-    keeps only what says which engine the point ran on (:func:`engine_settings`)."""
+    a home directory written from ``~``. Its engine.json keeps only what says which engine the point
+    ran on (:func:`engine_settings`)."""
     if (point := compact(run_dir)) is None:
         return None
     run, summary = point
-    nodes = summary.get("nodes") or {}
     record = out / run_dir.absolute().parent.name / run_dir.absolute().name
     (record / "bots").mkdir(parents=True, exist_ok=True)
     for name in RECORD:
@@ -857,10 +691,11 @@ def export_point(run_dir: Path, out: Path) -> Path | None:
     # gateway's configuration names files under the account's home directory (its cache-salt secret).
     (record / "run.json").write_bytes(orjson.dumps(_home(run), option=orjson.OPT_INDENT_2) + b"\n")
     (record / "summary.json").write_bytes(orjson.dumps(summary, option=orjson.OPT_INDENT_2) + b"\n")
-    for name in [f"engine-{node}.json" for node in nodes] or ["engine.json"]:
-        if (engine := run_dir / name).exists():
-            settings = engine_settings(orjson.loads(engine.read_bytes()))
-            (record / name).write_bytes(orjson.dumps(settings, option=orjson.OPT_INDENT_2) + b"\n")
+    if (engine := run_dir / "engine.json").exists():
+        settings = engine_settings(orjson.loads(engine.read_bytes()))
+        (record / "engine.json").write_bytes(
+            orjson.dumps(settings, option=orjson.OPT_INDENT_2) + b"\n"
+        )
     return record
 
 

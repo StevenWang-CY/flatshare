@@ -82,33 +82,6 @@ flags = ["--scheduling-policy", "fcfs", "--max-num-batched-tokens", "2048", "--l
 
 VOICE_ALONE = 'arm = 1\nlabel = "voice alone"\n'
 
-TWO_NODES = """\
-arm = "4-pool"
-label = "two GPU nodes pooled, least-loaded"
-
-[voice]
-callers = 4
-turns = 2
-
-[agents]
-sessions = 4
-warmup = 0.2
-data = "corpus"
-
-[gateway.nodes.phastform]
-upstream = "{phastform}"
-
-[gateway.nodes.gray]
-upstream = "{gray}"
-
-[gateway.placement]
-policy = "least-loaded"
-"""
-NODES = (
-    '[gateway.nodes.a]\nupstream = "http://127.0.0.1:1"\n'
-    '[gateway.nodes.b]\nupstream = "http://127.0.0.1:2"\n'
-)
-
 
 def write(directory: Path, name: str, text: str) -> Path:
     path = directory / name
@@ -172,14 +145,14 @@ def test_an_arm_file_says_everything_about_its_point(tmp_path: Path) -> None:
         ('arm = 2\nlabel = "x"\n[engine]\nflags = ["512"]\n', "follows no flag"),
         ('arm = 2\nlabel = "x"\n[engine]\nflags = "--a"\n', "flags must be list"),
         ("arm = \n", "a2.toml"),
-        ('arm = 2\nlabel = "x"\n' + NODES.split("[gateway.nodes.b]")[0], "two GPU nodes or more"),
-        ('arm = 2\nlabel = "x"\n' + NODES.replace("nodes.b", 'nodes."b c"'), "'b c' needs a name"),
-        ('arm = 2\nlabel = "x"\n' + NODES.replace("http://", "unix:"), "and an upstream: http://"),
         (
-            'arm = 2\nlabel = "x"\n' + NODES.replace("http://", "https://"),
-            "and an upstream: http://",
+            'arm = 2\nlabel = "x"\n[gateway.nodes.a]\nupstream = "http://127.0.0.1:1"\n',
+            "[gateway.nodes] is for points on several GPU nodes, which the two-node branch keeps",
         ),
-        ('arm = 2\nlabel = "x"\nrouter = "smg"\n' + NODES, "a router fronts one engine"),
+        (
+            'arm = 2\nlabel = "x"\n[gateway.placement]\npolicy = "least-loaded"\n',
+            "[gateway.placement] is for points on several GPU nodes",
+        ),
     ],
 )
 def test_a_wrong_arm_file_says_what_is_wrong(tmp_path: Path, text: str, error: str) -> None:
@@ -198,14 +171,17 @@ def test_the_campaigns_name_arm_files_that_load() -> None:
     assert campaigns
     for campaign in campaigns:
         lines = campaign_lines(campaign)
-        # The two settings campaign.sh reads, each at most once: the agents' seed and the KV sampler's interval.
+        # The settings campaign.sh reads, each at most once: the agents' seed, the KV sampler's interval and
+        # whether the calls' audio is saved.
         seeds = [line for line in lines if line.startswith("agents-seed")]
         assert len(seeds) <= 1 and all(re.fullmatch(r"agents-seed\s+\d+", s) for s in seeds)
         sampling = [line for line in lines if line.startswith("kv-sample-s")]
         assert len(sampling) <= 1 and all(
             re.fullmatch(r"kv-sample-s\s+\d+(\.\d+)?", s) for s in sampling
         )
-        for line in (line for line in lines if line not in seeds + sampling):
+        audio = [line for line in lines if line.startswith("save-audio")]
+        assert audio in ([], ["save-audio"])
+        for line in (line for line in lines if line not in seeds + sampling + audio):
             arm = load_arm(campaign.parent / line)
             variant = arm.engine.variant
             assert variant == "frozen" or (PHASTFORM / "variants" / variant).is_dir(), line
@@ -227,10 +203,11 @@ def test_the_w5_control_is_make_room_as_v03_built_it() -> None:
     cache = "%h/leaseholder/cache/make-room-v03"
     rename = f"ExecStartPre=/bin/mv -f {cache}/lh_make_room_scheduler.py {cache}/lh_make_room_v03_scheduler.py\n"
     assert rest.count(rename) == 1
-    # Like every engine since, it serves on its socket.
+    # Like every engine since, it serves on its socket, in a network namespace of its own.
     v03 = (
         rest.replace(rename, "")
         .replace(" --uds ${LH_ENGINE_SOCKET}", "")
+        .replace("%h/leaseholder/src/deploy/bin/in-private-net ", "")
         .replace("lh_make_room_v03_scheduler", "lh_make_room_scheduler")
         .replace("make-room-v03", "make-room")
     )
@@ -770,7 +747,9 @@ def test_a_host_file_sets_the_hosts_fields(tmp_path: Path) -> None:
 def test_stopping_a_tool_kills_its_whole_process_group(tmp_path: Path) -> None:
     artifacts = tmp_path / "aiperf"
     env = os.environ | {"LH_BENCH_ARTIFACTS": str(artifacts), "FAKE_AIPERF": "stubborn"}
-    tool = Process("AIPerf", [sys.executable, str(FAKES / "fake_aiperf.py")], tmp_path / "log", env)
+    command = [sys.executable, str(FAKES / "fake_aiperf.py")]
+    tool = Process("AIPerf", command, tmp_path / "log", env, str(tmp_path))
+    assert tool.mark.startswith(f"{tmp_path}/")  # its scope, the test's own
     child = int(wait_for(artifacts / "child.pid").read_text())
     assert not tool.exited()
     assert tool.stop(grace=0.3) == -9  # it ignored SIGINT, so it was killed
@@ -787,23 +766,34 @@ def test_stopping_a_tool_kills_what_it_started_in_a_session_of_its_own(tmp_path:
     """AIPerf starts some services with setsid, out of its process group: its mark reaches them."""
     artifacts = tmp_path / "aiperf"
     env = os.environ | {"LH_BENCH_ARTIFACTS": str(artifacts), "FAKE_AIPERF": "orphan"}
-    tool = Process("AIPerf", [sys.executable, str(FAKES / "fake_aiperf.py")], tmp_path / "log", env)
+    command = [sys.executable, str(FAKES / "fake_aiperf.py")]
+    tool = Process("AIPerf", command, tmp_path / "log", env, str(tmp_path))
     child = int(wait_for(artifacts / "child.pid").read_text())
     assert os.getpgid(child) != tool.popen.pid
     assert tool.stop(grace=5) == 0  # it stopped on SIGINT
     assert gone(child)
 
 
+def marked(mark: str) -> subprocess.Popen:
+    """A process that lasts a minute, marked as a tool of e2 run with ``mark``."""
+    env = os.environ | {e2.TOOL_MARK: mark}
+    return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], env=env)
+
+
 @PROC
-def test_a_marked_process_left_by_an_earlier_run_is_found_and_killed() -> None:
-    env = os.environ | {e2.TOOL_MARK: "an-earlier-run"}
-    sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], env=env)
+def test_a_marked_process_left_by_an_earlier_run_is_found_and_killed(tmp_path: Path) -> None:
+    # A mark is its run's scope, the root its run lock is in, and the run's pid and the tool's start.
+    here, beside = tmp_path / "a" / "leaseholder", tmp_path / "a" / "leaseholder" / "b"
+    earlier, other = marked(f"{here}/123-456"), marked(f"{beside}/123-456")
     try:
-        assert e2.kill_marked("another-run") == []
-        assert e2.kill_marked() == [sleeper.pid]
-        assert sleeper.wait(timeout=5) == -9
+        assert e2.kill_marked(str(here), f"{here}/123-789") == []
+        assert e2.kill_marked(str(here)) == [earlier.pid]  # not a scope inside its root's
+        assert earlier.wait(timeout=5) == -9 and other.poll() is None
+        assert e2.kill_marked(str(beside), f"{beside}/123-456") == [other.pid]
+        assert other.wait(timeout=5) == -9
     finally:
-        sleeper.kill()
+        earlier.kill()
+        other.kill()
 
 
 def wait_for(path: Path, timeout: float = 10.0) -> Path:
@@ -1156,6 +1146,23 @@ def test_voice_alone_runs_the_calls_against_the_box_as_it_is(cyan: Cyan) -> None
     assert json.loads((out / "summary.json").read_text()) == summary
 
 
+@PROC
+def test_a_point_kills_what_its_own_runs_left_and_not_another_sessions_tools(cyan: Cyan) -> None:
+    # Two test sessions on one host, each with its own home and run lock: a point's start killed
+    # every marked process of the user, so one session's point killed the other's tools (lane UP's
+    # make check saw them exit -9). It kills only what a run under its own lock left.
+    other_root = cyan.host.root.parent / "other-session" / "leaseholder"
+    left, others = marked(f"{cyan.host.root}/1-1"), marked(f"{other_root}/2-2")
+    try:
+        run(cyan, "a1-voice", VOICE_ALONE)
+        assert left.wait(timeout=5) == -9
+        assert others.poll() is None  # the other session's tool runs on
+        assert record(cyan, "a1-voice")["leftovers_killed"] == [left.pid]
+    finally:
+        left.kill()
+        others.kill()
+
+
 def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(cyan: Cyan) -> None:
     summary = run_stock(cyan)
     out = cyan.host.root / "runs" / "a2-stock-s4"
@@ -1275,24 +1282,19 @@ def test_an_agent_point_samples_the_engines_kv(cyan: Cyan) -> None:
     assert record(cyan, "a2-stock-s4-w5")["kv_sample_s"] is None
 
 
-def test_the_kv_sampler_keeps_one_connection_to_each_engine(tmp_path: Path) -> None:
-    # Through cyan's tunnel each new connection is a new SSH session on the GPU node: the sampler holds one per
-    # engine for its run, and opens another only after a request failed (engine a's 4th, which loses its own).
-    engines = {"a": CountingEngine(drop=frozenset({4})), "b": CountingEngine()}
-    sampler = e2._KvSampler({node: f"unix:{e.path}" for node, e in engines.items()}, tmp_path, 0.01)
+def test_the_kv_sampler_keeps_one_connection_to_the_engine(tmp_path: Path) -> None:
+    # Through cyan's tunnel each new connection is a new SSH session on the GPU node: the sampler holds one for
+    # its run, and opens another only after a request failed (the 4th, which loses its own).
+    engine = CountingEngine(drop=frozenset({4}))
+    sampler = e2._KvSampler(f"unix:{engine.path}", tmp_path, 0.01)
     deadline = time.monotonic() + 20
-    while min(e.requests for e in engines.values()) < 10 and time.monotonic() < deadline:
+    while engine.requests < 10 and time.monotonic() < deadline:
         time.sleep(0.01)
     sampler.stop()
-    for engine in engines.values():
-        engine.shutdown()
-    assert min(e.requests for e in engines.values()) >= 10
-    assert (engines["a"].accepted, engines["b"].accepted) == (2, 1)
-    for node, engine in engines.items():
-        rows = (tmp_path / f"engine-{node}-kv.csv").read_text().splitlines()[1:]
-        assert len(rows) == engine.requests - len(
-            engine.drop
-        )  # every answered sample, the failed one left out
+    engine.shutdown()
+    assert engine.requests >= 10 and engine.accepted == 2
+    rows = (tmp_path / "engine-kv.csv").read_text().splitlines()[1:]
+    assert len(rows) == engine.requests - 1  # every answered sample, the failed one left out
 
 
 def test_e2_run_takes_the_kv_samplers_interval(tmp_path: Path, monkeypatch) -> None:
@@ -1413,7 +1415,6 @@ def worker_line(name: str, message: str, **fields: Any) -> str:
 
 
 TURNS, SESSIONS = "leaseholder_voice.turns", "leaseholder_voice.events"
-PLACEMENT = "leaseholder_voice.placement"
 
 
 def test_a_point_keeps_the_gateways_requests_and_the_workers_lines(cyan: Cyan) -> None:
@@ -1586,106 +1587,20 @@ def test_run_json_keeps_each_gpu_nodes_deployed_revision(cyan: Cyan, capsys) -> 
     assert not out.with_name("again").exists()
 
 
-def test_the_callers_save_their_audio_when_the_run_asks(cyan: Cyan) -> None:
+def test_the_callers_save_their_audio_when_the_run_asks(
+    cyan: Cyan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The callers write each call's audio after their calls end, and the point's window and its last
+    # metrics end with the calls, not with the writing (it took the window's end after it).
+    monkeypatch.setenv("FAKE_BOTS_SAVE_SECONDS", "1.0")
     arm_file = write(cyan.arms, "a1-voice.toml", VOICE_ALONE)
     out = cyan.host.root / "runs" / "a1-voice"
     run_point(arm_file, out, cyan.host, cyan.systemd, save_audio=True)
     assert "--save-audio" in json.loads((out / "bots.args").read_text())
     assert record(cyan, "a1-voice")["save_audio"] is True  # a run option, not the arm's
-
-
-def test_a_point_on_two_gpu_nodes_checks_resets_and_reports_each_node(cyan: Cyan) -> None:
-    gray = fake_engine(cyan.scheduler)
-
-    def gateway(since: float, until: float | None) -> str:
-        served = {"prompt_tokens": 1000, "completion_tokens": 10}
-        return "\n".join(
-            [
-                logged_request(since + 0.01, "realtime", 120.0, node="phastform"),
-                logged_request(since + 0.02, "realtime", 180.0, node="gray"),
-                *(
-                    logged_request(since + 0.03, "background", 900.0, node="gray", **served)
-                    for _ in range(3)
-                ),
-                # refused by the node's admission point
-                logged_request(
-                    since + 0.04, "background", None, node="phastform", status=429, outcome=None
-                ),
-            ]
-        )
-
-    def worker(since: float, until: float | None) -> str:
-        nodes = ("phastform", "gray", "phastform", "gray")
-        return "\n".join(
-            [
-                "registered worker",
-                *(
-                    # the callers' rooms, named after the run id of fakes/fake_bots.py
-                    worker_line(PLACEMENT, "session placed", room=f"lh-bot-f00df00d-{c}", node=node)
-                    for c, node in enumerate(nodes)
-                ),
-            ]
-        )
-
-    cyan.systemd.journals = {"lh-gateway": gateway, "lh-voice-worker": worker}
-    try:
-        summary = run(cyan, "a4-pool", TWO_NODES.format(phastform=cyan.engine.url, gray=gray.url))
-    finally:
-        gray.shutdown()
-    out = cyan.host.root / "runs" / "a4-pool"
-    # Each node's tunnel starts first; each engine is checked, recorded and emptied.
-    assert cyan.systemd.calls == [
-        ("start", "lh-tunnel@phastform"),
-        ("start", "lh-tunnel@gray"),
-        ("daemon-reload",),
-        ("restart", "lh-gateway"),
-        ("restart", "lh-voice-worker"),
-    ]
-    assert cyan.engine.hits["/reset_prefix_cache"] == gray.hits["/reset_prefix_cache"] == 2
-    run_json = record(cyan, "a4-pool")
-    assert list(run_json["engine"]) == ["phastform", "gray"]
-    assert run_json["engine"]["gray"]["flags"]["unchecked"] == []
-    assert {p.name for p in out.glob("engine*.json")} == {
-        "engine-phastform.json",
-        "engine-gray.json",
-    }
-    assert {p.name for p in (out / "metrics").glob("engine*.prom")} == {
-        f"engine-{node}-{when}.prom" for node in ("phastform", "gray") for when in ("start", "end")
-    }
-    # The gateway serves the nodes in place of gateway.toml's upstream, and the worker knows them.
-    config = tomllib.loads((cyan.host.config / "gateway-e2.toml").read_text())
-    assert "upstream" not in config and config["nodes"]["gray"] == {"upstream": gray.url}
-    assert config["placement"] == {"policy": "least-loaded"}
-    dropin = cyan.host.units / "lh-voice-worker.service.d" / "variant-nodes.conf"
-    assert dropin.read_text().endswith("[Service]\nEnvironment=LH_NODES=phastform,gray\n")
-    assert run_json["cyan"]["worker"]["nodes"] == ["phastform", "gray"]
-    # The totals, as on one node, with the engines' counters added up; then each node's share.
-    assert summary["voice"]["turns"] == 8 and summary["background"]["requests"] > 0
-    assert summary["engine"]["preemptions"] == 2  # one scrape apart, on each engine
-    phastform, on_gray = summary["nodes"]["phastform"], summary["nodes"]["gray"]
-    assert (phastform["voice"]["calls"], phastform["voice"]["turns"]) == (2, 4)
-    assert phastform["voice"]["v2v_ms"]["p50"] == 1600.0  # callers 0 and 2: 1500 and 1700 ms
-    assert on_gray["voice"]["v2v_ms"]["p50"] == 1700.0  # callers 1 and 3: 1600 and 1800 ms
-    assert (on_gray["background"]["requests"], on_gray["background"]["errors"]) == (3, 0)
-    assert (phastform["background"]["requests"], phastform["background"]["errors"]) == (0, 1)
-    assert on_gray["realtime_first_byte_ms"]["p50"] == 180.0
-    assert phastform["engine"]["preemptions"] == on_gray["engine"]["preemptions"] == 1
-    assert "; gray: 2 calls, V2V p95 " in (out / "run.log").read_text()
-    # The worker goes back to one node with the next point on one, or with lh-bench e2 reset.
-    reset_cyan(cyan.host, cyan.systemd)
-    assert not dropin.exists()
-    assert not any(cyan.host.units.glob("*.service.d/variant-*.conf"))
-
-
-def test_a_gpu_node_that_does_not_answer_fails_the_point(
-    cyan: Cyan, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(e2, "ENGINE_UP_S", 0.2)
-    arm = TWO_NODES.format(phastform=cyan.engine.url, gray="unix:/nonexistent/gray-engine.sock")
-    with pytest.raises(E2Error, match=r"GPU node gray did not answer .* lh-tunnel@gray up"):
-        run(cyan, "a4-pool", arm)
-    assert record(cyan, "a4-pool")["status"] == "failed"
-    assert ("restart", "lh-gateway") not in cyan.systemd.calls
+    saved = float((out / "bots" / "saved").read_text())
+    assert record(cyan, "a1-voice")["window"]["end"] < saved - 0.5
+    assert (out / "metrics" / "gateway-end.prom").stat().st_mtime < saved - 0.5
 
 
 def test_smg_runs_only_for_the_points_that_route_through_it(cyan: Cyan) -> None:

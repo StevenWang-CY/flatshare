@@ -5,19 +5,23 @@ build-backend = "hatchling.build"
 [project]
 name = "leaseholder-bench"
 version = "0.3.0"
-description = "Leaseholder's benchmark toolchain: block-scaled agent traces, AIPerf plugins and latency probes"
+description = "Leaseholder's benchmark toolchain: block-scaled agent traces, AIPerf plugins, latency probes, E2's harness and report, and the failure drills' client"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "aiperf==0.13.0",
     "aiohttp>=3.14,<4",
     "httpx>=0.28,<0.29",
     "orjson>=3.11,<4",
+    "matplotlib==3.11.2",  # the report's figures, the committed bytes
+    "leaseholder-stats",  # python/leaseholder_stats, from this tree (tool.uv.sources)
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8,<10"]
+# AIPerf runs a point's agents (lh-bench e2 run) and loads the plugins; a report needs none of its
+# packages.
+aiperf = ["aiperf==0.13.0"]
+test = ["pytest>=8,<10", "leaseholder-bench[aiperf]"]
 
 [project.scripts]
 lh-bench = "leaseholder_bench.cli:main"
@@ -31,3 +35,6 @@ addopts = "-p no:cacheprovider"
 markers = [
     "integration: needs more than this venv (the demo video's encoding runs the script with uv)",
 ]
+
+[tool.uv.sources]
+leaseholder-stats = { path = "../leaseholder_stats", editable = true }

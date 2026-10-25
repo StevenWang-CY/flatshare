@@ -404,11 +404,21 @@ wheels = [
 ]
 
 [[package]]
+name = "leaseholder-stats"
+version = "0.3.0"
+source = { editable = "../leaseholder_stats" }
+
+[package.metadata]
+requires-dist = [{ name = "pytest", marker = "extra == 'test'", specifier = ">=8,<10" }]
+provides-extras = ["test"]
+
+[[package]]
 name = "leaseholder-voice"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx2" },
+    { name = "leaseholder-stats" },
     { name = "livekit" },
     { name = "livekit-agents", extra = ["openai", "silero"] },
     { name = "livekit-api" },
@@ -427,6 +437,7 @@ test = [
 requires-dist = [
     { name = "aiohttp", marker = "extra == 'test'", specifier = ">=3.10" },
     { name = "httpx2", specifier = ">=2.12,<3" },
+    { name = "leaseholder-stats", editable = "../leaseholder_stats" },
     { name = "livekit", specifier = "==1.1.20" },
     { name = "livekit-agents", extras = ["openai", "silero"], specifier = "==1.8.8" },
     { name = "livekit-api", specifier = ">=1.2" },

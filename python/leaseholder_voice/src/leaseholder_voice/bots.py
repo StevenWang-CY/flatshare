@@ -20,9 +20,9 @@ summary leaves them out. They draw their lines and pauses from a generator of th
 measured turns after them are those of the same call without them.
 
 A turn fails when the agent does not answer within ``reply_timeout``, or does not stop speaking: its
-line in turns.jsonl has an ``error`` and keeps what the turn measured before. In the summary a
-sample that the timeout cut short counts as censored at the timeout, never as missing, so that a
-failure raises a percentile rather than leaving it out.
+line in turns.jsonl has an ``error`` and keeps what the turn measured before, and the turns after it
+play what they would have. In the summary a sample that the timeout cut short counts as censored at
+the timeout, never as missing, so that a failure raises a percentile rather than leaving it out.
 
 With ``--save-audio`` each caller also keeps the frames it already handles, what it sent and the
 agent's audio as received, and once every call has ended writes them as ``call-<i>.wav`` with the
@@ -36,7 +36,6 @@ import json
 import math
 import platform
 import random
-import statistics
 import time
 import uuid
 import wave
@@ -47,6 +46,8 @@ from typing import Any, TextIO
 
 import numpy as np
 from livekit import api, rtc
+
+from leaseholder_stats import percentiles, v2v_samples
 
 from .audio import (
     AGENT_RATE,
@@ -148,9 +149,15 @@ class Caller:
 
     async def turn(self, number: int, warmup: random.Random | None = None) -> dict[str, Any]:
         """One turn of the call; a warm-up turn draws its line from ``warmup`` and is never
-        interrupted."""
+        interrupted. The turn draws its interruption with its line, before either is played, so
+        that a turn that fails takes as many draws as one answered: the turns after it play the
+        lines and interruptions of the same call without the failure."""
         config, audio = self.config, self.agent_audio
         clip = (warmup or self.rng).choice(self.corpus.turns)
+        interruption, delay = None, 0.0
+        if warmup is None and self.rng.random() < config.barge_in:
+            delay = self.rng.uniform(*config.barge_in_delay)
+            interruption = self.rng.choice(self.corpus.barge_ins)
         at = self.moments[number] = {}
         played = await self.microphone.play(clip)
         at |= {"start": played["start"], "speech_end": played["speech_end"]}
@@ -166,10 +173,8 @@ class Caller:
             "barge_in": False,
         }
         try:
-            if warmup is None and self.rng.random() < config.barge_in:
-                delay = self.rng.uniform(*config.barge_in_delay)
+            if interruption is not None:
                 await asyncio.sleep(max(0.0, reply + delay - time.monotonic()))
-                interruption = self.rng.choice(self.corpus.barge_ins)
                 barged = await self.microphone.play(interruption)
                 onset = barged["onset"]
                 at |= {"barge_in": onset, "barge_in_speech_end": barged["speech_end"]}
@@ -286,35 +291,12 @@ class Caller:
         (out_dir / f"call-{self.index}.json").write_text(json.dumps(call, indent=1) + "\n")
 
 
-def percentiles(values: Iterable[float], censored: int = 0) -> dict[str, float | int]:
-    """Count, p50, p95 and p99 of samples in ms; ``censored`` of them stand at the reply timeout."""
-    xs = sorted(values)
-    count = {"n": len(xs)} | ({"censored": censored} if censored else {})
-    if len(xs) < 2:
-        return count | ({"p50": xs[0]} if xs else {})
-    q = statistics.quantiles(xs, n=100, method="inclusive")
-    return count | {"p50": round(q[49], 1), "p95": round(q[94], 1), "p99": round(q[98], 1)}
-
-
-def v2v_samples(rows: Iterable[dict[str, Any]], timeout_ms: float) -> tuple[list[float], int]:
-    """The callers' voice-to-voice samples and how many of them are censored: each turn's reply and,
-    after a barge-in, the reply to the interruption, a reply that never came standing at the
-    timeout."""
-    samples, censored = [], 0
-    for row in rows:
-        wanted = ["v2v_ms", *(["v2v_after_barge_in_ms"] if row.get("barge_in") else [])]
-        for key in wanted:
-            censored += key not in row
-            samples.append(row.get(key, timeout_ms))
-    return samples, censored
-
-
 def summarize(
     rows: list[dict[str, Any]], lateness: list[float], timeout_s: float = 30.0
 ) -> dict[str, Any]:
-    """The calls' summary of their measured turns, the warm-up turns left out. A sample a timeout cut
-    short counts at the timeout (``timeout_s``): the reply to a turn or to an interruption that never
-    came, the agent's audio that never stopped."""
+    """The calls' summary of their measured turns, the warm-up turns left out, in leaseholder-stats'
+    percentiles. A sample a timeout cut short counts at the timeout (``timeout_s``): the reply to a
+    turn or to an interruption that never came, the agent's audio that never stopped."""
     rows = [row for row in rows if not row.get("warmup")]
     timeout_ms = timeout_s * 1000
     v2v, censored = v2v_samples(rows, timeout_ms)

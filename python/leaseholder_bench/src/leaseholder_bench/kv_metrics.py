@@ -12,19 +12,16 @@ time than blocks typically wait between reuses, LRU is evicting KV that would ha
 from __future__ import annotations
 
 import math
-import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from leaseholder_bench.transport import client
+from leaseholder_stats import metric_samples
 
 REUSE_GAP = "vllm:kv_block_reuse_gap_seconds"
 IDLE_BEFORE_EVICT = "vllm:kv_block_idle_before_evict_seconds"
 LIFETIME = "vllm:kv_block_lifetime_seconds"
 HISTOGRAMS = (REUSE_GAP, IDLE_BEFORE_EVICT, LIFETIME)
-
-_SAMPLE = re.compile(r"^(?P<name>[\w:]+)(?:\{(?P<labels>[^}]*)\})?\s+(?P<value>\S+)$")
-_LABEL = re.compile(r'(\w+)="([^"]*)"')
 
 
 def fetch(address: str, timeout: float = 10.0) -> str:
@@ -34,13 +31,6 @@ def fetch(address: str, timeout: float = 10.0) -> str:
         response = http.get("/metrics")
         response.raise_for_status()
         return response.text
-
-
-def metric_samples(exposition: str) -> Iterator[tuple[str, dict[str, str], float]]:
-    """Every sample of a Prometheus text exposition as ``(name, labels, value)``."""
-    for line in exposition.splitlines():
-        if m := _SAMPLE.match(line):
-            yield m["name"], dict(_LABEL.findall(m["labels"] or "")), float(m["value"])
 
 
 Labels = tuple[tuple[str, str], ...]

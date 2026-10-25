@@ -12,14 +12,15 @@ import asyncio
 import contextlib
 import math
 import random
-import statistics
 import time
-from collections.abc import AsyncIterator, Iterable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Self
 
 import httpx
 import orjson
+
+from leaseholder_stats import summarize
 
 # Qwen3's regular tokens; ids at and above 151,643 are special tokens.
 _TOKEN_LOW, _TOKEN_HIGH = 1_000, 150_000
@@ -38,20 +39,6 @@ async def stream_chunks(response: httpx.Response) -> AsyncIterator[dict[str, Any
     async for line in response.aiter_lines():
         if line.startswith("data:") and (data := line[5:].lstrip()).startswith("{"):
             yield orjson.loads(data)
-
-
-PERCENTILES = (10, 50, 90, 95, 99)
-"""Reported by :func:`summarize`; the SLOs are set at p95 (docs/SLO.md)."""
-
-
-def summarize(values: Iterable[float]) -> dict[str, float | int]:
-    """Count, mean and :data:`PERCENTILES` of a sample (inclusive interpolation)."""
-    xs = sorted(values)
-    if not xs:
-        return {"n": 0}
-    qs = [xs[0]] * 99 if len(xs) == 1 else statistics.quantiles(xs, n=100, method="inclusive")
-    cell: dict[str, float | int] = {"n": len(xs), "mean": round(statistics.fmean(xs), 2)}
-    return cell | {f"p{p}": round(qs[p - 1], 2) for p in PERCENTILES}
 
 
 @dataclass(frozen=True)

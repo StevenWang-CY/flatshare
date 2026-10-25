@@ -877,6 +877,51 @@ def test_the_run_hands_its_one_deadline_to_every_campaign_and_to_cprime(
     )
 
 
+def test_an_estimate_given_for_a_block_starts_it_where_the_pages_would_miss_the_deadline(
+    tmp_path: Path, runtime: Path
+) -> None:
+    # A deadline 17 minutes away is short of block 4's 29-minute estimate: the block does not start. With
+    # --estimate 4=15 it starts, and campaign.sh's own budgets run its first point (15 minutes: W5's agent point and
+    # an engine switch) but not the next, voice alone, which this host has measured at 20 minutes before: the run
+    # stops before its deadline, exit 0, the block undone. The single-host rehearsal runs block 4 so on the box.
+    hosts = tmp_path / "hosts"
+    home = a100_host(hosts)
+    env = dry_env(home, hosts, runtime)
+    until = (datetime.now(UTC) + timedelta(minutes=17)).strftime("%H:%M")
+    runs = home / "leaseholder" / "runs" / "a100"
+    results = home / "leaseholder" / "results" / "e2"
+
+    def run(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(RUN), "--until", until, *args],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+
+    done = run("4")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "block 4: about 29 minutes would end after" in (runs / "blocks.log").read_text()
+    assert not (results / "a100-r1").exists()
+    results.mkdir(parents=True)
+    (results / "durations.tsv").write_text("voice 1200\n")
+    done = run("--estimate", "4=15", "4")
+    assert done.returncode == 0, done.stdout + done.stderr
+    log = (runs / "blocks.log").read_text()
+    assert "estimates 4=15" in log and "block 4: start" in log, log
+    assert "a100-r1 stopped before its deadline" in log
+    points = results / "a100-r1"
+    assert '"status": "complete"' in (points / "w5-disc-pr-ab48-s24" / "run.json").read_text()
+    assert not (points / "w5-a1-voice").exists()
+    assert "w5-a1-voice: 22 minutes would end after" in (points / "campaign.log").read_text()
+    assert not (runs / "blocks" / "4.done").exists()
+    # An estimate that names no block, or no positive count of minutes, is refused before anything runs.
+    for bad in ("4", "x=15", "4=0", "11=5", "4=15m"):
+        done = run("--estimate", bad, "4")
+        assert done.returncode == 2 and "usage" in done.stderr, (bad, done.stderr)
+
+
 def test_a_cap_of_2048_is_measured_beside_vllms_default(tmp_path: Path, runtime: Path) -> None:
     # --cap 2048, the forecast's low value: block 2's second setting is 2,048/1,024, whose runs are its own, not
     # 2,048/0's under the same names (skipped as done, the engine restarted for nothing).

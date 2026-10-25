@@ -4,13 +4,13 @@ files that are the same bytes for the same report."""
 from __future__ import annotations
 
 import re
-import statistics
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from leaseholder_bench.e2.record import REPLY_TIMEOUT_MS
 from leaseholder_bench.e2.report import SLO_MARGIN_MS, STACKED, arm_order, configurations
+from leaseholder_stats import quantiles
 
 # Light chart surface, ink and the categorical palette, in its order.
 _SERIES = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948")
@@ -232,7 +232,7 @@ def _fence(values: Sequence[float]) -> float | None:
     above the upper quartile, of four or more configurations. None when none is past it."""
     if len(values) < 4:
         return None
-    q1, _, q3 = statistics.quantiles(values, n=4, method="inclusive")
+    q1, _, q3 = quantiles(values, 4)
     fence = q3 + 3 * (q3 - q1)
     return fence if max(values) > fence else None
 

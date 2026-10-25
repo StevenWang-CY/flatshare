@@ -16,6 +16,7 @@ dependencies = [
     "openai>=3.19,<4",
     "httpx2>=2.12,<3",
     "numpy>=1.26",
+    "leaseholder-stats",  # python/leaseholder_stats, from this tree (tool.uv.sources)
 ]
 
 [project.optional-dependencies]
@@ -34,3 +35,6 @@ testpaths = ["tests"]
 markers = [
     "integration: runs a LiveKit room in an isolated network namespace (Linux, livekit-server)",
 ]
+
+[tool.uv.sources]
+leaseholder-stats = { path = "../leaseholder_stats", editable = true }

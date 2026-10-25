@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
-# flock in the campaign.sh tests: `flock -n FILE COMMAND...` runs COMMAND, as when no point holds the lock.
+# flock in the campaign.sh tests: `flock -n FILE COMMAND...` runs COMMAND, as when no point holds the lock; from the
+# FAKE_FLOCK_HELD-th call of a host on, a point holds it (exit 1).
+count=$HOME/flock.count
+calls=$(($(cat "$count" 2>/dev/null || echo 0) + 1))
+echo "$calls" >"$count"
+if [[ -n ${FAKE_FLOCK_HELD:-} ]] && ((calls >= FAKE_FLOCK_HELD)); then
+  exit 1
+fi
 shift 2
 exec "$@"

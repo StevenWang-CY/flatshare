@@ -2,21 +2,24 @@
 # campaign.sh [--dry-run] [--pause] [--local] [--until HH:MM] CAMPAIGN: measure the E2 points a campaign file lists,
 # from a workstation with SSH to the hosts, like deploy/deploy.sh. CAMPAIGN names arm files, one per line, relative to itself; a line
 # `agents-seed N` sets AIPerf's seed for all of its points (lh-bench e2 run --agents-seed), in place of each arm
-# file's [agents] seed, and a line `kv-sample-s SECONDS` the KV sampler's interval (lh-bench e2 run --kv-sample-s;
-# 0 samples nothing, as W5's points ran). For each point whose run directory on cyan is not complete, in order, it
-#   1. switches each GPU node to the arm's engine (deploy/phastform/variant.sh use, with what lh-bench e2 engine prints),
+# file's [agents] seed, a line `kv-sample-s SECONDS` the KV sampler's interval (lh-bench e2 run --kv-sample-s;
+# 0 samples nothing, as W5's points ran), and a line `save-audio` has the callers save each call's audio (lh-bench e2
+# run --save-audio), for benchmarks/e2/demo.py's video. For each point whose run directory on cyan is not complete,
+# in order, it
+#   1. switches the GPU node to the arm's engine (deploy/phastform/variant.sh use, with what lh-bench e2 engine prints),
 #      with the measurement drop-in on (variant.sh measure on: vLLM's development routes, which lh-bench e2 run reads),
-#   2. measures the point on cyan (lh-bench e2 run) into ~/leaseholder/runs/e2/CAMPAIGN/POINT, with each GPU node's
-#      deployed revision (its ~/leaseholder/src/DEPLOYED as the point starts) for run.json, sampling each GPU's
-#      clocks and temperature once a second meanwhile into that directory's gpu.csv (gpu-NODE.csv on several nodes),
+#   2. measures the point on cyan (lh-bench e2 run) into ~/leaseholder/runs/e2/CAMPAIGN/POINT, with the GPU node's
+#      deployed revision (its ~/leaseholder/src/DEPLOYED as the point starts) for run.json, sampling its GPU's
+#      clocks and temperature once a second meanwhile into that directory's gpu.csv,
 #   3. fetches that run directory into $LH_E2_RESULTS/CAMPAIGN/POINT (default ~/leaseholder/runs/e2).
 # A complete point is skipped, so running a stopped campaign again resumes it; the first failure stops it. At the end
 # it writes the campaign's frontier (lh-bench e2 report, fetched into CAMPAIGN/report) and puts cyan's units back
-# (lh-bench e2 reset). --pause then stops each GPU node's units. --dry-run copies and checks every arm file and lists
+# (lh-bench e2 reset). --pause then stops the GPU node's units. A campaign that fails once it has switched the node
+# puts cyan's units back and pauses too, unless a point may still be running on cyan (the lock is held, or the
+# connection to cyan was lost): then it leaves both as they are, and says so. --dry-run copies and checks every arm file and lists
 # the points with their engines, without switching or measuring anything. LH_SSH is your ssh command for the hosts,
-# as for deploy.sh; LH_CYAN names cyan, and LH_GPU the GPU nodes every point of the campaign runs on: one host, or
-# several separated by commas for the points on several GPU nodes. A node is named after its host's first label
-# (gray for gray), as the arm files' [gateway.nodes] name it. LH_PROFILE names the GPU nodes' hardware
+# as for deploy.sh; LH_CYAN names cyan, and LH_GPU the GPU node every point of the campaign runs on, one host, which
+# run.json names after its first label (phastform for phastform). LH_PROFILE names the GPU node's hardware
 # profile (deploy/profiles) for lh-bench e2 run's engine check, when it is not the one cyan's host settings name, and
 # LH_NODE_DIR the GPU node's directory under its home, whose variant.sh switches the engine (default
 # leaseholder/src/deploy/phastform; a node rendered from another profile has its own, leaseholder/node).
@@ -58,11 +61,11 @@ done
 if $local; then
   ssh=$(cd "$(dirname "$0")/../../deploy/bin" && pwd)/lh-local
   cyan=localhost
-  gpus=(localhost)
+  gpu=localhost
 else
   ssh=${LH_SSH:-ssh}
   cyan=${LH_CYAN:-cyan}
-  IFS=', ' read -r -a gpus <<<"${LH_GPU:-phastform}"
+  gpu=${LH_GPU:-phastform}
 fi
 node_dir=${LH_NODE_DIR:-leaseholder/src/deploy/phastform}
 [[ $node_dir =~ ^[A-Za-z0-9._/-]+$ && $node_dir != /* ]] ||
@@ -77,13 +80,8 @@ elif [[ -n $until_epoch ]]; then
   deadline=$until_epoch
   until=$(date -u -d "@$deadline" +%H:%M 2>/dev/null || date -u -r "$deadline" +%H:%M) # GNU date, else BSD's
 fi
-bad_gpus() { echo "campaign: LH_GPU names each GPU node's host once, separated by commas: '${LH_GPU-}'" >&2; exit 2; }
-((${#gpus[@]})) || bad_gpus
-named=" "
-for gpu in "${gpus[@]}"; do
-  [[ -n $gpu && $named != *" ${gpu%%.*} "* ]] || bad_gpus
-  named+="${gpu%%.*} "
-done
+[[ -n $gpu && $gpu != *[,[:space:]]* ]] || { echo "campaign: LH_GPU names the GPU node's host, one: '${LH_GPU-}'" >&2; exit 2; }
+node=${gpu%%.*}
 profile=""
 if [[ -n ${LH_PROFILE:-} ]]; then
   [[ $LH_PROFILE =~ ^[a-z0-9][a-z0-9.-]*$ ]] || { echo "campaign: LH_PROFILE is a profile's name: '$LH_PROFILE'" >&2; exit 2; }
@@ -105,7 +103,7 @@ die() { log "campaign: $*"; exit 1; }
 
 # The points in order, each named after its arm file, and the agents' seed and the KV sampler's interval the
 # campaign sets, if it sets them.
-arms=() points=() seed="" sampling=""
+arms=() points=() seed="" sampling="" audio=""
 while IFS= read -r line || [[ -n $line ]]; do
   line=${line%%#*}
   line=${line#"${line%%[![:space:]]*}"}
@@ -123,6 +121,11 @@ while IFS= read -r line || [[ -n $line ]]; do
     sampling=${BASH_REMATCH[1]}
     continue
   fi
+  if [[ $line == save-audio* ]]; then
+    [[ -z $audio && $line == save-audio ]] || die "$1: '$line': a campaign saves its calls' audio once, as save-audio"
+    audio=" --save-audio"
+    continue
+  fi
   [[ -f $here/$line ]] || die "$1 names $line, which is not a file"
   point=$(basename "$line" .toml)
   for seen in ${points[@]+"${points[@]}"}; do
@@ -136,6 +139,7 @@ if [[ -n $seed ]]; then seeded=", the agents' seed $seed"; fi
 if [[ -n $sampling ]]; then
   if [[ $sampling =~ ^0+(\.0+)?$ ]]; then seeded+=", no KV sampler"; else seeded+=", the KV sampler every $sampling s"; fi
 fi
+if [[ -n $audio ]]; then seeded+=", the calls' audio saved"; fi
 log "campaign $name: ${#points[@]} points, arm files at $(git -C "$here" describe --always --dirty 2>/dev/null || echo '?')$seeded${deadline:+, until $until UTC (epoch $deadline)}"
 
 # Copy the arm files to cyan, where lh-bench reads them, and check each one there.
@@ -144,8 +148,10 @@ rsync -a -e "$ssh" "${arms[@]}" "$cyan:$runs/arms/"
 engines=()
 for point in "${points[@]}"; do
   state="{ $(complete "$point") && echo complete || echo pending; }"
-  answer=$($ssh "$cyan" "$bench e2 engine $runs/arms/$point.toml && $state") ||
-    die "$point: its arm file does not load (above)"
+  status=0
+  answer=$($ssh "$cyan" "$bench e2 engine $runs/arms/$point.toml && $state") || status=$?
+  ((status != 255)) || die "$point: lost the connection to cyan (ssh exit status 255)"
+  ((status == 0)) || die "$point: its arm file does not load (above)"
   engines+=("${answer%%$'\n'*}")
   log "$point: ${answer#*$'\n'}, engine ${answer%%$'\n'*}"
 done
@@ -154,39 +160,57 @@ if $dry_run; then exit 0; fi
 fetch() { # fetch POINT: mirror its run directory, without AIPerf's copy of the dataset
   rsync -a --delete -e "$ssh" --exclude aiperf/inputs.json "$cyan:$runs/$1/" "$results/$1/"
 }
-# A consumer card's boost clock follows its temperature, so each point keeps the clocks it ran at: nvidia-smi on each
+# A consumer card's boost clock follows its temperature, so each point keeps the clocks it ran at: nvidia-smi on the
 # GPU node, once a second while the point runs (line-buffered, timestamps in UTC); it stops when its ssh does. The
 # GPU's name and UUID come last, so that a record says which card it ran on. A host that lends one of several GPUs
 # names it in its environment (LH_GPU_ID, from its env.sh): only that GPU is sampled, and the file's first line, a
 # comment, says which (lh-bench's record reads that GPU's rows alone).
 gpu_query=timestamp,clocks.sm,clocks.mem,temperature.gpu,power.draw,clocks_event_reasons.active,name,uuid
-samplers=()
-trap 'for sampler in ${samplers[@]+"${samplers[@]}"}; do kill "$sampler" 2>/dev/null; done' EXIT
-gpu_csv() { # gpu_csv HOST: the file of its GPU's samples in a run directory
-  if ((${#gpus[@]} == 1)); then echo gpu.csv; else echo "gpu-${1%%.*}.csv"; fi
+sampler=""
+restore() { # put cyan's units back and, with --pause, stop the GPU node's units
+  $ssh "$cyan" "$bench e2 reset" 2>&1 | tee -a "$results/campaign.log" ||
+    { log "campaign: lh-bench e2 reset failed"; return 1; }
+  if $pause; then
+    # Naming the units makes systemctl wait for their stops too, not only the target's, which returns at once: a
+    # campaign started right after would otherwise meet an engine still shutting down.
+    $ssh "$gpu" systemctl --user stop leaseholder.target lh-engine lh-stt lh-tts ||
+      { log "campaign: the units of $node did not stop"; return 1; }
+    log "$node is paused; start it again with systemctl --user start leaseholder.target"
+  fi
 }
-sample_gpus() { # sample_gpus POINT
-  for gpu in "${gpus[@]}"; do
-    $ssh "$gpu" "if [ -n \"\${LH_GPU_ID:-}\" ]; then echo \"# gpu \$LH_GPU_ID\"; fi
-      exec env TZ=UTC stdbuf -oL nvidia-smi \${LH_GPU_ID:+-i \"\$LH_GPU_ID\"} --query-gpu=$gpu_query --format=csv,noheader -l 1" \
-      >"$results/$1.$(gpu_csv "$gpu")" 2>>"$results/campaign.log" &
-    samplers+=($!)
-  done
+# changed: the GPU node was switched; busy: a point may still be running on cyan, which a reset or a pause would spoil;
+# ended: the campaign's end ran restore itself.
+changed=false busy=false ended=false
+finish() {
+  local status=$?
+  if [[ -n $sampler ]]; then kill "$sampler" 2>/dev/null || true; fi
+  if $changed && ! $ended; then
+    if $busy; then
+      log "campaign: cyan's units and the GPU node stay as they are: a point may still be running on cyan"
+    else
+      restore || true
+    fi
+  fi
+  exit "$status"
 }
-stop_gpus() { # stop_gpus POINT: end the sampling and put the samples into the point's run directory on cyan
-  for sampler in ${samplers[@]+"${samplers[@]}"}; do
+trap finish EXIT
+sample_gpu() { # sample_gpu POINT
+  $ssh "$gpu" "if [ -n \"\${LH_GPU_ID:-}\" ]; then echo \"# gpu \$LH_GPU_ID\"; fi
+    exec env TZ=UTC stdbuf -oL nvidia-smi \${LH_GPU_ID:+-i \"\$LH_GPU_ID\"} --query-gpu=$gpu_query --format=csv,noheader -l 1" \
+    >"$results/$1.gpu.csv" 2>>"$results/campaign.log" &
+  sampler=$!
+}
+stop_gpu() { # stop_gpu POINT: end the sampling and put the samples into the point's run directory on cyan
+  if [[ -n $sampler ]]; then
     kill "$sampler" 2>/dev/null || true
     wait "$sampler" 2>/dev/null || true
-  done
-  samplers=()
-  for gpu in "${gpus[@]}"; do
-    file=$(gpu_csv "$gpu")
-    if $ssh "$cyan" "cat >$runs/$1/$file" <"$results/$1.$file"; then
-      rm "$results/$1.$file"
-    else
-      log "$1: the samples of ${gpu%%.*}'s GPU stay in $results/$1.$file"
-    fi
-  done
+  fi
+  sampler=""
+  if $ssh "$cyan" "cat >$runs/$1/gpu.csv" <"$results/$1.gpu.csv"; then
+    rm "$results/$1.gpu.csv"
+  else
+    log "$1: the samples of $node's GPU stay in $results/$1.gpu.csv"
+  fi
 }
 # A point's budget for --until: the longest of its kind measured on this host (durations.tsv), and of an engine
 # switch, in whole minutes rounded up; before one is, W5's on cyan: its longest agent point (11 min 34 s) and
@@ -219,7 +243,12 @@ minutes() { # minutes ARM ENGINE PREVIOUS
 previous=""
 for i in "${!points[@]}"; do
   point=${points[$i]}
-  if $ssh "$cyan" "$(complete "$point")"; then
+  status=0
+  $ssh "$cyan" "$(complete "$point")" || status=$?
+  if ((status == 255)); then
+    busy=true
+    die "$point: lost the connection to cyan (ssh exit status 255)"
+  elif ((status == 0)); then
     fetch "$point"
     previous=${engines[$i]}
     continue
@@ -235,31 +264,34 @@ for i in "${!points[@]}"; do
   [[ ${engines[$i]} == "$previous" ]] || switching=true
   previous=${engines[$i]}
   # A point whose ssh session dropped may still be running on cyan; switching the engine would spoil it.
-  $ssh "$cyan" flock -n leaseholder/runs/.lh-bench-e2.lock true ||
+  status=0
+  $ssh "$cyan" flock -n leaseholder/runs/.lh-bench-e2.lock true || status=$?
+  if ((status)); then
+    busy=true
+    ((status != 255)) || die "$point: lost the connection to cyan (ssh exit status 255)"
     die "a point is still running on cyan (its pid is in leaseholder/runs/.lh-bench-e2.lock); run again once it ends"
+  fi
+  changed=true
   switched=$(date -u +%s)
-  sources=""
-  for gpu in "${gpus[@]}"; do
-    log "$point: ${gpu%%.*} runs ${engines[$i]}"
-    variant="bash $node_dir/variant.sh"
-    $ssh "$gpu" "$variant measure on && $variant use ${engines[$i]}" 2>&1 |
-      tee -a "$results/campaign.log" || die "$point: ${gpu%%.*} did not start ${engines[$i]} (journalctl there)"
-    # The node's deployed revision as the point starts (deploy/deploy.sh writes it), for run.json beside cyan's; empty
-    # when the node has none.
-    deployed=$($ssh "$gpu" cat leaseholder/src/DEPLOYED 2>/dev/null) || deployed=""
-    [[ $deployed =~ ^[A-Za-z0-9._+-]+$ ]] || deployed=""
-    log "$point: ${gpu%%.*} has ${deployed:-no DEPLOYED}"
-    sources+=" --gpu-source ${gpu%%.*}=$deployed"
-  done
+  log "$point: $node runs ${engines[$i]}"
+  variant="bash $node_dir/variant.sh"
+  $ssh "$gpu" "$variant measure on && $variant use ${engines[$i]}" 2>&1 |
+    tee -a "$results/campaign.log" || die "$point: $node did not start ${engines[$i]} (journalctl there)"
+  # The node's deployed revision as the point starts (deploy/deploy.sh writes it), for run.json beside cyan's; empty
+  # when the node has none.
+  deployed=$($ssh "$gpu" cat leaseholder/src/DEPLOYED 2>/dev/null) || deployed=""
+  [[ $deployed =~ ^[A-Za-z0-9._+-]+$ ]] || deployed=""
+  log "$point: $node has ${deployed:-no DEPLOYED}"
   if $switching; then echo "switch $(($(date -u +%s) - switched))" >>"$durations"; fi
   log "$point: measuring"
   measuring=$(date -u +%s)
-  sample_gpus "$point"
+  sample_gpu "$point"
   status=0
-  $ssh "$cyan" "$bench e2 run $runs/arms/$point.toml --out $runs/$point${seed:+ --agents-seed $seed}${sampling:+ --kv-sample-s $sampling}$sources$profile" 2>&1 |
+  $ssh "$cyan" "$bench e2 run $runs/arms/$point.toml --out $runs/$point${seed:+ --agents-seed $seed}${sampling:+ --kv-sample-s $sampling}$audio --gpu-source $node=$deployed$profile" 2>&1 |
     tee -a "$results/campaign.log" || status=$?
-  stop_gpus "$point"
+  stop_gpu "$point"
   if ((status == 255)); then
+    busy=true
     die "$point: lost the connection to cyan; the point may still be running there"
   elif ((status)); then
     fetch "$point" || true
@@ -275,14 +307,6 @@ log "the frontier of $name"
 $ssh "$cyan" "$bench e2 report$dirs --out $runs/report" 2>&1 | tee -a "$results/campaign.log" ||
   die "lh-bench e2 report failed"
 rsync -a --delete -e "$ssh" "$cyan:$runs/report/" "$results/report/"
-$ssh "$cyan" "$bench e2 reset" 2>&1 | tee -a "$results/campaign.log" || die "lh-bench e2 reset failed"
-if $pause; then
-  for gpu in "${gpus[@]}"; do
-    # Naming the units makes systemctl wait for their stops too, not only the target's, which returns at once: a
-    # campaign started right after would otherwise meet an engine still shutting down.
-    $ssh "$gpu" systemctl --user stop leaseholder.target lh-engine lh-stt lh-tts ||
-      die "the units of ${gpu%%.*} did not stop"
-    log "${gpu%%.*} is paused; start it again with systemctl --user start leaseholder.target"
-  done
-fi
+ended=true
+restore || exit 1
 log "done: $results/report/frontier.md"

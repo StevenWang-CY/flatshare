@@ -11,23 +11,17 @@
    load-generator cores and waits for its profiling phase and a warm-up;
 4. it snapshots the gateway's and the engine's ``/metrics``, runs ``lh-voice bots`` inside the
    voice-plane namespace (``--save-audio`` has them save each call's audio, for the demo video) and
-   snapshots again: the calls are the measurement window, through which an agent point samples each
+   snapshots again: the calls are the measurement window, through which an agent point samples the
    engine's KV use and requests every half second (``--kv-sample-s``; 0 samples nothing, as W5's points
-   ran: the sampler came after them), on one connection to each engine that it keeps for the window;
+   ran: the sampler came after them), on one connection to the engine that it keeps for the window;
 5. it stops AIPerf, keeps the gateway's request log of the calls and the voice worker's journal of
    them (its turn lines and its sessions' event counts), and writes ``summary.json``.
 
-An arm whose ``[gateway]`` names GPU nodes (``[gateway.nodes.<name>]``, with ``[gateway.placement]``)
-is a point on several nodes, each running the arm's ``[engine]``: the run starts each node's tunnel
-(``lh-tunnel@<name>``), checks, resets and snapshots each node's engine, tells the voice worker the
-nodes (``LH_NODES``, so that each call's STT and TTS follow its node), and reports each node and the
-total.
-
-The run reaches every engine by its address (:mod:`leaseholder_bench.transport`): on cyan, the tunnel's
+The run reaches the engine by its address (:mod:`leaseholder_bench.transport`): on cyan, the tunnel's
 socket. Its engine check and cache resets need vLLM's development routes, which only the measurement
 drop-in serves (``deploy/phastform/variant.sh measure on``, which ``benchmarks/e2/campaign.sh`` runs).
 
-The GPU nodes' engines are switched by ``benchmarks/e2/campaign.sh`` (``variant.sh use``), never here.
+The GPU node's engine is switched by ``benchmarks/e2/campaign.sh`` (``variant.sh use``), never here.
 A failure ends the point: ``run.json`` keeps ``"status": "failed"`` and the error, and every process
 the run started is stopped by its process group. ``lh-bench e2 report`` (:mod:`.report`) builds the
 frontier from the run directories.
@@ -59,16 +53,7 @@ from typing import Any
 import httpx
 import orjson
 
-from leaseholder_bench.e2.arm import (
-    NODE_NAME,
-    Arm,
-    E2Error,
-    Engine,
-    Voice,
-    flag_values,
-    gpu_nodes,
-    load_arm,
-)
+from leaseholder_bench.e2.arm import Arm, E2Error, Engine, Voice, flag_values, load_arm
 from leaseholder_bench.e2.record import (
     OUTCOMES,
     gateway_request_lines,
@@ -79,9 +64,10 @@ from leaseholder_bench.e2.record import (
     summarize_point,
     worker_lines,
 )
-from leaseholder_bench.kv_metrics import fetch, metric_samples
+from leaseholder_bench.kv_metrics import fetch
 from leaseholder_bench.tiers import pool_tokens
 from leaseholder_bench.transport import client, runtime_socket
+from leaseholder_stats import metric_samples
 
 CONFIGS = Path(__file__).resolve().parents[3] / "configs"
 """The AIPerf configuration, from the source tree (``uv sync`` installs the package editable)."""
@@ -108,6 +94,9 @@ AIPERF_STOP_S = 120.0
 """How long AIPerf may take to cancel its requests and write its exports after SIGINT."""
 CALL_TURN_S = 130.0
 """The longest a call's turn can take: the line, a reply, a barge-in and a reply, the quiet wait."""
+CALLERS_EXIT_S = 120.0
+"""The longest the callers may take to exit once their calls ended: with --save-audio they write each
+call's audio then."""
 POLL_S = 1.0
 """How often a run checks on the tools and services it waits for."""
 SESSIONS_END_S = 30.0
@@ -117,20 +106,17 @@ when its room is deleted, and its job's shutdown, which sends the last events, m
 SMG = "lh-smg"
 GATEWAY = "lh-gateway"
 WORKER = "lh-voice-worker"
-TUNNEL = "lh-tunnel@{}"
-"""A GPU node's tunnel on cyan: the instance of deploy/cyan/systemd/lh-tunnel@.service named after it."""
 E2_GATEWAY = "e2-gateway"
 NO_PREEMPTIVE = "no-preemptive-generation"
 NO_EVENTS = "no-events"
 """Drop-ins under deploy/cyan/variants/ that e2 run links into cyan's units as ``variant-NAME.conf``."""
-NODES = "nodes"
-"""The worker drop-in e2 run writes for a point on several GPU nodes, ``variant-nodes.conf``."""
-ENGINE_UP_S = 60.0
-"""How long a node's engine may take to answer through a tunnel that was just started."""
 GATEWAY_IDLE_S = 30.0
 """How long the gateway may take to end its requests once a point's tools have stopped."""
+BUSY = ("lh_gateway_streams_active", "lh_gateway_admission_waiting")
+"""The gateway's gauges of the responses it is relaying and of the requests waiting at its admission
+point: it is idle when both are at zero (:func:`_ended`)."""
 KV_SAMPLE_S = 0.5
-"""How often an agent point samples each engine's KV use and its running and waiting requests from its
+"""How often an agent point samples the engine's KV use and its running and waiting requests from its
 ``/metrics`` while the calls run (P-1's sampler; record.KV_GAUGES), from which the summary takes the
 measured running share; ``lh-bench e2 run --kv-sample-s`` sets another, 0 none (W5's points ran without
 it)."""
@@ -157,7 +143,7 @@ class Host:
     aiperf_cores: str = "16-23"
     caller_cores: str = "24-31"
     profile: str = BOX_PROFILE
-    """The GPU nodes' hardware profile (deploy/profiles/NAME.toml), whose engine settings the engine
+    """The GPU node's hardware profile (deploy/profiles/NAME.toml), whose engine settings the engine
     check expects."""
     preflight: str = ""
     """A single host's preflight.json (deploy/a100/host.py preflight), whose degraded and refused checks
@@ -246,15 +232,15 @@ def configure_cyan(arm: Arm, host: Host, systemd: Systemd) -> dict[str, Any]:
             f"{WORKER} ends turns with LiveKit's end-of-turn model; E2 points need fixed endpointing: "
             "link deploy/cyan/variants/vad-turns (ops/RUNBOOK.md)"
         )
-    applied = _apply(host, systemd, arm.router, arm.gateway, arm.voice, tuple(gpu_nodes(arm)))
+    applied = _apply(host, systemd, arm.router, arm.gateway, arm.voice)
     return applied | {"llm_path": env.get("LH_LLM_UDS")}
 
 
 def reset_cyan(host: Host, systemd: Systemd) -> dict[str, Any]:
-    """Undo what e2 run changes on cyan: SMG stopped, the gateway back on gateway.toml, preemptive
-    generation and lifecycle events on, and the voice worker on one GPU node."""
+    """Undo what e2 run changes on cyan: SMG stopped, the gateway back on gateway.toml, and preemptive
+    generation and lifecycle events on."""
     with exclusive(host):
-        return _apply(host, systemd, None, {}, Voice(), ())
+        return _apply(host, systemd, None, {}, Voice())
 
 
 def _apply(
@@ -263,16 +249,12 @@ def _apply(
     router: str | None,
     overlay: Mapping[str, Any],
     voice: Voice,
-    nodes: tuple[str, ...],
 ) -> dict[str, Any]:
     if router == "smg":
         systemd("start", SMG)  # returns once SMG answers /health
     elif systemd.active(SMG):
         systemd("stop", SMG)
-    base = _read_toml(host.config / "gateway.toml")
-    if nodes:
-        base.pop("upstream", None)  # the arm's nodes replace the one engine
-    config = _merge(base, overlay)
+    config = _merge(_read_toml(host.config / "gateway.toml"), overlay)
     gateway = _link(host, GATEWAY, E2_GATEWAY, bool(overlay))
     if overlay:
         gateway |= _write_private(
@@ -281,7 +263,6 @@ def _apply(
     links = [
         _link(host, WORKER, NO_PREEMPTIVE, not voice.preemptive_generation),
         _link(host, WORKER, NO_EVENTS, not voice.events),
-        _name_nodes(host, nodes),
     ]
     worker = any(links)
     if gateway or worker:
@@ -304,15 +285,14 @@ def _apply(
             90.0,
             f"{WORKER} did not register with LiveKit within 90 s (journalctl --user -u {WORKER})",
         )
-    record = {
-        "restarted": worker,
-        "preemptive_generation": voice.preemptive_generation,
-        "events": voice.events,
-    }
     return {
         "router": router,
         "gateway": {"restarted": gateway, "config": _redacted(config)},
-        "worker": record | ({"nodes": list(nodes)} if nodes else {}),
+        "worker": {
+            "restarted": worker,
+            "preemptive_generation": voice.preemptive_generation,
+            "events": voice.events,
+        },
     }
 
 
@@ -334,27 +314,6 @@ def _link(host: Host, unit: str, variant: str, wanted: bool) -> bool:
     if wanted:
         link.parent.mkdir(parents=True, exist_ok=True)
         link.symlink_to(target)
-    return True
-
-
-def _name_nodes(host: Host, nodes: tuple[str, ...]) -> bool:
-    """Write the voice worker's drop-in that names the GPU nodes (``LH_NODES``), or remove it for a point
-    on one; returns whether that changed."""
-    path = host.units / f"{WORKER}.service.d" / f"variant-{NODES}.conf"
-    if not nodes:
-        if not (path.is_symlink() or path.exists()):
-            return False
-        path.unlink()
-        return True
-    text = (
-        "# Generated by lh-bench e2 run for a point on several GPU nodes.\n"
-        f"[Service]\nEnvironment=LH_NODES={','.join(nodes)}\n"
-    )
-    if path.is_file() and not path.is_symlink() and path.read_text() == text:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.unlink(missing_ok=True)
-    path.write_text(text)
     return True
 
 
@@ -751,7 +710,8 @@ def _get_json(address: str, path: str, missing: str | None = None, **kwargs: Any
 
 
 TOOL_MARK = "LH_E2_TOOL"
-"""The environment variable that marks every process a tool of e2 run started, its children too."""
+"""The environment variable that marks every process a tool of e2 run started, its children too:
+``SCOPE/PID-NS``, the run's scope (:func:`tool_scope`), then its pid and the tool's start."""
 NEEDS_WAITID = (
     "lh-bench e2 run needs os.waitid, to watch its tools without reaping them: Linux, or macOS "
     "from Python 3.13"
@@ -765,11 +725,12 @@ class Process:
     out of the group's reach. Output goes to ``log``."""
 
     def __init__(
-        self, name: str, command: Sequence[str], log: Path, env: Mapping[str, str]
+        self, name: str, command: Sequence[str], log: Path, env: Mapping[str, str], scope: str
     ) -> None:
         self.name = name
         self.log = log
-        self.mark = f"{os.getpid()}-{time.monotonic_ns()}"
+        self.scope = scope
+        self.mark = f"{scope}/{os.getpid()}-{time.monotonic_ns()}"
         with log.open("ab") as out:
             self.popen = subprocess.Popen(
                 list(command),
@@ -801,7 +762,7 @@ class Process:
             # A group with nothing left but its exited leader answers ESRCH (Linux) or EPERM (macOS).
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(pid, signal.SIGKILL)
-            kill_marked(self.mark)
+            kill_marked(self.scope, self.mark)
             self.status = self.popen.wait()
         return self.status
 
@@ -811,9 +772,16 @@ class Process:
         return E2Error(f"{self.name} {what} (exit status {self.stop()}); {self.log}:\n{tail}")
 
 
-def kill_marked(mark: str | None = None) -> list[int]:
-    """Kill the processes whose environment carries ``mark`` under ``TOOL_MARK`` (any mark when
-    None), and return their pids. It reads ``/proc``, so it finds none off Linux."""
+def tool_scope(host: Host) -> str:
+    """The scope of a run's tools: the root its run lock is in (``host.root``). A run's start kills
+    what a run under the same lock left, and no tool of a run beside it under another root, as a
+    test session's runs are beside another's on one host."""
+    return str(host.root)
+
+
+def kill_marked(scope: str, mark: str | None = None) -> list[int]:
+    """Kill the processes whose environment carries a mark of ``scope`` under ``TOOL_MARK`` (``mark``
+    alone when given), and return their pids. It reads ``/proc``, so it finds none off Linux."""
     killed = []
     for environ in Path("/proc").glob("[0-9]*/environ"):
         try:
@@ -821,7 +789,8 @@ def kill_marked(mark: str | None = None) -> list[int]:
         except OSError:  # another user's process, or one that just exited
             continue
         marks = [v.split(b"=", 1)[1] for v in variables if v.startswith(f"{TOOL_MARK}=".encode())]
-        if marks and (mark is None or marks[0] == mark.encode()):
+        ours = marks and marks[0].rsplit(b"/", 1)[0] == scope.encode()
+        if ours and (mark is None or marks[0] == mark.encode()):
             pid = int(environ.parent.name)
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.kill(pid, signal.SIGKILL)
@@ -859,7 +828,7 @@ def run_point(
     reads over its SSH at the point's start and run.json keeps beside cyan's; None when unknown.
     ``agents_seed``, a campaign's (``agents-seed`` in its file), replaces the arm file's ``[agents]
     seed`` for AIPerf; run.json keeps the seed the replay ran with (``agents_seed``). An agent point
-    samples each engine's KV every ``kv_sample_s`` while the calls run; 0 or None samples nothing (W5's
+    samples the engine's KV every ``kv_sample_s`` while the calls run; 0 or None samples nothing (W5's
     points ran without the sampler, and tests whose fake engines count their /metrics reads), and
     run.json keeps the interval the point sampled at (``kv_sample_s``, null when it did not)."""
     if not hasattr(os, "waitid"):
@@ -884,9 +853,9 @@ def run_point(
         record["agents_seed"] = seed if arm.agents.sessions else None
         # The KV sampler's interval, null where the point did not sample (voice alone, or 0).
         record["kv_sample_s"] = kv_sample_s if arm.agents.sessions else None
-        # Under the lock no other run's tools are alive: a marked process is left from a run that
-        # was killed before it could stop them.
-        if leftovers := kill_marked():
+        # Under the lock no other run's tools are alive: a process marked in its scope is left from a
+        # run that was killed before it could stop them.
+        if leftovers := kill_marked(tool_scope(host)):
             record["leftovers_killed"] = leftovers
             record.say(f"killed {len(leftovers)} processes left by an earlier run: {leftovers}")
         try:
@@ -912,15 +881,11 @@ def _measure(
     seed: int,
     kv_sample_s: float | None,
 ) -> dict[str, Any]:
-    nodes = gpu_nodes(arm)
-    engines: dict[str | None, str] = dict(nodes) or {None: host.engine_url}
-    if nodes:
-        _start_tunnels(nodes, systemd, record)
     base = profile_flags(host.profile)
     record["profile"] = host.profile
     if host.preflight:
         record["preflight"] = preflight_summary(Path(host.preflight))
-    servers = _check_engines(arm, engines, out, record, base)
+    server = _check_engine(arm, host.engine_url, out, record, base)
     record.say(f"configuring cyan for {arm.name}")
     record["cyan"] = configure_cyan(arm, host, systemd)
     _until(
@@ -928,8 +893,7 @@ def _measure(
         60.0,
         f"{host.gateway_url}/ready did not answer within 60 s: the engine or the router is down",
     )
-    for node, url in engines.items():
-        reset_prefix_cache(url, servers[node])
+    reset_prefix_cache(host.engine_url, server)
     # Before the replay and the calls the gateway is idle: the base of the check that its journal kept a
     # line for every request it ended.
     idle = (time.time(), _ended(host))
@@ -938,15 +902,16 @@ def _measure(
     aiperf = (
         _start_aiperf(arm, host, out, record, running, seed, model) if arm.agents.sessions else None
     )
-    start = _snapshot(host, out, "start", engines)
+    start = _snapshot(host, out, "start")
     sampler = None
     if aiperf is not None and kv_sample_s is not None:
-        sampler = _KvSampler(engines, out / "metrics", kv_sample_s)
+        sampler = _KvSampler(host.engine_url, out / "metrics", kv_sample_s)
         running.callback(sampler.stop)
-    end = _call(arm, host, out, record, running, aiperf, save_audio)
+    end, bots = _call(arm, host, out, record, running, aiperf, save_audio)
     if sampler is not None:
         sampler.stop()
-    _snapshot(host, out, "end", engines)
+    _snapshot(host, out, "end")
+    _callers_exit(bots)
     record["window"] = {"start": start, "end": end}
     if aiperf is not None:
         record.say("stopping AIPerf")
@@ -962,7 +927,6 @@ def _measure(
             start,
             end,
             agents=bool(arm.agents.sessions),
-            nodes=tuple(nodes),
             warmup_turns=arm.voice.warmup_turns,
         )
     except ValueError as exc:
@@ -973,30 +937,17 @@ def _measure(
     return summary
 
 
-def _check_engines(
-    arm: Arm,
-    engines: Mapping[str | None, str],
-    out: Path,
-    record: _Record,
-    base: Sequence[str] = FROZEN,
-) -> dict[str | None, str]:
-    """Record each engine (``engine.json``, ``engine-NODE.json`` on several GPU nodes, and run.json's
-    ``engine``, by node on several) and check it against the arm's; returns each engine's server."""
-    recorded: dict[str | None, dict[str, Any]] = {}
-
-    def keep(node: str | None, engine: dict[str, Any]) -> None:
-        recorded[node] = engine
-        record["engine"] = engine if node is None else recorded
-
-    servers = {}
-    for node, url in engines.items():
-        info = describe_engine(url)
-        servers[node] = info.server
-        _write_json(out / _engine_file(node, "json"), _redacted(info.config))
-        engine = {"server": info.server, "version": info.version, "pool_tokens": info.pool_tokens}
-        keep(node, engine)  # recorded before the check, which fails on a wrong engine
-        keep(node, engine | {"flags": check_engine(arm.engine, info, base=base)})
-    return servers
+def _check_engine(
+    arm: Arm, url: str, out: Path, record: _Record, base: Sequence[str] = FROZEN
+) -> str:
+    """Record the engine (``engine.json`` and run.json's ``engine``) and check it against the arm's;
+    returns its server."""
+    info = describe_engine(url)
+    _write_json(out / "engine.json", _redacted(info.config))
+    engine = {"server": info.server, "version": info.version, "pool_tokens": info.pool_tokens}
+    record["engine"] = engine  # recorded before the check, which fails on a wrong engine
+    record["engine"] = engine | {"flags": check_engine(arm.engine, info, base=base)}
+    return info.server
 
 
 def _start_aiperf(
@@ -1013,7 +964,7 @@ def _start_aiperf(
     agents = arm.agents
     record.say(f"AIPerf: {agents.sessions} session trees through the gateway, seed {seed}")
     env = _aiperf_env(arm, host, out, seed, model)
-    aiperf = Process("AIPerf", host.aiperf(), out / "aiperf.log", env)
+    aiperf = Process("AIPerf", host.aiperf(), out / "aiperf.log", env, tool_scope(host))
     running.callback(aiperf.stop, AIPERF_STOP_S)
     deadline = time.monotonic() + PROFILING_TIMEOUT_S
     while PROFILING not in aiperf.log.read_text(errors="replace"):
@@ -1039,8 +990,9 @@ def _call(
     running: contextlib.ExitStack,
     aiperf: Process | None,
     save_audio: bool,
-) -> float:
-    """Run the calls; returns when they ended. The replay must outlast them."""
+) -> tuple[float, Process]:
+    """Run the calls; returns when they ended, and the callers' process, which may still be writing
+    the calls' audio (:func:`_callers_exit`). The replay must outlast the calls."""
     voice = arm.voice
     warmup = f" after {voice.warmup_turns} warm-up" if voice.warmup_turns else ""
     record.say(f"calls: {voice.callers} callers, {voice.turns} turns each{warmup}")
@@ -1058,19 +1010,33 @@ def _call(
     if save_audio:
         command.append("--save-audio")
     env = os.environ | read_env(host.config / "livekit.env")
-    bots = Process("lh-voice bots", command, out / "bots.log", env)
+    bots = Process("lh-voice bots", command, out / "bots.log", env, tool_scope(host))
     running.callback(bots.stop, 30.0)
     deadline = time.monotonic() + CALL_TURN_S * (voice.warmup_turns + voice.turns) + 120
-    while not bots.exited():
+    # The callers write their summary as their calls end, before any call's audio.
+    ended = out / "bots" / "summary.json"
+    while not bots.exited() and not ended.exists():
         if aiperf is not None and aiperf.exited():
             raise aiperf.failure("exited while the calls ran, so its load did not cover them")
         if time.monotonic() > deadline:
             raise bots.failure("did not finish in time")
         time.sleep(POLL_S)
     end = time.time()
+    if not ended.exists():  # they exited before their calls ended
+        _callers_exit(bots)
+    return end, bots
+
+
+def _callers_exit(bots: Process) -> None:
+    """Wait for the callers to exit once their calls ended, and check how: with --save-audio they
+    write each call's audio first, which the point's window and its last metrics leave out."""
+    deadline = time.monotonic() + CALLERS_EXIT_S
+    while not bots.exited():
+        if time.monotonic() > deadline:
+            raise bots.failure("did not exit after the calls")
+        time.sleep(POLL_S)
     if bots.stop() not in (0, 3):  # 3: some turns failed, which the summary counts
         raise bots.failure("failed")
-    return end
 
 
 def _gateway_log(systemd: Systemd, out: Path, start: float, end: float) -> None:
@@ -1081,14 +1047,14 @@ def _gateway_log(systemd: Systemd, out: Path, start: float, end: float) -> None:
 
 
 def _ended(host: Host) -> tuple[float, float]:
-    """From the gateway's metrics: the requests it has ended (``lh_gateway_request_outcomes_total``, every
-    class and outcome), and those it is relaying or holding at its admission point."""
+    """From the gateway's metrics: the requests it has ended (OUTCOMES, every class and outcome), and
+    those it is relaying or holding at its admission point (BUSY)."""
     exposition = fetch(host.gateway_socket)
     ended = busy = 0.0
     for name, _, value in metric_samples(exposition):
         if name == OUTCOMES:
             ended += value
-        elif name in ("lh_gateway_streams_active", "lh_gateway_admission_waiting"):
+        elif name in BUSY:
             busy += value
     return ended, busy
 
@@ -1149,46 +1115,24 @@ def _ready(address: str, path: str = "/ready") -> bool:
     return False
 
 
-def _start_tunnels(nodes: Mapping[str, str], systemd: Systemd, record: _Record) -> None:
-    """Start each GPU node's tunnel (one that runs is left alone; none is stopped after the point) and
-    wait until the node's engine answers through it."""
-    record.say(f"GPU nodes: {', '.join(nodes)}")
-    for node, address in nodes.items():
-        systemd("start", TUNNEL.format(node))
-        _until(
-            lambda address=address: _ready(address, "/health"),
-            ENGINE_UP_S,
-            f"the engine of GPU node {node} did not answer at {address} within {ENGINE_UP_S:.0f} s: "
-            f"is the node running, and {TUNNEL.format(node)} up?",
-        )
-
-
 class _KvSampler:
-    """Each engine's KV use and running and waiting requests (record.KV_GAUGES) from its ``/metrics``
+    """The engine's KV use and running and waiting requests (record.KV_GAUGES) from its ``/metrics``
     every ``interval`` seconds, from its start until :meth:`stop`, a line a sample (its time, then the
-    three) into ``metrics``' engine-kv.csv (engine-NODE-kv.csv on several GPU nodes). A sample the
-    engine does not answer in time is left out; the summary counts the samples it has. Each engine has
-    one client for the whole run, its connection kept alive between samples (the engines keep an idle
-    one 60 s): through cyan's tunnel a new connection is a new SSH session on the GPU node, about 12 ms
-    of its CPU, which a client a sample would cost it twice a second while it measures. A request
-    that fails drops its client, and the next sample opens another."""
+    three) into ``metrics``' engine-kv.csv. A sample the engine does not answer in time is left out;
+    the summary counts the samples it has. The sampler has one client for the whole run, its
+    connection kept alive between samples (the engine keeps an idle one 60 s): through cyan's tunnel a
+    new connection is a new SSH session on the GPU node, about 12 ms of its CPU, which a client a
+    sample would cost it twice a second while it measures. A request that fails drops its client, and
+    the next sample opens another."""
 
-    def __init__(
-        self, engines: Mapping[str | None, str], metrics: Path, interval: float = KV_SAMPLE_S
-    ) -> None:
+    def __init__(self, address: str, metrics: Path, interval: float = KV_SAMPLE_S) -> None:
         self.interval = interval
         self._stopped = threading.Event()
         metrics.mkdir(exist_ok=True)
-        self._threads = [
-            threading.Thread(
-                target=self._sample,
-                args=(address, metrics / _engine_file(node, "csv", "kv")),
-                daemon=True,
-            )
-            for node, address in engines.items()
-        ]
-        for thread in self._threads:
-            thread.start()
+        self._thread = threading.Thread(
+            target=self._sample, args=(address, metrics / "engine-kv.csv"), daemon=True
+        )
+        self._thread.start()
 
     def _sample(self, address: str, path: Path) -> None:
         http: httpx.Client | None = None
@@ -1216,24 +1160,17 @@ class _KvSampler:
                     http.close()
 
     def stop(self) -> None:
-        """Stop sampling once each engine's sample in flight is written; stopping twice is stopping."""
+        """Stop sampling once the sample in flight is written; stopping twice is stopping."""
         self._stopped.set()
-        for thread in self._threads:
-            thread.join()
+        self._thread.join()
 
 
-def _engine_file(node: str | None, suffix: str, when: str | None = None) -> str:
-    """An engine's file: ``engine[-NODE][-WHEN].SUFFIX``, without a node for a point's one engine."""
-    return "-".join(part for part in ("engine", node, when) if part) + f".{suffix}"
-
-
-def _snapshot(host: Host, out: Path, when: str, engines: Mapping[str | None, str]) -> float:
-    """Save the gateway's ``/metrics`` (from its socket, which asks for no key) and each engine's;
+def _snapshot(host: Host, out: Path, when: str) -> float:
+    """Save the gateway's ``/metrics`` (from its socket, which asks for no key) and the engine's;
     returns the time it finished."""
     metrics = out / "metrics"
     metrics.mkdir(exist_ok=True)
-    files = {f"gateway-{when}.prom": host.gateway_socket}
-    files |= {_engine_file(node, "prom", when): address for node, address in engines.items()}
+    files = {f"gateway-{when}.prom": host.gateway_socket, f"engine-{when}.prom": host.engine_url}
     for name, address in files.items():
         try:
             (metrics / name).write_text(fetch(address))
@@ -1403,6 +1340,9 @@ def _versions(host: Host, gpu_source: Mapping[str, str | None] | None) -> dict[s
     }
 
 
+NODE_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
+"""A GPU node's name (its host's first label, as campaign.sh gives it), which unit, file and socket
+names carry."""
 _REVISION = re.compile(r"[A-Za-z0-9._+-]*")
 """A deployed revision as deploy/deploy.sh writes it (``git describe --always --dirty``)."""
 

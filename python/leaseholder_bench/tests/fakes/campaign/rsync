@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # rsync in the campaign.sh tests: copies the sources to the destination, HOST:PATH being $FAKE_HOSTS/HOST/PATH. A source
-# that ends in / is a directory whose contents go, and --delete empties the destination first.
+# that ends in / is a directory whose contents go, and --delete empties the destination first. A host whose connection
+# the fake ssh dropped (FAKE_SSH_DOWN) fails it, with ssh's 255.
 delete=false
 paths=()
 while (($#)); do
@@ -13,6 +14,12 @@ while (($#)); do
   shift
 done
 local_path() { if [[ $1 == *:* ]]; then echo "$FAKE_HOSTS/${1%%:*}/${1#*:}"; else echo "$1"; fi; }
+for path in "${paths[@]}"; do
+  if [[ $path == *:* && -e $FAKE_HOSTS/${path%%:*}.down ]]; then
+    echo "rsync: connection unexpectedly closed" >&2
+    exit 255
+  fi
+done
 last=$((${#paths[@]} - 1))
 dest=$(local_path "${paths[$last]}")
 unset "paths[$last]"

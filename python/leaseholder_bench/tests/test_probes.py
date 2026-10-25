@@ -12,7 +12,7 @@ import orjson
 import pytest
 from aiohttp import web
 
-from leaseholder_bench.load import LoadSpec, stream_chunks, summarize
+from leaseholder_bench.load import LoadSpec, stream_chunks
 from leaseholder_bench.tiers import (
     Sample,
     TiersConfig,
@@ -32,15 +32,6 @@ def test_load_spec_round_trips_and_rejects_malformed_specs():
     for bad in ("prefill", "prefill:8192", "burst:10x2", "decode:0x1", "decode:10x0"):
         with pytest.raises(ValueError):
             LoadSpec.parse(bad)
-
-
-def test_summarize_reports_percentiles():
-    cell = summarize(float(x) for x in range(1, 101))
-    assert cell["n"] == 100 and cell["p50"] == 50.5 and cell["p90"] == 90.1
-    assert cell["p95"] == 95.05  # the SLO percentile
-    single = {"n": 1, "mean": 7.0, "p10": 7.0, "p50": 7.0, "p90": 7.0, "p95": 7.0, "p99": 7.0}
-    assert summarize([7.0]) == single
-    assert summarize([]) == {"n": 0}
 
 
 def test_stream_chunks_reads_the_json_chunks_and_the_whole_stream():

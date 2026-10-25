@@ -3,7 +3,6 @@
 Leaseholder's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §4.2](../../docs/ARCHITECTURE.md#42-the-voice-pipeline)). The package holds:
 - the production voice agent;
 - the lifecycle events it posts to the control plane, and its per-turn stage times;
-- a call's GPU node, which it asks the control plane for when that fronts several;
 - the measurement callers that read voice-to-voice latency from waveforms;
 - the headers the agent sends to the control plane;
 - a factory for the stock OpenAI STT, LLM and TTS plugins, pointed at OpenAI-compatible servers over TCP or a Unix socket.
@@ -12,7 +11,6 @@ Leaseholder's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §4.2]
 |---|---|
 | `leaseholder_voice.worker` | The voice agent (`lh-voice-worker start`): Silero VAD, LiveKit's local end-of-turn model, STT/LLM/TTS over the voice plane's sockets, LiveKit's default turn handling |
 | `leaseholder_voice.events` | `Lifecycle`: a session's LiveKit signals as lifecycle events, and a log line per turn with its stage times; `EventSender`: their delivery to `/v1/events` |
-| `leaseholder_voice.placement` | A call's GPU node, when the control plane fronts several: asked of `/v1/sessions`, with the node's STT and TTS sockets |
 | `leaseholder_voice.bots` | Measurement callers (`lh-voice bots`): voice-to-voice latency, barge-in to silence, and with `--save-audio` each call's audio |
 | `leaseholder_voice.callers` | The caller corpus (`lh-voice render-callers`): scripted lines in six stock Kokoro voices, 16 kHz WAVs |
 | `leaseholder_voice.audio` | A real-time microphone track, the agent's speech spans and a recording of both, on one clock |
@@ -33,17 +31,10 @@ Leaseholder's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §4.2]
 | `LH_TURN_DETECTION` | `model` (default) or `vad` |
 | `LH_PREEMPTIVE_GENERATION` | `true` (default) or `false` |
 | `LH_EVENTS` | `on` (default): lifecycle events to the control plane through `LH_LLM_UDS`; `off` |
-| `LH_NODES` | The GPU nodes the control plane places calls on, two or more, `phastform,gray`: each call's STT and TTS go to its node ([below](#a-calls-node)). Unset with one node |
 
 Experiments change two settings. LiveKit's end-of-turn model waits up to the endpointing maximum (3 s) when it judges a line unfinished: on the synthesized callers that happened on about one turn in six, and put a 3 s mode in voice-to-voice latency unrelated to serving. Experiments therefore run with `LH_TURN_DETECTION=vad`. That variant is `deploy/cyan/variants/vad-turns`: a turn ends a fixed delay after the end of speech (VAD plus LiveKit's 0.5 s minimum), the same for every arm. LiveKit's preemptive generation, on by default, starts the reply from the final transcript before the end of the turn is confirmed; `LH_PREEMPTIVE_GENERATION=false` (the variant `deploy/cyan/variants/no-preemptive-generation`, which `lh-bench e2 run` links for an arm that asks for it) turns it off, one of E2's factors.
 
 Everything else is LiveKit's default except two settings for this deployment, whose only callers are the measurement bots in the namespace: interruptions are detected by VAD (what production mode picks anyway; adaptive detection needs LiveKit Inference), and there is no AEC warm-up, which would discard a barge-in on the first reply of each call although the callers have no echo path.
-
-## A call's node
-
-With two GPU nodes behind the control plane (its `[nodes]`), each session lives on one node, which holds its KV, and a call's STT and TTS belong on the same one. `LH_NODES` names the nodes, as the control plane and the tunnels do (`phastform,gray`). Before a call's session starts, the worker asks the control plane for the call's node (`POST /v1/sessions` with `{"session_id": "voice-<room SID>", "class": "realtime"}`, over `LH_LLM_UDS`, with a 1 s timeout) and builds the call's STT and TTS on that node's tunnel sockets, `<node>-stt.sock` and `<node>-tts.sock` beside `LH_STT_UDS` and `LH_TTS_UDS` (`%t/lh/gray-stt.sock`). The LLM path does not change: the control plane sends the call's requests to its node by their session. Each placed call logs one line, logger `leaseholder_voice.placement`, message `session placed`, with `session_id`, `room` (the room's name) and `node`, which `lh-bench e2 run` reads to report each node's calls.
-- **Failures.** A placement that fails (no answer in time, a refusal, a node not in `LH_NODES`) leaves the call on `LH_STT_UDS` and `LH_TTS_UDS`, with a warning naming the cause: the call goes on, and the control plane places it by its first request.
-- **One node.** Without `LH_NODES` no placement is asked for and every call uses `LH_STT_UDS` and `LH_TTS_UDS`, as before; on the bypass (`LH_LLM_UDS` an engine's tunnel) no placement is asked for either. A misspelled `LH_NODES` (one name, a repeat, a character outside `[A-Za-z0-9._-]`) fails each call with an error that names it, as the worker's other settings do.
 
 ## Lifecycle events and turn lines
 
@@ -94,7 +85,7 @@ Every time comes from `time.monotonic()` in one process, so no clock offset ente
 
 With `--warmup-turns N` each call opens with N warm-up turns, played but not measured: a line and its reply, never interrupted, drawing their lines and pauses from a generator of their own, so that the measured turns after them are those of the same call without them. They are numbered first in `turns.jsonl`, with `"warmup": true`, and `summary.json` leaves them out.
 
-A turn fails when the agent does not answer within the reply timeout (30 s), or does not stop speaking. Its line in `turns.jsonl` has an `error` and keeps what the turn measured before it. In `summary.json` a sample the timeout cut short counts at the timeout, censored (`censored` gives how many), never as missing: a turn that was never answered raises the percentiles instead of leaving them.
+A turn fails when the agent does not answer within the reply timeout (30 s), or does not stop speaking. Its line in `turns.jsonl` has an `error` and keeps what the turn measured before it. A turn draws its interruption with its line, so a failed turn leaves the turns after it as they were: a point with failures plays the same calls as the others. In `summary.json` a sample the timeout cut short counts at the timeout, censored (`censored` gives how many), never as missing: a turn that was never answered raises the percentiles instead of leaving them.
 
 ```bash
 lh-voice render-callers ~/leaseholder/data/callers --tts-url http://localhost/v1 --uds $XDG_RUNTIME_DIR/lh/phastform-tts.sock
@@ -134,7 +125,14 @@ Unit tests need no network. CI runs them with `make test-python`:
 uv run --extra test pytest -m "not integration"      # in python/leaseholder_voice
 ```
 
-`tests/test_events.py` drives a stand-in session's hooks with LiveKit's own event types and checks each event against lh-proto's schema, the turn lines and that a failing hook never reaches LiveKit; it delivers to a fake control plane on a Unix socket: order, batching, the ids, a timeout, a refusal and recovery, the full-queue drop, a missing socket, and the end of a session. `tests/test_placement.py` asks a fake control plane on a Unix socket for a call's node: the call's STT and TTS sockets follow the node it answers, with the `session placed` line; no placement is asked for without nodes; a refusal, an unknown node, an answer that is not a placement, a timeout or no control plane at all leave the default sockets with a warning; and `LH_NODES` takes two names or more, and none on the bypass. `tests/test_callers_and_bots.py` covers the corpus, the summary and the saved calls: the layout of a recorded track, the caller's track upsampled stretch by stretch exactly as a whole, and two turns, one with a barge-in, through a fake microphone and agent track, whose WAV shows each line's end and each reply's onset where `call-<i>.json` puts them and V2V as the callers measured it.
+`tests/` checks, grouped by what each part holds to:
+
+- **Lifecycle events** (`test_events.py`): a stand-in session's hooks, driven with LiveKit's own event types, give the protocol's events, each checked against lh-proto's schema; a turn line holds its stage times; a failing hook never reaches LiveKit; delivery to a fake control plane on a Unix socket: order and batching, the ids (a new sender for the same session repeats none), a timeout, a refusal and recovery, the full-queue drop of the oldest events, a missing socket, and the end of a session, which sends its last events and logs its counts.
+- **The callers** (`test_callers_and_bots.py`): the corpus, its 16 kHz clips and manifest, and resampling that keeps the speech band and rejects aliases; the summary, which pools V2V samples, censors the replies that never came and leaves the warm-up turns out; a call that opens with its warm-up turns and measures the same turns after them; a failed turn, after which the call plays the same lines and interruptions as answered; an unanswered interruption, which fails the turn and keeps its reply; the callers joining their rooms `JOIN_STAGGER_S` apart (`test_the_callers_join_their_rooms_a_stagger_apart`).
+- **The saved calls** (`test_callers_and_bots.py`): the layout of a recorded track, its frames together and its pauses kept; the caller's track upsampled stretch by stretch exactly as a whole; two turns, one with a barge-in, through a fake microphone and agent track, whose WAV shows each line's end and each reply's onset where `call-<i>.json` puts them, and V2V as the callers measured it.
+- **The worker** (`test_worker.py`): LiveKit's turn handling by default; the experiments' fixed endpointing, and preemptive generation turned off; events to the control plane's socket unless switched off; the box's model unless told another; a misspelled setting stopping the worker.
+- **The plugins and the protocol** (`test_plugins.py`, `test_protocol.py`): the worker letting idle connections go before the servers do; the LLM streaming with the session's headers, STT, and TTS's raw PCM over a Unix socket; the header names as lh-proto has them; a room's session id scoped to the room instance; the realtime headers, a new dict each call, and unsafe session ids refused.
+- **The namespace audit** (`test_socket_audit.py`): `ss`'s addresses and links parsed; the namespace's layout passing; public and wildcard binds failing, and the server barred from the dummy address; host problems flagged for the test's own processes only.
 
 The integration test (the W0 barge-in and header findings) runs on cyan. It needs Linux with unprivileged user namespaces,
 `unshare`, `nsenter`, `setpriv`, `ip` and `ss`, and `livekit-server` 1.13.10:

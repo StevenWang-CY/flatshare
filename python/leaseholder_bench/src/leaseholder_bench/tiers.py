@@ -32,10 +32,10 @@ from typing import Any
 import httpx
 import orjson
 
-from leaseholder_bench.kv_metrics import metric_samples
-from leaseholder_bench.load import BackgroundLoad, LoadSpec, random_prompt, summarize
+from leaseholder_bench.load import BackgroundLoad, LoadSpec, random_prompt
 from leaseholder_bench.protocol import ENGINE_PRIORITY, SloClass
 from leaseholder_bench.transport import async_client
+from leaseholder_stats import metric_samples, summarize
 
 TIERS = ("recompute", "gpu", "cpu")
 GPU_HITS = "vllm:prefix_cache_hits_total"

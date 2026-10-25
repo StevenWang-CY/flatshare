@@ -34,9 +34,9 @@ import orjson
 
 from leaseholder_bench.e2.arm import E2Error
 from leaseholder_bench.e2.run import MEASURE, Host, read_env
-from leaseholder_bench.kv_metrics import metric_samples
-from leaseholder_bench.load import random_prompt, summarize
+from leaseholder_bench.load import random_prompt
 from leaseholder_bench.protocol import DEFAULT_MODEL, SloClass
+from leaseholder_stats import metric_samples, summarize
 
 PROMPT = "Count from 1 to 3000, one number per line, with nothing else."
 """A reply that keeps decoding until ``max_tokens``, whatever the sampling."""
@@ -546,11 +546,15 @@ START_PHASES = (
 )
 """A server's start as its journal shows it (``journalctl -o short-unix``): vLLM's lines, uvicorn's, and
 systemd's, whose "Started" comes once the unit's ExecStartPost health check passes."""
+AT_LAST = frozenset({"the CUDA graphs are captured"})
+"""The phases a start can mark more than once, timed at their last line: vLLM that sizes its KV cache by
+``gpu_memory_utilization`` (the STT) captures the CUDA graphs once to profile their memory, before it
+allocates the KV cache, and then for good."""
 
 
 def start_phases(journal: str) -> list[tuple[str, float]]:
     """Each phase of :data:`START_PHASES` the journal reaches after its last "Starting" line, at the
-    first line that marks it, in seconds since that line."""
+    first line that marks it (the last, for those of :data:`AT_LAST`), in seconds since that line."""
     lines = [line.partition(" ") for line in journal.splitlines()]
     stamped = [(float(t), rest) for t, _, rest in lines if t.replace(".", "", 1).isdigit()]
     starts = [i for i, (_, rest) in enumerate(stamped) if re.search(START_PHASES[0][1], rest)]
@@ -559,8 +563,9 @@ def start_phases(journal: str) -> list[tuple[str, float]]:
     begin = stamped[starts[-1]][0]
     phases = []
     for name, pattern in START_PHASES:
-        at = next((t for t, rest in stamped[starts[-1] :] if re.search(pattern, rest)), None)
-        if at is not None:
+        marked = [t for t, rest in stamped[starts[-1] :] if re.search(pattern, rest)]
+        if marked:
+            at = marked[-1] if name in AT_LAST else marked[0]
             phases.append((name, round(at - begin, 1)))
     return phases
 

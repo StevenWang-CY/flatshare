@@ -166,11 +166,17 @@ def test_units_link_the_node_and_the_control_plane_with_this_hosts_drop_ins(
         assert lh_svc.load(name).last("CPUAffinity") == plan["voice"]
     assert lh_svc.load("lh-voicenet.service").values["Environment"] == ["LH_VOICENET=host"]
     assert "LH_TURN_DETECTION=vad" in lh_svc.load("lh-voice-worker.service").values["Environment"]
-    # Once namespaces work, the voice plane's drop-in goes.
+    # The GPU servers too: in-private-net runs them in the host's namespace by this mark alone (test_deploy.py).
+    for server in ("lh-engine.service", "lh-stt.service", "lh-tts.service"):
+        assert "LH_PRIVATE_NET=host" in lh_svc.load(server).values["Environment"], server
+    # Once namespaces work, the voice plane's drop-in goes, and the servers' with it.
     node.host["userns"] = True
     host_py.install_units(node, units, systemctl=str(systemctl))
     assert not (units / "lh-voicenet.service.d" / "single-host.conf").exists()
     assert "Environment" not in lh_svc.load("lh-voicenet.service").values
+    for server in ("lh-engine.service", "lh-stt.service", "lh-tts.service"):
+        assert not (units / f"{server}.d" / "single-host.conf").exists()
+        assert "LH_PRIVATE_NET=host" not in lh_svc.load(server).values.get("Environment", [])
 
 
 def test_config_writes_the_control_planes_files_once(tmp_path: Path, monkeypatch) -> None:
@@ -807,6 +813,8 @@ def test_the_voice_plane_outside_its_namespace_is_degraded_and_the_audit_needs_s
         in userns.reason
     )
     assert "kernel.apparmor_restrict_unprivileged_userns=0" in userns.reason
+    # The GPU servers run in the host's namespace by their drop-ins' mark (in-private-net), and the reason says so.
+    assert "in-private-net" in userns.reason and "LH_PRIVATE_NET=host" in userns.reason
     assert (
         checks["Listener audit"].status == "refused"
         and "iproute2" in checks["Listener audit"].reason

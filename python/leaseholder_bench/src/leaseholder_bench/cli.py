@@ -542,14 +542,14 @@ def _add_e2(commands: Commands) -> None:
         type=_seconds,
         default=0.5,
         metavar="SECONDS",
-        help="how often an agent point samples each engine's KV use and requests from its /metrics "
+        help="how often an agent point samples the engine's KV use and requests from its /metrics "
         "while the calls run, for the measured running share (default %(default)s); 0 samples "
         "nothing, as W5's points ran; run.json keeps the interval",
     )
     run.add_argument(
         "--profile",
         metavar="NAME",
-        help="the GPU nodes' hardware profile (deploy/profiles/NAME.toml), whose model and scheduler "
+        help="the GPU node's hardware profile (deploy/profiles/NAME.toml), whose model and scheduler "
         "settings the engine check expects; default the host's (~/.config/leaseholder/e2-host.toml), "
         "else the frozen box's",
     )

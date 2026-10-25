@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# run.sh [--until HH:MM] [--cap TOKENS] [BLOCK...]: the A100 run on this host (docs/HARDWARE.md, the core block by
-# block), block by block. A block is complete when it ends, a block done before is skipped, so that a rerun resumes and
-# a stop anywhere leaves whole comparisons; without BLOCK it runs the core, 0 to 10, in order. Started from an SSH
-# session, it outlives the session:
+# run.sh [--until HH:MM] [--cap TOKENS] [--estimate BLOCK=MINUTES]... [BLOCK...]: the A100 run on this host
+# (docs/HARDWARE.md, the core block by block), block by block. A block is complete when it ends, a block done before is
+# skipped, so that a rerun resumes and a stop anywhere leaves whole comparisons; without BLOCK it runs the core, 0 to
+# 10, in order. Started from an SSH session, it outlives the session:
 #   nohup setsid bash ~/leaseholder/src/benchmarks/a100/run.sh >>~/leaseholder/runs/a100/run.log 2>&1 </dev/null &
 # The core:
 #   0     bootstrap.sh gpu and warm (the preflight with the card, each compile configuration started once), the
@@ -17,11 +17,13 @@
 # preempt-resubmit, seeds 13 to 15), batch (batch.sh) and aprime (the box's pool at 32 sessions, two rounds).
 # --until HH:MM (UTC; tomorrow's when today's has passed) starts no block that the page's estimate says cannot end
 # before then, and hands the deadline, once computed, as an epoch, to each campaign and to cprime.sh, which then start
-# no point that cannot. Each block's start
-# and end go to ~/leaseholder/runs/a100/blocks.log; a block done leaves blocks/BLOCK.done.
+# no point that cannot. --estimate BLOCK=MINUTES puts another estimate in the page's place for BLOCK (a block or an
+# arm's name): a host measured faster or slower, or an E2 block run for its first point alone, which campaign.sh's own
+# budget then stops at the deadline (the single-host rehearsal's). Each block's start and end go to
+# ~/leaseholder/runs/a100/blocks.log; a block done leaves blocks/BLOCK.done.
 set -euo pipefail
-usage() { echo "usage: run.sh [--until HH:MM] [--cap TOKENS] [BLOCK...]" >&2; exit 2; }
-until="" cap=1536
+usage() { echo "usage: run.sh [--until HH:MM] [--cap TOKENS] [--estimate BLOCK=MINUTES]... [BLOCK...]" >&2; exit 2; }
+until="" cap=1536 estimates=""
 while [[ ${1:-} == --* ]]; do
   case $1 in
     --until)
@@ -31,6 +33,10 @@ while [[ ${1:-} == --* ]]; do
     --cap)
       [[ ${2:-} =~ ^[1-9][0-9]*$ ]] || usage
       cap=$2
+      ;;
+    --estimate)
+      [[ ${2:-} =~ ^(10|[0-9]|cprime|branches|resubmit|batch|aprime)=[1-9][0-9]*$ ]] || usage
+      estimates+=" $2"
       ;;
     *) usage ;;
   esac
@@ -52,8 +58,17 @@ if [[ -n $until ]]; then
   ((deadline > now)) || deadline=$((deadline + 86400))
 fi
 
-# docs/HARDWARE.md's estimates, in minutes, for --until (block 0 assumes staging did not warm the caches).
+# docs/HARDWARE.md's estimates, in minutes, for --until (block 0 assumes staging did not warm the caches), or the last
+# --estimate given for the block.
 minutes() {
+  local pair given=""
+  for pair in $estimates; do
+    [[ ${pair%%=*} != "$1" ]] || given=${pair#*=}
+  done
+  if [[ -n $given ]]; then
+    echo "$given"
+    return
+  fi
   case $1 in
     0) echo 44 ;; 1) echo 25 ;; 2) echo 26 ;; 3) echo 17 ;; 4) echo 29 ;; 5) echo 17 ;; 6 | 7 | 8 | 9) echo 28 ;;
     10) echo 10 ;; cprime) echo 95 ;; branches) echo 45 ;; resubmit) echo 36 ;; batch) echo 15 ;; aprime) echo 80 ;;
@@ -155,7 +170,7 @@ block() { # block NAME: run one block unless it is done
   log "block $name: done"
 }
 
-log "blocks ${blocks[*]}${until:+, until $until UTC}"
+log "blocks ${blocks[*]}${until:+, until $until UTC}${estimates:+, estimates$estimates}"
 # The control plane (the voice worker, LiveKit in the voice plane, the gateway), which a reboot leaves down (nothing
 # starts it at boot: lh-svc is no boot-time service, and the units are not enabled): block 0's call and every E2 point
 # need it, and starting it where it runs is nothing.

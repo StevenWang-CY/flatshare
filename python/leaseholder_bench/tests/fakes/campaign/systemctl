@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# systemctl on a GPU node in the campaign.sh tests: logs what it was asked to do.
+echo "systemctl $*" >>"$HOME/systemctl.log"

@@ -26,9 +26,10 @@ from typing import Any
 import httpx
 import orjson
 
-from leaseholder_bench.load import BackgroundLoad, LoadSpec, stream_chunks, summarize
+from leaseholder_bench.load import BackgroundLoad, LoadSpec, stream_chunks
 from leaseholder_bench.protocol import CLASS_HEADER, ENGINE_PRIORITY, SloClass
 from leaseholder_bench.transport import async_client
+from leaseholder_stats import summarize
 
 SENTENCE_END = re.compile(r"[.!?][\"')\]]*(?:\s|$)")
 MIN_SENTENCE_CHARS = 20

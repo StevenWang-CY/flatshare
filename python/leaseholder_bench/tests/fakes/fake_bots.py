@@ -2,7 +2,9 @@
 (0.3 s) and writes the callers' run directory: its run id is always ``RUN_ID``, and caller ``c``'s
 turns take 1500 + 100 c ms, after its warm-up turns (``--warmup-turns``), which take 2500 ms and
 which the summary leaves out. Its pid goes to ``bots.pid`` beside the run directory. ``FAKE_BOTS``
-picks an outcome: ``crash`` (exit 1, no summary) or ``hang``."""
+picks an outcome: ``crash`` (exit 1, no summary) or ``hang``. With ``--save-audio``, as the callers do,
+it then writes the calls' audio, ``FAKE_BOTS_SAVE_SECONDS`` (0) of it, and the time it ended in
+``saved``."""
 
 import argparse
 import json
@@ -49,3 +51,6 @@ rows = [
 ]
 (out / "turns.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
 (out / "run.json").write_text(json.dumps({"kind": "voice-bots", "run_id": RUN_ID}))
+if args.save_audio:  # once the summary is out, as lh-voice bots writes the calls' audio
+    time.sleep(float(os.environ.get("FAKE_BOTS_SAVE_SECONDS", "0")))
+    (out / "saved").write_text(str(time.time()))

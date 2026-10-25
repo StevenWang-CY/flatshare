@@ -18,6 +18,7 @@ from leaseholder_bench.drills import (
     DONE,
     ERROR_EVENT,
     HTTP_ERROR,
+    START_PHASES,
     Clients,
     DrillConfig,
     StreamRecord,
@@ -351,6 +352,31 @@ ENGINE_START = """\
 """
 
 
+STT_START = """\
+1792931486.627825 phastform systemd[2135572]: Starting Leaseholder STT: vLLM 0.32, whisper-large-v3-turbo...
+1792931503.372598 phastform vllm[4045882]: (APIServer pid=4045882) INFO 10-25 08:31:43 [api_utils.py:347]  version 0.32.0
+1792931524.808960 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:04 [core.py:133] Initializing a V1 LLM engine (v0.32.0) with config: ...
+1792931532.124778 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:12 [model_runner.py:424] Model loading took 1.51 GiB memory and 5.068500 seconds
+1792931541.987098 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:21 [model_runner.py:1127] Graph capturing finished in 1 secs, took 0.04 GiB
+1792931542.436190 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:22 [kv_cache_utils.py:2327] GPU KV cache size: 4,020 tokens, Maximum concurrency for 448 tokens per request: 8.97x
+1792931544.054378 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:24 [model_runner.py:1127] Graph capturing finished in 1 secs, took 0.04 GiB
+1792931545.878745 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:25 [core.py:395] init engine (profile, create kv cache, warmup model) took 13.72 s (compilation: 0.31 s)
+1792931546.973103 phastform vllm[4045882]: (APIServer pid=4045882) INFO 10-25 08:32:26 [entry.py:140] Starting vLLM server on unix:/run/user/1018/lh/stt.sock
+1792931547.895126 phastform systemd[2135572]: Started Leaseholder STT: vLLM 0.32, whisper-large-v3-turbo.
+"""
+"""The STT's start in W6's start-box drill: sizing its KV cache by gpu_memory_utilization, vLLM captures the CUDA
+graphs once to profile their memory, before the KV cache, and then for good."""
+
+
+def test_a_start_that_captures_the_graphs_twice_is_timed_at_the_second_capture() -> None:
+    phases = dict(start_phases(STT_START))
+    assert (phases["the KV cache is allocated"], phases["the CUDA graphs are captured"]) == (
+        55.8,
+        57.4,
+    )
+    assert list(phases.values()) == sorted(phases.values())
+
+
 def test_a_start_is_timed_by_its_phases_from_the_last_starting_line(tmp_path: Path, capsys) -> None:
     phases = dict(
         start_phases(
@@ -373,6 +399,35 @@ def test_a_start_is_timed_by_its_phases_from_the_last_starting_line(tmp_path: Pa
     path.write_text(ENGINE_START)
     assert main(["drill", "start", str(path)]) == 0
     assert "     87.6 s  the server listens" in capsys.readouterr().out
+
+
+STT_START = """\
+1792931486.627825 phastform systemd[2135572]: Starting Leaseholder STT: vLLM 0.32, whisper-large-v3-turbo on /run/user/1018/lh/stt.sock...
+1792931503.372598 phastform vllm[4045882]: (APIServer pid=4045882) INFO 10-25 08:31:43 [api_utils.py:347]  version 0.32.0
+1792931524.808960 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:04 [core.py:133] Initializing a V1 LLM engine (v0.32.0) with config: ...
+1792931532.124778 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:12 [model_runner.py:424] Model loading took 1.51 GiB memory and 5.068500 seconds
+1792931542.433227 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:22 [gpu_worker.py:669] Initial free memory 14.54 GiB, reserved 0.43 GiB memory for KV Cache as specified by kv_cache_memory_bytes config and skipped memory profiling. ...
+1792931542.436190 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:22 [kv_cache_utils.py:2327] GPU KV cache size: 4,020 tokens, Maximum concurrency for 448 tokens per request: 8.97x
+1792931544.054378 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:24 [model_runner.py:1127] Graph capturing finished in 1 secs, took 0.04 GiB
+1792931545.878745 phastform vllm[4046149]: (EngineCore pid=4046149) INFO 10-25 08:32:25 [core.py:395] init engine (profile, create kv cache, warmup model) took 13.72 s (compilation: 0.31 s)
+1792931546.973103 phastform vllm[4045882]: (APIServer pid=4045882) INFO 10-25 08:32:26 [entry.py:140] Starting vLLM server on unix:/run/user/1018/lh/stt.sock
+1792931547.368618 phastform vllm[4045882]: INFO:     Application startup complete.
+1792931547.895126 phastform systemd[2135572]: Started Leaseholder STT: vLLM 0.32, whisper-large-v3-turbo on /run/user/1018/lh/stt.sock.
+"""
+"""The box's STT start of 2026-10-25 (benchmarks/results/2026-10-25-drills/w6-start-box) as its fixed KV pool logs
+it in vLLM 0.32.0: without the memory profiling's lines, its graph capture among them (gpu_worker.py skips both for
+kv_cache_memory_bytes), and with the line that says the pool was reserved as configured."""
+
+
+def test_a_start_with_a_fixed_pool_captures_its_graphs_once_after_the_pool() -> None:
+    # A fixed pool captures the CUDA graphs once, after the pool, as the engine's start does: the first capture
+    # line and the last are the same line.
+    phases = dict(start_phases(STT_START))
+    assert phases["the KV cache is allocated"] == 55.8
+    assert phases["the CUDA graphs are captured"] == 57.4
+    assert len(phases) == len(START_PHASES) and list(phases.values()) == sorted(phases.values())
+    engine = dict(start_phases(ENGINE_START))
+    assert len(engine) == len(START_PHASES) and list(engine.values()) == sorted(engine.values())
 
 
 class FakeEngine:
