@@ -3,7 +3,10 @@
 
 A process of ours runs in a unit named lh-*.service: its cgroup's under systemd, or, under deploy/bin/lh-svc, whose
 processes stay in the session's cgroup, the unit that lh-svc names in its environment (LH_SVC_UNIT), as gpu-guard tells
-them apart from the hosts' other work. Over TCP and UDP such a process may listen only where ALLOWED says, on loopback:
+them apart from the hosts' other work. That name and the marks below are read from /proc/PID/environ, or, where a
+process's shows nothing, from its nearest parent's that shows them, a mark only within the process's unit: setproctitle
+blanks /proc/PID/environ, as vLLM's engine core does when it sets its title, while its server's keeps them. Over TCP
+and UDP such a process may listen only where ALLOWED says, on loopback:
 the gateway's port on cyan, and an SGLang engine (the sglang variant), which serves no Unix socket. Its Unix sockets
 must be under $XDG_RUNTIME_DIR, which only this user may enter, and $XDG_RUNTIME_DIR/lh must be 0700. A listener on an
 allowed address that is not ours holds our place for another user and fails too, and so does each SOCKET given that
@@ -84,8 +87,8 @@ def lineage(pid: str) -> Iterator[str]:
 
 def unit_of(pid: str) -> str | None:
     """The lh-*.service unit that process ``pid`` runs in, or None (another unit's, or gone): its cgroup's, or the one
-    lh-svc names in its environment. A process's own environment may no longer show it: vLLM's engine core writes
-    its title over the start of it (setproctitle), so the name is its nearest parent's that shows one, its server's."""
+    lh-svc names in its environment. /proc/PID/environ may no longer show it: setproctitle blanks it there, as vLLM's
+    engine core does when it sets its title, so the name is its nearest parent's that shows one, its server's."""
     try:
         cgroup = (PROC / pid / "cgroup").read_text()
     except OSError:

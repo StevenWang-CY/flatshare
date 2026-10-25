@@ -19,12 +19,12 @@ The KV layout follows the CPU tier's connector, not the card: vLLM's `Offloading
 
 ## The hardware profile
 
-A GPU node's deployment is a function of a few inputs: the card (its memory, compute capability, driver), the host (CPUs by NUMA node, RAM, `/dev/shm`, systemd), the model and the rules below. [`deploy/profiles/`](../deploy/profiles) holds one profile per node type, and [`deploy/profile.py`](../deploy/profile.py) (Python's standard library only, from 3.11 for `tomllib`, so that a bare host runs it before any venv exists: `bootstrap.sh` runs it on uv's Python 3.12) writes a node's directory from one:
+A GPU node's deployment is a function of a few inputs: the card (its memory, compute capability, driver), the host (CPUs by NUMA node, RAM, `/dev/shm`, systemd), the model and the rules below. [`deploy/profiles/`](../deploy/profiles) holds one profile per node type, and [`deploy/profile.py`](../deploy/profile.py) (Python's standard library only, so that a bare host runs it before any venv exists, from 3.11 for `tomllib`: on Ubuntu 22.04, whose `python3` is 3.10, uv's Python 3.12 runs it, as `bootstrap.sh` does) writes a node's directory from one:
 
 ```sh
-python3 deploy/profile.py detect --out host.json                # the host's facts: nvidia-smi, /sys, /proc, systemd, toolkits
-python3 deploy/profile.py render a100-40gb --host host.json --out ~/leaseholder/node
-python3 deploy/profile.py check rtx-5060-ti                     # the box's profile renders deploy/phastform byte for byte
+uv run --no-project --python 3.12 deploy/profile.py detect --out host.json    # the host's facts: nvidia-smi, /sys, /proc, systemd, toolkits
+uv run --no-project --python 3.12 deploy/profile.py render a100-40gb --host host.json --out ~/leaseholder/node
+uv run --no-project --python 3.12 deploy/profile.py check rtx-5060-ti         # the box's profile renders deploy/phastform byte for byte
 ~/leaseholder/venvs/engine/bin/python deploy/profile.py check-vllm ~/leaseholder/node   # vLLM's own parser, no engine
 ```
 
@@ -68,6 +68,7 @@ The profile's "auto" values, in `deploy/profile.py`:
 | Compute mode | | anything but Default: under `Exclusive_Process`, common on shared HPC nodes, one CUDA context exists at a time, so the STT, the TTS and the engine cannot all run (`nvidia-smi -c DEFAULT` with root, or the `mps` variant, which is not the core's configuration) |
 | MIG | one slice with `LH_ALLOW_MIG=1` (at a stage; `env.sh` keeps it): a smaller card, on which the forecast does not hold, CUDA on the slice by its UUID | MIG on: one slice (the profile's budgets and the forecast are the whole card's), none or several |
 | systemd `--user` and lingering | none, or `LH_SUPERVISOR=lh-svc`: `deploy/bin/lh-svc` runs the units; nothing changes in the measurements | `env.sh` keeps systemd from an earlier stage, but lingering is off now: the units would stop with the last session |
+| Socket paths | | the runtime directory (`%t`) too long for vLLM's ZMQ sockets, `%t/lh/lh-engine.zmq/` and a uuid4, past the 107 bytes a socket's path may have: the engine would fail at its first start. Under lh-svc where the session has no `XDG_RUNTIME_DIR`, `%t` is `~/.local/state/lh-svc/run`, which leaves a home directory 29 characters |
 | One supervisor | | units under the other supervisor too, an earlier stage's (a split control plane: the gateway's port held by one, its journal read from the other) |
 | User namespaces | the kernel refuses them: the voice plane in the host's network namespace, under either supervisor, with the host's public addresses named (they must drop inbound UDP). `smoke.sh`'s listener audit accepts its UDP sockets, loopback TCP listeners and file sockets there, by the `LH_VOICENET=host` that `in-voicenet` marks its processes with, and nothing else of ours. The GPU servers run there too, by the `LH_PRIVATE_NET=host` their drop-ins set, and the audit accepts their engine cores' loopback TCP listeners on ephemeral ports and CUDA's abstract sockets, which any user of the host reaches, and nothing else of theirs; allowing unprivileged user namespaces gives each its own (Ubuntu 24.04: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`) | |
 | Listener audit | | no `ss` (iproute2), which `smoke.sh`'s audit ([`deploy/bin/audit-listeners`](../deploy/bin/audit-listeners)) reads; `bootstrap.sh` installs it where apt works as root or with sudo |

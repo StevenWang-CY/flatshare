@@ -7,11 +7,10 @@ VLLM_SRC ?= $(HOME)/.cache/leaseholder/vllm-$(VLLM_REF)
 # Every Python package except the engine variants' tests (test-vllm); each one has a `test` extra.
 PY_PACKAGES := $(filter-out python/leaseholder_vllm,$(patsubst %/pyproject.toml,%,$(wildcard python/*/pyproject.toml)))
 # The Python that make lint checks: the packages, and the scripts of lh-sim, E2, the A100 run, the deployment (the
-# hosts' scripts without a suffix among them: the listener audit, the single host's supervisor and forwarder, the
-# gateway's stop and the tunnel) and the engine variants (not the recorded runs' own scripts under benchmarks/results).
-PY_SOURCES := python crates/lh-sim/scripts $(wildcard benchmarks/e2/*.py benchmarks/a100/*.py deploy/*.py deploy/bin/*.py \
-  deploy/a100/*.py deploy/phastform/variants/*/*.py) deploy/bin/audit-listeners deploy/bin/lh-forward \
-  deploy/bin/lh-gateway-stop deploy/bin/lh-svc deploy/bin/lh-tunnel
+# hosts' scripts without a suffix among them, found by their shebang) and the engine variants (not the recorded runs'
+# own scripts under benchmarks/results).
+PY_SOURCES := python crates/lh-sim/scripts $(sort $(wildcard benchmarks/e2/*.py benchmarks/a100/*.py deploy/*.py \
+  deploy/bin/*.py deploy/a100/*.py deploy/phastform/variants/*/*.py) $(shell grep -ls '^#!.*python' deploy/bin/*))
 # E2's committed records (lh-bench e2 export), one directory per point under its campaign, and where
 # reproduce-e2 writes their report.
 E2_RESULTS := benchmarks/results/2026-10-23-e2
@@ -234,4 +233,4 @@ e2-w5-figure:
 # renders today's files byte for byte, and `make profiles UPDATE=1` writes them from deploy/templates after a
 # template changes.
 profiles:
-	uv run -q --no-project python deploy/profile.py $(if $(UPDATE),update,check) rtx-5060-ti
+	uv run -q --no-project --python 3.12 python deploy/profile.py $(if $(UPDATE),update,check) rtx-5060-ti

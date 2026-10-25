@@ -315,8 +315,9 @@ def system_pythons() -> list[str]:
 
 
 @pytest.mark.skipif(not system_pythons(), reason="no system python3 of 3.10 or newer in /usr/bin")
-def test_the_host_python_runs_the_supervisor_and_the_forwarder(host: dict) -> None:
-    # A bare host's python3 runs them, as the shims and the scripts do: Ubuntu 22.04's is 3.10.
+def test_the_host_python_runs_the_hosts_scripts(host: dict) -> None:
+    # A bare host's python3 runs them, as the shims and the units do: Ubuntu 22.04's is 3.10. ruff's 3.10 target
+    # (ruff.toml) checks their syntax, not what they import, which only a run on 3.10 does.
     for python in system_pythons():
         done = subprocess.run(
             [python, str(BIN / "lh-svc"), "systemctl", "is-system-running"],
@@ -325,11 +326,21 @@ def test_the_host_python_runs_the_supervisor_and_the_forwarder(host: dict) -> No
             text=True,
         )
         assert done.returncode == 0 and done.stdout.strip() == "lh-svc", (python, done.stderr)
-        usage = subprocess.run([python, str(BIN / "lh-forward")], capture_output=True, text=True)
-        assert usage.returncode == 2 and "lh-forward LISTEN=TARGET" in usage.stderr, (
-            python,
-            usage.stderr,
-        )
+        for script, status, usage in (
+            ("lh-forward", 2, "lh-forward LISTEN=TARGET"),
+            ("lh-tunnel", 2, "usage: lh-tunnel NODE"),
+            ("lh-gateway-stop", 2, "usage: lh-gateway-stop"),
+            ("audit-listeners", 0, "usage: audit-listeners"),
+        ):
+            args = ["--help"] if script == "audit-listeners" else []
+            done = subprocess.run(
+                [python, str(BIN / script), *args], capture_output=True, text=True
+            )
+            assert done.returncode == status and usage in done.stdout + done.stderr, (
+                python,
+                script,
+                done.stderr,
+            )
 
 
 def test_a_start_whose_server_dies_fails_at_once_not_at_its_timeout(host: dict) -> None:
@@ -655,7 +666,7 @@ def test_a_vllm_servers_start_empties_its_own_directory_of_zmq_sockets(
     # vLLM names the ZMQ sockets between its API server and its engine core afresh at each start
     # (VLLM_RPC_BASE_PATH/<uuid4>) and removes none at a stop: the box's runtime directory held 111 after five hours of
     # engine switches. Each vLLM unit, the box's and the template's, keeps them in a directory of its own, which its
-    # start lines empty before the server starts (all of them but gpu-guard's, run as lh-svc runs them).
+    # start lines empty before the server starts (all of them but gpu-guard's, as lh-svc expands them).
     for name, value in host["env"].items():
         monkeypatch.setenv(name, value)
     lh_svc = _module("lh_svc", BIN / "lh-svc")
@@ -1057,13 +1068,28 @@ def test_gpu_guard_reads_the_lent_gpu_alone(tmp_path: Path) -> None:
 def test_gpu_guard_tells_the_supervisors_units_from_foreign_processes(tmp_path: Path) -> None:
     # Processes on the GPU (a stand-in nvidia-smi lists them): one of lh-svc's units, which carries its LH_SVC_UNIT;
     # a child of a unit's process whose environment no longer shows the mark, as vLLM's engine core's does once
-    # setproctitle has written its title over the start of it (the rehearsal on the box: the STT's engine core
-    # stopped the TTS's and the engine's starts); and a foreign one. The guard passes the unit and its child and
-    # refuses the stranger.
+    # setproctitle has blanked /proc/PID/environ (the rehearsal on the box: the STT's engine core stopped the TTS's
+    # and the engine's starts); and a foreign one. The guard passes the unit and its child and refuses the stranger,
+    # which is detached (its starter gone, PID 1 or a subreaper adopts it), so that the guard's walk up its parents
+    # does not reach this test's own process, which may run in a unit.
     sleep = [sys.executable, "-c", "import time; time.sleep(30)"]
     unmarked = {k: v for k, v in os.environ.items() if k != "LH_SVC_UNIT"}
     ours = subprocess.Popen(sleep, env=os.environ | {"LH_SVC_UNIT": "lh-stt.service"})
-    theirs = subprocess.Popen(sleep, env=unmarked)
+    detach = (
+        "import os, sys\n"
+        "pid = os.fork()\n"
+        "if pid == 0:\n"
+        "    os.setsid()\n"
+        "    null = os.open(os.devnull, os.O_RDWR)\n"
+        "    for fd in (0, 1, 2):\n"
+        "        os.dup2(null, fd)  # the starter's pipes end with the starter\n"
+        "    os.execv(sys.executable, [sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+        "print(pid, flush=True)\n"
+    )
+    starter = subprocess.run(
+        [sys.executable, "-c", detach], env=unmarked, capture_output=True, text=True, check=True
+    )
+    theirs = int(starter.stdout)
     spawn = (
         "import os, subprocess, sys, time\n"
         "env = {k: v for k, v in os.environ.items() if k != 'LH_SVC_UNIT'}\n"
@@ -1096,14 +1122,57 @@ def test_gpu_guard_tells_the_supervisors_units_from_foreign_processes(tmp_path: 
         assert guard(ours.pid).returncode == 0
         passed = guard(ours.pid, child)
         assert passed.returncode == 0, passed.stderr
-        refused = guard(ours.pid, child, theirs.pid)
-        assert refused.returncode == 1 and f"pid {theirs.pid}" in refused.stderr
+        refused = guard(ours.pid, child, theirs)
+        assert refused.returncode == 1 and f"pid {theirs}" in refused.stderr
     finally:
-        with contextlib.suppress(ProcessLookupError):
-            os.kill(child, signal.SIGKILL)
-        for process in (ours, theirs, parent):
+        for pid in (child, theirs):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+        for process in (ours, parent):
             process.kill()
             process.wait()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="gpu-guard runs on Linux (GNU stat)")
+def test_gpu_guard_takes_a_units_cgroup_from_the_process_itself(tmp_path: Path) -> None:
+    # Under systemd a unit's processes run in its cgroup, its engine core too. A process in another cgroup is not the
+    # unit's, although its parent is (one started with systemd-run --scope, say): systemd neither counts nor stops it
+    # with the unit, so the guard refuses it, as the listener audit does. A stand-in /proc (LH_PROCFS) holds them.
+    proc = tmp_path / "proc"
+    units = "/user.slice/user-1000.slice/user@1000.service/app.slice"
+
+    def process(pid: int, cgroup: str, parent: int = 1) -> None:
+        (proc / str(pid)).mkdir(parents=True)
+        (proc / str(pid) / "cgroup").write_text(f"0::{cgroup}\n")
+        (proc / str(pid) / "status").write_text(f"Name:\tpython3\nPPid:\t{parent}\n")
+        (proc / str(pid) / "environ").write_bytes(b"\0" * 64)  # setproctitle's blank
+        (proc / str(pid) / "comm").write_text("python3\n")
+
+    process(101, f"{units}/lh-engine.service")
+    process(102, f"{units}/lh-engine.service", parent=101)  # its engine core
+    process(103, f"{units}/run-r0123.scope", parent=101)
+    process(104, "/user.slice/user-1000.slice/session-4.scope")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    smi = bin_dir / "nvidia-smi"
+
+    def guard(*pids: int) -> subprocess.CompletedProcess[str]:
+        smi.write_text("#!/bin/sh\n" + "".join(f"echo {pid}\n" for pid in pids))
+        smi.chmod(0o755)
+        return subprocess.run(
+            ["bash", str(BIN / "gpu-guard")],
+            env=os.environ
+            | {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "LH_PROCFS": str(proc)},
+            capture_output=True,
+            text=True,
+        )
+
+    assert guard(101, 102).returncode == 0
+    for stranger in (103, 104):
+        refused = guard(101, 102, stranger)
+        assert refused.returncode == 1, refused.stderr
+        assert refused.stderr.startswith(f"gpu-guard: the GPU is in use by pid {stranger} (")
+        assert "python3), outside the box's units" in refused.stderr
 
 
 @pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="the audit reads /proc (Linux)")

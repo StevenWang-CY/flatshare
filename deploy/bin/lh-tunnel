@@ -9,14 +9,17 @@ stdin and stdout to the node's socket of the same name, under `restrict`, which 
 connection accepted on a socket here becomes one SSH session of its key, `ssh -T -S CONTROL TARGET`, whose stdin and
 stdout are the connection itself: the ssh client hands them to its master (ssh -M), which relays them, so this
 process copies no byte. Each master is one authenticated connection to the node and carries at most
-LH_TUNNEL_SESSIONS sessions at a time (sshd's MaxSessions, 10 by default). A connection's session counts against its
-master from the moment it is accepted, so that a burst of connections spreads over the masters, and a socket keeps
-enough masters opening for the connections waiting, with a session to spare. A connection that finds no master with
-room waits for one: were each to connect on its own, a burst would make as many SSH handshakes at once as it has
-connections, and sshd drops those past its MaxStartups (10 at once by default), so a gateway restarted with a
-backlog of requests lost some (the restart drill). It connects on its own only after WAIT_S without room, or when its
-master refuses the session. A new session costs about 12 ms where a new connection costs about 165 ms (OpenSSH 8.9
-on loopback), so the servers keep their connections open between requests.
+LH_TUNNEL_SESSIONS sessions at a time (sshd's MaxSessions, 10 by default). A connection's session counts against a
+master as soon as one has room for it, before its ssh starts, so that a burst of connections spreads over the masters;
+until then the connection waits, and a socket keeps enough masters opening for the connections waiting, with a
+session to spare. Were each connection without room to connect on its own, a burst would make as many SSH handshakes
+at once as it has connections, and sshd drops new ones once 10 are unauthenticated (its default MaxStartups,
+10:30:100, drops 30% of them from there and all from 100), so a gateway restarted with a backlog of requests lost some
+(the restart drill). A connection connects on its own only after WAIT_S without room, or when its master refuses the
+session. After masters fail in a row a socket opens the next only after a backoff, but no longer than BACKOFF_S[0]
+while connections wait, since nothing else serves them: after an outage, the first connection is served about as
+soon as the node answers. A new session costs about 12 ms where a new connection costs about 165 ms (OpenSSH 8.9 on
+loopback), so the servers keep their connections open between requests.
 
 The environment (the unit's EnvironmentFile, ~/.config/leaseholder/tunnel-NODE.env) names the node, LH_TUNNEL_TARGET
 (user@host), and may set LH_TUNNEL_SESSIONS. It tells systemd it is ready (Type=notify) once its sockets listen. On
@@ -37,14 +40,16 @@ from pathlib import Path
 
 SOCKETS = ("engine", "stt", "tts")
 MASTERS = 8
-"""Masters per socket at most: with sshd's default MaxSessions, 80 connections at once; more wait for room."""
+"""Masters per socket at most: with sshd's default MaxSessions, 80 connections at once. More wait for room, and those
+still waiting after WAIT_S connect on their own, together if they came together, where sshd may drop some."""
 OPENING = 3
 """Masters opening at once per socket at most: the three sockets' handshakes together stay under the 10 at once that
 sshd's default MaxStartups takes before it drops new connections."""
 WAIT_S = 10.0
 """How long a connection waits for a master with room (one opens in about 165 ms) before it connects on its own."""
 BACKOFF_S = (1.0, 2.0, 5.0, 10.0, 30.0)
-"""How long a socket waits to open a master again after failures in a row, by their number."""
+"""How long a socket waits to open a master again after failures in a row, by their number; while connections wait,
+no longer than the first."""
 
 
 def ssh_options(key: Path) -> list[str]:
@@ -128,7 +133,11 @@ class Tunnel:
         task.add_done_callback(self.tasks.discard)
 
     def backoff(self) -> float:
-        return BACKOFF_S[min(self.failures, len(BACKOFF_S)) - 1] if self.failures else 0.0
+        """How long after the last master opened another may, after failures in a row (BACKOFF_S)."""
+        if not self.failures:
+            return 0.0
+        backoff = BACKOFF_S[min(self.failures, len(BACKOFF_S)) - 1]
+        return min(backoff, BACKOFF_S[0]) if self.waiting else backoff
 
     def wake(self) -> None:
         """Tells the connections waiting for room to look again: a master's sessions, or the masters, changed."""
@@ -154,9 +163,26 @@ class Tunnel:
         return True
 
     async def run_master(self, master: Master) -> None:
+        started = time.monotonic()
+        try:
+            reason = await self.connect(master)
+        except OSError as error:  # its ssh did not start: no file descriptor or memory left, say
+            reason = f"ssh did not start: {error}"
+        finally:
+            # However it ended, the master goes, so that it holds no room it cannot give.
+            self.masters.remove(master)
+        lasted = time.monotonic() - started
+        self.failures = 0 if master.ready and lasted > 60 else self.failures + 1
+        log(f"{self.path.name}: master {master.control.name} ended after {lasted:.0f} s: {reason}")
+        self.wake()
+        if not self.masters and not self.closing:
+            await asyncio.sleep(self.backoff())
+            self.open_master()  # keep one ready
+
+    async def connect(self, master: Master) -> str:
+        """Runs the master's ssh until it ends; why it ended."""
         with contextlib.suppress(FileNotFoundError):
             master.control.unlink()
-        started = time.monotonic()
         process = await asyncio.create_subprocess_exec(
             "ssh", "-M", "-N", "-S", str(master.control), "-o", "ControlPersist=no",
             *self.options, self.target,
@@ -166,20 +192,12 @@ class Tunnel:
         if self.closing:  # closed while it started
             end(process)
         watch = asyncio.get_running_loop().create_task(self.await_control(master))
-        error = await process.stderr.read() if process.stderr else b""
-        status = await process.wait()
-        watch.cancel()
-        self.masters.remove(master)
-        lasted = time.monotonic() - started
-        self.failures = 0 if master.ready and lasted > 60 else self.failures + 1
-        reason = error.decode(errors="replace").strip() or f"exit status {status}"
-        log(f"{self.path.name}: master {master.control.name} ended after {lasted:.0f} s: {reason}")
-        self.wake()
-        if self.failures:  # the connections waiting look again once another may open
-            asyncio.get_running_loop().call_later(self.backoff(), self.wake)
-        if not self.masters and not self.closing:
-            await asyncio.sleep(self.backoff())
-            self.open_master()  # keep one ready
+        try:
+            error = await process.stderr.read() if process.stderr else b""
+            status = await process.wait()
+        finally:
+            watch.cancel()
+        return error.decode(errors="replace").strip() or f"exit status {status}"
 
     async def await_control(self, master: Master) -> None:
         """The master is ready once its control socket exists: ssh makes it after the node accepted the key."""
@@ -215,12 +233,15 @@ class Tunnel:
             while not self.closing:
                 change = self.change
                 master = self.take()
-                left = deadline - time.monotonic()
-                if master or left <= 0:
+                now = time.monotonic()
+                if master or now >= deadline:
                     return master
+                # It looks again at a change, or once the backoff ends, when a master may open for it.
+                backoff = self.opened + self.backoff() - now
+                timeout = min(deadline - now, backoff) if backoff > 0 else deadline - now
                 # asyncio's TimeoutError: Python 3.10's is not the builtin one.
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(change.wait(), left)
+                    await asyncio.wait_for(change.wait(), timeout)
             return None
         finally:
             self.waiting -= 1

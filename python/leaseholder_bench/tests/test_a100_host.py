@@ -893,6 +893,25 @@ def test_the_preflight_refuses_a_split_control_plane(
     )
 
 
+def test_the_preflight_refuses_a_runtime_directory_too_long_for_vllms_sockets(
+    tmp_path: Path, venv: Path, engine: str, monkeypatch
+) -> None:
+    # vLLM's ZMQ sockets are %t/lh/lh-engine.zmq/<uuid4>, and past 107 bytes the engine fails at its first start. Under
+    # lh-svc where the session has no runtime directory, %t is ~/.local/state/lh-svc/run: a 29-character home fits.
+    node = ready_host(tmp_path, venv, engine, monkeypatch, facts())
+
+    def check(run: str) -> host_py.Check:
+        monkeypatch.setenv("XDG_RUNTIME_DIR", run)
+        checks = host_py.preflight(node, gpu=True, home=venv, gateway_url=engine)
+        return next(c for c in checks if c.check == "Socket paths")
+
+    fits = check("/home/" + "u" * 23 + "/.local/state/lh-svc/run")
+    assert fits.status == "ok" and "107 of 107 bytes" in fits.value, fits
+    longer = check("/home/" + "u" * 24 + "/.local/state/lh-svc/run")
+    assert longer.status == "refused" and "108 bytes, past 107" in longer.value, longer
+    assert check("/run/user/1000").status == "ok"
+
+
 def test_a_recorded_systemd_without_lingering_is_refused(
     tmp_path: Path, venv: Path, engine: str, monkeypatch
 ) -> None:

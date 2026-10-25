@@ -5,7 +5,11 @@ skipped without them."""
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import errno
+import importlib.machinery
+import importlib.util
 import os
 import shutil
 import signal
@@ -127,7 +131,6 @@ def node() -> Iterator[dict]:
         "KbdInteractiveAuthentication no\nStrictModes no\nMaxSessions 3\nMaxStartups 6:100:6\n"
         "LogLevel VERBOSE\n"
     )
-    sshd = subprocess.Popen([SSHD, "-D", "-f", root / "sshd_config", "-E", root / "sshd.log"])
     (root / "ssh_config").write_text(
         f"Host gpu-node\n  HostName 127.0.0.1\n  Port {port}\n  UserKnownHostsFile {root}/known_hosts\n"
         "  StrictHostKeyChecking no\n"
@@ -146,17 +149,35 @@ def node() -> Iterator[dict]:
         "LH_TUNNEL_TARGET": "gpu-node",
         "LH_TUNNEL_SESSIONS": "3",
     }
-    wait_for(lambda: (root / "sshd.pid").exists(), "sshd started")
-    yield {"root": root, "lh": lh, "servers": servers, "runtime": runtime, "env": env}
-    # Each connection's sshd runs in a session of its own (setsid), which outlives the listener: end them first.
-    for child in children(sshd.pid):
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(child, signal.SIGTERM)
-    sshd.terminate()
-    sshd.wait(5)
+    node = {"root": root, "lh": lh, "servers": servers, "runtime": runtime, "env": env, "sshd": []}
+    start_sshd(node)
+    yield node
+    stop_sshd(node)
     for server in servers.values():
         server.shutdown()
     shutil.rmtree(root, ignore_errors=True)
+
+
+def start_sshd(node: dict) -> None:
+    root = node["root"]
+    with contextlib.suppress(FileNotFoundError):
+        (root / "sshd.pid").unlink()  # a killed sshd's
+    node["sshd"].append(
+        subprocess.Popen([SSHD, "-D", "-f", root / "sshd_config", "-E", root / "sshd.log"])
+    )
+    wait_for(lambda: (root / "sshd.pid").exists(), "sshd started")
+
+
+def stop_sshd(node: dict, signum: int = signal.SIGTERM) -> None:
+    """Ends the node's sshd: each connection's first, which runs in a session of its own (setsid) and outlives the
+    listener, then the listener."""
+    for sshd in node["sshd"]:
+        for child in children(sshd.pid):
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(child, signum)
+        sshd.send_signal(signum)
+        sshd.wait(5)
+    node["sshd"].clear()
 
 
 def children(pid: int) -> list[int]:
@@ -165,17 +186,34 @@ def children(pid: int) -> list[int]:
     return [int(child) for child in path.read_text().split()] if path.exists() else []
 
 
+def probe(path: Path, timeout: float) -> bool:
+    """The gateway's probe of a recovering upstream: GET /health within ``timeout``, the connection dropped after."""
+    connection = socket.socket(socket.AF_UNIX)
+    connection.settimeout(timeout)
+    try:
+        connection.connect(str(path))
+        return get(path, connection)[0] == b"engine"
+    except (OSError, ConnectionError):
+        return False
+    finally:
+        connection.close()
+
+
 def masters(node: dict) -> list[Path]:
     """The tunnel's masters' control sockets: each master removes its own as it ends."""
     return list((node["runtime"] / "lh" / "ssh-phastform").glob("*-*"))
 
 
-def start(node: dict) -> subprocess.Popen:
+def start(node: dict, runtime: Path | None = None) -> subprocess.Popen:
+    runtime = runtime or node["runtime"]
     tunnel = subprocess.Popen(
-        [PYTHON, TUNNEL, "phastform"], env=node["env"], stderr=subprocess.PIPE, text=True
+        [PYTHON, TUNNEL, "phastform"],
+        env=node["env"] | {"XDG_RUNTIME_DIR": str(runtime)},
+        stderr=subprocess.PIPE,
+        text=True,
     )
     for name in SOCKETS:
-        path = node["runtime"] / "lh" / f"phastform-{name}.sock"
+        path = runtime / "lh" / f"phastform-{name}.sock"
         wait_for(path.exists, f"{path} listening")
     return tunnel
 
@@ -223,11 +261,12 @@ def test_a_burst_of_connections_waits_for_masters_rather_than_connect_on_its_own
 ) -> None:
     # A gateway restarted with a backlog of requests opens its upstream connections at once: about 40 through the
     # engine's socket in the restart drill, where the node's sshd refused the sessions past a master's and dropped the
-    # connections they then made on their own past its MaxStartups. sshd here takes 3 sessions a connection and 6
-    # handshakes at once (MaxStartups 6:100:6): 12 connections held at once need 4 masters, and as many connections
-    # each connecting on its own would be dropped.
+    # connections they then made on their own past its MaxStartups. sshd here takes 3 sessions a connection and fewer
+    # than 6 handshakes at once (MaxStartups 6:100:6): 21 connections held at once need 7 masters, which the tunnel
+    # opens 3 at a time (OPENING); were they opened all at once, or each connection to connect on its own, sshd would
+    # drop some.
     tunnel = start(node)
-    burst = 12
+    burst = 21
     go, done = threading.Barrier(burst), threading.Event()
     answers: list[bytes] = []
     errors: list[Exception] = []
@@ -255,13 +294,90 @@ def test_a_burst_of_connections_waits_for_masters_rather_than_connect_on_its_own
         for thread in threads:
             thread.join(10)
         assert not errors and answers == [b"engine"] * burst, errors
-        assert "past MaxStartups" not in (node["root"] / "sshd.log").read_text()
+        log = (node["root"] / "sshd.log").read_text()
+        assert "past MaxStartups" not in log
+        # No master was asked for a session past its sshd's MaxSessions (it refuses it, and its client connects on
+        # its own): OpenSSH logs each.
+        assert "no more sessions" not in log
     finally:
         done.set()
         tunnel.send_signal(signal.SIGTERM)
         tunnel.wait(10)
-    # No master refused a session (its client would have connected on its own); a stop ends sessions with 255.
-    assert "session request failed" not in tunnel.stderr.read()
+
+
+def test_after_an_outage_a_waiting_connection_is_served_as_soon_as_the_node_answers(
+    node: dict,
+) -> None:
+    # The gateway's probe of a recovering engine asks /health with a 1 s deadline, every second, and the gateway
+    # answers 503 until one succeeds. While the node is down the masters fail, and the backoff before the next grows
+    # to 10 s and more; a connection that waits for a master cuts it to 1 s, since nothing else serves it.
+    tunnel = start(node)
+    lines: list[str] = []
+    threading.Thread(target=lambda: lines.extend(tunnel.stderr), daemon=True).start()
+    try:
+        engine = node["runtime"] / "lh" / "phastform-engine.sock"
+        get(engine)[1].close()
+        # The node is gone: its connections end, and new ones are refused.
+        stop_sshd(node, signal.SIGKILL)
+        ended = "phastform-engine.sock: master engine-"
+        failed = lambda: sum(ended in line and "ended after" in line for line in lines)  # noqa: E731
+        wait_for(lambda: failed() >= 4, "four masters failed in a row (a 10 s backoff)", 30)
+        start_sshd(node)
+        back = time.monotonic()
+        while not probe(engine, 1.0):
+            assert time.monotonic() - back < 4, "a probe answered within 4 s of the node's return"
+    finally:
+        tunnel.send_signal(signal.SIGTERM)
+        tunnel.wait(10)
+
+
+def test_a_connection_that_no_master_serves_connects_on_its_own_after_waiting(
+    node: dict,
+) -> None:
+    # Where no master can open but the node takes a connection's own, a connection waits WAIT_S (10 s), then connects
+    # on its own. Here the runtime directory is long enough that a master's control socket does not fit a socket's
+    # path (ssh -M binds it as PATH.XXXXXXXXXXXXXXXX first: 75 + 26 + 17 characters, past 107), while the tunnel's
+    # own sockets do (75 + 25). Python 3.10's asyncio raises its own TimeoutError at the wait's end, not the builtin.
+    runtime = node["root"] / ("r" * (75 - len(str(node["root"])) - 1))
+    runtime.mkdir(mode=0o700)
+    tunnel = start(node, runtime)
+    try:
+        engine = runtime / "lh" / "phastform-engine.sock"
+        connection = socket.socket(socket.AF_UNIX)
+        connection.settimeout(30)
+        started = time.monotonic()
+        connection.connect(str(engine))
+        assert get(engine, connection)[0] == b"engine"
+        assert 9.5 < time.monotonic() - started < 15
+        connection.close()
+    finally:
+        tunnel.send_signal(signal.SIGTERM)
+        assert tunnel.wait(10) == 0
+    assert "Task exception was never retrieved" not in tunnel.stderr.read()
+
+
+def test_a_master_whose_ssh_cannot_start_holds_no_room(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Out of file descriptors or memory, a master's ssh may not start: the master goes as one that failed to connect
+    # does. Were it kept, it would count as opening for good, and the socket would open no other.
+    loader = importlib.machinery.SourceFileLoader("lh_tunnel", str(TUNNEL))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(module)
+
+    async def no_ssh(*args: object, **kwargs: object) -> None:
+        raise OSError(errno.EMFILE, "Too many open files")
+
+    async def scenario() -> None:
+        tunnel = module.Tunnel("phastform", "engine", "gpu-node", tmp_path, 3)
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", no_ssh)
+        assert tunnel.open_master()
+        await asyncio.sleep(0.2)
+        assert tunnel.masters == [] and tunnel.failures == 1
+        tunnel.closing = True
+        tunnel.listener.close()
+
+    asyncio.run(scenario())
 
 
 def test_a_dead_server_on_the_node_closes_the_connection_without_an_answer(node: dict) -> None:

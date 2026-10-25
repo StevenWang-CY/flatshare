@@ -140,6 +140,11 @@ ENGINE_LINES = re.compile(
 """The engine log's lines a warm start keeps: the linear kernel, attention backend, FlashAttention version and KV
 layout as selected, pinned memory, the sampler, the JIT and compile work and the start's own account."""
 STATUSES = ("ok", "degraded", "refused", "pending")
+SOCKET_PATH = 107
+"""The longest path a Unix socket may have, in bytes: Linux's sun_path holds 108 with the NUL."""
+ZMQ_SOCKET = "lh/lh-engine.zmq/" + "0" * 36
+"""The longest of the GPU units' socket paths under %t: vLLM's ZMQ sockets, which its unit keeps in a directory of
+its own (VLLM_RPC_BASE_PATH, %t/lh/%N.zmq), each named by a uuid4."""
 
 
 class HostError(Exception):
@@ -1394,6 +1399,22 @@ def preflight(
             + ("; LH_SUPERVISOR=lh-svc" if overridden() else ""),
             "supervisor instead of systemd (deploy/bin/lh-svc with the systemctl and journalctl shims)",
             "none on the measurements",
+        )
+    run = runtime_dir(host)
+    longest = len(str(run / ZMQ_SOCKET).encode())
+    if longest > SOCKET_PATH:
+        add(
+            "Socket paths",
+            "refused",
+            f"%t is {run}: vLLM's ZMQ sockets would take {longest} bytes, past {SOCKET_PATH}",
+            "the engine would fail at its first start: a shorter runtime directory (XDG_RUNTIME_DIR, mode 0700; "
+            "under lh-svc, XDG_STATE_HOME/lh-svc/run where the session has none), then bootstrap.sh stage",
+        )
+    else:
+        add(
+            "Socket paths",
+            "ok",
+            f"%t is {run}: vLLM's ZMQ sockets take {longest} of {SOCKET_PATH} bytes",
         )
     other, split = active_elsewhere(host)
     if split:

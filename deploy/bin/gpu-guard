@@ -5,17 +5,21 @@
 # (LH_GPU_ID, its UUID), and only its processes count; without it, every GPU's do.
 set -euo pipefail
 
-# ours PID: whether PID runs in one of the box's units. Their processes run in the units' cgroups (…/lh-stt.service,
-# …/lh-engine.service), or, on a host without a systemd user manager, under deploy/bin/lh-svc, which marks their
-# environment instead. A process's own environment may no longer show the mark: vLLM's engine core writes its title
-# (setproctitle) over the start of it. So the process or one of its parents must carry it: the engine core's parent
-# is its server, the unit's main process.
+# The process table: /proc, or a stand-in's (LH_PROCFS, the tests').
+proc=${LH_PROCFS:-/proc}
+
+# ours PID: whether PID runs in one of the box's units. Under systemd a unit's processes run in its cgroup
+# (…/lh-stt.service, …/lh-engine.service), the process's own, as the listener audit reads it: a process in another
+# cgroup is not the unit's, whoever started it. On a host without a systemd user manager deploy/bin/lh-svc runs them,
+# and marks their environment instead (LH_SVC_UNIT), which /proc/PID/environ may no longer show: vLLM's engine core
+# blanks it there when it sets its title (setproctitle), although its own environment keeps it. So the process or one
+# of its parents must carry the mark: the engine core's parent is its server, the unit's main process.
 ours() {
   local pid=$1 depth
+  grep -qE '/lh-[a-z0-9-]+\.service$' "$proc/$pid/cgroup" 2>/dev/null && return 0
   for ((depth = 0; depth < 8; depth++)); do
-    grep -qE '/lh-[a-z0-9-]+\.service$' "/proc/$pid/cgroup" 2>/dev/null && return 0
-    grep -qzE '^LH_SVC_UNIT=lh-[a-z0-9-]+\.service$' "/proc/$pid/environ" 2>/dev/null && return 0
-    pid=$(awk '$1 == "PPid:" { print $2 }' "/proc/$pid/status" 2>/dev/null || true)
+    grep -qzE '^LH_SVC_UNIT=lh-[a-z0-9-]+\.service$' "$proc/$pid/environ" 2>/dev/null && return 0
+    pid=$(awk '$1 == "PPid:" { print $2 }' "$proc/$pid/status" 2>/dev/null || true)
     [[ -n $pid && $pid -gt 1 ]] || return 1
   done
   return 1
@@ -23,8 +27,8 @@ ours() {
 
 for pid in $(nvidia-smi ${LH_GPU_ID:+-i "$LH_GPU_ID"} --query-compute-apps=pid --format=csv,noheader | tr -d ' '); do
   ours "$pid" && continue
-  owner=$(ps -o user= -p "$pid" | tr -d ' ' || true)
+  owner=$(stat -c %U "$proc/$pid" 2>/dev/null || true)
   [[ -n $owner ]] || continue # it exited meanwhile
-  echo "gpu-guard: the GPU is in use by pid $pid ($owner, $(ps -o comm= -p "$pid" || true)), outside the box's units; not starting" >&2
+  echo "gpu-guard: the GPU is in use by pid $pid ($owner, $(cat "$proc/$pid/comm" 2>/dev/null || true)), outside the box's units; not starting" >&2
   exit 1
 done
