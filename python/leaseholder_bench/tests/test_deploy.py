@@ -427,13 +427,19 @@ class Listeners:
         command: str = "vllm serve",
         lh_svc: bool = False,
         env: dict[str, str] | None = None,
+        parent: str | None = None,
+        overwritten: bool = False,
     ) -> str:
         """A process, in ``unit`` or (None) another user's session; returns ss's note of it. Under systemd a
         unit's process is in the unit's cgroup; under deploy/bin/lh-svc (``lh_svc``) it stays in the SSH
-        session's, and lh-svc names its unit in its environment (LH_SVC_UNIT), beside ``env``."""
+        session's, and lh-svc names its unit in its environment (LH_SVC_UNIT), beside ``env``. ``parent`` is its
+        parent's pid; ``overwritten``, an environment that shows none of that any more, as vLLM's engine core's
+        once setproctitle has written its title over the start of it."""
         self.pids += 1
         pid = str(1000 + self.pids)
         (self.proc / pid).mkdir(parents=True)
+        if parent:
+            (self.proc / pid / "status").write_text(f"Name:\tVLLM::EngineCor\nPPid:\t{parent}\n")
         if lh_svc:
             cgroup = "/user.slice/user-1007.slice/session-4.scope"
         elif unit:
@@ -445,8 +451,11 @@ class Listeners:
         environ = (
             {"HOME": "/home/lh"} | ({"LH_SVC_UNIT": unit} if lh_svc and unit else {}) | (env or {})
         )
+        if overwritten:
+            environ = {"PATH": "/usr/bin"}
         (self.proc / pid / "environ").write_bytes(
-            b"".join(f"{k}={v}\0".encode() for k, v in environ.items())
+            (b"\0" * 16 if overwritten else b"")
+            + b"".join(f"{k}={v}\0".encode() for k, v in environ.items())
         )
         return f'users:(("python3",pid={pid},fd=3))'
 
@@ -640,6 +649,43 @@ def test_the_audit_tells_lh_svcs_units_by_the_unit_their_environment_names(tmp_p
         "audit-listeners: lh-engine.service listens on tcp 127.0.0.1:8000",
         f"audit-listeners: lh-stt.service listens on a socket outside {host.runtime}: /tmp/lh-stt.sock",
     ]
+
+
+def test_the_audit_tells_an_engine_cores_unit_and_mark_by_its_server_once_its_title_overwrote_them(
+    tmp_path: Path,
+) -> None:
+    # vLLM's engine core writes its title over the start of its environment (setproctitle), where lh-svc's
+    # LH_SVC_UNIT and the host's LH_PRIVATE_NET=host stood; its parent, the server it serves, keeps them. Under
+    # lh-svc the audit took the engine core for no unit's and passed its listeners unjudged; on a host that runs
+    # the GPU servers in its own namespace it found the core unmarked and refused gloo's listener (the rehearsal on
+    # the box found the same of gpu-guard). Its parent's unit and mark are now its own.
+    host = Listeners(tmp_path)
+    [server] = re.findall(r"pid=(\d+)", host.process("lh-engine.service", lh_svc=True))
+    host.tcp(
+        "0.0.0.0:29500", "lh-engine.service", "VLLM::EngineCore", lh_svc=True, parent=server,
+        overwritten=True,
+    )  # fmt: skip
+    done = host.audit()
+    assert done.returncode == 1
+    assert done.stderr.splitlines() == [
+        "audit-listeners: lh-engine.service listens on tcp 0.0.0.0:29500"
+    ]
+    host = Listeners(tmp_path / "marked")
+    marked = {"LH_PRIVATE_NET": "host"}
+    [server] = re.findall(r"pid=(\d+)", host.process("lh-engine.service", env=marked))
+    host.tcp(
+        "127.0.1.1:36087", "lh-engine.service", "VLLM::EngineCore", parent=server, overwritten=True
+    )
+    host.socket(
+        "@cuda-uvmfd-4026531836-4049952@", "lh-engine.service", parent=server, overwritten=True
+    )
+    done = host.audit()
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == (
+        f"audit-listeners: ok: the box's units hold 0 Unix sockets, all in {host.runtime}, "
+        "and 0 TCP or UDP listeners, all allowed; the GPU servers run in the host's network namespace "
+        "(LH_PRIVATE_NET=host) with 1 loopback TCP listeners and 1 abstract sockets\n"
+    )
 
 
 def test_the_audit_accepts_the_voice_plane_in_the_hosts_namespace_where_in_voicenet_ran_it_there(

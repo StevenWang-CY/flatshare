@@ -37,6 +37,7 @@ import re
 import stat
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 PROC = Path(os.environ.get("LH_AUDIT_PROC", "/proc"))
@@ -66,9 +67,25 @@ def environ(pid: str) -> list[bytes]:
         return []
 
 
+def lineage(pid: str) -> Iterator[str]:
+    """Process ``pid``, then its parents, nearest first: eight at most, up to the first that is gone or init."""
+    for _ in range(8):
+        yield pid
+        try:
+            status = (PROC / pid / "status").read_text()
+        except OSError:
+            return
+        pid = next(
+            (line.split()[1] for line in status.splitlines() if line.startswith("PPid:")), "0"
+        )
+        if pid in ("0", "1"):
+            return
+
+
 def unit_of(pid: str) -> str | None:
     """The lh-*.service unit that process ``pid`` runs in, or None (another unit's, or gone): its cgroup's, or the one
-    lh-svc names in its environment."""
+    lh-svc names in its environment. A process's own environment may no longer show it: vLLM's engine core writes
+    its title over the start of it (setproctitle), so the name is its nearest parent's that shows one, its server's."""
     try:
         cgroup = (PROC / pid / "cgroup").read_text()
     except OSError:
@@ -76,16 +93,30 @@ def unit_of(pid: str) -> str | None:
     for line in cgroup.splitlines():
         if match := UNIT.search(line):
             return match.group(1)
-    for variable in environ(pid):
-        if match := SVC_UNIT.fullmatch(variable):
-            return match.group(1).decode()
+    for process in lineage(pid):
+        for variable in environ(process):
+            if match := SVC_UNIT.fullmatch(variable):
+                return match.group(1).decode()
     return None
+
+
+def marked(unit: str, pid: str, mark: bytes) -> bool:
+    """Whether process ``pid`` of ``unit`` runs under ``mark`` (VAR=VALUE): in its environment, or, where that no
+    longer shows it (setproctitle, above), in its nearest parent's of the same unit."""
+    for process in lineage(pid):
+        if unit_of(process) != unit:
+            return False
+        if mark in environ(process):
+            return True
+    return False
 
 
 def in_host_namespace(unit: str, pids: list[str]) -> bool:
     """Whether ``unit`` is the voice plane's and in-voicenet ran each of its processes ``pids`` in the host's network
     namespace (LH_VOICENET=host)."""
-    return unit in VOICE and bool(pids) and all(b"LH_VOICENET=host" in environ(pid) for pid in pids)
+    return (
+        unit in VOICE and bool(pids) and all(marked(unit, pid, b"LH_VOICENET=host") for pid in pids)
+    )
 
 
 def marked_private(unit: str, pids: list[str]) -> bool:
@@ -94,7 +125,7 @@ def marked_private(unit: str, pids: list[str]) -> bool:
     return (
         unit in PRIVATE
         and bool(pids)
-        and all(b"LH_PRIVATE_NET=host" in environ(pid) for pid in pids)
+        and all(marked(unit, pid, b"LH_PRIVATE_NET=host") for pid in pids)
     )
 
 
