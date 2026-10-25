@@ -22,14 +22,24 @@ unix:$XDG_RUNTIME_DIR/lh/engine.sock 240 12 fresh``. ENGINE is the engine's addr
 
 import argparse
 import asyncio
+import importlib.util
 import json
 import random
-import re
 import statistics
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import aiohttp
+
+# leaseholder-stats (python/leaseholder_stats), the repository's one definition of the statistics it publishes, from
+# this source tree: the engine's environment, where the probe runs, does not install it.
+_STATS = importlib.util.spec_from_file_location(
+    "leaseholder_stats",
+    Path(__file__).resolve().parents[4] / "leaseholder_stats/src/leaseholder_stats/__init__.py",
+)
+stats = importlib.util.module_from_spec(_STATS)
+_STATS.loader.exec_module(stats)
 
 CALL = (
     "the order is late and the customer wants it moved to friday so check the address then confirm"
@@ -43,6 +53,7 @@ LONGEST_PROMPT = 30_000  # an agent's longest prompt
 BOX_AGENTS, BOX_POOL_TOKENS = 12, 36_400
 AGENT_THINK_S = (0, 3)  # an agent's thought after each turn
 CALL_START_S, CALL_GAP_S = (0, 4), (4, 8)  # a call's first turn, then the time between its turns
+CACHE_CONFIG = "vllm:cache_config_info"  # the pool's blocks and their size, as labels
 
 
 @dataclass(frozen=True)
@@ -71,10 +82,13 @@ async def read_engine(session: aiohttp.ClientSession, url: str) -> Engine:
     async with session.get(f"{url}/v1/models") as response:
         card = (await response.json())["data"][0]
     async with session.get(f"{url}/metrics") as response:
-        info = re.search(r"^vllm:cache_config_info\{([^}]*)\}", await response.text(), re.M)
-    if info is None:
-        raise RuntimeError(f"{url}/metrics has no vllm:cache_config_info")
-    labels = dict(re.findall(r'(\w+)="([^"]*)"', info.group(1)))
+        exposition = await response.text()
+    labels = next(
+        (labels for name, labels, _ in stats.metric_samples(exposition) if name == CACHE_CONFIG),
+        None,
+    )
+    if labels is None:
+        raise RuntimeError(f"{url}/metrics has no {CACHE_CONFIG}")
     pool = int(labels["num_gpu_blocks"]) * int(labels["block_size"])
     return Engine(url, card["id"], int(card["max_model_len"]), pool)
 
@@ -230,8 +244,9 @@ def ms(value: float) -> str:
 
 
 def spread(samples: list[float]) -> str:
-    """Sorted samples' p50, p90, p95 and max in ms, the percentiles inclusive, as E2's report computes them."""
-    q = statistics.quantiles(samples, n=20, method="inclusive")
+    """Sorted samples' p50, p90, p95 and max in ms, the percentiles leaseholder-stats' inclusive ones, as E2's report
+    computes them."""
+    q = stats.quantiles(samples, 20)
     return f"p50 {ms(statistics.median(samples))} p90 {ms(q[17])} p95 {ms(q[18])} max {ms(samples[-1])} ms"
 
 

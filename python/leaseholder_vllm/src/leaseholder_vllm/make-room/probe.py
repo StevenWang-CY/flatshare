@@ -28,14 +28,24 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import importlib.util
 import json
 import os
 import random
-import re
 import sys
 import time
+from pathlib import Path
 
 import aiohttp
+
+# leaseholder-stats (python/leaseholder_stats), the repository's one definition of the statistics it publishes, from
+# this source tree: the engine's environment, where the probe runs, does not install it.
+_STATS = importlib.util.spec_from_file_location(
+    "leaseholder_stats",
+    Path(__file__).resolve().parents[4] / "leaseholder_stats/src/leaseholder_stats/__init__.py",
+)
+stats = importlib.util.module_from_spec(_STATS)
+_STATS.loader.exec_module(stats)
 
 RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
 ENGINE = f"unix:{RUNTIME}/lh/engine.sock"  # the GPU node's engine socket
@@ -47,6 +57,7 @@ BACKGROUND = {"kv": 2, "prefill": 3}  # the fewest priority-2 requests of each c
 # still prefills, and the voice turn would find half the pool free.
 DECODE_TOKENS = 4096
 FIRST_TOKENS = 16  # the voice turn is timed to its first token and to its 16th
+CACHE_CONFIG = "vllm:cache_config_info"  # the pool's blocks and their size, as labels
 CALL = (
     "the call is about a late order and the customer wants it moved to friday so check the address"
     " then confirm the time window and read back the total with tax before you say goodbye"
@@ -83,10 +94,13 @@ async def engine(session: aiohttp.ClientSession, url: str) -> tuple[str, int, in
     """The engine's model and context, from /v1/models, and its pool's blocks and block size, from its metrics."""
     async with session.get(f"{url}/v1/models") as response:
         card = (await response.json())["data"][0]
-    info = re.search(r"^vllm:cache_config_info\{([^}]*)\}", await metrics(session, url), re.M)
-    if info is None:
-        raise RuntimeError(f"{url}/metrics has no vllm:cache_config_info")
-    labels = dict(re.findall(r'(\w+)="([^"]*)"', info.group(1)))
+    exposition = await metrics(session, url)
+    labels = next(
+        (labels for name, labels, _ in stats.metric_samples(exposition) if name == CACHE_CONFIG),
+        None,
+    )
+    if labels is None:
+        raise RuntimeError(f"{url}/metrics has no {CACHE_CONFIG}")
     return (
         card["id"],
         int(card["max_model_len"]),
@@ -108,8 +122,7 @@ async def engine_state(session: aiohttp.ClientSession, url: str, num_blocks: int
 
 def sample(exposition: str, name: str) -> float:
     """A metric's value in a Prometheus exposition, summed over its label sets."""
-    line = re.compile("^" + re.escape(name) + r"(?:\{[^}]*\})? (\S+)$", re.M)
-    return sum(float(value) for value in line.findall(exposition))
+    return sum(value for metric, _, value in stats.metric_samples(exposition) if metric == name)
 
 
 async def stream(

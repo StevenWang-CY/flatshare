@@ -7,10 +7,9 @@ import os
 import pytest
 
 
-@pytest.fixture(scope="session")
-def model(tmp_path_factory) -> str:
-    """A model directory with only a config: the scheduler reads the model's configuration, never its weights."""
-    path = tmp_path_factory.mktemp("model")
+def write_model(path, max_position_embeddings: int = 4096) -> None:
+    """A model's config.json in the directory ``path``, the only file the scheduler reads of a model. The suites'
+    model has a 4,096-token context; tests/perf_schedule.py's, a longer one."""
     config = {
         "architectures": ["LlamaForCausalLM"],
         "model_type": "llama",
@@ -20,10 +19,17 @@ def model(tmp_path_factory) -> str:
         "num_key_value_heads": 4,
         "num_hidden_layers": 1,
         "vocab_size": 1024,
-        "max_position_embeddings": 4096,
+        "max_position_embeddings": max_position_embeddings,
         "torch_dtype": "float16",
     }
     (path / "config.json").write_text(json.dumps(config))
+
+
+@pytest.fixture(scope="session")
+def model(tmp_path_factory) -> str:
+    """A model directory with only a config: the scheduler reads the model's configuration, never its weights."""
+    path = tmp_path_factory.mktemp("model")
+    write_model(path)
     return str(path)
 
 
