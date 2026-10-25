@@ -6,16 +6,23 @@ VLLM_REF := v0.32.0
 VLLM_SRC ?= $(HOME)/.cache/leaseholder/vllm-$(VLLM_REF)
 # Every Python package except the engine variants' tests (test-vllm); each one has a `test` extra.
 PY_PACKAGES := $(filter-out python/leaseholder_vllm,$(patsubst %/pyproject.toml,%,$(wildcard python/*/pyproject.toml)))
-# The Python that make lint checks: the packages, and the scripts of lh-sim, E2 and the engine variants (not the
-# recorded runs' own scripts under benchmarks/results).
-PY_SOURCES := python crates/lh-sim/scripts $(wildcard benchmarks/e2/*.py deploy/phastform/variants/*/*.py)
+# The Python that make lint checks: the packages, and the scripts of lh-sim, E2, the A100 run, the deployment (the
+# single host's supervisor and forwarder among them, which have no suffix) and the engine variants (not the recorded
+# runs' own scripts under benchmarks/results).
+PY_SOURCES := python crates/lh-sim/scripts $(wildcard benchmarks/e2/*.py benchmarks/a100/*.py deploy/*.py deploy/bin/*.py \
+  deploy/a100/*.py deploy/phastform/variants/*/*.py) deploy/bin/lh-forward deploy/bin/lh-svc
 # E2's committed records (lh-bench e2 export), one directory per point under its campaign, and where
 # reproduce-e2 writes their report.
 E2_RESULTS := benchmarks/results/2026-10-23-e2
 E2_REPORT ?= build/reproduce-e2
+# W5's re-measure, whose report reads its own voice-alone runs for the SLO.
+E2_W5_RESULTS := benchmarks/results/2026-10-24-e2-w5
+E2_W5_REPORT ?= build/reproduce-e2-w5
 
-.PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-make-room test-python schema \
-  reproduce-e1 reproduce-calibration reproduce-e2 e2-figures
+.PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-make-room test-trace test-make-room-ci \
+  test-python schema metrics \
+  reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 e2-figures e2-w5-figure forecast-a100 profiles \
+  reproduce-a100 check-a100-calibration
 
 check: lint test
 
@@ -47,12 +54,40 @@ $(VLLM_SRC):
 test-vllm: $(VLLM_SRC)
 	cd python/leaseholder_vllm && VLLM_SRC=$(VLLM_SRC) uv run -q --extra test pytest -q
 
+# The CPU suites' imports, checked before pytest runs: without one of them pytest would skip a suite, not fail it.
+CPU_SUITE_IMPORTS = cd python/leaseholder_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -c \
+  'import pytest, torch, vllm.v1.core.sched.scheduler' || { echo "$(TORCH_PYTHON) cannot import pytest, torch or \
+  vLLM's scheduler from $(VLLM_SRC)" >&2; exit 1; }
+
 # The make-room variant's behavior suite on vLLM's real v1 scheduler, on CPU, outside make check: it needs an
 # interpreter with CPU torch 2.13 and vLLM 0.32.0's Python dependencies, and runs on the source checkout.
 test-make-room: $(VLLM_SRC)
 	@test -n "$(TORCH_PYTHON)" || { echo "usage: make test-make-room TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies>" >&2; exit 2; }
+	@$(CPU_SUITE_IMPORTS)
 	cd python/leaseholder_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
-	  tests/test_make_room.py tests/test_tail.py
+	  tests/test_make_room.py
+
+# make-room against the PRs' own patches, step for step, on the same CPU environment (python/leaseholder_vllm/README.md):
+# the trace that keeps the variant equal to #63350 and #63351, with the PRs' one-line mutants as its negative control.
+# TRACE_SEEDS sets the random workloads' seeds; TRACE_REFERENCE, a generated module, replaces the PRs' as the other side.
+TRACE_SEEDS ?= 20
+test-trace: $(VLLM_SRC)
+	@test -n "$(TORCH_PYTHON)" || { echo "usage: make test-trace TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies> [TRACE_SEEDS=100]" >&2; exit 2; }
+	@$(CPU_SUITE_IMPORTS)
+	cd python/leaseholder_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) TRACE_SEEDS=$(TRACE_SEEDS) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
+	  tests/test_trace.py
+
+# Both CPU suites as CI's make-room job runs them: in the environment python/leaseholder_vllm/requirements-cpu.txt pins
+# (Python 3.12 on Linux x86_64, CPU torch), which uv builds in CPU_ENV, and with every test required to run
+# (LH_NO_SKIPS: a skip fails the session, tests/conftest.py).
+CPU_ENV ?= build/cpu-env
+$(CPU_ENV)/synced: python/leaseholder_vllm/requirements-cpu.txt
+	uv venv -q --allow-existing --python 3.12 $(CPU_ENV)
+	uv pip sync -q --python $(CPU_ENV)/bin/python --torch-backend cpu $<
+	@touch $@
+
+test-make-room-ci: $(CPU_ENV)/synced
+	LH_NO_SKIPS=1 $(MAKE) --no-print-directory test-make-room test-trace TORCH_PYTHON=$(abspath $(CPU_ENV))/bin/python
 
 # Integration tests need hosts (a LiveKit server, a running engine); CI runs everything else.
 test-python:
@@ -63,10 +98,14 @@ test-python:
 schema:
 	cargo run -q -p lh-proto --bin lh-proto-schema
 
-# E1's tables in crates/lh-sim/README.md from the 32x corpus, which stays outside the repository (`lh-bench
-# scale-traces` writes it; python/leaseholder_bench/README.md): the regime map, the realistic regime over 20 seeds,
-# the other GPUs at the 32x replay and at their own scalings, and the miss ratios with the idle service. Usage: make
-# reproduce-e1 CORPUS=<its directory>.
+# crates/lh-gateway/metrics.txt, the gateway's exposition before any traffic, after a change to its metrics.
+metrics:
+	LH_GATEWAY_WRITE_METRICS=1 cargo test -q -p lh-gateway --lib metrics::tests::the_checked_in_exposition_is_current
+
+# E1's tables (docs/BENCHMARKS.md's E1 section, crates/lh-sim/README.md's other hardware) from the 32x corpus, which
+# stays outside the repository (`lh-bench scale-traces` writes it; python/leaseholder_bench/README.md): the regime
+# map, the realistic regime over 20 seeds, the other GPUs at the 32x replay and at their own scalings, and the miss
+# ratios with the idle service. Usage: make reproduce-e1 CORPUS=<its directory>.
 E1_REPORT ?= build/reproduce-e1
 E1_SIM = target/release/lh-sim
 reproduce-e1:
@@ -82,6 +121,38 @@ reproduce-e1:
 	  >/dev/null
 	$(E1_SIM) mrc $(CORPUS) --service idle --csv $(E1_REPORT)/mrc.csv --markdown $(E1_REPORT)/mrc.md >/dev/null
 	@ls $(E1_REPORT)/*.md
+
+# The A100 run's forecast, benchmarks/a100/forecast.md, from the 32x corpus (outside the repository) and its 48
+# traces with the largest contexts, E2's discriminating corpus, which long_traces.py links into FORECAST_LONG. Usage:
+# make forecast-a100 CORPUS=<the 32x corpus directory>.
+FORECAST_LONG ?= build/weka-x32-long
+forecast-a100:
+	@test -n "$(CORPUS)" || { echo "usage: make forecast-a100 CORPUS=<the 32x corpus directory>" >&2; exit 2; }
+	cargo build --release --locked -p lh-sim
+	uv run -q --no-project python benchmarks/e2/long_traces.py $(CORPUS) $(FORECAST_LONG) 48 >/dev/null
+	@mkdir -p benchmarks/a100
+	$(E1_SIM) forecast $(CORPUS) $(FORECAST_LONG) --gpu a100-40gb --markdown benchmarks/a100/forecast.md >/dev/null
+	@ls benchmarks/a100/forecast.md
+
+# The A100 run's analysis (benchmarks/a100/analysis.py; docs/HARDWARE.md, the analysis) from a single host's records
+# as deploy/a100/pull.sh copies them, and the 32x corpus, into build/reproduce-a100/a100.md, with the bench venv for
+# E2's report. check-a100-calibration runs its calibration code on the box's W2 points (the calibration exports, as
+# reproduce-calibration takes them) and checks that it gives the box's rows. Usage: make reproduce-a100 RECORDS=<dir>
+# CORPUS=<dir>; make check-a100-calibration EXPORTS=<dir> CORPUS=<dir>.
+A100_REPORT ?= build/reproduce-a100
+reproduce-a100:
+	@test -n "$(RECORDS)" -a -n "$(CORPUS)" || \
+	  { echo "usage: make reproduce-a100 RECORDS=<the host's records> CORPUS=<the 32x corpus directory>" >&2; exit 2; }
+	cargo build --release --locked -p lh-sim
+	cd python/leaseholder_bench && uv run -q python ../../benchmarks/a100/analysis.py report $(abspath $(RECORDS)) \
+	  --corpus $(abspath $(CORPUS)) --lh-sim $(abspath $(E1_SIM)) --out $(abspath $(A100_REPORT)) --lh-bench lh-bench
+
+check-a100-calibration:
+	@test -n "$(EXPORTS)" -a -n "$(CORPUS)" || \
+	  { echo "usage: make check-a100-calibration EXPORTS=<the runs' exports> CORPUS=<the 32x corpus directory>" >&2; exit 2; }
+	cargo build --release --locked -p lh-sim
+	uv run -q --no-project python benchmarks/a100/analysis.py calibration-check $(EXPORTS) --corpus $(CORPUS) \
+	  --lh-sim $(E1_SIM) --out build/check-a100-calibration
 
 # The simulator's calibration and its validation against W0 (crates/lh-sim/README.md, and BENCHMARKS' table of W2's points)
 # from six measured runs' AIPerf exports and /metrics snapshots, one directory per run as `scripts/calibration.py export`
@@ -101,6 +172,10 @@ reproduce-e2:
 	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
 	  $(abspath $(dir $(wildcard $(E2_RESULTS)/*/*/run.json))) --out $(abspath $(E2_REPORT))
 
+# The same of W5's re-measure, from its own records.
+reproduce-e2-w5:
+	@$(MAKE) --no-print-directory reproduce-e2 E2_RESULTS=$(E2_W5_RESULTS) E2_REPORT=$(E2_W5_REPORT)
+
 # E2's figures in the docs, docs/figures/e2-frontier.svg and e2-waterfall.svg, from the records of the configurations an
 # operator could deploy (the ablations left out), each with all its runs. The demo GIF beside them is demo.py's.
 E2_DEPLOYABLE := a1-voice disc-frozen-s24 disc-a4-b1024-t0-s24 disc-a6-reserve2048-s24 disc-a7b-sglang-hicache-s24 \
@@ -113,3 +188,18 @@ e2-figures:
 	@mkdir -p docs/figures
 	cp build/e2-figures/frontier-weka-x32-long.svg docs/figures/e2-frontier.svg
 	cp build/e2-figures/waterfall.svg docs/figures/e2-waterfall.svg
+
+# The README's figure, docs/figures/e2-voice-p95.svg, from W5's records: the configurations figure.toml names, each run
+# in the same rounds over the same five samples of the agents' traces.
+e2-w5-figure:
+	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
+	  $(abspath $(dir $(wildcard $(E2_W5_RESULTS)/*/*/run.json))) \
+	  --dots $(abspath $(E2_W5_RESULTS)/figure.toml) --out $(abspath build/e2-w5-figure) >/dev/null
+	@mkdir -p docs/figures
+	cp build/e2-w5-figure/voice-p95.svg docs/figures/e2-voice-p95.svg
+
+# The frozen box's hardware profile against deploy/phastform (deploy/profile.py): `make profiles` checks that it
+# renders today's files byte for byte, and `make profiles UPDATE=1` writes them from deploy/templates after a
+# template changes.
+profiles:
+	uv run -q --no-project python deploy/profile.py $(if $(UPDATE),update,check) rtx-5060-ti

@@ -1,4 +1,4 @@
-"""The make-room engine variant (deploy/phastform/variants/make-room) on vLLM's real v1 scheduler, on CPU: hand-made
+"""The make-room engine variant (src/leaseholder_vllm/make-room) on vLLM's real v1 scheduler, on CPU: hand-made
 requests, no model and no GPU, as vLLM's own tests/v1/core build a scheduler.
 
 The module under test is built from the installed vLLM's source, as the variant builds it at engine start, so these
@@ -6,7 +6,6 @@ tests need vLLM with torch: the engine environment on a GPU node (python/leaseho
 them there). Without them, as in CI, they skip.
 """
 
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -36,7 +35,7 @@ from vllm.v1.outputs import KVConnectorOutput, ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
 from vllm.v1.structured_output import StructuredOutputManager
 
-BUILD = Path(__file__).resolve().parents[3] / "deploy/phastform/variants/make-room/build.py"
+BUILD = Path(__file__).resolve().parents[1] / "src/leaseholder_vllm/build.py"
 BLOCK = 16
 TOKEN = 7  # every sampled token; requests ignore EOS
 
@@ -48,7 +47,9 @@ def module(tmp_path_factory):
     """The generated lh_make_room_scheduler module."""
     out = tmp_path_factory.mktemp("make-room")
     subprocess.run(
-        [sys.executable, str(BUILD), "--source-tree", str(out)], check=True, capture_output=True
+        [sys.executable, str(BUILD), "make-room", str(out), "--source-tree"],
+        check=True,
+        capture_output=True,
     )
     sys.path.insert(0, str(out))
     try:
@@ -56,26 +57,6 @@ def module(tmp_path_factory):
     finally:
         sys.path.remove(str(out))
     return lh_make_room_scheduler
-
-
-@pytest.fixture(scope="session")
-def model(tmp_path_factory) -> str:
-    """A model directory with only a config: the scheduler reads the model's configuration, never its weights."""
-    path = tmp_path_factory.mktemp("model")
-    config = {
-        "architectures": ["LlamaForCausalLM"],
-        "model_type": "llama",
-        "hidden_size": 64,
-        "intermediate_size": 128,
-        "num_attention_heads": 4,
-        "num_key_value_heads": 4,
-        "num_hidden_layers": 1,
-        "vocab_size": 1024,
-        "max_position_embeddings": 4096,
-        "torch_dtype": "float16",
-    }
-    (path / "config.json").write_text(json.dumps(config))
-    return str(path)
 
 
 class Connector:
@@ -335,7 +316,7 @@ def test_a_victim_takes_the_stock_preemption_path(module, model):
     assert victim.num_preemptions == 1
     assert not any(sched.kv_cache_manager.get_blocks("bg").blocks)
     assert "voice" in scheduled(out) and voice.status == RequestStatus.RUNNING
-    assert sched.make_room_preemptions == 1  # the operator's count, apart from the running loop's
+    assert sched._num_priority_preemptions == 1  # the operator's count, not the running loop's
 
 
 def test_preempts_the_lowest_priority_first_and_only_as_many_as_needed(module, model):
@@ -1018,6 +999,29 @@ def test_lower_priority_prefill_sits_out_a_requests_first_tokens(module, model, 
     assert all(tokens["decode"] == tokens["voice"] == 1 for tokens in steps)
 
 
+def test_under_async_scheduling_the_first_tokens_hold_as_many_steps(module, model):
+    """As the engine runs on the frozen box, a step is scheduled before the output of the step before it is processed.
+    The priority-0 request's first tokens count those in flight, so the running priority-2 prefill sits out the steps
+    of its first 4 tokens and goes on in the step of its fifth, as with a synchronous engine."""
+    sched = scheduler(
+        module.AsyncScheduler,
+        model,
+        400,
+        {"budget_cap": True, "budget_cap_tokens": 4},
+        long_prefill_token_threshold=256,
+        max_model_len=4096,
+    )
+    run(sched, request("decode", 40, priority=2, arrival=0))
+    sched.add_request(request("prefill", 3000, priority=2, arrival=1))
+    assert step(sched).num_scheduled_tokens == {"decode": 1, "prefill": 256}
+    sched.add_request(request("voice", 100, priority=0, arrival=2))
+    engine = Pipelined(sched)
+    steps = [engine.step().num_scheduled_tokens for _ in range(5)]
+    assert steps[0] == {"decode": 1, "voice": 100}
+    assert steps[1:4] == [{"decode": 1, "voice": 1}] * 3
+    assert steps[4] == {"decode": 1, "voice": 1, "prefill": 256}
+
+
 def test_the_budget_cap_counts_deferred_frees(module, model):
     """With deferred frees, the blocks of the runner preempted to make room, the latest arrival, are free once the
     step in flight is processed, and the priority-0 request runs after that. It fits meanwhile, as the deferred
@@ -1275,8 +1279,8 @@ def test_make_room_counts_and_logs_what_it_holds_back(module, model, monkeypatch
     sched.add_request(request("late", 300, priority=2, arrival=3))
     for _ in range(3):
         step(sched)  # held: the prefill's chunk of 256, and the late request's admission
-    assert (sched.make_room_held_steps, sched.make_room_held_tokens) == (4, 4 * 256)
-    assert (sched.make_room_held_admissions, sched.make_room_preemptions) == (3, 0)
+    assert (sched._num_prefill_held_steps, sched._num_prefill_held_tokens) == (4, 4 * 256)
+    assert (sched.make_room_held_admissions, sched._num_priority_preemptions) == (3, 0)
 
     lines = []
     monkeypatch.setattr(
@@ -1291,6 +1295,31 @@ def test_make_room_counts_and_logs_what_it_holds_back(module, model, monkeypatch
         "make-room: budget cap held lower-priority prefill back in 4 steps (1024 prefill "
         "tokens and 3 admissions, summed over the steps); 0 preemptions to make room"
     ]
+
+
+@pytest.mark.parametrize("threshold, held_tokens", [(128, 2 * 128), (384, 511)])
+def test_a_steps_held_tokens_are_at_most_what_its_budget_leaves(
+    module, model, threshold, held_tokens
+):
+    """Two lower-priority prefill chunks held in one step count what the running loop would have scheduled for them:
+    a held chunk takes nothing from the step's budget, so each counts against what the chunks held before it leave.
+    Both chunks' 128 fit in the 511 tokens the decode leaves; of 384 each, the second would have had 127."""
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        400,
+        {"budget_cap": True, "budget_cap_tokens": 4},
+        long_prefill_token_threshold=threshold,
+        max_model_len=4096,
+    )
+    run(sched, request("decode", 40, priority=2, arrival=0))
+    sched.add_request(request("a", 3000, priority=2, arrival=1))
+    sched.add_request(request("b", 3000, priority=2, arrival=2))
+    assert scheduled(step(sched)) == {"decode", "a", "b"}
+    sched.add_request(request("voice", 100, priority=0, arrival=3))
+    for _ in range(4):
+        step(sched)  # held: both chunks
+    assert (sched._num_prefill_held_steps, sched._num_prefill_held_tokens) == (4, 4 * held_tokens)
 
 
 # The reserve
@@ -1435,7 +1464,10 @@ def test_a_bad_switch_fails_the_engine_start_naming_it(module, model, make_room,
 def test_budget_cap_takes_true_or_false_in_any_case(module, model, value, on):
     """As vLLM's CLI parses --additional-config.make_room.budget_cap: false and true become booleans, 0 and 1 integers,
     and other spellings stay strings."""
-    assert scheduler(module.Scheduler, model, 33, {"budget_cap": value}).prefill_budget_cap is on
+    assert (
+        scheduler(module.Scheduler, model, 33, {"budget_cap": value}).priority_prefill_budget_cap
+        is on
+    )
 
 
 def test_the_switches_need_priority_scheduling(module, model):

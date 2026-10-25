@@ -1,0 +1,85 @@
+vLLM PR #54530 (https://github.com/vllm-project/vllm/pull/54530, open), ported to v0.32.0 by hand: under priority
+scheduling, when the running queue is full (max_num_seqs; max_num_active_reqs in 0.32.0), a waiting request may preempt
+the lowest-priority running request if it has a strictly higher priority. The PR targets a newer main, whose waiting
+loop differs. The closure takes back what the victim was scheduled in the step, as the running loop's preemption does.
+The logger line keeps the scheduler's logger in the generated module, whose own name vLLM's logging config does not
+cover.
+
+diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
+index cec96d2..69464d3 100644
+--- a/vllm/v1/core/sched/scheduler.py
++++ b/vllm/v1/core/sched/scheduler.py
+@@ -79,6 +79,8 @@ from vllm.v1.structured_output.utils import strip_speculative_padding
+ from vllm.v1.utils import record_function_or_nullcontext
+ 
+ logger = init_logger(__name__)
++# Log as vLLM's scheduler does: vLLM's logging covers its loggers only.
++logger = init_logger("vllm.v1.core.sched.scheduler")
+ 
+ 
+ class Scheduler(SchedulerInterface):
+@@ -896,6 +898,41 @@ class Scheduler(SchedulerInterface):
+             )
+             assert len(scheduled_loras) <= self.lora_config.max_loras
+ 
++
++        def _preempt_lowest_priority_runner(request: Request) -> bool:
++            """Evict the lowest-priority running request so that a higher-priority waiting request can take its slot
++            once the running queue is full (vLLM PR #54530). Strict priority comparison: equal priorities never preempt
++            each other, which would ping-pong."""
++            nonlocal token_budget, input_budget, encoder_compute_budget
++            if not self.running:
++                return False
++            victim = max(self.running, key=lambda r: (r.priority, r.arrival_time))
++            if request.priority >= victim.priority:
++                return False
++            self.running.remove(victim)
++            for scheduled in (scheduled_running_reqs, scheduled_new_reqs, scheduled_resumed_reqs):
++                if victim in scheduled:
++                    scheduled.remove(victim)
++                    restored = num_scheduled_tokens.pop(victim.request_id)
++                    token_budget += restored
++                    input_budget += restored + draft_slots
++                    req_to_new_blocks.pop(victim.request_id)
++                    scheduled_spec_decode_tokens.pop(victim.request_id, None)
++                    encoder_inputs = scheduled_encoder_inputs.pop(victim.request_id, None)
++                    if encoder_inputs:
++                        encoder_compute_budget += sum(victim.get_num_encoder_embeds(i) for i in encoder_inputs)
++                    if self.lora_config and victim.lora_request:
++                        lora_id = victim.lora_request.lora_int_id
++                        if not any(
++                            r.lora_request is not None and r.lora_request.lora_int_id == lora_id
++                            for r in itertools.chain(scheduled_running_reqs, scheduled_new_reqs, scheduled_resumed_reqs)
++                        ):
++                            scheduled_loras.discard(lora_id)
++                    break
++            self._preempt_request(victim, scheduled_timestamp, drop_stale_output=self.requires_kv_delivery)
++            preempted_reqs.append(victim)
++            return True
++
+         # Next, schedule the WAITING requests.
+         if not preempted_reqs and self._pause_state != PauseState.PAUSED_ALL:
+             step_skipped_waiting: deque[Request] = deque()
+@@ -920,7 +957,8 @@ class Scheduler(SchedulerInterface):
+                 # Paused streaming sessions (WAITING_FOR_STREAMING_REQ) are not
+                 # in `running` but still hold a model-runner request slot.
+                 num_running = len(self.running) + self.num_waiting_for_streaming_input
+-                if num_running >= self.max_num_active_reqs:
++                queue_full = num_running >= self.max_num_active_reqs
++                if queue_full and self.policy != SchedulingPolicy.PRIORITY:
+                     break
+ 
+                 request = request_queue.peek_request()
+@@ -951,6 +989,12 @@ class Scheduler(SchedulerInterface):
+                     skip_request(request_queue)
+                     continue
+ 
++                if queue_full:
++                    # Running queue full: evict a strictly lower-priority runner, then retry this request.
++                    if not _preempt_lowest_priority_runner(request):
++                        break
++                    continue
++
+                 num_external_computed_tokens = 0
+                 load_kv_async = False
+                 connector_prefix_cache_queries, connector_prefix_cache_hits = 0, 0
