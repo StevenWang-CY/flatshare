@@ -1,0 +1,92 @@
+# One A100 40 GB (SXM4 or PCIe) for the A100 run's core: the frozen box's model, revision, pool, step cap and CPU tier,
+# so that its comparison of the frozen engine against make-room is the box's, on another card. Values marked "auto"
+# come from the host's facts (`profile.py detect`) by the rules in deploy/profile.py (docs/HARDWARE.md): the memory
+# budgets (R2), the CPU tier (R3), the core plan (R7), the CUDA compiler FlashInfer's JIT finds. The engine runs the
+# FP8 checkpoint through Marlin (W8A16) on sm80, as vLLM 0.32.0 selects it.
+
+[profile]
+name = "a100-40gb"
+gpu = "A100 40 GB"
+node = "auto"
+dir = ""
+deploy_dir = "%h/leaseholder/node"
+# The card as nvidia-smi shows it, for what is rendered and built before it is visible (staging).
+memory_mib = 40960
+compute_cap = "8.0"
+
+[model]
+name = "Qwen/Qwen3-4B-Instruct-2507-FP8"
+title = "Qwen3-4B-Instruct-2507-FP8"
+revision = "8591804019c8b22094c3b5b4454e0edc05dffc98"
+max_model_len = 32768
+
+[engine]
+# The box's 5 GiB: 36,400 tokens of Qwen3-4B's BF16 KV.
+kv_cache_memory = 5368709120
+gpu_memory_utilization = "auto"
+max_num_batched_tokens = 512
+long_prefill_token_threshold = 256
+cpu_bytes_to_use = "auto"
+extra = ""
+
+[stt]
+gpu_memory_utilization = "auto"
+
+[units]
+cuda_home = "auto"
+engine_path = "auto"
+stt_path = "auto"
+stt_cuda_home = "auto"
+cuda_compat = "auto"
+gpu_select = "auto"
+hf_hub_cache = "auto"
+cuda_ldflags = "auto"
+engine_cpus = "auto"
+engine_numa = "auto"
+audio_cpus = "auto"
+audio_numa = "auto"
+
+# The rules' inputs, from the box.
+[budgets]
+# The box's 0.70 and 0.15 of the 15.47 GiB torch reports: the engine's budget for vLLM's free-memory check, and
+# Whisper's, which sizes its own KV from it.
+engine_gib = 10.83
+stt_gib = 2.32
+# The box's 20 GiB CPU tier over its 5 GiB pool, and the RAM a single host keeps for its other processes.
+cpu_tier_ratio = 4
+host_reserve_gib = 25
+
+[text]
+engine_header = '''
+# LLM engine on {{profile.node}}: vLLM 0.32.0 on one {{profile.gpu}}, beside the STT and TTS servers, rendered
+# from deploy/profiles/{{profile.name}}.toml.'''
+stt_header = '''
+# Speech-to-text on {{profile.node}}: vLLM 0.32.0 serving Whisper large-v3-turbo at /v1/audio/transcriptions.'''
+target = "Leaseholder on {{profile.node}}: STT, TTS and the LLM engine on one {{profile.gpu}}"
+pool = '''
+# The KV pool is the frozen box's, 5 GiB (36,400 tokens), so that this card runs the box's comparison. vLLM still
+# requires utilization x total memory to be free at start: {{derived.engine_budget}} of the card's
+# {{derived.total_gib}} GiB.'''
+cpu_tier = '''
+# Host tier: vLLM's native CPU offload, write-through (generated tokens are stored as well), sized at
+# {{derived.cpu_tier_gib}} GiB: {{derived.cpu_tier_note}}.'''
+cuda = '''
+# FlashInfer JIT-compiles with nvcc and needs curand headers, which bootstrap.sh links from the venv into
+# cache/curand_include; {{derived.cuda_note}}.'''
+engine_numa = '''
+# {{derived.engine_numa_note}}'''
+audio_numa = '''
+# {{derived.audio_numa_note}}'''
+engine_caches = '''
+# Every compile and JIT cache the engine's start reads, under cache/ beside FlashInfer's and kept across the
+# campaign's engine switches, so that only a compile configuration's first start compiles (on the box 531.8 s with
+# all of them empty against 88.8 s warm, W8's start drills); bootstrap.sh warm fills them.
+Environment=VLLM_CACHE_ROOT=%h/leaseholder/cache/vllm
+Environment=TORCHINDUCTOR_CACHE_DIR=%h/leaseholder/cache/inductor
+Environment=TRITON_CACHE_DIR=%h/leaseholder/cache/triton'''
+stt_caches = '''
+# The STT's compile and JIT caches beside the engine's, kept across starts.
+Environment=VLLM_CACHE_ROOT=%h/leaseholder/cache/vllm
+Environment=FLASHINFER_WORKSPACE_BASE=%h/leaseholder/cache/flashinfer
+Environment=TORCHINDUCTOR_CACHE_DIR=%h/leaseholder/cache/inductor
+Environment=TRITON_CACHE_DIR=%h/leaseholder/cache/triton'''

@@ -6,7 +6,8 @@
 #   venvs/bench                         lh-bench and the AIPerf plugins, from python/leaseholder_bench/uv.lock
 #   venvs/smg                           SMG 1.13.0 for E2's arm 8b (lh-smg.service), from requirements/smg.txt
 #   ~/.config/leaseholder/livekit.env   API key pair for the local LiveKit server and the voice worker
-#   ~/.ssh/lh_tunnel_ed25519            the tunnel key; authorize it on each GPU node with deploy/authorize-tunnel.sh
+#   ~/.ssh/lh_tunnel_{engine,stt,tts}_ed25519   the tunnel keys, one per socket of a GPU node; authorize them on each
+#                                       node with deploy/authorize-tunnel.sh
 set -euo pipefail
 src=$(cd "$(dirname "$0")/../.." && pwd)
 root=$HOME/leaseholder
@@ -48,8 +49,10 @@ if [[ ! -f $env_file ]]; then
   )
 fi
 
-[[ -f $HOME/.ssh/lh_tunnel_ed25519 ]] ||
-  ssh-keygen -q -t ed25519 -N '' -C "lh-tunnel@$(hostname -s)" -f "$HOME/.ssh/lh_tunnel_ed25519"
+for name in engine stt tts; do
+  [[ -f $HOME/.ssh/lh_tunnel_${name}_ed25519 ]] ||
+    ssh-keygen -q -t ed25519 -N '' -C "lh-tunnel-$name@$(hostname -s)" -f "$HOME/.ssh/lh_tunnel_${name}_ed25519"
+done
 [[ -f $HOME/.config/leaseholder/tunnel-phastform.env ]] ||
   echo "bootstrap: write LH_TUNNEL_TARGET=<user>@<gpu node> to ~/.config/leaseholder/tunnel-phastform.env" >&2
 version() { "$root/venvs/$1/bin/python" -c 'import importlib.metadata as m, sys; print(sys.argv[1], m.version(sys.argv[1]))' "$2"; }

@@ -1,0 +1,10 @@
+[Unit]
+Description=Leaseholder engine socket's proxy to an engine's loopback port (variant sglang)
+Documentation=https://github.com/StevenWang-CY/leaseholder/blob/main/ops/RUNBOOK.md
+BindsTo=lh-engine.service
+After=lh-engine.service
+
+[Service]
+# Started by lh-engine-proxy.socket's first connection. systemd's proxy splices each connection to the port; one
+# process serves them all.
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:8000

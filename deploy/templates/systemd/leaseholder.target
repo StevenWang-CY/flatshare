@@ -1,0 +1,7 @@
+[Unit]
+Description={{text.target}}
+Documentation=https://github.com/StevenWang-CY/leaseholder/blob/main/ops/RUNBOOK.md
+Wants=lh-stt.service lh-tts.service lh-engine.service
+
+[Install]
+WantedBy=default.target

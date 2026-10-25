@@ -7,7 +7,16 @@
 # Besides loopback the namespace holds one dummy interface. libwebrtc ignores loopback adapters, so with lo alone a
 # client gathers no candidate and media never connects; the dummy gives clients an address to bind. It has no
 # default route and no IPv6 link-local address, so nothing leaves the namespace.
+#
+# With LH_VOICENET=host, on a host whose kernel refuses unprivileged user namespaces (the preflight finds out), it
+# holds no namespace: it writes "host" to PIDFILE, and in-voicenet then runs the voice plane in the host's network
+# namespace. LiveKit's own candidates stay on 127.0.0.1 (deploy/cyan/livekit.yaml), but the clients gather theirs on
+# the host's interfaces, so such a host must not be reachable from outside on the media ports.
 set -euo pipefail
+if [[ ${LH_VOICENET:-} == host ]]; then
+  echo host >"$1"
+  exec sleep infinity
+fi
 exec unshare --user --map-root-user --net -- sh -c '
   ip link set lo up &&
   ip link add lh0 type dummy &&

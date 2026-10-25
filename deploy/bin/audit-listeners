@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""audit-listeners [--expect SOCKET]...: fail unless the box's own processes listen only where they may.
+
+A process of ours runs in a unit named lh-*.service: its cgroup's under systemd, or, under deploy/bin/lh-svc, whose
+processes stay in the session's cgroup, the unit that lh-svc names in its environment (LH_SVC_UNIT), as gpu-guard tells
+them apart from the hosts' other work. Over TCP and UDP such a process may listen only where ALLOWED says, on loopback:
+the gateway's port on cyan, and an SGLang engine (the sglang variant), which serves no Unix socket. Its Unix sockets
+must be under $XDG_RUNTIME_DIR, which only this user may enter, and $XDG_RUNTIME_DIR/lh must be 0700. A listener on an
+allowed address that is not ours holds our place for another user and fails too, and so does each SOCKET given that
+nobody listens on. The user manager (systemd --user) holds the sockets of socket units, the gateway's
+(lh-gateway.socket) among them, also while no gateway runs: on an allowed address, its socket is the unit's. `ss` names
+only this user's processes, so the audit runs as the deployment's user, in the host's network namespace: the voice
+plane's namespace on cyan has no route in, and its listeners do not show. On a host whose kernel refuses unprivileged
+user namespaces the voice plane runs in the host's namespace instead (LH_VOICENET=host, the single host's degraded
+path, which its preflight reports), and in-voicenet marks its processes LH_VOICENET=host: there its units' UDP sockets
+(the WebRTC candidates, on the host's interfaces), loopback TCP listeners and file sockets are accepted, and counted
+apart. deploy/phastform/smoke.sh runs it on a GPU node, and deploy/deploy.sh after each install.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+PROC = Path(os.environ.get("LH_AUDIT_PROC", "/proc"))
+"""Where the processes' cgroups and environments are read (a test sets another)."""
+UNIT = re.compile(r"/(lh-[A-Za-z0-9@._-]+\.service)$")
+SVC_UNIT = re.compile(rb"LH_SVC_UNIT=(lh-[A-Za-z0-9@._-]+\.service)")
+"""deploy/bin/lh-svc's name for the unit a process runs in, in its environment."""
+VOICE = {"lh-livekit.service", "lh-voice-worker.service", "lh-voicenet.service"}
+"""The voice plane's units, which in-voicenet runs in its namespace, or, with LH_VOICENET=host, in the host's."""
+MANAGER = re.compile(r"/user@\d+\.service/init\.scope$")
+"""The cgroup of the user manager itself."""
+ALLOWED = {"lh-gateway.service": {"127.0.0.1:18080"}}
+"""The TCP and UDP listeners each unit may have: the gateway's, for AIPerf and the agents, with their keys."""
+LOOPBACK = re.compile(r"^(127\.\d+\.\d+\.\d+|\[::1\]|localhost)(%\w+)?:\d+$")
+
+
+def environ(pid: str) -> list[bytes]:
+    """Process ``pid``'s environment, one VAR=VALUE a item (empty when it is gone or not ours to read)."""
+    try:
+        return (PROC / pid / "environ").read_bytes().split(b"\0")
+    except OSError:
+        return []
+
+
+def unit_of(pid: str) -> str | None:
+    """The lh-*.service unit that process ``pid`` runs in, or None (another unit's, or gone): its cgroup's, or the one
+    lh-svc names in its environment."""
+    try:
+        cgroup = (PROC / pid / "cgroup").read_text()
+    except OSError:
+        return None
+    for line in cgroup.splitlines():
+        if match := UNIT.search(line):
+            return match.group(1)
+    for variable in environ(pid):
+        if match := SVC_UNIT.fullmatch(variable):
+            return match.group(1).decode()
+    return None
+
+
+def in_host_namespace(unit: str, pids: list[str]) -> bool:
+    """Whether ``unit`` is the voice plane's and in-voicenet ran each of its processes ``pids`` in the host's network
+    namespace (LH_VOICENET=host)."""
+    return unit in VOICE and bool(pids) and all(b"LH_VOICENET=host" in environ(pid) for pid in pids)
+
+
+def is_manager(pid: str) -> bool:
+    try:
+        cgroup = (PROC / pid / "cgroup").read_text()
+    except OSError:
+        return False
+    return any(MANAGER.search(line) for line in cgroup.splitlines())
+
+
+def is_sglang(pid: str) -> bool:
+    try:
+        return b"sglang" in (PROC / pid / "cmdline").read_bytes()
+    except OSError:
+        return False
+
+
+def units_of(pids: list[str]) -> dict[str, list[str]]:
+    """The lh-*.service units that processes ``pids`` run in, each with its processes among them."""
+    found: dict[str, list[str]] = {}
+    for pid in pids:
+        if unit := unit_of(pid):
+            found.setdefault(unit, []).append(pid)
+    return found
+
+
+def listeners(*options: str) -> list[tuple[str, str, list[str]]]:
+    """``ss -H OPTIONS``'s sockets: each one's kind, local address and the pids that hold it (this user's only)."""
+    lines = subprocess.run(
+        ["ss", "-H", *options], capture_output=True, text=True, check=True
+    ).stdout
+    found = []
+    for line in lines.splitlines():
+        fields = line.split()
+        if len(fields) < 5:
+            continue
+        process = re.search(r"users:\((.*)\)", line)
+        pids = re.findall(r"pid=(\d+)", process.group(1)) if process else []
+        found.append((fields[0], fields[4], pids))
+    return found
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="audit-listeners", description=__doc__.split("\n\n")[0])
+    parser.add_argument(
+        "--expect", action="append", default=[], metavar="SOCKET", help="a socket that must listen"
+    )
+    expected = parser.parse_args(argv).expect
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    problems = []
+    lh = Path(runtime, "lh")
+    if lh.exists():
+        mode = stat.S_IMODE(lh.stat().st_mode)
+        if mode != 0o700 or lh.stat().st_uid != os.getuid():
+            problems.append(
+                f"{lh} is mode {mode:o}, owned by uid {lh.stat().st_uid}: it must be 0700 and ours"
+            )
+
+    ours = {"tcp": 0, "unix": 0}
+    voice = {"udp": 0, "tcp": 0, "unix": 0}
+    held: dict[str, set[str]] = {}
+    for kind, address, pids in listeners("-lntup"):
+        by_unit = units_of(pids)
+        units = set(by_unit)
+        if any(map(is_manager, pids)):
+            # A socket unit's: the address is held for the unit it starts. Another of the user's socket units
+            # is not ours to judge.
+            units |= {unit for unit, allowed in ALLOWED.items() if address in allowed}
+        held.setdefault(address, set()).update(units)
+        for unit in sorted(units):
+            if in_host_namespace(unit, by_unit.get(unit, [])) and (
+                kind == "udp" or LOOPBACK.match(address)
+            ):
+                voice["udp" if kind == "udp" else "tcp"] += 1
+                continue
+            ours["tcp"] += 1
+            sglang = unit == "lh-engine.service" and any(map(is_sglang, pids))
+            if address in ALLOWED.get(unit, ()) or (sglang and LOOPBACK.match(address)):
+                continue
+            problems.append(f"{unit} listens on {kind} {address}")
+    for unit, addresses in ALLOWED.items():
+        for address in addresses:
+            if address in held and unit not in held[address]:
+                problems.append(
+                    f"{address} is held by a process that is not {unit}'s: another user's?"
+                )
+
+    unix_paths = set()
+    for _kind, path, pids in listeners("-lxp"):
+        unix_paths.add(path)
+        for unit, its in sorted(units_of(pids).items()):
+            if in_host_namespace(unit, its) and not path.startswith("@"):
+                # Its file sockets are reached through the file system, as from its own namespace; an abstract one
+                # would be any user's here.
+                voice["unix"] += 1
+                continue
+            ours["unix"] += 1
+            if not path.startswith(f"{runtime}/"):
+                where = "an abstract socket" if path.startswith("@") else "a socket"
+                problems.append(f"{unit} listens on {where} outside {runtime}: {path}")
+    for path in expected:
+        if path not in unix_paths:
+            problems.append(f"nothing listens on {path}")
+
+    for problem in problems:
+        print(f"audit-listeners: {problem}", file=sys.stderr)
+    if problems:
+        return 1
+    plane = ""
+    if any(voice.values()):
+        plane = (
+            "; the voice plane runs in the host's network namespace (LH_VOICENET=host) with "
+            f"{sum(voice.values())} listeners: {voice['udp']} UDP sockets, {voice['tcp']} loopback TCP listeners "
+            f"and {voice['unix']} file socket{'s' if voice['unix'] != 1 else ''}"
+        )
+    print(
+        f"audit-listeners: ok: the box's units hold {ours['unix']} Unix sockets, all in {runtime}, "
+        f"and {ours['tcp']} TCP or UDP listeners, all allowed{plane}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

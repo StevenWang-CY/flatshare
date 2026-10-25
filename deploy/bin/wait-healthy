@@ -1,15 +1,45 @@
 #!/usr/bin/env bash
-# wait-healthy URL [TIMEOUT_S]: block until URL answers 2xx. Units run it as ExecStartPost, so a unit counts as
-# started only once its server is ready, and units ordered after it start only then.
+# wait-healthy [--unix-socket SOCKET] [--pid=PID] URL [TIMEOUT_S]: block until URL answers 2xx, through the server's
+# Unix socket SOCKET when given (URL's host is then only a name, as for curl); fail after TIMEOUT_S, or, with PID (the
+# unit's main process: --pid=${MAINPID}, which systemd and deploy/bin/lh-svc set for ExecStartPost), as soon as that
+# process is gone, so that a server that dies in its start fails the start at once rather than at the timeout. Units
+# run it as ExecStartPost, so a unit counts as started only once its server is ready, and units ordered after it
+# start only then.
 set -euo pipefail
+usage() { echo "usage: wait-healthy [--unix-socket SOCKET] [--pid=PID] URL [TIMEOUT_S]" >&2; exit 2; }
+via=() pid=""
+while [[ ${1:-} == --* ]]; do
+  case $1 in
+    --unix-socket)
+      [[ -n ${2:-} ]] || usage
+      via=(--unix-socket "$2")
+      shift 2
+      ;;
+    --pid=*) # empty where the main process is not known: no PID, as without it
+      pid=${1#--pid=}
+      shift
+      ;;
+    *) usage ;;
+  esac
+done
+[[ -n ${1:-} && ( -z $pid || $pid =~ ^[0-9]+$ ) ]] || usage
 url=$1
 timeout=${2:-600}
+gone() { # whether the server has exited: no such process, or a zombie that its parent has not reaped yet
+  local state
+  state=$(ps -o stat= -p "$pid" 2>/dev/null || true)
+  [[ -z $state || $state == Z* ]]
+}
 deadline=$((SECONDS + timeout))
-until curl -fs -m 2 -o /dev/null "$url"; do
+until curl -fs -m 2 -o /dev/null ${via[@]+"${via[@]}"} "$url"; do
+  if [[ -n $pid ]] && gone; then
+    echo "wait-healthy: the server (pid $pid) exited before $url${via[1]:+ on ${via[1]}} was healthy" >&2
+    exit 1
+  fi
   if ((SECONDS >= deadline)); then
-    echo "wait-healthy: $url not healthy after ${timeout}s" >&2
+    echo "wait-healthy: $url${via[1]:+ on ${via[1]}} not healthy after ${timeout}s" >&2
     exit 1
   fi
   sleep 2
 done
-echo "wait-healthy: $url healthy after ${SECONDS}s"
+echo "wait-healthy: $url${via[1]:+ on ${via[1]}} healthy after ${SECONDS}s"

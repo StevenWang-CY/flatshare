@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # gpu-guard: refuse to start a GPU service while a process that is not one of the box's units holds the GPU, whoever
 # owns it. The GPU nodes are shared hosts, and other work runs on them under this user too; starting beside it risks
-# an OOM for both and spoils both sides' timings.
+# an OOM for both and spoils both sides' timings. On a host that lends one of several GPUs the units name it
+# (LH_GPU_ID, its UUID), and only its processes count; without it, every GPU's do.
 set -euo pipefail
-for pid in $(nvidia-smi --query-compute-apps=pid --format=csv,noheader | tr -d ' '); do
-  # The box's own servers run in their units' cgroups (…/lh-stt.service, …/lh-engine.service).
+for pid in $(nvidia-smi ${LH_GPU_ID:+-i "$LH_GPU_ID"} --query-compute-apps=pid --format=csv,noheader | tr -d ' '); do
+  # The box's own servers run in their units' cgroups (…/lh-stt.service, …/lh-engine.service), or, on a host
+  # without a systemd user manager, under deploy/bin/lh-svc, which marks their environment instead.
   grep -qE '/lh-[a-z0-9-]+\.service$' "/proc/$pid/cgroup" 2>/dev/null && continue
+  grep -qzE '^LH_SVC_UNIT=lh-[a-z0-9-]+\.service$' "/proc/$pid/environ" 2>/dev/null && continue
   owner=$(ps -o user= -p "$pid" | tr -d ' ' || true)
   [[ -n $owner ]] || continue # it exited meanwhile
   echo "gpu-guard: the GPU is in use by pid $pid ($owner, $(ps -o comm= -p "$pid" || true)), outside the box's units; not starting" >&2

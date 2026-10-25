@@ -1,24 +1,44 @@
 #!/usr/bin/env bash
-# authorize-tunnel.sh CLIENT GPU_NODE: let CLIENT's tunnel key (~/.ssh/lh_tunnel_ed25519 on CLIENT) forward
-# GPU_NODE's loopback service ports and nothing else: the engine (8000), STT (8100) and TTS (8880), with no shell
-# and no listener of its own there. Writes one restricted authorized_keys entry on GPU_NODE, replacing any earlier
-# entry for the same key. Uses LH_SSH like deploy.sh.
+# authorize-tunnel.sh CLIENT GPU_NODE: let CLIENT's tunnel keys reach GPU_NODE's servers and nothing else. Each of the
+# keys deploy/cyan/bootstrap.sh makes on CLIENT, ~/.ssh/lh_tunnel_engine_ed25519, _stt_ and _tts_, gets one
+# authorized_keys entry on GPU_NODE: `restrict`, which allows no forwarding of any kind, pty, agent, X11 or ~/.ssh/rc,
+# and a forced command that every session of the key runs whatever its client asks for, `exec nc -q0 -U SOCKET`,
+# joining the session to GPU_NODE's socket of the key's name in its $XDG_RUNTIME_DIR/lh. deploy/bin/lh-tunnel opens
+# them. Each entry replaces any earlier one for its key, and the entry of CLIENT's former tunnel key
+# (~/.ssh/lh_tunnel_ed25519, which forwarded the node's ports) goes. GPU_NODE's nc must be OpenBSD's, which takes -U
+# and -q. Uses LH_SSH like deploy.sh.
 set -euo pipefail
 client=${1:?usage: authorize-tunnel.sh CLIENT GPU_NODE}
 node=${2:?usage: authorize-tunnel.sh CLIENT GPU_NODE}
 ssh=${LH_SSH:-ssh}
-key=$($ssh "$client" cat .ssh/lh_tunnel_ed25519.pub)
-# The key's type and blob identify its entry; the comment after them is optional.
-read -r type blob _ <<<"$key"
-[[ -n $blob ]] || { echo "authorize-tunnel: no public key in $client's .ssh/lh_tunnel_ed25519.pub" >&2; exit 2; }
-permit=""
-for port in 8000 8100 8880; do permit+="permitopen=\"127.0.0.1:$port\","; done
-# port-forwarding re-enables remote forwards (-R) too, which permitopen does not limit: the only listener the key may
-# ask for is a privileged port, which the user's session cannot bind.
-permit+='permitlisten="127.0.0.1:1",'
-printf '%s\nrestrict,port-forwarding,%scommand="/bin/false" %s\n' "$type $blob" "$permit" "$key" |
-  $ssh "$node" 'umask 077; mkdir -p .ssh; touch .ssh/authorized_keys
-    read -r keyblob; read -r line
-    { grep -vF "$keyblob" .ssh/authorized_keys || true; printf "%s\n" "$line"; } >.ssh/authorized_keys.new
-    mv .ssh/authorized_keys.new .ssh/authorized_keys
-    echo "authorized: ${line##* } ($(grep -cF "$keyblob" .ssh/authorized_keys) entry)"'
+# One line per key, its socket's name first: "engine ssh-ed25519 AAAA... comment". A key's type and blob identify its
+# entry; the comment after them is optional.
+keys=""
+for name in engine stt tts; do
+  key=$($ssh "$client" cat ".ssh/lh_tunnel_${name}_ed25519.pub" 2>/dev/null || true)
+  read -r _ blob _ <<<"$key"
+  [[ -n ${blob:-} ]] || {
+    echo "authorize-tunnel: no public key in $client's .ssh/lh_tunnel_${name}_ed25519.pub (deploy/cyan/bootstrap.sh)" >&2
+    exit 2
+  }
+  keys+="$name $key"$'\n'
+done
+former=$($ssh "$client" cat .ssh/lh_tunnel_ed25519.pub 2>/dev/null || true)
+if [[ -n $former ]]; then keys+="former $former"$'\n'; fi
+printf '%s' "$keys" | $ssh "$node" 'nc -h 2>&1 | grep -q "^OpenBSD netcat" || {
+    echo "authorize-tunnel: $(hostname)'"'"'s nc is not OpenBSD netcat, which takes -U and -q" >&2; exit 2; }
+  umask 077; mkdir -p .ssh; touch .ssh/authorized_keys
+  lh=/run/user/$(id -u)/lh
+  cp .ssh/authorized_keys .ssh/authorized_keys.new
+  : >.ssh/authorized_keys.add
+  while read -r name type blob comment; do
+    { grep -vF "$type $blob" .ssh/authorized_keys.new || true; } >.ssh/authorized_keys.kept
+    mv .ssh/authorized_keys.kept .ssh/authorized_keys.new
+    [ "$name" = former ] && continue
+    printf "restrict,command=\"exec nc -q0 -U %s/%s.sock\" %s %s%s\n" "$lh" "$name" "$type" "$blob" \
+      "${comment:+ $comment}" >>.ssh/authorized_keys.add
+  done
+  cat .ssh/authorized_keys.add >>.ssh/authorized_keys.new
+  rm .ssh/authorized_keys.add
+  mv .ssh/authorized_keys.new .ssh/authorized_keys
+  echo "authorized: engine, stt and tts on $lh ($(grep -c "^restrict,command=\"exec nc -q0 -U $lh/" .ssh/authorized_keys) entries)"'

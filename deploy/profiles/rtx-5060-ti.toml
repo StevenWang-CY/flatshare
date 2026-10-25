@@ -1,0 +1,71 @@
+# The frozen box: Phastform's RTX 5060 Ti 16 GB. deploy/profile.py renders deploy/phastform's engine and STT
+# configs, units and make-room drop-in from this profile and deploy/templates; `profile.py check rtx-5060-ti` (and
+# the bench package's tests) keep them byte for byte what Phastform runs, so no measurement changes meaning. Every
+# value is the box's own, none derived.
+
+[profile]
+name = "rtx-5060-ti"
+gpu = "RTX 5060 Ti 16 GB"
+node = "Phastform"
+# The repository's copy of the rendered files, and where the units find them on the node.
+dir = "deploy/phastform"
+deploy_dir = "%h/leaseholder/src/deploy/phastform"
+compute_cap = "12.0"
+
+[model]
+name = "Qwen/Qwen3-4B-Instruct-2507-FP8"
+title = "Qwen3-4B-Instruct-2507-FP8"
+revision = "8591804019c8b22094c3b5b4454e0edc05dffc98"
+max_model_len = 32768
+
+[engine]
+kv_cache_memory = 5368709120
+gpu_memory_utilization = "0.70"
+max_num_batched_tokens = 512
+long_prefill_token_threshold = 256
+cpu_bytes_to_use = 21474836480
+extra = ""
+
+[stt]
+gpu_memory_utilization = "0.15"
+
+[units]
+cuda_home = "/usr/local/cuda-13.0"
+engine_path = "%h/leaseholder/venvs/engine/bin:/usr/local/cuda-13.0/bin:/usr/local/bin:/usr/bin:/bin:%h/.local/bin"
+stt_path = "%h/leaseholder/venvs/engine/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin"
+stt_cuda_home = ""
+cuda_compat = ""
+gpu_select = ""
+hf_hub_cache = ""
+cuda_ldflags = ""
+engine_cpus = "8-15"
+engine_numa = "1"
+audio_cpus = "0-7"
+audio_numa = "0"
+
+# The comment lines that state the node's own facts.
+[text]
+engine_header = '''
+# Frozen-box LLM engine on Phastform: vLLM 0.32.0 on one RTX 5060 Ti 16 GB, beside the STT and TTS servers.'''
+stt_header = '''
+# Frozen-box speech-to-text on Phastform: vLLM 0.32.0 serving Whisper large-v3-turbo at /v1/audio/transcriptions.'''
+target = "Leaseholder frozen box on Phastform: STT, TTS and the LLM engine on one GPU"
+pool = '''
+# The KV pool is fixed at 5 GiB (36,400 tokens), so the footprint depends neither on the profiler nor on the
+# audio servers. vLLM still requires utilization x total memory to be free at start: 10.83 GiB, with about
+# 12 GiB free once STT and TTS are resident.'''
+cpu_tier = '''
+# Host tier: vLLM's native CPU offload, write-through (generated tokens are stored as well), sized at 20 GiB,
+# four times the GPU pool. E1 sweeps 2x, 4x and 8x.'''
+cuda = '''
+# DeepGEMM's FP8 kernels JIT-compile with nvcc >= 13.0. FlashInfer's JIT also needs curand headers, which the
+# CUDA 13.0 toolkit on this host lacks; bootstrap.sh links the venv's copies into cache/curand_include.'''
+engine_numa = '''
+# NUMA node 1 is local to the GPU. "preferred" spills to node 0 when node 1 is short: the measured cost of a remote
+# CPU tier is under 1% of pinned bandwidth.'''
+audio_numa = '''
+# NUMA node 0 (cores 0-7) for the audio servers; node 1, local to the GPU, is the engine's.'''
+# The compile and JIT caches stay at their defaults here (~/.cache/vllm, /tmp/torchinductor_$USER, ~/.triton/cache),
+# warm since the box was set up; another node names them (deploy/profiles/a100-40gb.toml).
+engine_caches = ""
+stt_caches = ""

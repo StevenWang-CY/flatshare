@@ -1,0 +1,16 @@
+[Unit]
+Description=Leaseholder tunnel from cyan to GPU node %i: its engine, STT and TTS on %t/lh/%i-*.sock
+Documentation=https://github.com/StevenWang-CY/leaseholder/blob/main/ops/RUNBOOK.md
+
+[Service]
+# deploy/bin/lh-tunnel: one socket here per socket of the node's, each through SSH sessions of a key that the node
+# lets run only the bridge to its socket (deploy/authorize-tunnel.sh). The SSH target (user@host) is host-specific
+# and lives outside the repository, as LH_TUNNEL_TARGET in tunnel-%i.env.
+Type=notify
+EnvironmentFile=%h/.config/leaseholder/tunnel-%i.env
+ExecStart=/usr/bin/python3 %h/leaseholder/src/deploy/bin/lh-tunnel %i
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

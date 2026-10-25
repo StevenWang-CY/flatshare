@@ -1,0 +1,9 @@
+{{text.stt_header}}
+# lh-stt.service runs `vllm serve --config <this file>`. About 2.4 GiB of GPU memory.
+model: openai/whisper-large-v3-turbo
+# The measured weights, pinned as in engine.yaml.
+revision: 41f01f3fe87f28c78e2fbf8b568835947dd65ed9
+# No host or port: lh-stt.service serves it on its Unix socket (--uds).
+gpu-memory-utilization: {{stt.gpu_memory_utilization}}
+max-num-seqs: 8
+disable-uvicorn-access-log: true

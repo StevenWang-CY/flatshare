@@ -1,5 +1,5 @@
 [Unit]
-Description=Leaseholder LLM engine: vLLM 0.32, Qwen3-4B-Instruct-2507-FP8 on 127.0.0.1:8000
+Description=Leaseholder LLM engine: vLLM 0.32, Qwen3-4B-Instruct-2507-FP8 on %t/lh/engine.sock
 Documentation=https://github.com/StevenWang-CY/leaseholder/blob/main/ops/RUNBOOK.md
 PartOf=leaseholder.target
 # Start after the audio servers so vLLM's free-memory check sees them resident.
@@ -13,25 +13,32 @@ WorkingDirectory=%h/leaseholder
 # DeepGEMM's FP8 kernels JIT-compile with nvcc >= 13.0. FlashInfer's JIT also needs curand headers, which the
 # CUDA 13.0 toolkit on this host lacks; bootstrap.sh links the venv's copies into cache/curand_include.
 Environment=CUDA_HOME=/usr/local/cuda-13.0
-# vLLM's /server_info lists the venv's packages with `uv pip list` when the venv has no pip, so uv (in ~/.local/bin)
-# is on the path and VIRTUAL_ENV names the venv; without them the endpoint answers 500.
+# vLLM's /server_info (the measurement drop-in's, deploy/phastform/measure) lists the venv's packages with `uv pip list`
+# when the venv has no pip, so uv (in ~/.local/bin) is on the path and VIRTUAL_ENV names the venv; without them the
+# endpoint answers 500.
 Environment=PATH=%h/leaseholder/venvs/engine/bin:/usr/local/cuda-13.0/bin:/usr/local/bin:/usr/bin:/bin:%h/.local/bin
 Environment=VIRTUAL_ENV=%h/leaseholder/venvs/engine
 Environment=FLASHINFER_EXTRA_CUDAFLAGS=-I%h/leaseholder/cache/curand_include
 Environment=FLASHINFER_EXTRA_CFLAGS=-I%h/leaseholder/cache/curand_include
 Environment=FLASHINFER_WORKSPACE_BASE=%h/leaseholder/cache/flashinfer
 Environment=HF_HUB_OFFLINE=1
-# Dev mode exposes /reset_prefix_cache, which experiments use between load levels. The server binds loopback only.
-Environment=VLLM_SERVER_DEV_MODE=1
 # Keep idle HTTP connections for 60 s (vLLM's default is 5 s), so the gateway's pooled connections survive the
 # seconds between voice turns instead of being reopened for most of them.
 Environment=VLLM_HTTP_TIMEOUT_KEEP_ALIVE=60
+# The engine serves on a Unix socket in a directory only this user may enter: vLLM's --api-key guards only its /v1,
+# /v2, /inference and /cohere routes, and every user of the host reaches its loopback. vLLM binds the path without
+# removing the file a killed engine leaves (launchers/launcher.py, create_server_unix_socket), so the unit removes it
+# first. The ZMQ sockets between its API server and its engine core go there too (VLLM_RPC_BASE_PATH; /tmp by default).
+Environment=LH_ENGINE_SOCKET=%t/lh/engine.sock
+Environment=VLLM_RPC_BASE_PATH=%t/lh
+ExecStartPre=/usr/bin/install -d -m 0700 %t/lh
+ExecStartPre=/usr/bin/rm -f ${LH_ENGINE_SOCKET}
 ExecStartPre=%h/leaseholder/src/deploy/bin/gpu-guard
 # Variants add engine flags in LH_ENGINE_FLAGS (deploy/phastform/variant.sh use NAME FLAG...); flags on the command
 # line beat engine.yaml.
 Environment=LH_ENGINE_FLAGS=
-ExecStart=%h/leaseholder/venvs/engine/bin/vllm serve --config %h/leaseholder/src/deploy/phastform/engine.yaml $LH_ENGINE_FLAGS
-ExecStartPost=%h/leaseholder/src/deploy/bin/wait-healthy http://127.0.0.1:8000/health 1200
+ExecStart=%h/leaseholder/venvs/engine/bin/vllm serve --config %h/leaseholder/src/deploy/phastform/engine.yaml --uds ${LH_ENGINE_SOCKET} $LH_ENGINE_FLAGS
+ExecStartPost=%h/leaseholder/src/deploy/bin/wait-healthy --unix-socket ${LH_ENGINE_SOCKET} --pid=${MAINPID} http://localhost/health 1200
 # NUMA node 1 is local to the GPU. "preferred" spills to node 0 when node 1 is short: the measured cost of a remote
 # CPU tier is under 1% of pinned bandwidth.
 CPUAffinity=8-15
@@ -41,4 +48,7 @@ KillSignal=SIGINT
 TimeoutStartSec=1300
 TimeoutStopSec=90
 Restart=on-failure
-RestartSec=15
+# systemd counts RestartSec from the exit of the unit's last process, so after the GPU's teardown (7.7 s after a
+# SIGKILL in the W8 engine-kill drill): it is pure wait before a start that takes about 90 s, and StartLimitBurst=3
+# in 30 min ends a crash loop whatever it is.
+RestartSec=5

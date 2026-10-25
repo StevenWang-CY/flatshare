@@ -1,0 +1,7 @@
+# The engine environment for a GPU node whose driver is 525-579 (docs/HARDWARE.md): vLLM 0.32.0's CUDA 12.9 wheel,
+# which pins torch 2.13.0 (+cu129 through --torch-backend cu129), with the audio extra as on the box.
+vllm[audio] @ https://github.com/vllm-project/vllm/releases/download/v0.32.0/vllm-0.32.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl
+# CUDA 12.9's compiler and headers for FlashInfer's JIT on a host without a CUDA 12.9 toolkit, at the runtime's
+# major.minor, which CCCL checks (the box's lock carries CUDA 13.0's for the same reason).
+nvidia-cuda-nvcc-cu12==12.9.*
+nvidia-cuda-cccl-cu12==12.9.*

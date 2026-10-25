@@ -1,0 +1,975 @@
+#!/usr/bin/env python3
+"""lh-svc: the repository's systemd user units on a host without a systemd user manager.
+
+    lh-svc systemctl [--user] COMMAND [OPTIONS] [UNIT...]     what deploy/bin/shims/systemctl runs
+    lh-svc journalctl [--user] -u UNIT [--since T] [--until T] [-o cat|short-unix|short]
+    lh-svc run UNIT                                            one unit's runner, which `start` spawns
+
+A container, or a host where lingering cannot be turned on, has no systemd user manager to run the units. With
+deploy/bin/shims first on PATH, `systemctl` and `journalctl` are this program, so that variant.sh, install.sh,
+campaign.sh and lh-bench e2 run work unchanged. It reads each unit and its drop-ins (UNIT.d/*.conf, in name order)
+from ~/.config/systemd/user, where install.sh and variant.sh link them, afresh at every command, and implements the
+directives the repository's units use: Type=exec, simple or notify (the main process's READY=1 on NOTIFY_SOCKET is
+its start, as sd_notify sends it); ExecStartPre, ExecStart, ExecStartPost, ExecStop and
+ExecStopPost (an empty assignment resets the list; a leading `-` ignores a command's failure); Environment and
+EnvironmentFile (`-` for an optional file); WorkingDirectory; CPUAffinity; NUMAPolicy=preferred with NUMAMask
+(through numactl, when the host has it; otherwise the journal says it was not applied); KillSignal, TimeoutStartSec
+and TimeoutStopSec; Restart (no, on-failure, always), RestartSec, StartLimitIntervalSec and StartLimitBurst; and
+Wants, Requires, BindsTo, PartOf and After among the units, a target's Wants included; a unit that Wants= names and
+that does not exist is left out, as systemd leaves it (a tunnel a single host has none of), where one Requires=
+or BindsTo= names fails the start. A socket unit starts and stops as a target does, holding no listener: the
+service it would pass its sockets to binds its own (the gateway does without LISTEN_FDS). The specifiers %h,
+%t, %u, %U and %% and systemd's $NAME (a word of its own, split at whitespace) and ${NAME} (in place) expansions
+apply to the command lines.
+
+Each started unit has a runner (`lh-svc run UNIT`, in a session of its own) that runs its commands, with
+LH_SVC_UNIT=UNIT in their environment where systemd would put them in the unit's cgroup, relays their output into
+the unit's journal with UTC times, restarts it as Restart says and stops it on SIGTERM. `start` returns
+once a unit's ExecStartPost commands have succeeded, as systemd's does, and fails as systemd's does when it cannot;
+`stop` returns only once every process it stops has exited: the unit's own (KillSignal, then SIGKILL after
+TimeoutStopSec), those of the units bound to it or part of it, and a target's units with the target. The state is in
+$XDG_STATE_HOME/lh-svc (default ~/.local/state/lh-svc): UNIT.json and the journals, log/UNIT.log.
+
+Standard library only, for a bare host, and the host's own python3, 3.10 (Ubuntu 22.04's) or newer: the shims run
+it before any venv exists. Linux applies CPUAffinity; elsewhere (the tests' hosts) it is recorded only.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import fcntl
+import json
+import os
+import pwd
+import re
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone  # timezone.utc: Python 3.10 has no datetime.UTC
+from pathlib import Path
+
+DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+LISTS = {
+    "ExecStartPre",
+    "ExecStart",
+    "ExecStartPost",
+    "ExecStop",
+    "ExecStopPost",
+    "Environment",
+    "EnvironmentFile",
+    "Wants",
+    "Requires",
+    "BindsTo",
+    "PartOf",
+    "After",
+    "Before",
+}
+"""Directives that accumulate over the unit file and its drop-ins; an empty assignment clears them."""
+SECONDS = re.compile(r"(\d+(?:\.\d+)?)\s*(ms|s|sec|min|m|h)?$")
+NAME = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+ACTIVE = ("active", "activating", "deactivating", "reloading")
+
+
+class ServiceError(Exception):
+    pass
+
+
+def home() -> Path:
+    return Path(os.environ.get("HOME") or pwd.getpwuid(os.getuid()).pw_dir)
+
+
+def runtime_dir() -> Path:
+    """%t: XDG_RUNTIME_DIR, else a private directory under the state."""
+    if value := os.environ.get("XDG_RUNTIME_DIR"):
+        return Path(value)
+    path = state_dir() / "run"
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return path
+
+
+def unit_dir() -> Path:
+    return home() / ".config" / "systemd" / "user"
+
+
+def state_dir() -> Path:
+    base = os.environ.get("XDG_STATE_HOME") or str(home() / ".local" / "state")
+    path = Path(base) / "lh-svc"
+    (path / "log").mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def unit_name(name: str) -> str:
+    return name if "." in name else f"{name}.service"
+
+
+def passive(name: str) -> bool:
+    return unit_name(name).endswith((".target", ".socket"))
+
+
+# Unit files.
+
+
+@dataclass
+class Unit:
+    name: str
+    files: list[Path]
+    values: dict[str, list[str]] = field(default_factory=dict)
+
+    def last(self, key: str, default: str = "") -> str:
+        values = self.values.get(key)
+        return values[-1] if values else default
+
+    def words(self, key: str) -> list[str]:
+        return [word for value in self.values.get(key, []) for word in value.split()]
+
+    @property
+    def passive(self) -> bool:
+        """A target, or a socket unit: started and stopped with no process of its own."""
+        return passive(self.name)
+
+    def seconds(self, key: str, default: float) -> float:
+        text = self.last(key)
+        if not text:
+            return default
+        if text == "infinity":
+            return float("inf")
+        match = SECONDS.match(text.strip())
+        if not match:
+            raise ServiceError(f"{self.name}: {key}={text} is not a duration")
+        scale = {"ms": 0.001, "min": 60, "m": 60, "h": 3600}.get(match[2] or "s", 1)
+        return float(match[1]) * scale
+
+
+def load(name: str) -> Unit:
+    """The unit and its drop-ins, as systemd reads them: later assignments win, lists accumulate."""
+    name = unit_name(name)
+    path = unit_dir() / name
+    if not path.exists():
+        raise ServiceError(f"Unit {name} not found.")
+    dropins = sorted((unit_dir() / f"{name}.d").glob("*.conf"))
+    unit = Unit(name, [path, *dropins])
+    for file in unit.files:
+        text = file.read_text().replace("\\\n", " ")
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line[0] in "#;" or line.startswith("["):
+                continue
+            key, sep, value = line.partition("=")
+            if not sep:
+                continue
+            key, value = key.strip(), value.strip()
+            if key in LISTS:
+                if value:
+                    unit.values.setdefault(key, []).append(value)
+                else:
+                    unit.values[key] = []
+            else:
+                unit.values[key] = [value]
+    return unit
+
+
+def specifiers(text: str) -> str:
+    replace = {
+        "h": str(home()),
+        "t": str(runtime_dir()),
+        "u": pwd.getpwuid(os.getuid()).pw_name,
+        "U": str(os.getuid()),
+        "%": "%",
+    }
+
+    def one(match: re.Match[str]) -> str:
+        if match[1] not in replace:
+            raise ServiceError(f"specifier %{match[1]} is not supported")
+        return replace[match[1]]
+
+    return re.sub(r"%(.)", one, text)
+
+
+def environment(unit: Unit) -> dict[str, str]:
+    """The environment a unit's commands get: a user manager's own, then its EnvironmentFile and Environment."""
+    user = pwd.getpwuid(os.getuid())
+    env = {
+        "HOME": str(home()),
+        "USER": user.pw_name,
+        "LOGNAME": user.pw_name,
+        "SHELL": user.pw_shell or "/bin/sh",
+        "PATH": DEFAULT_PATH,
+        "XDG_RUNTIME_DIR": str(runtime_dir()),
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+        # What a unit's cgroup says under systemd: deploy/bin/gpu-guard tells the box's own servers by it.
+        "LH_SVC_UNIT": unit.name,
+    }
+    for value in unit.values.get("EnvironmentFile", []):
+        optional = value.startswith("-")
+        path = Path(specifiers(value.removeprefix("-")))
+        if not path.exists():
+            if optional:
+                continue
+            raise ServiceError(f"{unit.name}: no EnvironmentFile {path}")
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith(("#", ";")):
+                continue
+            key, sep, item = line.removeprefix("export ").partition("=")
+            if sep:
+                item = item.strip()
+                if len(item) >= 2 and item[0] == item[-1] and item[0] in "\"'":
+                    item = item[1:-1]
+                env[key.strip()] = item
+    for value in unit.values.get("Environment", []):
+        for assignment in shlex.split(specifiers(value)):
+            key, sep, item = assignment.partition("=")
+            if sep:
+                env[key] = item
+    return env
+
+
+def command(line: str, env: dict[str, str]) -> tuple[list[str], bool]:
+    """An Exec line as argv, and whether its failure is ignored (a leading `-`)."""
+    ignore = False
+    while line and line[0] in "-@+!:":
+        ignore = ignore or line[0] == "-"
+        line = line[1:]
+    argv: list[str] = []
+    for word in shlex.split(specifiers(line)):
+        whole = NAME.fullmatch(word)
+        if whole and whole[2]:  # $NAME, a word of its own: its value split at whitespace
+            argv += env.get(whole[2], "").split()
+        else:
+            argv.append(NAME.sub(lambda m: env.get(m[1] or m[2], ""), word.replace("$$", "\0")))
+            argv[-1] = argv[-1].replace("\0", "$")
+    if not argv:
+        raise ServiceError(f"empty command line {line!r}")
+    return argv, ignore
+
+
+def cpus(text: str) -> set[int]:
+    chosen: set[int] = set()
+    for part in text.replace(",", " ").split():
+        low, _, high = part.partition("-")
+        chosen.update(range(int(low), int(high or low) + 1))
+    return chosen
+
+
+# State.
+
+
+def state_path(name: str) -> Path:
+    return state_dir() / f"{name}.json"
+
+
+def read_state(name: str) -> dict:
+    try:
+        return json.loads(state_path(name).read_text())
+    except (OSError, ValueError):
+        return {"state": "inactive"}
+
+
+BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
+
+
+def boot_id() -> str | None:
+    """This boot's id (Linux), which a state file keeps: after a reboot its pids name other processes, or none."""
+    try:
+        return BOOT_ID.read_text().strip()
+    except OSError:
+        return None
+
+
+def started_at(pid: object) -> str | None:
+    """Process ``pid``'s start time (/proc/PID/stat's field 22, clock ticks since boot), which tells it from a later
+    process that reuses its pid; None where /proc does not say (another system, or no such process)."""
+    if not isinstance(pid, int) or not pid:
+        return None
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return None
+    return stat.rsplit(") ", 1)[1].split()[19]
+
+
+def write_state(name: str, **values: object) -> None:
+    # Each pid with its start time, and the boot: a process of this unit's is the one recorded, not its pid's next.
+    for key in ("runner", "main"):
+        if key in values:
+            values[f"{key}_start"] = started_at(values[key])
+    values["boot"] = boot_id()
+    state = read_state(name) | values
+    path = state_path(name)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state))
+    temporary.replace(path)
+
+
+def alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:  # a zombie child of a runner that is gone is not alive
+        with open(f"/proc/{pid}/stat") as stat:
+            return stat.read().split(") ", 1)[1][0] != "Z"
+    except OSError:
+        return True
+
+
+def owned(state: dict, key: str) -> int | None:
+    """The pid a unit's state names as its KEY (runner or main) while that process is still the one recorded: alive,
+    on this boot, started when it was. After a reboot, or once the pid is reused, it names another process or none."""
+    pid = state.get(key)
+    if not alive(pid):
+        return None
+    if state.get("boot") and state.get("boot") != boot_id():
+        return None
+    recorded = state.get(f"{key}_start")
+    if recorded and recorded != started_at(pid):
+        return None
+    return pid
+
+
+def current(name: str) -> str:
+    """The unit's state, as is-active prints it: a runner that died leaves its last state out of date, and a reboot
+    every state."""
+    state = read_state(name)
+    if state.get("boot") and state.get("boot") != boot_id():
+        return "inactive"  # nothing of an earlier boot runs
+    running = state.get("state") in ACTIVE and not passive(name)
+    if running and not owned(state, "runner"):
+        return "failed" if state.get("state") != "deactivating" else "inactive"
+    return state.get("state", "inactive")
+
+
+@contextlib.contextmanager
+def locked(name: str):
+    with open(state_dir() / f"{name}.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+# The journal.
+
+
+class Journal:
+    def __init__(self, name: str) -> None:
+        self.path = state_dir() / "log" / f"{name}.log"
+        self.lock = threading.Lock()
+
+    def write(self, pid: int, message: str) -> None:
+        with self.lock, self.path.open("a") as log:
+            log.write(f"{time.time():.6f}\t{pid}\t{message}\n")
+
+    def relay(self, stream, pid: int) -> threading.Thread:
+        def copy() -> None:
+            for raw in iter(stream.readline, b""):
+                self.write(pid, raw.decode(errors="replace").rstrip("\n"))
+            stream.close()
+
+        thread = threading.Thread(target=copy, daemon=True)
+        thread.start()
+        return thread
+
+
+# The runner.
+
+
+class Notify:
+    """NOTIFY_SOCKET for a Type=notify unit's main process, in a short private directory (a socket's path has
+    room for 104 bytes on macOS, 108 on Linux): its datagrams say how it is, READY=1 that it serves."""
+
+    def __init__(self) -> None:
+        self.dir = tempfile.mkdtemp(prefix="lh-svc-")
+        self.path = os.path.join(self.dir, "notify")
+        self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        self.socket.bind(self.path)
+        self.socket.settimeout(0.1)
+
+    def ready(self) -> bool:
+        """Whether a READY=1 came within 0.1 s."""
+        try:
+            data = self.socket.recv(4096)
+        except TimeoutError:
+            return False
+        return b"READY=1" in data.split(b"\n")
+
+    def close(self) -> None:
+        self.socket.close()
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+
+class Runner:
+    def __init__(self, name: str) -> None:
+        self.name = unit_name(name)
+        self.journal = Journal(self.name)
+        self.stopping = threading.Event()
+        self.main: subprocess.Popen | None = None
+
+    def say(self, message: str) -> None:
+        self.journal.write(os.getpid(), f"lh-svc: {message}")
+
+    def spawn(self, unit: Unit, line: str, env: dict[str, str]) -> tuple[subprocess.Popen, bool]:
+        """Start one of the unit's commands in a process group of its own, its output into the journal."""
+        argv, ignore = command(line, env)
+        if affinity := unit.last("CPUAffinity"):
+            if shutil.which("taskset"):
+                argv = ["taskset", "-c", ",".join(map(str, sorted(cpus(affinity)))), *argv]
+            else:
+                self.say(f"CPUAffinity={affinity} not applied: the host has no taskset")
+        policy, mask = unit.last("NUMAPolicy"), unit.last("NUMAMask")
+        if policy == "preferred" and mask:
+            if shutil.which("numactl"):
+                argv = ["numactl", f"--preferred={min(cpus(mask))}", "--", *argv]
+            else:
+                self.say(
+                    f"NUMAPolicy=preferred NUMAMask={mask} not applied: the host has no numactl"
+                )
+        workdir = specifiers(unit.last("WorkingDirectory"))
+        if workdir.startswith("-"):
+            workdir = workdir[1:] if Path(workdir[1:]).is_dir() else ""
+        try:
+            process = subprocess.Popen(
+                argv,
+                env=env,
+                cwd=workdir or str(home()),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            raise ServiceError(f"{argv[0]}: {exc}") from None
+        self.journal.relay(process.stdout, process.pid)
+        return process, ignore
+
+    def control(self, unit: Unit, key: str, env: dict[str, str], deadline: float) -> bool:
+        """Run each of a unit's KEY commands to its end; False at the first that fails or outlasts the deadline."""
+        stoppable = key in ("ExecStartPre", "ExecStartPost")
+        for line in unit.values.get(key, []):
+            process, ignore = self.spawn(unit, line, env)
+            while process.poll() is None:
+                if time.time() > deadline or (stoppable and self.stopping.is_set()):
+                    kill_group(process.pid, signal.SIGKILL)
+                    process.wait()
+                    self.say(
+                        f"{key} {'timed out' if time.time() > deadline else 'stopped'}: {line}"
+                    )
+                    return False
+                time.sleep(0.05)
+            if process.returncode and not ignore:
+                self.say(f"{key} failed with status {process.returncode}: {line}")
+                return False
+        return True
+
+    def run(self) -> int:
+        signal.signal(signal.SIGTERM, lambda *_: self.stop())
+        starts: list[float] = []
+        while True:
+            unit = load(self.name)
+            interval = unit.seconds("StartLimitIntervalSec", 10.0)
+            burst = int(unit.last("StartLimitBurst", "5"))
+            now = time.time()
+            starts = [t for t in starts if now - t < interval] + [now]
+            if len(starts) > burst:
+                self.say("start request repeated too quickly: failed (start-limit-hit)")
+                write_state(self.name, state="failed", result="start-limit-hit", runner=None)
+                return 1
+            outcome = self.once(unit)
+            if self.stopping.is_set() or outcome is None:
+                write_state(self.name, state="inactive", runner=None, main=None)
+                return 0
+            restart = unit.last("Restart", "no")
+            if restart == "always" or (restart == "on-failure" and outcome != 0):
+                self.say(f"scheduled restart in {unit.seconds('RestartSec', 0.1):g} s")
+                write_state(self.name, state="activating")
+                if self.stopping.wait(unit.seconds("RestartSec", 0.1)):
+                    write_state(self.name, state="inactive", runner=None)
+                    return 0
+                continue
+            write_state(
+                self.name,
+                state="failed" if outcome else "inactive",
+                result="exit-code" if outcome else "success",
+                runner=None,
+                main=None,
+            )
+            return outcome
+
+    def once(self, unit: Unit) -> int | None:
+        """One start: the unit's exit status, or None when it was stopped."""
+        env = environment(unit)
+        deadline = time.time() + unit.seconds("TimeoutStartSec", 90.0)
+        write_state(self.name, state="activating", runner=os.getpid(), main=None)
+        self.say(f"Starting {self.name}")
+        if not self.control(unit, "ExecStartPre", env, deadline):
+            self.control(unit, "ExecStopPost", env, time.time() + 30)
+            return 1
+        lines = unit.values.get("ExecStart", [])
+        if len(lines) != 1:
+            self.say(f"{self.name} has {len(lines)} ExecStart= lines, not one")
+            return 1
+        notify = Notify() if unit.last("Type", "simple") == "notify" else None
+        try:
+            main_env = env | {"NOTIFY_SOCKET": notify.path} if notify else env
+            self.main, _ = self.spawn(unit, lines[0], main_env)
+            write_state(self.name, main=self.main.pid)
+            ready = notify is None or self.ready(notify, deadline)
+        finally:
+            if notify is not None:
+                notify.close()
+        # The control commands know the main process, as systemd's do ($MAINPID: wait-healthy --pid=${MAINPID}).
+        env = env | {"MAINPID": str(self.main.pid)}
+        if (
+            not ready
+            or not self.control(unit, "ExecStartPost", env, deadline)
+            or self.main.poll() is not None
+        ):
+            self.say("start failed")
+            self.terminate(unit)
+            self.control(unit, "ExecStopPost", env, time.time() + 30)
+            return 1
+        write_state(self.name, state="active", since=time.time())
+        self.say(f"Started {self.name}")
+        while self.main.poll() is None and not self.stopping.is_set():
+            self.stopping.wait(0.2)
+        if self.stopping.is_set():
+            write_state(self.name, state="deactivating")
+            self.say(f"Stopping {self.name}")
+            self.control(unit, "ExecStop", env, time.time() + unit.seconds("TimeoutStopSec", 90.0))
+            self.terminate(unit)
+            self.control(unit, "ExecStopPost", env, time.time() + 30)
+            self.say(f"Stopped {self.name}")
+            write_state(self.name, state="inactive", runner=None, main=None)
+            return None
+        status = self.main.returncode
+        self.say(f"Main process exited, status={status}")
+        self.control(unit, "ExecStopPost", env, time.time() + 30)
+        return 0 if status == 0 else 1
+
+    def ready(self, notify: Notify, deadline: float) -> bool:
+        """A Type=notify unit's start: True once its main process says READY=1; False if it exits, the start
+        outlasts TimeoutStartSec or the unit is stopped first."""
+        assert self.main is not None
+        while not notify.ready():
+            if self.main.poll() is not None or self.stopping.is_set():
+                return False
+            if time.time() > deadline:
+                self.say("start timed out: no READY=1 from the main process")
+                return False
+        return True
+
+    def terminate(self, unit: Unit) -> None:
+        """KillSignal to the main process's group, then SIGKILL after TimeoutStopSec; returns once it is gone."""
+        if self.main is None or self.main.poll() is not None:
+            group_gone(self.main.pid if self.main else None, 0)
+            return
+        signum = getattr(signal, unit.last("KillSignal", "SIGTERM"), signal.SIGTERM)
+        kill_group(self.main.pid, signum)
+        try:
+            self.main.wait(timeout=unit.seconds("TimeoutStopSec", 90.0))
+        except subprocess.TimeoutExpired:
+            self.say("stop timed out: killing")
+            kill_group(self.main.pid, signal.SIGKILL)
+            self.main.wait()
+        group_gone(self.main.pid, 5.0)
+
+    def stop(self) -> None:
+        self.stopping.set()
+
+
+def kill_group(pid: int, signum: int) -> None:
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pid, signum)
+
+
+KILLED_GONE_S = 30.0
+"""How long a group SIGKILLed may take to be gone: a process exits only once the kernel has released what it held
+(an engine core its GPU memory and /dev/shm region), and is gone once its parent has reaped it."""
+
+
+def group_gone(pgid: int | None, timeout: float) -> None:
+    """Wait for every process of the group ``pgid`` (the main process's own) to exit, SIGKILL what is left after
+    ``timeout``, and wait for that to be gone too: a stop returns once the unit's processes have exited, as systemd's
+    once the unit's cgroup is empty, so that the next start does not meet the last one's engine still exiting."""
+    if not pgid:
+        return
+
+    def wait(seconds: float) -> bool:
+        deadline = time.time() + seconds
+        while True:
+            try:
+                os.killpg(pgid, 0)
+            except ProcessLookupError:
+                return True
+            except PermissionError:
+                pass  # macOS answers so for a group of zombies, which are still there
+            if time.time() >= deadline:
+                return False
+            time.sleep(0.05)
+
+    if not wait(timeout):
+        kill_group(pgid, signal.SIGKILL)
+        wait(KILLED_GONE_S)
+
+
+# systemctl.
+
+
+def closure(names: list[str], keys: tuple[str, ...]) -> list[str]:
+    """The units ``names`` pull in through ``keys`` (and a target's Wants), themselves included. A unit only
+    wanted (Wants=) that does not exist is left out, as systemd leaves it; any other that is missing fails."""
+    seen: list[str] = []
+    todo = [(unit_name(n), False) for n in names]
+    while todo:
+        name, wanted = todo.pop(0)
+        if name in seen:
+            continue
+        if wanted and not (unit_dir() / name).exists():
+            continue
+        seen.append(name)
+        unit = load(name)
+        todo += [(unit_name(n), key == "Wants") for key in keys for n in unit.words(key)]
+    return seen
+
+
+def loadable(name: str) -> Unit | None:
+    """The unit, or None where its file does not load (a link that dangles, a unit that is not there)."""
+    try:
+        return load(name)
+    except (ServiceError, OSError):
+        return None
+
+
+def ordered(names: list[str], tolerant: bool = False) -> list[str]:
+    """``names`` in start order: each after the units it is After= (and before those it is Before=); with
+    ``tolerant``, a unit that does not load is ordered by nothing (a stop's, which stops what it can)."""
+    units = {name: (loadable(name) or Unit(name, [])) if tolerant else load(name) for name in names}
+    after = {
+        name: {unit_name(n) for n in unit.words("After")} & set(names)
+        for name, unit in units.items()
+    }
+    for name, unit in units.items():
+        for other in unit.words("Before"):
+            if unit_name(other) in after:
+                after[unit_name(other)].add(name)
+    order: list[str] = []
+    while len(order) < len(names):
+        ready = [n for n in names if n not in order and after[n] <= set(order)]
+        if not ready:
+            raise ServiceError(
+                f"ordering cycle among {', '.join(n for n in names if n not in order)}"
+            )
+        order += ready
+    return order
+
+
+def start(names: list[str]) -> int:
+    requested = [unit_name(n) for n in names]
+    pulled = closure(requested, ("Wants", "Requires", "BindsTo"))
+    failed: set[str] = set()
+    status = 0
+    for name in ordered(pulled):
+        unit = load(name)
+        needs = {unit_name(n) for key in ("Requires", "BindsTo") for n in unit.words(key)}
+        if needs & failed:
+            failed.add(name)
+            continue
+        # The lock covers the decision and the runner's spawn, not the wait: a stop meanwhile takes the lock and
+        # ends the start, as systemd's cancels the start job, rather than waiting out its TimeoutStartSec.
+        with locked(name):
+            if unit.passive:
+                write_state(name, state="active", since=time.time())
+                continue
+            state = current(name)
+            if state == "active":
+                continue
+            # Started is having reached active since this request, as systemd's start of a unit that exits
+            # at once succeeds: the unit may be restarting, or have failed, by the time this looks.
+            asked = time.time()
+
+            def started(values: dict, asked: float = asked) -> bool:
+                return values.get("state") == "active" or (values.get("since") or 0) >= asked
+
+            runner = None
+            if state != "activating":
+                runner = subprocess.Popen(
+                    [sys.executable, os.path.abspath(__file__), "run", name],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                write_state(name, state="activating", runner=runner.pid, main=None, result=None)
+        # The wait, unlocked.
+        deadline = time.time() + unit.seconds("TimeoutStartSec", 90.0) + 10
+        while time.time() < deadline:
+            values = read_state(name)
+            gone = runner.poll() is not None if runner else not owned(values, "runner")
+            if started(values) or values.get("state") in ("failed", "inactive") or gone:
+                break
+            time.sleep(0.05)
+        if not started(read_state(name)):
+            failed.add(name)
+            if name in requested:
+                print(
+                    f"Job for {name} failed because the control process exited with error code.\n"
+                    f'See "journalctl --user -u {name}" for details.',
+                    file=sys.stderr,
+                )
+                status = 1
+    return status
+
+
+def stop(names: list[str]) -> int:
+    requested = [unit_name(n) for n in names]
+    # A unit that does not load (a link that dangles beside the others) binds nothing; a requested one that neither
+    # loads nor runs is an error, as systemd's, once the others have stopped.
+    units = {
+        p.name: loadable(p.name)
+        for p in unit_dir().iterdir()
+        if p.suffix in (".service", ".target", ".socket")
+    }
+    missing = [
+        name
+        for name in requested
+        if units.get(name) is None
+        and loadable(name) is None
+        and not owned(read_state(name), "runner")
+    ]
+    bound: list[str] = [name for name in requested if name not in missing]
+    changed = True
+    while changed:  # the units part of, or bound to, a unit that stops stop with it
+        changed = False
+        for name, unit in units.items():
+            if name in bound or unit is None:
+                continue
+            if {unit_name(n) for key in ("PartOf", "BindsTo") for n in unit.words(key)} & set(
+                bound
+            ):
+                bound.append(name)
+                changed = True
+    for name in reversed(ordered(bound, tolerant=True)):
+        with locked(name):
+            if passive(name):
+                write_state(name, state="inactive")
+                continue
+            state = read_state(name)
+            runner = owned(state, "runner")  # not a process that took a stale pid since
+            if runner:
+                os.kill(runner, signal.SIGTERM)
+                unit = loadable(name) or Unit(name, [])
+                deadline = time.time() + unit.seconds("TimeoutStopSec", 90.0) + 30
+                while alive(runner) and time.time() < deadline:
+                    time.sleep(0.05)
+                if alive(runner):
+                    kill_group(runner, signal.SIGKILL)
+            group_gone(owned(state, "main"), 5.0)
+            if read_state(name).get("state") != "failed":
+                write_state(name, state="inactive", runner=None, main=None)
+    for name in missing:
+        print(f"Failed to stop {name}: Unit {name} not loaded.", file=sys.stderr)
+    return 5 if missing else 0
+
+
+def show(names: list[str], properties: list[str], value_only: bool) -> int:
+    for name in names:
+        unit = load(name)
+        for prop in properties or ["Environment", "ActiveState"]:
+            if (
+                prop == "Environment"
+            ):  # the Environment= assignments, without the files', as systemd
+                text = " ".join(
+                    shlex.quote(assignment)
+                    for value in unit.values.get("Environment", [])
+                    for assignment in shlex.split(specifiers(value))
+                )
+            elif prop == "ActiveState":
+                text = current(unit.name)
+            elif prop == "ActiveEnterTimestamp":
+                since = read_state(unit.name).get("since")
+                text = (
+                    datetime.fromtimestamp(since, timezone.utc).strftime(  # noqa: UP017 (3.10)
+                        "%a %Y-%m-%d %H:%M:%S UTC"
+                    )
+                    if since
+                    else ""
+                )
+            else:
+                text = unit.last(prop)
+            print(text if value_only else f"{prop}={text}")
+    return 0
+
+
+def systemctl(argv: list[str]) -> int:
+    args = [a for a in argv if a not in ("--user", "--no-pager", "--no-block")]
+    quiet = any(a in ("-q", "--quiet") for a in args)
+    value_only = "--value" in args
+    properties: list[str] = []
+    words: list[str] = []
+    it = iter(args)
+    for arg in it:
+        if arg in ("-q", "--quiet", "--value"):
+            continue
+        if arg in ("-p", "--property"):
+            properties += next(it, "").split(",")
+        elif arg.startswith("--property="):
+            properties += arg.split("=", 1)[1].split(",")
+        else:
+            words.append(arg)
+    if not words:
+        print("systemctl (lh-svc): a command is needed", file=sys.stderr)
+        return 2
+    verb, names = words[0], words[1:]
+    try:
+        if verb == "start":
+            return start(names)
+        if verb == "stop":
+            return stop(names)
+        if verb == "restart":
+            stop(names)
+            return start(names)
+        if verb == "is-active":
+            states = [current(unit_name(n)) for n in names]
+            if not quiet:
+                print("\n".join(states))
+            return 0 if "active" in states else 3
+        if verb == "is-failed":
+            states = [current(unit_name(n)) for n in names]
+            if not quiet:
+                print("\n".join(states))
+            return 0 if "failed" in states else 1
+        if verb == "reset-failed":
+            for path in state_dir().glob("*.json"):
+                name = path.stem
+                if (not names or name in {unit_name(n) for n in names}) and current(
+                    name
+                ) == "failed":
+                    write_state(name, state="inactive", result=None)
+            return 0
+        if verb in ("daemon-reload", "enable", "disable", "import-environment"):
+            return 0
+        if verb == "show":
+            return show(names, properties, value_only)
+        if verb == "cat":
+            for name in names:
+                for file in load(name).files:
+                    print(f"# {file}\n{file.read_text()}")
+            return 0
+        if verb == "is-system-running":
+            print("lh-svc")
+            return 0
+        print(f"systemctl (lh-svc): {verb} is not supported", file=sys.stderr)
+        return 2
+    except ServiceError as exc:
+        print(f"Failed to {verb} {' '.join(names)}: {exc}", file=sys.stderr)
+        return 5
+
+
+# journalctl.
+
+
+def when(text: str) -> float:
+    """--since and --until: @EPOCH, YYYY-MM-DD HH:MM[:SS] (local time), today, now, or -N(s|min|h) ago."""
+    text = text.strip()
+    if text.startswith("@"):
+        return float(text[1:])
+    if text == "now":
+        return time.time()
+    if text == "today":
+        return time.mktime((*time.localtime()[:3], 0, 0, 0, 0, 0, -1))
+    if match := re.fullmatch(r"-(\d+)\s*(s|sec|m|min|h)", text):
+        return (
+            time.time()
+            - int(match[1]) * {"s": 1, "sec": 1, "m": 60, "min": 60, "h": 3600}[match[2]]
+        )
+    for form in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        with contextlib.suppress(ValueError):
+            return time.mktime(time.strptime(text, form))
+    raise ServiceError(f"Failed to parse timestamp: {text}")
+
+
+def journalctl(argv: list[str]) -> int:
+    units: list[str] = []
+    since, until, output, lines = None, None, "short", None
+    it = iter(argv)
+    try:
+        for arg in it:
+            option, eq, inline = arg.partition("=")
+            value = inline if eq else None
+            if option in ("--user", "--no-pager", "-q", "--quiet", "-a", "--all"):
+                continue
+            if option in ("-u", "--unit"):
+                units.append(unit_name(value or next(it)))
+            elif option in ("-S", "--since"):
+                since = when(value or next(it))
+            elif option in ("-U", "--until"):
+                until = when(value or next(it))
+            elif option in ("-o", "--output"):
+                output = value or next(it)
+            elif option in ("-n", "--lines"):
+                lines = int(value or next(it))
+            else:
+                raise ServiceError(f"{arg} is not supported")
+    except (ServiceError, StopIteration, ValueError) as exc:
+        print(f"journalctl (lh-svc): {exc}", file=sys.stderr)
+        return 1
+    host = socket.gethostname().split(".")[0]
+    entries = []
+    for name in units:
+        path = state_dir() / "log" / f"{name}.log"
+        if not path.exists():
+            continue
+        for line in path.read_text(errors="replace").splitlines():
+            at, _, rest = line.partition("\t")
+            pid, _, message = rest.partition("\t")
+            try:
+                stamp = float(at)
+            except ValueError:
+                continue
+            if (since is None or stamp >= since) and (until is None or stamp <= until):
+                entries.append((stamp, name, pid, message))
+    entries.sort()
+    if lines is not None:
+        entries = entries[-lines:]
+    for stamp, name, pid, message in entries:
+        if output == "cat":
+            print(message)
+        elif output == "short-unix":
+            print(f"{stamp:.6f} {host} {name.removesuffix('.service')}[{pid}]: {message}")
+        else:
+            moment = datetime.fromtimestamp(stamp).strftime("%b %d %H:%M:%S")
+            print(f"{moment} {host} {name.removesuffix('.service')}[{pid}]: {message}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if not argv:
+        print(__doc__.split("\n\n")[1], file=sys.stderr)
+        return 2
+    tool, rest = argv[0], argv[1:]
+    if tool == "systemctl":
+        return systemctl(rest)
+    if tool == "journalctl":
+        return journalctl(rest)
+    if tool == "run" and len(rest) == 1:
+        try:
+            return Runner(rest[0]).run()
+        except ServiceError as exc:
+            Journal(unit_name(rest[0])).write(os.getpid(), f"lh-svc: {exc}")
+            write_state(unit_name(rest[0]), state="failed", result="resources", runner=None)
+            return 1
+    print(f"lh-svc: {tool} is not a command", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,42 @@
+{{text.engine_header}}
+# lh-engine.service runs `vllm serve --config <this file>`. Every experiment shares these values; a sweep
+# overrides single flags on the command line (vLLM gives the command line precedence over this file).
+model: {{model.name}}
+# The measured weights. The units run offline, and a download by commit writes no refs/main, so the pin is what a
+# fresh host resolves; bootstrap.sh downloads the revision named here.
+revision: {{model.revision}}
+# No host or port: lh-engine.service serves the engine on its Unix socket (--uds).
+max-model-len: {{model.max_model_len}}
+disable-uvicorn-access-log: true
+# Agents call tools: parse Qwen3's tool calls into OpenAI tool_calls (chat completions and Responses). Requests without
+# tools are unaffected.
+enable-auto-tool-choice: true
+tool-call-parser: hermes
+{{engine.extra}}
+
+{{text.pool}}
+kv-cache-memory: {{engine.kv_cache_memory}}
+gpu-memory-utilization: {{engine.gpu_memory_utilization}}
+enable-prefix-caching: true
+
+# Priority orders the waiting queue and picks the running request to preempt when the KV cache is full; it never
+# preempts running work to admit a waiting request (vLLM #40004). The step cap bounds how long running decodes wait
+# behind a prefill.
+scheduling-policy: priority
+max-num-batched-tokens: {{engine.max_num_batched_tokens}}
+long-prefill-token-threshold: {{engine.long_prefill_token_threshold}}
+
+# Observability: per-request cached tokens and sampled KV residency histograms. No KV cache events: they carry
+# every cached block's token ids and session id, vLLM's publisher sends them to whoever binds its TCP endpoint
+# and replays them to anyone who asks, and nothing here reads them.
+enable-prompt-tokens-details: true
+kv-cache-metrics: true
+kv-cache-metrics-sample: 0.05
+
+{{text.cpu_tier}}
+kv-transfer-config:
+  kv_connector: OffloadingConnector
+  kv_role: kv_both
+  kv_connector_extra_config:
+    cpu_bytes_to_use: {{engine.cpu_bytes_to_use}}
+    offload_prompt_only: false

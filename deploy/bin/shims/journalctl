@@ -1,0 +1,3 @@
+#!/bin/sh
+# journalctl on a host without a systemd user manager: deploy/bin/lh-svc, with deploy/bin/shims first on PATH.
+exec "$(dirname "$0")/../lh-svc" journalctl "$@"

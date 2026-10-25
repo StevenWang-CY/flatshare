@@ -4,10 +4,11 @@
 #   key=$(head -c 32 /dev/urandom | base64 | tr -d '/+=\n'); printf '%s' "$key" | sha256sum
 # Every key is described in crates/lh-gateway/README.md.
 
-# vLLM on Phastform, through lh-tunnel-phastform.
-upstream = "http://127.0.0.1:18000"
+# vLLM on Phastform, through its tunnel's socket (lh-tunnel@phastform; cyan's deploy user's uid, 1007, as below).
+upstream = "unix:/run/user/1007/lh/phastform-engine.sock"
 # The engine keeps idle connections for 60 s (VLLM_HTTP_TIMEOUT_KEEP_ALIVE in lh-engine.service), so voice turns
-# seconds apart reuse a warm connection; let go of one 5 s before the engine would.
+# seconds apart reuse a warm connection, which through the tunnel is an SSH session that is already open; let go of
+# one 5 s before the engine would.
 upstream_idle_timeout_s = 55
 log_format = "json"
 # How the class's priority reaches the upstream: X-Vllm-Priority (the default, for vLLM's priority scheduling),
@@ -17,6 +18,10 @@ log_format = "json"
 # The secret each tenant's cache_salt is derived from, so that a tenant's name does not give its salt away: 32
 # random bytes in hex, mode 600, which deploy/cyan/install.sh writes once.
 cache_salt_secret_file = "<home>/.config/leaseholder/cache-salt-secret"
+# The key GET /metrics and /metrics/engine ask for on the TCP listener, which every user of cyan reaches: one line,
+# mode 600, which deploy/cyan/install.sh writes once. Prometheus reads the same file (ops/prometheus); on the
+# voice plane's socket, private to this user, no key is asked for.
+metrics_key_file = "<home>/.config/leaseholder/metrics-key"
 
 # The host network. Other users of cyan can reach loopback, so requests here need a key.
 [[listen]]
@@ -81,11 +86,11 @@ default_class = "background"
 # queue_timeout_s = 60
 
 # Two GPU nodes instead of one upstream (crates/lh-gateway/README.md#placement): leave `upstream` out, name each node
-# with its tunnel's port, and choose how sessions are placed. E2's two-node points set this in their arm files.
+# with its tunnel's socket, and choose how sessions are placed. E2's two-node points set this in their arm files.
 # [nodes.phastform]
-# upstream = "http://127.0.0.1:18000"
+# upstream = "unix:/run/user/1007/lh/phastform-engine.sock"
 # [nodes.gray]
-# upstream = "http://127.0.0.1:28000"
+# upstream = "unix:/run/user/1007/lh/gray-engine.sock"
 #
 # [placement]
 # policy = "least-loaded"
