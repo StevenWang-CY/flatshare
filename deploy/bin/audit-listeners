@@ -23,8 +23,9 @@ sockets are reached through the file system from any namespace and are judged as
 unprivileged user namespaces they run in the host's namespace (LH_PRIVATE_NET=host, which the host's drop-ins set
 and in-private-net honours): there their engine cores' loopback TCP listeners on ephemeral ports (torch's gloo groups)
 and CUDA's @cuda-uvmfd- sockets are accepted, and counted apart, and anything else of theirs is judged as everywhere.
-The host's namespace is this user's manager's (systemd --user), or the audit's own where none runs (lh-svc): run in
-another, the audit judges nothing and exits 2, and a process of ours whose namespace it cannot read fails it.
+The host's namespace is this user's manager's (systemd --user), or the audit's own where none runs (lh-svc) or the
+kernel keeps the manager's from its user (Ubuntu 24.04's): run in another, the audit judges nothing and exits 2, and a
+process of ours whose namespace it cannot read fails it.
 deploy/phastform/smoke.sh runs it on a GPU node, and deploy/deploy.sh after each install.
 """
 
@@ -130,12 +131,21 @@ def owned(pid: str) -> bool:
         return False
 
 
+def readable_netns(pid: str) -> str | None:
+    """Process ``pid``'s network namespace, or None when it is gone or the kernel keeps it from this user."""
+    try:
+        return netns(pid)
+    except Unreadable:
+        return None
+
+
 def host_netns() -> str | None:
-    """The host's network namespace: this user's manager's (systemd --user), where one runs, else the audit's own
-    (lh-svc's hosts)."""
+    """The host's network namespace: this user's manager's (systemd --user), where one runs and its namespace is
+    readable, else the audit's own (lh-svc's hosts, and a manager the kernel keeps from its user: one started under
+    another identity is not dumpable, as on Ubuntu 24.04)."""
     for entry in PROC.iterdir():
         pid = entry.name
-        if pid.isdigit() and is_manager(pid) and owned(pid) and (space := netns(pid)):
+        if pid.isdigit() and is_manager(pid) and owned(pid) and (space := readable_netns(pid)):
             return space
     return netns("self")
 

@@ -805,6 +805,25 @@ def test_the_audit_judges_nothing_from_another_network_namespace_than_the_user_m
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root reads every namespace")
+def test_the_audit_judges_from_its_own_network_namespace_where_the_managers_is_not_readable(
+    tmp_path: Path,
+) -> None:
+    # The user manager's namespace is the host's, but the kernel may keep it from the user: a manager it started
+    # under another identity is not dumpable, as GitHub's Ubuntu 24.04 runners and the A100's Ubuntu 24.04 have it.
+    # The audit then judges from its own namespace, as where no manager runs, instead of judging nothing.
+    host = Listeners(tmp_path)
+    host.socket(f"{host.runtime}/lh/gateway.sock", "lh-gateway.service")
+    [manager] = re.findall(r"pid=(\d+)", host.manager())
+    (host.proc / manager / "ns").chmod(0)
+    try:
+        done = host.audit()
+    finally:
+        (host.proc / manager / "ns").chmod(0o755)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.startswith("audit-listeners: ok: the box's units hold 1 Unix sockets")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads every namespace")
 def test_the_audit_fails_on_a_process_of_ours_whose_network_namespace_it_cannot_read(
     tmp_path: Path,
 ) -> None:
