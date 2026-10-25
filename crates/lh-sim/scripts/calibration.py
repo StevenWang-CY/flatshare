@@ -453,7 +453,7 @@ def report(exports: Path, corpus: Path, binary: Path, out: Path) -> str:
     lines += [
         "## W2's operating points (docs/BENCHMARKS.md)",
         "",
-        "| Session trees | Requests | TTFT p50 / p90 / p99 | ITL p50 | Prompt tokens: GPU / CPU tier / computed | Preemptions |",
+        "| Agent sessions | Requests | TTFT p50 / p90 / p99 | ITL p50 | Prompt tokens: GPU / CPU tier / computed | Preemptions |",
         "|---|---|---|---|---|---|",
     ]
     for _, sessions, run in POINTS:

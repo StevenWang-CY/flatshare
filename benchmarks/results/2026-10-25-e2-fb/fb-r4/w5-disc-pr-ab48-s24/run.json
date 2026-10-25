@@ -1,0 +1,134 @@
+{
+  "kind": "e2-point",
+  "name": "w5-disc-pr-ab48-s24",
+  "status": "complete",
+  "host": "cyan",
+  "started": 1792939145.5170386,
+  "arm": {
+    "name": "w5-disc-pr-ab48-s24",
+    "arm": "9-pr-ab48",
+    "label": "vLLM PRs A and B with a 48-token window, no gateway policy, a warm-up turn opening each call",
+    "voice": {
+      "callers": 2,
+      "turns": 25,
+      "barge_in": 0.25,
+      "seed": 0,
+      "warmup_turns": 1,
+      "preemptive_generation": true,
+      "events": true
+    },
+    "agents": {
+      "sessions": 24,
+      "think_cap": 120.0,
+      "warmup": 60.0,
+      "data": "weka-x32-long",
+      "seed": 11
+    },
+    "gateway": {},
+    "engine": {
+      "variant": "make-room",
+      "flags": [
+        "--additional-config.make_room.reserve_tokens",
+        "0",
+        "--additional-config.make_room.budget_cap_tokens",
+        "48"
+      ]
+    },
+    "router": null
+  },
+  "versions": {
+    "source": "v0.3-191-g987fd09",
+    "gpu_source": {
+      "phastform": "v0.3-191-g987fd09"
+    },
+    "leaseholder_bench": "0.3.0",
+    "aiperf": "0.13.0",
+    "lh_gateway": "lh-gateway 0.3.0"
+  },
+  "save_audio": false,
+  "agents_seed": 14,
+  "kv_sample_s": null,
+  "profile": "rtx-5060-ti",
+  "engine": {
+    "server": "vllm",
+    "version": "0.32.0",
+    "pool_tokens": 36400,
+    "flags": {
+      "checked": [
+        "--scheduling-policy",
+        "--max-num-batched-tokens",
+        "--long-prefill-token-threshold",
+        "--model",
+        "--revision",
+        "--max-model-len",
+        "--scheduler-cls",
+        "--additional-config.make_room.max_preemptions_per_step",
+        "--additional-config.make_room.budget_cap",
+        "--additional-config.make_room.reserve_tokens",
+        "--additional-config.make_room.budget_cap_tokens"
+      ],
+      "unchecked": []
+    }
+  },
+  "cyan": {
+    "router": null,
+    "gateway": {
+      "restarted": false,
+      "config": {
+        "upstream": "unix:/run/user/1007/lh/phastform-engine.sock",
+        "upstream_idle_timeout_s": 55,
+        "log_format": "json",
+        "cache_salt_secret_file": "~/.config/leaseholder/cache-salt-secret",
+        "metrics_key_file": "~/.config/leaseholder/metrics-key",
+        "listen": [
+          {
+            "tcp": "127.0.0.1:18080"
+          },
+          {
+            "unix": "/run/user/1007/lh/gateway.sock",
+            "tenant": "voice"
+          }
+        ],
+        "tenants": {
+          "voice": {
+            "trusted": true,
+            "default_class": "realtime",
+            "max_class": "realtime"
+          },
+          "agents": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "trusted": true,
+            "default_class": "background",
+            "max_class": "interactive"
+          },
+          "bench": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "default_class": "interactive"
+          }
+        }
+      }
+    },
+    "worker": {
+      "restarted": false,
+      "preemptive_generation": true,
+      "events": true
+    },
+    "llm_path": "/run/user/1007/lh/gateway.sock"
+  },
+  "window": {
+    "start": 1792939382.1728356,
+    "end": 1792939739.2122538
+  },
+  "aiperf": {
+    "exit_status": 0
+  },
+  "gateway_log": {
+    "request_lines": 265,
+    "requests_ended": 265
+  },
+  "finished": 1792939741.5648017
+}

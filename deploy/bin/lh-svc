@@ -838,9 +838,7 @@ def show(names: list[str], properties: list[str], value_only: bool) -> int:
             elif prop == "ActiveEnterTimestamp":
                 since = read_state(unit.name).get("since")
                 text = (
-                    datetime.fromtimestamp(since, timezone.utc).strftime(  # noqa: UP017 (3.10)
-                        "%a %Y-%m-%d %H:%M:%S UTC"
-                    )
+                    datetime.fromtimestamp(since, timezone.utc).strftime("%a %Y-%m-%d %H:%M:%S UTC")
                     if since
                     else ""
                 )

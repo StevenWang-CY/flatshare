@@ -1,0 +1,1 @@
+kv: priority-0 TTFT 173 ms, 16 tokens 420 ms, for 749 prompt tokens, sent with 2 priority-2 requests of 10719 tokens running and 22 of 1364 blocks free; after it, 2 running and 1 waiting

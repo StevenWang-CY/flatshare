@@ -1,0 +1,121 @@
+{
+  "kind": "e2-point",
+  "name": "w5-a1-voice",
+  "status": "complete",
+  "host": "cyan",
+  "started": 1792937990.1565597,
+  "arm": {
+    "name": "w5-a1-voice",
+    "arm": "1",
+    "label": "frozen box, voice alone, a warm-up turn opening each call",
+    "voice": {
+      "callers": 2,
+      "turns": 25,
+      "barge_in": 0.25,
+      "seed": 0,
+      "warmup_turns": 1,
+      "preemptive_generation": true,
+      "events": true
+    },
+    "agents": {
+      "sessions": 0,
+      "think_cap": 120.0,
+      "warmup": 60.0,
+      "data": "weka-x32",
+      "seed": 11
+    },
+    "gateway": {},
+    "engine": {
+      "variant": "frozen",
+      "flags": []
+    },
+    "router": null
+  },
+  "versions": {
+    "source": "v0.3-191-g987fd09",
+    "gpu_source": {
+      "phastform": "v0.3-191-g987fd09"
+    },
+    "leaseholder_bench": "0.3.0",
+    "aiperf": "0.13.0",
+    "lh_gateway": "lh-gateway 0.3.0"
+  },
+  "save_audio": false,
+  "agents_seed": null,
+  "kv_sample_s": null,
+  "profile": "rtx-5060-ti",
+  "engine": {
+    "server": "vllm",
+    "version": "0.32.0",
+    "pool_tokens": 36400,
+    "flags": {
+      "checked": [
+        "--scheduling-policy",
+        "--max-num-batched-tokens",
+        "--long-prefill-token-threshold",
+        "--model",
+        "--revision",
+        "--max-model-len"
+      ],
+      "unchecked": []
+    }
+  },
+  "cyan": {
+    "router": null,
+    "gateway": {
+      "restarted": false,
+      "config": {
+        "upstream": "unix:/run/user/1007/lh/phastform-engine.sock",
+        "upstream_idle_timeout_s": 55,
+        "log_format": "json",
+        "cache_salt_secret_file": "~/.config/leaseholder/cache-salt-secret",
+        "metrics_key_file": "~/.config/leaseholder/metrics-key",
+        "listen": [
+          {
+            "tcp": "127.0.0.1:18080"
+          },
+          {
+            "unix": "/run/user/1007/lh/gateway.sock",
+            "tenant": "voice"
+          }
+        ],
+        "tenants": {
+          "voice": {
+            "trusted": true,
+            "default_class": "realtime",
+            "max_class": "realtime"
+          },
+          "agents": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "trusted": true,
+            "default_class": "background",
+            "max_class": "interactive"
+          },
+          "bench": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "default_class": "interactive"
+          }
+        }
+      }
+    },
+    "worker": {
+      "restarted": false,
+      "preemptive_generation": true,
+      "events": true
+    },
+    "llm_path": "/run/user/1007/lh/gateway.sock"
+  },
+  "window": {
+    "start": 1792937990.4195805,
+    "end": 1792938338.4506893
+  },
+  "gateway_log": {
+    "request_lines": 62,
+    "requests_ended": 62
+  },
+  "finished": 1792938340.6315987
+}

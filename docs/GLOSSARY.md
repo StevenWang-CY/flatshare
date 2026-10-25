@@ -66,6 +66,10 @@ The terms the other documents use, each with where it is defined in full. Code i
   build with the voice agent's lifecycle events. W4 (2026-10-23 to 24): the discriminating scenario in rounds. W5
   (2026-10-24 to 25): the fixed make-room and the PRs' configuration in five rounds. W6 to W8: production hardening,
   refactors and failure drills.
+- **FB** (2026-10-25): the final benchmark, five rounds of W5's headline configurations (voice alone, the frozen box and
+  the PRs' 48-token configuration) on the final code, each round on the agents' sample of W5's round of the same number
+  ([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2); the records are in
+  [`benchmarks/results/2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb)).
 
 ## Measures
 

@@ -645,6 +645,42 @@ def test_lh_svc_expands_the_units_name(host: dict, monkeypatch: pytest.MonkeyPat
     )
 
 
+@pytest.mark.skipif(
+    not Path("/usr/bin/rm").exists(),
+    reason="runs the units' commands, Linux's /usr/bin/rm among them",
+)
+def test_a_vllm_servers_start_empties_its_own_directory_of_zmq_sockets(
+    host: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # vLLM names the ZMQ sockets between its API server and its engine core afresh at each start
+    # (VLLM_RPC_BASE_PATH/<uuid4>) and removes none at a stop: the box's runtime directory held 111 after five hours of
+    # engine switches. Each vLLM unit, the box's and the template's, keeps them in a directory of its own, which its
+    # start lines empty before the server starts (all of them but gpu-guard's, run as lh-svc runs them).
+    for name, value in host["env"].items():
+        monkeypatch.setenv(name, value)
+    lh_svc = _module("lh_svc", BIN / "lh-svc")
+    lh = Path(host["env"]["XDG_RUNTIME_DIR"]) / "lh"
+    for source in ("phastform", "templates"):
+        dirs = set()
+        for name in ("lh-engine.service", "lh-stt.service"):
+            text = (REPO / "deploy" / source / "systemd" / name).read_text()
+            (host["units"] / name).write_text(text)
+            unit = lh_svc.load(name)
+            env = lh_svc.environment(unit)
+            zmq = Path(env["VLLM_RPC_BASE_PATH"])
+            assert zmq.parent == lh, (source, name, zmq)
+            zmq.mkdir(parents=True, exist_ok=True)
+            (zmq / "0073c204-9efa-4d7b-abc0-0e7fd817fa54").touch()  # an earlier start's
+            for line in unit.values["ExecStartPre"]:
+                argv, _ = lh_svc.command(line, env, unit.name)
+                if not argv[0].endswith("/gpu-guard"):
+                    subprocess.run(argv, env=env, check=True)
+            assert zmq.is_dir() and not any(zmq.iterdir()), (source, name)
+            assert stat.S_IMODE(zmq.stat().st_mode) == 0o700, (source, name)
+            dirs.add(zmq)
+        assert len(dirs) == 2, source  # the engine's and the STT's own
+
+
 def test_a_start_refuses_a_unit_whose_lines_hold_a_specifier_lh_svc_does_not_expand(
     host: dict,
 ) -> None:

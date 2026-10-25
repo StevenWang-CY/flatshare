@@ -1,0 +1,152 @@
+{
+  "name": "w5-a1-voice",
+  "arm": "1",
+  "label": "frozen box, voice alone, a warm-up turn opening each call",
+  "window_s": 356.0,
+  "voice": {
+    "turns": 50,
+    "errors": 0,
+    "v2v_ms": {
+      "n": 59,
+      "p50": 1665.2,
+      "p95": 1805.9,
+      "p99": 1993.9
+    },
+    "barge_in_to_silence_ms": {
+      "n": 9,
+      "p50": 603.7,
+      "p95": 663.1,
+      "p99": 672.6
+    },
+    "barge_ins": 9
+  },
+  "worker": {
+    "sessions": 2,
+    "turns": 59,
+    "waterfall": {
+      "transcript_ms": {
+        "n": 59,
+        "mean": 746.36,
+        "p10": 731.58,
+        "p50": 742.7,
+        "p90": 759.96,
+        "p95": 784.28,
+        "p99": 819.34
+      },
+      "end_of_turn_ms": {
+        "n": 59,
+        "mean": 751.0,
+        "p10": 735.48,
+        "p50": 747.6,
+        "p90": 764.44,
+        "p95": 789.31,
+        "p99": 824.14
+      },
+      "llm_ttft_ms": {
+        "n": 59,
+        "mean": 79.83,
+        "p10": 61.4,
+        "p50": 80.4,
+        "p90": 95.22,
+        "p95": 95.66,
+        "p99": 97.64
+      },
+      "llm_first_sentence_ms": {
+        "n": 59,
+        "mean": 326.1,
+        "p10": 214.82,
+        "p50": 317.6,
+        "p90": 430.76,
+        "p95": 460.9,
+        "p99": 477.0
+      },
+      "turn_to_first_sentence_ms": {
+        "n": 59,
+        "mean": 331.55,
+        "p10": 224.76,
+        "p50": 319.3,
+        "p90": 434.5,
+        "p95": 470.9,
+        "p99": 486.6
+      },
+      "tts_first_audio_ms": {
+        "n": 59,
+        "mean": 230.8,
+        "p10": 193.34,
+        "p50": 228.6,
+        "p90": 256.7,
+        "p95": 267.67,
+        "p99": 383.01
+      },
+      "e2e_ms": {
+        "n": 59,
+        "mean": 1313.98,
+        "p10": 1185.82,
+        "p50": 1303.6,
+        "p90": 1437.96,
+        "p95": 1477.09,
+        "p99": 1544.36
+      }
+    },
+    "events": {
+      "sent": 249,
+      "dropped": 0,
+      "failed": 0
+    }
+  },
+  "background": null,
+  "gateway": {
+    "realtime_first_byte_ms": {
+      "n": 62,
+      "mean": 54.83,
+      "p50": 54.73,
+      "p95": 59.88,
+      "p99": 75.91,
+      "source": "log"
+    },
+    "background_first_byte_ms": {
+      "n": 0,
+      "source": "log"
+    },
+    "shed": 0,
+    "refused": 0,
+    "resubmitted": 0,
+    "discarded_tokens": 0,
+    "background_tokens_per_s": 0.0,
+    "counters": {
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_speech_started\"}": 62,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_started\"}": 61,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_ended\"}": 52,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"interrupted\"}": 10,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"session_closed\"}": 1,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_turn_ended\"}": 62,
+      "lh_gateway_request_outcomes_total{class=\"realtime\",outcome=\"completed\"}": 62,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/models\",status=\"200\",tenant=\"voice\"}": 2,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/events\",status=\"202\",tenant=\"voice\"}": 248,
+      "lh_gateway_requests_total{class=\"realtime\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"voice\"}": 62,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"cached\"}": 40768,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"completion\"}": 1498,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"prompt\"}": 42553
+    }
+  },
+  "engine": {
+    "preemptions": 0,
+    "prompt_tokens_by_source": {
+      "local_compute": 1785,
+      "local_cache_hit": 40768,
+      "external_kv_transfer": 0
+    },
+    "refused": {
+      "max_num_queued_reqs": 0,
+      "max_num_queued_tokens": 0
+    },
+    "kv_offload_load_bytes": null,
+    "kv_offload_store_bytes": 391643136
+  },
+  "kv": null,
+  "gpu": {
+    "sm_clock_p50_mhz": 2580,
+    "temperature_max_c": 56,
+    "name": "NVIDIA GeForce RTX 5060 Ti"
+  }
+}

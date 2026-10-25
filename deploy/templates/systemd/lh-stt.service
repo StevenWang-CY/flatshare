@@ -20,11 +20,14 @@ Environment=VLLM_USE_FLASHINFER_SAMPLER=0
 # Keep idle HTTP connections for 60 s (vLLM's default is 5 s), as the engine does: through the tunnel each new
 # connection is a new SSH session, about 12 ms, which the turns seconds apart would otherwise pay for most turns.
 Environment=VLLM_HTTP_TIMEOUT_KEEP_ALIVE=60
-# On a Unix socket in a directory only this user may enter, as the engine (lh-engine.service says why).
+# On a Unix socket in a directory only this user may enter, and its ZMQ sockets in a directory of its own there,
+# emptied first, as the engine (lh-engine.service says why).
 Environment=LH_STT_SOCKET=%t/lh/stt.sock
-Environment=VLLM_RPC_BASE_PATH=%t/lh
+Environment=VLLM_RPC_BASE_PATH=%t/lh/%N.zmq
 ExecStartPre=/usr/bin/install -d -m 0700 %t/lh
 ExecStartPre=/usr/bin/rm -f ${LH_STT_SOCKET}
+ExecStartPre=/usr/bin/rm -rf ${VLLM_RPC_BASE_PATH}
+ExecStartPre=/usr/bin/install -d -m 0700 ${VLLM_RPC_BASE_PATH}
 ExecStartPre=%h/leaseholder/src/deploy/bin/gpu-guard
 # In a network namespace of its own, as the engine (lh-engine.service says why).
 ExecStart=%h/leaseholder/src/deploy/bin/in-private-net %h/leaseholder/venvs/engine/bin/vllm serve --config {{profile.deploy_dir}}/stt.yaml --uds ${LH_STT_SOCKET}

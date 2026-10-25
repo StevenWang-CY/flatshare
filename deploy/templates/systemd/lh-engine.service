@@ -39,11 +39,15 @@ Environment=VLLM_HTTP_TIMEOUT_KEEP_ALIVE=60
 # The engine serves on a Unix socket in a directory only this user may enter: vLLM's --api-key guards only its /v1,
 # /v2, /inference and /cohere routes, and every user of the host reaches its loopback. vLLM binds the path without
 # removing the file a killed engine leaves (launchers/launcher.py, create_server_unix_socket), so the unit removes it
-# first. The ZMQ sockets between its API server and its engine core go there too (VLLM_RPC_BASE_PATH; /tmp by default).
+# first. The ZMQ sockets between its API server and its engine core go in a directory of the unit's own there
+# (VLLM_RPC_BASE_PATH; /tmp by default), which the unit empties first: vLLM names them afresh at each start and removes
+# none at a stop, so a directory that every start shared would keep them all.
 Environment=LH_ENGINE_SOCKET=%t/lh/engine.sock
-Environment=VLLM_RPC_BASE_PATH=%t/lh
+Environment=VLLM_RPC_BASE_PATH=%t/lh/%N.zmq
 ExecStartPre=/usr/bin/install -d -m 0700 %t/lh
 ExecStartPre=/usr/bin/rm -f ${LH_ENGINE_SOCKET}
+ExecStartPre=/usr/bin/rm -rf ${VLLM_RPC_BASE_PATH}
+ExecStartPre=/usr/bin/install -d -m 0700 ${VLLM_RPC_BASE_PATH}
 ExecStartPre=%h/leaseholder/src/deploy/bin/gpu-guard
 # The engine runs in a network namespace of its own (deploy/bin/in-private-net), where no other user of the host
 # reaches the listeners its engine core keeps on the loopback (torch's gloo groups) or CUDA's abstract sockets; its

@@ -79,7 +79,7 @@ The other arms take an earlier arm's winner, so their files are written from its
 
 [`w5-cap-r1.campaign`](w5-cap-r1.campaign) to [`w5-cap-r3.campaign`](w5-cap-r3.campaign) measure calls per GPU: the PRs' 48-token configuration with 4 and with 6 callers beside the discriminating scenario (`arms/w5-disc-pr-ab48-c4-s24.toml`, `w5-disc-pr-ab48-c6-s24.toml`), and voice alone with as many callers, the SLO's references (`w5-a1-voice-c4.toml`, `w5-a1-voice-c6.toml`), over three of W5's samples of the agents. Each round swaps the order of its two engine groups, and of the caller counts within each.
 
-[`fb-r1.campaign`](fb-r1.campaign) to [`fb-r5.campaign`](fb-r5.campaign) are FB's rounds: voice alone, the frozen box and the PRs' 48-token configuration again, on the final code, with W5's arm files, W5's five samples of the agents (seeds 11 to 15) and no KV sampler, as W5's points ran, so that each round compares with W5's of the same seed. Each round rotates the three by one place.
+[`fb-r1.campaign`](fb-r1.campaign) to [`fb-r5.campaign`](fb-r5.campaign) are FB's rounds: voice alone, the frozen box and the PRs' 48-token configuration again, on the final code, with W5's arm files, W5's five samples of the agents (seeds 11 to 15) and no KV sampler, as W5's points ran, so that each round compares with W5's of the same seed. Each round rotates the three by one place. Their records are in [`benchmarks/results/2026-10-25-e2-fb`](../results/2026-10-25-e2-fb/README.md), whose `compare.py` sets each round beside W5's.
 
 The `[admission]` keys are those of `lh-gateway`'s configuration ([its README](../../crates/lh-gateway/README.md)); `lh-bench e2 run` passes the `[gateway]` table through as it is.
 
@@ -89,28 +89,28 @@ The `[admission]` keys are those of `lh-gateway`'s configuration ([its README](.
 
 ## The headline configurations
 
-The configurations the docs' tables report, by the arm file each ran from and the campaigns whose records hold its runs, in the discriminating scenario unless the row says otherwise. W4's records are in [`benchmarks/results/2026-10-23-e2`](../results/2026-10-23-e2/README.md) and W5's re-measure in [`benchmarks/results/2026-10-24-e2-w5`](../results/2026-10-24-e2-w5/README.md), each W5 arm file its W4 one with a warm-up turn opening each call.
+The configurations the docs' tables report, by the arm file each ran from and the campaigns whose records hold its runs, in the discriminating scenario unless the row says otherwise. W4's records are in [`benchmarks/results/2026-10-23-e2`](../results/2026-10-23-e2/README.md) and W5's re-measure in [`benchmarks/results/2026-10-24-e2-w5`](../results/2026-10-24-e2-w5/README.md), each W5 arm file its W4 one with a warm-up turn opening each call. FB re-measured three of them on the final code with W5's arm files ([`benchmarks/results/2026-10-25-e2-fb`](../results/2026-10-25-e2-fb/README.md)).
 
-| Configuration | W4: arm file, campaigns | W5: arm file, campaigns |
-|---|---|---|
-| Voice alone, the SLO's reference | `a1-voice`: w2, s1, s2, r3, r4 | `w5-a1-voice`: w5-r1 to w5-r5 |
-| The frozen box | `disc-frozen-s24`: w2c, r1 to r4 | `w5-disc-frozen-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5 |
-| Step cap 1,024, no threshold | `disc-a4-b1024-t0-s24`: w2c, r1 to r4 | |
-| Static reservation, 2,048 tokens | `disc-a6-reserve2048-s24`: w2c, r1 to r4 | |
-| SGLang with HiCache | `disc-a7b-sglang-hicache-s24`: w2c, r1 to r4 | |
-| Preempt-resubmit before the first byte | `disc-a8c-resubmit-s24`: w2c, r1 to r4 | `w5-disc-a8c-resubmit-s24`: w5-ext-r1 to w5-ext-r5 |
-| Arm 9 | `disc-a9-s24`: a9, r1 to r4 | |
-| #63350 alone (KV preemption) | `disc-pr-a-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-a-s24`: w5-pr-r1 to w5-pr-r5 |
-| #63350 + #63351 (the budget cap, 16 tokens) | `disc-pr-ab-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab-s24`: w5-pr-r1 to w5-pr-r5 |
-| #63350 + #63351, a 48-token window | `disc-pr-ab48-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab48-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5, w5-ext-r1 to w5-ext-r5 |
-| The same on make-room as v0.3 built it (W5's control) | | `w5-disc-pr-ab48-v03-s24`: w5-r1 to w5-r5 |
-| Standard scenario (16 agent sessions): the frozen box | `a4-b512-t256-s16`: w2, s1, s2 | `w5-std-frozen-s16`: w5-ext-r1 to w5-ext-r5 |
-| Standard scenario: arm 9 | `a9-s16`: a9-standard, s1, s2 | |
-| Standard scenario: #63350 + #63351, a 48-token window | | `w5-std-pr-ab48-s16`: w5-ext-r1 to w5-ext-r5 |
-| 4 and 6 callers: #63350 + #63351, a 48-token window | | `w5-disc-pr-ab48-c4-s24`, `w5-disc-pr-ab48-c6-s24`: w5-cap-r1 to w5-cap-r3 |
-| 4 and 6 callers: voice alone | | `w5-a1-voice-c4`, `w5-a1-voice-c6`: w5-cap-r1 to w5-cap-r3 |
+| Configuration | W4: arm file, campaigns | W5: arm file, campaigns | FB: campaigns, W5's arm files |
+|---|---|---|---|
+| Voice alone, the SLO's reference | `a1-voice`: w2, s1, s2, r3, r4 | `w5-a1-voice`: w5-r1 to w5-r5 | fb-r1 to fb-r5 |
+| The frozen box | `disc-frozen-s24`: w2c, r1 to r4 | `w5-disc-frozen-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5 | fb-r1 to fb-r5 |
+| Step cap 1,024, no threshold | `disc-a4-b1024-t0-s24`: w2c, r1 to r4 | | |
+| Static reservation, 2,048 tokens | `disc-a6-reserve2048-s24`: w2c, r1 to r4 | | |
+| SGLang with HiCache | `disc-a7b-sglang-hicache-s24`: w2c, r1 to r4 | | |
+| Preempt-resubmit before the first byte | `disc-a8c-resubmit-s24`: w2c, r1 to r4 | `w5-disc-a8c-resubmit-s24`: w5-ext-r1 to w5-ext-r5 | |
+| Arm 9 | `disc-a9-s24`: a9, r1 to r4 | | |
+| #63350 alone (KV preemption) | `disc-pr-a-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-a-s24`: w5-pr-r1 to w5-pr-r5 | |
+| #63350 + #63351 (the budget cap, 16 tokens) | `disc-pr-ab-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab-s24`: w5-pr-r1 to w5-pr-r5 | |
+| #63350 + #63351, a 48-token window | `disc-pr-ab48-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab48-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5, w5-ext-r1 to w5-ext-r5 | fb-r1 to fb-r5 |
+| The same on make-room as v0.3 built it (W5's control) | | `w5-disc-pr-ab48-v03-s24`: w5-r1 to w5-r5 | |
+| Standard scenario (16 agent sessions): the frozen box | `a4-b512-t256-s16`: w2, s1, s2 | `w5-std-frozen-s16`: w5-ext-r1 to w5-ext-r5 | |
+| Standard scenario: arm 9 | `a9-s16`: a9-standard, s1, s2 | | |
+| Standard scenario: #63350 + #63351, a 48-token window | | `w5-std-pr-ab48-s16`: w5-ext-r1 to w5-ext-r5 | |
+| 4 and 6 callers: #63350 + #63351, a 48-token window | | `w5-disc-pr-ab48-c4-s24`, `w5-disc-pr-ab48-c6-s24`: w5-cap-r1 to w5-cap-r3 | |
+| 4 and 6 callers: voice alone | | `w5-a1-voice-c4`, `w5-a1-voice-c6`: w5-cap-r1 to w5-cap-r3 | |
 
-The points on two GPU nodes (PLAN §3.4: a voice node and an agent node, against two pooled nodes under tuned stock and under Leaseholder) never ran: no second GPU is free before v1.0. Their arm files and campaigns, with the code that runs them (the gateway's `[nodes]` and `[placement]`, the voice worker's `LH_NODES`, `lh-bench e2 run`'s points on several nodes and `campaign.sh`'s several GPU nodes), are on the `two-node` branch.
+The points on two GPU nodes (PLAN §3.4: a voice node and an agent node, against two pooled nodes on tuned vLLM and two running arm 9, make-room with the lifecycle policy) never ran: no second GPU is free before v1.0. Their arm files and campaigns, with the code that runs them (the gateway's `[nodes]` and `[placement]`, the voice worker's `LH_NODES`, `lh-bench e2 run`'s points on several nodes and `campaign.sh`'s several GPU nodes), are on the `two-node` branch.
 
 ## Results
 

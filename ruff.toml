@@ -1,5 +1,8 @@
 target-version = "py312"
 line-length = 100
+# The scripts a host runs on its own python3, 3.10 or newer (Ubuntu 22.04's), so that no rule rewrites them into
+# what 3.10 lacks; deploy/profile.py and deploy/a100/host.py run on uv's Python 3.12 (deploy/a100/bootstrap.sh).
+per-file-target-version = { "deploy/bin/*" = "py310" }
 
 [lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]

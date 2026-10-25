@@ -1,0 +1,8 @@
+{
+  "make_room": {
+    "budget_cap": true,
+    "budget_cap_tokens": 16,
+    "max_preemptions_per_step": 2,
+    "reserve_tokens": 0
+  }
+}

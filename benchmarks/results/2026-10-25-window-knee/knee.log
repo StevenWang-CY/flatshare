@@ -1,0 +1,44 @@
+[2026-10-25T15:27:49Z] knee: windows 16 24 32 48 64, 2 runs of 240 s each, fresh prompts, 40-token replies; deployed v0.3-191-g987fd09
+variant: the measurement drop-in is already on
+[2026-10-25T15:27:49Z] window 16: switching the engine (--additional-config.make_room.budget_cap_tokens 16)
+active
+active
+active
+[2026-10-25T15:30:21Z] window 16: run 1
+[2026-10-25T15:35:18Z] window 16: run 1: calls: 57 turns, 0 failed (counted at 30,000 ms), TTFT p50 263 p90 416 p95 470 max 3841 ms; agents: 0 of 12 stopped early
+[2026-10-25T15:35:18Z] window 16: run 2
+[2026-10-25T15:40:16Z] window 16: run 2: calls: 57 turns, 0 failed (counted at 30,000 ms), TTFT p50 273 p90 393 p95 427 max 496 ms; agents: 0 of 12 stopped early
+[2026-10-25T15:40:16Z] window 24: switching the engine (--additional-config.make_room.budget_cap_tokens 24)
+active
+active
+active
+[2026-10-25T15:42:53Z] window 24: run 1
+[2026-10-25T15:47:48Z] window 24: run 1: calls: 61 turns, 0 failed (counted at 30,000 ms), TTFT p50 243 p90 364 p95 405 max 647 ms; agents: 0 of 12 stopped early
+[2026-10-25T15:47:48Z] window 24: run 2
+[2026-10-25T15:52:45Z] window 24: run 2: calls: 60 turns, 0 failed (counted at 30,000 ms), TTFT p50 231 p90 330 p95 369 max 477 ms; agents: 0 of 12 stopped early
+[2026-10-25T15:52:45Z] window 32: switching the engine (--additional-config.make_room.budget_cap_tokens 32)
+active
+active
+active
+[2026-10-25T15:55:17Z] window 32: run 1
+[2026-10-25T16:00:11Z] window 32: run 1: calls: 64 turns, 0 failed (counted at 30,000 ms), TTFT p50 245 p90 321 p95 328 max 357 ms; agents: 0 of 12 stopped early
+[2026-10-25T16:00:11Z] window 32: run 2
+[2026-10-25T16:05:06Z] window 32: run 2: calls: 64 turns, 0 failed (counted at 30,000 ms), TTFT p50 259 p90 315 p95 325 max 359 ms; agents: 0 of 12 stopped early
+[2026-10-25T16:05:06Z] window 48: switching the engine (--additional-config.make_room.budget_cap_tokens 48)
+active
+active
+active
+[2026-10-25T16:06:47Z] window 48: run 1
+[2026-10-25T16:11:50Z] window 48: run 1: calls: 69 turns, 0 failed (counted at 30,000 ms), TTFT p50 230 p90 326 p95 353 max 620 ms; agents: 0 of 12 stopped early
+[2026-10-25T16:11:50Z] window 48: run 2
+[2026-10-25T16:16:45Z] window 48: run 2: calls: 70 turns, 0 failed (counted at 30,000 ms), TTFT p50 225 p90 321 p95 341 max 410 ms; agents: 0 of 12 stopped early
+[2026-10-25T16:16:45Z] window 64: switching the engine (--additional-config.make_room.budget_cap_tokens 64)
+active
+active
+active
+[2026-10-25T16:19:17Z] window 64: run 1
+[2026-10-25T16:24:20Z] window 64: run 1: calls: 69 turns, 0 failed (counted at 30,000 ms), TTFT p50 233 p90 330 p95 388 max 537 ms; agents: 0 of 12 stopped early
+[2026-10-25T16:24:20Z] window 64: run 2
+[2026-10-25T16:29:25Z] window 64: run 2: calls: 70 turns, 0 failed (counted at 30,000 ms), TTFT p50 218 p90 317 p95 344 max 440 ms; agents: 0 of 12 stopped early
+[2026-10-25T16:29:25Z] knee: done
+[2026-10-25T16:29:25Z] knee: the box back on the frozen engine

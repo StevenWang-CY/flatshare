@@ -34,8 +34,9 @@ the PRs' diff, ported to 0.32.0, did before their revision of 2026-10-25; that r
 sooner, a step only replies at least the window long reach ([after
 W5](docs/BENCHMARKS.md#after-w5-the-first-tokens-in-flight)). The agents' tokens/s count the first 240 s of the calls.
 These agents wait about a minute for a first token: the regime this change is for ([is
-yours?](docs/PRODUCTION.md#is-your-deployment-in-this-regime)). Every run and range is in
-[BENCHMARKS.md](docs/BENCHMARKS.md#voice-under-agent-load-e2).
+yours?](docs/PRODUCTION.md#is-your-deployment-in-this-regime)). On the final code, five more rounds on W5's own samples
+gave the last row 2.27 s, round by round −45 to +77 ms from W5's ([FB](benchmarks/results/2026-10-25-e2-fb)). Every run
+and range is in [BENCHMARKS.md](docs/BENCHMARKS.md#voice-under-agent-load-e2).
 
 ## What it shows
 
@@ -107,7 +108,8 @@ it fails) and how to check it on your hardware.
 - **Rounds.** Every configuration runs in each round, in a rotated order, on the round's own sample of the agents; a
   call opens with an unmeasured warm-up turn. Baselines are configured as their authors recommend.
 - **Reproducible.** `make reproduce-e2` rebuilds every table and figure from the committed records; the gateway adds
-  0.38 ms to a request's first token.
+  0.29 ms to a voice request's first token, paired against the engine's own socket on the final transport
+  ([W6](docs/BENCHMARKS.md#the-control-plane-lh-gateway-in-front-of-the-engine)).
 
 ## Documentation
 

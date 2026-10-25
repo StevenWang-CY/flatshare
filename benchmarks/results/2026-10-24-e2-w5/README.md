@@ -8,7 +8,7 @@ The compact records of the points W5 measured after its fixes to make-room and t
 |---|---:|---|
 | [`w5-r1`](w5-r1) to [`w5-r5`](w5-r5) | 4 each | Voice alone, the frozen box, and the PRs' 48-token configuration on make-room as W5's fixes leave it and as v0.3 built it (the control, `make-room-v03`) |
 | [`w5-pr-r1`](w5-pr-r1) to [`w5-pr-r5`](w5-pr-r5) | 4 each | The frozen box, the KV preemption alone (#63350), and both PRs at 16 and at 48 tokens, on the fixed make-room |
-| [`w5-ext-r1`](w5-ext-r1) to [`w5-ext-r5`](w5-ext-r5) | 4 each | Preempt-resubmit and the PRs' 48-token configuration in the discriminating scenario, and the frozen box and the PRs' 48-token configuration in the standard scenario (16 session trees of the whole corpus) |
+| [`w5-ext-r1`](w5-ext-r1) to [`w5-ext-r5`](w5-ext-r5) | 4 each | Preempt-resubmit and the PRs' 48-token configuration in the discriminating scenario, and the frozen box and the PRs' 48-token configuration in the standard scenario (16 agent sessions of the whole corpus) |
 | [`w5-cap-r1`](w5-cap-r1) to [`w5-cap-r3`](w5-cap-r3) | 4 each | Calls per GPU: voice alone and the PRs' 48-token configuration with 4 and with 6 callers |
 
 Round N of each campaign replays the same sample of the agents' traces (`agents-seed` 10 + N) and rotates the order of its configurations, or of its engine groups, from round to round. The PRs' rows are the `make-room` variant on vLLM 0.32.0 with the PRs' switch values, as W5 built it: it counted a request's first tokens from the outputs processed, so under the box's asynchronous scheduling the budget cap held a step past its window, which only a reply of at least the window's tokens meets ([after W5](../../../docs/BENCHMARKS.md#after-w5-the-first-tokens-in-flight)).

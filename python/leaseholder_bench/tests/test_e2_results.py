@@ -73,9 +73,11 @@ VOICE_EVENTS = VOICE / "src" / "leaseholder_voice" / "events.py"
 GATEWAY_METRICS = REPO / "crates" / "lh-gateway" / "metrics.txt"
 """The gateway's exposition under the lifecycle policy, every family it registers (``make metrics``
 writes it, and the gateway's tests check it is current)."""
-# The committed E2 records: W4's, then W5's re-measure.
+# The committed E2 records: W4's, W5's re-measure, FB's rounds on the final code, and the Marlin dry run's point.
 RESULTS = REPO / "benchmarks" / "results" / "2026-10-23-e2"
 W5_RESULTS = REPO / "benchmarks" / "results" / "2026-10-24-e2-w5"
+FB_RESULTS = REPO / "benchmarks" / "results" / "2026-10-25-e2-fb"
+MARLIN_RESULTS = REPO / "benchmarks" / "results" / "2026-10-25-marlin-dry" / "session2"
 
 
 def record(end: float, *, phase: str = "profiling", ttft: float = 100.0, **extra: Any) -> str:
@@ -1223,7 +1225,11 @@ def unredacted(data: Any) -> list[str]:
     return found + [key for value in data.values() for key in unredacted(value)]
 
 
-@pytest.mark.parametrize("results", [RESULTS, W5_RESULTS], ids=lambda p: p.name)
+@pytest.mark.parametrize(
+    "results",
+    [RESULTS, W5_RESULTS, FB_RESULTS, MARLIN_RESULTS],
+    ids=lambda p: str(p.relative_to(REPO / "benchmarks" / "results")),
+)
 def test_the_committed_records_are_complete_and_hold_no_credential(results: Path) -> None:
     assert unredacted({"tenants": {"a": {"keys_sha256": ["<sha256>"]}}}) == ["keys_sha256"]
     dirs = sorted(run.parent for run in results.glob("*/*/run.json"))  # as make reproduce-e2 does
@@ -1256,7 +1262,11 @@ def test_the_committed_records_give_their_committed_report(tmp_path: Path) -> No
             assert path.read_bytes() == (committed / path.name).read_bytes(), committed / path.name
 
 
-@pytest.mark.parametrize("results", [RESULTS, W5_RESULTS], ids=lambda p: p.name)
+@pytest.mark.parametrize(
+    "results",
+    [RESULTS, W5_RESULTS, FB_RESULTS, MARLIN_RESULTS],
+    ids=lambda p: str(p.relative_to(REPO / "benchmarks" / "results")),
+)
 def test_a_committed_record_exports_to_itself(tmp_path: Path, results: Path) -> None:
     # A record leaves out the files compact() reads beside run.json and summary.json, so exporting it
     # gives it back byte for byte: lh-bench e2 report reads records and run directories alike.
@@ -1271,12 +1281,19 @@ def test_a_committed_record_exports_to_itself(tmp_path: Path, results: Path) -> 
             assert (again / name).read_bytes() == (record / name).read_bytes(), record / name
 
 
-def test_each_w5_record_ran_the_scheduler_its_variant_loads_on_the_revision_it_names() -> None:
-    # W5's harness checked the engine's scheduler class before each point, so that make-room as W5
-    # fixed it and as v0.3 built it (make-room-v03) cannot pass for one another, and each record names
-    # the revision deployed on the GPU node: the one cyan ran.
-    runs = sorted(W5_RESULTS.glob("*/*/run.json"))
-    assert len(runs) == 72
+@pytest.mark.parametrize(
+    ("results", "points"),
+    [(W5_RESULTS, 72), (FB_RESULTS, 15), (MARLIN_RESULTS, 1)],
+    ids=["w5", "fb", "marlin-dry"],
+)
+def test_each_record_ran_the_scheduler_its_variant_loads_on_the_revision_it_names(
+    results: Path, points: int
+) -> None:
+    # The harness checked the engine's scheduler class before each point from W5 on, so that make-room
+    # as W5 fixed it and as v0.3 built it (make-room-v03) cannot pass for one another, and each record
+    # names the revision deployed on the GPU node: the one cyan ran.
+    runs = sorted(results.glob("*/*/run.json"))
+    assert len(runs) == points
     for path in runs:
         run = json.loads(path.read_text())
         variant = tomllib.loads((path.parent / "arm.toml").read_text()).get("engine", {})

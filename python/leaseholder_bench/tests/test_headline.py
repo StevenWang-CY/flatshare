@@ -1,12 +1,15 @@
 """The headline tables against the committed records: every number of README.md's table and of docs/PRODUCTION.md's
 "What it buys" table, as printed, from the medians of the W5 runs its row reports, pooled over the campaigns that ran
-it as benchmarks/results/2026-10-24-e2-w5/compare.py pools them. New records, or a table edited by hand, cannot leave
-a stale headline: the commit that changes either fails here."""
+it as benchmarks/results/2026-10-24-e2-w5/compare.py pools them; and BENCHMARKS.md's FB table and window-sweep table,
+from those records' own compare.py and table.py. New records, or a table edited by hand, cannot leave a stale
+headline: the commit that changes either fails here."""
 
 from __future__ import annotations
 
 import importlib.util
 import statistics
+import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -108,3 +111,37 @@ def test_productions_headline_table_is_the_records_medians() -> None:
             continue
         assert goodput == f"{median(runs, GOODPUT):,.0f}", label
         assert ttft == f"{median(runs, 'agent TTFT p99') / 1000:.0f} s", label
+
+
+KNEE = REPO / "benchmarks" / "results" / "2026-10-25-window-knee"
+
+
+def test_the_window_knees_tables_are_its_records_medians() -> None:
+    # The window sweep's table in BENCHMARKS.md and in its records' README, row by row, from its runs' outputs
+    # through the records' own table.py.
+    spec = importlib.util.spec_from_file_location("knee_table", KNEE / "table.py")
+    table = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(table)
+    medians = table.medians(KNEE)
+    assert sorted(medians) == [16, 24, 32, 48, 64]
+    for doc in (REPO / "docs" / "BENCHMARKS.md", KNEE / "README.md"):
+        text = doc.read_text()
+        for window, m in medians.items():
+            row = (
+                f"| {window} | {m['ttft_p95']:,.0f} | {m['t16_p95']:,.0f} | {m['t40_p95']:,.0f} "
+                f"| {m['prompt_tps']:,.0f} |"
+            )
+            assert row in text, (doc.name, row)
+
+
+FB = REPO / "benchmarks" / "results" / "2026-10-25-e2-fb"
+
+
+def test_fbs_table_is_its_records_against_w5s() -> None:
+    # BENCHMARKS.md's FB table is what FB's records' compare.py prints first, from FB's records and W5's.
+    printed = subprocess.run(
+        [sys.executable, str(FB / "compare.py")], capture_output=True, text=True, check=True
+    ).stdout
+    first = printed.split("\n\n")[0].strip()
+    assert first.count("\n") == 4  # the header, its rule and three configurations
+    assert first in (REPO / "docs" / "BENCHMARKS.md").read_text()
