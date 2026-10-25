@@ -1,0 +1,4 @@
+(EngineCore pid=4003573) INFO 10-25 06:28:59 [__init__.py:758] Selected DeepGemmFp8BlockScaledMMKernel for Fp8LinearMethod
+(EngineCore pid=4003573) INFO 10-25 06:29:01 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=4003573) INFO 10-25 06:29:01 [flash_attn.py:1117] Using FlashAttention version 2
+(EngineCore pid=4003573) INFO 10-25 06:29:13 [utils.py:347] Using LBHNC KV cache layout.

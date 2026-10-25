@@ -1,0 +1,5 @@
+(EngineCore pid=4005838) INFO 10-25 06:35:41 [__init__.py:758] Selected MarlinFP8ScaledMMLinearKernel for Fp8LinearMethod
+(EngineCore pid=4005838) INFO 10-25 06:35:43 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=4005838) INFO 10-25 06:35:43 [flash_attn.py:1117] Using FlashAttention version 2
+(EngineCore pid=4005838) WARNING 10-25 06:35:48 [marlin_utils_fp8.py:108] Your GPU does not have native support for FP8 computation but FP8 quantization is being used. Weight-only FP8 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.
+(EngineCore pid=4005838) INFO 10-25 06:35:50 [utils.py:347] Using LBHNC KV cache layout.

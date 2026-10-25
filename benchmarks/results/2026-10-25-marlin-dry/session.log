@@ -1,0 +1,81 @@
+[2026-10-25T10:27:16Z] engine: frozen
+active
+active
+active
+(EngineCore pid=4003573) INFO 10-25 06:28:59 [__init__.py:758] Selected DeepGemmFp8BlockScaledMMKernel for Fp8LinearMethod
+(EngineCore pid=4003573) INFO 10-25 06:29:01 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=4003573) INFO 10-25 06:29:01 [flash_attn.py:1117] Using FlashAttention version 2
+(EngineCore pid=4003573) INFO 10-25 06:29:13 [utils.py:347] Using LBHNC KV cache layout.
+[2026-10-25T10:29:50Z] tiers-deepgemm: lh-bench tiers --reps 3
+ 24576    6522.1     128.1     698.3
+ 31744   10257.5     156.3     895.9
+fit gpu: {'ms': 33.11, 'us_per_token': 3.876}
+fit cpu: {'ms': 42.41, 'us_per_token': 27.012}
+fit cpu_over_gpu: {'ms': 9.3, 'us_per_token': 23.136}
+fit recompute: {'ms': 28.7, 'us_per_token': 65.409, 'ns_per_token_squared': 8.0899}
+[2026-10-25T10:34:51Z] engine: frozen --linear-backend marlin
+active
+active
+active
+(EngineCore pid=4005838) INFO 10-25 06:35:41 [__init__.py:758] Selected MarlinFP8ScaledMMLinearKernel for Fp8LinearMethod
+(EngineCore pid=4005838) INFO 10-25 06:35:43 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=4005838) INFO 10-25 06:35:43 [flash_attn.py:1117] Using FlashAttention version 2
+(EngineCore pid=4005838) WARNING 10-25 06:35:48 [marlin_utils_fp8.py:108] Your GPU does not have native support for FP8 computation but FP8 quantization is being used. Weight-only FP8 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.
+(EngineCore pid=4005838) INFO 10-25 06:35:50 [utils.py:347] Using LBHNC KV cache layout.
+[2026-10-25T10:37:49Z] /server_info linear_backend: marlin
+health                     ok
+tts question (wav)         0.259275s, 87666 bytes
+stt                        0.387922s:  What is the capital of France?
+llm                        0.121400s: The capital of France is Paris.
+tts reply (first/total)    0.003912/0.199834s, 95100 bytes
+gpu memory                 13826 MiB, 16311 MiB
+port audit                 loopback only
+smoke: ok
+[2026-10-25T10:37:52Z] tiers-marlin: lh-bench tiers --reps 3
+ 24576    9218.8     128.6     706.1
+ 31744   13728.7     156.6     896.2
+fit gpu: {'ms': 46.02, 'us_per_token': 3.339}
+fit cpu: {'ms': 41.59, 'us_per_token': 27.112}
+fit cpu_over_gpu: {'ms': -4.43, 'us_per_token': 23.773}
+fit recompute: {'ms': 34.84, 'us_per_token': 175.664, 'ns_per_token_squared': 8.0545}
+[2026-10-25T10:45:28Z] engine: make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --linear-backend marlin
+active
+active
+active
+(EngineCore pid=4009566) INFO 10-25 06:46:18 [__init__.py:758] Selected MarlinFP8ScaledMMLinearKernel for Fp8LinearMethod
+(EngineCore pid=4009566) INFO 10-25 06:46:19 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=4009566) INFO 10-25 06:46:19 [flash_attn.py:1117] Using FlashAttention version 2
+(EngineCore pid=4009566) WARNING 10-25 06:46:25 [marlin_utils_fp8.py:108] Your GPU does not have native support for FP8 computation but FP8 quantization is being used. Weight-only FP8 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.
+(EngineCore pid=4009566) INFO 10-25 06:46:26 [utils.py:347] Using LBHNC KV cache layout.
+[2026-10-25T10:48:23Z] marlin-kv-1: probe.py kv
+kv: priority-0 TTFT 299 ms, 16 tokens 579 ms, for 749 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-25T10:48:37Z] marlin-kv-2: probe.py kv
+kv: priority-0 TTFT 370 ms, 16 tokens 649 ms, for 744 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-25T10:48:50Z] marlin-prefill-1: probe.py prefill
+prefill: priority-0 TTFT 511 ms, 16 tokens 748 ms, for 749 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1026 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-25T10:48:57Z] marlin-prefill-2: probe.py prefill
+prefill: priority-0 TTFT 459 ms, 16 tokens 695 ms, for 745 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1026 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-25T10:49:03Z] marlin-tail-1: tail.py 240 12 fresh
+10:52:54.816 call 1 ttft    405 ms
+10:52:59.376 call 2 ttft    402 ms
+10:53:02.246 call 1 ttft    372 ms
+calls: 73 turns, 0 failed (counted at 30,000 ms), TTFT p50 296 p90 405 p95 432 max 447 ms; agents: 0 of 12 stopped early
+[2026-10-25T10:54:07Z] engine: frozen
+active
+active
+active
+[2026-10-25T10:55:54Z] the GEMM ratio: bench_marlin.py --m 1,16,64,128,256,512,1024
+FlashInfer kernels are disabled: flashinfer-cubin is not installed and nvcc (CUDA_HOME, CUDA_PATH, PATH or /usr/local/cuda) or ninja (PATH) is missing. Set CUDA_HOME to a CUDA toolkit and put ninja on PATH, or run `vllm download-kernels`.
+Your GPU does not have native support for FP8 computation but FP8 quantization is being used. Weight-only FP8 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.
+M 1: Marlin over BF16 1.44
+M 16: Marlin over BF16 1.43
+M 64: Marlin over BF16 1.38
+M 128: Marlin over BF16 1.67
+M 256: Marlin over BF16 1.49
+M 512: Marlin over BF16 1.31
+M 1024: Marlin over BF16 1.20
+bench_marlin: 84 rows in leaseholder/runs/marlin-dry/gemm.partial.csv
+inactive
+inactive
+inactive
+[2026-10-25T10:56:55Z] session 1 and the GEMM ratio done; the box paused
