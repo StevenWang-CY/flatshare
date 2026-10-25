@@ -1,0 +1,14 @@
+1792931460.850456 cyan systemd[3080141]: lh-gateway.service: Killing process 3445206 (lh-gateway) with signal SIGKILL.
+1792931460.851153 cyan lh-gateway[3445206]: {"timestamp":"2026-10-25T12:31:00.850435Z","level":"INFO","message":"shutting down: no new connections; draining in-flight requests","drain_timeout_s":30.0,"background_drain_s":5.0,"target":"lh_gateway::server"}
+1792931460.850580 cyan systemd[3080141]: lh-gateway.service: Killing process 3445212 (tokio-rt-worker) with signal SIGKILL.
+1792931460.850617 cyan systemd[3080141]: lh-gateway.service: Killing process 3445213 (tokio-rt-worker) with signal SIGKILL.
+1792931460.850848 cyan systemd[3080141]: Stopping Leaseholder gateway on cyan: 127.0.0.1:18080 and the voice-plane socket /run/user/1007/lh/gateway.sock, from lh-gateway.socket...
+1792931460.851650 cyan systemd[3080141]: lh-gateway.service: Main process exited, code=killed, status=9/KILL
+1792931460.851790 cyan systemd[3080141]: lh-gateway.service: Failed with result 'signal'.
+1792931460.852339 cyan systemd[3080141]: Stopped Leaseholder gateway on cyan: 127.0.0.1:18080 and the voice-plane socket /run/user/1007/lh/gateway.sock, from lh-gateway.socket.
+1792931460.852372 cyan systemd[3080141]: lh-gateway.service: Consumed 1.088s CPU time.
+1792931460.854589 cyan systemd[3080141]: Starting Leaseholder gateway on cyan: 127.0.0.1:18080 and the voice-plane socket /run/user/1007/lh/gateway.sock, from lh-gateway.socket...
+1792931460.859015 cyan lh-gateway[3446733]: {"timestamp":"2026-10-25T12:31:00.858978Z","level":"INFO","message":"lh-gateway serving","upstream":"unix:/run/user/1007/lh/phastform-engine.sock","listeners":"[Tcp(127.0.0.1:18080), Unix(\"/run/user/1007/lh/gateway.sock\")]","inherited":2,"admission":"None","target":"lh_gateway::server"}
+1792931460.859096 cyan systemd[3080141]: Started Leaseholder gateway on cyan: 127.0.0.1:18080 and the voice-plane socket /run/user/1007/lh/gateway.sock, from lh-gateway.socket.
+1792931461.916847 cyan lh-gateway[3446733]: {"timestamp":"2026-10-25T12:31:01.916797Z","level":"INFO","message":"request","request_id":"601e21798c195a980000000000000000","tenant":"voice","session":"m-b7347b3131c939d8809a6a0f5e83de4b","class":"realtime","route":"/v1/chat/completions","status":200,"outcome":"completed","first_byte_ms":53.747,"total_ms":53.77,"prompt_tokens":11,"completion_tokens":1,"cached_tokens":0,"finish_reason":"length","target":"lh_gateway::request"}
+1792931461.946559 cyan lh-gateway[3446733]: {"timestamp":"2026-10-25T12:31:01.946492Z","level":"INFO","message":"request","request_id":"601e21798c195a980000000000000001","tenant":"agents","session":"m-709be66406136633d76789c23a3e1018","class":"background","route":"/v1/chat/completions","status":200,"outcome":"completed","first_byte_ms":81.537,"total_ms":81.569,"prompt_tokens":11,"completion_tokens":1,"cached_tokens":0,"finish_reason":"length","target":"lh_gateway::request"}

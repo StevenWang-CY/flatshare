@@ -1,6 +1,6 @@
 # E2 records (2026-10-23)
 
-The compact records of E2's points ([E2](../../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)), from which `make reproduce-e2` regenerates the report into `build/reproduce-e2` (`E2_REPORT=DIR` to choose): `frontier.md`, `frontier.csv`, a frontier figure per workload (`frontier.svg` for the standard scenario, `frontier-weka-x32-long.svg` for the discriminating one, `frontier-4-callers.svg` and `frontier-6-callers.svg` for the calls-per-GPU points) and `waterfall.svg`, each configuration's voice turn by stage. [The report](../../../python/leaseholder_bench/README.md#e2-points) gives the same tables and figures, byte for byte, from these records as from the points' run directories.
+The compact records of E2's points ([E2](../../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)), from which `make reproduce-e2` regenerates the report into `build/reproduce-e2` (`E2_REPORT=DIR` to choose): `frontier.md`, `frontier.csv`, a frontier figure per workload (`frontier.svg` for the standard scenario, `frontier-weka-x32-long.svg` for the discriminating one, `frontier-4-callers.svg` and `frontier-6-callers.svg` for the calls-per-GPU points) and `waterfall.svg`, each configuration's voice turn by stage. [The report](../../../python/leaseholder_bench/README.md#e2-points) gives the same tables and figures, byte for byte, from these records as from the points' run directories. [`report/`](report) holds the report these records give, every file of it ([`frontier.md`](report/frontier.md) for the tables): `make reproduce-e2 E2_REPORT=benchmarks/results/2026-10-23-e2/report` rewrites it, and the bench's tests fail while it is not what the records give, so that a change to the report's code shows in review by what it changes there.
 
 Each point is `CAMPAIGN/POINT/`, as `lh-bench e2 export` writes it from the run directory that [`campaign.sh`](../../e2/README.md) fetched:
 
@@ -29,4 +29,4 @@ The raw records, which the report does not need (the gateway's request log, AIPe
 | [`a9-window`](a9-window) | 1 | Arm 9 without degrade, with a 48-token first-tokens window |
 | [`upstream`](upstream), [`upstream-r1`](upstream-r1), [`upstream-r2`](upstream-r2) | 3, 4, 4 | The engine as vLLM #63350 and #63351 propose it, and arm 9's 48-token window, three rounds |
 
-To add a campaign's points: `lh-bench e2 export $LH_E2_RESULTS/CAMPAIGN/* --out benchmarks/results/2026-10-23-e2`.
+To add a campaign's points: `lh-bench e2 export $LH_E2_RESULTS/CAMPAIGN/* --out benchmarks/results/2026-10-23-e2`, then rewrite `report/` from them.

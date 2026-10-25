@@ -1,0 +1,9 @@
+realtime: 2 streams: 2 broken
+  ended 14 ms after the gateway kill at the median, 14 ms at most
+  error: RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)
+background: 4 streams: 4 broken
+  ended 14 ms after the gateway kill at the median, 16 ms at most
+  error: RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)
+probe, realtime: 2 attempts, none failed; the first success answered 1.2 s after the gateway kill; the slowest took 1.15 s
+probe, background: 2 attempts, none failed; the first success answered 1.2 s after the gateway kill; the slowest took 1.18 s
+engine: 6 running and 0 waiting before the gateway kill; none running from 0.2 s after it

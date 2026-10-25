@@ -60,28 +60,23 @@ The voice worker tells the gateway where each call is.
 | `source` | `voice-worker`, `agentic-api` or `client` |
 | `type` | The event type, below |
 
-Under the `leaseholder` admission policy, the gateway keeps each realtime session's turn state from the voice events ([ARCHITECTURE.md §6](ARCHITECTURE.md#6-tested-and-not-adopted)). Every state but idle times out after `state_timeout_s` without an event, so a lost event holds a session at most that long, and a realtime request opens its session's critical window too. Under any other policy it keeps no turn state, and `session_closed` only ends the session's placement.
+Under the lifecycle policy, the gateway keeps each realtime session's turn state from the voice events ([ARCHITECTURE.md §6](ARCHITECTURE.md#6-tested-and-not-adopted)). Every state but idle times out after `state_timeout_s` without an event, so a lost event holds a session at most that long, and a realtime request opens its session's critical window too. Under any other policy it keeps no turn state: the events are accepted and counted, and change no decision.
 
-| `type` | Extra fields | Sent by | Under `leaseholder` |
+| `type` | Extra fields | Sent by | Under the lifecycle policy |
 |---|---|---|---|
 | `user_speech_started` | — | the voice worker, at VAD onset | Arms the session's KV headroom (with `trigger = "onset"`) |
 | `user_turn_ended` | — | the voice worker, at the end-of-turn decision | Opens the critical window, in which background prefill is budgeted |
 | `playback_started` | — | the voice worker, at the reply's first audio | Closes the critical window |
 | `playback_ended` | `played_ms` | the voice worker | Back to idle |
 | `interrupted` | `played_ms`, what the caller heard | the voice worker, on barge-in | The caller is speaking again |
-| `session_closed` | — | the voice worker, when the caller hangs up | Forgets the session, and ends its placement |
+| `session_closed` | — | the voice worker, when the caller hangs up | Forgets the session |
 | `turn_started`, `turn_finished`, `tool_wait_started`, `tool_wait_ended` | `stop_reason` and token counts; `tool`, `eta_ms` | nothing: an agent framework's sink is proposed in [agentic-api#364](https://github.com/vllm-project/agentic-api/issues/364) | Accepted, no effect: E1 found that agent-side timing closes nothing ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)) |
 
 [`leaseholder-voice`](../python/leaseholder_voice/README.md#lifecycle-events-and-turn-lines) gives the LiveKit hook behind each voice event and when it fires.
 
 ## Placement
 
-When the gateway fronts several GPU nodes, it places each session on one of them and keeps it there, because the session's KV lives in that node's engine and never moves. A session is placed by its first request, or ahead of it by a trusted caller that needs its node: the voice worker places each call before it starts, so that the call's STT and TTS run on the same node.
-- **Request.** Trusted callers `POST` one JSON object to `/v1/sessions`: `{"session_id": "voice-RM_a1B2c3", "class": "realtime"}`. `session_id` has the form of [Sessions](#sessions). `class` is optional: the tenant's default class when absent, and a class stricter than the tenant's `max_class` is lowered to it, as for a request.
-- **Answer.** 200 `{"session_id": "voice-RM_a1B2c3", "class": "realtime", "node": "gray"}`. `node` is the node's name in the gateway's configuration, which also names its tunnel sockets on the control host (`gray-stt.sock`, `gray-tts.sock`).
-- **Idempotent.** Asking again returns the same node while the placement holds, and the session's requests go to that node.
-- **How long it holds.** Until the session has gone `idle_s` (300 s by default) without a request, its node fails readiness, or its `session_closed` event arrives, or, while the table of 4,096 sessions is full, a new session takes its place as the one idle longest (untrusted tenants' sessions take at most half the table). Its next request is then placed again; KV left on the old node is lost.
-- **Errors.** 401 `invalid_api_key` without a valid key (the voice plane's socket needs none); 403 `untrusted_tenant` from a caller that is not trusted; 400 `invalid_session` for a body without a valid `session_id` or with an unknown class; 503 `no_ready_node` when no ready node serves the class; 503 `placement_full` when the table is full and every session in it has a request in flight. A gateway with one upstream has no such route (404).
+The placement of sessions on several GPU nodes (`POST /v1/sessions`), built for E2's two-node points, is parked on the `two-node` branch with them: a gateway has one upstream.
 
 ## Removed after v0.3
 

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import json
 import re
 import shutil
@@ -29,6 +30,16 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+# leaseholder-stats (python/leaseholder_stats), the repository's one reader of Prometheus text, from this source tree:
+# the script runs with no project.
+_STATS = importlib.util.spec_from_file_location(
+    "leaseholder_stats",
+    Path(__file__).resolve().parents[3]
+    / "python/leaseholder_stats/src/leaseholder_stats/__init__.py",
+)
+stats = importlib.util.module_from_spec(_STATS)
+_STATS.loader.exec_module(stats)
 
 # W2's operating points, each on a freshly started engine: the calibration's data. W0, the validation's. The repeats
 # on a warm engine: 16 sessions after the 8-session point, 24 after the 16-session one.
@@ -68,14 +79,10 @@ def p3(values: list[float]) -> list[float]:
 def counters(path: Path) -> dict[str, float]:
     """vLLM's counters in a /metrics snapshot, summed over labels but the prompt tokens' source."""
     out: dict[str, float] = {}
-    for line in path.read_text().splitlines():
-        m = re.match(r"^(vllm:[a-z_]+)(\{[^}]*\})?\s+(\S+)$", line)
-        if not m:
-            continue
-        name, labels, value = m.group(1), m.group(2) or "", float(m.group(3))
-        source = re.search(r'source="([^"]+)"', labels)
-        key = name + (f"[{source.group(1)}]" if source else "")
-        out[key] = out.get(key, 0.0) + value
+    for name, labels, value in stats.metric_samples(path.read_text()):
+        if name.startswith("vllm:"):
+            key = name + (f"[{labels['source']}]" if "source" in labels else "")
+            out[key] = out.get(key, 0.0) + value
     return out
 
 

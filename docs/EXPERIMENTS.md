@@ -5,7 +5,7 @@ How Leaseholder's measurements were made. Every experiment runs on one frozen bo
 | # | Experiment | Question | State |
 |---|---|---|---|
 | E0 | **The tier cost model** | What does resuming an agent turn cost from the GPU cache, from host RAM and recomputed? | Done ([BENCHMARKS.md](BENCHMARKS.md#tier-cost-model-resuming-an-agent-turn-e0)); `lh-core` carries the fits |
-| E2 | **Voice under agent load** | How close does each configuration an operator can deploy bring the voice tail to its SLO, at what cost to background agents, and what does each mechanism of Leaseholder's arm 9 contribute? | Done on one GPU node; the two-node points wait for a window on the second |
+| E2 | **Voice under agent load** | How close does each configuration an operator can deploy bring the voice tail to its SLO, at what cost to background agents, and what does each mechanism of Leaseholder's arm 9 contribute? | Done on one GPU node; the two-node points never ran, and their code is parked on the `two-node` branch |
 | E1 | **Parking** | How much of the gap between LRU plus CPU offload and a clairvoyant reference does each level of lifecycle information close, on resume latency? | Done in the simulator: negative at the median, and for the information a deployment has |
 | E3 | **The background tier's cost of make-room** | What does make-room take from the agents, and through which rule: the budget cap's hold on their prefill, or the KV preemption's victims and their restores? | Done on W5's points ([BENCHMARKS.md](BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)), from the engine's own counts; what a victim recomputes when it resumes is not measured |
 
@@ -33,13 +33,13 @@ The original E3, a recompute ledger validated by injected causes with cache cont
 | 6 | Static answers | A background concurrency cap of 2 or 8; a static 2,048-token KV reservation |
 | 7 | What engines ship | `--max-num-seqs 12`, with and without #54530 ported to 0.32.0; SGLang 0.5.22's priority preemption, with and without its host tier (HiCache) |
 | 8 | What routers ship | llm-d's flow control, emulated in the gateway (ceilings 6/6/6); SMG 1.13.0's priority scheduler, as shipped; abort-and-resubmit of background work before its first byte (preempt-resubmit) |
-| 9 | make-room with the lifecycle policy | The change and the lifecycle policy (`leaseholder`), below, with single-mechanism ablations |
+| 9 | make-room with the lifecycle policy | The change and the lifecycle policy, below, with single-mechanism ablations |
 
 Arm 10 of the plan (MPS with an active-thread split, audio off the GPU) was not run in E2: W1's MPS comparison had already shown that the interference that matters is inside the engine ([BENCHMARKS.md](BENCHMARKS.md#voice-on-the-shared-gpu)).
 
 **Arm 9** ([`disc-a9-s24.toml`](../benchmarks/e2/arms/disc-a9-s24.toml)):
 - **The engine** runs the `make-room` variant ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351)): at most two preemptions a step for a waiting request that lacks KV, the budget cap with a 16-token window, and a 2,048-token reserve. The budget cap took two changes before the repeat rounds, each found from a point's stage waterfall and reproduced on a probe; the earlier versions' points are kept apart and not placed on the frontier.
-- **The gateway** runs the `leaseholder` admission policy ([ARCHITECTURE.md §6](ARCHITECTURE.md#6-tested-and-not-adopted)): 1,024 tokens of KV headroom per armed call, armed from speech onset; 150 ms of predicted background prefill per critical window; replies capped at 16 tokens when the headroom was not there (degrade); aging after 10 s.
+- **The gateway** runs the lifecycle policy (`policy = "lifecycle"`; E2's arm files spell it `leaseholder`; [ARCHITECTURE.md §6](ARCHITECTURE.md#6-tested-and-not-adopted)): 1,024 tokens of KV headroom per armed call, armed from speech onset; 150 ms of predicted background prefill per critical window; replies capped at 16 tokens when the headroom was not there (degrade); aging after 10 s.
 - **The voice worker** posts its lifecycle events.
 - **Ablations**, each arm 9 without one part: the throttle, the headroom, degrade, the events, the gateway policy (the engine only), the change (the gateway only), and each engine switch. The headroom is also armed by the request instead of speech onset, and the throttle's budget run at 0 and 500 ms.
 - **Beyond the plan:**

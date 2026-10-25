@@ -1,0 +1,49 @@
+1792931484.945746 phastform systemd[2135572]: Stopping Leaseholder TTS: Kokoro-82M on Kokoro-FastAPI 0.9.1-rc1 at /run/user/1018/lh/tts.sock...
+1792931484.997995 phastform uvicorn[4033127]: INFO:     Shutting down
+1792931485.098478 phastform uvicorn[4033127]: INFO:     Waiting for application shutdown.
+1792931485.098711 phastform uvicorn[4033127]: INFO:     Application shutdown complete.
+1792931485.098810 phastform uvicorn[4033127]: INFO:     Finished server process [4033127]
+1792931486.618393 phastform systemd[2135572]: Stopped Leaseholder TTS: Kokoro-82M on Kokoro-FastAPI 0.9.1-rc1 at /run/user/1018/lh/tts.sock.
+1792931486.618595 phastform systemd[2135572]: lh-tts.service: Consumed 59.784s CPU time.
+1792931486.629662 phastform systemd[2135572]: Starting Leaseholder TTS: Kokoro-82M on Kokoro-FastAPI 0.9.1-rc1 at /run/user/1018/lh/tts.sock...
+1792931498.941949 phastform uvicorn[4045885]: INFO:     Started server process [4045885]
+1792931498.941949 phastform uvicorn[4045885]: INFO:     Waiting for application startup.
+1792931498.944314 phastform uvicorn[4045885]: Global API loguru logger level: DEBUG
+1792931498.944314 phastform uvicorn[4045885]: 08:31:38 AM | INFO     | main:68 | Loading TTS model and voice packs...
+1792931498.944581 phastform uvicorn[4045885]: 08:31:38 AM | INFO     | model_manager:46 | Initializing Kokoro V1 on cuda
+1792931498.944677 phastform uvicorn[4045885]: 08:31:38 AM | DEBUG    | paths:131 | Searching for model in path: ~/leaseholder/vendor/Kokoro-FastAPI/api/src/models
+1792931498.945125 phastform uvicorn[4045885]: 08:31:38 AM | INFO     | kokoro_v1:162 | Loading Kokoro model on cuda
+1792931498.945295 phastform uvicorn[4045885]: 08:31:38 AM | INFO     | kokoro_v1:163 | Config path: ~/leaseholder/vendor/Kokoro-FastAPI/api/src/models/v1_0/config.json
+1792931498.945295 phastform uvicorn[4045885]: 08:31:38 AM | INFO     | kokoro_v1:164 | Model path: ~/leaseholder/vendor/Kokoro-FastAPI/api/src/models/v1_0/kokoro-v1_0.pth
+1792931499.099982 phastform uvicorn[4045885]: ~/leaseholder/venvs/tts/lib/python3.12/site-packages/torch/nn/modules/rnn.py:123: UserWarning: dropout option adds dropout after all but last recurrent layer, so non-zero dropout expects num_layers greater than 1, but got dropout=0.2 and num_layers=1
+1792931499.099982 phastform uvicorn[4045885]:   warnings.warn(
+1792931499.231831 phastform uvicorn[4045885]: ~/leaseholder/venvs/tts/lib/python3.12/site-packages/torch/nn/utils/weight_norm.py:144: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+1792931499.231831 phastform uvicorn[4045885]:   WeightNorm.apply(module, name, dim)
+1792931502.696921 phastform uvicorn[4045885]: 08:31:42 AM | DEBUG    | paths:171 | Scanning for voices in path: ~/leaseholder/vendor/Kokoro-FastAPI/api/src/voices/v1_0
+1792931502.697753 phastform uvicorn[4045885]: 08:31:42 AM | DEBUG    | paths:155 | Searching for voice in path: ~/leaseholder/vendor/Kokoro-FastAPI/api/src/voices/v1_0
+1792931502.698222 phastform uvicorn[4045885]: 08:31:42 AM | DEBUG    | model_manager:85 | Using default voice 'af_heart' for warmup
+1792931502.701266 phastform uvicorn[4045885]: 08:31:42 AM | DEBUG    | kokoro_v1:130 | Cached voice tensor from ~/leaseholder/vendor/Kokoro-FastAPI/api/src/voices/v1_0/af_heart.pt
+1792931502.701457 phastform uvicorn[4045885]: 08:31:42 AM | INFO     | kokoro_v1:201 | Creating new pipeline for language code: a
+1792931504.502489 phastform uvicorn[4045885]: 08:31:44 AM | DEBUG    | kokoro_v1:382 | Generating audio for text with lang_code 'a': 'Warmup text for initialization.'
+1792931505.886475 phastform uvicorn[4045885]: 08:31:45 AM | DEBUG    | kokoro_v1:389 | Got audio chunk with shape: torch.Size([57600])
+1792931505.887183 phastform uvicorn[4045885]: 08:31:45 AM | INFO     | model_manager:92 | Warmup completed in 6942ms
+1792931505.887183 phastform uvicorn[4045885]: 08:31:45 AM | INFO     | main:129 |
+1792931505.887183 phastform uvicorn[4045885]: ░░░░░░░░░░░░░░░░░░░░░░░░
+1792931505.887183 phastform uvicorn[4045885]:     ╔═╗┌─┐┌─┐┌┬┐
+1792931505.887183 phastform uvicorn[4045885]:     ╠╣ ├─┤└─┐ │
+1792931505.887183 phastform uvicorn[4045885]:     ╚  ┴ ┴└─┘ ┴
+1792931505.887183 phastform uvicorn[4045885]:     ╦╔═┌─┐┬┌─┌─┐
+1792931505.887183 phastform uvicorn[4045885]:     ╠╩╗│ │├┴┐│ │
+1792931505.887183 phastform uvicorn[4045885]:     ╩ ╩└─┘┴ ┴└─┘
+1792931505.887183 phastform uvicorn[4045885]: ░░░░░░░░░░░░░░░░░░░░░░░░
+1792931505.887183 phastform uvicorn[4045885]:                 
+1792931505.887183 phastform uvicorn[4045885]: Model warmed up on cuda: kokoro_v1
+1792931505.887183 phastform uvicorn[4045885]: CUDA: True
+1792931505.887183 phastform uvicorn[4045885]: 72 voice packs loaded
+1792931505.887183 phastform uvicorn[4045885]: Beta Web Player: http://0.0.0.0:8880/web/
+1792931505.887183 phastform uvicorn[4045885]: or http://localhost:8880/web/
+1792931505.887183 phastform uvicorn[4045885]: ░░░░░░░░░░░░░░░░░░░░░░░░
+1792931505.887183 phastform uvicorn[4045885]: INFO:     Application startup complete.
+1792931505.888816 phastform uvicorn[4045885]: INFO:     Uvicorn running on unix socket /run/user/1018/lh/tts.sock (Press CTRL+C to quit)
+1792931507.120518 phastform wait-healthy[4045888]: wait-healthy: http://localhost/health on /run/user/1018/lh/tts.sock healthy after 21s
+1792931507.121096 phastform systemd[2135572]: Started Leaseholder TTS: Kokoro-82M on Kokoro-FastAPI 0.9.1-rc1 at /run/user/1018/lh/tts.sock.

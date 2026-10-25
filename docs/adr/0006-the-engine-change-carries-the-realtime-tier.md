@@ -20,7 +20,7 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
 
   There is no reserve. Until the PRs merge, the `make-room` variant runs the same change on vLLM 0.32.0.
 - **The priority comes from the caller's identity.** A gateway maps each tenant to a class and caps it, so a client cannot raise its own priority.
-- **No admission policy in front.** `lh-gateway` stays the experiment harness: its baselines and the `leaseholder` policy remain E2's arms, and the measured configuration ran without either.
+- **No admission policy in front.** `lh-gateway` stays the experiment harness: its baselines and the lifecycle policy remain E2's arms, and the measured configuration ran without either.
 - **Not pursued:**
   - leases, prefetch, the per-node sidecar (`lh-node`), cache contracts and the recompute ledger;
   - they would be reopened by a source of tool-return times ahead of the return, which the oracle's tail gain needs, or by an engine whose running KV a control plane can reclaim.

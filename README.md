@@ -51,8 +51,8 @@ yours?](docs/PRODUCTION.md#is-your-deployment-in-this-regime)). Every run and ra
    48 tokens 2.24 s.
 4. **A control plane in front can make room only by aborting work.** A gateway can hold back new requests and abort
    admitted ones; only the engine can take KV from a request already decoding. Aborting and resubmitting agent requests
-   reaches 2.52 s at the agents' cost (TTFT p99 193 s against 106 s); the lifecycle policy (`leaseholder`), timed by the
-   conversation, never found its headroom and left tuned vLLM at 11.0 s (W4) ([what it could not
+   reaches 2.52 s at the agents' cost (TTFT p99 193 s against 106 s); the lifecycle policy, timed by the conversation,
+   never found its headroom and left tuned vLLM at 11.0 s (W4) ([what it could not
    do](docs/METHODS.md#what-lifecycle-timing-could-and-could-not-do)).
 
 ## Where it falls short, and what it costs
@@ -144,6 +144,7 @@ crates/lh-sim/            the KV cache simulator behind E1
 python/leaseholder_vllm/  the change on vLLM 0.32: the PRs as patches, the build, probes and tests
 python/leaseholder_bench/ the E2 harness, trace conversion, probes and drills
 python/leaseholder_voice/ the voice agent and the measurement callers
+python/leaseholder_stats/ the statistics the measurements publish, each defined once
 benchmarks/               E2's arm files and campaigns, the committed records, and the A100 run
 deploy/                   per-host bootstrap, hardware profiles, systemd units, the engine variants' drop-ins, tunnels,
                           single-host mode
@@ -156,12 +157,16 @@ docs/                     the documents above, ADRs and figures
 Rust 1.98, uv and Python 3.12; no GPU.
 
 ```sh
-make check                    # lint and the tests of CI's main job
-make test-make-room-ci        # CI's make-room job (Linux x86-64): the change's behavior suite and its trace against
-                              # the PRs' patches, on vLLM's real scheduler
-make reproduce-e2             # E2's tables and figures from the committed records (W4)
-make reproduce-e2-w5          # the same for W5's records
-make reproduce-e1 CORPUS=DIR  # E1's tables with lh-sim, from the 32x corpus
+make check                           # lint and the tests of CI's main job
+make test-make-room-ci               # CI's make-room job (Linux x86-64): the change's behavior suite and its trace
+                                     # against the PRs' patches, on vLLM's real scheduler
+make perf-make-room TORCH_PYTHON=PY  # the change's cost a scheduler step on CPU, its switches off against stock vLLM
+                                     # and on against off, against peacock's baseline (PY: an absolute path)
+make compat-upstream                 # the PRs against vLLM's main, make-room's patches against vLLM's newest release
+make reproduce-e2                    # E2's tables and figures from the committed records (W4)
+make reproduce-e2-w5                 # the same for W5's records
+make reproduce-e1 CORPUS=DIR         # E1's tables with lh-sim, from the 32x corpus
+make forecast-a100 CORPUS=DIR        # lh-sim's forecast for the A100 run, benchmarks/a100/forecast.md
 ```
 
 The name is the original design's, in which the gateway held leases on sessions' KV; E1 and E2 showed the engine had to

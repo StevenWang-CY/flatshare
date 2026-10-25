@@ -81,7 +81,7 @@ The terms the other documents use, each with where it is defined in full. Code i
 
 ## The lifecycle policy and the simulator's coordinates
 
-- **The lifecycle policy** (`leaseholder` in arm files): the gateway policy timed by the conversation, which E2 measured
+- **The lifecycle policy** (`policy = "lifecycle"`; E2's arm files spell it `leaseholder`): the gateway policy timed by the conversation, which E2 measured
   as a negative result. Its **headroom** keeps one voice turn of KV free from speech onset by deferring new background
   requests; its **throttle** budgets background prefill from the end of a turn to the reply's first audio; **degrade**
   caps a reply at 16 tokens when the headroom was not there; **aging** admits deferred work after 10 s

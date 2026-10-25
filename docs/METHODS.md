@@ -9,7 +9,7 @@ One RTX 5060 Ti 16 GB (sm_120) on PCIe Gen3 x8, in a host with two Xeon E5-2609 
 - **CPU tier:** vLLM's native `OffloadingConnector`, 20 GiB in `/dev/shm`, written through (generated tokens too).
 - **Audio on the same card:** Whisper large-v3-turbo (STT) on vLLM and Kokoro-82M (TTS), time-sliced with the LLM. This is the edge pattern; NVIDIA's single-GPU voice-agent profile co-locates the same three.
 
-A second, identical card (Gray) is deployed the same way for the two-node points, which wait for a free window on it ([below](#two-gpus-dedicate-or-pool)). No datacenter GPU was available: other hardware is placed on the results by a model, labeled as such.
+A second, identical card (Gray) is deployed the same way, for the probes and the two-node points, which never ran ([below](#two-gpus-dedicate-or-pool)). No datacenter GPU was available: other hardware is placed on the results by a model, labeled as such.
 
 ## What an agent turn costs to resume (E0)
 
@@ -114,7 +114,7 @@ The regime where a waiting voice turn is blocked by KV (#40004) follows how long
 
 ## Two GPUs: dedicate or pool
 
-Three configurations of two GPU nodes: a voice node and an agent node (dedicate); two mixed nodes with least-loaded placement; two mixed nodes with Leaseholder's placement, which sends a new call to the node with the fewest calls and a new agent session to the node holding the least background KV. The gateway places sessions on several nodes and keeps each on its node, the harness measures a point on two nodes with each node's share, and both are deployed. The points are not measured yet: they wait for a window on the second card ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load)).
+Three configurations of two GPU nodes were planned: a voice node and an agent node (dedicate); two mixed nodes with least-loaded placement; two mixed nodes with Leaseholder's placement, which sends a new call to the node with the fewest calls and a new agent session to the node holding the least background KV. They never ran: another user's work has held the second card since 2026-10-23, and none is free before v1.0. The gateway's placement of sessions on several nodes, which keeps each on its node, and the harness's points on two nodes were built for them, and are parked on the `two-node` branch ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load)).
 
 ## How the runs were made
 
@@ -134,4 +134,4 @@ Three configurations of two GPU nodes: a voice node and an agent node (dedicate)
 - Every run of W2–W4 replays the same workload sample (agent seed 11, caller seed 0): their ranges are timing noise, not workload variation. W5's five rounds replay five samples (agent seeds 11–15), the same five for every configuration.
 - In W4 the vLLM PRs' configurations ran in a session of their own, after the rounds and with no control (10-23 23:16Z – 10-24 01:35Z); W5 re-measured them in rounds beside the frozen box.
 - vLLM 0.32's prompt-token counters see only a request's first scheduling: what a preempted request reloads or recomputes when it resumes is not in them. The records also keep the CPU tier's own load counter, which sees a resume's loads; what a resume recomputes is not measured.
-- The two-node points are not measured yet.
+- The two-node points never ran, and their code is parked on the `two-node` branch.

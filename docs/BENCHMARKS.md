@@ -327,6 +327,15 @@ The gateway forwards over the SSH tunnel to the frozen box. Measured W1, 2026-10
 | Through lh-gateway | 44.1 ms | 223.3 ms | 370.3 ms | 12.14 / 12.69 ms |
 | **Paired median difference** | **+0.38 ms** | **+0.26 ms** | **+0.25 ms** | — |
 
+The same probe on the final transport (W6, 2026-10-25: every server on a Unix socket, the gateway's upstream the
+tunnel's engine socket), 40 rounds again, the same text on both paths ([records](../benchmarks/results/2026-10-25-w6-transport)):
+
+| Path | First token p50 | First sentence p50 | End p50 | Gap between chunks, p50 / p99 |
+|---|---|---|---|---|
+| Engine socket | 43.3 ms | 162.1 ms | 344.1 ms | 12.08 / 12.53 ms |
+| Through lh-gateway | 43.8 ms | 162.7 ms | 344.7 ms | 12.09 / 12.52 ms |
+| **Paired median difference** | **+0.29 ms** | **+0.40 ms** | **+0.45 ms** | — |
+
 **Its own time, in place** (`lh_gateway_overhead_seconds`: from the end of a request's body to the upstream write). The voice agent's turns are seconds apart:
 
 | Upstream keep-alive (engine / gateway) | Requests | Mean | p99 | Within 0.5 ms | First byte p99 |
@@ -346,6 +355,9 @@ The gateway forwards over the SSH tunnel to the frozen box. Measured W1, 2026-10
     | 60 s keep-alive | 0.08 ms | 38.5 ms | 49.8 ms |
 
   - The engine now keeps idle connections for 60 s (`VLLM_HTTP_TIMEOUT_KEEP_ALIVE`) and the gateway for 55 s.
+  - Through the final build's tunnel a new connection is a new SSH session: `GET /health` took 12.4–13.2 ms on a new
+    connection against 2.1–2.7 ms on a kept one, for each of the three sockets (p50 of 50, cyan to Phastform), so
+    about 10.5 ms. The servers keep idle connections 60 s for it, and the voice worker's clients 55 s.
 - **End to end it is inside the run-to-run spread.**
   - Voice alone through the gateway: V2V p50 1,684, 1,600 and 1,633 ms over three runs.
   - Straight to the engine: 1,614 and 1,579 ms over two runs, every run with 0 errors.
