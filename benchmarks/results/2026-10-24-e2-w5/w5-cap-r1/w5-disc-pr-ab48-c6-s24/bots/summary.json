@@ -1,0 +1,19 @@
+{
+ "turns": 150,
+ "errors": 0,
+ "v2v_ms": {
+  "n": 182,
+  "p50": 2036.5,
+  "p95": 2391.8,
+  "p99": 2502.3
+ },
+ "barge_in_to_silence_ms": {
+  "n": 30,
+  "p50": 455.9,
+  "p95": 719.9,
+  "p99": 727.0
+ },
+ "barge_ins": 32,
+ "barge_ins_after_the_reply": 2,
+ "caller_max_lateness_ms": 121.4
+}

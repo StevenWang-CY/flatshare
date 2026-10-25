@@ -1,0 +1,543 @@
+{
+  "kind": "drill",
+  "started": 1792900328.8590913,
+  "config": {
+    "realtime": 2,
+    "background": 4,
+    "max_tokens": 2000,
+    "deadline_s": 600.0,
+    "probe_interval_s": 1.0,
+    "model": "Qwen/Qwen3-4B-Instruct-2507-FP8"
+  },
+  "streams": [
+    {
+      "stream": 0,
+      "slo_class": "realtime",
+      "sent": 1792900328.8591,
+      "status": 200,
+      "first_byte": 1792900329.0041575,
+      "chunks": 561,
+      "last_chunk": 1792900336.2939434,
+      "end": "broken",
+      "ended": 1792900336.342675,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    },
+    {
+      "stream": 1,
+      "slo_class": "realtime",
+      "sent": 1792900328.8592186,
+      "status": 200,
+      "first_byte": 1792900329.0084922,
+      "chunks": 560,
+      "last_chunk": 1792900336.293825,
+      "end": "broken",
+      "ended": 1792900336.3420918,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    },
+    {
+      "stream": 2,
+      "slo_class": "background",
+      "sent": 1792900328.8592248,
+      "status": 200,
+      "first_byte": 1792900329.6343253,
+      "chunks": 511,
+      "last_chunk": 1792900336.294143,
+      "end": "broken",
+      "ended": 1792900336.3444357,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    },
+    {
+      "stream": 3,
+      "slo_class": "background",
+      "sent": 1792900328.859228,
+      "status": 200,
+      "first_byte": 1792900329.6347158,
+      "chunks": 511,
+      "last_chunk": 1792900336.2940695,
+      "end": "broken",
+      "ended": 1792900336.3438423,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    },
+    {
+      "stream": 4,
+      "slo_class": "background",
+      "sent": 1792900328.8592308,
+      "status": 200,
+      "first_byte": 1792900329.6353207,
+      "chunks": 511,
+      "last_chunk": 1792900336.2943099,
+      "end": "broken",
+      "ended": 1792900336.3412685,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    },
+    {
+      "stream": 5,
+      "slo_class": "background",
+      "sent": 1792900328.8592331,
+      "status": 200,
+      "first_byte": 1792900329.6350033,
+      "chunks": 511,
+      "last_chunk": 1792900336.2942371,
+      "end": "broken",
+      "ended": 1792900336.3451471,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    }
+  ],
+  "probe": {
+    "attempts": [
+      [
+        1792900336.3875015,
+        "http 502 server_error"
+      ],
+      [
+        1792900337.3886771,
+        "http 502 server_error"
+      ],
+      [
+        1792900338.3906631,
+        "http 502 server_error"
+      ],
+      [
+        1792900339.3917737,
+        "http 502 server_error"
+      ],
+      [
+        1792900340.3935258,
+        "http 502 server_error"
+      ],
+      [
+        1792900341.3948786,
+        "http 502 server_error"
+      ],
+      [
+        1792900342.3960836,
+        "http 502 server_error"
+      ],
+      [
+        1792900343.3971798,
+        "http 502 server_error"
+      ],
+      [
+        1792900344.398496,
+        "http 502 server_error"
+      ],
+      [
+        1792900345.4004729,
+        "http 502 server_error"
+      ],
+      [
+        1792900346.4012039,
+        "http 502 server_error"
+      ],
+      [
+        1792900347.4029484,
+        "http 502 server_error"
+      ],
+      [
+        1792900348.4042375,
+        "http 502 server_error"
+      ],
+      [
+        1792900349.405853,
+        "http 502 server_error"
+      ],
+      [
+        1792900350.4070013,
+        "http 502 server_error"
+      ],
+      [
+        1792900351.4088686,
+        "http 502 server_error"
+      ],
+      [
+        1792900352.410353,
+        "http 502 server_error"
+      ],
+      [
+        1792900353.4118376,
+        "http 502 server_error"
+      ],
+      [
+        1792900354.4131963,
+        "http 502 server_error"
+      ],
+      [
+        1792900355.414343,
+        "http 502 server_error"
+      ],
+      [
+        1792900356.4156055,
+        "http 502 server_error"
+      ],
+      [
+        1792900357.4167612,
+        "http 502 server_error"
+      ],
+      [
+        1792900358.4187863,
+        "http 502 server_error"
+      ],
+      [
+        1792900359.420678,
+        "http 502 server_error"
+      ],
+      [
+        1792900360.4225564,
+        "http 502 server_error"
+      ],
+      [
+        1792900361.4244297,
+        "http 502 server_error"
+      ],
+      [
+        1792900362.4260633,
+        "http 502 server_error"
+      ],
+      [
+        1792900363.4279568,
+        "http 502 server_error"
+      ],
+      [
+        1792900364.4297662,
+        "http 502 server_error"
+      ],
+      [
+        1792900365.4316745,
+        "http 502 server_error"
+      ],
+      [
+        1792900366.4329383,
+        "http 502 server_error"
+      ],
+      [
+        1792900367.4348078,
+        "http 502 server_error"
+      ],
+      [
+        1792900368.4367833,
+        "http 502 server_error"
+      ],
+      [
+        1792900369.4386873,
+        "http 502 server_error"
+      ],
+      [
+        1792900370.439908,
+        "http 502 server_error"
+      ],
+      [
+        1792900371.4411507,
+        "http 502 server_error"
+      ],
+      [
+        1792900372.4422545,
+        "http 502 server_error"
+      ],
+      [
+        1792900373.444132,
+        "http 502 server_error"
+      ],
+      [
+        1792900374.4459403,
+        "http 502 server_error"
+      ],
+      [
+        1792900375.4478784,
+        "http 502 server_error"
+      ],
+      [
+        1792900376.4489844,
+        "http 502 server_error"
+      ],
+      [
+        1792900377.451002,
+        "http 502 server_error"
+      ],
+      [
+        1792900378.4528747,
+        "http 502 server_error"
+      ],
+      [
+        1792900379.454222,
+        "http 502 server_error"
+      ],
+      [
+        1792900380.4555342,
+        "http 502 server_error"
+      ],
+      [
+        1792900381.4571433,
+        "http 502 server_error"
+      ],
+      [
+        1792900382.4582791,
+        "http 502 server_error"
+      ],
+      [
+        1792900383.460024,
+        "http 502 server_error"
+      ],
+      [
+        1792900384.4614627,
+        "http 502 server_error"
+      ],
+      [
+        1792900385.463469,
+        "http 502 server_error"
+      ],
+      [
+        1792900386.4645998,
+        "http 502 server_error"
+      ],
+      [
+        1792900387.4658391,
+        "http 502 server_error"
+      ],
+      [
+        1792900388.4673777,
+        "http 502 server_error"
+      ],
+      [
+        1792900389.4692507,
+        "http 502 server_error"
+      ],
+      [
+        1792900390.4711294,
+        "http 502 server_error"
+      ],
+      [
+        1792900391.4730906,
+        "http 502 server_error"
+      ],
+      [
+        1792900392.4744403,
+        "http 502 server_error"
+      ],
+      [
+        1792900393.4764068,
+        "http 502 server_error"
+      ],
+      [
+        1792900394.4779165,
+        "http 502 server_error"
+      ],
+      [
+        1792900395.4791298,
+        "http 502 server_error"
+      ],
+      [
+        1792900396.4805288,
+        "http 502 server_error"
+      ],
+      [
+        1792900397.4817557,
+        "http 502 server_error"
+      ],
+      [
+        1792900398.4837341,
+        "http 502 server_error"
+      ],
+      [
+        1792900399.4858189,
+        "http 502 server_error"
+      ],
+      [
+        1792900400.4871714,
+        "http 502 server_error"
+      ],
+      [
+        1792900401.488407,
+        "http 502 server_error"
+      ],
+      [
+        1792900402.490454,
+        "http 502 server_error"
+      ],
+      [
+        1792900403.4924493,
+        "http 502 server_error"
+      ],
+      [
+        1792900404.4943419,
+        "http 502 server_error"
+      ],
+      [
+        1792900405.4955573,
+        "http 502 server_error"
+      ],
+      [
+        1792900406.4972959,
+        "http 502 server_error"
+      ],
+      [
+        1792900407.4985461,
+        "http 502 server_error"
+      ],
+      [
+        1792900408.5005896,
+        "http 502 server_error"
+      ],
+      [
+        1792900409.5024605,
+        "http 502 server_error"
+      ],
+      [
+        1792900410.503999,
+        "http 502 server_error"
+      ],
+      [
+        1792900411.5053003,
+        "http 502 server_error"
+      ],
+      [
+        1792900412.507371,
+        "http 502 server_error"
+      ],
+      [
+        1792900413.5089018,
+        "http 502 server_error"
+      ],
+      [
+        1792900414.5107238,
+        "http 502 server_error"
+      ],
+      [
+        1792900415.5126662,
+        "http 502 server_error"
+      ],
+      [
+        1792900416.5143616,
+        "http 502 server_error"
+      ],
+      [
+        1792900417.5158541,
+        "http 502 server_error"
+      ],
+      [
+        1792900418.517912,
+        "http 502 server_error"
+      ],
+      [
+        1792900419.5198276,
+        "http 502 server_error"
+      ],
+      [
+        1792900420.521686,
+        "http 502 server_error"
+      ],
+      [
+        1792900421.5236213,
+        "http 502 server_error"
+      ],
+      [
+        1792900422.5247424,
+        "http 502 server_error"
+      ],
+      [
+        1792900423.5266342,
+        "http 502 server_error"
+      ],
+      [
+        1792900424.5285323,
+        "http 502 server_error"
+      ],
+      [
+        1792900425.5296457,
+        "http 502 server_error"
+      ],
+      [
+        1792900426.53165,
+        "http 502 server_error"
+      ],
+      [
+        1792900427.53318,
+        "http 502 server_error"
+      ],
+      [
+        1792900428.5347815,
+        "http 502 server_error"
+      ],
+      [
+        1792900429.5360703,
+        "http 502 server_error"
+      ],
+      [
+        1792900430.5379097,
+        "http 502 server_error"
+      ],
+      [
+        1792900431.5398922,
+        "http 502 server_error"
+      ],
+      [
+        1792900432.5417879,
+        "http 502 server_error"
+      ],
+      [
+        1792900433.543595,
+        "http 502 server_error"
+      ],
+      [
+        1792900434.5455472,
+        "http 502 server_error"
+      ],
+      [
+        1792900435.5473711,
+        "http 502 server_error"
+      ],
+      [
+        1792900436.5493782,
+        "http 502 server_error"
+      ],
+      [
+        1792900437.5514777,
+        "http 502 server_error"
+      ],
+      [
+        1792900438.5527165,
+        "http 502 server_error"
+      ],
+      [
+        1792900439.5547976,
+        "http 502 server_error"
+      ],
+      [
+        1792900440.5567815,
+        "http 502 server_error"
+      ],
+      [
+        1792900441.5580816,
+        "http 502 server_error"
+      ],
+      [
+        1792900442.5591826,
+        "http 502 server_error"
+      ],
+      [
+        1792900443.561177,
+        "http 502 server_error"
+      ],
+      [
+        1792900444.5630097,
+        "http 502 server_error"
+      ],
+      [
+        1792900445.5641487,
+        "http 502 server_error"
+      ],
+      [
+        1792900446.5655165,
+        "http 502 server_error"
+      ],
+      [
+        1792900447.567581,
+        "http 502 server_error"
+      ],
+      [
+        1792900448.5695853,
+        "ok"
+      ]
+    ],
+    "recovered": 1792900448.5695853
+  }
+}

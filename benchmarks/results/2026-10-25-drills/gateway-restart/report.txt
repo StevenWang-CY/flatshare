@@ -1,0 +1,5 @@
+realtime: 2 streams: 2 done
+  ended 22,418 ms after the gateway restart at the median, 22,425 ms at most
+background: 4 streams: 4 done
+  ended 23,195 ms after the gateway restart at the median, 23,216 ms at most
+probe: 1 attempts; the first success 23.2 s after the gateway restart

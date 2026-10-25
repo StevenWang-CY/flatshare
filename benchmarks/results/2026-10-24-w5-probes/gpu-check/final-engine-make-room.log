@@ -1,0 +1,8 @@
+Oct 24 12:14:50 phastform vllm[3560054]: (APIServer pid=3560054) ERROR 10-24 12:14:50 [async_llm.py:906] AsyncLLM output_handler failed.
+Oct 24 12:14:50 phastform vllm[3560054]: (APIServer pid=3560054) ERROR 10-24 12:14:50 [async_llm.py:906] Traceback (most recent call last):
+Oct 24 12:14:50 phastform vllm[3560054]: (APIServer pid=3560054) ERROR 10-24 12:14:50 [async_llm.py:906]   File "~/leaseholder/venvs/engine/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 849, in output_handler
+Oct 24 12:14:50 phastform vllm[3560054]: (APIServer pid=3560054) ERROR 10-24 12:14:50 [async_llm.py:906]     outputs = await engine_core.get_output_async()
+Oct 24 12:14:50 phastform vllm[3560054]: (APIServer pid=3560054) ERROR 10-24 12:14:50 [async_llm.py:906]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Oct 24 12:14:50 phastform vllm[3560054]: (APIServer pid=3560054) ERROR 10-24 12:14:50 [async_llm.py:906]   File "~/leaseholder/venvs/engine/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 1235, in get_output_async
+Oct 24 12:14:50 phastform vllm[3560054]: (APIServer pid=3560054) ERROR 10-24 12:14:50 [async_llm.py:906]     raise self._format_exception(outputs) from None
+Oct 24 12:14:50 phastform vllm[3560054]: (APIServer pid=3560054) ERROR 10-24 12:14:50 [async_llm.py:906] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.

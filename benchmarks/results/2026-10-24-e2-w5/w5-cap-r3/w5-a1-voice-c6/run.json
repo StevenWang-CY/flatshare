@@ -1,0 +1,111 @@
+{
+  "kind": "e2-point",
+  "name": "w5-a1-voice-c6",
+  "status": "complete",
+  "host": "cyan",
+  "started": 1792918363.8611495,
+  "arm": {
+    "name": "w5-a1-voice-c6",
+    "arm": "1-calls",
+    "label": "frozen box, 6 callers, voice alone, a warm-up turn opening each call",
+    "voice": {
+      "callers": 6,
+      "turns": 25,
+      "barge_in": 0.25,
+      "seed": 0,
+      "warmup_turns": 1,
+      "preemptive_generation": true,
+      "events": true
+    },
+    "agents": {
+      "sessions": 0,
+      "think_cap": 120.0,
+      "warmup": 60.0,
+      "data": "weka-x32",
+      "seed": 11
+    },
+    "gateway": {},
+    "engine": {
+      "variant": "frozen",
+      "flags": []
+    },
+    "router": null
+  },
+  "versions": {
+    "source": "v0.3-90-gd43b46d",
+    "gpu_source": {
+      "phastform": "v0.3-90-gd43b46d"
+    },
+    "leaseholder_bench": "0.3.0",
+    "aiperf": "0.13.0",
+    "lh_gateway": "lh-gateway 0.3.0"
+  },
+  "save_audio": false,
+  "agents_seed": null,
+  "engine": {
+    "server": "vllm",
+    "version": "0.32.0",
+    "pool_tokens": 36400,
+    "flags": {
+      "checked": [
+        "--scheduling-policy",
+        "--max-num-batched-tokens",
+        "--long-prefill-token-threshold"
+      ],
+      "unchecked": []
+    }
+  },
+  "cyan": {
+    "router": null,
+    "gateway": {
+      "restarted": false,
+      "config": {
+        "upstream": "http://127.0.0.1:18000",
+        "upstream_idle_timeout_s": 55,
+        "log_format": "json",
+        "cache_salt_secret_file": "~/.config/leaseholder/cache-salt-secret",
+        "listen": [
+          {
+            "tcp": "127.0.0.1:18080"
+          },
+          {
+            "unix": "/run/user/1007/lh/gateway.sock",
+            "tenant": "voice"
+          }
+        ],
+        "tenants": {
+          "voice": {
+            "trusted": true,
+            "default_class": "realtime",
+            "max_class": "realtime"
+          },
+          "agents": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "trusted": true,
+            "default_class": "background",
+            "max_class": "interactive"
+          },
+          "bench": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "default_class": "interactive"
+          }
+        }
+      }
+    },
+    "worker": {
+      "restarted": false,
+      "preemptive_generation": true,
+      "events": true
+    },
+    "llm_path": "/run/user/1007/lh/gateway.sock"
+  },
+  "window": {
+    "start": 1792918364.0426843,
+    "end": 1792918707.0767567
+  },
+  "finished": 1792918708.3043911
+}

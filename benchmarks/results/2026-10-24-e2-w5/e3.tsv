@@ -1,0 +1,62 @@
+campaign	point	agents_seed	calls_s	engine_steps	held_steps	held_prefill_tokens	held_admissions	make_room_preemptions
+w5-cap-r1	w5-disc-pr-ab48-c4-s24	11	381	6349	3415	826003	3702	54
+w5-cap-r1	w5-disc-pr-ab48-c6-s24	11	365	6454	4402	1117420	4797	64
+w5-cap-r2	w5-disc-pr-ab48-c4-s24	12	358	6913	3010	574709	3246	50
+w5-cap-r2	w5-disc-pr-ab48-c6-s24	12	368	7550	4332	911368	4766	66
+w5-cap-r3	w5-disc-pr-ab48-c4-s24	13	374	6250	3321	747879	3614	55
+w5-cap-r3	w5-disc-pr-ab48-c6-s24	13	357	6727	4328	1067013	4342	61
+w5-ext-r1	w5-disc-a8c-resubmit-s24	11	344	4794				
+w5-ext-r1	w5-disc-pr-ab48-s24	11	360	5291	2036	424007	2341	33
+w5-ext-r1	w5-std-frozen-s16	11	357	11018				
+w5-ext-r1	w5-std-pr-ab48-s16	11	344	10870	291	9984	351	1
+w5-ext-r2	w5-disc-a8c-resubmit-s24	12	372	6619				
+w5-ext-r2	w5-disc-pr-ab48-s24	12	342	6312	1714	293787	1844	33
+w5-ext-r2	w5-std-frozen-s16	12	384	10494				
+w5-ext-r2	w5-std-pr-ab48-s16	12	376	11122	1459	97486	2015	7
+w5-ext-r3	w5-disc-a8c-resubmit-s24	13	394	5390				
+w5-ext-r3	w5-disc-pr-ab48-s24	13	359	5404	1809	354010	1950	31
+w5-ext-r3	w5-std-frozen-s16	13	363	10755				
+w5-ext-r3	w5-std-pr-ab48-s16	13	336	10988	615	67072	544	1
+w5-ext-r4	w5-disc-a8c-resubmit-s24	14	353	5077				
+w5-ext-r4	w5-disc-pr-ab48-s24	14	354	4961	1727	422596	2018	38
+w5-ext-r4	w5-std-frozen-s16	14	347	11430				
+w5-ext-r4	w5-std-pr-ab48-s16	14	345	11361	505	19968	485	0
+w5-ext-r5	w5-disc-a8c-resubmit-s24	15	360	5532				
+w5-ext-r5	w5-disc-pr-ab48-s24	15	340	5864	1695	346014	1912	38
+w5-ext-r5	w5-std-frozen-s16	15	337	8819				
+w5-ext-r5	w5-std-pr-ab48-s16	15	340	9351	339	31520	260	1
+w5-pr-r1	w5-disc-frozen-s24	11	476	5792				
+w5-pr-r1	w5-disc-pr-a-s24	11	412	5430	0	0	0	46
+w5-pr-r1	w5-disc-pr-ab-s24	11	346	5161	1309	322048	1444	32
+w5-pr-r1	w5-disc-pr-ab48-s24	11	346	5172	1880	433002	2028	29
+w5-pr-r2	w5-disc-frozen-s24	12	431	7016				
+w5-pr-r2	w5-disc-pr-a-s24	12	386	6548	0	0	0	24
+w5-pr-r2	w5-disc-pr-ab-s24	12	346	6527	1335	353935	1605	30
+w5-pr-r2	w5-disc-pr-ab48-s24	12	352	6778	1751	404563	1862	23
+w5-pr-r3	w5-disc-frozen-s24	13	454	5765				
+w5-pr-r3	w5-disc-pr-a-s24	13	394	5254	0	0	0	40
+w5-pr-r3	w5-disc-pr-ab-s24	13	355	4990	1298	325689	1328	22
+w5-pr-r3	w5-disc-pr-ab48-s24	13	358	5118	1845	367360	2088	33
+w5-pr-r4	w5-disc-frozen-s24	14	458	5514				
+w5-pr-r4	w5-disc-pr-a-s24	14	416	5158	0	0	0	34
+w5-pr-r4	w5-disc-pr-ab-s24	14	358	4930	1310	337408	1449	35
+w5-pr-r4	w5-disc-pr-ab48-s24	14	358	4591	1615	381780	1650	31
+w5-pr-r5	w5-disc-frozen-s24	15	455	7214				
+w5-pr-r5	w5-disc-pr-a-s24	15	412	6655	0	0	0	30
+w5-pr-r5	w5-disc-pr-ab-s24	15	344	5774	1316	240432	1496	34
+w5-pr-r5	w5-disc-pr-ab48-s24	15	344	5724	1778	336012	2226	30
+w5-r1	w5-disc-frozen-s24	11	452	5262				
+w5-r1	w5-disc-pr-ab48-s24	11	351	4898	1784	382720	1985	31
+w5-r1	w5-disc-pr-ab48-v03-s24	11	344	4856				
+w5-r2	w5-disc-frozen-s24	12	466	7848				
+w5-r2	w5-disc-pr-ab48-s24	12	353	6673	1905	407052	2148	25
+w5-r2	w5-disc-pr-ab48-v03-s24	12	344	6560				
+w5-r3	w5-disc-frozen-s24	13	424	5259				
+w5-r3	w5-disc-pr-ab48-s24	13	351	5450	1781	463150	1813	26
+w5-r3	w5-disc-pr-ab48-v03-s24	13	341	4939				
+w5-r4	w5-disc-frozen-s24	14	449	5268				
+w5-r4	w5-disc-pr-ab48-s24	14	341	4604	1752	440238	1920	37
+w5-r4	w5-disc-pr-ab48-v03-s24	14	346	4744				
+w5-r5	w5-disc-frozen-s24	15	474	7128				
+w5-r5	w5-disc-pr-ab48-s24	15	355	6119	1696	378112	1858	28
+w5-r5	w5-disc-pr-ab48-v03-s24	15	365	6338				

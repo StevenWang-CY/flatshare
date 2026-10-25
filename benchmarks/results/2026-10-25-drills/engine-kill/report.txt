@@ -1,0 +1,7 @@
+realtime: 2 streams: 2 broken
+  ended 54 ms after the engine kill at the median, 54 ms at most
+  error: RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)
+background: 4 streams: 4 broken
+  ended 56 ms after the engine kill at the median, 57 ms at most
+  error: RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)
+probe: 113 attempts (112 http 502 server_error); the first success 112.3 s after the engine kill

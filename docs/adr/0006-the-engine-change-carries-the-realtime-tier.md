@@ -7,7 +7,7 @@
 ## Context
 
 E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GPU's KV pool, on one RTX 5060 Ti ([BENCHMARKS.md](../BENCHMARKS.md#voice-under-agent-load-e2)):
-- **Nothing deployable today fixes it.** Tuned stock vLLM leaves the voice tail at 10.1 s at p95. Every gateway baseline and both engines' priority preemption leave it at 8.8–12.1 s. Aborting background work before its first byte and resubmitting it reaches 2.6 s, at the cost of the agents' tail.
+- **Nothing deployable today fixes it.** Tuned vLLM (the frozen box) leaves the voice tail at 10.1 s at p95. Every gateway baseline and both engines' priority preemption leave it at 8.8–12.1 s. Aborting background work before its first byte and resubmitting it reaches 2.6 s, at the cost of the agents' tail.
 - **The engine change does.** With the two vLLM PRs and a 48-token window the tail is 2.19 s, against an SLO of 2.02 s, at 94% of stock's background throughput. Leaseholder's arm 9 reaches 2.06 s with every reply capped at 16 tokens.
 - **The control plane could not make room.** Leaseholder's admission policy holds KV headroom from speech onset and throttles background prefill while a turn is answered. In front of stock vLLM it left the tail where stock does (10,993 ms). Beside the engine change its mechanisms could not act. Running agent requests held the pool, and a control plane can only defer new ones, so the headroom was never there: degrade capped 60 of 60 replies in every run. The throttle, checked after the headroom, deferred nothing.
 - **E1 measured the agent side.** In the simulator, even an oracle that knows when each agent returns closes under 9% of resume TTFT at p50; at p90 it closes 28% at low pressure, but session history, the information a deployment has, closes nothing ([EXPERIMENTS.md](../EXPERIMENTS.md#e1-parking)).
@@ -33,4 +33,9 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
   - ADR-0003's decision stands, with the room made in the engine;
   - a window that covers the reply's first sentence makes degrade unnecessary.
 - **The v0 lease and ledger code is removed after v0.3:** `lh-proto`'s lease hint and ledger rows, `X-LH-Synthetic`, and `leaseholder_vllm`'s `LeasePolicy` and `LeaseConnector`. Done on 2026-10-24; the v0.3 tree keeps them.
-- **The change's known gaps** ([ARCHITECTURE.md §2](../ARCHITECTURE.md#2-the-engine-change)) were open in the v0.3 variant and in both PRs as first opened, and E2 measured the change with them. W5 fixed them, with the further defects its review found, in the variant (main, up to dff9744); the PRs carry the same fixes before their review.
+- **The change's known gaps** ([ARCHITECTURE.md §2](../ARCHITECTURE.md#2-the-change-63350-and-63351)) were open in the v0.3 variant and in both PRs as first opened, and E2 measured the change with them. W5 fixed them, with the further defects its review found, in the variant (main, up to dff9744); the PRs carry the same fixes before their review.
+
+## Later
+
+- **Aborting work makes room** (2026-10-25). The Context's "a control plane can only defer new ones" is too strong: a control plane can make room only by aborting background work, as E2's preempt-resubmit baseline does at the agents' tail. Only the engine can take KV from a request already decoding, so the decision stands.
+- **W5's re-measure** (2026-10-25). W5 fixed the change's gaps and re-measured it in five rounds, each on its own sample of the agents' traces: over the ten runs of its two campaigns, the PRs with a 48-token window reach 2.17–2.40 s at p95 against W5's SLO of 2.03 s, and the frozen box 8.7–12.1 s ([BENCHMARKS.md](../BENCHMARKS.md#voice-under-agent-load-e2)). The Context keeps the numbers the decision was taken on.

@@ -1,0 +1,15 @@
+# E2 W5 extension (w5-ext-r1.campaign to w5-ext-r5.campaign): preempt-resubmit, the best arm without an engine change,
+# as disc-a8c-resubmit-s24.toml, over W5's five samples of the agents, each call opening with an unmeasured warm-up turn.
+arm = "8c"
+label = "frozen box + preempt-resubmit before the first byte, discriminating scenario, a warm-up turn opening each call"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 24
+data = "weka-x32-long"
+
+[gateway.admission]
+policy = "preempt-resubmit"
+queue_timeout_s = 240

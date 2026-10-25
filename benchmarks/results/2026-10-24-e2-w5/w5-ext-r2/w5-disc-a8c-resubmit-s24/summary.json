@@ -1,0 +1,191 @@
+{
+  "name": "w5-disc-a8c-resubmit-s24",
+  "arm": "8c",
+  "label": "frozen box + preempt-resubmit before the first byte, discriminating scenario, a warm-up turn opening each call",
+  "window_s": 372.0,
+  "voice": {
+    "turns": 50,
+    "errors": 0,
+    "v2v_ms": {
+      "n": 59,
+      "p50": 2064.2,
+      "p95": 2859.8,
+      "p99": 3146.7
+    },
+    "barge_in_to_silence_ms": {
+      "n": 8,
+      "p50": 418.2,
+      "p95": 638.8,
+      "p99": 650.0
+    },
+    "barge_ins": 9
+  },
+  "worker": {
+    "sessions": 2,
+    "turns": 59,
+    "waterfall": {
+      "transcript_ms": {
+        "n": 58,
+        "mean": 822.62,
+        "p10": 799.3,
+        "p50": 814.35,
+        "p90": 851.22,
+        "p95": 894.93,
+        "p99": 946.3
+      },
+      "end_of_turn_ms": {
+        "n": 58,
+        "mean": 827.38,
+        "p10": 803.37,
+        "p50": 817.8,
+        "p90": 856.71,
+        "p95": 896.02,
+        "p99": 951.06
+      },
+      "llm_ttft_ms": {
+        "n": 59,
+        "mean": 277.77,
+        "p10": 207.78,
+        "p50": 274.7,
+        "p90": 359.58,
+        "p95": 388.29,
+        "p99": 430.98
+      },
+      "llm_first_sentence_ms": {
+        "n": 59,
+        "mean": 727.07,
+        "p10": 426.32,
+        "p50": 606.2,
+        "p90": 1241.32,
+        "p95": 1475.72,
+        "p99": 1678.97
+      },
+      "turn_to_first_sentence_ms": {
+        "n": 58,
+        "mean": 738.74,
+        "p10": 432.93,
+        "p50": 630.3,
+        "p90": 1245.18,
+        "p95": 1481.89,
+        "p99": 1682.77
+      },
+      "tts_first_audio_ms": {
+        "n": 59,
+        "mean": 229.11,
+        "p10": 183.54,
+        "p50": 229.7,
+        "p90": 267.64,
+        "p95": 286.01,
+        "p99": 315.59
+      },
+      "e2e_ms": {
+        "n": 58,
+        "mean": 1796.12,
+        "p10": 1432.81,
+        "p50": 1713.9,
+        "p90": 2344.45,
+        "p95": 2547.3,
+        "p99": 2823.25
+      }
+    },
+    "events": {
+      "sent": 248,
+      "dropped": 0,
+      "failed": 0
+    }
+  },
+  "background": {
+    "requests": 193,
+    "errors": 1,
+    "without_usage": 0,
+    "requests_per_s": 0.519,
+    "prompt_tokens_per_s": 3409.9,
+    "completion_tokens_per_s": 27.5,
+    "tokens_per_s": 3437.3,
+    "ttft_ms": {
+      "n": 193,
+      "mean": 39892.11,
+      "p10": 8206.59,
+      "p50": 28202.27,
+      "p90": 82228.01,
+      "p95": 104939.09,
+      "p99": 160330.6
+    },
+    "fixed_window": {
+      "seconds": 240.0,
+      "requests": 131,
+      "requests_per_s": 0.546,
+      "tokens_per_s": 3284.8
+    }
+  },
+  "gateway": {
+    "realtime_first_byte_ms": {
+      "n": 61,
+      "mean": 248.23,
+      "p50": 247.89,
+      "p95": 351.29,
+      "p99": 398.19,
+      "source": "log"
+    },
+    "background_first_byte_ms": {
+      "n": 193,
+      "mean": 39890.12,
+      "p50": 28200.81,
+      "p95": 104937.79,
+      "p99": 160329.2,
+      "source": "log"
+    },
+    "shed": 0,
+    "refused": 0,
+    "resubmitted": 1251,
+    "discarded_tokens": 12742869,
+    "background_tokens_per_s": 3437.3,
+    "counters": {
+      "lh_gateway_admission_admitted_total{class=\"realtime\"}": 62,
+      "lh_gateway_admission_admitted_total{class=\"background\"}": 189,
+      "lh_gateway_admission_discarded_tokens_total{class=\"background\"}": 12742869,
+      "lh_gateway_admission_resubmits_total{class=\"background\"}": 1251,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"interrupted\"}": 9,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_started\"}": 61,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"session_closed\"}": 1,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_turn_ended\"}": 62,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_speech_started\"}": 62,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_ended\"}": 52,
+      "lh_gateway_request_outcomes_total{class=\"background\",outcome=\"completed\"}": 193,
+      "lh_gateway_request_outcomes_total{class=\"realtime\",outcome=\"cancelled\"}": 1,
+      "lh_gateway_request_outcomes_total{class=\"background\",outcome=\"cancelled\"}": 1,
+      "lh_gateway_request_outcomes_total{class=\"realtime\",outcome=\"completed\"}": 61,
+      "lh_gateway_requests_total{class=\"background\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"agents\"}": 193,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/models\",status=\"200\",tenant=\"voice\"}": 2,
+      "lh_gateway_requests_total{class=\"realtime\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"voice\"}": 62,
+      "lh_gateway_requests_total{class=\"background\",route=\"/v1/chat/completions\",status=\"499\",tenant=\"agents\"}": 1,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/events\",status=\"202\",tenant=\"voice\"}": 247,
+      "lh_gateway_sanitized_total{field=\"priority\"}": 189,
+      "lh_gateway_sanitized_total{field=\"x-request-id\"}": 189,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"prompt\"}": 41640,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"cached\"}": 39968,
+      "lh_gateway_usage_tokens_total{class=\"background\",kind=\"cached\"}": 609504,
+      "lh_gateway_usage_tokens_total{class=\"background\",kind=\"prompt\"}": 1268599,
+      "lh_gateway_usage_tokens_total{class=\"background\",kind=\"completion\"}": 10214,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"completion\"}": 1399
+    }
+  },
+  "engine": {
+    "preemptions": 10,
+    "prompt_tokens_by_source": {
+      "local_compute": 670043,
+      "local_cache_hit": 114240,
+      "external_kv_transfer": 555184
+    },
+    "refused": {
+      "max_num_queued_reqs": 0,
+      "max_num_queued_tokens": 0
+    },
+    "kv_offload_load_bytes": 122449821696,
+    "kv_offload_store_bytes": 171660017664
+  },
+  "gpu": {
+    "sm_clock_p50_mhz": 2722,
+    "temperature_max_c": 68
+  }
+}

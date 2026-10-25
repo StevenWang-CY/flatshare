@@ -1,0 +1,95 @@
+{
+  "kind": "drill",
+  "started": 1792900454.9130774,
+  "config": {
+    "realtime": 2,
+    "background": 4,
+    "max_tokens": 2000,
+    "deadline_s": 600.0,
+    "probe_interval_s": 1.0,
+    "model": "Qwen/Qwen3-4B-Instruct-2507-FP8"
+  },
+  "streams": [
+    {
+      "stream": 0,
+      "slo_class": "realtime",
+      "sent": 1792900454.9130855,
+      "status": 200,
+      "first_byte": 1792900455.0315623,
+      "chunks": 2001,
+      "last_chunk": 1792900484.1177049,
+      "end": "done",
+      "ended": 1792900484.1177907,
+      "error": null
+    },
+    {
+      "stream": 1,
+      "slo_class": "realtime",
+      "sent": 1792900454.913216,
+      "status": 200,
+      "first_byte": 1792900455.0380282,
+      "chunks": 2001,
+      "last_chunk": 1792900484.1319335,
+      "end": "done",
+      "ended": 1792900484.1320193,
+      "error": null
+    },
+    {
+      "stream": 2,
+      "slo_class": "background",
+      "sent": 1792900454.913222,
+      "status": 200,
+      "first_byte": 1792900455.66389,
+      "chunks": 2001,
+      "last_chunk": 1792900484.8809848,
+      "end": "done",
+      "ended": 1792900484.8810527,
+      "error": null
+    },
+    {
+      "stream": 3,
+      "slo_class": "background",
+      "sent": 1792900454.9132252,
+      "status": 200,
+      "first_byte": 1792900455.664267,
+      "chunks": 2001,
+      "last_chunk": 1792900484.8820424,
+      "end": "done",
+      "ended": 1792900484.882118,
+      "error": null
+    },
+    {
+      "stream": 4,
+      "slo_class": "background",
+      "sent": 1792900454.9132283,
+      "status": 200,
+      "first_byte": 1792900455.6645505,
+      "chunks": 2001,
+      "last_chunk": 1792900484.921719,
+      "end": "done",
+      "ended": 1792900484.9217954,
+      "error": null
+    },
+    {
+      "stream": 5,
+      "slo_class": "background",
+      "sent": 1792900454.9132311,
+      "status": 200,
+      "first_byte": 1792900455.6648188,
+      "chunks": 2001,
+      "last_chunk": 1792900484.9224548,
+      "end": "done",
+      "ended": 1792900484.92253,
+      "error": null
+    }
+  ],
+  "probe": {
+    "attempts": [
+      [
+        1792900484.936843,
+        "ok"
+      ]
+    ],
+    "recovered": 1792900484.936843
+  }
+}

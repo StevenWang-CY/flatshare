@@ -2,137 +2,171 @@
 
 [![CI](https://github.com/StevenWang-CY/leaseholder/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenWang-CY/leaseholder/actions/workflows/ci.yml)
 
-**A realtime voice agent and background agents on one GPU.** A self-hosted voice agent (speech to text, an LLM, text to speech) leaves its GPU idle most of the time, and background LLM work could use the gaps: coding agents, post-call summaries, batch jobs. On stock vLLM that costs the voice agent its latency. A waiting voice turn cannot take KV cache from running background requests, and once it runs, their prefill shares every step of its reply. Leaseholder measures this end to end on one RTX 5060 Ti against what an operator can deploy today, and fixes it in vLLM's scheduler, proposed upstream as [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351).
+**A voice agent and coding agents on one GPU.** A self-hosted voice agent (speech to text, an LLM, text to speech) needs
+its GPU for a fraction of each turn, and background work such as coding agents could use the rest. On vLLM 0.32, beside
+24 long-context coding-agent sessions on one RTX 5060 Ti, the voice agent's p95 response goes from 1.78 s to 10.5 s. The
+time is lost inside vLLM's scheduler: a waiting voice turn cannot take KV cache from running agent requests, and once it
+runs, their prefill shares every step of its reply. Two changes to the scheduler, proposed upstream as
+[#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351),
+bring it to 2.24 s, 0.20 s over its SLO, while the agents keep 97% of their throughput.
 
-![One call of each configuration beside 24 coding-agent sessions: tuned vLLM answers the second turn after 10.8 s, vLLM with the two PRs after 1.6 s](docs/figures/e2-demo.gif)
+![The same caller's second turn on each engine beside 24 coding-agent sessions: vLLM with the two PRs answers after 1.6 s, tuned vLLM after 10.8 s](docs/figures/e2-demo.gif)
 
-The first two turns of a call on each configuration, beside 24 coding-agent sessions on the same GPU: tuned vLLM 0.32 (left) answers the second after 10.8 s, vLLM with #63350 and #63351 (right) after 1.6 s. The 75-second video, with sound, is in the [v0.3 release](https://github.com/StevenWang-CY/leaseholder/releases/tag/v0.3).
+*The same caller's second turn on each engine, beside the same agents (recorded 2026-10-24): the two PRs answer after
+1.6 s, tuned vLLM after 10.8 s; over both calls of each run, their V2V p95 was 2.2 and 10.9 s. The 75-second video, with
+sound, is in the [v0.3 release](https://github.com/StevenWang-CY/leaseholder/releases/tag/v0.3).*
 
-| Two calls beside 24 sessions of the longest-context coding-agent traces, whose KV fills the pool, on one RTX 5060 Ti (vLLM 0.32, Qwen3-4B-FP8) | Voice-to-voice p95 | Agent tokens/s | Agent TTFT p99 |
-|---|---:|---:|---:|
-| Voice alone | 1.77 s | — | — |
-| Stock vLLM, tuned: priority scheduling, a 512-token step cap | 10.1 s | 3,710 | 99 s |
-| The best arm without an engine change: abort background work before its first byte and resubmit it | 2.59 s | 3,630 | 160 s |
-| **vLLM with #63350 and #63351**, a 48-token window | **2.19 s** | 3,493 | 97 s |
-| Leaseholder's arm 9: the engine change with a 16-token window and a KV reserve, its gateway policy capping every reply at 16 tokens | 2.06 s | 3,411 | 103 s |
+![Voice-to-voice p95 of each configuration over its runs, against the SLO: tuned vLLM near 10.5 s, a router that aborts and resubmits near 2.52 s, the two PRs at 2.24 s](docs/figures/e2-voice-p95.svg)
 
-Medians of five runs (three for the PRs' configuration); the SLO is voice alone plus 250 ms, 2.02 s. The scenario is E2's discriminating one, a saturated pool: its agents wait about a minute for a first token at the median (65 s on stock vLLM). [BENCHMARKS.md](docs/BENCHMARKS.md#voice-under-agent-load-e2) has every configuration with its runs and range, [docs/PRODUCTION.md](docs/PRODUCTION.md) the configuration to deploy, what to watch and how it fails, and [docs/METHODS.md](docs/METHODS.md) how it was all measured.
+| Two calls beside 24 coding-agent sessions that fill the KV pool | Voice p95 | Over the SLO | Agents' tokens/s | Agents' TTFT p50 |
+|---|---:|---:|---:|---:|
+| Voice alone, the SLO's reference | 1,784 ms | — | — | — |
+| vLLM 0.32, tuned: priority scheduling, a 512-token step cap, a CPU KV tier | 10,477 ms | +8,443 ms | 3,305 | 63 s |
+| Tuned, with a router that aborts agent requests before their first byte and resubmits them | 2,522 ms | +488 ms | 3,332 | 32 s |
+| + #63350: a waiting request preempts lower-priority work for KV | 5,085 ms | +3,051 ms | 3,414 | 67 s |
+| + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 3,298 | 71 s |
+| + #63351 with a 48-token window: **the configuration to deploy** | **2,236 ms** | +202 ms | 3,203 | 72 s |
 
-What the measurements say:
-- **The voice turn loses its seconds waiting for the LLM's first sentence**: 3.8 s of a 5.2 s mean turn on stock vLLM, against 0.3 s alone. Endpointing and TTS barely move.
-- **Nothing deployable fixes it in the engine today.** vLLM's priority scheduling with any step cap, its pending request-count preemption (#54530) and SGLang's priority preemption, with or without its host tier, leave the p95 between 8.8 and 12.1 s. A static KV reservation halves it; a router that aborts and resubmits background work brings it to 2.6 s, at the cost of the agents' tail.
-- **The scheduler change brings it from 10.1 s to 0.18 s over the SLO (0.15–0.27 s over three runs).** A waiting voice turn preempts lower-priority requests for KV (#63350), whose KV was written through to the CPU tier as it was computed (how much of it a victim reloads, and how much it recomputes, E2 did not measure), and lower-priority prefill sits out the steps of the turn's first tokens (#63351). The second part is the necessary one: #63350 alone stops at 5.8 s. The window has to cover the reply's first sentence: at 16 tokens full replies leave 3.2 s, at 48 the p95 is 2.2 s.
-- **A control plane in front cannot make room; only the engine can.** Leaseholder was built to time the protection from the conversation: KV headroom held from speech onset, a prefill throttle while a turn is answered, events from the voice agent. With agents' KV filling the pool these mechanisms could not act. A gateway can only defer new requests, so the headroom was never there (every reply was capped) and the throttle deferred nothing. In front of stock vLLM the same policy leaves voice where stock does (11.0 s). Whether timing helps where its mechanisms do engage was not isolated. The simulator's result for prefetching agents' KV before their tools return is negative too (E1).
-- **Where the KV pool has room, the change does not help, and nothing tested meets the SLO.** At the standard scenario's realistic load (16 session trees of the whole corpus) every configuration misses it, the best by about 0.1 s, and three runs each detect no difference between the change (2.20 s) and stock vLLM (2.32 s).
+Medians of five rounds (10 runs for tuned vLLM and 15 for the last row, which more than one campaign ran), each round on
+its own sample of the agents' traces with every configuration in a rotated order. The SLO is voice alone plus 250 ms at
+p95. The PRs' rows ran as Leaseholder's make-room variant on vLLM 0.32.0 with the PRs' switch values, which schedules as
+the PRs' diff, ported to 0.32.0, did before their revision of 2026-10-25; that revision ends the window's hold a step
+sooner, a step only replies at least the window long reach ([after
+W5](docs/BENCHMARKS.md#after-w5-the-first-tokens-in-flight)). The agents' tokens/s count the first 240 s of the calls.
+These agents wait about a minute for a first token: the regime this change is for ([is
+yours?](docs/PRODUCTION.md#is-your-deployment-in-this-regime)). Every run and range is in
+[BENCHMARKS.md](docs/BENCHMARKS.md#voice-under-agent-load-e2).
 
-## The problem, measured on one RTX 5060 Ti 16 GB
+## What it shows
 
-| | vLLM 0.32, Qwen3-4B-FP8, the frozen box (W1, 2026-10-22) |
-|---|---|
-| Resuming a 16k-token agent turn | **97 ms** from the GPU cache · **509 ms** restored from host RAM · **3.26 s** recomputed |
-| GPU KV pool with speech-to-text, LLM and text-to-speech co-located | **36,400 tokens**: two or three agent contexts |
-| One voice turn on the server (STT → first LLM sentence → first TTS audio), p50 | **589 ms** idle · **1,261 ms** beside one stream of cold 8k-token agent prefills · **2,279 ms** beside two |
-| What stock priority scheduling does about it | vLLM preempts among running requests, but a waiting voice turn cannot preempt running work when the KV cache is full ([#40004](https://github.com/vllm-project/vllm/issues/40004)) |
-| What a control plane in front costs | `lh-gateway` adds **0.38 ms** to a voice request's first token: the paired median against the engine's own socket (W1 build, on cyan) |
+1. **vLLM cannot preempt for a waiting request.** Its scheduler serves running requests first and preempts only so that
+   one of them can grow; the waiting loop stops at the first request it cannot allocate. Behind two 18k-token agent
+   requests in a full pool, a 750-token voice turn waits 4.9–5.0 s for its first token, and 219–290 ms with #63350 ([the
+   KV case](docs/BENCHMARKS.md#the-kv-case-make-room)).
+2. **Getting the turn into the batch is not enough.** A step cap bounds tokens, not time. Beside three agent prefills
+   the reply's tokens come 60–65 ms apart with #63350 alone and 16–20 ms apart with #63351, and #63350 alone leaves the
+   voice p95 at 5.1 s.
+3. **The window must cover the reply's first sentence**, because the voice agent hands TTS its first complete sentence,
+   not its first token. This agent's replies run 23 tokens at the median and 52 at most: a 16-token window leaves 3.1 s,
+   48 tokens 2.24 s.
+4. **A control plane in front can make room only by aborting work.** A gateway can hold back new requests and abort
+   admitted ones; only the engine can take KV from a request already decoding. Aborting and resubmitting agent requests
+   reaches 2.52 s at the agents' cost (TTFT p99 193 s against 106 s); the lifecycle policy (`leaseholder`), timed by the
+   conversation, never found its headroom and left tuned vLLM at 11.0 s (W4) ([what it could not
+   do](docs/METHODS.md#what-lifecycle-timing-could-and-could-not-do)).
 
-The frozen box is the one pinned configuration every experiment runs on: the LLM, STT and TTS servers sharing the GPU. More numbers are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+## Where it falls short, and what it costs
 
-## How it works
+- **A pool with room.** At a realistic load of the whole corpus (16 sessions), where the pool has room, #63350 has
+  little to do (0–7 preemptions a run) and the cap holds agent prefill in 3–13% of the steps. The PRs' p95 was the lower
+  in every one of five rounds, by 109–1,413 ms, but met the SLO in only one: 2,021–2,419 ms against tuned vLLM's
+  2,147–3,832 ms.
+- **Many calls.** #63351 holds agent prefill while any call's first tokens are due, so overlapping replies hold it for
+  longer: with 4 and 6 callers the PRs' p95 was 0.27 s and 0.26 s over each one's SLO in every round, against 0.20 s
+  with two ([how it fails](docs/PRODUCTION.md#how-it-fails)).
+- **The agents pay through the prefill hold.** Their TTFT p50 rises by 9 s, from 63 to 72 s, and the cap holds their
+  prefill in 33% of the engine's steps during the calls; the preemptions cost no measurable throughput. What a preempted
+  request recomputes when it resumes, no vLLM 0.32 counter shows
+  ([E3](docs/BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)).
+- **Other GPUs.** The mechanisms are not specific to the card; what each costs is. On an A100 40 GB with the box's pool,
+  `lh-sim` forecasts the KV case's first token at 1.6–1.7 s on stock vLLM and 134–158 ms with #63350 ([the
+  forecast](benchmarks/a100/forecast.md), written before the run that checks it, [docs/HARDWARE.md](docs/HARDWARE.md));
+  other cards are placed by the same model ([what transfers](docs/METHODS.md#what-transfers-to-other-hardware)).
 
-```text
- voice: LiveKit worker ──┐                                           agent replay (AIPerf) ──┐
- speech · turn · barge-in                                              background class      │
-                         ▼                                                                   ▼
-          ┌─────────────────────────────── lh-gateway (Rust) ───────────────────────────────┐
-          │ tenants → classes → engine priority · SSE relay with cancellation · metrics     │
-          │ admission policies: E2's baselines and Leaseholder's lifecycle-timed policy     │
-          │ voice lifecycle events · sessions placed on GPU nodes, sticky                   │
-          └────────────────────────────────────────┬─────────────────────────────────────────┘
-                                                   ▼
-     vLLM 0.32 + make-room: KV preemption for a waiting high-priority request · its first tokens'
-     prefill cap · priority scheduling · step cap · write-through CPU KV tier (20 GiB)
-     + Whisper (STT) and Kokoro (TTS) on the same 16 GB GPU
-```
+## Try it on vLLM 0.32
 
-- **The engine decides the voice turn.** The `make-room` variant changes vLLM 0.32's scheduler in three switches, generated from the installed vLLM's source at each start without modifying it: KV preemption for a waiting request of a higher priority, the prefill cap on its first tokens, and a KV reserve for priority 0. The first two are proposed upstream; the reserve stays in the variant, and with full replies E2 found the two equivalent (2.20 s with the reserve, 2.19 s with the KV preemption).
-- **The control plane is a harness.** `lh-gateway` maps tenants to classes and classes to engine priorities, relays streams with cancellation, and runs the admission policies E2 compares, Leaseholder's own lifecycle-timed policy among them. It is how the experiments are run, not what a deployment needs: the measured configuration sends the priority and nothing else.
-- **Realtime is never shed.** The engine makes room for a voice turn; under arm 9's policy the gateway caps its reply instead of refusing it.
-- **KV never crosses the network.** Sessions stick to the node that holds them. Every service binds loopback; hosts talk over SSH tunnels; the voice plane runs in a network namespace with no route out.
-
-The name is the original design's, in which the control plane held leases on sessions' KV; that design also had prefetch and a recompute ledger, and after E1 and E2 all three were dropped ([ADR-0006](docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)). [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes what is built, what was tested and not adopted, and why.
-
-## Status
-
-As of 2026-10-24 (v0.3; main has since removed the unused lease code):
-
-| Component | State |
-|---|---|
-| Frozen box on the GPU node: vLLM 0.32 LLM + Whisper STT + Kokoro TTS, pinned environment, NUMA-pinned `systemd --user` units, smoke test | **Deployed** on Phastform, and on Gray, the identical second node, for booked windows; paused when idle ([`deploy/phastform`](deploy/phastform), [`deploy/gray`](deploy/gray)) |
-| Engine variants for E2: vLLM #54530 ported to 0.32.0, SGLang 0.5.22, CUDA MPS, engine flags from an arm file, and `make-room`, Leaseholder's scheduler change for priority scheduling under KV pressure (#40004), generated from vLLM's source with three switches | **Deployed** ([`deploy/phastform/variants`](deploy/phastform/variants)); `make-room` tested on vLLM's real scheduler, probed on the GPU (4.9–5.1 s → 0.22–0.30 s to a voice turn's first token behind two 18k-token agent requests, [the KV case](docs/BENCHMARKS.md#the-kv-case-make-room)) and measured in E2 |
-| Control host: restricted SSH tunnels, `lh-gateway`, and LiveKit with the voice agent in a network namespace with no route out; SMG for one E2 arm | **Deployed** ([`deploy/cyan`](deploy/cyan)) |
-| `lh-proto`: lifecycle events, headers, SLO classes and sessions, with JSON Schemas | **Built** ([`crates/lh-proto`](crates/lh-proto)) |
-| `lh-core`: the tier cost model, KV geometry, the step-time model fitted on the frozen box, and the admission state machine with E2's baseline policies (static cap, token reservation, llm-d flow control emulated, preempt-resubmit) and Leaseholder's own, `leaseholder`: KV headroom for armed voice sessions, a critical-window prefill budget priced by the step model, degrade and aging; the placement policies for several GPU nodes (`dedicated`, `least-loaded`, `leaseholder`) | **Built** ([`crates/lh-core`](crates/lh-core)) |
-| `lh-gateway`: auth, sanitization, sessions and classes, SSE relay with cancellation and backpressure, lifecycle-event ingest with each voice session's turn state, metrics, and an admission point running `lh-core`'s policies, with the class sent upstream as vLLM's priority header, SGLang's body field or SMG's header; with `[nodes]`, sessions placed and kept on several GPU nodes, each with its own readiness probe and admission point (`POST /v1/sessions`) | **Deployed** on cyan ([`crates/lh-gateway`](crates/lh-gateway)) |
-| `lh-sim`: the agent replay through a model of vLLM's two-tier KV cache and its step loop (calibrated within 8% of resume TTFT p50 and p90 at 8 and 16 sessions), with stock arms, E1's information-level arms, a clairvoyant reference and the regime map | **Built** ([`crates/lh-sim`](crates/lh-sim)); E1's result is negative |
-| `leaseholder_vllm`: the engine variants' tests, their builds from vLLM's source and `make-room` on vLLM's real scheduler | **Built** ([`python/leaseholder_vllm`](python/leaseholder_vllm)); the lease-aware CPU-tier `CachePolicy` and connector it held, live-checked on the GPU and never used, were removed after v0.3 |
-| `leaseholder_bench`: block-scaled Claude Code traces, AIPerf loader and endpoint plugin, KV lifecycle comparison, tier and voice-turn probes, and `lh-bench e2`, the E2 harness (arm files, campaigns, per-point summaries with exact first bytes, the stage waterfall and the GPU's clocks, the frontier report with repeats, compact records and `make reproduce-e2`), points on two GPU nodes with each node's share | **Built** ([`python/leaseholder_bench`](python/leaseholder_bench), [`benchmarks/e2`](benchmarks/e2)); E2's 129 points on one node are committed ([records](benchmarks/results/2026-10-23-e2)) |
-| `leaseholder_voice`: the voice agent (`lh-voice-worker`) with its lifecycle events and per-turn stage times, measurement callers that read latency from waveforms and can record a call (`lh-voice bots`), LiveKit plugin factory, barge-in test; a call's STT and TTS on its GPU node | **Deployed** on cyan ([`python/leaseholder_voice`](python/leaseholder_voice)); the calls of every E2 point, and voice alone five times as the SLO's reference |
-
-The experiments are in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md). E2, the voice SLO against tuned stock vLLM and every deployable alternative while background agents run, is complete on one GPU node; its two-node points (dedicate vs pool) wait for a window on Gray.
-
-## Quickstart
-
-Development needs Rust 1.98, uv and Python 3.12. No GPU is required.
+The make-room variant builds vLLM 0.32.0's scheduler with the two PRs, backported, from an installed vLLM, without
+modifying it:
 
 ```sh
-make check                                         # lint and every test CI runs (below)
-make schema                                        # regenerate crates/lh-proto/schema after changing a wire type
-VLLM_SRC=~/src/vllm-v0.32.0 make test-vllm         # the engine variants' tests against an existing vLLM checkout
-make reproduce-e2                                  # E2's report, tables, frontiers and waterfall from the committed records
-make e2-figures                                    # the docs' E2 figures from the same records
-make reproduce-e1 CORPUS=DIR                       # E1's tables with lh-sim, from the 32x corpus in DIR
-make reproduce-calibration EXPORTS=DIR CORPUS=DIR  # lh-sim's calibration, from six measured runs' exports
+python python/leaseholder_vllm/src/leaseholder_vllm/build.py make-room ~/make-room
+PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 \
+  --scheduling-policy priority --max-num-batched-tokens 512 --long-prefill-token-threshold 256 \
+  --scheduler-cls lh_make_room_scheduler.AsyncScheduler \
+  --additional-config.make_room.max_preemptions_per_step 2 \
+  --additional-config.make_room.budget_cap true --additional-config.make_room.budget_cap_tokens 48 \
+  --additional-config.make_room.reserve_tokens 0
+python python/leaseholder_vllm/src/leaseholder_vllm/make-room/probe.py http://127.0.0.1:8000 kv   # a voice turn behind two long agent requests
 ```
 
-`make check` runs rustfmt, clippy and ruff, the Rust tests, the engine variants' build tests against vLLM's scheduler source (in a sparse vLLM v0.32.0 checkout it clones once into `~/.cache/leaseholder`), and the Python unit tests; `make test-make-room TORCH_PYTHON=<a python with CPU torch>` runs the engine change's behavior suite on vLLM's real scheduler. `make reproduce-e2` rebuilds E2's report from the compact records of its 129 points, the same files as from the run directories. `make reproduce-e1` rebuilds E1's tables in about a minute from the 32× corpus, which stays outside the repository ([how to build it](crates/lh-sim/README.md#usage)). `make reproduce-calibration` recomputes the simulator's calibration from the exports of the six runs it was fitted and validated on, an asset of the [v0.3 release](https://github.com/StevenWang-CY/leaseholder/releases/tag/v0.3). Deploying to the hosts is in [ops/RUNBOOK.md](ops/RUNBOOK.md#deploy).
+Send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV tier from
+[`engine.yaml`](deploy/phastform/engine.yaml). `probe.py` sizes its requests from the engine's pool and context, so the
+check runs as it is on another card.
 
-## Repository layout
+[docs/PRODUCTION.md](docs/PRODUCTION.md) has the whole configuration (the CPU tier, the priorities, what to watch, how
+it fails) and how to check it on your hardware.
+
+## How it was measured
+
+- **The box.** One RTX 5060 Ti 16 GB runs vLLM 0.32 with Qwen3-4B-Instruct-2507-FP8 and a 36,400-token KV pool, Whisper
+  and Kokoro on the same GPU, a 20 GiB CPU KV tier, NUMA-pinned units.
+- **Voice-to-voice from waveforms.** Two LiveKit callers speak scripted lines, synthesized in six voices, to a stock
+  LiveKit voice agent and time the end of their speech to the agent's first audio; the agent logs each turn's stages.
+- **The agents.** AIPerf replays the 48 longest-context Claude Code sessions of SemiAnalysis' traces, block-scaled 32×,
+  with their think times, through the gateway at a lower priority.
+- **Rounds.** Every configuration runs in each round, in a rotated order, on the round's own sample of the agents; a
+  call opens with an unmeasured warm-up turn. Baselines are configured as their authors recommend.
+- **Reproducible.** `make reproduce-e2` rebuilds every table and figure from the committed records; the gateway adds
+  0.38 ms to a request's first token.
+
+## Documentation
+
+| To | Read |
+|---|---|
+| deploy the change and watch it | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
+| see how it works in vLLM's scheduler | [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-the-change-63350-and-63351), then the two PR diffs |
+| see every number, with runs and ranges | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
+| know how each experiment was designed and run | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) |
+| read the story end to end | [docs/METHODS.md](docs/METHODS.md) |
+| compare with llm-d, Dynamo, SMG, SGLang and papers | [docs/PRIOR-ART.md](docs/PRIOR-ART.md) |
+| know why a decision was made | [docs/adr/](docs/adr) |
+| look up a term (arm 9, the frozen box, the window, W0 to W8) | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
+| run it on other hardware, or on one host | [docs/HARDWARE.md](docs/HARDWARE.md) |
+| operate the hosts, and what the failure drills showed | [ops/RUNBOOK.md](ops/RUNBOOK.md) |
+
+## Why not llm-d, Dynamo, SMG or vllm-project/router?
+
+They act in front of the engine, and the voice turn loses its time inside the engine's scheduler. E2 measured SMG,
+llm-d's flow control (emulated), and vLLM's and SGLang's own priority preemption: none meets the SLO, and most leave the
+p95 between 8.8 and 12.1 s. What this adds is the change to vLLM's scheduler (SGLang's counterpart is its own draft,
+#45686), the end-to-end measurement against every deployable alternative, and two measured negatives: a gateway policy
+timed by the conversation (E2) and agent-side KV prefetch (E1). `lh-gateway` is a small Rust harness for these
+experiments, not a fleet router. [docs/PRIOR-ART.md](docs/PRIOR-ART.md) has the sources and where each result went
+upstream.
+
+## Repository
 
 ```text
 crates/lh-proto/          wire types and their JSON Schemas
-crates/lh-core/           the cost and step-time models and KV geometry, shared with the simulator; admission and placement policies
-crates/lh-gateway/        the control-plane service in front of vLLM, with its overhead benchmark
-crates/lh-sim/            the KV cache simulator: AIPerf's replay, vLLM's two tiers, policy arms
-python/leaseholder_vllm/  the engine variants' tests: their builds from vLLM's source, make-room on the real scheduler
-python/leaseholder_bench/ trace conversion, AIPerf plugins and configs, latency probes, the E2 harness
-python/leaseholder_voice/ the voice agent, measurement callers, LiveKit integration and its hermetic barge-in test
-benchmarks/               E2's arm files and campaigns, the committed records, and runs against upstream projects
-deploy/                   per-host bootstrap, systemd units, engine variants, tunnels, smoke test
-ops/                      the runbook; dashboards and alert rules are planned
-docs/                     architecture, protocol, SLOs, experiments, benchmarks, production guide, methods, prior art, ADRs, figures
+crates/lh-core/           cost and step-time models, KV geometry, the admission policies E2 compares
+crates/lh-gateway/        the gateway that sets priorities and runs E2's admission policies
+crates/lh-sim/            the KV cache simulator behind E1
+python/leaseholder_vllm/  the change on vLLM 0.32: the PRs as patches, the build, probes and tests
+python/leaseholder_bench/ the E2 harness, trace conversion, probes and drills
+python/leaseholder_voice/ the voice agent and the measurement callers
+benchmarks/               E2's arm files and campaigns, the committed records, and the A100 run
+deploy/                   per-host bootstrap, hardware profiles, systemd units, the engine variants' drop-ins, tunnels,
+                          single-host mode
+ops/                      the runbook, the failure drills, Prometheus rules and a Grafana dashboard
+docs/                     the documents above, ADRs and figures
 ```
 
-## Why not llm-d, Dynamo or vllm-project/router?
+## Development
 
-- **Most mechanisms already ship.**
-  - llm-d v1.0 has flow control with priority bands, holdback ceilings, SLO-deadline ordering and in-flight eviction of sheddable requests.
-  - SMG, a Rust gateway, reserves slots per priority class and preempts lower classes before their first byte.
-  - Dynamo queues by priority but does not reserve capacity.
-  - vllm-project/router admits agent Programs with a logical KV TTL.
-  - In the engines, vLLM and SGLang preempt by priority, but neither lets a waiting request preempt running work when the KV cache is full.
+Rust 1.98, uv and Python 3.12; no GPU.
 
-  Leaseholder claims none of these. llm-d flow control (emulated), SMG and both engines' priority preemption are baselines it is measured against, and in the discriminating scenario none of them meets the voice SLO.
-- **What it adds:**
-  - a change to vLLM's priority scheduling for a full KV cache: a waiting request preempts lower-priority running work, which resumes from the CPU tier, and lower-priority prefill sits out its first tokens (#63350 and #63351; SGLang's counterpart is its own draft, #45686);
-  - E2: the voice SLO measured end to end, from waveforms, against every deployable alternative, with single-mechanism ablations, five repeats and each turn's stages;
-  - measured negatives: lifecycle-timed headroom and throttling beside that change (E2), lifecycle-informed retention and prefetch of agents' KV (E1).
-- **The gateway is a harness.** `lh-gateway` is a small Rust proxy for experiments on one GPU without Kubernetes. It does not compete with fleet routers. What goes where production runs:
-  - the engine change, as two vLLM scheduler PRs under #40004: [#63350](https://github.com/vllm-project/vllm/pull/63350) lets a waiting request preempt lower-priority work for KV, and [#63351](https://github.com/vllm-project/vllm/pull/63351) holds lower-priority prefill out of its first tokens;
-  - E1's negative result for agent-side retention and prefetch, on vLLM #57103 and vllm-project/router #428.
+```sh
+make check                    # lint and the tests of CI's main job
+make test-make-room-ci        # CI's make-room job (Linux x86-64): the change's behavior suite and its trace against
+                              # the PRs' patches, on vLLM's real scheduler
+make reproduce-e2             # E2's tables and figures from the committed records (W4)
+make reproduce-e2-w5          # the same for W5's records
+make reproduce-e1 CORPUS=DIR  # E1's tables with lh-sim, from the 32x corpus
+```
 
-  None of these is merged yet. Independent of them, this work proposed to agentic-api a benchmark sweep ([#478](https://github.com/vllm-project/agentic-api/pull/478)), a lifecycle-event sink (#364) and cache-control pass-through (#330), likewise not merged.
-
-See [docs/PRIOR-ART.md](docs/PRIOR-ART.md) for sources and status.
+The name is the original design's, in which the gateway held leases on sessions' KV; E1 and E2 showed the engine had to
+carry the realtime tier, and that design was dropped
+([ADR-0006](docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)).
 
 ## License
 

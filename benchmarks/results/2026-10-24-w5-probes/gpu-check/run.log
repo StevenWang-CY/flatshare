@@ -1,0 +1,77 @@
+16:11:56Z start; DEPLOYED v0.3-31-ge277e85; final build.py a997b14eee04be5a, v0.3 build.py ba7bbe076530311b
+16:12:16Z CPU suite on the engine venv: exit 0: 65 passed, 3 skipped in 17.50s
+16:12:16Z block final: build.py sha256 a997b14eee04be5a
+active
+active
+active
+16:16:32Z final: engine ready; additional_config {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': True, 'reserve_tokens': 0}}; GPU processes: 3559467, ~/leaseholder/venvs/tts/bin/python, 812 MiB;3559677, VLLM::EngineCore, 2440 MiB;3561119, VLLM::EngineCore, 10386 MiB;
+16:16:32Z final kv 1
+16:16:40Z final kv 2
+16:16:49Z final kv 3
+16:16:58Z final prefill 1
+16:17:02Z final prefill 2
+16:17:06Z final prefill 3
+16:17:10Z final prefill 4
+16:17:14Z final tail fresh 1
+16:22:10Z final tail fresh 2
+16:27:02Z final tail grow 1
+16:32:35Z final tail grow 2
+16:38:08Z final: done; engine make-room lines: 0, errors: 8
+16:38:08Z block v03: build.py sha256 ba7bbe076530311b
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0
+16:39:48Z v03: engine ready; additional_config {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': True, 'reserve_tokens': 0}}; GPU processes: 3559467, ~/leaseholder/venvs/tts/bin/python, 812 MiB;3559677, VLLM::EngineCore, 2440 MiB;3568960, VLLM::EngineCore, 10386 MiB;
+16:39:48Z v03 kv 1
+16:39:57Z v03 kv 2
+16:40:05Z v03 kv 3
+16:40:14Z v03 prefill 1
+16:40:18Z v03 prefill 2
+16:40:22Z v03 prefill 3
+16:40:26Z v03 prefill 4
+16:40:30Z v03 tail fresh 1
+16:45:27Z v03 tail fresh 2
+16:50:24Z v03 tail grow 1
+16:55:49Z v03 tail grow 2
+17:01:21Z v03: done; engine make-room lines: 0, errors: 0
+17:01:21Z restored the final build.py: a997b14eee04be5a
+17:01:21Z box stopped (restart: systemctl --user start leaseholder.target); GPU 13720 MiB
+17:01:21Z done
+17:01:29Z block loadhold: build.py sha256 93297c10ef5d08d3
+active
+active
+active
+17:05:46Z loadhold: engine ready; additional_config {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': True, 'reserve_tokens': 0}}
+17:05:46Z loadhold kv 1
+17:05:54Z loadhold kv 2
+17:06:03Z loadhold kv 3
+17:06:12Z loadhold prefill 1
+17:06:16Z loadhold prefill 2
+17:06:20Z loadhold prefill 3
+17:06:24Z loadhold prefill 4
+17:06:28Z loadhold tail fresh 1
+17:11:26Z loadhold tail fresh 2
+17:16:20Z loadhold tail grow 1
+17:21:45Z loadhold tail grow 2
+17:27:13Z loadhold: done; engine make-room lines: 102, errors: 0
+17:27:13Z restored the final build.py: a997b14eee04be5a
+17:27:14Z box stopped (restart: systemctl --user start leaseholder.target); GPU 13720 MiB
+17:27:14Z loadhold done
+18:24:40Z block final2: build.py sha256 73aea2efb3aa82cc
+18:25:00Z CPU suite on the engine venv: exit 0: 76 passed, 3 skipped in 17.36s
+active
+active
+active
+18:29:11Z final2: engine ready; additional_config {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': True, 'reserve_tokens': 0}}
+18:29:11Z final2 kv 1
+18:29:20Z final2 kv 2
+18:29:29Z final2 kv 3
+18:29:37Z final2 prefill 1
+18:29:41Z final2 prefill 2
+18:29:45Z final2 prefill 3
+18:29:49Z final2 prefill 4
+18:29:53Z final2 tail fresh 1
+18:34:48Z final2 tail fresh 2
+18:39:41Z final2 tail grow 1
+18:45:08Z final2 tail grow 2
+18:50:36Z final2: done; engine make-room lines: 101, errors: 8
+18:50:36Z box stopped (restart: systemctl --user start leaseholder.target); GPU 13720 MiB
+18:50:36Z final2 done

@@ -1,0 +1,151 @@
+{
+  "name": "w5-a1-voice",
+  "arm": "1",
+  "label": "frozen box, voice alone, a warm-up turn opening each call",
+  "window_s": 345.0,
+  "voice": {
+    "turns": 50,
+    "errors": 0,
+    "v2v_ms": {
+      "n": 59,
+      "p50": 1618.7,
+      "p95": 1784.3,
+      "p99": 1938.5
+    },
+    "barge_in_to_silence_ms": {
+      "n": 9,
+      "p50": 538.0,
+      "p95": 682.0,
+      "p99": 687.0
+    },
+    "barge_ins": 9
+  },
+  "worker": {
+    "sessions": 2,
+    "turns": 59,
+    "waterfall": {
+      "transcript_ms": {
+        "n": 58,
+        "mean": 754.61,
+        "p10": 735.99,
+        "p50": 747.45,
+        "p90": 789.88,
+        "p95": 799.0,
+        "p99": 822.43
+      },
+      "end_of_turn_ms": {
+        "n": 58,
+        "mean": 759.27,
+        "p10": 739.33,
+        "p50": 753.45,
+        "p90": 796.51,
+        "p95": 805.17,
+        "p99": 826.86
+      },
+      "llm_ttft_ms": {
+        "n": 59,
+        "mean": 80.86,
+        "p10": 63.86,
+        "p50": 79.7,
+        "p90": 95.88,
+        "p95": 99.47,
+        "p99": 120.77
+      },
+      "llm_first_sentence_ms": {
+        "n": 59,
+        "mean": 291.75,
+        "p10": 203.6,
+        "p50": 296.0,
+        "p90": 384.34,
+        "p95": 412.34,
+        "p99": 467.87
+      },
+      "turn_to_first_sentence_ms": {
+        "n": 58,
+        "mean": 296.69,
+        "p10": 211.32,
+        "p50": 298.45,
+        "p90": 391.08,
+        "p95": 422.33,
+        "p99": 470.73
+      },
+      "tts_first_audio_ms": {
+        "n": 59,
+        "mean": 202.26,
+        "p10": 168.36,
+        "p50": 190.4,
+        "p90": 240.68,
+        "p95": 246.97,
+        "p99": 277.95
+      },
+      "e2e_ms": {
+        "n": 58,
+        "mean": 1259.27,
+        "p10": 1150.29,
+        "p50": 1265.2,
+        "p90": 1371.21,
+        "p95": 1418.76,
+        "p99": 1460.86
+      }
+    },
+    "events": {
+      "sent": 248,
+      "dropped": 0,
+      "failed": 0
+    }
+  },
+  "background": null,
+  "gateway": {
+    "realtime_first_byte_ms": {
+      "n": 62,
+      "mean": 57.15,
+      "p50": 55.32,
+      "p95": 73.55,
+      "p99": 88.27,
+      "source": "log"
+    },
+    "background_first_byte_ms": {
+      "n": 0,
+      "source": "log"
+    },
+    "shed": 0,
+    "refused": 0,
+    "resubmitted": 0,
+    "discarded_tokens": 0,
+    "background_tokens_per_s": 0.0,
+    "counters": {
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"session_closed\"}": 1,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_started\"}": 61,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_turn_ended\"}": 62,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_speech_started\"}": 62,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_ended\"}": 52,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"interrupted\"}": 9,
+      "lh_gateway_request_outcomes_total{class=\"realtime\",outcome=\"cancelled\"}": 1,
+      "lh_gateway_request_outcomes_total{class=\"realtime\",outcome=\"completed\"}": 61,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/models\",status=\"200\",tenant=\"voice\"}": 2,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/events\",status=\"202\",tenant=\"voice\"}": 247,
+      "lh_gateway_requests_total{class=\"realtime\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"voice\"}": 62,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"prompt\"}": 40655,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"completion\"}": 1354,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"cached\"}": 38992
+    }
+  },
+  "engine": {
+    "preemptions": 0,
+    "prompt_tokens_by_source": {
+      "local_compute": 1690,
+      "local_cache_hit": 39232,
+      "external_kv_transfer": 0
+    },
+    "refused": {
+      "max_num_queued_reqs": 0,
+      "max_num_queued_tokens": 0
+    },
+    "kv_offload_load_bytes": null,
+    "kv_offload_store_bytes": 370409472
+  },
+  "gpu": {
+    "sm_clock_p50_mhz": 2580,
+    "temperature_max_c": 57
+  }
+}

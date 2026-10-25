@@ -1,0 +1,27 @@
+# The README's figure, docs/figures/e2-voice-p95.svg (make e2-w5-figure): these points' configurations in the
+# discriminating scenario, top to bottom. Each ran in the same rounds as the others, over W5's five samples of the
+# agents' traces. `change` marks the rows that run the two PRs' rules: the make-room variant on vLLM 0.32.0 with the
+# PRs' switch values, on the tuned box.
+
+[[row]]
+point = "w5-disc-frozen-s24"
+label = "Tuned vLLM 0.32"
+
+[[row]]
+point = "w5-disc-a8c-resubmit-s24"
+label = "Tuned vLLM, a router that aborts and resubmits"
+
+[[row]]
+point = "w5-disc-pr-a-s24"
+label = "#63350: KV preemption"
+change = true
+
+[[row]]
+point = "w5-disc-pr-ab-s24"
+label = "#63350 and #63351, 16-token window"
+change = true
+
+[[row]]
+point = "w5-disc-pr-ab48-s24"
+label = "#63350 and #63351, 48-token window"
+change = true

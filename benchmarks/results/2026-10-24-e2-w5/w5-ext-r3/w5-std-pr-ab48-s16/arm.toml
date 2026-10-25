@@ -1,0 +1,14 @@
+# E2 W5 extension: the engine as the two vLLM PRs propose it with a 48-token window, no reserve, as
+# w5-disc-pr-ab48-s24.toml, in the standard scenario (the whole corpus) beside 16 agent session trees.
+arm = "9-pr-ab48"
+label = "vLLM PRs A and B with a 48-token window, no gateway policy, standard scenario, a warm-up turn opening each call"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 16
+
+[engine]
+variant = "make-room"
+flags = ["--additional-config.make_room.reserve_tokens", "0", "--additional-config.make_room.budget_cap_tokens", "48"]

@@ -1,0 +1,57 @@
+02:36:02Z start; DEPLOYED v0.3-71-g66deebb; make-room build.py sha256 73aea2efb3aa82cc; GPU NVIDIA GeForce RTX 5060 Ti, 2 MiB, 35; GPU processes: 
+02:36:02Z block stock: variant.sh use frozen
+active
+active
+active
+02:38:36Z stock: engine ready; scheduler_cls None additional_config {}; GPU 13698 MiB, 39; GPU processes: 3820071, ~/leaseholder/venvs/tts/bin/python, 812 MiB;3820410, VLLM::EngineCore, 2440 MiB;3821155, VLLM::EngineCore, 10386 MiB;
+02:38:36Z stock kv 1
+02:38:49Z stock kv 2
+02:39:03Z stock kv 3
+02:39:16Z stock kv 4
+02:39:30Z stock prefill 1
+02:39:34Z stock prefill 2
+02:39:39Z stock prefill 3
+02:39:44Z stock prefill 4
+02:39:49Z stock tail fresh 1
+02:44:43Z stock tail fresh 2
+02:49:37Z stock tail grow 1
+02:54:59Z stock tail grow 2
+03:00:26Z stock: done; engine make-room lines: 0, errors: 0
+03:00:26Z block a: variant.sh use make-room --additional-config.make_room.budget_cap false --additional-config.make_room.reserve_tokens 0
+active
+active
+active
+03:02:06Z a: engine ready; scheduler_cls lh_make_room_scheduler.AsyncScheduler additional_config {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': False, 'reserve_tokens': 0}}; GPU 13698 MiB, 40; GPU processes: 3820071, ~/leaseholder/venvs/tts/bin/python, 812 MiB;3820410, VLLM::EngineCore, 2440 MiB;3829108, VLLM::EngineCore, 10386 MiB;
+03:02:06Z a kv 1
+03:02:15Z a kv 2
+03:02:23Z a kv 3
+03:02:32Z a kv 4
+03:02:41Z a prefill 1
+03:02:46Z a prefill 2
+03:02:50Z a prefill 3
+03:02:55Z a prefill 4
+03:02:59Z a tail fresh 1
+03:07:52Z a tail fresh 2
+03:12:48Z a tail grow 1
+03:18:10Z a tail grow 2
+03:23:41Z a: done; engine make-room lines: 68, errors: 0
+03:23:41Z block ab: variant.sh use make-room --additional-config.make_room.reserve_tokens 0
+active
+active
+active
+03:25:21Z ab: engine ready; scheduler_cls lh_make_room_scheduler.AsyncScheduler additional_config {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': True, 'reserve_tokens': 0}}; GPU 13698 MiB, 40; GPU processes: 3820071, ~/leaseholder/venvs/tts/bin/python, 812 MiB;3820410, VLLM::EngineCore, 2440 MiB;3836504, VLLM::EngineCore, 10386 MiB;
+03:25:21Z ab kv 1
+03:25:29Z ab kv 2
+03:25:38Z ab kv 3
+03:25:47Z ab kv 4
+03:25:56Z ab prefill 1
+03:25:59Z ab prefill 2
+03:26:03Z ab prefill 3
+03:26:07Z ab prefill 4
+03:26:11Z ab tail fresh 1
+03:31:06Z ab tail fresh 2
+03:35:58Z ab tail grow 1
+03:41:21Z ab tail grow 2
+03:46:42Z ab: done; engine make-room lines: 102, errors: 0
+03:46:42Z box stopped (restart: systemctl --user start leaseholder.target); GPU 13720 MiB
+03:46:42Z done

@@ -1,0 +1,64 @@
+{
+  "kind": "drill-cpu-tier",
+  "capacity_bytes": 21474836480,
+  "stored_bytes": 43486543872.0,
+  "fill_requests": 18,
+  "fill_ms": {
+    "n": 18,
+    "mean": 3303.63,
+    "p10": 3297.91,
+    "p50": 3301.73,
+    "p90": 3311.27,
+    "p95": 3312.17,
+    "p99": 3312.61
+  },
+  "samples": [
+    {
+      "rep": 0,
+      "tokens": 8192,
+      "tier": "recompute",
+      "ms": 1108.78,
+      "prompt_tokens": 8192,
+      "gpu_hit_tokens": 0,
+      "cpu_hit_tokens": 0,
+      "valid": true,
+      "computed": 8192
+    },
+    {
+      "rep": 0,
+      "tokens": 8192,
+      "tier": "recompute",
+      "ms": 1111.99,
+      "prompt_tokens": 8192,
+      "gpu_hit_tokens": 0,
+      "cpu_hit_tokens": 0,
+      "valid": true,
+      "computed": 8192
+    },
+    {
+      "rep": 0,
+      "tokens": 8192,
+      "tier": "cpu",
+      "ms": 293.69,
+      "prompt_tokens": 8192,
+      "gpu_hit_tokens": 0,
+      "cpu_hit_tokens": 8192,
+      "valid": true,
+      "computed": 0
+    },
+    {
+      "rep": 0,
+      "tokens": 8192,
+      "tier": "recompute",
+      "ms": 1111.14,
+      "prompt_tokens": 8192,
+      "gpu_hit_tokens": 0,
+      "cpu_hit_tokens": 0,
+      "valid": true,
+      "computed": 8192
+    }
+  ],
+  "healthy": true,
+  "failure": null,
+  "passed": true
+}

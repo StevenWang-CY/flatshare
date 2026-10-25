@@ -1,0 +1,10 @@
+lh-engine-journal.txt:
+      0.0 s  the unit starts
+     16.5 s  the API server is up
+     38.4 s  the engine process is up
+     54.1 s  the weights are loaded
+     55.4 s  the KV cache is allocated
+     84.1 s  the CUDA graphs are captured
+     86.0 s  the engine is initialized
+     87.9 s  the server listens
+     88.8 s  the unit is ready (its health check)

@@ -70,7 +70,7 @@ Under the `leaseholder` admission policy, the gateway keeps each realtime sessio
 | `playback_ended` | `played_ms` | the voice worker | Back to idle |
 | `interrupted` | `played_ms`, what the caller heard | the voice worker, on barge-in | The caller is speaking again |
 | `session_closed` | — | the voice worker, when the caller hangs up | Forgets the session, and ends its placement |
-| `turn_started`, `turn_finished`, `tool_wait_started`, `tool_wait_ended` | `stop_reason` and token counts; `tool`, `eta_ms` | nothing yet | Accepted, no effect |
+| `turn_started`, `turn_finished`, `tool_wait_started`, `tool_wait_ended` | `stop_reason` and token counts; `tool`, `eta_ms` | nothing: an agent framework's sink is proposed in [agentic-api#364](https://github.com/vllm-project/agentic-api/issues/364) | Accepted, no effect: E1 found that agent-side timing closes nothing ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)) |
 
 [`leaseholder-voice`](../python/leaseholder_voice/README.md#lifecycle-events-and-turn-lines) gives the LiveKit hook behind each voice event and when it fires.
 

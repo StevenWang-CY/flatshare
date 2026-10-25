@@ -1,0 +1,10 @@
+# E2 W5 extension: the frozen box in the standard scenario (the whole corpus) beside 16 agent session trees, as
+# a4-b512-t256-s16.toml, each call opening with an unmeasured warm-up turn.
+arm = 4
+label = "priority, step cap 512, long-prefill threshold 256 (frozen box), a warm-up turn opening each call"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 16

@@ -1,0 +1,191 @@
+{
+  "name": "w5-disc-a8c-resubmit-s24",
+  "arm": "8c",
+  "label": "frozen box + preempt-resubmit before the first byte, discriminating scenario, a warm-up turn opening each call",
+  "window_s": 353.0,
+  "voice": {
+    "turns": 50,
+    "errors": 0,
+    "v2v_ms": {
+      "n": 59,
+      "p50": 1968.5,
+      "p95": 2521.9,
+      "p99": 2677.5
+    },
+    "barge_in_to_silence_ms": {
+      "n": 9,
+      "p50": 356.5,
+      "p95": 658.1,
+      "p99": 674.3
+    },
+    "barge_ins": 9
+  },
+  "worker": {
+    "sessions": 2,
+    "turns": 59,
+    "waterfall": {
+      "transcript_ms": {
+        "n": 58,
+        "mean": 812.13,
+        "p10": 797.64,
+        "p50": 809.2,
+        "p90": 830.92,
+        "p95": 835.38,
+        "p99": 842.55
+      },
+      "end_of_turn_ms": {
+        "n": 58,
+        "mean": 816.81,
+        "p10": 802.14,
+        "p50": 814.9,
+        "p90": 838.39,
+        "p95": 841.68,
+        "p99": 847.69
+      },
+      "llm_ttft_ms": {
+        "n": 59,
+        "mean": 254.88,
+        "p10": 188.86,
+        "p50": 249.9,
+        "p90": 314.44,
+        "p95": 332.48,
+        "p99": 385.15
+      },
+      "llm_first_sentence_ms": {
+        "n": 59,
+        "mean": 630.42,
+        "p10": 378.42,
+        "p50": 535.3,
+        "p90": 1054.08,
+        "p95": 1198.31,
+        "p99": 1250.5
+      },
+      "turn_to_first_sentence_ms": {
+        "n": 58,
+        "mean": 641.32,
+        "p10": 392.03,
+        "p50": 550.5,
+        "p90": 1059.78,
+        "p95": 1201.71,
+        "p99": 1253.65
+      },
+      "tts_first_audio_ms": {
+        "n": 59,
+        "mean": 219.1,
+        "p10": 184.62,
+        "p50": 211.8,
+        "p90": 255.5,
+        "p95": 258.51,
+        "p99": 325.67
+      },
+      "e2e_ms": {
+        "n": 58,
+        "mean": 1677.97,
+        "p10": 1412.53,
+        "p50": 1607.7,
+        "p90": 2112.13,
+        "p95": 2243.5,
+        "p99": 2320.69
+      }
+    },
+    "events": {
+      "sent": 248,
+      "dropped": 0,
+      "failed": 0
+    }
+  },
+  "background": {
+    "requests": 175,
+    "errors": 1,
+    "without_usage": 0,
+    "requests_per_s": 0.496,
+    "prompt_tokens_per_s": 3734.5,
+    "completion_tokens_per_s": 21.2,
+    "tokens_per_s": 3755.7,
+    "ttft_ms": {
+      "n": 175,
+      "mean": 41908.53,
+      "p10": 9327.16,
+      "p50": 26621.5,
+      "p90": 89800.86,
+      "p95": 120345.08,
+      "p99": 192812.34
+    },
+    "fixed_window": {
+      "seconds": 240.0,
+      "requests": 123,
+      "requests_per_s": 0.512,
+      "tokens_per_s": 3703.1
+    }
+  },
+  "gateway": {
+    "realtime_first_byte_ms": {
+      "n": 61,
+      "mean": 229.75,
+      "p50": 231.79,
+      "p95": 312.37,
+      "p99": 362.92,
+      "source": "log"
+    },
+    "background_first_byte_ms": {
+      "n": 175,
+      "mean": 41906.05,
+      "p50": 26619.93,
+      "p95": 120343.66,
+      "p99": 192810.69,
+      "source": "log"
+    },
+    "shed": 0,
+    "refused": 0,
+    "resubmitted": 1210,
+    "discarded_tokens": 15259140,
+    "background_tokens_per_s": 3755.7,
+    "counters": {
+      "lh_gateway_admission_admitted_total{class=\"background\"}": 172,
+      "lh_gateway_admission_admitted_total{class=\"realtime\"}": 62,
+      "lh_gateway_admission_discarded_tokens_total{class=\"background\"}": 15259140,
+      "lh_gateway_admission_resubmits_total{class=\"background\"}": 1210,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_started\"}": 61,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"interrupted\"}": 9,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"session_closed\"}": 1,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_ended\"}": 52,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_speech_started\"}": 62,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_turn_ended\"}": 62,
+      "lh_gateway_request_outcomes_total{class=\"background\",outcome=\"cancelled\"}": 1,
+      "lh_gateway_request_outcomes_total{class=\"realtime\",outcome=\"completed\"}": 61,
+      "lh_gateway_request_outcomes_total{class=\"realtime\",outcome=\"cancelled\"}": 1,
+      "lh_gateway_request_outcomes_total{class=\"background\",outcome=\"completed\"}": 175,
+      "lh_gateway_requests_total{class=\"background\",route=\"/v1/chat/completions\",status=\"499\",tenant=\"agents\"}": 1,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/models\",status=\"200\",tenant=\"voice\"}": 2,
+      "lh_gateway_requests_total{class=\"background\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"agents\"}": 175,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/events\",status=\"202\",tenant=\"voice\"}": 247,
+      "lh_gateway_requests_total{class=\"realtime\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"voice\"}": 62,
+      "lh_gateway_sanitized_total{field=\"priority\"}": 172,
+      "lh_gateway_sanitized_total{field=\"x-request-id\"}": 172,
+      "lh_gateway_usage_tokens_total{class=\"background\",kind=\"cached\"}": 690096,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"cached\"}": 39584,
+      "lh_gateway_usage_tokens_total{class=\"background\",kind=\"prompt\"}": 1318417,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"completion\"}": 1411,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"prompt\"}": 41175,
+      "lh_gateway_usage_tokens_total{class=\"background\",kind=\"completion\"}": 7473
+    }
+  },
+  "engine": {
+    "preemptions": 7,
+    "prompt_tokens_by_source": {
+      "local_compute": 609611,
+      "local_cache_hit": 80448,
+      "external_kv_transfer": 649232
+    },
+    "refused": {
+      "max_num_queued_reqs": 0,
+      "max_num_queued_tokens": 0
+    },
+    "kv_offload_load_bytes": 118821224448,
+    "kv_offload_store_bytes": 186287652864
+  },
+  "gpu": {
+    "sm_clock_p50_mhz": 2722,
+    "temperature_max_c": 69
+  }
+}
