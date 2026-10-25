@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "leaseholder-stats"
+version = "0.3.0"
+description = "The statistics Leaseholder's measurements publish, defined once: inclusive percentiles, censored V2V samples, Prometheus text"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+# The standard library only: the probes load it by path in the engine's environment.
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
