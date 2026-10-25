@@ -11,6 +11,7 @@ use lh_core::{
 use lh_sim::aiperf::{ConvKind, PlanOptions, reference};
 use lh_sim::corpus::Corpus;
 use lh_sim::engine::Engine;
+use lh_sim::forecast;
 use lh_sim::hardware::{self, Gpu};
 use lh_sim::replay::{Pauses, ReplayConfig, Service};
 use lh_sim::replay_log;
@@ -46,6 +47,9 @@ enum Command {
     /// E1 arms at each GPU's pool and session counts, and how long the agents leave a realtime
     /// tier short of KV.
     Hardware(HardwareArgs),
+    /// Writes the forecast for a run on another GPU: its modeled costs as a range, E0's cells, the
+    /// engine probes' cases, the time-equivalent step cap and E2's scenarios on the regime map.
+    Forecast(ForecastArgs),
     /// Dumps AIPerf's replay structure and lane plan as the simulator builds it, in the format of
     /// scripts/aiperf_reference.py, to check the port against AIPerf.
     #[command(hide = true)]
@@ -334,8 +338,12 @@ struct HardwareArgs {
     /// --token-scale scales no pool: each GPU has its own.
     #[command(flatten)]
     replay: ReplayArgs,
-    /// GPUs: rtx-5060-ti (the frozen box, measured), l4 and h100-sxm (modeled).
-    #[arg(long, value_delimiter = ',', default_value = "rtx-5060-ti,l4,h100-sxm")]
+    /// GPUs: rtx-5060-ti (the frozen box, measured), l4, a100-40gb and h100-sxm (modeled).
+    #[arg(
+        long,
+        value_delimiter = ',',
+        default_value = "rtx-5060-ti,l4,a100-40gb,h100-sxm"
+    )]
     gpus: Vec<Gpu>,
     /// Replay the corpus on each GPU as close to the traces' original token counts as it can serve:
     /// at the least power-of-two scaling whose longest request fits its pool and the model's
@@ -366,6 +374,30 @@ struct HardwareArgs {
     #[arg(long)]
     csv: Option<PathBuf>,
     /// Write the GPUs and their placements to this Markdown file.
+    #[arg(long)]
+    markdown: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct ForecastArgs {
+    /// The 32x corpus, which the calibration point replays whole.
+    whole: PathBuf,
+    /// E2's discriminating corpus, the 48 traces of the 32x corpus with the largest contexts
+    /// (`benchmarks/e2/long_traces.py` links them).
+    long: PathBuf,
+    /// The GPU.
+    #[arg(long, default_value = "a100-40gb")]
+    gpu: Gpu,
+    /// Seeds: E2's five rounds replay agent seeds 11 to 15.
+    #[arg(long, value_delimiter = ',', default_value = "11,12,13,14,15")]
+    seeds: Vec<u64>,
+    /// Profiling duration of each cell's replay, in seconds.
+    #[arg(long, default_value_t = 600.0)]
+    duration: f64,
+    /// Cells to run at once. Default: the machine's cores.
+    #[arg(long)]
+    jobs: Option<usize>,
+    /// Write the report to this Markdown file.
     #[arg(long)]
     markdown: Option<PathBuf>,
 }
@@ -426,6 +458,7 @@ fn main() -> ExitCode {
         Command::ReplayLog(args) => replay_log(args),
         Command::Regime(args) => regime(args),
         Command::Hardware(args) => hardware(args),
+        Command::Forecast(args) => forecast(args),
         Command::AiperfPlan(args) => aiperf_plan(args),
     };
     match result {
@@ -844,6 +877,39 @@ fn hardware(args: HardwareArgs) -> Result<(), String> {
     Ok(())
 }
 
+fn forecast(args: ForecastArgs) -> Result<(), String> {
+    let cells = forecast::cells(&args.gpu);
+    let jobs = args.jobs.unwrap_or_else(|| {
+        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+    });
+    let base = ReplayConfig {
+        duration_s: args.duration,
+        ..ReplayConfig::default()
+    };
+    let start = std::time::Instant::now();
+    let placed = forecast::place(
+        &args.whole,
+        &args.long,
+        PlanOptions::default(),
+        &base,
+        &cells,
+        &args.seeds,
+        jobs,
+    )?;
+    let report = forecast::report(&args.gpu, &cells, &placed, &args.seeds);
+    print!("{report}");
+    eprintln!(
+        "{} cells x {} seeds in {:.1} s on {jobs} threads",
+        cells.len(),
+        args.seeds.len(),
+        start.elapsed().as_secs_f64()
+    );
+    if let Some(path) = &args.markdown {
+        write(path, &report)?;
+    }
+    Ok(())
+}
+
 fn replay_log(args: LogArgs) -> Result<(), String> {
     if args.arm == Arm::Clairvoyant {
         return Err("replay-log runs a stock arm".into());
@@ -1004,12 +1070,32 @@ mod tests {
         // and two calls.
         let d = hardware_args(&["hardware", "DATA"]);
         assert_eq!(d.gpus, hardware::GPUS);
+        assert_eq!(d.gpus[2], hardware::A100_40GB);
         assert_eq!(d.sessions[..7], [5, 8, 12, 16, 24, 32, 40]);
         assert_eq!((d.seeds, d.cpu_ratio, d.calls), (vec![11, 12, 13], 4.0, 2));
         assert!(!d.fit && d.replay.config().token_scale == 1);
         // --fit takes the place of --token-scale, and an unknown GPU is refused.
         assert!(parse(&["hardware", "DATA", "--fit", "--token-scale", "2"]).is_err());
         assert!(parse(&["hardware", "DATA", "--gpus", "a100"]).is_err());
+    }
+
+    #[test]
+    fn forecast_takes_its_corpora_gpu_and_seeds() {
+        let f = match parse(&["forecast", "WHOLE", "LONG"]).unwrap().command {
+            Command::Forecast(f) => f,
+            _ => panic!("not the forecast command"),
+        };
+        // By default the A100 40 GB, E2's five seeds and 600 s replays.
+        assert_eq!(
+            (f.gpu, f.seeds, f.duration),
+            (hardware::A100_40GB, vec![11, 12, 13, 14, 15], 600.0)
+        );
+        assert_eq!(
+            (f.whole, f.long),
+            (PathBuf::from("WHOLE"), PathBuf::from("LONG"))
+        );
+        assert!(parse(&["forecast", "WHOLE"]).is_err());
+        assert!(parse(&["forecast", "WHOLE", "LONG", "--gpu", "a100"]).is_err());
     }
 
     #[test]

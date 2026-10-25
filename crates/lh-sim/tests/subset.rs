@@ -9,7 +9,8 @@ use lh_core::{FROZEN_BOX_POOL_TOKENS, KvGeometry, PromptSources, TierCapacity};
 use lh_sim::aiperf::{PlanOptions, reference};
 use lh_sim::corpus::Corpus;
 use lh_sim::engine::Engine;
-use lh_sim::hardware::{self, Gpu, H100_SXM, RTX_5060_TI};
+use lh_sim::forecast;
+use lh_sim::hardware::{self, A100_40GB, Gpu, H100_SXM, RTX_5060_TI};
 use lh_sim::replay::{Pauses, Replay, ReplayConfig, Service, TimelineEvent};
 use lh_sim::retention::Retention;
 use lh_sim::run::{self, Arm, ArmResult, RunConfig};
@@ -284,6 +285,60 @@ fn the_box_places_as_the_regime_sweep_runs_it_and_an_h100_elsewhere() {
     assert!(share(h) <= share(b) && share(b) < 1.0);
     let table = hardware::csv(&placed);
     assert_eq!(table.lines().count(), 1 + 2 * Arm::E1.len());
+}
+
+#[test]
+fn the_forecast_places_its_cells_as_run_places_them() {
+    let traces = testdata("weka-x32-sub16");
+    let base = ReplayConfig {
+        duration_s: 120.0,
+        ..ReplayConfig::default()
+    };
+    let cells = forecast::cells(&A100_40GB);
+    // The core's three cells and the calibration point's two, on the subset as both corpora.
+    let cells = &cells[..5];
+    let placed = forecast::place(
+        &traces,
+        &traces,
+        PlanOptions::default(),
+        &base,
+        cells,
+        &[11],
+        2,
+    )
+    .unwrap();
+    // The box's own core cell is `lru-cpu` at 24 sessions on the frozen box with two calls of
+    // realtime tier, as `run` runs it.
+    let cfg = RunConfig::frozen_box(ReplayConfig {
+        concurrency: 24,
+        ..forecast::replay(&base)
+    });
+    let capacity = TierCapacity::frozen_box(&KvGeometry::QWEN3_4B_BF16);
+    let (alone, _) = run::run_arm(&mut corpus(), &cfg, Arm::LruCpu, capacity, false).unwrap();
+    let s = &alone.summary;
+    assert_eq!(placed[0].pressure_mean, s.regime.kv_pressure_mean);
+    assert_eq!(placed[0].resume_p90_ms, s.resume_ttft_ms.p90);
+    assert_eq!(
+        placed[0].running_share,
+        s.replay.realtime_blocked_share.unwrap()
+    );
+    // The A100 runs the same agents faster: less of its time busy, never a longer resume tail.
+    let (b, a) = (&placed[0], &placed[2]);
+    assert!(a.busy < b.busy, "{} vs {}", a.busy, b.busy);
+    assert!(a.resume_p90_ms <= b.resume_p90_ms);
+    let report = forecast::report(&A100_40GB, cells, &placed, &[11]);
+    for heading in [
+        "# Forecast: the A100 40 GB against the frozen box",
+        "## Step and tier costs, Qwen3-4B-Instruct-2507-FP8",
+        "## Step and tier costs, Qwen3-14B-FP8",
+        "## E0's cells",
+        "## The engine probes",
+        "## E2's scenarios on the regime map",
+        "## What the forecast says the run will show",
+    ] {
+        assert!(report.contains(heading), "{heading}\n{report}");
+    }
+    assert!(report.contains("| A: the core, the box's pool | RTX 5060 Ti 16 GB (measured) | 24 |"));
 }
 
 /// The idle service is v0's: with the W0 settings it gives the subset run v0 published, 559 requests

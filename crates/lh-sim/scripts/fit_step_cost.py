@@ -5,7 +5,10 @@ it, which says where the engine model finds each prompt. The fit goes to stdout 
 `lh-sim run --step-costs` reads, and the size and residuals of each data set to stderr:
 
     uv run --no-project python crates/lh-sim/scripts/fit_step_cost.py \\
-        s8.jsonl s8.csv s16.jsonl s16.csv [...] > steps.json
+        [--e0 summary.json] s8.jsonl s8.csv s16.jsonl s16.csv [...] > steps.json
+
+E0's cells and restore term are the frozen box's unless `--e0` gives another card's, the summary.json that
+`lh-bench tiers` writes there (its GPU-hit and recompute p50s by length and its restore fit, cpu_over_gpu).
 
 The terms, each from the requests' measured token times:
 
@@ -132,6 +135,23 @@ class Run:
             for a, b in pairwise(r.times):
                 if b - a >= 2.0:  # shorter: chunks the client received together
                     yield r, a, b, self.overlapping(a, b, r)
+
+
+def use_e0(path: Path) -> None:
+    """Fit with another card's E0 (lh-bench tiers' summary.json) in place of the frozen box's."""
+    global E0_LENGTHS, E0_RECOMPUTE_MS, E0_GPU_MS, RESTORE_MS, RESTORE_US
+    summary = json.loads(path.read_text())
+    p50, fits = summary["p50_ms"], summary["fits"]
+    lengths = sorted(int(n) for n in set(p50["recompute"]) & set(p50["gpu"]))
+    if len(lengths) < 3 or "cpu_over_gpu" not in fits:
+        raise SystemExit(
+            f"{path}: E0 needs recompute and GPU-hit cells at 3 lengths or more and its restore fit"
+        )
+    E0_LENGTHS = tuple(lengths)
+    E0_RECOMPUTE_MS = tuple(float(p50["recompute"][str(n)]) for n in lengths)
+    E0_GPU_MS = tuple(float(p50["gpu"][str(n)]) for n in lengths)
+    RESTORE_MS = float(fits["cpu_over_gpu"]["ms"])
+    RESTORE_US = float(fits["cpu_over_gpu"]["us_per_token"])
 
 
 def restore_ms(tokens: int) -> float:
@@ -315,9 +335,16 @@ def main() -> None:
     parser.add_argument(
         "runs", nargs="+", type=Path, help="profile_export.jsonl and replay-log CSV, per run"
     )
+    parser.add_argument(
+        "--e0",
+        type=Path,
+        help="another card's E0, lh-bench tiers' summary.json (default: the box's)",
+    )
     args = parser.parse_args()
     if len(args.runs) % 2:
         parser.error("give each run's profile_export.jsonl and its replay-log CSV")
+    if args.e0:
+        use_e0(args.e0)
     runs = [Run(j, c) for j, c in zip(args.runs[::2], args.runs[1::2], strict=True)]
     fit = fit_steps(runs)
     model = Model(fit)

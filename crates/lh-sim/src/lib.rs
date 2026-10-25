@@ -6,12 +6,14 @@
 //! served by vLLM's step loop ([`scheduler`], priced by `lh-core`'s step-time model) or at E0's
 //! idle-box cost. [`run`] runs the arms and the clairvoyant reference, [`retention`] holds the E1
 //! arms' policies, [`metrics`] summarizes a run, [`regime`] sweeps the E1 regime map, [`hardware`]
-//! places other GPUs on it from modeled costs, [`mrc`] computes miss-ratio curves, and
-//! [`replay_log`] drives the engine model with a measured AIPerf run.
+//! places other GPUs on it from modeled costs, [`forecast`] writes a GPU run's forecast from them,
+//! [`mrc`] computes miss-ratio curves, and [`replay_log`] drives the engine model with a measured
+//! AIPerf run.
 
 pub mod aiperf;
 pub mod corpus;
 pub mod engine;
+pub mod forecast;
 pub mod hardware;
 pub mod metrics;
 pub mod mrc;
