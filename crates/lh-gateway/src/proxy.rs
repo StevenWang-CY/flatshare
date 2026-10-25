@@ -7,7 +7,9 @@
 //! which closes the upstream connection; vLLM aborts a request whose client disconnects.
 
 use std::convert::Infallible;
-use std::error::Error as _;
+use std::future::Future;
+use std::io;
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,46 +26,102 @@ use http::{StatusCode, Version};
 use http_body::{Body as _, Frame, SizeHint};
 use http_body_util::{BodyExt, LengthLimitError, Limited};
 use hyper::body::Incoming;
-use hyper_util::client::legacy::Client;
 use hyper_util::client::legacy::connect::HttpConnector;
-use hyper_util::rt::{TokioExecutor, TokioTimer};
+use hyper_util::client::legacy::{Client, ResponseFuture};
+use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use prometheus_client::metrics::histogram::Histogram;
-use tokio::sync::mpsc;
+use tokio::net::UnixStream;
 use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::{mpsc, watch};
 
 use crate::admission::Ticket;
+use crate::config::UpstreamAddr;
 use crate::exchange::Exchange;
-use crate::metrics::{Outcome, Refusal, Route, UpstreamError};
-use crate::placement::{InFlight, Node};
+use crate::metrics::{ErrorEvent, Outcome, Refusal, Route, UpstreamError};
+use crate::placement::{self, InFlight, Node};
 use crate::sanitize::{
     REQUEST_ID, cap_reply, names_session, resolve_class, resolve_session, rewrite_body,
     sanitize_headers, set_engine_headers, strip_hop_by_hop,
 };
-use crate::server::{App, Shared};
+use crate::server::{self, App, Shared};
 use crate::usage::Scanner;
 
-/// The pooled HTTP/1.1 client to the engine.
+/// The pooled HTTP/1.1 client to the engine, over TCP or its Unix socket.
 #[derive(Debug)]
 pub(crate) struct Upstream {
-    client: Client<HttpConnector, UpstreamBody>,
+    pool: Pool,
+    addr: UpstreamAddr,
+    /// The authority of the requests' URIs: the engine's `host:port`, or `localhost` on a socket.
     authority: Authority,
+}
+
+/// One connection pool, keyed by the requests' authority; a socket's client connects every request to it.
+#[derive(Debug)]
+enum Pool {
+    Tcp(Client<HttpConnector, UpstreamBody>),
+    Unix(Client<UnixConnector, UpstreamBody>),
+}
+
+impl Pool {
+    fn request(&self, request: http::Request<UpstreamBody>) -> ResponseFuture {
+        match self {
+            Self::Tcp(client) => client.request(request),
+            Self::Unix(client) => client.request(request),
+        }
+    }
+}
+
+/// Connects to one Unix socket whatever the URI: the engine's, or a tunnel's on this host.
+#[derive(Clone, Debug)]
+struct UnixConnector(Arc<Path>);
+
+impl tower_service::Service<Uri> for UnixConnector {
+    type Response = TokioIo<UnixStream>;
+    type Error = io::Error;
+    type Future = Pin<Box<dyn Future<Output = io::Result<TokioIo<UnixStream>>> + Send>>;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, _: Uri) -> Self::Future {
+        let path = Arc::clone(&self.0);
+        Box::pin(async move { UnixStream::connect(&*path).await.map(TokioIo::new) })
+    }
 }
 
 impl Upstream {
     /// A client that keeps idle connections for `idle_timeout`. The engine closes idle connections after its
     /// keep-alive, and a request sent on a connection it is closing fails, so the gateway must let go first.
-    pub fn new(authority: Authority, idle_timeout: Duration) -> Self {
-        let mut connector = HttpConnector::new();
-        connector.set_nodelay(true);
-        let client = Client::builder(TokioExecutor::new())
-            .pool_timer(TokioTimer::new())
-            .pool_idle_timeout(idle_timeout)
-            .build(connector);
-        Self { client, authority }
+    pub fn new(addr: UpstreamAddr, idle_timeout: Duration) -> Self {
+        let builder = || {
+            let mut builder = Client::builder(TokioExecutor::new());
+            builder
+                .pool_timer(TokioTimer::new())
+                .pool_idle_timeout(idle_timeout);
+            builder
+        };
+        let (pool, authority) = match &addr {
+            UpstreamAddr::Tcp(authority) => {
+                let mut connector = HttpConnector::new();
+                connector.set_nodelay(true);
+                (Pool::Tcp(builder().build(connector)), authority.clone())
+            }
+            UpstreamAddr::Unix(path) => {
+                let connector = UnixConnector(path.as_path().into());
+                let localhost = Authority::from_static("localhost");
+                (Pool::Unix(builder().build(connector)), localhost)
+            }
+        };
+        Self {
+            pool,
+            addr,
+            authority,
+        }
     }
 
-    pub fn authority(&self) -> &Authority {
-        &self.authority
+    pub fn addr(&self) -> &UpstreamAddr {
+        &self.addr
     }
 
     fn uri(&self, path_and_query: PathAndQuery) -> Uri {
@@ -74,6 +132,40 @@ impl Upstream {
         Uri::from_parts(parts).expect("a scheme, an authority and a path form a valid URI")
     }
 
+    /// The engine's own `GET /metrics`, read in full within `timeout`, with its status and content type.
+    pub async fn metrics(&self, timeout: Duration) -> Result<Response, String> {
+        // vLLM's exposition with its KV cache histograms is a few hundred kilobytes.
+        const LIMIT: usize = 16 << 20;
+        let uri = self.uri(PathAndQuery::from_static("/metrics"));
+        let request = http::Request::get(uri)
+            .body(UpstreamBody::empty())
+            .expect("a GET with a valid URI is a valid request");
+        let read = async {
+            let response = self
+                .pool
+                .request(request)
+                .await
+                .map_err(|err| format!("the engine's /metrics failed: {}", causes(&err)))?;
+            let (parts, body) = response.into_parts();
+            let body = Limited::new(body, LIMIT)
+                .collect()
+                .await
+                .map_err(|err| format!("cannot read the engine's /metrics: {err}"))?;
+            Ok::<_, String>((parts, body.to_bytes()))
+        };
+        let (parts, body) = tokio::time::timeout(timeout, read)
+            .await
+            .map_err(|_| format!("the engine's /metrics did not answer within {timeout:?}"))??;
+        let mut response = Response::new(Body::from(body));
+        *response.status_mut() = parts.status;
+        if let Some(content_type) = parts.headers.get(CONTENT_TYPE) {
+            response
+                .headers_mut()
+                .insert(CONTENT_TYPE, content_type.clone());
+        }
+        Ok(response)
+    }
+
     /// Whether the engine's `/health` answers with success within `timeout`.
     pub async fn healthy(&self, timeout: Duration) -> bool {
         let uri = self.uri(PathAndQuery::from_static("/health"));
@@ -81,11 +173,15 @@ impl Upstream {
             .body(UpstreamBody::empty())
             .expect("a GET with a valid URI is a valid request");
         matches!(
-            tokio::time::timeout(timeout, self.client.request(request)).await,
+            tokio::time::timeout(timeout, self.pool.request(request)).await,
             Ok(Ok(response)) if response.status().is_success()
         )
     }
 }
+
+/// The message of the 503 that a request gets while the one upstream is not ready.
+const NOT_READY: &str =
+    "the engine is not ready: a request found it broken and its /health has not answered since";
 
 /// `POST /v1/chat/completions`, `/v1/completions` and `/v1/responses`.
 pub(crate) async fn inference(app: App, route: Route, request: Request) -> Response {
@@ -141,11 +237,14 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         else {
             ex.session = Some(session);
             let message = format!("no ready node takes {class} requests");
-            return ex.error(StatusCode::SERVICE_UNAVAILABLE, "no_ready_node", message);
+            return ex.not_ready("no_ready_node", message, placement.probe_interval());
         };
         node = &shared.nodes[in_flight.node()];
         ex.on_node(node);
         placed = Some(in_flight);
+    } else if !node.ready() {
+        ex.session = Some(session);
+        return ex.not_ready("upstream_not_ready", NOT_READY, placement::RECOVERY_PROBE);
     }
     let session = &*ex.session.insert(session);
 
@@ -155,7 +254,18 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         None => None,
         Some(admission) => {
             let arrived = Instant::now();
-            match admission.admit(class, session, body.json.len()).await {
+            // A background request still waiting at the drain's cut leaves the queue.
+            let mut cut = shared.drain.cut_for(Some(class));
+            let admitted = tokio::select! {
+                biased;
+                () = server::cut(&mut cut) => None,
+                admitted = admission.admit(class, session, body.json.len()) => Some(admitted),
+            };
+            let Some(admitted) = admitted else {
+                ex.admission_wait = Some(arrived.elapsed());
+                return ex.drained(shared.drain.grace);
+            };
+            match admitted {
                 Ok(ticket) => {
                     let waited = ticket.as_ref().map_or(Duration::ZERO, Ticket::waited);
                     ex.admission_wait = Some(waited);
@@ -201,9 +311,14 @@ pub(crate) async fn models(app: App, request: Request) -> Response {
     sanitize_headers(&mut parts.headers, tenant.trusted, &shared.metrics);
     parts.headers.insert(REQUEST_ID.clone(), ex.id.clone());
     // With `[nodes]`, any ready node knows the model.
-    let node = match shared.nodes.iter().find(|node| node.ready()) {
-        Some(node) => node,
-        None => &shared.nodes[0],
+    let Some(node) = shared.nodes.iter().find(|node| node.ready()) else {
+        return match &shared.placement {
+            Some(placement) => {
+                let message = "no node is ready";
+                ex.not_ready("no_ready_node", message, placement.probe_interval())
+            }
+            None => ex.not_ready("upstream_not_ready", NOT_READY, placement::RECOVERY_PROBE),
+        };
     };
     if shared.placement.is_some() {
         ex.on_node(node);
@@ -258,25 +373,41 @@ async fn forward(
     parts.extensions.clear();
 
     ex.forwarded = true;
-    let sent = match &mut ticket {
-        Some(ticket) if ticket.preemptible() => {
-            resubmitting(shared, upstream, &mut ex, parts, body, ticket).await
-        }
-        Some(ticket) if ticket.sheddable() => {
-            let request = http::Request::from_parts(parts, body);
-            tokio::select! {
-                sent = send(shared, upstream, request) => sent.map(|response| (response, None)),
-                // Dropping the request future closes its connection, which aborts the engine request.
-                () = ticket.shed() => return ex.shed(),
+    // A background request without a response at the drain's cut is dropped, as is a shed one: dropping the
+    // request future closes its connection, which aborts the engine request.
+    let mut cut = shared.drain.cut_for(ex.class);
+    let sending = async {
+        match &mut ticket {
+            Some(ticket) if ticket.preemptible() => {
+                resubmitting(shared, upstream, &mut ex, parts, body, ticket).await
             }
+            Some(ticket) if ticket.sheddable() => {
+                let request = http::Request::from_parts(parts, body);
+                tokio::select! {
+                    sent = send(shared, upstream, request) => sent.map(|response| (response, None)),
+                    () = ticket.shed() => Err(Failure::Shed),
+                }
+            }
+            _ => send(shared, upstream, http::Request::from_parts(parts, body))
+                .await
+                .map(|response| (response, None)),
         }
-        _ => send(shared, upstream, http::Request::from_parts(parts, body))
-            .await
-            .map(|response| (response, None)),
+    };
+    let sent = tokio::select! {
+        biased;
+        () = server::cut(&mut cut) => Err(Failure::Drained),
+        sent = sending => sent,
     };
     let (response, first) = match sent {
         Ok(sent) => sent,
-        Err(failure) => return failure.answer(ex, shared),
+        Err(failure) => {
+            // The one upstream that a request found broken is probed until it answers; meanwhile its requests
+            // are answered 503 (placement::recover). With `[nodes]`, each node's probe runs all along.
+            if failure.broken() && shared.placement.is_none() && node.start_recovery() {
+                tokio::spawn(placement::recover(Arc::downgrade(&app.shared)));
+            }
+            return failure.answer(ex, shared);
+        }
     };
 
     let (mut parts, upstream_body) = response.into_parts();
@@ -302,10 +433,12 @@ async fn forward(
         shared.stall_timeout,
         ticket,
         placed,
+        (cut, shared.drain.grace),
     ));
     let body = ClientBody {
         frames: receiver,
         aborted,
+        unflushed: false,
     };
     Response::from_parts(parts, Body::new(body))
 }
@@ -322,9 +455,19 @@ enum Failure {
     Body,
     /// A preempted request was not admitted again in time (503).
     Refused(Refusal),
+    /// The admission policy shed the request before its response, for a stricter class (429).
+    Shed,
+    /// A background request had no response yet at a drain's cut (503).
+    Drained,
 }
 
 impl Failure {
+    /// Whether the upstream broke: no connection, or one that ended before the response began. A timeout is a
+    /// slow engine, which its probe would find serving, and a refusal the admission point's.
+    fn broken(&self) -> bool {
+        matches!(self, Self::Upstream(_) | Self::Body)
+    }
+
     /// The client's answer; the upstream error counts on the request's node.
     fn answer(self, ex: Exchange, shared: &Shared) -> Response {
         match self {
@@ -335,12 +478,7 @@ impl Failure {
                     UpstreamError::Request
                 };
                 ex.metrics().upstream_error(kind);
-                let mut message = format!("upstream request failed: {err}");
-                let mut source = err.source();
-                while let Some(cause) = source {
-                    message.push_str(&format!(": {cause}"));
-                    source = cause.source();
-                }
+                let message = format!("upstream request failed: {}", causes(&err));
                 ex.error(StatusCode::BAD_GATEWAY, "upstream_unavailable", message)
             }
             Self::Timeout(awaited) => {
@@ -355,6 +493,8 @@ impl Failure {
                 ex.error(StatusCode::BAD_GATEWAY, "upstream_unavailable", message)
             }
             Self::Refused(refusal) => ex.refused(refusal),
+            Self::Shed => ex.shed(),
+            Self::Drained => ex.drained(shared.drain.grace),
         }
     }
 }
@@ -365,7 +505,7 @@ async fn send(
     upstream: &Upstream,
     request: http::Request<UpstreamBody>,
 ) -> Result<http::Response<Incoming>, Failure> {
-    let response = upstream.client.request(request);
+    let response = upstream.pool.request(request);
     match tokio::time::timeout(shared.first_byte_timeout, response).await {
         Ok(response) => response.map_err(Failure::Upstream),
         Err(_) => Err(Failure::Timeout("response headers")),
@@ -415,7 +555,7 @@ async fn first_frame(
 ) -> Result<(http::Response<Incoming>, Option<Bytes>), Failure> {
     let attempt = async {
         let response = upstream
-            .client
+            .pool
             .request(request)
             .await
             .map_err(Failure::Upstream)?;
@@ -437,8 +577,9 @@ async fn first_frame(
         .unwrap_or(Err(Failure::Timeout("first byte")))
 }
 
-/// Relays an upstream body into the client's channel until either side ends, or until the admission policy
-/// sheds the request. The request's place on its node ends with the relay.
+/// Relays an upstream body into the client's channel until either side ends, until the admission policy sheds
+/// the request, or until a drain's cut ends a background one (`drain`: what it waits on, and the grace it had).
+/// The request's place on its node ends with the relay.
 #[allow(clippy::too_many_arguments)]
 async fn pump(
     mut upstream: Incoming,
@@ -449,20 +590,47 @@ async fn pump(
     stall_timeout: Duration,
     mut ticket: Option<Ticket>,
     _placed: Option<InFlight>,
+    drain: (Option<watch::Receiver<bool>>, Duration),
 ) {
     let _active = ex.class.map(|class| ex.metrics().stream_started(class));
     let sheddable = ticket.as_ref().is_some_and(Ticket::sheddable);
+    let (mut cut, grace) = drain;
     let outcome = loop {
         let frame = tokio::select! {
             biased;
             () = frames.closed() => break Outcome::Cancelled,
             () = shed(&mut ticket), if sheddable => break Outcome::Shed,
+            () = server::cut(&mut cut) => {
+                let message = server::drain_message(grace);
+                // At once or not at all: a drain does not wait for a client that stops reading.
+                if scanner.is_events()
+                    && frames
+                        .try_send(error_event(ErrorEvent::Draining, &message, scanner.at_event_boundary()))
+                        .is_ok()
+                    && let Some(class) = ex.class
+                {
+                    ex.metrics().error_event(class, ErrorEvent::Draining);
+                }
+                ex.note_error(message);
+                break Outcome::Drained;
+            }
             frame = upstream.frame() => frame,
         };
         let data = match frame {
             None => break Outcome::Completed,
-            Some(Err(_)) => {
+            Some(Err(err)) => {
                 ex.metrics().upstream_error(UpstreamError::Body);
+                let message = format!("the upstream stream broke off: {}", causes(&err));
+                if scanner.is_events() {
+                    // Within the stall timeout: a client that stops reading gets none.
+                    let event =
+                        error_event(ErrorEvent::Upstream, &message, scanner.at_event_boundary());
+                    let sent = tokio::time::timeout(stall_timeout, frames.send(event)).await;
+                    if let (Ok(Ok(())), Some(class)) = (sent, ex.class) {
+                        ex.metrics().error_event(class, ErrorEvent::Upstream);
+                    }
+                }
+                ex.note_error(message);
                 break Outcome::Error;
             }
             // Trailers are not relayed; vLLM sends none.
@@ -487,6 +655,10 @@ async fn pump(
             let sent = tokio::select! {
                 biased;
                 () = shed(&mut ticket), if sheddable => break Outcome::Shed,
+                () = server::cut(&mut cut) => {
+                    ex.note_error(server::drain_message(grace));
+                    break Outcome::Drained;
+                }
                 sent = tokio::time::timeout(stall_timeout, frames.send(data)) => sent,
             };
             match sent {
@@ -497,7 +669,10 @@ async fn pump(
         }
         scanner.feed(&scanned);
     };
-    if matches!(outcome, Outcome::Stalled | Outcome::Error | Outcome::Shed) {
+    if matches!(
+        outcome,
+        Outcome::Stalled | Outcome::Error | Outcome::Shed | Outcome::Drained
+    ) {
         aborted.store(true, Ordering::Release);
     }
     // An unfinished upstream body closes its connection when dropped, which aborts the engine request.
@@ -510,6 +685,28 @@ async fn pump(
         drop(ticket);
     }
     ex.finish(outcome);
+}
+
+/// The error event of vLLM's own streams (`data: {"error": {...}}`), which the gateway sends before it aborts an
+/// event stream, so that a client learns why: the upstream broke it off, or a draining gateway cut it. A client
+/// that ignores it still sees the broken stream. After a partial event, a blank line ends that event first.
+fn error_event(kind: ErrorEvent, message: &str, at_boundary: bool) -> Bytes {
+    let error = serde_json::json!({
+        "error": {"message": message, "type": kind.as_str(), "param": null, "code": kind.code()},
+    });
+    let start = if at_boundary { "" } else { "\n\n" };
+    Bytes::from(format!("{start}data: {error}\n\n"))
+}
+
+/// An error and its causes, outermost first: `client error (Connect): Connection refused (os error 111)`.
+fn causes(err: &(dyn std::error::Error + 'static)) -> String {
+    let mut message = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        message.push_str(&format!(": {cause}"));
+        source = cause.source();
+    }
+    message
 }
 
 /// Completes when the admission policy sheds the request.
@@ -568,6 +765,10 @@ struct ClientBody {
     /// Set by the pump before it stops on a stall, an upstream error or a shed, so the client sees an error
     /// instead of a clean end: a truncated response must not look complete.
     aborted: Arc<AtomicBool>,
+    /// Whether a frame was handed to hyper since it last found the body pending. hyper drops what it has not
+    /// written when a body errors, so an abort waits one poll, in which hyper writes out the last frames, such as
+    /// the error event.
+    unflushed: bool,
 }
 
 #[derive(Debug)]
@@ -589,10 +790,23 @@ impl http_body::Body for ClientBody {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Bytes>, StreamAborted>>> {
-        match ready!(self.frames.poll_recv(cx)) {
-            Some(data) => Poll::Ready(Some(Ok(Frame::data(data)))),
+        let polled = self.frames.poll_recv(cx);
+        if polled.is_pending() {
+            self.unflushed = false;
+        }
+        match ready!(polled) {
+            Some(data) => {
+                self.unflushed = true;
+                Poll::Ready(Some(Ok(Frame::data(data))))
+            }
             // The pump stores the flag before it drops the sender, so it is visible once the channel closes.
-            None if self.aborted.load(Ordering::Acquire) => Poll::Ready(Some(Err(StreamAborted))),
+            None if self.aborted.load(Ordering::Acquire) => {
+                if std::mem::take(&mut self.unflushed) {
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+                Poll::Ready(Some(Err(StreamAborted)))
+            }
             None => Poll::Ready(None),
         }
     }

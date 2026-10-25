@@ -28,14 +28,17 @@ mod auth;
 pub mod config;
 mod events;
 mod exchange;
+pub mod handover;
 mod metrics;
 mod placement;
 mod proxy;
 mod realtime;
 mod sanitize;
 mod server;
+pub mod systemd;
 mod usage;
 
 pub use config::{Config, ConfigError, ListenAddr};
 pub use events::{AcceptedEvent, EventSink, LogSink};
-pub use server::Server;
+pub use server::{HandOver, MetricsReader, Server};
+pub use systemd::Inherited;

@@ -247,6 +247,8 @@ async fn a_node_that_fails_readiness_takes_no_new_sessions_and_its_sessions_move
     .await;
     assert_eq!(reply.status, 503);
     assert_eq!(reply.json()["error"]["code"], "no_ready_node");
+    // Come back after a probe interval (0.05 s), in whole seconds.
+    assert_eq!(reply.header("retry-after"), Some("1"));
     assert_eq!(a.requests().len() + b.requests().len(), 5);
 }
 

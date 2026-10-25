@@ -414,7 +414,7 @@ async fn metrics_expose_every_series() {
         1.0,
     )
     .await;
-    let reply = call(&gw.tcp, "GET", "/metrics", &[], "").await;
+    let reply = call(&gw.tcp, "GET", "/metrics", &[METRICS_AUTH], "").await;
     assert!(
         reply
             .header("content-type")

@@ -204,6 +204,7 @@ fn main() {
     ];
     client_rt.block_on(price_placement(&pairs));
     let _ = std::fs::remove_file(salt_secret());
+    let _ = std::fs::remove_file(metrics_key());
 }
 
 /// The gateways' cache-salt secret, a file of mode 600 that `main` removes at the end.
@@ -213,6 +214,18 @@ fn salt_secret() -> &'static Path {
         let name = format!("lh-gw-overhead-{}-cache-salt-secret", std::process::id());
         let path = std::env::temp_dir().join(name);
         std::fs::write(&path, format!("{}\n", "ab".repeat(32))).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        path
+    })
+}
+
+/// The metrics key of every gateway here, `metrics-key` in a file of mode 600.
+fn metrics_key() -> &'static Path {
+    static FILE: OnceLock<PathBuf> = OnceLock::new();
+    FILE.get_or_init(|| {
+        let name = format!("lh-gw-overhead-{}-metrics-key", std::process::id());
+        let path = std::env::temp_dir().join(name);
+        std::fs::write(&path, "metrics-key\n").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
         path
     })
@@ -313,10 +326,11 @@ async fn start_gateway(engines: &[SocketAddr], extra: &str) -> SocketAddr {
         ),
     };
     let config = Config::from_toml(&format!(
-        "{upstream}\ncache_salt_secret_file = \"{}\"\n[[listen]]\ntcp = \"127.0.0.1:0\"\n\
+        "{upstream}\ncache_salt_secret_file = \"{}\"\nmetrics_key_file = \"{}\"\n[[listen]]\ntcp = \"127.0.0.1:0\"\n\
          [tenants.agents]\nkeys_sha256 = [\"{}\"]\ntrusted = true\ndefault_class = \"background\"\n\
          max_class = \"interactive\"\n{nodes}{extra}",
         salt_secret().display(),
+        metrics_key().display(),
         digest(KEY)
     ))
     .unwrap();
@@ -909,6 +923,7 @@ fn chat_body(size: usize, stream: bool) -> Bytes {
 async fn report_gateway_metric(client: &HttpClient, gateway: &Target, label: &str) {
     let request = http::Request::get(format!("http://{}/metrics", gateway.addr))
         .header(HOST, "gateway")
+        .header(AUTHORIZATION, "Bearer metrics-key")
         .body(Full::default())
         .unwrap();
     let response = client.request(request).await.unwrap();

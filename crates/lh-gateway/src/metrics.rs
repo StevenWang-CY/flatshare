@@ -70,15 +70,19 @@ pub(crate) enum Outcome {
     /// The admission policy shed it to make room for a stricter class; the gateway cancelled the upstream
     /// request.
     Shed,
+    /// A background request still running `background_drain_s` into a drain: the gateway cut it, with a
+    /// `draining` error event on a stream or a 503 before the response.
+    Drained,
 }
 
 impl Outcome {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Completed,
         Self::Cancelled,
         Self::Stalled,
         Self::Error,
         Self::Shed,
+        Self::Drained,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -88,6 +92,34 @@ impl Outcome {
             Self::Stalled => "stalled",
             Self::Error => "error",
             Self::Shed => "shed",
+            Self::Drained => "drained",
+        }
+    }
+}
+
+/// Why the gateway ended an event stream with an error event: its `type`, and the HTTP status as its `code`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ErrorEvent {
+    /// The upstream broke the stream off (502).
+    Upstream,
+    /// A draining gateway cut a background stream (503): the client may send it again.
+    Draining,
+}
+
+impl ErrorEvent {
+    const ALL: [Self; 2] = [Self::Upstream, Self::Draining];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Upstream => "upstream_unavailable",
+            Self::Draining => "draining",
+        }
+    }
+
+    pub const fn code(self) -> u16 {
+        match self {
+            Self::Upstream => 502,
+            Self::Draining => 503,
         }
     }
 }
@@ -207,6 +239,12 @@ struct KindLabels {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct ErrorEventLabels {
+    class: &'static str,
+    r#type: &'static str,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 struct EventLabels {
     r#type: &'static str,
     source: &'static str,
@@ -309,6 +347,7 @@ pub(crate) struct Metrics {
     sanitized: Family<FieldLabels, Counter>,
     class_clamped: Counter,
     upstream_errors: Family<KindLabels, Counter>,
+    error_events: Family<ErrorEventLabels, Counter>,
     events: Family<EventLabels, Counter>,
     usage_tokens: Family<UsageLabels, Counter>,
     admitted: Family<NodeClassLabels, Counter>,
@@ -325,10 +364,11 @@ pub(crate) struct Metrics {
     false_alarm_token_seconds: PerNode<Counter<f64, AtomicU64>>,
     realtime_sessions: Family<StateLabels, Gauge>,
     state_timeouts: Family<StateLabels, Counter>,
-    /// With `[nodes]` only: the sessions placed on each node, the placements, and the nodes' readiness.
+    /// With `[nodes]` only: the sessions placed on each node, and the placements.
     sessions: Family<NodeClassLabels, Gauge>,
     placements: Family<PlacementLabels, Counter>,
-    node_ready: Family<NodeLabel, Gauge>,
+    /// Each node's readiness; with one upstream, its own, without a label.
+    node_ready: PerNode<Gauge>,
 }
 
 impl Metrics {
@@ -369,6 +409,7 @@ impl Metrics {
             sanitized: Family::default(),
             class_clamped: Counter::default(),
             upstream_errors: Family::default(),
+            error_events: Family::default(),
             events: Family::default(),
             usage_tokens: Family::default(),
             admitted: Family::default(),
@@ -387,7 +428,7 @@ impl Metrics {
             state_timeouts: Family::default(),
             sessions: Family::default(),
             placements: Family::default(),
-            node_ready: Family::default(),
+            node_ready: PerNode::new(nodes),
         };
         for class in SloClass::ALL.map(SloClass::as_str) {
             for outcome in Outcome::ALL.map(Outcome::as_str) {
@@ -412,6 +453,9 @@ impl Metrics {
             create(&metrics.first_byte, ClassLabels { class });
             create(&metrics.duration, ClassLabels { class });
             create(&metrics.streams_active, ClassLabels { class });
+            for r#type in ErrorEvent::ALL.map(ErrorEvent::as_str) {
+                create(&metrics.error_events, ErrorEventLabels { class, r#type });
+            }
             for node in nodes {
                 let labels = NodeClassLabels {
                     node: node.clone(),
@@ -463,9 +507,7 @@ impl Metrics {
                     create(&metrics.state_timeouts, labels);
                 }
             }
-            if policy.is_some() {
-                create(&metrics.node_ready, node.clone());
-            }
+            metrics.node_ready.of(node);
         }
         if let Some(policy) = policy {
             for reason in Reason::ALL.map(Reason::as_str) {
@@ -539,6 +581,12 @@ impl Metrics {
             "upstream_errors",
             "Upstream failures by kind",
             self.upstream_errors.clone(),
+        );
+        r.register(
+            "error_events",
+            "Error events sent on event streams before the gateway aborted them, by type: upstream_unavailable when \
+             the upstream broke the stream off, draining when a draining gateway cut a background stream",
+            self.error_events.clone(),
         );
         r.register(
             "events",
@@ -641,12 +689,14 @@ impl Metrics {
                  readiness (node_down), which leaves their KV behind",
                 self.placements.clone(),
             );
-            r.register(
-                "node_ready",
-                "Whether a node answers its readiness probe (1), or takes no new sessions (0)",
-                self.node_ready.clone(),
-            );
         }
+        self.node_ready.register(
+            r,
+            "node_ready",
+            "Whether a node answers its readiness probe (1), or takes no new sessions (0); with one upstream, \
+             whether it is ready (1), or a request found it broken and its /health has not answered since (0), \
+             while its requests are answered 503",
+        );
         self.registry = Arc::new(registry);
         self
     }
@@ -825,7 +875,7 @@ impl Metrics {
 
     /// The gauge of whether this handle's node answers its readiness probe.
     pub fn node_ready(&self) -> Gauge {
-        self.node_ready.get_or_create_owned(&self.node)
+        self.node_ready.of(&self.node)
     }
 
     /// A session was placed by `policy`, for `reason`.
@@ -859,6 +909,15 @@ impl Metrics {
             kind: kind.as_str(),
         };
         self.upstream_errors.get_or_create(&labels).inc();
+    }
+
+    /// An event stream got an error event before its abort.
+    pub fn error_event(&self, class: SloClass, event: ErrorEvent) {
+        let labels = ErrorEventLabels {
+            class: class.as_str(),
+            r#type: event.as_str(),
+        };
+        self.error_events.get_or_create(&labels).inc();
     }
 
     pub fn event(&self, r#type: &'static str, source: &'static str, duplicate: bool) {
@@ -934,5 +993,121 @@ impl GaugeGuard {
 impl Drop for GaugeGuard {
     fn drop(&mut self) {
         self.0.dec();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    /// An exposition with each family's series in the order of their labels, so that it reads the same in every
+    /// process: a family keeps its series in a hash map. A series' own lines, such as a histogram's sum, count and
+    /// buckets, keep their order.
+    fn by_labels(exposition: &str) -> String {
+        fn flush(out: &mut String, series: &mut Vec<(String, Vec<&str>)>) {
+            series.sort_by(|a, b| a.0.cmp(&b.0));
+            for (_, lines) in series.drain(..) {
+                for line in lines {
+                    out.push_str(line);
+                    out.push('\n');
+                }
+            }
+        }
+        // A sample's labels without its bucket's `le`: the same for every line of one series.
+        fn labels(sample: &str) -> String {
+            let Some((_, rest)) = sample.split_once('{') else {
+                return String::new();
+            };
+            let set = rest.split_once('}').map_or(rest, |(set, _)| set);
+            set.split(',')
+                .filter(|label| !label.starts_with("le="))
+                .collect::<Vec<_>>()
+                .join(",")
+        }
+        let mut out = String::new();
+        let mut series: Vec<(String, Vec<&str>)> = Vec::new();
+        for line in exposition.lines() {
+            if line.starts_with('#') {
+                flush(&mut out, &mut series);
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            let key = labels(line);
+            match series.last_mut() {
+                Some((last, lines)) if *last == key => lines.push(line),
+                _ => series.push((key, vec![line])),
+            }
+        }
+        flush(&mut out, &mut series);
+        out
+    }
+
+    /// `metrics.txt` is the exposition of a gateway with one upstream before any traffic, its series in the order
+    /// of their labels: every metric's name, type, help and labels, which the dashboards' and alerts' checks
+    /// (`ops/`) read. `LH_GATEWAY_WRITE_METRICS=1` writes it anew (`make metrics`).
+    #[test]
+    fn the_checked_in_exposition_is_current() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("metrics.txt");
+        let metrics = Metrics::new();
+        // Requests by status and lifecycle events by type have no series before traffic, and a family without
+        // one is left out of the exposition: one of each at zero, so that the file names them and their labels.
+        create(
+            &metrics.requests,
+            RequestLabels {
+                tenant: None,
+                route: Route::Other.as_str(),
+                class: None,
+                status: 404,
+            },
+        );
+        create(
+            &metrics.events,
+            EventLabels {
+                r#type: "turn_started",
+                source: "client",
+                duplicate: false,
+            },
+        );
+        let exposition = by_labels(&metrics.encode());
+        if std::env::var_os("LH_GATEWAY_WRITE_METRICS").is_some() {
+            std::fs::write(&path, &exposition).unwrap();
+        }
+        let on_disk = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            on_disk == exposition,
+            "{} is stale; write it anew with `make metrics`",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn series_sort_by_their_labels_and_keep_their_own_lines_in_order() {
+        let exposition = "# HELP h A histogram.\n# TYPE h histogram\n\
+            h_sum{class=\"b\"} 0\nh_count{class=\"b\"} 0\nh_bucket{le=\"1.0\",class=\"b\"} 0\n\
+            h_bucket{le=\"+Inf\",class=\"b\"} 0\n\
+            h_sum{class=\"a\"} 0\nh_count{class=\"a\"} 0\nh_bucket{le=\"1.0\",class=\"a\"} 0\n\
+            h_bucket{le=\"+Inf\",class=\"a\"} 0\n\
+            # HELP c A counter.\n# TYPE c counter\nc_total 0\n# EOF\n";
+        let sorted = by_labels(exposition);
+        let lines: Vec<&str> = sorted.lines().collect();
+        assert_eq!(
+            lines[2..6].iter().map(|l| &l[..5]).collect::<Vec<_>>(),
+            ["h_sum", "h_cou", "h_buc", "h_buc"]
+        );
+        assert!(lines[2].ends_with("{class=\"a\"} 0") && lines[6].ends_with("{class=\"b\"} 0"));
+        assert_eq!(lines[4], "h_bucket{le=\"1.0\",class=\"a\"} 0");
+        assert_eq!(
+            &lines[10..],
+            [
+                "# HELP c A counter.",
+                "# TYPE c counter",
+                "c_total 0",
+                "# EOF"
+            ]
+        );
+        assert_eq!(by_labels(&sorted), sorted);
     }
 }

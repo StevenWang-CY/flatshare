@@ -22,9 +22,11 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::client::conn::http1;
 use hyper_util::rt::TokioIo;
-use lh_gateway::{AcceptedEvent, Config, EventSink, ListenAddr, LogSink, Server};
+use lh_gateway::{
+    AcceptedEvent, Config, EventSink, Inherited, ListenAddr, LogSink, MetricsReader, Server,
+};
 use sha2::{Digest, Sha256};
-use tokio::net::{TcpListener, TcpStream, UnixStream};
+use tokio::net::{TcpListener, TcpStream, UnixListener, UnixStream};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 use tokio::task::JoinHandle;
 
@@ -36,6 +38,16 @@ pub const TAG: &str = "x-mock-tag";
 /// A request header that makes the mock engine hold its answer until [`Mock::release`]: a JSON response's
 /// headers, or an event stream's first chunk, as an engine holds them through a prefill.
 pub const GATE: &str = "x-mock-gate";
+
+/// The mock engine's `/metrics`, as vLLM's exposition starts, with vLLM's content type.
+pub const ENGINE_METRICS: &str = "# HELP vllm:num_requests_running Number of requests in model execution batches.\n\
+    # TYPE vllm:num_requests_running gauge\n\
+    vllm:num_requests_running{engine=\"0\",model_name=\"qwen\"} 0.0\n";
+pub const ENGINE_METRICS_TYPE: &str = "text/plain; version=0.0.4; charset=utf-8";
+
+/// The metrics key of every test gateway, which `GET /metrics` asks for on its TCP listener.
+pub const METRICS_KEY: &str = "metrics-key";
+pub const METRICS_AUTH: (&str, &str) = ("authorization", "Bearer metrics-key");
 
 /// How the mock engine answers inference requests.
 #[derive(Clone, Debug)]
@@ -53,6 +65,12 @@ pub enum Script {
     },
     /// JSON, but the response headers come only after this delay.
     Slow(Duration),
+    /// A body of `content_type`: the chunks, `gap` apart, then the connection breaks, as a killed engine's does.
+    Broken {
+        content_type: &'static str,
+        chunks: Vec<Bytes>,
+        gap: Duration,
+    },
 }
 
 /// A request the mock engine received.
@@ -82,9 +100,14 @@ struct MockState {
     dropped: mpsc::UnboundedSender<(Instant, Option<String>)>,
 }
 
-/// An in-process engine on 127.0.0.1.
+/// An in-process engine on 127.0.0.1, or on a Unix socket ([`Mock::start_unix`]).
 pub struct Mock {
+    /// Its TCP address; for a mock on a Unix socket, the unspecified address, which no gateway reaches.
     pub addr: SocketAddr,
+    /// The gateway's `upstream` for it: `http://` and its address, or `unix:` and its socket's path.
+    pub upstream: String,
+    /// The connections it has accepted.
+    pub connections: Arc<AtomicUsize>,
     state: Arc<MockState>,
     dropped: mpsc::UnboundedReceiver<(Instant, Option<String>)>,
 }
@@ -104,6 +127,55 @@ impl Drop for DropSignal {
 
 impl Mock {
     pub async fn start(script: Script) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let accepted = Arc::clone(&connections);
+        let listener = listener.tap_io(move |tcp| {
+            tcp.set_nodelay(true).unwrap();
+            accepted.fetch_add(1, Ordering::SeqCst);
+        });
+        let mut mock = Self::serve(script, listener, Arc::clone(&connections));
+        (mock.addr, mock.upstream) = (addr, format!("http://{addr}"));
+        mock
+    }
+
+    /// A mock engine on 127.0.0.1 whose first connection closes at once, before any answer.
+    pub async fn start_flaky(script: Script) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let listener = DropsFirst {
+            listener,
+            dropped: false,
+        };
+        let mut mock = Self::serve(script, listener, Arc::new(AtomicUsize::new(0)));
+        (mock.addr, mock.upstream) = (addr, format!("http://{addr}"));
+        mock
+    }
+
+    /// A mock engine on a new Unix socket, as the engine serves on its GPU node or a tunnel on the control host.
+    pub async fn start_unix(script: Script) -> Self {
+        Self::start_unix_at(socket_path(), script).await
+    }
+
+    /// A mock engine on the Unix socket `path`, as an engine that comes back on its socket.
+    pub async fn start_unix_at(path: PathBuf, script: Script) -> Self {
+        let listener = UnixListener::bind(&path).unwrap();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let accepted = Arc::clone(&connections);
+        let listener = listener.tap_io(move |_| {
+            accepted.fetch_add(1, Ordering::SeqCst);
+        });
+        let mut mock = Self::serve(script, listener, connections);
+        mock.upstream = format!("unix:{}", path.display());
+        mock
+    }
+
+    fn serve<L>(script: Script, listener: L, connections: Arc<AtomicUsize>) -> Self
+    where
+        L: axum::serve::Listener,
+        L::Addr: std::fmt::Debug,
+    {
         let (dropped_tx, dropped) = mpsc::unbounded_channel();
         let state = Arc::new(MockState {
             script,
@@ -118,6 +190,10 @@ impl Mock {
             .route("/v1/responses", post(answer))
             .route("/v1/models", get(models))
             .route(
+                "/metrics",
+                get(|| async { ([(CONTENT_TYPE, ENGINE_METRICS_TYPE)], ENGINE_METRICS) }),
+            )
+            .route(
                 "/health",
                 get(|State(state): State<Arc<MockState>>| async move {
                     if state.healthy.load(Ordering::SeqCst) {
@@ -128,12 +204,11 @@ impl Mock {
                 }),
             )
             .with_state(Arc::clone(&state));
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let listener = listener.tap_io(|tcp| tcp.set_nodelay(true).unwrap());
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         Self {
-            addr,
+            addr: SocketAddr::from(([0, 0, 0, 0], 0)),
+            upstream: String::new(),
+            connections,
             state,
             dropped,
         }
@@ -260,6 +335,28 @@ async fn answer(State(state): State<Arc<MockState>>, request: Request) -> Respon
             );
             event_stream(Body::from_stream(chunks))
         }
+        Script::Broken {
+            content_type,
+            chunks,
+            gap,
+        } => {
+            // After the chunks, one error: hyper then closes the connection without ending the body.
+            let chunks = stream::unfold(
+                (chunks.into_iter(), guard, false),
+                move |(mut chunks, guard, broken)| async move {
+                    if broken {
+                        return None;
+                    }
+                    tokio::time::sleep(gap).await;
+                    let item = chunks
+                        .next()
+                        .ok_or_else(|| std::io::Error::other("the engine died"));
+                    let broken = item.is_err();
+                    Some((item, (chunks, guard, broken)))
+                },
+            );
+            ([(CONTENT_TYPE, content_type)], Body::from_stream(chunks)).into_response()
+        }
         Script::Endless { chunk, gap } => {
             let chunks = stream::unfold(guard, move |guard| {
                 let chunk = chunk.clone();
@@ -283,6 +380,8 @@ fn event_stream(body: Body) -> Response {
 pub struct Gateway {
     pub tcp: Target,
     pub unix: Target,
+    /// Its metrics, read in process: during a drain, when no listener takes the requests of [`Gateway::metrics`].
+    pub exposition: MetricsReader,
     shutdown: Option<oneshot::Sender<()>>,
     done: Option<JoinHandle<()>>,
 }
@@ -295,10 +394,48 @@ pub enum Target {
 }
 
 /// A Unix socket path unique to this test process and call, short enough for `sun_path`.
+/// A listener that closes the first connection it accepts at once, as a connection that breaks on its way to an
+/// engine that serves, and hands on every later one.
+struct DropsFirst {
+    listener: TcpListener,
+    dropped: bool,
+}
+
+impl axum::serve::Listener for DropsFirst {
+    type Io = TcpStream;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (TcpStream, SocketAddr) {
+        loop {
+            let accepted = axum::serve::Listener::accept(&mut self.listener).await;
+            if std::mem::replace(&mut self.dropped, true) {
+                return accepted;
+            }
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        self.listener.local_addr()
+    }
+}
+
 pub fn socket_path() -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!("lh-gw-{}-{n}.sock", std::process::id()))
+}
+
+/// The metrics key's file of every test gateway: [`METRICS_KEY`], mode 600, written anew by each test process.
+pub fn metrics_key_file() -> &'static Path {
+    static FILE: LazyLock<PathBuf> = LazyLock::new(|| {
+        let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("metrics-key");
+        let staged = path.with_extension(std::process::id().to_string());
+        std::fs::write(&staged, format!("{METRICS_KEY}\n")).unwrap();
+        std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::fs::rename(&staged, &path).unwrap();
+        path
+    });
+    &FILE
 }
 
 /// The cache-salt secret of every test gateway: the bytes 0 to 31, in hex, in a file of mode 600 that each test
@@ -326,10 +463,23 @@ pub fn key_digest(key: &str) -> String {
 /// The test configuration: `voice` (trusted, keyless, on the Unix socket), `agents` (trusted, default
 /// background, max interactive) and `bench` (untrusted, default interactive). `top` holds extra top-level keys.
 pub fn gateway_toml(upstream: SocketAddr, socket: &std::path::Path, top: &str) -> String {
-    format!(
-        "\nupstream = \"http://{upstream}\"\n{}",
-        harness_toml(socket, top)
-    )
+    upstream_toml(&format!("http://{upstream}"), socket, top)
+}
+
+/// The test configuration with `upstream` as written: `http://host:port`, or `unix:` and a socket path.
+pub fn upstream_toml(upstream: &str, socket: &std::path::Path, top: &str) -> String {
+    format!("\nupstream = \"{upstream}\"\n{}", harness_toml(socket, top))
+}
+
+/// The test configuration with its TCP listener on `tcp` instead of a port of its own.
+pub fn listeners_toml(
+    upstream: &str,
+    tcp: SocketAddr,
+    socket: &std::path::Path,
+    top: &str,
+) -> String {
+    let toml = upstream_toml(upstream, socket, top);
+    toml.replace("tcp = \"127.0.0.1:0\"", &format!("tcp = \"{tcp}\""))
 }
 
 /// The test configuration of a gateway on GPU nodes instead of one upstream: `tables` holds `[nodes.<name>]`,
@@ -343,6 +493,7 @@ fn harness_toml(socket: &std::path::Path, top: &str) -> String {
     format!(
         r#"log_level = "debug"
 cache_salt_secret_file = "{secret}"
+metrics_key_file = "{metrics_key}"
 {top}
 
 [[listen]]
@@ -368,6 +519,7 @@ default_class = "interactive"
 "#,
         socket = socket.display(),
         secret = cache_salt_secret_file().display(),
+        metrics_key = metrics_key_file().display(),
         agents = key_digest(AGENTS_KEY),
         bench = key_digest(BENCH_KEY),
     )
@@ -383,6 +535,12 @@ impl Gateway {
         Self::from_config(config, sink).await
     }
 
+    /// A gateway whose `upstream` is `upstream` as written, such as a mock's [`Mock::upstream`].
+    pub async fn start_upstream(upstream: &str, top: &str) -> Self {
+        let config = Config::from_toml(&upstream_toml(upstream, &socket_path(), top)).unwrap();
+        Self::from_config(config, Arc::new(LogSink)).await
+    }
+
     /// A gateway on GPU nodes: `tables` holds `[nodes.<name>]`, `[placement]` and any other table.
     pub async fn start_nodes(tables: &str) -> Self {
         let config = Config::from_toml(&nodes_toml(&socket_path(), tables)).unwrap();
@@ -390,7 +548,16 @@ impl Gateway {
     }
 
     pub async fn from_config(config: Config, sink: Arc<dyn EventSink>) -> Self {
-        let server = Server::bind(config, sink).await.unwrap();
+        Self::from_server(Server::bind(config, sink).await.unwrap())
+    }
+
+    /// A gateway that takes its listeners from `inherited` where it can, as from systemd's socket activation.
+    pub async fn from_inherited(config: Config, inherited: Inherited) -> Self {
+        let server = Server::bind_with(config, Arc::new(LogSink), inherited);
+        Self::from_server(server.await.unwrap())
+    }
+
+    fn from_server(server: Server) -> Self {
         let mut targets = server
             .local_addrs()
             .unwrap()
@@ -400,6 +567,7 @@ impl Gateway {
                 ListenAddr::Unix(path) => Target::Unix(path),
             });
         let (tcp, unix) = (targets.next().unwrap(), targets.next().unwrap());
+        let exposition = server.metrics();
         let (shutdown, stop) = oneshot::channel::<()>();
         let done = tokio::spawn(server.run(async move {
             let _ = stop.await;
@@ -407,6 +575,7 @@ impl Gateway {
         Self {
             tcp,
             unix,
+            exposition,
             shutdown: Some(shutdown),
             done: Some(done),
         }
@@ -426,9 +595,10 @@ impl Gateway {
         }
     }
 
-    /// The Prometheus exposition.
+    /// The Prometheus exposition, from the private socket, which asks for no key.
     pub async fn metrics(&self) -> String {
-        let reply = call(&self.tcp, "GET", "/metrics", &[], "").await;
+        let reply = call(&self.unix, "GET", "/metrics", &[], "").await;
+        assert_eq!(reply.status, 200);
         String::from_utf8(reply.body.to_vec()).unwrap()
     }
 
@@ -591,3 +761,43 @@ impl EventSink for RecordingSink {
 }
 
 pub const CHAT: &str = r#"{"model":"qwen","messages":[{"role":"user","content":"hi"}]}"#;
+
+/// Awaits `future` for a few seconds at most: what a drain or a reload does takes well under a second here, so a
+/// test whose gateway does not do it fails instead of waiting for the timeouts it would hit instead.
+pub async fn soon<T>(future: impl std::future::Future<Output = T>) -> T {
+    tokio::time::timeout(Duration::from_secs(3), future)
+        .await
+        .expect("done within 3 s")
+}
+
+/// A chat completion's stream whose response has begun: its body after the first frame, which `bytes` holds.
+pub struct Open {
+    body: Incoming,
+    bytes: Vec<u8>,
+    _connection: JoinHandle<()>,
+}
+
+pub async fn begin(target: &Target, headers: &[(&str, &str)]) -> Open {
+    let (response, connection) = open(target, "POST", "/v1/chat/completions", headers, CHAT).await;
+    assert_eq!(response.status(), 200);
+    let mut body = response.into_body();
+    let first = body.frame().await.unwrap().unwrap().into_data().unwrap();
+    Open {
+        body,
+        bytes: first.to_vec(),
+        _connection: connection,
+    }
+}
+
+/// Reads a begun stream to its end: its bytes, whether it ended with an error rather than cleanly, and when.
+pub fn finish(mut open: Open) -> JoinHandle<(Vec<u8>, bool, Instant)> {
+    tokio::spawn(async move {
+        loop {
+            match open.body.frame().await {
+                Some(Ok(frame)) => open.bytes.extend_from_slice(&frame.into_data().unwrap()),
+                Some(Err(_)) => return (open.bytes, true, Instant::now()),
+                None => return (open.bytes, false, Instant::now()),
+            }
+        }
+    })
+}

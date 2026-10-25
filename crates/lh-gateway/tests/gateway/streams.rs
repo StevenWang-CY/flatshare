@@ -260,3 +260,119 @@ async fn the_unix_listener_replaces_a_stale_socket_is_private_and_cleans_up() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "not a socket");
     std::fs::remove_file(&path).unwrap();
 }
+
+/// A response body read to its end: the bytes, and whether it ended with an error rather than cleanly.
+async fn read_to_end(target: &Target, headers: &[(&str, &str)]) -> (Vec<u8>, bool) {
+    let (response, _connection) = open(target, "POST", "/v1/chat/completions", headers, CHAT).await;
+    assert_eq!(response.status(), 200);
+    let mut body = response.into_body();
+    let mut bytes = Vec::new();
+    loop {
+        match body.frame().await {
+            Some(Ok(frame)) => bytes.extend_from_slice(&frame.into_data().unwrap()),
+            Some(Err(_)) => return (bytes, true),
+            None => return (bytes, false),
+        }
+    }
+}
+
+/// The error event the gateway sends after `relayed` when the upstream breaks off an event stream.
+fn broken_off(relayed: &[u8], bytes: &[u8]) -> serde_json::Value {
+    let event = bytes
+        .strip_prefix(relayed)
+        .expect("the stream relays the upstream's bytes first");
+    let event = std::str::from_utf8(event).unwrap();
+    let data = event
+        .strip_prefix("data: ")
+        .and_then(|data| data.strip_suffix("\n\n"))
+        .unwrap_or_else(|| panic!("not one error event: {event:?}"));
+    serde_json::from_str(data).unwrap()
+}
+
+#[tokio::test]
+async fn an_event_stream_the_upstream_breaks_off_ends_with_a_typed_error_then_an_abort() {
+    let chunks: Vec<Bytes> = (0..2)
+        .map(|i| {
+            Bytes::from(format!(
+                "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{i}\"}}}}]}}\n\n"
+            ))
+        })
+        .collect();
+    let relayed: Vec<u8> = chunks.concat();
+    let mock = Mock::start(Script::Broken {
+        content_type: "text/event-stream",
+        chunks,
+        gap: Duration::from_millis(10),
+    })
+    .await;
+    let gw = Gateway::start(mock.addr, "").await;
+    // A realtime stream on the voice plane's socket, as when the engine dies under a call.
+    let (bytes, aborted) = read_to_end(&gw.unix, &[]).await;
+    assert!(aborted, "a broken stream must not end cleanly");
+    let error = broken_off(&relayed, &bytes);
+    let message = error["error"]["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("the upstream stream broke off: "),
+        "{message}"
+    );
+    assert_eq!(
+        error,
+        serde_json::json!({"error": {"message": message, "type": "upstream_unavailable", "param": null, "code": 502}})
+    );
+    gw.await_metric(
+        "lh_gateway_error_events_total{class=\"realtime\",type=\"upstream_unavailable\"}",
+        1.0,
+    )
+    .await;
+    gw.await_metric("lh_gateway_upstream_errors_total{kind=\"body\"}", 1.0)
+        .await;
+    gw.await_metric(
+        "lh_gateway_request_outcomes_total{class=\"realtime\",outcome=\"error\"}",
+        1.0,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_break_inside_an_event_ends_that_event_before_the_error() {
+    let partial = Bytes::from_static(b"data: {\"choices\":[{\"del");
+    let mock = Mock::start(Script::Broken {
+        content_type: "text/event-stream",
+        chunks: vec![partial.clone()],
+        gap: Duration::from_millis(10),
+    })
+    .await;
+    let gw = Gateway::start(mock.addr, "").await;
+    let (bytes, aborted) = read_to_end(&gw.tcp, &[AGENTS_AUTH]).await;
+    assert!(aborted);
+    // The partial event ends at a blank line, so that the error is an event of its own.
+    let relayed = [&partial[..], b"\n\n"].concat();
+    let error = broken_off(&relayed, &bytes);
+    assert_eq!(error["error"]["type"], "upstream_unavailable");
+    gw.await_metric(
+        "lh_gateway_error_events_total{class=\"background\",type=\"upstream_unavailable\"}",
+        1.0,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_json_body_the_upstream_breaks_off_gets_no_event() {
+    let partial = Bytes::from_static(b"{\"id\":\"c-1\",");
+    let mock = Mock::start(Script::Broken {
+        content_type: "application/json",
+        chunks: vec![partial.clone()],
+        gap: Duration::from_millis(10),
+    })
+    .await;
+    let gw = Gateway::start(mock.addr, "").await;
+    let (bytes, aborted) = read_to_end(&gw.tcp, &[AGENTS_AUTH]).await;
+    assert!(aborted);
+    assert_eq!(bytes, &partial[..]);
+    gw.await_metric("lh_gateway_upstream_errors_total{kind=\"body\"}", 1.0)
+        .await;
+    let metrics = gw.metrics().await;
+    let series =
+        "lh_gateway_error_events_total{class=\"background\",type=\"upstream_unavailable\"}";
+    assert_eq!(metric(&metrics, series), Some(0.0));
+}

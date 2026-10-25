@@ -1,7 +1,10 @@
 //! The GPU nodes, and the sessions placed on them.
 //!
-//! A gateway with one `upstream` has one node, without a name, a probe or a placement: its requests go to it as
-//! they always have. With `[nodes]`, each node has its engine's connection pool, its own admission point (one
+//! A gateway with one `upstream` has one node, without a name or a placement: its requests go to it as they always
+//! have. Only a request that finds it broken (no connection, or none that lasts until the response headers) starts
+//! its probe ([`recover`]): until its `/health` answers again, its requests are answered 503 with `Retry-After`
+//! without going upstream, so that clients wait out an engine restart instead of each finding the engine gone.
+//! With `[nodes]`, each node has its engine's connection pool, its own admission point (one
 //! `lh_core` admission and, under policy leaseholder, one [`Realtime`](crate::realtime::Realtime): KV estimates
 //! are per engine) and a readiness probe, and each session is placed on one of them ([`Placement`]):
 //! - **Sticky.** A session is placed by its first request, or by `POST /v1/sessions`, and stays on its node until
@@ -48,6 +51,10 @@ const SESSIONS: usize = 4096;
 /// Failed probes in a row after which a node takes no new sessions.
 const PROBES_DOWN: u32 = 3;
 
+/// How often the one upstream of a gateway without `[nodes]` is probed while a request has found it broken, and the
+/// `Retry-After` of the requests answered meanwhile.
+pub(crate) const RECOVERY_PROBE: Duration = Duration::from_secs(1);
+
 /// A GPU node: its engine's connection pool and, under an `[admission]` policy, its own admission point.
 #[derive(Debug)]
 pub(crate) struct Node {
@@ -60,8 +67,11 @@ pub(crate) struct Node {
     pub metrics: Arc<Metrics>,
     /// Whether it serves each class, strictest first (placement dedicated).
     serves: [bool; 3],
-    /// Whether its readiness probe answers. A node starts ready, and only a gateway with `[nodes]` probes.
+    /// Whether its readiness probe answers. A node starts ready; with `[nodes]` it is probed all along, and the one
+    /// upstream only from a request that found it broken until its probe answers ([`recover`]).
     ready: AtomicBool,
+    /// Whether the one upstream's [`recover`] runs.
+    recovering: AtomicBool,
 }
 
 impl Node {
@@ -73,9 +83,7 @@ impl Node {
         serves: [bool; 3],
     ) -> Self {
         let admission = admission.map(|admission| Admission::new(admission, Arc::clone(&metrics)));
-        if name.is_some() {
-            metrics.node_ready().set(1);
-        }
+        metrics.node_ready().set(1);
         Self {
             name,
             upstream,
@@ -83,6 +91,7 @@ impl Node {
             metrics,
             serves,
             ready: AtomicBool::new(true),
+            recovering: AtomicBool::new(false),
         }
     }
 
@@ -97,15 +106,24 @@ impl Node {
         if self.ready.swap(ready, Ordering::Relaxed) == ready {
             return;
         }
-        let node = self.name.as_deref().unwrap_or_default();
-        if ready {
-            tracing::info!(node, "node {node} is ready again");
-        } else {
-            tracing::warn!(
-                node,
+        match (&self.name, ready) {
+            (Some(node), true) => tracing::info!(node = &**node, "node {node} is ready again"),
+            (Some(node), false) => tracing::warn!(
+                node = &**node,
                 "node {node} takes no new sessions: its /health failed {PROBES_DOWN} probes in a row"
-            );
+            ),
+            (None, true) => tracing::info!("the upstream is ready again: its /health answers"),
+            (None, false) => tracing::warn!(
+                "the upstream is not ready: a request found it broken and its /health does not answer; requests \
+                 are answered 503 until it does"
+            ),
         }
+    }
+
+    /// Whether the caller, whose request found this, the one upstream, broken, is to start its [`recover`]: false
+    /// while one runs.
+    pub fn start_recovery(&self) -> bool {
+        !self.recovering.swap(true, Ordering::AcqRel)
     }
 }
 
@@ -372,6 +390,28 @@ pub(crate) async fn probe(shared: Weak<Shared>, index: usize, interval: Duration
     }
 }
 
+/// Probes the `/health` of a gateway's one upstream (without `[nodes]`) after a request found it broken: at once, and
+/// every [`RECOVERY_PROBE`] until it answers. A failed probe makes it not ready, so that its requests are answered
+/// 503 without going upstream, and the probe that answers makes it ready again and ends the task. One request that
+/// fails on an engine that serves (a connection that broke) makes no request wait: the first probe answers.
+pub(crate) async fn recover(shared: Weak<Shared>) {
+    let mut ticks = tokio::time::interval(RECOVERY_PROBE);
+    ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticks.tick().await;
+        let Some(shared) = shared.upgrade() else {
+            return;
+        };
+        let node = &shared.nodes[0];
+        if node.upstream.healthy(RECOVERY_PROBE).await {
+            node.recovering.store(false, Ordering::Release);
+            node.set_ready(true);
+            return;
+        }
+        node.set_ready(false);
+    }
+}
+
 /// The body of `POST /v1/sessions`. Unknown fields are ignored.
 #[derive(Deserialize)]
 struct Asked {
@@ -427,17 +467,21 @@ pub(crate) async fn post(State(app): State<App>, request: Request) -> Response {
         Ok(index) => index,
         Err(unplaced) => {
             ex.session = Some(asked.session_id);
-            let (code, message) = match unplaced {
-                Unplaced::NoReadyNode => (
-                    "no_ready_node",
-                    format!("no ready node takes {class} sessions"),
-                ),
-                Unplaced::Full => (
-                    "placement_full",
-                    format!("each of the {SESSIONS} sessions placed has a request in flight"),
-                ),
+            return match unplaced {
+                Unplaced::NoReadyNode => {
+                    let message = format!("no ready node takes {class} sessions");
+                    let retry = shared
+                        .placement
+                        .as_ref()
+                        .map_or(RECOVERY_PROBE, |placement| placement.probe_interval());
+                    ex.not_ready("no_ready_node", message, retry)
+                }
+                Unplaced::Full => {
+                    let message =
+                        format!("each of the {SESSIONS} sessions placed has a request in flight");
+                    ex.error(StatusCode::SERVICE_UNAVAILABLE, "placement_full", message)
+                }
             };
-            return ex.error(StatusCode::SERVICE_UNAVAILABLE, code, message);
         }
     };
     let node = &shared.nodes[index];
@@ -688,6 +732,7 @@ impl Held {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::UpstreamAddr;
     use SloClass::*;
 
     fn session(id: &str) -> SessionId {
@@ -914,8 +959,10 @@ mod tests {
         let nodes: Vec<Node> = names
             .iter()
             .map(|name| {
-                let upstream =
-                    Upstream::new("127.0.0.1:9".parse().unwrap(), Duration::from_secs(1));
+                let upstream = Upstream::new(
+                    UpstreamAddr::Tcp("127.0.0.1:9".parse().unwrap()),
+                    Duration::from_secs(1),
+                );
                 let own = Arc::new(metrics.on(name));
                 Node::new(Some(Arc::clone(name)), upstream, None, own, [true; 3])
             })

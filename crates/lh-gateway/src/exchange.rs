@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use axum::response::{IntoResponse, Response};
 use http::StatusCode;
-use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue, RETRY_AFTER};
 use lh_core::admission::Deferral;
 use lh_proto::{SessionId, SloClass};
 use tracing::Level;
@@ -123,6 +123,17 @@ impl Exchange {
         self.respond(status, &body)
     }
 
+    /// The 503 for a request that no ready engine can take, sent without going upstream. `Retry-After` is `retry`,
+    /// the interval of the readiness probe that will say when an engine answers again, in whole seconds.
+    pub fn not_ready(self, code: &str, message: impl Into<String>, retry: Duration) -> Response {
+        let mut response = self.error(StatusCode::SERVICE_UNAVAILABLE, code, message);
+        let seconds = retry.as_secs_f64().ceil().max(1.0) as u64;
+        response
+            .headers_mut()
+            .insert(RETRY_AFTER, HeaderValue::from(seconds));
+        response
+    }
+
     /// The 401 for a request without a known API key on a listener without a tenant.
     pub fn unauthorized(self) -> Response {
         self.error(
@@ -159,6 +170,19 @@ impl Exchange {
             "shed",
             "shed by the admission policy to make room for a stricter class",
         )
+    }
+
+    /// The 503 for a background request that had no response yet at a drain's cut (`grace` into the drain):
+    /// `Retry-After: 1`, for the gateway that serves the sockets next.
+    pub fn drained(mut self, grace: Duration) -> Response {
+        self.outcome = Some(Outcome::Drained);
+        let message = crate::server::drain_message(grace);
+        self.not_ready("draining", message, Duration::from_secs(1))
+    }
+
+    /// Records why a response already begun went wrong, for the request's log line.
+    pub fn note_error(&mut self, message: String) {
+        self.error = Some(message);
     }
 
     /// Records how a forwarded request ended.

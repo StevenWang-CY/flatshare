@@ -9,7 +9,7 @@ use lh_proto::SloClass;
 use sha2::{Digest, Sha256};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
-use crate::config::{self, CacheSaltSecret};
+use crate::config::{self, CacheSaltSecret, MetricsKey};
 use crate::sanitize::hex;
 
 /// A tenant as the request path sees it.
@@ -80,6 +80,14 @@ impl Tenants {
         }
         bool::from(found).then_some(index as usize)
     }
+}
+
+/// Whether a request's bearer key is the metrics key: its SHA-256 compared in constant time, as a tenant's.
+pub(crate) fn is_metrics_key(headers: &HeaderMap, key: &MetricsKey) -> bool {
+    bearer_token(headers).is_some_and(|token| {
+        let digest: [u8; 32] = Sha256::digest(token).into();
+        bool::from(digest[..].ct_eq(&key.0[..]))
+    })
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<&[u8]> {

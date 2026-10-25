@@ -34,6 +34,9 @@ pub(crate) enum Scanner {
     Sse {
         line: Vec<u8>,
         skipping: bool,
+        /// Whether the last complete line was blank (or there was none yet): with no partial line after it, the
+        /// stream so far ends where an event may begin.
+        blank: bool,
         summary: Summary,
     },
     /// A JSON body, parsed once complete.
@@ -51,6 +54,7 @@ impl Scanner {
             Self::Sse {
                 line: Vec::new(),
                 skipping: false,
+                blank: true,
                 summary: Summary::default(),
             }
         } else if content_type.starts_with(b"application/json") {
@@ -68,16 +72,20 @@ impl Scanner {
             Self::Sse {
                 line,
                 skipping,
+                blank,
                 summary,
             } => {
                 while let Some(end) = memchr(b'\n', chunk) {
+                    *blank = false;
                     if !*skipping {
-                        if line.is_empty() {
-                            summary.read_line(&chunk[..end]);
+                        let complete = if line.is_empty() {
+                            &chunk[..end]
                         } else {
                             line.extend_from_slice(&chunk[..end]);
-                            summary.read_line(line);
-                        }
+                            &line[..]
+                        };
+                        summary.read_line(complete);
+                        *blank = matches!(complete, b"" | b"\r");
                     }
                     line.clear();
                     *skipping = false;
@@ -100,6 +108,16 @@ impl Scanner {
             }
             Self::Other => {}
         }
+    }
+
+    /// Whether the body is an event stream.
+    pub fn is_events(&self) -> bool {
+        matches!(self, Self::Sse { .. })
+    }
+
+    /// Whether an event stream's bytes so far end where an event may begin: at its start, or after a blank line.
+    pub fn at_event_boundary(&self) -> bool {
+        matches!(self, Self::Sse { line, skipping: false, blank: true, .. } if line.is_empty())
     }
 
     pub fn finish(self) -> Summary {
@@ -248,6 +266,37 @@ mod tests {
         }
         let bytes: Vec<&[u8]> = CHAT_STREAM.chunks(1).collect();
         assert_eq!(scan("text/event-stream; charset=utf-8", &bytes), expected);
+    }
+
+    #[test]
+    fn an_event_streams_boundaries_are_found_under_any_chunking() {
+        // Where an event may begin: the stream's start and every blank line, with LF or CRLF line ends.
+        let stream: &[u8] = b"data: {\"a\":1}\n\nevent: e\r\ndata: x\r\n\r\ndata: [DONE]\n\n";
+        let boundaries = [0, 15, 36, 50];
+        for split in 0..=stream.len() {
+            let (a, b) = stream.split_at(split);
+            let mut scanner =
+                Scanner::for_content_type(Some(&HeaderValue::from_static("text/event-stream")));
+            assert!(scanner.is_events());
+            scanner.feed(a);
+            assert_eq!(
+                scanner.at_event_boundary(),
+                boundaries.contains(&split),
+                "after {:?}",
+                String::from_utf8_lossy(a)
+            );
+            scanner.feed(b);
+            assert!(scanner.at_event_boundary(), "split at {split}");
+        }
+        // A line too long to read is never a boundary, and a JSON body never has one.
+        let mut scanner =
+            Scanner::for_content_type(Some(&HeaderValue::from_static("text/event-stream")));
+        scanner.feed(&vec![b'x'; MAX_SSE_LINE + 1]);
+        assert!(!scanner.at_event_boundary());
+        scanner.feed(b"\n\n");
+        assert!(scanner.at_event_boundary());
+        let json = Scanner::for_content_type(Some(&HeaderValue::from_static("application/json")));
+        assert!(!json.is_events() && !json.at_event_boundary());
     }
 
     #[test]

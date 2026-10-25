@@ -14,12 +14,13 @@ use lh_core::admission::{Ceilings, Leaseholder, Policy, Trigger};
 use lh_core::placement;
 use lh_proto::SloClass;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 /// A validated configuration.
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// The engine's address (`host:port`), spoken to over plain HTTP/1.1; with `[nodes]`, the first node's.
-    pub upstream: Authority,
+    /// The engine, spoken to over plain HTTP/1.1; with `[nodes]`, the first node's.
+    pub upstream: UpstreamAddr,
     /// `[nodes]` and `[placement]`: several GPU nodes and how sessions are placed on them; `None` for one
     /// `upstream`.
     pub placement: Option<Placement>,
@@ -34,6 +35,9 @@ pub struct Config {
     pub tenants: Vec<Tenant>,
     /// The key of every tenant's `cache_salt`, from `cache_salt_secret_file`.
     pub cache_salt_secret: CacheSaltSecret,
+    /// What `GET /metrics` asks of a request on a TCP listener, from `metrics_key_file`; `None` without one,
+    /// which only a gateway without TCP listeners may be.
+    pub metrics_key: Option<MetricsKey>,
     /// Largest accepted request body; larger requests get 413.
     pub max_body_bytes: usize,
     /// Frames buffered between the upstream and a client before backpressure reaches the upstream.
@@ -44,6 +48,10 @@ pub struct Config {
     pub first_byte_timeout: Duration,
     /// How long a shutdown waits for in-flight requests.
     pub drain_timeout: Duration,
+    /// How far into a drain background requests go on before the gateway cuts them, so that a stop or a reload
+    /// is not held up by the longest agent turn: a stream then ends with a `draining` error event, and a request
+    /// without a response yet gets 503. Realtime and interactive requests have the whole drain timeout.
+    pub background_drain: Duration,
     /// Lifecycle-event ids remembered for deduplication, and for how long.
     pub event_dedup_capacity: usize,
     pub event_dedup_ttl: Duration,
@@ -67,6 +75,23 @@ pub enum ListenAddr {
     Unix(PathBuf),
 }
 
+/// Where an engine listens: `http://host:port`, or `unix:` and the path of its socket (the engine's own, or a
+/// tunnel's on this host).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UpstreamAddr {
+    Tcp(Authority),
+    Unix(PathBuf),
+}
+
+impl fmt::Display for UpstreamAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Tcp(authority) => write!(f, "http://{authority}"),
+            Self::Unix(path) => write!(f, "unix:{}", path.display()),
+        }
+    }
+}
+
 /// A tenant: who a request belongs to, what it may ask for, and its cache namespace.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tenant {
@@ -87,6 +112,16 @@ pub struct CacheSaltSecret(pub(crate) [u8; 32]);
 impl fmt::Debug for CacheSaltSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("CacheSaltSecret(..)")
+    }
+}
+
+/// The SHA-256 of the metrics key, which its `Debug` does not show.
+#[derive(Clone, PartialEq, Eq)]
+pub struct MetricsKey(pub(crate) [u8; 32]);
+
+impl fmt::Debug for MetricsKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MetricsKey(..)")
     }
 }
 
@@ -137,7 +172,7 @@ pub struct Placement {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Node {
     pub name: String,
-    pub upstream: Authority,
+    pub upstream: UpstreamAddr,
     /// Whether it serves each class, strictest first: those `classes` names under placement dedicated, and
     /// every class under the others.
     pub serves: [bool; 3],
@@ -215,11 +250,13 @@ struct RawConfig {
     listen: Vec<RawListen>,
     tenants: BTreeMap<String, RawTenant>,
     cache_salt_secret_file: Option<PathBuf>,
+    metrics_key_file: Option<PathBuf>,
     max_body_bytes: usize,
     stream_buffer_frames: usize,
     stall_timeout_s: f64,
     first_byte_timeout_s: f64,
     drain_timeout_s: f64,
+    background_drain_s: f64,
     event_dedup_capacity: usize,
     event_dedup_ttl_s: f64,
     log_format: LogFormat,
@@ -239,11 +276,13 @@ impl Default for RawConfig {
             listen: Vec::new(),
             tenants: BTreeMap::new(),
             cache_salt_secret_file: None,
+            metrics_key_file: None,
             max_body_bytes: 32 << 20,
             stream_buffer_frames: 64,
             stall_timeout_s: 30.0,
             first_byte_timeout_s: 600.0,
             drain_timeout_s: 30.0,
+            background_drain_s: 5.0,
             event_dedup_capacity: 100_000,
             event_dedup_ttl_s: 600.0,
             log_format: LogFormat::Text,
@@ -474,6 +513,10 @@ impl RawConfig {
             }
         }
         let cache_salt_secret = cache_salt_secret(self.cache_salt_secret_file)?;
+        let tcp = listeners
+            .iter()
+            .any(|l| matches!(l.addr, ListenAddr::Tcp(_)));
+        let metrics_key = metrics_key(self.metrics_key_file, tcp)?;
 
         if self.max_body_bytes == 0 {
             return Err("max_body_bytes must be positive".into());
@@ -484,6 +527,16 @@ impl RawConfig {
         if self.event_dedup_capacity == 0 {
             return Err("event_dedup_capacity must be positive".into());
         }
+        let drain_timeout = seconds("drain_timeout_s", self.drain_timeout_s)?;
+        let background_drain = Duration::try_from_secs_f64(self.background_drain_s)
+            .ok()
+            .filter(|grace| *grace <= drain_timeout)
+            .ok_or_else(|| {
+                format!(
+                    "background_drain_s must be a number of seconds from 0 to drain_timeout_s ({})",
+                    self.drain_timeout_s
+                )
+            })?;
         Ok(Config {
             upstream,
             placement,
@@ -496,11 +549,13 @@ impl RawConfig {
             listeners,
             tenants,
             cache_salt_secret,
+            metrics_key,
             max_body_bytes: self.max_body_bytes,
             stream_buffer_frames: self.stream_buffer_frames,
             stall_timeout: seconds("stall_timeout_s", self.stall_timeout_s)?,
             first_byte_timeout: seconds("first_byte_timeout_s", self.first_byte_timeout_s)?,
-            drain_timeout: seconds("drain_timeout_s", self.drain_timeout_s)?,
+            drain_timeout,
+            background_drain,
             event_dedup_capacity: self.event_dedup_capacity,
             event_dedup_ttl: seconds("event_dedup_ttl_s", self.event_dedup_ttl_s)?,
             log_format: self.log_format,
@@ -899,20 +954,36 @@ fn valid_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
-fn node_upstream(name: &str, raw: &str) -> Result<Authority, String> {
+fn node_upstream(name: &str, raw: &str) -> Result<UpstreamAddr, String> {
     parse_upstream(raw).map_err(|e| format!("nodes.{name}: {e}"))
 }
 
-fn parse_upstream(raw: &str) -> Result<Authority, String> {
-    let uri: Uri = raw.parse().map_err(|e| format!("upstream {raw:?}: {e}"))?;
+fn parse_upstream(raw: &str) -> Result<UpstreamAddr, String> {
+    const EXPECTED: &str =
+        "expected http://host:port with no path, or unix: and an absolute socket path";
+    if let Some(path) = raw.strip_prefix("unix:") {
+        let path = Path::new(path);
+        // One spelling: `unix://host/...` reads as a URL with an authority, which a socket has not.
+        if !path.is_absolute() || path.as_os_str().as_encoded_bytes().starts_with(b"//") {
+            return Err(format!("upstream {raw:?}: {EXPECTED}"));
+        }
+        // A path longer than a socket address holds would fail every connection; refuse it at start.
+        if std::os::unix::net::SocketAddr::from_pathname(path).is_err() {
+            return Err(format!(
+                "upstream {raw:?}: the path is too long for a Unix socket address"
+            ));
+        }
+        return Ok(UpstreamAddr::Unix(path.to_owned()));
+    }
+    let uri: Uri = raw
+        .parse()
+        .map_err(|e| format!("upstream {raw:?}: {e}; {EXPECTED}"))?;
     let path_is_root = matches!(uri.path(), "" | "/") && uri.query().is_none();
     match (uri.scheme(), uri.authority()) {
         (Some(scheme), Some(authority)) if *scheme == Scheme::HTTP && path_is_root => {
-            Ok(authority.clone())
+            Ok(UpstreamAddr::Tcp(authority.clone()))
         }
-        _ => Err(format!(
-            "upstream {raw:?}: expected http://host:port with no path"
-        )),
+        _ => Err(format!("upstream {raw:?}: {EXPECTED}")),
     }
 }
 
@@ -939,11 +1010,51 @@ fn cache_salt_secret(path: Option<PathBuf>) -> Result<CacheSaltSecret, String> {
         "no cache_salt_secret_file: name a file of 32 random bytes in hex, mode 600, from which the tenants' \
          cache salts are derived",
     )?;
-    let fail = |cause: String| format!("cache_salt_secret_file {}: {cause}", path.display());
+    let key = "cache_salt_secret_file";
+    parse_digest(private_file(key, &path)?.trim())
+        .map(CacheSaltSecret)
+        .ok_or_else(|| {
+            format!(
+                "{key} {}: expected 64 hex characters, 32 random bytes",
+                path.display()
+            )
+        })
+}
+
+/// Reads `metrics_key_file`: one key on one line, in a file only its owner may open, whose SHA-256 `GET /metrics`
+/// compares with a request's bearer key on a TCP listener. Every user of the host reaches loopback, and the
+/// metrics name the tenants and their traffic, so a gateway with a TCP listener needs one.
+fn metrics_key(path: Option<PathBuf>, tcp: bool) -> Result<Option<MetricsKey>, String> {
+    let Some(path) = path else {
+        return if tcp {
+            Err(
+                "no metrics_key_file: a TCP listener serves /metrics to every user of the host; name a file of \
+                 one key, mode 600, that GET /metrics asks for there"
+                    .into(),
+            )
+        } else {
+            Ok(None)
+        };
+    };
+    let key = "metrics_key_file";
+    let text = private_file(key, &path)?;
+    let token = text.trim();
+    if token.is_empty() || token.contains(char::is_whitespace) {
+        return Err(format!(
+            "{key} {}: expected one key on one line",
+            path.display()
+        ));
+    }
+    Ok(Some(MetricsKey(Sha256::digest(token).into())))
+}
+
+/// The text of a file that only its owner may open, named by the configuration's `key` by an absolute path.
+fn private_file(key: &str, path: &Path) -> Result<String, String> {
+    let fail = |cause: String| format!("{key} {}: {cause}", path.display());
     if !path.is_absolute() {
         return Err(fail("not an absolute path".into()));
     }
-    let mode = std::fs::metadata(&path)
+    let mode = std::fs::metadata(path)
         .map_err(|e| fail(e.to_string()))?
         .permissions()
         .mode();
@@ -953,10 +1064,7 @@ fn cache_salt_secret(path: Option<PathBuf>) -> Result<CacheSaltSecret, String> {
             mode & 0o777
         )));
     }
-    let text = std::fs::read_to_string(&path).map_err(|e| fail(e.to_string()))?;
-    parse_digest(text.trim())
-        .map(CacheSaltSecret)
-        .ok_or_else(|| fail("expected 64 hex characters, 32 random bytes".into()))
+    std::fs::read_to_string(path).map_err(|e| fail(e.to_string()))
 }
 
 fn parse_digest(hex: &str) -> Option<[u8; 32]> {
@@ -1000,9 +1108,23 @@ mod tests {
         path
     });
 
-    /// The configuration line that names a cache-salt secret file.
+    /// The metrics key of the configurations below, `metrics-key` in a file of mode 600.
+    static METRICS_FILE: LazyLock<PathBuf> = LazyLock::new(|| {
+        let path = std::env::temp_dir().join("lh-gw-config-test-metrics-key");
+        let staged = path.with_extension(std::process::id().to_string());
+        std::fs::write(&staged, "metrics-key\n").unwrap();
+        std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::fs::rename(&staged, &path).unwrap();
+        path
+    });
+
+    /// The configuration lines that name a cache-salt secret file and the metrics key's file.
     fn secret_file(path: &Path) -> String {
-        format!("cache_salt_secret_file = \"{}\"", path.display())
+        format!(
+            "cache_salt_secret_file = \"{}\"\nmetrics_key_file = \"{}\"",
+            path.display(),
+            METRICS_FILE.display()
+        )
     }
 
     /// A configuration with one TCP listener, plus top-level keys and tables.
@@ -1017,7 +1139,7 @@ mod tests {
     #[test]
     fn defaults_follow_the_spec() {
         let config = config("", &format!("[tenants.agents]\nkeys_sha256 = [\"{KEY}\"]")).unwrap();
-        assert_eq!(config.upstream.as_str(), "127.0.0.1:18000");
+        assert_eq!(config.upstream.to_string(), "http://127.0.0.1:18000");
         assert_eq!(config.upstream_idle_timeout, Duration::from_secs(4));
         let vllm = PrioritySignals {
             vllm_header: true,
@@ -1032,9 +1154,10 @@ mod tests {
             [
                 config.stall_timeout,
                 config.first_byte_timeout,
-                config.drain_timeout
+                config.drain_timeout,
+                config.background_drain
             ],
-            [30, 600, 30].map(Duration::from_secs)
+            [30, 600, 30, 5].map(Duration::from_secs)
         );
         assert_eq!(
             (config.event_dedup_capacity, config.event_dedup_ttl),
@@ -1078,6 +1201,17 @@ mod tests {
                 "stall_timeout_s must be a positive",
             ),
             (
+                "background_drain_s = 31",
+                &a,
+                "background_drain_s must be a number of seconds from 0 to drain_timeout_s (30)",
+            ),
+            (
+                "drain_timeout_s = 2\nbackground_drain_s = 3",
+                &a,
+                "from 0 to drain_timeout_s (2)",
+            ),
+            ("background_drain_s = -1", &a, "from 0 to drain_timeout_s"),
+            (
                 "",
                 "[[listen]]\ntcp = \"127.0.0.1:1\"\ntenant = \"a\"\n[tenants.a]",
                 "TCP listener cannot",
@@ -1096,6 +1230,87 @@ mod tests {
         );
         let err = Config::from_toml(&https).unwrap_err().to_string();
         assert!(err.contains("http://host:port"), "{err}");
+    }
+
+    #[test]
+    fn background_requests_may_be_cut_from_the_drains_start_to_its_end() {
+        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
+        let at_once = config("background_drain_s = 0", &a).unwrap();
+        assert_eq!(at_once.background_drain, Duration::ZERO);
+        let whole = config("drain_timeout_s = 10\nbackground_drain_s = 10", &a).unwrap();
+        assert_eq!(whole.background_drain, whole.drain_timeout);
+    }
+
+    #[test]
+    fn an_upstream_is_a_tcp_address_or_a_unix_socket() {
+        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
+        let upstream = |value: &str| {
+            Config::from_toml(&format!(
+                "upstream = \"{value}\"\n{}\n[[listen]]\ntcp = \"127.0.0.1:0\"\n{a}",
+                secret_file(&SECRET_FILE)
+            ))
+            .map(|config| config.upstream)
+            .map_err(|e| e.to_string())
+        };
+        let socket = "/run/user/1007/lh/phastform-engine.sock";
+        assert_eq!(
+            upstream(&format!("unix:{socket}")).unwrap(),
+            UpstreamAddr::Unix(socket.into())
+        );
+        assert_eq!(
+            upstream("http://127.0.0.1:18000").unwrap(),
+            UpstreamAddr::Tcp("127.0.0.1:18000".parse().unwrap())
+        );
+        // The start line and the errors name it as it was written.
+        assert_eq!(
+            UpstreamAddr::Unix(socket.into()).to_string(),
+            format!("unix:{socket}")
+        );
+        let long = format!("unix:/{}", "s".repeat(200));
+        for (value, cause) in [
+            ("unix:relative.sock", "or unix: and an absolute socket path"),
+            ("unix:", "or unix: and an absolute socket path"),
+            (
+                "unix://engine/x.sock",
+                "or unix: and an absolute socket path",
+            ),
+            (&long, "the path is too long for a Unix socket address"),
+            (
+                "http+unix://%2Frun%2Fx.sock",
+                "or unix: and an absolute socket path",
+            ),
+        ] {
+            let err = upstream(value).unwrap_err();
+            assert!(
+                err.contains(&format!("upstream {value:?}: ")) && err.contains(cause),
+                "{err}"
+            );
+        }
+
+        // Nodes take either kind, and two nodes never share a socket.
+        let nodes = |gray: &str| {
+            Config::from_toml(&format!(
+                "{}\n[nodes.phastform]\nupstream = \"unix:{socket}\"\n[nodes.gray]\nupstream = \"{gray}\"\n\
+                 [[listen]]\ntcp = \"127.0.0.1:0\"\n{a}",
+                secret_file(&SECRET_FILE)
+            ))
+            .map_err(|e| e.to_string())
+        };
+        let placement = nodes("http://127.0.0.1:28000").unwrap().placement.unwrap();
+        let upstreams: Vec<_> = placement
+            .nodes
+            .iter()
+            .map(|n| n.upstream.to_string())
+            .collect();
+        assert_eq!(
+            upstreams,
+            ["http://127.0.0.1:28000", &format!("unix:{socket}")]
+        );
+        let err = nodes(&format!("unix:{socket}")).unwrap_err();
+        assert!(
+            err.contains("nodes.gray and nodes.phastform have the same upstream"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -1151,6 +1366,67 @@ mod tests {
         }
         let err = with("").unwrap_err();
         assert!(err.starts_with("no cache_salt_secret_file"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_tcp_listener_needs_a_metrics_key_in_a_private_file() {
+        let salt = format!("cache_salt_secret_file = \"{}\"", SECRET_FILE.display());
+        let with = |listen: &str, key: &str| {
+            Config::from_toml(&format!(
+                "upstream = \"http://127.0.0.1:18000\"\n{salt}\n{key}\n[[listen]]\n{listen}\n\
+                 [tenants.a]\nkeys_sha256 = [\"{KEY}\"]\ntrusted = true"
+            ))
+            .map_err(|e| e.to_string())
+        };
+        let tcp = "tcp = \"127.0.0.1:0\"";
+        let unix = "unix = \"/run/user/1007/lh/gateway.sock\"\ntenant = \"a\"";
+        let named = |path: &Path| format!("metrics_key_file = \"{}\"", path.display());
+
+        let config = with(tcp, &named(&METRICS_FILE)).unwrap();
+        // SHA-256 of "metrics-key": the key itself is never kept, and never printed.
+        let digest = Sha256::digest("metrics-key").into();
+        assert_eq!(config.metrics_key, Some(MetricsKey(digest)));
+        assert_eq!(
+            format!("{:?}", config.metrics_key.unwrap()),
+            "MetricsKey(..)"
+        );
+        // Only a TCP listener needs it: a Unix socket's file mode keeps other users out.
+        assert_eq!(with(unix, "").unwrap().metrics_key, None);
+        let err = with(tcp, "").unwrap_err();
+        assert!(
+            err.starts_with("no metrics_key_file: a TCP listener serves /metrics"),
+            "{err}"
+        );
+
+        let dir = std::env::temp_dir().join(format!("lh-gw-metrics-key-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = |name: &str, text: &str, mode: u32| {
+            let path = dir.join(name);
+            std::fs::write(&path, text).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+            path
+        };
+        for (path, cause) in [
+            (
+                file("readable", "k\n", 0o644),
+                "mode 644 lets other users open it",
+            ),
+            (file("empty", "\n", 0o600), "expected one key on one line"),
+            (
+                file("two", "k1 k2\n", 0o600),
+                "expected one key on one line",
+            ),
+            (dir.join("missing"), "No such file or directory"),
+            (PathBuf::from("relative/key"), "not an absolute path"),
+        ] {
+            let err = with(tcp, &named(&path)).unwrap_err();
+            assert!(
+                err.starts_with(&format!("metrics_key_file {}: ", path.display()))
+                    && err.contains(cause),
+                "{err}"
+            );
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1504,16 +1780,16 @@ mod tests {
         let names: Vec<_> = placement
             .nodes
             .iter()
-            .map(|n| (n.name.as_str(), n.upstream.as_str(), n.serves))
+            .map(|n| (n.name.as_str(), n.upstream.to_string(), n.serves))
             .collect();
         assert_eq!(
             names,
             [
-                ("gray", "127.0.0.1:28000", [true; 3]),
-                ("phastform", "127.0.0.1:18000", [true; 3])
+                ("gray", "http://127.0.0.1:28000".to_owned(), [true; 3]),
+                ("phastform", "http://127.0.0.1:18000".to_owned(), [true; 3])
             ]
         );
-        assert_eq!(pool.upstream.as_str(), "127.0.0.1:28000");
+        assert_eq!(pool.upstream.to_string(), "http://127.0.0.1:28000");
 
         let dedicated = Config::from_toml(&format!(
             "{}\n[nodes.voice]\nupstream = \"http://127.0.0.1:18000\"\nclasses = [\"realtime\"]\n\
@@ -1664,6 +1940,10 @@ mod tests {
             .replace(
                 "<home>/.config/leaseholder/cache-salt-secret",
                 &SECRET_FILE.display().to_string(),
+            )
+            .replace(
+                "<home>/.config/leaseholder/metrics-key",
+                &METRICS_FILE.display().to_string(),
             )
     }
 
