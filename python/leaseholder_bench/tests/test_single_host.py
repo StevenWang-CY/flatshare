@@ -1055,13 +1055,29 @@ def test_gpu_guard_reads_the_lent_gpu_alone(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="reads /proc (Linux)")
 def test_gpu_guard_tells_the_supervisors_units_from_foreign_processes(tmp_path: Path) -> None:
-    # Two processes on the GPU (a stand-in nvidia-smi lists them): one of lh-svc's units, which carries its
-    # LH_SVC_UNIT, and a foreign one. The guard passes the unit and refuses the stranger.
+    # Processes on the GPU (a stand-in nvidia-smi lists them): one of lh-svc's units, which carries its LH_SVC_UNIT;
+    # a child of a unit's process whose environment no longer shows the mark, as vLLM's engine core's does once
+    # setproctitle has written its title over the start of it (the rehearsal on the box: the STT's engine core
+    # stopped the TTS's and the engine's starts); and a foreign one. The guard passes the unit and its child and
+    # refuses the stranger.
     sleep = [sys.executable, "-c", "import time; time.sleep(30)"]
+    unmarked = {k: v for k, v in os.environ.items() if k != "LH_SVC_UNIT"}
     ours = subprocess.Popen(sleep, env=os.environ | {"LH_SVC_UNIT": "lh-stt.service"})
-    theirs = subprocess.Popen(
-        sleep, env={k: v for k, v in os.environ.items() if k != "LH_SVC_UNIT"}
+    theirs = subprocess.Popen(sleep, env=unmarked)
+    spawn = (
+        "import os, subprocess, sys, time\n"
+        "env = {k: v for k, v in os.environ.items() if k != 'LH_SVC_UNIT'}\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], env=env)\n"
+        "print(child.pid, flush=True)\n"
+        "time.sleep(30)\n"
     )
+    parent = subprocess.Popen(
+        [sys.executable, "-c", spawn],
+        env=os.environ | {"LH_SVC_UNIT": "lh-stt.service"},
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    child = int(parent.stdout.readline())
     try:
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
@@ -1078,10 +1094,14 @@ def test_gpu_guard_tells_the_supervisors_units_from_foreign_processes(tmp_path: 
             )
 
         assert guard(ours.pid).returncode == 0
-        refused = guard(ours.pid, theirs.pid)
+        passed = guard(ours.pid, child)
+        assert passed.returncode == 0, passed.stderr
+        refused = guard(ours.pid, child, theirs.pid)
         assert refused.returncode == 1 and f"pid {theirs.pid}" in refused.stderr
     finally:
-        for process in (ours, theirs):
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(child, signal.SIGKILL)
+        for process in (ours, theirs, parent):
             process.kill()
             process.wait()
 
