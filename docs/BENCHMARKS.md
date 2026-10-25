@@ -347,6 +347,20 @@ tunnel's engine socket), 40 rounds again, the same text on both paths ([records]
 | Through lh-gateway | 43.8 ms | 162.7 ms | 344.7 ms | 12.09 / 12.52 ms |
 | **Paired median difference** | **+0.29 ms** | **+0.40 ms** | **+0.45 ms** | — |
 
+**The final transport against W5's** (the transport A/B, 2026-10-25): `lh-bench voice-turn` (30 turns of the two LibriSpeech clips) and `lh-bench tiers` (5 reps) from cyan on the frozen engine, with the same clips, reps and cores, once through W5's tunnel, one SSH connection's TCP forwards (at v0.3-90), and once through the final build's, an SSH session of its own for each connection to each socket (at v0.3-274), p50 / p90 in ms ([records](../benchmarks/results/2026-10-25-w6-transport), whose `ab.py` prints this table):
+
+| Stage | TCP forwards (W5's tunnel) | Sockets (lh-tunnel) | Sockets − TCP, p50 |
+|---|---:|---:|---:|
+| STT | 152.6 / 161.3 | 152.5 / 160.9 | −0.1 |
+| LLM first token | 49.1 / 50.5 | 40.7 / 41.5 | −8.4 |
+| LLM first sentence | 252.5 / 317.9 | 249.9 / 316.6 | −2.6 |
+| TTS first audio | 176.3 / 187.6 | 175.6 / 186.7 | −0.8 |
+| **Turn** | 584.6 / 655.2 | 581.0 / 655.1 | −3.6 |
+| LLM whole reply | 303.0 / 369.2 | 263.3 / 330.0 | −39.7 |
+
+- **The turn is the same:** −3.6 ms on the sockets at the median, the STT, the first sentence and the first audio −0.1, −2.6 and −0.8 ms, the LLM's first token −8.4 ms. The TCP side's probe (before 04d6d1a) opened a connection for each TTS request, which through W5's forwards is a channel on the SSH connection: `GET /health` took 2.4–3.2 ms on a new connection against 2.1–2.7 ms on a kept one (p50 of 50 for each server; the TTS's new ones 44.7 ms at p95, the tail below), so the TCP side's first audio holds about 0.4 ms at the median that the socket side's, on a kept connection, does not.
+- **The sockets drop a 40 ms tail.** On the TCP side a stream ended 51 ms after its reply's text was complete, at the median, against 13 ms on the sockets, with the same text on both, so the LLM's whole reply, which the turn does not wait for, is 39.7 ms shorter; and `tiers` had 2 of its 21 cells' medians 29 and 40 ms longer over TCP, the other 19 within 10 ms. 40 ms is Linux's shortest delayed acknowledgment, which a small last write held back by Nagle's algorithm waits for; these records do not say which TCP connection of the path held it.
+
 **Its own time, in place** (`lh_gateway_overhead_seconds`: from the end of a request's body to the upstream write). The voice agent's turns are seconds apart:
 
 | Upstream keep-alive (engine / gateway) | Requests | Mean | p99 | Within 0.5 ms | First byte p99 |
@@ -366,9 +380,10 @@ tunnel's engine socket), 40 rounds again, the same text on both paths ([records]
     | 60 s keep-alive | 0.08 ms | 38.5 ms | 49.8 ms |
 
   - The engine now keeps idle connections for 60 s (`VLLM_HTTP_TIMEOUT_KEEP_ALIVE`) and the gateway for 55 s.
-  - Through the final build's tunnel a new connection is a new SSH session: `GET /health` took 12.4–13.2 ms on a new
-    connection against 2.1–2.7 ms on a kept one, for each of the three sockets (p50 of 50, cyan to Phastform), so
-    about 10.5 ms. The servers keep idle connections 60 s for it, and the voice worker's clients 55 s.
+  - Through the final build's tunnel a new connection is a new SSH session: `GET /health` took 13.1–13.9 ms
+    on a new connection against 2.2–2.8 ms on a kept one, for each of the three sockets (p50 of 50,
+    cyan to Phastform), so about 11 ms, where through W5's forwards it was a channel, about 0.4 ms
+    (above). The servers keep idle connections 60 s for it, and the voice worker's clients 55 s.
 - **End to end it is inside the run-to-run spread.**
   - Voice alone through the gateway: V2V p50 1,684, 1,600 and 1,633 ms over three runs.
   - Straight to the engine: 1,614 and 1,579 ms over two runs, every run with 0 errors.

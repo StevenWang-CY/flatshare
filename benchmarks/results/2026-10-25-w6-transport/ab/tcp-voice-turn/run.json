@@ -1,0 +1,30 @@
+{
+  "kind": "voice-turn",
+  "config": {
+    "stt_url": "http://127.0.0.1:18100/v1",
+    "llm_url": "http://127.0.0.1:18000/v1",
+    "tts_url": "http://127.0.0.1:18880/v1",
+    "stt_model": "openai/whisper-large-v3-turbo",
+    "llm_model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+    "tts_model": "kokoro",
+    "voice": "af_heart",
+    "audio": [
+      "~/leaseholder/src/python/leaseholder_voice/tests/data/user_turn.wav",
+      "~/leaseholder/src/python/leaseholder_voice/tests/data/barge_in.wav"
+    ],
+    "reps": 30,
+    "warm": 2,
+    "concurrency": 1,
+    "max_tokens": 60,
+    "system": "You are Ava, the voice assistant of a small restaurant, speaking on the phone. Answer in one or two short, natural sentences, with no lists or markdown.",
+    "slo_class": "realtime",
+    "send_priority": true,
+    "background": "none",
+    "decode_tokens": 1024,
+    "gap_s": 0.5,
+    "timeout": 120.0
+  },
+  "host": "cyan",
+  "started": 1792922276.1810274,
+  "finished": 1792922310.9746482
+}

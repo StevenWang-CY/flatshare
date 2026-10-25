@@ -1,0 +1,29 @@
+{
+  "kind": "tiers",
+  "config": {
+    "url": "http://127.0.0.1:18000",
+    "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+    "lengths": [
+      1024,
+      2048,
+      4096,
+      8192,
+      16384,
+      24576,
+      31744
+    ],
+    "reps": 5,
+    "background": "none",
+    "decode_tokens": 1024,
+    "priority": 1,
+    "flush_factor": 1.5,
+    "seed": 0,
+    "timeout": 300.0
+  },
+  "host": "cyan",
+  "engine_version": "0.32.0",
+  "pool_tokens": 36400,
+  "started": 1792922311.2098427,
+  "finished": 1792922812.4313164,
+  "background": null
+}

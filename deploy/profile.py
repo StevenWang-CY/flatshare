@@ -976,4 +976,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # This file has the name of the standard library's profile module, which cProfile imports, as torch does under
+    # vLLM's import (check-vllm). A script's directory comes first on sys.path, where this file would be found in
+    # the library's place, so the directory leaves the path.
+    sys.path[:] = [entry for entry in sys.path if Path(entry or ".").resolve() != HERE]
     sys.exit(main())

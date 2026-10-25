@@ -657,3 +657,22 @@ def test_the_hub_cache_is_resolved_as_huggingface_hub_does_and_rendered_into_the
         tmp_path / "unknown", "a100-40gb", host()
     )  # facts from before the cache was recorded
     assert "HF_HUB_CACHE" not in (out / "systemd" / "lh-engine.service").read_text()
+
+
+def test_check_vllm_imports_vllm_although_torch_imports_cprofile(tmp_path: Path) -> None:
+    # profile.py has the name of the standard library's profile module, which cProfile imports, and vLLM's import
+    # imports cProfile (torch's dynamo, under vLLM's env_override). Run as a script, profile.py's directory led
+    # sys.path, so cProfile got profile.py in the library's place: the rehearsal on the box failed in bootstrap.sh
+    # gpu's check-vllm with "module 'profile' has no attribute 'run'". A vllm that imports cProfile, then exits 7,
+    # stands in for vLLM.
+    fake = tmp_path / "site" / "vllm"
+    fake.mkdir(parents=True)
+    (fake / "__init__.py").write_text("import cProfile\n\nraise SystemExit(7)\n")
+    done = subprocess.run(
+        [sys.executable, str(DEPLOY / "profile.py"), "check-vllm", str(tmp_path)],
+        env=os.environ | {"PYTHONPATH": str(tmp_path / "site")},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == 7, done.stderr

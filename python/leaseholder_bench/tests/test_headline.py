@@ -145,3 +145,16 @@ def test_fbs_table_is_its_records_against_w5s() -> None:
     first = printed.split("\n\n")[0].strip()
     assert first.count("\n") == 4  # the header, its rule and three configurations
     assert first in (REPO / "docs" / "BENCHMARKS.md").read_text()
+
+
+TRANSPORT = REPO / "benchmarks" / "results" / "2026-10-25-w6-transport"
+
+
+def test_the_transport_ab_table_is_its_records() -> None:
+    # BENCHMARKS.md's transport A/B table is what the records' ab.py prints first, from both sides' summaries.
+    printed = subprocess.run(
+        [sys.executable, str(TRANSPORT / "ab.py")], capture_output=True, text=True, check=True
+    ).stdout
+    first = printed.split("\n\n")[0].strip()
+    assert first.count("\n") == 7  # the header, its rule and six stages
+    assert first in (REPO / "docs" / "BENCHMARKS.md").read_text()
