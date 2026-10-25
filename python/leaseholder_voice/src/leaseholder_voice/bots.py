@@ -65,6 +65,13 @@ from .protocol import AGENT_NAME
 QUIET_S = 1.0
 """Agent silence that ends its reply."""
 
+JOIN_STAGGER_S = 0.25
+"""How far apart the callers join their rooms. LiveKit's dispatcher can drop the job of a room created within
+milliseconds of another's ("no workers with sufficient capacity", with six callers in W5's calls per GPU) and does
+not retry, so that room's caller waits for an agent that never comes; a quarter second apart, each room's job is
+assigned before the next room exists. The stagger only shifts when each call starts, by at most 1.25 s with six
+callers: every turn is timed within its own call, and the callers' think times set the calls' turns apart anyway."""
+
 
 @dataclass(frozen=True)
 class BotsConfig:
@@ -333,7 +340,12 @@ async def run_bots(config: BotsConfig, out_dir: Path) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     started = time.time()
     with (out_dir / "turns.jsonl").open("w") as log:
-        await asyncio.gather(*(caller.call(rows, log) for caller in callers))
+
+        async def join(caller: Caller) -> None:
+            await asyncio.sleep(caller.index * JOIN_STAGGER_S)
+            await caller.call(rows, log)
+
+        await asyncio.gather(*(join(caller) for caller in callers))
     summary = summarize(rows, [c.max_lateness_s for c in callers], config.reply_timeout)
     run = {
         "kind": "voice-bots",

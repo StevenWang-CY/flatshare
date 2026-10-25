@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import itertools
 import json
 import threading
 import time
@@ -143,6 +144,18 @@ def test_a_recorded_track_keeps_its_frames_together_and_its_pauses():
 
 REPLY_S, SPOKEN_S = 0.2, 0.4
 """The fake agent answers each line REPLY_S after its end of speech, with SPOKEN_S of tone."""
+FRAME_MS = 10.0
+"""A frame of either side: the caller's microphone and the agent's track."""
+
+
+def replied(v2v_ms: float, late_s: float) -> bool:
+    """Whether a V2V the caller measured is the fake agent's REPLY_S, as far as the event loop that
+    runs both sides lets it be: up to a frame short, since the caller stamps a line's end after its
+    last frame has gone out, and up to a frame of each side long; and either way by as much as the
+    caller's pacing loop ran late (its worst lateness, ``max_lateness_s``), which the agent's side
+    ran late by too."""
+    late = late_s * 1000
+    return REPLY_S * 1000 - FRAME_MS - late <= v2v_ms <= REPLY_S * 1000 + 2 * FRAME_MS + late
 
 
 class Line:
@@ -241,18 +254,20 @@ def test_a_saved_call_lines_up_what_the_caller_sent_with_what_it_heard(
         "start", "speech_end", "reply", "barge_in", "barge_in_speech_end", "silence",
         "barge_in_reply", "end",
     }  # fmt: skip
-    # The caller's lines on the left, the agent's replies on the right, where the times say.
+    # The caller's lines on the left, the agent's replies on the right, where the times say, as
+    # closely as the caller's pacing loop kept time.
+    late = caller.microphone.max_lateness_s
     sent, heard = runs(pcm[:, 0]), runs(pcm[:, 1])
     assert len(sent) == 3 and len(heard) == 3
     turns = [(first, ""), (second, ""), (second, "barge_in_")]
     ends = [turn["at"][f"{event}speech_end"] for turn, event in turns]
     replies = [turn["at"][f"{event}reply"] for turn, event in turns]
-    assert [last / 24_000 for _, last in sent] == pytest.approx(ends, abs=0.015)
-    assert [onset / 24_000 for onset, _ in heard] == pytest.approx(replies, abs=0.015)
+    assert [last / 24_000 for _, last in sent] == pytest.approx(ends, abs=0.015 + late)
+    assert [onset / 24_000 for onset, _ in heard] == pytest.approx(replies, abs=0.015 + late)
     v2v = [first["v2v_ms"], second["v2v_ms"], second["v2v_after_barge_in_ms"]]
     gaps = [(onset - last) / 24 for (_, last), (onset, _) in zip(sent, heard, strict=True)]
-    assert gaps == pytest.approx(v2v, abs=25)  # the waveforms show the V2V the callers measured
-    assert all(REPLY_S * 1000 <= ms <= REPLY_S * 1000 + 60 for ms in v2v)
+    assert gaps == pytest.approx(v2v, abs=25 + 1000 * late)  # the V2V the callers measured
+    assert all(replied(ms, late) for ms in v2v), v2v
 
 
 def test_a_call_opens_with_its_warm_up_turns_and_measures_the_same_turns_after_them(
@@ -264,12 +279,12 @@ def test_a_call_opens_with_its_warm_up_turns_and_measures_the_same_turns_after_t
     config = BotsConfig("ws://fake", "key", "secret", tmp_path, turns=2, barge_in=1.0, seed=3)
     config = dataclasses.replace(config, barge_in_delay=(0.05, 0.05), think=(0.0, 0.0))
 
-    def call(warmup_turns: int) -> list[dict[str, Any]]:
+    def call(warmup_turns: int) -> tuple[list[dict[str, Any]], float]:
         line = Line()
         monkeypatch.setattr(audio.rtc, "AudioSource", line.source)
         monkeypatch.setattr(audio.rtc, "AudioStream", line.stream)
 
-        async def play() -> list[dict[str, Any]]:
+        async def play() -> tuple[list[dict[str, Any]], float]:
             caller = Caller(dataclasses.replace(config, warmup_turns=warmup_turns), corpus, 0, "t")
             tasks = [
                 asyncio.create_task(caller.microphone.run()),
@@ -282,18 +297,18 @@ def test_a_call_opens_with_its_warm_up_turns_and_measures_the_same_turns_after_t
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-            return rows
+            return rows, caller.microphone.max_lateness_s
 
         return asyncio.run(play())
 
-    plain, warmed = call(0), call(1)
+    (plain, _), (warmed, late) = call(0), call(1)
     # One warm-up turn first, a line and its reply without an interruption, marked as such.
     assert [(row["turn"], row.get("warmup", False), row["barge_in"]) for row in warmed] == [
         (0, True, False),
         (1, False, True),
         (2, False, True),
     ]
-    assert REPLY_S * 1000 <= warmed[0]["v2v_ms"] <= REPLY_S * 1000 + 60
+    assert replied(warmed[0]["v2v_ms"], late), warmed[0]["v2v_ms"]
     # The measured turns play the lines and interruptions of the same call without it.
     script = [(row["clip"], row["barge_in_clip"]) for row in plain]
     assert [(row["clip"], row["barge_in_clip"]) for row in warmed[1:]] == script
@@ -320,7 +335,7 @@ def test_an_unanswered_interruption_fails_the_turn_and_keeps_its_reply(
     config = BotsConfig("ws://fake", "key", "secret", tmp_path, barge_in=1.0, reply_timeout=0.5)
     config = dataclasses.replace(config, barge_in_delay=(0.05, 0.05))
 
-    async def call() -> dict[str, Any]:
+    async def call() -> tuple[dict[str, Any], float]:
         caller = Caller(config, corpus, 0, "test")
         tasks = [
             asyncio.create_task(caller.microphone.run()),
@@ -331,13 +346,36 @@ def test_an_unanswered_interruption_fails_the_turn_and_keeps_its_reply(
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        return row
+        return row, caller.microphone.max_lateness_s
 
-    row = asyncio.run(call())
+    row, late = asyncio.run(call())
     assert row["error"] == "the agent did not start speaking"
     assert row["barge_in"] and "v2v_after_barge_in_ms" not in row
-    assert REPLY_S * 1000 <= row["v2v_ms"] <= REPLY_S * 1000 + 60  # the reply it measured stays
+    assert replied(row["v2v_ms"], late), row["v2v_ms"]  # the reply it measured stays
     summary = summarize([row], [0.0], timeout_s=0.5)
     assert summary["errors"] == 1
     assert (summary["v2v_ms"]["n"], summary["v2v_ms"]["censored"]) == (2, 1)
     assert summary["v2v_ms"]["p99"] == pytest.approx(500.0, abs=5)
+
+
+def test_the_callers_join_their_rooms_a_stagger_apart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # LiveKit's dispatcher dropped the job of a room created within milliseconds of the others' (W5's calls per GPU,
+    # six callers: "no workers with sufficient capacity", and it does not retry), so caller-1 waited for an agent
+    # that never came. The callers join one stagger apart.
+    joined: list[tuple[int, float]] = []
+
+    async def call(self: Caller, rows: list[dict[str, Any]], log: Any) -> None:
+        joined.append((self.index, time.monotonic()))
+
+    monkeypatch.setattr(bots.Caller, "call", call)
+    monkeypatch.setattr(bots, "Corpus", lambda _: SimpleNamespace(turns=[], barge_ins=[]))
+    monkeypatch.setattr(bots, "summarize", lambda *_: {})
+    monkeypatch.setattr(bots, "JOIN_STAGGER_S", 0.05, raising=False)
+    config = dataclasses.replace(BotsConfig("ws://fake", "key", "secret", tmp_path), callers=6)
+    asyncio.run(bots.run_bots(config, tmp_path / "out"))
+    order = [index for index, _ in sorted(joined, key=lambda j: j[1])]
+    assert order == list(range(6))
+    starts = [at for _, at in sorted(joined, key=lambda j: j[1])]
+    assert all(b - a >= 0.045 for a, b in itertools.pairwise(starts)), starts

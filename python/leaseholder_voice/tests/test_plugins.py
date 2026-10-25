@@ -24,6 +24,10 @@ from .mocks import FIRST_SENTENCE, TRANSCRIPT, OpenAIMocks
 BASE_URL = "http://lh.invalid/v1"
 
 
+def test_the_worker_lets_idle_connections_go_before_the_servers_do() -> None:
+    assert plugins._LIMITS.keepalive_expiry < plugins.SERVER_KEEP_ALIVE_S
+
+
 @pytest.fixture(scope="module")
 def mocks() -> Iterator[OpenAIMocks]:
     # a short directory: socket paths are limited to 104 bytes on macOS, 108 on Linux

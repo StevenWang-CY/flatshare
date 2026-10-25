@@ -24,9 +24,13 @@ API_KEY = "local"
 
 # The plugins' own client defaults. The plugins set each request's timeout themselves
 # (the LLM uses the session's ``llm_conn_options.timeout``, 10 s by default), so these
-# only apply to calls without one, such as the LLM prewarm.
+# only apply to calls without one, such as the LLM prewarm. Idle connections go after 55 s,
+# 5 s before the GPU node's servers would close them (60 s), so that a turn never sends on a
+# connection the server is closing; through the tunnel a new one is a new SSH session.
 _TIMEOUT = httpx.Timeout(connect=15.0, read=5.0, write=5.0, pool=5.0)
-_LIMITS = httpx.Limits(max_connections=50, max_keepalive_connections=50, keepalive_expiry=120)
+_LIMITS = httpx.Limits(max_connections=50, max_keepalive_connections=50, keepalive_expiry=55)
+SERVER_KEEP_ALIVE_S = 60
+"""How long the engine, STT and TTS keep an idle connection (deploy/phastform/systemd)."""
 
 
 def openai_client(

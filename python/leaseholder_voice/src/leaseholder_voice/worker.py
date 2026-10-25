@@ -44,6 +44,7 @@ a Unix socket each. The environment, set by ``lh-voice-worker.service``, configu
 | ``LH_PREEMPTIVE_GENERATION`` | ``true`` (default, LiveKit's) or ``false`` |
 | ``LH_EVENTS`` | ``on`` (default: lifecycle events to the control plane) or ``off`` |
 | ``LH_NODES`` | The GPU nodes the control plane places calls on, ``phastform,gray``; unset with one |
+| ``LH_LLM_MODEL`` | The model the agent's requests name (default the box's, ``plugins.LLM_MODEL``) |
 """
 
 from __future__ import annotations
@@ -126,6 +127,12 @@ def events_socket() -> str | None:
     return None if setting == "off" or uds.endswith(ENGINE_TUNNEL) else uds
 
 
+def llm_model() -> str:
+    """The model the agent's requests name: ``LH_LLM_MODEL``, else the box's. An engine that serves
+    another model, as the A100 run's Qwen3-14B arm does, answers a request for any other with a 404."""
+    return os.environ.get("LH_LLM_MODEL") or plugins.LLM_MODEL
+
+
 def placement_nodes() -> tuple[str, ...]:
     """The GPU nodes the control plane places calls on (``LH_NODES``): none with one node, or when the LLM
     bypasses the control plane through an engine's tunnel, where nothing places calls."""
@@ -158,7 +165,7 @@ async def entrypoint(ctx: JobContext) -> None:
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
         stt=plugins.make_stt(BASE_URL, uds=sockets.stt),
-        llm=plugins.make_llm(BASE_URL, session_id, uds=os.environ["LH_LLM_UDS"]),
+        llm=plugins.make_llm(BASE_URL, session_id, uds=os.environ["LH_LLM_UDS"], model=llm_model()),
         tts=plugins.make_tts(BASE_URL, uds=sockets.tts),
         turn_handling=turn_handling(),
         aec_warmup_duration=None,

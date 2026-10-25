@@ -97,7 +97,7 @@ With `--warmup-turns N` each call opens with N warm-up turns, played but not mea
 A turn fails when the agent does not answer within the reply timeout (30 s), or does not stop speaking. Its line in `turns.jsonl` has an `error` and keeps what the turn measured before it. In `summary.json` a sample the timeout cut short counts at the timeout, censored (`censored` gives how many), never as missing: a turn that was never answered raises the percentiles instead of leaving them.
 
 ```bash
-lh-voice render-callers ~/leaseholder/data/callers --tts-url http://127.0.0.1:18880/v1
+lh-voice render-callers ~/leaseholder/data/callers --tts-url http://localhost/v1 --uds $XDG_RUNTIME_DIR/lh/phastform-tts.sock
 set -a; . ~/.config/leaseholder/livekit.env; set +a
 ~/leaseholder/src/deploy/bin/in-voicenet lh-voice bots --corpus ~/leaseholder/data/callers \
   --callers 2 --turns 25 --barge-in 0.25 --out ~/leaseholder/runs/<run>/bots
