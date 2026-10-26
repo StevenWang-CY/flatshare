@@ -2,10 +2,10 @@
 
 The records of [`benchmarks/a100/rehearsal`](../../a100/rehearsal/README.md)'s run on Phastform, the box's RTX 5060 Ti
 host, standing in for the A100's: every step of the kit from `deploy/a100/push.sh` to `make reproduce-a100`, under
-lh-svc in a home of its own beside the box's deployment, which the rehearsal left as it found it (`cleanup`: 253,192
-lines of units and files alike). The node was rendered from the A100's profile (`a100-40gb`) with Phastform's facts, so
-these are the box's numbers through the A100's kit: they check its mechanics, as its own preflight says of a host
-with 16 CPUs ("this host checks the mechanics, not the numbers").
+flatshare-svc in a home of its own beside the box's deployment, which the rehearsal left as it found it (`cleanup`:
+253,192 lines of units and files alike). The node was rendered from the A100's profile (`a100-40gb`) with Phastform's
+facts, so these are the box's numbers through the A100's kit: they check its mechanics, as its own preflight says of a
+host with 16 CPUs ("this host checks the mechanics, not the numbers").
 
 Home paths are cut to `~` (the box's login home; the rehearsal's own is `~/a100-rehearsal`), the workstation's to
 `$REHEARSAL_WORK` and `$REHEARSAL_REPO`, the account name to `USER`, and LiveKit's key is redacted as its secret is.
@@ -17,7 +17,7 @@ Home paths are cut to `~` (the box's login home; the rehearsal's own is `~/a100-
 | `blocks.log`, `run.log` | `run.sh`'s blocks 0, 1 and 4 |
 | `block0/` | `smoke.sh` with the listener audit, and a 2-turn call |
 | `block1/` | E0 on the frozen engine (`frozen-e0`, 3 repetitions) and the probes: the KV case and the prefill case three times each, the calls' tail twice |
-| `e2/a100-r1/` | round 1's first point, the PRs' 48-token configuration, as `lh-bench e2 export` keeps it, with the campaign's log and its report |
+| `e2/a100-r1/` | round 1's first point, the PRs' 48-token configuration, as `flatshare-bench e2 export` keeps it, with the campaign's log and its report |
 | `a100.md` | `make reproduce-a100` over these records |
 
 ## What it found
@@ -27,9 +27,9 @@ Two runs stopped at defects of the kit, each fixed with a test that failed first
 - **`bootstrap.sh gpu` failed** at `profile.py check-vllm`: run as a script, deploy/profile.py stood in for the
   standard library's `profile` module when vLLM's import reached cProfile ("module 'profile' has no attribute
   'run'"). Fixed in be9c536.
-- **Under lh-svc, `warm` started no engine.** vLLM's engine core blanks its /proc/PID/environ when it sets its title,
-  where lh-svc's LH_SVC_UNIT stood, so gpu-guard took the STT's engine core for a foreign process and refused the
-  TTS's and the engine's starts (e85b13a); the listener audit read the same environment (4cb5d5f).
+- **Under flatshare-svc, `warm` started no engine.** vLLM's engine core blanks its /proc/PID/environ when it sets its
+  title, where flatshare-svc's FLATSHARE_SVC_UNIT stood, so gpu-guard took the STT's engine core for a foreign process
+  and refused the TTS's and the engine's starts (e85b13a); the listener audit read the same environment (4cb5d5f).
 
 ## The steps
 
@@ -39,7 +39,7 @@ The minutes of each step's run that passed, from `steps.log`:
 |---|---:|---|
 | `check`, `init`, `data` | 0.4 | the callers' clips copied from cyan |
 | `push` | 1.9 | the source and 2.7 GB of data as files; later pushes, the source alone, took 3 s |
-| `stage` | 9.1 | uv, Python 3.12 and the venvs (the engine's 5.0 minutes), rustup and `cargo build -p lh-gateway`, LiveKit's server, FlashInfer's sampler for sm120 (177.9 s), the control plane up |
+| `stage` | 9.1 | uv, Python 3.12 and the venvs (the engine's 5.0 minutes), rustup and `cargo build -p flatshare-gateway`, LiveKit's server, FlashInfer's sampler for sm120 (177.9 s), the control plane up |
 | `gpu` | 1.4 | the card's facts, vLLM's parse of both configurations, the preflight |
 | `warm` | 21.7 | the four compile configurations: frozen 797.7 s to ready, then 178.8, 152.3 and 152.4 s; the engine's caches were empty, but the STT's were warm from the second run, which had started it ([the release's rehearsal](../2026-10-26-a100-rehearsal/README.md), from a fresh home: 1,232.1 s) |
 | `block0` | 4.1 | `smoke.sh`, the listener audit (the three GPU servers in network namespaces of their own), a 2-turn call |

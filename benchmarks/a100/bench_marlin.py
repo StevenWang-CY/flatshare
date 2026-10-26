@@ -17,9 +17,9 @@ for. DeepGEMM JIT-compiles its kernels with nvcc at their first call, so the ben
 environment (its CUDA_HOME and PATH; deploy/a100/host.py with-engine-env NODE CMD...); a DeepGEMM row whose build
 failed without CUDA_HOME says so. On the box, from the home directory, with the engine stopped:
 
-    leaseholder/venvs/engine/bin/python leaseholder/src/deploy/a100/host.py with-engine-env \\
-      leaseholder/src/deploy/phastform leaseholder/venvs/engine/bin/python \\
-      leaseholder/src/benchmarks/a100/bench_marlin.py --m 1,16,64,128,256,512,1024 --out gemm.csv
+    flatshare/venvs/engine/bin/python flatshare/src/deploy/a100/host.py with-engine-env \\
+      flatshare/src/deploy/phastform flatshare/venvs/engine/bin/python \\
+      flatshare/src/benchmarks/a100/bench_marlin.py --m 1,16,64,128,256,512,1024 --out gemm.csv
 
 The CSV has one row per shape, M and kernel: the time in µs, the TFLOPS it amounts to, how it was timed (cuda-graph)
 and, for a kernel that does not run here, why, in one line (the row's time is empty). Its last lines on stdout are

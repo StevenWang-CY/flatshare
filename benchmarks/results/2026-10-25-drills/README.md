@@ -8,21 +8,21 @@ gateway, on four builds. [RUNBOOK.md](../../../ops/RUNBOOK.md#drills) says how t
 | Set | Build, times (UTC) | What it shows |
 |---|---|---|
 | `engine-kill/`, `gateway-restart/`, `cpu-tier/`, `start-engine/`, `start-engine-cold/` | W8's, 03:50–04:10Z, before W6's hardening | a killed engine broke every stream with no error event; a restart drained the gateway's streams while it refused new connections |
-| `w6-*` | v0.3-191-g987fd09, 12:28–12:31Z: the servers on Unix sockets, `lh-gateway.socket` holding the gateway's listeners, a reload handing them to a successor | a reload failed no probe; a restart after it cut its streams (below) |
-| `v0.3-274-*` | v0.3-274-gd6d6814, 17:12–17:16Z | a restart after a reload drained (the unit's `ExecStop`, `deploy/bin/lh-gateway-stop`, waits for the drain), and 5 of its 42 probes failed with 502: cyan's tunnel let a burst of new connections pass a master's sessions (below) |
+| `w6-*` | v0.3-191-g987fd09, 12:28–12:31Z: the servers on Unix sockets, `flatshare-gateway.socket` holding the gateway's listeners, a reload handing them to a successor | a reload failed no probe; a restart after it cut its streams (below) |
+| `v0.3-274-*` | v0.3-274-gd6d6814, 17:12–17:16Z | a restart after a reload drained (the unit's `ExecStop`, `deploy/bin/flatshare-gateway-stop`, waits for the drain), and 5 of its 42 probes failed with 502: cyan's tunnel let a burst of new connections pass a master's sessions (below) |
 | `v0.3-295-*` | v0.3-295-ga2db355, 19:27–19:31Z, the final build | the drills as BENCHMARKS gives them: every drill as `v0.3-274-*`'s, and the restart's probes all answered |
 
 | Directory | Drill | Its files |
 |---|---|---|
-| `engine-kill/` | `ops/drills/drill.sh engine-kill`: SIGKILL to every process of `lh-engine` while two realtime and four background streams decode | `drill.json` (each stream and probe attempt, wall-clock), `report.txt` (`lh-bench drill report`), `event` (the kill's time), `engine-journal.txt` (the unit's journal from the kill on), `requests-*.txt` (the engine's running and waiting requests before, after and at the end), `shm-*.txt` (`/dev/shm`'s used and size bytes, then our files), `scheduler` (the engine's scheduler class) |
-| `gateway-restart/` | `ops/drills/drill.sh gateway-restart`: `systemctl --user restart lh-gateway` on cyan, the same streams | as above, without the engine's journal |
-| `cpu-tier/` | `lh-bench drill cpu-tier`: twice the CPU tier's capacity of unique prompts, then the latest restored and the first evicted | `tier.json` |
+| `engine-kill/` | `ops/drills/drill.sh engine-kill`: SIGKILL to every process of `flatshare-engine` while two realtime and four background streams decode | `drill.json` (each stream and probe attempt, wall-clock), `report.txt` (`flatshare-bench drill report`), `event` (the kill's time), `engine-journal.txt` (the unit's journal from the kill on), `requests-*.txt` (the engine's running and waiting requests before, after and at the end), `shm-*.txt` (`/dev/shm`'s used and size bytes, then our files), `scheduler` (the engine's scheduler class) |
+| `gateway-restart/` | `ops/drills/drill.sh gateway-restart`: `systemctl --user restart flatshare-gateway` on cyan, the same streams | as above, without the engine's journal |
+| `cpu-tier/` | `flatshare-bench drill cpu-tier`: twice the CPU tier's capacity of unique prompts, then the latest restored and the first evicted | `tier.json` |
 | `start-engine/`, `start-engine-cold/` | `ops/drills/cold-start.sh engine` and `engine --cold` (the compile and JIT caches emptied first, then put back) | `report.txt` (the phases), `lh-engine-journal.txt` |
 | `w6-engine-kill/` | `engine-kill` on the final build | as `engine-kill/`, the engine's running and waiting requests sampled every 0.5 s in `drill.json` in place of `requests-*.txt` |
-| `w6-gateway-reload/` | `ops/drills/drill.sh gateway-reload`: `systemctl --user reload lh-gateway`, as a deploy takes a new gateway | `drill.json`, `report.txt`, `event`, `event.log` (the reload's own output), `gateway-journal.txt` (from the event on), `client.log`, `shm-*.txt`, `scheduler` |
+| `w6-gateway-reload/` | `ops/drills/drill.sh gateway-reload`: `systemctl --user reload flatshare-gateway`, as a deploy takes a new gateway | `drill.json`, `report.txt`, `event`, `event.log` (the reload's own output), `gateway-journal.txt` (from the event on), `client.log`, `shm-*.txt`, `scheduler` |
 | `w6-gateway-restart/` | `gateway-restart`, 30 s after the reload | as `w6-gateway-reload/` |
 | `w6-gateway-kill/` | `ops/drills/drill.sh gateway-kill`: SIGKILL to the gateway, which systemd starts again a second later while its socket unit holds the listeners | as `w6-gateway-reload/` |
-| `w6-start-box/` | `ops/drills/cold-start.sh box`: `systemctl --user restart leaseholder.target`, the STT and TTS, then the engine | `report.txt` (each unit's phases), each unit's journal |
+| `w6-start-box/` | `ops/drills/cold-start.sh box`: `systemctl --user restart flatshare.target`, the STT and TTS, then the engine | `report.txt` (each unit's phases), each unit's journal |
 | `v0.3-274-*/`, `v0.3-295-*/` | the same five drills on those builds; the box's start takes the three servers at once | as the `w6-*` directories of the same name |
 
 What the records do not show:

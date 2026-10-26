@@ -13,22 +13,22 @@ NODE is the node's directory as deploy/a100/bootstrap.sh makes it: profile.py's 
 STT configs, the GPU units) and host.json, the host's facts (profile.py detect).
 
 `env` writes NODE/env.sh: nothing where systemd's user manager, outliving the session (lingering), runs the units; else
-deploy/bin/lh-svc runs them, and env.sh puts its systemctl and journalctl shims first on PATH and gives XDG_RUNTIME_DIR
-lh-svc's own directory where the session has none. LH_SUPERVISOR=lh-svc makes lh-svc run them where systemd could (a
-host whose kernel refuses the voice plane's namespace, with no sudo to allow it: the voice plane then runs in the host's
-namespace, degraded, where under systemd the preflight refuses), and env.sh keeps the choice; LH_SUPERVISOR=auto (or
-unset) lets the host's facts decide. `units` links the node's GPU units and cyan's control-plane units
-(deploy/cyan/systemd: the gateway and its socket unit, LiveKit, the voice-plane namespace and the voice worker; no
-tunnel, lh-tunnel@, since the GPU servers are this host's) into ~/.config/systemd/user, with drop-ins it writes into
-NODE/single-host: the cores of the node's core plan for the gateway and the voice plane; the voice worker's STT and TTS
-on this host's own sockets ($XDG_RUNTIME_DIR/lh/stt.sock and tts.sock, where cyan has the tunnel's phastform-stt.sock
-and -tts.sock); the voice plane in the host's network namespace where unprivileged user namespaces are refused; and the
-vad-turns worker variant, which E2 points need. `config` writes ~/.config/leaseholder: gateway.toml from
-deploy/cyan/gateway.example.toml with the upstream on the engine's own socket, the voice plane's socket under this
-host's runtime directory and the digests of new tenant keys (kept in gateway-keys.env), livekit.env, the cache-salt
-secret, the metrics key, and e2-host.toml, which points lh-bench e2 run at the engine's and the gateway's sockets, the
-core plan's load-generator cores, the node's profile and its preflight. Secrets are written once, mode 600, and never
-replaced.
+deploy/bin/flatshare-svc runs them, and env.sh puts its systemctl and journalctl shims first on PATH and gives
+XDG_RUNTIME_DIR flatshare-svc's own directory where the session has none. FLATSHARE_SUPERVISOR=flatshare-svc makes
+flatshare-svc run them where systemd could (a host whose kernel refuses the voice plane's namespace, with no sudo to
+allow it: the voice plane then runs in the host's namespace, degraded, where under systemd the preflight refuses), and
+env.sh keeps the choice; FLATSHARE_SUPERVISOR=auto (or unset) lets the host's facts decide. `units` links the node's GPU
+units and cyan's control-plane units (deploy/cyan/systemd: the gateway and its socket unit, LiveKit, the voice-plane
+namespace and the voice worker; no tunnel, flatshare-tunnel@, since the GPU servers are this host's) into
+~/.config/systemd/user, with drop-ins it writes into NODE/single-host: the cores of the node's core plan for the gateway
+and the voice plane; the voice worker's STT and TTS on this host's own sockets ($XDG_RUNTIME_DIR/flatshare/stt.sock and
+tts.sock, where cyan has the tunnel's phastform-stt.sock and -tts.sock); the voice plane in the host's network namespace
+where unprivileged user namespaces are refused; and the vad-turns worker variant, which E2 points need. `config` writes
+~/.config/flatshare: gateway.toml from deploy/cyan/gateway.example.toml with the upstream on the engine's own socket,
+the voice plane's socket under this host's runtime directory and the digests of new tenant keys (kept in
+gateway-keys.env), livekit.env, the cache-salt secret, the metrics key, and e2-host.toml, which points flatshare-bench
+e2 run at the engine's and the gateway's sockets, the core plan's load-generator cores, the node's profile and its
+preflight. Secrets are written once, mode 600, and never replaced.
 
 `jit-check` builds FlashInfer's top-k/top-p sampler, the kernel the engine JIT-compiles at its first start on this
 card (vLLM 0.32.0 samples with FlashInfer on CUDA cards of more than 16 SMs), with the engine unit's environment and
@@ -74,11 +74,11 @@ GIB = 1 << 30
 
 def _profile_module():
     """deploy/profile.py, once (the tests load it by the same name)."""
-    if module := sys.modules.get("lh_profile"):
+    if module := sys.modules.get("flatshare_profile"):
         return module
-    spec = importlib.util.spec_from_file_location("lh_profile", DEPLOY / "profile.py")
+    spec = importlib.util.spec_from_file_location("flatshare_profile", DEPLOY / "profile.py")
     module = importlib.util.module_from_spec(spec)
-    sys.modules["lh_profile"] = module
+    sys.modules["flatshare_profile"] = module
     spec.loader.exec_module(module)
     return module
 
@@ -86,22 +86,23 @@ def _profile_module():
 profile = _profile_module()
 
 CONTROL = (
-    "lh-gateway.socket",
-    "lh-gateway.service",
-    "lh-livekit.service",
-    "lh-voicenet.service",
-    "lh-voice-worker.service",
+    "flatshare-gateway.socket",
+    "flatshare-gateway.service",
+    "flatshare-livekit.service",
+    "flatshare-voicenet.service",
+    "flatshare-voice-worker.service",
 )
-"""cyan's units that a single host runs beside the GPU node's: not SMG (E2 arm 8b's), nor a tunnel (lh-tunnel@),
+"""cyan's units that a single host runs beside the GPU node's: not SMG (E2 arm 8b's), nor a tunnel (flatshare-tunnel@),
 since the control plane reaches this host's GPU servers on their own sockets."""
 WORKER_VARIANTS = ("vad-turns",)
 """cyan's worker variants linked for good: every E2 point runs with fixed endpointing (ops/RUNBOOK.md)."""
-SUPERVISORS = ("auto", "lh-svc", "systemd")
-"""LH_SUPERVISOR's values: auto, the host's facts decide; lh-svc, deploy/bin/lh-svc runs the units where systemd
-could. env.sh records the supervisor a stage chose, lh-svc or systemd, which the later stages keep (bootstrap.sh)."""
-PRIVATE_SERVERS = ("lh-engine.service", "lh-stt.service", "lh-tts.service")
+SUPERVISORS = ("auto", "flatshare-svc", "systemd")
+"""FLATSHARE_SUPERVISOR's values: auto, the host's facts decide; flatshare-svc, deploy/bin/flatshare-svc runs the units
+where systemd could. env.sh records the supervisor a stage chose, flatshare-svc or systemd, which the later stages keep
+(bootstrap.sh)."""
+PRIVATE_SERVERS = ("flatshare-engine.service", "flatshare-stt.service", "flatshare-tts.service")
 """The GPU node's servers, each of which deploy/bin/in-private-net runs in a network namespace of its own."""
-UNITS = ("leaseholder.target", *PRIVATE_SERVERS, *CONTROL)
+UNITS = ("flatshare.target", *PRIVATE_SERVERS, *CONTROL)
 """Every unit of this host's: the GPU node's and the control plane's."""
 GATEWAY_URL = "http://127.0.0.1:18080"
 """The gateway's TCP listener, AIPerf's way in (gateway.toml's first [[listen]])."""
@@ -142,9 +143,9 @@ layout as selected, pinned memory, the sampler, the JIT and compile work and the
 STATUSES = ("ok", "degraded", "refused", "pending")
 SOCKET_PATH = 107
 """The longest path a Unix socket may have, in bytes: Linux's sun_path holds 108 with the NUL."""
-ZMQ_SOCKET = "lh/lh-engine.zmq/" + "0" * 36
+ZMQ_SOCKET = "flatshare/engine.zmq/" + "0" * 36
 """The longest of the GPU units' socket paths under %t: vLLM's ZMQ sockets, which its unit keeps in a directory of
-its own (VLLM_RPC_BASE_PATH, %t/lh/%N.zmq), each named by a uuid4."""
+its own (VLLM_RPC_BASE_PATH, %t/flatshare/engine.zmq, and stt.zmq for the STT), each named by a uuid4."""
 
 
 class HostError(Exception):
@@ -208,22 +209,23 @@ class Node:
 
 
 def engine_address(host: dict) -> str:
-    """The engine's own socket, as the GPU units serve it (%t/lh/engine.sock), as an address."""
-    return f"unix:{runtime_dir(host) / 'lh' / 'engine.sock'}"
+    """The engine's own socket, as the GPU units serve it (%t/flatshare/engine.sock), as an address."""
+    return f"unix:{runtime_dir(host) / 'flatshare' / 'engine.sock'}"
 
 
 def chosen() -> str:
-    """LH_SUPERVISOR: auto (or unset), lh-svc, or the systemd that env.sh records once a stage chose it."""
-    value = os.environ.get("LH_SUPERVISOR") or "auto"
+    """FLATSHARE_SUPERVISOR: auto (or unset), flatshare-svc, or the systemd that env.sh records once a stage chose
+    it."""
+    value = os.environ.get("FLATSHARE_SUPERVISOR") or "auto"
     if value not in SUPERVISORS:
-        raise HostError(f"LH_SUPERVISOR is auto or lh-svc, not {value!r}")
+        raise HostError(f"FLATSHARE_SUPERVISOR is auto or flatshare-svc, not {value!r}")
     return value
 
 
 def overridden() -> bool:
-    """Whether lh-svc is chosen whatever the facts say (LH_SUPERVISOR=lh-svc: the operator's choice, or an earlier
-    stage's that env.sh keeps); auto or unset lets the facts decide."""
-    return chosen() == "lh-svc"
+    """Whether flatshare-svc is chosen whatever the facts say (FLATSHARE_SUPERVISOR=flatshare-svc: the operator's
+    choice, or an earlier stage's that env.sh keeps); auto or unset lets the facts decide."""
+    return chosen() == "flatshare-svc"
 
 
 def manager_usable(host: dict) -> bool:
@@ -232,33 +234,33 @@ def manager_usable(host: dict) -> bool:
 
 
 def supervisor(host: dict) -> str:
-    """What runs the units: deploy/bin/lh-svc with LH_SUPERVISOR=lh-svc; the user manager with
-    LH_SUPERVISOR=systemd (env.sh's record of an earlier stage's choice, kept even should the facts change: the
+    """What runs the units: deploy/bin/flatshare-svc with FLATSHARE_SUPERVISOR=flatshare-svc; the user manager with
+    FLATSHARE_SUPERVISOR=systemd (env.sh's record of an earlier stage's choice, kept even should the facts change: the
     preflight then refuses); with auto, the user manager where the host has one that outlives the session, else
-    lh-svc."""
+    flatshare-svc."""
     value = chosen()
     if value == "auto":
-        return "systemd" if manager_usable(host) else "lh-svc"
+        return "systemd" if manager_usable(host) else "flatshare-svc"
     return value
 
 
-def lh_svc_runtime() -> Path:
-    """deploy/bin/lh-svc's runtime directory where the session has no XDG_RUNTIME_DIR."""
+def flatshare_svc_runtime() -> Path:
+    """deploy/bin/flatshare-svc's runtime directory where the session has no XDG_RUNTIME_DIR."""
     state = os.environ.get("XDG_STATE_HOME") or str(_home() / ".local" / "state")
-    return Path(state) / "lh-svc" / "run"
+    return Path(state) / "flatshare-svc" / "run"
 
 
 def runtime_dir(host: dict) -> Path:
-    """%t as the units will see it: XDG_RUNTIME_DIR; else systemd's /run/user/UID, or deploy/bin/lh-svc's own."""
+    """%t as the units will see it: XDG_RUNTIME_DIR; else systemd's /run/user/UID, or deploy/bin/flatshare-svc's own."""
     if value := os.environ.get("XDG_RUNTIME_DIR"):
         return Path(value)
     if supervisor(host) == "systemd":
         return Path(f"/run/user/{os.getuid()}")
-    return lh_svc_runtime()
+    return flatshare_svc_runtime()
 
 
 def write_env(node: Node, home: Path | None = None) -> Path:
-    """NODE/env.sh, which every command on this host sources: under lh-svc its shims and runtime directory."""
+    """NODE/env.sh, which every command on this host sources: under flatshare-svc its shims and runtime directory."""
     home = home or _home()
     path = node.dir / "env.sh"
     if supervisor(node.host) == "systemd":
@@ -266,18 +268,18 @@ def write_env(node: Node, home: Path | None = None) -> Path:
         _write(
             path,
             "# Sourced before any command on this host (deploy/a100/host.py env writes it): systemd runs the units.\n"
-            "export LH_SUPERVISOR=systemd\n" + _gpu_line(node.host),
+            "export FLATSHARE_SUPERVISOR=systemd\n" + _gpu_line(node.host),
         )
         return path
     state = os.environ.get("XDG_STATE_HOME") or str(home / ".local" / "state")
-    run = Path(state) / "lh-svc" / "run"
+    run = Path(state) / "flatshare-svc" / "run"
     run.mkdir(mode=0o700, parents=True, exist_ok=True)
     run.chmod(0o700)
     why = (
-        "LH_SUPERVISOR=lh-svc (the operator's, or an earlier stage's choice, kept) runs the units under "
-        "deploy/bin/lh-svc over the user manager"
+        "FLATSHARE_SUPERVISOR=flatshare-svc (the operator's, or an earlier stage's choice, kept) runs the units under "
+        "deploy/bin/flatshare-svc over the user manager"
         if overridden() and manager_usable(node.host)
-        else "no systemd user manager that outlives the session here, so deploy/bin/lh-svc runs the units"
+        else "no systemd user manager that outlives the session here, so deploy/bin/flatshare-svc runs the units"
     )
     lines = [
         "# Sourced before any command on this host (deploy/a100/host.py env writes it): "
@@ -287,7 +289,7 @@ def write_env(node: Node, home: Path | None = None) -> Path:
         f"export XDG_RUNTIME_DIR=${{XDG_RUNTIME_DIR:-{run}}}",
         f"export PATH={DEPLOY / 'bin' / 'shims'}:$PATH",
         # The choice is kept: the later stages run the units where this one did (bootstrap.sh).
-        "export LH_SUPERVISOR=lh-svc",
+        "export FLATSHARE_SUPERVISOR=flatshare-svc",
     ]
     _write(path, "\n".join(lines) + "\n" + _gpu_line(node.host))
     return path
@@ -296,12 +298,14 @@ def write_env(node: Node, home: Path | None = None) -> Path:
 def _gpu_line(host: dict) -> str:
     """env.sh's lines naming the lent GPU, for the later stages (detect reads it) and the GPU sampler, and the hub
     cache the units read, for the later stages and every script that loads a model's files."""
-    # Its UUID once the facts chose it; before the card is visible, the operator's LH_GPU_ID as given, which the
+    # Its UUID once the facts chose it; before the card is visible, the operator's FLATSHARE_GPU_ID as given, which the
     # gpu stage's facts resolve.
-    chosen = lent_gpu(host) or (None if host.get("gpu") else os.environ.get("LH_GPU_ID"))
-    lines = f"export LH_GPU_ID={chosen}\n" if chosen else ""
-    if os.environ.get("LH_ALLOW_MIG") == "1":  # the operator's choice to measure on a MIG slice
-        lines += "export LH_ALLOW_MIG=1\n"
+    chosen = lent_gpu(host) or (None if host.get("gpu") else os.environ.get("FLATSHARE_GPU_ID"))
+    lines = f"export FLATSHARE_GPU_ID={chosen}\n" if chosen else ""
+    if (
+        os.environ.get("FLATSHARE_ALLOW_MIG") == "1"
+    ):  # the operator's choice to measure on a MIG slice
+        lines += "export FLATSHARE_ALLOW_MIG=1\n"
     if cache := host.get("hf_hub_cache"):
         lines += f"export HF_HUB_CACHE={shlex.quote(cache)}\n"
     return lines
@@ -311,8 +315,8 @@ def active_elsewhere(host: dict) -> tuple[str, list[str]]:
     """The supervisor that does not run this host's units, and those of its units that run under it: an earlier
     stage's, which a split control plane leaves (the gateway's port held by one, the journal read from the other)."""
     if supervisor(host) == "systemd":
-        other = "lh-svc"
-        command = [sys.executable, str(DEPLOY / "bin" / "lh-svc"), "systemctl"]
+        other = "flatshare-svc"
+        command = [sys.executable, str(DEPLOY / "bin" / "flatshare-svc"), "systemctl"]
     else:
         other = "systemd"
         shims = str(DEPLOY / "bin" / "shims")
@@ -338,26 +342,26 @@ def drop_ins(node: Node) -> dict[str, str]:
     header = "# Single host (deploy/a100/host.py units, from the node's core plan in node.json).\n"
     cores = lambda cpus: f"CPUAffinity=\nCPUAffinity={cpus}\n"  # noqa: E731
     out = {
-        "lh-gateway.service": header + "[Service]\n" + cores(plan["gateway"]),
-        "lh-livekit.service": header + "[Service]\n" + cores(plan["voice"]),
-        "lh-voice-worker.service": header
-        + "# No tunnel: the STT and the TTS are this host's, on their own sockets (lh-stt and lh-tts).\n"
-        "[Service]\nEnvironment=LH_STT_UDS=%t/lh/stt.sock\nEnvironment=LH_TTS_UDS=%t/lh/tts.sock\n"
-        + cores(plan["voice"]),
+        "flatshare-gateway.service": header + "[Service]\n" + cores(plan["gateway"]),
+        "flatshare-livekit.service": header + "[Service]\n" + cores(plan["voice"]),
+        "flatshare-voice-worker.service": header
+        + "# No tunnel: the STT and the TTS are this host's, on their own sockets (flatshare-stt and flatshare-tts).\n"
+        "[Service]\nEnvironment=FLATSHARE_STT_UDS=%t/flatshare/stt.sock\n"
+        "Environment=FLATSHARE_TTS_UDS=%t/flatshare/tts.sock\n" + cores(plan["voice"]),
     }
     if node.host.get("userns") is not True:
-        out["lh-voicenet.service"] = (
+        out["flatshare-voicenet.service"] = (
             header
             + "# The kernel refuses unprivileged user namespaces here: the voice plane runs in the host's "
             "network\n# namespace (deploy/bin/voicenet-holder), which the preflight reports.\n"
-            "[Service]\nEnvironment=LH_VOICENET=host\n"
+            "[Service]\nEnvironment=FLATSHARE_VOICENET=host\n"
         )
         for server in PRIVATE_SERVERS:
             out[server] = (
                 header
                 + "# The kernel refuses unprivileged user namespaces here: the GPU server runs in the host's "
                 "network\n# namespace (deploy/bin/in-private-net), which the preflight reports.\n"
-                "[Service]\nEnvironment=LH_PRIVATE_NET=host\n"
+                "[Service]\nEnvironment=FLATSHARE_PRIVATE_NET=host\n"
             )
     return out
 
@@ -377,11 +381,12 @@ def install_units(node: Node, units: Path | None = None, systemctl: str = "syste
         _write(conf, text)
         links.append((conf, units / f"{unit}.d" / "single-host.conf"))
     for variant in WORKER_VARIANTS:
-        conf = CYAN / "variants" / variant / "lh-voice-worker.conf"
-        links.append((conf, units / "lh-voice-worker.service.d" / f"variant-{variant}.conf"))
+        conf = CYAN / "variants" / variant / "flatshare-voice-worker.conf"
+        links.append((conf, units / "flatshare-voice-worker.service.d" / f"variant-{variant}.conf"))
     for target, link in links:
         _link(target, link)
-    # Links to units the repository no longer has (the tunnels' before lh-tunnel@) go, as deploy/cyan/install.sh's.
+    # Links to units the repository no longer has (the tunnels' before flatshare-tunnel@) go, as
+    # deploy/cyan/install.sh's.
     for link in units.glob("*"):
         if link.is_symlink() and not link.exists():
             target = Path(os.readlink(link))
@@ -410,43 +415,45 @@ def gateway_toml(home: Path, runtime: Path, keys: dict[str, str]) -> str:
     """cyan's gateway.toml for this host: its home's files, its runtime directory's sockets, the engine's own."""
     text = (CYAN / "gateway.example.toml").read_text()
     head, sep, rest = text.partition("\n\n")
-    if not head.startswith("# lh-gateway on cyan"):
+    if not head.startswith("# flatshare-gateway on cyan"):
         raise HostError("deploy/cyan/gateway.example.toml changed: its header is not cyan's")
     text = (
-        "# lh-gateway on this single host, written by deploy/a100/host.py config from deploy/cyan/gateway.example.toml\n"
+        "# flatshare-gateway on this single host, written by deploy/a100/host.py config from deploy/cyan/gateway.example.toml\n"
         "# (mode 600). It holds the tenants' key digests; the keys are in gateway-keys.env. Every key is described in\n"
-        "# crates/lh-gateway/README.md." + sep + rest
+        "# crates/flatshare-gateway/README.md." + sep + rest
     )
     text = _replace_once(
         text,
-        "# vLLM on Phastform, through its tunnel's socket (lh-tunnel@phastform; cyan's deploy user's uid, 1007, as "
-        'below).\nupstream = "unix:/run/user/1007/lh/phastform-engine.sock"\n',
-        "# vLLM on this host, on its own socket (lh-engine.service's %t/lh/engine.sock): no tunnel.\n"
-        f"upstream = {json.dumps('unix:' + str(runtime / 'lh' / 'engine.sock'))}\n",
+        "# vLLM on Phastform, through its tunnel's socket (flatshare-tunnel@phastform; cyan's deploy user's "
+        'uid, 1007, as below).\nupstream = "unix:/run/user/1007/flatshare/phastform-engine.sock"\n',
+        "# vLLM on this host, on its own socket (flatshare-engine.service's %t/flatshare/engine.sock): no tunnel.\n"
+        f"upstream = {json.dumps('unix:' + str(runtime / 'flatshare' / 'engine.sock'))}\n",
         "upstream",
     )
     text = _replace_once(
         text,
-        '"<home>/.config/leaseholder/cache-salt-secret"',
-        json.dumps(str(home / ".config/leaseholder/cache-salt-secret")),
+        '"<home>/.config/flatshare/cache-salt-secret"',
+        json.dumps(str(home / ".config/flatshare/cache-salt-secret")),
         "cache_salt_secret_file",
     )
     text = _replace_once(
         text,
-        '"<home>/.config/leaseholder/metrics-key"',
-        json.dumps(str(home / ".config/leaseholder/metrics-key")),
+        '"<home>/.config/flatshare/metrics-key"',
+        json.dumps(str(home / ".config/flatshare/metrics-key")),
         "metrics_key_file",
     )
     text = _replace_once(
         text,
-        'unix = "/run/user/1007/lh/gateway.sock"',
-        f"unix = {json.dumps(str(runtime / 'lh' / 'gateway.sock'))}",
+        'unix = "/run/user/1007/flatshare/gateway.sock"',
+        f"unix = {json.dumps(str(runtime / 'flatshare' / 'gateway.sock'))}",
         "voice socket",
     )
     # The rest of cyan's runtime directory, in the commented examples, is this host's too.
     text = text.replace("/run/user/1007/", f"{runtime}/")
     for tenant in ("agents", "bench"):
-        digest = hashlib.sha256(keys[f"LH_GATEWAY_{tenant.upper()}_KEY"].encode()).hexdigest()
+        digest = hashlib.sha256(
+            keys[f"FLATSHARE_GATEWAY_{tenant.upper()}_KEY"].encode()
+        ).hexdigest()
         text = _replace_once(
             text, f'"<sha256 of the {tenant} key>"', f'"{digest}"', f"{tenant} key"
         )
@@ -465,7 +472,7 @@ def _read_env(path: Path) -> dict[str, str]:
 def write_config(node: Node, home: Path | None = None) -> list[str]:
     """Writes the control plane's configuration where it is missing, and e2-host.toml; returns the files written."""
     home = home or _home()
-    config = home / ".config" / "leaseholder"
+    config = home / ".config" / "flatshare"
     written = []
     salt = config / "cache-salt-secret"
     if not salt.exists():
@@ -477,7 +484,9 @@ def write_config(node: Node, home: Path | None = None) -> list[str]:
         written.append(metrics)
     keys_file = config / "gateway-keys.env"
     if not keys_file.exists():
-        keys = {f"LH_GATEWAY_{t}_KEY": secrets.token_urlsafe(32) for t in ("AGENTS", "BENCH")}
+        keys = {
+            f"FLATSHARE_GATEWAY_{t}_KEY": secrets.token_urlsafe(32) for t in ("AGENTS", "BENCH")
+        }
         _write(
             keys_file,
             "# The gateway tenants' keys on this host (deploy/a100/host.py config); gateway.toml holds their digests.\n"
@@ -493,7 +502,7 @@ def write_config(node: Node, home: Path | None = None) -> list[str]:
         written.append(gateway)
     livekit = config / "livekit.env"
     if not livekit.exists():
-        key = "lh" + secrets.token_hex(6)
+        key = "flatshare" + secrets.token_hex(6)
         value = secrets.token_urlsafe(32).replace("-", "").replace("_", "")
         _write(
             livekit,
@@ -506,11 +515,12 @@ def write_config(node: Node, home: Path | None = None) -> list[str]:
     host_file = config / "e2-host.toml"
     _write(
         host_file,
-        "# lh-bench e2 run on this single host (deploy/a100/host.py config, from the node's core plan): the engine on\n"
+        "# flatshare-bench e2 run on this single host (deploy/a100/host.py config, from the node's core plan): "
+        "the engine on\n"
         "# its own socket, no tunnel; the gateway's socket; the load generators' cores; the node's profile and its\n"
         "# preflight.\n"
         f'gateway_url = "{GATEWAY_URL}"\n'
-        f"gateway_socket = {json.dumps('unix:' + str(runtime_dir(node.host) / 'lh' / 'gateway.sock'))}\n"
+        f"gateway_socket = {json.dumps('unix:' + str(runtime_dir(node.host) / 'flatshare' / 'gateway.sock'))}\n"
         f"engine_url = {json.dumps(engine_address(node.host))}\n"
         f'aiperf_cores = "{plan["aiperf"]}"\ncaller_cores = "{plan["callers"]}"\n'
         f'profile = "{node.node["profile"]}"\npreflight = {json.dumps(str(node.dir / "preflight.json"))}\n',
@@ -566,10 +576,10 @@ print(json.dumps({"library": str(spec.get_library_path()), "workspace": str(env.
 def jit_check(node: Node, home: Path | None = None, cap: str | None = None) -> dict:
     """Builds FlashInfer's sampler with the engine unit's environment; writes cache/jit-check.json."""
     home = home or _home()
-    unit = node.dir / "systemd" / "lh-engine.service"
+    unit = node.dir / "systemd" / "flatshare-engine.service"
     env = {"HOME": str(home), "LANG": "C.UTF-8"} | unit_environment(unit, home)
     env["FLASHINFER_CUDA_ARCH_LIST"] = arch(node, cap)
-    python = home / "leaseholder" / "venvs" / "engine" / "bin" / "python"
+    python = home / "flatshare" / "venvs" / "engine" / "bin" / "python"
     started = time.time()
     try:
         done = _run([str(python), "-c", BUILD], env=env, timeout=3600)
@@ -587,7 +597,7 @@ def jit_check(node: Node, home: Path | None = None, cap: str | None = None) -> d
         result |= json.loads(output.strip().splitlines()[-1])
     else:
         result["error"] = "\n".join(error.strip().splitlines()[-12:])
-    _write(home / "leaseholder" / "cache" / "jit-check.json", json.dumps(result, indent=2) + "\n")
+    _write(home / "flatshare" / "cache" / "jit-check.json", json.dumps(result, indent=2) + "\n")
     return result
 
 
@@ -596,10 +606,12 @@ def jit_current(node: Node, home: Path | None = None) -> tuple[bool, str]:
     compute capability, and if not, why: the gpu stage can change both (a cu129 lock and CUDA 12.9's toolkit where
     the stage rendered cu130; the card's own capability where the stage had the profile's)."""
     home = home or _home()
-    record = _json(home / "leaseholder" / "cache" / "jit-check.json")
+    record = _json(home / "flatshare" / "cache" / "jit-check.json")
     if record is None:
         return False, "not built"
-    wanted = unit_environment(node.dir / "systemd" / "lh-engine.service", home).get("CUDA_HOME", "")
+    wanted = unit_environment(node.dir / "systemd" / "flatshare-engine.service", home).get(
+        "CUDA_HOME", ""
+    )
     try:
         cap = arch(node)
     except HostError as e:
@@ -630,7 +642,7 @@ class _UnixConnection(http.client.HTTPConnection):
 
 def _get(address: str, path: str, timeout: float = 10) -> str | None:
     """GET ``path`` from the server at ``address`` (``http://host:port``, or ``unix:`` and its socket's path, as
-    lh-bench's addresses): the body of a 2xx answer, else None."""
+    flatshare-bench's addresses): the body of a 2xx answer, else None."""
     try:
         if address.startswith("unix:"):
             connection: http.client.HTTPConnection = _UnixConnection(
@@ -703,7 +715,7 @@ def warm(
     if measure.returncode:
         said = (measure.stderr or measure.stdout).strip().splitlines()
         raise HostError(f"variant.sh measure on: {said[-1] if said else 'failed'}")
-    path = home / "leaseholder" / "cache" / "warm.json"
+    path = home / "flatshare" / "cache" / "warm.json"
     try:
         record = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
@@ -717,7 +729,7 @@ def warm(
                 "journalctl",
                 "--user",
                 "--unit",
-                "lh-engine",
+                "flatshare-engine",
                 "--since",
                 f"@{int(started)}",
                 "-o",
@@ -829,8 +841,8 @@ DATA = {
     "weka-x32": ("*.json", "traces"),
     "callers": ("*.wav", "clips"),
 }
-"""The campaign's data under ~/leaseholder/data (deploy/a100/push.sh copies them): each directory's files that the
-campaign reads, and what they are. The callers' corpus also needs its manifest.json (lh-voice bots reads it)."""
+"""The campaign's data under ~/flatshare/data (deploy/a100/push.sh copies them): each directory's files that the
+campaign reads, and what they are. The callers' corpus also needs its manifest.json (flatshare-voice bots reads it)."""
 
 
 def data_check(root: Path, data: dict[str, tuple[str, str]] | None = None) -> Check:
@@ -862,7 +874,7 @@ def data_check(root: Path, data: dict[str, tuple[str, str]] | None = None) -> Ch
             "Corpus and callers",
             "refused",
             "; ".join(wrong),
-            "under ~/leaseholder/data: deploy/a100/push.sh copies them, as files (links into the workstation's paths "
+            "under ~/flatshare/data: deploy/a100/push.sh copies them, as files (links into the workstation's paths "
             "dangle here)",
         )
     return Check("Corpus and callers", "ok", ", ".join(found))
@@ -879,7 +891,7 @@ def _yaml_model(path: Path) -> tuple[str, str] | None:
 
 
 def lent_gpu(host: dict) -> str | None:
-    """The UUID of the GPU this host lends, once its facts chose one (profile.py detect, LH_GPU_ID)."""
+    """The UUID of the GPU this host lends, once its facts chose one (profile.py detect, FLATSHARE_GPU_ID)."""
     card = host.get("gpu") or {}
     return card.get("uuid") if card.get("chosen") else None
 
@@ -951,8 +963,10 @@ NO_DRIVER = "Found no NVIDIA driver"
 
 def torch_on_gpu(node: Node, home: Path) -> tuple[bool, str]:
     """Whether torch in the engine venv initializes CUDA with the engine unit's environment, and what it said."""
-    env = {"HOME": str(home)} | unit_environment(node.dir / "systemd" / "lh-engine.service", home)
-    python = home / "leaseholder" / "venvs" / "engine" / "bin" / "python"
+    env = {"HOME": str(home)} | unit_environment(
+        node.dir / "systemd" / "flatshare-engine.service", home
+    )
+    python = home / "flatshare" / "venvs" / "engine" / "bin" / "python"
     try:
         done = _run([str(python), "-c", TORCH_PROBE], env=env, timeout=300)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -971,7 +985,7 @@ def preflight(
 ) -> list[Check]:
     """Every check, in docs/HARDWARE.md's order (the preflight)."""
     home = home or _home()
-    root = home / "leaseholder"
+    root = home / "flatshare"
     host, values = node.host, node.node["values"]
     card = host.get("gpu") or {}
     warmed = (_json(root / "cache" / "warm.json") or {}).get("configurations", {})
@@ -1062,8 +1076,8 @@ def preflight(
     # The driver, the install path and the compilers.
     install = node.node.get("install") or {}
     built = (
-        (root / "venvs" / "engine" / "lh-install-path").read_text().strip()
-        if (root / "venvs" / "engine" / "lh-install-path").exists()
+        (root / "venvs" / "engine" / "flatshare-install-path").read_text().strip()
+        if (root / "venvs" / "engine" / "flatshare-install-path").exists()
         else None
     )
     path = install.get("path")
@@ -1115,7 +1129,7 @@ def preflight(
         ok, said = torch_on_gpu(node, home)
         if ok:
             why = ""
-        elif outside and "lh-engine" in outside[1]:
+        elif outside and "flatshare-engine" in outside[1]:
             why = (
                 f"{unsearched}, and the engine unit's environment does not name it on LD_LIBRARY_PATH: "
                 "bootstrap.sh gpu renders the GPU units with it"
@@ -1161,7 +1175,7 @@ def preflight(
             "refused",
             f"the sampler for sm{jit['arch'].replace('.', '')} with {jit.get('cuda_home')}: {(jit.get('error') or '').splitlines()[-1:]}",
             "the engine's first start would fail where it JIT-compiles the sampler; fix the compiler, or set "
-            "VLLM_USE_FLASHINFER_SAMPLER=0 in an lh-engine drop-in (PyTorch's sampler: degraded, recorded)",
+            "VLLM_USE_FLASHINFER_SAMPLER=0 in a flatshare-engine drop-in (PyTorch's sampler: degraded, recorded)",
         )
     compilers = [name for name in ("cc", "cxx") if not host.get(name)]
     if compilers:
@@ -1189,7 +1203,7 @@ def preflight(
 
     # The caches.
     cache = root / "cache"
-    mounts = Path(os.environ.get("LH_PROCFS", "/proc")) / "mounts"
+    mounts = Path(os.environ.get("FLATSHARE_PROCFS", "/proc")) / "mounts"
     point, fstype = _mount(cache, mounts.read_text() if mounts.exists() else "")
     free = _free(cache)
     wanted = [name for name, *_ in WARM] + sorted(set(warmed) - {name for name, *_ in WARM})
@@ -1359,18 +1373,18 @@ def preflight(
             add(
                 "GPU",
                 "refused",
-                f"LH_GPU_ID={card['wanted']} names none of: {listed}"
+                f"FLATSHARE_GPU_ID={card['wanted']} names none of: {listed}"
                 if card.get("wanted")
                 else f"{card.get('count')} GPUs, none chosen: {listed}",
                 "the core runs on one GPU, which the units, gpu-guard and the sampler must name: "
-                "LH_GPU_ID=INDEX|UUID bootstrap.sh stage (env.sh keeps it)",
+                "FLATSHARE_GPU_ID=INDEX|UUID bootstrap.sh stage (env.sh keeps it)",
             )
     elif card:
         add("GPU", "ok", f"the host's one GPU{f': {lent}' if lent else ''}")
     if gpu:
         guard = _run(
             ["bash", str(DEPLOY / "bin" / "gpu-guard")],
-            env=os.environ | ({"LH_GPU_ID": lent} if lent else {}),
+            env=os.environ | ({"FLATSHARE_GPU_ID": lent} if lent else {}),
         )
         processes = _gpu_processes(lent)
         add(
@@ -1406,15 +1420,15 @@ def preflight(
         slices = card.get("mig_devices") or []
         off = "turn MIG off (nvidia-smi -mig 0, root and a GPU reset)"
         if len(slices) == 1:
-            allowed = os.environ.get("LH_ALLOW_MIG") == "1"
+            allowed = os.environ.get("FLATSHARE_ALLOW_MIG") == "1"
             add(
                 "MIG",
                 "degraded" if allowed else "refused",
                 f"enabled, one slice ({slices[0]['profile']}, {slices[0]['uuid']})",
-                "LH_ALLOW_MIG=1: the core on one slice of the card"
+                "FLATSHARE_ALLOW_MIG=1: the core on one slice of the card"
                 if allowed
                 else "a MIG slice: the profile's memory budgets and the forecast are the whole card's; "
-                f"{off}, or measure on the slice anyway: LH_ALLOW_MIG=1",
+                f"{off}, or measure on the slice anyway: FLATSHARE_ALLOW_MIG=1",
                 "a slice is a smaller card: the forecast does not hold" if allowed else "",
             )
         else:
@@ -1443,7 +1457,7 @@ def preflight(
             "refused",
             f"env.sh keeps systemd; systemd --user {bool(host.get('systemd_user'))}, linger {host.get('linger')}",
             "the user manager stops the units with the last session: enable lingering (loginctl enable-linger), or "
-            "move the units to deploy/bin/lh-svc: LH_SUPERVISOR=auto bootstrap.sh stage",
+            "move the units to deploy/bin/flatshare-svc: FLATSHARE_SUPERVISOR=auto bootstrap.sh stage",
         )
     elif supervisor(host) == "systemd":
         add("systemd --user and linger", "ok", "systemd --user, lingering")
@@ -1452,8 +1466,8 @@ def preflight(
             "systemd --user and linger",
             "degraded",
             f"systemd --user {bool(host.get('systemd_user'))}, linger {host.get('linger')}"
-            + ("; LH_SUPERVISOR=lh-svc" if overridden() else ""),
-            "supervisor instead of systemd (deploy/bin/lh-svc with the systemctl and journalctl shims)",
+            + ("; FLATSHARE_SUPERVISOR=flatshare-svc" if overridden() else ""),
+            "supervisor instead of systemd (deploy/bin/flatshare-svc with the systemctl and journalctl shims)",
             "none on the measurements",
         )
     run = runtime_dir(host)
@@ -1464,7 +1478,8 @@ def preflight(
             "refused",
             f"%t is {run}: vLLM's ZMQ sockets would take {longest} bytes, past {SOCKET_PATH}",
             "the engine would fail at its first start: a shorter runtime directory (XDG_RUNTIME_DIR, mode 0700; "
-            "under lh-svc, XDG_STATE_HOME/lh-svc/run where the session has none), then bootstrap.sh stage",
+            "under flatshare-svc, XDG_STATE_HOME/flatshare-svc/run where the session has none), "
+            "then bootstrap.sh stage",
         )
     else:
         add(
@@ -1479,7 +1494,7 @@ def preflight(
             "refused",
             f"{supervisor(host)} runs the units, and {other} runs {', '.join(split)}",
             f"a split control plane, an earlier stage's: stop them under {other}, then bootstrap.sh stage again "
-            "(bootstrap.sh moves the units itself on LH_SUPERVISOR=auto or lh-svc)",
+            "(bootstrap.sh moves the units itself on FLATSHARE_SUPERVISOR=auto or flatshare-svc)",
         )
     else:
         add("One supervisor", "ok", f"{supervisor(host)}, none of the units under {other}")
@@ -1491,8 +1506,8 @@ def preflight(
         )
     else:
         # The voice plane in the host's namespace, under either supervisor: smoke.sh's listener audit
-        # (deploy/bin/audit-listeners) accepts what it holds there by the LH_VOICENET=host that in-voicenet marks its
-        # processes with, and refuses anything else of ours, as it does in the namespaced path.
+        # (deploy/bin/audit-listeners) accepts what it holds there by the FLATSHARE_VOICENET=host that in-voicenet marks
+        # its processes with, and refuses anything else of ours, as it does in the namespaced path.
         public = _public_addresses()
         add(
             "User namespaces",
@@ -1505,8 +1520,9 @@ def preflight(
                 else ""
             )
             + "; smoke.sh's listener audit accepts its UDP sockets, loopback TCP listeners and file sockets there "
-            "(LH_VOICENET=host) and nothing else of ours; the GPU servers run there too, by their drop-ins' "
-            "LH_PRIVATE_NET=host (deploy/bin/in-private-net), where the audit accepts their engine cores' loopback "
+            "(FLATSHARE_VOICENET=host) and nothing else of ours; the GPU servers run there too, by their drop-ins' "
+            "FLATSHARE_PRIVATE_NET=host (deploy/bin/in-private-net), where the audit accepts their "
+            "engine cores' loopback "
             "TCP listeners on ephemeral ports and CUDA's abstract sockets, which any user of the host reaches, and "
             "nothing else of theirs; allowing unprivileged user namespaces gives "
             "each its own (Ubuntu 24.04: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0, then "
@@ -1580,7 +1596,7 @@ def preflight(
     )
     checks.append(data_check(root, data))
     binaries = []
-    for name, args in (("lh-gateway", ["--version"]), ("livekit-server", ["--version"])):
+    for name, args in (("flatshare-gateway", ["--version"]), ("livekit-server", ["--version"])):
         binary = root / "bin" / name
         try:
             ok = _run([str(binary), *args], timeout=30).returncode == 0
@@ -1591,8 +1607,8 @@ def preflight(
     add(
         "Binaries",
         "refused" if binaries else "ok",
-        ", ".join(binaries) if binaries else "lh-gateway, livekit-server",
-        "missing or not runnable in ~/leaseholder/bin: bootstrap.sh stage" if binaries else "",
+        ", ".join(binaries) if binaries else "flatshare-gateway, livekit-server",
+        "missing or not runnable in ~/flatshare/bin: bootstrap.sh stage" if binaries else "",
     )
     disk = _free(root)
     if disk is not None:
@@ -1600,7 +1616,7 @@ def preflight(
         add(
             "Disk",
             status,
-            f"{disk / GIB:.0f} GiB free under ~/leaseholder",
+            f"{disk / GIB:.0f} GiB free under ~/flatshare",
             "" if status == "ok" else "little room for the points' records [estimate: 20 GiB]",
         )
     return checks
@@ -1629,10 +1645,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="host.py", description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
     for name, text in (
-        ("env", "write NODE/env.sh, with the supervisor's shims where lh-svc runs the units"),
+        (
+            "env",
+            "write NODE/env.sh, with the supervisor's shims where flatshare-svc runs the units",
+        ),
         (
             "supervisor",
-            "print what runs the units: lh-svc or systemd (LH_SUPERVISOR and the facts)",
+            "print what runs the units: flatshare-svc or systemd (FLATSHARE_SUPERVISOR and the facts)",
         ),
         ("units", "link the units and this host's drop-ins"),
         ("config", "write the control plane's configuration"),
@@ -1686,7 +1705,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "with-engine-env":
         if not args.cmd:
             parser.error("with-engine-env needs a command")
-        env = os.environ | unit_environment(args.node / "systemd" / "lh-engine.service", _home())
+        env = os.environ | unit_environment(
+            args.node / "systemd" / "flatshare-engine.service", _home()
+        )
         os.execvpe(args.cmd[0], args.cmd, env)
     try:
         node = Node.load(args.node)
@@ -1695,7 +1716,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "supervisor":
             print(supervisor(node.host))
         elif args.command == "warmed":
-            done = (_json(_home() / "leaseholder" / "cache" / "warm.json") or {}).get(
+            done = (_json(_home() / "flatshare" / "cache" / "warm.json") or {}).get(
                 "configurations", {}
             )
             cold = [name for name, *_ in WARM if not (done.get(name) or {}).get("ok")]
@@ -1711,7 +1732,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"host: wrote {path}")
         elif args.command == "jit-check":
             if args.if_stale and not args.arch:
-                recorded = _json(_home() / "leaseholder" / "cache" / "jit-check.json") or {}
+                recorded = _json(_home() / "flatshare" / "cache" / "jit-check.json") or {}
                 if recorded.get("ok") and jit_current(node)[0]:
                     print(
                         f"host: FlashInfer's sampler is built for {recorded['arch']} with {recorded['cuda_home']}"

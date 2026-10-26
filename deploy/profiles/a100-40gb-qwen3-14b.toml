@@ -1,12 +1,12 @@
 # Qwen3-14B-FP8 on one A100 40 GB at the card's own pool: the A100 run's optional arm C' (docs/HARDWARE.md, the optional
 # arms), a second model in a pool it was not made to bind, which the like-for-like core does not answer. Every value it
-# does not set is a100-40gb's, the base. It renders into its own directory, ~/leaseholder/node-14b, whose units
+# does not set is a100-40gb's, the base. It renders into its own directory, ~/flatshare/node-14b, whose units
 # benchmarks/a100/cprime.sh installs in place of the core's for the arm and puts back after it.
 
 [profile]
 base = "a100-40gb"
 name = "a100-40gb-qwen3-14b"
-deploy_dir = "%h/leaseholder/node-14b"
+deploy_dir = "%h/flatshare/node-14b"
 
 [model]
 name = "Qwen/Qwen3-14B-FP8"
@@ -16,7 +16,7 @@ revision = "9a283b4a5efbc09ce247e0ae5b02b744739e525a"
 max_model_len = 32768
 
 [engine]
-# lh-sim's sizing of the 14B's own pool on this card (benchmarks/a100/forecast.md) [modeled]: what the box keeps
+# flatshare-sim's sizing of the 14B's own pool on this card (benchmarks/a100/forecast.md) [modeled]: what the box keeps
 # beside its pool, with the 14B's 16.3 GB of weights in place of the 4B's 4.4 GB, left to the 14B's 160 KiB of BF16 KV
 # a token in whole blocks, 7,334 blocks of 16 (117,344 tokens). cprime.sh's first start checks that it fits. The
 # engine outgrows its budget then, which R2's sum of the budgets does not see (docs/HARDWARE.md, R2).
@@ -30,8 +30,8 @@ engine_order = '''
 # On this node the engine starts after the audio servers instead: its pool and weights outgrow its budget, which R2's
 # sum does not cover, so each audio server checks free memory before the engine's large allocation, and the engine's
 # own check sees them resident, as in every measured start of the box before the three started at once.
-After=lh-stt.service lh-tts.service'''
+After=flatshare-stt.service flatshare-tts.service'''
 pool = '''
-# The KV pool is Qwen3-14B-FP8's own on this card, 7,334 blocks (117,344 tokens), by lh-sim's sizing. vLLM still
+# The KV pool is Qwen3-14B-FP8's own on this card, 7,334 blocks (117,344 tokens), by flatshare-sim's sizing. vLLM still
 # requires utilization x total memory to be free at start: {{derived.engine_budget}} of the card's
 # {{derived.total_gib}} GiB.'''

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install.sh: link the frozen-box units (deploy/phastform/systemd) into Gray's user manager, with Gray's drop-ins. Gray is
-# a second GPU node in booked windows, shared with other work, so leaseholder.target is not enabled at boot: start it
+# a second GPU node in booked windows, shared with other work, so flatshare.target is not enabled at boot: start it
 # for a window and stop it after. Lingering must be on (`loginctl enable-linger`).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)

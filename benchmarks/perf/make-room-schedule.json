@@ -1,5 +1,5 @@
 {
- "what": "the cost per step of stock vLLM's scheduler and of make-room's with its switches off and in the configuration to deploy, Scheduler.schedule()'s wall time on vLLM 0.32.0's real scheduler on CPU, written by python/leaseholder_vllm/tests/perf_schedule.py baseline",
+ "what": "the cost per step of stock vLLM's scheduler and of make-room's with its switches off and in the configuration to deploy, Scheduler.schedule()'s wall time on vLLM 0.32.0's real scheduler on CPU, written by python/flatshare_vllm/tests/perf_schedule.py baseline",
  "machine": {
   "host": "peacock",
   "cpu": "Intel(R) Xeon(R) Silver 4110 CPU @ 2.10GHz",

@@ -1,6 +1,6 @@
 # Forecast: the A100 SXM4 80 GB against the frozen box
 
-Written by `lh-sim forecast` (`make forecast-a100 GPU=a100-80gb`) from the box's measured costs, the card's published peaks and the path vLLM 0.32.0 takes for the box's checkpoint on it (Marlin W8A16; `crates/lh-sim/src/hardware.rs`). Every number for the A100 SXM4 80 GB is modeled; the box's are measured where they say so. Three settings bound it: **low**, the peaks' ratios alone with Marlin as fast as a BF16 GEMM; **central**, with the box's 1.7 ms of step overhead kept, Marlin 1.42× a BF16 GEMM (vLLM PR #61224's L4) and FlashAttention 2 at its best published efficiency on the card; **high**, with FlashAttention 2 at its worst published. The E1 map's model, on which `lh-sim hardware` places every card, scales the fixed step with bandwidth and keeps the box's attention efficiency.
+Written by `flatshare-sim forecast` (`make forecast-a100 GPU=a100-80gb`) from the box's measured costs, the card's published peaks and the path vLLM 0.32.0 takes for the box's checkpoint on it (Marlin W8A16; `crates/flatshare-sim/src/hardware.rs`). Every number for the A100 SXM4 80 GB is modeled; the box's are measured where they say so. Three settings bound it: **low**, the peaks' ratios alone with Marlin as fast as a BF16 GEMM; **central**, with the box's 1.7 ms of step overhead kept, Marlin 1.42× a BF16 GEMM (vLLM PR #61224's L4) and FlashAttention 2 at its best published efficiency on the card; **high**, with FlashAttention 2 at its worst published. The E1 map's model, on which `flatshare-sim hardware` places every card, scales the fixed step with bandwidth and keeps the box's attention efficiency.
 
 ## Step and tier costs, Qwen3-4B-Instruct-2507-FP8
 
@@ -44,7 +44,7 @@ Time to first token of a request alone, in ms: the box's measured p50 (2026-10-2
 
 ## E2's scenarios on the regime map
 
-Each cell replays E2's agents in `lh-sim`'s model of vLLM 0.32.0's two-tier KV cache and step loop with the card's central costs; the discriminating scenario replays `weka-x32-long`, the calibration point the whole 32x corpus.
+Each cell replays E2's agents in `flatshare-sim`'s model of vLLM 0.32.0's two-tier KV cache and step loop with the card's central costs; the discriminating scenario replays `weka-x32-long`, the calibration point the whole 32x corpus.
 
 Means over seeds 11, 12, 13, 14, 15; `lru-cpu`, the stock engine's policy; a realtime tier of two calls. Running / working set: the time running agent requests / the agents' working set leave those calls short of KV. Busy: the card's step time over the replay's. Stalled: the requests that waited for free blocks.
 

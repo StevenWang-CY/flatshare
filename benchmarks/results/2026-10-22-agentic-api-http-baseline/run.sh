@@ -2,8 +2,8 @@
 # w1-agentic-api.sh: agentic-api's own response_provider benchmark against the frozen box, the HTTP baseline for
 # vllm-project/agentic-api#367: agentic-api over WebSocket, HTTP/SSE and JSON vs direct vLLM, same model and hosts.
 set -uo pipefail
-R=$HOME/leaseholder/runs/w1-agentic-api
-A=$HOME/leaseholder/bin/agentic-api-a7dc7b5
+R=$HOME/flatshare/runs/w1-agentic-api
+A=$HOME/flatshare/bin/agentic-api-a7dc7b5
 MODEL=Qwen/Qwen3-4B-Instruct-2507-FP8
 mkdir -p "$R"
 log() { echo "[$(date -u +%FT%TZ)] $*" | tee -a "$R/campaign.log"; }

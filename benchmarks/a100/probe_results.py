@@ -3,7 +3,7 @@
     python3 probe_results.py table [RUNS]           every probe run as a Markdown table
     python3 probe_results.py pick-stock [RUNS] [--cap TOKENS]
 
-RUNS is the probe blocks' directory (default ~/leaseholder/runs/a100: block1, block2, block3 with one NAME.txt a run).
+RUNS is the probe blocks' directory (default ~/flatshare/runs/a100: block1, block2, block3 with one NAME.txt a run).
 `pick-stock` picks C''s stock arm by P-1's rule (docs/HARDWARE.md, the optional arms): of the stock step-cap settings blocks 1 and 2 ran,
 512/256 (frozen), 2,048/0 and the time-equivalent cap, the one whose tail runs gave the calls the lowest first-token
 p95, the median of its runs; it prints the setting's name and its engine flags on one line, and the table on stderr.
@@ -220,7 +220,7 @@ def markdown(root: Path) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="probe_results.py", description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
-    default = Path.home() / "leaseholder" / "runs" / "a100"
+    default = Path.home() / "flatshare" / "runs" / "a100"
     p = commands.add_parser("table", help="every probe run as a Markdown table")
     p.add_argument("runs", type=Path, nargs="?", default=default)
     p = commands.add_parser("pick-stock", help="C''s stock arm by P-1's rule")

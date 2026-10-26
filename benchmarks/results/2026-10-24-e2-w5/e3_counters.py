@@ -2,10 +2,10 @@
 which the compact records do not keep. It ran once, on the raw run directories (which keep the engine's metrics at the
 calls' start and end) and an export of Phastform's engine journal, where make-room logs its running totals, at most
 every 10 s and when they move: python3 e3_counters.py RUNS JOURNAL > e3.tsv, with JOURNAL from
-journalctl --user -u lh-engine -o short-unix. A point's count is the totals of the last line at or before the calls'
-end, less those of the same engine process's last line at or before their start (none: zero, since make-room logs its
-first move at once), so either edge may miss up to 10 s of moves. The frozen box runs no make-room, and v0.3's module
-logs no totals: their make-room columns are empty."""
+journalctl --user -u flatshare-engine -o short-unix. A point's count is the totals of the last line at or before the
+calls' end, less those of the same engine process's last line at or before their start (none: zero, since make-room logs
+its first move at once), so either edge may miss up to 10 s of moves. The frozen box runs no make-room, and v0.3's
+module logs no totals: their make-room columns are empty."""
 
 from __future__ import annotations
 

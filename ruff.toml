@@ -9,4 +9,4 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 ignore = ["E501"]
 
 [lint.isort]
-known-first-party = ["leaseholder_bench", "leaseholder_stats", "leaseholder_vllm", "leaseholder_voice"]
+known-first-party = ["flatshare_bench", "flatshare_stats", "flatshare_vllm", "flatshare_voice"]

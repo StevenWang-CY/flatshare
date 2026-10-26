@@ -1,0 +1,29 @@
+[Unit]
+Description=Flatshare voice agent: LiveKit Agents worker in the voice-plane namespace on cyan
+Documentation=https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md
+BindsTo=flatshare-voicenet.service
+After=flatshare-voicenet.service flatshare-livekit.service flatshare-tunnel@phastform.service flatshare-gateway.service
+Wants=flatshare-livekit.service flatshare-tunnel@phastform.service flatshare-gateway.service
+
+[Service]
+Type=exec
+# LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET, written by bootstrap.sh.
+EnvironmentFile=%h/.config/flatshare/livekit.env
+# The namespace reaches the GPU node only through these sockets. FLATSHARE_LLM_UDS is the control plane's socket;
+# point it at %t/flatshare/phastform-engine.sock to bypass the control plane. The lifecycle events go to it as well
+# (FLATSHARE_EVENTS, on by default; the no-events variant turns them off), and stop on the bypass.
+Environment=FLATSHARE_LLM_UDS=%t/flatshare/gateway.sock
+Environment=FLATSHARE_STT_UDS=%t/flatshare/phastform-stt.sock
+Environment=FLATSHARE_TTS_UDS=%t/flatshare/phastform-tts.sock
+Environment=FLATSHARE_IDLE_PROCESSES=4
+Environment=HF_HUB_OFFLINE=1
+ExecStart=%h/flatshare/src/deploy/bin/in-voicenet %h/flatshare/venvs/voice/bin/flatshare-voice-worker start
+# Cores 32-47 belong to the voice plane; the control plane and load generators use the others.
+CPUAffinity=32-47
+KillSignal=SIGINT
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

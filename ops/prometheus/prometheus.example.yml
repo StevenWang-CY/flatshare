@@ -9,21 +9,21 @@ global:
   evaluation_interval: 30s
 
 rule_files:
-  - <home>/leaseholder/src/ops/prometheus/rules.yml
+  - <home>/flatshare/src/ops/prometheus/rules.yml
 
 scrape_configs:
-  - job_name: lh-gateway
+  - job_name: flatshare-gateway
     metrics_path: /metrics
     authorization:
-      credentials_file: <home>/.config/leaseholder/metrics-key
+      credentials_file: <home>/.config/flatshare/metrics-key
     static_configs:
       - targets: ["127.0.0.1:18080"]
 
   # The engine's own /metrics, relayed.
-  - job_name: lh-engine
+  - job_name: flatshare-engine
     metrics_path: /metrics/engine
     authorization:
-      credentials_file: <home>/.config/leaseholder/metrics-key
+      credentials_file: <home>/.config/flatshare/metrics-key
     static_configs:
       - targets: ["127.0.0.1:18080"]
         labels:

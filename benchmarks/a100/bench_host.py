@@ -20,7 +20,7 @@ The facts beside them: the CPU's model name, the GPU, its PCIe generation and wi
 VM, the link to the GPU's switch, which need not be the root port's), torch's and vLLM's versions. On the host, from
 the home directory, with the GPU units stopped:
 
-    leaseholder/venvs/engine/bin/python leaseholder/src/benchmarks/a100/bench_host.py --out leaseholder/runs/a100/host
+    flatshare/venvs/engine/bin/python flatshare/src/benchmarks/a100/bench_host.py --out flatshare/runs/a100/host
 
 writes host.json there and prints a line for each row. The module imports without a GPU, vLLM or torch (the tests'
 CPU), which the link's measurement imports when it runs.

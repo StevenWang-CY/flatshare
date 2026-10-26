@@ -20,9 +20,9 @@ Option 1 tracks a codebase that releases every two weeks, and its patches rarely
 ## Decision
 
 Build option 3: a Rust service (tokio, hyper/axum, tower).
-- The policy is a pure, deterministic library (`lh-core`) behind a narrow trait: `admit`, `place`, `on_event`, `on_complete`. The simulator (`lh-sim`) runs the same code, and another router could embed it.
+- The policy is a pure, deterministic library (`flatshare-core`) behind a narrow trait: `admit`, `place`, `on_event`, `on_complete`. The simulator (`flatshare-sim`) runs the same code, and another router could embed it.
 - The engine stays stock. Engine-side code exists only behind vLLM's own plugin points (`CachePolicy` and connector modules, see ADR-0004).
-- Wire types are defined once, in `lh-proto` (ADR-0002).
+- Wire types are defined once, in `flatshare-proto` (ADR-0002).
 
 ## Consequences
 
@@ -33,6 +33,6 @@ Build option 3: a Rust service (tokio, hyper/axum, tower).
 
 ## Later
 
-- **No trait** (2026-10-23). The policies are variants of one enum in `lh_core::admission`, driven by a pure state machine (arrivals, first bytes, departures and the realtime sessions' turns) that the gateway feeds and whose waits it carries out.
-- **The simulator** (2026-10-24). `lh-sim` shares `lh-core`'s cost and step-time models, not its policies: only the gateway runs those.
+- **No trait** (2026-10-23). The policies are variants of one enum in `flatshare_core::admission`, driven by a pure state machine (arrivals, first bytes, departures and the realtime sessions' turns) that the gateway feeds and whose waits it carries out.
+- **The simulator** (2026-10-24). `flatshare-sim` shares `flatshare-core`'s cost and step-time models, not its policies: only the gateway runs those.
 - **The engine change** (2026-10-23/24). The consequence that the control plane compensates with admission and headroom did not hold: in E2 only an engine change moved the voice tail. It runs as the generated `make-room` variant on vLLM 0.32.0 and is proposed upstream as #63350 and #63351 ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)).

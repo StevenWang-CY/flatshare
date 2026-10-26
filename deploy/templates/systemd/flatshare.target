@@ -1,0 +1,7 @@
+[Unit]
+Description={{text.target}}
+Documentation=https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md
+Wants=flatshare-stt.service flatshare-tts.service flatshare-engine.service
+
+[Install]
+WantedBy=default.target

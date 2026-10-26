@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # in-private-net CMD...: run CMD in a network namespace of its own, with a loopback interface and nothing else, as
-# the GPU node's units run their servers (lh-engine, lh-stt and lh-tts). vLLM's engine cores listen on the loopback for
-# torch's gloo groups, and CUDA keeps abstract sockets (@cuda-uvmfd-*): in the host's namespace every user of the host
-# reaches both, in a namespace of its own nobody else does. The servers' own sockets are files in
-# $XDG_RUNTIME_DIR/lh, which a network namespace does not hide, so the tunnel and the gateway reach them as before.
+# the GPU node's units run their servers (flatshare-engine, flatshare-stt and flatshare-tts). vLLM's engine cores listen
+# on the loopback for torch's gloo groups, and CUDA keeps abstract sockets (@cuda-uvmfd-*): in the host's namespace
+# every user of the host reaches both, in a namespace of its own nobody else does. The servers' own sockets are files in
+# $XDG_RUNTIME_DIR/flatshare, which a network namespace does not hide, so the tunnel and the gateway reach them as
+# before.
 #
 # The namespace is made in an unprivileged user namespace in which this user is root (unshare --map-root-user, as
 # voicenet-holder makes the voice plane's), and ends with CMD; CMD keeps this process, so it stays the unit's main
@@ -11,13 +12,13 @@
 # namespace of its own, and a process cannot join a network namespace that another's made, so the unit's processes
 # land in namespaces of their own or the host's by turns.
 #
-# With LH_PRIVATE_NET=host, on a host whose kernel refuses unprivileged user namespaces (Ubuntu 24.04 restricts them;
-# the single host's preflight finds out, and deploy/a100/host.py writes the mark into the three units' drop-ins), CMD
-# runs in the host's namespace as it is, the mark in its environment, by which deploy/bin/audit-listeners judges its
+# With FLATSHARE_PRIVATE_NET=host, on a host whose kernel refuses unprivileged user namespaces (Ubuntu 24.04 restricts
+# them; the single host's preflight finds out, and deploy/a100/host.py writes the mark into the three units' drop-ins),
+# CMD runs in the host's namespace as it is, the mark in its environment, by which deploy/bin/audit-listeners judges its
 # engine cores' loopback listeners and CUDA's abstract sockets apart. Anywhere else a namespace that cannot be made
 # fails the unit, with unshare's or ip's own error in its journal, as voicenet-holder fails the voice plane's.
 set -euo pipefail
-if [[ ${LH_PRIVATE_NET:-} == host ]]; then
+if [[ ${FLATSHARE_PRIVATE_NET:-} == host ]]; then
   exec "$@"
 fi
 exec unshare --user --map-root-user --net -- sh -c 'ip link set lo up && exec "$@"' sh "$@"

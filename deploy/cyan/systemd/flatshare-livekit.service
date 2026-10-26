@@ -1,0 +1,18 @@
+[Unit]
+Description=Flatshare LiveKit server in the voice-plane namespace on cyan (127.0.0.1:17880)
+Documentation=https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md
+BindsTo=flatshare-voicenet.service
+After=flatshare-voicenet.service
+
+[Service]
+Type=exec
+EnvironmentFile=%h/.config/flatshare/livekit.env
+ExecStart=%h/flatshare/src/deploy/bin/in-voicenet %h/flatshare/bin/livekit-server --config %h/flatshare/src/deploy/cyan/livekit.yaml
+ExecStartPost=%h/flatshare/src/deploy/bin/in-voicenet %h/flatshare/src/deploy/bin/wait-healthy http://127.0.0.1:17880/ 30
+# Cores 32-47 belong to the voice plane; the control plane and load generators use the others.
+CPUAffinity=32-47
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

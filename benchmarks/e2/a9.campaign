@@ -1,6 +1,6 @@
-# E2 arm 9, Leaseholder, in the discriminating scenario (24 session trees on weka-x32-long): the full arm, its knob
-# (the critical-window budget of predicted background prefill: 0, 150 and 500 ms), and one run of each single-mechanism
-# ablation. The gateway runs policy leaseholder, the engine the make-room variant, the voice worker posts lifecycle
+# E2 arm 9 in the discriminating scenario (24 session trees on weka-x32-long): the full arm, its knob (the
+# critical-window budget of predicted background prefill: 0, 150 and 500 ms), and one run of each single-mechanism
+# ablation. The gateway runs the lifecycle policy, the engine the make-room variant, the voice worker posts lifecycle
 # events, each unless the point turns it off. Grouped by engine, so the engine restarts five times.
 #   benchmarks/e2/campaign.sh benchmarks/e2/a9.campaign
 

@@ -1,4 +1,4 @@
-# SMG environment for cyan: SMG 1.13.0 (lh-smg.service, E2's arm 8b), resolved for Linux x86_64 and Python 3.12.
+# SMG environment for cyan: SMG 1.13.0 (flatshare-smg.service, E2's arm 8b), resolved for Linux x86_64 and Python 3.12.
 # Built by deploy/cyan/bootstrap.sh with: uv pip sync
 grpcio==1.84.1
 grpcio-health-checking==1.84.1

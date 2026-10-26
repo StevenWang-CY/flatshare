@@ -9,7 +9,7 @@ name = "a100-40gb"
 gpu = "A100 40 GB"
 node = "auto"
 dir = ""
-deploy_dir = "%h/leaseholder/node"
+deploy_dir = "%h/flatshare/node"
 # The card as nvidia-smi shows it, for what is rendered and built before it is visible (staging).
 memory_mib = 40960
 compute_cap = "8.0"
@@ -62,14 +62,14 @@ cpu_tier_ratio = 4
 host_reserve_gib = 25
 
 [text]
-# The engine's start order beside the audio servers' (lh-engine.service): none, the three at once.
+# The engine's start order beside the audio servers' (flatshare-engine.service): none, the three at once.
 engine_order = ''
 engine_header = '''
 # LLM engine on {{profile.node}}: vLLM 0.32.0 on one {{profile.gpu}}, beside the STT and TTS servers, rendered
 # from deploy/profiles/{{profile.name}}.toml.'''
 stt_header = '''
 # Speech-to-text on {{profile.node}}: vLLM 0.32.0 serving Whisper large-v3-turbo at /v1/audio/transcriptions.'''
-target = "Leaseholder on {{profile.node}}: STT, TTS and the LLM engine on one {{profile.gpu}}"
+target = "Flatshare on {{profile.node}}: STT, TTS and the LLM engine on one {{profile.gpu}}"
 pool = '''
 # The KV pool is the frozen box's, 5 GiB (36,400 tokens), so that this card runs the box's comparison. vLLM still
 # requires utilization x total memory to be free at start: {{derived.engine_budget}} of the card's
@@ -88,12 +88,12 @@ engine_caches = '''
 # Every compile and JIT cache the engine's start reads, under cache/ beside FlashInfer's and kept across the
 # campaign's engine switches, so that only a compile configuration's first start compiles (on the box 531.8 s with
 # all of them empty against 88.8 s warm, W8's start drills); bootstrap.sh warm fills them.
-Environment=VLLM_CACHE_ROOT=%h/leaseholder/cache/vllm
-Environment=TORCHINDUCTOR_CACHE_DIR=%h/leaseholder/cache/inductor
-Environment=TRITON_CACHE_DIR=%h/leaseholder/cache/triton'''
+Environment=VLLM_CACHE_ROOT=%h/flatshare/cache/vllm
+Environment=TORCHINDUCTOR_CACHE_DIR=%h/flatshare/cache/inductor
+Environment=TRITON_CACHE_DIR=%h/flatshare/cache/triton'''
 stt_caches = '''
 # The STT's compile and JIT caches beside the engine's, kept across starts.
-Environment=VLLM_CACHE_ROOT=%h/leaseholder/cache/vllm
-Environment=FLASHINFER_WORKSPACE_BASE=%h/leaseholder/cache/flashinfer
-Environment=TORCHINDUCTOR_CACHE_DIR=%h/leaseholder/cache/inductor
-Environment=TRITON_CACHE_DIR=%h/leaseholder/cache/triton'''
+Environment=VLLM_CACHE_ROOT=%h/flatshare/cache/vllm
+Environment=FLASHINFER_WORKSPACE_BASE=%h/flatshare/cache/flashinfer
+Environment=TORCHINDUCTOR_CACHE_DIR=%h/flatshare/cache/inductor
+Environment=TRITON_CACHE_DIR=%h/flatshare/cache/triton'''

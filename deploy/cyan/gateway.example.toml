@@ -1,12 +1,12 @@
-# lh-gateway on cyan. Copy to ~/.config/leaseholder/gateway.toml (mode 600), replace <home> with the deploy user's
+# flatshare-gateway on cyan. Copy to ~/.config/flatshare/gateway.toml (mode 600), replace <home> with the deploy user's
 # home directory and each other placeholder with the SHA-256 of a new key; the file holds digests only. To make a
 # key and its digest:
 #   key=$(head -c 32 /dev/urandom | base64 | tr -d '/+=\n'); printf '%s' "$key" | sha256sum
-# Every key is described in crates/lh-gateway/README.md.
+# Every key is described in crates/flatshare-gateway/README.md.
 
-# vLLM on Phastform, through its tunnel's socket (lh-tunnel@phastform; cyan's deploy user's uid, 1007, as below).
-upstream = "unix:/run/user/1007/lh/phastform-engine.sock"
-# The engine keeps idle connections for 60 s (VLLM_HTTP_TIMEOUT_KEEP_ALIVE in lh-engine.service), so voice turns
+# vLLM on Phastform, through its tunnel's socket (flatshare-tunnel@phastform; cyan's deploy user's uid, 1007, as below).
+upstream = "unix:/run/user/1007/flatshare/phastform-engine.sock"
+# The engine keeps idle connections for 60 s (VLLM_HTTP_TIMEOUT_KEEP_ALIVE in flatshare-engine.service), so voice turns
 # seconds apart reuse a warm connection, which through the tunnel is an SSH session that is already open; let go of
 # one 5 s before the engine would.
 upstream_idle_timeout_s = 55
@@ -17,11 +17,11 @@ log_format = "json"
 # upstream_priority = ["vllm-header"]
 # The secret each tenant's cache_salt is derived from, so that a tenant's name does not give its salt away: 32
 # random bytes in hex, mode 600, which deploy/cyan/install.sh writes once.
-cache_salt_secret_file = "<home>/.config/leaseholder/cache-salt-secret"
+cache_salt_secret_file = "<home>/.config/flatshare/cache-salt-secret"
 # The key GET /metrics and /metrics/engine ask for on the TCP listener, which every user of cyan reaches: one line,
 # mode 600, which deploy/cyan/install.sh writes once. Prometheus reads the same file (ops/prometheus); on the
 # voice plane's socket, private to this user, no key is asked for.
-metrics_key_file = "<home>/.config/leaseholder/metrics-key"
+metrics_key_file = "<home>/.config/flatshare/metrics-key"
 # A cap on every realtime reply, in tokens, with or without an admission policy; none by default. Undegraded, E2's
 # voice agent's replies ran 20 tokens at the median and 39 at most.
 # realtime_max_tokens = 64
@@ -31,12 +31,12 @@ metrics_key_file = "<home>/.config/leaseholder/metrics-key"
 tcp = "127.0.0.1:18080"
 
 # The voice plane's way in. The socket file is private to this user, so its requests need no key. The path is
-# the units' %t/lh/gateway.sock, with cyan's deploy user's uid (1007; `id -u` elsewhere).
+# the units' %t/flatshare/gateway.sock, with cyan's deploy user's uid (1007; `id -u` elsewhere).
 [[listen]]
-unix = "/run/user/1007/lh/gateway.sock"
+unix = "/run/user/1007/flatshare/gateway.sock"
 tenant = "voice"
 
-# The LiveKit voice worker. It sends X-Session-ID (voice-<room SID>) and X-LH-Class: realtime.
+# The LiveKit voice worker. It sends X-Session-ID (voice-<room SID>) and X-Flatshare-Class: realtime.
 [tenants.voice]
 trusted = true
 default_class = "realtime"
@@ -49,13 +49,13 @@ trusted = true
 default_class = "background"
 max_class = "interactive"
 
-# An untrusted client: its X-Session-ID and X-LH-Class are ignored, and it gets background, so that it never
+# An untrusted client: its X-Session-ID and X-Flatshare-Class are ignored, and it gets background, so that it never
 # outranks the agents (E2 replays its AIPerf traffic as the agents tenant).
 [tenants.bench]
 keys_sha256 = ["<sha256 of the bench key>"]
 default_class = "background"
 
-# The admission policy (crates/lh-gateway/README.md#admission). Without the table, every request goes upstream
+# The admission policy (crates/flatshare-gateway/README.md#admission). Without the table, every request goes upstream
 # at once. E2's baselines set one policy and its keys:
 # [admission]
 # policy = "static-cap"
@@ -70,9 +70,8 @@ default_class = "background"
 #
 # policy = "preempt-resubmit"
 #
-# The lifecycle policy (policy = "lifecycle"; E2's arm files spell it "leaseholder"), which E2's arm 9 runs with
-# make-room. headroom_tokens is one voice turn at its longest, for each armed session: arm 1 averaged 646 prompt and
-# 23 completion tokens a turn.
+# The lifecycle policy (policy = "lifecycle"), which E2's arm 9 runs with make-room. headroom_tokens is one voice
+# turn at its longest, for each armed session: arm 1 averaged 646 prompt and 23 completion tokens a turn.
 # policy = "lifecycle"
 # headroom_tokens = 1024
 # critical_prefill_budget_ms = 150

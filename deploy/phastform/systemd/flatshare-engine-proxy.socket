@@ -1,0 +1,12 @@
+[Unit]
+Description=Flatshare engine socket for an engine that serves TCP only (variant sglang): %t/flatshare/engine.sock
+Documentation=https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md
+# The sglang variant's drop-in wants it. It starts once the engine serves on its loopback port and stops with it, so
+# that a vLLM engine finds the path free.
+BindsTo=flatshare-engine.service
+After=flatshare-engine.service
+
+[Socket]
+ListenStream=%t/flatshare/engine.sock
+SocketMode=0600
+RemoveOnStop=yes

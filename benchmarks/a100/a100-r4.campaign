@@ -4,8 +4,8 @@
 # alone, each call opening with a warm-up turn. Round N replays the agents' sample of seed 10 + N; the engine groups
 # alternate from round to round so that each round starts on the engine the last one ended on (round 1 on block 3's). On
 # the A100 host, from the home directory:
-#   LH_NODE_DIR=leaseholder/node leaseholder/src/benchmarks/e2/campaign.sh --local \
-#     leaseholder/src/benchmarks/a100/a100-r4.campaign
+#   FLATSHARE_NODE_DIR=flatshare/node flatshare/src/benchmarks/e2/campaign.sh --local \
+#     flatshare/src/benchmarks/a100/a100-r4.campaign
 
 agents-seed 14
 

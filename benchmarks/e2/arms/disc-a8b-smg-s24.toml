@@ -9,5 +9,5 @@ sessions = 24
 data = "weka-x32-long"
 
 [gateway]
-upstream = "unix:/run/user/1007/lh/smg.sock"
+upstream = "unix:/run/user/1007/flatshare/smg.sock"
 upstream_priority = ["smg-header"]

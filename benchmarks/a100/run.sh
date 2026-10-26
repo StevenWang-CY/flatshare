@@ -3,7 +3,7 @@
 # (docs/HARDWARE.md, the core block by block), block by block. A block is complete when it ends, a block done before is
 # skipped, so that a rerun resumes and a stop anywhere leaves whole comparisons; without BLOCK it runs the core, 0 to
 # 10, in order. Started from an SSH session, it outlives the session:
-#   nohup setsid bash ~/leaseholder/src/benchmarks/a100/run.sh >>~/leaseholder/runs/a100/run.log 2>&1 </dev/null &
+#   nohup setsid bash ~/flatshare/src/benchmarks/a100/run.sh >>~/flatshare/runs/a100/run.log 2>&1 </dev/null &
 # The core:
 #   0     bootstrap.sh gpu and warm (the preflight with the card, each compile configuration started once), the
 #         box's smoke.sh (from the source tree, its listener audit beside it), and one 2-turn call through LiveKit
@@ -23,7 +23,7 @@
 # no point that cannot. --estimate BLOCK=MINUTES puts another estimate in the page's place for BLOCK (a block or an
 # arm's name): a host measured faster or slower, or an E2 block run for its first point alone, which campaign.sh's own
 # budget then stops at the deadline (the single-host rehearsal's). Each block's start and end go to
-# ~/leaseholder/runs/a100/blocks.log; a block done leaves blocks/BLOCK.done.
+# ~/flatshare/runs/a100/blocks.log; a block done leaves blocks/BLOCK.done.
 set -euo pipefail
 usage() { echo "usage: run.sh [--until HH:MM] [--cap TOKENS] [--estimate BLOCK=MINUTES]... [BLOCK...]" >&2; exit 2; }
 until="" cap=1536 estimates=""
@@ -47,7 +47,7 @@ while [[ ${1:-} == --* ]]; do
 done
 blocks=("$@")
 ((${#blocks[@]})) || blocks=(0 1 2 3 4 5 6 7 8 9 10)
-root=$HOME/leaseholder
+root=$HOME/flatshare
 src=$(cd "$(dirname "$0")/../.." && pwd)
 here=$src/benchmarks/a100
 node=$root/node
@@ -95,7 +95,7 @@ points_done() { # points_done CAMPAIGN: whether every point of the campaign file
 campaign() { # campaign FILE: its points on this host, as campaign.sh --local runs them
   local status=0
   # The run's one deadline, as an epoch: a campaign that ends after HH:MM hands the next none 24 hours away.
-  (cd "$HOME" && LH_NODE_DIR=leaseholder/node bash "$src/benchmarks/e2/campaign.sh" --local \
+  (cd "$HOME" && FLATSHARE_NODE_DIR=flatshare/node bash "$src/benchmarks/e2/campaign.sh" --local \
     ${deadline:+--until-epoch "$deadline"} "$1") || status=$?
   points_done "$1" && return 0
   # campaign.sh exits 0 with points left only where --until stopped it; any other status is a failure.
@@ -109,14 +109,14 @@ campaign() { # campaign FILE: its points on this host, as campaign.sh --local ru
 
 call() { # one 2-turn call through LiveKit, as an E2 point's callers make theirs
   local cores
-  cores=$(sed -n 's/^caller_cores = "\(.*\)"$/\1/p' "$HOME/.config/leaseholder/e2-host.toml")
+  cores=$(sed -n 's/^caller_cores = "\(.*\)"$/\1/p' "$HOME/.config/flatshare/e2-host.toml")
   rm -rf "$runs/block0/call"
   (
     set -a
     # shellcheck source=/dev/null
-    . "$HOME/.config/leaseholder/livekit.env"
+    . "$HOME/.config/flatshare/livekit.env"
     set +a
-    taskset -c "$cores" "$src/deploy/bin/in-voicenet" "$root/venvs/voice/bin/lh-voice" bots \
+    taskset -c "$cores" "$src/deploy/bin/in-voicenet" "$root/venvs/voice/bin/flatshare-voice" bots \
       --corpus "$root/data/callers" --callers 1 --turns 2 --out "$runs/block0/call"
   )
 }
@@ -154,7 +154,7 @@ block() { # block NAME: run one block unless it is done
     4) campaign "$here/a100-r1.campaign" ;;
     5) bash "$here/calibration.sh" --sessions 16 ;;
     6 | 7 | 8 | 9) campaign "$here/a100-r$((name - 4)).campaign" ;;
-    10) systemctl --user stop leaseholder.target lh-engine lh-stt lh-tts ;;
+    10) systemctl --user stop flatshare.target flatshare-engine flatshare-stt flatshare-tts ;;
     cprime) # its rounds take the run's deadline; it exits 3 where that stopped it with points left
       local status=0
       bash "$here/cprime.sh" --cap "$cap" ${deadline:+--until-epoch "$deadline"} || status=$?
@@ -179,12 +179,12 @@ block() { # block NAME: run one block unless it is done
 
 log "blocks ${blocks[*]}${until:+, until $until UTC}${estimates:+, estimates$estimates}"
 # The control plane (the voice worker, LiveKit in the voice plane, the gateway), which a reboot leaves down (nothing
-# starts it at boot: lh-svc is no boot-time service, and the units are not enabled): block 0's call and every E2 point
-# need it, and starting it where it runs is nothing.
+# starts it at boot: flatshare-svc is no boot-time service, and the units are not enabled): block 0's call and every E2
+# point need it, and starting it where it runs is nothing.
 # shellcheck source=/dev/null
 [[ ! -f $node/env.sh ]] || source "$node/env.sh"
-systemctl --user start lh-voice-worker.service ||
-  { log "the control plane did not start: journalctl --user -u lh-voice-worker (and lh-livekit, lh-gateway)"; exit 1; }
+systemctl --user start flatshare-voice-worker.service ||
+  { log "the control plane did not start: journalctl --user -u flatshare-voice-worker (and flatshare-livekit, flatshare-gateway)"; exit 1; }
 for name in "${blocks[@]}"; do
   block "$name"
 done

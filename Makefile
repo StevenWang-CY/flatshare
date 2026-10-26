@@ -3,15 +3,16 @@
 
 RUFF := uvx ruff@0.17.1
 VLLM_REF := v0.32.0
-VLLM_SRC ?= $(HOME)/.cache/leaseholder/vllm-$(VLLM_REF)
+VLLM_SRC ?= $(HOME)/.cache/flatshare/vllm-$(VLLM_REF)
 # Every Python package except the engine variants' tests (test-vllm); each one has a `test` extra.
-PY_PACKAGES := $(filter-out python/leaseholder_vllm,$(patsubst %/pyproject.toml,%,$(wildcard python/*/pyproject.toml)))
-# The Python that make lint checks: the packages, and the scripts of lh-sim, E2, the A100 run, the deployment (the
-# hosts' scripts without a suffix among them, found by their shebang) and the engine variants (not the recorded runs'
-# own scripts under benchmarks/results).
-PY_SOURCES := python crates/lh-sim/scripts $(sort $(wildcard benchmarks/e2/*.py benchmarks/a100/*.py deploy/*.py \
-  deploy/bin/*.py deploy/a100/*.py deploy/phastform/variants/*/*.py) $(shell grep -ls '^#!.*python' deploy/bin/*))
-# E2's committed records (lh-bench e2 export), one directory per point under its campaign, and where
+PY_PACKAGES := $(filter-out python/flatshare_vllm,$(patsubst %/pyproject.toml,%,$(wildcard python/*/pyproject.toml)))
+# The Python that make lint checks: the packages, and the scripts of flatshare-sim, E2, the A100 run, the deployment
+# (the hosts' scripts without a suffix among them, found by their shebang) and the engine variants (not the recorded
+# runs' own scripts under benchmarks/results).
+PY_SOURCES := python crates/flatshare-sim/scripts $(sort $(wildcard benchmarks/e2/*.py benchmarks/a100/*.py \
+  deploy/*.py deploy/bin/*.py deploy/a100/*.py deploy/phastform/variants/*/*.py) \
+  $(shell grep -ls '^#!.*python' deploy/bin/*))
+# E2's committed records (flatshare-bench e2 export), one directory per point under its campaign, and where
 # reproduce-e2 writes their report.
 E2_RESULTS := benchmarks/results/2026-10-23-e2
 E2_REPORT ?= build/reproduce-e2
@@ -60,10 +61,10 @@ $(VLLM_SRC):
 	git -C $@ sparse-checkout set vllm
 
 test-vllm: $(VLLM_SRC)
-	cd python/leaseholder_vllm && VLLM_SRC=$(VLLM_SRC) uv run -q --extra test pytest -q
+	cd python/flatshare_vllm && VLLM_SRC=$(VLLM_SRC) uv run -q --extra test pytest -q
 
 # The CPU suites' imports, checked before pytest runs: without one of them pytest would skip a suite, not fail it.
-CPU_SUITE_IMPORTS = cd python/leaseholder_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -c \
+CPU_SUITE_IMPORTS = cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -c \
   'import pytest, torch, vllm.v1.core.sched.scheduler' || { echo "$(TORCH_PYTHON) cannot import pytest, torch or \
   vLLM's scheduler from $(VLLM_SRC)" >&2; exit 1; }
 
@@ -72,30 +73,31 @@ CPU_SUITE_IMPORTS = cd python/leaseholder_vllm && VLLM_TARGET_DEVICE=cpu PYTHONP
 test-make-room: $(VLLM_SRC)
 	@test -n "$(TORCH_PYTHON)" || { echo "usage: make test-make-room TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies>" >&2; exit 2; }
 	@$(CPU_SUITE_IMPORTS)
-	cd python/leaseholder_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
+	cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
 	  tests/test_make_room.py tests/test_perf_schedule.py
 
-# make-room against the PRs' own patches, step for step, on the same CPU environment (python/leaseholder_vllm/README.md):
+# make-room against the PRs' own patches, step for step, on the same CPU environment (python/flatshare_vllm/README.md):
 # the trace that keeps the variant equal to #63350 and #63351, with the PRs' one-line mutants as its negative control.
 # TRACE_SEEDS sets the random workloads' seeds; TRACE_REFERENCE, a generated module, replaces the PRs' as the other side.
 TRACE_SEEDS ?= 20
 test-trace: $(VLLM_SRC)
 	@test -n "$(TORCH_PYTHON)" || { echo "usage: make test-trace TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies> [TRACE_SEEDS=100]" >&2; exit 2; }
 	@$(CPU_SUITE_IMPORTS)
-	cd python/leaseholder_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) TRACE_SEEDS=$(TRACE_SEEDS) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
+	cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) TRACE_SEEDS=$(TRACE_SEEDS) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
 	  tests/test_trace.py
 
-# Both CPU suites as CI's make-room job runs them: in the environment python/leaseholder_vllm/requirements-cpu.txt pins
+# Both CPU suites as CI's make-room job runs them: in the environment python/flatshare_vllm/requirements-cpu.txt pins
 # (Python 3.12 on Linux x86_64, CPU torch), which uv builds in CPU_ENV, and with every test required to run
-# (LH_NO_SKIPS: a skip fails the session, tests/conftest.py).
+# (FLATSHARE_NO_SKIPS: a skip fails the session, tests/conftest.py).
 CPU_ENV ?= build/cpu-env
-$(CPU_ENV)/synced: python/leaseholder_vllm/requirements-cpu.txt
+$(CPU_ENV)/synced: python/flatshare_vllm/requirements-cpu.txt
 	uv venv -q --allow-existing --python 3.12 $(CPU_ENV)
 	uv pip sync -q --python $(CPU_ENV)/bin/python --torch-backend cpu $<
 	@touch $@
 
 test-make-room-ci: $(CPU_ENV)/synced
-	LH_NO_SKIPS=1 $(MAKE) --no-print-directory test-make-room test-trace TORCH_PYTHON=$(abspath $(CPU_ENV))/bin/python
+	FLATSHARE_NO_SKIPS=1 $(MAKE) --no-print-directory test-make-room test-trace \
+	  TORCH_PYTHON=$(abspath $(CPU_ENV))/bin/python
 
 # Integration tests need hosts (a LiveKit server, a running engine); CI runs everything else.
 test-python:
@@ -103,7 +105,7 @@ test-python:
 	  echo "== $$pkg"; (cd $$pkg && uv run -q --extra test pytest -q -m "not integration") || exit 1; \
 	done
 
-# The engine change's upkeep checks, outside make check (python/leaseholder_vllm/README.md says how to read them).
+# The engine change's upkeep checks, outside make check (python/flatshare_vllm/README.md says how to read them).
 .PHONY: perf-make-room compat-upstream
 
 # The change's cost per step: Scheduler.schedule() on CPU for stock vLLM and for make-room with its switches off and in
@@ -119,36 +121,37 @@ perf-make-room: $(VLLM_SRC)
 	@test -n "$(TORCH_PYTHON)" || { echo "usage: make perf-make-room TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies> [PERF_BASELINE=FILE] [UPDATE=1 PERF_BESIDE=TEXT]" >&2; exit 2; }
 	@if [ "$(filter 1,$(UPDATE))" = 1 ] && [ -z "$(strip $(PERF_BESIDE))" ]; then \
 	  echo "make perf-make-room UPDATE=1 needs PERF_BESIDE=<what else ran on the machine>" >&2; exit 2; fi
-	cd python/leaseholder_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) tests/perf_schedule.py \
+	cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) tests/perf_schedule.py \
 	  $(if $(filter 1,$(UPDATE)),baseline $(abspath $(PERF_BASELINE)) --beside "$(PERF_BESIDE)",check $(abspath $(PERF_BASELINE)) --out $(abspath $(PERF_OUT)))
-	cd python/leaseholder_vllm && LH_PERF=1 LH_PERF_BASELINE=$(abspath $(PERF_BASELINE)) VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) \
+	cd python/flatshare_vllm && FLATSHARE_PERF=1 FLATSHARE_PERF_BASELINE=$(abspath $(PERF_BASELINE)) VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) \
 	  $(TORCH_PYTHON) -m pytest -q -s -p no:cacheprovider tests/test_perf_control.py
 
 # Whether #63350 and #63351 merge into vLLM's main and, with TORCH_PYTHON (an interpreter for vLLM main's scheduler and
 # tests), pass their tests there on CPU; and whether make-room's patches apply to vLLM's newest release. It keeps a
 # blobless vLLM clone in VLLM_UPSTREAM, and needs the network and git 2.38 or newer (GIT names one).
-VLLM_UPSTREAM ?= $(HOME)/.cache/leaseholder/vllm-upstream
+VLLM_UPSTREAM ?= $(HOME)/.cache/flatshare/vllm-upstream
 GIT ?= git
 compat-upstream:
-	uv run -q --no-project --python 3.12 python python/leaseholder_vllm/scripts/compat_upstream.py --clone $(VLLM_UPSTREAM) \
+	uv run -q --no-project --python 3.12 python python/flatshare_vllm/scripts/compat_upstream.py --clone $(VLLM_UPSTREAM) \
 	  --git $(GIT) $(if $(TORCH_PYTHON),--python $(TORCH_PYTHON))
 
 schema:
-	cargo run -q -p lh-proto --bin lh-proto-schema
+	cargo run -q -p flatshare-proto --bin flatshare-proto-schema
 
-# crates/lh-gateway/metrics.txt, the gateway's exposition before any traffic, after a change to its metrics.
+# crates/flatshare-gateway/metrics.txt, the gateway's exposition before any traffic, after a change to its metrics.
 metrics:
-	LH_GATEWAY_WRITE_METRICS=1 cargo test -q -p lh-gateway --lib metrics::tests::the_checked_in_exposition_is_current
+	FLATSHARE_GATEWAY_WRITE_METRICS=1 cargo test -q -p flatshare-gateway --lib \
+	  metrics::tests::the_checked_in_exposition_is_current
 
-# E1's tables (docs/BENCHMARKS.md's E1 section, crates/lh-sim/README.md's other hardware) from the 32x corpus, which
-# stays outside the repository (`lh-bench scale-traces` writes it; python/leaseholder_bench/README.md): the regime
-# map, the realistic regime over 20 seeds, the other GPUs at the 32x replay and at their own scalings, and the miss
-# ratios with the idle service. Usage: make reproduce-e1 CORPUS=<its directory>.
+# E1's tables (docs/BENCHMARKS.md's E1 section, crates/flatshare-sim/README.md's other hardware) from the 32x corpus,
+# which stays outside the repository (`flatshare-bench scale-traces` writes it; python/flatshare_bench/README.md): the
+# regime map, the realistic regime over 20 seeds, the other GPUs at the 32x replay and at their own scalings, and the
+# miss ratios with the idle service. Usage: make reproduce-e1 CORPUS=<its directory>.
 E1_REPORT ?= build/reproduce-e1
-E1_SIM = target/release/lh-sim
+E1_SIM = target/release/flatshare-sim
 reproduce-e1:
 	@test -n "$(CORPUS)" || { echo "usage: make reproduce-e1 CORPUS=<the 32x corpus directory>" >&2; exit 2; }
-	cargo build --release --locked -p lh-sim
+	cargo build --release --locked -p flatshare-sim
 	@mkdir -p $(E1_REPORT)
 	$(E1_SIM) regime $(CORPUS) --csv $(E1_REPORT)/regime.csv --markdown $(E1_REPORT)/regime.md >/dev/null
 	$(E1_SIM) regime $(CORPUS) --sessions 8,12,16,24 --cpu-ratio 4 --pause-sources trace \
@@ -162,17 +165,17 @@ reproduce-e1:
 
 # The A100 run's forecast, benchmarks/a100/forecast.md, from the 32x corpus (outside the repository) and its 48
 # traces with the largest contexts, E2's discriminating corpus, which long_traces.py links into FORECAST_LONG. GPU names
-# the card (lh-sim's profile): GPU=a100-80gb writes benchmarks/a100/forecast-80gb.md, for the A100 SXM4 80 GB, which
-# analysis.py reads for records whose card is one. HOST_JSON, the host.json benchmarks/a100/bench_host.py writes on
-# the card's host, places the card there (lh-sim forecast --host) and writes the forecast beside the one made before
-# the run, with -on-host in its name, so that one stays as it was. Usage: make forecast-a100 CORPUS=<the 32x corpus
-# directory> [GPU=a100-80gb] [HOST_JSON=<host.json>].
+# the card (flatshare-sim's profile): GPU=a100-80gb writes benchmarks/a100/forecast-80gb.md, for the A100 SXM4 80 GB,
+# which analysis.py reads for records whose card is one. HOST_JSON, the host.json benchmarks/a100/bench_host.py writes
+# on the card's host, places the card there (flatshare-sim forecast --host) and writes the forecast beside the one made
+# before the run, with -on-host in its name, so that one stays as it was. Usage: make forecast-a100 CORPUS=<the 32x
+# corpus directory> [GPU=a100-80gb] [HOST_JSON=<host.json>].
 FORECAST_LONG ?= build/weka-x32-long
 GPU ?= a100-40gb
 FORECAST_MD = benchmarks/a100/forecast$(if $(filter-out a100-40gb,$(GPU)),-$(GPU:a100-%=%))$(if $(HOST_JSON),-on-host).md
 forecast-a100:
 	@test -n "$(CORPUS)" || { echo "usage: make forecast-a100 CORPUS=<the 32x corpus directory> [GPU=a100-80gb] [HOST_JSON=<host.json>]" >&2; exit 2; }
-	cargo build --release --locked -p lh-sim
+	cargo build --release --locked -p flatshare-sim
 	uv run -q --no-project python benchmarks/e2/long_traces.py $(CORPUS) $(FORECAST_LONG) 48 >/dev/null
 	@mkdir -p benchmarks/a100
 	$(E1_SIM) forecast $(CORPUS) $(FORECAST_LONG) --gpu $(GPU) $(if $(HOST_JSON),--host $(HOST_JSON)) --markdown $(FORECAST_MD) \
@@ -191,7 +194,7 @@ forecast-fitted: OUT = build/forecast-fitted.md
 forecast-fitted:
 	@test -n "$(CORPUS)" -a -n "$(COSTS)" -a -n "$(STEPS)" || \
 	  { echo "usage: make forecast-fitted CORPUS=<the 32x corpus directory> COSTS=<E0's summary.json> STEPS=<steps.json> [GPU=a100-80gb] [HOST_JSON=<host.json>] [OUT=build/forecast-fitted.md]" >&2; exit 2; }
-	cargo build --release --locked -p lh-sim
+	cargo build --release --locked -p flatshare-sim
 	uv run -q --no-project python benchmarks/e2/long_traces.py $(CORPUS) $(FORECAST_LONG) 48 >/dev/null
 	@mkdir -p $(dir $(OUT))
 	$(E1_SIM) forecast $(CORPUS) $(FORECAST_LONG) --gpu $(GPU) --costs $(COSTS) --step-costs $(STEPS) \
@@ -207,26 +210,27 @@ A100_REPORT ?= build/reproduce-a100
 reproduce-a100:
 	@test -n "$(RECORDS)" -a -n "$(CORPUS)" || \
 	  { echo "usage: make reproduce-a100 RECORDS=<the host's records> CORPUS=<the 32x corpus directory>" >&2; exit 2; }
-	cargo build --release --locked -p lh-sim
-	cd python/leaseholder_bench && uv run -q python ../../benchmarks/a100/analysis.py report $(abspath $(RECORDS)) \
-	  --corpus $(abspath $(CORPUS)) --lh-sim $(abspath $(E1_SIM)) --out $(abspath $(A100_REPORT)) --lh-bench lh-bench
+	cargo build --release --locked -p flatshare-sim
+	cd python/flatshare_bench && uv run -q python ../../benchmarks/a100/analysis.py report $(abspath $(RECORDS)) \
+	  --corpus $(abspath $(CORPUS)) --flatshare-sim $(abspath $(E1_SIM)) --out $(abspath $(A100_REPORT)) \
+	  --flatshare-bench flatshare-bench
 
 check-a100-calibration:
 	@test -n "$(EXPORTS)" -a -n "$(CORPUS)" || \
 	  { echo "usage: make check-a100-calibration EXPORTS=<the runs' exports> CORPUS=<the 32x corpus directory>" >&2; exit 2; }
-	cargo build --release --locked -p lh-sim
+	cargo build --release --locked -p flatshare-sim
 	uv run -q --no-project python benchmarks/a100/analysis.py calibration-check $(EXPORTS) --corpus $(CORPUS) \
-	  --lh-sim $(E1_SIM) --out build/check-a100-calibration
+	  --flatshare-sim $(E1_SIM) --out build/check-a100-calibration
 
-# The simulator's calibration and its validation against W0 (crates/lh-sim/README.md, and BENCHMARKS' table of W2's points)
+# The simulator's calibration and its validation against W0 (crates/flatshare-sim/README.md, and BENCHMARKS' table of W2's points)
 # from six measured runs' AIPerf exports and /metrics snapshots, one directory per run as `scripts/calibration.py export`
 # writes them, and the 32x corpus. Usage: make reproduce-calibration EXPORTS=<dir> CORPUS=<dir>.
 CALIBRATION_REPORT ?= build/reproduce-calibration
 reproduce-calibration:
 	@test -n "$(EXPORTS)" -a -n "$(CORPUS)" || \
 	  { echo "usage: make reproduce-calibration EXPORTS=<the runs' exports> CORPUS=<the 32x corpus directory>" >&2; exit 2; }
-	cargo build --release --locked -p lh-sim
-	uv run -q --no-project python crates/lh-sim/scripts/calibration.py report $(EXPORTS) $(CORPUS) $(E1_SIM) \
+	cargo build --release --locked -p flatshare-sim
+	uv run -q --no-project python crates/flatshare-sim/scripts/calibration.py report $(EXPORTS) $(CORPUS) $(E1_SIM) \
 	  $(CALIBRATION_REPORT) >/dev/null
 	@ls $(CALIBRATION_REPORT)/calibration.md
 
@@ -234,7 +238,7 @@ reproduce-calibration:
 # (W4's four, W5's six) and waterfall.svg, the files each set of records keeps in its report/, which the bench's tests
 # check and E2_REPORT=<that report/> rewrites. It prints the files it writes.
 reproduce-e2:
-	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
+	@cd python/flatshare_bench && uv run -q flatshare-bench e2 report \
 	  $(abspath $(dir $(wildcard $(E2_RESULTS)/*/*/run.json))) --out $(abspath $(E2_REPORT))
 
 # The same of W5's re-measure, from its own records.
@@ -244,7 +248,7 @@ reproduce-e2-w5:
 # The same of the A100's core, tuned vLLM and the PRs' values at its step cap, from the A100 run's records
 # (benchmarks/results/2026-10-26-a100).
 reproduce-e2-a100:
-	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
+	@cd python/flatshare_bench && uv run -q flatshare-bench e2 report \
 	  $(abspath $(dir $(E2_A100_POINTS))) --out $(abspath $(E2_A100_REPORT))
 
 # E2's figures in the docs, docs/figures/e2-frontier.svg and e2-waterfall.svg, from the records of the configurations an
@@ -254,7 +258,7 @@ E2_DEPLOYABLE := a1-voice disc-frozen-s24 disc-a4-b1024-t0-s24 disc-a6-reserve20
   disc-a8c-resubmit-s24 disc-a9-s24 disc-pr-ab48-s24
 E2_STAGES := a1-voice disc-frozen-s24 disc-a6-reserve2048-s24 disc-a8c-resubmit-s24 disc-a9-s24 disc-pr-ab48-s24
 e2-figures:
-	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
+	@cd python/flatshare_bench && uv run -q flatshare-bench e2 report \
 	  $(abspath $(dir $(foreach p,$(E2_DEPLOYABLE),$(wildcard $(E2_RESULTS)/*/$(p)/run.json)))) \
 	  $(foreach p,$(E2_STAGES),--waterfall $(p)) --out $(abspath build/e2-figures) >/dev/null
 	@mkdir -p docs/figures
@@ -264,7 +268,7 @@ e2-figures:
 # The README's chart, docs/figures/e2-voice-p95.svg and its phone layout e2-voice-p95-narrow.svg, from W5's records:
 # the configurations figure.toml names, each run in the same rounds over the same five samples of the agents' traces.
 e2-w5-figure:
-	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
+	@cd python/flatshare_bench && uv run -q flatshare-bench e2 report \
 	  $(abspath $(dir $(wildcard $(E2_W5_RESULTS)/*/*/run.json))) \
 	  --dots $(abspath $(E2_W5_RESULTS)/figure.toml) --out $(abspath build/e2-w5-figure) >/dev/null
 	@mkdir -p docs/figures
@@ -275,7 +279,7 @@ e2-w5-figure:
 # the rows the A100 run's figure.toml names, W5's from the box's records and the A100's from its own, each group
 # against its own voice alone's SLO (the A100 ran the box's arm files, so each group names the GPU its points ran on).
 e2-gpus-figure:
-	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
+	@cd python/flatshare_bench && uv run -q flatshare-bench e2 report \
 	  $(abspath $(dir $(wildcard $(E2_W5_RESULTS)/*/*/run.json) $(E2_A100_POINTS))) \
 	  --dots $(abspath $(E2_A100_RESULTS)/figure.toml) --out $(abspath build/e2-gpus-figure) >/dev/null
 	@mkdir -p docs/figures
@@ -283,9 +287,9 @@ e2-gpus-figure:
 	cp build/e2-gpus-figure/voice-p95-narrow.svg docs/figures/e2-voice-p95-gpus-narrow.svg
 
 # The README's method figure, docs/figures/method.svg and its phone layout method-narrow.svg: the voice agent and the
-# coding agents on one GPU, and the two scheduler rules of #63350 and #63351, drawn by leaseholder_bench.diagrams.
+# coding agents on one GPU, and the two scheduler rules of #63350 and #63351, drawn by flatshare_bench.diagrams.
 method-figure:
-	cd python/leaseholder_bench && uv run -q python -m leaseholder_bench.diagrams $(abspath docs/figures)
+	cd python/flatshare_bench && uv run -q python -m flatshare_bench.diagrams $(abspath docs/figures)
 
 # Every figure under docs/figures that its records or its code draw; the bench's tests check each is current.
 figures: e2-figures e2-w5-figure e2-gpus-figure method-figure
@@ -297,7 +301,7 @@ figures: e2-figures e2-w5-figure e2-gpus-figure method-figure
 # the two configurations, W5's report for the SLO and the closing card, and the A100's (reproduce-e2-a100's, committed
 # as its report/) for the card's second group: the same two configurations on the A100.
 DEMO_POINTS := w5-disc-frozen-s24 w5-disc-pr-ab48-s24
-DEMO_OUT ?= build/leaseholder-demo.mp4
+DEMO_OUT ?= build/flatshare-demo.mp4
 demo-video:
 	@test -n "$(DEMO)" || { echo "make demo-video DEMO=<the directory of $(DEMO_POINTS)>" >&2; exit 2; }
 	@mkdir -p $(dir $(DEMO_OUT)) docs/figures

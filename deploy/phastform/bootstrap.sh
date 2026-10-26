@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bootstrap.sh: build a GPU node's frozen-box environment under ~/leaseholder (Phastform; Gray reuses it). Safe to
+# bootstrap.sh: build a GPU node's frozen-box environment under ~/flatshare (Phastform; Gray reuses it). Safe to
 # re-run.
 #   venvs/engine            vLLM 0.32.0 with the audio extra, serving the LLM and Whisper
 #   venvs/tts               Kokoro-FastAPI 0.9.1-rc1 (torch 2.8.0+cu128)
@@ -8,7 +8,7 @@
 #   ~/.cache/huggingface    the LLM and Whisper weights, at pinned revisions
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-root=$HOME/leaseholder
+root=$HOME/flatshare
 uv=${UV:-$HOME/.local/bin/uv}
 # The locks were resolved with uv 0.11.27; uv 0.10.8 could not resolve the engine lock's torchcodec==0.17.0+cu130
 # through --torch-backend.

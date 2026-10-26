@@ -1,0 +1,16 @@
+[Unit]
+Description=Flatshare voice-plane network namespace on cyan (no route out)
+Documentation=https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md
+
+[Service]
+Type=exec
+ExecStartPre=/usr/bin/install -d -m 0700 %t/flatshare
+ExecStart=%h/flatshare/src/deploy/bin/voicenet-holder %t/flatshare/voicenet.pid
+# Started means the pid file exists, so units that enter the namespace never race its creation.
+ExecStartPost=/usr/bin/timeout 10 /bin/sh -c 'until [ -s "$0" ]; do sleep 0.1; done' %t/flatshare/voicenet.pid
+ExecStopPost=/usr/bin/rm -f %t/flatshare/voicenet.pid
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,6 +1,6 @@
 # Making room in the engine: a realtime voice tier beside coding agents on one GPU
 
-*Technical report v1. Leaseholder, StevenWang-CY/leaseholder. Every number comes from the committed records
+*Technical report v1. Flatshare, StevenWang-CY/flatshare. Every number comes from the committed records
 ([BENCHMARKS.md](BENCHMARKS.md) lists every run); E2's are W5's, measured on 2026-10-24 and 25.*
 
 ## Abstract
@@ -255,16 +255,17 @@ aborted more than once waits for its prefill again each time: the agents' TTFT p
 
 ### 5.5 What a control plane cannot do
 
-E2's gateway, `lh-gateway`, ran the control-plane mechanisms an operator could add in front of the engine: KV headroom
-held by deferring background requests while a call is armed, a throttle on background prefill during the critical window
-of a turn, degraded replies when the pool is short, all timed by the voice agent's lifecycle events. On tuned vLLM in
-the discriminating scenario this lifecycle policy left the voice p95 at 10,993 ms, no better than tuned vLLM's 10,138 ms
-(both W4): deferring new requests cannot make room while running work holds the KV. On top of the engine change, the
-same policy, or arm 9 without its headroom, its throttle or its events, landed within the spread of its own runs (W4):
-the room comes from the engine. Of the routers, SMG's preemption before the first byte and llm-d's flow control
-(emulated) left 11,050 and 10,992 ms (W4); the abort-and-resubmit policy reaches 2.52 s only by discarding admitted
-prefill (§5.4). A control plane sees requests, not KV blocks or steps: it can hold back what has not started and abort
-what has, and only the engine can take KV from a request that is decoding or keep agent prefill out of a reply's step.
+E2's gateway, `flatshare-gateway`, ran the control-plane mechanisms an operator could add in front of the engine: KV
+headroom held by deferring background requests while a call is armed, a throttle on background prefill during the
+critical window of a turn, degraded replies when the pool is short, all timed by the voice agent's lifecycle events. On
+tuned vLLM in the discriminating scenario this lifecycle policy left the voice p95 at 10,993 ms, no better than tuned
+vLLM's 10,138 ms (both W4): deferring new requests cannot make room while running work holds the KV. On top of the
+engine change, the same policy, or arm 9 without its headroom, its throttle or its events, landed within the spread of
+its own runs (W4): the room comes from the engine. Of the routers, SMG's preemption before the first byte and llm-d's
+flow control (emulated) left 11,050 and 10,992 ms (W4); the abort-and-resubmit policy reaches 2.52 s only by discarding
+admitted prefill (§5.4). A control plane sees requests, not KV blocks or steps: it can hold back what has not started
+and abort what has, and only the engine can take KV from a request that is decoding or keep agent prefill out of a
+reply's step.
 
 ### 5.6 Where it does not help
 

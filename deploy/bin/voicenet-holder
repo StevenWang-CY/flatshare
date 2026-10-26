@@ -8,20 +8,20 @@
 # client gathers no candidate and media never connects; the dummy gives clients an address to bind. It has no
 # default route and no IPv6 link-local address, so nothing leaves the namespace.
 #
-# With LH_VOICENET=host, on a host whose kernel refuses unprivileged user namespaces (the preflight finds out), it
-# holds no namespace: it writes "host" to PIDFILE, and in-voicenet then runs the voice plane in the host's network
-# namespace. LiveKit's own candidates stay on 127.0.0.1 (deploy/cyan/livekit.yaml), but the clients gather theirs on
-# the host's interfaces, so such a host must not be reachable from outside on the media ports.
+# With FLATSHARE_VOICENET=host, on a host whose kernel refuses unprivileged user namespaces (the preflight finds out),
+# it holds no namespace: it writes "host" to PIDFILE, and in-voicenet then runs the voice plane in the host's network
+# namespace. LiveKit's own candidates stay on 127.0.0.1 (deploy/cyan/livekit.yaml), but the clients gather theirs on the
+# host's interfaces, so such a host must not be reachable from outside on the media ports.
 set -euo pipefail
-if [[ ${LH_VOICENET:-} == host ]]; then
+if [[ ${FLATSHARE_VOICENET:-} == host ]]; then
   echo host >"$1"
   exec sleep infinity
 fi
 exec unshare --user --map-root-user --net -- sh -c '
   ip link set lo up &&
-  ip link add lh0 type dummy &&
-  ip link set lh0 addrgenmode none &&
-  ip addr add 10.255.0.1/32 dev lh0 &&
-  ip link set lh0 up &&
+  ip link add flatshare0 type dummy &&
+  ip link set flatshare0 addrgenmode none &&
+  ip addr add 10.255.0.1/32 dev flatshare0 &&
+  ip link set flatshare0 up &&
   echo $$ >"$1" &&
   exec sleep infinity' sh "$1"

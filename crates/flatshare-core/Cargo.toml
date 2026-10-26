@@ -1,0 +1,16 @@
+[package]
+name = "flatshare-core"
+description = "Flatshare's pure models of the frozen box (cost, geometry, step), which flatshare-sim runs, and the gateway's admission policies"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+flatshare-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

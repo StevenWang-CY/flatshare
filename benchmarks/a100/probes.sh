@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # probes.sh BLOCK [--cap TOKENS]: one of the A100 run's probe blocks (docs/HARDWARE.md, the core block by block) on this
-# host, the GPU node rendered at ~/leaseholder/node (LH_NODE_DIR another): engine-level runs on one engine configuration
-# at a time, E0's cells (lh-bench tiers), make-room's KV and prefill cases (probe.py) and the calls' tail beside agents
-# (tail.py with whole 40-token replies, at the box's KV pressure for the pool). Each run writes
-# ~/leaseholder/runs/a100/blockN/NAME: a .txt of the probe's output, renamed from .partial once the probe has exited 0,
-# or E0's directory with its summary.json; a run already there is skipped, so a block run again resumes where it
-# stopped.
+# host, the GPU node rendered at ~/flatshare/node (FLATSHARE_NODE_DIR another): engine-level runs on one engine
+# configuration at a time, E0's cells (flatshare-bench tiers), make-room's KV and prefill cases (probe.py) and the
+# calls' tail beside agents (tail.py with whole 40-token replies, at the box's KV pressure for the pool). Each run
+# writes ~/flatshare/runs/a100/blockN/NAME: a .txt of the probe's output, renamed from .partial once the probe has
+# exited 0, or E0's directory with its summary.json; a run already there is skipped, so a block run again resumes where
+# it stopped.
 #   1  frozen, the box's flags: E0 (--reps 3), kv x3, prefill x3, tail x2
 #   2  stock at vLLM's default here, 2,048/0: kv x3, tail x2; then stock at the time-equivalent step cap (R4; --cap,
 #      1,536 by default, the threshold at half): kv x1, tail x2, its runs named by cap and threshold (stock1536-768-*),
@@ -31,17 +31,17 @@ while (($#)); do
   esac
   shift
 done
-root=$HOME/leaseholder
+root=$HOME/flatshare
 src=$(cd "$(dirname "$0")/../.." && pwd)
-node=${LH_NODE_DIR:-$root/node}
+node=${FLATSHARE_NODE_DIR:-$root/node}
 out=$root/runs/a100/block$block
 [[ $block != backend ]] || out=$root/runs/a100/backend
-probes=$src/python/leaseholder_vllm/src/leaseholder_vllm/make-room
+probes=$src/python/flatshare_vllm/src/flatshare_vllm/make-room
 python=$root/venvs/engine/bin/python
 mkdir -p "$out"
 # shellcheck source=/dev/null
 [[ ! -f $node/env.sh ]] || source "$node/env.sh"
-sock=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/lh/engine.sock # the engine's own socket (lh-engine.service)
+sock=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/flatshare/engine.sock # the engine's own socket (flatshare-engine.service)
 engine=unix:$sock
 log() { echo "[$(date -u +%FT%TZ)] probes $block: $*" | tee -a "$out/probes.log"; }
 
@@ -73,8 +73,8 @@ tiers() { # tiers NAME: E0's cells on the running engine
   local model
   model=$(curl -fsS -m 10 --unix-socket "$sock" http://localhost/v1/models |
     "$python" -c 'import json, sys; print(json.load(sys.stdin)["data"][0]["id"])')
-  log "$1: lh-bench tiers --reps 3 ($model)"
-  "$root/venvs/bench/bin/lh-bench" tiers --url "$engine" --model "$model" --reps 3 --out "$out/$1" 2>&1 |
+  log "$1: flatshare-bench tiers --reps 3 ($model)"
+  "$root/venvs/bench/bin/flatshare-bench" tiers --url "$engine" --model "$model" --reps 3 --out "$out/$1" 2>&1 |
     tail -3 | tee -a "$out/probes.log"
   [[ -f $out/$1/summary.json ]] || { log "$1: no summary.json"; exit 1; }
 }
@@ -117,7 +117,7 @@ case $block in
     # The backend and the KV layout the engine selected at this start, as the preflight reads them. vLLM 0.32 names an
     # attention backend it selects ("Using X attention backend"), but for one --attention-backend sets, FlashInfer names
     # itself as it sets up ("FlashInfer resolved query dtypes").
-    selected=$(journalctl --user -u lh-engine.service --since "@$started" 2>/dev/null |
+    selected=$(journalctl --user -u flatshare-engine.service --since "@$started" 2>/dev/null |
       grep -oE "Using [A-Z_0-9]+ (attention backend|KV cache layout)|FlashInfer resolved query dtypes" |
       sort -u | tr '\n' ' ') || true
     [[ $selected == *"FLASHINFER attention backend"* || $selected == *"FlashInfer resolved query dtypes"* ]] &&

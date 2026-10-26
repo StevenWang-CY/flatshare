@@ -16,17 +16,18 @@ private() {
 }
 # The key of every tenant's cache_salt (cache_salt_secret_file in gateway.toml): a new secret would change every
 # salt, which orphans every tenant's prefix cache.
-private "$HOME/.config/leaseholder/cache-salt-secret"
+private "$HOME/.config/flatshare/cache-salt-secret"
 # The key GET /metrics asks for on the gateway's TCP listener (metrics_key_file), which Prometheus sends.
-private "$HOME/.config/leaseholder/metrics-key"
-# Links to units the repository no longer has, such as the tunnels' before lh-tunnel@.service, go; a unit that still
-# runs from one stops at the next reboot (stop it by hand, ops/RUNBOOK.md). Disabling a linked unit removes its link
-# already, so the link may be gone when rm comes to it.
+private "$HOME/.config/flatshare/metrics-key"
+# Links to units the repository no longer has, such as the tunnels' before flatshare-tunnel@.service, go; a unit that
+# still runs from one stops at the next reboot (stop it by hand, ops/RUNBOOK.md). Disabling a linked unit removes its
+# link already, so the link may be gone when rm comes to it.
 for link in "$units"/*; do
   [[ -L $link && ! -e $link && $(readlink "$link") == "$here"/systemd/* ]] || continue
   systemctl --user disable -q "$(basename "$link")" 2>/dev/null || true
   rm -f "$link"
 done
 systemctl --user daemon-reload
-systemctl --user enable -q lh-voicenet.service lh-livekit.service lh-tunnel@phastform.service lh-voice-worker.service
+systemctl --user enable -q flatshare-voicenet.service flatshare-livekit.service flatshare-tunnel@phastform.service \
+  flatshare-voice-worker.service
 loginctl show-user "$(id -un)" --property=Linger

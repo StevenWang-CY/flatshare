@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # cprime.sh [--sessions N] [--rounds N] [--cap TOKENS]: the A100 run's optional arm 1, C' (docs/HARDWARE.md, the
 # optional arms), on this host after the core: Qwen3-14B-FP8 at the card's own pool
-# (deploy/profiles/a100-40gb-qwen3-14b.toml, rendered into ~/leaseholder/node-14b), at N sessions (40, the forecast's
+# (deploy/profiles/a100-40gb-qwen3-14b.toml, rendered into ~/flatshare/node-14b), at N sessions (40, the forecast's
 # largest running share for it), in N rounds (3) of tuned stock against the PRs' values, the first with the 14B's own
 # voice alone for its own SLO. Tuned stock is P-1's rule: of the stock step-cap settings blocks 1 and 2 measured on the
 # 4B (512/256, 2,048/0, the time-equivalent cap --cap), the one with the lowest calls' first-token p95 (probe_results.py
 # pick-stock). In order:
 #   1. the 14B's node rendered with this host's facts, its weights at their pin (bootstrap.sh stage fetches them
-#      with LH_MODELS; here if it did not);
+#      with FLATSHARE_MODELS; here if it did not);
 #   2. the host switched to it: the GPU units stopped, the 14B node's units in place of the core's, the agent's
 #      requests naming the 14B (the qwen3-14b worker variant); on any exit the core's node and worker come back;
 #   3. its first starts (host.py warm: the frozen engine and the stock setting, each compiling its own graphs), the
 #      pool checked against the profile's 7,334 blocks, smoke.sh (a reply with no <think>), E0 with one rep;
-#   4. the arm files and campaigns written into ~/leaseholder/runs/a100/cprime, and the campaigns run.
+#   4. the arm files and campaigns written into ~/flatshare/runs/a100/cprime, and the campaigns run.
 # A campaign done before is skipped by campaign.sh's own resume. --until-epoch SECONDS hands each round's campaign
 # that deadline (benchmarks/a100/run.sh's); a round it stopped with points left ends C' with exit status 3.
 set -euo pipefail
@@ -34,7 +34,7 @@ while (($#)); do
   esac
   shift
 done
-root=$HOME/leaseholder
+root=$HOME/flatshare
 src=$(cd "$(dirname "$0")/../.." && pwd)
 here=$src/benchmarks/a100
 core=$root/node
@@ -59,17 +59,17 @@ log "$model@${revision:0:7}; tuned stock: $stock (${stock_flags:-the frozen flag
 
 # 2. The switch, and the switch back on any exit.
 switch() { # switch NODE on|off
-  systemctl --user stop leaseholder.target lh-engine lh-stt lh-tts
+  systemctl --user stop flatshare.target flatshare-engine flatshare-stt flatshare-tts
   "$py" "$src/deploy/a100/host.py" units "$1" >/dev/null
-  local variant=$units/lh-voice-worker.service.d/variant-qwen3-14b.conf
+  local variant=$units/flatshare-voice-worker.service.d/variant-qwen3-14b.conf
   if [[ $2 == on ]]; then
     mkdir -p "$(dirname "$variant")"
-    ln -sf "$src/deploy/cyan/variants/qwen3-14b/lh-voice-worker.conf" "$variant"
+    ln -sf "$src/deploy/cyan/variants/qwen3-14b/flatshare-voice-worker.conf" "$variant"
   else
     rm -f "$variant"
   fi
   systemctl --user daemon-reload
-  systemctl --user restart lh-voice-worker.service
+  systemctl --user restart flatshare-voice-worker.service
   log "the host runs $(basename "$1")'s units, the worker variant qwen3-14b $2"
 }
 trap 'status=$?; switch "$core" off || log "the core node did not come back: host.py units $core"; exit $status' EXIT
@@ -89,7 +89,8 @@ bash "$node/variant.sh" use frozen | tee -a "$out/cprime.log"
 bash "$src/deploy/phastform/smoke.sh" | tee "$out/smoke.txt"
 ! grep -q '<think>' "$out/smoke.txt" || { log "the 14B's reply thinks aloud: enable_thinking is not off"; exit 1; }
 if [[ ! -f $out/e0/summary.json ]]; then
-  "$root/venvs/bench/bin/lh-bench" tiers --url "unix:${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/lh/engine.sock" \
+  "$root/venvs/bench/bin/flatshare-bench" tiers \
+    --url "unix:${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/flatshare/engine.sock" \
     --model "$model" --reps 1 --out "$out/e0" |
     tail -3 | tee -a "$out/cprime.log"
 fi
@@ -140,7 +141,7 @@ for ((n = 1; n <= rounds; n++)); do
     fi
   } >"$out/a100-cprime-r$n.campaign"
   log "round $n"
-  (cd "$HOME" && LH_NODE_DIR=leaseholder/node-14b LH_PROFILE=$profile \
+  (cd "$HOME" && FLATSHARE_NODE_DIR=flatshare/node-14b FLATSHARE_PROFILE=$profile \
     bash "$src/benchmarks/e2/campaign.sh" --local ${until_epoch:+--until-epoch "$until_epoch"} \
     "$out/a100-cprime-r$n.campaign")
   # campaign.sh exits 0 with points left only where the deadline stopped it.

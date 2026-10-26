@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flatshare-vllm"
+version = "1.1.0"
+description = "The engine change on vLLM 0.32: vLLM #63350 and #63351 backported as patches, the make-room and pr54530 variants' build, probes and tests"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+# vLLM itself comes from the engine environment (deploy/phastform/requirements/engine.txt).
+dependencies = []
+
+[project.optional-dependencies]
+# aiohttp: probe.py's and tail.py's tests, against a stand-in engine; the engine environment has it too.
+test = ["pytest>=8", "aiohttp>=3.14,<4"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

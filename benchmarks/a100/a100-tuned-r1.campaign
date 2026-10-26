@@ -1,8 +1,8 @@
 # The A100 run's optional arm 6, tuned vLLM (docs/HARDWARE.md, the optional arms), round 1 of 2: the stock engine at
 # the A100's best step cap in the probes, on the agents' sample of the core's round 1 (seed 10 + N), so that it pairs
 # with that round's frozen point and the PRs' values. On the A100 host:
-#   LH_NODE_DIR=leaseholder/node leaseholder/src/benchmarks/e2/campaign.sh --local \
-#     leaseholder/src/benchmarks/a100/a100-tuned-r1.campaign
+#   FLATSHARE_NODE_DIR=flatshare/node flatshare/src/benchmarks/e2/campaign.sh --local \
+#     flatshare/src/benchmarks/a100/a100-tuned-r1.campaign
 
 agents-seed 11
 

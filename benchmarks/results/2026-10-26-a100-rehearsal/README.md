@@ -2,19 +2,19 @@
 
 The records of [`benchmarks/a100/rehearsal`](../../a100/rehearsal/README.md)'s run of the release's kit on Phastform,
 the box's RTX 5060 Ti host, standing in for the A100's: every step from `deploy/a100/push.sh` to `make reproduce-a100`
-in one pass, under lh-svc in a home of its own beside the box's deployment, which the rehearsal left as it found it
-(`cleanup`: 253,381 lines of units and files alike). The home was new, so every cache the kit fills started empty:
+in one pass, under flatshare-svc in a home of its own beside the box's deployment, which the rehearsal left as it found
+it (`cleanup`: 253,381 lines of units and files alike). The home was new, so every cache the kit fills started empty:
 the venvs, the compile and JIT caches, the gateway's build. The models were read from the box's hub cache, offline,
 where the A100's first stage downloads them. The node was rendered from the A100's profile (`a100-40gb`) with
-Phastform's facts, so these are the box's numbers through the A100's kit: they check its mechanics, as its own
-preflight says of a host with 16 CPUs ("this host checks the mechanics, not the numbers").
+Phastform's facts, so these are the box's numbers through the A100's kit: they check its mechanics, as its own preflight
+says of a host with 16 CPUs ("this host checks the mechanics, not the numbers").
 
 [The rehearsal of 2026-10-25](../2026-10-25-a100-rehearsal/README.md) found the two defects of the kit that this kit
 has fixed. A run of the release's candidate earlier the same night, from a fresh home too, passed every step but one:
 `reproduce`'s copy of this workstation's corpus to a peacock that had none failed, because GNU rsync makes a
 destination's last directory alone. That was the rehearsal's own script, fixed in f974b2a with a test that fails
-without it under GNU rsync. lh-svc's two fixes after that run (a start's state written before its runner runs, each
-write under a lock; a start whose command is missing fails, as systemd's does) are in the kit this run checked; the
+without it under GNU rsync. flatshare-svc's two fixes after that run (a start's state written before its runner runs,
+each write under a lock; a start whose command is missing fails, as systemd's does) are in the kit this run checked; the
 candidate's run measured the same first start within 2.3 s.
 
 Home paths are cut to `~` (the box's login home; the rehearsal's own is `~/a100-rehearsal`), the workstation's to
@@ -27,7 +27,7 @@ Home paths are cut to `~` (the box's login home; the rehearsal's own is `~/a100-
 | `blocks.log`, `run.log` | `run.sh`'s blocks 0, 1 and 4 |
 | `block0/` | `smoke.sh` with the listener audit, and a 2-turn call |
 | `block1/` | E0 on the frozen engine (`frozen-e0`, 3 repetitions) and the probes: the KV case and the prefill case three times each, the calls' tail twice |
-| `e2/a100-r1/` | round 1's first point, the PRs' 48-token configuration, as `lh-bench e2 export` keeps it, with the campaign's log and its report |
+| `e2/a100-r1/` | round 1's first point, the PRs' 48-token configuration, as `flatshare-bench e2 export` keeps it, with the campaign's log and its report |
 | `a100.md` | `make reproduce-a100` over these records |
 
 ## The steps
@@ -38,7 +38,7 @@ The minutes of each step, from `steps.log`:
 |---|---:|---|
 | `check`, `init`, `data` | 1.3 | Kokoro copied from the box's checkout; weka-x32 and the callers' clips copied from cyan, the long traces made |
 | `push` | 1.7 | the source and 2.7 GB of data as files |
-| `stage` | 9.1 | uv, Python 3.12 and the venvs, rustup and `cargo build -p lh-gateway`, LiveKit's server, FlashInfer's sampler for sm120 (179.0 s), the control plane up |
+| `stage` | 9.1 | uv, Python 3.12 and the venvs, rustup and `cargo build -p flatshare-gateway`, LiveKit's server, FlashInfer's sampler for sm120 (179.0 s), the control plane up |
 | `gpu` | 1.4 | the card's facts, vLLM's parse of both configurations, the preflight |
 | `warm` | 28.8 | the four compile configurations from empty caches: frozen's three servers 1,232.1 s to ready (the STT 502.9, the TTS 34.8, the engine 692.4), then 176.9, 152.5 and 152.6 s |
 | `block0` | 4.1 | `smoke.sh`, the listener audit (the three GPU servers in network namespaces of their own), a 2-turn call |

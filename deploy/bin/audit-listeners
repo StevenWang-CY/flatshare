@@ -1,34 +1,34 @@
 #!/usr/bin/env python3
 """audit-listeners [--expect SOCKET]...: fail unless the box's own processes listen only where they may.
 
-A process of ours runs in a unit named lh-*.service: its cgroup's under systemd, or, under deploy/bin/lh-svc, whose
-processes stay in the session's cgroup, the unit that lh-svc names in its environment (LH_SVC_UNIT), as gpu-guard tells
-them apart from the hosts' other work. That name and the marks below are read from /proc/PID/environ, or, where a
-process's shows nothing, from its nearest parent's that shows them, a mark only within the process's unit: setproctitle
-blanks /proc/PID/environ, as vLLM's engine core does when it sets its title, while its server's keeps them. Over TCP
-and UDP such a process may listen only where ALLOWED says, on loopback:
+A process of ours runs in a unit named flatshare-*.service: its cgroup's under systemd, or, under
+deploy/bin/flatshare-svc, whose processes stay in the session's cgroup, the unit that flatshare-svc names in its
+environment (FLATSHARE_SVC_UNIT), as gpu-guard tells them apart from the hosts' other work. That name and the marks
+below are read from /proc/PID/environ, or, where a process's shows nothing, from its nearest parent's that shows them, a
+mark only within the process's unit: setproctitle blanks /proc/PID/environ, as vLLM's engine core does when it sets its
+title, while its server's keeps them. Over TCP and UDP such a process may listen only where ALLOWED says, on loopback:
 the gateway's port on cyan, and an SGLang engine (the sglang variant), which serves no Unix socket. Its Unix sockets
-must be under $XDG_RUNTIME_DIR, which only this user may enter, and $XDG_RUNTIME_DIR/lh must be 0700. A listener on an
-allowed address that is not ours holds our place for another user and fails too, and so does each SOCKET given that
-nobody listens on. The user manager (systemd --user) holds the sockets of socket units, the gateway's
-(lh-gateway.socket) among them, also while no gateway runs: on an allowed address, its socket is the unit's. `ss` names
-only this user's processes, so the audit runs as the deployment's user, in the host's network namespace: the voice
+must be under $XDG_RUNTIME_DIR, which only this user may enter, and $XDG_RUNTIME_DIR/flatshare must be 0700. A listener
+on an allowed address that is not ours holds our place for another user and fails too, and so does each SOCKET given
+that nobody listens on. The user manager (systemd --user) holds the sockets of socket units, the gateway's
+(flatshare-gateway.socket) among them, also while no gateway runs: on an allowed address, its socket is the unit's. `ss`
+names only this user's processes, so the audit runs as the deployment's user, in the host's network namespace: the voice
 plane's namespace on cyan has no route in, and its listeners do not show. On a host whose kernel refuses unprivileged
-user namespaces the voice plane runs in the host's namespace instead (LH_VOICENET=host, the single host's degraded
-path, which its preflight reports), and in-voicenet marks its processes LH_VOICENET=host: there its units' UDP sockets
-(the WebRTC candidates, on the host's interfaces), loopback TCP listeners and file sockets are accepted, and counted
-apart.
+user namespaces the voice plane runs in the host's namespace instead (FLATSHARE_VOICENET=host, the single host's
+degraded path, which its preflight reports), and in-voicenet marks its processes FLATSHARE_VOICENET=host: there its
+units' UDP sockets (the WebRTC candidates, on the host's interfaces), loopback TCP listeners and file sockets are
+accepted, and counted apart.
 
 The GPU node's servers run in network namespaces of their own (deploy/bin/in-private-net), which ss here does not
 list either: their listeners there, the engine cores' loopback ones and CUDA's abstract sockets, are read from the
 namespaces' own tables (/proc/PID/net) and accepted, since no other user reaches a namespace of ours, but their file
 sockets are reached through the file system from any namespace and are judged as here. Where the kernel refuses
-unprivileged user namespaces they run in the host's namespace (LH_PRIVATE_NET=host, which the host's drop-ins set
+unprivileged user namespaces they run in the host's namespace (FLATSHARE_PRIVATE_NET=host, which the host's drop-ins set
 and in-private-net honours): there their engine cores' loopback TCP listeners on ephemeral ports (torch's gloo groups)
 and CUDA's @cuda-uvmfd- sockets are accepted, and counted apart, and anything else of theirs is judged as everywhere.
-The host's namespace is this user's manager's (systemd --user), or the audit's own where none runs (lh-svc) or the
-kernel keeps the manager's from its user (Ubuntu 24.04's): run in another, the audit judges nothing and exits 2, and a
-process of ours whose namespace it cannot read fails it.
+The host's namespace is this user's manager's (systemd --user), or the audit's own where none runs (flatshare-svc) or
+the kernel keeps the manager's from its user (Ubuntu 24.04's): run in another, the audit judges nothing and exits 2, and
+a process of ours whose namespace it cannot read fails it.
 deploy/phastform/smoke.sh runs it on a GPU node, and deploy/deploy.sh after each install.
 """
 
@@ -43,19 +43,23 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
-PROC = Path(os.environ.get("LH_AUDIT_PROC", "/proc"))
+PROC = Path(os.environ.get("FLATSHARE_AUDIT_PROC", "/proc"))
 """Where the processes' cgroups and environments are read (a test sets another)."""
-UNIT = re.compile(r"/(lh-[A-Za-z0-9@._-]+\.service)$")
-SVC_UNIT = re.compile(rb"LH_SVC_UNIT=(lh-[A-Za-z0-9@._-]+\.service)")
-"""deploy/bin/lh-svc's name for the unit a process runs in, in its environment."""
-VOICE = {"lh-livekit.service", "lh-voice-worker.service", "lh-voicenet.service"}
-"""The voice plane's units, which in-voicenet runs in its namespace, or, with LH_VOICENET=host, in the host's."""
-PRIVATE = {"lh-engine.service", "lh-stt.service", "lh-tts.service"}
+UNIT = re.compile(r"/(flatshare-[A-Za-z0-9@._-]+\.service)$")
+SVC_UNIT = re.compile(rb"FLATSHARE_SVC_UNIT=(flatshare-[A-Za-z0-9@._-]+\.service)")
+"""deploy/bin/flatshare-svc's name for the unit a process runs in, in its environment."""
+VOICE = {
+    "flatshare-livekit.service",
+    "flatshare-voice-worker.service",
+    "flatshare-voicenet.service",
+}
+"""The voice plane's units, which in-voicenet runs in its namespace, or, with FLATSHARE_VOICENET=host, in the host's."""
+PRIVATE = {"flatshare-engine.service", "flatshare-stt.service", "flatshare-tts.service"}
 """The GPU node's server units, which in-private-net runs in a network namespace of their own, or, with
-LH_PRIVATE_NET=host, in the host's."""
+FLATSHARE_PRIVATE_NET=host, in the host's."""
 MANAGER = re.compile(r"/user@\d+\.service/init\.scope$")
 """The cgroup of the user manager itself."""
-ALLOWED = {"lh-gateway.service": {"127.0.0.1:18080"}}
+ALLOWED = {"flatshare-gateway.service": {"127.0.0.1:18080"}}
 """The TCP and UDP listeners each unit may have: the gateway's, for AIPerf and the agents, with their keys."""
 LOOPBACK = re.compile(r"^(127\.\d+\.\d+\.\d+|\[::1\]|localhost)(%\w+)?:\d+$")
 CUDA_ABSTRACT = "@cuda-uvmfd-"
@@ -86,9 +90,10 @@ def lineage(pid: str) -> Iterator[str]:
 
 
 def unit_of(pid: str) -> str | None:
-    """The lh-*.service unit that process ``pid`` runs in, or None (another unit's, or gone): its cgroup's, or the one
-    lh-svc names in its environment. /proc/PID/environ may no longer show it: setproctitle blanks it there, as vLLM's
-    engine core does when it sets its title, so the name is its nearest parent's that shows one, its server's."""
+    """The flatshare-*.service unit that process ``pid`` runs in, or None (another unit's, or gone): its cgroup's, or
+    the one flatshare-svc names in its environment. /proc/PID/environ may no longer show it: setproctitle blanks it
+    there, as vLLM's engine core does when it sets its title, so the name is its nearest parent's that shows one, its
+    server's."""
     try:
         cgroup = (PROC / pid / "cgroup").read_text()
     except OSError:
@@ -116,19 +121,21 @@ def marked(unit: str, pid: str, mark: bytes) -> bool:
 
 def in_host_namespace(unit: str, pids: list[str]) -> bool:
     """Whether ``unit`` is the voice plane's and in-voicenet ran each of its processes ``pids`` in the host's network
-    namespace (LH_VOICENET=host)."""
+    namespace (FLATSHARE_VOICENET=host)."""
     return (
-        unit in VOICE and bool(pids) and all(marked(unit, pid, b"LH_VOICENET=host") for pid in pids)
+        unit in VOICE
+        and bool(pids)
+        and all(marked(unit, pid, b"FLATSHARE_VOICENET=host") for pid in pids)
     )
 
 
 def marked_private(unit: str, pids: list[str]) -> bool:
     """Whether ``unit`` is a GPU server's and in-private-net ran each of its processes ``pids`` in the host's network
-    namespace (LH_PRIVATE_NET=host)."""
+    namespace (FLATSHARE_PRIVATE_NET=host)."""
     return (
         unit in PRIVATE
         and bool(pids)
-        and all(marked(unit, pid, b"LH_PRIVATE_NET=host") for pid in pids)
+        and all(marked(unit, pid, b"FLATSHARE_PRIVATE_NET=host") for pid in pids)
     )
 
 
@@ -175,8 +182,8 @@ def readable_netns(pid: str) -> str | None:
 
 def host_netns() -> str | None:
     """The host's network namespace: this user's manager's (systemd --user), where one runs and its namespace is
-    readable, else the audit's own (lh-svc's hosts, and a manager the kernel keeps from its user: one started under
-    another identity is not dumpable, as on Ubuntu 24.04)."""
+    readable, else the audit's own (flatshare-svc's hosts, and a manager the kernel keeps from its user: one started
+    under another identity is not dumpable, as on Ubuntu 24.04)."""
     for entry in PROC.iterdir():
         pid = entry.name
         if pid.isdigit() and is_manager(pid) and owned(pid) and (space := readable_netns(pid)):
@@ -226,7 +233,7 @@ def namespace_listeners(pid: str) -> list[tuple[str, str, str]]:
 
 
 def our_processes() -> dict[str, str]:
-    """Every process of this user's in an lh-*.service unit, with its unit."""
+    """Every process of this user's in a flatshare-*.service unit, with its unit."""
     found = {}
     for entry in PROC.iterdir():
         if entry.name.isdigit() and owned(entry.name) and (unit := unit_of(entry.name)):
@@ -250,7 +257,7 @@ def is_sglang(pid: str) -> bool:
 
 
 def units_of(pids: list[str]) -> dict[str, list[str]]:
-    """The lh-*.service units that processes ``pids`` run in, each with its processes among them."""
+    """The flatshare-*.service units that processes ``pids`` run in, each with its processes among them."""
     found: dict[str, list[str]] = {}
     for pid in pids:
         if unit := unit_of(pid):
@@ -295,12 +302,12 @@ def main(argv: list[str]) -> int:
         )
         return 2
     problems = []
-    lh = Path(runtime, "lh")
-    if lh.exists():
-        mode = stat.S_IMODE(lh.stat().st_mode)
-        if mode != 0o700 or lh.stat().st_uid != os.getuid():
+    socket_dir = Path(runtime, "flatshare")
+    if socket_dir.exists():
+        mode = stat.S_IMODE(socket_dir.stat().st_mode)
+        if mode != 0o700 or socket_dir.stat().st_uid != os.getuid():
             problems.append(
-                f"{lh} is mode {mode:o}, owned by uid {lh.stat().st_uid}: it must be 0700 and ours"
+                f"{socket_dir} is mode {mode:o}, owned by uid {socket_dir.stat().st_uid}: it must be 0700 and ours"
             )
 
     ours = {"tcp": 0, "unix": 0}
@@ -330,7 +337,7 @@ def main(argv: list[str]) -> int:
                 degraded["tcp"] += 1
                 continue
             ours["tcp"] += 1
-            sglang = unit == "lh-engine.service" and any(map(is_sglang, pids))
+            sglang = unit == "flatshare-engine.service" and any(map(is_sglang, pids))
             if address in ALLOWED.get(unit, ()) or (sglang and LOOPBACK.match(address)):
                 continue
             problems.append(f"{unit} listens on {kind} {address}")
@@ -399,7 +406,7 @@ def main(argv: list[str]) -> int:
     plane = ""
     if any(voice.values()):
         plane = (
-            "; the voice plane runs in the host's network namespace (LH_VOICENET=host) with "
+            "; the voice plane runs in the host's network namespace (FLATSHARE_VOICENET=host) with "
             f"{sum(voice.values())} listeners: {voice['udp']} UDP sockets, {voice['tcp']} loopback TCP listeners "
             f"and {voice['unix']} file socket{'s' if voice['unix'] != 1 else ''}"
         )
@@ -414,7 +421,7 @@ def main(argv: list[str]) -> int:
         )
     if any(degraded.values()):
         own = (
-            "; the GPU servers run in the host's network namespace (LH_PRIVATE_NET=host) with "
+            "; the GPU servers run in the host's network namespace (FLATSHARE_PRIVATE_NET=host) with "
             f"{degraded['tcp']} loopback TCP listeners and {degraded['abstract']} abstract sockets"
         )
     print(

@@ -1,0 +1,20 @@
+[Unit]
+Description=Flatshare gateway's listening sockets on cyan: 127.0.0.1:18080 and the voice-plane socket %t/flatshare/gateway.sock
+Documentation=https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md
+
+[Socket]
+# systemd holds these and passes them to each gateway process (LISTEN_FDS), so that they outlive any one of them:
+# while the gateway restarts, starts again after a crash or hands over to its successor on a reload, connections
+# wait in the backlog instead of being refused. gateway.toml's [[listen]] entries name the same addresses (%t is
+# /run/user/1007 for cyan's deploy user), and the gateway refuses a socket that none of them names.
+ListenStream=127.0.0.1:18080
+ListenStream=%t/flatshare/gateway.sock
+# Only this user may enter %t/flatshare and open the socket, so its requests need no key.
+SocketMode=0600
+DirectoryMode=0700
+# The backlog the gateway's own listeners had (tokio's).
+Backlog=1024
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

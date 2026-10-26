@@ -1,7 +1,7 @@
-# E2 arm 9, Leaseholder, in the discriminating scenario (24 session trees on weka-x32-long, as disc-frozen-s24.toml).
+# E2 arm 9 in the discriminating scenario (24 session trees on weka-x32-long, as disc-frozen-s24.toml).
 # Arm 9 with the voice worker's lifecycle events off: the gateway knows a turn only from its realtime request.
 arm = 9
-label = "Leaseholder without lifecycle events"
+label = "Arm 9 without lifecycle events"
 
 [agents]
 sessions = 24
@@ -11,7 +11,7 @@ data = "weka-x32-long"
 events = false
 
 [gateway.admission]
-policy = "leaseholder"
+policy = "lifecycle"
 headroom_tokens = 1024
 critical_prefill_budget_ms = 150
 degrade_max_tokens = 16

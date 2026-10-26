@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # rehearsal-ssh HOST COMMAND...: ssh HOST COMMAND, with COMMAND run from the rehearsal's home on HOST in its environment
-# (rehearsal.env, which rehearse.sh init writes there): HOME is the rehearsal's, so the kit's ~/leaseholder is
-# ~/REHEARSAL_HOME/leaseholder. deploy/a100/push.sh and pull.sh take it as LH_SSH, and rsync -e, unchanged. It refuses
-# where that home has no rehearsal.env, so that nothing it runs reaches the login home, where the box's deployment is.
-# REHEARSAL_SSH is the ssh command (default ssh), REHEARSAL_HOME the home's name under the login home; HOST takes no
-# user@ (rsync would pass it as -l), and no ssh option comes before it.
+# (rehearsal.env, which rehearse.sh init writes there): HOME is the rehearsal's, so the kit's ~/flatshare is
+# ~/REHEARSAL_HOME/flatshare. deploy/a100/push.sh and pull.sh take it as FLATSHARE_SSH, and rsync -e, unchanged. It
+# refuses where that home has no rehearsal.env, so that nothing it runs reaches the login home, where the box's
+# deployment is. REHEARSAL_SSH is the ssh command (default ssh), REHEARSAL_HOME the home's name under the login home;
+# HOST takes no user@ (rsync would pass it as -l), and no ssh option comes before it.
 set -euo pipefail
 home=${REHEARSAL_HOME:?REHEARSAL_HOME names the rehearsal's home under the host's login home}
 [[ $home =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "rehearsal-ssh: REHEARSAL_HOME is one directory name: '$home'" >&2; exit 2; }

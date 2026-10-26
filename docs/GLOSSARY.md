@@ -1,7 +1,14 @@
 # Glossary
 
 The terms the other documents use, each with where it is defined in full. Code identifiers and the records' labels
-(arm files, point names, `policy = "leaseholder"`) keep their names; prose uses the names below.
+(point names, arm labels) keep their names; prose uses the names below.
+
+The project was called Leaseholder through v1.1. The records committed before its rename on 2026-10-26 name it and
+its parts that way: `Leaseholder` in arm 9's labels, `lh-*` units and tools, `lh_gateway_*` metrics, `LH_*`
+variables, `X-LH-*` headers, `leaseholder_*` packages and loggers, `lh_*_scheduler` modules, `~/leaseholder` paths,
+and `policy = "leaseholder"` for the lifecycle policy. The code that reads records accepts the former names of what it
+reads (the gateway's metrics, the voice worker's loggers, the scheduler modules and the policy's name), and the report
+shows arm 9's labels as its arm files give them now, `Arm 9` for `Leaseholder`.
 
 ## The change and its parts
 
@@ -15,7 +22,7 @@ The terms the other documents use, each with where it is defined in full. Code i
   configuration to deploy).
 - **make-room**: the engine variant that builds vLLM 0.32.0's scheduler at each start from the PRs' scheduler diff,
   backported to 0.32.0, and a patch of its own (its switches, the reserve and its counters), and loads it with
-  `--scheduler-cls` ([python/leaseholder_vllm](../python/leaseholder_vllm/README.md)). E2 measured the PRs'
+  `--scheduler-cls` ([python/flatshare_vllm](../python/flatshare_vllm/README.md)). E2 measured the PRs'
   configuration as make-room with the PRs' switch values. Ported to 0.32.0, the PRs' diff schedules identically to it:
   `tests/test_trace.py` runs the variant and the PRs' own patches on the same request traces and requires every step
   to be equal. Run against the module W5's points loaded, it finds them equal but for two things: the held-token
@@ -90,7 +97,7 @@ The terms the other documents use, each with where it is defined in full. Code i
 
 ## The lifecycle policy and the simulator's coordinates
 
-- **The lifecycle policy** (`policy = "lifecycle"`; E2's arm files spell it `leaseholder`): the gateway policy timed by the conversation, which E2 measured
+- **The lifecycle policy** (`policy = "lifecycle"`; `leaseholder` in the records before the rename): the gateway policy timed by the conversation, which E2 measured
   as a negative result. Its **headroom** keeps one voice turn of KV free from speech onset by deferring new background
   requests; its **throttle** budgets background prefill from the end of a turn to the reply's first audio; **degrade**
   caps a reply at 16 tokens when the headroom was not there; **aging** admits deferred work after 10 s

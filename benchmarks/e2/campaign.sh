@@ -1,36 +1,37 @@
 #!/usr/bin/env bash
 # campaign.sh [--dry-run] [--pause] [--local] [--until HH:MM] CAMPAIGN: measure the E2 points a campaign file lists,
-# from a workstation with SSH to the hosts, like deploy/deploy.sh. CAMPAIGN names arm files, one per line, relative to itself; a line
-# `agents-seed N` sets AIPerf's seed for all of its points (lh-bench e2 run --agents-seed), in place of each arm
-# file's [agents] seed, a line `kv-sample-s SECONDS` the KV sampler's interval (lh-bench e2 run --kv-sample-s;
-# 0 samples nothing, as W5's points ran), and a line `save-audio` has the callers save each call's audio (lh-bench e2
-# run --save-audio), for benchmarks/e2/demo.py's video. For each point whose run directory on cyan is not complete,
-# in order, it
-#   1. switches the GPU node to the arm's engine (deploy/phastform/variant.sh use, with what lh-bench e2 engine prints),
-#      with the measurement drop-in on (variant.sh measure on: vLLM's development routes, which lh-bench e2 run reads),
-#   2. measures the point on cyan (lh-bench e2 run) into ~/leaseholder/runs/e2/CAMPAIGN/POINT, with the GPU node's
-#      deployed revision (its ~/leaseholder/src/DEPLOYED as the point starts) for run.json, sampling its GPU's
+# from a workstation with SSH to the hosts, like deploy/deploy.sh. CAMPAIGN names arm files, one per line, relative to
+# itself; a line `agents-seed N` sets AIPerf's seed for all of its points (flatshare-bench e2 run --agents-seed), in
+# place of each arm file's [agents] seed, a line `kv-sample-s SECONDS` the KV sampler's interval (flatshare-bench e2 run
+# --kv-sample-s; 0 samples nothing, as W5's points ran), and a line `save-audio` has the callers save each call's audio
+# (flatshare-bench e2 run --save-audio), for benchmarks/e2/demo.py's video. For each point whose run directory on cyan
+# is not complete, in order, it
+#   1. switches the GPU node to the arm's engine (deploy/phastform/variant.sh use, with what flatshare-bench e2 engine
+#      prints), with the measurement drop-in on (variant.sh measure on: vLLM's development routes, which flatshare-bench
+#      e2 run reads),
+#   2. measures the point on cyan (flatshare-bench e2 run) into ~/flatshare/runs/e2/CAMPAIGN/POINT, with the GPU node's
+#      deployed revision (its ~/flatshare/src/DEPLOYED as the point starts) for run.json, sampling its GPU's
 #      clocks and temperature once a second meanwhile into that directory's gpu.csv,
-#   3. fetches that run directory into $LH_E2_RESULTS/CAMPAIGN/POINT (default ~/leaseholder/runs/e2).
+#   3. fetches that run directory into $FLATSHARE_E2_RESULTS/CAMPAIGN/POINT (default ~/flatshare/runs/e2).
 # A complete point is skipped, so running a stopped campaign again resumes it; the first failure stops it. At the end
-# it writes the campaign's frontier (lh-bench e2 report, fetched into CAMPAIGN/report) and puts cyan's units back
-# (lh-bench e2 reset). --pause then stops the GPU node's units. A campaign that fails once it has switched the node
-# puts cyan's units back and pauses too, unless a point may still be running on cyan (the lock is held, or the
-# connection to cyan was lost): then it leaves both as they are, and says so. --dry-run copies and checks every arm file and lists
-# the points with their engines, without switching or measuring anything. LH_SSH is your ssh command for the hosts,
-# as for deploy.sh; LH_CYAN names cyan, and LH_GPU the GPU node every point of the campaign runs on, one host, which
-# run.json names after its first label (phastform for phastform). LH_PROFILE names the GPU node's hardware
-# profile (deploy/profiles) for lh-bench e2 run's engine check, when it is not the one cyan's host settings name, and
-# LH_NODE_DIR the GPU node's directory under its home, whose variant.sh switches the engine (default
-# leaseholder/src/deploy/phastform; a node rendered from another profile has its own, leaseholder/node).
-# --local runs the campaign on a single host that is cyan and the GPU node at once (docs/HARDWARE.md): every command
-# runs here (deploy/bin/lh-local in place of ssh), the node is localhost, and the results go to ~/leaseholder/results/e2
-# unless LH_E2_RESULTS says otherwise. --until HH:MM (UTC; tomorrow's when today's has passed) starts no point that
-# cannot end before then, by W5's durations: 13 minutes for a point with agents, 7 without, and 2 more for an engine
-# switch, until this host has measured its own: each point and engine switch campaign.sh runs goes to durations.tsv
-# beside the campaigns' results (KIND SECONDS a line: switch, voice, or agents:SESSIONS), and a kind measured here
-# is budgeted by its longest. --until-epoch SECONDS does the same at an absolute time, which has no tomorrow:
-# benchmarks/a100/run.sh hands its one deadline to every campaign of a run so.
+# it writes the campaign's frontier (flatshare-bench e2 report, fetched into CAMPAIGN/report) and puts cyan's units back
+# (flatshare-bench e2 reset). --pause then stops the GPU node's units. A campaign that fails once it has switched the
+# node puts cyan's units back and pauses too, unless a point may still be running on cyan (the lock is held, or the
+# connection to cyan was lost): then it leaves both as they are, and says so. --dry-run copies and checks every arm file
+# and lists the points with their engines, without switching or measuring anything. FLATSHARE_SSH is your ssh command
+# for the hosts, as for deploy.sh; FLATSHARE_CYAN names cyan, and FLATSHARE_GPU the GPU node every point of the campaign
+# runs on, one host, which run.json names after its first label (phastform for phastform).
+# FLATSHARE_PROFILE names the GPU node's hardware profile (deploy/profiles) for flatshare-bench e2 run's engine check,
+# when it is not the one cyan's host settings name, and FLATSHARE_NODE_DIR the GPU node's directory under its home,
+# whose variant.sh switches the engine (default flatshare/src/deploy/phastform; a node rendered from another profile has
+# its own, flatshare/node). --local runs the campaign on a single host that is cyan and the GPU node at once
+# (docs/HARDWARE.md): every command runs here (deploy/bin/flatshare-local in place of ssh), the node is localhost, and
+# the results go to ~/flatshare/results/e2 unless FLATSHARE_E2_RESULTS says otherwise. --until HH:MM (UTC; tomorrow's
+# when today's has passed) starts no point that cannot end before then, by W5's durations: 13 minutes for a point with
+# agents, 7 without, and 2 more for an engine switch, until this host has measured its own: each point and engine switch
+# campaign.sh runs goes to durations.tsv beside the campaigns' results (KIND SECONDS a line: switch, voice, or
+# agents:SESSIONS), and a kind measured here is budgeted by its longest. --until-epoch SECONDS does the same at an
+# absolute time, which has no tomorrow: benchmarks/a100/run.sh hands its one deadline to every campaign of a run so.
 set -euo pipefail
 usage() {
   echo "usage: campaign.sh [--dry-run] [--pause] [--local] [--until HH:MM | --until-epoch SECONDS] CAMPAIGN" >&2
@@ -59,17 +60,17 @@ done
 (($# == 1)) || usage
 [[ -f $1 ]] || { echo "campaign: no such file: $1" >&2; exit 2; }
 if $local; then
-  ssh=$(cd "$(dirname "$0")/../../deploy/bin" && pwd)/lh-local
+  ssh=$(cd "$(dirname "$0")/../../deploy/bin" && pwd)/flatshare-local
   cyan=localhost
   gpu=localhost
 else
-  ssh=${LH_SSH:-ssh}
-  cyan=${LH_CYAN:-cyan}
-  gpu=${LH_GPU:-phastform}
+  ssh=${FLATSHARE_SSH:-ssh}
+  cyan=${FLATSHARE_CYAN:-cyan}
+  gpu=${FLATSHARE_GPU:-phastform}
 fi
-node_dir=${LH_NODE_DIR:-leaseholder/src/deploy/phastform}
+node_dir=${FLATSHARE_NODE_DIR:-flatshare/src/deploy/phastform}
 [[ $node_dir =~ ^[A-Za-z0-9._/-]+$ && $node_dir != /* ]] ||
-  { echo "campaign: LH_NODE_DIR is a directory under the GPU node's home: '$node_dir'" >&2; exit 2; }
+  { echo "campaign: FLATSHARE_NODE_DIR is a directory under the GPU node's home: '$node_dir'" >&2; exit 2; }
 [[ -z $until || -z $until_epoch ]] || { echo "campaign: --until or --until-epoch, not both" >&2; exit 2; }
 deadline=""
 if [[ -n $until ]]; then
@@ -80,22 +81,22 @@ elif [[ -n $until_epoch ]]; then
   deadline=$until_epoch
   until=$(date -u -d "@$deadline" +%H:%M 2>/dev/null || date -u -r "$deadline" +%H:%M) # GNU date, else BSD's
 fi
-[[ -n $gpu && $gpu != *[,[:space:]]* ]] || { echo "campaign: LH_GPU names the GPU node's host, one: '${LH_GPU-}'" >&2; exit 2; }
+[[ -n $gpu && $gpu != *[,[:space:]]* ]] || { echo "campaign: FLATSHARE_GPU names the GPU node's host, one: '${FLATSHARE_GPU-}'" >&2; exit 2; }
 node=${gpu%%.*}
 profile=""
-if [[ -n ${LH_PROFILE:-} ]]; then
-  [[ $LH_PROFILE =~ ^[a-z0-9][a-z0-9.-]*$ ]] || { echo "campaign: LH_PROFILE is a profile's name: '$LH_PROFILE'" >&2; exit 2; }
-  profile=" --profile $LH_PROFILE"
+if [[ -n ${FLATSHARE_PROFILE:-} ]]; then
+  [[ $FLATSHARE_PROFILE =~ ^[a-z0-9][a-z0-9.-]*$ ]] || { echo "campaign: FLATSHARE_PROFILE is a profile's name: '$FLATSHARE_PROFILE'" >&2; exit 2; }
+  profile=" --profile $FLATSHARE_PROFILE"
 fi
 name=$(basename "$1" .campaign)
 here=$(cd "$(dirname "$1")" && pwd)
 if $local; then
-  results=${LH_E2_RESULTS:-$HOME/leaseholder/results/e2}/$name # beside the runs, not over them
+  results=${FLATSHARE_E2_RESULTS:-$HOME/flatshare/results/e2}/$name # beside the runs, not over them
 else
-  results=${LH_E2_RESULTS:-$HOME/leaseholder/runs/e2}/$name
+  results=${FLATSHARE_E2_RESULTS:-$HOME/flatshare/runs/e2}/$name
 fi
-runs=leaseholder/runs/e2/$name # on cyan, under the home directory, as every path given to ssh here
-bench=leaseholder/venvs/bench/bin/lh-bench
+runs=flatshare/runs/e2/$name # on cyan, under the home directory, as every path given to ssh here
+bench=flatshare/venvs/bench/bin/flatshare-bench
 complete() { echo "grep -qs '\"status\": \"complete\"' $runs/$1/run.json"; } # run.json as e2 run writes it
 mkdir -p "$results"
 log() { echo "[$(date -u +%FT%TZ)] $*" | tee -a "$results/campaign.log"; }
@@ -146,7 +147,7 @@ count="${#points[@]} point"; ((${#points[@]} == 1)) || count+=s
 at=$(git -C "$here" describe --always --dirty 2>/dev/null || head -n 1 "$(dirname "$0")/../../DEPLOYED" 2>/dev/null || true)
 log "campaign $name: $count, arm files at ${at:-?}$seeded${deadline:+, until $until UTC (epoch $deadline)}"
 
-# Copy the arm files to cyan, where lh-bench reads them, and check each one there.
+# Copy the arm files to cyan, where flatshare-bench reads them, and check each one there.
 $ssh "$cyan" mkdir -p "$runs/arms"
 rsync -a -e "$ssh" "${arms[@]}" "$cyan:$runs/arms/"
 engines=()
@@ -167,19 +168,19 @@ fetch() { # fetch POINT: mirror its run directory, without AIPerf's copy of the 
 # A consumer card's boost clock follows its temperature, so each point keeps the clocks it ran at: nvidia-smi on the
 # GPU node, once a second while the point runs (line-buffered, timestamps in UTC); it stops when its ssh does. The
 # GPU's name and UUID come last, so that a record says which card it ran on. A host that lends one of several GPUs
-# names it in its environment (LH_GPU_ID, from its env.sh): only that GPU is sampled, and the file's first line, a
-# comment, says which (lh-bench's record reads that GPU's rows alone).
+# names it in its environment (FLATSHARE_GPU_ID, from its env.sh): only that GPU is sampled, and the file's first line,
+# a comment, says which (flatshare-bench's record reads that GPU's rows alone).
 gpu_query=timestamp,clocks.sm,clocks.mem,temperature.gpu,power.draw,clocks_event_reasons.active,name,uuid
 sampler=""
 restore() { # put cyan's units back and, with --pause, stop the GPU node's units
   $ssh "$cyan" "$bench e2 reset" 2>&1 | tee -a "$results/campaign.log" ||
-    { log "campaign: lh-bench e2 reset failed"; return 1; }
+    { log "campaign: flatshare-bench e2 reset failed"; return 1; }
   if $pause; then
     # Naming the units makes systemctl wait for their stops too, not only the target's, which returns at once: a
     # campaign started right after would otherwise meet an engine still shutting down.
-    $ssh "$gpu" systemctl --user stop leaseholder.target lh-engine lh-stt lh-tts ||
+    $ssh "$gpu" systemctl --user stop flatshare.target flatshare-engine flatshare-stt flatshare-tts ||
       { log "campaign: the units of $node did not stop"; return 1; }
-    log "$node is paused; start it again with systemctl --user start leaseholder.target"
+    log "$node is paused; start it again with systemctl --user start flatshare.target"
   fi
 }
 # changed: the GPU node was switched; busy: a point may still be running on cyan, which a reset or a pause would spoil;
@@ -199,8 +200,8 @@ finish() {
 }
 trap finish EXIT
 sample_gpu() { # sample_gpu POINT
-  $ssh "$gpu" "if [ -n \"\${LH_GPU_ID:-}\" ]; then echo \"# gpu \$LH_GPU_ID\"; fi
-    exec env TZ=UTC stdbuf -oL nvidia-smi \${LH_GPU_ID:+-i \"\$LH_GPU_ID\"} --query-gpu=$gpu_query --format=csv,noheader -l 1" \
+  $ssh "$gpu" "if [ -n \"\${FLATSHARE_GPU_ID:-}\" ]; then echo \"# gpu \$FLATSHARE_GPU_ID\"; fi
+    exec env TZ=UTC stdbuf -oL nvidia-smi \${FLATSHARE_GPU_ID:+-i \"\$FLATSHARE_GPU_ID\"} --query-gpu=$gpu_query --format=csv,noheader -l 1" \
     >"$results/$1.gpu.csv" 2>>"$results/campaign.log" &
   sampler=$!
 }
@@ -269,11 +270,11 @@ for i in "${!points[@]}"; do
   previous=${engines[$i]}
   # A point whose ssh session dropped may still be running on cyan; switching the engine would spoil it.
   status=0
-  $ssh "$cyan" flock -n leaseholder/runs/.lh-bench-e2.lock true || status=$?
+  $ssh "$cyan" flock -n flatshare/runs/.flatshare-bench-e2.lock true || status=$?
   if ((status)); then
     busy=true
     ((status != 255)) || die "$point: lost the connection to cyan (ssh exit status 255)"
-    die "a point is still running on cyan (its pid is in leaseholder/runs/.lh-bench-e2.lock); run again once it ends"
+    die "a point is still running on cyan (its pid is in flatshare/runs/.flatshare-bench-e2.lock); run again once it ends"
   fi
   changed=true
   switched=$(date -u +%s)
@@ -283,7 +284,7 @@ for i in "${!points[@]}"; do
     tee -a "$results/campaign.log" || die "$point: $node did not start ${engines[$i]} (journalctl there)"
   # The node's deployed revision as the point starts (deploy/deploy.sh writes it), for run.json beside cyan's; empty
   # when the node has none.
-  deployed=$($ssh "$gpu" cat leaseholder/src/DEPLOYED 2>/dev/null) || deployed=""
+  deployed=$($ssh "$gpu" cat flatshare/src/DEPLOYED 2>/dev/null) || deployed=""
   [[ $deployed =~ ^[A-Za-z0-9._+-]+$ ]] || deployed=""
   log "$point: $node has ${deployed:-no DEPLOYED}"
   if $switching; then echo "switch $(($(date -u +%s) - switched))" >>"$durations"; fi
@@ -309,7 +310,7 @@ dirs=""
 for point in "${points[@]}"; do dirs+=" $runs/$point"; done
 log "the frontier of $name"
 $ssh "$cyan" "$bench e2 report$dirs --out $runs/report" 2>&1 | tee -a "$results/campaign.log" ||
-  die "lh-bench e2 report failed"
+  die "flatshare-bench e2 report failed"
 rsync -a --delete -e "$ssh" "$cyan:$runs/report/" "$results/report/"
 ended=true
 restore || exit 1

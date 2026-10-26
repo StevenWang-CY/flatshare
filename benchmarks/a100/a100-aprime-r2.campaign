@@ -1,10 +1,10 @@
 # The A100 run's optional arm 5, A' (docs/HARDWARE.md, the optional arms), round 2 of 2: the box's pool at 32 sessions,
 # the frozen engine and the PRs' values; the agents' sample of seed 10 + N. Voice alone, the SLO's reference, is the
-# core's five points on this host (lh-bench e2 report reads arm 1 on the same hardware), so neither round repeats it.
-# Round 1 starts on the frozen engine the run's previous block ended on, round 2 on the PRs' values round 1 ended on.
-# On the A100 host:
-#   LH_NODE_DIR=leaseholder/node leaseholder/src/benchmarks/e2/campaign.sh --local \
-#     leaseholder/src/benchmarks/a100/a100-aprime-r2.campaign
+# core's five points on this host (flatshare-bench e2 report reads arm 1 on the same hardware), so neither round repeats
+# it. Round 1 starts on the frozen engine the run's previous block ended on, round 2 on the PRs' values round 1 ended
+# on. On the A100 host:
+#   FLATSHARE_NODE_DIR=flatshare/node flatshare/src/benchmarks/e2/campaign.sh --local \
+#     flatshare/src/benchmarks/a100/a100-aprime-r2.campaign
 
 agents-seed 12
 

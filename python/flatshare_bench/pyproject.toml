@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flatshare-bench"
+version = "1.1.0"
+description = "Flatshare's benchmark toolchain: block-scaled agent traces, AIPerf plugins, latency probes, E2's harness and report, and the failure drills' client"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "aiohttp>=3.14,<4",
+    "httpx>=0.28,<0.29",
+    "orjson>=3.11,<4",
+    "fonttools==4.67.0",  # the figures' embedded font subsets: the committed bytes
+    "matplotlib==3.11.2",  # the demo video's frames, which its tests draw
+    "flatshare-stats",  # python/flatshare_stats, from this tree (tool.uv.sources)
+]
+
+[project.optional-dependencies]
+# AIPerf runs a point's agents (flatshare-bench e2 run) and loads the plugins; a report needs none of its
+# packages.
+aiperf = ["aiperf==0.13.0"]
+test = ["pytest>=8,<10", "flatshare-bench[aiperf]"]
+
+[project.scripts]
+flatshare-bench = "flatshare_bench.cli:main"
+
+[project.entry-points."aiperf.plugins"]
+flatshare = "flatshare_bench:plugins.yaml"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+markers = [
+    "integration: needs more than this venv (the demo video's encoding runs the script with uv)",
+]
+
+[tool.uv.sources]
+flatshare-stats = { path = "../flatshare_stats", editable = true }

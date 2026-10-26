@@ -15,9 +15,9 @@ Idle sessions must park somewhere cheaper than the 36,400-token GPU pool. Restor
 
 - **Host tier.** The native `OffloadingConnector` with `offload_prompt_only: false`, sized at 20 GiB (four times the GPU pool) in the frozen box. In vLLM 0.32 it is a shared-memory region in `/dev/shm`, placed by the engine's NUMA policy.
 - **Split of work.** The engine decides what to keep from the contract carried on each request; the control plane decides when to bring KV back, by prediction. Prefetch is a `max_tokens=1` warm-up timed close to the predicted arrival. It is never cancelled mid-load, because an abort discards the restored KV.
-- **Default eviction.** CPU-tier eviction stays LRU. `leaseholder_vllm.policy.LeasePolicy` is switched on only where the simulator shows that CPU-tier eviction binds at the configured RAM ratio (gate G-sim, [EXPERIMENTS.md](../EXPERIMENTS.md#e1-parking)).
-- **Policy behavior.** The policy reads only `kv_transfer_params.leaseholder` (`EngineLeaseHint`), plus recency. It is soft: it refuses a store only where plain LRU would refuse it too, because a refused eviction makes vLLM drop the store silently.
-- **Hit receipts.** `leaseholder_vllm.connector.LeaseConnector` wraps the native connector to return per-request hit receipts (GPU tokens and CPU tokens). The recompute ledger needs that split; vLLM's metrics give it only in aggregate.
+- **Default eviction.** CPU-tier eviction stays LRU. `LeasePolicy` is switched on only where the simulator shows that CPU-tier eviction binds at the configured RAM ratio (gate G-sim, [EXPERIMENTS.md](../EXPERIMENTS.md#e1-parking)).
+- **Policy behavior.** The policy reads only its hint in `kv_transfer_params` (`EngineLeaseHint`), plus recency. It is soft: it refuses a store only where plain LRU would refuse it too, because a refused eviction makes vLLM drop the store silently.
+- **Hit receipts.** `LeaseConnector` wraps the native connector to return per-request hit receipts (GPU tokens and CPU tokens). The recompute ledger needs that split; vLLM's metrics give it only in aggregate.
 
 ## Consequences
 

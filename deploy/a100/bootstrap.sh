@@ -1,58 +1,62 @@
 #!/usr/bin/env bash
 # bootstrap.sh stage|gpu|warm: make one host the GPU node and the control host of a campaign (single-host mode,
-# docs/HARDWARE.md), from the source tree at ~/leaseholder/src, which deploy/a100/push.sh copies there with the
+# docs/HARDWARE.md), from the source tree at ~/flatshare/src, which deploy/a100/push.sh copies there with the
 # corpora and the callers' audio. Each stage is safe to re-run, skips what is done and ends with the preflight
-# (deploy/a100/host.py preflight), whose refused checks fail the stage. Its log: ~/leaseholder/node/bootstrap.log.
+# (deploy/a100/host.py preflight), whose refused checks fail the stage. Its log: ~/flatshare/node/bootstrap.log.
 #   stage  needs no GPU, so it can run before the billed clock: uv and Python 3.12; the host's facts and the node
-#          rendered from deploy/profiles/$LH_PROFILE (a100-40gb) into ~/leaseholder/node (its GPU units name the
+#          rendered from deploy/profiles/$FLATSHARE_PROFILE (a100-40gb) into ~/flatshare/node (its GPU units name the
 #          driver's library directory where the linker does not search it, a container's); the venvs, the engine's
 #          from the lock the driver needs (profile.py's R8); Kokoro and the models at their pinned revisions;
-#          LiveKit and lh-gateway; the files the JIT compilers need; the units and the control plane's
+#          LiveKit and flatshare-gateway; the files the JIT compilers need; the units and the control plane's
 #          configuration, and the control plane started; FlashInfer's sampler compiled for the card
 #   gpu    with the card: the facts again, now with the driver (the engine venv re-synced if the lock changes),
 #          vLLM's own parse of the node's configs, and the preflight with the GPU's checks
 #   warm   one engine start for each compile configuration (cache/warm.json), so that the campaign starts warm
-# LH_GPU_ID names the GPU the host lends, by nvidia-smi's index or its UUID, on a host with several (the preflight
-# refuses several and none named): detect resolves it to its UUID, which the GPU units run on alone and env.sh keeps;
-# LH_ALLOW_MIG=1 measures on a MIG slice, which the preflight otherwise refuses, and env.sh keeps it too.
-# LH_PROFILE names another profile; LH_MODELS adds MODEL@REVISION words to download (the 14B, for C'); LH_WARM is a
-# file of the configurations to warm (host.py warm --configs). The first stage chooses what runs the units, the user
-# manager where it outlives the session (lingering, which it enables where a user may) or else deploy/bin/lh-svc, and
-# env.sh keeps the choice for the later stages and every script that sources it. LH_SUPERVISOR=lh-svc runs them under
-# lh-svc even where systemd's user manager could (docs/HARDWARE.md, single-host mode), and LH_SUPERVISOR=auto
-# chooses again from the facts; either moves the units, stopping them under the supervisor they leave first.
-# Sourced (as a test does), it defines its functions and runs nothing.
+# FLATSHARE_GPU_ID names the GPU the host lends, by nvidia-smi's index or its UUID, on a host with several (the
+# preflight refuses several and none named): detect resolves it to its UUID, which the GPU units run on alone and env.sh
+# keeps; FLATSHARE_ALLOW_MIG=1 measures on a MIG slice, which the preflight otherwise refuses, and env.sh keeps it too.
+# FLATSHARE_PROFILE names another profile; FLATSHARE_MODELS adds MODEL@REVISION words to download (the 14B, for C');
+# FLATSHARE_WARM is a file of the configurations to warm (host.py warm --configs). The first stage chooses what runs the
+# units, the user manager where it outlives the session (lingering, which it enables where a user may) or else
+# deploy/bin/flatshare-svc, and env.sh keeps the choice for the later stages and every script that sources it.
+# FLATSHARE_SUPERVISOR=flatshare-svc runs them under flatshare-svc even where systemd's user manager could
+# (docs/HARDWARE.md, single-host mode), and FLATSHARE_SUPERVISOR=auto chooses again from the facts; either moves the
+# units, stopping them under the supervisor they leave first. Sourced (as a test does), it defines its functions and
+# runs nothing.
 set -euo pipefail
 src=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-root=$HOME/leaseholder
+root=$HOME/flatshare
 node=$root/node
-profile=${LH_PROFILE:-a100-40gb}
+profile=${FLATSHARE_PROFILE:-a100-40gb}
 stage=""
 log() { echo "[$(date -u +%FT%TZ)] bootstrap $stage: $*"; }
 
-choose_supervisor() { # LH_SUPERVISOR, checked before anything is written; previous: what ran an earlier stage's units
+choose_supervisor() { # FLATSHARE_SUPERVISOR, checked before anything is written; previous: what ran an earlier stage's units
   previous=""
-  [[ ! -f $node/env.sh ]] || previous=$(sed -n 's/^export LH_SUPERVISOR=//p' "$node/env.sh")
-  case ${LH_SUPERVISOR:-} in
-    "") LH_SUPERVISOR=${previous:-auto} ;; # an earlier stage's choice (lh-svc or systemd), kept
-    auto | lh-svc) ;;
-    *) echo "bootstrap: LH_SUPERVISOR is auto or lh-svc, not '$LH_SUPERVISOR'" >&2; exit 2 ;;
+  [[ ! -f $node/env.sh ]] || previous=$(sed -n 's/^export FLATSHARE_SUPERVISOR=//p' "$node/env.sh")
+  case ${FLATSHARE_SUPERVISOR:-} in
+    "") FLATSHARE_SUPERVISOR=${previous:-auto} ;; # an earlier stage's choice (flatshare-svc or systemd), kept
+    auto | flatshare-svc) ;;
+    *) echo "bootstrap: FLATSHARE_SUPERVISOR is auto or flatshare-svc, not '$FLATSHARE_SUPERVISOR'" >&2; exit 2 ;;
   esac
-  export LH_SUPERVISOR
+  export FLATSHARE_SUPERVISOR
 }
 
-choose_gpu() { # LH_GPU_ID, checked before anything is written: unset, an earlier stage's (env.sh, its UUID)
-  if [[ -z ${LH_GPU_ID:-} && -f $node/env.sh ]]; then
-    LH_GPU_ID=$(sed -n 's/^export LH_GPU_ID=//p' "$node/env.sh")
+choose_gpu() { # FLATSHARE_GPU_ID, checked before anything is written: unset, an earlier stage's (env.sh, its UUID)
+  if [[ -z ${FLATSHARE_GPU_ID:-} && -f $node/env.sh ]]; then
+    FLATSHARE_GPU_ID=$(sed -n 's/^export FLATSHARE_GPU_ID=//p' "$node/env.sh")
   fi
-  [[ -z ${LH_GPU_ID:-} || $LH_GPU_ID =~ ^([0-9]+|GPU-[0-9A-Za-z-]+)$ ]] ||
-    { echo "bootstrap: LH_GPU_ID is a GPU's index or UUID (nvidia-smi -L), not '$LH_GPU_ID'" >&2; exit 2; }
-  [[ -z ${LH_GPU_ID:-} ]] || export LH_GPU_ID
-  # LH_ALLOW_MIG=1, measuring on a MIG slice (the preflight refuses one without it), is kept so too.
-  if [[ -z ${LH_ALLOW_MIG:-} && -f $node/env.sh ]]; then
-    LH_ALLOW_MIG=$(sed -n 's/^export LH_ALLOW_MIG=//p' "$node/env.sh")
+  [[ -z ${FLATSHARE_GPU_ID:-} || $FLATSHARE_GPU_ID =~ ^([0-9]+|GPU-[0-9A-Za-z-]+)$ ]] ||
+    {
+      echo "bootstrap: FLATSHARE_GPU_ID is a GPU's index or UUID (nvidia-smi -L), not '$FLATSHARE_GPU_ID'" >&2
+      exit 2
+    }
+  [[ -z ${FLATSHARE_GPU_ID:-} ]] || export FLATSHARE_GPU_ID
+  # FLATSHARE_ALLOW_MIG=1, measuring on a MIG slice (the preflight refuses one without it), is kept so too.
+  if [[ -z ${FLATSHARE_ALLOW_MIG:-} && -f $node/env.sh ]]; then
+    FLATSHARE_ALLOW_MIG=$(sed -n 's/^export FLATSHARE_ALLOW_MIG=//p' "$node/env.sh")
   fi
-  [[ -z ${LH_ALLOW_MIG:-} ]] || export LH_ALLOW_MIG
+  [[ -z ${FLATSHARE_ALLOW_MIG:-} ]] || export FLATSHARE_ALLOW_MIG
 }
 
 choose_hub_cache() { # the Hugging Face hub cache, resolved once: an earlier stage's (env.sh), else as huggingface_hub
@@ -120,15 +124,15 @@ detect() { # the host's facts, as the host's own systemctl answers (not the shim
 
 render() {
   detect
-  # Lingering keeps the user manager, and so the units, past the last SSH session; without it, lh-svc runs them. A
-  # user may enable its own (polkit's set-self-linger): the facts are read again at once, so that this stage
-  # chooses the supervisor the later ones keep.
-  if [[ $LH_SUPERVISOR != lh-svc && $(field "$node/host.json" systemd_user) == True &&
+  # Lingering keeps the user manager, and so the units, past the last SSH session; without it, flatshare-svc runs them.
+  # A user may enable its own (polkit's set-self-linger): the facts are read again at once, so that this stage chooses
+  # the supervisor the later ones keep.
+  if [[ $FLATSHARE_SUPERVISOR != flatshare-svc && $(field "$node/host.json" systemd_user) == True &&
     $(field "$node/host.json" linger) != True ]]; then
     if loginctl enable-linger "$(id -un)" 2>/dev/null; then
       detect
-    elif [[ $LH_SUPERVISOR == auto ]]; then
-      log "lingering stays off (loginctl enable-linger was refused): lh-svc runs the units"
+    elif [[ $FLATSHARE_SUPERVISOR == auto ]]; then
+      log "lingering stays off (loginctl enable-linger was refused): flatshare-svc runs the units"
     else
       log "lingering stays off (loginctl enable-linger was refused): env.sh's systemd would stop with the session"
     fi
@@ -153,14 +157,15 @@ render() {
   fi
 }
 
-gpu_units=(leaseholder.target lh-engine lh-stt lh-tts)
-units=("${gpu_units[@]}" lh-voice-worker lh-gateway.service lh-gateway.socket lh-livekit lh-voicenet)
-stop_units() { # stop_units lh-svc|systemd [UNIT...]: stop this host's units (all of them by default) under it
+gpu_units=(flatshare.target flatshare-engine flatshare-stt flatshare-tts)
+units=("${gpu_units[@]}" flatshare-voice-worker flatshare-gateway.service flatshare-gateway.socket flatshare-livekit
+  flatshare-voicenet)
+stop_units() { # stop_units flatshare-svc|systemd [UNIT...]: stop this host's units (all of them by default) under it
   local supervisor=$1
   shift
   (($#)) || set -- "${units[@]}"
-  if [[ $supervisor == lh-svc ]]; then
-    # With the env.sh that started them: lh-svc's shims and runtime directory.
+  if [[ $supervisor == flatshare-svc ]]; then
+    # With the env.sh that started them: flatshare-svc's shims and runtime directory.
     # shellcheck source=/dev/null
     (source "$node/env.sh" && systemctl --user stop "$@") 2>/dev/null || true
   else
@@ -170,15 +175,15 @@ stop_units() { # stop_units lh-svc|systemd [UNIT...]: stop this host's units (al
   fi
 }
 
-shell_env() { # env.sh, which every command on this host sources: lh-svc's shims where it runs the units
+shell_env() { # env.sh, which every command on this host sources: flatshare-svc's shims where it runs the units
   local chosen
   chosen=$(host_py supervisor "$node")
   if [[ -n $previous && $previous != "$chosen" ]]; then
-    # LH_SUPERVISOR moves the units: they stop where they ran, so that no unit runs under both.
-    log "the units move from $previous to $chosen (LH_SUPERVISOR=$LH_SUPERVISOR): stopping them under $previous"
+    # FLATSHARE_SUPERVISOR moves the units: they stop where they ran, so that no unit runs under both.
+    log "the units move from $previous to $chosen (FLATSHARE_SUPERVISOR=$FLATSHARE_SUPERVISOR): stopping them under $previous"
     stop_units "$previous"
-  elif [[ $chosen == lh-svc && $(field "$node/host.json" systemd_user) == True ]]; then
-    # The user manager may run units that no env.sh recorded: they stop, so that lh-svc's take their sockets.
+  elif [[ $chosen == flatshare-svc && $(field "$node/host.json" systemd_user) == True ]]; then
+    # The user manager may run units that no env.sh recorded: they stop, so that flatshare-svc's take their sockets.
     stop_units systemd
   fi
   host_py env "$node"
@@ -219,7 +224,7 @@ venvs() {
   venv "$root/venvs/engine"
   log "engine venv: $path, ${lock#"$src/"}"
   "$uv" pip sync -q --python "$root/venvs/engine/bin/python" --torch-backend "$backend" "$lock"
-  echo "$path" >"$root/venvs/engine/lh-install-path"
+  echo "$path" >"$root/venvs/engine/flatshare-install-path"
 }
 
 compilers() { # the files FlashInfer's JIT reads beside the compiler the units name (units.cuda_home)
@@ -238,9 +243,9 @@ compilers() { # the files FlashInfer's JIT reads beside the compiler the units n
     cc -shared -Wl,-soname,libcuda.so.1 -o "$root/cache/cuda_lib/libcuda.so" -x c /dev/null
   fi
   cuda_home=$(field "$node/node.json" values units.cuda_home)
-  if [[ $cuda_home == "%h/leaseholder/cuda-12.9" && ! -x $root/cuda-12.9/bin/nvcc ]]; then
+  if [[ $cuda_home == "%h/flatshare/cuda-12.9" && ! -x $root/cuda-12.9/bin/nvcc ]]; then
     # CUDA 12's wheels carry no nvcc; NVIDIA's runfile installs the toolkit alone into a user directory, no root.
-    log "CUDA 12.9.1's toolkit into ~/leaseholder/cuda-12.9 (a 5.9 GB download, about 10 GB installed)"
+    log "CUDA 12.9.1's toolkit into ~/flatshare/cuda-12.9 (a 5.9 GB download, about 10 GB installed)"
     local run=$root/vendor/cuda_12.9.1_575.57.08_linux.run
     curl -fsSL -o "$run" https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda_12.9.1_575.57.08_linux.run
     mkdir -p "$root/vendor/cuda-tmp"
@@ -268,14 +273,14 @@ audio_and_models() {
     [[ -n $revision ]] || { log "$config pins no revision"; exit 2; }
     "$root/venvs/engine/bin/hf" download -q "$model" --revision "$revision" >/dev/null
   done
-  for pin in ${LH_MODELS:-}; do
+  for pin in ${FLATSHARE_MODELS:-}; do
     "$root/venvs/engine/bin/hf" download -q "${pin%@*}" --revision "${pin#*@}" >/dev/null
   done
 }
 
 control_plane() {
   local venv
-  for venv in voice:leaseholder_voice bench:leaseholder_bench; do
+  for venv in voice:flatshare_voice bench:flatshare_bench; do
     UV_PROJECT_ENVIRONMENT=$root/venvs/${venv%%:*} "$uv" sync -q --locked --managed-python --python 3.12 \
       --extra test --project "$src/python/${venv#*:}"
   done
@@ -288,20 +293,20 @@ control_plane() {
       tar -xz -C "$root/bin" livekit-server
   fi
   # A gateway built elsewhere may not run here (another glibc); then it is built here, with the repository's toolchain.
-  if ! "$root/bin/lh-gateway" --version >/dev/null 2>&1; then
-    log "building lh-gateway"
+  if ! "$root/bin/flatshare-gateway" --version >/dev/null 2>&1; then
+    log "building flatshare-gateway"
     [[ -x $HOME/.cargo/bin/rustup ]] ||
       curl -fsSL https://sh.rustup.rs | sh -s -- -y -q --profile minimal --default-toolchain none --no-modify-path
     "$HOME/.cargo/bin/rustup" toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' "$src/rust-toolchain.toml")" \
       --profile minimal >/dev/null 2>&1
-    (cd "$src" && "$HOME/.cargo/bin/cargo" build -q --release --locked -p lh-gateway)
-    install -m 755 "$src/target/release/lh-gateway" "$root/bin/lh-gateway"
+    (cd "$src" && "$HOME/.cargo/bin/cargo" build -q --release --locked -p flatshare-gateway)
+    install -m 755 "$src/target/release/flatshare-gateway" "$root/bin/flatshare-gateway"
   fi
   host_py units "$node" >/dev/null
   host_py config "$node"
   # The voice worker and what it wants: LiveKit in the voice plane and the gateway, on its socket unit.
-  systemctl --user start lh-voice-worker.service ||
-    log "the control plane did not start: journalctl --user -u lh-voice-worker (and lh-livekit, lh-gateway)"
+  systemctl --user start flatshare-voice-worker.service ||
+    log "the control plane did not start: journalctl --user -u flatshare-voice-worker (and flatshare-livekit, flatshare-gateway)"
 }
 
 preflight() { # preflight [--gpu]: the stage's status is the preflight's
@@ -332,7 +337,7 @@ main() {
     gpu)
       nvidia-smi -L >/dev/null 2>&1 || { log "nvidia-smi shows no GPU"; exit 2; }
       local built
-      built=$(cat "$root/venvs/engine/lh-install-path" 2>/dev/null || true)
+      built=$(cat "$root/venvs/engine/flatshare-install-path" 2>/dev/null || true)
       gpu_facts
       if [[ $(field "$node/node.json" install path) != "$built" ]]; then
         venvs
@@ -349,7 +354,8 @@ main() {
       ;;
     warm)
       shell_env
-      host_py warm "$node" ${LH_WARM:+--configs "$LH_WARM"} || log "a configuration did not start: see warm.json"
+      host_py warm "$node" ${FLATSHARE_WARM:+--configs "$FLATSHARE_WARM"} ||
+        log "a configuration did not start: see warm.json"
       preflight --gpu
       ;;
   esac

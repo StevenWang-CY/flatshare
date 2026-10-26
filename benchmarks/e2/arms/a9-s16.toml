@@ -1,12 +1,12 @@
-# E2 arm 9, Leaseholder, as disc-a9-s24.toml, in the standard scenario (the whole corpus) beside 16 agent session trees.
+# E2 arm 9, as disc-a9-s24.toml, in the standard scenario (the whole corpus) beside 16 agent session trees.
 arm = 9
-label = "Leaseholder: timed headroom, critical-window throttle, degrade; make-room"
+label = "Arm 9: timed headroom, critical-window throttle, degrade; make-room"
 
 [agents]
 sessions = 16
 
 [gateway.admission]
-policy = "leaseholder"
+policy = "lifecycle"
 headroom_tokens = 1024
 critical_prefill_budget_ms = 150
 degrade_max_tokens = 16

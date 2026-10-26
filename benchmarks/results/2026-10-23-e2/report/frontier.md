@@ -107,12 +107,12 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 
 | Point | | Sessions | Background tokens/s | First 240 s | Requests/s | V2V p50 | V2V p95 | V2V p99 | Failed turns | Agent TTFT p50 / p99 | Realtime first byte p95 | Preemptions | Shed / refused / resubmitted | SM clock p50 | Max temp |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|
-| a9-s8: Leaseholder: timed headroom, critical-window throttle, degrade; make-room | • | 8 | 2,675 | 2,463 | 0.81 | 1,745 | 2,060 | 2,090 | 0 of 50 | 79 / 620 | 85 | 0 | 0 / 0 / 0 | 2,790 | 56 |
+| a9-s8: Arm 9: timed headroom, critical-window throttle, degrade; make-room | • | 8 | 2,675 | 2,463 | 0.81 | 1,745 | 2,060 | 2,090 | 0 of 50 | 79 / 620 | 85 | 0 | 0 / 0 / 0 | 2,790 | 56 |
 | a9-s16 (a9-standard) |  | 16 | 5,244 | 5,605 | 1.05 | 1,707 | 2,193 | 2,542 | 0 of 50 | 127 / 2,171 | 211 | 0 | 0 / 0 / 0 | 2,790 | 63 |
 | a9-s16 (s1) |  | 16 | 4,990 | 5,429 | 0.94 | 1,684 | 2,446 | 2,532 | 0 of 50 | 137 / 2,774 | 211 | 0 | 0 / 0 / 0 | 2,790 | 63 |
 | a9-s16 (s2) |  | 16 | 5,271 | 5,516 | 1.08 | 1,693 | 2,196 | 2,714 | 0 of 50 | 123 / 2,584 | 196 | 0 | 0 / 0 / 0 | 2,790 | 63 |
-| a9-s16: Leaseholder: timed headroom, critical-window throttle, degrade; make-room; median (range) of 3 runs | • | 16 | 5,244 (4,990–5,271) | 5,516 (5,429–5,605) | | 1,693 (1,684–1,707) | 2,196 (2,193–2,446) | 2,542 (2,532–2,714) | 0 (0–0) | 127 (123–137) / 2,584 (2,171–2,774) | 211 (196–211) | | | | |
-| a9-s24: Leaseholder: timed headroom, critical-window throttle, degrade; make-room | • | 24 | 9,606 | 10,028 | 2.42 | 1,848 | 2,375 | 2,897 | 0 of 50 | 166 / 3,871 | 357 | 0 | 0 / 0 / 0 | 2,782 | 65 |
+| a9-s16: Arm 9: timed headroom, critical-window throttle, degrade; make-room; median (range) of 3 runs | • | 16 | 5,244 (4,990–5,271) | 5,516 (5,429–5,605) | | 1,693 (1,684–1,707) | 2,196 (2,193–2,446) | 2,542 (2,532–2,714) | 0 (0–0) | 127 (123–137) / 2,584 (2,171–2,774) | 211 (196–211) | | | | |
+| a9-s24: Arm 9: timed headroom, critical-window throttle, degrade; make-room | • | 24 | 9,606 | 10,028 | 2.42 | 1,848 | 2,375 | 2,897 | 0 of 50 | 166 / 3,871 | 357 | 0 | 0 / 0 / 0 | 2,782 | 65 |
 
 ## Workload: weka-x32, 4 callers
 
@@ -231,7 +231,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-s24 (r2) |  | 24 | 3,387 | 3,402 | 0.27 | 1,776 | 2,057 | 2,105 | 0 of 50 | 74,993 / 98,098 | 282 | 0 | 0 / 0 / 0 | 2,722 | 70 |
 | disc-a9-s24 (r3) |  | 24 | 3,438 | 3,381 | 0.27 | 1,809 | 2,003 | 2,139 | 0 of 50 | 75,420 / 103,312 | 275 | 0 | 0 / 0 / 0 | 2,722 | 68 |
 | disc-a9-s24 (r4) |  | 24 | 3,427 | 3,352 | 0.27 | 1,834 | 1,980 | 2,078 | 0 of 50 | 73,092 / 104,642 | 306 | 0 | 0 / 0 / 0 | 2,722 | 68 |
-| disc-a9-s24: Leaseholder: timed headroom, critical-window throttle, degrade; make-room; median (range) of 5 runs |  | 24 | 3,411 (3,387–3,438) | 3,355 (3,308–3,402) | | 1,825 (1,776–1,836) | 2,057 (1,980–2,134) | 2,139 (2,078–2,274) | 0 (0–0) | 75,081 (73,092–76,651) / 103,312 (98,076–105,287) | 290 (275–346) | | | | |
+| disc-a9-s24: Arm 9: timed headroom, critical-window throttle, degrade; make-room; median (range) of 5 runs |  | 24 | 3,411 (3,387–3,438) | 3,355 (3,308–3,402) | | 1,825 (1,776–1,836) | 2,057 (1,980–2,134) | 2,139 (2,078–2,274) | 0 (0–0) | 75,081 (73,092–76,651) / 103,312 (98,076–105,287) | 290 (275–346) | | | | |
 
 ### Arm 9-budget0
 
@@ -240,7 +240,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-budget0-s24 (a9) |  | 24 | 3,443 | 3,406 | 0.27 | 1,823 | 2,166 | 2,263 | 0 of 50 | 72,857 / 100,661 | 317 | 0 | 0 / 0 / 0 | 2,730 | 68 |
 | disc-a9-budget0-s24 (r1) |  | 24 | 3,387 | 3,420 | 0.28 | 1,848 | 2,094 | 2,223 | 0 of 50 | 72,247 / 104,432 | 284 | 0 | 0 / 0 / 0 | 2,730 | 70 |
 | disc-a9-budget0-s24 (r2) |  | 24 | 3,370 | 3,307 | 0.27 | 1,784 | 2,109 | 2,192 | 0 of 50 | 74,490 / 106,918 | 304 | 0 | 0 / 0 / 0 | 2,722 | 71 |
-| disc-a9-budget0-s24: Leaseholder, critical-window budget 0 ms; median (range) of 3 runs |  | 24 | 3,387 (3,370–3,443) | 3,406 (3,307–3,420) | | 1,823 (1,784–1,848) | 2,109 (2,094–2,166) | 2,223 (2,192–2,263) | 0 (0–0) | 72,857 (72,247–74,490) / 104,432 (100,661–106,918) | 304 (284–317) | | | | |
+| disc-a9-budget0-s24: Arm 9, critical-window budget 0 ms; median (range) of 3 runs |  | 24 | 3,387 (3,370–3,443) | 3,406 (3,307–3,420) | | 1,823 (1,784–1,848) | 2,109 (2,094–2,166) | 2,223 (2,192–2,263) | 0 (0–0) | 72,857 (72,247–74,490) / 104,432 (100,661–106,918) | 304 (284–317) | | | | |
 
 ### Arm 9-budget500
 
@@ -249,7 +249,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-budget500-s24 (a9) |  | 24 | 3,265 | 3,354 | 0.26 | 1,847 | 2,060 | 2,112 | 0 of 50 | 76,107 / 101,836 | 321 | 0 | 0 / 0 / 0 | 2,730 | 68 |
 | disc-a9-budget500-s24 (r1) |  | 24 | 3,370 | 3,380 | 0.27 | 1,831 | 2,080 | 2,294 | 0 of 50 | 75,822 / 104,106 | 287 | 0 | 0 / 0 / 0 | 2,722 | 70 |
 | disc-a9-budget500-s24 (r2) |  | 24 | 3,325 | 3,308 | 0.26 | 1,780 | 1,990 | 2,108 | 0 of 50 | 77,491 / 109,576 | 301 | 0 | 0 / 0 / 0 | 2,722 | 70 |
-| disc-a9-budget500-s24: Leaseholder, critical-window budget 500 ms; median (range) of 3 runs |  | 24 | 3,325 (3,265–3,370) | 3,354 (3,308–3,380) | | 1,831 (1,780–1,847) | 2,060 (1,990–2,080) | 2,112 (2,108–2,294) | 0 (0–0) | 76,107 (75,822–77,491) / 104,106 (101,836–109,576) | 301 (287–321) | | | | |
+| disc-a9-budget500-s24: Arm 9, critical-window budget 500 ms; median (range) of 3 runs |  | 24 | 3,325 (3,265–3,370) | 3,354 (3,308–3,380) | | 1,831 (1,780–1,847) | 2,060 (1,990–2,080) | 2,112 (2,108–2,294) | 0 (0–0) | 76,107 (75,822–77,491) / 104,106 (101,836–109,576) | 301 (287–321) | | | | |
 
 ### Arm 9-engine-only
 
@@ -267,7 +267,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-gateway-only-s24 (a9) |  | 24 | 3,690 | 3,556 | 0.30 | 4,452 | 11,958 | 13,557 | 0 of 50 | 64,809 / 98,579 | 9,121 | 29 | 0 / 0 / 0 | 2,722 | 69 |
 | disc-a9-gateway-only-s24 (r1) |  | 24 | 3,679 | 3,633 | 0.30 | 4,601 | 10,028 | 11,340 | 0 of 50 | 65,646 / 103,011 | 7,607 | 40 | 0 / 0 / 0 | 2,722 | 70 |
 | disc-a9-gateway-only-s24 (r2) |  | 24 | 3,697 | 3,653 | 0.30 | 4,396 | 10,993 | 11,990 | 0 of 50 | 67,249 / 98,498 | 8,673 | 29 | 0 / 0 / 0 | 2,722 | 68 |
-| disc-a9-gateway-only-s24: Leaseholder's gateway policy on the frozen engine; median (range) of 3 runs |  | 24 | 3,690 (3,679–3,697) | 3,633 (3,556–3,653) | | 4,452 (4,396–4,601) | 10,993 (10,028–11,958) | 11,990 (11,340–13,557) | 0 (0–0) | 65,646 (64,809–67,249) / 98,579 (98,498–103,011) | 8,673 (7,607–9,121) | | | | |
+| disc-a9-gateway-only-s24: Arm 9's gateway policy on the frozen engine; median (range) of 3 runs |  | 24 | 3,690 (3,679–3,697) | 3,633 (3,556–3,653) | | 4,452 (4,396–4,601) | 10,993 (10,028–11,958) | 11,990 (11,340–13,557) | 0 (0–0) | 65,646 (64,809–67,249) / 98,579 (98,498–103,011) | 8,673 (7,607–9,121) | | | | |
 
 ### Arm 9-no-budget-cap
 
@@ -276,7 +276,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-no-budget-cap-s24 (a9) |  | 24 | 3,582 | 3,532 | 0.29 | 3,069 | 5,295 | 6,841 | 0 of 50 | 71,998 / 103,693 | 2,835 | 0 | 0 / 0 / 0 | 2,722 | 70 |
 | disc-a9-no-budget-cap-s24 (r1) |  | 24 | 3,522 | 3,465 | 0.29 | 2,635 | 5,063 | 6,610 | 0 of 50 | 74,402 / 107,519 | 2,900 | 0 | 0 / 0 / 0 | 2,722 | 70 |
 | disc-a9-no-budget-cap-s24 (r2) |  | 24 | 3,445 | 3,448 | 0.28 | 2,950 | 6,115 | 7,734 | 0 of 50 | 71,374 / 97,482 | 3,970 | 0 | 0 / 0 / 0 | 2,722 | 70 |
-| disc-a9-no-budget-cap-s24: Leaseholder, make-room without the prefill budget cap; median (range) of 3 runs |  | 24 | 3,522 (3,445–3,582) | 3,465 (3,448–3,532) | | 2,950 (2,635–3,069) | 5,295 (5,063–6,115) | 6,841 (6,610–7,734) | 0 (0–0) | 71,998 (71,374–74,402) / 103,693 (97,482–107,519) | 2,900 (2,835–3,970) | | | | |
+| disc-a9-no-budget-cap-s24: Arm 9, make-room without the prefill budget cap; median (range) of 3 runs |  | 24 | 3,522 (3,445–3,582) | 3,465 (3,448–3,532) | | 2,950 (2,635–3,069) | 5,295 (5,063–6,115) | 6,841 (6,610–7,734) | 0 (0–0) | 71,998 (71,374–74,402) / 103,693 (97,482–107,519) | 2,900 (2,835–3,970) | | | | |
 
 ### Arm 9-no-degrade
 
@@ -285,7 +285,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-no-degrade-s24 (a9) |  | 24 | 3,506 | 3,454 | 0.28 | 2,126 | 4,079 | 6,299 | 0 of 50 | 72,423 / 99,908 | 279 | 0 | 0 / 0 / 0 | 2,730 | 68 |
 | disc-a9-no-degrade-s24 (r1) |  | 24 | 3,456 | 3,307 | 0.28 | 1,968 | 2,890 | 5,200 | 0 of 50 | 73,893 / 105,202 | 354 | 0 | 0 / 0 / 0 | 2,722 | 71 |
 | disc-a9-no-degrade-s24 (r2) |  | 24 | 3,489 | 3,336 | 0.28 | 2,040 | 3,837 | 6,513 | 0 of 50 | 73,248 / 97,440 | 326 | 0 | 0 / 0 / 0 | 2,722 | 69 |
-| disc-a9-no-degrade-s24: Leaseholder without degrade; median (range) of 3 runs |  | 24 | 3,489 (3,456–3,506) | 3,336 (3,307–3,454) | | 2,040 (1,968–2,126) | 3,837 (2,890–4,079) | 6,299 (5,200–6,513) | 0 (0–0) | 73,248 (72,423–73,893) / 99,908 (97,440–105,202) | 326 (279–354) | | | | |
+| disc-a9-no-degrade-s24: Arm 9 without degrade; median (range) of 3 runs |  | 24 | 3,489 (3,456–3,506) | 3,336 (3,307–3,454) | | 2,040 (1,968–2,126) | 3,837 (2,890–4,079) | 6,299 (5,200–6,513) | 0 (0–0) | 73,248 (72,423–73,893) / 99,908 (97,440–105,202) | 326 (279–354) | | | | |
 
 ### Arm 9-no-events
 
@@ -294,7 +294,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-no-events-s24 (a9) |  | 24 | 3,393 | 3,402 | 0.27 | 1,850 | 2,048 | 2,199 | 0 of 50 | 75,269 / 98,194 | 301 | 0 | 0 / 0 / 0 | 2,722 | 68 |
 | disc-a9-no-events-s24 (r1) |  | 24 | 3,424 | 3,307 | 0.27 | 1,823 | 2,005 | 2,105 | 0 of 50 | 74,603 / 105,803 | 295 | 0 | 0 / 0 / 0 | 2,722 | 70 |
 | disc-a9-no-events-s24 (r2) |  | 24 | 3,338 | 3,326 | 0.27 | 1,817 | 2,036 | 2,124 | 0 of 50 | 76,923 / 102,213 | 292 | 0 | 0 / 0 / 0 | 2,722 | 69 |
-| disc-a9-no-events-s24: Leaseholder without lifecycle events; median (range) of 3 runs |  | 24 | 3,393 (3,338–3,424) | 3,326 (3,307–3,402) | | 1,823 (1,817–1,850) | 2,036 (2,005–2,048) | 2,124 (2,105–2,199) | 0 (0–0) | 75,269 (74,603–76,923) / 102,213 (98,194–105,803) | 295 (292–301) | | | | |
+| disc-a9-no-events-s24: Arm 9 without lifecycle events; median (range) of 3 runs |  | 24 | 3,393 (3,338–3,424) | 3,326 (3,307–3,402) | | 1,823 (1,817–1,850) | 2,036 (2,005–2,048) | 2,124 (2,105–2,199) | 0 (0–0) | 75,269 (74,603–76,923) / 102,213 (98,194–105,803) | 295 (292–301) | | | | |
 
 ### Arm 9-no-headroom
 
@@ -303,7 +303,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-no-headroom-s24 (a9) |  | 24 | 3,389 | 3,339 | 0.27 | 1,837 | 2,071 | 2,211 | 0 of 50 | 74,637 / 97,899 | 299 | 0 | 0 / 0 / 0 | 2,730 | 68 |
 | disc-a9-no-headroom-s24 (r1) |  | 24 | 3,380 | 3,326 | 0.27 | 1,832 | 2,033 | 2,181 | 0 of 50 | 75,921 / 102,263 | 300 | 0 | 0 / 0 / 0 | 2,722 | 70 |
 | disc-a9-no-headroom-s24 (r2) |  | 24 | 3,292 | 3,362 | 0.27 | 1,815 | 1,947 | 2,067 | 0 of 50 | 76,692 / 107,828 | 302 | 0 | 0 / 0 / 0 | 2,722 | 69 |
-| disc-a9-no-headroom-s24: Leaseholder without the turn-imminent headroom; median (range) of 3 runs |  | 24 | 3,380 (3,292–3,389) | 3,339 (3,326–3,362) | | 1,832 (1,815–1,837) | 2,033 (1,947–2,071) | 2,181 (2,067–2,211) | 0 (0–0) | 75,921 (74,637–76,692) / 102,263 (97,899–107,828) | 300 (299–302) | | | | |
+| disc-a9-no-headroom-s24: Arm 9 without the turn-imminent headroom; median (range) of 3 runs |  | 24 | 3,380 (3,292–3,389) | 3,339 (3,326–3,362) | | 1,832 (1,815–1,837) | 2,033 (1,947–2,071) | 2,181 (2,067–2,211) | 0 (0–0) | 75,921 (74,637–76,692) / 102,263 (97,899–107,828) | 300 (299–302) | | | | |
 
 ### Arm 9-no-kv-makeroom
 
@@ -312,7 +312,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-no-kv-makeroom-s24 (a9) |  | 24 | 3,290 | 3,321 | 0.26 | 1,827 | 2,037 | 2,153 | 0 of 50 | 76,773 / 102,147 | 306 | 0 | 0 / 0 / 0 | 2,726 | 69 |
 | disc-a9-no-kv-makeroom-s24 (r1) |  | 24 | 3,360 | 3,326 | 0.27 | 1,814 | 1,990 | 2,164 | 0 of 50 | 75,501 / 102,279 | 317 | 0 | 0 / 0 / 0 | 2,722 | 69 |
 | disc-a9-no-kv-makeroom-s24 (r2) |  | 24 | 3,377 | 3,327 | 0.27 | 1,828 | 2,039 | 2,154 | 0 of 50 | 75,973 / 98,643 | 274 | 0 | 0 / 0 / 0 | 2,722 | 69 |
-| disc-a9-no-kv-makeroom-s24: Leaseholder, make-room without KV make-room; median (range) of 3 runs |  | 24 | 3,360 (3,290–3,377) | 3,326 (3,321–3,327) | | 1,827 (1,814–1,828) | 2,037 (1,990–2,039) | 2,154 (2,153–2,164) | 0 (0–0) | 75,973 (75,501–76,773) / 102,147 (98,643–102,279) | 306 (274–317) | | | | |
+| disc-a9-no-kv-makeroom-s24: Arm 9, make-room without KV make-room; median (range) of 3 runs |  | 24 | 3,360 (3,290–3,377) | 3,326 (3,321–3,327) | | 1,827 (1,814–1,828) | 2,037 (1,990–2,039) | 2,154 (2,153–2,164) | 0 (0–0) | 75,973 (75,501–76,773) / 102,147 (98,643–102,279) | 306 (274–317) | | | | |
 
 ### Arm 9-no-reserve
 
@@ -321,7 +321,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-no-reserve-s24 (a9) |  | 24 | 3,419 | 3,406 | 0.27 | 1,884 | 2,115 | 2,214 | 0 of 50 | 73,269 / 106,476 | 349 | 39 | 0 / 0 / 0 | 2,730 | 69 |
 | disc-a9-no-reserve-s24 (r1) |  | 24 | 3,422 | 3,485 | 0.28 | 1,876 | 2,116 | 2,191 | 0 of 50 | 72,387 / 95,339 | 391 | 38 | 0 / 0 / 0 | 2,722 | 70 |
 | disc-a9-no-reserve-s24 (r2) |  | 24 | 3,508 | 3,438 | 0.28 | 1,897 | 2,155 | 2,275 | 0 of 50 | 72,389 / 95,741 | 373 | 27 | 0 / 0 / 0 | 2,722 | 68 |
-| disc-a9-no-reserve-s24: Leaseholder, make-room without the realtime KV reserve; median (range) of 3 runs |  | 24 | 3,422 (3,419–3,508) | 3,438 (3,406–3,485) | | 1,884 (1,876–1,897) | 2,116 (2,115–2,155) | 2,214 (2,191–2,275) | 0 (0–0) | 72,389 (72,387–73,269) / 95,741 (95,339–106,476) | 373 (349–391) | | | | |
+| disc-a9-no-reserve-s24: Arm 9, make-room without the realtime KV reserve; median (range) of 3 runs |  | 24 | 3,422 (3,419–3,508) | 3,438 (3,406–3,485) | | 1,884 (1,876–1,897) | 2,116 (2,115–2,155) | 2,214 (2,191–2,275) | 0 (0–0) | 72,389 (72,387–73,269) / 95,741 (95,339–106,476) | 373 (349–391) | | | | |
 
 ### Arm 9-no-throttle
 
@@ -330,7 +330,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-no-throttle-s24 (a9) |  | 24 | 3,378 | 3,424 | 0.26 | 1,817 | 2,049 | 2,140 | 0 of 50 | 76,041 / 97,414 | 307 | 0 | 0 / 0 / 0 | 2,730 | 68 |
 | disc-a9-no-throttle-s24 (r1) |  | 24 | 3,390 | 3,333 | 0.27 | 1,832 | 1,995 | 2,197 | 0 of 50 | 77,208 / 104,776 | 316 | 0 | 0 / 0 / 0 | 2,722 | 70 |
 | disc-a9-no-throttle-s24 (r2) |  | 24 | 3,420 | 3,357 | 0.27 | 1,814 | 2,081 | 2,178 | 0 of 50 | 77,361 / 108,519 | 331 | 0 | 0 / 0 / 0 | 2,722 | 70 |
-| disc-a9-no-throttle-s24: Leaseholder without the critical-window throttle; median (range) of 3 runs |  | 24 | 3,390 (3,378–3,420) | 3,357 (3,333–3,424) | | 1,817 (1,814–1,832) | 2,049 (1,995–2,081) | 2,178 (2,140–2,197) | 0 (0–0) | 77,208 (76,041–77,361) / 104,776 (97,414–108,519) | 316 (307–331) | | | | |
+| disc-a9-no-throttle-s24: Arm 9 without the critical-window throttle; median (range) of 3 runs |  | 24 | 3,390 (3,378–3,420) | 3,357 (3,333–3,424) | | 1,817 (1,814–1,832) | 2,049 (1,995–2,081) | 2,178 (2,140–2,197) | 0 (0–0) | 77,208 (76,041–77,361) / 104,776 (97,414–108,519) | 316 (307–331) | | | | |
 
 ### Arm 9-pr-a
 
@@ -366,7 +366,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-trigger-request-s24 (a9) |  | 24 | 3,386 | 3,339 | 0.27 | 1,836 | 2,008 | 2,128 | 0 of 50 | 72,595 / 98,697 | 294 | 0 | 0 / 0 / 0 | 2,730 | 68 |
 | disc-a9-trigger-request-s24 (r1) |  | 24 | 3,401 | 3,402 | 0.27 | 1,806 | 2,165 | 2,209 | 0 of 50 | 75,912 / 98,193 | 356 | 0 | 0 / 0 / 0 | 2,722 | 70 |
 | disc-a9-trigger-request-s24 (r2) |  | 24 | 3,345 | 3,307 | 0.27 | 1,852 | 2,124 | 2,192 | 0 of 50 | 74,750 / 106,011 | 318 | 0 | 0 / 0 / 0 | 2,722 | 70 |
-| disc-a9-trigger-request-s24: Leaseholder, headroom armed by the realtime request; median (range) of 3 runs |  | 24 | 3,386 (3,345–3,401) | 3,339 (3,307–3,402) | | 1,836 (1,806–1,852) | 2,124 (2,008–2,165) | 2,192 (2,128–2,209) | 0 (0–0) | 74,750 (72,595–75,912) / 98,697 (98,193–106,011) | 318 (294–356) | | | | |
+| disc-a9-trigger-request-s24: Arm 9, headroom armed by the realtime request; median (range) of 3 runs |  | 24 | 3,386 (3,345–3,401) | 3,339 (3,307–3,402) | | 1,836 (1,806–1,852) | 2,124 (2,008–2,165) | 2,192 (2,128–2,209) | 0 (0–0) | 74,750 (72,595–75,912) / 98,697 (98,193–106,011) | 318 (294–356) | | | | |
 
 ### Arm 9-window48
 
@@ -375,7 +375,7 @@ The voice SLO allows a V2V p95 of 2,017 ms, 250 ms above voice alone with as man
 | disc-a9-window48-s24 (a9-window) |  | 24 | 3,402 | 3,352 | 0.28 | 1,837 | 2,098 | 2,207 | 0 of 50 | 75,978 / 96,319 | 327 | 0 | 0 / 0 / 0 | 2,722 | 68 |
 | disc-a9-window48-s24 (upstream-r1) |  | 24 | 3,422 | 3,343 | 0.28 | 1,942 | 2,205 | 2,310 | 0 of 50 | 75,867 / 96,587 | 277 | 0 | 0 / 0 / 0 | 2,722 | 68 |
 | disc-a9-window48-s24 (upstream-r2) |  | 24 | 3,362 | 3,307 | 0.27 | 1,866 | 2,289 | 2,506 | 0 of 50 | 74,942 / 106,072 | 318 | 0 | 0 / 0 / 0 | 2,730 | 68 |
-| disc-a9-window48-s24: Leaseholder without degrade, a 48-token first-tokens window; median (range) of 3 runs |  | 24 | 3,402 (3,362–3,422) | 3,343 (3,307–3,352) | | 1,866 (1,837–1,942) | 2,205 (2,098–2,289) | 2,310 (2,207–2,506) | 0 (0–0) | 75,867 (74,942–75,978) / 96,587 (96,319–106,072) | 318 (277–327) | | | | |
+| disc-a9-window48-s24: Arm 9 without degrade, a 48-token first-tokens window; median (range) of 3 runs |  | 24 | 3,402 (3,362–3,422) | 3,343 (3,307–3,352) | | 1,866 (1,837–1,942) | 2,205 (2,098–2,289) | 2,310 (2,207–2,506) | 0 (0–0) | 75,867 (74,942–75,978) / 96,587 (96,319–106,072) | 318 (277–327) | | | | |
 
 ## Voice turn stages
 
@@ -485,7 +485,7 @@ The voice worker's own timing of each turn, p50 / p95 in ms: from the end of the
 
 ## The lifecycle policy
 
-What the gateway's lifecycle policy (`policy = "lifecycle"`; E2's arm files spell it `leaseholder`) did in each point that ran it: the background requests its admission point deferred, by what held them back when they arrived (the KV headroom first, then the critical window's prefill budget), and the realtime replies it capped at `degrade_max_tokens` because the headroom was not there, of the realtime requests it admitted. A mechanism that deferred or capped nothing did not act in that point.
+What the gateway's lifecycle policy (`policy = "lifecycle"`; `leaseholder` in the records from before the project's rename) did in each point that ran it: the background requests its admission point deferred, by what held them back when they arrived (the KV headroom first, then the critical window's prefill budget), and the realtime replies it capped at `degrade_max_tokens` because the headroom was not there, of the realtime requests it admitted. A mechanism that deferred or capped nothing did not act in that point.
 
 | Point | Deferred by the headroom | Deferred by the critical window | Degraded replies |
 |---|---:|---:|---:|
@@ -672,9 +672,9 @@ Each configuration's voice turn as stages that follow one another, in ms, the me
 | a4-b512-t256-s16: priority, step cap 512, long-prefill threshold 256 (frozen box) | 2 | 118 | 788 | 407 | 219 | 361 | 1,775 | 1,709 | 2,476 | 117 |
 | a7b-sglang-hicache-s8: SGLang 0.5.22 with HiCache 4x (write-through) | 1 | 59 | 777 | 309 | 204 | 355 | 1,645 | 1,660 | 1,822 | 102 |
 | a7b-sglang-hicache-s16: SGLang 0.5.22 with HiCache 4x (write-through) | 1 | 59 | 799 | 439 | 227 | 347 | 1,812 | 1,720 | 2,218 | 164 |
-| a9-s8: Leaseholder: timed headroom, critical-window throttle, degrade; make-room | 1 | 59 | 785 | 378 | 231 | 355 | 1,749 | 1,745 | 2,060 | 91 |
-| a9-s16: Leaseholder: timed headroom, critical-window throttle, degrade; make-room | 3 | 177 | 792 | 399 | 214 | 353 | 1,759 | 1,694 | 2,248 | 119 |
-| a9-s24: Leaseholder: timed headroom, critical-window throttle, degrade; make-room | 1 | 59 | 812 | 498 | 217 | 350 | 1,877 | 1,848 | 2,375 | 200 |
+| a9-s8: Arm 9: timed headroom, critical-window throttle, degrade; make-room | 1 | 59 | 785 | 378 | 231 | 355 | 1,749 | 1,745 | 2,060 | 91 |
+| a9-s16: Arm 9: timed headroom, critical-window throttle, degrade; make-room | 3 | 177 | 792 | 399 | 214 | 353 | 1,759 | 1,694 | 2,248 | 119 |
+| a9-s24: Arm 9: timed headroom, critical-window throttle, degrade; make-room | 1 | 59 | 812 | 498 | 217 | 350 | 1,877 | 1,848 | 2,375 | 200 |
 | disc-frozen-s24: frozen box, discriminating scenario (large contexts) | 5 | 295 | 822 | 3,801 | 244 | 343 | 5,211 | 4,526 | 10,424 | 2,760 |
 | disc-a4-b1024-t0-s24: priority, step cap 1024, long-prefill threshold 0, discriminating scenario | 5 | 295 | 826 | 3,475 | 239 | 370 | 4,909 | 4,374 | 9,145 | 2,601 |
 | disc-a5-watermark10-s24: frozen box + watermark 0.1, discriminating scenario | 1 | 59 | 827 | 4,243 | 239 | 300 | 5,609 | 4,843 | 10,647 | 3,261 |
@@ -687,20 +687,20 @@ Each configuration's voice turn as stages that follow one another, in ms, the me
 | disc-a8a-flow-s24: frozen box + flow control (llm-d, emulated), ceilings 6/6/6, discriminating scenario | 1 | 59 | 820 | 3,756 | 251 | 311 | 5,137 | 4,221 | 10,992 | 2,579 |
 | disc-a8b-smg-s24: frozen box behind SMG 1.13.0, as shipped, discriminating scenario | 1 | 59 | 819 | 3,446 | 239 | 308 | 4,812 | 3,511 | 11,050 | 2,494 |
 | disc-a8c-resubmit-s24: frozen box + preempt-resubmit before the first byte, discriminating scenario | 5 | 295 | 826 | 622 | 222 | 353 | 2,023 | 1,960 | 2,584 | 274 |
-| disc-a9-s24: Leaseholder: timed headroom, critical-window throttle, degrade; make-room | 5 | 295 | 824 | 429 | 222 | 354 | 1,830 | 1,815 | 2,075 | 221 |
-| disc-a9-budget0-s24: Leaseholder, critical-window budget 0 ms | 3 | 177 | 826 | 431 | 222 | 354 | 1,833 | 1,820 | 2,152 | 217 |
-| disc-a9-budget500-s24: Leaseholder, critical-window budget 500 ms | 3 | 177 | 821 | 426 | 216 | 360 | 1,824 | 1,818 | 2,054 | 223 |
+| disc-a9-s24: Arm 9: timed headroom, critical-window throttle, degrade; make-room | 5 | 295 | 824 | 429 | 222 | 354 | 1,830 | 1,815 | 2,075 | 221 |
+| disc-a9-budget0-s24: Arm 9, critical-window budget 0 ms | 3 | 177 | 826 | 431 | 222 | 354 | 1,833 | 1,820 | 2,152 | 217 |
+| disc-a9-budget500-s24: Arm 9, critical-window budget 500 ms | 3 | 177 | 821 | 426 | 216 | 360 | 1,824 | 1,818 | 2,054 | 223 |
 | disc-a9-engine-only-s24: Make-room alone, without the gateway policy | 3 | 177 | 825 | 850 | 239 | 352 | 2,266 | 1,991 | 4,044 | 234 |
-| disc-a9-gateway-only-s24: Leaseholder's gateway policy on the frozen engine | 3 | 177 | 830 | 4,020 | 231 | 309 | 5,390 | 4,473 | 11,417 | 3,110 |
-| disc-a9-no-budget-cap-s24: Leaseholder, make-room without the prefill budget cap | 3 | 177 | 828 | 1,784 | 225 | 340 | 3,177 | 2,896 | 5,562 | 938 |
-| disc-a9-no-degrade-s24: Leaseholder without degrade | 3 | 177 | 827 | 888 | 239 | 345 | 2,299 | 2,048 | 3,980 | 238 |
-| disc-a9-no-events-s24: Leaseholder without lifecycle events | 3 | 177 | 823 | 432 | 217 | 353 | 1,825 | 1,831 | 2,036 | 223 |
-| disc-a9-no-headroom-s24: Leaseholder without the turn-imminent headroom | 3 | 177 | 825 | 432 | 218 | 358 | 1,833 | 1,827 | 2,039 | 233 |
-| disc-a9-no-kv-makeroom-s24: Leaseholder, make-room without KV make-room | 3 | 177 | 821 | 432 | 217 | 357 | 1,827 | 1,820 | 2,036 | 223 |
-| disc-a9-no-reserve-s24: Leaseholder, make-room without the realtime KV reserve | 3 | 177 | 827 | 492 | 221 | 358 | 1,898 | 1,890 | 2,131 | 277 |
-| disc-a9-no-throttle-s24: Leaseholder without the critical-window throttle | 3 | 177 | 820 | 437 | 216 | 358 | 1,830 | 1,822 | 2,060 | 230 |
+| disc-a9-gateway-only-s24: Arm 9's gateway policy on the frozen engine | 3 | 177 | 830 | 4,020 | 231 | 309 | 5,390 | 4,473 | 11,417 | 3,110 |
+| disc-a9-no-budget-cap-s24: Arm 9, make-room without the prefill budget cap | 3 | 177 | 828 | 1,784 | 225 | 340 | 3,177 | 2,896 | 5,562 | 938 |
+| disc-a9-no-degrade-s24: Arm 9 without degrade | 3 | 177 | 827 | 888 | 239 | 345 | 2,299 | 2,048 | 3,980 | 238 |
+| disc-a9-no-events-s24: Arm 9 without lifecycle events | 3 | 177 | 823 | 432 | 217 | 353 | 1,825 | 1,831 | 2,036 | 223 |
+| disc-a9-no-headroom-s24: Arm 9 without the turn-imminent headroom | 3 | 177 | 825 | 432 | 218 | 358 | 1,833 | 1,827 | 2,039 | 233 |
+| disc-a9-no-kv-makeroom-s24: Arm 9, make-room without KV make-room | 3 | 177 | 821 | 432 | 217 | 357 | 1,827 | 1,820 | 2,036 | 223 |
+| disc-a9-no-reserve-s24: Arm 9, make-room without the realtime KV reserve | 3 | 177 | 827 | 492 | 221 | 358 | 1,898 | 1,890 | 2,131 | 277 |
+| disc-a9-no-throttle-s24: Arm 9 without the critical-window throttle | 3 | 177 | 820 | 437 | 216 | 358 | 1,830 | 1,822 | 2,060 | 230 |
 | disc-pr-a-s24: vLLM #63350: make-room's KV preemption alone, no gateway policy | 3 | 177 | 826 | 2,082 | 241 | 346 | 3,496 | 3,228 | 5,846 | 959 |
 | disc-pr-ab-s24: vLLM #63350 and #63351: KV preemption and the budget cap, no gateway policy | 3 | 177 | 826 | 914 | 245 | 353 | 2,336 | 2,053 | 4,108 | 265 |
 | disc-pr-ab48-s24: vLLM #63350 and #63351 with a 48-token window, no gateway policy | 3 | 177 | 824 | 526 | 249 | 353 | 1,953 | 1,939 | 2,209 | 270 |
-| disc-a9-trigger-request-s24: Leaseholder, headroom armed by the realtime request | 3 | 177 | 822 | 451 | 217 | 358 | 1,848 | 1,839 | 2,125 | 231 |
-| disc-a9-window48-s24: Leaseholder without degrade, a 48-token first-tokens window | 3 | 177 | 828 | 473 | 241 | 357 | 1,899 | 1,877 | 2,207 | 231 |
+| disc-a9-trigger-request-s24: Arm 9, headroom armed by the realtime request | 3 | 177 | 822 | 451 | 217 | 358 | 1,848 | 1,839 | 2,125 | 231 |
+| disc-a9-window48-s24: Arm 9 without degrade, a 48-token first-tokens window | 3 | 177 | 828 | 473 | 241 | 357 | 1,899 | 1,877 | 2,207 | 231 |

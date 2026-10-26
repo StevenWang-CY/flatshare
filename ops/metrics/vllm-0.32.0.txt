@@ -2,7 +2,7 @@
 # vllm/v1/metrics/loggers.py (PrometheusStatLogger), the OffloadingConnector's
 # (vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py) and its CPU tier's (vllm/v1/kv_offload/cpu/spec.py).
 # A counter's samples end in _total, a histogram's are _bucket, _sum and _count. ops/'s tests check that every metric a
-# dashboard or rule names is here, in the gateway's crates/lh-gateway/metrics.txt or in the voice worker's.
+# dashboard or rule names is here, in the gateway's crates/flatshare-gateway/metrics.txt or in the voice worker's.
 vllm:admission_rejections counter
 vllm:cache_config_info gauge
 vllm:corrupted_requests counter

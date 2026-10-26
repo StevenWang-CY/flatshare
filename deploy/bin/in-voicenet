@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# in-voicenet CMD...: run CMD inside the voice-plane network namespace held by lh-voicenet.service.
+# in-voicenet CMD...: run CMD inside the voice-plane network namespace held by flatshare-voicenet.service.
 # Inside there is loopback and a dummy interface, with no route out; the tunnels and the control plane are reached
-# through Unix sockets in $XDG_RUNTIME_DIR/lh/.
-# A holder that keeps no namespace (LH_VOICENET=host, see voicenet-holder) writes "host": CMD then runs as it is, in
-# the host's namespace, marked LH_VOICENET=host in its environment, by which deploy/bin/audit-listeners tells the voice
-# plane's listeners there.
+# through Unix sockets in $XDG_RUNTIME_DIR/flatshare/.
+# A holder that keeps no namespace (FLATSHARE_VOICENET=host, see voicenet-holder) writes "host": CMD then runs as it is,
+# in the host's namespace, marked FLATSHARE_VOICENET=host in its environment, by which deploy/bin/audit-listeners tells
+# the voice plane's listeners there.
 set -euo pipefail
-pid=$(cat "${XDG_RUNTIME_DIR:?}/lh/voicenet.pid")
+pid=$(cat "${XDG_RUNTIME_DIR:?}/flatshare/voicenet.pid")
 if [[ $pid == host ]]; then
-  export LH_VOICENET=host
+  export FLATSHARE_VOICENET=host
   exec "$@"
 fi
 exec nsenter --target "$pid" --user --net --preserve-credentials -- "$@"

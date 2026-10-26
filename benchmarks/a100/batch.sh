@@ -12,10 +12,10 @@
 # the batch; while they run it samples the engine's running and waiting requests once a second (ENGINE-running.txt),
 # and ENGINE-running.json keeps their median and maximum, so that the record shows the batch formed. Each client's
 # result (vllm bench serve's JSON: request and output throughput, TTFT, TPOT and ITL percentiles) goes to
-# ~/leaseholder/runs/a100/batch/ENGINE-pPRIORITY.json; a result already there is kept.
+# ~/flatshare/runs/a100/batch/ENGINE-pPRIORITY.json; a result already there is kept.
 # vllm bench serve speaks TCP and the engine serves on its socket only: the clients reach it through
-# deploy/bin/lh-forward, from a loopback port (LH_FORWARD_PORT, 18000) to the socket, on their own cores, the same
-# hop for each engine.
+# deploy/bin/flatshare-forward, from a loopback port (FLATSHARE_FORWARD_PORT, 18000) to the socket, on their own cores,
+# the same hop for each engine.
 set -euo pipefail
 rounds=20
 while (($#)); do
@@ -29,21 +29,21 @@ while (($#)); do
   esac
   shift
 done
-root=$HOME/leaseholder
-node=${LH_NODE_DIR:-$root/node}
+root=$HOME/flatshare
+node=${FLATSHARE_NODE_DIR:-$root/node}
 src=$(cd "$(dirname "$0")/../.." && pwd)
-port=${LH_FORWARD_PORT:-18000}
-engine=http://127.0.0.1:$port # lh-forward's end of the engine's socket
+port=${FLATSHARE_FORWARD_PORT:-18000}
+engine=http://127.0.0.1:$port # flatshare-forward's end of the engine's socket
 out=$root/runs/a100/batch
 mkdir -p "$out"
 # shellcheck source=/dev/null
 [[ ! -f $node/env.sh ]] || source "$node/env.sh"
-sock=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/lh/engine.sock # the engine's own socket (lh-engine.service)
+sock=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/flatshare/engine.sock # the engine's own socket (flatshare-engine.service)
 log() { echo "[$(date -u +%FT%TZ)] batch: $*" | tee -a "$out/batch.log"; }
 trap 'jobs -p | xargs -r kill 2>/dev/null || true' EXIT # a client left when the other failed
-cores=$(sed -n 's/^aiperf_cores = "\(.*\)"$/\1/p' "$HOME/.config/leaseholder/e2-host.toml")
-[[ -n $cores ]] || { log "no aiperf_cores in ~/.config/leaseholder/e2-host.toml (deploy/a100/host.py config)"; exit 2; }
-taskset -c "$cores" "$root/venvs/bench/bin/python" "$src/deploy/bin/lh-forward" "127.0.0.1:$port=unix:$sock" \
+cores=$(sed -n 's/^aiperf_cores = "\(.*\)"$/\1/p' "$HOME/.config/flatshare/e2-host.toml")
+[[ -n $cores ]] || { log "no aiperf_cores in ~/.config/flatshare/e2-host.toml (deploy/a100/host.py config)"; exit 2; }
+taskset -c "$cores" "$root/venvs/bench/bin/python" "$src/deploy/bin/flatshare-forward" "127.0.0.1:$port=unix:$sock" \
   >"$out/forward.log" 2>&1 &
 
 batch=256 input=48 output=64 slack=16 # the requests in flight, and each one's tokens (slack: a longer re-tokenization)

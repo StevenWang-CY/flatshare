@@ -45,7 +45,7 @@ The rules (docs/HARDWARE.md):
   the forward-compatibility libraries a data-center GPU on R535 or R570 can load (cuda-compat-13-0, installed);
   the cu129 lock (deploy/a100/requirements) on any other driver from R525; none below. JIT compiles with the host's
   toolkit of the runtime's CUDA version where it has one, else with the venv's CUDA 13.0 compiler (cu130) or with CUDA
-  12.9's toolkit, which bootstrap.sh installs into ~/leaseholder/cuda-12.9 (cu129: CUDA 12's wheels carry no nvcc).
+  12.9's toolkit, which bootstrap.sh installs into ~/flatshare/cuda-12.9 (cu129: CUDA 12's wheels carry no nvcc).
 
 A profile whose [profile] table names a base takes the base's values under its own, table by table: the A100's
 second model (a100-40gb-qwen3-14b) is the core's profile with its own model, pool and directory.
@@ -80,21 +80,21 @@ BOX = HERE / "phastform"
 RENDERED = (
     "engine.yaml",
     "stt.yaml",
-    "systemd/leaseholder.target",
-    "systemd/lh-engine.service",
-    "systemd/lh-stt.service",
-    "systemd/lh-tts.service",
-    "variants/make-room/lh-engine.conf",
+    "systemd/flatshare.target",
+    "systemd/flatshare-engine.service",
+    "systemd/flatshare-stt.service",
+    "systemd/flatshare-tts.service",
+    "variants/make-room/flatshare-engine.conf",
 )
 """The files a node's directory renders from deploy/templates."""
 COPIED = (
     "variant.sh",
     "install.sh",
-    "measure/lh-engine.conf",
-    "systemd/lh-mps.service",
-    "variants/mps/lh-engine.conf",
-    "variants/mps/lh-stt.conf",
-    "variants/mps/lh-tts.conf",
+    "measure/flatshare-engine.conf",
+    "systemd/flatshare-mps.service",
+    "variants/mps/flatshare-engine.conf",
+    "variants/mps/flatshare-stt.conf",
+    "variants/mps/flatshare-tts.conf",
 )
 """The files it takes from the box's directory as they are: they name nothing of a node's own."""
 BOX_ONLY = {
@@ -103,7 +103,9 @@ BOX_ONLY = {
     "variants/README.md": "the variants' documentation",
     "smoke.sh": "the end-to-end check, which runs from the source tree beside deploy/bin's listener audit and asks "
     "the engine for its model",
-    "systemd/lh-engine-proxy.*": "the sglang variant's socket in front of its TCP port, measured on the box only",
+    "systemd/flatshare-engine-proxy.*": (
+        "the sglang variant's socket in front of its TCP port, measured on the box only"
+    ),
     "variants/make-room-v03/*": "W5's control, measured on the box only",
     "variants/pr54530/*": "E2 arm 7a's variant, measured on the box only",
     "variants/sglang/*": "E2 arm 7b's variant, measured on the box only",
@@ -120,9 +122,9 @@ CORES = (("engine", 8), ("audio", 4), ("gateway", 2), ("voice", 8), ("aiperf", 8
 CORE_FLOOR = sum(want for _, want in CORES) // 2
 
 GIB = 1 << 30
-VENV_CUDA = "%h/leaseholder/venvs/engine/lib/python3.12/site-packages/nvidia/cu13"
+VENV_CUDA = "%h/flatshare/venvs/engine/lib/python3.12/site-packages/nvidia/cu13"
 """The CUDA 13 toolkit the engine venv carries (nvidia-cuda-nvcc, pinned by the engine lock), Gray's CUDA_HOME."""
-HOME_CUDA = "%h/leaseholder/cuda-12.9"
+HOME_CUDA = "%h/flatshare/cuda-12.9"
 """Where bootstrap.sh installs CUDA 12.9.1's toolkit for the cu129 lock on a host without one."""
 COMPAT = "/usr/local/cuda-13.0/compat"
 """Where cuda-compat-13-0 puts CUDA 13.0's forward-compatibility libraries."""
@@ -216,14 +218,14 @@ def _mig_devices(uuid: str) -> list[dict]:
 
 
 def _gpu(sysfs: Path) -> dict | None:
-    """The GPU's facts: on a host with several, the one LH_GPU_ID names (nvidia-smi's index or the GPU's UUID); with
-    one, it. ``chosen`` says whether one is: several and none named leave GPU 0's facts and chosen false, which the
+    """The GPU's facts: on a host with several, the one FLATSHARE_GPU_ID names (nvidia-smi's index or the GPU's UUID);
+    with one, it. ``chosen`` says whether one is: several and none named leave GPU 0's facts and chosen false, which the
     preflight refuses."""
     done = _run(["nvidia-smi", f"--query-gpu={GPU_QUERY}", "--format=csv,noheader,nounits"])
     if done is None or done.returncode != 0 or not done.stdout.strip():
         return None
     rows = [[x.strip() for x in line.split(",")] for line in done.stdout.strip().splitlines()]
-    wanted = os.environ.get("LH_GPU_ID", "").strip() or None
+    wanted = os.environ.get("FLATSHARE_GPU_ID", "").strip() or None
     if wanted:
         matches = [row for row in rows if wanted in (row[0], row[1])]
     else:
@@ -267,11 +269,12 @@ def gpu_select(gpu: dict) -> str:
     slices = gpu.get("mig_devices") or []
     visible = slices[0]["uuid"] if len(slices) == 1 else gpu["uuid"]
     return (
-        f"# GPU {gpu.get('index')} of {gpu.get('count', 1)}, the one this host lends (bootstrap.sh's LH_GPU_ID, else "
+        f"# GPU {gpu.get('index')} of {gpu.get('count', 1)}, the one this host lends "
+        "(bootstrap.sh's FLATSHARE_GPU_ID, else "
         "its only one): CUDA sees it alone, by UUID,\n# and gpu-guard reads its processes alone.\n"
         "Environment=CUDA_DEVICE_ORDER=PCI_BUS_ID\n"
         f"Environment=CUDA_VISIBLE_DEVICES={visible}\n"
-        f"Environment=LH_GPU_ID={gpu['uuid']}"
+        f"Environment=FLATSHARE_GPU_ID={gpu['uuid']}"
     )
 
 
@@ -281,7 +284,7 @@ def _cpus(sysfs: Path) -> dict[str, list[int]]:
     nodes: dict[str, list[int]] = {}
     for path in sorted((sysfs / "devices" / "system" / "node").glob("node[0-9]*")):
         cpus = parse_cpulist(_read(path / "cpulist") or "")
-        if allowed is not None and not os.environ.get("LH_SYSFS"):
+        if allowed is not None and not os.environ.get("FLATSHARE_SYSFS"):
             cpus = [c for c in cpus if c in allowed]
         if cpus:
             nodes[path.name.removeprefix("node")] = cpus
@@ -397,7 +400,7 @@ def _userns() -> bool | None:
             "--",
             "sh",
             "-c",
-            "ip link add lh0 type dummy && ip link del lh0",
+            "ip link add flatshare0 type dummy && ip link del flatshare0",
         ]
     )
     return done is not None and done.returncode == 0
@@ -428,11 +431,11 @@ def hub_cache() -> str:
 
 
 def detect(peer: str | None = None) -> dict:
-    """The host's facts. LH_ROOTFS, LH_SYSFS, LH_PROCFS and LH_SHM put /, /sys, /proc and /dev/shm elsewhere
-    (for tests)."""
-    root = Path(os.environ.get("LH_ROOTFS", "/"))
-    sysfs = Path(os.environ.get("LH_SYSFS", "/sys"))
-    procfs = Path(os.environ.get("LH_PROCFS", "/proc"))
+    """The host's facts. FLATSHARE_ROOTFS, FLATSHARE_SYSFS, FLATSHARE_PROCFS and FLATSHARE_SHM put /, /sys, /proc and
+    /dev/shm elsewhere (for tests)."""
+    root = Path(os.environ.get("FLATSHARE_ROOTFS", "/"))
+    sysfs = Path(os.environ.get("FLATSHARE_SYSFS", "/sys"))
+    procfs = Path(os.environ.get("FLATSHARE_PROCFS", "/proc"))
     systemd = _run(["systemctl", "--user", "is-system-running"])
     linger = _run(
         ["loginctl", "show-user", os.environ.get("USER", ""), "--property=Linger", "--value"]
@@ -448,7 +451,7 @@ def detect(peer: str | None = None) -> dict:
         "gpu": _gpu(sysfs),
         "cpus": _cpus(sysfs),
         "memory": _memory(sysfs, procfs),
-        "shm": _shm(Path(os.environ.get("LH_SHM", "/dev/shm"))),
+        "shm": _shm(Path(os.environ.get("FLATSHARE_SHM", "/dev/shm"))),
         "thp_shmem": _bracketed(
             _read(sysfs / "kernel" / "mm" / "transparent_hugepage" / "shmem_enabled")
         ),
@@ -580,7 +583,7 @@ def compiler(host: dict, install: str) -> tuple[str, str]:
     if install == "cu129":
         return HOME_CUDA, (
             "the host has no CUDA 12.9 toolkit and CUDA 12's wheels carry no nvcc, so the engine\n# JIT-compiles "
-            "with CUDA 12.9.1's toolkit, which bootstrap.sh installs into ~/leaseholder/cuda-12.9"
+            "with CUDA 12.9.1's toolkit, which bootstrap.sh installs into ~/flatshare/cuda-12.9"
         )
     return VENV_CUDA, (
         "the host has no CUDA 13 toolkit, so the engine JIT-compiles with the CUDA 13 compiler its\n# venv "
@@ -793,12 +796,12 @@ def resolve(profile: dict, host: dict | None) -> tuple[dict[str, str], dict | No
     outside = libs.get("path") if not libs.get("linker") else None
     unit_values = {
         "units.cuda_home": cuda,
-        "units.engine_path": f"%h/leaseholder/venvs/engine/bin:{cuda}/bin:/usr/local/bin:/usr/bin:/bin:%h/.local/bin",
-        "units.stt_path": f"%h/leaseholder/venvs/engine/bin:{cuda}/bin:/usr/local/bin:/usr/bin:/bin",
+        "units.engine_path": f"%h/flatshare/venvs/engine/bin:{cuda}/bin:/usr/local/bin:/usr/bin:/bin:%h/.local/bin",
+        "units.stt_path": f"%h/flatshare/venvs/engine/bin:{cuda}/bin:/usr/local/bin:/usr/bin:/bin",
         "units.stt_cuda_home": "" if system else f"Environment=CUDA_HOME={cuda}",
         # FlashInfer's JIT links -lcudart and -lcuda from $CUDA_HOME/lib64 and lib64/stubs, which the venv's CUDA 13
         # lacks (lib/ holds libcudart.so.13 only): bootstrap.sh links them into cache/cuda_lib.
-        "units.cuda_ldflags": "Environment=FLASHINFER_EXTRA_LDFLAGS=-L%h/leaseholder/cache/cuda_lib"
+        "units.cuda_ldflags": "Environment=FLASHINFER_EXTRA_LDFLAGS=-L%h/flatshare/cache/cuda_lib"
         if cuda == VENV_CUDA
         else "",
         "units.gpu_select": gpu_select(gpu),

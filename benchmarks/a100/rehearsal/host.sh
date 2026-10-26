@@ -19,11 +19,11 @@
 #   wait NAME             follow the step's log until it ends; exit with its status (254 for a status of 255)
 #   state NAME            done STATUS, running PID, died PID (gone without a status) or none
 #   stop NAME             end a running step: TERM to its process group, then KILL to what is left of it after
-#             180 s (lh-bench's own stop of its tools); status 143
+#             180 s (flatshare-bench's own stop of its tools); status 143
 #   verify STEP           the checks of rehearse.sh's STEP: env, stage, gpu, warm, block0, block1, block4
-#   kill-tools            the process groups of lh-bench's tools that a killed step left, ended by lh-bench's
-#             kill_left (the bench venv)
-#   stop-units            the rehearsal's units stopped, under lh-svc (its node's env.sh): fails on one not
+#   kill-tools            the process groups of flatshare-bench's tools that a killed step left, ended by
+#             flatshare-bench's kill_left (the bench venv)
+#   stop-units            the rehearsal's units stopped, under flatshare-svc (its node's env.sh): fails on one not
 #             inactive or failed after its stop
 # Bash 3.2 (the CPU test's macOS) or newer, and python3 for what the shell has no portable way to do. REHEARSAL_POLL_S
 # is wait's interval (5 s; the test's shorter).
@@ -31,10 +31,10 @@ set -euo pipefail
 
 say() { echo "check: $1: $2"; }
 
-# The box's units, as the user manager runs them: every lh-* and leaseholder* unit, its state, and its enablement.
+# The box's units, as the user manager runs them: every flatshare* unit, its state, and its enablement.
 box_units() {
-  systemctl --user list-units --all --no-legend --plain 'lh-*' 'leaseholder*' | LC_ALL=C sort
-  systemctl --user list-unit-files --no-legend 'lh-*' 'leaseholder*' | LC_ALL=C sort
+  systemctl --user list-units --all --no-legend --plain 'flatshare*' | LC_ALL=C sort
+  systemctl --user list-unit-files --no-legend 'flatshare*' | LC_ALL=C sort
 }
 
 # The box's deployment as files: each entry's kind, size, mtime, mode and link target under the trees the box runs
@@ -64,7 +64,7 @@ for top in sys.argv[1:]:
 EOF
 }
 
-BOX_TREES=(leaseholder .config/systemd/user .config/leaseholder .cache/vllm .cache/flashinfer)
+BOX_TREES=(flatshare .config/systemd/user .config/flatshare .cache/vllm .cache/flashinfer)
 
 box_state() { # box_state HUB_CACHE: what cleanup compares, from the login home (the hub cache wherever it is)
   echo "# units"
@@ -96,14 +96,14 @@ check_box() {
     say "rehearsal home" "ok: ~/$home, new"
   fi
   # The box's units, stopped: under its user manager, none of them active, activating or deactivating.
-  if ! active=$(systemctl --user list-units --all --no-legend --plain 'lh-*' 'leaseholder*' 2>&1); then
+  if ! active=$(systemctl --user list-units --all --no-legend --plain 'flatshare*' 2>&1); then
     no "the box's units" "the user manager does not answer: ${active%%$'\n'*}"
   else
     active=$(awk '$3 ~ /^(active|activating|deactivating|reloading)$/ {printf "%s%s", sep, $1; sep = ", "}' <<<"$active")
     if [[ -n $active ]]; then
       no "the box's units" "running: $active (stop them first: README.md, before)"
     else
-      say "the box's units" "ok: every lh-* and leaseholder* unit is inactive"
+      say "the box's units" "ok: every flatshare* unit is inactive"
     fi
   fi
   # The GPU, idle: no compute process (the box's engine, FB's, anyone's).
@@ -151,10 +151,10 @@ check_box() {
     fi
   done
   # Kokoro-FastAPI and its model, which init copies from the box's (bootstrap.sh then neither clones nor downloads).
-  if [[ -d leaseholder/vendor/Kokoro-FastAPI/.git && -f leaseholder/vendor/Kokoro-FastAPI/api/src/models/v1_0/kokoro-v1_0.pth ]]; then
-    say "Kokoro" "ok: the box's ~/leaseholder/vendor/Kokoro-FastAPI, with its model"
+  if [[ -d flatshare/vendor/Kokoro-FastAPI/.git && -f flatshare/vendor/Kokoro-FastAPI/api/src/models/v1_0/kokoro-v1_0.pth ]]; then
+    say "Kokoro" "ok: the box's ~/flatshare/vendor/Kokoro-FastAPI, with its model"
   else
-    no "Kokoro" "no ~/leaseholder/vendor/Kokoro-FastAPI with api/src/models/v1_0/kokoro-v1_0.pth"
+    no "Kokoro" "no ~/flatshare/vendor/Kokoro-FastAPI with api/src/models/v1_0/kokoro-v1_0.pth"
   fi
   # What bootstrap.sh would install with sudo, which the rehearsal refuses it: present already.
   local missing=""
@@ -168,13 +168,13 @@ check_box() {
     if python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
       say "tools" "ok: cc, c++, ss, git, curl, rsync, tar; python3 $version"
     else
-      no "tools" "python3 $version, below the 3.10 deploy/bin/lh-svc runs on"
+      no "tools" "python3 $version, below the 3.10 deploy/bin/flatshare-svc runs on"
     fi
   fi
   if command -v unshare >/dev/null && unshare --user --map-root-user --net true 2>/dev/null; then
     say "user namespaces" "ok: the voice plane and each GPU server in a network namespace of its own"
   else
-    say "user namespaces" "note: refused, so the voice plane runs in the host's network namespace (LiveKit's TCP 17880 and UDP 17882 there), and so do the GPU servers (LH_PRIVATE_NET=host)"
+    say "user namespaces" "note: refused, so the voice plane runs in the host's network namespace (LiveKit's TCP 17880 and UDP 17882 there), and so do the GPU servers (FLATSHARE_PRIVATE_NET=host)"
   fi
   # A logind that kills a session's processes at logout would end every detached step with its SSH session.
   line=$(grep -hE '^[[:space:]]*KillUserProcesses[[:space:]]*=' /etc/systemd/logind.conf /etc/systemd/logind.conf.d/*.conf 2>/dev/null | tail -1 || true)
@@ -204,15 +204,16 @@ init() {
 # each of the rehearsal's commands): its own home, runtime directory, caches and supervisor; the box's hub cache, read
 # offline; no way to the box's user manager (no session bus, and a runtime directory that is not /run/user/UID), so
 # that nothing of the rehearsal stops or starts a unit of the box's; and sudo refused.
-export LH_REHEARSAL=1
+export FLATSHARE_REHEARSAL=1
 export HOME=$qroot
 export XDG_RUNTIME_DIR=$qroot/run XDG_CONFIG_HOME=$qroot/.config XDG_CACHE_HOME=$qroot/.cache
 export XDG_DATA_HOME=$qroot/.local/share XDG_STATE_HOME=$qroot/.local/state TMPDIR=$qroot/tmp
 export UV_CACHE_DIR=$qroot/.cache/uv UV_PYTHON_INSTALL_DIR=$qroot/.local/share/uv/python
 export CARGO_HOME=$qroot/.cargo RUSTUP_HOME=$qroot/.rustup
 unset DBUS_SESSION_BUS_ADDRESS UV VIRTUAL_ENV PYTHONPATH HF_HOME HUGGINGFACE_HUB_CACHE TRANSFORMERS_CACHE
-unset VLLM_CACHE_ROOT TORCHINDUCTOR_CACHE_DIR TRITON_CACHE_DIR TORCH_HOME LH_GPU_ID LH_PROFILE LH_NODE_DIR LH_E2_RESULTS
-export LH_SUPERVISOR=lh-svc
+unset VLLM_CACHE_ROOT TORCHINDUCTOR_CACHE_DIR TRITON_CACHE_DIR TORCH_HOME
+unset FLATSHARE_GPU_ID FLATSHARE_PROFILE FLATSHARE_NODE_DIR FLATSHARE_E2_RESULTS
+export FLATSHARE_SUPERVISOR=flatshare-svc
 export HF_HUB_CACHE=$qhub HF_HUB_OFFLINE=1
 export PATH=$qroot/.rehearsal/bin:$qroot/.local/bin:\$PATH
 cd "\$HOME"
@@ -225,10 +226,10 @@ echo "rehearsal: sudo refused: the rehearsal changes nothing of the host's syste
 exit 1
 EOF
   chmod 755 "$root/.rehearsal/bin/sudo"
-  if [[ ! -d $root/leaseholder/vendor/Kokoro-FastAPI ]]; then
-    mkdir -p "$root/leaseholder/vendor"
-    cp -a leaseholder/vendor/Kokoro-FastAPI "$root/leaseholder/vendor/"
-    echo "init: Kokoro-FastAPI copied from the box's ~/leaseholder/vendor ($(du -sh "$root/leaseholder/vendor/Kokoro-FastAPI" | cut -f1))"
+  if [[ ! -d $root/flatshare/vendor/Kokoro-FastAPI ]]; then
+    mkdir -p "$root/flatshare/vendor"
+    cp -a flatshare/vendor/Kokoro-FastAPI "$root/flatshare/vendor/"
+    echo "init: Kokoro-FastAPI copied from the box's ~/flatshare/vendor ($(du -sh "$root/flatshare/vendor/Kokoro-FastAPI" | cut -f1))"
   fi
   if [[ ! -f $root/.rehearsal/box-before.state ]]; then
     box_state "$hub" >"$root/.rehearsal/box-before.state.new"
@@ -363,11 +364,11 @@ state() {
   pid=$(cat "$base.pid" 2>/dev/null || true)
   # Then the process, then the status again: a step writes its status before it exits, so one seen gone has written
   # any status it was to write (without the second look a step that ends between the two reads as died). On Linux
-  # the process must be the step's own (LH_REHEARSAL_STEP in its environment), not a pid reused since: one whose
+  # the process must be the step's own (FLATSHARE_REHEARSAL_STEP in its environment), not a pid reused since: one whose
   # environment cannot be read (another user's, or a non-dumpable one of this user's, as ssh-agent is) is not. grep
   # reads the file itself, as behind a pipe under pipefail its exit at the first match can kill the writer (SIGPIPE).
   if [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null &&
-    { [[ ! -d /proc/self ]] || grep -qzx "LH_REHEARSAL_STEP=$1" "/proc/$pid/environ" 2>/dev/null; }; then
+    { [[ ! -d /proc/self ]] || grep -qzx "FLATSHARE_REHEARSAL_STEP=$1" "/proc/$pid/environ" 2>/dev/null; }; then
     echo "running $pid"
   elif [[ -f $base.status ]]; then
     echo "done $(cat "$base.status")"
@@ -402,7 +403,7 @@ start() {
   # Where this run's output begins in the step's log, which keeps the runs before it.
   if [[ -f $base.log ]]; then wc -c <"$base.log" | tr -d ' ' >"$base.offset"; else echo 0 >"$base.offset"; fi
   echo "[$(date -u +%FT%TZ)] rehearsal: $name: $command" >>"$base.log"
-  LH_REHEARSAL_STEP=$name python3 -c '
+  FLATSHARE_REHEARSAL_STEP=$name python3 -c '
 import os
 import sys
 import time
@@ -474,7 +475,7 @@ stop_step() {
   fi
   pid=${s#running }
   # TERM to the step's process group, then up to 180 s for all of the group to end, not its leader alone: the step's
-  # bash ends at once, while lh-bench, on TERM, stops its callers (30 s of grace) and AIPerf (120 s; e2/run.py)
+  # bash ends at once, while flatshare-bench, on TERM, stops its callers (30 s of grace) and AIPerf (120 s; e2/run.py)
   # before it exits. AIPerf runs in a session of its own, out of this group's reach: a KILL sooner leaves it running.
   kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
   for i in $(seq 180); do
@@ -491,7 +492,7 @@ stop_step() {
 
 # The steps' checks, from the rehearsal's home.
 verify_preflight() { # the node's preflight.json: no refused check; the counts and every check that is not ok
-  local file=leaseholder/node/preflight.json
+  local file=flatshare/node/preflight.json
   [[ -f $file ]] || { echo "verify: no $file"; return 1; }
   python3 - "$file" <<'EOF'
 import json
@@ -507,31 +508,32 @@ EOF
 }
 
 verify() {
-  local runs=leaseholder/runs/a100 missing="" f
+  local runs=flatshare/runs/a100 missing="" f
   case $1 in
     env)
-      grep -qx 'export LH_SUPERVISOR=lh-svc' leaseholder/node/env.sh ||
-        { echo "verify: node/env.sh does not keep lh-svc"; return 1; }
-      grep -qx "export HF_HUB_CACHE=$HF_HUB_CACHE" leaseholder/node/env.sh ||
+      grep -qx 'export FLATSHARE_SUPERVISOR=flatshare-svc' flatshare/node/env.sh ||
+        { echo "verify: node/env.sh does not keep flatshare-svc"; return 1; }
+      grep -qx "export HF_HUB_CACHE=$HF_HUB_CACHE" flatshare/node/env.sh ||
         { echo "verify: node/env.sh does not name the box's hub cache $HF_HUB_CACHE"; return 1; }
-      echo "verify: node/env.sh keeps lh-svc and the box's hub cache"
+      echo "verify: node/env.sh keeps flatshare-svc and the box's hub cache"
       ;;
     stage)
       verify env
       verify_preflight
       local states
       # shellcheck source=/dev/null
-      states=$(source leaseholder/node/env.sh &&
-        systemctl --user is-active lh-voicenet.service lh-livekit.service lh-gateway.service lh-voice-worker.service |
+      states=$(source flatshare/node/env.sh &&
+        systemctl --user is-active flatshare-voicenet.service flatshare-livekit.service flatshare-gateway.service \
+          flatshare-voice-worker.service |
         tr '\n' ' ' || true)
       [[ $states == "active active active active " ]] ||
-        { echo "verify: the control plane is not up under lh-svc (voicenet, livekit, gateway, worker: $states)"; return 1; }
-      echo "verify: the control plane is up under lh-svc"
+        { echo "verify: the control plane is not up under flatshare-svc (voicenet, livekit, gateway, worker: $states)"; return 1; }
+      echo "verify: the control plane is up under flatshare-svc"
       ;;
     gpu) verify_preflight ;;
     warm)
-      [[ -f leaseholder/cache/warm.json ]] || { echo "verify: no cache/warm.json"; return 1; }
-      python3 - leaseholder/cache/warm.json <<'EOF'
+      [[ -f flatshare/cache/warm.json ]] || { echo "verify: no cache/warm.json"; return 1; }
+      python3 - flatshare/cache/warm.json <<'EOF'
 import json
 import sys
 
@@ -547,12 +549,12 @@ EOF
       [[ $(tail -n 1 "$runs/block0/smoke.txt") == 'smoke: ok' ]] || { echo "verify: smoke.txt does not end in smoke: ok"; return 1; }
       [[ -s $runs/block0/call.txt ]] || { echo "verify: no block0/call.txt"; return 1; }
       # The listener audit's line: the GPU servers each in a network namespace of its own (deploy/bin/in-private-net)
-      # where the kernel allows unprivileged user namespaces, else in the host's, marked LH_PRIVATE_NET=host.
+      # where the kernel allows unprivileged user namespaces, else in the host's, marked FLATSHARE_PRIVATE_NET=host.
       audit=$(sed -n 's/^listener audit  *//p' "$runs/block0/smoke.txt")
       if unshare --user --map-root-user --net true 2>/dev/null; then
-        want="lh-engine, lh-stt, lh-tts in network namespaces of their own"
+        want="flatshare-engine, flatshare-stt, flatshare-tts in network namespaces of their own"
       else
-        want="the GPU servers run in the host's network namespace (LH_PRIVATE_NET=host)"
+        want="the GPU servers run in the host's network namespace (FLATSHARE_PRIVATE_NET=host)"
       fi
       [[ $audit == ok:* && $audit == *"$want"* ]] ||
         { echo "verify: the listener audit's line is not ok with $want: ${audit:-none}"; return 1; }
@@ -570,7 +572,7 @@ EOF
       for f in kv-1 prefill-1 tail-1; do echo "verify:   frozen-$f: $(tail -1 "$runs/block1/frozen-$f.txt")"; done
       ;;
     block4)
-      local points=leaseholder/results/e2/a100-r1
+      local points=flatshare/results/e2/a100-r1
       grep -q 'a100-r1 stopped before its deadline' "$runs/blocks.log" ||
         { echo "verify: blocks.log has no deadline stop of a100-r1"; return 1; }
       grep -qs '"status": "complete"' "$points/w5-disc-pr-ab48-s24/run.json" ||
@@ -588,35 +590,40 @@ EOF
   esac
 }
 
-# What lh-bench's tools left when a step was killed before lh-bench could stop them. AIPerf runs in a session of its
-# own, out of the step's group, and its processes set their titles, which blanks the environment leftovers reads; but
-# lh-bench names each tool's process group in leaseholder/.lh-bench-e2-tools until the tool is stopped. lh-bench's
-# own kill_left ends those groups, from the bench venv; no such directory is no tool started.
+# What flatshare-bench's tools left when a step was killed before flatshare-bench could stop them. AIPerf runs in a
+# session of its own, out of the step's group, and its processes set their titles, which blanks the environment
+# leftovers reads; but flatshare-bench names each tool's process group in flatshare/.flatshare-bench-e2-tools until the
+# tool is stopped. flatshare-bench's own kill_left ends those groups, from the bench venv; no such directory is no tool
+# started.
 kill_tools() {
-  local python=leaseholder/venvs/bench/bin/python
-  if [[ ! -d leaseholder/.lh-bench-e2-tools ]]; then
-    echo "kill-tools: lh-bench started no tool here"
+  local python=flatshare/venvs/bench/bin/python
+  if [[ ! -d flatshare/.flatshare-bench-e2-tools ]]; then
+    echo "kill-tools: flatshare-bench started no tool here"
     return 0
   fi
   "$python" - <<'EOF'
-from leaseholder_bench.e2.run import Host, kill_left, tool_scope
+from flatshare_bench.e2.run import Host, kill_left, tool_scope
 
 killed = sorted(kill_left(tool_scope(Host.load())))
-print(f"kill-tools: lh-bench's kill_left {'ended ' + ' '.join(map(str, killed)) if killed else 'found nothing left'}")
+print(
+    f"kill-tools: flatshare-bench's kill_left "
+    f"{'ended ' + ' '.join(map(str, killed)) if killed else 'found nothing left'}"
+)
 EOF
 }
 
 stop_units() {
-  if [[ ! -f leaseholder/node/env.sh ]]; then
+  if [[ ! -f flatshare/node/env.sh ]]; then
     echo "stop-units: no node/env.sh: no unit was started"
     return 0
   fi
   # shellcheck source=/dev/null
-  source leaseholder/node/env.sh
-  local units=(leaseholder.target lh-engine.service lh-stt.service lh-tts.service lh-voice-worker.service
-    lh-gateway.service lh-gateway.socket lh-livekit.service lh-voicenet.service) states state i=0 left=""
+  source flatshare/node/env.sh
+  local units=(flatshare.target flatshare-engine.service flatshare-stt.service flatshare-tts.service
+    flatshare-voice-worker.service flatshare-gateway.service flatshare-gateway.socket flatshare-livekit.service
+    flatshare-voicenet.service) states state i=0 left=""
   systemctl --user stop "${units[@]}" || echo "stop-units: systemctl --user stop failed (above)"
-  # A unit is stopped once inactive, or failed; one deactivating (lh-svc's state while it ends what is left of a
+  # A unit is stopped once inactive, or failed; one deactivating (flatshare-svc's state while it ends what is left of a
   # unit's group) is not yet. is-active fails unless a unit is active, so its answer is read, not its status.
   states=$(systemctl --user is-active "${units[@]}" || true)
   echo "stop-units: $(tr '\n' ' ' <<<"$states")"

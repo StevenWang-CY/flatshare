@@ -8,7 +8,7 @@
 #     "imageio-ffmpeg==0.6.0",
 # ]
 # ///
-"""E2's demo video: the same caller on two engines, from two calls that ``lh-bench e2 run
+"""E2's demo video: the same caller on two engines, from two calls that ``flatshare-bench e2 run
 --save-audio`` saved.
 
     uv run benchmarks/e2/demo.py BASELINE FEATURED --summary FRONTIER_CSV --out demo.mp4 \\
@@ -25,7 +25,7 @@ the other: only a caller's pause between turns is stretched, never a measured wa
 A frame shows the turn under way on one time axis for both calls: the caller's line and the agent's
 reply as their waveforms, drawn as they play, and between them the wait, a bar that grows until the
 reply's first audio while a clock counts it, then gives the V2V the caller measured. Under it, each
-turn's V2V as a pair of bars. ``--summary`` is a report's frontier.csv (``lh-bench e2 report``): the
+turn's V2V as a pair of bars. ``--summary`` is a report's frontier.csv (``flatshare-bench e2 report``): the
 voice SLO is the report's, 250 ms above voice alone's median V2V p95 with as many callers, drawn as
 a dashed rule against each wait and each bar; and a closing card gives both configurations (by their
 points' names) over all the report's runs, the median of their V2V p95 and of the agents' tokens/s
@@ -42,7 +42,7 @@ and in a phone layout 420 units across (PREFIX.webp, PREFIX-dark.webp, PREFIX-na
 PREFIX-narrow-dark.webp).
 
 Frames follow the docs' figures (``figure_style.py`` and ``fonts/`` in
-python/leaseholder_bench/src/leaseholder_bench): STIX Two at the figures' four sizes on a layout
+python/flatshare_bench/src/flatshare_bench): STIX Two at the figures' four sizes on a layout
 1120 units wide, the palette of ``--theme``, the configuration to deploy in the saturated blue and
 the baseline in gray. Each frame is drawn at twice its size and halved by a box filter, so type and
 hairlines stay crisp. Motion follows the calls: the playhead, the waveforms, the clock and the
@@ -76,7 +76,7 @@ from typing import Any
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKAGE = ROOT / "python" / "leaseholder_bench" / "src" / "leaseholder_bench"
+PACKAGE = ROOT / "python" / "flatshare_bench" / "src" / "flatshare_bench"
 _spec = importlib.util.spec_from_file_location("demo_figure_style", PACKAGE / "figure_style.py")
 assert _spec is not None and _spec.loader is not None
 style = importlib.util.module_from_spec(_spec)
@@ -159,7 +159,7 @@ def leaving(t: float, by: float, seconds: float = EXIT_S) -> float:
 
 @dataclass
 class Call:
-    """A call that ``lh-voice bots --save-audio`` saved, and the point it was measured at."""
+    """A call that ``flatshare-voice bots --save-audio`` saved, and the point it was measured at."""
 
     label: str
     point: str

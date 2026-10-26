@@ -8,8 +8,8 @@
 
 E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GPU's KV pool, on one RTX 5060 Ti ([BENCHMARKS.md](../BENCHMARKS.md#voice-under-agent-load-e2)):
 - **Nothing deployable today fixes it.** Tuned vLLM (the frozen box) leaves the voice tail at 10.1 s at p95. Every gateway baseline and both engines' priority preemption leave it at 8.8–12.1 s. Aborting background work before its first byte and resubmitting it reaches 2.6 s, at the cost of the agents' tail.
-- **The engine change does.** With the two vLLM PRs and a 48-token window the tail is 2.19 s, against an SLO of 2.02 s, at 94% of stock's background throughput. Leaseholder's arm 9 reaches 2.06 s with every reply capped at 16 tokens.
-- **The control plane could not make room.** Leaseholder's admission policy holds KV headroom from speech onset and throttles background prefill while a turn is answered. In front of stock vLLM it left the tail where stock does (10,993 ms). Beside the engine change its mechanisms could not act. Running agent requests held the pool, and a control plane can only defer new ones, so the headroom was never there: degrade capped 60 of 60 replies in every run. The throttle, checked after the headroom, deferred nothing.
+- **The engine change does.** With the two vLLM PRs and a 48-token window the tail is 2.19 s, against an SLO of 2.02 s, at 94% of stock's background throughput. Flatshare's arm 9 reaches 2.06 s with every reply capped at 16 tokens.
+- **The control plane could not make room.** Flatshare's admission policy holds KV headroom from speech onset and throttles background prefill while a turn is answered. In front of stock vLLM it left the tail where stock does (10,993 ms). Beside the engine change its mechanisms could not act. Running agent requests held the pool, and a control plane can only defer new ones, so the headroom was never there: degrade capped 60 of 60 replies in every run. The throttle, checked after the headroom, deferred nothing.
 - **E1 measured the agent side.** In the simulator, even an oracle that knows when each agent returns closes under 9% of resume TTFT at p50; at p90 it closes 28% at low pressure, but session history, the information a deployment has, closes nothing ([EXPERIMENTS.md](../EXPERIMENTS.md#e1-parking)).
 
 ## Decision
@@ -20,9 +20,9 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
 
   There is no reserve. Until the PRs merge, the `make-room` variant runs the same change on vLLM 0.32.0.
 - **The priority comes from the caller's identity.** A gateway maps each tenant to a class and caps it, so a client cannot raise its own priority.
-- **No admission policy in front.** `lh-gateway` stays the experiment harness: its baselines and the lifecycle policy remain E2's arms, and the measured configuration ran without either.
+- **No admission policy in front.** `flatshare-gateway` stays the experiment harness: its baselines and the lifecycle policy remain E2's arms, and the measured configuration ran without either.
 - **Not pursued:**
-  - leases, prefetch, the per-node sidecar (`lh-node`), cache contracts and the recompute ledger;
+  - leases, prefetch, the per-node sidecar, cache contracts and the recompute ledger;
   - they would be reopened by a source of tool-return times ahead of the return, which the oracle's tail gain needs, or by an engine whose running KV a control plane can reclaim.
 
 ## Consequences
@@ -32,7 +32,7 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
   - ADR-0001's design describes the experiment harness, not the deployment;
   - ADR-0003's decision stands, with the room made in the engine;
   - a window that covers the reply's first sentence makes degrade unnecessary.
-- **The v0 lease and ledger code is removed after v0.3:** `lh-proto`'s lease hint and ledger rows, `X-LH-Synthetic`, and `leaseholder_vllm`'s `LeasePolicy` and `LeaseConnector`. Done on 2026-10-24; the v0.3 tree keeps them.
+- **The v0 lease and ledger code is removed after v0.3:** `flatshare-proto`'s lease hint and ledger rows, the header that marked synthetic requests, and `flatshare_vllm`'s `LeasePolicy` and `LeaseConnector`. Done on 2026-10-24; the v0.3 tree keeps them.
 - **The change's known gaps** ([ARCHITECTURE.md §2](../ARCHITECTURE.md#2-the-change-63350-and-63351)) were open in the v0.3 variant and in both PRs as first opened, and E2 measured the change with them. W5 fixed them, with the further defects its review found, in the variant (main, up to dff9744); the PRs carry the same fixes before their review.
 
 ## Later

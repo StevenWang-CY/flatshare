@@ -1,0 +1,44 @@
+[Unit]
+Description=Flatshare STT: vLLM 0.32, whisper-large-v3-turbo on %t/flatshare/stt.sock
+Documentation=https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md
+PartOf=flatshare.target
+StartLimitIntervalSec=1800
+StartLimitBurst=3
+
+[Service]
+Type=exec
+WorkingDirectory=%h/flatshare
+Environment=PATH={{units.stt_path}}
+{{units.stt_cuda_home}}
+{{units.library_path}}
+{{units.gpu_select}}
+Environment=HF_HUB_OFFLINE=1
+{{units.hf_hub_cache}}
+{{text.stt_caches}}
+# The FlashInfer sampler would JIT-compile at warm-up; Whisper does not need it.
+Environment=VLLM_USE_FLASHINFER_SAMPLER=0
+# Keep idle HTTP connections for 60 s (vLLM's default is 5 s), as the engine does: through the tunnel each new
+# connection is a new SSH session, about 12 ms, which the turns seconds apart would otherwise pay for most turns.
+Environment=VLLM_HTTP_TIMEOUT_KEEP_ALIVE=60
+# On a Unix socket in a directory only this user may enter, and its ZMQ sockets in a directory of its own there,
+# emptied first, as the engine (flatshare-engine.service says why).
+Environment=FLATSHARE_STT_SOCKET=%t/flatshare/stt.sock
+Environment=VLLM_RPC_BASE_PATH=%t/flatshare/stt.zmq
+ExecStartPre=/usr/bin/install -d -m 0700 %t/flatshare
+ExecStartPre=/usr/bin/rm -f ${FLATSHARE_STT_SOCKET}
+ExecStartPre=/usr/bin/rm -rf ${VLLM_RPC_BASE_PATH}
+ExecStartPre=/usr/bin/install -d -m 0700 ${VLLM_RPC_BASE_PATH}
+ExecStartPre=%h/flatshare/src/deploy/bin/gpu-guard
+# In a network namespace of its own, as the engine (flatshare-engine.service says why).
+ExecStart=%h/flatshare/src/deploy/bin/in-private-net %h/flatshare/venvs/engine/bin/vllm serve --config {{profile.deploy_dir}}/stt.yaml --uds ${FLATSHARE_STT_SOCKET}
+ExecStartPost=%h/flatshare/src/deploy/bin/wait-healthy --unix-socket ${FLATSHARE_STT_SOCKET} --pid=${MAINPID} http://localhost/health 900
+{{text.audio_numa}}
+CPUAffinity={{units.audio_cpus}}
+NUMAPolicy=preferred
+NUMAMask={{units.audio_numa}}
+KillSignal=SIGINT
+TimeoutStartSec=1000
+TimeoutStopSec=60
+Restart=on-failure
+# From the exit of the unit's last process, as flatshare-engine's: pure wait; StartLimitBurst ends a crash loop.
+RestartSec=5

@@ -1,6 +1,6 @@
-# Leaseholder
+# Flatshare
 
-[![CI](https://github.com/StevenWang-CY/leaseholder/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenWang-CY/leaseholder/actions/workflows/ci.yml)
+[![CI](https://github.com/StevenWang-CY/flatshare/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenWang-CY/flatshare/actions/workflows/ci.yml)
 
 **A voice agent and coding agents on one GPU.** A self-hosted voice agent (speech to text, an LLM, text to speech) needs
 its GPU for a fraction of each turn, and background work such as coding agents could use the rest. On vLLM 0.32, beside
@@ -22,7 +22,7 @@ the agents' throughput holds.
 *The same caller's first measured turn on each engine, beside the same agents (recorded 2026-10-25), as it plays: with
 the two PRs the reply comes 1.9 s after the caller's line ends, on tuned vLLM after 9.6 s; over both calls of each run,
 their V2V p95 was 2.2 and 11.2 s. The video of ten turns, with sound, its closing card with both GPUs' runs, is in the
-[v1.1 release](https://github.com/StevenWang-CY/leaseholder/releases/tag/v1.1).*
+[v1.1 release](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.1).*
 
 <picture>
   <source media="(max-width: 767px)" srcset="docs/figures/e2-voice-p95-gpus-narrow.svg">
@@ -40,7 +40,7 @@ their V2V p95 was 2.2 and 11.2 s. The video of ten turns, with sound, its closin
 
 Medians of five rounds (10 runs for tuned vLLM and 15 for the last row, which more than one campaign ran), each round on
 its own sample of the agents' traces with every configuration in a rotated order. The SLO is voice alone plus 250 ms at
-p95. The PRs' rows ran as Leaseholder's make-room variant on vLLM 0.32.0 with the PRs' switch values, which schedules as
+p95. The PRs' rows ran as Flatshare's make-room variant on vLLM 0.32.0 with the PRs' switch values, which schedules as
 the PRs' diff, ported to 0.32.0, did before their revision of 2026-10-25; that revision ends the window's hold a step
 sooner, a step only replies at least the window long reach ([after
 W5](docs/BENCHMARKS.md#after-w5-the-first-tokens-in-flight)). The agents' tokens/s count the first 240 s of the calls.
@@ -121,14 +121,14 @@ The make-room variant builds vLLM 0.32.0's scheduler with the two PRs, backporte
 modifying it:
 
 ```sh
-python python/leaseholder_vllm/src/leaseholder_vllm/build.py make-room ~/make-room
+python python/flatshare_vllm/src/flatshare_vllm/build.py make-room ~/make-room
 PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 \
   --scheduling-policy priority --max-num-batched-tokens 512 --long-prefill-token-threshold 256 \
-  --scheduler-cls lh_make_room_scheduler.AsyncScheduler \
+  --scheduler-cls flatshare_make_room_scheduler.AsyncScheduler \
   --additional-config.make_room.max_preemptions_per_step 2 \
   --additional-config.make_room.budget_cap true --additional-config.make_room.budget_cap_tokens 48 \
   --additional-config.make_room.reserve_tokens 0
-python python/leaseholder_vllm/src/leaseholder_vllm/make-room/probe.py http://127.0.0.1:8000 kv   # a voice turn behind two long agent requests
+python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv   # a voice turn behind two long agent requests
 ```
 
 Send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV tier from
@@ -153,7 +153,7 @@ it fails) and how to check it on your hardware.
   call opens with an unmeasured warm-up turn. Baselines are configured as their authors recommend.
 - **Reproducible.** `make reproduce-e2` rebuilds every table and figure from the committed records; the gateway adds
   0.29 ms to a voice request's first token, paired against the engine's own socket on the final transport
-  ([W6](docs/BENCHMARKS.md#the-control-plane-lh-gateway-in-front-of-the-engine)).
+  ([W6](docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)).
 
 ## Documentation
 
@@ -177,21 +177,21 @@ They act in front of the engine, and the voice turn loses its time inside the en
 llm-d's flow control (emulated), and vLLM's and SGLang's own priority preemption: none meets the SLO, and most leave the
 p95 between 8.8 and 12.1 s. What this adds is the change to vLLM's scheduler (SGLang's counterpart is its own draft,
 #45686), the end-to-end measurement against every deployable alternative, and two measured negatives: a gateway policy
-timed by the conversation (E2) and agent-side KV prefetch (E1). `lh-gateway` is a small Rust harness for these
+timed by the conversation (E2) and agent-side KV prefetch (E1). `flatshare-gateway` is a small Rust harness for these
 experiments, not a fleet router. [docs/PRIOR-ART.md](docs/PRIOR-ART.md) has the sources and where each result went
 upstream.
 
 ## Repository
 
 ```text
-crates/lh-proto/          wire types and their JSON Schemas
-crates/lh-core/           cost and step-time models, KV geometry, the admission policies E2 compares
-crates/lh-gateway/        the gateway that sets priorities and runs E2's admission policies
-crates/lh-sim/            the KV cache simulator behind E1
-python/leaseholder_vllm/  the change on vLLM 0.32: the PRs as patches, the build, probes and tests
-python/leaseholder_bench/ the E2 harness, trace conversion, probes and drills
-python/leaseholder_voice/ the voice agent and the measurement callers
-python/leaseholder_stats/ the statistics the measurements publish, each defined once
+crates/flatshare-proto/   wire types and their JSON Schemas
+crates/flatshare-core/    cost and step-time models, KV geometry, the admission policies E2 compares
+crates/flatshare-gateway/ the gateway that sets priorities and runs E2's admission policies
+crates/flatshare-sim/     the KV cache simulator behind E1
+python/flatshare_vllm/    the change on vLLM 0.32: the PRs as patches, the build, probes and tests
+python/flatshare_bench/   the E2 harness, trace conversion, probes and drills
+python/flatshare_voice/   the voice agent and the measurement callers
+python/flatshare_stats/   the statistics the measurements publish, each defined once
 benchmarks/               E2's arm files and campaigns, the committed records, and the A100 run
 deploy/                   per-host bootstrap, hardware profiles, systemd units, the engine variants' drop-ins, tunnels,
                           single-host mode
@@ -212,13 +212,14 @@ make perf-make-room TORCH_PYTHON=PY  # the change's cost a scheduler step on CPU
 make compat-upstream                 # the PRs against vLLM's main, make-room's patches against vLLM's newest release
 make reproduce-e2                    # E2's tables and figures from the committed records (W4)
 make reproduce-e2-w5                 # the same for W5's records
-make reproduce-e1 CORPUS=DIR         # E1's tables with lh-sim, from the 32x corpus
-make forecast-a100 CORPUS=DIR        # lh-sim's forecast for the A100 run, benchmarks/a100/forecast.md
+make reproduce-e1 CORPUS=DIR         # E1's tables with flatshare-sim, from the 32x corpus
+make forecast-a100 CORPUS=DIR        # flatshare-sim's forecast for the A100 run, benchmarks/a100/forecast.md
 ```
 
-The name is the original design's, in which the gateway held leases on sessions' KV; E1 and E2 showed the engine had to
-carry the realtime tier, and that design was dropped
-([ADR-0006](docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)).
+The project was called Leaseholder through v1.1, after its original design, in which the gateway held leases on
+sessions' KV; E1 and E2 showed the engine had to carry the realtime tier, and that design was dropped
+([ADR-0006](docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)). The records from before the rename keep the
+old names ([docs/GLOSSARY.md](docs/GLOSSARY.md)).
 
 ## License
 

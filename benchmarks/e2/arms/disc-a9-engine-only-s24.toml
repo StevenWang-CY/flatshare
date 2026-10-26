@@ -1,4 +1,4 @@
-# E2 arm 9, Leaseholder, in the discriminating scenario (24 session trees on weka-x32-long, as disc-frozen-s24.toml).
+# E2 arm 9 in the discriminating scenario (24 session trees on weka-x32-long, as disc-frozen-s24.toml).
 # Arm 9's engine half alone: make-room behind the gateway without an admission policy.
 arm = 9
 label = "Make-room alone, without the gateway policy"

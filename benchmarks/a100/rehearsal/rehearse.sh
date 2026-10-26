@@ -5,7 +5,7 @@
 # prints and takes, how to abort and restore). The steps, in order:
 #   check      read-only: the box's units stopped, the GPU idle, the ports free, the disk, the models, Kokoro, logind
 #   init       the rehearsal's home on the host (~/a100-rehearsal): its environment, Kokoro, the box's state recorded
-#   data       LH_DATA on this workstation: weka-x32, weka-x32-long (long_traces.py), callers (cyan's)
+#   data       FLATSHARE_DATA on this workstation: weka-x32, weka-x32-long (long_traces.py), callers (cyan's)
 #   push       deploy/a100/push.sh, into the rehearsal's home
 #   stage, gpu, warm     bootstrap.sh's three stages, on the host
 #   block0, block1       run.sh 0 (its listener audit with each GPU server in a network namespace of its own) and
@@ -20,29 +20,29 @@
 #   --redo STEP          run STEP again although it is done (repeatable): a step on the host is run again, and a
 #                        block's blocks/N.done on the host removed first, so that run.sh runs the block again
 #   --purge              cleanup, run again although it is done, also removes the rehearsal's home on the host
-# The environment: REHEARSAL_HOST (phastform), REHEARSAL_SSH (the ssh command: LH_SSH, else ssh),
+# The environment: REHEARSAL_HOST (phastform), REHEARSAL_SSH (the ssh command: FLATSHARE_SSH, else ssh),
 # REHEARSAL_HOME (a100-rehearsal, a directory under the host's login home), REHEARSAL_REPO (the checkout pushed: the one
 # this script is in), REHEARSAL_CYAN and REHEARSAL_PEACOCK (cyan, peacock),
-# REHEARSAL_CORPUS (this workstation's weka-x32, ~/leaseholder/data/weka-x32; cyan's when it has none),
-# REHEARSAL_PEACOCK_CORPUS (peacock's, under its home: leaseholder-data/weka-x32; this workstation's is copied there when
-# it has none), REHEARSAL_GATEWAY_BIN (an lh-gateway for push.sh's LH_GATEWAY_BIN; by default bootstrap.sh builds one on
-# the host, as the A100's must where a copy does not run), REHEARSAL_MIN_FREE_GIB (40), REHEARSAL_WORK (where state/,
-# data/ (LH_DATA), hosts/ (the pulled records) and reproduce/ go: ~/leaseholder/rehearsal).
+# REHEARSAL_CORPUS (this workstation's weka-x32, ~/flatshare/data/weka-x32; cyan's when it has none),
+# REHEARSAL_PEACOCK_CORPUS (peacock's, under its home: flatshare-data/weka-x32; this workstation's is copied there when
+# it has none), REHEARSAL_GATEWAY_BIN (a flatshare-gateway for push.sh's FLATSHARE_GATEWAY_BIN; by default bootstrap.sh
+# builds one on the host, as the A100's must where a copy does not run), REHEARSAL_MIN_FREE_GIB (40), REHEARSAL_WORK
+# (where state/, data/ (FLATSHARE_DATA), hosts/ (the pulled records) and reproduce/ go: ~/flatshare/rehearsal).
 # Bash 3.2 (macOS's) or newer.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 host=${REHEARSAL_HOST:-phastform}
-export REHEARSAL_SSH=${REHEARSAL_SSH:-${LH_SSH:-ssh}}
+export REHEARSAL_SSH=${REHEARSAL_SSH:-${FLATSHARE_SSH:-ssh}}
 export REHEARSAL_HOME=${REHEARSAL_HOME:-a100-rehearsal}
 rhome=$REHEARSAL_HOME
 repo=${REHEARSAL_REPO:-$(cd "$here/../../.." && pwd)}
-work=${REHEARSAL_WORK:-$HOME/leaseholder/rehearsal}
+work=${REHEARSAL_WORK:-$HOME/flatshare/rehearsal}
 data=$work/data
 state=$work/state
 cyan=${REHEARSAL_CYAN:-cyan}
 peacock=${REHEARSAL_PEACOCK:-peacock}
-corpus=${REHEARSAL_CORPUS:-$HOME/leaseholder/data/weka-x32}
-peacock_corpus=${REHEARSAL_PEACOCK_CORPUS:-leaseholder-data/weka-x32}
+corpus=${REHEARSAL_CORPUS:-$HOME/flatshare/data/weka-x32}
+peacock_corpus=${REHEARSAL_PEACOCK_CORPUS:-flatshare-data/weka-x32}
 gateway=${REHEARSAL_GATEWAY_BIN:-}
 min_gib=${REHEARSAL_MIN_FREE_GIB:-40}
 read -r -a ssh_cmd <<<"$REHEARSAL_SSH"
@@ -145,12 +145,12 @@ step_init() {
   hub=$(sed -n 's/^check: hub cache: ok: //p' "$state/check.txt" 2>/dev/null || true)
   [[ -n $hub ]] || die "init: state/check.txt names no hub cache (rehearse.sh --redo check check)"
   host_sh init "$rhome" "$hub" || die "init: the rehearsal's home was not made (above)"
-  in_rehearsal 'echo "init: the rehearsal environment: HOME $HOME, XDG_RUNTIME_DIR $XDG_RUNTIME_DIR, LH_SUPERVISOR $LH_SUPERVISOR, HF_HUB_CACHE $HF_HUB_CACHE (offline $HF_HUB_OFFLINE), session bus ${DBUS_SESSION_BUS_ADDRESS:-none}"'
-  # The box's user manager must be out of the rehearsal's reach: bootstrap.sh, under LH_SUPERVISOR=lh-svc where a user
-  # manager runs, would stop the units of that name it runs (the box's). Only systemctl's answer that it reaches no
-  # manager passes: "Failed to connect to bus" ("to user scope bus" from systemd 257), or offline where systemd did
-  # not boot the host. Anything else fails: a manager's state, and no answer, as from a dropped connection or
-  # rehearsal-ssh's refusal.
+  in_rehearsal 'echo "init: the rehearsal environment: HOME $HOME, XDG_RUNTIME_DIR $XDG_RUNTIME_DIR, FLATSHARE_SUPERVISOR $FLATSHARE_SUPERVISOR, HF_HUB_CACHE $HF_HUB_CACHE (offline $HF_HUB_OFFLINE), session bus ${DBUS_SESSION_BUS_ADDRESS:-none}"'
+  # The box's user manager must be out of the rehearsal's reach: bootstrap.sh, under FLATSHARE_SUPERVISOR=flatshare-svc
+  # where a user manager runs, would stop the units of that name it runs (the box's). Only systemctl's answer that it
+  # reaches no manager passes: "Failed to connect to bus" ("to user scope bus" from systemd 257), or offline where
+  # systemd did not boot the host. Anything else fails: a manager's state, and no answer, as from a dropped connection
+  # or rehearsal-ssh's refusal.
   answer=$(in_rehearsal 'systemctl --user is-system-running 2>&1 || true') ||
     die "init: the rehearsal's environment did not answer whether it reaches the box's user manager (above)"
   answer=${answer%%$'\n'*}
@@ -168,7 +168,7 @@ step_data() {
       ln -s "$corpus" "$data/weka-x32"
     else
       log "data: weka-x32 from $cyan"
-      rsync -a -e "$REHEARSAL_SSH" "$cyan:leaseholder/data/weka-x32/" "$data/weka-x32/"
+      rsync -a -e "$REHEARSAL_SSH" "$cyan:flatshare/data/weka-x32/" "$data/weka-x32/"
     fi
   fi
   if [[ ! -e $data/weka-x32-long ]]; then
@@ -176,7 +176,7 @@ step_data() {
   fi
   if [[ ! -e $data/callers ]]; then
     log "data: callers from $cyan"
-    rsync -a -e "$REHEARSAL_SSH" "$cyan:leaseholder/data/callers/" "$data/callers/"
+    rsync -a -e "$REHEARSAL_SSH" "$cyan:flatshare/data/callers/" "$data/callers/"
   fi
   traces=$(find -L "$data/weka-x32/" -maxdepth 1 -name '*.json' -type f | wc -l | tr -d ' ')
   long=$(find -L "$data/weka-x32-long/" -maxdepth 1 -name '*.json' -type f | wc -l | tr -d ' ')
@@ -184,61 +184,63 @@ step_data() {
   [[ -f $data/callers/manifest.json ]] || die "data: $data/callers has no manifest.json"
   ((traces > 0 && long == 48 && clips > 0)) ||
     die "data: weka-x32 $traces traces, weka-x32-long $long (48 wanted), callers $clips clips"
-  mark data "LH_DATA $data: weka-x32 $traces traces, weka-x32-long $long, callers $clips clips"
+  mark data "FLATSHARE_DATA $data: weka-x32 $traces traces, weka-x32-long $long, callers $clips clips"
 }
 
 step_push() {
   local rev deployed counts want="" d
   rev=$(revision)
-  env -u LH_GATEWAY_BIN LH_SSH="$here/bin/rehearsal-ssh" LH_DATA="$data" ${gateway:+"LH_GATEWAY_BIN=$gateway"} \
+  env -u FLATSHARE_GATEWAY_BIN FLATSHARE_SSH="$here/bin/rehearsal-ssh" FLATSHARE_DATA="$data" \
+    ${gateway:+"FLATSHARE_GATEWAY_BIN=$gateway"} \
     bash "$repo/deploy/a100/push.sh" "$host" || die "push: push.sh failed (above)"
-  deployed=$(in_rehearsal cat leaseholder/src/DEPLOYED)
+  deployed=$(in_rehearsal cat flatshare/src/DEPLOYED)
   [[ $deployed == "$rev" ]] || die "push: the rehearsal's DEPLOYED on $host is '$deployed', not $rev"
-  # The host's data as push.sh copies LH_DATA's (-L: the links as files): as many files in each directory, no link.
+  # The host's data as push.sh copies FLATSHARE_DATA's (-L: the links as files): as many files in each directory, no
+  # link.
   for d in weka-x32 weka-x32-long callers; do
     want+="$d $(find -L "$data/$d" -type f | wc -l | tr -d ' ') files 0 links; "
   done
   counts=$(in_rehearsal 'for d in weka-x32 weka-x32-long callers; do
-    printf "%s %s files %s links; " $d $(find leaseholder/data/$d -type f | wc -l) $(find leaseholder/data/$d -type l | wc -l)
+    printf "%s %s files %s links; " $d $(find flatshare/data/$d -type f | wc -l) $(find flatshare/data/$d -type l | wc -l)
     done') || die "push: the rehearsal's data on $host was not counted (above)"
-  log "push: ~/$rhome/leaseholder on $host: the source at $deployed; $counts"
-  [[ $counts == "$want" ]] || die "push: the host's data is not LH_DATA's, copied as files: $want wanted"
+  log "push: ~/$rhome/flatshare on $host: the source at $deployed; $counts"
+  [[ $counts == "$want" ]] || die "push: the host's data is not FLATSHARE_DATA's, copied as files: $want wanted"
   mark push "$deployed; $counts"
 }
 
 step_stage() {
-  host_step stage "bash leaseholder/src/deploy/a100/bootstrap.sh stage" ||
-    die "stage: bootstrap.sh stage failed (above; ~/$rhome/leaseholder/node/bootstrap.log on $host)"
+  host_step stage "bash flatshare/src/deploy/a100/bootstrap.sh stage" ||
+    die "stage: bootstrap.sh stage failed (above; ~/$rhome/flatshare/node/bootstrap.log on $host)"
   rehearsal_sh verify stage || die "stage: its checks failed (above)"
-  mark stage "bootstrap.sh stage, the control plane up under lh-svc"
+  mark stage "bootstrap.sh stage, the control plane up under flatshare-svc"
 }
 
 step_gpu() {
-  host_step gpu "bash leaseholder/src/deploy/a100/bootstrap.sh gpu" ||
-    die "gpu: bootstrap.sh gpu failed (above; ~/$rhome/leaseholder/node/bootstrap.log on $host)"
+  host_step gpu "bash flatshare/src/deploy/a100/bootstrap.sh gpu" ||
+    die "gpu: bootstrap.sh gpu failed (above; ~/$rhome/flatshare/node/bootstrap.log on $host)"
   rehearsal_sh verify gpu || die "gpu: its checks failed (above)"
   mark gpu "bootstrap.sh gpu"
 }
 
 step_warm() {
-  host_step warm "bash leaseholder/src/deploy/a100/bootstrap.sh warm" ||
-    die "warm: bootstrap.sh warm failed (above; ~/$rhome/leaseholder/cache/warm.json on $host)"
+  host_step warm "bash flatshare/src/deploy/a100/bootstrap.sh warm" ||
+    die "warm: bootstrap.sh warm failed (above; ~/$rhome/flatshare/cache/warm.json on $host)"
   rehearsal_sh verify warm || die "warm: its checks failed (above)"
   mark warm "bootstrap.sh warm"
 }
 
 # run.sh as docs/HARDWARE.md starts it, its output appended to runs/a100/run.log too.
-run_sh() { echo "mkdir -p leaseholder/runs/a100 && set -o pipefail && bash leaseholder/src/benchmarks/a100/run.sh $* 2>&1 | tee -a leaseholder/runs/a100/run.log"; }
+run_sh() { echo "mkdir -p flatshare/runs/a100 && set -o pipefail && bash flatshare/src/benchmarks/a100/run.sh $* 2>&1 | tee -a flatshare/runs/a100/run.log"; }
 
 # again BLOCK: a block that --redo names starts afresh on the host, so that run.sh, which skips a block done, runs it.
 again() {
-  [[ $redo != *" block$1 "* ]] || in_rehearsal "rm -f leaseholder/runs/a100/blocks/$1.done"
+  [[ $redo != *" block$1 "* ]] || in_rehearsal "rm -f flatshare/runs/a100/blocks/$1.done"
 }
 
 step_block0() {
   again 0
   host_step block0 "$(run_sh 0)" ||
-    die "block0: run.sh 0 failed (above, and ~/$rhome/leaseholder/runs/a100/run.log on $host)"
+    die "block0: run.sh 0 failed (above, and ~/$rhome/flatshare/runs/a100/run.log on $host)"
   rehearsal_sh verify block0 || die "block0: its checks failed (above)"
   mark block0 "run.sh 0, the listener audit ok"
 }
@@ -263,7 +265,7 @@ step_block4() {
 
 step_pull() {
   local dir=$work/hosts/${host%%.*} what missing=""
-  LH_SSH="$here/bin/rehearsal-ssh" bash "$repo/deploy/a100/pull.sh" --once "$host" "$dir" || die "pull: pull.sh failed (above)"
+  FLATSHARE_SSH="$here/bin/rehearsal-ssh" bash "$repo/deploy/a100/pull.sh" --once "$host" "$dir" || die "pull: pull.sh failed (above)"
   for what in runs/a100/blocks.log runs/a100/block1/frozen-e0/summary.json node/preflight.json cache/warm.json \
     results/e2/a100-r1/w5-disc-pr-ab48-s24/run.json runs/journal/units.log; do
     [[ -s $dir/$what ]] || missing+=" $what"
@@ -274,7 +276,7 @@ step_pull() {
 }
 
 step_reproduce() {
-  local dir=$work/hosts/${host%%.*} out=$work/reproduce there=leaseholder-rehearsal-reproduce corpus_dir section
+  local dir=$work/hosts/${host%%.*} out=$work/reproduce there=flatshare-rehearsal-reproduce corpus_dir section
   "${ssh_cmd[@]}" "$peacock" "mkdir -p $there/src $there/records && cd $there &&
     find src -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} + && rm -rf records && mkdir records" ||
     die "reproduce: ~/$there on $peacock was not emptied for the checkout and the records (above)"

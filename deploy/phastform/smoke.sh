@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # smoke.sh [ENGINE] [STT] [TTS]: end-to-end check of the frozen box, on the GPU node or through its tunnel. Each server
 # is an address, http://host:port or unix: and its socket's path; the defaults are the GPU node's sockets,
-# unix:$XDG_RUNTIME_DIR/lh/engine.sock, stt.sock and tts.sock (through the tunnel on cyan, phastform-engine.sock and so
-# on). Speaks a question with the TTS, transcribes it with the STT, asks the LLM, and speaks the reply; prints each
-# stage's latency. On the GPU node it also prints GPU memory and audits the listening sockets (deploy/bin/
+# unix:$XDG_RUNTIME_DIR/flatshare/engine.sock, stt.sock and tts.sock (through the tunnel on cyan, phastform-engine.sock
+# and so on). Speaks a question with the TTS, transcribes it with the STT, asks the LLM, and speaks the reply; prints
+# each stage's latency. On the GPU node it also prints GPU memory and audits the listening sockets (deploy/bin/
 # audit-listeners): the servers on the sockets given, and no TCP listener of the box's units.
 set -euo pipefail
-lh=unix:${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/lh
-engine=${1:-$lh/engine.sock}
-stt=${2:-$lh/stt.sock}
-tts=${3:-$lh/tts.sock}
+socket_dir=unix:${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/flatshare
+engine=${1:-$socket_dir/engine.sock}
+stt=${2:-$socket_dir/stt.sock}
+tts=${3:-$socket_dir/tts.sock}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 

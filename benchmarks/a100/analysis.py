@@ -1,25 +1,27 @@
 """The A100 run's analysis (docs/HARDWARE.md, the analysis), on a CPU, from a single host's records as
 deploy/a100/pull.sh copies them.
 
-    python3 benchmarks/a100/analysis.py report HOST_DIR --corpus WEKA_X32 --lh-sim LH_SIM --out OUT [--lh-bench BIN]
-    python3 benchmarks/a100/analysis.py calibration-check EXPORTS --corpus WEKA_X32 --lh-sim LH_SIM --out OUT
+    python3 benchmarks/a100/analysis.py report HOST_DIR --corpus WEKA_X32 --flatshare-sim FLATSHARE_SIM --out OUT
+        [--flatshare-bench BIN]
+    python3 benchmarks/a100/analysis.py calibration-check EXPORTS --corpus WEKA_X32 --flatshare-sim FLATSHARE_SIM
+        --out OUT
 
 `report` writes OUT/a100.md (`make reproduce-a100`), each section from what HOST_DIR holds and saying what it lacks,
 against the forecast for the card the records name (node/host.json's GPU): benchmarks/a100/forecast-80gb.md for an
 A100 80 GB, benchmarks/a100/forecast.md (the A100 40 GB's, the card the kit was built for) otherwise; a100.md says
 which.
-1. The step model: crates/lh-sim/scripts/fit_step_cost.py on the calibration point (runs/a100/calibration-s16) with
-   the card's own E0 (runs/a100/block1/frozen-e0), each fitted term beside the forecast's central value and range
+1. The step model: crates/flatshare-sim/scripts/fit_step_cost.py on the calibration point (runs/a100/calibration-s16)
+   with the card's own E0 (runs/a100/block1/frozen-e0), each fitted term beside the forecast's central value and range
    as a ratio, and the largest miss with what it is likely to mean.
-2. The calibration table: lh-sim with those costs (and E0's tier fits) against the measured point, as the box's
-   (crates/lh-sim/scripts/calibration.py, whose functions it uses): requests, resume TTFT p50 / p90 / p99 and the
+2. The calibration table: flatshare-sim with those costs (and E0's tier fits) against the measured point, as the box's
+   (crates/flatshare-sim/scripts/calibration.py, whose functions it uses): requests, resume TTFT p50 / p90 / p99 and the
    GPU, CPU and computed shares of the prompt tokens.
 3. The probes (probe_results.py): every run, then the KV case's wait and the prefill case's token gap on stock and on
    the PRs' values, and the calls' tail at each stock setting, beside the forecast and the box.
-4. E2 within the A100: `lh-bench e2 report` over the core's points, tuned vLLM's and the PRs' values at its step cap
-   (results/e2/a100-r1 to -r5, a100-tuned-r1 and -r2, a100-prtuned-r1 and -r2) into OUT/e2, its frontier quoted, the
-   points by round (each round one sample of the agents, which the two arms' rounds share with the core's first two), and each configuration's measured running share
-   against the forecast's.
+4. E2 within the A100: `flatshare-bench e2 report` over the core's points, tuned vLLM's and the PRs' values at its step
+   cap (results/e2/a100-r1 to -r5, a100-tuned-r1 and -r2, a100-prtuned-r1 and -r2) into OUT/e2, its frontier quoted, the
+   points by round (each round one sample of the agents, which the two arms' rounds share with the core's first two),
+   and each configuration's measured running share against the forecast's.
 5. A': the same over its points (results/e2/a100-aprime-r1, -r2) and the core's voice alone, the SLO's reference on
    this card, into OUT/e2-aprime, against the forecast's A' cell.
 6. The scheduler at a batch of 256 (runs/a100/batch, batch.sh): each engine's throughput, TPOT and TTFT by priority,
@@ -49,7 +51,7 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-SCRIPTS = REPO / "crates" / "lh-sim" / "scripts"
+SCRIPTS = REPO / "crates" / "flatshare-sim" / "scripts"
 FORECAST = HERE / "forecast.md"
 """The forecast for the A100 40 GB, the card the kit was built for (make forecast-a100)."""
 FORECAST_80GB = HERE / "forecast-80gb.md"
@@ -70,8 +72,8 @@ def _module(name: str, path: Path):
     return module
 
 
-calibration = _module("lh_calibration", SCRIPTS / "calibration.py")
-results = _module("lh_a100_probe_results", HERE / "probe_results.py")
+calibration = _module("flatshare_calibration", SCRIPTS / "calibration.py")
+results = _module("flatshare_a100_probe_results", HERE / "probe_results.py")
 
 TERMS = (
     ("step_ms", "Step: fixed", "ms", "the step's launches and kernel tails beyond the weight read"),
@@ -181,7 +183,7 @@ def forecast_probes(text: str, card: str) -> dict[str, str]:
 
 def forecast_core(text: str, card: str, scenario: str = CORE) -> dict[str, str]:
     """A scenario's cell on the forecast's card, central (the core's by default), on the host the forecast places the
-    card on if it names one (lh-sim forecast --host): its running share, busy and stalled shares."""
+    card on if it names one (flatshare-sim forecast --host): its running share, busy and stalled shares."""
     labels = (f"{card} (central)", f"{card} (central, on this host)")
     for line in text.splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
@@ -274,7 +276,7 @@ def step_model_lines(steps: dict[str, Any], forecast: dict[str, dict[str, float]
 def calibration_lines(
     sim: Any, export: Path, sessions: int, options: list[str], name: str
 ) -> tuple[list[str], list[float]]:
-    """The measured point and lh-sim's contention and idle models of it, as calibration.py's table rows."""
+    """The measured point and flatshare-sim's contention and idle models of it, as calibration.py's table rows."""
     m = calibration.measured(export)
     lines = [
         f"| {sessions} sessions | measured | {calibration.n(m['requests'])} | "
@@ -416,19 +418,19 @@ def complete_points(host: Path, campaigns: str) -> list[Path]:
 def e2_lines(
     points: list[Path],
     out: Path,
-    lh_bench: Path | None,
+    flatshare_bench: Path | None,
     forecast_running: str,
     scenario: str,
     reference: list[Path] | None = None,
 ) -> list[str]:
-    """E2's points: lh-bench e2 report's frontier over them (with lh-bench), the points by round, and each
+    """E2's points: flatshare-bench e2 report's frontier over them (with flatshare-bench), the points by round, and each
     configuration's measured running share against the forecast's for the scenario. `reference` (voice alone's
     points, the SLO's reference) enters the report alone."""
     lines = []
-    if lh_bench is not None:
+    if flatshare_bench is not None:
         subprocess.run(
             [
-                str(lh_bench),
+                str(flatshare_bench),
                 "e2",
                 "report",
                 *map(str, [*(reference or []), *points]),
@@ -639,7 +641,7 @@ def host_lines(record: dict[str, Any], e0: dict[str, Any] | None, forecast_text:
     return lines
 
 
-def report(host: Path, corpus: Path, binary: Path, out: Path, lh_bench: Path | None) -> Path:
+def report(host: Path, corpus: Path, binary: Path, out: Path, flatshare_bench: Path | None) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     sim = calibration.Sim(binary, corpus, out)
     runs = host / "runs" / "a100"
@@ -660,7 +662,7 @@ def report(host: Path, corpus: Path, binary: Path, out: Path, lh_bench: Path | N
     measured_point = (export / "after.prom").exists() and e0.exists()
     if measured_point and not binary.exists():
         lines.append(
-            f"Not computed: no lh-sim at {binary} (cargo build --release --locked -p lh-sim)."
+            f"Not computed: no flatshare-sim at {binary} (cargo build --release --locked -p flatshare-sim)."
         )
     elif measured_point:
         log = out / "calibration-s16-replay-log.csv"
@@ -697,7 +699,7 @@ def report(host: Path, corpus: Path, binary: Path, out: Path, lh_bench: Path | N
         + complete_points(host, "a100-prtuned-r*")
     )
     if points:
-        lines += e2_lines(points, out / "e2", lh_bench, core["running"], "the core")
+        lines += e2_lines(points, out / "e2", flatshare_bench, core["running"], "the core")
     else:
         lines.append("Not measured: no E2 point (results/e2/a100-r1 to -r5).")
     lines += ["", "## 5. A': the box's pool, more agents", ""]
@@ -708,7 +710,7 @@ def report(host: Path, corpus: Path, binary: Path, out: Path, lh_bench: Path | N
         lines += e2_lines(
             aprime,
             out / "e2-aprime",
-            lh_bench,
+            flatshare_bench,
             forecast.aprime["running"],
             "A', 32 sessions",
             reference=alone,
@@ -772,17 +774,21 @@ def main(argv: list[str] | None = None) -> int:
             "dir", type=Path, help="the host's records (report) or the box's exports (check)"
         )
         p.add_argument("--corpus", type=Path, required=True, help="the whole 32x corpus, weka-x32")
-        p.add_argument("--lh-sim", type=Path, required=True, help="lh-sim's release binary")
+        p.add_argument(
+            "--flatshare-sim", type=Path, required=True, help="flatshare-sim's release binary"
+        )
         p.add_argument("--out", type=Path, required=True)
         if name == "report":
             p.add_argument(
-                "--lh-bench", type=Path, help="lh-bench, for E2's report (the bench venv's)"
+                "--flatshare-bench",
+                type=Path,
+                help="flatshare-bench, for E2's report (the bench venv's)",
             )
     args = parser.parse_args(argv)
     if args.command == "report":
-        print(report(args.dir, args.corpus, args.lh_sim, args.out, args.lh_bench))
+        print(report(args.dir, args.corpus, args.flatshare_sim, args.out, args.flatshare_bench))
         return 0
-    differ = calibration_check(args.dir, args.corpus, args.lh_sim, args.out)
+    differ = calibration_check(args.dir, args.corpus, args.flatshare_sim, args.out)
     for row in differ:
         print(f"analysis: not in calibration.py's table: {row}", file=sys.stderr)
     print(

@@ -1,10 +1,10 @@
 """llm_paths.py OUT.json [ROUNDS]: the voice agent's LLM request through each path to the engine, alternating.
 
-Paths (Unix sockets on cyan): "direct" is lh-tunnel's engine socket; "gateway" is lh-gateway's voice socket, whose
-upstream is that socket. (W1 ran it when both went over the tunnel's TCP forwards; the code is the same.) Each round sends the same request once per path, in
-alternating order, so drift hits both. Greedy decoding makes both paths generate the same tokens. Times: first
-content token, the first sentence as the voice worker cuts it (at least 20 characters), the end of the stream,
-and the gaps between content chunks.
+Paths (Unix sockets on cyan): "direct" is flatshare-tunnel's engine socket; "gateway" is flatshare-gateway's voice
+socket, whose upstream is that socket. (W1 ran it when both went over the tunnel's TCP forwards; the code is the same.)
+Each round sends the same request once per path, in alternating order, so drift hits both. Greedy decoding makes both
+paths generate the same tokens. Times: first content token, the first sentence as the voice worker cuts it (at least 20
+characters), the end of the stream, and the gaps between content chunks.
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ import sys
 import time
 
 import httpx
-from leaseholder_bench.voice_turn import first_sentence
+from flatshare_bench.voice_turn import first_sentence
 
-RUN = f"/run/user/{os.getuid()}/lh"
+RUN = f"/run/user/{os.getuid()}/flatshare"
 PATHS = {"direct": f"{RUN}/phastform-engine.sock", "gateway": f"{RUN}/gateway.sock"}
 MODEL = "Qwen/Qwen3-4B-Instruct-2507-FP8"
 SYSTEM = (
@@ -44,7 +44,7 @@ async def one(client: httpx.AsyncClient, path: str, line: str, n: int) -> dict:
         "temperature": 0,
         "stream": True,
     }
-    headers = {"X-LH-Class": "realtime", "X-Session-ID": f"voice-probe-{path}-{n}"}
+    headers = {"X-Flatshare-Class": "realtime", "X-Session-ID": f"voice-probe-{path}-{n}"}
     text, stamps = "", []
     sentence_s = first_s = None
     start = time.perf_counter()

@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# AIPerf in the A100 CPU dry run (calibration.sh): `aiperf profile --config FILE` writes a profiling export of a few
-# records to $LH_BENCH_ARTIFACTS, with the settings it was started with in env.txt, and exits.
-mkdir -p "$LH_BENCH_ARTIFACTS"
-env | grep -E '^(LH_BENCH_|AIPERF_)' | sort >"$LH_BENCH_ARTIFACTS/env.txt"
-for i in 1 2 3; do
-  echo "{\"metadata\": {\"benchmark_phase\": \"profiling\", \"turn_index\": $i}, \"metrics\": {}}"
-done >"$LH_BENCH_ARTIFACTS/profile_export.jsonl"
-echo "aiperf $*" >>"$HOME/aiperf.log"

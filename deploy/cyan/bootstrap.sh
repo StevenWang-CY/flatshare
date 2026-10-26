@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# bootstrap.sh: prepare cyan, the control host. Safe to re-run; stop lh-voice-worker first if a re-run may change
+# bootstrap.sh: prepare cyan, the control host. Safe to re-run; stop flatshare-voice-worker first if a re-run may change
 # the voice venv's packages.
 #   bin/livekit-server                  LiveKit server 1.13.10
-#   venvs/voice                         lh-voice-worker and lh-voice, from python/leaseholder_voice/uv.lock
-#   venvs/bench                         lh-bench and the AIPerf plugins, from python/leaseholder_bench/uv.lock
-#   venvs/smg                           SMG 1.13.0 for E2's arm 8b (lh-smg.service), from requirements/smg.txt
-#   ~/.config/leaseholder/livekit.env   API key pair for the local LiveKit server and the voice worker
-#   ~/.ssh/lh_tunnel_{engine,stt,tts}_ed25519   the tunnel keys, one per socket of a GPU node; authorize them on each
-#                                       node with deploy/authorize-tunnel.sh
+#   venvs/voice                         flatshare-voice-worker and flatshare-voice, from python/flatshare_voice/uv.lock
+#   venvs/bench                         flatshare-bench and the AIPerf plugins, from python/flatshare_bench/uv.lock
+#   venvs/smg                           SMG 1.13.0 for E2's arm 8b (flatshare-smg.service), from requirements/smg.txt
+#   ~/.config/flatshare/livekit.env     API key pair for the local LiveKit server and the voice worker
+#   ~/.ssh/flatshare_tunnel_{engine,stt,tts}_ed25519 the tunnel keys, one per socket of a GPU node; authorize them
+#                                       on each node with deploy/authorize-tunnel.sh
 set -euo pipefail
 src=$(cd "$(dirname "$0")/../.." && pwd)
-root=$HOME/leaseholder
+root=$HOME/flatshare
 uv=${UV:-$HOME/.local/bin/uv}
 [[ -x $uv ]] || uv=$(command -v uv) || { echo "bootstrap: no uv; set UV to its path" >&2; exit 2; }
-mkdir -p "$root"/{bin,venvs,data,runs} "$HOME/.config/leaseholder" "$HOME/.ssh"
+mkdir -p "$root"/{bin,venvs,data,runs} "$HOME/.config/flatshare" "$HOME/.ssh"
 
 livekit=1.13.10
 if ! "$root/bin/livekit-server" --version 2>/dev/null | grep -q "$livekit"; then
@@ -27,22 +27,22 @@ venv() { # venv NAME PACKAGE
   UV_PROJECT_ENVIRONMENT=$root/venvs/$1 "$uv" sync -q --locked --python 3.12 --extra test \
     --project "$src/python/$2"
 }
-venv voice leaseholder_voice
-venv bench leaseholder_bench
+venv voice flatshare_voice
+venv bench flatshare_bench
 [[ -x $root/venvs/smg/bin/python ]] || "$uv" venv -q --python 3.12 "$root/venvs/smg"
 "$uv" pip sync -q --python "$root/venvs/smg/bin/python" "$src/deploy/cyan/requirements/smg.txt"
 
 # The worker's models ship in its wheels (the v1-mini end-of-turn model in livekit-local-inference, Silero's ONNX
-# file in its plugin), so there is nothing to download. Check that they load offline, as lh-voice-worker.service
+# file in its plugin), so there is nothing to download. Check that they load offline, as flatshare-voice-worker.service
 # runs them (HF_HUB_OFFLINE=1, inside a namespace with no route out).
 HF_HUB_OFFLINE=1 "$root/venvs/voice/bin/python" -c \
   'from livekit.local_inference import init_eot; init_eot(); from livekit.plugins import silero; silero.VAD.load()'
 
-env_file=$HOME/.config/leaseholder/livekit.env
+env_file=$HOME/.config/flatshare/livekit.env
 if [[ ! -f $env_file ]]; then
   (
     umask 077
-    key=lh$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
+    key=flatshare$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
     secret=$(head -c 32 /dev/urandom | base64 | tr -d '/+=\n')
     printf 'LIVEKIT_KEYS="%s: %s"\nLIVEKIT_API_KEY=%s\nLIVEKIT_API_SECRET=%s\nLIVEKIT_URL=ws://127.0.0.1:17880\n' \
       "$key" "$secret" "$key" "$secret" >"$env_file"
@@ -50,11 +50,12 @@ if [[ ! -f $env_file ]]; then
 fi
 
 for name in engine stt tts; do
-  [[ -f $HOME/.ssh/lh_tunnel_${name}_ed25519 ]] ||
-    ssh-keygen -q -t ed25519 -N '' -C "lh-tunnel-$name@$(hostname -s)" -f "$HOME/.ssh/lh_tunnel_${name}_ed25519"
+  [[ -f $HOME/.ssh/flatshare_tunnel_${name}_ed25519 ]] ||
+    ssh-keygen -q -t ed25519 -N '' -C "flatshare-tunnel-$name@$(hostname -s)" \
+      -f "$HOME/.ssh/flatshare_tunnel_${name}_ed25519"
 done
-[[ -f $HOME/.config/leaseholder/tunnel-phastform.env ]] ||
-  echo "bootstrap: write LH_TUNNEL_TARGET=<user>@<gpu node> to ~/.config/leaseholder/tunnel-phastform.env" >&2
+[[ -f $HOME/.config/flatshare/tunnel-phastform.env ]] ||
+  echo "bootstrap: write FLATSHARE_TUNNEL_TARGET=<user>@<gpu node> to ~/.config/flatshare/tunnel-phastform.env" >&2
 version() { "$root/venvs/$1/bin/python" -c 'import importlib.metadata as m, sys; print(sys.argv[1], m.version(sys.argv[1]))' "$2"; }
 echo "bootstrap: $("$root/bin/livekit-server" --version)"
 echo "bootstrap: voice $(version voice livekit-agents); its models load offline"

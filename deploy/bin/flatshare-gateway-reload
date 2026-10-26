@@ -1,0 +1,28 @@
+#!/bin/sh
+# flatshare-gateway-reload UNIT PID: the gateway unit's ExecReload. SIGHUP makes the gateway at PID start its successor
+# on the same listening sockets, from the binary and the configuration on disk; the successor tells systemd that it is
+# UNIT's main process once it serves (MAINPID=), and the old process drains and exits (crates/flatshare-gateway,
+# handover). This waits until UNIT's main process is no longer PID, and fails after 15 s
+# (FLATSHARE_GATEWAY_RELOAD_WAIT_S): the successor did not take over within the gateway's 10 s (its error is in the
+# journal), the gateway stopped it, and the old process serves on. Its exit status is the reload's.
+set -eu
+# A stop that arrives mid-reload signals the unit's whole cgroup, this script included: systemd skips ExecStop while
+# the unit reloads, and both gateways drain under its wait for the cgroup to empty. The reload's control process must
+# not turn that into a failed unit (result 'signal') by dying of the SIGTERM.
+trap 'exit 0' TERM
+unit=$1 old=$2
+wait_s=${FLATSHARE_GATEWAY_RELOAD_WAIT_S:-15}
+kill -HUP "$old"
+i=0
+while [ "$i" -lt "$((wait_s * 10))" ]; do
+  main=$(systemctl --user show --property MainPID --value "$unit")
+  if [ "$main" != "$old" ] && [ "$main" != 0 ]; then
+    echo "flatshare-gateway-reload: $unit's main process is $main, after $old"
+    exit 0
+  fi
+  sleep 0.1
+  i=$((i + 1))
+done
+echo "flatshare-gateway-reload: $unit's main process is still $old after $wait_s s: its successor did not take over" \
+  "(journalctl --user -u $unit)" >&2
+exit 1

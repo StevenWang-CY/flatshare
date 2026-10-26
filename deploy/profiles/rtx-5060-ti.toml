@@ -9,7 +9,7 @@ gpu = "RTX 5060 Ti 16 GB"
 node = "Phastform"
 # The repository's copy of the rendered files, and where the units find them on the node.
 dir = "deploy/phastform"
-deploy_dir = "%h/leaseholder/src/deploy/phastform"
+deploy_dir = "%h/flatshare/src/deploy/phastform"
 compute_cap = "12.0"
 # The card as nvidia-smi shows it, which R2 checks the budgets against (deploy/profile.py).
 memory_mib = 16311
@@ -40,8 +40,8 @@ tts_gib = 1.08
 
 [units]
 cuda_home = "/usr/local/cuda-13.0"
-engine_path = "%h/leaseholder/venvs/engine/bin:/usr/local/cuda-13.0/bin:/usr/local/bin:/usr/bin:/bin:%h/.local/bin"
-stt_path = "%h/leaseholder/venvs/engine/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin"
+engine_path = "%h/flatshare/venvs/engine/bin:/usr/local/cuda-13.0/bin:/usr/local/bin:/usr/bin:/bin:%h/.local/bin"
+stt_path = "%h/flatshare/venvs/engine/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin"
 stt_cuda_home = ""
 library_path = ""
 tts_library_path = ""
@@ -55,13 +55,13 @@ audio_numa = "0"
 
 # The comment lines that state the node's own facts.
 [text]
-# The engine's start order beside the audio servers' (lh-engine.service): none, the three at once.
+# The engine's start order beside the audio servers' (flatshare-engine.service): none, the three at once.
 engine_order = ''
 engine_header = '''
 # Frozen-box LLM engine on Phastform: vLLM 0.32.0 on one RTX 5060 Ti 16 GB, beside the STT and TTS servers.'''
 stt_header = '''
 # Frozen-box speech-to-text on Phastform: vLLM 0.32.0 serving Whisper large-v3-turbo at /v1/audio/transcriptions.'''
-target = "Leaseholder frozen box on Phastform: STT, TTS and the LLM engine on one GPU"
+target = "Flatshare frozen box on Phastform: STT, TTS and the LLM engine on one GPU"
 pool = '''
 # The KV pool is fixed at 5 GiB (36,400 tokens), so the footprint depends neither on the profiler nor on the
 # audio servers. vLLM still requires utilization x total memory to be free at start: 10.83 GiB, with about

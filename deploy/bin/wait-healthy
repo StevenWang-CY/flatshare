@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # wait-healthy [--unix-socket SOCKET] [--pid=PID] URL [TIMEOUT_S]: block until URL answers 2xx, through the server's
 # Unix socket SOCKET when given (URL's host is then only a name, as for curl); fail after TIMEOUT_S, or, with PID (the
-# unit's main process: --pid=${MAINPID}, which systemd and deploy/bin/lh-svc set for ExecStartPost), as soon as that
-# process is gone, so that a server that dies in its start fails the start at once rather than at the timeout. Units
-# run it as ExecStartPost, so a unit counts as started only once its server is ready, and units ordered after it
+# unit's main process: --pid=${MAINPID}, which systemd and deploy/bin/flatshare-svc set for ExecStartPost), as soon as
+# that process is gone, so that a server that dies in its start fails the start at once rather than at the timeout.
+# Units run it as ExecStartPost, so a unit counts as started only once its server is ready, and units ordered after it
 # start only then.
 set -euo pipefail
 usage() { echo "usage: wait-healthy [--unix-socket SOCKET] [--pid=PID] URL [TIMEOUT_S]" >&2; exit 2; }

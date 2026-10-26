@@ -1,11 +1,11 @@
 # Frozen-box LLM engine on Phastform: vLLM 0.32.0 on one RTX 5060 Ti 16 GB, beside the STT and TTS servers.
-# lh-engine.service runs `vllm serve --config <this file>`. Every experiment shares these values; a sweep
+# flatshare-engine.service runs `vllm serve --config <this file>`. Every experiment shares these values; a sweep
 # overrides single flags on the command line (vLLM gives the command line precedence over this file).
 model: Qwen/Qwen3-4B-Instruct-2507-FP8
 # The measured weights. The units run offline, and a download by commit writes no refs/main, so the pin is what a
 # fresh host resolves; bootstrap.sh downloads the revision named here.
 revision: 8591804019c8b22094c3b5b4454e0edc05dffc98
-# No host or port: lh-engine.service serves the engine on its Unix socket (--uds).
+# No host or port: flatshare-engine.service serves the engine on its Unix socket (--uds).
 max-model-len: 32768
 disable-uvicorn-access-log: true
 # Agents call tools: parse Qwen3's tool calls into OpenAI tool_calls (chat completions and Responses). Requests without

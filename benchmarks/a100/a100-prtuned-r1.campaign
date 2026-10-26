@@ -1,8 +1,8 @@
 # The A100 run's optional arm 8, the PRs' values at the A100's best stock step cap (docs/HARDWARE.md, the optional
 # arms), round 1 of 2: on the agents' sample of the core's round 1 (seed 10 + N), so that it pairs with tuned vLLM's
 # round 1 and with that round's frozen point and the PRs' values at 512/256. On the A100 host:
-#   LH_NODE_DIR=leaseholder/node leaseholder/src/benchmarks/e2/campaign.sh --local \
-#     leaseholder/src/benchmarks/a100/a100-prtuned-r1.campaign
+#   FLATSHARE_NODE_DIR=flatshare/node flatshare/src/benchmarks/e2/campaign.sh --local \
+#     flatshare/src/benchmarks/a100/a100-prtuned-r1.campaign
 
 agents-seed 11
 

@@ -1,0 +1,463 @@
+# HELP flatshare_gateway_requests API requests by tenant, route, class and response status (499: the client left before the response).
+# TYPE flatshare_gateway_requests counter
+flatshare_gateway_requests_total{tenant="",route="other",class="",status="404"} 0
+# HELP flatshare_gateway_request_outcomes Proxied requests by class and how they ended.
+# TYPE flatshare_gateway_request_outcomes counter
+flatshare_gateway_request_outcomes_total{class="background",outcome="cancelled"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="completed"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="drained"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="error"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="shed"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="stalled"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="cancelled"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="completed"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="drained"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="error"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="shed"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="stalled"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="cancelled"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="completed"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="drained"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="error"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="shed"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="stalled"} 0
+# HELP flatshare_gateway_overhead_seconds Time from the end of a request's body to writing the request to the upstream: parse, sanitize, resolve, connection checkout.
+# TYPE flatshare_gateway_overhead_seconds histogram
+# UNIT flatshare_gateway_overhead_seconds seconds
+flatshare_gateway_overhead_seconds_sum{route="/v1/chat/completions"} 0.0
+flatshare_gateway_overhead_seconds_count{route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.00005",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0001",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0002",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0003",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0005",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.00075",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.001",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0015",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.002",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.005",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.01",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.05",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="+Inf",route="/v1/chat/completions"} 0
+flatshare_gateway_overhead_seconds_sum{route="/v1/completions"} 0.0
+flatshare_gateway_overhead_seconds_count{route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.00005",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0001",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0002",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0003",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0005",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.00075",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.001",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0015",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.002",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.005",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.01",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.05",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_bucket{le="+Inf",route="/v1/completions"} 0
+flatshare_gateway_overhead_seconds_sum{route="/v1/responses"} 0.0
+flatshare_gateway_overhead_seconds_count{route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.00005",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0001",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0002",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0003",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0005",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.00075",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.001",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.0015",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.002",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.005",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.01",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="0.05",route="/v1/responses"} 0
+flatshare_gateway_overhead_seconds_bucket{le="+Inf",route="/v1/responses"} 0
+# HELP flatshare_gateway_request_body_seconds Time from receiving a request's headers to the end of its body: the client's upload, which a direct call to the engine waits for too.
+# TYPE flatshare_gateway_request_body_seconds histogram
+# UNIT flatshare_gateway_request_body_seconds seconds
+flatshare_gateway_request_body_seconds_sum{route="/v1/chat/completions"} 0.0
+flatshare_gateway_request_body_seconds_count{route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.00005",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0001",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0002",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0003",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0005",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.00075",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.001",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0015",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.002",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.005",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.01",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.05",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="+Inf",route="/v1/chat/completions"} 0
+flatshare_gateway_request_body_seconds_sum{route="/v1/completions"} 0.0
+flatshare_gateway_request_body_seconds_count{route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.00005",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0001",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0002",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0003",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0005",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.00075",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.001",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0015",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.002",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.005",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.01",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.05",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_bucket{le="+Inf",route="/v1/completions"} 0
+flatshare_gateway_request_body_seconds_sum{route="/v1/responses"} 0.0
+flatshare_gateway_request_body_seconds_count{route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.00005",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0001",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0002",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0003",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0005",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.00075",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.001",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.0015",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.002",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.005",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.01",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="0.05",route="/v1/responses"} 0
+flatshare_gateway_request_body_seconds_bucket{le="+Inf",route="/v1/responses"} 0
+# HELP flatshare_gateway_first_byte_seconds Time from receiving a request to the first response body byte from the upstream.
+# TYPE flatshare_gateway_first_byte_seconds histogram
+# UNIT flatshare_gateway_first_byte_seconds seconds
+flatshare_gateway_first_byte_seconds_sum{class="background"} 0.0
+flatshare_gateway_first_byte_seconds_count{class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.005",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.01",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.025",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.05",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.1",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.25",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.5",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="1.0",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="2.5",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="5.0",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="10.0",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="30.0",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="60.0",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="120.0",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="300.0",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="600.0",class="background"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="+Inf",class="background"} 0
+flatshare_gateway_first_byte_seconds_sum{class="interactive"} 0.0
+flatshare_gateway_first_byte_seconds_count{class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.005",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.01",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.025",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.05",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.1",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.25",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.5",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="1.0",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="2.5",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="5.0",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="10.0",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="30.0",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="60.0",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="120.0",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="300.0",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="600.0",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="+Inf",class="interactive"} 0
+flatshare_gateway_first_byte_seconds_sum{class="realtime"} 0.0
+flatshare_gateway_first_byte_seconds_count{class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.005",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.01",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.025",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.05",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.1",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.25",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="0.5",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="1.0",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="2.5",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="5.0",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="10.0",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="30.0",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="60.0",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="120.0",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="300.0",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="600.0",class="realtime"} 0
+flatshare_gateway_first_byte_seconds_bucket{le="+Inf",class="realtime"} 0
+# HELP flatshare_gateway_duration_seconds Time from receiving a request to the end of the upstream response.
+# TYPE flatshare_gateway_duration_seconds histogram
+# UNIT flatshare_gateway_duration_seconds seconds
+flatshare_gateway_duration_seconds_sum{class="background"} 0.0
+flatshare_gateway_duration_seconds_count{class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.005",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.01",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.025",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.05",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.1",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.25",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.5",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="1.0",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="2.5",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="5.0",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="10.0",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="30.0",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="60.0",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="120.0",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="300.0",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="600.0",class="background"} 0
+flatshare_gateway_duration_seconds_bucket{le="+Inf",class="background"} 0
+flatshare_gateway_duration_seconds_sum{class="interactive"} 0.0
+flatshare_gateway_duration_seconds_count{class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.005",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.01",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.025",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.05",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.1",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.25",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.5",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="1.0",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="2.5",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="5.0",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="10.0",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="30.0",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="60.0",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="120.0",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="300.0",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="600.0",class="interactive"} 0
+flatshare_gateway_duration_seconds_bucket{le="+Inf",class="interactive"} 0
+flatshare_gateway_duration_seconds_sum{class="realtime"} 0.0
+flatshare_gateway_duration_seconds_count{class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.005",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.01",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.025",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.05",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.1",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.25",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="0.5",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="1.0",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="2.5",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="5.0",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="10.0",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="30.0",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="60.0",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="120.0",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="300.0",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="600.0",class="realtime"} 0
+flatshare_gateway_duration_seconds_bucket{le="+Inf",class="realtime"} 0
+# HELP flatshare_gateway_streams_active Responses being relayed from the upstream.
+# TYPE flatshare_gateway_streams_active gauge
+flatshare_gateway_streams_active{class="background"} 0
+flatshare_gateway_streams_active{class="interactive"} 0
+flatshare_gateway_streams_active{class="realtime"} 0
+# HELP flatshare_gateway_sanitized Request headers and body fields removed because clients may not set them.
+# TYPE flatshare_gateway_sanitized counter
+flatshare_gateway_sanitized_total{field="bootstrap_host"} 0
+flatshare_gateway_sanitized_total{field="bootstrap_port"} 0
+flatshare_gateway_sanitized_total{field="bootstrap_room"} 0
+flatshare_gateway_sanitized_total{field="cache_salt"} 0
+flatshare_gateway_sanitized_total{field="custom_labels"} 0
+flatshare_gateway_sanitized_total{field="data_parallel_rank"} 0
+flatshare_gateway_sanitized_total{field="disagg_prefill_dp_rank"} 0
+flatshare_gateway_sanitized_total{field="ec_transfer_params"} 0
+flatshare_gateway_sanitized_total{field="extra_key"} 0
+flatshare_gateway_sanitized_total{field="kv_transfer_params"} 0
+flatshare_gateway_sanitized_total{field="priority"} 0
+flatshare_gateway_sanitized_total{field="request_id"} 0
+flatshare_gateway_sanitized_total{field="rid"} 0
+flatshare_gateway_sanitized_total{field="routed_dp_rank"} 0
+flatshare_gateway_sanitized_total{field="session_id"} 0
+flatshare_gateway_sanitized_total{field="session_params"} 0
+flatshare_gateway_sanitized_total{field="vllm_xargs"} 0
+flatshare_gateway_sanitized_total{field="x-data-parallel-rank"} 0
+flatshare_gateway_sanitized_total{field="x-flatshare-*"} 0
+flatshare_gateway_sanitized_total{field="x-flatshare-class"} 0
+flatshare_gateway_sanitized_total{field="x-flatshare-session-id"} 0
+flatshare_gateway_sanitized_total{field="x-request-id"} 0
+flatshare_gateway_sanitized_total{field="x-session-id"} 0
+flatshare_gateway_sanitized_total{field="x-smg-priority"} 0
+flatshare_gateway_sanitized_total{field="x-vllm-priority"} 0
+# HELP flatshare_gateway_class_clamped Requests whose class was stricter than their tenant's max_class.
+# TYPE flatshare_gateway_class_clamped counter
+flatshare_gateway_class_clamped_total 0
+# HELP flatshare_gateway_upstream_errors Upstream failures by kind.
+# TYPE flatshare_gateway_upstream_errors counter
+flatshare_gateway_upstream_errors_total{kind="body"} 0
+flatshare_gateway_upstream_errors_total{kind="connect"} 0
+flatshare_gateway_upstream_errors_total{kind="request"} 0
+flatshare_gateway_upstream_errors_total{kind="timeout"} 0
+# HELP flatshare_gateway_error_events Error events sent on event streams before the gateway aborted them, by type: upstream_unavailable when the upstream broke the stream off, draining when a draining gateway cut a background stream.
+# TYPE flatshare_gateway_error_events counter
+flatshare_gateway_error_events_total{class="background",type="draining"} 0
+flatshare_gateway_error_events_total{class="background",type="upstream_unavailable"} 0
+flatshare_gateway_error_events_total{class="interactive",type="draining"} 0
+flatshare_gateway_error_events_total{class="interactive",type="upstream_unavailable"} 0
+flatshare_gateway_error_events_total{class="realtime",type="draining"} 0
+flatshare_gateway_error_events_total{class="realtime",type="upstream_unavailable"} 0
+# HELP flatshare_gateway_events Lifecycle events by type, source and whether they repeated an earlier event.
+# TYPE flatshare_gateway_events counter
+flatshare_gateway_events_total{type="turn_started",source="client",duplicate="false"} 0
+# HELP flatshare_gateway_usage_tokens Tokens reported in response usage, by class and kind.
+# TYPE flatshare_gateway_usage_tokens counter
+flatshare_gateway_usage_tokens_total{class="background",kind="cached"} 0
+flatshare_gateway_usage_tokens_total{class="background",kind="completion"} 0
+flatshare_gateway_usage_tokens_total{class="background",kind="prompt"} 0
+flatshare_gateway_usage_tokens_total{class="interactive",kind="cached"} 0
+flatshare_gateway_usage_tokens_total{class="interactive",kind="completion"} 0
+flatshare_gateway_usage_tokens_total{class="interactive",kind="prompt"} 0
+flatshare_gateway_usage_tokens_total{class="realtime",kind="cached"} 0
+flatshare_gateway_usage_tokens_total{class="realtime",kind="completion"} 0
+flatshare_gateway_usage_tokens_total{class="realtime",kind="prompt"} 0
+# HELP flatshare_gateway_admission_admitted Requests the admission point let go upstream, by class.
+# TYPE flatshare_gateway_admission_admitted counter
+flatshare_gateway_admission_admitted_total{class="background"} 0
+flatshare_gateway_admission_admitted_total{class="interactive"} 0
+flatshare_gateway_admission_admitted_total{class="realtime"} 0
+# HELP flatshare_gateway_admission_waiting Requests waiting at the admission point.
+# TYPE flatshare_gateway_admission_waiting gauge
+flatshare_gateway_admission_waiting{class="background"} 0
+flatshare_gateway_admission_waiting{class="interactive"} 0
+flatshare_gateway_admission_waiting{class="realtime"} 0
+# HELP flatshare_gateway_admission_wait_seconds Time from reaching the admission point to being admitted.
+# TYPE flatshare_gateway_admission_wait_seconds histogram
+# UNIT flatshare_gateway_admission_wait_seconds seconds
+flatshare_gateway_admission_wait_seconds_sum{class="background"} 0.0
+flatshare_gateway_admission_wait_seconds_count{class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.005",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.01",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.025",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.05",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.1",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.25",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.5",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="1.0",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="2.5",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="5.0",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="10.0",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="30.0",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="60.0",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="120.0",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="300.0",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="600.0",class="background"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="+Inf",class="background"} 0
+flatshare_gateway_admission_wait_seconds_sum{class="interactive"} 0.0
+flatshare_gateway_admission_wait_seconds_count{class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.005",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.01",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.025",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.05",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.1",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.25",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.5",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="1.0",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="2.5",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="5.0",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="10.0",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="30.0",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="60.0",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="120.0",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="300.0",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="600.0",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="+Inf",class="interactive"} 0
+flatshare_gateway_admission_wait_seconds_sum{class="realtime"} 0.0
+flatshare_gateway_admission_wait_seconds_count{class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.005",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.01",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.025",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.05",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.1",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.25",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="0.5",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="1.0",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="2.5",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="5.0",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="10.0",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="30.0",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="60.0",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="120.0",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="300.0",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="600.0",class="realtime"} 0
+flatshare_gateway_admission_wait_seconds_bucket{le="+Inf",class="realtime"} 0
+# HELP flatshare_gateway_admission_refused Requests the admission point refused, by class and reason.
+# TYPE flatshare_gateway_admission_refused counter
+flatshare_gateway_admission_refused_total{class="background",reason="queue_full"} 0
+flatshare_gateway_admission_refused_total{class="background",reason="timeout"} 0
+flatshare_gateway_admission_refused_total{class="interactive",reason="queue_full"} 0
+flatshare_gateway_admission_refused_total{class="interactive",reason="timeout"} 0
+flatshare_gateway_admission_refused_total{class="realtime",reason="queue_full"} 0
+flatshare_gateway_admission_refused_total{class="realtime",reason="timeout"} 0
+# HELP flatshare_gateway_admission_resubmits Requests sent upstream again after a preemption dropped their attempt.
+# TYPE flatshare_gateway_admission_resubmits counter
+flatshare_gateway_admission_resubmits_total{class="background"} 0
+flatshare_gateway_admission_resubmits_total{class="interactive"} 0
+flatshare_gateway_admission_resubmits_total{class="realtime"} 0
+# HELP flatshare_gateway_admission_discarded_tokens Estimated prompt tokens of the upstream attempts preemptions dropped: at most the prefill they discarded.
+# TYPE flatshare_gateway_admission_discarded_tokens counter
+flatshare_gateway_admission_discarded_tokens_total{class="background"} 0
+flatshare_gateway_admission_discarded_tokens_total{class="interactive"} 0
+flatshare_gateway_admission_discarded_tokens_total{class="realtime"} 0
+# HELP flatshare_gateway_admission_deferred Background requests the lifecycle policy deferred, by what held them back when they arrived: the headroom of the armed realtime sessions, or the critical window's prefill budget.
+# TYPE flatshare_gateway_admission_deferred counter
+flatshare_gateway_admission_deferred_total{reason="critical"} 0
+flatshare_gateway_admission_deferred_total{reason="headroom"} 0
+# HELP flatshare_gateway_admission_deferral_seconds Time from arrival to admission of the background requests the lifecycle policy deferred, by what held them back when they arrived.
+# TYPE flatshare_gateway_admission_deferral_seconds histogram
+# UNIT flatshare_gateway_admission_deferral_seconds seconds
+flatshare_gateway_admission_deferral_seconds_sum{reason="critical"} 0.0
+flatshare_gateway_admission_deferral_seconds_count{reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.005",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.01",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.025",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.05",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.1",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.25",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.5",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="1.0",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="2.5",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="5.0",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="10.0",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="30.0",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="60.0",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="120.0",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="300.0",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="600.0",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="+Inf",reason="critical"} 0
+flatshare_gateway_admission_deferral_seconds_sum{reason="headroom"} 0.0
+flatshare_gateway_admission_deferral_seconds_count{reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.005",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.01",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.025",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.05",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.1",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.25",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="0.5",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="1.0",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="2.5",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="5.0",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="10.0",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="30.0",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="60.0",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="120.0",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="300.0",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="600.0",reason="headroom"} 0
+flatshare_gateway_admission_deferral_seconds_bucket{le="+Inf",reason="headroom"} 0
+# HELP flatshare_gateway_admission_aged Deferred requests admitted regardless after max_defer_s; oversize: their estimate alone was over what the headroom leaves background requests.
+# TYPE flatshare_gateway_admission_aged counter
+flatshare_gateway_admission_aged_total{oversize="false"} 0
+flatshare_gateway_admission_aged_total{oversize="true"} 0
+# HELP flatshare_gateway_admission_degraded Realtime requests whose reply the lifecycle policy capped, because the background requests in flight left less than one turn's headroom free.
+# TYPE flatshare_gateway_admission_degraded counter
+flatshare_gateway_admission_degraded_total 0
+# HELP flatshare_gateway_admission_false_alarms Headroom armings that no realtime request of their session followed: the session left the armed states, timed out or closed first.
+# TYPE flatshare_gateway_admission_false_alarms counter
+flatshare_gateway_admission_false_alarms_total 0
+# HELP flatshare_gateway_admission_false_alarm_token_seconds Estimated background tokens the headroom held back during false alarms, times how long.
+# TYPE flatshare_gateway_admission_false_alarm_token_seconds counter
+flatshare_gateway_admission_false_alarm_token_seconds_total 0.0
+# HELP flatshare_gateway_realtime_sessions Realtime sessions the lifecycle policy follows, by the state of their turn.
+# TYPE flatshare_gateway_realtime_sessions gauge
+flatshare_gateway_realtime_sessions{state="critical"} 0
+flatshare_gateway_realtime_sessions{state="idle"} 0
+flatshare_gateway_realtime_sessions{state="playback"} 0
+flatshare_gateway_realtime_sessions{state="user_speaking"} 0
+# HELP flatshare_gateway_realtime_state_timeouts Realtime sessions that stayed in a state of their turn for state_timeout_s without an event, by the state: a lost or missing event.
+# TYPE flatshare_gateway_realtime_state_timeouts counter
+flatshare_gateway_realtime_state_timeouts_total{state="critical"} 0
+flatshare_gateway_realtime_state_timeouts_total{state="playback"} 0
+flatshare_gateway_realtime_state_timeouts_total{state="user_speaking"} 0
+# HELP flatshare_gateway_node_ready Whether the engine is ready (1), or a request found it broken and its /health has not answered since (0), while its requests are answered 503.
+# TYPE flatshare_gateway_node_ready gauge
+flatshare_gateway_node_ready 0
+# EOF

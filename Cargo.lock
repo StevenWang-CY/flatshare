@@ -279,6 +279,68 @@ dependencies = [
 ]
 
 [[package]]
+name = "flatshare-core"
+version = "1.1.0"
+dependencies = [
+ "flatshare-proto",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "flatshare-gateway"
+version = "1.1.0"
+dependencies = [
+ "axum",
+ "bytes",
+ "clap",
+ "command-fds",
+ "flatshare-core",
+ "flatshare-proto",
+ "futures-util",
+ "getrandom",
+ "hmac",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "listenfd",
+ "memchr",
+ "nix",
+ "prometheus-client",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "tokio",
+ "toml",
+ "tower-service",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "flatshare-proto"
+version = "1.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "flatshare-sim"
+version = "1.1.0"
+dependencies = [
+ "clap",
+ "flatshare-core",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -476,68 +538,6 @@ name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
-
-[[package]]
-name = "lh-core"
-version = "1.1.0"
-dependencies = [
- "lh-proto",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "lh-gateway"
-version = "1.1.0"
-dependencies = [
- "axum",
- "bytes",
- "clap",
- "command-fds",
- "futures-util",
- "getrandom",
- "hmac",
- "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-util",
- "lh-core",
- "lh-proto",
- "listenfd",
- "memchr",
- "nix",
- "prometheus-client",
- "serde",
- "serde_json",
- "sha2",
- "subtle",
- "tokio",
- "toml",
- "tower-service",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "lh-proto"
-version = "1.1.0"
-dependencies = [
- "schemars",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "lh-sim"
-version = "1.1.0"
-dependencies = [
- "clap",
- "lh-core",
- "serde",
- "serde_json",
- "sha2",
-]
 
 [[package]]
 name = "libc"

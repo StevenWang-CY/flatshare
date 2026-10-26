@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# lh-local HOST COMMAND...: run COMMAND on this host as ssh HOST would run it there: with bash, in the home directory,
-# whatever HOST names. campaign.sh --local uses it for every host, and rsync -e for its copies, on a single host.
-shift
-cd "$HOME" && exec bash -c "$*"

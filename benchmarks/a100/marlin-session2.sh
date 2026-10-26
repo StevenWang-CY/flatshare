@@ -10,20 +10,20 @@
 #      vLLM's compile hash, so this start compiles
 #   3. one E2 point on Marlin, benchmarks/a100/marlin-dry.campaign through benchmarks/e2/campaign.sh
 #   4. the frozen engine back
-# The outputs stay on Phastform under ~/leaseholder/runs/marlin-dry (the point's on cyan, as a campaign's) and are
-# copied to LH_OUT (default ~/leaseholder/hosts/marlin-dry); a step whose outputs are there is skipped. LH_SSH, LH_GPU
-# and LH_CYAN as for benchmarks/e2/campaign.sh.
+# The outputs stay on Phastform under ~/flatshare/runs/marlin-dry (the point's on cyan, as a campaign's) and are
+# copied to FLATSHARE_OUT (default ~/flatshare/hosts/marlin-dry); a step whose outputs are there is skipped.
+# FLATSHARE_SSH, FLATSHARE_GPU and FLATSHARE_CYAN as for benchmarks/e2/campaign.sh.
 set -euo pipefail
 (($# == 0)) || { echo "usage: marlin-session2.sh" >&2; exit 2; }
 here=$(cd "$(dirname "$0")" && pwd)
-ssh=${LH_SSH:-ssh}
-gpu=${LH_GPU:-phastform}
-out=${LH_OUT:-$HOME/leaseholder/hosts/marlin-dry}
-runs=leaseholder/runs/marlin-dry
-variant=leaseholder/src/deploy/phastform/variant.sh
-probes=leaseholder/src/python/leaseholder_vllm/src/leaseholder_vllm/make-room
-engine='/run/user/$(id -u)/lh/engine.sock' # the box's engine socket, as the remote shell expands it
-python=leaseholder/venvs/engine/bin/python
+ssh=${FLATSHARE_SSH:-ssh}
+gpu=${FLATSHARE_GPU:-phastform}
+out=${FLATSHARE_OUT:-$HOME/flatshare/hosts/marlin-dry}
+runs=flatshare/runs/marlin-dry
+variant=flatshare/src/deploy/phastform/variant.sh
+probes=flatshare/src/python/flatshare_vllm/src/flatshare_vllm/make-room
+engine='/run/user/$(id -u)/flatshare/engine.sock' # the box's engine socket, as the remote shell expands it
+python=flatshare/venvs/engine/bin/python
 mkdir -p "$out"
 log() { echo "[$(date -u +%FT%TZ)] session 2: $*" | tee -a "$out/session.log"; }
 on_gpu() { $ssh "$gpu" "$@"; }
@@ -44,10 +44,10 @@ if on_gpu "head -1 $runs/gemm.csv 2>/dev/null | grep -q ',timing,'"; then
   log "gemm.csv: done before"
 else
   log "bench_marlin.py, in the engine unit's environment (a gemm.csv without timing kept as gemm-events.csv)"
-  on_gpu "systemctl --user stop lh-engine && mkdir -p $runs &&
+  on_gpu "systemctl --user stop flatshare-engine && mkdir -p $runs &&
     { test ! -f $runs/gemm.csv || mv $runs/gemm.csv $runs/gemm-events.csv; } &&
-    $python leaseholder/src/deploy/a100/host.py with-engine-env leaseholder/src/deploy/phastform \
-      $python leaseholder/src/benchmarks/a100/bench_marlin.py --m 1,16,64,128,256,512,1024 --out $runs/gemm.csv" 2>&1 |
+    $python flatshare/src/deploy/a100/host.py with-engine-env flatshare/src/deploy/phastform \
+      $python flatshare/src/benchmarks/a100/bench_marlin.py --m 1,16,64,128,256,512,1024 --out $runs/gemm.csv" 2>&1 |
     tee -a "$out/session.log"
 fi
 
@@ -68,4 +68,4 @@ bash "$here/../e2/campaign.sh" "$here/marlin-dry.campaign" 2>&1 | tee -a "$out/s
 log "engine: frozen"
 on_gpu "bash $variant use frozen" 2>&1 | tee -a "$out/session.log"
 rsync -a -e "$ssh" "$gpu:$runs/" "$out/gpu/"
-log "done: $out (the E2 point: campaign.sh's results, ~/leaseholder/runs/e2/marlin-dry)"
+log "done: $out (the E2 point: campaign.sh's results, ~/flatshare/runs/e2/marlin-dry)"

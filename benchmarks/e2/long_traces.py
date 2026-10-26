@@ -1,7 +1,7 @@
 """long_traces.py CORPUS OUT N: link the N traces of a scaled Weka corpus whose requests carry the largest contexts
 (the median `in` of the main agent's requests; subagent entries nest their own) into OUT. E2's discriminating scenario replays them:
 
-    python benchmarks/e2/long_traces.py ~/leaseholder/data/weka-x32 ~/leaseholder/data/weka-x32-long 48
+    python benchmarks/e2/long_traces.py ~/flatshare/data/weka-x32 ~/flatshare/data/weka-x32-long 48
 """
 
 import json
