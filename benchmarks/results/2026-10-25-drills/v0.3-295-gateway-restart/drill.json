@@ -1,0 +1,670 @@
+{
+  "kind": "drill",
+  "started": 1792956605.8667793,
+  "config": {
+    "realtime": 2,
+    "background": 4,
+    "max_tokens": 2000,
+    "deadline_s": 600.0,
+    "probe_interval_s": 1.0,
+    "sample_interval_s": 0.5,
+    "model": "Qwen/Qwen3-4B-Instruct-2507-FP8"
+  },
+  "event": 1792956612.383619,
+  "streams": [
+    {
+      "stream": 0,
+      "slo_class": "realtime",
+      "sent": 1792956605.8669205,
+      "status": 200,
+      "first_byte": 1792956605.9559357,
+      "chunks": 2000,
+      "last_chunk": 1792956633.0379663,
+      "end": "done",
+      "ended": 1792956633.0380392,
+      "error": null
+    },
+    {
+      "stream": 1,
+      "slo_class": "realtime",
+      "sent": 1792956605.8669312,
+      "status": 200,
+      "first_byte": 1792956605.9607136,
+      "chunks": 2000,
+      "last_chunk": 1792956633.0501077,
+      "end": "done",
+      "ended": 1792956633.0501873,
+      "error": null
+    },
+    {
+      "stream": 2,
+      "slo_class": "background",
+      "sent": 1792956605.8669372,
+      "status": 200,
+      "first_byte": 1792956606.5931456,
+      "chunks": 804,
+      "last_chunk": 1792956617.4128551,
+      "end": "error-event",
+      "ended": 1792956617.4172542,
+      "error": "draining: the gateway is stopping or reloading: background requests end 5s into its drain (background_drain_s); send the request again"
+    },
+    {
+      "stream": 3,
+      "slo_class": "background",
+      "sent": 1792956605.86694,
+      "status": 200,
+      "first_byte": 1792956606.593591,
+      "chunks": 804,
+      "last_chunk": 1792956617.4132695,
+      "end": "error-event",
+      "ended": 1792956617.415967,
+      "error": "draining: the gateway is stopping or reloading: background requests end 5s into its drain (background_drain_s); send the request again"
+    },
+    {
+      "stream": 4,
+      "slo_class": "background",
+      "sent": 1792956605.866943,
+      "status": 200,
+      "first_byte": 1792956606.5933814,
+      "chunks": 804,
+      "last_chunk": 1792956617.4130085,
+      "end": "error-event",
+      "ended": 1792956617.4169555,
+      "error": "draining: the gateway is stopping or reloading: background requests end 5s into its drain (background_drain_s); send the request again"
+    },
+    {
+      "stream": 5,
+      "slo_class": "background",
+      "sent": 1792956605.8669455,
+      "status": 200,
+      "first_byte": 1792956606.5938168,
+      "chunks": 804,
+      "last_chunk": 1792956617.4133723,
+      "end": "error-event",
+      "ended": 1792956617.4164395,
+      "error": "draining: the gateway is stopping or reloading: background requests end 5s into its drain (background_drain_s); send the request again"
+    }
+  ],
+  "probe": {
+    "attempts": [
+      {
+        "slo_class": "realtime",
+        "sent": 1792956612.3866067,
+        "answered": 1792956612.45715,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956612.3877296,
+        "answered": 1792956612.4865363,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956613.4041512,
+        "answered": 1792956633.1880524,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956613.405598,
+        "answered": 1792956633.224064,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956614.416828,
+        "answered": 1792956633.193409,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956614.4182909,
+        "answered": 1792956633.2148898,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956615.4379053,
+        "answered": 1792956633.4371989,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956615.4393191,
+        "answered": 1792956633.5533726,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956616.4548914,
+        "answered": 1792956633.1928453,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956616.4563122,
+        "answered": 1792956633.553277,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956617.456773,
+        "answered": 1792956633.4653456,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956617.4579415,
+        "answered": 1792956633.554841,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956618.4766703,
+        "answered": 1792956633.1940925,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956618.478143,
+        "answered": 1792956633.5465884,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956619.4813411,
+        "answered": 1792956633.1938672,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956619.4827874,
+        "answered": 1792956633.5468113,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956620.495364,
+        "answered": 1792956633.1936526,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956620.4968214,
+        "answered": 1792956633.553326,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956621.4976335,
+        "answered": 1792956633.464448,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956621.499116,
+        "answered": 1792956633.5466537,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956622.514226,
+        "answered": 1792956633.193143,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956622.5157242,
+        "answered": 1792956633.5468597,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956623.5262718,
+        "answered": 1792956633.464894,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956623.5277364,
+        "answered": 1792956633.5467594,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956624.5267608,
+        "answered": 1792956633.4573252,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956624.5282319,
+        "answered": 1792956633.55346,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956625.527072,
+        "answered": 1792956633.470911,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956625.5285707,
+        "answered": 1792956633.5535018,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956626.545991,
+        "answered": 1792956633.4665356,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956626.5474613,
+        "answered": 1792956633.5467093,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956627.5577192,
+        "answered": 1792956633.4661508,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956627.5592825,
+        "answered": 1792956633.554937,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956628.5726128,
+        "answered": 1792956633.465769,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956628.5741184,
+        "answered": 1792956633.5578732,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956629.591039,
+        "answered": 1792956633.49555,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956629.5925035,
+        "answered": 1792956633.554894,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956630.6067932,
+        "answered": 1792956633.4921327,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956630.6083012,
+        "answered": 1792956633.553212,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956631.625791,
+        "answered": 1792956633.4951422,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956631.6272798,
+        "answered": 1792956633.5363889,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956632.6456766,
+        "answered": 1792956633.4724803,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956632.6471262,
+        "answered": 1792956633.5534182,
+        "outcome": "ok"
+      }
+    ]
+  },
+  "engine": [
+    {
+      "at": 1792956606.5961413,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956607.0962806,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956607.5968368,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956608.097679,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956608.5985866,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956609.100676,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956609.6010132,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956610.101504,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956610.6019557,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956611.1023703,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956611.6035285,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956612.1046894,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956612.6054502,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956613.1062913,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956613.6069472,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956614.1071124,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956614.607941,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956615.108288,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956615.608539,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956616.1090596,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956616.60956,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956617.1104245,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956617.6112185,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956618.1121454,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956618.612535,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956619.1133611,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956619.6148424,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956620.1159446,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956620.6161184,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956621.1169477,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956621.6173592,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956622.1181293,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956622.618487,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956623.1186469,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956623.619209,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956624.1202757,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956624.6207936,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956625.1215625,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956625.6221569,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956626.122498,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956626.6234732,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956627.1241887,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956627.6246774,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956628.126031,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956628.6266544,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956629.1272683,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956629.6280224,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956630.128551,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956630.6294568,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956631.1297765,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956631.6312747,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956632.1316898,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956632.6325326,
+      "running": 2.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956633.13353,
+      "running": 0.0,
+      "waiting": 0.0,
+      "error": null
+    }
+  ]
+}

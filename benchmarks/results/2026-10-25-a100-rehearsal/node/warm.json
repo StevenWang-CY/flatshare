@@ -1,0 +1,96 @@
+{
+  "configurations": {
+    "frozen": {
+      "variant": "frozen",
+      "flags": [],
+      "started": 1792952374.790554,
+      "ready_s": 797.7,
+      "ok": true,
+      "log": [
+        "(EngineCore pid=6616) INFO 10-25 14:21:57 [__init__.py:758] Selected DeepGemmFp8BlockScaledMMKernel for Fp8LinearMethod",
+        "(EngineCore pid=6616) INFO 10-25 14:21:58 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].",
+        "(EngineCore pid=6616) INFO 10-25 14:21:58 [flash_attn.py:1117] Using FlashAttention version 2",
+        "(EngineCore pid=6616) INFO 10-25 14:22:26 [topk_topp_sampler.py:124] Using FlashInfer for top-p & top-k sampling.",
+        "(EngineCore pid=6616) INFO 10-25 14:22:26 [utils.py:347] Using LBHNC KV cache layout.",
+        "(EngineCore pid=6616) INFO 10-25 14:32:48 [core.py:395] init engine (profile, create kv cache, warmup model) took 622.41 s (compilation: 83.20 s)"
+      ],
+      "async_scheduling": true,
+      "linear_backend": "auto",
+      "block_size": 16,
+      "num_gpu_blocks": 2275
+    },
+    "2048-0": {
+      "variant": "frozen",
+      "flags": [
+        "--max-num-batched-tokens",
+        "2048",
+        "--long-prefill-token-threshold",
+        "0"
+      ],
+      "started": 1792953175.0046792,
+      "ready_s": 178.8,
+      "ok": true,
+      "log": [
+        "(EngineCore pid=13467) INFO 10-25 14:33:45 [__init__.py:758] Selected DeepGemmFp8BlockScaledMMKernel for Fp8LinearMethod",
+        "(EngineCore pid=13467) INFO 10-25 14:33:46 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].",
+        "(EngineCore pid=13467) INFO 10-25 14:33:46 [flash_attn.py:1117] Using FlashAttention version 2",
+        "(EngineCore pid=13467) INFO 10-25 14:33:59 [topk_topp_sampler.py:124] Using FlashInfer for top-p & top-k sampling.",
+        "(EngineCore pid=13467) INFO 10-25 14:34:00 [utils.py:347] Using LBHNC KV cache layout.",
+        "(EngineCore pid=13467) INFO 10-25 14:35:48 [core.py:395] init engine (profile, create kv cache, warmup model) took 108.92 s (compilation: 57.66 s)"
+      ],
+      "async_scheduling": true,
+      "linear_backend": "auto",
+      "block_size": 16,
+      "num_gpu_blocks": 2275
+    },
+    "1536": {
+      "variant": "frozen",
+      "flags": [
+        "--max-num-batched-tokens",
+        "1536",
+        "--long-prefill-token-threshold",
+        "768"
+      ],
+      "started": 1792953356.1619718,
+      "ready_s": 152.3,
+      "ok": true,
+      "log": [
+        "(EngineCore pid=15219) INFO 10-25 14:36:46 [__init__.py:758] Selected DeepGemmFp8BlockScaledMMKernel for Fp8LinearMethod",
+        "(EngineCore pid=15219) INFO 10-25 14:36:47 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].",
+        "(EngineCore pid=15219) INFO 10-25 14:36:47 [flash_attn.py:1117] Using FlashAttention version 2",
+        "(EngineCore pid=15219) INFO 10-25 14:37:01 [topk_topp_sampler.py:124] Using FlashInfer for top-p & top-k sampling.",
+        "(EngineCore pid=15219) INFO 10-25 14:37:01 [utils.py:347] Using LBHNC KV cache layout.",
+        "(EngineCore pid=15219) INFO 10-25 14:38:25 [core.py:395] init engine (profile, create kv cache, warmup model) took 84.28 s (compilation: 52.15 s)"
+      ],
+      "async_scheduling": true,
+      "linear_backend": "auto",
+      "block_size": 16,
+      "num_gpu_blocks": 2275
+    },
+    "pr": {
+      "variant": "make-room",
+      "flags": [
+        "--additional-config.make_room.reserve_tokens",
+        "0",
+        "--additional-config.make_room.budget_cap_tokens",
+        "48"
+      ],
+      "started": 1792953510.8894644,
+      "ready_s": 152.4,
+      "ok": true,
+      "log": [
+        "(EngineCore pid=16683) INFO 10-25 14:39:21 [__init__.py:758] Selected DeepGemmFp8BlockScaledMMKernel for Fp8LinearMethod",
+        "(EngineCore pid=16683) INFO 10-25 14:39:22 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].",
+        "(EngineCore pid=16683) INFO 10-25 14:39:22 [flash_attn.py:1117] Using FlashAttention version 2",
+        "(EngineCore pid=16683) INFO 10-25 14:39:36 [topk_topp_sampler.py:124] Using FlashInfer for top-p & top-k sampling.",
+        "(EngineCore pid=16683) INFO 10-25 14:39:36 [utils.py:347] Using LBHNC KV cache layout.",
+        "(EngineCore pid=16683) INFO 10-25 14:40:59 [core.py:395] init engine (profile, create kv cache, warmup model) took 83.81 s (compilation: 51.95 s)"
+      ],
+      "async_scheduling": true,
+      "linear_backend": "auto",
+      "block_size": 16,
+      "num_gpu_blocks": 2275
+    }
+  },
+  "time": 1792953665.7134798
+}

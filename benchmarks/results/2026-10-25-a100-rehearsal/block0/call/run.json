@@ -1,0 +1,28 @@
+{
+ "kind": "voice-bots",
+ "config": {
+  "url": "ws://127.0.0.1:17880",
+  "api_key": "<redacted>",
+  "api_secret": "<redacted>",
+  "corpus": "~/a100-rehearsal/leaseholder/data/callers",
+  "callers": 1,
+  "turns": 2,
+  "barge_in": 0.25,
+  "barge_in_delay": [
+   0.6,
+   1.5
+  ],
+  "think": [
+   1.0,
+   3.0
+  ],
+  "reply_timeout": 30.0,
+  "seed": 0,
+  "warmup_turns": 0,
+  "save_audio": false
+ },
+ "host": "phastform",
+ "run_id": "94da81e0",
+ "started": 1792953887.9317396,
+ "finished": 1792953914.0395958
+}

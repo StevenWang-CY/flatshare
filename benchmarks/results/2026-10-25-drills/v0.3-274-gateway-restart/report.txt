@@ -1,0 +1,8 @@
+realtime: 2 streams: 2 done
+  ended 20,606 ms after the gateway restart at the median, 20,612 ms at most
+background: 4 streams: 4 error-event
+  ended 5,031 ms after the gateway restart at the median, 5,033 ms at most
+  error: draining: the gateway is stopping or reloading: background requests end 5s into its drain (background_drain_s); send the request again
+probe, realtime: 21 attempts (3 http 502 upstream_unavailable); the first success answered 0.1 s after the gateway restart, the last failure sent 15.1 s after it; the slowest took 19.78 s
+probe, background: 21 attempts (2 http 502 upstream_unavailable); the first success answered 0.1 s after the gateway restart, the last failure sent 18.2 s after it; the slowest took 19.77 s
+engine: 6 running and 0 waiting before the gateway restart; none running from 20.8 s after it

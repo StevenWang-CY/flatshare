@@ -107,6 +107,35 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notify:
 while True:
     time.sleep(0.05)
 """
+LEAVES = """\
+import os, signal, subprocess, sys, time
+from pathlib import Path
+# A main process that leaves a child in its group: at the unit's first start it starts the child, says it is ready
+# (ready.PID) once the child is, and exits with the status sys.argv[1] when the file exit appears; at a later start
+# it says it is ready and serves. The child records each signal it gets in signals, ignores it, and ends itself a
+# minute on.
+home = Path(os.environ["HOME"])
+if sys.argv[1:] == ["child"]:
+    def record(signum, _):
+        with open(home / "signals", "a") as signals:
+            signals.write(signal.Signals(signum).name + "\\n")
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(signum, record)
+    (home / "child.pid").write_text(str(os.getpid()))
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        time.sleep(0.05)
+    sys.exit()
+first = not (home / "child.pid").exists()
+if first:
+    subprocess.Popen([sys.executable, __file__, "child"])
+    while not (home / "child.pid").exists():
+        time.sleep(0.02)
+(home / f"ready.{os.getpid()}").touch()
+while not (first and (home / "exit").exists()):
+    time.sleep(0.05)
+sys.exit(int(sys.argv[1]))
+"""
 
 
 SMOKE_SERVER = """\
@@ -295,6 +324,111 @@ def test_a_unit_that_fails_restarts_and_then_fails_its_start(host: dict) -> None
     assert ctl(host, "is-active", "broken").stdout.strip() == "inactive"
 
 
+@pytest.mark.parametrize("kind", ["simple", "exec", "notify"])
+def test_a_unit_has_started_though_its_main_process_exits_before_the_runner_looks(
+    host: dict, kind: str
+) -> None:
+    # As under systemd, a Type=simple or exec unit has started once its main process has been executed, though that
+    # exits before the runner first looks at it, as on a busy host (LH_SVC_LOOK_DELAY makes it so every time): the start
+    # succeeds, and the exit takes the unit's Restart= and start limit. lh-svc failed such a start, so that
+    # broken.service above, whose main process exits at once, failed its start now and then on a loaded host. A notify
+    # unit starts at its READY=1, which this one never sends.
+    (host["units"] / "quick.service").write_text(
+        f"[Service]\nType={kind}\nExecStart=/bin/sh -c 'exit 3'\n"
+        "Restart=on-failure\nRestartSec=0.05\nStartLimitBurst=2\n"
+    )
+    started = kind != "notify"
+    try:
+        done = subprocess.run(
+            ["systemctl", "--user", "start", "quick.service"],
+            env=os.environ | host["env"] | {"LH_SVC_LOOK_DELAY": "1"},
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert done.returncode == (0 if started else 1), done.stderr
+        deadline = time.monotonic() + 30
+        while ctl(host, "--user", "is-failed", "quick.service").stdout.strip() != "failed":
+            assert time.monotonic() < deadline, "the unit did not fail after its restarts"
+            time.sleep(0.1)
+        # The start limit's two starts: each a started unit's exit, which Restart= took, or a failed start.
+        journal = ctl(host, "-u", "quick", "-o", "cat", tool="journalctl").stdout
+        assert journal.count("lh-svc: Started quick.service") == (2 if started else 0), journal
+        assert journal.count("Main process exited, status=3") == (2 if started else 0), journal
+        assert journal.count("lh-svc: start failed") == (0 if started else 2), journal
+        assert "start-limit-hit" in journal, journal
+    finally:
+        ctl(host, "--user", "stop", "quick.service")
+
+
+def test_a_start_keeps_what_its_runner_wrote_while_the_client_was_held_up(host: dict) -> None:
+    # A start wrote the unit's state after spawning its runner: activating, the runner's pid and no main process. A
+    # runner that had started its main process and reached active by then (the client descheduled on a busy host;
+    # LH_SVC_SPAWN_DELAY makes it so) lost those writes: the unit read activating for as long as it ran, and a second
+    # start waited out its TimeoutStartSec for it and failed. The client now writes the state before the spawn, and the
+    # runner's pid alone after it.
+    py = sys.executable
+    (host["units"] / "held.service").write_text(
+        f"[Service]\nExecStart={py} -c 'import time; time.sleep(60)'\nTimeoutStartSec=5\n"
+    )
+    try:
+        done = subprocess.run(
+            ["systemctl", "--user", "start", "held.service"],
+            env=os.environ | host["env"] | {"LH_SVC_SPAWN_DELAY": "3"},
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert done.returncode == 0, done.stderr
+        assert ctl(host, "--user", "is-active", "held.service").stdout.strip() == "active"
+        # The main process its runner recorded, still there.
+        recorded = Path(host["env"]["XDG_STATE_HOME"]) / "lh-svc" / "held.service.json"
+        state = json.loads(recorded.read_text())
+        assert state["main"] and not gone(state["main"]), state
+        begun = time.monotonic()
+        again = ctl(host, "--user", "start", "held.service")
+        took = time.monotonic() - begun
+        assert again.returncode == 0 and took < 3, (again.stderr, took)
+    finally:
+        ctl(host, "--user", "stop", "held.service")
+
+
+def test_a_unit_reads_activating_while_its_start_spawns_its_runner(
+    host: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A start writes its unit activating before it spawns the runner: until the runner is named, the client stands for
+    # it, or is-active reads the unit failed meanwhile, as it reads an activating unit whose runner is gone. Here this
+    # process is the start's client, and reads the unit at the spawn.
+    for key, value in host["env"].items():
+        monkeypatch.setenv(key, value)
+    lh_svc = _module("lh_svc", BIN / "lh-svc")
+    (host["units"] / "spawned.service").write_text(
+        f"[Service]\nExecStart={sys.executable} -c 'import time; time.sleep(60)'\n"
+    )
+    read: list[str] = []
+    runners: list[subprocess.Popen] = []
+    popen = subprocess.Popen
+
+    def spawn(argv: list[str], **kwargs: object) -> subprocess.Popen:
+        if argv[2:] != ["run", "spawned.service"]:
+            return popen(argv, **kwargs)
+        read.append(lh_svc.current("spawned.service"))
+        runners.append(popen(argv, **kwargs))
+        return runners[-1]
+
+    monkeypatch.setattr(subprocess, "Popen", spawn)
+    try:
+        assert lh_svc.start(["spawned.service"]) == 0
+    finally:
+        monkeypatch.setattr(subprocess, "Popen", popen)
+        # This process is the runner's parent, and reaps it as it exits, as init reaps one whose client has exited:
+        # the stop waits for the runner to be gone, and where there is no /proc a zombie reads as alive.
+        for runner in runners:
+            threading.Thread(target=runner.wait, daemon=True).start()
+        ctl(host, "--user", "stop", "spawned.service")
+    assert read == ["activating"]
+
+
 def system_pythons() -> list[str]:
     """The host's own interpreters from 3.10 on, which the shims run before any venv exists (the tests' own
     Python is the venv's)."""
@@ -343,6 +477,265 @@ def test_the_host_python_runs_the_hosts_scripts(host: dict) -> None:
             )
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="reads /proc (Linux)")
+def test_a_unit_whose_main_process_exits_leaves_no_process_of_its_group(host: dict) -> None:
+    # systemd ends what is left of a unit's cgroup once its main process has exited, before ExecStopPost and a restart:
+    # an engine core that outlives its server (killed by the OOM killer, say) holds the GPU, and every restart's
+    # gpu-guard would refuse to start beside it. Each start of this unit leaves a child in its group as its main
+    # process fails; lh-svc ends each before the next start.
+    children = host["tmp"] / "children"
+    (host["units"] / "leaves.service").write_text(
+        "[Service]\n"
+        f"ExecStart=/bin/sh -c 'sleep 300 & echo $! >> {children}; sleep 0.3; exit 1'\n"
+        "Restart=on-failure\nRestartSec=0.1\nStartLimitBurst=2\nTimeoutStopSec=5\n"
+    )
+
+    def ended(pid: int) -> bool:
+        """Exited: gone, or a zombie its new parent has yet to reap."""
+        try:
+            return Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].startswith("Z")
+        except FileNotFoundError:
+            return True
+
+    # The children not yet seen ended, which alone the cleanup kills: a pid seen gone may name another process since.
+    left: list[int] = []
+    try:
+        assert ctl(host, "--user", "start", "leaves.service").returncode == 0
+        deadline = time.monotonic() + 30
+        while ctl(host, "--user", "is-failed", "leaves.service").stdout.strip() != "failed":
+            assert time.monotonic() < deadline, "the unit failed after its restarts"
+            time.sleep(0.1)
+        left = pids = [int(pid) for pid in children.read_text().split()]
+        assert len(pids) == 2, pids  # StartLimitBurst
+        deadline = time.monotonic() + 10
+        while left := [pid for pid in left if not ended(pid)]:
+            assert time.monotonic() < deadline, left
+            time.sleep(0.05)
+    finally:
+        for pid in left:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="a subreaper (Linux)")
+def test_a_unit_restarts_at_once_where_nothing_reaps_its_orphans(host: dict) -> None:
+    # A unit's process whose parent exits before it goes to the nearest subreaper: lh-svc's runner, as systemd's
+    # manager for its units. It went to init, which in a container may reap none (`sleep infinity`): a zombie, it
+    # stayed a member of its group, which a restart waits to be gone, so that every exit of the main process waited
+    # out TimeoutStopSec and 30 s more. Here the runners are the children of a subreaper that reaps none of them.
+    children = host["tmp"] / "children"
+    (host["units"] / "orphans.service").write_text(
+        "[Service]\n"
+        f"ExecStart=/bin/sh -c 'sleep 30 & echo $! >> {children}; sleep 0.3; exit 1'\n"
+        "Restart=on-failure\nRestartSec=0.1\nStartLimitBurst=2\nTimeoutStopSec=20\n"
+    )
+    init = (
+        "import ctypes, subprocess, sys, time\n"
+        "assert ctypes.CDLL(None).prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER\n"
+        "print(subprocess.run(sys.argv[1:]).returncode, flush=True)\n"
+        "time.sleep(120)  # reaping none of the orphans it adopts\n"
+    )
+    parent = subprocess.Popen(
+        [sys.executable, "-c", init, "systemctl", "--user", "start", "orphans.service"],
+        env=os.environ | host["env"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert parent.stdout is not None and parent.stdout.readline().strip() == "0"
+        deadline = time.monotonic() + 15
+        while ctl(host, "--user", "is-failed", "orphans.service").stdout.strip() != "failed":
+            assert time.monotonic() < deadline, "a restart waited out TimeoutStopSec for a zombie"
+            time.sleep(0.1)
+        pids = [int(pid) for pid in children.read_text().split()]
+        assert len(pids) == 2, pids  # StartLimitBurst
+        assert not [pid for pid in pids if Path(f"/proc/{pid}").exists()]  # reaped, by the runner
+        # Each main process's status, which its own wait reads, untouched by the reaping (a status taken reads 0).
+        journal = ctl(host, "-u", "orphans", "-o", "cat", tool="journalctl").stdout
+        assert journal.count("Main process exited, status=1") == 2, journal
+    finally:
+        ctl(host, "--user", "stop", "orphans.service")
+        parent.kill()
+        parent.wait()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="a subreaper (Linux)")
+def test_a_runner_reaps_the_orphans_it_adopts_and_no_process_it_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The runner reaps what it adopts, by pid, and leaves what it started to its Popen, which reads its status: a
+    # status the reaping took would read 0, and a failed main process would not restart (Restart=on-failure). This
+    # test's own children stand in for both, the orphan the older, both exited when the runner reaps.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    lh_svc = _module("lh_svc", BIN / "lh-svc")
+    runner = lh_svc.Runner("reaps.service")
+    runner.subreaper = True  # as run() makes it
+    orphan = os.posix_spawn(
+        sys.executable, [sys.executable, "-c", "raise SystemExit(4)"], os.environ
+    )
+    started, _ = runner.spawn(
+        lh_svc.Unit("reaps.service", []), f"{sys.executable} -c 'raise SystemExit(3)'", {}
+    )
+    for pid in (orphan, started.pid):
+        os.waitid(os.P_PID, pid, os.WEXITED | os.WNOWAIT)  # it has exited, and is left unreaped
+    runner.reap()
+    with pytest.raises(ChildProcessError):
+        os.waitpid(orphan, os.WNOHANG)  # reaped
+    assert started.wait(timeout=5) == 3
+
+
+def test_a_runner_stops_whichever_line_of_its_wait_its_sigterm_is_handled_at(
+    tmp_path: Path,
+) -> None:
+    # A Python signal handler runs in the main thread between two of its bytecodes, wherever that is: inside the
+    # runner's wait for a stop too, which threading.Event.wait does holding the Event's lock, and there the SIGTERM
+    # handler's Event.set() waited for that lock for good, the runner frozen and its unit running on past the stop
+    # (once in nine suite runs on a loaded host). Here a trace makes the handler's call at each of the wait's first lines
+    # in turn, as a signal handled there would, in a process of its own, which a deadlock leaves hanging.
+    program = textwrap.dedent(
+        """\
+        import importlib.machinery, importlib.util, sys
+        loader = importlib.machinery.SourceFileLoader("lh_svc", sys.argv[1])
+        spec = importlib.util.spec_from_loader("lh_svc", loader)
+        lh_svc = sys.modules["lh_svc"] = importlib.util.module_from_spec(spec)
+        loader.exec_module(lh_svc)
+        for at in range(1, 13):
+            runner, lines = lh_svc.Runner("waits.service"), []
+            def handled_at(frame, event, arg):
+                if event == "line":
+                    lines.append(frame.f_lineno)
+                    if len(lines) == at:
+                        runner.stop()  # what the runner's SIGTERM handler calls
+                return handled_at
+            sys.settrace(handled_at)
+            stopped = runner.stopping.wait(5)
+            sys.settrace(None)
+            assert stopped, (at, lines)
+        print("stopped")
+        """
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", program, str(BIN / "lh-svc")],
+            env=os.environ | {"HOME": str(tmp_path), "XDG_STATE_HOME": str(tmp_path / "state")},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("the runner froze: its SIGTERM handler waited for good on its wait's lock")
+    assert done.returncode == 0 and done.stdout.strip() == "stopped", done.stderr
+
+
+def test_two_writes_of_a_units_state_at_once_keep_each_others_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # write_state reads the unit's state, merges its fields in and writes it back through a temporary file: two writers
+    # at once, a client and its runner, lost each other's fields, or the second found the first's temporary file
+    # renamed. Each now holds the state's own lock from its read to its rename. Here each read is held up long enough
+    # for both writers to have read before either writes.
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    lh_svc = _module("lh_svc", BIN / "lh-svc")
+    read = lh_svc.read_state
+
+    def slow_read(name: str) -> dict:
+        values = read(name)
+        time.sleep(0.3)
+        return values
+
+    monkeypatch.setattr(lh_svc, "read_state", slow_read)
+    raised: list[Exception] = []
+
+    def write(**values: object) -> None:
+        try:
+            lh_svc.write_state("both.service", **values)
+        except Exception as exc:
+            raised.append(exc)
+
+    writers = [threading.Thread(target=write, kwargs={key: 1}) for key in ("first", "second")]
+    for writer in writers:
+        writer.start()
+    for writer in writers:
+        writer.join()
+    assert not raised and read("both.service").keys() >= {"first", "second"}, raised
+
+
+def journal_times(host: dict, unit: str, message: str) -> list[float]:
+    """When the unit's journal logged each line holding ``message``."""
+    out = ctl(host, "-u", unit, "-o", "short-unix", tool="journalctl").stdout
+    return [float(line.split(" ", 1)[0]) for line in out.splitlines() if message in line]
+
+
+@pytest.mark.parametrize("status", [1, 0], ids=["restarted", "started-afresh"])
+def test_a_unit_is_deactivating_while_what_is_left_of_its_group_is_ended(
+    host: dict, status: int
+) -> None:
+    # As under systemd: from the main process's exit until what is left of its group has been ended, the unit is
+    # deactivating, not active, and a start meanwhile waits for that to be over: it then joins the restart that
+    # follows a failure, or, after an exit with status 0 (Restart=on-failure), starts the unit afresh. lh-svc said
+    # active, and such a start returned at once, the unit not running. Here the child ignores its SIGINT for 3 s.
+    home, py = host["home"], sys.executable
+    (home / "leaves.py").write_text(LEAVES)
+    (host["units"] / "leaves.service").write_text(
+        f"[Service]\nExecStart={py} %h/leaves.py {status}\n"
+        f"ExecStartPost={py} %h/wait.py %h/ready.${{MAINPID}}\n"
+        "KillSignal=SIGINT\nTimeoutStopSec=3\nRestart=on-failure\nRestartSec=0.1\n"
+    )
+    try:
+        assert ctl(host, "--user", "start", "leaves.service").returncode == 0
+        (home / "exit").touch()  # the main process exits, leaving the child
+        deadline = time.monotonic() + 10
+        while not (exited := journal_times(host, "leaves", "Main process exited")):
+            assert time.monotonic() < deadline, "the main process did not exit"
+            time.sleep(0.05)
+        # Not active: is-active exits 3, as systemd's does for a unit deactivating.
+        state = ctl(host, "--user", "is-active", "leaves.service")
+        assert (state.returncode, state.stdout.strip()) == (3, "deactivating")
+        done = ctl(host, "--user", "start", "leaves.service")
+        took = time.time() - exited[0]
+        assert done.returncode == 0, done.stderr
+        # It returned once that was over, TimeoutStopSec on, with the next main process ready: not at once, nor by
+        # starting a runner of its own beside the one deactivating.
+        assert took >= 3 and len(list(home.glob("ready.*"))) == 2, took
+        assert ctl(host, "--user", "is-active", "leaves.service").stdout.strip() == "active"
+    finally:
+        ctl(host, "--user", "stop", "leaves.service")
+
+
+def test_what_is_left_of_a_units_group_gets_its_kill_signal_then_sigkill(host: dict) -> None:
+    # As systemd ends what is left of a unit's cgroup once its main process has exited: the unit's KillSignal first,
+    # SIGKILL once TimeoutStopSec has passed, then ExecStopPost, which finds it gone, and the restart. Here the child
+    # records each signal it gets and ignores it.
+    home, py = host["home"], sys.executable
+    (home / "leaves.py").write_text(LEAVES)
+    alive = "kill -0 $(cat %h/child.pid) 2>/dev/null && echo alive || echo gone"
+    (host["units"] / "leaves.service").write_text(
+        f"[Service]\nExecStart={py} %h/leaves.py 1\nExecStartPost={py} %h/wait.py %h/ready.${{MAINPID}}\n"
+        f"ExecStopPost=/bin/sh -c '({alive}) >> %h/post'\n"
+        "KillSignal=SIGINT\nTimeoutStopSec=1\nRestart=on-failure\nRestartSec=0.1\n"
+    )
+    try:
+        assert ctl(host, "--user", "start", "leaves.service").returncode == 0
+        (home / "exit").touch()  # the main process exits 1, leaving the child
+        deadline = time.monotonic() + 15
+        while len(list(home.glob("ready.*"))) < 2:  # the restart's main process
+            assert time.monotonic() < deadline, "the unit did not restart"
+            time.sleep(0.05)
+        signals = home / "signals"
+        assert (signals.read_text().split() if signals.exists() else []) == ["SIGINT"]
+        assert (home / "post").read_text().split()[0] == "gone"
+        [exited] = journal_times(host, "leaves", "Main process exited, status=1")
+        restarted = journal_times(host, "leaves", "lh-svc: Starting leaves.service")[1]
+        assert restarted - exited >= 1.0, restarted - exited  # TimeoutStopSec
+        # The journal says why the restart came so late, in systemd's words.
+        [signaled] = journal_times(host, "leaves", "with signal SIGINT.")
+        [killed] = journal_times(host, "leaves", "State 'stop-sigterm' timed out. Killing.")
+        assert exited <= signaled and signaled + 1.0 <= killed <= restarted
+    finally:
+        ctl(host, "--user", "stop", "leaves.service")
+
+
 def test_a_start_whose_server_dies_fails_at_once_not_at_its_timeout(host: dict) -> None:
     # As the GPU units: ExecStartPost waits for the server with wait-healthy --pid=${MAINPID}, which lh-svc sets for
     # its control commands as systemd does; a server that dies in its start fails the start in seconds.
@@ -359,6 +752,34 @@ def test_a_start_whose_server_dies_fails_at_once_not_at_its_timeout(host: dict) 
     assert time.monotonic() - start < 30
     journal = ctl(host, "-u", "dies", "-o", "cat", tool="journalctl").stdout
     assert "exited before http://127.0.0.1:9/health was healthy" in journal
+
+
+@pytest.mark.parametrize(
+    ("wrapper", "lines"),
+    [("taskset", "CPUAffinity=0\n"), ("numactl", "NUMAPolicy=preferred\nNUMAMask=0\n")],
+    ids=["taskset", "numactl"],
+)
+def test_a_start_fails_whose_command_is_not_there_though_a_wrapper_runs_it(
+    host: dict, wrapper: str, lines: str
+) -> None:
+    # CPUAffinity= runs a unit's commands through taskset, NUMAPolicy= through numactl, which exec a command only once
+    # they run themselves: one that is not there was then the wrapper's exit, a started unit's (a Type=simple unit has
+    # started once its main process runs), and the start succeeded, the unit failing after it. The command is now found
+    # first, and its absence fails the start, as the exec of the command alone fails it.
+    if not shutil.which(wrapper):
+        pytest.skip(f"the host has no {wrapper}")
+    (host["units"] / "wrapped.service").write_text(
+        f"[Service]\nExecStart=%h/no-such-server --port 1\n{lines}"
+    )
+    try:
+        done = ctl(host, "--user", "start", "wrapped.service")
+        assert done.returncode == 1 and "Job for wrapped.service failed" in done.stderr, done
+        assert ctl(host, "--user", "is-active", "wrapped.service").stdout.strip() == "failed"
+        journal = ctl(host, "-u", "wrapped", "-o", "cat", tool="journalctl").stdout
+        missing = f"{host['home']}/no-such-server: [Errno 2] No such file or directory"
+        assert missing in journal, journal
+    finally:
+        ctl(host, "--user", "stop", "wrapped.service")
 
 
 @pytest.mark.skipif(
@@ -413,6 +834,45 @@ def test_a_state_file_from_another_boot_or_a_reused_pid_is_not_a_running_unit(ho
         json.dumps({"state": "active", "boot": "00000000-0000-0000-0000-000000000000"})
     )
     assert ctl(host, "--user", "is-active", "box.target").stdout.strip() == "inactive"
+
+
+@pytest.mark.skipif(
+    not Path("/proc/sys/kernel/random/boot_id").exists(), reason="reads /proc (Linux)"
+)
+def test_lh_svc_reads_a_units_process_whose_name_the_kernel_cut_inside_a_character(
+    host: dict,
+) -> None:
+    # The kernel keeps 15 bytes of a process's name (PR_SET_NAME's, a title's), which can end inside a character:
+    # /proc/PID/stat is then not UTF-8, and lh-svc raised reading whether a unit's process lives and when it started.
+    # A name may hold ") " too, which lh-svc took for the name's end, and so a live process for a zombie.
+    state = Path(host["env"]["XDG_STATE_HOME"]) / "lh-svc"
+    state.mkdir(parents=True, exist_ok=True)
+    boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    program = (
+        "import ctypes, sys, time\n"
+        "ctypes.CDLL(None).prctl(15, bytes.fromhex(sys.argv[1]), 0, 0, 0)  # PR_SET_NAME\n"
+        "time.sleep(60)"
+    )
+    for name in (("abcdefghijklmn" + chr(0xE9)).encode(), b"x) Z y"):  # 16 bytes: é is two
+        named = subprocess.Popen([sys.executable, "-c", program, name.hex()])
+        try:
+            deadline = time.monotonic() + 10
+            while Path(f"/proc/{named.pid}/comm").read_bytes() != name[:15] + b"\n":
+                assert time.monotonic() < deadline, "the process never took its name"
+                time.sleep(0.02)
+            stat = Path(f"/proc/{named.pid}/stat").read_bytes()
+            started = stat.rsplit(b") ", 1)[1].split()[19].decode()
+            # The runner of a unit, as its state names it: alive, of this boot, started when it did.
+            (state / "named.service.json").write_text(
+                json.dumps(
+                    {"state": "active", "runner": named.pid, "runner_start": started, "boot": boot}
+                )
+            )
+            done = ctl(host, "--user", "is-active", "named.service")
+            assert (done.returncode, done.stdout.strip()) == (0, "active"), (name, done.stderr)
+        finally:
+            named.kill()
+            named.wait()
 
 
 def test_a_broken_unit_link_or_a_missing_unit_stops_only_itself(host: dict) -> None:

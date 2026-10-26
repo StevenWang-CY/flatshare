@@ -1,0 +1,10 @@
+{
+  "time": 1792950776.7651389,
+  "arch": "12.0",
+  "cuda_home": "/usr/local/cuda-13.0",
+  "seconds": 177.9,
+  "ok": true,
+  "library": "~/a100-rehearsal/leaseholder/cache/flashinfer/.cache/flashinfer/0.7.0.post1/120f/cached_ops/sampling/sampling.so",
+  "workspace": "~/a100-rehearsal/leaseholder/cache/flashinfer/.cache/flashinfer/0.7.0.post1/120f",
+  "build_s": 162.3
+}

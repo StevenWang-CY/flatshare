@@ -1,0 +1,24 @@
+lh-stt-journal.txt:
+      0.0 s  the unit starts
+     16.7 s  the API server is up
+     38.1 s  the engine process is up
+     45.4 s  the weights are loaded
+     52.7 s  the KV cache is allocated
+     54.7 s  the CUDA graphs are captured
+     56.5 s  the engine is initialized
+     57.6 s  the server listens
+     59.3 s  the unit is ready (its health check)
+lh-tts-journal.txt:
+      0.0 s  the unit starts
+     19.2 s  the server listens
+     20.5 s  the unit is ready (its health check)
+lh-engine-journal.txt:
+      0.0 s  the unit starts
+     16.5 s  the API server is up
+     38.5 s  the engine process is up
+     54.2 s  the weights are loaded
+     55.6 s  the KV cache is allocated
+     84.4 s  the CUDA graphs are captured
+     86.3 s  the engine is initialized
+     88.2 s  the server listens
+     90.0 s  the unit is ready (its health check)

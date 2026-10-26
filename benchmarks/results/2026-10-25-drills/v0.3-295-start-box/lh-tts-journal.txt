@@ -1,0 +1,49 @@
+1792956648.734302 phastform systemd[2135572]: Stopping Leaseholder TTS: Kokoro-82M on Kokoro-FastAPI 0.9.1-rc1 at /run/user/1018/lh/tts.sock...
+1792956648.740301 phastform in-private-net[40332]: INFO:     Shutting down
+1792956648.841369 phastform in-private-net[40332]: INFO:     Waiting for application shutdown.
+1792956648.841626 phastform in-private-net[40332]: INFO:     Application shutdown complete.
+1792956648.841626 phastform in-private-net[40332]: INFO:     Finished server process [40332]
+1792956650.342319 phastform systemd[2135572]: Stopped Leaseholder TTS: Kokoro-82M on Kokoro-FastAPI 0.9.1-rc1 at /run/user/1018/lh/tts.sock.
+1792956650.342493 phastform systemd[2135572]: lh-tts.service: Consumed 34.397s CPU time.
+1792956656.876478 phastform systemd[2135572]: Starting Leaseholder TTS: Kokoro-82M on Kokoro-FastAPI 0.9.1-rc1 at /run/user/1018/lh/tts.sock...
+1792956669.927194 phastform in-private-net[47248]: INFO:     Started server process [47248]
+1792956669.928119 phastform in-private-net[47248]: INFO:     Waiting for application startup.
+1792956669.930708 phastform in-private-net[47248]: Global API loguru logger level: DEBUG
+1792956669.930708 phastform in-private-net[47248]: 03:31:09 PM | INFO     | main:68 | Loading TTS model and voice packs...
+1792956669.931130 phastform in-private-net[47248]: 03:31:09 PM | INFO     | model_manager:46 | Initializing Kokoro V1 on cuda
+1792956669.931451 phastform in-private-net[47248]: 03:31:09 PM | DEBUG    | paths:131 | Searching for model in path: ~/leaseholder/vendor/Kokoro-FastAPI/api/src/models
+1792956669.932105 phastform in-private-net[47248]: 03:31:09 PM | INFO     | kokoro_v1:162 | Loading Kokoro model on cuda
+1792956669.932352 phastform in-private-net[47248]: 03:31:09 PM | INFO     | kokoro_v1:163 | Config path: ~/leaseholder/vendor/Kokoro-FastAPI/api/src/models/v1_0/config.json
+1792956669.932573 phastform in-private-net[47248]: 03:31:09 PM | INFO     | kokoro_v1:164 | Model path: ~/leaseholder/vendor/Kokoro-FastAPI/api/src/models/v1_0/kokoro-v1_0.pth
+1792956670.088412 phastform in-private-net[47248]: ~/leaseholder/venvs/tts/lib/python3.12/site-packages/torch/nn/modules/rnn.py:123: UserWarning: dropout option adds dropout after all but last recurrent layer, so non-zero dropout expects num_layers greater than 1, but got dropout=0.2 and num_layers=1
+1792956670.088412 phastform in-private-net[47248]:   warnings.warn(
+1792956670.219881 phastform in-private-net[47248]: ~/leaseholder/venvs/tts/lib/python3.12/site-packages/torch/nn/utils/weight_norm.py:144: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+1792956670.219881 phastform in-private-net[47248]:   WeightNorm.apply(module, name, dim)
+1792956675.815463 phastform in-private-net[47248]: 03:31:15 PM | DEBUG    | paths:171 | Scanning for voices in path: ~/leaseholder/vendor/Kokoro-FastAPI/api/src/voices/v1_0
+1792956675.816314 phastform in-private-net[47248]: 03:31:15 PM | DEBUG    | paths:155 | Searching for voice in path: ~/leaseholder/vendor/Kokoro-FastAPI/api/src/voices/v1_0
+1792956675.816670 phastform in-private-net[47248]: 03:31:15 PM | DEBUG    | model_manager:85 | Using default voice 'af_heart' for warmup
+1792956675.819460 phastform in-private-net[47248]: 03:31:15 PM | DEBUG    | kokoro_v1:130 | Cached voice tensor from ~/leaseholder/vendor/Kokoro-FastAPI/api/src/voices/v1_0/af_heart.pt
+1792956675.819639 phastform in-private-net[47248]: 03:31:15 PM | INFO     | kokoro_v1:201 | Creating new pipeline for language code: a
+1792956677.684475 phastform in-private-net[47248]: 03:31:17 PM | DEBUG    | kokoro_v1:382 | Generating audio for text with lang_code 'a': 'Warmup text for initialization.'
+1792956679.068134 phastform in-private-net[47248]: 03:31:19 PM | DEBUG    | kokoro_v1:389 | Got audio chunk with shape: torch.Size([57600])
+1792956679.068735 phastform in-private-net[47248]: 03:31:19 PM | INFO     | model_manager:92 | Warmup completed in 9137ms
+1792956679.068735 phastform in-private-net[47248]: 03:31:19 PM | INFO     | main:129 |
+1792956679.068735 phastform in-private-net[47248]: ░░░░░░░░░░░░░░░░░░░░░░░░
+1792956679.068735 phastform in-private-net[47248]:     ╔═╗┌─┐┌─┐┌┬┐
+1792956679.068735 phastform in-private-net[47248]:     ╠╣ ├─┤└─┐ │
+1792956679.068735 phastform in-private-net[47248]:     ╚  ┴ ┴└─┘ ┴
+1792956679.068735 phastform in-private-net[47248]:     ╦╔═┌─┐┬┌─┌─┐
+1792956679.068735 phastform in-private-net[47248]:     ╠╩╗│ │├┴┐│ │
+1792956679.068735 phastform in-private-net[47248]:     ╩ ╩└─┘┴ ┴└─┘
+1792956679.068735 phastform in-private-net[47248]: ░░░░░░░░░░░░░░░░░░░░░░░░
+1792956679.068735 phastform in-private-net[47248]:                 
+1792956679.068735 phastform in-private-net[47248]: Model warmed up on cuda: kokoro_v1
+1792956679.068735 phastform in-private-net[47248]: CUDA: True
+1792956679.068735 phastform in-private-net[47248]: 72 voice packs loaded
+1792956679.068735 phastform in-private-net[47248]: Beta Web Player: http://0.0.0.0:8880/web/
+1792956679.068735 phastform in-private-net[47248]: or http://localhost:8880/web/
+1792956679.068735 phastform in-private-net[47248]: ░░░░░░░░░░░░░░░░░░░░░░░░
+1792956679.068735 phastform in-private-net[47248]: INFO:     Application startup complete.
+1792956679.069774 phastform in-private-net[47248]: INFO:     Uvicorn running on unix socket /run/user/1018/lh/tts.sock (Press CTRL+C to quit)
+1792956679.792280 phastform wait-healthy[47250]: wait-healthy: http://localhost/health on /run/user/1018/lh/tts.sock healthy after 23s
+1792956679.792910 phastform systemd[2135572]: Started Leaseholder TTS: Kokoro-82M on Kokoro-FastAPI 0.9.1-rc1 at /run/user/1018/lh/tts.sock.

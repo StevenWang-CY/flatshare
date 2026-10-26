@@ -1,0 +1,53 @@
+[2026-10-25T17:44:41Z] rehearse: check: start
+[2026-10-25T17:44:41Z] rehearse: check: phastform, its ~/a100-rehearsal, the source at v0.3-287-g2932cbe ($REHEARSAL_REPO)
+[2026-10-25T17:44:42Z] rehearse: check: done: v0.3-287-g2932cbe on phastform
+[2026-10-25T17:44:42Z] rehearse: init: start
+[2026-10-25T17:44:51Z] rehearse: init: the box's user manager is out of the rehearsal's reach (systemctl --user there: Failed to connect to bus: No such file or directory)
+[2026-10-25T17:44:51Z] rehearse: init: done: ~/a100-rehearsal on phastform
+[2026-10-25T17:44:51Z] rehearse: data: start
+[2026-10-25T17:45:02Z] rehearse: data: callers from cyan
+[2026-10-25T17:45:02Z] rehearse: data: done: LH_DATA $REHEARSAL_WORK/data: weka-x32 393 traces, weka-x32-long 48, callers 48 clips
+[2026-10-25T17:45:02Z] rehearse: push: start
+[2026-10-25T17:46:53Z] rehearse: push: ~/a100-rehearsal/leaseholder on phastform: the source at v0.3-287-g2932cbe; weka-x32 393 files 0 links; weka-x32-long 48 files 0 links; callers 49 files 0 links; 
+[2026-10-25T17:46:53Z] rehearse: push: done: v0.3-287-g2932cbe; weka-x32 393 files 0 links; weka-x32-long 48 files 0 links; callers 49 files 0 links; 
+[2026-10-25T17:46:53Z] rehearse: stage: start
+[2026-10-25T17:56:00Z] rehearse: stage: done: bootstrap.sh stage, the control plane up under lh-svc
+[2026-10-25T17:56:00Z] rehearse: gpu: start
+[2026-10-25T17:56:11Z] rehearse: gpu: bootstrap.sh gpu failed (above; ~/a100-rehearsal/leaseholder/node/bootstrap.log on phastform)
+[2026-10-25T17:56:11Z] rehearse: gpu: failed, exit status 1 (state/logs/gpu.log)
+[2026-10-25T17:59:19Z] rehearse: check: done before (2026-10-25T17:44:42Z v0.3-287-g2932cbe on phastform)
+[2026-10-25T17:59:19Z] rehearse: init: done before (2026-10-25T17:44:51Z ~/a100-rehearsal on phastform)
+[2026-10-25T17:59:19Z] rehearse: data: done before (2026-10-25T17:45:02Z LH_DATA $REHEARSAL_WORK/data: weka-x32 393 traces, weka-x32-long 48, callers 48 clips)
+[2026-10-25T17:59:19Z] rehearse: push: start
+[2026-10-25T17:59:21Z] rehearse: push: ~/a100-rehearsal/leaseholder on phastform: the source at v0.3-289-gbe9c536; weka-x32 393 files 0 links; weka-x32-long 48 files 0 links; callers 49 files 0 links; 
+[2026-10-25T17:59:21Z] rehearse: push: done: v0.3-289-gbe9c536; weka-x32 393 files 0 links; weka-x32-long 48 files 0 links; callers 49 files 0 links; 
+[2026-10-25T17:59:21Z] rehearse: stage: done before (2026-10-25T17:56:00Z bootstrap.sh stage, the control plane up under lh-svc)
+[2026-10-25T17:59:21Z] rehearse: gpu: start
+[2026-10-25T18:00:43Z] rehearse: gpu: done: bootstrap.sh gpu
+[2026-10-25T18:00:43Z] rehearse: warm: start
+[2026-10-25T18:14:36Z] rehearse: warm: bootstrap.sh warm failed (above; ~/a100-rehearsal/leaseholder/cache/warm.json on phastform)
+[2026-10-25T18:14:36Z] rehearse: warm: failed, exit status 1 (state/logs/warm.log)
+[2026-10-25T18:19:30Z] rehearse: check: done before (2026-10-25T17:44:42Z v0.3-287-g2932cbe on phastform)
+[2026-10-25T18:19:30Z] rehearse: init: done before (2026-10-25T17:44:51Z ~/a100-rehearsal on phastform)
+[2026-10-25T18:19:30Z] rehearse: data: done before (2026-10-25T17:45:02Z LH_DATA $REHEARSAL_WORK/data: weka-x32 393 traces, weka-x32-long 48, callers 48 clips)
+[2026-10-25T18:19:30Z] rehearse: push: start
+[2026-10-25T18:19:33Z] rehearse: push: ~/a100-rehearsal/leaseholder on phastform: the source at v0.3-291-gc4afb2f; weka-x32 393 files 0 links; weka-x32-long 48 files 0 links; callers 49 files 0 links; 
+[2026-10-25T18:19:33Z] rehearse: push: done: v0.3-291-gc4afb2f; weka-x32 393 files 0 links; weka-x32-long 48 files 0 links; callers 49 files 0 links; 
+[2026-10-25T18:19:33Z] rehearse: stage: done before (2026-10-25T17:56:00Z bootstrap.sh stage, the control plane up under lh-svc)
+[2026-10-25T18:19:33Z] rehearse: gpu: done before (2026-10-25T18:00:43Z bootstrap.sh gpu)
+[2026-10-25T18:19:33Z] rehearse: warm: start
+[2026-10-25T18:41:12Z] rehearse: warm: done: bootstrap.sh warm
+[2026-10-25T18:41:12Z] rehearse: block0: start
+[2026-10-25T18:45:19Z] rehearse: block0: done: run.sh 0, the listener audit ok
+[2026-10-25T18:45:19Z] rehearse: block1: start
+[2026-10-25T19:01:23Z] rehearse: block1: done: run.sh 1
+[2026-10-25T19:01:23Z] rehearse: block4: start
+[2026-10-25T19:15:36Z] rehearse: block4: done: run.sh --until --estimate 4=15 4: the first point, then the deadline's stop
+[2026-10-25T19:15:36Z] rehearse: pull: start
+[2026-10-25T19:15:40Z] rehearse: pull: $REHEARSAL_WORK/hosts/phastform: 4.5M, the journal's 5520 lines
+[2026-10-25T19:15:40Z] rehearse: pull: done: $REHEARSAL_WORK/hosts/phastform
+[2026-10-25T19:15:40Z] rehearse: reproduce: start
+[2026-10-25T19:16:06Z] rehearse: reproduce: $REHEARSAL_WORK/reproduce/a100.md, its sections: ## 1. The step model ## 2. The calibration table ## 3. The probes ## 4. E2 within the A100 ## Workload: weka-x32-long, 2 callers ## Voice turn stages ## The engine's prompt tokens and its CPU tier ## Stage waterfall ## 5. Across cards (different hardware) 
+[2026-10-25T19:16:06Z] rehearse: reproduce: done: $REHEARSAL_WORK/reproduce/a100.md
+[2026-10-25T19:16:06Z] rehearse: cleanup: start
+[2026-10-25T19:16:26Z] rehearse: cleanup: done: the box's deployment as found

@@ -10,11 +10,11 @@ runs, their prefill shares every step of its reply. Two changes to the scheduler
 [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351),
 bring it to 2.24 s, 0.20 s over its SLO, while the agents keep 97% of their throughput.
 
-![The same caller's second turn on each engine beside 24 coding-agent sessions: vLLM with the two PRs answers after 1.6 s, tuned vLLM after 10.8 s](docs/figures/e2-demo.gif)
+![The same caller's second turn on each engine beside 24 coding-agent sessions: vLLM with the two PRs answers after 1.9 s, tuned vLLM after 9.6 s](docs/figures/e2-demo.gif)
 
-*The same caller's second turn on each engine, beside the same agents (recorded 2026-10-24): the two PRs answer after
-1.6 s, tuned vLLM after 10.8 s; over both calls of each run, their V2V p95 was 2.2 and 10.9 s. The 75-second video, with
-sound, is in the [v0.3 release](https://github.com/StevenWang-CY/leaseholder/releases/tag/v0.3).*
+*The same caller's second turn on each engine, beside the same agents (recorded 2026-10-25): the two PRs answer after
+1.9 s, tuned vLLM after 9.6 s; over both calls of each run, their V2V p95 was 2.2 and 11.2 s. The 170-second video, with
+sound, is in the [v1.0 release](https://github.com/StevenWang-CY/leaseholder/releases/tag/v1.0).*
 
 ![Voice-to-voice p95 of each configuration over its runs, against the SLO: tuned vLLM near 10.5 s, a router that aborts and resubmits near 2.52 s, the two PRs at 2.24 s](docs/figures/e2-voice-p95.svg)
 
@@ -115,11 +115,12 @@ it fails) and how to check it on your hardware.
 
 | To | Read |
 |---|---|
+| read the work as one paper: the problem, the change, the results and their limits | [docs/REPORT.md](docs/REPORT.md), the technical report |
 | deploy the change and watch it | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
 | see how it works in vLLM's scheduler | [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-the-change-63350-and-63351), then the two PR diffs |
 | see every number, with runs and ranges | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
 | know how each experiment was designed and run | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) |
-| read the story end to end | [docs/METHODS.md](docs/METHODS.md) |
+| follow the method: what was measured, in what order, and why | [docs/METHODS.md](docs/METHODS.md) |
 | compare with llm-d, Dynamo, SMG, SGLang and papers | [docs/PRIOR-ART.md](docs/PRIOR-ART.md) |
 | know why a decision was made | [docs/adr/](docs/adr) |
 | look up a term (arm 9, the frozen box, the window, W0 to W8) | [docs/GLOSSARY.md](docs/GLOSSARY.md) |

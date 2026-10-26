@@ -1,0 +1,8 @@
+realtime: 2 streams: 2 done
+  ended 20,885 ms after the gateway reload at the median, 20,891 ms at most
+background: 4 streams: 4 error-event
+  ended 5,016 ms after the gateway reload at the median, 5,017 ms at most
+  error: draining: the gateway is stopping or reloading: background requests end 5s into its drain (background_drain_s); send the request again
+probe, realtime: 21 attempts, none failed; the first success answered 0.1 s after the gateway reload; the slowest took 0.07 s
+probe, background: 21 attempts, none failed; the first success answered 0.1 s after the gateway reload; the slowest took 0.11 s
+engine: 6 running and 0 waiting before the gateway reload; 2 still running at the last sample, 20.8 s after it

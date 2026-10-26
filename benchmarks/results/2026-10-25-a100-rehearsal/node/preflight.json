@@ -1,0 +1,229 @@
+{
+  "time": 1792953709.4952762,
+  "host": "phastform",
+  "counts": {
+    "ok": 29,
+    "degraded": 2,
+    "refused": 0,
+    "pending": 0
+  },
+  "checks": [
+    {
+      "check": "CC and precision path",
+      "status": "ok",
+      "value": "sm120: FP8 W8A8; the engine selected DeepGemmFp8BlockScaledMMKernel",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "BF16",
+      "status": "ok",
+      "value": "CC >= 8.0",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Attention backend and KV layout",
+      "status": "ok",
+      "value": "FLASH_ATTN 2, LBHNC",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Driver and install path",
+      "status": "ok",
+      "value": "driver 580.173.02, cu130 (venv: cu130): the box's lock",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "torch on the GPU",
+      "status": "ok",
+      "value": "13.0 NVIDIA GeForce RTX 5060 Ti (12, 0)",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "FlashInfer's JIT",
+      "status": "ok",
+      "value": "the sampler for sm120 in 177.9 s with /usr/local/cuda-13.0",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Host compilers",
+      "status": "ok",
+      "value": "/usr/bin/cc, /usr/bin/c++",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Python headers",
+      "status": "ok",
+      "value": "Python.h in ~/a100-rehearsal/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/include/python3.12",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Compile and JIT caches",
+      "status": "ok",
+      "value": "ext4 at /, 434 GiB free; warm: frozen, 2048-0, 1536, pr",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "CPU tier and /dev/shm",
+      "status": "ok",
+      "value": "20 GiB, 4.0 x the pool; /dev/shm 94 GiB",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Shmem huge pages",
+      "status": "ok",
+      "value": "never",
+      "reason": "",
+      "effect": "recorded; start time only (the box's tier takes about 14 s of each start)"
+    },
+    {
+      "check": "Pinned memory",
+      "status": "ok",
+      "value": "no cudaHostRegister failure in the engine log",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Host RAM",
+      "status": "ok",
+      "value": "162 GiB available",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Async scheduling",
+      "status": "ok",
+      "value": "true",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Block size",
+      "status": "ok",
+      "value": "16 (2275 blocks)",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Engine starts",
+      "status": "ok",
+      "value": "frozen 797.7 s, 2048-0 178.8 s, 1536 152.3 s, pr 152.4 s",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "GPU",
+      "status": "ok",
+      "value": "GPU 0 of 1: GPU-cdd4de93-d4be-307d-f873-0136abb00d70",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "GPU exclusive",
+      "status": "ok",
+      "value": "0 compute processes",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Compute mode",
+      "status": "ok",
+      "value": "Default",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "MIG",
+      "status": "ok",
+      "value": "[N/A]",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Power cap, link and ECC",
+      "status": "ok",
+      "value": "180.0 W, PCIe gen 3 x8, ECC [N/A]",
+      "reason": "",
+      "effect": "recorded; campaign.sh samples clocks, power and throttle reasons at 1 Hz"
+    },
+    {
+      "check": "systemd --user and linger",
+      "status": "degraded",
+      "value": "systemd --user False, linger True; LH_SUPERVISOR=lh-svc",
+      "reason": "supervisor instead of systemd (deploy/bin/lh-svc with the systemctl and journalctl shims)",
+      "effect": "none on the measurements"
+    },
+    {
+      "check": "One supervisor",
+      "status": "ok",
+      "value": "lh-svc, none of the units under systemd",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "User namespaces",
+      "status": "ok",
+      "value": "the voice plane in a network namespace of its own, and each GPU server in one of its own",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Listener audit",
+      "status": "ok",
+      "value": "ss",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Cores",
+      "status": "degraded",
+      "value": "16 CPUs",
+      "reason": "16 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers",
+      "effect": "callers' lateness and AIPerf's timing are recorded per point and shown"
+    },
+    {
+      "check": "Control plane",
+      "status": "ok",
+      "value": "5 units active, the gateway answers /health",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Models",
+      "status": "ok",
+      "value": "the engine's and the STT's at their revisions",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Corpus and callers",
+      "status": "ok",
+      "value": "weka-x32-long 48 traces, weka-x32 393 traces, callers 48 clips",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Binaries",
+      "status": "ok",
+      "value": "lh-gateway, livekit-server",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Disk",
+      "status": "ok",
+      "value": "434 GiB free under ~/leaseholder",
+      "reason": "",
+      "effect": ""
+    }
+  ]
+}

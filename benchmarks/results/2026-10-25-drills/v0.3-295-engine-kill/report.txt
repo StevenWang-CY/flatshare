@@ -1,0 +1,9 @@
+realtime: 2 streams: 2 error-event
+  ended 11 ms after the engine kill at the median, 11 ms at most
+  error: upstream_unavailable: the upstream stream broke off: error reading a body from connection: unexpected EOF during chunk size line
+background: 4 streams: 4 error-event
+  ended 8 ms after the engine kill at the median, 10 ms at most
+  error: upstream_unavailable: the upstream stream broke off: error reading a body from connection: unexpected EOF during chunk size line
+probe, realtime: 106 attempts (1 http 502 upstream_unavailable, 104 http 503 upstream_not_ready); the first success answered 106.2 s after the engine kill, the last failure sent 105.1 s after it; the slowest took 0.04 s
+probe, background: 106 attempts (1 http 502 upstream_unavailable, 104 http 503 upstream_not_ready); the first success answered 106.2 s after the engine kill, the last failure sent 105.1 s after it; the slowest took 0.06 s
+engine: 6 running and 0 waiting before the engine kill; no answer from 0.2 to 104.8 s after it (RemoteProtocolError); none running from 105.3 s after it

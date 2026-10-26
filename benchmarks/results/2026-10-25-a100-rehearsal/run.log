@@ -1,0 +1,150 @@
+[2026-10-25T18:41:13Z] run: blocks 0
+[2026-10-25T18:41:13Z] run: block 0: start
+[2026-10-25T18:41:13Z] bootstrap gpu: from ~/a100-rehearsal/leaseholder/src (v0.3-291-gc4afb2f)
+profile: warning: 16 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+profile: a100-40gb rendered into ~/a100-rehearsal/leaseholder/node
+[2026-10-25T18:41:25Z] bootstrap gpu: install path: cu130: driver 580.173.02 runs CUDA 13.0: the box's lock
+host: wrote ~/a100-rehearsal/leaseholder/node/env.sh (lh-svc runs the units)
+host: wrote ~/a100-rehearsal/.config/leaseholder/e2-host.toml
+host: FlashInfer's sampler is built for 12.0 with /usr/local/cuda-13.0
+[2026-10-25T18:41:26Z] bootstrap gpu: vLLM parses the node's configs
+(MainProcess pid=18253) INFO 10-25 14:41:41 [model.py:733] Resolved architecture: Qwen3ForCausalLM
+(MainProcess pid=18253) INFO 10-25 14:41:41 [model.py:2152] Using max model len 32768
+(MainProcess pid=18253) INFO 10-25 14:41:42 [scheduler.py:307] Chunked prefill is enabled with max_num_batched_tokens=512.
+(MainProcess pid=18253) INFO 10-25 14:41:42 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(MainProcess pid=18253) INFO 10-25 14:41:42 [compilation.py:317] Enabled custom fusions: norm_quant, act_quant
+engine.yaml: ~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98, kv_cache_memory_bytes 5368709120, gpu_memory_utilization 0.68, max_num_batched_tokens 512
+(MainProcess pid=18253) INFO 10-25 14:41:42 [arg_utils.py:916] HF_HUB_OFFLINE is True, replace model_id [openai/whisper-large-v3-turbo] to model_path [~/.cache/huggingface/hub/models--openai--whisper-large-v3-turbo/snapshots/41f01f3fe87f28c78e2fbf8b568835947dd65ed9]
+(MainProcess pid=18253) INFO 10-25 14:41:42 [model.py:733] Resolved architecture: WhisperForConditionalGeneration
+(MainProcess pid=18253) INFO 10-25 14:41:42 [model.py:2152] Using max model len 448
+(MainProcess pid=18253) INFO 10-25 14:41:42 [model.py:815] Encoder-decoder model detected, disabling mm processor cache.
+(MainProcess pid=18253) INFO 10-25 14:41:43 [scheduler.py:298] Encoder-decoder models do not support chunked prefill nor prefix caching; disabling both.
+(MainProcess pid=18253) INFO 10-25 14:41:43 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(MainProcess pid=18253) INFO 10-25 14:41:43 [vllm.py:1891] Encoder-decoder models do not support FULL_AND_PIECEWISE. Overriding cudagraph_mode to FULL_DECODE_ONLY.
+(MainProcess pid=18253) WARNING 10-25 14:41:43 [vllm.py:1964] Whisper is known to have issues with forked workers. If startup is hanging, try setting 'VLLM_WORKER_MULTIPROC_METHOD' to 'spawn'.
+stt.yaml: ~/.cache/huggingface/hub/models--openai--whisper-large-v3-turbo/snapshots/41f01f3fe87f28c78e2fbf8b568835947dd65ed9, kv_cache_memory_bytes 458752000, gpu_memory_utilization 0.15, max_num_batched_tokens 2048
+CC and precision path            ok        sm120: FP8 W8A8; the engine selected DeepGemmFp8BlockScaledMMKernel
+BF16                             ok        CC >= 8.0
+Attention backend and KV layout  ok        FLASH_ATTN 2, LBHNC
+Driver and install path          ok        driver 580.173.02, cu130 (venv: cu130): the box's lock
+torch on the GPU                 ok        13.0 NVIDIA GeForce RTX 5060 Ti (12, 0)
+FlashInfer's JIT                 ok        the sampler for sm120 in 177.9 s with /usr/local/cuda-13.0
+Host compilers                   ok        /usr/bin/cc, /usr/bin/c++
+Python headers                   ok        Python.h in ~/a100-rehearsal/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/include/python3.12
+Compile and JIT caches           ok        ext4 at /, 434 GiB free; warm: frozen, 2048-0, 1536, pr
+CPU tier and /dev/shm            ok        20 GiB, 4.0 x the pool; /dev/shm 94 GiB
+Shmem huge pages                 ok        never
+Pinned memory                    ok        no cudaHostRegister failure in the engine log
+Host RAM                         ok        162 GiB available
+Async scheduling                 ok        true
+Block size                       ok        16 (2275 blocks)
+Engine starts                    ok        frozen 797.7 s, 2048-0 178.8 s, 1536 152.3 s, pr 152.4 s
+GPU                              ok        GPU 0 of 1: GPU-cdd4de93-d4be-307d-f873-0136abb00d70
+GPU exclusive                    ok        0 compute processes
+Compute mode                     ok        Default
+MIG                              ok        [N/A]
+Power cap, link and ECC          ok        180.0 W, PCIe gen 3 x8, ECC [N/A]
+systemd --user and linger        degraded  systemd --user False, linger True; LH_SUPERVISOR=lh-svc
+                                           supervisor instead of systemd (deploy/bin/lh-svc with the systemctl and journalctl shims)
+One supervisor                   ok        lh-svc, none of the units under systemd
+User namespaces                  ok        the voice plane in a network namespace of its own, and each GPU server in one of its own
+Listener audit                   ok        ss
+Cores                            degraded  16 CPUs
+                                           16 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+Control plane                    ok        5 units active, the gateway answers /health
+Models                           ok        the engine's and the STT's at their revisions
+Corpus and callers               ok        weka-x32-long 48 traces, weka-x32 393 traces, callers 48 clips
+Binaries                         ok        lh-gateway, livekit-server
+Disk                             ok        434 GiB free under ~/leaseholder
+host: ~/a100-rehearsal/leaseholder/node/preflight.json: 29 ok, 2 degraded, 0 refused, 0 pending
+[2026-10-25T18:41:49Z] bootstrap gpu: done (no check refused)
+[2026-10-25T18:41:49Z] run: block 0: every compile configuration warm already (cache/warm.json)
+active
+active
+active
+health                     ok
+tts question (wav)         0.301314s, 87668 bytes
+stt                        0.387445s:  What is the capital of France?
+llm                        0.130361s: The capital of France is Paris.
+tts reply (first/total)    0.003345/0.189915s, 95100 bytes
+gpu memory                 13808 MiB, 16311 MiB
+listener audit             ok: the box's units hold 8 Unix sockets, all in ~/a100-rehearsal/run, and 1 TCP or UDP listeners, all allowed; lh-engine, lh-stt, lh-tts in network namespaces of their own, with 12 TCP or UDP listeners and 3 abstract sockets there
+smoke: ok
+Nvidia Decoder is supported.
+{
+ "turns": 2,
+ "errors": 0,
+ "v2v_ms": {
+  "n": 2,
+  "p50": 1604.2,
+  "p95": 1829.2,
+  "p99": 1849.2
+ },
+ "barge_in_to_silence_ms": {
+  "n": 0
+ },
+ "barge_ins": 0,
+ "barge_ins_after_the_reply": 0,
+ "caller_max_lateness_ms": 0.0
+}
+[2026-10-25T18:45:14Z] run: block 0: done
+[2026-10-25T18:45:14Z] run: complete: 0
+[2026-10-25T18:45:19Z] run: blocks 1
+[2026-10-25T18:45:19Z] run: block 1: start
+[2026-10-25T18:45:20Z] probes 1: engine: frozen
+variant: the box already runs frozen 
+[2026-10-25T18:45:20Z] probes 1: frozen-e0: lh-bench tiers --reps 3 (Qwen/Qwen3-4B-Instruct-2507-FP8)
+fit cpu: {'ms': 41.26, 'us_per_token': 27.188}
+fit cpu_over_gpu: {'ms': 8.73, 'us_per_token': 23.348}
+fit recompute: {'ms': 25.32, 'us_per_token': 65.193, 'ns_per_token_squared': 8.0789}
+[2026-10-25T18:50:21Z] probes 1: frozen-kv-1: probe.py kv
+  kv: priority-0 TTFT 4849 ms, 16 tokens 5132 ms, for 745 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-25T18:50:34Z] probes 1: frozen-kv-2: probe.py kv
+  kv: priority-0 TTFT 4922 ms, 16 tokens 5204 ms, for 748 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-25T18:50:47Z] probes 1: frozen-kv-3: probe.py kv
+  kv: priority-0 TTFT 4922 ms, 16 tokens 5205 ms, for 746 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-25T18:51:01Z] probes 1: frozen-prefill-1: probe.py prefill
+  prefill: priority-0 TTFT 523 ms, 16 tokens —, for 749 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1026 of 2274 blocks free; after it, 3 running and 0 waiting
+[2026-10-25T18:51:04Z] probes 1: frozen-prefill-2: probe.py prefill
+  prefill: priority-0 TTFT 512 ms, 16 tokens 1468 ms, for 748 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1026 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-25T18:51:09Z] probes 1: frozen-prefill-3: probe.py prefill
+  prefill: priority-0 TTFT 304 ms, 16 tokens 1208 ms, for 751 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1026 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-25T18:51:14Z] probes 1: frozen-tail-1: tail.py 240 pool fresh --reply 40
+  calls: 44 turns, 0 failed (counted at 30,000 ms), TTFT p50 1692 p90 6581 p95 7635 max 10857 ms; agents: 0 of 12 stopped early
+[2026-10-25T18:56:18Z] probes 1: frozen-tail-2: tail.py 240 pool fresh --reply 40
+  calls: 44 turns, 0 failed (counted at 30,000 ms), TTFT p50 1722 p90 6558 p95 7631 max 10835 ms; agents: 0 of 12 stopped early
+[2026-10-25T19:01:22Z] probes 1: block 1 complete
+[2026-10-25T19:01:22Z] run: block 1: done
+[2026-10-25T19:01:22Z] run: complete: 1
+[2026-10-25T19:01:23Z] run: blocks 4, until 19:18 UTC, estimates 4=15
+[2026-10-25T19:01:23Z] run: block 4: start
+[2026-10-25T19:01:23Z] campaign a100-r1: 3 points, arm files at ?, the agents' seed 11, until 19:18 UTC (epoch 1792955880)
+[2026-10-25T19:01:24Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-25T19:01:24Z] w5-a1-voice: pending, engine frozen
+[2026-10-25T19:01:25Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-25T19:01:25Z] w5-disc-pr-ab48-s24: localhost runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-25T19:03:06Z] w5-disc-pr-ab48-s24: localhost has v0.3-291-gc4afb2f
+[2026-10-25T19:03:06Z] w5-disc-pr-ab48-s24: measuring
+[19:03:09Z] configuring cyan for w5-disc-pr-ab48-s24
+[19:03:09Z] AIPerf: 24 session trees through the gateway, seed 11
+[19:08:21Z] AIPerf is profiling; 60 s of warm-up
+[19:09:21Z] calls: 2 callers, 25 turns each after 1 warm-up
+[19:15:24Z] stopping AIPerf
+[19:15:26Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1936.1/2109.3/2244.6 ms, 0 of 50 turns failed; background 0.285 requests/s, 3,531 tokens/s, agent TTFT p50/p99 71628.73/107065.87 ms
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1936.1/2109.3/2244.6 ms, 0 of 50 turns failed; background 0.285 requests/s, 3,531 tokens/s, agent TTFT p50/p99 71628.73/107065.87 ms
+[2026-10-25T19:15:27Z] w5-a1-voice: 9 minutes would end after 19:18 UTC; stopping before it (--until)
+[2026-10-25T19:15:27Z] the frontier of a100-r1
+lh-bench e2: leaseholder/runs/e2/a100-r1/w5-a1-voice: the point did not complete
+lh-bench e2: leaseholder/runs/e2/a100-r1/w5-disc-frozen-s24: the point did not complete
+leaseholder/runs/e2/a100-r1/report/frontier.csv
+leaseholder/runs/e2/a100-r1/report/frontier.md
+leaseholder/runs/e2/a100-r1/report/frontier-weka-x32-long.svg
+leaseholder/runs/e2/a100-r1/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-25T19:15:33Z] done: ~/a100-rehearsal/leaseholder/results/e2/a100-r1/report/frontier.md
+[2026-10-25T19:15:33Z] run: a100-r1 stopped before its deadline (19:18 UTC) with points left

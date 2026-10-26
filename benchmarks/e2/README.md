@@ -123,7 +123,7 @@ python/leaseholder_bench/.venv/bin/lh-bench e2 export $LH_E2_RESULTS/w2c/* --out
 make reproduce-e2
 ```
 
-The run directories themselves, with the raw records the report does not need (the gateway's request log, AIPerf's exports, the metric snapshots, the worker's journal, the GPU's samples, the tools' logs), are an asset of the v0.3 release.
+The run directories themselves, with the raw records the report does not need (the gateway's request log, AIPerf's exports, the metric snapshots, the worker's journal, the GPU's samples, the tools' logs), are an asset of the v0.3 release; W5's and FB's are the v1.0 release's `leaseholder-raw-records-w5.tar.gz` and `leaseholder-raw-records-fb.tar.gz`.
 
 ## The demo video
 
@@ -143,7 +143,7 @@ uv run benchmarks/e2/demo.py $LH_E2_RESULTS/demo/w5-disc-frozen-s24 $LH_E2_RESUL
   --gif docs/figures/e2-demo.gif --gif-seconds 15
 ```
 
-The v0.3 release has the video rendered so, from two such points measured by hand on 2026-10-24 (`disc-frozen-s24` and `disc-pr-ab48-s24`, V2V p95 10,851 and 2,202 ms; they are not in the tables, and the release has their run directories). [`docs/figures/e2-demo.gif`](../../docs/figures/e2-demo.gif) is the second command's: the calls' second turn, the first 15 s.
+The v1.0 release has the video rendered so, with `--seconds 180` and a title card (`--title`): the calls' first ten turns in 165 s after the card's 5 s, from `demo.campaign`'s two points, measured on 2026-10-25 at v0.3-274 (`w5-disc-frozen-s24` and `w5-disc-pr-ab48-s24`, V2V p95 11,232 and 2,213 ms; they are not in the tables, and the release's `leaseholder-raw-records-demo.tar.gz` has their run directories, the calls' audio among their files). [`docs/figures/e2-demo.gif`](../../docs/figures/e2-demo.gif) is the second command's: the calls' second turn, the first 15 s. The v0.3 release's 75-second video came from two points measured by hand on 2026-10-24.
 
 The video is 1280×720 at 30 frames a second. Each side shows its point's first call (`--caller`): its scrolling waveform, the caller above and the agent below; the current turn's wait, from the end of the caller's speech to the agent's first audio, counting live; each reply's V2V as the callers measured it, in a bar that grows while the caller waits; and the background goodput, the point's over its calls and the last 10 s of AIPerf's completed requests on the wall clock. Both calls show the same turns from `--first-turn` (default 0): `--turns` of them, by default as many as fit in `--seconds` (default 90). Turn k of both starts at the same moment, so the same line is answered side by side, and the call that is ahead waits in silence before its next line: only a caller's pause between turns is stretched, never a measured wait. The soundtrack is one call at a time, the left one for the first half and the right one for the second, and the side playing is highlighted. `--gif` writes the first 10 s (`--gif-seconds`) as a 640×360 GIF at 10 frames a second, for a README, from frames of their own without the soundtrack's cues (no side marked as heard). A 90-second video takes two to three minutes to render.
 

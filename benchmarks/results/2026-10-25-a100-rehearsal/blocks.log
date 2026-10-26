@@ -1,0 +1,12 @@
+[2026-10-25T18:41:13Z] run: blocks 0
+[2026-10-25T18:41:13Z] run: block 0: start
+[2026-10-25T18:41:49Z] run: block 0: every compile configuration warm already (cache/warm.json)
+[2026-10-25T18:45:14Z] run: block 0: done
+[2026-10-25T18:45:14Z] run: complete: 0
+[2026-10-25T18:45:19Z] run: blocks 1
+[2026-10-25T18:45:19Z] run: block 1: start
+[2026-10-25T19:01:22Z] run: block 1: done
+[2026-10-25T19:01:22Z] run: complete: 1
+[2026-10-25T19:01:23Z] run: blocks 4, until 19:18 UTC, estimates 4=15
+[2026-10-25T19:01:23Z] run: block 4: start
+[2026-10-25T19:15:33Z] run: a100-r1 stopped before its deadline (19:18 UTC) with points left

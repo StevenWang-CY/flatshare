@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# rehearsal-ssh HOST COMMAND...: ssh HOST COMMAND, with COMMAND run from the rehearsal's home on HOST in its environment
+# (rehearsal.env, which rehearse.sh init writes there): HOME is the rehearsal's, so the kit's ~/leaseholder is
+# ~/REHEARSAL_HOME/leaseholder. deploy/a100/push.sh and pull.sh take it as LH_SSH, and rsync -e, unchanged. It refuses
+# where that home has no rehearsal.env, so that nothing it runs reaches the login home, where the box's deployment is.
+# REHEARSAL_SSH is the ssh command (default ssh), REHEARSAL_HOME the home's name under the login home; HOST takes no
+# user@ (rsync would pass it as -l), and no ssh option comes before it.
+set -euo pipefail
+home=${REHEARSAL_HOME:?REHEARSAL_HOME names the rehearsal's home under the host's login home}
+[[ $home =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "rehearsal-ssh: REHEARSAL_HOME is one directory name: '$home'" >&2; exit 2; }
+(($# >= 2)) || { echo "usage: rehearsal-ssh HOST COMMAND..." >&2; exit 2; }
+[[ $1 != -* ]] || { echo "rehearsal-ssh: no ssh option before the host: '$1'" >&2; exit 2; }
+read -r -a ssh <<<"${REHEARSAL_SSH:-ssh}"
+host=$1
+shift
+# The command as ssh would join its words, run once the home and its environment are in place; nothing is printed
+# before it, so that rsync's protocol on stdout stays its own.
+exec "${ssh[@]}" "$host" "unset CDPATH; { cd $home && test -f rehearsal.env; } 2>/dev/null ||
+  { echo 'rehearsal-ssh: ~/$home on $host has no rehearsal.env (rehearse.sh init first)' >&2; exit 97; }
+. ./rehearsal.env && {
+$*
+}"

@@ -1,0 +1,102 @@
+{
+  "hostname": "phastform",
+  "kernel": "5.15.0-131-generic",
+  "arch": "x86_64",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 5060 Ti",
+    "count": 1,
+    "index": 0,
+    "uuid": "GPU-cdd4de93-d4be-307d-f873-0136abb00d70",
+    "chosen": true,
+    "wanted": "GPU-cdd4de93-d4be-307d-f873-0136abb00d70",
+    "all": [
+      "0: NVIDIA GeForce RTX 5060 Ti (GPU-cdd4de93-d4be-307d-f873-0136abb00d70)"
+    ],
+    "memory_mib": 16311,
+    "compute_cap": "12.0",
+    "driver": "580.173.02",
+    "pcie_gen": 3,
+    "pcie_width": 8,
+    "mig": "[N/A]",
+    "mig_devices": [],
+    "power_limit_w": 180.0,
+    "ecc": "[N/A]",
+    "compute_mode": "Default",
+    "bus_id": "00000000:81:00.0",
+    "numa_node": 1
+  },
+  "cpus": {
+    "0": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "1": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ]
+  },
+  "memory": {
+    "total_bytes": 202687569920,
+    "available_bytes": 174448291840,
+    "nodes": {
+      "0": {
+        "total_bytes": 135094816768,
+        "free_bytes": 95298912256
+      },
+      "1": {
+        "total_bytes": 67592753152,
+        "free_bytes": 28852072448
+      }
+    }
+  },
+  "shm": {
+    "path": "/dev/shm",
+    "total_bytes": 101343784960,
+    "free_bytes": 101342445568
+  },
+  "thp_shmem": "never",
+  "container": false,
+  "virtualization": "none",
+  "root": false,
+  "sudo": false,
+  "systemd_user": false,
+  "linger": true,
+  "userns": true,
+  "cuda_toolkits": [
+    {
+      "version": "13.0",
+      "path": "/usr/local/cuda-13.0"
+    },
+    {
+      "version": "12.9",
+      "path": "/usr/local/cuda-12.9"
+    },
+    {
+      "version": "12.8",
+      "path": "/usr/local/cuda-12.8"
+    }
+  ],
+  "cuda_toolkit": {
+    "version": "13.0",
+    "path": "/usr/local/cuda-13.0"
+  },
+  "cuda_compat": null,
+  "cc": "/usr/bin/cc",
+  "cxx": "/usr/bin/c++",
+  "ninja": false,
+  "uv": "~/a100-rehearsal/.local/bin/uv",
+  "python": "3.12.13",
+  "hf_hub_cache": "~/.cache/huggingface/hub"
+}

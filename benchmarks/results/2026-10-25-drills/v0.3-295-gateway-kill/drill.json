@@ -1,0 +1,208 @@
+{
+  "kind": "drill",
+  "started": 1792956638.131832,
+  "config": {
+    "realtime": 2,
+    "background": 4,
+    "max_tokens": 2000,
+    "deadline_s": 600.0,
+    "probe_interval_s": 1.0,
+    "sample_interval_s": 0.5,
+    "model": "Qwen/Qwen3-4B-Instruct-2507-FP8"
+  },
+  "event": 1792956644.690636,
+  "streams": [
+    {
+      "stream": 0,
+      "slo_class": "realtime",
+      "sent": 1792956638.1319764,
+      "status": 200,
+      "first_byte": 1792956638.2166646,
+      "chunks": 497,
+      "last_chunk": 1792956644.6924267,
+      "end": "broken",
+      "ended": 1792956644.7023516,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    },
+    {
+      "stream": 1,
+      "slo_class": "realtime",
+      "sent": 1792956638.1319869,
+      "status": 200,
+      "first_byte": 1792956638.2207146,
+      "chunks": 496,
+      "last_chunk": 1792956644.6928341,
+      "end": "broken",
+      "ended": 1792956644.7017162,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    },
+    {
+      "stream": 2,
+      "slo_class": "background",
+      "sent": 1792956638.1319926,
+      "status": 200,
+      "first_byte": 1792956638.8271794,
+      "chunks": 448,
+      "last_chunk": 1792956644.6930227,
+      "end": "broken",
+      "ended": 1792956644.7041693,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    },
+    {
+      "stream": 3,
+      "slo_class": "background",
+      "sent": 1792956638.1319957,
+      "status": 200,
+      "first_byte": 1792956638.8287966,
+      "chunks": 448,
+      "last_chunk": 1792956644.693454,
+      "end": "broken",
+      "ended": 1792956644.7035909,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    },
+    {
+      "stream": 4,
+      "slo_class": "background",
+      "sent": 1792956638.131999,
+      "status": 200,
+      "first_byte": 1792956638.827795,
+      "chunks": 448,
+      "last_chunk": 1792956644.6936665,
+      "end": "broken",
+      "ended": 1792956644.7029986,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    },
+    {
+      "stream": 5,
+      "slo_class": "background",
+      "sent": 1792956638.1320016,
+      "status": 200,
+      "first_byte": 1792956638.8284037,
+      "chunks": 448,
+      "last_chunk": 1792956644.6938663,
+      "end": "broken",
+      "ended": 1792956644.700724,
+      "error": "RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)"
+    }
+  ],
+  "probe": {
+    "attempts": [
+      {
+        "slo_class": "realtime",
+        "sent": 1792956644.7087584,
+        "answered": 1792956646.0443802,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956644.7105007,
+        "answered": 1792956646.0410767,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "realtime",
+        "sent": 1792956645.7164137,
+        "answered": 1792956646.0439444,
+        "outcome": "ok"
+      },
+      {
+        "slo_class": "background",
+        "sent": 1792956645.7178597,
+        "answered": 1792956646.0685399,
+        "outcome": "ok"
+      }
+    ]
+  },
+  "engine": [
+    {
+      "at": 1792956638.8331587,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956639.333676,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956639.8346555,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956640.3355343,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956640.8360236,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956641.3366377,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956641.8383224,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956642.339206,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956642.8396964,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956643.3400812,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956643.8406317,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956644.3416538,
+      "running": 6.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956644.8418407,
+      "running": 0.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956645.3420181,
+      "running": 0.0,
+      "waiting": 0.0,
+      "error": null
+    },
+    {
+      "at": 1792956645.8426554,
+      "running": 0.0,
+      "waiting": 0.0,
+      "error": null
+    }
+  ]
+}
