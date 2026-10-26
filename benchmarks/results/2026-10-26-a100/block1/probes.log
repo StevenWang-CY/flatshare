@@ -1,0 +1,23 @@
+[2026-10-26T04:43:06Z] probes 1: engine: frozen
+variant: the box already runs frozen 
+[2026-10-26T04:43:06Z] probes 1: frozen-e0: lh-bench tiers --reps 3 (Qwen/Qwen3-4B-Instruct-2507-FP8)
+fit cpu: {'ms': 19.95, 'us_per_token': 14.661}
+fit cpu_over_gpu: {'ms': 2.77, 'us_per_token': 12.863}
+fit recompute: {'ms': 4.21, 'us_per_token': 56.481, 'ns_per_token_squared': 2.0124}
+[2026-10-26T04:45:22Z] probes 1: frozen-kv-1: probe.py kv
+  kv: priority-0 TTFT 1721 ms, 16 tokens 1823 ms, for 746 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:45:28Z] probes 1: frozen-kv-2: probe.py kv
+  kv: priority-0 TTFT 1748 ms, 16 tokens 1851 ms, for 748 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:45:33Z] probes 1: frozen-kv-3: probe.py kv
+  kv: priority-0 TTFT 1750 ms, 16 tokens 1853 ms, for 749 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:45:39Z] probes 1: frozen-prefill-1: probe.py prefill
+  prefill: priority-0 TTFT 301 ms, 16 tokens 781 ms, for 748 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 993 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T04:45:41Z] probes 1: frozen-prefill-2: probe.py prefill
+  prefill: priority-0 TTFT 163 ms, 16 tokens 644 ms, for 746 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1008 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T04:45:44Z] probes 1: frozen-prefill-3: probe.py prefill
+  prefill: priority-0 TTFT 194 ms, 16 tokens 674 ms, for 747 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1008 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T04:45:46Z] probes 1: frozen-tail-1: tail.py 240 pool fresh --reply 40
+  calls: 60 turns, 0 failed (counted at 30,000 ms), TTFT p50 734 p90 2679 p95 3126 max 3847 ms; agents: 0 of 12 stopped early
+[2026-10-26T04:50:13Z] probes 1: frozen-tail-2: tail.py 240 pool fresh --reply 40
+  calls: 60 turns, 0 failed (counted at 30,000 ms), TTFT p50 750 p90 2696 p95 3102 max 3844 ms; agents: 0 of 12 stopped early
+[2026-10-26T04:54:41Z] probes 1: block 1 complete

@@ -1,0 +1,29 @@
+{
+  "kind": "tiers",
+  "config": {
+    "url": "unix:~/.local/state/lh-svc/run/lh/engine.sock",
+    "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+    "lengths": [
+      1024,
+      2048,
+      4096,
+      8192,
+      16384,
+      24576,
+      31744
+    ],
+    "reps": 3,
+    "background": "none",
+    "decode_tokens": 1024,
+    "priority": 1,
+    "flush_factor": 1.5,
+    "seed": 0,
+    "timeout": 300.0
+  },
+  "host": "509dc7dd4f24",
+  "engine_version": "0.32.0",
+  "pool_tokens": 36400,
+  "started": 1792989787.4973414,
+  "finished": 1792989922.5468895,
+  "background": null
+}

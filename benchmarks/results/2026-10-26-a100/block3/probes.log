@@ -1,0 +1,21 @@
+[2026-10-26T05:14:42Z] probes 3: engine: make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+active
+active
+active
+[2026-10-26T05:15:48Z] probes 3: pr-kv-1: probe.py kv
+  kv: priority-0 TTFT 150 ms, 16 tokens 253 ms, for 750 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T05:15:52Z] probes 3: pr-kv-2: probe.py kv
+  kv: priority-0 TTFT 175 ms, 16 tokens 278 ms, for 749 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T05:15:56Z] probes 3: pr-kv-3: probe.py kv
+  kv: priority-0 TTFT 176 ms, 16 tokens 279 ms, for 749 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T05:16:00Z] probes 3: pr-prefill-1: probe.py prefill
+  prefill: priority-0 TTFT 186 ms, 16 tokens 291 ms, for 748 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1026 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T05:16:02Z] probes 3: pr-prefill-2: probe.py prefill
+  prefill: priority-0 TTFT 170 ms, 16 tokens 276 ms, for 748 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1008 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T05:16:04Z] probes 3: pr-prefill-3: probe.py prefill
+  prefill: priority-0 TTFT 173 ms, 16 tokens 278 ms, for 751 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 993 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T05:16:06Z] probes 3: pr-tail-1: tail.py 240 pool fresh --reply 40
+  calls: 75 turns, 0 failed (counted at 30,000 ms), TTFT p50 123 p90 166 p95 179 max 192 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:20:38Z] probes 3: pr-tail-2: tail.py 240 pool fresh --reply 40
+  calls: 75 turns, 0 failed (counted at 30,000 ms), TTFT p50 129 p90 156 p95 167 max 296 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:25:08Z] probes 3: block 3 complete

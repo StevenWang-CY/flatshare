@@ -1,0 +1,94 @@
+{
+  "cpu": "Intel(R) Xeon(R) CPU @ 2.20GHz",
+  "python": "3.12.13",
+  "python_ms": {
+    "p50": 227.21885699866107,
+    "min": 223.33217099912872,
+    "reps": 7
+  },
+  "gpu": {
+    "name": "NVIDIA A100-SXM4-80GB",
+    "pcie.link.gen.current": "4",
+    "pcie.link.gen.max": "4",
+    "pcie.link.width.current": "16",
+    "pcie.link.width.max": "16"
+  },
+  "versions": {
+    "torch": "2.13.0+cu130",
+    "vllm": "0.32.0"
+  },
+  "link": [
+    {
+      "direction": "h2d",
+      "page_bytes": 32768,
+      "pages": 8192,
+      "bytes": 268435456,
+      "ms": 26.6177921295166,
+      "note": "",
+      "gb_per_s": 10.084812996278927
+    },
+    {
+      "direction": "h2d",
+      "page_bytes": 65536,
+      "pages": 4096,
+      "bytes": 268435456,
+      "ms": 24.208831787109375,
+      "note": "",
+      "gb_per_s": 11.08832753106804
+    },
+    {
+      "direction": "h2d",
+      "page_bytes": 2359296,
+      "pages": 113,
+      "bytes": 266600448,
+      "ms": 21.710912704467773,
+      "note": "",
+      "gb_per_s": 12.279559667942365
+    },
+    {
+      "direction": "h2d",
+      "page_bytes": null,
+      "pages": 1,
+      "bytes": 268435456,
+      "ms": 21.795167922973633,
+      "note": "",
+      "gb_per_s": 12.316282992114516
+    },
+    {
+      "direction": "d2h",
+      "page_bytes": 32768,
+      "pages": 8192,
+      "bytes": 268435456,
+      "ms": 25.308223724365234,
+      "note": "",
+      "gb_per_s": 10.606649400746624
+    },
+    {
+      "direction": "d2h",
+      "page_bytes": 65536,
+      "pages": 4096,
+      "bytes": 268435456,
+      "ms": 23.10028839111328,
+      "note": "",
+      "gb_per_s": 11.620437435892255
+    },
+    {
+      "direction": "d2h",
+      "page_bytes": 2359296,
+      "pages": 113,
+      "bytes": 266600448,
+      "ms": 20.8253116607666,
+      "note": "",
+      "gb_per_s": 12.801750693712604
+    },
+    {
+      "direction": "d2h",
+      "page_bytes": null,
+      "pages": 1,
+      "bytes": 268435456,
+      "ms": 20.878400802612305,
+      "note": "",
+      "gb_per_s": 12.857088937885193
+    }
+  ]
+}

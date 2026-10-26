@@ -1,0 +1,25 @@
+[2026-10-26T04:54:41Z] probes 2: engine: frozen --max-num-batched-tokens 2048 --long-prefill-token-threshold 0
+active
+active
+active
+[2026-10-26T04:55:47Z] probes 2: stock2048-kv-1: probe.py kv
+  kv: priority-0 TTFT 1620 ms, 16 tokens 1724 ms, for 747 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:55:52Z] probes 2: stock2048-kv-2: probe.py kv
+  kv: priority-0 TTFT 1645 ms, 16 tokens 1749 ms, for 745 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:55:57Z] probes 2: stock2048-kv-3: probe.py kv
+  kv: priority-0 TTFT 1642 ms, 16 tokens 1747 ms, for 750 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:56:02Z] probes 2: stock2048-tail-1: tail.py 240 pool fresh --reply 40
+  calls: 62 turns, 0 failed (counted at 30,000 ms), TTFT p50 854 p90 2341 p95 2518 max 2827 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:00:28Z] probes 2: stock2048-tail-2: tail.py 240 pool fresh --reply 40
+  calls: 61 turns, 0 failed (counted at 30,000 ms), TTFT p50 837 p90 2354 p95 2535 max 2837 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:04:50Z] probes 2: engine: frozen --max-num-batched-tokens 1536 --long-prefill-token-threshold 768
+active
+active
+active
+[2026-10-26T05:05:56Z] probes 2: stock1536-768-kv-1: probe.py kv
+  kv: priority-0 TTFT 1680 ms, 16 tokens 1785 ms, for 749 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T05:06:01Z] probes 2: stock1536-768-tail-1: tail.py 240 pool fresh --reply 40
+  calls: 59 turns, 0 failed (counted at 30,000 ms), TTFT p50 977 p90 2669 p95 3687 max 3855 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:10:24Z] probes 2: stock1536-768-tail-2: tail.py 240 pool fresh --reply 40
+  calls: 57 turns, 0 failed (counted at 30,000 ms), TTFT p50 1010 p90 3181 p95 3446 max 4041 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:14:42Z] probes 2: block 2 complete

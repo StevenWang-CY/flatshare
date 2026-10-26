@@ -1,0 +1,236 @@
+{
+  "time": 1792989633.9112403,
+  "host": "509dc7dd4f24",
+  "counts": {
+    "ok": 29,
+    "degraded": 3,
+    "refused": 0,
+    "pending": 0
+  },
+  "checks": [
+    {
+      "check": "CC and precision path",
+      "status": "degraded",
+      "value": "sm80; the engine selected MarlinFP8ScaledMMLinearKernel",
+      "reason": "W8A16 through Marlin at the BF16 rate",
+      "effect": "the per-token cost is the BF16 path's; within-card comparisons unchanged; across cards only in regime coordinates"
+    },
+    {
+      "check": "BF16",
+      "status": "ok",
+      "value": "CC >= 8.0",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Attention backend and KV layout",
+      "status": "ok",
+      "value": "FLASH_ATTN 2, LBHNC",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Driver and install path",
+      "status": "ok",
+      "value": "driver 580.82.07, cu130 (venv: cu130): the box's lock",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "torch on the GPU",
+      "status": "ok",
+      "value": "13.0 NVIDIA A100-SXM4-80GB (8, 0)",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "FlashInfer's JIT",
+      "status": "ok",
+      "value": "the sampler for sm80 in 112.8 s with /usr/local/cuda-13.0",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Host compilers",
+      "status": "ok",
+      "value": "/usr/bin/cc, /usr/bin/c++",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Python headers",
+      "status": "ok",
+      "value": "Python.h in ~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/include/python3.12",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Compile and JIT caches",
+      "status": "ok",
+      "value": "overlay at /, 166 GiB free; warm: frozen, 2048-0, 1536, pr",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "CPU tier and /dev/shm",
+      "status": "ok",
+      "value": "20 GiB, 4.0 x the pool; /dev/shm 82 GiB (a container)",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Shmem huge pages",
+      "status": "ok",
+      "value": "never",
+      "reason": "",
+      "effect": "recorded; start time only (the box's tier takes about 14 s of each start)"
+    },
+    {
+      "check": "Pinned memory",
+      "status": "ok",
+      "value": "no cudaHostRegister failure in the engine log",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Host RAM",
+      "status": "ok",
+      "value": "164 GiB available",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Async scheduling",
+      "status": "ok",
+      "value": "true",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Block size",
+      "status": "ok",
+      "value": "16 (2275 blocks)",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Engine starts",
+      "status": "ok",
+      "value": "frozen 220.2 s, 2048-0 114.5 s, 1536 96.3 s, pr 94.4 s",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "GPU",
+      "status": "ok",
+      "value": "GPU 0 of 1: GPU-25a43d78-0d54-92b1-2413-590e82785e37",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "GPU exclusive",
+      "status": "ok",
+      "value": "0 compute processes",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Compute mode",
+      "status": "ok",
+      "value": "Default",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "MIG",
+      "status": "ok",
+      "value": "Disabled",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Power cap, link and ECC",
+      "status": "ok",
+      "value": "400.0 W, PCIe gen 4 x16, ECC Enabled",
+      "reason": "",
+      "effect": "recorded; campaign.sh samples clocks, power and throttle reasons at 1 Hz"
+    },
+    {
+      "check": "systemd --user and linger",
+      "status": "degraded",
+      "value": "systemd --user False, linger False; LH_SUPERVISOR=lh-svc",
+      "reason": "supervisor instead of systemd (deploy/bin/lh-svc with the systemctl and journalctl shims)",
+      "effect": "none on the measurements"
+    },
+    {
+      "check": "Socket paths",
+      "status": "ok",
+      "value": "%t is ~/.local/state/lh-svc/run: vLLM's ZMQ sockets take 83 of 107 bytes",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "One supervisor",
+      "status": "ok",
+      "value": "lh-svc, none of the units under systemd",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "User namespaces",
+      "status": "ok",
+      "value": "the voice plane in a network namespace of its own, and each GPU server in one of its own",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Listener audit",
+      "status": "ok",
+      "value": "ss",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Cores",
+      "status": "degraded",
+      "value": "12 CPUs",
+      "reason": "12 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers",
+      "effect": "callers' lateness and AIPerf's timing are recorded per point and shown"
+    },
+    {
+      "check": "Control plane",
+      "status": "ok",
+      "value": "5 units active, the gateway answers /health",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Models",
+      "status": "ok",
+      "value": "the engine's and the STT's at their revisions",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Corpus and callers",
+      "status": "ok",
+      "value": "weka-x32-long 48 traces, weka-x32 393 traces, callers 48 clips",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Binaries",
+      "status": "ok",
+      "value": "lh-gateway, livekit-server",
+      "reason": "",
+      "effect": ""
+    },
+    {
+      "check": "Disk",
+      "status": "ok",
+      "value": "166 GiB free under ~/leaseholder",
+      "reason": "",
+      "effect": ""
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "step_ms": 4.5,
+  "us_per_token": 41.36,
+  "ns_per_pair": 4.07,
+  "ns_per_context": 171.9,
+  "mixed_ms": 7.3,
+  "host": {
+    "ms": 14.2,
+    "us_per_token": 4.971
+  },
+  "host_per_decode_ms": -4.1,
+  "restore_stall": 0.82
+}

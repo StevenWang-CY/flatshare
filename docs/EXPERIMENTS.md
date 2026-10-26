@@ -72,9 +72,10 @@ Audio gaps, abort latency, wasted tokens and cost per token were in the plan and
 **Results** are in [BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2), every number with its runs and ranges,
 and [METHODS.md](METHODS.md#voice-under-agent-load-e2), the story they tell.
 
-**Other hardware.** E2 runs on the frozen box. [METHODS.md](METHODS.md#what-transfers-to-other-hardware) says what
-transfers to another card and what does not, and [HARDWARE.md](HARDWARE.md) how a node of another card is deployed
-and measured, the A100 40 GB run included.
+**Other hardware.** E2 runs on the frozen box, and its core ran like for like on an A100 SXM4 80 GB on 2026-10-26.
+[METHODS.md](METHODS.md#what-transfers-to-other-hardware) says what transfers to another card and what does not, and
+[HARDWARE.md](HARDWARE.md) how a node of another card is deployed and measured, with [the A100
+run](HARDWARE.md#what-it-measured-2026-10-26)'s results.
 
 ## E3: the background tier's cost of make-room
 

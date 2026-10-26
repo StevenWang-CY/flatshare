@@ -1,0 +1,84 @@
+{
+  "hostname": "509dc7dd4f24",
+  "kernel": "6.6.122+",
+  "arch": "x86_64",
+  "gpu": {
+    "name": "NVIDIA A100-SXM4-80GB",
+    "count": 1,
+    "index": 0,
+    "uuid": "GPU-25a43d78-0d54-92b1-2413-590e82785e37",
+    "chosen": true,
+    "wanted": "GPU-25a43d78-0d54-92b1-2413-590e82785e37",
+    "all": [
+      "0: NVIDIA A100-SXM4-80GB (GPU-25a43d78-0d54-92b1-2413-590e82785e37)"
+    ],
+    "memory_mib": 81920,
+    "compute_cap": "8.0",
+    "driver": "580.82.07",
+    "pcie_gen": 4,
+    "pcie_width": 16,
+    "mig": "Disabled",
+    "mig_devices": [],
+    "power_limit_w": 400.0,
+    "ecc": "Enabled",
+    "compute_mode": "Default",
+    "bus_id": "00000000:00:05.0",
+    "numa_node": 0
+  },
+  "cpus": {
+    "0": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  "memory": {
+    "total_bytes": 179370467328,
+    "available_bytes": 175748612096,
+    "nodes": {
+      "0": {
+        "total_bytes": 179370467328,
+        "free_bytes": 111671996416
+      }
+    }
+  },
+  "shm": {
+    "path": "/dev/shm",
+    "total_bytes": 88234524672,
+    "free_bytes": 88234524672
+  },
+  "thp_shmem": "never",
+  "container": true,
+  "virtualization": "docker",
+  "root": true,
+  "sudo": true,
+  "systemd_user": false,
+  "linger": false,
+  "userns": true,
+  "cuda_toolkits": [
+    {
+      "version": "13.0",
+      "path": "/usr/local/cuda-13.0"
+    }
+  ],
+  "cuda_toolkit": {
+    "version": "13.0",
+    "path": "/usr/local/cuda-13.0"
+  },
+  "cuda_compat": "/usr/local/cuda-13.0/compat",
+  "cc": "/usr/bin/cc",
+  "cxx": "/usr/bin/c++",
+  "ninja": false,
+  "uv": "/usr/local/bin/uv",
+  "python": "3.12.13",
+  "hf_hub_cache": "~/.cache/huggingface/hub"
+}

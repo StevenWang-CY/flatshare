@@ -1,0 +1,48 @@
+[2026-10-26T06:59:59Z] campaign a100-r4: 3 points, arm files at ?, the agents' seed 14, until 09:05 UTC (epoch 1793005500)
+[2026-10-26T06:59:59Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-26T06:59:59Z] w5-a1-voice: pending, engine frozen
+[2026-10-26T07:00:00Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T07:00:00Z] w5-disc-frozen-s24: localhost runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-26T07:00:00Z] w5-disc-frozen-s24: localhost has v1.0
+[2026-10-26T07:00:00Z] w5-disc-frozen-s24: measuring
+[07:00:00Z] configuring cyan for w5-disc-frozen-s24
+[07:00:00Z] AIPerf: 24 session trees through the gateway, seed 14
+[07:02:51Z] AIPerf is profiling; 60 s of warm-up
+[07:03:51Z] calls: 2 callers, 25 turns each after 1 warm-up
+[07:10:05Z] stopping AIPerf
+[07:10:07Z] w5-disc-frozen-s24: V2V p50/p95/p99 2451.9/5169.4/5758.3 ms, 0 of 50 turns failed; background 1.016 requests/s, 9,828 tokens/s, agent TTFT p50/p99 15270.21/24310.82 ms
+w5-disc-frozen-s24: V2V p50/p95/p99 2451.9/5169.4/5758.3 ms, 0 of 50 turns failed; background 1.016 requests/s, 9,828 tokens/s, agent TTFT p50/p99 15270.21/24310.82 ms
+[2026-10-26T07:10:08Z] w5-a1-voice: localhost runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-26T07:10:08Z] w5-a1-voice: localhost has v1.0
+[2026-10-26T07:10:08Z] w5-a1-voice: measuring
+[07:10:08Z] configuring cyan for w5-a1-voice
+[07:10:09Z] calls: 2 callers, 25 turns each after 1 warm-up
+[07:15:32Z] w5-a1-voice: V2V p50/p95/p99 1261.7/1391.0/1427.8 ms, 0 of 50 turns failed
+w5-a1-voice: V2V p50/p95/p99 1261.7/1391.0/1427.8 ms, 0 of 50 turns failed
+[2026-10-26T07:15:33Z] w5-disc-pr-ab48-s24: localhost runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T07:16:41Z] w5-disc-pr-ab48-s24: localhost has v1.0
+[2026-10-26T07:16:41Z] w5-disc-pr-ab48-s24: measuring
+[07:16:43Z] configuring cyan for w5-disc-pr-ab48-s24
+[07:16:43Z] AIPerf: 24 session trees through the gateway, seed 14
+[07:19:34Z] AIPerf is profiling; 60 s of warm-up
+[07:20:34Z] calls: 2 callers, 25 turns each after 1 warm-up
+[07:26:24Z] stopping AIPerf
+[07:26:26Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1450.8/1634.5/1936.3 ms, 0 of 50 turns failed; background 0.963 requests/s, 9,302 tokens/s, agent TTFT p50/p99 15279.61/25114.93 ms
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1450.8/1634.5/1936.3 ms, 0 of 50 turns failed; background 0.963 requests/s, 9,302 tokens/s, agent TTFT p50/p99 15279.61/25114.93 ms
+[2026-10-26T07:26:27Z] the frontier of a100-r4
+leaseholder/runs/e2/a100-r4/report/frontier.csv
+leaseholder/runs/e2/a100-r4/report/frontier.md
+leaseholder/runs/e2/a100-r4/report/frontier-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r4/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r4/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T07:26:29Z] done: ~/leaseholder/results/e2/a100-r4/report/frontier.md

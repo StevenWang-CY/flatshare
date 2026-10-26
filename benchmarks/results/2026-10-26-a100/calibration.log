@@ -1,0 +1,4 @@
+[2026-10-26T05:50:59Z] calibration: the frozen engine, freshly started
+variant: the box already runs frozen 
+[2026-10-26T05:52:07Z] calibration: 16 sessions of weka-x32, seed 11, Qwen/Qwen3-4B-Instruct-2507-FP8, on cores 8-10, through http://127.0.0.1:18000
+[2026-10-26T06:07:52Z] calibration: complete: 709 requests in ~/leaseholder/runs/a100/calibration-s16

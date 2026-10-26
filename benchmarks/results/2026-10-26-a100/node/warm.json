@@ -1,0 +1,100 @@
+{
+  "configurations": {
+    "frozen": {
+      "variant": "frozen",
+      "flags": [],
+      "started": 1792989074.9551046,
+      "ready_s": 220.2,
+      "ok": true,
+      "log": [
+        "(EngineCore pid=12730) INFO 10-26 04:33:28 [__init__.py:758] Selected MarlinFP8ScaledMMLinearKernel for Fp8LinearMethod",
+        "(EngineCore pid=12730) INFO 10-26 04:33:29 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].",
+        "(EngineCore pid=12730) INFO 10-26 04:33:29 [flash_attn.py:1117] Using FlashAttention version 2",
+        "(EngineCore pid=12730) WARNING 10-26 04:33:35 [marlin_utils_fp8.py:108] Your GPU does not have native support for FP8 computation but FP8 quantization is being used. Weight-only FP8 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.",
+        "(EngineCore pid=12730) INFO 10-26 04:33:36 [topk_topp_sampler.py:124] Using FlashInfer for top-p & top-k sampling.",
+        "(EngineCore pid=12730) INFO 10-26 04:33:36 [utils.py:347] Using LBHNC KV cache layout.",
+        "(EngineCore pid=12730) INFO 10-26 04:34:51 [core.py:395] init engine (profile, create kv cache, warmup model) took 74.53 s (compilation: 49.58 s)"
+      ],
+      "async_scheduling": true,
+      "linear_backend": "auto",
+      "block_size": 16,
+      "num_gpu_blocks": 2275
+    },
+    "2048-0": {
+      "variant": "frozen",
+      "flags": [
+        "--max-num-batched-tokens",
+        "2048",
+        "--long-prefill-token-threshold",
+        "0"
+      ],
+      "started": 1792989296.9256644,
+      "ready_s": 114.5,
+      "ok": true,
+      "log": [
+        "(EngineCore pid=13855) INFO 10-26 04:35:31 [__init__.py:758] Selected MarlinFP8ScaledMMLinearKernel for Fp8LinearMethod",
+        "(EngineCore pid=13855) INFO 10-26 04:35:32 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].",
+        "(EngineCore pid=13855) INFO 10-26 04:35:32 [flash_attn.py:1117] Using FlashAttention version 2",
+        "(EngineCore pid=13855) WARNING 10-26 04:35:37 [marlin_utils_fp8.py:108] Your GPU does not have native support for FP8 computation but FP8 quantization is being used. Weight-only FP8 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.",
+        "(EngineCore pid=13855) INFO 10-26 04:35:39 [topk_topp_sampler.py:124] Using FlashInfer for top-p & top-k sampling.",
+        "(EngineCore pid=13855) INFO 10-26 04:35:39 [utils.py:347] Using LBHNC KV cache layout.",
+        "(EngineCore pid=13855) INFO 10-26 04:36:47 [core.py:395] init engine (profile, create kv cache, warmup model) took 68.02 s (compilation: 45.73 s)"
+      ],
+      "async_scheduling": true,
+      "linear_backend": "auto",
+      "block_size": 16,
+      "num_gpu_blocks": 2275
+    },
+    "1536": {
+      "variant": "frozen",
+      "flags": [
+        "--max-num-batched-tokens",
+        "1536",
+        "--long-prefill-token-threshold",
+        "768"
+      ],
+      "started": 1792989412.850371,
+      "ready_s": 96.3,
+      "ok": true,
+      "log": [
+        "(EngineCore pid=14880) INFO 10-26 04:37:27 [__init__.py:758] Selected MarlinFP8ScaledMMLinearKernel for Fp8LinearMethod",
+        "(EngineCore pid=14880) INFO 10-26 04:37:28 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].",
+        "(EngineCore pid=14880) INFO 10-26 04:37:28 [flash_attn.py:1117] Using FlashAttention version 2",
+        "(EngineCore pid=14880) WARNING 10-26 04:37:33 [marlin_utils_fp8.py:108] Your GPU does not have native support for FP8 computation but FP8 quantization is being used. Weight-only FP8 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.",
+        "(EngineCore pid=14880) INFO 10-26 04:37:35 [topk_topp_sampler.py:124] Using FlashInfer for top-p & top-k sampling.",
+        "(EngineCore pid=14880) INFO 10-26 04:37:35 [utils.py:347] Using LBHNC KV cache layout.",
+        "(EngineCore pid=14880) INFO 10-26 04:38:25 [core.py:395] init engine (profile, create kv cache, warmup model) took 50.17 s (compilation: 27.94 s)"
+      ],
+      "async_scheduling": true,
+      "linear_backend": "auto",
+      "block_size": 16,
+      "num_gpu_blocks": 2275
+    },
+    "pr": {
+      "variant": "make-room",
+      "flags": [
+        "--additional-config.make_room.reserve_tokens",
+        "0",
+        "--additional-config.make_room.budget_cap_tokens",
+        "48"
+      ],
+      "started": 1792989510.596735,
+      "ready_s": 94.4,
+      "ok": true,
+      "log": [
+        "(EngineCore pid=15791) INFO 10-26 04:39:04 [__init__.py:758] Selected MarlinFP8ScaledMMLinearKernel for Fp8LinearMethod",
+        "(EngineCore pid=15791) INFO 10-26 04:39:05 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].",
+        "(EngineCore pid=15791) INFO 10-26 04:39:05 [flash_attn.py:1117] Using FlashAttention version 2",
+        "(EngineCore pid=15791) WARNING 10-26 04:39:11 [marlin_utils_fp8.py:108] Your GPU does not have native support for FP8 computation but FP8 quantization is being used. Weight-only FP8 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.",
+        "(EngineCore pid=15791) INFO 10-26 04:39:12 [topk_topp_sampler.py:124] Using FlashInfer for top-p & top-k sampling.",
+        "(EngineCore pid=15791) INFO 10-26 04:39:12 [utils.py:347] Using LBHNC KV cache layout.",
+        "(EngineCore pid=15791) INFO 10-26 04:40:02 [core.py:395] init engine (profile, create kv cache, warmup model) took 49.41 s (compilation: 27.42 s)"
+      ],
+      "async_scheduling": true,
+      "linear_backend": "auto",
+      "block_size": 16,
+      "num_gpu_blocks": 2275
+    }
+  },
+  "time": 1792989606.4054515
+}

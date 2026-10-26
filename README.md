@@ -8,17 +8,28 @@ its GPU for a fraction of each turn, and background work such as coding agents c
 time is lost inside vLLM's scheduler: a waiting voice turn cannot take KV cache from running agent requests, and once it
 runs, their prefill shares every step of its reply. Two changes to the scheduler, proposed upstream as
 [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351),
-bring it to 2.24 s, 0.20 s over its SLO, while the agents keep 97% of their throughput.
+bring it to 2.24 s, 0.20 s over its SLO, while the agents keep 97% of their throughput. On an A100 SXM4 80 GB, with the
+box's model, pool and sessions, they bring it from 4.99 s to 1.63 s, under that card's SLO in each of five rounds, and
+the agents' throughput holds.
 
-![The same caller's second turn on each engine beside 24 coding-agent sessions: vLLM with the two PRs answers after 1.9 s, tuned vLLM after 9.6 s](docs/figures/e2-demo.gif)
+<picture>
+  <source media="(max-width: 767px) and (prefers-color-scheme: dark)" srcset="docs/figures/e2-demo-narrow-dark.webp">
+  <source media="(max-width: 767px)" srcset="docs/figures/e2-demo-narrow.webp">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/e2-demo-dark.webp">
+  <img src="docs/figures/e2-demo.webp" width="100%" alt="The same caller's first measured turn on two engines beside 24 coding-agent sessions on one RTX 5060 Ti, drawn as it plays on one time axis: the caller's line, the wait for the reply as a growing bar with a clock, and the agent's reply. With #63350 and #63351 the reply comes 1.9 s after the line ends, before the dashed SLO rule at 2.03 s; on tuned vLLM 0.32 it comes after 9.6 s">
+</picture>
 
-*The same caller's second turn on each engine, beside the same agents (recorded 2026-10-25): the two PRs answer after
-1.9 s, tuned vLLM after 9.6 s; over both calls of each run, their V2V p95 was 2.2 and 11.2 s. The 170-second video, with
-sound, is in the [v1.0 release](https://github.com/StevenWang-CY/leaseholder/releases/tag/v1.0).*
+*The same caller's first measured turn on each engine, beside the same agents (recorded 2026-10-25), as it plays: with
+the two PRs the reply comes 1.9 s after the caller's line ends, on tuned vLLM after 9.6 s; over both calls of each run,
+their V2V p95 was 2.2 and 11.2 s. The video of ten turns, with sound, its closing card with both GPUs' runs, is in the
+[v1.1 release](https://github.com/StevenWang-CY/leaseholder/releases/tag/v1.1).*
 
-![Voice-to-voice p95 of each configuration over its runs, against the SLO: tuned vLLM near 10.5 s, a router that aborts and resubmits near 2.52 s, the two PRs at 2.24 s](docs/figures/e2-voice-p95.svg)
+<picture>
+  <source media="(max-width: 767px)" srcset="docs/figures/e2-voice-p95-gpus-narrow.svg">
+  <img src="docs/figures/e2-voice-p95-gpus.svg" width="100%" alt="Two panels, rows in three groups beside 24 coding-agent sessions, each group against its card's SLO: the voice-to-voice p95, median of its runs, and the agents' tokens a second with each one's share of its group's first row. RTX 5060 Ti 16 GB, SLO 2.03 s: tuned vLLM 10.48 s at 3,305 tokens/s, a router that aborts and resubmits 2.52 s at 101%, #63350 and #63351 2.24 s at 97%. A100 at 512-token steps, SLO 1.67 s: tuned vLLM with the box's tuning 4.99 s at 8,633 tokens/s, the PRs 1.63 s at 100%. A100 at 2,048-token steps: tuned vLLM, the card's best, 3.66 s at 14,536 tokens/s, the PRs 1.83 s at 101%">
+</picture>
 
-| Two calls beside 24 coding-agent sessions that fill the KV pool | Voice p95 | Over the SLO | Agents' tokens/s | Agents' TTFT p50 |
+| Two calls beside 24 coding-agent sessions that fill the KV pool of one RTX 5060 Ti | Voice p95 | Over the SLO | Agents' tokens/s | Agents' TTFT p50 |
 |---|---:|---:|---:|---:|
 | Voice alone, the SLO's reference | 1,784 ms | — | — | — |
 | vLLM 0.32, tuned: priority scheduling, a 512-token step cap, a CPU KV tier | 10,477 ms | +8,443 ms | 3,305 | 63 s |
@@ -38,12 +49,35 @@ yours?](docs/PRODUCTION.md#is-your-deployment-in-this-regime)). On the final cod
 gave the last row 2.27 s, round by round −45 to +77 ms from W5's ([FB](benchmarks/results/2026-10-25-e2-fb)). Every run
 and range is in [BENCHMARKS.md](docs/BENCHMARKS.md#voice-under-agent-load-e2).
 
+| The same two calls and 24 sessions on an A100 SXM4 80 GB | Voice p95 | Over the SLO | Agents' tokens/s | Agents' TTFT p50 |
+|---|---:|---:|---:|---:|
+| Voice alone, the SLO's reference | 1,419 ms | — | — | — |
+| vLLM 0.32 with the box's tuning, 512-token steps | 4,986 ms | +3,317 ms | 8,633 | 12 s |
+| + #63350 and #63351 | **1,634 ms** | −35 ms | 8,651 | 14 s |
+| vLLM 0.32 at its default 2,048-token steps, the card's best | 3,663 ms | +1,994 ms | 14,536 | 1.5 s |
+| + #63350 and #63351 | 1,826 ms | +157 ms | 14,635 | 1.5 s |
+
+The A100 ran the box's model, pool, CPU tier and agents, on W5's five samples of the agents' traces (medians of five
+rounds; of two, on the first two samples, at 2,048-token steps). At the box's 512-token steps the PRs' p95 was under the
+card's SLO in every round, the agents' tokens/s 94–111% of tuned vLLM's round by round, and with 32 sessions at that
+pool 1.62 s against 5.22 s, in one round. At vLLM's default 2,048-token steps, which give this card's agents 1.4 times
+the tokens a second on the same samples, the PRs kept all of them and halved the p95, to 0.14 and 0.17 s over the SLO:
+what the larger steps add is the wait for the steps already in flight when a voice turn arrives, which no scheduling
+rule takes back ([the A100 run](docs/HARDWARE.md#what-it-measured-2026-10-26)).
+
 ## What it shows
 
-1. **vLLM cannot preempt for a waiting request.** Its scheduler serves running requests first and preempts only so that
-   one of them can grow; the waiting loop stops at the first request it cannot allocate. Behind two 18k-token agent
-   requests in a full pool, a 750-token voice turn waits 4.9–5.0 s for its first token, and 219–290 ms with #63350 ([the
-   KV case](docs/BENCHMARKS.md#the-kv-case-make-room)).
+<picture>
+  <source media="(max-width: 767px)" srcset="docs/figures/method-narrow.svg">
+  <img src="docs/figures/method.svg" width="100%" alt="The method in three panels. (a) A caller's speech goes to speech to text, then to vLLM 0.32's scheduler with #63350 and #63351, then to text to speech and back to the caller; 24 coding-agent sessions send their requests to the same scheduler at priority 2, the voice turn's at priority 0, and the scheduler allocates from the KV pool beneath it. (b) #63350: in a full pool of 12 KV blocks, two agent requests hold 5 each and 2 are free; a voice turn that needs 4 waits beside it on stock vLLM, and with #63350 the latest agent request, agent B, is preempted, its KV kept in the CPU tier for its resume, and the turn takes its blocks. (c) #63351, the engine's steps in time: without it, each step of the reply carries an agent's prefill chunk beside its token, 14 tokens in the time #63351, holding agent prefill, gives the reply its first 48; agent prefill resumes after the window">
+</picture>
+
+*The voice agent's turn and the coding agents share vLLM's scheduler and its KV pool (a). #63350 lets a waiting turn take KV from the latest agent request (b); #63351 keeps agent prefill out of the steps of the reply's first tokens (c). The blocks and steps are illustrative; a step's length is drawn in the ratio of the gaps measured between the reply's tokens beside agent prefill and with it held (60–65 and 16–20 ms).*
+
+1. **vLLM 0.32 cannot preempt for a waiting request.** Its scheduler serves running requests first and preempts only
+   so that one of them can grow; the waiting loop stops at the first request it cannot allocate. Behind two 18k-token
+   agent requests in a full pool, a 750-token voice turn waits 4.9–5.0 s for its first token, and 219–290 ms with
+   #63350 ([the KV case](docs/BENCHMARKS.md#the-kv-case-make-room)).
 2. **Getting the turn into the batch is not enough.** A step cap bounds tokens, not time. Beside three agent prefills
    the reply's tokens come 60–65 ms apart with #63350 alone and 16–20 ms apart with #63351, and #63350 alone leaves the
    voice p95 at 5.1 s.
@@ -64,15 +98,22 @@ and range is in [BENCHMARKS.md](docs/BENCHMARKS.md#voice-under-agent-load-e2).
   2,147–3,832 ms.
 - **Many calls.** #63351 holds agent prefill while any call's first tokens are due, so overlapping replies hold it for
   longer: with 4 and 6 callers the PRs' p95 was 0.27 s and 0.26 s over each one's SLO in every round, against 0.20 s
-  with two ([how it fails](docs/PRODUCTION.md#how-it-fails)).
+  with two ([how it fails](docs/PRODUCTION.md#how-it-fails)). At a datacenter batch on an A100, 256 requests in flight
+  with 10% at priority 0, the hold took the priority 2 requests' TTFT p99 from 1.1 s to 8.0 s while their median fell.
 - **The agents pay through the prefill hold.** Their TTFT p50 rises by 9 s, from 63 to 72 s, and the cap holds their
   prefill in 33% of the engine's steps during the calls; the preemptions cost no measurable throughput. What a preempted
   request recomputes when it resumes, no vLLM 0.32 counter shows
   ([E3](docs/BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)).
-- **Other GPUs.** The mechanisms are not specific to the card; what each costs is. On an A100 40 GB with the box's pool,
-  `lh-sim` forecasts the KV case's first token at 1.6–1.7 s on stock vLLM and 134–158 ms with #63350 ([the
-  forecast](benchmarks/a100/forecast.md), written before the run that checks it, [docs/HARDWARE.md](docs/HARDWARE.md));
-  other cards are placed by the same model ([what transfers](docs/METHODS.md#what-transfers-to-other-hardware)).
+- **A larger step on a faster card.** The step cap that suits the box costs the A100's agents 30% of their throughput;
+  at the card's own best, 2,048-token steps, the PRs keep all of it but leave the voice p95 0.14–0.17 s over the SLO,
+  the LLM's first token waiting for the larger steps in flight (412 and 414 ms at p95 against 183 and 216 ms at
+  512-token steps on the same samples).
+- **Other GPUs.** The mechanisms carry to an A100 SXM4 80 GB; what each costs does not scale with the card's peaks. A
+  forecast written before that run placed the KV case's first token at 1.33–1.37 s on stock vLLM and 126–145 ms with the
+  PRs, and the card measured 1.75 s and 175 ms: its decode attention reads KV at 42% of its bandwidth, where the box's
+  reaches 77% ([the A100 run](docs/HARDWARE.md#what-it-measured-2026-10-26)). At the box's pool the A100's agents leave
+  two calls short of KV 6% of the time, against the box's 17%. Other cards are placed by the same model ([what
+  transfers](docs/METHODS.md#what-transfers-to-other-hardware)).
 
 ## Try it on vLLM 0.32
 
@@ -101,6 +142,9 @@ it fails) and how to check it on your hardware.
 
 - **The box.** One RTX 5060 Ti 16 GB runs vLLM 0.32 with Qwen3-4B-Instruct-2507-FP8 and a 36,400-token KV pool, Whisper
   and Kokoro on the same GPU, a 20 GiB CPU KV tier, NUMA-pinned units.
+- **The A100.** The same deployment rendered from a hardware profile onto an A100 SXM4 80 GB on Google Colab, the
+  control plane on the same host, the box's pool kept; a forecast of each measurement was written before the run ([the
+  A100 run](docs/HARDWARE.md#the-a100-run)).
 - **Voice-to-voice from waveforms.** Two LiveKit callers speak scripted lines, synthesized in six voices, to a stock
   LiveKit voice agent and time the end of their speech to the agent's first audio; the agent logs each turn's stages.
 - **The agents.** AIPerf replays the 48 longest-context Claude Code sessions of SemiAnalysis' traces, block-scaled 32×,
@@ -124,7 +168,7 @@ it fails) and how to check it on your hardware.
 | compare with llm-d, Dynamo, SMG, SGLang and papers | [docs/PRIOR-ART.md](docs/PRIOR-ART.md) |
 | know why a decision was made | [docs/adr/](docs/adr) |
 | look up a term (arm 9, the frozen box, the window, W0 to W8) | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
-| run it on other hardware, or on one host | [docs/HARDWARE.md](docs/HARDWARE.md) |
+| run it on other hardware, or on one host, and what the A100 measured | [docs/HARDWARE.md](docs/HARDWARE.md), [the A100 run](docs/HARDWARE.md#what-it-measured-2026-10-26) |
 | operate the hosts, and what the failure drills showed | [ops/RUNBOOK.md](ops/RUNBOOK.md) |
 
 ## Why not llm-d, Dynamo, SMG or vllm-project/router?

@@ -1,0 +1,39 @@
+[2026-10-26T08:43:03Z] campaign a100-aprime-r1: 2 points, arm files at ?, the agents' seed 11, until 09:26 UTC (epoch 1793006760)
+[2026-10-26T08:43:04Z] a100-aprime-frozen-s32: pending, engine frozen
+[2026-10-26T08:43:04Z] a100-aprime-pr-ab48-s32: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T08:43:04Z] a100-aprime-frozen-s32: localhost runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T08:44:13Z] a100-aprime-frozen-s32: localhost has v1.0
+[2026-10-26T08:44:13Z] a100-aprime-frozen-s32: measuring
+[08:44:14Z] configuring cyan for a100-aprime-frozen-s32
+[08:44:14Z] AIPerf: 32 session trees through the gateway, seed 11
+[08:47:16Z] AIPerf is profiling; 60 s of warm-up
+[08:48:16Z] calls: 2 callers, 25 turns each after 1 warm-up
+[08:54:25Z] stopping AIPerf
+[08:54:27Z] a100-aprime-frozen-s32: V2V p50/p95/p99 2670.2/5221.6/5526.8 ms, 0 of 50 turns failed; background 0.793 requests/s, 8,614 tokens/s, agent TTFT p50/p99 24479.05/55809.86 ms
+a100-aprime-frozen-s32: V2V p50/p95/p99 2670.2/5221.6/5526.8 ms, 0 of 50 turns failed; background 0.793 requests/s, 8,614 tokens/s, agent TTFT p50/p99 24479.05/55809.86 ms
+[2026-10-26T08:54:27Z] a100-aprime-pr-ab48-s32: localhost runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T08:55:36Z] a100-aprime-pr-ab48-s32: localhost has v1.0
+[2026-10-26T08:55:36Z] a100-aprime-pr-ab48-s32: measuring
+[08:55:38Z] configuring cyan for a100-aprime-pr-ab48-s32
+[08:55:38Z] AIPerf: 32 session trees through the gateway, seed 11
+[08:58:40Z] AIPerf is profiling; 60 s of warm-up
+[08:59:40Z] calls: 2 callers, 25 turns each after 1 warm-up
+[09:05:12Z] stopping AIPerf
+[09:05:14Z] a100-aprime-pr-ab48-s32: V2V p50/p95/p99 1462.0/1617.2/1649.5 ms, 0 of 50 turns failed; background 0.75 requests/s, 8,547 tokens/s, agent TTFT p50/p99 25881.42/52272.63 ms
+a100-aprime-pr-ab48-s32: V2V p50/p95/p99 1462.0/1617.2/1649.5 ms, 0 of 50 turns failed; background 0.75 requests/s, 8,547 tokens/s, agent TTFT p50/p99 25881.42/52272.63 ms
+[2026-10-26T09:05:15Z] the frontier of a100-aprime-r1
+leaseholder/runs/e2/a100-aprime-r1/report/frontier.csv
+leaseholder/runs/e2/a100-aprime-r1/report/frontier.md
+leaseholder/runs/e2/a100-aprime-r1/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-aprime-r1/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T09:05:16Z] done: ~/leaseholder/results/e2/a100-aprime-r1/report/frontier.md

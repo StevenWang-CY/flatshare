@@ -4,7 +4,8 @@
 # corpora and the callers' audio. Each stage is safe to re-run, skips what is done and ends with the preflight
 # (deploy/a100/host.py preflight), whose refused checks fail the stage. Its log: ~/leaseholder/node/bootstrap.log.
 #   stage  needs no GPU, so it can run before the billed clock: uv and Python 3.12; the host's facts and the node
-#          rendered from deploy/profiles/$LH_PROFILE (a100-40gb) into ~/leaseholder/node; the venvs, the engine's
+#          rendered from deploy/profiles/$LH_PROFILE (a100-40gb) into ~/leaseholder/node (its GPU units name the
+#          driver's library directory where the linker does not search it, a container's); the venvs, the engine's
 #          from the lock the driver needs (profile.py's R8); Kokoro and the models at their pinned revisions;
 #          LiveKit and lh-gateway; the files the JIT compilers need; the units and the control plane's
 #          configuration, and the control plane started; FlashInfer's sampler compiled for the card
@@ -144,6 +145,12 @@ render() {
     fi
   fi
   log "install path: $(field "$node/node.json" install path): $(field "$node/node.json" install reason)"
+  # The units' environment has none of the operator's LD_LIBRARY_PATH, which in a container may be what reaches the
+  # driver's libraries (Colab's /usr/lib64-nvidia, not in the linker's cache): the GPU units name their directory.
+  if [[ $(field "$node/host.json" driver_libs linker) == False ]]; then
+    log "the driver's libcuda.so.1 is in $(field "$node/host.json" driver_libs path), which the linker does not" \
+      "search ($(field "$node/host.json" driver_libs via)): the GPU units name it on LD_LIBRARY_PATH"
+  fi
 }
 
 gpu_units=(leaseholder.target lh-engine lh-stt lh-tts)

@@ -1,0 +1,24 @@
+[2026-10-26T08:02:34Z] campaign a100-tuned-r1: 1 points, arm files at ?, the agents' seed 11, until 09:26 UTC (epoch 1793006760)
+[2026-10-26T08:02:35Z] a100-tuned-s24: pending, engine frozen --max-num-batched-tokens 2048 --long-prefill-token-threshold 0
+[2026-10-26T08:02:35Z] a100-tuned-s24: localhost runs frozen --max-num-batched-tokens 2048 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T08:03:41Z] a100-tuned-s24: localhost has v1.0
+[2026-10-26T08:03:41Z] a100-tuned-s24: measuring
+[08:03:43Z] configuring cyan for a100-tuned-s24
+[08:03:43Z] AIPerf: 24 session trees through the gateway, seed 11
+[08:06:29Z] AIPerf is profiling; 60 s of warm-up
+[08:07:29Z] calls: 2 callers, 25 turns each after 1 warm-up
+[08:13:08Z] stopping AIPerf
+[08:13:10Z] a100-tuned-s24: V2V p50/p95/p99 1850.1/4036.5/5331.1 ms, 0 of 50 turns failed; background 1.663 requests/s, 15,215 tokens/s, agent TTFT p50/p99 969.56/17316.89 ms
+a100-tuned-s24: V2V p50/p95/p99 1850.1/4036.5/5331.1 ms, 0 of 50 turns failed; background 1.663 requests/s, 15,215 tokens/s, agent TTFT p50/p99 969.56/17316.89 ms
+[2026-10-26T08:13:11Z] the frontier of a100-tuned-r1
+leaseholder/runs/e2/a100-tuned-r1/report/frontier.csv
+leaseholder/runs/e2/a100-tuned-r1/report/frontier.md
+leaseholder/runs/e2/a100-tuned-r1/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-tuned-r1/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T08:13:13Z] done: ~/leaseholder/results/e2/a100-tuned-r1/report/frontier.md

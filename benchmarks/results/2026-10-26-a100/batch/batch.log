@@ -1,0 +1,22 @@
+[2026-10-26T07:53:31Z] batch: frozen: frozen
+active
+active
+active
+[2026-10-26T07:56:38Z] batch: frozen: running p50 201, max 254 (the batch: 256)
+[2026-10-26T07:56:38Z] batch: frozen: Output token throughput (tok/s):         6588.59    Output token throughput (tok/s):         935.24     
+[2026-10-26T07:56:38Z] batch: off: make-room --additional-config.make_room.max_preemptions_per_step 0 --additional-config.make_room.budget_cap false --additional-config.make_room.reserve_tokens 0
+active
+active
+active
+[2026-10-26T07:59:13Z] batch: off: running p50 215, max 256 (the batch: 256)
+[2026-10-26T07:59:13Z] batch: off: Output token throughput (tok/s):         6715.49    Output token throughput (tok/s):         945.22     
+[2026-10-26T07:59:13Z] batch: on: make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+active
+active
+active
+[2026-10-26T08:01:28Z] batch: on: running p50 154, max 230 (the batch: 256)
+[2026-10-26T08:01:28Z] batch: on: Output token throughput (tok/s):         6007.57    Output token throughput (tok/s):         2664.45    
+active
+active
+active
+[2026-10-26T08:02:34Z] batch: complete

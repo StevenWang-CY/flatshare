@@ -1,0 +1,210 @@
+{
+  "name": "w5-disc-pr-ab48-s24",
+  "arm": "9-pr-ab48",
+  "label": "vLLM PRs A and B with a 48-token window, no gateway policy, a warm-up turn opening each call",
+  "window_s": 327.1,
+  "voice": {
+    "turns": 50,
+    "errors": 0,
+    "v2v_ms": {
+      "n": 59,
+      "p50": 1438.6,
+      "p95": 1609.1,
+      "p99": 1664.1
+    },
+    "barge_in_to_silence_ms": {
+      "n": 8,
+      "p50": 488.9,
+      "p95": 649.2,
+      "p99": 657.7
+    },
+    "barge_ins": 9
+  },
+  "worker": {
+    "sessions": 2,
+    "turns": 59,
+    "waterfall": {
+      "transcript_ms": {
+        "n": 59,
+        "mean": 729.31,
+        "p10": 709.82,
+        "p50": 725.5,
+        "p90": 756.02,
+        "p95": 761.44,
+        "p99": 765.59
+      },
+      "end_of_turn_ms": {
+        "n": 59,
+        "mean": 731.55,
+        "p10": 713.08,
+        "p50": 727.7,
+        "p90": 758.62,
+        "p95": 764.5,
+        "p99": 768.12
+      },
+      "llm_ttft_ms": {
+        "n": 59,
+        "mean": 136.6,
+        "p10": 94.16,
+        "p50": 139.8,
+        "p90": 170.18,
+        "p95": 180.73,
+        "p99": 232.94
+      },
+      "llm_first_sentence_ms": {
+        "n": 59,
+        "mean": 231.48,
+        "p10": 162.3,
+        "p50": 231.9,
+        "p90": 300.62,
+        "p95": 319.33,
+        "p99": 361.07
+      },
+      "turn_to_first_sentence_ms": {
+        "n": 59,
+        "mean": 234.3,
+        "p10": 164.14,
+        "p50": 233.2,
+        "p90": 301.64,
+        "p95": 320.14,
+        "p99": 362.07
+      },
+      "tts_first_audio_ms": {
+        "n": 59,
+        "mean": 134.84,
+        "p10": 118.6,
+        "p50": 131.3,
+        "p90": 144.3,
+        "p95": 163.55,
+        "p99": 214.33
+      },
+      "e2e_ms": {
+        "n": 59,
+        "mean": 1100.93,
+        "p10": 1028.9,
+        "p50": 1094.4,
+        "p90": 1180.68,
+        "p95": 1224.44,
+        "p99": 1295.58
+      }
+    },
+    "events": {
+      "sent": 249,
+      "dropped": 0,
+      "failed": 0
+    }
+  },
+  "background": {
+    "requests": 266,
+    "errors": 0,
+    "without_usage": 0,
+    "requests_per_s": 0.813,
+    "prompt_tokens_per_s": 8093.2,
+    "completion_tokens_per_s": 45.6,
+    "tokens_per_s": 8138.8,
+    "ttft_ms": {
+      "n": 266,
+      "mean": 20548.29,
+      "p10": 12838.09,
+      "p50": 19805.96,
+      "p90": 28023.2,
+      "p95": 30131.29,
+      "p99": 41596.35
+    },
+    "itl_ms": {
+      "n": 253,
+      "mean": 25.87,
+      "p10": 7.05,
+      "p50": 26.45,
+      "p90": 42.86,
+      "p95": 45.23,
+      "p99": 63.49
+    },
+    "fixed_window": {
+      "seconds": 240.0,
+      "requests": 193,
+      "requests_per_s": 0.804,
+      "tokens_per_s": 7922.5
+    }
+  },
+  "gateway": {
+    "realtime_first_byte_ms": {
+      "n": 62,
+      "mean": 126.47,
+      "p50": 128.21,
+      "p95": 163.45,
+      "p99": 219.65,
+      "source": "log"
+    },
+    "background_first_byte_ms": {
+      "n": 266,
+      "mean": 20547.58,
+      "p50": 19805.18,
+      "p95": 30130.58,
+      "p99": 41595.69,
+      "source": "log"
+    },
+    "shed": null,
+    "refused": null,
+    "resubmitted": null,
+    "discarded_tokens": null,
+    "background_tokens_per_s": 8138.8,
+    "counters": {
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"session_closed\"}": 1,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"interrupted\"}": 10,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_started\"}": 61,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_turn_ended\"}": 62,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_ended\"}": 52,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_speech_started\"}": 62,
+      "lh_gateway_request_outcomes_total{class=\"background\",outcome=\"completed\"}": 266,
+      "lh_gateway_request_outcomes_total{class=\"realtime\",outcome=\"completed\"}": 62,
+      "lh_gateway_requests_total{class=\"background\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"agents\"}": 266,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/models\",status=\"200\",tenant=\"voice\"}": 2,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/events\",status=\"202\",tenant=\"voice\"}": 248,
+      "lh_gateway_requests_total{class=\"realtime\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"voice\"}": 62,
+      "lh_gateway_sanitized_total{field=\"x-request-id\"}": 260,
+      "lh_gateway_sanitized_total{field=\"priority\"}": 260,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"cached\"}": 35904,
+      "lh_gateway_usage_tokens_total{class=\"background\",kind=\"prompt\"}": 2647093,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"completion\"}": 1284,
+      "lh_gateway_usage_tokens_total{class=\"background\",kind=\"completion\"}": 14921,
+      "lh_gateway_usage_tokens_total{class=\"background\",kind=\"cached\"}": 181920,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"prompt\"}": 39805
+    }
+  },
+  "engine": {
+    "preemptions": 78,
+    "prompt_tokens_by_source": {
+      "local_compute": 2476072,
+      "local_cache_hit": 40368,
+      "external_kv_transfer": 178096
+    },
+    "refused": {
+      "max_num_queued_reqs": 0,
+      "max_num_queued_tokens": 0
+    },
+    "kv_offload_load_bytes": 60506505216,
+    "kv_offload_store_bytes": 364900515840
+  },
+  "kv": {
+    "samples": 655,
+    "running_share": 0.0626,
+    "free_blocks": {
+      "p50": 826,
+      "min": 0
+    },
+    "running": {
+      "p50": 2.0,
+      "max": 6.0
+    },
+    "waiting": {
+      "p50": 14.0,
+      "max": 21.0
+    }
+  },
+  "gpu": {
+    "sm_clock_p50_mhz": 1410,
+    "temperature_max_c": 66,
+    "name": "NVIDIA A100-SXM4-80GB"
+  }
+}

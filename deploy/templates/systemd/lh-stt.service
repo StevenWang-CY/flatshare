@@ -10,7 +10,7 @@ Type=exec
 WorkingDirectory=%h/leaseholder
 Environment=PATH={{units.stt_path}}
 {{units.stt_cuda_home}}
-{{units.cuda_compat}}
+{{units.library_path}}
 {{units.gpu_select}}
 Environment=HF_HUB_OFFLINE=1
 {{units.hf_hub_cache}}

@@ -70,6 +70,11 @@ The terms the other documents use, each with where it is defined in full. Code i
   the PRs' 48-token configuration) on the final code, each round on the agents' sample of W5's round of the same number
   ([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2); the records are in
   [`benchmarks/results/2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb)).
+- **The A100 run** (A1, 2026-10-26): the release's kit on an A100 SXM4 80 GB on Google Colab. Its **core** repeats E2's
+  discriminating scenario like for like (the box's model, pool, 512/256 and CPU tier, W5's arm files and five samples),
+  with E0, the probes and a calibration point; its **arms** after the core: the batch (256 requests in flight), **tuned
+  vLLM** (the stock engine at the card's best step cap, 2,048/0), the PRs' values at that cap, A' (32 sessions) and
+  FlashInfer's attention ([HARDWARE.md](HARDWARE.md#what-it-measured-2026-10-26)).
 
 ## Measures
 

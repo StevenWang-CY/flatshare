@@ -1,6 +1,6 @@
 # Running Leaseholder on other hardware
 
-Every measurement so far ran on one RTX 5060 Ti 16 GB, the frozen box, with Gray, a second one, for the probes. This page says what the deployment needs from a GPU node, how a node's files come from a hardware profile, what changes on a card or a host that is not the box's, how one host runs both the GPU servers and the control plane, and how the A100 40 GB run is laid out. A number here is measured (on the box or Gray, with its source), modeled (lh-sim's forecast, [`benchmarks/a100/forecast.md`](../benchmarks/a100/forecast.md)) or an estimate, and says which.
+Every measurement before 2026-10-26 ran on one RTX 5060 Ti 16 GB, the frozen box, with Gray, a second one, for the probes; that day an A100 SXM4 80 GB on Google Colab ran E2's core like for like ([what it measured](#what-it-measured-2026-10-26)). This page says what the deployment needs from a GPU node, how a node's files come from a hardware profile, what changes on a card or a host that is not the box's, how one host runs both the GPU servers and the control plane, and how the A100 run is laid out and what it measured. A number here is measured (on the box, Gray or the A100, with its source), modeled (lh-sim's forecast, [`benchmarks/a100/forecast.md`](../benchmarks/a100/forecast.md)) or an estimate, and says which.
 
 ## What runs where
 
@@ -9,7 +9,7 @@ What vLLM 0.32.0 runs for the box's checkpoint, Qwen3-4B-Instruct-2507-FP8 (bloc
 | Cards (compute capability) | Linear layers | Attention, KV layout | Status |
 |---|---|---|---|
 | RTX 5060 Ti (sm120): the box, Gray | FP8 W8A8 (DeepGEMM) | FlashAttention 2, LBHNC | **measured**: E0, E1's calibration, E2, the make-room probes |
-| A100 40 GB, SXM4 or PCIe (sm80) | Marlin W8A16: the FP8 weights, BF16 activations, the BF16 tensor rate | FlashAttention 2, LBHNC | **modeled** ([the forecast](../benchmarks/a100/forecast.md)); the run below is prepared, and the Marlin path's [dry run on the box](#the-marlin-dry-run-on-the-box) is its first test on a GPU |
+| A100 40 GB or 80 GB, SXM4 or PCIe (sm80) | Marlin W8A16: the FP8 weights, BF16 activations, the BF16 tensor rate | FlashAttention 2, LBHNC | **measured** on an A100 SXM4 80 GB: E0, the step model, the make-room probes, E2 ([the A100 run](#what-it-measured-2026-10-26)); the 40 GB **modeled** ([the forecast](../benchmarks/a100/forecast.md)); the Marlin path was first run on the box ([its dry run](#the-marlin-dry-run-on-the-box)) |
 | A10 (sm86), L4, L40S, RTX 4090 (sm89) | Marlin W8A16, as on the A100 (vLLM 0.32.0 sends this checkpoint to Marlin on sm89 too) | FlashAttention 2 | **modeled** (`lh-sim hardware`) |
 | H100, H200 (sm90), B200 (sm100) | FP8 W8A8 | FlashAttention 3 (sm90), FlashInfer (sm100) | **modeled** |
 | T4 (sm75) | Marlin with FP16 activations | Triton attention | **modeled**; the preflight labels both |
@@ -52,8 +52,8 @@ The profile's "auto" values, in `deploy/profile.py`:
 | Compute capability and precision path | sm75-sm89: W8A16 through Marlin at the BF16 rate; the per-token cost is the BF16 path's, comparisons across cards only in regime coordinates. The row names the kernel the engine's first start selected (before it, the one expected): another than Marlin below sm90 is named as such | below sm75 |
 | BF16 | sm75: FP16 activations; numerics differ from the box | |
 | Attention backend and KV layout | not FlashAttention or FlashInfer on LBHNC (the engine log): attention's cost | |
-| Driver and install path | cu130 with the compatibility libraries, or the cu129 lock: another CUDA runtime under the same vLLM and torch | the venv's build is not the one the driver needs |
-| torch on the GPU (`--gpu`) | | `torch.cuda.init()` fails with the engine's environment (errors 803, 804) |
+| Driver and install path | cu130 with the compatibility libraries, or the cu129 lock: another CUDA runtime under the same vLLM and torch | the venv's build is not the one the driver needs; or the driver's libraries are in a directory the linker does not search and a GPU unit does not name it on `LD_LIBRARY_PATH` |
+| torch on the GPU (`--gpu`) | | `torch.cuda.init()` fails with the engine's environment (errors 803, 804; or no driver, where the engine's environment does not reach the driver's `libcuda.so.1`) |
 | FlashInfer's JIT | | its sampler does not build (the engine would fail at its first start; `VLLM_USE_FLASHINFER_SAMPLER=0` in a drop-in is the degraded way out), or was built for another compiler or card than the units name now (staged before the card was visible, the `gpu` stage can change both; it builds the sampler again: `host.py jit-check --if-stale`) |
 | Host compilers | | no `cc` or `c++`: Triton builds its launchers with a C compiler, `nvcc` needs a C++ one |
 | Python headers | | the engine venv's Python has no `Python.h`, which Triton compiles its launcher against at the engine's first start (a system Python 3.12 without its `-dev` package, Ubuntu 24.04's): `stage` makes the venvs from uv's own Python |
@@ -84,6 +84,7 @@ A host off the lab's network has no cyan beside it, so it runs both: the GPU ser
 - **One GPU of several.** On a host with more than one, the lent GPU is named once (`LH_GPU_ID`, its index or UUID; `env.sh` keeps its UUID): the GPU units run on it alone (`CUDA_VISIBLE_DEVICES` by UUID, `CUDA_DEVICE_ORDER=PCI_BUS_ID`), its facts are the ones the profile derives from, and `gpu-guard` and `campaign.sh`'s sampler read it alone, so another tenant's work on the others neither stops a start nor enters a point's clocks.
 - **No systemd user manager** (a container, or no lingering), or `LH_SUPERVISOR=lh-svc` where there is one: [`deploy/bin/lh-svc`](../deploy/bin/lh-svc), a supervisor in Python's standard library, runs the same unit files and drop-ins, and `deploy/bin/shims/systemctl` and `journalctl`, first on `PATH` (`~/leaseholder/node/env.sh`, which `deploy/a100/host.py env` writes), answer what `variant.sh`, `campaign.sh` and `lh-bench e2 run` ask. The first stage chooses the supervisor, enabling lingering where a user may enable its own and reading the facts again at once, and `env.sh` keeps the choice, lh-svc or systemd, for the later stages and every script that sources it; `LH_SUPERVISOR=auto` chooses again from the host's facts, and it or `LH_SUPERVISOR=lh-svc` moves the units, stopping them first under the supervisor they leave, so that none runs under both (the preflight refuses a split control plane). A `Type=notify` unit (the gateway) has started at its `READY=1`, a `Type=exec` one without `ExecStartPost` once its main process has been executed (even if it exits at once), a socket unit (`lh-gateway.socket`) starts and stops as a target does while the gateway binds its own listeners, and a wanted unit that does not exist is left out, as systemd leaves it. A stop runs a unit's `ExecStop` (the gateway's waits for its drain), then sends its `KillSignal` to a main process still running, also when `ExecStop` failed, which leaves the unit failed as under systemd, and returns once every process it stops has exited, a target's units included. A main process that exits on its own has what is left of its group ended the same way before any restart, the unit deactivating meanwhile, and a start then waits for it; each unit's runner reaps the orphans of the unit's processes, as systemd's manager does, so that a container's init that reaps none (`sleep infinity`) holds up no restart or stop. A start refuses a unit whose command lines hold a specifier lh-svc does not expand (it expands `%n`, `%N`, `%h`, `%t`, `%u`, `%U` and `%%`) before any unit of the start runs, as systemd will not start such a unit. A start takes a target's units one at a time, in the target's order, each after the one before it has started: the GPU servers start STT, TTS, then the engine, where systemd starts the three at once. Its units' processes carry `LH_SVC_UNIT`, by which `gpu-guard` tells them from a foreign process and `smoke.sh`'s listener audit tells whose listener is whose (the gateway's 127.0.0.1:18080 among them, which the gateway binds itself here), as both tell systemd's units by their cgroups.
 - **No user namespaces** (Ubuntu 24.04 restricts them): the voice plane runs in the host's network namespace (`LH_VOICENET=host`), under either supervisor; LiveKit's own candidates stay on 127.0.0.1, but the callers' and the worker's WebRTC clients gather theirs on the host's interfaces, so the preflight reports it as degraded and names the host's public addresses, which must drop inbound UDP. `in-voicenet` marks the processes it runs there `LH_VOICENET=host`, and the listener audit of `smoke.sh` (block 0) accepts their UDP sockets, loopback TCP listeners and file sockets, which in their own namespace it would not see, and refuses anything else of ours, an abstract socket or a TCP listener off loopback among them. The GPU servers run in the host's too, by the `LH_PRIVATE_NET=host` that the host's drop-ins set for `in-private-net`, which anywhere else fails a unit whose namespace cannot be made: there the audit accepts the loopback TCP listeners of vLLM's engine cores on ephemeral ports (torch's gloo groups) and CUDA's abstract sockets, which any user of the host reaches, and refuses anything else of theirs.
+- **The driver's libraries outside the linker's search** (Colab's container keeps `libcuda.so.1` and the rest in `/usr/lib64-nvidia`, which `ldconfig -p` does not list and only its shells' `LD_LIBRARY_PATH` reaches, so `nvidia-smi` works there while torch in a unit finds no driver): the facts find the directory (the linker's cache, else the stages' `LD_LIBRARY_PATH`, else `/usr/lib64-nvidia` or `/usr/lib/x86_64-linux-gnu`; `driver_libs` in `host.json`), and where the linker does not search it every GPU unit names it on its own `LD_LIBRARY_PATH`, after `cuda-compat-13-0`'s where that is used, since a unit's environment has none of the operator's under either supervisor; the preflight's driver and torch rows name the case. A driver's libraries elsewhere are found by running the stages with their directory on `LD_LIBRARY_PATH`.
 - **The measurement drop-in** ([`deploy/phastform/measure`](../deploy/phastform/measure)): the A100 run reads vLLM's development routes, as the box's measurements do (`/server_info`, `/reset_prefix_cache`): `campaign.sh` turns the drop-in on before each point, and `host.py warm` before its starts.
 - **The campaign runs on the host** (`benchmarks/e2/campaign.sh --local`), so a dropped workstation link stops nothing, and [`deploy/a100/pull.sh`](../deploy/a100/pull.sh) copies each point, the probes, the node's records, the warm starts' and the units' logs (exported from the host's journal, or `lh-svc`'s, since the last round) to the workstation every two minutes.
 
@@ -118,7 +119,7 @@ The preflight finds the host's facts, but these decide the plan, and some need t
 1. SSH access: the user and the key, and whether the host has a public address and a firewall that drops inbound UDP (the voice plane, should it run without its own namespace).
 2. Whether the host is a container (its `/dev/shm`: Docker's default 64 MB holds no CPU tier; `--shm-size` or `--ipc=host`), and whether there is root or sudo: build-essential, iproute2, git and `cuda-compat-13-0` install through apt as root (a container's root needs no sudo) or with `sudo -n`, as do the sysctl that allows user namespaces and any compute-mode change.
 3. How many GPUs the host has and which one is ours, by its index or UUID in `nvidia-smi -L` (`LH_GPU_ID=INDEX|UUID bash leaseholder/src/deploy/a100/bootstrap.sh stage`; the preflight refuses several with none named), the card and its form factor (A100 40 GB SXM4 or PCIe), whether MIG is off (a slice is refused unless `LH_ALLOW_MIG=1`: the forecast is the whole card's), and its compute mode (Default; `Exclusive_Process`, common on shared HPC nodes, lets one process at a time use the card and is refused).
-4. The driver version (R580 or newer runs the box's lock as it is; R535 or R570 on a data-center card with `cuda-compat-13-0` installed, or root or sudo to install it; else the cu129 lock), and any CUDA toolkit installed (13.0 or 12.9 saves the toolkit download).
+4. The driver version (R580 or newer runs the box's lock as it is; R535 or R570 on a data-center card with `cuda-compat-13-0` installed, or root or sudo to install it; else the cu129 lock), and any CUDA toolkit installed (13.0 or 12.9 saves the toolkit download). In a container, also where the driver's libraries are when the linker's cache does not list them (`ldconfig -p | grep libcuda.so.1` shows nothing; Colab's are in `/usr/lib64-nvidia`): the stages find them on their `LD_LIBRARY_PATH` or there.
 5. Whether the host is reachable before the billed clock, for `stage` and `warm` (block 0 is 44 minutes without them [estimate]; `warm` alone took 29 minutes on the box, measured).
 6. Whether the home directory is on a volume that outlives the host's restarts: the compile caches and every record live there until `pull.sh` copies them. If `HF_HOME` or `HF_HUB_CACHE` is set, the models go where it says, a data volume's, say; the first stage keeps that choice.
 7. The OS image, systemd with lingering (the first stage enables it where a user may enable their own), and whether unprivileged user namespaces are allowed (Ubuntu 24.04 restricts them unless sudo lifts it): without them the voice plane runs in the host's network namespace, degraded.
@@ -128,7 +129,7 @@ The preflight finds the host's facts, but these decide the plan, and some need t
 
 ## The A100 run
 
-The A100 40 GB run asks whether make-room's result carries to a datacenter card. Its core is like-for-like with the box: the box's model at its revision, its 5 GiB pool, 512/256, the 20 GiB CPU tier, 24 sessions of `weka-x32-long`, two callers, W5's three arm files and five rounds at seeds 11 to 15; only the card, its precision path and the host change. So a difference within the A100 is the change's, and a difference from the box is the card's. [The forecast](../benchmarks/a100/forecast.md) gives every term the run measures, modeled: the KV case's stock wait 1,636–1,688 ms, make-room's first token 134–158 ms, a running share of 13% in the core scenario against the box's 17%, 76% busy against the box's 100%.
+The A100 run asks whether make-room's result carries to a datacenter card; it ran on an A100 SXM4 80 GB on 2026-10-26 ([what it measured](#what-it-measured-2026-10-26)). Its core is like-for-like with the box: the box's model at its revision, its 5 GiB pool, 512/256, the 20 GiB CPU tier, 24 sessions of `weka-x32-long`, two callers, W5's three arm files and five rounds at seeds 11 to 15; only the card, its precision path and the host change. So a difference within the A100 is the change's, and a difference from the box is the card's. [The forecast](../benchmarks/a100/forecast.md) gives every term the run measures, modeled: the KV case's stock wait 1,636–1,688 ms, make-room's first token 134–158 ms, a running share of 13% in the core scenario against the box's 17%, 76% busy against the box's 100%. Those are the A100 40 GB's: the forecast exists for both cards the run can draw, [`forecast.md`](../benchmarks/a100/forecast.md) for the A100 40 GB and [`forecast-80gb.md`](../benchmarks/a100/forecast-80gb.md) for the A100 SXM4 80 GB (`make forecast-a100 GPU=a100-80gb`: the same compute, 2,039 GB/s of HBM2e against 1,555), and the analysis compares a run against the one for the card its records name (`node/host.json`), `forecast-80gb.md` for an A100 80 GB and `forecast.md` otherwise.
 
 ### The core, block by block
 
@@ -158,14 +159,144 @@ In order, each complete in itself, after the core (`run.sh NAME`):
 1. **C'** ([`cprime.sh`](../benchmarks/a100/cprime.sh)): Qwen3-14B-FP8 at the card's own pool, 117,344 tokens (modeled), at 40 sessions, on its own node (`a100-40gb-qwen3-14b`), the agent's requests naming it (the `qwen3-14b` worker variant): its first starts, the pool checked, a smoke reply without `<think>`, E0 with one rep, its own voice alone, then three rounds of tuned vLLM (the step cap with the lowest calls' first-token p95 in blocks 1 and 2, [`probe_results.py`](../benchmarks/a100/probe_results.py) `pick-stock`) against the PRs' values. About 95 minutes.
 2. **The PRs' own code** ([`branches.sh`](../benchmarks/a100/branches.sh)): vLLM at the PRs' tip with their switches on against vLLM at their base, two Python-only installs over precompiled binaries staged beforehand (`branches.sh stage BASE HEAD`), each through the probes: KV x3, prefill x2, tail x2. About 45 minutes.
 3. **Preempt-resubmit** on the stock engine (`a100-resubmit-r3` to `-r5`): three points, seeds 13 to 15. About 36 minutes.
-4. **The scheduler at a datacenter batch** ([`batch.sh`](../benchmarks/a100/batch.sh)): `vllm bench serve` keeping 256 requests in flight, 10% at priority 0, on frozen and on make-room with its switches off and on, each request small enough (48 prompt and 64 output tokens, 8 blocks at most) that all 256 hold their KV at once in the core's pool (2,048 of its 2,275 blocks), so the arm measures the scheduler's per-step cost at a batch of 256 rather than a queue behind the KV; the engine's running requests, sampled once a second, show the batch formed (`ENGINE-running.json`), and a pool too small for it is refused. About 15 minutes [estimate: four engine switches and two cold make-room compiles].
-5. **A'** (`a100-aprime-r1`, `-r2`): the box's pool at 32 sessions, where the forecast places the A100 closest to the box's regime (a running share of 18%). About 80 minutes.
+4. **The scheduler at a datacenter batch** ([`batch.sh`](../benchmarks/a100/batch.sh)): `vllm bench serve` keeping 256 requests in flight, 10% at priority 0, on frozen and on make-room with its switches off and on, each request small enough (48 prompt and 64 output tokens, 8 blocks at most) that all 256 hold their KV at once in the core's pool (2,048 of its 2,275 blocks), so the arm measures the scheduler's per-step cost at a batch of 256 rather than a queue behind the KV; the engine's running requests, sampled once a second, show the batch formed (`ENGINE-running.json`), and a pool too small for it is refused. The clients load their tokenizer from the engine's own snapshot, at the revision `engine.yaml` pins, since offline the model's name resolves to nothing where the download was by commit. About 15 minutes [estimate: four engine switches and two cold make-room compiles].
+5. **A'** (`a100-aprime-r1`, `-r2`): the box's pool at 32 sessions, where the forecast places the A100 closest to the box's regime (a running share of 18%), each round the frozen engine and the PRs' values on one sample of the agents; voice alone, the SLO's reference, is the core's five points on the same card. About 56 minutes.
+6. **Tuned vLLM** (`a100-tuned-r1`, `-r2`): the stock engine at the step cap whose calls' first-token p95 was the lowest in blocks 1 and 2 on this card (`probe_results.py pick-stock`), otherwise the core's frozen point, on the samples of the core's rounds 1 and 2, so that each pairs with that round's frozen point and the PRs' values. The core keeps the box's 512/256, the box's best, so that a difference within the A100 is the change's; this arm sets the change beside the stock engine at the A100's own best. About 28 minutes.
+7. **FlashInfer's attention** (`run.sh backend`, [`probes.sh`](../benchmarks/a100/probes.sh) `backend`): the frozen engine with FlashInfer's attention in place of FlashAttention 2 (`--attention-backend FLASHINFER`) through the KV case x3, whose two 18k-token decodes take the same steps on either backend, so that its wait reads the decode step on each; the block stops before a run unless the engine's log at that start names FlashInfer. The calibration fitted the A100's decode attention at 42% of the card's bandwidth, where the box's reaches 77% of its own. About 12 minutes, more at the first start, which JIT-compiles FlashInfer's attention kernels for the card.
+8. **The PRs' values at the A100's best stock step cap** (`run.sh prtuned`, `a100-prtuned-r1`, `-r2`): the PRs' 48-token configuration with tuned vLLM's 2,048/0 ([`a100-pr-ab48-2048-s24.toml`](../benchmarks/a100/arms/a100-pr-ab48-2048-s24.toml)), on the samples of the core's rounds 1 and 2, so that each pairs with tuned vLLM's round. Added during the run, when tuned vLLM's first round gave the agents 40% more tokens a second at 2,048/0 than the box's 512/256 on the same sample, the voice as far over its SLO: whether the PRs keep the voice under its SLO at the card's own best cap. About 24 minutes.
 
 MIG (a 3g.20gb voice instance beside a 4g.20gb agent instance) needs administrator rights and a GPU reset and is not scripted.
 
 ### The analysis
 
-`make reproduce-a100 RECORDS=<the pulled host directory> CORPUS=<weka-x32>` writes `build/reproduce-a100/a100.md` ([`analysis.py`](../benchmarks/a100/analysis.py)), each section from what the records hold: the step model fitted on the calibration point with the card's own E0, each term beside the forecast as a ratio; lh-sim with those costs against the measured point, as the box's calibration table; the probes beside the forecast and the box; `lh-bench e2 report` over the A100's points alone, with each configuration's measured running share; and the two cards in regime coordinates only. `make check-a100-calibration EXPORTS=<the v0.3 calibration exports> CORPUS=<weka-x32>` runs its calibration code on the box's three W2 points with the box's E0, and checks that it gives the box's own table rows.
+`make reproduce-a100 RECORDS=<the pulled host directory> CORPUS=<weka-x32>` writes `build/reproduce-a100/a100.md` ([`analysis.py`](../benchmarks/a100/analysis.py)), each section from what the records hold: the step model fitted on the calibration point with the card's own E0, each term beside the forecast as a ratio; lh-sim with those costs against the measured point, as the box's calibration table; the probes beside the forecast and the box; `lh-bench e2 report` over the A100's points alone (the core's with tuned vLLM's and the PRs' values' at its cap, then A' with the core's voice alone), each round's points side by side and each configuration's measured running share; the batch arm's output tokens a second against the frozen engine's, each priority's latency beside them; the host around the card; and the two cards in regime coordinates only. The host is measured by [`bench_host.py`](../benchmarks/a100/bench_host.py), with the GPU units stopped (`leaseholder/venvs/engine/bin/python leaseholder/src/benchmarks/a100/bench_host.py --out leaseholder/runs/a100/host`): its link from pinned host memory to the card through vLLM's own batched page copies, at the CPU tier's page sizes, each way, and its CPU at a fixed Python workload, the two of the host's costs the forecast takes from the box; the analysis reads them with E0's GPU hit (the host's work on a prompt, which grows with it) and its CPU restore beyond the GPU hit (the transfer). `make check-a100-calibration EXPORTS=<the v0.3 calibration exports> CORPUS=<weka-x32>` runs its calibration code on the box's three W2 points with the box's E0, and checks that it gives the box's own table rows.
+
+### What it measured (2026-10-26)
+
+The run had an A100 SXM4 80 GB on Google Colab ([below](#on-google-colab)), so the analysis reads it against
+[`forecast-80gb.md`](../benchmarks/a100/forecast-80gb.md). Staging, `gpu` and `warm` took 19 minutes (`warm` 9 of them,
+the four compile configurations from empty caches on the host's 12 vCPUs), and the core's blocks 0 to 10 ran back to
+back in 3 hours 13 minutes, each E2 round in 26 minutes. Its records are
+[`benchmarks/results/2026-10-26-a100`](../benchmarks/results/2026-10-26-a100/README.md), with the analysis's report.
+
+**E2, the core's five rounds** (W5's arm files and samples of the agents, seeds 11 to 15). Voice alone ran at a p95 of
+1,419 ms (1,391–1,445), so the SLO is 1,669 ms:
+
+| Two calls beside 24 coding-agent sessions | Voice p95, median (range) | Over the SLO | Agents' tokens/s | Agents' TTFT p50 / p99 | Running share |
+|---|---:|---:|---:|---:|---:|
+| Frozen, the box's flags (512/256) | 4,986 ms (4,163–5,710 ms) | +3,317 ms | 8,633 | 12 s / 26 s | 6% (4–9%) |
+| The PRs' values (make-room, a 48-token window) | **1,634 ms** (1,609–1,663 ms) | −35 ms | 8,651 | 14 s / 26 s | 6% (2–7%) |
+
+The PRs' values met the SLO in every round, by 6 to 60 ms; frozen missed it by 2.5 to 4.0 s. Round by round, the agents'
+tokens/s over the calls' first 240 s with the PRs' values were 94–111% of frozen's (a median of 96%), their whole-call
+tokens/s 95–103%, and no turn of the 750 failed. The forecast put the core's running share at 10% [modeled].
+
+**The probes (blocks 1 to 3)**, against the forecast and the box:
+
+| Probe | A100 SXM4 80 GB | Forecast, central (low–high) [modeled] | The box |
+|---|---:|---:|---:|
+| KV case, stock 512/256: the voice turn's wait | 1,748 ms (1,721–1,750, 3 runs) | 1,328–1,369 ms (1,082–1,377) | 4,923–5,077 ms (Gray) |
+| KV case, stock at vLLM's default 2,048/0 | 1,642 ms (1,620–1,645, 3 runs) | | |
+| KV case, the PRs' values: the first token | 175 ms (150–176, 3 runs) | 126–145 ms (109–146) | 225 and 297 ms (Gray) |
+| Prefill case, stock: the reply's token gap (1st to 16th) | 32 ms (3 runs) | 32.8 ms (25.7–35.4) | 69 ms (Gray) |
+| Prefill case, the PRs' values: the token gap | 7 ms (3 runs) | 5.6 ms (3.7–5.6) | 17 ms (Gray) |
+| The calls' first-token p95 beside 12 agents, 512/256 | 3,114 ms (3,102–3,126, 2 runs) | | 7,631 and 7,643 ms (the kit's rehearsal) |
+| The same at 2,048/0, and at 1,536/768 | 2,526 ms (2,518–2,535) and 3,566 ms (3,446–3,687) | | |
+| The same, the PRs' values | 173 ms (167–179, 2 runs) | | |
+
+Of the stock step caps, vLLM's default 2,048/0 gave the A100 its lowest calls' tail, so tuned vLLM's arm ran it.
+
+**The arms after the core**, in the order they ran: the batch, tuned vLLM, the PRs' values at tuned vLLM's cap (arm 8,
+added once tuned vLLM's first round was in), A' (its first round) and FlashInfer's attention. C' (about 95 minutes),
+the PRs' own code (45) and preempt-resubmit (36) did not run: the balance left after the core went to the five that set
+the core beside the card's own best stock configuration.
+
+- **The scheduler at a batch of 256** (9 minutes): with its switches off make-room made 1.018 of vLLM's output tokens a
+  second (7,661 against 7,524), with 215 requests running at the median against 201, so its code path costs nothing this
+  batch shows. With the PRs' values the priority 0 requests' TTFT p99 went from 574 to 177 ms and their TPOT p50 from
+  28.6 to 6.9 ms, the engine's output to 1.153 of vLLM's, and the priority 2 requests' TTFT p99 from 1,086 to 7,971 ms
+  (p50 341 to 283 ms): 26 priority 0 requests in closed loop keep first tokens due in most steps, and #63351 holds
+  lower-priority prefill out of those steps ([BENCHMARKS.md](BENCHMARKS.md#the-a100-run-2026-10-26)).
+- **Tuned vLLM, 2,048/0** (rounds 1 and 2, seeds 11 and 12): V2V p95 4,036 and 3,289 ms, against frozen's 4,163 and
+  4,783 and the PRs' values' 1,663 and 1,658 on the same samples; the agents 15,082 and 13,990 tokens a second over the
+  calls' first 240 s, 1.40 and 1.42 times frozen's and 1.49 and 1.29 times the PRs' values'. At the A100's own best
+  stock cap the voice tail stays twice its SLO, while the box's 512/256 costs the agents about 30% of their tokens.
+- **The PRs' values at 2,048/0** (arm 8, the same two samples): V2V p95 1,810 and 1,843 ms, 141 and 174 ms over the SLO,
+  against tuned vLLM's 4,036 and 3,289 ms on the same samples; the agents at 100% and 101% of tuned vLLM's tokens a
+  second (15,124 and 14,145), their TTFT p50 1.0 and 2.0 s and p99 18.4 and 11.2 s, against tuned vLLM's 1.0 and 2.0 s
+  and 17.3 and 11.4 s; no turn of the 100 failed. The voice turn's stages are the 512-token PRs' but one: the LLM's
+  first token, 412 and 414 ms at p95 against 183 and 216 ms at 512/256 on the same samples. A turn that arrives with
+  steps in flight waits for them, two under asynchronous scheduling, and at 2,048 tokens a step of agent prefill carries
+  four times the tokens; the hold acts only on the steps scheduled after the turn arrives. So the step cap trades the
+  voice's tail against the agents' throughput, with the PRs as without: 512/256 meets the SLO at 70% of the card's best
+  throughput, 2,048/0 keeps all of it 0.14–0.17 s over.
+- **A' at 32 sessions** (round 1, seed 11; round 2 would have ended past the deadline with one point of two): frozen V2V
+  p95 5,222 ms, the PRs' values 1,617 ms, 52 ms under the SLO; the agents 8,649 and 8,487 tokens a second (98%), their
+  TTFT p50 24.5 and 25.9 s, 57 and 65 preemptions, no turn of the 100 failed. At the box's pool more agents make fewer
+  tokens than 24 do on the same sample (10,749 and 10,125), waiting longer for KV, and two calls found KV short 6.5% of
+  the time beside either engine, where the forecast placed 32 sessions at 18% (the fitted forecast at 15%): the
+  simulator overstates how often this card runs short, here and in the core (10% forecast, 6% measured).
+- **FlashInfer's attention** (the frozen engine at 512/256, the KV case x3): the voice turn's wait 1,580, 1,600 and
+  1,607 ms against FlashAttention 2's 1,721–1,750, 8% shorter at the median. The two 18k-token decodes take the same
+  steps on either backend, so the wait reads the decode step: FlashInfer's is shorter on these contexts, a backend's
+  share of the tail that the rules leave as it is. The block refused its first start, since vLLM 0.32 logs FlashInfer's
+  selection as `FlashInfer resolved query dtypes`, not in the line its check read; the check reads both since, and the
+  block ran again.
+
+**The step model (block 5)**, fitted on the calibration point (AIPerf's replay of the whole corpus at 16 sessions, 709
+requests) with the card's own E0: a step's fixed cost 4.5 ms (the forecast's 3.88), 41.36 µs a token (41.33: Marlin's
+W8A16 GEMMs as modeled), 4.07 ns a token pair (2.59) and 171.9 ns a KV token read (94.3). Decode attention is the miss,
+1.82 times the forecast: 858 GB/s of KV, 42% of the card's bandwidth, where the box's FlashAttention 2 reaches 77% of
+its own. The fit reproduces the point's decode steps to −3.0% at the median (−8.6/+8.0% at p10/p90) and E0's cells to
+−0.7%.
+
+**E0 (block 1)**, the box's fits beside it: a GPU hit 17 ms + 1.80 µs a token (the box's 35 ms + 3.8), a CPU restore 2.8
+ms + 12.9 µs a token over it, 11.5 GB/s of KV (the box's 6.2), and a recompute 4.2 ms + 56.5 µs a token + 2.01 ns a
+token squared (48 ms + 63 µs + 8.1 ns): at 16,384 tokens 46 ms, 268 ms and 1,471 ms against the box's 97, 509 and 3,264.
+Restoring beats recomputing from 1,024 tokens, as on the box. Under the 512-token step cap a cold prefill's linear cost
+is nearly the box's: without FP8 units the card runs the checkpoint's GEMMs through Marlin's weight-only path.
+
+**The host** (`bench_host.py`, the GPU units stopped): Python's fixed workload in 227 ms at the median (the box's Xeon
+E5-2609 v4, 381 ms), and the link at the CPU tier's 32 KiB pages 10.08 GB/s to the card and 10.61 back, one copy 12.32
+and 12.86 GB/s. The card negotiates PCIe Gen4 x16, but the host's Xeon is a Cascade Lake, whose root ports are PCIe 3.0:
+the copies run at a Gen3 x16 rate, 39% of the card's link (the box's PCIe 3.0 x8 reaches 5.44 GB/s at 32 KiB pages and
+6.76 in one copy, 86% of its own). E0's GPU-hit slope, the host's work on a prompt, is half the box's (1.80 against 3.79
+µs a token, by least squares), as Python's time is 0.60 of it. Placed on this host
+([`forecast-80gb-on-host.md`](../benchmarks/a100/forecast-80gb-on-host.md), `make forecast-a100 GPU=a100-80gb
+HOST_JSON=...`), the forecast's E0 cells come within 9% of the measured GPU hits and 10% of the CPU restores at the
+mean, from 69% and 22% off before the run; recompute, which the host does not set, stays 17% off. The host leaves
+the running share where it was: placed on it, the forecast gives the core 11% and A' 18%, against 6% and 6.5%
+measured, so the host is not what the simulator misses there.
+
+### On Google Colab
+
+The run of 2026-10-26 had an A100 SXM4 80 GB on a Colab runtime with high RAM: a container (Ubuntu 24.04, root, no
+systemd user manager) with 12 vCPUs of a 2.20 GHz Xeon (Cascade Lake), 167 GB of RAM, an 83 GB `/dev/shm`, driver
+580.82.07 and CUDA 13.0's toolkit. Colab's command-line client
+([google-colab-cli](https://github.com/googlecolab/google-colab-cli), its `colab` command, signed in once) makes the
+runtime and reaches it:
+
+```sh
+colab new -s a100 --gpu A100 --high-mem   # the runtime, billed in compute units from here to `colab stop -s a100`
+colab usage                               # the balance and the rate (6.77 units an hour for this runtime)
+```
+
+and an SSH host entry whose `ProxyCommand` is `colab ssh --proxy-mode -s a100` carries `push.sh`, `pull.sh` and every
+command (`LH_SSH="ssh -F <that file>"`). Four things differ from the hosts the kit was rehearsed on:
+
+1. **One connection.** The bridge carries one SSH connection at a time and refuses a second (HTTP 429): the host entry
+   multiplexes every command over one master connection (`ControlMaster auto`, `ControlPersist`), so that `pull.sh`'s
+   copy every two minutes, a watch and a command typed meanwhile share it, and the run starts detached (`nohup setsid`),
+   held by no connection.
+2. **No user manager.** The first stage chose lh-svc.
+3. **The driver's libraries outside the linker's search** (`/usr/lib64-nvidia`): `bootstrap.sh gpu` refused the host
+   until the GPU units named that directory, which the kit now does ([single-host mode](#single-host-mode)); this run's
+   host had it registered by hand (`/etc/ld.so.conf.d`, `ldconfig`) before the fix.
+4. **Billing from creation to stop**, whatever the card does: staging ran before the GPU stages, the core's blocks back
+   to back, and the optional arms were queued to start as the core ended, under one deadline the balance set; the
+   records were pulled every two minutes, and the runtime stopped once the last pull was in. This run's runtime lived
+   5 hours 5 minutes (04:07Z to 09:12Z) and used 34.35 compute units of 37.38, at 6.77 an hour; the GPU stages held the
+   card from 04:28Z to 09:12Z, 93% of that time.
 
 ## The kit, rehearsed on the box
 

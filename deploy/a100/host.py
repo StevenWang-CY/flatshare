@@ -920,10 +920,33 @@ def python_headers(python: Path) -> tuple[bool, str] | None:
     return found[1].strip() == "True", found[0].strip()
 
 
+def _series(words: list[str], conjunction: str = "and") -> str:
+    """``words`` as a sentence lists them: "a", "a and b", "a, b and c"."""
+    return f"{', '.join(words[:-1])} {conjunction} {words[-1]}" if len(words) > 1 else words[0]
+
+
+def outside_linker(node: Node, home: Path) -> tuple[str, list[str]] | None:
+    """The directory of the driver's libcuda.so.1 where the facts found that the dynamic linker does not search it
+    (profile.py detect's driver_libs: Colab's container keeps it in /usr/lib64-nvidia, which only its shells'
+    LD_LIBRARY_PATH reaches), and the GPU units whose environment does not name it on LD_LIBRARY_PATH, as theirs must,
+    having none of the operator's; None where the linker finds it, or the facts found none."""
+    libs = node.host.get("driver_libs") or {}
+    if not libs.get("path") or libs.get("linker"):
+        return None
+    unnamed = []
+    for unit in PRIVATE_SERVERS:
+        path = unit_environment(node.dir / "systemd" / unit, home).get("LD_LIBRARY_PATH", "")
+        if libs["path"] not in path.split(":"):
+            unnamed.append(unit.removesuffix(".service"))
+    return libs["path"], unnamed
+
+
 TORCH_PROBE = (
     "import torch; torch.cuda.init(); "
     "print(torch.version.cuda, torch.cuda.get_device_name(0), torch.cuda.get_device_capability(0))"
 )
+NO_DRIVER = "Found no NVIDIA driver"
+"""torch's error where the CUDA runtime cannot load the driver's libcuda.so.1 (cudaDriverGetVersion gives 0)."""
 
 
 def torch_on_gpu(node: Node, home: Path) -> tuple[bool, str]:
@@ -1047,36 +1070,69 @@ def preflight(
     value = f"driver {card.get('driver') or 'not seen'}, {path or 'no install path'}" + (
         f" (venv: {built})" if built else ""
     )
+    # The driver's libraries where the linker does not search them, which every GPU unit must name: their environment
+    # has no LD_LIBRARY_PATH of the operator's.
+    outside = outside_linker(node, home)
+    unsearched = (
+        outside
+        and f"the driver's libcuda.so.1 is in {outside[0]}, which the linker does not search"
+    )
+    on_path = (
+        f"; the driver's libraries in {outside[0]}, which the linker does not search, on the GPU units' "
+        "LD_LIBRARY_PATH"
+        if outside and not outside[1]
+        else ""
+    )
     if built and path and built != path:
         add(
             "Driver and install path",
             "refused",
-            value,
+            value + on_path,
             f"the engine venv holds the {built} build but the driver needs {path}: bootstrap.sh gpu",
         )
+    elif outside and outside[1]:
+        add(
+            "Driver and install path",
+            "refused",
+            value,
+            f"{unsearched}, and {_series(outside[1])} {'do' if len(outside[1]) > 1 else 'does'} not name it on "
+            "LD_LIBRARY_PATH: bootstrap.sh stage or gpu renders the GPU units with it",
+        )
     elif not card.get("driver"):
-        add("Driver and install path", "pending", value, install.get("reason", "no driver seen"))
+        reason = install.get("reason", "no driver seen")
+        add("Driver and install path", "pending", value + on_path, reason)
     elif path == "cu130":
-        add("Driver and install path", "ok", value + ": the box's lock")
+        add("Driver and install path", "ok", value + ": the box's lock" + on_path)
     else:
         add(
             "Driver and install path",
             "degraded",
-            value,
+            value + on_path,
             install.get("reason", ""),
             "the same vLLM and torch versions on another CUDA runtime; recorded",
         )
     if gpu:
         ok, said = torch_on_gpu(node, home)
-        add(
-            "torch on the GPU",
-            "ok" if ok else "refused",
-            said,
-            ""
-            if ok
-            else "torch.cuda.init() fails in the engine venv with the engine unit's environment (errors "
-            "803 and 804: the CUDA runtime and the driver do not match)",
-        )
+        if ok:
+            why = ""
+        elif outside and "lh-engine" in outside[1]:
+            why = (
+                f"{unsearched}, and the engine unit's environment does not name it on LD_LIBRARY_PATH: "
+                "bootstrap.sh gpu renders the GPU units with it"
+            )
+        elif NO_DRIVER in said and "driver_libs" in host and not host["driver_libs"]:
+            where = _series(["the linker's cache", "LD_LIBRARY_PATH", *profile.DRIVER_DIRS], "or")
+            why = (
+                f"no libcuda.so.1 where the facts look ({where}): the driver's libraries are elsewhere, or not on "
+                "this host (a container started without the NVIDIA runtime); with their directory on "
+                "LD_LIBRARY_PATH, bootstrap.sh gpu renders the GPU units with it"
+            )
+        else:
+            why = (
+                "torch.cuda.init() fails in the engine venv with the engine unit's environment (errors 803 and 804: "
+                "the CUDA runtime and the driver do not match)"
+            )
+        add("torch on the GPU", "ok" if ok else "refused", said, why)
     jit = _json(root / "cache" / "jit-check.json")
     if jit is None:
         add(

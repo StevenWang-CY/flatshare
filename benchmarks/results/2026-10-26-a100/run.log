@@ -1,0 +1,610 @@
+[2026-10-26T04:40:09Z] run: blocks 0 1 2 3 4 5 6 7 8 9 10, until 09:05 UTC
+[2026-10-26T04:40:09Z] run: block 0: start
+[2026-10-26T04:40:09Z] bootstrap gpu: from ~/leaseholder/src (v1.0)
+profile: warning: 12 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+profile: a100-40gb rendered into ~/leaseholder/node
+[2026-10-26T04:40:16Z] bootstrap gpu: install path: cu130: driver 580.82.07 runs CUDA 13.0: the box's lock
+host: wrote ~/leaseholder/node/env.sh (lh-svc runs the units)
+host: wrote ~/.config/leaseholder/e2-host.toml
+host: FlashInfer's sampler is built for 8.0 with /usr/local/cuda-13.0
+[2026-10-26T04:40:17Z] bootstrap gpu: vLLM parses the node's configs
+(MainProcess pid=16650) INFO 10-26 04:40:27 [model.py:733] Resolved architecture: Qwen3ForCausalLM
+(MainProcess pid=16650) INFO 10-26 04:40:27 [model.py:2152] Using max model len 32768
+(MainProcess pid=16650) INFO 10-26 04:40:28 [scheduler.py:307] Chunked prefill is enabled with max_num_batched_tokens=512.
+(MainProcess pid=16650) INFO 10-26 04:40:28 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(MainProcess pid=16650) INFO 10-26 04:40:28 [compilation.py:317] Enabled custom fusions: norm_quant, act_quant
+engine.yaml: ~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98, kv_cache_memory_bytes 5368709120, gpu_memory_utilization 0.14, max_num_batched_tokens 512
+(MainProcess pid=16650) INFO 10-26 04:40:28 [arg_utils.py:916] HF_HUB_OFFLINE is True, replace model_id [openai/whisper-large-v3-turbo] to model_path [~/.cache/huggingface/hub/models--openai--whisper-large-v3-turbo/snapshots/41f01f3fe87f28c78e2fbf8b568835947dd65ed9]
+(MainProcess pid=16650) INFO 10-26 04:40:28 [model.py:733] Resolved architecture: WhisperForConditionalGeneration
+(MainProcess pid=16650) INFO 10-26 04:40:28 [model.py:2152] Using max model len 448
+(MainProcess pid=16650) INFO 10-26 04:40:28 [model.py:815] Encoder-decoder model detected, disabling mm processor cache.
+(MainProcess pid=16650) INFO 10-26 04:40:28 [scheduler.py:298] Encoder-decoder models do not support chunked prefill nor prefix caching; disabling both.
+(MainProcess pid=16650) INFO 10-26 04:40:28 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(MainProcess pid=16650) INFO 10-26 04:40:28 [vllm.py:1891] Encoder-decoder models do not support FULL_AND_PIECEWISE. Overriding cudagraph_mode to FULL_DECODE_ONLY.
+(MainProcess pid=16650) WARNING 10-26 04:40:28 [vllm.py:1964] Whisper is known to have issues with forked workers. If startup is hanging, try setting 'VLLM_WORKER_MULTIPROC_METHOD' to 'spawn'.
+stt.yaml: ~/.cache/huggingface/hub/models--openai--whisper-large-v3-turbo/snapshots/41f01f3fe87f28c78e2fbf8b568835947dd65ed9, kv_cache_memory_bytes 458752000, gpu_memory_utilization 0.03, max_num_batched_tokens 2048
+CC and precision path            degraded  sm80; the engine selected MarlinFP8ScaledMMLinearKernel
+                                           W8A16 through Marlin at the BF16 rate
+BF16                             ok        CC >= 8.0
+Attention backend and KV layout  ok        FLASH_ATTN 2, LBHNC
+Driver and install path          ok        driver 580.82.07, cu130 (venv: cu130): the box's lock
+torch on the GPU                 ok        13.0 NVIDIA A100-SXM4-80GB (8, 0)
+FlashInfer's JIT                 ok        the sampler for sm80 in 112.8 s with /usr/local/cuda-13.0
+Host compilers                   ok        /usr/bin/cc, /usr/bin/c++
+Python headers                   ok        Python.h in ~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/include/python3.12
+Compile and JIT caches           ok        overlay at /, 166 GiB free; warm: frozen, 2048-0, 1536, pr
+CPU tier and /dev/shm            ok        20 GiB, 4.0 x the pool; /dev/shm 82 GiB (a container)
+Shmem huge pages                 ok        never
+Pinned memory                    ok        no cudaHostRegister failure in the engine log
+Host RAM                         ok        164 GiB available
+Async scheduling                 ok        true
+Block size                       ok        16 (2275 blocks)
+Engine starts                    ok        frozen 220.2 s, 2048-0 114.5 s, 1536 96.3 s, pr 94.4 s
+GPU                              ok        GPU 0 of 1: GPU-25a43d78-0d54-92b1-2413-590e82785e37
+GPU exclusive                    ok        0 compute processes
+Compute mode                     ok        Default
+MIG                              ok        Disabled
+Power cap, link and ECC          ok        400.0 W, PCIe gen 4 x16, ECC Enabled
+systemd --user and linger        degraded  systemd --user False, linger False; LH_SUPERVISOR=lh-svc
+                                           supervisor instead of systemd (deploy/bin/lh-svc with the systemctl and journalctl shims)
+Socket paths                     ok        %t is ~/.local/state/lh-svc/run: vLLM's ZMQ sockets take 83 of 107 bytes
+One supervisor                   ok        lh-svc, none of the units under systemd
+User namespaces                  ok        the voice plane in a network namespace of its own, and each GPU server in one of its own
+Listener audit                   ok        ss
+Cores                            degraded  12 CPUs
+                                           12 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+Control plane                    ok        5 units active, the gateway answers /health
+Models                           ok        the engine's and the STT's at their revisions
+Corpus and callers               ok        weka-x32-long 48 traces, weka-x32 393 traces, callers 48 clips
+Binaries                         ok        lh-gateway, livekit-server
+Disk                             ok        166 GiB free under ~/leaseholder
+host: ~/leaseholder/node/preflight.json: 29 ok, 3 degraded, 0 refused, 0 pending
+[2026-10-26T04:40:33Z] bootstrap gpu: done (no check refused)
+[2026-10-26T04:40:34Z] run: block 0: every compile configuration warm already (cache/warm.json)
+active
+active
+active
+health                     ok
+tts question (wav)         0.221412s, 87768 bytes
+stt                        0.271746s:  What is the capital of France?
+llm                        0.062728s: The capital of France is Paris.
+tts reply (first/total)    0.002174/0.134465s, 95008 bytes
+gpu memory                 14888 MiB, 81920 MiB
+listener audit             ok: the box's units hold 8 Unix sockets, all in ~/.local/state/lh-svc/run, and 1 TCP or UDP listeners, all allowed; lh-engine, lh-stt, lh-tts in network namespaces of their own, with 12 TCP or UDP listeners and 3 abstract sockets there
+smoke: ok
+Nvidia Decoder is supported.
+{
+ "turns": 2,
+ "errors": 0,
+ "v2v_ms": {
+  "n": 2,
+  "p50": 1310.0,
+  "p95": 1454.0,
+  "p99": 1466.8
+ },
+ "barge_in_to_silence_ms": {
+  "n": 0
+ },
+ "barge_ins": 0,
+ "barge_ins_after_the_reply": 0,
+ "caller_max_lateness_ms": 0.0
+}
+[2026-10-26T04:43:06Z] run: block 0: done
+[2026-10-26T04:43:06Z] run: block 1: start
+[2026-10-26T04:43:06Z] probes 1: engine: frozen
+variant: the box already runs frozen 
+[2026-10-26T04:43:06Z] probes 1: frozen-e0: lh-bench tiers --reps 3 (Qwen/Qwen3-4B-Instruct-2507-FP8)
+fit cpu: {'ms': 19.95, 'us_per_token': 14.661}
+fit cpu_over_gpu: {'ms': 2.77, 'us_per_token': 12.863}
+fit recompute: {'ms': 4.21, 'us_per_token': 56.481, 'ns_per_token_squared': 2.0124}
+[2026-10-26T04:45:22Z] probes 1: frozen-kv-1: probe.py kv
+  kv: priority-0 TTFT 1721 ms, 16 tokens 1823 ms, for 746 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:45:28Z] probes 1: frozen-kv-2: probe.py kv
+  kv: priority-0 TTFT 1748 ms, 16 tokens 1851 ms, for 748 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:45:33Z] probes 1: frozen-kv-3: probe.py kv
+  kv: priority-0 TTFT 1750 ms, 16 tokens 1853 ms, for 749 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:45:39Z] probes 1: frozen-prefill-1: probe.py prefill
+  prefill: priority-0 TTFT 301 ms, 16 tokens 781 ms, for 748 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 993 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T04:45:41Z] probes 1: frozen-prefill-2: probe.py prefill
+  prefill: priority-0 TTFT 163 ms, 16 tokens 644 ms, for 746 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1008 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T04:45:44Z] probes 1: frozen-prefill-3: probe.py prefill
+  prefill: priority-0 TTFT 194 ms, 16 tokens 674 ms, for 747 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1008 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T04:45:46Z] probes 1: frozen-tail-1: tail.py 240 pool fresh --reply 40
+  calls: 60 turns, 0 failed (counted at 30,000 ms), TTFT p50 734 p90 2679 p95 3126 max 3847 ms; agents: 0 of 12 stopped early
+[2026-10-26T04:50:13Z] probes 1: frozen-tail-2: tail.py 240 pool fresh --reply 40
+  calls: 60 turns, 0 failed (counted at 30,000 ms), TTFT p50 750 p90 2696 p95 3102 max 3844 ms; agents: 0 of 12 stopped early
+[2026-10-26T04:54:41Z] probes 1: block 1 complete
+[2026-10-26T04:54:41Z] run: block 1: done
+[2026-10-26T04:54:41Z] run: block 2: start
+[2026-10-26T04:54:41Z] probes 2: engine: frozen --max-num-batched-tokens 2048 --long-prefill-token-threshold 0
+active
+active
+active
+[2026-10-26T04:55:47Z] probes 2: stock2048-kv-1: probe.py kv
+  kv: priority-0 TTFT 1620 ms, 16 tokens 1724 ms, for 747 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:55:52Z] probes 2: stock2048-kv-2: probe.py kv
+  kv: priority-0 TTFT 1645 ms, 16 tokens 1749 ms, for 745 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:55:57Z] probes 2: stock2048-kv-3: probe.py kv
+  kv: priority-0 TTFT 1642 ms, 16 tokens 1747 ms, for 750 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T04:56:02Z] probes 2: stock2048-tail-1: tail.py 240 pool fresh --reply 40
+  calls: 62 turns, 0 failed (counted at 30,000 ms), TTFT p50 854 p90 2341 p95 2518 max 2827 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:00:28Z] probes 2: stock2048-tail-2: tail.py 240 pool fresh --reply 40
+  calls: 61 turns, 0 failed (counted at 30,000 ms), TTFT p50 837 p90 2354 p95 2535 max 2837 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:04:50Z] probes 2: engine: frozen --max-num-batched-tokens 1536 --long-prefill-token-threshold 768
+active
+active
+active
+[2026-10-26T05:05:56Z] probes 2: stock1536-768-kv-1: probe.py kv
+  kv: priority-0 TTFT 1680 ms, 16 tokens 1785 ms, for 749 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T05:06:01Z] probes 2: stock1536-768-tail-1: tail.py 240 pool fresh --reply 40
+  calls: 59 turns, 0 failed (counted at 30,000 ms), TTFT p50 977 p90 2669 p95 3687 max 3855 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:10:24Z] probes 2: stock1536-768-tail-2: tail.py 240 pool fresh --reply 40
+  calls: 57 turns, 0 failed (counted at 30,000 ms), TTFT p50 1010 p90 3181 p95 3446 max 4041 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:14:42Z] probes 2: block 2 complete
+[2026-10-26T05:14:42Z] run: block 2: done
+[2026-10-26T05:14:42Z] run: block 3: start
+[2026-10-26T05:14:42Z] probes 3: engine: make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+active
+active
+active
+[2026-10-26T05:15:48Z] probes 3: pr-kv-1: probe.py kv
+  kv: priority-0 TTFT 150 ms, 16 tokens 253 ms, for 750 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T05:15:52Z] probes 3: pr-kv-2: probe.py kv
+  kv: priority-0 TTFT 175 ms, 16 tokens 278 ms, for 749 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T05:15:56Z] probes 3: pr-kv-3: probe.py kv
+  kv: priority-0 TTFT 176 ms, 16 tokens 279 ms, for 749 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T05:16:00Z] probes 3: pr-prefill-1: probe.py prefill
+  prefill: priority-0 TTFT 186 ms, 16 tokens 291 ms, for 748 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1026 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T05:16:02Z] probes 3: pr-prefill-2: probe.py prefill
+  prefill: priority-0 TTFT 170 ms, 16 tokens 276 ms, for 748 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 1008 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T05:16:04Z] probes 3: pr-prefill-3: probe.py prefill
+  prefill: priority-0 TTFT 173 ms, 16 tokens 278 ms, for 751 prompt tokens, sent with 3 priority-2 requests of 10000 tokens running and 993 of 2274 blocks free; after it, 4 running and 0 waiting
+[2026-10-26T05:16:06Z] probes 3: pr-tail-1: tail.py 240 pool fresh --reply 40
+  calls: 75 turns, 0 failed (counted at 30,000 ms), TTFT p50 123 p90 166 p95 179 max 192 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:20:38Z] probes 3: pr-tail-2: tail.py 240 pool fresh --reply 40
+  calls: 75 turns, 0 failed (counted at 30,000 ms), TTFT p50 129 p90 156 p95 167 max 296 ms; agents: 0 of 12 stopped early
+[2026-10-26T05:25:08Z] probes 3: block 3 complete
+[2026-10-26T05:25:08Z] run: block 3: done
+[2026-10-26T05:25:08Z] run: block 4: start
+[2026-10-26T05:25:08Z] campaign a100-r1: 3 points, arm files at ?, the agents' seed 11, until 09:05 UTC (epoch 1793005500)
+[2026-10-26T05:25:08Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T05:25:09Z] w5-a1-voice: pending, engine frozen
+[2026-10-26T05:25:09Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-26T05:25:09Z] w5-disc-pr-ab48-s24: localhost runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T05:25:09Z] w5-disc-pr-ab48-s24: localhost has v1.0
+[2026-10-26T05:25:09Z] w5-disc-pr-ab48-s24: measuring
+[05:25:11Z] configuring cyan for w5-disc-pr-ab48-s24
+[05:25:11Z] AIPerf: 24 session trees through the gateway, seed 11
+[05:28:04Z] AIPerf is profiling; 60 s of warm-up
+[05:29:04Z] calls: 2 callers, 25 turns each after 1 warm-up
+[05:34:32Z] stopping AIPerf
+[05:34:35Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1484.2/1662.6/1690.8 ms, 0 of 50 turns failed; background 1.222 requests/s, 10,841 tokens/s, agent TTFT p50/p99 5335.01/26077.15 ms
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1484.2/1662.6/1690.8 ms, 0 of 50 turns failed; background 1.222 requests/s, 10,841 tokens/s, agent TTFT p50/p99 5335.01/26077.15 ms
+[2026-10-26T05:34:35Z] w5-a1-voice: localhost runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T05:35:41Z] w5-a1-voice: localhost has v1.0
+[2026-10-26T05:35:41Z] w5-a1-voice: measuring
+[05:35:43Z] configuring cyan for w5-a1-voice
+[05:35:43Z] calls: 2 callers, 25 turns each after 1 warm-up
+[05:41:13Z] w5-a1-voice: V2V p50/p95/p99 1284.8/1445.0/1480.8 ms, 0 of 50 turns failed
+w5-a1-voice: V2V p50/p95/p99 1284.8/1445.0/1480.8 ms, 0 of 50 turns failed
+[2026-10-26T05:41:14Z] w5-disc-frozen-s24: localhost runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-26T05:41:14Z] w5-disc-frozen-s24: localhost has v1.0
+[2026-10-26T05:41:14Z] w5-disc-frozen-s24: measuring
+[05:41:14Z] configuring cyan for w5-disc-frozen-s24
+[05:41:14Z] AIPerf: 24 session trees through the gateway, seed 11
+[05:44:04Z] AIPerf is profiling; 60 s of warm-up
+[05:45:04Z] calls: 2 callers, 25 turns each after 1 warm-up
+[05:50:53Z] stopping AIPerf
+[05:50:55Z] w5-disc-frozen-s24: V2V p50/p95/p99 1983.4/4163.3/5717.5 ms, 0 of 50 turns failed; background 1.247 requests/s, 10,900 tokens/s, agent TTFT p50/p99 6520.27/25847.5 ms
+w5-disc-frozen-s24: V2V p50/p95/p99 1983.4/4163.3/5717.5 ms, 0 of 50 turns failed; background 1.247 requests/s, 10,900 tokens/s, agent TTFT p50/p99 6520.27/25847.5 ms
+[2026-10-26T05:50:56Z] the frontier of a100-r1
+leaseholder/runs/e2/a100-r1/report/frontier.csv
+leaseholder/runs/e2/a100-r1/report/frontier.md
+leaseholder/runs/e2/a100-r1/report/frontier-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r1/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r1/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T05:50:59Z] done: ~/leaseholder/results/e2/a100-r1/report/frontier.md
+[2026-10-26T05:50:59Z] run: block 4: done
+[2026-10-26T05:50:59Z] run: block 5: start
+[2026-10-26T05:50:59Z] calibration: the frozen engine, freshly started
+variant: the box already runs frozen 
+[2026-10-26T05:52:07Z] calibration: 16 sessions of weka-x32, seed 11, Qwen/Qwen3-4B-Instruct-2507-FP8, on cores 8-10, through http://127.0.0.1:18000
+[2026-10-26T06:07:52Z] calibration: complete: 709 requests in ~/leaseholder/runs/a100/calibration-s16
+[2026-10-26T06:07:52Z] run: block 5: done
+[2026-10-26T06:07:52Z] run: block 6: start
+[2026-10-26T06:07:52Z] campaign a100-r2: 3 points, arm files at ?, the agents' seed 12, until 09:05 UTC (epoch 1793005500)
+[2026-10-26T06:07:52Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-26T06:07:52Z] w5-a1-voice: pending, engine frozen
+[2026-10-26T06:07:52Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T06:07:52Z] w5-disc-frozen-s24: localhost runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-26T06:07:53Z] w5-disc-frozen-s24: localhost has v1.0
+[2026-10-26T06:07:53Z] w5-disc-frozen-s24: measuring
+[06:07:54Z] configuring cyan for w5-disc-frozen-s24
+[06:07:54Z] AIPerf: 24 session trees through the gateway, seed 12
+[06:10:46Z] AIPerf is profiling; 60 s of warm-up
+[06:11:46Z] calls: 2 callers, 25 turns each after 1 warm-up
+[06:17:55Z] stopping AIPerf
+[06:17:57Z] w5-disc-frozen-s24: V2V p50/p95/p99 2175.3/4783.1/9613.6 ms, 0 of 50 turns failed; background 1.463 requests/s, 11,543 tokens/s, agent TTFT p50/p99 5795.75/22076.55 ms
+w5-disc-frozen-s24: V2V p50/p95/p99 2175.3/4783.1/9613.6 ms, 0 of 50 turns failed; background 1.463 requests/s, 11,543 tokens/s, agent TTFT p50/p99 5795.75/22076.55 ms
+[2026-10-26T06:17:58Z] w5-a1-voice: localhost runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-26T06:17:58Z] w5-a1-voice: localhost has v1.0
+[2026-10-26T06:17:58Z] w5-a1-voice: measuring
+[06:17:58Z] configuring cyan for w5-a1-voice
+[06:17:58Z] calls: 2 callers, 25 turns each after 1 warm-up
+[06:23:21Z] w5-a1-voice: V2V p50/p95/p99 1283.0/1414.5/1436.3 ms, 0 of 50 turns failed
+w5-a1-voice: V2V p50/p95/p99 1283.0/1414.5/1436.3 ms, 0 of 50 turns failed
+[2026-10-26T06:23:21Z] w5-disc-pr-ab48-s24: localhost runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T06:24:30Z] w5-disc-pr-ab48-s24: localhost has v1.0
+[2026-10-26T06:24:30Z] w5-disc-pr-ab48-s24: measuring
+[06:24:31Z] configuring cyan for w5-disc-pr-ab48-s24
+[06:24:32Z] AIPerf: 24 session trees through the gateway, seed 12
+[06:27:22Z] AIPerf is profiling; 60 s of warm-up
+[06:28:22Z] calls: 2 callers, 25 turns each after 1 warm-up
+[06:34:00Z] stopping AIPerf
+[06:34:02Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1444.3/1658.3/1770.5 ms, 0 of 50 turns failed; background 1.5 requests/s, 11,914 tokens/s, agent TTFT p50/p99 5151.1/19992.93 ms
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1444.3/1658.3/1770.5 ms, 0 of 50 turns failed; background 1.5 requests/s, 11,914 tokens/s, agent TTFT p50/p99 5151.1/19992.93 ms
+[2026-10-26T06:34:02Z] the frontier of a100-r2
+leaseholder/runs/e2/a100-r2/report/frontier.csv
+leaseholder/runs/e2/a100-r2/report/frontier.md
+leaseholder/runs/e2/a100-r2/report/frontier-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r2/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r2/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T06:34:04Z] done: ~/leaseholder/results/e2/a100-r2/report/frontier.md
+[2026-10-26T06:34:04Z] run: block 6: done
+[2026-10-26T06:34:04Z] run: block 7: start
+[2026-10-26T06:34:04Z] campaign a100-r3: 3 points, arm files at ?, the agents' seed 13, until 09:05 UTC (epoch 1793005500)
+[2026-10-26T06:34:05Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T06:34:05Z] w5-a1-voice: pending, engine frozen
+[2026-10-26T06:34:05Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-26T06:34:05Z] w5-disc-pr-ab48-s24: localhost runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T06:34:05Z] w5-disc-pr-ab48-s24: localhost has v1.0
+[2026-10-26T06:34:05Z] w5-disc-pr-ab48-s24: measuring
+[06:34:06Z] configuring cyan for w5-disc-pr-ab48-s24
+[06:34:06Z] AIPerf: 24 session trees through the gateway, seed 13
+[06:36:58Z] AIPerf is profiling; 60 s of warm-up
+[06:37:58Z] calls: 2 callers, 25 turns each after 1 warm-up
+[06:43:41Z] stopping AIPerf
+[06:43:43Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1450.5/1610.9/1668.7 ms, 0 of 50 turns failed; background 0.892 requests/s, 9,310 tokens/s, agent TTFT p50/p99 13770.9/37973.33 ms
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1450.5/1610.9/1668.7 ms, 0 of 50 turns failed; background 0.892 requests/s, 9,310 tokens/s, agent TTFT p50/p99 13770.9/37973.33 ms
+[2026-10-26T06:43:44Z] w5-a1-voice: localhost runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T06:44:51Z] w5-a1-voice: localhost has v1.0
+[2026-10-26T06:44:51Z] w5-a1-voice: measuring
+[06:44:52Z] configuring cyan for w5-a1-voice
+[06:44:52Z] calls: 2 callers, 25 turns each after 1 warm-up
+[06:50:19Z] w5-a1-voice: V2V p50/p95/p99 1271.2/1419.4/1448.5 ms, 0 of 50 turns failed
+w5-a1-voice: V2V p50/p95/p99 1271.2/1419.4/1448.5 ms, 0 of 50 turns failed
+[2026-10-26T06:50:19Z] w5-disc-frozen-s24: localhost runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-26T06:50:19Z] w5-disc-frozen-s24: localhost has v1.0
+[2026-10-26T06:50:19Z] w5-disc-frozen-s24: measuring
+[06:50:20Z] configuring cyan for w5-disc-frozen-s24
+[06:50:20Z] AIPerf: 24 session trees through the gateway, seed 13
+[06:53:13Z] AIPerf is profiling; 60 s of warm-up
+[06:54:13Z] calls: 2 callers, 25 turns each after 1 warm-up
+[06:59:54Z] stopping AIPerf
+[06:59:56Z] w5-disc-frozen-s24: V2V p50/p95/p99 1983.5/4986.1/5415.0 ms, 0 of 50 turns failed; background 0.906 requests/s, 9,529 tokens/s, agent TTFT p50/p99 11932.31/37970.25 ms
+w5-disc-frozen-s24: V2V p50/p95/p99 1983.5/4986.1/5415.0 ms, 0 of 50 turns failed; background 0.906 requests/s, 9,529 tokens/s, agent TTFT p50/p99 11932.31/37970.25 ms
+[2026-10-26T06:59:57Z] the frontier of a100-r3
+leaseholder/runs/e2/a100-r3/report/frontier.csv
+leaseholder/runs/e2/a100-r3/report/frontier.md
+leaseholder/runs/e2/a100-r3/report/frontier-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r3/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r3/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T06:59:59Z] done: ~/leaseholder/results/e2/a100-r3/report/frontier.md
+[2026-10-26T06:59:59Z] run: block 7: done
+[2026-10-26T06:59:59Z] run: block 8: start
+[2026-10-26T06:59:59Z] campaign a100-r4: 3 points, arm files at ?, the agents' seed 14, until 09:05 UTC (epoch 1793005500)
+[2026-10-26T06:59:59Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-26T06:59:59Z] w5-a1-voice: pending, engine frozen
+[2026-10-26T07:00:00Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T07:00:00Z] w5-disc-frozen-s24: localhost runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-26T07:00:00Z] w5-disc-frozen-s24: localhost has v1.0
+[2026-10-26T07:00:00Z] w5-disc-frozen-s24: measuring
+[07:00:00Z] configuring cyan for w5-disc-frozen-s24
+[07:00:00Z] AIPerf: 24 session trees through the gateway, seed 14
+[07:02:51Z] AIPerf is profiling; 60 s of warm-up
+[07:03:51Z] calls: 2 callers, 25 turns each after 1 warm-up
+[07:10:05Z] stopping AIPerf
+[07:10:07Z] w5-disc-frozen-s24: V2V p50/p95/p99 2451.9/5169.4/5758.3 ms, 0 of 50 turns failed; background 1.016 requests/s, 9,828 tokens/s, agent TTFT p50/p99 15270.21/24310.82 ms
+w5-disc-frozen-s24: V2V p50/p95/p99 2451.9/5169.4/5758.3 ms, 0 of 50 turns failed; background 1.016 requests/s, 9,828 tokens/s, agent TTFT p50/p99 15270.21/24310.82 ms
+[2026-10-26T07:10:08Z] w5-a1-voice: localhost runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-26T07:10:08Z] w5-a1-voice: localhost has v1.0
+[2026-10-26T07:10:08Z] w5-a1-voice: measuring
+[07:10:08Z] configuring cyan for w5-a1-voice
+[07:10:09Z] calls: 2 callers, 25 turns each after 1 warm-up
+[07:15:32Z] w5-a1-voice: V2V p50/p95/p99 1261.7/1391.0/1427.8 ms, 0 of 50 turns failed
+w5-a1-voice: V2V p50/p95/p99 1261.7/1391.0/1427.8 ms, 0 of 50 turns failed
+[2026-10-26T07:15:33Z] w5-disc-pr-ab48-s24: localhost runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T07:16:41Z] w5-disc-pr-ab48-s24: localhost has v1.0
+[2026-10-26T07:16:41Z] w5-disc-pr-ab48-s24: measuring
+[07:16:43Z] configuring cyan for w5-disc-pr-ab48-s24
+[07:16:43Z] AIPerf: 24 session trees through the gateway, seed 14
+[07:19:34Z] AIPerf is profiling; 60 s of warm-up
+[07:20:34Z] calls: 2 callers, 25 turns each after 1 warm-up
+[07:26:24Z] stopping AIPerf
+[07:26:26Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1450.8/1634.5/1936.3 ms, 0 of 50 turns failed; background 0.963 requests/s, 9,302 tokens/s, agent TTFT p50/p99 15279.61/25114.93 ms
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1450.8/1634.5/1936.3 ms, 0 of 50 turns failed; background 0.963 requests/s, 9,302 tokens/s, agent TTFT p50/p99 15279.61/25114.93 ms
+[2026-10-26T07:26:27Z] the frontier of a100-r4
+leaseholder/runs/e2/a100-r4/report/frontier.csv
+leaseholder/runs/e2/a100-r4/report/frontier.md
+leaseholder/runs/e2/a100-r4/report/frontier-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r4/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r4/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T07:26:29Z] done: ~/leaseholder/results/e2/a100-r4/report/frontier.md
+[2026-10-26T07:26:29Z] run: block 8: done
+[2026-10-26T07:26:29Z] run: block 9: start
+[2026-10-26T07:26:29Z] campaign a100-r5: 3 points, arm files at ?, the agents' seed 15, until 09:05 UTC (epoch 1793005500)
+[2026-10-26T07:26:29Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T07:26:29Z] w5-a1-voice: pending, engine frozen
+[2026-10-26T07:26:30Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-26T07:26:30Z] w5-disc-pr-ab48-s24: localhost runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T07:26:30Z] w5-disc-pr-ab48-s24: localhost has v1.0
+[2026-10-26T07:26:30Z] w5-disc-pr-ab48-s24: measuring
+[07:26:30Z] configuring cyan for w5-disc-pr-ab48-s24
+[07:26:30Z] AIPerf: 24 session trees through the gateway, seed 15
+[07:29:24Z] AIPerf is profiling; 60 s of warm-up
+[07:30:24Z] calls: 2 callers, 25 turns each after 1 warm-up
+[07:35:52Z] stopping AIPerf
+[07:35:54Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1438.6/1609.1/1664.1 ms, 0 of 50 turns failed; background 0.813 requests/s, 8,139 tokens/s, agent TTFT p50/p99 19805.96/41596.35 ms
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1438.6/1609.1/1664.1 ms, 0 of 50 turns failed; background 0.813 requests/s, 8,139 tokens/s, agent TTFT p50/p99 19805.96/41596.35 ms
+[2026-10-26T07:35:55Z] w5-a1-voice: localhost runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T07:37:03Z] w5-a1-voice: localhost has v1.0
+[2026-10-26T07:37:03Z] w5-a1-voice: measuring
+[07:37:05Z] configuring cyan for w5-a1-voice
+[07:37:05Z] calls: 2 callers, 25 turns each after 1 warm-up
+[07:42:36Z] w5-a1-voice: V2V p50/p95/p99 1276.7/1424.1/1457.1 ms, 0 of 50 turns failed
+w5-a1-voice: V2V p50/p95/p99 1276.7/1424.1/1457.1 ms, 0 of 50 turns failed
+[2026-10-26T07:42:36Z] w5-disc-frozen-s24: localhost runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-26T07:42:36Z] w5-disc-frozen-s24: localhost has v1.0
+[2026-10-26T07:42:36Z] w5-disc-frozen-s24: measuring
+[07:42:36Z] configuring cyan for w5-disc-frozen-s24
+[07:42:36Z] AIPerf: 24 session trees through the gateway, seed 15
+[07:45:32Z] AIPerf is profiling; 60 s of warm-up
+[07:46:32Z] calls: 2 callers, 25 turns each after 1 warm-up
+[07:53:08Z] stopping AIPerf
+[07:53:10Z] w5-disc-frozen-s24: V2V p50/p95/p99 3218.7/5710.1/6745.5 ms, 0 of 50 turns failed; background 0.813 requests/s, 8,213 tokens/s, agent TTFT p50/p99 18949.95/36665.54 ms
+w5-disc-frozen-s24: V2V p50/p95/p99 3218.7/5710.1/6745.5 ms, 0 of 50 turns failed; background 0.813 requests/s, 8,213 tokens/s, agent TTFT p50/p99 18949.95/36665.54 ms
+[2026-10-26T07:53:11Z] the frontier of a100-r5
+leaseholder/runs/e2/a100-r5/report/frontier.csv
+leaseholder/runs/e2/a100-r5/report/frontier.md
+leaseholder/runs/e2/a100-r5/report/frontier-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r5/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-r5/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T07:53:13Z] done: ~/leaseholder/results/e2/a100-r5/report/frontier.md
+[2026-10-26T07:53:13Z] run: block 9: done
+[2026-10-26T07:53:13Z] run: block 10: start
+[2026-10-26T07:53:20Z] run: block 10: done
+[2026-10-26T07:53:20Z] run: complete: 0 1 2 3 4 5 6 7 8 9 10
+[2026-10-26T07:53:31Z] run: blocks batch, until 09:26 UTC
+[2026-10-26T07:53:31Z] run: block batch: start
+[2026-10-26T07:53:31Z] batch: frozen: frozen
+active
+active
+active
+[2026-10-26T07:56:38Z] batch: frozen: running p50 201, max 254 (the batch: 256)
+[2026-10-26T07:56:38Z] batch: frozen: Output token throughput (tok/s):         6588.59    Output token throughput (tok/s):         935.24     
+[2026-10-26T07:56:38Z] batch: off: make-room --additional-config.make_room.max_preemptions_per_step 0 --additional-config.make_room.budget_cap false --additional-config.make_room.reserve_tokens 0
+active
+active
+active
+[2026-10-26T07:59:13Z] batch: off: running p50 215, max 256 (the batch: 256)
+[2026-10-26T07:59:13Z] batch: off: Output token throughput (tok/s):         6715.49    Output token throughput (tok/s):         945.22     
+[2026-10-26T07:59:13Z] batch: on: make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+active
+active
+active
+[2026-10-26T08:01:28Z] batch: on: running p50 154, max 230 (the batch: 256)
+[2026-10-26T08:01:28Z] batch: on: Output token throughput (tok/s):         6007.57    Output token throughput (tok/s):         2664.45    
+active
+active
+active
+[2026-10-26T08:02:34Z] batch: complete
+[2026-10-26T08:02:34Z] run: block batch: done
+[2026-10-26T08:02:34Z] run: complete: batch
+[2026-10-26T08:02:34Z] run: blocks tuned, until 09:26 UTC, estimates tuned=13
+[2026-10-26T08:02:34Z] run: block tuned: start
+[2026-10-26T08:02:34Z] campaign a100-tuned-r1: 1 points, arm files at ?, the agents' seed 11, until 09:26 UTC (epoch 1793006760)
+[2026-10-26T08:02:35Z] a100-tuned-s24: pending, engine frozen --max-num-batched-tokens 2048 --long-prefill-token-threshold 0
+[2026-10-26T08:02:35Z] a100-tuned-s24: localhost runs frozen --max-num-batched-tokens 2048 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T08:03:41Z] a100-tuned-s24: localhost has v1.0
+[2026-10-26T08:03:41Z] a100-tuned-s24: measuring
+[08:03:43Z] configuring cyan for a100-tuned-s24
+[08:03:43Z] AIPerf: 24 session trees through the gateway, seed 11
+[08:06:29Z] AIPerf is profiling; 60 s of warm-up
+[08:07:29Z] calls: 2 callers, 25 turns each after 1 warm-up
+[08:13:08Z] stopping AIPerf
+[08:13:10Z] a100-tuned-s24: V2V p50/p95/p99 1850.1/4036.5/5331.1 ms, 0 of 50 turns failed; background 1.663 requests/s, 15,215 tokens/s, agent TTFT p50/p99 969.56/17316.89 ms
+a100-tuned-s24: V2V p50/p95/p99 1850.1/4036.5/5331.1 ms, 0 of 50 turns failed; background 1.663 requests/s, 15,215 tokens/s, agent TTFT p50/p99 969.56/17316.89 ms
+[2026-10-26T08:13:11Z] the frontier of a100-tuned-r1
+leaseholder/runs/e2/a100-tuned-r1/report/frontier.csv
+leaseholder/runs/e2/a100-tuned-r1/report/frontier.md
+leaseholder/runs/e2/a100-tuned-r1/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-tuned-r1/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T08:13:13Z] done: ~/leaseholder/results/e2/a100-tuned-r1/report/frontier.md
+[2026-10-26T08:13:13Z] campaign a100-tuned-r2: 1 points, arm files at ?, the agents' seed 12, until 09:26 UTC (epoch 1793006760)
+[2026-10-26T08:13:13Z] a100-tuned-s24: pending, engine frozen --max-num-batched-tokens 2048 --long-prefill-token-threshold 0
+[2026-10-26T08:13:13Z] a100-tuned-s24: localhost runs frozen --max-num-batched-tokens 2048 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs frozen --max-num-batched-tokens 2048 --long-prefill-token-threshold 0
+[2026-10-26T08:13:13Z] a100-tuned-s24: localhost has v1.0
+[2026-10-26T08:13:13Z] a100-tuned-s24: measuring
+[08:13:14Z] configuring cyan for a100-tuned-s24
+[08:13:14Z] AIPerf: 24 session trees through the gateway, seed 12
+[08:16:00Z] AIPerf is profiling; 60 s of warm-up
+[08:17:00Z] calls: 2 callers, 25 turns each after 1 warm-up
+[08:22:28Z] stopping AIPerf
+[08:22:30Z] a100-tuned-s24: V2V p50/p95/p99 1613.2/3289.4/3765.9 ms, 0 of 50 turns failed; background 1.734 requests/s, 14,085 tokens/s, agent TTFT p50/p99 2009.22/11357.16 ms
+a100-tuned-s24: V2V p50/p95/p99 1613.2/3289.4/3765.9 ms, 0 of 50 turns failed; background 1.734 requests/s, 14,085 tokens/s, agent TTFT p50/p99 2009.22/11357.16 ms
+[2026-10-26T08:22:31Z] the frontier of a100-tuned-r2
+leaseholder/runs/e2/a100-tuned-r2/report/frontier.csv
+leaseholder/runs/e2/a100-tuned-r2/report/frontier.md
+leaseholder/runs/e2/a100-tuned-r2/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-tuned-r2/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T08:22:33Z] done: ~/leaseholder/results/e2/a100-tuned-r2/report/frontier.md
+[2026-10-26T08:22:33Z] run: block tuned: done
+[2026-10-26T08:22:33Z] run: complete: tuned
+[2026-10-26T08:22:39Z] campaign a100-prtuned-r1: 1 points, arm files at ?, the agents' seed 11, until 09:26 UTC (epoch 1793006760)
+[2026-10-26T08:22:39Z] a100-pr-ab48-2048-s24: pending, engine make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T08:22:39Z] a100-pr-ab48-2048-s24: localhost runs make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T08:24:16Z] a100-pr-ab48-2048-s24: localhost has v1.0
+[2026-10-26T08:24:16Z] a100-pr-ab48-2048-s24: measuring
+[08:24:18Z] configuring cyan for a100-pr-ab48-2048-s24
+[08:24:18Z] AIPerf: 24 session trees through the gateway, seed 11
+[08:27:03Z] AIPerf is profiling; 60 s of warm-up
+[08:28:03Z] calls: 2 callers, 25 turns each after 1 warm-up
+[08:33:32Z] stopping AIPerf
+[08:33:34Z] a100-pr-ab48-2048-s24: V2V p50/p95/p99 1428.7/1809.7/1874.4 ms, 0 of 50 turns failed; background 1.693 requests/s, 15,229 tokens/s, agent TTFT p50/p99 1042.01/18391.89 ms
+a100-pr-ab48-2048-s24: V2V p50/p95/p99 1428.7/1809.7/1874.4 ms, 0 of 50 turns failed; background 1.693 requests/s, 15,229 tokens/s, agent TTFT p50/p99 1042.01/18391.89 ms
+[2026-10-26T08:33:35Z] the frontier of a100-prtuned-r1
+leaseholder/runs/e2/a100-prtuned-r1/report/frontier.csv
+leaseholder/runs/e2/a100-prtuned-r1/report/frontier.md
+leaseholder/runs/e2/a100-prtuned-r1/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-prtuned-r1/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T08:33:36Z] done: ~/leaseholder/results/e2/a100-prtuned-r1/report/frontier.md
+[2026-10-26T08:33:36Z] campaign a100-prtuned-r2: 1 points, arm files at ?, the agents' seed 12, until 09:26 UTC (epoch 1793006760)
+[2026-10-26T08:33:37Z] a100-pr-ab48-2048-s24: pending, engine make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T08:33:37Z] a100-pr-ab48-2048-s24: localhost runs make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T08:33:37Z] a100-pr-ab48-2048-s24: localhost has v1.0
+[2026-10-26T08:33:37Z] a100-pr-ab48-2048-s24: measuring
+[08:33:37Z] configuring cyan for a100-pr-ab48-2048-s24
+[08:33:38Z] AIPerf: 24 session trees through the gateway, seed 12
+[08:36:23Z] AIPerf is profiling; 60 s of warm-up
+[08:37:23Z] calls: 2 callers, 25 turns each after 1 warm-up
+[08:42:59Z] stopping AIPerf
+[08:43:01Z] a100-pr-ab48-2048-s24: V2V p50/p95/p99 1535.8/1842.7/1906.8 ms, 0 of 50 turns failed; background 1.788 requests/s, 14,320 tokens/s, agent TTFT p50/p99 2025.09/11202.42 ms
+a100-pr-ab48-2048-s24: V2V p50/p95/p99 1535.8/1842.7/1906.8 ms, 0 of 50 turns failed; background 1.788 requests/s, 14,320 tokens/s, agent TTFT p50/p99 2025.09/11202.42 ms
+[2026-10-26T08:43:02Z] the frontier of a100-prtuned-r2
+leaseholder/runs/e2/a100-prtuned-r2/report/frontier.csv
+leaseholder/runs/e2/a100-prtuned-r2/report/frontier.md
+leaseholder/runs/e2/a100-prtuned-r2/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-prtuned-r2/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T08:43:03Z] done: ~/leaseholder/results/e2/a100-prtuned-r2/report/frontier.md
+[2026-10-26T08:43:03Z] campaign a100-aprime-r1: 2 points, arm files at ?, the agents' seed 11, until 09:26 UTC (epoch 1793006760)
+[2026-10-26T08:43:04Z] a100-aprime-frozen-s32: pending, engine frozen
+[2026-10-26T08:43:04Z] a100-aprime-pr-ab48-s32: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T08:43:04Z] a100-aprime-frozen-s32: localhost runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T08:44:13Z] a100-aprime-frozen-s32: localhost has v1.0
+[2026-10-26T08:44:13Z] a100-aprime-frozen-s32: measuring
+[08:44:14Z] configuring cyan for a100-aprime-frozen-s32
+[08:44:14Z] AIPerf: 32 session trees through the gateway, seed 11
+[08:47:16Z] AIPerf is profiling; 60 s of warm-up
+[08:48:16Z] calls: 2 callers, 25 turns each after 1 warm-up
+[08:54:25Z] stopping AIPerf
+[08:54:27Z] a100-aprime-frozen-s32: V2V p50/p95/p99 2670.2/5221.6/5526.8 ms, 0 of 50 turns failed; background 0.793 requests/s, 8,614 tokens/s, agent TTFT p50/p99 24479.05/55809.86 ms
+a100-aprime-frozen-s32: V2V p50/p95/p99 2670.2/5221.6/5526.8 ms, 0 of 50 turns failed; background 0.793 requests/s, 8,614 tokens/s, agent TTFT p50/p99 24479.05/55809.86 ms
+[2026-10-26T08:54:27Z] a100-aprime-pr-ab48-s32: localhost runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T08:55:36Z] a100-aprime-pr-ab48-s32: localhost has v1.0
+[2026-10-26T08:55:36Z] a100-aprime-pr-ab48-s32: measuring
+[08:55:38Z] configuring cyan for a100-aprime-pr-ab48-s32
+[08:55:38Z] AIPerf: 32 session trees through the gateway, seed 11
+[08:58:40Z] AIPerf is profiling; 60 s of warm-up
+[08:59:40Z] calls: 2 callers, 25 turns each after 1 warm-up
+[09:05:12Z] stopping AIPerf
+[09:05:14Z] a100-aprime-pr-ab48-s32: V2V p50/p95/p99 1462.0/1617.2/1649.5 ms, 0 of 50 turns failed; background 0.75 requests/s, 8,547 tokens/s, agent TTFT p50/p99 25881.42/52272.63 ms
+a100-aprime-pr-ab48-s32: V2V p50/p95/p99 1462.0/1617.2/1649.5 ms, 0 of 50 turns failed; background 0.75 requests/s, 8,547 tokens/s, agent TTFT p50/p99 25881.42/52272.63 ms
+[2026-10-26T09:05:15Z] the frontier of a100-aprime-r1
+leaseholder/runs/e2/a100-aprime-r1/report/frontier.csv
+leaseholder/runs/e2/a100-aprime-r1/report/frontier.md
+leaseholder/runs/e2/a100-aprime-r1/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-aprime-r1/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T09:05:16Z] done: ~/leaseholder/results/e2/a100-aprime-r1/report/frontier.md
+[2026-10-26T09:05:16Z] run: blocks backend, until 09:30 UTC, estimates backend=14
+[2026-10-26T09:05:16Z] run: block backend: start
+[2026-10-26T09:05:16Z] probes backend: engine: frozen --attention-backend FLASHINFER
+active
+active
+active
+[2026-10-26T09:08:12Z] probes backend: the engine selected Using LBHNC KV cache layout , not FlashInfer
+[2026-10-26T09:09:29Z] run: blocks backend, until 09:30 UTC, estimates backend=10
+[2026-10-26T09:09:30Z] run: block backend: start
+[2026-10-26T09:09:30Z] probes backend: engine: frozen --attention-backend FLASHINFER
+active
+active
+active
+[2026-10-26T09:11:37Z] probes backend: engine: FlashInfer resolved query dtypes Using LBHNC KV cache layout
+[2026-10-26T09:11:37Z] probes backend: backend-kv-1: probe.py kv
+  kv: priority-0 TTFT 1580 ms, 16 tokens 1679 ms, for 748 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T09:11:43Z] probes backend: backend-kv-2: probe.py kv
+  kv: priority-0 TTFT 1600 ms, 16 tokens 1698 ms, for 747 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T09:11:48Z] probes backend: backend-kv-3: probe.py kv
+  kv: priority-0 TTFT 1607 ms, 16 tokens 1705 ms, for 748 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T09:11:54Z] probes backend: block backend complete
+[2026-10-26T09:11:54Z] run: block backend: done
+[2026-10-26T09:11:54Z] run: complete: backend

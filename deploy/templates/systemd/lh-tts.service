@@ -16,6 +16,7 @@ Environment=MODEL_DIR=src/models
 Environment=VOICES_DIR=src/voices/v1_0
 Environment=WEB_PLAYER_PATH=%h/leaseholder/vendor/Kokoro-FastAPI/web
 {{units.gpu_select}}
+{{units.tts_library_path}}
 # On a Unix socket in a directory only this user may enter, as the engine (lh-engine.service says why). uvicorn
 # replaces a stale socket file itself and makes the new one 0666 (uvicorn 0.34.0, server.py), so the directory's mode is
 # what keeps the host's other users out. Idle connections stay 60 s (uvicorn's default is 5 s), as the engine's: through

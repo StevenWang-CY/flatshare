@@ -10,7 +10,8 @@
 `detect` writes the host's facts as JSON: the GPU as `nvidia-smi` shows it (name, memory, compute capability, driver,
 PCIe link, MIG mode, power limit, NUMA node), the CPUs by NUMA node, RAM, /dev/shm, shmem huge pages, the kernel, a
 container or VM, root and sudo, systemd's user manager and lingering, user namespaces, a CUDA toolkit, ninja and uv,
-and with --peer the TCP round trip to a control-plane host. `render` writes a node's directory: deploy/templates
+the directory of the driver's libcuda.so.1, and whether the linker searches it (the GPU units name it where it does
+not), and with --peer the TCP round trip to a control-plane host. `render` writes a node's directory: deploy/templates
 filled from the profile (engine.yaml, stt.yaml, the units, the make-room drop-in), the box's scripts and the mps
 variant as they are, and node.json, the profile's values resolved with the core plan and its warnings. A profile's
 "auto" values come from the host's facts by the rules below; a profile without them, as the frozen box's, needs no
@@ -127,6 +128,22 @@ COMPAT = "/usr/local/cuda-13.0/compat"
 """Where cuda-compat-13-0 puts CUDA 13.0's forward-compatibility libraries."""
 COMPAT_BRANCHES = (535, 570)
 """The driver branches cuda-compat-13-0 runs CUDA 13.0 on, on data-center GPUs only (NOTES §3)."""
+LIBCUDA = "libcuda.so.1"
+"""The driver's CUDA library, by the soname the CUDA runtime loads; where it cannot, torch finds "no NVIDIA driver"."""
+DRIVER_DIRS = ("/usr/lib64-nvidia", "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu")
+"""Where a host keeps the driver's libraries, for facts that find them neither in the linker's cache nor on the
+operator's LD_LIBRARY_PATH: Colab's container's directory, and Debian's multiarch ones, where the driver's packages
+put them."""
+LINKER_DIRS = (
+    "/lib/x86_64-linux-gnu",
+    "/usr/lib/x86_64-linux-gnu",
+    "/lib/aarch64-linux-gnu",
+    "/usr/lib/aarch64-linux-gnu",
+)
+"""Debian's multiarch library directories, which its dynamic linker searches whether or not its cache lists them
+(`ld.so --help`'s system search path)."""
+LIBC6 = {"x86_64": "x86-64", "aarch64": "AArch64"}
+"""ldconfig -p's mark of a machine's own libraries ("libc6,x86-64"), by its architecture, beside a 32-bit one's."""
 
 
 class ProfileError(Exception):
@@ -332,6 +349,41 @@ def _cuda_toolkits(local: Path) -> list[dict]:
     ]
 
 
+def _driver_libs(root: Path) -> dict | None:
+    """Where the driver's libcuda.so.1 is, and whether the dynamic linker finds it there by itself, as the GPU units
+    need it to: their environment has no LD_LIBRARY_PATH of the operator's. Listed in the linker's cache (ldconfig
+    -p), it does; else on the operator's LD_LIBRARY_PATH (a container's shell, as Colab's, reaching a directory that
+    the cache does not list), cuda-compat's directories aside, whose libcuda.so.1 is not the driver's; else in
+    DRIVER_DIRS. Found on either, the linker finds it only in a directory it searches anyway (LINKER_DIRS). None where
+    none of them holds it: no driver, or a container started without the NVIDIA runtime."""
+    ldconfig = shutil.which("ldconfig") or next(
+        (str(p) for p in (root / "sbin" / "ldconfig", root / "usr/sbin/ldconfig") if p.is_file()),
+        None,
+    )
+    done = _run([ldconfig, "-p"]) if ldconfig else None
+    mark = LIBC6.get(os.uname().machine)
+    for line in done.stdout.splitlines() if done is not None and done.returncode == 0 else []:
+        m = re.fullmatch(r"\s*libcuda\.so\.1 \(([^)]*)\) => (.+)", line)
+        if m and (mark is None or mark in m.group(1)) and Path(m.group(2)).exists():
+            return {
+                "path": str(Path(m.group(2)).parent),
+                "linker": True,
+                "via": "the linker's cache",
+            }
+    # glibc splits LD_LIBRARY_PATH at colons and semicolons; a relative entry is the working directory's.
+    path = [
+        os.path.normpath(p)
+        for p in re.split(r"[:;]", os.environ.get("LD_LIBRARY_PATH", ""))
+        if p.startswith("/")
+    ]
+    places = [(Path(p), p, "LD_LIBRARY_PATH") for p in path if Path(p).name != "compat"]
+    places += [(root / d.lstrip("/"), d, "a known location") for d in DRIVER_DIRS]
+    for directory, name, via in places:
+        if (directory / LIBCUDA).exists():
+            return {"path": str(directory), "linker": name in LINKER_DIRS, "via": via}
+    return None
+
+
 def _userns() -> bool | None:
     """Whether an unprivileged user and network namespace can make a link, as voicenet-holder does."""
     if shutil.which("unshare") is None or shutil.which("ip") is None:
@@ -412,8 +464,11 @@ def detect(peer: str | None = None) -> dict:
         "cuda_toolkits": (toolkits := _cuda_toolkits(root / "usr" / "local")),
         "cuda_toolkit": toolkits[0] if toolkits else None,
         "cuda_compat": str(compat)
-        if (compat := root / COMPAT.lstrip("/")).joinpath("libcuda.so.1").exists()
+        if (compat := root / COMPAT.lstrip("/")).joinpath(LIBCUDA).exists()
         else None,
+        # The units' environment has no LD_LIBRARY_PATH of the operator's: they name this directory where the linker
+        # does not search it (Colab's container's /usr/lib64-nvidia).
+        "driver_libs": _driver_libs(root),
         # Triton builds its launchers with a C compiler, and nvcc needs a host C++ compiler.
         "cc": shutil.which("cc") or shutil.which("gcc"),
         "cxx": shutil.which("c++") or shutil.which("g++"),
@@ -532,6 +587,33 @@ def compiler(host: dict, install: str) -> tuple[str, str]:
         "carries (nvidia-cuda-nvcc, pinned by the engine lock), as on Gray, and links with the venv's runtime and a "
         "driver\n# stub, which bootstrap.sh puts in cache/cuda_lib"
     )
+
+
+def library_path(driver: str | None, compat: str | None, libs: str | None) -> str:
+    """A GPU unit's LD_LIBRARY_PATH line and the comment that says why, or nothing: cuda-compat-13-0's libraries where
+    the install path runs on them (R8), first, so that their libcuda.so.1 is the one loaded, then the directory of the
+    driver's own libraries where the dynamic linker does not search it (``libs``), which the unit's environment would
+    not otherwise reach, having no LD_LIBRARY_PATH of the operator's (Colab's container: /usr/lib64-nvidia)."""
+    if compat:
+        why = (
+            f"# Driver {driver}: CUDA 13.0 through the forward-compatibility libraries of cuda-compat-13-0,\n"
+            "# which a data-center GPU can load"
+            + (
+                ", ahead of the driver's own (libcuda.so.1 and the rest), which are in a\n"
+                "# directory the dynamic linker does not search (not in its cache, as in some containers)"
+                if libs
+                else ""
+            )
+            + "."
+        )
+    elif libs:
+        why = (
+            "# The driver's own libraries (libcuda.so.1 and the rest) are in a directory the dynamic linker does not "
+            "search\n# (not in its cache, as in some containers): the unit names it."
+        )
+    else:
+        return ""
+    return why + "\nEnvironment=LD_LIBRARY_PATH=" + ":".join(p for p in (compat, libs) if p)
 
 
 def cpu_tier(pool_bytes: int, ratio: float, host: dict, reserve_gib: float) -> tuple[int, str]:
@@ -706,6 +788,9 @@ def resolve(profile: dict, host: dict | None) -> tuple[dict[str, str], dict | No
         host, install
     )  # the middle of a sentence: text.cuda ends it
     system = not cuda.startswith("%h/")
+    compat = host["cuda_compat"] if install == "cu130-compat" else None
+    libs = host.get("driver_libs") or {}
+    outside = libs.get("path") if not libs.get("linker") else None
     unit_values = {
         "units.cuda_home": cuda,
         "units.engine_path": f"%h/leaseholder/venvs/engine/bin:{cuda}/bin:/usr/local/bin:/usr/bin:/bin:%h/.local/bin",
@@ -720,12 +805,10 @@ def resolve(profile: dict, host: dict | None) -> tuple[dict[str, str], dict | No
         "units.hf_hub_cache": f'Environment="HF_HUB_CACHE={host["hf_hub_cache"]}"'
         if host.get("hf_hub_cache")
         else "",
-        "units.cuda_compat": (
-            f"# Driver {gpu['driver']}: CUDA 13.0 through the forward-compatibility libraries of cuda-compat-13-0,\n"
-            f"# which a data-center GPU can load.\nEnvironment=LD_LIBRARY_PATH={host['cuda_compat']}"
-            if install == "cu130-compat"
-            else ""
-        ),
+        # The vLLM units' library path, cuda-compat's libraries first, and the TTS's, Kokoro's own CUDA 12.8 build,
+        # which takes the driver's alone.
+        "units.library_path": library_path(gpu.get("driver"), compat, outside),
+        "units.tts_library_path": library_path(gpu.get("driver"), None, outside),
     }
     plan, warnings = core_plan({k: v for k, v in host["cpus"].items()}, gpu.get("numa_node"))
     warnings = early + warnings

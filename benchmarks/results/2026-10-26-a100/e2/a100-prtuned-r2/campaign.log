@@ -1,0 +1,22 @@
+[2026-10-26T08:33:36Z] campaign a100-prtuned-r2: 1 points, arm files at ?, the agents' seed 12, until 09:26 UTC (epoch 1793006760)
+[2026-10-26T08:33:37Z] a100-pr-ab48-2048-s24: pending, engine make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T08:33:37Z] a100-pr-ab48-2048-s24: localhost runs make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T08:33:37Z] a100-pr-ab48-2048-s24: localhost has v1.0
+[2026-10-26T08:33:37Z] a100-pr-ab48-2048-s24: measuring
+[08:33:37Z] configuring cyan for a100-pr-ab48-2048-s24
+[08:33:38Z] AIPerf: 24 session trees through the gateway, seed 12
+[08:36:23Z] AIPerf is profiling; 60 s of warm-up
+[08:37:23Z] calls: 2 callers, 25 turns each after 1 warm-up
+[08:42:59Z] stopping AIPerf
+[08:43:01Z] a100-pr-ab48-2048-s24: V2V p50/p95/p99 1535.8/1842.7/1906.8 ms, 0 of 50 turns failed; background 1.788 requests/s, 14,320 tokens/s, agent TTFT p50/p99 2025.09/11202.42 ms
+a100-pr-ab48-2048-s24: V2V p50/p95/p99 1535.8/1842.7/1906.8 ms, 0 of 50 turns failed; background 1.788 requests/s, 14,320 tokens/s, agent TTFT p50/p99 2025.09/11202.42 ms
+[2026-10-26T08:43:02Z] the frontier of a100-prtuned-r2
+leaseholder/runs/e2/a100-prtuned-r2/report/frontier.csv
+leaseholder/runs/e2/a100-prtuned-r2/report/frontier.md
+leaseholder/runs/e2/a100-prtuned-r2/report/frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg
+leaseholder/runs/e2/a100-prtuned-r2/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T08:43:03Z] done: ~/leaseholder/results/e2/a100-prtuned-r2/report/frontier.md

@@ -1,0 +1,43 @@
+FlashInfer kernels are disabled: flashinfer-cubin is not installed and nvcc (CUDA_HOME, CUDA_PATH, PATH or /usr/local/cuda) or ninja (PATH) is missing. Set CUDA_HOME to a CUDA toolkit and put ninja on PATH, or run `vllm download-kernels`.
+Namespace(subparser='bench', bench_type='serve', dispatch_function=<function BenchmarkServingSubcommand.cmd at 0x793120f60e00>, trust_remote_code=False, seed=0, num_prompts=520, dataset_name='random', no_stream=False, dataset_path=None, no_oversample=False, skip_chat_template=False, enable_multimodal_chat=False, disable_shuffle=False, custom_output_len=256, custom_ensure_client_side_data=False, spec_bench_output_len=256, spec_bench_category=None, sharegpt_output_len=None, timed_trace_chunk_hash_size=16, timed_trace_sec_multiplier=1, timed_trace_label_timestamp='timestamp', timed_trace_label_input_length='input_length', timed_trace_label_output_length='output_length', timed_trace_label_hash_ids='hash_ids', blazedit_min_distance=0.0, blazedit_max_distance=1.0, asr_max_audio_len_sec=inf, asr_min_audio_len_sec=0.0, random_input_len=48, random_output_len=64, random_range_ratio='0.0', random_prefix_len=0, random_batch_size=1, no_reranker=False, random_mm_base_items_per_request=1, random_mm_num_mm_items_range_ratio=0.0, random_mm_limit_mm_per_prompt={'image': 255, 'video': 1}, random_mm_bucket_config={(256, 256, 1): 0.5, (720, 1280, 1): 0.5, (720, 1280, 16): 0.0}, hf_subset=None, hf_split=None, hf_name=None, hf_output_len=None, bfcl_categories=None, prefix_repetition_prefix_len=256, prefix_repetition_suffix_len=256, prefix_repetition_num_prefixes=10, prefix_repetition_output_len=128, speed_bench_dataset_subset='qualitative', speed_bench_output_len=4096, speed_bench_category=None, label=None, backend='vllm', base_url='http://127.0.0.1:18000', host='127.0.0.1', port=8000, endpoint='/v1/completions', header=None, max_concurrency=26, model='Qwen/Qwen3-4B-Instruct-2507-FP8', input_len=None, output_len=None, tokenizer='~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98', tokenizer_mode='auto', use_beam_search=False, logprobs=None, request_rate=inf, burstiness=1.0, probe_request_rate=0.0, disable_tqdm=False, num_warmups=0, profile=False, save_result=True, save_detailed=False, append_result=False, metadata=None, result_dir='~/leaseholder/runs/a100/batch', result_filename='frozen-p0.partial.json', ignore_eos=True, self_timed=None, percentile_metrics='ttft,tpot,itl', metric_percentiles='50,90,99', goodput=None, request_id_prefix='bench-0b997aa5-', top_p=None, top_k=None, min_p=None, temperature=None, frequency_penalty=None, presence_penalty=None, repetition_penalty=None, served_model_name=None, lora_modules=None, lora_assignment='random', ramp_up_strategy=None, ramp_up_start_rps=None, ramp_up_end_rps=None, ready_check_timeout_sec=0, chat_template_kwargs=None, extra_body={'priority': 0}, skip_tokenizer_init=False, insecure=False, plot_timeline=False, timeline_itl_thresholds='25,50', plot_dataset_stats=False, log_config_file=None, logging_config=LoggingConfig(log_level='INFO', formatter='text', configure_logging=True, pylogging_config_file=None))
+(MainProcess pid=80960) INFO 10-26 07:55:50 [utils.py:88] Sampling input_len from [48, 48] and output_len from [64, 64]
+WARNING: vllm bench serve no longer sets temperature==0 (greedy) in requests by default. The default will be determined on the server side and can be model/API specific. For the old behavior, include --temperature=0.
+Starting initial single prompt test run...
+Skipping endpoint ready check.
+Starting main benchmark run...
+Traffic request rate: inf
+Burstiness factor: 1.0 (Poisson process)
+Maximum request concurrency: 26
+  0%|          | 0/520 [00:00<?, ?it/s]  0%|          | 1/520 [00:00<04:28,  1.93it/s]  5%|▌         | 27/520 [00:00<00:15, 32.12it/s] 10%|█         | 53/520 [00:01<00:11, 42.22it/s] 15%|█▌        | 79/520 [00:01<00:09, 46.98it/s] 20%|██        | 105/520 [00:02<00:10, 40.90it/s] 21%|██        | 110/520 [00:03<00:12, 33.58it/s] 25%|██▌       | 131/520 [00:04<00:17, 22.50it/s] 26%|██▌       | 134/520 [00:04<00:17, 21.76it/s] 26%|██▋       | 137/520 [00:04<00:17, 22.10it/s] 30%|███       | 157/520 [00:06<00:24, 14.85it/s] 31%|███▏      | 163/520 [00:06<00:21, 16.96it/s] 35%|███▌      | 183/520 [00:08<00:25, 13.21it/s] 38%|███▊      | 198/520 [00:08<00:17, 18.68it/s] 40%|████      | 209/520 [00:10<00:27, 11.51it/s] 45%|████▍     | 232/520 [00:11<00:14, 19.25it/s] 46%|████▋     | 241/520 [00:13<00:24, 11.56it/s] 50%|█████     | 261/520 [00:15<00:25, 10.25it/s] 52%|█████▏    | 268/520 [00:15<00:21, 11.84it/s] 55%|█████▌    | 287/520 [00:17<00:19, 11.82it/s] 56%|█████▌    | 291/520 [00:17<00:20, 11.20it/s] 57%|█████▋    | 295/520 [00:17<00:18, 12.18it/s] 58%|█████▊    | 301/520 [00:17<00:15, 14.43it/s] 60%|█████▉    | 311/520 [00:18<00:10, 20.19it/s] 61%|██████    | 317/520 [00:19<00:19, 10.16it/s] 63%|██████▎   | 326/520 [00:19<00:13, 14.05it/s] 64%|██████▎   | 331/520 [00:19<00:11, 16.03it/s] 65%|██████▍   | 336/520 [00:20<00:09, 18.84it/s] 66%|██████▌   | 341/520 [00:21<00:23,  7.58it/s] 68%|██████▊   | 353/520 [00:22<00:12, 13.17it/s] 70%|██████▉   | 362/520 [00:22<00:08, 18.15it/s] 71%|███████   | 369/520 [00:24<00:19,  7.90it/s] 75%|███████▍  | 388/520 [00:24<00:08, 15.18it/s] 76%|███████▌  | 396/520 [00:26<00:13,  8.88it/s] 78%|███████▊  | 408/520 [00:26<00:09, 12.21it/s] 80%|████████  | 417/520 [00:27<00:07, 13.22it/s] 81%|████████  | 422/520 [00:28<00:11,  8.69it/s] 83%|████████▎ | 434/520 [00:29<00:06, 12.92it/s] 85%|████████▍ | 441/520 [00:29<00:04, 15.82it/s] 86%|████████▌ | 446/520 [00:31<00:09,  7.66it/s] 89%|████████▉ | 464/520 [00:31<00:03, 14.65it/s] 91%|█████████ | 472/520 [00:33<00:05,  8.77it/s] 92%|█████████▏| 479/520 [00:33<00:03, 10.86it/s] 95%|█████████▍| 493/520 [00:33<00:01, 16.88it/s] 96%|█████████▌| 500/520 [00:35<00:01, 10.54it/s] 97%|█████████▋| 505/520 [00:35<00:01, 11.70it/s] 99%|█████████▉| 517/520 [00:35<00:00, 17.90it/s]100%|██████████| 520/520 [00:35<00:00, 14.61it/s]
+tip: install termplotlib and gnuplot to plot the metrics
+============ Serving Benchmark Result ============
+Successful requests:                     520       
+Failed requests:                         0         
+Maximum request concurrency:             26        
+Benchmark duration (s):                  35.58     
+Total input tokens:                      24960     
+Total generated tokens:                  33280     
+Request throughput (req/s):              14.61     
+Output token throughput (tok/s):         935.24    
+Peak output token throughput (tok/s):    3394.00   
+Peak concurrent requests:                80.00     
+Total token throughput (tok/s):          1636.66   
+---------------Time to First Token----------------
+Mean TTFT (ms):                          214.85    
+Median TTFT (ms):                        166.09    
+P50 TTFT (ms):                           166.09    
+P90 TTFT (ms):                           451.08    
+P99 TTFT (ms):                           574.16    
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          24.65     
+Median TPOT (ms):                        28.62     
+P50 TPOT (ms):                           28.62     
+P90 TPOT (ms):                           33.07     
+P99 TPOT (ms):                           33.97     
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           25.14     
+Median ITL (ms):                         26.49     
+P50 ITL (ms):                            26.49     
+P90 ITL (ms):                            38.26     
+P99 ITL (ms):                            44.69     
+==================================================

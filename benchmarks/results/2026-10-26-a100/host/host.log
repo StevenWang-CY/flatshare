@@ -1,0 +1,10 @@
+FlashInfer kernels are disabled: flashinfer-cubin is not installed and nvcc (CUDA_HOME, CUDA_PATH, PATH or /usr/local/cuda) or ninja (PATH) is missing. Set CUDA_HOME to a CUDA toolkit and put ninja on PATH, or run `vllm download-kernels`.
+python: 227.2 ms at the median of 7 on Intel(R) Xeon(R) CPU @ 2.20GHz
+link h2d: 256 MiB as 8,192 pages of 32 KiB: 26.62 ms, 10.08 GB/s
+link h2d: 256 MiB as 4,096 pages of 64 KiB: 24.21 ms, 11.09 GB/s
+link h2d: 254 MiB as 113 pages of 2,304 KiB: 21.71 ms, 12.28 GB/s
+link h2d: 256 MiB as one copy: 21.80 ms, 12.32 GB/s
+link d2h: 256 MiB as 8,192 pages of 32 KiB: 25.31 ms, 10.61 GB/s
+link d2h: 256 MiB as 4,096 pages of 64 KiB: 23.10 ms, 11.62 GB/s
+link d2h: 254 MiB as 113 pages of 2,304 KiB: 20.83 ms, 12.80 GB/s
+link d2h: 256 MiB as one copy: 20.88 ms, 12.86 GB/s

@@ -19,7 +19,7 @@ Type=exec
 WorkingDirectory=%h/leaseholder
 {{text.cuda}}
 Environment=CUDA_HOME={{units.cuda_home}}
-{{units.cuda_compat}}
+{{units.library_path}}
 {{units.gpu_select}}
 # vLLM's /server_info (the measurement drop-in's, deploy/phastform/measure) lists the venv's packages with `uv pip list`
 # when the venv has no pip, so uv (in ~/.local/bin) is on the path and VIRTUAL_ENV names the venv; without them the

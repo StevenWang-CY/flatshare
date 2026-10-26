@@ -1,0 +1,17 @@
+[2026-10-26T09:05:16Z] probes backend: engine: frozen --attention-backend FLASHINFER
+active
+active
+active
+[2026-10-26T09:08:12Z] probes backend: the engine selected Using LBHNC KV cache layout , not FlashInfer
+[2026-10-26T09:09:30Z] probes backend: engine: frozen --attention-backend FLASHINFER
+active
+active
+active
+[2026-10-26T09:11:37Z] probes backend: engine: FlashInfer resolved query dtypes Using LBHNC KV cache layout
+[2026-10-26T09:11:37Z] probes backend: backend-kv-1: probe.py kv
+  kv: priority-0 TTFT 1580 ms, 16 tokens 1679 ms, for 748 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T09:11:43Z] probes backend: backend-kv-2: probe.py kv
+  kv: priority-0 TTFT 1600 ms, 16 tokens 1698 ms, for 747 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T09:11:48Z] probes backend: backend-kv-3: probe.py kv
+  kv: priority-0 TTFT 1607 ms, 16 tokens 1705 ms, for 748 prompt tokens, sent with 2 priority-2 requests of 17999 tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting
+[2026-10-26T09:11:54Z] probes backend: block backend complete

@@ -1,0 +1,152 @@
+{
+  "name": "w5-a1-voice",
+  "arm": "1",
+  "label": "frozen box, voice alone, a warm-up turn opening each call",
+  "window_s": 328.0,
+  "voice": {
+    "turns": 50,
+    "errors": 0,
+    "v2v_ms": {
+      "n": 59,
+      "p50": 1284.8,
+      "p95": 1445.0,
+      "p99": 1480.8
+    },
+    "barge_in_to_silence_ms": {
+      "n": 8,
+      "p50": 349.1,
+      "p95": 677.4,
+      "p99": 683.2
+    },
+    "barge_ins": 9
+  },
+  "worker": {
+    "sessions": 2,
+    "turns": 59,
+    "waterfall": {
+      "transcript_ms": {
+        "n": 59,
+        "mean": 680.18,
+        "p10": 668.86,
+        "p50": 675.3,
+        "p90": 688.1,
+        "p95": 731.73,
+        "p99": 752.75
+      },
+      "end_of_turn_ms": {
+        "n": 59,
+        "mean": 682.3,
+        "p10": 671.14,
+        "p50": 677.5,
+        "p90": 690.34,
+        "p95": 732.42,
+        "p99": 754.08
+      },
+      "llm_ttft_ms": {
+        "n": 59,
+        "mean": 40.8,
+        "p10": 34.98,
+        "p50": 40.2,
+        "p90": 48.72,
+        "p95": 49.94,
+        "p99": 51.33
+      },
+      "llm_first_sentence_ms": {
+        "n": 59,
+        "mean": 136.34,
+        "p10": 100.14,
+        "p50": 130.1,
+        "p90": 183.28,
+        "p95": 188.35,
+        "p99": 202.5
+      },
+      "turn_to_first_sentence_ms": {
+        "n": 59,
+        "mean": 139.04,
+        "p10": 101.94,
+        "p50": 132.4,
+        "p90": 184.14,
+        "p95": 190.71,
+        "p99": 209.19
+      },
+      "tts_first_audio_ms": {
+        "n": 59,
+        "mean": 122.61,
+        "p10": 87.04,
+        "p50": 116.1,
+        "p90": 158.72,
+        "p95": 169.33,
+        "p99": 188.78
+      },
+      "e2e_ms": {
+        "n": 59,
+        "mean": 944.19,
+        "p10": 881.22,
+        "p50": 935.7,
+        "p90": 1018.52,
+        "p95": 1026.46,
+        "p99": 1069.11
+      }
+    },
+    "events": {
+      "sent": 249,
+      "dropped": 0,
+      "failed": 0
+    }
+  },
+  "background": null,
+  "gateway": {
+    "realtime_first_byte_ms": {
+      "n": 62,
+      "mean": 30.68,
+      "p50": 30.68,
+      "p95": 35.13,
+      "p99": 35.93,
+      "source": "log"
+    },
+    "background_first_byte_ms": {
+      "n": 0,
+      "source": "log"
+    },
+    "shed": null,
+    "refused": null,
+    "resubmitted": null,
+    "discarded_tokens": null,
+    "background_tokens_per_s": 0.0,
+    "counters": {
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"session_closed\"}": 1,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"interrupted\"}": 10,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_started\"}": 61,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_turn_ended\"}": 62,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_ended\"}": 52,
+      "lh_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_speech_started\"}": 62,
+      "lh_gateway_request_outcomes_total{class=\"realtime\",outcome=\"completed\"}": 62,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/models\",status=\"200\",tenant=\"voice\"}": 2,
+      "lh_gateway_requests_total{class=\"\",route=\"/v1/events\",status=\"202\",tenant=\"voice\"}": 248,
+      "lh_gateway_requests_total{class=\"realtime\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"voice\"}": 62,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"cached\"}": 38736,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"completion\"}": 1305,
+      "lh_gateway_usage_tokens_total{class=\"realtime\",kind=\"prompt\"}": 40418
+    }
+  },
+  "engine": {
+    "preemptions": 0,
+    "prompt_tokens_by_source": {
+      "local_compute": 1682,
+      "local_cache_hit": 38736,
+      "external_kv_transfer": 0
+    },
+    "refused": {
+      "max_num_queued_reqs": 0,
+      "max_num_queued_tokens": 0
+    },
+    "kv_offload_load_bytes": null,
+    "kv_offload_store_bytes": 356253696
+  },
+  "kv": null,
+  "gpu": {
+    "sm_clock_p50_mhz": 1155,
+    "temperature_max_c": 39,
+    "name": "NVIDIA A100-SXM4-80GB"
+  }
+}

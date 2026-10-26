@@ -1,0 +1,8 @@
+health                     ok
+tts question (wav)         0.221412s, 87768 bytes
+stt                        0.271746s:  What is the capital of France?
+llm                        0.062728s: The capital of France is Paris.
+tts reply (first/total)    0.002174/0.134465s, 95008 bytes
+gpu memory                 14888 MiB, 81920 MiB
+listener audit             ok: the box's units hold 8 Unix sockets, all in ~/.local/state/lh-svc/run, and 1 TCP or UDP listeners, all allowed; lh-engine, lh-stt, lh-tts in network namespaces of their own, with 12 TCP or UDP listeners and 3 abstract sockets there
+smoke: ok

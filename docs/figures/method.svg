@@ -1,0 +1,216 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="782" viewBox="0 0 1120 782" font-size="21" role="img" aria-labelledby="title desc">
+<title id="title">How #63350 and #63351 make room for a voice turn</title>
+<desc id="desc">Panel a: a caller's speech goes to speech to text, then to vLLM 0.32's scheduler, which carries the two changes, then to text to speech and back to the caller; 24 coding-agent sessions send their requests to the same scheduler at priority 2, the voice turn's at priority 0; the scheduler allocates from the KV pool beneath it. Panel b, #63350, a pool of 12 KV blocks: two agent requests hold 5 each and 2 are free, while a voice turn that needs 4 waits beside the pool; on stock vLLM it waits for an agent request to finish, while #63350 preempts the latest agent request, agent B, and the turn takes 4 of its blocks; agent B waits, its KV kept in the CPU tier for its resume. Panel c, #63351, the engine's steps in time, one box a step, from the reply's first token: without #63351 each step of the reply also carries an agent's prefill chunk, so in the time #63351 gives the reply its first 48 tokens the reply gets 14 without it; after the window, agent prefill resumes. Blocks and steps are illustrative.</desc>
+<!-- Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 (python/leaseholder_bench/src/leaseholder_bench/fonts/OFL.txt). -->
+<style>@font-face{font-family:'Leaseholder Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Leaseholder Text','Leaseholder Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}</style>
+<rect class="page" width="1120" height="782"/>
+<text x="24" y="34">One GPU: a voice agent beside coding agents</text>
+<text x="1096" y="34" text-anchor="end">(a)</text>
+<rect x="24" y="81" width="104" height="46" rx="8" class="box"/>
+<text x="76" y="110.93" text-anchor="middle">Caller</text>
+<rect x="176" y="81" width="151.14" height="46" rx="8" class="box"/>
+<text x="251.57" y="110.93" text-anchor="middle">Speech to text</text>
+<rect x="24" y="145" width="303.14" height="46" rx="8" class="box"/>
+<text x="175.57" y="174.93" text-anchor="middle">24 coding-agent sessions</text>
+<rect x="780.42" y="81" width="154.9" height="46" rx="8" class="box"/>
+<text x="857.88" y="110.93" text-anchor="middle">Text to speech</text>
+<rect x="992" y="81" width="104" height="46" rx="8" class="box"/>
+<text x="1044" y="110.93" text-anchor="middle">Caller</text>
+<rect x="435.14" y="81" width="233.28" height="110" rx="8" class="ours"/>
+<text x="551.78" y="130.4" text-anchor="middle" font-size="20">vLLM 0.32 scheduler</text>
+<text x="551.78" y="154.8" text-anchor="middle" font-size="20">with #63350, #63351</text>
+<rect x="427.14" y="73" width="249.28" height="126" rx="10" class="group"/>
+<rect x="451.14" y="229" width="169.28" height="40" rx="6" class="memory"/>
+<text x="535.78" y="255" text-anchor="middle" font-size="20">KV pool</text>
+<path d="M535.78 191L535.78 229" class="flow"/>
+<path d="M128 104L168.7 104" class="flow"/>
+<path d="M173.5 104L165.5 108.8L165.5 99.2Z" class="flow-head"/>
+<path d="M327.14 104L419.84 104" class="flow"/>
+<path d="M424.64 104L416.64 108.8L416.64 99.2Z" class="flow-head"/>
+<text x="339.14" y="94" class="mute" font-size="18">priority 0</text>
+<path d="M327.14 168L419.84 168" class="flow"/>
+<path d="M424.64 168L416.64 172.8L416.64 163.2Z" class="flow-head"/>
+<text x="339.14" y="158" class="mute" font-size="18">priority 2</text>
+<path d="M676.42 104L773.12 104" class="flow"/>
+<path d="M777.92 104L769.92 108.8L769.92 99.2Z" class="flow-head"/>
+<text x="688.42" y="94" class="mute" font-size="18">the reply</text>
+<path d="M935.33 104L984.7 104" class="flow"/>
+<path d="M989.5 104L981.5 108.8L981.5 99.2Z" class="flow-head"/>
+<rect x="24" y="330" width="532" height="440" rx="12" class="panel-a"/>
+<text x="42" y="358.7">#63350: make room for KV</text>
+<text x="538" y="358.7" text-anchor="end">(b)</text>
+<text x="50" y="400" font-size="20">stock vLLM</text>
+<rect x="44" y="408" width="320" height="36" rx="6" class="memory"/>
+<rect x="50" y="414" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="76" y="414" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="102" y="414" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="128" y="414" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="154" y="414" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="180" y="414" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="206" y="414" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="232" y="414" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="258" y="414" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="284" y="414" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="310" y="414" width="22" height="24" rx="2" class="cell-empty"/>
+<rect x="336" y="414" width="22" height="24" rx="2" class="cell-empty"/>
+<rect x="392" y="414" width="22" height="24" rx="2" class="green cell"/>
+<rect x="418" y="414" width="22" height="24" rx="2" class="green cell"/>
+<rect x="444" y="414" width="22" height="24" rx="2" class="green cell"/>
+<rect x="470" y="414" width="22" height="24" rx="2" class="green cell"/>
+<path d="M50 444V450H176V444" class="bracket"/>
+<text x="113" y="468.96" text-anchor="middle" font-size="18">agent A</text>
+<path d="M180 444V450H306V444" class="bracket"/>
+<text x="243" y="468.96" text-anchor="middle" font-size="18">agent B</text>
+<path d="M310 444V450H358V444" class="bracket"/>
+<text x="334" y="468.96" text-anchor="middle" font-size="18">free</text>
+<path d="M392 444V450H492V444" class="bracket"/>
+<text x="442" y="468.96" text-anchor="middle" font-size="18">voice turn</text>
+<text x="50" y="500" class="soft" font-size="18">The turn waits for an agent request to finish.</text>
+<text x="50" y="560" font-size="20">#63350</text>
+<rect x="44" y="568" width="320" height="36" rx="6" class="memory"/>
+<rect x="50" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="76" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="102" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="128" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="154" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="180" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<path d="M180 574L180 574M180 579L185 574M180 584L190 574M180 589L195 574M180 594L200 574M181 598L202 577M186 598L202 582M191 598L202 587M196 598L202 592M201 598L202 597" class="gray hatch"/>
+<rect x="206" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<path d="M206 574L206 574M206 579L211 574M206 584L216 574M206 589L221 574M206 594L226 574M207 598L228 577M212 598L228 582M217 598L228 587M222 598L228 592M227 598L228 597" class="gray hatch"/>
+<rect x="232" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<path d="M232 574L232 574M232 579L237 574M232 584L242 574M232 589L247 574M232 594L252 574M233 598L254 577M238 598L254 582M243 598L254 587M248 598L254 592M253 598L254 597" class="gray hatch"/>
+<rect x="258" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<path d="M258 574L258 574M258 579L263 574M258 584L268 574M258 589L273 574M258 594L278 574M259 598L280 577M264 598L280 582M269 598L280 587M274 598L280 592M279 598L280 597" class="gray hatch"/>
+<rect x="284" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<path d="M284 574L284 574M284 579L289 574M284 584L294 574M284 589L299 574M284 594L304 574M285 598L306 577M290 598L306 582M295 598L306 587M300 598L306 592M305 598L306 597" class="gray hatch"/>
+<rect x="310" y="574" width="22" height="24" rx="2" class="cell-empty"/>
+<rect x="336" y="574" width="22" height="24" rx="2" class="cell-empty"/>
+<rect x="392" y="574" width="22" height="24" rx="2" class="green cell"/>
+<rect x="418" y="574" width="22" height="24" rx="2" class="green cell"/>
+<rect x="444" y="574" width="22" height="24" rx="2" class="green cell"/>
+<rect x="470" y="574" width="22" height="24" rx="2" class="green cell"/>
+<path d="M180 568V562H306V568" class="bracket"/>
+<text x="243" y="554" text-anchor="middle" font-size="18">agent B, preempted</text>
+<rect x="44" y="656" width="320" height="36" rx="6" class="memory"/>
+<rect x="50" y="662" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="76" y="662" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="102" y="662" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="128" y="662" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="154" y="662" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="180" y="662" width="22" height="24" rx="2" class="green cell"/>
+<rect x="206" y="662" width="22" height="24" rx="2" class="green cell"/>
+<rect x="232" y="662" width="22" height="24" rx="2" class="green cell"/>
+<rect x="258" y="662" width="22" height="24" rx="2" class="green cell"/>
+<rect x="284" y="662" width="22" height="24" rx="2" class="cell-empty"/>
+<rect x="310" y="662" width="22" height="24" rx="2" class="cell-empty"/>
+<rect x="336" y="662" width="22" height="24" rx="2" class="cell-empty"/>
+<path d="M442 601L442 620Q442 626 436 626L236 626Q230 626 230 632L230 649.18" class="green line"/>
+<path d="M230 653.5L226.4 646.3L233.6 646.3Z" class="green line-head"/>
+<path d="M180 692V698H280V692" class="bracket"/>
+<text x="230" y="716.96" text-anchor="middle" font-size="18">voice turn</text>
+<path d="M284 692V698H358V692" class="bracket"/>
+<text x="321" y="716.96" text-anchor="middle" font-size="18">free</text>
+<text x="50" y="750" class="mute" font-size="18">Agent B waits; its KV stays in the CPU tier for its resume.</text>
+<rect x="588" y="330" width="508" height="440" rx="12" class="panel-b"/>
+<text x="606" y="358.7">#63351: hold agent prefill</text>
+<text x="1078" y="358.7" text-anchor="end">(c)</text>
+<rect x="614" y="389" width="14" height="16" rx="2" class="green cell"/>
+<text x="636" y="402" font-size="18">the reply's token</text>
+<rect x="783.39" y="389" width="30" height="16" rx="2" class="gray cell"/>
+<text x="821.39" y="402" font-size="18">an agent's prefill chunk</text>
+<text x="614" y="440" font-size="20">without #63351</text>
+<rect x="614" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="621.11" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="642.62" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="649.72" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="671.23" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="678.34" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="699.85" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="706.95" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="728.46" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="735.57" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="757.08" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="764.18" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="785.69" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="792.8" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="814.31" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="821.42" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="842.92" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="850.03" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="871.54" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="878.65" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="900.15" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="907.26" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="928.77" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="935.88" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="957.38" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="964.49" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="986" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="993.11" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="1014.62" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="1021.72" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<path d="M614 482V488H1013.42V482" class="bracket"/>
+<text x="813.71" y="506.96" text-anchor="middle" font-size="18">14 tokens</text>
+<text x="614" y="540" font-size="20">with #63351</text>
+<rect x="614" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="622.31" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="630.62" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="638.92" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="647.23" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="655.54" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="663.85" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="672.15" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="680.46" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="688.77" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="697.08" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="705.38" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="713.69" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="722" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="730.31" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="738.62" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="746.92" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="755.23" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="763.54" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="771.85" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="780.15" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="788.46" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="796.77" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="805.08" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="813.38" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="821.69" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="830" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="838.31" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="846.62" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="854.92" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="863.23" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="871.54" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="879.85" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="888.15" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="896.46" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="904.77" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="913.08" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="921.38" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="929.69" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="938" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="946.31" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="954.62" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="962.92" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="971.23" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="979.54" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="987.85" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="996.15" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="1004.46" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="1012.77" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="1019.88" y="552" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="1041.38" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
+<rect x="1048.49" y="552" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<path d="M614 582V588H1011.57V582" class="bracket"/>
+<text x="812.78" y="606.96" text-anchor="middle" font-size="18">the reply's first 48 tokens</text>
+<path d="M1012.77 582V588H1068.8V582" class="bracket"/>
+<text x="1040.78" y="606.96" text-anchor="middle" font-size="18">resumed</text>
+<path d="M614 638H1064" class="axis"/>
+<path d="M1070 638L1063 634.8L1063 641.2Z" class="axis-head"/>
+<text x="614" y="662" class="mute" font-size="18">time, one box per engine step, from the reply's first token</text>
+<path d="M473.14 269L473.14 330" class="leader"/>
+<path d="M662.42 199L662.42 211L628 312L628 330" class="leader"/>
+</svg>

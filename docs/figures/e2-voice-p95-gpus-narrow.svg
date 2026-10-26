@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1392" viewBox="0 0 420 1392" font-size="21" role="img" aria-labelledby="title desc">
+<title id="title">Two voice calls beside 24 coding-agent sessions</title>
+<desc id="desc">RTX 5060 Ti: voice-to-voice p95 against an SLO of 2.03 s and the agents' tokens/s: Tuned vLLM 0.32, the baseline, 10.48 s and 3,305 tokens/s (100% of the first row's) over 10 runs; A router, aborts and resubmits, 2.52 s and 3,332 tokens/s (101% of the first row's) over 5 runs; #63350 and #63351, 48-token window, 2.24 s and 3,203 tokens/s (97% of the first row's) over 15 runs. A100-SXM4-80GB: voice-to-voice p95 against an SLO of 1.67 s and the agents' tokens/s: Tuned vLLM 0.32, the box's tuning, 4.99 s and 8,633 tokens/s (100% of the first row's) over 5 runs; #63350 and #63351, 48-token window, 1.63 s and 8,651 tokens/s (100% of the first row's) over 5 runs. A100-SXM4-80GB: voice-to-voice p95 against an SLO of 1.67 s and the agents' tokens/s: Tuned vLLM 0.32, the card's best, 3.66 s and 14,536 tokens/s (100% of the first row's) over 2 runs; #63350 and #63351, 48-token window, 1.83 s and 14,635 tokens/s (101% of the first row's) over 2 runs.</desc>
+<!-- Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 (python/leaseholder_bench/src/leaseholder_bench/fonts/OFL.txt). -->
+<style>@font-face{font-family:'Leaseholder Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Leaseholder Text','Leaseholder Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}</style>
+<rect class="page" width="420" height="1392"/>
+<text x="210" y="32" text-anchor="middle" font-size="23">Two voice calls beside</text>
+<text x="210" y="61" text-anchor="middle" font-size="23">24 coding-agent sessions</text>
+<text x="210" y="116" text-anchor="middle">Voice-to-voice p95</text>
+<text x="210" y="141" text-anchor="middle" class="soft" font-size="18">seconds • Lower is better</text>
+<text x="18" y="174" class="mute" font-size="18">RTX 5060 Ti 16 GB</text>
+<text x="68.18" y="200" text-anchor="middle" class="orange tint" font-size="18">SLO 2.03 s</text>
+<text x="18" y="226" font-size="20">Tuned vLLM 0.32</text>
+<text x="174.96" y="226" class="soft" font-size="18">the baseline</text>
+<path d="M18 235V263" class="axis"/>
+<path d="M67.33 235V263" class="grid"/>
+<path d="M116.67 235V263" class="grid"/>
+<path d="M166 235V263" class="grid"/>
+<path d="M215.33 235V263" class="grid"/>
+<path d="M264.67 235V263" class="grid"/>
+<path d="M314 235V263" class="grid"/>
+<path d="M18 239H273.44Q276.44 239 276.44 242V256Q276.44 259 273.44 259H18Z" class="g-mid"/>
+<text x="283.44" y="254" class="halo" font-size="18">10.48</text>
+<path d="M68.18 235V263" class="slo"/>
+<text x="18" y="288" font-size="20">A router</text>
+<text x="96.52" y="288" class="soft" font-size="18">aborts and resubmits</text>
+<path d="M18 297V325" class="axis"/>
+<path d="M67.33 297V325" class="grid"/>
+<path d="M116.67 297V325" class="grid"/>
+<path d="M166 297V325" class="grid"/>
+<path d="M215.33 297V325" class="grid"/>
+<path d="M264.67 297V325" class="grid"/>
+<path d="M314 297V325" class="grid"/>
+<path d="M18 301H77.21Q80.21 301 80.21 304V318Q80.21 321 77.21 321H18Z" class="g-mid"/>
+<text x="87.21" y="316" class="halo" font-size="18">2.52</text>
+<path d="M68.18 297V325" class="slo"/>
+<text x="18" y="350" font-size="20">#63350 and #63351</text>
+<text x="188.22" y="350" class="soft" font-size="18">48-token window</text>
+<path d="M18 359V387" class="axis"/>
+<path d="M67.33 359V387" class="grid"/>
+<path d="M116.67 359V387" class="grid"/>
+<path d="M166 359V387" class="grid"/>
+<path d="M215.33 359V387" class="grid"/>
+<path d="M264.67 359V387" class="grid"/>
+<path d="M314 359V387" class="grid"/>
+<path d="M18 363H70.15Q73.15 363 73.15 366V380Q73.15 383 70.15 383H18Z" class="g-hi"/>
+<text x="80.15" y="378" class="halo" font-size="18">2.24</text>
+<path d="M68.18 359V387" class="slo"/>
+<text x="18" y="410" class="mute" font-size="18">A100, 512-token steps</text>
+<text x="59.18" y="436" text-anchor="middle" class="orange tint" font-size="18">SLO 1.67 s</text>
+<text x="18" y="462" font-size="20">Tuned vLLM 0.32</text>
+<text x="174.96" y="462" class="soft" font-size="18">the box's tuning</text>
+<path d="M18 471V499" class="axis"/>
+<path d="M67.33 471V499" class="grid"/>
+<path d="M116.67 471V499" class="grid"/>
+<path d="M166 471V499" class="grid"/>
+<path d="M215.33 471V499" class="grid"/>
+<path d="M264.67 471V499" class="grid"/>
+<path d="M314 471V499" class="grid"/>
+<path d="M18 475H137.99Q140.99 475 140.99 478V492Q140.99 495 137.99 495H18Z" class="g-mid"/>
+<text x="147.99" y="490" class="halo" font-size="18">4.99</text>
+<path d="M59.18 471V499" class="slo"/>
+<text x="18" y="524" font-size="20">#63350 and #63351</text>
+<text x="188.22" y="524" class="soft" font-size="18">48-token window</text>
+<path d="M18 533V561" class="axis"/>
+<path d="M67.33 533V561" class="grid"/>
+<path d="M116.67 533V561" class="grid"/>
+<path d="M166 533V561" class="grid"/>
+<path d="M215.33 533V561" class="grid"/>
+<path d="M264.67 533V561" class="grid"/>
+<path d="M314 533V561" class="grid"/>
+<path d="M18 537H55.32Q58.32 537 58.32 540V554Q58.32 557 55.32 557H18Z" class="g-hi"/>
+<text x="65.32" y="552" class="halo" font-size="18">1.63</text>
+<path d="M59.18 533V561" class="slo"/>
+<text x="18" y="584" class="mute" font-size="18">A100, 2,048-token steps</text>
+<text x="59.18" y="610" text-anchor="middle" class="orange tint" font-size="18">SLO 1.67 s</text>
+<text x="18" y="636" font-size="20">Tuned vLLM 0.32</text>
+<text x="174.96" y="636" class="soft" font-size="18">the card's best</text>
+<path d="M18 645V673" class="axis"/>
+<path d="M67.33 645V673" class="grid"/>
+<path d="M116.67 645V673" class="grid"/>
+<path d="M166 645V673" class="grid"/>
+<path d="M215.33 645V673" class="grid"/>
+<path d="M264.67 645V673" class="grid"/>
+<path d="M314 645V673" class="grid"/>
+<path d="M18 649H105.35Q108.35 649 108.35 652V666Q108.35 669 105.35 669H18Z" class="g-mid"/>
+<text x="115.35" y="664" class="halo" font-size="18">3.66</text>
+<path d="M59.18 645V673" class="slo"/>
+<text x="18" y="698" font-size="20">#63350 and #63351</text>
+<text x="188.22" y="698" class="soft" font-size="18">48-token window</text>
+<path d="M18 707V735" class="axis"/>
+<path d="M67.33 707V735" class="grid"/>
+<path d="M116.67 707V735" class="grid"/>
+<path d="M166 707V735" class="grid"/>
+<path d="M215.33 707V735" class="grid"/>
+<path d="M264.67 707V735" class="grid"/>
+<path d="M314 707V735" class="grid"/>
+<path d="M18 711H60.05Q63.05 711 63.05 714V728Q63.05 731 60.05 731H18Z" class="g-soft"/>
+<text x="70.05" y="726" class="halo" font-size="18">1.83</text>
+<path d="M59.18 707V735" class="slo"/>
+<path d="M18 735H314" class="axis"/>
+<text x="18" y="758" text-anchor="middle" class="mute" font-size="18">0</text>
+<text x="67.33" y="758" text-anchor="middle" class="mute" font-size="18">2</text>
+<text x="116.67" y="758" text-anchor="middle" class="mute" font-size="18">4</text>
+<text x="166" y="758" text-anchor="middle" class="mute" font-size="18">6</text>
+<text x="215.33" y="758" text-anchor="middle" class="mute" font-size="18">8</text>
+<text x="264.67" y="758" text-anchor="middle" class="mute" font-size="18">10</text>
+<text x="314" y="758" text-anchor="middle" class="mute" font-size="18">12</text>
+<text x="210" y="807" text-anchor="middle">Agents' throughput</text>
+<text x="210" y="832" text-anchor="middle" class="soft" font-size="18">tokens/s, % of the baseline • Higher is better</text>
+<text x="18" y="865" class="mute" font-size="18">RTX 5060 Ti 16 GB</text>
+<text x="18" y="895" font-size="20">Tuned vLLM 0.32</text>
+<text x="174.96" y="895" class="soft" font-size="18">the baseline</text>
+<path d="M18 904V932" class="axis"/>
+<path d="M116.67 904V932" class="grid"/>
+<path d="M215.33 904V932" class="grid"/>
+<path d="M314 904V932" class="grid"/>
+<path d="M18 908H80.22Q83.22 908 83.22 911V925Q83.22 928 80.22 928H18Z" class="g-mid"/>
+<text x="90.22" y="923" class="halo" font-size="18">3,305</text>
+<text x="137.27" y="923" class="soft halo" font-size="18">100%</text>
+<text x="18" y="957" font-size="20">A router</text>
+<text x="96.52" y="957" class="soft" font-size="18">aborts and resubmits</text>
+<path d="M18 966V994" class="axis"/>
+<path d="M116.67 966V994" class="grid"/>
+<path d="M215.33 966V994" class="grid"/>
+<path d="M314 966V994" class="grid"/>
+<path d="M18 970H80.76Q83.76 970 83.76 973V987Q83.76 990 80.76 990H18Z" class="g-mid"/>
+<text x="90.76" y="985" class="halo" font-size="18">3,332</text>
+<text x="137.81" y="985" class="soft halo" font-size="18">101%</text>
+<text x="18" y="1019" font-size="20">#63350 and #63351</text>
+<text x="188.22" y="1019" class="soft" font-size="18">48-token window</text>
+<path d="M18 1028V1056" class="axis"/>
+<path d="M116.67 1028V1056" class="grid"/>
+<path d="M215.33 1028V1056" class="grid"/>
+<path d="M314 1028V1056" class="grid"/>
+<path d="M18 1032H78.2Q81.2 1032 81.2 1035V1049Q81.2 1052 78.2 1052H18Z" class="g-hi"/>
+<text x="88.2" y="1047" class="halo" font-size="18">3,203</text>
+<text x="135.25" y="1047" class="soft halo" font-size="18">97%</text>
+<text x="18" y="1079" class="mute" font-size="18">A100, 512-token steps</text>
+<text x="18" y="1109" font-size="20">Tuned vLLM 0.32</text>
+<text x="174.96" y="1109" class="soft" font-size="18">the box's tuning</text>
+<path d="M18 1118V1146" class="axis"/>
+<path d="M116.67 1118V1146" class="grid"/>
+<path d="M215.33 1118V1146" class="grid"/>
+<path d="M314 1118V1146" class="grid"/>
+<path d="M18 1122H185.35Q188.35 1122 188.35 1125V1139Q188.35 1142 185.35 1142H18Z" class="g-mid"/>
+<text x="195.35" y="1137" class="halo" font-size="18">8,633</text>
+<text x="242.4" y="1137" class="soft halo" font-size="18">100%</text>
+<text x="18" y="1171" font-size="20">#63350 and #63351</text>
+<text x="188.22" y="1171" class="soft" font-size="18">48-token window</text>
+<path d="M18 1180V1208" class="axis"/>
+<path d="M116.67 1180V1208" class="grid"/>
+<path d="M215.33 1180V1208" class="grid"/>
+<path d="M314 1180V1208" class="grid"/>
+<path d="M18 1184H185.72Q188.72 1184 188.72 1187V1201Q188.72 1204 185.72 1204H18Z" class="g-hi"/>
+<text x="195.72" y="1199" class="halo" font-size="18">8,651</text>
+<text x="242.77" y="1199" class="soft halo" font-size="18">100%</text>
+<text x="18" y="1231" class="mute" font-size="18">A100, 2,048-token steps</text>
+<text x="18" y="1261" font-size="20">Tuned vLLM 0.32</text>
+<text x="174.96" y="1261" class="soft" font-size="18">the card's best</text>
+<path d="M18 1270V1298" class="axis"/>
+<path d="M116.67 1270V1298" class="grid"/>
+<path d="M215.33 1270V1298" class="grid"/>
+<path d="M314 1270V1298" class="grid"/>
+<path d="M18 1274H301.85Q304.85 1274 304.85 1277V1291Q304.85 1294 301.85 1294H18Z" class="g-mid"/>
+<text x="311.85" y="1289" class="halo" font-size="18">14,536</text>
+<text x="367.81" y="1289" class="soft halo" font-size="18">100%</text>
+<text x="18" y="1323" font-size="20">#63350 and #63351</text>
+<text x="188.22" y="1323" class="soft" font-size="18">48-token window</text>
+<path d="M18 1332V1360" class="axis"/>
+<path d="M116.67 1332V1360" class="grid"/>
+<path d="M215.33 1332V1360" class="grid"/>
+<path d="M314 1332V1360" class="grid"/>
+<path d="M18 1336H303.79Q306.79 1336 306.79 1339V1353Q306.79 1356 303.79 1356H18Z" class="g-soft"/>
+<text x="313.79" y="1351" class="halo" font-size="18">14,635</text>
+<text x="369.75" y="1351" class="soft halo" font-size="18">101%</text>
+<path d="M18 1360H314" class="axis"/>
+<text x="18" y="1383" text-anchor="middle" class="mute" font-size="18">0</text>
+<text x="116.67" y="1383" text-anchor="middle" class="mute" font-size="18">5,000</text>
+<text x="215.33" y="1383" text-anchor="middle" class="mute" font-size="18">10,000</text>
+<text x="314" y="1383" text-anchor="middle" class="mute" font-size="18">15,000</text>
+</svg>

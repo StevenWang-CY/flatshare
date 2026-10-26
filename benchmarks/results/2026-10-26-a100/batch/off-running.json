@@ -1,0 +1,9 @@
+{
+  "samples": 59,
+  "running_p50": 215.0,
+  "running_max": 256.0,
+  "waiting_max": 73.0,
+  "blocks": 2275,
+  "blocks_needed": 2048,
+  "batch": 256
+}

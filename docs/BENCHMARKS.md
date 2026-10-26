@@ -1,6 +1,6 @@
 # Benchmarks
 
-What has been measured from W1 to W4, on one RTX 5060 Ti 16 GB (sm_120, PCIe Gen3 x8) in Phastform: two Xeon E5-2609 v4 at 1.7 GHz, 188 GiB RAM, vLLM 0.32.0. The numbers come from the frozen box ([`deploy/phastform`](../deploy/phastform)), the `lh-bench` probes and the E2 harness in this repository, run from cyan through the SSH tunnel as the control plane reaches the engine; the make-room probes ran on Gray, the identical second box. Earlier probe numbers are kept only where W1 has not re-measured them, and are marked.
+What has been measured from W1 to W4, on one RTX 5060 Ti 16 GB (sm_120, PCIe Gen3 x8) in Phastform: two Xeon E5-2609 v4 at 1.7 GHz, 188 GiB RAM, vLLM 0.32.0; and on 2026-10-26, on an A100 SXM4 80 GB ([its own section](#the-a100-run-2026-10-26)). The numbers come from the frozen box ([`deploy/phastform`](../deploy/phastform)), the `lh-bench` probes and the E2 harness in this repository, run from cyan through the SSH tunnel as the control plane reaches the engine; the make-room probes ran on Gray, the identical second box. Earlier probe numbers are kept only where W1 has not re-measured them, and are marked.
 
 ## The frozen box
 
@@ -227,7 +227,7 @@ The voice turn by stage (means over each configuration's replies, ms):
 
 ![The voice turn by stage: stock vLLM loses its seconds in the reply's first sentence](figures/e2-waterfall.svg)
 
-The same stages as bars (`make e2-figures`), a row per point of the records: `a1-voice` is voice alone (four runs: its W2 run predates the worker's stage times), `disc-frozen-s24` the frozen box, `a6-reserve2048` the static reservation, `a8c-resubmit` preempt-resubmit, `a9` arm 9 and `pr-ab48` the PRs with a 48-token window. The grey bar is the LLM's first token, from its request.
+The same stages as bars (`make e2-figures`), a row per point of the records: `a1-voice` is voice alone (four runs: its W2 run predates the worker's stage times), `disc-frozen-s24` the frozen box, `a6-reserve2048` the static reservation, `a8c-resubmit` preempt-resubmit, `a9` arm 9 and `pr-ab48` the PRs with a 48-token window. The violet stage is the reply to its first sentence; the LLM's first token, from its request, is in the table above.
 
 What the repeats say:
 - **The change takes the voice tail to the SLO's edge.** With full replies and a 48-token window, the PRs' configuration reaches 2,193 ms (2,168–2,286), 176 ms over the SLO, against the frozen box's 10,138 and preempt-resubmit's 2,591. Arm 9, whose gateway capped every reply at 16 tokens, reaches 2,057 ms: two of its five runs are under the SLO, and its median is 40 ms over it, within one point's spread. No configuration without the change has a run under the SLO; vLLM's queued-token limit refused 48 of its 50 voice turns, which count at the reply timeout.
@@ -650,6 +650,106 @@ Three sequences: the 32× replay; the same admission order with every prompt cut
 - **Scaling changes the timing.** Replayed at original token counts with the box's E0 fit, a cold prefill of a 100k-token prompt is priced at 88 s, and the 10-minute run completes 10 requests. The 32× replay's pacing, and with it its KV pressure and π, is a property of the scaling. So E1 states its results in the regime coordinates (KV pressure, π, ρ), and other hardware is placed on that map from cost fits built from published specifications, labeled as modeled ([below](../crates/lh-sim/README.md#other-hardware-modeled)).
 - **Prefixes stay whole.** LRU's per-block and per-prefix ratios are equal: tail-first eviction never leaves a hole in a cached prefix. MIN's are equal to three decimals.
 - **Headroom.** At the pool's size MIN misses 22.9% of prompt tokens where LRU misses 35.6%. MIN is down to the cold misses (4.1%) at four times the pool, LRU at eight.
+
+## The A100 run (2026-10-26)
+
+An A100 SXM4 80 GB on Google Colab (12 vCPUs of a 2.20 GHz Cascade Lake Xeon, whose PCIe 3.0 root ports set the link to
+host memory), the release's kit ([HARDWARE.md](HARDWARE.md#the-a100-run)): E2's core like for like, the box's model at
+its revision, its 5 GiB pool, 512/256 and 20 GiB CPU tier, 24 sessions of the long traces and two callers, W5's arm
+files and samples of the agents; only the card, its precision path (Marlin's W8A16, no FP8 units) and the host change.
+Records: [`benchmarks/results/2026-10-26-a100`](../benchmarks/results/2026-10-26-a100/README.md); the analysis against
+the forecast written before the run is its `a100.md`.
+
+**E2, by round.** The V2V p95 (ms) and the agents' tokens a second over the calls' first 240 s, each round on W5's
+sample of the agents for its number; voice alone sets the SLO at 1,419 + 250 = 1,669 ms. No turn of the 750 failed.
+
+| Agents' sample (seed) | Voice alone | Frozen, the box's 512/256 | The PRs' values | The PRs' tokens/s, of frozen's |
+|---|---:|---:|---:|---:|
+| 11 | 1,445 | 4,163 / 10,749 | 1,663 / 10,125 | 94% |
+| 12 | 1,414 | 4,783 / 9,820 | 1,658 / 10,851 | 111% |
+| 13 | 1,419 | 4,986 / 8,398 | 1,611 / 8,025 | 96% |
+| 14 | 1,391 | 5,169 / 8,633 | 1,634 / 8,651 | 100% |
+| 15 | 1,424 | 5,710 / 8,312 | 1,609 / 7,922 | 95% |
+| Median | 1,419 | 4,986 / 8,633 | 1,634 / 8,651 | 96% |
+
+- **Every round under the SLO with the PRs' values**, by 6 to 60 ms; frozen 2.5 to 4.0 s over. The agents' whole-call
+  tokens/s with the PRs' values were 95–103% of frozen's round by round, and their TTFT p50 moved by −1.2 to +1.9 s
+  (frozen's 5.8–18.9 s across the rounds, p99 22–38 s).
+- **Less of a squeeze than the box's.** Two calls found KV short (the measured running share) 4–9% of the time beside
+  frozen and 2–7% beside the PRs' values, against the box's 17% in W5 and the forecast's 10% [modeled]; frozen preempted
+  29–75 agent requests a point, the PRs' values 31–78.
+
+**At vLLM's default 2,048/0**, the card's best stock cap in the probes, on rounds 1 and 2's samples: tuned vLLM, then
+the PRs' values at that cap (arm 8), the V2V p95 (ms) / the agents' tokens a second over the calls' first 240 s, with
+the LLM's first token at p95 from the voice worker beside the 512/256 points':
+
+| Agents' sample (seed) | Tuned vLLM, 2,048/0 | The PRs' values, 2,048/0 | Of tuned's tokens/s | LLM first token p95: 2,048/0 PRs, 512/256 PRs |
+|---|---:|---:|---:|---:|
+| 11 | 4,036 / 15,082 | 1,810 / 15,124 | 100% | 412 ms, 183 ms |
+| 12 | 3,289 / 13,990 | 1,843 / 14,145 | 101% | 414 ms, 216 ms |
+
+No turn of the 200 failed. Tuned vLLM made 1.40 and 1.42 times the agents' tokens of the 512/256 points on the same
+samples, its TTFT p50 1.0 and 2.0 s against frozen's 6.5 and 5.8 s; the PRs' values at 2,048/0 kept them all, 141 and
+174 ms over the SLO, the rest of their tail the LLM's first token behind the larger steps in flight.
+
+**A', 32 sessions at the box's pool** (round 1, seed 11; one point a configuration):
+
+| Configuration | V2V p95 | Agents' tokens/s, first 240 s | Agents' TTFT p50 / p99 | Preemptions | Running share |
+|---|---:|---:|---:|---:|---:|
+| Frozen, the box's 512/256 | 5,222 ms | 8,649 | 24.5 / 55.8 s | 57 | 6.5% |
+| The PRs' values | **1,617 ms** | 8,487 (98%) | 25.9 / 52.3 s | 65 | 6.5% |
+
+No turn of the 100 failed. With 24 sessions on the same sample the agents made 10,749 and 10,125 tokens a second; the
+forecast placed 32 sessions at a running share of 18% (fitted: 15%) [modeled].
+
+**The probes** (blocks 1 to 3; each run's numbers in `a100.md`): the KV case's wait on stock vLLM 1,721–1,750 ms at
+512/256 and 1,620–1,645 ms at vLLM's default 2,048/0, and the first token with the PRs' values 150–176 ms; the prefill
+case's token gap, 1st to 16th, 32 ms on stock vLLM and 7 ms with the PRs' values; the calls' first-token p95 beside 12
+agents 3,102–3,126 ms at 512/256, 2,518–2,535 ms at 2,048/0, 3,446–3,687 ms at 1,536/768 and 167–179 ms with the PRs'
+values, over 57–75 turns a run, none failed. With FlashInfer's attention in place of FlashAttention 2 (the backend
+arm, after the core), the KV case's wait on stock vLLM at 512/256 was 1,580–1,607 ms, 8% shorter at the median.
+
+**E0** (block 1, 3 repetitions, p50 in ms):
+
+| Prompt tokens | Recomputed | GPU hit | Restored from host RAM |
+|---|---:|---:|---:|
+| 1,024 | 64 | 18 | 32 |
+| 2,048 | 128 | 21 | 49 |
+| 4,096 | 269 | 25 | 81 |
+| 8,192 | 602 | 32 | 139 |
+| 16,384 | **1,471** | **46** | **268** |
+| 24,576 | 2,607 | 61 | 379 |
+| 31,744 | 3,825 | 75 | 483 |
+
+Fitted: a GPU hit 17 ms + 1.80 µs/token, a CPU restore 2.8 ms + 12.9 µs/token over it (11.5 GB/s of KV), a recompute 4.2
+ms + 56.5 µs/token + 2.01 ns/token². Restoring beats recomputing from 1,024 tokens.
+
+**The step model** (the calibration point: AIPerf's replay of the whole corpus at 16 sessions, 709 requests, fitted with
+`crates/lh-sim/scripts/fit_step_cost.py` and E0): a step's fixed cost 4.5 ms, 41.36 µs a token, 4.07 ns a token pair,
+171.9 ns a KV token read; the forecast's 3.88 ms, 41.33 µs, 2.59 ns and 94.3 ns. It reproduces the point's 18,380 decode
+steps to −3.0% at the median (p10/p90 −8.6/+8.0%).
+
+**The scheduler at a batch of 256** (`batch.sh`: `vllm bench serve` keeping 26 requests at priority 0 and 230 at
+priority 2 in flight, 48 prompt and 64 output tokens each, so that all 256 hold their KV at once; one run an engine):
+
+| Engine | Output tokens/s | Priority 0: TTFT p50 / p99 | Priority 0: TPOT p50 | Priority 2: TTFT p50 / p99 | Priority 2: TPOT p50 | Running p50 / max |
+|---|---:|---:|---:|---:|---:|---:|
+| vLLM 0.32.0 (frozen) | 7,524 | 166 / 574 ms | 28.6 ms | 341 / 1,086 ms | 29.1 ms | 201 / 254 |
+| make-room, its switches off | 7,661 | 133 / 510 ms | 30.9 ms | 214 / 1,212 ms | 30.8 ms | 215 / 256 |
+| make-room, the PRs' values | 8,672 | 90 / 177 ms | 6.9 ms | 283 / 7,971 ms | 28.6 ms | 154 / 230 |
+
+- **The code path costs nothing at the batch.** With its switches off make-room schedules as vLLM does, and it made
+  1.018 of vLLM's output tokens a second, with more requests running at once (215 at the median against 201), which is
+  also why each one's TPOT is longer.
+- **The PRs' values turn the priorities' latencies around.** The priority 0 requests' first tokens come 3.2 times as
+  soon at p99 and their tokens 4.1 times as fast, since #63351 keeps priority 2 prefill out of their first 48 tokens'
+  steps; closed loop at a concurrency of 26, the priority 0 client then completes its requests at 2.8 times the rate,
+  and the engine makes 1.153 of vLLM's tokens a second. The priority 2 requests pay at their tail: TTFT p99 7.3 times
+  frozen's, its median lower, as a steady stream of priority 0 first tokens holds their prefill back.
+
+**The host** (`bench_host.py`): Python's fixed workload 227 ms at the median (the box's 381); pinned host memory to the
+card 10.08 GB/s at the CPU tier's 32 KiB pages, 11.09 at 64 KiB, 12.28 at a 16-block page of 2,304 KiB and 12.32 in one
+copy (the box's 5.44, 6.03, 6.74, 6.76), and back to the host 10.61, 11.62, 12.80 and 12.86.
 
 ## Failure drills
 

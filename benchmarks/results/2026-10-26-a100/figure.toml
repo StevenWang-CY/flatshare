@@ -1,0 +1,60 @@
+# The README's chart of both GPUs, docs/figures/e2-voice-p95-gpus.svg and its phone layout (make e2-gpus-figure): the
+# discriminating scenario's configurations on the box, from W5's records, and on the A100, from this run's, in groups
+# that each pair their rows on the same samples of the agents: the box's in W5's rounds; the A100's at the box's
+# 512-token steps in the core's five rounds; and at vLLM's default 2,048-token steps, the card's best stock cap, in
+# the two rounds of tuned vLLM and the PRs' values at that cap (the core's first two samples). Each group is read
+# against its card's voice alone's SLO, with the agents' throughput as a share of its first row's. The A100 ran the
+# box's own arm files, so each group names the GPU its points ran on. Rows as in W5's figure.toml: `change` marks the
+# rows that run the two PRs' rules, `featured` each card's configuration to deploy, `note` a row's second line.
+
+[[group]]
+title = "RTX 5060 Ti 16 GB"
+gpu = "RTX 5060 Ti"
+
+[[group.row]]
+point = "w5-disc-frozen-s24"
+label = "Tuned vLLM 0.32"
+note = "the baseline"
+
+[[group.row]]
+point = "w5-disc-a8c-resubmit-s24"
+label = "A router"
+note = "aborts and resubmits"
+
+[[group.row]]
+point = "w5-disc-pr-ab48-s24"
+label = "#63350 and #63351"
+note = "48-token window"
+change = true
+featured = true
+
+[[group]]
+title = "A100, 512-token steps"
+gpu = "A100-SXM4-80GB"
+
+[[group.row]]
+point = "w5-disc-frozen-s24"
+label = "Tuned vLLM 0.32"
+note = "the box's tuning"
+
+[[group.row]]
+point = "w5-disc-pr-ab48-s24"
+label = "#63350 and #63351"
+note = "48-token window"
+change = true
+featured = true
+
+[[group]]
+title = "A100, 2,048-token steps"
+gpu = "A100-SXM4-80GB"
+
+[[group.row]]
+point = "a100-tuned-s24"
+label = "Tuned vLLM 0.32"
+note = "the card's best"
+
+[[group.row]]
+point = "a100-pr-ab48-2048-s24"
+label = "#63350 and #63351"
+note = "48-token window"
+change = true
