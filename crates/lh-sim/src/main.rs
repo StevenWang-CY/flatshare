@@ -12,7 +12,7 @@ use lh_sim::aiperf::{ConvKind, PlanOptions, reference};
 use lh_sim::corpus::Corpus;
 use lh_sim::engine::Engine;
 use lh_sim::forecast;
-use lh_sim::hardware::{self, Gpu};
+use lh_sim::hardware::{self, Gpu, Host};
 use lh_sim::replay::{Pauses, ReplayConfig, Service};
 use lh_sim::replay_log;
 use lh_sim::run::{self, Arm, ArmResult, RunConfig};
@@ -183,19 +183,21 @@ impl CostArgs {
     }
 
     fn cost(&self) -> Result<TierCost, String> {
-        let mut cost = match &self.costs {
-            Some(path) => {
-                let text = std::fs::read_to_string(path)
-                    .map_err(|e| format!("{}: {e}", path.display()))?;
-                TierCost::from_e0_summary(&text).map_err(|e| format!("{}: {e}", path.display()))?
-            }
-            None => TierCost::frozen_box(),
-        };
+        let mut cost = tier_cost(self.costs.as_deref())?;
         if let Some(itl) = self.itl_ms {
             cost = cost.with_inter_token_ms(itl);
         }
         Ok(cost)
     }
+}
+
+/// The E0 tier fits in `path`, or the frozen box's.
+fn tier_cost(path: Option<&Path>) -> Result<TierCost, String> {
+    let Some(path) = path else {
+        return Ok(TierCost::frozen_box());
+    };
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    TierCost::from_e0_summary(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// The step-time model in `path`, or the frozen box's.
@@ -205,6 +207,12 @@ fn step_cost(path: Option<&Path>) -> Result<StepCost, String> {
     };
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The host in `path`, the host.json bench_host.py writes.
+fn read_host(path: &Path) -> Result<Host, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    Host::from_bench_host(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 #[derive(Args)]
@@ -338,7 +346,8 @@ struct HardwareArgs {
     /// --token-scale scales no pool: each GPU has its own.
     #[command(flatten)]
     replay: ReplayArgs,
-    /// GPUs: rtx-5060-ti (the frozen box, measured), l4, a100-40gb and h100-sxm (modeled).
+    /// GPUs: rtx-5060-ti (the frozen box, measured), l4, a100-40gb and h100-sxm (modeled), and
+    /// a100-80gb (modeled), which the map leaves out.
     #[arg(
         long,
         value_delimiter = ',',
@@ -385,7 +394,7 @@ struct ForecastArgs {
     /// E2's discriminating corpus, the 48 traces of the 32x corpus with the largest contexts
     /// (`benchmarks/e2/long_traces.py` links them).
     long: PathBuf,
-    /// The GPU.
+    /// The GPU: a100-40gb, or a100-80gb (the A100 SXM4 80 GB, which the A100 run drew).
     #[arg(long, default_value = "a100-40gb")]
     gpu: Gpu,
     /// Seeds: E2's five rounds replay agent seeds 11 to 15.
@@ -394,6 +403,27 @@ struct ForecastArgs {
     /// Profiling duration of each cell's replay, in seconds.
     #[arg(long, default_value_t = 600.0)]
     duration: f64,
+    /// The card's E0 tier fits, read as `run` reads them: with --step-costs, the report adds the
+    /// calibration point and the core at the box's pool with the card's fitted costs.
+    #[arg(long, requires = "step_costs")]
+    costs: Option<PathBuf>,
+    /// The card's step-time model, read as `run` reads it (scripts/fit_step_cost.py writes it);
+    /// with --costs.
+    #[arg(long, requires = "costs")]
+    step_costs: Option<PathBuf>,
+    /// Session counts of the core with the fitted costs.
+    #[arg(
+        long,
+        value_delimiter = ',',
+        default_value = "24,28,32,36,40",
+        requires = "costs"
+    )]
+    fitted_sessions: Vec<usize>,
+    /// The host the card runs on: the host.json benchmarks/a100/bench_host.py writes there. The
+    /// card's cells take the API server's time from its CPU and the restores from its link, and the
+    /// costs tables add the card's costs on it.
+    #[arg(long)]
+    host: Option<PathBuf>,
     /// Cells to run at once. Default: the machine's cores.
     #[arg(long)]
     jobs: Option<usize>,
@@ -877,8 +907,31 @@ fn hardware(args: HardwareArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// The last component of `path`, as the report names a file.
+fn file_name(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
 fn forecast(args: ForecastArgs) -> Result<(), String> {
-    let cells = forecast::cells(&args.gpu);
+    let host = args.host.as_deref().map(read_host).transpose()?;
+    let mut cells = forecast::cells(&args.gpu, host.as_ref());
+    let modeled = cells.len();
+    // The card's fitted costs, which clap takes both or neither of; their cells follow the modeled.
+    let sources = args.costs.as_deref().zip(args.step_costs.as_deref());
+    if let Some((summary, steps)) = sources {
+        let costs = forecast::Costs {
+            steps: step_cost(Some(steps))?,
+            tier: tier_cost(Some(summary))?,
+        };
+        cells.extend(forecast::fitted_cells(
+            &args.gpu,
+            &costs,
+            &args.fitted_sessions,
+        ));
+    }
     let jobs = args.jobs.unwrap_or_else(|| {
         std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
     });
@@ -896,7 +949,26 @@ fn forecast(args: ForecastArgs) -> Result<(), String> {
         &args.seeds,
         jobs,
     )?;
-    let report = forecast::report(&args.gpu, &cells, &placed, &args.seeds);
+    let names = sources.map(|(summary, steps)| (file_name(summary), file_name(steps)));
+    let fitted = names.as_ref().map(|(summary, steps)| forecast::Fitted {
+        summary,
+        steps,
+        cells: &cells[modeled..],
+        placed: &placed[modeled..],
+    });
+    let host_file = args.host.as_deref().map(file_name);
+    let on_host = host
+        .as_ref()
+        .zip(host_file.as_deref())
+        .map(|(host, file)| forecast::OnHost { host, file });
+    let report = forecast::report(
+        &args.gpu,
+        on_host.as_ref(),
+        &cells[..modeled],
+        &placed[..modeled],
+        &args.seeds,
+        fitted.as_ref(),
+    );
     print!("{report}");
     eprintln!(
         "{} cells x {} seeds in {:.1} s on {jobs} threads",
@@ -1096,6 +1168,104 @@ mod tests {
         );
         assert!(parse(&["forecast", "WHOLE"]).is_err());
         assert!(parse(&["forecast", "WHOLE", "LONG", "--gpu", "a100"]).is_err());
+        // The A100 80 GB SXM4, the card the run drew, by name.
+        match parse(&["forecast", "WHOLE", "LONG", "--gpu", "a100-80gb"])
+            .unwrap()
+            .command
+        {
+            Command::Forecast(f) => assert_eq!(f.gpu, hardware::A100_80GB),
+            _ => panic!("not the forecast command"),
+        }
+    }
+
+    #[test]
+    fn forecast_takes_the_cards_fitted_costs_both_or_neither() {
+        let forecast = |args: &[&str]| match parse(args).unwrap().command {
+            Command::Forecast(f) => f,
+            _ => panic!("not the forecast command"),
+        };
+        // By default neither, and the core's counts from 24 sessions to 40 for when they are given.
+        let d = forecast(&["forecast", "WHOLE", "LONG"]);
+        assert_eq!((d.costs, d.step_costs), (None, None));
+        assert_eq!(d.fitted_sessions, [24, 28, 32, 36, 40]);
+        let f = forecast(&[
+            "forecast",
+            "WHOLE",
+            "LONG",
+            "--costs",
+            "E0",
+            "--step-costs",
+            "STEPS",
+            "--fitted-sessions",
+            "24,30",
+        ]);
+        assert_eq!(
+            (f.costs, f.step_costs, f.fitted_sessions),
+            (
+                Some(PathBuf::from("E0")),
+                Some(PathBuf::from("STEPS")),
+                vec![24, 30]
+            )
+        );
+        // One without the other is refused, and so are session counts without the costs.
+        for args in [
+            &["--costs", "E0"][..],
+            &["--step-costs", "STEPS"],
+            &["--fitted-sessions", "32"],
+            &["--fitted-sessions", "32", "--costs", "E0"],
+        ] {
+            let all: Vec<&str> = ["forecast", "WHOLE", "LONG"]
+                .iter()
+                .chain(args)
+                .copied()
+                .collect();
+            assert!(parse(&all).is_err(), "{args:?}");
+        }
+        // A file that cannot be read is named in the error; the report names each file by its own
+        // name.
+        let e = tier_cost(Some(Path::new("no-such-summary.json"))).unwrap_err();
+        assert!(e.starts_with("no-such-summary.json: "), "{e}");
+        assert_eq!(file_name(Path::new("runs/a100/steps.json")), "steps.json");
+    }
+
+    #[test]
+    fn forecast_takes_a_host_and_names_a_file_it_refuses() {
+        let forecast = |args: &[&str]| match parse(args).unwrap().command {
+            Command::Forecast(f) => f,
+            _ => panic!("not the forecast command"),
+        };
+        // None by default: the box's CPU and the card's datasheet link. One goes with the fitted
+        // costs too.
+        assert_eq!(forecast(&["forecast", "WHOLE", "LONG"]).host, None);
+        let f = forecast(&[
+            "forecast",
+            "WHOLE",
+            "LONG",
+            "--host",
+            "host.json",
+            "--costs",
+            "E0",
+            "--step-costs",
+            "STEPS",
+        ]);
+        assert_eq!(
+            (f.host, f.costs),
+            (Some(PathBuf::from("host.json")), Some(PathBuf::from("E0")))
+        );
+        // The box's own reads back; one that cannot be read, or holds no host, is named.
+        let testdata = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        let b = read_host(&testdata.join("box-host.json")).unwrap();
+        assert_eq!(
+            (b.python_ms, b.h2d_gb_per_s),
+            (hardware::BOX_PYTHON_MS, hardware::BOX_H2D_GB_PER_S)
+        );
+        let e = read_host(Path::new("no-such-host.json")).unwrap_err();
+        assert!(e.starts_with("no-such-host.json: "), "{e}");
+        let plan = testdata.join("aiperf-0.13.0-sub16.json");
+        assert_eq!(
+            read_host(&plan).unwrap_err(),
+            format!("{}: python_ms.p50 is missing", plan.display())
+        );
     }
 
     #[test]

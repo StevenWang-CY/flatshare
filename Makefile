@@ -18,11 +18,19 @@ E2_REPORT ?= build/reproduce-e2
 # W5's re-measure, whose report reads its own voice-alone runs for the SLO.
 E2_W5_RESULTS := benchmarks/results/2026-10-24-e2-w5
 E2_W5_REPORT ?= build/reproduce-e2-w5
+# The A100 run's E2 points (benchmarks/a100/run.sh on Google Colab, 2026-10-26), under e2/ beside its other records:
+# the core's five rounds, and tuned vLLM's two and the PRs' values' at its step cap, which pair with the core's first two:
+# the paired design reproduce-e2-a100 reports. A' (32 sessions) is a workload of its own, which make reproduce-a100
+# reports from the raw records.
+E2_A100_RESULTS := benchmarks/results/2026-10-26-a100
+E2_A100_POINTS = $(wildcard $(foreach c,a100-r a100-tuned-r a100-prtuned-r,$(E2_A100_RESULTS)/e2/$(c)[0-9]/*/run.json))
+E2_A100_REPORT ?= build/reproduce-e2-a100
 
 .PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-make-room test-trace test-make-room-ci \
   test-python schema metrics \
-  reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 e2-figures e2-w5-figure forecast-a100 profiles \
-  reproduce-a100 check-a100-calibration
+  reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 reproduce-e2-a100 figures e2-figures e2-w5-figure \
+  e2-gpus-figure method-figure \
+  demo-video forecast-a100 forecast-fitted profiles reproduce-a100 check-a100-calibration
 
 check: lint test
 
@@ -153,16 +161,42 @@ reproduce-e1:
 	@ls $(E1_REPORT)/*.md
 
 # The A100 run's forecast, benchmarks/a100/forecast.md, from the 32x corpus (outside the repository) and its 48
-# traces with the largest contexts, E2's discriminating corpus, which long_traces.py links into FORECAST_LONG. Usage:
-# make forecast-a100 CORPUS=<the 32x corpus directory>.
+# traces with the largest contexts, E2's discriminating corpus, which long_traces.py links into FORECAST_LONG. GPU names
+# the card (lh-sim's profile): GPU=a100-80gb writes benchmarks/a100/forecast-80gb.md, for the A100 SXM4 80 GB, which
+# analysis.py reads for records whose card is one. HOST_JSON, the host.json benchmarks/a100/bench_host.py writes on
+# the card's host, places the card there (lh-sim forecast --host) and writes the forecast beside the one made before
+# the run, with -on-host in its name, so that one stays as it was. Usage: make forecast-a100 CORPUS=<the 32x corpus
+# directory> [GPU=a100-80gb] [HOST_JSON=<host.json>].
 FORECAST_LONG ?= build/weka-x32-long
+GPU ?= a100-40gb
+FORECAST_MD = benchmarks/a100/forecast$(if $(filter-out a100-40gb,$(GPU)),-$(GPU:a100-%=%))$(if $(HOST_JSON),-on-host).md
 forecast-a100:
-	@test -n "$(CORPUS)" || { echo "usage: make forecast-a100 CORPUS=<the 32x corpus directory>" >&2; exit 2; }
+	@test -n "$(CORPUS)" || { echo "usage: make forecast-a100 CORPUS=<the 32x corpus directory> [GPU=a100-80gb] [HOST_JSON=<host.json>]" >&2; exit 2; }
 	cargo build --release --locked -p lh-sim
 	uv run -q --no-project python benchmarks/e2/long_traces.py $(CORPUS) $(FORECAST_LONG) 48 >/dev/null
 	@mkdir -p benchmarks/a100
-	$(E1_SIM) forecast $(CORPUS) $(FORECAST_LONG) --gpu a100-40gb --markdown benchmarks/a100/forecast.md >/dev/null
-	@ls benchmarks/a100/forecast.md
+	$(E1_SIM) forecast $(CORPUS) $(FORECAST_LONG) --gpu $(GPU) $(if $(HOST_JSON),--host $(HOST_JSON)) --markdown $(FORECAST_MD) \
+	  >/dev/null
+	@ls $(FORECAST_MD)
+
+# The same forecast with a section on the card's fitted costs, into OUT: the card's E0 summary.json (COSTS; the
+# records' runs/a100/block1/frozen-e0/summary.json) and the step-time model fit_step_cost.py fits on its calibration
+# point (STEPS; make reproduce-a100 writes it to build/reproduce-a100/steps.json) place the calibration point and the
+# core at the box's pool at 24 to 40 sessions, and the section names the count whose running share is closest to the
+# box's in the core. GPU is the A100 SXM4 80 GB here unless it names another card, and HOST_JSON places it on its
+# host as for forecast-a100. Usage: make forecast-fitted CORPUS=<the 32x corpus directory> COSTS=<E0's summary.json>
+# STEPS=<steps.json> [GPU=a100-80gb] [HOST_JSON=<host.json>] [OUT=build/forecast-fitted.md].
+forecast-fitted: GPU = a100-80gb
+forecast-fitted: OUT = build/forecast-fitted.md
+forecast-fitted:
+	@test -n "$(CORPUS)" -a -n "$(COSTS)" -a -n "$(STEPS)" || \
+	  { echo "usage: make forecast-fitted CORPUS=<the 32x corpus directory> COSTS=<E0's summary.json> STEPS=<steps.json> [GPU=a100-80gb] [HOST_JSON=<host.json>] [OUT=build/forecast-fitted.md]" >&2; exit 2; }
+	cargo build --release --locked -p lh-sim
+	uv run -q --no-project python benchmarks/e2/long_traces.py $(CORPUS) $(FORECAST_LONG) 48 >/dev/null
+	@mkdir -p $(dir $(OUT))
+	$(E1_SIM) forecast $(CORPUS) $(FORECAST_LONG) --gpu $(GPU) --costs $(COSTS) --step-costs $(STEPS) \
+	  $(if $(HOST_JSON),--host $(HOST_JSON)) --markdown $(OUT) >/dev/null
+	@ls $(OUT)
 
 # The A100 run's analysis (benchmarks/a100/analysis.py; docs/HARDWARE.md, the analysis) from a single host's records
 # as deploy/a100/pull.sh copies them, and the 32x corpus, into build/reproduce-a100/a100.md, with the bench venv for
@@ -207,8 +241,15 @@ reproduce-e2:
 reproduce-e2-w5:
 	@$(MAKE) --no-print-directory reproduce-e2 E2_RESULTS=$(E2_W5_RESULTS) E2_REPORT=$(E2_W5_REPORT)
 
+# The same of the A100's core, tuned vLLM and the PRs' values at its step cap, from the A100 run's records
+# (benchmarks/results/2026-10-26-a100).
+reproduce-e2-a100:
+	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
+	  $(abspath $(dir $(E2_A100_POINTS))) --out $(abspath $(E2_A100_REPORT))
+
 # E2's figures in the docs, docs/figures/e2-frontier.svg and e2-waterfall.svg, from the records of the configurations an
-# operator could deploy (the ablations left out), each with all its runs. The demo GIF beside them is demo.py's.
+# operator could deploy (the ablations left out), each with all its runs. The README's animation is demo.py's
+# (demo-video).
 E2_DEPLOYABLE := a1-voice disc-frozen-s24 disc-a4-b1024-t0-s24 disc-a6-reserve2048-s24 disc-a7b-sglang-hicache-s24 \
   disc-a8c-resubmit-s24 disc-a9-s24 disc-pr-ab48-s24
 E2_STAGES := a1-voice disc-frozen-s24 disc-a6-reserve2048-s24 disc-a8c-resubmit-s24 disc-a9-s24 disc-pr-ab48-s24
@@ -220,14 +261,51 @@ e2-figures:
 	cp build/e2-figures/frontier-weka-x32-long.svg docs/figures/e2-frontier.svg
 	cp build/e2-figures/waterfall.svg docs/figures/e2-waterfall.svg
 
-# The README's figure, docs/figures/e2-voice-p95.svg, from W5's records: the configurations figure.toml names, each run
-# in the same rounds over the same five samples of the agents' traces.
+# The README's chart, docs/figures/e2-voice-p95.svg and its phone layout e2-voice-p95-narrow.svg, from W5's records:
+# the configurations figure.toml names, each run in the same rounds over the same five samples of the agents' traces.
 e2-w5-figure:
 	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
 	  $(abspath $(dir $(wildcard $(E2_W5_RESULTS)/*/*/run.json))) \
 	  --dots $(abspath $(E2_W5_RESULTS)/figure.toml) --out $(abspath build/e2-w5-figure) >/dev/null
 	@mkdir -p docs/figures
 	cp build/e2-w5-figure/voice-p95.svg docs/figures/e2-voice-p95.svg
+	cp build/e2-w5-figure/voice-p95-narrow.svg docs/figures/e2-voice-p95-narrow.svg
+
+# The README's chart of both GPUs, docs/figures/e2-voice-p95-gpus.svg and its phone layout e2-voice-p95-gpus-narrow.svg:
+# the rows the A100 run's figure.toml names, W5's from the box's records and the A100's from its own, each group
+# against its own voice alone's SLO (the A100 ran the box's arm files, so each group names the GPU its points ran on).
+e2-gpus-figure:
+	@cd python/leaseholder_bench && uv run -q lh-bench e2 report \
+	  $(abspath $(dir $(wildcard $(E2_W5_RESULTS)/*/*/run.json) $(E2_A100_POINTS))) \
+	  --dots $(abspath $(E2_A100_RESULTS)/figure.toml) --out $(abspath build/e2-gpus-figure) >/dev/null
+	@mkdir -p docs/figures
+	cp build/e2-gpus-figure/voice-p95.svg docs/figures/e2-voice-p95-gpus.svg
+	cp build/e2-gpus-figure/voice-p95-narrow.svg docs/figures/e2-voice-p95-gpus-narrow.svg
+
+# The README's method figure, docs/figures/method.svg and its phone layout method-narrow.svg: the voice agent and the
+# coding agents on one GPU, and the two scheduler rules of #63350 and #63351, drawn by leaseholder_bench.diagrams.
+method-figure:
+	cd python/leaseholder_bench && uv run -q python -m leaseholder_bench.diagrams $(abspath docs/figures)
+
+# Every figure under docs/figures that its records or its code draw; the bench's tests check each is current.
+figures: e2-figures e2-w5-figure e2-gpus-figure method-figure
+
+# The demo video, DEMO_OUT, and the README's animation, docs/figures/e2-demo.webp with its dark theme and its phone
+# layout (e2-demo-dark.webp, e2-demo-narrow.webp, e2-demo-narrow-dark.webp), from the calls that demo.campaign's two
+# points saved (the v1.0 release's leaseholder-raw-records-demo.tar.gz has them): make demo-video DEMO=<the directory
+# of DEMO_POINTS>. demo.py draws them (benchmarks/e2/README.md, The demo video) with the names the README's chart gives
+# the two configurations, W5's report for the SLO and the closing card, and the A100's (reproduce-e2-a100's, committed
+# as its report/) for the card's second group: the same two configurations on the A100.
+DEMO_POINTS := w5-disc-frozen-s24 w5-disc-pr-ab48-s24
+DEMO_OUT ?= build/leaseholder-demo.mp4
+demo-video:
+	@test -n "$(DEMO)" || { echo "make demo-video DEMO=<the directory of $(DEMO_POINTS)>" >&2; exit 2; }
+	@mkdir -p $(dir $(DEMO_OUT)) docs/figures
+	uv run -q benchmarks/e2/demo.py $(addprefix $(abspath $(DEMO))/,$(DEMO_POINTS)) \
+	  --labels "Tuned vLLM 0.32" "#63350 and #63351" --summary $(E2_W5_RESULTS)/report/frontier.csv \
+	  --also $(E2_A100_RESULTS)/report/frontier.csv \
+	  --heading "A voice agent and coding agents on one GPU" --turns 10 --out $(DEMO_OUT) \
+	  --excerpt docs/figures/e2-demo
 
 # The frozen box's hardware profile against deploy/phastform (deploy/profile.py): `make profiles` checks that it
 # renders today's files byte for byte, and `make profiles UPDATE=1` writes them from deploy/templates after a

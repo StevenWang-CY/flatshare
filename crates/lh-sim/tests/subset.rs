@@ -4,8 +4,11 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use lh_core::{FROZEN_BOX_POOL_TOKENS, KvGeometry, PromptSources, TierCapacity};
+use lh_core::{
+    FROZEN_BOX_POOL_TOKENS, KvGeometry, PromptSources, StepCost, TierCapacity, TierCost,
+};
 use lh_sim::aiperf::{PlanOptions, reference};
 use lh_sim::corpus::Corpus;
 use lh_sim::engine::Engine;
@@ -294,7 +297,7 @@ fn the_forecast_places_its_cells_as_run_places_them() {
         duration_s: 120.0,
         ..ReplayConfig::default()
     };
-    let cells = forecast::cells(&A100_40GB);
+    let cells = forecast::cells(&A100_40GB, None);
     // The core's three cells and the calibration point's two, on the subset as both corpora.
     let cells = &cells[..5];
     let placed = forecast::place(
@@ -326,7 +329,7 @@ fn the_forecast_places_its_cells_as_run_places_them() {
     let (b, a) = (&placed[0], &placed[2]);
     assert!(a.busy < b.busy, "{} vs {}", a.busy, b.busy);
     assert!(a.resume_p90_ms <= b.resume_p90_ms);
-    let report = forecast::report(&A100_40GB, cells, &placed, &[11]);
+    let report = forecast::report(&A100_40GB, None, cells, &placed, &[11], None);
     for heading in [
         "# Forecast: the A100 40 GB against the frozen box",
         "## Step and tier costs, Qwen3-4B-Instruct-2507-FP8",
@@ -339,6 +342,173 @@ fn the_forecast_places_its_cells_as_run_places_them() {
         assert!(report.contains(heading), "{heading}\n{report}");
     }
     assert!(report.contains("| A: the core, the box's pool | RTX 5060 Ti 16 GB (measured) | 24 |"));
+}
+
+/// `lh-sim forecast` for the A100 80 GB with `args`, on the subset as both corpora at seed 11 in
+/// 120 s replays: the report it prints.
+fn forecast_on_subset(args: &[&str]) -> String {
+    let traces = testdata("weka-x32-sub16");
+    let out = Command::new(env!("CARGO_BIN_EXE_lh-sim"))
+        .arg("forecast")
+        .args([&traces, &traces])
+        .args(["--gpu", "a100-80gb", "--seeds", "11", "--duration", "120"])
+        .args(["--jobs", "2"])
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// `testdata/forecast-a100-80gb-sub16.md` is that report as `lh-sim forecast` wrote it before it
+/// took a card's fitted costs (`lh-sim forecast testdata/weka-x32-sub16 testdata/weka-x32-sub16
+/// --gpu a100-80gb --seeds 11 --duration 120 --markdown testdata/forecast-a100-80gb-sub16.md`
+/// rewrites it).
+#[test]
+fn the_forecast_is_unchanged_without_fitted_costs_and_the_boxs_own_give_its_rows() {
+    let golden = std::fs::read_to_string(testdata("forecast-a100-80gb-sub16.md")).unwrap();
+    assert_eq!(forecast_on_subset(&[]), golden);
+    // The box's own costs as the card's fitted ones: its E0 fits as `lh-bench tiers` writes them,
+    // and its step-time model as fit_step_cost.py does.
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    let (summary, steps) = (dir.join("box-e0-summary.json"), dir.join("box-steps.json"));
+    let tier = TierCost::frozen_box();
+    let fits = json!({"fits": {
+        "gpu": tier.gpu_hit,
+        "cpu_over_gpu": tier.cpu_restore,
+        "recompute": tier.recompute,
+    }});
+    std::fs::write(&summary, fits.to_string()).unwrap();
+    std::fs::write(&steps, json!(StepCost::frozen_box()).to_string()).unwrap();
+    let report = forecast_on_subset(&[
+        "--costs",
+        summary.to_str().unwrap(),
+        "--step-costs",
+        steps.to_str().unwrap(),
+    ]);
+    // Every table is as it was, with the fitted section between the scenario table and the reading.
+    let start = report.find("\n## With the card's fitted costs\n").unwrap();
+    let end = report
+        .find("\n## What the forecast says the run will show\n")
+        .unwrap();
+    assert_eq!(format!("{}{}", &report[..start], &report[end..]), golden);
+    let section = &report[start..end];
+    assert!(
+        section.contains("`box-steps.json` and E0's tier fits in `box-e0-summary.json`."),
+        "{section}"
+    );
+    // The box's costs give the box's rows: the calibration point's, and the core's at 24 sessions.
+    let measured: Vec<_> = golden
+        .lines()
+        .filter(|l| l.contains(" | RTX 5060 Ti 16 GB (measured) | "))
+        .collect();
+    assert_eq!(measured.len(), 2);
+    for row in measured {
+        let fitted = row.replace("RTX 5060 Ti 16 GB (measured)", "A100 SXM4 80 GB (fitted)");
+        assert!(section.contains(&fitted), "{fitted}\n{section}");
+    }
+    assert_eq!(section.matches(" (fitted) | ").count(), 6);
+    assert!(
+        section.contains("Closest to the box's running share in the core (0%): 24 sessions (0%)."),
+        "{section}"
+    );
+}
+
+/// `text`'s section under `heading`, to the next one.
+fn section<'a>(text: &'a str, heading: &str) -> &'a str {
+    let start = text.find(&format!("## {heading}\n")).expect(heading);
+    let end = text[start..]
+        .find("\n## ")
+        .map_or(text.len(), |n| start + n);
+    &text[start..end]
+}
+
+/// On the box's own host (`testdata/box-host.json`, bench_host.py's host.json on Phastform) the A100
+/// 80 GB keeps the box's host time and takes the box's measured link in place of its datasheet one:
+/// the report is the one without a host but for the introduction, which names the host, the costs
+/// tables' rows on it, E0's restores and the card's scenario cells.
+#[test]
+fn on_the_boxs_own_host_the_card_keeps_the_boxs_host_time_and_takes_its_link() {
+    let golden = std::fs::read_to_string(testdata("forecast-a100-80gb-sub16.md")).unwrap();
+    let report = forecast_on_subset(&["--host", testdata("box-host.json").to_str().unwrap()]);
+    for text in [
+        "(`make forecast-a100 GPU=a100-80gb HOST_JSON=box-host.json`) from the box's measured costs, the \
+         card's published peaks, the path vLLM 0.32.0 takes for the box's checkpoint on it (Marlin \
+         W8A16; `crates/lh-sim/src/hardware.rs`) and the host it is placed on, as \
+         `benchmarks/a100/bench_host.py` measured it: its CPU (Intel(R) Xeon(R) CPU E5-2609 v4 @ \
+         1.70GHz) runs the Python workload in 381.1 ms against the box's 381.1, and its link copies \
+         pinned host memory to the card at 6.76 GB/s in one copy against the box's 6.76. Every number",
+        "On this host the API server's time is the box's over 1.00, and a restore's transfer runs at \
+         92% of the host's one-copy rate, as the box's E0 restore does of the box's;",
+    ] {
+        assert!(report.contains(text), "{text}\n{report}");
+    }
+    // The probes are the steps', which a host does not change.
+    let probes = "The engine probes";
+    assert_eq!(section(&report, probes), section(&golden, probes));
+    // Each costs table keeps its rows and adds the card's on this host: the box's 23.64 µs a token of
+    // restore for the 4B's 144 KiB (26.27 for the 14B's 160 KiB), and the rest as they were.
+    for (model, restore) in [
+        ("Qwen3-4B-Instruct-2507-FP8", "23.64"),
+        ("Qwen3-14B-FP8", "26.27"),
+    ] {
+        let heading = format!("Step and tier costs, {model}");
+        let (ours, theirs) = (section(&report, &heading), section(&golden, &heading));
+        assert!(ours.starts_with(theirs), "{ours}");
+        let card = theirs
+            .lines()
+            .filter(|l| l.starts_with("| A100 SXM4 80 GB |"));
+        let on_host: Vec<String> = card
+            .map(|row| {
+                let mut cells: Vec<String> = row.split(" | ").map(String::from).collect();
+                cells[1] = format!("{}, on this host", cells[1]);
+                cells[6] = format!("10.3 ms + {restore} µs/token");
+                cells.join(" | ")
+            })
+            .collect();
+        assert_eq!(ours[theirs.len()..].lines().collect::<Vec<_>>(), on_host);
+    }
+    // E0's GPU hits and recomputes are as without a host, the box's host time; its restores slower.
+    let e0 = |text: &str| -> Vec<Vec<String>> {
+        let rows = section(text, "E0's cells").lines();
+        rows.filter(|l| l.starts_with("| ") && l.as_bytes()[2].is_ascii_digit())
+            .map(|l| l.split(" | ").map(String::from).collect())
+            .collect()
+    };
+    let (ours, theirs) = (e0(&report), e0(&golden));
+    assert_eq!(ours.len(), 7);
+    // A forecast's central value, in ms.
+    let central = |cell: &str| -> f64 {
+        let ms = cell.split(' ').next().unwrap();
+        ms.replace(',', "").parse().unwrap()
+    };
+    for (o, t) in ours.iter().zip(&theirs) {
+        assert_eq!((&o[..4], &o[5..]), (&t[..4], &t[5..]));
+        assert!(central(&o[4]) > central(&t[4]), "{o:?}");
+    }
+    // The box's own scenario cells are as they were; the card's say where it is.
+    let rows = |text: &str, card: &str| -> Vec<String> {
+        let label = format!(" | {card} | ");
+        text.lines()
+            .filter(|l| l.contains(&label))
+            .map(String::from)
+            .collect()
+    };
+    let measured = "RTX 5060 Ti 16 GB (measured)";
+    assert_eq!(rows(&report, measured), rows(&golden, measured));
+    assert_eq!(
+        rows(&report, "A100 SXM4 80 GB (central, on this host)").len(),
+        rows(&golden, "A100 SXM4 80 GB (central)").len()
+    );
+    assert_eq!(
+        rows(&report, "A100 SXM4 80 GB (the E1 map's, on this host)").len(),
+        1
+    );
+    assert!(!report.contains("A100 SXM4 80 GB (central) |"), "{report}");
 }
 
 /// The idle service is v0's: with the W0 settings it gives the subset run v0 published, 559 requests

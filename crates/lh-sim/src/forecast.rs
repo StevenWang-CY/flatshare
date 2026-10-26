@@ -6,6 +6,10 @@
 //! box's own measured values stand beside them. Where the box has a measurement of the same thing
 //! (E0's cells, the probes on Gray), the forecast is that measurement times the modeled ratio of the
 //! two cards, so that what the box's model misses of its own measurement does not carry over.
+//! Placed on a measured host ([`Host`]), the card's cells take the API server's time from its CPU
+//! and the restores from its link, and the costs tables add the card's costs there. Once the card
+//! has a step-time model and E0 tier fits of its own, the forecast places the calibration point and
+//! the core with them too ([`fitted_cells`]).
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -14,7 +18,7 @@ use lh_core::{PromptSources, StepCost, StepLoad, TierCapacity, TierCost};
 
 use crate::aiperf::PlanOptions;
 use crate::hardware::{
-    self, Gpu, Model, QWEN3_4B_FP8, QWEN3_14B_FP8, RTX_5060_TI, Scaling, TOKENS_PER_CALL,
+    self, Gpu, Host, Model, QWEN3_4B_FP8, QWEN3_14B_FP8, RTX_5060_TI, Scaling, TOKENS_PER_CALL,
 };
 use crate::metrics::Summary;
 use crate::regime::{self, thousands};
@@ -60,12 +64,25 @@ pub struct Costs {
 impl Costs {
     /// The box's measured costs for its own model; otherwise `gpu`'s for `model` under `scaling`.
     pub fn of(gpu: &Gpu, model: &Model, scaling: Scaling) -> Self {
-        if gpu.measured() && *model == QWEN3_4B_FP8 {
-            return Self::frozen_box();
-        }
+        Self::on(gpu, model, scaling, None)
+    }
+
+    /// The same with the card on `host` ([`Gpu::step_cost_on`]), and as [`of`](Self::of) without
+    /// one.
+    pub fn on(gpu: &Gpu, model: &Model, scaling: Scaling, host: Option<&Host>) -> Self {
+        // Every scaling gives the box its measured step terms for its own model, the E1 map's
+        // exactly, so that its own host gives its measured costs back.
+        let scaling = if gpu.measured() && *model == QWEN3_4B_FP8 {
+            if host.is_none() {
+                return Self::frozen_box();
+            }
+            Scaling::MAP
+        } else {
+            scaling
+        };
         Self {
-            steps: gpu.step_cost_with(model, scaling),
-            tier: gpu.tier_cost_with(model, scaling),
+            steps: gpu.step_cost_on(model, scaling, host),
+            tier: gpu.tier_cost_on(model, scaling, host),
         }
     }
 
@@ -89,11 +106,11 @@ pub const E0_BOX_P50: [[f64; 7]; 3] = [
 ];
 
 /// The modeled time to first token of E0's three requests of `tokens` tokens (a GPU hit, a restore
-/// and a recompute, as `[hit, restore, cold]`): each alone on the engine, with E0's host time, its
-/// last block computed.
-pub fn e0_model(costs: &Costs, tokens: u64) -> [f64; 3] {
+/// and a recompute, as `[hit, restore, cold]`): each alone on the engine, with E0's host time on
+/// `host` (the box's without one), its last block computed.
+pub fn e0_model(costs: &Costs, host: Option<&Host>, tokens: u64) -> [f64; 3] {
     let steps = StepCost {
-        host: StepCost::frozen_box().e0_host(&TierCost::frozen_box()),
+        host: hardware::e0_host(host),
         ..costs.steps.clone()
     };
     let block = costs.tier.block_tokens;
@@ -234,9 +251,23 @@ impl Cell {
     }
 }
 
+/// The scenarios at the box's pool: the core, more agents than its 24 sessions, and the calibration
+/// point.
+const CORE: &str = "A: the core, the box's pool";
+const MORE_AGENTS: &str = "A': the box's pool, more agents";
+const CALIBRATION: &str = "the calibration point, the whole corpus";
+
+/// A setting's name, which says so when the card is placed on a host.
+fn setting(name: &str, host: Option<&Host>) -> String {
+    match host {
+        Some(_) => format!("{name}, on this host"),
+        None => name.to_string(),
+    }
+}
+
 /// E2's scenarios on `gpu`, as the A100 campaign's design names them, with the box's own cells
-/// beside the core's and the calibration's.
-pub fn cells(gpu: &Gpu) -> Vec<Cell> {
+/// beside the core's and the calibration's; the card's are on `host` when one is given.
+pub fn cells(gpu: &Gpu, host: Option<&Host>) -> Vec<Cell> {
     let pool = lh_core::FROZEN_BOX_POOL_TOKENS;
     let cpu = lh_core::FROZEN_BOX_CPU_BYTES;
     let central = Variant::Central.scaling(gpu);
@@ -258,17 +289,15 @@ pub fn cells(gpu: &Gpu) -> Vec<Cell> {
             cpu_bytes,
         }
     };
-    let name = |s: &str| format!("{} ({s})", gpu.title);
+    let name = |s: &str| format!("{} ({})", gpu.title, setting(s, host));
     let measured = format!("{} (measured)", RTX_5060_TI.title);
-    let gpu4 = Costs::of(gpu, &QWEN3_4B_FP8, central);
-    let gpu14 = Costs::of(gpu, &QWEN3_14B_FP8, central);
+    let gpu4 = Costs::on(gpu, &QWEN3_4B_FP8, central, host);
+    let gpu14 = Costs::on(gpu, &QWEN3_14B_FP8, central, host);
     let own4 = gpu.model_pool_tokens(&QWEN3_4B_FP8);
     let own14 = gpu.model_pool_tokens(&QWEN3_14B_FP8);
-    let core = "A: the core, the box's pool";
-    let calibration = "the calibration point, the whole corpus";
     let mut out = vec![
         cell(
-            core,
+            CORE,
             true,
             measured.clone(),
             QWEN3_4B_FP8,
@@ -277,16 +306,16 @@ pub fn cells(gpu: &Gpu) -> Vec<Cell> {
             pool,
         ),
         cell(
-            core,
+            CORE,
             true,
             name("the E1 map's"),
             QWEN3_4B_FP8,
-            Costs::of(gpu, &QWEN3_4B_FP8, Scaling::MAP),
+            Costs::on(gpu, &QWEN3_4B_FP8, Scaling::MAP, host),
             24,
             pool,
         ),
         cell(
-            core,
+            CORE,
             true,
             name("central"),
             QWEN3_4B_FP8,
@@ -295,7 +324,7 @@ pub fn cells(gpu: &Gpu) -> Vec<Cell> {
             pool,
         ),
         cell(
-            calibration,
+            CALIBRATION,
             false,
             measured,
             QWEN3_4B_FP8,
@@ -304,7 +333,7 @@ pub fn cells(gpu: &Gpu) -> Vec<Cell> {
             pool,
         ),
         cell(
-            calibration,
+            CALIBRATION,
             false,
             name("central"),
             QWEN3_4B_FP8,
@@ -314,7 +343,7 @@ pub fn cells(gpu: &Gpu) -> Vec<Cell> {
         ),
     ];
     out.push(cell(
-        "A': the box's pool, more agents",
+        MORE_AGENTS,
         true,
         name("central"),
         QWEN3_4B_FP8,
@@ -354,6 +383,29 @@ pub fn cells(gpu: &Gpu) -> Vec<Cell> {
         24,
         own4,
     ));
+    out
+}
+
+/// The cells with `costs`, the card's fitted costs: the calibration point, to read the fitted model
+/// against the measured point, and the discriminating scenario at the box's pool at each of
+/// `sessions`, named A' above the core's 24. Each is otherwise its scenario's central cell.
+pub fn fitted_cells(gpu: &Gpu, costs: &Costs, sessions: &[usize]) -> Vec<Cell> {
+    let cell = |scenario, long, sessions| Cell {
+        scenario,
+        long,
+        label: format!("{} (fitted)", gpu.title),
+        model: QWEN3_4B_FP8,
+        costs: costs.clone(),
+        sessions,
+        pool_tokens: lh_core::FROZEN_BOX_POOL_TOKENS,
+        cpu_bytes: lh_core::FROZEN_BOX_CPU_BYTES,
+    };
+    let mut out = vec![cell(CALIBRATION, false, 16)];
+    out.extend(
+        sessions
+            .iter()
+            .map(|&s| cell(if s > 24 { MORE_AGENTS } else { CORE }, true, s)),
+    );
     out
 }
 
@@ -478,8 +530,9 @@ fn pct(x: f64) -> String {
     format!("{:.0}%", 100.0 * x)
 }
 
-/// The costs table: the box's, and `gpu`'s in each setting for `model`.
-pub fn costs_table(gpu: &Gpu, model: &Model) -> String {
+/// The costs table: the box's, and `gpu`'s in each setting for `model`, then on `host` when one is
+/// given.
+pub fn costs_table(gpu: &Gpu, model: &Model, host: Option<&Host>) -> String {
     let mut text = String::from(
         "| Card | Costs | Step: fixed | per token | per pair | per KV token read | Restore \
          | Cold prefill of 31,744 tokens |\n|---|---|---:|---:|---:|---:|---|---:|\n",
@@ -503,28 +556,32 @@ pub fn costs_table(gpu: &Gpu, model: &Model) -> String {
     if *model == QWEN3_4B_FP8 {
         row(RTX_5060_TI.title, "measured", &Costs::frozen_box());
     }
-    row(
-        gpu.title,
-        "the E1 map's",
-        &Costs::of(gpu, model, Scaling::MAP),
-    );
-    for v in Variant::ALL {
-        row(gpu.title, v.name(), &Costs::of(gpu, model, v.scaling(gpu)));
+    for on in std::iter::once(None).chain(host.map(Some)) {
+        row(
+            gpu.title,
+            &setting("the E1 map's", on),
+            &Costs::on(gpu, model, Scaling::MAP, on),
+        );
+        for v in Variant::ALL {
+            let costs = Costs::on(gpu, model, v.scaling(gpu), on);
+            row(gpu.title, &setting(v.name(), on), &costs);
+        }
     }
     text
 }
 
-/// E0's cells: the box's measured p50s and `gpu`'s forecast, central with the low–high range.
-pub fn e0_table(gpu: &Gpu) -> String {
+/// E0's cells: the box's measured p50s and `gpu`'s forecast, central with the low–high range, the
+/// card on `host` when one is given.
+pub fn e0_table(gpu: &Gpu, host: Option<&Host>) -> String {
     let mut text = String::from(
         "| Prompt tokens | GPU hit: box | forecast | CPU restore: box | forecast | Recompute: box \
          | forecast |\n|---:|---:|---:|---:|---:|---:|---:|\n",
     );
     let box_costs = Costs::frozen_box();
-    let costs = Variant::ALL.map(|v| Costs::of(gpu, &QWEN3_4B_FP8, v.scaling(gpu)));
+    let costs = Variant::ALL.map(|v| Costs::on(gpu, &QWEN3_4B_FP8, v.scaling(gpu), host));
     for (i, &tokens) in E0_LENGTHS.iter().enumerate() {
-        let base = e0_model(&box_costs, tokens);
-        let models = costs.each_ref().map(|c| e0_model(c, tokens));
+        let base = e0_model(&box_costs, None, tokens);
+        let models = costs.each_ref().map(|c| e0_model(c, host, tokens));
         write!(text, "| {} |", thousands(tokens)).expect("writing to a String");
         for kind in 0..3 {
             let measured = E0_BOX_P50[kind][i];
@@ -619,15 +676,22 @@ pub fn probes_section(gpu: &Gpu) -> String {
 /// The placements table.
 pub fn placements_table(cells: &[Cell], placed: &[Placed], seeds: &[u64]) -> String {
     let seeds: Vec<_> = seeds.iter().map(u64::to_string).collect();
-    let mut text = format!(
+    format!(
         "Means over seeds {}; `lru-cpu`, the stock engine's policy; a realtime tier of two calls. \
          Running / working set: the time running agent requests / the agents' working set leave \
          those calls short of KV. Busy: the card's step time over the replay's. Stalled: the \
-         requests that waited for free blocks.\n\n\
-         | Scenario | Card | Sessions | Pool | CPU tier | Pressure | π | ρ | Running / working set \
+         requests that waited for free blocks.\n\n{}",
+        seeds.join(", "),
+        table(cells, placed),
+    )
+}
+
+/// The placements table's head and a row per cell.
+fn table(cells: &[Cell], placed: &[Placed]) -> String {
+    let mut text = String::from(
+        "| Scenario | Card | Sessions | Pool | CPU tier | Pressure | π | ρ | Running / working set \
          | Busy | Stalled | Computed | Resume TTFT p50 / p90 |\n\
          |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
-        seeds.join(", "),
     );
     for (c, p) in cells.iter().zip(placed) {
         writeln!(
@@ -746,53 +810,175 @@ pub fn reading(gpu: &Gpu, cells: &[Cell], placed: &[Placed]) -> String {
     text
 }
 
-/// The whole report for `gpu`.
-pub fn report(gpu: &Gpu, cells: &[Cell], placed: &[Placed], seeds: &[u64]) -> String {
+/// The cells with the card's fitted costs ([`fitted_cells`]), where they were placed, and the names
+/// of the files the costs came from.
+#[derive(Clone, Copy, Debug)]
+pub struct Fitted<'a> {
+    /// E0's summary (`--costs`) and the step-time model (`--step-costs`).
+    pub summary: &'a str,
+    pub steps: &'a str,
+    pub cells: &'a [Cell],
+    pub placed: &'a [Placed],
+}
+
+/// Of `(sessions, running share)` pairs, the one whose share is closest to `target`, the lower
+/// session count on a tie.
+pub fn closest_sessions(target: f64, shares: &[(usize, f64)]) -> Option<(usize, f64)> {
+    shares.iter().copied().min_by(|a, b| {
+        (a.1 - target)
+            .abs()
+            .total_cmp(&(b.1 - target).abs())
+            .then(a.0.cmp(&b.0))
+    })
+}
+
+/// The fitted cells' section: where their costs came from, their table, and the session count at
+/// which the core's running share comes closest to the box's (`cells`' measured core cell).
+pub fn fitted_section(fitted: &Fitted<'_>, cells: &[Cell], placed: &[Placed]) -> String {
+    let mut text = format!(
+        "\n## With the card's fitted costs\n\nThe calibration point and the core at the box's pool \
+         with the card's own costs in place of the modeled ones: the step-time model in `{}` and \
+         E0's tier fits in `{}`.\n\n",
+        fitted.steps, fitted.summary,
+    );
+    text.push_str(&table(fitted.cells, fitted.placed));
+    let on_box = cells
+        .iter()
+        .zip(placed)
+        .find(|(c, _)| c.scenario == CORE && c.label.contains("measured"));
+    let core: Vec<(usize, f64)> = fitted
+        .cells
+        .iter()
+        .zip(fitted.placed)
+        .filter(|(c, _)| c.long)
+        .map(|(c, p)| (c.sessions, p.running_share))
+        .collect();
+    if let Some((_, b)) = on_box
+        && let Some((sessions, share)) = closest_sessions(b.running_share, &core)
+    {
+        writeln!(
+            text,
+            "\nClosest to the box's running share in the core ({}): {sessions} sessions ({}).",
+            pct(b.running_share),
+            pct(share),
+        )
+        .expect("writing to a String");
+    }
+    text
+}
+
+/// The host the card is placed on (`--host`), and the name of the file that describes it.
+#[derive(Clone, Copy, Debug)]
+pub struct OnHost<'a> {
+    pub host: &'a Host,
+    /// bench_host.py's `host.json`.
+    pub file: &'a str,
+}
+
+/// The whole report for `gpu`, on `host` when one is given, with the fitted cells' section after
+/// the scenario table when `fitted` gives them.
+pub fn report(
+    gpu: &Gpu,
+    host: Option<&OnHost<'_>>,
+    cells: &[Cell],
+    placed: &[Placed],
+    seeds: &[u64],
+    fitted: Option<&Fitted<'_>>,
+) -> String {
+    // The make target that writes it: the A100 40 GB's is the default.
+    let mut target = if gpu.name == hardware::A100_40GB.name {
+        "make forecast-a100".to_string()
+    } else {
+        format!("make forecast-a100 GPU={}", gpu.name)
+    };
+    let path = format!(
+        "the path vLLM 0.32.0 takes for the box's checkpoint on it ({}; \
+         `crates/lh-sim/src/hardware.rs`)",
+        gpu.linear.label()
+    );
+    // What the costs come from, and on a host what it sets.
+    let (sources, host_terms) = match host {
+        None => (
+            format!("the card's published peaks and {path}"),
+            String::new(),
+        ),
+        Some(h) => {
+            write!(target, " HOST_JSON={}", h.file).expect("writing to a String");
+            let cpu = match &h.host.cpu {
+                Some(name) => format!(" ({name})"),
+                None => String::new(),
+            };
+            (
+                format!(
+                    "the card's published peaks, {path} and the host it is placed on, as \
+                     `benchmarks/a100/bench_host.py` measured it: its CPU{cpu} runs the Python \
+                     workload in {:.1} ms against the box's {:.1}, and its link copies pinned host \
+                     memory to the card at {:.2} GB/s in one copy against the box's {:.2}",
+                    h.host.python_ms,
+                    hardware::BOX_PYTHON_MS,
+                    h.host.h2d_gb_per_s,
+                    hardware::BOX_H2D_GB_PER_S,
+                ),
+                format!(
+                    " On this host the API server's time is the box's over {:.2}, and a restore's \
+                     transfer runs at {:.0}% of the host's one-copy rate, as the box's E0 restore \
+                     does of the box's; the restore's fixed part, the mixed-step extra and the \
+                     restore stall stay the box's.",
+                    h.host.cpu_ratio(),
+                    100.0 * hardware::BOX_RESTORE_SHARE,
+                ),
+            )
+        }
+    };
+    let on_this_host = host.map_or("", |_| " on this host");
+    let host = host.map(|h| h.host);
     let mut text = String::new();
     writeln!(
         text,
         "# Forecast: the {} against the frozen box\n\n\
-         Written by `lh-sim forecast` (`make forecast-a100`) from the box's measured costs, the \
-         card's published peaks and the path vLLM 0.32.0 takes for the box's checkpoint on it ({}; \
-         `crates/lh-sim/src/hardware.rs`). Every number for the {} is modeled; the box's are \
-         measured where they say so. Three settings bound it: **low**, the peaks' ratios alone with \
-         Marlin as fast as a BF16 GEMM; **central**, with the box's 1.7 ms of step overhead kept, \
-         Marlin {:.2}× a BF16 GEMM (vLLM PR #61224's L4) and FlashAttention 2 at its best published \
-         efficiency on the card; **high**, with FlashAttention 2 at its worst published. The E1 \
-         map's model, on which `lh-sim hardware` places every card, scales the fixed step with \
-         bandwidth and keeps the box's attention efficiency.\n",
+         Written by `lh-sim forecast` (`{target}`) from the box's measured costs, {sources}. Every \
+         number for the {} is modeled; the box's are measured where they say so.{host_terms} Three \
+         settings bound it: **low**, the peaks' ratios alone with Marlin as fast as a BF16 GEMM; \
+         **central**, with the box's 1.7 ms of step overhead kept, Marlin {:.2}× a BF16 GEMM (vLLM \
+         PR #61224's L4) and FlashAttention 2 at its best published efficiency on the card; \
+         **high**, with FlashAttention 2 at its worst published. The E1 map's model, on which \
+         `lh-sim hardware` places every card, scales the fixed step with bandwidth and keeps the \
+         box's attention efficiency.\n",
         gpu.title,
-        gpu.linear.label(),
         gpu.title,
         hardware::MARLIN_FACTOR,
     )
     .expect("writing to a String");
     writeln!(text, "## Step and tier costs, Qwen3-4B-Instruct-2507-FP8\n")
         .expect("writing to a String");
-    text.push_str(&costs_table(gpu, &QWEN3_4B_FP8));
+    text.push_str(&costs_table(gpu, &QWEN3_4B_FP8, host));
     if gpu.model_pool_tokens(&QWEN3_14B_FP8) > 0 {
         writeln!(text, "\n## Step and tier costs, Qwen3-14B-FP8\n").expect("writing to a String");
-        text.push_str(&costs_table(gpu, &QWEN3_14B_FP8));
+        text.push_str(&costs_table(gpu, &QWEN3_14B_FP8, host));
     }
+    let ratio = host.map_or("", |_| ", the card on this host and the box on its own");
     writeln!(
         text,
         "\n## E0's cells\n\nTime to first token of a request alone, in ms: the box's measured p50 \
-         (2026-10-22), and the forecast as that times the modeled ratio of the two cards, central \
-         (low–high).\n"
+         (2026-10-22), and the forecast as that times the modeled ratio of the two cards{ratio}, \
+         central (low–high).\n"
     )
     .expect("writing to a String");
-    text.push_str(&e0_table(gpu));
+    text.push_str(&e0_table(gpu, host));
     writeln!(text, "\n## The engine probes\n").expect("writing to a String");
     text.push_str(&probes_section(gpu));
     writeln!(
         text,
         "\n## E2's scenarios on the regime map\n\nEach cell replays E2's agents in `lh-sim`'s model \
-         of vLLM 0.32.0's two-tier KV cache and step loop with the card's central costs; the \
-         discriminating scenario replays `weka-x32-long`, the calibration point the whole 32x \
-         corpus.\n"
+         of vLLM 0.32.0's two-tier KV cache and step loop with the card's central \
+         costs{on_this_host}; the discriminating scenario replays `weka-x32-long`, the calibration \
+         point the whole 32x corpus.\n"
     )
     .expect("writing to a String");
     text.push_str(&placements_table(cells, placed, seeds));
+    if let Some(fitted) = fitted {
+        text.push_str(&fitted_section(fitted, cells, placed));
+    }
     writeln!(text, "\n## What the forecast says the run will show\n").expect("writing to a String");
     text.push_str(&reading(gpu, cells, placed));
     text
@@ -801,7 +987,7 @@ pub fn report(gpu: &Gpu, cells: &[Cell], placed: &[Placed], seeds: &[u64]) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hardware::{A100_40GB, L4};
+    use crate::hardware::{A100_40GB, A100_80GB, L4};
 
     #[test]
     fn the_box_forecasts_its_own_measurements() {
@@ -821,7 +1007,7 @@ mod tests {
             assert_eq!(time_equivalent_cap(&b.steps, context), Some(512));
         }
         // E0's forecast on the box is its measured cells.
-        let table = e0_table(&RTX_5060_TI);
+        let table = e0_table(&RTX_5060_TI, None);
         assert!(
             table.contains(
                 "| 31,744 | 156 | 156 (156) | 903 | 903 (903) | 10,239 | 10,239 (10,239) |"
@@ -861,7 +1047,7 @@ mod tests {
 
     #[test]
     fn the_cells_name_the_campaigns_scenarios() {
-        let cells = cells(&A100_40GB);
+        let cells = cells(&A100_40GB, None);
         let names: Vec<_> = cells
             .iter()
             .map(|c| (c.scenario, c.sessions, c.pool_tokens))
@@ -882,7 +1068,7 @@ mod tests {
         assert!(cells[0].long && !cells[3].long);
         // A card too small for the 14B gets no C' cells.
         assert!(
-            !super::cells(&RTX_5060_TI)
+            !super::cells(&RTX_5060_TI, None)
                 .iter()
                 .any(|c| c.model == QWEN3_14B_FP8)
         );
@@ -890,7 +1076,7 @@ mod tests {
 
     #[test]
     fn the_tables_carry_the_settings() {
-        let t = costs_table(&A100_40GB, &QWEN3_4B_FP8);
+        let t = costs_table(&A100_40GB, &QWEN3_4B_FP8, None);
         assert!(
             t.contains(
                 "| RTX 5060 Ti 16 GB | measured | 11.56 ms | 47.99 µs | 14.17 ns | 429.3 ns |"
@@ -913,10 +1099,332 @@ mod tests {
             t.contains("| A100 40 GB | the E1 map's | 3.33 ms | 41.33 µs | 2.15 ns |"),
             "{t}"
         );
-        let t14 = costs_table(&A100_40GB, &QWEN3_14B_FP8);
+        let t14 = costs_table(&A100_40GB, &QWEN3_14B_FP8, None);
         assert!(!t14.contains("measured"), "{t14}");
         let probes = probes_section(&A100_40GB);
         assert!(probes.contains("1,536 tokens (central"), "{probes}");
         assert!(probes.contains("on Gray 4,923–5,077 ms"), "{probes}");
+    }
+
+    #[test]
+    fn the_a100_80gbs_forecast_is_the_40gbs_with_its_bandwidth_and_pools() {
+        // The step costs: the fixed step and the KV reads by the bandwidth, the rest the 40 GB card's.
+        let t = costs_table(&A100_80GB, &QWEN3_4B_FP8, None);
+        for row in [
+            "| A100 SXM4 80 GB | the E1 map's | 2.54 ms | 41.33 µs | 2.15 ns | 94.3 ns |",
+            "| A100 SXM4 80 GB | low | 2.54 ms | 29.19 µs | 2.15 ns | 94.3 ns |",
+            "| A100 SXM4 80 GB | central | 3.88 ms | 41.33 µs | 2.59 ns | 94.3 ns |",
+            "| A100 SXM4 80 GB | high | 3.88 ms | 41.33 µs | 3.78 ns | 94.3 ns |",
+        ] {
+            assert!(t.contains(row), "{row}\n{t}");
+        }
+        assert!(t.contains("| 10.3 ms + 5.91 µs/token | 3,123 ms |"), "{t}");
+        // E0's cells at 31,744 tokens: a GPU hit, a restore and a recompute, each a little faster.
+        let e0 = e0_table(&A100_80GB, None);
+        assert!(
+            e0.contains(
+                "| 31,744 | 156 | 131 (130–132) | 903 | 324 (322–324) | 10,239 | 3,169 (2,459–3,788) |"
+            ),
+            "{e0}"
+        );
+        // The KV case's wait is two 18k decodes at a time: 7.5 ms on this card against the 40 GB
+        // card's 9.2, so stock waits 1.3-1.4 s; the caps are the 40 GB card's.
+        let central = Costs::of(&A100_80GB, &QWEN3_4B_FP8, Scaling::central(&A100_80GB));
+        assert!((two_decodes_ms(&central.steps) - 7.45).abs() < 0.01);
+        let probes = probes_section(&A100_80GB);
+        for text in [
+            "On the A100 SXM4 80 GB: 1,328–1,369 ms (low–high 1,082–1,377).",
+            "an idle pool: 126–145 ms (109–146).",
+            "On the A100 SXM4 80 GB: 32.8 ms (25.7–35.4) and 5.6 ms (3.7–5.6)",
+            "1,536 tokens (central, 127 ms)",
+        ] {
+            assert!(probes.contains(text), "{text}\n{probes}");
+        }
+        // The core's cells are at the box's pool, as on the 40 GB card; C' and D at the card's own.
+        let cells = cells(&A100_80GB, None);
+        let names: Vec<_> = cells
+            .iter()
+            .map(|c| (c.scenario, c.sessions, c.pool_tokens))
+            .collect();
+        assert_eq!(names[2], ("A: the core, the box's pool", 24, 36_400));
+        assert_eq!(cells[2].label, "A100 SXM4 80 GB (central)");
+        assert!(names.contains(&("C': Qwen3-14B-FP8 at its own pool", 40, 379_488)));
+        assert!(names.contains(&("D: Qwen3-4B at the card's own pool", 24, 502_432)));
+        // The report names the make target that writes it.
+        let text = report(&A100_80GB, None, &cells, &[], &[11], None);
+        assert!(
+            text.starts_with(
+                "# Forecast: the A100 SXM4 80 GB against the frozen box\n\nWritten by `lh-sim \
+                 forecast` (`make forecast-a100 GPU=a100-80gb`)"
+            ),
+            "{text}"
+        );
+        assert!(
+            report(&A100_40GB, None, &[], &[], &[11], None).contains("(`make forecast-a100`) from")
+        );
+    }
+
+    #[test]
+    fn the_fitted_cells_are_the_central_cells_at_the_boxs_pool_with_the_fitted_costs() {
+        let costs = Costs::of(&A100_80GB, &QWEN3_4B_FP8, Scaling::LOW);
+        let fitted = fitted_cells(&A100_80GB, &costs, &[24, 28, 32, 36, 40]);
+        let names: Vec<_> = fitted
+            .iter()
+            .map(|c| (c.scenario, c.long, c.sessions))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("the calibration point, the whole corpus", false, 16),
+                ("A: the core, the box's pool", true, 24),
+                ("A': the box's pool, more agents", true, 28),
+                ("A': the box's pool, more agents", true, 32),
+                ("A': the box's pool, more agents", true, 36),
+                ("A': the box's pool, more agents", true, 40),
+            ]
+        );
+        // Each is its scenario's central cell with the fitted costs in its place: the box's pool
+        // and 20 GiB CPU tier, the box's checkpoint.
+        let modeled = cells(&A100_80GB, None);
+        for f in &fitted {
+            assert_eq!(f.label, "A100 SXM4 80 GB (fitted)");
+            assert_eq!(f.costs, costs);
+            let c = modeled
+                .iter()
+                .find(|c| c.scenario == f.scenario && c.label.contains("central"))
+                .unwrap();
+            assert_eq!(
+                (f.long, f.model, f.pool_tokens, f.cpu_bytes),
+                (c.long, c.model, c.pool_tokens, c.cpu_bytes)
+            );
+        }
+        assert_eq!(
+            (fitted[1].pool_tokens, fitted[1].cpu_bytes),
+            (36_400, 20 << 30)
+        );
+        // The calibration point alone when no count of the core is asked.
+        assert_eq!(fitted_cells(&A100_80GB, &costs, &[]).len(), 1);
+    }
+
+    #[test]
+    fn the_closest_session_count_takes_the_lower_on_a_tie() {
+        let shares = [(24, 0.10), (28, 0.15), (32, 0.18), (36, 0.25)];
+        assert_eq!(closest_sessions(0.17, &shares), Some((32, 0.18)));
+        // A quarter and three quarters are as far from a half: the lower count, wherever it is.
+        assert_eq!(
+            closest_sessions(0.5, &[(32, 0.75), (28, 0.25)]),
+            Some((28, 0.25))
+        );
+        assert_eq!(closest_sessions(0.5, &[]), None);
+    }
+
+    #[test]
+    fn the_report_has_the_fitted_section_only_with_the_fitted_cells() {
+        let at = |running_share: f64| Placed {
+            pressure_mean: 9.0,
+            pressure_peak: 10.0,
+            pi: 98.0,
+            rho: 0.11,
+            running_share,
+            working_set_share: 1.0,
+            busy: 0.71,
+            stalled: 0.5,
+            computed: 0.4,
+            resume_p50_ms: 1_168.0,
+            resume_p90_ms: 9_717.0,
+        };
+        let modeled = cells(&A100_80GB, None);
+        // The box's core cell comes first, at 17%.
+        let placed: Vec<_> = (0..modeled.len())
+            .map(|i| at(if i == 0 { 0.17 } else { 0.1 }))
+            .collect();
+        let without = report(&A100_80GB, None, &modeled, &placed, &[11], None);
+        assert!(
+            !without.contains("## With the card's fitted costs"),
+            "{without}"
+        );
+        // The calibration point at the box's share, which the closest count leaves out, then the
+        // core from 24 sessions to 40.
+        let cells = fitted_cells(&A100_80GB, &Costs::frozen_box(), &[24, 28, 32, 36, 40]);
+        let shares = [0.17, 0.10, 0.15, 0.18, 0.21, 0.30];
+        let fitted_placed: Vec<_> = shares.iter().map(|&s| at(s)).collect();
+        let fitted = Fitted {
+            summary: "summary.json",
+            steps: "steps.json",
+            cells: &cells,
+            placed: &fitted_placed,
+        };
+        let with = report(&A100_80GB, None, &modeled, &placed, &[11], Some(&fitted));
+        // The section comes between the scenario table and the reading, and the rest is unchanged.
+        let start = with.find("\n## With the card's fitted costs\n").unwrap();
+        let end = with
+            .find("\n## What the forecast says the run will show\n")
+            .unwrap();
+        assert_eq!(format!("{}{}", &with[..start], &with[end..]), without);
+        let section = &with[start..end];
+        assert!(
+            section.contains(
+                "with the card's own costs in place of the modeled ones: the step-time model in \
+                 `steps.json` and E0's tier fits in `summary.json`.\n\n| Scenario | Card |"
+            ),
+            "{section}"
+        );
+        assert!(
+            section.contains(
+                "| A': the box's pool, more agents | A100 SXM4 80 GB (fitted) | 32 | 36,400 tokens \
+                 | 20 GiB | 9.0 / 10.0 | 98.0 | 0.11 | 18% / 100% | 71% | 50% | 40% \
+                 | 1,168 / 9,717 ms |\n"
+            ),
+            "{section}"
+        );
+        assert_eq!(section.matches(" (fitted) |").count(), 6);
+        assert!(
+            section.ends_with(
+                "|\n\nClosest to the box's running share in the core (17%): 32 sessions (18%).\n"
+            ),
+            "{section}"
+        );
+        // Without the box's core cell there is no share to come closest to.
+        let alone = fitted_section(&fitted, &modeled[1..], &placed[1..]);
+        assert!(!alone.contains("Closest"), "{alone}");
+    }
+
+    /// The box's host as bench_host.py measured it on Phastform.
+    fn box_host() -> Host {
+        Host::from_bench_host(include_str!("../testdata/box-host.json")).unwrap()
+    }
+
+    /// A stand-in for the A100 run's host: twice the box's speed at Python, 12.1 GB/s in one copy.
+    fn a100_host() -> Host {
+        Host {
+            cpu: Some("Intel(R) Xeon(R) CPU @ 2.20GHz".into()),
+            python_ms: 190.0,
+            h2d_gb_per_s: 12.1,
+        }
+    }
+
+    #[test]
+    fn the_boxs_own_host_leaves_the_boxs_forecast_as_it_is() {
+        let b = box_host();
+        for s in [
+            Scaling::MAP,
+            Scaling::LOW,
+            Scaling::central(&RTX_5060_TI),
+            Scaling::high(&RTX_5060_TI),
+        ] {
+            assert_eq!(
+                Costs::on(&RTX_5060_TI, &QWEN3_4B_FP8, s, Some(&b)),
+                Costs::frozen_box()
+            );
+        }
+        assert_eq!(
+            e0_table(&RTX_5060_TI, Some(&b)),
+            e0_table(&RTX_5060_TI, None)
+        );
+        // Its cells are the ones without a host, which say where they are.
+        let (on, without) = (cells(&RTX_5060_TI, Some(&b)), cells(&RTX_5060_TI, None));
+        assert_eq!(on.len(), without.len());
+        for (c, w) in on.iter().zip(&without) {
+            assert_eq!(c.costs, w.costs);
+            assert_eq!(c.label.replace(", on this host", ""), w.label);
+        }
+        assert_eq!(on[2].label, "RTX 5060 Ti 16 GB (central, on this host)");
+    }
+
+    #[test]
+    fn on_a_host_the_cards_cells_take_its_costs_and_the_report_says_so() {
+        let h = a100_host();
+        let on = Some(&h);
+        // Each costs table keeps its rows and adds the card's on the host: its link's 13.21 µs a
+        // token for the 4B's KV (14.68 for the 14B's), and a cold prefill shorter by E0's host time
+        // saved.
+        let (with, without) = (
+            costs_table(&A100_80GB, &QWEN3_4B_FP8, on),
+            costs_table(&A100_80GB, &QWEN3_4B_FP8, None),
+        );
+        assert!(with.starts_with(&without), "{with}");
+        assert_eq!(with.matches(", on this host |").count(), 4);
+        for row in [
+            "| A100 SXM4 80 GB | the E1 map's, on this host | 2.54 ms | 41.33 µs | 2.15 ns | 94.3 ns \
+             | 10.3 ms + 13.21 µs/token | 2,754 ms |",
+            "| A100 SXM4 80 GB | central, on this host | 3.88 ms | 41.33 µs | 2.59 ns | 94.3 ns \
+             | 10.3 ms + 13.21 µs/token | 3,065 ms |",
+        ] {
+            assert!(with.contains(row), "{row}\n{with}");
+        }
+        let t14 = costs_table(&A100_80GB, &QWEN3_14B_FP8, on);
+        assert!(
+            t14.contains(
+                "| A100 SXM4 80 GB | central, on this host | 8.96 ms | 150.21 µs | 3.60 ns \
+                 | 104.8 ns | 10.3 ms + 14.68 µs/token | 7,379 ms |"
+            ),
+            "{t14}"
+        );
+        // The box's own cells are as they were; the card's are on the host, and say so.
+        let (on_host, without) = (cells(&A100_80GB, on), cells(&A100_80GB, None));
+        assert_eq!(on_host.len(), without.len());
+        for (c, w) in on_host.iter().zip(&without) {
+            if c.label.contains("measured") {
+                assert_eq!((&c.label, &c.costs), (&w.label, &w.costs));
+                continue;
+            }
+            assert_eq!(c.label, w.label.replace(')', ", on this host)"));
+            let scaling = if c.label.contains("the E1 map's") {
+                Scaling::MAP
+            } else {
+                Scaling::central(&A100_80GB)
+            };
+            assert_eq!(c.costs, Costs::on(&A100_80GB, &c.model, scaling, on));
+            assert_ne!(c.costs, w.costs);
+        }
+        // There the API server's time is the box's over 2.01: 14.76 ms + 3.985 µs a prompt token,
+        // and 3.24 ms for each request decoding.
+        let s = &on_host[2].costs.steps;
+        assert!((s.host.ms - 14.76).abs() < 0.005 && (s.host.us_per_token - 3.985).abs() < 0.001);
+        assert!((s.host_per_decode_ms - 3.24).abs() < 0.005);
+        // E0's cells: the GPU hits about half the forecast's without a host, the restores slower.
+        let e0 = e0_table(&A100_80GB, on);
+        for row in [
+            "| 1,024 | 45.0 | 20.3 (18.6–20.4) | 64.0 | 36.1 (34.8–36.1) | 135 | 82.0 (62.4–82.7) |",
+            "| 31,744 | 156 | 70.0 (68.3–70.6) | 903 | 492 (491–493) | 10,239 | 3,106 (2,397–3,725) |",
+        ] {
+            assert!(e0.contains(row), "{row}\n{e0}");
+        }
+        // The report names the host where it says what the costs come from, and says where E0's
+        // cells and the scenarios' are.
+        let file = OnHost {
+            host: &h,
+            file: "host.json",
+        };
+        let text = report(&A100_80GB, Some(&file), &on_host, &[], &[11], None);
+        for part in [
+            "(`make forecast-a100 GPU=a100-80gb HOST_JSON=host.json`) from the box's measured costs, the \
+             card's published peaks, the path vLLM 0.32.0 takes for the box's checkpoint on it \
+             (Marlin W8A16; `crates/lh-sim/src/hardware.rs`) and the host it is placed on, as \
+             `benchmarks/a100/bench_host.py` measured it: its CPU (Intel(R) Xeon(R) CPU @ 2.20GHz) \
+             runs the Python workload in 190.0 ms against the box's 381.1, and its link copies \
+             pinned host memory to the card at 12.10 GB/s in one copy against the box's 6.76. Every \
+             number for the A100 SXM4 80 GB is modeled; the box's are measured where they say so. \
+             On this host the API server's time is the box's over 2.01, and a restore's transfer \
+             runs at 92% of the host's one-copy rate, as the box's E0 restore does of the box's; \
+             the restore's fixed part, the mixed-step extra and the restore stall stay the box's. \
+             Three settings bound it:",
+            "the modeled ratio of the two cards, the card on this host and the box on its own, \
+             central (low–high).",
+            "step loop with the card's central costs on this host; the discriminating scenario",
+        ] {
+            assert!(text.contains(part), "{part}\n{text}");
+        }
+        // A file without the CPU's name gives the sentence without it.
+        let unnamed = Host { cpu: None, ..h };
+        let file = OnHost {
+            host: &unnamed,
+            file: "host.json",
+        };
+        let text = report(&A100_80GB, Some(&file), &[], &[], &[11], None);
+        assert!(
+            text.contains("measured it: its CPU runs the Python workload in 190.0 ms"),
+            "{text}"
+        );
     }
 }

@@ -1,0 +1,94 @@
+{
+  "cpu": "Intel(R) Xeon(R) CPU E5-2609 v4 @ 1.70GHz",
+  "python": "3.12.13",
+  "python_ms": {
+    "p50": 381.10023736953735,
+    "min": 377.19426210969687,
+    "reps": 7
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 5060 Ti",
+    "pcie.link.gen.current": "1",
+    "pcie.link.gen.max": "3",
+    "pcie.link.width.current": "8",
+    "pcie.link.width.max": "16"
+  },
+  "versions": {
+    "torch": "2.13.0+cu130",
+    "vllm": "0.32.0"
+  },
+  "link": [
+    {
+      "direction": "h2d",
+      "page_bytes": 32768,
+      "pages": 8192,
+      "bytes": 268435456,
+      "ms": 49.34812927246094,
+      "note": "",
+      "gb_per_s": 5.439627802665302
+    },
+    {
+      "direction": "h2d",
+      "page_bytes": 65536,
+      "pages": 4096,
+      "bytes": 268435456,
+      "ms": 44.51411056518555,
+      "note": "",
+      "gb_per_s": 6.0303452678653136
+    },
+    {
+      "direction": "h2d",
+      "page_bytes": 2359296,
+      "pages": 113,
+      "bytes": 266600448,
+      "ms": 39.552608489990234,
+      "note": "",
+      "gb_per_s": 6.740401156284543
+    },
+    {
+      "direction": "h2d",
+      "page_bytes": null,
+      "pages": 1,
+      "bytes": 268435456,
+      "ms": 39.689632415771484,
+      "note": "",
+      "gb_per_s": 6.7633646285253
+    },
+    {
+      "direction": "d2h",
+      "page_bytes": 32768,
+      "pages": 8192,
+      "bytes": 268435456,
+      "ms": 46.62579345703125,
+      "note": "",
+      "gb_per_s": 5.757230839350348
+    },
+    {
+      "direction": "d2h",
+      "page_bytes": 65536,
+      "pages": 4096,
+      "bytes": 268435456,
+      "ms": 42.057472229003906,
+      "note": "",
+      "gb_per_s": 6.3825865363082865
+    },
+    {
+      "direction": "d2h",
+      "page_bytes": 2359296,
+      "pages": 113,
+      "bytes": 266600448,
+      "ms": 37.351585388183594,
+      "note": "",
+      "gb_per_s": 7.137593899410243
+    },
+    {
+      "direction": "d2h",
+      "page_bytes": null,
+      "pages": 1,
+      "bytes": 268435456,
+      "ms": 37.47903823852539,
+      "note": "",
+      "gb_per_s": 7.162282401475026
+    }
+  ]
+}
