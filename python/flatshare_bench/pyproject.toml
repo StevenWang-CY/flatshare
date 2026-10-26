@@ -22,6 +22,8 @@ dependencies = [
 # AIPerf runs a point's agents (flatshare-bench e2 run) and loads the plugins; a report needs none of its
 # packages.
 aiperf = ["aiperf==0.13.0"]
+# resvg renders the repository's social preview (python -m flatshare_bench.brand, make brand).
+brand = ["resvg-py==0.5.0"]
 test = ["pytest>=8,<10", "flatshare-bench[aiperf]"]
 
 [project.scripts]

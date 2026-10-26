@@ -30,7 +30,7 @@ E2_A100_REPORT ?= build/reproduce-e2-a100
 .PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-make-room test-trace test-make-room-ci \
   test-python schema metrics \
   reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 reproduce-e2-a100 figures e2-figures e2-w5-figure \
-  e2-gpus-figure method-figure \
+  e2-gpus-figure method-figure brand \
   demo-video forecast-a100 forecast-fitted profiles reproduce-a100 check-a100-calibration
 
 check: lint test
@@ -293,6 +293,11 @@ method-figure:
 
 # Every figure under docs/figures that its records or its code draw; the bench's tests check each is current.
 figures: e2-figures e2-w5-figure e2-gpus-figure method-figure
+
+# The logo, the mark and the social preview under docs/brand, drawn by flatshare_bench.brand (docs/brand/README.md);
+# the bench's tests check each is current.
+brand:
+	cd python/flatshare_bench && uv run -q --extra brand python -m flatshare_bench.brand $(abspath docs/brand)
 
 # The demo video, DEMO_OUT, and the README's animation, docs/figures/e2-demo.webp with its dark theme and its phone
 # layout (e2-demo-dark.webp, e2-demo-narrow.webp, e2-demo-narrow-dark.webp), from the calls that demo.campaign's two
