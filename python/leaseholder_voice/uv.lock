@@ -405,7 +405,7 @@ wheels = [
 
 [[package]]
 name = "leaseholder-stats"
-version = "0.3.0"
+version = "1.0.0"
 source = { editable = "../leaseholder_stats" }
 
 [package.metadata]
@@ -414,7 +414,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "leaseholder-voice"
-version = "0.3.0"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx2" },

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "leaseholder-vllm"
-version = "0.3.0"
+version = "1.0.0"
 description = "The engine change on vLLM 0.32: vLLM #63350 and #63351 backported as patches, the make-room and pr54530 variants' build, probes and tests"
 readme = "README.md"
 license = "Apache-2.0"
