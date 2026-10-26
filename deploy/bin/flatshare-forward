@@ -4,10 +4,11 @@
 On a single host (docs/HARDWARE.md, single-host mode) the GPU servers serve on Unix sockets only, as the box's do, and
 AIPerf speaks TCP only: the A100 run's calibration point (benchmarks/a100/calibration.sh) replays straight to the
 engine through flatshare-forward from a loopback port to the engine's socket, as the box's calibration points reached
-the engine through the tunnel's TCP forward. LISTEN is a socket path, whose file it makes mode 600 (replacing one left
-by an earlier run) and removes when stopped, or HOST:PORT; TARGET is HOST:PORT, or unix: and a socket's path. Each
-connection is relayed both ways until both sides have closed, with Nagle off on its TCP sides; a connection whose target
-refuses it is closed at once. It runs until SIGTERM or SIGINT.
+the engine through the tunnel's TCP forward. LISTEN is a socket path, whose file is mode 600 from its creation
+(replacing one left by an earlier run) and is removed when it stops, or HOST:PORT; TARGET is HOST:PORT, or unix: and a
+socket's path. An IPv6 HOST goes in brackets: [::1]:18000. Each connection is relayed both ways until both sides have
+closed, with Nagle off on its TCP sides; a connection whose target refuses it is closed at once. It runs until SIGTERM
+or SIGINT.
 
     flatshare-forward 127.0.0.1:18000=unix:$XDG_RUNTIME_DIR/flatshare/engine.sock
 
@@ -39,7 +40,10 @@ def target(text: str) -> str | tuple[str, int]:
 
 
 def describe(to: str | tuple[str, int]) -> str:
-    return f"unix:{to}" if isinstance(to, str) else f"{to[0]}:{to[1]}"
+    if isinstance(to, str):
+        return f"unix:{to}"
+    host, port = to
+    return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
 
 
 def nodelay(writer: asyncio.StreamWriter) -> None:
@@ -49,9 +53,14 @@ def nodelay(writer: asyncio.StreamWriter) -> None:
 
 
 def address(text: str) -> tuple[str, int]:
+    """HOST:PORT as its host and port; an IPv6 host goes in brackets ([::1]:8000), which a port cannot be told
+    from otherwise."""
     host, sep, port = text.rpartition(":")
-    if not sep or not host or not port.isdigit():
-        raise ValueError(f"{text!r} is not HOST:PORT")
+    bracketed = host.startswith("[") and host.endswith("]")
+    if bracketed:
+        host = host[1:-1]
+    if not sep or not host or not port.isdigit() or (":" in host) != bracketed:
+        raise ValueError(f"{text!r} is not HOST:PORT (an IPv6 HOST in brackets: [::1]:8000)")
     return host, int(port)
 
 
@@ -88,18 +97,27 @@ def relay(to: str | tuple[str, int]):
     return handle
 
 
+async def unix_server(path: Path, to: str | tuple[str, int]) -> asyncio.Server:
+    """A relay to ``to`` on a Unix socket at ``path``, replacing a socket left by an earlier run. The socket's file is
+    mode 600 from its creation: bound under umask 177, not changed after, when another user could have connected."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.exists() or path.is_symlink():
+        if not stat.S_ISSOCK(path.lstat().st_mode):
+            raise SystemExit(f"flatshare-forward: {path} exists and is not a socket")
+        path.unlink()
+    mask = os.umask(0o177)
+    try:
+        return await asyncio.start_unix_server(relay(to), path=str(path))
+    finally:
+        os.umask(mask)
+
+
 async def serve(pairs: list[tuple[str, str | tuple[str, int]]]) -> None:
     servers, sockets = [], []
     for listen, to in pairs:
         if "/" in listen:
             path = Path(listen)
-            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            if path.exists() or path.is_symlink():
-                if not stat.S_ISSOCK(path.lstat().st_mode):
-                    raise SystemExit(f"flatshare-forward: {path} exists and is not a socket")
-                path.unlink()
-            servers.append(await asyncio.start_unix_server(relay(to), path=str(path)))
-            os.chmod(path, 0o600)
+            servers.append(await unix_server(path, to))
             sockets.append(path)
         else:
             host, port = address(listen)

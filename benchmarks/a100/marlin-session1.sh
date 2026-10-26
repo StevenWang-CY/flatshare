@@ -14,8 +14,8 @@
 # (a drop-in, VLLM_DISABLED_KERNELS) in place of the flag, and remove the drop-in after. Each step's outputs stay on
 # their host under ~/flatshare/runs/marlin-dry (cyan's E0, Phastform's log lines and probes) and are copied to
 # FLATSHARE_OUT (default ~/flatshare/hosts/marlin-dry); a step whose outputs are there is skipped, so a rerun resumes.
-# FLATSHARE_SSH, FLATSHARE_GPU (phastform) and FLATSHARE_CYAN (cyan) as for
-# benchmarks/e2/campaign.sh.
+# FLATSHARE_SSH, FLATSHARE_GPU (default phastform) and FLATSHARE_CYAN (default cyan) as for benchmarks/e2/campaign.sh:
+# the hosts by SSH host names or aliases.
 set -euo pipefail
 fallback=false
 case ${1:-} in

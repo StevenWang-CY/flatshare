@@ -24,7 +24,7 @@ from typing import Any
 
 import orjson
 
-from flatshare_bench.kv_metrics import Labels, samples
+from flatshare_bench.kv_metrics import Labels, metric_series
 from flatshare_stats import metric_samples, summarize, v2v_samples
 
 OUTCOMES = "flatshare_gateway_request_outcomes_total"
@@ -378,12 +378,11 @@ def gateway_counts(
     ``counters``. The admission counts are null for a gateway without an admission point, the
     background rate for one without usage counters. A gateway from before the project's rename named
     its metrics otherwise (FORMER_PREFIXES); they are counted under their names now."""
-    before, after = current_exposition(before), current_exposition(after)
-    names = {name for name, _, _ in metric_samples(after) if name.startswith(GATEWAY_PREFIX)}
+    then, now = (metric_series(current_exposition(text)) for text in (before, after))
     counters = {
-        name: deltas(before, after, name, "gateway") or {}
-        for name in sorted(names)
-        if name.endswith("_total")
+        name: deltas(then, now, name, "gateway") or {}
+        for name in sorted(now)
+        if name.startswith(GATEWAY_PREFIX) and name.endswith("_total")
     }
 
     def total(name: str, match: Mapping[str, str]) -> int | None:
@@ -431,9 +430,10 @@ def engine_counts(before: str, after: str) -> dict[str, Any]:
     stores in bytes over the window. vLLM 0.32 counts a request's prompt tokens by source only at its
     first scheduling, so a preempted request's resume is in none of them; the CPU tier's counts have
     every load and store."""
+    then, now = metric_series(before), metric_series(after)
 
     def by(label: str, name: str) -> dict[str, int] | None:
-        series = deltas(before, after, name, "engine")
+        series = deltas(then, now, name, "engine")
         if series is None:
             return None
         totals: dict[str, int] = {}
@@ -443,7 +443,7 @@ def engine_counts(before: str, after: str) -> dict[str, Any]:
         return totals
 
     def total(name: str) -> int | None:
-        series = deltas(before, after, name, "engine")
+        series = deltas(then, now, name, "engine")
         return None if series is None else round(sum(series.values()))
 
     return {
@@ -454,13 +454,19 @@ def engine_counts(before: str, after: str) -> dict[str, Any]:
     }
 
 
-def deltas(before: str, after: str, name: str, source: str) -> dict[Labels, float] | None:
-    """How much each series of counter ``name`` grew; None when the exposition has no such counter.
-    A counter that went down means its process restarted during the window, which voids it."""
-    now = samples(after, name)
+def deltas(
+    before: Mapping[str, Mapping[Labels, float]],
+    after: Mapping[str, Mapping[Labels, float]],
+    name: str,
+    source: str,
+) -> dict[Labels, float] | None:
+    """How much each series of counter ``name`` grew from ``before`` to ``after``, two expositions'
+    :func:`~flatshare_bench.kv_metrics.metric_series`; None when ``after`` has no such counter. A
+    counter that went down means its process restarted during the window, which voids it."""
+    now = after.get(name)
     if not now:
         return None
-    then = samples(before, name)
+    then = before.get(name, {})
     grown = {}
     for labels, value in now.items():
         grown[labels] = value - then.get(labels, 0.0)

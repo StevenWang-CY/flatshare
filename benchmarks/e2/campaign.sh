@@ -19,8 +19,9 @@
 # node puts cyan's units back and pauses too, unless a point may still be running on cyan (the lock is held, or the
 # connection to cyan was lost): then it leaves both as they are, and says so. --dry-run copies and checks every arm file
 # and lists the points with their engines, without switching or measuring anything. FLATSHARE_SSH is your ssh command
-# for the hosts, as for deploy.sh; FLATSHARE_CYAN names cyan, and FLATSHARE_GPU the GPU node every point of the campaign
-# runs on, one host, which run.json names after its first label (phastform for phastform).
+# for the hosts, as for deploy.sh. FLATSHARE_CYAN names cyan (default cyan), and FLATSHARE_GPU the GPU node every point
+# of the campaign runs on (default phastform), one host, which run.json names after its first label (phastform for
+# phastform.example.org); each is an SSH host name or alias.
 # FLATSHARE_PROFILE names the GPU node's hardware profile (deploy/profiles) for flatshare-bench e2 run's engine check,
 # when it is not the one cyan's host settings name, and FLATSHARE_NODE_DIR the GPU node's directory under its home,
 # whose variant.sh switches the engine (default flatshare/src/deploy/phastform; a node rendered from another profile has

@@ -8,7 +8,22 @@ version = "1.2.0"
 description = "Flatshare's realtime voice plane on LiveKit Agents 1.8.8: the voice agent, measurement callers and plugin factory"
 readme = "README.md"
 license = "Apache-2.0"
+# The repository's LICENSE, copied here: a wheel built from the sdist cannot reach the root.
+license-files = ["LICENSE"]
+authors = [{ name = "Chuyue Wang" }]
 requires-python = ">=3.12,<3.13"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    # Installed from this repository, never uploaded to PyPI.
+    "Private :: Do Not Upload",
+]
 dependencies = [
     "livekit-agents[openai,silero]==1.8.8",
     "livekit==1.1.20",  # the rtc SDK livekit-agents 1.8.8 pins
@@ -18,6 +33,12 @@ dependencies = [
     "numpy>=1.26",
     "flatshare-stats",  # python/flatshare_stats, from this tree (tool.uv.sources)
 ]
+
+[project.urls]
+Homepage = "https://github.com/StevenWang-CY/flatshare"
+Repository = "https://github.com/StevenWang-CY/flatshare"
+Documentation = "https://github.com/StevenWang-CY/flatshare/blob/main/python/flatshare_voice/README.md"
+Issues = "https://github.com/StevenWang-CY/flatshare/issues"
 
 [project.optional-dependencies]
 test = [
@@ -32,6 +53,7 @@ flatshare-voice-worker = "flatshare_voice.worker:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
 markers = [
     "integration: runs a LiveKit room in an isolated network namespace (Linux, livekit-server)",
 ]

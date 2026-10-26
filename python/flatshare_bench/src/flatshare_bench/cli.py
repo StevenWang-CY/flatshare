@@ -129,10 +129,10 @@ def _add_kv_metrics(commands: Commands) -> None:
         "address",
         help=f"the server ({ADDRESS}), e.g. {runtime_socket('phastform-engine.sock')}, the engine's tunnel",
     )
-    snap.add_argument("out", type=Path)
+    snap.add_argument("out", type=Path, help="file to write the exposition to")
     cmp_ = actions.add_parser("compare", help="report the histograms between two snapshots")
-    cmp_.add_argument("before", type=Path)
-    cmp_.add_argument("after", type=Path)
+    cmp_.add_argument("before", type=Path, help="the snapshot taken before the run")
+    cmp_.add_argument("after", type=Path, help="the snapshot taken after it")
     kv.set_defaults(func=_kv_metrics)
 
 
@@ -398,7 +398,7 @@ def _add_drill(commands: Commands) -> None:
     )
     streams.add_argument("--out", type=Path, required=True, help="the record (JSON)")
     summary = actions.add_parser("report", help="summarize a drill's record")
-    summary.add_argument("record", type=Path)
+    summary.add_argument("record", type=Path, help="the record (JSON) that drill streams wrote")
     summary.add_argument(
         "--event",
         type=float,
@@ -422,7 +422,9 @@ def _add_drill(commands: Commands) -> None:
     start = actions.add_parser(
         "start", help="the phases of a server's start, from its journal (journalctl -o short-unix)"
     )
-    start.add_argument("journal", type=Path, nargs="+")
+    start.add_argument(
+        "journal", type=Path, nargs="+", help="a server's journal (journalctl -o short-unix)"
+    )
     drill.set_defaults(func=_drill)
 
 
@@ -571,7 +573,13 @@ def _add_e2(commands: Commands) -> None:
         description="Write frontier.csv, frontier.md, a frontier figure per workload and the "
         "stage waterfall of the points with turn lines, waterfall.svg.",
     )
-    report.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
+    report.add_argument(
+        "run_dirs",
+        type=Path,
+        nargs="+",
+        metavar="RUN_DIR",
+        help="a point's run directory (e2 run), or its compact record (e2 export)",
+    )
     report.add_argument("--out", type=Path, required=True, help="report directory")
     report.add_argument(
         "--waterfall",
@@ -600,7 +608,9 @@ def _add_e2(commands: Commands) -> None:
         "engine.json reduced to the engine the point ran on; no request log, AIPerf export, "
         "journal, credential or home path.",
     )
-    export.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
+    export.add_argument(
+        "run_dirs", type=Path, nargs="+", metavar="RUN_DIR", help="a point's run directory (e2 run)"
+    )
     export.add_argument("--out", type=Path, required=True, help="records directory")
     engine = actions.add_parser(
         "engine",

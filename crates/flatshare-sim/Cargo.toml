@@ -1,11 +1,17 @@
 [package]
 name = "flatshare-sim"
-description = "Trace-driven two-tier KV cache simulator for vLLM agent replays"
+description = "Trace-driven simulator of vLLM's two-tier KV cache (GPU pool and CPU tier) and step loop under coding-agent replays, with retention arms and forecasts for other GPUs"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+homepage.workspace = true
 repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+keywords = ["llm", "vllm", "kv-cache", "simulation", "agents"]
+categories = ["simulation", "science", "command-line-utilities"]
 
 [dependencies]
 clap.workspace = true

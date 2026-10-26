@@ -698,8 +698,8 @@ def libcuda(directory: Path, version: str = "580.82.07") -> Path:
     return directory
 
 
-LIBC6 = {"x86_64": "libc6,x86-64", "aarch64": "libc6,AArch64"}.get(os.uname().machine, "libc6")
-"""ldconfig -p's tag of this machine's 64-bit libraries."""
+LIBC6 = "libc6,x86-64"
+"""ldconfig -p's tag of an x86-64 host's 64-bit libraries: the machine the linker's cache below is read on."""
 
 
 def test_detect_finds_the_drivers_libraries_where_the_linker_does_not_look(
@@ -711,6 +711,10 @@ def test_detect_finds_the_drivers_libraries_where_the_linker_does_not_look(
     bin_dir, rootfs = tmp_path / "bin", tmp_path / "root"
     bin_dir.mkdir()
     rootfs.mkdir()
+    # detect reads the cache's entries of the host's machine, an x86-64 one here wherever the test runs: on another,
+    # such as an arm64 Mac, it would take every entry for the host's own.
+    machine = os.uname()
+    monkeypatch.setattr(os, "uname", lambda: os.uname_result((*machine[:4], "x86_64")))
     cache = tmp_path / "cache.txt"
     libc = f"\tlibc.so.6 ({LIBC6}) => /lib/x86_64-linux-gnu/libc.so.6\n"
     cache.write_text("1 libs found in cache `/etc/ld.so.cache'\n" + libc)

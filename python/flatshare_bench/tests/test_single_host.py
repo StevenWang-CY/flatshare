@@ -5,6 +5,7 @@ speaks TCP only."""
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import importlib.machinery
 import importlib.util
@@ -1448,6 +1449,76 @@ def test_flatshare_forward_relays_a_socket_to_a_port() -> None:
         [sys.executable, str(BIN / "flatshare-forward"), "nowhere"], capture_output=True
     )
     assert bad.returncode == 2
+
+
+def test_flatshare_forward_takes_ipv6_hosts_in_brackets() -> None:
+    # "[::1]:8000" was host "[::1]", brackets and all, which no connection resolves; an unbracketed IPv6 host was
+    # split at its last colon, its port a guess.
+    forward = _module("flatshare_forward", BIN / "flatshare-forward")
+    assert forward.address("[::1]:18000") == ("::1", 18000)
+    assert forward.address("127.0.0.1:18000") == ("127.0.0.1", 18000)
+    assert forward.target("[fe80::1]:8000") == ("fe80::1", 8000)
+    assert forward.describe(("::1", 8000)) == "[::1]:8000"
+    assert forward.describe(("127.0.0.1", 8000)) == "127.0.0.1:8000"
+    for wrong in ("::1:8000", "[127.0.0.1]:80", "[]:80", "[::1]", "localhost", "localhost:http"):
+        with pytest.raises(ValueError, match=r"is not HOST:PORT \(an IPv6 HOST in brackets"):
+            forward.address(wrong)
+
+
+@pytest.mark.skipif(not socket.has_ipv6, reason="needs IPv6")
+def test_flatshare_forward_relays_a_socket_to_an_ipv6_port() -> None:
+    try:
+        server = socket.create_server(("::1", 0), family=socket.AF_INET6)
+    except OSError:
+        pytest.skip("no IPv6 loopback")
+    port = server.getsockname()[1]
+
+    def serve() -> None:
+        with contextlib.suppress(OSError):
+            connection, _ = server.accept()
+            with connection:
+                while data := connection.recv(65536):
+                    connection.sendall(data.upper())
+
+    threading.Thread(target=serve, daemon=True).start()
+    path = Path(tempfile.mkdtemp(prefix="forward-")) / "stt.sock"
+    forward = subprocess.Popen(
+        [sys.executable, str(BIN / "flatshare-forward"), f"{path}=[::1]:{port}"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert f"{path} -> [::1]:{port}" in forward.stdout.readline()
+        with socket.socket(socket.AF_UNIX) as client:
+            client.connect(str(path))
+            client.sendall(b"over six")
+            client.shutdown(socket.SHUT_WR)
+            reply = b""
+            while data := client.recv(65536):
+                reply += data
+        assert reply == b"OVER SIX"
+    finally:
+        forward.send_signal(signal.SIGTERM)
+        assert forward.wait(timeout=10) == 0
+        server.close()
+
+
+def test_flatshare_forward_binds_its_socket_private_from_its_creation(
+    socket_modes: dict[str, int],
+) -> None:
+    # Bound under the process's umask and made mode 600 after, the socket was open in between to what the umask left
+    # (755 under 022, 777 under 0): a user who connected then kept the connection.
+    forward = _module("flatshare_forward", BIN / "flatshare-forward")
+    path = Path(tempfile.mkdtemp(prefix="forward-")) / "engine.sock"
+
+    async def bind() -> None:
+        server = await forward.unix_server(path, ("127.0.0.1", 9))
+        server.close()
+        await server.wait_closed()
+
+    asyncio.run(bind())
+    assert socket_modes == {str(path): 0o600}
+    assert os.umask(0o022) == 0o022, "the process's umask is back"
 
 
 def test_flatshare_forward_relays_a_port_to_a_socket() -> None:

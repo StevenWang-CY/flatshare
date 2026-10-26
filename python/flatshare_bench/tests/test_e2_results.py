@@ -79,6 +79,7 @@ writes it, and the gateway's tests check it is current)."""
 RESULTS = REPO / "benchmarks" / "results" / "2026-10-23-e2"
 W5_RESULTS = REPO / "benchmarks" / "results" / "2026-10-24-e2-w5"
 FB_RESULTS = REPO / "benchmarks" / "results" / "2026-10-25-e2-fb"
+RS_RESULTS = REPO / "benchmarks" / "results" / "2026-10-26-e2-rs"
 MARLIN_RESULTS = REPO / "benchmarks" / "results" / "2026-10-25-marlin-dry" / "session2"
 A100_RESULTS = REPO / "benchmarks" / "results" / "2026-10-26-a100"
 A100_E2 = A100_RESULTS / "e2"
@@ -1281,7 +1282,7 @@ def unredacted(data: Any) -> list[str]:
 
 @pytest.mark.parametrize(
     "results",
-    [RESULTS, W5_RESULTS, FB_RESULTS, MARLIN_RESULTS, A100_E2],
+    [RESULTS, W5_RESULTS, FB_RESULTS, RS_RESULTS, MARLIN_RESULTS, A100_E2],
     ids=lambda p: str(p.relative_to(REPO / "benchmarks" / "results")),
 )
 def test_the_committed_records_are_complete_and_hold_no_credential(results: Path) -> None:
@@ -1322,7 +1323,7 @@ def test_the_committed_records_give_their_committed_report(tmp_path: Path) -> No
 
 @pytest.mark.parametrize(
     "results",
-    [RESULTS, W5_RESULTS, FB_RESULTS, MARLIN_RESULTS, A100_E2],
+    [RESULTS, W5_RESULTS, FB_RESULTS, RS_RESULTS, MARLIN_RESULTS, A100_E2],
     ids=lambda p: str(p.relative_to(REPO / "benchmarks" / "results")),
 )
 def test_a_committed_record_exports_to_itself(tmp_path: Path, results: Path) -> None:
@@ -1341,8 +1342,8 @@ def test_a_committed_record_exports_to_itself(tmp_path: Path, results: Path) -> 
 
 @pytest.mark.parametrize(
     ("results", "points"),
-    [(W5_RESULTS, 72), (FB_RESULTS, 15), (MARLIN_RESULTS, 1)],
-    ids=["w5", "fb", "marlin-dry"],
+    [(W5_RESULTS, 72), (FB_RESULTS, 15), (RS_RESULTS, 10), (MARLIN_RESULTS, 1)],
+    ids=["w5", "fb", "rs", "marlin-dry"],
 )
 def test_each_record_ran_the_scheduler_its_variant_loads_on_the_revision_it_names(
     results: Path, points: int

@@ -75,9 +75,10 @@ pub struct TraceSource {
 #[derive(Debug)]
 enum SourceKind {
     Dir(Vec<PathBuf>),
+    /// Each trace's byte offset and length in the file, and its line's number (from 1): a blank line holds none.
     Jsonl {
         path: PathBuf,
-        lines: Vec<(u64, usize)>,
+        lines: Vec<(u64, usize, usize)>,
     },
     #[cfg(test)]
     Memory(Vec<Trace>),
@@ -108,7 +109,7 @@ impl TraceSource {
         let mut lines = Vec::new();
         let mut offset = 0u64;
         let mut buf = Vec::new();
-        loop {
+        for number in 1.. {
             buf.clear();
             let n = reader
                 .read_until(b'\n', &mut buf)
@@ -117,7 +118,7 @@ impl TraceSource {
                 break;
             }
             if buf.iter().any(|b| !b.is_ascii_whitespace()) {
-                lines.push((offset, n));
+                lines.push((offset, n, number));
             }
             offset += n as u64;
         }
@@ -181,7 +182,7 @@ impl TraceSource {
                     path: path.clone(),
                     source,
                 };
-                let (offset, len) = lines[index];
+                let (offset, len, number) = lines[index];
                 let mut file = File::open(path).map_err(|e| err(ErrorKind::Io(e)))?;
                 file.seek(SeekFrom::Start(offset))
                     .map_err(|e| err(ErrorKind::Io(e)))?;
@@ -189,7 +190,7 @@ impl TraceSource {
                 file.read_exact(&mut bytes)
                     .map_err(|e| err(ErrorKind::Io(e)))?;
                 Trace::from_json(&bytes)
-                    .map_err(|e| err(ErrorKind::Parse(format!("line {}: {e}", index + 1))))
+                    .map_err(|e| err(ErrorKind::Parse(format!("line {number}: {e}"))))
             }
             #[cfg(test)]
             SourceKind::Memory(traces) => Ok(traces[index].clone()),
@@ -385,6 +386,14 @@ mod tests {
         let src = TraceSource::open(&jsonl).unwrap();
         assert_eq!(src.len(), 2);
         assert_eq!(src.load(1).unwrap().id, "abd");
+        // A trace that does not parse is named by its line in the file, the blank line before it counted.
+        std::fs::write(&jsonl, format!("{line}\n\n{{\"id\": \"abe\"}}\n")).unwrap();
+        let err = TraceSource::open(&jsonl).unwrap().load(1).unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with(&format!("{}: not a Weka trace: line 3: ", jsonl.display())),
+            "{err}"
+        );
 
         let traces = dir.join("traces");
         std::fs::create_dir_all(&traces).unwrap();

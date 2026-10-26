@@ -1,8 +1,8 @@
 """The headline tables against the committed records: every number of README.md's table and of docs/PRODUCTION.md's
 "What it buys" table, as printed, from the medians of the W5 runs its row reports, pooled over the campaigns that ran
-it as benchmarks/results/2026-10-24-e2-w5/compare.py pools them; and BENCHMARKS.md's FB table and window-sweep table,
-from those records' own compare.py and table.py. New records, or a table edited by hand, cannot leave a stale
-headline: the commit that changes either fails here."""
+it as benchmarks/results/2026-10-24-e2-w5/compare.py pools them; and BENCHMARKS.md's FB, RS, transport and
+window-sweep tables, from those records' own compare.py, running_share.py, ab.py and table.py. New records, or a table
+edited by hand, cannot leave a stale headline: the commit that changes either fails here."""
 
 from __future__ import annotations
 
@@ -144,6 +144,22 @@ def test_fbs_table_is_its_records_against_w5s() -> None:
     ).stdout
     first = printed.split("\n\n")[0].strip()
     assert first.count("\n") == 4  # the header, its rule and three configurations
+    assert first in (REPO / "docs" / "BENCHMARKS.md").read_text()
+
+
+RS = REPO / "benchmarks" / "results" / "2026-10-26-e2-rs"
+
+
+def test_rss_table_is_its_records_beside_the_a100s() -> None:
+    # BENCHMARKS.md's RS table is what RS's records' running_share.py prints first, from RS's records and the A100
+    # core's, every round of both counted.
+    printed = subprocess.run(
+        [sys.executable, str(RS / "running_share.py")], capture_output=True, text=True, check=True
+    ).stdout
+    first = printed.split("\n\n")[0].strip()
+    assert first.count("\n") == 3  # the header, its rule and two configurations
+    # Each configuration's five rounds on the box.
+    assert all(row.split(" | ")[1] == "5" for row in first.splitlines()[2:])
     assert first in (REPO / "docs" / "BENCHMARKS.md").read_text()
 
 

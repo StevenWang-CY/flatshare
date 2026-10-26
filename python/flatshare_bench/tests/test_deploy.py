@@ -105,6 +105,13 @@ def test_the_gpu_nodes_publish_no_kv_events_and_cyan_reaches_them_only_through_t
         assert "ssh " not in text and "flatshare-tunnel-" not in text, unit.name
 
 
+def test_the_tunnel_unit_does_not_restart_a_configuration_it_refuses() -> None:
+    # flatshare-tunnel exits 2 only for a configuration it refuses (no target, a session count under 1), which a
+    # restart would refuse again every RestartSec; any other exit is restarted.
+    tunnel = (DEPLOY / "cyan" / "systemd" / "flatshare-tunnel@.service").read_text().splitlines()
+    assert "Restart=always" in tunnel and "RestartPreventExitStatus=2" in tunnel
+
+
 def test_cyans_servers_and_tunnels_run_on_their_planes_cores() -> None:
     # The control plane has cores 0-7 and the voice plane 32-47, the load generators the rest
     # (e2-host.toml): a unit on every core competes with what a point measures. The tunnel's SSH
@@ -200,6 +207,44 @@ def test_cyans_install_makes_the_gateways_secret_and_metrics_key_once(tmp_path: 
     subprocess.run(install, env=env, check=True, capture_output=True)
     assert [path.read_text() for path in files] == made
     assert sorted(p.name for p in config.iterdir()) == ["cache-salt-secret", "metrics-key"]
+
+
+def test_cyans_install_says_when_the_gateways_binary_is_not_the_sources_version(
+    tmp_path: Path,
+) -> None:
+    # deploy.sh syncs the source, and the gateway's binary is built apart (ops/RUNBOOK.md, Deploy), so it lagged a
+    # release unnoticed: cyan's DEPLOYED was v1.2 while its binary said 1.1.0. The install says so and still succeeds,
+    # since the source may be deployed before the binary is built.
+    home, bin_dir = tmp_path / "home", tmp_path / "bin"
+    home.mkdir()
+    bin_dir.mkdir()
+    for tool in ("systemctl", "loginctl"):
+        (bin_dir / tool).write_text("#!/bin/sh\n")
+        (bin_dir / tool).chmod(0o755)
+    env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    source = tomllib.loads((REPO / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+    gateway = home / "flatshare" / "bin" / "flatshare-gateway"
+    gateway.parent.mkdir(parents=True)
+
+    def install() -> str:
+        done = subprocess.run(
+            ["bash", str(DEPLOY / "cyan" / "install.sh")], env=env, capture_output=True, text=True
+        )
+        assert done.returncode == 0, done.stderr
+        return done.stderr
+
+    said = (
+        "install: ~/flatshare/bin/flatshare-gateway is {}, the source version {}: "
+        "rebuild and reinstall it as ops/RUNBOOK.md's Deploy says\n"
+    )
+    assert install() == said.format("missing", source)
+    gateway.write_text("#!/bin/sh\necho 'flatshare-gateway 1.1.0'\n")
+    gateway.chmod(0o755)
+    assert install() == said.format("version 1.1.0", source)
+    gateway.write_text("#!/bin/sh\nexit 126\n")  # a binary for another machine, say
+    assert install() == said.format("not runnable", source)
+    gateway.write_text(f"#!/bin/sh\necho 'flatshare-gateway {source}'\n")
+    assert install() == ""
 
 
 LINKED_SYSTEMCTL = """\
@@ -1513,7 +1558,7 @@ def test_deploy_syncs_the_commit_alone_and_refuses_changes_it_would_not_carry(
     (repo / "deploy" / "__pycache__").mkdir()  # ignored: never synced
     (repo / "deploy" / "__pycache__" / "x.pyc").write_bytes(b"")
     # The host has a file of an earlier commit, which goes.
-    src = hosts / "phastform" / "flatshare" / "src"
+    src = hosts / "phastform.example.org" / "flatshare" / "src"
     src.mkdir(parents=True)
     (src / "gone.py").write_text("")
     env = os.environ | {
@@ -1521,13 +1566,13 @@ def test_deploy_syncs_the_commit_alone_and_refuses_changes_it_would_not_carry(
         "FAKE_HOSTS": str(hosts),
         "FLATSHARE_SSH": str(FAKES / "ssh"),
     }
-    deploy = ["bash", str(repo / "deploy" / "deploy.sh"), "phastform"]
+    deploy = ["bash", str(repo / "deploy" / "deploy.sh"), "phastform.example.org"]
     done = subprocess.run(deploy, env=env, capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
     synced = sorted(str(p.relative_to(src)) for p in src.rglob("*") if p.is_file())
     assert synced == sorted([*git(repo, "ls-files").splitlines(), "DEPLOYED"])
     assert (src / "DEPLOYED").read_text() == git(repo, "describe", "--always") + "\n"
-    assert (hosts / "phastform" / "install.log").read_text() == "installed\n"
+    assert (hosts / "phastform.example.org" / "install.log").read_text() == "installed\n"
     # A change the sync would not carry, committed or not, is refused before anything moves.
     (repo / "deploy" / "phastform" / "install.sh").write_text("echo changed\n")
     (repo / "new.txt").write_text("")

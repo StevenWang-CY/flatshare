@@ -46,6 +46,15 @@ def samples(exposition: str, name: str) -> dict[Labels, float]:
     }
 
 
+def metric_series(exposition: str) -> dict[str, dict[Labels, float]]:
+    """Every metric's samples, by name and then label set, in one pass over the exposition: for each
+    name, what :func:`samples` gives for it."""
+    by_name: dict[str, dict[Labels, float]] = {}
+    for sample, labels, value in metric_samples(exposition):
+        by_name.setdefault(sample, {})[tuple(sorted(labels.items()))] = value
+    return by_name
+
+
 @dataclass(frozen=True)
 class Histogram:
     """Cumulative bucket counts, ordered by upper bound; the last bound is +Inf."""

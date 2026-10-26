@@ -97,6 +97,10 @@ class BotsConfig:
     """Write each call's audio and its turns' times after the calls: call-<i>.wav, call-<i>.json."""
 
     def __post_init__(self) -> None:
+        if self.callers < 1 or self.turns < 1:
+            raise ValueError("callers and turns must be 1 or more")
+        if not 0.0 <= self.barge_in <= 1.0:
+            raise ValueError("barge_in is a share of the turns, from 0 to 1")
         if self.warmup_turns < 0:
             raise ValueError("warmup_turns cannot be negative")
 

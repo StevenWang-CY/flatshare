@@ -22,7 +22,8 @@ session costs about 12 ms where a new connection costs about 165 ms (OpenSSH 8.9
 connections open between requests.
 
 The environment (the unit's EnvironmentFile, ~/.config/flatshare/tunnel-NODE.env) names the node,
-FLATSHARE_TUNNEL_TARGET (user@host), and may set FLATSHARE_TUNNEL_SESSIONS. It tells systemd it is ready (Type=notify)
+FLATSHARE_TUNNEL_TARGET (user@host), and may set FLATSHARE_TUNNEL_SESSIONS, 1 or more; without a target, or with a
+session count that is not one, it exits with status 2 before it listens. It tells systemd it is ready (Type=notify)
 once its sockets listen. On SIGTERM or SIGINT it closes its sockets, opens nothing more, and ends its masters and
 sessions.
 """
@@ -104,8 +105,12 @@ class Tunnel:
         with contextlib.suppress(FileNotFoundError):
             if stat.S_ISSOCK(self.path.lstat().st_mode):
                 self.path.unlink()  # a dead tunnel's; systemd runs one instance of a unit
-        self.listener.bind(str(self.path))
-        self.path.chmod(0o600)
+        # Mode 600 from its creation: bound under umask 177, not changed after, when another user could have connected.
+        mask = os.umask(0o177)
+        try:
+            self.listener.bind(str(self.path))
+        finally:
+            os.umask(mask)
         self.listener.listen(128)
         self.listener.setblocking(False)
         # Accepted by hand, so that no event loop ever reads from a connection: each one goes to ssh untouched.
@@ -312,7 +317,18 @@ async def main(node: str) -> int:
             f"flatshare-tunnel: no FLATSHARE_TUNNEL_TARGET for {node} (~/.config/flatshare/tunnel-{node}.env)"
         )
         return 2
-    sessions = int(os.environ.get("FLATSHARE_TUNNEL_SESSIONS", "10"))
+    setting = os.environ.get("FLATSHARE_TUNNEL_SESSIONS") or "10"
+    try:
+        sessions = int(setting)
+    except ValueError:
+        sessions = 0
+    if sessions < 1:
+        log(
+            "flatshare-tunnel: FLATSHARE_TUNNEL_SESSIONS is the sessions a master carries at once, a number of "
+            f"1 or more (sshd's MaxSessions, 10 by default), not {setting!r} "
+            f"(~/.config/flatshare/tunnel-{node}.env)"
+        )
+        return 2
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "flatshare"
     for directory in (runtime, runtime / f"ssh-{node}"):
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)

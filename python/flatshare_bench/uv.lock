@@ -641,7 +641,6 @@ dependencies = [
     { name = "flatshare-stats" },
     { name = "fonttools" },
     { name = "httpx" },
-    { name = "matplotlib" },
     { name = "orjson" },
 ]
 
@@ -654,6 +653,7 @@ brand = [
 ]
 test = [
     { name = "aiperf" },
+    { name = "matplotlib" },
     { name = "pytest" },
 ]
 
@@ -665,7 +665,7 @@ requires-dist = [
     { name = "flatshare-stats", editable = "../flatshare_stats" },
     { name = "fonttools", specifier = "==4.67.0" },
     { name = "httpx", specifier = ">=0.28,<0.29" },
-    { name = "matplotlib", specifier = "==3.11.2" },
+    { name = "matplotlib", marker = "extra == 'test'", specifier = "==3.11.2" },
     { name = "orjson", specifier = ">=3.11,<4" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8,<10" },
     { name = "resvg-py", marker = "extra == 'brand'", specifier = "==0.5.0" },

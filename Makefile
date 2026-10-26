@@ -2,6 +2,9 @@
 # tests, the benchmark tools and the voice worker have disjoint dependencies (a vLLM checkout, AIPerf, LiveKit).
 
 RUFF := uvx ruff@0.17.1
+# A literal '#' for the recipes and functions below: make before 4.3, macOS's 3.81 among them, reads one inside a
+# function call as the start of a comment.
+HASH := \#
 VLLM_REF := v0.32.0
 VLLM_SRC ?= $(HOME)/.cache/flatshare/vllm-$(VLLM_REF)
 # Every Python package except the engine variants' tests (test-vllm); each one has a `test` extra.
@@ -11,7 +14,7 @@ PY_PACKAGES := $(filter-out python/flatshare_vllm,$(patsubst %/pyproject.toml,%,
 # runs' own scripts under benchmarks/results).
 PY_SOURCES := python crates/flatshare-sim/scripts $(sort $(wildcard benchmarks/e2/*.py benchmarks/a100/*.py \
   deploy/*.py deploy/bin/*.py deploy/a100/*.py deploy/phastform/variants/*/*.py) \
-  $(shell grep -ls '^#!.*python' deploy/bin/*))
+  $(shell grep -ls '^$(HASH)!.*python' deploy/bin/*))
 # E2's committed records (flatshare-bench e2 export), one directory per point under its campaign, and where
 # reproduce-e2 writes their report.
 E2_RESULTS := benchmarks/results/2026-10-23-e2

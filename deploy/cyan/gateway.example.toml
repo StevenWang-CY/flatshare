@@ -42,7 +42,7 @@ trusted = true
 default_class = "realtime"
 max_class = "realtime"
 
-# agentic-api, carrying Claude Code and Codex sessions.
+# Coding agents, through an API layer such as agentic-api.
 [tenants.agents]
 keys_sha256 = ["<sha256 of the agents key>"]
 trusted = true

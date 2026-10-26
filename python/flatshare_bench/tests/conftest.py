@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import socket
+import stat
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +14,26 @@ def _hermetic_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep the caller's FLATSHARE_BENCH_* settings (the plugin's and the YAML template's) out of every test."""
     for name in [name for name in os.environ if name.startswith("FLATSHARE_BENCH_")]:
         monkeypatch.delenv(name)
+
+
+@pytest.fixture
+def socket_modes(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, int]]:
+    """The mode of each Unix socket's file as bind() creates it, by path, before its caller could change it; the
+    process's umask is 022 meanwhile, a unit's default, under which a socket bound as it is would be mode 755."""
+    modes: dict[str, int] = {}
+    bind = socket.socket.bind
+
+    def recorded(self: socket.socket, address: object) -> None:
+        bind(self, address)
+        if self.family == socket.AF_UNIX and isinstance(address, str):
+            modes[address] = stat.S_IMODE(os.stat(address).st_mode)
+
+    monkeypatch.setattr(socket.socket, "bind", recorded)
+    mask = os.umask(0o022)
+    try:
+        yield modes
+    finally:
+        os.umask(mask)
 
 
 @pytest.fixture

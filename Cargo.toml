@@ -4,10 +4,14 @@ members = ["crates/*"]
 
 [workspace.package]
 version = "1.2.0"
+authors = ["Chuyue Wang"]
 edition = "2024"
 rust-version = "1.98"
 license = "Apache-2.0"
+homepage = "https://github.com/StevenWang-CY/flatshare"
 repository = "https://github.com/StevenWang-CY/flatshare"
+# The crates are built from this repository, not published to crates.io.
+publish = false
 
 [workspace.dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
@@ -26,7 +30,7 @@ flatshare-core = { path = "crates/flatshare-core" }
 flatshare-proto = { path = "crates/flatshare-proto" }
 listenfd = "1"
 memchr = "2"
-nix = { version = "0.31", features = ["signal"] }
+nix = { version = "0.31", features = ["signal", "user"] }
 prometheus-client = "0.25"
 schemars = "1"
 serde = { version = "1", features = ["derive"] }

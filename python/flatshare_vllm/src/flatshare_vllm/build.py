@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
+import os
 import re
 import sys
 from collections.abc import Iterable
@@ -173,7 +174,15 @@ def build(variant: str, out_dir: Path, source_tree: bool = False) -> Path:
     compile(header + source, f"{name}.py", "exec")
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / f"{name}.py"
-    target.write_text(header + source)
+    # Whole or not at all: an engine that starts while this writes, or after a write was cut short, imports the
+    # previous module or this one, never a part. The staged file's name is no module's.
+    staged = out_dir / f".{name}.py.{os.getpid()}"
+    try:
+        staged.write_text(header + source)
+        staged.replace(target)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
     return target
 
 

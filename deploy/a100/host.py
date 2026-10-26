@@ -1644,6 +1644,7 @@ def write_preflight(node: Node, checks: list[Check], out: Path | None = None) ->
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="host.py", description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
+    node_help = "the node's directory (NODE), as bootstrap.sh makes it"
     for name, text in (
         (
             "env",
@@ -1656,11 +1657,11 @@ def main(argv: list[str] | None = None) -> int:
         ("units", "link the units and this host's drop-ins"),
         ("config", "write the control plane's configuration"),
     ):
-        commands.add_parser(name, help=text).add_argument("node", type=Path)
+        commands.add_parser(name, help=text).add_argument("node", type=Path, help=node_help)
     p = commands.add_parser(
         "jit-check", help="build FlashInfer's sampler as the engine's first start would"
     )
-    p.add_argument("node", type=Path)
+    p.add_argument("node", type=Path, help=node_help)
     p.add_argument(
         "--arch",
         help="the compute capability to build for (default: the card's, else the profile's)",
@@ -1671,25 +1672,25 @@ def main(argv: list[str] | None = None) -> int:
         help="build only where the last build failed or was for another compiler or card",
     )
     p = commands.add_parser("preflight", help="check the host for the campaign")
-    p.add_argument("node", type=Path)
+    p.add_argument("node", type=Path, help=node_help)
     p.add_argument("--gpu", action="store_true", help="also run the checks that need the card")
     p.add_argument("--out", type=Path, help="where to write preflight.json (default: in NODE)")
     p = commands.add_parser("warm", help="start the engine once per compile configuration")
-    p.add_argument("node", type=Path)
+    p.add_argument("node", type=Path, help=node_help)
     p.add_argument(
         "--configs", type=Path, help="NAME VARIANT [FLAG...] lines instead of the core's three"
     )
     p = commands.add_parser(
         "warmed", help="whether every core compile configuration started (exit status 1 if not)"
     )
-    p.add_argument("node", type=Path)
+    p.add_argument("node", type=Path, help=node_help)
     p = commands.add_parser("headers", help="whether PYTHON has Python.h (exit status 1 if not)")
-    p.add_argument("python", type=Path)
+    p.add_argument("python", type=Path, help="the Python interpreter to look in")
     p = commands.add_parser(
         "with-engine-env", help="run a command with the engine unit's environment"
     )
-    p.add_argument("node", type=Path)
-    p.add_argument("cmd", nargs=argparse.REMAINDER)
+    p.add_argument("node", type=Path, help=node_help)
+    p.add_argument("cmd", nargs=argparse.REMAINDER, help="the command and its arguments")
     args = parser.parse_args(argv)
     if args.command == "headers":
         found = python_headers(args.python)

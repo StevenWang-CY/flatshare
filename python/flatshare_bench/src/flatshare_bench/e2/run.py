@@ -318,13 +318,15 @@ def _link(host: Host, unit: str, variant: str, wanted: bool) -> bool:
 
 
 def _write_private(path: Path, text: str) -> bool:
-    """Write ``text`` to a file only its owner can read (it holds key digests); returns whether it
-    changed."""
+    """Write ``text`` to a file only its owner can read (it holds key digests), from its creation
+    on: a new file of mode 600 replaces it. Returns whether it changed."""
     if path.exists() and path.read_text() == text:
         return False
     staged = path.with_name(path.name + ".new")
-    staged.write_text(text)
-    staged.chmod(0o600)
+    # One an interrupted write left goes: whoever opened it would read what is written over it.
+    staged.unlink(missing_ok=True)
+    with open(os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as file:
+        file.write(text)
     staged.replace(path)
     return True
 

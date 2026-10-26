@@ -11,6 +11,9 @@ EnvironmentFile=%h/.config/flatshare/tunnel-%i.env
 ExecStart=/usr/bin/python3 %h/flatshare/src/deploy/bin/flatshare-tunnel %i
 Restart=always
 RestartSec=5
+# Status 2 is a configuration the tunnel refuses (no target, a session count under 1), which a restart would refuse
+# again every RestartSec: the unit stays failed until the env file is fixed and the unit started.
+RestartPreventExitStatus=2
 # Its SSH sessions carry every byte to and from the node: on the control plane's cores 0-7, as the gateway (the voice
 # plane has 32-47).
 CPUAffinity=0-7

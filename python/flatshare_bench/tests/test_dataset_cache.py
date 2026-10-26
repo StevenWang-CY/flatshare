@@ -226,6 +226,9 @@ def test_aiperf_profile_imports_the_plugin_before_it_forks_its_services(tmp_path
     env = os.environ | {
         "FLATSHARE_BENCH_DATA": str(TRACES),
         "AIPERF_DATASET_MMAP_CACHE_DIR": str(tmp_path),
+        # Resolving makes the artifact directory, by default runs/agentic-replay in the working directory: the
+        # source tree's, under pytest.
+        "FLATSHARE_BENCH_ARTIFACTS": str(tmp_path / "aiperf"),
     }
     result = subprocess.run(
         [sys.executable, "-c", RESOLVE, str(CONFIGS / "agentic_replay.yaml")],

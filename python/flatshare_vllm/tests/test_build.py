@@ -4,6 +4,7 @@ source the patches do not match fails the build naming the hunk, and the build r
 tests/test_make_room.py checks make-room's behavior on the real scheduler, and tests/test_trace.py that it schedules
 as the PRs do."""
 
+import errno
 import importlib.util
 import os
 import shutil
@@ -151,6 +152,31 @@ def test_build_needs_source_tree_for_a_checkout(tmp_path):
     result = build(tmp_path / "out", "pr54530")
     assert result.returncode != 0 and "--source-tree builds from a source checkout" in result.stderr
     assert build(tmp_path / "out", "pr54530", "--source-tree").returncode == 0
+
+
+@needs_vllm_src
+def test_a_build_cut_short_leaves_the_previous_module_whole(tmp_path, builder, monkeypatch):
+    """The engine imports the module at every start: a build that fails as it writes (a full disk, say) leaves the
+    previous module as it was and nothing of its own, and the next build replaces the module whole."""
+    sched = Path(str(VLLM_SRC)) / "vllm/v1/core/sched"
+    monkeypatch.setattr(builder, "sched_dir", lambda source_tree: sched)
+    target = tmp_path / f"{MODULES['make-room']}.py"
+    target.write_text("# the previous build\n")
+    write = Path.write_text
+
+    def cut_short(path, text, *args, **kwargs):
+        write(path, text[: len(text) // 2])
+        raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+
+    monkeypatch.setattr(Path, "write_text", cut_short)
+    with pytest.raises(OSError):
+        builder.build("make-room", tmp_path, source_tree=True)
+    assert target.read_text() == "# the previous build\n"
+    assert [path.name for path in tmp_path.iterdir()] == [target.name]
+    monkeypatch.setattr(Path, "write_text", write)
+    assert builder.build("make-room", tmp_path, source_tree=True) == target
+    assert [path.name for path in tmp_path.iterdir()] == [target.name]
+    compile(target.read_text(), target.name, "exec")
 
 
 def test_build_names_its_variants(tmp_path):

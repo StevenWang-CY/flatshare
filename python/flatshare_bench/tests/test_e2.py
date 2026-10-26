@@ -381,6 +381,21 @@ def test_the_calls_per_gpu_rounds_alternate_their_engine_groups_and_caller_count
         )
 
 
+RS = ("w5-disc-frozen-s24", "w5-disc-pr-ab48-s24")
+"""RS's two configurations: W5's arm files of the frozen box and of the PRs' 48-token configuration."""
+
+
+def test_rs_samples_the_kv_beside_w5s_two_configurations_in_alternating_order() -> None:
+    # RS measures the box's running share as the A100's core measured its own: W5's arm files, round N on
+    # the agents' sample of W5's round N, the engine's free KV sampled every 0.5 s.
+    rounds = [campaign_lines(BENCHMARKS / f"rs-r{r}.campaign") for r in range(1, 6)]
+    assert [lines[:2] for lines in rounds] == [
+        [f"agents-seed {seed}", "kv-sample-s 0.5"] for seed in range(11, 16)
+    ]
+    orders = [[Path(line).stem for line in lines[2:]] for lines in rounds]
+    assert orders == [list(RS) if r % 2 else list(RS[::-1]) for r in range(1, 6)]
+
+
 def test_flag_values_pair_each_flag_with_its_value() -> None:
     flags = ["--max-num-seqs", "12", "--no-async-scheduling", "--watermark", "0.1", "--x"]
     assert flag_values(flags) == {
@@ -1425,6 +1440,28 @@ def test_a_point_whose_leftovers_cannot_be_ended_fails_and_says_why(
         run(cyan, "a1-voice", VOICE_ALONE)
     run_json = record(cyan, "a1-voice")
     assert run_json["status"] == "failed" and "Permission denied" in run_json["error"]
+
+
+def test_the_generated_configuration_is_private_from_its_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # gateway-e2.toml was written with the umask's mode and made mode 600 after, so that it was readable in between
+    # (644 under 022, 666 under 0), and the staged file an interrupted write left was written over in place: whoever
+    # had opened it read the next configuration's key digests.
+    path, staged = tmp_path / "gateway-e2.toml", tmp_path / "gateway-e2.toml.new"
+    staged.write_text("stale\n")
+    staged.chmod(0o644)
+    monkeypatch.setattr(Path, "chmod", lambda *args, **kwargs: None)  # no mode set after the fact
+    mask = os.umask(0)
+    try:
+        with staged.open() as reader:
+            assert e2._write_private(path, "digests\n")
+            assert reader.read() == "stale\n"
+    finally:
+        os.umask(mask)
+    assert path.read_text() == "digests\n" and stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert not staged.exists()
+    assert not e2._write_private(path, "digests\n"), "an unchanged configuration is not written"
 
 
 def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(cyan: Cyan) -> None:

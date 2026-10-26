@@ -6,8 +6,8 @@
 # on a new host or after an upgrade, then removes the drop-in and its caches and restarts the engine warm. The model's
 # files stay in the page cache: a start after a reboot also reads them from disk. Into $FLATSHARE_DRILLS/NAME (default
 # ~/flatshare/runs/drills) it writes each unit's journal from the restart on, and prints each start's phases
-# (`flatshare-bench drill start`, on cyan). FLATSHARE_SSH, FLATSHARE_CYAN and FLATSHARE_GPU as for
-# benchmarks/e2/campaign.sh, with one GPU node.
+# (`flatshare-bench drill start`, on cyan). FLATSHARE_SSH, FLATSHARE_CYAN (default cyan) and FLATSHARE_GPU (default
+# phastform) as for benchmarks/e2/campaign.sh, with one GPU node: the hosts by SSH host names or aliases.
 set -euo pipefail
 usage() { echo "usage: cold-start.sh [--cold] engine|box [NAME]" >&2; exit 2; }
 cold=false caches_note=""

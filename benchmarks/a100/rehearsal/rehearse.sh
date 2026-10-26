@@ -22,7 +22,7 @@
 #   --purge              cleanup, run again although it is done, also removes the rehearsal's home on the host
 # The environment: REHEARSAL_HOST (phastform), REHEARSAL_SSH (the ssh command: FLATSHARE_SSH, else ssh),
 # REHEARSAL_HOME (a100-rehearsal, a directory under the host's login home), REHEARSAL_REPO (the checkout pushed: the one
-# this script is in), REHEARSAL_CYAN and REHEARSAL_PEACOCK (cyan, peacock),
+# this script is in), REHEARSAL_CYAN and REHEARSAL_PEACOCK (cyan, peacock), the hosts by SSH host names or aliases,
 # REHEARSAL_CORPUS (this workstation's weka-x32, ~/flatshare/data/weka-x32; cyan's when it has none),
 # REHEARSAL_PEACOCK_CORPUS (peacock's, under its home: flatshare-data/weka-x32; this workstation's is copied there when
 # it has none), REHEARSAL_GATEWAY_BIN (a flatshare-gateway for push.sh's FLATSHARE_GATEWAY_BIN; by default bootstrap.sh

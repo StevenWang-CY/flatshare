@@ -17,10 +17,10 @@
 # (default ~/flatshare/runs/drills) it fetches the client's record (drill.json, client.log) and writes the event's
 # time (event), the GPU node's /dev/shm before and after (the CPU tier lives there), the engine's scheduler class,
 # and the journal from the event on (the engine's or the gateway's); then it prints `flatshare-bench drill report`.
-# FLATSHARE_SSH, FLATSHARE_CYAN and FLATSHARE_GPU as for benchmarks/e2/campaign.sh, with one GPU node. The drill runs on
-# whatever variant the node runs: switch it first with deploy/phastform/variant.sh use. The scheduler class comes from
-# /server_info, which only the measurement drop-in serves (variant.sh measure on); without it the scheduler file is
-# empty.
+# FLATSHARE_SSH, FLATSHARE_CYAN (default cyan) and FLATSHARE_GPU (default phastform) as for benchmarks/e2/campaign.sh,
+# with one GPU node: the hosts by SSH host names or aliases. The drill runs on whatever variant the node runs: switch it
+# first with deploy/phastform/variant.sh use. The scheduler class comes from /server_info, which only the measurement
+# drop-in serves (variant.sh measure on); without it the scheduler file is empty.
 set -euo pipefail
 usage() { echo "usage: drill.sh engine-kill|gateway-reload|gateway-restart|gateway-kill [NAME]" >&2; exit 2; }
 (($# >= 1 && $# <= 2)) || usage

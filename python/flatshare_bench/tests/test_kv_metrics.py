@@ -8,6 +8,7 @@ from flatshare_bench.kv_metrics import (
     REUSE_GAP,
     Histogram,
     compare,
+    metric_series,
     samples,
 )
 
@@ -49,6 +50,20 @@ def test_samples_are_keyed_by_their_sorted_labels():
     assert samples(text, "m_total") == {(("a", "1"), ("b", "2")): 3.0, (("a", "9"),): 4.0}
     assert samples(text, "other_total") == {(): 5.0}
     assert samples(text, "absent_total") == {}
+
+
+def test_every_metric_is_read_in_one_pass_as_samples_reads_one():
+    # The export read a gateway's exposition once for each counter of it; the series of all, in one pass, are
+    # what samples() gives for each, the last of a repeated label set included.
+    text = (
+        'm_total{b="2",a="1"} 3\nm_total{a="9"} 4\nother_total 5\nm_created{a="1"} 1.7e9\n'
+        'm_total{a="9"} 6\n# HELP m_total M.\n'
+    )
+    series = metric_series(text)
+    assert list(series) == ["m_total", "other_total", "m_created"]
+    for name in series:
+        assert series[name] == samples(text, name)
+    assert series["m_total"] == {(("a", "1"), ("b", "2")): 3.0, (("a", "9"),): 6.0}
 
 
 def test_quantiles_and_shares_interpolate_inside_buckets():

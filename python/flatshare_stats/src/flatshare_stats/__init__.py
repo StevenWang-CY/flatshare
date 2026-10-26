@@ -73,13 +73,41 @@ def v2v_samples(turns: Iterable[Mapping[str, Any]], timeout_ms: float) -> tuple[
     return samples, censored
 
 
-_SAMPLE = re.compile(r"^(?P<name>[\w:]+)(?:\{(?P<labels>[^}]*)\})?\s+(?P<value>\S+)$")
-_LABEL = re.compile(r'(\w+)="([^"]*)"')
+_VALUE = r'[^"\\\n]*(?:\\[\\"n][^"\\\n]*)*'
+"""A label value between its quotes: any character but the three the format escapes, which are."""
+_LABEL = rf'[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)[ \t]*=[ \t]*"({_VALUE})"[ \t]*'
+_LABEL_SYNTAX = rf'[ \t]*[a-zA-Z_][a-zA-Z0-9_]*[ \t]*=[ \t]*"{_VALUE}"[ \t]*'
+_SAMPLE = re.compile(
+    r"[ \t]*(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)"
+    rf"(?:\{{(?P<labels>(?:{_LABEL_SYNTAX}(?:,{_LABEL_SYNTAX})*,?)?)[ \t]*\}})?"
+    r"[ \t]+(?P<value>[^ \t#]+)"
+    r"(?:[ \t]+(?P<timestamp>[^ \t#]+))?"
+    r"(?:[ \t]+#.*)?[ \t]*"
+)
+"""A sample's line: its name, its labels, its value, then perhaps a timestamp and an exemplar."""
+_LABELS = re.compile(_LABEL)
+_ESCAPED = re.compile(r"\\(.)")
+_UNESCAPED = {"\\": "\\", '"': '"', "n": "\n"}
 
 
 def metric_samples(exposition: str) -> Iterator[tuple[str, dict[str, str], float]]:
-    """Every sample of a Prometheus text exposition as ``(name, labels, value)``, in its order;
-    comments and lines that are not a sample are skipped."""
-    for line in exposition.splitlines():
-        if m := _SAMPLE.match(line):
-            yield m["name"], dict(_LABEL.findall(m["labels"] or "")), float(m["value"])
+    """Every sample of a Prometheus text exposition (format 0.0.4, or OpenMetrics) as ``(name,
+    labels, value)``, in its order. A label value is unescaped (``\\\\``, ``\\"``, ``\\n``) and
+    may hold any other character, ``}`` and ``,`` among them; a sample's timestamp and its exemplar
+    (``# {...} value``) are read past. Comments, blank lines and lines that are not a sample (a
+    value or timestamp that is not a number, an escape the format has not) are skipped."""
+    for line in exposition.split("\n"):
+        m = _SAMPLE.fullmatch(line.removesuffix("\r"))
+        if m is None:
+            continue
+        try:
+            value = float(m["value"])
+            if m["timestamp"] is not None:
+                float(m["timestamp"])
+        except ValueError:
+            continue
+        labels = {
+            name: _ESCAPED.sub(lambda e: _UNESCAPED[e[1]], text) if "\\" in text else text
+            for name, text in _LABELS.findall(m["labels"] or "")
+        }
+        yield m["name"], labels, value

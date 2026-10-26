@@ -990,34 +990,35 @@ def check_vllm(node_dir: Path, flags: list[str]) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="profile.py", description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
+    profile_help = "a profile: its name, NAME for deploy/profiles/NAME.toml, or a TOML file's path"
     p = commands.add_parser("detect", help="write the host's facts as JSON")
     p.add_argument("--out", type=Path, help="write them to this file instead of stdout")
     p.add_argument(
         "--peer", help="also time TCP connects to this host's SSH port (split mode's RTT check)"
     )
     p = commands.add_parser("render", help="write a node's directory from a profile")
-    p.add_argument("profile")
+    p.add_argument("profile", help=profile_help)
     p.add_argument(
         "--host",
         type=Path,
         help="the host's facts (profile.py detect), for a profile's auto values",
     )
-    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--out", type=Path, required=True, help="the node's directory to write")
     p = commands.add_parser(
         "check", help="compare a profile's rendering with its repository copy, byte for byte"
     )
-    p.add_argument("profile")
+    p.add_argument("profile", help=profile_help)
     p.add_argument(
         "--against", type=Path, help="the directory to compare with (default: the profile's dir)"
     )
     p = commands.add_parser(
         "update", help="write a profile's rendered files into its repository copy"
     )
-    p.add_argument("profile")
+    p.add_argument("profile", help=profile_help)
     p = commands.add_parser(
         "check-vllm", help="parse a rendered node's configs with vLLM's own parser"
     )
-    p.add_argument("dir", type=Path)
+    p.add_argument("dir", type=Path, help="a node's directory, as render writes it")
     p.add_argument(
         "flags",
         nargs=argparse.REMAINDER,

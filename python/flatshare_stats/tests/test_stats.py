@@ -97,3 +97,49 @@ not a sample
         ("flatshare_gateway_first_byte_seconds_bucket", {"class": "realtime", "le": "+Inf"}, 20.0),
         ("flatshare_gateway_up", {}, 1.0),
     ]
+
+
+def test_metric_samples_follows_the_text_format() -> None:
+    # A line with a timestamp or an exemplar was not read, and a label value with a brace or an escaped quote was
+    # cut at it: the sample was lost, or its labels were wrong.
+    exposition = (
+        # A timestamp (the text format's milliseconds, OpenMetrics' seconds) and an exemplar are read past.
+        'http_requests_total{method="post",code="200"} 1027 1395066363000\n'
+        'flatshare_gateway_requests_total{class="realtime"} 7 # {trace_id="KOMLtNiG"} 1 1700000000.5\n'
+        'flatshare_gateway_requests_created{class="realtime"} 1.7e9 1700000000.25\n'
+        # A label value holds any character; a backslash, a double quote and a line feed come escaped.
+        'msg{text="a } b, c=\\"d\\"",path="C:\\\\DIR\\\\",lines="1\\n2"} 1\n'
+        # Blanks around a label's parts, a trailing comma, an empty set, the special values, a CRLF line end.
+        'spaced{ a = "1" , b="2", } 2\n'
+        "empty{} 3\n"
+        "nan NaN\n"
+        "up +Inf\n"
+        "down -Inf\n"
+        "crlf 4\r\n"
+        # Not samples: a value or a timestamp that is not a number, an escape the format has not, a label value
+        # without quotes, labels with no comma between them, an unclosed set, a number after the timestamp.
+        "bad_value one\n"
+        "bad_timestamp 1 yesterday\n"
+        'bad_escape{a="\\t"} 1\n'
+        "bad_quotes{a=1} 1\n"
+        'bad_comma{a="1" b="2"} 1\n'
+        'bad_brace{a="1" 1\n'
+        "bad_tail 1 2 3\n"
+        "# EOF\n"
+    )
+    samples = list(metric_samples(exposition))
+    assert [(name, labels) for name, labels, _ in samples] == [
+        ("http_requests_total", {"method": "post", "code": "200"}),
+        ("flatshare_gateway_requests_total", {"class": "realtime"}),
+        ("flatshare_gateway_requests_created", {"class": "realtime"}),
+        ("msg", {"text": 'a } b, c="d"', "path": "C:\\DIR\\", "lines": "1\n2"}),
+        ("spaced", {"a": "1", "b": "2"}),
+        ("empty", {}),
+        ("nan", {}),
+        ("up", {}),
+        ("down", {}),
+        ("crlf", {}),
+    ]
+    values = [value for _, _, value in samples]
+    assert values[:6] == [1027.0, 7.0, 1.7e9, 1.0, 2.0, 3.0]
+    assert math.isnan(values[6]) and values[7:] == [math.inf, -math.inf, 4.0]

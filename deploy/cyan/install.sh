@@ -30,4 +30,18 @@ done
 systemctl --user daemon-reload
 systemctl --user enable -q flatshare-voicenet.service flatshare-livekit.service flatshare-tunnel@phastform.service \
   flatshare-voice-worker.service
+# The gateway's binary is built apart from this source (ops/RUNBOOK.md, Deploy), so a release can leave it behind: a
+# version that is not the source's is said, not refused, since the source may be deployed before the binary is built.
+gateway=$HOME/flatshare/bin/flatshare-gateway
+wanted=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version *= *"\([^"]*\)".*/\1/p' "$here/../../Cargo.toml")
+built=missing
+if [[ -e $gateway ]]; then
+  version=$("$gateway" --version 2>/dev/null | awk '{print $2}') || true
+  built=${version:+version $version}
+  built=${built:-not runnable}
+fi
+if [[ $built != "version $wanted" ]]; then
+  echo "install: ~/flatshare/bin/flatshare-gateway is $built, the source version $wanted: rebuild and reinstall it" \
+    "as ops/RUNBOOK.md's Deploy says" >&2
+fi
 loginctl show-user "$(id -un)" --property=Linger

@@ -83,6 +83,8 @@ The other arms take an earlier arm's winner, so their files are written from its
 
 [`fb-r1.campaign`](fb-r1.campaign) to [`fb-r5.campaign`](fb-r5.campaign) are FB's rounds: voice alone, the frozen box and the PRs' 48-token configuration again, on the final code, with W5's arm files, W5's five samples of the agents (seeds 11 to 15) and no KV sampler, as W5's points ran, so that each round compares with W5's of the same seed. Each round rotates the three by one place. Their records are in [`benchmarks/results/2026-10-25-e2-fb`](../results/2026-10-25-e2-fb/README.md), whose `compare.py` sets each round beside W5's.
 
+[`rs-r1.campaign`](rs-r1.campaign) to [`rs-r5.campaign`](rs-r5.campaign) are RS's rounds: the frozen box and the PRs' 48-token configuration on v1.2, with W5's arm files, W5's five samples of the agents (seeds 11 to 15) and the KV sampler every 0.5 s, so that the box's running share is measured as the A100 run measured its own. Odd rounds run the frozen box first, even rounds the PRs' configuration. Their records are in [`benchmarks/results/2026-10-26-e2-rs`](../results/2026-10-26-e2-rs/README.md), whose `running_share.py` sets each round beside the A100 core's of the same seed.
+
 The `[admission]` keys are those of `flatshare-gateway`'s configuration ([its README](../../crates/flatshare-gateway/README.md)); `flatshare-bench e2 run` passes the `[gateway]` table through as it is.
 
 `FLATSHARE_PROFILE` names the GPU node's hardware profile ([`deploy/profiles`](../../deploy/profiles)) when it is not the frozen box's: `flatshare-bench e2 run --profile` then holds the engine to that profile's model and scheduler settings, and the report gives the points a workload of their own, by the GPU and the model their records name.
@@ -93,10 +95,10 @@ The `[admission]` keys are those of `flatshare-gateway`'s configuration ([its RE
 
 The configurations the docs' tables report, by the arm file each ran from and the campaigns whose records hold its runs, in the discriminating scenario unless the row says otherwise. W4's records are in [`benchmarks/results/2026-10-23-e2`](../results/2026-10-23-e2/README.md) and W5's re-measure in [`benchmarks/results/2026-10-24-e2-w5`](../results/2026-10-24-e2-w5/README.md), each W5 arm file its W4 one with a warm-up turn opening each call. FB re-measured three of them on the final code with W5's arm files ([`benchmarks/results/2026-10-25-e2-fb`](../results/2026-10-25-e2-fb/README.md)). The A100 run's campaigns, in [`benchmarks/a100`](../a100), ran W5's three arm files for its core on an A100 SXM4 80 GB and arm files of their own for the arms after it ([HARDWARE.md](../../docs/HARDWARE.md#the-a100-run); the records are in [`benchmarks/results/2026-10-26-a100`](../results/2026-10-26-a100/README.md)).
 
-| Configuration | W4: arm file, campaigns | W5: arm file, campaigns | FB: campaigns, W5's arm files |
+| Configuration | W4: arm file, campaigns | W5: arm file, campaigns | FB and RS: campaigns, W5's arm files |
 |---|---|---|---|
 | Voice alone, the SLO's reference | `a1-voice`: w2, s1, s2, r3, r4 | `w5-a1-voice`: w5-r1 to w5-r5 | fb-r1 to fb-r5 |
-| The frozen box | `disc-frozen-s24`: w2c, r1 to r4 | `w5-disc-frozen-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5 | fb-r1 to fb-r5 |
+| The frozen box | `disc-frozen-s24`: w2c, r1 to r4 | `w5-disc-frozen-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5 | fb-r1 to fb-r5, rs-r1 to rs-r5 |
 | Step cap 1,024, no threshold | `disc-a4-b1024-t0-s24`: w2c, r1 to r4 | | |
 | Static reservation, 2,048 tokens | `disc-a6-reserve2048-s24`: w2c, r1 to r4 | | |
 | SGLang with HiCache | `disc-a7b-sglang-hicache-s24`: w2c, r1 to r4 | | |
@@ -104,7 +106,7 @@ The configurations the docs' tables report, by the arm file each ran from and th
 | Arm 9 | `disc-a9-s24`: a9, r1 to r4 | | |
 | #63350 alone (KV preemption) | `disc-pr-a-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-a-s24`: w5-pr-r1 to w5-pr-r5 | |
 | #63350 + #63351 (the budget cap, 16 tokens) | `disc-pr-ab-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab-s24`: w5-pr-r1 to w5-pr-r5 | |
-| #63350 + #63351, a 48-token window | `disc-pr-ab48-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab48-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5, w5-ext-r1 to w5-ext-r5 | fb-r1 to fb-r5 |
+| #63350 + #63351, a 48-token window | `disc-pr-ab48-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab48-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5, w5-ext-r1 to w5-ext-r5 | fb-r1 to fb-r5, rs-r1 to rs-r5 |
 | The same on make-room as v0.3 built it (W5's control) | | `w5-disc-pr-ab48-v03-s24`: w5-r1 to w5-r5 | |
 | Standard scenario (16 agent sessions): the frozen box | `a4-b512-t256-s16`: w2, s1, s2 | `w5-std-frozen-s16`: w5-ext-r1 to w5-ext-r5 | |
 | Standard scenario: arm 9 | `a9-s16`: a9-standard, s1, s2 | | |
@@ -126,7 +128,7 @@ python/flatshare_bench/.venv/bin/flatshare-bench e2 export $FLATSHARE_E2_RESULTS
 make reproduce-e2
 ```
 
-The run directories themselves, with the raw records the report does not need (the gateway's request log, AIPerf's exports, the metric snapshots, the worker's journal, the GPU's samples, the tools' logs), are an asset of the v0.3 release; W5's and FB's are the v1.0 release's `leaseholder-raw-records-w5.tar.gz` and `leaseholder-raw-records-fb.tar.gz`, named before the project's rename.
+The run directories themselves, with the raw records the report does not need (the gateway's request log, AIPerf's exports, the metric snapshots, the worker's journal, the GPU's samples, the tools' logs), are an asset of the v0.3 release; W5's and FB's are the v1.0 release's `leaseholder-raw-records-w5.tar.gz` and `leaseholder-raw-records-fb.tar.gz`, named before the project's rename, and RS's the v1.3 release's `flatshare-raw-records-rs.tar.gz`.
 
 ## The demo video
 

@@ -930,6 +930,9 @@ def test_the_override_runs_the_units_under_flatshare_svc_where_systemd_could(
     # and with no user namespaces the voice plane in the host's namespace is the degraded path there too.
     monkeypatch.setenv("FLATSHARE_SUPERVISOR", "flatshare-svc")
     monkeypatch.setattr(host_py, "_public_addresses", lambda: ["203.0.113.7"])
+    # A session's runtime directory, as short as a host's: under a temporary home, as on macOS, flatshare-svc's own
+    # would be too long for vLLM's sockets, which test_the_preflight_refuses_a_runtime_directory_too_long_... checks.
+    monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
     node = ready_host(tmp_path, venv, engine, monkeypatch, facts(userns=False))
     checks = {c.check: c for c in host_py.preflight(node, gpu=True, home=venv, gateway_url=engine)}
     assert not [c.check for c in checks.values() if c.status == "refused"]

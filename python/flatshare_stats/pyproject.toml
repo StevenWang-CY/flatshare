@@ -5,12 +5,33 @@ build-backend = "hatchling.build"
 [project]
 name = "flatshare-stats"
 version = "1.2.0"
-description = "The statistics Flatshare's measurements publish, defined once: inclusive percentiles, censored V2V samples, Prometheus text"
+description = "The statistics Flatshare's measurements publish, defined once: inclusive percentiles, censored voice-to-voice samples, Prometheus text expositions"
 readme = "README.md"
 license = "Apache-2.0"
+# The repository's LICENSE, copied here: a wheel built from the sdist cannot reach the root.
+license-files = ["LICENSE"]
+authors = [{ name = "Chuyue Wang" }]
 requires-python = ">=3.12"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    # Installed from this repository, never uploaded to PyPI.
+    "Private :: Do Not Upload",
+]
 # The standard library only: the probes load it by path in the engine's environment.
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/StevenWang-CY/flatshare"
+Repository = "https://github.com/StevenWang-CY/flatshare"
+Documentation = "https://github.com/StevenWang-CY/flatshare/blob/main/python/flatshare_stats/README.md"
+Issues = "https://github.com/StevenWang-CY/flatshare/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]

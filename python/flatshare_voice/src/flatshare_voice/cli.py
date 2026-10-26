@@ -22,13 +22,18 @@ def _render(args: argparse.Namespace) -> int:
     return 0
 
 
+LIVEKIT_CREDENTIALS = ("LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
+"""The LiveKit server's key and secret, which ``bots`` signs its callers' join tokens with, from the environment."""
+
+
 def _bots(args: argparse.Namespace) -> int:
     from .bots import BotsConfig, run_bots
 
+    api_key, api_secret = (os.environ[name] for name in LIVEKIT_CREDENTIALS)
     config = BotsConfig(
         url=args.url,
-        api_key=os.environ["LIVEKIT_API_KEY"],
-        api_secret=os.environ["LIVEKIT_API_SECRET"],
+        api_key=api_key,
+        api_secret=api_secret,
         corpus=args.corpus,
         callers=args.callers,
         turns=args.turns,
@@ -76,14 +81,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bots.add_argument("--corpus", type=Path, required=True, help="directory from render-callers")
     bots.add_argument(
-        "--callers", type=int, default=2, help="concurrent calls (default %(default)s)"
+        "--callers", type=_positive, default=2, help="concurrent calls (default %(default)s)"
     )
-    bots.add_argument("--turns", type=int, default=20, help="turns per call (default %(default)s)")
+    bots.add_argument(
+        "--turns", type=_positive, default=20, help="turns per call (default %(default)s)"
+    )
     bots.add_argument(
         "--barge-in",
-        type=float,
+        type=_share,
         default=0.25,
-        help="share of turns with an interruption (default %(default)s)",
+        help="share of turns with an interruption, from 0 to 1 (default %(default)s)",
     )
     bots.add_argument(
         "--seed",
@@ -93,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bots.add_argument(
         "--warmup-turns",
-        type=int,
+        type=_count,
         default=0,
         help="turns that open each call unmeasured: a line and its reply, no interruption, "
         'marked "warmup" in turns.jsonl and left out of the summary (default %(default)s)',
@@ -109,8 +116,37 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _count(text: str) -> int:
+    """A count of 0 or more, for argparse."""
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must be 0 or more, got {value}")
+    return value
+
+
+def _positive(text: str) -> int:
+    """A count of 1 or more, for argparse."""
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be 1 or more, got {value}")
+    return value
+
+
+def _share(text: str) -> float:
+    """A share from 0 to 1, for argparse."""
+    value = float(text)
+    if not 0.0 <= value <= 1.0:
+        raise argparse.ArgumentTypeError(f"must be a share from 0 to 1, got {value}")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "bots" and (
+        missing := [name for name in LIVEKIT_CREDENTIALS if not os.environ.get(name)]
+    ):
+        parser.error(f"bots needs {' and '.join(missing)} in the environment for its join tokens")
     return args.func(args)
 
 

@@ -12,7 +12,8 @@
 #   4. the frozen engine back
 # The outputs stay on Phastform under ~/flatshare/runs/marlin-dry (the point's on cyan, as a campaign's) and are
 # copied to FLATSHARE_OUT (default ~/flatshare/hosts/marlin-dry); a step whose outputs are there is skipped.
-# FLATSHARE_SSH, FLATSHARE_GPU and FLATSHARE_CYAN as for benchmarks/e2/campaign.sh.
+# FLATSHARE_SSH, FLATSHARE_GPU (default phastform) and FLATSHARE_CYAN (default cyan) as for benchmarks/e2/campaign.sh:
+# the hosts by SSH host names or aliases.
 set -euo pipefail
 (($# == 0)) || { echo "usage: marlin-session2.sh" >&2; exit 2; }
 here=$(cd "$(dirname "$0")" && pwd)

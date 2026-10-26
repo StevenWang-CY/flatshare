@@ -34,12 +34,10 @@ import math
 import os
 import re
 import sys
-from copy import deepcopy
 from dataclasses import dataclass
 from functools import cache
 from html import escape
 from pathlib import Path
-from xml.etree import ElementTree as ET
 
 from fontTools import subset
 from fontTools.ttLib import TTFont
@@ -574,16 +572,6 @@ class Figure:
 
     # Charts -----------------------------------------------------------------------------------
 
-    def titles(
-        self, cx: float, y: float, title: str, subtitle: str, *, size: float = TITLE
-    ) -> float:
-        """A centred title over its gray subtitle, which names the measure and says which way is
-        better; returns the subtitle's baseline."""
-        self.text(cx, y, title, size=size, anchor="middle")
-        below = y + NOTE + 9
-        self.text(cx, below, subtitle, size=NOTE, anchor="middle", cls="soft")
-        return below
-
     def hbar(
         self, x: float, y: float, length: float, thickness: float, bar: str, *, cut: bool = False
     ) -> None:
@@ -623,18 +611,6 @@ class Figure:
         """A legend's entry: a small segment swatch and its name; returns the name's box."""
         self._hpath(x, baseline - 0.62 * size, 22, 0.66 * size, f"s-{fill}", 2.0)
         return self.text(x + 30, baseline, name, size=size)
-
-    def vbar(self, x: float, base: float, height: float, width: float, bar: str) -> None:
-        """A flat vertical bar standing on ``base``, its top corners rounded."""
-        if bar not in BARS:
-            raise ValueError(f"a bar is one of {BARS}, not {bar!r}")
-        r = min(3.0, height / 2, width / 2)
-        top, x1 = base - height, x + width
-        self.path(
-            f"M{fmt(x)} {fmt(base)}V{fmt(top + r)}Q{fmt(x)} {fmt(top)} {fmt(x + r)} {fmt(top)}"
-            f"H{fmt(x1 - r)}Q{fmt(x1)} {fmt(top)} {fmt(x1)} {fmt(top + r)}V{fmt(base)}Z",
-            f"g-{bar}",
-        )
 
     # Method figures ---------------------------------------------------------------------------
 
@@ -794,10 +770,6 @@ class Figure:
         baseline = y + 0.72 * size + 6 if below else y - 8
         return self.text((x0 + x1) / 2, baseline, name, size=size, anchor="middle")
 
-    def junction(self, x: float, y: float) -> None:
-        """A dot where dataflow splits or joins."""
-        self.circle(x, y, FLOW * 1.35, "flow-head")
-
     # Checks and export ------------------------------------------------------------------------
 
     def check(self) -> None:
@@ -819,15 +791,6 @@ class Figure:
             for box in self.boxes:
                 if not box.halo and _segment_hits_box(a, b, box, pad=1.0):
                     raise ValueError(f"a rule crosses the text {box.label!r} near {a}")
-
-    def check_crop(self, left: float, top: float, width: float, height: float) -> None:
-        """Refuse a phone layout's crop that would cut through a label."""
-        right, bottom = left + width, top + height
-        for box in self.boxes:
-            inside = box.x0 >= left and box.x1 <= right and box.y0 >= top and box.y1 <= bottom
-            outside = box.x1 <= left or box.x0 >= right or box.y1 <= top or box.y0 >= bottom
-            if not (inside or outside):
-                raise ValueError(f"the crop {left, top, width, height} cuts {box.label!r}")
 
     def _font_css(self) -> str:
         rules = []
@@ -887,53 +850,3 @@ class Figure:
     def save(self, path: Path) -> Path:
         path.write_text(self.render())
         return path
-
-
-def stack_panels(
-    source: Path, out: Path, panels, *, gap: float = 24, width: float = NARROW
-) -> Path:
-    """A phone layout that restacks a wide figure's panels in one column, reusing their exact
-    vector content: ``panels`` are (left, top, width, height) crops of ``source``, top to bottom,
-    each scaled down to ``width`` where it is wider."""
-    ns = "http://www.w3.org/2000/svg"
-    ET.register_namespace("", ns)
-    root_in = ET.parse(source).getroot()
-    root = ET.Element(
-        f"{{{ns}}}svg",
-        {"width": "0", "height": "0", "font-size": str(LABEL), "role": "img",
-         "aria-labelledby": "title desc"},
-    )  # fmt: skip
-    defs = ET.Element(f"{{{ns}}}defs")
-    content = ET.SubElement(defs, f"{{{ns}}}g", {"id": "figure-content"})
-    for child in root_in:
-        local = child.tag.rsplit("}", 1)[-1]
-        if local == "style":
-            root.append(ET.Comment(FONT_NOTICE))
-        (root if local in {"title", "desc", "style"} else content).append(deepcopy(child))
-    root.append(defs)
-    page = ET.SubElement(root, f"{{{ns}}}rect", {"class": "page", "width": fmt(width)})
-    y = 0.0
-    for left, top, panel_width, panel_height in panels:
-        scale = min(1.0, width / panel_width)
-        shown_w, shown_h = panel_width * scale, panel_height * scale
-        view = ET.SubElement(
-            root,
-            f"{{{ns}}}svg",
-            {
-                "x": fmt((width - shown_w) / 2),
-                "y": fmt(y),
-                "width": fmt(shown_w),
-                "height": fmt(shown_h),
-                "viewBox": f"{fmt(left)} {fmt(top)} {fmt(panel_width)} {fmt(panel_height)}",
-                "overflow": "hidden",
-            },
-        )
-        ET.SubElement(view, f"{{{ns}}}use", {"href": "#figure-content"})
-        y += shown_h + gap
-    y -= gap
-    root.set("width", fmt(width))
-    root.set("height", fmt(y))
-    root.set("viewBox", f"0 0 {fmt(width)} {fmt(y)}")
-    page.set("height", fmt(y))
-    out.write_text(ET.tostring(root, encoding="unicode") + "\n")
-    return out

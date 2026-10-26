@@ -1,7 +1,7 @@
 """deploy/bin/flatshare-tunnel against a real sshd on loopback, as a GPU node authorizes cyan's tunnel keys: each key's
 every session is `exec nc -q0 -U SOCKET` under `restrict`. The tunnel runs on the host's /usr/bin/python3 where there is
-one, as its unit runs it (3.10 on Ubuntu 22.04). Needs Linux, OpenSSH's sshd and OpenBSD's netcat (as the GPU nodes
-have); skipped without them."""
+one, as its unit runs it (3.10 on Ubuntu 22.04). The tests with a node need Linux, OpenSSH's sshd and OpenBSD's netcat
+(as the GPU nodes have), and skip without them; the others run anywhere."""
 
 from __future__ import annotations
 
@@ -41,10 +41,8 @@ def _openbsd_nc() -> bool:
     return "-U" in usage.stdout + usage.stderr and "-q" in usage.stdout + usage.stderr
 
 
-pytestmark = pytest.mark.skipif(
-    sys.platform != "linux" or not SSHD.exists() or not _openbsd_nc(),
-    reason="needs Linux, sshd and OpenBSD's netcat",
-)
+NO_NODE = sys.platform != "linux" or not SSHD.exists() or not _openbsd_nc()
+"""Whether this host lacks what a node on loopback needs: Linux, sshd and OpenBSD's netcat."""
 
 
 class _Named(BaseHTTPRequestHandler):
@@ -104,6 +102,8 @@ def wait_for(condition, what: str, timeout: float = 15.0) -> None:
 @pytest.fixture
 def node() -> Iterator[dict]:
     """A GPU node on loopback (its sshd and its three servers) and cyan's side (keys, ssh's configuration)."""
+    if NO_NODE:
+        pytest.skip("needs Linux, sshd and OpenBSD's netcat")
     root = Path(tempfile.mkdtemp(prefix="flatshare-t-"))  # short: sockets' paths must fit sun_path
     socket_dir = root / "node"
     socket_dir.mkdir(mode=0o700)
@@ -387,6 +387,35 @@ def test_a_master_whose_ssh_cannot_start_holds_no_room(
     asyncio.run(scenario())
 
 
+def test_each_socket_is_private_from_its_creation(
+    monkeypatch: pytest.MonkeyPatch, socket_modes: dict[str, int]
+) -> None:
+    # Bound under the process's umask and made mode 600 after, a socket was open in between to what the umask left
+    # (755 under 022): a user of cyan who connected then had the node's engine without a key.
+    loader = importlib.machinery.SourceFileLoader("flatshare_tunnel", str(TUNNEL))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(module)
+    # Short: the sockets' paths must fit sun_path.
+    runtime = Path(tempfile.mkdtemp(prefix="flatshare-t-"))
+
+    async def no_ssh(*args: object, **kwargs: object) -> None:
+        raise OSError(errno.EMFILE, "Too many open files")
+
+    async def listen() -> None:
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", no_ssh)
+        tunnels = [module.Tunnel("phastform", name, "gpu-node", runtime, 3) for name in SOCKETS]
+        for tunnel in tunnels:
+            tunnel.listen()
+        await asyncio.sleep(0)
+        for tunnel in tunnels:
+            tunnel.close()
+
+    asyncio.run(listen())
+    assert socket_modes == {str(runtime / f"phastform-{name}.sock"): 0o600 for name in SOCKETS}
+    assert os.umask(0o022) == 0o022, "the process's umask is back"
+    shutil.rmtree(runtime)
+
+
 def test_a_dead_server_on_the_node_closes_the_connection_without_an_answer(node: dict) -> None:
     tunnel = start(node)
     try:
@@ -442,3 +471,48 @@ def test_a_tunnel_key_opens_no_forward_and_reaches_no_other_socket(node: dict) -
         timeout=20,
     )
     assert asked.stdout.endswith(b"engine")
+
+
+@pytest.mark.parametrize("sessions", ["0", "-3", "ten", "2.5"])
+def test_a_session_count_that_is_not_one_or_more_is_refused_before_it_listens(
+    sessions: str, tmp_path: Path
+) -> None:
+    # It was read with int() and used as given: 0 or less left no master room for a session, so that every connection
+    # waited WAIT_S and connected on its own; anything else ended the tunnel with a traceback, which systemd restarted.
+    env = os.environ | {
+        "XDG_RUNTIME_DIR": str(tmp_path),
+        "FLATSHARE_TUNNEL_TARGET": "gpu-node",
+        "FLATSHARE_TUNNEL_SESSIONS": sessions,
+    }
+    done = subprocess.run(
+        [PYTHON, TUNNEL, "phastform"], env=env, capture_output=True, text=True, timeout=30
+    )
+    assert done.returncode == 2, done.stderr
+    assert done.stderr.startswith("flatshare-tunnel: FLATSHARE_TUNNEL_SESSIONS is the sessions")
+    assert f"not {sessions!r} (~/.config/flatshare/tunnel-phastform.env)" in done.stderr
+    assert not (tmp_path / "flatshare").exists()
+
+
+def test_an_empty_session_count_is_the_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # As the shell's ${FLATSHARE_TUNNEL_SESSIONS:-10}: an EnvironmentFile line with no value leaves it unset.
+    loader = importlib.machinery.SourceFileLoader("flatshare_tunnel", str(TUNNEL))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(module)
+    limits = []
+
+    class Built(Exception):
+        pass
+
+    def tunnel(node: str, name: str, target: str, runtime: Path, sessions: int) -> None:
+        limits.append(sessions)
+        raise Built
+
+    monkeypatch.setattr(module, "Tunnel", tunnel)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setenv("FLATSHARE_TUNNEL_TARGET", "gpu-node")
+    monkeypatch.setenv("FLATSHARE_TUNNEL_SESSIONS", "")
+    with pytest.raises(Built):
+        asyncio.run(module.main("phastform"))
+    assert limits == [10]

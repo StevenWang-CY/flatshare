@@ -17,7 +17,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 CAMPAIGN = REPO / "benchmarks" / "e2" / "campaign.sh"
 FAKES = Path(__file__).parent / "fakes" / "campaign"
-PHASTFORM = "phastform"
+PHASTFORM = "phastform.example.org"  # a host by its full name: run.json names it phastform
 DEPLOYED = "v0.3-30-g6851e13"
 
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="campaign.sh needs bash")
@@ -169,7 +169,7 @@ def test_a_campaign_runs_on_one_gpu_node(hosts: Hosts) -> None:
     # The points on several GPU nodes are on the two-node branch.
     hosts.gpu(PHASTFORM)
     campaign = hosts.campaign("c9", ["arms/a1.toml"], {"a1": VOICE})
-    for gpus in (f"{PHASTFORM},gray", f"{PHASTFORM} gray"):
+    for gpus in (f"{PHASTFORM},gray.example.org", f"{PHASTFORM} gray.example.org"):
         done = hosts.run(campaign, gpus=gpus)
         assert done.returncode == 2, gpus
         assert f"FLATSHARE_GPU names the GPU node's host, one: '{gpus}'" in done.stderr

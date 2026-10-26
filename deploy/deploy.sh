@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # deploy.sh HOST: sync this repository's commit to HOST:~/flatshare/src, install HOST's units (deploy/<short-name>/),
-# and audit what listens on HOST (deploy/bin/audit-listeners). The sync carries the commit HEAD names and nothing else
-# (git archive): no untracked or ignored file, no __pycache__, no change that is not committed. A tree with changes the
-# sync would not carry is refused, so that DEPLOYED, the commit synced, names what HOST runs. Set FLATSHARE_SSH to the
-# ssh command for your hosts, e.g. FLATSHARE_SSH="ssh -F $HOME/.ssh/penn_config".
+# and audit what listens on HOST (deploy/bin/audit-listeners). HOST is an SSH host name or alias whose first label is
+# the host's directory under deploy/ (phastform, cyan or gray): phastform and phastform.example.org both install
+# deploy/phastform/. The sync carries the commit HEAD names and nothing else (git archive): no untracked or ignored
+# file, no __pycache__, no change that is not committed. A tree with changes the sync would not carry is refused, so
+# that DEPLOYED, the commit synced, names what HOST runs. Set FLATSHARE_SSH to the ssh command for your hosts, e.g.
+# FLATSHARE_SSH="ssh -F $HOME/.ssh/flatshare_config".
 set -euo pipefail
 host=${1:?usage: deploy.sh HOST}
 name=${host%%.*}
