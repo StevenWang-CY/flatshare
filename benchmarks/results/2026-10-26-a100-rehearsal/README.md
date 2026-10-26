@@ -18,7 +18,8 @@ each write under a lock; a start whose command is missing fails, as systemd's do
 candidate's run measured the same first start within 2.3 s.
 
 Home paths are cut to `~` (the box's login home; the rehearsal's own is `~/a100-rehearsal`), the workstation's to
-`$REHEARSAL_WORK` and `$REHEARSAL_REPO`, the account name to `USER`, and LiveKit's key is redacted as its secret is.
+`$REHEARSAL_WORK` and `$REHEARSAL_REPO`, the account name to `USER`, the hosts' domain names to their SSH aliases, and
+LiveKit's key is redacted as its secret is.
 
 | File | What |
 |---|---|

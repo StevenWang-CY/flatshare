@@ -43,7 +43,7 @@ that measured them end to end, the deployment they ran on, the committed records
 </picture>
 
 *The same caller's first measured turn on each engine, beside the same agents (recorded 2026-10-25), as it plays.
-Tuned vLLM answers 9.6 s after the caller's line ends, over the SLO; with the two changes the reply comes after 1.9 s,
+Tuned vLLM answers 9.6 s after the caller's line ends, over the SLO. With the two changes the reply comes after 1.9 s,
 within it, and the agents keep 98% of their tokens a second. Over both calls of each run the V2V p95 was 11.2 and
 2.2 s. The video of ten turns, with sound and a closing card for both GPUs, is attached to the
 [v1.2 release](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.2).*
@@ -64,7 +64,7 @@ within it, and the agents keep 98% of their tokens a second. Over both calls of 
 | + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 3,298 | 71 s |
 | + #63351 with a 48-token window: **the configuration to deploy** | **2,236 ms** | +202 ms | 3,203 | 72 s |
 
-Each value is the median of five rounds; each round replays its own sample of the agents' traces and runs every
+Each value is the median of five rounds. Each round replays its own sample of the agents' traces and runs every
 configuration in a rotated order (10 runs for tuned vLLM and 15 for the last row, which more than one campaign ran).
 The SLO is the voice-alone p95 plus 250 ms, and the agents' tokens/s count the calls' first 240 s. These agents wait
 about a minute for a first token, which is the regime the change is for
@@ -104,8 +104,8 @@ Values are medians of five rounds at 512-token steps and of two rounds, on the f
 </picture>
 
 *The voice agent's turn and the coding agents share vLLM's scheduler and its KV pool (a). #63350 lets a waiting turn
-take KV from the latest agent request (b); #63351 keeps agent prefill out of the steps of the reply's first tokens
-(c). The blocks and steps are illustrative; a step's length is drawn in the ratio of the gaps measured between the
+take KV from the latest agent request (b), and #63351 keeps agent prefill out of the steps of the reply's first tokens
+(c). The blocks and steps are illustrative. A step's length is drawn in the ratio of the gaps measured between the
 reply's tokens beside agent prefill and with it held (60–65 and 16–20 ms).*
 
 1. **vLLM 0.32 cannot preempt for a waiting request.** Its scheduler serves running requests first and preempts only
@@ -136,7 +136,7 @@ reply's tokens beside agent prefill and with it held (60–65 and 16–20 ms).*
   datacenter batch on the A100, 256 requests in flight with 10% at priority 0, the hold took the priority-2 requests'
   TTFT p99 from 1.1 s to 8.0 s while their median fell.
 - **The agents pay through the prefill hold.** Their TTFT p50 rises by 9 s, from 63 to 72 s, and the cap holds their
-  prefill in 33% of the engine's steps during the calls; the preemptions cost no measurable throughput. No vLLM 0.32
+  prefill in 33% of the engine's steps during the calls. The preemptions cost no measurable throughput. No vLLM 0.32
   counter shows what a preempted request recomputes when it resumes
   ([E3](docs/BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)).
 - **A larger step on a faster card.** The 512-token step cap that suits the RTX 5060 Ti costs the A100's agents 30%
@@ -145,10 +145,11 @@ reply's tokens beside agent prefill and with it held (60–65 and 16–20 ms).*
   183 and 216 ms at 512-token steps on the same samples).
 - **Other GPUs.** The mechanisms carry to the A100, but their costs do not scale with the card's peak figures. A
   forecast written before that run placed the KV case's first token at 1.33–1.37 s on stock vLLM and 126–145 ms with
-  the PRs; the card measured 1.75 s and 175 ms, because its decode attention reads KV at 42% of its bandwidth, where
-  the RTX 5060 Ti's reaches 77% ([the A100 run](docs/HARDWARE.md#what-it-measured-2026-10-26)). At the RTX 5060 Ti's
-  pool the A100's agents leave two calls short of KV 6% of the time, where the simulator gives the RTX 5060 Ti 17%.
-  Other cards are placed by the same model ([what transfers](docs/METHODS.md#what-transfers-to-other-hardware)).
+  the PRs. The card measured 1.75 s and 175 ms, because its decode attention reads KV at 42% of its bandwidth, where
+  the RTX 5060 Ti's reaches 77% ([the A100 run](docs/HARDWARE.md#what-it-measured-2026-10-26)). Beside tuned vLLM at
+  the RTX 5060 Ti's pool, two calls found KV short 8% of the time on the RTX 5060 Ti and 6% on the A100, where the
+  simulator gives 17% and 10% ([RS](docs/BENCHMARKS.md#the-boxs-running-share-rs)). Other cards are placed by the same
+  model ([what transfers](docs/METHODS.md#what-transfers-to-other-hardware)).
 
 ## Quick start
 
@@ -181,7 +182,7 @@ configuration (the CPU tier, the priorities, what to watch and how it fails) and
   the control plane on the same host and the RTX 5060 Ti's KV pool kept. A forecast of each measurement was written
   before the run ([the A100 run](docs/HARDWARE.md#the-a100-run)).
 - **Voice-to-voice from waveforms.** Two LiveKit callers speak scripted lines, synthesized in six voices, to a stock
-  LiveKit voice agent, and time the end of their speech to the agent's first audio; the agent logs each turn's stages.
+  LiveKit voice agent, and time the end of their speech to the agent's first audio. The agent logs each turn's stages.
 - **The agents.** AIPerf replays the 48 longest-context Claude Code sessions of SemiAnalysis' traces, block-scaled 32×,
   with their think times, through the gateway at a lower priority.
 - **Rounds.** Every configuration runs in each round, in a rotated order, on the round's own sample of the agents, and
@@ -211,10 +212,11 @@ configuration (the CPU tier, the priorities, what to watch and how it fails) and
 llm-d, Dynamo, SMG and vllm-project/router act in front of the engine, and the voice turn loses its time inside the
 engine's scheduler. E2 measured SMG, llm-d's flow control (emulated), and vLLM's and SGLang's own priority preemption:
 none meets the SLO, and most leave the p95 between 8.8 and 12.1 s. What Flatshare adds is the change to vLLM's
-scheduler (SGLang's counterpart is its own draft, #45686), its end-to-end measurement against every deployable
-alternative, and two measured negative results: a gateway policy timed by the conversation (E2) and agent-side KV
-prefetch (E1). `flatshare-gateway` is a small Rust harness for these experiments, not a fleet router.
-[docs/PRIOR-ART.md](docs/PRIOR-ART.md) has the sources and where each result went upstream.
+scheduler, its end-to-end measurement against every deployable alternative, and two measured negative results: a
+gateway policy timed by the conversation (E2) and agent-side KV prefetch (E1). For SGLang, a separate draft,
+[#45686](https://github.com/sgl-project/sglang/pull/45686), proposes the counterpart of #63350. `flatshare-gateway` is
+a small Rust harness for these experiments, not a fleet router. [docs/PRIOR-ART.md](docs/PRIOR-ART.md) has the sources
+and where each result went upstream.
 
 ## Repository layout
 
@@ -236,7 +238,7 @@ docs/                     the documents above, ADRs, figures and the logo
 
 ## Development
 
-Rust 1.98, uv, Python 3.12 and GNU Make 4 (macOS's `/usr/bin/make` 3.81 cannot read the Makefile); no GPU.
+Development needs Rust 1.98, uv, Python 3.12 and GNU Make 3.81 or newer (macOS's own will do), and no GPU.
 
 ```sh
 make check                           # lint and the tests of CI's main job
@@ -257,15 +259,19 @@ make figures brand                   # the docs' figures, and the logo and socia
 
 ## Acknowledgments
 
-Flatshare builds on [vLLM](https://github.com/vllm-project/vllm), which serves its LLM and its speech-to-text model and
-whose scheduler the two changes modify; [LiveKit](https://github.com/livekit/livekit) and
-[LiveKit Agents](https://github.com/livekit/agents), which carry the calls and run the voice agent;
-[Qwen3-4B-Instruct-2507-FP8](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507-FP8),
-[Whisper large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) and
-[Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) on [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI),
-the models it runs; [AIPerf](https://github.com/ai-dynamo/aiperf), which replays the coding agents from
-[SemiAnalysis' Claude Code traces](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126); and the
-[STIX Two](https://github.com/stipub/stixfonts) fonts, which set its figures and logo under the SIL Open Font License.
+Flatshare builds on the work of others:
+
+- [vLLM](https://github.com/vllm-project/vllm) serves its LLM and its speech-to-text model, and its scheduler is what
+  the two changes modify.
+- [LiveKit](https://github.com/livekit/livekit) and [LiveKit Agents](https://github.com/livekit/agents) carry the calls
+  and run the voice agent.
+- [Qwen3-4B-Instruct-2507-FP8](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507-FP8),
+  [Whisper large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) and
+  [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), served by
+  [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI), are the models it runs.
+- [AIPerf](https://github.com/ai-dynamo/aiperf) replays the coding agents from
+  [SemiAnalysis' Claude Code traces](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126).
+- The [STIX Two](https://github.com/stipub/stixfonts) fonts, under the SIL Open Font License, set its figures and logo.
 
 ## Citation
 
@@ -284,10 +290,10 @@ If you use Flatshare or its measurements, please cite the repository ([CITATION.
 ## Name and license
 
 The project was called Leaseholder through v1.1, after its first design, in which the gateway held leases on sessions'
-KV; E1 and E2 showed that the engine had to carry the realtime tier, and that design was dropped
+KV. E1 and E2 showed that the engine had to carry the realtime tier, and that design was dropped
 ([ADR-0006](docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)). Records from before the rename keep the old
 names ([docs/GLOSSARY.md](docs/GLOSSARY.md)).
 
 Flatshare is an independent project by Chuyue (Steven) Wang. It is not affiliated with, endorsed by, or sponsored by
-the vLLM project, LiveKit, or any other project or organization named in this repository; their names identify the
-software Flatshare runs on and measures. Flatshare is released under the [Apache License 2.0](LICENSE).
+the vLLM project, LiveKit, or any other project or organization named in this repository. Their names identify only
+the software Flatshare runs on and measures. Flatshare is released under the [Apache License 2.0](LICENSE).

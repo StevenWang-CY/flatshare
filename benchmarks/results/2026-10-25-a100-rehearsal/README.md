@@ -8,7 +8,8 @@ facts, so these are the box's numbers through the A100's kit: they check its mec
 host with 16 CPUs ("this host checks the mechanics, not the numbers").
 
 Home paths are cut to `~` (the box's login home; the rehearsal's own is `~/a100-rehearsal`), the workstation's to
-`$REHEARSAL_WORK` and `$REHEARSAL_REPO`, the account name to `USER`, and LiveKit's key is redacted as its secret is.
+`$REHEARSAL_WORK` and `$REHEARSAL_REPO`, the account name to `USER`, the hosts' domain names to their SSH aliases, and
+LiveKit's key is redacted as its secret is.
 
 | File | What |
 |---|---|

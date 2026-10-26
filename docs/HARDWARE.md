@@ -168,7 +168,7 @@ The rehearsal ran block 0 in 34 minutes on the box from a fresh home (`gpu` 1.4,
 
 `run.sh --until HH:MM` (UTC) starts no block whose estimate above would end after then, and hands that one deadline, as an epoch, to every campaign and to C', which start no point that cannot end before it: a point is budgeted by the longest of its kind measured on this host once one has run (`durations.tsv`), by W5's durations before. A campaign stopped so leaves its block undone and the run exits 0; any failure exits 1. `--estimate BLOCK=MINUTES` puts another estimate in the table's place for a block or an arm (a host measured faster or slower, or an E2 block run for its first point alone, which the campaign's own budget then stops at the deadline).
 
-During every agent point `flatshare-bench e2 run` samples the engine's `/metrics` every 0.5 s, from which each point's summary gives the measured running share (the time free KV is under two calls' 2,048 tokens). W5's points on the box ran without this sampler, so the box's running share is the forecast's [modeled].
+During every agent point `flatshare-bench e2 run` samples the engine's `/metrics` every 0.5 s, from which each point's summary gives the measured running share (the time free KV is under two calls' 2,048 tokens). W5's and FB's points on the box ran without this sampler; RS measured the box's afterwards on W5's samples, 8.1% beside the frozen engine against the forecast's 17% ([RS](BENCHMARKS.md#the-boxs-running-share-rs)).
 
 ### The optional arms
 
@@ -319,7 +319,8 @@ the copies run at a Gen3 x16 rate, 39% of the card's link (the box's PCIe 3.0 x8
 HOST_JSON=...`), the forecast's E0 cells come within 9% of the measured GPU hits and 10% of the CPU restores at the
 mean, from 69% and 22% off before the run; recompute, which the host does not set, stays 17% off. The host leaves
 the running share where it was: placed on it, the forecast gives the core 11% and A' 18%, against 6% and 6.5%
-measured, so the host is not what the simulator misses there.
+measured, so the host is not what the simulator misses there. It overstates the box's too: 17% against the 8.1%
+RS measured on the same samples ([RS](BENCHMARKS.md#the-boxs-running-share-rs)).
 
 ## The kit, rehearsed on the box
 

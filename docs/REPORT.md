@@ -312,11 +312,13 @@ Voice alone ran at a p95 of 1.42 s (1.39–1.45), so the SLO is 1.67 s.
 With the two rules the p95 was under the SLO in all five rounds, by 6 to 60 ms, where this box's best run missed its own
 by 0.10 s; without them it was 2.5 to 4.0 s over. Round by round, on the same sample of the agents, the agents' tokens/s
 over the calls' first 240 s were 94–111% of the stock engine's, and their TTFT p50 moved by −1.2 to +1.8 s: on this
-card, at this box's pool, the change costs the agents nothing a round can resolve. The card is not as saturated as the
-box at this pool: two calls found KV short 6% of the time (the measured running share, 2–9% by run), where the simulator
-gives the box 17% on its measured costs (the box's own runs did not sample it), and the agents ran at 2.6 times the
-box's tokens/s. The voice tail is the same in kind, though: the wait for KV and the reply's steps shared with agent
-prefill, which the probes take apart.
+card, at this box's pool, the change costs the agents nothing a round can resolve. At this pool the card ran short of
+KV a little less often than the box beside the stock engine, and as often beside the rules: two calls found KV short
+5.7% and 6.3% of the time (the measured running share, 2–9% by run), against 8.1% and 6.1% on the box on the same
+samples ([RS](BENCHMARKS.md#the-boxs-running-share-rs)), where the simulator gives the two cards 10% and 17%. What sets
+their voice tails apart is how long a turn waits once KV is short: in the KV case 1.75 s on this card against the box's
+4.9–5.0 s, with the agents running at 2.6 times the box's tokens/s. The voice tail is the same in kind: the wait for KV
+and the reply's steps shared with agent prefill, which the probes take apart.
 
 **At the card's own step cap.** The core keeps this box's 512-token step cap, so that a difference within the A100 is
 the change's; on the A100 that cap costs the agents 30% of their throughput. At vLLM's default 2,048-token steps, the
@@ -332,9 +334,9 @@ of the card's agent throughput, 2,048-token steps keep all of it 0.14–0.17 s o
 **More agents.** With 32 sessions at this box's pool (A', one round), the rules held the p95 at 1,617 ms, 52 ms under
 the SLO, against stock's 5,222 ms, at 98% of its throughput. The extra sessions made the agents fewer tokens a second
 than 24 made on the same sample, each waiting longer for KV, and left the measured running share at 6.5% beside either
-engine, where the forecast placed 32 sessions at 18%, near the 17% it gives the box: on this card the simulator
-overstates how often two calls run short of KV, in the core too (10% forecast, 6% measured), and placed on the measured
-host it still gives 11% and 18%.
+engine, where the forecast placed 32 sessions at 18%. The simulator overstates how often two calls run short of KV on
+both cards: on this card in the core too (10% forecast, 6% measured, and 11% placed on the measured host), and on the
+box, 17% against the 8.1% RS measured.
 
 | Probe | A100 SXM4 80 GB, measured | Forecast before the run [modeled] | This box |
 |---|---|---|---|
@@ -433,12 +435,12 @@ engine, against the configurations an operator can deploy.
 ## 8. Limitations
 
 **One model, two cards.** Every E2 result is Qwen3-4B, on one RTX 5060 Ti, whose 36,400-token pool the agents' contexts
-fill, and on an A100 SXM4 80 GB held to the same pool (§5.7), where the agents leave two calls short of KV less often (a
-measured running share of 6%, where the simulator gives the box 17%). At the A100's own best step cap the rules keep all
-of the agents' throughput but leave the voice 0.14–0.17 s over its SLO, the wait for the larger steps in flight. The
-card's own pool, other models and other cards are placed by the simulator, from costs scaled by published peaks, which
-on the A100 missed decode attention by 1.8 times; the coordinates that place them do not carry a configuration's gain
-from one card to another.
+fill, and on an A100 SXM4 80 GB held to the same pool (§5.7), where two calls ran short of KV a similar share of the
+time (6%, against the box's 6.1% and 8.1%) but each wait for KV was a third as long. At the A100's own best step cap the
+rules keep all of the agents' throughput but leave the voice 0.14–0.17 s over its SLO, the wait for the larger steps in
+flight. The card's own pool, other models and other cards are placed by the simulator, from costs scaled by published
+peaks, which on the A100 missed decode attention by 1.8 times; the coordinates that place them do not carry a
+configuration's gain from one card to another.
 
 **A few calls.** The headline runs two callers, and with 4 and 6 the configuration misses each one's SLO in every round,
 by a median of 0.27 s and 0.26 s (§5.6): many calls per GPU is its known limit.

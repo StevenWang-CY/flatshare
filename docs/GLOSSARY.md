@@ -94,6 +94,10 @@ names](#former-names) maps them to the current ones.
   prefills, with room in the pool, timed to its first and 16th tokens.
 - **Round**: one run of each point of a campaign, in a rotated order, on the round's own sample of the agents'
   traces.
+- **RS** (2026-10-26): five rounds of the frozen box and the PRs' 48-token configuration on v1.2 with the KV
+  sampler on, each round on the agents' sample of W5's round of the same number, which measured the box's running
+  share ([BENCHMARKS.md](BENCHMARKS.md#the-boxs-running-share-rs); the records are in
+  [`benchmarks/results/2026-10-26-e2-rs`](../benchmarks/results/2026-10-26-e2-rs)).
 - **Run**: one measurement of a point.
 - **The standard scenario**: the whole corpus of agent traces at 16 agent sessions, the realistic load (and at 8 and
   24 in W2 and W4).
@@ -117,8 +121,8 @@ names](#former-names) maps them to the current ones.
   [`flatshare_stats`](../python/flatshare_stats/README.md).
 - **Realtime first byte**: the gateway's time from receiving a realtime request to the first byte of the engine's
   response, from its request log, exact to the millisecond ([SLO.md](SLO.md#indicators)).
-- **Running share**: the share of the time in which free KV is under two calls' 2,048 tokens. The A100 run measured it
-  from the engine's metrics, sampled every 0.5 s, and flatshare-sim models it
+- **Running share**: the share of the time in which free KV is under two calls' 2,048 tokens. The A100 run and RS
+  measured it from the engine's metrics, sampled every 0.5 s, and flatshare-sim models it
   ([HARDWARE.md](HARDWARE.md#the-core-block-by-block)).
 - **The SLO**: voice V2V p95 at most 250 ms above voice alone with as many callers. Its reference is measured per
   campaign ([SLO.md](SLO.md#the-slos-reference-campaign-by-campaign)).

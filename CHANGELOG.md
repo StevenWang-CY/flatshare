@@ -5,6 +5,35 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.3](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.3) (2026-10-26): the box's running share, and a public release
+
+- **The box's running share, measured (RS).** Five rounds on the RTX 5060 Ti of the frozen engine and the PRs'
+  48-token configuration, on W5's arm files and samples, with the engine's free KV sampled every 0.5 s: two calls found
+  KV short 8.1% of the time beside the frozen engine and 6.1% beside the PRs', where the simulator gives the box 17%,
+  and the A100 measured 5.7% and 6.3% on the same samples. The documents that gave the box the simulator's share now
+  give the measurement, and the report no longer calls the A100 less saturated at the box's pool.
+- **A logo and a social preview**, drawn by `flatshare_bench.brand` (`make brand`) in light and dark, with a small mark
+  and a 1280×640 preview; the tests check each file against the generator.
+- **Community files.** A security policy, a contributing guide, the Contributor Covenant 2.1, `CITATION.cff`, issue
+  forms, a pull request template, this changelog and a map of the documentation.
+- **The documents.** The README leads with the logo and the result and states that Flatshare is an independent
+  project. #63350 and #63351 are described as pull requests proposed to vLLM and under review, and each document opens
+  with the reader it serves.
+- **Hardening.** The gateway binds its own Unix sockets only in a directory closed to other users, the tunnel and the
+  forwarder create theirs private, `flatshare-bench e2 run` writes the gateway's configuration private from its
+  creation, and `build.py` replaces the scheduler module whole. The tunnel's unit no longer restarts a configuration it
+  refuses, and cyan's install says when the gateway's binary is not the source's version.
+- **Efficiency.** The gateway finds the session a new one replaces through an ordered index (6.1–6.6 µs to
+  0.22–0.24 µs with a full table) and caps a realtime reply within its one body rewrite. A point's counters read each
+  metric snapshot once (the gateway's from 15 ms to 1.4 ms a point).
+- **Fixes.** flatshare-core's `estimate_error` example describes an export without long requests instead of
+  panicking; a trace line that does not parse is named; the exposition parser reads timestamps, exemplars and escaped
+  label values; `long_traces.py` keeps its corpus to the traces it names; `flatshare-forward` takes bracketed IPv6
+  addresses; the callers refuse settings no call can run with; every command-line argument has help; the Makefile
+  parses under GNU Make 3.81; the scripts default to the hosts' SSH aliases.
+- **Packages** versioned 1.3.0, each with its license in its sdist and wheel (flatshare-bench's with the fonts' OFL),
+  and not published to a package index. Asset: `flatshare-raw-records-rs.tar.gz`.
+
 ## [v1.2](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.2) (2026-10-26): Flatshare, and the demo in its original form
 
 No measurement changed: every record keeps the names it was recorded under, and the reports and figures regenerate

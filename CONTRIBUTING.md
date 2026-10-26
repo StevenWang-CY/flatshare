@@ -6,9 +6,9 @@ under the project's [Apache-2.0](LICENSE) license, and everyone taking part foll
 
 ## Build and test
 
-You need Rust 1.98 (`rust-toolchain.toml` pins it), [uv](https://docs.astral.sh/uv/), Python 3.12, git and GNU Make 4
-or newer: CI runs Ubuntu 24.04's 4.3, and macOS's `/usr/bin/make` 3.81 cannot parse the Makefile. Nothing CI runs needs
-a GPU.
+You need Rust 1.98 (`rust-toolchain.toml` pins it), [uv](https://docs.astral.sh/uv/), Python 3.12, git and GNU Make
+3.81 or newer: CI runs Ubuntu 24.04's 4.3, and the 3.81 that macOS ships reads the Makefile too. Nothing CI runs needs a
+GPU.
 
 | Command | What it runs | What it needs |
 |---|---|---|
