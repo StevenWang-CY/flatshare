@@ -53,7 +53,12 @@ class Hosts:
         return path
 
     def run(
-        self, campaign: Path, *options: str, gpus: str = PHASTFORM, **extra: str
+        self,
+        campaign: Path,
+        *options: str,
+        gpus: str = PHASTFORM,
+        script: Path = CAMPAIGN,
+        **extra: str,
     ) -> subprocess.CompletedProcess:
         env = (
             os.environ
@@ -69,7 +74,7 @@ class Hosts:
             }
         )
         return subprocess.run(
-            ["bash", str(CAMPAIGN), *options, str(campaign)],
+            ["bash", str(script), *options, str(campaign)],
             env=env,
             capture_output=True,
             text=True,
@@ -179,6 +184,23 @@ def test_a_campaign_sets_its_points_agents_seed(hosts: Hosts) -> None:
     assert (
         "c3: 2 points, arm files at ?, the agents' seed 13"
         in (hosts.results / "c3" / "campaign.log").read_text()
+    )
+
+
+def test_a_campaign_on_a_copied_tree_names_the_commit_in_its_deployed(
+    hosts: Hosts, tmp_path: Path
+) -> None:
+    # deploy.sh and push.sh copy the tree without .git, and write its commit into DEPLOYED at its top.
+    tree = tmp_path / "src"
+    (tree / "benchmarks" / "e2").mkdir(parents=True)
+    shutil.copy(CAMPAIGN, tree / "benchmarks" / "e2" / "campaign.sh")
+    (tree / "DEPLOYED").write_text("472adce\n")
+    hosts.gpu(PHASTFORM)
+    campaign = hosts.campaign("c11", ["arms/a1.toml"], {"a1": VOICE})
+    done = hosts.run(campaign, script=tree / "benchmarks" / "e2" / "campaign.sh")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (
+        "c11: 1 point, arm files at 472adce" in (hosts.results / "c11" / "campaign.log").read_text()
     )
 
 

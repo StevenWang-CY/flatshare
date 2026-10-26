@@ -1,0 +1,10 @@
+# The A100 run's optional arm 8, the PRs' values at the A100's best stock step cap (docs/HARDWARE.md, the optional
+# arms), round 2 of 2: on the agents' sample of the core's round 2 (seed 10 + N), so that it pairs with tuned vLLM's
+# round 2 and with that round's frozen point and the PRs' values at 512/256. On the A100 host:
+#   LH_NODE_DIR=leaseholder/node leaseholder/src/benchmarks/e2/campaign.sh --local \
+#     leaseholder/src/benchmarks/a100/a100-prtuned-r2.campaign
+
+agents-seed 12
+
+# engine make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+arms/a100-pr-ab48-2048-s24.toml

@@ -253,6 +253,12 @@ if "gen_sampling_module" in code:
 elif "torch.cuda.init" in code:
     if "torch" in fail:
         sys.exit("RuntimeError: CUDA driver error: system has unsupported display driver / cuda driver combination (803)")
+    # "linker": the linker's cache does not list the driver's libcuda.so.1 (Colab's container), so the CUDA runtime
+    # finds it only on the environment's LD_LIBRARY_PATH, and torch finds no driver without it.
+    path = [d for d in os.environ.get("LD_LIBRARY_PATH", "").split(":") if d]
+    if "linker" in fail and not any((Path(d) / "libcuda.so.1").exists() for d in path):
+        sys.exit("RuntimeError: Found no NVIDIA driver on your system. Please check that you have an NVIDIA GPU and "
+                 "installed a driver from http://www.nvidia.com/Download/index.aspx")
     print("13.0 NVIDIA A100-SXM4-40GB (8, 0)")
 elif "Python.h" in code:  # the headers' probe: a system Python 3.12 without libpython3.12-dev has none
     print("/usr/include/python3.12" if "headers" in fail else str(Path(sys.argv[0]).parents[1] / "include"))
@@ -537,6 +543,77 @@ def test_the_preflight_passes_a_ready_host_and_labels_what_the_card_changes(
     out = host_py.write_preflight(node, checks)
     data = json.loads(out.read_text())
     assert data["counts"]["degraded"] >= 1 and len(data["checks"]) == len(checks)
+
+
+MISMATCH = (
+    "torch.cuda.init() fails in the engine venv with the engine unit's environment (errors 803 and 804: the CUDA "
+    "runtime and the driver do not match)"
+)
+
+
+def test_the_preflight_names_the_drivers_libraries_outside_the_linkers_search(
+    tmp_path: Path, venv: Path, engine: str, monkeypatch
+) -> None:
+    # Colab's container: libcuda.so.1 in a directory the linker's cache does not list, which only its shells'
+    # LD_LIBRARY_PATH reaches. The torch probe runs with the engine unit's environment alone, as the units run under
+    # either supervisor, and the engine venv's stand-in loads libcuda.so.1 as the linker would there: from that
+    # environment's LD_LIBRARY_PATH alone (fail: linker).
+    nvidia = tmp_path / "lib64-nvidia"
+    nvidia.mkdir()
+    (nvidia / "libcuda.so.1").write_text("")
+    outside = {"path": str(nvidia), "linker": False, "via": "LD_LIBRARY_PATH"}
+    node = ready_host(tmp_path, venv, engine, monkeypatch, facts(driver_libs=outside))
+    fail = venv / "leaseholder" / "venvs" / "engine" / "bin" / "fail"
+    fail.write_text("linker")
+
+    def rows() -> dict[str, host_py.Check]:
+        return {
+            c.check: c for c in host_py.preflight(node, gpu=True, home=venv, gateway_url=engine)
+        }
+
+    # The units rendered from these facts name the directory: torch finds the driver, and the driver's row says where
+    # its libraries are.
+    checks = rows()
+    assert checks["torch on the GPU"].status == "ok", checks["torch on the GPU"]
+    driver = checks["Driver and install path"]
+    assert driver.status == "ok" and f"the driver's libraries in {nvidia}" in driver.value, driver
+    # lh-svc gives the GPU units that environment, as systemd does from the same Environment= line: their commands'
+    # (gpu-guard's nvidia-smi, an ExecStartPre, among them).
+    home = tmp_path / "units-home"
+    host_py.install_units(
+        node, home / ".config" / "systemd" / "user", str(tmp_path / "bin" / "systemctl")
+    )
+    monkeypatch.setenv("HOME", str(home))
+    for unit in host_py.PRIVATE_SERVERS:
+        assert lh_svc.environment(lh_svc.load(unit))["LD_LIBRARY_PATH"] == str(nvidia), unit
+    # Units rendered without it (from facts that did not say): both rows name the case, not a runtime-driver mismatch.
+    profile.render(profile.load("a100-40gb"), facts(), node.dir)
+    checks = rows()
+    torch = checks["torch on the GPU"]
+    assert torch.status == "refused" and "Found no NVIDIA driver" in torch.value, torch
+    named = f"the driver's libcuda.so.1 is in {nvidia}, which the linker does not search"
+    assert torch.reason.startswith(named) and "803" not in torch.reason, torch
+    driver = checks["Driver and install path"]
+    assert driver.status == "refused" and driver.reason.startswith(named), driver
+    assert "lh-engine, lh-stt and lh-tts do not name it" in driver.reason, driver
+    # A real mismatch, where the linker finds the driver's libraries itself, keeps its message.
+    node.host["driver_libs"] = {
+        "path": "/usr/lib/x86_64-linux-gnu",
+        "linker": True,
+        "via": "the linker's cache",
+    }
+    fail.write_text("torch")
+    checks = rows()
+    torch = checks["torch on the GPU"]
+    assert torch.status == "refused" and "(803)" in torch.value and torch.reason == MISMATCH
+    assert checks["Driver and install path"].status == "ok"
+    # No libcuda.so.1 where the facts look: torch finds no driver, which the row says rather than a mismatch.
+    node.host["driver_libs"] = None
+    fail.write_text("linker")
+    torch = rows()["torch on the GPU"]
+    assert torch.status == "refused" and "Found no NVIDIA driver" in torch.value, torch
+    assert torch.reason.startswith("no libcuda.so.1 where the facts look (the linker's cache, ")
+    assert "803" not in torch.reason, torch
 
 
 def test_the_preflight_does_not_take_a_stale_jit_check_for_ok(

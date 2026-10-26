@@ -44,7 +44,7 @@ def test_agentic_replay_template_overrides(tmp_path, monkeypatch):
     assert benchmark.artifacts.raw is True
 
 
-def test_env_file_disables_the_dataset_cache():
+def test_env_file_enables_the_dataset_cache():
     settings = (CONFIGS / "aiperf.env").read_text().splitlines()
-    assert "export AIPERF_DATASET_MMAP_CACHE_ENABLED=false" in settings
+    assert "export AIPERF_DATASET_MMAP_CACHE_ENABLED=true" in settings
     assert "export AIPERF_HTTP_X_SESSION_ID_FROM_CORRELATION_ID=false" in settings

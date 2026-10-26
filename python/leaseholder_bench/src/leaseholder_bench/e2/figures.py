@@ -1,235 +1,102 @@
-"""The report's figures (:mod:`.report`): a frontier per workload and the stage waterfall, as SVG
-files that are the same bytes for the same report."""
+"""The report's figures (:mod:`.report`) as SVG files that are the same bytes for the same report,
+in the docs' figure style (:mod:`leaseholder_bench.figure_style`): a frontier figure per workload,
+the stage waterfall, and the README's voice-p95.svg with its phone layout.
+
+Every number a figure prints is a record's, as the report's tables give it: a configuration's
+median over its runs, or a stage's mean over the replies of its runs. Latency scales start at zero.
+"""
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from leaseholder_bench.e2.record import REPLY_TIMEOUT_MS
-from leaseholder_bench.e2.report import SLO_MARGIN_MS, STACKED, arm_order, configurations
+from leaseholder_bench.e2.report import STACKED, arm_order, configurations
+from leaseholder_bench.figure_style import (
+    NARROW,
+    NOTE,
+    TITLE,
+    VALUE,
+    WIDTH,
+    Figure,
+    measure,
+    wrap,
+)
 from leaseholder_stats import quantiles
 
-# Light chart surface, ink and the categorical palette, in its order.
-_SERIES = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948")
-_SURFACE, _INK, _MUTED, _GRID, _AXIS = "#fcfcfb", "#0b0b0b", "#898781", "#e1e0d9", "#c3c2b7"
-_SECONDARY = "#52514e"
-
 FAMILIES = (
-    ("stock vLLM", 1, 5, _SECONDARY),
-    ("operator answers", 6, 6, "#1baf7a"),
-    ("engines", 7, 7, "#eda100"),
-    ("routers", 8, 8, "#e87ba4"),
-    ("make-room", 9, 9, "#2a78d6"),
-    ("MPS", 10, 10, "#008300"),
+    ("stock vLLM", 1, 5),
+    ("operator answers", 6, 6),
+    ("engines", 7, 7),
+    ("routers", 8, 8),
+    ("make-room", 9, 9),
+    ("MPS", 10, 10),
 )
-"""E2's arms by family (docs/EXPERIMENTS.md): its name, its first and last arm, and the color the
-frontier figures draw it in. Any two families can meet on a scatter, and no six of the palette's
-hues stay apart pair by pair, so stock vLLM, the baseline the others are read against, takes the
-secondary ink, and five hues that do (with the markers and the arms' names beside them) take the
-rest: blue, the first, for make-room, then the others in E2's order."""
-_MARKERS = (("o", 8.0), ("s", 7.1), ("^", 10.0), ("D", 7.1), ("v", 10.0), ("P", 9.5))
-"""The markers of the arms of a family, counted by number (stock vLLM's 1 to 5), then by letter,
-each in the size (points) that gives it the circle's area: 8 px inside its 2 px ring."""
+"""E2's arms by family (docs/EXPERIMENTS.md): its name, its first and last arm. A frontier figure
+groups its rows under them."""
+CHANGE_FAMILY = 9
+"""The family of the engine change: make-room and the PRs' configurations, drawn in blue."""
+TO_DEPLOY = "9-pr-ab48"
+"""The configuration to deploy (docs/PRODUCTION.md): the two PRs with a 48-token window, the one
+configuration a frontier figure draws in the saturated blue."""
+WORKLOAD_CLAUSES = re.compile(
+    r", (?:discriminating|standard) scenario(?: \(large contexts\))?"
+    r"|, a warm-up turn opening each call|, \d+ callers"
+)
+"""The clauses of a configuration's label that name its workload, which every row of a figure
+shares and the figure's title gives once."""
+NUMBERS = ("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten")
 
 
-def _save_svg(fig: Any, path: Path, **options: Any) -> None:
-    """Write a figure as SVG, the same bytes for the same figure: no date, and the ids salted by
-    the file's name rather than at random. ``options`` go to savefig."""
-    import matplotlib
+def label(text: str) -> str:
+    """A configuration's label as a figure names it, under its workload's title or heading:
+    without the clauses that name the workload, and a first word in lower case capitalized
+    ("Frozen box", but "vLLM #63350")."""
+    text = WORKLOAD_CLAUSES.sub("", text)
+    first = text.split(" ", 1)[0]
+    return text[:1].upper() + text[1:] if first.islower() else text
 
-    with matplotlib.rc_context({"svg.hashsalt": path.name}):
-        fig.savefig(path, format="svg", facecolor=_SURFACE, metadata={"Date": None}, **options)
+
+def ticks(top: float, length: float) -> list[float]:
+    """Round ticks from zero that reach ``top``, at most seven, on an axis ``length`` long: the
+    finest step whose labels keep a clear gap between them."""
+    if top <= 0:
+        return [0.0, 1.0]
+    magnitude = 10 ** math.floor(math.log10(top))
+    for factor in (0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10, 20):
+        step = factor * magnitude
+        count = math.ceil(top / step - 1e-9)
+        widest = max(measure(tick_text(step * k, step), NOTE) for k in range(count + 1))
+        if count <= 6 and length / count >= widest + 16:
+            return [step * k for k in range(count + 1)]
+    return [0.0, 20 * magnitude * math.ceil(top / (20 * magnitude))]
 
 
-def _style(arm: str) -> tuple[str, str, tuple[str, float]]:
-    """An arm's family as the legend names it, its color and the arm's marker (FAMILIES, _MARKERS).
-    An arm with a factor (4-no-preemptive) takes its arm's marker, and its name tells them apart."""
-    found = re.match(r"(\d+)([a-z]?)", arm)
-    number, letter = (int(found[1]), found[2]) if found else (0, "")
-    for name, first, last, color in FAMILIES:
+def tick_text(value: float, step: float) -> str:
+    """A tick's value, with as many decimals as its step needs, the same for every tick."""
+    digits = next(d for d in range(4) if abs(step * 10**d - round(step * 10**d)) < 1e-9)
+    return f"{value:,.{digits}f}"
+
+
+def _family(arm: str) -> tuple[int, str]:
+    """An arm's family, by its index in FAMILIES and as a heading names it."""
+    number = arm_order(arm)[0]
+    for index, (name, first, last) in enumerate(FAMILIES):
         if first <= number <= last:
             arms = f"arm {first}" if first == last else f"arms {first}\N{EN DASH}{last}"
-            index = number - first + (ord(letter) - ord("a") if letter else 0)
-            return f"{name} ({arms})", color, _MARKERS[index % len(_MARKERS)]
-    return "other arms", _MUTED, _MARKERS[0]
-
-
-def plot(rows: Sequence[Mapping[str, Any]], path: Path, slo: float | None = None) -> bool:
-    """A workload's frontier figure: each arm's frontier in its family's color and with the arm's
-    marker, joined by a line where it spans load levels (a sweep of sessions; configurations at one
-    load are markers), its dominated configurations as open markers, and the arm's name by the last
-    point of its frontier. A configuration measured in several campaigns sits at its runs' medians,
-    with whiskers over their range on both axes: one marker per configuration keeps each frontier a
-    line through what frontier.md marks, and the whiskers still show a run that collapsed. A
-    configuration with failed turns, whose V2V is censored, is a cross on no frontier, and the notes
-    name it. A dashed line marks the voice SLO, ``slo`` ms. False without matplotlib."""
-    try:
-        import matplotlib
-    except ImportError:
-        return False
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.lines import Line2D
-    from matplotlib.ticker import StrMethodFormatter
-
-    placed = [g for g in configurations(rows) if g["v2v_p95_ms"] is not None]
-    groups = [g for g in placed if not g["failed_turns"]]
-    failed = [g for g in placed if g["failed_turns"]]
-    arms = sorted({g["arm"] for g in placed}, key=arm_order)
-    fence = _fence([g["v2v_p95_ms"] for g in groups])
-    # The scale of the measured configurations: a censored V2V must not flatten them.
-    top = fence if fence is not None else max((g["v2v_p95_ms"] for g in groups), default=None)
-    if slo is not None and top is not None:
-        top = max(top, slo)
-    crosses = [g for g in failed if top is not None and g["v2v_p95_ms"] <= top]
-    fig, ax = plt.subplots(figsize=(7.5, 5.5), facecolor=_SURFACE, layout="constrained")
-    ax.set_facecolor(_SURFACE)
-    ends = []
-    swept = False  # whether any arm's frontier is drawn as a line
-    for arm in arms:
-        _, color, (marker, size) = _style(arm)
-        points = [g for g in groups if g["arm"] == arm]
-        front = sorted(
-            (g for g in points if g["frontier"]), key=lambda g: g["background_tokens_per_s"]
-        )
-        others = [g for g in points if not g["frontier"]]
-        line = load_sweep(front)
-        swept |= line
-        ax.plot(
-            [g["background_tokens_per_s"] for g in front],
-            [g["v2v_p95_ms"] for g in front],
-            color=color,
-            linewidth=1.5,
-            linestyle="-" if line else "none",
-            marker=marker,
-            markersize=size,
-            markeredgecolor=_SURFACE,
-            markeredgewidth=2.0,
-            zorder=3,
-        )
-        ax.scatter(
-            [g["background_tokens_per_s"] for g in others],
-            [g["v2v_p95_ms"] for g in others],
-            s=(size - 2.75) ** 2,  # with its edge, as large as a frontier marker inside its ring
-            marker=marker,
-            facecolors=_SURFACE,
-            edgecolors=color,
-            linewidths=1.25,
-            zorder=2,
-        )
-        for g in (g for g in points if len(g["runs"]) > 1):
-            x, y = g["background_tokens_per_s"], g["v2v_p95_ms"]
-            xs = [r["background_tokens_per_s"] for r in g["runs"]]
-            ys = [r["v2v_p95_ms"] for r in g["runs"] if r["v2v_p95_ms"] is not None]
-            ax.errorbar(
-                x,
-                y,
-                xerr=[[x - min(xs)], [max(xs) - x]],
-                yerr=[[y - min(ys)], [max(ys) - y]],
-                fmt="none",
-                ecolor=color,
-                elinewidth=1,
-                alpha=0.6,
-                zorder=1,
-            )
-        if drawn := [g for g in front if fence is None or g["v2v_p95_ms"] <= fence]:
-            ends.append((drawn[-1]["background_tokens_per_s"], drawn[-1]["v2v_p95_ms"], arm))
-        if censored := [g for g in crosses if g["arm"] == arm]:
-            ax.scatter(
-                [g["background_tokens_per_s"] for g in censored],
-                [g["v2v_p95_ms"] for g in censored],
-                s=size**2,
-                marker="X",
-                color=color,
-                linewidths=0,
-                zorder=2,
-            )
-    notes = ["Open markers are dominated configurations"]
-    if any(len(g["runs"]) > 1 for g in groups):
-        notes[0] += ", whiskers span repeated runs"
-    if swept:  # each note stays one line of the figure's width
-        notes.insert(0, "A line joins an arm's frontier across load levels")
-    if fence is not None or len(crosses) < len(failed):  # the scale of the rest and the SLO
-        shown = [g["v2v_p95_ms"] for g in groups if fence is None or g["v2v_p95_ms"] <= fence]
-        shown += [] if slo is None else [slo]
-        if shown:
-            low, high = min(shown), max(shown)
-            ax.set_ylim(low - 0.05 * (high - low), high + 0.05 * (high - low))
-    if fence is not None:
-        notes += [
-            f"Off the scale: {g['point']}, {g['v2v_p95_ms']:,.0f} ms at "
-            f"{g['background_tokens_per_s']:,.0f} tokens/s"
-            for g in groups
-            if g["v2v_p95_ms"] > fence
-        ]
-    notes += [
-        f"Failed turns: {g['point']}, {g['failed_turns']} of {g['turns']}, its V2V censored at "
-        f"{REPLY_TIMEOUT_MS / 1000:.0f} s{' (a cross)' if g in crosses else ', off the scale'}"
-        for g in failed
-    ]
-    taken = []  # what the arms' names keep clear of
-    if slo is None:
-        notes.append(f"No point of voice alone with {rows[0]['callers']} callers sets a voice SLO")
-    else:  # said above the plot: on the line, it would cover the points that reach it
-        notes.append(
-            f"The dashed line is the voice SLO, {slo:,.0f} ms: voice alone + {SLO_MARGIN_MS:.0f} ms"
-        )
-        taken.append(ax.axhline(slo, color=_INK, linewidth=0.75, linestyle=(0, (4, 3)), zorder=1.5))
-    title = f"E2 frontier: {rows[0]['workload']}"
-    ax.set_title(title, color=_INK, loc="left", pad=12 + 11 * len(notes))
-    note = ax.annotate(
-        ".\n".join(notes) + ".",
-        (0, 1),
-        xycoords="axes fraction",
-        xytext=(0, 6),
-        textcoords="offset points",
-        fontsize=8.5,
-        color=_SECONDARY,
-    )
-    ax.set_xlabel("Background goodput (tokens/s)", color=_INK)
-    ax.set_ylabel("Voice V2V p95 (ms)", color=_INK)
-    ax.grid(color=_GRID, linewidth=0.75)
-    ax.set_axisbelow(True)
-    ax.tick_params(colors=_MUTED)
-    for axis in (ax.xaxis, ax.yaxis):
-        axis.set_major_formatter(StrMethodFormatter("{x:,.0f}"))
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    for side in ("bottom", "left"):
-        ax.spines[side].set_color(_AXIS)
-    families = list(dict.fromkeys(_style(arm)[:2] for arm in arms))
-    if len(families) > 1:  # one family needs no legend: the arms' names say whose they are
-        handles = [Line2D([], [], color=color, linewidth=2.5) for _, color in families]
-        labels = [family for family, _ in families]
-        legend = fig.legend(handles, labels, loc="outside lower left", ncols=3, frameon=False)
-        for text in legend.get_texts():
-            text.set_color(_INK)
-    fig.draw_without_rendering()  # lays the axes out, so that the names can be placed in them
-    marks = [(g["background_tokens_per_s"], g["v2v_p95_ms"]) for g in [*groups, *crosses]]
-    if unnamed := _name_ends(ax, ends, marks, taken):
-        notes.append(
-            f"{unnamed} variants of arms crowd too closely to name; frontier.md lists them"
-        )
-        note.set_text(".\n".join(notes) + ".")
-        ax.set_title(title, color=_INK, loc="left", pad=12 + 11 * len(notes))
-    _save_svg(fig, path, bbox_inches="tight", pad_inches=0.1)
-    plt.close(fig)
-    return True
-
-
-def load_sweep(configurations: Sequence[Mapping[str, Any]]) -> bool:
-    """Whether configurations span load levels (numbers of session trees), so that a line through
-    them reads as one arm swept over its load. Configurations at one load are separate markers."""
-    return len({c["runs"][0]["sessions"] for c in configurations}) > 1
+            return index, f"{name[0].upper()}{name[1:]}, {arms}"
+    return len(FAMILIES), "Other arms"
 
 
 def _fence(values: Sequence[float]) -> float | None:
-    """The V2V p95 past which a frontier figure leaves a configuration off its scale, so that one
-    collapse does not flatten the rest: Tukey's fence for far outliers, three interquartile ranges
-    above the upper quartile, of four or more configurations. None when none is past it."""
+    """The V2V p95 past which a frontier figure cuts a configuration's bar at the scale's end, so
+    that one collapse does not flatten the rest: Tukey's fence for far outliers, three
+    interquartile ranges above the upper quartile, of four or more configurations. None when none
+    is past it."""
     if len(values) < 4:
         return None
     q1, _, q3 = quantiles(values, 4)
@@ -237,277 +104,450 @@ def _fence(values: Sequence[float]) -> float | None:
     return fence if max(values) > fence else None
 
 
-_PLACES = (
-    *((7.5, angle) for angle in (0, 35, -35, 90, -90, 145, -145, 180)),
-    *((radius, angle) for radius in (20.0, 34.0) for angle in range(0, 360, 30)),
-)
-"""Where an arm's name may go around the last point of its frontier, in the order tried: beside it,
-then farther out on a leader line. Each is a distance in points and an angle in degrees."""
+def load_sweep(configurations: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether configurations span load levels (numbers of session trees)."""
+    return len({c["runs"][0]["sessions"] for c in configurations}) > 1
 
 
-def _name_ends(
-    ax: Any,
-    ends: Sequence[tuple[float, float, str]],
-    marks: Sequence[tuple[float, float]],
-    taken: Sequence[Any],
-) -> int:
-    """Write each arm's name by the last point of its frontier (``ends``: x, y and the name), at
-    the first of _PLACES where it stays in the axes, clear of every marker (``marks``), of the texts
-    ``taken`` and of the names placed before it; where none is, an arm's name goes beside the point
-    anyway, and the names of an arm's variants (``9-no-headroom``) are left out. Arms whose ends
-    share a marker's place share a name ("6, 8b"; past three, "9, 9-budget0 and 8 more"), and the
-    most crowded go first. Returns how many variants were left unnamed."""
-    import math
+def _seconds(ms: float) -> str:
+    return f"{ms / 1000:.2f}"
 
-    from matplotlib.text import Text
-    from matplotlib.transforms import Bbox
 
-    renderer = ax.figure.canvas.get_renderer()
-    frame = ax.get_window_extent(renderer)
-    half = 6.0 * ax.figure.dpi / 72  # the largest marker with its ring, in pixels
-    boxes = [t.get_window_extent(renderer).padded(2) for t in taken]
-    centers = [ax.transData.transform(mark) for mark in marks]
-    for cx, cy in centers:
-        boxes.append(Bbox.from_extents(cx - half, cy - half, cx + half, cy + half))
-    shared: list[tuple[float, float, list[str], Any]] = []
-    for x, y, name in ends:
-        at = ax.transData.transform((x, y))
-        same = next((s for s in shared if math.dist(s[3], at) <= half), None)
-        if same is None:
-            shared.append((x, y, [name], at))
+def _name(s: Figure, right: float, y: float, name: str, note: str) -> float:
+    """A row's name, right-aligned at ``right`` from the label column's left edge (24) in lines that
+    break evenly, and its ``note`` in the soft ink: at the end of its last line where it fits, else
+    on a line of its own. Returns the lines' height."""
+    lines = wrap(name, right - 24, VALUE)
+    joined = bool(note) and (measure(lines[-1], VALUE) + 10 + measure(note, NOTE) <= right - 24)
+    for k, line in enumerate(lines):
+        last = k == len(lines) - 1
+        end = right - (measure(note, NOTE) + 10 if last and joined else 0)
+        s.text(end, y + 15 + 22 * k, line, size=VALUE, anchor="end")
+    height = 22.0 * len(lines)
+    if joined:
+        s.text(right, y + 15 + height - 22, note, size=NOTE, anchor="end", cls="soft")
+    elif note:
+        s.text(right, y + 15 + height, note, size=NOTE, anchor="end", cls="soft")
+        height += 20
+    return height
+
+
+def _panel_heads(s: Figure, cx: float, y: float, title: str, subtitle: str) -> None:
+    s.text(cx, y, title, anchor="middle")
+    s.text(cx, y + 25, subtitle, size=NOTE, anchor="middle", cls="soft")
+
+
+def _axis(s: Figure, x0: float, length: float, marks: list[float], y0: float, y1: float) -> None:
+    """A scale of ``length`` from zero to the last of ``marks``, its ticks' values in the units
+    they are given in: gridlines from ``y0`` to ``y1``, the axis at zero, the baseline at ``y1`` and
+    the values under it."""
+    step = marks[1] - marks[0]
+    for mark in marks:
+        x = x0 + length * mark / marks[-1]
+        s.vrule(x, y0, y1, "axis" if mark == 0 else "grid")
+        s.text(x, y1 + 23, tick_text(mark, step), size=NOTE, anchor="middle", cls="mute")
+    s.rule(x0, x0 + length, y1)
+
+
+# The frontier figure -----------------------------------------------------------------------------
+
+
+def plot(rows: Sequence[Mapping[str, Any]], path: Path, slo: float | None = None) -> Path:
+    """A workload's frontier figure: a row per configuration, under its family's heading, with its
+    voice-to-voice p95 against the voice SLO (``slo`` ms) beside the agents' goodput over the
+    calls, each its median over the configuration's runs. A configuration on its arm's frontier has
+    a filled bar and one off it an open bar; the change's configurations are blue, the one to
+    deploy saturated, and the others gray. A configuration whose V2V p95 lies past the far
+    outliers' fence of the rest, or that failed turns (its V2V censored at the reply timeout), has
+    its bar cut at the scale's end, its value printed."""
+    groups = configurations(rows)
+    workload = rows[0]["workload"]
+    measured = [g["v2v_p95_ms"] for g in groups if g["v2v_p95_ms"] is not None]
+    fence = _fence([g["v2v_p95_ms"] for g in groups if not g["failed_turns"]])
+    shown = [v for v in measured if (fence is None or v <= fence) and v < REPLY_TIMEOUT_MS]
+    top_ms = max([*shown, *([slo] if slo else []), 1000.0])
+    right, ax0, alen, bx0, blen = 388, 412, 344, 842, 176
+    marks_a = ticks(top_ms / 1000, alen)
+    top_a = marks_a[-1] * 1000
+    goodputs = [g["background_tokens_per_s"] for g in groups if g["runs"][0]["sessions"]]
+    marks_b = ticks(max([*goodputs, 1.0]), blen)
+    top_b = marks_b[-1]
+    pale = any(arm_order(g["arm"])[0] == CHANGE_FAMILY and g["arm"] != TO_DEPLOY for g in groups)
+
+    s = Figure(WIDTH, 400, f"Voice tail and the agents' goodput: {workload}", "")
+    s.text(
+        WIDTH / 2,
+        38,
+        f"Voice tail and the agents' goodput: {workload}",
+        size=TITLE,
+        anchor="middle",
+    )
+    _panel_heads(
+        s, ax0 + alen / 2, 92, "Voice-to-voice p95", "seconds, median of the runs • Lower is better"
+    )
+    _panel_heads(
+        s, bx0 + blen / 2, 92, "Agents' goodput", "tokens/s over the calls • Higher is better"
+    )
+    top = 160  # the SLO's label; the plot starts under it
+    y = top + 16
+    family = None
+    placed = []  # (y of the bar, configuration, lines' bottom)
+    for g in groups:
+        index, heading = _family(g["arm"])
+        if index != family:
+            family = index
+            y += 2 if placed else 0
+            s.text(24, y + 15, heading, size=NOTE, cls="mute")
+            y += 26
+        notes = []
+        if len(g["runs"]) > 1:
+            notes.append(f"{len(g['runs'])} runs")
+        if g["failed_turns"]:
+            notes.append(f"{g['failed_turns']} of {g['turns']} turns failed")
+        height = _name(s, right, y, label(g["runs"][0]["label"]), ", ".join(notes))
+        placed.append((y + max(height, 22) / 2 - 10, g))
+        y += max(height, 22) + 10
+    bottom = y + 2
+    _axis(s, ax0, alen, marks_a, top + 8, bottom)
+    _axis(s, bx0, blen, marks_b, top + 8, bottom)
+    cut = False
+    values = []
+    for bar_y, g in placed:
+        number = arm_order(g["arm"])[0]
+        bar = (
+            "open"
+            if not g["frontier"]
+            else "hi"
+            if g["arm"] == TO_DEPLOY
+            else "soft"
+            if number == CHANGE_FAMILY
+            else "mid"
+            if pale
+            else "lo"
+        )
+        p95 = g["v2v_p95_ms"]
+        if p95 is not None:
+            over = p95 > top_a
+            cut |= over
+            s.hbar(ax0, bar_y, alen * min(p95, top_a) / top_a, 20, bar, cut=over)
+            text = ("≥" if p95 >= REPLY_TIMEOUT_MS else "") + _seconds(p95)
+            values.append((ax0 + alen * min(p95, top_a) / top_a + 7, bar_y + 15, text))
+        if g["runs"][0]["sessions"]:
+            tokens = g["background_tokens_per_s"]
+            s.hbar(bx0, bar_y, blen * tokens / top_b, 20, bar)
+            values.append((bx0 + blen * tokens / top_b + 7, bar_y + 15, f"{tokens:,.0f}"))
         else:
-            same[2].append(name)
-
-    def crowd(end: tuple[float, float, list[str], Any]) -> int:
-        """Less for an end with more markers around it."""
-        return -sum(math.dist(center, end[3]) <= 6 * half for center in centers)
-
-    def name_at(x: float, y: float, name: str, distance: float, angle: float) -> tuple[Any, Any]:
-        dx, dy = math.cos(math.radians(angle)), math.sin(math.radians(angle))
-        leader = {"arrowstyle": "-", "color": _MUTED, "linewidth": 0.6, "shrinkB": 5}
-        label = ax.annotate(
-            name,
-            (x, y),
-            xytext=(distance * dx, distance * dy),
-            textcoords="offset points",
-            ha="left" if dx > 0.3 else "right" if dx < -0.3 else "center",
-            va="bottom" if dy > 0.3 else "top" if dy < -0.3 else "center",
-            fontsize=8,
-            color=_INK,
-            arrowprops=None if distance == _PLACES[0][0] else leader,
-        )
-        label.set_in_layout(False)
-        label.update_positions(renderer)
-        return label, Text.get_window_extent(label, renderer).padded(1.5)
-
-    unnamed = 0
-    for x, y, names, _ in sorted(shared, key=crowd):
-        name = (
-            ", ".join(names)
-            if len(names) <= 3
-            else f"{', '.join(names[:2])} and {len(names) - 2} more"
-        )
-        for place in _PLACES:
-            label, box = name_at(x, y, name, *place)
-            inside = frame.x0 <= box.x0 and box.x1 <= frame.x1 and frame.y0 <= box.y0
-            if inside and box.y1 <= frame.y1 and not any(box.overlaps(b) for b in boxes):
-                break
-            label.remove()
-        else:  # nowhere clear: an arm's name beside the point anyway, its variants' left out
-            if all("-" in n for n in names):
-                unnamed += len(names)
-                continue
-            label, box = name_at(x, y, name, *_PLACES[0])
-        boxes.append(box)
-    return unnamed
+            values.append((bx0 + 7, bar_y + 15, "no agents"))
+    if slo:
+        x = ax0 + alen * slo / top_a
+        s.vrule(x, top + 8, bottom, "slo")
+        s.text(x, top, f"SLO {_seconds(slo)} s", size=NOTE, anchor="middle", cls="orange tint")
+    for x, baseline, text in values:
+        s.text(x, baseline, text, size=NOTE, halo=True, cls="soft" if text == "no agents" else "")
+    notes = []
+    if any(not g["frontier"] for g in groups):
+        notes.append("An open bar is a configuration off its arm's frontier.")
+    if cut:
+        notes.append("A bar cut square runs past the scale's end; its value says how far.")
+    if slo is None:
+        notes.append(f"No point of voice alone with {rows[0]['callers']} callers sets a voice SLO.")
+    else:
+        notes.append("The SLO is voice alone with as many callers plus 250 ms.")
+    y = bottom + 58
+    for note in notes:
+        s.text(24, y, note, size=NOTE, cls="soft")
+        y += 24
+    s.height = y - 6
+    return s.save(path)
 
 
-def plot_waterfall(cells: Sequence[Mapping[str, Any]], path: Path) -> bool:
-    """waterfall.svg: a bar per configuration that stacks the means of its stages from the end of the
-    caller's speech, so that its length is the mean V2V, with a line at the median V2V and a
-    triangle at the p95, and under it a thin bar for the LLM's time to first token from its
-    request. False without matplotlib."""
-    try:
-        import matplotlib
-    except ImportError:
-        return False
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import StrMethodFormatter
+# The stage waterfall -----------------------------------------------------------------------------
 
-    ys = list(range(len(cells)))
-    fig, ax = plt.subplots(
-        figsize=(7.5, 1.9 + 0.5 * len(cells)), facecolor=_SURFACE, layout="constrained"
+STAGES = (*STACKED, ("transport_ms", "Transport and playout"))
+STAGE_FILLS = ("lo", "violet", "mid", "pale")
+"""Each stage's fill: the reply's first sentence, the LLM's stage and where a shared GPU loses
+its time, the one hue; the others grays of distinct lightness."""
+
+
+def plot_waterfall(cells: Sequence[Mapping[str, Any]], path: Path) -> Path:
+    """waterfall.svg: a row per configuration whose bar stacks the means of its stages from the end
+    of the caller's speech (STACKED, then transport and playout), so that its length is the mean
+    V2V, printed at its end; each run of rows of one workload under the workload's name."""
+    right, x0, length = 388, 412, 610
+    top_ms = max(c["v2v_mean_ms"] for c in cells)
+    marks = ticks(top_ms / 1000, length)
+    top = marks[-1] * 1000
+    s = Figure(WIDTH, 400, "The voice turn by stage", "")
+    s.text(WIDTH / 2, 38, "The voice turn by stage", size=TITLE, anchor="middle")
+    s.text(
+        WIDTH / 2,
+        64,
+        "Mean over the replies of each configuration's runs, seconds • Shorter is better",
+        size=NOTE,
+        anchor="middle",
+        cls="soft",
     )
-    ax.set_facecolor(_SURFACE)
-    handles, left = [], [0.0] * len(cells)
-    segments = [*STACKED, ("transport_ms", "Transport and playout")]
-    for color, (key, label) in zip(_SERIES, segments, strict=False):
-        widths = [max(0.0, c[key]) for c in cells]
-        bars = ax.barh(ys, widths, left=left, height=0.42, color=color, edgecolor=_SURFACE)
-        handles.append((bars, label))
-        left = [x + width for x, width in zip(left, widths, strict=True)]
-    timed = [(y, c) for y, c in zip(ys, cells, strict=True) if c["llm_ttft_ms"] is not None]
-    llm = ax.barh(
-        [y + 0.32 for y, _ in timed],
-        [c["llm_ttft_ms"] for _, c in timed],
-        left=[c["llm_request_ms"] for _, c in timed],
-        height=0.08,
-        color=_SECONDARY,
+    # The stages' swatches, centred under the subtitle.
+    widths = [30 + measure(name, NOTE) for _, name in STAGES]
+    x = (WIDTH - sum(widths) - 28 * (len(STAGES) - 1)) / 2
+    for (_, name), fill, width in zip(STAGES, STAGE_FILLS, widths, strict=True):
+        s.swatch(x, 98, fill, name)
+        x += width + 28
+    top_y = 132
+    y = top_y + 8
+    placed = []
+    workload = None
+    for c in cells:
+        if c["workload"] != workload:  # each run of one workload's rows under its heading
+            workload = c["workload"]
+            y += 2 if placed else 0
+            # In the label column, clear of the gridlines: a GPU's name makes one wider than it.
+            lines = wrap(workload, right - 24, NOTE)
+            for k, line in enumerate(lines):
+                s.text(24, y + 15 + 20 * k, line, size=NOTE, cls="mute")
+            y += 26 + 20 * (len(lines) - 1)
+        height = _name(s, right, y, label(c["label"]), f"{c['runs']} runs" if c["runs"] > 1 else "")
+        placed.append((y + max(height, 22) / 2 - 10, c))
+        y += max(height, 22) + 10
+    bottom = y + 2
+    _axis(s, x0, length, marks, top_y, bottom)
+    for bar_y, c in placed:
+        parts = [
+            (length * max(0.0, c[key]) / top, fill)
+            for (key, _), fill in zip(STAGES, STAGE_FILLS, strict=True)
+        ]
+        s.segments(x0, bar_y, parts, 20)
+        end = x0 + sum(width for width, _ in parts)
+        s.text(end + 7, bar_y + 15, _seconds(c["v2v_mean_ms"]), size=NOTE, halo=True)
+    s.height = bottom + 40
+    return s.save(path)
+
+
+# The README's voice-p95.svg ----------------------------------------------------------------------
+
+
+def _title(groups: Sequence[Mapping[str, Any]]) -> str:
+    """The figure's title, from its records: the calls, the agents and, for one group, the GPU."""
+    callers, sessions = groups[0]["callers"], groups[0]["sessions"]
+    calls = (
+        f"{NUMBERS[callers]} voice calls" if callers < len(NUMBERS) else f"{callers} voice calls"
     )
-    median = ax.vlines(
-        [c["v2v_p50_ms"] for c in cells],
-        [y - 0.27 for y in ys],
-        [y + 0.27 for y in ys],
-        colors=_INK,
-        linewidth=2,
+    title = f"{calls} beside {sessions} coding-agent sessions"
+    return title + (f" on one {groups[0]['gpu']}" if len(groups) == 1 else "")
+
+
+def plot_voice(groups: Sequence[Mapping[str, Any]], path: Path, narrow: Path) -> list[Path]:
+    """voice-p95.svg and its phone layout: each group's configurations (``rows``: the
+    configuration and its row of figure.toml) as rows of two panels, the V2V p95 against the
+    group's voice SLO (``slo`` ms) and the agents' tokens/s over the fixed window with each one's
+    share of the group's first row, each the median over the configuration's runs. A group is the
+    configurations of one GPU (``gpu``); with several, each is headed by its ``title``. The row to
+    deploy (``featured``) is the saturated blue, the change's other rows (``change``) pale blue,
+    the rest gray. ``callers`` and ``sessions`` are the groups' workload, which the title names."""
+    p95_top = max(
+        [g["slo"] or 0.0 for g in groups] + [c["v2v_p95_ms"] for g in groups for c, _ in g["rows"]]
     )
-    p95 = ax.scatter(
-        [c["v2v_p95_ms"] for c in cells], [y - 0.34 for y in ys], s=36, marker="v", color=_INK
-    )
-    handles += [
-        (llm, "LLM first token, from its request"),
-        (median, "V2V median"),
-        (p95, "V2V p95"),
+    tokens = max([c["fixed_window_tokens_per_s"] or 0.0 for g in groups for c, _ in g["rows"]])
+    title = _title(groups)
+    description = _describe(groups)
+    return [
+        _voice_wide(groups, path, title, description, p95_top, max(tokens, 1.0)),
+        _voice_narrow(groups, narrow, title, description, p95_top, max(tokens, 1.0)),
     ]
-    ax.set_yticks(
-        ys, [c["point"] + (f" ({c['runs']} runs)" if c["runs"] > 1 else "") for c in cells]
-    )
-    ax.set_ylim(len(cells) - 0.5, -0.55)  # the report's order, top to bottom
-    ax.set_xlabel("ms from the end of the caller's speech", color=_INK)
-    ax.set_title(
-        "Voice turn stages, stacked: a bar's length is the mean V2V", color=_INK, loc="left"
-    )
-    ax.grid(axis="x", color=_GRID, linewidth=0.75)
-    ax.set_axisbelow(True)
-    ax.tick_params(colors=_MUTED)
-    ax.tick_params(axis="y", length=0, labelcolor=_INK)
-    ax.xaxis.set_major_formatter(StrMethodFormatter("{x:,.0f}"))
-    for side in ("top", "right", "left"):
-        ax.spines[side].set_visible(False)
-    ax.spines["bottom"].set_color(_AXIS)
-    artists, labels = zip(*handles, strict=True)
-    legend = fig.legend(artists, labels, loc="outside lower left", ncols=3, frameon=False)
-    for text in legend.get_texts():
-        text.set_color(_INK)
-    _save_svg(fig, path, bbox_inches="tight", pad_inches=0.1)  # the rows and the legend, no more
-    plt.close(fig)
-    return True
 
 
-def plot_dots(
-    rows: Sequence[tuple[Mapping[str, Any], str, bool]],
-    path: Path,
-    slo: float | None = None,
-    alone: float | None = None,
-) -> bool:
-    """voice-p95.svg: one row per configuration, ``(configuration, label, change)`` in the given
-    order: each run's V2V p95 as an open dot on the runs' range and their median as a ringed dot,
-    in the first hue where ``change`` marks a row that runs the engine change and in the secondary
-    ink otherwise; at the right, the configuration's agents' tokens/s over the fixed window as a
-    share of the first row's (a dash where either was not measured). A dashed line marks the voice SLO, ``slo`` ms, which voice alone
-    (``alone`` ms) sets. A configuration with failed turns says so by its label, since its V2V is
-    censored. False without matplotlib."""
-    try:
-        import matplotlib
-    except ImportError:
-        return False
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.lines import Line2D
+def _bar(spec: Mapping[str, Any]) -> str:
+    return "hi" if spec.get("featured") else "soft" if spec.get("change") else "mid"
 
-    base = rows[0][0]["fixed_window_tokens_per_s"]
-    fig, ax = plt.subplots(
-        figsize=(7.5, 1.9 + 0.45 * len(rows)), facecolor=_SURFACE, layout="constrained"
+
+def _share(group: Mapping[str, Any], configuration: Mapping[str, Any]) -> str | None:
+    base = group["rows"][0][0]["fixed_window_tokens_per_s"]
+    tokens = configuration["fixed_window_tokens_per_s"]
+    return None if not base or tokens is None else f"{tokens / base:.0%}"
+
+
+def _note(configuration: Mapping[str, Any], spec: Mapping[str, Any]) -> str:
+    runs = len(configuration["runs"])
+    parts = [spec["note"]] if spec.get("note") else []
+    parts.append(f"{runs} run{'' if runs == 1 else 's'}")
+    if configuration["failed_turns"]:
+        parts.append(f"{configuration['failed_turns']} of {configuration['turns']} turns failed")
+    return ", ".join(parts)
+
+
+def _describe(groups: Sequence[Mapping[str, Any]]) -> str:
+    sentences = []
+    for g in groups:
+        head = f"{g['gpu']}: " if len(groups) > 1 else ""
+        rows = "; ".join(
+            f"{spec['label']}{', ' + spec['note'] if spec.get('note') else ''}, "
+            f"{_seconds(c['v2v_p95_ms'])} s and {c['fixed_window_tokens_per_s']:,.0f} tokens/s"
+            f" ({_share(g, c)} of the first row's) over {len(c['runs'])} runs"
+            for c, spec in g["rows"]
+        )
+        slo = f" against an SLO of {_seconds(g['slo'])} s" if g["slo"] else ""
+        sentences.append(f"{head}voice-to-voice p95{slo} and the agents' tokens/s: {rows}.")
+    return " ".join(sentences)
+
+
+def _voice_wide(groups, path, title, description, p95_top, tokens_top) -> Path:
+    right, ax0, alen, bx0, blen = 238, 262, 420, 764, 200
+    marks_a, marks_b = ticks(p95_top / 1000, alen), ticks(tokens_top, blen)
+    top_a, top_b = marks_a[-1] * 1000, marks_b[-1]
+    s = Figure(WIDTH, 400, title, description)
+    s.text(WIDTH / 2, 38, title, size=TITLE, anchor="middle")
+    _panel_heads(
+        s, ax0 + alen / 2, 96, "Voice-to-voice p95", "seconds, median of the runs • Lower is better"
     )
-    ax.set_facecolor(_SURFACE)
-    labels = []
-    for y, (group, label, change) in enumerate(rows):
-        color = _SERIES[0] if change else _SECONDARY
-        runs = sorted(r["v2v_p95_ms"] / 1000 for r in group["runs"] if r["v2v_p95_ms"] is not None)
-        ax.plot(
-            [runs[0], runs[-1]],
-            [y, y],
-            color=color,
-            linewidth=2,
-            alpha=0.35,
-            solid_capstyle="round",
-        )
-        ax.scatter(
-            runs,
-            [y] * len(runs),
-            s=22,
-            facecolors=_SURFACE,
-            edgecolors=color,
-            linewidths=1.25,
-            zorder=3,
-        )
-        ax.scatter(
-            group["v2v_p95_ms"] / 1000,
-            y,
-            s=64,
-            color=color,
-            edgecolors=_SURFACE,
-            linewidths=2,
-            zorder=4,
-        )
-        count = len(group["runs"])
-        runs_text = f"{count} run{'s' if count > 1 else ''}"
-        if group["failed_turns"]:
-            runs_text += f", {group['failed_turns']} of {group['turns']} turns failed"
-        labels.append(f"{label} ({runs_text})")
-        tokens = group["fixed_window_tokens_per_s"]
-        share = "\N{EN DASH}" if tokens is None or not base else f"{tokens / base:.0%}"
-        ax.text(1.03, y, share, transform=ax.get_yaxis_transform(), va="center", color=_INK)
-    ax.text(
-        1.03,
-        -0.75,
-        "Agents'\ntokens/s",
-        transform=ax.get_yaxis_transform(),
-        va="center",
-        color=_SECONDARY,
-        fontsize="small",
+    _panel_heads(
+        s,
+        bx0 + blen / 2 + 24,
+        96,
+        "Agents' throughput",
+        "tokens/s, % of the baseline • Higher is better",
     )
-    handles = [
-        Line2D(
-            [],
-            [],
-            linestyle="none",
-            marker="o",
-            markersize=5,
-            markerfacecolor=_SURFACE,
-            markeredgecolor=_SECONDARY,
-            markeredgewidth=1.25,
-        ),
-        Line2D([], [], linestyle="none", marker="o", markersize=8, color=_SECONDARY),
-    ]
-    names = ["a run", "the median of the runs"]
-    if slo is not None:
-        ax.axvline(slo / 1000, color=_INK, linewidth=0.75, linestyle=(0, (4, 3)), zorder=1.5)
-        handles.append(Line2D([], [], color=_INK, linewidth=0.75, linestyle=(0, (4, 3))))
-        names.append(
-            "the SLO" + ("" if alone is None else f": voice alone ({alone / 1000:.2f} s) + 250 ms")
-        )
-    ax.set_yticks(range(len(rows)), labels)
-    ax.set_ylim(len(rows) - 0.5, -1.2)  # the given order, top to bottom, under the column's head
-    ax.set_xlim(0, None)
-    ax.set_xlabel("Voice-to-voice p95 (s)", color=_INK)
-    fig.suptitle(
-        "Voice-to-voice p95, two calls beside 24 coding-agent sessions",
-        x=0.01,
-        ha="left",
-        color=_INK,
+    top = 164  # the SLO's label; the plot starts under it
+    y = top + 16
+    pitch, thick = 54, 26
+    spans = []  # each group's rows' extent, for its SLO
+    bars = []
+    for g in groups:
+        if len(groups) > 1:
+            s.text(24, y + 22, g["title"], size=NOTE, cls="mute")
+            y += 36
+        first = y
+        for configuration, spec in g["rows"]:
+            s.text(right, y + 12, spec["label"], size=VALUE, anchor="end")
+            s.text(right, y + 34, _note(configuration, spec), size=NOTE, anchor="end", cls="soft")
+            bars.append((y, g, configuration, spec))
+            y += pitch
+        spans.append((first, y - pitch + thick + 6, g))
+        y += 10
+    bottom = y - 10 + 2
+    _axis(s, ax0, alen, marks_a, top + 8, bottom)
+    _axis(s, bx0, blen, marks_b, top + 8, bottom)
+    values = []
+    for bar_y, g, configuration, spec in bars:
+        p95 = configuration["v2v_p95_ms"]
+        s.hbar(ax0, bar_y, alen * p95 / top_a, thick, _bar(spec))
+        values.append((ax0 + alen * p95 / top_a + 8, bar_y + 19, _seconds(p95), ""))
+        tokens = configuration["fixed_window_tokens_per_s"]
+        if tokens is None:
+            values.append((bx0 + 8, bar_y + 19, "\N{EN DASH}", "soft"))
+            continue
+        s.hbar(bx0, bar_y, blen * tokens / top_b, thick, _bar(spec))
+        values.append((bx0 + blen * tokens / top_b + 8, bar_y + 19, f"{tokens:,.0f}", ""))
+        if share := _share(g, configuration):
+            width = measure(f"{tokens:,.0f}", NOTE)
+            values.append((bx0 + blen * tokens / top_b + 8 + width + 8, bar_y + 19, share, "soft"))
+    for k, (first, last, g) in enumerate(spans):
+        if g["slo"]:
+            x = ax0 + alen * g["slo"] / top_a
+            label_y = top if k == 0 else first - 8
+            s.vrule(x, label_y + 8, last, "slo")
+            s.text(
+                x,
+                label_y,
+                f"SLO {_seconds(g['slo'])} s",
+                size=NOTE,
+                anchor="middle",
+                cls="orange tint",
+                halo=True,
+            )
+    for x, baseline, text, cls in values:
+        s.text(x, baseline, text, size=NOTE, cls=cls, halo=True)
+    s.height = bottom + 42
+    return s.save(path)
+
+
+def _voice_narrow(groups, path, title, description, p95_top, tokens_top) -> Path:
+    s = Figure(NARROW, 400, title, description)
+    cx = NARROW / 2
+    y = 32
+    for line in wrap(title, NARROW - 32, TITLE):
+        s.text(cx, y, line, size=TITLE, anchor="middle")
+        y += 29
+    x0, length = 18, 296
+    marks_a, marks_b = ticks(p95_top / 1000, length), ticks(tokens_top, length)
+
+    def panel(y: float, head: str, sub: str, marks: list[float], scale: float, show) -> float:
+        _panel_heads(s, cx, y + 20, head, sub)
+        y += 62
+        top = marks[-1] * scale
+        thick = 20
+        for g in groups:
+            if len(groups) > 1:
+                s.text(x0, y + 16, g["title"], size=NOTE, cls="mute")
+                y += 28
+            slo = g["slo"] if scale == 1000 else None
+            if slo:
+                s.text(
+                    x0 + length * slo / top,
+                    y + 14,
+                    f"SLO {_seconds(slo)} s",
+                    size=NOTE,
+                    anchor="middle",
+                    cls="orange tint",
+                )
+                y += 22
+            for configuration, spec in g["rows"]:
+                name = s.text(x0, y + 18, spec["label"], size=VALUE)
+                if spec.get("note"):
+                    s.text(name.x1 + 7, y + 18, spec["note"], size=NOTE, cls="soft")
+                band = y + 27
+                for mark in marks:
+                    s.vrule(
+                        x0 + length * mark * scale / top,
+                        band,
+                        band + thick + 8,
+                        "axis" if mark == 0 else "grid",
+                    )
+                value = show(g, configuration)
+                if value is None:
+                    s.text(x0 + 8, band + 4 + 15, "\N{EN DASH}", size=NOTE, cls="soft", halo=True)
+                else:
+                    amount, texts = value
+                    end = x0 + length * amount / top
+                    s.hbar(x0, band + 4, end - x0, thick, _bar(spec))
+                    x = end + 7
+                    for text, cls in texts:
+                        box = s.text(x, band + 4 + 15, text, size=NOTE, cls=cls, halo=True)
+                        x = box.x1 + 7
+                if slo:
+                    s.vrule(x0 + length * slo / top, band, band + thick + 8, "slo")
+                y += 62
+        bottom = y - 62 + 27 + thick + 8
+        s.rule(x0, x0 + length, bottom)
+        step = marks[1] - marks[0]
+        for mark in marks:
+            s.text(
+                x0 + length * mark * scale / top,
+                bottom + 23,
+                tick_text(mark, step),
+                size=NOTE,
+                anchor="middle",
+                cls="mute",
+            )
+        return bottom + 42
+
+    def p95(g, configuration):
+        return configuration["v2v_p95_ms"], [(_seconds(configuration["v2v_p95_ms"]), "")]
+
+    def tokens(g, configuration):
+        amount = configuration["fixed_window_tokens_per_s"]
+        if amount is None:
+            return None
+        share = _share(g, configuration)
+        return amount, [(f"{amount:,.0f}", ""), *([(share, "soft")] if share else [])]
+
+    y = panel(y + 6, "Voice-to-voice p95", "seconds • Lower is better", marks_a, 1000, p95)
+    y = panel(
+        y + 10,
+        "Agents' throughput",
+        "tokens/s, % of the baseline • Higher is better",
+        marks_b,
+        1,
+        tokens,
     )
-    ax.grid(axis="x", color=_GRID, linewidth=0.75)
-    ax.set_axisbelow(True)
-    ax.tick_params(colors=_MUTED)
-    ax.tick_params(axis="y", length=0, labelcolor=_INK)
-    for side in ("top", "right", "left"):
-        ax.spines[side].set_visible(False)
-    ax.spines["bottom"].set_color(_AXIS)
-    legend = fig.legend(handles, names, loc="outside lower left", ncols=3, frameon=False)
-    for text in legend.get_texts():
-        text.set_color(_INK)
-    _save_svg(fig, path, bbox_inches="tight", pad_inches=0.1)
-    plt.close(fig)
-    return True
+    s.height = y - 10
+    return s.save(path)

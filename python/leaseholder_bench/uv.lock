@@ -1034,6 +1034,7 @@ version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
+    { name = "fonttools" },
     { name = "httpx" },
     { name = "leaseholder-stats" },
     { name = "matplotlib" },
@@ -1053,6 +1054,7 @@ test = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.14,<4" },
     { name = "aiperf", marker = "extra == 'aiperf'", specifier = "==0.13.0" },
+    { name = "fonttools", specifier = "==4.67.0" },
     { name = "httpx", specifier = ">=0.28,<0.29" },
     { name = "leaseholder-bench", extras = ["aiperf"], marker = "extra == 'test'" },
     { name = "leaseholder-stats", editable = "../leaseholder_stats" },

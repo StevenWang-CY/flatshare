@@ -479,6 +479,7 @@ def stage_waterfall(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         cells.append(
             {
                 "point": group["point"],
+                "workload": group["workload"],
                 "label": runs[0]["label"],
                 "runs": len(runs),
                 "replies": v2v["n"],
@@ -501,24 +502,52 @@ def _pooled(runs: Iterable[Mapping[str, Any]], stage: str) -> float | None:
     return sum(n * mean for n, mean in counted) / turns if turns else None
 
 
+DOT_KEYS = ("point", "label", "note", "change", "featured")
+"""The keys of a row of figure.toml: the point's name and the row's label, a note the row's second
+line gives before its runs, whether it runs the engine change, and whether it is the configuration
+to deploy."""
+
+
 def read_dots(path: Path) -> list[dict[str, Any]]:
-    """The rows of voice-p95.svg from a TOML file: one ``[[row]]`` table each, with the point's name
-    (``point``), the row's label (``label``) and whether it runs the engine change (``change``,
-    false by default), in the file's order. A ValueError names what is wrong."""
+    """The groups of voice-p95.svg from a TOML file, in the file's order: the ``[[row]]`` tables
+    at its top as one group, or ``[[group]]`` tables, each with a ``title`` and ``[[group.row]]``
+    tables, for a figure of several GPUs, and the ``gpu`` its points ran on where the GPUs ran the
+    same arm files (as :func:`gpu_name` gives it: "A100-SXM4-80GB"). A row names its point
+    (``point``) and its label (``label``), and may give a ``note``, whether it runs the engine
+    change (``change``) and whether it is the configuration to deploy (``featured``, at most one a
+    group; it runs the change), both false by default. A ValueError names what is wrong."""
     try:
-        rows = tomllib.loads(path.read_text()).get("row")
+        data = tomllib.loads(path.read_text())
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ValueError(f"{path}: {exc}") from exc
-    if not rows:
+    if "row" in data and "group" in data:
+        raise ValueError(f"{path}: [[row]] tables and [[group]] tables together")
+    groups = data.get("group") or ([{"title": None, "row": data["row"]}] if "row" in data else [])
+    if not groups or not all(g.get("row") for g in groups):
         raise ValueError(f"{path}: no [[row]] tables")
-    for row in rows:
-        if not isinstance(row.get("point"), str) or not isinstance(row.get("label"), str):
-            raise ValueError(f"{path}: a row without a point or a label: {row}")
-        if set(row) - {"point", "label", "change"}:
-            raise ValueError(f"{path}: a row with keys other than point, label and change: {row}")
-        if not isinstance(row.get("change", False), bool):
-            raise ValueError(f"{path}: a row whose change is not true or false: {row}")
-    return rows
+    for group in groups:
+        if set(group) - {"title", "gpu", "row"}:
+            raise ValueError(f"{path}: a group with keys other than title, gpu and row: {group}")
+        if not isinstance(group.get("gpu", ""), str):
+            raise ValueError(f"{path}: a group whose gpu is not a string: {group}")
+        if len(groups) > 1 and not isinstance(group.get("title"), str):
+            raise ValueError(f"{path}: a group without a title, among several")
+        for row in group["row"]:
+            if not isinstance(row.get("point"), str) or not isinstance(row.get("label"), str):
+                raise ValueError(f"{path}: a row without a point or a label: {row}")
+            if set(row) - set(DOT_KEYS):
+                keys = ", ".join(DOT_KEYS[:-1]) + f" and {DOT_KEYS[-1]}"
+                raise ValueError(f"{path}: a row with keys other than {keys}: {row}")
+            if not isinstance(row.get("note", ""), str):
+                raise ValueError(f"{path}: a row whose note is not a string: {row}")
+            for key in ("change", "featured"):
+                if not isinstance(row.get(key, False), bool):
+                    raise ValueError(f"{path}: a row whose {key} is not true or false: {row}")
+            if row.get("featured") and not row.get("change"):
+                raise ValueError(f"{path}: a featured row that does not run the change: {row}")
+        if sum(bool(row.get("featured")) for row in group["row"]) > 1:
+            raise ValueError(f"{path}: a group with more than one featured row")
+    return [{"title": g.get("title"), "gpu": g.get("gpu"), "rows": g["row"]} for g in groups]
 
 
 def write_report(
@@ -527,16 +556,17 @@ def write_report(
     waterfall: Sequence[str] = (),
     dots: Sequence[Mapping[str, Any]] = (),
 ) -> list[Path]:
-    """frontier.csv, frontier.md and, when matplotlib is installed, a frontier figure per workload
-    (:func:`figure_name`), waterfall.svg: the stage waterfall of the points ``waterfall`` names,
-    in its order, or of every configuration with turn lines, and with ``dots`` voice-p95.svg: the
-    V2V p95 of the configurations of the points it names (``{"point", "label", "change"}`` each,
-    in its order; see :func:`~leaseholder_bench.e2.figures.plot_dots`), against their workload's
-    SLO. Naming a point without turn lines, or a dots point the report lacks or that two
-    workloads measured, is a ValueError."""
+    """frontier.csv, frontier.md, a frontier figure per workload (:func:`figure_name`) and
+    waterfall.svg: the stage waterfall of the points ``waterfall`` names, in its order, or of every
+    configuration with turn lines. With ``dots`` (:func:`read_dots`'s groups), voice-p95.svg and
+    its phone layout voice-p95-narrow.svg: the V2V p95 and the agents' tokens/s of the
+    configurations of the points each group names, in its order, against its workload's SLO (see
+    :func:`~leaseholder_bench.e2.figures.plot_voice`). Naming a point without turn lines, a dots
+    point the report lacks or that two workloads measured, or a group whose points are of
+    different workloads, is a ValueError."""
     from leaseholder_bench.e2.figures import (  # figures.py builds on this module
         plot,
-        plot_dots,
+        plot_voice,
         plot_waterfall,
     )
 
@@ -558,28 +588,62 @@ def write_report(
     for members in _by_workload(rows):
         first = members[0]
         slo = voice_slo(groups, first["callers"], first["hardware"], first["warmup_turns"])
-        figure = out_dir / first["figure"]
-        if plot(members, figure, None if slo is None else slo[0]):
-            written.append(figure)
-    if cells and plot_waterfall(cells, out_dir / "waterfall.svg"):
-        written.append(out_dir / "waterfall.svg")
+        written.append(plot(members, out_dir / first["figure"], None if slo is None else slo[0]))
+    if cells:
+        written.append(plot_waterfall(cells, out_dir / "waterfall.svg"))
     if dots:
-        chosen = []
-        for dot in dots:
-            found = [g for g in groups if g["point"] == dot["point"]]
-            if len(found) != 1:
-                raise ValueError(
-                    f"{len(found)} configurations of {dot['point']} in the report, not 1"
-                )
-            chosen.append((found[0], dot["label"], bool(dot.get("change", False))))
-        first = chosen[0][0]["runs"][0]
-        slo = voice_slo(groups, first["callers"], first["hardware"], first["warmup_turns"])
-        alone = None
-        if slo is not None:
-            alone = statistics.median(g["v2v_p95_ms"] for g in groups if g["point"] in slo[1])
-        if plot_dots(chosen, out_dir / "voice-p95.svg", *((slo[0], alone) if slo else ())):
-            written.append(out_dir / "voice-p95.svg")
+        figure = [_dot_group(group, groups) for group in dots]
+        if len({(g["callers"], g["sessions"]) for g in figure}) > 1:
+            raise ValueError(
+                "the figure's groups differ in their callers or their agents' sessions"
+            )
+        written += plot_voice(figure, out_dir / "voice-p95.svg", out_dir / "voice-p95-narrow.svg")
     return written
+
+
+def _dot_group(
+    group: Mapping[str, Any], configurations: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    """A group of voice-p95.svg: the configuration of each point its rows name, with the row, and
+    their workload's voice SLO, GPU, callers and agents' sessions; with the group's ``gpu``, the
+    configurations measured on that GPU."""
+    gpu = group.get("gpu")
+    chosen = []
+    for dot in group["rows"]:
+        found = [
+            g
+            for g in configurations
+            if g["point"] == dot["point"] and gpu in (None, gpu_name(g["runs"][0]["hardware"]))
+        ]
+        if len(found) != 1:
+            on = f" on {gpu}" if gpu else ""
+            raise ValueError(
+                f"{len(found)} configurations of {dot['point']}{on} in the report, not 1"
+            )
+        chosen.append((found[0], dot))
+    workloads = {c["workload"] for c, _ in chosen}
+    if len(workloads) > 1:
+        raise ValueError(
+            f"a group of the figure's rows from {len(workloads)} workloads: {workloads}"
+        )
+    first = chosen[0][0]["runs"][0]
+    slo = voice_slo(configurations, first["callers"], first["hardware"], first["warmup_turns"])
+    return {
+        "title": group["title"],
+        "rows": chosen,
+        "slo": None if slo is None else slo[0],
+        "gpu": gpu_name(first["hardware"]),
+        "callers": first["callers"],
+        "sessions": first["sessions"],
+    }
+
+
+def gpu_name(on: str) -> str:
+    """The GPU a point's :func:`hardware` names, as a figure gives it: the box's when it names none
+    (a model's name, which has its organization's slash, is not a GPU's), without the vendor's
+    prefixes ("RTX 5060 Ti", "A100-SXM4-40GB")."""
+    gpu = next((part for part in on.split(", ") if part and "/" not in part), BOX_GPU)
+    return re.sub(r"^NVIDIA (GeForce )?", "", gpu)
 
 
 def _by_workload(rows: Sequence[Mapping[str, Any]]) -> list[list[Mapping[str, Any]]]:

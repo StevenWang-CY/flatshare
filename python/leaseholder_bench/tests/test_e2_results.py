@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 import csv
-import importlib.util
 import json
 import re
 import tomllib
@@ -73,11 +72,17 @@ VOICE_EVENTS = VOICE / "src" / "leaseholder_voice" / "events.py"
 GATEWAY_METRICS = REPO / "crates" / "lh-gateway" / "metrics.txt"
 """The gateway's exposition under the lifecycle policy, every family it registers (``make metrics``
 writes it, and the gateway's tests check it is current)."""
-# The committed E2 records: W4's, W5's re-measure, FB's rounds on the final code, and the Marlin dry run's point.
+# The committed E2 records: W4's, W5's re-measure, FB's rounds on the final code, the Marlin dry run's point, and
+# the A100 run's points (beside its other records, under e2/).
 RESULTS = REPO / "benchmarks" / "results" / "2026-10-23-e2"
 W5_RESULTS = REPO / "benchmarks" / "results" / "2026-10-24-e2-w5"
 FB_RESULTS = REPO / "benchmarks" / "results" / "2026-10-25-e2-fb"
 MARLIN_RESULTS = REPO / "benchmarks" / "results" / "2026-10-25-marlin-dry" / "session2"
+A100_RESULTS = REPO / "benchmarks" / "results" / "2026-10-26-a100"
+A100_E2 = A100_RESULTS / "e2"
+# The A100 report's points, as the Makefile's E2_A100_POINTS names them: the core's rounds and the arms paired with
+# its first two; A' (32 sessions) is a workload of its own, which make reproduce-a100 reports.
+A100_REPORTED = ("a100-r", "a100-tuned-r", "a100-prtuned-r")
 
 
 def record(end: float, *, phase: str = "profiling", ttft: float = 100.0, **extra: Any) -> str:
@@ -456,16 +461,17 @@ def test_each_workload_has_its_section_its_voice_slo_and_its_figure(tmp_path: Pa
     assert (Agents.data, Voice.callers) == STANDARD_WORKLOAD  # an arm file that names neither
     assert figure_name("weka-x32", 4) == "frontier-4-callers.svg"
     assert figure_name("traces/long", 6) == "frontier-traces-long-6-callers.svg"
-    if importlib.util.find_spec("matplotlib"):
-        figures = ["frontier.svg", "frontier-4-callers.svg", "frontier-weka-x32-long.svg"]
-        assert [p.name for p in written if p.suffix == ".svg"] == figures
-        texts = {name: (out / name).read_text() for name in figures}
-        assert "E2 frontier: weka-x32, 2 callers" in texts["frontier.svg"]
-        assert (
-            "the voice SLO, 2,010 ms: voice alone + 250 ms" in texts["frontier-weka-x32-long.svg"]
-        )
-        assert "a1-voice" not in texts["frontier-weka-x32-long.svg"]  # only its workload's points
-        assert "No point of voice alone with 4 callers" in texts["frontier-4-callers.svg"]
+    figures = ["frontier.svg", "frontier-4-callers.svg", "frontier-weka-x32-long.svg"]
+    assert [p.name for p in written if p.suffix == ".svg"] == figures
+    texts = {name: (out / name).read_text() for name in figures}
+    assert "Voice tail and the agents' goodput: weka-x32, 2 callers" in texts["frontier.svg"]
+    assert ">SLO 2.01 s<" in texts["frontier-weka-x32-long.svg"]  # voice alone's 1,760 + 250 ms
+    long = texts["frontier-weka-x32-long.svg"].lower()
+    assert "a1-voice" not in long and "disc-a4 label" in long  # only its workload's points
+    assert (
+        "No point of voice alone with 4 callers sets a voice SLO."
+        in texts["frontier-4-callers.svg"]
+    )
 
 
 def test_the_report_writes_the_table_and_the_csv(tmp_path: Path, capsys) -> None:
@@ -700,9 +706,8 @@ def test_points_that_differ_in_warm_up_turns_are_workloads_of_their_own(tmp_path
     assert f"## Workload: {warm}\n" in table
     assert "(a1-voice: 1,760 ms). Figure: `frontier.svg`." in table
     assert "(w5-a1-voice: 1,700 ms). Figure: `frontier-1-warm-up-turn.svg`." in table
-    if importlib.util.find_spec("matplotlib"):
-        figures = [p.name for p in written if p.suffix == ".svg"]
-        assert figures == ["frontier.svg", "frontier-1-warm-up-turn.svg"]
+    figures = [p.name for p in written if p.suffix == ".svg"]
+    assert figures == ["frontier.svg", "frontier-1-warm-up-turn.svg"]
     # A report of one record set names no warm-up turns, as each committed report reads one.
     w5, _ = load_points(dirs[3:])
     assert [r["workload"] for r in w5] == ["weka-x32, 2 callers"] * 2
@@ -793,7 +798,6 @@ def test_a_median_between_two_runs_keeps_its_half(tmp_path: Path) -> None:
 def test_a_failed_turn_is_censored_and_keeps_its_configuration_off_the_frontier(
     tmp_path: Path,
 ) -> None:
-    pytest.importorskip("matplotlib")
     stages = {"end_of_turn_ms": 800, "turn_to_first_sentence_ms": 300, "tts_first_audio_ms": 200}
     ok = point(tmp_path, "a5-ok-s24", "5", 4000, 2000)
     turn_lines(ok, stages, 3, answered(1900, 2000, 2100))
@@ -819,9 +823,9 @@ def test_a_failed_turn_is_censored_and_keeps_its_configuration_off_the_frontier(
     assert "| a5-queued-s24: a5-queued-s24 label |  | 16 | 5,600 |" in table
     assert "| ≥30,000 | ≥30,000 | ≥30,000 | 48 of 50 |" in table
     figure = (out / "frontier.svg").read_text()
-    assert (
-        "Failed turns: a5-queued-s24, 48 of 50, its V2V censored at 30 s, off the scale" in figure
-    )
+    # Its bar is cut at the scale's end, and its value says it is censored.
+    assert ">A5-queued-s24 label<" in figure and ">48 of 50 turns failed<" in figure
+    assert ">≥30.00<" in figure and "A bar cut square runs past the scale's end" in figure
 
 
 @pytest.mark.parametrize(
@@ -998,13 +1002,33 @@ def test_the_stage_waterfall_stacks_each_configurations_stages_to_its_mean_v2v(
     args = ["e2", "report", *map(str, [*frozen, cap2, voice]), "--out", str(out)]
     assert main([*args, "--waterfall", "a1-voice"]) == 1
     assert "lh-bench e2: the report has no turn lines of a1-voice" in capsys.readouterr().err
-    if importlib.util.find_spec("matplotlib"):
-        assert main([*args, "--waterfall", "disc-cap2"]) == 0
-        figure = (out / "waterfall.svg").read_text()
-        assert "disc-cap2" in figure and "disc-frozen" not in figure
-        write_report(rows, out)
-        figure = (out / "waterfall.svg").read_text()
-        assert "disc-frozen (2 runs)" in figure and "a1-voice" not in figure
+    assert main([*args, "--waterfall", "disc-cap2"]) == 0
+    figure = (out / "waterfall.svg").read_text()
+    assert ">Disc-cap2 label<" in figure and "Disc-frozen" not in figure
+    write_report(rows, out)
+    figure = (out / "waterfall.svg").read_text()
+    assert ">Disc-frozen label<" in figure and ">2 runs<" in figure and "A1-voice" not in figure
+    assert ">4.30<" in figure  # the mean V2V, the stacked bar's length
+
+
+def test_the_waterfall_wraps_a_heading_that_names_the_gpu(tmp_path: Path) -> None:
+    # A point off the box has the GPU in its workload's heading, wider than the label column: the
+    # heading wraps there, where one line would run across the gridlines and the figure refuse it.
+    a100 = "NVIDIA A100-SXM4-80GB"
+    pr = point(tmp_path / "a100-r1", "w5-disc-pr-ab48-s24", "9", 8800, 1800, data="weka-x32-long")
+    samples = [named(T0 + 10, "1410 MHz", a100), named(T0 + 20, "1395 MHz", a100)]
+    (pr / "gpu.csv").write_text("\n".join(samples) + "\n")
+    turn_lines(
+        pr,
+        {"transcript_ms": 800, "end_of_turn_ms": 810, "llm_ttft_ms": 400}
+        | {"turn_to_first_sentence_ms": 700, "tts_first_audio_ms": 200},
+        2,
+        answered(1500, 1700),
+    )
+    rows, _ = load_points([pr])
+    write_report(rows, tmp_path / "report")
+    figure = (tmp_path / "report" / "waterfall.svg").read_text()
+    assert ">weka-x32-long, 2 callers,<" in figure and f">{a100}<" in figure
 
 
 SNAPSHOT = (
@@ -1227,7 +1251,7 @@ def unredacted(data: Any) -> list[str]:
 
 @pytest.mark.parametrize(
     "results",
-    [RESULTS, W5_RESULTS, FB_RESULTS, MARLIN_RESULTS],
+    [RESULTS, W5_RESULTS, FB_RESULTS, MARLIN_RESULTS, A100_E2],
     ids=lambda p: str(p.relative_to(REPO / "benchmarks" / "results")),
 )
 def test_the_committed_records_are_complete_and_hold_no_credential(results: Path) -> None:
@@ -1250,9 +1274,13 @@ def test_the_committed_records_give_their_committed_report(tmp_path: Path) -> No
     # (make reproduce-e2 E2_REPORT=<its report/> rewrites it), so that a change to the report's code
     # shows in what it changes there.
     reports = sorted(REPO.glob("benchmarks/results/*/report"))
-    assert {RESULTS / "report", W5_RESULTS / "report"} <= set(reports)
+    assert {RESULTS / "report", W5_RESULTS / "report", A100_RESULTS / "report"} <= set(reports)
     for committed in reports:
-        dirs = sorted(run.parent for run in committed.parent.glob("*/*/run.json"))
+        if committed.parent == A100_RESULTS:
+            runs = [run for c in A100_REPORTED for run in A100_E2.glob(f"{c}[0-9]/*/run.json")]
+        else:
+            runs = list(committed.parent.glob("*/*/run.json"))
+        dirs = sorted(run.parent for run in runs)
         rows, incomplete = load_points(dirs)
         assert dirs and not incomplete
         out = tmp_path / committed.parent.name
@@ -1264,7 +1292,7 @@ def test_the_committed_records_give_their_committed_report(tmp_path: Path) -> No
 
 @pytest.mark.parametrize(
     "results",
-    [RESULTS, W5_RESULTS, FB_RESULTS, MARLIN_RESULTS],
+    [RESULTS, W5_RESULTS, FB_RESULTS, MARLIN_RESULTS, A100_E2],
     ids=lambda p: str(p.relative_to(REPO / "benchmarks" / "results")),
 )
 def test_a_committed_record_exports_to_itself(tmp_path: Path, results: Path) -> None:
@@ -1364,8 +1392,7 @@ def test_the_record_and_the_report_read_series_the_gateway_exports() -> None:
     assert counts["realtime_replies"] == moved(admitted, {"class": "realtime"}) > 0
 
 
-def test_the_figure_needs_matplotlib(tmp_path: Path) -> None:
-    pytest.importorskip("matplotlib")
+def test_a_frontier_figure_names_each_configuration_under_its_family(tmp_path: Path) -> None:
     dirs = [
         point(tmp_path, "a1-voice", "1", None, 1760),
         point(tmp_path, "a2-s8", "2", 3000, 2000),
@@ -1375,16 +1402,20 @@ def test_the_figure_needs_matplotlib(tmp_path: Path) -> None:
     written = write_report(rows, tmp_path / "report")
     assert (tmp_path / "report" / "frontier.svg") in written
     figure = (tmp_path / "report" / "frontier.svg").read_text()
-    assert "<svg" in figure and "whiskers" not in figure
-    assert "stock vLLM" not in figure  # one family: the arms' names, no legend
+    assert figure.startswith("<svg") and ">Stock vLLM, arms 1\N{EN DASH}5<" in figure
+    assert ">A2-s8 label<" in figure and ">A2-s16 label<" in figure
+    assert ">no agents<" in figure and " runs<" not in figure  # voice alone; one run each
+    assert ">2.00<" in figure and ">2.60<" in figure and ">5,000<" in figure  # p95 s, tokens/s
     repeated = point(tmp_path / "r1", "a2-s16", "2", 4000, 3000)
     rows, _ = load_points([*dirs, repeated])
     write_report(rows, tmp_path / "report")
-    assert "whiskers span repeated runs" in (tmp_path / "report" / "frontier.svg").read_text()
+    figure = (tmp_path / "report" / "frontier.svg").read_text()
+    assert ">2 runs<" in figure and ">2.80<" in figure and ">4,500<" in figure  # their medians
 
 
-def test_the_figure_draws_families_and_leaves_a_collapse_off_its_scale(tmp_path: Path) -> None:
-    pytest.importorskip("matplotlib")
+def test_the_frontier_figure_groups_families_and_cuts_a_collapse_at_its_scale(
+    tmp_path: Path,
+) -> None:
     dirs = [
         point(tmp_path, "a1-voice", "1", None, 1760),
         point(tmp_path, "a2-s8", "2", 3000, 2000),
@@ -1396,17 +1427,22 @@ def test_the_figure_draws_families_and_leaves_a_collapse_off_its_scale(tmp_path:
     rows, _ = load_points(dirs)
     write_report(rows, tmp_path / "report")
     figure = (tmp_path / "report" / "frontier.svg").read_text()
-    # One color per family, named in the legend; the arms by their names.
-    legend = ("stock vLLM (arms 1\N{EN DASH}5)", "engines (arm 7)", "routers (arm 8)")
-    assert all(f"<!-- {family} -->" in figure for family in legend)
-    assert all(f"<!-- {arm} -->" in figure for arm in ("1", "2", "3", "8a"))
-    assert "Off the scale: a7b-s16, 9,000 ms at 5,000 tokens/s." in figure
-    assert "<!-- 7b -->" not in figure  # its only point is off the scale
-    assert "The dashed line is the voice SLO, 2,010 ms" in figure
+    # A heading per family, in E2's order, and each configuration under its family.
+    headings = ["Stock vLLM, arms 1\N{EN DASH}5", "Engines, arm 7", "Routers, arm 8"]
+    assert [figure.index(f">{h}<") for h in headings] == sorted(
+        figure.index(f">{h}<") for h in headings
+    )
+    assert (
+        figure.index(">Engines, arm 7<")
+        < figure.index(">A7b-s16 label<")
+        < figure.index(">Routers, arm 8<")
+    )
+    # The collapse is drawn, cut at the scale's end, with its value: 9.00 s on a scale to 3 s.
+    assert ">9.00<" in figure and "A bar cut square runs past the scale's end" in figure
+    assert ">SLO 2.01 s<" in figure and ">3.0<" in figure and ">3.5<" not in figure
 
 
-def test_the_dot_figure_draws_the_named_configurations_in_order(tmp_path: Path, capsys) -> None:
-    pytest.importorskip("matplotlib")
+def test_the_voice_figure_draws_the_named_configurations_in_order(tmp_path: Path, capsys) -> None:
     dirs = [
         point(tmp_path / "r1", "w5-a1-voice", "1", None, 1760),
         point(tmp_path / "r1", "w5-frozen", "2", 3300, 10000),
@@ -1424,19 +1460,31 @@ def test_the_dot_figure_draws_the_named_configurations_in_order(tmp_path: Path, 
     rows, _ = load_points(dirs)
     figure_toml = tmp_path / "figure.toml"
     figure_toml.write_text(
-        '[[row]]\npoint = "w5-frozen"\nlabel = "Tuned vLLM"\n\n'
-        '[[row]]\npoint = "w5-pr"\nlabel = "Both PRs"\nchange = true\n'
+        '[[row]]\npoint = "w5-frozen"\nlabel = "Tuned vLLM"\nnote = "the baseline"\n\n'
+        '[[row]]\npoint = "w5-pr"\nlabel = "Both PRs"\nchange = true\nfeatured = true\n'
     )
     out = tmp_path / "report"
-    assert out / "voice-p95.svg" in write_report(rows, out, dots=read_dots(figure_toml))
-    figure = (out / "voice-p95.svg").read_text()
-    # The rows in the file's order with their runs, each one's goodput against the first row's
-    # (3,150 against 3,350 tokens/s), and the SLO that voice alone sets.
-    assert figure.index("<!-- Tuned vLLM (2 runs) -->") < figure.index("<!-- Both PRs (2 runs) -->")
-    assert "<!-- 100% -->" in figure and "<!-- 94% -->" in figure
-    assert "<!-- the SLO: voice alone (1.76 s) + 250 ms -->" in figure
+    written = write_report(rows, out, dots=read_dots(figure_toml))
+    assert written[-2:] == [out / "voice-p95.svg", out / "voice-p95-narrow.svg"]
+    for path in written[-2:]:
+        figure = path.read_text()
+        # The rows in the file's order, each p95 against the SLO voice alone sets (1,760 + 250 ms),
+        # and each one's tokens/s with its share of the first row's: 3,150 of 3,350.
+        assert figure.index(">Tuned vLLM<") < figure.index(">Both PRs<")
+        assert ">SLO 2.01 s<" in figure and ">10.50<" in figure and ">2.25<" in figure
+        assert (
+            ">3,350<" in figure and ">100%<" in figure and ">3,150<" in figure and ">94%<" in figure
+        )
+        assert "Two voice calls beside 16 coding-agent sessions on one RTX 5060 Ti" in figure
+        assert (
+            'class="g-hi"' in figure
+            and 'class="g-mid"' in figure
+            and "g-soft" not in figure.split("</style>")[1]
+        )
+    assert ">the baseline, 2 runs<" in written[-2].read_text()
     write_report(rows, tmp_path / "again", dots=read_dots(figure_toml))
-    assert (tmp_path / "again" / "voice-p95.svg").read_bytes() == figure.encode()
+    for path in written[-2:]:
+        assert (tmp_path / "again" / path.name).read_bytes() == path.read_bytes()
     # A point the report lacks, or a row the file gets wrong, names what is wrong.
     figure_toml.write_text('[[row]]\npoint = "w5-gone"\nlabel = "Gone"\n')
     with pytest.raises(ValueError, match="0 configurations of w5-gone in the report, not 1"):
@@ -1444,15 +1492,133 @@ def test_the_dot_figure_draws_the_named_configurations_in_order(tmp_path: Path, 
     for bad, error in (
         ('[[row]]\npoint = "w5-pr"\n', "a row without a point or a label"),
         ('[[row]]\npoint = "w5-pr"\nlabel = "PR"\ncolor = "blue"\n', "keys other than"),
-        ('[[row]]\npoint = "w5-pr"\nlabel = "PR"\nchange = "yes"\n', "not true or false"),
+        ('[[row]]\npoint = "w5-pr"\nlabel = "PR"\nchange = "yes"\n', "change is not true or false"),
+        ('[[row]]\npoint = "w5-pr"\nlabel = "PR"\nfeatured = true\n', "does not run the change"),
+        ('[[row]]\npoint = "w5-pr"\nlabel = "PR"\nnote = 3\n', "note is not a string"),
         ("", "no \\[\\[row\\]\\] tables"),
+        ('[[row]]\npoint = "a"\nlabel = "A"\n[[group]]\ntitle = "B"\n', "together"),
+        (
+            '[[group]]\n[[group.row]]\npoint = "a"\nlabel = "A"\n[[group]]\ntitle = "B"\n'
+            '[[group.row]]\npoint = "b"\nlabel = "B"\n',
+            "a group without a title, among several",
+        ),
+        (
+            '[[row]]\npoint = "a"\nlabel = "A"\nchange = true\nfeatured = true\n'
+            '[[row]]\npoint = "b"\nlabel = "B"\nchange = true\nfeatured = true\n',
+            "more than one featured",
+        ),
     ):
         figure_toml.write_text(bad)
         with pytest.raises(ValueError, match=error):
             read_dots(figure_toml)
     args = ["e2", "report", *map(str, dirs), "--out", str(out), "--dots", str(figure_toml)]
     assert main(args) == 1
-    assert "no [[row]] tables" in capsys.readouterr().err
+    assert "more than one featured" in capsys.readouterr().err
+
+
+def test_the_voice_figure_takes_a_group_for_each_gpu(tmp_path: Path) -> None:
+    # The A100's rows beside the box's: each group its own SLO from its own voice alone, one scale,
+    # its GPU at its head, and the title naming no GPU.
+    a100 = "NVIDIA A100-SXM4-40GB"
+    dirs = {
+        "box-voice": point(tmp_path / "box", "a1-voice", "1", None, 1760),
+        "box-frozen": point(tmp_path / "box", "frozen", "4", 3300, 10000),
+        "box-pr": point(tmp_path / "box", "pr", "9", 3200, 2200),
+        "a100-voice": point(tmp_path / "a100", "a100-a1-voice", "1", None, 1700),
+        "a100-frozen": point(tmp_path / "a100", "a100-frozen", "4", 9000, 4000),
+        "a100-pr": point(tmp_path / "a100", "a100-pr", "9", 8800, 1800),
+    }
+    for name, run_dir in dirs.items():
+        if name.startswith("a100"):
+            samples = [named(T0 + 10, "1410 MHz", a100), named(T0 + 20, "1395 MHz", a100)]
+            (run_dir / "gpu.csv").write_text("\n".join(samples) + "\n")
+        if not name.endswith("voice"):
+            rewrite(
+                run_dir,
+                lambda s: s["background"].update(
+                    fixed_window={"tokens_per_s": s["background"]["tokens_per_s"], "seconds": 240.0}
+                ),
+            )
+    rows, _ = load_points(list(dirs.values()))
+    figure_toml = tmp_path / "figure.toml"
+    figure_toml.write_text(
+        '[[group]]\ntitle = "RTX 5060 Ti 16 GB"\n'
+        '[[group.row]]\npoint = "frozen"\nlabel = "Tuned vLLM"\n'
+        '[[group.row]]\npoint = "pr"\nlabel = "Both PRs"\nchange = true\nfeatured = true\n'
+        '[[group]]\ntitle = "A100 40 GB"\n'
+        '[[group.row]]\npoint = "a100-frozen"\nlabel = "Tuned vLLM"\n'
+        '[[group.row]]\npoint = "a100-pr"\nlabel = "Both PRs"\nchange = true\nfeatured = true\n'
+    )
+    groups = read_dots(figure_toml)
+    assert [g["title"] for g in groups] == ["RTX 5060 Ti 16 GB", "A100 40 GB"]
+    written = write_report(rows, tmp_path / "report", dots=groups)
+    for path in written[-2:]:
+        figure = path.read_text()
+        assert figure.index(">RTX 5060 Ti 16 GB<") < figure.index(">A100 40 GB<")
+        assert ">SLO 2.01 s<" in figure and ">SLO 1.95 s<" in figure  # each GPU's voice alone + 250
+        assert "Two voice calls beside 16 coding-agent sessions<" in figure  # no GPU in the title
+        assert ">8,800<" in figure and ">98%<" in figure  # the A100's share of its own first row
+    figure_toml.write_text(
+        '[[group]]\ntitle = "Mixed"\n'
+        '[[group.row]]\npoint = "frozen"\nlabel = "Tuned vLLM"\n'
+        '[[group.row]]\npoint = "a100-pr"\nlabel = "Both PRs"\nchange = true\n'
+    )
+    with pytest.raises(ValueError, match="from 2 workloads"):
+        write_report(rows, tmp_path / "report", dots=read_dots(figure_toml))
+
+
+def test_a_group_names_its_gpu_where_both_gpus_ran_the_same_points(tmp_path: Path) -> None:
+    # The A100 ran the box's own arm files (benchmarks/a100/run.sh), so each point's name is on both
+    # GPUs: a group's gpu, as the figure names it, picks the configurations its rows mean.
+    a100 = "NVIDIA A100-SXM4-80GB"
+    dirs = []
+    for root, (voice, frozen, pr), tokens in (
+        ("box", (1760, 10000, 2200), (3300, 3200)),
+        ("a100", (1700, 4000, 1800), (9000, 8800)),
+    ):
+        dirs += [
+            point(tmp_path / root, "a1-voice", "1", None, voice),
+            point(tmp_path / root, "frozen", "4", tokens[0], frozen),
+            point(tmp_path / root, "pr", "9", tokens[1], pr),
+        ]
+    for run_dir in dirs:
+        if run_dir.parent.name == "a100":
+            samples = [named(T0 + 10, "1410 MHz", a100), named(T0 + 20, "1395 MHz", a100)]
+            (run_dir / "gpu.csv").write_text("\n".join(samples) + "\n")
+        if run_dir.name != "a1-voice":
+            rewrite(
+                run_dir,
+                lambda s: s["background"].update(
+                    fixed_window={"tokens_per_s": s["background"]["tokens_per_s"], "seconds": 240.0}
+                ),
+            )
+    rows, _ = load_points(dirs)
+    figure_toml = tmp_path / "figure.toml"
+    both = (
+        '[[group.row]]\npoint = "frozen"\nlabel = "Tuned vLLM"\n'
+        '[[group.row]]\npoint = "pr"\nlabel = "Both PRs"\nchange = true\nfeatured = true\n'
+    )
+    figure_toml.write_text(
+        f'[[group]]\ntitle = "RTX 5060 Ti 16 GB"\ngpu = "RTX 5060 Ti"\n{both}'
+        f'[[group]]\ntitle = "A100 80 GB"\ngpu = "A100-SXM4-80GB"\n{both}'
+    )
+    groups = read_dots(figure_toml)
+    assert [g["gpu"] for g in groups] == ["RTX 5060 Ti", "A100-SXM4-80GB"]
+    for path in write_report(rows, tmp_path / "report", dots=groups)[-2:]:
+        figure = path.read_text()
+        assert figure.index(">RTX 5060 Ti 16 GB<") < figure.index(">A100 80 GB<")
+        assert ">SLO 2.01 s<" in figure and ">SLO 1.95 s<" in figure
+        assert ">3,200<" in figure and ">97%<" in figure  # the box's PRs, 3,200 of its 3,300
+        assert ">8,800<" in figure and ">98%<" in figure  # the A100's, 8,800 of its 9,000
+    figure_toml.write_text(f'[[group]]\ntitle = "Both"\n{both}')
+    with pytest.raises(ValueError, match="2 configurations of frozen in the report, not 1"):
+        write_report(rows, tmp_path / "report", dots=read_dots(figure_toml))
+    figure_toml.write_text(f'[[group]]\ntitle = "H100"\ngpu = "H100 80GB HBM3"\n{both}')
+    with pytest.raises(ValueError, match="0 configurations of frozen on H100 80GB HBM3 in the"):
+        write_report(rows, tmp_path / "report", dots=read_dots(figure_toml))
+    figure_toml.write_text(f'[[group]]\ntitle = "A100"\ngpu = 100\n{both}')
+    with pytest.raises(ValueError, match="a group whose gpu is not a string"):
+        read_dots(figure_toml)
 
 
 def test_a_point_summary_reads_its_run_directory(tmp_path: Path) -> None:

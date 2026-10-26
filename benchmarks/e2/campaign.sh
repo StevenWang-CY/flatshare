@@ -140,7 +140,11 @@ if [[ -n $sampling ]]; then
   if [[ $sampling =~ ^0+(\.0+)?$ ]]; then seeded+=", no KV sampler"; else seeded+=", the KV sampler every $sampling s"; fi
 fi
 if [[ -n $audio ]]; then seeded+=", the calls' audio saved"; fi
-log "campaign $name: ${#points[@]} points, arm files at $(git -C "$here" describe --always --dirty 2>/dev/null || echo '?')$seeded${deadline:+, until $until UTC (epoch $deadline)}"
+count="${#points[@]} point"; ((${#points[@]} == 1)) || count+=s
+# The arm files' commit: their checkout's, or on a tree that deploy.sh or push.sh copied without .git, the one they
+# wrote into its DEPLOYED.
+at=$(git -C "$here" describe --always --dirty 2>/dev/null || head -n 1 "$(dirname "$0")/../../DEPLOYED" 2>/dev/null || true)
+log "campaign $name: $count, arm files at ${at:-?}$seeded${deadline:+, until $until UTC (epoch $deadline)}"
 
 # Copy the arm files to cyan, where lh-bench reads them, and check each one there.
 $ssh "$cyan" mkdir -p "$runs/arms"

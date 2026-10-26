@@ -13,7 +13,8 @@ dependencies = [
     "aiohttp>=3.14,<4",
     "httpx>=0.28,<0.29",
     "orjson>=3.11,<4",
-    "matplotlib==3.11.2",  # the report's figures, the committed bytes
+    "fonttools==4.67.0",  # the figures' embedded font subsets: the committed bytes
+    "matplotlib==3.11.2",  # the demo video's frames, which its tests draw
     "leaseholder-stats",  # python/leaseholder_stats, from this tree (tool.uv.sources)
 ]
 

@@ -335,6 +335,61 @@ def test_each_install_path_compiles_at_its_runtimes_cuda_version(tmp_path: Path)
     assert node["install"]["path"] == "cu129" and node["install"]["compat_eligible"] is True
 
 
+NVIDIA_LIBS = "/usr/lib64-nvidia"
+"""Where Colab's container keeps the driver's libraries: a directory the linker's cache does not list."""
+
+
+def test_the_gpu_units_name_the_drivers_libraries_where_the_linker_does_not_find_them(
+    tmp_path: Path,
+) -> None:
+    # Colab's container: the driver's libcuda.so.1 is in /usr/lib64-nvidia, which only its shells' LD_LIBRARY_PATH
+    # reaches. The units' environment has no such path, so every GPU unit names the directory itself, the TTS's
+    # Kokoro too, whose torch loads the same libcuda.so.1.
+    outside = {"path": NVIDIA_LIBS, "linker": False, "via": "LD_LIBRARY_PATH"}
+
+    def units(name: str, **facts) -> dict[str, list[str]]:
+        out, _ = render(tmp_path / name, "a100-40gb", host(**facts))
+        return {
+            unit: (out / "systemd" / f"{unit}.service").read_text().splitlines()
+            for unit in ("lh-engine", "lh-stt", "lh-tts")
+        }
+
+    def library_path(lines: list[str]) -> list[str]:
+        return [line for line in lines if line.startswith("Environment=LD_LIBRARY_PATH=")]
+
+    for unit, lines in units(
+        "colab", gpu=A100 | {"driver": "580.82.07"}, driver_libs=outside
+    ).items():
+        assert library_path(lines) == [f"Environment=LD_LIBRARY_PATH={NVIDIA_LIBS}"], unit
+        assert all(len(line) <= 120 for line in lines if line.startswith("#")), unit
+    # With cuda-compat-13-0 (R570): its libraries first, so that its libcuda.so.1 is the one loaded, then the driver's
+    # own; the TTS, Kokoro's own CUDA 12.8 build, takes the driver's alone.
+    got = units(
+        "compat", gpu=A100 | {"driver": "570.86.15"}, cuda_compat=COMPAT, driver_libs=outside
+    )
+    for unit in ("lh-engine", "lh-stt"):
+        assert library_path(got[unit]) == [f"Environment=LD_LIBRARY_PATH={COMPAT}:{NVIDIA_LIBS}"]
+        assert all(len(line) <= 120 for line in got[unit] if line.startswith("#")), unit
+    assert library_path(got["lh-tts"]) == [f"Environment=LD_LIBRARY_PATH={NVIDIA_LIBS}"]
+    # Where the linker finds them on its own (its cache, or the directory it searches anyway), nothing changes:
+    # compat's libraries alone where they are used, else no library path; as without the fact (older facts).
+    inside = {"path": "/usr/lib/x86_64-linux-gnu", "linker": True, "via": "the linker's cache"}
+    for name, libs in (("cache", inside), ("unknown", None)):
+        got = units(
+            f"{name}-compat",
+            gpu=A100 | {"driver": "570.86.15"},
+            cuda_compat=COMPAT,
+            driver_libs=libs,
+        )
+        assert library_path(got["lh-engine"]) == [f"Environment=LD_LIBRARY_PATH={COMPAT}"], name
+        assert library_path(got["lh-stt"]) == [f"Environment=LD_LIBRARY_PATH={COMPAT}"], name
+        assert library_path(got["lh-tts"]) == [], name
+        for unit, lines in units(
+            name, gpu=A100 | {"driver": "580.82.07"}, driver_libs=libs
+        ).items():
+            assert library_path(lines) == [], (name, unit)
+
+
 def test_the_second_models_profile_renders_the_cores_node_with_its_own_model_and_pool(
     tmp_path: Path,
 ) -> None:
@@ -623,6 +678,82 @@ def test_detect_takes_the_lent_gpu_of_several_by_index_or_uuid(tmp_path: Path, m
     monkeypatch.setenv("LH_GPU_ID", "7")
     gpu = profile.detect()["gpu"]
     assert (gpu["chosen"], gpu["wanted"]) == (False, "7")
+
+
+def libcuda(directory: Path, version: str = "580.82.07") -> Path:
+    """A driver's libcuda.so.1 in ``directory``: the soname's link to the versioned library, as the driver installs it."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"libcuda.so.{version}").write_text("")
+    (directory / "libcuda.so.1").symlink_to(f"libcuda.so.{version}")
+    return directory
+
+
+LIBC6 = {"x86_64": "libc6,x86-64", "aarch64": "libc6,AArch64"}.get(os.uname().machine, "libc6")
+"""ldconfig -p's tag of this machine's 64-bit libraries."""
+
+
+def test_detect_finds_the_drivers_libraries_where_the_linker_does_not_look(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Colab's container: the driver's libraries (580.82.07) are in /usr/lib64-nvidia, which the linker's cache does
+    # not list; its shells reach them through LD_LIBRARY_PATH, where nvidia-smi works, but the units' environment has
+    # no such path, so torch found no driver there. detect finds the directory, and that the linker does not.
+    bin_dir, rootfs = tmp_path / "bin", tmp_path / "root"
+    bin_dir.mkdir()
+    rootfs.mkdir()
+    cache = tmp_path / "cache.txt"
+    libc = f"\tlibc.so.6 ({LIBC6}) => /lib/x86_64-linux-gnu/libc.so.6\n"
+    cache.write_text("1 libs found in cache `/etc/ld.so.cache'\n" + libc)
+    # ldconfig -p: the linker's cache, as the host's ldconfig prints it.
+    (bin_dir / "ldconfig").write_text(f'#!/bin/sh\n[ "$1" = -p ] && cat {cache}\n')
+    (bin_dir / "ldconfig").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin")
+    monkeypatch.setenv("LH_ROOTFS", str(rootfs))
+    monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+    # No libcuda.so.1 anywhere the facts look (no driver installed, or a container without the NVIDIA runtime).
+    assert profile.detect()["driver_libs"] is None
+    # On the operator's LD_LIBRARY_PATH, after cuda-compat's directory, whose libcuda.so.1 is not the driver's.
+    nvidia = libcuda(tmp_path / "lib64-nvidia")
+    compat = libcuda(tmp_path / "cuda-13.0" / "compat", "580.65.06")
+    monkeypatch.setenv("LD_LIBRARY_PATH", f"{compat}:{nvidia}")
+    assert profile.detect()["driver_libs"] == {
+        "path": str(nvidia),
+        "linker": False,
+        "via": "LD_LIBRARY_PATH",
+    }
+    # Listed in the linker's cache (another architecture's entry aside): the linker finds it on its own.
+    i386 = libcuda(tmp_path / "i386-linux-gnu")
+    cache.write_text(
+        "3 libs found in cache `/etc/ld.so.cache'\n"
+        f"\tlibcuda.so.1 (libc6) => {i386}/libcuda.so.1\n"
+        f"\tlibcuda.so.1 ({LIBC6}) => {nvidia}/libcuda.so.1\n" + libc
+    )
+    assert profile.detect()["driver_libs"] == {
+        "path": str(nvidia),
+        "linker": True,
+        "via": "the linker's cache",
+    }
+    # Not on LD_LIBRARY_PATH (a shell without Colab's) nor in the cache: where Colab keeps them, which the linker
+    # does not search; and Debian's multiarch directory, which it searches whether or not its cache lists it.
+    cache.write_text("1 libs found in cache `/etc/ld.so.cache'\n" + libc)
+    monkeypatch.delenv("LD_LIBRARY_PATH")
+    multiarch = libcuda(rootfs / "usr" / "lib" / "x86_64-linux-gnu")
+    assert profile.detect()["driver_libs"] == {
+        "path": str(multiarch),
+        "linker": True,
+        "via": "a known location",
+    }
+    colab = libcuda(rootfs / NVIDIA_LIBS.lstrip("/"))
+    assert profile.detect()["driver_libs"] == {
+        "path": str(colab),
+        "linker": False,
+        "via": "a known location",
+    }
+    # The facts render a node whose GPU units name it.
+    out, _ = render(tmp_path, "a100-40gb", host(driver_libs=profile.detect()["driver_libs"]))
+    for unit in ("lh-engine", "lh-stt", "lh-tts"):
+        lines = (out / "systemd" / f"{unit}.service").read_text().splitlines()
+        assert f"Environment=LD_LIBRARY_PATH={colab}" in lines, unit
 
 
 def test_the_hub_cache_is_resolved_as_huggingface_hub_does_and_rendered_into_the_vllm_units(

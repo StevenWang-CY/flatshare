@@ -444,6 +444,8 @@ case "$*" in
 esac
 """,
     "nvidia-smi": "#!/bin/sh\nexit 1\n",  # staging: no card yet
+    # ldconfig -p: the linker's cache, the libraries that $FAKE_HOST/ld.so.cache lists (none unless a test writes it).
+    "ldconfig": '#!/bin/sh\n[ "$1" = -p ] || exit 1\ncat "$FAKE_HOST/ld.so.cache" 2>/dev/null || true\n',
     "sudo": "#!/bin/sh\nexit 1\n",
     "systemd-detect-virt": "#!/bin/sh\nexit 1\n",
     "unshare": "#!/bin/sh\nexit 1\n",
@@ -718,6 +720,54 @@ def test_bootstrap_keeps_the_hub_cache_the_first_stage_resolved(ubuntu: dict) ->
         assert 'Environment="HF_HUB_CACHE=/data/hf/hub"' in engine, invocation
 
 
+def test_the_stages_facts_find_the_drivers_libraries_and_the_gpu_units_name_them(
+    ubuntu: dict,
+) -> None:
+    # Colab's container: the driver's libraries in /usr/lib64-nvidia, which the linker's cache does not list and the
+    # operator's shell reaches through LD_LIBRARY_PATH. The stage's facts find them there and the stage says so; the
+    # GPU units name the directory, and so does every check that runs with a unit's environment (with-engine-env,
+    # vLLM's parse), without the shell's. Once the cache lists them (ldconfig), the units name nothing.
+    nvidia = ubuntu["home"].parent / "lib64-nvidia"
+    nvidia.mkdir()
+    (nvidia / "libcuda.so.580.82.07").write_text("")
+    (nvidia / "libcuda.so.1").symlink_to("libcuda.so.580.82.07")
+    node = ubuntu["node"]
+    done = bootstrap(ubuntu, "render", LD_LIBRARY_PATH=str(nvidia))
+    assert done.returncode == 0, done.stdout + done.stderr
+    libs = json.loads((node / "host.json").read_text())["driver_libs"]
+    assert libs == {"path": str(nvidia), "linker": False, "via": "LD_LIBRARY_PATH"}
+    assert (
+        f"the driver's libcuda.so.1 is in {nvidia}, which the linker does not search" in done.stdout
+    )
+    for unit in ("lh-engine", "lh-stt", "lh-tts"):
+        lines = (node / "systemd" / f"{unit}.service").read_text().splitlines()
+        assert f"Environment=LD_LIBRARY_PATH={nvidia}" in lines, unit
+    shell = {k: v for k, v in ubuntu["env"].items() if k != "LD_LIBRARY_PATH"}
+    checked = subprocess.run(
+        [
+            sys.executable,
+            str(REPO / "deploy" / "a100" / "host.py"),
+            "with-engine-env",
+            str(node),
+            "env",
+        ],
+        env=shell,
+        capture_output=True,
+        text=True,
+    )
+    assert f"LD_LIBRARY_PATH={nvidia}" in checked.stdout.splitlines(), checked.stderr
+    libc6 = {"x86_64": "libc6,x86-64", "aarch64": "libc6,AArch64"}.get(os.uname().machine, "libc6")
+    (ubuntu["state"] / "ld.so.cache").write_text(
+        f"\tlibcuda.so.1 ({libc6}) => {nvidia}/libcuda.so.1\n"
+    )
+    done = bootstrap(ubuntu, "render", LD_LIBRARY_PATH=str(nvidia))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert json.loads((node / "host.json").read_text())["driver_libs"]["linker"] is True
+    assert "which the linker does not search" not in done.stdout
+    for unit in ("lh-engine", "lh-stt", "lh-tts"):
+        assert "LD_LIBRARY_PATH" not in (node / "systemd" / f"{unit}.service").read_text(), unit
+
+
 FAKE_VLLM = """\
 #!/usr/bin/env bash
 # The engine venv's vllm in the batch arm's dry run: `vllm bench serve` logs how it was asked, holds its clients a
@@ -782,6 +832,26 @@ def test_the_batch_arm_holds_its_whole_batch_in_the_pool_and_records_that_it_for
         vllm.chmod(0o755)
         env = dry_env(home, hosts, run)
         batch = REPO / "benchmarks" / "a100" / "batch.sh"
+        # The clients' tokenizer is the engine's snapshot in the hub cache, at engine.yaml's revision: offline, the
+        # model's name resolves to nothing where the download was by commit (no refs/main).
+        env["HF_HUB_CACHE"] = str(home / "hub")
+        revision = re.search(
+            r"^revision: (\S+)$", (home / "leaseholder" / "node" / "engine.yaml").read_text(), re.M
+        )
+        assert revision, "engine.yaml pins no revision"
+        snapshot = home / "hub" / f"models--{MODEL.replace('/', '--')}" / "snapshots" / revision[1]
+        refused = subprocess.run(
+            ["bash", str(batch), "--rounds", "1"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert refused.returncode == 2, refused.stdout + refused.stderr
+        assert f"no tokenizer for {MODEL} at {revision[1]} in {home / 'hub'}" in refused.stdout
+        assert not lines(home / "vllm.log")  # no engine switched, no client started
+        snapshot.mkdir(parents=True)
+        (snapshot / "tokenizer_config.json").write_text("{}\n")
         done = subprocess.run(
             ["bash", str(batch), "--rounds", "1"],
             env=env,
@@ -794,6 +864,7 @@ def test_the_batch_arm_holds_its_whole_batch_in_the_pool_and_records_that_it_for
         assert len(calls) == 6  # two clients on each of three engines
         for call in calls:
             assert "--random-input-len 48 --random-output-len 64 " in call, call
+            assert f"--tokenizer {snapshot} " in call, call
         out = home / "leaseholder" / "runs" / "a100" / "batch"
         for name in ("frozen", "off", "on"):
             running = json.loads((out / f"{name}-running.json").read_text())
@@ -882,7 +953,8 @@ def test_an_estimate_given_for_a_block_starts_it_where_the_pages_would_miss_the_
 ) -> None:
     # A deadline 17 minutes away is short of block 4's 29-minute estimate: the block does not start. With
     # --estimate 4=15 it starts, and campaign.sh's own budgets run its first point (15 minutes: W5's agent point and
-    # an engine switch) but not the next, voice alone, which this host has measured at 20 minutes before: the run
+    # an engine switch) but not the next, voice alone, which this host has measured at 20 minutes before, with a switch
+    # it has measured at 2 (the longest of its kind, which a fake switch's own second or so does not move): the run
     # stops before its deadline, exit 0, the block undone. The single-host rehearsal runs block 4 so on the box.
     hosts = tmp_path / "hosts"
     home = a100_host(hosts)
@@ -905,7 +977,7 @@ def test_an_estimate_given_for_a_block_starts_it_where_the_pages_would_miss_the_
     assert "block 4: about 29 minutes would end after" in (runs / "blocks.log").read_text()
     assert not (results / "a100-r1").exists()
     results.mkdir(parents=True)
-    (results / "durations.tsv").write_text("voice 1200\n")
+    (results / "durations.tsv").write_text("voice 1200\nswitch 120\n")
     done = run("--estimate", "4=15", "4")
     assert done.returncode == 0, done.stdout + done.stderr
     log = (runs / "blocks.log").read_text()
@@ -920,6 +992,34 @@ def test_an_estimate_given_for_a_block_starts_it_where_the_pages_would_miss_the_
     for bad in ("4", "x=15", "4=0", "11=5", "4=15m"):
         done = run("--estimate", bad, "4")
         assert done.returncode == 2 and "usage" in done.stderr, (bad, done.stderr)
+
+
+def test_the_prs_at_the_a100s_best_cap_run_both_rounds_on_their_engine(
+    tmp_path: Path, runtime: Path
+) -> None:
+    # run.sh prtuned: the PRs' values at tuned vLLM's 2,048/0, its two campaigns on the samples of the core's rounds 1
+    # and 2, each point on make-room with the step cap's flags before the PRs' own.
+    hosts = tmp_path / "hosts"
+    home = a100_host(hosts)
+    env = dry_env(home, hosts, runtime)
+    done = subprocess.run(
+        ["bash", str(RUN), "--estimate", "prtuned=24", "prtuned"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    runs = home / "leaseholder" / "runs" / "a100"
+    assert "block prtuned: done" in (runs / "blocks.log").read_text()
+    results = home / "leaseholder" / "results" / "e2"
+    for n in (1, 2):
+        run = results / f"a100-prtuned-r{n}" / "a100-pr-ab48-2048-s24" / "run.json"
+        assert '"status": "complete"' in run.read_text(), n
+    assert (
+        "variant.sh use make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 "
+        "--additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48"
+    ) in lines(home / "variant.log")
 
 
 def test_a_cap_of_2048_is_measured_beside_vllms_default(tmp_path: Path, runtime: Path) -> None:
@@ -1001,3 +1101,63 @@ def test_bootstrap_installs_as_root_without_sudo(ubuntu: dict) -> None:
     refused = bootstrap(ubuntu, "apt_install iproute2 || echo refused", FAKE_UID="1000")
     assert refused.returncode == 0 and refused.stdout.strip().endswith("refused")
     assert len(lines(log)) == 2  # sudo -n fails: nothing installed
+
+
+def test_the_backend_probe_runs_the_kv_case_on_flashinfer_once_the_engine_names_it(
+    tmp_path: Path, runtime: Path
+) -> None:
+    # probes.sh backend: the frozen engine with FlashInfer's attention, the KV case three times into runs/a100/backend,
+    # once the engine's log at this start names FlashInfer; an engine that selected another backend stops the block
+    # before a run, so that no run is filed under the wrong backend. vLLM 0.32 logs "Using X attention backend" only
+    # for a backend it selects; for the one --attention-backend sets, as here, FlashInfer names itself as it sets up
+    # (the A100 run's engine logged no other line of it, and the first version of the check refused it).
+    hosts = tmp_path / "hosts"
+    home = a100_host(hosts)
+    env = dry_env(home, hosts, runtime)
+    fakes = tmp_path / "bin"
+    fakes.mkdir()
+    (fakes / "journalctl").write_text(
+        "#!/bin/sh\n"
+        "case ${FAKE_BACKEND:-} in\n"
+        '  "") echo "INFO [flashinfer.py:966] FlashInfer resolved query dtypes: prefill=torch.bfloat16, '
+        'decode=torch.bfloat16, decode_backend=flashinfer-native" ;;\n'
+        '  *) echo "INFO [cuda.py:506] Using $FAKE_BACKEND attention backend out of potential backends: '
+        "['FLASH_ATTN', 'FLASHINFER']\" ;;\n"
+        "esac\n"
+        'echo "INFO [utils.py:347] Using LBHNC KV cache layout."\n'
+    )
+    (fakes / "journalctl").chmod(0o755)
+    env["PATH"] = os.pathsep.join([str(fakes), env["PATH"]])
+    probes = REPO / "benchmarks" / "a100" / "probes.sh"
+    out = home / "leaseholder" / "runs" / "a100" / "backend"
+
+    def run(backend: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(probes), "backend"],
+            env=env | {"FAKE_BACKEND": backend},
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+
+    refused = run("FLASH_ATTN")
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert (
+        "the engine selected Using FLASH_ATTN attention backend" in (out / "probes.log").read_text()
+    )
+    assert not list(out.glob("backend-kv-*"))
+    done = run("")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "variant.sh use frozen --attention-backend FLASHINFER" in lines(home / "variant.log")
+    assert sorted(p.name for p in out.glob("backend-kv-*.txt")) == [
+        "backend-kv-1.txt",
+        "backend-kv-2.txt",
+        "backend-kv-3.txt",
+    ]
+    log = (out / "probes.log").read_text()
+    assert "engine: FlashInfer resolved query dtypes Using LBHNC KV cache layout\n" in log
+    # A FlashInfer that vLLM selected itself names itself as a selection: also FlashInfer.
+    for kv in out.glob("backend-kv-*.txt"):
+        kv.unlink()
+    selected = run("FLASHINFER")
+    assert selected.returncode == 0, selected.stdout + selected.stderr

@@ -11,10 +11,13 @@
 #      1,536 by default, the threshold at half): kv x1, tail x2, its runs named by cap and threshold (stock1536-768-*),
 #      so that a cap of 2,048, the forecast's low value, is not taken for vLLM's default (stock2048-*)
 #   3  the PRs' values (make-room with no reserve and a 48-token window): kv x3, prefill x3, tail x2
+#   backend  the frozen engine, the box's flags, with FlashInfer's attention in place of FlashAttention 2: kv x3, the
+#      decode-bound case, against block 1's (the same steps, so the wait reads the step), into runs/a100/backend; the
+#      engine log must name FlashInfer as the attention backend, or the block stops before a run
 set -euo pipefail
-usage() { echo "usage: probes.sh 1|2|3 [--cap TOKENS]" >&2; exit 2; }
+usage() { echo "usage: probes.sh 1|2|3|backend [--cap TOKENS]" >&2; exit 2; }
 block=${1:-}
-[[ $block == 1 || $block == 2 || $block == 3 ]] || usage
+[[ $block == 1 || $block == 2 || $block == 3 || $block == backend ]] || usage
 shift
 cap=1536
 while (($#)); do
@@ -32,6 +35,7 @@ root=$HOME/leaseholder
 src=$(cd "$(dirname "$0")/../.." && pwd)
 node=${LH_NODE_DIR:-$root/node}
 out=$root/runs/a100/block$block
+[[ $block != backend ]] || out=$root/runs/a100/backend
 probes=$src/python/leaseholder_vllm/src/leaseholder_vllm/make-room
 python=$root/venvs/engine/bin/python
 mkdir -p "$out"
@@ -106,6 +110,21 @@ case $block in
     runs pr kv 3
     runs pr prefill 3
     runs pr tail 2
+    ;;
+  backend)
+    started=$(date -u +%s)
+    use frozen --attention-backend FLASHINFER
+    # The backend and the KV layout the engine selected at this start, as the preflight reads them. vLLM 0.32 names an
+    # attention backend it selects ("Using X attention backend"), but for one --attention-backend sets, FlashInfer names
+    # itself as it sets up ("FlashInfer resolved query dtypes").
+    selected=$(journalctl --user -u lh-engine.service --since "@$started" 2>/dev/null |
+      grep -oE "Using [A-Z_0-9]+ (attention backend|KV cache layout)|FlashInfer resolved query dtypes" |
+      sort -u | tr '\n' ' ') || true
+    [[ $selected == *"FLASHINFER attention backend"* || $selected == *"FlashInfer resolved query dtypes"* ]] &&
+      [[ $selected != *"Using FLASH_ATTN attention backend"* ]] ||
+      { log "the engine selected ${selected:-no attention backend it logged}, not FlashInfer"; exit 1; }
+    log "engine: ${selected% }"
+    runs backend kv 3
     ;;
 esac
 log "block $block complete"

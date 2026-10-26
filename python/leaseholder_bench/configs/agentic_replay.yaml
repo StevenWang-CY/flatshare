@@ -6,8 +6,8 @@
 # trace, replays it with its recorded think times and subagents, then recycles a trace with a fresh
 # cache-bust marker. AIPerf 0.13.0 selects this timing mode only from YAML; there is no CLI flag.
 #
-# AIPerf substitutes ${VAR:default} when it loads the file. Source aiperf.env first: it disables
-# AIPerf's dataset cache, which AIPerf can only take from the environment.
+# AIPerf substitutes ${VAR:default} when it loads the file. Source aiperf.env first: AIPerf takes the
+# settings it holds (the session-id override, the dataset cache and timeouts) only from the environment.
 #
 #   . configs/aiperf.env
 #   LH_BENCH_URL=http://127.0.0.1:18080/v1/chat/completions LH_BENCH_API_KEY=<the agents key> \

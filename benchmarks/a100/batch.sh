@@ -48,6 +48,16 @@ taskset -c "$cores" "$root/venvs/bench/bin/python" "$src/deploy/bin/lh-forward" 
 
 batch=256 input=48 output=64 slack=16 # the requests in flight, and each one's tokens (slack: a longer re-tokenization)
 
+# vllm bench serve loads its tokenizer by name at the Hub's main, which the node's download by commit leaves unresolved
+# offline (no refs/main): the clients load the engine's own snapshot, at the revision engine.yaml pins, from the hub
+# cache as huggingface_hub resolves it (deploy/profile.py's hub_cache).
+hub=${HF_HUB_CACHE:-${HUGGINGFACE_HUB_CACHE:-${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}/hub}}
+pinned=$(sed -n 's/^model: *//p' "$node/engine.yaml")
+revision=$(sed -n 's/^revision: *//p' "$node/engine.yaml")
+tokenizer=$hub/models--${pinned//\//--}/snapshots/$revision
+[[ -f $tokenizer/tokenizer_config.json ]] ||
+  { log "no tokenizer for $pinned at ${revision:-no revision} in $hub (bootstrap.sh stage downloads it)"; exit 2; }
+
 geometry() { # the engine's KV blocks and their size, from its /metrics (vllm:cache_config_info's labels)
   curl -fsS -m 10 --unix-socket "$sock" http://localhost/metrics | "$root/venvs/bench/bin/python" -c '
 import re, sys
@@ -68,7 +78,7 @@ sample_running() { # sample_running FILE: the engine's running and waiting reque
 client() { # client NAME PRIORITY CONCURRENCY SEED: one vllm bench serve, in the background
   local name=$1 priority=$2 concurrency=$3 seed=$4
   HF_HUB_OFFLINE=1 taskset -c "$cores" "$root/venvs/engine/bin/vllm" bench serve --backend vllm \
-    --base-url "$engine" --endpoint /v1/completions --model "$model" --tokenizer "$model" \
+    --base-url "$engine" --endpoint /v1/completions --model "$model" --tokenizer "$tokenizer" \
     --dataset-name random --random-input-len "$input" --random-output-len "$output" --ignore-eos --seed "$seed" \
     --num-prompts $((rounds * concurrency)) --max-concurrency "$concurrency" \
     --extra-body "{\"priority\": $priority}" --percentile-metrics ttft,tpot,itl --metric-percentiles 50,90,99 \

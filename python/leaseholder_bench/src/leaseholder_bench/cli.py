@@ -565,7 +565,7 @@ def _add_e2(commands: Commands) -> None:
     report = actions.add_parser(
         "report",
         help="build the frontier from run directories",
-        description="Write frontier.csv, frontier.md and, with matplotlib, frontier.svg and the "
+        description="Write frontier.csv, frontier.md, a frontier figure per workload and the "
         "stage waterfall of the points with turn lines, waterfall.svg.",
     )
     report.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
@@ -582,9 +582,11 @@ def _add_e2(commands: Commands) -> None:
         "--dots",
         type=Path,
         metavar="FILE",
-        help="also draw voice-p95.svg: the V2V p95 of the configurations a TOML file names, one "
-        '[[row]] each (point = "...", label = "...", change = true for the engine change\'s rows), '
-        "in its order",
+        help="also draw voice-p95.svg and its phone layout voice-p95-narrow.svg: the V2V p95 and "
+        "the agents' tokens/s of the configurations a TOML file names, one [[row]] each "
+        '(point = "...", label = "...", note = "...", change = true for the engine change\'s rows, '
+        "featured = true for the one to deploy), in its order, or [[group]] tables of rows, one "
+        'per GPU (title = "...", and gpu = "..." where the GPUs ran the same points)',
     )
     export = actions.add_parser(
         "export",
