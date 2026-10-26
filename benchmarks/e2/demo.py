@@ -15,40 +15,44 @@
       --excerpt docs/figures/e2-demo
 
 BASELINE and FEATURED are the run directories of two points: the engine a viewer compares against,
-drawn gray above, and the configuration the video is about, drawn blue below. Each side plays one of
+in the left panel, and the configuration the video is about, in the right. Each side plays one of
 its point's calls (``--caller``, by default the first), and both play the same turns: ``--turns`` of
 them from ``--first-turn``, by default from the first turn the callers measured (after the warm-up
 turns that open each call) and as many as fit in ``--seconds``. Turn k of both starts at the same
 moment, so the same line is heard on both at once, and the call that is ahead waits in silence for
 the other: only a caller's pause between turns is stretched, never a measured wait.
 
-A frame shows the turn under way on one time axis for both calls: the caller's line and the agent's
-reply as their waveforms, drawn as they play, and between them the wait, a bar that grows until the
-reply's first audio while a clock counts it, then gives the V2V the caller measured. Under it, each
-turn's V2V as a pair of bars. ``--summary`` is a report's frontier.csv (``flatshare-bench e2 report``): the
-voice SLO is the report's, 250 ms above voice alone's median V2V p95 with as many callers, drawn as
-a dashed rule against each wait and each bar; and a closing card gives both configurations (by their
-points' names) over all the report's runs, the median of their V2V p95 and of the agents' tokens/s
-over the calls' first 240 s, as the README's chart draws them. ``--also`` adds another GPU's report of
-the same two points (its own frontier.csv): the closing card then gives each GPU's as a group under
-its name, against its own SLO. An opening card names the calls and the engines (``--heading`` is its
-heading).
+A frame is the dashboard the v1.0 demo drew, a panel a call side by side. In each panel: what the
+call is doing, the wait's clock, which counts from the end of the caller's line to the reply's
+first audio and then gives the V2V the caller measured, and that wait against the SLO; each reply's
+V2V as a bar that grows while the caller waits, on one scale for both panels; the turn under way on
+its time axis, the caller's line above it and the agent's reply below as their waveforms, drawn as
+they play, with the wait between them as a bar; and the agents' tokens/s over the calls' first
+240 s, the README's measure, on one scale for both. ``--summary`` is a report's frontier.csv
+(``flatshare-bench e2 report``): the voice SLO is the report's, 250 ms above voice alone's median V2V
+p95 with as many callers, drawn as a dashed rule against each wait and each bar; and a closing card
+gives both configurations (by their points' names) over all the report's runs, the median of their
+V2V p95 and of the agents' tokens/s over the calls' first 240 s, as the README's chart draws them.
+``--also`` adds another GPU's report of the same two points (its own frontier.csv): the closing card
+then gives each GPU's as a group under its name, against its own SLO. An opening card names the
+calls and the engines (``--heading`` is its heading).
 
 The soundtrack is one call at a time, the caller and the agent mixed: the baseline's for the first
-half of the turns and the featured configuration's for the rest, and the side heard is marked. The
-excerpt (``--excerpt PREFIX``, a README's animation) is silent and loops: ``--excerpt-turns`` turns
-from the first, without the turn bars or the cards, as animated lossless WebPs in each theme, wide
-and in a phone layout 420 units across (PREFIX.webp, PREFIX-dark.webp, PREFIX-narrow.webp,
-PREFIX-narrow-dark.webp).
+half of the turns and the featured configuration's for the rest, and the panel heard is marked. The
+excerpt (``--excerpt PREFIX``, a README's animation) is the same dashboard, silent and looping:
+``--excerpt-turns`` turns from the first, without the cards, as animated lossless WebPs in each
+theme, the panels side by side and, for a phone, one above the other 420 units across
+(PREFIX.webp, PREFIX-dark.webp, PREFIX-narrow.webp, PREFIX-narrow-dark.webp).
 
 Frames follow the docs' figures (``figure_style.py`` and ``fonts/`` in
-python/flatshare_bench/src/flatshare_bench): STIX Two at the figures' four sizes on a layout
-1120 units wide, the palette of ``--theme``, the configuration to deploy in the saturated blue and
-the baseline in gray. Each frame is drawn at twice its size and halved by a box filter, so type and
-hairlines stay crisp. Motion follows the calls: the playhead, the waveforms, the clock and the
-growing bars move linearly with their time. A text that changes leaves faster than its successor
-arrives (ease-in-out, then ease-out from 0.96 of its size), a V2V once given holds at least HOLD_S,
-a turn's drawing leaves before the next turn starts, and nothing a viewer reads moves otherwise.
+python/flatshare_bench/src/flatshare_bench): STIX Two at the figures' four sizes, and the clock at
+HERO, on a layout 1120 units wide; the palette of ``--theme``; the panels on the figures' gray ground
+in dashed borders; the configuration to deploy in the saturated blue and the baseline in gray. Each
+frame is drawn at twice its size and halved by a box filter, so type and hairlines stay crisp.
+Motion follows the calls: the playhead, the waveforms, the clock and the growing bars move linearly
+with their time. A text that changes leaves faster than its successor arrives (ease-in-out, then
+ease-out from 0.96 of its size), a V2V once given holds at least HOLD_S, a turn's drawing leaves
+before the next turn starts, and nothing a viewer reads moves otherwise.
 The video is 1920 by 1080, H.264 (yuv420p, CRF 18, BT.709) at 60 frames a second with AAC sound,
 encoded by the ffmpeg that imageio-ffmpeg bundles.
 """
@@ -85,8 +89,8 @@ _spec.loader.exec_module(style)
 
 W = 1120.0
 """The layout's width in units, a README figure's; 1920 pixels make 1.71 of them a unit."""
-FULL_H, EXCERPT_H = 630.0, 392.0
-"""The video's layout height (16 by 9), and the excerpt's, which leaves out the turn bars."""
+FULL_H = 630.0
+"""The video's layout height: 16 by 9 on its 1120 units."""
 DPI = 100
 LEAD_S = 0.5
 """How long before its line a turn starts on the video."""
@@ -178,6 +182,9 @@ class Call:
     gpu: str | None
     """The GPU the point ran on, as its samples name it in the docs' spelling (``shown``), or the
     box's where they name none on the box's profile; None off it."""
+    tokens: float | None = None
+    """The point's agents' tokens/s over the calls' first 240 s, as its summary.json gives them
+    (the README's measure); None without them."""
 
     @classmethod
     def load(cls, run_dir: Path, caller: int = 0, label: str | None = None) -> Call:
@@ -186,6 +193,9 @@ class Call:
             pcm = np.frombuffer(wav.readframes(wav.getnframes()), dtype=np.int16).reshape(-1, 2)
         run = json.loads((run_dir / "run.json").read_text())
         arm = run["arm"]
+        summary = run_dir / "summary.json"
+        background = json.loads(summary.read_text()).get("background") if summary.exists() else None
+        window = (background or {}).get("fixed_window") or {}
         return cls(
             label if label is not None else arm["label"],
             run.get("name", run_dir.name),
@@ -197,6 +207,7 @@ class Call:
             arm.get("agents", {}).get("sessions", 0),
             gpu_name(run_dir / "gpu.csv")
             or (BOX_GPU if run.get("profile", BOX_PROFILE) == BOX_PROFILE else None),
+            window.get("tokens_per_s"),
         )
 
     @property
@@ -583,7 +594,16 @@ class Board:
             artist.set_dashes((dashes[0] / width, dashes[1] / width))
         return artist
 
-    def patch(self, vertices: np.ndarray, fill: str, edge: str | None, width: float) -> Any:
+    def patch(
+        self,
+        vertices: np.ndarray,
+        fill: str,
+        edge: str | None,
+        width: float,
+        *,
+        dashes: tuple[float, float] | None = None,
+    ) -> Any:
+        """A filled polygon, its outline ``width`` units wide; ``dashes`` (on, off) in units."""
         from matplotlib.patches import Polygon
 
         artist = Polygon(
@@ -594,6 +614,8 @@ class Board:
             linewidth=self.lw(width) if edge else 0,
             joinstyle="round",
         )
+        if dashes and edge:
+            artist.set_linestyle((0, (dashes[0] / width, dashes[1] / width)))
         self.ax.add_patch(artist)
         return artist
 
@@ -686,6 +708,29 @@ def bar_shape(x: float, y: float, w: float, h: float, end: str, r: float = 3.0) 
     )
 
 
+def round_rect(x: float, y: float, w: float, h: float, r: float) -> np.ndarray:
+    """The outline of a rectangle at (x, y), ``w`` by ``h``, its four corners rounded as a bar's
+    are (quadratic corners of radius ``r``), as a polygon."""
+    r = max(0.0, min(r, w / 2, h / 2))
+    s = np.linspace(0.0, 1.0, 9)[:, None]
+
+    def corner(
+        a: tuple[float, float], c: tuple[float, float], b: tuple[float, float]
+    ) -> np.ndarray:
+        pa, pc, pb = (np.asarray(p, dtype=float) for p in (a, c, b))
+        return (1 - s) ** 2 * pa + 2 * (1 - s) * s * pc + s**2 * pb
+
+    x1, y1 = x + w, y + h
+    return np.vstack(
+        [
+            corner((x, y + r), (x, y), (x + r, y)),
+            corner((x1 - r, y), (x1, y), (x1, y + r)),
+            corner((x1, y1 - r), (x1, y1), (x1 - r, y1)),
+            corner((x + r, y1), (x, y1), (x, y1 - r)),
+        ]
+    )
+
+
 @dataclass
 class Segment:
     """A text's content from ``start`` until the next segment's: fixed, or a function of the
@@ -731,69 +776,6 @@ class Slot:
         self.artist.set_fontsize(self.size * self.board.points * size)
 
 
-@dataclass
-class Row:
-    """A side's drawing of the turn under way."""
-
-    top: float
-    center: float
-    status: Any = None
-    """What the call is doing: the caller speaks, waits, or was answered."""
-    clock: Any = None
-    """The wait so far, then the V2V the caller measured."""
-    heard: Any = None
-    """Whether the soundtrack is this call's."""
-    waves: list[Any] = field(default_factory=list)
-    """The caller's waveform and the agent's."""
-    bands: list[Any] = field(default_factory=list)
-    """The waits of the turn, one band each: the line's, and an interruption's."""
-    rules: list[Any] = field(default_factory=list)
-    """The SLO against each wait."""
-
-
-KEY_SWATCH = {"caller": 22.0, "wait": 48.0, "agent": 22.0, "slo": 10.0}
-"""Each key entry's swatch width before its name, 8 units from it."""
-
-
-@dataclass
-class Layout:
-    """Where a frame's parts go, in units: the video's and the README's wide form, whose names
-    stand in a column left of the lanes, or the README's phone form, 420 units across, whose names
-    stand over each lane (:func:`wide_layout`, :func:`narrow_layout`)."""
-
-    across: float
-    down: float
-    left: float
-    right: float
-    """The texts' right edge: the names' column in the wide form, the margin in the narrow."""
-    x0: float
-    x1: float
-    """The turn's time axis."""
-    title: list[tuple[float, str]]
-    """The title's lines, centred, at their baselines; then the subtitle's."""
-    subtitle: list[tuple[float, str]]
-    head: float
-    """The turn's heading."""
-    note: list[tuple[float, str]]
-    key: list[tuple[float, float, str, str]]
-    """Each mark the key names: where its swatch starts, its baseline, its kind, its name."""
-    rows: tuple[float, float]
-    """Each side's row's top."""
-    name: float
-    status: float
-    """The baselines of a row's name and of its status, from the row's top."""
-    lane: tuple[float, float]
-    """A row's lane, its top and its bottom, from the row's top."""
-    axis: float
-    """The time axis's baseline."""
-    axis_name: tuple[float, float, str]
-    """Where the time axis's name goes: x, baseline, alignment."""
-    bars: tuple[float, float, float] | None = None
-    """The turn bars' plot: its top, its base and its right end (it starts at x0); None without
-    them."""
-    narrow: bool = False
-
-
 def headings(timeline: Timeline) -> tuple[str, str, str]:
     """The frame's title and subtitle, and the turn's note, from the records."""
     calls = timeline.calls
@@ -807,61 +789,120 @@ def headings(timeline: Timeline) -> tuple[str, str, str]:
     return title, f"{who}{where}, recorded {when}", note
 
 
-def key_items(slo: float | None) -> list[tuple[str, str]]:
-    """The marks a turn draws, each by its kind and its name in the key."""
-    items = [
-        ("caller", "caller's line"),
-        ("wait", "wait for the reply"),
-        ("agent", "agent's reply"),
-    ]
-    if slo is not None:
-        items.append(("slo", f"SLO, {slo:.2f} s after the line"))
-    return items
+def _counting(ended: float) -> Callable[[float], str]:
+    """The clock while the caller waits: the seconds since the speech ended, to a tenth."""
+
+    def text(t: float) -> str:
+        return f"{max(t - ended, 0.0):.1f} s"
+
+    return text
 
 
-def _key_width(kind: str, name: str) -> float:
-    return KEY_SWATCH[kind] + 8 + style.measure(name, style.NOTE)
+def _time_step(seconds: float) -> int:
+    """The time axis's step: the least of 1, 2, 5 and 10 s that marks it at most six times."""
+    return next((s for s in (1, 2, 5, 10, 20, 30, 60) if seconds / s <= 6), 60)
 
 
-def wide_layout(timeline: Timeline, slo: float | None, bars: bool) -> Layout:
-    """The video's layout, 1120 by 630 units with the turn bars, and the README's wide excerpt,
-    392 high without them: the names in a column left of the lanes, the key along the heading."""
-    title, subtitle, note = headings(timeline)
-    items = key_items(slo)
-    x = 1080 - sum(_key_width(*item) for item in items) - 26 * (len(items) - 1)
-    key = []
-    for kind, name in items:
-        key.append((x, 118.0, kind, name))
-        x += _key_width(kind, name) + 26
-    return Layout(
+# The dashboard ----------------------------------------------------------------------------------
+
+HERO = 44.0
+"""The size of a panel's clock, the number each panel builds to: about twice a label's."""
+
+
+@dataclass
+class Panels:
+    """Where the dashboard's parts go, in units: the calls in two panels side by side (the wide form,
+    1120 across) or one above the other (the phone form, 420 across), each panel laid out the same
+    from its own top left (:func:`wide_panels`, :func:`narrow_panels`)."""
+
+    across: float
+    down: float
+    title: list[tuple[float, str]]
+    """The title's lines, centred, at their baselines; then the subtitle's."""
+    subtitle: list[tuple[float, str]]
+    boxes: tuple[Box, Box]
+    """Each panel's left, top, right and bottom."""
+    pad: float
+    """A panel's inner margin."""
+    name: float
+    status: float
+    clock: float
+    verdict: float
+    """Baselines from a panel's top: its call's name, what the call is doing, the wait's clock, and
+    the wait against the SLO."""
+    plot: tuple[float, float, float, float]
+    """The waits' plot, from the panel's left and top: its left, top, right and base."""
+    lanes: tuple[float, float, float, float]
+    """The turn's time axis, from the panel's left and top: where it starts and ends (the lanes'
+    names stand left of it), and its top and bottom; the caller's line is drawn above its middle,
+    the agent's reply below."""
+    ticks: float
+    axis_name: float
+    """Baselines from a panel's top: the time axis's marks and its name."""
+    agents: tuple[float, float, float]
+    """The agents' tokens/s: the label's baseline, and the bar's top and bottom, from the panel's
+    top."""
+    sound: bool = False
+    """Whether a panel marks when the soundtrack is its call's: the video's, not the README's."""
+
+
+def _subtitle(timeline: Timeline) -> str:
+    return f"{headings(timeline)[1]} \N{BULLET} the same line on both engines at once"
+
+
+def wide_panels(timeline: Timeline) -> Panels:
+    """The README's animation, 1120 by 612 units: the calls' panels side by side under the title."""
+    top, height = 100.0, 488.0
+    return Panels(
         across=W,
-        down=FULL_H if bars else EXCERPT_H,
-        left=40,
-        right=300,
-        x0=340,
-        x1=1080,
-        title=[(44, title)],
-        subtitle=[(70, subtitle)],
-        head=118,
-        note=[(142, note)],
-        key=key,
-        rows=(156, 252),
-        name=28,
-        status=60,
-        lane=(6, 82),
-        axis=342,
-        axis_name=(300, 364, "right"),
-        bars=(446, 590, 990) if bars else None,
+        down=top + height + 24,
+        title=[(46.0, headings(timeline)[0])],
+        subtitle=[(72.0, _subtitle(timeline))],
+        boxes=((24.0, top, 548.0, top + height), (572.0, top, 1096.0, top + height)),
+        pad=24.0,
+        name=40.0,
+        status=82.0,
+        clock=134.0,
+        verdict=164.0,
+        plot=(330.0, 72.0, 500.0, 164.0),
+        lanes=(92.0, 500.0, 200.0, 356.0),
+        ticks=380.0,
+        axis_name=404.0,
+        agents=(440.0, 452.0, 470.0),
     )
 
 
-def narrow_layout(timeline: Timeline, slo: float | None) -> Layout:
+def video_panels(timeline: Timeline) -> Panels:
+    """The video's frame, 1120 by 630 units (16 by 9): the README's panels with room for a bar a
+    turn, and each marks when the soundtrack is its call's."""
+    top, height = 96.0, 510.0
+    return Panels(
+        across=W,
+        down=FULL_H,
+        title=[(44.0, headings(timeline)[0])],
+        subtitle=[(70.0, _subtitle(timeline))],
+        boxes=((24.0, top, 548.0, top + height), (572.0, top, 1096.0, top + height)),
+        pad=24.0,
+        name=40.0,
+        status=82.0,
+        clock=134.0,
+        verdict=164.0,
+        plot=(262.0, 72.0, 500.0, 182.0),
+        lanes=(92.0, 500.0, 222.0, 378.0),
+        ticks=402.0,
+        axis_name=426.0,
+        agents=(462.0, 474.0, 492.0),
+        sound=True,
+    )
+
+
+def narrow_panels(timeline: Timeline) -> Panels:
     """The README's phone layout, 420 units across like the figures' phone layouts: the title and
-    notes broken evenly, the key over as many lines as it needs, and each call's name, status and
-    clock over its lane, which spans the frame."""
-    title, subtitle, note = headings(timeline)
-    left, right = 16.0, 404.0
-    width = right - left
+    subtitle broken evenly, then the calls' panels one above the other."""
+    title, _, _ = headings(timeline)
+    subtitle = _subtitle(timeline)
+    left, right = 12.0, 408.0
+    width = right - left - 8
     y = 32.0
     titles = []
     for line in style.wrap(title, width, style.TITLE):
@@ -869,75 +910,88 @@ def narrow_layout(timeline: Timeline, slo: float | None) -> Layout:
         y += 29
     y += 2
     subtitles = []
-    where, _, when = subtitle.rpartition(", ")
-    lines = [subtitle] if style.measure(subtitle, style.NOTE) <= width else [f"{where},", when]
-    for line in lines:  # broken before the date, never inside the GPU's name
+    head, _, note = subtitle.partition(" \N{BULLET} ")
+    where, _, when = head.rpartition(", ")
+    lines = [head] if style.measure(head, style.NOTE) <= width else [f"{where},", when]
+    for line in [*lines, note]:  # broken before the date, never inside the GPU's name
         subtitles.append((y, line))
         y += 23
-    head = y + 30
-    notes = []
-    y = head + 24
-    for line in style.wrap(note, width, style.NOTE):
-        notes.append((y, line))
-        y += 23
-    key = []
-    x, y = left, y + 10
-    for kind, name in key_items(slo):
-        if x > left and x + _key_width(kind, name) > right:
-            x, y = left, y + 26
-        key.append((x, y, kind, name))
-        x += _key_width(kind, name) + 24
-    top = y + 22
-    pitch = 148.0
-    axis = top + pitch + 132
-    return Layout(
-        across=420,
-        down=axis + 58,
-        left=left,
-        right=right,
-        x0=left,
-        x1=right,
+    top, height, gap = y + 4, 424.0, 16.0
+    boxes = (
+        (left, top, right, top + height),
+        (left, top + height + gap, right, top + 2 * height + gap),
+    )
+    return Panels(
+        across=420.0,
+        down=boxes[1][3] + 12,
         title=titles,
         subtitle=subtitles,
-        head=head,
-        note=notes,
-        key=key,
-        rows=(top, top + pitch),
-        name=24,
-        status=50,
-        lane=(62, 128),
-        axis=axis,
-        axis_name=(right, axis + 46, "right"),
-        narrow=True,
+        boxes=boxes,
+        pad=18.0,
+        name=36.0,
+        status=72.0,
+        clock=120.0,
+        verdict=148.0,
+        plot=(240.0, 68.0, 378.0, 148.0),
+        lanes=(76.0, 378.0, 172.0, 304.0),
+        ticks=326.0,
+        axis_name=350.0,
+        agents=(382.0, 392.0, 408.0),
     )
 
 
-class Frames:
-    """The calls' frames, ``width`` pixels wide, as RGB pixels. The video's layout draws the turn
-    bars under the turn; an ``excerpt`` leaves them out and loops, its last turn's drawing leaving
-    at the end as each turn's leaves before the next, in the wide layout or the ``narrow`` one.
-    Without ``sound`` no side is marked as heard."""
+@dataclass
+class Side:
+    """A call's panel: what changes in it."""
+
+    status: Any
+    """What the call is doing: the caller speaks, waits, or was answered."""
+    clock: Any
+    """The wait so far, then the V2V the caller measured."""
+    waves: list[Any]
+    """The caller's line, drawn above the time axis, and the agent's reply, below it."""
+    bands: list[Any]
+    """The waits of the turn, one bar each on the time axis: the line's, and an interruption's."""
+    rules: list[Any]
+    """The SLO against each wait."""
+    playhead: Any
+    bars: list[tuple[Wait, Any, Any, float]] = field(default_factory=list)
+    """Each wait in the plot: its bar, its value, and the bar's left."""
+    heard: Any = None
+    """Whether the soundtrack is this call's: the video's mark."""
+    verdicts: tuple[Any, Any] = (None, None)
+    """The wait against the SLO: over it, as soon as the clock passes it; within it, at the
+    reply."""
+    agents: list[Any] = field(default_factory=list)
+    """The agents' tokens/s: the bar, then its value."""
+
+
+FORMS = {"wide": wide_panels, "narrow": narrow_panels, "video": video_panels}
+"""The dashboard's layouts: the README's animation, its phone layout, and the video's frame."""
+
+
+class Dashboard:
+    """The calls in two panels, ``width`` pixels wide, as RGB pixels, as the v1.0 demo set them
+    side by side: in each panel what the call is doing and the wait's clock, the wait against the
+    SLO, each reply's V2V as a bar that grows while the caller waits, the turn under way on its time
+    axis (the caller's line above it, the agent's reply below, the wait between them as a bar) and
+    the agents' tokens/s over the calls' first 240 s. Each turn's drawing leaves before the next
+    turn starts. ``form`` is one of FORMS: the README's animations loop, their last turn's drawing
+    leaving before the end; the video's frame holds its last turn and marks the call heard."""
 
     def __init__(
         self,
         timeline: Timeline,
         summary: Summary | None,
         *,
-        width: int = 1920,
+        width: int = 2 * 840,
         theme: str = "light",
-        sound: bool = True,
-        excerpt: bool = False,
-        narrow: bool = False,
+        form: str = "wide",
     ) -> None:
-        self.timeline, self.summary, self.sound, self.excerpt = timeline, summary, sound, excerpt
+        self.timeline, self.summary = timeline, summary
         self.slo = summary.slo_ms / 1000 if summary and summary.slo_ms else None
-        if narrow and not excerpt:
-            raise ValueError("the narrow layout is an excerpt's")
-        self.layout = (
-            narrow_layout(timeline, self.slo)
-            if narrow
-            else wide_layout(timeline, self.slo, not excerpt)
-        )
+        self.layout = FORMS[form](timeline)
+        self.loop = form != "video"
         lay = self.layout
         self.board = Board(width, lay.down, theme, across=lay.across)
         self.waits = [timeline.waits(side) for side in (0, 1)]
@@ -948,216 +1002,220 @@ class Frames:
         ]
         lengths = [b - a for a, b in zip(timeline.offsets, timeline.offsets[1:], strict=False)]
         self.axis_s = float(math.ceil(max(lengths)))
+        values = [w.seconds for side in self.waits for w in side]
+        self.marks = scale(max([*values, self.slo or 0.0, 1.0]), most=2)
         self.dynamic: list[Any] = []
         self.slots: list[Slot] = []
-        self._layout()
-        for artist in self.dynamic:
-            artist.set_animated(True)
-        self.board.canvas.draw()
-        self.background = self.board.canvas.copy_from_bbox(self.board.figure.bbox)
-
-    # Layout ---------------------------------------------------------------------------------
-
-    def x_of(self, seconds: float) -> float:
-        """A moment of the turn, in seconds from its start, on the time axis."""
-        lay = self.layout
-        return lay.x0 + (lay.x1 - lay.x0) * min(max(seconds, 0.0), self.axis_s) / self.axis_s
-
-    def lanes(self) -> list[tuple[float, float]]:
-        """Each lane's top and bottom."""
-        lay = self.layout
-        return [(top + lay.lane[0], top + lay.lane[1]) for top in lay.rows]
-
-    def _slot(self, artist: Any, size: float, segments: list[Segment]) -> None:
-        end = self.timeline.seconds if self.excerpt else None
-        self.slots.append(Slot(self.board, artist, size, segments, end))
-        self.dynamic.append(artist)
-
-    def _layout(self) -> None:
-        board, timeline, lay = self.board, self.timeline, self.layout
+        board = self.board
         middle = lay.across / 2
         for y, line in lay.title:
             board.text(middle, y, line, style.TITLE, ha="center")
         for y, line in lay.subtitle:
             board.text(middle, y, line, style.NOTE, "soft", ha="center")
-        # The turn under way: its heading, its note and its key.
-        widest = style.measure(f"Turn {timeline.first + timeline.turns}", style.LABEL)
-        head_room = (lay.left - 8, lay.head - 22, lay.left + widest + 8, lay.head + 8)
-        head = board.text(lay.left, lay.head, "", style.LABEL, room=head_room)
-        heads = [
-            Segment(timeline.offsets[k], f"Turn {timeline.first + k}")
-            for k in range(timeline.turns)
-        ]
-        self._slot(head, style.LABEL, heads)
-        for y, line in lay.note:
-            board.text(lay.left, y, line, style.NOTE, "soft")
-        self._key()
-        self.rows = [self._row(side, top) for side, top in enumerate(lay.rows)]
-        self._time_axis()
-        if lay.bars:
-            self._turn_bars()
-        # The playhead: one across both lanes where nothing stands between them, else one each.
-        lanes = self.lanes()
-        spans = [(lanes[0][0], lanes[1][1])] if not lay.narrow else lanes
-        self.playheads = [
-            board.line([lay.x0, lay.x0], [top, bottom], "axis", style.THIN) for top, bottom in spans
-        ]
-        self.dynamic += self.playheads
+        self.sides = [self._panel(side) for side in (0, 1)]
+        for artist in self.dynamic:
+            artist.set_animated(True)
+        board.canvas.draw()
+        self.background = board.canvas.copy_from_bbox(board.figure.bbox)
 
-    def _key(self) -> None:
-        """The marks of a turn, each named beside its swatch."""
-        board, lay = self.board, self.layout
-        size = style.NOTE
-        for x, baseline, kind, name in lay.key:
-            top = baseline - 0.62 * size
-            if kind in ("caller", "agent"):
-                hue = "gray" if kind == "caller" else "green"
-                shape = bar_shape(x, top, 22, 0.66 * size, "right", 2.0)
-                board.patch(shape, f"{hue}-w", hue, style.HAIR)
-            elif kind == "wait":
-                for k, fill in enumerate(BARS):
-                    shape = bar_shape(x + 26 * k, top, 22, 0.66 * size, "right", 2.0)
-                    board.patch(shape, fill, "bar-line", style.BAR_LINE)
-            else:
-                ys = [top - 2, top + 0.66 * size + 2]
-                board.line([x + 5, x + 5], ys, "orange", style.THIN, dashes=(3, 2.5))
-            name_x = x + KEY_SWATCH[kind] + 8
-            room = (name_x - 1, baseline - 20, lay.x1 + 0.5, baseline + 8)
-            board.text(name_x, baseline, name, size, room=room)
+    # Layout ---------------------------------------------------------------------------------
 
-    def _row(self, side: int, top: float) -> Row:
+    def x_of(self, side: int, seconds: float) -> float:
+        """A moment of the turn, in seconds from its start, on a panel's time axis."""
+        lay = self.layout
+        x0 = lay.boxes[side][0]
+        a, b = x0 + lay.lanes[0], x0 + lay.lanes[1]
+        return a + (b - a) * min(max(seconds, 0.0), self.axis_s) / self.axis_s
+
+    def _slot(self, artist: Any, size: float, segments: list[Segment]) -> None:
+        end = self.timeline.seconds if self.loop else None
+        self.slots.append(Slot(self.board, artist, size, segments, end))
+        self.dynamic.append(artist)
+
+    def _panel(self, side: int) -> Side:
         board, lay, timeline = self.board, self.layout, self.timeline
         call = timeline.calls[side]
-        lane_top, lane_bottom = top + lay.lane[0], top + lay.lane[1]
-        room = (lay.left - 8, top, lay.right + 0.5, lane_top if lay.narrow else top + 96)
-        board.text(lay.left, top + lay.name, call.label, style.VALUE, room=room)
-        status = board.text(lay.left, top + lay.status, "", style.NOTE, "soft", room=room)
-        clock = board.text(lay.right, top + lay.status, "", style.TITLE, ha="right", room=room)
-        statuses = [
-            Segment(timeline.offsets[k], "the caller speaks") for k in range(timeline.turns)
-        ]
-        clocks = [Segment(timeline.offsets[k], "") for k in range(timeline.turns)]
-        for _, at in timeline.interruptions(side):  # the last V2V stays until the next wait
-            statuses.append(Segment(at, "the caller interrupts"))
-        shown = -math.inf  # when the last V2V was given
-        for wait in self.waits[side]:
-            statuses.append(Segment(wait.ended, "waiting for the reply"))
-            # A count starts once the V2V before it has held for HOLD_S, from the true end of speech.
-            counts = max(wait.ended, shown + HOLD_S + EXIT_S) if wait.again else wait.ended
-            if counts < wait.until:
-                clocks.append(Segment(counts, _counting(wait.ended)))
-            answered = "answered after" if wait.ms is not None else "no reply"
-            statuses.append(Segment(wait.until, answered))
-            final = f"{wait.seconds:.1f} s" if wait.ms is not None else ""
-            clocks.append(Segment(wait.until, final, enter=wait.ms is None))
-            shown = wait.until
-        self._slot(status, style.NOTE, statuses)
-        self._slot(clock, style.TITLE, clocks)
+        x0, y0, x1, y1 = lay.boxes[side]
+        pad = lay.pad
+        room = (x0 + 4, y0 + 4, x1 - 4, y1 - 4)
+        ground = round_rect(x0, y0, x1 - x0, y1 - y0, 12.0)
+        board.patch(ground, "ground-b", "border", style.PANEL_LINE, dashes=(6.0, 4.0))
+        board.text(x0 + pad, y0 + lay.name, call.label, style.LABEL, room=room)
         heard = None
-        if self.sound:
-            heard = board.text(
-                lay.right, top + lay.name, "", style.NOTE, "mute", ha="right", room=room
-            )
+        if lay.sound:
+            after = x0 + pad + style.measure(call.label, style.LABEL) + 16
+            heard = board.text(after, y0 + lay.name, "", style.NOTE, "mute", room=room)
             switch = timeline.offsets[timeline.switch]
             marks = [
                 Segment(0.0, "sound on" if side == 0 else ""),
                 Segment(switch, "" if side == 0 else "sound on"),
             ]
             self._slot(heard, style.NOTE, marks)
-        # The lane: a hairline at its middle, the waveforms over it as they play.
-        center = (lane_top + lane_bottom) / 2
-        row = Row(top, center, status, clock, heard)
-        board.line([lay.x0, lay.x1], [center, center], "rule", style.HAIR)
-        for hue in ("green", "gray"):  # the agent's under the caller's, who may interrupt it
-            row.waves.insert(0, board.patch(np.zeros((3, 2)), f"{hue}-w", hue, 0.8))
-        most = max(sum(1 for w in self.waits[side] if w.turn == k) for k in range(timeline.turns))
-        for _ in range(max(most, 1)):
-            row.bands.append(board.bar(BARS[side]))
-            if self.slo is not None:
-                ys = [lane_top + 4, lane_bottom - 4]
-                row.rules.append(board.line([0, 0], ys, "orange", style.THIN, dashes=(4, 3)))
-        self.dynamic += [*row.waves[::-1], *row.bands, *row.rules]
-        return row
-
-    def _time_axis(self) -> None:
-        """The turn's seconds: gridlines behind the lanes (within each lane where names stand
-        between them), the axis under them and its marks."""
-        board, lay = self.board, self.layout
-        lanes = self.lanes()
-        spans = [(lanes[0][0], lay.axis)] if not lay.narrow else [*lanes, (lay.axis - 6, lay.axis)]
-        marks = [float(s) for s in range(0, int(self.axis_s) + 1, _time_step(self.axis_s))]
-        room = (lay.x0 - 30, lay.axis, lay.x1 + 24, lay.axis + 30)
-        for mark in marks:
-            x = self.x_of(mark)
-            for top, bottom in spans:
-                board.line([x, x], [top, bottom], "axis" if mark == 0 else "grid", style.THIN)
-            text = f"{mark:.0f}"
-            board.text(x, lay.axis + 22, text, style.NOTE, "mute", ha="center", room=room)
-        board.line([lay.x0, lay.x1], [lay.axis, lay.axis], "axis", style.THIN)
-        x, baseline, ha = lay.axis_name
-        board.text(x, baseline, "seconds into the turn", style.NOTE, "mute", ha=ha)
-
-    def _turn_bars(self) -> None:
-        board, lay, timeline = self.board, self.layout, self.timeline
-        assert lay.bars is not None
-        top, base, right = lay.bars
-        x0 = lay.x0
-        board.text(lay.left, base - 186, "Each turn's wait for the reply", style.LABEL)
-        sub = "voice-to-voice, seconds \N{BULLET} Lower is better"
-        board.text(lay.left, base - 162, sub, style.NOTE, "soft")
-        for side, fill in enumerate(BARS):
-            y = base - 112 + 28 * side
-            name_x = board.swatch(lay.left, y, fill)
-            room = (lay.left - 8, y - 20, lay.right + 0.5, y + 8)
-            board.text(name_x, y, timeline.calls[side].label, style.NOTE, room=room)
-        values = [w.seconds for side in self.waits for w in side]
-        marks = scale(max([*values, self.slo or 0.0, 1.0]))
-        self.bar_top = marks[-1]
-        step = marks[1] - marks[0]
-        height = base - top
-        for mark in marks:
-            y = base - height * mark / self.bar_top
+        # What the call is doing, the wait's clock and the wait against the SLO, left of the plot.
+        plot_x0, plot_top, plot_x1, plot_base = (
+            x0 + lay.plot[0],
+            y0 + lay.plot[1],
+            x0 + lay.plot[2],
+            y0 + lay.plot[3],
+        )
+        hero = (x0 + 4, y0 + lay.name + 8, plot_x0 - 44, y0 + lay.lanes[2] - 8)
+        status = board.text(x0 + pad, y0 + lay.status, "", style.NOTE, "soft", room=hero)
+        clock = board.text(x0 + pad, y0 + lay.clock, "", HERO, room=hero)
+        over = board.text(x0 + pad, y0 + lay.verdict, "", style.NOTE, "orange", room=hero)
+        within = board.text(x0 + pad, y0 + lay.verdict, "", style.NOTE, "soft", room=hero)
+        self._hero(side, status, clock, over, within)
+        # The waits' plot: each reply's V2V as a bar, on one scale for both panels.
+        board.text(
+            plot_x1, y0 + lay.name, "voice-to-voice, s", style.NOTE, "mute", ha="right", room=room
+        )
+        height = plot_base - plot_top
+        step = self.marks[1] - self.marks[0]
+        for mark in self.marks:
+            y = plot_base - height * mark / self.marks[-1]
             if mark:
-                board.line([x0, right], [y, y], "grid", style.THIN)
-            board.text(x0 - 10, y + 6, mark_text(mark, step), style.NOTE, "mute", ha="right")
-        board.line([x0, x0], [top - 6, base], "axis", style.THIN)
-        board.line([x0, right], [base, base], "axis", style.THIN)
-        # A slot per wait of the baseline's, each beside the featured call's wait of the same turn.
-        slots = [(w.turn, w.again) for w in self.waits[0]]
-        pitch = (right - x0) / len(slots)
-        self.bar_width = min(24.0, pitch * 0.36)
-        self.bars: list[list[tuple[Wait, Any, Any, float]]] = [[], []]
-        value_room = (x0, top - 34, right + 0.5, base)
-        for j, (k, again) in enumerate(slots):
-            cx = x0 + pitch * (j + 0.5)
-            board.text(cx, base + 25, str(timeline.first + k), style.NOTE, "mute", ha="center")
-            for side in (0, 1):
-                matched = (w for w in self.waits[side] if (w.turn, w.again) == (k, again))
-                wait = next(matched, None)
-                if wait is None:
-                    continue
-                bx = cx - 3 - self.bar_width if side == 0 else cx + 3
-                bar = board.bar(BARS[side])
-                value = board.text(
-                    bx + self.bar_width / 2,
-                    base,
-                    "",
-                    style.NOTE,
-                    ha="center",
-                    room=value_room,
-                    halo=4.0,  # within the gap between a pair's bars, whatever the value's width
-                )
-                self.bars[side].append((wait, bar, value, bx))
-                self.dynamic += [bar, value]
+                board.line([plot_x0, plot_x1], [y, y], "grid", style.THIN)
+            text = mark_text(mark, step)
+            board.text(plot_x0 - 8, y + 6, text, style.NOTE, "mute", ha="right", room=room)
+        board.line([plot_x0, plot_x0], [plot_top - 6, plot_base], "axis", style.THIN)
+        board.line([plot_x0, plot_x1], [plot_base, plot_base], "axis", style.THIN)
         if self.slo is not None:
-            y = base - height * self.slo / self.bar_top
-            board.line([x0, right + 6], [y, y], "orange", style.THIN, dashes=(5, 4))
-            board.text(right + 12, y + 6, f"SLO {self.slo:.2f} s", style.NOTE, "orange")
+            y = plot_base - height * self.slo / self.marks[-1]
+            board.line([plot_x0, plot_x1], [y, y], "orange", style.THIN, dashes=(5, 4))
+            board.text(plot_x1, y - 6, "SLO", style.NOTE, "orange", ha="right", room=room, halo=6.0)
+        # The bars keep clear of the SLO's name at the plot's right end.
+        clear = plot_x1 - (style.measure("SLO", style.NOTE) + 14 if self.slo is not None else 0)
+        bars = self._bars(side, plot_x0, clear, plot_base, room)
+        # The turn's time axis: the caller's line above its middle, the agent's reply below.
+        a, b = x0 + lay.lanes[0], x0 + lay.lanes[1]
+        top, bottom = y0 + lay.lanes[2], y0 + lay.lanes[3]
+        mid = (top + bottom) / 2
+        names = (("caller", (top + mid) / 2 + 6), ("agent", (mid + bottom) / 2 + 6))
+        for name, baseline in names:
+            board.text(x0 + pad, baseline, name, style.NOTE, "mute", room=room)
+        marks = [float(s) for s in range(0, int(self.axis_s) + 1, _time_step(self.axis_s))]
+        for mark in marks:
+            x = self.x_of(side, mark)
+            board.line([x, x], [top, bottom], "axis" if mark == 0 else "grid", style.THIN)
+            board.text(x, y0 + lay.ticks, f"{mark:.0f}", style.NOTE, "mute", ha="center", room=room)
+        board.line([a, b], [mid, mid], "axis", style.THIN)
+        name = board.text(b, y0 + lay.axis_name, "", style.NOTE, "mute", ha="right", room=room)
+        named = [
+            Segment(timeline.offsets[k], f"seconds into turn {timeline.first + k}")
+            for k in range(timeline.turns)
+        ]
+        self._slot(name, style.NOTE, named)
+        waves = [board.patch(np.zeros((3, 2)), f"{hue}-w", hue, 0.8) for hue in ("gray", "green")]
+        most = max(sum(1 for w in self.waits[side] if w.turn == k) for k in range(timeline.turns))
+        bands, rules = [], []
+        for _ in range(max(most, 1)):
+            bands.append(board.bar(BARS[side]))
+            if self.slo is not None:
+                rules.append(
+                    board.line([0, 0], [top + 4, bottom - 4], "orange", style.THIN, dashes=(4, 3))
+                )
+        playhead = board.line([a, a], [top, bottom], "axis", style.THIN)
+        self.dynamic += [*waves, *bands, *rules, playhead]
+        # The agents' tokens/s over the calls' first 240 s, each panel's on one scale.
+        agents = self._agents(side, x0 + pad, y0, x1 - pad, room)
+        return Side(
+            status, clock, waves, bands, rules, playhead, bars, heard, (over, within), agents
+        )
+
+    def _hero(self, side: int, status: Any, clock: Any, over: Any, within: Any) -> None:
+        """The panel's texts that follow the call: what it is doing, the clock, and the verdict."""
+        timeline = self.timeline
+        starts = [timeline.offsets[k] for k in range(timeline.turns)]
+        statuses = [Segment(at, "the caller speaks") for at in starts]
+        clocks = [Segment(at, "") for at in starts]
+        overs = [Segment(at, "") for at in starts]
+        withins = [Segment(at, "") for at in starts]
+        for _, at in timeline.interruptions(side):
+            statuses.append(Segment(at, "the caller interrupts"))
+        shown = -math.inf  # when the last V2V was given
+        for wait in self.waits[side]:
+            statuses.append(Segment(wait.ended, "waiting for the reply"))
+            counts = max(wait.ended, shown + HOLD_S + EXIT_S) if wait.again else wait.ended
+            if counts < wait.until:
+                clocks.append(Segment(counts, _counting(wait.ended)))
+            answered = wait.ms is not None
+            statuses.append(Segment(wait.until, "answered after" if answered else "no reply"))
+            clocks.append(
+                Segment(wait.until, f"{wait.seconds:.1f} s" if answered else "", enter=not answered)
+            )
+            if self.slo is not None:
+                overs.append(Segment(wait.ended, ""))
+                withins.append(Segment(wait.ended, ""))
+                if wait.seconds > self.slo:
+                    overs.append(Segment(wait.ended + self.slo, f"over the {self.slo:.2f} s SLO"))
+                else:
+                    withins.append(Segment(wait.until, f"within the {self.slo:.2f} s SLO"))
+            shown = wait.until
+        self._slot(status, style.NOTE, statuses)
+        self._slot(clock, HERO, clocks)
+        if self.slo is not None:
+            self._slot(over, style.NOTE, overs)
+            self._slot(within, style.NOTE, withins)
+
+    def _bars(
+        self, side: int, x0: float, x1: float, base: float, room: Box
+    ) -> list[tuple[Wait, Any, Any, float]]:
+        """A bar for each wait of the panel's call, in the plot between x0 and x1; their turns named
+        under them where there are several."""
+        board, timeline = self.board, self.timeline
+        waits = self.waits[side]
+        pitch = (x1 - x0) / max(len(waits), 1)
+        self.bar_width = min(28.0, pitch * 0.5)
+        found = []
+        for j, wait in enumerate(waits):
+            cx = x0 + pitch * (j + 0.5)
+            if len(waits) > 1 and not wait.again:  # an interruption's bar follows its turn's
+                turn = str(timeline.first + wait.turn)
+                board.text(cx, base + 22, turn, style.NOTE, "mute", ha="center", room=room)
+            bx = cx - self.bar_width / 2
+            bar = board.bar(BARS[side])
+            value = board.text(cx, base, "", style.NOTE, ha="center", room=room, halo=6.0)
+            found.append((wait, bar, value, bx))
+            self.dynamic += [bar, value]
+        return found
+
+    def _agents(self, side: int, left: float, top: float, right: float, room: Box) -> list[Any]:
+        """The agents' tokens/s over the calls' first 240 s: a bar on one scale for both panels,
+        and the featured call's share of the baseline's."""
+        board, lay, calls = self.board, self.layout, self.timeline.calls
+        label_y, bar_top, bar_bottom = (top + v for v in lay.agents)
+        label = "the agents' tokens/s over the calls' first 240 s"
+        board.text(left, label_y, label[0].upper() + label[1:], style.NOTE, "soft", room=room)
+        value, baseline = calls[side].tokens, calls[0].tokens
+        if value is None:
+            return [board.text(left, bar_bottom, "\N{EN DASH}", style.NOTE, "soft", room=room)]
+        text = f"{value:,.0f}"
+        share = f"{value / baseline:.0%} of the baseline's" if side and baseline else ""
+        # One scale for both panels: the longest bar leaves room for the widest value and share.
+        widest = max(
+            style.measure(f"{c.tokens:,.0f}", style.NOTE)
+            + (
+                16 + style.measure(f"{c.tokens / baseline:.0%} of the baseline's", style.NOTE)
+                if k and baseline
+                else 0
+            )
+            for k, c in enumerate(calls)
+            if c.tokens is not None
+        )
+        most = max(c.tokens or 0.0 for c in calls)
+        length = (right - left - widest - 12) * value / most
+        shape = bar_shape(left, bar_top, max(length, 0.01), bar_bottom - bar_top, "right")
+        bar = board.patch(shape, BARS[side], "bar-line", style.BAR_LINE)
+        baseline_y = (bar_top + bar_bottom) / 2 + 6
+        drawn = [bar, board.text(left + length + 8, baseline_y, text, style.NOTE, room=room)]
+        if share:
+            after = left + length + 16 + style.measure(text, style.NOTE)
+            drawn.append(board.text(after, baseline_y, share, style.NOTE, "soft", room=room))
+        return drawn
 
     # Drawing --------------------------------------------------------------------------------
 
     def draw(self, t: float) -> np.ndarray:
-        """The frame at video time t, halved: RGB."""
+        """The frame at time t, halved: RGB."""
         board = self.board
         board.canvas.restore_region(self.background)
         self.update(t)
@@ -1166,85 +1224,89 @@ class Frames:
         return board.halve(np.asarray(board.canvas.buffer_rgba()))
 
     def update(self, t: float) -> None:
-        """Set every changing artist for video time t."""
-        timeline, lay = self.timeline, self.layout
+        """Set every changing artist for time t."""
+        timeline = self.timeline
         for slot in self.slots:
             slot.show(t)
         k = timeline.turn_at(t)
         start = timeline.offsets[k]
         last = k == timeline.turns - 1
-        stays = last and not self.excerpt
-        gone = 1.0 if stays else leaving(t, timeline.offsets[k + 1], TURN_EXIT_S)
-        for side, row in enumerate(self.rows):
-            self._lane(side, row, t, k, start, gone)
-        x = self.x_of(t - start)
-        for playhead in self.playheads:
-            playhead.set_xdata([x, x])
-            playhead.set_alpha(gone)
-        if lay.bars:
-            self._bars(t)
+        gone = 1.0 if last and not self.loop else leaving(t, timeline.offsets[k + 1], TURN_EXIT_S)
+        # A loop's end: every drawing leaves before the first turn comes back.
+        end = leaving(t, timeline.seconds, TURN_EXIT_S) if self.loop else 1.0
+        for side, panel in enumerate(self.sides):
+            self._lanes(side, panel, t, k, start, gone)
+            x = self.x_of(side, t - start)
+            panel.playhead.set_xdata([x, x])
+            panel.playhead.set_alpha(gone)
+            self._grow(side, panel, t, end)
 
-    def _lane(self, side: int, row: Row, t: float, k: int, start: float, gone: float) -> None:
+    def _lanes(self, side: int, panel: Side, t: float, k: int, start: float, gone: float) -> None:
         lay = self.layout
+        x0, y0 = lay.boxes[side][:2]
+        a, b = x0 + lay.lanes[0], x0 + lay.lanes[1]
+        top, bottom = y0 + lay.lanes[2], y0 + lay.lanes[3]
+        mid = (top + bottom) / 2
+        reach = mid - top - 6  # a full waveform's height
         first, now = round(start * 100), round(t * 100)
-        reach = (lay.lane[1] - lay.lane[0]) / 2 - 6  # a full waveform's half height
-        for wave_patch, env in zip(row.waves, self.envelopes[side], strict=True):
+        for wave_patch, env, sign in zip(panel.waves, self.envelopes[side], (-1, 1), strict=True):
             values = env[first:now]
             if len(values) < 2:
                 wave_patch.set_visible(False)
                 continue
-            xs = lay.x0 + (lay.x1 - lay.x0) * (np.arange(len(values)) / 100) / self.axis_s
-            ys = np.minimum(values / REFERENCE, 1.0) * reach
-            upper = np.column_stack([xs, row.center - ys])
-            lower = np.column_stack([xs[::-1], row.center + ys[::-1]])
-            wave_patch.set_xy(np.concatenate([upper, lower]))
+            xs = a + (b - a) * (np.arange(len(values)) / 100) / self.axis_s
+            ys = mid + sign * np.minimum(values / REFERENCE, 1.0) * reach
+            outline = np.concatenate([np.column_stack([xs, ys]), [[xs[-1], mid], [xs[0], mid]]])
+            wave_patch.set_xy(outline)
             wave_patch.set_visible(True)
             wave_patch.set_alpha(gone)
         waits = [w for w in self.waits[side] if w.turn == k]
-        for index, band in enumerate(row.bands):
-            rule = row.rules[index] if row.rules else None
+        for index, band in enumerate(panel.bands):
+            rule = panel.rules[index] if panel.rules else None
             if index >= len(waits) or t < waits[index].ended:
                 band.set_visible(False)
                 if rule is not None:
                     rule.set_visible(False)
                 continue
             wait = waits[index]
-            a = self.x_of(wait.ended - start)
-            b = self.x_of(min(t, wait.until) - start)
-            band.set_xy(bar_shape(a, row.center - 10, max(b - a, 0.01), 20, "right"))
+            left = self.x_of(side, wait.ended - start)
+            right = self.x_of(side, min(t, wait.until) - start)
+            band.set_xy(bar_shape(left, mid - 8, max(right - left, 0.01), 16, "right"))
             band.set_visible(True)
             band.set_alpha(gone)
             if rule is not None and self.slo is not None:
-                x = self.x_of(wait.ended - start + self.slo)
+                x = self.x_of(side, wait.ended - start + self.slo)
                 rule.set_xdata([x, x])
                 rule.set_visible(True)
                 rule.set_alpha(arriving(t, wait.ended)[0] * gone)
 
-    def _bars(self, t: float) -> None:
+    def _grow(self, side: int, panel: Side, t: float, end: float) -> None:
+        """Each wait's bar in the plot: growing while the caller waits, then its V2V over it."""
         lay = self.layout
-        assert lay.bars is not None
-        top, base, _ = lay.bars
+        y0 = lay.boxes[side][1]
+        top, base = y0 + lay.plot[1], y0 + lay.plot[3]
         height = base - top
-        for side in (0, 1):
-            for wait, bar, value, bx in self.bars[side]:
-                if t < wait.ended:
-                    bar.set_visible(False)
-                    value.set_alpha(0.0)
-                    continue
-                done = t >= wait.until
-                seconds = wait.seconds if done else t - wait.ended
-                h = height * min(seconds, self.bar_top) / self.bar_top
-                bar.set_xy(bar_shape(bx, base - h, self.bar_width, max(h, 0.01), "top"))
-                bar.set_visible(True)
-                if not done:
-                    value.set_alpha(0.0)
-                    continue
-                alpha, size = arriving(t, wait.until)
-                text = f"{wait.seconds:.1f}" if wait.ms is not None else "\N{EN DASH}"
-                self.board.set_text(value, text)
-                value.set_y(base - h - 7)
-                value.set_alpha(alpha)
-                value.set_fontsize(style.NOTE * self.board.points * size)
+        starts = [*(w.ended for w, _, _, _ in panel.bars[1:]), math.inf]
+        for (wait, bar, value, bx), following in zip(panel.bars, starts, strict=True):
+            if t < wait.ended:
+                bar.set_visible(False)
+                value.set_alpha(0.0)
+                continue
+            done = t >= wait.until
+            seconds = wait.seconds if done else t - wait.ended
+            h = height * min(seconds, self.marks[-1]) / self.marks[-1]
+            bar.set_xy(bar_shape(bx, base - h, self.bar_width, max(h, 0.01), "top"))
+            bar.set_visible(True)
+            bar.set_alpha(end)
+            if not done:
+                value.set_alpha(0.0)
+                continue
+            alpha, size = arriving(t, wait.until)
+            text = f"{wait.seconds:.1f}" if wait.ms is not None else "\N{EN DASH}"
+            self.board.set_text(value, text)
+            value.set_y(base - h - 8)
+            value.set_alpha(alpha * end * leaving(t, following))  # the latest V2V alone
+            value.set_fontsize(style.NOTE * self.board.points * size)
 
     def check(self, t: float) -> None:
         """Draw the frame at t in full and refuse a text that leaves its room or overlaps
@@ -1262,29 +1324,17 @@ class Frames:
             self.background = self.board.canvas.copy_from_bbox(self.board.figure.bbox)
 
     def moments(self) -> list[float]:
-        """The moments a check draws: each turn's start, each wait's end of speech, its reply and a
-        hold after it, and each turn's last moment, where the most texts show."""
+        """The moments a check draws: each turn's start and end, each wait's end of speech, its
+        passing the SLO, its reply and a hold after it."""
         found = {0.0, self.timeline.seconds - 1e-3}
         for k, offset in enumerate(self.timeline.offsets[:-1]):
             found |= {offset + ENTER_S, self.timeline.offsets[k + 1] - EXIT_S / 2}
         for side in self.waits:
             for w in side:
                 found |= {w.ended + 0.05, w.ended + ENTER_S, w.until + ENTER_S, w.until + HOLD_S}
+                if self.slo is not None:
+                    found.add(w.ended + self.slo + ENTER_S)
         return sorted(t for t in found if 0 <= t < self.timeline.seconds)
-
-
-def _counting(ended: float) -> Callable[[float], str]:
-    """The clock while the caller waits: the seconds since the speech ended, to a tenth."""
-
-    def text(t: float) -> str:
-        return f"{max(t - ended, 0.0):.1f} s"
-
-    return text
-
-
-def _time_step(seconds: float) -> int:
-    """The time axis's step: the least of 1, 2, 5 and 10 s that marks it at most six times."""
-    return next((s for s in (1, 2, 5, 10, 20, 30, 60) if seconds / s <= 6), 60)
 
 
 # Cards ------------------------------------------------------------------------------------------
@@ -1313,9 +1363,9 @@ def title_card(
     first, last, switch = timeline.first, timeline.first + timeline.turns - 1, timeline.switch
     if switch < timeline.turns:
         above, below = _turns(first, first + switch - 1), _turns(first + switch, last)
-        heard = f"Sound: {above} from the call above, then {below} from the call below"
+        heard = f"Sound: {above} from the call on the left, then {below} from the call on the right"
     else:
-        heard = "Sound: the call above"
+        heard = "Sound: the call on the left"
     top = FULL_H / 2 - 104
     lines = [
         (0.0, heading, style.TITLE, "ink"),
@@ -1336,7 +1386,7 @@ def title_card(
     ]
     for dy, text, size, ink in lines:
         board.text(W / 2, top + dy, text, size, ink, ha="center")
-    places = (("Above", 84.0), ("Below", 114.0))
+    places = (("Left", 84.0), ("Right", 114.0))
     left = max(board.width_of(place, style.NOTE) for place, _ in places)
     right = max(board.width_of(call.label, style.VALUE) for call in calls)
     column = W / 2 - (left + 14 + right) / 2 + left
@@ -1513,7 +1563,7 @@ def video_frames(
     steps = plan(timeline, summary, heading, fps)
 
     def generate() -> Iterator[np.ndarray]:
-        frames = Frames(timeline, summary, width=width, theme=theme)
+        frames = Dashboard(timeline, summary, width=width, theme=theme, form="video")
         page = np.empty((frames.board.height, width, 3), dtype=np.uint8)
         page[:] = [int(frames.board.color("page")[i : i + 2], 16) for i in (1, 3, 5)]
         first = frames.draw(0.0).copy()
@@ -1607,14 +1657,14 @@ def write_excerpt(
     theme: str,
     narrow: bool = False,
 ) -> int:
-    """The calls' turns as a looping animated WebP (lossless), silent, without the turn bars:
-    each frame stored as what changed from the one before. Returns its frames."""
+    """The calls' turns as the dashboard, a looping animated WebP (lossless), silent: each frame
+    stored as what changed from the one before. Returns its frames."""
     import imageio_ffmpeg
 
     if path.suffix != ".webp":
         raise ValueError(f"an excerpt is an animated .webp, not {path.suffix}")
-    frames = Frames(
-        timeline, summary, width=width, theme=theme, sound=False, excerpt=True, narrow=narrow
+    frames = Dashboard(
+        timeline, summary, width=width, theme=theme, form="narrow" if narrow else "wide"
     )
     count = round(timeline.seconds * fps)
     size = f"{width}x{frames.board.height}"
@@ -1646,8 +1696,8 @@ def _pipe(command: list[str], frames: Iterator[np.ndarray]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("baseline", type=Path, help="run directory of the baseline point (above)")
-    parser.add_argument("featured", type=Path, help="run directory of the featured point (below)")
+    parser.add_argument("baseline", type=Path, help="run directory of the baseline point (left)")
+    parser.add_argument("featured", type=Path, help="run directory of the featured point (right)")
     parser.add_argument("--out", type=Path, help="the MP4 to write")
     parser.add_argument(
         "--summary", type=Path, help="a report's frontier.csv: the SLO and the closing card"

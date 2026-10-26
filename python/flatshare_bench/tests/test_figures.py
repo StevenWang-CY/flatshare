@@ -160,11 +160,25 @@ def test_every_svg_under_docs_figures_is_what_its_generator_draws(drawn: dict[st
     assert not stale, f"run make figures and commit what it draws: {stale}"
 
 
+def webp_frames(path: Path) -> list[int]:
+    """An animated WebP's frames, each its duration in ms, from its ANMF chunks: libwebp merges a
+    frame that repeats the one before into it, so the count can differ where the time cannot."""
+    data = path.read_bytes()
+    assert data[:4] == b"RIFF" and data[8:12] == b"WEBP", path
+    durations, at = [], 12
+    while at + 8 <= len(data):
+        kind, size = data[at : at + 4], int.from_bytes(data[at + 4 : at + 8], "little")
+        if kind == b"ANMF":
+            durations.append(int.from_bytes(data[at + 8 + 12 : at + 8 + 15], "little"))
+        at += 8 + size + (size & 1)
+    return durations
+
+
 def test_the_readme_animation_is_a_looping_webp_in_each_theme_and_layout() -> None:
     """docs/figures/e2-demo.webp, its dark theme and its phone layout, which make demo-video draws
     from the demo campaign's recorded calls (a release's raw records, not this tree's): the same
-    frames in each theme, at twice the width the README shows each layout at, small enough to show
-    inline."""
+    span of the calls in each, at twice the width the README shows each layout at, the same size in
+    both themes, small enough to show inline."""
     from PIL import Image
 
     seen = {}
@@ -179,12 +193,14 @@ def test_the_readme_animation_is_a_looping_webp_in_each_theme_and_layout() -> No
         with Image.open(path) as image:
             assert image.format == "WEBP" and image.is_animated, name
             assert image.info.get("loop") == 0, name  # it loops
-            seen[name] = (image.size, image.n_frames)
             page = tuple(int(theme["page"][k : k + 2], 16) for k in (1, 3, 5))
             assert image.convert("RGB").getpixel((2, 2)) == page, name  # its own page
-    assert seen["e2-demo"] == seen["e2-demo-dark"] and seen["e2-demo"][0] == (1680, 588)
-    assert seen["e2-demo-narrow"] == seen["e2-demo-narrow-dark"]
-    assert seen["e2-demo-narrow"][0][0] == 680 and seen["e2-demo-narrow"][1] == seen["e2-demo"][1]
+            seen[name] = (image.size, sum(webp_frames(path)))
+    assert seen["e2-demo"][0] == seen["e2-demo-dark"][0] and seen["e2-demo"][0][0] == 1680
+    assert seen["e2-demo-narrow"][0] == seen["e2-demo-narrow-dark"][0]
+    assert seen["e2-demo-narrow"][0][0] == 680
+    spans = {span for _, span in seen.values()}
+    assert max(spans) - min(spans) <= 20 and min(spans) > 5_000, spans  # within a frame at 60 fps
 
 
 def test_the_figures_set_their_type_in_its_sizes_and_never_in_bold(drawn: dict[str, Path]) -> None:

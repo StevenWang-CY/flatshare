@@ -30,6 +30,8 @@ KEYS = {
 comment."""
 FORMER = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPz4xY6wQ8eR0tU2iO4pA6sD8fG0hJ2kL4zX6cV8bN0mQ2e"
 """cyan's former tunnel key, which forwarded the node's ports."""
+FORMER_ENGINE = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL5nT7wQ9eS1uV3iP5pB7sF9gH1jK3lZ5xC7vB9nM1qR"
+"""cyan's engine key under the project's former name, whose entry reached $XDG_RUNTIME_DIR/lh."""
 LOGIN = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB7m2Qp9xR4tYc3vLk8wNs6fJd0aHe5uPq1zXo2iGb4M me@laptop"
 """Another key in a GPU node's authorized_keys: its user's own."""
 
@@ -52,19 +54,19 @@ def authorize(
     work: Path,
     keys: dict[str, str],
     authorized_keys: str = "",
-    former: str | None = None,
+    formers: dict[str, str] | None = None,
     nc: str = OPENBSD_NC,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     """Runs authorize-tunnel.sh from cyan to phastform, hosts kept under ``work``: cyan's tunnel keys are
-    ``keys`` by socket (and its former key ``former``), phastform's authorized_keys ``authorized_keys``
+    ``keys`` by socket (and its former keys ``formers``, by file name), phastform's authorized_keys ``authorized_keys``
     and its nc ``nc``. Returns the run and the file it leaves."""
     hosts, bin_dir = work / "hosts", work / "bin"
     for host in ("cyan", "phastform"):
         (hosts / host / ".ssh").mkdir(parents=True)
     for name, key in keys.items():
         (hosts / "cyan" / ".ssh" / f"flatshare_tunnel_{name}_ed25519.pub").write_text(f"{key}\n")
-    if former is not None:
-        (hosts / "cyan" / ".ssh" / "flatshare_tunnel_ed25519.pub").write_text(f"{former}\n")
+    for stem, key in (formers or {}).items():
+        (hosts / "cyan" / ".ssh" / f"{stem}_ed25519.pub").write_text(f"{key}\n")
     authorized = hosts / "phastform" / ".ssh" / "authorized_keys"
     authorized.write_text(authorized_keys)
     bin_dir.mkdir()
@@ -129,7 +131,10 @@ def test_each_tunnel_key_may_only_bridge_its_session_to_its_socket(tmp_path: Pat
     for case, comment in (("commented", " flatshare-tunnel-{}@cyan"), ("bare", "")):
         keys = {name: key + comment.format(name) for name, key in KEYS.items()}
         done, authorized = authorize(
-            tmp_path / case, keys, f"{LOGIN}\n{earlier}\n{former}\n", former=FORMER
+            tmp_path / case,
+            keys,
+            f"{LOGIN}\n{earlier}\n{former}\n",
+            formers={"flatshare_tunnel": FORMER},
         )
         assert done.returncode == 0, done.stderr
         # The earlier entry for a key and the former key's go; every other key stays. Each entry allows its
@@ -139,6 +144,23 @@ def test_each_tunnel_key_may_only_bridge_its_session_to_its_socket(tmp_path: Pat
             for name in KEYS
         ], case
         assert done.stdout == f"authorized: engine, stt and tts on {socket_dir} (3 entries)\n", case
+
+
+def test_the_former_names_keys_lose_their_entries_too(tmp_path: Path) -> None:
+    # A host not moved since the project's rename keeps its keys under the former name: the entries of the key that
+    # forwarded the node's ports and of the sockets' keys, which reach $XDG_RUNTIME_DIR/lh, go as the former key's does.
+    uid = os.getuid()
+    entries = [
+        f'restrict,port-forwarding,permitopen="127.0.0.1:8000",command="/bin/false" {FORMER} lh-tunnel@cyan',
+        f'restrict,command="exec nc -q0 -U /run/user/{uid}/lh/engine.sock" {FORMER_ENGINE} lh-tunnel-engine@cyan',
+    ]
+    formers = {"lh_tunnel": FORMER, "lh_tunnel_engine": FORMER_ENGINE}
+    done, authorized = authorize(tmp_path, KEYS, "\n".join([LOGIN, *entries, ""]), formers=formers)
+    assert done.returncode == 0, done.stderr
+    assert authorized.splitlines() == [LOGIN] + [
+        f'restrict,command="exec nc -q0 -U /run/user/{uid}/flatshare/{name}.sock" {KEYS[name]}'
+        for name in KEYS
+    ]
 
 
 def test_authorizing_needs_all_three_keys_and_openbsd_netcat(tmp_path: Path) -> None:

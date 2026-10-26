@@ -304,10 +304,14 @@ def test_a_report_compares_against_its_cards_forecast_and_says_which(
     )
     assert f"| 150 ms (140{DASH}160, 3 runs) | {f.probes['kv_pr']} |" in text
     assert f"against the forecast's {f.core['running']} (central) for the core" in text
+    # Both cards' coordinates are the forecast's, the box's from its calibration row: W5 sampled no running share.
     assert (
-        f"the forecast puts the {f.card} at {f.core['busy']} busy, {f.core['stalled']} stalled and "
-        f"{f.core['running']} [modeled]"
+        f"the forecast's [modeled]: on the box's measured costs (W5's points did not sample its running share) a "
+        f"saturated card, {f.box['busy']} busy, {f.box['stalled']} of agent requests waiting for blocks and a running "
+        f"share of {f.box['running']}; the {f.card} at {f.core['busy']} busy, {f.core['stalled']} stalled and "
+        f"{f.core['running']}, where §4 gives"
     ) in text
+    assert (f.box["busy"], f.box["stalled"], f.box["running"]) == ("100%", "99%", "17%")
     # Neither card's report quotes the other's forecast.
     other = analysis.read_forecast(
         analysis.FORECAST if forecast == "forecast-80gb.md" else analysis.FORECAST_80GB

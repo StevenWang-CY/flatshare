@@ -28,8 +28,8 @@ which.
    the batch it held, and each make-room engine's output tokens a second against the frozen engine's.
 7. The host around the card (runs/a100/host/host.json, bench_host.py): its CPU and its link against the box's, read
    with E0's GPU hit (the host's work on a prompt) and its CPU restore beyond it (the transfer).
-8. Across cards: the regime coordinates the box measured and the forecast gives the A100, beside the A100's measured
-   running share, labeled different hardware.
+8. Across cards: the regime coordinates the forecast gives the box, on its measured costs, and the A100, beside the
+   A100's measured running share, labeled different hardware.
 
 `calibration-check` is P-1's prep 6: report's calibration code on the box's three W2 operating points (the
 calibration exports, calibration.py's EXPORTS) with the box's own E0 gives calibration.py report's rows for them.
@@ -94,6 +94,9 @@ BOX = {
     "prefill_pr_gap_ms": "17 ms (Gray)",
 }
 """The box's probe results, measured (docs/BENCHMARKS.md; benchmarks/results/2026-10-23-make-room-probes)."""
+BOX_ROW = "RTX 5060 Ti 16 GB (measured)"
+"""The forecasts' calibration row: flatshare-sim on the box's measured costs, the box's regime coordinates (W5's points
+did not sample its running share)."""
 BOX_HOST = {
     "cpu": "Xeon E5-2609 v4 at 1.70 GHz",
     "python_ms": 381.1,
@@ -181,15 +184,18 @@ def forecast_probes(text: str, card: str) -> dict[str, str]:
     }
 
 
-def forecast_core(text: str, card: str, scenario: str = CORE) -> dict[str, str]:
+def forecast_core(
+    text: str, card: str, scenario: str = CORE, row: str | None = None
+) -> dict[str, str]:
     """A scenario's cell on the forecast's card, central (the core's by default), on the host the forecast places the
-    card on if it names one (flatshare-sim forecast --host): its running share, busy and stalled shares."""
-    labels = (f"{card} (central)", f"{card} (central, on this host)")
+    card on if it names one (flatshare-sim forecast --host), or on the row named: its running share, busy and stalled
+    shares."""
+    labels = (row,) if row else (f"{card} (central)", f"{card} (central, on this host)")
     for line in text.splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) >= 11 and cells[0] == scenario and cells[1] in labels:
             return {"running": cells[8].split(" / ")[0], "busy": cells[9], "stalled": cells[10]}
-    raise ValueError(f"the forecast has no central cell of {scenario!r} for the {card}")
+    raise ValueError(f"the forecast has no cell of {scenario!r} on {' or '.join(labels)}")
 
 
 @dataclass(frozen=True)
@@ -202,6 +208,7 @@ class Forecast:
     probes: dict[str, str]
     core: dict[str, str]
     aprime: dict[str, str]
+    box: dict[str, str]
 
 
 def read_forecast(path: Path) -> Forecast:
@@ -214,6 +221,7 @@ def read_forecast(path: Path) -> Forecast:
         forecast_probes(text, card),
         forecast_core(text, card),
         forecast_core(text, card, APRIME),
+        forecast_core(text, card, row=BOX_ROW),
     )
 
 
@@ -647,7 +655,7 @@ def report(host: Path, corpus: Path, binary: Path, out: Path, flatshare_bench: P
     runs = host / "runs" / "a100"
     gpu = gpu_name(host)
     forecast = read_forecast(forecast_for(gpu))
-    core = forecast.core
+    core, box = forecast.core, forecast.box
     lines = [
         f"# The {forecast.card} run against its forecast",
         "",
@@ -733,11 +741,12 @@ def report(host: Path, corpus: Path, binary: Path, out: Path, flatshare_bench: P
         "",
         "## 8. Across cards (different hardware)",
         "",
-        "The core scenario's regime coordinates: the box measured (E2 W5, docs/BENCHMARKS.md) a saturated card, 99% "
-        f"of agent requests waiting for blocks and a running share of 17%; the forecast puts the {forecast.card} at "
-        f"{core['busy']} busy, {core['stalled']} stalled and {core['running']} [modeled]. Each card's distance to its "
-        "own SLO (its voice alone + 250 ms) is in §4 for the A100 and in docs/BENCHMARKS.md for the box; the two are "
-        "compared in these coordinates only.",
+        "The core scenario's regime coordinates, the forecast's [modeled]: on the box's measured costs (W5's points "
+        f"did not sample its running share) a saturated card, {box['busy']} busy, {box['stalled']} of agent requests "
+        f"waiting for blocks and a running share of {box['running']}; the {forecast.card} at {core['busy']} busy, "
+        f"{core['stalled']} stalled and {core['running']}, where §4 gives the running share it measured. Each card's "
+        "distance to its own SLO (its voice alone + 250 ms) is in §4 for the A100 and in docs/BENCHMARKS.md for the "
+        "box; the two are compared in these coordinates only.",
     ]
     path = out / "a100.md"
     path.write_text("\n".join(lines) + "\n")

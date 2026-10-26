@@ -42,9 +42,12 @@ def tone(hz: float, seconds: float) -> np.ndarray:
     return (np.sin(2 * np.pi * hz * t) * 12_000).astype(np.int16)
 
 
-def saved_call(run_dir: Path, v2v_s: list[float], *, label: str, point: str) -> Path:
+def saved_call(
+    run_dir: Path, v2v_s: list[float], *, label: str, point: str, tokens: float | None = None
+) -> Path:
     """A point's run directory with one saved call: a warm-up turn, then a turn per V2V, each a line,
-    the reply V2V later and a pause; the second measured turn is interrupted and answered again."""
+    the reply V2V later and a pause; the second measured turn is interrupted and answered again.
+    ``tokens`` is its summary.json's agents' tokens/s over the calls' first 240 s."""
     pcm = np.zeros((round(20 * (len(v2v_s) + 1) * RATE), 2), dtype=np.int16)
     turns, t = [], 1.0
     for number, v2v in enumerate([1.0, *v2v_s]):
@@ -83,6 +86,9 @@ def saved_call(run_dir: Path, v2v_s: list[float], *, label: str, point: str) -> 
     (run_dir / "bots" / "call-0.json").write_text(json.dumps(call))
     arm = {"label": label, "voice": {"callers": 2}, "agents": {"sessions": 24}}
     (run_dir / "run.json").write_text(json.dumps({"name": point, "arm": arm}))
+    if tokens is not None:
+        background = {"tokens_per_s": tokens + 50, "fixed_window": {"tokens_per_s": tokens}}
+        (run_dir / "summary.json").write_text(json.dumps({"background": background}))
     return run_dir
 
 
@@ -104,8 +110,10 @@ def frontier(path: Path, on: str = "", scale: float = 1.0) -> Path:
 
 @pytest.fixture
 def pair(tmp_path: Path) -> tuple[Path, Path]:
-    slow = saved_call(tmp_path / "frozen", [3.0, 2.5, 4.0], label="Frozen box", point="frozen")
-    fast = saved_call(tmp_path / "a9", [1.0, 0.8, 1.2], label="Arm 9", point="a9")
+    slow = saved_call(
+        tmp_path / "frozen", [3.0, 2.5, 4.0], label="Frozen box", point="frozen", tokens=900.0
+    )
+    fast = saved_call(tmp_path / "a9", [1.0, 0.8, 1.2], label="Arm 9", point="a9", tokens=880.0)
     return slow, fast
 
 
@@ -190,54 +198,60 @@ def test_motion_follows_its_curves() -> None:
 
 
 def test_a_frame_shows_the_live_wait_and_each_reply(timeline: Any, summary: Any) -> None:
-    frames = demo.Frames(timeline, summary, width=320)
+    frames = demo.Dashboard(timeline, summary, width=320, form="video")
     first = timeline.waits(0)[0]
     image = frames.draw(first.ended + 2.0)  # the baseline still waits; the other replied after 1 s
     assert image.shape == (180, 320, 3) and image.dtype == np.uint8
-    slow, fast = frames.rows
+    slow, fast = frames.sides
     assert (slow.status.get_text(), slow.clock.get_text()) == ("waiting for the reply", "2.0 s")
     assert (fast.status.get_text(), fast.clock.get_text()) == ("answered after", "1.0 s")
     assert (slow.heard.get_text(), fast.heard.get_text()) == ("sound on", "")
-    (_, bar, value, _), (_, _, fast_value, _) = frames.bars[0][0], frames.bars[1][0]
+    # The SLO is 1.80 s: the baseline's clock has passed it, the other answered within it.
+    assert slow.verdicts[0].get_text() == "over the 1.80 s SLO"
+    assert fast.verdicts[1].get_text() == "within the 1.80 s SLO"
+    (_, bar, value, _), (_, _, fast_value, _) = slow.bars[0], fast.bars[0]
     assert bar.get_visible() and value.get_alpha() == 0.0  # still growing, no value yet
-    height = np.ptp(bar.get_xy()[:, 1])
-    assert height == pytest.approx(144 * 2.0 / frames.bar_top, abs=0.1)  # two seconds so far
+    height = frames.layout.plot[3] - frames.layout.plot[1]
+    assert np.ptp(bar.get_xy()[:, 1]) == pytest.approx(height * 2.0 / frames.marks[-1], abs=0.1)
     assert fast_value.get_text() == "1.0" and fast_value.get_alpha() == 1.0
-    assert not frames.bars[0][1][1].get_visible()  # the next turn's bar is not yet drawn
-    # The SLO rule stands 1.8 s after the line on the wait's lane.
-    rule = frames.rows[0].rules[0]
-    assert rule.get_xdata()[0] == pytest.approx(frames.x_of(first.ended - 0 + 1.8))
+    assert not slow.bars[1][1].get_visible()  # the next turn's bar is not yet drawn
+    # The SLO rule stands 1.8 s after the line on the turn's time axis.
+    assert slow.rules[0].get_xdata()[0] == pytest.approx(frames.x_of(0, first.ended + 1.8))
     frames.draw(timeline.seconds - 0.01)
     assert slow.clock.get_text() == "4.0 s"
     assert (slow.heard.get_text(), fast.heard.get_text()) == ("", "sound on")
-    assert [v.get_text() for _, _, v, _ in frames.bars[0]] == ["3.0", "2.5", "2.5", "4.0"]
+    # A V2V shows over its bar until the call's next wait: at the end, the last one alone.
+    values = [value for _, _, value, _ in slow.bars]
+    assert [v.get_text() for v in values] == ["3.0", "2.5", "2.5", "4.0"]
+    assert values[-1].get_alpha() == 1.0 and all(v.get_alpha() == 0.0 for v in values[:-1])
 
 
 def test_each_v2v_holds_once_it_is_given(timeline: Any, summary: Any) -> None:
-    frames = demo.Frames(timeline, summary, width=320)
-    for side, row in enumerate(frames.rows):
+    frames = demo.Dashboard(timeline, summary, width=320, form="video")
+    for side, panel in enumerate(frames.sides):
         for wait in timeline.waits(side):  # an interruption's among them, 1.4 s after its reply
             for t in (wait.until + 0.01, wait.until + demo.HOLD_S):
                 frames.update(t)
-                assert row.clock.get_text() == f"{wait.seconds:.1f} s"
-                assert row.clock.get_alpha() == 1.0
+                assert panel.clock.get_text() == f"{wait.seconds:.1f} s"
+                assert panel.clock.get_alpha() == 1.0
+
+
+def test_the_agents_tokens_are_on_one_scale(timeline: Any, summary: Any) -> None:
+    frames = demo.Dashboard(timeline, summary, width=640)
+    (slow_bar, slow_value), (fast_bar, fast_value, share) = (s.agents for s in frames.sides)
+    lengths = [np.ptp(bar.get_xy()[:, 0]) for bar in (slow_bar, fast_bar)]
+    assert lengths[1] / lengths[0] == pytest.approx(880 / 900, abs=1e-6)
+    assert (slow_value.get_text(), fast_value.get_text()) == ("900", "880")
+    assert share.get_text() == "98% of the baseline's"
 
 
 def test_no_text_leaves_its_room_or_overlaps_another(
     timeline: Any, summary: Any, tmp_path: Path
 ) -> None:
-    forms = [(1280, False, False), (1280, True, False), (680, True, True)]
+    forms = [(1280, "video"), (1280, "wide"), (680, "narrow")]
     for theme in ("light", "dark"):
-        for width, excerpt, narrow in forms:  # the video's, the README's and its phone layout's
-            frames = demo.Frames(
-                timeline,
-                summary,
-                width=width,
-                theme=theme,
-                sound=not excerpt,
-                excerpt=excerpt,
-                narrow=narrow,
-            )
+        for width, form in forms:  # the video's, the README's and its phone layout's
+            frames = demo.Dashboard(timeline, summary, width=width, theme=theme, form=form)
             moments = frames.moments()
             assert len(moments) > 20
             for t in moments:
@@ -253,28 +267,26 @@ def test_no_text_leaves_its_room_or_overlaps_another(
     for theme in ("light", "dark"):
         demo.closing_card(summary, timeline, also=[a100], width=1280, theme=theme)
     # The check refuses a text out of its room.
-    frames = demo.Frames(timeline, summary, width=640)
+    frames = demo.Dashboard(timeline, summary, width=640)
     artist, room = frames.board.texts[0]
     frames.board.texts[0] = (artist, (room[0] + 400, *room[1:]))
     with pytest.raises(ValueError, match="leaves its room"):
         frames.check(0.0)
 
 
-def test_the_excerpt_loops_without_the_sound_and_the_bars(timeline: Any, summary: Any) -> None:
-    narrow = demo.Frames(timeline, summary, width=340, sound=False, excerpt=True, narrow=True)
+def test_the_excerpt_loops_silently(timeline: Any, summary: Any) -> None:
+    narrow = demo.Dashboard(timeline, summary, width=340, form="narrow")
     assert narrow.board.across == 420 and narrow.draw(1.0).shape[1] == 340
-    assert len(narrow.playheads) == 2  # one a lane: each call's name stands between them
-    with pytest.raises(ValueError, match="an excerpt's"):
-        demo.Frames(timeline, summary, width=340, narrow=True)
-    frames = demo.Frames(timeline, summary, width=320, sound=False, excerpt=True)
-    assert frames.draw(1.0).shape == (112, 320, 3)  # 1120 by 392 units
-    texts = [artist.get_text() for artist, _ in frames.board.texts]
-    assert "Each turn's wait for the reply" not in texts and not hasattr(frames, "bars")
+    assert narrow.layout.boxes[1][1] > narrow.layout.boxes[0][3]  # one panel above the other
+    frames = demo.Dashboard(timeline, summary, width=320)
+    assert frames.draw(1.0).shape == (174, 320, 3)  # 1120 by 612 units
+    assert all(side.heard is None for side in frames.sides)  # silent: no call is marked as heard
     frames.update(0.0)
     assert all(slot.artist.get_alpha() == 0.0 for slot in frames.slots if slot.loop_end)
-    frames.update(timeline.seconds - 1e-3)  # the last turn leaves before the loop restarts
-    assert all(playhead.get_alpha() < 0.05 for playhead in frames.playheads)
-    assert all(row.heard is None for row in frames.rows)  # silent: no call is marked as heard
+    frames.update(timeline.seconds - 1e-3)  # every drawing leaves before the loop restarts
+    assert all(side.playhead.get_alpha() < 0.05 for side in frames.sides)
+    bars = [bar for side in frames.sides for _, bar, _, _ in side.bars]
+    assert bars and all(bar.get_alpha() < 0.05 for bar in bars)
 
 
 def test_the_video_is_its_planned_frames_each_its_size(timeline: Any, summary: Any) -> None:
@@ -344,5 +356,5 @@ def test_the_script_renders_a_video_and_an_excerpt(pair: tuple[Path, Path], tmp_
             assert image.format == "WEBP" and image.is_animated, name
             assert image.n_frames == round(9.3 * 10), name  # turn 1, the slower call's
             sizes[name] = image.size
-    assert sizes["demo"] == sizes["demo-dark"] == (320, 112)
+    assert sizes["demo"] == sizes["demo-dark"] == (320, 174)
     assert sizes["demo-narrow"] == sizes["demo-narrow-dark"] and sizes["demo-narrow"][0] == 130
