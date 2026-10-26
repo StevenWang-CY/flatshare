@@ -1,0 +1,48 @@
+tail: 12 agents with fresh prompts of 6,000-30,000 tokens beside 2 calls with 40-token replies, for 240 s; Qwen/Qwen3-4B-Instruct-2507-FP8, a context of 32,768 tokens, a pool of 36,400
+02:44:24.829 call 1 ttft    798 ms, 16 tokens   2027 ms, 40 tokens   3846 ms
+02:44:28.115 call 2 ttft    160 ms, 16 tokens   1205 ms, 40 tokens   3003 ms
+02:44:34.843 call 1 ttft   1636 ms, 16 tokens   1963 ms, 40 tokens   2491 ms
+02:44:35.230 call 2 ttft   1249 ms, 16 tokens   1577 ms, 40 tokens   2105 ms
+02:44:41.819 call 1 ttft    496 ms, 16 tokens   1689 ms, 40 tokens   2700 ms
+02:44:42.751 call 2 ttft    584 ms, 16 tokens   1194 ms, 40 tokens   2742 ms
+02:44:50.794 call 2 ttft   5393 ms, 16 tokens   5965 ms, 40 tokens   6542 ms
+02:44:51.219 call 1 ttft   4968 ms, 16 tokens   5539 ms, 40 tokens   6117 ms
+02:45:03.397 call 1 ttft   3106 ms, 16 tokens   4961 ms, 40 tokens   6144 ms
+02:45:04.967 call 2 ttft   1536 ms, 16 tokens   3391 ms, 40 tokens   4575 ms
+02:45:15.483 call 1 ttft    426 ms, 16 tokens    759 ms, 40 tokens   1835 ms
+02:45:17.362 call 2 ttft   3015 ms, 16 tokens   4388 ms, 40 tokens   5642 ms
+02:45:24.342 call 1 ttft   4761 ms, 16 tokens   6478 ms, 40 tokens   9530 ms
+02:45:30.070 call 2 ttft   1331 ms, 16 tokens   3251 ms, 40 tokens   4452 ms
+02:45:38.710 call 1 ttft    619 ms, 16 tokens   2156 ms, 40 tokens   3435 ms
+02:45:40.202 call 2 ttft    664 ms, 16 tokens   1729 ms, 40 tokens   2240 ms
+02:45:46.382 call 1 ttft   7049 ms, 16 tokens   8407 ms, 40 tokens   9039 ms
+02:45:48.136 call 2 ttft   5295 ms, 16 tokens   6653 ms, 40 tokens   7285 ms
+02:46:01.458 call 1 ttft    259 ms, 16 tokens    655 ms, 40 tokens   1906 ms
+02:46:01.468 call 2 ttft    251 ms, 16 tokens    644 ms, 40 tokens   1896 ms
+02:46:07.431 call 2 ttft   4301 ms, 16 tokens   5485 ms, 40 tokens   6371 ms
+02:46:10.065 call 1 ttft   1750 ms, 16 tokens   3039 ms, 40 tokens   3791 ms
+02:46:20.275 call 1 ttft   1478 ms, 16 tokens   3187 ms, 40 tokens   5494 ms
+02:46:21.205 call 2 ttft    762 ms, 16 tokens   2630 ms, 40 tokens   4609 ms
+02:46:31.771 call 2 ttft   4481 ms, 16 tokens   4827 ms, 40 tokens   5612 ms
+02:46:33.471 call 1 ttft   2781 ms, 16 tokens   3128 ms, 40 tokens   3913 ms
+02:46:44.110 call 2 ttft    691 ms, 16 tokens   2453 ms, 40 tokens   3000 ms
+02:46:45.266 call 1 ttft    837 ms, 16 tokens   1528 ms, 40 tokens   2067 ms
+02:46:53.495 call 2 ttft   2398 ms, 16 tokens   3421 ms, 40 tokens   5240 ms
+02:46:55.255 call 1 ttft    700 ms, 16 tokens   1736 ms, 40 tokens   3505 ms
+02:47:03.974 call 1 ttft  10850 ms, 16 tokens  12333 ms, 40 tokens  13005 ms
+02:47:05.277 call 2 ttft   9548 ms, 16 tokens  11031 ms, 40 tokens  11703 ms
+02:47:21.531 call 2 ttft    260 ms, 16 tokens    670 ms, 40 tokens   1271 ms
+02:47:24.777 call 1 ttft   2947 ms, 16 tokens   4067 ms, 40 tokens   5247 ms
+02:47:29.819 call 2 ttft    633 ms, 16 tokens   1012 ms, 40 tokens   1413 ms
+02:47:34.739 call 1 ttft   4985 ms, 16 tokens   6711 ms, 40 tokens   7827 ms
+02:47:36.468 call 2 ttft   3366 ms, 16 tokens   5105 ms, 40 tokens   6119 ms
+02:47:47.520 call 2 ttft   7694 ms, 16 tokens   9662 ms, 40 tokens  10546 ms
+02:47:47.987 call 1 ttft   7352 ms, 16 tokens   9518 ms, 40 tokens  10100 ms
+02:48:02.467 call 2 ttft   3672 ms, 16 tokens   4225 ms, 40 tokens   5015 ms
+02:48:04.331 call 1 ttft   1808 ms, 16 tokens   2361 ms, 40 tokens   3151 ms
+02:48:15.225 call 2 ttft    628 ms, 16 tokens   1863 ms, 40 tokens   2302 ms
+02:48:15.324 call 1 ttft    618 ms, 16 tokens   1764 ms, 40 tokens   2225 ms
+02:48:22.107 call 1 ttft   4121 ms, 16 tokens   5745 ms, 40 tokens   6229 ms
+replies: 44 turns, 16 tokens p50 3157 p90 7898 p95 9640 max 12333 ms, 40 tokens p50 4514 p90 9383 p95 10479 max 13005 ms
+agents: 58 requests in 240 s, 0.24 a second, with 3,655 prompt and 12 output tokens a second
+calls: 44 turns, 0 failed (counted at 30,000 ms), TTFT p50 1693 p90 6552 p95 7643 max 10850 ms; agents: 0 of 12 stopped early

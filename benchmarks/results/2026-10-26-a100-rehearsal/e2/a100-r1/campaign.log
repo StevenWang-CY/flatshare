@@ -1,0 +1,29 @@
+[2026-10-26T02:54:37Z] campaign a100-r1: 3 points, arm files at ?, the agents' seed 11, until 03:11 UTC (epoch 1792984260)
+[2026-10-26T02:54:37Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-26T02:54:38Z] w5-a1-voice: pending, engine frozen
+[2026-10-26T02:54:38Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-26T02:54:38Z] w5-disc-pr-ab48-s24: localhost runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-26T02:56:20Z] w5-disc-pr-ab48-s24: localhost has v0.3-319-gb4ff4bd
+[2026-10-26T02:56:20Z] w5-disc-pr-ab48-s24: measuring
+[02:56:23Z] configuring cyan for w5-disc-pr-ab48-s24
+[02:56:23Z] AIPerf: 24 session trees through the gateway, seed 11
+[03:01:01Z] AIPerf is profiling; 60 s of warm-up
+[03:02:01Z] calls: 2 callers, 25 turns each after 1 warm-up
+[03:07:42Z] stopping AIPerf
+[03:07:44Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1949.5/2332.7/2599.3 ms, 0 of 50 turns failed; background 0.276 requests/s, 3,425 tokens/s, agent TTFT p50/p99 71898.23/107806.89 ms
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1949.5/2332.7/2599.3 ms, 0 of 50 turns failed; background 0.276 requests/s, 3,425 tokens/s, agent TTFT p50/p99 71898.23/107806.89 ms
+[2026-10-26T03:07:45Z] w5-a1-voice: 9 minutes would end after 03:11 UTC; stopping before it (--until)
+[2026-10-26T03:07:45Z] the frontier of a100-r1
+lh-bench e2: leaseholder/runs/e2/a100-r1/w5-a1-voice: the point did not complete
+lh-bench e2: leaseholder/runs/e2/a100-r1/w5-disc-frozen-s24: the point did not complete
+leaseholder/runs/e2/a100-r1/report/frontier.csv
+leaseholder/runs/e2/a100-r1/report/frontier.md
+leaseholder/runs/e2/a100-r1/report/frontier-weka-x32-long.svg
+leaseholder/runs/e2/a100-r1/report/waterfall.svg
+gateway: unchanged
+worker: unchanged
+[2026-10-26T03:07:50Z] done: ~/a100-rehearsal/leaseholder/results/e2/a100-r1/report/frontier.md

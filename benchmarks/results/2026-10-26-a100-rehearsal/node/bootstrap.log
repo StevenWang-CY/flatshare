@@ -1,0 +1,259 @@
+[2026-10-26T01:55:02Z] bootstrap stage: from ~/a100-rehearsal/leaseholder/src (v0.3-319-gb4ff4bd)
+[2026-10-26T01:55:02Z] bootstrap stage: uv 0.11.27 into ~/.local/bin
+profile: warning: 16 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+profile: a100-40gb rendered into ~/a100-rehearsal/leaseholder/node
+[2026-10-26T01:55:07Z] bootstrap stage: install path: cu130: driver 580.173.02 runs CUDA 13.0: the box's lock
+host: wrote ~/a100-rehearsal/leaseholder/node/env.sh (lh-svc runs the units)
+[2026-10-26T01:55:08Z] bootstrap stage: engine venv: cu130, deploy/phastform/requirements/engine.txt
+[90mHint: The `hf-cli` skill is not installed. Run `hf skills add -g` to teach your AI agents how to use the `hf` CLI.[0m
+[2026-10-26T02:00:07Z] bootstrap stage: building lh-gateway
+error: $HOME differs from euid-obtained home directory: you may be using sudo
+error: $HOME directory: ~/a100-rehearsal
+error: euid-obtained home directory: ~
+
+
+Rust is installed now. Great!
+
+To get started you need Cargo's bin directory ($HOME/.cargo/bin) in your PATH
+environment variable. This has not been done automatically.
+
+To configure your current shell, you need to source
+the corresponding env file under $HOME/.cargo.
+
+Consider running the right command for your shell (note the leading DOT):
+. "$HOME/.cargo/env" # For sh/ash/dash/pdksh
+cargo:rerun-if-env-changed=CC_x86_64-unknown-linux-gnu
+CC_x86_64-unknown-linux-gnu = None
+cargo:rerun-if-env-changed=CC_x86_64_unknown_linux_gnu
+CC_x86_64_unknown_linux_gnu = None
+cargo:rerun-if-env-changed=HOST_CC
+HOST_CC = None
+cargo:rerun-if-env-changed=CC
+CC = None
+cargo:rerun-if-env-changed=CC_ENABLE_DEBUG_OUTPUT
+cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS
+CRATE_CC_NO_DEFAULTS = None
+cargo:rerun-if-env-changed=CFLAGS
+CFLAGS = None
+cargo:rerun-if-env-changed=HOST_CFLAGS
+HOST_CFLAGS = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64_unknown_linux_gnu
+CFLAGS_x86_64_unknown_linux_gnu = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64-unknown-linux-gnu
+CFLAGS_x86_64-unknown-linux-gnu = None
+info: syncing channel updates for 1.98-x86_64-unknown-linux-gnu
+info: latest update on 2026-09-03 for version 1.98.1 (48a229cea 2026-09-01)
+info: downloading 2 components
+host: wrote ~/a100-rehearsal/.config/leaseholder/cache-salt-secret
+host: wrote ~/a100-rehearsal/.config/leaseholder/metrics-key
+host: wrote ~/a100-rehearsal/.config/leaseholder/gateway-keys.env
+host: wrote ~/a100-rehearsal/.config/leaseholder/gateway.toml
+host: wrote ~/a100-rehearsal/.config/leaseholder/livekit.env
+host: wrote ~/a100-rehearsal/.config/leaseholder/e2-host.toml
+host: built FlashInfer's sampler for 12.0 in 179.0 s: ~/a100-rehearsal/leaseholder/cache/flashinfer/.cache/flashinfer/0.7.0.post1/120f/cached_ops/sampling/sampling.so
+CC and precision path            ok        sm120: FP8 W8A8, expected (the engine's first start shows its kernel)
+BF16                             ok        CC >= 8.0
+Attention backend and KV layout  pending   not started
+                                           the engine's first start (bootstrap.sh warm) shows it
+Driver and install path          ok        driver 580.173.02, cu130 (venv: cu130): the box's lock
+FlashInfer's JIT                 ok        the sampler for sm120 in 179.0 s with /usr/local/cuda-13.0
+Host compilers                   ok        /usr/bin/cc, /usr/bin/c++
+Python headers                   ok        Python.h in ~/a100-rehearsal/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/include/python3.12
+Compile and JIT caches           degraded  ext4 at /, 434 GiB free; cold: frozen, 2048-0, 1536, pr
+                                           the first start of each cold compile configuration compiles (the box: 531.8 s against 88.8 s warm)
+CPU tier and /dev/shm            ok        20 GiB, 4.0 x the pool; /dev/shm 94 GiB
+Shmem huge pages                 ok        never
+Pinned memory                    pending   not started
+                                           the engine's first start (bootstrap.sh warm) shows it
+Host RAM                         ok        163 GiB available
+Async scheduling                 pending   not started
+                                           the engine's first start (bootstrap.sh warm) shows it
+Block size                       pending   not started
+                                           the engine's first start (bootstrap.sh warm) shows it
+Engine starts                    pending   not started
+                                           the engine's first start (bootstrap.sh warm) shows it
+GPU                              ok        the host's one GPU: GPU-cdd4de93-d4be-307d-f873-0136abb00d70
+Compute mode                     ok        Default
+MIG                              ok        [N/A]
+Power cap, link and ECC          ok        180.0 W, PCIe gen 1 x8, ECC [N/A]
+systemd --user and linger        degraded  systemd --user False, linger True; LH_SUPERVISOR=lh-svc
+                                           supervisor instead of systemd (deploy/bin/lh-svc with the systemctl and journalctl shims)
+Socket paths                     ok        %t is ~/a100-rehearsal/run: vLLM's ZMQ sockets take 87 of 107 bytes
+One supervisor                   ok        lh-svc, none of the units under systemd
+User namespaces                  ok        the voice plane in a network namespace of its own, and each GPU server in one of its own
+Listener audit                   ok        ss
+Cores                            degraded  16 CPUs
+                                           16 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+Control plane                    ok        5 units active, the gateway answers /health
+Models                           ok        the engine's and the STT's at their revisions
+Corpus and callers               ok        weka-x32-long 48 traces, weka-x32 393 traces, callers 48 clips
+Binaries                         ok        lh-gateway, livekit-server
+Disk                             ok        434 GiB free under ~/leaseholder
+host: ~/a100-rehearsal/leaseholder/node/preflight.json: 22 ok, 3 degraded, 0 refused, 5 pending
+[2026-10-26T02:04:06Z] bootstrap stage: done (no check refused)
+[2026-10-26T02:04:10Z] bootstrap gpu: from ~/a100-rehearsal/leaseholder/src (v0.3-319-gb4ff4bd)
+profile: warning: 16 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+profile: a100-40gb rendered into ~/a100-rehearsal/leaseholder/node
+[2026-10-26T02:04:11Z] bootstrap gpu: install path: cu130: driver 580.173.02 runs CUDA 13.0: the box's lock
+host: wrote ~/a100-rehearsal/leaseholder/node/env.sh (lh-svc runs the units)
+host: wrote ~/a100-rehearsal/.config/leaseholder/e2-host.toml
+host: FlashInfer's sampler is built for 12.0 with /usr/local/cuda-13.0
+[2026-10-26T02:04:12Z] bootstrap gpu: vLLM parses the node's configs
+(MainProcess pid=251034) INFO 10-25 22:05:02 [model.py:733] Resolved architecture: Qwen3ForCausalLM
+(MainProcess pid=251034) INFO 10-25 22:05:02 [model.py:2152] Using max model len 32768
+(MainProcess pid=251034) INFO 10-25 22:05:05 [scheduler.py:307] Chunked prefill is enabled with max_num_batched_tokens=512.
+(MainProcess pid=251034) INFO 10-25 22:05:05 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(MainProcess pid=251034) INFO 10-25 22:05:05 [compilation.py:317] Enabled custom fusions: norm_quant, act_quant
+engine.yaml: ~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98, kv_cache_memory_bytes 5368709120, gpu_memory_utilization 0.68, max_num_batched_tokens 512
+(MainProcess pid=251034) INFO 10-25 22:05:05 [arg_utils.py:916] HF_HUB_OFFLINE is True, replace model_id [openai/whisper-large-v3-turbo] to model_path [~/.cache/huggingface/hub/models--openai--whisper-large-v3-turbo/snapshots/41f01f3fe87f28c78e2fbf8b568835947dd65ed9]
+(MainProcess pid=251034) INFO 10-25 22:05:22 [model.py:733] Resolved architecture: WhisperForConditionalGeneration
+(MainProcess pid=251034) INFO 10-25 22:05:22 [model.py:2152] Using max model len 448
+(MainProcess pid=251034) INFO 10-25 22:05:22 [model.py:815] Encoder-decoder model detected, disabling mm processor cache.
+(MainProcess pid=251034) INFO 10-25 22:05:23 [scheduler.py:298] Encoder-decoder models do not support chunked prefill nor prefix caching; disabling both.
+(MainProcess pid=251034) INFO 10-25 22:05:23 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(MainProcess pid=251034) INFO 10-25 22:05:23 [vllm.py:1891] Encoder-decoder models do not support FULL_AND_PIECEWISE. Overriding cudagraph_mode to FULL_DECODE_ONLY.
+(MainProcess pid=251034) WARNING 10-25 22:05:23 [vllm.py:1964] Whisper is known to have issues with forked workers. If startup is hanging, try setting 'VLLM_WORKER_MULTIPROC_METHOD' to 'spawn'.
+stt.yaml: ~/.cache/huggingface/hub/models--openai--whisper-large-v3-turbo/snapshots/41f01f3fe87f28c78e2fbf8b568835947dd65ed9, kv_cache_memory_bytes 458752000, gpu_memory_utilization 0.15, max_num_batched_tokens 2048
+CC and precision path            ok        sm120: FP8 W8A8, expected (the engine's first start shows its kernel)
+BF16                             ok        CC >= 8.0
+Attention backend and KV layout  pending   not started
+                                           the engine's first start (bootstrap.sh warm) shows it
+Driver and install path          ok        driver 580.173.02, cu130 (venv: cu130): the box's lock
+torch on the GPU                 ok        13.0 NVIDIA GeForce RTX 5060 Ti (12, 0)
+FlashInfer's JIT                 ok        the sampler for sm120 in 179.0 s with /usr/local/cuda-13.0
+Host compilers                   ok        /usr/bin/cc, /usr/bin/c++
+Python headers                   ok        Python.h in ~/a100-rehearsal/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/include/python3.12
+Compile and JIT caches           degraded  ext4 at /, 434 GiB free; cold: frozen, 2048-0, 1536, pr
+                                           the first start of each cold compile configuration compiles (the box: 531.8 s against 88.8 s warm)
+CPU tier and /dev/shm            ok        20 GiB, 4.0 x the pool; /dev/shm 94 GiB
+Shmem huge pages                 ok        never
+Pinned memory                    pending   not started
+                                           the engine's first start (bootstrap.sh warm) shows it
+Host RAM                         ok        162 GiB available
+Async scheduling                 pending   not started
+                                           the engine's first start (bootstrap.sh warm) shows it
+Block size                       pending   not started
+                                           the engine's first start (bootstrap.sh warm) shows it
+Engine starts                    pending   not started
+                                           the engine's first start (bootstrap.sh warm) shows it
+GPU                              ok        GPU 0 of 1: GPU-cdd4de93-d4be-307d-f873-0136abb00d70
+GPU exclusive                    ok        0 compute processes
+Compute mode                     ok        Default
+MIG                              ok        [N/A]
+Power cap, link and ECC          ok        180.0 W, PCIe gen 1 x8, ECC [N/A]
+systemd --user and linger        degraded  systemd --user False, linger True; LH_SUPERVISOR=lh-svc
+                                           supervisor instead of systemd (deploy/bin/lh-svc with the systemctl and journalctl shims)
+Socket paths                     ok        %t is ~/a100-rehearsal/run: vLLM's ZMQ sockets take 87 of 107 bytes
+One supervisor                   ok        lh-svc, none of the units under systemd
+User namespaces                  ok        the voice plane in a network namespace of its own, and each GPU server in one of its own
+Listener audit                   ok        ss
+Cores                            degraded  16 CPUs
+                                           16 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+Control plane                    ok        5 units active, the gateway answers /health
+Models                           ok        the engine's and the STT's at their revisions
+Corpus and callers               ok        weka-x32-long 48 traces, weka-x32 393 traces, callers 48 clips
+Binaries                         ok        lh-gateway, livekit-server
+Disk                             ok        434 GiB free under ~/leaseholder
+host: ~/a100-rehearsal/leaseholder/node/preflight.json: 24 ok, 3 degraded, 0 refused, 5 pending
+[2026-10-26T02:05:29Z] bootstrap gpu: done (no check refused)
+[2026-10-26T02:05:31Z] bootstrap warm: from ~/a100-rehearsal/leaseholder/src (v0.3-319-gb4ff4bd)
+host: wrote ~/a100-rehearsal/leaseholder/node/env.sh (lh-svc runs the units)
+warm: frozen (frozen ) ready after 1232.1 s
+warm: 2048-0 (frozen --max-num-batched-tokens 2048 --long-prefill-token-threshold 0) ready after 176.9 s
+warm: 1536 (frozen --max-num-batched-tokens 1536 --long-prefill-token-threshold 768) ready after 152.5 s
+warm: pr (make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48) ready after 152.6 s
+CC and precision path            ok        sm120: FP8 W8A8; the engine selected DeepGemmFp8BlockScaledMMKernel
+BF16                             ok        CC >= 8.0
+Attention backend and KV layout  ok        FLASH_ATTN 2, LBHNC
+Driver and install path          ok        driver 580.173.02, cu130 (venv: cu130): the box's lock
+torch on the GPU                 ok        13.0 NVIDIA GeForce RTX 5060 Ti (12, 0)
+FlashInfer's JIT                 ok        the sampler for sm120 in 179.0 s with /usr/local/cuda-13.0
+Host compilers                   ok        /usr/bin/cc, /usr/bin/c++
+Python headers                   ok        Python.h in ~/a100-rehearsal/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/include/python3.12
+Compile and JIT caches           ok        ext4 at /, 434 GiB free; warm: frozen, 2048-0, 1536, pr
+CPU tier and /dev/shm            ok        20 GiB, 4.0 x the pool; /dev/shm 94 GiB
+Shmem huge pages                 ok        never
+Pinned memory                    ok        no cudaHostRegister failure in the engine log
+Host RAM                         ok        162 GiB available
+Async scheduling                 ok        true
+Block size                       ok        16 (2275 blocks)
+Engine starts                    ok        frozen 1232.1 s, 2048-0 176.9 s, 1536 152.5 s, pr 152.6 s
+GPU                              ok        GPU 0 of 1: GPU-cdd4de93-d4be-307d-f873-0136abb00d70
+GPU exclusive                    ok        3 compute processes
+Compute mode                     ok        Default
+MIG                              ok        [N/A]
+Power cap, link and ECC          ok        180.0 W, PCIe gen 1 x8, ECC [N/A]
+systemd --user and linger        degraded  systemd --user False, linger True; LH_SUPERVISOR=lh-svc
+                                           supervisor instead of systemd (deploy/bin/lh-svc with the systemctl and journalctl shims)
+Socket paths                     ok        %t is ~/a100-rehearsal/run: vLLM's ZMQ sockets take 87 of 107 bytes
+One supervisor                   ok        lh-svc, none of the units under systemd
+User namespaces                  ok        the voice plane in a network namespace of its own, and each GPU server in one of its own
+Listener audit                   ok        ss
+Cores                            degraded  16 CPUs
+                                           16 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+Control plane                    ok        5 units active, the gateway answers /health
+Models                           ok        the engine's and the STT's at their revisions
+Corpus and callers               ok        weka-x32-long 48 traces, weka-x32 393 traces, callers 48 clips
+Binaries                         ok        lh-gateway, livekit-server
+Disk                             ok        434 GiB free under ~/leaseholder
+host: ~/a100-rehearsal/leaseholder/node/preflight.json: 30 ok, 2 degraded, 0 refused, 0 pending
+[2026-10-26T02:34:20Z] bootstrap warm: done (no check refused)
+[2026-10-26T02:34:22Z] bootstrap gpu: from ~/a100-rehearsal/leaseholder/src (v0.3-319-gb4ff4bd)
+profile: warning: 16 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+profile: a100-40gb rendered into ~/a100-rehearsal/leaseholder/node
+[2026-10-26T02:34:33Z] bootstrap gpu: install path: cu130: driver 580.173.02 runs CUDA 13.0: the box's lock
+host: wrote ~/a100-rehearsal/leaseholder/node/env.sh (lh-svc runs the units)
+host: wrote ~/a100-rehearsal/.config/leaseholder/e2-host.toml
+host: FlashInfer's sampler is built for 12.0 with /usr/local/cuda-13.0
+[2026-10-26T02:34:35Z] bootstrap gpu: vLLM parses the node's configs
+(MainProcess pid=271690) INFO 10-25 22:34:50 [model.py:733] Resolved architecture: Qwen3ForCausalLM
+(MainProcess pid=271690) INFO 10-25 22:34:50 [model.py:2152] Using max model len 32768
+(MainProcess pid=271690) INFO 10-25 22:34:51 [scheduler.py:307] Chunked prefill is enabled with max_num_batched_tokens=512.
+(MainProcess pid=271690) INFO 10-25 22:34:51 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(MainProcess pid=271690) INFO 10-25 22:34:51 [compilation.py:317] Enabled custom fusions: norm_quant, act_quant
+engine.yaml: ~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98, kv_cache_memory_bytes 5368709120, gpu_memory_utilization 0.68, max_num_batched_tokens 512
+(MainProcess pid=271690) INFO 10-25 22:34:51 [arg_utils.py:916] HF_HUB_OFFLINE is True, replace model_id [openai/whisper-large-v3-turbo] to model_path [~/.cache/huggingface/hub/models--openai--whisper-large-v3-turbo/snapshots/41f01f3fe87f28c78e2fbf8b568835947dd65ed9]
+(MainProcess pid=271690) INFO 10-25 22:34:51 [model.py:733] Resolved architecture: WhisperForConditionalGeneration
+(MainProcess pid=271690) INFO 10-25 22:34:51 [model.py:2152] Using max model len 448
+(MainProcess pid=271690) INFO 10-25 22:34:51 [model.py:815] Encoder-decoder model detected, disabling mm processor cache.
+(MainProcess pid=271690) INFO 10-25 22:34:52 [scheduler.py:298] Encoder-decoder models do not support chunked prefill nor prefix caching; disabling both.
+(MainProcess pid=271690) INFO 10-25 22:34:52 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(MainProcess pid=271690) INFO 10-25 22:34:52 [vllm.py:1891] Encoder-decoder models do not support FULL_AND_PIECEWISE. Overriding cudagraph_mode to FULL_DECODE_ONLY.
+(MainProcess pid=271690) WARNING 10-25 22:34:52 [vllm.py:1964] Whisper is known to have issues with forked workers. If startup is hanging, try setting 'VLLM_WORKER_MULTIPROC_METHOD' to 'spawn'.
+stt.yaml: ~/.cache/huggingface/hub/models--openai--whisper-large-v3-turbo/snapshots/41f01f3fe87f28c78e2fbf8b568835947dd65ed9, kv_cache_memory_bytes 458752000, gpu_memory_utilization 0.15, max_num_batched_tokens 2048
+CC and precision path            ok        sm120: FP8 W8A8; the engine selected DeepGemmFp8BlockScaledMMKernel
+BF16                             ok        CC >= 8.0
+Attention backend and KV layout  ok        FLASH_ATTN 2, LBHNC
+Driver and install path          ok        driver 580.173.02, cu130 (venv: cu130): the box's lock
+torch on the GPU                 ok        13.0 NVIDIA GeForce RTX 5060 Ti (12, 0)
+FlashInfer's JIT                 ok        the sampler for sm120 in 179.0 s with /usr/local/cuda-13.0
+Host compilers                   ok        /usr/bin/cc, /usr/bin/c++
+Python headers                   ok        Python.h in ~/a100-rehearsal/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/include/python3.12
+Compile and JIT caches           ok        ext4 at /, 434 GiB free; warm: frozen, 2048-0, 1536, pr
+CPU tier and /dev/shm            ok        20 GiB, 4.0 x the pool; /dev/shm 94 GiB
+Shmem huge pages                 ok        never
+Pinned memory                    ok        no cudaHostRegister failure in the engine log
+Host RAM                         ok        161 GiB available
+Async scheduling                 ok        true
+Block size                       ok        16 (2275 blocks)
+Engine starts                    ok        frozen 1232.1 s, 2048-0 176.9 s, 1536 152.5 s, pr 152.6 s
+GPU                              ok        GPU 0 of 1: GPU-cdd4de93-d4be-307d-f873-0136abb00d70
+GPU exclusive                    ok        0 compute processes
+Compute mode                     ok        Default
+MIG                              ok        [N/A]
+Power cap, link and ECC          ok        180.0 W, PCIe gen 3 x8, ECC [N/A]
+systemd --user and linger        degraded  systemd --user False, linger True; LH_SUPERVISOR=lh-svc
+                                           supervisor instead of systemd (deploy/bin/lh-svc with the systemctl and journalctl shims)
+Socket paths                     ok        %t is ~/a100-rehearsal/run: vLLM's ZMQ sockets take 87 of 107 bytes
+One supervisor                   ok        lh-svc, none of the units under systemd
+User namespaces                  ok        the voice plane in a network namespace of its own, and each GPU server in one of its own
+Listener audit                   ok        ss
+Cores                            degraded  16 CPUs
+                                           16 logical CPUs, below the single-host floor of 17: the components share fewer CPUs than their minimums, so this host checks the mechanics, not the numbers
+Control plane                    ok        5 units active, the gateway answers /health
+Models                           ok        the engine's and the STT's at their revisions
+Corpus and callers               ok        weka-x32-long 48 traces, weka-x32 393 traces, callers 48 clips
+Binaries                         ok        lh-gateway, livekit-server
+Disk                             ok        434 GiB free under ~/leaseholder
+host: ~/a100-rehearsal/leaseholder/node/preflight.json: 30 ok, 2 degraded, 0 refused, 0 pending
+[2026-10-26T02:34:58Z] bootstrap gpu: done (no check refused)

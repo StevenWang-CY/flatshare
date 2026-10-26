@@ -41,7 +41,7 @@ The minutes of each step's run that passed, from `steps.log`:
 | `push` | 1.9 | the source and 2.7 GB of data as files; later pushes, the source alone, took 3 s |
 | `stage` | 9.1 | uv, Python 3.12 and the venvs (the engine's 5.0 minutes), rustup and `cargo build -p lh-gateway`, LiveKit's server, FlashInfer's sampler for sm120 (177.9 s), the control plane up |
 | `gpu` | 1.4 | the card's facts, vLLM's parse of both configurations, the preflight |
-| `warm` | 21.7 | the four compile configurations from empty caches: frozen 797.7 s to ready, then 178.8, 152.3 and 152.4 s |
+| `warm` | 21.7 | the four compile configurations: frozen 797.7 s to ready, then 178.8, 152.3 and 152.4 s; the engine's caches were empty, but the STT's were warm from the second run, which had started it ([the release's rehearsal](../2026-10-26-a100-rehearsal/README.md), from a fresh home: 1,232.1 s) |
 | `block0` | 4.1 | `smoke.sh`, the listener audit (the three GPU servers in network namespaces of their own), a 2-turn call |
 | `block1` | 16.1 | E0, three KV and three prefill probes, two 240 s tails |
 | `block4` | 14.2 | the first point, then the deadline's stop before the second |
