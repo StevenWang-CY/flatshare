@@ -1,0 +1,14 @@
+# E2 RS, round 1 of 5: the frozen box and the PRs' 48-token configuration on v1.2 with W5's arm files and the KV
+# sampler on, every 0.5 s, so that the box's running share is measured as the A100 run measured its own. Round N
+# replays w5-rN's sample of the agents (seed 10 + N), as FB and the A100's core did, the two configurations in an
+# order that alternates from round to round.
+#   benchmarks/e2/campaign.sh benchmarks/e2/rs-r1.campaign
+
+agents-seed 11
+kv-sample-s 0.5
+
+# engine frozen
+arms/w5-disc-frozen-s24.toml
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+arms/w5-disc-pr-ab48-s24.toml
