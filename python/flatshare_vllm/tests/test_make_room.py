@@ -1022,6 +1022,67 @@ def test_under_async_scheduling_the_first_tokens_hold_as_many_steps(module, mode
     assert steps[4] == {"decode": 1, "voice": 1, "prefill": 256}
 
 
+def agents_beside_replies(sched, every: int, window: int, steps: int = 600) -> tuple[int, int]:
+    """Six closed-loop agents at priority 2 (prompts of 2,000 tokens, 48 output tokens, each resubmitted as it
+    finishes) beside a priority-0 reply of ``window`` tokens every ``every`` steps, over ``steps`` steps, in a pool
+    where KV never binds: the agents' prompt tokens computed and their requests finished."""
+    agents = [
+        request(f"agent{i}", 2000, priority=2, arrival=i, max_tokens=48, token=10 + i)
+        for i in range(6)
+    ]
+    for agent in agents:
+        sched.add_request(agent)
+    computed = finished = 0
+    for t in range(steps):
+        if t % every == 0:
+            sched.add_request(
+                request(f"reply{t}", 100, priority=0, arrival=10_000 + t, max_tokens=window)
+            )
+        tokens = step(sched).num_scheduled_tokens
+        computed += sum(n for req_id, n in tokens.items() if req_id.startswith("agent") and n > 1)
+        for i, agent in enumerate(agents):
+            if agent.is_finished():
+                finished += 1
+                agents[i] = request(
+                    f"agent{i}-{finished}", 2000, priority=2, arrival=t, max_tokens=48, token=10 + i
+                )
+                sched.add_request(agents[i])
+    return computed, finished
+
+
+@pytest.mark.parametrize(
+    ("window", "every", "share"), [(48, 200, 0.82), (48, 50, 0.09), (48, 40, 0.0), (16, 40, 0.91)]
+)
+def test_replies_whose_windows_overlap_hold_lower_priority_prefill_throughout(
+    module, model, window, every, share
+):
+    """The budget cap holds lower-priority prefill while any priority-0 request's first ``window`` tokens are due, so
+    with replies at least the window long it holds as long as one is in its window: a 48-token window lasts about 49
+    steps. Replies every 200 steps leave the agents 82% of stock's prompt tokens, replies every 50 steps 9%, and
+    replies every 40 steps, whose windows overlap, none: no agent request finishes. A 16-token window leaves them 91%
+    at that rate. This is PRODUCTION.md's limit of calls: at the 16-20 ms a step the box measures under the cap, a
+    48-token window is 0.8-1 s, about one reply a second in aggregate. Stock vLLM (the control) finishes 60 agent
+    requests at every rate."""
+
+    def agents_with(cls, make_room):
+        sched = scheduler(
+            cls,
+            model,
+            800,
+            make_room,
+            long_prefill_token_threshold=256,
+            max_model_len=4096,
+            max_num_seqs=64,
+        )
+        return agents_beside_replies(sched, every, window)
+
+    stock = agents_with(StockScheduler, None)
+    held = agents_with(module.Scheduler, {"budget_cap": True, "budget_cap_tokens": window})
+    assert stock[1] == 60
+    assert held[0] / stock[0] == pytest.approx(share, abs=0.01)
+    assert held[1] > 0 if share else held == (0, 0)
+
+
 def test_the_budget_cap_counts_deferred_frees(module, model):
     """With deferred frees, the blocks of the runner preempted to make room, the latest arrival, are free once the
     step in flight is processed, and the priority-0 request runs after that. It fits meanwhile, as the deferred

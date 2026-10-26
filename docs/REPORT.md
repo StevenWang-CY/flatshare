@@ -1,7 +1,8 @@
 # Making room in the engine: a realtime voice tier beside coding agents on one GPU
 
-*Technical report v1. Flatshare, StevenWang-CY/flatshare. Every number comes from the committed records
-([BENCHMARKS.md](BENCHMARKS.md) lists every run); E2's are W5's, measured on 2026-10-24 and 25.*
+*Technical report. Flatshare, StevenWang-CY/flatshare, v1.2. Every number comes from the committed records
+([BENCHMARKS.md](BENCHMARKS.md) lists every run): E2's on the RTX 5060 Ti are W5's, measured on 2026-10-24 and 25, and
+the A100's are its run of 2026-10-26.*
 
 ## Abstract
 
@@ -51,7 +52,7 @@ victims' KV is already in the CPU tier, which a resume reloads from where the ti
 lower-priority prefill out of the steps of the request's first tokens, a budget cap counted in output tokens, while
 decodes continue. Neither needs a model of the hardware: both count blocks, tokens and steps.
 
-This report makes four contributions:
+This report makes five contributions:
 - **It measures the failure end to end.** Voice-to-voice latency is read from waveforms at the caller, beside a replay
   of real coding-agent traces, against every deployable alternative, in rotated rounds over five samples of the agents'
   traces (§4, §5.1).
@@ -66,6 +67,9 @@ This report makes four contributions:
 - **It bounds what a control plane can do.** Headroom, a prefill throttle and degraded replies timed by the conversation
   leave the tail where tuned vLLM does when agents' KV fills the pool, and aborting admitted work comes within 0.49 s of
   the SLO only by discarding the agents' prefill (§5.5).
+- **It carries the result to a datacenter card.** On an A100 SXM4 80 GB held to this box's pool, the rules meet that
+  card's SLO in every round; a forecast written before the run placed each mechanism and missed by what the card's
+  decode attention costs, and the card's own step cap trades the voice's margin against the agents' throughput (§5.7).
 
 ## 2. Why the voice turn waits
 
@@ -279,10 +283,12 @@ the lower in every one of five rounds, by 109–1,413 ms, but met the SLO in onl
 replies hold it for longer. With 4 and 6 callers, each against its own SLO (voice alone with as many callers plus 250
 ms: 2,044 ms and 2,135 ms), the PRs' p95 was 2,250–2,415 ms and 2,360–2,468 ms, over the SLO in every round by a median
 of 0.27 s and 0.26 s, against 0.20 s with two. The hold grew to 53% and 64% of the engine's steps, and the agents'
-throughput fell to 3,055 and 2,716 tokens a second, against 3,203 with two calls. A model on vLLM's real scheduler
-places the limit near one realtime reply a second in aggregate, where the cap holds the background tier nearly always
-([how it fails](PRODUCTION.md#how-it-fails)). On an A100 at a datacenter batch, 256 requests in flight with 26 of them
-at priority 0 in closed loop, the hold took the priority 2 requests' TTFT p99 from 1.1 s to 8.0 s (§5.7).
+throughput fell to 3,055 and 2,716 tokens a second, against 3,203 with two calls. On vLLM's real scheduler, on CPU,
+replies at least the window long stop the agents' prefill once each one's window, about 49 steps, overlaps the next: a
+reply every 50 steps left the agents 9% of stock's prompt tokens, one every 40 none. At this box's 16–20 ms steps under
+the cap, that limit is about one realtime reply a second in aggregate ([how it fails](PRODUCTION.md#how-it-fails)). On
+an A100 at a datacenter batch, 256 requests in flight with 26 of them at priority 0 in closed loop, the hold took the
+priority 2 requests' TTFT p99 from 1.1 s to 8.0 s (§5.7).
 
 ### 5.7 Another GPU
 
@@ -302,11 +308,12 @@ Voice alone ran at a p95 of 1.42 s (1.39–1.45), so the SLO is 1.67 s.
 
 With the two rules the p95 was under the SLO in all five rounds, by 6 to 60 ms, where this box's best run missed its own
 by 0.10 s; without them it was 2.5 to 4.0 s over. Round by round, on the same sample of the agents, the agents' tokens/s
-over the calls' first 240 s were 94–111% of the stock engine's, and their TTFT p50 moved by −1.2 to +1.9 s: on this
+over the calls' first 240 s were 94–111% of the stock engine's, and their TTFT p50 moved by −1.2 to +1.8 s: on this
 card, at this box's pool, the change costs the agents nothing a round can resolve. The card is not as saturated as the
-box at this pool: two calls found KV short 6% of the time (the measured running share, 2–9% by run), against the box's
-17%, and the agents ran at 2.6 times the box's tokens/s. The voice tail is the same in kind, though: the wait for KV and
-the reply's steps shared with agent prefill, which the probes take apart.
+box at this pool: two calls found KV short 6% of the time (the measured running share, 2–9% by run), where the simulator
+gives the box 17% on its measured costs (the box's own runs did not sample it), and the agents ran at 2.6 times the
+box's tokens/s. The voice tail is the same in kind, though: the wait for KV and the reply's steps shared with agent
+prefill, which the probes take apart.
 
 **At the card's own step cap.** The core keeps this box's 512-token step cap, so that a difference within the A100 is
 the change's; on the A100 that cap costs the agents 30% of their throughput. At vLLM's default 2,048-token steps, the
@@ -322,9 +329,9 @@ of the card's agent throughput, 2,048-token steps keep all of it 0.14–0.17 s o
 **More agents.** With 32 sessions at this box's pool (A', one round), the rules held the p95 at 1,617 ms, 52 ms under
 the SLO, against stock's 5,222 ms, at 98% of its throughput. The extra sessions made the agents fewer tokens a second
 than 24 made on the same sample, each waiting longer for KV, and left the measured running share at 6.5% beside either
-engine, where the forecast placed 32 sessions at 18%, the box's regime (17%): on this card the simulator overstates how
-often two calls run short of KV, in the core too (10% forecast, 6% measured), and placed on the measured host it
-still gives 11% and 18%.
+engine, where the forecast placed 32 sessions at 18%, near the 17% it gives the box: on this card the simulator
+overstates how often two calls run short of KV, in the core too (10% forecast, 6% measured), and placed on the measured
+host it still gives 11% and 18%.
 
 | Probe | A100 SXM4 80 GB, measured | Forecast before the run [modeled] | This box |
 |---|---|---|---|
@@ -424,10 +431,11 @@ engine, against the configurations an operator can deploy.
 
 **One model, two cards.** Every E2 result is Qwen3-4B, on one RTX 5060 Ti, whose 36,400-token pool the agents' contexts
 fill, and on an A100 SXM4 80 GB held to the same pool (§5.7), where the agents leave two calls short of KV less often (a
-running share of 6% against 17%). At the A100's own best step cap the rules keep all of the agents' throughput but leave
-the voice 0.14–0.17 s over its SLO, the wait for the larger steps in flight. The card's own pool, other models and other
-cards are placed by the simulator, from costs scaled by published peaks, which on the A100 missed decode attention by
-1.8 times; the coordinates that place them do not carry a configuration's gain from one card to another.
+measured running share of 6%, where the simulator gives the box 17%). At the A100's own best step cap the rules keep all
+of the agents' throughput but leave the voice 0.14–0.17 s over its SLO, the wait for the larger steps in flight. The
+card's own pool, other models and other cards are placed by the simulator, from costs scaled by published peaks, which
+on the A100 missed decode attention by 1.8 times; the coordinates that place them do not carry a configuration's gain
+from one card to another.
 
 **A few calls.** The headline runs two callers, and with 4 and 6 the configuration misses each one's SLO in every round,
 by a median of 0.27 s and 0.26 s (§5.6): many calls per GPU is its known limit.
@@ -447,10 +455,10 @@ still holds. How much it reloads and how much it recomputes, no vLLM 0.32 counte
 values. The trace test holds the variant and the PRs' diff, ported to 0.32.0, to the same steps, but the PR branches
 themselves, on vLLM's main, ran only on CPU.
 
-**What five runs resolve.** Each comparison rests on five runs a configuration (15 for the configuration to deploy).
-Differences of a few hundred milliseconds between configurations near the SLO are within the spread of their runs, and
-we say so where they arise rather than test them; the pairs by round (§5.1, §5.6) compare configurations on the same
-sample of the agents.
+**What five runs resolve.** Each comparison rests on five runs a configuration (15 for the configuration to deploy; the
+A100's arms at 2,048-token steps on two, and its 32 sessions on one). Differences of a few hundred milliseconds between
+configurations near the SLO are within the spread of their runs, and we say so where they arise rather than test them;
+the pairs by round (§5.1, §5.6) compare configurations on the same sample of the agents.
 
 ## 9. Conclusion
 

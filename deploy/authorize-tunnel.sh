@@ -4,9 +4,11 @@
 # authorized_keys entry on GPU_NODE: `restrict`, which allows no forwarding of any kind, pty, agent, X11 or ~/.ssh/rc,
 # and a forced command that every session of the key runs whatever its client asks for, `exec nc -q0 -U SOCKET`,
 # joining the session to GPU_NODE's socket of the key's name in its $XDG_RUNTIME_DIR/flatshare.
-# deploy/bin/flatshare-tunnel opens them. Each entry replaces any earlier one for its key, and the entry of CLIENT's
-# former tunnel key (~/.ssh/flatshare_tunnel_ed25519, which forwarded the node's ports) goes. GPU_NODE's nc must be
-# OpenBSD's, which takes -U and -q. Uses FLATSHARE_SSH like deploy.sh.
+# deploy/bin/flatshare-tunnel opens them. Each entry replaces any earlier one for its key, and the entries of CLIENT's
+# former tunnel keys go: the one that forwarded the node's ports (~/.ssh/flatshare_tunnel_ed25519, lh_tunnel_ed25519 on
+# a host not moved since the project's rename) and the sockets' keys under the former name (lh_tunnel_engine_ed25519
+# and so on, whose entries reach $XDG_RUNTIME_DIR/lh). GPU_NODE's nc must be OpenBSD's, which takes -U and -q. Uses
+# FLATSHARE_SSH like deploy.sh.
 set -euo pipefail
 client=${1:?usage: authorize-tunnel.sh CLIENT GPU_NODE}
 node=${2:?usage: authorize-tunnel.sh CLIENT GPU_NODE}
@@ -23,8 +25,11 @@ for name in engine stt tts; do
   }
   keys+="$name $key"$'\n'
 done
-former=$($ssh "$client" cat .ssh/flatshare_tunnel_ed25519.pub 2>/dev/null || true)
-if [[ -n $former ]]; then keys+="former $former"$'\n'; fi
+formers=$($ssh "$client" cat .ssh/flatshare_tunnel_ed25519.pub .ssh/lh_tunnel_ed25519.pub \
+  .ssh/lh_tunnel_engine_ed25519.pub .ssh/lh_tunnel_stt_ed25519.pub .ssh/lh_tunnel_tts_ed25519.pub 2>/dev/null || true)
+while read -r former; do
+  if [[ -n $former ]]; then keys+="former $former"$'\n'; fi
+done <<<"$formers"
 printf '%s' "$keys" | $ssh "$node" 'nc -h 2>&1 | grep -q "^OpenBSD netcat" || {
     echo "authorize-tunnel: $(hostname)'"'"'s nc is not OpenBSD netcat, which takes -U and -q" >&2; exit 2; }
   umask 077; mkdir -p .ssh; touch .ssh/authorized_keys

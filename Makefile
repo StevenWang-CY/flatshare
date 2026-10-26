@@ -265,7 +265,7 @@ e2-figures:
 	cp build/e2-figures/frontier-weka-x32-long.svg docs/figures/e2-frontier.svg
 	cp build/e2-figures/waterfall.svg docs/figures/e2-waterfall.svg
 
-# The README's chart, docs/figures/e2-voice-p95.svg and its phone layout e2-voice-p95-narrow.svg, from W5's records:
+# REPORT.md's chart, docs/figures/e2-voice-p95.svg and its phone layout e2-voice-p95-narrow.svg, from W5's records:
 # the configurations figure.toml names, each run in the same rounds over the same five samples of the agents' traces.
 e2-w5-figure:
 	@cd python/flatshare_bench && uv run -q flatshare-bench e2 report \

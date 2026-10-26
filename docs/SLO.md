@@ -8,24 +8,24 @@ Three classes share the GPU, the tiers API providers sell as priority, standard 
 | `interactive` | Agent loops with a person waiting | 1 | None measured: no E2 arm runs this class |
 | `background` | Batch agents, trace replays | 2 | Background goodput and the agents' time to first token |
 
-The deployed configuration sends the priority and nothing else ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)). Under the lifecycle policy (`flatshare`), an experiment arm, a realtime request is never queued or refused ([ADR-0003](adr/0003-realtime-is-never-shed.md)).
+The deployed configuration sends the priority and nothing else ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)). Under the lifecycle policy (`policy = "lifecycle"`), an experiment arm, a realtime request is never queued or refused ([ADR-0003](adr/0003-realtime-is-never-shed.md)).
 
 ## Indicators
 
-E2's report computes these for every point (`flatshare-bench e2`; [EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) gives the method), except two: the server-side voice turn, from a W1 probe, and the control-plane overhead, the gateway's own histogram. The voice targets are stated against voice alone on the same box: experiments end a turn a fixed delay after the end of speech, which contributes about 1 s of every turn, so the target is the degradation that agent load may add.
+E2's report computes these for every point (`flatshare-bench e2`; [EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) gives the method), except two: the server-side voice turn, from a W1 probe, and the control-plane overhead, the gateway's own histogram. The voice targets are stated against voice alone on the same box: experiments end a turn a fixed delay after the end of speech, and endpointing takes about 0.8 s of every turn (0.76–0.82 s at the mean in W5; [REPORT.md §5.2](REPORT.md#52-each-rules-share)), so the target is the degradation that agent load may add.
 
 | Indicator | Definition | Target, or what is reported |
 |---|---|---|
-| Voice V2V | The end of the caller's speech to the agent's first audio, from waveforms at the caller (`flatshare-voice bots`), with fixed endpointing; a turn not answered within 30 s counts at 30 s | **The SLO: p95 at most 250 ms above voice alone with as many callers.** 250 ms is about four times voice alone's own spread from run to run (1,744–1,805 ms over five runs), and about one gap between turns in conversation: their mean is 208 ms over ten languages ([Stivers et al., PNAS 2009](https://doi.org/10.1073/pnas.0903616106)). Each campaign states it against its own voice alone with as many callers ([below](#the-slos-reference-campaign-by-campaign)) |
+| Voice V2V | The end of the caller's speech to the agent's first audio, from waveforms at the caller (`flatshare-voice bots`), with fixed endpointing; a turn not answered within 30 s counts at 30 s | **The SLO: p95 at most 250 ms above voice alone with as many callers.** 250 ms is about four times voice alone's own spread from run to run (1,744–1,805 ms over W3–W4's five runs), and about one gap between turns in conversation: their mean is 208 ms over ten languages ([Stivers et al., PNAS 2009](https://doi.org/10.1073/pnas.0903616106)). Each campaign states it against its own voice alone with as many callers ([below](#the-slos-reference-campaign-by-campaign)) |
 | The voice turn's stages | Endpointing, the reply's first sentence, TTS's first audio, transport and playout, from the voice worker's line per reply | Reported per point; the reply's first sentence dominates under load |
 | Realtime first byte | The gateway's request log, exact to the millisecond | Reported per point |
 | Barge-in to silence | The caller starts speaking during the agent's speech, until the agent's audio falls below threshold | Reported per point |
 | Server-side voice turn | The utterance sent to STT, until the first byte of TTS audio (`flatshare-bench voice-turn`): the part serving controls | p90 ≤ 800 ms (voice alone: 589 ms p50 and 665 ms p90, W1) |
-| Background goodput | The prompt and completion tokens per second of the agent requests that complete during the calls | Reported: the frontier's x-axis. Its window is the calls' duration, which differs by configuration |
+| Background goodput | The prompt and completion tokens per second of the agent requests that complete during the calls | Reported: the frontier's x-axis, over the calls' duration, which differs by configuration, and over the calls' first 240 s, the same span for every point, which the headline tables give |
 | Agents' time to first token | AIPerf's per-request records | p50 and p99, reported |
 | The gateway's decisions | Under an admission policy: deferrals by reason, degraded replies and resubmissions (`flatshare_gateway_admission_*`) | Reported per point. The gateway also counts the headroom's false alarms, which no E2 run had: every utterance of the callers is a turn |
 | Realtime first byte, in production | `flatshare_gateway_first_byte_seconds{class="realtime"}`, the gateway's histogram of the same | 95% within 250 ms: voice alone's p95 (66 ms, W4) plus most of the 250 ms the voice SLO allows a turn. The shared configurations of W4 all miss it, as they miss the voice SLO (the PRs with a 48-token window 372 ms, arm 9 290 ms), and voice alone holds it. It is the production alert's objective, since V2V needs the callers' waveforms |
-| Control-plane overhead | `flatshare_gateway_overhead_seconds`, on every request: from the end of the request body to the upstream write, with an admission policy's decision but not the wait it imposes | p99 ≤ 2 ms per request. On cyan with the W1 build: p99 0.44 ms for voice alone and 0.58 ms beside the agent replay, and +0.38 ms to a voice request's first token paired against the engine's own socket ([BENCHMARKS.md](BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)). On an Apple M5 Max, an admission policy adds 6–24 µs of its own time on average, `flatshare` 9 µs ([`flatshare-gateway` README](../crates/flatshare-gateway/README.md#overhead)) |
+| Control-plane overhead | `flatshare_gateway_overhead_seconds`, on every request: from the end of the request body to the upstream write, with an admission policy's decision but not the wait it imposes | p99 ≤ 2 ms per request. On cyan with the W1 build: p99 0.44 ms for voice alone and 0.58 ms beside the agent replay. Paired against the engine's own socket, the gateway adds 0.29 ms to a voice request's first token on the final transport (W6; 0.38 ms on the W1 build) ([BENCHMARKS.md](BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)). On an Apple M5 Max, an admission policy adds 6–24 µs of its own time on average, `lifecycle` 9 µs ([`flatshare-gateway` README](../crates/flatshare-gateway/README.md#overhead)) |
 
 ## The SLO's reference, campaign by campaign
 
@@ -36,6 +36,7 @@ E2's report computes these for every point (`flatshare-bench e2`; [EXPERIMENTS.m
 | W5 | 2 | 1,784 ms (1,764–1,819) | the median of five rounds | 2,034 ms |
 | W5, calls per GPU | 4 | 1,794 ms (1,780–1,894) | the median of three rounds | 2,044 ms |
 | W5, calls per GPU | 6 | 1,885 ms (1,878–1,885) | the median of three rounds | 2,135 ms |
+| The A100 run (an A100 SXM4 80 GB) | 2 | 1,419 ms (1,391–1,445) | the median of five rounds | 1,669 ms |
 
 Not computed: audio gaps (the continuity indicator), the interactive class's resume target, and the cache-contract honor rate, which went with leases.
 

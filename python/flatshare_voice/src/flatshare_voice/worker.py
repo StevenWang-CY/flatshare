@@ -21,10 +21,10 @@ starts the reply from the final transcript before the end of the turn is confirm
 factors.
 
 Each session posts its lifecycle events (speech onset, end of turn, playback, barge-in) to the
-control plane over the LLM's socket, and logs a line per turn with its stage times
-(:mod:`.events`). ``FLATSHARE_EVENTS=off`` stops the events, so that E2 can measure Flatshare with and
-without them; they stop as well when the LLM bypasses the control plane, whose socket alone takes
-them.
+control plane over the LLM's socket, and logs a line per turn with its stage times (:mod:`.events`).
+``FLATSHARE_EVENTS=off`` stops the events, so that E2 can measure arm 9, the lifecycle policy, with
+and without them; they stop as well when the LLM bypasses the control plane, whose socket alone
+takes them.
 
 The worker runs inside the voice-plane network namespace, where the only route to the servers is
 a Unix socket each. The environment, set by ``flatshare-voice-worker.service``, configures it:

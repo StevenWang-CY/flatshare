@@ -5,7 +5,7 @@ The change on vLLM 0.32.0, the version E2 measured: vLLM [#63350](https://github
 ```text
 src/flatshare_vllm/build.py      writes a variant's module: its patches, applied exactly, and the stock AsyncScheduler
 src/flatshare_vllm/make-room/    63350.patch and 63351.patch, the PRs' scheduler diff backported to v0.32.0;
-                                 variant.patch, what only the variant has; probe.py and tail.py, its GPU checks
+                                 variant.patch, what only the variant has; probe.py, tail.py and knee.sh, its GPU checks
 src/flatshare_vllm/pr54530/      pr54530.patch, #54530 ported to v0.32.0 by hand; probe.py
 scripts/make-room-patches.sh     rewrites make-room's patches from the backport's branches in a vLLM clone
 scripts/compat_upstream.py       make compat-upstream: the PRs against vLLM's main, the patches against its newest release
@@ -69,7 +69,7 @@ cd ~/flatshare/src/python/flatshare_vllm
 VLLM_TARGET_DEVICE=cpu PYTHONPATH=$tools ~/flatshare/venvs/engine/bin/python -m pytest -q -p no:cacheprovider tests/test_make_room.py tests/test_trace.py
 ```
 
-Elsewhere, an environment with CPU torch 2.13 and vLLM 0.32.0's Python dependencies runs them on the source checkout instead, from the repository's root: `make test-make-room TORCH_PYTHON=<its python>`, and `make test-trace TORCH_PYTHON=<its python>` (add `TRACE_SEEDS=100` for the random workloads at RV2's count). Both first check that the interpreter imports pytest, torch and vLLM's scheduler, and fail if it does not, rather than let pytest skip the suites. `make test-make-room-ci` runs both as CI's `make-room` job does. It runs them in the environment that `requirements-cpu.txt` pins: Python 3.12 on Linux x86_64, CPU torch 2.13.0, and vLLM's dependencies at the engine environment's versions (`requirements-cpu.in`, compiled by the command in its header). uv builds that environment in `build/cpu-env` (`CPU_ENV`), and the target sets `FLATSHARE_NO_SKIPS=1`, under which any skipped test fails the session (`tests/conftest.py`).
+Elsewhere, an environment with CPU torch 2.13 and vLLM 0.32.0's Python dependencies runs them on the source checkout instead, from the repository's root: `make test-make-room TORCH_PYTHON=<its python>`, and `make test-trace TORCH_PYTHON=<its python>` (`TRACE_SEEDS=100` runs the random workloads at 100 seeds, where the default is 20). Both first check that the interpreter imports pytest, torch and vLLM's scheduler, and fail if it does not, rather than let pytest skip the suites. `make test-make-room-ci` runs both as CI's `make-room` job does. It runs them in the environment that `requirements-cpu.txt` pins: Python 3.12 on Linux x86_64, CPU torch 2.13.0, and vLLM's dependencies at the engine environment's versions (`requirements-cpu.in`, compiled by the command in its header). uv builds that environment in `build/cpu-env` (`CPU_ENV`), and the target sets `FLATSHARE_NO_SKIPS=1`, under which any skipped test fails the session (`tests/conftest.py`).
 
 The probes take their statistics from flatshare-stats (`python/flatshare_stats`), which they load from the source tree by path, so the engine's environment runs them without an install. The make-room probes' tests run in CI, with aiohttp from the test extra (the engine environment has it too), against `tests/fake_engine.py`, a stand-in for vLLM's server with a pool, a context and a fixed pace:
 

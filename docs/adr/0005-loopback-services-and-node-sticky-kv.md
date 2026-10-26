@@ -30,7 +30,7 @@ The GPU nodes are joined by 1 GbE, slower than recomputing a prompt on the card.
 - No public ports, by construction. Every smoke test and deploy check audits the listening sockets.
 - The voice plane cannot reach the internet or the host network directly. Joining a call from a browser would need an explicit bridge; the demo video needs none, since it is rendered from calls the measurement callers record (`flatshare-voice bots --save-audio`).
 - A tunnel adds a loopback hop on each side, sub-millisecond on this network (W6: an SSH session per connection, below). Every measured path to the engine crosses it, direct or through the control plane; the control-plane overhead in the SLO ends at the upstream write and leaves it out.
-- Losing a node costs a re-prefill of its sessions; a node-loss drill to measure it is planned (W8).
+- Losing a node costs a re-prefill of its sessions; a node-loss drill to measure it is planned (W8). (W8 drilled an engine kill instead, which the gateway handles as it does a node's loss: [the drills](../BENCHMARKS.md#failure-drills), [ARCHITECTURE.md §8](../ARCHITECTURE.md#8-failure-handling).)
 
 ## Co-tenants (2026-10-24)
 

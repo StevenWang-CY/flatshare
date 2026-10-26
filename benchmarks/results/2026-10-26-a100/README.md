@@ -8,7 +8,7 @@ it ran this repository's `run.sh`, `batch.sh` and `probes.sh`, with the arm file
 [`a100-pr-ab48-2048-s24.toml`](../../a100/arms/a100-pr-ab48-2048-s24.toml) (written during the run),
 [`a100-aprime-frozen-s32.toml`](../../a100/arms/a100-aprime-frozen-s32.toml) and
 [`a100-aprime-pr-ab48-s32.toml`](../../a100/arms/a100-aprime-pr-ab48-s32.toml). The host: 12 vCPUs of a 2.20 GHz Xeon
-(Cascade Lake, PCIe 3.0 root ports), 167 GB of RAM, driver 580.82.07; the node rendered from the A100 profile
+(Cascade Lake, PCIe 3.0 root ports), 167 GiB of RAM, driver 580.82.07; the node rendered from the A100 profile
 (`a100-40gb`, which keeps the box's pool on either A100) under flatshare-svc. The runtime used 34.35 of Colab's compute
 units (37.38 at its creation, 3.03 at its stop), at 6.77 an hour.
 

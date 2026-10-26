@@ -10,7 +10,7 @@ the budget cap, past two victims, with shared prefixes), random ones with shared
 connector loading asynchronously, answering "not yet" and holding frees (the untried rule). One-line mutants of the
 PRs' module are the negative control: each must make a trace diverge.
 
-``TRACE_SEEDS`` sets the random workloads' seeds (20; RV2's identity check ran 100). ``TRACE_REFERENCE``, a generated
+``TRACE_SEEDS`` sets the random workloads' seeds (20; a review's identity check ran 100). ``TRACE_REFERENCE``, a generated
 module's path, compares the variant with that module instead, the reserve and the variant's counters included: for
 example main's module against a branch's. A module from before #63351 bounded a step's held tokens by its budget (the
 old build.py's, which W5's records ran) counted each held chunk against the step's whole budget, so with two chunks

@@ -38,7 +38,9 @@ Every `X-Flatshare-` header ends at the gateway; none reaches the engine.
 | Headers | `X-Vllm-Priority`, `X-SMG-Priority`, `X-Session-ID` (from untrusted callers), `X-data-parallel-rank`, `X-Request-Id` |
 | Body fields | vLLM's `session_id`, `priority`, `kv_transfer_params`, `ec_transfer_params`, `cache_salt`, `request_id`, `vllm_xargs`; SGLang's `rid`, `extra_key`, `session_params`, `custom_labels`, `routed_dp_rank`, `data_parallel_rank`, `disagg_prefill_dp_rank`, `bootstrap_host`, `bootstrap_port`, `bootstrap_room` |
 
-vLLM 0.32 reads the body's `session_id` before the header, and `vllm_xargs.session_id` after it; `X-Vllm-Priority` takes precedence over the body's `priority`. When `upstream_priority` lists `body`, the gateway writes the class's engine priority into the body's `priority`, which SGLang reads (E2 arm 7b). vLLM's FCFS scheduler ignores priorities. Each tenant's `cache_salt` is the first 32 hex digits of HMAC-SHA-256 of the tenant's name, keyed by the 32 random bytes of `cache_salt_secret_file`: it depends on the tenant's name, not its key, so rotating a key keeps the tenant's cache, and without the secret the name does not give it away.
+vLLM 0.32 reads the body's `session_id` before the header, and `vllm_xargs.session_id` after it; `X-Vllm-Priority` takes precedence over the body's `priority`. When `upstream_priority` lists `body`, the gateway writes the class's engine priority into the body's `priority`, which SGLang reads (E2 arm 7b). vLLM's FCFS scheduler ignores priorities.
+
+Each tenant's `cache_salt` is the first 32 hex digits of HMAC-SHA-256 of the tenant's name, keyed by the 32 random bytes of `cache_salt_secret_file`: it depends on the tenant's name, not its key, so rotating a key keeps the tenant's cache, and without the secret the name does not give it away.
 
 ## Lifecycle events
 
@@ -70,7 +72,7 @@ Under the lifecycle policy, the gateway keeps each realtime session's turn state
 | `playback_ended` | `played_ms` | the voice worker | Back to idle |
 | `interrupted` | `played_ms`, what the caller heard | the voice worker, on barge-in | The caller is speaking again |
 | `session_closed` | — | the voice worker, when the caller hangs up | Forgets the session |
-| `turn_started`, `turn_finished`, `tool_wait_started`, `tool_wait_ended` | `stop_reason` and token counts; `tool`, `eta_ms` | nothing: an agent framework's sink is proposed in [agentic-api#364](https://github.com/vllm-project/agentic-api/issues/364) | Accepted, no effect: E1 found that agent-side timing closes nothing ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)) |
+| `turn_started`, `turn_finished`, `tool_wait_started`, `tool_wait_ended` | `stop_reason` and token counts; `tool`, `eta_ms` | nothing: an agent framework's sink is proposed in [agentic-api#364](https://github.com/vllm-project/agentic-api/issues/364) | Accepted, no effect: in E1 even exact tool-return times closed under 9% of resume TTFT at p50, and session history, what a deployment knows without them, closed nothing ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)) |
 
 [`flatshare-voice`](../python/flatshare_voice/README.md#lifecycle-events-and-turn-lines) gives the LiveKit hook behind each voice event and when it fires.
 

@@ -159,7 +159,7 @@ pub fn capacities(pool: u64, multiples: &[f64]) -> Vec<u64> {
         .collect()
 }
 
-/// The miss-ratio table of the flatshare-sim README (`flatshare-sim mrc --markdown`): the per-block miss ratios of
+/// BENCHMARKS.md's miss-ratio table (`flatshare-sim mrc --markdown`): the per-block miss ratios of
 /// LRU and MIN, to three decimals, at each of `multiples` of the pool (where MIN was run), on the
 /// replay (`scaled`, with its pool in blocks) and, where there is one, on the same admission order at
 /// the original token counts (`same_order`, `factor` times the replay's tokens).

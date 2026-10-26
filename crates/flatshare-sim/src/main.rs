@@ -299,7 +299,7 @@ struct MrcArgs {
     #[arg(long)]
     csv: Option<PathBuf>,
     /// Write the miss ratios at the --min-at capacities as a Markdown table to this file: the
-    /// README's, on the replay and on the same order at the original token counts.
+    /// table in BENCHMARKS.md, on the replay and on the same order at the original token counts.
     #[arg(long)]
     markdown: Option<PathBuf>,
 }
