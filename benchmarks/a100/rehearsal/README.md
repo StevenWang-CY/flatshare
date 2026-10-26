@@ -65,7 +65,7 @@ bash rehearse.sh --purge cleanup           # cleanup, again if done, and remove 
 
 | Variable | Default | What it sets |
 |---|---|---|
-| `REHEARSAL_HOST` | `phastform` | the host |
+| `REHEARSAL_HOST` | `phastform`, the box | the host, by any SSH host name or alias |
 | `REHEARSAL_SSH` | `FLATSHARE_SSH`, else `ssh` | the ssh command, also `rsync -e`'s |
 | `REHEARSAL_HOME` | `a100-rehearsal` | the rehearsal's home, one directory under the host's login home |
 | `REHEARSAL_REPO` | the checkout this directory is in | the checkout pushed |
@@ -148,8 +148,8 @@ The `data` step assembles `data/` (`FLATSHARE_DATA`) on the workstation:
 
 The minutes planned are measured where a measurement existed, and say so; the rest were estimates. The release's
 rehearsal of 2026-10-26 measured each step from a fresh home
-([its records](../../results/2026-10-26-a100-rehearsal/README.md)): from the lab's network and with the box's models in
-its hub cache, `push` and `stage` took a fraction of their plan.
+([its records](../../results/2026-10-26-a100-rehearsal/README.md)): from a workstation on the box's network and with the
+box's models in its hub cache, `push` and `stage` took a fraction of their plan.
 
 | Step | Where | What it runs | Minutes planned | Measured |
 |---|---|---|---:|---:|

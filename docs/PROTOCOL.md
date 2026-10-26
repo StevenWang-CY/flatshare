@@ -1,6 +1,6 @@
 # Protocol
 
-What the gateway, `flatshare-gateway`, accepts from callers and sends to the engines. The wire types are defined once, in [`crates/flatshare-proto`](../crates/flatshare-proto); the JSON Schemas in [`crates/flatshare-proto/schema/`](../crates/flatshare-proto/schema/) are generated from them for the Python components, and [`testdata/events.jsonl`](../crates/flatshare-proto/testdata/events.jsonl) pins the event format with one example of every type. Regenerate the schemas after changing a type (a test fails until you do):
+What the gateway, `flatshare-gateway`, accepts from callers and sends to the engines, for a reader who writes a client of the gateway or reads its code. The wire types are defined once, in [`crates/flatshare-proto`](../crates/flatshare-proto); the JSON Schemas in [`crates/flatshare-proto/schema/`](../crates/flatshare-proto/schema/) are generated from them for the Python components, and [`testdata/events.jsonl`](../crates/flatshare-proto/testdata/events.jsonl) pins the event format with one example of every type. Regenerate the schemas after changing a type (a test fails until you do):
 
 ```sh
 make schema    # cargo run -p flatshare-proto --bin flatshare-proto-schema

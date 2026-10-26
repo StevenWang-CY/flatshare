@@ -1,16 +1,16 @@
 # Glossary
 
-The terms the other documents use, each with where it is defined in full, sorted within each section. Code
-identifiers and the records' labels (point names, arm labels) keep their names; prose uses the names below. The project
-was called Leaseholder through v1.1, and the records keep its former names: [Former names](#former-names) maps them to
-the current ones.
+The terms the other documents use, for a reader who meets one they do not know, each with where it is defined in full,
+sorted within each section. Code identifiers and the records' labels (point names, arm labels) keep their names; prose
+uses the names below. The project was called Leaseholder through v1.1, and the records keep its former names: [Former
+names](#former-names) maps them to the current ones.
 
 ## The change and its parts
 
 - **The budget cap** (#63351): lower-priority prefill sits out the steps of a higher-priority request's first tokens.
   **Its window** is how many first tokens it covers (`--priority-prefill-budget-cap-tokens`, 16 by default; 48 in the
   configuration to deploy).
-- **The change**: the two vLLM pull requests that change priority scheduling,
+- **The change**: the two pull requests proposed to vLLM, open and under review, that change priority scheduling,
   [#63350](https://github.com/vllm-project/vllm/pull/63350) for a full KV cache and
   [#63351](https://github.com/vllm-project/vllm/pull/63351) for prefill beside a priority request's first tokens.
   [ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351) states their rules.
@@ -39,7 +39,8 @@ the current ones.
 - **cyan**: the control host, CPU only: the gateway, LiveKit, the voice agent and the callers, and AIPerf.
 - **The frozen box**: the one pinned configuration every experiment on the box runs: vLLM 0.32.0 with
   Qwen3-4B-Instruct-2507-FP8, priority scheduling, a 512-token step cap and a 20 GiB CPU KV tier, beside Whisper (STT)
-  and Kokoro (TTS) on the same GPU ([ARCHITECTURE.md §3.1](ARCHITECTURE.md#31-the-frozen-box)).
+  and Kokoro (TTS) on the same GPU ([ARCHITECTURE.md §3.1](ARCHITECTURE.md#31-the-frozen-box)). *Frozen* alone, as in
+  the A100 run's tables, names the stock engine with the frozen box's flags on whatever card it runs.
 - **Gray**: the second GPU node, identical to Phastform, on which the first make-room probes ran (2026-10-23).
 - **peacock**: a CPU host for builds and tests, and the machine of the change's per-step cost baseline
   (`make perf-make-room`).
@@ -56,6 +57,8 @@ the current ones.
 
 ## Experiments and how they are counted
 
+- **A' and C'**: two of the A100 run's optional arms: A', the box's pool at 32 agent sessions (one round ran), and C',
+  Qwen3-14B-FP8 at an A100 40 GB's own pool (not run) ([HARDWARE.md](HARDWARE.md#the-optional-arms)).
 - **The A100 run** (A1, 2026-10-26): the release's kit on an A100 SXM4 80 GB on Google Colab. Its **core** repeated
   E2's discriminating scenario like for like (the box's model, pool, 512/256 and CPU tier, W5's arm files and five
   samples) with E0, the probes and a calibration point, and its **arms** after the core were the batch (256 requests
@@ -76,8 +79,11 @@ the current ones.
 - **E3**: what make-room takes from the agents, from the engine's own counters.
 - **FB** (2026-10-25): the final benchmark, five rounds of W5's headline configurations (voice alone, the frozen box
   and the PRs' 48-token configuration) on the final code, each round on the agents' sample of W5's round of the same
-  number ([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2); the records are in
+  number ([BENCHMARKS.md](BENCHMARKS.md#the-final-code-against-w5-fb); the records are in
   [`benchmarks/results/2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb)).
+- **G-sim**: E1's gate: if even the oracle closes under about 10% of resume TTFT over LRU plus the CPU tier in the
+  realistic regime, no lease-aware policy runs on the GPU. Read at p50, E1 took this negative branch
+  ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)).
 - **The KV case**: the probe in which a voice-sized request of about 750 tokens arrives at priority 0 while two
   18k-token priority-2 requests fill the KV pool, timed to its first token
   ([BENCHMARKS.md](BENCHMARKS.md#the-kv-case-make-room)).
@@ -96,25 +102,35 @@ the current ones.
   with the voice agent's lifecycle events; W4 (2026-10-23 to 24): the discriminating scenario in rounds; W5
   (2026-10-24 to 25): the fixed make-room and the PRs' configuration in five rounds; W6 to W8 (2026-10-25): production
   hardening, refactors and failure drills.
+- **W5's campaigns**: *W5's campaign* (voice alone, the frozen box and the PRs' 48-token configuration, with make-room
+  as v0.3 built it as its control), *the PR campaign* (the frozen box, #63350 alone, and both PRs at 16 and at 48
+  tokens), *the extension* (preempt-resubmit, the PRs' 48-token configuration again, and the standard scenario's pair),
+  each of five rounds, and *calls per GPU*, of three ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load)).
 
 ## Measures
 
 - **Goodput**: the agents' prompt and completion tokens per second over the requests that complete during the calls;
-  **the first 240 s** (the fixed window) counts it over the calls' first 240 s, so that configurations whose calls
-  last longer compare fairly.
+  **the first 240 s** (the fixed window) counts it over the calls' first 240 s, so that configurations whose calls last
+  longer are counted over the same span.
 - **Percentiles** are inclusive everywhere, in the E2 report, the probes and the simulator: Python's
   `statistics.quantiles(..., method="inclusive")`, defined once in
   [`flatshare_stats`](../python/flatshare_stats/README.md).
+- **Realtime first byte**: the gateway's time from receiving a realtime request to the first byte of the engine's
+  response, from its request log, exact to the millisecond ([SLO.md](SLO.md#indicators)).
 - **Running share**: the share of the time in which free KV is under two calls' 2,048 tokens. The A100 run measured it
   from the engine's metrics, sampled every 0.5 s, and flatshare-sim models it
   ([HARDWARE.md](HARDWARE.md#the-core-block-by-block)).
 - **The SLO**: voice V2V p95 at most 250 ms above voice alone with as many callers. Its reference is measured per
   campaign ([SLO.md](SLO.md#the-slos-reference-campaign-by-campaign)).
+- **TTFT** (time to first token): for the agents, from AIPerf's per-request records; for a probe, from sending its
+  request to the first token streamed back.
 - **V2V (voice-to-voice)**: from the end of the caller's speech to the agent's first audio, read from the waveforms at
   the caller. A turn not answered within 30 s counts at 30 s.
 
 ## The lifecycle policy and the simulator's coordinates
 
+- **The critical window**: a voice turn's span from the end of the caller's turn to the reply's first audio, in which
+  the lifecycle policy's throttle budgets background prefill.
 - **KV pressure**: the agents' live working set over the KV pool, one of the coordinates that locate a card and a
   workload on E1's map ([METHODS.md](METHODS.md#what-transfers-to-other-hardware)).
 - **The lifecycle policy** (`policy = "lifecycle"`): the gateway policy timed by the conversation, which E2 measured as
@@ -122,6 +138,9 @@ the current ones.
   requests, its **throttle** budgets background prefill from the end of a turn to the reply's first audio, **degrade**
   caps a reply at 16 tokens when the headroom was not there, and **aging** admits deferred work after 10 s
   ([METHODS.md](METHODS.md#what-lifecycle-timing-could-and-could-not-do)).
+- **The realistic regime** (E1): the simulator's replay with the traces' own think times and the CPU tier at four times
+  the pool, the box's ratio, over 20 seeds; E1's gate is read in it
+  ([BENCHMARKS.md](BENCHMARKS.md#e1-parking-in-the-simulator)).
 - **π**: the median pause between an agent's turns over the time to restore its context; a coordinate of E1's map.
 - **ρ**: restore time over recompute time at the median prompt; a coordinate of E1's map.
 

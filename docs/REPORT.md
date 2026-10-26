@@ -1,41 +1,44 @@
 # Making room in the engine: a realtime voice tier beside coding agents on one GPU
 
-*Technical report. Flatshare, StevenWang-CY/flatshare, v1.2. Every number comes from the committed records
-([BENCHMARKS.md](BENCHMARKS.md) lists every run): E2's on the RTX 5060 Ti are W5's, measured on 2026-10-24 and 25, and
-the A100's are its run of 2026-10-26.*
+*Technical report on Flatshare v1.2 (StevenWang-CY/flatshare), by Chuyue Wang, 2026-10-26. It is written for engineers
+and researchers in LLM serving, and gives the problem, the change, the evidence and its limits in one place. Every
+number comes from the committed records, which [BENCHMARKS.md](BENCHMARKS.md) lists run by run: E2's on the RTX 5060 Ti
+are W5's, measured on 2026-10-24 and 25, and the A100's come from its run of 2026-10-26. [GLOSSARY.md](GLOSSARY.md)
+defines the terms.*
 
 ## Abstract
 
 A self-hosted voice agent leaves its GPU idle between turns, and background LLM work such as coding agents could use
-those gaps. On vLLM today the voice tier pays for it. Beside 24 coding-agent sessions of long contexts on one RTX 5060
-Ti, the voice-to-voice p95 of two calls grows from 1.78 s alone to 10.5 s on vLLM tuned for priority. Two scheduler
-mechanisms cause the loss: a waiting voice turn cannot take KV cache from running background requests, and once it runs,
-background prefill shares every step of its reply. We change vLLM's priority scheduling in two rules. A waiting request
-preempts lower-priority running work when it lacks KV, and the victims' KV is already written through to the CPU tier.
-Lower-priority prefill sits out the steps of the request's first tokens. Proposed upstream as two stacked pull requests
-and run on vLLM 0.32 as a scheduler built from them, the change brings the p95 to 2.24 s, 0.20 s over an SLO of voice
-alone plus 250 ms, while the agents keep 97% of their throughput. Each rule is necessary: the KV preemption alone leaves
-5.1 s, and the prefill rule's window must cover the reply's first sentence (3.1 s with 16 tokens). A router that aborts
-background requests and resubmits them reaches 2.52 s, at the agents' expense; a gateway that holds back background work
-by the conversation's state leaves the tail where tuned vLLM does. A control plane makes room only by aborting work, and
-only the engine takes KV from a request already decoding. On an A100 SXM4 80 GB, with this box's model, pool and agents,
-the change brings the p95 from 4.99 s to 1.63 s, under that card's SLO in each of five rounds, and the agents'
-throughput holds; a forecast written before that run placed each mechanism and missed the KV case's waits by about 30%,
-through the card's decode attention.
+those gaps. On vLLM 0.32 the voice tier pays for the sharing. Beside 24 coding-agent sessions of long contexts on one
+RTX 5060 Ti, the voice-to-voice p95 of two calls grows from 1.78 s alone to 10.5 s on vLLM tuned for priority. Two
+scheduler mechanisms cause the loss: a waiting voice turn cannot take KV cache from running background requests, and
+once it runs, background prefill shares every step of its reply. We change vLLM's priority scheduling in two rules. A
+waiting request preempts lower-priority running work when it lacks KV, and the victims' KV is already written through to
+the CPU tier. Lower-priority prefill sits out the steps of the request's first tokens. Proposed to vLLM as two stacked
+pull requests, open and under review, and run on vLLM 0.32 as a scheduler built from them, the change brings the p95 to
+2.24 s, 0.20 s over an SLO of voice alone plus 250 ms, while the agents keep 97% of their throughput. Each rule is
+necessary: the KV preemption alone leaves 5.1 s, and the prefill rule's window must cover the reply's first sentence
+(3.1 s with 16 tokens). A router that aborts background requests and resubmits them reaches 2.52 s, at the agents'
+expense; a gateway that holds back background work by the conversation's state leaves the tail where tuned vLLM does. A
+control plane in front of the engine can make room only by aborting work; only the engine can take KV from a request
+already decoding. On an A100 SXM4 80 GB, with this box's model, pool and agents, the change brings the p95 from 4.99 s
+to 1.63 s, under that card's SLO in each of five rounds, and the agents' throughput holds; a forecast written before
+that run predicted each mechanism, and the KV case's measured waits came out about 30% longer than forecast, because the
+card's decode attention reads KV at 42% of its bandwidth.
 
 ## 1. Introduction
 
 Voice agents are judged by how soon they answer, so a self-hosted cascade (speech to text, an LLM, text to speech) is
 provisioned for latency, and the GPU it runs on idles most of the time: the LLM is busy only while a reply decodes.
-Background work fills such gaps elsewhere in serving, and coding agents are the background work of the moment. They send
-long prompts that reuse long prefixes, tolerate a minute to the first token, and run for hours.
+Background work fills such gaps elsewhere in serving, and coding agents suit the role: they send long prompts that reuse
+long prefixes, tolerate a minute to the first token, and run for hours.
 
 The two do not share a GPU well on today's engines. We measure a voice agent and 24 Claude Code sessions on one RTX 5060
 Ti with vLLM 0.32, tuned as an operator would tune it: priority scheduling with the voice tier at the highest priority,
 a 512-token step cap that bounds how long a decode waits behind a prefill chunk, and a 20 GiB CPU KV tier written
-through as tokens are computed. The voice tail grows 5.9-fold. The loss is not in speech recognition or synthesis, which
-barely move, but in the LLM's first sentence: 3.88 s of a 5.30 s mean turn, against 0.30 s alone. Every configuration an
-operator can deploy today misses the SLO: vLLM's pending request-count preemption, SGLang's priority preemption with its
+through as tokens are computed. The voice tail grows 5.9-fold. Speech recognition and synthesis barely move; the loss is
+in the LLM's first sentence, 3.88 s of a 5.30 s mean turn against 0.30 s alone. Every configuration an operator can
+deploy today misses the SLO: vLLM's pending request-count preemption (#54530), SGLang's priority preemption with its
 host tier, a static KV reservation and two routers by seconds (W4), and a router that aborts background work before its
 first byte and resubmits it by 0.49 s, with the agents' TTFT p99 at 193 s against 106 s.
 
@@ -56,11 +59,11 @@ This report makes five contributions:
 - **It measures the failure end to end.** Voice-to-voice latency is read from waveforms at the caller, beside a replay
   of real coding-agent traces, against every deployable alternative, in rotated rounds over five samples of the agents'
   traces (§4, §5.1).
-- **It changes vLLM's priority scheduling** for a full KV cache and for prefill interference, in two rules proposed
-  upstream as two stacked pull requests and built into vLLM 0.32's scheduler without modifying the installed vLLM (§3).
-  Neither idea is new (§7). The first brings to vLLM's V1 scheduler the preemption for a waiting request that its V0
-  scheduler had only with chunked prefill off, and keeps the victims' KV in the CPU tier; the second bounds its hold
-  on lower-priority prefill to the reply's first tokens, sized to cover its first sentence.
+- **It changes vLLM's priority scheduling** for a full KV cache and for prefill interference, in two rules proposed to
+  vLLM as two stacked pull requests, under review, and built into vLLM 0.32's scheduler without modifying the installed
+  vLLM (§3). Neither idea is new (§7). The first brings to vLLM's V1 scheduler the preemption for a waiting request that
+  its V0 scheduler had only with chunked prefill off, and keeps the victims' KV in the CPU tier; the second bounds its
+  hold on lower-priority prefill to the reply's first tokens, sized to cover its first sentence.
 - **It shows each rule necessary and prices it.** The KV preemption alone halves the tail; the prefill rule closes most
   of the rest once its window covers the reply's first sentence; the agents keep 97% of their throughput and pay through
   the prefill rule's hold, not the preemptions (§5.2-5.4).
@@ -470,5 +473,5 @@ throughput. That is still 0.20 s over a strict SLO; the nearest a control plane 
 aborting and resubmitting the agents' requests, is 0.49 s over, with the agents' TTFT p99 at 193 s. Where the pool has
 room or many calls overlap, the change helps less. On an A100 SXM4 80 GB at the same pool, the rules take the p95 from
 4.99 s to 1.63 s, under that card's SLO in every round. For a voice agent that shares its GPU with agents whose KV fills
-the pool, the fix belongs in the engine: preempt for the waiting voice turn, and keep background prefill out of its
-first sentence.
+the pool, the measurements point to the engine's scheduler: preempt for the waiting voice turn, and keep background
+prefill out of its first sentence.

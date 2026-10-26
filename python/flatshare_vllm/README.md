@@ -1,6 +1,6 @@
 # flatshare-vllm
 
-The change on vLLM 0.32.0, the version E2 measured: vLLM [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) (stacked on #63350); this package runs their scheduler diff on 0.32.0 as Flatshare's `make-room` variant, beside `pr54530`, vLLM [#54530](https://github.com/vllm-project/vllm/pull/54530) ported to 0.32.0 as a baseline. A variant is a scheduler module that `build.py` writes at each engine start from the installed vLLM's own scheduler, which it never modifies. The variants' systemd drop-ins are in [`deploy/phastform/variants`](../../deploy/phastform/variants/README.md).
+The change on vLLM 0.32.0, the version E2 measured: pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) (stacked on #63350), proposed to vLLM and under review; this package runs their scheduler diff on 0.32.0 as Flatshare's `make-room` variant, beside `pr54530`, vLLM [#54530](https://github.com/vllm-project/vllm/pull/54530) ported to 0.32.0 as a baseline. A variant is a scheduler module that `build.py` writes at each engine start from the installed vLLM's own scheduler, which it never modifies. The variants' systemd drop-ins are in [`deploy/phastform/variants`](../../deploy/phastform/variants/README.md).
 
 ```text
 src/flatshare_vllm/build.py      writes a variant's module: its patches, applied exactly, and the stock AsyncScheduler

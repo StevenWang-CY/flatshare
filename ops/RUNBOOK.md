@@ -1,6 +1,6 @@
 # Runbook
 
-How to deploy, check, operate and recover the Flatshare hosts. Every service runs as a `systemd --user` unit. Lingering is enabled on each host, so units survive logout and start at boot.
+How to deploy, check, operate and recover the Flatshare hosts, for whoever operates the box and its control host; a deployment on other hardware, or on one host, follows [HARDWARE.md](../docs/HARDWARE.md). Every service runs as a `systemd --user` unit. Lingering is enabled on each host, so units survive logout and start at boot.
 
 | Host | Units | Listeners |
 |---|---|---|
@@ -21,13 +21,13 @@ The `flatshare-gateway`, `flatshare-livekit` and `flatshare-voice-worker` units 
 
 ## Deploy
 
-From a workstation with SSH access to the hosts:
+Deploy from a workstation with SSH access to the hosts. The commands name the hosts by SSH aliases (`phastform`, `cyan`, `gray`); any host name or alias that SSH resolves works, as long as its first label is the host's directory under `deploy/`, from which `deploy.sh` installs.
 
 ```sh
-export FLATSHARE_SSH="ssh -F $HOME/.ssh/penn_config"   # your SSH command for the hosts
-deploy/deploy.sh phastform       # sync the repo to ~/flatshare/src and install the units
+export FLATSHARE_SSH="ssh -F $HOME/.ssh/flatshare_config"   # your SSH command for the hosts
+deploy/deploy.sh phastform     # sync the repo to ~/flatshare/src and install the units
 deploy/deploy.sh cyan
-deploy/deploy.sh gray            # the second GPU node
+deploy/deploy.sh gray          # the second GPU node
 ```
 
 `deploy.sh` syncs the commit `HEAD` names (`git archive`) and nothing else, no untracked, ignored or uncommitted file, and refuses a tree that has any, so that `~/flatshare/src/DEPLOYED`, the commit it writes there, names what the host runs. It then runs the host's `install.sh` and audits what listens there (`deploy/bin/audit-listeners`): a failure names each process of the box's units that listens over TCP outside the allowed set, or on a socket outside `/run/user/$UID`, which is what still runs from before until its unit restarts. On cyan, `install.sh` also disables and unlinks the units of this tree that the repository no longer has (the tunnels' from before `flatshare-tunnel@.service`, say); one that still runs keeps running until the next reboot, so stop it by hand (`systemctl --user stop UNIT`). Do not deploy to cyan while an E2 campaign runs: the points read their arm files and the harness from that tree.
@@ -167,31 +167,25 @@ One point runs at a time: the pid of the running one is in `~/flatshare/runs/.fl
 ## Drills
 
 The failure drills run from a workstation with SSH to the hosts, on the variant the GPU node runs, with no E2 point running (they take the same lock on cyan). Each writes its directory under `~/flatshare/runs/drills` and prints its summary:
-- `ops/drills/drill.sh engine-kill` opens two realtime streams (the voice plane's socket) and four background ones (the TCP port, the agents tenant's key) through the gateway, then sends SIGKILL to every process of `flatshare-engine`, as an OOM kill or a crash would end it. It records how each stream ended and when, what new requests get from the kill on, how long until one succeeds again, the engine's restart from its journal, and `/dev/shm` before and after, where the CPU tier lives. The final build's drill, on 2026-10-25: every stream got the `upstream_unavailable` error event 8 to 11 ms after the kill; the engine's main process was gone 0.14 s after it and its last process 7.6 s after it (the GPU's teardown, which systemd waits for); systemd started it RestartSec (5 s) after that; its warm start listened 92.1 s later; and the first request succeeded 106.2 s after the kill. W8's, before W6, broke every stream with no error event, waited 15 s to restart and succeeded after 112.3 s.
+- `ops/drills/drill.sh engine-kill` opens two realtime streams (the voice plane's socket) and four background ones (the TCP port, the agents tenant's key) through the gateway, then sends SIGKILL to every process of `flatshare-engine`, as an OOM kill or a crash would end it. It records how each stream ended and when, what new requests get from the kill on, how long until one succeeds again, the engine's restart from its journal, and `/dev/shm` before and after, where the CPU tier lives. The final build's drill, on 2026-10-25: every stream got the `upstream_unavailable` error event 8 to 11 ms after the kill; the engine's main process was gone 0.14 s after it and its last process 7.6 s after it (the GPU's teardown, which systemd waits for); systemd started it RestartSec (5 s) after that; its warm start listened 92.1 s later; and the first request succeeded 106.2 s after the kill ([the drills](../docs/BENCHMARKS.md#failure-drills) set it beside W8's, before the W6 hardening).
 - `ops/drills/drill.sh gateway-reload`, `gateway-restart` and `gateway-kill` do the same on cyan with `systemctl --user reload flatshare-gateway` (a deploy's), `restart flatshare-gateway`, and SIGKILL to the gateway (systemd starts it again a second later). The drill script writes the event's time to the run's `event` file in the same command as the event, and from the moment the client sees it, it probes both planes every second, each probe on a new connection, beside the streams, until they have ended and requests succeed again; every attempt is kept with when it was sent and answered. The client also samples the engine's running and waiting requests from the streams' first bytes on, each sample stamped, and the report says when none was left: a gateway that dies must not leave its requests running in the engine. A reload should show no failed probe and every voice turn whole; a restart no failed probe either, but answers that come only once its drain is done; a kill the in-flight streams broken, the engine's requests gone within a second or so, and the probes answered once the gateway is back.
 - `~/flatshare/venvs/bench/bin/flatshare-bench drill cpu-tier --out FILE`, on cyan with the engine otherwise idle, stores twice the CPU tier's capacity of unique prompts and checks that the tier evicted the oldest prompt and still restores the latest.
 - `ops/drills/cold-start.sh engine|box` restarts the engine alone or the whole box and times each server's start from its journal; `--cold` empties the compile and JIT caches first, as on a new host, and puts them back after, even when the start fails. A failed start still leaves its journals. The script refuses to start while an E2 point or a drill holds cyan's lock, but does not hold the lock itself: start nothing else meanwhile.
 
 ## Checks before heavy work on a shared host
 
-- `nvidia-smi` and `who`. `gpu-guard` refuses to start a GPU unit while another user's process holds the GPU. It cannot stop
-  work that starts after the units; another user's processes run in their own tmux, which `tmux ls` does not show.
-- While a campaign measures, `nvidia-smi --query-compute-apps=pid,used_memory --format=csv` on the GPU node lists only the
-  box's units (their cgroups end in `flatshare-*.service`). A point measured while any other process held the GPU is measured again.
+- `nvidia-smi` and `who`. `gpu-guard` refuses to start a GPU unit while another user's process holds the GPU. It cannot stop work that starts after the units; another user's processes run in their own tmux, which `tmux ls` does not show.
+- While a campaign measures, `nvidia-smi --query-compute-apps=pid,used_memory --format=csv` on the GPU node lists only the box's units (their cgroups end in `flatshare-*.service`). A point measured while any other process held the GPU is measured again.
 - `free -g`, and `df -h /dev/shm`: the CPU tier occupies 20 GiB there.
-- Listener audit, as `python3 ~/flatshare/src/deploy/bin/audit-listeners` checks it on either host (`deploy.sh` runs
-  it after each install):
-  - on Phastform, the audit with the three sockets expected finds the servers listening on them and none of the box's
-    units on TCP, but for the SGLang variant's engine on loopback:
+- Listener audit, as `python3 ~/flatshare/src/deploy/bin/audit-listeners` checks it on either host (`deploy.sh` runs it after each install):
+  - on Phastform, the audit with the three sockets expected finds the servers listening on them and none of the box's units on TCP, but for the SGLang variant's engine on loopback:
 
     ```sh
     python3 ~/flatshare/src/deploy/bin/audit-listeners --expect $XDG_RUNTIME_DIR/flatshare/engine.sock \
       --expect $XDG_RUNTIME_DIR/flatshare/stt.sock --expect $XDG_RUNTIME_DIR/flatshare/tts.sock
     ```
 
-    The host's `ss -Hlx` does not list those sockets: each server listens in a network namespace of its own, whose
-    sockets the audit reads from the namespace's own table (`ls -l /run/user/$UID/flatshare/` shows the files; the
-    `nsenter` line under [Start, stop, status](#start-stop-status) shows what listens in the engine's namespace);
+    The host's `ss -Hlx` does not list those sockets: each server listens in a network namespace of its own, whose sockets the audit reads from the namespace's own table (`ls -l /run/user/$UID/flatshare/` shows the files; the `nsenter` line under [Start, stop, status](#start-stop-status) shows what listens in the engine's namespace);
   - on cyan: `ss -Hlntup` shows no LiveKit socket on the host network.
 
 ## Failures

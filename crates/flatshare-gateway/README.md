@@ -33,7 +33,7 @@ flatshare-gateway --config ~/.config/flatshare/gateway.toml
 - Leases, prefetch or a recompute ledger: the lease design was not pursued ([ADR-0006](../../docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)). Nor admission for interactive requests by predicted time to first token: the lifecycle policy does not hold interactive requests.
 - Retries, or balancing requests over several engines. The placement of sessions on several GPU nodes that E2's two-node points were built for (`[nodes]`, `[placement]`, `POST /v1/sessions`) never ran, since no second GPU was free before v1.0, and is kept on the `two-node` branch.
 - TLS. Every listener binds loopback or a private socket, and the upstream is a tunnel's socket or a loopback port.
-- The Anthropic Messages API: agentic-api translates it and calls the gateway.
+- The Anthropic Messages API: a translating layer in front of the gateway, such as agentic-api, calls its OpenAI-compatible routes.
 - Inferring `turn_started` and `turn_finished` from traffic. The finish reason is logged per request.
 - The Responses API's stop reasons (its usage is read).
 - What a production gateway would need beyond this harness:

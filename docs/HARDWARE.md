@@ -1,6 +1,6 @@
 # Running Flatshare on other hardware
 
-Every measurement before 2026-10-26 ran on one RTX 5060 Ti 16 GB, the frozen box, with Gray, a second one, for the first make-room probes; that day an A100 SXM4 80 GB on Google Colab ran E2's core like for like ([what it measured](#what-it-measured-2026-10-26)). This page says what the deployment needs from a GPU node, how a node's files come from a hardware profile, what changes on a card or a host that is not the box's, how one host runs both the GPU servers and the control plane, and how the A100 run is laid out and what it measured.
+Every measurement before 2026-10-26 ran on one RTX 5060 Ti 16 GB, the frozen box, with Gray, a second one, for the first make-room probes; that day an A100 SXM4 80 GB on Google Colab ran E2's core like for like ([what it measured](#what-it-measured-2026-10-26)). This page is for an operator who moves the deployment to another GPU or to a single host, and for a reader who checks the A100 numbers. It says what the deployment needs from a GPU node, how a node's files come from a hardware profile, what changes on a card or a host that is not the box's, how one host runs both the GPU servers and the control plane, and how the A100 run is laid out and what it measured.
 
 A number here is measured (on the box, Gray or the A100, with its source), modeled (flatshare-sim's forecasts, [`forecast.md`](../benchmarks/a100/forecast.md) for the A100 40 GB and [`forecast-80gb.md`](../benchmarks/a100/forecast-80gb.md) for the A100 SXM4 80 GB) or an estimate, and says which.
 
@@ -43,7 +43,7 @@ The profile's "auto" values, in `deploy/profile.py`:
 
   `profile.py` refuses a profile where the two budgets and the TTS's share take more than 0.95 of the card's memory as `nvidia-smi` shows it, the ceiling of one budget alone, since vLLM's total is the card less the driver's reserve; the TTS's share is Kokoro's footprint on the box, 1.08 GiB (`tts_gib`).
 
-  On the box the three take 0.92 of the card, and the worst cases leave 12,250 MiB free against the engine's 11,096 and 4,360 against the STT's 2,378, the engine holding 10,388 MiB (vLLM's total of 15,852 MiB less the servers' footprints of 2026-10-25) [measured]; on a 40 GiB card they take 0.37. C''s 14B outgrows its budget, its pool sized to fill the card up to the box's headroom [modeled], so the sum does not cover it, and its node starts the engine after the audio servers instead (the profile's `engine_order`): each audio server checks free memory before the 14B's allocation, and the engine's own check sees them resident.
+  On the box the three take 0.92 of the card, and the worst cases leave 12,250 MiB free against the engine's 11,096 and 4,360 against the STT's 2,378, the engine holding 10,388 MiB (vLLM's total of 15,852 MiB less the servers' footprints of 2026-10-25) [measured]; on a 40 GiB card they take 0.37. The 14B model of the optional arm C' ([below](#the-optional-arms)) outgrows its budget, its pool sized to fill the card up to the box's headroom [modeled], so the sum does not cover it, and its node starts the engine after the audio servers instead (the profile's `engine_order`): each audio server checks free memory before the 14B's allocation, and the engine's own check sees them resident.
 - **R3, the CPU tier.** The box's ratio, four times the pool, bounded by what `/dev/shm` holds less 2 GiB and by the RAM a single host leaves after 25 GiB for its other processes [estimate]; refused below the pool's own size, since a tier no larger than the pool only mirrors it.
 - **R4, the step cap.** The core keeps the box's 512/256. The time-equivalent cap is the largest multiple of 256 whose chunk takes no longer than the box's 512-token chunk at the scenario's median context, its long-prefill threshold half of it: 1,536 on the A100, central (2,048 low, 1,280 high) [modeled].
 - **R5, the probes.** `probe.py` and `tail.py` size their requests from the engine's pool and context: on the box two KV-case requests of 17,999 tokens, three prefill-case requests of 10,000 and 12 tail agents.
@@ -85,7 +85,7 @@ The profile's "auto" values, in `deploy/profile.py`:
 
 ## Single-host mode
 
-A host off the lab's network has no cyan beside it, so it runs both: the GPU servers from its node directory and cyan's control plane, on the host's own Unix sockets and loopback, each on its core plan's cores. What differs from the box:
+A host without a control host beside it, as the box has cyan, runs both: the GPU servers from its node directory and cyan's control plane, on the host's own Unix sockets and loopback, each on its core plan's cores. What differs from the box:
 
 - **No tunnel.** The GPU servers serve on their own sockets, as the box's do (`$XDG_RUNTIME_DIR/flatshare/engine.sock`, `stt.sock` and `tts.sock`), and the control plane reaches them there: the gateway's upstream is the engine's socket, and a drop-in gives the voice worker the STT's and the TTS's, where cyan has the tunnel's `phastform-stt.sock` and `phastform-tts.sock`. No tunnel unit (`flatshare-tunnel@`) is linked; the units that want one start without it, as systemd starts them. E2's agents reach the engine through the gateway's TCP listener, as on cyan. AIPerf and `vllm bench serve` speak TCP only, so the calibration point and the batch arm, which go straight to the engine, reach it through [`deploy/bin/flatshare-forward`](../deploy/bin/flatshare-forward), from a loopback port to the engine's socket, on the load generator's cores, as the box's calibration points reached their engine through the tunnel's TCP forward.
 - **One directory of units.** The control plane's units and drop-ins share `~/.config/systemd/user` with the GPU node's: `variant.sh` switches only the GPU units' variant drop-ins (`flatshare-engine`, `flatshare-stt`, `flatshare-tts`, the only units the box's and the node's variants change), and `flatshare-bench e2 run` keeps owning the control plane's (the worker's `vad-turns`, linked for good, and the arms' gateway overlay and worker switches), as on cyan.
@@ -272,7 +272,8 @@ the core beside the card's own best stock configuration.
 - **Tuned vLLM, 2,048/0** (rounds 1 and 2, seeds 11 and 12): V2V p95 4,036 and 3,289 ms, against frozen's 4,163 and
   4,783 and the PRs' values' 1,663 and 1,658 on the same samples; the agents 15,082 and 13,990 tokens a second over the
   calls' first 240 s, 1.40 and 1.42 times frozen's and 1.49 and 1.29 times the PRs' values'. At the A100's own best
-  stock cap the voice tail stays twice its SLO, while the box's 512/256 costs the agents about 30% of their tokens.
+  stock cap the voice tail stays two to 2.4 times its SLO, while the box's 512/256 costs the agents about 30% of their
+  tokens.
 - **The PRs' values at 2,048/0** (arm 8, the same two samples): V2V p95 1,810 and 1,843 ms, 141 and 174 ms over the SLO,
   against tuned vLLM's 4,036 and 3,289 ms on the same samples; the agents at 100% and 101% of tuned vLLM's tokens a
   second (15,124 and 14,145), their TTFT p50 1.0 and 2.0 s and p99 18.4 and 11.2 s, against tuned vLLM's 1.0 and 2.0 s

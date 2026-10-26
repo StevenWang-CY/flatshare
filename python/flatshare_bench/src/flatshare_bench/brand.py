@@ -10,7 +10,8 @@ turn's lane green with a waveform, as the method figure draws a voice turn's blo
 adjustments, without ligatures.
 
 Writes logo.svg and logo-dark.svg (the mark and the wordmark, for the README's light and dark themes), mark.svg
-and mark-dark.svg (the mark alone), and social-preview.svg with social-preview.png (1280 x 640, GitHub's size for
+and mark-dark.svg (the mark alone), mark-small.svg and mark-small-dark.svg (the mark without its waveform, for 16
+to 24 pixels), and social-preview.svg with social-preview.png (1280 x 640, GitHub's size for
 a repository's social preview). resvg renders the PNG, which records the SHA-256 of the SVG it was rendered from.
 """
 
@@ -33,8 +34,9 @@ from flatshare_bench.figure_style import DARK, FONT_DIR, LIGHT
 
 WORDMARK = "flatshare"
 TAGLINE = "A voice agent and coding agents on one GPU"
-SUBLINE = "Two scheduler rules make room in vLLM for a voice agent's turn beside long-context coding agents"
+SUBLINE = "Two scheduler changes, proposed to vLLM, make room for a voice agent's turn beside long-context coding agents"
 URL = "github.com/StevenWang-CY/flatshare"
+NOTICE = "An independent project · Apache-2.0"
 
 SEMIBOLD, REGULAR = "STIXTwoText-SemiBold.ttf", "STIXTwoText-Regular.ttf"
 
@@ -49,7 +51,7 @@ WAVE_WIDTH = 2.8
 THEMES = {
     "light": {
         "ink": LIGHT["ink"],
-        "block": LIGHT["bar-mid"],
+        "block": "#8c959f",
         "lane": LIGHT["green"],
         "wave": "#ffffff",
     },
@@ -60,8 +62,10 @@ THEMES = {
         "wave": "#ffffff",
     },
 }
-"""Each theme's colors, from the figures' palette. The lane keeps the light theme's green in both themes, so
-that the mark is one object on either page; only its neutrals follow the theme."""
+"""Each theme's colors. The lane keeps the light theme's green in both themes, so that the mark is one object on
+either page, and only its neutrals follow the theme: the wordmark takes the figures' ink, and the blocks a gray
+that keeps 3:1 against the page, WCAG's floor for a graphic (#8c959f on white; the figures' dark bar gray on
+#0d1117)."""
 
 TEXT_SIZE, TEXT_GAP, BASELINE = 66.0, 20.0, 54.0
 """The wordmark beside a 64-unit mark: its size (its ascenders reach the top row), its distance from the mark,
@@ -185,10 +189,18 @@ def _rect(x: float, y: float, width: float, height: float, radius: float, fill: 
 
 
 def pool(
-    x: float, y: float, columns: int, rows: int, lane: int, scale: float, colors: dict[str, str]
+    x: float,
+    y: float,
+    columns: int,
+    rows: int,
+    lane: int,
+    scale: float,
+    colors: dict[str, str],
+    wave: bool = True,
 ) -> Iterator[str]:
     """A KV pool of ``columns`` x ``rows`` blocks from (x, y), ``scale`` canvas units to a mark unit; its
-    column ``lane`` is the voice turn's, one green capsule the pool's height with the waveform at its middle."""
+    column ``lane`` is the voice turn's, one green capsule the pool's height, with the waveform at its middle
+    unless ``wave`` is false."""
     pitch, side = (BLOCK + GAP) * scale, BLOCK * scale
     for column in range(columns):
         left = x + column * pitch
@@ -198,6 +210,8 @@ def pool(
             continue
         height = rows * pitch - GAP * scale
         yield _rect(left, y, side, height, side / 2, colors["lane"])
+        if not wave:
+            continue
         middle_x, middle_y = left + side / 2, y + height / 2
         width = WAVE_WIDTH * scale
         for offset, bar in WAVE:
@@ -205,10 +219,10 @@ def pool(
             yield _rect(x0, middle_y - length / 2, width, length, width / 2, colors["wave"])
 
 
-def mark(x: float, y: float, size: float, colors: dict[str, str]) -> str:
+def mark(x: float, y: float, size: float, colors: dict[str, str], wave: bool = True) -> str:
     """The mark in a ``size``-unit square at (x, y): three columns of three blocks, the middle one the lane."""
     scale = size / UNIT
-    return "".join(pool(x + GAP * scale, y + GAP * scale, 3, 3, 1, scale, colors))
+    return "".join(pool(x + GAP * scale, y + GAP * scale, 3, 3, 1, scale, colors, wave))
 
 
 def _svg(
@@ -236,11 +250,11 @@ def logo(theme: str) -> str:
     return _svg((GAP, top, word.bounds[2] - GAP, bottom - top), body, "Flatshare")
 
 
-def mark_svg(theme: str) -> str:
-    """The mark alone, cropped to its ink."""
-    return _svg(
-        (GAP, GAP, UNIT - 2 * GAP, UNIT - 2 * GAP), mark(0, 0, UNIT, THEMES[theme]), "Flatshare"
-    )
+def mark_svg(theme: str, wave: bool = True) -> str:
+    """The mark alone, cropped to its ink; without its waveform for 16 to 24 pixels, where the bars would be
+    narrower than a pixel."""
+    body = mark(0, 0, UNIT, THEMES[theme], wave)
+    return _svg((GAP, GAP, UNIT - 2 * GAP, UNIT - 2 * GAP), body, "Flatshare")
 
 
 @dataclass(frozen=True)
@@ -294,6 +308,8 @@ def preview_parts() -> list[Placed]:
     for i, line in enumerate(subline):
         parts.append(text(line, REGULAR, 27.0, margin, y + 67 + 37 * i, LIGHT["mute"]))
     parts.append(text(URL, REGULAR, 23.0, margin, height - 56, LIGHT["mute"]))
+    notice_x = width - margin - outline(NOTICE, REGULAR, 23.0, 0, 0).advance
+    parts.append(text(NOTICE, REGULAR, 23.0, notice_x, height - 56, LIGHT["mute"]))
     return parts
 
 
@@ -329,6 +345,7 @@ def svgs() -> dict[str, str]:
     for theme, suffix in (("light", ""), ("dark", "-dark")):
         out[f"logo{suffix}.svg"] = logo(theme)
         out[f"mark{suffix}.svg"] = mark_svg(theme)
+        out[f"mark-small{suffix}.svg"] = mark_svg(theme, wave=False)
     out["social-preview.svg"] = preview()
     return out
 

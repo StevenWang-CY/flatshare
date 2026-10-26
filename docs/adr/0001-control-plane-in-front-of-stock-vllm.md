@@ -5,7 +5,7 @@
 
 ## Context
 
-One 16 GB GPU has to serve realtime voice turns and a swarm of tool-using coding agents. Stock vLLM 0.32 schedules everything from one queue:
+One 16 GB GPU has to serve realtime voice turns and many tool-using coding agents. Stock vLLM 0.32 schedules everything from one queue:
 - priority scheduling orders the waiting queue and picks which running request to preempt when one cannot grow, but never preempts running work to admit a waiting request;
 - prefix-cache eviction is LRU, with no notion of when a session will be back;
 - a 16k-token agent turn costs 0.18 s from the GPU cache, 0.57 s from host RAM and 4.75 s recomputed (measured on this card on 2026-10-21 with BF16 weights; [BENCHMARKS.md](../BENCHMARKS.md#tier-cost-model-resuming-an-agent-turn-e0) has the frozen box's W1 values).
@@ -15,7 +15,7 @@ There are three ways to add session awareness:
 2. adopt an external router (llm-d, Dynamo, vllm-project/router);
 3. put a thin control plane in front of the engine. It sets headers, budgets and admission, and uses the engine's supported extension points for anything that must run inside it.
 
-Option 1 tracks a codebase that releases every two weeks, and its patches rarely merge. Option 2 brings Kubernetes and endpoint scoring. The problems here are timing policies on a single node, plus accounting.
+Option 1 tracks a codebase that releases every two weeks, and a fork carries its patches until they merge, if they do. Option 2 brings Kubernetes and endpoint scoring. The problems here are timing policies on a single node, plus accounting.
 
 ## Decision
 
@@ -29,10 +29,10 @@ Build option 3: a Rust service (tokio, hyper/axum, tower).
 - Upgrading vLLM is a pin change plus a compatibility run. There is no fork to rebase.
 - Some policies cannot be expressed outside the engine, the main one being preemption of running work. The control plane compensates with admission and turn-imminent headroom (ADR-0003). The engine's step cap (`--max-num-batched-tokens`, `--long-prefill-token-threshold`) bounds the rest.
 - The control plane adds one hop. Its budget is ≤ 2 ms per request at p99, and it is measured on every run.
-- Rust matches agentic-api, the API layer in front of it, and keeps the data path cheap on slow hosts.
+- Rust matches agentic-api (vllm-project/agentic-api), the API layer the design placed in front of it for coding agents, and keeps the data path cheap on slow hosts.
 
 ## Later
 
 - **No trait** (2026-10-23). The policies are variants of one enum in `flatshare_core::admission`, driven by a pure state machine (arrivals, first bytes, departures and the realtime sessions' turns) that the gateway feeds and whose waits it carries out.
 - **The simulator** (2026-10-24). `flatshare-sim` shares `flatshare-core`'s cost and step-time models, not its policies: only the gateway runs those.
-- **The engine change** (2026-10-23/24). The consequence that the control plane compensates with admission and headroom did not hold: in E2 only an engine change moved the voice tail. It runs as the generated `make-room` variant on vLLM 0.32.0 and is proposed upstream as #63350 and #63351 ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)).
+- **The engine change** (2026-10-23/24). The consequence that the control plane compensates with admission and headroom did not hold: in E2 only an engine change moved the voice tail. It runs as the generated `make-room` variant on vLLM 0.32.0 and is proposed to vLLM as pull requests #63350 and #63351, under review ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)).

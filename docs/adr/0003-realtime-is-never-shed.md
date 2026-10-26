@@ -5,7 +5,7 @@
 
 ## Context
 
-A voice caller expects an answer about a second after they stop talking. Rejecting a voice turn with a 429 drops the call mid-conversation, which is the failure users notice most. Load-shedding routers (llm-d's flow control, for example) treat every class the same way at the limit.
+A voice caller expects an answer about a second after they stop talking. Rejecting a voice turn with a 429 leaves the caller without an answer mid-conversation. Load-shedding routers (llm-d's flow control, for example) treat every class the same way at the limit.
 
 On this hardware, the threat to voice is not request volume but background work holding the GPU:
 - one server-side voice turn takes 415 ms idle and 876 ms median while background agents run 8k-token prefills, and LLM time to first token rises from 39 to 371 ms (the 2026-10-22 probe; [BENCHMARKS.md](../BENCHMARKS.md#voice-on-the-shared-gpu) has the frozen box's W1 values);

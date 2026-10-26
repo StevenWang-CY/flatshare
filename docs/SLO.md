@@ -1,6 +1,6 @@
 # Service levels
 
-Three classes share the GPU, the tiers API providers sell as priority, standard and flex. A gateway maps each tenant to a class, capped by the tenant's `max_class`, and sends the class's priority to the engine, where a lower value is served first.
+This page defines the service classes, the indicators measured for each, and the SLO with its reference in each campaign, for a reader interpreting an SLO figure anywhere in the documents. Three classes share the GPU, matching the tiers API providers sell as priority, standard and flex. A gateway maps each tenant to a class, capped by the tenant's `max_class`, and sends the class's priority to the engine, where a lower value is served first.
 
 | Class | Traffic | Engine priority | Indicators |
 |---|---|---|---|
