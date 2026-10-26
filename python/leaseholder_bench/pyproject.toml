@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "leaseholder-bench"
-version = "1.0.0"
+version = "1.1.0"
 description = "Leaseholder's benchmark toolchain: block-scaled agent traces, AIPerf plugins, latency probes, E2's harness and report, and the failure drills' client"
 readme = "README.md"
 license = "Apache-2.0"

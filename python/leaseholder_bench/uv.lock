@@ -1030,7 +1030,7 @@ wheels = [
 
 [[package]]
 name = "leaseholder-bench"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -1066,7 +1066,7 @@ provides-extras = ["aiperf", "test"]
 
 [[package]]
 name = "leaseholder-stats"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "../leaseholder_stats" }
 
 [package.metadata]
