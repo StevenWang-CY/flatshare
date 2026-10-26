@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "flatshare-vllm"
-version = "1.2.0"
+version = "1.3.0"
 description = "Flatshare's patches to vLLM 0.32's scheduler: the make-room variant (vLLM PRs #63350 and #63351, backported) and the pr54530 baseline, their build, GPU probes and tests"
 readme = "README.md"
 license = "Apache-2.0"
