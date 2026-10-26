@@ -1,0 +1,71 @@
+name: Bug report
+description: Something in Flatshare does not behave as its documents say.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Report a vulnerability privately instead, as SECURITY.md describes. A problem in vLLM, SGLang, LiveKit or
+        another project Flatshare runs belongs with that project, unless Flatshare's change or configuration causes it.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - flatshare-gateway
+        - The make-room variant (python/flatshare_vllm)
+        - flatshare-sim
+        - flatshare-bench or the E2 harness
+        - flatshare-voice
+        - Deploy scripts and units (deploy/)
+        - Documents
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The release, or `git describe --always` of your checkout.
+      placeholder: v1.2
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, with the error or the numbers.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have happened, and the document or test that says so, if one does.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The commands, and the arm file, configuration or input they used.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >-
+        OS and CPU; the GPU, driver and CUDA if one is involved; the vLLM, Python and Rust versions; how it is deployed
+        (the box's hosts, a hardware profile, single-host mode, or none).
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The relevant lines of the unit's journal, the gateway's log or the test's output.
+      render: text
+    validations:
+      required: false

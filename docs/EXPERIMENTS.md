@@ -35,14 +35,14 @@ The original E3, a recompute ledger validated by injected causes with cache cont
 | 8 | What routers ship | llm-d's flow control, emulated in the gateway (ceilings 6/6/6); SMG 1.13.0's priority scheduler, as shipped; abort-and-resubmit of background work before its first byte (preempt-resubmit) |
 | 9 | make-room with the lifecycle policy | The change and the lifecycle policy, below, with single-mechanism ablations |
 
-Arm 10 of the plan (MPS with an active-thread split, audio off the GPU) was not run in E2: W1's MPS comparison had already shown that the interference that matters is inside the engine ([BENCHMARKS.md](BENCHMARKS.md#voice-on-the-shared-gpu)).
+Arm 10 of E2's original plan (MPS with an active-thread split, audio off the GPU) was not run: W1's MPS comparison had already shown that the interference that matters is inside the engine ([BENCHMARKS.md](BENCHMARKS.md#voice-on-the-shared-gpu)).
 
 **Arm 9** ([`disc-a9-s24.toml`](../benchmarks/e2/arms/disc-a9-s24.toml)):
 - **The engine** runs the `make-room` variant ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351)): at most two preemptions a step for a waiting request that lacks KV, the budget cap with a 16-token window, and a 2,048-token reserve. The budget cap took two changes before the repeat rounds, each found from a point's stage waterfall and reproduced on a probe; the earlier versions' points are kept apart and not placed on the frontier.
 - **The gateway** runs the lifecycle policy (`policy = "lifecycle"`; [ARCHITECTURE.md §6](ARCHITECTURE.md#6-tested-and-not-adopted)): 1,024 tokens of KV headroom per armed call, armed from speech onset; 150 ms of predicted background prefill per critical window; replies capped at 16 tokens when the headroom was not there (degrade); aging after 10 s.
 - **The voice worker** posts its lifecycle events.
 - **Ablations**, each arm 9 without one part: the throttle, the headroom, degrade, the events, the gateway policy (the engine only), the change (the gateway only), and each engine switch. The headroom is also armed by the request instead of speech onset, and the throttle's budget run at 0 and 500 ms.
-- **Beyond the plan:**
+- **Beyond the original plan:**
   - arm 9 without degrade but with a 48-token window;
   - the engine as the PRs propose it (no reserve, no gateway policy), with the KV preemption alone, with the budget cap, and with a 48-token window;
   - arm 9 and the frozen box in the standard scenario.
@@ -57,7 +57,7 @@ Arm 10 of the plan (MPS with an active-thread split, audio off the GPU) was not 
 - **The gateway.** Its decisions: deferrals by reason, degraded replies and resubmissions. It also counts the headroom's false alarms, and a record keeps the counters that moved: none of E2's records has one, since every utterance of the callers is a turn.
 - **The GPU.** Its clocks and temperature.
 
-Audio gaps, abort latency, wasted tokens and cost per token were in the plan and are not computed.
+Audio gaps, abort latency, wasted tokens and cost per token were in the original plan and are not computed.
 
 **Volume and builds.**
 - **Runs.** W2 measured each baseline once (50 turns). W3–W4 repeated the discriminating scenario in rounds, rotating the order of the engine groups so that no configuration always runs at the same hour. Each headline configuration has five runs (250 turns); each ablation and PR configuration has three (150). Two exceptions: the PRs' configurations and arm 9's 48-token window ran after the rounds, in a session of their own (10-23 23:16Z – 10-24 01:35Z) with no frozen-box, arm-9 or voice-alone point, and arm 9's ablations always ran in one order. Every run of W2–W4 replays the same workload sample (agent seed 11, caller seed 0), so their ranges measure timing noise only.

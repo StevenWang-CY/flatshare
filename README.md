@@ -185,7 +185,7 @@ configuration (the CPU tier, the priorities, what to watch and how it fails) and
 - **The agents.** AIPerf replays the 48 longest-context Claude Code sessions of SemiAnalysis' traces, block-scaled 32×,
   with their think times, through the gateway at a lower priority.
 - **Rounds.** Every configuration runs in each round, in a rotated order, on the round's own sample of the agents, and
-  each call opens with an unmeasured warm-up turn. Baselines are configured as their authors recommend.
+  each call opens with an unmeasured warm-up turn. Baselines are configured as their documentation recommends.
 - **Reproducibility.** `make reproduce-e2` rebuilds every table and figure from the committed records. The gateway
   adds 0.29 ms to a voice request's first token, paired against the engine's own socket on the final transport
   ([W6](docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)).
@@ -236,7 +236,7 @@ docs/                     the documents above, ADRs, figures and the logo
 
 ## Development
 
-Rust 1.98, uv and Python 3.12; no GPU.
+Rust 1.98, uv, Python 3.12 and GNU Make 4 (macOS's `/usr/bin/make` 3.81 cannot read the Makefile); no GPU.
 
 ```sh
 make check                           # lint and the tests of CI's main job
@@ -274,7 +274,7 @@ If you use Flatshare or its measurements, please cite the repository ([CITATION.
 ```bibtex
 @software{wang_flatshare_2026,
   author  = {Wang, Chuyue},
-  title   = {Flatshare: a voice agent and coding agents on one GPU},
+  title   = {Flatshare},
   year    = {2026},
   version = {1.2.0},
   url     = {https://github.com/StevenWang-CY/flatshare}

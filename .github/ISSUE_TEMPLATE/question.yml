@@ -1,0 +1,28 @@
+name: Question
+description: Ask about the measurements, the scheduler change, or running Flatshare.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        docs/README.md maps the documents by the question each answers, and docs/GLOSSARY.md defines the terms.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: What you have read or tried
+      description: The documents, records or commands your question is about.
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v1.2
+    validations:
+      required: false

@@ -137,7 +137,7 @@ keeps its datasets in a directory named by a hash of its own code and version
 dataset an older one built (`aiperf_plugin.cache_datasets`). As for AIPerf's own trace types, a
 run then writes no `inputs.json`, which took 124 MB of each point's directory for the long
 traces. Nothing evicts an entry, 0.14 GB for the long traces and 0.33 GB for the whole corpus:
-delete the directory to reclaim them (the cache filled green's disk once).
+delete the directory to reclaim them (the cache once filled a host's disk).
 
 Things to know:
 
