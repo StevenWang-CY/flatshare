@@ -285,7 +285,18 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     shared.metrics.request_body(route, read - ex.received);
     let signals = shared.upstream_priority;
     let priority = signals.body.then(|| class.engine_priority());
-    let mut body = match rewrite_body(&body, &tenant.cache_salt, priority, &shared.metrics) {
+    // The deployment's cap on every realtime reply, in the rewrite's one pass over the body.
+    let realtime_cap = shared
+        .realtime_max_tokens
+        .filter(|_| class == SloClass::Realtime)
+        .map(|cap| (route, cap));
+    let mut body = match rewrite_body(
+        &body,
+        &tenant.cache_salt,
+        priority,
+        realtime_cap,
+        &shared.metrics,
+    ) {
         Ok(body) => body,
         Err(err) => return ex.error(StatusCode::BAD_REQUEST, "invalid_json", err.to_string()),
     };
@@ -335,12 +346,9 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         }
     };
 
-    // The reply cap: the deployment's on every realtime reply, and degrade's, the lower of the two.
+    // Degrade's reply cap, over the deployment's: the lower of the two holds.
     let degrade = ticket.as_ref().and_then(Ticket::reply_cap);
-    let realtime = shared
-        .realtime_max_tokens
-        .filter(|_| class == SloClass::Realtime);
-    if let Some(cap) = realtime.into_iter().chain(degrade).min() {
+    if let Some(cap) = degrade {
         body.json = cap_reply(&body.json, route, cap);
     }
     ex.degraded = degrade.is_some();

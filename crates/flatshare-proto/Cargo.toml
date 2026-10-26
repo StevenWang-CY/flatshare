@@ -1,11 +1,17 @@
 [package]
 name = "flatshare-proto"
-description = "Flatshare wire types: lifecycle events, headers, SLO classes and session ids"
+description = "Flatshare's wire types: lifecycle events, headers, SLO classes and session ids, with their JSON Schemas"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+homepage.workspace = true
 repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+keywords = ["llm", "vllm", "voice-agent", "json-schema", "serde"]
+categories = ["encoding", "network-programming"]
 
 [dependencies]
 schemars.workspace = true

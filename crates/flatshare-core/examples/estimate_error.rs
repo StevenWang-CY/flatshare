@@ -94,6 +94,8 @@ fn estimates(records: &[Record]) -> (Vec<u64>, Vec<u64>, usize) {
     (anchored, fallback, with_report)
 }
 
+/// The estimates' error over all prompt tokens, and its quantiles over the requests of 1,000 tokens or more. An
+/// export may have neither: an engine that reported no usage, or a replay of short prompts.
 fn describe(records: &[Record], estimates: &[u64]) -> String {
     let reported: u64 = records.iter().map(|r| r.prompt_tokens).sum();
     let off: u64 = records
@@ -108,15 +110,78 @@ fn describe(records: &[Record], estimates: &[u64]) -> String {
         .map(|(r, &e)| e.abs_diff(r.prompt_tokens) as f64 / r.prompt_tokens as f64)
         .collect();
     errors.sort_by(f64::total_cmp);
-    let within = |q: f64| errors[((errors.len() - 1) as f64 * q).round() as usize] * 100.0;
+    let total = if reported == 0 {
+        "no prompt tokens reported".to_owned()
+    } else {
+        format!(
+            "off by {:.2}% of all prompt tokens",
+            off as f64 / reported as f64 * 100.0
+        )
+    };
+    let Some(last) = errors.len().checked_sub(1) else {
+        return format!("{total}; no request of 1,000 tokens or more");
+    };
+    let within = |q: f64| errors[(last as f64 * q).round() as usize] * 100.0;
     format!(
-        "off by {:.2}% of all prompt tokens; of {} requests of 1,000 tokens or more, 50% within {:.1}%, \
-         90% within {:.1}%, 99% within {:.1}%, all within {:.1}%",
-        off as f64 / reported as f64 * 100.0,
+        "{total}; of {} requests of 1,000 tokens or more, 50% within {:.1}%, 90% within {:.1}%, 99% within \
+         {:.1}%, all within {:.1}%",
         errors.len(),
         within(0.5),
         within(0.9),
         within(0.99),
         within(1.0),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(start_ns: u64, end_ns: u64, bytes: u64, prompt_tokens: u64) -> Record {
+        Record {
+            start_ns,
+            end_ns,
+            session: "s".to_owned(),
+            bytes,
+            prompt_tokens,
+        }
+    }
+
+    #[test]
+    fn a_request_is_estimated_from_its_sessions_last_report_that_had_ended() {
+        let records = [
+            record(0, 10, 8_000, 1_900),
+            // Sent while the first was in flight: no report yet, its bytes alone.
+            record(5, 20, 8_400, 2_000),
+            // After both ended: the second's report and the 400 bytes since, 100 tokens.
+            record(30, 40, 8_800, 2_100),
+        ];
+        let (anchored, fallback, with_report) = estimates(&records);
+        assert_eq!(anchored, [2_000, 2_100, 2_100]);
+        assert_eq!(fallback, [2_000, 2_100, 2_200]);
+        assert_eq!(with_report, 1);
+        assert_eq!(
+            describe(&records, &anchored),
+            "off by 3.33% of all prompt tokens; of 3 requests of 1,000 tokens or more, 50% within 5.0%, 90% \
+             within 5.3%, 99% within 5.3%, all within 5.3%"
+        );
+    }
+
+    #[test]
+    fn an_export_without_long_requests_or_usage_is_described_too() {
+        // Every prompt under 1,000 tokens: no quantile to give, where the error over all tokens stands (500 tokens
+        // for each, 100 off each).
+        let short = [record(0, 10, 2_000, 400), record(20, 30, 2_400, 600)];
+        let (anchored, _, _) = estimates(&short);
+        assert_eq!(anchored, [500, 500]);
+        assert_eq!(
+            describe(&short, &anchored),
+            "off by 20.00% of all prompt tokens; no request of 1,000 tokens or more"
+        );
+        // No request at all, as from an export whose records all lacked their usage.
+        assert_eq!(
+            describe(&[], &[]),
+            "no prompt tokens reported; no request of 1,000 tokens or more"
+        );
+    }
 }

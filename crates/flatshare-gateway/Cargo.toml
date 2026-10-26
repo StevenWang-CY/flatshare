@@ -1,11 +1,17 @@
 [package]
 name = "flatshare-gateway"
-description = "Flatshare gateway: the serving harness in front of vLLM (auth, sanitization, sessions, classes, admission, SSE passthrough, lifecycle events, metrics)"
+description = "Flatshare's HTTP gateway in front of a vLLM engine: API-key tenants, input sanitization, sessions and SLO-class priorities, experimental admission policies, SSE relay, lifecycle events and metrics"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+homepage.workspace = true
 repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+keywords = ["llm", "vllm", "gateway", "proxy", "voice-agent"]
+categories = ["web-programming::http-server", "network-programming"]
 
 [dependencies]
 axum.workspace = true

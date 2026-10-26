@@ -2,7 +2,7 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -436,10 +436,24 @@ impl axum::serve::Listener for DropsFirst {
     }
 }
 
+/// A socket path of its own, in a directory only this user can enter (mode 700), where the gateway binds sockets; the
+/// directory, one for all of the user's test runs, stays.
 pub fn socket_path() -> PathBuf {
+    static DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+        // Short: a socket's path must fit sun_path.
+        let user = nix::unistd::Uid::effective();
+        let dir = std::env::temp_dir().join(format!("flatshare-gw-sockets-{user}"));
+        match std::fs::DirBuilder::new().mode(0o700).create(&dir) {
+            Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
+                panic!("{}: {e}", dir.display())
+            }
+            _ => std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap(),
+        }
+        dir
+    });
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("flatshare-gw-{}-{n}.sock", std::process::id()))
+    DIR.join(format!("gw-{}-{n}.sock", std::process::id()))
 }
 
 /// The metrics key's file of every test gateway: [`METRICS_KEY`], mode 600, written anew by each test process.

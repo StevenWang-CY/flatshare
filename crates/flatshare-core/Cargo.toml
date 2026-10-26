@@ -1,16 +1,27 @@
 [package]
 name = "flatshare-core"
-description = "Flatshare's pure models of the frozen box (cost, geometry, step), which flatshare-sim runs, and the gateway's admission policies"
+description = "Pure, clock-free models for Flatshare: KV tier costs, KV geometry and a step-time model of vLLM 0.32, and the admission policies flatshare-gateway runs"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+homepage.workspace = true
 repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+keywords = ["llm", "vllm", "kv-cache", "scheduling", "admission-control"]
+categories = ["algorithms", "science"]
 
 [dependencies]
 flatshare-proto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+# The example's own tests run with the crate's: its summary of an export.
+[[example]]
+name = "estimate_error"
+test = true
 
 [lints]
 workspace = true

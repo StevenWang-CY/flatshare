@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::future::{Future, IntoFuture};
 use std::io;
 use std::os::fd::{AsFd, OwnedFd};
-use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -530,9 +530,11 @@ impl Drop for SocketFile {
     }
 }
 
-/// Binds a Unix socket with mode 0600. A socket file nobody accepts on is stale (its process died) and is
-/// replaced; a live socket, or a file that is not a socket, is an error.
+/// Binds a Unix socket with mode 0600, in a directory only the gateway's user can enter. A socket file nobody
+/// accepts on is stale (its process died) and is replaced; a live socket, or a file that is not a socket, is an
+/// error.
 async fn bind_unix(path: &Path) -> io::Result<(UnixListener, SocketFile)> {
+    private_directory(path)?;
     if UnixStream::connect(path).await.is_ok() {
         return Err(io::Error::new(
             io::ErrorKind::AddrInUse,
@@ -552,6 +554,34 @@ async fn bind_unix(path: &Path) -> io::Result<(UnixListener, SocketFile)> {
     Ok((listener, file))
 }
 
+/// Refuses a socket `path` in a directory that is not the gateway's user's or that others may enter. bind() creates
+/// the socket's file with the process's umask, and only then can its mode be set: meanwhile the directory is what
+/// keeps other users from connecting (pathname sockets honor their directory's permissions, unix(7)), as the units'
+/// %t/flatshare (mode 700) does. A tenant's socket admits its requests without a key.
+fn private_directory(path: &Path) -> io::Result<()> {
+    let dir = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    let meta = std::fs::metadata(dir).map_err(|e| context(e, dir.display()))?;
+    let user = nix::unistd::Uid::effective().as_raw();
+    if meta.uid() == user && meta.mode() & 0o077 == 0 {
+        return Ok(());
+    }
+    Err(io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        format!(
+            "{}: the socket's directory must be the gateway's user's alone (mode 700, as the units' \
+             %t/flatshare), so that no other user can connect before the socket's mode is set; {} is mode \
+             {:o}, owned by uid {}",
+            path.display(),
+            dir.display(),
+            meta.mode() & 0o7777,
+            meta.uid(),
+        ),
+    ))
+}
+
 fn context(err: io::Error, what: impl Display) -> io::Error {
     io::Error::new(err.kind(), format!("{what}: {err}"))
 }
@@ -567,5 +597,28 @@ mod tests {
         let long: Uri = format!("/{}", "a".repeat(300)).parse().unwrap();
         let line = request_line(&Method::POST, &long);
         assert_eq!(line, format!("POST /{}…", "a".repeat(255)));
+    }
+
+    #[tokio::test]
+    async fn a_socket_is_bound_only_in_a_directory_that_others_cannot_enter() {
+        let dir = std::env::temp_dir().join(format!("flatshare-gw-dir-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("gw.sock");
+        let user = nix::unistd::Uid::effective();
+        for mode in [0o755, 0o750, 0o711, 0o701] {
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(mode)).unwrap();
+            let err = bind_unix(&path).await.unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+            let says = format!("{} is mode {mode:o}, owned by uid {user}", dir.display());
+            assert!(err.to_string().ends_with(&says), "{err}");
+            assert!(!path.exists(), "refused before binding");
+        }
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let (listener, file) = bind_unix(&path).await.unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        drop((listener, file));
+        assert!(!path.exists(), "removed with the server's socket file");
+        std::fs::remove_dir(&dir).unwrap();
     }
 }

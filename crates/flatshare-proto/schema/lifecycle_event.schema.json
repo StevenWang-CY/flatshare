@@ -212,7 +212,7 @@
       "description": "Who emitted an event.",
       "oneOf": [
         {
-          "description": "agentic-api's lifecycle sink: exact server-side tool timing.",
+          "description": "A lifecycle sink as proposed for agentic-api (#364): exact server-side tool timing.",
           "type": "string",
           "const": "agentic-api"
         },

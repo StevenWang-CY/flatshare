@@ -41,7 +41,7 @@ impl LifecycleEvent {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum EventSource {
-    /// agentic-api's lifecycle sink: exact server-side tool timing.
+    /// A lifecycle sink as proposed for agentic-api (#364): exact server-side tool timing.
     AgenticApi,
     /// The LiveKit voice worker: voice activity, end of turn, playback, barge-in.
     VoiceWorker,

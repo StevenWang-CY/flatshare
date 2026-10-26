@@ -265,7 +265,9 @@ impl fmt::Display for InvalidBody {
 }
 
 /// Removes the engine-control fields from a JSON object body and sets the tenant's `cache_salt`, and the
-/// gateway's own `priority` if it is given one.
+/// gateway's own `priority` if it is given one. With a `reply_cap`, the route's and a number of tokens (the
+/// deployment's `realtime_max_tokens`), it caps the reply in the same pass, to the bytes [`cap_reply`] would
+/// make of the rewritten body.
 ///
 /// Only the top level is parsed: values stay raw slices of the input and are copied through unchanged, so the
 /// cost is one validating scan and one copy whatever the body's size. Keys are compared after JSON unescaping,
@@ -274,12 +276,20 @@ pub(crate) fn rewrite_body(
     body: &[u8],
     cache_salt: &str,
     priority: Option<i32>,
+    reply_cap: Option<(Route, u32)>,
     metrics: &Metrics,
 ) -> Result<Body, InvalidBody> {
     let TopLevel(fields) = serde_json::from_slice(body).map_err(InvalidBody)?;
     let mut json = Vec::with_capacity(body.len() + 64);
     let mut prompt_cache_key = None;
     json.push(b'{');
+    // No reply cap is an engine-control field, so the body the rewrite keeps has the caps this one has.
+    if let Some((route, cap)) = reply_cap
+        && !fields.iter().any(|(key, _)| is_reply_cap(key))
+    {
+        write!(json, "\"{}\":{cap},", reply_cap_field(route))
+            .expect("writing to a Vec cannot fail");
+    }
     for (key, value) in &fields {
         if let Some(field) = headers::ENGINE_CONTROL_BODY_FIELDS
             .into_iter()
@@ -293,7 +303,10 @@ pub(crate) fn rewrite_body(
         }
         serde_json::to_writer(&mut json, key).expect("writing to a Vec cannot fail");
         json.push(b':');
-        json.extend_from_slice(value.get().as_bytes());
+        match reply_cap {
+            Some((_, cap)) if is_reply_cap(key) => write_capped(&mut json, value, cap),
+            _ => json.extend_from_slice(value.get().as_bytes()),
+        }
         json.push(b',');
     }
     if let Some(priority) = priority {
@@ -312,32 +325,23 @@ pub(crate) fn rewrite_body(
 /// `max_tokens`, which Completions reads, and the Responses API's `max_output_tokens`.
 const REPLY_CAPS: [&str; 3] = ["max_completion_tokens", "max_tokens", "max_output_tokens"];
 
-/// Caps a request's reply at `cap` tokens (`realtime_max_tokens`, or degrade's cap) in a body [`rewrite_body`]
-/// wrote: each of the body's reply caps is lowered to `cap` if it is above it or not a count, and a body with none
-/// gets the route's own.
+/// Caps a request's reply at `cap` tokens (degrade's) in a body [`rewrite_body`] wrote: each of the body's reply
+/// caps is lowered to `cap` if it is above it or not a count, and a body with none gets the route's own. Capping a
+/// capped body again keeps the lower of the two caps, byte for byte as one cap at the lower would.
 pub(crate) fn cap_reply(body: &[u8], route: Route, cap: u32) -> Bytes {
     let TopLevel(fields) =
         serde_json::from_slice(body).expect("the gateway writes bodies as JSON objects");
     let mut json = Vec::with_capacity(body.len() + 32);
     json.push(b'{');
-    if !fields
-        .iter()
-        .any(|(key, _)| REPLY_CAPS.contains(&key.as_str()))
-    {
-        let field = match route {
-            Route::Completions => "max_tokens",
-            Route::Responses => "max_output_tokens",
-            _ => "max_completion_tokens",
-        };
-        write!(json, "\"{field}\":{cap},").expect("writing to a Vec cannot fail");
+    if !fields.iter().any(|(key, _)| is_reply_cap(key)) {
+        write!(json, "\"{}\":{cap},", reply_cap_field(route))
+            .expect("writing to a Vec cannot fail");
     }
     for (key, value) in &fields {
         serde_json::to_writer(&mut json, key).expect("writing to a Vec cannot fail");
         json.push(b':');
-        if REPLY_CAPS.contains(&key.as_str()) {
-            let asked = serde_json::from_str::<u32>(value.get()).ok();
-            let capped = asked.filter(|&asked| asked <= cap).unwrap_or(cap);
-            write!(json, "{capped}").expect("writing to a Vec cannot fail");
+        if is_reply_cap(key) {
+            write_capped(&mut json, value, cap);
         } else {
             json.extend_from_slice(value.get().as_bytes());
         }
@@ -346,6 +350,26 @@ pub(crate) fn cap_reply(body: &[u8], route: Route, cap: u32) -> Bytes {
     // Every member, the one added among them, ends with a comma.
     *json.last_mut().expect("a member was written") = b'}';
     json.into()
+}
+
+fn is_reply_cap(key: &str) -> bool {
+    REPLY_CAPS.contains(&key)
+}
+
+/// The reply cap a body of `route` that has none gets.
+fn reply_cap_field(route: Route) -> &'static str {
+    match route {
+        Route::Completions => "max_tokens",
+        Route::Responses => "max_output_tokens",
+        _ => "max_completion_tokens",
+    }
+}
+
+/// A reply cap's value, lowered to `cap` if it is above it or not a count.
+fn write_capped(json: &mut Vec<u8>, value: &RawValue, cap: u32) {
+    let asked = serde_json::from_str::<u32>(value.get()).ok();
+    let capped = asked.filter(|&asked| asked <= cap).unwrap_or(cap);
+    write!(json, "{capped}").expect("writing to a Vec cannot fail");
 }
 
 /// The top-level members of a JSON object, in order, with raw values.
@@ -546,7 +570,7 @@ mod tests {
             "session_params":{"id":"s"},"custom_labels":{"x":"y"},"routed_dp_rank":1,"data_parallel_rank":1,
             "disagg_prefill_dp_rank":0,"bootstrap_host":"h","bootstrap_port":1,"bootstrap_room":7,
             "prompt_cache_key":"pck-1","stream":true}"#;
-        let out = rewrite_body(body, "0123", None, &metrics).unwrap();
+        let out = rewrite_body(body, "0123", None, None, &metrics).unwrap();
         let value: Value = serde_json::from_slice(&out.json).unwrap();
         assert_eq!(
             value,
@@ -558,7 +582,7 @@ mod tests {
             assert_eq!(metrics.sanitized_count(field), 1, "{field}");
         }
         // For an upstream that reads the priority from the body, the gateway's replaces the client's.
-        let out = rewrite_body(body, "0123", Some(2), &metrics).unwrap();
+        let out = rewrite_body(body, "0123", Some(2), None, &metrics).unwrap();
         let value: Value = serde_json::from_slice(&out.json).unwrap();
         assert_eq!(value["priority"], 2);
         assert_eq!(metrics.sanitized_count("priority"), 2);
@@ -612,6 +636,57 @@ mod tests {
     }
 
     #[test]
+    fn a_cap_in_the_rewrite_is_the_cap_of_the_rewritten_body() {
+        // The deployment's realtime cap is now applied in rewrite_body's pass, where cap_reply parsed the
+        // rewritten body again: the same bytes, whatever the body, route and priority, and degrade's cap over it
+        // keeps the lower of the two, as the one cap_reply of the lower did.
+        let metrics = Metrics::new();
+        assert!(
+            REPLY_CAPS
+                .iter()
+                .all(|cap| !headers::ENGINE_CONTROL_BODY_FIELDS.contains(cap))
+        );
+        let bodies = [
+            r#"{"model":"m","messages":[{"role":"user","content":"\"max_tokens\":1"}]}"#,
+            r#"{"model":"m","max_tokens":100,"max_completion_tokens":12}"#,
+            r#"{"max_tokens":null,"prompt":"p","priority":3}"#,
+            r#"{"max_output_tokens":"many","input":"p","cache_salt":"theirs"}"#,
+            r#"{"max_completion_tokens":24,"max_completion_tokens":7.5}"#,
+            r#"{"max_tokens":9000,"session_id":"s","prompt_cache_key":"k","stream":true}"#,
+            r#"{}"#,
+            r#"{"max_completion_tokens":0}"#,
+        ];
+        for body in bodies {
+            for route in [Route::ChatCompletions, Route::Completions, Route::Responses] {
+                for priority in [None, Some(2)] {
+                    let plain =
+                        rewrite_body(body.as_bytes(), "s", priority, None, &metrics).unwrap();
+                    for cap in [0, 24, 64, 4096] {
+                        let folded = rewrite_body(
+                            body.as_bytes(),
+                            "s",
+                            priority,
+                            Some((route, cap)),
+                            &metrics,
+                        )
+                        .unwrap();
+                        let case = format!("{body} {route:?} {priority:?} {cap}");
+                        assert_eq!(folded.json, cap_reply(&plain.json, route, cap), "{case}");
+                        assert_eq!(folded.prompt_cache_key, plain.prompt_cache_key, "{case}");
+                        for degrade in [0, 16, 64, 10_000] {
+                            assert_eq!(
+                                cap_reply(&folded.json, route, degrade),
+                                cap_reply(&plain.json, route, cap.min(degrade)),
+                                "{case} {degrade}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn bodies_must_be_json_objects() {
         let metrics = Metrics::new();
         for body in [
@@ -622,11 +697,14 @@ mod tests {
             b"{} {}",
             b"{\"a\":1,}",
         ] {
-            assert!(rewrite_body(body, "s", None, &metrics).is_err(), "{body:?}");
+            assert!(
+                rewrite_body(body, "s", None, None, &metrics).is_err(),
+                "{body:?}"
+            );
         }
-        let out = rewrite_body(b" { } ", "s", None, &metrics).unwrap();
+        let out = rewrite_body(b" { } ", "s", None, None, &metrics).unwrap();
         assert_eq!(&out.json[..], br#"{"cache_salt":"s"}"#);
-        let out = rewrite_body(b"{}", "s", Some(0), &metrics).unwrap();
+        let out = rewrite_body(b"{}", "s", Some(0), None, &metrics).unwrap();
         assert_eq!(&out.json[..], br#"{"priority":0,"cache_salt":"s"}"#);
     }
 

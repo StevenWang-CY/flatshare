@@ -2,8 +2,8 @@
 //!
 //! Names are lowercase, the HTTP/2 form; HTTP/1.1 matches them case-insensitively.
 
-/// Session id set by a trusted caller (agentic-api, the voice worker). vLLM reads the same header and records the
-/// session id in its GPU-tier KV events.
+/// Session id set by a trusted caller such as an API layer or the voice worker. vLLM reads the same header and
+/// records the session id in its GPU-tier KV events.
 pub const SESSION_ID: &str = "x-session-id";
 
 /// Claude Code's own session header: the second source in session resolution.
