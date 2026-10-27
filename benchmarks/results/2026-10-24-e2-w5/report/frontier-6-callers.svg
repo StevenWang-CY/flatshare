@@ -37,5 +37,5 @@
 <text x="705.72" y="160" text-anchor="middle" class="orange tint" font-size="18">SLO 2.13 s</text>
 <text x="678.32" y="218" class="halo" font-size="18">1.88</text>
 <text x="849" y="218" class="soft halo" font-size="18">no agents</text>
-<text x="24" y="294" class="soft" font-size="18">The SLO is voice alone with as many callers plus 250 ms.</text>
+<text x="24" y="294" class="soft" font-size="18">The SLO is the p95 of voice alone with as many callers, plus 250 ms.</text>
 </svg>

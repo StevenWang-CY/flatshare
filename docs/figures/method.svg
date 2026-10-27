@@ -212,5 +212,5 @@
 <path d="M1070 638L1063 634.8L1063 641.2Z" class="axis-head"/>
 <text x="614" y="662" class="mute" font-size="18">time, one box per engine step, from the reply's first token</text>
 <path d="M473.14 269L473.14 330" class="leader"/>
-<path d="M662.42 199L662.42 211L628 312L628 330" class="leader"/>
+<path d="M648.42 199L648.42 330" class="leader"/>
 </svg>

@@ -360,7 +360,7 @@ def point(
     warmup_turns: int | None = None,
 ) -> Path:
     """A run directory as flatshare-bench e2 run leaves it; without ``warmup_turns``, its arm names none,
-    as the arms run before 2c2c0dc."""
+    as the arms run before 3151475."""
     run_dir = root / name
     run_dir.mkdir(parents=True)
     settings = {
