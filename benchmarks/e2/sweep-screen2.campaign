@@ -1,0 +1,15 @@
+# The step-cap and window sweep, its second screen: the gateway's static cap at 2 and at 1 background requests in
+# flight, which the first screen showed lowers the change's share of replies over the SLO (41% without a cap, 32% at
+# 8, 25% at 4) at the same agents' throughput, for the change at W5's 48-token configuration and for the frozen box,
+# on the same sample of the agents (seed 11). The levels that pass go on to the rounds on fresh samples.
+#   benchmarks/e2/campaign.sh --pause benchmarks/e2/sweep-screen2.campaign
+
+agents-seed 11
+
+# engine frozen
+arms/sweep-disc-frozen-cap2-s24.toml
+arms/sweep-disc-frozen-cap1-s24.toml
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+arms/sweep-disc-pr-ab48-cap2-s24.toml
+arms/sweep-disc-pr-ab48-cap1-s24.toml
