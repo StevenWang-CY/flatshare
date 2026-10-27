@@ -96,16 +96,13 @@ if [[ ! -f $out/e0/summary.json ]]; then
 fi
 
 # 4. The arms and the campaigns.
-points_done() { # points_done CAMPAIGN: whether every point of the campaign file is complete (as run.sh's)
-  local file=$1 name line
-  name=$(basename "$file" .campaign)
-  while IFS= read -r line || [[ -n $line ]]; do
-    line=${line%%#*}
-    line=${line#"${line%%[![:space:]]*}"}
-    line=${line%"${line##*[![:space:]]}"}
-    [[ -z $line || $line == agents-seed* || $line == kv-sample-s* ]] && continue
-    grep -qs '"status": "complete"' "$root/runs/e2/$name/$(basename "$line" .toml)/run.json" || return 1
-  done <"$file"
+points_done() { # points_done CAMPAIGN: whether every point of the campaign file, as campaign.sh reads it, is complete
+  local name points point
+  name=$(basename "$1" .campaign)
+  points=$(bash "$src/benchmarks/e2/campaign.sh" --points "$1") || return 1
+  while IFS= read -r point; do
+    grep -qs '"status": "complete"' "$root/runs/e2/$name/$point/run.json" || return 1
+  done <<<"$points"
 }
 arm() { # arm FILE LABEL VARIANT [FLAG...]: an agents arm at C''s sessions on the long corpus, on VARIANT (or frozen)
   local file=$1 label=$2 variant=$3 flag list=""
