@@ -5,6 +5,7 @@
     profile.py render PROFILE [--host host.json] --out DIR
     profile.py check PROFILE [--against DIR]
     profile.py update PROFILE
+    profile.py effective PROFILE
     profile.py check-vllm DIR [FLAG...]
 
 `detect` writes the host's facts as JSON: the GPU as `nvidia-smi` shows it (name, memory, compute capability, driver,
@@ -22,6 +23,15 @@ the lines to carry into deploy/templates, and a file added to the box's director
 in BOX_ONLY before the tests pass. `check-vllm` parses a rendered engine.yaml and stt.yaml with vLLM's own argument
 parser and builds their engine configs, as `vllm serve` would, without starting an engine: run it with the engine
 venv's Python on a GPU host.
+
+A serving profile is a profile with a [serving] table (the box's: rtx-5060-ti-serve, on rtx-5060-ti): the configuration
+the box serves, as against the frozen box that experiments change. It renders, beside the node's files, its engine
+variant's drop-in (variants/make-room-serve) and serving.json, the effective configuration the box must run: every
+setting of the engine's (model and tokenizer revisions, policy, step cap, pool, CPU tier, make-room's switches), the
+vLLM version, the SHA-256 of the scheduler module and of the patches it is built from, and the calls the voice worker
+admits. `effective` prints it. deploy/bin/serving-check holds the running engine, and the voice worker in serve mode,
+to it: the engine writes what it runs as it starts (python/flatshare_vllm's serve module), since a production box
+serves no /server_info.
 
 The rules (docs/HARDWARE.md):
 - R2, memory budgets: vLLM refuses a start whose free memory is below gpu_memory_utilization x total, with
@@ -58,6 +68,8 @@ from __future__ import annotations
 import argparse
 import difflib
 import fnmatch
+import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -97,6 +109,12 @@ COPIED = (
     "variants/mps/flatshare-tts.conf",
 )
 """The files it takes from the box's directory as they are: they name nothing of a node's own."""
+SERVED = (
+    "variants/make-room-serve/flatshare-engine.conf",
+    "serving.json",
+)
+"""The files a serving profile renders beside RENDERED: its variant's drop-in, from deploy/templates, and serving.json,
+written by serving_config."""
 BOX_ONLY = {
     "bootstrap.sh": "the box's own setup; another node's is its own",
     "requirements/*": "the engine's and TTS's locks, which a node's bootstrap installs from the source tree",
@@ -113,6 +131,12 @@ BOX_ONLY = {
 """The box's files that a node's directory does not take, and why. Every file of the box's directory is
 rendered, copied or here (a test holds it), so that a file another change adds to the box, a unit or a
 drop-in, is not silently left out of other nodes: it fails the test until it is placed."""
+
+VLLM_PACKAGE = REPO / "python" / "flatshare_vllm" / "src" / "flatshare_vllm"
+SERVE_MODULE = VLLM_PACKAGE / "serve" / "flatshare_make_room_serve.py"
+"""The scheduler class the serving variant loads: make-room's, which writes the configuration the engine runs."""
+SCHEDULER_MODULE = "flatshare_make_room_scheduler"
+"""The module build.py writes for make-room, which the serve module extends."""
 
 PLACEHOLDER = re.compile(r"\{\{([a-z0-9_]+\.[a-z0-9_]+)\}\}")
 ALONE = re.compile(r"\{\{([a-z0-9_]+\.[a-z0-9_]+)\}\}\n?")
@@ -727,8 +751,9 @@ def load(profile: str) -> dict:
 
 
 def flatten(profile: dict) -> dict[str, str]:
+    """The profile's values by section.key, as text: a boolean as TOML writes it (true, false)."""
     return {
-        f"{section}.{key}": str(value)
+        f"{section}.{key}": str(value).lower() if isinstance(value, bool) else str(value)
         for section, table in profile.items()
         if isinstance(table, dict)
         for key, value in table.items()
@@ -866,13 +891,136 @@ def fill(text: str, values: dict[str, str]) -> str:
     return text
 
 
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def make_room_patches() -> tuple[str, ...]:
+    """make-room's patches in the order build.py applies them, from build.py's own table."""
+    spec = importlib.util.spec_from_file_location("flatshare_vllm_build", VLLM_PACKAGE / "build.py")
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    return build.VARIANTS["make-room"][0]
+
+
+SERVING_KEYS = {
+    "variant": str,
+    "vllm_version": str,
+    "max_preemptions_per_step": int,
+    "budget_cap": bool,
+    "budget_cap_tokens": int,
+    "reserve_tokens": int,
+    "block_size": int,
+    "pool_tokens": int,
+    "max_num_seqs": int,
+    "async_scheduling": bool,
+    "scheduler_module_sha256": str,
+    "max_calls": int,
+    "audio": str,
+}
+"""A [serving] table's keys and their types: each is required, and no other is taken."""
+AUDIO = ("microphone", "synthetic")
+"""The voice worker's audio configurations (python/flatshare_voice's worker.py)."""
+
+
+def serving_config(profile: dict, values: dict[str, str]) -> dict:
+    """serving.json: the configuration a serving profile's engine must run, each setting as the engine's own
+    configuration names it, as deploy/bin/serving-check compares it with what the engine writes at start; the SHA-256
+    of make-room's patches, which build.py makes its module from; and the voice worker's admission."""
+    serve = profile["serving"]
+    name = values["profile.name"]
+    for key, kind in SERVING_KEYS.items():
+        if not isinstance(serve.get(key), kind) or (kind is int and isinstance(serve[key], bool)):
+            raise ProfileError(f"{name}: [serving] needs {key}, a {kind.__name__}")
+    if extra := sorted(set(serve) - set(SERVING_KEYS)):
+        raise ProfileError(f"{name}: [serving] has no key {', '.join(extra)}")
+    if serve["variant"] != "make-room-serve":
+        raise ProfileError(
+            f"{name}: the serving variant is make-room-serve, not {serve['variant']}"
+        )
+    if serve["pool_tokens"] % serve["block_size"]:
+        raise ProfileError(
+            f"{name}: pool_tokens is no whole number of {serve['block_size']}-token blocks"
+        )
+    if serve["max_calls"] < 1:
+        raise ProfileError(f"{name}: max_calls must be 1 or more")
+    if serve["audio"] not in AUDIO:
+        raise ProfileError(f"{name}: audio must be {' or '.join(AUDIO)}, not {serve['audio']!r}")
+    return {
+        "profile": name,
+        "node": values["profile.node"],
+        "variant": serve["variant"],
+        "engine": {
+            "vllm_version": serve["vllm_version"],
+            "scheduler_cls": f"{SERVE_MODULE.stem}.AsyncScheduler",
+            "scheduler_module": {
+                "name": SCHEDULER_MODULE,
+                "sha256": serve["scheduler_module_sha256"],
+            },
+            "serve_module_sha256": sha256(SERVE_MODULE),
+            "model": {
+                "model": values["model.name"],
+                "revision": values["model.revision"],
+                # vLLM's default: the model's own repository and revision.
+                "tokenizer": values["model.name"],
+                "tokenizer_revision": values["model.revision"],
+                "max_model_len": int(values["model.max_model_len"]),
+            },
+            "scheduler": {
+                "policy": "priority",  # engine.yaml's for every profile (deploy/templates)
+                "max_num_batched_tokens": int(values["engine.max_num_batched_tokens"]),
+                "long_prefill_token_threshold": int(values["engine.long_prefill_token_threshold"]),
+                "max_num_seqs": serve["max_num_seqs"],
+                "async_scheduling": serve["async_scheduling"],
+            },
+            "cache": {
+                "block_size": serve["block_size"],
+                "num_gpu_blocks": serve["pool_tokens"] // serve["block_size"],
+                "pool_tokens": serve["pool_tokens"],
+                "kv_cache_memory_bytes": int(values["engine.kv_cache_memory"]),
+                "gpu_memory_utilization": float(values["engine.gpu_memory_utilization"]),
+                "enable_prefix_caching": True,  # engine.yaml's
+            },
+            "kv_transfer": {
+                "kv_connector": "OffloadingConnector",
+                "kv_role": "kv_both",
+                "kv_connector_extra_config": {
+                    "cpu_bytes_to_use": int(values["engine.cpu_bytes_to_use"]),
+                    "offload_prompt_only": False,
+                },
+            },
+            "make_room": {
+                key: serve[key]
+                for key in (
+                    "max_preemptions_per_step",
+                    "budget_cap",
+                    "budget_cap_tokens",
+                    "reserve_tokens",
+                )
+            },
+        },
+        "patches": {
+            patch: sha256(VLLM_PACKAGE / "make-room" / patch) for patch in make_room_patches()
+        },
+        "voice": {"mode": "serve", "max_calls": serve["max_calls"], "audio": serve["audio"]},
+    }
+
+
+def outputs(profile: dict) -> tuple[str, ...]:
+    """The files a profile renders: a node's, and a serving profile's own."""
+    return RENDERED + (SERVED if "serving" in profile else ())
+
+
 def render(profile: dict, host: dict | None, out: Path) -> dict:
     """Writes the node's directory to `out`; returns node.json's content."""
     values, plan, warnings = resolve(profile, host)
-    for rel in RENDERED:
+    for rel in outputs(profile):
         dest = out / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(fill((TEMPLATES / rel).read_text(), values))
+        if rel == "serving.json":
+            dest.write_text(json.dumps(serving_config(profile, values), indent=2) + "\n")
+        else:
+            dest.write_text(fill((TEMPLATES / rel).read_text(), values))
     for rel in COPIED:
         dest = out / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -902,7 +1050,7 @@ def check(profile: dict, against: Path) -> list[str]:
         render(profile, None, out)
         return [
             rel
-            for rel in RENDERED + COPIED
+            for rel in outputs(profile) + COPIED
             if not (against / rel).is_file()
             or (out / rel).read_bytes() != (against / rel).read_bytes()
         ]
@@ -943,7 +1091,7 @@ def unplaced(box: Path = BOX) -> list[str]:
     return [
         rel
         for rel in files
-        if rel not in RENDERED + COPIED
+        if rel not in RENDERED + SERVED + COPIED
         and not any(fnmatch.fnmatch(rel, pattern) for pattern in BOX_ONLY)
     ]
 
@@ -954,9 +1102,10 @@ def update(profile: dict, into: Path) -> list[str]:
         out = Path(scratch)
         render(profile, None, out)
         changed = []
-        for rel in RENDERED:
+        for rel in outputs(profile):
             new = (out / rel).read_bytes()
-            if (into / rel).read_bytes() != new:
+            if not (into / rel).is_file() or (into / rel).read_bytes() != new:
+                (into / rel).parent.mkdir(parents=True, exist_ok=True)
                 (into / rel).write_bytes(new)
                 changed.append(rel)
         return changed
@@ -1016,6 +1165,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("profile", help=profile_help)
     p = commands.add_parser(
+        "effective", help="print a serving profile's effective configuration (its serving.json)"
+    )
+    p.add_argument("profile", help=profile_help)
+    p = commands.add_parser(
         "check-vllm", help="parse a rendered node's configs with vLLM's own parser"
     )
     p.add_argument("dir", type=Path, help="a node's directory, as render writes it")
@@ -1054,6 +1207,14 @@ def main(argv: list[str] | None = None) -> int:
             if differ:
                 return 1
             print(f"profile: {args.profile} renders {against} byte for byte")
+        elif args.command == "effective":
+            profile = load(args.profile)
+            if "serving" not in profile:
+                raise ProfileError(
+                    f"{args.profile} is no serving profile: it has no [serving] table"
+                )
+            values, _, _ = resolve(profile, None)
+            sys.stdout.write(json.dumps(serving_config(profile, values), indent=2) + "\n")
         else:
             return check_vllm(args.dir, args.flags)
     except ProfileError as e:

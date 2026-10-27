@@ -155,6 +155,11 @@ def configure_cyan(arm: Arm, host: Host, systemd: Systemd) -> dict[str, Any]:
             f"{WORKER} ends turns with LiveKit's end-of-turn model; E2 points need fixed endpointing: "
             "link deploy/cyan/variants/vad-turns (ops/RUNBOOK.md)"
         )
+    if env.get("FLATSHARE_VOICE_MODE", "bench") != "bench":
+        raise E2Error(
+            f"{WORKER} runs serve mode, whose admission refuses calls past the serving profile's; E2 points "
+            "measure bench mode: unlink deploy/cyan/variants/serve (ops/RUNBOOK.md)"
+        )
     overlay = _merge(E2_GATEWAY_TABLE, arm.gateway)
     applied = _apply(host, systemd, arm.router, overlay, arm.voice)
     return applied | {"llm_path": env.get("FLATSHARE_LLM_UDS")}

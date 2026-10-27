@@ -26,8 +26,8 @@ Points that share an engine go together in a campaign file: a switch restarts th
 
 ## Before the first campaign
 
-- Deploy both hosts (`deploy/deploy.sh`), then on cyan rerun `deploy/cyan/bootstrap.sh`: it builds `venvs/bench` and `venvs/smg`.
-- cyan: the `vad-turns` worker variant is linked (`flatshare-bench e2 run` refuses to measure without it); `~/.config/flatshare/gateway-keys.env` has `FLATSHARE_GATEWAY_AGENTS_KEY`, the key of the `agents` tenant; `~/flatshare/data/weka-x32` (`flatshare-bench scale-traces`) and `~/flatshare/data/callers` (`flatshare-voice render-callers`) exist; `flatshare-gateway` is a build that knows every key the arms' `[gateway]` tables set (`upstream_priority`, `[admission]`).
+- Deploy both hosts (`deploy/deploy.sh`): each release builds or links the host's environments from their locks, cyan's `venvs/bench` and `venvs/smg` among them ([the runbook](../../ops/RUNBOOK.md#deploy)).
+- cyan: the `vad-turns` worker variant is linked and the worker runs bench mode, not the `serve` variant (`flatshare-bench e2 run` refuses to measure otherwise); `~/.config/flatshare/gateway-keys.env` has `FLATSHARE_GATEWAY_AGENTS_KEY`, the key of the `agents` tenant; `~/flatshare/data/weka-x32` (`flatshare-bench scale-traces`) and `~/flatshare/data/callers` (`flatshare-voice render-callers`) exist; `flatshare-gateway` is a build that knows every key the arms' `[gateway]` tables set (`upstream_priority`, `[admission]`).
 - Phastform, for arm 7b: `bash ~/flatshare/src/deploy/phastform/variants/sglang/install.sh` builds SGLang's environment once.
 
 ## Points

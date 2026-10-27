@@ -1,37 +1,28 @@
 #!/usr/bin/env bash
-# bootstrap.sh: build a GPU node's frozen-box environment under ~/flatshare (Phastform; Gray reuses it). Safe to
-# re-run.
-#   venvs/engine            vLLM 0.32.0 with the audio extra, serving the LLM and Whisper
-#   venvs/tts               Kokoro-FastAPI 0.9.1-rc1 (torch 2.8.0+cu128)
-#   vendor/Kokoro-FastAPI   source checkout and model weights
+# bootstrap.sh: prepare a GPU node for the frozen box under ~/flatshare (Phastform; Gray reuses it), once a release is
+# deployed there: deploy/deploy.sh's release builds the Python environments from the lock files (venvs/engine, vLLM
+# 0.32.0 with the audio extra, serving the LLM and Whisper; venvs/tts, Kokoro-FastAPI 0.9.1-rc1 on torch 2.8.0+cu128;
+# deploy/bin/flatshare-release), which this reads through ~/flatshare/venvs. Safe to re-run.
+#   vendor/Kokoro-FastAPI   source checkout at the measured commit, and its model weights
 #   cache/                  FlashInfer JIT workspace and the curand header links
 #   ~/.cache/huggingface    the LLM and Whisper weights, at pinned revisions
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 root=$HOME/flatshare
-uv=${UV:-$HOME/.local/bin/uv}
-# The locks were resolved with uv 0.11.27; uv 0.10.8 could not resolve the engine lock's torchcodec==0.17.0+cu130
-# through --torch-backend.
-version=$("$uv" --version | awk '{print $2}')
-[[ $(printf '%s\n' 0.11.27 "$version" | sort -V | head -1) == 0.11.27 ]] ||
-  { echo "bootstrap: uv $version is older than 0.11.27; set UV to a newer uv" >&2; exit 2; }
-mkdir -p "$root"/{venvs,vendor,cache/flashinfer,cache/curand_include,runs}
+for env in engine tts; do
+  [[ -x $root/venvs/$env/bin/python ]] || {
+    echo "bootstrap: no $root/venvs/$env: deploy a release first (deploy/deploy.sh), which builds the environments" >&2
+    exit 2
+  }
+done
+mkdir -p "$root"/{vendor,cache/flashinfer,cache/curand_include,runs}
 
-venv() { # venv NAME REQUIREMENTS UV_ARGS...
-  local name=$1 req=$2
-  shift 2
-  [[ -x $root/venvs/$name/bin/python ]] || "$uv" venv -q --python 3.12 "$root/venvs/$name"
-  "$uv" pip sync -q --python "$root/venvs/$name/bin/python" "$@" "$req"
-}
-
-venv engine "$here/requirements/engine.txt" --torch-backend cu130
-venv tts "$here/requirements/tts.txt" --torch-backend cu128
-
-# Kokoro-FastAPI publishes no tag for 0.9.1-rc1, so the measured commit is the version pin.
+# Kokoro-FastAPI publishes no tag for 0.9.1-rc1, so the measured commit is the version pin; the release installs the
+# checkout into the TTS environment and refuses a checkout at another commit (deploy/bin/flatshare-release's TTS pin,
+# which this must equal). This is where the pin moves.
 kokoro=$root/vendor/Kokoro-FastAPI
 [[ -d $kokoro/.git ]] || git clone -q https://github.com/remsky/Kokoro-FastAPI.git "$kokoro"
-git -C "$kokoro" checkout -q ebd4ec9
-"$uv" pip install -q --python "$root/venvs/tts/bin/python" --no-deps -e "$kokoro"
+git -C "$kokoro" checkout -q ebd4ec9cc97b258b25afc39444a5e1701055db50
 if [[ ! -f $kokoro/api/src/models/v1_0/kokoro-v1_0.pth ]]; then
   (cd "$kokoro" && "$root/venvs/tts/bin/python" docker/scripts/download_model.py --output api/src/models/v1_0)
 fi

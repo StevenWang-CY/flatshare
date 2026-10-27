@@ -1,36 +1,28 @@
 #!/usr/bin/env bash
-# bootstrap.sh: prepare cyan, the control host. Safe to re-run; stop flatshare-voice-worker first if a re-run may change
-# the voice venv's packages.
+# bootstrap.sh: prepare cyan, the control host, once a release is deployed there: deploy/deploy.sh's release builds the
+# Python environments from the lock files (venvs/voice, flatshare-voice-worker and flatshare-voice, from
+# python/flatshare_voice/uv.lock; venvs/bench, flatshare-bench and the AIPerf plugins, from python/flatshare_bench/uv.lock;
+# venvs/smg, SMG 1.13.0 for E2's arm 8b, from requirements/smg.txt; deploy/bin/flatshare-release), which this reads
+# through ~/flatshare/venvs. Safe to re-run.
 #   bin/livekit-server                  LiveKit server 1.13.10
-#   venvs/voice                         flatshare-voice-worker and flatshare-voice, from python/flatshare_voice/uv.lock
-#   venvs/bench                         flatshare-bench and the AIPerf plugins, from python/flatshare_bench/uv.lock
-#   venvs/smg                           SMG 1.13.0 for E2's arm 8b (flatshare-smg.service), from requirements/smg.txt
 #   ~/.config/flatshare/livekit.env     API key pair for the local LiveKit server and the voice worker
 #   ~/.ssh/flatshare_tunnel_{engine,stt,tts}_ed25519 the tunnel keys, one per socket of a GPU node; authorize them
 #                                       on each node with deploy/authorize-tunnel.sh
 set -euo pipefail
-src=$(cd "$(dirname "$0")/../.." && pwd)
 root=$HOME/flatshare
-uv=${UV:-$HOME/.local/bin/uv}
-[[ -x $uv ]] || uv=$(command -v uv) || { echo "bootstrap: no uv; set UV to its path" >&2; exit 2; }
-mkdir -p "$root"/{bin,venvs,data,runs} "$HOME/.config/flatshare" "$HOME/.ssh"
+for env in voice bench smg; do
+  [[ -x $root/venvs/$env/bin/python ]] || {
+    echo "bootstrap: no $root/venvs/$env: deploy a release first (deploy/deploy.sh), which builds the environments" >&2
+    exit 2
+  }
+done
+mkdir -p "$root"/{bin,data,runs} "$HOME/.config/flatshare" "$HOME/.ssh"
 
 livekit=1.13.10
 if ! "$root/bin/livekit-server" --version 2>/dev/null | grep -q "$livekit"; then
   curl -fsSL "https://github.com/livekit/livekit/releases/download/v$livekit/livekit_${livekit}_linux_amd64.tar.gz" |
     tar -xz -C "$root/bin" livekit-server
 fi
-
-# Each package in its own venv, exactly as its lock file says, with the test extra: the voice plane's integration
-# test and the bench tests run from these venvs too (UV_PROJECT_ENVIRONMENT, as in their READMEs).
-venv() { # venv NAME PACKAGE
-  UV_PROJECT_ENVIRONMENT=$root/venvs/$1 "$uv" sync -q --locked --python 3.12 --extra test \
-    --project "$src/python/$2"
-}
-venv voice flatshare_voice
-venv bench flatshare_bench
-[[ -x $root/venvs/smg/bin/python ]] || "$uv" venv -q --python 3.12 "$root/venvs/smg"
-"$uv" pip sync -q --python "$root/venvs/smg/bin/python" "$src/deploy/cyan/requirements/smg.txt"
 
 # The worker's models ship in its wheels (the v1-mini end-of-turn model in livekit-local-inference, Silero's ONNX
 # file in its plugin), so there is nothing to download. Check that they load offline, as flatshare-voice-worker.service

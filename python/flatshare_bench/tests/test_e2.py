@@ -2050,6 +2050,21 @@ def test_the_window_needs_fixed_endpointing(cyan: Cyan) -> None:
         run(cyan, "a1-voice", VOICE_ALONE)
 
 
+def test_a_point_needs_the_worker_in_bench_mode(cyan: Cyan) -> None:
+    # Serve mode's admission refuses calls past the serving profile's two: a point of 4 or 6 callers would measure
+    # refusals. The unit's own bench mode, and a worker that names none, measure.
+    env = {
+        "FLATSHARE_LLM_UDS": "/run/user/1/flatshare/gateway.sock",
+        "FLATSHARE_TURN_DETECTION": "vad",
+    }
+    cyan.systemd.env = env | {"FLATSHARE_VOICE_MODE": "serve"}
+    with pytest.raises(E2Error, match="unlink deploy/cyan/variants/serve"):
+        run(cyan, "a1-voice", VOICE_ALONE)
+    assert cyan.systemd.calls == []
+    cyan.systemd.env = env | {"FLATSHARE_VOICE_MODE": "bench"}
+    run(cyan, "a1-voice", VOICE_ALONE)
+
+
 def test_a_complete_point_is_kept_and_an_incomplete_one_moved_aside(
     cyan: Cyan, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -72,14 +72,15 @@ CPU_SUITE_IMPORTS = cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPAT
   'import pytest, torch, vllm.v1.core.sched.scheduler' || { echo "$(TORCH_PYTHON) cannot import pytest, torch or \
   vLLM's scheduler from $(VLLM_SRC)" >&2; exit 1; }
 
-# The make-room variant's behavior suite on vLLM's real v1 scheduler, on CPU, outside make check: it needs an
-# interpreter with CPU torch 2.13 and vLLM 0.32.0's Python dependencies, and runs on the source checkout. With it, the
-# gateway's reply caps read by vLLM's own request models (tests/test_gateway_caps.py, over the gateway's fixture).
+# The make-room variant's behavior suite on vLLM's real v1 scheduler, on CPU, outside make check, with the serving
+# variant's scheduler (tests/test_serve.py) and the gateway's reply caps read by vLLM's own request models
+# (tests/test_gateway_caps.py, over the gateway's fixture): it needs an interpreter with CPU torch 2.13 and vLLM
+# 0.32.0's Python dependencies, and runs on the source checkout.
 test-make-room: $(VLLM_SRC)
 	@test -n "$(TORCH_PYTHON)" || { echo "usage: make test-make-room TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies>" >&2; exit 2; }
 	@$(CPU_SUITE_IMPORTS)
 	cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
-	  tests/test_make_room.py tests/test_perf_schedule.py tests/test_gateway_caps.py
+	  tests/test_make_room.py tests/test_perf_schedule.py tests/test_gateway_caps.py tests/test_serve.py
 
 # make-room against the PRs' own patches, step for step, on the same CPU environment (python/flatshare_vllm/README.md):
 # the trace that keeps the variant equal to #63350 and #63351, with the PRs' one-line mutants as its negative control.
@@ -341,8 +342,10 @@ demo-video:
 	  --heading "A voice agent and coding agents on one GPU" --turns 10 --out $(DEMO_OUT) \
 	  --excerpt docs/figures/e2-demo
 
-# The frozen box's hardware profile against deploy/phastform (deploy/profile.py): `make profiles` checks that it
-# renders today's files byte for byte, and `make profiles UPDATE=1` writes them from deploy/templates after a
-# template changes.
+# The frozen box's hardware profile and its serving profile against deploy/phastform (deploy/profile.py): `make
+# profiles` checks that they render today's files byte for byte, the serving variant's drop-in and serving.json
+# included, and `make profiles UPDATE=1` writes them from deploy/templates after a template, a profile or a file
+# serving.json hashes changes.
 profiles:
 	uv run -q --no-project --python 3.12 python deploy/profile.py $(if $(UPDATE),update,check) rtx-5060-ti
+	uv run -q --no-project --python 3.12 python deploy/profile.py $(if $(UPDATE),update,check) rtx-5060-ti-serve

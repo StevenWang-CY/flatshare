@@ -17,6 +17,13 @@ Environment=FLATSHARE_STT_UDS=%t/flatshare/phastform-stt.sock
 Environment=FLATSHARE_TTS_UDS=%t/flatshare/phastform-tts.sock
 Environment=FLATSHARE_IDLE_PROCESSES=4
 Environment=HF_HUB_OFFLINE=1
+# Bench mode, as every measurement ran: every call taken (the serve variant's drop-in sets serve mode's admission).
+# Serve mode writes its state to the status file and takes no call while the drain file exists (a release's drain);
+# a start removes both, so that no state of an earlier process is read and a drain ends with the restart.
+Environment=FLATSHARE_VOICE_MODE=bench
+Environment=FLATSHARE_VOICE_STATUS=%t/flatshare/voice-worker.json
+Environment=FLATSHARE_VOICE_DRAIN=%t/flatshare/voice-worker.drain
+ExecStartPre=/usr/bin/rm -f ${FLATSHARE_VOICE_STATUS} ${FLATSHARE_VOICE_DRAIN}
 ExecStart=%h/flatshare/src/deploy/bin/in-voicenet %h/flatshare/venvs/voice/bin/flatshare-voice-worker start
 # Cores 32-47 belong to the voice plane; the control plane and load generators use the others.
 CPUAffinity=32-47
