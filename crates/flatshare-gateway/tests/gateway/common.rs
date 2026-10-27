@@ -449,11 +449,35 @@ pub fn socket_path() -> PathBuf {
             }
             _ => std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap(),
         }
+        remove_left_by_ended_processes(&dir);
         dir
     });
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     DIR.join(format!("gw-{}-{n}.sock", std::process::id()))
+}
+
+/// Removes the files that test processes no longer running left in `dir`, each named for its process
+/// (`gw-PID-N.sock`, and the configurations named after them): the sockets the tests bind in systemd's place, which
+/// stay after the gateway stops as a socket unit's do, and those of a gateway that did not stop.
+fn remove_left_by_ended_processes(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let pid = name
+            .to_str()
+            .and_then(|name| name.strip_prefix("gw-"))
+            .and_then(|rest| rest.split('-').next())
+            .and_then(|pid| pid.parse::<i32>().ok());
+        let Some(pid) = pid else { continue };
+        let ended = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
+            == Err(nix::errno::Errno::ESRCH);
+        if ended {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// The metrics key's file of every test gateway: [`METRICS_KEY`], mode 600, written anew by each test process.

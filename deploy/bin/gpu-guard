@@ -26,8 +26,13 @@ ours() {
   return 1
 }
 
-for pid in $(nvidia-smi ${FLATSHARE_GPU_ID:+-i "$FLATSHARE_GPU_ID"} --query-compute-apps=pid --format=csv,noheader |
-  tr -d ' '); do
+# The GPU's compute processes. When nvidia-smi cannot list them, the guard cannot say the GPU is free, so it refuses:
+# read inside the loop's word list, a failure would list no process and pass.
+if ! apps=$(nvidia-smi ${FLATSHARE_GPU_ID:+-i "$FLATSHARE_GPU_ID"} --query-compute-apps=pid --format=csv,noheader); then
+  echo "gpu-guard: nvidia-smi could not list the GPU's processes; not starting" >&2
+  exit 1
+fi
+for pid in $(tr -d ' ' <<<"$apps"); do
   ours "$pid" && continue
   owner=$(stat -c %U "$proc/$pid" 2>/dev/null || true)
   [[ -n $owner ]] || continue # it exited meanwhile

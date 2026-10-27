@@ -117,9 +117,8 @@ def kv_values(exposition: str) -> tuple[float, float, float] | None:
     """An engine's KV use (0 to 1, the mean over its series) and its running and waiting requests
     (summed) in a ``/metrics`` exposition, as KV_GAUGES orders them; None when it lacks one (SGLang)."""
     found: dict[str, list[float]] = {name: [] for name in KV_GAUGES}
-    for name, _, value in metric_samples(exposition):
-        if name in found:
-            found[name].append(value)
+    for name, _, value in metric_samples(exposition, KV_GAUGES):
+        found[name].append(value)
     if not all(found.values()):
         return None
     usage, running, waiting = (found[name] for name in KV_GAUGES)

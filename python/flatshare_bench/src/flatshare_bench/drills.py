@@ -33,7 +33,7 @@ import httpx
 import orjson
 
 from flatshare_bench.e2.arm import E2Error
-from flatshare_bench.e2.run import MEASURE, Host, read_env
+from flatshare_bench.e2.engine import MEASURE
 from flatshare_bench.load import random_prompt
 from flatshare_bench.protocol import DEFAULT_MODEL, SloClass
 from flatshare_stats import metric_samples, summarize
@@ -258,9 +258,8 @@ async def sample_engine(
                 samples.append(EngineSample(at, error=f"http {response.status_code}"))
             else:
                 values = {"vllm:num_requests_running": 0.0, "vllm:num_requests_waiting": 0.0}
-                for name, _, value in metric_samples(response.text):
-                    if name in values:
-                        values[name] += value
+                for name, _, value in metric_samples(response.text, tuple(values)):
+                    values[name] += value
                 samples.append(
                     EngineSample(
                         at,
@@ -398,15 +397,6 @@ async def run_streams(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(orjson.dumps(result, option=orjson.OPT_INDENT_2) + b"\n")
     return result
-
-
-def agents_key(host: Host) -> str:
-    """The agents tenant's key, from cyan's gateway-keys.env, as ``flatshare-bench e2 run`` reads it."""
-    keys = host.config / "gateway-keys.env"
-    key = read_env(keys).get("FLATSHARE_GATEWAY_AGENTS_KEY") if keys.exists() else None
-    if not key:
-        raise SystemExit(f"{keys} has no FLATSHARE_GATEWAY_AGENTS_KEY, the agents tenant's key")
-    return key
 
 
 def default_uds() -> Path:
@@ -600,7 +590,7 @@ async def fill_cpu_tier(
         )
 
         def stored(exposition: str) -> float:
-            return sum(v for name, _, v in metric_samples(exposition) if name == STORES)
+            return sum(v for _, _, v in metric_samples(exposition, (STORES,)))
 
         exposition = await probe.metrics()
         probe.pool = pool_tokens(exposition) or 0

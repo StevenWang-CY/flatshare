@@ -284,6 +284,26 @@ def test_a_campaign_saves_its_calls_audio(hosts: Hosts) -> None:
         assert done.returncode == 1 and "a campaign saves its calls' audio once" in done.stdout
 
 
+def test_points_lists_a_campaigns_points_and_reaches_no_host(hosts: Hosts) -> None:
+    # The A100 run's scripts read a campaign's points from here: each line that sets something for every point is no
+    # point, and a file that is not a campaign is refused as a campaign refuses it.
+    lines = [
+        "# a round",
+        "agents-seed 11",
+        "kv-sample-s 0.5",
+        "save-audio",
+        "",
+        "arms/a2.toml  # the stock arm",
+        "arms/a1.toml",
+    ]
+    done = hosts.run(hosts.campaign("c14", lines, {"a1": VOICE, "a2": VOICE}), "--points")
+    assert (done.returncode, done.stdout) == (0, "a2\na1\n"), done.stderr
+    assert not (hosts.root / "ssh.log").exists() and not hosts.results.exists()  # no host, no log
+    done = hosts.run(hosts.campaign("c15", ["save-audio twice", "arms/a1.toml"], {}), "--points")
+    assert done.returncode == 1 and "a campaign saves its calls' audio once" in done.stderr
+    assert done.stdout == ""
+
+
 def test_campaign_sh_reads_the_demo_campaign(hosts: Hosts) -> None:
     done = hosts.run(REPO / "benchmarks" / "e2" / "demo.campaign", "--dry-run")
     assert done.returncode == 0, done.stdout + done.stderr

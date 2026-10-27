@@ -46,20 +46,18 @@ FLUSH_CHUNK = 16_384
 def read_counters(exposition: str) -> dict[str, float]:
     """The two hit counters of a Prometheus exposition, summed over label sets."""
     totals = {GPU_HITS: 0.0, CPU_HITS: 0.0}
-    for name, _, value in metric_samples(exposition):
-        if name in totals:
-            totals[name] += value
+    for name, _, value in metric_samples(exposition, (GPU_HITS, CPU_HITS)):
+        totals[name] += value
     return totals
 
 
 def pool_tokens(exposition: str) -> int | None:
     """GPU KV pool size in tokens, from vLLM's ``cache_config_info`` labels."""
-    for name, labels, _ in metric_samples(exposition):
-        if name == "vllm:cache_config_info":
-            try:
-                return int(labels["num_gpu_blocks"]) * int(labels["block_size"])
-            except (KeyError, ValueError):
-                return None
+    for _, labels, _ in metric_samples(exposition, ("vllm:cache_config_info",)):
+        try:
+            return int(labels["num_gpu_blocks"]) * int(labels["block_size"])
+        except (KeyError, ValueError):
+            return None
     return None
 
 

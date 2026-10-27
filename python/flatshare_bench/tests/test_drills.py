@@ -531,3 +531,21 @@ def test_the_fills_stop_at_twice_what_the_tiers_rate_needs(tmp_path: Path) -> No
     assert record["passed"] is False and record["failure"].startswith("the CPU tier stored ")
     # Three fills store 98,304 bytes against a target of 2,000,000: the limit is 2 * 62 + 2 fills.
     assert record["fill_requests"] == 2 * 62 + 2
+
+
+@pytest.mark.parametrize("action", [["streams", "--event-file", "event"], ["cpu-tier"]])
+def test_a_drill_names_what_it_cannot_run_with_in_a_line(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    action: list[str],
+) -> None:
+    # A host's settings that do not read stop a drill as they stop flatshare-bench e2: a line naming the file, exit
+    # status 1. The streams read them outside the drill's error handling, and gave a traceback.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    settings = tmp_path / ".config" / "flatshare" / "e2-host.toml"
+    settings.parent.mkdir(parents=True)
+    settings.write_text('aiperf_cores = "16-23"\ncores = "0-7"\n')
+    assert main(["drill", *action, "--out", str(tmp_path / "record.json")]) == 1
+    error = capsys.readouterr().err
+    assert error.startswith(f"flatshare-bench drill: {settings} sets cores;"), error

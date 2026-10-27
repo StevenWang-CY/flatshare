@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from flatshare_bench.e2 import run as e2run
+from flatshare_bench.e2.engine import profile_flags
 
 REPO = Path(__file__).resolve().parents[3]
 DEPLOY = REPO / "deploy"
@@ -443,7 +443,7 @@ def test_the_second_models_profile_renders_the_cores_node_with_its_own_model_and
         ours = its_order.sub("", ours)
         assert ours.replace("Qwen3-14B-FP8", "Qwen3-4B-Instruct-2507-FP8") == theirs, unit
     # The harness's engine check reads the same profile, its base's values under its own.
-    flags = dict(zip(*[iter(e2run.profile_flags("a100-40gb-qwen3-14b"))] * 2, strict=True))
+    flags = dict(zip(*[iter(profile_flags("a100-40gb-qwen3-14b"))] * 2, strict=True))
     assert flags["--model"] == "Qwen/Qwen3-14B-FP8" and flags["--max-num-batched-tokens"] == "512"
     assert flags["--revision"] == second["values"]["model.revision"]
 

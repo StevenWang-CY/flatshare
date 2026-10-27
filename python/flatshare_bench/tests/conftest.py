@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import stat
+import tempfile
 from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,6 +17,15 @@ def _hermetic_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep the caller's FLATSHARE_BENCH_* settings (the plugin's and the YAML template's) out of every test."""
     for name in [name for name in os.environ if name.startswith("FLATSHARE_BENCH_")]:
         monkeypatch.delenv(name)
+
+
+@pytest.fixture
+def short_dir() -> Iterator[Path]:
+    """A new directory with a short path, for sockets, whose paths must fit sun_path (104 bytes on macOS), which a
+    test's tmp_path may not; removed with what it holds once the test ends."""
+    path = Path(tempfile.mkdtemp(prefix="flatshare-"))
+    yield path
+    shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture

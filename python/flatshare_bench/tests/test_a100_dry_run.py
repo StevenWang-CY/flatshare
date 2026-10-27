@@ -16,16 +16,15 @@ import pwd
 import re
 import shutil
 import socket
-import socketserver
 import subprocess
 import sys
 import tempfile
-import threading
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from servers import UnixServer, serve, stop
 
 REPO = Path(__file__).resolve().parents[3]
 FAKES = Path(__file__).parent / "fakes"
@@ -93,20 +92,15 @@ class Engine(http.server.BaseHTTPRequestHandler):
         pass
 
 
-class UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
-
-
 @pytest.fixture
 def runtime() -> Iterator[Path]:
     """XDG_RUNTIME_DIR, with the engine on flatshare/engine.sock as flatshare-engine.service serves it."""
     # A short path: a socket's must fit sun_path, which a test's tmp_path may not.
     run = Path(tempfile.mkdtemp(prefix="flatshare-dry-"))
     (run / "flatshare").mkdir(mode=0o700)
-    server = UnixServer(str(run / "flatshare" / "engine.sock"), Engine)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server = serve(UnixServer(str(run / "flatshare" / "engine.sock"), Engine))
     yield run
-    server.shutdown()
+    stop(server)
     shutil.rmtree(run, ignore_errors=True)
 
 
@@ -835,8 +829,7 @@ def test_the_batch_arm_holds_its_whole_batch_in_the_pool_and_records_that_it_for
     # refused before a client starts.
     run = Path(tempfile.mkdtemp(prefix="flatshare-batch-"))
     (run / "flatshare").mkdir(mode=0o700)
-    server = UnixServer(str(run / "flatshare" / "engine.sock"), BatchEngine)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server = serve(UnixServer(str(run / "flatshare" / "engine.sock"), BatchEngine))
     try:
         hosts = tmp_path / "hosts"
         home = a100_host(hosts)
@@ -902,7 +895,7 @@ def test_the_batch_arm_holds_its_whole_batch_in_the_pool_and_records_that_it_for
         assert len(lines(home / "vllm.log")) == 6  # no client started
     finally:
         BatchEngine.blocks = 2275
-        server.shutdown()
+        stop(server)
         shutil.rmtree(run, ignore_errors=True)
 
 
@@ -1033,6 +1026,45 @@ def test_the_prs_at_the_a100s_best_cap_run_both_rounds_on_their_engine(
         "variant.sh use make-room --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 "
         "--additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48"
     ) in lines(home / "variant.log")
+
+
+def test_a_campaign_whose_points_are_complete_completes_its_block_whatever_it_sets(
+    tmp_path: Path, runtime: Path
+) -> None:
+    # run.sh reads a campaign's points as campaign.sh reads them: a line that campaign.sh takes for every point, such as
+    # save-audio, is no point. Read by a parser of run.sh's own, which knew the seed and the sampler's lines alone,
+    # save-audio was a point that never completed, and a block whose every point was measured failed.
+    hosts = tmp_path / "hosts"
+    home = a100_host(hosts)
+    env = dry_env(home, hosts, runtime)
+    tree = tmp_path / "tree"
+    for path in (
+        "benchmarks/a100/run.sh",
+        "benchmarks/a100/a100-tuned-r2.campaign",
+        "benchmarks/a100/arms/a100-tuned-s24.toml",
+        "benchmarks/e2/campaign.sh",
+        "deploy/bin/flatshare-local",
+    ):
+        (tree / path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO / path, tree / path)
+    r1 = (REPO / "benchmarks" / "a100" / "a100-tuned-r1.campaign").read_text() + "save-audio\n"
+    (tree / "benchmarks" / "a100" / "a100-tuned-r1.campaign").write_text(r1)
+    done = subprocess.run(
+        ["bash", str(tree / "benchmarks" / "a100" / "run.sh"), "--estimate", "tuned=28", "tuned"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    runs = home / "flatshare" / "runs" / "a100"
+    assert "block tuned: done" in (runs / "blocks.log").read_text()
+    points = [
+        call
+        for call in lines(home / "flatshare-bench.log")
+        if call.startswith("flatshare-bench e2 run ")
+    ]
+    assert ["--save-audio" in point for point in points] == [True, False]
 
 
 def test_a_cap_of_2048_is_measured_beside_vllms_default(tmp_path: Path, runtime: Path) -> None:

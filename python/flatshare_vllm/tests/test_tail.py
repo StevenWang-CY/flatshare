@@ -10,6 +10,7 @@ import importlib.util
 import json
 import random
 import re
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -133,7 +134,8 @@ def test_the_calls_reach_an_engine_on_its_unix_socket(tail):
         runner = web.AppRunner(app)
         await runner.setup()
         # A short path: a socket's must fit sun_path, which pytest's tmp_path may not.
-        path = f"{tempfile.mkdtemp(prefix='flatshare-tail-')}/engine.sock"
+        directory = tempfile.mkdtemp(prefix="flatshare-tail-")
+        path = f"{directory}/engine.sock"
         await web.UnixSite(runner, path).start()
         try:
             session, url = tail.connect(f"unix:{path}")
@@ -143,6 +145,7 @@ def test_the_calls_reach_an_engine_on_its_unix_socket(tail):
                 )
         finally:
             await runner.cleanup()
+            shutil.rmtree(directory, ignore_errors=True)
 
     times, reply = asyncio.run(main())
     assert times[0] is not None and reply == "Sure, done."

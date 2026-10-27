@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import socketserver
-import tempfile
-import threading
 from http.server import BaseHTTPRequestHandler
-from pathlib import Path
 
 import pytest
+from servers import UnixServer, serve, socket_file, stop
 
+from flatshare_bench.cli import main
 from flatshare_bench.kv_metrics import fetch
 from flatshare_bench.transport import client, runtime_socket, socket_path
 
@@ -24,10 +22,6 @@ class _Metrics(BaseHTTPRequestHandler):
 
     def log_message(self, *args: object) -> None:
         pass
-
-
-class _UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
 
 
 def test_an_address_is_http_or_a_unix_socket() -> None:
@@ -45,10 +39,30 @@ def test_an_address_is_http_or_a_unix_socket() -> None:
             socket_path(wrong)
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["kv-metrics", "snapshot", "{}", "out.prom"],
+        ["tiers", "--url", "{}", "--out", "run"],
+        ["voice-turn", "--audio", "turn.wav", "--llm", "{}", "--out", "run"],
+        ["drill", "cpu-tier", "--engine", "{}", "--out", "record.json"],
+    ],
+)
+def test_a_command_refuses_an_address_that_is_none_before_it_runs(
+    command: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Taken as it was given, such an address failed once the command made its client, with a traceback.
+    with pytest.raises(SystemExit) as refused:
+        main([word.format("unix:flatshare/engine.sock") for word in command])
+    assert refused.value.code == 2
+    assert "'unix:flatshare/engine.sock': a unix: address names an absolute socket path" in (
+        capsys.readouterr().err
+    )
+
+
 def test_a_unix_address_reaches_the_server_on_its_socket() -> None:
-    path = Path(tempfile.mkdtemp(prefix="flatshare-transport-")) / "s.sock"
-    server = _UnixServer(str(path), _Metrics)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    path = socket_file("flatshare-transport-")
+    server = serve(UnixServer(str(path), _Metrics))
     try:
         with client(f"unix:{path}") as http:
             assert http.get("/server_info", params={"config_format": "json"}).text == (
@@ -56,7 +70,7 @@ def test_a_unix_address_reaches_the_server_on_its_socket() -> None:
             )
         assert fetch(f"unix:{path}") == "seen /metrics\n"
     finally:
-        server.shutdown()
+        stop(server)
 
 
 def test_the_deployments_sockets_live_in_the_users_runtime_directory(

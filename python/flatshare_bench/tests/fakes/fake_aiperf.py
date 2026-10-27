@@ -2,7 +2,8 @@
 
 It logs AIPerf's profiling line, then writes one profiling record every 20 ms to
 ``$FLATSHARE_BENCH_ARTIFACTS/profile_export.jsonl`` until SIGINT, and saves the FLATSHARE_BENCH_ settings it was
-started with to ``env.json``. ``FAKE_AIPERF`` picks a failure: ``exit-early`` (before profiling),
+started with, and its TMPDIR, to ``env.json``. With ``FAKE_AIPERF_TEMP`` set it leaves a temp directory, as
+AIPerf leaves its IPC directory, and writes its path to ``left.txt``. ``FAKE_AIPERF`` picks a failure: ``exit-early`` (before profiling),
 ``exit-later`` (0.5 s into profiling), ``stubborn`` (ignores SIGINT, as does a child it starts,
 whose pid goes to ``child.pid``), ``orphan`` (starts a child in a session of its own, as AIPerf
 starts some services, and leaves it behind when it exits) or ``titled`` (starts a child in its
@@ -14,13 +15,20 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 artifacts = Path(os.environ["FLATSHARE_BENCH_ARTIFACTS"])
 artifacts.mkdir(parents=True, exist_ok=True)
-settings = {k: v for k, v in os.environ.items() if k.startswith(("FLATSHARE_BENCH_", "AIPERF_"))}
+settings = {
+    k: v
+    for k, v in os.environ.items()
+    if k.startswith(("FLATSHARE_BENCH_", "AIPERF_")) or k == "TMPDIR"
+}
 (artifacts / "env.json").write_text(json.dumps(settings))
+if os.environ.get("FAKE_AIPERF_TEMP"):
+    (artifacts / "left.txt").write_text(tempfile.mkdtemp())
 mode = os.environ.get("FAKE_AIPERF", "")
 print("Building the dataset", flush=True)
 if mode == "exit-early":

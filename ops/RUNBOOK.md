@@ -174,7 +174,7 @@ The failure drills run from a workstation with SSH to the hosts, on the variant 
 
 ## Checks before heavy work on a shared host
 
-- `nvidia-smi` and `who`. `gpu-guard` refuses to start a GPU unit while another user's process holds the GPU. It cannot stop work that starts after the units; another user's processes run in their own tmux, which `tmux ls` does not show.
+- `nvidia-smi` and `who`. `gpu-guard` refuses to start a GPU unit while another user's process holds the GPU, or when `nvidia-smi` cannot list the GPU's processes. It cannot stop work that starts after the units; another user's processes run in their own tmux, which `tmux ls` does not show.
 - While a campaign measures, `nvidia-smi --query-compute-apps=pid,used_memory --format=csv` on the GPU node lists only the box's units (their cgroups end in `flatshare-*.service`). A point measured while any other process held the GPU is measured again.
 - `free -g`, and `df -h /dev/shm`: the CPU tier occupies 20 GiB there.
 - Listener audit, as `python3 ~/flatshare/src/deploy/bin/audit-listeners` checks it on either host (`deploy.sh` runs it after each install):
@@ -211,6 +211,7 @@ The failure drills run from a workstation with SSH to the hosts, on the variant 
 | `flatshare-gateway.socket` failed with `service-start-limit-hit`, and connections are refused | The gateway crashed five times within 10 s, so systemd stopped it, and the socket unit with it | `journalctl --user -u flatshare-gateway -n 200`, fix, `systemctl --user reset-failed flatshare-gateway flatshare-gateway.socket`, start both |
 | Some voice turns wait about 3 s before the agent answers | LiveKit's end-of-turn model is waiting its maximum endpointing delay | Link the `vad-turns` worker variant |
 | A caller run fails with "the agent never listened" | The worker is not registered ("registered worker" missing from its log), or LiveKit was restarted under it | `journalctl --user -u flatshare-voice-worker -n 50`; `systemctl --user restart flatshare-voice-worker` |
+| `flatshare-voice-worker` restarts every 5 s without registering, its journal saying "flatshare-voice-worker: FLATSHARE_… must be …" or "… is not set" | A drop-in sets one of the worker's settings to a value it does not take, or leaves out a socket ([the settings](../python/flatshare_voice/README.md#the-voice-agent)) | Fix the drop-in (`systemctl --user cat flatshare-voice-worker` lists them), then `systemctl --user daemon-reload` and restart the worker |
 | `flatshare-bench e2 run` fails at its engine check | The GPU node runs another variant or other flags than the arm names | `variant.sh use` with what `flatshare-bench e2 engine ARM` prints; a campaign does this itself |
 | `flatshare-bench e2 run` or `flatshare-bench drill cpu-tier`: "no /server_info" | The engine runs without the measurement drop-in, as a production box does | `variant.sh measure on` (restarts the engine); a campaign does this itself |
 | `flatshare-bench e2 run`: "another flatshare-bench e2 run or reset holds" the lock | A point is still running, or one was interrupted | The pid is in `~/flatshare/runs/.flatshare-bench-e2.lock`; stop it with SIGINT, or wait |

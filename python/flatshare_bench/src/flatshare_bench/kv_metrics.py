@@ -41,8 +41,7 @@ def samples(exposition: str, name: str) -> dict[Labels, float]:
     """The samples of metric ``name``, by label set; empty when the exposition has none."""
     return {
         tuple(sorted(labels.items())): value
-        for sample, labels, value in metric_samples(exposition)
-        if sample == name
+        for _, labels, value in metric_samples(exposition, (name,))
     }
 
 
@@ -68,8 +67,8 @@ class Histogram:
         label in ``match``)."""
         totals: dict[float, float] = {}
         wanted = (match or {}).items()
-        for sample, labels, value in metric_samples(text):
-            if sample == f"{name}_bucket" and "le" in labels and labels.items() >= wanted:
+        for _, labels, value in metric_samples(text, (f"{name}_bucket",)):
+            if "le" in labels and labels.items() >= wanted:
                 bound = float(labels["le"])  # "+Inf" parses as math.inf
                 totals[bound] = totals.get(bound, 0.0) + value
         bounds = tuple(sorted(totals))

@@ -16,6 +16,8 @@ import pytest
 
 from flatshare_bench.cli import main
 from flatshare_bench.e2.arm import Agents, Voice, flag_values
+from flatshare_bench.e2.cyan import SECRETS
+from flatshare_bench.e2.engine import SCHEDULER, variant_flags
 from flatshare_bench.e2.figures import load_sweep
 from flatshare_bench.e2.record import (
     DISCARDED,
@@ -64,7 +66,7 @@ from flatshare_bench.e2.report import (
     voice_slo,
     write_report,
 )
-from flatshare_bench.e2.run import BUSY, SCHEDULER, SECRETS, variant_flags
+from flatshare_bench.e2.run import BUSY
 from flatshare_stats import metric_samples
 
 T0 = 1_800_000_000.0  # the calls run from T0 to T0 + 100 s
@@ -1267,7 +1269,7 @@ def test_the_report_gives_the_cpu_tiers_loads_and_stores_in_tokens(tmp_path: Pat
 
 
 def unredacted(data: Any) -> list[str]:
-    """The credential settings (e2.SECRETS) in a JSON document that hold anything but a redaction."""
+    """The credential settings (cyan.SECRETS) in a JSON document that hold anything but a redaction."""
     if isinstance(data, list):
         return [key for item in data for key in unredacted(item)]
     if not isinstance(data, dict):

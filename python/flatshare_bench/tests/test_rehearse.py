@@ -596,7 +596,7 @@ def test_cleanup_ends_the_rehearsals_processes_whatever_their_titles(world: dict
     # kill_left. A unit's engine core is in its server's group: leftovers ends the groups and sessions of the processes
     # it finds.
     pytest.importorskip("setproctitle")
-    from flatshare_bench.e2 import run as e2
+    from flatshare_bench.e2.tools import Process
 
     for step in ("check", "init"):
         assert rehearse(world, step).returncode == 0
@@ -609,7 +609,7 @@ def test_cleanup_ends_the_rehearsals_processes_whatever_their_titles(world: dict
     titled = [sys.executable, str(tmp / "titled.py")]
     # AIPerf as flatshare-bench starts it, its group named in the tools' directory, and the run then killed.
     command = [*titled, "aiperf system_controller", str(tmp / "aiperf.pids")]
-    aiperf = e2.Process("AIPerf", command, tmp / "aiperf.log", env, str(home / "flatshare"))
+    aiperf = Process("AIPerf", command, tmp / "aiperf.log", env, str(home / "flatshare"))
     # A unit's server in a session of its own, with its engine core, and a process whose environment names another
     # home: not the rehearsal's, whatever its session.
     command = [*titled, "", str(tmp / "server.pids"), str(tmp)]
@@ -847,6 +847,21 @@ def test_a_step_that_ends_before_its_pid_file_is_written_does_not_start(tmp_path
     assert "rehearsal: lost did not start" in started.stdout
     time.sleep(0.5)
     assert not ran.exists() and host_state(home, "lost") == "none"
+
+
+def test_rehearsal_ssh_names_the_home_it_needs_in_full() -> None:
+    # Its message, an unquoted word in ${REHEARSAL_HOME:?...}, lost both apostrophes, which bash took for quotes:
+    # "names the rehearsals home under the hosts login home".
+    env = {name: value for name, value in os.environ.items() if name != "REHEARSAL_HOME"}
+    done = subprocess.run(
+        ["bash", str(HERE / "bin" / "rehearsal-ssh"), "host", "true"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode != 0
+    assert "REHEARSAL_HOME names the rehearsal's home under the host's login home" in done.stderr
 
 
 if __name__ == "__main__":

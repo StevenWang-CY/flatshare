@@ -7,6 +7,7 @@ the test extra and the engine environment have."""
 import asyncio
 import importlib.util
 import re
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -140,8 +141,12 @@ def test_the_probe_reaches_an_engine_on_its_unix_socket(probe, capsys):
     from fake_engine import FakeEngine
 
     # A short path: a socket's must fit sun_path, which pytest's tmp_path may not.
-    engine = FakeEngine(socket=f"{tempfile.mkdtemp(prefix='flatshare-probe-')}/engine.sock")
-    run(probe, engine, "kv")
+    directory = tempfile.mkdtemp(prefix="flatshare-probe-")
+    engine = FakeEngine(socket=f"{directory}/engine.sock")
+    try:
+        run(probe, engine, "kv")
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
     [line] = capsys.readouterr().out.splitlines()
     assert LINE.match(line), line
     assert engine.bodies and {body["model"] for body in engine.bodies} == {engine.model}

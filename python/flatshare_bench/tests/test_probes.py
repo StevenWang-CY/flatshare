@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import tempfile
+import shutil
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -11,6 +11,7 @@ import httpx
 import orjson
 import pytest
 from aiohttp import web
+from servers import socket_file
 
 from flatshare_bench.load import LoadSpec, stream_chunks
 from flatshare_bench.tiers import (
@@ -157,20 +158,22 @@ async def serving(app: web.Application, transport: str = "tcp") -> AsyncIterator
     (the tunnel's socket); yields its address."""
     runner = web.AppRunner(app)
     await runner.setup()
-    if transport == "unix":
-        path = f"{tempfile.mkdtemp(prefix='flatshare-probe-')}/engine.sock"
-        site: web.BaseSite = web.UnixSite(runner, path)
+    path = socket_file("flatshare-probe-", "engine.sock") if transport == "unix" else None
+    if path is not None:
+        site: web.BaseSite = web.UnixSite(runner, str(path))
         address = f"unix:{path}"
     else:
         site = web.TCPSite(runner, "127.0.0.1", 0)
     await site.start()
-    if transport != "unix":
+    if path is None:
         port = site._server.sockets[0].getsockname()[1]  # type: ignore[union-attr]
         address = f"http://127.0.0.1:{port}"
     try:
         yield address
     finally:
         await runner.cleanup()
+        if path is not None:
+            shutil.rmtree(path.parent, ignore_errors=True)
 
 
 def run(coro: Callable[[], Awaitable[None]]) -> None:

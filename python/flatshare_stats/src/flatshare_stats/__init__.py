@@ -6,7 +6,7 @@
 - :func:`v2v_samples`: the voice-to-voice samples of the callers' turn lines, a reply that never
   came censored at the reply timeout.
 - :func:`metric_samples`: the samples of a Prometheus text exposition, as vLLM and the gateway
-  export them.
+  export them, or only those of the metrics a reader names.
 
 It needs only the standard library. The bench and voice packages depend on it; the probes, which
 run in the engine's environment (python/flatshare_vllm/src/flatshare_vllm/make-room/), and
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 import statistics
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from typing import Any
 
 PERCENTILES = (10, 50, 90, 95, 99)
@@ -90,15 +90,26 @@ _ESCAPED = re.compile(r"\\(.)")
 _UNESCAPED = {"\\": "\\", '"': '"', "n": "\n"}
 
 
-def metric_samples(exposition: str) -> Iterator[tuple[str, dict[str, str], float]]:
+def metric_samples(
+    exposition: str, names: Collection[str] | None = None
+) -> Iterator[tuple[str, dict[str, str], float]]:
     """Every sample of a Prometheus text exposition (format 0.0.4, or OpenMetrics) as ``(name,
-    labels, value)``, in its order. A label value is unescaped (``\\\\``, ``\\"``, ``\\n``) and
-    may hold any other character, ``}`` and ``,`` among them; a sample's timestamp and its exemplar
-    (``# {...} value``) are read past. Comments, blank lines and lines that are not a sample (a
-    value or timestamp that is not a number, an escape the format has not) are skipped."""
+    labels, value)``, in its order, or with ``names`` only the samples of those metrics. A label
+    value is unescaped (``\\\\``, ``\\"``, ``\\n``) and may hold any other character, ``}`` and
+    ``,`` among them; a sample's timestamp and its exemplar (``# {...} value``) are read past.
+    Comments, blank lines and lines that are not a sample (a value or timestamp that is not a
+    number, an escape the format has not) are skipped. With ``names``, a line that does not start
+    with one of them is skipped before it is parsed, so that a reader of a few of vLLM 0.32's metrics
+    parses their lines alone, not the 900 or so of its exposition."""
+    if isinstance(names, str):  # read as its characters, it would match no sample, silently
+        raise TypeError(f"names is a collection of metric names, not one: {names!r}")
+    wanted = None if names is None else tuple(names)
     for line in exposition.split("\n"):
+        # A sample's name starts after the line's leading blanks, where a wanted one must start.
+        if wanted is not None and not line.lstrip(" \t").startswith(wanted):
+            continue
         m = _SAMPLE.fullmatch(line.removesuffix("\r"))
-        if m is None:
+        if m is None or (wanted is not None and m["name"] not in wanted):
             continue
         try:
             value = float(m["value"])

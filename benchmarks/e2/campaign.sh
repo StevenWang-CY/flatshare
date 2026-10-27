@@ -33,15 +33,19 @@
 # campaign.sh runs goes to durations.tsv beside the campaigns' results (KIND SECONDS a line: switch, voice, or
 # agents:SESSIONS), and a kind measured here is budgeted by its longest. --until-epoch SECONDS does the same at an
 # absolute time, which has no tomorrow: benchmarks/a100/run.sh hands its one deadline to every campaign of a run so.
+# --points prints the points CAMPAIGN lists, one a line, as this script reads the file, and reaches no host:
+# benchmarks/a100/run.sh and cprime.sh take a campaign's points from it.
 set -euo pipefail
 usage() {
   echo "usage: campaign.sh [--dry-run] [--pause] [--local] [--until HH:MM | --until-epoch SECONDS] CAMPAIGN" >&2
+  echo "       campaign.sh --points CAMPAIGN" >&2
   exit 2
 }
-dry_run=false pause=false local=false until="" until_epoch=""
+dry_run=false pause=false local=false until="" until_epoch="" list=false
 while [[ ${1:-} == --* ]]; do
   case $1 in
     --dry-run) dry_run=true ;;
+    --points) list=true ;;
     --pause) pause=true ;;
     --local) local=true ;;
     --until)
@@ -99,8 +103,12 @@ fi
 runs=flatshare/runs/e2/$name # on cyan, under the home directory, as every path given to ssh here
 bench=flatshare/venvs/bench/bin/flatshare-bench
 complete() { echo "grep -qs '\"status\": \"complete\"' $runs/$1/run.json"; } # run.json as e2 run writes it
-mkdir -p "$results"
-log() { echo "[$(date -u +%FT%TZ)] $*" | tee -a "$results/campaign.log"; }
+if $list; then
+  log() { echo "$*" >&2; } # --points writes no log
+else
+  mkdir -p "$results"
+  log() { echo "[$(date -u +%FT%TZ)] $*" | tee -a "$results/campaign.log"; }
+fi
 die() { log "campaign: $*"; exit 1; }
 
 # The points in order, each named after its arm file, and the agents' seed and the KV sampler's interval the
@@ -136,6 +144,10 @@ while IFS= read -r line || [[ -n $line ]]; do
   arms+=("$here/$line") points+=("$point")
 done <"$1"
 ((${#points[@]})) || die "$1 names no point"
+if $list; then
+  printf '%s\n' "${points[@]}"
+  exit 0
+fi
 seeded=""
 if [[ -n $seed ]]; then seeded=", the agents' seed $seed"; fi
 if [[ -n $sampling ]]; then

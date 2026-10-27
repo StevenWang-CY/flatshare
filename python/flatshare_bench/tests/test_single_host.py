@@ -19,7 +19,6 @@ import socket
 import stat
 import subprocess
 import sys
-import tempfile
 import textwrap
 import threading
 import time
@@ -27,8 +26,8 @@ from pathlib import Path
 
 import pytest
 
-from flatshare_bench.e2 import run as e2
 from flatshare_bench.e2.arm import load_arm
+from flatshare_bench.e2.cyan import Host, Systemd, configure_cyan
 
 REPO = Path(__file__).resolve().parents[3]
 BIN = REPO / "deploy" / "bin"
@@ -1271,7 +1270,7 @@ def single_host_node(host: dict, tmp_path: Path) -> Path:
     return node
 
 
-class ShimSystemd(e2.Systemd):
+class ShimSystemd(Systemd):
     """flatshare-bench e2 run's view of the units through flatshare-svc's shims (what it reads: show); the restarts it
     asks for are recorded, not run, since the control plane is only linked here."""
 
@@ -1316,9 +1315,9 @@ def test_variant_sh_on_a_single_host_switches_only_the_gpu_units(
     )
     (arms / "voice.toml").write_text('arm = 1\nlabel = "voice alone"\n')
     overlay, plain = load_arm(arms / "overlay.toml"), load_arm(arms / "voice.toml")
-    e2_host = e2.Host(home=home)
+    e2_host = Host(home=home)
     systemd = ShimSystemd()
-    first = e2.configure_cyan(overlay, e2_host, systemd)  # links e2-gateway and no-events
+    first = configure_cyan(overlay, e2_host, systemd)  # links e2-gateway and no-events
     assert first["gateway"]["restarted"] and first["worker"]["restarted"]
     control = sorted(
         str(p.relative_to(units))
@@ -1353,7 +1352,7 @@ def test_variant_sh_on_a_single_host_switches_only_the_gpu_units(
                     ("flatshare-engine.", "flatshare-stt.", "flatshare-tts.")
                 )
             ), switch
-            again = e2.configure_cyan(overlay, e2_host, systemd)
+            again = configure_cyan(overlay, e2_host, systemd)
             assert not again["gateway"]["restarted"] and not again["worker"]["restarted"], switch
         engine = ctl(host, "-u", "flatshare-engine", "-o", "cat", tool="journalctl").stdout
         assert "argv ['make-room', '--additional-config.make_room.reserve_tokens', '0']" in engine
@@ -1369,7 +1368,7 @@ def test_variant_sh_on_a_single_host_switches_only_the_gpu_units(
     finally:
         ctl(host, "--user", "stop", "flatshare.target")
     # An arm without a gateway table or events off takes its drop-ins away, as on cyan.
-    last = e2.configure_cyan(plain, e2_host, systemd)
+    last = configure_cyan(plain, e2_host, systemd)
     assert last["gateway"]["restarted"] and last["worker"]["restarted"]
     assert not (units / "flatshare-gateway.service.d" / "variant-e2-gateway.conf").exists()
     assert (units / "flatshare-voice-worker.service.d" / "variant-vad-turns.conf").is_symlink()
@@ -1409,10 +1408,9 @@ def echo_server() -> tuple[socket.socket, int]:
     return server, server.getsockname()[1]
 
 
-def test_flatshare_forward_relays_a_socket_to_a_port() -> None:
+def test_flatshare_forward_relays_a_socket_to_a_port(short_dir: Path) -> None:
     server, port = echo_server()
-    # A short directory: a socket's path has room for 104 bytes on macOS.
-    path = Path(tempfile.mkdtemp(prefix="forward-")) / "flatshare" / "phastform-stt.sock"
+    path = short_dir / "flatshare" / "phastform-stt.sock"
     path.parent.mkdir()
     stale = socket.socket(socket.AF_UNIX)  # a socket left by an earlier run is replaced
     stale.bind(str(path))
@@ -1466,7 +1464,7 @@ def test_flatshare_forward_takes_ipv6_hosts_in_brackets() -> None:
 
 
 @pytest.mark.skipif(not socket.has_ipv6, reason="needs IPv6")
-def test_flatshare_forward_relays_a_socket_to_an_ipv6_port() -> None:
+def test_flatshare_forward_relays_a_socket_to_an_ipv6_port(short_dir: Path) -> None:
     try:
         server = socket.create_server(("::1", 0), family=socket.AF_INET6)
     except OSError:
@@ -1481,7 +1479,7 @@ def test_flatshare_forward_relays_a_socket_to_an_ipv6_port() -> None:
                     connection.sendall(data.upper())
 
     threading.Thread(target=serve, daemon=True).start()
-    path = Path(tempfile.mkdtemp(prefix="forward-")) / "stt.sock"
+    path = short_dir / "stt.sock"
     forward = subprocess.Popen(
         [sys.executable, str(BIN / "flatshare-forward"), f"{path}=[::1]:{port}"],
         stdout=subprocess.PIPE,
@@ -1504,12 +1502,12 @@ def test_flatshare_forward_relays_a_socket_to_an_ipv6_port() -> None:
 
 
 def test_flatshare_forward_binds_its_socket_private_from_its_creation(
-    socket_modes: dict[str, int],
+    socket_modes: dict[str, int], short_dir: Path
 ) -> None:
     # Bound under the process's umask and made mode 600 after, the socket was open in between to what the umask left
     # (755 under 022, 777 under 0): a user who connected then kept the connection.
     forward = _module("flatshare_forward", BIN / "flatshare-forward")
-    path = Path(tempfile.mkdtemp(prefix="forward-")) / "engine.sock"
+    path = short_dir / "engine.sock"
 
     async def bind() -> None:
         server = await forward.unix_server(path, ("127.0.0.1", 9))
@@ -1521,9 +1519,9 @@ def test_flatshare_forward_binds_its_socket_private_from_its_creation(
     assert os.umask(0o022) == 0o022, "the process's umask is back"
 
 
-def test_flatshare_forward_relays_a_port_to_a_socket() -> None:
+def test_flatshare_forward_relays_a_port_to_a_socket(short_dir: Path) -> None:
     # As AIPerf reaches the engine for the calibration point: a loopback port to the engine's Unix socket.
-    path = Path(tempfile.mkdtemp(prefix="forward-")) / "engine.sock"
+    path = short_dir / "engine.sock"
     server = socket.socket(socket.AF_UNIX)
     server.bind(str(path))
     server.listen()
@@ -1565,8 +1563,10 @@ def test_flatshare_forward_relays_a_port_to_a_socket() -> None:
     assert relative.returncode == 2 and "absolute socket path" in relative.stderr
 
 
-def test_the_voice_plane_runs_in_the_hosts_namespace_where_there_is_none_of_its_own() -> None:
-    run = Path(tempfile.mkdtemp(prefix="voicenet-"))
+def test_the_voice_plane_runs_in_the_hosts_namespace_where_there_is_none_of_its_own(
+    short_dir: Path,
+) -> None:
+    run = short_dir
     (run / "flatshare").mkdir()
     pidfile = run / "flatshare" / "voicenet.pid"
     holder = subprocess.Popen(
@@ -1609,6 +1609,20 @@ def test_gpu_guard_reads_the_lent_gpu_alone(tmp_path: Path) -> None:
         "-i GPU-bbbb --query-compute-apps=pid --format=csv,noheader",
         "--query-compute-apps=pid --format=csv,noheader",
     ]
+
+
+def test_gpu_guard_refuses_when_nvidia_smi_cannot_list_the_gpu(tmp_path: Path) -> None:
+    # A guard that cannot read the GPU's processes cannot say the GPU is free: a failing nvidia-smi (a driver that is
+    # not loaded, a GPU id that names no card) refuses the start instead of passing with no process listed.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "nvidia-smi").write_text("#!/bin/sh\necho 'No devices were found' >&2\nexit 6\n")
+    (bin_dir / "nvidia-smi").chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k != "FLATSHARE_GPU_ID"}
+    env["PATH"] = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+    done = subprocess.run(["bash", str(BIN / "gpu-guard")], env=env, capture_output=True, text=True)
+    assert done.returncode == 1, done.stderr
+    assert "could not list the GPU's processes; not starting" in done.stderr
 
 
 @pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="reads /proc (Linux)")

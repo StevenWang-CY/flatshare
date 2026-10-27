@@ -14,7 +14,6 @@ import os
 import shutil
 import signal
 import socket
-import socketserver
 import subprocess
 import sys
 import tempfile
@@ -25,6 +24,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
+from servers import UnixServer, serve, stop
 
 REPO = Path(__file__).resolve().parents[3]
 TUNNEL = REPO / "deploy" / "bin" / "flatshare-tunnel"
@@ -59,10 +59,6 @@ class _Named(BaseHTTPRequestHandler):
 
     def log_message(self, *args: object) -> None:
         pass
-
-
-class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
 
 
 def get(path: Path, connection: socket.socket | None = None) -> tuple[bytes, socket.socket]:
@@ -109,10 +105,9 @@ def node() -> Iterator[dict]:
     socket_dir.mkdir(mode=0o700)
     servers = {}
     for name in SOCKETS:
-        server = _Server(str(socket_dir / f"{name}.sock"), _Named)
+        server = UnixServer(str(socket_dir / f"{name}.sock"), _Named)
         server.name = name  # type: ignore[attr-defined]
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        servers[name] = server
+        servers[name] = serve(server)
     home = root / "home"
     (home / ".ssh").mkdir(parents=True, mode=0o700)
     entries = []
@@ -161,7 +156,7 @@ def node() -> Iterator[dict]:
     yield node
     stop_sshd(node)
     for server in servers.values():
-        server.shutdown()
+        stop(server)
     shutil.rmtree(root, ignore_errors=True)
 
 
