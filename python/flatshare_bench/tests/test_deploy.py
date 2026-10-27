@@ -1648,6 +1648,37 @@ def test_deploy_rolls_back_and_shows_status_with_the_current_releases_tool(tmp_p
     assert release_log(home)[-1] == {"args": ["status"]}
 
 
+def test_deploy_runs_the_newest_releases_tool_while_the_current_release_has_none(
+    tmp_path: Path,
+) -> None:
+    # A rollback to the release adopted from before releases leaves current without a flatshare-release of its own:
+    # the newest release's, by its commit's time, shows the status and goes forward again.
+    repo, hosts, env = deploy_repo(tmp_path)
+    home = hosts / "phastform"
+    flatshare = home / "flatshare"
+    (flatshare / "releases" / "legacy-v1.5" / "deploy").mkdir(parents=True)
+    (flatshare / "current").symlink_to("releases/legacy-v1.5")
+    (flatshare / "src").symlink_to("current")
+    stub = STUB_RELEASE.replace(
+        'entry = {"args": args}', 'entry = {"args": args, "tool": sys.argv[0]}'
+    )
+    now = time.time()
+    for rid, age in (("a" * 12, 100), ("b" * 12, 10), ("c" * 12, 1000)):
+        tool = flatshare / "releases" / rid / "deploy" / "bin" / "flatshare-release"
+        tool.parent.mkdir(parents=True)
+        tool.write_text(stub)
+        os.utime(tool, (now - age, now - age))
+    deploy = ["bash", str(repo / "deploy" / "deploy.sh"), "phastform"]
+    for args in (["--status"], ["--rollback"]):
+        done = subprocess.run([*deploy, *args], env=env, capture_output=True, text=True)
+        assert done.returncode == 0, done.stderr
+    newest = f"flatshare/releases/{'b' * 12}/deploy/bin/flatshare-release"
+    assert release_log(home) == [
+        {"args": ["status"], "tool": newest},
+        {"args": ["rollback"], "tool": newest},
+    ]
+
+
 def gateway_build(repo: Path, out: Path, commit: str) -> Path:
     """A gateway binary as deploy/build-gateway.sh leaves one, built from ``commit``."""
     out.write_text("#!/bin/sh\necho 'flatshare-gateway 1.0.0'\n")

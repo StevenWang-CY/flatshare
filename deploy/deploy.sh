@@ -11,6 +11,8 @@
 # --adopt moves a host deployed before releases into one first; --no-switch prepares and verifies only.
 # deploy.sh HOST --rollback [--to ID]: switch HOST back to its previous release (or ID), by the same steps.
 # deploy.sh HOST --status: HOST's releases, current and previous.
+# Both run the current release's flatshare-release, or, while the current release is one adopted from before releases
+# (which has none), the newest release's.
 # HOST is an SSH host name or alias whose first label is the host's directory under deploy/ (phastform, cyan or gray):
 # phastform and phastform.example.org both release deploy/phastform/. Set FLATSHARE_SSH to the ssh command for your
 # hosts, e.g. FLATSHARE_SSH="ssh -F $HOME/.ssh/flatshare_config".
@@ -21,7 +23,12 @@ name=${host%%.*}
 repo=$(cd "$(dirname "$0")/.." && pwd)
 ssh=${FLATSHARE_SSH:-ssh}
 [[ -d $repo/deploy/$name ]] || { echo "deploy: no deploy/$name directory" >&2; exit 2; }
-release=flatshare/src/deploy/bin/flatshare-release # the current release's, on HOST
+# The release tool on HOST: the current release's, or the newest release's (by its commit's time, which the files of
+# a release keep) where the current release has none.
+# shellcheck disable=SC2016 # HOST's shell expands it
+tool='t=flatshare/src/deploy/bin/flatshare-release; [ -f "$t" ] ||
+  t=$(ls -t flatshare/releases/*/deploy/bin/flatshare-release 2>/dev/null | head -n 1)
+  python3 "${t:-flatshare/src/deploy/bin/flatshare-release}"'
 gateway="" mode=deploy pass=()
 while (($#)); do
   case $1 in
@@ -35,10 +42,10 @@ while (($#)); do
   shift
 done
 if [[ $mode == status ]]; then
-  exec $ssh "$host" "python3 $release status"
+  exec $ssh "$host" "$tool status"
 fi
 if [[ $mode == rollback ]]; then
-  exec $ssh "$host" "python3 $release rollback ${pass[*]:-}"
+  exec $ssh "$host" "$tool rollback ${pass[*]:-}"
 fi
 changes=$(git -C "$repo" status --porcelain --untracked-files=normal)
 if [[ -n $changes ]]; then
@@ -69,7 +76,7 @@ if [[ -e $repo/deploy/$name/systemd/flatshare-gateway.service ]]; then
     cp "$gateway.json" "$stage/bin/flatshare-gateway.json"
   else
     # The binary of the release HOST runs, when it was built from crates this commit has unchanged: the same source.
-    $ssh "$host" "python3 $release status --json" >"$stage.status" 2>/dev/null || true
+    $ssh "$host" "$tool status --json" >"$stage.status" 2>/dev/null || true
     current_id="" current_commit=""
     read -r current_id current_commit < <(python3 - "$stage.status" <<'PY'
 import json, sys
