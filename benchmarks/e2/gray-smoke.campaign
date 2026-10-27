@@ -1,0 +1,7 @@
+# Gray as an E2 node, end to end, on W5's round-1 sample of the agents: voice alone on the frozen box, then the agents
+# alone on a dedicated card (variant agents-only, which stops the card's speech servers) and on the shared card's
+# engine (which starts them again). Run it on Gray: FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --pause gray-smoke.campaign
+agents-seed 11
+arms/w5-a1-voice.toml
+arms/rg-disc-agents-only-s24.toml
+arms/rg-disc-agents-pr-ab48-s24.toml
