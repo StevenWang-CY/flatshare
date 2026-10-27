@@ -5,6 +5,43 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.4](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.4) (2026-10-27): a rewritten history, and the code reorganized
+
+No measurement changed, and every report and figure regenerates from the same records.
+
+- **The history.** The 740 commits up to v1.3 are now 104, each titled "[Area] What it does" with a body that says why.
+  Every file of every commit was cleaned of a host login, a lab host's address and the name of a LiveKit key; none of
+  them was a secret, and none had been in the tree since v1.3. Each tag, and each revision a record names, keeps
+  exactly its tree under a new hash, and [docs/REVISIONS.md](docs/REVISIONS.md) gives each record's revision its
+  commit in this history. A clone made before 2026-10-27 has to be made again.
+- **The figures.** Where a figure shows the change in two blues, a note says the darker one is the configuration to
+  deploy, and the voice figures state their SLO. On the A100 both of the PRs' rows are drawn alike, and tuned vLLM's
+  512-token row says it runs the RTX 5060 Ti's tuning. A row's name breaks to keep its run count on its last line, and
+  the method figure's leader to (c) runs straight down. The README's links say where they lead.
+- **The simulator.** The replay is split into its loop, its clock, the sessions' trees, the E1 arms' retention and the
+  working-set accounting, and the regime map is split out of the hardware profiles. One function prices a lone prefill
+  chunk, where the regime map and the forecast each had a copy. Every committed output is byte for byte as before:
+  E1's tables, the three forecasts, the calibration report and the A100 analysis, 158 files. `flatshare-sim` refuses a
+  count, duration, ratio or capacity that describes no run, where `--concurrency 0` wrote an empty table and exited 0.
+- **The gateway.** The engine client and the response relay are modules of their own. The metric series a request
+  updates under fixed labels are resolved at start, which takes its bookkeeping from 170 to 49 ns, and from 2,440 to
+  1,481 ns with four threads at once. A session's lifecycle events reach the admission point in the order they were
+  accepted, where two concurrent posts could arrive reversed. A lifecycle throttle without a step budget is a
+  configuration error that names the key, where the core panicked.
+- **The harness.** `e2/run.py` keeps the point's steps and its records (647 of its 1,472 lines); the engine check,
+  cyan's settings and the tools' processes are modules of their own. A reader of a few metrics parses their lines
+  alone, so the KV sample an agent point takes twice a second went from 1.07–1.09 ms to 72–74 µs. The voice worker
+  checks its settings before it registers with LiveKit, so a misspelled value stops it instead of failing every call.
+  The A100 scripts read a campaign's points from `campaign.sh`, so a campaign that saves audio reads as complete. Each
+  CLI action is a function with one error path. A point gives AIPerf a temp directory of its own, which goes once
+  AIPerf has stopped: AIPerf leaves its IPC directory and the run's dataset map in the temp directory, and cyan's
+  /tmp held 234 maps (264 MB). The tests' stand-in servers stop within 10 ms and leave nothing behind, which took
+  the bench suite from 222–232 s to 181–199 s on the same machine.
+- **Fixes.** `gpu-guard` refuses to start a GPU unit when `nvidia-smi` cannot list the GPU's processes, where it
+  passed with none listed. The gateway's tests remove the sockets that ended test runs left, which had built up to
+  322 files, and `rehearsal-ssh` prints its message with its apostrophes.
+- **Packages** versioned 1.4.0, and not published to a package index.
+
 ## [v1.3](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.3) (2026-10-26): the box's running share, and a public release
 
 - **The box's running share, measured (RS).** Five rounds on the RTX 5060 Ti of the frozen engine and the PRs'
