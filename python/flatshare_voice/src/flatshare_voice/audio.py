@@ -8,6 +8,7 @@ microphone to the agent's audio carries no clock offset.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import math
 import time
 import wave
@@ -23,6 +24,9 @@ AGENT_RATE = 24_000
 AGENT_SPEECH_RMS = 0.02
 """Agent audio at or above this RMS (of full scale) counts as speech."""
 AGENT_STATE = "lk.agent.state"
+SPEAKING = "speaking"
+"""The agent's state while it plays a reply: LiveKit Agents sets it at the reply's first frame and leaves it once its
+own playout timer says the last frame has gone out, before the caller has heard that frame."""
 
 
 @dataclass
@@ -236,6 +240,16 @@ class AgentAudio:
             await asyncio.sleep(0.01)
         raise TimeoutError("the agent did not stop speaking")
 
+    def gaps_between(self, a: float, b: float, shortest: float) -> list[float]:
+        """The quiet stretches of at least ``shortest`` seconds between the spans of speech that start within
+        ``[a, b]``: the pauses of a reply that began at ``a`` and ended at ``b``."""
+        spans = [span for span in self.spans if a <= span[0] <= b]
+        return [
+            nxt[0] - prev[1]
+            for prev, nxt in itertools.pairwise(spans)
+            if nxt[0] - prev[1] >= shortest
+        ]
+
     async def silent_after(self, t: float, quiet: float, timeout: float) -> float:
         """When the agent's audio stops for good after ``t``: the end of the last span that began
         before a ``quiet``-second stretch of silence."""
@@ -247,6 +261,38 @@ class AgentAudio:
                 return last_end
             await asyncio.sleep(0.02)
         raise TimeoutError("the agent did not stop speaking")
+
+
+class AgentState:
+    """The agent's state attribute as the caller saw it change, each change with when it arrived."""
+
+    def __init__(self) -> None:
+        self.changes: list[tuple[float, str]] = []
+
+    def record(self, state: str, at: float | None = None) -> None:
+        if not self.changes or self.changes[-1][1] != state:
+            self.changes.append((time.monotonic() if at is None else at, state))
+
+    def at(self, t: float) -> str | None:
+        """The state the caller last saw at or before ``t``."""
+        found = None
+        for when, state in self.changes:
+            if when > t:
+                break
+            found = state
+        return found
+
+    async def left_speaking_after(self, t: float, timeout: float) -> float | None:
+        """When the agent, speaking at ``t`` or from a change after it, next leaves ``speaking``; None if no such
+        change arrives within ``timeout`` (an agent that publishes no state)."""
+        deadline = time.monotonic() + timeout
+        while True:
+            for when, state in self.changes:
+                if when > t and state != SPEAKING and self.at(when - 1e-9) == SPEAKING:
+                    return when
+            if time.monotonic() >= deadline:
+                return None
+            await asyncio.sleep(0.01)
 
 
 def agents(room: rtc.Room) -> list[rtc.RemoteParticipant]:

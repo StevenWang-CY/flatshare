@@ -423,3 +423,129 @@ def test_the_callers_join_their_rooms_a_stagger_apart(
     assert order == list(range(6))
     starts = [at for _, at in sorted(joined, key=lambda j: j[1])]
     assert all(b - a >= 0.045 for a, b in itertools.pairwise(starts)), starts
+
+
+def test_the_agents_state_says_when_it_stops_speaking() -> None:
+    state = audio.AgentState()
+    state.record("listening", at=1.0)
+    state.record("listening", at=1.5)  # no change, no entry
+    state.record("speaking", at=2.0)
+    state.record("listening", at=4.0)
+    assert state.changes == [(1.0, "listening"), (2.0, "speaking"), (4.0, "listening")]
+    assert [state.at(t) for t in (0.5, 1.2, 2.0, 3.9, 9.0)] == [
+        None,
+        "listening",
+        "speaking",
+        "speaking",
+        "listening",
+    ]
+    # Speaking at 2.5 or from a change after 1.5 (the state can arrive before the caller hears the audio): 4.0.
+    assert asyncio.run(state.left_speaking_after(2.5, 0.0)) == 4.0
+    assert asyncio.run(state.left_speaking_after(1.5, 0.0)) == 4.0
+    # After the reply's end, no change says it ended: None once the timeout passes.
+    assert asyncio.run(state.left_speaking_after(4.5, 0.05)) is None
+
+
+def test_a_replys_pauses_are_its_quiet_stretches_between_spans() -> None:
+    heard = audio.AgentAudio()
+    heard.spans = [[1.0, 1.8], [2.0, 2.5], [3.2, 3.6], [9.0, 9.5]]
+    assert [round(g, 3) for g in heard.gaps_between(1.0, 4.0, 0.3)] == [0.7]
+    assert [round(g, 3) for g in heard.gaps_between(1.0, 4.0, 0.1)] == [0.2, 0.7]
+    assert heard.gaps_between(9.0, 9.5, 0.1) == []
+
+
+PAUSE = 0.6
+"""The fake agent's pause inside its reply: SPOKEN_S of speech, PAUSE of quiet, SPOKEN_S again."""
+
+
+class PausedLine(Line):
+    """A fake agent whose replies pause halfway, and which publishes its state as LiveKit Agents does: speaking from
+    the reply's first frame, listening once its last has gone out."""
+
+    def __init__(self, state: audio.AgentState | None) -> None:
+        super().__init__()
+        self.state = state
+
+    async def capture_frame(self, frame: Any) -> None:
+        before = len(self.replies)
+        await super().capture_frame(frame)
+        if self.state is not None and len(self.replies) > before:
+            start = self.replies[-1]
+            asyncio.get_running_loop().call_at(start, self.state.record, "speaking")
+            end = start + 2 * SPOKEN_S + PAUSE
+            asyncio.get_running_loop().call_at(end, self.state.record, "listening")
+
+    async def __aiter__(self) -> AsyncIterator[Any]:
+        speech, silence = tone(440, 0.01)[:240], np.zeros(240, dtype=np.int16)
+        deadline = time.monotonic()
+        while True:
+            deadline += 0.01
+            await asyncio.sleep(max(0.0, deadline - time.monotonic()))
+            now = time.monotonic()
+            replying = any(
+                start <= now < start + SPOKEN_S
+                or start + SPOKEN_S + PAUSE <= now < start + 2 * SPOKEN_S + PAUSE
+                for start in self.replies
+            )
+            frame = SimpleNamespace(data=memoryview(speech if replying else silence))
+            yield SimpleNamespace(frame=frame)
+
+
+def test_the_agents_state_ends_a_reply_that_pauses_where_silence_would_cut_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A reply that pauses for 0.6 s halfway: with the agent's state the caller waits for its second half and counts
+    # the pause; by silence alone, with the quiet that ends a reply shorter than the pause, it takes the pause for the
+    # end and its next line would talk over the rest of the reply.
+    monkeypatch.setattr(bots, "QUIET_S", 0.5)
+    monkeypatch.setattr(bots, "TAIL_S", 0.1)
+    lines = [line_clip(f"turn-{n:02}", 0.2) for n in range(4)]
+    corpus = SimpleNamespace(turns=lines, barge_ins=[line_clip("barge", 0.2)])
+    config = BotsConfig("ws://fake", "key", "secret", tmp_path, turns=2, barge_in=0.0, seed=1)
+    config = dataclasses.replace(config, think=(0.0, 0.0))
+
+    def call(publishes_state: bool) -> list[dict[str, Any]]:
+        async def play() -> list[dict[str, Any]]:
+            state = audio.AgentState()
+            line = PausedLine(state if publishes_state else None)
+            monkeypatch.setattr(audio.rtc, "AudioSource", line.source)
+            monkeypatch.setattr(audio.rtc, "AudioStream", line.stream)
+            caller = Caller(config, corpus, 0, "t")
+            caller.agent_state = state
+            if publishes_state:
+                state.record("listening")
+            tasks = [
+                asyncio.create_task(caller.microphone.run()),
+                asyncio.create_task(caller.agent_audio.consume(line)),
+            ]
+            await asyncio.sleep(0.2)
+            rows: list[dict[str, Any]] = []
+            with (tmp_path / f"turns-{publishes_state}.jsonl").open("w") as log:
+                await caller.play(rows, log)
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            return rows
+
+        return asyncio.run(play())
+
+    told = call(True)
+    assert [row["end_by"] for row in told] == ["state", "state"]
+    for row in told:
+        [pause] = row["reply_pauses_ms"]
+        assert PAUSE * 1000 - 30 <= pause <= PAUSE * 1000 + 30, row
+        assert row["reply_audio_ms"] >= (2 * SPOKEN_S + PAUSE) * 1000 - 30, row
+    guessed = call(False)
+    assert [row["end_by"] for row in guessed] == ["silence", "silence"]
+    # Silence took the pause for the end: the reply it measured is its first half, with no pause in it.
+    for row in guessed:
+        assert row["reply_pauses_ms"] == [] and row["reply_audio_ms"] < (SPOKEN_S + 0.1) * 1000, row
+    summary = summarize(told, [0.0])["replies"]
+    assert (summary["n"], summary["ended_by_state"], summary["with_a_pause_over_500_ms"]) == (
+        2,
+        2,
+        2,
+    )
+    assert (
+        summary["with_a_pause_of_quiet_s"] == 2
+    )  # a pause as long as the quiet that would end a reply

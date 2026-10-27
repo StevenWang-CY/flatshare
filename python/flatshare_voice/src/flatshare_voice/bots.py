@@ -10,8 +10,14 @@ plays a line from the corpus and waits for the reply:
   **barge-in to silence** runs from the interruption's speech onset until the agent's audio
   stops, and the reply to the interruption gives a second V2V sample.
 
-The caller then waits until the agent has been quiet for a second, pauses for a think time and
-takes the next turn. Every time comes from one clock in one process, so no clock offset enters
+The caller then waits for the reply to end and pauses for a think time before the next turn. The
+agent says when it has finished: its state (``lk.agent.state``) leaves ``speaking`` once its last
+frame has gone out, and the reply ended when the caller has heard that frame. Within each reply the
+caller times its pauses, the stretches of quiet while the agent has not finished, and reads its
+WebRTC receiver's count of samples played without a packet (concealed); an agent that publishes no
+state has finished once it has been quiet for a second, as every caller before the state was read
+had it, which a pause of a second or more mistakes for the end. Either way the next turn starts no
+sooner than a second after the reply's last audio, so the turns keep the pace they always had. Every time comes from one clock in one process, so no clock offset enters
 the numbers. Each run directory gets ``run.json``, ``turns.jsonl`` and ``summary.json``.
 
 A call may open with warm-up turns (``--warmup-turns``): a line and its reply, without an
@@ -54,6 +60,7 @@ from .audio import (
     AGENT_STATE,
     SAMPLE_RATE,
     AgentAudio,
+    AgentState,
     Clip,
     Microphone,
     Recorder,
@@ -64,7 +71,16 @@ from .audio import (
 from .protocol import AGENT_NAME
 
 QUIET_S = 1.0
-"""Agent silence that ends its reply."""
+"""Agent silence that ends its reply when the agent publishes no state, and the least time from a reply's last audio
+to the next turn."""
+
+TAIL_S = 0.3
+"""Quiet after the agent's state leaves speaking by which the reply's last frames have arrived: they travel through
+LiveKit's server and the receiver's jitter buffer, the state change through its signalling."""
+
+PAUSE_S = 0.3
+"""The shortest quiet stretch inside a reply that counts as a pause (a gap the caller hears); a speech span already
+closes over quiet shorter than AgentAudio.GAP."""
 
 JOIN_STAGGER_S = 0.25
 """How far apart the callers join their rooms. LiveKit's dispatcher can drop the job of a room created within
@@ -145,6 +161,8 @@ class Caller:
         self.sent = Recorder(SAMPLE_RATE) if config.save_audio else None
         self.received = Recorder(AGENT_RATE) if config.save_audio else None
         self.agent_audio = AgentAudio(self.received)
+        self.agent_state = AgentState()
+        self.agent_track: rtc.Track | None = None
         self.microphone = Microphone(recorder=self.sent)
         self.max_lateness_s = 0.0
         self.moments: dict[int, dict[str, float]] = {}
@@ -167,6 +185,7 @@ class Caller:
         at |= {"start": played["start"], "speech_end": played["speech_end"]}
         reply = await audio.first_onset_after(played["speech_end"], config.reply_timeout)
         at["reply"] = reply
+        before = asyncio.create_task(self.receiver_counts())
         row: dict[str, Any] = {
             "caller": self.index,
             "turn": number,
@@ -191,12 +210,62 @@ class Caller:
                 second = await audio.first_onset_after(barged["speech_end"], config.reply_timeout)
                 at["barge_in_reply"] = second
                 row["v2v_after_barge_in_ms"] = round((second - barged["speech_end"]) * 1000, 1)
-            at["end"] = await audio.silent_after(
-                time.monotonic(), QUIET_S, config.reply_timeout * 2
-            )
+                row["interrupted_reply_pauses_ms"] = self.pauses(reply, onset)
+                await before
+                reply, before = second, asyncio.create_task(self.receiver_counts())
+            end, row["end_by"] = await self.reply_end(reply)
+            at["end"] = end
+            row["reply_audio_ms"] = round((end - reply) * 1000, 1)
+            row["reply_pauses_ms"] = self.pauses(reply, end)
+            counted = (await before, await self.receiver_counts())
+            if None not in counted:
+                row["received"] = {key: counted[1][key] - counted[0][key] for key in counted[1]}
         except TimeoutError as exc:  # the turn fails, keeping the reply it measured
             row["error"] = str(exc)
+        finally:
+            before.cancel()
         return row
+
+    async def reply_end(self, reply: float) -> tuple[float, str]:
+        """When the reply that began at ``reply`` ended, its last audio, and how the caller knew: ``state``, once the
+        agent's state has left speaking and TAIL_S of quiet followed, or ``silence``, after QUIET_S of quiet, from an
+        agent that publishes no state. It returns no sooner than QUIET_S after the reply's last audio."""
+        config, audio = self.config, self.agent_audio
+        left = None
+        if self.agent_state.changes:
+            left = await self.agent_state.left_speaking_after(reply, config.reply_timeout * 2)
+        if left is None:
+            end = await audio.silent_after(time.monotonic(), QUIET_S, config.reply_timeout * 2)
+            return end, "silence"
+        await audio.silent_after(left, TAIL_S, config.reply_timeout)
+        end = max((e for s, e in audio.spans if reply <= s <= time.monotonic()), default=reply)
+        await asyncio.sleep(max(0.0, end + QUIET_S - time.monotonic()))
+        return end, "state"
+
+    def pauses(self, a: float, b: float) -> list[float]:
+        """The reply's pauses between ``a`` and ``b``, each in ms."""
+        return [round(g * 1000, 1) for g in self.agent_audio.gaps_between(a, b, PAUSE_S)]
+
+    async def receiver_counts(self) -> dict[str, int] | None:
+        """The agent's audio as the caller's WebRTC receiver has counted it so far: the samples it played, those of
+        them it concealed (played without a packet) and those it concealed as silence; None without the agent's track
+        or its statistics."""
+        track = self.agent_track
+        if track is None:
+            return None
+        try:
+            stats = await asyncio.wait_for(track.get_stats(), 1.0)
+        except Exception:  # a missing count drops the counts, never the turn
+            return None
+        for stat in stats:
+            if stat.HasField("inbound_rtp"):
+                inbound = stat.inbound_rtp.inbound
+                return {
+                    "samples": inbound.total_samples_received,
+                    "concealed": inbound.concealed_samples,
+                    "silent_concealed": inbound.silent_concealed_samples,
+                }
+        return None
 
     async def call(self, rows: list[dict[str, Any]], log: TextIO) -> None:
         config = self.config
@@ -206,7 +275,14 @@ class Caller:
         def _on_track(track: rtc.Track, _: Any, participant: rtc.RemoteParticipant) -> None:
             is_agent = participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_AGENT
             if is_agent and track.kind == rtc.TrackKind.KIND_AUDIO:
+                self.agent_track = track
                 tasks.add(asyncio.create_task(self.agent_audio.consume(track)))
+
+        @self.room.on("participant_attributes_changed")
+        def _on_attributes(changed: dict[str, str], participant: rtc.Participant) -> None:
+            is_agent = participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_AGENT
+            if is_agent and AGENT_STATE in changed:
+                self.agent_state.record(changed[AGENT_STATE])
 
         identity = f"caller-{self.index}"
         await self.room.connect(config.url, token(config, self.room_name, identity))
@@ -222,6 +298,7 @@ class Caller:
                 config.reply_timeout,
                 "the agent never listened",
             )
+            self.agent_state.record("listening")
             await asyncio.sleep(0.5)  # let the agent's audio input run on silence first
             await self.play(rows, log)
         finally:
@@ -307,7 +384,7 @@ def summarize(
     silence = [r["barge_in_to_silence_ms"] for r in rows if "barge_in_to_silence_ms" in r]
     cut = sum(1 for r in rows if r.get("interrupted_speech") and "barge_in_to_silence_ms" not in r)
     barge_ins = [r for r in rows if r.get("barge_in")]
-    return {
+    summary = {
         "turns": len(rows),
         "errors": sum(1 for r in rows if "error" in r),
         "v2v_ms": percentiles(v2v, censored),
@@ -316,6 +393,30 @@ def summarize(
         "barge_ins_after_the_reply": sum(1 for r in barge_ins if not r["interrupted_speech"]),
         "caller_max_lateness_ms": round(max(lateness, default=0.0) * 1000, 1),
     }
+    heard = [r for r in rows if "reply_pauses_ms" in r]
+    return summary | ({"replies": replies(heard)} if heard else {})
+
+
+def replies(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """The replies the calls heard to their end (on a turn with an interruption, the reply to it): how the caller knew
+    each had ended, how long its audio ran, its pauses of PAUSE_S or more, and, where the receiver counted them, the
+    share of the samples it played over them that it had to conceal, silence left out."""
+    longest = [max(r["reply_pauses_ms"], default=0.0) for r in rows]
+    found: dict[str, Any] = {
+        "n": len(rows),
+        "ended_by_state": sum(1 for r in rows if r.get("end_by") == "state"),
+        "audio_ms": percentiles(r["reply_audio_ms"] for r in rows),
+        "with_a_pause": sum(1 for m in longest if m > 0),
+        "with_a_pause_over_500_ms": sum(1 for m in longest if m > 500),
+        "with_a_pause_of_quiet_s": sum(1 for m in longest if m >= QUIET_S * 1000),
+        "longest_pause_ms": percentiles(longest),
+    }
+    received = [r["received"] for r in rows if "received" in r]
+    samples = sum(x["samples"] for x in received)
+    if samples:
+        concealed = sum(x["concealed"] - x["silent_concealed"] for x in received)
+        found["concealed_share"] = round(concealed / samples, 5)
+    return found
 
 
 async def run_bots(config: BotsConfig, out_dir: Path) -> dict[str, Any]:
