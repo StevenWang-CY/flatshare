@@ -1264,6 +1264,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.6 | 2026-10-28 | The share of replies over the SLO and the pooled p95 beside each configuration's median p95, what the agents' token rate measures, the reuse of the five samples of the agents, and how long the first sentences are |
 | 1.5 | 2026-10-27 | Rewritten in full: the design and two algorithms, thirteen figures and five tables drawn from the records, references, and appendices |
 | 1.4 | 2026-10-27 | Unchanged: the release rewrote the repository's history |
 | 1.3 | 2026-10-26 | The RTX 5060 Ti's measured share of time short of KV, beside the A100's |
