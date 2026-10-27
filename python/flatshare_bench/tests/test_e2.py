@@ -33,6 +33,7 @@ from flatshare_bench.e2 import run as e2
 from flatshare_bench.e2 import tools
 from flatshare_bench.e2.arm import E2Error, Engine, Voice, flag_values, load_arm
 from flatshare_bench.e2.cyan import (
+    E2_GATEWAY_TABLE,
     Host,
     Systemd,
     _merge,
@@ -413,6 +414,17 @@ def test_flag_values_pair_each_flag_with_its_value() -> None:
 
 
 # The gateway's configuration and the environment files
+
+
+def test_every_point_switches_the_gateways_canary_off_unless_its_arm_sets_it() -> None:
+    # The canary would add one-token completions to an idle engine's counters, which a point reads, and hold a
+    # restarted gateway's /ready until one succeeded; the recorded campaigns ran without it.
+    assert E2_GATEWAY_TABLE == {"canary": {"enabled": False}}
+    base = tomllib.loads(EXAMPLE.read_text())
+    arm = {"admission": {"policy": "static-cap", "background_max_in_flight": 4}}
+    assert _merge(base, _merge(E2_GATEWAY_TABLE, arm)) == base | arm | E2_GATEWAY_TABLE
+    own = {"canary": {"enabled": True, "interval_s": 5}}
+    assert _merge(E2_GATEWAY_TABLE, own) == own
 
 
 def test_the_gateway_configuration_merges_the_arm_and_round_trips(tmp_path: Path) -> None:
@@ -1349,7 +1361,12 @@ def record(cyan: Cyan, name: str) -> dict[str, Any]:
 def test_voice_alone_runs_the_calls_against_the_box_as_it_is(cyan: Cyan) -> None:
     summary = run(cyan, "a1-voice", VOICE_ALONE)
     out = cyan.host.root / "runs" / "a1-voice"
-    assert cyan.systemd.calls == []  # nothing to change, so nothing restarts
+    # The gateway as configured, but for its inference canary, which every point switches off; nothing else
+    # changes, so only the gateway restarts.
+    assert cyan.systemd.calls == [("daemon-reload",), ("restart", "flatshare-gateway")]
+    deployed = tomllib.loads((cyan.host.config / "gateway.toml").read_text())
+    generated = tomllib.loads((cyan.host.config / "gateway-e2.toml").read_text())
+    assert "canary" not in deployed and generated == deployed | {"canary": {"enabled": False}}
     assert cyan.engine.hits["/reset_prefix_cache"] == 2  # retried until the engine could
     assert not (out / "aiperf.log").exists()
     run_json = record(cyan, "a1-voice")
@@ -1367,6 +1384,7 @@ def test_voice_alone_runs_the_calls_against_the_box_as_it_is(cyan: Cyan) -> None
     assert engine["scheduler_config"] == FROZEN_SCHEDULER
     assert engine["model_config"]["hf_token"] == "<redacted>"
     assert run_json["cyan"]["llm_path"].endswith("gateway.sock")
+    assert run_json["cyan"]["gateway"]["config"]["canary"] == {"enabled": False}
     assert run_json["versions"]["aiperf"] == "0.13.0"
     # No campaign named the GPU node's revision; it goes beside cyan's.
     assert list(run_json["versions"])[:2] == ["source", "gpu_source"]
@@ -1491,6 +1509,7 @@ def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(
     assert stat.S_IMODE(generated.stat().st_mode) == 0o600  # it holds the key digests
     config = tomllib.loads(generated.read_text())
     assert config["upstream_priority"] == [] and config["admission"]["policy"] == "static-cap"
+    assert config["canary"] == {"enabled": False}  # every point's, beside the arm's table
     assert config["tenants"]["agents"]["keys_sha256"] == ["<sha256 of the agents key>"]
     env = json.loads((out / "aiperf" / "env.json").read_text())
     assert env["FLATSHARE_BENCH_URL"] == f"{cyan.gateway.url}/v1/chat/completions"
@@ -1691,13 +1710,15 @@ def test_the_same_arm_again_restarts_nothing(cyan: Cyan) -> None:
     run_stock(cyan, out="again")
     assert cyan.systemd.calls == []
     cyan.scheduler.update(FROZEN_SCHEDULER)
-    run(cyan, "a1-voice", VOICE_ALONE)  # and back: the drop-ins go, the units restart
+    run(cyan, "a1-voice", VOICE_ALONE)  # and back: the arm's settings go, the units restart
     assert cyan.systemd.calls == [
         ("daemon-reload",),
         ("restart", "flatshare-gateway"),
         ("restart", "flatshare-voice-worker"),
     ]
-    assert not any(cyan.host.units.glob("*.service.d/variant-*.conf"))
+    # The worker's drop-ins go; the gateway's stays, for the canary that every point switches off.
+    linked = [p.name for p in cyan.host.units.glob("*.service.d/variant-*.conf")]
+    assert linked == ["variant-e2-gateway.conf"]
 
 
 def logged_request(

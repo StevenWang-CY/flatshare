@@ -391,7 +391,8 @@ def _check_gateway_log(
         last = ended
         pause()
     until = time.time()
-    # Requests that went upstream with a class, as the counter counts them.
+    # Inference requests with a class, as the counter counts them: since the gateway counts every one that ends,
+    # refused or not, by its outcome, each has a line with an outcome.
     lines = [
         record
         for at, record in logged_requests(systemd.journal(GATEWAY, since, until=until))

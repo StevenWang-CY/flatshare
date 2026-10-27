@@ -478,8 +478,9 @@ def deltas(
 
 def logged_first_byte(requests: Iterable[Mapping[str, Any]], slo_class: str) -> dict[str, Any]:
     """Count, mean and p50/p95/p99 of a class's first byte at the gateway in ms, exactly from its
-    request lines (``source`` "log"): the requests it sent upstream (with an outcome) that had a first
-    byte, as its first-byte histogram counts them."""
+    request lines (``source`` "log"): the requests that had a first byte from the upstream, as its
+    first-byte histogram counts them (a request refused or timed out before going upstream has an
+    outcome and no first byte)."""
     first_bytes = [
         r["first_byte_ms"]
         for r in requests

@@ -82,7 +82,8 @@ class Arm:
     voice: Voice = Voice()
     agents: Agents = Agents()
     gateway: Mapping[str, Any] = field(default_factory=dict)
-    """Merged into gateway.toml as it is (an empty table leaves gateway.toml alone)."""
+    """Merged into gateway.toml as it is, over the inference canary's switch that every point turns off
+    (:data:`flatshare_bench.e2.cyan.E2_GATEWAY_TABLE`)."""
     engine: Engine = Engine()
     router: str | None = None
     """``smg``: start flatshare-smg; the ``[gateway]`` table points the gateway at it."""

@@ -1367,10 +1367,13 @@ def test_variant_sh_on_a_single_host_switches_only_the_gpu_units(
         assert (units / "flatshare-engine.service.d" / "measure.conf").is_symlink()
     finally:
         ctl(host, "--user", "stop", "flatshare.target")
-    # An arm without a gateway table or events off takes its drop-ins away, as on cyan.
+    # An arm without a gateway table or events off takes its settings away, as on cyan: the worker's drop-in goes,
+    # and the gateway's stays for the canary that every point switches off.
     last = configure_cyan(plain, e2_host, systemd)
     assert last["gateway"]["restarted"] and last["worker"]["restarted"]
-    assert not (units / "flatshare-gateway.service.d" / "variant-e2-gateway.conf").exists()
+    assert last["gateway"]["config"]["canary"] == {"enabled": False}
+    assert (units / "flatshare-gateway.service.d" / "variant-e2-gateway.conf").is_symlink()
+    assert not (units / "flatshare-voice-worker.service.d" / "variant-no-events.conf").exists()
     assert (units / "flatshare-voice-worker.service.d" / "variant-vad-turns.conf").is_symlink()
 
 
