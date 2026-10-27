@@ -5,16 +5,19 @@ tests/test_make_room.py checks make-room's behavior on the real scheduler, and t
 as the PRs do."""
 
 import errno
+import hashlib
 import importlib.util
 import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
 
 BUILD = Path(__file__).resolve().parents[1] / "src/flatshare_vllm/build.py"
+REPO = Path(__file__).resolve().parents[3]
 VLLM_SRC = os.environ.get("VLLM_SRC")
 MODULES = {"make-room": "flatshare_make_room_scheduler", "pr54530": "flatshare_pr54530_scheduler"}
 
@@ -104,6 +107,17 @@ def test_make_room_is_the_prs_and_the_variants_own_parts(tmp_path):
     ):
         assert line in module
     assert "self.scheduler_config.max_priority_preemptions_per_step" not in module
+
+
+@needs_vllm_src
+def test_the_serving_profile_names_the_module_make_room_builds(tmp_path):
+    """The serving profile requires the engine to load the module build.py writes from make-room's patches on
+    v0.32.0's scheduler, by its SHA-256 (deploy/profiles/rtx-5060-ti-serve.toml; deploy/bin/serving-check holds the
+    engine's to it): a change to a patch changes the module, and the profile must name the new one."""
+    profile = tomllib.loads((REPO / "deploy/profiles/rtx-5060-ti-serve.toml").read_text())
+    assert build(tmp_path, "make-room", "--source-tree").returncode == 0
+    module = (tmp_path / f"{MODULES['make-room']}.py").read_bytes()
+    assert hashlib.sha256(module).hexdigest() == profile["serving"]["scheduler_module_sha256"]
 
 
 @needs_vllm_src

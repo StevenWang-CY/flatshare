@@ -7,6 +7,8 @@ src/flatshare_vllm/build.py      writes a variant's module: its patches, applied
 src/flatshare_vllm/make-room/    63350.patch and 63351.patch, the PRs' scheduler diff backported to v0.32.0;
                                  variant.patch, what only the variant has; probe.py, tail.py and knee.sh, its GPU checks
 src/flatshare_vllm/pr54530/      pr54530.patch, #54530 ported to v0.32.0 by hand; probe.py
+src/flatshare_vllm/serve/        flatshare_make_room_serve.py, the serving variant's scheduler class: make-room's,
+                                 which writes the configuration the engine runs as it starts
 scripts/make-room-patches.sh     rewrites make-room's patches from the backport's branches in a vLLM clone
 scripts/compat_upstream.py       make compat-upstream: the PRs against vLLM's main, the patches against its newest release
 tests/                           the build, make-room's behavior, make-room traced against the PRs, its cost per step
@@ -15,6 +17,8 @@ tests/                           the build, make-room's behavior, make-room trac
 ## The build
 
 `python src/flatshare_vllm/build.py make-room OUT_DIR` (or `pr54530`) reads the scheduler of the vLLM the interpreter finds, applies the variant's patches in order, appends the stock `AsyncScheduler`, which then extends the patched `Scheduler`, and writes `OUT_DIR/flatshare_make_room_scheduler.py`. The engine runs it with `PYTHONPATH=OUT_DIR` and `--scheduler-cls flatshare_make_room_scheduler.AsyncScheduler`. The build needs only the standard library and finds vLLM without importing it, so the engine's own Python runs it from this source tree, with no install. Every hunk must apply at its stated line, its context and removed lines as they are there: the build refuses any installed vLLM but 0.32.0, and a source the patches do not match fails it, naming the hunk. `--source-tree` builds from a v0.32.0 source checkout, which has no package metadata to check.
+
+The serving variant, `make-room-serve` ([`deploy/phastform/variants`](../../deploy/phastform/variants/README.md#the-serving-profile)), loads `flatshare_make_room_serve.AsyncScheduler` from `src/flatshare_vllm/serve` over the module `build.py` writes for `make-room`: make-room's `AsyncScheduler`, unchanged but for its constructor, which then writes the configuration the scheduler was built with (its switches, policy, step cap, pool, the model and its revisions, the KV connector, the vLLM version, and the SHA-256 of the module it extends and of its own file) to the file `FLATSHARE_ENGINE_EFFECTIVE` names, whole. `deploy/bin/serving-check` holds that to the serving profile.
 
 `make-room`'s patches apply in order:
 - `63350.patch` and `63351.patch`: the two PRs' changes to `vllm/v1/core/sched/scheduler.py`, backported to v0.32.0 and adapted where 0.32.0 needs it, as each patch's header says under the commit: #63350 calls make-room after 0.32.0's long-prefill threshold, since 0.32.0 has no local prefill cadence; the PRs' counters of make-room's preemptions and of the budget cap's held steps and prefill tokens stay in the scheduler, since 0.32.0's `SchedulerStats` has no fields for them; and #63351's check of a waiting queue for a lower priority is the scheduler's own, since the request queues stay stock.
@@ -53,6 +57,10 @@ The PRs are the change's only source. A change is made on their branches, on vLL
 ```sh
 VLLM_SRC=~/src/vllm-v0.32.0 uv run --extra test pytest      # in python/flatshare_vllm
 ```
+
+`test_build.py` also holds the serving profile's SHA-256 of the module (`deploy/profiles/rtx-5060-ti-serve.toml`) to the one it builds, so that a change to a patch changes the profile with it.
+
+`tests/test_serve.py` checks the serving variant's scheduler on vLLM's real v1 scheduler, on CPU, in the environment of `tests/test_make_room.py` (`make test-make-room` runs both): it schedules as make-room's `AsyncScheduler` step for step on the behavior suite's workload and the trace suite's KV pressure, writes every setting the box's `serving.json` names, and `deploy/bin/serving-check` passes a profile of its own values and fails one that differs.
 
 `tests/test_make_room.py` checks the `make-room` variant's behavior on vLLM's real v1 scheduler, on CPU, with hand-made requests and no model, as vLLM's own `tests/v1/core` do:
 

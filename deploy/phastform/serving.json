@@ -1,0 +1,60 @@
+{
+  "profile": "rtx-5060-ti-serve",
+  "node": "Phastform",
+  "variant": "make-room-serve",
+  "engine": {
+    "vllm_version": "0.32.0",
+    "scheduler_cls": "flatshare_make_room_serve.AsyncScheduler",
+    "scheduler_module": {
+      "name": "flatshare_make_room_scheduler",
+      "sha256": "0d24d178977f3c1ba29cbf7de1a15355205137a542983e554191103376f36a46"
+    },
+    "serve_module_sha256": "e3e5f1a1e1cd0fd468af9f04f781c1cc2d1105918ec826a24fbeaa7ca5fbcc59",
+    "model": {
+      "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+      "revision": "8591804019c8b22094c3b5b4454e0edc05dffc98",
+      "tokenizer": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+      "tokenizer_revision": "8591804019c8b22094c3b5b4454e0edc05dffc98",
+      "max_model_len": 32768
+    },
+    "scheduler": {
+      "policy": "priority",
+      "max_num_batched_tokens": 512,
+      "long_prefill_token_threshold": 256,
+      "max_num_seqs": 256,
+      "async_scheduling": true
+    },
+    "cache": {
+      "block_size": 16,
+      "num_gpu_blocks": 2275,
+      "pool_tokens": 36400,
+      "kv_cache_memory_bytes": 5368709120,
+      "gpu_memory_utilization": 0.7,
+      "enable_prefix_caching": true
+    },
+    "kv_transfer": {
+      "kv_connector": "OffloadingConnector",
+      "kv_role": "kv_both",
+      "kv_connector_extra_config": {
+        "cpu_bytes_to_use": 21474836480,
+        "offload_prompt_only": false
+      }
+    },
+    "make_room": {
+      "max_preemptions_per_step": 2,
+      "budget_cap": true,
+      "budget_cap_tokens": 48,
+      "reserve_tokens": 0
+    }
+  },
+  "patches": {
+    "63350.patch": "a6ff429f1444d8ac0c0a14286367011702d927a137702d32f76f10f75fc79613",
+    "63351.patch": "3b8dfd94fe62277512d99c22625bda2f80556c0cf670e8e0e741ed38d74acb25",
+    "variant.patch": "cef3a54ab1ae31eaae2a11206bc2ee888b3ce5c77640fbc9b6d460525b3c3e6e"
+  },
+  "voice": {
+    "mode": "serve",
+    "max_calls": 2,
+    "audio": "microphone"
+  }
+}

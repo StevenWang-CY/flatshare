@@ -1,0 +1,399 @@
+"""The box's serving profile (deploy/profiles/rtx-5060-ti-serve.toml): it renders the serving variant's drop-in and
+serving.json, which hold every setting the engine must run with and its required revisions, the measured configuration
+of W5's PR points; the drop-in runs exactly what serving.json names; and deploy/bin/serving-check passes an engine that
+runs it and fails one that differs in any setting, the negative control, as well as a file the engine did not write."""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+REPO = Path(__file__).resolve().parents[3]
+DEPLOY = REPO / "deploy"
+BOX = DEPLOY / "phastform"
+CHECK = DEPLOY / "bin" / "serving-check"
+SERVING = json.loads((BOX / "serving.json").read_text())
+MEASURED = REPO / "benchmarks/results/2026-10-24-e2-w5/w5-ext-r1/w5-disc-pr-ab48-s24/engine.json"
+"""The engine's configuration as /server_info gave it in a W5 point of the PRs' configuration."""
+
+spec = importlib.util.spec_from_file_location("flatshare_profile_serving", DEPLOY / "profile.py")
+profile = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(profile)
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def exec_lines(text: str, key: str) -> list[str]:
+    """The values of a unit's ``key=`` lines."""
+    return [line.partition("=")[2] for line in text.splitlines() if line.startswith(f"{key}=")]
+
+
+def effective(serving: dict = SERVING, pid: int | None = None) -> dict:
+    """What the serve scheduler writes in an engine that runs ``serving``'s configuration: every setting it names, and
+    the ones it does not (the dtype, the scheduler's own step cap, the reserve in blocks), written by ``pid``."""
+    report = copy.deepcopy(serving["engine"])
+    report["model"] |= {"dtype": "torch.bfloat16", "quantization": "fp8"}
+    report["scheduler"] |= {"max_num_scheduled_tokens": 512, "enable_chunked_prefill": True}
+    report["cache"] |= {"cache_dtype": "auto"}
+    report["make_room"] |= {"reserve_blocks": 0}
+    return report | {
+        "schema": 1,
+        "pid": pid or os.getpid(),
+        "ppid": os.getppid(),
+        "written_at": 1_793_000_000.0,
+        "additional_config": {"make_room": serving["engine"]["make_room"]},
+    }
+
+
+def run_check(tmp_path: Path, *args: str, serving: dict | None = None, report: dict | None = None):
+    """serving-check with ``serving`` as the profile (the box's by default) and ``report`` as the engine's file."""
+    profile_path = BOX / "serving.json"
+    if serving is not None:
+        profile_path = tmp_path / "serving.json"
+        profile_path.write_text(json.dumps(serving))
+    engine = tmp_path / "engine-effective.json"
+    engine.write_text(json.dumps(effective() if report is None else report))
+    return subprocess.run(
+        [sys.executable, str(CHECK), str(profile_path), "--engine", str(engine), *args],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_the_serving_profile_renders_the_boxs_serving_files(tmp_path: Path) -> None:
+    serve = profile.load("rtx-5060-ti-serve")
+    assert profile.check(serve, BOX) == []
+    out = tmp_path / "node"
+    profile.render(serve, None, out)
+    for rel in profile.SERVED:
+        assert (out / rel).read_bytes() == (BOX / rel).read_bytes(), rel
+    # The frozen box's own files are the base profile's, whichever renders them.
+    for rel in profile.RENDERED:
+        assert (out / rel).read_bytes() == (BOX / rel).read_bytes(), rel
+    done = subprocess.run(
+        [sys.executable, str(DEPLOY / "profile.py"), "effective", "rtx-5060-ti-serve"],
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == SERVING
+    # A profile without a [serving] table renders none of them and has no effective configuration.
+    profile.render(profile.load("rtx-5060-ti"), None, tmp_path / "frozen")
+    assert not any((tmp_path / "frozen" / rel).exists() for rel in profile.SERVED)
+    done = subprocess.run(
+        [sys.executable, str(DEPLOY / "profile.py"), "effective", "rtx-5060-ti"],
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 2 and "no serving profile" in done.stderr
+
+
+def test_serving_json_holds_every_effective_setting_and_its_required_revisions() -> None:
+    engine = SERVING["engine"]
+    assert (SERVING["profile"], SERVING["variant"]) == ("rtx-5060-ti-serve", "make-room-serve")
+    assert engine["vllm_version"] == "0.32.0"
+    assert engine["model"] == {
+        "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+        "revision": "8591804019c8b22094c3b5b4454e0edc05dffc98",
+        "tokenizer": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+        "tokenizer_revision": "8591804019c8b22094c3b5b4454e0edc05dffc98",
+        "max_model_len": 32768,
+    }
+    assert engine["scheduler"] == {
+        "policy": "priority",
+        "max_num_batched_tokens": 512,
+        "long_prefill_token_threshold": 256,
+        "max_num_seqs": 256,
+        "async_scheduling": True,
+    }
+    assert engine["cache"] == {
+        "block_size": 16,
+        "num_gpu_blocks": 2275,
+        "pool_tokens": 36400,
+        "kv_cache_memory_bytes": 5 << 30,
+        "gpu_memory_utilization": 0.7,
+        "enable_prefix_caching": True,
+    }
+    assert engine["kv_transfer"]["kv_connector_extra_config"] == {
+        "cpu_bytes_to_use": 20 << 30,
+        "offload_prompt_only": False,
+    }
+    assert engine["make_room"] == {
+        "max_preemptions_per_step": 2,
+        "budget_cap": True,
+        "budget_cap_tokens": 48,
+        "reserve_tokens": 0,
+    }
+    # The scheduler: the serve module, over the module make-room's patches build, each by its hash.
+    assert engine["scheduler_cls"] == "flatshare_make_room_serve.AsyncScheduler"
+    assert engine["serve_module_sha256"] == sha256(profile.SERVE_MODULE)
+    patches = REPO / "python/flatshare_vllm/src/flatshare_vllm/make-room"
+    assert SERVING["patches"] == {
+        name: sha256(patches / name) for name in ("63350.patch", "63351.patch", "variant.patch")
+    }
+    assert re.fullmatch(r"[0-9a-f]{64}", engine["scheduler_module"]["sha256"])
+    assert SERVING["voice"] == {"mode": "serve", "max_calls": 2, "audio": "microphone"}
+
+
+def test_the_serving_profile_is_the_configuration_w5_measured() -> None:
+    # The PRs' configuration as W5 ran it, from the engine's own /server_info: the same model, revision, step cap,
+    # pool, CPU tier, policy, request slots and switches. Only the scheduler's module name differs, then make-room's
+    # (under the project's former name), now the serve module over it.
+    measured = json.loads(MEASURED.read_text())
+    engine = SERVING["engine"]
+    model, cache, sched = (
+        measured[k] for k in ("model_config", "cache_config", "scheduler_config")
+    )
+    assert (model["model"], model["revision"], model["max_model_len"]) == tuple(
+        engine["model"][k] for k in ("model", "revision", "max_model_len")
+    )
+    for key in ("block_size", "num_gpu_blocks", "kv_cache_memory_bytes", "enable_prefix_caching"):
+        assert cache[key] == engine["cache"][key], key
+    for key in ("policy", "max_num_batched_tokens", "long_prefill_token_threshold", "max_num_seqs"):
+        assert sched[key] == engine["scheduler"][key], key
+    assert sched["async_scheduling"] is engine["scheduler"]["async_scheduling"]
+    assert measured["kv_transfer_config"]["kv_connector"] == engine["kv_transfer"]["kv_connector"]
+    assert (
+        measured["kv_transfer_config"]["kv_connector_extra_config"]
+        == engine["kv_transfer"]["kv_connector_extra_config"]
+    )
+    assert measured["additional_config"]["make_room"] == engine["make_room"]
+
+
+def test_the_serving_variant_runs_what_serving_json_names() -> None:
+    conf = (BOX / "variants" / "make-room-serve" / "flatshare-engine.conf").read_text()
+    [start] = [line for line in exec_lines(conf, "ExecStart") if line]
+    words = start.split()
+    assert words[:4] == [
+        "%h/flatshare/src/deploy/bin/in-private-net",
+        "%h/flatshare/venvs/engine/bin/vllm",
+        "serve",
+        "--config",
+    ]
+    assert words[4] == "%h/flatshare/src/deploy/phastform/engine.yaml"
+    flags = dict(zip(words[5::2], words[6::2], strict=False))
+    assert flags["--scheduler-cls"] == SERVING["engine"]["scheduler_cls"]
+    switches = {
+        key.removeprefix("--additional-config.make_room."): value
+        for key, value in flags.items()
+        if key.startswith("--additional-config.make_room.")
+    }
+    assert switches == {
+        key: str(value).lower() for key, value in SERVING["engine"]["make_room"].items()
+    }
+    assert words[-3:] == ["--uds", "${FLATSHARE_ENGINE_SOCKET}", "$FLATSHARE_ENGINE_FLAGS"]
+    # make-room's module, built into the directory on PYTHONPATH, and the serve module's directory after it.
+    environment = dict(line.split("=", 1) for line in exec_lines(conf, "Environment"))
+    build, remove = exec_lines(conf, "ExecStartPre")
+    assert build.endswith("/build.py make-room %h/flatshare/cache/make-room")
+    serve_dir = profile.SERVE_MODULE.parent.relative_to(REPO)
+    assert environment["PYTHONPATH"] == f"%h/flatshare/cache/make-room:%h/flatshare/src/{serve_dir}"
+    assert environment["FLATSHARE_ENGINE_EFFECTIVE"] == "%t/flatshare/engine-effective.json"
+    assert remove == "/usr/bin/rm -f ${FLATSHARE_ENGINE_EFFECTIVE}"
+    # After the unit's own wait for /health: the check of what the engine wrote against the profile beside it.
+    assert exec_lines(conf, "ExecStartPost") == [
+        "/usr/bin/python3 %h/flatshare/src/deploy/bin/serving-check "
+        "%h/flatshare/src/deploy/phastform/serving.json --engine ${FLATSHARE_ENGINE_EFFECTIVE} --pid ${MAINPID}"
+    ]
+
+
+def test_make_room_keeps_arm_nines_values() -> None:
+    # E2's arms and records name make-room: its unit keeps arm 9's two preemptions, the 16-token window (the default,
+    # no flag) and the 2,048-token reserve, and an arm's flags still change one.
+    conf = (BOX / "variants" / "make-room" / "flatshare-engine.conf").read_text()
+    [start] = [line for line in exec_lines(conf, "ExecStart") if line]
+    assert (
+        "--scheduler-cls flatshare_make_room_scheduler.AsyncScheduler "
+        "--additional-config.make_room.max_preemptions_per_step 2 "
+        "--additional-config.make_room.budget_cap true "
+        "--additional-config.make_room.reserve_tokens 2048 "
+        "--uds ${FLATSHARE_ENGINE_SOCKET} $FLATSHARE_ENGINE_FLAGS"
+    ) in start
+    assert "budget_cap_tokens" not in start and "serving-check" not in conf
+
+
+def test_serving_check_passes_an_engine_that_runs_the_profile(tmp_path: Path) -> None:
+    done = run_check(tmp_path, "--pid", str(os.getpid()))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "serving-check: ok: engine and patches as rtx-5060-ti-serve names them" in done.stdout
+    # Every setting is printed, the effective configuration at a glance.
+    for name in (
+        "engine.make_room.budget_cap_tokens",
+        "engine.cache.pool_tokens",
+        "patches.variant.patch",
+    ):
+        assert re.search(rf"^  {re.escape(name)} +\S", done.stdout, re.M), name
+    # The engine core writes it, a child of the unit's main process.
+    done = run_check(tmp_path, "--pid", str(os.getppid()))
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "runs"),
+    [
+        (("make_room", "budget_cap_tokens"), 16, "16"),  # arm 9's window
+        (("make_room", "reserve_tokens"), 2048, "2048"),  # and its reserve
+        (("make_room", "budget_cap"), 1, "1"),  # one is not true
+        (("scheduler", "max_num_batched_tokens"), 2048, "2048"),
+        (("cache", "pool_tokens"), 33683, "33683"),
+        (("model", "revision"), "main", '"main"'),
+        (("scheduler_module", "sha256"), "0" * 64, f'"{"0" * 64}"'),
+        (("vllm_version", None), "0.33.0", '"0.33.0"'),
+    ],
+)
+def test_serving_check_fails_an_engine_that_differs_in_any_setting(
+    tmp_path: Path, path: tuple, value: object, runs: str
+) -> None:
+    report = effective()
+    table, key = (report[path[0]], path[1]) if path[1] else (report, path[0])
+    table[key] = value
+    done = run_check(tmp_path, report=report)
+    assert done.returncode == 1, done.stdout + done.stderr
+    name = "engine." + ".".join(p for p in path if p)
+    assert re.search(
+        rf"^  {re.escape(name)} +\S+  DIFFERS: runs {re.escape(runs)}$", done.stdout, re.M
+    )
+    assert done.stderr == f"serving-check: 1 setting(s) differ from rtx-5060-ti-serve's: {name}\n"
+
+
+def test_a_profile_that_differs_fails_the_check_of_an_engine_that_runs_the_boxs(
+    tmp_path: Path,
+) -> None:
+    # The negative control from the profile's side: the serving profile with make-room's arm-9 values, rendered, against
+    # an engine that runs the box's profile: both differences named, and profile.py check names the two files.
+    serve = profile.load("rtx-5060-ti-serve")
+    serve["serving"] |= {"budget_cap_tokens": 16, "reserve_tokens": 2048}
+    out = tmp_path / "node"
+    profile.render(serve, None, out)
+    assert profile.check(serve, BOX) == list(profile.SERVED)
+    done = run_check(tmp_path, serving=json.loads((out / "serving.json").read_text()))
+    assert done.returncode == 1
+    assert done.stderr == (
+        "serving-check: 2 setting(s) differ from rtx-5060-ti-serve's: engine.make_room.budget_cap_tokens, "
+        "engine.make_room.reserve_tokens\n"
+    )
+
+
+def test_serving_check_holds_the_releases_patches_to_the_profiles(tmp_path: Path) -> None:
+    # The module's sources: a release whose variant.patch is not the one the profile names fails, before any start
+    # builds a module from it.
+    root = tmp_path / "release"
+    patches = root / "python/flatshare_vllm/src/flatshare_vllm/make-room"
+    shutil.copytree(REPO / "python/flatshare_vllm/src/flatshare_vllm/make-room", patches)
+    assert run_check(tmp_path, "--root", str(root)).returncode == 0
+    (patches / "variant.patch").write_text((patches / "variant.patch").read_text() + "\n")
+    done = run_check(tmp_path, "--root", str(root))
+    assert done.returncode == 1
+    assert done.stderr.endswith("differ from rtx-5060-ti-serve's: patches.variant.patch\n")
+    (patches / "63350.patch").unlink()
+    done = run_check(tmp_path, "--root", str(root))
+    assert re.search(r"^  patches\.63350\.patch +\S+  DIFFERS: runs nothing$", done.stdout, re.M)
+
+
+def test_serving_check_refuses_a_file_the_engine_did_not_write(tmp_path: Path) -> None:
+    # A file of an earlier start (another pid), of another format, or none: exit 2, nothing compared.
+    done = run_check(tmp_path, "--pid", "1")
+    assert done.returncode == 2 and "a file of an earlier start" in done.stderr
+    done = run_check(tmp_path, report=effective() | {"schema": 2})
+    assert done.returncode == 2 and "schema 2, not 1" in done.stderr
+    done = subprocess.run(
+        [
+            sys.executable,
+            str(CHECK),
+            str(BOX / "serving.json"),
+            "--engine",
+            str(tmp_path / "none.json"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 2 and "no effective configuration at" in done.stderr
+    (tmp_path / "broken.json").write_text("{")
+    done = subprocess.run(
+        [
+            sys.executable,
+            str(CHECK),
+            str(tmp_path / "broken.json"),
+            "--engine",
+            str(tmp_path / "x"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 2 and "serving profile" in done.stderr
+
+
+def voice_status(**fields: object) -> dict:
+    """The voice worker's status file in serve mode (python/flatshare_voice's worker.py)."""
+    return {
+        "schema": 1,
+        "pid": os.getpid(),
+        "updated": 1_793_000_000.0,
+        "mode": "serve",
+        "max_calls": 2,
+        "audio": "microphone",
+        "active_calls": 0,
+        "admitting": True,
+    } | fields
+
+
+def test_serving_check_holds_the_voice_worker_to_the_profiles_admission(tmp_path: Path) -> None:
+    status = tmp_path / "voice-worker.json"
+
+    def check(**fields: object) -> subprocess.CompletedProcess[str]:
+        status.write_text(json.dumps(voice_status(**fields)))
+        return subprocess.run(
+            [
+                *(sys.executable, str(CHECK), str(BOX / "serving.json")),
+                *("--voice", str(status), "--voice-pid", str(os.getpid())),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+    done = check()
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (
+        "serving-check: ok: voice worker and patches as rtx-5060-ti-serve names them" in done.stdout
+    )
+    done = check(max_calls=6)
+    assert done.returncode == 1 and done.stderr.endswith("voice.max_calls\n")
+    done = check(mode="bench")
+    assert done.returncode == 1 and done.stderr.endswith("voice.mode\n")
+    done = check(pid=os.getpid() + 1_000_000)
+    assert done.returncode == 2 and "a file of an earlier start" in done.stderr
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"max_calls": None}, "[serving] needs max_calls, a int"),
+        ({"budget_cap": "yes"}, "[serving] needs budget_cap, a bool"),
+        ({"reserve_tokens": True}, "[serving] needs reserve_tokens, a int"),
+        ({"window": 48}, "[serving] has no key window"),
+        ({"pool_tokens": 36401}, "pool_tokens is no whole number of 16-token blocks"),
+        ({"audio": "phone"}, "audio must be microphone or synthetic"),
+        ({"max_calls": 0}, "max_calls must be 1 or more"),
+        ({"variant": "make-room"}, "the serving variant is make-room-serve"),
+    ],
+)
+def test_a_serving_table_is_checked_as_it_renders(
+    tmp_path: Path, change: dict, message: str
+) -> None:
+    serve = profile.load("rtx-5060-ti-serve")
+    serve["serving"] |= change
+    serve["serving"] = {key: value for key, value in serve["serving"].items() if value is not None}
+    with pytest.raises(profile.ProfileError, match=re.escape(message)):
+        profile.render(serve, None, tmp_path / "node")
