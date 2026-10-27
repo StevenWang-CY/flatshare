@@ -113,6 +113,7 @@ def test_each_point_runs_with_the_gpu_nodes_deployed_revision(hosts: Hosts) -> N
     assert done.returncode == 0, done.stdout + done.stderr
     runs_of = (
         "flatshare-bench e2 run flatshare/runs/e2/c1/arms/{0}.toml --out flatshare/runs/e2/c1/{0}"
+        " --node phastform"
     )
     assert runs(hosts) == [
         f"{runs_of.format(point)} --gpu-source phastform={DEPLOYED}" for point in ("a1", "a2")
@@ -163,6 +164,40 @@ def test_a_gpu_node_without_its_revision_runs_the_point_with_none(hosts: Hosts) 
     [run] = runs(hosts)
     assert run.endswith(" --gpu-source phastform=")
     assert "a1: phastform has no DEPLOYED" in (hosts.results / "c2" / "campaign.log").read_text()
+
+
+def test_a_campaign_on_gray_measures_each_point_there_and_keeps_its_own_run_directories(
+    hosts: Hosts,
+) -> None:
+    # FLATSHARE_GPU=gray: the engine switches on Gray, the samples are Gray's GPU's, and e2 run measures on Gray (its
+    # tunnel on cyan, run.json naming it) with Gray's deployed revision.
+    gray = "gray.example.org"
+    hosts.gpu(gray, deployed="v1.6-41-gba09ebe")
+    campaign = hosts.campaign("rg-gray", ["arms/a1.toml"], {"a1": VOICE})
+    done = hosts.run(campaign, gpus=gray)
+    assert done.returncode == 0, done.stdout + done.stderr
+    [run] = runs(hosts)
+    assert " --node gray " in run and run.endswith(" --gpu-source gray=v1.6-41-gba09ebe")
+    assert hosts.calls(gray, "variant") == ["variant.sh measure on", "variant.sh use frozen"]
+    assert hosts.calls(gray, "nvidia-smi") and not hosts.calls(PHASTFORM, "nvidia-smi")
+    # Its run directories are its own: the same campaign's complete point, measured on Phastform, is no point of
+    # Gray's, and stops the campaign rather than be fetched as one.
+    record = hosts.home("cyan") / "flatshare" / "runs" / "e2" / "rg-gray" / "a1" / "run.json"
+    record.write_text(
+        '{\n  "kind": "e2-point",\n  "status": "complete",\n  "node": "phastform"\n}\n'
+    )
+    done = hosts.run(campaign, gpus=gray)
+    assert done.returncode == 1
+    assert "a1 is complete in flatshare/runs/e2/rg-gray, measured on phastform" in done.stdout
+    # A record from before run.json named its node names it by its GPU's revision.
+    record.write_text(
+        '{"status": "complete", "versions": {"source": "v1.5", "gpu_source": {"phastform": "v1.5"}}}\n'
+    )
+    assert hosts.run(campaign, gpus=gray).returncode == 1
+    record.write_text('{"status": "complete", "node": "gray"}\n')
+    done = hosts.run(campaign, gpus=gray)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert len(runs(hosts)) == 1  # complete on Gray: fetched, not measured again
 
 
 def test_a_campaign_runs_on_one_gpu_node(hosts: Hosts) -> None:
@@ -357,6 +392,7 @@ def test_a_local_campaign_runs_every_step_on_this_host(hosts: Hosts) -> None:
     )
     runs_of = (
         "flatshare-bench e2 run flatshare/runs/e2/c7/arms/{0}.toml --out flatshare/runs/e2/c7/{0}"
+        " --node localhost"
     )
     assert [
         c

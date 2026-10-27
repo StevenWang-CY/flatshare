@@ -277,6 +277,12 @@ CYAN = HostSpec(
             inputs=("deploy/cyan/systemd/flatshare-tunnel@.service", "deploy/bin/flatshare-tunnel"),
             drain="voice",
         ),
+        # Gray's, which E2 points on Gray start (flatshare-bench e2 run --node gray) and which stays up after them.
+        Unit(
+            "flatshare-tunnel@gray.service",
+            inputs=("deploy/cyan/systemd/flatshare-tunnel@.service", "deploy/bin/flatshare-tunnel"),
+            drain="voice",
+        ),
         Unit(
             "flatshare-livekit.service",
             inputs=(

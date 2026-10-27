@@ -476,6 +476,7 @@ def _e2_run(args: argparse.Namespace) -> int:
             gpu_source=sources,
             agents_seed=args.agents_seed,
             kv_sample_s=args.kv_sample_s,
+            node=args.node,
         )
     except KeyboardInterrupt:
         print(f"flatshare-bench e2: {args.arm.stem} interrupted", file=sys.stderr)
@@ -595,6 +596,14 @@ def _add_e2(commands: Commands) -> None:
         help="the GPU node's hardware profile (deploy/profiles/NAME.toml), whose model and scheduler "
         "settings the engine check expects; default the host's (~/.config/flatshare/e2-host.toml), "
         "else the frozen box's",
+    )
+    run.add_argument(
+        "--node",
+        metavar="NODE",
+        help="the GPU node the point measures on, which run.json names: the host's own by default "
+        "(cyan's, phastform); another one through its tunnel on this host (flatshare-tunnel@NODE, "
+        "started when it is not running), with the gateway's upstream and the voice worker's speech "
+        "sockets pointed at that node's for the point (e2 reset points them back)",
     )
     run.add_argument(
         "--gpu-source",

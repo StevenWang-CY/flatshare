@@ -15,6 +15,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 from collections import Counter
@@ -35,10 +36,12 @@ from flatshare_bench.e2.arm import E2Error, Engine, Voice, flag_values, load_arm
 from flatshare_bench.e2.cyan import (
     E2_GATEWAY_TABLE,
     Host,
+    Node,
     Systemd,
     _merge,
     _write_private,
     exclusive,
+    node_drop_in,
     read_env,
     redacted,
     reset_cyan,
@@ -818,6 +821,68 @@ def test_a_host_file_sets_the_hosts_fields(tmp_path: Path) -> None:
     path.write_text("aiperf_cores = 21\n")
     with pytest.raises(E2Error, match="aiperf_cores must be strings"):
         Host.load(home)
+
+
+def test_a_point_reaches_its_gpu_node_by_its_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # cyan reaches its own node, Phastform, as its settings say, and another, Gray, through that node's tunnel's
+    # sockets here; a single host, whose settings name its engine, measures its own node alone.
+    monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1007")
+    home = tmp_path / "home"
+    cyan = Host.load(home)
+    assert (
+        cyan.node_for()
+        == cyan.node_for("phastform")
+        == Node("phastform", "unix:/run/user/1007/flatshare/phastform-engine.sock", own=True)
+    )
+    gray = cyan.node_for("gray")
+    assert gray == Node("gray", "unix:/run/user/1007/flatshare/gray-engine.sock", own=False)
+    assert (gray.socket("stt"), gray.tunnel) == (
+        "/run/user/1007/flatshare/gray-stt.sock",
+        "flatshare-tunnel@gray.service",
+    )
+    with pytest.raises(E2Error, match=re.escape("'gray/../x' is not a GPU node's name")):
+        cyan.node_for("gray/../x")
+    path = home / ".config" / "flatshare" / "e2-host.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        'engine_url = "unix:/run/user/1000/flatshare/engine.sock"\nnode = "localhost"\n'
+    )
+    single = Host.load(home)
+    assert single.node_for("localhost") == Node("localhost", single.engine_url, own=True)
+    with pytest.raises(E2Error, match="a point here measures localhost, not gray"):
+        single.node_for("gray")
+    # A single host's file from before it named its node: its own is localhost, as campaign.sh --local calls it.
+    path.write_text('engine_url = "unix:/run/user/1000/flatshare/engine.sock"\n')
+    assert Host.load(home).node == "localhost"
+    path.write_text('node = "a b"\n')
+    with pytest.raises(E2Error, match="node 'a b' is not a GPU node's name"):
+        Host.load(home)
+
+
+def test_the_workers_drop_in_for_another_node_points_its_sockets_at_that_nodes_tunnel() -> None:
+    gray = Node("gray", "unix:/run/user/1007/flatshare/gray-engine.sock", own=False)
+    through_gateway = node_drop_in(
+        gray, {"FLATSHARE_LLM_UDS": "/run/user/1007/flatshare/gateway.sock"}
+    )
+    assert through_gateway is not None
+    lines = through_gateway.splitlines()
+    assert lines[lines.index("[Unit]") :] == [
+        "[Unit]",
+        "Wants=flatshare-tunnel@gray.service",
+        "After=flatshare-tunnel@gray.service",
+        "[Service]",
+        "Environment=FLATSHARE_STT_UDS=%t/flatshare/gray-stt.sock",
+        "Environment=FLATSHARE_TTS_UDS=%t/flatshare/gray-tts.sock",
+    ]
+    # The bypass: the LLM straight to an engine's tunnel socket goes to Gray's engine as well.
+    bypass = node_drop_in(
+        gray, {"FLATSHARE_LLM_UDS": "/run/user/1007/flatshare/phastform-engine.sock"}
+    )
+    assert bypass is not None
+    assert bypass.splitlines()[-1] == "Environment=FLATSHARE_LLM_UDS=%t/flatshare/gray-engine.sock"
+    assert node_drop_in(Node("phastform", "unix:x", own=True), {}) is None
 
 
 # Processes
@@ -1984,6 +2049,93 @@ def test_smg_runs_only_for_the_points_that_route_through_it(cyan: Cyan) -> None:
     ) in cyan.systemd.calls and "flatshare-smg" in cyan.systemd.running
     run(cyan, "a1-voice", VOICE_ALONE)
     assert "flatshare-smg" not in cyan.systemd.running
+
+
+def test_a_point_on_gray_measures_there_and_the_reset_points_cyan_back(
+    cyan: Cyan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # FLATSHARE_GPU=gray: the point reads Gray's engine through gray-engine.sock (cyan's own engine address leads
+    # nowhere here), starts Gray's tunnel, and points the gateway's upstream and the worker's speech sockets at it for
+    # the point, all of which run.json names; the reset points them back at Phastform, and a point there changes
+    # nothing else.
+    runtime = Path(
+        tempfile.mkdtemp(prefix="flatshare-rt-")
+    )  # short: a socket's path must fit sun_path
+    (runtime / "flatshare").mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    (runtime / "flatshare" / "gray-engine.sock").symlink_to(cyan.engine.path)
+    host = replace(cyan.host, engine_url="unix:/nonexistent/phastform-engine.sock")
+    arm_file = write(cyan.arms, "a1-voice.toml", VOICE_ALONE)
+    out = cyan.host.root / "runs" / "rg" / "a1-voice"
+    sources = {"gray": "v1.6-41-gba09ebe"}
+    run_point(arm_file, out, host, cyan.systemd, node="gray", gpu_source=sources, kv_sample_s=None)
+    run_json = json.loads((out / "run.json").read_text())
+    assert (run_json["status"], run_json["node"]) == ("complete", "gray")
+    assert run_json["versions"]["gpu_source"] == sources
+    flatshare = runtime / "flatshare"
+    assert run_json["tunnel"] == {
+        "name": "gray",
+        "tunnel": "flatshare-tunnel@gray.service",
+        "tunnel_started": True,
+        "sockets": {s: str(flatshare / f"gray-{s}.sock") for s in ("engine", "stt", "tts")},
+    }
+    assert cyan.systemd.calls[0] == ("start", "flatshare-tunnel@gray.service")
+    generated = tomllib.loads((cyan.host.config / "gateway-e2.toml").read_text())
+    assert generated["upstream"] == f"unix:{flatshare}/gray-engine.sock"
+    assert run_json["cyan"]["gateway"]["config"]["upstream"] == generated["upstream"]
+    drop_in = cyan.host.units / "flatshare-voice-worker.service.d" / "variant-e2-node.conf"
+    assert "Environment=FLATSHARE_STT_UDS=%t/flatshare/gray-stt.sock" in drop_in.read_text()
+    assert run_json["cyan"]["worker"]["restarted"]
+    assert ("restart", "flatshare-voice-worker") in cyan.systemd.calls
+    # The campaign's next point on Gray finds cyan as the first left it.
+    cyan.systemd.calls.clear()
+    again = out.with_name("a1-voice-again")
+    run_point(
+        arm_file, again, host, cyan.systemd, node="gray", gpu_source=sources, kv_sample_s=None
+    )
+    assert cyan.systemd.calls == []
+    assert json.loads((again / "run.json").read_text())["tunnel"]["tunnel_started"] is False
+    applied = reset_cyan(host, cyan.systemd)
+    assert applied["gateway"]["restarted"] and applied["worker"]["restarted"]
+    assert not drop_in.exists()
+    # On Phastform, cyan's own node: no tunnel started, no drop-in, the upstream gateway.toml's.
+    cyan.systemd.calls.clear()
+    run(cyan, "a1-voice", VOICE_ALONE)
+    assert cyan.systemd.calls == [("daemon-reload",), ("restart", "flatshare-gateway")]
+    assert record(cyan, "a1-voice")["node"] == "phastform" and "tunnel" not in record(
+        cyan, "a1-voice"
+    )
+    deployed = tomllib.loads((cyan.host.config / "gateway.toml").read_text())
+    generated = tomllib.loads((cyan.host.config / "gateway-e2.toml").read_text())
+    assert generated["upstream"] == deployed["upstream"]
+
+
+def test_a_point_on_another_node_needs_its_own_routing_and_a_matching_revision(
+    cyan: Cyan,
+) -> None:
+    arm_file = write(cyan.arms, "a1-voice.toml", VOICE_ALONE)
+    with pytest.raises(
+        E2Error, match="the point measures on gray, and --gpu-source names phastform"
+    ):
+        run_point(
+            arm_file,
+            cyan.host.root / "runs" / "x",
+            cyan.host,
+            cyan.systemd,
+            node="gray",
+            gpu_source={"phastform": None},
+        )
+    smg = write(cyan.arms, "a8b.toml", 'arm = "8b"\nlabel = "SMG"\nrouter = "smg"\n')
+    with pytest.raises(E2Error, match="sets its own router or \\[gateway\\] upstream"):
+        run_point(
+            smg,
+            cyan.host.root / "runs" / "y",
+            cyan.host,
+            cyan.systemd,
+            node="gray",
+            kv_sample_s=None,
+        )
+    assert not any(cyan.host.units.glob("*.service.d/variant-e2-node.conf"))
 
 
 def test_reset_puts_cyan_back(cyan: Cyan) -> None:
