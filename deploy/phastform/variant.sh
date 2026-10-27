@@ -12,6 +12,10 @@
 # The box's variant drop-ins are the GPU units' only (gpu below, every unit a variant here changes): on a single host
 # the control plane's units share the directory, and their drop-ins (cyan's variants, linked by deploy/a100/host.py
 # units and flatshare-bench e2 run) are not the box's to switch.
+# A variant may keep a GPU unit from running: its drop-in for that unit holds the line `ConditionPathExists=!/`, which
+# never holds, so systemd skips the unit (agents-only keeps the STT and the TTS off the card). While such a drop-in is
+# linked the box runs without that unit, and every check here holds the others active and it stopped; the variant that
+# follows starts it again (use frozen restores the frozen box).
 set -euo pipefail
 action=${1:?on|off|use|measure} name=${2:?variant name}
 shift 2
@@ -63,6 +67,28 @@ clear_start_limits() { systemctl --user reset-failed flatshare-engine flatshare-
 # Whether every named unit is active: `systemctl is-active` given several units succeeds when any one of them is, so a
 # box half stopped by a pause, or with a failed engine beside running audio servers, would pass for running.
 all_active() { local u; for u; do systemctl --user is-active -q "$u" || return 1; done; }
+# Whether none of the named units is active (none named: true).
+none_active() { local u; for u; do ! systemctl --user is-active -q "$u" || return 1; done; }
+# The GPU units the linked variant drop-ins keep from running (ConditionPathExists=!/), one a line; the others run.
+off=() on=()
+kept_off() {
+  local u f
+  off=() on=()
+  for u in "${gpu[@]}"; do
+    for f in "$units/$u.service.d"/variant-*.conf; do
+      if [[ -e $f ]] && grep -qx 'ConditionPathExists=!/' "$f"; then
+        off+=("$u")
+        continue 2
+      fi
+    done
+    on+=("$u")
+  done
+}
+# Whether the box runs as its linked drop-ins say: each unit they leave on active, each they keep off stopped. A stop of
+# a unit kept off is no failure of the box.
+runs_as_linked() { kept_off; all_active ${on[@]+"${on[@]}"} && none_active ${off[@]+"${off[@]}"}; }
+# Print each GPU unit's state, as the box's start leaves them (systemctl is-active exits 0 while any one is active).
+states() { systemctl --user is-active "${gpu[@]}" || true; }
 
 if [[ $action != use ]]; then
   systemctl --user stop "${box[@]}"
@@ -74,8 +100,8 @@ if [[ $action != use ]]; then
   systemctl --user daemon-reload
   clear_start_limits
   systemctl --user start flatshare.target
-  systemctl --user is-active flatshare-stt flatshare-tts flatshare-engine
-  all_active flatshare-stt flatshare-tts flatshare-engine
+  states
+  runs_as_linked
   exit
 fi
 
@@ -107,11 +133,12 @@ wanted() {
   if (($#)); then echo "flatshare-engine.service.d/variant-flags.conf: $flags_line"; fi
 }
 changed=$(comm -3 <(current | sort) <(wanted "$@" | sort) | sed 's/^[[:space:]]*//; s/\.service\.d\/.*//' | sort -u)
-if [[ -z $changed ]] && all_active flatshare-stt flatshare-tts flatshare-engine; then
+if [[ -z $changed ]] && runs_as_linked; then
   echo "variant: the box already runs $name $*"
   exit
 fi
-# Only the engine restarts when only its drop-ins change and the audio servers run; anything else (re)starts the box.
+# Only the engine restarts when only its drop-ins change and the audio servers run; anything else (re)starts the box,
+# which stops a unit the new variant keeps off and starts one the old variant kept off.
 restart=("${box[@]}")
 if [[ $changed == flatshare-engine ]] && all_active flatshare-stt flatshare-tts; then restart=(flatshare-engine); fi
 systemctl --user stop "${restart[@]}"
@@ -125,5 +152,5 @@ fi
 systemctl --user daemon-reload
 clear_start_limits
 systemctl --user start "${restart[0]}" # flatshare.target or flatshare-engine; returns once /health answers
-systemctl --user is-active flatshare-stt flatshare-tts flatshare-engine
-all_active flatshare-stt flatshare-tts flatshare-engine
+states
+runs_as_linked

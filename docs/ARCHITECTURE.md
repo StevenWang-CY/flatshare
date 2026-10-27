@@ -57,7 +57,7 @@ Every measurement on the box runs one pinned configuration, with the audio model
 - **NUMA.** vLLM runs on the GPU's node (node 1, cores 8–15), the audio servers on node 0. The CPU tier's shared memory prefers node 1.
 - **Pinned environment.** vLLM 0.32.0 with torch 2.13.0+cu130 serves the LLM and Whisper, Kokoro runs on torch 2.8.0+cu128; lock files are in `deploy/phastform/requirements/`.
 - **Time-slicing, not MPS.** As MPS clients, STT and TTS gain a little under agent prefill, but the LLM stage and its tail get worse: the interference that matters is inside the engine ([BENCHMARKS.md](BENCHMARKS.md#voice-on-the-shared-gpu)).
-- **Engine variants** are drop-ins switched by `deploy/phastform/variant.sh`: `make-room`, `make-room-v03` (make-room as v0.3 built it, W5's control), vLLM #54530 ported to 0.32.0, SGLang 0.5.22, MPS, and engine flags from an arm file ([the variants](../deploy/phastform/variants/README.md)).
+- **Engine variants** are drop-ins switched by `deploy/phastform/variant.sh`: `make-room`, `make-room-v03` (make-room as v0.3 built it, W5's control), vLLM #54530 ported to 0.32.0, SGLang 0.5.22, MPS, `agents-only` (a card for the agents alone: the STT and the TTS stopped and their 3.4 GiB in the engine's KV pool, 8.4 GiB, under vLLM's own scheduling for the card), and engine flags from an arm file ([the variants](../deploy/phastform/variants/README.md)).
 
 ### 3.2 Hosts
 

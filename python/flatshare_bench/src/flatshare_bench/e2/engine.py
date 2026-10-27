@@ -52,7 +52,7 @@ class EngineInfo:
     """The whole configuration, for engine.json."""
 
 
-SETTING_NAMES = {"--scheduling-policy": "policy"}
+SETTING_NAMES = {"--scheduling-policy": "policy", "--kv-cache-memory": "kv_cache_memory_bytes"}
 """vLLM flags whose setting has another name; any other ``--a-flag`` sets ``a_flag``."""
 
 FROZEN = (

@@ -658,6 +658,39 @@ def test_the_engine_runs_exactly_the_switches_its_flags_set(tmp_path: Path) -> N
     ]
 
 
+def test_the_engine_check_holds_the_agents_only_cards_pool_and_scheduling() -> None:
+    # The dedicated background card's engine (variant agents-only): its grown pool by its bytes, its budget, and vLLM's
+    # default scheduling for the card, each checked; the box's engine, or the variant's with the box's pool, fails.
+    agents_only = vllm(
+        policy="fcfs",
+        max_num_batched_tokens=2048,
+        long_prefill_token_threshold=0,
+        kv_cache_memory_bytes=9019431321,
+        gpu_memory_utilization=0.88,
+    )
+    flags = check_engine(Engine("agents-only", ()), agents_only)
+    assert flags == {
+        "checked": [
+            "--scheduling-policy",
+            "--max-num-batched-tokens",
+            "--long-prefill-token-threshold",
+            "--kv-cache-memory",
+            "--gpu-memory-utilization",
+        ],
+        "unchecked": [],
+    }
+    box = vllm(kv_cache_memory_bytes=5368709120, gpu_memory_utilization=0.7)
+    with pytest.raises(
+        E2Error, match="policy = 'priority', the point needs --scheduling-policy fcfs"
+    ):
+        check_engine(Engine("agents-only", ()), box)
+    small = vllm(**STOCK_SCHEDULER, kv_cache_memory_bytes=5368709120, gpu_memory_utilization=0.88)
+    with pytest.raises(
+        E2Error, match="kv_cache_memory_bytes = 5368709120, the point needs --kv-cache"
+    ):
+        check_engine(Engine("agents-only", ()), small)
+
+
 def test_the_committed_points_ran_the_engines_their_arm_files_name() -> None:
     """Each vLLM point of the committed records passes the engine check of its arm file, its scheduler
     class among what is checked: the check refuses none of the engines the variants start."""

@@ -4,6 +4,8 @@ authorizes cyan's tunnel keys on a GPU node, run against stand-ins for ssh and s
 from __future__ import annotations
 
 import hashlib
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -356,6 +358,165 @@ def test_the_engine_serves_its_development_routes_only_with_the_measurement_drop
         "reset-failed flatshare-engine",
         "restart flatshare-engine",
     ]
+
+
+STATEFUL_SYSTEMCTL = """\
+#!/bin/sh
+# systemctl --user ...: a GPU node's user manager whose units' states are files in $HOME/state, every call logged. A
+# start skips a unit whose drop-ins hold ConditionPathExists=!/ (its condition never holds), as systemd does, and the
+# target starts the three GPU servers; is-active with several units succeeds when one is active, as systemctl does.
+shift
+command=$1
+shift
+state=$HOME/state
+units=$HOME/.config/systemd/user
+mkdir -p "$state"
+echo "$command $*" >>"$HOME/systemctl.log"
+skipped() { cat "$units/$1.service.d"/*.conf 2>/dev/null | grep -qx 'ConditionPathExists=!/'; }
+case $command in
+  is-active)
+    quiet=""
+    if [ "$1" = -q ]; then quiet=1; shift; fi
+    status=3
+    for unit; do
+      if [ -e "$state/${unit%.service}" ]; then status=0; word=active; else word=inactive; fi
+      [ -n "$quiet" ] || echo "$word"
+    done
+    exit $status
+    ;;
+  start | restart)
+    for unit; do
+      unit=${unit%.service}
+      if [ "$unit" = flatshare.target ]; then
+        for server in flatshare-engine flatshare-stt flatshare-tts; do skipped $server || touch "$state/$server"; done
+      else
+        skipped "$unit" || touch "$state/$unit"
+      fi
+    done
+    ;;
+  stop)
+    for unit; do rm -f "$state/${unit%.service}"; done
+    ;;
+esac
+exit 0
+"""
+
+
+def test_variant_sh_runs_the_agents_only_card_without_its_speech_servers_and_restores_them(
+    tmp_path: Path,
+) -> None:
+    # A dedicated background card runs the engine alone: agents-only keeps the STT and the TTS from starting, the box
+    # counts as running with them stopped (and only so), and the variant after it starts them again.
+    home, bin_dir = tmp_path / "home", tmp_path / "bin"
+    (home / "state").mkdir(parents=True)
+    bin_dir.mkdir()
+    (bin_dir / "systemctl").write_text(STATEFUL_SYSTEMCTL)
+    (bin_dir / "systemctl").chmod(0o755)
+    env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    servers = ("flatshare-engine", "flatshare-stt", "flatshare-tts")
+    for server in servers:
+        (home / "state" / server).touch()  # the frozen box runs
+    units = home / ".config" / "systemd" / "user"
+
+    def variant(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(DEPLOY / "phastform" / "variant.sh"), *args],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+    def running() -> set[str]:
+        return {path.name for path in (home / "state").iterdir()}
+
+    done = variant("use", "agents-only")
+    assert done.returncode == 0, done.stderr
+    assert running() == {"flatshare-engine"}
+    for server in servers:
+        link = units / f"{server}.service.d" / "variant-agents-only.conf"
+        assert (
+            link.resolve() == DEPLOY / "phastform" / "variants" / "agents-only" / f"{server}.conf"
+        )
+    assert (
+        "stop flatshare.target flatshare-engine flatshare-stt flatshare-tts"
+        in (home / "systemctl.log").read_text().splitlines()
+    )
+    assert variant("use", "agents-only").stdout == "variant: the box already runs agents-only \n"
+    # A speech server started by hand beside it is no box that runs agents-only: the switch stops it.
+    (home / "state" / "flatshare-stt").touch()
+    done = variant("use", "agents-only")
+    assert done.returncode == 0 and running() == {"flatshare-engine"}, done.stderr
+    # Flags over it restart the engine alone; the speech servers stay off.
+    done = variant("use", "agents-only", "--max-num-batched-tokens", "1024")
+    assert done.returncode == 0 and running() == {"flatshare-engine"}, done.stderr
+    # The frozen box again: the drop-ins go and the three servers run.
+    done = variant("use", "frozen")
+    assert done.returncode == 0, done.stderr
+    assert running() == set(servers)
+    assert not list(units.glob("*.service.d/variant-*.conf"))
+    # on|off add and remove it the same way.
+    assert variant("on", "agents-only").returncode == 0 and running() == {"flatshare-engine"}
+    assert variant("off", "agents-only").returncode == 0 and running() == set(servers)
+
+
+def test_the_agents_only_cards_pool_takes_the_speech_servers_memory_and_fits_the_card() -> None:
+    # Its pool is the box's 5 GiB and the 3.4 GiB the STT and the TTS hold (ARCHITECTURE.md 3.1: about 2.4 and 1.0),
+    # 3,822 blocks of 16 tokens at Qwen3-4B's 144 KiB a token; the engine, about 10.6 GiB with the box's pool, then
+    # takes 14.0 GiB of the card, a budget of 0.88 under R2's ceiling, which vLLM wants free at the start and which a
+    # card with the speech servers resident does not have.
+    conf = (DEPLOY / "phastform" / "variants" / "agents-only" / "flatshare-engine.conf").read_text()
+    [start] = [line for line in conf.splitlines() if line.startswith("ExecStart=%h")]
+    assert start.startswith("ExecStart=%h/flatshare/src/deploy/bin/in-private-net ")
+    flags = dict(re.findall(r"(--[a-z-]+) ([^ $-][^ ]*)", start.split("engine.yaml", 1)[1]))
+    gib = 1 << 30
+    box = int(
+        re.search(
+            r"^kv-cache-memory: (\d+)$", (DEPLOY / "phastform" / "engine.yaml").read_text(), re.M
+        )[1]
+    )
+    assert box == 5 * gib
+    architecture = (REPO / "docs" / "ARCHITECTURE.md").read_text()
+    stt, tts = (
+        float(re.search(rf"^\| {name} \|.*\| ≈ ([\d.]+) GiB \|$", architecture, re.M)[1])
+        for name in ("STT", "TTS")
+    )
+    engine = float(re.search(r"^\| LLM \|.*\| ≈ ([\d.]+) GiB \|$", architecture, re.M)[1])
+    assert (stt, tts, engine) == (2.4, 1.0, 10.6)
+    pool = int(flags["--kv-cache-memory"])
+    assert pool == int((5 + stt + tts) * gib)
+    token = 36 * 8 * 128 * 2 * 2  # layers x KV heads x head size x (K, V) x BF16 bytes: 144 KiB
+    assert (pool // (token * 16), pool // (token * 16) * 16) == (3822, 61152)
+    assert box // (token * 16) * 16 == 36400  # the box's, as serving.json records it
+    loader = importlib.machinery.SourceFileLoader("profile_rules", str(DEPLOY / "profile.py"))
+    rules = importlib.util.module_from_spec(
+        importlib.util.spec_from_loader("profile_rules", loader)
+    )
+    loader.exec_module(rules)
+    budget = engine + stt + tts
+    assert rules.utilization(budget, 16311) == flags["--gpu-memory-utilization"] == "0.88"
+    assert float(flags["--gpu-memory-utilization"]) <= rules.CARD_SHARE
+    # Free at the start, vLLM wants 0.88 of the 15,852 MiB it counts; the speech servers' 3.4 GiB beside an otherwise
+    # empty card leave less than that.
+    assert 15852 - (stt + tts) * 1024 < 0.88 * 15852 < 15852 - 600
+    assert (flags["--scheduling-policy"], flags["--max-num-batched-tokens"]) == ("fcfs", "2048")
+    assert flags["--long-prefill-token-threshold"] == "0"
+
+
+def test_the_agents_only_cards_step_cap_follows_what_e2_measured() -> None:
+    # The variant's comment cites E2's discriminating scenario: the agents' tokens/s at a step cap of 1,024 with no
+    # threshold against the frozen box's 512/256, the medians of their five runs in W4's records.
+    import statistics
+
+    results = REPO / "benchmarks" / "results" / "2026-10-23-e2"
+    goodput = {}
+    for point in ("disc-a4-b1024-t0-s24", "disc-frozen-s24"):
+        runs = [json.loads(path.read_text()) for path in results.glob(f"*/{point}/summary.json")]
+        assert len(runs) == 5, point
+        goodput[point] = statistics.median(s["background"]["tokens_per_s"] for s in runs)
+    larger, box = goodput["disc-a4-b1024-t0-s24"], goodput["disc-frozen-s24"]
+    assert (round(larger), round(box), round(100 * (larger / box - 1))) == (4097, 3710, 10)
+    conf = (DEPLOY / "phastform" / "variants" / "agents-only" / "flatshare-engine.conf").read_text()
+    assert "10% more (4,097 against 3,710 tokens a second" in conf.replace("\n# ", " ")
 
 
 class _Health(BaseHTTPRequestHandler):
