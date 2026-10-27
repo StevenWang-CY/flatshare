@@ -239,7 +239,7 @@ back in 3 hours 13 minutes, each E2 round in 26 minutes. Its records are
 | Frozen, the box's flags (512/256) | 4,986 ms (4,163–5,710 ms) | +3,317 ms | 8,633 | 12 s / 26 s | 6% (4–9%) |
 | The PRs' values (make-room, a 48-token window) | **1,634 ms** (1,609–1,663 ms) | −35 ms | 8,651 | 14 s / 26 s | 6% (2–7%) |
 
-The PRs' values met the SLO in every round, by 6 to 60 ms; frozen missed it by 2.5 to 4.0 s. Round by round, the agents'
+The PRs' values met the SLO in every round, by 7 to 60 ms; frozen missed it by 2.5 to 4.0 s. Round by round, the agents'
 tokens/s over the calls' first 240 s with the PRs' values were 94–111% of frozen's (a median of 96%), their whole-call
 tokens/s 95–103%, and no turn of the 750 failed. The forecast put the core's running share at 10% [modeled].
 
@@ -274,7 +274,7 @@ the core beside the card's own best stock configuration.
   calls' first 240 s, 1.40 and 1.42 times frozen's and 1.49 and 1.29 times the PRs' values'. At the A100's own best
   stock cap the voice tail stays two to 2.4 times its SLO, while the box's 512/256 costs the agents about 30% of their
   tokens.
-- **The PRs' values at 2,048/0** (arm 8, the same two samples): V2V p95 1,810 and 1,843 ms, 141 and 174 ms over the SLO,
+- **The PRs' values at 2,048/0** (arm 8, the same two samples): V2V p95 1,810 and 1,843 ms, 140 and 173 ms over the SLO,
   against tuned vLLM's 4,036 and 3,289 ms on the same samples; the agents at 100% and 101% of tuned vLLM's tokens a
   second (15,124 and 14,145), their TTFT p50 1.0 and 2.0 s and p99 18.4 and 11.2 s, against tuned vLLM's 1.0 and 2.0 s
   and 17.3 and 11.4 s; no turn of the 100 failed. The voice turn's stages are the 512-token PRs' but one: the LLM's
