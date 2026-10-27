@@ -1,0 +1,42 @@
+{"concurrency": 1, "round": 0, "text": "Yes, we have a table for four at seven.", "first_audio_ms": 1001.9, "total_ms": 1003.5, "audio_s": 2.436}
+{"concurrency": 1, "round": 1, "text": "We close at 9 p.m. on Sundays.", "first_audio_ms": 980.3, "total_ms": 981.7, "audio_s": 2.301}
+{"concurrency": 1, "round": 2, "text": "We close at 9 PM on Sundays.", "first_audio_ms": 965.0, "total_ms": 966.4, "audio_s": 2.276}
+{"concurrency": 1, "round": 3, "text": "Yes, we have a few vegetarian options.", "first_audio_ms": 1062.8, "total_ms": 1071.9, "audio_s": 2.585}
+{"concurrency": 1, "round": 4, "text": "Sure, I can help with that.", "first_audio_ms": 962.2, "total_ms": 963.6, "audio_s": 1.762}
+{"concurrency": 1, "round": 5, "text": "Sure! This Friday evening, we have tables available for two.", "first_audio_ms": 1442.2, "total_ms": 1444.0, "audio_s": 3.879}
+{"concurrency": 2, "round": 0, "text": "Yes, we have a table for four at seven.", "first_audio_ms": 945.3, "total_ms": 948.5, "audio_s": 2.438}
+{"concurrency": 2, "round": 0, "text": "We close at 9 p.m. on Sundays.", "first_audio_ms": 1851.7, "total_ms": 1853.4, "audio_s": 2.301}
+{"concurrency": 2, "round": 1, "text": "We close at 9 PM on Sundays.", "first_audio_ms": 893.3, "total_ms": 1878.9, "audio_s": 2.276}
+{"concurrency": 2, "round": 1, "text": "Yes, we have a few vegetarian options.", "first_audio_ms": 1877.8, "total_ms": 1879.2, "audio_s": 2.585}
+{"concurrency": 2, "round": 2, "text": "Sure, I can help with that.", "first_audio_ms": 2052.6, "total_ms": 2056.4, "audio_s": 1.762}
+{"concurrency": 2, "round": 2, "text": "Sure! This Friday evening, we have tables available for two.", "first_audio_ms": 2052.0, "total_ms": 2054.4, "audio_s": 3.879}
+{"concurrency": 2, "round": 3, "text": "Yes, there's a small parking lot right behind the building, and a few spots on the street across from the entrance.", "first_audio_ms": 4419.7, "total_ms": 4422.8, "audio_s": 6.256}
+{"concurrency": 2, "round": 3, "text": "Yes, there's a small parking lot right behind the building, and a few spots along Main Street too.", "first_audio_ms": 4419.6, "total_ms": 4423.2, "audio_s": 5.707}
+{"concurrency": 2, "round": 4, "text": "Yes, there's a small parking lot right behind the building, and a few spots on the street across from the door.", "first_audio_ms": 4016.7, "total_ms": 4020.1, "audio_s": 6.049}
+{"concurrency": 2, "round": 4, "text": "I don\u2019t have real-time wait times, but I can check if we have any open tables right now.", "first_audio_ms": 4016.3, "total_ms": 4019.9, "audio_s": 5.14}
+{"concurrency": 2, "round": 5, "text": "I don\u2019t have real-time wait times, but I can check if we have a table available right now.", "first_audio_ms": 3422.8, "total_ms": 3426.2, "audio_s": 5.215}
+{"concurrency": 2, "round": 5, "text": "I don\u2019t have real-time wait times, but I can check the current status for you.", "first_audio_ms": 3420.1, "total_ms": 3423.0, "audio_s": 4.215}
+{"concurrency": 4, "round": 0, "text": "Yes, we have a table for four at seven.", "first_audio_ms": 942.2, "total_ms": 945.6, "audio_s": 2.438}
+{"concurrency": 4, "round": 0, "text": "We close at 9 p.m. on Sundays.", "first_audio_ms": 1824.7, "total_ms": 2697.1, "audio_s": 2.3}
+{"concurrency": 4, "round": 0, "text": "We close at 9 PM on Sundays.", "first_audio_ms": 3662.4, "total_ms": 3664.9, "audio_s": 2.276}
+{"concurrency": 4, "round": 0, "text": "Yes, we have a few vegetarian options.", "first_audio_ms": 3662.8, "total_ms": 3664.9, "audio_s": 2.585}
+{"concurrency": 4, "round": 1, "text": "Sure, I can help with that.", "first_audio_ms": 727.0, "total_ms": 729.0, "audio_s": 1.762}
+{"concurrency": 4, "round": 1, "text": "Sure! This Friday evening, we have tables available for two.", "first_audio_ms": 4313.1, "total_ms": 6380.7, "audio_s": 3.878}
+{"concurrency": 4, "round": 1, "text": "Yes, there's a small parking lot right behind the building, and a few spots on the street across from the entrance.", "first_audio_ms": 6376.7, "total_ms": 6381.4, "audio_s": 6.257}
+{"concurrency": 4, "round": 1, "text": "Yes, there's a small parking lot right behind the building, and a few spots along Main Street too.", "first_audio_ms": 6378.3, "total_ms": 6381.9, "audio_s": 5.707}
+{"concurrency": 4, "round": 2, "text": "Yes, there's a small parking lot right behind the building, and a few spots on the street across from the door.", "first_audio_ms": 2405.3, "total_ms": 2410.1, "audio_s": 6.049}
+{"concurrency": 4, "round": 2, "text": "I don\u2019t have real-time wait times, but I can check if we have any open tables right now.", "first_audio_ms": 7439.8, "total_ms": 7443.9, "audio_s": 5.14}
+{"concurrency": 4, "round": 2, "text": "I don\u2019t have real-time wait times, but I can check if we have a table available right now.", "first_audio_ms": 5965.0, "total_ms": 7441.5, "audio_s": 5.214}
+{"concurrency": 4, "round": 2, "text": "I don\u2019t have real-time wait times, but I can check the current status for you.", "first_audio_ms": 7440.5, "total_ms": 7443.1, "audio_s": 4.215}
+{"concurrency": 4, "round": 3, "text": "Yes, we do take reservations for large groups.", "first_audio_ms": 1208.5, "total_ms": 1210.9, "audio_s": 3.07}
+{"concurrency": 4, "round": 3, "text": "Today\u2019s soup is chicken and barley, slow-braised with thyme and a hint of rosemary.", "first_audio_ms": 3105.6, "total_ms": 6861.7, "audio_s": 5.187}
+{"concurrency": 4, "round": 3, "text": "Today\u2019s soup is tomato and basil, a fresh and hearty blend perfect for a cool evening.", "first_audio_ms": 6861.1, "total_ms": 6865.1, "audio_s": 5.507}
+{"concurrency": 4, "round": 3, "text": "Today's soup is a creamy mushroom and spinach soup, served with a side of crusty bread.", "first_audio_ms": 6859.4, "total_ms": 6862.6, "audio_s": 5.225}
+{"concurrency": 4, "round": 4, "text": "Yes, we're open for lunch on weekdays from 11 AM to 2 PM.", "first_audio_ms": 3110.5, "total_ms": 4697.5, "audio_s": 4.626}
+{"concurrency": 4, "round": 4, "text": "Yes, we're open for lunch weekdays from 11 a.m.", "first_audio_ms": 3109.4, "total_ms": 4693.3, "audio_s": 3.337}
+{"concurrency": 4, "round": 4, "text": "Yes, we're open for lunch on weekdays from 11 am to 2 pm.", "first_audio_ms": 4694.9, "total_ms": 4696.9, "audio_s": 4.33}
+{"concurrency": 4, "round": 4, "text": "Yes, you can bring your own wine.", "first_audio_ms": 5594.4, "total_ms": 5601.8, "audio_s": 1.965}
+{"concurrency": 4, "round": 5, "text": "Yes, you can bring your own wine\u2014just let us know when you reserve.", "first_audio_ms": 1421.4, "total_ms": 1423.3, "audio_s": 3.707}
+{"concurrency": 4, "round": 5, "text": "Yes, you can bring your own wine\u2014we don\u2019t have a corkage fee and will happily serve it with your meal.", "first_audio_ms": 3408.5, "total_ms": 3411.7, "audio_s": 5.443}
+{"concurrency": 4, "round": 5, "text": "Yes, the patio is open from late spring through early fall.", "first_audio_ms": 6171.4, "total_ms": 6173.8, "audio_s": 3.524}
+{"concurrency": 4, "round": 5, "text": "Yes, the patio is open from late May through early October.", "first_audio_ms": 6171.7, "total_ms": 6174.1, "audio_s": 3.682}
