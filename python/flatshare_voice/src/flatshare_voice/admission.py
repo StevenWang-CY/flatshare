@@ -14,8 +14,8 @@ while its engine does not serve or while a release drains the worker. ``Admissio
 it does (warming, degraded or drained otherwise, and 503 while the engine's ``/health`` fails), or, when the LLM
 bypasses the gateway, the engine's own ``/health``. A gateway without ``/ready`` (404 or 405) leaves admission to
 capacity alone, said once in the log; one that does not answer within a second takes no call. ``Monitor`` asks it
-every second and writes the worker's state to a file, which a release reads to drain the worker (deploy/release.py)
-and deploy/bin/serving-check holds to the profile.
+every second and writes the worker's state to a file, which a release reads to drain the worker
+(deploy/bin/flatshare-release) and deploy/bin/serving-check holds to the profile.
 """
 
 from __future__ import annotations

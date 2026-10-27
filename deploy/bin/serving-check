@@ -16,7 +16,7 @@ patches are compared (by default the tree this script is in).
 
 It prints each setting of the profile with the value the engine runs where they differ, and the patches, then a
 verdict. The variant runs it after each start (ExecStartPost), so that an engine that runs anything else, a flag over
-the profile's or another module, fails its start; deploy/release.py runs it at each release.
+the profile's or another module, fails its start; deploy/bin/flatshare-release runs it at each release.
 
 Exit status: 0 when everything runs the profile's configuration exactly; 1 when a setting differs, each named; 2 when
 a file is missing or unreadable, or not the engine's own (another process's, or of another format).
