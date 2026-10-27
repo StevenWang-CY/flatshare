@@ -1,0 +1,60 @@
+{"concurrency": 1, "clip": "turn-00", "audio_s": 3.382, "transcript_ms": 16404.6, "errors": 2, "words": 11, "text": "Hi, do you have a table for 4 at 7 tonight?"}
+{"concurrency": 1, "clip": "turn-01", "audio_s": 2.726, "transcript_ms": 16287.6, "errors": 0, "words": 7, "text": "What time do you close on Sundays?"}
+{"concurrency": 1, "clip": "turn-02", "audio_s": 3.22, "transcript_ms": 16362.0, "errors": 0, "words": 9, "text": "Do you have any vegetarian options on the menu?"}
+{"concurrency": 1, "clip": "turn-03", "audio_s": 3.145, "transcript_ms": 16461.2, "errors": 0, "words": 10, "text": "Can I book a table for two this Friday evening?"}
+{"concurrency": 1, "clip": "turn-04", "audio_s": 3.082, "transcript_ms": 16337.5, "errors": 0, "words": 6, "text": "Is there parking near the restaurant?"}
+{"concurrency": 1, "clip": "turn-05", "audio_s": 3.471, "transcript_ms": 16378.6, "errors": 0, "words": 10, "text": "How long is the wait right now for a table?"}
+{"concurrency": 1, "clip": "turn-06", "audio_s": 4.002, "transcript_ms": 16343.7, "errors": 1, "words": 10, "text": "Do you take reservations for large groups, like 12 people?"}
+{"concurrency": 1, "clip": "turn-07", "audio_s": 2.152, "transcript_ms": 16434.9, "errors": 0, "words": 6, "text": "What's the soup of the day?"}
+{"concurrency": 1, "clip": "turn-08", "audio_s": 2.732, "transcript_ms": 16465.2, "errors": 0, "words": 7, "text": "Are you open for lunch on weekdays?"}
+{"concurrency": 1, "clip": "turn-09", "audio_s": 2.607, "transcript_ms": 16238.9, "errors": 0, "words": 8, "text": "Can I bring my own bottle of wine?"}
+{"concurrency": 1, "clip": "turn-10", "audio_s": 3.265, "transcript_ms": 16248.1, "errors": 0, "words": 8, "text": "Is the patio open this time of year?"}
+{"concurrency": 1, "clip": "turn-11", "audio_s": 2.7, "transcript_ms": 16104.3, "errors": 0, "words": 6, "text": "Do you have gluten-free pasta?"}
+{"concurrency": 1, "clip": "turn-12", "audio_s": 3.834, "transcript_ms": 16079.3, "errors": 0, "words": 9, "text": "I'd like to cancel my reservation for tomorrow night."}
+{"concurrency": 1, "clip": "turn-13", "audio_s": 3.27, "transcript_ms": 16229.1, "errors": 3, "words": 10, "text": "Can you move my booking from 7 to 8.30?"}
+{"concurrency": 1, "clip": "turn-14", "audio_s": 2.108, "transcript_ms": 16386.7, "errors": 0, "words": 6, "text": "Do you have a kids menu?"}
+{"concurrency": 1, "clip": "turn-15", "audio_s": 2.575, "transcript_ms": 16392.5, "errors": 0, "words": 8, "text": "How far are you from the train station?"}
+{"concurrency": 1, "clip": "turn-16", "audio_s": 2.182, "transcript_ms": 16312.3, "errors": 0, "words": 5, "text": "Is there a dress code?"}
+{"concurrency": 1, "clip": "turn-17", "audio_s": 2.635, "transcript_ms": 16350.2, "errors": 0, "words": 6, "text": "What desserts do you have tonight?"}
+{"concurrency": 1, "clip": "turn-18", "audio_s": 2.394, "transcript_ms": 16344.6, "errors": 0, "words": 7, "text": "Can I order takeout over the phone?"}
+{"concurrency": 1, "clip": "turn-19", "audio_s": 2.794, "transcript_ms": 16375.1, "errors": 0, "words": 9, "text": "Do you deliver to the north side of town?"}
+{"concurrency": 2, "clip": "turn-01", "audio_s": 2.726, "transcript_ms": 18350.7, "errors": 0, "words": 7, "text": "What time do you close on Sundays?"}
+{"concurrency": 2, "clip": "turn-00", "audio_s": 3.382, "transcript_ms": 18382.9, "errors": 2, "words": 11, "text": "Hi, do you have a table for 4 at 7 tonight?"}
+{"concurrency": 2, "clip": "turn-02", "audio_s": 3.22, "transcript_ms": 18155.5, "errors": 0, "words": 9, "text": "Do you have any vegetarian options on the menu?"}
+{"concurrency": 2, "clip": "turn-03", "audio_s": 3.145, "transcript_ms": 18252.6, "errors": 0, "words": 10, "text": "Can I book a table for two this Friday evening?"}
+{"concurrency": 2, "clip": "turn-04", "audio_s": 3.082, "transcript_ms": 17910.9, "errors": 0, "words": 6, "text": "Is there parking near the restaurant?"}
+{"concurrency": 2, "clip": "turn-05", "audio_s": 3.471, "transcript_ms": 17950.7, "errors": 0, "words": 10, "text": "How long is the wait right now for a table?"}
+{"concurrency": 2, "clip": "turn-07", "audio_s": 2.152, "transcript_ms": 14658.8, "errors": 0, "words": 6, "text": "What's the soup of the day?"}
+{"concurrency": 2, "clip": "turn-06", "audio_s": 4.002, "transcript_ms": 16562.5, "errors": 1, "words": 10, "text": "Do you take reservations for large groups, like 12 people?"}
+{"concurrency": 2, "clip": "turn-08", "audio_s": 2.732, "transcript_ms": 17750.4, "errors": 0, "words": 7, "text": "Are you open for lunch on weekdays?"}
+{"concurrency": 2, "clip": "turn-09", "audio_s": 2.607, "transcript_ms": 18452.7, "errors": 0, "words": 8, "text": "Can I bring my own bottle of wine?"}
+{"concurrency": 2, "clip": "turn-10", "audio_s": 3.265, "transcript_ms": 18475.6, "errors": 0, "words": 8, "text": "Is the patio open this time of year?"}
+{"concurrency": 2, "clip": "turn-11", "audio_s": 2.7, "transcript_ms": 18453.9, "errors": 0, "words": 6, "text": "Do you have gluten-free pasta?"}
+{"concurrency": 2, "clip": "turn-12", "audio_s": 3.834, "transcript_ms": 18987.7, "errors": 0, "words": 9, "text": "I'd like to cancel my reservation for tomorrow night."}
+{"concurrency": 2, "clip": "turn-13", "audio_s": 3.27, "transcript_ms": 18707.5, "errors": 3, "words": 10, "text": "Can you move my booking from 7 to 8.30?"}
+{"concurrency": 2, "clip": "turn-14", "audio_s": 2.108, "transcript_ms": 18265.2, "errors": 0, "words": 6, "text": "Do you have a kids menu?"}
+{"concurrency": 2, "clip": "turn-15", "audio_s": 2.575, "transcript_ms": 18292.6, "errors": 0, "words": 8, "text": "How far are you from the train station?"}
+{"concurrency": 2, "clip": "turn-16", "audio_s": 2.182, "transcript_ms": 18048.5, "errors": 0, "words": 5, "text": "Is there a dress code?"}
+{"concurrency": 2, "clip": "turn-17", "audio_s": 2.635, "transcript_ms": 18344.6, "errors": 0, "words": 6, "text": "What desserts do you have tonight?"}
+{"concurrency": 2, "clip": "turn-18", "audio_s": 2.394, "transcript_ms": 17780.5, "errors": 0, "words": 7, "text": "Can I order takeout over the phone?"}
+{"concurrency": 2, "clip": "turn-19", "audio_s": 2.794, "transcript_ms": 17667.2, "errors": 0, "words": 9, "text": "Do you deliver to the north side of town?"}
+{"concurrency": 4, "clip": "turn-02", "audio_s": 3.22, "transcript_ms": 31202.5, "errors": 0, "words": 9, "text": "Do you have any vegetarian options on the menu?"}
+{"concurrency": 4, "clip": "turn-03", "audio_s": 3.145, "transcript_ms": 32303.5, "errors": 0, "words": 10, "text": "Can I book a table for two this Friday evening?"}
+{"concurrency": 4, "clip": "turn-00", "audio_s": 3.382, "transcript_ms": 32803.1, "errors": 2, "words": 11, "text": "Hi, do you have a table for 4 at 7 tonight?"}
+{"concurrency": 4, "clip": "turn-01", "audio_s": 2.726, "transcript_ms": 34725.8, "errors": 0, "words": 7, "text": "What time do you close on Sundays?"}
+{"concurrency": 4, "clip": "turn-04", "audio_s": 3.082, "transcript_ms": 28450.0, "errors": 0, "words": 6, "text": "Is there parking near the restaurant?"}
+{"concurrency": 4, "clip": "turn-05", "audio_s": 3.471, "transcript_ms": 30544.3, "errors": 0, "words": 10, "text": "How long is the wait right now for a table?"}
+{"concurrency": 4, "clip": "turn-06", "audio_s": 4.002, "transcript_ms": 30882.3, "errors": 1, "words": 10, "text": "Do you take reservations for large groups, like 12 people?"}
+{"concurrency": 4, "clip": "turn-07", "audio_s": 2.152, "transcript_ms": 31865.9, "errors": 0, "words": 6, "text": "What's the soup of the day?"}
+{"concurrency": 4, "clip": "turn-08", "audio_s": 2.732, "transcript_ms": 28439.0, "errors": 0, "words": 7, "text": "Are you open for lunch on weekdays?"}
+{"concurrency": 4, "clip": "turn-09", "audio_s": 2.607, "transcript_ms": 30997.2, "errors": 0, "words": 8, "text": "Can I bring my own bottle of wine?"}
+{"concurrency": 4, "clip": "turn-10", "audio_s": 3.265, "transcript_ms": 31424.6, "errors": 0, "words": 8, "text": "Is the patio open this time of year?"}
+{"concurrency": 4, "clip": "turn-11", "audio_s": 2.7, "transcript_ms": 33556.8, "errors": 0, "words": 6, "text": "Do you have gluten-free pasta?"}
+{"concurrency": 4, "clip": "turn-12", "audio_s": 3.834, "transcript_ms": 30389.2, "errors": 0, "words": 9, "text": "I'd like to cancel my reservation for tomorrow night."}
+{"concurrency": 4, "clip": "turn-13", "audio_s": 3.27, "transcript_ms": 31776.6, "errors": 3, "words": 10, "text": "Can you move my booking from 7 to 8.30?"}
+{"concurrency": 4, "clip": "turn-14", "audio_s": 2.108, "transcript_ms": 32145.8, "errors": 0, "words": 6, "text": "Do you have a kids menu?"}
+{"concurrency": 4, "clip": "turn-15", "audio_s": 2.575, "transcript_ms": 34394.1, "errors": 0, "words": 8, "text": "How far are you from the train station?"}
+{"concurrency": 4, "clip": "turn-16", "audio_s": 2.182, "transcript_ms": 30108.1, "errors": 0, "words": 5, "text": "Is there a dress code?"}
+{"concurrency": 4, "clip": "turn-17", "audio_s": 2.635, "transcript_ms": 28186.8, "errors": 0, "words": 6, "text": "What desserts do you have tonight?"}
+{"concurrency": 4, "clip": "turn-18", "audio_s": 2.394, "transcript_ms": 28926.0, "errors": 0, "words": 7, "text": "Can I order takeout over the phone?"}
+{"concurrency": 4, "clip": "turn-19", "audio_s": 2.794, "transcript_ms": 25477.4, "errors": 0, "words": 9, "text": "Do you deliver to the north side of town?"}
