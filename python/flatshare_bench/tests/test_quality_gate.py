@@ -627,7 +627,7 @@ def test_the_committed_sample_is_what_sample_py_draws() -> None:
 # ---- the record --------------------------------------------------------------------------------------------------
 
 RECORD = REPO / "benchmarks" / "results" / "2026-10-27-quality"
-RUNS = [""]
+RUNS = ["", "fp8-kv"]
 
 
 @pytest.mark.parametrize("run", RUNS)
