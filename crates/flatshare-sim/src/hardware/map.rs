@@ -7,7 +7,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use flatshare_core::{FROZEN_BOX_POOL_TOKENS, KvGeometry, StepCost, StepLoad};
+use flatshare_core::{FROZEN_BOX_POOL_TOKENS, KvGeometry, StepCost};
 
 use super::{Gpu, LinearPath, MARLIN_FACTOR};
 use crate::aiperf::PlanOptions;
@@ -28,9 +28,7 @@ const BOX_TOP_SESSIONS: f64 = 40.0;
 /// The step of one 512-token background prefill chunk after `context` cached tokens, alone: what a
 /// realtime request that arrives during it waits behind, in ms.
 pub fn chunk_ms(steps: &StepCost, context: u64) -> f64 {
-    let mut load = StepLoad::default();
-    load.add_prefill(StepBudget::FROZEN_BOX.max_batched_tokens, context);
-    steps.step_ms(&load)
+    steps.chunk_ms(StepBudget::FROZEN_BOX.max_batched_tokens, context)
 }
 
 /// The largest prompt plus output of a request of `corpus`, in tokens at token scale 1: at token
