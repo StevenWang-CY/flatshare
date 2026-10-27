@@ -3,14 +3,33 @@
 ``flatshare-voice-worker start`` registers the agent ``flatshare-voice`` with the LiveKit server and
 serves every dispatched room with one ``AgentSession``: Silero VAD and LiveKit's audio
 end-of-turn model (``turn-detector-v1-mini``, run locally) on the CPU, then STT, the LLM and TTS
-on the GPU node. Turn handling (endpointing, interruptions, preemptive generation) keeps LiveKit's
-defaults, with two settings pinned for this deployment, whose only callers are the measurement
-bots inside the namespace:
+on the GPU node.
+
+It runs in one of two modes (``FLATSHARE_VOICE_MODE``):
+
+- ``bench``, the default and what every measurement ran: the worker takes every call LiveKit
+  dispatches, its load always 0, so that other tenants' CPU load on a shared host cannot drain it.
+- ``serve``: call-capacity admission (:mod:`.admission`). The serving profile
+  (``FLATSHARE_SERVING_PROFILE``, a serving profile's serving.json) names the calls the measured
+  envelope admits: the worker's load is its calls over that number, with LiveKit's load threshold
+  at 1, so that a full worker is marked full and the server sends it no job, and a job request
+  beyond it is refused. It takes no call while the gateway says the engine does not serve
+  (``/ready`` on the LLM's socket, or the engine's ``/health`` on the bypass), or while the file
+  ``FLATSHARE_VOICE_DRAIN`` names exists (a release's drain), and writes its state to the file
+  ``FLATSHARE_VOICE_STATUS`` names every second.
+
+Two audio configurations (``FLATSHARE_AUDIO``), :data:`AUDIO`. ``synthetic``, bench mode's default,
+is what the measurements ran: the measurement bots inside the namespace play files, so turn handling
+keeps LiveKit's defaults with two settings pinned:
 
 - interruptions by VAD, which production mode picks anyway: adaptive detection needs LiveKit
   Inference, and the namespace has no route out;
 - no AEC warm-up: the callers play files, so there is no echo to wait out, and the 3 s warm-up
   would only discard a barge-in on the first reply of each call.
+
+``microphone``, serve mode's default (the serving profile names it), is for real callers: the
+end-of-turn model, LiveKit's AEC warm-up for the echo of a loudspeaker, and a VAD and interruptions
+that a noisy room trips less. No benchmark measured it: the callers E2 measures are synthetic.
 
 Experiments use ``FLATSHARE_TURN_DETECTION=vad`` instead: the end of a turn is then a fixed delay after
 the end of speech, the same for every arm, so voice-to-voice latency moves only with serving. The
@@ -40,6 +59,11 @@ a Unix socket each. The environment, set by ``flatshare-voice-worker.service``, 
 | ``FLATSHARE_PREEMPTIVE_GENERATION`` | ``true`` (default, LiveKit's) or ``false`` |
 | ``FLATSHARE_EVENTS`` | ``on`` (default: lifecycle events to the control plane) or ``off`` |
 | ``FLATSHARE_LLM_MODEL`` | The model the agent's requests name (default the box's, ``plugins.LLM_MODEL``) |
+| ``FLATSHARE_VOICE_MODE`` | ``bench`` (default: every call taken) or ``serve`` (call-capacity admission) |
+| ``FLATSHARE_SERVING_PROFILE`` | Serve mode: the serving profile's serving.json, whose ``voice`` table it runs |
+| ``FLATSHARE_AUDIO`` | ``synthetic`` (bench mode's default) or ``microphone`` (serve mode's: the profile's) |
+| ``FLATSHARE_VOICE_STATUS`` | Serve mode: the file its state is written to every second |
+| ``FLATSHARE_VOICE_DRAIN`` | Serve mode: while this file exists, the worker takes no new call |
 
 The worker reads them whenever it is to serve (``start``, which the unit runs, or ``dev``, ``console``
 or ``connect``), before it registers with LiveKit (:class:`Settings`): a socket that is not set, or a
@@ -49,11 +73,12 @@ a worker that would fail it.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import sys
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from livekit.agents import (
@@ -63,6 +88,7 @@ from livekit.agents import (
     APIConnectOptions,
     JobContext,
     JobProcess,
+    JobRequest,
     cli,
     inference,
     room_io,
@@ -71,6 +97,7 @@ from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import silero
 
 from . import events, plugins
+from .admission import Admission, EngineProbe, Monitor
 from .protocol import AGENT_NAME, room_session_id
 
 BASE_URL = "http://flatshare.invalid/v1"
@@ -89,6 +116,37 @@ INSTRUCTIONS = (
 SERVES = frozenset({"start", "dev", "console", "connect"})
 """LiveKit's worker commands that run the agent's sessions, for which :func:`main` reads the settings."""
 
+AUDIO: dict[str, dict[str, Any]] = {
+    # The measurement bots' audio, as every E2 point ran: files played into the room, so no echo and no room noise.
+    "synthetic": {
+        "vad": {},  # Silero's defaults: activation 0.5, 0.05 s of speech, 0.55 s of silence
+        "endpointing": None,  # LiveKit's: 0.5 s at least after speech, 3 s at most
+        "interruption": {"mode": "vad"},
+        "aec_warmup_s": None,
+    },
+    # Real callers' microphones, not measured by any benchmark. The end-of-turn model decides the end of a turn, as
+    # people pause inside a sentence (FLATSHARE_TURN_DETECTION=vad is refused with it). The VAD needs a clearer
+    # and longer onset to count speech (0.6 against 0.5, 0.1 s against 0.05), so that a click or a door is no
+    # barge-in, and so does an interruption (0.6 s against 0.5); one that no transcript follows within 2 s is taken
+    # for a false one, and the agent resumes (LiveKit's default). LiveKit's 3 s AEC warm-up stays on: a
+    # loudspeaker's echo of the agent would otherwise cut its first reply. Noise suppression is the caller's
+    # client's (a browser's WebRTC applies its own), since LiveKit's noise cancellation needs LiveKit Cloud, which
+    # the namespace cannot reach; the room input's gain control is LiveKit's default.
+    "microphone": {
+        "vad": {"activation_threshold": 0.6, "min_speech_duration": 0.1},
+        "endpointing": {"mode": "fixed", "min_delay": 0.5, "max_delay": 3.0},
+        "interruption": {
+            "mode": "vad",
+            "min_duration": 0.6,
+            "resume_false_interruption": True,
+            "false_interruption_timeout": 2.0,
+        },
+        "aec_warmup_s": 3.0,
+    },
+}
+"""The audio configurations (``FLATSHARE_AUDIO``): Silero VAD's options, LiveKit's endpointing and interruption
+handling, and the AEC warm-up (None: none)."""
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -103,6 +161,13 @@ class Settings:
     preemptive_generation: bool = True
     events: bool = True
     llm_model: str = plugins.LLM_MODEL
+    mode: str = "bench"
+    audio: str = "synthetic"
+    max_calls: int | None = None
+    serving_profile: str | None = None
+    status_file: str | None = None
+    drain_file: str | None = None
+    serving: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
@@ -112,16 +177,34 @@ class Settings:
             if not env.get(name):
                 raise ValueError(f"{name} is not set: the worker reaches its servers by sockets")
         preemptive = _choice(env, "FLATSHARE_PREEMPTIVE_GENERATION", ("true", "false"))
+        mode = _choice(env, "FLATSHARE_VOICE_MODE", ("bench", "serve"))
+        serving = _serving(env) if mode == "serve" else {}
+        audio = env.get("FLATSHARE_AUDIO") or serving.get("audio", "synthetic")
+        if audio not in AUDIO:
+            raise ValueError(f"FLATSHARE_AUDIO must be {' or '.join(AUDIO)}, got {audio!r}")
+        turn_detection = _choice(env, "FLATSHARE_TURN_DETECTION", ("model", "vad"))
+        if audio == "microphone" and turn_detection == "vad":
+            raise ValueError(
+                "FLATSHARE_TURN_DETECTION=vad is the synthetic callers' fixed endpointing; the "
+                "microphone configuration ends a turn by the end-of-turn model (unlink vad-turns)"
+            )
         return cls(
             llm_uds=env["FLATSHARE_LLM_UDS"],
             stt_uds=env["FLATSHARE_STT_UDS"],
             tts_uds=env["FLATSHARE_TTS_UDS"],
             idle_processes=_count(env, "FLATSHARE_IDLE_PROCESSES", 2),
             llm_timeout=_seconds(env, "FLATSHARE_LLM_TIMEOUT", 30.0),
-            turn_detection=_choice(env, "FLATSHARE_TURN_DETECTION", ("model", "vad")),
+            turn_detection=turn_detection,
             preemptive_generation=preemptive == "true",
             events=_choice(env, "FLATSHARE_EVENTS", ("on", "off")) == "on",
             llm_model=env.get("FLATSHARE_LLM_MODEL") or plugins.LLM_MODEL,
+            mode=mode,
+            audio=audio,
+            max_calls=serving.get("max_calls"),
+            serving_profile=env.get("FLATSHARE_SERVING_PROFILE") if mode == "serve" else None,
+            status_file=env.get("FLATSHARE_VOICE_STATUS") or None,
+            drain_file=env.get("FLATSHARE_VOICE_DRAIN") or None,
+            serving=serving,
         )
 
     def turn_handling(self) -> dict[str, Any]:
@@ -131,10 +214,41 @@ class Settings:
         detection = (
             "vad" if self.turn_detection == "vad" else inference.TurnDetector(version="v1-mini")
         )
-        return {
+        audio = AUDIO[self.audio]
+        handling: dict[str, Any] = {
             "turn_detection": detection,
-            "interruption": {"mode": "vad"},
+            "interruption": dict(audio["interruption"]),
             "preemptive_generation": {"enabled": self.preemptive_generation},
+        }
+        if audio["endpointing"] is not None:
+            handling["endpointing"] = dict(audio["endpointing"])
+        return handling
+
+    def vad_options(self) -> dict[str, float]:
+        """Silero VAD's options for the audio configuration (its defaults for synthetic callers)."""
+        return dict(AUDIO[self.audio]["vad"])
+
+    @property
+    def aec_warmup(self) -> float | None:
+        """Seconds of the agent's first speech in which the caller's audio cannot interrupt it."""
+        return AUDIO[self.audio]["aec_warmup_s"]
+
+    @property
+    def probe_path(self) -> str:
+        """Where the LLM's socket says whether the engine serves: the gateway's /ready, or the
+        engine's /health on the bypass."""
+        return "/health" if self.llm_uds.endswith(ENGINE_TUNNEL) else "/ready"
+
+    def describe(self) -> dict[str, Any]:
+        """What the worker runs, for its status file: what deploy/bin/serving-check holds to the
+        serving profile's ``voice`` table, and the turn handling."""
+        return {
+            "mode": self.mode,
+            "max_calls": self.max_calls,
+            "audio": self.audio,
+            "turn_detection": self.turn_detection,
+            "serving_profile": self.serving_profile,
+            "profile": self.serving.get("profile"),
         }
 
     @property
@@ -142,6 +256,28 @@ class Settings:
         """The socket lifecycle events go to: the LLM's, unless they are off or the LLM bypasses the
         control plane through the engine's tunnel, which has no ``/v1/events``."""
         return self.llm_uds if self.events and not self.llm_uds.endswith(ENGINE_TUNNEL) else None
+
+
+def _serving(env: Mapping[str, str]) -> dict[str, Any]:
+    """Serve mode's ``voice`` table of the serving profile FLATSHARE_SERVING_PROFILE names, with
+    the profile's name."""
+    path = env.get("FLATSHARE_SERVING_PROFILE")
+    if not path:
+        raise ValueError(
+            "FLATSHARE_SERVING_PROFILE is not set: serve mode admits the calls its serving.json names"
+        )
+    try:
+        profile = json.loads(open(path, encoding="utf-8").read())  # noqa: SIM115
+        voice = profile["voice"]
+        max_calls = voice["max_calls"]
+        audio = voice["audio"]
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise ValueError(
+            f"FLATSHARE_SERVING_PROFILE {path} is no serving profile's serving.json: {error!r}"
+        ) from None
+    if isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 1:
+        raise ValueError(f"FLATSHARE_SERVING_PROFILE {path}: voice.max_calls must be 1 or more")
+    return {"max_calls": max_calls, "audio": audio, "profile": profile.get("profile")}
 
 
 def _choice(env: Mapping[str, str], name: str, choices: tuple[str, ...]) -> str:
@@ -177,20 +313,41 @@ def _seconds(env: Mapping[str, str], name: str, default: float) -> float:
 
 
 def prewarm(proc: JobProcess) -> None:
-    """Load the VAD once per job process, before a room is assigned."""
-    proc.userdata["vad"] = silero.VAD.load()
+    """Load the VAD once per job process, before a room is assigned, with the audio configuration's
+    options."""
+    proc.userdata["vad"] = silero.VAD.load(**Settings.from_env().vad_options())
+
+
+ADMISSION: Admission | None = None
+"""Serve mode's admission, which main() sets up; None in bench mode."""
+
+
+def load(worker: AgentServer) -> float:
+    """The worker's load as LiveKit reads it. Bench mode: 0, as every measurement ran, so that other
+    tenants' CPU load on a shared host cannot drain the worker. Serve mode: its calls over the
+    calls the profile admits, and 1 while it takes none."""
+    return 0.0 if ADMISSION is None else ADMISSION.load()
+
+
+async def request(job: JobRequest) -> None:
+    """A job request: bench mode accepts it, as LiveKit's default does; serve mode's admission
+    decides."""
+    if ADMISSION is None:
+        await job.accept()
+    else:
+        await ADMISSION.request(job)
 
 
 # The idle processes' count is the settings', which main() reads before the server starts.
 server = AgentServer(
     host="127.0.0.1",  # the default "" puts the health server on every interface
     port=0,
-    load_fnc=lambda: 0.0,  # other tenants' CPU load on a shared host must not drain the worker
+    load_fnc=load,
     setup_fnc=prewarm,
 )
 
 
-@server.rtc_session(agent_name=AGENT_NAME)
+@server.rtc_session(agent_name=AGENT_NAME, on_request=request)
 async def entrypoint(ctx: JobContext) -> None:
     settings = Settings.from_env()  # as main() read them, in this job's process
     session_id = room_session_id(ctx.job.room.sid)
@@ -200,7 +357,7 @@ async def entrypoint(ctx: JobContext) -> None:
         llm=plugins.make_llm(BASE_URL, session_id, uds=settings.llm_uds, model=settings.llm_model),
         tts=plugins.make_tts(BASE_URL, uds=settings.tts_uds),
         turn_handling=settings.turn_handling(),
-        aec_warmup_duration=None,
+        aec_warmup_duration=settings.aec_warmup,
         conn_options=SessionConnectOptions(
             # One retry, not LiveKit's three: a dropped connection still gets a second try, and a
             # stalled turn gives up after two timeouts rather than four.
@@ -219,6 +376,32 @@ async def entrypoint(ctx: JobContext) -> None:
     events.observe(ctx, session, session_id, uds=settings.events_socket)
 
 
+def active_calls() -> int:
+    """The calls in progress: LiveKit's running jobs, none before the server runs (its process pool
+    is made then, after main() has started serve mode's monitor)."""
+    try:
+        return len(server.active_jobs)
+    except AttributeError:
+        return 0
+
+
+def serve(settings: Settings) -> Admission:
+    """Serve mode's admission over ``server``'s running jobs, its probe of the engine and its
+    status file, started; LiveKit's load threshold at 1 (a plain float, so that dev mode holds it
+    too), so that the worker is full at max_calls."""
+    global ADMISSION
+    assert settings.max_calls is not None
+    ADMISSION = Admission(
+        settings.max_calls,
+        active=active_calls,
+        probe=EngineProbe(settings.llm_uds, settings.probe_path),
+        drain=settings.drain_file,
+    )
+    server.update_options(load_threshold=1.0)
+    Monitor(ADMISSION, settings.status_file, settings.describe()).start()
+    return ADMISSION
+
+
 def main() -> None:
     """LiveKit's worker command line. A command that serves reads the settings first, so that a
     setting it cannot take stops the worker before it registers."""
@@ -228,6 +411,8 @@ def main() -> None:
         except ValueError as error:
             sys.exit(f"flatshare-voice-worker: {error}")
         server.update_options(num_idle_processes=settings.idle_processes)
+        if settings.mode == "serve":
+            serve(settings)
     cli.run_app(server)
 
 
