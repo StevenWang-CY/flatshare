@@ -1075,3 +1075,25 @@ def test_scripts_run_from_a_releases_own_directory_link_through_src(tmp_path: Pa
         os.readlink(units / "flatshare-engine.service.d" / "measure.conf")
         == f"{src}/phastform/measure/flatshare-engine.conf"
     )
+
+
+def test_any_failure_after_the_switch_switches_back(
+    host: Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Not only a failed check: an error of the tool's own after the switch, or an interrupt, goes back too.
+    host.prepare(A, "v1.0")
+    host.switch(A)
+    host.start("box-a.service")
+    host.prepare(B, "v1.1", **{"deploy/testhost/a.conf": "[Service]\nNice=5\n"})
+    health = release.health
+    calls = []
+
+    def broken(*args, **kwargs):
+        calls.append(release.Layout(host.root).target(host.layout.current))
+        if len(calls) == 1:
+            raise KeyError("a bug")
+        return health(*args, **kwargs)
+
+    monkeypatch.setattr(release, "health", broken)
+    assert host.switch(B) == 1
+    assert (host.current(), calls) == (A, [B, A])

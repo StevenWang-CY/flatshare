@@ -1528,9 +1528,11 @@ def switch(
         result = health(layout, spec, steps.restart, systemd, settle_s)
         if result.failed:
             raise ReleaseError(", ".join(result.failed))
-    except ReleaseError as error:
-        say(f"release {rid} failed after the switch: {error}")
-        layout.log(action=action, source=old, target=rid, result=f"failed: {error}")
+    except (Exception, KeyboardInterrupt) as error:
+        # Whatever failed, a check, a command or this tool itself, the host goes back to what it ran.
+        why = str(error) if isinstance(error, ReleaseError) else repr(error)
+        say(f"release {rid} failed after the switch: {why}")
+        layout.log(action=action, source=old, target=rid, result=f"failed: {why}")
         if not old:
             say("there is no release before it to switch back to")
             return 1
@@ -1538,7 +1540,7 @@ def switch(
         try:
             apply(layout, spec, old, steps, systemd)
             back = health(layout, spec, steps.restart, systemd, settle_s)
-        except ReleaseError as again:
+        except Exception as again:
             back = Report([("switch back", False, str(again))])
         finally:
             if previous_link:
