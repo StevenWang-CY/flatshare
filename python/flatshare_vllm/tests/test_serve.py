@@ -60,10 +60,14 @@ def scheduler(cls, model, num_blocks=48):
 @pytest.mark.parametrize("workload", ["suite", "pressure"])
 def test_it_schedules_as_make_rooms_async_scheduler(modules, model, workload, num_blocks):
     make_room, serve = modules
+    # The class defines its constructor and nothing else: every other method is make-room's.
     assert serve.AsyncScheduler.__mro__[1] is make_room.AsyncScheduler
-    assert set(vars(serve.AsyncScheduler)) - {"__module__", "__doc__", "__qualname__"} == {
-        "__init__"
-    }
+    defined = [
+        name
+        for name, value in vars(serve.AsyncScheduler).items()
+        if callable(value) or isinstance(value, staticmethod | classmethod | property)
+    ]
+    assert defined == ["__init__"]
     requests = {"suite": T.workload, "pressure": TR.pressure_workload}[workload]
     seen = [
         TR.trace(scheduler(cls, model, num_blocks), requests(), sync=False)
