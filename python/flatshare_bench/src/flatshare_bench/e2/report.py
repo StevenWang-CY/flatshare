@@ -287,7 +287,7 @@ def _row(run_dir: Path, run: Mapping[str, Any], summary: Mapping[str, Any]) -> d
     )
     # What frontier.csv leaves out: the corpus, the hardware and the warm-up turns, from which
     # load_points names the workload, and the stage waterfall's inputs, the count and mean of each
-    # of the worker's stages and the callers' V2V samples. An arm from before 2c2c0dc names no
+    # of the worker's stages and the callers' V2V samples. An arm from before 3151475 names no
     # warm-up turns: it ran none.
     row["data"] = arm["agents"]["data"]
     row["hardware"] = on

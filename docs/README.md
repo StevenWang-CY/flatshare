@@ -23,6 +23,7 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 - [METHODS.md](METHODS.md): What did each measurement rule in or out, in what order, and what carries to other hardware?
 - [PRIOR-ART.md](PRIOR-ART.md): How does Flatshare differ from the engines, routers and papers that co-serve latency classes, and what does it not claim?
 - [benchmarks/results](../benchmarks/results): Where are the committed records behind each number, one directory per campaign or probe, each with its README?
+- [REVISIONS.md](REVISIONS.md): Which commit of this history holds each revision the records name, since the history was rewritten on 2026-10-27?
 
 ## Decisions
 
