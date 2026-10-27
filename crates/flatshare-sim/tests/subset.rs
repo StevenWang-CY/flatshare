@@ -249,13 +249,13 @@ fn the_box_places_as_the_regime_sweep_runs_it_and_an_h100_elsewhere() {
         cpu_ratio: 4.0,
         capacity: gpu.capacity(&qwen, 4.0),
     };
-    let cells = [RTX_5060_TI, H100_SXM].map(|gpu| hardware::Cell {
+    let cells = [RTX_5060_TI, H100_SXM].map(|gpu| hardware::map::Cell {
         gpu,
         token_scale: 1,
         seed: 11,
         regime: cell(gpu),
     });
-    let placed = hardware::sweep(&traces, PlanOptions::default(), &replay, &cells, 2).unwrap();
+    let placed = hardware::map::sweep(&traces, PlanOptions::default(), &replay, &cells, 2).unwrap();
     let base = RunConfig::frozen_box(replay);
     let frozen_box = regime::Cell {
         capacity: TierCapacity::with_cpu_ratio(&qwen, FROZEN_BOX_POOL_TOKENS, 4.0),
@@ -286,7 +286,7 @@ fn the_box_places_as_the_regime_sweep_runs_it_and_an_h100_elsewhere() {
     assert!(h.resume_ttft_ms.p50 < b.resume_ttft_ms.p50);
     let share = |s: &flatshare_sim::metrics::Summary| s.replay.realtime_blocked_share.unwrap();
     assert!(share(h) <= share(b) && share(b) < 1.0);
-    let table = hardware::csv(&placed);
+    let table = hardware::map::csv(&placed);
     assert_eq!(table.lines().count(), 1 + 2 * Arm::E1.len());
 }
 

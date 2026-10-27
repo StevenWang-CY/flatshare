@@ -845,18 +845,18 @@ fn hardware(args: HardwareArgs) -> Result<(), String> {
                 "hash blocks of {hash_block} tokens do not divide the original 64"
             ));
         }
-        let longest = hardware::longest_request(&mut corpus)?;
+        let longest = hardware::map::longest_request(&mut corpus)?;
         args.gpus
             .iter()
             .map(|&g| {
-                let k = hardware::fitted_token_scale(&g, &geometry, longest, 64 / hash_block);
+                let k = hardware::map::fitted_token_scale(&g, &geometry, longest, 64 / hash_block);
                 k.map(|k| (g, k)).ok_or_else(|| {
                     format!(
                         "no scaling of the corpus fits {}: its longest request is {longest} tokens, \
                          its pool {} and the model's context {}",
                         g.name,
                         g.pool_tokens(&geometry),
-                        hardware::MODEL_CONTEXT
+                        hardware::map::MODEL_CONTEXT
                     )
                 })
             })
@@ -865,7 +865,7 @@ fn hardware(args: HardwareArgs) -> Result<(), String> {
         args.gpus.iter().map(|&g| (g, replay.token_scale)).collect()
     };
     drop(corpus);
-    let cells = hardware::cells(
+    let cells = hardware::map::cells(
         &gpus,
         &args.sessions,
         &args.seeds,
@@ -879,7 +879,7 @@ fn hardware(args: HardwareArgs) -> Result<(), String> {
         std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
     });
     let start = std::time::Instant::now();
-    let results = hardware::sweep(
+    let results = hardware::map::sweep(
         &args.replay.traces,
         args.replay.plan_options(),
         &replay,
@@ -888,8 +888,8 @@ fn hardware(args: HardwareArgs) -> Result<(), String> {
     )?;
     let map = format!(
         "{}\n{}",
-        hardware::profiles(&args.gpus),
-        hardware::markdown(&results, hash_block, replay.realtime_tokens)
+        hardware::map::profiles(&args.gpus),
+        hardware::map::markdown(&results, hash_block, replay.realtime_tokens)
     );
     print!("{map}");
     println!(
@@ -899,7 +899,7 @@ fn hardware(args: HardwareArgs) -> Result<(), String> {
         start.elapsed().as_secs_f64()
     );
     if let Some(path) = &args.csv {
-        write(path, &hardware::csv(&results))?;
+        write(path, &hardware::map::csv(&results))?;
     }
     if let Some(path) = &args.markdown {
         write(path, &map)?;
