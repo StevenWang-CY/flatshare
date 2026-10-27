@@ -16,8 +16,9 @@ names](#former-names) maps them to the current ones.
   [ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351) states their rules.
 - **The configuration to deploy**: the frozen box's engine with the KV preemption at 2 a step, the budget cap with a
   48-token window and no reserve ([PRODUCTION.md](PRODUCTION.md#the-configuration)).
-- **The KV preemption** (#63350; **KV make-room** in make-room's switches): a waiting request of a higher priority that
-  lacks KV preempts running requests of a lower priority, at most N a step (`--max-priority-preemptions-per-step`).
+- **The KV preemption** (#63350; **KV make-room** in make-room's switches, and **make-room** in the technical report): a
+  waiting request of a higher priority that lacks KV preempts running requests of a lower priority, at most N a step
+  (`--max-priority-preemptions-per-step`).
 - **make-room**: the engine variant that builds vLLM 0.32.0's scheduler at each start from the PRs' scheduler diff,
   backported to 0.32.0, and a patch of its own (its switches, the reserve and its counters), and loads it with
   `--scheduler-cls` ([python/flatshare_vllm](../python/flatshare_vllm/README.md)). E2 measured the PRs' configuration
@@ -26,7 +27,10 @@ names](#former-names) maps them to the current ones.
   W5's points loaded equal but for its held-token count, which it overstated
   ([E3](BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)), and for the hold's last step under asynchronous
   scheduling with the budget cap, which it held a step past the window, as #63351 did before its revision of
-  2026-10-25 ([after W5](BENCHMARKS.md#after-w5-the-first-tokens-in-flight)).
+  2026-10-25 ([after W5](BENCHMARKS.md#after-w5-the-first-tokens-in-flight)). The technical report calls it the
+  generated scheduler and keeps *make-room* for #63350's rule.
+- **The prefill hold**: the technical report's name for the budget cap, after #63351's title, "hold lower-priority
+  prefill for first tokens". The report writes its window T.
 - **The reserve**: make-room's third switch, which keeps KV free for priority 0 by holding back lower-priority
   admissions. The PRs leave it out.
 
@@ -46,8 +50,9 @@ names](#former-names) maps them to the current ones.
   (`make perf-make-room`).
 - **Phastform**: the box's host: one RTX 5060 Ti 16 GB, two Xeon E5-2609 v4 and 188 GiB of RAM.
 - **Stock vLLM**: vLLM 0.32.0 without the change, whatever its flags.
-- **Tuned vLLM**: stock vLLM as an operator would tune it. On the box it is the frozen box; on the A100, the stock
-  engine at that card's best step cap, 2,048/0 ([the A100 run](HARDWARE.md#what-it-measured-2026-10-26)).
+- **Tuned vLLM**: stock vLLM as an operator would tune it. On the box it is the frozen box. On the A100 the technical
+  report names its step cap: at 512-token steps it runs the box's tuning, as the core compares, and at 2,048/0 the
+  card's best stock step cap ([the A100 run](HARDWARE.md#what-it-measured-2026-10-26)).
 
 ## Classes and priorities
 
