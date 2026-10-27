@@ -32,7 +32,7 @@ E2_A100_POINTS = $(wildcard $(foreach c,a100-r a100-tuned-r a100-prtuned-r,$(E2_
 E2_A100_REPORT ?= build/reproduce-e2-a100
 
 .PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-make-room test-trace test-make-room-ci \
-  test-python schema metrics gateway-fixtures \
+  test-python schema metrics gateway-fixtures check-rules \
   reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 reproduce-e2-a100 figures e2-figures e2-w5-figure \
   e2-gpus-figure method-figure report-figures brand \
   demo-video forecast-a100 forecast-fitted profiles reproduce-a100 check-a100-calibration
@@ -153,6 +153,13 @@ metrics:
 gateway-fixtures:
 	FLATSHARE_GATEWAY_WRITE_FIXTURES=1 cargo test -q -p flatshare-gateway --lib \
 	  bounds::tests::the_reply_caps_fixture_is_current
+
+# ops/prometheus's recording and alert rules, checked and run against their unit tests (rules.test.yml) by promtool,
+# Prometheus 3.5.0's, which PROMTOOL names; outside make check, which needs no Prometheus.
+PROMTOOL ?= promtool
+check-rules:
+	$(PROMTOOL) check rules ops/prometheus/rules.yml
+	$(PROMTOOL) test rules ops/prometheus/rules.test.yml
 
 # E1's tables (docs/BENCHMARKS.md's E1 section, crates/flatshare-sim/README.md's other hardware) from the 32x corpus,
 # which stays outside the repository (`flatshare-bench scale-traces` writes it; python/flatshare_bench/README.md): the

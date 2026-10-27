@@ -3,32 +3,38 @@
 # alerts are the multiwindow ones of Google's SRE workbook over a 30-day budget: a page when an hour burns 14.4 times
 # the budget's rate (2% of it) or six hours burn 6 times (5%), each confirmed by a window a twelfth as long, and a
 # ticket when three days burn it at 1 times. Severity is a label: page or ticket. ops/'s tests check that every metric
-# named here exists in the gateway's, vLLM 0.32.0's or the voice worker's metric set (ops/metrics).
+# named here exists in the gateway's, vLLM 0.32.0's or the voice worker's metric set (ops/metrics), and
+# rules.test.yml is promtool's unit test of them (make check-rules).
 groups:
   - name: flatshare-sli
     rules:
-      # The realtime first byte: the share of realtime requests whose first byte took longer than 250 ms (objective:
-      # at most 5%).
-      - record: flatshare:realtime_first_byte_slow:ratio_rate5m
+      # Each class's service level, failures included: the share of its valid requests that were not good. Valid is
+      # every request that ended but for the client's faults (malformed, unauthorized, an engine 4xx, an upload too
+      # slow, a tenant over its own bound, a client that stopped reading) and for a client that cancelled before the
+      # class's first-content objective passed; good is a 2xx response relayed to its end, or cancelled by its client
+      # after its first content, with its first content within the objective (realtime's: 250 ms). So a request that
+      # fails, is refused for capacity, times out or hangs until its deadline counts as missed, where the first byte's
+      # histogram never saw it (the gateway's README, Accounting). Realtime's objective: at most 5% missed.
+      - record: flatshare:sli_miss:ratio_rate5m
         expr: |
-          1 - sum(rate(flatshare_gateway_first_byte_seconds_bucket{class="realtime",le="0.25"}[5m]))
-            / sum(rate(flatshare_gateway_first_byte_seconds_count{class="realtime"}[5m]))
-      - record: flatshare:realtime_first_byte_slow:ratio_rate30m
+          1 - sum by (class) (rate(flatshare_gateway_sli_good_total[5m]))
+            / sum by (class) (rate(flatshare_gateway_sli_valid_total[5m]))
+      - record: flatshare:sli_miss:ratio_rate30m
         expr: |
-          1 - sum(rate(flatshare_gateway_first_byte_seconds_bucket{class="realtime",le="0.25"}[30m]))
-            / sum(rate(flatshare_gateway_first_byte_seconds_count{class="realtime"}[30m]))
-      - record: flatshare:realtime_first_byte_slow:ratio_rate1h
+          1 - sum by (class) (rate(flatshare_gateway_sli_good_total[30m]))
+            / sum by (class) (rate(flatshare_gateway_sli_valid_total[30m]))
+      - record: flatshare:sli_miss:ratio_rate1h
         expr: |
-          1 - sum(rate(flatshare_gateway_first_byte_seconds_bucket{class="realtime",le="0.25"}[1h]))
-            / sum(rate(flatshare_gateway_first_byte_seconds_count{class="realtime"}[1h]))
-      - record: flatshare:realtime_first_byte_slow:ratio_rate6h
+          1 - sum by (class) (rate(flatshare_gateway_sli_good_total[1h]))
+            / sum by (class) (rate(flatshare_gateway_sli_valid_total[1h]))
+      - record: flatshare:sli_miss:ratio_rate6h
         expr: |
-          1 - sum(rate(flatshare_gateway_first_byte_seconds_bucket{class="realtime",le="0.25"}[6h]))
-            / sum(rate(flatshare_gateway_first_byte_seconds_count{class="realtime"}[6h]))
-      - record: flatshare:realtime_first_byte_slow:ratio_rate3d
+          1 - sum by (class) (rate(flatshare_gateway_sli_good_total[6h]))
+            / sum by (class) (rate(flatshare_gateway_sli_valid_total[6h]))
+      - record: flatshare:sli_miss:ratio_rate3d
         expr: |
-          1 - sum(rate(flatshare_gateway_first_byte_seconds_bucket{class="realtime",le="0.25"}[3d]))
-            / sum(rate(flatshare_gateway_first_byte_seconds_count{class="realtime"}[3d]))
+          1 - sum by (class) (rate(flatshare_gateway_sli_good_total[3d]))
+            / sum by (class) (rate(flatshare_gateway_sli_valid_total[3d]))
       # The control plane's overhead: the share of requests the gateway itself held longer than 2 ms (objective: at
       # most 1%, the SLO's p99 of 2 ms).
       - record: flatshare:overhead_slow:ratio_rate5m
@@ -51,7 +57,19 @@ groups:
         expr: |
           1 - sum(rate(flatshare_gateway_overhead_seconds_bucket{le="0.002"}[3d]))
             / sum(rate(flatshare_gateway_overhead_seconds_count[3d]))
-      # For the dashboard: each class's first byte at p95, and the tokens each class completes a second.
+      # For the dashboard: the requests offered, admitted and ended a second; admission coverage, the share of offered
+      # requests that were sent upstream, beside latency among the admitted; each class's first byte at p95; and the
+      # tokens each class completes a second.
+      - record: flatshare:requests_offered:rate5m
+        expr: sum by (class) (rate(flatshare_gateway_requests_offered_total[5m]))
+      - record: flatshare:requests_admitted:rate5m
+        expr: sum by (class, admission) (rate(flatshare_gateway_requests_admitted_total[5m]))
+      - record: flatshare:requests_terminal:rate5m
+        expr: sum by (class, outcome) (rate(flatshare_gateway_requests_terminal_total[5m]))
+      - record: flatshare:admission_coverage:ratio_rate5m
+        expr: |
+          sum by (class) (rate(flatshare_gateway_requests_admitted_total[5m]))
+            / sum by (class) (rate(flatshare_gateway_requests_offered_total[5m]))
       - record: flatshare:first_byte_seconds:p95_5m
         expr: histogram_quantile(0.95, sum by (class, le) (rate(flatshare_gateway_first_byte_seconds_bucket[5m])))
       - record: flatshare:usage_tokens:rate5m
@@ -61,26 +79,28 @@ groups:
     rules:
       - alert: FlatshareRealtimeFirstByteBudgetBurn
         expr: |
-          (flatshare:realtime_first_byte_slow:ratio_rate1h > 14.4 * 0.05
-            and flatshare:realtime_first_byte_slow:ratio_rate5m > 14.4 * 0.05)
+          (flatshare:sli_miss:ratio_rate1h{class="realtime"} > 14.4 * 0.05
+            and flatshare:sli_miss:ratio_rate5m{class="realtime"} > 14.4 * 0.05)
           or
-          (flatshare:realtime_first_byte_slow:ratio_rate6h > 6 * 0.05
-            and flatshare:realtime_first_byte_slow:ratio_rate30m > 6 * 0.05)
+          (flatshare:sli_miss:ratio_rate6h{class="realtime"} > 6 * 0.05
+            and flatshare:sli_miss:ratio_rate30m{class="realtime"} > 6 * 0.05)
         labels:
           severity: page
         annotations:
-          summary: Voice turns' first bytes burn the realtime class's budget (95% within 250 ms) fast
+          summary: Voice turns burn the realtime class's budget (95% good, first content within 250 ms) fast
           description: >-
-            {{ $value | humanizePercentage }} of realtime first bytes took over 250 ms. Look at the engine's KV usage
-            and waiting requests (background KV filling the pool) and at flatshare_gateway_node_ready.
+            {{ $value | humanizePercentage }} of valid realtime requests missed: failed, timed out, were refused for
+            capacity, or had their first content over 250 ms. Look at flatshare:requests_terminal:rate5m by outcome,
+            the engine's KV usage and waiting requests (background KV filling the pool), flatshare_gateway_node_ready
+            and flatshare_gateway_engine_state.
       - alert: FlatshareRealtimeFirstByteBudgetSlowBurn
         expr: |
-          flatshare:realtime_first_byte_slow:ratio_rate3d > 0.05
-            and flatshare:realtime_first_byte_slow:ratio_rate6h > 0.05
+          flatshare:sli_miss:ratio_rate3d{class="realtime"} > 0.05
+            and flatshare:sli_miss:ratio_rate6h{class="realtime"} > 0.05
         labels:
           severity: ticket
         annotations:
-          summary: Three days of voice turns spend the realtime first byte's budget faster than it lasts
+          summary: Three days of voice turns spend the realtime class's budget faster than it lasts
       - alert: FlatshareOverheadBudgetBurn
         expr: |
           (flatshare:overhead_slow:ratio_rate1h > 14.4 * 0.01 and flatshare:overhead_slow:ratio_rate5m > 14.4 * 0.01)
@@ -119,6 +139,24 @@ groups:
           description: >-
             A request found the engine broken and its /health has not answered since. An engine restart takes about
             two minutes (the W8 drill: 112 s); a tunnel down shows in flatshare-tunnel@NODE's journal.
+      - alert: FlatshareEngineDegraded
+        expr: flatshare_gateway_engine_state{state="degraded"} == 1
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: The engine answers /health but its inference fails, and /ready answers 503
+          description: >-
+            The gateway's inference canary failed degraded_after times in a row with no request succeeding between:
+            the engine's process lives (vLLM's /health) but generates nothing. Look at the engine's journal and
+            flatshare_gateway_canary_probes_total; a success of any request, or of the canary, serves it again.
+      - alert: FlatshareEngineWarming
+        expr: flatshare_gateway_engine_state{state="warming"} == 1
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: No inference has succeeded since the gateway started, 15 minutes ago (an engine's cold start is about 9)
       - alert: FlatshareEngineMetricsDown
         expr: up{job="flatshare-engine"} == 0
         for: 5m
@@ -132,6 +170,23 @@ groups:
           severity: ticket
         annotations:
           summary: The upstream broke off event streams, which their clients saw end with an error event
+      - alert: FlatshareRequestsRefusedForCapacity
+        expr: |
+          sum by (class) (increase(flatshare_gateway_request_outcomes_total{outcome=~"refused_in_flight|refused_class|refused_body_bytes|refused_queue"}[10m])) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: The gateway refused requests because its bounds were full (max_in_flight, a class's, the bodies' budget or max_queued)
+          description: >-
+            See flatshare:requests_terminal:rate5m by outcome and flatshare_gateway_in_flight; a reload's predecessor
+            counts too while it drains (flatshare_gateway_predecessor_in_flight).
+      - alert: FlatshareDeadlinesMissed
+        expr: |
+          sum by (class, outcome) (increase(flatshare_gateway_request_outcomes_total{outcome=~"timeout_headers|timeout_first_content|timeout_idle|timeout_total"}[10m])) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: Requests ran past their class's deadlines waiting on the engine, which the gateway then cancelled
       - alert: FlatshareKvPoolFullWithWaiting
         expr: max(vllm:kv_cache_usage_perc) > 0.95 and sum(vllm:num_requests_waiting) > 0
         for: 10m

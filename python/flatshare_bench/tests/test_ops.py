@@ -1,6 +1,7 @@
-"""ops/'s dashboards, alert and recording rules and scrape configuration: every metric an expression names is one the
-code exports, from the gateway's checked-in exposition (crates/flatshare-gateway/metrics.txt) and the metric sets of vLLM 0.32.0
-and the voice worker (ops/metrics), and the rules and scrape jobs are what the docs say."""
+"""ops/'s dashboards, alert and recording rules, their promtool tests and scrape configuration: every metric an
+expression or a test's input names is one the code exports, from the gateway's checked-in exposition
+(crates/flatshare-gateway/metrics.txt) and the metric sets of vLLM 0.32.0 and the voice worker (ops/metrics), and the
+rules and scrape jobs are what the docs say. make check-rules runs the promtool tests themselves."""
 
 from __future__ import annotations
 
@@ -96,13 +97,42 @@ def test_the_rules_name_their_records_and_alerts_as_the_docs_do() -> None:
         assert {f"{objective}BudgetBurn", f"{objective}BudgetSlowBurn"} <= alerts
     sli = {rule["record"]: rule["expr"] for rule in rules() if "record" in rule}
     for window in ("5m", "30m", "1h", "6h", "3d"):
-        realtime = sli[f"flatshare:realtime_first_byte_slow:ratio_rate{window}"]
-        assert 'class="realtime",le="0.25"' in realtime and f"[{window}]" in realtime
+        # The realtime objective reads the failure-inclusive service level, good over valid by class, not the first
+        # byte's histogram, which has no sample of a request that failed or hung before its first byte.
+        miss = sli[f"flatshare:sli_miss:ratio_rate{window}"]
+        for counter in ("flatshare_gateway_sli_good_total", "flatshare_gateway_sli_valid_total"):
+            assert f"{counter}[{window}]" in miss
+        assert "by (class)" in miss and "first_byte" not in miss
         assert 'le="0.002"' in sli[f"flatshare:overhead_slow:ratio_rate{window}"]
-    # The buckets the objectives read exist in the gateway's histograms.
+    burns = {rule["alert"]: rule["expr"] for rule in rules() if "alert" in rule}
+    for alert in (
+        "FlatshareRealtimeFirstByteBudgetBurn",
+        "FlatshareRealtimeFirstByteBudgetSlowBurn",
+    ):
+        assert "flatshare:sli_miss:" in burns[alert] and 'class="realtime"' in burns[alert]
+    # The series the objectives read exist in the gateway's exposition.
     gateway = (REPO / "crates" / "flatshare-gateway" / "metrics.txt").read_text()
-    assert 'flatshare_gateway_first_byte_seconds_bucket{le="0.25",class="realtime"}' in gateway
+    for counter in ("flatshare_gateway_sli_good_total", "flatshare_gateway_sli_valid_total"):
+        assert f'{counter}{{class="realtime"}}' in gateway
     assert 'flatshare_gateway_overhead_seconds_bucket{le="0.002",' in gateway
+
+
+def test_the_rule_tests_feed_exported_series_and_test_the_objectives_alerts() -> None:
+    tests = yaml.safe_load((OPS / "prometheus" / "rules.test.yml").read_text())
+    assert tests["rule_files"] == ["rules.yml"]
+    known = exported() | BUILT_IN
+    series = [s["series"] for test in tests["tests"] for s in test.get("input_series", [])]
+    unknown = {s for s in series if metric_names(s) - known}
+    assert series and unknown == set(), unknown
+    alerts = {rule["alert"] for rule in rules() if "alert" in rule}
+    tested = {t["alertname"] for test in tests["tests"] for t in test.get("alert_rule_test", [])}
+    assert tested <= alerts, tested - alerts
+    assert {
+        "FlatshareRealtimeFirstByteBudgetBurn",
+        "FlatshareRealtimeFirstByteBudgetSlowBurn",
+        "FlatshareEngineDegraded",
+        "FlatshareEngineWarming",
+    } <= tested
 
 
 def test_prometheus_reads_the_gateway_and_the_engine_with_the_metrics_key() -> None:

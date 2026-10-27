@@ -108,7 +108,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Realtime first bytes over 250 ms (budget: 5%)",
+      "title": "Requests missing their class's objective, 1 - good/valid (realtime's budget: 5%)",
       "id": 3,
       "datasource": {
         "type": "prometheus",
@@ -159,8 +159,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "flatshare:realtime_first_byte_slow:ratio_rate5m",
-          "legendFormat": "5 min",
+          "expr": "flatshare:sli_miss:ratio_rate5m",
+          "legendFormat": "{{class}}, 5 min",
           "refId": "A"
         },
         {
@@ -168,11 +168,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "flatshare:realtime_first_byte_slow:ratio_rate1h",
-          "legendFormat": "1 h",
+          "expr": "flatshare:sli_miss:ratio_rate1h{class=\"realtime\"}",
+          "legendFormat": "realtime, 1 h",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "The service level, failures included: of each class's valid requests (all that ended, but for the clients' faults), the share that did not complete with a 2xx response, or whose first content came after the class's objective (realtime's: 250 ms). A request refused for capacity, timed out, failed or hung until its deadline is a miss, where the first byte's histogram never saw it. Only realtime has an objective by default; the other classes' misses are their requests that did not complete."
     },
     {
       "type": "timeseries",
@@ -214,7 +215,7 @@
           "refId": "A"
         }
       ],
-      "description": "503: the engine is not ready (upstream_not_ready); 502: a request found it broken."
+      "description": "408: an upload too slow; 429: a tenant at its own bound, or the admission queues full; 503: refused for capacity (with Retry-After), not admitted by the queue deadline, the gateway draining, or the engine not ready (upstream_not_ready); 504: no response by a deadline; 502: a request found the engine broken. The outcomes panel below names each."
     },
     {
       "type": "row",
@@ -514,6 +515,287 @@
       "description": "Empty without an [admission] policy, as the deployed configuration runs."
     },
     {
+      "type": "timeseries",
+      "title": "Requests offered, admitted and ended a second, by class",
+      "id": 21,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "flatshare:requests_offered:rate5m",
+          "legendFormat": "offered, {{class}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (class) (flatshare:requests_admitted:rate5m)",
+          "legendFormat": "admitted, {{class}}",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (class) (flatshare:requests_terminal:rate5m)",
+          "legendFormat": "ended, {{class}}",
+          "refId": "C"
+        }
+      ],
+      "description": "Every inference request is offered once, when its class is known; admitted once, when it is sent upstream; and ends once, with one outcome. Offered minus ended is what is in flight."
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests ended a second, by class and outcome",
+      "id": 22,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "flatshare:requests_terminal:rate5m > 0",
+          "legendFormat": "{{class}}: {{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "description": "completed: a 2xx response relayed to its end. Misses: upstream_server_error, transport_error, not_ready, shed, drained, refused_in_flight, refused_class, refused_body_bytes, refused_queue and the timeouts but timeout_upload. The clients' own, outside the service level: invalid, upstream_client_error, refused_tenant, timeout_upload, stalled, and cancelled before the class's objective passed (the gateway's README, Accounting)."
+    },
+    {
+      "type": "timeseries",
+      "title": "Admission coverage: the share of offered requests sent upstream",
+      "id": 23,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "flatshare:admission_coverage:ratio_rate5m",
+          "legendFormat": "{{class}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Read it beside the first byte's panels, which see only the admitted: a gateway that refuses or times out requests before they go upstream keeps their latency low by serving fewer. Under 1: requests refused, timed out at the admission point, invalid, or answered 503 while the engine was not ready."
+    },
+    {
+      "type": "timeseries",
+      "title": "The engine's state, as inference finds it",
+      "id": 24,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 34
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "flatshare_gateway_engine_state",
+          "legendFormat": "{{state}}",
+          "refId": "A"
+        }
+      ],
+      "description": "1 for the current state. warming: no inference has succeeded since the gateway started; serving; degraded: the inference canary failed degraded_after times in a row with nothing succeeding between; drained: the gateway drains. GET /ready answers 200 only while serving (and the engine's /health answers)."
+    },
+    {
+      "type": "timeseries",
+      "title": "Inference canaries a second, by result",
+      "id": 25,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 34
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (result) (rate(flatshare_gateway_canary_probes_total[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "description": "None while requests succeed: the canary asks the engine for one token only when no inference succeeded within [canary] interval_s (30 s), and every second while it warms. Empty with [canary] enabled = false, as E2's points run."
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests in flight, by class, and a reload's predecessor's",
+      "id": 26,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 34
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (class) (flatshare_gateway_in_flight)",
+          "legendFormat": "{{class}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "flatshare_gateway_predecessor_in_flight",
+          "legendFormat": "a reload's predecessor",
+          "refId": "B"
+        }
+      ],
+      "description": "Against max_in_flight (1,024 by default) and each class's [classes.<class>] max_in_flight (128, 256, 512); during a reload the successor counts its predecessor's requests with its own until the predecessor exits."
+    },
+    {
       "type": "row",
       "title": "The engine (vLLM, relayed by the gateway)",
       "id": 12,
@@ -522,7 +804,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 42
       },
       "panels": []
     },
@@ -538,7 +820,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 27
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -588,7 +870,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 27
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -639,7 +921,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 27
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -681,7 +963,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 35
+        "y": 51
       },
       "fieldConfig": {
         "defaults": {
@@ -732,7 +1014,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 35
+        "y": 51
       },
       "fieldConfig": {
         "defaults": {
@@ -779,7 +1061,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 59
       },
       "panels": []
     },
@@ -795,7 +1077,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 44
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
@@ -836,7 +1118,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 44
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
