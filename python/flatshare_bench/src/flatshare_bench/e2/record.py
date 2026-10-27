@@ -101,7 +101,9 @@ def summarize_point(
     voice = ("turns", "errors", "v2v_ms", "barge_in_to_silence_ms", "barge_ins")
     summary = {
         "window_s": round(end - start, 1),
-        "voice": {key: bots[key] for key in voice},
+        # The replies' end, length and pauses, from callers that read the agent's state (from v1.6).
+        "voice": {key: bots[key] for key in voice}
+        | ({"replies": bots["replies"]} if "replies" in bots else {}),
         "worker": worker(run_dir / "voice-worker.log", warmup_turns),
         "background": background(records, start, end) if agents else None,
         "gateway": gateway_counts(*_snapshots(metrics, "gateway"), end - start, requests),
