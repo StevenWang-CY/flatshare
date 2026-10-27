@@ -634,7 +634,7 @@ wheels = [
 
 [[package]]
 name = "flatshare-bench"
-version = "1.4.0"
+version = "1.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -674,7 +674,7 @@ provides-extras = ["aiperf", "brand", "test"]
 
 [[package]]
 name = "flatshare-stats"
-version = "1.4.0"
+version = "1.5.0"
 source = { editable = "../flatshare_stats" }
 
 [package.metadata]

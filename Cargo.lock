@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "flatshare-core"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "flatshare-proto",
  "serde",
@@ -289,7 +289,7 @@ dependencies = [
 
 [[package]]
 name = "flatshare-gateway"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "axum",
  "bytes",
@@ -322,7 +322,7 @@ dependencies = [
 
 [[package]]
 name = "flatshare-proto"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "schemars",
  "serde",
@@ -331,7 +331,7 @@ dependencies = [
 
 [[package]]
 name = "flatshare-sim"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "clap",
  "flatshare-core",
