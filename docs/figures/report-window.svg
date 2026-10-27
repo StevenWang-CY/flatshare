@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="464" viewBox="0 0 1120 464" font-size="21" role="img" aria-labelledby="title desc">
+<title id="title">Why the window is 48 tokens</title>
+<desc id="desc">In panel a, the cumulative share of 5,571 voice replies by their output tokens, 23 at the median and 52 at most, 21% ending within a 16-token window and all but 1 within a 48-token one; in panel b, the p95 of a 40-token reply's last token by the window, the median of two runs (16 tokens 3.76 s; 24 tokens 2.64 s; 32 tokens 1.85 s; 48 tokens 1.04 s; 64 tokens 1.02 s), its first token's staying between 326 and 448 ms; in panel c, the agents' prompt tokens a second, 3,483 at 16 tokens and 3,205 at 48, 8% less.</desc>
+<!-- Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 (python/flatshare_bench/src/flatshare_bench/fonts/OFL.txt). -->
+<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}svg{--sky:#6fa1e3;--stage-endpointing:#dde1e7;--stage-wait:#9d87d8;--stage-decode:#a4dac1;--stage-tts:#8a929e;--stage-transport:#f3f4f6}@media(prefers-color-scheme:dark){svg{--sky:#3b69a6;--stage-endpointing:#2d333b;--stage-wait:#6a56ad;--stage-decode:#245c45;--stage-tts:#7d8692;--stage-transport:#1a1f26}}.sky{--c:var(--sky);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}.mark{fill:var(--page);stroke:var(--c);stroke-width:1.4}.mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.2}.cross{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round}.trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}.trace.thick{stroke-width:2.4}.trace.dashed{stroke-dasharray:8 5}.trace.dotted{stroke-width:2.6;stroke-dasharray:0 5.5;stroke-linecap:round}.median{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.hair{fill:none;stroke:var(--axis);stroke-width:1}.ref{fill:none;stroke:var(--c);stroke-width:1.5}.range{fill:none;stroke:var(--c);stroke-width:1.4}.run{fill:none;stroke:var(--c);stroke-width:1.5;stroke-linecap:butt}.band{fill:var(--a)}.arrow{fill:none;stroke:var(--c);stroke-width:1.6}.arrow-head{fill:var(--c)}.s-endpointing{fill:var(--stage-endpointing);stroke:var(--bar-line);stroke-width:1.1}.s-wait{fill:var(--stage-wait);stroke:var(--bar-line);stroke-width:1.1}.s-decode{fill:var(--stage-decode);stroke:var(--bar-line);stroke-width:1.1}.s-tts{fill:var(--stage-tts);stroke:var(--bar-line);stroke-width:1.1}.s-transport{fill:var(--stage-transport);stroke:var(--bar-line);stroke-width:1.1}</style>
+<rect class="page" width="1120" height="464"/>
+<text x="24" y="30">(a) Share of the voice replies</text>
+<path d="M96 400H540" class="axis"/>
+<text x="88" y="406" text-anchor="end" class="mute" font-size="18">0%</text>
+<path d="M96 322.5H540" class="grid"/>
+<text x="88" y="328.5" text-anchor="end" class="mute" font-size="18">25%</text>
+<path d="M96 245H540" class="grid"/>
+<text x="88" y="251" text-anchor="end" class="mute" font-size="18">50%</text>
+<path d="M96 167.5H540" class="grid"/>
+<text x="88" y="173.5" text-anchor="end" class="mute" font-size="18">75%</text>
+<path d="M96 90H540" class="grid"/>
+<text x="88" y="96" text-anchor="end" class="mute" font-size="18">100%</text>
+<path d="M96 90V400" class="axis"/>
+<path d="M170 90V400" class="grid"/>
+<path d="M244 90V400" class="grid"/>
+<path d="M318 90V400" class="grid"/>
+<path d="M392 90V400" class="grid"/>
+<path d="M466 90V400" class="grid"/>
+<path d="M540 90V400" class="grid"/>
+<text x="96" y="423" text-anchor="middle" class="mute" font-size="18">0</text>
+<text x="170" y="423" text-anchor="middle" class="mute" font-size="18">10</text>
+<text x="244" y="423" text-anchor="middle" class="mute" font-size="18">20</text>
+<text x="318" y="423" text-anchor="middle" class="mute" font-size="18">30</text>
+<text x="392" y="423" text-anchor="middle" class="mute" font-size="18">40</text>
+<text x="466" y="423" text-anchor="middle" class="mute" font-size="18">50</text>
+<text x="540" y="423" text-anchor="middle" class="mute" font-size="18">60</text>
+<path d="M96 400H540" class="axis"/>
+<text x="318" y="450" text-anchor="middle" class="soft" font-size="18">Output tokens of the reply</text>
+<path d="M214.4 400V78" class="sky ref"/>
+<text x="214.4" y="70" text-anchor="middle" font-size="18">16-token window</text>
+<path d="M451.2 400V78" class="blue ref"/>
+<text x="451.2" y="70" text-anchor="middle" font-size="18">48-token window</text>
+<path d="M140.4 400H140.4V397H147.8V396.44H155.2V396.22H162.6V395.55H170V381.3H177.4V379.75H184.8V367.06H192.2V362.22H199.6V356.32H207V344.02H214.4V334.28H221.8V324.66H229.2V315.09H236.6V299.06H244V285.65H251.4V269.57H258.8V252.71H266.2V231.84H273.6V219.49H281V201.9H288.4V187.55H295.8V171.91H303.2V155.05H310.6V144.03H318V130.23H325.4V120.22H332.8V113.32H340.2V107.47H347.6V104.02H355V99.18H362.4V96.45H369.8V95.29H377.2V93.78H384.6V92.45H392V91.67H399.4V90.72H406.8V90.5H414.2V90.45H421.6V90.33H429V90.28H436.4V90.17H443.8V90.11H451.2V90.06H480.8V90" class="ink trace"/>
+<path d="M209.4 334.28A5 5 0 1 0 219.4 334.28A5 5 0 1 0 209.4 334.28Z" class="sky mark-fill"/>
+<text x="204.4" y="275.8" text-anchor="end" class="halo" font-size="18">21% end</text>
+<text x="204.4" y="299.8" text-anchor="end" class="halo" font-size="18">within it</text>
+<text x="441.2" y="251" text-anchor="end" class="halo" font-size="18">all but 1 of 5,571</text>
+<text x="441.2" y="275" text-anchor="end" class="halo" font-size="18">end within it</text>
+<text x="620" y="30">(b) A 40-token reply, p95 (s)</text>
+<path d="M700 250H1004" class="axis"/>
+<text x="692" y="256" text-anchor="end" class="mute" font-size="18">0</text>
+<path d="M700 210H1004" class="grid"/>
+<text x="692" y="216" text-anchor="end" class="mute" font-size="18">1</text>
+<path d="M700 170H1004" class="grid"/>
+<text x="692" y="176" text-anchor="end" class="mute" font-size="18">2</text>
+<path d="M700 130H1004" class="grid"/>
+<text x="692" y="136" text-anchor="end" class="mute" font-size="18">3</text>
+<path d="M700 90H1004" class="grid"/>
+<text x="692" y="96" text-anchor="end" class="mute" font-size="18">4</text>
+<path d="M700 90V250" class="axis"/>
+<text x="620" y="296">(c) Agents' prompt tokens/s</text>
+<path d="M700 400H1004" class="axis"/>
+<text x="692" y="406" text-anchor="end" class="mute" font-size="18">0</text>
+<path d="M700 360H1004" class="grid"/>
+<text x="692" y="366" text-anchor="end" class="mute" font-size="18">2,000</text>
+<path d="M700 320H1004" class="grid"/>
+<text x="692" y="326" text-anchor="end" class="mute" font-size="18">4,000</text>
+<path d="M700 320V400" class="axis"/>
+<path d="M738 90V250" class="grid"/>
+<path d="M738 320V400" class="grid"/>
+<path d="M776 90V250" class="grid"/>
+<path d="M776 320V400" class="grid"/>
+<path d="M814 90V250" class="grid"/>
+<path d="M814 320V400" class="grid"/>
+<path d="M890 90V250" class="grid"/>
+<path d="M890 320V400" class="grid"/>
+<path d="M966 90V250" class="grid"/>
+<path d="M966 320V400" class="grid"/>
+<text x="738" y="423" text-anchor="middle" class="mute" font-size="18">16</text>
+<text x="776" y="423" text-anchor="middle" class="mute" font-size="18">24</text>
+<text x="814" y="423" text-anchor="middle" class="mute" font-size="18">32</text>
+<text x="890" y="423" text-anchor="middle" class="mute" font-size="18">48</text>
+<text x="966" y="423" text-anchor="middle" class="mute" font-size="18">64</text>
+<path d="M700 400H1004" class="axis"/>
+<text x="852" y="450" text-anchor="middle" class="soft" font-size="18">The window (tokens)</text>
+<path d="M738 99.64L776 144.32L814 175.86L890 208.52L966 209.28" class="blue trace"/>
+<path d="M733 101.56A5 5 0 1 0 743 101.56A5 5 0 1 0 733 101.56Z" class="blue mark"/>
+<path d="M733 97.72A5 5 0 1 0 743 97.72A5 5 0 1 0 733 97.72Z" class="blue mark"/>
+<path d="M771 144.12A5 5 0 1 0 781 144.12A5 5 0 1 0 771 144.12Z" class="blue mark"/>
+<path d="M771 144.52A5 5 0 1 0 781 144.52A5 5 0 1 0 771 144.52Z" class="blue mark"/>
+<path d="M809 173.8A5 5 0 1 0 819 173.8A5 5 0 1 0 809 173.8Z" class="blue mark"/>
+<path d="M809 177.92A5 5 0 1 0 819 177.92A5 5 0 1 0 809 177.92Z" class="blue mark"/>
+<path d="M885 204.56A5 5 0 1 0 895 204.56A5 5 0 1 0 885 204.56Z" class="blue mark"/>
+<path d="M885 212.48A5 5 0 1 0 895 212.48A5 5 0 1 0 885 212.48Z" class="blue mark"/>
+<path d="M961 207.56A5 5 0 1 0 971 207.56A5 5 0 1 0 961 207.56Z" class="blue mark"/>
+<path d="M961 211A5 5 0 1 0 971 211A5 5 0 1 0 961 211Z" class="blue mark"/>
+<text x="980" y="215.28" class="halo" font-size="18">40th token</text>
+<path d="M738 232.06L776 234.52L814 236.94L890 236.12L966 235.36" class="blue trace dashed"/>
+<path d="M733 231.2A5 5 0 1 0 743 231.2A5 5 0 1 0 733 231.2Z" class="blue mark"/>
+<path d="M733 232.92A5 5 0 1 0 743 232.92A5 5 0 1 0 733 232.92Z" class="blue mark"/>
+<path d="M771 233.8A5 5 0 1 0 781 233.8A5 5 0 1 0 771 233.8Z" class="blue mark"/>
+<path d="M771 235.24A5 5 0 1 0 781 235.24A5 5 0 1 0 771 235.24Z" class="blue mark"/>
+<path d="M809 236.88A5 5 0 1 0 819 236.88A5 5 0 1 0 809 236.88Z" class="blue mark"/>
+<path d="M809 237A5 5 0 1 0 819 237A5 5 0 1 0 809 237Z" class="blue mark"/>
+<path d="M885 235.88A5 5 0 1 0 895 235.88A5 5 0 1 0 885 235.88Z" class="blue mark"/>
+<path d="M885 236.36A5 5 0 1 0 895 236.36A5 5 0 1 0 885 236.36Z" class="blue mark"/>
+<path d="M961 234.48A5 5 0 1 0 971 234.48A5 5 0 1 0 961 234.48Z" class="blue mark"/>
+<path d="M961 236.24A5 5 0 1 0 971 236.24A5 5 0 1 0 961 236.24Z" class="blue mark"/>
+<text x="980" y="241.36" class="halo" font-size="18">first token</text>
+<path d="M738 330.34L776 331.14L814 334L890 335.9L966 335.08" class="blue trace"/>
+<path d="M733 330.34A5 5 0 1 0 743 330.34A5 5 0 1 0 733 330.34Z" class="blue mark"/>
+<path d="M733 330.34A5 5 0 1 0 743 330.34A5 5 0 1 0 733 330.34Z" class="blue mark"/>
+<path d="M771 331.14A5 5 0 1 0 781 331.14A5 5 0 1 0 771 331.14Z" class="blue mark"/>
+<path d="M771 331.14A5 5 0 1 0 781 331.14A5 5 0 1 0 771 331.14Z" class="blue mark"/>
+<path d="M809 334.4A5 5 0 1 0 819 334.4A5 5 0 1 0 809 334.4Z" class="blue mark"/>
+<path d="M809 333.6A5 5 0 1 0 819 333.6A5 5 0 1 0 809 333.6Z" class="blue mark"/>
+<path d="M885 335.08A5 5 0 1 0 895 335.08A5 5 0 1 0 885 335.08Z" class="blue mark"/>
+<path d="M885 336.72A5 5 0 1 0 895 336.72A5 5 0 1 0 885 336.72Z" class="blue mark"/>
+<path d="M961 335.08A5 5 0 1 0 971 335.08A5 5 0 1 0 961 335.08Z" class="blue mark"/>
+<path d="M961 335.08A5 5 0 1 0 971 335.08A5 5 0 1 0 961 335.08Z" class="blue mark"/>
+<text x="890" y="361.9" text-anchor="middle" class="halo" font-size="18">−8% from 16</text>
+</svg>

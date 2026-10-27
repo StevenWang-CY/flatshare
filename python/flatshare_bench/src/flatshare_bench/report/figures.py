@@ -1,0 +1,1389 @@
+"""The report's figures, docs/figures/report-*.svg, one function each, from the values :mod:`.data` reads.
+
+    python -m flatshare_bench.report.figures OUT_DIR
+
+Each figure is 1120 units wide, as the README's are, and shows at about 840 CSS pixels; a figure with a phone layout
+has it at 420 units. No figure draws a title: the report's caption under it states its claim and its key. Every
+number a figure prints is a record's, as docs/BENCHMARKS.md's tables give it, and latency scales start at zero unless
+the axis says it is logarithmic.
+"""
+
+from __future__ import annotations
+
+import math
+import statistics
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+
+from flatshare_bench.e2.record import REPLY_TIMEOUT_MS
+from flatshare_bench.figure_style import LABEL, NARROW, NOTE, VALUE, WIDTH, fmt, measure, wrap
+from flatshare_bench.report import data
+from flatshare_bench.report.charts import (
+    STAGES,
+    Chart,
+    Scale,
+    band_grid,
+    column_rug,
+    ecdf,
+    legend,
+    legend_columns,
+    legend_width,
+    line_key,
+    linear_ticks,
+    mark_key,
+    pct,
+    rug,
+    seconds,
+    stage_key,
+    x_axis,
+    y_axis,
+)
+
+# The voice turn by stage ------------------------------------------------------------------------------------------
+
+STAGE_NAMES = {
+    "endpointing": "Endpointing",
+    "wait": "Wait for the LLM's first token",
+    "decode": "Decode of the first sentence",
+    "tts": "TTS first audio",
+    "transport": "Transport and playout",
+}
+STAGE_ROWS = {
+    data.VOICE_ALONE: ("Voice alone", "no agents"),
+    data.TUNED: ("Tuned vLLM", "beside 24 agent sessions"),
+    data.MAKE_ROOM: ("+ make-room", ""),
+    data.CHANGE: ("+ the prefill hold", "48-token window"),
+}
+"""Each configuration's row: its name and the note under it. The change is make-room and the prefill hold."""
+INSIDE = ("wait", "decode")
+"""The stages whose seconds a bar prints inside the segment, where they fit: the two the scheduler sets."""
+
+
+STAGE_DESCRIBED = {
+    data.VOICE_ALONE: "voice alone",
+    data.TUNED: "tuned vLLM beside 24 agent sessions",
+    data.MAKE_ROOM: "with make-room",
+    data.CHANGE: "with make-room and the prefill hold at 48 tokens",
+}
+
+
+def _stage_description(cells: Sequence[data.Stages]) -> str:
+    rows = "; ".join(
+        f"{STAGE_DESCRIBED[c.point]}, {seconds(c.v2v)} s, {seconds(c.wait)} s of it waiting for the LLM's first "
+        f"token and {seconds(c.decode)} s decoding the first sentence"
+        for c in cells
+    )
+    return f"The voice turn's mean voice-to-voice time stacked by stage from the end of the caller's speech: {rows}."
+
+
+def stages(out: Path) -> list[Path]:
+    """report-stages.svg and its phone layout: where the voice turn's seconds go, a stacked bar a configuration of
+    its stages' means, its length the mean V2V."""
+    cells = data.stages()
+    description = _stage_description(cells)
+    return [
+        _stages_wide(cells, out / "report-stages.svg", description),
+        _stages_narrow(cells, out / "report-stages-narrow.svg", description),
+    ]
+
+
+def _stage_bar(s: Chart, cells: data.Stages, scale: Scale, y: float, thick: float) -> None:
+    """A configuration's stacked bar at ``y``, its stages' seconds inside the scheduler's two where they fit, and
+    its mean V2V at its end."""
+    parts = [(scale(v) - scale(0), stage) for v, stage in zip(cells.parts, STAGES, strict=True)]
+    starts = s.stack(scale.start, y, parts, thick)
+    for (length, stage), start, value in zip(parts, starts, cells.parts, strict=True):
+        text = f"{seconds(value)} s"
+        if stage in INSIDE and measure(text, NOTE) + 16 <= length:
+            s.text(start + length / 2, y + thick / 2 + 6, text, size=NOTE, anchor="middle")
+    s.text(scale(cells.v2v) + 8, y + thick / 2 + 6, f"{seconds(cells.v2v)} s", size=NOTE, halo=True)
+
+
+def _stages_wide(cells: Sequence[data.Stages], path: Path, description: str) -> Path:
+    s = Chart(WIDTH, 400, "Where the voice turn's seconds go", description)
+    entries = [(stage_key(stage), STAGE_NAMES[stage]) for stage in STAGES]
+    left = (WIDTH - legend_width(entries)) / 2
+    legend(s, left, 30, entries, width=WIDTH - 2 * left + 1)
+    right, x0, length = 300, 324, 736
+    marks, labels = linear_ticks(6, 1)
+    scale = Scale(0, marks[-1] * 1000, x0, x0 + length)
+    top, pitch, thick = 62, 64, 28
+    rows = [top + 18 + pitch * k for k in range(len(cells))]
+    bottom = rows[-1] + thick + 16
+    last = x_axis(
+        s,
+        scale,
+        [m * 1000 for m in marks],
+        labels,
+        top,
+        bottom,
+        title="Mean time from the end of the caller's speech (s)",
+    )
+    for y, c in zip(rows, cells, strict=True):
+        name, note = STAGE_ROWS[c.point]
+        runs = f"{c.runs} runs"
+        s.text(right, y + 12, name, size=VALUE, anchor="end")
+        s.text(
+            right, y + 35, f"{note}, {runs}" if note else runs, size=NOTE, anchor="end", cls="soft"
+        )
+        _stage_bar(s, c, scale, y, thick)
+    s.height = last + 14
+    return s.save(path)
+
+
+def _stages_narrow(cells: Sequence[data.Stages], path: Path, description: str) -> Path:
+    s = Chart(NARROW, 400, "Where the voice turn's seconds go", description)
+    x0, length = 18, 330
+    entries = [(stage_key(stage), STAGE_NAMES[stage]) for stage in STAGES]
+    y = legend(s, x0, 28, entries, width=NARROW - 2 * x0, pitch=25) + 10
+    marks, labels = linear_ticks(6, 1)
+    scale = Scale(0, marks[-1] * 1000, x0, x0 + length)
+    thick, pitch = 24, 74
+    rows = [y + 12 + pitch * k for k in range(len(cells))]
+    for y, c in zip(rows, cells, strict=True):
+        name, note = STAGE_ROWS[c.point]
+        box = s.text(x0, y + 18, name, size=VALUE)
+        s.text(
+            box.x1 + 7, y + 18, f"{note + ', ' if note else ''}{c.runs} runs", size=NOTE, cls="soft"
+        )
+        band_grid(s, scale, [m * 1000 for m in marks], y + 24, y + 28 + thick + 4)
+        _stage_bar(s, c, scale, y + 28, thick)
+    bottom = rows[-1] + 28 + thick + 4
+    last = x_axis(s, scale, [m * 1000 for m in marks], labels, None, bottom)
+    for line in wrap("Mean time from the end of the caller's speech (s)", NARROW - 36, NOTE):
+        last += 26
+        s.text(NARROW / 2, last, line, size=NOTE, anchor="middle", cls="soft")
+    s.height = last + 14
+    return s.save(path)
+
+
+# The KV pool over time --------------------------------------------------------------------------------------------
+
+KV_TICKS = [0, 5, 10, 15, 20, 25]
+"""Seconds since the KV case's agent requests were sent, past the timeline's last read at 24.5 s."""
+KV_LINES = (("agent A", "gray trace"), ("agent B", "gray trace dashed"))
+"""Each agent request's line in panel b: its name and its stroke."""
+
+
+def _kv_description(samples: Sequence[data.PoolSample], m: data.PoolMoments) -> str:
+    last = samples[-1]
+    return (
+        f"In panel a, the share of the KV pool's {data.POOL_BLOCKS:,} blocks in use on vLLM 0.32 while the KV case's "
+        "two agent requests of 18k prompt tokens prefill and decode, read about every 0.55 s: "
+        f"{m.full.usage:.1%} at {m.full.t:g} s, {m.send.free_blocks} blocks free at {m.send.t:g} s, where the KV case "
+        f"sends its voice turn, none freed until {m.before.t:g} s, and {m.after.usage:.1%} at {m.after.t:g} s, once "
+        "vLLM has preempted agent B so that agent A can grow; in panel b, each request's output tokens, both decoding "
+        f"into the last free blocks until agent B stops at {m.after.tokens[1]} tokens while agent A reaches "
+        f"{last.tokens[0]} by {last.t:g} s."
+    )
+
+
+def _decoding(samples: Sequence[data.PoolSample], k: int) -> list[data.PoolSample]:
+    """Agent request ``k``'s samples from the last before its first output token: its line starts as its prefill
+    ends."""
+    first = next(i for i, sample in enumerate(samples) if sample.tokens[k] > 0)
+    return list(samples[max(first - 1, 0) :])
+
+
+def kv_timeline(out: Path) -> list[Path]:
+    """report-kv-timeline.svg: why a waiting request finds no room on vLLM 0.32. (a) The KV pool's blocks in use as
+    the KV case's two agent requests prefill and decode, the moments the pool is full, the KV case would send its
+    voice turn and vLLM preempts one request, the wait between the last two shaded. (b) Each request's output tokens
+    on the same time axis, the wait shaded there too."""
+    samples = data.kv_timeline()
+    m = data.kv_moments(samples)
+    s = Chart(WIDTH, 460, "The KV pool over time", _kv_description(samples, m))
+    x = Scale(KV_TICKS[0], KV_TICKS[-1], 100, 1000)
+    a = Scale(0, 1, 222, 82)
+    b = Scale(0, 900, 386, 296)
+    # The wait for room, under both panels' grids.
+    for scale in (a, b):
+        s.rect(
+            x(m.send.t),
+            scale.end,
+            x(m.before.t) - x(m.send.t),
+            scale.start - scale.end,
+            "orange area",
+        )
+    s.text(24, 30, f"(a) The KV pool in use, % of its {data.POOL_BLOCKS:,} blocks", size=LABEL)
+    y_axis(s, a, [0, 0.5, 1], [pct(v) for v in (0, 0.5, 1)], x.start, x.end)
+    s.text(24, 266, "(b) Each agent request's output tokens", size=LABEL)
+    marks_b, labels_b = linear_ticks(800, 400)
+    y_axis(s, b, marks_b, labels_b, x.start, x.end)
+    for t in KV_TICKS[1:-1]:
+        for scale in (a, b):
+            s.vrule(x(t), scale.end, scale.start, "grid")
+    last = x_axis(
+        s,
+        x,
+        KV_TICKS,
+        [str(t) for t in KV_TICKS],
+        None,
+        b.start,
+        title="Seconds since the two agent requests were sent",
+    )
+    # (a): the pool, its moments above it, the wait and the preemption inside it.
+    s.trace([(x(p.t), a(p.usage)) for p in samples], "gray trace")
+    for moment, label, anchor in (
+        (m.full, "the pool full", "end"),
+        (m.send, "the KV case sends its voice turn", "start"),
+    ):
+        at = x(moment.t)
+        s.trace([(at, 70), (at, a(moment.usage) - 4)], "hair")
+        s.text(at + (-6 if anchor == "end" else 6), 62, label, size=NOTE, anchor=anchor)
+    middle = (x(m.send.t) + x(m.before.t)) / 2
+    s.text(middle, a(0) - 34, "no room for", size=NOTE, anchor="middle", halo=True)
+    s.text(middle, a(0) - 12, "a waiting request", size=NOTE, anchor="middle", halo=True)
+    s.text(
+        x(m.after.t) + 14,
+        a(0.75) + 6,
+        "agent B preempted so that agent A can grow",
+        size=NOTE,
+        halo=True,
+    )
+    # (b): each request's output tokens, named at their ends; in the wait the two lines run as one.
+    s.text(middle, b(600) + 5, "both decoding", size=NOTE, anchor="middle", halo=True)
+    for k, (name, cls) in enumerate(KV_LINES):
+        points = [(x(p.t), b(p.tokens[k])) for p in _decoding(samples, k)]
+        s.trace(points, cls)
+        s.text(points[-1][0] + 10, points[-1][1] + 6, name, size=NOTE, halo=True)
+    s.height = last + 14
+    return [s.save(out / "report-kv-timeline.svg")]
+
+
+# The two waits in isolation ---------------------------------------------------------------------------------------
+
+PROBE_ROWS = {
+    "stock": ("vLLM 0.32", "priority scheduling", "gray"),
+    "a": ("+ make-room", "#63350", "sky"),
+    "ab": ("+ the prefill hold", "#63351, 16-token window", "blue"),
+}
+"""Each probe block's row: its name, the note under it and its hue."""
+RUN_PITCH = 11.0
+"""Between a row's runs, each on a line of its own in the order they ran."""
+
+
+def _run_offsets(count: int) -> list[float]:
+    return [(k - (count - 1) / 2) * RUN_PITCH for k in range(count)]
+
+
+def _probe_description(
+    kv: dict[str, list[data.Probe]], prefill: dict[str, list[data.Probe]]
+) -> str:
+    def spread(values: list[int]) -> str:
+        return f"{min(values):,}\N{EN DASH}{max(values):,} ms"
+
+    names = {engine: PROBE_ROWS[engine][0].removeprefix("+ ") for engine in data.ENGINES}
+    first = "; ".join(f"{names[e]} {spread([r.ttft for r in runs])}" for e, runs in kv.items())
+    sixteenth = "; ".join(
+        f"{names[e]} {spread([r.t16 for r in runs if r.t16])}" for e, runs in prefill.items()
+    )
+    return (
+        "Four probe runs on the RTX 5060 Ti for each of vLLM 0.32, make-room alone and make-room with the prefill "
+        "hold: in panel a, the KV case, the voice turn's first token while two agent requests of 18k tokens hold the "
+        f"pool ({first}); in panel b, the prefill case, its first token to its 16th while three agent prefills of 10k "
+        f"tokens run, the 16th at {sixteenth}."
+    )
+
+
+def isolation(out: Path) -> list[Path]:
+    """report-isolation.svg: the two waits in isolation, the probe runs of each case by configuration. (a) The KV
+    case: the turn's first token, sent into a pool two agent requests fill. (b) The prefill case: each run's first
+    token to its 16th, sent beside three agent prefills."""
+    kv, prefill = data.probes("kv"), data.probes("prefill")
+    # The panels' subtitles state what each case's turn was sent beside: every run's line must say it.
+    for case, runs_by_engine, beside in (("kv", kv, (2, 17999)), ("prefill", prefill, (3, 10000))):
+        sent = {(r.agents, r.agent_tokens) for runs in runs_by_engine.values() for r in runs}
+        if sent != {beside}:
+            raise ValueError(f"the {case} case's runs were sent beside {sent}, not {beside}")
+    s = Chart(WIDTH, 400, "The two waits in isolation", _probe_description(kv, prefill))
+    right = 236
+    a = Scale(0, 6000, 262, 640)
+    b = Scale(0, 2000, 692, 1070)
+    s.text(a.start, 30, "(a) The KV case", size=LABEL)
+    s.text(a.start, 54, "two agent requests of 18k tokens fill the pool", size=NOTE, cls="soft")
+    s.text(b.start, 30, "(b) The prefill case", size=LABEL)
+    s.text(b.start, 54, "three agent prefills of 10k tokens run", size=NOTE, cls="soft")
+    top, pitch = 80, 64
+    rows = [top + 34 + pitch * k for k in range(len(data.ENGINES))]
+    bottom = rows[-1] + 34
+    marks_a, labels_a = linear_ticks(6000, 2000)
+    marks_b, labels_b = linear_ticks(2000, 500)
+    last = x_axis(s, a, marks_a, labels_a, top, bottom, title="Time to the first token (ms)")
+    x_axis(s, b, marks_b, labels_b, top, bottom, title="Time from the request (ms)")
+    for y, engine in zip(rows, data.ENGINES, strict=True):
+        name, note, hue = PROBE_ROWS[engine]
+        s.text(right, y - 4, name, size=VALUE, anchor="end")
+        s.text(right, y + 19, note, size=NOTE, anchor="end", cls="soft")
+        # (a): each run's first token over their median.
+        runs = kv[engine]
+        middle = statistics.median(r.ttft for r in runs)
+        s.median(a(middle), y, hue, half=24)
+        for offset, run in zip(_run_offsets(len(runs)), runs, strict=True):
+            s.mark(a(run.ttft), y + offset, hue)
+        edge = a(max(r.ttft for r in runs)) + 14
+        s.text(edge, y + 6, f"{middle:,.0f} ms", size=NOTE, halo=True)
+        # (b): each run from its first token to its 16th, over the 16th's median.
+        runs = prefill[engine]
+        middle = statistics.median(r.t16 for r in runs if r.t16)
+        s.median(b(middle), y, hue, half=24)
+        for offset, run in zip(_run_offsets(len(runs)), runs, strict=True):
+            if run.t16 is None:
+                raise ValueError(f"a prefill run of {engine} ended before its 16th token")
+            s.trace(
+                [(b(run.ttft), y + offset), (b(run.t16), y + offset)], f"{hue} trace", wire=False
+            )
+            s.mark(b(run.ttft), y + offset, hue)
+            s.mark(b(run.t16), y + offset, hue, filled=True)
+        edge = b(max(r.t16 for r in runs if r.t16)) + 14
+        s.text(edge, y + 6, f"{middle:,.0f} ms", size=NOTE, halo=True)
+    key_y = last + 34
+    entries = [
+        (mark_key("gray"), "a run's first token"),
+        (mark_key("gray", filled=True), "its 16th token"),
+    ]
+    legend(s, b.start, key_y, entries, width=b.end - b.start + 40)
+    s.height = key_y + 14
+    return [s.save(out / "report-isolation.svg")]
+
+
+# Both waits beside closed-loop agents -------------------------------------------------------------------------------
+
+TAIL_LINES = {
+    "stock": ("vLLM 0.32", "on vLLM 0.32", "gray trace"),
+    "a": ("make-room", "with make-room", "sky trace"),
+    "ab": (
+        "make-room + prefill hold, 16-token window",
+        "with make-room and the prefill hold",
+        "blue trace thick",
+    ),
+}
+"""Each probe block's line: its name in the key (the headline's), in the description, and its stroke."""
+TAIL_PANELS = {
+    "fresh": ("(a) Fresh agent prompts", "with the agents' prompts fresh each turn"),
+    "grow": ("(b) Growing agent prompts", "with each agent's prompt grown by a tool result"),
+}
+TAIL_TICKS = [50, 100, 200, 500, 1000, 2000, 5000, 10000]
+"""A first token's log axis from 40 ms, under the fastest turn (43 ms), to 15 s, past the slowest (11.8 s)."""
+TAIL_TITLE = "Time to a call turn's first token (s, log scale)"
+
+
+def _tail_description(tails: dict[str, dict[str, data.Tail]]) -> str:
+    panels = []
+    for letter, (mode, (_, prompts)) in zip("ab", TAIL_PANELS.items(), strict=True):
+        cells = ", ".join(
+            f"{t.percentile(50):,.0f} and {t.percentile(95):,.0f} ms {TAIL_LINES[engine][1]} "
+            f"({len(t.turns)} turns)"
+            for engine, t in tails[mode].items()
+        )
+        panels.append(f"in panel {letter}, {prompts}, the p50 and p95 at {cells}")
+    return (
+        "The cumulative share of two calls' turns by their time to first token beside 12 closed-loop agent sessions, "
+        "pooled over two 240 s runs of each scheduler, on a log scale with the 95th percentile marked: "
+        + "; ".join(panels)
+        + "."
+    )
+
+
+def tail(out: Path) -> list[Path]:
+    """report-tail.svg: both waits at once, beside closed-loop agents. The calls' time to first token as ECDFs, each
+    pooled over a scheduler's two runs, on a log scale: (a) with the agents' prompts fresh each turn, (b) with each
+    grown by a tool result; vLLM 0.32, make-room alone and make-room with the prefill hold at its 16-token window."""
+    tails = data.tails()
+    s = Chart(WIDTH, 460, "The calls' first tokens beside agents", _tail_description(tails))
+    panels = {
+        "fresh": Scale(40, 15000, 96, 520, log=True),
+        "grow": Scale(40, 15000, 656, 1080, log=True),
+    }
+    y = Scale(0, 1, 380, 120)
+    legend(
+        s,
+        24,
+        30,
+        [(line_key(cls), name) for name, _, cls in TAIL_LINES.values()],
+        width=WIDTH - 48,
+    )
+    s.text(24, 102, "Share of the calls' turns", size=NOTE, cls="soft")
+    marks = [0.0, 0.25, 0.5, 0.75, 1.0]
+    last = 0.0
+    for mode, x in panels.items():
+        s.text(24 if mode == "fresh" else x.start, 72, TAIL_PANELS[mode][0], size=LABEL)
+        if mode == "fresh":
+            y_axis(s, y, marks, [pct(v) for v in marks], x.start, x.end)
+        else:  # the same scale as panel a's, its labels left to it
+            for v in marks:
+                s.rule(x.start, x.end, y(v), "axis" if v == 0 else "grid")
+            s.vrule(x.start, y.end, y.start)
+        for tick in TAIL_TICKS:
+            s.vrule(x(tick), y.end, y.start, "grid")
+        last = x_axis(
+            s,
+            x,
+            TAIL_TICKS,
+            [f"{t / 1000:g}" for t in TAIL_TICKS],
+            None,
+            y.start,
+            title=TAIL_TITLE,
+        )
+        s.rule(x.start, x.end, y(0.95), "rule")
+        s.text(x.start + 10, y(0.95) + 22, "p95", size=NOTE, cls="soft", halo=True)
+        for engine, (_, _, cls) in TAIL_LINES.items():
+            s.trace(ecdf(tails[mode][engine].turns, x, y, cap=data.TAIL_TIMEOUT_MS), cls)
+    s.height = last + 14
+    return [s.save(out / "report-tail.svg")]
+
+
+# Sizing the window ------------------------------------------------------------------------------------------------
+
+
+def _window_description(tokens: list[int], runs: list[data.KneeRun]) -> str:
+    t40 = data.knee_medians(runs, "t40_p95")
+    first = data.knee_medians(runs, "ttft_p95")
+    prompt = data.knee_medians(runs, "prompt_tps")
+    sweep = "; ".join(f"{w} tokens {seconds(t40[w])} s" for w in t40)
+    return (
+        f"In panel a, the cumulative share of {len(tokens):,} voice replies by their output tokens, "
+        f"{statistics.median(tokens):.0f} at the median and {max(tokens)} at most, "
+        f"{data.share_within(tokens, 16):.0%} ending within a 16-token window and all but "
+        f"{sum(t > 48 for t in tokens)} within a 48-token one; in panel b, the p95 of a 40-token reply's last token "
+        f"by the window, the median of two runs ({sweep}), its first token's staying between "
+        f"{min(first.values()):.0f} and {max(first.values()):.0f} ms; in panel c, the agents' prompt tokens a "
+        f"second, {prompt[16]:,.0f} at 16 tokens and {prompt[48]:,.0f} at 48, {1 - prompt[48] / prompt[16]:.0%} less."
+    )
+
+
+def window(out: Path) -> list[Path]:
+    """report-window.svg: why the window is 48 tokens. (a) The ECDF of the voice replies' output tokens, with the 16-
+    and 48-token windows and the share of replies each covers. (b) The window sweep: a 40-token reply's last token
+    at p95, and its first token, by the window. (c) The agents' prompt tokens a second beside it."""
+    tokens = data.reply_tokens()
+    runs = data.knee()
+    s = Chart(WIDTH, 460, "Why the window is 48 tokens", _window_description(tokens, runs))
+
+    # (a) The replies' lengths, the two windows labelled at their tops.
+    x = Scale(0, 60, 96, 540)
+    y = Scale(0, 1, 400, 90)
+    s.text(24, 30, "(a) Share of the voice replies", size=LABEL)
+    marks = [0.0, 0.25, 0.5, 0.75, 1.0]
+    y_axis(s, y, marks, [pct(m) for m in marks], x.start, x.end)
+    ticks = list(range(0, 61, 10))
+    for mark in ticks[1:]:
+        s.vrule(x(mark), y.end, y.start, "grid")
+    last = x_axis(
+        s, x, ticks, [str(m) for m in ticks], None, y.start, title="Output tokens of the reply"
+    )
+    within16 = data.share_within(tokens, 16)
+    beyond48 = sum(t > 48 for t in tokens)
+    for size, hue in ((16, "sky"), (48, "blue")):
+        s.trace([(x(size), y.start), (x(size), y.end - 12)], f"{hue} ref", wire=False)
+        s.text(x(size), y.end - 20, f"{size}-token window", size=NOTE, anchor="middle")
+    s.trace(ecdf(tokens, x, y), "ink trace")
+    s.mark(x(16), y(within16), "sky", filled=True)
+    s.text(x(16) - 10, y(0.42) + 6, f"{within16:.0%} end", size=NOTE, anchor="end", halo=True)
+    s.text(x(16) - 10, y(0.42) + 30, "within it", size=NOTE, anchor="end", halo=True)
+    s.text(
+        x(48) - 10,
+        y(0.5) + 6,
+        f"all but {beyond48} of {len(tokens):,}",
+        size=NOTE,
+        anchor="end",
+        halo=True,
+    )
+    s.text(x(48) - 10, y(0.5) + 30, "end within it", size=NOTE, anchor="end", halo=True)
+
+    # (b) and (c), the sweep, on one window axis.
+    w = Scale(8, 72, 700, 1004)
+    windows = sorted({run.window for run in runs})
+    b = Scale(0, 4000, 250, 90)
+    c = Scale(0, 4000, 400, 320)
+    s.text(620, 30, "(b) A 40-token reply, p95 (s)", size=LABEL)
+    marks_b, labels_b = linear_ticks(4, 1)
+    y_axis(s, b, [m * 1000 for m in marks_b], labels_b, w.start, w.end)
+    s.text(620, 296, "(c) Agents' prompt tokens/s", size=LABEL)
+    marks_c, labels_c = linear_ticks(4000, 2000)
+    y_axis(s, c, marks_c, labels_c, w.start, w.end)
+    for k in windows:
+        s.vrule(w(k), b.end, b.start, "grid")
+        s.vrule(w(k), c.end, c.start, "grid")
+    x_axis(s, w, windows, [str(k) for k in windows], None, c.start, title="The window (tokens)")
+    for field, cls, name in (
+        ("t40_p95", "blue trace", "40th token"),
+        ("ttft_p95", "blue trace dashed", "first token"),
+    ):
+        medians = data.knee_medians(runs, field)
+        s.trace([(w(k), b(v)) for k, v in medians.items()], cls)
+        for run in runs:
+            s.mark(w(run.window), b(getattr(run, field)), "blue")
+        s.text(w(windows[-1]) + 14, b(medians[windows[-1]]) + 6, name, size=NOTE, halo=True)
+    prompt = data.knee_medians(runs, "prompt_tps")
+    s.trace([(w(k), c(v)) for k, v in prompt.items()], "blue trace")
+    for run in runs:
+        s.mark(w(run.window), c(run.prompt_tps), "blue")
+    drop = 1 - prompt[48] / prompt[16]
+    s.text(
+        w(48),
+        c(prompt[48]) + 26,
+        f"\N{MINUS SIGN}{drop:.0%} from 16",
+        size=NOTE,
+        anchor="middle",
+        halo=True,
+    )
+    s.height = last + 14
+    return [s.save(out / "report-window.svg")]
+
+
+# The rules' cost per step -----------------------------------------------------------------------------------------
+
+DECODE_STEP_MS = (16, 20)
+"""A decode step on the RTX 5060 Ti, from the gaps between a reply's tokens with agent prefill held back (the
+prefill case's 16-20 ms a token, docs/BENCHMARKS.md), against which the figure sets the scheduler's cost."""
+
+
+def _step_row(cost: data.StepCost) -> str:
+    return f"{cost.running} running" + (f", {cost.variant}" if cost.variant else "")
+
+
+def _step_description(costs: Sequence[data.StepCost]) -> str:
+    worst = max(costs, key=lambda c: c.off_ratio)
+    rows = "; ".join(
+        f"{data.SCENARIOS[c.scenario]}, {_step_row(c)}: {c.stock:,.0f}, {c.off:,.0f} and {c.on:,.0f} µs"
+        for c in costs
+    )
+    return (
+        "The wall time of one call of vLLM 0.32.0's Scheduler.schedule() on the host's CPU in each steady state, on a "
+        f"log scale beside a decode step on the RTX 5060 Ti of {DECODE_STEP_MS[0]} to {DECODE_STEP_MS[1]} ms, for "
+        f"stock vLLM, the change with its switches off (within {worst.off_ratio:.1%} of stock's in every state) and "
+        f"the change as deployed (adding {min(c.added for c in costs):,.0f} to {max(c.added for c in costs):,.0f} µs "
+        f"a step): {rows}."
+    )
+
+
+def step_cost(out: Path) -> list[Path]:
+    """report-step-cost.svg: the rules' cost per scheduler step on the host, a row per steady state under its
+    scenario: stock vLLM's step, the change's with its switches off (on stock's, within a percent), and the change's
+    as deployed, with what it adds, on a log scale that also holds a decode step on the RTX 5060 Ti."""
+    costs = data.step_costs()
+    s = Chart(WIDTH, 600, "The rules' cost per scheduler step", _step_description(costs))
+    right = 372
+    x = Scale(100, 30000, 400, 1090, log=True)
+    entries = [
+        (mark_key("gray"), "vLLM 0.32"),
+        (mark_key("gray", "dot", filled=True), "the change, its switches off"),
+        (mark_key("blue", filled=True), "the change as deployed"),
+    ]
+    legend(s, x.start, 30, entries, width=x.end - x.start)
+    top = 76
+    layout = []
+    y = top + 4
+    scenario = None
+    for cost in costs:
+        if cost.scenario != scenario:
+            scenario = cost.scenario
+            lines = wrap(
+                data.SCENARIOS[scenario][0].upper() + data.SCENARIOS[scenario][1:], right - 24, NOTE
+            )
+            y += 6 if layout else 0
+            for k, line in enumerate(lines):
+                s.text(24, y + 20 + 22 * k, line, size=NOTE, cls="mute")
+            y += 22 * len(lines) + 8
+        layout.append((y + 14, cost))
+        y += 30
+    bottom = y + 6
+    lo, hi = DECODE_STEP_MS
+    s.rect(x(lo * 1000), top, x(hi * 1000) - x(lo * 1000), bottom - top, "gray band")
+    ticks = [100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+    last = x_axis(
+        s,
+        x,
+        ticks,
+        [f"{t / 1000:g}" for t in ticks],
+        top,
+        bottom,
+        title="Scheduler.schedule()'s wall time a step on the host (ms, log scale)",
+    )
+    for k, line in enumerate(("a decode step on", f"the RTX 5060 Ti, {lo}\N{EN DASH}{hi} ms")):
+        s.text(
+            x(lo * 1000) - 10,
+            top + 26 + 22 * k,
+            line,
+            size=NOTE,
+            anchor="end",
+            cls="soft",
+            halo=True,
+        )
+    for row_y, cost in layout:
+        s.text(right, row_y + 6, _step_row(cost), size=VALUE, anchor="end")
+        s.trace([(x(cost.off), row_y), (x(cost.on), row_y)], "blue trace", wire=False)
+        s.mark(x(cost.stock), row_y, "gray", r=6.5)
+        s.mark(x(cost.off), row_y, "gray", "dot", filled=True)
+        s.mark(x(cost.on), row_y, "blue", filled=True)
+        s.text(x(cost.on) + 12, row_y + 6, f"+{cost.added:,.0f} µs", size=NOTE, halo=True)
+    s.height = last + 14
+    return [s.save(out / "report-step-cost.svg")]
+
+
+# The headline -----------------------------------------------------------------------------------------------------
+
+HEADLINE_ROWS = {
+    data.VOICE_ALONE: ("Voice alone", "no agents", "ink", "dot"),
+    data.TUNED: ("Tuned vLLM 0.32", "the baseline", "gray", "circle"),
+    data.ROUTER: ("A router", "aborts and resubmits", "gray", "square"),
+    data.MAKE_ROOM: ("make-room", "#63350", "sky", "circle"),
+    data.HOLD_16: ("make-room + prefill hold", "16-token window", "sky", "circle"),
+    data.CHANGE: ("make-room + prefill hold", "48-token window", "blue", "circle"),
+}
+"""Each configuration's row: its name, the note under it, its hue and its runs' marker. figure.toml orders them,
+voice alone, the reference, first."""
+V2V_TICKS = [1000, 2000, 5000, 10000, 20000]
+"""A V2V p95 axis's ticks on a log scale of 1 to 20 s, wide enough for every run of tuned vLLM's tail."""
+
+
+def _runs_of(configuration: data.Configuration) -> str:
+    return _runs_of_count(len(configuration.runs))
+
+
+def _runs_of_count(count: int) -> str:
+    return f"{count} run{'' if count == 1 else 's'}"
+
+
+def _headline_description(configurations: Sequence[data.Configuration], slo: float) -> str:
+    base = configurations[1].tokens
+    rows = []
+    for c in configurations:
+        name, note, _, _ = HEADLINE_ROWS[c.point]
+        p95s = [run.p95 for run in c.runs]
+        text = (
+            f"{name}, {note}: V2V p95 {seconds(c.p95)} s at the median of {_runs_of(c)} "
+            f"({seconds(min(p95s))} to {seconds(max(p95s))} s)"
+        )
+        if c.tokens is not None and base:
+            text += (
+                f", the agents' {c.tokens:,.0f} tokens/s ({c.tokens / base:.0%} of tuned vLLM's)"
+            )
+        rows.append(text)
+    return (
+        f"Each run's voice-to-voice p95 on a log scale against the SLO of {seconds(slo)} s, and the agents' tokens a "
+        "second over the calls' first 240 s, with each configuration's median: "
+        + "; ".join(rows)
+        + "."
+    )
+
+
+def headline(out: Path) -> list[Path]:
+    """report-headline.svg and its phone layout: each run of the headline configurations, beside 24 agent sessions
+    on the RTX 5060 Ti, with voice alone on top. (a) The V2V p95 against the SLO, on a log scale. (b) The agents'
+    tokens a second over the calls' first 240 s."""
+    rows = data.w5_rows()
+    configurations = data.headline(rows)
+    slo = data.slo_ms(rows)
+    description = _headline_description(configurations, slo)
+    return [
+        _headline_wide(configurations, slo, out / "report-headline.svg", description),
+        _headline_narrow(configurations, slo, out / "report-headline-narrow.svg", description),
+    ]
+
+
+RUN_HALF = 9.0
+"""Half a run's tick across a headline row: fifteen runs within 0.3 s stay apart as a rug, which markers would not
+without a swarm several rows tall."""
+
+
+def _place_value(
+    s: Chart, xs: Sequence[float], y: float, text: str, *, slo: float, floor: float
+) -> None:
+    """A row's value beside its runs: after the rightmost; where that would cross the SLO's rule, before the
+    leftmost, or past the rule where the axis leaves no room before them (``floor``, the axis's start)."""
+    after = max(xs) + 12
+    width = measure(text, NOTE)
+    if not after - 4 <= slo <= after + width + 4:
+        s.text(after, y + 6, text, size=NOTE, halo=True)
+    elif min(xs) - 12 - width >= floor + 10:
+        s.text(min(xs) - 12, y + 6, text, size=NOTE, anchor="end", halo=True)
+    else:
+        s.text(slo + 10, y + 6, text, size=NOTE, halo=True)
+
+
+def _v2v_row(s: Chart, c: data.Configuration, a: Scale, y: float, slo_x: float) -> None:
+    """A configuration's runs' V2V p95 at ``y`` as a rug under their median's marker, the median's value beside
+    them."""
+    _, _, hue, shape = HEADLINE_ROWS[c.point]
+    xs = [a(r.p95) for r in c.runs]
+    rug(s, xs, y, hue, shape, median=a(c.p95), half=RUN_HALF)
+    _place_value(s, xs, y, f"{seconds(c.p95)} s", slo=slo_x, floor=a.start)
+
+
+def _tokens_row(s: Chart, c: data.Configuration, b: Scale, y: float, base: float) -> None:
+    _, _, hue, shape = HEADLINE_ROWS[c.point]
+    assert c.tokens is not None
+    xs = [b(r.tokens) for r in c.runs if r.tokens is not None]
+    rug(s, xs, y, hue, shape, median=b(c.tokens), half=RUN_HALF)
+    box = s.text(max(xs) + 12, y + 6, f"{c.tokens:,.0f}", size=NOTE, halo=True)
+    s.text(box.x1 + 7, y + 6, f"{c.tokens / base:.0%}", size=NOTE, cls="soft", halo=True)
+
+
+def _slo_rule(s: Chart, x: float, top: float, bottom: float, slo: float) -> None:
+    s.vrule(x, top, bottom, "slo")
+    s.text(
+        x,
+        top - 8,
+        f"SLO {seconds(slo)} s",
+        size=NOTE,
+        anchor="middle",
+        cls="orange tint",
+        halo=True,
+    )
+
+
+V2V_TITLE = "seconds, log scale \N{BULLET} lower is better"
+TOKENS_TITLE = "first 240 s of the calls \N{BULLET} higher is better"
+
+
+def _headline_wide(
+    configurations: Sequence[data.Configuration], slo: float, path: Path, description: str
+) -> Path:
+    s = Chart(WIDTH, 500, "The voice tail and the agents' throughput", description)
+    right = 276
+    a = Scale(1000, 20000, 300, 780, log=True)
+    b = Scale(0, 4000, 820, 1000)
+    s.text(a.start, 30, "(a) Voice-to-voice p95", size=LABEL)
+    s.text(b.start, 30, "(b) Agents' tokens/s", size=LABEL)
+    top, pitch = 82, 60
+    ys = [top + 32 + pitch * k for k in range(len(configurations))]
+    bottom = ys[-1] + 32
+    last = x_axis(
+        s, a, V2V_TICKS, [f"{t // 1000}" for t in V2V_TICKS], top, bottom, title=V2V_TITLE
+    )
+    marks_b, labels_b = linear_ticks(4000, 2000)
+    x_axis(s, b, marks_b, labels_b, top, bottom, title=TOKENS_TITLE)
+    _slo_rule(s, a(slo), top, bottom, slo)
+    base = configurations[1].tokens
+    for y, c in zip(ys, configurations, strict=True):
+        name, note, _, _ = HEADLINE_ROWS[c.point]
+        s.text(right, y - 4, name, size=VALUE, anchor="end")
+        s.text(right, y + 19, f"{note}, {_runs_of(c)}", size=NOTE, anchor="end", cls="soft")
+        _v2v_row(s, c, a, y, a(slo))
+        if c.tokens is not None:
+            _tokens_row(s, c, b, y, base)
+    s.height = last + 14
+    return s.save(path)
+
+
+def _headline_narrow(
+    configurations: Sequence[data.Configuration], slo: float, path: Path, description: str
+) -> Path:
+    s = Chart(NARROW, 900, "The voice tail and the agents' throughput", description)
+    x0 = 18
+    # From 0.8 s, so that voice alone's value fits before its runs on the phone's narrower scale.
+    a = Scale(800, 20000, x0, 330, log=True)
+    b = Scale(0, 4000, x0, 300)
+    base = configurations[1].tokens
+    y = 30
+    for panel in "ab":
+        scale = a if panel == "a" else b
+        s.text(
+            x0, y, "(a) Voice-to-voice p95" if panel == "a" else "(b) Agents' tokens/s", size=LABEL
+        )
+        y += 12
+        if panel == "a":
+            y += 30
+            s.text(
+                a(slo),
+                y - 8,
+                f"SLO {seconds(slo)} s",
+                size=NOTE,
+                anchor="middle",
+                cls="orange tint",
+            )
+        marks = V2V_TICKS if panel == "a" else [0, 2000, 4000]
+        for c in configurations:
+            if panel == "b" and c.tokens is None:
+                continue
+            name, note, _, _ = HEADLINE_ROWS[c.point]
+            box = s.text(x0, y + 18, name, size=VALUE)
+            s.text(box.x1 + 7, y + 18, note, size=NOTE, cls="soft")
+            band = y + 40
+            band_grid(s, scale, marks, band - 12, band + 12)
+            if panel == "a":
+                s.vrule(a(slo), band - 12, band + 12, "slo")
+                _v2v_row(s, c, a, band, a(slo))
+            else:
+                _tokens_row(s, c, b, band, base)
+            y = band + 16
+        labels = (
+            [f"{t // 1000}" for t in V2V_TICKS] if panel == "a" else linear_ticks(4000, 2000)[1]
+        )
+        last = x_axis(s, scale, marks, labels, None, y)
+        for line in wrap(V2V_TITLE if panel == "a" else TOKENS_TITLE, NARROW - 36, NOTE):
+            last += 25
+            s.text(x0, last, line, size=NOTE, cls="soft")
+        y = last + 48
+    s.height = y - 48 + 14
+    return s.save(path)
+
+
+# Every turn -------------------------------------------------------------------------------------------------------
+
+CDF_LINES = {
+    data.VOICE_ALONE: ("voice alone", "ink trace dotted"),
+    data.TUNED: ("Tuned vLLM", "gray trace"),
+    data.ROUTER: ("the abort-and-resubmit router", "gray trace dashed"),
+    data.CHANGE: ("the change", "blue trace thick"),
+}
+"""Each configuration's line: its name and its stroke. The change is make-room and the prefill hold at 48 tokens."""
+CDF_TICKS = [1000, 2000, 5000, 10000, 20000, 30000]
+"""The ECDF's log axis, from 1 s, under every turn measured (the fastest took 1.38 s), to the reply timeout."""
+
+
+def _cdf_description(configurations: Sequence[data.Configuration], slo: float) -> str:
+    rows = []
+    for c in configurations:
+        samples = c.samples()
+        within = sum(v <= slo for v in samples) / len(samples)
+        rows.append(
+            f"{CDF_LINES[c.point][0]}, {len(samples)} replies over {_runs_of(c)}: {within:.0%} within the SLO, "
+            f"the slowest at {seconds(samples[-1])} s"
+        )
+    return (
+        "The cumulative share of every measured turn's voice-to-voice time, pooled over each configuration's runs, on "
+        f"a log scale from 1 to 30 s with the SLO of {seconds(slo)} s and the 95th percentile marked: "
+        + "; ".join(rows)
+        + "."
+    )
+
+
+def cdf(out: Path) -> list[Path]:
+    """report-cdf.svg: every measured turn's V2V as ECDFs, pooled over each configuration's runs (the warm-up turns
+    left out, a turn that got no reply counted at 30 s), for voice alone, tuned vLLM, the abort-and-resubmit router
+    and the change."""
+    rows = data.w5_rows()
+    configurations = [c for c in data.headline(rows) if c.point in CDF_LINES]
+    slo = data.slo_ms(rows)
+    s = Chart(WIDTH, 480, "Every turn's voice-to-voice time", _cdf_description(configurations, slo))
+    x = Scale(CDF_TICKS[0], CDF_TICKS[-1], 96, 1040, log=True)
+    y = Scale(0, 1, 420, 70)
+    s.text(24, 34, "Share of replies", size=NOTE, cls="soft")
+    marks = [0.0, 0.25, 0.5, 0.75, 1.0]
+    y_axis(s, y, marks, [pct(m) for m in marks], x.start, x.end)
+    for tick in CDF_TICKS[1:]:
+        s.vrule(x(tick), y.end, y.start, "grid")
+    last = x_axis(
+        s,
+        x,
+        CDF_TICKS,
+        [f"{t / 1000:g}" for t in CDF_TICKS],
+        None,
+        y.start,
+        title="Voice-to-voice time of a reply (s, log scale)",
+    )
+    s.rule(x.start, x.end, y(0.95), "rule")
+    s.text(x.start + 10, y(0.95) + 22, "p95", size=NOTE, cls="soft")
+    s.vrule(x(slo), y.start, y.end, "slo")
+    s.text(
+        x(slo), y.end - 10, f"SLO {seconds(slo)} s", size=NOTE, anchor="middle", cls="orange tint"
+    )
+    lines = {}
+    for c in configurations:
+        name, cls = CDF_LINES[c.point]
+        points = ecdf(c.samples(), x, y, cap=REPLY_TIMEOUT_MS)
+        s.trace(points, cls)
+        lines[c.point] = (name, points)
+    # The labels: the change's and tuned vLLM's after their tails' ends, the router's beside its line where it parts
+    # from the change's, voice alone's in the space left of its line.
+    for point in (data.CHANGE, data.TUNED):
+        name, points = lines[point]
+        end = points[-1]
+        s.text(end[0] + 10, end[1] + 6, name, size=NOTE, halo=True)
+    router = next(c for c in configurations if c.point == data.ROUTER)
+    at = x(_quantile(router.samples(), 0.88))
+    s.text(at + 12, y(0.88) + 6, lines[data.ROUTER][0], size=NOTE, halo=True)
+    alone = next(c for c in configurations if c.point == data.VOICE_ALONE)
+    at = x(_quantile(alone.samples(), 0.8))
+    s.text(at - 12, y(0.8) + 6, lines[data.VOICE_ALONE][0], size=NOTE, anchor="end", halo=True)
+    s.height = last + 14
+    return [s.save(out / "report-cdf.svg")]
+
+
+def _quantile(samples: Sequence[float], share: float) -> float:
+    """The smallest sample at or above ``share`` of the samples: where the ECDF reaches it."""
+    ordered = sorted(samples)
+    return ordered[min(len(ordered) - 1, max(0, math.ceil(share * len(ordered)) - 1))]
+
+
+# What the agents pay ----------------------------------------------------------------------------------------------
+
+AGENT_PANELS = (
+    ("(a) Agents' TTFT p99", "seconds \N{BULLET} lower is better"),
+    ("(b) Steps held", "of the engine's steps"),
+    ("(c) Preemptions", "make-room's own count"),
+)
+"""Each panel's title and its axis's title."""
+
+
+def _agents_description(runs: dict[str, list[data.AgentRun]]) -> str:
+    rows = []
+    for point, cells in runs.items():
+        name, note, _, _ = HEADLINE_ROWS[point]
+        p99s = [r.ttft_p99 / 1000 for r in cells]
+        shares = [r.held_share for r in cells if r.held_share is not None]
+        preemptions = [r.preemptions for r in cells if r.preemptions is not None]
+        text = (
+            f"{name} ({note}, {_runs_of_count(len(cells))}): TTFT p99 {statistics.median(p99s):.0f} s "
+            f"({min(p99s):.0f} to {max(p99s):.0f})"
+        )
+        text += (
+            f", agent prefill held in {statistics.median(shares):.0%} of the steps"
+            if shares
+            else ", no hold"
+        )
+        text += (
+            f", {statistics.median(preemptions):.0f} preemptions by make-room"
+            if preemptions
+            else ", no make-room"
+        )
+        rows.append(text)
+    return (
+        "For each configuration beside 24 agent sessions, each run and the median of the agents' TTFT p99, of the "
+        "share of the engine's steps over the calls in which the prefill hold kept agent prefill out, and of "
+        "make-room's own preemptions over the calls: " + "; ".join(rows) + "."
+    )
+
+
+def _agent_row(
+    s: Chart,
+    values: Sequence[float],
+    scale: Scale,
+    y: float,
+    point: str,
+    value: str,
+) -> None:
+    """A configuration's runs at ``y`` as a rug under their median's marker, the median's ``value`` after them."""
+    _, _, hue, shape = HEADLINE_ROWS[point]
+    xs = [scale(v) for v in values]
+    rug(s, xs, y, hue, shape, median=scale(statistics.median(values)), half=RUN_HALF)
+    s.text(max(xs) + 12, y + 6, value, size=NOTE, halo=True)
+
+
+def agents(out: Path) -> list[Path]:
+    """report-agents.svg: what the agents pay, run by run, for the headline's configurations that run agents, in its
+    rows. (a) The agents' TTFT p99. (b) The share of the engine's steps in which the prefill hold kept agent prefill
+    out. (c) make-room's own preemptions. Each run a tick, the median a filled marker with its value."""
+    runs = data.agent_runs()
+    s = Chart(WIDTH, 440, "What the agents pay", _agents_description(runs))
+    right = 276
+    a = Scale(0, 250, 300, 520)
+    b = Scale(0, 0.5, 580, 800)
+    c = Scale(0, 50, 860, 1080)
+    ticks = (
+        ([0, 100, 200], ["0", "100", "200"]),
+        ([0, 0.25, 0.5], [pct(v) for v in (0, 0.25, 0.5)]),
+        ([0, 25, 50], ["0", "25", "50"]),
+    )
+    top, pitch = 52, 60
+    ys = [top + 32 + pitch * k for k in range(len(runs))]
+    bottom = ys[-1] + 32
+    last = 0.0
+    for (title, axis_title), scale, (marks, labels) in zip(
+        AGENT_PANELS, (a, b, c), ticks, strict=True
+    ):
+        s.text(scale.start, 30, title, size=LABEL)
+        last = x_axis(s, scale, marks, labels, top, bottom, title=axis_title)
+    for y, (point, cells) in zip(ys, runs.items(), strict=True):
+        name, note, _, _ = HEADLINE_ROWS[point]
+        s.text(right, y - 4, name, size=VALUE, anchor="end")
+        s.text(
+            right,
+            y + 19,
+            f"{note}, {_runs_of_count(len(cells))}",
+            size=NOTE,
+            anchor="end",
+            cls="soft",
+        )
+        p99s = [r.ttft_p99 / 1000 for r in cells]
+        _agent_row(s, p99s, a, y, point, f"{statistics.median(p99s):.0f} s")
+        shares = [r.held_share for r in cells if r.held_share is not None]
+        if shares:
+            _agent_row(s, shares, b, y, point, pct(statistics.median(shares)))
+        else:
+            s.text(b.start + 10, y + 6, "no hold", size=NOTE, cls="mute", halo=True)
+        preemptions = [r.preemptions for r in cells if r.preemptions is not None]
+        if preemptions:
+            _agent_row(s, preemptions, c, y, point, f"{statistics.median(preemptions):.0f}")
+        else:
+            s.text(c.start + 10, y + 6, "no make-room", size=NOTE, cls="mute", halo=True)
+    s.height = last + 14
+    return [s.save(out / "report-agents.svg")]
+
+
+# Every configuration ---------------------------------------------------------------------------------------------
+
+FAMILY_MARKS = {
+    "tuned": ("gray", "circle", True, "vLLM tuned by its own settings"),
+    "operator": ("gray", "diamond", True, "the operator's static answers"),
+    "engine": ("gray", "cross", True, "what engines ship"),
+    "router": ("gray", "triangle", True, "a router"),
+    "resubmit": ("gray", "square", True, "the abort-and-resubmit router"),
+    "lifecycle": ("gray", "diamond", False, "the lifecycle policy, on tuned vLLM"),
+    "change": ("blue", "circle", True, "the change, 48-token window"),
+    "lifecycle-change": ("sky", "diamond", False, "the lifecycle policy over a KV reserve"),
+}
+"""Each family's marker (data.FAMILIES): its hue, its shape, whether it is filled, and its name in the legend."""
+SIBLINGS = {"9-pr-a", "9-pr-ab"}
+"""The change's configurations other than the one to deploy, in the pale blue: make-room alone, and both rules at
+16 tokens."""
+FRONTIER_LABELS = {
+    "disc-frozen-s24": ("Tuned vLLM", "leader-down"),
+    "disc-a8b-smg-s24": ("SMG", "left"),
+    "disc-a8a-flow-s24": ("llm-d (emulated)", "right"),
+    "disc-a7b-sglang-hicache-s24": ("SGLang with HiCache", "right"),
+    "disc-a8c-resubmit-s24": ("the abort-and-resubmit router", "right"),
+    "disc-pr-ab48-s24": ("the change", "above-left"),
+    "disc-a9-gateway-only-s24": ("the lifecycle policy", "leader-up"),
+    "disc-a5-queued8192-s24": ("vLLM's queued-token limit: 48 of 50 turns failed", "left"),
+}
+"""The points the figure names, each its label and where it sits from its marker; the caption names the rest by
+their families' markers."""
+FRONTIER_MARK = 5.6
+
+
+def _frontier_hue(point: data.FrontierPoint) -> str:
+    return "sky" if point.arm in SIBLINGS else FAMILY_MARKS[point.family][0]
+
+
+def _frontier_description(points: Sequence[data.FrontierPoint], slo: float) -> str:
+    named = {p.point: p for p in points}
+    parts = []
+    for point_name, (label, _) in FRONTIER_LABELS.items():
+        p = named[point_name]
+        p95 = "at least 30 s" if p.failed_turns else f"{seconds(p.p95)} s"
+        parts.append(f"{label.split(':')[0]} {p95} at {p.tokens:,.0f} tokens/s")
+    return (
+        f"Each of {len(points)} configurations beside 24 agent sessions of the traces with "
+        "the largest contexts, at the median of its runs with their range, the agents' tokens a second over the calls' "
+        f"first 240 s against the voice-to-voice p95 on a log scale and the SLO of {seconds(slo)} s, only the engine "
+        "change and the router "
+        "that aborts agent requests coming near it: " + "; ".join(parts) + "."
+    )
+
+
+def frontier(out: Path) -> list[Path]:
+    """report-frontier.svg: every configuration of W4's discriminating scenario but arm 9's ablations, at its
+    median over its runs: the agents' tokens a second over the calls' first 240 s against the V2V p95 on a log scale,
+    a thin bar from its runs' least p95 to their greatest, its marker by its family, against the SLO."""
+    points = data.frontier()
+    slo = data.slo_ms(data.w4_rows())
+    s = Chart(WIDTH, 560, "Every configuration on one plane", _frontier_description(points, slo))
+    x = Scale(3000, 5800, 110, 1080)
+    y = Scale(1500, 30000, 520, 70, log=True)
+    ticks_y = [1500, 2000, 3000, 5000, 10000, 20000, 30000]
+    y_axis(s, y, ticks_y, [f"{t / 1000:g}" for t in ticks_y], x.start, x.end)
+    ticks_x = [3000, 3500, 4000, 4500, 5000, 5500]
+    for t in ticks_x[1:]:
+        s.vrule(x(t), y.end, y.start, "grid")
+    last = x_axis(
+        s,
+        x,
+        ticks_x,
+        [f"{t:,}" for t in ticks_x],
+        None,
+        y.start,
+        title="Agents' tokens/s, first 240 s of the calls \N{BULLET} higher is better",
+    )
+    s.text(
+        24,
+        34,
+        "Voice-to-voice p95 (s, log scale) \N{BULLET} lower is better",
+        size=NOTE,
+        cls="soft",
+    )
+    s.rule(x.start, x.end, y(slo), "slo")
+    s.text(
+        x.end - 6, y(slo) + 22, f"SLO {seconds(slo)} s", size=NOTE, anchor="end", cls="orange tint"
+    )
+    where = {}
+    for point in points:
+        _, shape, filled, _ = FAMILY_MARKS[point.family]
+        hue = _frontier_hue(point)
+        px, py = x(point.tokens), y(min(point.p95, REPLY_TIMEOUT_MS))
+        if len(point.p95s) > 1:
+            low, high = min(point.p95s), min(max(point.p95s), REPLY_TIMEOUT_MS)
+            s.path(f"M{fmt(px)} {fmt(y(low))}V{fmt(y(high))}", f"{hue} range")
+        s.mark(px, py, hue, shape, filled=filled, r=FRONTIER_MARK, name=point.point)
+        where[point.point] = (px, py, point)
+    for name, (label, side) in FRONTIER_LABELS.items():
+        px, py, point = where[name]
+        if side == "right":
+            s.text(px + 13, py + 6, label, size=NOTE, halo=True)
+        elif side == "left":
+            s.text(px - 13, py + 6, label, size=NOTE, anchor="end", halo=True)
+        elif side == "above-left":
+            s.text(px - 8, py - 14, label, size=NOTE, anchor="end", halo=True)
+        else:  # a leader into the clear space above or below the cluster, between its other markers
+            down = side == "leader-down"
+            reach = (40, 44) if down else (46, -46)
+            start = (px + 6, py + (8 if down else -6))
+            end = (px + reach[0], py + reach[1])
+            s.trace([start, end], "hair")
+            s.text(end[0] + 4, end[1] + (16 if down else -2), label, size=NOTE, halo=True)
+    entries = [
+        (mark_key(hue, shape, filled=filled, r=FRONTIER_MARK), name)
+        for hue, shape, filled, name in FAMILY_MARKS.values()
+    ]
+    entries.insert(
+        7, (mark_key("sky", filled=True, r=FRONTIER_MARK), "make-room alone, or a 16-token window")
+    )
+    legend_columns(s, 24, last + 46, entries, columns=3, column=362)
+    s.height = last + 46 + 26 * 2 + 14
+    return [s.save(out / "report-frontier.svg")]
+
+
+# Where the pool has room, and as calls overlap --------------------------------------------------------------------
+
+
+def _margin_description(
+    rounds: list[tuple[int, float, float]], calls: list[data.Calls], slo: float
+) -> str:
+    paired = ", ".join(f"{seconds(t)} and {seconds(c)} s" for _, t, c in rounds)
+    counts = "; ".join(
+        f"{c.callers} callers, {statistics.median(c.over):+,.0f} ms over their SLO of {seconds(c.slo)} s at the "
+        f"median of {len(c.over)} runs ({min(c.over):+,.0f} to {max(c.over):+,.0f}), the hold in "
+        f"{statistics.median(c.held):.0%} of the steps, the agents at {statistics.median(c.tokens):,.0f} tokens/s"
+        for c in calls
+    )
+    return (
+        "In panel a, with 16 agent sessions of the whole corpus, where the pool has room, tuned vLLM's V2V p95 and "
+        f"the change's in each of five rounds against the SLO of {seconds(slo)} s ({paired}); in panels b to d, the "
+        "change with two, four and six calls beside 24 agent sessions, on the same three samples of the agents, each "
+        "run's p95 over that many callers' SLO, "
+        "the share of the engine's steps in which the prefill hold held agent prefill, and the agents' tokens a "
+        f"second over the calls' first 240 s ({counts})."
+    )
+
+
+def margin(out: Path) -> list[Path]:
+    """report-margin.svg: where the pool has room, and as calls overlap. (a) Where the pool has room: the standard
+    scenario's rounds, tuned vLLM's p95 and the change's, joined per round. (b) to (d) As calls overlap: with 2, 4 and
+    6 calls on the same three samples of the agents, the change's p95 over that many callers' SLO, the share of steps
+    the hold held agent prefill in, and the agents' tokens a second; each run an open marker, the median a tick."""
+    rows = data.w5_rows()
+    rounds = data.standard_rounds(rows)
+    calls = data.calls(rows)
+    slo = data.slo_ms(rows)
+    s = Chart(
+        WIDTH,
+        620,
+        "Where the pool has room, and as calls overlap",
+        _margin_description(rounds, calls, slo),
+    )
+
+    # (a) The standard scenario, round by round.
+    a_x = Scale(0.5, len(rounds) + 0.5, 96, 440)
+    a_y = Scale(0, 4000, 548, 110)
+    s.text(24, 30, "(a) Where the pool has room", size=LABEL)
+    s.text(24, 54, "16 agent sessions of the whole corpus", size=NOTE, cls="soft")
+    s.text(24, 84, "V2V p95 (s)", size=NOTE, cls="soft")
+    marks, labels = linear_ticks(4, 1)
+    y_axis(s, a_y, [m * 1000 for m in marks], labels, a_x.start, a_x.end)
+    x_axis(
+        s,
+        a_x,
+        [r for r, _, _ in rounds],
+        [str(r) for r, _, _ in rounds],
+        None,
+        a_y.start,
+        title="Round",
+    )
+    s.rule(a_x.start, a_x.end, a_y(slo), "slo")
+    s.text(
+        a_x.start + 6,
+        a_y(slo) + 22,
+        f"SLO {seconds(slo)} s",
+        size=NOTE,
+        cls="orange tint",
+        halo=True,
+    )
+    for k, tuned, change in rounds:
+        s.trace([(a_x(k), a_y(tuned)), (a_x(k), a_y(change))], "hair", wire=False)
+        s.mark(a_x(k), a_y(tuned), "gray")
+        s.mark(a_x(k), a_y(change), "blue")
+    last_round, tuned, change = rounds[-1]
+    s.text(a_x(last_round) + 14, a_y(tuned) + 6, "Tuned vLLM", size=NOTE, halo=True)
+    s.text(a_x(last_round) + 14, a_y(change) + 6, "the change", size=NOTE, halo=True)
+
+    # (b) to (d) As calls overlap, on one axis of callers, with room right of six for its labels.
+    x = Scale(1, 7.5, 640, 1100)
+    callers = [c.callers for c in calls]
+    panels = (
+        ("(b) p95 over the SLO (ms)", Scale(0, 400, 220, 110), [0, 200, 400], "over", "{:+,.0f}"),
+        ("(c) Steps holding agent prefill", Scale(0, 1, 384, 274), [0, 0.5, 1], "held", "{:.0%}"),
+        (
+            "(d) Agents' tokens/s, first 240 s",
+            Scale(0, 4000, 548, 438),
+            [0, 2000, 4000],
+            "tokens",
+            "{:,.0f}",
+        ),
+    )
+    for title, y, ticks, field, text in panels:
+        s.text(560, y.end - 22, title, size=LABEL)
+        labels = [f"{t:.0%}" if field == "held" else f"{t:,.0f}" for t in ticks]
+        y_axis(s, y, ticks, labels, x.start, x.end, axis=field != "over")
+        if field == "over":
+            s.rule(x.start, x.end, y(0), "slo")
+        for c in calls:
+            values = list(getattr(c, field))
+            middle = statistics.median(values)
+            column_rug(s, x(c.callers), [y(v) for v in values], "blue", median=y(middle))
+            s.text(x(c.callers) + 18, y(middle) + 6, text.format(middle), size=NOTE, halo=True)
+            if field == "over":
+                s.text(
+                    x(c.callers) + 18,
+                    y(0) - 7,
+                    f"SLO {seconds(c.slo)} s",
+                    size=NOTE,
+                    cls="orange tint",
+                    halo=True,
+                )
+    last = x_axis(
+        s,
+        x,
+        callers,
+        [str(n) for n in callers],
+        None,
+        panels[-1][1].start,
+        title="Calls beside 24 agent sessions",
+    )
+    s.height = last + 14
+    return [s.save(out / "report-margin.svg")]
+
+
+# The A100 ---------------------------------------------------------------------------------------------------------
+
+
+def _a100_description(
+    pairs: dict[int, tuple[data.Configuration, data.Configuration]], slo: float
+) -> str:
+    tuned, change = pairs[512]
+    by_round = ", ".join(
+        f"{seconds(t.p95)} and {seconds(c.p95)} s"
+        for t, c in zip(tuned.runs, change.runs, strict=True)
+    )
+    caps = "; ".join(
+        f"at {cap:,}-token steps tuned vLLM {seconds(t.p95)} s at {t.tokens:,.0f} tokens/s, the change "
+        f"{seconds(c.p95)} s at {c.tokens:,.0f} tokens/s, medians of {len(t.runs)} runs each"
+        for cap, (t, c) in pairs.items()
+    )
+    return (
+        "On the A100 beside 24 agent sessions: in panel a, at the RTX 5060 Ti's 512-token steps, tuned vLLM's V2V "
+        f"p95 and the change's in each of five rounds against the card's SLO of {seconds(slo)} s ({by_round}); in "
+        "panel b, the agents' tokens a second over the calls' first 240 s against the V2V p95, each run and the "
+        f"medians, an arrow from tuned vLLM's median to the change's at the same step cap ({caps})."
+    )
+
+
+def a100(out: Path) -> list[Path]:
+    """report-a100.svg: the A100. (a) At 512-token steps, tuned vLLM's p95 and the change's by round, joined per
+    round, against the card's SLO. (b) The trade-off at both step caps: the agents' tokens a second against the
+    p95, each run open, the medians filled, an arrow from tuned vLLM's median to the change's."""
+    rows = data.a100_rows()
+    pairs = data.a100(rows)
+    slo = data.slo_ms(rows)
+    s = Chart(WIDTH, 520, "The rules on an A100", _a100_description(pairs, slo))
+    y_top = 6000
+
+    # (a) By round, at 512-token steps.
+    tuned, change = pairs[512]
+    a_x = Scale(0.5, len(tuned.runs) + 0.5, 96, 400)
+    y = Scale(0, y_top, 450, 104)
+    s.text(24, 30, "(a) Each round, 512-token steps", size=LABEL)
+    s.text(24, 84, "V2V p95 (s)", size=NOTE, cls="soft")
+    marks, labels = linear_ticks(y_top / 1000, 1)
+    y_axis(s, y, [m * 1000 for m in marks], labels, a_x.start, a_x.end)
+    rounds = [run.round for run in tuned.runs]
+    x_axis(s, a_x, rounds, [str(r) for r in rounds], None, y.start, title="Round")
+    s.rule(a_x.start, a_x.end, y(slo), "slo")
+    s.text(
+        a_x.start + 6, y(slo) + 22, f"SLO {seconds(slo)} s", size=NOTE, cls="orange tint", halo=True
+    )
+    for t, c in zip(tuned.runs, change.runs, strict=True):
+        if t.round != c.round:
+            raise ValueError(
+                f"round {t.round} of tuned vLLM pairs with round {c.round} of the change"
+            )
+        s.trace([(a_x(t.round), y(t.p95)), (a_x(c.round), y(c.p95))], "hair", wire=False)
+        s.mark(a_x(t.round), y(t.p95), "gray")
+        s.mark(a_x(c.round), y(c.p95), "blue")
+    last = tuned.runs[-1]
+    s.text(a_x(last.round) + 14, y(last.p95) + 6, "Tuned vLLM", size=NOTE, halo=True)
+    s.text(a_x(last.round) + 14, y(change.runs[-1].p95) - 10, "the change", size=NOTE, halo=True)
+
+    # (b) The trade-off at both step caps.
+    b_x = Scale(0, 16000, 580, 1040)
+    s.text(500, 30, "(b) The agents' throughput against the voice tail", size=LABEL)
+    y_axis(s, y, [m * 1000 for m in marks], labels, b_x.start, b_x.end)
+    ticks = [0, 4000, 8000, 12000, 16000]
+    for t in ticks[1:]:
+        s.vrule(b_x(t), y.end, y.start, "grid")
+    bottom = x_axis(
+        s,
+        b_x,
+        ticks,
+        [f"{t:,}" for t in ticks],
+        None,
+        y.start,
+        title="Agents' tokens/s, first 240 s of the calls",
+    )
+    s.rule(b_x.start, b_x.end, y(slo), "slo")
+    s.text(
+        b_x.start + 6, y(slo) + 22, f"SLO {seconds(slo)} s", size=NOTE, cls="orange tint", halo=True
+    )
+    legend_columns(
+        s,
+        b_x.start + 18,
+        y(y_top) + 22,
+        [(mark_key("gray"), "Tuned vLLM"), (mark_key("blue"), "the change")],
+        columns=1,
+        column=0,
+        halo=True,
+    )
+    for cap, (t, c) in pairs.items():
+        for config, hue in ((t, "gray"), (c, "blue")):
+            for run in config.runs:
+                s.mark(b_x(run.tokens), y(run.p95), hue)
+        start, end = (b_x(t.tokens), y(t.p95)), (b_x(c.tokens), y(c.p95))
+        s.arrow(start, end, "blue")
+        s.mark(*start, "gray", filled=True, r=5.6)
+        s.mark(*end, "blue", filled=True, r=5.6)
+        centre = statistics.mean(b_x(run.tokens) for run in (*t.runs, *c.runs))
+        s.text(centre, y(slo) + 40, f"{cap:,}-token steps", size=NOTE, anchor="middle", halo=True)
+    s.height = bottom + 14
+    return [s.save(out / "report-a100.svg")]
+
+
+# Every figure -----------------------------------------------------------------------------------------------------
+
+FIGURES = (
+    stages,
+    kv_timeline,
+    isolation,
+    tail,
+    window,
+    step_cost,
+    headline,
+    cdf,
+    agents,
+    frontier,
+    margin,
+    a100,
+)
+
+
+def main(out_dir: Path) -> list[Path]:
+    """Every report figure in ``out_dir``."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return [path for figure in FIGURES for path in figure(out_dir)]
+
+
+if __name__ == "__main__":
+    for written in main(Path(sys.argv[1])):
+        print(written)
