@@ -468,6 +468,57 @@ def test_the_headline_is_each_configurations_runs_in_frontier_csv() -> None:
     assert all(run.p95 > slo for run in change.runs)
 
 
+def test_the_replies_over_the_slo_and_the_pooled_p95() -> None:
+    # Beside each configuration's median run p95, how many of its replies missed the SLO and the p95 of all of them
+    # taken together: a third of the change's replies missed it, which its 202 ms over the SLO at the median hides.
+    rows = data.w5_rows()
+    found = {}
+    two = [(2, c.point) for c in data.headline(rows)] + [(2, point) for point in data.STANDARD]
+    more = [
+        (callers, point)
+        for callers, points in data.CALLS.items()
+        if callers > 2
+        for point in points
+    ]
+    for callers, point in two + more:
+        c = data.configuration(rows, point)
+        found[point] = (
+            c.over(data.slo_ms(rows, callers)),
+            len(c.samples()),
+            round(c.pooled_p95, 2),
+        )
+    assert found == {
+        data.VOICE_ALONE: (1, 295, 1796.03),
+        data.TUNED: (532, 590, 10609.19),
+        data.ROUTER: (130, 295, 2717.44),
+        data.MAKE_ROOM: (263, 295, 5290.11),
+        "w5-disc-pr-ab-s24": (128, 295, 3090.42),
+        data.CHANGE: (286, 885, 2267.76),
+        "w5-a1-voice-c4": (4, 357, 1840.14),
+        "w5-disc-pr-ab48-c4-s24": (142, 357, 2330.44),
+        "w5-a1-voice-c6": (2, 546, 1884.9),
+        "w5-disc-pr-ab48-c6-s24": (165, 546, 2395.25),
+        "w5-std-frozen-s16": (72, 295, 3033.49),
+        "w5-std-pr-ab48-s16": (46, 295, 2246.54),
+    }
+
+
+def test_the_agents_tokens_are_a_replay_s_prompts() -> None:
+    # The change's 97% is tuned vLLM's agents' token rate over the calls' first 240 s kept in each campaign that ran
+    # both on the same sample: ten pairs. The rate is the replay's prompt tokens nearly all; it generates few.
+    retained = data.paired_retention(data.w5_rows(), data.CHANGE, data.TUNED)
+    assert len(retained) == 10
+    assert [round(100 * f(retained.values()), 2) for f in (statistics.median, min, max)] == [
+        96.66,
+        94.24,
+        98.67,
+    ]
+    for point, share, generated in ((data.TUNED, 0.4655, 17.4), (data.CHANGE, 0.4703, 16.0)):
+        runs = data.agent_tokens(point)
+        assert round(100 * statistics.median(r.generated_share for r in runs), 4) == share, point
+        assert round(statistics.median(r.completion for r in runs), 1) == generated, point
+
+
 def test_every_turn_is_each_runs_measured_turns() -> None:
     rows = data.w5_rows()
     slo = data.slo_ms(rows)
