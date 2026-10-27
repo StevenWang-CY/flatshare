@@ -13,6 +13,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from flatshare_bench.report import data
+
 REPO = Path(__file__).resolve().parents[3]
 W5_RESULTS = REPO / "benchmarks" / "results" / "2026-10-24-e2-w5"
 _spec = importlib.util.spec_from_file_location("w5_compare", W5_RESULTS / "compare.py")
@@ -78,13 +80,32 @@ def slo() -> float:
     return median(summaries(ALONE), "V2V p95") + 250
 
 
+def over_slo(label: str) -> tuple[int, int]:
+    """How many of the row's replies took longer than the SLO, and of how many: every measured turn of its runs, as
+    :meth:`flatshare_bench.report.data.Configuration.over` counts them over the same campaigns."""
+    points = points_of(label)
+    [name] = {point.split(":")[1] for point in points}
+    c = data.configuration(data.w5_rows(), name)
+    assert sorted(f"{run.campaign.rsplit('-r', 1)[0]}:{name}" for run in c.runs) == sorted(
+        point for point in points for _ in range(5)
+    ), label
+    return c.over(data.slo_ms(data.w5_rows())), len(c.samples())
+
+
+def share(over: int, replies: int) -> str:
+    """A share of replies as the docs print it: to a tenth of a percent under 1%, else to the percent."""
+    percent = 100 * over / replies
+    return f"{percent:.1f}%" if percent < 1 else f"{percent:.0f}%"
+
+
 def test_the_readmes_headline_table_is_the_records_medians() -> None:
     rows = rows_of(REPO / "README.md", "| Two calls beside 24 coding-agent sessions")
     assert len(rows) == 6
-    for label, p95, over, goodput, ttft in rows:
+    for label, p95, over, replies, goodput, ttft in rows:
         runs = summaries(points_of(label))
         voice = median(runs, "V2V p95")
         assert p95 == f"{voice:,.0f} ms", label
+        assert replies == share(*over_slo(label)), label
         if points_of(label) == ALONE:
             assert (over, goodput, ttft) == (NONE, NONE, NONE), label
             continue
@@ -98,10 +119,11 @@ def test_productions_headline_table_is_the_records_medians() -> None:
     assert f"the SLO is voice alone plus 250 ms at p95, {slo():,.0f} ms" in path.read_text()
     rows = rows_of(path, "| Configuration | Runs | V2V p95 |")
     assert len(rows) == 4
-    for label, count, p95, goodput, ttft in rows:
+    for label, count, p95, replies, goodput, ttft in rows:
         runs = summaries(points_of(label))
         p95s = [compare.value(s, compare.METRICS["V2V p95"]) for s in runs]
         assert count == str(len(runs)), label
+        assert replies == "{} / {}".format(*over_slo(label)), label
         assert (
             p95
             == f"{statistics.median(p95s):,.0f} ms ({min(p95s):,.0f}{compare.DASH}{max(p95s):,.0f})"
