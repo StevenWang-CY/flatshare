@@ -6,7 +6,7 @@
 # deployment is. REHEARSAL_SSH is the ssh command (default ssh), REHEARSAL_HOME the home's name under the login home;
 # HOST takes no user@ (rsync would pass it as -l), and no ssh option comes before it.
 set -euo pipefail
-home=${REHEARSAL_HOME:?REHEARSAL_HOME names the rehearsal's home under the host's login home}
+home=${REHEARSAL_HOME:?"REHEARSAL_HOME names the rehearsal's home under the host's login home"}
 [[ $home =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "rehearsal-ssh: REHEARSAL_HOME is one directory name: '$home'" >&2; exit 2; }
 (($# >= 2)) || { echo "usage: rehearsal-ssh HOST COMMAND..." >&2; exit 2; }
 [[ $1 != -* ]] || { echo "rehearsal-ssh: no ssh option before the host: '$1'" >&2; exit 2; }

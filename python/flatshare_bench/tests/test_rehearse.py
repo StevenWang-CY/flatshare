@@ -849,5 +849,20 @@ def test_a_step_that_ends_before_its_pid_file_is_written_does_not_start(tmp_path
     assert not ran.exists() and host_state(home, "lost") == "none"
 
 
+def test_rehearsal_ssh_names_the_home_it_needs_in_full() -> None:
+    # Its message, an unquoted word in ${REHEARSAL_HOME:?...}, lost both apostrophes, which bash took for quotes:
+    # "names the rehearsals home under the hosts login home".
+    env = {name: value for name, value in os.environ.items() if name != "REHEARSAL_HOME"}
+    done = subprocess.run(
+        ["bash", str(HERE / "bin" / "rehearsal-ssh"), "host", "true"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode != 0
+    assert "REHEARSAL_HOME names the rehearsal's home under the host's login home" in done.stderr
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
