@@ -84,6 +84,10 @@ UV_MIN = (0, 11, 27)
 MARK = ".flatshare-env.json"
 """Written last into a complete environment: one without it is an interrupted build, removed and built again."""
 KEEP = 3
+HOST_NETWORK = "private-net-host.conf"
+"""A GPU node's drop-in for a kernel that refuses unprivileged user namespaces (deploy/NODE/private-net-host.conf, Gray's),
+which its install.sh links into each GPU server's unit when deploy/bin/private-net-check says so: FLATSHARE_PRIVATE_NET=host,
+the server in the host's network namespace."""
 
 
 class ReleaseError(Exception):
@@ -166,10 +170,16 @@ TTS = Env(
 
 
 def gpu_units(node: str) -> tuple[Unit, ...]:
-    """A GPU node's three servers: Phastform's units, with a node's own drop-ins (deploy/NODE/systemd/*.conf)."""
+    """A GPU node's three servers: Phastform's units, with a node's own drop-ins (deploy/NODE/systemd/*.conf, and
+    HOST_NETWORK where the node has one, which its install.sh links into all three where the kernel refuses unprivileged
+    user namespaces)."""
     box = "deploy/phastform"
     common = ("deploy/bin/in-private-net", "deploy/bin/gpu-guard", "deploy/bin/wait-healthy")
-    own = () if node == "phastform" else (f"deploy/{node}/systemd/*.conf",)
+    own = (
+        ()
+        if node == "phastform"
+        else (f"deploy/{node}/systemd/*.conf", f"deploy/{node}/{HOST_NETWORK}")
+    )
     return (
         Unit(
             "flatshare-stt.service",
@@ -830,31 +840,45 @@ def unit_digests(
     return out
 
 
-def isolation(spec: HostSpec, systemd: Systemd) -> dict[str, str]:
-    """Where each GPU unit's servers run: a network namespace of their own (deploy/bin/in-private-net), or the host's
-    where a drop-in sets FLATSHARE_PRIVATE_NET=host (a kernel that refuses unprivileged user namespaces, as Gray's)."""
+def private_net_check(tree: Path) -> tuple[str, str]:
+    """What ``tree``'s deploy/bin/private-net-check says of this host: ("allowed", ""), ("refused", REASON) or
+    ("unknown", REASON), the check's own words, which try what deploy/bin/in-private-net does."""
+    check = tree / "deploy" / "bin" / "private-net-check"
+    if not check.is_file():
+        return "unknown", f"no {check}"
+    done = run(["bash", str(check)], check=False, timeout=30)
+    line = (done.stdout.strip() or done.stderr.strip() or "no answer").splitlines()[-1]
+    _, _, reason = line.partition(":")
+    kinds = {0: "allowed", 1: "refused"}
+    return kinds.get(done.returncode, "unknown"), reason.strip()
+
+
+def isolation(spec: HostSpec, systemd: Systemd, tree: Path) -> dict[str, str]:
+    """Where each GPU unit's server runs once ``tree`` is the host's release: a network namespace of its own
+    (deploy/bin/in-private-net), or the host's (FLATSHARE_PRIVATE_NET=host), and whether the kernel allows unprivileged
+    user namespaces (deploy/bin/private-net-check). A node whose directory has HOST_NETWORK, Gray, runs every server in
+    the host's namespace exactly where the kernel refuses them, as its install.sh links it at the switch; any other
+    node's servers run as the drop-ins it has now say. A server that would ask for a namespace of its own where the
+    kernel refuses them would fail to start, and says so (verify fails a release that would start one)."""
     if not spec.gpu:
         return {}
+    allowed, reason = private_net_check(tree)
+    linked = (tree / "deploy" / spec.node / HOST_NETWORK).is_file() and allowed == "refused"
     report = {}
     for unit in spec.units:
-        env = systemd.environment(unit.name)
-        report[unit.name] = (
-            "the host's network namespace (FLATSHARE_PRIVATE_NET=host)"
-            if env.get("FLATSHARE_PRIVATE_NET") == "host"
-            else "a network namespace of its own"
-        )
-    namespaces = (
-        run(["unshare", "--user", "--map-root-user", "--net", "true"], check=False)
-        if shutil.which("unshare")
-        else None
-    )
-    report["user namespaces"] = (
-        "unknown (no unshare)"
-        if namespaces is None
-        else "allowed"
-        if namespaces.returncode == 0
-        else f"refused ({(namespaces.stderr or '').strip()[:80]})"
-    )
+        if linked or systemd.environment(unit.name).get("FLATSHARE_PRIVATE_NET") == "host":
+            report[unit.name] = "the host's network namespace (FLATSHARE_PRIVATE_NET=host)" + (
+                ": the kernel refuses unprivileged user namespaces here; the server serves only its Unix socket"
+                if allowed == "refused"
+                else ", by a drop-in's mark"
+            )
+        elif allowed == "refused":
+            report[unit.name] = (
+                "a network namespace of its own, which the kernel refuses here: the server cannot start"
+            )
+        else:
+            report[unit.name] = "a network namespace of its own"
+    report["user namespaces"] = f"{allowed} ({reason})" if reason else allowed
     return report
 
 
@@ -966,7 +990,7 @@ def prepare(
         "serving": serving,
         "units": unit_digests(spec, files, envs),
         "tools": tools(layout.root, spec),
-        "isolation": isolation(spec, systemd),
+        "isolation": isolation(spec, systemd, upload),
     }
     compile_packages(upload, layout, envs)
     (upload / "MANIFEST.json").write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n")
@@ -1155,6 +1179,13 @@ def verify(
     for link, rel in linked_drop_ins(units_dir, layout.root):
         report.add(f"drop-in {link.parent.name}/{link.name}", (path / rel).is_file(), rel)
     if spec.gpu:
+        # A server that asks for a network namespace of its own where the kernel refuses them fails its start
+        # (deploy/bin/in-private-net): one that runs or will restart fails the check; a stopped one is reported.
+        where = isolation(spec, systemd, path)
+        for unit in spec.units:
+            starts = unit.name in needed
+            fails = where[unit.name].endswith("cannot start")
+            report.add(f"{unit.name} network namespace", not (fails and starts), where[unit.name])
         hub = Path(os.environ.get("HF_HUB_CACHE") or Path.home() / ".cache" / "huggingface" / "hub")
         for config, pin in manifest.get("models", {}).items():
             snapshot = (
@@ -1453,7 +1484,10 @@ def apply(layout: Layout, spec: HostSpec, rid: str, steps: Plan, systemd: System
         replace_link(layout.previous, f"releases/{old}")
     replace_link(layout.current, f"releases/{rid}")
     compat_links(layout, spec)
-    run(["bash", str(layout.root / "src" / "deploy" / spec.node / "install.sh")])
+    # What it says (on Gray, where the GPU servers' network namespaces are) goes into the deploy's output.
+    installed = run(["bash", str(layout.root / "src" / "deploy" / spec.node / "install.sh")])
+    for line in installed.stdout.splitlines():
+        say(line)
     systemd("daemon-reload")
     if steps.restart:
         systemd("reset-failed", *steps.restart, check=False)
@@ -1722,6 +1756,11 @@ def status(layout: Layout, as_json: bool, systemd: Systemd, spec: HostSpec | Non
                 "artifacts": manifest.get("artifacts", {}),
             }
         )
+    # Where the GPU servers run, as the current release's manifest recorded it (a GPU node's; none adopted).
+    isolated: dict[str, str] = {}
+    if current:
+        with contextlib.suppress(NotReady):
+            isolated = layout.manifest(current).get("isolation") or {}
     if as_json:
         print(
             json.dumps(
@@ -1730,6 +1769,7 @@ def status(layout: Layout, as_json: bool, systemd: Systemd, spec: HostSpec | Non
                     "previous": previous,
                     "releases": releases,
                     "running": running,
+                    "isolation": isolated,
                 },
                 indent=1,
             )
@@ -1742,6 +1782,8 @@ def status(layout: Layout, as_json: bool, systemd: Systemd, spec: HostSpec | Non
         )
     for unit, rid in sorted(running.items()):
         print(f"  {unit}: started under {rid}")
+    for what, where in sorted(isolated.items()):
+        print(f"  {what}: {where}")
     if not releases:
         print(
             "no releases" + (" (an old layout: deploy.sh --adopt)" if layout.old_layout() else "")

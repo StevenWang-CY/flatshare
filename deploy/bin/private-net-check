@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# private-net-check: whether this host lets deploy/bin/in-private-net give a GPU server a network namespace of its own.
+# It tries what in-private-net does, as the deploying user: an unprivileged user namespace in which this user is root,
+# with a network namespace whose loopback comes up (unshare --user --map-root-user --net, then ip link set lo up). It
+# prints one line and exits by it:
+#   0  "allowed": each GPU server gets a network namespace of its own;
+#   1  "refused: REASON": the kernel refuses (REASON is unshare's or ip's own error, and where the host has it the
+#      value of kernel.apparmor_restrict_unprivileged_userns, Ubuntu 24.04's restriction, which only root lifts);
+#   2  "unknown: REASON": the host has no unshare or no ip, so nothing was tried.
+# deploy/gray/install.sh reads it to decide whether the GPU servers run in the host's network namespace
+# (FLATSHARE_PRIVATE_NET=host, deploy/gray/private-net-host.conf), and deploy/bin/flatshare-release records it in each
+# GPU node's manifest. It changes nothing on the host.
+set -uo pipefail
+for tool in unshare ip; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "unknown: no $tool on PATH"; exit 2; }
+done
+if error=$(unshare --user --map-root-user --net -- sh -c 'ip link set lo up' 2>&1); then
+  echo allowed
+  exit 0
+fi
+reason=${error//$'\n'/; }
+restrict=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+if [[ -r $restrict ]]; then
+  reason+="; kernel.apparmor_restrict_unprivileged_userns = $(<"$restrict")"
+fi
+echo "refused: ${reason:-unshare failed}"
+exit 1

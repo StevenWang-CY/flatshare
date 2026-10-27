@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import stat
 import subprocess
@@ -1129,6 +1130,71 @@ def test_in_private_net_fails_where_the_namespace_cannot_be_made_and_the_host_is
     )
     assert done.returncode == 1 and done.stdout == ""
     assert "unshare: unshare failed: Operation not permitted" in done.stderr
+
+
+UBUNTU_REFUSES = "unshare: write failed /proc/self/uid_map: Operation not permitted"
+"""unshare's error on Ubuntu 24.04, whose kernel.apparmor_restrict_unprivileged_userns=1 refuses an unprivileged user
+namespace its uid map (Gray's, 2026-10-27)."""
+
+
+def namespace_tools(bin_dir: Path, *, refused: bool, unshare: bool = True) -> Path:
+    """unshare and ip stand-ins in ``bin_dir``: unshare logs its arguments to ``bin_dir``/unshare.log and runs the
+    command after its ``--``, or, ``refused``, fails as Gray's kernel makes it fail; ip succeeds. Without ``unshare``,
+    only ip. Returns ``bin_dir``."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    tools = {"ip": "#!/bin/sh\nexit 0\n"}
+    if unshare:
+        run = (
+            f"echo '{UBUNTU_REFUSES}' >&2\nexit 1\n"
+            if refused
+            else ('while [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n')
+        )
+        tools["unshare"] = f'#!/bin/sh\necho "$*" >>"{bin_dir}/unshare.log"\n{run}'
+    for name, text in tools.items():
+        (bin_dir / name).write_text(text)
+        (bin_dir / name).chmod(0o755)
+    return bin_dir
+
+
+@pytest.mark.parametrize("refused", [False, True])
+def test_private_net_check_tries_what_in_private_net_does(tmp_path: Path, refused: bool) -> None:
+    # The check that decides whether a GPU node's servers get network namespaces of their own runs the command that
+    # in-private-net runs at every start, and gives unshare's own error where the kernel refuses it.
+    bin_dir = namespace_tools(tmp_path / "bin", refused=refused)
+    done = subprocess.run(
+        ["bash", str(DEPLOY / "bin" / "private-net-check")],
+        env=os.environ | {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+    assert (
+        bin_dir / "unshare.log"
+    ).read_text() == "--user --map-root-user --net -- sh -c ip link set lo up\n"
+    if refused:
+        assert done.returncode == 1
+        assert done.stdout.startswith(f"refused: {UBUNTU_REFUSES}")
+    else:
+        assert (done.returncode, done.stdout) == (0, "allowed\n")
+    # in-private-net, unmarked, runs the same command (its script's line), so the check cannot pass where it fails.
+    assert (
+        "unshare --user --map-root-user --net -- sh -c 'ip link set lo up"
+        in (DEPLOY / "bin" / "in-private-net").read_text()
+    )
+
+
+def test_private_net_check_without_unshare_tries_nothing_and_says_it_cannot_tell(
+    tmp_path: Path,
+) -> None:
+    bin_dir = namespace_tools(tmp_path / "bin", refused=True, unshare=False)
+    bash = shutil.which("bash")  # found before PATH holds the stand-ins' directory alone
+    assert bash is not None
+    done = subprocess.run(
+        [bash, str(DEPLOY / "bin" / "private-net-check")],
+        env=os.environ | {"PATH": str(bin_dir)},
+        capture_output=True,
+        text=True,
+    )
+    assert (done.returncode, done.stdout) == (2, "unknown: no unshare on PATH\n")
 
 
 def test_the_gpu_nodes_servers_run_in_network_namespaces_of_their_own() -> None:
