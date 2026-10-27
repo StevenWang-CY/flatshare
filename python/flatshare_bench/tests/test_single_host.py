@@ -27,8 +27,8 @@ from pathlib import Path
 
 import pytest
 
-from flatshare_bench.e2 import run as e2
 from flatshare_bench.e2.arm import load_arm
+from flatshare_bench.e2.cyan import Host, Systemd, configure_cyan
 
 REPO = Path(__file__).resolve().parents[3]
 BIN = REPO / "deploy" / "bin"
@@ -1271,7 +1271,7 @@ def single_host_node(host: dict, tmp_path: Path) -> Path:
     return node
 
 
-class ShimSystemd(e2.Systemd):
+class ShimSystemd(Systemd):
     """flatshare-bench e2 run's view of the units through flatshare-svc's shims (what it reads: show); the restarts it
     asks for are recorded, not run, since the control plane is only linked here."""
 
@@ -1316,9 +1316,9 @@ def test_variant_sh_on_a_single_host_switches_only_the_gpu_units(
     )
     (arms / "voice.toml").write_text('arm = 1\nlabel = "voice alone"\n')
     overlay, plain = load_arm(arms / "overlay.toml"), load_arm(arms / "voice.toml")
-    e2_host = e2.Host(home=home)
+    e2_host = Host(home=home)
     systemd = ShimSystemd()
-    first = e2.configure_cyan(overlay, e2_host, systemd)  # links e2-gateway and no-events
+    first = configure_cyan(overlay, e2_host, systemd)  # links e2-gateway and no-events
     assert first["gateway"]["restarted"] and first["worker"]["restarted"]
     control = sorted(
         str(p.relative_to(units))
@@ -1353,7 +1353,7 @@ def test_variant_sh_on_a_single_host_switches_only_the_gpu_units(
                     ("flatshare-engine.", "flatshare-stt.", "flatshare-tts.")
                 )
             ), switch
-            again = e2.configure_cyan(overlay, e2_host, systemd)
+            again = configure_cyan(overlay, e2_host, systemd)
             assert not again["gateway"]["restarted"] and not again["worker"]["restarted"], switch
         engine = ctl(host, "-u", "flatshare-engine", "-o", "cat", tool="journalctl").stdout
         assert "argv ['make-room', '--additional-config.make_room.reserve_tokens', '0']" in engine
@@ -1369,7 +1369,7 @@ def test_variant_sh_on_a_single_host_switches_only_the_gpu_units(
     finally:
         ctl(host, "--user", "stop", "flatshare.target")
     # An arm without a gateway table or events off takes its drop-ins away, as on cyan.
-    last = e2.configure_cyan(plain, e2_host, systemd)
+    last = configure_cyan(plain, e2_host, systemd)
     assert last["gateway"]["restarted"] and last["worker"]["restarted"]
     assert not (units / "flatshare-gateway.service.d" / "variant-e2-gateway.conf").exists()
     assert (units / "flatshare-voice-worker.service.d" / "variant-vad-turns.conf").is_symlink()

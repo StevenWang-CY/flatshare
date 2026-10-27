@@ -33,7 +33,7 @@ import httpx
 import orjson
 
 from flatshare_bench.e2.arm import E2Error
-from flatshare_bench.e2.run import MEASURE, Host, read_env
+from flatshare_bench.e2.engine import MEASURE
 from flatshare_bench.load import random_prompt
 from flatshare_bench.protocol import DEFAULT_MODEL, SloClass
 from flatshare_stats import metric_samples, summarize
@@ -397,15 +397,6 @@ async def run_streams(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(orjson.dumps(result, option=orjson.OPT_INDENT_2) + b"\n")
     return result
-
-
-def agents_key(host: Host) -> str:
-    """The agents tenant's key, from cyan's gateway-keys.env, as ``flatshare-bench e2 run`` reads it."""
-    keys = host.config / "gateway-keys.env"
-    key = read_env(keys).get("FLATSHARE_GATEWAY_AGENTS_KEY") if keys.exists() else None
-    if not key:
-        raise SystemExit(f"{keys} has no FLATSHARE_GATEWAY_AGENTS_KEY, the agents tenant's key")
-    return key
 
 
 def default_uds() -> Path:

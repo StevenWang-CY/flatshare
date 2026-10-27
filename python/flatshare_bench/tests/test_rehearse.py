@@ -596,7 +596,7 @@ def test_cleanup_ends_the_rehearsals_processes_whatever_their_titles(world: dict
     # kill_left. A unit's engine core is in its server's group: leftovers ends the groups and sessions of the processes
     # it finds.
     pytest.importorskip("setproctitle")
-    from flatshare_bench.e2 import run as e2
+    from flatshare_bench.e2.tools import Process
 
     for step in ("check", "init"):
         assert rehearse(world, step).returncode == 0
@@ -609,7 +609,7 @@ def test_cleanup_ends_the_rehearsals_processes_whatever_their_titles(world: dict
     titled = [sys.executable, str(tmp / "titled.py")]
     # AIPerf as flatshare-bench starts it, its group named in the tools' directory, and the run then killed.
     command = [*titled, "aiperf system_controller", str(tmp / "aiperf.pids")]
-    aiperf = e2.Process("AIPerf", command, tmp / "aiperf.log", env, str(home / "flatshare"))
+    aiperf = Process("AIPerf", command, tmp / "aiperf.log", env, str(home / "flatshare"))
     # A unit's server in a session of its own, with its engine core, and a process whose environment names another
     # home: not the rehearsal's, whatever its session.
     command = [*titled, "", str(tmp / "server.pids"), str(tmp)]

@@ -32,22 +32,30 @@ import pytest
 
 from flatshare_bench.cli import main
 from flatshare_bench.e2 import run as e2
+from flatshare_bench.e2 import tools
 from flatshare_bench.e2.arm import E2Error, Engine, Voice, flag_values, load_arm
-from flatshare_bench.e2.record import current_name
-from flatshare_bench.e2.run import (
-    FROZEN,
-    EngineInfo,
+from flatshare_bench.e2.cyan import (
     Host,
-    Process,
     Systemd,
-    check_engine,
-    gpu_sources,
-    profile_flags,
+    _merge,
+    _write_private,
+    exclusive,
     read_env,
+    redacted,
     reset_cyan,
-    run_point,
     toml_text,
 )
+from flatshare_bench.e2.engine import (
+    FROZEN,
+    EngineInfo,
+    check_engine,
+    describe_engine,
+    profile_flags,
+    variant_flags,
+)
+from flatshare_bench.e2.record import current_name
+from flatshare_bench.e2.run import gpu_sources, run_point
+from flatshare_bench.e2.tools import Process
 
 FAKES = Path(__file__).parent / "fakes"
 REPO = Path(__file__).resolve().parents[3]
@@ -55,7 +63,7 @@ EXAMPLE = REPO / "deploy" / "cyan" / "gateway.example.toml"
 BENCHMARKS = REPO / "benchmarks" / "e2"
 RESULTS = REPO / "benchmarks" / "results" / "2026-10-23-e2"
 PHASTFORM = REPO / "deploy" / "phastform"
-needs_waitid = pytest.mark.skipif(not hasattr(os, "waitid"), reason=e2.NEEDS_WAITID)
+needs_waitid = pytest.mark.skipif(not hasattr(os, "waitid"), reason=tools.NEEDS_WAITID)
 
 ARM = """\
 arm = 2
@@ -94,7 +102,7 @@ def write(directory: Path, name: str, text: str) -> Path:
 
 @pytest.fixture(autouse=True)
 def _quick(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(e2, "POLL_S", 0.02)
+    monkeypatch.setattr(tools, "POLL_S", 0.02)
     for name in ("FAKE_AIPERF", "FAKE_BOTS"):
         monkeypatch.delenv(name, raising=False)
 
@@ -225,7 +233,7 @@ def test_the_w5_control_is_make_room_as_v03_built_it() -> None:
     assert hashlib.sha256(v03.encode()).hexdigest() == V03_CONF_SHA256
     assert f"variants/make-room-v03/build.py {cache}" in rest
     assert f"Environment=PYTHONPATH={cache}" in rest
-    assert e2.variant_flags("make-room-v03") == (
+    assert variant_flags("make-room-v03") == (
         "--scheduler-cls", "flatshare_make_room_v03_scheduler.AsyncScheduler",
         "--additional-config.make_room.max_preemptions_per_step", "2",
         "--additional-config.make_room.budget_cap", "true",
@@ -417,7 +425,7 @@ def test_the_gateway_configuration_merges_the_arm_and_round_trips(tmp_path: Path
         "admission": {"policy": "flow-control", "ttft_target_ms": {"realtime": 300.0}},
         "tenants": {"agents": {"max_class": "background"}},
     }
-    merged = e2._merge(base, overlay)
+    merged = _merge(base, overlay)
     assert tomllib.loads(toml_text(merged)) == merged
     assert merged["tenants"]["agents"]["trusted"] is True  # tables merge key by key
     assert merged["tenants"]["agents"]["max_class"] == "background"
@@ -428,9 +436,9 @@ def test_the_gateway_configuration_merges_the_arm_and_round_trips(tmp_path: Path
         "nested": {"a.b": [1.5, 2]},
     }
     assert tomllib.loads(toml_text(tricky)) == tricky
-    redacted = e2._redacted(merged)
-    assert redacted["tenants"]["agents"]["keys_sha256"] == ["<redacted>"]
-    assert "<sha256" not in json.dumps(redacted)
+    kept = redacted(merged)
+    assert kept["tenants"]["agents"]["keys_sha256"] == ["<redacted>"]
+    assert "<sha256" not in json.dumps(kept)
 
 
 def test_env_files_read_like_the_shell_reads_them(tmp_path: Path) -> None:
@@ -528,21 +536,21 @@ def variants_of_the_box(tmp_path: Path) -> Path:
 
 def test_a_variants_flags_are_those_of_the_engine_command_it_starts(tmp_path: Path) -> None:
     variants = variants_of_the_box(tmp_path)
-    assert e2.variant_flags("make-room", variants) == (
+    assert variant_flags("make-room", variants) == (
         "--scheduler-cls", MAKE_ROOM_CLS,
         "--additional-config.make_room.max_preemptions_per_step", "2",
         "--additional-config.make_room.budget_cap", "true",
         "--additional-config.make_room.reserve_tokens", "2048",
     )  # fmt: skip
-    assert e2.variant_flags("frozen", variants) == e2.variant_flags("mps", variants) == ()
+    assert variant_flags("frozen", variants) == variant_flags("mps", variants) == ()
     with pytest.raises(E2Error, match="no engine variant nope in"):
-        e2.variant_flags("nope", variants)
+        variant_flags("nope", variants)
     # The repository's variants: each names its scheduler class, and its flags pair up.
     for variant in (PHASTFORM / "variants").iterdir():
         if variant.is_dir():
-            flag_values(e2.variant_flags(variant.name))
-    assert dict(pairs(e2.variant_flags("make-room")))["--scheduler-cls"] == MAKE_ROOM_CLS
-    assert dict(pairs(e2.variant_flags("pr54530"))) == {
+            flag_values(variant_flags(variant.name))
+    assert dict(pairs(variant_flags("make-room")))["--scheduler-cls"] == MAKE_ROOM_CLS
+    assert dict(pairs(variant_flags("pr54530"))) == {
         "--scheduler-cls": "flatshare_pr54530_scheduler.AsyncScheduler",
         "--max-num-seqs": "12",
     }
@@ -666,7 +674,7 @@ def test_a_vllm_point_needs_the_frozen_settings_its_flags_keep(tmp_path: Path) -
     pr54530 = vllm(scheduler_cls="flatshare_pr54530_scheduler.AsyncScheduler", max_num_seqs=12)
     assert check_engine(Engine("pr54530", ()), pr54530, variants)["unchecked"] == []
     engine_yaml = (PHASTFORM / "engine.yaml").read_text()
-    for flag, value in flag_values(e2.FROZEN).items():
+    for flag, value in flag_values(FROZEN).items():
         assert re.search(rf"^{flag.removeprefix('--')}: {value}$", engine_yaml, re.M), flag
 
 
@@ -740,7 +748,7 @@ def test_the_engine_check_holds_the_profiles_model_and_the_kernels(tmp_path: Pat
 def test_an_engines_settings_name_its_model_by_its_id_and_hold_its_kernels() -> None:
     engine = fake_engine(dict(FROZEN_SCHEDULER))
     try:
-        info = e2.describe_engine(engine.url)
+        info = describe_engine(engine.url)
     finally:
         engine.shutdown()
     # Offline mode reports the model by its path in the cache; the settings name it by its id.
@@ -820,11 +828,11 @@ def test_a_run_ends_the_process_group_a_killed_run_left_although_its_titles_blan
     try:
         assert os.getpgid(child) == tool.popen.pid
         titled(child)
-        assert (tmp_path / e2.TOOLS / str(tool.popen.pid)).exists()
+        assert (tmp_path / tools.TOOLS / str(tool.popen.pid)).exists()
         # The run is killed here, before stop(); the next run's start:
-        assert sorted(e2.kill_left(str(tmp_path))) == sorted([tool.popen.pid, child])
+        assert sorted(tools.kill_left(str(tmp_path))) == sorted([tool.popen.pid, child])
         assert gone(child) and tool.popen.wait(timeout=5) == -9
-        assert list((tmp_path / e2.TOOLS).iterdir()) == []
+        assert list((tmp_path / tools.TOOLS).iterdir()) == []
     finally:
         for pid in (child, tool.popen.pid):
             with contextlib.suppress(ProcessLookupError):
@@ -844,13 +852,13 @@ def test_a_stopped_tool_leaves_no_group_named_in_its_scope(tmp_path: Path) -> No
     )
     wait_for(artifacts / "profile_export.jsonl")
     assert tool.stop(grace=5) == 0
-    assert list((tmp_path / e2.TOOLS).iterdir()) == [] and e2.kill_left(str(tmp_path)) == []
+    assert list((tmp_path / tools.TOOLS).iterdir()) == [] and tools.kill_left(str(tmp_path)) == []
 
 
 def titled(pid: int) -> None:
     """Wait for process ``pid`` to set its title, which blanks its environment and the mark in it."""
     deadline = time.monotonic() + 10
-    while e2.TOOL_MARK.encode() in Path(f"/proc/{pid}/environ").read_bytes():
+    while tools.TOOL_MARK.encode() in Path(f"/proc/{pid}/environ").read_bytes():
         assert time.monotonic() < deadline, f"{pid} never set its title"
         time.sleep(0.05)
 
@@ -868,7 +876,7 @@ def leaderless(scope: Path) -> tuple[Path, int]:
     titled(child)
     os.kill(tool.popen.pid, signal.SIGINT)  # which the child ignores
     assert tool.popen.wait(timeout=10) == 0
-    return scope / e2.TOOLS / str(tool.popen.pid), child
+    return scope / tools.TOOLS / str(tool.popen.pid), child
 
 
 @PROC
@@ -880,7 +888,7 @@ def test_a_run_ends_the_titled_processes_of_a_tools_group_whose_leader_is_gone(
     cgroup the tool started in are the tool's."""
     named, child = leaderless(tmp_path)
     try:
-        assert e2.kill_left(str(tmp_path)) == [child]
+        assert tools.kill_left(str(tmp_path)) == [child]
         assert gone(child) and not named.exists()
     finally:
         with contextlib.suppress(ProcessLookupError):
@@ -907,7 +915,7 @@ def test_a_record_that_does_not_name_the_tool_leaves_the_titled_processes_of_its
     }
     named.write_text(records[which])
     try:
-        assert e2.kill_left(str(tmp_path)) == [] and not gone(child, timeout=0.2)
+        assert tools.kill_left(str(tmp_path)) == [] and not gone(child, timeout=0.2)
         assert not named.exists()
     finally:
         with contextlib.suppress(ProcessLookupError):
@@ -917,7 +925,7 @@ def test_a_record_that_does_not_name_the_tool_leaves_the_titled_processes_of_its
 def name_group(scope: Path, pgid: int, started: str | None) -> Path:
     """Name process group ``pgid`` in ``scope`` as Process names a tool's: ``started`` for its leader's
     start, and the cgroup of this process, which the processes it starts share."""
-    named = scope / e2.TOOLS / str(pgid)
+    named = scope / tools.TOOLS / str(pgid)
     named.parent.mkdir(exist_ok=True)
     named.write_text(f"{started}\n{Path('/proc/self/cgroup').read_text()}")
     return named
@@ -931,8 +939,8 @@ def test_a_record_leaves_a_process_that_took_its_number_since(tmp_path: Path) ->
         [sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True
     )
     try:
-        named = name_group(tmp_path, other.pid, e2._started(os.getpid()))  # the tool's, earlier
-        assert e2.kill_left(str(tmp_path)) == [] and other.poll() is None
+        named = name_group(tmp_path, other.pid, tools._started(os.getpid()))  # the tool's, earlier
+        assert tools.kill_left(str(tmp_path)) == [] and other.poll() is None
         assert not named.exists()
     finally:
         other.kill()
@@ -953,8 +961,8 @@ def test_a_record_leaves_a_group_that_took_its_number_since_and_lost_its_own_lea
     member = int(shell.communicate()[0])  # the shell has exited, and been reaped
     try:
         assert os.getpgid(member) == shell.pid
-        named = name_group(tmp_path, shell.pid, e2._started(os.getpid()))
-        assert e2.kill_left(str(tmp_path)) == [] and not gone(member, timeout=0.2)
+        named = name_group(tmp_path, shell.pid, tools._started(os.getpid()))
+        assert tools.kill_left(str(tmp_path)) == [] and not gone(member, timeout=0.2)
         assert not named.exists()
     finally:
         with contextlib.suppress(ProcessLookupError):
@@ -979,12 +987,12 @@ def test_a_record_reads_a_process_whose_name_the_kernel_cut_inside_a_character(
         while Path(f"/proc/{cut.pid}/comm").read_bytes() != name[:15] + b"\n":
             assert time.monotonic() < deadline, "the process never took its name"
             time.sleep(0.02)
-        name_group(tmp_path, cut.pid, e2._started(os.getpid()))  # another start
-        assert e2.kill_left(str(tmp_path)) == [] and cut.poll() is None
-        name_group(tmp_path, cut.pid, e2._started(cut.pid))
-        write(tmp_path / e2.TOOLS, "1.part", "")
-        assert e2.kill_left(str(tmp_path)) == [cut.pid] and cut.wait(timeout=5) == -9
-        assert [path.name for path in (tmp_path / e2.TOOLS).iterdir()] == ["1.part"]
+        name_group(tmp_path, cut.pid, tools._started(os.getpid()))  # another start
+        assert tools.kill_left(str(tmp_path)) == [] and cut.poll() is None
+        name_group(tmp_path, cut.pid, tools._started(cut.pid))
+        write(tmp_path / tools.TOOLS, "1.part", "")
+        assert tools.kill_left(str(tmp_path)) == [cut.pid] and cut.wait(timeout=5) == -9
+        assert [path.name for path in (tmp_path / tools.TOOLS).iterdir()] == ["1.part"]
     finally:
         cut.kill()
 
@@ -1001,7 +1009,7 @@ def test_a_tool_that_cannot_be_named_is_not_left_running(
     scope = write(tmp_path, "not-a-directory", "")
     with pytest.raises(NotADirectoryError):
         Process("AIPerf", command, tmp_path / "log", env, str(scope))
-    assert e2.kill_marked(str(scope)) == []  # nothing runs with its mark
+    assert tools.kill_marked(str(scope)) == []  # nothing runs with its mark
 
     def full(path: Path, *args: object, **kwargs: object) -> int:
         raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC), str(path))
@@ -1010,12 +1018,12 @@ def test_a_tool_that_cannot_be_named_is_not_left_running(
         patched.setattr(Path, "write_text", full)
         with pytest.raises(OSError, match="No space left on device"):
             Process("AIPerf", command, tmp_path / "log", env, str(tmp_path))
-    assert e2.kill_marked(str(tmp_path)) == []
+    assert tools.kill_marked(str(tmp_path)) == []
 
 
 def marked(mark: str) -> subprocess.Popen:
     """A process that lasts a minute, marked as a tool of e2 run with ``mark``."""
-    env = os.environ | {e2.TOOL_MARK: mark}
+    env = os.environ | {tools.TOOL_MARK: mark}
     return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], env=env)
 
 
@@ -1025,10 +1033,10 @@ def test_a_marked_process_left_by_an_earlier_run_is_found_and_killed(tmp_path: P
     here, beside = tmp_path / "a" / "flatshare", tmp_path / "a" / "flatshare" / "b"
     earlier, other = marked(f"{here}/123-456"), marked(f"{beside}/123-456")
     try:
-        assert e2.kill_marked(str(here), f"{here}/123-789") == []
-        assert e2.kill_marked(str(here)) == [earlier.pid]  # not a scope inside its root's
+        assert tools.kill_marked(str(here), f"{here}/123-789") == []
+        assert tools.kill_marked(str(here)) == [earlier.pid]  # not a scope inside its root's
         assert earlier.wait(timeout=5) == -9 and other.poll() is None
-        assert e2.kill_marked(str(beside), f"{beside}/123-456") == [other.pid]
+        assert tools.kill_marked(str(beside), f"{beside}/123-456") == [other.pid]
         assert other.wait(timeout=5) == -9
     finally:
         earlier.kill()
@@ -1304,7 +1312,7 @@ class Cyan:
 @pytest.fixture
 def cyan(tmp_path: Path) -> Iterator[Cyan]:
     if not hasattr(os, "waitid"):
-        pytest.skip(e2.NEEDS_WAITID)  # every point runs its tools
+        pytest.skip(tools.NEEDS_WAITID)  # every point runs its tools
     home = tmp_path / "home"
     config = home / ".config" / "flatshare"
     config.mkdir(parents=True)
@@ -1415,7 +1423,7 @@ def test_a_point_ends_the_group_a_killed_runs_tool_left_its_titled_processes_too
     artifacts = tmp_path / "left"
     env = os.environ | {"FLATSHARE_BENCH_ARTIFACTS": str(artifacts), "FAKE_AIPERF": "titled"}
     command = [sys.executable, str(FAKES / "fake_aiperf.py")]
-    tool = Process("AIPerf", command, tmp_path / "left.log", env, e2.tool_scope(cyan.host))
+    tool = Process("AIPerf", command, tmp_path / "left.log", env, tools.tool_scope(cyan.host))
     child = int(wait_for(artifacts / "child.pid").read_text())
     try:
         titled(child)
@@ -1455,13 +1463,13 @@ def test_the_generated_configuration_is_private_from_its_creation(
     mask = os.umask(0)
     try:
         with staged.open() as reader:
-            assert e2._write_private(path, "digests\n")
+            assert _write_private(path, "digests\n")
             assert reader.read() == "stale\n"
     finally:
         os.umask(mask)
     assert path.read_text() == "digests\n" and stat.S_IMODE(path.stat().st_mode) == 0o600
     assert not staged.exists()
-    assert not e2._write_private(path, "digests\n"), "an unchanged configuration is not written"
+    assert not _write_private(path, "digests\n"), "an unchanged configuration is not written"
 
 
 def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(cyan: Cyan) -> None:
@@ -2042,7 +2050,7 @@ def test_a_complete_point_is_kept_and_an_incomplete_one_moved_aside(
 
 def test_one_point_at_a_time(cyan: Cyan) -> None:
     lock = cyan.host.root / "runs" / ".flatshare-bench-e2.lock"
-    with e2.exclusive(cyan.host):
+    with exclusive(cyan.host):
         with pytest.raises(E2Error, match="another flatshare-bench e2 run"):
             run(cyan, "a1-voice", VOICE_ALONE)
         assert lock.read_text() == f"{os.getpid()}\n"  # the holder's, kept through the refusal

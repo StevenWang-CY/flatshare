@@ -602,7 +602,8 @@ kill_tools() {
     return 0
   fi
   "$python" - <<'EOF'
-from flatshare_bench.e2.run import Host, kill_left, tool_scope
+from flatshare_bench.e2.cyan import Host
+from flatshare_bench.e2.tools import kill_left, tool_scope
 
 killed = sorted(kill_left(tool_scope(Host.load())))
 print(

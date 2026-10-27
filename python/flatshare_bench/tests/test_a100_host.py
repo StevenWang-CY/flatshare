@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from flatshare_bench.e2.run import Host
+from flatshare_bench.e2.cyan import Host
 
 REPO = Path(__file__).resolve().parents[3]
 DEPLOY = REPO / "deploy"

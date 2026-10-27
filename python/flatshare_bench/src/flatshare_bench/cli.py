@@ -287,7 +287,6 @@ def _drill(args: argparse.Namespace) -> int:
 
     from flatshare_bench.drills import (
         DrillConfig,
-        agents_key,
         clients,
         default_uds,
         fill_cpu_tier,
@@ -296,7 +295,7 @@ def _drill(args: argparse.Namespace) -> int:
         start_phases,
     )
     from flatshare_bench.e2.arm import E2Error
-    from flatshare_bench.e2.run import Host, exclusive
+    from flatshare_bench.e2.cyan import Host, agents_key, exclusive
     from flatshare_bench.transport import async_client
 
     if args.action == "streams":
@@ -430,9 +429,10 @@ def _add_drill(commands: Commands) -> None:
 
 def _e2(args: argparse.Namespace) -> int:
     from flatshare_bench.e2.arm import E2Error, load_arm
+    from flatshare_bench.e2.cyan import Host, Systemd, reset_cyan
     from flatshare_bench.e2.record import export_point, render
     from flatshare_bench.e2.report import load_points, read_dots, write_report
-    from flatshare_bench.e2.run import Host, Systemd, gpu_sources, reset_cyan, run_point
+    from flatshare_bench.e2.run import gpu_sources, run_point
 
     try:
         if args.action == "engine":
