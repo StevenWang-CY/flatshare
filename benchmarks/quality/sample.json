@@ -1,0 +1,1417 @@
+{
+ "gate": "benchmarks/quality/GATE.md",
+ "seed": 2026,
+ "qasper": {
+  "file": "qasper-test-v0.3.json",
+  "sha256": "6e29ad410e6e39aa1936017fb965b30a20eb2e7751997f55b97c9d281aa884e5",
+  "per_paper": 2,
+  "questions": [
+   {
+    "paper": "2001.11316",
+    "question_id": "538430077b1820011c609c8ae147389b960932c8",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1706.02427",
+    "question_id": "c21675d8a90bda624d27e5535d1c10f08fcbc16b",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1609.02075",
+    "question_id": "993d5bef2bf1c0cd537342ef76d4b952f0588b83",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1910.12477",
+    "question_id": "e86b9633dc691976dd00ed57d1675e1460f7167b",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1912.11585",
+    "question_id": "11360385dff0a9d7b8f4b106ba2b7fe15ca90d7c",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1905.08392",
+    "question_id": "98c8ed9019e43839ffb53a714bc37fbb1c28fe2c",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1709.04491",
+    "question_id": "90829d5fde4f5f0ffc184c5e8fc64c8ac5ece521",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1803.08614",
+    "question_id": "21175d8853fd906266f884bced85c598c35b1cbc",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1911.04128",
+    "question_id": "b02a6f59270b8c55fa4df3751bcb66fca2371451",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1809.03695",
+    "question_id": "9d98975ab0b75640b2c83e29e1438c76a959fbde",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1910.07973",
+    "question_id": "c6170bb09ba2a416f8fa9b542f0ab05a64dbf2e4",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "2004.03090",
+    "question_id": "be0b438952048fe6bb91c61ba48e529d784bdcea",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1907.00168",
+    "question_id": "ab95ca983240ad5289c123a2774f8e0db424f4a1",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1711.11118",
+    "question_id": "f1e70b63c45ab0fc35dc63de089c802543e30c8f",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1911.06815",
+    "question_id": "52f5249a9a2cb7210eeb8e52cb29d18912f6c3aa",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1812.05813",
+    "question_id": "e500948fa01c74e5cb3e6774f66aaa9ad4b3e435",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1909.08357",
+    "question_id": "9bf60073fbb69fbf860196513fc6fd2f466535f6",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1908.05731",
+    "question_id": "11dd2913d1517a1d47b367acb29fe9d79a9c95d1",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1910.07973",
+    "question_id": "a17fc7b96753f85aee1d2036e2627570f4b50c30",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1610.07149",
+    "question_id": "bfcbb47f3c54ee1a459183e04e4c5a41ac9ae83b",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1906.01010",
+    "question_id": "a926d71e6e58066d279d9f7dc3210cd43f410164",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1910.09387",
+    "question_id": "87523fb927354ddc8ad1357a81f766b7ea95f53c",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1907.01339",
+    "question_id": "a913aa14d4e05cc9d658bf6697fe5b2652589b1b",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1710.01789",
+    "question_id": "d3d6a4a721b8bc9776f62759b8d9be1a19c6b0d2",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1905.00472",
+    "question_id": "04914917d01c9cd8718cd551dc253eb3827915d8",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1912.00239",
+    "question_id": "fd556a038c36abc88a800d9d4f2cfa0aef6f5aba",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1906.05506",
+    "question_id": "3dad6b792044018bb968ac0d0fd4628653f9e4b7",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1809.08935",
+    "question_id": "7fba61426737394304e307cdc7537225f6253150",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1909.04242",
+    "question_id": "2a55076a66795793d79a3edfae1041098404fbc3",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1907.00168",
+    "question_id": "044c66c6b7ff7378682f24887b05e1af79dcd04f",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1711.11118",
+    "question_id": "bbc6d0402cae16084261f8558cebb4aa6d5b1ea5",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1710.11027",
+    "question_id": "7f8fc3c7d59aba80a3e7c839db6892a1fc329210",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1908.07721",
+    "question_id": "67104a5111bf8ea626532581f20b33b851b5abc1",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1906.08871",
+    "question_id": "010fd15696580d9924ac0275a4ff269005e5808d",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1902.10246",
+    "question_id": "3e4e415e346a313f5a7c3764fe0f51c11f51b071",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1905.08392",
+    "question_id": "173060673cb15910cc310058bbb9750614abda52",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1812.00382",
+    "question_id": "592df9831692b8fde213257ed1894344da3e0594",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1906.04236",
+    "question_id": "84f9952814d6995bc99bbb3abb372d90ef2f28b4",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "2003.13028",
+    "question_id": "3e3d123960e40bcb1618e11999bd2031ccc1d155",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1804.03839",
+    "question_id": "6c5a64b5150305c584326882d37af5b0e58de2fd",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1908.09355",
+    "question_id": "71e1f06daf6310609d00850340e64a846fbe2dfb",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "2003.12450",
+    "question_id": "0ba1514fb193c52a15c31ffdcd5c3ddbb2bb2c40",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1702.02584",
+    "question_id": "4830459e3d1d204e431025ce7e596ef3f8d757d2",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1906.06349",
+    "question_id": "0b5a505c1fca92258b9e83f53bb8cfeb81cb655a",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1911.05652",
+    "question_id": "fa468c31dd0f9095d7cec010f2262eeed565a7d2",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1908.05925",
+    "question_id": "63279ecb2ba4e51c1225e63b81cb021abc10d0d1",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1903.01411",
+    "question_id": "5138121b9e9bd56962e69bfe49d5df5301cb7745",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1909.06708",
+    "question_id": "a86758696926f2db71f982dc1a4fa4404988544e",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1909.08357",
+    "question_id": "4beb50ba020f624446ff1ef5bf4adca5ed318b98",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1911.04128",
+    "question_id": "3a3c372b6d73995adbdfa26103c85b32d071ff10",
+    "stratum": "unanswerable"
+   },
+   {
+    "paper": "1912.02866",
+    "question_id": "6e37f43f4f54ffc77c785d60c6058fbad2147922",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.04242",
+    "question_id": "7f11f128fd39b8060f5810fa84102f000d94ea33",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1711.03759",
+    "question_id": "bab4ae97afd598a11d1fc7c05c6fdb98c30cafe0",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2002.06851",
+    "question_id": "96295e1fe8713417d2b4632438a95d23831fbbdc",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1710.10380",
+    "question_id": "cf68906b7d96ca0c13952a6597d1f23e5184c304",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1809.03680",
+    "question_id": "5e4eac0b0a73d465d74568c21819acaec557b700",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.13184",
+    "question_id": "4379a3ece3fdb93b71db43f62833f5f724c49842",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.02001",
+    "question_id": "c135e1f8ecaf7965f6a6d3e30b537eb37ad74230",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.01340",
+    "question_id": "1f011fa772ce802e74eda89f706cdb1aa2833686",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1906.11085",
+    "question_id": "04796aaa59eeb2176339c0651838670fd916074d",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1811.00127",
+    "question_id": "f93bad406e004014618dd64f6c604b1a9ee6a371",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.12208",
+    "question_id": "14fdc8087f2a62baea9d50c4aa3a3f8310b38d17",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1603.09405",
+    "question_id": "ad8411edf11d3429c9bdd08b3e07ee671464d73c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1703.10152",
+    "question_id": "31e6062ba45d8956791e1b86bad7efcb6d1b191a",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2002.04374",
+    "question_id": "f9ae1b31c1a60aacb9ef869e1cc6b0e70c6e5d8e",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1808.07231",
+    "question_id": "5d93245832d90b31aee42ea2bf1e7704c22ebeca",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.13793",
+    "question_id": "12dc04e0ec1d3ba5ec543069fe457dfa4a1cac07",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1703.10152",
+    "question_id": "38b29b0dcb87868680f9934af71ef245ebb122e4",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1911.12237",
+    "question_id": "894bbb1e42540894deb31c04cba0e6cfb10ea912",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1605.05156",
+    "question_id": "8ddf78dbdc6ac964a7102ae84df18582841f2e3c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1804.01155",
+    "question_id": "028d0d9b7a71133e51a14a32cd09dea1e2f39f05",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1809.03391",
+    "question_id": "183b385fb59ff1e3f658d4555a08b67c005a8734",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1708.07690",
+    "question_id": "157de5175259d6f25db703efb299f948dae597b7",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1706.00188",
+    "question_id": "5096aaea2d0f4bea4c12e14f4f7735e1aea1bfa6",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1803.05160",
+    "question_id": "9ca85242ebeeafa88a0246986aa760014f6094f2",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.01108",
+    "question_id": "84ee6180d3267115ad27852027d147fb86a33135",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.04387",
+    "question_id": "371433bd3fb5042bacec4dfad3cfff66147c14f0",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1605.04278",
+    "question_id": "7546125f43eec5b09a3368c95019cb2bf1478255",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1905.00840",
+    "question_id": "7748c072e07d6c6db5a34be38b4a5e97ac6d7999",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1604.05559",
+    "question_id": "6014c2219d29bae17279625716e7c2a1f8a2bd05",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1611.02378",
+    "question_id": "283d358606341c399e369f2ba7952cd955326f73",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1803.05160",
+    "question_id": "42279c3a202a93cfb4aef49212ccaf401a3f8761",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.01720",
+    "question_id": "246e924017c48fa1f069361c44133fdf4f0386e1",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.09919",
+    "question_id": "36cb7ebdd39e0b8a89ff946d3a3aef8a76a6bb43",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1708.03312",
+    "question_id": "bab4e8881f4d75e266bce6fbfa4c3bcd3eacf30f",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.10670",
+    "question_id": "c0cebef0e29b9d13c165b6f19f6ca8393348c671",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1805.04833",
+    "question_id": "f2dba5bf75967407cce5d0a9c2618269225081f5",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1806.07042",
+    "question_id": "86c867b393db0ec4ad09abb48cc1353cac47ea4c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1902.08830",
+    "question_id": "3699927c6c1146f5057576034d226a99946d52cb",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1911.01214",
+    "question_id": "29794bda61665a1fbe736111e107fd181eacba1b",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1709.05453",
+    "question_id": "3a01dc85ac983002fd631f1c28fc1cbe16094c24",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1611.00440",
+    "question_id": "65b39676db60f914f29f74b7c1264422ee42ad5c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.07873",
+    "question_id": "07d98dfa88944abd12acd45e98fb7d3719986aeb",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1802.02614",
+    "question_id": "d8ae36ae1b4d3af5b59ebd24efe94796101c1c12",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1911.10742",
+    "question_id": "b584739622d0c53830e60430b13fd3ae6ff43669",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1905.10039",
+    "question_id": "8126c6b8a0cab3e22661d3d71d96aa57360da65c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.06708",
+    "question_id": "2711ae6dd532d136295c95253dbf202e37ecd3e7",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1911.11025",
+    "question_id": "a9ff35f77615b3a4e7fd7b3a53d0b288a46f06ce",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1803.08419",
+    "question_id": "833d3ae7613500f2867ed8b33d233d71781014e7",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2004.02334",
+    "question_id": "ec990c16896793a819766bc3168c02556ef69971",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1901.10619",
+    "question_id": "275b2c22b6a733d2840324d61b5b101f2bbc5653",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.07491",
+    "question_id": "e831ce6c406bf5d1c493162732e1b320abb71b6f",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.07491",
+    "question_id": "4de6bcddd46726bf58326304b0490fdb9e7e86ec",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2002.00175",
+    "question_id": "b424ad7f9214076b963a0077d7345d7bb5a7a205",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1712.02555",
+    "question_id": "ed7ce13cd95f7664a5e4fc530dcf72dc3808dced",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1710.06923",
+    "question_id": "00e4c9aa87411dfc5455fc92f10e5c9266e7b95e",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1610.06510",
+    "question_id": "bf5e80f1ab4eae2254b4f4d7651969a3cf945fb4",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.09283",
+    "question_id": "3a06d40a4bf5ba6e26d9138434e9139a014deb40",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1705.01306",
+    "question_id": "49cd18448101da146c3187a44412628f8c722d7b",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1911.12237",
+    "question_id": "bdae851d4cf1d05506cf3e8359786031ac4f756f",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.10762",
+    "question_id": "3cfe464052f0a248b6e22c9351279403dfe34f3c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1602.07563",
+    "question_id": "f4e16b185b506713ff99acc4dbd9ec3208e4997b",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.10762",
+    "question_id": "13eb64957478ade79a1e81d32e36ee319209c19a",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.06502",
+    "question_id": "7de0b2df60d3161dd581ed7915837d460020bc11",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.08211",
+    "question_id": "562a995dfc8d95777aa2a3c6353ee5cd4a9aeb08",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.05925",
+    "question_id": "59a3d4cdd1c3797962bf8d72c226c847e06e1d44",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1603.07252",
+    "question_id": "0f9c1586f1b4b531fa4fd113e767d06af90b1ae8",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2004.02143",
+    "question_id": "af948ea91136c700957b438d927f58d9b051c97c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1803.08614",
+    "question_id": "9b05d5f723a8a452522907778a084b52e27fd924",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.02855",
+    "question_id": "34e9e54fa79e89ecacac35f97b33ef3ca3a00f85",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1901.03253",
+    "question_id": "ec2045e0da92989642a5b5f2b1130c8bd765bcc5",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.07721",
+    "question_id": "0b10cfa61595b21bf3ff13b4df0fe1c17bbbf4e9",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1804.08000",
+    "question_id": "610fc593638c5e9809ea9839912d0b282541d42d",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1911.09709",
+    "question_id": "5422a3f2a083395416d6f99c57d28335eb2e44e1",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2003.04707",
+    "question_id": "58259f2e22363aab20c448e5dd7b6f432556b32d",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1707.06875",
+    "question_id": "f11856814a57b86667179e1e275e4f99ff1bcad8",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2004.04498",
+    "question_id": "b1fe6a39b474933038b44b6d45e5ca32af7c3e36",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.08250",
+    "question_id": "87c00edc497274ae6a972c3097818de85b1b384f",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1905.08067",
+    "question_id": "31894361833b3e329a1fb9ebf85a78841cff229f",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.02677",
+    "question_id": "23cbf6ab365c1eb760b565d8ba51fb3f06257d62",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.00437",
+    "question_id": "8599d6d14ac157169920c73b98a79737c7a68cf5",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.10487",
+    "question_id": "8db11d9166474a0e98b99ac7f81d1f14539d79ec",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1802.06053",
+    "question_id": "5f6c1513cbda9ae711bc38df08fe72e3d3028af2",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2001.11316",
+    "question_id": "8a0e1a298716698a305153c524bf03d18969b1c6",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1907.08540",
+    "question_id": "16cc37e4f8e2db99eaf89337a3d9ada431170d5b",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.00437",
+    "question_id": "088d42ecb1e15515f6a97a0da2fed81b61d61a23",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1710.07394",
+    "question_id": "dfd07a8e2de80c3a8d075a0f400fb13a1f1d4c60",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1911.12722",
+    "question_id": "87b65b538d79e1218fa19aaac71e32e9b49208df",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1709.05295",
+    "question_id": "9e378361b6462034aaf752adf04595ef56370b86",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.02284",
+    "question_id": "0caa3162abe588f576a568d63ab9fd0e9c46ceda",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1802.08969",
+    "question_id": "1128a600a813116cba9a2cf99d8568ae340f327a",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1710.06923",
+    "question_id": "99554d0c76fbaef90bce972700fa4c315f961c31",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1703.10090",
+    "question_id": "8c89f1d1b3c2a45c0254c4c8d6e700ab9a4b4ffb",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.00369",
+    "question_id": "361f330d3232681f1a13c6d59abb6c18246e7b35",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2002.06851",
+    "question_id": "5bfbc9ca7fd41be9627f6ef587bb7e21c7983be0",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1810.02268",
+    "question_id": "ebe1084a06abdabefffc66f029eeb0b69f114fd9",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1812.00382",
+    "question_id": "6822ca5f7a19866ffc3c985b790a4aadcecf2d1c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1805.00195",
+    "question_id": "633e2210c740b4558b1eea3f041b3ae8e0813293",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1702.02584",
+    "question_id": "74ebfba06f37cc95dfe59c3790ebe6165e6be19c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1912.00239",
+    "question_id": "5b95665d44666a1dc9e568d2471e5edf8614859f",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1703.04009",
+    "question_id": "22c125c461f565f5437dac74bf19c2ef317bad86",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.10487",
+    "question_id": "ce8d8de78a21a3ba280b658ac898f73d0b52bf1b",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1808.00957",
+    "question_id": "a398c9b061f28543bc77c2951d0dfc5d1bee9e87",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1610.03807",
+    "question_id": "1e11e74481ead4b7635922bbe0de041dc2dde28d",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1702.02367",
+    "question_id": "97ff88c31dac9a3e8041a77fa7e34ce54eef5a76",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1708.05482",
+    "question_id": "f13a5b6a67a9b10fde68e8b33792879b8146102c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1905.08067",
+    "question_id": "a4a9971799c8860b50f219c93f050ebf6a627b3d",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1911.02747",
+    "question_id": "8ad5ebca2f69023b60ccfa3aac0ed426234437ac",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1705.10754",
+    "question_id": "9262292ca4cc78de515b5617f6a91e540eb2678c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.09283",
+    "question_id": "bfd55ae9630a08a9e287074fff3691dfbffc3258",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1907.05338",
+    "question_id": "5d3e87937ecebf0695bece08eccefb2f88ad4a0f",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1906.01010",
+    "question_id": "c17ece1dad42d92c78fca2e3d8afa9a20ff19598",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1802.08969",
+    "question_id": "d64fa192a7e9918c6a22d819abad581af0644c7d",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1907.10676",
+    "question_id": "9f74f3991b8681619d95ab93a7c8733a843ddffe",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1707.02892",
+    "question_id": "fcdafaea5b1c9edee305b81f6865efc8b8dc50d3",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1603.08868",
+    "question_id": "a70656fc61bf526dd21db7d2ec697b29a5a9c24e",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1906.11085",
+    "question_id": "ebb33f3871b8c2ffd2c451bc06480263b8e870e0",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1707.07568",
+    "question_id": "4e568134c896c4616bc7ab4924686d8d59b57ea1",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1809.06083",
+    "question_id": "5181aefb8a7272b4c83a1f7cb61f864ead6a1f1f",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1912.11585",
+    "question_id": "875fbf4e5f93c3da63e28a233ce1d8405c7dfe63",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1811.04791",
+    "question_id": "5370a0062aae7fa4e700ae47aa143be5c5fc6b22",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1612.09535",
+    "question_id": "3614c1f1435b7c1fd1f7f0041219eebf5bcff473",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2001.05540",
+    "question_id": "ed15a593d64a5ba58f63c021ae9fd8f50051a667",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1802.02614",
+    "question_id": "8cf52ba480d372fc15024b3db704952f10fdca27",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1706.04206",
+    "question_id": "065623cc1d5f5b19ec1f84d286522fc2f805c6ce",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.11049",
+    "question_id": "9ef0d2365bde0d18054511fbb53cec5fa2cda5ee",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.11664",
+    "question_id": "940a16e9db8be5b5f4e67d9c7622b3df99ac10a5",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1603.09381",
+    "question_id": "b32de10d84b808886d7a91ab0c423d4fc751384c",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1912.11980",
+    "question_id": "a4cf0cf372f62b2dbc7f31c600c6c66246263328",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.11046",
+    "question_id": "1dcfcfa46dbcffc2fc7be92dd57df9620258097b",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2003.07459",
+    "question_id": "5a90871856beeefaa69a1080e1b3c8b5d4b2b937",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2004.01970",
+    "question_id": "da21bcaa8e3a9eadc8a5194fd57ae797e93c3049",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1911.03090",
+    "question_id": "441be93e2830cc0fc65afad6959db92754c9f5a8",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.10090",
+    "question_id": "96459b02efa82993a0b413530ed0b517c6633eea",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2002.03056",
+    "question_id": "5d5c25d68988fa5effe546507c66997785070573",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1601.03313",
+    "question_id": "5206b6f40a91fc16179829041c1139a6c6d91ce7",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1811.00127",
+    "question_id": "b6dae03d56dff0db8ad2a1bff9c7dd3f87551cd1",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2003.03728",
+    "question_id": "fee498457774d9617068890ff29528e9fa05a2ac",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1909.10481",
+    "question_id": "c0355afc7871bf2e12260592873ffdb5c0c4c919",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1906.05685",
+    "question_id": "6657ece018b1455035421b822ea2d7961557c645",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1805.11850",
+    "question_id": "df4895c6ae426006e75c511a304d56d37c42a1c7",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1908.10461",
+    "question_id": "b012df09fa2a3d6b581032d68991768cf4bc9d7b",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1910.01160",
+    "question_id": "180c7bea8caf05ca97d9962b90eb454be4176425",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1612.05202",
+    "question_id": "d5c393df758dec6ea6827ae5b887eb6c303a4f4d",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "2003.07459",
+    "question_id": "6cb3007a09ab0f1602cdad20cc0437fbdd4d7f3e",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1603.09405",
+    "question_id": "4dc4180127761e987c1043d5f8b94512bbe74d4f",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1706.00188",
+    "question_id": "452e2d7d7d9e1bb4914903479cd7caff9f6fae42",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1807.08089",
+    "question_id": "fef5b65263c81299acc350a101dabaf5a8cb9c6e",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1809.00129",
+    "question_id": "c635295c2b77aaab28faecca3b5767b0c4ab3728",
+    "stratum": "answerable"
+   },
+   {
+    "paper": "1905.07894",
+    "question_id": "c463136ba9a312a096034c872b5c74b9d58cef95",
+    "stratum": "answerable"
+   }
+  ]
+ },
+ "redocred": {
+  "file": "redocred-test.json",
+  "sha256": "ea673b7ef91e16510d7eb88863d3903e47318dc5653ef361266f27ae3b84723c",
+  "documents": [
+   {
+    "index": 1,
+    "title": "Vladimir Mitrofanovich Orlov"
+   },
+   {
+    "index": 5,
+    "title": "WHTV"
+   },
+   {
+    "index": 12,
+    "title": "Emiliano Esono Mich\u00e1"
+   },
+   {
+    "index": 39,
+    "title": "Assassin's Creed Unity"
+   },
+   {
+    "index": 41,
+    "title": "Metacomet Ridge"
+   },
+   {
+    "index": 45,
+    "title": "Eclipse (Meyer novel)"
+   },
+   {
+    "index": 46,
+    "title": "Pierre Seghers"
+   },
+   {
+    "index": 50,
+    "title": "Museum of Army Flying"
+   },
+   {
+    "index": 52,
+    "title": "Tuzantla"
+   },
+   {
+    "index": 56,
+    "title": "Operator Toll Dialing"
+   },
+   {
+    "index": 59,
+    "title": "Johannes Cuspinian"
+   },
+   {
+    "index": 60,
+    "title": "Booker T. Washington"
+   },
+   {
+    "index": 66,
+    "title": "Beaverton, Oregon"
+   },
+   {
+    "index": 72,
+    "title": "Isa, Nigeria"
+   },
+   {
+    "index": 107,
+    "title": "Street Fighter X Mega Man"
+   },
+   {
+    "index": 114,
+    "title": "In the Mood"
+   },
+   {
+    "index": 122,
+    "title": "Heikki H. Herlin"
+   },
+   {
+    "index": 128,
+    "title": "\u00c5lg\u00e5rd Line"
+   },
+   {
+    "index": 132,
+    "title": "The Merchants of Bollywood"
+   },
+   {
+    "index": 147,
+    "title": "American Theocracy"
+   },
+   {
+    "index": 149,
+    "title": "Scotch and soda (magic trick)"
+   },
+   {
+    "index": 158,
+    "title": "List of Major League Baseball first-round draft picks"
+   },
+   {
+    "index": 160,
+    "title": "Live in New York (Laurie Anderson album)"
+   },
+   {
+    "index": 163,
+    "title": "Malolos"
+   },
+   {
+    "index": 174,
+    "title": "Michael Scanlon"
+   },
+   {
+    "index": 178,
+    "title": "Marselisborg Gymnasium"
+   },
+   {
+    "index": 182,
+    "title": "Gyles Longley"
+   },
+   {
+    "index": 186,
+    "title": "Zillebeke Churchyard Commonwealth War Graves Commission Cemetery"
+   },
+   {
+    "index": 188,
+    "title": "Lloyd Fredendall"
+   },
+   {
+    "index": 192,
+    "title": "Sidney Peel"
+   },
+   {
+    "index": 203,
+    "title": "Henri de Boulainvilliers"
+   },
+   {
+    "index": 204,
+    "title": "List of Presidents of Ethiopia"
+   },
+   {
+    "index": 215,
+    "title": "Bone Machine"
+   },
+   {
+    "index": 216,
+    "title": "Ferrous metallurgy"
+   },
+   {
+    "index": 217,
+    "title": "Telecom Business School"
+   },
+   {
+    "index": 225,
+    "title": "Bengals\u2013Browns rivalry"
+   },
+   {
+    "index": 230,
+    "title": "Trail Smelter dispute"
+   },
+   {
+    "index": 234,
+    "title": "Durham Bulls"
+   },
+   {
+    "index": 236,
+    "title": "Ko Chang-seok"
+   },
+   {
+    "index": 245,
+    "title": "New Caledonian barrier reef"
+   },
+   {
+    "index": 251,
+    "title": "Life in Color"
+   },
+   {
+    "index": 255,
+    "title": "Rebelde (album)"
+   },
+   {
+    "index": 257,
+    "title": "Ninety-Two Resolutions"
+   },
+   {
+    "index": 259,
+    "title": "Olesno County"
+   },
+   {
+    "index": 262,
+    "title": "Neue Bachgesellschaft"
+   },
+   {
+    "index": 265,
+    "title": "Iwo Byczewski"
+   },
+   {
+    "index": 268,
+    "title": "The Storming of the Winter Palace"
+   },
+   {
+    "index": 275,
+    "title": "USS Lyndon B. Johnson"
+   },
+   {
+    "index": 280,
+    "title": "Space Mirror Memorial"
+   },
+   {
+    "index": 283,
+    "title": "Sangiran"
+   },
+   {
+    "index": 284,
+    "title": "The Archbishop"
+   },
+   {
+    "index": 285,
+    "title": "Enterprise Objects Framework"
+   },
+   {
+    "index": 288,
+    "title": "Andrew Fastow"
+   },
+   {
+    "index": 293,
+    "title": "Concordia Station"
+   },
+   {
+    "index": 294,
+    "title": "Angry Candy"
+   },
+   {
+    "index": 295,
+    "title": "Township High School District"
+   },
+   {
+    "index": 299,
+    "title": "House of Hanover"
+   },
+   {
+    "index": 300,
+    "title": "Fugue"
+   },
+   {
+    "index": 307,
+    "title": "Treaty of Ghent"
+   },
+   {
+    "index": 314,
+    "title": "Shanghainese"
+   },
+   {
+    "index": 318,
+    "title": "List of islands of Western Australia, M\u2013Q"
+   },
+   {
+    "index": 326,
+    "title": "Des Plaines River"
+   },
+   {
+    "index": 330,
+    "title": "Matthew de Glendonwyn"
+   },
+   {
+    "index": 331,
+    "title": "Wolfgang Th\u00fcne"
+   },
+   {
+    "index": 347,
+    "title": "God's Son (album)"
+   },
+   {
+    "index": 350,
+    "title": "Laurence M. Keitt"
+   },
+   {
+    "index": 360,
+    "title": "Burns Verkaufen der Kraftwerk"
+   },
+   {
+    "index": 363,
+    "title": "Rose Porteous"
+   },
+   {
+    "index": 366,
+    "title": "List of United States Armed Forces unit mottoes"
+   },
+   {
+    "index": 370,
+    "title": "Ulises Humala"
+   },
+   {
+    "index": 374,
+    "title": "Joshua Cushman"
+   },
+   {
+    "index": 381,
+    "title": "Microsoft Sync Framework"
+   },
+   {
+    "index": 384,
+    "title": "Operation Unified Resolve"
+   },
+   {
+    "index": 392,
+    "title": "Uptoi Village"
+   },
+   {
+    "index": 393,
+    "title": "Shire of Murray"
+   },
+   {
+    "index": 395,
+    "title": "Mountain railways of India"
+   },
+   {
+    "index": 397,
+    "title": "History of Medicine Society"
+   },
+   {
+    "index": 401,
+    "title": "Bloomberg L.P."
+   },
+   {
+    "index": 410,
+    "title": "Portugal no cora\u00e7\u00e3o"
+   },
+   {
+    "index": 412,
+    "title": "Crazy Town"
+   },
+   {
+    "index": 417,
+    "title": "Darren Davies (Welsh footballer)"
+   },
+   {
+    "index": 418,
+    "title": "Sibiu"
+   },
+   {
+    "index": 430,
+    "title": "Culture of Los Angeles"
+   },
+   {
+    "index": 431,
+    "title": "The G-String Murders"
+   },
+   {
+    "index": 440,
+    "title": "Everard Butler"
+   },
+   {
+    "index": 447,
+    "title": "Watts Station"
+   },
+   {
+    "index": 452,
+    "title": "Palestinian National Theatre"
+   },
+   {
+    "index": 454,
+    "title": "Franz Wilhelm Seiwert"
+   },
+   {
+    "index": 456,
+    "title": "Perdono"
+   },
+   {
+    "index": 458,
+    "title": "Demonstration (Tinie Tempah album)"
+   },
+   {
+    "index": 466,
+    "title": "Phineas Clanton"
+   },
+   {
+    "index": 475,
+    "title": "Denali National Park Improvement Act"
+   },
+   {
+    "index": 476,
+    "title": "National Integrated Ballistic Information Network"
+   },
+   {
+    "index": 484,
+    "title": "Contact Group (Balkans)"
+   },
+   {
+    "index": 487,
+    "title": "Ruth Winona Tao"
+   },
+   {
+    "index": 488,
+    "title": "Ned McEvoy"
+   },
+   {
+    "index": 489,
+    "title": "University (album)"
+   },
+   {
+    "index": 492,
+    "title": "Allen County, Ohio"
+   },
+   {
+    "index": 495,
+    "title": "Vladislav Frolov"
+   },
+   {
+    "index": 496,
+    "title": "Pinal Peak"
+   }
+  ]
+ }
+}
