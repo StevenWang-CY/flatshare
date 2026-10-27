@@ -32,7 +32,15 @@ from servers import UnixServer, serve, socket_file, stop
 from flatshare_bench.cli import main
 from flatshare_bench.e2 import run as e2
 from flatshare_bench.e2 import tools
-from flatshare_bench.e2.arm import E2Error, Engine, Voice, flag_values, load_arm
+from flatshare_bench.e2.arm import (
+    AGENTS_WINDOW_S,
+    E2Error,
+    Engine,
+    Voice,
+    arm_record,
+    flag_values,
+    load_arm,
+)
 from flatshare_bench.e2.cyan import (
     E2_GATEWAY_TABLE,
     Host,
@@ -55,7 +63,8 @@ from flatshare_bench.e2.engine import (
     profile_flags,
     variant_flags,
 )
-from flatshare_bench.e2.record import current_name
+from flatshare_bench.e2.record import current_name, render
+from flatshare_bench.e2.report import load_points
 from flatshare_bench.e2.run import gpu_sources, run_point
 from flatshare_bench.e2.tools import Process
 
@@ -110,6 +119,57 @@ def _quick(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # The arm file
+
+
+AGENTS_ONLY = """\
+arm = "2-agents"
+label = "the agents alone, 4 sessions"
+
+[voice]
+callers = 0
+
+[agents]
+sessions = 4
+warmup = 0.2
+data = "corpus"
+window_s = 1
+"""
+
+
+def test_an_agents_only_point_has_no_calls_and_a_fixed_window(tmp_path: Path) -> None:
+    # A dedicated background card serves no call: [voice] callers = 0 with agent sessions, measured over [agents]
+    # window_s, by default AGENTS_WINDOW_S; a point with calls is measured over its calls and takes no window.
+    arm = load_arm(write(tmp_path, "agents.toml", AGENTS_ONLY))
+    assert (arm.voice.callers, arm.agents.sessions, arm.agents.window_s) == (0, 4, 1.0)
+    default = AGENTS_ONLY.replace("window_s = 1\n", "")
+    assert load_arm(write(tmp_path, "default.toml", default)).agents.window_s == AGENTS_WINDOW_S
+    assert arm_record(arm)["agents"]["window_s"] == 1.0
+    # A voice point's record names no window: it is the record points kept before the field.
+    voice = load_arm(write(tmp_path, "a1-voice.toml", VOICE_ALONE))
+    assert "window_s" not in arm_record(voice)["agents"]
+    assert arm_record(voice)["agents"] == {
+        "sessions": 0, "think_cap": 120.0, "warmup": 60.0, "data": "weka-x32", "seed": 11
+    }  # fmt: skip
+    for text, error in (
+        (AGENTS_ONLY.replace("sessions = 4", "sessions = 0"), "measures the agents alone"),
+        (AGENTS_ONLY.replace("callers = 0", "callers = -1"), "callers cannot be negative"),
+        (AGENTS_ONLY.replace("callers = 0", "callers = 2"), "window_s is the window of a point"),
+        (AGENTS_ONLY.replace("window_s = 1", "window_s = -5"), "window_s is seconds"),
+    ):
+        with pytest.raises(E2Error, match=re.escape(error)):
+            load_arm(write(tmp_path, "bad.toml", text))
+
+
+def test_the_agents_only_window_is_the_median_of_w5s_two_caller_calls() -> None:
+    import statistics
+
+    windows = [
+        json.loads(path.with_name("summary.json").read_text())["window_s"]
+        for path in (REPO / "benchmarks" / "results" / "2026-10-24-e2-w5").glob("*/*/run.json")
+        if json.loads(path.read_text())["arm"]["voice"]["callers"] == 2
+    ]
+    assert (len(windows), min(windows), max(windows)) == (60, 336.0, 476.0)
+    assert statistics.median(windows) == AGENTS_WINDOW_S == 355.0
 
 
 def test_an_arm_file_fills_in_the_defaults(tmp_path: Path) -> None:
@@ -2136,6 +2196,46 @@ def test_a_point_on_another_node_needs_its_own_routing_and_a_matching_revision(
             kv_sample_s=None,
         )
     assert not any(cyan.host.units.glob("*.service.d/variant-e2-node.conf"))
+
+
+def test_an_agents_only_point_measures_the_agents_over_its_window(cyan: Cyan) -> None:
+    # No callers, no worker journal: the window is [agents] window_s after the warm-up, the agents' goodput over it is
+    # the point's measure, and its summary, record and render say there were no calls.
+    cyan.scheduler.update(STOCK_SCHEDULER)
+    # The gateway ends the agents' requests alone: no realtime request, since no call makes one.
+    cyan.systemd.journals["flatshare-gateway"] = lambda since, until: "\n".join(
+        logged_request(since + n / 100, "background", 200.0 + n) for n in range(1, 6)
+    )
+    arm = AGENTS_ONLY + "\n[engine]\nflags = " + json.dumps(
+        ["--scheduling-policy", "fcfs", "--max-num-batched-tokens", "2048",
+         "--long-prefill-token-threshold", "0"]
+    ) + "\n"  # fmt: skip
+    summary = run(cyan, "agents-s4", arm)
+    out = cyan.host.root / "runs" / "agents-s4"
+    assert not (out / "bots").exists() and not (out / "bots.log").exists()
+    assert not (out / "voice-worker.log").exists()
+    assert (summary["voice"], summary["worker"]) == (None, None)
+    assert 1.0 <= summary["window_s"] < 2.0
+    assert summary["background"]["requests"] > 0
+    assert summary["gateway"]["realtime_first_byte_ms"] == {"n": 0, "source": "log"}
+    assert summary["gateway"]["background_first_byte_ms"]["n"] == 5
+    run_json = record(cyan, "agents-s4")
+    assert run_json["status"] == "complete" and run_json["arm"]["agents"]["window_s"] == 1.0
+    window = run_json["window"]
+    assert 1.0 <= window["end"] - window["start"] < 2.0
+    assert render(summary).startswith("agents-s4: no calls, the agents alone for ")
+    # Its compact record has no callers' files, and the report reads it as its run directory.
+    records = cyan.host.root / "records"
+    main(["e2", "export", str(out), "--out", str(records)])
+    kept = records / "runs" / "agents-s4"
+    assert sorted(p.name for p in kept.iterdir()) == [
+        "arm.toml",
+        "engine.json",
+        "run.json",
+        "summary.json",
+    ]
+    rows, _ = load_points([out])
+    assert load_points([kept])[0] == rows
 
 
 def test_reset_puts_cyan_back(cyan: Cyan) -> None:

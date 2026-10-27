@@ -360,9 +360,11 @@ def point(
     callers: int = 2,
     data: str = "weka-x32",
     warmup_turns: int | None = None,
+    node: str | None = None,
 ) -> Path:
     """A run directory as flatshare-bench e2 run leaves it; without ``warmup_turns``, its arm names none,
-    as the arms run before 3151475."""
+    as the arms run before 3151475, and without ``node``, its run.json names none, as before v1.6. A point
+    without ``callers`` is the agents alone: no voice and no callers' turns."""
     run_dir = root / name
     run_dir.mkdir(parents=True)
     settings = {
@@ -376,6 +378,8 @@ def point(
     if warmup_turns is not None:
         settings["voice"]["warmup_turns"] = warmup_turns
     run = {"kind": "e2-point", "name": name, "status": status, "arm": settings}
+    if node is not None:
+        run["node"] = node
     run["window"] = {"start": T0, "end": T0 + 100}
     (run_dir / "run.json").write_text(json.dumps(run))
     bg = None
@@ -405,8 +409,13 @@ def point(
         },
         "engine": {"preemptions": 4, "refused": {"max_num_queued_tokens": 1}},
     }
+    if not callers:
+        summary["voice"] = None
+        summary["gateway"]["realtime_first_byte_ms"] = {"n": 0, "source": "log"}
     if status == "complete":
         (run_dir / "summary.json").write_text(json.dumps(summary))
+        if not callers:
+            return run_dir
         # The callers' turns: of 101 samples, the inclusive quantiles are the 51st, 96th and 100th.
         v2v = [1600.0] * 51 + [p95] * 45 + [p95 + 500] * 5
         (run_dir / "bots").mkdir()
@@ -499,6 +508,62 @@ def test_each_workload_has_its_section_its_voice_slo_and_its_figure(tmp_path: Pa
         "No point of voice alone with 4 callers sets a voice SLO."
         in texts["frontier-4-callers.svg"]
     )
+
+
+def test_points_without_calls_are_a_workload_of_their_own_without_a_frontier_or_a_figure(
+    tmp_path: Path,
+) -> None:
+    # The dedicated background card's points: no V2V, so no voice SLO, no frontier and no figure for them, their
+    # goodput beside the voice points' in the tables, and nothing of theirs in the voice points' figure.
+    dirs = [
+        point(tmp_path / "r1", "a1-voice", "1", None, 1760),
+        point(tmp_path / "r1", "a2-s16", "2", 5000, 2600),
+        point(tmp_path / "r1", "agents-s16", "2", 9000, 0, callers=0),
+        point(tmp_path / "r2", "agents-s16", "2", 9400, 0, callers=0),
+    ]
+    rows, _ = load_points(dirs)
+    alone = [r for r in rows if r["callers"] == 0]
+    assert [r["workload"] for r in alone] == ["weka-x32, no calls"] * 2
+    assert all(r["v2v_p95_ms"] is None and not r["frontier"] for r in alone)
+    out = tmp_path / "report"
+    written = write_report(rows, out)
+    assert [p.name for p in written if p.suffix == ".svg"] == ["frontier.svg"]
+    assert "agents-s16" not in (out / "frontier.svg").read_text()
+    table = (out / "frontier.md").read_text()
+    assert "## Workload: weka-x32, no calls" in table
+    assert "Points without calls: the agents alone on the card" in table
+    [spread] = [line for line in table.splitlines() if "median (range) of 2 runs" in line]
+    assert "| 9,200 (9,000\N{EN DASH}9,400) |" in spread and "| — | — | — | — |" in spread
+    with (out / "frontier.csv").open() as f:
+        alone_csv = [r for r in csv.DictReader(f) if r["callers"] == "0"]
+    assert [(r["background_tokens_per_s"], r["v2v_p95_ms"]) for r in alone_csv] == [
+        ("9000", ""),
+        ("9400", ""),
+    ]
+    with pytest.raises(ValueError, match="agents-s16 measured no calls"):
+        write_report(
+            rows, out, dots=[{"title": None, "rows": [{"point": "agents-s16", "label": "x"}]}]
+        )
+
+
+def test_the_report_names_each_runs_node_where_the_points_ran_on_several(tmp_path: Path) -> None:
+    # The resource gate's rounds swap the two cards: an arm file measured on Phastform in one round and Gray in the next
+    # is one configuration, and each run names its node; points that name no node (before v1.6) name none.
+    dirs = [
+        point(tmp_path / "rg-r1", "a2-s16", "2", 5000, 2600, node="phastform"),
+        point(tmp_path / "rg-r2", "a2-s16", "2", 5200, 2500, node="gray"),
+    ]
+    rows, _ = load_points(dirs)
+    out = tmp_path / "report"
+    write_report(rows, out)
+    table = (out / "frontier.md").read_text()
+    assert "| a2-s16 (rg-r1, phastform) |" in table and "| a2-s16 (rg-r2, gray) |" in table
+    assert "each run names its node" in table
+    with (out / "frontier.csv").open() as f:
+        assert [r["node"] for r in csv.DictReader(f)] == ["phastform", "gray"]
+    one = load_points([point(tmp_path / "rg-r3", "a2-s8", "2", 3000, 2000, node="gray")])[0]
+    write_report(one, tmp_path / "one")
+    assert "(rg-r3, gray)" not in (tmp_path / "one" / "frontier.md").read_text()
 
 
 def test_the_report_writes_the_table_and_the_csv(tmp_path: Path, capsys) -> None:

@@ -210,8 +210,10 @@ def _configuration(row: Mapping[str, Any]) -> tuple[str, str, str]:
 
 def _workload(data: str, callers: int, on: str = "", warmup_turns: int = 0) -> str:
     """A workload's name, as frontier.csv and frontier.md give it; ``on`` is :func:`hardware`'s, and
-    ``warmup_turns`` the warm-up turns its calls open with, where the report names them."""
-    name = f"{data}, {callers} caller{'' if callers == 1 else 's'}" + (f", {on}" if on else "")
+    ``warmup_turns`` the warm-up turns its calls open with, where the report names them. Points without
+    calls are a workload of their own: the agents alone ("weka-x32, no calls")."""
+    calls = "no calls" if not callers else f"{callers} caller{'' if callers == 1 else 's'}"
+    name = f"{data}, {calls}" + (f", {on}" if on else "")
     return name + (f", {_warmups(warmup_turns)}" if warmup_turns else "")
 
 
@@ -236,14 +238,17 @@ def hardware(gpu_name: str | None, model: str | None) -> str:
 
 def _row(run_dir: Path, run: Mapping[str, Any], summary: Mapping[str, Any]) -> dict[str, Any]:
     """A point's row of frontier.csv but for its workload, which load_points names."""
-    arm, voice = run["arm"], summary["voice"]
+    arm = run["arm"]
+    # A point without calls (the agents alone, [voice] callers = 0) has no voice and no callers' turns.
+    voice = summary["voice"] or {"turns": 0, "errors": 0, "barge_in_to_silence_ms": {}}
     background = summary["background"] or {}
     gateway, engine = summary["gateway"], summary["engine"]
     first_byte = gateway["realtime_first_byte_ms"]
     worker = summary.get("worker") or {}
     waterfall, events = worker.get("waterfall") or {}, worker.get("events") or {}
     # V2V from the callers' turns, where a failed turn counts at the reply timeout.
-    samples = v2v_samples(run_dir / "bots" / "turns.jsonl")
+    turns = run_dir / "bots" / "turns.jsonl"
+    samples = v2v_samples(turns) if summary["voice"] is not None else []
     v2v = percentiles(samples)
     settings = point_engine(run_dir)
     on = hardware((summary.get("gpu") or {}).get("name"), engine_model(settings))
@@ -598,6 +603,8 @@ def write_report(
     groups = configurations(rows)
     for members in _by_workload(rows):
         first = members[0]
+        if not _calls(members):
+            continue  # the agents alone: no V2V to draw goodput against
         slo = voice_slo(groups, first["callers"], first["hardware"], first["warmup_turns"])
         written.append(plot(members, out_dir / first["figure"], None if slo is None else slo[0]))
     if cells:
@@ -631,6 +638,8 @@ def _dot_group(
             raise ValueError(
                 f"{len(found)} configurations of {dot['point']}{on} in the report, not 1"
             )
+        if found[0]["v2v_p95_ms"] is None:
+            raise ValueError(f"{dot['point']} measured no calls: the figure draws V2V")
         chosen.append((found[0], dot))
     workloads = {c["workload"] for c, _ in chosen}
     if len(workloads) > 1:
@@ -657,6 +666,12 @@ def gpu_name(on: str) -> str:
     return re.sub(r"^NVIDIA (GeForce )?", "", gpu)
 
 
+def _calls(rows: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether the rows' points had calls: a workload of points without calls (the agents alone) has no V2V, no
+    voice SLO, no frontier and no figure."""
+    return any(r["callers"] for r in rows)
+
+
 def _by_workload(rows: Sequence[Mapping[str, Any]]) -> list[list[Mapping[str, Any]]]:
     """The rows of each workload, in the rows' order."""
     members: dict[str, list[Mapping[str, Any]]] = {}
@@ -674,7 +689,7 @@ def figure_name(data: str, callers: int, on: str = "", warmup_turns: int = 0) ->
     if data != STANDARD_WORKLOAD[0]:
         name += "-" + data.replace("/", "-")
     if callers != STANDARD_WORKLOAD[1]:
-        name += f"-{callers}-callers"
+        name += f"-{callers}-callers" if callers else "-no-calls"
     if on:
         name += "-" + re.sub(r"[^a-z0-9]+", "-", on.lower()).strip("-")
     if warmup_turns:
@@ -786,6 +801,12 @@ def _slo_line(
 ) -> str:
     """The sentence that opens the section of ``row``'s workload: its voice SLO, and its figure."""
     callers, figure = row["callers"], row["figure"]
+    if not callers:
+        return (
+            "Points without calls: the agents alone on the card, each over a fixed window (`[agents] window_s`) "
+            "where a point with calls is measured over its calls. No voice SLO applies, nothing is placed on a "
+            "frontier and no figure is drawn; the background goodput is the measure."
+        )
     slo = voice_slo(list(groups.values()), callers, row["hardware"], row["warmup_turns"])
     if slo is None:
         return (
@@ -833,7 +854,7 @@ def _arm_rows(
             f"| {_cell(r['background_tokens_per_s'])} |{window} "
             f"{_cell(r['background_requests_per_s'], 2)} "
             f"| {_v2v(r['v2v_p50_ms'])} | {_v2v(r['v2v_p95_ms'])} | {_v2v(r['v2v_p99_ms'])} "
-            f"| {r['voice_errors']} of {r['voice_turns']} | {ttft} | {first_byte} "
+            f"| {_failed(r)} | {ttft} | {first_byte} "
             f"| {_cell(r['engine_preemptions'])} | {counts} |"
         )
         if gpu_columns:
@@ -873,7 +894,8 @@ def _spread(
         f"| {first['point']}: {first['label']}; median (range) of {len(runs)} runs "
         f"| {'•' if group['frontier'] and several else ''} | {first['sessions']} "
         f"| {spread('background_tokens_per_s')} |{window} | {spread('v2v_p50_ms')} "
-        f"| {spread('v2v_p95_ms')} | {spread('v2v_p99_ms')} | {spread('voice_errors')} "
+        f"| {spread('v2v_p95_ms')} | {spread('v2v_p99_ms')} "
+        f"| {spread('voice_errors') if first['callers'] else '—'} "
         f"| {spread('agent_ttft_p50_ms')} / {spread('agent_ttft_p99_ms')} | {first_byte} | | |"
     )
     return line + (" | |" if gpu_columns else "")
@@ -1020,6 +1042,11 @@ def _waterfall_table(cells: Sequence[Mapping[str, Any]]) -> list[str]:
             f"| {_cell(c['llm_ttft_ms'])} |"
         )
     return lines
+
+
+def _failed(row: Mapping[str, Any]) -> str:
+    """A run's failed-turns cell: of its turns, or — for a point without calls."""
+    return f"{row['voice_errors']} of {row['voice_turns']}" if row["callers"] else "—"
 
 
 def _cell(value: Any, digits: int = 0) -> str:

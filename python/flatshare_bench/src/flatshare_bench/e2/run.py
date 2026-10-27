@@ -44,7 +44,6 @@ import threading
 import time
 import tomllib
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -52,7 +51,7 @@ from typing import Any
 import httpx
 import orjson
 
-from flatshare_bench.e2.arm import Arm, E2Error, flag_values, load_arm
+from flatshare_bench.e2.arm import Arm, E2Error, arm_record, flag_values, load_arm
 from flatshare_bench.e2.cyan import (
     CONFIGS,
     GATEWAY,
@@ -231,11 +230,17 @@ def _measure(
     if aiperf is not None and kv_sample_s is not None:
         sampler = _KvSampler(node.engine_url, out / "metrics", kv_sample_s)
         running.callback(sampler.stop)
-    end, bots = _call(arm, host, out, record, running, aiperf, save_audio)
+    calls = arm.voice.callers > 0
+    if calls:
+        end, bots = _call(arm, host, out, record, running, aiperf, save_audio)
+    else:
+        assert aiperf is not None  # load_arm: a point without calls has agents
+        end = _agents_window(arm, record, aiperf, start)
     if sampler is not None:
         sampler.stop()
     _snapshot(host, node, out, "end")
-    _callers_exit(bots)
+    if calls:
+        _callers_exit(bots)
     record["window"] = {"start": start, "end": end}
     if aiperf is not None:
         record.say("stopping AIPerf")
@@ -244,7 +249,8 @@ def _measure(
             raise aiperf.failure("failed when stopped")
     _gateway_log(systemd, out, start, end)
     record["gateway_log"] = _check_gateway_log(host, systemd, idle)
-    _worker_journal(systemd, out, start, arm.voice.callers)
+    if calls:
+        _worker_journal(systemd, out, start, arm.voice.callers)
     try:
         metrics = summarize_point(
             out,
@@ -252,6 +258,7 @@ def _measure(
             end,
             agents=bool(arm.agents.sessions),
             warmup_turns=arm.voice.warmup_turns,
+            calls=calls,
         )
     except ValueError as exc:
         raise E2Error(str(exc)) from None
@@ -355,6 +362,18 @@ def _call(
     if not ended.exists():  # they exited before their calls ended
         _callers_exit(bots)
     return end, bots
+
+
+def _agents_window(arm: Arm, record: _Record, aiperf: Process, start: float) -> float:
+    """An agents-only point's measurement window: ``[agents] window_s`` from ``start``, the first snapshot, while
+    AIPerf replays; returns when it ended. The replay must outlast it, as it must outlast a point's calls."""
+    record.say(f"no calls: the agents alone for {arm.agents.window_s:g} s")
+    end = start + arm.agents.window_s
+    while (left := end - time.time()) > 0:
+        if aiperf.exited():
+            raise aiperf.failure("exited during the window, so its load did not cover it")
+        pause(left)
+    return time.time()
 
 
 def _callers_exit(bots: Process) -> None:
@@ -571,7 +590,7 @@ class _Record:
             # The GPU node the point measures on, whose deployed revision versions.gpu_source names.
             "node": node,
             "started": time.time(),
-            "arm": asdict(arm),
+            "arm": arm_record(arm),
             "versions": _versions(host, gpu_source),
         }
         self._write()

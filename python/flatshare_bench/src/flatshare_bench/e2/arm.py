@@ -9,10 +9,14 @@ from __future__ import annotations
 import re
 import tomllib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
+AGENTS_WINDOW_S = 355.0
+"""An agents-only point's measurement window by default (``[agents] window_s``), in seconds: the median length of a
+two-caller point's calls in W5's records, over its 60 points with two callers (336 to 476 s; 357 s over the 55 with
+agents beside the calls), so that a card without calls is measured over as long as a shared card's calls run."""
 _FLAG = re.compile(r"[A-Za-z0-9._:/=,+-]+")
 """Engine flags travel through ssh and a systemd environment line, so each is one plain word."""
 _ARM = re.compile(r"(10|[1-9])[a-z]?(-[a-z0-9]+)*")
@@ -27,7 +31,8 @@ class E2Error(Exception):
 
 @dataclass(frozen=True)
 class Voice:
-    """``[voice]``: the measurement calls and the voice agent's turn handling."""
+    """``[voice]``: the measurement calls and the voice agent's turn handling. ``callers = 0`` is an
+    agents-only point, a card that serves no call, measured over ``[agents] window_s``."""
 
     callers: int = 2
     turns: int = 25
@@ -57,6 +62,10 @@ class Agents:
     data: str = "weka-x32"
     """A ``scale-traces`` directory, relative to ~/flatshare/data."""
     seed: int = 11
+    window_s: float = 0.0
+    """An agents-only point's measurement window (``[voice] callers = 0``), in seconds, from the end of the warm-up;
+    AGENTS_WINDOW_S when the arm file gives none. A point with calls is measured over its calls and takes none, so its
+    record names none."""
 
 
 @dataclass(frozen=True)
@@ -161,17 +170,32 @@ def load_arm(path: Path) -> Arm:
     )
     top.done()
     voice, agents = arm.voice, arm.agents
+    calls = voice.callers > 0
     for ok, what in (
         (_ARM.fullmatch(arm.arm), "arm is E2's arm: 1 to 10, then a letter (7a) or a -suffix"),
         (arm.router in (None, "smg"), "router can only be smg"),
-        (voice.callers >= 1 and voice.turns >= 1, "[voice] needs a caller and a turn"),
+        (voice.callers >= 0, "[voice] callers cannot be negative"),
+        (voice.turns >= 1 or not calls, "[voice] needs a turn"),
+        (
+            calls or agents.sessions >= 1,
+            "a point without calls ([voice] callers = 0) measures "
+            "the agents alone: it needs [agents] sessions",
+        ),
         (voice.warmup_turns >= 0, "[voice] warmup_turns cannot be negative"),
         (0 <= voice.barge_in <= 1, "[voice] barge_in is a share of turns, 0 to 1"),
         (agents.sessions >= 0, "[agents] sessions cannot be negative"),
         (agents.think_cap > 0 and agents.warmup >= 0, "[agents] think_cap and warmup are seconds"),
+        (agents.window_s >= 0, "[agents] window_s is seconds"),
+        (
+            not calls or agents.window_s == 0,
+            "[agents] window_s is the window of a point without "
+            "calls: a point with calls is measured over its calls",
+        ),
     ):
         if not ok:
             raise E2Error(f"{path.name}: {what}")
+    if not calls and agents.window_s == 0:
+        arm = replace(arm, agents=replace(agents, window_s=AGENTS_WINDOW_S))
     for key in ("nodes", "placement"):
         if key in arm.gateway:
             raise E2Error(
@@ -179,6 +203,15 @@ def load_arm(path: Path) -> Arm:
                 "two-node branch keeps"
             )
     return arm
+
+
+def arm_record(arm: Arm) -> dict[str, Any]:
+    """The arm as run.json keeps it: its fields, but for ``[agents] window_s`` on a point with calls, which is
+    measured over its calls and takes no window, so that its record is the one points recorded before the field."""
+    record = asdict(arm)
+    if arm.voice.callers:
+        del record["agents"]["window_s"]
+    return record
 
 
 def flag_values(flags: Sequence[str]) -> dict[str, str]:
