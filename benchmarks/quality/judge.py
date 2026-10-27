@@ -190,6 +190,13 @@ def account(workdir: Path) -> dict:
     return {"email": status.get("email"), "subscription": status.get("subscriptionType")}
 
 
+def fingerprint(login: dict) -> str:
+    """The login a ruling ran on, as its subscription and a short hash of its email, which stays out of the
+    record."""
+    email = hashlib.sha256((login.get("email") or "").encode()).hexdigest()[:12]
+    return f"{login.get('subscription')}:{email}"
+
+
 def opus_check(out: dict) -> tuple[str, int]:
     """The Opus model that answered and its output tokens; raises unless an Opus model produced output and no other
     model produced any."""
@@ -237,7 +244,7 @@ class Judge:
         self.workdir, self.rulings, self.jobs = workdir, rulings, jobs
         self.lock = threading.Lock()
         self.account = account(workdir)
-        print(f"judge: account {self.account}", file=sys.stderr)
+        print(f"judge: login {fingerprint(self.account)}", file=sys.stderr)
 
     def batch(self, kind: str, items: list[dict], pass_: str) -> list[dict]:
         system, labels, _ = RATERS[kind]
@@ -283,7 +290,7 @@ class Judge:
                         "model": model,
                         "output_tokens": tokens,
                         "seconds": round(time.monotonic() - t0, 1),
-                        "account": self.account["email"],
+                        "account": fingerprint(self.account),
                         "at": at,
                     }
                     for k, it in enumerate(items, 1)
