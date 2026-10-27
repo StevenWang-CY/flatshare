@@ -298,14 +298,9 @@ def _wide(path: Path) -> Path:
     pool = zooms["b"]
     s.leader([(pool[0] + 22, pool[3]), (pool[0] + 22, py)])
     sched = zooms["c"]
-    s.leader(
-        [
-            (sched[2] - 14, sched[3]),
-            (sched[2] - 14, sched[3] + 12),
-            (cx + 40, py - 18),
-            (cx + 40, py),
-        ]
-    )
+    x = (pool[2] + sched[2]) / 2  # between the pool's right edge and the scheduler's, over (c)
+    assert cx < x < cx + cw, (cx, x)
+    s.leader([(x, sched[3]), (x, py)])
     s.height = py + ph + 12
     return s.save(path)
 
