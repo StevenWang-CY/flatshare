@@ -578,7 +578,11 @@ covers the reply (Figure 6b). Windows of 16, 24 and 32 tokens left the 40th toke
 windows of 48 and 64 tokens at 1.04 and 1.02 s. The first token, which the window does not touch, stayed at 326–448 ms
 at every window. The agents' prompt throughput fell 8% from 16 to 48 tokens and no further at 64 (Figure 6c), since a
 hold ends with its reply, so a window longer than the replies costs no more than one just long enough. The voice agent
-here is prompted for one or two short sentences, and an agent prompted for longer answers needs a longer window.
+here is prompted for one or two short sentences, and an agent prompted for longer answers needs a longer window. The
+records keep each reply's tokens but not its text. So we asked the engine for 320 of the agent's replies to the callers'
+lines again, and counted the tokens up to the one that completes each reply's first sentence. They took 15 tokens at the
+median, 29 at the 95th percentile and 39 at most: a 48-token window covers every first sentence, and a 16-token window
+56% of them.
 
 ### 6.4 The agents pay through the hold, not through the preemptions
 
