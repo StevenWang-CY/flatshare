@@ -83,7 +83,7 @@ impl Events {
     }
 
     /// Records a batch, returning how many events were new and how many were repeats. The new ones go to `admit`
-    /// (the admission points), and then to the sink.
+    /// (the admission point) in the order they were accepted, and then to the sink.
     fn ingest(
         &self,
         tenant: &Arc<str>,
@@ -92,11 +92,12 @@ impl Events {
         admit: impl FnOnce(&[LifecycleEvent]),
     ) -> (usize, usize) {
         let total = events.len();
-        let received = Instant::now();
-        let fresh: Vec<LifecycleEvent> = {
+        let (received, fresh) = {
             let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+            // Taken under the lock, so that the receipt times of two batches are in the order they were accepted.
+            let received = Instant::now();
             seen.expire(received, self.ttl);
-            events
+            let fresh: Vec<LifecycleEvent> = events
                 .into_iter()
                 .filter(|event| {
                     // Per tenant: any trusted tenant may name any source, and must not make another's events
@@ -106,10 +107,14 @@ impl Events {
                     metrics.event(event.kind.label(), event.source.as_str(), !fresh);
                     fresh
                 })
-                .collect()
+                .collect();
+            // Still under the lock, so that a batch accepted after this one reaches the admission point after it.
+            // `admit` is synchronous, and the only lock it takes is the admission point's, under which nothing takes
+            // this one.
+            admit(&fresh);
+            (received, fresh)
         };
         let accepted = fresh.len();
-        admit(&fresh);
         for event in fresh {
             self.sink.accept(AcceptedEvent {
                 tenant: Arc::clone(tenant),
@@ -236,6 +241,48 @@ mod tests {
             "only the key inserted at +3 s is inside the window"
         );
         assert!(seen.insert("b".into(), start + Duration::from_secs(602), 2));
+    }
+
+    /// A batch of one event of the voice session, with id `id`.
+    fn batch(id: &str) -> Vec<LifecycleEvent> {
+        let json = format!(
+            r#"{{"event_id":"{id}","session_id":"voice-1","at_ms":1,"source":"voice-worker","type":"user_turn_ended"}}"#
+        );
+        parse(json.as_bytes()).unwrap()
+    }
+
+    /// Two posts for one session at once: the second is accepted while the first's events are still on their way
+    /// to the admission point, which must get them first all the same.
+    #[test]
+    fn a_sessions_events_reach_the_admission_point_in_the_order_they_were_accepted() {
+        let events = Events::new(16, Duration::from_secs(60), Arc::new(LogSink));
+        let metrics = Metrics::new();
+        let tenant: Arc<str> = "voice".into();
+        let reached = Mutex::new(Vec::new());
+        let record = |fresh: &[LifecycleEvent]| {
+            let ids = fresh.iter().map(|e| e.event_id.clone());
+            reached.lock().unwrap().extend(ids);
+        };
+        let (first_accepted, accepted) = std::sync::mpsc::channel();
+        let (second_done, done) = std::sync::mpsc::channel();
+        std::thread::scope(|s| {
+            let (events, tenant, metrics, record) = (&events, &tenant, &metrics, &record);
+            s.spawn(move || {
+                events.ingest(tenant, batch("first"), metrics, |fresh| {
+                    first_accepted.send(()).unwrap();
+                    // Room for the second post to overtake, which it must not.
+                    let _ = done.recv_timeout(Duration::from_millis(200));
+                    record(fresh);
+                })
+            });
+            accepted.recv().unwrap();
+            s.spawn(move || {
+                events.ingest(tenant, batch("second"), metrics, record);
+                // The first post may have stopped waiting.
+                let _ = second_done.send(());
+            });
+        });
+        assert_eq!(*reached.lock().unwrap(), ["first", "second"]);
     }
 
     #[test]
