@@ -1,7 +1,9 @@
-# The step-cap and window sweep, its second screen: the gateway's static cap at 2 and at 1 background requests in
-# flight, which the first screen showed lowers the change's share of replies over the SLO (41% without a cap, 32% at
-# 8, 25% at 4) at the same agents' throughput, for the change at W5's 48-token configuration and for the frozen box,
-# on the same sample of the agents (seed 11). The levels that pass go on to the rounds on fresh samples.
+# The step-cap and window sweep, its second screen, on the same sample of the agents (seed 11). The first screen showed
+# the gateway's static cap lowering the change's share of replies over the SLO (41% without a cap, 32% at 8, 25% at 4)
+# at the same agents' throughput, and a step cap of 256 lowering it to 15%, against 56% at 1,024. This one takes the cap
+# to 2 and to 1, combines the 256-token step cap with caps of 4 and 2, gives tuned vLLM the same step cap and caps, and
+# runs the change with the KV cache in FP8, which doubles the pool's tokens (the quality gate screens FP8's outputs).
+# The FP8 points come last: an engine that does not start with them stops only them.
 #   benchmarks/e2/campaign.sh --pause benchmarks/e2/sweep-screen2.campaign
 
 agents-seed 11
@@ -10,6 +12,19 @@ agents-seed 11
 arms/sweep-disc-frozen-cap2-s24.toml
 arms/sweep-disc-frozen-cap1-s24.toml
 
-# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+# engine frozen --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+arms/sweep-disc-frozen-b256-t0-s24.toml
+
+# engine make-room (48-token window)
 arms/sweep-disc-pr-ab48-cap2-s24.toml
 arms/sweep-disc-pr-ab48-cap1-s24.toml
+
+# engine make-room (48-token window) --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+arms/sweep-disc-pr-ab48-b256-cap4-s24.toml
+arms/sweep-disc-pr-ab48-b256-cap2-s24.toml
+
+# engine make-room (48-token window) --kv-cache-dtype fp8
+arms/sweep-disc-pr-ab48-fp8-s24.toml
+
+# engine make-room (48-token window) --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --kv-cache-dtype fp8
+arms/sweep-disc-pr-ab48-b256-fp8-s24.toml
