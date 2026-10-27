@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import socketserver
-import tempfile
-import threading
 from http.server import BaseHTTPRequestHandler
-from pathlib import Path
 
 import pytest
+from servers import UnixServer, serve, socket_file, stop
 
 from flatshare_bench.kv_metrics import fetch
 from flatshare_bench.transport import client, runtime_socket, socket_path
@@ -24,10 +21,6 @@ class _Metrics(BaseHTTPRequestHandler):
 
     def log_message(self, *args: object) -> None:
         pass
-
-
-class _UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
 
 
 def test_an_address_is_http_or_a_unix_socket() -> None:
@@ -46,9 +39,8 @@ def test_an_address_is_http_or_a_unix_socket() -> None:
 
 
 def test_a_unix_address_reaches_the_server_on_its_socket() -> None:
-    path = Path(tempfile.mkdtemp(prefix="flatshare-transport-")) / "s.sock"
-    server = _UnixServer(str(path), _Metrics)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    path = socket_file("flatshare-transport-")
+    server = serve(UnixServer(str(path), _Metrics))
     try:
         with client(f"unix:{path}") as http:
             assert http.get("/server_info", params={"config_format": "json"}).text == (
@@ -56,7 +48,7 @@ def test_a_unix_address_reaches_the_server_on_its_socket() -> None:
             )
         assert fetch(f"unix:{path}") == "seen /metrics\n"
     finally:
-        server.shutdown()
+        stop(server)
 
 
 def test_the_deployments_sockets_live_in_the_users_runtime_directory(

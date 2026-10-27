@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -101,6 +102,9 @@ def point(tmp_path, monkeypatch, tokenizer) -> Path:
     monkeypatch.setenv("FLATSHARE_BENCH_ARTIFACTS", str(tmp_path / "aiperf"))
     monkeypatch.setattr(Environment.DATASET, "MMAP_BASE_PATH", tmp_path / "mmap")
     monkeypatch.setattr(Environment.DATASET, "WEKA_PARALLEL_WORKERS", 1)
+    # AIPerf makes a directory for its IPC sockets, tempfile.mkdtemp(), for each configuration it
+    # resolves and each service it builds, and removes none: the test's go under its own directory.
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     return tmp_path / "dataset_mmap"
 
 
@@ -229,6 +233,7 @@ def test_aiperf_profile_imports_the_plugin_before_it_forks_its_services(tmp_path
         # Resolving makes the artifact directory, by default runs/agentic-replay in the working directory: the
         # source tree's, under pytest.
         "FLATSHARE_BENCH_ARTIFACTS": str(tmp_path / "aiperf"),
+        "TMPDIR": str(tmp_path),  # where AIPerf makes its IPC sockets' directory (point())
     }
     result = subprocess.run(
         [sys.executable, "-c", RESOLVE, str(CONFIGS / "agentic_replay.yaml")],

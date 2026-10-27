@@ -16,16 +16,15 @@ import pwd
 import re
 import shutil
 import socket
-import socketserver
 import subprocess
 import sys
 import tempfile
-import threading
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from servers import UnixServer, serve, stop
 
 REPO = Path(__file__).resolve().parents[3]
 FAKES = Path(__file__).parent / "fakes"
@@ -93,20 +92,15 @@ class Engine(http.server.BaseHTTPRequestHandler):
         pass
 
 
-class UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
-
-
 @pytest.fixture
 def runtime() -> Iterator[Path]:
     """XDG_RUNTIME_DIR, with the engine on flatshare/engine.sock as flatshare-engine.service serves it."""
     # A short path: a socket's must fit sun_path, which a test's tmp_path may not.
     run = Path(tempfile.mkdtemp(prefix="flatshare-dry-"))
     (run / "flatshare").mkdir(mode=0o700)
-    server = UnixServer(str(run / "flatshare" / "engine.sock"), Engine)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server = serve(UnixServer(str(run / "flatshare" / "engine.sock"), Engine))
     yield run
-    server.shutdown()
+    stop(server)
     shutil.rmtree(run, ignore_errors=True)
 
 
@@ -835,8 +829,7 @@ def test_the_batch_arm_holds_its_whole_batch_in_the_pool_and_records_that_it_for
     # refused before a client starts.
     run = Path(tempfile.mkdtemp(prefix="flatshare-batch-"))
     (run / "flatshare").mkdir(mode=0o700)
-    server = UnixServer(str(run / "flatshare" / "engine.sock"), BatchEngine)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server = serve(UnixServer(str(run / "flatshare" / "engine.sock"), BatchEngine))
     try:
         hosts = tmp_path / "hosts"
         home = a100_host(hosts)
@@ -902,7 +895,7 @@ def test_the_batch_arm_holds_its_whole_batch_in_the_pool_and_records_that_it_for
         assert len(lines(home / "vllm.log")) == 6  # no client started
     finally:
         BatchEngine.blocks = 2275
-        server.shutdown()
+        stop(server)
         shutil.rmtree(run, ignore_errors=True)
 
 

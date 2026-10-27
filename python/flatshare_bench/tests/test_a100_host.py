@@ -12,18 +12,16 @@ import importlib.util
 import json
 import os
 import shutil
-import socketserver
 import stat
 import subprocess
 import sys
 import sysconfig
-import tempfile
-import threading
 import tomllib
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from servers import UnixServer, serve, socket_file, stop
 
 from flatshare_bench.e2.cyan import Host
 
@@ -369,25 +367,18 @@ class Engine(http.server.BaseHTTPRequestHandler):
 @pytest.fixture
 def engine() -> Iterator[str]:
     """The gateway's TCP listener (its /health)."""
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Engine)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server = serve(http.server.ThreadingHTTPServer(("127.0.0.1", 0), Engine))
     yield f"http://127.0.0.1:{server.server_address[1]}"
-    server.shutdown()
-
-
-class UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
+    stop(server)
 
 
 @pytest.fixture
 def engine_socket() -> Iterator[str]:
     """The engine on its own socket, as the GPU units serve it."""
-    # A short path: a socket's must fit sun_path, which a test's tmp_path may not.
-    path = Path(tempfile.mkdtemp(prefix="flatshare-a100-")) / "engine.sock"
-    server = UnixServer(str(path), Engine)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    path = socket_file("flatshare-a100-", "engine.sock")
+    server = serve(UnixServer(str(path), Engine))
     yield f"unix:{path}"
-    server.shutdown()
+    stop(server)
 
 
 JOURNAL = """\

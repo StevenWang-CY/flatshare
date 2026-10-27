@@ -12,12 +12,9 @@ import math
 import os
 import re
 import signal
-import socketserver
 import stat
 import subprocess
 import sys
-import tempfile
-import threading
 import time
 import tomllib
 from collections import Counter
@@ -29,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from servers import UnixServer, serve, socket_file, stop
 
 from flatshare_bench.cli import main
 from flatshare_bench.e2 import run as e2
@@ -750,7 +748,7 @@ def test_an_engines_settings_name_its_model_by_its_id_and_hold_its_kernels() -> 
     try:
         info = describe_engine(engine.url)
     finally:
-        engine.shutdown()
+        stop(engine)
     # Offline mode reports the model by its path in the cache; the settings name it by its id.
     assert (info.settings["model"], info.settings["revision"]) == (
         "Qwen/Qwen3-4B-Instruct-2507-FP8",
@@ -1076,46 +1074,40 @@ class Service(ThreadingHTTPServer):
         self.routes = routes
         self.hits: Counter[str] = Counter()
         super().__init__(("127.0.0.1", 0), _Handler)
-        threading.Thread(target=self.serve_forever, daemon=True).start()
+        serve(self)
 
     @property
     def url(self) -> str:
         return f"http://127.0.0.1:{self.server_address[1]}"
 
 
-class UnixService(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+class UnixService(UnixServer):
     """The same service on a Unix socket of its own, as the engine through the tunnel, or the gateway's
     socket; its address is ``unix:`` and the socket's path."""
-
-    daemon_threads = True
 
     def __init__(self, routes: Routes) -> None:
         self.routes = routes
         self.hits: Counter[str] = Counter()
-        # A short path: a socket's must fit sun_path, which a test's tmp_path may not.
-        self.path = Path(tempfile.mkdtemp(prefix="flatshare-e2-")) / "s.sock"
+        self.path = socket_file("flatshare-e2-")
         super().__init__(str(self.path), _Handler)
-        threading.Thread(target=self.serve_forever, daemon=True).start()
+        serve(self)
 
     @property
     def url(self) -> str:
         return f"unix:{self.path}"
 
 
-class CountingEngine(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+class CountingEngine(UnixServer):
     """An engine's /metrics on a Unix socket, as the tunnel's on cyan, that counts the connections it accepts and
     keeps each one open between requests (HTTP/1.1), as vLLM does for 60 s; the requests numbered in ``drop`` get
     no answer, and lose their connection."""
 
-    daemon_threads = True
-
     def __init__(self, drop: frozenset[int] = frozenset()) -> None:
         self.accepted = self.requests = 0
         self.drop = drop
-        # A short path: a socket's must fit sun_path, which a test's tmp_path may not.
-        self.path = Path(tempfile.mkdtemp(prefix="flatshare-kv-")) / "s.sock"
+        self.path = socket_file("flatshare-kv-")
         super().__init__(str(self.path), _KeepAlive)
-        threading.Thread(target=self.serve_forever, daemon=True).start()
+        serve(self)
 
     def get_request(self):
         request = super().get_request()
@@ -1333,7 +1325,7 @@ def cyan(tmp_path: Path) -> Iterator[Cyan]:
     arms.mkdir()
     yield Cyan(host, systemd, gateway, socket, engine, scheduler, arms)
     for service in (gateway, socket, engine):
-        service.shutdown()
+        stop(service)
 
 
 def run(cyan: Cyan, name: str, text: str, out: str | None = None) -> dict[str, Any]:
@@ -1606,7 +1598,7 @@ def test_the_kv_sampler_keeps_one_connection_to_the_engine(tmp_path: Path) -> No
     while engine.requests < 10 and time.monotonic() < deadline:
         time.sleep(0.01)
     sampler.stop()
-    engine.shutdown()
+    stop(engine)
     assert engine.requests >= 10 and engine.accepted == 2
     rows = (tmp_path / "engine-kv.csv").read_text().splitlines()[1:]
     assert len(rows) == engine.requests - 1  # every answered sample, the failed one left out

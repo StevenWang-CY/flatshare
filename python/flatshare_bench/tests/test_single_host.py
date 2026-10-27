@@ -19,7 +19,6 @@ import socket
 import stat
 import subprocess
 import sys
-import tempfile
 import textwrap
 import threading
 import time
@@ -1409,10 +1408,9 @@ def echo_server() -> tuple[socket.socket, int]:
     return server, server.getsockname()[1]
 
 
-def test_flatshare_forward_relays_a_socket_to_a_port() -> None:
+def test_flatshare_forward_relays_a_socket_to_a_port(short_dir: Path) -> None:
     server, port = echo_server()
-    # A short directory: a socket's path has room for 104 bytes on macOS.
-    path = Path(tempfile.mkdtemp(prefix="forward-")) / "flatshare" / "phastform-stt.sock"
+    path = short_dir / "flatshare" / "phastform-stt.sock"
     path.parent.mkdir()
     stale = socket.socket(socket.AF_UNIX)  # a socket left by an earlier run is replaced
     stale.bind(str(path))
@@ -1466,7 +1464,7 @@ def test_flatshare_forward_takes_ipv6_hosts_in_brackets() -> None:
 
 
 @pytest.mark.skipif(not socket.has_ipv6, reason="needs IPv6")
-def test_flatshare_forward_relays_a_socket_to_an_ipv6_port() -> None:
+def test_flatshare_forward_relays_a_socket_to_an_ipv6_port(short_dir: Path) -> None:
     try:
         server = socket.create_server(("::1", 0), family=socket.AF_INET6)
     except OSError:
@@ -1481,7 +1479,7 @@ def test_flatshare_forward_relays_a_socket_to_an_ipv6_port() -> None:
                     connection.sendall(data.upper())
 
     threading.Thread(target=serve, daemon=True).start()
-    path = Path(tempfile.mkdtemp(prefix="forward-")) / "stt.sock"
+    path = short_dir / "stt.sock"
     forward = subprocess.Popen(
         [sys.executable, str(BIN / "flatshare-forward"), f"{path}=[::1]:{port}"],
         stdout=subprocess.PIPE,
@@ -1504,12 +1502,12 @@ def test_flatshare_forward_relays_a_socket_to_an_ipv6_port() -> None:
 
 
 def test_flatshare_forward_binds_its_socket_private_from_its_creation(
-    socket_modes: dict[str, int],
+    socket_modes: dict[str, int], short_dir: Path
 ) -> None:
     # Bound under the process's umask and made mode 600 after, the socket was open in between to what the umask left
     # (755 under 022, 777 under 0): a user who connected then kept the connection.
     forward = _module("flatshare_forward", BIN / "flatshare-forward")
-    path = Path(tempfile.mkdtemp(prefix="forward-")) / "engine.sock"
+    path = short_dir / "engine.sock"
 
     async def bind() -> None:
         server = await forward.unix_server(path, ("127.0.0.1", 9))
@@ -1521,9 +1519,9 @@ def test_flatshare_forward_binds_its_socket_private_from_its_creation(
     assert os.umask(0o022) == 0o022, "the process's umask is back"
 
 
-def test_flatshare_forward_relays_a_port_to_a_socket() -> None:
+def test_flatshare_forward_relays_a_port_to_a_socket(short_dir: Path) -> None:
     # As AIPerf reaches the engine for the calibration point: a loopback port to the engine's Unix socket.
-    path = Path(tempfile.mkdtemp(prefix="forward-")) / "engine.sock"
+    path = short_dir / "engine.sock"
     server = socket.socket(socket.AF_UNIX)
     server.bind(str(path))
     server.listen()
@@ -1565,8 +1563,10 @@ def test_flatshare_forward_relays_a_port_to_a_socket() -> None:
     assert relative.returncode == 2 and "absolute socket path" in relative.stderr
 
 
-def test_the_voice_plane_runs_in_the_hosts_namespace_where_there_is_none_of_its_own() -> None:
-    run = Path(tempfile.mkdtemp(prefix="voicenet-"))
+def test_the_voice_plane_runs_in_the_hosts_namespace_where_there_is_none_of_its_own(
+    short_dir: Path,
+) -> None:
+    run = short_dir
     (run / "flatshare").mkdir()
     pidfile = run / "flatshare" / "voicenet.pid"
     holder = subprocess.Popen(

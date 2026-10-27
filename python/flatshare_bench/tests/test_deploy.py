@@ -6,18 +6,16 @@ from __future__ import annotations
 import os
 import re
 import signal
-import socketserver
 import stat
 import subprocess
 import sys
-import tempfile
-import threading
 import time
 import tomllib
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
+from servers import UnixServer, serve, socket_file, stop
 
 REPO = Path(__file__).resolve().parents[3]
 DEPLOY = REPO / "deploy"
@@ -367,16 +365,10 @@ class _Health(BaseHTTPRequestHandler):
         pass
 
 
-class _UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
-
-
 def test_wait_healthy_reaches_a_server_on_its_unix_socket() -> None:
     wait = ["bash", str(DEPLOY / "bin" / "wait-healthy")]
-    # A short path: a socket's must fit sun_path, which pytest's tmp_path may not.
-    socket = Path(tempfile.mkdtemp(prefix="flatshare-wait-")) / "engine.sock"
-    server = _UnixServer(str(socket), _Health)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    socket = socket_file("flatshare-wait-", "engine.sock")
+    server = serve(UnixServer(str(socket), _Health))
     try:
         done = subprocess.run(
             [*wait, "--unix-socket", str(socket), "http://localhost/health", "5"],
@@ -386,7 +378,7 @@ def test_wait_healthy_reaches_a_server_on_its_unix_socket() -> None:
         assert done.returncode == 0, done.stderr
         assert done.stdout.startswith(f"wait-healthy: http://localhost/health on {socket} healthy")
     finally:
-        server.shutdown()
+        stop(server)
     # Nobody serves the socket now: it gives up after its timeout.
     done = subprocess.run(
         [*wait, "--unix-socket", str(socket), "http://localhost/health", "0"],
