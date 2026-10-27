@@ -1,0 +1,165 @@
+# promtool's unit tests of rules.yml (make check-rules): the failure-inclusive service level and its burn-rate alerts,
+# admission coverage, and the engine's states. Each input is a counter's value a minute.
+rule_files:
+  - rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A healthy realtime class: one valid request in 60 misses, under the 5% objective, and nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'flatshare_gateway_sli_valid_total{class="realtime"}'
+        values: '0+60x180'
+      - series: 'flatshare_gateway_sli_good_total{class="realtime"}'
+        values: '0+59x180'
+    promql_expr_test:
+      - expr: round(flatshare:sli_miss:ratio_rate5m, 0.0001)
+        eval_time: 30m
+        exp_samples:
+          - labels: '{class="realtime"}'
+            value: 0.0167
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: FlatshareRealtimeFirstByteBudgetBurn
+        exp_alerts: []
+      - eval_time: 170m
+        alertname: FlatshareRealtimeFirstByteBudgetSlowBurn
+        exp_alerts: []
+
+  # An engine that fails every realtime request before its first byte (refused, timed out, or answered 503). The first
+  # byte's histogram, which the SLI read before, has no sample of them, so it had no data to page on; the service level
+  # misses them all, and pages within minutes.
+  - interval: 1m
+    input_series:
+      - series: 'flatshare_gateway_sli_valid_total{class="realtime"}'
+        values: '0+60x60'
+      - series: 'flatshare_gateway_sli_good_total{class="realtime"}'
+        values: '0+0x60'
+      - series: 'flatshare_gateway_first_byte_seconds_count{class="realtime"}'
+        values: '0+0x60'
+    promql_expr_test:
+      - expr: flatshare:sli_miss:ratio_rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'flatshare:sli_miss:ratio_rate5m{class="realtime"}'
+            value: 1
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FlatshareRealtimeFirstByteBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              class: realtime
+            exp_annotations:
+              summary: Voice turns burn the realtime class's budget (95% good, first content within 250 ms) fast
+              description: >-
+                100% of valid realtime requests missed: failed, timed out, were refused for capacity, or had their
+                first content over 250 ms. Look at flatshare:requests_terminal:rate5m by outcome, the engine's KV usage
+                and waiting requests (background KV filling the pool), flatshare_gateway_node_ready and
+                flatshare_gateway_engine_state.
+
+  # Half the realtime requests time out or hang until their deadline: under the hour's fast burn (72%), over the six
+  # hours' (30%), which pages with the six hours' ratio.
+  - interval: 1m
+    input_series:
+      - series: 'flatshare_gateway_sli_valid_total{class="realtime"}'
+        values: '0+10x60'
+      - series: 'flatshare_gateway_sli_good_total{class="realtime"}'
+        values: '0+5x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: FlatshareRealtimeFirstByteBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              class: realtime
+            exp_annotations:
+              summary: Voice turns burn the realtime class's budget (95% good, first content within 250 ms) fast
+              description: >-
+                50% of valid realtime requests missed: failed, timed out, were refused for capacity, or had their
+                first content over 250 ms. Look at flatshare:requests_terminal:rate5m by outcome, the engine's KV usage
+                and waiting requests (background KV filling the pool), flatshare_gateway_node_ready and
+                flatshare_gateway_engine_state.
+    # Another class's misses never page for realtime.
+  - interval: 1m
+    input_series:
+      - series: 'flatshare_gateway_sli_valid_total{class="background"}'
+        values: '0+10x60'
+      - series: 'flatshare_gateway_sli_good_total{class="background"}'
+        values: '0+0x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: FlatshareRealtimeFirstByteBudgetBurn
+        exp_alerts: []
+
+  # 7% missed for three days: over the budget's rate, a ticket, and never a page.
+  - interval: 1m
+    input_series:
+      - series: 'flatshare_gateway_sli_valid_total{class="realtime"}'
+        values: '0+100x4400'
+      - series: 'flatshare_gateway_sli_good_total{class="realtime"}'
+        values: '0+93x4400'
+    alert_rule_test:
+      - eval_time: 4330m
+        alertname: FlatshareRealtimeFirstByteBudgetSlowBurn
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              class: realtime
+            exp_annotations:
+              summary: Three days of voice turns spend the realtime class's budget faster than it lasts
+      - eval_time: 4330m
+        alertname: FlatshareRealtimeFirstByteBudgetBurn
+        exp_alerts: []
+
+  # Admission coverage: of 10 offered requests a minute, 8 sent upstream.
+  - interval: 1m
+    input_series:
+      - series: 'flatshare_gateway_requests_offered_total{tenant="voice",route="/v1/chat/completions",class="realtime"}'
+        values: '0+10x30'
+      - series: 'flatshare_gateway_requests_admitted_total{tenant="voice",route="/v1/chat/completions",class="realtime",admission="none"}'
+        values: '0+8x30'
+    promql_expr_test:
+      - expr: flatshare:admission_coverage:ratio_rate5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'flatshare:admission_coverage:ratio_rate5m{class="realtime"}'
+            value: 0.8
+
+  # An engine whose inference fails while its /health answers: degraded for two minutes pages; warming for fifteen
+  # files a ticket.
+  - interval: 1m
+    input_series:
+      - series: 'flatshare_gateway_engine_state{state="degraded"}'
+        values: '0 0 1 1 1 1 1'
+      - series: 'flatshare_gateway_engine_state{state="warming"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: FlatshareEngineDegraded
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: FlatshareEngineDegraded
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              state: degraded
+            exp_annotations:
+              summary: The engine answers /health but its inference fails, and /ready answers 503
+              description: >-
+                The gateway's inference canary failed degraded_after times in a row with no request succeeding
+                between: the engine's process lives (vLLM's /health) but generates nothing. Look at the engine's
+                journal and flatshare_gateway_canary_probes_total; a success of any request, or of the canary, serves
+                it again.
+      - eval_time: 10m
+        alertname: FlatshareEngineWarming
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: FlatshareEngineWarming
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              state: warming
+            exp_annotations:
+              summary: No inference has succeeded since the gateway started, 15 minutes ago (an engine's cold start is about 9)

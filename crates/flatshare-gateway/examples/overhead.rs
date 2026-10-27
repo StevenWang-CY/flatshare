@@ -275,12 +275,12 @@ fn digest(key: &str) -> String {
 }
 
 /// A gateway in front of `engine`, with `extra` (more tenants, an `[admission]` table, or nothing) in its
-/// configuration.
+/// configuration, and no canary, whose requests the engine would answer among the measured ones.
 async fn start_gateway(engine: SocketAddr, extra: &str) -> SocketAddr {
     let config = Config::from_toml(&format!(
         "upstream = \"http://{engine}\"\ncache_salt_secret_file = \"{}\"\nmetrics_key_file = \"{}\"\n\
          [[listen]]\ntcp = \"127.0.0.1:0\"\n[tenants.agents]\nkeys_sha256 = [\"{}\"]\ntrusted = true\n\
-         default_class = \"background\"\nmax_class = \"interactive\"\n{extra}",
+         default_class = \"background\"\nmax_class = \"interactive\"\n[canary]\nenabled = false\n{extra}",
         salt_secret().display(),
         metrics_key().display(),
         digest(KEY)

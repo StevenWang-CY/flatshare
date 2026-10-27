@@ -20,6 +20,7 @@ use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::metrics::histogram::Histogram;
 use prometheus_client::registry::{Registry, Unit};
 
+use crate::deadline::Timeout;
 use crate::harness;
 use crate::usage::Usage;
 
@@ -39,6 +40,11 @@ impl Route {
     /// The routes that proxy a request body, whose overhead and upload are timed.
     const INFERENCE: [Self; 3] = [Self::ChatCompletions, Self::Completions, Self::Responses];
 
+    /// Whether the route is an inference route, whose requests are offered, admitted and ended.
+    pub fn is_inference(self) -> bool {
+        Self::INFERENCE.contains(&self)
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ChatCompletions => "/v1/chat/completions",
@@ -51,42 +57,148 @@ impl Route {
     }
 }
 
-/// How a proxied request ended.
+/// How an inference request ended: its terminal event, one a request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Outcome {
-    /// The upstream response was relayed in full (whatever its status).
+    /// A 2xx response relayed to its end.
     Completed,
+    /// The engine answered 4xx (the request's own fault, such as a prompt over the context), relayed to its end.
+    UpstreamClientError,
+    /// The engine answered another status than 2xx or 4xx, relayed to its end.
+    UpstreamServerError,
+    /// The upstream failed: no connection, one that closed before the response headers, or a body that broke off.
+    TransportError,
     /// The client went away first; the gateway closed the upstream request.
     Cancelled,
     /// The client stopped reading for longer than the stall timeout; the gateway aborted both sides.
     Stalled,
-    /// The upstream failed: no connection, no response headers in time, or a broken body.
-    Error,
     /// The admission policy shed it to make room for a stricter class; the gateway cancelled the upstream
     /// request.
     Shed,
-    /// A background request still running `background_drain_s` into a drain: the gateway cut it, with a
-    /// `draining` error event on a stream or a 503 before the response.
+    /// A draining gateway cut it: a background request still running `background_drain_s` into a drain (a
+    /// `draining` error event on a stream, or a 503 before the response), or one a gateway that handed its sockets
+    /// over did not admit.
     Drained,
+    /// One of the request's deadlines passed ([`crate::deadline`]); the gateway cancelled the upstream request.
+    TimeoutUpload,
+    TimeoutQueue,
+    TimeoutHeaders,
+    TimeoutFirstContent,
+    TimeoutIdle,
+    TimeoutTotal,
+    /// The intake refused it before reading its body ([`crate::intake`]): the gateway, its class or its tenant had
+    /// its requests in flight, or the bodies' budget was full.
+    RefusedInFlight,
+    RefusedClass,
+    RefusedTenant,
+    RefusedBodyBytes,
+    /// The admission point's queues were full.
+    RefusedQueue,
+    /// The engine was not ready: a request had found it broken and its `/health` had not answered since.
+    NotReady,
+    /// The gateway refused it as malformed or unauthorized: 400, 401, 404, 405 or 413.
+    Invalid,
 }
 
 impl Outcome {
-    const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 21] = [
         Self::Completed,
+        Self::UpstreamClientError,
+        Self::UpstreamServerError,
+        Self::TransportError,
         Self::Cancelled,
         Self::Stalled,
-        Self::Error,
         Self::Shed,
         Self::Drained,
+        Self::TimeoutUpload,
+        Self::TimeoutQueue,
+        Self::TimeoutHeaders,
+        Self::TimeoutFirstContent,
+        Self::TimeoutIdle,
+        Self::TimeoutTotal,
+        Self::RefusedInFlight,
+        Self::RefusedClass,
+        Self::RefusedTenant,
+        Self::RefusedBodyBytes,
+        Self::RefusedQueue,
+        Self::NotReady,
+        Self::Invalid,
     ];
+
+    /// The outcome of a request whose `timeout` passed.
+    pub const fn timeout(timeout: Timeout) -> Self {
+        match timeout {
+            Timeout::Upload => Self::TimeoutUpload,
+            Timeout::Queue => Self::TimeoutQueue,
+            Timeout::Headers => Self::TimeoutHeaders,
+            Timeout::FirstContent => Self::TimeoutFirstContent,
+            Timeout::Idle => Self::TimeoutIdle,
+            Timeout::Total => Self::TimeoutTotal,
+        }
+    }
+
+    /// Whether the client is at fault, which the SLI leaves out of its valid requests: a malformed or unauthorized
+    /// request, one the engine answered 4xx, an upload too slow, a tenant over its own bound, a client that stopped
+    /// reading. A client's cancellation is judged by the request's own state ([`crate::exchange`]).
+    pub const fn clients_fault(self) -> bool {
+        matches!(
+            self,
+            Self::Invalid
+                | Self::UpstreamClientError
+                | Self::TimeoutUpload
+                | Self::RefusedTenant
+                | Self::Stalled
+        )
+    }
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Completed => "completed",
+            Self::UpstreamClientError => "upstream_client_error",
+            Self::UpstreamServerError => "upstream_server_error",
+            Self::TransportError => "transport_error",
             Self::Cancelled => "cancelled",
             Self::Stalled => "stalled",
-            Self::Error => "error",
             Self::Shed => "shed",
+            Self::Drained => "drained",
+            Self::TimeoutUpload => "timeout_upload",
+            Self::TimeoutQueue => "timeout_queue",
+            Self::TimeoutHeaders => "timeout_headers",
+            Self::TimeoutFirstContent => "timeout_first_content",
+            Self::TimeoutIdle => "timeout_idle",
+            Self::TimeoutTotal => "timeout_total",
+            Self::RefusedInFlight => "refused_in_flight",
+            Self::RefusedClass => "refused_class",
+            Self::RefusedTenant => "refused_tenant",
+            Self::RefusedBodyBytes => "refused_body_bytes",
+            Self::RefusedQueue => "refused_queue",
+            Self::NotReady => "not_ready",
+            Self::Invalid => "invalid",
+        }
+    }
+}
+
+/// The engine's state, as the gateway's inference canary and its requests find it ([`crate::canary`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EngineState {
+    /// No inference has succeeded yet.
+    Warming,
+    /// Inference succeeds.
+    Serving,
+    /// The canary failed `degraded_after` times in a row with nothing succeeding.
+    Degraded,
+    /// The gateway is draining.
+    Drained,
+}
+
+impl EngineState {
+    pub const ALL: [Self; 4] = [Self::Warming, Self::Serving, Self::Degraded, Self::Drained];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Warming => "warming",
+            Self::Serving => "serving",
+            Self::Degraded => "degraded",
             Self::Drained => "drained",
         }
     }
@@ -99,15 +211,18 @@ pub(crate) enum ErrorEvent {
     Upstream,
     /// A draining gateway cut a background stream (503): the client may send it again.
     Draining,
+    /// A deadline passed while the upstream streamed (504): it stopped sending, or the request ran too long.
+    Timeout,
 }
 
 impl ErrorEvent {
-    const ALL: [Self; 2] = [Self::Upstream, Self::Draining];
+    const ALL: [Self; 3] = [Self::Upstream, Self::Draining, Self::Timeout];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Upstream => "upstream_unavailable",
             Self::Draining => "draining",
+            Self::Timeout => "upstream_timeout",
         }
     }
 
@@ -115,6 +230,7 @@ impl ErrorEvent {
         match self {
             Self::Upstream => 502,
             Self::Draining => 503,
+            Self::Timeout => 504,
         }
     }
 }
@@ -126,7 +242,8 @@ pub(crate) enum UpstreamError {
     Connect,
     /// The connection failed before the response headers arrived (502).
     Request,
-    /// No response headers within the first-byte timeout (504).
+    /// A deadline passed while the gateway waited on the upstream: its headers, its first content, a frame after
+    /// one, or the request's total (504, or an error event mid-stream).
     Timeout,
     /// The response body broke off.
     Body,
@@ -169,6 +286,42 @@ struct RequestLabels {
 struct OutcomeLabels {
     class: &'static str,
     outcome: &'static str,
+}
+
+/// An inference request's tenant, route and class; empty when unknown, as for `requests_total`.
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct OfferedLabels {
+    tenant: Option<Arc<str>>,
+    route: &'static str,
+    class: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct AdmittedLabels {
+    tenant: Option<Arc<str>>,
+    route: &'static str,
+    class: Option<&'static str>,
+    /// `policy` when an admission policy held the request's class and decided when it went upstream, `none` when
+    /// none did.
+    admission: &'static str,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct TerminalLabels {
+    tenant: Option<Arc<str>>,
+    route: &'static str,
+    class: Option<&'static str>,
+    outcome: &'static str,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct StateLabels {
+    state: &'static str,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct ResultLabels {
+    result: &'static str,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
@@ -224,7 +377,13 @@ struct Resolved {
     first_byte: [Histogram; 3],
     duration: [Histogram; 3],
     streams_active: [Gauge; 3],
+    in_flight: [Gauge; 3],
+    sli_valid: [Counter; 3],
+    sli_good: [Counter; 3],
     usage_tokens: [[Counter; USAGE_KINDS.len()]; 3],
+    engine_state: [Gauge; EngineState::ALL.len()],
+    /// Successes, then failures.
+    canary: [Counter; 2],
     overhead: [Histogram; Route::INFERENCE.len()],
     request_body: [Histogram; Route::INFERENCE.len()],
 }
@@ -248,11 +407,22 @@ pub(crate) struct Metrics {
     registry: Arc<Registry>,
     requests: Family<RequestLabels, Counter>,
     outcomes: Family<OutcomeLabels, Counter>,
+    offered: Family<OfferedLabels, Counter>,
+    admitted: Family<AdmittedLabels, Counter>,
+    terminal: Family<TerminalLabels, Counter>,
+    sli_valid: Family<ClassLabels, Counter>,
+    sli_good: Family<ClassLabels, Counter>,
+    engine_state: Family<StateLabels, Gauge>,
+    canary: Family<ResultLabels, Counter>,
+    canary_seconds: Histogram,
     overhead: Histograms<RouteLabels>,
     request_body: Histograms<RouteLabels>,
     first_byte: Histograms<ClassLabels>,
     duration: Histograms<ClassLabels>,
     streams_active: Family<ClassLabels, Gauge>,
+    in_flight: Family<ClassLabels, Gauge>,
+    buffered_body_bytes: Gauge,
+    predecessor_in_flight: Gauge,
     sanitized: Family<FieldLabels, Counter>,
     class_clamped: Counter,
     upstream_errors: Family<KindLabels, Counter>,
@@ -286,6 +456,11 @@ impl Metrics {
         let duration: Histograms<ClassLabels> =
             Family::new_with_constructor(|| Histogram::new(LATENCY_BUCKETS));
         let streams_active: Family<ClassLabels, Gauge> = Family::default();
+        let in_flight: Family<ClassLabels, Gauge> = Family::default();
+        let sli_valid: Family<ClassLabels, Counter> = Family::default();
+        let sli_good: Family<ClassLabels, Counter> = Family::default();
+        let engine_state: Family<StateLabels, Gauge> = Family::default();
+        let canary: Family<ResultLabels, Counter> = Family::default();
         let usage_tokens: Family<UsageLabels, Counter> = Family::default();
         let by_class = SloClass::ALL.map(SloClass::as_str);
         let by_route = Route::INFERENCE.map(Route::as_str);
@@ -302,6 +477,16 @@ impl Metrics {
             duration: by_class.map(|class| duration.get_or_create_owned(&ClassLabels { class })),
             streams_active: by_class
                 .map(|class| streams_active.get_or_create_owned(&ClassLabels { class })),
+            in_flight: by_class.map(|class| in_flight.get_or_create_owned(&ClassLabels { class })),
+            sli_valid: by_class.map(|class| sli_valid.get_or_create_owned(&ClassLabels { class })),
+            sli_good: by_class.map(|class| sli_good.get_or_create_owned(&ClassLabels { class })),
+            engine_state: EngineState::ALL.map(|state| {
+                engine_state.get_or_create_owned(&StateLabels {
+                    state: state.as_str(),
+                })
+            }),
+            canary: ["success", "failure"]
+                .map(|result| canary.get_or_create_owned(&ResultLabels { result })),
             usage_tokens: by_class.map(|class| {
                 USAGE_KINDS
                     .map(|kind| usage_tokens.get_or_create_owned(&UsageLabels { class, kind }))
@@ -314,11 +499,22 @@ impl Metrics {
             registry: Arc::new(Registry::default()),
             requests: Family::default(),
             outcomes,
+            offered: Family::default(),
+            admitted: Family::default(),
+            terminal: Family::default(),
+            sli_valid,
+            sli_good,
+            engine_state,
+            canary,
+            canary_seconds: Histogram::new(LATENCY_BUCKETS),
             overhead,
             request_body,
             first_byte,
             duration,
             streams_active,
+            in_flight,
+            buffered_body_bytes: Gauge::default(),
+            predecessor_in_flight: Gauge::default(),
             sanitized: Family::default(),
             class_clamped: Counter::default(),
             upstream_errors: Family::default(),
@@ -353,8 +549,25 @@ impl Metrics {
         );
         r.register(
             "request_outcomes",
-            "Proxied requests by class and how they ended",
+            "Inference requests with a class, by class and how they ended: one terminal event a request",
             self.outcomes.clone(),
+        );
+        r.register(
+            "requests_offered",
+            "Inference requests received, by tenant, route and class, counted as their class is known",
+            self.offered.clone(),
+        );
+        r.register(
+            "requests_admitted",
+            "Inference requests sent upstream, past the intake, the admission point and the readiness check, by \
+             tenant, route, class and whether an admission policy decided when (policy) or none did (none)",
+            self.admitted.clone(),
+        );
+        r.register(
+            "requests_terminal",
+            "Inference requests ended, by tenant, route, class and outcome: one terminal event a request, offered \
+             minus terminal being those in flight",
+            self.terminal.clone(),
         );
         r.register_with_unit(
             "overhead",
@@ -383,9 +596,38 @@ impl Metrics {
             self.duration.clone(),
         );
         r.register(
+            "sli_valid",
+            "Inference requests the service level counts, by class: every one that ended, but for the client's faults \
+             and its cancellations before the class's first-content objective passed",
+            self.sli_valid.clone(),
+        );
+        r.register(
+            "sli_good",
+            "Valid inference requests that met their class's objective, by class: a 2xx response relayed to its end \
+             (or cancelled by its client after its first content), its first content within the objective",
+            self.sli_good.clone(),
+        );
+        r.register(
             "streams_active",
             "Responses being relayed from the upstream",
             self.streams_active.clone(),
+        );
+        r.register(
+            "in_flight",
+            "Inference requests past the intake, by class: from their headers to their end, reading their body, \
+             waiting at the admission point or relayed",
+            self.in_flight.clone(),
+        );
+        r.register(
+            "buffered_body_bytes",
+            "Bytes of request bodies the gateway holds, which max_buffered_body_bytes bounds",
+            self.buffered_body_bytes.clone(),
+        );
+        r.register(
+            "predecessor_in_flight",
+            "A reload's predecessor's requests in flight, which the gateway counts with its own until the \
+             predecessor exits",
+            self.predecessor_in_flight.clone(),
         );
         r.register(
             "sanitized",
@@ -427,6 +669,25 @@ impl Metrics {
              (0), while its requests are answered 503",
             self.node_ready.clone(),
         );
+        r.register(
+            "engine_state",
+            "The engine's state as inference finds it, 1 for the current one: warming until an inference succeeds, \
+             serving, degraded after the canary failed degraded_after times in a row, drained once the gateway \
+             drains",
+            self.engine_state.clone(),
+        );
+        r.register(
+            "canary_probes",
+            "Inference canaries by result: a one-token generation the gateway sends when nothing succeeded within its \
+             interval",
+            self.canary.clone(),
+        );
+        r.register_with_unit(
+            "canary",
+            "Time an inference canary took, to its answer's end or its failure",
+            Unit::Seconds,
+            self.canary_seconds.clone(),
+        );
         self.registry = Arc::new(registry);
         self
     }
@@ -458,6 +719,69 @@ impl Metrics {
         self.resolved.outcomes[class_index(class)][outcome as usize].inc();
     }
 
+    /// An inference request whose class is known (or that ended before it was).
+    pub fn offered(&self, tenant: Option<&Arc<str>>, route: Route, class: Option<SloClass>) {
+        let labels = OfferedLabels {
+            tenant: tenant.cloned(),
+            route: route.as_str(),
+            class: class.map(SloClass::as_str),
+        };
+        self.offered.get_or_create(&labels).inc();
+    }
+
+    /// An inference request sent upstream; `policy` when an admission policy decided when.
+    pub fn admitted(
+        &self,
+        tenant: Option<&Arc<str>>,
+        route: Route,
+        class: Option<SloClass>,
+        policy: bool,
+    ) {
+        let labels = AdmittedLabels {
+            tenant: tenant.cloned(),
+            route: route.as_str(),
+            class: class.map(SloClass::as_str),
+            admission: if policy { "policy" } else { "none" },
+        };
+        self.admitted.get_or_create(&labels).inc();
+    }
+
+    /// An inference request's terminal event.
+    pub fn terminal(
+        &self,
+        tenant: Option<&Arc<str>>,
+        route: Route,
+        class: Option<SloClass>,
+        outcome: Outcome,
+    ) {
+        let labels = TerminalLabels {
+            tenant: tenant.cloned(),
+            route: route.as_str(),
+            class: class.map(SloClass::as_str),
+            outcome: outcome.as_str(),
+        };
+        self.terminal.get_or_create(&labels).inc();
+    }
+
+    /// A valid request of `class` for the service level, which met its objective or not.
+    pub fn sli(&self, class: SloClass, good: bool) {
+        self.resolved.sli_valid[class_index(class)].inc();
+        if good {
+            self.resolved.sli_good[class_index(class)].inc();
+        }
+    }
+
+    /// The gauges of the engine's states, in [`EngineState::ALL`] order.
+    pub fn engine_state(&self) -> [Gauge; EngineState::ALL.len()] {
+        self.resolved.engine_state.clone()
+    }
+
+    /// An inference canary's result and how long it took.
+    pub fn canary(&self, success: bool, elapsed: Duration) {
+        self.resolved.canary[usize::from(!success)].inc();
+        self.canary_seconds.observe(elapsed.as_secs_f64());
+    }
+
     /// How long the body of a request of `route`, an inference route, took to arrive after its headers.
     pub fn request_body(&self, route: Route, elapsed: Duration) {
         self.resolved.request_body[inference_index(route)].observe(elapsed.as_secs_f64());
@@ -484,6 +808,15 @@ impl Metrics {
     /// The gauge of whether the engine is ready.
     pub fn node_ready(&self) -> Gauge {
         self.node_ready.clone()
+    }
+
+    /// The intake's gauges.
+    pub fn intake_gauges(&self) -> crate::intake::Gauges {
+        crate::intake::Gauges {
+            in_flight: self.resolved.in_flight.clone(),
+            body_bytes: self.buffered_body_bytes.clone(),
+            predecessor_in_flight: self.predecessor_in_flight.clone(),
+        }
     }
 
     pub fn sanitized(&self, field: &'static str) {
@@ -614,8 +947,9 @@ mod tests {
 
     /// `metrics.txt` is the exposition of a gateway under the lifecycle policy before any traffic, every family the
     /// gateway exports, its series in the order of their labels: every metric's name, type, help and labels, which
-    /// the dashboards' and alerts' checks (`ops/`) read. `FLATSHARE_GATEWAY_WRITE_METRICS=1` writes it anew (`make
-    /// metrics`).
+    /// the dashboards' and alerts' checks (`ops/`) read. The families whose series are made by traffic (requests by
+    /// status, lifecycle events, and requests offered, admitted and ended by tenant) get one each, at zero.
+    /// `FLATSHARE_GATEWAY_WRITE_METRICS=1` writes it anew (`make metrics`).
     #[test]
     fn the_checked_in_exposition_is_current() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("metrics.txt");
@@ -637,6 +971,34 @@ mod tests {
                 r#type: "turn_started",
                 source: "client",
                 duplicate: false,
+            },
+        );
+        let tenant = Some(Arc::from("agents"));
+        let (route, class) = (Route::ChatCompletions.as_str(), Some("background"));
+        create(
+            &metrics.offered,
+            OfferedLabels {
+                tenant: tenant.clone(),
+                route,
+                class,
+            },
+        );
+        create(
+            &metrics.admitted,
+            AdmittedLabels {
+                tenant: tenant.clone(),
+                route,
+                class,
+                admission: "policy",
+            },
+        );
+        create(
+            &metrics.terminal,
+            TerminalLabels {
+                tenant,
+                route,
+                class,
+                outcome: Outcome::Completed.as_str(),
             },
         );
         let exposition = by_labels(&metrics.encode());

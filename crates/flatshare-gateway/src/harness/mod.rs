@@ -6,7 +6,8 @@
 //! policy). Without an `[admission]` policy the gateway has no admission point and registers none of these metric
 //! families, and under another policy than the lifecycle policy none of that policy's. With one, the proxy reaches
 //! the harness only through a request's [`Ticket`], and the lifecycle events through [`Admission::events`]. The
-//! cap a deployment may set on every realtime reply (`realtime_max_tokens`) is the proxy's, not the harness's.
+//! caps a deployment may set on each class's replies (`[classes.<class>] max_reply_tokens`, `realtime_max_tokens`)
+//! and its bound on choices (`max_choices`) are the proxy's, not the harness's.
 
 mod admission;
 pub(crate) mod config;

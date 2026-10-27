@@ -507,24 +507,37 @@ async fn a_deployment_caps_every_realtime_reply_without_an_admission_policy() {
         format!(r#"{{"model":"qwen","messages":[{{"role":"user","content":"hi"}}]{cap}}}"#)
     };
     // A longer realtime reply is lowered to the cap, a shorter one kept, and one that asks for no length gets the
-    // route's field at the cap.
-    for (asked, field, sent) in [
-        (r#","max_tokens":200"#, "max_tokens", 24),
-        (r#","max_tokens":8"#, "max_tokens", 8),
-        ("", "max_completion_tokens", 24),
+    // cap: in both of Chat Completions' fields, whichever the client set. A field the route's engine ignores is no
+    // way around the cap, and is gone.
+    for (asked, sent) in [
+        (r#","max_tokens":200"#, 24),
+        (r#","max_tokens":8"#, 8),
+        ("", 24),
+        (r#","max_output_tokens":5"#, 24),
+        (r#","max_completion_tokens":null,"max_tokens":12"#, 12),
     ] {
         let reply = call(&gw.unix, "POST", "/v1/chat/completions", &[], &chat(asked)).await;
         assert_eq!(reply.status, 200);
         let body = mock.last().json();
-        assert_eq!(body[field], sent, "{body}");
+        assert_eq!(
+            (&body["max_completion_tokens"], &body["max_tokens"]),
+            (&sent.into(), &sent.into()),
+            "{body}"
+        );
+        assert!(body.get("max_output_tokens").is_none(), "{body}");
         assert_eq!(body["messages"][0]["content"], "hi");
     }
-    // Interactive and background replies are not capped.
+    // Interactive and background replies are not capped, and their limits pass as they are.
     for auth in [BENCH_AUTH, AGENTS_AUTH] {
-        let asked = chat(r#","max_tokens":200"#);
+        let asked = chat(r#","max_tokens":200,"max_output_tokens":5"#);
         let reply = call(&gw.tcp, "POST", "/v1/chat/completions", &[auth], &asked).await;
         assert_eq!(reply.status, 200);
-        assert_eq!(mock.last().json()["max_tokens"], 200);
+        let body = mock.last().json();
+        assert_eq!(
+            (&body["max_tokens"], &body["max_output_tokens"]),
+            (&200.into(), &5.into())
+        );
+        assert!(body.get("max_completion_tokens").is_none(), "{body}");
     }
     // Without a policy there is no degrade to count it as.
     let metrics = gw.metrics().await;
@@ -532,6 +545,134 @@ async fn a_deployment_caps_every_realtime_reply_without_an_admission_policy() {
         metric(&metrics, "flatshare_gateway_admission_degraded_total"),
         None
     );
+}
+
+#[tokio::test]
+async fn each_classs_cap_is_written_in_its_routes_own_field() {
+    let mock = Mock::start(Script::Json("{}")).await;
+    let top = "[classes.background]\nmax_reply_tokens = 100";
+    let gw = Gateway::start(mock.addr, top).await;
+    for (path, asked, field, sent, gone) in [
+        // Completions read max_tokens alone: 16 without one, as vLLM's default.
+        (
+            "/v1/completions",
+            r#"{"prompt":"p"}"#,
+            "max_tokens",
+            16,
+            "max_completion_tokens",
+        ),
+        (
+            "/v1/completions",
+            r#"{"prompt":"p","max_completion_tokens":5000}"#,
+            "max_tokens",
+            16,
+            "max_completion_tokens",
+        ),
+        (
+            "/v1/completions",
+            r#"{"prompt":"p","max_tokens":null}"#,
+            "max_tokens",
+            100,
+            "max_output_tokens",
+        ),
+        // The Responses API reads max_output_tokens alone.
+        (
+            "/v1/responses",
+            r#"{"input":"p","max_tokens":10}"#,
+            "max_output_tokens",
+            100,
+            "max_tokens",
+        ),
+        (
+            "/v1/responses",
+            r#"{"input":"p","max_output_tokens":30}"#,
+            "max_output_tokens",
+            30,
+            "max_tokens",
+        ),
+    ] {
+        let reply = call(&gw.tcp, "POST", path, &[AGENTS_AUTH], asked).await;
+        assert_eq!(reply.status, 200, "{asked}");
+        let body = mock.last().json();
+        assert_eq!(body[field], sent, "{path} {asked}: {body}");
+        assert!(body.get(gone).is_none(), "{path} {asked}: {body}");
+    }
+    // The interactive class has no cap.
+    let reply = call(
+        &gw.tcp,
+        "POST",
+        "/v1/completions",
+        &[BENCH_AUTH],
+        r#"{"prompt":"p"}"#,
+    )
+    .await;
+    assert_eq!(reply.status, 200);
+    assert!(mock.last().json().get("max_tokens").is_none());
+}
+
+#[tokio::test]
+async fn limits_and_choices_the_engine_could_read_otherwise_are_400() {
+    let mock = Mock::start(Script::Json("{}")).await;
+    let gw = Gateway::start(mock.addr, "realtime_max_tokens = 24").await;
+    for (asked, code, param) in [
+        // vLLM accepted n = 8 and would run eight choices.
+        (r#"{"messages":[],"n":8}"#, "too_many_choices", "n"),
+        (
+            r#"{"messages":[],"best_of":2}"#,
+            "too_many_choices",
+            "best_of",
+        ),
+        (r#"{"messages":[],"n":0}"#, "invalid_choices", "n"),
+        // Python's json keeps the last of a key given twice.
+        (
+            r#"{"messages":[],"max_tokens":8,"max_tokens":9000}"#,
+            "duplicate_field",
+            "max_tokens",
+        ),
+        (
+            r#"{"messages":[],"max_tokens":"9000"}"#,
+            "invalid_reply_limit",
+            "max_tokens",
+        ),
+        (
+            r#"{"messages":[],"max_completion_tokens":-5}"#,
+            "invalid_reply_limit",
+            "max_completion_tokens",
+        ),
+    ] {
+        for (target, auth) in [(&gw.unix, None), (&gw.tcp, Some(AGENTS_AUTH))] {
+            let headers: Vec<_> = auth.into_iter().collect();
+            let reply = call(target, "POST", "/v1/chat/completions", &headers, asked).await;
+            assert_eq!(reply.status, 400, "{asked}");
+            let error = &reply.json()["error"];
+            assert_eq!(
+                (&error["type"], &error["code"], &error["param"]),
+                (&"invalid_request_error".into(), &code.into(), &param.into()),
+                "{asked}: {error}"
+            );
+        }
+    }
+    assert!(mock.requests().is_empty(), "none reached the engine");
+    // One choice, or more where a deployment allows them.
+    let reply = call(
+        &gw.unix,
+        "POST",
+        "/v1/chat/completions",
+        &[],
+        r#"{"messages":[],"n":1}"#,
+    )
+    .await;
+    assert_eq!(reply.status, 200);
+    let more = Gateway::start(mock.addr, "max_choices = 4").await;
+    let reply = call(
+        &more.unix,
+        "POST",
+        "/v1/chat/completions",
+        &[],
+        r#"{"messages":[],"n":4}"#,
+    )
+    .await;
+    assert_eq!(reply.status, 200);
 }
 
 #[tokio::test]

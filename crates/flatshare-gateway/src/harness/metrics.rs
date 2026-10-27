@@ -23,17 +23,23 @@ use crate::metrics::{GaugeGuard, Histograms, LATENCY_BUCKETS, create};
 pub(crate) enum Refusal {
     /// Its class's queue was full (429).
     QueueFull,
+    /// The queues held `max_queued` requests in all (429).
+    Queued,
     /// It waited `queue_timeout_s` without being admitted (503).
     Timeout,
+    /// The gateway handed its sockets to a successor as it waited, or before it arrived (503): it is to be sent again.
+    Draining,
 }
 
 impl Refusal {
-    const ALL: [Self; 2] = [Self::QueueFull, Self::Timeout];
+    const ALL: [Self; 4] = [Self::QueueFull, Self::Queued, Self::Timeout, Self::Draining];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::QueueFull => "queue_full",
+            Self::Queued => "max_queued",
             Self::Timeout => "timeout",
+            Self::Draining => "draining",
         }
     }
 }

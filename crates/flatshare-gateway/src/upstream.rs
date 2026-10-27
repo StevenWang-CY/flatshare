@@ -296,6 +296,14 @@ impl UpstreamBody {
         }
     }
 
+    /// The body `data`, which times nothing: the gateway's own requests', the canary's.
+    pub fn plain(data: Bytes) -> Self {
+        Self {
+            data: Some(data),
+            sent: None,
+        }
+    }
+
     /// The same bytes, to send again after a preemption dropped the attempt: the first attempt observed the
     /// overhead.
     pub fn again(&self) -> Self {

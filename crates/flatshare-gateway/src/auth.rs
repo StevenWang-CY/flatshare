@@ -16,6 +16,10 @@ use crate::sanitize::hex;
 #[derive(Debug)]
 pub(crate) struct Tenant {
     pub name: Arc<str>,
+    /// Its place in the configuration, by which the intake counts its requests.
+    pub index: usize,
+    /// Its requests in flight at most.
+    pub max_in_flight: usize,
     pub trusted: bool,
     pub default_class: SloClass,
     pub max_class: SloClass,
@@ -34,8 +38,11 @@ impl Tenants {
     pub fn new(config: &[config::Tenant], secret: &CacheSaltSecret) -> Self {
         let tenants = config
             .iter()
-            .map(|t| Tenant {
+            .enumerate()
+            .map(|(index, t)| Tenant {
                 name: t.name.as_str().into(),
+                index,
+                max_in_flight: t.max_in_flight,
                 trusted: t.trusted,
                 default_class: t.default_class,
                 max_class: t.max_class,
@@ -48,6 +55,11 @@ impl Tenants {
             .flat_map(|(t, index)| t.keys_sha256.iter().map(move |digest| (*digest, index)))
             .collect();
         Self { tenants, keys }
+    }
+
+    /// Every tenant, in the configuration's order (each one's [`Tenant::index`]).
+    pub fn all(&self) -> &[Tenant] {
+        &self.tenants
     }
 
     pub fn index(&self, name: &str) -> Option<usize> {
@@ -122,6 +134,7 @@ mod tests {
             trusted: false,
             default_class: SloClass::Interactive,
             max_class: SloClass::Interactive,
+            max_in_flight: 1,
         };
         Tenants::new(
             &[

@@ -1,6 +1,7 @@
 //! The test harness: a mock engine, a gateway on ephemeral listeners, and a raw HTTP/1.1 client.
 
 use std::convert::Infallible;
+use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -38,6 +39,10 @@ pub const TAG: &str = "x-mock-tag";
 /// A request header that makes the mock engine hold its answer until [`Mock::release`]: a JSON response's
 /// headers, or an event stream's first chunk, as an engine holds them through a prefill.
 pub const GATE: &str = "x-mock-gate";
+/// A request header that makes the mock engine answer with this status and a JSON error, at once.
+pub const STATUS: &str = "x-mock-status";
+/// The header the gateway's inference canary sends.
+pub const CANARY: &str = "x-flatshare-canary";
 
 /// The mock engine's `/metrics`, as vLLM's exposition starts, with vLLM's content type.
 pub const ENGINE_METRICS: &str = "# HELP vllm:num_requests_running Number of requests in model execution batches.\n\
@@ -103,6 +108,13 @@ struct MockState {
     /// The permits gated answers wait for, granted in the order they began to wait.
     gate: Semaphore,
     dropped: mpsc::UnboundedSender<(Instant, Option<String>)>,
+    /// Inference requests the engine is working on (from their arrival to their response's end or drop), and the
+    /// most at once.
+    active: AtomicUsize,
+    peak: AtomicUsize,
+    /// Whether it answers every inference request 503, or the canary's alone.
+    failing: AtomicBool,
+    failing_canary: AtomicBool,
 }
 
 /// An in-process engine on 127.0.0.1, or on a Unix socket ([`Mock::start_unix`]).
@@ -118,14 +130,24 @@ pub struct Mock {
 }
 
 /// Sends the time it is dropped, with the request's tag: held by a response body, or by a handler that has
-/// not answered yet.
+/// not answered yet. It counts the request as one the engine works on while it lives.
 struct DropSignal(
     mpsc::UnboundedSender<(Instant, Option<String>)>,
     Option<String>,
+    Arc<MockState>,
 );
+
+impl DropSignal {
+    fn new(state: &Arc<MockState>, tag: Option<String>) -> Self {
+        let active = state.active.fetch_add(1, Ordering::SeqCst) + 1;
+        state.peak.fetch_max(active, Ordering::SeqCst);
+        Self(state.dropped.clone(), tag, Arc::clone(state))
+    }
+}
 
 impl Drop for DropSignal {
     fn drop(&mut self) {
+        self.2.active.fetch_sub(1, Ordering::SeqCst);
         let _ = self.0.send((Instant::now(), self.1.take()));
     }
 }
@@ -188,6 +210,10 @@ impl Mock {
             healthy: AtomicBool::new(true),
             gate: Semaphore::new(0),
             dropped: dropped_tx,
+            active: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
+            failing: AtomicBool::new(false),
+            failing_canary: AtomicBool::new(false),
         });
         let app = Router::new()
             .route("/v1/chat/completions", post(answer))
@@ -221,6 +247,24 @@ impl Mock {
 
     pub fn set_healthy(&self, healthy: bool) {
         self.state.healthy.store(healthy, Ordering::SeqCst);
+    }
+
+    /// Answers every inference request 503 while `failing`, as an engine whose process lives but serves nothing.
+    pub fn set_failing(&self, failing: bool) {
+        self.state.failing.store(failing, Ordering::SeqCst);
+    }
+
+    /// Answers the gateway's canary 503 while `failing`, and the clients' requests as its script says.
+    pub fn set_failing_canary(&self, failing: bool) {
+        self.state.failing_canary.store(failing, Ordering::SeqCst);
+    }
+
+    /// The canary's requests the engine received.
+    pub fn canaries(&self) -> usize {
+        self.requests()
+            .iter()
+            .filter(|request| request.header(CANARY).is_some())
+            .count()
     }
 
     pub fn requests(&self) -> Vec<Recorded> {
@@ -259,6 +303,11 @@ impl Mock {
     /// Lets `n` gated answers go on, the longest waiting first.
     pub fn release(&self, n: usize) {
         self.state.gate.add_permits(n);
+    }
+
+    /// The most inference requests the engine worked on at once.
+    pub fn peak(&self) -> usize {
+        self.state.peak.load(Ordering::SeqCst)
     }
 
     /// The tags of the requests received, in order of arrival.
@@ -310,8 +359,19 @@ async fn answer(State(state): State<Arc<MockState>>, request: Request) -> Respon
     let headers = request.headers();
     let tag = headers.get(TAG).map(|v| v.to_str().unwrap().to_owned());
     let gated = headers.contains_key(GATE);
-    let guard = DropSignal(state.dropped.clone(), tag);
+    let canary = headers.contains_key(CANARY);
+    let status = headers
+        .get(STATUS)
+        .map(|v| StatusCode::from_bytes(v.as_bytes()).unwrap());
+    let guard = DropSignal::new(&state, tag);
     state.record(request).await;
+    let failing = state.failing.load(Ordering::SeqCst)
+        || (canary && state.failing_canary.load(Ordering::SeqCst));
+    if let Some(status) = status.or(failing.then_some(StatusCode::SERVICE_UNAVAILABLE)) {
+        let error =
+            r#"{"error":{"message":"the mock engine fails","type":"server_error","code":503}}"#;
+        return (status, [(CONTENT_TYPE, "application/json")], error).into_response();
+    }
     match state.script.clone() {
         Script::Json(json) => {
             if gated {
@@ -537,13 +597,20 @@ pub fn listeners_toml(
     toml.replace("tcp = \"127.0.0.1:0\"", &format!("tcp = \"{tcp}\""))
 }
 
-/// The test configuration's listeners and tenants, after `top`.
+/// The test configuration's listeners and tenants, after `top`. The canary is off unless `top` sets it: it would be
+/// a request at the mock engine that no test sent.
 fn harness_toml(socket: &std::path::Path, top: &str) -> String {
+    let canary = if top.contains("[canary]") {
+        ""
+    } else {
+        "[canary]\nenabled = false\n"
+    };
     format!(
         r#"log_level = "debug"
 cache_salt_secret_file = "{secret}"
 metrics_key_file = "{metrics_key}"
 {top}
+{canary}
 
 [[listen]]
 tcp = "127.0.0.1:0"
@@ -843,4 +910,102 @@ pub fn finish(mut open: Open) -> JoinHandle<(Vec<u8>, bool, Instant)> {
             }
         }
     })
+}
+
+/// What a raw client got: the answer's head and body as text, and how long after its head was sent.
+pub struct Answer {
+    pub text: String,
+    pub after: Duration,
+}
+
+impl Answer {
+    pub fn status(&self) -> &str {
+        self.text.get(9..12).unwrap_or_default()
+    }
+
+    pub fn header(&self, name: &str) -> Option<&str> {
+        let head = self.text.split("\r\n\r\n").next()?;
+        head.lines().find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.eq_ignore_ascii_case(name).then(|| value.trim())
+        })
+    }
+
+    pub fn json(&self) -> serde_json::Value {
+        let body = self
+            .text
+            .split_once("\r\n\r\n")
+            .map(|(_, body)| body)
+            .unwrap();
+        serde_json::from_str(body).unwrap()
+    }
+}
+
+/// Sends a request's `head` on a new connection, then each part of its body after its pause, and reads the answer
+/// for up to five seconds: a client whose body never comes, or comes slowly.
+pub fn raw(
+    addr: SocketAddr,
+    head: String,
+    parts: Vec<(Duration, Vec<u8>)>,
+) -> std::thread::JoinHandle<Answer> {
+    std::thread::spawn(move || {
+        let mut stream = std::net::TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let sent = Instant::now();
+        stream.write_all(head.as_bytes()).unwrap();
+        for (pause, part) in parts {
+            std::thread::sleep(pause);
+            // The gateway may have answered and closed already.
+            if stream.write_all(&part).is_err() {
+                break;
+            }
+        }
+        let mut bytes = Vec::new();
+        let mut buf = [0; 4096];
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => bytes.extend_from_slice(&buf[..n]),
+            }
+            // The whole answer: its head, and the body its Content-Length gives.
+            let text = String::from_utf8_lossy(&bytes);
+            if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                let length = head.lines().find_map(|line| {
+                    let (key, value) = line.split_once(':')?;
+                    key.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())?
+                });
+                if length.is_some_and(|length| body.len() >= length) {
+                    break;
+                }
+            }
+        }
+        Answer {
+            text: String::from_utf8_lossy(&bytes).into_owned(),
+            after: sent.elapsed(),
+        }
+    })
+}
+
+/// A chat completion's head on the TCP listener, with `auth` and `framing` (its Content-Length or chunked encoding).
+pub fn head(auth: &str, framing: &str) -> String {
+    format!(
+        "POST /v1/chat/completions HTTP/1.1\r\nHost: gateway\r\nAuthorization: Bearer {auth}\r\n\
+         Content-Type: application/json\r\n{framing}\r\n\r\n"
+    )
+}
+
+pub fn tcp(gw: &Gateway) -> SocketAddr {
+    match gw.tcp {
+        Target::Tcp(addr) => addr,
+        Target::Unix(_) => unreachable!("the TCP listener"),
+    }
+}
+
+pub async fn answered(client: std::thread::JoinHandle<Answer>) -> Answer {
+    tokio::task::spawn_blocking(move || client.join().unwrap())
+        .await
+        .unwrap()
 }

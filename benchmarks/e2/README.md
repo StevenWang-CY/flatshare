@@ -43,7 +43,7 @@ Points that share an engine go together in a campaign file: a switch restarts th
 | 7a | `a7a-seqs12-s16`, `a7a-pr54530-s16` | priority, `--max-num-seqs 12`, without and with vLLM #54530 | as configured |
 | 7b | `a7b-sglang-s{8,16}` | SGLang 0.5.22 | `upstream_priority = ["body"]` |
 
-The gateway "as configured" is `~/.config/flatshare/gateway.toml`, which sends each class's priority as `X-Vllm-Priority`. Every point runs 2 callers × 25 turns with barge-in on a quarter of them, beside AIPerf's agentic replay of the 32× corpus (think times capped at 120 s) through the gateway as the `agents` tenant.
+The gateway "as configured" is `~/.config/flatshare/gateway.toml`, which sends each class's priority as `X-Vllm-Priority`, with its inference canary off, as every point runs it ([`flatshare-bench`'s README](../../python/flatshare_bench/README.md)). Every point runs 2 callers × 25 turns with barge-in on a quarter of them, beside AIPerf's agentic replay of the 32× corpus (think times capped at 120 s) through the gateway as the `agents` tenant.
 
 The other arms take an earlier arm's winner, so their files are written from its results. Each starts from the winning arm file, with its own `arm` and `label`:
 

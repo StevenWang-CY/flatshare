@@ -7,6 +7,11 @@
 //! connection is refused or waits. A successor that exits, or is not ready within [`TIMEOUT`], changes nothing:
 //! the predecessor serves on.
 //!
+//! The successor also finds the path of its predecessor's ledger in its environment (`FLATSHARE_GATEWAY_LEDGER`): what
+//! the predecessor holds on the engine, which the successor counts with its own until the predecessor exits
+//! ([`crate::ledger`]). As the predecessor drains it admits nothing more, and the successor waits for it to say so,
+//! [`CLOSE_WAIT`] at most, before it serves.
+//!
 //! The predecessor watches its successor only until it takes over, and never reaps it after that: once the
 //! predecessor exits, the service manager, a subreaper, adopts the successor and reaps it when it exits. That does
 //! not make systemd count it as a main process it can watch: the successor was not its child when it said
@@ -15,6 +20,7 @@
 
 use std::io;
 use std::os::fd::{OwnedFd, RawFd};
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus};
 use std::time::Duration;
 
@@ -23,6 +29,7 @@ use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 use tokio::signal::unix::{SignalKind, signal};
 
+use crate::ledger::Ledger;
 use crate::systemd;
 
 /// How long a successor has to take over.
@@ -30,6 +37,13 @@ pub const TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The environment variable that tells a successor which process started it.
 const PREDECESSOR: &str = "FLATSHARE_GATEWAY_PREDECESSOR";
+
+/// The environment variable that tells a successor where its predecessor's ledger is.
+const LEDGER: &str = "FLATSHARE_GATEWAY_LEDGER";
+
+/// How long a successor waits, before it serves, for its predecessor to say that it admits nothing more: it does so as
+/// soon as it reads the successor's SIGTERM.
+pub const CLOSE_WAIT: Duration = Duration::from_secs(2);
 
 /// How often the predecessor looks whether its successor exited before taking over.
 const POLL: Duration = Duration::from_millis(50);
@@ -69,6 +83,11 @@ pub fn predecessor() -> Option<u32> {
     (std::os::unix::process::parent_id() == pid).then_some(pid)
 }
 
+/// The path of the predecessor's ledger, for a successor that [`predecessor`] names.
+pub fn ledger() -> Option<PathBuf> {
+    std::env::var_os(LEDGER).map(PathBuf::from)
+}
+
 /// Takes over from `predecessor`: tells systemd that this process is the unit's main one and ready, and then
 /// relieves the predecessor (SIGTERM), which drains.
 pub fn take_over(predecessor: u32) -> io::Result<()> {
@@ -79,8 +98,13 @@ pub fn take_over(predecessor: u32) -> io::Result<()> {
 }
 
 /// Serves the signals until the gateway is to drain: SIGTERM or SIGINT. Each SIGHUP starts a successor on
-/// `listeners` (the gateway's listening sockets, in configuration order) unless one is starting already.
-pub async fn until_stopped(mut signals: Signals, listeners: Vec<OwnedFd>) -> Stopped {
+/// `listeners` (the gateway's listening sockets, in configuration order), with a channel to the gateway's `ledger`,
+/// unless one is starting already.
+pub async fn until_stopped(
+    mut signals: Signals,
+    listeners: Vec<OwnedFd>,
+    ledger: Ledger,
+) -> Stopped {
     let mut successor: Option<(Child, tokio::time::Instant)> = None;
     let mut poll = tokio::time::interval(POLL);
     loop {
@@ -93,7 +117,12 @@ pub async fn until_stopped(mut signals: Signals, listeners: Vec<OwnedFd>) -> Sto
                     tracing::warn!(successor = child.id(), "reload: a successor is starting already");
                     continue;
                 }
-                match spawn(&listeners) {
+                // Without a ledger the reload goes on, but the successor's bounds and policy count only its own requests.
+                let path = ledger
+                    .open(TIMEOUT)
+                    .inspect_err(|err| tracing::warn!("reload: cannot open the ledger for the successor: {err}"))
+                    .ok();
+                match spawn(&listeners, path.as_deref()) {
                     Ok(child) => {
                         tracing::info!(successor = child.id(), "reload: started a successor on the listening sockets");
                         successor = Some((child, tokio::time::Instant::now() + TIMEOUT));
@@ -140,8 +169,9 @@ fn exited(child: &mut Child) -> Option<ExitStatus> {
     child.try_wait().ok().flatten()
 }
 
-/// Starts a successor from this process's binary path and arguments, with `listeners` from fd 3 on.
-fn spawn(listeners: &[OwnedFd]) -> io::Result<Child> {
+/// Starts a successor from this process's binary path and arguments, with `listeners` from fd 3 on and the path of
+/// the gateway's ledger.
+fn spawn(listeners: &[OwnedFd], ledger: Option<&Path>) -> io::Result<Child> {
     let mut args = std::env::args_os();
     let program = args
         .next()
@@ -160,7 +190,11 @@ fn spawn(listeners: &[OwnedFd]) -> io::Result<Child> {
         .env_remove("LISTEN_PID")
         .env_remove("LISTEN_FDNAMES")
         .env(PREDECESSOR, std::process::id().to_string())
+        .env_remove(LEDGER)
         .fd_mappings(mappings)
         .map_err(io::Error::other)?;
+    if let Some(ledger) = ledger {
+        command.env(LEDGER, ledger);
+    }
     command.spawn()
 }

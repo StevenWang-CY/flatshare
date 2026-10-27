@@ -222,9 +222,28 @@ pub struct Arrival {
     pub reply_cap: Option<u32>,
 }
 
-/// A request refused on arrival because its class's queue is full.
+/// A request refused on arrival because its class's queue is full, or the queues hold their bound in all
+/// ([`Admission::with_max_waiting`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QueueFull;
+
+/// What another admission point holds on the same engine, which this one counts with its own: in
+/// `flatshare-gateway`, a reload's predecessor's admitted requests while it drains. The predecessor admits nothing
+/// after the handover, so what it holds only shrinks, and the requests it holds are counted wherever the policy counts
+/// requests in flight: a static cap's background requests, a reservation's tokens, flow control's ceilings,
+/// preempt-resubmit's realtime requests without a first byte, the lifecycle policy's headroom, throttle and degrade.
+/// They cannot be shed or preempted from here.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Elsewhere {
+    /// Admitted requests by class, strictest first.
+    pub admitted: [u32; 3],
+    /// The estimated tokens of the admitted background requests.
+    pub background_tokens: u64,
+    /// Admitted realtime requests without a first byte (preempt-resubmit).
+    pub realtime_pending: u32,
+    /// The realtime sessions' turns (the lifecycle policy).
+    pub turns: Turns,
+}
 
 /// An admission point under the lifecycle policy with its throttle on, which prices prefills, asked for without a
 /// [`PrefillCost`].
@@ -260,6 +279,10 @@ pub struct Admission {
     realtime_pending: u32,
     /// The lifecycle policy's own state; `None` under every other policy.
     lifecycle: Option<LifecycleState>,
+    /// The waiting requests of every class in all at most.
+    max_waiting: usize,
+    /// What another admission point holds on the engine ([`Elsewhere`]).
+    elsewhere: Elsewhere,
 }
 
 /// What the lifecycle policy keeps at its admission point beside what every policy does.
@@ -268,7 +291,7 @@ struct LifecycleState {
     policy: Lifecycle,
     /// What the throttle prices a background prefill by; `None` without the throttle.
     prefill_cost: Option<PrefillCost>,
-    /// The realtime sessions' turns.
+    /// The realtime sessions' turns, as the caller reports them; [`Elsewhere`]'s come on top.
     turns: Turns,
     /// The predicted prefill time of the background requests admitted in the current critical window.
     window_prefill: Duration,
@@ -318,7 +341,17 @@ impl Admission {
             background_tokens: 0,
             realtime_pending: 0,
             lifecycle,
+            max_waiting: usize::MAX,
+            elsewhere: Elsewhere::default(),
         })
+    }
+
+    /// The same admission point with its queues holding at most `max_waiting` requests in all, whatever their
+    /// classes: a request that would wait beyond it is refused as when its class's queue is full.
+    #[must_use]
+    pub const fn with_max_waiting(mut self, max_waiting: usize) -> Self {
+        self.max_waiting = max_waiting;
+        self
     }
 
     pub const fn policy(&self) -> Policy {
@@ -340,7 +373,10 @@ impl Admission {
             .iter()
             .any(|&c| !self.waiting[index(c)].is_empty());
         let admitted = !behind && (self.fits(&held) || self.make_room(class, &mut actions));
-        if !admitted && self.waiting[index(class)].len() >= self.queue_limit {
+        if !admitted
+            && (self.waiting[index(class)].len() >= self.queue_limit
+                || self.waiting.iter().map(VecDeque::len).sum::<usize>() >= self.max_waiting)
+        {
             return Err(QueueFull);
         }
         let deferred = if admitted { None } else { self.deferral(&held) };
@@ -373,15 +409,63 @@ impl Admission {
     /// opens with its whole prefill budget, and what the new counts free goes upstream.
     pub fn set_turns(&mut self, turns: Turns) -> Vec<Action> {
         let mut actions = Vec::new();
+        let elsewhere = self.elsewhere.turns;
         let Some(lifecycle) = &mut self.lifecycle else {
             return actions;
         };
-        if lifecycle.turns.critical == 0 && turns.critical > 0 {
-            lifecycle.window_prefill = Duration::ZERO;
-        }
+        lifecycle.open_window(
+            lifecycle.turns.critical + elsewhere.critical,
+            turns.critical + elsewhere.critical,
+        );
         lifecycle.turns = turns;
         self.dispatch(&mut actions);
         actions
+    }
+
+    /// What another admission point holds on the engine changed ([`Elsewhere`]): what it frees goes upstream, and
+    /// its sessions' critical windows open this one's as the caller's own do.
+    pub fn set_elsewhere(&mut self, elsewhere: Elsewhere) -> Vec<Action> {
+        let mut actions = Vec::new();
+        if let Some(lifecycle) = &mut self.lifecycle {
+            let own = lifecycle.turns.critical;
+            lifecycle.open_window(
+                own + self.elsewhere.turns.critical,
+                own + elsewhere.turns.critical,
+            );
+        }
+        self.elsewhere = elsewhere;
+        self.dispatch(&mut actions);
+        actions
+    }
+
+    /// What this admission point holds on the engine, with what it counts of another's: what a successor that takes
+    /// over from it is to count ([`Admission::set_elsewhere`]).
+    pub fn held(&self) -> Elsewhere {
+        let own = self
+            .lifecycle
+            .as_ref()
+            .map_or(Turns::default(), |lifecycle| lifecycle.turns);
+        Elsewhere {
+            admitted: std::array::from_fn(|i| self.admitted[i] + self.elsewhere.admitted[i]),
+            background_tokens: self.background_tokens + self.elsewhere.background_tokens,
+            realtime_pending: self.realtime_pending + self.elsewhere.realtime_pending,
+            turns: Turns {
+                speaking: own.speaking + self.elsewhere.turns.speaking,
+                critical: own.critical + self.elsewhere.turns.critical,
+            },
+        }
+    }
+
+    /// Admits nothing more: every waiting request leaves, without admitting another, and the ids of those that did
+    /// are returned for the caller to refuse. The admitted requests stay until they leave. In `flatshare-gateway`, a
+    /// predecessor's queue as it hands its sockets to a successor, which then owns every admission.
+    pub fn close(&mut self) -> Vec<RequestId> {
+        let waiting: Vec<RequestId> = self.waiting.iter_mut().flat_map(std::mem::take).collect();
+        for id in &waiting {
+            self.held.remove(id);
+        }
+        self.waiting_tokens = 0;
+        waiting
     }
 
     /// The waiting request has waited as long as the caller lets a request be deferred: it is admitted
@@ -392,10 +476,11 @@ impl Admission {
     pub fn age(&mut self, id: RequestId) -> Option<bool> {
         let held = self.held.get(&id).filter(|held| !held.admitted)?;
         let (class, tokens) = (held.class, held.tokens);
+        let turns = self.turns();
         let oversize = self
             .lifecycle
             .as_ref()
-            .and_then(LifecycleState::headroom_limit)
+            .and_then(|lifecycle| lifecycle.headroom_limit(turns))
             .is_some_and(|limit| tokens > limit);
         self.waiting[index(class)].retain(|&waiting| waiting != id);
         if class == SloClass::Background {
@@ -460,6 +545,28 @@ impl Admission {
         self.admitted[index(class)]
     }
 
+    /// The admitted requests of `class` here and elsewhere ([`Elsewhere`]), which the policies count.
+    fn counted(&self, class: SloClass) -> u32 {
+        self.admitted[index(class)] + self.elsewhere.admitted[index(class)]
+    }
+
+    /// The estimated tokens of the admitted background requests here and elsewhere.
+    const fn counted_tokens(&self) -> u64 {
+        self.background_tokens + self.elsewhere.background_tokens
+    }
+
+    /// The realtime sessions' turns here and elsewhere.
+    fn turns(&self) -> Turns {
+        let own = self
+            .lifecycle
+            .as_ref()
+            .map_or(Turns::default(), |lifecycle| lifecycle.turns);
+        Turns {
+            speaking: own.speaking + self.elsewhere.turns.speaking,
+            critical: own.critical + self.elsewhere.turns.critical,
+        }
+    }
+
     /// The waiting requests of `class`.
     pub fn waiting(&self, class: SloClass) -> usize {
         self.waiting[index(class)].len()
@@ -482,17 +589,19 @@ impl Admission {
         match self.policy {
             Policy::StaticCap {
                 background_max_in_flight,
-            } => !background || self.admitted(SloClass::Background) < background_max_in_flight,
+            } => !background || self.counted(SloClass::Background) < background_max_in_flight,
             Policy::TokenReservation {
                 pool_tokens,
                 reserved_tokens,
             } => {
                 !background
-                    || self.background.is_empty()
-                    || self.background_tokens + tokens + reserved_tokens <= pool_tokens
+                    || self.counted(SloClass::Background) == 0
+                    || self.counted_tokens() + tokens + reserved_tokens <= pool_tokens
             }
             Policy::FlowControl { ceilings } => self.in_flight() < ceilings.of(class),
-            Policy::PreemptResubmit => !background || self.realtime_pending == 0,
+            Policy::PreemptResubmit => {
+                !background || self.realtime_pending + self.elsewhere.realtime_pending == 0
+            }
             Policy::Lifecycle(_) => {
                 !background
                     || self
@@ -506,14 +615,15 @@ impl Admission {
     /// What holds a background request back under the lifecycle policy, if anything: the headroom first, then
     /// the critical window's prefill budget.
     fn blocking(&self, lifecycle: &LifecycleState, held: &Held) -> Option<Deferral> {
+        let turns = self.turns();
         if lifecycle
-            .headroom_limit()
-            .is_some_and(|limit| self.background_tokens + held.tokens > limit)
+            .headroom_limit(turns)
+            .is_some_and(|limit| self.counted_tokens() + held.tokens > limit)
         {
             return Some(Deferral::Headroom);
         }
         if let Some(budget) = lifecycle.policy.critical_prefill_budget
-            && lifecycle.turns.critical > 0
+            && turns.critical > 0
             && lifecycle.window_prefill + held.prefill > budget
         {
             return Some(Deferral::Critical);
@@ -538,7 +648,7 @@ impl Admission {
         policy
             .degrade_max_tokens
             .filter(|_| class == SloClass::Realtime)
-            .filter(|_| self.background_tokens + policy.headroom_tokens > policy.pool_tokens)
+            .filter(|_| self.counted_tokens() + policy.headroom_tokens > policy.pool_tokens)
     }
 
     /// The predicted prefill time of a request that the lifecycle policy's throttle prices.
@@ -613,6 +723,7 @@ impl Admission {
     }
 
     fn admit(&mut self, id: RequestId) {
+        let critical = self.turns().critical;
         let held = self
             .held
             .get_mut(&id)
@@ -624,7 +735,7 @@ impl Admission {
                 self.background.push(id);
                 self.background_tokens += held.tokens;
                 if let Some(lifecycle) = &mut self.lifecycle
-                    && lifecycle.turns.critical > 0
+                    && critical > 0
                 {
                     lifecycle.window_prefill += held.prefill;
                 }
@@ -651,16 +762,24 @@ impl Admission {
         }
     }
 
+    /// The requests in flight, of every class, here and elsewhere.
     fn in_flight(&self) -> u32 {
-        self.admitted.iter().sum()
+        SloClass::ALL.iter().map(|&class| self.counted(class)).sum()
     }
 }
 
 impl LifecycleState {
-    /// The tokens the background requests in flight may hold while the headroom keeps room for the armed
-    /// sessions; `None` while none is armed, or with the headroom off.
-    fn headroom_limit(&self) -> Option<u64> {
-        let armed = self.policy.headroom?.armed(self.turns);
+    /// A critical window opens with its whole prefill budget: as the sessions in one go from none to some.
+    fn open_window(&mut self, before: u32, after: u32) {
+        if before == 0 && after > 0 {
+            self.window_prefill = Duration::ZERO;
+        }
+    }
+
+    /// The tokens the background requests in flight may hold while the headroom keeps room for the sessions
+    /// `turns` arms; `None` while none is armed, or with the headroom off.
+    fn headroom_limit(&self, turns: Turns) -> Option<u64> {
+        let armed = self.policy.headroom?.armed(turns);
         (armed > 0).then(|| {
             self.policy
                 .pool_tokens
@@ -1232,5 +1351,169 @@ mod tests {
         assert_eq!((a.background_tokens(), a.waiting_tokens()), (6_000, 4_000));
         assert_eq!(a.leave(running), [Action::Admit(deferred)]);
         assert_eq!((a.background_tokens(), a.waiting_tokens()), (4_000, 0));
+    }
+
+    #[test]
+    fn what_is_held_elsewhere_counts_as_this_points_own() {
+        // A static cap of 2 with a predecessor that holds 2 background requests: nothing is admitted until it frees
+        // one, and then one.
+        let cap = Policy::StaticCap {
+            background_max_in_flight: 2,
+        };
+        let mut a = Admission::new(cap, 8, None).unwrap();
+        let mut elsewhere = Elsewhere {
+            admitted: [0, 0, 2],
+            ..Elsewhere::default()
+        };
+        assert_eq!(a.set_elsewhere(elsewhere), []);
+        let first = waits(&mut a, Background, 0);
+        let second = waits(&mut a, Background, 0);
+        elsewhere.admitted[2] = 1;
+        assert_eq!(a.set_elsewhere(elsewhere), [Action::Admit(first)]);
+        assert!(a.is_waiting(second));
+        assert_eq!(
+            a.set_elsewhere(Elsewhere::default()),
+            [Action::Admit(second)]
+        );
+        // What it holds is reported with what it counts of the other's, for a successor of its own.
+        assert_eq!(a.held().admitted, [0, 0, 2]);
+        a.set_elsewhere(Elsewhere {
+            admitted: [1, 0, 3],
+            background_tokens: 7,
+            realtime_pending: 1,
+            turns: turns(2, 1),
+        });
+        let held = a.held();
+        assert_eq!(
+            (held.admitted, held.background_tokens, held.realtime_pending),
+            ([1, 0, 5], 7, 1)
+        );
+
+        // Flow control's ceilings count every class in flight elsewhere, and shed only what is its own.
+        let ceilings = Ceilings {
+            realtime: 3,
+            interactive: 3,
+            background: 2,
+        };
+        let mut a = Admission::new(Policy::FlowControl { ceilings }, 8, None).unwrap();
+        a.set_elsewhere(Elsewhere {
+            admitted: [1, 1, 0],
+            ..Elsewhere::default()
+        });
+        waits(&mut a, Background, 0);
+        let realtime = admitted(&mut a, Realtime, 0);
+        // Three in flight: the realtime ceiling is full, and there is no background request here to shed.
+        waits(&mut a, Realtime, 0);
+        assert_eq!(a.leave(realtime).len(), 1);
+
+        // A reservation counts the other's tokens, and its rule for a request too large to fit beside the
+        // reservation (alone, once no other background request is in flight) counts the other's requests.
+        let reservation = Policy::TokenReservation {
+            pool_tokens: 10_000,
+            reserved_tokens: 2_000,
+        };
+        let mut a = Admission::new(reservation, 8, None).unwrap();
+        a.set_elsewhere(Elsewhere {
+            admitted: [0, 0, 1],
+            background_tokens: 7_000,
+            ..Elsewhere::default()
+        });
+        let large = waits(&mut a, Background, 9_000);
+        assert_eq!(
+            a.set_elsewhere(Elsewhere::default()),
+            [Action::Admit(large)]
+        );
+
+        // Preempt-resubmit holds background work while a realtime request elsewhere has no first byte.
+        let mut a = Admission::new(Policy::PreemptResubmit, 8, None).unwrap();
+        a.set_elsewhere(Elsewhere {
+            admitted: [1, 0, 0],
+            realtime_pending: 1,
+            ..Elsewhere::default()
+        });
+        let held = waits(&mut a, Background, 0);
+        assert_eq!(a.set_elsewhere(Elsewhere::default()), [Action::Admit(held)]);
+    }
+
+    #[test]
+    fn the_lifecycle_policy_keeps_headroom_for_sessions_armed_elsewhere() {
+        let mut a = priced(Policy::Lifecycle(lifecycle()), 8);
+        // Another point's background requests and its armed session: 9,500 tokens and one turn's headroom leave no
+        // room for 1,000 more, nor a turn's free for a realtime request, which is degraded as if they were this
+        // point's own.
+        a.set_elsewhere(Elsewhere {
+            admitted: [0, 0, 2],
+            background_tokens: 9_500,
+            turns: turns(1, 0),
+            ..Elsewhere::default()
+        });
+        let arrival = a.arrive(Background, estimate(1_000)).unwrap();
+        assert_eq!(
+            (arrival.admitted, arrival.deferred),
+            (false, Some(Deferral::Headroom))
+        );
+        let realtime = a.arrive(Realtime, estimate(0)).unwrap();
+        assert_eq!(realtime.reply_cap, Some(16));
+        // A critical window elsewhere opens this point's throttle with its whole budget.
+        a.set_elsewhere(Elsewhere {
+            turns: turns(0, 1),
+            ..Elsewhere::default()
+        });
+        assert!(!a.is_waiting(arrival.id), "the headroom is free again");
+        // The window's first admission, the request that waited, took part of its 300 ms; 8,000 new tokens fit the
+        // headroom, and not the rest of the budget.
+        let heavy = a.arrive(Background, estimate(8_000)).unwrap();
+        assert_eq!(heavy.deferred, Some(Deferral::Critical));
+        assert_eq!(a.held().turns, turns(0, 1));
+    }
+
+    #[test]
+    fn a_closed_point_refuses_its_waiting_requests_and_admits_nothing_more() {
+        let cap = Policy::StaticCap {
+            background_max_in_flight: 1,
+        };
+        let mut a = Admission::new(cap, 8, None).unwrap();
+        let running = admitted(&mut a, Background, 10);
+        let first = waits(&mut a, Background, 20);
+        let second = waits(&mut a, Background, 30);
+        let mut closed = a.close();
+        closed.sort_unstable();
+        assert_eq!(closed, [first, second]);
+        assert_eq!((a.waiting(Background), a.waiting_tokens()), (0, 0));
+        // The admitted one stays until it leaves, which admits nothing: no one waits.
+        assert_eq!(a.held().admitted, [0, 0, 1]);
+        assert_eq!(a.leave(running), []);
+        assert_eq!(a.leave(first), [], "a refused request is no longer held");
+        assert_eq!(a.held(), Elsewhere::default());
+    }
+
+    #[test]
+    fn the_queues_hold_at_most_max_waiting_in_all() {
+        let cap = Policy::StaticCap {
+            background_max_in_flight: 1,
+        };
+        let mut a = Admission::new(cap, 8, None).unwrap().with_max_waiting(2);
+        admitted(&mut a, Background, 0);
+        waits(&mut a, Background, 0);
+        waits(&mut a, Background, 0);
+        // Under its class's queue_limit of 8, but at the bound of all the queues.
+        assert_eq!(a.arrive(Background, estimate(0)), Err(QueueFull));
+        // A class the policy does not hold never waits, so the bound never refuses it.
+        assert!(a.arrive(Realtime, estimate(0)).unwrap().admitted);
+
+        // The bound is of every class's queue together: one interactive and one background request waiting fill it
+        // for a realtime request that flow control cannot shed room for.
+        let ceilings = Ceilings {
+            realtime: 1,
+            interactive: 1,
+            background: 1,
+        };
+        let mut a = Admission::new(Policy::FlowControl { ceilings }, 8, None)
+            .unwrap()
+            .with_max_waiting(2);
+        admitted(&mut a, Interactive, 0);
+        waits(&mut a, Interactive, 0);
+        waits(&mut a, Background, 0);
+        assert_eq!(a.arrive(Realtime, estimate(0)), Err(QueueFull));
     }
 }

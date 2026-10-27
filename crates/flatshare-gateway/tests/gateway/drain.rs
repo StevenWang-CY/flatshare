@@ -164,10 +164,10 @@ async fn background_requests_still_queued_at_the_cut_get_503_and_never_go_upstre
         "the waiting request never reached the engine"
     );
     let metrics = gw.exposition.encode();
-    // Only the request that went upstream has an outcome; both were answered 503.
+    // Both were cut by the drain, the one upstream and the one waiting, and both answered 503.
     assert_eq!(
         metric(&metrics, &outcome("background", "drained")),
-        Some(1.0)
+        Some(2.0)
     );
     let answered = "flatshare_gateway_requests_total{tenant=\"agents\",route=\"/v1/chat/completions\",\
                     class=\"background\",status=\"503\"}";
