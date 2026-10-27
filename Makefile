@@ -9,11 +9,11 @@ VLLM_REF := v0.32.0
 VLLM_SRC ?= $(HOME)/.cache/flatshare/vllm-$(VLLM_REF)
 # Every Python package except the engine variants' tests (test-vllm); each one has a `test` extra.
 PY_PACKAGES := $(filter-out python/flatshare_vllm,$(patsubst %/pyproject.toml,%,$(wildcard python/*/pyproject.toml)))
-# The Python that make lint checks: the packages, and the scripts of flatshare-sim, E2, the A100 run, the deployment
-# (the hosts' scripts without a suffix among them, found by their shebang) and the engine variants (not the recorded
-# runs' own scripts under benchmarks/results).
+# The Python that make lint checks: the packages, and the scripts of flatshare-sim, E2, the A100 run, the replies'
+# measure, the deployment (the hosts' scripts without a suffix among them, found by their shebang) and the engine
+# variants (not the recorded runs' own scripts under benchmarks/results).
 PY_SOURCES := python crates/flatshare-sim/scripts $(sort $(wildcard benchmarks/e2/*.py benchmarks/a100/*.py \
-  deploy/*.py deploy/bin/*.py deploy/a100/*.py deploy/phastform/variants/*/*.py) \
+  benchmarks/replies/*.py deploy/*.py deploy/bin/*.py deploy/a100/*.py deploy/phastform/variants/*/*.py) \
   $(shell grep -ls '^$(HASH)!.*python' deploy/bin/*))
 # E2's committed records (flatshare-bench e2 export), one directory per point under its campaign, and where
 # reproduce-e2 writes their report.

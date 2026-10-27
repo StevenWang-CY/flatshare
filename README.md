@@ -28,12 +28,13 @@ On vLLM 0.32 with 24 coding-agent sessions on one RTX 5060 Ti, the voice agent's
 1.78 s, with voice alone, to 10.5 s. The time is lost in vLLM's scheduler: a waiting voice turn cannot take KV cache
 from running agent requests, and once it runs, agent prefill shares every step of its reply.
 
-Two scheduler changes, proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350)
-and [#63351](https://github.com/vllm-project/vllm/pull/63351) (open as of 2026-10-26), bring that p95 to 2.24 s, 0.20 s
-over the voice agent's SLO, while the agents keep 97% of their throughput. On an A100 SXM4 80 GB with the same model,
-KV pool and sessions, they take it from 4.99 s to 1.63 s, under that card's SLO in each of five rounds, while the
-agents keep their throughput. This repository holds the two changes as a variant of vLLM 0.32's scheduler, the harness
-that measured them end to end, the deployment they ran on, the committed records and a technical report.
+Two scheduler changes, proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and
+[#63351](https://github.com/vllm-project/vllm/pull/63351) (open as of 2026-10-26), bring that p95 to 2.24 s, 0.20 s over
+the voice agent's SLO, while the agents keep 97% of their token rate. A third of the replies still take longer than the
+SLO allows, where tuned vLLM leaves 90%: the changes narrow the gap without closing it. On an A100 SXM4 80 GB with the
+same model, KV pool and sessions, they take it from 4.99 s to 1.63 s, under that card's SLO in each of five rounds,
+while the agents keep their throughput. This repository holds the two changes as a variant of vLLM 0.32's scheduler, the
+harness that measured them end to end, the deployment they ran on, the committed records and a technical report.
 
 <picture>
   <source media="(max-width: 767px) and (prefers-color-scheme: dark)" srcset="docs/figures/e2-demo-narrow-dark.webp">
@@ -55,18 +56,20 @@ within it, and the agents keep 98% of their tokens a second. Over both calls of 
   <img src="docs/figures/e2-voice-p95-gpus.svg" width="100%" alt="Two panels, rows in three groups beside 24 coding-agent sessions, each group against its card's SLO: the voice-to-voice p95, median of its runs, and the agents' tokens a second with each one's share of its group's first row. RTX 5060 Ti 16 GB, SLO 2.03 s: tuned vLLM 10.48 s at 3,305 tokens/s, a router that aborts and resubmits 2.52 s at 101%, #63350 and #63351 2.24 s at 97%. A100 at 512-token steps, SLO 1.67 s: tuned vLLM with the RTX 5060 Ti's tuning 4.99 s at 8,633 tokens/s, the PRs 1.63 s at 100%. A100 at 2,048-token steps: tuned vLLM, the card's best, 3.66 s at 14,536 tokens/s, the PRs 1.83 s at 101%">
 </picture>
 
-| Two calls beside 24 coding-agent sessions that fill the KV pool of one RTX 5060 Ti | Voice p95 | Over the SLO | Agents' tokens/s | Agents' TTFT p50 |
-|---|---:|---:|---:|---:|
-| Voice alone, the SLO's reference | 1,784 ms | — | — | — |
-| vLLM 0.32, tuned: priority scheduling, a 512-token step cap, a CPU KV tier | 10,477 ms | +8,443 ms | 3,305 | 63 s |
-| Tuned, with a router that aborts agent requests before their first byte and resubmits them | 2,522 ms | +488 ms | 3,332 | 32 s |
-| + #63350: a waiting request preempts lower-priority work for KV | 5,085 ms | +3,051 ms | 3,414 | 67 s |
-| + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 3,298 | 71 s |
-| + #63351 with a 48-token window: **the configuration to deploy** | **2,236 ms** | +202 ms | 3,203 | 72 s |
+| Two calls beside 24 coding-agent sessions that fill the KV pool of one RTX 5060 Ti | Voice p95 | Over the SLO | Replies over the SLO | Agents' tokens/s | Agents' TTFT p50 |
+|---|---:|---:|---:|---:|---:|
+| Voice alone, the SLO's reference | 1,784 ms | — | 0.3% | — | — |
+| vLLM 0.32, tuned: priority scheduling, a 512-token step cap, a CPU KV tier | 10,477 ms | +8,443 ms | 90% | 3,305 | 63 s |
+| Tuned, with a router that aborts agent requests before their first byte and resubmits them | 2,522 ms | +488 ms | 44% | 3,332 | 32 s |
+| + #63350: a waiting request preempts lower-priority work for KV | 5,085 ms | +3,051 ms | 89% | 3,414 | 67 s |
+| + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 43% | 3,298 | 71 s |
+| + #63351 with a 48-token window: **the configuration to deploy** | **2,236 ms** | +202 ms | 32% | 3,203 | 72 s |
 
 Each value is the median of five rounds. Each round replays its own sample of the agents' traces and runs every
 configuration in a rotated order (10 runs for tuned vLLM and 15 for the last row, which more than one campaign ran).
-The SLO is the voice-alone p95 plus 250 ms, and the agents' tokens/s count the calls' first 240 s. These agents wait
+The SLO is the voice-alone p95 plus 250 ms and allows 5% of the replies over it; the replies over it are counted over
+all of a configuration's runs. The agents' tokens/s count the calls' first 240 s of a replay of coding agents' requests,
+and nearly all of them are prompt tokens: the replay runs no task. These agents wait
 about a minute for a first token, which is the regime the change is for
 ([is yours?](docs/PRODUCTION.md#is-your-deployment-in-this-regime)). Every run and range is in
 [BENCHMARKS.md](docs/BENCHMARKS.md#voice-under-agent-load-e2).

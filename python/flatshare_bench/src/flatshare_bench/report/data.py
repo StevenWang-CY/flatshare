@@ -552,6 +552,17 @@ class Configuration:
         """Every measured turn's V2V over the runs, sorted."""
         return sorted(sample for run in self.runs for sample in run.samples)
 
+    def over(self, threshold: float) -> int:
+        """How many of the runs' measured turns took longer than ``threshold`` ms: with the SLO's threshold, the
+        replies that missed it."""
+        return sum(sample > threshold for sample in self.samples())
+
+    @property
+    def pooled_p95(self) -> float:
+        """The p95 of the runs' measured turns taken together, by the method the records' own p95 uses
+        (:func:`flatshare_stats.quantiles`), beside :attr:`p95`, the median of the runs' p95."""
+        return quantiles(self.samples())[94]
+
 
 def configuration(rows: Sequence[Mapping[str, Any]], point: str) -> Configuration:
     return Configuration(
@@ -578,6 +589,52 @@ def headline(
     return [
         configuration(rows, point) for point in (VOICE_ALONE, *(r["point"] for r in group["rows"]))
     ]
+
+
+def paired_retention(
+    rows: Sequence[Mapping[str, Any]], point: str, against: str
+) -> dict[str, float]:
+    """``point``'s agents' tokens a second over the calls' first 240 s as a share of ``against``'s, in each campaign
+    that ran both on the same sample of the agents, by campaign."""
+    mine = {run.campaign: run.tokens for run in configuration(rows, point).runs}
+    theirs = {run.campaign: run.tokens for run in configuration(rows, against).runs}
+    return {
+        campaign: mine[campaign] / theirs[campaign]
+        for campaign in sorted(mine.keys() & theirs.keys())
+        if mine[campaign] is not None and theirs[campaign]
+    }
+
+
+@dataclass(frozen=True)
+class AgentTokens:
+    """The agents' tokens of one run over the whole call, a second, from its summary: the prompt tokens the engine
+    processed for them and the tokens it generated."""
+
+    campaign: str
+    prompt: float
+    completion: float
+
+    @property
+    def generated_share(self) -> float:
+        """The generated tokens' share of all the agents' tokens."""
+        return self.completion / (self.prompt + self.completion)
+
+
+def agent_tokens(point: str, root: Path = W5) -> list[AgentTokens]:
+    """Each run of ``point``'s agents' tokens over the whole call."""
+    found = []
+    for path in sorted(root.glob(f"*/{point}/summary.json")):
+        background = json.loads(path.read_text())["background"]
+        found.append(
+            AgentTokens(
+                path.parts[-3],
+                background["prompt_tokens_per_s"],
+                background["completion_tokens_per_s"],
+            )
+        )
+    if not found:
+        raise ValueError(f"no run of {point}")
+    return found
 
 
 # The frontier -------------------------------------------------------------------------------------------------------
