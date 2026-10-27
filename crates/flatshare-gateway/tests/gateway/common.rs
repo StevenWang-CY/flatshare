@@ -125,6 +125,9 @@ pub struct Mock {
     pub upstream: String,
     /// The connections it has accepted.
     pub connections: Arc<AtomicUsize>,
+    /// While set, a mock from [`Mock::start_killable`] closes every connection it accepts at once, as a killed
+    /// engine behind a tunnel that still accepts does.
+    killed: Arc<AtomicBool>,
     state: Arc<MockState>,
     dropped: mpsc::UnboundedReceiver<(Instant, Option<String>)>,
 }
@@ -178,6 +181,28 @@ impl Mock {
         let mut mock = Self::serve(script, listener, Arc::new(AtomicUsize::new(0)));
         (mock.addr, mock.upstream) = (addr, format!("http://{addr}"));
         mock
+    }
+
+    /// A mock engine on 127.0.0.1 that [`Mock::kill`] stops answering: every connection it accepts then closes at
+    /// once, before any answer.
+    pub async fn start_killable(script: Script) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let killed = Arc::new(AtomicBool::new(false));
+        let listener = Killable {
+            listener,
+            killed: Arc::clone(&killed),
+        };
+        let mut mock = Self::serve(script, listener, Arc::new(AtomicUsize::new(0)));
+        (mock.addr, mock.upstream) = (addr, format!("http://{addr}"));
+        mock.killed = killed;
+        mock
+    }
+
+    /// Kills the engine of [`Mock::start_killable`] (`true`), or brings it back. The connections a gateway pooled
+    /// before stay: a gateway whose pool keeps none idle for long finds every new one closed.
+    pub fn kill(&self, killed: bool) {
+        self.killed.store(killed, Ordering::SeqCst);
     }
 
     /// A mock engine on a new Unix socket, as the engine serves on its GPU node or a tunnel on the control host.
@@ -240,6 +265,7 @@ impl Mock {
             addr: SocketAddr::from(([0, 0, 0, 0], 0)),
             upstream: String::new(),
             connections,
+            killed: Arc::new(AtomicBool::new(false)),
             state,
             dropped,
         }
@@ -496,6 +522,30 @@ impl axum::serve::Listener for DropsFirst {
     }
 }
 
+/// A listener that, while `killed`, closes every connection it accepts at once.
+struct Killable {
+    listener: TcpListener,
+    killed: Arc<AtomicBool>,
+}
+
+impl axum::serve::Listener for Killable {
+    type Io = TcpStream;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (TcpStream, SocketAddr) {
+        loop {
+            let accepted = axum::serve::Listener::accept(&mut self.listener).await;
+            if !self.killed.load(Ordering::SeqCst) {
+                return accepted;
+            }
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        self.listener.local_addr()
+    }
+}
+
 /// A socket path of its own, in a directory only this user can enter (mode 700), where the gateway binds sockets; the
 /// directory, one for all of the user's test runs, stays.
 pub fn socket_path() -> PathBuf {
@@ -641,7 +691,74 @@ default_class = "interactive"
     )
 }
 
+/// A GPU node of a test gateway: its engine (killable) and its speech servers, mocks each.
+pub struct TestNode {
+    pub name: &'static str,
+    pub engine: Mock,
+    pub stt: Mock,
+    pub tts: Mock,
+}
+
+impl TestNode {
+    pub async fn start(name: &'static str, script: Script) -> Self {
+        Self {
+            name,
+            engine: Mock::start_killable(script).await,
+            stt: Mock::start(Script::Json("{}")).await,
+            tts: Mock::start(Script::Json("{}")).await,
+        }
+    }
+
+    /// Its `[[nodes]]` entry, with `keys` added.
+    pub fn toml(&self, keys: &str) -> String {
+        format!(
+            "[[nodes]]\nname = \"{}\"\nupstream = \"{}\"\nstt = \"{}\"\ntts = \"{}\"\n{keys}\n",
+            self.name, self.engine.upstream, self.stt.upstream, self.tts.upstream
+        )
+    }
+
+    /// The inference requests its engine received, the canary's left out.
+    pub fn requests(&self) -> usize {
+        self.engine
+            .requests()
+            .iter()
+            .filter(|request| request.header(CANARY).is_none())
+            .count()
+    }
+}
+
+/// The test configuration with `[[nodes]]` in place of `upstream`: `top`'s keys, then `nodes` (their `[[nodes]]`
+/// entries and any `[placement]`).
+pub fn nodes_toml(top: &str, nodes: &str) -> String {
+    harness_toml(&socket_path(), &format!("{top}\n{nodes}"))
+}
+
+/// The same, with its TCP listener on `tcp` and its Unix socket at `socket`.
+pub fn nodes_listeners_toml(
+    tcp: SocketAddr,
+    socket: &std::path::Path,
+    top: &str,
+    nodes: &str,
+) -> String {
+    let toml = harness_toml(socket, &format!("{top}\n{nodes}"));
+    toml.replace("tcp = \"127.0.0.1:0\"", &format!("tcp = \"{tcp}\""))
+}
+
 impl Gateway {
+    /// A gateway of `nodes`, each with `keys` in its entry, and `top`'s keys; the nodes are judged every 20 ms, two
+    /// checks making them unhealthy and two healthy again, unless `placement` sets its own `[placement]` table.
+    pub async fn start_nodes(nodes: &[&TestNode], keys: &str, top: &str, placement: &str) -> Self {
+        let entries: String = nodes.iter().map(|node| node.toml(keys)).collect();
+        let placement = if placement.is_empty() {
+            "[placement]\nhealth_interval_s = 0.02\nhealth_timeout_s = 0.5\nunhealthy_after = 2\nhealthy_after = 2\n"
+        } else {
+            placement
+        };
+        let toml = nodes_toml(top, &format!("{entries}\n{placement}"));
+        let config = Config::from_toml(&toml).unwrap_or_else(|err| panic!("{err}\n{toml}"));
+        Self::from_config(config, Arc::new(LogSink)).await
+    }
+
     pub async fn start(upstream: SocketAddr, top: &str) -> Self {
         Self::start_with(upstream, top, Arc::new(LogSink)).await
     }

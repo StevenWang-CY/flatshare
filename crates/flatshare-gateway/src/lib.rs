@@ -1,4 +1,4 @@
-//! `flatshare-gateway`: the Flatshare harness in front of one vLLM engine.
+//! `flatshare-gateway`: the Flatshare harness in front of one vLLM engine, or of several GPU nodes.
 //!
 //! It carries Flatshare's request contract and nothing a stock proxy would not need:
 //! - **auth**: tenants from API-key digests (constant-time match), or from the listener for a private Unix
@@ -20,6 +20,10 @@
 //!   its predecessor's ([`ledger`]);
 //! - **relay**: responses pass through byte for byte, with backpressure, client-disconnect cancellation and a
 //!   stall timeout;
+//! - **nodes** (`[[nodes]]`, [`nodes`]): several GPU nodes, each judged as a whole pipeline (its engine's canary and
+//!   readiness, its STT and TTS servers), sessions placed on them stickily with call slots, and failover: a session
+//!   whose node fails moves by its next request, a realtime request whose node fails before its first content is
+//!   sent once more elsewhere, and a node that covers for a failed one defers its agents' requests;
 //! - **lifecycle events** at `POST /v1/events`, deduplicated, then to the admission point and an [`EventSink`];
 //! - **metrics** at `GET /metrics` and one structured log line per request.
 //!
@@ -30,6 +34,7 @@ mod bounds;
 mod canary;
 pub mod config;
 mod deadline;
+mod engine;
 mod events;
 mod exchange;
 pub mod handover;
@@ -37,6 +42,7 @@ mod harness;
 mod intake;
 mod ledger;
 mod metrics;
+mod nodes;
 mod proxy;
 mod relay;
 mod sanitize;

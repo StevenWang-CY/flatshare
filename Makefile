@@ -144,10 +144,11 @@ compat-upstream:
 schema:
 	cargo run -q -p flatshare-proto --bin flatshare-proto-schema
 
-# crates/flatshare-gateway/metrics.txt, the gateway's exposition before any traffic, after a change to its metrics.
+# crates/flatshare-gateway/metrics.txt, the gateway's exposition before any traffic, and metrics-nodes.txt, what a
+# gateway with [[nodes]] exports in place of the one engine's families, after a change to its metrics.
 metrics:
-	FLATSHARE_GATEWAY_WRITE_METRICS=1 cargo test -q -p flatshare-gateway --lib \
-	  metrics::tests::the_checked_in_exposition_is_current
+	FLATSHARE_GATEWAY_WRITE_METRICS=1 cargo test -q -p flatshare-gateway --lib -- \
+	  metrics::tests::the_checked_in_exposition_is_current metrics::tests::the_checked_in_node_exposition_is_current
 
 # crates/flatshare-gateway/tests/fixtures/reply-caps.json, the gateway's rewrite of reply limits and choices case by
 # case, after a change to it; test-make-room parses its bodies with vLLM's own request models.

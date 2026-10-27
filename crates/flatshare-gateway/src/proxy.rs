@@ -1,5 +1,6 @@
 //! The proxy path: authenticate, sanitize, resolve, admit, and send the request upstream. The engine and its
-//! readiness are [`crate::upstream`]'s, and the response's relay to the client [`crate::relay`]'s.
+//! readiness are [`crate::upstream`]'s, the nodes and their placements [`crate::nodes`]', and the response's relay to
+//! the client [`crate::relay`]'s.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,21 +19,31 @@ use http_body_util::BodyExt;
 use hyper::body::Incoming;
 
 use crate::deadline::{Deadlines, Phase, Timeout};
+use crate::engine::Engine;
 use crate::exchange::Exchange;
 use crate::harness::{Refusal, Ticket};
 use crate::intake::{BodyBytes, Refused};
 use crate::metrics::{Route, UpstreamError};
+use crate::nodes::{Held, Key, Nodes, Placed};
 use crate::relay;
 use crate::sanitize::{
-    Bounds, InvalidBody, REQUEST_ID, cap_reply, resolve_class, resolve_session, rewrite_body,
-    sanitize_headers, set_engine_headers, strip_hop_by_hop,
+    Bounds, InvalidBody, REQUEST_ID, cap_reply, names_session, resolve_class, resolve_session,
+    rewrite_body, sanitize_headers, set_engine_headers, strip_hop_by_hop,
 };
-use crate::server::{self, App, Shared};
-use crate::upstream::{RECOVERY_PROBE, Upstream, UpstreamBody, causes, recover};
+use crate::server::{self, App, Engines, Shared};
+use crate::upstream::{RECOVERY_PROBE, Upstream, UpstreamBody, causes};
 
 /// The message of the 503 that a request gets while the engine is not ready.
 const NOT_READY: &str =
     "the engine is not ready: a request found it broken and its /health has not answered since";
+
+/// Where a request goes.
+pub(crate) enum Target {
+    /// An engine: the gateway's one upstream, or a node's for a request without a session (a model list).
+    Engine(Arc<Engine>),
+    /// A request placed on a node, whose engine it goes to.
+    Placed(Placed),
+}
 
 /// `POST /v1/chat/completions`, `/v1/completions` and `/v1/responses`.
 pub(crate) async fn inference(app: App, route: Route, request: Request) -> Response {
@@ -62,7 +73,9 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     let deadlines = Deadlines::new(class, shared.class(class), ex.received);
     ex.deadlines = Some(deadlines);
     ex.objective = shared.class(class).first_content_objective;
-    ex.health = Some(Arc::clone(&shared.health));
+    if let Engines::One(engine) = &shared.engines {
+        ex.health = Some(Arc::clone(&engine.health));
+    }
 
     // The intake's bounds, before a byte of the body is read: a refused request costs the gateway no memory and no
     // wait.
@@ -106,15 +119,32 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         }
         Err(InvalidBody::Bounds(invalid)) => return ex.invalid_field(&invalid),
     };
+    let named = names_session(&inputs, body.prompt_cache_key.as_deref());
     let session = resolve_session(tenant, &inputs, body.prompt_cache_key.as_deref());
     set_engine_headers(&mut parts.headers, &session, class, &ex.id, signals);
     parts
         .headers
         .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     let session = &*ex.session.insert(session);
-    if !shared.upstream.ready() {
-        return ex.not_ready("upstream_not_ready", NOT_READY, RECOVERY_PROBE);
-    }
+    let mut target = match &shared.engines {
+        Engines::One(engine) => {
+            if !engine.upstream.ready() {
+                return ex.not_ready("upstream_not_ready", NOT_READY, RECOVERY_PROBE);
+            }
+            Target::Engine(Arc::clone(engine))
+        }
+        // The session's node, or a node chosen for it: a request of a session the gateway minted is placed alone.
+        Engines::Nodes(nodes) => {
+            let key = named.then(|| Key {
+                tenant: tenant.index,
+                session: session.clone(),
+            });
+            match nodes.request(key, class, tenant.trusted) {
+                Ok(placed) => Target::Placed(placed),
+                Err(unplaced) => return ex.unplaced(unplaced, class),
+            }
+        }
+    };
 
     // The admission point. Its decisions are the gateway's overhead; the time a request waits there is not.
     let mut start = read;
@@ -162,6 +192,27 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         }
     };
 
+    // A node that covers for a failed one holds its agents' requests back; the time they wait is not the overhead.
+    if let (Target::Placed(placed), Some(nodes)) = (&mut target, shared.nodes()) {
+        let arrived = Instant::now();
+        let cut = shared.drain.cut_for(Some(class));
+        match nodes.admit(placed, deadlines.queue(arrived), cut).await {
+            Ok(waited) => {
+                if !waited.is_zero() {
+                    ex.admission_wait = Some(waited);
+                    start += waited;
+                }
+            }
+            Err(held) => {
+                ex.admission_wait = Some(arrived.elapsed());
+                return match held {
+                    Held::Late(timeout) => ex.timed_out(Phase::Queue, timeout),
+                    Held::Cut => ex.drained(shared.drain.grace),
+                };
+            }
+        }
+    }
+
     // Degrade's reply cap, over the class's: the lower of the two holds.
     let degrade = ticket.as_ref().and_then(Ticket::reply_cap);
     if let Some(cap) = degrade {
@@ -170,7 +221,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     ex.degraded = degrade.is_some();
 
     let body = UpstreamBody::new(body.json, start, shared.metrics.overhead(route));
-    forward(&app, ex, parts, body, ticket).await
+    forward(&app, ex, parts, body, ticket, target).await
 }
 
 /// `GET /v1/models`: authenticated and sanitized, with no session or class.
@@ -194,10 +245,24 @@ pub(crate) async fn models(app: App, request: Request) -> Response {
     ));
     sanitize_headers(&mut parts.headers, tenant.trusted, &shared.metrics);
     parts.headers.insert(REQUEST_ID.clone(), ex.id.clone());
-    if !shared.upstream.ready() {
-        return ex.not_ready("upstream_not_ready", NOT_READY, RECOVERY_PROBE);
-    }
-    forward(&app, ex, parts, UpstreamBody::empty(), None).await
+    let engine = match &shared.engines {
+        Engines::One(engine) => {
+            if !engine.upstream.ready() {
+                return ex.not_ready("upstream_not_ready", NOT_READY, RECOVERY_PROBE);
+            }
+            Arc::clone(engine)
+        }
+        // Any available node's: the nodes serve one model.
+        Engines::Nodes(nodes) => match nodes.any() {
+            Some(engine) => engine,
+            None => {
+                let message = "no node is healthy; ask again";
+                return ex.not_ready("no_healthy_node", message, Duration::from_secs(1));
+            }
+        },
+    };
+    let target = Target::Engine(engine);
+    forward(&app, ex, parts, UpstreamBody::empty(), None, target).await
 }
 
 /// What a wait at the admission point ended with.
@@ -273,18 +338,38 @@ pub(crate) async fn read_body(
 
 /// Sends the request upstream and relays the response. An admitted request's ticket goes with the relay, and is
 /// given back when the response ends. A request shed before its response answers 429; one preempted before its
-/// first byte is sent again.
+/// first byte is sent again; a realtime one whose node fails before its first content is sent once more on another
+/// node ([`retrying`]).
 async fn forward(
     app: &App,
     mut ex: Exchange,
     mut parts: http::request::Parts,
     body: UpstreamBody,
     mut ticket: Option<Ticket>,
+    target: Target,
 ) -> Response {
     let shared = &app.shared;
-    let upstream = &shared.upstream;
-    let path = parts.uri.path_and_query().cloned();
-    parts.uri = upstream.uri(path.unwrap_or_else(|| PathAndQuery::from_static("/")));
+    let (engine, retry) = match target {
+        Target::Engine(engine) => (engine, None),
+        Target::Placed(placed) => {
+            let engine = Arc::clone(&placed.node.engine);
+            ex.node = Some(Arc::clone(&placed.node.name));
+            ex.health = Some(Arc::clone(&engine.health));
+            ex.placed = Some(placed);
+            // Only a realtime request is sent again, and only where another node could take it.
+            let retry = shared
+                .nodes()
+                .filter(|nodes| ex.class == Some(SloClass::Realtime) && nodes.list.len() > 1);
+            (engine, retry.cloned())
+        }
+    };
+    let upstream = &engine.upstream;
+    let path = parts
+        .uri
+        .path_and_query()
+        .cloned()
+        .unwrap_or_else(|| PathAndQuery::from_static("/"));
+    parts.uri = upstream.uri(path.clone());
     parts.version = Version::HTTP_11;
     parts.extensions.clear();
 
@@ -306,9 +391,12 @@ async fn forward(
                     () = ticket.shed() => Err(Failure::Shed),
                 }
             }
-            _ => send(upstream, http::Request::from_parts(parts, body), &deadlines)
-                .await
-                .map(|response| (response, None)),
+            _ => match &retry {
+                Some(nodes) => retrying(nodes, &mut ex, parts, body, path, &deadlines).await,
+                None => send(upstream, http::Request::from_parts(parts, body), &deadlines)
+                    .await
+                    .map(|response| (response, None)),
+            },
         }
     };
     let sent = tokio::select! {
@@ -320,9 +408,13 @@ async fn forward(
         Ok(sent) => sent,
         Err(failure) => {
             // An engine that a request found broken is probed until it answers; meanwhile its requests are
-            // answered 503 ([`recover`]).
-            if failure.broken() && upstream.start_recovery() {
-                tokio::spawn(recover(Arc::downgrade(&app.shared)));
+            // answered 503, or a node's placed on another node ([`crate::upstream::recover`]). After a retry, the
+            // engine is the second node's.
+            if failure.broken() {
+                match &ex.placed {
+                    Some(placed) => placed.node.engine.found_broken(),
+                    None => engine.found_broken(),
+                }
             }
             return failure.answer(ex, shared);
         }
@@ -448,6 +540,63 @@ async fn resubmitting(
         ex.resubmits += 1;
         request = http::Request::from_parts(again.0.clone(), again.1.again());
     }
+}
+
+/// Sends a realtime request placed on a node and holds its response back until its first body frame. If its node
+/// fails before that frame (the connection fails, or closes before the response headers, or the body breaks off before
+/// its first frame), the attempt is dropped, which closes its connection and aborts the engine's work, the node's
+/// engine is probed, and the request is sent once more on another available node, where its session moves, within the
+/// deadlines of its receipt. The client has seen nothing of the first attempt. A request whose first content has
+/// reached the client is never sent again: its relay ends it with an error event, so that a voice reply is never a
+/// second generation appended to half-delivered audio. A slow engine is no failure: a deadline ends the request.
+async fn retrying(
+    nodes: &Arc<Nodes>,
+    ex: &mut Exchange,
+    parts: http::request::Parts,
+    body: UpstreamBody,
+    path: PathAndQuery,
+    deadlines: &Deadlines,
+) -> Result<(http::Response<Incoming>, Option<Bytes>), Failure> {
+    let again = (parts.clone(), body.again());
+    let placed = ex.placed.as_ref().expect("a placed request");
+    let engine = Arc::clone(&placed.node.engine);
+    let request = http::Request::from_parts(parts, body);
+    let failure = match first_frame(&engine.upstream, request, deadlines).await {
+        Ok(sent) => return Ok(first_content(ex, sent)),
+        Err(failure) if failure.broken() => failure,
+        Err(failure) => return Err(failure),
+    };
+    engine.found_broken();
+    // No other node takes it: the client gets the failure.
+    let Ok(moved) = nodes.retry(placed) else {
+        return Err(failure);
+    };
+    let engine = Arc::clone(&moved.node.engine);
+    ex.node = Some(Arc::clone(&moved.node.name));
+    ex.health = Some(Arc::clone(&engine.health));
+    // The first attempt's place on its node goes.
+    ex.placed = Some(moved);
+    ex.retries += 1;
+    let (mut parts, body) = again;
+    parts.uri = engine.upstream.uri(path);
+    let request = http::Request::from_parts(parts, body);
+    let sent = first_frame(&engine.upstream, request, deadlines).await?;
+    Ok(first_content(ex, sent))
+}
+
+/// Records the first frame of a response read before the client was answered: its first byte, and for a 2xx its
+/// engine's success.
+fn first_content(
+    ex: &mut Exchange,
+    (response, first): (http::Response<Incoming>, Option<Bytes>),
+) -> (http::Response<Incoming>, Option<Bytes>) {
+    if first.is_some() {
+        ex.first_byte = Some(ex.received.elapsed());
+        if response.status().is_success() {
+            ex.succeeded();
+        }
+    }
+    (response, first)
 }
 
 /// Sends a request and reads its response to the first body frame, or to the end of a body without one: its headers by

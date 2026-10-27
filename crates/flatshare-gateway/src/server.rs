@@ -23,14 +23,16 @@ use tokio::sync::{Notify, watch};
 use tokio::task::JoinSet;
 
 use crate::auth::{self, Tenant, Tenants};
-use crate::canary::{self, Health};
+use crate::canary::{self, Health, Watched};
 use crate::config::{ClassConfig, Config, ListenAddr, MetricsKey, PrioritySignals};
+use crate::engine::Engine;
 use crate::events::{self, EventSink, Events};
 use crate::exchange::Exchange;
 use crate::harness::Admission;
 use crate::intake::{self, Intake};
 use crate::ledger::{self, Followed, Ledger, Load};
 use crate::metrics::{EngineState, Metrics, Route};
+use crate::nodes::{self, Nodes};
 use crate::proxy;
 use crate::systemd::Inherited;
 use crate::upstream::Upstream;
@@ -41,20 +43,27 @@ const READY_WINDOW: Duration = Duration::from_secs(1);
 /// How long `GET /metrics/engine` waits for the engine's `/metrics`: Prometheus' default scrape timeout.
 const ENGINE_METRICS_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// What the gateway sends its requests to.
+#[derive(Debug)]
+pub(crate) enum Engines {
+    /// One `upstream`, served as it always was.
+    One(Arc<Engine>),
+    /// `[[nodes]]`, each with its engine, and the sessions placed on them.
+    Nodes(Arc<Nodes>),
+}
+
 /// State shared by every listener.
 #[derive(Debug)]
 pub(crate) struct Shared {
     pub tenants: Tenants,
-    /// The engine.
-    pub upstream: Upstream,
+    /// The engine, or the nodes.
+    pub engines: Engines,
     /// The bounds on the requests in flight and their bodies, whatever the admission policy.
     pub intake: Arc<Intake>,
     /// The admission point; `None` under policy "none", where requests go upstream at once.
     pub admission: Option<Arc<Admission>>,
     /// Told of every change to what the intake and the admission point hold, for a successor's ledger.
     pub changed: Arc<Notify>,
-    /// The engine's state as inference finds it, which `GET /ready` answers by.
-    pub health: Arc<Health>,
     pub upstream_priority: PrioritySignals,
     pub metrics: Arc<Metrics>,
     pub events: Events,
@@ -73,13 +82,19 @@ pub(crate) struct Shared {
 impl Shared {
     /// What the gateway holds on its engine, with what it counts of a predecessor's: a successor's ledger line.
     pub fn load(&self) -> Load {
+        let closed = self.intake.is_closed();
         Load {
             intake: self.intake.held(),
             admission: self
                 .admission
                 .as_ref()
                 .map(|admission| admission.held().into()),
-            closed: self.intake.is_closed(),
+            closed,
+            // The placements and the nodes' verdicts, once: they change no more once the gateway admits nothing.
+            nodes: self
+                .nodes()
+                .filter(|_| closed)
+                .map(|nodes| nodes.handover(&self.tenants)),
         }
     }
 
@@ -88,6 +103,17 @@ impl Shared {
         self.intake.set_predecessor(load.intake.clone());
         if let Some(admission) = &self.admission {
             admission.set_predecessor(load.elsewhere());
+        }
+        if let (Some(nodes), Some(handed)) = (self.nodes(), &load.nodes) {
+            nodes.restore(handed, &self.tenants);
+        }
+    }
+
+    /// The nodes, with `[[nodes]]`.
+    pub fn nodes(&self) -> Option<&Arc<Nodes>> {
+        match &self.engines {
+            Engines::Nodes(nodes) => Some(nodes),
+            Engines::One(_) => None,
         }
     }
 
@@ -109,6 +135,10 @@ impl Shared {
     pub fn lifecycle(&self, tenant: &Tenant, events: &[LifecycleEvent]) {
         if let Some(admission) = &self.admission {
             admission.events(tenant, events);
+        }
+        // A session_closed event ends its session's placement, and frees a call's slot.
+        if let Some(nodes) = self.nodes() {
+            nodes.closed(tenant, events);
         }
     }
 }
@@ -269,15 +299,52 @@ impl Server {
             };
             listeners.push((listener, tenant));
         }
-        let metrics = Arc::new(match &admission {
-            Some(admission) => Metrics::with_harness(admission.metrics()),
-            None => Metrics::new(),
+        let names: Vec<Arc<str>> = config
+            .nodes
+            .iter()
+            .map(|n| n.name.as_str().into())
+            .collect();
+        let node_metrics = (!names.is_empty()).then(|| nodes::metrics::Metrics::new(&names));
+        let metrics = Arc::new(match (&admission, &node_metrics) {
+            (Some(admission), _) => Metrics::with_harness(admission.metrics()),
+            (None, Some(nodes)) => Metrics::with_nodes(nodes),
+            (None, None) => Metrics::new(),
         });
-        let upstream = Upstream::new(
-            config.upstream,
-            config.upstream_idle_timeout,
-            metrics.node_ready(),
-        );
+        let engines = match &node_metrics {
+            Some(node_metrics) => Engines::Nodes(Nodes::start(
+                &config.nodes,
+                config.placement,
+                config.canary,
+                config.upstream_priority,
+                config.upstream_idle_timeout,
+                node_metrics,
+            )),
+            None => {
+                let health = Health::new(
+                    config.canary,
+                    Watched {
+                        gauges: metrics.engine_state(),
+                        probes: metrics.probes(),
+                        changed: None,
+                        node: None,
+                    },
+                );
+                let engine = Arc::new(Engine {
+                    upstream: Upstream::new(
+                        config.upstream,
+                        config.upstream_idle_timeout,
+                        metrics.node_ready(),
+                    ),
+                    health: Arc::new(health),
+                    signals: config.upstream_priority,
+                    changed: Arc::new(Notify::new()),
+                });
+                if config.canary.is_some() {
+                    tokio::spawn(canary::run(Arc::downgrade(&engine)));
+                }
+                Engines::One(engine)
+            }
+        };
         let limits = intake::Limits {
             in_flight: config.max_in_flight,
             classes: config.classes.each_ref().map(|class| class.max_in_flight),
@@ -289,14 +356,12 @@ impl Server {
             Arc::clone(&changed),
             metrics.intake_gauges(),
         );
-        let health = Health::new(config.canary, metrics.engine_state());
         let shared = Shared {
             tenants,
-            upstream,
+            engines,
             intake: Arc::new(intake),
             admission,
             changed,
-            health: Arc::new(health),
             upstream_priority: config.upstream_priority,
             metrics,
             events: Events::new(config.event_dedup_capacity, config.event_dedup_ttl, sink),
@@ -309,9 +374,6 @@ impl Server {
             metrics_key: config.metrics_key,
         };
         let shared = Arc::new(shared);
-        if config.canary.is_some() {
-            tokio::spawn(canary::run(Arc::downgrade(&shared)));
-        }
         Ok(Self {
             shared,
             listeners,
@@ -377,13 +439,24 @@ impl Server {
             .as_ref()
             .map(|admission| admission.policy());
         let listeners = self.local_addrs().unwrap_or_default();
-        tracing::info!(
-            upstream = %shared.upstream.addr(),
-            listeners = ?listeners,
-            inherited = self.inherited,
-            admission = ?admission,
-            "flatshare-gateway serving"
-        );
+        match &shared.engines {
+            Engines::One(engine) => tracing::info!(
+                upstream = %engine.upstream.addr(),
+                listeners = ?listeners,
+                inherited = self.inherited,
+                admission = ?admission,
+                "flatshare-gateway serving"
+            ),
+            Engines::Nodes(nodes) => {
+                let names: Vec<&str> = nodes.list.iter().map(|node| &*node.name).collect();
+                tracing::info!(
+                    nodes = ?names,
+                    listeners = ?listeners,
+                    inherited = self.inherited,
+                    "flatshare-gateway serving"
+                );
+            }
+        }
         // Dropping `stop` tells every listener to shut down.
         let (stop, stopped) = watch::channel(());
         let mut serving = JoinSet::new();
@@ -412,7 +485,10 @@ impl Server {
             }
         }
         shutdown.await;
-        shared.health.drain();
+        match &shared.engines {
+            Engines::One(engine) => engine.health.drain(),
+            Engines::Nodes(nodes) => nodes.drain(),
+        }
         let grace = shared.drain.grace;
         tracing::info!(
             drain_timeout_s = self.drain_timeout.as_secs_f64(),
@@ -470,7 +546,17 @@ where
 }
 
 fn router(app: App) -> Router {
-    Router::new()
+    let with_nodes = app.shared.nodes().is_some();
+    let router = Router::new();
+    // Without [[nodes]] neither route exists: their paths are 404, as they always were.
+    let router = if with_nodes {
+        router
+            .route("/v1/sessions", post(nodes::routes::sessions))
+            .route("/nodes", get(nodes::routes::nodes))
+    } else {
+        router
+    };
+    router
         .route("/v1/chat/completions", inference(Route::ChatCompletions))
         .route("/v1/completions", inference(Route::Completions))
         .route("/v1/responses", inference(Route::Responses))
@@ -526,7 +612,7 @@ fn inference(route: Route) -> MethodRouter<App> {
 
 /// The 401 of a request that may not read the metrics: one on a TCP listener without the metrics key. On a Unix
 /// socket, private to its owner, no key is asked for, as for the requests of its tenant.
-fn metrics_refused(app: &App, headers: &HeaderMap) -> Option<Response> {
+pub(crate) fn metrics_refused(app: &App, headers: &HeaderMap) -> Option<Response> {
     let key = app.shared.metrics_key.as_ref();
     let allowed = app.private || key.is_some_and(|key| auth::is_metrics_key(headers, key));
     (!allowed).then(|| {
@@ -548,13 +634,41 @@ async fn metrics(State(app): State<App>, headers: HeaderMap) -> Response {
 }
 
 /// `GET /metrics/engine`: the engine's own `/metrics`, under the rule of the gateway's, so that a scraper reaches
-/// the engine without a TCP route to it.
-async fn engine_metrics(State(app): State<App>, headers: HeaderMap) -> Response {
+/// the engine without a TCP route to it. With `[[nodes]]`, `?node=NAME` names the node whose engine's.
+async fn engine_metrics(State(app): State<App>, headers: HeaderMap, uri: Uri) -> Response {
     if let Some(refused) = metrics_refused(&app, &headers) {
         return refused;
     }
     let shared = &app.shared;
-    match shared.upstream.metrics(ENGINE_METRICS_TIMEOUT).await {
+    let error = |status, code, message: String| {
+        Exchange::new(&shared.metrics, Route::Other).error(status, code, message)
+    };
+    let upstream = match &shared.engines {
+        Engines::One(engine) => &engine.upstream,
+        Engines::Nodes(nodes) => {
+            let asked = uri
+                .query()
+                .and_then(|query| query.split('&').find_map(|pair| pair.strip_prefix("node=")));
+            let names = || {
+                let names: Vec<&str> = nodes.list.iter().map(|node| &*node.name).collect();
+                names.join(", ")
+            };
+            match asked {
+                None => {
+                    let message = format!("name a node: /metrics/engine?node=NAME, of {}", names());
+                    return error(StatusCode::BAD_REQUEST, "node_required", message);
+                }
+                Some(name) => match nodes.named(name) {
+                    Some(node) => &node.engine.upstream,
+                    None => {
+                        let message = format!("no node {name:?}: the nodes are {}", names());
+                        return error(StatusCode::NOT_FOUND, "unknown_node", message);
+                    }
+                },
+            }
+        }
+    };
+    match upstream.metrics(ENGINE_METRICS_TIMEOUT).await {
         Ok(response) => response,
         Err(message) => Exchange::new(&shared.metrics, Route::Other).error(
             StatusCode::BAD_GATEWAY,
@@ -567,15 +681,37 @@ async fn engine_metrics(State(app): State<App>, headers: HeaderMap) -> Response 
 /// 200 while the engine serves ([`crate::canary`]: an inference succeeded, and the canary has not failed since
 /// `degraded_after` times in a row; from the start without a canary) and its `/health` has answered within
 /// [`READY_WINDOW`], asking it once more otherwise. 503 while it is warming, degraded or drained, and at once while a
-/// request has found the upstream broken and its probe has not answered since ([`crate::upstream::recover`]).
+/// request has found the upstream broken and its probe has not answered since ([`crate::upstream::recover`]). With
+/// `[[nodes]]`, 200 while each role is taken by an available node, and 503 naming the role that is not, or once the
+/// gateway drains.
 async fn ready(State(app): State<App>) -> Response {
     let shared = &app.shared;
-    let state = shared.health.state();
+    let engine = match &shared.engines {
+        Engines::One(engine) => engine,
+        // Every role taken by an available node: healthy, and its engine ready.
+        Engines::Nodes(nodes) => {
+            if nodes
+                .list
+                .iter()
+                .any(|node| node.engine.health.state() == EngineState::Drained)
+            {
+                return (StatusCode::SERVICE_UNAVAILABLE, "gateway drained\n").into_response();
+            }
+            return match nodes.ready() {
+                Ok(()) => (StatusCode::OK, "ready\n").into_response(),
+                Err(role) => {
+                    let body = format!("no healthy node for {role}\n");
+                    (StatusCode::SERVICE_UNAVAILABLE, body).into_response()
+                }
+            };
+        }
+    };
+    let state = engine.health.state();
     if state != EngineState::Serving {
         let body = format!("engine {}\n", state.as_str());
         return (StatusCode::SERVICE_UNAVAILABLE, body).into_response();
     }
-    let upstream = &shared.upstream;
+    let upstream = &engine.upstream;
     if upstream.ready() && upstream.answers(READY_WINDOW).await {
         (StatusCode::OK, "ready\n").into_response()
     } else {

@@ -1,4 +1,5 @@
-//! The gateway between a test client and an in-process mock engine, over loopback TCP and a Unix socket.
+//! The gateway between a test client and in-process mock engines (and, for `[[nodes]]`, mock speech servers), over
+//! loopback TCP and a Unix socket.
 
 mod accounting;
 mod admission;
@@ -9,6 +10,7 @@ mod events;
 mod intake;
 mod lifecycle;
 mod metrics;
+mod nodes;
 mod proxy;
 mod reload;
 mod sockets;

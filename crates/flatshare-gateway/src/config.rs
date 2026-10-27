@@ -20,8 +20,13 @@ use crate::harness::config::RawAdmission;
 /// A validated configuration.
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// The engine, spoken to over plain HTTP/1.1.
+    /// The engine, spoken to over plain HTTP/1.1. With `[[nodes]]`, which name their own engines, the first node's.
     pub upstream: UpstreamAddr,
+    /// The GPU nodes (`[[nodes]]`), each with its engine and speech servers, in the file's order; empty for a gateway
+    /// with one `upstream`, which serves it as it always has.
+    pub nodes: Vec<NodeConfig>,
+    /// How sessions are placed on the nodes and the nodes judged (`[placement]`); read only with `[[nodes]]`.
+    pub placement: Placement,
     /// How long an idle upstream connection is kept for reuse. It must be shorter than the engine's own
     /// keep-alive, or a request can be sent on a connection the engine is closing.
     pub upstream_idle_timeout: Duration,
@@ -144,6 +149,56 @@ pub struct Canary {
     pub timeout: Duration,
     /// The consecutive failures, with nothing succeeding between them, that make the engine degraded.
     pub degraded_after: u32,
+}
+
+/// One `[[nodes]]` entry: a GPU node, its engine and its speech servers, as cyan's tunnels reach them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NodeConfig {
+    /// Its name, in `/nodes`, the metrics' `node` label and `POST /v1/sessions`' answers.
+    pub name: String,
+    /// Its engine.
+    pub upstream: UpstreamAddr,
+    /// Whether it takes realtime sessions (calls), and interactive and background ones (agents).
+    pub realtime: bool,
+    pub background: bool,
+    /// The realtime sessions placed on it at most: a call each.
+    pub max_calls: usize,
+    /// Its speech servers, whose `/health` its health needs, and which a call placed on it binds to.
+    pub stt: Option<UpstreamAddr>,
+    pub tts: Option<UpstreamAddr>,
+}
+
+/// `[placement]`: how sessions are placed on the nodes, and when a node is healthy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Placement {
+    /// How long a session keeps its node without a request (`idle_s`).
+    pub idle: Duration,
+    /// How often each node's engine and speech servers are checked (`health_interval_s`), and how long a speech
+    /// server's `/health` may take (`health_timeout_s`).
+    pub health_interval: Duration,
+    pub health_timeout: Duration,
+    /// The failed checks in a row that make a healthy node unhealthy (`unhealthy_after`), and the passed ones that
+    /// make an unhealthy node healthy again (`healthy_after`).
+    pub unhealthy_after: u32,
+    pub healthy_after: u32,
+    /// The interactive and background requests in flight at most on a node that carries realtime sessions moved
+    /// from a node that is not healthy (`failover_background_max_in_flight`): the others wait.
+    pub failover_background_max_in_flight: usize,
+}
+
+impl Default for Placement {
+    fn default() -> Self {
+        Self {
+            // The 5 minutes a prefix cache is worth keeping a session for; E2's agents think for 2 minutes at most,
+            // and a call's sessions end with its session_closed event.
+            idle: Duration::from_secs(300),
+            health_interval: Duration::from_secs(1),
+            health_timeout: Duration::from_secs(1),
+            unhealthy_after: 3,
+            healthy_after: 2,
+            failover_background_max_in_flight: 0,
+        }
+    }
 }
 
 /// One listener.
@@ -291,6 +346,8 @@ impl std::error::Error for ConfigError {
 #[serde(default, deny_unknown_fields)]
 struct RawConfig {
     upstream: String,
+    nodes: Vec<RawNode>,
+    placement: Option<RawPlacement>,
     upstream_idle_timeout_s: f64,
     upstream_priority: Vec<PrioritySignal>,
     admission: RawAdmission,
@@ -321,6 +378,8 @@ impl Default for RawConfig {
     fn default() -> Self {
         Self {
             upstream: String::new(),
+            nodes: Vec::new(),
+            placement: None,
             // vLLM closes idle connections after VLLM_HTTP_TIMEOUT_KEEP_ALIVE, 5 s by default.
             upstream_idle_timeout_s: 4.0,
             upstream_priority: vec![PrioritySignal::VllmHeader],
@@ -413,6 +472,161 @@ impl RawCanary {
             degraded_after: self.degraded_after,
         }))
     }
+}
+
+/// A role a node takes: the classes whose sessions it is given.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Role {
+    /// Realtime sessions: calls.
+    Realtime,
+    /// Interactive and background sessions: agents.
+    Background,
+}
+
+/// A `[[nodes]]` entry as written.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawNode {
+    name: String,
+    upstream: String,
+    #[serde(default = "RawNode::every_role")]
+    roles: Vec<Role>,
+    /// E2 measured two calls on one card.
+    #[serde(default = "RawNode::two_calls")]
+    max_calls: usize,
+    #[serde(default)]
+    stt: Option<String>,
+    #[serde(default)]
+    tts: Option<String>,
+}
+
+impl RawNode {
+    fn every_role() -> Vec<Role> {
+        vec![Role::Realtime, Role::Background]
+    }
+
+    fn two_calls() -> usize {
+        2
+    }
+}
+
+/// `[placement]` as written; a missing key takes [`Placement::default`]'s value.
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RawPlacement {
+    idle_s: Option<f64>,
+    health_interval_s: Option<f64>,
+    health_timeout_s: Option<f64>,
+    unhealthy_after: Option<u32>,
+    healthy_after: Option<u32>,
+    failover_background_max_in_flight: Option<usize>,
+}
+
+impl RawPlacement {
+    fn validate(self) -> Result<Placement, String> {
+        let defaults = Placement::default();
+        let duration = |key: &str, value: Option<f64>, default: Duration| match value {
+            Some(value) => seconds(&format!("placement.{key}"), value),
+            None => Ok(default),
+        };
+        let count = |key: &str, value: Option<u32>, default: u32| match value {
+            Some(0) => Err(format!("placement.{key} must be positive")),
+            Some(value) => Ok(value),
+            None => Ok(default),
+        };
+        Ok(Placement {
+            idle: duration("idle_s", self.idle_s, defaults.idle)?,
+            health_interval: duration(
+                "health_interval_s",
+                self.health_interval_s,
+                defaults.health_interval,
+            )?,
+            health_timeout: duration(
+                "health_timeout_s",
+                self.health_timeout_s,
+                defaults.health_timeout,
+            )?,
+            unhealthy_after: count(
+                "unhealthy_after",
+                self.unhealthy_after,
+                defaults.unhealthy_after,
+            )?,
+            healthy_after: count("healthy_after", self.healthy_after, defaults.healthy_after)?,
+            failover_background_max_in_flight: self
+                .failover_background_max_in_flight
+                .unwrap_or(defaults.failover_background_max_in_flight),
+        })
+    }
+}
+
+/// The `[[nodes]]` entries: names that metric labels carry, each once, no engine twice, and every role taken by
+/// some node, since a class whose role no node takes could never be placed.
+fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
+    let mut nodes: Vec<NodeConfig> = Vec::with_capacity(raw.len());
+    for (i, node) in raw.into_iter().enumerate() {
+        if !valid_name(&node.name) {
+            return Err(format!(
+                "nodes[{i}].name {:?}: use 1 to 64 characters from [A-Za-z0-9._-]",
+                node.name
+            ));
+        }
+        let name = node.name;
+        if nodes.iter().any(|other| other.name == name) {
+            return Err(format!("nodes: {name:?} is named twice"));
+        }
+        let upstream = parse_address(&format!("nodes.{name}.upstream"), &node.upstream)?;
+        if let Some(other) = nodes.iter().find(|other| other.upstream == upstream) {
+            return Err(format!(
+                "nodes.{name}.upstream is nodes.{}'s: one engine would count as two nodes",
+                other.name
+            ));
+        }
+        let mut roles = [false; 2];
+        for role in &node.roles {
+            if std::mem::replace(&mut roles[*role as usize], true) {
+                return Err(format!("nodes.{name}.roles names a role twice"));
+            }
+        }
+        let [realtime, background] = roles;
+        if !realtime && !background {
+            return Err(format!(
+                "nodes.{name}.roles is empty: name realtime, background or both"
+            ));
+        }
+        if realtime && node.max_calls == 0 {
+            return Err(format!(
+                "nodes.{name}.max_calls must be positive for a node with the realtime role"
+            ));
+        }
+        let speech = |key: &str, value: Option<String>| {
+            value
+                .map(|raw| parse_address(&format!("nodes.{name}.{key}"), &raw))
+                .transpose()
+        };
+        let stt = speech("stt", node.stt)?;
+        let tts = speech("tts", node.tts)?;
+        nodes.push(NodeConfig {
+            upstream,
+            realtime,
+            background,
+            max_calls: node.max_calls,
+            stt,
+            tts,
+            name,
+        });
+    }
+    for (role, takes) in [
+        ("realtime", nodes.iter().any(|node| node.realtime)),
+        ("background", nodes.iter().any(|node| node.background)),
+    ] {
+        if !nodes.is_empty() && !takes {
+            return Err(format!(
+                "no node has the {role} role, so no {role} session could be placed"
+            ));
+        }
+    }
+    Ok(nodes)
 }
 
 impl RawClasses {
@@ -554,9 +768,30 @@ impl Config {
 
 impl RawConfig {
     fn validate(self) -> Result<Config, String> {
-        let upstream = parse_upstream(&self.upstream)?;
+        let nodes = validate_nodes(self.nodes)?;
+        let upstream = match (nodes.first(), self.upstream.is_empty()) {
+            (None, _) => parse_upstream(&self.upstream)?,
+            (Some(first), true) => first.upstream.clone(),
+            (Some(_), false) => {
+                return Err(
+                    "set upstream or [[nodes]], not both: each node names its own engine".into(),
+                );
+            }
+        };
+        let placement = match (self.placement, nodes.is_empty()) {
+            (Some(_), true) => return Err("[placement] needs [[nodes]]".into()),
+            (Some(raw), false) => raw.validate()?,
+            (None, _) => Placement::default(),
+        };
         let upstream_priority = priority_signals(&self.upstream_priority)?;
         let admission = self.admission.validate()?;
+        if admission.is_some() && !nodes.is_empty() {
+            return Err(
+                "an [admission] policy is for one upstream: with [[nodes]] each engine would need an admission \
+                 point of its own"
+                    .into(),
+            );
+        }
 
         let mut tenants = Vec::with_capacity(self.tenants.len());
         let mut digests = HashSet::new();
@@ -673,6 +908,8 @@ impl RawConfig {
             })?;
         Ok(Config {
             upstream,
+            nodes,
+            placement,
             upstream_idle_timeout: seconds(
                 "upstream_idle_timeout_s",
                 self.upstream_idle_timeout_s,
@@ -751,31 +988,36 @@ fn valid_name(name: &str) -> bool {
 }
 
 fn parse_upstream(raw: &str) -> Result<UpstreamAddr, String> {
+    parse_address("upstream", raw)
+}
+
+/// An engine's or a speech server's address, `key` naming it in errors.
+fn parse_address(key: &str, raw: &str) -> Result<UpstreamAddr, String> {
     const EXPECTED: &str =
         "expected http://host:port with no path, or unix: and an absolute socket path";
     if let Some(path) = raw.strip_prefix("unix:") {
         let path = Path::new(path);
         // One spelling: `unix://host/...` reads as a URL with an authority, which a socket has not.
         if !path.is_absolute() || path.as_os_str().as_encoded_bytes().starts_with(b"//") {
-            return Err(format!("upstream {raw:?}: {EXPECTED}"));
+            return Err(format!("{key} {raw:?}: {EXPECTED}"));
         }
         // A path longer than a socket address holds would fail every connection; refuse it at start.
         if std::os::unix::net::SocketAddr::from_pathname(path).is_err() {
             return Err(format!(
-                "upstream {raw:?}: the path is too long for a Unix socket address"
+                "{key} {raw:?}: the path is too long for a Unix socket address"
             ));
         }
         return Ok(UpstreamAddr::Unix(path.to_owned()));
     }
     let uri: Uri = raw
         .parse()
-        .map_err(|e| format!("upstream {raw:?}: {e}; {EXPECTED}"))?;
+        .map_err(|e| format!("{key} {raw:?}: {e}; {EXPECTED}"))?;
     let path_is_root = matches!(uri.path(), "" | "/") && uri.query().is_none();
     match (uri.scheme(), uri.authority()) {
         (Some(scheme), Some(authority)) if *scheme == Scheme::HTTP && path_is_root => {
             Ok(UpstreamAddr::Tcp(authority.clone()))
         }
-        _ => Err(format!("upstream {raw:?}: {EXPECTED}")),
+        _ => Err(format!("{key} {raw:?}: {EXPECTED}")),
     }
 }
 
@@ -1251,6 +1493,168 @@ mod tests {
             let err = config("", &format!("{a}\n{tables}")).unwrap_err();
             assert!(err.contains(cause), "{err}");
         }
+    }
+
+    /// A configuration of `[[nodes]]` in place of `upstream`, with `top`'s keys and `nodes` after the tenants.
+    fn nodes_config(top: &str, nodes: &str) -> Result<Config, String> {
+        Config::from_toml(&format!(
+            "{}\n{top}\n[[listen]]\ntcp = \"127.0.0.1:0\"\n[tenants.a]\nkeys_sha256 = [\"{KEY}\"]\n{nodes}",
+            secret_file(&SECRET_FILE)
+        ))
+        .map_err(|e| e.to_string())
+    }
+
+    const TWO_NODES: &str = r#"
+[[nodes]]
+name = "phastform"
+upstream = "unix:/run/user/1007/flatshare/phastform-engine.sock"
+stt = "unix:/run/user/1007/flatshare/phastform-stt.sock"
+tts = "unix:/run/user/1007/flatshare/phastform-tts.sock"
+
+[[nodes]]
+name = "gray"
+upstream = "unix:/run/user/1007/flatshare/gray-engine.sock"
+roles = ["background"]
+max_calls = 0
+"#;
+
+    #[test]
+    fn nodes_take_both_roles_two_calls_and_the_placements_defaults() {
+        let two = nodes_config("", TWO_NODES).unwrap();
+        let [phastform, gray] = &two.nodes[..] else {
+            panic!("{:?}", two.nodes)
+        };
+        assert_eq!(phastform.name, "phastform");
+        assert_eq!(
+            (
+                phastform.realtime,
+                phastform.background,
+                phastform.max_calls
+            ),
+            (true, true, 2)
+        );
+        assert_eq!(
+            phastform.stt,
+            Some(UpstreamAddr::Unix(
+                "/run/user/1007/flatshare/phastform-stt.sock".into()
+            ))
+        );
+        // A background node needs no call slot and no speech servers.
+        assert_eq!(
+            (gray.realtime, gray.background, &gray.tts),
+            (false, true, &None)
+        );
+        // The first node's engine stands for the one upstream (the start line, the default node).
+        assert_eq!(two.upstream, phastform.upstream);
+        assert_eq!(two.placement, Placement::default());
+        assert_eq!(
+            two.placement,
+            Placement {
+                idle: Duration::from_secs(300),
+                health_interval: Duration::from_secs(1),
+                health_timeout: Duration::from_secs(1),
+                unhealthy_after: 3,
+                healthy_after: 2,
+                failover_background_max_in_flight: 0,
+            }
+        );
+        let tuned = format!(
+            "{TWO_NODES}[placement]\nidle_s = 60\nhealth_interval_s = 0.5\nunhealthy_after = 5\n\
+             failover_background_max_in_flight = 2\n"
+        );
+        let placement = nodes_config("", &tuned).unwrap().placement;
+        assert_eq!(
+            (
+                placement.idle,
+                placement.health_interval,
+                placement.unhealthy_after,
+                placement.failover_background_max_in_flight
+            ),
+            (Duration::from_secs(60), Duration::from_millis(500), 5, 2)
+        );
+        // Without [[nodes]], none, and the placement's defaults.
+        let one = config("", &format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]")).unwrap();
+        assert!(one.nodes.is_empty());
+    }
+
+    #[test]
+    fn nodes_are_refused_with_an_upstream_an_admission_policy_or_a_role_no_node_takes() {
+        let node = |name: &str, keys: &str| {
+            format!("[[nodes]]\nname = \"{name}\"\nupstream = \"unix:/run/{name}.sock\"\n{keys}\n")
+        };
+        let both = format!("{}{}", node("a", ""), node("b", ""));
+        for (top, nodes, cause) in [
+            (
+                "upstream = \"http://127.0.0.1:18000\"",
+                both.clone(),
+                "set upstream or [[nodes]], not both",
+            ),
+            (
+                "",
+                format!("{both}[admission]\npolicy = \"static-cap\"\nbackground_max_in_flight = 1"),
+                "an [admission] policy is for one upstream",
+            ),
+            (
+                "",
+                format!("{}{}", node("a", ""), node("a", "")),
+                "nodes: \"a\" is named twice",
+            ),
+            (
+                "",
+                format!(
+                    "{}[[nodes]]\nname = \"b\"\nupstream = \"unix:/run/a.sock\"\n",
+                    node("a", "")
+                ),
+                "nodes.b.upstream is nodes.a's",
+            ),
+            ("", node("a b", ""), "nodes[0].name \"a b\""),
+            ("", node("a", "roles = []"), "nodes.a.roles is empty"),
+            (
+                "",
+                node("a", "roles = [\"realtime\", \"realtime\"]"),
+                "nodes.a.roles names a role twice",
+            ),
+            (
+                "",
+                node("a", "roles = [\"realtime\"]"),
+                "no node has the background role",
+            ),
+            (
+                "",
+                node("a", "max_calls = 0"),
+                "nodes.a.max_calls must be positive",
+            ),
+            (
+                "",
+                node("a", "tts = \"http://127.0.0.1:9000/tts\""),
+                "nodes.a.tts \"http://127.0.0.1:9000/tts\": expected",
+            ),
+            (
+                "",
+                node("a", "speech = \"unix:/run/a-stt.sock\""),
+                "unknown field `speech`",
+            ),
+            (
+                "",
+                format!("{both}[placement]\nunhealthy_after = 0"),
+                "placement.unhealthy_after must be positive",
+            ),
+            (
+                "",
+                format!("{both}[placement]\nidle_s = 0"),
+                "placement.idle_s must be a positive",
+            ),
+        ] {
+            let err = nodes_config(top, &nodes).unwrap_err();
+            assert!(err.contains(cause), "{cause}: {err}");
+        }
+        // [placement] without [[nodes]].
+        let err = config(
+            "",
+            &format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]\n[placement]\nidle_s = 1"),
+        )
+        .unwrap_err();
+        assert!(err.contains("[placement] needs [[nodes]]"), "{err}");
     }
 
     #[test]

@@ -16,8 +16,12 @@
 //! requests succeed it sends nothing, so it never adds to an engine that real traffic shows serving. With the canary
 //! off (`[canary] enabled = false`, as E2's runs set it) the engine is `serving` from the start, and `/ready` asks the
 //! engine's `/health` as it always did.
+//!
+//! With `[[nodes]]` each node's engine has a state and a canary of its own, and a degraded node's engine is asked
+//! every second, as a warming one is: a node that is not healthy takes no requests, so only its canary can show it
+//! serving again.
 
-use std::sync::{Mutex, PoisonError, Weak};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -25,12 +29,15 @@ use flatshare_proto::SloClass;
 use http::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 use http::uri::PathAndQuery;
 use http_body_util::{BodyExt, Limited};
+use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::gauge::Gauge;
+use prometheus_client::metrics::histogram::Histogram;
+use tokio::sync::Notify;
 
 use crate::config::Canary;
+use crate::engine::Engine;
 use crate::metrics::EngineState;
 use crate::sanitize::{REQUEST_ID, request_id, set_priority};
-use crate::server::Shared;
 use crate::upstream::{UpstreamBody, causes};
 
 /// How often the canary asks while the engine is warming.
@@ -47,7 +54,40 @@ const PROBE: &str = r#""prompt":"ping","max_tokens":1,"temperature":0"#;
 pub(crate) struct Health {
     canary: Option<Canary>,
     state: Mutex<State>,
-    gauges: [Gauge; EngineState::ALL.len()],
+    watched: Watched,
+}
+
+/// Where an engine's state shows, and who learns of its changes.
+#[derive(Debug)]
+pub(crate) struct Watched {
+    /// The state's gauges, in [`EngineState::ALL`] order.
+    pub gauges: [Gauge; EngineState::ALL.len()],
+    /// Its canaries' results and times.
+    pub probes: Probes,
+    /// Woken at each change of state; `None` for a gateway's one upstream.
+    pub changed: Option<Arc<Notify>>,
+    /// The engine's node, which a degraded engine's canary asks every second as a warming one's does; `None` for a
+    /// gateway's one upstream, which goes on taking requests while degraded.
+    pub node: Option<Arc<str>>,
+}
+
+/// The series an engine's canaries count in.
+#[derive(Clone, Debug)]
+pub(crate) struct Probes {
+    pub success: Counter,
+    pub failure: Counter,
+    pub seconds: Histogram,
+}
+
+impl Probes {
+    fn record(&self, success: bool, elapsed: Duration) {
+        if success {
+            self.success.inc();
+        } else {
+            self.failure.inc();
+        }
+        self.seconds.observe(elapsed.as_secs_f64());
+    }
 }
 
 #[derive(Debug)]
@@ -61,7 +101,7 @@ struct State {
 
 impl Health {
     /// Warming with a canary, serving without one.
-    pub fn new(canary: Option<Canary>, gauges: [Gauge; EngineState::ALL.len()]) -> Self {
+    pub fn new(canary: Option<Canary>, watched: Watched) -> Self {
         let engine = if canary.is_some() {
             EngineState::Warming
         } else {
@@ -75,7 +115,7 @@ impl Health {
                 last_success: None,
                 last_probe: None,
             }),
-            gauges,
+            watched,
         };
         health.show(engine);
         health
@@ -92,7 +132,8 @@ impl Health {
         state.failures = 0;
         if state.engine != EngineState::Drained && state.engine != EngineState::Serving {
             if state.engine == EngineState::Degraded {
-                tracing::info!("the engine serves again: an inference succeeded");
+                let node = self.watched.node.as_deref();
+                tracing::info!(node, "the engine serves again: an inference succeeded");
             }
             state.engine = EngineState::Serving;
             drop(state);
@@ -109,13 +150,15 @@ impl Health {
             let failures = state.failures;
             drop(state);
             tracing::warn!(
+                node = self.watched.node.as_deref(),
                 failures,
                 "the engine is degraded: the inference canary failed {failures} times in a row with nothing \
                  succeeding: {cause}"
             );
             self.show(EngineState::Degraded);
         } else {
-            tracing::debug!("the inference canary failed: {cause}");
+            let node = self.watched.node.as_deref();
+            tracing::debug!(node, "the inference canary failed: {cause}");
         }
     }
 
@@ -133,6 +176,10 @@ impl Health {
             EngineState::Warming => state
                 .last_probe
                 .map(|at| at + WARMING_PROBE.min(canary.interval)),
+            // A node's: it takes no requests while degraded, so its canary is what can show it serving again.
+            EngineState::Degraded if self.watched.node.is_some() => state
+                .last_probe
+                .map(|at| at + WARMING_PROBE.min(canary.interval)),
             // The later of the last success and the last canary, an interval on.
             EngineState::Serving | EngineState::Degraded => state
                 .last_success
@@ -147,8 +194,11 @@ impl Health {
     }
 
     fn show(&self, engine: EngineState) {
-        for (state, gauge) in EngineState::ALL.iter().zip(&self.gauges) {
+        for (state, gauge) in EngineState::ALL.iter().zip(&self.watched.gauges) {
             gauge.set(i64::from(*state == engine));
+        }
+        if let Some(changed) = &self.watched.changed {
+            changed.notify_waiters();
         }
     }
 
@@ -159,11 +209,11 @@ impl Health {
 
 /// Asks the engine for a token whenever nothing succeeded within the canary's interval, until the gateway drains or
 /// is gone.
-pub(crate) async fn run(shared: Weak<Shared>) {
+pub(crate) async fn run(engine: Weak<Engine>) {
     loop {
-        let Some(wait) = shared.upgrade().and_then(|shared| {
-            let canary = shared.health.canary?;
-            shared.health.next_probe(&canary, Instant::now())
+        let Some(wait) = engine.upgrade().and_then(|engine| {
+            let canary = engine.health.canary?;
+            engine.health.next_probe(&canary, Instant::now())
         }) else {
             return;
         };
@@ -172,32 +222,36 @@ pub(crate) async fn run(shared: Weak<Shared>) {
             // A success meanwhile moves the next canary on.
             continue;
         }
-        let Some(shared) = shared.upgrade() else {
+        let Some(engine) = engine.upgrade() else {
             return;
         };
-        let Some(canary) = shared.health.canary else {
+        let health = &engine.health;
+        let Some(canary) = health.canary else {
             return;
         };
         let started = Instant::now();
-        shared.health.probed(started);
-        let result = probe(&shared, canary.timeout).await;
-        shared.metrics.canary(result.is_ok(), started.elapsed());
+        health.probed(started);
+        let result = probe(&engine, canary.timeout).await;
+        health
+            .watched
+            .probes
+            .record(result.is_ok(), started.elapsed());
         match result {
-            Ok(()) => shared.health.succeeded(),
-            Err(cause) => shared.health.failed(canary.degraded_after, &cause),
+            Ok(()) => health.succeeded(),
+            Err(cause) => health.failed(canary.degraded_after, &cause),
         }
     }
 }
 
 /// One canary: a one-token completion, read to its end within `timeout`.
-async fn probe(shared: &Shared, timeout: Duration) -> Result<(), String> {
+async fn probe(engine: &Engine, timeout: Duration) -> Result<(), String> {
     let class = SloClass::Background;
-    let signals = shared.upstream_priority;
+    let signals = engine.signals;
     let body = match signals.body {
         true => format!("{{{PROBE},\"priority\":{}}}", class.engine_priority()),
         false => format!("{{{PROBE}}}"),
     };
-    let uri = shared
+    let uri = engine
         .upstream
         .uri(PathAndQuery::from_static("/v1/completions"));
     let mut request = http::Request::post(uri)
@@ -208,7 +262,7 @@ async fn probe(shared: &Shared, timeout: Duration) -> Result<(), String> {
         .expect("a POST with a valid URI is a valid request");
     set_priority(request.headers_mut(), class, signals);
     let attempt = async {
-        let response = shared
+        let response = engine
             .upstream
             .request(request)
             .await
@@ -237,6 +291,19 @@ mod tests {
         std::array::from_fn(|_| Gauge::default())
     }
 
+    fn watched(gauges: [Gauge; EngineState::ALL.len()], node: Option<&str>) -> Watched {
+        Watched {
+            gauges,
+            probes: Probes {
+                success: Counter::default(),
+                failure: Counter::default(),
+                seconds: Histogram::new([1.0]),
+            },
+            changed: None,
+            node: node.map(Arc::from),
+        }
+    }
+
     const CANARY_CONFIG: Canary = Canary {
         interval: Duration::from_secs(30),
         timeout: Duration::from_secs(60),
@@ -246,7 +313,7 @@ mod tests {
     #[test]
     fn the_states_follow_successes_failures_and_the_drain() {
         let shared = gauges();
-        let health = Health::new(Some(CANARY_CONFIG), shared.clone());
+        let health = Health::new(Some(CANARY_CONFIG), watched(shared.clone(), None));
         let shown = || shared.iter().map(Gauge::get).collect::<Vec<_>>();
         assert_eq!(
             (health.state(), shown()),
@@ -280,12 +347,15 @@ mod tests {
             (EngineState::Drained, vec![0, 0, 0, 1])
         );
         // Without a canary it serves from the start.
-        assert_eq!(Health::new(None, gauges()).state(), EngineState::Serving);
+        assert_eq!(
+            Health::new(None, watched(gauges(), None)).state(),
+            EngineState::Serving
+        );
     }
 
     #[test]
     fn the_canary_asks_only_when_nothing_succeeded_within_its_interval() {
-        let health = Health::new(Some(CANARY_CONFIG), gauges());
+        let health = Health::new(Some(CANARY_CONFIG), watched(gauges(), None));
         let now = Instant::now();
         // Warming: at once, then a second after each canary.
         assert_eq!(health.next_probe(&CANARY_CONFIG, now), Some(Duration::ZERO));
@@ -305,5 +375,25 @@ mod tests {
         );
         health.drain();
         assert_eq!(health.next_probe(&CANARY_CONFIG, later), None);
+    }
+
+    #[test]
+    fn a_nodes_degraded_engine_is_asked_every_second_and_a_lone_engines_every_interval() {
+        let lone = Health::new(Some(CANARY_CONFIG), watched(gauges(), None));
+        let node = Health::new(Some(CANARY_CONFIG), watched(gauges(), Some("gray")));
+        for (health, wait) in [(&lone, CANARY_CONFIG.interval), (&node, WARMING_PROBE)] {
+            health.succeeded();
+            health.failed(2, "slow");
+            health.failed(2, "slow");
+            assert_eq!(health.state(), EngineState::Degraded);
+            // A canary at `now`, after the last success.
+            let now = Instant::now();
+            health.probed(now);
+            assert_eq!(health.next_probe(&CANARY_CONFIG, now), Some(wait));
+        }
+        // Serving again, a node's engine is asked an interval after its last success, as a lone engine is.
+        node.succeeded();
+        let wait = node.next_probe(&CANARY_CONFIG, Instant::now()).unwrap();
+        assert!(wait > Duration::from_secs(29), "{wait:?}");
     }
 }

@@ -180,6 +180,12 @@ pub(crate) fn resolve_session(
     }
 }
 
+/// Whether a request names its session (any of its sources is present), rather than having the gateway mint one,
+/// which no later request can name.
+pub(crate) fn names_session(inputs: &ClientInputs, prompt_cache_key: Option<&str>) -> bool {
+    session_source(inputs, prompt_cache_key).is_some()
+}
+
 /// The first present source of a request's session, in PROTOCOL.md's order.
 fn session_source<'a>(
     inputs: &'a ClientInputs,

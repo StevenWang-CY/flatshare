@@ -32,6 +32,8 @@ pub(crate) enum Route {
     Responses,
     Models,
     Events,
+    /// `POST /v1/sessions`, with `[[nodes]]`.
+    Sessions,
     /// Any path or method the gateway does not serve.
     Other,
 }
@@ -52,6 +54,7 @@ impl Route {
             Self::Responses => "/v1/responses",
             Self::Models => "/v1/models",
             Self::Events => "/v1/events",
+            Self::Sessions => "/v1/sessions",
             Self::Other => "other",
         }
     }
@@ -431,6 +434,8 @@ pub(crate) struct Metrics {
     usage_tokens: Family<UsageLabels, Counter>,
     /// Whether the engine is ready.
     node_ready: Gauge,
+    /// With `[[nodes]]`, the nodes' series, registered in place of the one engine's.
+    nodes: Option<crate::nodes::metrics::Metrics>,
     resolved: Resolved,
 }
 
@@ -443,6 +448,13 @@ impl Metrics {
     /// The metrics of a gateway with an admission point, whose series `harness` holds.
     pub fn with_harness(harness: &harness::Metrics) -> Self {
         Self::build(Some(harness))
+    }
+
+    /// The metrics of a gateway with `[[nodes]]`, whose engines' series `nodes` holds in place of the one engine's.
+    pub fn with_nodes(nodes: &crate::nodes::metrics::Metrics) -> Self {
+        let mut metrics = Self::build(None);
+        metrics.nodes = Some(nodes.clone());
+        metrics.register(None)
     }
 
     fn build(harness: Option<&harness::Metrics>) -> Self {
@@ -522,6 +534,7 @@ impl Metrics {
             events: Family::default(),
             usage_tokens,
             node_ready: Gauge::default(),
+            nodes: None,
             resolved,
         };
         for class in by_class {
@@ -663,6 +676,11 @@ impl Metrics {
         if let Some(harness) = harness {
             harness.register(r);
         }
+        if let Some(nodes) = &self.nodes {
+            nodes.register(r);
+            self.registry = Arc::new(registry);
+            return self;
+        }
         r.register(
             "node_ready",
             "Whether the engine is ready (1), or a request found it broken and its /health has not answered since \
@@ -776,10 +794,14 @@ impl Metrics {
         self.resolved.engine_state.clone()
     }
 
-    /// An inference canary's result and how long it took.
-    pub fn canary(&self, success: bool, elapsed: Duration) {
-        self.resolved.canary[usize::from(!success)].inc();
-        self.canary_seconds.observe(elapsed.as_secs_f64());
+    /// The series the one engine's canaries count in.
+    pub fn probes(&self) -> crate::canary::Probes {
+        let [success, failure] = self.resolved.canary.clone();
+        crate::canary::Probes {
+            success,
+            failure,
+            seconds: self.canary_seconds.clone(),
+        }
     }
 
     /// How long the body of a request of `route`, an inference route, took to arrive after its headers.
@@ -1011,6 +1033,37 @@ mod tests {
             "{} is stale; write it anew with `make metrics`",
             path.display()
         );
+    }
+
+    /// `metrics-nodes.txt` is what a gateway with `[[nodes]]` exports in place of the one engine's families, for two
+    /// nodes, before any traffic, its series in the order of their labels: the engine's readiness, state and canaries
+    /// by node under the same names, and the nodes' own families, which `ops/`'s checks read with `metrics.txt`.
+    /// `FLATSHARE_GATEWAY_WRITE_METRICS=1` writes it anew (`make metrics`).
+    #[test]
+    fn the_checked_in_node_exposition_is_current() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("metrics-nodes.txt");
+        let nodes = crate::nodes::metrics::Metrics::new(&["phastform".into(), "gray".into()]);
+        let mut registry = Registry::with_prefix("flatshare_gateway");
+        nodes.register(&mut registry);
+        let mut text = String::new();
+        encode(&mut text, &registry).unwrap();
+        let exposition = by_labels(&text);
+        if std::env::var_os("FLATSHARE_GATEWAY_WRITE_METRICS").is_some() {
+            std::fs::write(&path, &exposition).unwrap();
+        }
+        let on_disk = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            on_disk == exposition,
+            "{} is stale; write it anew with `make metrics`",
+            path.display()
+        );
+        // A gateway with nodes exports the nodes' families and not the one engine's unlabeled ones.
+        let gateway = Metrics::with_nodes(&nodes).encode();
+        assert!(gateway.contains("flatshare_gateway_node_ready{node=\"gray\"} 0"));
+        assert!(!gateway.contains("\nflatshare_gateway_node_ready 0"));
+        assert!(gateway.contains(
+            "flatshare_gateway_request_outcomes_total{class=\"realtime\",outcome=\"completed\"} 0"
+        ));
     }
 
     #[test]
