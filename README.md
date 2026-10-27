@@ -29,7 +29,7 @@ On vLLM 0.32 with 24 coding-agent sessions on one RTX 5060 Ti, the voice agent's
 from running agent requests, and once it runs, agent prefill shares every step of its reply.
 
 Two scheduler changes, proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and
-[#63351](https://github.com/vllm-project/vllm/pull/63351) (open as of 2026-10-26), bring that p95 to 2.24 s, 0.20 s over
+[#63351](https://github.com/vllm-project/vllm/pull/63351) (open as of 2026-10-28), bring that p95 to 2.24 s, 0.20 s over
 the voice agent's SLO, while the agents keep 97% of their token rate. A third of the replies still take longer than the
 SLO allows, where tuned vLLM leaves 90%: the changes narrow the gap without closing it. On an A100 SXM4 80 GB with the
 same model, KV pool and sessions, they take it from 4.99 s to 1.63 s, under that card's SLO in each of five rounds,

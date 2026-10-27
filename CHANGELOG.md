@@ -5,6 +5,58 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.6](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.6) (2026-10-28): what an external audit found, fixed
+
+No headline measurement changed. An external audit of v1.5 found defects in the gateway and the deployment and asked
+for measures the documents lacked; this release fixes the first and adds the second.
+
+- **Reply caps on every route.** The realtime cap was skipped when a body carried any reply-limit field, so a chat
+  request with only `max_output_tokens`, which vLLM's chat model ignores, ran uncapped. A capped body now gets its
+  route's own limit fields, at the lower of the client's limit and the cap, and loses the other routes'; a limit or a
+  choice count given twice, or as anything but a whole number, is refused; `n` and `best_of` are bounded by
+  `max_choices`, 1 by default; and each class can have a cap of its own. A CPU test reads every body of the
+  gateway's fixture with vLLM 0.32.0's own request models.
+- **Bounded intake.** Global, per-class and per-tenant limits on requests in flight are taken before a body is read,
+  a budget of buffered body bytes is taken as the body arrives, and the admission queues hold at most `max_queued`
+  requests; refusals come at once, with `Retry-After`. Through a reload the successor counts what its predecessor
+  still holds, so the limits and an admission policy hold over both processes.
+- **Deadlines.** Each class has deadlines for the upload, the queue, the response headers, the first content, the gap
+  between frames and the whole request. A timeout cancels the engine's work, gives back what the request held and
+  ends it once; a retry runs within the request's first deadline, and only before the client has seen any output.
+- **Accounting that counts failures.** The gateway counts each request offered, admitted and ended, by outcome, and
+  `completed` means a 2xx response that ended. The service level is per class, good over valid requests, so
+  failures, refusals and hangs count against it, and the burn-rate alerts read it; admission coverage is exported. An
+  inference canary, sent only after 30 s without a successful request, drives the engine's states (warming, serving,
+  degraded, drained) and `/ready`. `make check-rules` runs promtool over the rules and their tests.
+- **The serving profile.** [`deploy/profiles/rtx-5060-ti-serve.toml`](deploy/profiles/rtx-5060-ti-serve.toml) names
+  the configuration to deploy, the change with two preemptions a step, a 48-token window and no reserve, with every
+  setting and revision it depends on. The `make-room-serve` variant runs it, and `serving-check` fails an engine
+  start whose settings differ from it.
+- **The voice worker's modes.** Serve mode admits calls by capacity, at most the profile's number of calls, and takes
+  none while the gateway's `/ready` says the engine does not serve. Bench mode, for the measurement callers, stays the
+  default. Real microphones get settings of their own, apart from the synthetic callers', and unmeasured.
+- **Releases.** [`deploy/deploy.sh`](deploy/deploy.sh) releases each host as an immutable release with a manifest (the
+  commit, the hashes of every artifact and environment, the lockfiles, the model and patch revisions, the effective
+  configuration), checks it before switching, switches an atomic link, restarts only what changed, switches back on
+  any failure, and keeps earlier releases for `--rollback`.
+- **Measurement.** The README, PRODUCTION, BENCHMARKS, METHODS and the report give the share of replies over the SLO
+  beside the median of the runs' p95: 286 of the change's 885 replies (32%) are over it, where the SLO allows 5% and
+  tuned vLLM leaves 90%. The report says what the agents' 97% measures, the token rate of a replay that runs no task,
+  and that the change's fifteen runs replay five samples of the agents. The callers now end a reply when the agent's
+  state says it has finished, not after a second of silence, and record each reply's pauses and concealed audio.
+- **Records.** How long the voice agent's first sentences are
+  ([`2026-10-27-first-sentence`](benchmarks/results/2026-10-27-first-sentence): 15 tokens at the median, 39 at most,
+  all within the 48-token window), and speech synthesis and recognition on the CPU
+  ([`2026-10-27-cpu-audio`](benchmarks/results/2026-10-27-cpu-audio): too slow for the voice SLO on these hosts).
+- **Gates fixed in advance.** The quality gate's criteria and the two-card comparison's resource gate
+  ([`benchmarks/quality`](benchmarks/quality)) were committed before their runs.
+- **Upgrading from v1.5.** A request with `n` or `best_of` above 1 now gets 400 unless `max_choices` allows it, as
+  does a limit field given twice or as a string; `/ready` answers 503 until the first inference succeeds after a
+  start; realtime streams end after 30 s without a frame or 300 s in all; the outcome `error` is now
+  `transport_error`. A host moves to releases once, with `deploy/deploy.sh HOST --adopt`.
+- **A test** read a non-dumpable process's environment through `access()`, which answers yes to root; it now reads it.
+- **The packages** are versioned 1.6.0, and are not published to a package index.
+
 ## [v1.5](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.5) (2026-10-27): the technical report, rewritten
 
 No measurement changed. The technical report is rewritten in full, every number in it is recomputed from the committed
