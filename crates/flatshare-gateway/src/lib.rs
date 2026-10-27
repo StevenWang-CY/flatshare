@@ -28,9 +28,11 @@ pub mod handover;
 mod harness;
 mod metrics;
 mod proxy;
+mod relay;
 mod sanitize;
 mod server;
 pub mod systemd;
+mod upstream;
 mod usage;
 
 pub use config::{Config, ConfigError, ListenAddr};

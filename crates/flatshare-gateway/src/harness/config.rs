@@ -3,8 +3,10 @@
 
 use std::time::Duration;
 
-use flatshare_core::FROZEN_BOX_POOL_TOKENS;
-use flatshare_core::admission::{Ceilings, Lifecycle, Policy, Trigger};
+use flatshare_core::admission::{
+    self, Ceilings, Lifecycle, NoPrefillCost, Policy, PrefillCost, Trigger,
+};
+use flatshare_core::{FROZEN_BOX_POOL_TOKENS, StepCost};
 use serde::Deserialize;
 
 use crate::config::seconds;
@@ -22,8 +24,27 @@ pub struct Admission {
     /// (`state_timeout_s`). Only the lifecycle policy keeps the sessions' states.
     pub state_timeout: Option<Duration>,
     /// The engine's step budget (`max_num_batched_tokens`), in whose steps the lifecycle policy's throttle prices a
-    /// background request's prefill; `None` without the throttle.
+    /// background request's prefill; `None` without the throttle, which needs it.
     pub step_tokens: Option<u64>,
+}
+
+impl Admission {
+    /// The core's admission point for this configuration, or an error that names the key it lacks: the lifecycle
+    /// policy's throttle prices prefills in steps of `step_tokens`, and needs them.
+    pub(crate) fn core(&self) -> Result<admission::Admission, String> {
+        // The throttle prices prefills by the frozen box's step model; another engine or GPU needs its own fit.
+        let cost = self.step_tokens.map(|step_tokens| PrefillCost {
+            steps: StepCost::frozen_box(),
+            step_tokens,
+        });
+        admission::Admission::new(self.policy, self.queue_limit, cost)
+            .map_err(|NoPrefillCost| lifecycle_needs("max_num_batched_tokens", "throttle = false"))
+    }
+}
+
+/// The error for a key that the lifecycle policy needs unless `off`.
+fn lifecycle_needs(key: &str, off: &str) -> String {
+    format!("admission: policy lifecycle needs {key}, unless {off}")
 }
 
 /// `[admission]` as written. Each key but `policy` belongs to some of the policies, and setting it for another
@@ -297,8 +318,6 @@ impl RawAdmission {
                 return Err(format!("admission.{key} does not apply with {off}"));
             }
         }
-        let needs =
-            |key: &str, off: &str| format!("admission: policy lifecycle needs {key}, unless {off}");
         let pool_tokens = self.pool_tokens.unwrap_or(FROZEN_BOX_POOL_TOKENS);
         let headroom_tokens = match self.headroom_tokens {
             Some(tokens) if (1..pool_tokens).contains(&tokens) => tokens,
@@ -309,7 +328,7 @@ impl RawAdmission {
                 ));
             }
             None if sizing => {
-                return Err(needs(
+                return Err(lifecycle_needs(
                     "headroom_tokens",
                     "headroom = false and degrade = false",
                 ));
@@ -321,7 +340,7 @@ impl RawAdmission {
                 "admission.critical_prefill_budget_ms must be a number of milliseconds, 0 or more"
             })?),
             None if throttle => {
-                return Err(needs("critical_prefill_budget_ms", "throttle = false"));
+                return Err(lifecycle_needs("critical_prefill_budget_ms", "throttle = false"));
             }
             None => None,
         };
@@ -332,7 +351,9 @@ impl RawAdmission {
         };
         let degrade_max_tokens = match self.degrade_max_tokens {
             Some(0) => return Err("admission.degrade_max_tokens must be positive".into()),
-            None if degrade => return Err(needs("degrade_max_tokens", "degrade = false")),
+            None if degrade => {
+                return Err(lifecycle_needs("degrade_max_tokens", "degrade = false"));
+            }
             cap => cap,
         };
         let trigger = match self.trigger {
@@ -352,13 +373,17 @@ impl RawAdmission {
         // Longer than any state of an E2 caller's turn lasts (lines of 2 to 3 s, replies of a few seconds of
         // audio), so only a lost event ends a state by timeout.
         let state_timeout_s = self.state_timeout_s.unwrap_or(10.0);
-        Ok(Admission {
+        let admission = Admission {
             policy: Policy::Lifecycle(lifecycle),
             queue_limit,
             max_wait: seconds("admission.max_defer_s", max_defer_s)?,
             state_timeout: Some(seconds("admission.state_timeout_s", state_timeout_s)?),
             step_tokens,
-        })
+        };
+        // The server makes the admission point by the core's rule (`Admission::core`), and the file is validated in
+        // full before anything binds. No file breaks the rule: the throttle's step budget defaults to 512 tokens.
+        admission.core()?;
+        Ok(admission)
     }
 }
 

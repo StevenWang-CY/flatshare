@@ -284,4 +284,4 @@ The unit tests pin:
 - **The configuration rules:** each admission policy's own keys and defaults; the lifecycle policy's switches, the mechanisms each of its keys needs on, and its old name; `realtime_max_tokens`; every arm file's `[gateway]` table over the deploy example.
 - **The realtime sessions:** their states, timeouts and false alarms, and their place in the session table.
 - **The session table:** its bound, its untrusted half and its tenants.
-- **The rest:** the reply cap a degraded request's body gets; the cache salts and the checks of their secret's file; hashed session ids; the constant-time key match at every position; the deduplication window; the SSE scanner under every split of a stream.
+- **The rest:** the reply cap a degraded request's body gets; the cache salts and the checks of their secret's file; hashed session ids; the constant-time key match at every position; the deduplication window; the SSE scanner under every split of a stream; the metric series a proxied request updates, each resolved at start to its family's series of its labels.

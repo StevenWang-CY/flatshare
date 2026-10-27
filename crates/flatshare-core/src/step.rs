@@ -139,6 +139,14 @@ impl StepCost {
         Duration::from_secs_f64(self.step_ms(load).max(0.0) / 1e3)
     }
 
+    /// The duration of a step carrying only a prefill chunk of `tokens` tokens after `cached` tokens
+    /// of its context, in milliseconds.
+    pub fn chunk_ms(&self, tokens: u64, cached: u64) -> f64 {
+        let mut load = StepLoad::default();
+        load.add_prefill(tokens, cached);
+        self.step_ms(&load)
+    }
+
     /// Host time of a request with `prompt_tokens` tokens sent while `decoding` requests decode, in
     /// milliseconds.
     pub fn host_ms(&self, prompt_tokens: u64, decoding: u64) -> f64 {
@@ -150,11 +158,7 @@ impl StepCost {
     /// than `host`, the chat requests'.
     pub fn e0_host(&self, tier: &TierCost) -> Linear {
         let bt = tier.block_tokens;
-        let host = |tokens: u64| {
-            let mut hit = StepLoad::default();
-            hit.add_prefill(bt, tokens - bt);
-            tier.gpu_hit.at(tokens) - self.step_ms(&hit)
-        };
+        let host = |tokens: u64| tier.gpu_hit.at(tokens) - self.chunk_ms(bt, tokens - bt);
         let (a, b) = (1_024, 31_744);
         let us_per_token = (host(b) - host(a)) / (b - a) as f64 * 1e3;
         Linear {
@@ -181,9 +185,7 @@ impl StepCost {
         let (mut left, mut cached, mut ms) = (tokens, cached, 0.0);
         while left > 0 {
             let n = left.min(chunk.max(1));
-            let mut load = StepLoad::default();
-            load.add_prefill(n, cached);
-            ms += self.step_ms(&load);
+            ms += self.chunk_ms(n, cached);
             cached += n;
             left -= n;
         }
@@ -306,14 +308,15 @@ mod tests {
         let cost = StepCost::frozen_box();
         // A 512-token chunk: 38 ms on an empty context, 269 ms after 30,000 tokens, where attention
         // over the context is most of the step. A token budget prices both the same.
-        let empty = cost.prefill_ms(512, 0, BUDGET);
-        let deep = cost.prefill_ms(512, 30_000, BUDGET);
+        let empty = cost.chunk_ms(512, 0);
+        let deep = cost.chunk_ms(512, 30_000);
         assert!((empty - 38.2).abs() < 0.5, "{empty}");
         assert!((deep - 268.7).abs() < 0.5, "{deep}");
+        // A prefill is its chunks' steps, each after the ones before it.
         assert_eq!(cost.prefill_ms(0, 30_000, BUDGET), 0.0);
-        // A longer prefill is its chunks' steps, each after the ones before it.
+        assert_eq!(cost.prefill_ms(512, 30_000, BUDGET), deep);
         let two = cost.prefill_ms(1_024, 30_000, BUDGET);
-        assert!((two - deep - cost.prefill_ms(512, 30_512, BUDGET)).abs() < 1e-9);
+        assert!((two - deep - cost.chunk_ms(512, 30_512)).abs() < 1e-9);
     }
 
     #[test]

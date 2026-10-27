@@ -180,22 +180,15 @@ fn reply_step_ms(steps: &StepCost, chunk: u64) -> f64 {
     steps.step_ms(&load)
 }
 
-/// A step carrying one `tokens`-token prefill chunk after `context` cached tokens, alone.
-pub fn chunk_ms(steps: &StepCost, tokens: u64, context: u64) -> f64 {
-    let mut load = StepLoad::default();
-    load.add_prefill(tokens, context);
-    steps.step_ms(&load)
-}
-
 /// The largest step cap, a multiple of 256 tokens, whose chunk after `context` tokens takes `steps`
 /// no longer than the box's 512-token chunk takes the box: a realtime decode then waits no longer
 /// behind a chunk than on the box. `None` when even 256 tokens take longer.
 pub fn time_equivalent_cap(steps: &StepCost, context: u64) -> Option<u64> {
     let budget = StepBudget::FROZEN_BOX.max_batched_tokens;
-    let target = chunk_ms(&StepCost::frozen_box(), budget, context);
+    let target = StepCost::frozen_box().chunk_ms(budget, context);
     (1..=64)
         .map(|i| i * 256)
-        .take_while(|&b| chunk_ms(steps, b, context) <= target)
+        .take_while(|&b| steps.chunk_ms(b, context) <= target)
         .last()
 }
 
@@ -642,11 +635,8 @@ pub fn probes_section(gpu: &Gpu) -> String {
     )
     .expect("writing to a String");
     for (what, context) in MEDIAN_CONTEXTS {
-        let box_chunk = chunk_ms(
-            &StepCost::frozen_box(),
-            StepBudget::FROZEN_BOX.max_batched_tokens,
-            context,
-        );
+        let box_chunk =
+            StepCost::frozen_box().chunk_ms(StepBudget::FROZEN_BOX.max_batched_tokens, context);
         let caps: Vec<String> = Variant::ALL
             .iter()
             .zip(&costs)
@@ -655,7 +645,7 @@ pub fn probes_section(gpu: &Gpu) -> String {
                     "{} tokens ({}, {:.0} ms)",
                     thousands(b),
                     v.name(),
-                    chunk_ms(&c.steps, b, context)
+                    c.steps.chunk_ms(b, context)
                 ),
                 None => format!("none ({})", v.name()),
             })

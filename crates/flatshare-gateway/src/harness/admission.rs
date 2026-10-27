@@ -19,9 +19,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
-use flatshare_core::StepCost;
 use flatshare_core::admission::{
-    self, Action, Deferral, Estimate, Policy, PrefillCost, RequestId, SessionUsage,
+    self, Action, Deferral, Estimate, Policy, RequestId, SessionUsage,
 };
 use flatshare_proto::{LifecycleEvent, SessionId, SloClass};
 use tokio::sync::watch;
@@ -64,8 +63,10 @@ enum Signal {
 
 impl Admission {
     /// The admission point and its metric families, the lifecycle policy's only under it; under that policy, with
-    /// the task that ends the realtime sessions' phases as they time out.
-    pub fn new(config: &config::Admission) -> Arc<Self> {
+    /// the task that ends the realtime sessions' phases as they time out. A configuration that the core refuses is
+    /// an error that names the key it lacks ([`config::Admission::core`]).
+    pub fn new(config: &config::Admission) -> Result<Arc<Self>, String> {
+        let core = config.core()?;
         let (metrics, realtime) = match config.policy {
             Policy::Lifecycle(lifecycle) => {
                 let metrics = LifecycleMetrics::new();
@@ -75,17 +76,6 @@ impl Admission {
                 (Metrics::new(Some(metrics)), realtime)
             }
             _ => (Metrics::new(None), None),
-        };
-        // The throttle prices prefills by the frozen box's step model; another engine or GPU needs its own fit.
-        let core = match config.step_tokens {
-            Some(step_tokens) => {
-                let cost = PrefillCost {
-                    steps: StepCost::frozen_box(),
-                    step_tokens,
-                };
-                admission::Admission::with_prefill_cost(config.policy, config.queue_limit, cost)
-            }
-            None => admission::Admission::new(config.policy, config.queue_limit),
         };
         let state = State {
             core,
@@ -102,7 +92,7 @@ impl Admission {
         if let Some(timeout) = config.state_timeout {
             tokio::spawn(expire(Arc::downgrade(&admission), timeout));
         }
-        admission
+        Ok(admission)
     }
 
     /// Takes a request of `tenant` and `class` through the admission point. Returns its ticket once it is

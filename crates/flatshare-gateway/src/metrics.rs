@@ -3,7 +3,9 @@
 //!
 //! Every label takes its values from a fixed set or from the configuration (tenant names), so the number of series
 //! is bounded. Every series except those of requests (labeled with a status) and lifecycle events is created at
-//! start, so it exports zero before traffic.
+//! start, so it exports zero before traffic. The series a proxied request updates whose labels are fixed (its
+//! class, its outcome, its route) are resolved then too, so that its bookkeeping takes no family's lock and hashes no
+//! labels: of the families it touches, only requests by tenant and status are looked up per request.
 
 use std::hash::Hash;
 use std::sync::Arc;
@@ -34,6 +36,9 @@ pub(crate) enum Route {
 }
 
 impl Route {
+    /// The routes that proxy a request body, whose overhead and upload are timed.
+    const INFERENCE: [Self; 3] = [Self::ChatCompletions, Self::Completions, Self::Responses];
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ChatCompletions => "/v1/chat/completions",
@@ -207,6 +212,36 @@ struct UsageLabels {
 
 pub(crate) type Histograms<L> = Family<L, Histogram, fn() -> Histogram>;
 
+/// The kinds of `flatshare_gateway_usage_tokens_total`, in the order of [`Resolved::usage_tokens`].
+const USAGE_KINDS: [&str; 3] = ["prompt", "completion", "cached"];
+
+/// The series of fixed labels that every proxied request updates, each a handle to its family's series: by class
+/// ([`SloClass::ALL`] order), outcome ([`Outcome::ALL`]), usage kind ([`USAGE_KINDS`]) or inference route
+/// ([`Route::INFERENCE`]).
+#[derive(Clone, Debug)]
+struct Resolved {
+    outcomes: [[Counter; Outcome::ALL.len()]; 3],
+    first_byte: [Histogram; 3],
+    duration: [Histogram; 3],
+    streams_active: [Gauge; 3],
+    usage_tokens: [[Counter; USAGE_KINDS.len()]; 3],
+    overhead: [Histogram; Route::INFERENCE.len()],
+    request_body: [Histogram; Route::INFERENCE.len()],
+}
+
+/// The index of `class` in [`Resolved`]'s arrays.
+fn class_index(class: SloClass) -> usize {
+    class as usize
+}
+
+/// The index of `route`, a route that proxies a body, in [`Resolved`]'s arrays.
+fn inference_index(route: Route) -> usize {
+    Route::INFERENCE
+        .iter()
+        .position(|&inference| inference == route)
+        .expect("only the inference routes time a request body")
+}
+
 /// The gateway's metrics: cloning a handle shares every series.
 #[derive(Clone, Debug)]
 pub(crate) struct Metrics {
@@ -226,6 +261,7 @@ pub(crate) struct Metrics {
     usage_tokens: Family<UsageLabels, Counter>,
     /// Whether the engine is ready.
     node_ready: Gauge,
+    resolved: Resolved,
 }
 
 impl Metrics {
@@ -240,41 +276,62 @@ impl Metrics {
     }
 
     fn build(harness: Option<&harness::Metrics>) -> Self {
+        let outcomes: Family<OutcomeLabels, Counter> = Family::default();
+        let overhead: Histograms<RouteLabels> =
+            Family::new_with_constructor(|| Histogram::new(OVERHEAD_BUCKETS));
+        let request_body: Histograms<RouteLabels> =
+            Family::new_with_constructor(|| Histogram::new(OVERHEAD_BUCKETS));
+        let first_byte: Histograms<ClassLabels> =
+            Family::new_with_constructor(|| Histogram::new(LATENCY_BUCKETS));
+        let duration: Histograms<ClassLabels> =
+            Family::new_with_constructor(|| Histogram::new(LATENCY_BUCKETS));
+        let streams_active: Family<ClassLabels, Gauge> = Family::default();
+        let usage_tokens: Family<UsageLabels, Counter> = Family::default();
+        let by_class = SloClass::ALL.map(SloClass::as_str);
+        let by_route = Route::INFERENCE.map(Route::as_str);
+        // Each handle creates its series, at zero.
+        let resolved = Resolved {
+            outcomes: by_class.map(|class| {
+                Outcome::ALL.map(|outcome| {
+                    let outcome = outcome.as_str();
+                    outcomes.get_or_create_owned(&OutcomeLabels { class, outcome })
+                })
+            }),
+            first_byte: by_class
+                .map(|class| first_byte.get_or_create_owned(&ClassLabels { class })),
+            duration: by_class.map(|class| duration.get_or_create_owned(&ClassLabels { class })),
+            streams_active: by_class
+                .map(|class| streams_active.get_or_create_owned(&ClassLabels { class })),
+            usage_tokens: by_class.map(|class| {
+                USAGE_KINDS
+                    .map(|kind| usage_tokens.get_or_create_owned(&UsageLabels { class, kind }))
+            }),
+            overhead: by_route.map(|route| overhead.get_or_create_owned(&RouteLabels { route })),
+            request_body: by_route
+                .map(|route| request_body.get_or_create_owned(&RouteLabels { route })),
+        };
         let metrics = Self {
             registry: Arc::new(Registry::default()),
             requests: Family::default(),
-            outcomes: Family::default(),
-            overhead: Family::new_with_constructor(|| Histogram::new(OVERHEAD_BUCKETS)),
-            request_body: Family::new_with_constructor(|| Histogram::new(OVERHEAD_BUCKETS)),
-            first_byte: Family::new_with_constructor(|| Histogram::new(LATENCY_BUCKETS)),
-            duration: Family::new_with_constructor(|| Histogram::new(LATENCY_BUCKETS)),
-            streams_active: Family::default(),
+            outcomes,
+            overhead,
+            request_body,
+            first_byte,
+            duration,
+            streams_active,
             sanitized: Family::default(),
             class_clamped: Counter::default(),
             upstream_errors: Family::default(),
             error_events: Family::default(),
             events: Family::default(),
-            usage_tokens: Family::default(),
+            usage_tokens,
             node_ready: Gauge::default(),
+            resolved,
         };
-        for class in SloClass::ALL.map(SloClass::as_str) {
-            for outcome in Outcome::ALL.map(Outcome::as_str) {
-                create(&metrics.outcomes, OutcomeLabels { class, outcome });
-            }
-            for kind in ["prompt", "completion", "cached"] {
-                create(&metrics.usage_tokens, UsageLabels { class, kind });
-            }
-            create(&metrics.first_byte, ClassLabels { class });
-            create(&metrics.duration, ClassLabels { class });
-            create(&metrics.streams_active, ClassLabels { class });
+        for class in by_class {
             for r#type in ErrorEvent::ALL.map(ErrorEvent::as_str) {
                 create(&metrics.error_events, ErrorEventLabels { class, r#type });
             }
-        }
-        for route in [Route::ChatCompletions, Route::Completions, Route::Responses] {
-            let route = route.as_str();
-            create(&metrics.overhead, RouteLabels { route });
-            create(&metrics.request_body, RouteLabels { route });
         }
         for kind in UpstreamError::ALL.map(UpstreamError::as_str) {
             create(&metrics.upstream_errors, KindLabels { kind });
@@ -398,53 +455,30 @@ impl Metrics {
     }
 
     pub fn outcome(&self, class: SloClass, outcome: Outcome) {
-        let labels = OutcomeLabels {
-            class: class.as_str(),
-            outcome: outcome.as_str(),
-        };
-        self.outcomes.get_or_create(&labels).inc();
+        self.resolved.outcomes[class_index(class)][outcome as usize].inc();
     }
 
-    /// How long a request's body took to arrive after its headers.
+    /// How long the body of a request of `route`, an inference route, took to arrive after its headers.
     pub fn request_body(&self, route: Route, elapsed: Duration) {
-        let labels = RouteLabels {
-            route: route.as_str(),
-        };
-        self.request_body
-            .get_or_create(&labels)
-            .observe(elapsed.as_secs_f64());
+        self.resolved.request_body[inference_index(route)].observe(elapsed.as_secs_f64());
     }
 
-    /// The overhead histogram of a route, observed when the upstream request is written.
+    /// The overhead histogram of `route`, an inference route, observed when the upstream request is written.
     pub fn overhead(&self, route: Route) -> Histogram {
-        self.overhead.get_or_create_owned(&RouteLabels {
-            route: route.as_str(),
-        })
+        self.resolved.overhead[inference_index(route)].clone()
     }
 
     pub fn first_byte(&self, class: SloClass, elapsed: Duration) {
-        let labels = ClassLabels {
-            class: class.as_str(),
-        };
-        self.first_byte
-            .get_or_create(&labels)
-            .observe(elapsed.as_secs_f64());
+        self.resolved.first_byte[class_index(class)].observe(elapsed.as_secs_f64());
     }
 
     pub fn duration(&self, class: SloClass, elapsed: Duration) {
-        let labels = ClassLabels {
-            class: class.as_str(),
-        };
-        self.duration
-            .get_or_create(&labels)
-            .observe(elapsed.as_secs_f64());
+        self.resolved.duration[class_index(class)].observe(elapsed.as_secs_f64());
     }
 
     /// Counts a stream as active until the returned guard drops.
     pub fn stream_started(&self, class: SloClass) -> GaugeGuard {
-        GaugeGuard::new(self.streams_active.get_or_create_owned(&ClassLabels {
-            class: class.as_str(),
-        }))
+        GaugeGuard::new(self.resolved.streams_active[class_index(class)].clone())
     }
 
     /// The gauge of whether the engine is ready.
@@ -486,15 +520,12 @@ impl Metrics {
     }
 
     pub fn usage(&self, class: SloClass, usage: &Usage) {
-        let class = class.as_str();
-        for (kind, tokens) in [
-            ("prompt", usage.prompt),
-            ("completion", usage.completion),
-            ("cached", usage.cached),
-        ] {
-            self.usage_tokens
-                .get_or_create(&UsageLabels { class, kind })
-                .inc_by(tokens);
+        let counters = &self.resolved.usage_tokens[class_index(class)];
+        for (counter, tokens) in counters
+            .iter()
+            .zip([usage.prompt, usage.completion, usage.cached])
+        {
+            counter.inc_by(tokens);
         }
     }
 
@@ -618,6 +649,120 @@ mod tests {
             "{} is stale; write it anew with `make metrics`",
             path.display()
         );
+    }
+
+    #[test]
+    fn each_resolved_series_is_its_familys_series_of_its_labels() {
+        // An update through a resolved handle shows under its labels, and only there: the indices follow the
+        // label sets' orders.
+        let metrics = Metrics::new();
+        metrics.outcome(SloClass::Background, Outcome::Shed);
+        let usage = Usage {
+            prompt: 3,
+            completion: 2,
+            cached: 1,
+        };
+        metrics.usage(SloClass::Realtime, &usage);
+        metrics.first_byte(SloClass::Interactive, Duration::from_millis(1));
+        metrics.duration(SloClass::Background, Duration::from_millis(1));
+        let _active = metrics.stream_started(SloClass::Realtime);
+        metrics.overhead(Route::Responses).observe(1e-4);
+        metrics.request_body(Route::Completions, Duration::from_micros(10));
+        let text = metrics.encode();
+        let value = |series: &str| -> f64 {
+            text.lines()
+                .find_map(|line| line.strip_prefix(series)?.strip_prefix(' ')?.parse().ok())
+                .unwrap_or_else(|| panic!("no {series}"))
+        };
+        let changed = [
+            (
+                "flatshare_gateway_request_outcomes_total{class=\"background\",outcome=\"shed\"}",
+                1.0,
+            ),
+            (
+                "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"prompt\"}",
+                3.0,
+            ),
+            (
+                "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"completion\"}",
+                2.0,
+            ),
+            (
+                "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"cached\"}",
+                1.0,
+            ),
+            (
+                "flatshare_gateway_first_byte_seconds_count{class=\"interactive\"}",
+                1.0,
+            ),
+            (
+                "flatshare_gateway_duration_seconds_count{class=\"background\"}",
+                1.0,
+            ),
+            ("flatshare_gateway_streams_active{class=\"realtime\"}", 1.0),
+            (
+                "flatshare_gateway_overhead_seconds_count{route=\"/v1/responses\"}",
+                1.0,
+            ),
+            (
+                "flatshare_gateway_request_body_seconds_count{route=\"/v1/completions\"}",
+                1.0,
+            ),
+        ];
+        for (series, expected) in changed {
+            assert_eq!(value(series), expected, "{series}");
+        }
+        // Nothing else changed: the nine series above, and the sums of the four histograms among them.
+        let nonzero = text
+            .lines()
+            .filter(|line| !line.starts_with('#') && !line.contains("_bucket{"))
+            .filter(|line| {
+                line.rsplit(' ')
+                    .next()
+                    .is_some_and(|v| v != "0" && v != "0.0")
+            })
+            .filter(|line| !line.starts_with("flatshare_gateway_node_ready"))
+            .count();
+        assert_eq!(nonzero, changed.len() + 4, "{text}");
+    }
+
+    /// What a proxied request's metric bookkeeping costs (its upload, overhead, stream, request, outcome, duration,
+    /// first byte and usage), with one thread at it and with four at once. `cargo test --release -p
+    /// flatshare-gateway --lib metrics -- --ignored --nocapture` prints it.
+    #[test]
+    #[ignore = "a benchmark, for --release"]
+    fn what_a_requests_bookkeeping_costs() {
+        const N: u32 = 200_000;
+        let metrics = Metrics::new();
+        let tenant: Arc<str> = "agents".into();
+        let usage = Usage {
+            prompt: 512,
+            completion: 21,
+            cached: 448,
+        };
+        let class = SloClass::Interactive;
+        let request = || {
+            metrics.request_body(Route::ChatCompletions, Duration::from_micros(3));
+            metrics.overhead(Route::ChatCompletions).observe(30e-6);
+            drop(metrics.stream_started(class));
+            metrics.request(Some(&tenant), Route::ChatCompletions, Some(class), 200);
+            metrics.outcome(class, Outcome::Completed);
+            metrics.duration(class, Duration::from_micros(80));
+            metrics.first_byte(class, Duration::from_micros(70));
+            metrics.usage(class, &usage);
+        };
+        for threads in [1, 4] {
+            let start = std::time::Instant::now();
+            std::thread::scope(|scope| {
+                for _ in 0..threads {
+                    scope.spawn(|| (0..N).for_each(|_| request()));
+                }
+            });
+            let ns = start.elapsed().as_nanos() as f64 / f64::from(N);
+            println!(
+                "a request's metric bookkeeping, {threads} thread(s) at once: {ns:.0} ns each"
+            );
+        }
     }
 
     #[test]
