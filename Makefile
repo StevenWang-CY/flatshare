@@ -32,7 +32,7 @@ E2_A100_POINTS = $(wildcard $(foreach c,a100-r a100-tuned-r a100-prtuned-r,$(E2_
 E2_A100_REPORT ?= build/reproduce-e2-a100
 
 .PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-make-room test-trace test-make-room-ci \
-  test-python schema metrics \
+  test-python schema metrics gateway-fixtures \
   reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 reproduce-e2-a100 figures e2-figures e2-w5-figure \
   e2-gpus-figure method-figure report-figures brand \
   demo-video forecast-a100 forecast-fitted profiles reproduce-a100 check-a100-calibration
@@ -73,12 +73,13 @@ CPU_SUITE_IMPORTS = cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPAT
   vLLM's scheduler from $(VLLM_SRC)" >&2; exit 1; }
 
 # The make-room variant's behavior suite on vLLM's real v1 scheduler, on CPU, outside make check: it needs an
-# interpreter with CPU torch 2.13 and vLLM 0.32.0's Python dependencies, and runs on the source checkout.
+# interpreter with CPU torch 2.13 and vLLM 0.32.0's Python dependencies, and runs on the source checkout. With it, the
+# gateway's reply caps read by vLLM's own request models (tests/test_gateway_caps.py, over the gateway's fixture).
 test-make-room: $(VLLM_SRC)
 	@test -n "$(TORCH_PYTHON)" || { echo "usage: make test-make-room TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies>" >&2; exit 2; }
 	@$(CPU_SUITE_IMPORTS)
 	cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
-	  tests/test_make_room.py tests/test_perf_schedule.py
+	  tests/test_make_room.py tests/test_perf_schedule.py tests/test_gateway_caps.py
 
 # make-room against the PRs' own patches, step for step, on the same CPU environment (python/flatshare_vllm/README.md):
 # the trace that keeps the variant equal to #63350 and #63351, with the PRs' one-line mutants as its negative control.
@@ -146,6 +147,12 @@ schema:
 metrics:
 	FLATSHARE_GATEWAY_WRITE_METRICS=1 cargo test -q -p flatshare-gateway --lib \
 	  metrics::tests::the_checked_in_exposition_is_current
+
+# crates/flatshare-gateway/tests/fixtures/reply-caps.json, the gateway's rewrite of reply limits and choices case by
+# case, after a change to it; test-make-room parses its bodies with vLLM's own request models.
+gateway-fixtures:
+	FLATSHARE_GATEWAY_WRITE_FIXTURES=1 cargo test -q -p flatshare-gateway --lib \
+	  bounds::tests::the_reply_caps_fixture_is_current
 
 # E1's tables (docs/BENCHMARKS.md's E1 section, crates/flatshare-sim/README.md's other hardware) from the 32x corpus,
 # which stays outside the repository (`flatshare-bench scale-traces` writes it; python/flatshare_bench/README.md): the

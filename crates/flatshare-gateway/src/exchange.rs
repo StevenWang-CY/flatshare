@@ -13,6 +13,7 @@ use http::StatusCode;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue, RETRY_AFTER};
 use tracing::Level;
 
+use crate::bounds;
 use crate::harness::Refusal;
 use crate::metrics::{Metrics, Outcome, Route};
 use crate::sanitize::{REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
@@ -123,6 +124,17 @@ impl Exchange {
             .headers_mut()
             .insert(RETRY_AFTER, HeaderValue::from(seconds));
         response
+    }
+
+    /// The 400 for a body whose reply limits or choices the gateway does not forward ([`crate::bounds`]), with the
+    /// field at fault as the error's `param`.
+    pub fn invalid_field(mut self, invalid: &bounds::Invalid) -> Response {
+        let message = invalid.to_string();
+        let body = serde_json::json!({"error": {
+            "message": message, "type": "invalid_request_error", "param": invalid.field(), "code": invalid.code(),
+        }});
+        self.error = Some(message);
+        self.respond(StatusCode::BAD_REQUEST, &body)
     }
 
     /// The 401 for a request without a known API key on a listener without a tenant.

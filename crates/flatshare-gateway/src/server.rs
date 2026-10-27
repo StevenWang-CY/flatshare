@@ -23,7 +23,7 @@ use tokio::sync::watch;
 use tokio::task::JoinSet;
 
 use crate::auth::{self, Tenant, Tenants};
-use crate::config::{Config, ListenAddr, MetricsKey, PrioritySignals};
+use crate::config::{ClassConfig, Config, ListenAddr, MetricsKey, PrioritySignals};
 use crate::events::{self, EventSink, Events};
 use crate::exchange::Exchange;
 use crate::harness::Admission;
@@ -50,8 +50,10 @@ pub(crate) struct Shared {
     pub metrics: Arc<Metrics>,
     pub events: Events,
     pub max_body_bytes: usize,
-    /// The cap on every realtime reply, in tokens.
-    pub realtime_max_tokens: Option<u32>,
+    /// What each class's requests may ask for, by [`SloClass`].
+    pub classes: [ClassConfig; 3],
+    /// The choices a request may ask for at most.
+    pub max_choices: u32,
     pub stream_buffer_frames: usize,
     pub stall_timeout: Duration,
     pub first_byte_timeout: Duration,
@@ -61,6 +63,11 @@ pub(crate) struct Shared {
 }
 
 impl Shared {
+    /// The configuration of `class`'s requests.
+    pub fn class(&self, class: SloClass) -> &ClassConfig {
+        &self.classes[class as usize]
+    }
+
     /// Accepted lifecycle events of `tenant`'s sessions, in the order they were received, to the admission point.
     pub fn lifecycle(&self, tenant: &Tenant, events: &[LifecycleEvent]) {
         if let Some(admission) = &self.admission {
@@ -241,7 +248,8 @@ impl Server {
             metrics,
             events: Events::new(config.event_dedup_capacity, config.event_dedup_ttl, sink),
             max_body_bytes: config.max_body_bytes,
-            realtime_max_tokens: config.realtime_max_tokens,
+            classes: config.classes,
+            max_choices: config.max_choices,
             stream_buffer_frames: config.stream_buffer_frames,
             stall_timeout: config.stall_timeout,
             first_byte_timeout: config.first_byte_timeout,

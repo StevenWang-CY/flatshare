@@ -239,10 +239,11 @@ async fn degrade_caps_a_realtime_reply_when_the_headroom_was_not_kept() {
     )
     .await;
     assert_eq!(voice.status, 200);
+    // Chat Completions' both limits, as its engine reads the first that is set.
     let body = mock.last().json();
     assert_eq!(
         (&body["max_tokens"], &body["max_completion_tokens"]),
-        (&16.into(), &serde_json::Value::Null),
+        (&16.into(), &16.into()),
         "{body}"
     );
     assert_eq!(body["messages"][0]["content"], "hi");
@@ -287,7 +288,11 @@ async fn a_degraded_reply_takes_the_lower_of_its_caps() {
     )
     .await;
     assert_eq!(voice.status, 200);
-    assert_eq!(mock.last().json()["max_tokens"], 64);
+    let body = mock.last().json();
+    assert_eq!(
+        (&body["max_tokens"], &body["max_completion_tokens"]),
+        (&64.into(), &64.into())
+    );
     // With the pool taken, degrade's, the lower.
     let large = spawn_call(&gw.tcp, background("bg"), nine_hundred());
     mock.await_requests(2).await;
@@ -300,7 +305,11 @@ async fn a_degraded_reply_takes_the_lower_of_its_caps() {
     )
     .await;
     assert_eq!(voice.status, 200);
-    assert_eq!(mock.last().json()["max_tokens"], 16);
+    let body = mock.last().json();
+    assert_eq!(
+        (&body["max_tokens"], &body["max_completion_tokens"]),
+        (&16.into(), &16.into())
+    );
     gw.await_metric("flatshare_gateway_admission_degraded_total", 1.0)
         .await;
     mock.release(1);

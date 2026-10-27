@@ -38,10 +38,12 @@ pub struct Config {
     pub metrics_key: Option<MetricsKey>,
     /// Largest accepted request body; larger requests get 413.
     pub max_body_bytes: usize,
-    /// The cap on every realtime reply, in tokens (`realtime_max_tokens`): each of a realtime request's reply caps
-    /// above it is lowered to it, and a body with none gets the route's own, as degrade caps a reply under the
-    /// lifecycle policy. `None` caps no reply.
-    pub realtime_max_tokens: Option<u32>,
+    /// What each class's requests may ask for (`[classes.<class>]`), by [`SloClass`] (strictest first; index a class
+    /// with [`Config::class`]).
+    pub classes: [ClassConfig; 3],
+    /// The choices a request may ask for at most: its `n` (with `use_beam_search`, its beam's width) and its
+    /// `best_of`. A request that asks for more gets 400.
+    pub max_choices: u32,
     /// Frames buffered between the upstream and a client before backpressure reaches the upstream.
     pub stream_buffer_frames: usize,
     /// How long a full stream buffer may stay full before the stream is aborted as stalled.
@@ -59,6 +61,22 @@ pub struct Config {
     pub event_dedup_ttl: Duration,
     pub log_format: LogFormat,
     pub log_level: LogLevel,
+}
+
+impl Config {
+    /// The configuration of `class`'s requests.
+    pub fn class(&self, class: SloClass) -> &ClassConfig {
+        &self.classes[class as usize]
+    }
+}
+
+/// `[classes.<class>]`: what the requests of one class may ask for.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ClassConfig {
+    /// The cap on the class's replies, in tokens (`max_reply_tokens`; for realtime, `realtime_max_tokens` too): a
+    /// request's body gets its route's own limit at the lower of the client's limit and the cap
+    /// ([`crate::bounds`]), as degrade caps a reply under the lifecycle policy. `None` caps no reply.
+    pub max_reply_tokens: Option<u32>,
 }
 
 /// One listener.
@@ -213,6 +231,8 @@ struct RawConfig {
     metrics_key_file: Option<PathBuf>,
     max_body_bytes: usize,
     realtime_max_tokens: Option<u32>,
+    classes: RawClasses,
+    max_choices: u32,
     stream_buffer_frames: usize,
     stall_timeout_s: f64,
     first_byte_timeout_s: f64,
@@ -238,6 +258,8 @@ impl Default for RawConfig {
             metrics_key_file: None,
             max_body_bytes: 32 << 20,
             realtime_max_tokens: None,
+            classes: RawClasses::default(),
+            max_choices: 1,
             stream_buffer_frames: 64,
             stall_timeout_s: 30.0,
             first_byte_timeout_s: 600.0,
@@ -248,6 +270,57 @@ impl Default for RawConfig {
             log_format: LogFormat::Text,
             log_level: LogLevel::Info,
         }
+    }
+}
+
+/// `[classes]`: a table for each class that sets anything.
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RawClasses {
+    realtime: RawClass,
+    interactive: RawClass,
+    background: RawClass,
+}
+
+/// `[classes.<class>]` as written; a missing key takes the class's default.
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RawClass {
+    max_reply_tokens: Option<u32>,
+}
+
+impl RawClasses {
+    /// Each class's configuration, strictest first. `realtime_max_tokens` is the realtime class's
+    /// `max_reply_tokens`, from before there were classes' tables, and only one of the two may be set.
+    fn validate(self, realtime_max_tokens: Option<u32>) -> Result<[ClassConfig; 3], String> {
+        let Self {
+            mut realtime,
+            interactive,
+            background,
+        } = self;
+        match (realtime_max_tokens, realtime.max_reply_tokens) {
+            (Some(0), _) => return Err("realtime_max_tokens must be positive".into()),
+            (Some(_), Some(_)) => {
+                return Err(
+                    "realtime_max_tokens and classes.realtime.max_reply_tokens are the same cap: set one".into(),
+                );
+            }
+            (Some(cap), None) => realtime.max_reply_tokens = Some(cap),
+            (None, _) => {}
+        }
+        let mut classes = SloClass::ALL.map(|_| ClassConfig::default());
+        for (class, raw) in SloClass::ALL
+            .into_iter()
+            .zip([realtime, interactive, background])
+        {
+            if raw.max_reply_tokens == Some(0) {
+                return Err(format!("classes.{class}.max_reply_tokens must be positive"));
+            }
+            classes[class as usize] = ClassConfig {
+                max_reply_tokens: raw.max_reply_tokens,
+            };
+        }
+        Ok(classes)
     }
 }
 
@@ -371,8 +444,9 @@ impl RawConfig {
         if self.max_body_bytes == 0 {
             return Err("max_body_bytes must be positive".into());
         }
-        if self.realtime_max_tokens == Some(0) {
-            return Err("realtime_max_tokens must be positive".into());
+        let classes = self.classes.validate(self.realtime_max_tokens)?;
+        if self.max_choices == 0 {
+            return Err("max_choices must be positive".into());
         }
         if self.stream_buffer_frames == 0 {
             return Err("stream_buffer_frames must be positive".into());
@@ -403,7 +477,8 @@ impl RawConfig {
             cache_salt_secret,
             metrics_key,
             max_body_bytes: self.max_body_bytes,
-            realtime_max_tokens: self.realtime_max_tokens,
+            classes,
+            max_choices: self.max_choices,
             stream_buffer_frames: self.stream_buffer_frames,
             stall_timeout: seconds("stall_timeout_s", self.stall_timeout_s)?,
             first_byte_timeout: seconds("first_byte_timeout_s", self.first_byte_timeout_s)?,
@@ -735,16 +810,60 @@ mod tests {
     }
 
     #[test]
-    fn a_deployment_may_cap_every_realtime_reply() {
+    fn a_deployment_may_cap_each_classs_replies() {
         let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
-        assert_eq!(config("", &a).unwrap().realtime_max_tokens, None);
+        let caps =
+            |config: &Config| SloClass::ALL.map(|class| config.class(class).max_reply_tokens);
+        assert_eq!(caps(&config("", &a).unwrap()), [None; 3]);
+        // realtime_max_tokens is the realtime class's cap, as it was before the classes' tables.
         let capped = config("realtime_max_tokens = 64", &a).unwrap();
-        assert_eq!(capped.realtime_max_tokens, Some(64));
-        let err = config("realtime_max_tokens = 0", &a).unwrap_err();
-        assert!(
-            err.contains("realtime_max_tokens must be positive"),
-            "{err}"
+        assert_eq!(caps(&capped), [Some(64), None, None]);
+        let tables = format!(
+            "{a}\n[classes.realtime]\nmax_reply_tokens = 48\n[classes.background]\nmax_reply_tokens = 4096"
         );
+        assert_eq!(
+            caps(&config("", &tables).unwrap()),
+            [Some(48), None, Some(4096)]
+        );
+        for (top, tables, cause) in [
+            (
+                "realtime_max_tokens = 0",
+                a.clone(),
+                "realtime_max_tokens must be positive",
+            ),
+            (
+                "realtime_max_tokens = 64",
+                format!("{a}\n[classes.realtime]\nmax_reply_tokens = 48"),
+                "realtime_max_tokens and classes.realtime.max_reply_tokens are the same cap",
+            ),
+            (
+                "",
+                format!("{a}\n[classes.interactive]\nmax_reply_tokens = 0"),
+                "classes.interactive.max_reply_tokens must be positive",
+            ),
+            (
+                "",
+                format!("{a}\n[classes.urgent]\nmax_reply_tokens = 1"),
+                "unknown field `urgent`",
+            ),
+            (
+                "",
+                format!("{a}\n[classes.realtime]\nmax_tokens = 1"),
+                "unknown field `max_tokens`",
+            ),
+        ] {
+            let err = config(top, &tables).unwrap_err();
+            assert!(err.contains(cause), "{err}");
+        }
+    }
+
+    #[test]
+    fn requests_ask_for_one_choice_unless_the_deployment_allows_more() {
+        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
+        assert_eq!(config("", &a).unwrap().max_choices, 1);
+        assert_eq!(config("max_choices = 4", &a).unwrap().max_choices, 4);
+        let err = config("max_choices = 0", &a).unwrap_err();
+        assert!(err.contains("max_choices must be positive"), "{err}");
     }
 
     #[test]

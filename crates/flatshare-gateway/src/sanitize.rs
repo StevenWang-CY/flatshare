@@ -15,6 +15,7 @@ use serde_json::value::RawValue;
 use sha2::{Digest, Sha256};
 
 use crate::auth::Tenant;
+use crate::bounds;
 use crate::config::PrioritySignals;
 use crate::metrics::{Metrics, Route};
 
@@ -254,41 +255,62 @@ pub(crate) struct Body {
     pub prompt_cache_key: Option<String>,
 }
 
+/// What a rewrite bounds ([`crate::bounds`]): the reply of a request of `route`, at `cap` tokens if its class has
+/// one, and its choices, at `max_choices`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Bounds {
+    pub route: Route,
+    pub cap: Option<u32>,
+    pub max_choices: u32,
+}
+
 /// Why a request body was rejected (400).
 #[derive(Debug)]
-pub(crate) struct InvalidBody(serde_json::Error);
+pub(crate) enum InvalidBody {
+    /// Not a JSON object.
+    Json(serde_json::Error),
+    /// A reply limit or a choice count the gateway does not forward ([`crate::bounds`]).
+    Bounds(bounds::Invalid),
+}
 
 impl fmt::Display for InvalidBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "the request body must be a JSON object: {}", self.0)
+        match self {
+            Self::Json(err) => write!(f, "the request body must be a JSON object: {err}"),
+            Self::Bounds(invalid) => invalid.fmt(f),
+        }
     }
 }
 
 /// Removes the engine-control fields from a JSON object body and sets the tenant's `cache_salt`, and the
-/// gateway's own `priority` if it is given one. With a `reply_cap`, the route's and a number of tokens (the
-/// deployment's `realtime_max_tokens`), it caps the reply in the same pass, to the bytes [`cap_reply`] would
-/// make of the rewritten body.
+/// gateway's own `priority` if it is given one. Its reply limits and choices are checked ([`crate::bounds`]), and
+/// with a cap, the reply is capped in the same pass, to the bytes [`cap_reply`] would make of the rewritten body:
+/// the route's own limit fields first, at the lower of the client's limit and the cap, and the other routes' gone.
 ///
 /// Only the top level is parsed: values stay raw slices of the input and are copied through unchanged, so the
 /// cost is one validating scan and one copy whatever the body's size. Keys are compared after JSON unescaping,
-/// so an escaped `"pri\u006frity"` is removed too.
+/// so an escaped `"pri\u006frity"` is removed too, and an escaped `"max_\u0074okens"` is the `max_tokens` it
+/// spells.
 pub(crate) fn rewrite_body(
     body: &[u8],
     cache_salt: &str,
     priority: Option<i32>,
-    reply_cap: Option<(Route, u32)>,
+    bounds: Bounds,
     metrics: &Metrics,
 ) -> Result<Body, InvalidBody> {
-    let TopLevel(fields) = serde_json::from_slice(body).map_err(InvalidBody)?;
+    let TopLevel(fields) = serde_json::from_slice(body).map_err(InvalidBody::Json)?;
+    let asked = bounds::read(
+        fields.iter().map(|(key, value)| (key.as_str(), *value)),
+        bounds.max_choices,
+    )
+    .map_err(InvalidBody::Bounds)?;
     let mut json = Vec::with_capacity(body.len() + 64);
     let mut prompt_cache_key = None;
     json.push(b'{');
-    // No reply cap is an engine-control field, so the body the rewrite keeps has the caps this one has.
-    if let Some((route, cap)) = reply_cap
-        && !fields.iter().any(|(key, _)| is_reply_cap(key))
-    {
-        write!(json, "\"{}\":{cap},", reply_cap_field(route))
-            .expect("writing to a Vec cannot fail");
+    // No reply limit is an engine-control field, so the body the rewrite keeps has the limits this one has.
+    let capped = bounds.cap.map(|cap| asked.capped(bounds.route, cap));
+    if let Some(limit) = capped {
+        bounds::write_limit(&mut json, bounds.route, limit);
     }
     for (key, value) in &fields {
         if let Some(field) = headers::ENGINE_CONTROL_BODY_FIELDS
@@ -298,15 +320,15 @@ pub(crate) fn rewrite_body(
             metrics.sanitized(field);
             continue;
         }
+        if capped.is_some() && bounds::is_reply_limit(key) {
+            continue;
+        }
         if key == "prompt_cache_key" {
             prompt_cache_key = serde_json::from_str(value.get()).ok();
         }
         serde_json::to_writer(&mut json, key).expect("writing to a Vec cannot fail");
         json.push(b':');
-        match reply_cap {
-            Some((_, cap)) if is_reply_cap(key) => write_capped(&mut json, value, cap),
-            _ => json.extend_from_slice(value.get().as_bytes()),
-        }
+        json.extend_from_slice(value.get().as_bytes());
         json.push(b',');
     }
     if let Some(priority) = priority {
@@ -321,59 +343,37 @@ pub(crate) fn rewrite_body(
     })
 }
 
-/// The body fields that cap a reply's tokens: Chat Completions' `max_completion_tokens` and its deprecated
-/// `max_tokens`, which Completions reads, and the Responses API's `max_output_tokens`.
-const REPLY_CAPS: [&str; 3] = ["max_completion_tokens", "max_tokens", "max_output_tokens"];
-
-/// Caps a request's reply at `cap` tokens (degrade's) in a body [`rewrite_body`] wrote: each of the body's reply
-/// caps is lowered to `cap` if it is above it or not a count, and a body with none gets the route's own. Capping a
-/// capped body again keeps the lower of the two caps, byte for byte as one cap at the lower would.
+/// Caps a request's reply at `cap` tokens (degrade's) in a body [`rewrite_body`] wrote: the route's own limit
+/// fields first, at the lower of the body's limit and `cap`, and the other routes' removed. Capping a capped body
+/// again keeps the lower of the two caps, byte for byte as one cap at the lower would.
 pub(crate) fn cap_reply(body: &[u8], route: Route, cap: u32) -> Bytes {
     let TopLevel(fields) =
         serde_json::from_slice(body).expect("the gateway writes bodies as JSON objects");
+    // The rewrite checked the body's limits and choices, and writes no field twice.
+    let asked = bounds::read(
+        fields.iter().map(|(key, value)| (key.as_str(), *value)),
+        u32::MAX,
+    )
+    .expect("a rewritten body's limits were checked");
     let mut json = Vec::with_capacity(body.len() + 32);
     json.push(b'{');
-    if !fields.iter().any(|(key, _)| is_reply_cap(key)) {
-        write!(json, "\"{}\":{cap},", reply_cap_field(route))
-            .expect("writing to a Vec cannot fail");
-    }
+    bounds::write_limit(&mut json, route, asked.capped(route, cap));
     for (key, value) in &fields {
+        if bounds::is_reply_limit(key) {
+            continue;
+        }
         serde_json::to_writer(&mut json, key).expect("writing to a Vec cannot fail");
         json.push(b':');
-        if is_reply_cap(key) {
-            write_capped(&mut json, value, cap);
-        } else {
-            json.extend_from_slice(value.get().as_bytes());
-        }
+        json.extend_from_slice(value.get().as_bytes());
         json.push(b',');
     }
-    // Every member, the one added among them, ends with a comma.
+    // Every member ends with a comma, and a rewritten body has its cache salt among them.
     *json.last_mut().expect("a member was written") = b'}';
     json.into()
 }
 
-fn is_reply_cap(key: &str) -> bool {
-    REPLY_CAPS.contains(&key)
-}
-
-/// The reply cap a body of `route` that has none gets.
-fn reply_cap_field(route: Route) -> &'static str {
-    match route {
-        Route::Completions => "max_tokens",
-        Route::Responses => "max_output_tokens",
-        _ => "max_completion_tokens",
-    }
-}
-
-/// A reply cap's value, lowered to `cap` if it is above it or not a count.
-fn write_capped(json: &mut Vec<u8>, value: &RawValue, cap: u32) {
-    let asked = serde_json::from_str::<u32>(value.get()).ok();
-    let capped = asked.filter(|&asked| asked <= cap).unwrap_or(cap);
-    write!(json, "{capped}").expect("writing to a Vec cannot fail");
-}
-
-/// The top-level members of a JSON object, in order, with raw values.
-struct TopLevel<'a>(Vec<(String, &'a RawValue)>);
+/// The top-level members of a JSON object, in order and duplicates kept, with raw values.
+pub(crate) struct TopLevel<'a>(pub Vec<(String, &'a RawValue)>);
 
 impl<'de> serde::Deserialize<'de> for TopLevel<'de> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -570,7 +570,8 @@ mod tests {
             "session_params":{"id":"s"},"custom_labels":{"x":"y"},"routed_dp_rank":1,"data_parallel_rank":1,
             "disagg_prefill_dp_rank":0,"bootstrap_host":"h","bootstrap_port":1,"bootstrap_room":7,
             "prompt_cache_key":"pck-1","stream":true}"#;
-        let out = rewrite_body(body, "0123", None, None, &metrics).unwrap();
+        let chat = uncapped(Route::ChatCompletions);
+        let out = rewrite_body(body, "0123", None, chat, &metrics).unwrap();
         let value: Value = serde_json::from_slice(&out.json).unwrap();
         assert_eq!(
             value,
@@ -582,10 +583,134 @@ mod tests {
             assert_eq!(metrics.sanitized_count(field), 1, "{field}");
         }
         // For an upstream that reads the priority from the body, the gateway's replaces the client's.
-        let out = rewrite_body(body, "0123", Some(2), None, &metrics).unwrap();
+        let out = rewrite_body(body, "0123", Some(2), chat, &metrics).unwrap();
         let value: Value = serde_json::from_slice(&out.json).unwrap();
         assert_eq!(value["priority"], 2);
         assert_eq!(metrics.sanitized_count("priority"), 2);
+    }
+
+    /// The bounds of a request of `route` whose class has no cap, at one choice.
+    fn uncapped(route: Route) -> Bounds {
+        Bounds {
+            route,
+            cap: None,
+            max_choices: 1,
+        }
+    }
+
+    /// The bounds of a request of `route` whose class caps its reply at `cap`, at one choice.
+    fn capped(route: Route, cap: u32) -> Bounds {
+        Bounds {
+            cap: Some(cap),
+            ..uncapped(route)
+        }
+    }
+
+    #[test]
+    fn a_capped_body_gets_its_routes_own_limits_at_the_lower_of_the_two() {
+        use Route::*;
+        let metrics = Metrics::new();
+        let rewrite = |body: &str, route, cap| -> Value {
+            let out =
+                rewrite_body(body.as_bytes(), "s", None, capped(route, cap), &metrics).unwrap();
+            serde_json::from_slice(&out.json).unwrap()
+        };
+        // Chat Completions: max_completion_tokens and max_tokens, both at the lower of the client's limit (the first
+        // of them that is not null) and the cap, and none of max_output_tokens, which its engine ignores: a body with
+        // only that field once went uncapped.
+        for (body, limit) in [
+            (r#"{"model":"m"}"#, 24),
+            (r#"{"model":"m","max_output_tokens":4000}"#, 24),
+            (r#"{"model":"m","max_output_tokens":5}"#, 24),
+            (r#"{"model":"m","max_tokens":200}"#, 24),
+            (r#"{"model":"m","max_tokens":8}"#, 8),
+            (
+                r#"{"model":"m","max_completion_tokens":12,"max_tokens":200}"#,
+                12,
+            ),
+            (
+                r#"{"model":"m","max_completion_tokens":200,"max_tokens":3}"#,
+                24,
+            ),
+            (
+                r#"{"model":"m","max_completion_tokens":null,"max_tokens":9}"#,
+                9,
+            ),
+            (
+                r#"{"model":"m","max_completion_tokens":null,"max_tokens":null}"#,
+                24,
+            ),
+            (r#"{"model":"m","max_tokens":0}"#, 0),
+        ] {
+            assert_eq!(
+                rewrite(body, ChatCompletions, 24),
+                json!({"max_completion_tokens": limit, "max_tokens": limit, "model": "m", "cache_salt": "s"}),
+                "{body}"
+            );
+        }
+        // Completions: max_tokens alone, with vLLM's 16 for a body without one and no limit for a null one.
+        for (body, limit) in [
+            (r#"{"prompt":"p"}"#, 16),
+            (r#"{"prompt":"p","max_tokens":null}"#, 24),
+            (r#"{"prompt":"p","max_tokens":200}"#, 24),
+            (r#"{"prompt":"p","max_tokens":20}"#, 20),
+            (
+                r#"{"prompt":"p","max_completion_tokens":2,"max_output_tokens":3}"#,
+                16,
+            ),
+            (
+                r#"{"prompt":"p","max_completion_tokens":2,"max_tokens":100}"#,
+                24,
+            ),
+        ] {
+            assert_eq!(
+                rewrite(body, Completions, 24),
+                json!({"max_tokens": limit, "prompt": "p", "cache_salt": "s"}),
+                "{body}"
+            );
+        }
+        assert_eq!(
+            rewrite(r#"{"prompt":"p"}"#, Completions, 8),
+            json!({"max_tokens": 8, "prompt": "p", "cache_salt": "s"})
+        );
+        // The Responses API: max_output_tokens alone.
+        for (body, limit) in [
+            (r#"{"input":"p"}"#, 24),
+            (r#"{"input":"p","max_output_tokens":null}"#, 24),
+            (r#"{"input":"p","max_output_tokens":4000}"#, 24),
+            (r#"{"input":"p","max_output_tokens":7}"#, 7),
+            (
+                r#"{"input":"p","max_tokens":7,"max_completion_tokens":7}"#,
+                24,
+            ),
+        ] {
+            assert_eq!(
+                rewrite(body, Responses, 24),
+                json!({"max_output_tokens": limit, "input": "p", "cache_salt": "s"}),
+                "{body}"
+            );
+        }
+        // The limits come first, and every other value is copied as it is.
+        let body =
+            br#"{"messages":[{"role":"user","content":"\"max_tokens\":1"}],"max_tokens":99,"n":1}"#;
+        let out = rewrite_body(body, "s", None, capped(ChatCompletions, 24), &metrics).unwrap();
+        assert_eq!(
+            &out.json[..],
+            br#"{"max_completion_tokens":24,"max_tokens":24,"messages":[{"role":"user","content":"\"max_tokens\":1"}],"n":1,"cache_salt":"s"}"#
+        );
+    }
+
+    #[test]
+    fn an_uncapped_body_keeps_its_limits_as_they_are() {
+        let metrics = Metrics::new();
+        let body = br#"{"max_output_tokens":4000,"max_tokens":null,"max_completion_tokens":7}"#;
+        for route in [Route::ChatCompletions, Route::Completions, Route::Responses] {
+            let out = rewrite_body(body, "s", None, uncapped(route), &metrics).unwrap();
+            assert_eq!(
+                &out.json[..],
+                br#"{"max_output_tokens":4000,"max_tokens":null,"max_completion_tokens":7,"cache_salt":"s"}"#
+            );
+        }
     }
 
     #[test]
@@ -593,11 +718,12 @@ mod tests {
         let capped = |body: &str, route| -> Value {
             serde_json::from_slice(&cap_reply(body.as_bytes(), route, 24)).unwrap()
         };
-        // A body without a cap gets the route's own; a smaller one stays, a larger one or a non-count is lowered.
+        // A body without a limit gets the route's own; a smaller one stays, a larger one is lowered, and the other
+        // routes' fields go.
         let chat = capped(r#"{"model":"m","cache_salt":"s"}"#, Route::ChatCompletions);
         assert_eq!(
             chat,
-            json!({"max_completion_tokens": 24, "model": "m", "cache_salt": "s"})
+            json!({"max_completion_tokens": 24, "max_tokens": 24, "model": "m", "cache_salt": "s"})
         );
         let both = capped(
             r#"{"max_tokens":100,"max_completion_tokens":12,"cache_salt":"s"}"#,
@@ -605,7 +731,7 @@ mod tests {
         );
         assert_eq!(
             both,
-            json!({"max_tokens": 24, "max_completion_tokens": 12, "cache_salt": "s"})
+            json!({"max_completion_tokens": 12, "max_tokens": 12, "cache_salt": "s"})
         );
         let null = capped(
             r#"{"max_tokens":null,"cache_salt":"s"}"#,
@@ -615,15 +741,15 @@ mod tests {
         let completion = capped(r#"{"prompt":"p","cache_salt":"s"}"#, Route::Completions);
         assert_eq!(
             completion,
-            json!({"max_tokens": 24, "prompt": "p", "cache_salt": "s"})
+            json!({"max_tokens": 16, "prompt": "p", "cache_salt": "s"})
         );
         let response = capped(
-            r#"{"input":"p","max_output_tokens":4000,"cache_salt":"s"}"#,
+            r#"{"input":"p","max_output_tokens":4000,"max_tokens":3,"cache_salt":"s"}"#,
             Route::Responses,
         );
         assert_eq!(
             response,
-            json!({"input": "p", "max_output_tokens": 24, "cache_salt": "s"})
+            json!({"max_output_tokens": 24, "input": "p", "cache_salt": "s"})
         );
         // Every other value is copied as it is.
         let body =
@@ -631,28 +757,29 @@ mod tests {
         let out = cap_reply(body, Route::ChatCompletions, 24);
         assert_eq!(
             &out[..],
-            br#"{"max_completion_tokens":24,"messages":[{"role":"user","content":"\"max_tokens\":1"}],"cache_salt":"s"}"#
+            br#"{"max_completion_tokens":24,"max_tokens":24,"messages":[{"role":"user","content":"\"max_tokens\":1"}],"cache_salt":"s"}"#
         );
     }
 
     #[test]
     fn a_cap_in_the_rewrite_is_the_cap_of_the_rewritten_body() {
-        // The deployment's realtime cap is now applied in rewrite_body's pass, where cap_reply parsed the
-        // rewritten body again: the same bytes, whatever the body, route and priority, and degrade's cap over it
-        // keeps the lower of the two, as the one cap_reply of the lower did.
+        // The class's cap is applied in rewrite_body's pass, where cap_reply would parse the rewritten body again:
+        // the same bytes, whatever the body, route and priority, and degrade's cap over it keeps the lower of the
+        // two, as one cap_reply at the lower does.
         let metrics = Metrics::new();
         assert!(
-            REPLY_CAPS
+            bounds::REPLY_LIMITS
                 .iter()
-                .all(|cap| !headers::ENGINE_CONTROL_BODY_FIELDS.contains(cap))
+                .chain(&bounds::CHOICES)
+                .all(|field| !headers::ENGINE_CONTROL_BODY_FIELDS.contains(field))
         );
         let bodies = [
             r#"{"model":"m","messages":[{"role":"user","content":"\"max_tokens\":1"}]}"#,
             r#"{"model":"m","max_tokens":100,"max_completion_tokens":12}"#,
             r#"{"max_tokens":null,"prompt":"p","priority":3}"#,
-            r#"{"max_output_tokens":"many","input":"p","cache_salt":"theirs"}"#,
-            r#"{"max_completion_tokens":24,"max_completion_tokens":7.5}"#,
-            r#"{"max_tokens":9000,"session_id":"s","prompt_cache_key":"k","stream":true}"#,
+            r#"{"max_output_tokens":4000,"input":"p","cache_salt":"theirs"}"#,
+            r#"{"max_completion_tokens":null,"max_tokens":7}"#,
+            r#"{"max_tokens":9000,"session_id":"s","prompt_cache_key":"k","stream":true,"n":1}"#,
             r#"{}"#,
             r#"{"max_completion_tokens":0}"#,
         ];
@@ -660,20 +787,21 @@ mod tests {
             for route in [Route::ChatCompletions, Route::Completions, Route::Responses] {
                 for priority in [None, Some(2)] {
                     let plain =
-                        rewrite_body(body.as_bytes(), "s", priority, None, &metrics).unwrap();
-                    for cap in [0, 24, 64, 4096] {
+                        rewrite_body(body.as_bytes(), "s", priority, uncapped(route), &metrics)
+                            .unwrap();
+                    for cap in [1, 16, 24, 64, 4096] {
                         let folded = rewrite_body(
                             body.as_bytes(),
                             "s",
                             priority,
-                            Some((route, cap)),
+                            capped(route, cap),
                             &metrics,
                         )
                         .unwrap();
                         let case = format!("{body} {route:?} {priority:?} {cap}");
                         assert_eq!(folded.json, cap_reply(&plain.json, route, cap), "{case}");
                         assert_eq!(folded.prompt_cache_key, plain.prompt_cache_key, "{case}");
-                        for degrade in [0, 16, 64, 10_000] {
+                        for degrade in [1, 16, 64, 10_000] {
                             assert_eq!(
                                 cap_reply(&folded.json, route, degrade),
                                 cap_reply(&plain.json, route, cap.min(degrade)),
@@ -687,8 +815,73 @@ mod tests {
     }
 
     #[test]
+    fn limits_and_choices_the_engine_might_read_otherwise_are_refused() {
+        let metrics = Metrics::new();
+        let refused = |body: &str, bounds: Bounds| match rewrite_body(
+            body.as_bytes(),
+            "s",
+            None,
+            bounds,
+            &metrics,
+        ) {
+            Err(InvalidBody::Bounds(invalid)) => (invalid.code(), invalid.field()),
+            other => panic!("{body}: {other:?}"),
+        };
+        for route in [Route::ChatCompletions, Route::Completions, Route::Responses] {
+            for bounds in [uncapped(route), capped(route, 24)] {
+                for (body, code, field) in [
+                    (
+                        r#"{"max_tokens":8,"max_tokens":9000}"#,
+                        "duplicate_field",
+                        "max_tokens",
+                    ),
+                    (
+                        r#"{"max_completion_tokens":null,"model":"m","max_completion_tokens":5000}"#,
+                        "duplicate_field",
+                        "max_completion_tokens",
+                    ),
+                    (r#"{"n":1,"n":8}"#, "duplicate_field", "n"),
+                    (
+                        r#"{"max_output_tokens":"64"}"#,
+                        "invalid_reply_limit",
+                        "max_output_tokens",
+                    ),
+                    (
+                        r#"{"max_tokens":64.0}"#,
+                        "invalid_reply_limit",
+                        "max_tokens",
+                    ),
+                    (r#"{"max_tokens":-1}"#, "invalid_reply_limit", "max_tokens"),
+                    (r#"{"n":0}"#, "invalid_choices", "n"),
+                    (r#"{"n":8}"#, "too_many_choices", "n"),
+                    (r#"{"best_of":2}"#, "too_many_choices", "best_of"),
+                ] {
+                    assert_eq!(refused(body, bounds), (code, field), "{body} {route:?}");
+                }
+                // A key spelled with an escape is the key it spells, as Python's json reads it.
+                let escaped = format!("{{\"max_{}u0074okens\":1,\"max_tokens\":9000}}", '\\');
+                assert_eq!(refused(&escaped, bounds), ("duplicate_field", "max_tokens"));
+            }
+        }
+        // A deployment that allows more choices takes them, up to its max_choices.
+        let four = Bounds {
+            max_choices: 4,
+            ..uncapped(Route::ChatCompletions)
+        };
+        for body in [
+            r#"{"n":4}"#,
+            r#"{"n":4,"use_beam_search":true}"#,
+            r#"{"best_of":3}"#,
+        ] {
+            assert!(rewrite_body(body.as_bytes(), "s", None, four, &metrics).is_ok());
+        }
+        assert_eq!(refused(r#"{"n":5}"#, four), ("too_many_choices", "n"));
+    }
+
+    #[test]
     fn bodies_must_be_json_objects() {
         let metrics = Metrics::new();
+        let chat = uncapped(Route::ChatCompletions);
         for body in [
             &b""[..],
             b"[1]",
@@ -698,13 +891,16 @@ mod tests {
             b"{\"a\":1,}",
         ] {
             assert!(
-                rewrite_body(body, "s", None, None, &metrics).is_err(),
+                matches!(
+                    rewrite_body(body, "s", None, chat, &metrics),
+                    Err(InvalidBody::Json(_))
+                ),
                 "{body:?}"
             );
         }
-        let out = rewrite_body(b" { } ", "s", None, None, &metrics).unwrap();
+        let out = rewrite_body(b" { } ", "s", None, chat, &metrics).unwrap();
         assert_eq!(&out.json[..], br#"{"cache_salt":"s"}"#);
-        let out = rewrite_body(b"{}", "s", Some(0), None, &metrics).unwrap();
+        let out = rewrite_body(b"{}", "s", Some(0), chat, &metrics).unwrap();
         assert_eq!(&out.json[..], br#"{"priority":0,"cache_salt":"s"}"#);
     }
 

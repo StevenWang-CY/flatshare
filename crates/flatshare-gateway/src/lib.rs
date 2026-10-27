@@ -12,7 +12,9 @@
 //! - **admission**, E2's harness (`harness`): a `flatshare_core::admission` policy decides when a request goes
 //!   upstream, and the gateway does the waiting and the cancellation; under the lifecycle policy it also follows
 //!   the realtime sessions' turns from lifecycle events and realtime requests;
-//! - **a reply cap** on every realtime request (`realtime_max_tokens`), without an admission policy as with one;
+//! - **bounds on what a request asks for**: a reply cap per class (`[classes.<class>] max_reply_tokens`, and
+//!   `realtime_max_tokens`), written in each route's own fields as vLLM reads them, and at most `max_choices`
+//!   choices, without an admission policy as with one;
 //! - **relay**: responses pass through byte for byte, with backpressure, client-disconnect cancellation and a
 //!   stall timeout;
 //! - **lifecycle events** at `POST /v1/events`, deduplicated, then to the admission point and an [`EventSink`];
@@ -21,6 +23,7 @@
 //! The admission policies are E2's baselines and the lifecycle policy, which E2's arm 9 runs with make-room.
 
 mod auth;
+mod bounds;
 pub mod config;
 mod events;
 mod exchange;

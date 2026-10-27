@@ -23,8 +23,12 @@ cache_salt_secret_file = "<home>/.config/flatshare/cache-salt-secret"
 # voice plane's socket, private to this user, no key is asked for.
 metrics_key_file = "<home>/.config/flatshare/metrics-key"
 # A cap on every realtime reply, in tokens, with or without an admission policy; none by default. Undegraded, E2's
-# voice agent's replies ran 20 tokens at the median and 39 at most.
+# voice agent's replies ran 20 tokens at the median and 39 at most (W5's 5,571 replies: 52 at most). It is the
+# realtime class's max_reply_tokens ([classes.realtime] below): set one of the two.
 # realtime_max_tokens = 64
+# The choices a request may ask for: n (with use_beam_search, a beam's width) and best_of. vLLM runs each as a reply
+# of its own, so the default is 1; a request that asks for more gets 400.
+# max_choices = 1
 
 # The host network. Other users of cyan can reach loopback, so requests here need a key.
 [[listen]]
@@ -54,6 +58,13 @@ max_class = "interactive"
 [tenants.bench]
 keys_sha256 = ["<sha256 of the bench key>"]
 default_class = "background"
+
+# What each class's requests may ask for. A capped body gets its route's own limit fields at the lower of the client's
+# limit and the cap (crates/flatshare-gateway/README.md, Bounds).
+# [classes.realtime]
+# max_reply_tokens = 64
+# [classes.background]
+# max_reply_tokens = 8192
 
 # The admission policy (crates/flatshare-gateway/README.md#admission). Without the table, every request goes upstream
 # at once. E2's baselines set one policy and its keys:

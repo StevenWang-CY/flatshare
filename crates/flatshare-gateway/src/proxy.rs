@@ -8,7 +8,6 @@ use axum::body::Body;
 use axum::extract::Request;
 use axum::response::Response;
 use bytes::Bytes;
-use flatshare_proto::SloClass;
 use http::header::{CONTENT_TYPE, HeaderValue};
 use http::uri::PathAndQuery;
 use http::{StatusCode, Version};
@@ -21,8 +20,8 @@ use crate::harness::{Refusal, Ticket};
 use crate::metrics::{Route, UpstreamError};
 use crate::relay;
 use crate::sanitize::{
-    REQUEST_ID, cap_reply, resolve_class, resolve_session, rewrite_body, sanitize_headers,
-    set_engine_headers, strip_hop_by_hop,
+    Bounds, InvalidBody, REQUEST_ID, cap_reply, resolve_class, resolve_session, rewrite_body,
+    sanitize_headers, set_engine_headers, strip_hop_by_hop,
 };
 use crate::server::{self, App, Shared};
 use crate::upstream::{RECOVERY_PROBE, Upstream, UpstreamBody, causes, recover};
@@ -66,20 +65,20 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     shared.metrics.request_body(route, read - ex.received);
     let signals = shared.upstream_priority;
     let priority = signals.body.then(|| class.engine_priority());
-    // The deployment's cap on every realtime reply, in the rewrite's one pass over the body.
-    let realtime_cap = shared
-        .realtime_max_tokens
-        .filter(|_| class == SloClass::Realtime)
-        .map(|cap| (route, cap));
-    let mut body = match rewrite_body(
-        &body,
-        &tenant.cache_salt,
-        priority,
-        realtime_cap,
-        &shared.metrics,
-    ) {
+    // The class's reply cap and the choices, in the rewrite's one pass over the body.
+    let bounds = Bounds {
+        route,
+        cap: shared.class(class).max_reply_tokens,
+        max_choices: shared.max_choices,
+    };
+    let mut body = match rewrite_body(&body, &tenant.cache_salt, priority, bounds, &shared.metrics)
+    {
         Ok(body) => body,
-        Err(err) => return ex.error(StatusCode::BAD_REQUEST, "invalid_json", err.to_string()),
+        Err(InvalidBody::Json(err)) => {
+            let message = InvalidBody::Json(err).to_string();
+            return ex.error(StatusCode::BAD_REQUEST, "invalid_json", message);
+        }
+        Err(InvalidBody::Bounds(invalid)) => return ex.invalid_field(&invalid),
     };
     let session = resolve_session(tenant, &inputs, body.prompt_cache_key.as_deref());
     set_engine_headers(&mut parts.headers, &session, class, &ex.id, signals);
@@ -127,7 +126,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         }
     };
 
-    // Degrade's reply cap, over the deployment's: the lower of the two holds.
+    // Degrade's reply cap, over the class's: the lower of the two holds.
     let degrade = ticket.as_ref().and_then(Ticket::reply_cap);
     if let Some(cap) = degrade {
         body.json = cap_reply(&body.json, route, cap);
