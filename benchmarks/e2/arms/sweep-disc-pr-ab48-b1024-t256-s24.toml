@@ -1,0 +1,16 @@
+# The step-cap and window sweep (sweep-screen.campaign, then sweep-r1.campaign to sweep-r5.campaign on fresh samples of
+# the agents): the change as the PRs propose it (make-room, no reserve) with a 48-token first-tokens window at a
+# step cap of 1024 and a long-prefill threshold of 256.
+arm = "9-pr-ab48-b1024-t256"
+label = "vLLM PRs A and B, 48-token window, step cap 1024, threshold 256, discriminating scenario, warm-up turn"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 24
+data = "weka-x32-long"
+
+[engine]
+variant = "make-room"
+flags = ["--additional-config.make_room.reserve_tokens", "0", "--additional-config.make_room.budget_cap_tokens", "48", "--max-num-batched-tokens", "1024", "--long-prefill-token-threshold", "256"]
