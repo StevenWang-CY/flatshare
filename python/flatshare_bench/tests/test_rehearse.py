@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import selectors
 import shlex
 import signal
 import subprocess
@@ -772,35 +773,77 @@ def test_a_step_that_ends_while_its_process_is_looked_at_reads_done(tmp_path: Pa
         step.wait()
 
 
+def reads_as_no_running_step(home: Path, process: subprocess.Popen) -> None:
+    """A pid file that names ``process``, a live process of this user that is not the step's, reads died, and done
+    once the step's status is written: a status once written is final."""
+    steps = home / ".rehearsal" / "steps"
+    steps.mkdir(parents=True, exist_ok=True)
+    (steps / "stage.pid").write_text(f"{process.pid}\n")
+    (steps / "stage.status").unlink(missing_ok=True)
+    assert host_state(home, "stage") == f"died {process.pid}"
+    (steps / "stage.status").write_text("0\n")
+    assert host_state(home, "stage") == "done 0"
+
+
 @PROC
 def test_a_pid_file_naming_another_live_process_reads_as_no_running_step(tmp_path: Path) -> None:
-    # A process is the step's only while its environment carries the step's mark, and a status once written is final.
-    # A pid file that names another live process of this user reads died, whether its environment lacks the mark or
-    # cannot be read (a non-dumpable process, as ssh-agent is: prctl PR_SET_DUMPABLE 0), and done once the step's
-    # status is written.
-    steps = tmp_path / ".rehearsal" / "steps"
-    steps.mkdir(parents=True)
+    # A process is the step's only while its environment carries the step's mark: one whose environment lacks it is
+    # not, whatever its pid file says.
     rest = {k: v for k, v in os.environ.items() if k != "FLATSHARE_REHEARSAL_STEP"}
-    sleep = "import time; time.sleep(60)"
-    hidden = "import ctypes; ctypes.CDLL(None).prctl(4, 0, 0, 0, 0); " + sleep
-    plain = subprocess.Popen([sys.executable, "-c", sleep], env=rest)
-    marked = rest | {"FLATSHARE_REHEARSAL_STEP": "stage"}
-    agent = subprocess.Popen([sys.executable, "-c", hidden], env=marked)
+    plain = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], env=rest)
     try:
-        deadline = time.monotonic() + 10
-        while os.access(f"/proc/{agent.pid}/environ", os.R_OK):
-            assert time.monotonic() < deadline, "the process stayed dumpable"
-            time.sleep(0.05)
-        for process in (plain, agent):
-            (steps / "stage.pid").write_text(f"{process.pid}\n")
-            (steps / "stage.status").unlink(missing_ok=True)
-            assert host_state(tmp_path, "stage") == f"died {process.pid}"
-            (steps / "stage.status").write_text("0\n")
-            assert host_state(tmp_path, "stage") == "done 0"
+        reads_as_no_running_step(tmp_path, plain)
     finally:
-        for process in (plain, agent):
-            process.kill()
-            process.wait()
+        plain.kill()
+        plain.wait()
+
+
+NON_DUMPABLE = """\
+import ctypes, sys, time
+if ctypes.CDLL(None).prctl(4, 0, 0, 0, 0) != 0:  # PR_SET_DUMPABLE 0, as ssh-agent does
+    sys.exit("prctl failed")
+print("non-dumpable", flush=True)
+time.sleep(60)
+"""
+"""A process that makes itself non-dumpable, says so on its stdout once it is, and waits."""
+
+
+@PROC
+def test_a_pid_file_naming_a_process_whose_environment_cannot_be_read_reads_as_no_running_step(
+    tmp_path: Path,
+) -> None:
+    # Nor is one whose environment cannot be read, as a non-dumpable process's cannot (prctl PR_SET_DUMPABLE 0, as
+    # ssh-agent does), although it carries the mark here. The child says when it is non-dumpable, and the test then
+    # reads its environment as host.sh does: os.access cannot tell, since root's access() grants a read that the
+    # kernel's ptrace check on /proc/PID/environ then denies (the audit's root container, 2026-10-27).
+    rest = {k: v for k, v in os.environ.items() if k != "FLATSHARE_REHEARSAL_STEP"}
+    marked = rest | {"FLATSHARE_REHEARSAL_STEP": "stage"}
+    agent = subprocess.Popen(
+        [sys.executable, "-c", NON_DUMPABLE], env=marked, stdout=subprocess.PIPE, text=True
+    )
+    try:
+        with selectors.DefaultSelector() as ready:
+            ready.register(agent.stdout, selectors.EVENT_READ)
+            assert ready.select(timeout=10), "the child did not say it was non-dumpable"
+        assert agent.stdout.readline() == "non-dumpable\n", f"the child exited {agent.poll()}"
+        try:
+            environ = Path(f"/proc/{agent.pid}/environ").read_bytes()
+        except PermissionError:
+            pass
+        else:
+            # Root, or a user with CAP_SYS_PTRACE (root in its own user namespace has it there), reads the environment
+            # of a non-dumpable process, mark and all: host.sh would rightly find the step running, so the case cannot
+            # be made here. The other half, an environment without the mark, has its own test above.
+            assert b"FLATSHARE_REHEARSAL_STEP=stage" in environ.split(b"\0")
+            pytest.skip(
+                "this user reads a non-dumpable process's environment (root, or CAP_SYS_PTRACE): "
+                "an environment that cannot be read cannot be made"
+            )
+        reads_as_no_running_step(tmp_path, agent)
+    finally:
+        agent.kill()
+        agent.wait()
+        agent.stdout.close()
 
 
 def test_wait_follows_a_log_that_grows_as_it_is_read(tmp_path: Path) -> None:
