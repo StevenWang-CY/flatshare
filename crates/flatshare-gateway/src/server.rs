@@ -168,13 +168,22 @@ impl Server {
     }
 
     /// Takes each configured listener from `inherited`, the socket of the same address, and binds the others. A
-    /// socket that no listener names is an error: nothing would accept on it.
+    /// socket that no listener names is an error: nothing would accept on it. So is an admission configuration that
+    /// the core refuses, which only a configuration built in code can hold.
     pub async fn bind_with(
         config: Config,
         sink: Arc<dyn EventSink>,
         mut inherited: Inherited,
     ) -> io::Result<Self> {
         let tenants = Tenants::new(&config.tenants, &config.cache_salt_secret);
+        // The harness, and its metric families, only with an admission policy; made before anything is bound, so
+        // that a configuration it refuses changes nothing.
+        let admission = config
+            .admission
+            .as_ref()
+            .map(Admission::new)
+            .transpose()
+            .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
         let mut listeners = Vec::with_capacity(config.listeners.len());
         let mut sockets = Vec::new();
         let given = inherited.len();
@@ -215,8 +224,6 @@ impl Server {
             };
             listeners.push((listener, tenant));
         }
-        // The harness, and its metric families, only with an admission policy.
-        let admission = config.admission.as_ref().map(Admission::new);
         let metrics = Arc::new(match &admission {
             Some(admission) => Metrics::with_harness(admission.metrics()),
             None => Metrics::new(),

@@ -29,6 +29,7 @@
 //! waiting request of a stricter class.
 
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
 use std::time::Duration;
 
 use flatshare_proto::SloClass;
@@ -225,6 +226,19 @@ pub struct Arrival {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QueueFull;
 
+/// An admission point under the lifecycle policy with its throttle on, which prices prefills, asked for without a
+/// [`PrefillCost`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NoPrefillCost;
+
+impl fmt::Display for NoPrefillCost {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("the lifecycle policy's throttle prices prefills and needs a prefill cost")
+    }
+}
+
+impl std::error::Error for NoPrefillCost {}
+
 /// The requests at the admission point and the policy that decides for them.
 #[derive(Debug)]
 pub struct Admission {
@@ -252,7 +266,7 @@ pub struct Admission {
 #[derive(Debug)]
 struct LifecycleState {
     policy: Lifecycle,
-    /// What the throttle prices a background prefill by.
+    /// What the throttle prices a background prefill by; `None` without the throttle.
     prefill_cost: Option<PrefillCost>,
     /// The realtime sessions' turns.
     turns: Turns,
@@ -272,43 +286,27 @@ struct Held {
 }
 
 impl Admission {
-    /// An admission point holding nothing, whose class queues hold at most `queue_limit` requests each.
-    ///
-    /// # Panics
-    /// Under the lifecycle policy with its throttle on, which prices prefills: that admission point is made with
-    /// [`Admission::with_prefill_cost`].
-    pub fn new(policy: Policy, queue_limit: usize) -> Self {
-        let throttle = matches!(
-            policy,
-            Policy::Lifecycle(Lifecycle {
-                critical_prefill_budget: Some(_),
-                ..
-            })
-        );
-        assert!(
-            !throttle,
-            "the lifecycle policy's throttle prices prefills: use Admission::with_prefill_cost"
-        );
-        Self::build(policy, queue_limit, None)
-    }
-
-    /// An admission point holding nothing, whose class queues hold at most `queue_limit` requests each, and
-    /// where the lifecycle policy's throttle prices a background request's prefill by `cost`.
-    pub fn with_prefill_cost(policy: Policy, queue_limit: usize, cost: PrefillCost) -> Self {
-        Self::build(policy, queue_limit, Some(cost))
-    }
-
-    fn build(policy: Policy, queue_limit: usize, prefill_cost: Option<PrefillCost>) -> Self {
+    /// An admission point holding nothing, whose class queues hold at most `queue_limit` requests each. The
+    /// lifecycle policy's throttle prices a background request's prefill by `prefill_cost`, and is refused
+    /// without one; every other policy, and the lifecycle policy without its throttle, ignores it.
+    pub fn new(
+        policy: Policy,
+        queue_limit: usize,
+        prefill_cost: Option<PrefillCost>,
+    ) -> Result<Self, NoPrefillCost> {
         let lifecycle = match policy {
             Policy::Lifecycle(policy) => Some(LifecycleState {
                 policy,
-                prefill_cost: prefill_cost.filter(|_| policy.critical_prefill_budget.is_some()),
+                prefill_cost: match policy.critical_prefill_budget {
+                    Some(_) => Some(prefill_cost.ok_or(NoPrefillCost)?),
+                    None => None,
+                },
                 turns: Turns::default(),
                 window_prefill: Duration::ZERO,
             }),
             _ => None,
         };
-        Self {
+        Ok(Self {
             policy,
             queue_limit,
             next_id: 0,
@@ -320,7 +318,7 @@ impl Admission {
             background_tokens: 0,
             realtime_pending: 0,
             lifecycle,
-        }
+        })
     }
 
     pub const fn policy(&self) -> Policy {
@@ -749,7 +747,7 @@ mod tests {
             background_max_in_flight: 2,
         };
         assert!(policy.holds(Background) && !policy.holds(Realtime) && !policy.holds(Interactive));
-        let mut a = Admission::new(policy, 2);
+        let mut a = Admission::new(policy, 2, None).unwrap();
         let first = admitted(&mut a, Background, 0);
         let second = admitted(&mut a, Background, 0);
         let third = waits(&mut a, Background, 0);
@@ -773,7 +771,7 @@ mod tests {
             pool_tokens: 1_000,
             reserved_tokens: 200,
         };
-        let mut a = Admission::new(policy, 8);
+        let mut a = Admission::new(policy, 8, None).unwrap();
         let small = admitted(&mut a, Background, 300);
         let medium = admitted(&mut a, Background, 500);
         // 300 + 500 + 300 + 200 > 1,000. The 50 behind it waits too: the queue is first in, first out.
@@ -797,7 +795,7 @@ mod tests {
             pool_tokens: 1_000,
             reserved_tokens: 0,
         };
-        let mut a = Admission::new(policy, 8);
+        let mut a = Admission::new(policy, 8, None).unwrap();
         admitted(&mut a, Background, 600);
         let head = waits(&mut a, Background, 600);
         let behind = waits(&mut a, Background, 100);
@@ -811,7 +809,7 @@ mod tests {
             interactive: 2,
             background: 1,
         };
-        let mut a = Admission::new(Policy::FlowControl { ceilings }, 8);
+        let mut a = Admission::new(Policy::FlowControl { ceilings }, 8, None).unwrap();
         let interactive = admitted(&mut a, Interactive, 0);
         let early_background = waits(&mut a, Background, 0);
         let second_interactive = admitted(&mut a, Interactive, 0);
@@ -837,7 +835,7 @@ mod tests {
             interactive: 2,
             background: 2,
         };
-        let mut a = Admission::new(Policy::FlowControl { ceilings }, 8);
+        let mut a = Admission::new(Policy::FlowControl { ceilings }, 8, None).unwrap();
         let older = admitted(&mut a, Background, 0);
         let newer = admitted(&mut a, Background, 0);
         let realtime = a.arrive(Realtime, estimate(0)).unwrap();
@@ -860,7 +858,7 @@ mod tests {
             interactive: 2,
             background: 2,
         };
-        let mut a = Admission::new(Policy::FlowControl { ceilings }, 8);
+        let mut a = Admission::new(Policy::FlowControl { ceilings }, 8, None).unwrap();
         let older = admitted(&mut a, Background, 0);
         let newer = admitted(&mut a, Background, 0);
         let realtime = admitted(&mut a, Realtime, 0);
@@ -881,7 +879,7 @@ mod tests {
     fn a_realtime_arrival_preempts_background_requests_without_a_first_byte() {
         let policy = Policy::PreemptResubmit;
         assert!(policy.holds(Realtime) && policy.holds(Background) && !policy.holds(Interactive));
-        let mut a = Admission::new(policy, 8);
+        let mut a = Admission::new(policy, 8, None).unwrap();
         let streaming = admitted(&mut a, Background, 0);
         let prefilling = admitted(&mut a, Background, 0);
         assert_eq!(a.first_byte(streaming), Some(vec![]));
@@ -908,7 +906,7 @@ mod tests {
 
     #[test]
     fn background_waits_until_every_realtime_request_has_a_first_byte_or_has_left() {
-        let mut a = Admission::new(Policy::PreemptResubmit, 1);
+        let mut a = Admission::new(Policy::PreemptResubmit, 1, None).unwrap();
         let first = admitted(&mut a, Realtime, 0);
         let second = admitted(&mut a, Realtime, 0);
         let background = waits(&mut a, Background, 0);
@@ -920,7 +918,7 @@ mod tests {
 
     #[test]
     fn a_preempted_request_that_leaves_is_not_admitted_again() {
-        let mut a = Admission::new(Policy::PreemptResubmit, 8);
+        let mut a = Admission::new(Policy::PreemptResubmit, 8, None).unwrap();
         let background = admitted(&mut a, Background, 0);
         let realtime = a.arrive(Realtime, estimate(0)).unwrap();
         assert_eq!(realtime.actions, [Action::Preempt(background)]);
@@ -973,7 +971,7 @@ mod tests {
 
     /// An admission point that prices prefills as the frozen box runs them.
     fn priced(policy: Policy, queue_limit: usize) -> Admission {
-        Admission::with_prefill_cost(policy, queue_limit, frozen_box())
+        Admission::new(policy, queue_limit, Some(frozen_box())).unwrap()
     }
 
     #[test]
@@ -998,9 +996,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "use Admission::with_prefill_cost")]
     fn a_throttle_needs_a_prefill_cost() {
-        Admission::new(Policy::Lifecycle(lifecycle()), 8);
+        let throttle = Policy::Lifecycle(lifecycle());
+        assert_eq!(Admission::new(throttle, 8, None).err(), Some(NoPrefillCost));
+        // Nothing else prices a prefill.
+        let off = Policy::Lifecycle(Lifecycle {
+            critical_prefill_budget: None,
+            ..lifecycle()
+        });
+        assert!(Admission::new(off, 8, None).is_ok());
     }
 
     /// 512 new tokens after `context` cached ones: 38 ms of prefill on an empty context, 269 ms after 30,000.

@@ -2,7 +2,13 @@
 //! headroom 200, so one armed session leaves background requests 800; a background request of about 600 tokens
 //! fits alone, and two do not.
 
+use std::io;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use flatshare_gateway::config::Admission;
+use flatshare_gateway::{Config, LogSink, Server};
 
 use crate::common::*;
 
@@ -151,6 +157,27 @@ async fn the_critical_window_spends_a_budget_of_predicted_prefill_time() {
         assert_eq!(reply.await.unwrap().status, 200);
     }
     assert_eq!(mock.tags(), ["bg1", "bg2"]);
+}
+
+/// A configuration built in code can turn the throttle on without the engine's step budget, which a file cannot
+/// (`max_num_batched_tokens` defaults to 512). The gateway refuses it before binding anything, naming the key.
+#[tokio::test]
+async fn a_throttle_without_a_step_budget_is_refused_by_its_key() {
+    let path = socket_path();
+    let unused = SocketAddr::from(([127, 0, 0, 1], 9));
+    let mut config = Config::from_toml(&gateway_toml(unused, &path, &throttle_alone(100))).unwrap();
+    let admission = config.admission.take().unwrap();
+    config.admission = Some(Admission {
+        step_tokens: None,
+        ..admission
+    });
+    let err = Server::bind(config, Arc::new(LogSink)).await.unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert_eq!(
+        err.to_string(),
+        "admission: policy lifecycle needs max_num_batched_tokens, unless throttle = false"
+    );
+    assert!(!path.exists(), "nothing was bound");
 }
 
 #[tokio::test]
