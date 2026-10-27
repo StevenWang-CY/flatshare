@@ -161,7 +161,7 @@ TTS = Env(
         "https://github.com/remsky/Kokoro-FastAPI.git",
         "ebd4ec9cc97b258b25afc39444a5e1701055db50",
     ),
-    check="import torch, kokoro; print('torch', torch.__version__)",
+    check="import torch, importlib.metadata as m; print('torch', torch.__version__, 'kokoro', m.version('kokoro'))",
 )
 
 
@@ -750,6 +750,9 @@ def build_env(env: Env, tree: Path, layout: Layout, uv: str) -> tuple[str, bool]
             )
             pinned = pin_editables(path, tree, layout.root)
         packages = run([uv, "pip", "freeze", "--python", str(python)]).stdout
+        interpreter = run(
+            [str(python), "-c", "import sys; print(sys.version.split()[0])"]
+        ).stdout.strip()
     except BaseException:
         if path.exists():
             remove_tree(path)
@@ -760,6 +763,7 @@ def build_env(env: Env, tree: Path, layout: Layout, uv: str) -> tuple[str, bool]
         "built_at": stamp(),
         "seconds": round(time.monotonic() - started, 1),
         "uv": run([uv, "--version"]).stdout.strip(),
+        "python": interpreter,
         "inputs": {rel: sha256_file(tree / rel) for rel in env.inputs},
         "vendor": {"path": env.vendor[0], "commit": env.vendor[2]} if env.vendor else None,
         "pinned": pinned,
@@ -961,6 +965,7 @@ def prepare(
         },
         "serving": serving,
         "units": unit_digests(spec, files, envs),
+        "tools": tools(layout.root, spec),
         "isolation": isolation(spec, systemd),
     }
     compile_packages(upload, layout, envs)
@@ -983,7 +988,43 @@ def prepare(
         say(
             f"  {artifact}: {about['sha256'][:16]} ({source} from {about['built'].get('commit', '?')[:12]})"
         )
+    if serving is not None:
+        for line in describe_serving(serving):
+            say(line)
     return rid
+
+
+def tools(root: Path, spec: HostSpec) -> dict[str, dict[str, str | None]]:
+    """The host's own binaries that its units run (outside the releases): each one's SHA-256 and --version."""
+    found: dict[str, dict[str, str | None]] = {}
+    for tool in spec.tools:
+        path = root / tool
+        if not path.is_file():
+            found[tool] = {"sha256": None, "version": None}
+            continue
+        done = run([str(path), "--version"], check=False) if os.access(path, os.X_OK) else None
+        version = done.stdout.strip() if done is not None and done.returncode == 0 else None
+        found[tool] = {"sha256": sha256_file(path), "version": version}
+    return found
+
+
+def describe_serving(serving: dict) -> list[str]:
+    """The serving profile's effective configuration in a few lines, as a release prints it."""
+    engine, voice = serving["engine"], serving["voice"]
+    model, sched, cache = engine["model"], engine["scheduler"], engine["cache"]
+    tier = engine["kv_transfer"]["kv_connector_extra_config"]["cpu_bytes_to_use"]
+    switches = ", ".join(f"{key} {json.dumps(value)}" for key, value in engine["make_room"].items())
+    return [
+        f"serving profile {serving['profile']} (variant {serving['variant']}), vLLM {engine['vllm_version']}",
+        f"  model {model['model']}@{model['revision'][:12]}, tokenizer {model['tokenizer']}@"
+        f"{model['tokenizer_revision'][:12]}, context {model['max_model_len']}",
+        f"  {sched['policy']}, step cap {sched['max_num_batched_tokens']}/{sched['long_prefill_token_threshold']}, "
+        f"pool {cache['pool_tokens']} tokens ({cache['num_gpu_blocks']} blocks), CPU tier {tier >> 30} GiB",
+        f"  make_room: {switches}",
+        f"  scheduler {engine['scheduler_cls']} over {engine['scheduler_module']['name']} "
+        f"{engine['scheduler_module']['sha256'][:16]}",
+        f"  voice: {voice['mode']} mode, {voice['max_calls']} calls at once, {voice['audio']} audio",
+    ]
 
 
 def compile_packages(tree: Path, layout: Layout, envs: dict[str, str]) -> None:
@@ -1068,7 +1109,7 @@ def verify(
             continue
         done = run(
             [str(env_dir / "bin" / "python"), "-I", "-c", env.check],
-            env={PIN: str(path.resolve())},
+            env={PIN: str(path.resolve()), "HF_HUB_OFFLINE": "1"},
             timeout=600,
             check=False,
         )
@@ -1257,6 +1298,10 @@ def drain_voice(timeout: float, force: bool) -> bool:
                 f"the voice worker still has {calls} call(s) after {timeout:g} s: nothing switched (--force cuts them)"
             )
         time.sleep(1)
+
+
+ENGINE_DRAIN_S = 60
+"""The longest a release waits for the engine's requests to end, whatever --drain-timeout says: agents keep it busy."""
 
 
 def drain_engine(timeout: float) -> None:
@@ -1477,7 +1522,7 @@ def switch(
         )
     drained = drain_voice(drain_timeout, force) if "voice" in cuts else False
     if "engine" in cuts:
-        drain_engine(drain_timeout)
+        drain_engine(min(drain_timeout, ENGINE_DRAIN_S))
     try:
         apply(layout, spec, rid, steps, systemd)
         result = health(layout, spec, steps.restart, systemd, settle_s)

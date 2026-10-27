@@ -18,9 +18,11 @@ import stat
 import subprocess
 import sys
 from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
+from servers import UnixServer, serve, stop
 
 REPO = Path(__file__).resolve().parents[3]
 DEPLOY = REPO / "deploy"
@@ -919,3 +921,157 @@ def test_bootstrap_moves_the_vendored_checkout_to_the_releases_pin() -> None:
     [pin] = re.findall(r"checkout -q ([0-9a-f]{40})", text)
     assert pin == release.TTS.vendor[2]
     assert release.HOSTS["gray"].envs == release.HOSTS["phastform"].envs
+
+
+def test_the_manifest_records_the_hosts_tools_and_each_environments_interpreter(host: Host) -> None:
+    tool = host.root / "bin" / "livekit-server"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\necho 'livekit-server version 1.13.10'\n")
+    tool.chmod(0o755)
+    spec_ = release.HostSpec(
+        SPEC.name,
+        SPEC.node,
+        SPEC.envs,
+        SPEC.units,
+        SPEC.artifacts,
+        {"bin/livekit-server": "1.13.10"},
+    )
+    upload, tree = host.upload(A, "v1.0")
+    release.prepare(
+        upload,
+        host.layout,
+        spec_,
+        rid=A,
+        commit=A * 3,
+        describe="v1.0",
+        tree=tree,
+        gateway_from=None,
+        systemd=release.Systemd(),
+    )
+    manifest = json.loads((host.root / "releases" / A / "MANIFEST.json").read_text())
+    assert manifest["tools"] == {
+        "bin/livekit-server": {
+            "sha256": hashlib.sha256(tool.read_bytes()).hexdigest(),
+            "version": "livekit-server version 1.13.10",
+        }
+    }
+    assert manifest["envs"]["app"]["python"] == ".".join(map(str, sys.version_info[:3]))
+
+
+def test_a_release_prints_the_serving_profiles_configuration() -> None:
+    serving = json.loads((DEPLOY / "phastform" / "serving.json").read_text())
+    assert release.describe_serving(serving) == [
+        "serving profile rtx-5060-ti-serve (variant make-room-serve), vLLM 0.32.0",
+        "  model Qwen/Qwen3-4B-Instruct-2507-FP8@8591804019c8, tokenizer Qwen/Qwen3-4B-Instruct-2507-FP8@8591804019c8, "
+        "context 32768",
+        "  priority, step cap 512/256, pool 36400 tokens (2275 blocks), CPU tier 20 GiB",
+        "  make_room: max_preemptions_per_step 2, budget_cap true, budget_cap_tokens 48, reserve_tokens 0",
+        "  scheduler flatshare_make_room_serve.AsyncScheduler over flatshare_make_room_scheduler 0d24d178977f3c1b",
+        "  voice: serve mode, 2 calls at once, microphone audio",
+    ]
+
+
+def test_the_engine_drain_waits_for_its_requests_and_gives_up_at_its_bound(
+    short_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The engine's /metrics on its socket: requests in flight while the file says so.
+    (short_dir / "flatshare").mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(short_dir))
+    left = short_dir / "left"
+    left.write_text("2")
+
+    class Metrics(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            n = float(left.read_text())
+            body = (
+                f'vllm:num_requests_running{{engine="0",model_name="m"}} {n}\n'
+                'vllm:num_requests_waiting{engine="0",model_name="m"} 0.0\n'
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    server = serve(UnixServer(str(short_dir / "flatshare" / "engine.sock"), Metrics))
+    try:
+        release.drain_engine(0.5)
+        assert (
+            "still has 2 request(s) in flight after 0.5 s: its restart cuts them"
+            in capsys.readouterr().out
+        )
+        left.write_text("0")
+        release.drain_engine(5)
+        assert "the engine has no request in flight" in capsys.readouterr().out
+    finally:
+        stop(server)
+    # No engine on the socket: nothing to wait for.
+    release.drain_engine(5)
+    assert release.ENGINE_DRAIN_S == 60
+
+
+def test_scripts_run_from_a_releases_own_directory_link_through_src(tmp_path: Path) -> None:
+    # A link into releases/ID dangles once ID is pruned: install.sh and variant.sh, run from there, link through
+    # ~/flatshare/src instead, as they do when run through it.
+    home = tmp_path / "home"
+    tree = home / "flatshare" / "releases" / A
+    for node in ("phastform", "cyan", "gray"):
+        (tree / "deploy" / node).mkdir(parents=True)
+        (tree / "deploy" / node / "install.sh").write_text(
+            (DEPLOY / node / "install.sh").read_text()
+        )
+    (tree / "deploy" / "phastform" / "variant.sh").write_text(
+        (DEPLOY / "phastform" / "variant.sh").read_text()
+    )
+    for rel in (
+        "phastform/systemd/flatshare-engine.service",
+        "cyan/systemd/flatshare-gateway.service",
+        "gray/systemd/flatshare-engine.conf",
+    ):
+        (tree / "deploy" / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tree / "deploy" / rel).write_text("[Service]\n")
+    (tree / "deploy" / "phastform" / "measure").mkdir()
+    (tree / "deploy" / "phastform" / "measure" / "flatshare-engine.conf").write_text("[Service]\n")
+    (tree / "Cargo.toml").write_text('[workspace.package]\nversion = "1.0.0"\n')
+    (home / "flatshare" / "src").symlink_to(f"releases/{A}")  # current's, as on a host
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("systemctl", "loginctl"):
+        (bin_dir / tool).write_text('#!/bin/sh\n[ "$2" = is-active ] && exit 3\nexit 0\n')
+        (bin_dir / tool).chmod(0o755)
+    env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    units = home / ".config" / "systemd" / "user"
+    src = home / "flatshare" / "src" / "deploy"
+    for node in ("phastform", "cyan", "gray"):
+        done = subprocess.run(
+            ["bash", str(tree / "deploy" / node / "install.sh")],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert done.returncode == 0, done.stderr
+    assert (
+        os.readlink(units / "flatshare-engine.service")
+        == f"{src}/gray/../phastform/systemd/flatshare-engine.service"
+    )
+    assert (
+        os.readlink(units / "flatshare-gateway.service")
+        == f"{src}/cyan/systemd/flatshare-gateway.service"
+    )
+    assert (
+        os.readlink(units / "flatshare-engine.service.d" / "gray.conf")
+        == f"{src}/gray/systemd/flatshare-engine.conf"
+    )
+    done = subprocess.run(
+        ["bash", str(tree / "deploy" / "phastform" / "variant.sh"), "measure", "on"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 0, done.stderr
+    assert (
+        os.readlink(units / "flatshare-engine.service.d" / "measure.conf")
+        == f"{src}/phastform/measure/flatshare-engine.conf"
+    )
