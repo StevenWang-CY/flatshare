@@ -622,3 +622,46 @@ def test_the_committed_sample() -> None:
 def test_the_committed_sample_is_what_sample_py_draws() -> None:
     drawn = sample.build(Path(os.environ["FLATSHARE_QUALITY_DATA"]), sample.TEST)
     assert drawn == json.loads((QUALITY / "sample.json").read_text())
+
+
+# ---- the record --------------------------------------------------------------------------------------------------
+
+RECORD = REPO / "benchmarks" / "results" / "2026-10-27-quality"
+RUNS = [""]
+
+
+@pytest.mark.parametrize("run", RUNS)
+def test_the_records_verdict_is_what_gate_py_computes(run: str) -> None:
+    d = RECORD / run
+    scores = json.loads((d / "scores.json").read_text())
+    rows = [json.loads(line) for line in (d / "rulings.jsonl").read_text().splitlines()]
+    verdict = json.loads((d / "verdict.json").read_text())
+    assert verdict == gate.verdict(scores, rows)
+    # Every item of the sample ran once, and every ruling is Opus's, on one login, by the committed raters.
+    s = json.loads((QUALITY / "sample.json").read_text())
+    outputs = [json.loads(line) for line in (d / "outputs.jsonl").read_text().splitlines()]
+    assert sorted((r["task"], r["id"]) for r in outputs) == sorted(
+        [("qa", q["question_id"]) for q in s["qasper"]["questions"]]
+        + [("enrich", str(x["index"])) for x in s["redocred"]["documents"]]
+    )
+    assert [x["id"] for x in scores["qa"]] == [q["question_id"] for q in s["qasper"]["questions"]]
+    assert all("opus" in r["model"] and r["output_tokens"] > 0 for r in rows)
+    assert len({r["account"] for r in rows}) == 1 and "@" not in rows[0]["account"]
+    assert {(r["kind"], r["rater"]) for r in rows} <= {(k, judge.rater_id(k)) for k in judge.RATERS}
+    hashes = {x["judge"] for x in scores["qa"] if x["judge"]}
+    hashes |= {f["judge"] for x in scores["enrich"] for f in x["facts"] if f["judge"]}
+    hashes |= {y["judge"] for x in scores["enrich"] for y in x["summary"]}
+    assert {r["item"] for r in rows if r["pass"] == "first"} == hashes
+    assert sorted(r["item"] for r in rows if r["pass"] == "reask") == sorted(
+        judge.reask_sample(list(hashes))
+    )
+    meta = json.loads((d / "generate.json").read_text())
+    script = hashlib.sha256((QUALITY / "generate.py").read_bytes()).hexdigest()
+    assert meta["script_sha256"] == script and meta["model"] == "Qwen/Qwen3-4B-Instruct-2507-FP8"
+    assert (
+        meta["sample_sha256"] == hashlib.sha256((QUALITY / "sample.json").read_bytes()).hexdigest()
+    )
+    # The README's table is the verdict's.
+    readme = (RECORD / "README.md").read_text()
+    for c in verdict["criteria"]:
+        assert f"{c['k']:,} of {c['n']:,}" in readme, c["name"]
