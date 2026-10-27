@@ -1611,6 +1611,20 @@ def test_gpu_guard_reads_the_lent_gpu_alone(tmp_path: Path) -> None:
     ]
 
 
+def test_gpu_guard_refuses_when_nvidia_smi_cannot_list_the_gpu(tmp_path: Path) -> None:
+    # A guard that cannot read the GPU's processes cannot say the GPU is free: a failing nvidia-smi (a driver that is
+    # not loaded, a GPU id that names no card) refuses the start instead of passing with no process listed.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "nvidia-smi").write_text("#!/bin/sh\necho 'No devices were found' >&2\nexit 6\n")
+    (bin_dir / "nvidia-smi").chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k != "FLATSHARE_GPU_ID"}
+    env["PATH"] = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+    done = subprocess.run(["bash", str(BIN / "gpu-guard")], env=env, capture_output=True, text=True)
+    assert done.returncode == 1, done.stderr
+    assert "could not list the GPU's processes; not starting" in done.stderr
+
+
 @pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="reads /proc (Linux)")
 def test_gpu_guard_tells_the_supervisors_units_from_foreign_processes(tmp_path: Path) -> None:
     # Processes on the GPU (a stand-in nvidia-smi lists them): one of flatshare-svc's units, which carries its
