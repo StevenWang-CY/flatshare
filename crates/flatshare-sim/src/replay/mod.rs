@@ -28,20 +28,34 @@
 //!
 //! A session pauses between turns for the trace's delay, or for a TraceLab tool wait in its place
 //! ([`Pauses`]); a [`Retention`] arm acts on its KV meanwhile ([`crate::retention`]).
+//!
+//! This module holds the event loop and AIPerf's dispatch. `clock` holds the pending events and how far the idle
+//! cap has pulled them forward, `tree` the session trees with their gates and barriers, `retain` what a retention
+//! arm does with a pausing session's KV, and `working_set` the live working set and the time it leaves a realtime
+//! tier short of KV.
 
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, BinaryHeap, HashSet};
+mod clock;
+mod retain;
+#[cfg(test)]
+mod tests;
+mod tree;
+mod working_set;
+
 use std::rc::Rc;
 
 use flatshare_core::{PromptSources, StepCost, TierCost};
 use serde::Serialize;
 
+use self::clock::Queue;
+use self::retain::RetainStep;
+use self::tree::{Kind, Lane, Play, Stream};
+use self::working_set::WorkingSet;
 use crate::aiperf::{ConvKind, ReplayPlan, snapshot};
 use crate::corpus::Corpus;
 use crate::engine::{Admission, Engine, EngineRequest};
 use crate::pauses::ToolPauses;
 use crate::prefix::{BlockId, IdMap, IdSet, MAX_PLAYS, NodeId, Tokens};
-use crate::retention::{Interception, PauseHistory, Retention, intercept};
+use crate::retention::{PauseHistory, Retention};
 use crate::scheduler::{Outcome, Scheduler, StepBudget};
 
 /// How the engine serves the requests it admits.
@@ -228,21 +242,6 @@ pub struct ReplayOutput {
     pub timeline: Option<Timeline>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Kind {
-    SessionStart,
-    RootNext,
-    Join,
-    ChildFirst,
-    ChildNext,
-}
-
-impl Kind {
-    fn is_child(self) -> bool {
-        matches!(self, Kind::ChildFirst | Kind::ChildNext)
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 enum Event {
     Dispatch {
@@ -270,132 +269,6 @@ enum Event {
     },
 }
 
-#[derive(Clone, Copy, Debug)]
-enum RetainStep {
-    /// The pause's hold ends: a TTL, or the session is late.
-    Release,
-    /// Start loading the session's blocks from the CPU tier.
-    Prefetch,
-    /// The load has ended: the blocks are in the pool, held for the session.
-    Prefetched,
-}
-
-/// A session between its turns, until its next turn is admitted.
-#[derive(Debug)]
-struct Paused {
-    id: u64,
-    since: u64,
-    /// The tool it waits for, when the pauses name one.
-    tool: Option<u16>,
-    /// The engine's hold on its KV.
-    hold: Option<u64>,
-}
-
-#[derive(Debug)]
-struct Entry {
-    at: u64,
-    seq: u64,
-    event: Event,
-}
-
-impl PartialEq for Entry {
-    fn eq(&self, other: &Self) -> bool {
-        (self.at, self.seq) == (other.at, other.seq)
-    }
-}
-
-impl Eq for Entry {}
-
-impl PartialOrd for Entry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Entry {
-    // Reversed: BinaryHeap pops the earliest.
-    fn cmp(&self, other: &Self) -> Ordering {
-        (other.at, other.seq).cmp(&(self.at, self.seq))
-    }
-}
-
-/// One conversation of a play as it is replayed: the root, or a child spawned by a branch.
-#[derive(Debug)]
-struct Stream {
-    play: u32,
-    conv: u32,
-    /// 0 for the root, 1 for a child.
-    depth: u8,
-    /// `(gated root turn, branch)` this child must satisfy; empty for background children.
-    joins: Vec<(u32, u32)>,
-    /// A child that finished, or that can never continue once sending stops.
-    done: bool,
-    /// The blocks of its latest prompt, counted in the live working set.
-    context: Vec<BlockId>,
-    /// Between turns, with a retention arm.
-    paused: Option<Paused>,
-}
-
-/// One branch a gated root turn waits for.
-#[derive(Debug)]
-struct Prereq {
-    branch: u32,
-    /// Children spawned so far.
-    expected: u32,
-    /// Children finished so far.
-    completed: u32,
-    /// The branch has been spawned, so `expected` is final.
-    registered: bool,
-}
-
-/// A root turn that waits for the children of the branches it joins (AIPerf's SPAWN_JOIN).
-#[derive(Debug)]
-struct Gate {
-    turn: u32,
-    prereqs: Vec<Prereq>,
-}
-
-impl Gate {
-    fn satisfied(&self) -> bool {
-        self.prereqs
-            .iter()
-            .all(|p| p.registered && p.completed >= p.expected)
-    }
-
-    fn prereq(&mut self, branch: u32) -> Option<&mut Prereq> {
-        self.prereqs.iter_mut().find(|p| p.branch == branch)
-    }
-}
-
-/// One session play: a trace replayed by a lane, under its own KV namespace.
-#[derive(Debug)]
-struct Play {
-    plan: Rc<ReplayPlan>,
-    /// The trace's index in the corpus.
-    trace: u32,
-    lane: usize,
-    /// The KV namespace its blocks are cut in: the play's index.
-    namespace: u64,
-    root: Option<u32>,
-    /// The root has turns left to send.
-    root_pending: bool,
-    /// Child streams not yet done.
-    descendants: u32,
-    /// The session tree has finished and its lane has moved on.
-    drained: bool,
-    /// `(conversation, turn)` pairs completed: the replay barriers' history.
-    completed: HashSet<(u32, u32)>,
-    /// Turns held by replay barriers, in AIPerf's `(conversation id, turn)` order, with their stream and
-    /// kind.
-    held: BTreeMap<(u32, u32, u32), (u32, Kind)>,
-    /// Gates of later root turns.
-    future_joins: BTreeMap<u32, Gate>,
-    /// The gate the root is blocked on now.
-    active_join: Option<Gate>,
-    /// Branches spawned when their spawning turn was sent, so its return does not spawn them again.
-    overlap_spawned: Vec<u32>,
-}
-
 /// A request on its way to the engine, in it, or waiting for its blocks.
 #[derive(Debug)]
 struct InFlight {
@@ -421,14 +294,6 @@ struct InFlight {
 enum Phase {
     Warmup,
     Profiling,
-}
-
-/// A lane's first session: its play, its snapshot, and one stream per live state.
-#[derive(Debug)]
-struct Lane {
-    play: u32,
-    snapshot: crate::aiperf::Snapshot,
-    streams: Vec<u32>,
 }
 
 /// Computed tokens of an admitted prompt in full blocks that `seen` holds: blocks some earlier
@@ -474,20 +339,8 @@ pub struct Replay<'a> {
     history: PauseHistory,
     next_pause: u64,
     now: u64,
-    /// Insertion counter: breaks ties between events due at the same time.
-    seq: u64,
-    /// How far the idle cap has pulled `timers` and `following` forward: an entry stored at `at` fires
-    /// at `at - shift`.
-    shift: u64,
-    /// The scheduler's timers (spread warmup, first dispatches, think times, recycling), which the idle
-    /// cap pulls forward.
-    timers: BinaryHeap<Entry>,
-    /// Timers the idle cap pulls forward with the scheduler's but leaves out of its test for the next
-    /// one: the oracle's prefetches, which follow the dispatch they foresee.
-    following: BinaryHeap<Entry>,
-    /// Events the idle cap leaves in place: request arrivals, steps and completions, children's first
-    /// turns, and the other retention timers, on the engine's clock.
-    fixed: BinaryHeap<Entry>,
+    /// The pending events.
+    queue: Queue<Event>,
     phase: Phase,
     profiling_start: u64,
     profiling_end: u64,
@@ -506,17 +359,8 @@ pub struct Replay<'a> {
     timeline: Option<Timeline>,
     /// Every block an admitted prompt has had, for attributing recompute.
     seen: IdSet,
-    /// The blocks of the live streams' latest prompts, each with the number of streams holding it.
-    working_set: IdMap<u32>,
-    /// Where `ws_integral` has reached.
-    ws_last_change: u64,
-    /// The working set's size integrated over the profiling window, in blocks × ns.
-    ws_integral: f64,
-    /// [`ReplayConfig::realtime_tokens`] in blocks, and the profiling time (ns) in which the working
-    /// set, and the pinned blocks, left fewer than that free.
-    realtime_blocks: usize,
-    realtime_short_ns: u64,
-    realtime_blocked_ns: u64,
+    /// The blocks of the live streams' latest prompts.
+    working_set: WorkingSet,
     stats: ReplayStats,
     /// A reused buffer for prefix-tree paths.
     scratch: Vec<NodeId>,
@@ -555,11 +399,7 @@ impl<'a> Replay<'a> {
             history: PauseHistory::default(),
             next_pause: 0,
             now: 0,
-            seq: 0,
-            shift: 0,
-            timers: BinaryHeap::new(),
-            following: BinaryHeap::new(),
-            fixed: BinaryHeap::new(),
+            queue: Queue::default(),
             phase: Phase::Warmup,
             profiling_start: 0,
             profiling_end: u64::MAX,
@@ -575,12 +415,7 @@ impl<'a> Replay<'a> {
             records: Vec::new(),
             timeline: record.then(Timeline::default),
             seen: IdSet::default(),
-            working_set: IdMap::default(),
-            ws_last_change: 0,
-            ws_integral: 0.0,
-            realtime_blocks,
-            realtime_short_ns: 0,
-            realtime_blocked_ns: 0,
+            working_set: WorkingSet::new(realtime_blocks),
             stats: ReplayStats::default(),
             scratch: Vec::new(),
         }
@@ -589,36 +424,12 @@ impl<'a> Replay<'a> {
     /// Runs the replay to the end of its grace period, or until it runs out of work.
     pub fn run(mut self) -> Result<ReplayOutput, String> {
         self.start_lanes()?;
-        loop {
-            let (now, shift) = (self.now, self.shift);
-            let heads = [
-                self.timers.peek().map(|e| (e.at - shift, e.seq)),
-                // A prefetch the cap pulls into the past starts at once.
-                self.following
-                    .peek()
-                    .map(|e| (e.at.saturating_sub(shift).max(now), e.seq)),
-                self.fixed.peek().map(|e| (e.at, e.seq)),
-            ];
-            let Some((heap, (at, _))) = heads
-                .into_iter()
-                .enumerate()
-                .filter_map(|(i, head)| Some((i, head?)))
-                .min_by_key(|&(_, head)| head)
-            else {
-                break;
-            };
-            let from_timers = heap == 0;
-            let entry = match heap {
-                0 => self.timers.pop(),
-                1 => self.following.pop(),
-                _ => self.fixed.pop(),
-            }
-            .expect("peeked");
+        while let Some((at, event, from_timers)) = self.queue.pop(self.now) {
             if self.phase == Phase::Profiling && at > self.grace_end {
                 break;
             }
             self.advance(at);
-            match entry.event {
+            match event {
                 Event::Dispatch {
                     stream,
                     turn,
@@ -657,12 +468,8 @@ impl<'a> Replay<'a> {
             .filter(|f| !f.warmup && f.issued >= self.profiling_start)
             .count() as u64;
         let window = window_end.saturating_sub(self.profiling_start).max(1) as f64;
-        self.stats.working_set_mean_tokens =
-            self.ws_integral / window * self.cfg.block_tokens as f64;
-        if self.realtime_blocks > 0 {
-            self.stats.realtime_short_share = Some(self.realtime_short_ns as f64 / window);
-            self.stats.realtime_blocked_share = Some(self.realtime_blocked_ns as f64 / window);
-        }
+        self.working_set
+            .finish(window, self.cfg.block_tokens as u64, &mut self.stats);
         self.stats.lanes = self.lanes.len();
         Ok(ReplayOutput {
             records: self.records,
@@ -675,51 +482,11 @@ impl<'a> Replay<'a> {
     /// Moves the clock to `at`, integrating the live working set, and the time it and the pinned
     /// blocks leave the realtime tier short, over the profiling duration.
     fn advance(&mut self, at: u64) {
-        if self.phase == Phase::Profiling && at > self.ws_last_change {
-            let from = self.ws_last_change.max(self.profiling_start);
-            let to = at.min(self.profiling_end);
-            if to > from {
-                self.ws_integral += self.working_set.len() as f64 * (to - from) as f64;
-                if self.realtime_blocks > 0 {
-                    let pool = self.engine.gpu_capacity();
-                    if self.working_set.len() + self.realtime_blocks > pool {
-                        self.realtime_short_ns += to - from;
-                    }
-                    if self.engine.pinned_blocks() + self.realtime_blocks > pool {
-                        self.realtime_blocked_ns += to - from;
-                    }
-                }
-            }
-            self.ws_last_change = at;
+        if self.phase == Phase::Profiling {
+            self.working_set
+                .advance(at, self.profiling_start, self.profiling_end, &self.engine);
         }
         self.now = self.now.max(at);
-    }
-
-    fn push_timer(&mut self, at: u64, event: Event) {
-        self.seq += 1;
-        self.timers.push(Entry {
-            at: at + self.shift,
-            seq: self.seq,
-            event,
-        });
-    }
-
-    fn push_following(&mut self, at: u64, event: Event) {
-        self.seq += 1;
-        self.following.push(Entry {
-            at: at + self.shift,
-            seq: self.seq,
-            event,
-        });
-    }
-
-    fn push_fixed(&mut self, at: u64, event: Event) {
-        self.seq += 1;
-        self.fixed.push(Entry {
-            at,
-            seq: self.seq,
-            event,
-        });
     }
 
     fn sending_open(&self) -> bool {
@@ -752,21 +519,8 @@ impl<'a> Replay<'a> {
         if namespace >= MAX_PLAYS {
             return Err("too many session plays for the block namespace".into());
         }
-        self.plays.push(Play {
-            plan,
-            trace: trace as u32,
-            lane,
-            namespace,
-            root: None,
-            root_pending: false,
-            descendants: 0,
-            drained: false,
-            completed: HashSet::new(),
-            held: BTreeMap::new(),
-            future_joins: BTreeMap::new(),
-            active_join: None,
-            overlap_spawned: Vec::new(),
-        });
+        self.plays
+            .push(Play::new(plan, trace as u32, lane, namespace));
         self.stats.sessions_started += 1;
         Ok(namespace as u32)
     }
@@ -835,7 +589,8 @@ impl<'a> Replay<'a> {
             if self.cfg.burst_starts || max_lead - lead <= 0.0 {
                 self.issue(stream, turn, true, None);
             } else {
-                self.push_timer(ns(max_lead - lead), Event::Warm { stream, turn });
+                self.queue
+                    .timer(ns(max_lead - lead), Event::Warm { stream, turn });
             }
         }
         Ok(())
@@ -844,12 +599,10 @@ impl<'a> Replay<'a> {
     fn start_profiling(&mut self) -> Result<(), String> {
         self.phase = Phase::Profiling;
         self.profiling_start = self.now;
-        self.ws_last_change = self.now;
+        self.working_set.start(self.now);
         self.profiling_end = self.now + ns(self.cfg.duration_s * 1e3);
         self.grace_end = self.profiling_end + ns(self.cfg.grace_s * 1e3);
         self.stats.profiling_start_s = self.now as f64 / 1e9;
-        self.stats.working_set_peak_tokens =
-            self.working_set.len() as u64 * self.cfg.block_tokens as u64;
         // Seed every lane's barrier history and live-children joins before any lane dispatches.
         let mut dispatches = Vec::new();
         for lane in 0..self.lanes.len() {
@@ -874,7 +627,7 @@ impl<'a> Replay<'a> {
                 else {
                     continue;
                 };
-                let gate = self.seeded_gate(play, root, gated, &plan);
+                let gate = self.plays[play as usize].seeded_gate(root, gated, &plan);
                 if let Some(p) = gate.prereq(branch) {
                     p.expected += 1;
                     p.registered = true;
@@ -908,7 +661,7 @@ impl<'a> Replay<'a> {
         }
         for (stream, turn, kind, delay) in dispatches {
             if delay > 0.0 {
-                self.push_timer(
+                self.queue.timer(
                     self.now + ns(delay),
                     Event::Dispatch {
                         stream,
@@ -923,62 +676,6 @@ impl<'a> Replay<'a> {
         }
         self.enforce_idle_cap(false);
         Ok(())
-    }
-
-    /// `_ensure_seeded_join`: the join on `gated` for a snapshot lane, created with the prerequisites
-    /// of every branch the turn joins; branches spawned before `t*` count as registered.
-    fn seeded_gate(
-        &mut self,
-        play: u32,
-        root: &snapshot::State,
-        gated: u32,
-        plan: &ReplayPlan,
-    ) -> &mut Gate {
-        let p = &mut self.plays[play as usize];
-        if p.active_join.as_ref().is_some_and(|g| g.turn == gated) {
-            return p.active_join.as_mut().expect("checked");
-        }
-        if !p.future_joins.contains_key(&gated) {
-            let prereqs = plan.root().turns[gated as usize]
-                .joins
-                .iter()
-                .map(|&b| Prereq {
-                    branch: b,
-                    expected: 0,
-                    completed: 0,
-                    registered: plan.root().branches[b as usize].spawn_turn < root.next_turn,
-                })
-                .collect();
-            let gate = Gate {
-                turn: gated,
-                prereqs,
-            };
-            if root.waiting && root.join_turn == Some(gated) {
-                p.active_join = Some(gate);
-                return p.active_join.as_mut().expect("just set");
-            }
-            p.future_joins.insert(gated, gate);
-        }
-        p.future_joins.get_mut(&gated).expect("present")
-    }
-
-    /// `_ensure_future_join`.
-    fn future_gate(&mut self, play: u32, gated: u32) -> &mut Gate {
-        let p = &mut self.plays[play as usize];
-        let plan = p.plan.clone();
-        p.future_joins.entry(gated).or_insert_with(|| Gate {
-            turn: gated,
-            prereqs: plan.root().turns[gated as usize]
-                .joins
-                .iter()
-                .map(|&b| Prereq {
-                    branch: b,
-                    expected: 0,
-                    completed: 0,
-                    registered: false,
-                })
-                .collect(),
-        })
     }
 
     /// `_spawn_children_and_register_gates`.
@@ -999,7 +696,7 @@ impl<'a> Replay<'a> {
             for &child in &branch.children {
                 let stream = self.new_stream(play, child, 1);
                 if let Some(g) = gated {
-                    if let Some(p) = self.future_gate(play, g).prereq(b) {
+                    if let Some(p) = self.plays[play as usize].future_gate(g).prereq(b) {
                         p.expected += 1;
                         p.registered = true;
                     }
@@ -1010,7 +707,7 @@ impl<'a> Replay<'a> {
                 let offset = first.map_or(0.0, |t| (t.ts_ms - base).max(0.0));
                 if offset > 0.0 {
                     let at = self.now + ns(offset);
-                    self.push_fixed(
+                    self.queue.fixed(
                         at,
                         Event::Dispatch {
                             stream,
@@ -1031,13 +728,9 @@ impl<'a> Replay<'a> {
 
     /// Sends a turn through the replay barrier: held until its predecessors have completed.
     fn submit(&mut self, stream: u32, turn: u32, kind: Kind, delay_ms: Option<f64>) {
-        let s = &self.streams[stream as usize];
-        let play = &mut self.plays[s.play as usize];
         if self.phase == Phase::Profiling {
-            let t = &play.plan.convs[s.conv as usize].turns[turn as usize];
-            if !t.preds.iter().all(|p| play.completed.contains(p)) {
-                let key = (play.plan.id_rank[s.conv as usize], turn, s.conv);
-                play.held.insert(key, (stream, kind));
+            let s = &self.streams[stream as usize];
+            if self.plays[s.play as usize].hold(s.conv, turn, stream, kind) {
                 self.stats.barrier_holds += 1;
                 return;
             }
@@ -1118,7 +811,7 @@ impl<'a> Replay<'a> {
             Some(s) => {
                 if !self.engine.reject_oversized(&req) {
                     let at = self.now + s.host_ns(prompt_tokens, self.now);
-                    self.push_fixed(at, Event::Arrive(id));
+                    self.queue.fixed(at, Event::Arrive(id));
                 }
             }
         }
@@ -1173,7 +866,7 @@ impl<'a> Replay<'a> {
         self.outcomes = out;
         self.step_at = next;
         if let Some(at) = next {
-            self.push_fixed(at, Event::Step);
+            self.queue.fixed(at, Event::Step);
         }
         Ok(())
     }
@@ -1212,21 +905,9 @@ impl<'a> Replay<'a> {
         }
         let (stream, turn) = (f.stream, f.turn);
         if let Some(done) = done {
-            self.push_fixed(done, Event::Complete(id));
+            self.queue.fixed(done, Event::Complete(id));
         }
-        if self.retention == Retention::Mori
-            && let Some(pause) = self.predicted_pause(stream, turn + 1)
-        {
-            self.engine.expect_pause(id, ns(pause));
-        }
-        // Its hits are pinned now; the pause's hold can go.
-        if let Some(hold) = self.streams[stream as usize]
-            .paused
-            .take()
-            .and_then(|p| p.hold)
-        {
-            self.release(hold);
-        }
+        self.pause_admitted(id, stream, turn);
     }
 
     /// Request `id` returned its last token. Under contention the scheduler has already finished it
@@ -1311,7 +992,7 @@ impl<'a> Replay<'a> {
             if !spawns.is_empty() {
                 self.spawn_children(play, &spawns, None);
             }
-            intercepted = self.suspend_if_gated(play, turn + 1);
+            intercepted = self.plays[play as usize].suspend_if_gated(turn + 1);
             if is_final {
                 self.plays[play as usize].root_pending = false;
                 self.maybe_drain(play);
@@ -1336,7 +1017,7 @@ impl<'a> Replay<'a> {
         match delay {
             Some(d) if d > 0.0 => {
                 let at = self.now + ns(d);
-                self.push_timer(
+                self.queue.timer(
                     at,
                     Event::Dispatch {
                         stream,
@@ -1370,199 +1051,6 @@ impl<'a> Replay<'a> {
         }
     }
 
-    /// What the history level predicts for the pause before turn `turn` of `stream`, in ms.
-    fn predicted_pause(&self, stream: u32, turn: u32) -> Option<f64> {
-        let s = &self.streams[stream as usize];
-        let turns = self.plays[s.play as usize].plan.convs[s.conv as usize]
-            .turns
-            .len();
-        let tool = if (turn as usize) < turns {
-            self.delay(stream, turn).1
-        } else {
-            None
-        };
-        self.history.predict(stream, tool)
-    }
-
-    /// `stream` pauses until its next turn, due at `at`, after calling `tool`: the retention arm
-    /// acts on its KV, its latest prompt.
-    fn pause(&mut self, stream: u32, at: u64, tool: Option<u16>) {
-        // A turn that was never admitted (larger than the pool) leaves its pause behind.
-        if let Some(hold) = self.streams[stream as usize]
-            .paused
-            .take()
-            .and_then(|p| p.hold)
-        {
-            self.release(hold);
-        }
-        self.next_pause += 1;
-        let id = self.next_pause;
-        let context = self.streams[stream as usize].context.clone();
-        let tokens = context.len() as u64 * self.cfg.block_tokens as u64;
-        let predicted = self.history.predict(stream, tool).map(ns);
-        let mut hold = None;
-        let mut back = None;
-        match self.retention {
-            Retention::None | Retention::Mori => {}
-            Retention::Ttl(ttl_s) => {
-                hold = self.engine.hold(&context);
-                let end = self.now + ns(ttl_s * 1e3);
-                self.retain_at(end, stream, id, RetainStep::Release);
-            }
-            Retention::HistoryPrefetch => back = predicted.map(|p| self.now + p),
-            Retention::OraclePrefetch => back = Some(at.max(self.now)),
-            Retention::Tokencake => {
-                self.engine.demote(&context);
-                back = predicted.map(|p| self.now + p);
-            }
-            Retention::InferCept => {
-                let restore = self.cost.restore_ms(tokens);
-                let choice = predicted.map(|p| {
-                    intercept(
-                        tokens,
-                        p as f64 / 1e6,
-                        self.engine.running_tokens(),
-                        self.restore_stall * restore,
-                        self.cost.recompute_ms(tokens),
-                        self.engine.has_cpu_tier(),
-                    )
-                });
-                if choice == Some(Interception::Preserve) {
-                    hold = self.engine.hold(&context);
-                    back = predicted.map(|p| self.now + p);
-                } else {
-                    self.engine.demote(&context);
-                }
-            }
-        }
-        if let Some(back) = back {
-            if self.retention != Retention::InferCept {
-                // Start the load so that it ends just before the session returns. The oracle knows
-                // when the turn is sent, so its load moves with the dispatch when the idle cap pulls
-                // that forward; the history level predicts the engine's time.
-                let lead = ns(self.cost.restore_ms(tokens) + 1.0);
-                let start = back.saturating_sub(lead).max(self.now);
-                let prefetch = Event::Retain {
-                    stream,
-                    pause: id,
-                    step: RetainStep::Prefetch,
-                };
-                if self.retention == Retention::OraclePrefetch {
-                    self.push_following(start, prefetch);
-                } else {
-                    self.push_fixed(start, prefetch);
-                }
-            }
-            // A session later than twice its expected pause is not coming back soon.
-            let late = back + (back - self.now);
-            self.retain_at(late, stream, id, RetainStep::Release);
-        }
-        self.streams[stream as usize].paused = Some(Paused {
-            id,
-            since: self.now,
-            tool,
-            hold,
-        });
-    }
-
-    /// `stream` sends its next turn: the history learns how long it paused. A prefetch that lands
-    /// before the turn is admitted still serves it.
-    fn pause_ends(&mut self, stream: u32) {
-        if let Some(p) = &self.streams[stream as usize].paused {
-            let ms = (self.now - p.since) as f64 / 1e6;
-            self.history.observe(stream, p.tool, ms);
-        }
-    }
-
-    fn retain_at(&mut self, at: u64, stream: u32, pause: u64, step: RetainStep) {
-        self.push_fixed(
-            at,
-            Event::Retain {
-                stream,
-                pause,
-                step,
-            },
-        );
-    }
-
-    /// A retention timer; stale once the turn after its pause has been admitted.
-    fn retain(&mut self, stream: u32, pause: u64, step: RetainStep) -> Result<(), String> {
-        let s = stream as usize;
-        if self.streams[s]
-            .paused
-            .as_ref()
-            .is_none_or(|p| p.id != pause)
-        {
-            return Ok(());
-        }
-        match step {
-            RetainStep::Release => {
-                let hold = self.streams[s].paused.as_mut().and_then(|p| p.hold.take());
-                if let Some(hold) = hold {
-                    self.release(hold);
-                    self.kick()?;
-                }
-            }
-            RetainStep::Prefetch => {
-                let context = &self.streams[s].context;
-                let tokens =
-                    self.engine.prefetchable(context) as u64 * self.cfg.block_tokens as u64;
-                let end = match &mut self.scheduler {
-                    Some(s) if tokens > 0 => s.load(self.now, tokens),
-                    _ => self.now + ns(self.cost.restore_ms(tokens)),
-                };
-                self.retain_at(end, stream, pause, RetainStep::Prefetched);
-            }
-            RetainStep::Prefetched => {
-                let stream = &mut self.streams[s];
-                let hold = self.engine.prefetch(&stream.context);
-                let p = stream.paused.as_mut().expect("checked above");
-                debug_assert!(p.hold.is_none());
-                p.hold = hold;
-            }
-        }
-        Ok(())
-    }
-
-    /// Ends an engine hold; the idle engine admits what now fits.
-    fn release(&mut self, hold: u64) {
-        let now = self.now;
-        for (qid, adm) in self.engine.release(hold) {
-            let blocked = now - self.in_flight[&qid].issued;
-            self.admitted(qid, adm, blocked);
-        }
-    }
-
-    /// Contention: runs an idle step loop, which may now admit what waits for blocks.
-    fn kick(&mut self) -> Result<(), String> {
-        match &self.scheduler {
-            Some(s) if !s.busy() => self.run_steps(),
-            _ => Ok(()),
-        }
-    }
-
-    /// `_maybe_suspend_parent`: whether the root must wait for children before `next`.
-    fn suspend_if_gated(&mut self, play: u32, next: u32) -> bool {
-        let p = &mut self.plays[play as usize];
-        if let Some(active) = &p.active_join
-            && active.turn == next
-            && !active.satisfied()
-        {
-            return true;
-        }
-        match p.future_joins.get(&next) {
-            None => false,
-            Some(g) if g.satisfied() => {
-                p.future_joins.remove(&next);
-                false
-            }
-            Some(_) => {
-                p.active_join = p.future_joins.remove(&next);
-                true
-            }
-        }
-    }
-
     /// A child stream finished (or can never continue): satisfy its gates and drain.
     fn child_done(&mut self, stream: u32) {
         let s = &mut self.streams[stream as usize];
@@ -1574,7 +1062,7 @@ impl<'a> Replay<'a> {
         let joins = std::mem::take(&mut s.joins);
         self.clear_context(stream);
         for (gated, branch) in joins {
-            if let Some(root) = self.satisfy(play, gated, branch) {
+            if let Some(root) = self.plays[play as usize].satisfy(gated, branch) {
                 self.submit(root, gated, Kind::Join, None);
             }
         }
@@ -1583,42 +1071,17 @@ impl<'a> Replay<'a> {
         self.maybe_drain(play);
     }
 
-    /// `_satisfy_prerequisite`: counts one finished child against the join on `gated`. Returns the
-    /// root stream when the root was blocked on that join and may now send it.
-    fn satisfy(&mut self, play: u32, gated: u32, branch: u32) -> Option<u32> {
-        let p = &mut self.plays[play as usize];
-        let active = p.active_join.as_ref().is_some_and(|g| g.turn == gated);
-        let gate = if active {
-            p.active_join.as_mut()?
-        } else {
-            p.future_joins.get_mut(&gated)?
-        };
-        gate.prereq(branch)?.completed += 1;
-        if !gate.satisfied() {
-            return None;
-        }
-        if active {
-            p.active_join = None;
-            p.root
-        } else {
-            p.future_joins.remove(&gated);
-            None
-        }
-    }
-
+    /// A session tree that has finished frees its lane, which starts the next trace.
     fn maybe_drain(&mut self, play: u32) {
         let p = &mut self.plays[play as usize];
-        if p.drained || p.root_pending || p.descendants > 0 {
+        if !p.drain() {
             return;
         }
-        p.drained = true;
-        p.completed.clear();
-        p.held.clear();
         let lane = p.lane;
         if let Some(root) = p.root {
             self.clear_context(root);
         }
-        self.push_timer(self.now, Event::Recycle(lane));
+        self.queue.timer(self.now, Event::Recycle(lane));
     }
 
     fn recycle(&mut self, lane: usize) -> Result<(), String> {
@@ -1659,23 +1122,9 @@ impl<'a> Replay<'a> {
             .extend(overlapping);
     }
 
+    /// Sends the turns of `play` that its barriers held and that may go now.
     fn release_held(&mut self, play: u32) {
-        let p = &self.plays[play as usize];
-        if p.held.is_empty() {
-            return;
-        }
-        let ready: Vec<(u32, u32, u32)> = p
-            .held
-            .iter()
-            .filter(|&(&(_, turn, conv), _)| {
-                p.plan.convs[conv as usize].turns[turn as usize]
-                    .preds
-                    .iter()
-                    .all(|x| p.completed.contains(x))
-            })
-            .map(|(k, _)| *k)
-            .collect();
-        for key in ready {
+        for key in self.plays[play as usize].unblocked() {
             let (stream, kind) = self.plays[play as usize]
                 .held
                 .remove(&key)
@@ -1700,428 +1149,28 @@ impl<'a> Replay<'a> {
         }
         let elapsed = self.now - self.idle_since.expect("set above");
         let remaining = ns(cap * 1e3).saturating_sub(elapsed);
-        if let Some(e) = self.timers.peek() {
-            let earliest = e.at - self.shift;
-            let limit = self.now + remaining;
-            if earliest > limit {
-                let jump = earliest - limit;
-                self.shift += jump;
-                // The grace period sends nothing, so what the cap skips then is not counted.
-                if self.now < self.profiling_end {
-                    self.stats.idle_cap_jumps += 1;
-                    self.stats.idle_cap_skipped_s += jump as f64 / 1e9;
-                }
-            }
+        // The grace period sends nothing, so what the cap skips then is not counted.
+        if let Some(jump) = self.queue.pull_forward(self.now + remaining)
+            && self.now < self.profiling_end
+        {
+            self.stats.idle_cap_jumps += 1;
+            self.stats.idle_cap_skipped_s += jump as f64 / 1e9;
         }
     }
 
     /// Replaces a stream's context (its latest prompt) in the live working set.
     fn set_context(&mut self, stream: u32, prompt: &[BlockId]) {
-        for &b in prompt {
-            *self.working_set.entry(b).or_insert(0) += 1;
-        }
+        self.working_set.add(prompt);
         self.clear_context(stream);
         self.streams[stream as usize].context = prompt.to_vec();
         if self.phase == Phase::Profiling {
-            let tokens = self.working_set.len() as u64 * self.cfg.block_tokens as u64;
-            self.stats.working_set_peak_tokens = self.stats.working_set_peak_tokens.max(tokens);
+            self.working_set.observe_peak();
         }
     }
 
+    /// Takes a stream's latest prompt out of the live working set.
     fn clear_context(&mut self, stream: u32) {
-        for b in std::mem::take(&mut self.streams[stream as usize].context) {
-            if let Some(n) = self.working_set.get_mut(&b) {
-                *n -= 1;
-                if *n == 0 {
-                    self.working_set.remove(&b);
-                }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::aiperf::PlanOptions;
-    use crate::engine::{CpuPolicyKind, EngineConfig, GpuPolicyKind};
-    use crate::trace::{Trace, TraceSource};
-
-    const S: u64 = 1_000_000_000;
-
-    fn run(traces: &[&str], cfg: ReplayConfig) -> ReplayOutput {
-        let engine = EngineConfig {
-            gpu_blocks: 4096,
-            cpu_blocks: 0,
-            block_tokens: 16,
-            gpu_policy: GpuPolicyKind::Lru,
-            cpu_policy: CpuPolicyKind::Lru,
-        };
-        run_with(traces, cfg, &engine, Retention::None)
-    }
-
-    fn run_with(
-        traces: &[&str],
-        cfg: ReplayConfig,
-        engine: &EngineConfig,
-        retention: Retention,
-    ) -> ReplayOutput {
-        let traces = traces
-            .iter()
-            .map(|t| Trace::from_json(t.as_bytes()).unwrap())
-            .collect();
-        let mut corpus = Corpus::new(TraceSource::from_traces(traces), PlanOptions::default());
-        Replay::new(
-            cfg,
-            &mut corpus,
-            Engine::new(engine, None),
-            TierCost::frozen_box(),
-            Service::Idle,
-            retention,
-            false,
-        )
-        .run()
-        .unwrap()
-    }
-
-    /// Lanes that start at their traces' first requests and play each trace once, with nothing
-    /// pulled forward.
-    fn from_start(concurrency: usize) -> ReplayConfig {
-        ReplayConfig {
-            concurrency,
-            start_min_ratio: 0.0,
-            start_max_ratio: 0.0,
-            system_idle_cap_s: None,
-            max_sessions: Some(concurrency as u64),
-            duration_s: 3_600.0,
-            grace_s: 600.0,
-            ..ReplayConfig::default()
-        }
-    }
-
-    fn find(out: &ReplayOutput, conv: u32, turn: u32) -> &RequestRecord {
-        out.records
-            .iter()
-            .find(|r| (r.conv, r.turn) == (conv, turn))
-            .expect("the request ran")
-    }
-
-    const PAUSES: &str = r#"{"id": "pauses", "block_size": 2, "requests": [
-        {"t": 0, "type": "n", "model": "m", "in": 2, "out": 1, "hash_ids": [1], "api_time": 1.0},
-        {"t": 600, "type": "n", "model": "m", "in": 4, "out": 1, "hash_ids": [1, 2], "api_time": 1.0, "think_time": 599.0},
-        {"t": 640, "type": "n", "model": "m", "in": 6, "out": 1, "hash_ids": [1, 2, 3], "think_time": 30.0}
-    ]}"#;
-
-    #[test]
-    fn think_times_are_capped() {
-        let out = run(&[PAUSES], from_start(1));
-        assert_eq!(out.records.len(), 3);
-        let (t0, t1, t2) = (find(&out, 0, 0), find(&out, 0, 1), find(&out, 0, 2));
-        assert_eq!(t0.issued_ns, 0);
-        assert_eq!(
-            t1.issued_ns - t0.done_ns,
-            120 * S,
-            "599 s is capped at 120 s"
-        );
-        assert_eq!(t2.issued_ns - t1.done_ns, 30 * S);
-        assert_eq!(
-            (t1.delay_ms, t2.delay_ms),
-            (Some(120_000.0), Some(30_000.0))
-        );
-    }
-
-    #[test]
-    fn the_idle_cap_pulls_pauses_forward() {
-        let out = run(
-            &[PAUSES],
-            ReplayConfig {
-                system_idle_cap_s: Some(10.0),
-                ..from_start(1)
-            },
-        );
-        let (t0, t1, t2) = (find(&out, 0, 0), find(&out, 0, 1), find(&out, 0, 2));
-        assert_eq!(t1.issued_ns - t0.done_ns, 10 * S);
-        assert_eq!(t2.issued_ns - t1.done_ns, 10 * S);
-        assert_eq!(out.stats.idle_cap_jumps, 2);
-        assert!((out.stats.idle_cap_skipped_s - 130.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn the_idle_cap_counters_stop_when_sending_closes() {
-        const LONG: &str = r#"{"id": "long", "block_size": 2, "requests": [
-            {"t": 0, "type": "n", "model": "m", "in": 2, "out": 2000, "hash_ids": [7], "api_time": 1.0}
-        ]}"#;
-        let capped = ReplayConfig {
-            system_idle_cap_s: Some(10.0),
-            ..from_start(2)
-        };
-        let all = run(&[PAUSES, LONG], capped.clone());
-        let long = all
-            .records
-            .iter()
-            .find(|r| r.trace == 1)
-            .expect("the long request");
-        // Sending closes while the long request runs and `pauses` thinks before its turn 1. When the
-        // long request returns, in the grace period, the cap still pulls turn 1's dispatch forward,
-        // but turn 1 is never sent: that jump is not counted.
-        let close_s = long.done_ns as f64 / 2e9 - all.stats.profiling_start_s;
-        let out = run(
-            &[PAUSES, LONG],
-            ReplayConfig {
-                duration_s: close_s,
-                ..capped
-            },
-        );
-        assert_eq!(out.records.len(), 2);
-        assert_eq!(
-            (out.stats.idle_cap_jumps, out.stats.idle_cap_skipped_s),
-            (0, 0.0)
-        );
-    }
-
-    #[test]
-    fn subagents_run_together_and_the_parent_waits_for_both() {
-        let trace = r#"{"id": "fanout", "block_size": 2, "requests": [
-            {"t": 0, "type": "n", "model": "m", "in": 2, "out": 1, "hash_ids": [1], "api_time": 1.0},
-            {"t": 2, "type": "subagent", "agent_id": "a", "duration_ms": 8000, "requests": [
-                {"t": 2, "type": "n", "model": "m", "in": 4, "out": 1, "hash_ids": [9, 10], "api_time": 1.0},
-                {"t": 6, "type": "n", "model": "m", "in": 6, "out": 1, "hash_ids": [9, 10, 11], "think_time": 3.0}
-            ]},
-            {"t": 2, "type": "subagent", "agent_id": "b", "duration_ms": 8000, "requests": [
-                {"t": 2, "type": "n", "model": "m", "in": 4, "out": 1, "hash_ids": [20, 21], "api_time": 1.0},
-                {"t": 7, "type": "n", "model": "m", "in": 6, "out": 1, "hash_ids": [20, 21, 22], "think_time": 4.0}
-            ]},
-            {"t": 20, "type": "n", "model": "m", "in": 4, "out": 1, "hash_ids": [1, 2], "think_time": 1.0}
-        ]}"#;
-        let out = run(&[trace], from_start(1));
-        assert_eq!(out.records.len(), 6);
-        let root0 = find(&out, 0, 0);
-        let (a0, a1, b0, b1) = (
-            find(&out, 1, 0),
-            find(&out, 1, 1),
-            find(&out, 2, 0),
-            find(&out, 2, 1),
-        );
-        // Both children start when the spawning turn returns, and overlap.
-        assert_eq!((a0.issued_ns, b0.issued_ns), (root0.done_ns, root0.done_ns));
-        assert!(a0.issued_ns < b0.done_ns && b0.issued_ns < a0.done_ns);
-        assert_eq!(
-            (a1.issued_ns - a0.done_ns, b1.issued_ns - b0.done_ns),
-            (3 * S, 4 * S)
-        );
-        assert_eq!(a0.kind, ConvKind::Subagent);
-        // The parent's next turn joins both children: it goes when the last one finishes.
-        assert_eq!(find(&out, 0, 1).issued_ns, a1.done_ns.max(b1.done_ns));
-    }
-
-    /// Session A pauses 5 s twice. During its second pause session C sends a request (leaving cached
-    /// blocks newer than A's), then session B one of `b_blocks` blocks, in an 11-block pool with a
-    /// 64-block CPU tier. Returns A's third turn under `retention`.
-    fn third_turn_after_pauses(retention: Retention, b_blocks: u64) -> RequestRecord {
-        let a = r#"{"id": "a", "block_size": 16, "requests": [
-            {"t": 0, "type": "n", "model": "m", "in": 64, "out": 1, "hash_ids": [1, 2, 3, 4], "api_time": 0.1},
-            {"t": 5, "type": "n", "model": "m", "in": 80, "out": 1, "hash_ids": [1, 2, 3, 4, 5], "think_time": 5.0},
-            {"t": 10, "type": "n", "model": "m", "in": 96, "out": 1, "hash_ids": [1, 2, 3, 4, 5, 6], "think_time": 5.0}
-        ]}"#;
-        let ids: Vec<String> = (101..101 + b_blocks).map(|i| i.to_string()).collect();
-        let b = format!(
-            r#"{{"id": "b", "block_size": 16, "requests": [
-                {{"t": 0, "type": "n", "model": "m", "in": 16, "out": 1, "hash_ids": [100], "api_time": 0.1}},
-                {{"t": 8, "type": "n", "model": "m", "in": {}, "out": 1, "hash_ids": [{}], "think_time": 8.0}}
-            ]}}"#,
-            16 * b_blocks,
-            ids.join(",")
-        );
-        let c = r#"{"id": "c", "block_size": 16, "requests": [
-            {"t": 0, "type": "n", "model": "m", "in": 16, "out": 1, "hash_ids": [200], "api_time": 0.1},
-            {"t": 6.5, "type": "n", "model": "m", "in": 48, "out": 1, "hash_ids": [200, 201, 202], "think_time": 6.5}
-        ]}"#;
-        let engine = EngineConfig {
-            gpu_blocks: 12,
-            cpu_blocks: 64,
-            block_tokens: 16,
-            gpu_policy: GpuPolicyKind::Lru,
-            cpu_policy: CpuPolicyKind::Lru,
-        };
-        let out = run_with(&[a, &b, c], from_start(3), &engine, retention);
-        assert_eq!(out.records.len(), 7);
-        out.records
-            .iter()
-            .find(|r| (r.trace, r.turn) == (0, 2))
-            .expect("A's third turn ran")
-            .clone()
-    }
-
-    fn sources(r: &RequestRecord) -> (u64, u64) {
-        (r.sources.gpu, r.sources.cpu)
-    }
-
-    #[test]
-    fn a_ttl_hold_keeps_a_paused_session_over_newer_cached_blocks() {
-        // LRU evicts A's newest block for B's 4 blocks, before C's newer ones; the hold keeps it.
-        assert_eq!(
-            sources(&third_turn_after_pauses(Retention::None, 4)),
-            (64, 16)
-        );
-        assert_eq!(
-            sources(&third_turn_after_pauses(Retention::Ttl(30.0), 4)),
-            (80, 0)
-        );
-        // A hold shorter than the pause has ended by then.
-        assert_eq!(
-            sources(&third_turn_after_pauses(Retention::Ttl(1.0), 4)),
-            (64, 16)
-        );
-    }
-
-    #[test]
-    fn a_prefetch_brings_an_evicted_session_back_before_it_returns() {
-        // B's 11 blocks evict everything; A's blocks come back from the CPU tier.
-        assert_eq!(
-            sources(&third_turn_after_pauses(Retention::None, 11)),
-            (0, 80)
-        );
-        for retention in [
-            Retention::OraclePrefetch,
-            // A's first pause predicts its second exactly.
-            Retention::HistoryPrefetch,
-            Retention::Tokencake,
-        ] {
-            let r = third_turn_after_pauses(retention, 11);
-            assert_eq!(sources(&r), (80, 0), "{retention:?}");
-        }
-    }
-
-    #[test]
-    fn the_oracle_prefetch_moves_with_a_turn_the_idle_cap_pulls_forward() {
-        // A pauses 60 s. B's second turn evicts A's blocks from an 11-block pool; then nothing is in
-        // flight, and with the cap A's next turn goes 10 s after B's returns.
-        let a = r#"{"id": "a", "block_size": 16, "requests": [
-            {"t": 0, "type": "n", "model": "m", "in": 64, "out": 1, "hash_ids": [1, 2, 3, 4], "api_time": 0.1},
-            {"t": 60, "type": "n", "model": "m", "in": 80, "out": 1, "hash_ids": [1, 2, 3, 4, 5], "think_time": 60.0}
-        ]}"#;
-        let ids: Vec<String> = (101..112).map(|i| i.to_string()).collect();
-        let b = format!(
-            r#"{{"id": "b", "block_size": 16, "requests": [
-                {{"t": 0, "type": "n", "model": "m", "in": 16, "out": 1, "hash_ids": [100], "api_time": 0.1}},
-                {{"t": 1, "type": "n", "model": "m", "in": 176, "out": 1, "hash_ids": [{}], "think_time": 1.0}}
-            ]}}"#,
-            ids.join(",")
-        );
-        let engine = EngineConfig {
-            gpu_blocks: 12,
-            cpu_blocks: 64,
-            block_tokens: 16,
-            gpu_policy: GpuPolicyKind::Lru,
-            cpu_policy: CpuPolicyKind::Lru,
-        };
-        for cap in [None, Some(10.0)] {
-            let cfg = ReplayConfig {
-                system_idle_cap_s: cap,
-                ..from_start(2)
-            };
-            for (retention, expected) in [
-                (Retention::None, (0, 64)),
-                (Retention::OraclePrefetch, (64, 0)),
-            ] {
-                let out = run_with(&[a, &b], cfg.clone(), &engine, retention);
-                let turn = |trace, turn| {
-                    out.records
-                        .iter()
-                        .find(|r| (r.trace, r.turn) == (trace, turn))
-                        .expect("the turn ran")
-                };
-                let (a0, a1, b1) = (turn(0, 0), turn(0, 1), turn(1, 1));
-                let pause = match cap {
-                    None => 60 * S,
-                    Some(_) => b1.done_ns + 10 * S - a0.done_ns,
-                };
-                assert_eq!(a1.issued_ns - a0.done_ns, pause, "{cap:?}");
-                assert_eq!(sources(a1), expected, "{retention:?}, cap {cap:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn a_drained_lane_recycles_under_a_fresh_namespace() {
-        let ids: Vec<String> = (1..=16).map(|i| i.to_string()).collect();
-        let trace = format!(
-            r#"{{"id": "loop", "block_size": 2, "requests": [
-                {{"t": 0, "type": "n", "model": "m", "in": 16, "out": 1, "hash_ids": [{}], "api_time": 1.0}},
-                {{"t": 5, "type": "n", "model": "m", "in": 32, "out": 1, "hash_ids": [{}], "think_time": 1.0}}
-            ]}}"#,
-            ids[..8].join(","),
-            ids.join(",")
-        );
-        let out = run(
-            &[&trace],
-            ReplayConfig {
-                max_sessions: Some(3),
-                ..from_start(1)
-            },
-        );
-        assert_eq!((out.stats.sessions_started, out.records.len()), (3, 6));
-        let mut last_done = 0;
-        for play in out.records.chunks(2) {
-            let (first, second) = (&play[0], &play[1]);
-            assert_eq!((first.turn, second.turn), (0, 1));
-            // The prompt the previous play cached is computed again: its blocks are new.
-            assert_eq!(
-                (first.sources.gpu, first.sources.computed, first.recomputed),
-                (0, 16, 0)
-            );
-            // The second turn hits the first turn's block within the play.
-            assert_eq!(second.sources.gpu, 16);
-            assert!(
-                first.issued_ns >= last_done,
-                "a lane recycles only after its tree drains"
-            );
-            last_done = second.done_ns;
-        }
-    }
-
-    #[test]
-    fn the_realtime_tier_is_short_while_too_little_of_the_pool_is_free() {
-        // 11 usable blocks: an 8-block prompt, a 1 s pause, then a 9-block prompt over it.
-        let trace = r#"{"id": "rt", "block_size": 16, "requests": [
-            {"t": 0, "type": "n", "model": "m", "in": 128, "out": 1, "hash_ids": [1, 2, 3, 4, 5, 6, 7, 8], "api_time": 0.1},
-            {"t": 2, "type": "n", "model": "m", "in": 144, "out": 1, "hash_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9], "think_time": 1.0}
-        ]}"#;
-        let engine = EngineConfig {
-            gpu_blocks: 12,
-            cpu_blocks: 0,
-            block_tokens: 16,
-            gpu_policy: GpuPolicyKind::Lru,
-            cpu_policy: CpuPolicyKind::Lru,
-        };
-        let run_rt = |realtime_tokens| {
-            let cfg = ReplayConfig {
-                realtime_tokens,
-                ..from_start(1)
-            };
-            run_with(&[trace], cfg, &engine, Retention::None)
-        };
-        let share = |ns: u64, end: u64| ns as f64 / end as f64;
-        // 4 blocks: the working set leaves fewer free throughout, the pinned prompt while each runs.
-        let out = run_rt(64);
-        let (first, second) = (&out.records[0], &out.records[1]);
-        let end = second.done_ns;
-        let running = first.done_ns - first.admitted_ns + second.done_ns - second.admitted_ns;
-        assert_eq!(out.stats.realtime_short_share, Some(1.0));
-        let blocked = out.stats.realtime_blocked_share.unwrap();
-        assert!((blocked - share(running, end)).abs() < 1e-12, "{blocked}");
-        // 3 blocks fit beside the 8-block prompt, pinned or not, but not beside the 9-block one.
-        let out = run_rt(48);
-        let second = &out.records[1];
-        assert_eq!(second.done_ns, end);
-        let short = out.stats.realtime_short_share.unwrap();
-        assert!((short - share(end - second.issued_ns, end)).abs() < 1e-12);
-        let blocked = out.stats.realtime_blocked_share.unwrap();
-        assert!((blocked - share(second.done_ns - second.admitted_ns, end)).abs() < 1e-12);
-        let none = run_rt(0).stats;
-        assert_eq!(
-            (none.realtime_short_share, none.realtime_blocked_share),
-            (None, None)
-        );
+        let context = std::mem::take(&mut self.streams[stream as usize].context);
+        self.working_set.remove(&context);
     }
 }
