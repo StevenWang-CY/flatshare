@@ -1,0 +1,1869 @@
+#!/usr/bin/env python3
+"""flatshare-release: a host's deployment as immutable releases, switched atomically, with a manifest and rollback.
+
+    flatshare-release deploy UPLOAD --host NAME --id ID --commit SHA --describe REV --tree SHA256 [--gateway-from ID]
+                      [--adopt] [--no-switch] [--drain-timeout S] [--force] [--keep N] [--settle S]
+    flatshare-release rollback [--to ID] [--drain-timeout S] [--force] [--settle S]
+    flatshare-release status [--json]
+    flatshare-release verify [ID]
+    flatshare-release prune [--keep N]
+    flatshare-release drain [--timeout S] | undrain
+    flatshare-release adopt --host NAME
+    flatshare-release tree-hash DIR
+
+deploy/deploy.sh runs `deploy` on the host with the commit's tree uploaded to UPLOAD (git archive, DEPLOYED, and on the
+control host the gateway's binary). The layout under ~/flatshare (--root):
+
+    releases/ID/        one release: the commit's tree, read-only, with MANIFEST.json, and venvs/NAME, links to its
+                        environments
+    envs/NAME-KEY/      a Python environment, shared by every release whose inputs give the same KEY (the SHA-256 of
+                        its lock file and what else decides it): a release links an environment, never rebuilds one
+    current             a link to the release the host runs, replaced in one rename
+    previous            a link to the release current replaced, which rollback switches back to
+    src -> current      the path the units and scripts name (%h/flatshare/src/...)
+    venvs/NAME          a link to current/venvs/NAME, for the units' %h/flatshare/venvs/NAME/...
+    bin/flatshare-gateway  on the control host, a link to current/bin/flatshare-gateway; bin/ keeps the host's tools
+
+`deploy` prepares the release, verifies it and switches to it. Preparing checks the upload against the tree's hash that
+deploy.sh computed, builds each environment the release's lock files ask for that no release has built yet, makes each
+release Python package's editable install read the release a process tree started under (FLATSHARE_RELEASE, below),
+compiles the packages, writes the manifest and renames the upload into releases/ID. Verifying, before any switch: every
+file against the manifest, each environment's imports, the binaries' versions, the serving profile's patches and the
+scheduler module they build on the installed vLLM, the variant drop-ins the host links, and the models the GPU units
+read offline. Switching: drain what the switch would cut (the voice worker's calls in serve mode, the engine's
+requests), point previous at the release current names, replace current, link the units (the host's install.sh),
+restart or reload each active unit whose inputs changed (the release files it reads, its environments and binaries,
+compared by hash with the release it ran under), and check health: each restarted unit active without restarting,
+the engine's configuration against the serving profile, the gateway, the voice worker's admission, the listener audit.
+Any failure switches back to the release before and restarts the same units on it. `rollback` switches to previous by
+the same steps. A successful switch keeps the newest --keep releases (3), current, previous and any release a running
+process was started under, and removes the rest and the environments none of them links.
+
+A release's packages are installed editable into the shared environments, with a .pth line that appends the package's
+source directory under the release named by FLATSHARE_RELEASE, which the first interpreter of a process tree sets from
+current's target if it is unset, so that a tree (the voice worker and its job processes, an E2 point) imports one
+release's code whatever a switch does meanwhile, and children inherit it.
+
+Exit status: 0 on success; 1 when a check fails or a switch was switched back; 2 when it is used wrongly or the host
+is not ready (another operation holds the lock, an upload that differs from its hash, an old layout without --adopt);
+3 when switching back failed too.
+
+Standard library only, for the host's python3 (3.10 or newer).
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import fcntl
+import fnmatch
+import hashlib
+import http.client
+import json
+import os
+import re
+import shutil
+import socket
+import stat
+import subprocess
+import sys
+import time
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+SCHEMA = 1
+"""MANIFEST.json's format."""
+PIN = "FLATSHARE_RELEASE"
+"""The environment variable that names the release a process tree imports its packages from."""
+PYTHON = "3.12"
+"""The Python of every environment (the locks are resolved for it)."""
+UV_MIN = (0, 11, 27)
+"""uv 0.10.8 could not resolve the engine lock's torchcodec==0.17.0+cu130 through --torch-backend."""
+MARK = ".flatshare-env.json"
+"""Written last into a complete environment: one without it is an interrupted build, removed and built again."""
+KEEP = 3
+
+
+class ReleaseError(Exception):
+    """A check that failed: exit 1."""
+
+
+class NotReady(Exception):
+    """A host, upload or command line this cannot work with: exit 2."""
+
+
+# What each host runs.
+
+
+@dataclass(frozen=True)
+class Env:
+    """A Python environment: ``requirements`` synced with uv pip (with ``args``), or the uv project ``project`` synced
+    from its lock with the test extra. ``inputs`` are the release files that decide it, ``vendor`` a checkout outside
+    the releases installed editable at a pinned commit (directory under the root, its URL, the commit), and ``check``
+    the Python the verification runs in it."""
+
+    name: str
+    inputs: tuple[str, ...]
+    check: str
+    requirements: str | None = None
+    project: str | None = None
+    args: tuple[str, ...] = ()
+    vendor: tuple[str, str, str] | None = None
+
+
+@dataclass(frozen=True)
+class Unit:
+    """A unit a release restarts when ``inputs`` (globs of release files, where * crosses directories), ``envs``,
+    ``artifacts`` or ``tools`` (the host's, which it runs) changed, and reloads when only ``reload_inputs`` and its
+    artifacts did. ``restarts`` are the units that must restart with it (those bound to it); ``drain`` says what its
+    restart would cut, to drain first: "voice", the voice worker's calls; "engine", the engine's requests."""
+
+    name: str
+    inputs: tuple[str, ...]
+    envs: tuple[str, ...] = ()
+    artifacts: tuple[str, ...] = ()
+    tools: tuple[str, ...] = ()
+    reload_inputs: tuple[str, ...] = ()
+    restarts: tuple[str, ...] = ()
+    drain: str | None = None
+
+
+@dataclass(frozen=True)
+class HostSpec:
+    name: str
+    node: str  # the directory under deploy/ whose install.sh links the host's units
+    envs: tuple[Env, ...]
+    units: tuple[Unit, ...]
+    artifacts: tuple[str, ...] = ()  # release files that are built, not committed
+    tools: dict[str, str] = field(
+        default_factory=dict
+    )  # host tools under the root, and the version they must say
+    gpu: bool = False
+
+
+ENGINE = Env(
+    "engine",
+    inputs=("deploy/phastform/requirements/engine.txt",),
+    requirements="deploy/phastform/requirements/engine.txt",
+    args=("--torch-backend", "cu130"),
+    check="import vllm, torch; assert vllm.__version__ == '0.32.0', vllm.__version__; print('vllm', vllm.__version__, 'torch', torch.__version__)",
+)
+TTS = Env(
+    "tts",
+    inputs=("deploy/phastform/requirements/tts.txt",),
+    requirements="deploy/phastform/requirements/tts.txt",
+    args=("--torch-backend", "cu128"),
+    # Kokoro-FastAPI publishes no tag for 0.9.1-rc1: the measured commit is the pin (deploy/phastform/bootstrap.sh).
+    vendor=(
+        "vendor/Kokoro-FastAPI",
+        "https://github.com/remsky/Kokoro-FastAPI.git",
+        "ebd4ec9cc97b258b25afc39444a5e1701055db50",
+    ),
+    check="import torch, kokoro; print('torch', torch.__version__)",
+)
+
+
+def gpu_units(node: str) -> tuple[Unit, ...]:
+    """A GPU node's three servers: Phastform's units, with a node's own drop-ins (deploy/NODE/systemd/*.conf)."""
+    box = "deploy/phastform"
+    common = ("deploy/bin/in-private-net", "deploy/bin/gpu-guard", "deploy/bin/wait-healthy")
+    own = () if node == "phastform" else (f"deploy/{node}/systemd/*.conf",)
+    return (
+        Unit(
+            "flatshare-stt.service",
+            inputs=(
+                f"{box}/stt.yaml",
+                f"{box}/systemd/flatshare-stt.service",
+                f"{box}/systemd/flatshare.target",
+                f"{box}/variants/*/flatshare-stt.conf",
+                *common,
+                *own,
+            ),
+            envs=("engine",),
+        ),
+        Unit(
+            "flatshare-tts.service",
+            inputs=(
+                f"{box}/systemd/flatshare-tts.service",
+                f"{box}/systemd/flatshare.target",
+                f"{box}/variants/*/flatshare-tts.conf",
+                *common,
+                *own,
+            ),
+            envs=("tts",),
+        ),
+        Unit(
+            "flatshare-engine.service",
+            inputs=(
+                f"{box}/engine.yaml",
+                f"{box}/serving.json",
+                f"{box}/systemd/flatshare-engine.service",
+                f"{box}/systemd/flatshare-engine-proxy.*",
+                f"{box}/systemd/flatshare-mps.service",
+                f"{box}/systemd/flatshare.target",
+                f"{box}/variants/*",
+                f"{box}/measure/*",
+                "deploy/bin/serving-check",
+                "python/flatshare_vllm/src/*",
+                *common,
+                *own,
+            ),
+            envs=("engine",),
+            drain="engine",
+        ),
+    )
+
+
+GPU_TOOLS: dict[str, str] = {}
+CYAN = HostSpec(
+    "cyan",
+    node="cyan",
+    envs=(
+        Env(
+            "voice",
+            inputs=(
+                "python/flatshare_voice/uv.lock",
+                "python/flatshare_voice/pyproject.toml",
+                "python/flatshare_stats/pyproject.toml",
+            ),
+            project="python/flatshare_voice",
+            args=("--extra", "test"),
+            check="import flatshare_voice.worker, flatshare_stats; print('flatshare-voice', flatshare_voice.worker.__file__)",
+        ),
+        Env(
+            "bench",
+            inputs=(
+                "python/flatshare_bench/uv.lock",
+                "python/flatshare_bench/pyproject.toml",
+                "python/flatshare_stats/pyproject.toml",
+            ),
+            project="python/flatshare_bench",
+            args=("--extra", "test"),
+            check="import flatshare_bench.cli, flatshare_stats; print('flatshare-bench', flatshare_bench.cli.__file__)",
+        ),
+        Env(
+            "smg",
+            inputs=("deploy/cyan/requirements/smg.txt",),
+            requirements="deploy/cyan/requirements/smg.txt",
+            check="import importlib.metadata as m; print('smg', m.version('smg'))",
+        ),
+    ),
+    units=(
+        Unit(
+            "flatshare-voicenet.service",
+            inputs=("deploy/cyan/systemd/flatshare-voicenet.service", "deploy/bin/voicenet-holder"),
+            # BindsTo= them: they stop with it, and start again only when asked.
+            restarts=(
+                "flatshare-livekit.service",
+                "flatshare-smg.service",
+                "flatshare-voice-worker.service",
+            ),
+            drain="voice",
+        ),
+        Unit(
+            "flatshare-tunnel@phastform.service",
+            inputs=("deploy/cyan/systemd/flatshare-tunnel@.service", "deploy/bin/flatshare-tunnel"),
+            drain="voice",
+        ),
+        Unit(
+            "flatshare-livekit.service",
+            inputs=(
+                "deploy/cyan/systemd/flatshare-livekit.service",
+                "deploy/cyan/livekit.yaml",
+                "deploy/bin/in-voicenet",
+                "deploy/bin/wait-healthy",
+            ),
+            tools=("bin/livekit-server",),
+            drain="voice",
+        ),
+        Unit(
+            "flatshare-gateway.socket",
+            inputs=("deploy/cyan/systemd/flatshare-gateway.socket",),
+            restarts=("flatshare-gateway.service",),
+        ),
+        Unit(
+            "flatshare-gateway.service",
+            inputs=(
+                "deploy/cyan/systemd/flatshare-gateway.service",
+                "deploy/cyan/variants/e2-gateway/*",
+            ),
+            # A new binary or a stop or reload script takes a reload, which hands the sockets over without a gap; the
+            # successor starts from bin/flatshare-gateway, current's.
+            reload_inputs=(
+                "deploy/bin/flatshare-gateway-reload",
+                "deploy/bin/flatshare-gateway-stop",
+            ),
+            artifacts=("bin/flatshare-gateway",),
+            drain="voice",
+        ),
+        Unit(
+            "flatshare-smg.service",
+            inputs=(
+                "deploy/cyan/systemd/flatshare-smg.service",
+                "deploy/cyan/smg.sh",
+                "deploy/bin/in-voicenet",
+                "deploy/bin/wait-healthy",
+            ),
+            envs=("smg",),
+        ),
+        Unit(
+            "flatshare-voice-worker.service",
+            inputs=(
+                "deploy/cyan/systemd/flatshare-voice-worker.service",
+                "deploy/cyan/variants/*/flatshare-voice-worker.conf",
+                "deploy/bin/in-voicenet",
+                "deploy/phastform/serving.json",
+                "python/flatshare_voice/src/*",
+                "python/flatshare_stats/src/*",
+            ),
+            envs=("voice",),
+            drain="voice",
+        ),
+    ),
+    artifacts=("bin/flatshare-gateway",),
+    # The LiveKit server deploy/cyan/bootstrap.sh installs, which flatshare-livekit.service runs.
+    tools={"bin/livekit-server": "1.13.10"},
+)
+HOSTS: dict[str, HostSpec] = {
+    "phastform": HostSpec(
+        "phastform", "phastform", (ENGINE, TTS), gpu_units("phastform"), gpu=True
+    ),
+    "gray": HostSpec("gray", "gray", (ENGINE, TTS), gpu_units("gray"), gpu=True),
+    "cyan": CYAN,
+}
+"""Each host deploy.sh releases to, by the first label of its name (deploy/HOST)."""
+
+
+# Files and hashes.
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def tree_files(top: Path) -> dict[str, str]:
+    """Every regular file under ``top`` by its path relative to it, with its SHA-256: the release's own files, not its
+    manifest, its environments' links or the bytecode compiled from it."""
+    files = {}
+    for directory, dirs, names in os.walk(top):
+        here = Path(directory)
+        dirs[:] = sorted(
+            d for d in dirs if d != "__pycache__" and not (here == top and d == "venvs")
+        )
+        for name in names:
+            path = here / name
+            rel = path.relative_to(top).as_posix()
+            if rel == "MANIFEST.json" or path.is_symlink() or not path.is_file():
+                continue
+            files[rel] = sha256_file(path)
+    return files
+
+
+def tree_hash(files: dict[str, str]) -> str:
+    """One hash of a tree's files: SHA-256 of sha256sum's lines for them, in path order."""
+    lines = "".join(f"{files[rel]}  {rel}\n" for rel in sorted(files))
+    return hashlib.sha256(lines.encode()).hexdigest()
+
+
+def matches(rel: str, patterns: tuple[str, ...]) -> bool:
+    return any(fnmatch.fnmatchcase(rel, pattern) for pattern in patterns)
+
+
+def digest(files: dict[str, str], patterns: tuple[str, ...], extra: dict[str, str]) -> str:
+    """The SHA-256 of the files ``patterns`` match and of ``extra`` (environment keys, artifacts' hashes)."""
+    chosen = {rel: sha for rel, sha in files.items() if matches(rel, patterns)}
+    return hashlib.sha256(
+        json.dumps([sorted(chosen.items()), sorted(extra.items())]).encode()
+    ).hexdigest()
+
+
+# Running things.
+
+
+def run(
+    command: list[str],
+    *,
+    env: dict[str, str] | None = None,
+    timeout: float | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    done = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        env=None if env is None else os.environ | env,
+        timeout=timeout,
+    )
+    if check and done.returncode != 0:
+        tail = (done.stderr or done.stdout).strip().splitlines()[-12:]
+        raise ReleaseError(f"{' '.join(command)} exited {done.returncode}:\n  " + "\n  ".join(tail))
+    return done
+
+
+def say(text: str) -> None:
+    print(f"flatshare-release: {text}", flush=True)
+
+
+class Systemd:
+    """The user manager, through systemctl --user."""
+
+    def __call__(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return run(["systemctl", "--user", *args], check=check)
+
+    def active(self, unit: str) -> bool:
+        return self("is-active", "-q", unit, check=False).returncode == 0
+
+    def show(self, unit: str, *properties: str) -> dict[str, str]:
+        done = self("show", unit, *(f"--property={p}" for p in properties), check=False)
+        values = {}
+        for line in done.stdout.splitlines():
+            key, _, value = line.partition("=")
+            values[key] = value
+        return values
+
+    def environment(self, unit: str) -> dict[str, str]:
+        text = self.show(unit, "Environment").get("Environment", "")
+        env = {}
+        for item in text.split():
+            key, _, value = item.partition("=")
+            env[key] = value
+        return env
+
+
+def runtime_dir() -> Path:
+    return Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "flatshare"
+
+
+def http_get(uds: Path, path: str, timeout: float = 5.0) -> tuple[int, str]:
+    """GET ``path`` from the server on the Unix socket ``uds``: its status and body."""
+
+    class Connection(http.client.HTTPConnection):
+        def connect(self) -> None:
+            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.sock.settimeout(timeout)
+            self.sock.connect(str(uds))
+
+    connection = Connection("localhost", timeout=timeout)
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        return response.status, response.read().decode("utf-8", "replace")
+    finally:
+        connection.close()
+
+
+# The layout.
+
+
+class Layout:
+    """The deployment's directories under ``root``."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.releases = root / "releases"
+        self.envs = root / "envs"
+        self.current = root / "current"
+        self.previous = root / "previous"
+        self.history = self.releases / "history.jsonl"
+        self.running = self.releases / "running.json"
+
+    def release(self, rid: str) -> Path:
+        return self.releases / rid
+
+    def target(self, link: Path) -> str | None:
+        """The release ``link`` names, or None."""
+        if not link.is_symlink():
+            return None
+        return Path(os.readlink(link)).name
+
+    def manifest(self, rid: str) -> dict[str, Any]:
+        path = self.release(rid) / "MANIFEST.json"
+        try:
+            return json.loads(path.read_text())
+        except (OSError, ValueError) as error:
+            raise NotReady(f"release {rid} has no readable manifest ({error})") from None
+
+    def ids(self) -> list[str]:
+        """The releases, oldest first by when each was prepared (its manifest's prepared_at)."""
+        found = []
+        for path in self.releases.iterdir() if self.releases.is_dir() else ():
+            if (
+                path.is_dir()
+                and not path.name.startswith(".")
+                and (path / "MANIFEST.json").is_file()
+            ):
+                with contextlib.suppress(OSError, ValueError, KeyError):
+                    manifest = json.loads((path / "MANIFEST.json").read_text())
+                    found.append(
+                        (manifest.get("prepared_unix", 0.0), manifest["prepared_at"], path.name)
+                    )
+        return [rid for *_, rid in sorted(found)]
+
+    def old_layout(self) -> bool:
+        """A host deployed before releases: a real ~/flatshare/src."""
+        src = self.root / "src"
+        return src.is_dir() and not src.is_symlink()
+
+    @contextlib.contextmanager
+    def lock(self) -> Iterator[None]:
+        """One release operation at a time on the host."""
+        self.releases.mkdir(parents=True, exist_ok=True)
+        with (self.releases / ".lock").open("w") as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise NotReady(
+                    f"another flatshare-release operation holds {self.releases / '.lock'}"
+                ) from None
+            yield
+
+    def log(self, **entry: Any) -> None:
+        with self.history.open("a") as f:
+            f.write(json.dumps({"at": stamp(), **entry}) + "\n")
+
+
+def stamp(when: float | None = None) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(when))
+
+
+def replace_link(link: Path, target: str) -> None:
+    """Point ``link`` at ``target`` in one rename, whatever was there: a reader sees the old target or the new."""
+    staged = link.with_name(f".{link.name}.{os.getpid()}")
+    with contextlib.suppress(FileNotFoundError):
+        staged.unlink()
+    staged.symlink_to(target)
+    os.replace(staged, link)
+
+
+def writable(top: Path) -> None:
+    """Give the owner write access to ``top``'s tree again, so that it can be removed."""
+    for directory, dirs, names in os.walk(top):
+        here = Path(directory)
+        with contextlib.suppress(OSError):
+            here.chmod(here.stat().st_mode | stat.S_IWUSR)
+        for name in dirs + names:
+            path = here / name
+            if not path.is_symlink():
+                with contextlib.suppress(OSError):
+                    path.chmod(path.stat().st_mode | stat.S_IWUSR)
+
+
+def read_only(top: Path) -> None:
+    """Take every write permission off ``top``'s tree: a release is never changed in place."""
+    for directory, dirs, names in os.walk(top, topdown=False):
+        here = Path(directory)
+        for name in names + dirs:
+            path = here / name
+            if not path.is_symlink():
+                path.chmod(path.stat().st_mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
+        here.chmod(here.stat().st_mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
+
+
+def remove_tree(top: Path) -> None:
+    writable(top)
+    shutil.rmtree(top)
+
+
+def compat_links(layout: Layout, spec: HostSpec) -> None:
+    """The paths the units name, as links into current: src, venvs/NAME and the host's artifacts under bin/."""
+    root = layout.root
+    replace_link(root / "src", "current")
+    (root / "venvs").mkdir(exist_ok=True)
+    for env in spec.envs:
+        replace_link(root / "venvs" / env.name, f"../current/venvs/{env.name}")
+    for artifact in spec.artifacts:
+        (root / artifact).parent.mkdir(parents=True, exist_ok=True)
+        replace_link(
+            root / artifact,
+            f"{os.path.relpath(root / 'current', (root / artifact).parent)}/{artifact}",
+        )
+
+
+# Environments.
+
+
+def find_uv(root: Path) -> str:
+    """uv, 0.11.27 or newer: FLATSHARE_RELEASE_UV, ~/.local/bin/uv, the root's bin/uv or the PATH's."""
+    for candidate in (
+        os.environ.get("FLATSHARE_RELEASE_UV"),
+        str(Path.home() / ".local" / "bin" / "uv"),
+        str(root / "bin" / "uv"),
+        shutil.which("uv"),
+    ):
+        if not candidate or not os.access(candidate, os.X_OK):
+            continue
+        version = run([candidate, "--version"], check=False).stdout.split()
+        found = (
+            tuple(int(x) for x in re.findall(r"\d+", version[1])[:3]) if len(version) > 1 else ()
+        )
+        if found >= UV_MIN:
+            return candidate
+        say(
+            f"{candidate} is uv {'.'.join(map(str, found)) or '?'}, older than {'.'.join(map(str, UV_MIN))}"
+        )
+    raise NotReady("no uv 0.11.27 or newer (set FLATSHARE_RELEASE_UV)")
+
+
+def env_key(env: Env, tree: Path) -> str:
+    """The environment's key: the hash of what decides its contents."""
+    spec = {
+        "name": env.name,
+        "python": PYTHON,
+        "requirements": env.requirements,
+        "project": env.project,
+        "args": list(env.args),
+        "vendor": [env.vendor[0], env.vendor[2]] if env.vendor else None,
+        "files": {rel: sha256_file(tree / rel) for rel in env.inputs},
+    }
+    return hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def pinned_line(root: Path, rel: str) -> str:
+    """A .pth line that appends ``rel``, a package's source directory, under the release FLATSHARE_RELEASE names, which
+    it sets from current's target when the process tree has not."""
+    current = str(root / "current")
+    return (
+        f"import os, sys; sys.path.append(os.path.join(os.environ.setdefault({PIN!r}, "
+        f"os.path.realpath({current!r})), {rel!r}))\n"
+    )
+
+
+def site_packages(env_dir: Path) -> Path:
+    return env_dir / "lib" / f"python{PYTHON}" / "site-packages"
+
+
+def pin_editables(env_dir: Path, tree: Path, root: Path) -> list[str]:
+    """Make the editable installs that point into ``tree`` (the upload) read the pinned release instead, and say
+    which; refuses an environment that still names the upload anywhere."""
+    site = site_packages(env_dir)
+    pinned = []
+    for pth in sorted(site.glob("*.pth")):
+        text = pth.read_text().strip()
+        if "\n" not in text and (text == str(tree) or text.startswith(f"{tree}{os.sep}")):
+            rel = os.path.relpath(text, tree)
+            pth.write_text(pinned_line(root, rel))
+            pinned.append(rel)
+    for direct in sorted(site.glob("*.dist-info/direct_url.json")):
+        text = direct.read_text()
+        if str(tree) in text:
+            direct.write_text(text.replace(f"file://{tree}", f"file://{root / 'current'}"))
+    left = [
+        str(path.relative_to(env_dir))
+        for path in [
+            *site.glob("*.pth"),
+            *site.glob("*.dist-info/direct_url.json"),
+            *(env_dir / "bin").glob("*"),
+        ]
+        if path.is_file()
+        and not path.is_symlink()
+        and str(tree) in path.read_text(errors="replace")
+    ]
+    if left:
+        raise ReleaseError(f"{env_dir.name} still names the upload {tree} in {', '.join(left)}")
+    return pinned
+
+
+def vendor_checkout(root: Path, vendor: tuple[str, str, str]) -> Path:
+    """The vendored checkout at its pinned commit, cloned there if the host has none. One at another commit is the
+    host's to move (deploy/phastform/bootstrap.sh), never a release's: releases that still run it may need it."""
+    directory, url, commit = vendor
+    path = root / directory
+    if not (path / ".git").exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        run(["git", "clone", "-q", url, str(path)])
+        run(["git", "-C", str(path), "checkout", "-q", commit])
+    head = run(["git", "-C", str(path), "rev-parse", "HEAD"]).stdout.strip()
+    if head != commit:
+        raise ReleaseError(
+            f"{path} is at {head[:12]}, and the release pins {commit[:12]}: bootstrap.sh moves the checkout"
+        )
+    return path
+
+
+def build_env(env: Env, tree: Path, layout: Layout, uv: str) -> tuple[str, bool]:
+    """The environment ``env`` of the release in ``tree``: an existing complete one of the same key, linked, or a new
+    one, built. Returns its directory's name and whether it was built."""
+    key = env_key(env, tree)
+    name = f"{env.name}-{key}"
+    path = layout.envs / name
+    if (path / MARK).is_file():
+        return name, False
+    if path.exists():
+        say(f"{name}: an interrupted build, removed")
+        remove_tree(path)
+    layout.envs.mkdir(parents=True, exist_ok=True)
+    say(f"{name}: building")
+    started = time.monotonic()
+    python = path / "bin" / "python"
+    pinned: list[str] = []
+    try:
+        if env.requirements:
+            run([uv, "venv", "-q", "--python", PYTHON, str(path)])
+            run(
+                [
+                    uv,
+                    "pip",
+                    "sync",
+                    "-q",
+                    "--python",
+                    str(python),
+                    *env.args,
+                    str(tree / env.requirements),
+                ]
+            )
+            if env.vendor:
+                checkout = vendor_checkout(layout.root, env.vendor)
+                run(
+                    [
+                        uv,
+                        "pip",
+                        "install",
+                        "-q",
+                        "--python",
+                        str(python),
+                        "--no-deps",
+                        "-e",
+                        str(checkout),
+                    ]
+                )
+        else:
+            assert env.project
+            run(
+                [
+                    uv,
+                    "sync",
+                    "-q",
+                    "--locked",
+                    "--python",
+                    PYTHON,
+                    *env.args,
+                    "--project",
+                    str(tree / env.project),
+                ],
+                env={"UV_PROJECT_ENVIRONMENT": str(path)},
+            )
+            pinned = pin_editables(path, tree, layout.root)
+        packages = run([uv, "pip", "freeze", "--python", str(python)]).stdout
+    except BaseException:
+        if path.exists():
+            remove_tree(path)
+        raise
+    mark = {
+        "name": env.name,
+        "key": key,
+        "built_at": stamp(),
+        "seconds": round(time.monotonic() - started, 1),
+        "uv": run([uv, "--version"]).stdout.strip(),
+        "inputs": {rel: sha256_file(tree / rel) for rel in env.inputs},
+        "vendor": {"path": env.vendor[0], "commit": env.vendor[2]} if env.vendor else None,
+        "pinned": pinned,
+        "packages_sha256": hashlib.sha256(packages.encode()).hexdigest(),
+        "packages": len(packages.splitlines()),
+    }
+    (path / MARK).write_text(json.dumps(mark, indent=2) + "\n")
+    say(f"{name}: built in {mark['seconds']} s, {mark['packages']} packages")
+    return name, True
+
+
+# Preparing a release.
+
+
+def model_pins(tree: Path) -> dict[str, dict[str, str]]:
+    """The models the GPU units load, by config: model and revision (engine.yaml and stt.yaml), and the tokenizer's,
+    which vLLM takes from the model's repository and revision unless a config says otherwise."""
+    pins = {}
+    for name in ("engine.yaml", "stt.yaml"):
+        path = tree / "deploy" / "phastform" / name
+        if not path.is_file():
+            continue
+        values = {}
+        for line in path.read_text().splitlines():
+            m = re.match(r"(model|revision|tokenizer|tokenizer-revision):\s*(\S+)\s*$", line)
+            if m:
+                values[m.group(1)] = m.group(2)
+        pins[name] = {
+            "model": values.get("model", ""),
+            "revision": values.get("revision", ""),
+            "tokenizer": values.get("tokenizer", values.get("model", "")),
+            "tokenizer_revision": values.get("tokenizer-revision", values.get("revision", "")),
+        }
+    return pins
+
+
+def workspace_version(tree: Path) -> str:
+    text = (tree / "Cargo.toml").read_text()
+    section = text.split("[workspace.package]", 1)[1].split("\n[", 1)[0]
+    m = re.search(r'^version\s*=\s*"([^"]+)"', section, re.M)
+    if not m:
+        raise ReleaseError("Cargo.toml has no [workspace.package] version")
+    return m.group(1)
+
+
+def unit_digests(
+    spec: HostSpec, files: dict[str, str], envs: dict[str, str]
+) -> dict[str, dict[str, str]]:
+    """Each unit's inputs, hashed: what a restart takes (``restart``) and what a reload does (``reload``)."""
+    out = {}
+    for unit in spec.units:
+        extra = {f"env:{name}": envs.get(name, "") for name in unit.envs}
+        extra |= {f"artifact:{a}": files.get(a, "") for a in unit.artifacts}
+        reload_extra = {f"artifact:{a}": files.get(a, "") for a in unit.artifacts}
+        if unit.reload_inputs:
+            # The binary and the scripts a reload runs: a reload takes them; the rest takes a restart.
+            extra = {k: v for k, v in extra.items() if not k.startswith("artifact:")}
+            out[unit.name] = {
+                "restart": digest(files, unit.inputs, extra),
+                "reload": digest(files, unit.reload_inputs, reload_extra),
+            }
+        else:
+            out[unit.name] = {"restart": digest(files, unit.inputs, extra)}
+    return out
+
+
+def isolation(spec: HostSpec, systemd: Systemd) -> dict[str, str]:
+    """Where each GPU unit's servers run: a network namespace of their own (deploy/bin/in-private-net), or the host's
+    where a drop-in sets FLATSHARE_PRIVATE_NET=host (a kernel that refuses unprivileged user namespaces, as Gray's)."""
+    if not spec.gpu:
+        return {}
+    report = {}
+    for unit in spec.units:
+        env = systemd.environment(unit.name)
+        report[unit.name] = (
+            "the host's network namespace (FLATSHARE_PRIVATE_NET=host)"
+            if env.get("FLATSHARE_PRIVATE_NET") == "host"
+            else "a network namespace of its own"
+        )
+    namespaces = (
+        run(["unshare", "--user", "--map-root-user", "--net", "true"], check=False)
+        if shutil.which("unshare")
+        else None
+    )
+    report["user namespaces"] = (
+        "unknown (no unshare)"
+        if namespaces is None
+        else "allowed"
+        if namespaces.returncode == 0
+        else f"refused ({(namespaces.stderr or '').strip()[:80]})"
+    )
+    return report
+
+
+def prepare(
+    upload: Path,
+    layout: Layout,
+    spec: HostSpec,
+    *,
+    rid: str,
+    commit: str,
+    describe: str,
+    tree: str,
+    gateway_from: str | None,
+    systemd: Systemd,
+) -> str:
+    """Make ``upload`` the release ``rid``: environments, manifest, bytecode, read-only, renamed into releases/."""
+    upload = upload.absolute()
+    if not re.fullmatch(r"[0-9a-f]{7,40}", rid):
+        raise NotReady(f"a release id is a commit's hex abbreviation, not {rid!r}")
+    final = layout.release(rid)
+    files = tree_files(upload)
+    if tree_hash(files) != tree:
+        raise NotReady(
+            f"the upload {upload} is not the tree deploy.sh staged (hash {tree_hash(files)[:16]}, not {tree[:16]})"
+        )
+    if (upload / "DEPLOYED").read_text().strip() != describe:
+        raise NotReady(f"the upload's DEPLOYED is not {describe}")
+    if final.exists():
+        old = layout.manifest(rid)
+        if old.get("upload_tree_sha256") == tree:
+            say(f"release {rid} exists with this tree: kept")
+            remove_tree(upload)
+            return rid
+        raise NotReady(
+            f"release {rid} exists with another tree ({old.get('tree_sha256', '?')[:16]}): it was prepared from other "
+            "artifacts; remove it once it is neither current nor previous (flatshare-release prune)"
+        )
+    artifacts = {}
+    for artifact in spec.artifacts:
+        provenance_path = upload / f"{artifact}.json"
+        if gateway_from and not (upload / artifact).exists():
+            source = layout.release(gateway_from)
+            given = layout.manifest(gateway_from).get("artifacts", {}).get(artifact)
+            if not given or not (source / artifact).is_file():
+                raise NotReady(f"release {gateway_from} has no {artifact} to carry")
+            (upload / artifact).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / artifact, upload / artifact)
+            provenance = {"carried_from": gateway_from, "built": given.get("built")}
+        elif provenance_path.is_file():
+            provenance = {"built": json.loads(provenance_path.read_text())}
+        else:
+            raise NotReady(
+                f"the upload has no {artifact} with its provenance (deploy.sh --gateway FILE)"
+            )
+        sha = sha256_file(upload / artifact)
+        built = provenance.get("built") or {}
+        if built.get("sha256") != sha:
+            raise NotReady(f"{artifact} is not the binary its provenance names (sha256 {sha[:16]})")
+        artifacts[artifact] = {"sha256": sha, **provenance}
+    files = tree_files(upload)  # with a carried artifact
+    uv = find_uv(layout.root)
+    envs = {}
+    built = []
+    for env in spec.envs:
+        name, new = build_env(env, upload, layout, uv)
+        envs[env.name] = name
+        if new:
+            built.append(name)
+    (upload / "venvs").mkdir(exist_ok=True)
+    for env_name, directory in envs.items():
+        (upload / "venvs" / env_name).symlink_to(f"../../../envs/{directory}")
+    if tree_files(upload) != files:
+        raise ReleaseError("building the environments changed the release's files")
+    serving_path = upload / "deploy" / "phastform" / "serving.json"
+    serving = json.loads(serving_path.read_text()) if serving_path.is_file() else None
+    manifest = {
+        "schema": SCHEMA,
+        "id": rid,
+        "commit": commit,
+        "describe": describe,
+        "host": spec.name,
+        "prepared_at": stamp(),
+        "prepared_unix": time.time(),
+        "upload_tree_sha256": tree,
+        "tree_sha256": tree_hash(files),
+        "files": files,
+        "locks": {
+            rel: sha
+            for rel, sha in files.items()
+            if re.search(
+                r"(^|/)(uv\.lock|Cargo\.lock)$|/requirements/[^/]+\.txt$|requirements-cpu\.txt$",
+                rel,
+            )
+        },
+        "artifacts": artifacts,
+        "envs": {
+            env_name: json.loads((layout.envs / directory / MARK).read_text())
+            | {"directory": directory}
+            for env_name, directory in envs.items()
+        },
+        "models": model_pins(upload),
+        "scheduler": None
+        if serving is None
+        else {
+            "patches": serving["patches"],
+            "module": serving["engine"]["scheduler_module"],
+            "serve_module_sha256": serving["engine"]["serve_module_sha256"],
+        },
+        "serving": serving,
+        "units": unit_digests(spec, files, envs),
+        "isolation": isolation(spec, systemd),
+    }
+    compile_packages(upload, layout, envs)
+    (upload / "MANIFEST.json").write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n")
+    read_only(upload)
+    try:
+        os.rename(upload, final)
+    except OSError:
+        writable(upload)  # deploy.sh uploads into it again
+        raise
+    say(
+        f"release {rid} ({describe}) prepared: {len(files)} files, tree {manifest['tree_sha256'][:16]}"
+    )
+    for env_name, directory in envs.items():
+        say(
+            f"  env {env_name}: {directory} ({'built' if directory in built else 'linked, unchanged'})"
+        )
+    for artifact, about in artifacts.items():
+        source = f"carried from {about['carried_from']}" if about.get("carried_from") else "built"
+        say(
+            f"  {artifact}: {about['sha256'][:16]} ({source} from {about['built'].get('commit', '?')[:12]})"
+        )
+    return rid
+
+
+def compile_packages(tree: Path, layout: Layout, envs: dict[str, str]) -> None:
+    """Compile the release's packages with the environments' Python, so that a read-only release imports from
+    bytecode."""
+    sources = sorted(str(p) for p in (tree / "python").glob("*/src") if p.is_dir())
+    if not envs or not sources:
+        return
+    python = layout.envs / next(iter(envs.values())) / "bin" / "python"
+    run([str(python), "-m", "compileall", "-q", "-j", "0", *sources])
+
+
+# Verifying a release.
+
+
+@dataclass
+class Report:
+    checks: list[tuple[str, bool, str]] = field(default_factory=list)
+
+    def add(self, what: str, ok: bool, detail: str = "") -> None:
+        self.checks.append((what, ok, detail))
+        say(f"{'ok  ' if ok else 'FAIL'} {what}" + (f": {detail}" if detail else ""))
+
+    @property
+    def failed(self) -> list[str]:
+        return [what for what, ok, _ in self.checks if not ok]
+
+
+def linked_drop_ins(units_dir: Path, root: Path) -> list[tuple[Path, str]]:
+    """The drop-ins the host links into its units from the deployed tree, each with its path in the release."""
+    src = str(root / "src")
+    found = []
+    for link in sorted(units_dir.glob("*.d/*.conf")):
+        if link.is_symlink():
+            target = os.readlink(link)
+            if target.startswith(src + "/"):
+                found.append((link, target[len(src) + 1 :]))
+    return found
+
+
+def verify(
+    layout: Layout,
+    spec: HostSpec,
+    rid: str,
+    systemd: Systemd,
+    units_dir: Path,
+    restarting: set[str] | None = None,
+) -> Report:
+    """Check release ``rid`` before a switch to it: its files, environments, binaries and configuration, and what the
+    host's units need of it. Models the GPU units would load offline fail the check only for units that run or will
+    restart; otherwise they are reported, for bootstrap.sh to fetch."""
+    report = Report()
+    path = layout.release(rid)
+    manifest = layout.manifest(rid)
+    files = tree_files(path)
+    changed = sorted(
+        rel
+        for rel in set(files) | set(manifest["files"])
+        if files.get(rel) != manifest["files"].get(rel)
+    )
+    report.add(
+        "files",
+        not changed,
+        f"{len(changed)} differ from the manifest: {', '.join(changed[:5])}"
+        if changed
+        else f"{len(files)} as the manifest says",
+    )
+    for env in spec.envs:
+        about = manifest["envs"].get(env.name, {})
+        env_dir = path / "venvs" / env.name
+        mark = env_dir / MARK
+        if not mark.is_file():
+            report.add(f"env {env.name}", False, f"{env_dir} is no complete environment")
+            continue
+        if about.get("key") == "legacy":
+            # Its editable installs read ~/flatshare/src, which names the release current runs until the switch.
+            report.add(
+                f"env {env.name} ({about.get('directory')})",
+                True,
+                "adopted from before releases, not imported",
+            )
+            continue
+        done = run(
+            [str(env_dir / "bin" / "python"), "-I", "-c", env.check],
+            env={PIN: str(path.resolve())},
+            timeout=600,
+            check=False,
+        )
+        detail = (done.stdout.strip() or done.stderr.strip()).splitlines()
+        report.add(
+            f"env {env.name} ({about.get('directory', '?')})",
+            done.returncode == 0,
+            detail[-1] if detail else "",
+        )
+    for artifact in manifest.get("artifacts", {}):
+        binary = path / artifact
+        done = run([str(binary), "--version"], check=False) if os.access(binary, os.X_OK) else None
+        said = done.stdout.strip() if done is not None and done.returncode == 0 else ""
+        wanted = f"flatshare-gateway {workspace_version(path)}"
+        report.add(f"{artifact} --version", said == wanted, said or "not runnable")
+    needed = {unit.name for unit in spec.units if systemd.active(unit.name)} | (restarting or set())
+    for tool, version in spec.tools.items():
+        binary = layout.root / tool
+        done = run([str(binary), "--version"], check=False) if os.access(binary, os.X_OK) else None
+        said = done.stdout.strip() if done is not None and done.returncode == 0 else ""
+        users = {unit.name for unit in spec.units if tool in unit.tools}
+        ok = version in said or not users & needed
+        report.add(f"{tool} --version", ok, said or "missing (bootstrap.sh installs it)")
+    serving = manifest.get("serving")
+    if serving is not None:
+        done = run(
+            [
+                sys.executable,
+                str(path / "deploy" / "bin" / "serving-check"),
+                str(path / "deploy" / "phastform" / "serving.json"),
+                "--root",
+                str(path),
+            ],
+            check=False,
+        )
+        report.add(
+            "serving profile's patches",
+            done.returncode == 0,
+            (done.stderr or done.stdout).strip().splitlines()[-1],
+        )
+        if "engine" in manifest["envs"]:
+            report.add(*module_check(path, serving))
+    for link, rel in linked_drop_ins(units_dir, layout.root):
+        report.add(f"drop-in {link.parent.name}/{link.name}", (path / rel).is_file(), rel)
+    if spec.gpu:
+        hub = Path(os.environ.get("HF_HUB_CACHE") or Path.home() / ".cache" / "huggingface" / "hub")
+        for config, pin in manifest.get("models", {}).items():
+            snapshot = (
+                hub / f"models--{pin['model'].replace('/', '--')}" / "snapshots" / pin["revision"]
+            )
+            present = (snapshot / "config.json").is_file() or snapshot.is_dir()
+            unit = "flatshare-stt.service" if config == "stt.yaml" else "flatshare-engine.service"
+            ok = present or unit not in needed
+            note = (
+                "present offline" if present else f"missing from {hub} (bootstrap.sh downloads it)"
+            )
+            report.add(f"model {pin['model']}@{pin['revision'][:12]}", ok, note)
+        for env in spec.envs:
+            if env.vendor:
+                checkout = layout.root / env.vendor[0]
+                head = run(
+                    ["git", "-C", str(checkout), "rev-parse", "HEAD"], check=False
+                ).stdout.strip()
+                report.add(
+                    f"{env.vendor[0]} at {env.vendor[2][:12]}",
+                    head == env.vendor[2],
+                    head[:12] or "missing",
+                )
+    return report
+
+
+def module_check(path: Path, serving: dict) -> tuple[str, bool, str]:
+    """The scheduler module build.py writes from the release's patches on the engine environment's vLLM, against the
+    serving profile's hash of it."""
+    out = path.parent / f".module-{os.getpid()}"
+    try:
+        done = run(
+            [
+                str(path / "venvs" / "engine" / "bin" / "python"),
+                "-I",
+                str(path / "python/flatshare_vllm/src/flatshare_vllm/build.py"),
+                "make-room",
+                str(out),
+            ],
+            check=False,
+        )
+        module = out / f"{serving['engine']['scheduler_module']['name']}.py"
+        if done.returncode != 0 or not module.is_file():
+            return "scheduler module", False, (done.stderr or done.stdout).strip()[-200:]
+        sha = sha256_file(module)
+        wanted = serving["engine"]["scheduler_module"]["sha256"]
+        return (
+            "scheduler module",
+            sha == wanted,
+            f"{sha[:16]}" + ("" if sha == wanted else f", the profile names {wanted[:16]}"),
+        )
+    finally:
+        if out.exists():
+            shutil.rmtree(out)
+
+
+# Switching.
+
+
+@dataclass
+class Plan:
+    restart: list[str] = field(default_factory=list)
+    reload: list[str] = field(default_factory=list)
+
+    def __bool__(self) -> bool:
+        return bool(self.restart or self.reload)
+
+
+def plan(spec: HostSpec, old: dict | None, new: dict, systemd: Systemd) -> Plan:
+    """What a switch from ``old`` to ``new`` restarts and reloads: each active unit whose inputs differ, in the host's
+    order, with the units bound to it. A switch from or to a release with no unit hashes (one adopted from before)
+    restarts every active unit."""
+    result = Plan()
+    active = {unit.name for unit in spec.units if systemd.active(unit.name)}
+    old_units = (old or {}).get("units") or {}
+    new_units = new.get("units") or {}
+    for unit in spec.units:
+        if unit.name not in active:
+            continue
+        before, after = old_units.get(unit.name), new_units.get(unit.name)
+        if before is None or after is None or before["restart"] != after["restart"]:
+            for name in (unit.name, *unit.restarts):
+                if name not in result.restart and (name in active or name == unit.name):
+                    result.restart.append(name)
+        elif (
+            "reload" in after
+            and before.get("reload") != after["reload"]
+            and unit.name not in result.restart
+        ):
+            result.reload.append(unit.name)
+    order = [unit.name for unit in spec.units]
+    result.restart.sort(key=order.index)
+    result.reload = [name for name in result.reload if name not in result.restart]
+    return result
+
+
+def e2_point(root: Path) -> int | None:
+    """The pid of the E2 point or drill that holds the host's lock (flatshare-bench), if one runs."""
+    try:
+        pid = int((root / "runs" / ".flatshare-bench-e2.lock").read_text().split()[0])
+        os.kill(pid, 0)
+    except (OSError, ValueError, IndexError):
+        return None
+    return pid
+
+
+def voice_files() -> tuple[Path, Path]:
+    base = runtime_dir()
+    return base / "voice-worker.json", base / "voice-worker.drain"
+
+
+def drain_voice(timeout: float, force: bool) -> bool:
+    """In serve mode, stop the voice worker taking calls and wait for those in progress to end. Returns whether it
+    drained (a bench-mode worker takes every call and has no drain: False)."""
+    status_path, drain = voice_files()
+    try:
+        status = json.loads(status_path.read_text())
+    except (OSError, ValueError):
+        status = {}
+    if status.get("mode") != "serve":
+        say("the voice worker runs bench mode, which has no drain: its calls end with its restart")
+        return False
+    drain.touch()
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            calls = json.loads(status_path.read_text()).get("active_calls", 0)
+        except (OSError, ValueError):
+            calls = 0
+        if calls == 0:
+            say("the voice worker takes no new call and has none in progress")
+            return True
+        if time.monotonic() >= deadline:
+            if force:
+                say(
+                    f"the voice worker still has {calls} call(s) after {timeout:g} s; --force cuts them"
+                )
+                return True
+            drain.unlink(missing_ok=True)
+            raise NotReady(
+                f"the voice worker still has {calls} call(s) after {timeout:g} s: nothing switched (--force cuts them)"
+            )
+        time.sleep(1)
+
+
+def drain_engine(timeout: float) -> None:
+    """Wait for the engine's requests in flight to end, at most ``timeout``; those left are cut by its restart, and
+    the gateway answers its clients' next requests 503 until it serves again."""
+    sock = runtime_dir() / "engine.sock"
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            status, text = http_get(sock, "/metrics", timeout=2)
+        except OSError:
+            return
+        if status != 200:
+            return
+        left = sum(
+            float(m.group(2))
+            for m in re.finditer(
+                r"^vllm:num_requests_(running|waiting)\{[^}]*\} (\S+)$", text, re.M
+            )
+        )
+        if left == 0:
+            say("the engine has no request in flight")
+            return
+        if time.monotonic() >= deadline:
+            say(
+                f"the engine still has {left:g} request(s) in flight after {timeout:g} s: its restart cuts them"
+            )
+            return
+        time.sleep(1)
+
+
+def settle(systemd: Systemd, units: list[str], seconds: float) -> list[str]:
+    """The units among ``units`` that are not active, or restarted, within ``seconds`` of now."""
+    before = {unit: systemd.show(unit, "NRestarts") for unit in units}
+    time.sleep(seconds)
+    failed = []
+    for unit in units:
+        now = systemd.show(unit, "ActiveState", "NRestarts")
+        if now.get("ActiveState") != "active" or now.get("NRestarts") != before[unit].get(
+            "NRestarts"
+        ):
+            failed.append(
+                f"{unit} ({now.get('ActiveState', '?')}, restarts {before[unit].get('NRestarts', '?')}->{now.get('NRestarts', '?')})"
+            )
+    return failed
+
+
+def health(
+    layout: Layout, spec: HostSpec, restarted: list[str], systemd: Systemd, seconds: float
+) -> Report:
+    """The host after a switch: each unit restarted active and staying so, and what serves checked."""
+    report = Report()
+    if restarted:
+        failed = settle(systemd, restarted, seconds)
+        report.add(
+            "units", not failed, ", ".join(failed) if failed else f"{', '.join(restarted)} active"
+        )
+    src = layout.root / "src"
+    check = src / "deploy" / "bin" / "serving-check"
+    if spec.gpu and systemd.active("flatshare-engine.service"):
+        serve = (
+            Path.home()
+            / ".config"
+            / "systemd"
+            / "user"
+            / "flatshare-engine.service.d"
+            / "variant-make-room-serve.conf"
+        )
+        if serve.exists():
+            pid = systemd.show("flatshare-engine.service", "MainPID").get("MainPID", "")
+            done = run(
+                [
+                    sys.executable,
+                    str(check),
+                    str(src / "deploy" / "phastform" / "serving.json"),
+                    "--engine",
+                    str(runtime_dir() / "engine-effective.json"),
+                    "--pid",
+                    pid,
+                ],
+                check=False,
+            )
+            print(done.stdout, end="")
+            report.add(
+                "the engine's configuration against the serving profile",
+                done.returncode == 0,
+                done.stderr.strip(),
+            )
+        else:
+            say(
+                "the engine runs a variant other than make-room-serve: no serving profile to hold it to"
+            )
+    if not spec.gpu and systemd.active("flatshare-gateway.service"):
+        try:
+            status, _ = http_get(runtime_dir() / "gateway.sock", "/health")
+        except OSError as error:
+            status = f"no answer ({error})"
+        report.add("gateway /health", status == 200, str(status))
+    if not spec.gpu and systemd.active("flatshare-voice-worker.service"):
+        status_path, _ = voice_files()
+        serve = (
+            Path.home()
+            / ".config"
+            / "systemd"
+            / "user"
+            / "flatshare-voice-worker.service.d"
+            / "variant-serve.conf"
+        )
+        if serve.exists():
+            deadline = time.monotonic() + max(seconds, 30)
+            while not status_path.exists() and time.monotonic() < deadline:
+                time.sleep(0.5)
+            pid = systemd.show("flatshare-voice-worker.service", "MainPID").get("MainPID", "")
+            done = run(
+                [
+                    sys.executable,
+                    str(check),
+                    str(src / "deploy" / "phastform" / "serving.json"),
+                    "--voice",
+                    str(status_path),
+                    "--voice-pid",
+                    pid,
+                ],
+                check=False,
+            )
+            print(done.stdout, end="")
+            report.add(
+                "the voice worker's admission against the serving profile",
+                done.returncode == 0,
+                done.stderr.strip(),
+            )
+    audit = src / "deploy" / "bin" / "audit-listeners"
+    if audit.exists():
+        done = run([sys.executable, str(audit)], check=False)
+        report.add(
+            "listener audit",
+            done.returncode == 0,
+            (done.stdout + done.stderr).strip().splitlines()[-1]
+            if (done.stdout + done.stderr).strip()
+            else "",
+        )
+    return report
+
+
+def apply(layout: Layout, spec: HostSpec, rid: str, steps: Plan, systemd: Systemd) -> None:
+    """Point current at ``rid`` (previous at what current named), link the units and restart or reload ``steps``."""
+    old = layout.target(layout.current)
+    if old and old != rid:
+        replace_link(layout.previous, f"releases/{old}")
+    replace_link(layout.current, f"releases/{rid}")
+    compat_links(layout, spec)
+    run(["bash", str(layout.root / "src" / "deploy" / spec.node / "install.sh")])
+    systemd("daemon-reload")
+    if steps.restart:
+        systemd("reset-failed", *steps.restart, check=False)
+        systemd("restart", *steps.restart)
+    for unit in steps.reload:
+        systemd("reload", unit)
+
+
+def record_running(
+    layout: Layout, spec: HostSpec, rid: str, restarted: list[str], systemd: Systemd
+) -> None:
+    """Which release each active unit was started under: the one it was (re)started on, kept for one a switch left
+    running."""
+    try:
+        running = json.loads(layout.running.read_text())
+    except (OSError, ValueError):
+        running = {}
+    for unit in spec.units:
+        if not systemd.active(unit.name):
+            running.pop(unit.name, None)
+        elif unit.name in restarted or unit.name not in running:
+            running[unit.name] = (
+                rid if unit.name in restarted else running.get(unit.name, "before releases")
+            )
+    layout.running.write_text(json.dumps(running, indent=1, sort_keys=True) + "\n")
+
+
+def switch(
+    layout: Layout,
+    spec: HostSpec,
+    rid: str,
+    systemd: Systemd,
+    *,
+    action: str,
+    drain_timeout: float,
+    force: bool,
+    settle_s: float,
+    keep: int,
+    units_dir: Path,
+) -> int:
+    """Switch the host to release ``rid``; on any failure, back to the release before. Returns the exit status."""
+    old = layout.target(layout.current)
+    new = layout.manifest(rid)
+    previous_link = layout.target(layout.previous)
+    old_manifest = (
+        layout.manifest(old) if old and (layout.release(old) / "MANIFEST.json").is_file() else None
+    )
+    if old == rid:
+        say(f"the host runs release {rid} already")
+        return 0
+    steps = plan(spec, old_manifest, new, systemd)
+    checks = verify(layout, spec, rid, systemd, units_dir, set(steps.restart))
+    if checks.failed:
+        raise ReleaseError(
+            f"release {rid} fails its checks ({', '.join(checks.failed)}): nothing switched"
+        )
+    say(
+        f"switching {old or 'nothing'} -> {rid}: restart {', '.join(steps.restart) or 'nothing'}"
+        + (f", reload {', '.join(steps.reload)}" if steps.reload else "")
+    )
+    units = {unit.name: unit for unit in spec.units}
+    cuts = {units[name].drain for name in steps.restart}
+    if steps and not force and (pid := e2_point(layout.root)):
+        raise NotReady(
+            f"an E2 point (pid {pid}) measures on this host: nothing switched (--force switches anyway)"
+        )
+    drained = drain_voice(drain_timeout, force) if "voice" in cuts else False
+    if "engine" in cuts:
+        drain_engine(drain_timeout)
+    try:
+        apply(layout, spec, rid, steps, systemd)
+        result = health(layout, spec, steps.restart, systemd, settle_s)
+        if result.failed:
+            raise ReleaseError(", ".join(result.failed))
+    except ReleaseError as error:
+        say(f"release {rid} failed after the switch: {error}")
+        layout.log(action=action, source=old, target=rid, result=f"failed: {error}")
+        if not old:
+            say("there is no release before it to switch back to")
+            return 1
+        say(f"switching back to {old}")
+        try:
+            apply(layout, spec, old, steps, systemd)
+            back = health(layout, spec, steps.restart, systemd, settle_s)
+        except ReleaseError as again:
+            back = Report([("switch back", False, str(again))])
+        finally:
+            if previous_link:
+                replace_link(layout.previous, f"releases/{previous_link}")
+            if drained:
+                voice_files()[1].unlink(missing_ok=True)
+        layout.log(
+            action="switch-back",
+            source=rid,
+            target=old,
+            result="ok" if not back.failed else f"failed: {back.failed}",
+        )
+        if back.failed:
+            say(f"switching back to {old} failed too: {', '.join(back.failed)}")
+            return 3
+        say(f"the host runs {old} again")
+        return 1
+    finally:
+        if drained:
+            voice_files()[1].unlink(missing_ok=True)
+    record_running(layout, spec, rid, steps.restart, systemd)
+    layout.log(
+        action=action,
+        source=old,
+        target=rid,
+        result="ok",
+        restarted=steps.restart,
+        reloaded=steps.reload,
+    )
+    say(f"the host runs release {rid} ({new['describe']}); previous is {old}")
+    prune(layout, keep)
+    return 0
+
+
+# Pruning.
+
+
+def pinned_releases(proc: Path = Path("/proc")) -> set[str]:
+    """The releases this user's processes import from (FLATSHARE_RELEASE in their environment), by name."""
+    found = set()
+    for entry in proc.iterdir() if proc.is_dir() else ():
+        if not entry.name.isdigit():
+            continue
+        try:
+            environ = (entry / "environ").read_bytes()
+        except OSError:
+            continue
+        for item in environ.split(b"\0"):
+            if item.startswith(PIN.encode() + b"="):
+                found.add(Path(item.split(b"=", 1)[1].decode(errors="replace")).name)
+    return found
+
+
+def prune(layout: Layout, keep: int, proc: Path = Path("/proc")) -> list[str]:
+    """Remove the releases beyond the newest ``keep``, except current, previous and any a running process imports from
+    or a unit was started under, and then the environments no release links. Returns what it removed."""
+    ids = layout.ids()
+    try:
+        running = set(json.loads(layout.running.read_text()).values())
+    except (OSError, ValueError):
+        running = set()
+    kept = set(ids[-keep:]) | {layout.target(layout.current), layout.target(layout.previous)}
+    kept |= pinned_releases(proc) | running
+    removed = []
+    for rid in ids:
+        if rid not in kept:
+            remove_tree(layout.release(rid))
+            removed.append(rid)
+    linked = set()
+    for rid in layout.ids():
+        for link in (
+            (layout.release(rid) / "venvs").glob("*")
+            if (layout.release(rid) / "venvs").is_dir()
+            else ()
+        ):
+            linked.add(Path(os.readlink(link)).name)
+    for env_dir in sorted(layout.envs.iterdir()) if layout.envs.is_dir() else ():
+        if env_dir.is_dir() and env_dir.name not in linked:
+            remove_tree(env_dir)
+            removed.append(f"envs/{env_dir.name}")
+    for name in removed:
+        say(f"pruned {name}")
+    return removed
+
+
+# Adopting a host deployed before releases.
+
+
+def adopt(layout: Layout, spec: HostSpec) -> str:
+    """Move the old layout (a real ~/flatshare/src, venvs/NAME and, on the control host, bin/flatshare-gateway) into
+    one release, as it is, without rebuilding: the tree becomes releases/legacy-REV and current, the environments
+    envs/NAME-legacy, linked from it, and the old paths links into current. Each move is one rename; a process that
+    runs from the old paths keeps its files."""
+    root = layout.root
+    src = root / "src"
+    describe = (src / "DEPLOYED").read_text().strip() if (src / "DEPLOYED").is_file() else "unknown"
+    rid = "legacy-" + re.sub(r"[^A-Za-z0-9._-]", "-", describe)
+    release = layout.release(rid)
+    if release.exists():
+        raise NotReady(f"{release} exists already")
+    layout.releases.mkdir(parents=True, exist_ok=True)
+    layout.envs.mkdir(parents=True, exist_ok=True)
+    os.rename(src, release)
+    replace_link(layout.current, f"releases/{rid}")
+    replace_link(src, "current")
+    envs = {}
+    (release / "venvs").mkdir(exist_ok=True)
+    for env in spec.envs:
+        old = root / "venvs" / env.name
+        if old.is_dir() and not old.is_symlink():
+            directory = f"{env.name}-legacy"
+            (release / "venvs" / env.name).symlink_to(f"../../../envs/{directory}")
+            os.rename(old, layout.envs / directory)
+            replace_link(old, f"../current/venvs/{env.name}")
+            mark = {"name": env.name, "key": "legacy", "adopted_at": stamp()}
+            (layout.envs / directory / MARK).write_text(json.dumps(mark) + "\n")
+            envs[env.name] = directory
+    artifacts = {}
+    for artifact in spec.artifacts:
+        old = root / artifact
+        if old.is_file() and not old.is_symlink():
+            (release / artifact).parent.mkdir(parents=True, exist_ok=True)
+            os.rename(old, release / artifact)
+            replace_link(old, f"{os.path.relpath(layout.current, old.parent)}/{artifact}")
+            artifacts[artifact] = {
+                "sha256": sha256_file(release / artifact),
+                "adopted": True,
+                "built": {},
+            }
+    compat_links(layout, spec)
+    files = tree_files(release)
+    manifest = {
+        "schema": SCHEMA,
+        "id": rid,
+        "commit": None,
+        "describe": describe,
+        "host": spec.name,
+        "prepared_at": stamp(),
+        "prepared_unix": time.time(),
+        "adopted": True,
+        "tree_sha256": tree_hash(files),
+        "files": files,
+        "artifacts": artifacts,
+        "envs": {
+            name: {"directory": directory, "key": "legacy"} for name, directory in envs.items()
+        },
+        "models": model_pins(release),
+        "units": None,
+    }
+    (release / "MANIFEST.json").write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n")
+    layout.log(action="adopt", target=rid, result="ok")
+    say(
+        f"adopted the deployment of {describe} as release {rid}, current; {', '.join(envs) or 'no'} environments kept"
+    )
+    return rid
+
+
+# Commands.
+
+
+def status(layout: Layout, as_json: bool, systemd: Systemd, spec: HostSpec | None) -> int:
+    current, previous = layout.target(layout.current), layout.target(layout.previous)
+    try:
+        running = json.loads(layout.running.read_text())
+    except (OSError, ValueError):
+        running = {}
+    releases = []
+    for rid in layout.ids():
+        manifest = layout.manifest(rid)
+        releases.append(
+            {
+                "id": rid,
+                "describe": manifest.get("describe"),
+                "commit": manifest.get("commit"),
+                "prepared_at": manifest.get("prepared_at"),
+                "tree_sha256": manifest.get("tree_sha256"),
+                "current": rid == current,
+                "previous": rid == previous,
+                "artifacts": manifest.get("artifacts", {}),
+            }
+        )
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "current": current,
+                    "previous": previous,
+                    "releases": releases,
+                    "running": running,
+                },
+                indent=1,
+            )
+        )
+        return 0
+    for item in releases:
+        mark = "current " if item["current"] else "previous" if item["previous"] else "        "
+        print(
+            f"{mark} {item['id']:<20} {item['describe'] or '':<24} {item['prepared_at']}  tree {str(item['tree_sha256'])[:16]}"
+        )
+    for unit, rid in sorted(running.items()):
+        print(f"  {unit}: started under {rid}")
+    if not releases:
+        print(
+            "no releases" + (" (an old layout: deploy.sh --adopt)" if layout.old_layout() else "")
+        )
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="flatshare-release", description=__doc__.split("\n\n")[0])
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=Path.home() / "flatshare",
+        help="the deployment (default ~/flatshare)",
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    def switching(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--drain-timeout",
+            type=float,
+            default=300,
+            help="seconds to wait for calls and requests to end (300)",
+        )
+        p.add_argument(
+            "--force",
+            action="store_true",
+            help="switch although calls are still in progress after the drain",
+        )
+        p.add_argument(
+            "--settle",
+            type=float,
+            default=10,
+            help="seconds a restarted unit must stay active (10)",
+        )
+        p.add_argument(
+            "--keep",
+            type=int,
+            default=KEEP,
+            help=f"releases kept besides current and previous ({KEEP})",
+        )
+
+    p = commands.add_parser("deploy", help="prepare, verify and switch to an uploaded release")
+    p.add_argument("upload", type=Path)
+    p.add_argument("--host", required=True, choices=sorted(HOSTS))
+    p.add_argument("--id", required=True)
+    p.add_argument("--commit", required=True)
+    p.add_argument("--describe", required=True)
+    p.add_argument("--tree", required=True)
+    p.add_argument("--gateway-from", help="carry the gateway's binary from this release")
+    p.add_argument(
+        "--adopt", action="store_true", help="move a deployment from before releases into one first"
+    )
+    p.add_argument("--no-switch", action="store_true", help="prepare and verify only")
+    switching(p)
+    p = commands.add_parser("rollback", help="switch back to the previous release")
+    p.add_argument("--to", help="a release other than previous")
+    switching(p)
+    p = commands.add_parser("status", help="the releases, current and previous")
+    p.add_argument("--json", action="store_true")
+    p = commands.add_parser(
+        "verify", help="check a release (default current) against its manifest and the host"
+    )
+    p.add_argument("id", nargs="?")
+    p = commands.add_parser("prune", help="remove old releases and unlinked environments")
+    p.add_argument("--keep", type=int, default=KEEP)
+    p = commands.add_parser(
+        "drain",
+        help="stop the voice worker (serve mode) taking calls, and wait for those in progress",
+    )
+    p.add_argument("--timeout", type=float, default=300)
+    commands.add_parser("undrain", help="let the voice worker take calls again")
+    p = commands.add_parser("adopt", help="move a deployment from before releases into one")
+    p.add_argument("--host", required=True, choices=sorted(HOSTS))
+    p = commands.add_parser(
+        "tree-hash", help="the hash of a directory's files, as a release's manifest has it"
+    )
+    p.add_argument("dir", type=Path)
+    args = parser.parse_args(argv)
+
+    layout = Layout(args.root.expanduser())
+    systemd = Systemd()
+    units_dir = Path.home() / ".config" / "systemd" / "user"
+    try:
+        if args.command == "tree-hash":
+            print(tree_hash(tree_files(args.dir)))
+            return 0
+        if args.command == "status":
+            return status(layout, args.json, systemd, None)
+        if args.command == "drain":
+            return 0 if drain_voice(args.timeout, force=False) else 1
+        if args.command == "undrain":
+            voice_files()[1].unlink(missing_ok=True)
+            say("the voice worker takes calls again")
+            return 0
+        with layout.lock():
+            if args.command == "adopt":
+                if not layout.old_layout():
+                    raise NotReady(f"{layout.root / 'src'} is no deployment from before releases")
+                adopt(layout, HOSTS[args.host])
+                return 0
+            if args.command == "prune":
+                prune(layout, args.keep)
+                return 0
+            current = layout.target(layout.current)
+            if args.command == "verify":
+                rid = args.id or current
+                if not rid:
+                    raise NotReady("no release to verify")
+                spec = HOSTS[layout.manifest(rid)["host"]]
+                report = verify(layout, spec, rid, systemd, units_dir)
+                return 1 if report.failed else 0
+            if args.command == "rollback":
+                rid = args.to or layout.target(layout.previous)
+                if not rid:
+                    raise NotReady("no previous release to roll back to")
+                spec = HOSTS[layout.manifest(current or rid)["host"]]
+                return switch(
+                    layout,
+                    spec,
+                    rid,
+                    systemd,
+                    action="rollback",
+                    drain_timeout=args.drain_timeout,
+                    force=args.force,
+                    settle_s=args.settle,
+                    keep=args.keep,
+                    units_dir=units_dir,
+                )
+            spec = HOSTS[args.host]
+            if layout.old_layout():
+                if not args.adopt:
+                    raise NotReady(
+                        f"{layout.root / 'src'} is a deployment from before releases: deploy with --adopt to move it into one"
+                    )
+                adopt(layout, spec)
+            rid = prepare(
+                args.upload,
+                layout,
+                spec,
+                rid=args.id,
+                commit=args.commit,
+                describe=args.describe,
+                tree=args.tree,
+                gateway_from=args.gateway_from,
+                systemd=systemd,
+            )
+            if args.no_switch:
+                report = verify(layout, spec, rid, systemd, units_dir)
+                return 1 if report.failed else 0
+            return switch(
+                layout,
+                spec,
+                rid,
+                systemd,
+                action="switch",
+                drain_timeout=args.drain_timeout,
+                force=args.force,
+                settle_s=args.settle,
+                keep=args.keep,
+                units_dir=units_dir,
+            )
+    except NotReady as error:
+        say(str(error))
+        return 2
+    except ReleaseError as error:
+        say(str(error))
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

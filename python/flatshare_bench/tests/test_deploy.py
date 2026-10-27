@@ -3,6 +3,8 @@ authorizes cyan's tunnel keys on a GPU node, run against stand-ins for ssh and s
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import signal
@@ -210,9 +212,9 @@ def test_cyans_install_makes_the_gateways_secret_and_metrics_key_once(tmp_path: 
 def test_cyans_install_says_when_the_gateways_binary_is_not_the_sources_version(
     tmp_path: Path,
 ) -> None:
-    # deploy.sh syncs the source, and the gateway's binary is built apart (ops/RUNBOOK.md, Deploy), so it lagged a
-    # release unnoticed: cyan's DEPLOYED was v1.2 while its binary said 1.1.0. The install says so and still succeeds,
-    # since the source may be deployed before the binary is built.
+    # The gateway's binary was built apart from the source it was deployed with, so it lagged a release unnoticed:
+    # cyan's DEPLOYED was v1.2 while its binary said 1.1.0. A release checks it before it switches; an install outside
+    # one says so and still succeeds.
     home, bin_dir = tmp_path / "home", tmp_path / "bin"
     home.mkdir()
     bin_dir.mkdir()
@@ -233,7 +235,7 @@ def test_cyans_install_says_when_the_gateways_binary_is_not_the_sources_version(
 
     said = (
         "install: ~/flatshare/bin/flatshare-gateway is {}, the source version {}: "
-        "rebuild and reinstall it as ops/RUNBOOK.md's Deploy says\n"
+        "release this commit with its gateway as ops/RUNBOOK.md's Deploy says\n"
     )
     assert install() == said.format("missing", source)
     gateway.write_text("#!/bin/sh\necho 'flatshare-gateway 1.1.0'\n")
@@ -1532,44 +1534,182 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()
 
 
-def test_deploy_syncs_the_commit_alone_and_refuses_changes_it_would_not_carry(
-    tmp_path: Path,
-) -> None:
+STUB_RELEASE = """\
+#!/usr/bin/env python3
+# flatshare-release on a host in the deploy.sh tests: tree-hash is the real tool's; every other command is logged with
+# the files of the upload it names, and status --json answers $HOME/status.json.
+import json, os, subprocess, sys
+from pathlib import Path
+args = sys.argv[1:]
+if args[0] == "tree-hash":
+    sys.exit(subprocess.run([sys.executable, os.environ["REAL_RELEASE"], *args]).returncode)
+if args[:2] == ["status", "--json"]:
+    status = Path(os.environ["HOME"]) / "status.json"
+    print(status.read_text() if status.exists() else json.dumps({"releases": []}))
+    sys.exit(0)
+entry = {"args": args}
+if args[0] == "deploy":
+    upload = Path(args[1])
+    entry["files"] = sorted(str(p.relative_to(upload)) for p in upload.rglob("*") if p.is_file())
+with open(Path(os.environ["HOME"]) / "release.log", "a") as log:
+    log.write(json.dumps(entry) + "\\n")
+"""
+
+
+def deploy_repo(tmp_path: Path, host_dir: str = "phastform") -> tuple[Path, Path, dict[str, str]]:
+    """A repository with deploy.sh and a stand-in flatshare-release, committed, and the hosts it deploys to."""
     repo, hosts = tmp_path / "repo", tmp_path / "hosts"
-    (repo / "deploy" / "phastform").mkdir(parents=True)
+    (repo / "deploy" / host_dir / "systemd").mkdir(parents=True)
     (repo / "deploy" / "bin").mkdir()
     (repo / "deploy" / "deploy.sh").write_text((DEPLOY / "deploy.sh").read_text())
-    (repo / "deploy" / "phastform" / "install.sh").write_text(
-        'echo installed >>"$HOME/install.log"\n'
-    )
-    (repo / "deploy" / "bin" / "audit-listeners").write_text('print("audit-listeners: ok")\n')
+    (repo / "deploy" / "bin" / "flatshare-release").write_text(STUB_RELEASE)
+    (repo / "deploy" / host_dir / "systemd" / "flatshare.target").write_text("[Unit]\n")
+    (repo / "crates").mkdir()
+    (repo / "crates" / "lib.rs").write_text("// the gateway\n")
     (repo / ".gitignore").write_text("__pycache__/\n")
     git(repo, "init", "-q")
     git(repo, "add", ".")
     git(repo, "commit", "-q", "-m", "first")
-    (repo / "deploy" / "__pycache__").mkdir()  # ignored: never synced
-    (repo / "deploy" / "__pycache__" / "x.pyc").write_bytes(b"")
-    # The host has a file of an earlier commit, which goes.
-    src = hosts / "phastform.example.org" / "flatshare" / "src"
-    src.mkdir(parents=True)
-    (src / "gone.py").write_text("")
+    hosts.mkdir()
     env = os.environ | {
         "PATH": f"{FAKES}{os.pathsep}{os.environ['PATH']}",
         "FAKE_HOSTS": str(hosts),
         "FLATSHARE_SSH": str(FAKES / "ssh"),
+        "REAL_RELEASE": str(DEPLOY / "bin" / "flatshare-release"),
     }
+    return repo, hosts, env
+
+
+def release_log(home: Path) -> list[dict]:
+    path = home / "release.log"
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+def tree_hash(directory: Path) -> str:
+    done = subprocess.run(
+        [sys.executable, str(DEPLOY / "bin" / "flatshare-release"), "tree-hash", str(directory)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return done.stdout.strip()
+
+
+def test_deploy_uploads_the_commit_alone_and_runs_its_release_there(tmp_path: Path) -> None:
+    repo, hosts, env = deploy_repo(tmp_path)
+    (repo / "deploy" / "__pycache__").mkdir()  # ignored: never released
+    (repo / "deploy" / "__pycache__" / "x.pyc").write_bytes(b"")
     deploy = ["bash", str(repo / "deploy" / "deploy.sh"), "phastform.example.org"]
-    done = subprocess.run(deploy, env=env, capture_output=True, text=True)
+    done = subprocess.run(
+        [*deploy, "--adopt", "--drain-timeout", "60"], env=env, capture_output=True, text=True
+    )
     assert done.returncode == 0, done.stderr
-    synced = sorted(str(p.relative_to(src)) for p in src.rglob("*") if p.is_file())
-    assert synced == sorted([*git(repo, "ls-files").splitlines(), "DEPLOYED"])
-    assert (src / "DEPLOYED").read_text() == git(repo, "describe", "--always") + "\n"
-    assert (hosts / "phastform.example.org" / "install.log").read_text() == "installed\n"
-    # A change the sync would not carry, committed or not, is refused before anything moves.
-    (repo / "deploy" / "phastform" / "install.sh").write_text("echo changed\n")
+    home = hosts / "phastform.example.org"
+    rev, commit = git(repo, "describe", "--always"), git(repo, "rev-parse", "HEAD")
+    rid = git(repo, "rev-parse", "--short=12", "HEAD")
+    upload = f"flatshare/releases/.upload-{rid}"
+    [entry] = release_log(home)
+    # The commit's files and DEPLOYED, uploaded, and the uploaded tool run on them, with the tree's hash.
+    assert entry["files"] == sorted([*git(repo, "ls-files").splitlines(), "DEPLOYED"])
+    assert (home / upload / "DEPLOYED").read_text() == rev + "\n"
+    assert entry["args"] == [
+        "deploy", upload, "--host", "phastform", "--id", rid, "--commit", commit, "--describe", rev,
+        "--tree", tree_hash(home / upload), "--adopt", "--drain-timeout", "60",
+    ]  # fmt: skip
+    # A change the release would not carry, committed or not, is refused before anything moves.
+    (repo / "deploy" / "deploy.sh").write_text(
+        (repo / "deploy" / "deploy.sh").read_text() + "# changed\n"
+    )
     (repo / "new.txt").write_text("")
     done = subprocess.run(deploy, env=env, capture_output=True, text=True)
     assert done.returncode == 2
-    assert "changes the sync would not carry" in done.stderr
-    assert " M deploy/phastform/install.sh" in done.stderr and "?? new.txt" in done.stderr
-    assert (src / "deploy" / "phastform" / "install.sh").read_text().startswith("echo installed")
+    assert "changes the release would not carry" in done.stderr
+    assert " M deploy/deploy.sh" in done.stderr and "?? new.txt" in done.stderr
+    assert len(release_log(home)) == 1
+
+
+def test_deploy_rolls_back_and_shows_status_with_the_current_releases_tool(tmp_path: Path) -> None:
+    repo, hosts, env = deploy_repo(tmp_path)
+    home = hosts / "phastform"
+    tool = home / "flatshare" / "src" / "deploy" / "bin" / "flatshare-release"
+    tool.parent.mkdir(parents=True)
+    tool.write_text(STUB_RELEASE)
+    deploy = ["bash", str(repo / "deploy" / "deploy.sh"), "phastform"]
+    done = subprocess.run(
+        [*deploy, "--rollback", "--to", "a" * 12, "--settle", "5"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 0, done.stderr
+    assert release_log(home) == [{"args": ["rollback", "--to", "a" * 12, "--settle", "5"]}]
+    done = subprocess.run([*deploy, "--status"], env=env, capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert release_log(home)[-1] == {"args": ["status"]}
+
+
+def gateway_build(repo: Path, out: Path, commit: str) -> Path:
+    """A gateway binary as deploy/build-gateway.sh leaves one, built from ``commit``."""
+    out.write_text("#!/bin/sh\necho 'flatshare-gateway 1.0.0'\n")
+    sha = hashlib.sha256(out.read_bytes()).hexdigest()
+    (out.parent / f"{out.name}.json").write_text(json.dumps({"commit": commit, "sha256": sha}))
+    return out
+
+
+def test_deploy_releases_the_gateway_built_from_this_commit_or_one_of_the_same_crates(
+    tmp_path: Path,
+) -> None:
+    repo, hosts, env = deploy_repo(tmp_path, "cyan")
+    (repo / "deploy" / "cyan" / "systemd" / "flatshare-gateway.service").write_text("[Service]\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "the gateway's unit")
+    home = hosts / "cyan"
+    commit = git(repo, "rev-parse", "HEAD")
+    deploy = ["bash", str(repo / "deploy" / "deploy.sh"), "cyan"]
+    # No binary, and nothing on the host to carry: refused.
+    done = subprocess.run(deploy, env=env, capture_output=True, text=True)
+    assert (
+        done.returncode == 2
+        and "build this commit's (deploy/build-gateway.sh BUILD_HOST)" in done.stderr
+    )
+    # One built from another commit: refused.
+    other = gateway_build(repo, tmp_path / "gateway-other", "0" * 40)
+    done = subprocess.run(
+        [*deploy, "--gateway", str(other)], env=env, capture_output=True, text=True
+    )
+    assert (
+        done.returncode == 2 and f"was built from {'0' * 40}, not from this commit" in done.stderr
+    )
+    # This commit's: in the release, with its provenance.
+    built = gateway_build(repo, tmp_path / "gateway", commit)
+    done = subprocess.run(
+        [*deploy, "--gateway", str(built)], env=env, capture_output=True, text=True
+    )
+    assert done.returncode == 0, done.stderr
+    [entry] = release_log(home)
+    assert {"bin/flatshare-gateway", "bin/flatshare-gateway.json"} <= set(entry["files"])
+    assert "--gateway-from" not in entry["args"]
+    # The host runs a release whose binary was built from crates this commit has unchanged: carried from it.
+    current = {
+        "id": "c" * 12,
+        "commit": "c" * 40,
+        "current": True,
+        "artifacts": {"bin/flatshare-gateway": {"built": {"commit": commit}}},
+    }
+    (home / "status.json").write_text(json.dumps({"releases": [current]}))
+    (repo / "README.md").write_text("docs only\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "docs")
+    tool = home / "flatshare" / "src" / "deploy" / "bin" / "flatshare-release"
+    tool.parent.mkdir(parents=True, exist_ok=True)
+    tool.write_text(STUB_RELEASE)
+    done = subprocess.run(deploy, env=env, capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    entry = release_log(home)[-1]
+    assert entry["args"][-2:] == ["--gateway-from", "c" * 12]
+    assert "bin/flatshare-gateway" not in entry["files"]
+    # A commit that changes the crates needs its own build.
+    (repo / "crates" / "lib.rs").write_text("// changed\n")
+    git(repo, "commit", "-q", "-am", "the gateway changes")
+    done = subprocess.run(deploy, env=env, capture_output=True, text=True)
+    assert done.returncode == 2 and "has no binary built from these crates" in done.stderr

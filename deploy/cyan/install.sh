@@ -4,6 +4,9 @@
 # last SSH session.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
+# The units' links go through ~/flatshare/src, current's release, never into one release's own directory, which a later
+# release prunes (deploy/bin/flatshare-release): whichever path ran this, its links name the one through src.
+case $here in "$HOME"/flatshare/releases/*/deploy/*) here=$HOME/flatshare/src/deploy/${here#"$HOME"/flatshare/releases/*/deploy/} ;; esac
 units=$HOME/.config/systemd/user
 mkdir -p "$units"
 ln -sf "$here"/systemd/* "$units/"
@@ -30,8 +33,9 @@ done
 systemctl --user daemon-reload
 systemctl --user enable -q flatshare-voicenet.service flatshare-livekit.service flatshare-tunnel@phastform.service \
   flatshare-voice-worker.service
-# The gateway's binary is built apart from this source (ops/RUNBOOK.md, Deploy), so a release can leave it behind: a
-# version that is not the source's is said, not refused, since the source may be deployed before the binary is built.
+# The gateway's binary is the release's (bin/flatshare-gateway, a link into current, which deploy.sh's release checked
+# against the source's version before it switched). Installed outside a release, from a tree deployed otherwise, it
+# can lag the source: a version that is not the source's is said, not refused.
 gateway=$HOME/flatshare/bin/flatshare-gateway
 wanted=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version *= *"\([^"]*\)".*/\1/p' "$here/../../Cargo.toml")
 built=missing
@@ -41,7 +45,7 @@ if [[ -e $gateway ]]; then
   built=${built:-not runnable}
 fi
 if [[ $built != "version $wanted" ]]; then
-  echo "install: ~/flatshare/bin/flatshare-gateway is $built, the source version $wanted: rebuild and reinstall it" \
-    "as ops/RUNBOOK.md's Deploy says" >&2
+  echo "install: ~/flatshare/bin/flatshare-gateway is $built, the source version $wanted: release this commit with" \
+    "its gateway as ops/RUNBOOK.md's Deploy says" >&2
 fi
 loginctl show-user "$(id -un)" --property=Linger
