@@ -1156,6 +1156,232 @@
         }
       ],
       "description": "Where a preemption policy moves the cost: agents wait, voice does not."
+    },
+    {
+      "type": "row",
+      "title": "Two GPU nodes (with [[nodes]])",
+      "id": 27,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 68
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Each node's health and its engine's readiness",
+      "id": 28,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 69
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "flatshare_gateway_node_healthy",
+          "legendFormat": "healthy, {{node}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "flatshare_gateway_node_ready",
+          "legendFormat": "engine ready, {{node}}",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "min by (node, component) (flatshare_gateway_node_component_healthy)",
+          "legendFormat": "{{node}} {{component}}",
+          "refId": "C"
+        }
+      ],
+      "description": "1 while healthy: its engine serving and ready, its STT and TTS answering /health. A node is passed over at once when a request finds its engine broken, and unhealthy after unhealthy_after failed checks in a row."
+    },
+    {
+      "type": "timeseries",
+      "title": "Sessions on each node, by class",
+      "id": 29,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 69
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (node, class) (flatshare_gateway_node_sessions)",
+          "legendFormat": "{{node}} {{class}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Calls (realtime) take a node's call slots, max_calls; agents' sessions stay where their prefix cache is."
+    },
+    {
+      "type": "timeseries",
+      "title": "Placements a second by reason, and sessions refused",
+      "id": 30,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 69
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (node, reason) (rate(flatshare_gateway_placements_total[5m]))",
+          "legendFormat": "{{node}} {{reason}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (class, reason) (rate(flatshare_gateway_placements_refused_total[5m])) > 0",
+          "legendFormat": "refused {{class}} {{reason}}",
+          "refId": "B"
+        }
+      ],
+      "description": "moved: a session placed again because its node was not available; retried: a realtime request sent again on another node after its node failed before the first content; no_call_slot: a call that fit no node."
+    },
+    {
+      "type": "timeseries",
+      "title": "Failover: covering nodes and their agents waiting",
+      "id": 31,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 77
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "flatshare_gateway_node_covering",
+          "legendFormat": "covering, {{node}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "flatshare_gateway_node_failover_waiting",
+          "legendFormat": "agents waiting, {{node}}",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (node) (flatshare_gateway_node_in_flight)",
+          "legendFormat": "in flight, {{node}}",
+          "refId": "C"
+        }
+      ],
+      "description": "A node that carries calls moved from a failed node covers for it: its agents' requests in flight are held to failover_background_max_in_flight (0) until the failed node is healthy again."
     }
   ]
 }
