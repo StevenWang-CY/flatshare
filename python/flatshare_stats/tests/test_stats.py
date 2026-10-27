@@ -99,6 +99,33 @@ not a sample
     ]
 
 
+def test_metric_samples_reads_the_named_metrics_alone() -> None:
+    exposition = """\
+# HELP vllm:num_requests_waiting Number of requests waiting to be processed.
+vllm:num_requests_waiting{engine="0"} 2.0
+vllm:num_requests_waiting_by_reason{engine="0",reason="capacity"} 2.0
+vllm:kv_cache_usage_perc{engine="0"} 0.5
+  vllm:kv_cache_usage_perc{engine="1"} 0.25
+vllm:num_requests_waiting one
+vllm:num_requests_running{engine="0"} 3.0
+"""
+    # A name that only begins a wanted one is another metric's, and blanks before a sample are the format's.
+    assert list(
+        metric_samples(exposition, ("vllm:num_requests_waiting", "vllm:kv_cache_usage_perc"))
+    ) == [
+        ("vllm:num_requests_waiting", {"engine": "0"}, 2.0),
+        ("vllm:kv_cache_usage_perc", {"engine": "0"}, 0.5),
+        ("vllm:kv_cache_usage_perc", {"engine": "1"}, 0.25),
+    ]
+    assert list(metric_samples(exposition, ())) == []
+    with pytest.raises(TypeError, match="not one"):
+        next(metric_samples(exposition, "vllm:num_requests_waiting"))
+    # The samples of any names are those of the whole exposition's with those names, in its order.
+    every = list(metric_samples(exposition))
+    for names in ({"vllm:num_requests_running"}, {"vllm:num_requests_waiting_by_reason", "absent"}):
+        assert list(metric_samples(exposition, names)) == [s for s in every if s[0] in names]
+
+
 def test_metric_samples_follows_the_text_format() -> None:
     # A line with a timestamp or an exemplar was not read, and a label value with a brace or an escaped quote was
     # cut at it: the sample was lost, or its labels were wrong.
@@ -143,3 +170,8 @@ def test_metric_samples_follows_the_text_format() -> None:
     values = [value for _, _, value in samples]
     assert values[:6] == [1027.0, 7.0, 1.7e9, 1.0, 2.0, 3.0]
     assert math.isnan(values[6]) and values[7:] == [math.inf, -math.inf, 4.0]
+    # Read by its name alone, each metric gives the samples the whole exposition gives it, and a line that is not a
+    # sample is skipped as there.
+    for name in {name for name, _, _ in samples} | {"bad_value", "bad_escape", "bad_tail"}:
+        named = [(n, labels) for n, labels, _ in metric_samples(exposition, (name,))]
+        assert named == [(n, labels) for n, labels, _ in samples if n == name], name

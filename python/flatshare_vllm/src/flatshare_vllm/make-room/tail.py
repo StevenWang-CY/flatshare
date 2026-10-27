@@ -84,8 +84,7 @@ async def read_engine(session: aiohttp.ClientSession, url: str) -> Engine:
     async with session.get(f"{url}/metrics") as response:
         exposition = await response.text()
     labels = next(
-        (labels for name, labels, _ in stats.metric_samples(exposition) if name == CACHE_CONFIG),
-        None,
+        (labels for _, labels, _ in stats.metric_samples(exposition, (CACHE_CONFIG,))), None
     )
     if labels is None:
         raise RuntimeError(f"{url}/metrics has no {CACHE_CONFIG}")

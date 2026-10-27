@@ -258,9 +258,8 @@ async def sample_engine(
                 samples.append(EngineSample(at, error=f"http {response.status_code}"))
             else:
                 values = {"vllm:num_requests_running": 0.0, "vllm:num_requests_waiting": 0.0}
-                for name, _, value in metric_samples(response.text):
-                    if name in values:
-                        values[name] += value
+                for name, _, value in metric_samples(response.text, tuple(values)):
+                    values[name] += value
                 samples.append(
                     EngineSample(
                         at,
@@ -600,7 +599,7 @@ async def fill_cpu_tier(
         )
 
         def stored(exposition: str) -> float:
-            return sum(v for name, _, v in metric_samples(exposition) if name == STORES)
+            return sum(v for _, _, v in metric_samples(exposition, (STORES,)))
 
         exposition = await probe.metrics()
         probe.pool = pool_tokens(exposition) or 0

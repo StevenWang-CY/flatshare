@@ -96,8 +96,7 @@ async def engine(session: aiohttp.ClientSession, url: str) -> tuple[str, int, in
         card = (await response.json())["data"][0]
     exposition = await metrics(session, url)
     labels = next(
-        (labels for name, labels, _ in stats.metric_samples(exposition) if name == CACHE_CONFIG),
-        None,
+        (labels for _, labels, _ in stats.metric_samples(exposition, (CACHE_CONFIG,))), None
     )
     if labels is None:
         raise RuntimeError(f"{url}/metrics has no {CACHE_CONFIG}")
@@ -122,7 +121,7 @@ async def engine_state(session: aiohttp.ClientSession, url: str, num_blocks: int
 
 def sample(exposition: str, name: str) -> float:
     """A metric's value in a Prometheus exposition, summed over its label sets."""
-    return sum(value for metric, _, value in stats.metric_samples(exposition) if metric == name)
+    return sum(value for _, _, value in stats.metric_samples(exposition, (name,)))
 
 
 async def stream(

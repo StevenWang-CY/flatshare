@@ -1159,10 +1159,10 @@ def _ended(host: Host) -> tuple[float, float]:
     those it is relaying or holding at its admission point (BUSY)."""
     exposition = fetch(host.gateway_socket)
     ended = busy = 0.0
-    for name, _, value in metric_samples(exposition):
+    for name, _, value in metric_samples(exposition, (OUTCOMES, *BUSY)):
         if name == OUTCOMES:
             ended += value
-        elif name in BUSY:
+        else:
             busy += value
     return ended, busy
 
