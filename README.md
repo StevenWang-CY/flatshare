@@ -74,9 +74,9 @@ about a minute for a first token, which is the regime the change is for
 - **The variant and the PRs.** The rows with #63350 and #63351 ran as Flatshare's make-room variant of vLLM 0.32.0
   with the PRs' switch values. It schedules as the PRs' diff did before their revision of 2026-10-25, which ends the
   window's hold one step sooner for replies at least the window long
-  ([after W5](docs/BENCHMARKS.md#after-w5-the-first-tokens-in-flight)).
+  ([the revision](docs/BENCHMARKS.md#after-w5-the-first-tokens-in-flight)).
 - **On the final code**, five more rounds on the same samples gave the last row 2.27 s, between 45 ms lower and 77 ms
-  higher than W5's round by round ([FB](benchmarks/results/2026-10-25-e2-fb)).
+  higher than the same round in the table ([the records](benchmarks/results/2026-10-25-e2-fb)).
 
 | The same two calls and 24 sessions on an A100 SXM4 80 GB | Voice p95 | Over the SLO | Agents' tokens/s | Agents' TTFT p50 |
 |---|---:|---:|---:|---:|
@@ -122,7 +122,7 @@ reply's tokens beside agent prefill and with it held (60–65 and 16–20 ms).*
    requests and abort admitted ones, but only the engine can take KV from a request that is already decoding.
    Aborting and resubmitting agent requests reaches 2.52 s at the agents' expense, their TTFT p99 rising to 193 s from
    tuned vLLM's 106 s. A lifecycle policy timed by the conversation never found headroom to give and left the p95 at
-   11.0 s in W4 ([what it could not do](docs/METHODS.md#what-lifecycle-timing-could-and-could-not-do)).
+   11.0 s in an earlier campaign ([what it could not do](docs/METHODS.md#what-lifecycle-timing-could-and-could-not-do)).
 
 ## Limits and costs
 
@@ -138,7 +138,7 @@ reply's tokens beside agent prefill and with it held (60–65 and 16–20 ms).*
 - **The agents pay through the prefill hold.** Their TTFT p50 rises by 9 s, from 63 to 72 s, and the cap holds their
   prefill in 33% of the engine's steps during the calls. The preemptions cost no measurable throughput. No vLLM 0.32
   counter shows what a preempted request recomputes when it resumes
-  ([E3](docs/BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)).
+  ([what the change takes from the agents](docs/BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)).
 - **A larger step on a faster card.** The 512-token step cap that suits the RTX 5060 Ti costs the A100's agents 30%
   of their throughput. At the card's own best, 2,048-token steps, the PRs keep all of it but leave the voice p95
   0.14–0.17 s over the SLO: the LLM's first token waits for the larger steps in flight (412 and 414 ms at p95, against
@@ -148,8 +148,8 @@ reply's tokens beside agent prefill and with it held (60–65 and 16–20 ms).*
   the PRs. The card measured 1.75 s and 175 ms, because its decode attention reads KV at 42% of its bandwidth, where
   the RTX 5060 Ti's reaches 77% ([the A100 run](docs/HARDWARE.md#what-it-measured-2026-10-26)). Beside tuned vLLM at
   the RTX 5060 Ti's pool, two calls found KV short 8% of the time on the RTX 5060 Ti and 6% on the A100, where the
-  simulator gives 17% and 10% ([RS](docs/BENCHMARKS.md#the-boxs-running-share-rs)). Other cards are placed by the same
-  model ([what transfers](docs/METHODS.md#what-transfers-to-other-hardware)).
+  simulator gives 17% and 10% ([the measurement](docs/BENCHMARKS.md#the-boxs-running-share-rs)). Other cards are
+  placed by the same model ([what transfers](docs/METHODS.md#what-transfers-to-other-hardware)).
 
 ## Quick start
 
@@ -189,7 +189,7 @@ configuration (the CPU tier, the priorities, what to watch and how it fails) and
   each call opens with an unmeasured warm-up turn. Baselines are configured as their documentation recommends.
 - **Reproducibility.** `make reproduce-e2` rebuilds every table and figure from the committed records. The gateway
   adds 0.29 ms to a voice request's first token, paired against the engine's own socket on the final transport
-  ([W6](docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)).
+  ([the gateway's cost](docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)).
 
 ## Documentation
 
@@ -210,13 +210,13 @@ configuration (the CPU tier, the priorities, what to watch and how it fails) and
 ## Related systems
 
 llm-d, Dynamo, SMG and vllm-project/router act in front of the engine, and the voice turn loses its time inside the
-engine's scheduler. E2 measured SMG, llm-d's flow control (emulated), and vLLM's and SGLang's own priority preemption:
-none meets the SLO, and most leave the p95 between 8.8 and 12.1 s. What Flatshare adds is the change to vLLM's
-scheduler, its end-to-end measurement against every deployable alternative, and two measured negative results: a
-gateway policy timed by the conversation (E2) and agent-side KV prefetch (E1). For SGLang, a separate draft,
-[#45686](https://github.com/sgl-project/sglang/pull/45686), proposes the counterpart of #63350. `flatshare-gateway` is
-a small Rust harness for these experiments, not a fleet router. [docs/PRIOR-ART.md](docs/PRIOR-ART.md) has the sources
-and where each result went upstream.
+engine's scheduler. The end-to-end experiment, E2, measured SMG, llm-d's flow control (emulated), and vLLM's and
+SGLang's own priority preemption: none meets the SLO, and most leave the p95 between 8.8 and 12.1 s. What Flatshare
+adds is the change to vLLM's scheduler, its end-to-end measurement against every deployable alternative, and two
+measured negative results: a gateway policy timed by the conversation (E2) and agent-side KV prefetch (E1). A separate
+draft for SGLang, [#45686](https://github.com/sgl-project/sglang/pull/45686), proposes the counterpart of #63350.
+`flatshare-gateway` is a small Rust harness for these experiments, not a fleet router.
+[docs/PRIOR-ART.md](docs/PRIOR-ART.md) has the sources and where each result went upstream.
 
 ## Repository layout
 
