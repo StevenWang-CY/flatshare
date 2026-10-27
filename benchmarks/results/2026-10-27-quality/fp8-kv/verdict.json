@@ -1,0 +1,214 @@
+{
+ "verdict": "FAIL",
+ "criteria": [
+  {
+   "task": "qa",
+   "name": "precision",
+   "k": 84,
+   "n": 151,
+   "value": 0.5563,
+   "interval": [
+    0.4766,
+    0.6332
+   ],
+   "threshold": 0.8,
+   "pass": false,
+   "straddles": false,
+   "note": "answered questions that are correct"
+  },
+  {
+   "task": "qa",
+   "name": "coverage",
+   "k": 72,
+   "n": 100,
+   "value": 0.72,
+   "interval": [
+    0.6251,
+    0.7986
+   ],
+   "threshold": 0.6,
+   "pass": true,
+   "straddles": false,
+   "note": "answerable questions with evidence retrieved, answered correctly"
+  },
+  {
+   "task": "qa",
+   "name": "abstention",
+   "k": 31,
+   "n": 50,
+   "value": 0.62,
+   "interval": [
+    0.4815,
+    0.7414
+   ],
+   "threshold": 0.7,
+   "pass": false,
+   "straddles": true,
+   "note": "unanswerable questions abstained on"
+  },
+  {
+   "task": "qa",
+   "name": "citations",
+   "k": 67,
+   "n": 72,
+   "value": 0.9306,
+   "interval": [
+    0.8475,
+    0.97
+   ],
+   "threshold": 0.8,
+   "pass": true,
+   "straddles": false,
+   "note": "correct answers in the coverage set citing a supporting paragraph"
+  },
+  {
+   "task": "qa",
+   "name": "citations valid",
+   "k": 261,
+   "n": 261,
+   "value": 1.0,
+   "interval": [
+    0.9855,
+    1.0
+   ],
+   "threshold": 1.0,
+   "pass": true,
+   "straddles": true,
+   "note": "every citation names a paragraph that was given"
+  },
+  {
+   "task": "qa",
+   "name": "speakable",
+   "k": 142,
+   "n": 151,
+   "value": 0.9404,
+   "interval": [
+    0.8906,
+    0.9683
+   ],
+   "threshold": 0.95,
+   "pass": false,
+   "straddles": true,
+   "note": "answers of at most two sentences with no list or markdown"
+  },
+  {
+   "task": "enrich",
+   "name": "accepted records",
+   "k": 79,
+   "n": 100,
+   "value": 0.79,
+   "interval": [
+    0.7002,
+    0.8583
+   ],
+   "threshold": 0.95,
+   "pass": false,
+   "straddles": false,
+   "note": "documents with an accepted record"
+  },
+  {
+   "task": "enrich",
+   "name": "fact precision",
+   "k": 341,
+   "n": 1427,
+   "value": 0.239,
+   "interval": [
+    0.2176,
+    0.2618
+   ],
+   "threshold": 0.8,
+   "pass": false,
+   "straddles": false,
+   "note": "facts in accepted records that match gold or that their cited sentences state"
+  },
+  {
+   "task": "enrich",
+   "name": "fact recall",
+   "k": 151,
+   "n": 3404,
+   "value": 0.0444,
+   "interval": [
+    0.0379,
+    0.0518
+   ],
+   "threshold": 0.2,
+   "pass": false,
+   "straddles": false,
+   "note": "gold facts of all the documents recovered by accepted records"
+  },
+  {
+   "task": "enrich",
+   "name": "entity recall",
+   "k": 771,
+   "n": 1475,
+   "value": 0.5227,
+   "interval": [
+    0.4972,
+    0.5481
+   ],
+   "threshold": 0.7,
+   "pass": false,
+   "straddles": false,
+   "note": "gold PER, ORG, LOC and TIME entities of all the documents matched by accepted records"
+  },
+  {
+   "task": "enrich",
+   "name": "summaries",
+   "k": 127,
+   "n": 158,
+   "value": 0.8038,
+   "interval": [
+    0.735,
+    0.8582
+   ],
+   "threshold": 0.9,
+   "pass": false,
+   "straddles": false,
+   "note": "summary sentences in accepted records that their cited sentences state"
+  }
+ ],
+ "judge": {
+  "task": "judge",
+  "name": "consistency",
+  "k": 139,
+  "n": 144,
+  "value": 0.9653,
+  "interval": [
+   0.9213,
+   0.9851
+  ],
+  "threshold": 0.9,
+  "pass": true,
+  "straddles": false,
+  "note": "re-asked rulings that agree with the first on what the gate counts",
+  "same_label": 139,
+  "ruled_items": 1432
+ },
+ "reported": [
+  {
+   "task": "qa",
+   "name": "retrieval recall",
+   "k": 100,
+   "n": 150,
+   "value": 0.6667,
+   "interval": [
+    0.5879,
+    0.7371
+   ],
+   "threshold": 0.0,
+   "pass": true,
+   "straddles": false,
+   "note": "answerable questions with a gold evidence paragraph among the six (reported, no threshold)"
+  }
+ ],
+ "failed": [
+  "qa precision",
+  "qa abstention",
+  "qa speakable",
+  "enrich accepted records",
+  "enrich fact precision",
+  "enrich fact recall",
+  "enrich entity recall",
+  "enrich summaries"
+ ]
+}

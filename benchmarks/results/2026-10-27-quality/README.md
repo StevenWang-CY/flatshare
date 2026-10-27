@@ -75,6 +75,47 @@ inconclusive. The useful-workload pilot, which GATE.md runs only on a PASS, does
   ("cruiser Bogatyr" for "Bogatyr") does not match under GATE.md's rule. 125 of its 152 summary sentences are stated by
   the sentences they cite.
 
+## With an FP8 KV cache
+
+The same screen ran once more with the engine's KV cache in FP8 (item P12), recorded in `fp8-kv/` with the same files,
+on 2026-10-27 between 22:54 and 23:31 UTC: the same sample, prompts, settings, judge and criteria, with a host-local
+drop-in on Gray adding `--kv-cache-dtype fp8` to the engine for this run only, and removed afterwards (its first
+start, with the flag's value unquoted in the drop-in, stopped at vLLM's argument parsing, before the GPU). vLLM 0.32.0
+then ran attention on FlashInfer, chosen from FlashInfer and Triton since FlashAttention 2 takes no FP8 cache on this
+card, with FP8 (e4m3) keys and values, BF16 queries and the XQA decode kernel. The checkpoint carries no KV scales and
+the engine log says so: "Using KV cache scaling factor 1.0 for fp8_e4m3". The same 5 GiB pool held 72,816 tokens
+where BF16 held 36,400. The judge reused its rulings on the items identical to the BF16 run's (432 of 1,432), so judge
+noise does not separate the runs on them, asked the other 1,000 anew, and agreed with itself on 139 of the 144 rulings
+asked again.
+
+| Criterion | Threshold | BF16 KV | FP8 KV | Difference, points |
+|---|---:|---:|---:|---:|
+| Precision | ≥ 80% | 50.6% (78 of 154) | 55.6% (84 of 151) | +5.0 |
+| Coverage | ≥ 60% | 68.0% (68 of 100) | 72.0% (72 of 100) | +4.0 |
+| Abstention | ≥ 70% | 60.0% (30 of 50) | 62.0% (31 of 50) | +2.0 |
+| Citations: supporting | ≥ 80% | 94.1% (64 of 68) | 93.1% (67 of 72) | −1.1 |
+| Citations: naming a given paragraph | all | 99.6% (272 of 273), **fail** | 100% (261 of 261) | +0.4 |
+| Speakable | ≥ 95% | 91.6% (141 of 154) | 94.0% (142 of 151) | +2.5 |
+| Accepted records | ≥ 95% | 76.0% (76 of 100) | 79.0% (79 of 100) | +3.0 |
+| Fact precision | ≥ 80% | 23.9% (292 of 1,221) | 23.9% (341 of 1,427) | 0.0 |
+| Fact recall | ≥ 20% | 3.8% (129 of 3,404) | 4.4% (151 of 3,404) | +0.6 |
+| Entity recall | ≥ 70% | 46.9% (692 of 1,475) | 52.3% (771 of 1,475) | +5.4 |
+| Summaries | ≥ 90% | 82.2% (125 of 152) | 80.4% (127 of 158) | −1.9 |
+| Judge consistency | ≥ 90% | 98.5% (134 of 136) | 96.5% (139 of 144) | −2.0 |
+| Retrieval recall (reported) | – | 66.7% (100 of 150) | 66.7% (100 of 150) | 0.0 |
+
+The FP8 intervals, in `fp8-kv/verdict.json`: precision 47.7–63.3%, coverage 62.5–79.9%, abstention 48.1–74.1%,
+supporting citations 84.8–97.0%, speakable 89.1–96.8%, accepted records 70.0–85.8%, fact precision 21.8–26.2%, fact
+recall 3.8–5.2%, entity recall 49.7–54.8%, summaries 73.5–85.8%, judge consistency 92.1–98.5%.
+
+- **FP8 KV fails the gate too**, on the same criteria but one: none of its 261 citations names a paragraph that was
+  not given, where the BF16 run had one such [8].
+- **It costs no quality this screen can see.** The two runs' intervals overlap on every criterion but entity recall,
+  and that difference is which records were accepted, not what they say: on the 69 documents both runs accepted, the
+  two match 641 and 640 of the same 980 gold entities. The answers are sampled (temperature 0.7), so even one engine
+  gives different ones from run to run; 69 of the 200 are the same text in both. No record is the same text, though
+  both are greedy: the cache's precision changes their tokens.
+
 ## Files
 
 - `outputs.jsonl`: the 300 outputs, one a line: the task and its ids (QASPER's question and paper, Re-DocRED's document
@@ -88,6 +129,7 @@ inconclusive. The useful-workload pilot, which GATE.md runs only on a PASS, does
   the login's fingerprint and the time.
 - `verdict.json`: [`gate.py`](../../quality/gate.py)'s verdict from `scores.json` and `rulings.jsonl`;
   `python/flatshare_bench/tests/test_quality_gate.py` checks that it is what they give, and this table against it.
+- `fp8-kv/`: the same five files for the run with an FP8 KV cache.
 
 ## The judge
 
@@ -116,12 +158,13 @@ agree with the first on what the gate counts, and on the label too.
 ## Environment
 
 Gray's RTX 5060 Ti 16 GB (driver 580.178.04), vLLM 0.32.0 and Qwen3-4B-Instruct-2507-FP8 at revision
-8591804019c8b22094c3b5b4454e0edc05dffc98: the frozen box's engine at v1.5 ([`deploy/phastform/engine.yaml`](../../../deploy/phastform/engine.yaml)),
-with its BF16 KV cache in a 5 GiB pool of 36,400 tokens (the engine log's GPU KV cache size), FlashAttention as its
-attention backend, prefix caching and the 20 GiB CPU tier, and Gray's host-local drop-ins (its NUMA node and the
-host network, as for [the first sentences' record](../2026-10-27-first-sentence/README.md)). The engine ran only while
-no other process used the GPU: none before it started, only its own between the two tasks, and the card back to
-4 MiB once it stopped. One request at a time.
+8591804019c8b22094c3b5b4454e0edc05dffc98: the frozen box's engine at v1.5
+([`deploy/phastform/engine.yaml`](../../../deploy/phastform/engine.yaml)), with its BF16 KV cache in a 5 GiB pool of
+36,400 tokens (the engine log's GPU KV cache size), FlashAttention as its attention backend, prefix caching and the
+20 GiB CPU tier, and Gray's host-local drop-ins (its NUMA node and the host network, as for
+[the first sentences' record](../2026-10-27-first-sentence/README.md)). The engine ran only while no other process
+used the GPU, in each run: none before it started, only its own between the two tasks, and the card back to 4 MiB
+once it stopped. One request at a time.
 
 ## To run again
 
