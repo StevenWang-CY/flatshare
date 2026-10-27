@@ -5,6 +5,36 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.5](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.5) (2026-10-27): the technical report, rewritten
+
+No measurement changed. The technical report is rewritten in full, every number in it is recomputed from the committed
+records, and its figures are drawn from them.
+
+- **The report.** [docs/REPORT.md](docs/REPORT.md) is now a technical report of ten sections and six appendices: the
+  problem and the evidence for each claim, the background a vLLM reader needs, the two rules with their pseudocode,
+  the implementation and what the rules cost a scheduler step, the evaluation setup, the results under claims, how to
+  operate the change, related work with numbered references, the limitations, and appendices on reproducing the
+  results, every run by round, the configurations, the failure drills, the A100 forecast and the report's versions.
+  It calls #63350's rule make-room, #63351's the prefill hold and the evaluated module the generated scheduler, and
+  uses no campaign codes.
+- **Its figures.** Twelve figures are drawn from the records by `flatshare_bench.report` (`make report-figures`), with
+  phone layouts of the first and the headline. The tests check every committed SVG against a fresh render and pin the
+  values the report quotes. In the method figure, the waiting turn now waits until agent blocks are freed, which a
+  preemption for another request's growth does as well as a request's end.
+- **Corrections.** v1.4 said each rule is necessary. The hold is, but in the campaign before the main evaluation a
+  class-aware KV reserve made the room in place of make-room, and the report now says so. With every running slot
+  taken, the hold still covers a running request's first tokens; only a waiting request or a KV load holds nothing
+  then, where v1.4 and ARCHITECTURE.md said nothing is held. On vLLM 0.32 the prefill case's reply tokens come
+  60–66 ms apart, where v1.4 gave make-room alone's 60–65 ms. Distributions over replies now pool every reply, 59 a
+  run, as each run's p95 does, and two, four and six callers are compared on the same three samples of the agents.
+- **A record.** The main evaluation's voice replies with their output tokens
+  ([`replies.tsv`](benchmarks/results/2026-10-24-e2-w5/replies.tsv), 5,571 replies), which the compact records did not
+  keep, extracted by `replies.py` from the v1.0 release's raw records.
+- **Docs.** The glossary gives the report's names for the rules and the module, and names the A100's tuned vLLM by
+  its step cap. The links into the report follow its new sections, and `CITATION.cff` gives the report as the
+  preferred citation.
+- **The packages** are versioned 1.5.0, and are not published to a package index.
+
 ## [v1.4](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.4) (2026-10-27): a rewritten history, and the code reorganized
 
 No measurement changed, and every report and figure regenerates from the same records.
