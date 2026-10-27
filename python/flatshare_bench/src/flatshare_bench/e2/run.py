@@ -39,6 +39,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import tomllib
@@ -268,8 +269,14 @@ def _start_aiperf(
     agents = arm.agents
     record.say(f"AIPerf: {agents.sessions} session trees through the gateway, seed {seed}")
     env = _aiperf_env(arm, host, out, seed, model)
+    # AIPerf 0.13.0 leaves its IPC directory and the run's dataset memory map in the temp directory, one of each a
+    # point (cyan's /tmp held 234 maps, 264 MB). A temp directory of the point's own, in the same file system, holds
+    # them until AIPerf has stopped, and goes with them.
+    scratch = Path(tempfile.mkdtemp(prefix="flatshare-aiperf-"))
+    running.callback(shutil.rmtree, scratch, ignore_errors=True)
+    env["TMPDIR"] = str(scratch)
     aiperf = Process("AIPerf", host.aiperf(), out / "aiperf.log", env, tool_scope(host))
-    running.callback(aiperf.stop, AIPERF_STOP_S)
+    running.callback(aiperf.stop, AIPERF_STOP_S)  # first: the stack unwinds the other way
     deadline = time.monotonic() + PROFILING_TIMEOUT_S
     while PROFILING not in aiperf.log.read_text(errors="replace"):
         if aiperf.exited():

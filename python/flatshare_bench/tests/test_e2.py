@@ -1464,7 +1464,11 @@ def test_the_generated_configuration_is_private_from_its_creation(
     assert not _write_private(path, "digests\n"), "an unchanged configuration is not written"
 
 
-def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(cyan: Cyan) -> None:
+def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(
+    cyan: Cyan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The stand-in leaves a temp directory, as AIPerf does.
+    monkeypatch.setenv("FAKE_AIPERF_TEMP", "1")
     summary = run_stock(cyan)
     out = cyan.host.root / "runs" / "a2-stock-s4"
     units = cyan.host.units
@@ -1499,6 +1503,10 @@ def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(cy
         == "Qwen/Qwen3-4B-Instruct-2507-FP8"
     )
     assert env["AIPERF_HTTP_X_SESSION_ID_FROM_CORRELATION_ID"] == "false"  # from configs/aiperf.env
+    # AIPerf's temp files went to a directory of the point's own, which went once AIPerf had stopped.
+    scratch, left = Path(env["TMPDIR"]), Path((out / "aiperf" / "left.txt").read_text())
+    assert scratch.name.startswith("flatshare-aiperf-") and left.parent == scratch
+    assert not scratch.exists()
     run_json = record(cyan, "a2-stock-s4")
     assert run_json["aiperf"] == {"exit_status": 0}
     assert run_json["cyan"]["worker"] == {
