@@ -4,6 +4,7 @@ Wilson intervals and the verdict's logic, and the sample's determinism."""
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -439,6 +440,12 @@ def test_the_judges_transport() -> None:
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "HOME", "PATH", "USER",
     ]  # fmt: skip
     assert env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] == env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == "1"
+    # The record keeps the login as its subscription and a hash, never the email.
+    login = {"email": "someone@example.com", "subscription": "max"}
+    assert (
+        judge.fingerprint(login) == "max:" + hashlib.sha256(b"someone@example.com").hexdigest()[:12]
+    )
+    assert "@" not in judge.fingerprint(login)
     opus = {"modelUsage": {"claude-opus-5-5": {"outputTokens": 12}}, "usage": {"output_tokens": 12}}
     assert judge.opus_check(opus) == ("claude-opus-5-5", 12)
     for bad in (
