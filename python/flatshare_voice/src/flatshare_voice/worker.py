@@ -39,6 +39,12 @@ in the tail. ``FLATSHARE_PREEMPTIVE_GENERATION=false`` turns off LiveKit's preem
 starts the reply from the final transcript before the end of the turn is confirmed: one of E2's
 factors.
 
+With node binding (``FLATSHARE_NODE_BINDING``, serve mode's default), a call starts by asking the
+gateway which GPU node it is on, binds its STT and TTS to that node's sockets and its LLM to the
+gateway with the session id, and when its node fails it ends the reply under way and asks again at
+the caller's next speech, the conversation's transcript kept (:mod:`.nodes`); a gateway without
+nodes answers that it places nothing, and the call is served on the configured sockets as before.
+
 Each session posts its lifecycle events (speech onset, end of turn, playback, barge-in) to the
 control plane over the LLM's socket, and logs a line per turn with its stage times (:mod:`.events`).
 ``FLATSHARE_EVENTS=off`` stops the events, so that E2 can measure arm 9, the lifecycle policy, with
@@ -64,6 +70,7 @@ a Unix socket each. The environment, set by ``flatshare-voice-worker.service``, 
 | ``FLATSHARE_AUDIO`` | ``synthetic`` (bench mode's default) or ``microphone`` (serve mode's: the profile's) |
 | ``FLATSHARE_VOICE_STATUS`` | Serve mode: the file its state is written to every second |
 | ``FLATSHARE_VOICE_DRAIN`` | Serve mode: while this file exists, the worker takes no new call |
+| ``FLATSHARE_NODE_BINDING`` | ``on`` (serve mode's default): each call asks the gateway for its GPU node and binds its STT and TTS to that node's sockets (:mod:`.nodes`); ``off`` (bench mode's default) |
 
 The worker reads them whenever it is to serve (``start``, which the unit runs, or ``dev``, ``console``
 or ``connect``), before it registers with LiveKit (:class:`Settings`): a socket that is not set, or a
@@ -96,7 +103,7 @@ from livekit.agents import (
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import silero
 
-from . import events, plugins
+from . import events, nodes, plugins
 from .admission import Admission, EngineProbe, Monitor
 from .protocol import AGENT_NAME, room_session_id
 
@@ -168,6 +175,7 @@ class Settings:
     status_file: str | None = None
     drain_file: str | None = None
     serving: Mapping[str, Any] = field(default_factory=dict)
+    node_binding: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
@@ -188,6 +196,15 @@ class Settings:
                 "FLATSHARE_TURN_DETECTION=vad is the synthetic callers' fixed endpointing; the "
                 "microphone configuration ends a turn by the end-of-turn model (unlink vad-turns)"
             )
+        # Serve mode asks the gateway for each call's node, bench mode only when told to.
+        binding = _choice(
+            env, "FLATSHARE_NODE_BINDING", ("on", "off") if mode == "serve" else ("off", "on")
+        )
+        if binding == "on" and env["FLATSHARE_LLM_UDS"].endswith(ENGINE_TUNNEL):
+            raise ValueError(
+                "FLATSHARE_NODE_BINDING=on asks the gateway for each call's node, and FLATSHARE_LLM_UDS "
+                "bypasses it for an engine's tunnel: set FLATSHARE_NODE_BINDING=off"
+            )
         return cls(
             llm_uds=env["FLATSHARE_LLM_UDS"],
             stt_uds=env["FLATSHARE_STT_UDS"],
@@ -205,6 +222,7 @@ class Settings:
             status_file=env.get("FLATSHARE_VOICE_STATUS") or None,
             drain_file=env.get("FLATSHARE_VOICE_DRAIN") or None,
             serving=serving,
+            node_binding=binding == "on",
         )
 
     def turn_handling(self) -> dict[str, Any]:
@@ -249,6 +267,7 @@ class Settings:
             "turn_detection": self.turn_detection,
             "serving_profile": self.serving_profile,
             "profile": self.serving.get("profile"),
+            "node_binding": self.node_binding,
         }
 
     @property
@@ -347,15 +366,55 @@ server = AgentServer(
 )
 
 
+async def bind_call(settings: Settings, session_id: str) -> nodes.CallBinding | None:
+    """The call's node binding (:mod:`.nodes`), placed: None with node binding off, or where the gateway
+    has no nodes (it answers that it places nothing), and the call is served on the configured sockets as
+    it always was. A placement that did not answer leaves the binding to ask again at the call's first
+    request."""
+    if not settings.node_binding:
+        return None
+    binding = nodes.CallBinding(session_id, settings.llm_uds, settings.stt_uds, settings.tts_uds)
+    await binding.place("start")
+    if binding.nodes is False:
+        await binding.aclose()
+        return None
+    return binding
+
+
+def call_plugins(
+    settings: Settings, session_id: str, binding: nodes.CallBinding | None
+) -> tuple[Any, Any, Any]:
+    """The call's STT, LLM and TTS: on the configured sockets, or through ``binding``'s transports, which
+    send each request to the call's node."""
+
+    def transport(server: str) -> Any:
+        return None if binding is None else binding.transport(server, plugins.LIMITS)
+
+    return (
+        plugins.make_stt(BASE_URL, uds=settings.stt_uds, transport=transport("stt")),
+        plugins.make_llm(
+            BASE_URL,
+            session_id,
+            uds=settings.llm_uds,
+            model=settings.llm_model,
+            transport=transport("llm"),
+        ),
+        plugins.make_tts(BASE_URL, uds=settings.tts_uds, transport=transport("tts")),
+    )
+
+
 @server.rtc_session(agent_name=AGENT_NAME, on_request=request)
 async def entrypoint(ctx: JobContext) -> None:
     settings = Settings.from_env()  # as main() read them, in this job's process
     session_id = room_session_id(ctx.job.room.sid)
+    # The call's GPU node, before anything of it runs, where the gateway fronts several.
+    binding = await bind_call(settings, session_id)
+    stt, llm, tts = call_plugins(settings, session_id, binding)
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
-        stt=plugins.make_stt(BASE_URL, uds=settings.stt_uds),
-        llm=plugins.make_llm(BASE_URL, session_id, uds=settings.llm_uds, model=settings.llm_model),
-        tts=plugins.make_tts(BASE_URL, uds=settings.tts_uds),
+        stt=stt,
+        llm=llm,
+        tts=tts,
         turn_handling=settings.turn_handling(),
         aec_warmup_duration=settings.aec_warmup,
         conn_options=SessionConnectOptions(
@@ -364,6 +423,10 @@ async def entrypoint(ctx: JobContext) -> None:
             llm_conn_options=APIConnectOptions(max_retry=1, timeout=settings.llm_timeout)
         ),
     )
+    if binding is not None:
+        nodes.watch(
+            session, binding
+        )  # a node failure ends the reply; the caller's next turn rebinds
     # One caller per room: when the caller hangs up, the session closes and the room is deleted.
     room_options = room_io.RoomOptions(delete_room_on_close=True)
     await session.start(

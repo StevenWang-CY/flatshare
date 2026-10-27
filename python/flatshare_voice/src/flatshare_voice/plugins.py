@@ -29,19 +29,26 @@ API_KEY = "local"
 # connection the server is closing; through the tunnel a new one is a new SSH session.
 _TIMEOUT = httpx.Timeout(connect=15.0, read=5.0, write=5.0, pool=5.0)
 _LIMITS = httpx.Limits(max_connections=50, max_keepalive_connections=50, keepalive_expiry=55)
+LIMITS = _LIMITS
+"""The connection limits of every client's transport, a node binding's too."""
 SERVER_KEEP_ALIVE_S = 60
 """How long the engine, STT and TTS keep an idle connection (deploy/phastform/systemd)."""
 
 
 def openai_client(
-    base_url: str, *, uds: str | None = None, api_key: str = API_KEY
+    base_url: str,
+    *,
+    uds: str | None = None,
+    api_key: str = API_KEY,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> openai.AsyncClient:
-    """Return an OpenAI client for ``base_url``, connected through ``uds`` when given.
+    """Return an OpenAI client for ``base_url``, connected through ``uds`` when given, or through
+    ``transport`` (a call's node binding, :mod:`.nodes`, which picks the socket per request).
 
     The transport is explicit, so proxy environment variables never apply. Retries are
     left to the plugins (``APIConnectOptions.max_retry``).
     """
-    transport = httpx.AsyncHTTPTransport(uds=uds, limits=_LIMITS)
+    transport = transport or httpx.AsyncHTTPTransport(uds=uds, limits=_LIMITS)
     return openai.AsyncClient(
         api_key=api_key,
         base_url=base_url,
@@ -57,9 +64,10 @@ def make_stt(
     model: str = STT_MODEL,
     language: str = "en",
     api_key: str = API_KEY,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> lk_openai.STT:
     """Speech-to-text over ``/audio/transcriptions`` on VAD-cut segments (not streaming)."""
-    client = openai_client(base_url, uds=uds, api_key=api_key)
+    client = openai_client(base_url, uds=uds, api_key=api_key, transport=transport)
     return lk_openai.STT(model=model, language=language, client=client)
 
 
@@ -70,13 +78,14 @@ def make_llm(
     uds: str | None = None,
     model: str = LLM_MODEL,
     api_key: str = API_KEY,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> lk_openai.LLM:
     """Streaming chat completions tagged with the session id and the realtime class.
 
     The plugin's ``extra_headers`` option puts the headers on every chat request of
     this instance, so the worker creates one instance per session.
     """
-    client = openai_client(base_url, uds=uds, api_key=api_key)
+    client = openai_client(base_url, uds=uds, api_key=api_key, transport=transport)
     llm = lk_openai.LLM(model=model, client=client, extra_headers=realtime_headers(session_id))
     return _owning_client(llm)
 
@@ -88,9 +97,10 @@ def make_tts(
     model: str = TTS_MODEL,
     voice: str = TTS_VOICE,
     api_key: str = API_KEY,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> lk_openai.TTS:
     """Text-to-speech over ``/audio/speech`` as raw 24 kHz PCM, with no MP3 round trip."""
-    client = openai_client(base_url, uds=uds, api_key=api_key)
+    client = openai_client(base_url, uds=uds, api_key=api_key, transport=transport)
     tts = lk_openai.TTS(model=model, voice=voice, response_format="pcm", client=client)
     return _owning_client(tts)
 
