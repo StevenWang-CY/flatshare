@@ -115,13 +115,19 @@ def _seconds(ms: float) -> str:
 
 def _name(s: Figure, right: float, y: float, name: str, note: str) -> float:
     """A row's name, right-aligned at ``right`` from the label column's left edge (24) in lines that
-    break evenly, and its ``note`` in the soft ink: at the end of its last line where it fits, else
-    on a line of its own. Returns the lines' height."""
-    lines = wrap(name, right - 24, VALUE)
-    joined = bool(note) and (measure(lines[-1], VALUE) + 10 + measure(note, NOTE) <= right - 24)
+    break evenly, and its ``note`` in the soft ink at the end of its last line: where it does not
+    fit there, the name breaks narrower to make room, at the cost of one more line at most, else
+    the note takes a line of its own. Returns the lines' height."""
+    width, room = right - 24, measure(note, NOTE) + 10
+    lines = wrap(name, width, VALUE)
+    joined = bool(note) and measure(lines[-1], VALUE) + room <= width
+    if note and not joined:
+        narrower = wrap(name, width - room, VALUE)
+        if len(narrower) <= len(lines) + 1 and measure(narrower[-1], VALUE) + room <= width:
+            lines, joined = narrower, True
     for k, line in enumerate(lines):
         last = k == len(lines) - 1
-        end = right - (measure(note, NOTE) + 10 if last and joined else 0)
+        end = right - (room if last and joined else 0)
         s.text(end, y + 15 + 22 * k, line, size=VALUE, anchor="end")
     height = 22.0 * len(lines)
     if joined:
@@ -212,6 +218,7 @@ def plot(rows: Sequence[Mapping[str, Any]], path: Path, slo: float | None = None
     _axis(s, bx0, blen, marks_b, top + 8, bottom)
     cut = False
     values = []
+    fills = set()
     for bar_y, g in placed:
         number = arm_order(g["arm"])[0]
         bar = (
@@ -225,6 +232,7 @@ def plot(rows: Sequence[Mapping[str, Any]], path: Path, slo: float | None = None
             if pale
             else "lo"
         )
+        fills.add(bar)
         p95 = g["v2v_p95_ms"]
         if p95 is not None:
             over = p95 > top_a
@@ -247,12 +255,14 @@ def plot(rows: Sequence[Mapping[str, Any]], path: Path, slo: float | None = None
     notes = []
     if any(not g["frontier"] for g in groups):
         notes.append("An open bar is a configuration off its arm's frontier.")
+    if {"hi", "soft"} <= fills:
+        notes.append(DEPLOY_NOTE)
     if cut:
         notes.append("A bar cut square runs past the scale's end; its value says how far.")
     if slo is None:
         notes.append(f"No point of voice alone with {rows[0]['callers']} callers sets a voice SLO.")
     else:
-        notes.append("The SLO is voice alone with as many callers plus 250 ms.")
+        notes.append("The SLO is the p95 of voice alone with as many callers, plus 250 ms.")
     y = bottom + 58
     for note in notes:
         s.text(24, y, note, size=NOTE, cls="soft")
@@ -360,6 +370,23 @@ def _bar(spec: Mapping[str, Any]) -> str:
     return "hi" if spec.get("featured") else "soft" if spec.get("change") else "mid"
 
 
+DEPLOY_NOTE = "The darker blue bar is the configuration to deploy."
+"""The note of a figure whose blue bars come in both tones: the configuration to deploy, and the change's others."""
+
+
+def _voice_notes(groups: Sequence[Mapping[str, Any]]) -> list[str]:
+    """The voice figure's notes: what its two blues mean, where it has both, and what its SLOs are."""
+    fills = {_bar(spec) for g in groups for _, spec in g["rows"]}
+    notes = [DEPLOY_NOTE] if {"hi", "soft"} <= fills else []
+    if any(g["slo"] for g in groups):
+        notes.append(
+            "Each group's SLO is the p95 of voice alone on its card, with as many callers, plus 250 ms."
+            if len(groups) > 1
+            else "The SLO is the p95 of voice alone with as many callers, plus 250 ms."
+        )
+    return notes
+
+
 def _share(group: Mapping[str, Any], configuration: Mapping[str, Any]) -> str | None:
     base = group["rows"][0][0]["fixed_window_tokens_per_s"]
     tokens = configuration["fixed_window_tokens_per_s"]
@@ -456,7 +483,11 @@ def _voice_wide(groups, path, title, description, p95_top, tokens_top) -> Path:
             )
     for x, baseline, text, cls in values:
         s.text(x, baseline, text, size=NOTE, cls=cls, halo=True)
-    s.height = bottom + 42
+    y = bottom + 58
+    for note in _voice_notes(groups):
+        s.text(24, y, note, size=NOTE, cls="soft")
+        y += 24
+    s.height = y - 6
     return s.save(path)
 
 
@@ -549,5 +580,11 @@ def _voice_narrow(groups, path, title, description, p95_top, tokens_top) -> Path
         1,
         tokens,
     )
+    y += 16  # the notes' first baseline as far under the ticks as the wide figure's
+    for note in _voice_notes(groups):
+        for line in wrap(note, NARROW - 36, NOTE):
+            s.text(18, y, line, size=NOTE, cls="soft")
+            y += 24
+        y += 6
     s.height = y - 10
     return s.save(path)

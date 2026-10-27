@@ -52,7 +52,7 @@ within it, and the agents keep 98% of their tokens a second. Over both calls of 
 
 <picture>
   <source media="(max-width: 767px)" srcset="docs/figures/e2-voice-p95-gpus-narrow.svg">
-  <img src="docs/figures/e2-voice-p95-gpus.svg" width="100%" alt="Two panels, rows in three groups beside 24 coding-agent sessions, each group against its card's SLO: the voice-to-voice p95, median of its runs, and the agents' tokens a second with each one's share of its group's first row. RTX 5060 Ti 16 GB, SLO 2.03 s: tuned vLLM 10.48 s at 3,305 tokens/s, a router that aborts and resubmits 2.52 s at 101%, #63350 and #63351 2.24 s at 97%. A100 at 512-token steps, SLO 1.67 s: tuned vLLM with the box's tuning 4.99 s at 8,633 tokens/s, the PRs 1.63 s at 100%. A100 at 2,048-token steps: tuned vLLM, the card's best, 3.66 s at 14,536 tokens/s, the PRs 1.83 s at 101%">
+  <img src="docs/figures/e2-voice-p95-gpus.svg" width="100%" alt="Two panels, rows in three groups beside 24 coding-agent sessions, each group against its card's SLO: the voice-to-voice p95, median of its runs, and the agents' tokens a second with each one's share of its group's first row. RTX 5060 Ti 16 GB, SLO 2.03 s: tuned vLLM 10.48 s at 3,305 tokens/s, a router that aborts and resubmits 2.52 s at 101%, #63350 and #63351 2.24 s at 97%. A100 at 512-token steps, SLO 1.67 s: tuned vLLM with the RTX 5060 Ti's tuning 4.99 s at 8,633 tokens/s, the PRs 1.63 s at 100%. A100 at 2,048-token steps: tuned vLLM, the card's best, 3.66 s at 14,536 tokens/s, the PRs 1.83 s at 101%">
 </picture>
 
 | Two calls beside 24 coding-agent sessions that fill the KV pool of one RTX 5060 Ti | Voice p95 | Over the SLO | Agents' tokens/s | Agents' TTFT p50 |
