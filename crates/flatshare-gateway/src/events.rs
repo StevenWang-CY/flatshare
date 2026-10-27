@@ -14,7 +14,7 @@ use serde_json::value::RawValue;
 
 use crate::exchange::Exchange;
 use crate::metrics::{Metrics, Route};
-use crate::proxy::read_body;
+use crate::proxy::{BodyError, read_body};
 use crate::server::App;
 
 /// An event the gateway accepted: not a repeat of one seen within the deduplication window.
@@ -174,9 +174,18 @@ pub(crate) async fn post(State(app): State<App>, request: Request) -> Response {
             "only trusted tenants may post lifecycle events",
         );
     }
-    let body = match read_body(body, shared.max_body_bytes).await {
+    // A batch's bytes come from the budget of the bodies the gateway holds, as a request's do.
+    let mut budget = shared.intake.body();
+    let body = match read_body(body, shared.max_body_bytes, &mut budget).await {
         Ok(body) => body,
-        Err((status, code, message)) => return ex.error(status, code, message),
+        Err(BodyError::Invalid(status, code, message)) => return ex.error(status, code, message),
+        Err(BodyError::Refused(_)) => {
+            return ex.error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "body_budget_exhausted",
+                "the gateway holds max_buffered_body_bytes of request bodies; send the events again",
+            );
+        }
     };
     let events = match parse(&body) {
         Ok(events) => events,

@@ -15,6 +15,7 @@ use tracing::Level;
 
 use crate::bounds;
 use crate::harness::Refusal;
+use crate::intake::{Permit, Refused};
 use crate::metrics::{Metrics, Outcome, Route};
 use crate::sanitize::{REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
 use crate::usage::Summary;
@@ -48,6 +49,8 @@ pub(crate) struct Exchange {
     pub resubmits: u32,
     pub first_byte: Option<Duration>,
     pub summary: Summary,
+    /// The request's place in the intake and its body's bytes, given back when the record ends.
+    pub permit: Option<Permit>,
     outcome: Option<Outcome>,
     error: Option<String>,
 }
@@ -71,6 +74,7 @@ impl Exchange {
             resubmits: 0,
             first_byte: None,
             summary: Summary::default(),
+            permit: None,
             outcome: None,
             error: None,
         }
@@ -137,6 +141,32 @@ impl Exchange {
         self.respond(StatusCode::BAD_REQUEST, &body)
     }
 
+    /// An error with `Retry-After: 1`, for a request the gateway did not take that its client may send again.
+    fn retry(self, status: StatusCode, code: &str, message: impl Into<String>) -> Response {
+        let mut response = self.error(status, code, message);
+        response
+            .headers_mut()
+            .insert(RETRY_AFTER, HeaderValue::from_static("1"));
+        response
+    }
+
+    /// The answer to a request the intake refused, before its body was read or as its bytes passed the budget: 429
+    /// when its tenant has its requests in flight, 503 when the gateway, its class or the bodies' budget is full, or
+    /// when the gateway admits nothing more; each with `Retry-After: 1`.
+    pub fn intake_refused(mut self, refused: Refused, message: String) -> Response {
+        let (status, code) = match refused {
+            Refused::Draining => (StatusCode::SERVICE_UNAVAILABLE, "draining"),
+            Refused::InFlight => (StatusCode::SERVICE_UNAVAILABLE, "in_flight_limit"),
+            Refused::Class => (StatusCode::SERVICE_UNAVAILABLE, "class_in_flight_limit"),
+            Refused::Tenant => (StatusCode::TOO_MANY_REQUESTS, "tenant_in_flight_limit"),
+            Refused::BodyBytes => (StatusCode::SERVICE_UNAVAILABLE, "body_budget_exhausted"),
+        };
+        if refused == Refused::Draining {
+            self.outcome = Some(Outcome::Drained);
+        }
+        self.retry(status, code, message)
+    }
+
     /// The 401 for a request without a known API key on a listener without a tenant.
     pub fn unauthorized(self) -> Response {
         self.error(
@@ -148,19 +178,32 @@ impl Exchange {
 
     /// The error for a request the admission point refused: 429 when its class's queue was full, 503 when it
     /// was not admitted in time.
-    pub fn refused(self, refusal: Refusal) -> Response {
+    pub fn refused(mut self, refusal: Refusal) -> Response {
         let class = self.class.map_or("", SloClass::as_str);
         match refusal {
-            Refusal::QueueFull => self.error(
+            Refusal::QueueFull => self.retry(
                 StatusCode::TOO_MANY_REQUESTS,
                 "queue_full",
                 format!("the admission queue of {class} requests is full"),
             ),
-            Refusal::Timeout => self.error(
+            Refusal::Queued => self.retry(
+                StatusCode::TOO_MANY_REQUESTS,
+                "queue_full",
+                "the admission point holds max_queued requests waiting",
+            ),
+            Refusal::Timeout => self.retry(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "queue_timeout",
                 format!("the {class} request was not admitted within queue_timeout_s"),
             ),
+            Refusal::Draining => {
+                self.outcome = Some(Outcome::Drained);
+                self.retry(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "draining",
+                    "the gateway handed its sockets to a successor before admitting the request; send it again",
+                )
+            }
         }
     }
 

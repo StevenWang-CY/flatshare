@@ -44,6 +44,13 @@ pub struct Config {
     /// The choices a request may ask for at most: its `n` (with `use_beam_search`, its beam's width) and its
     /// `best_of`. A request that asks for more gets 400.
     pub max_choices: u32,
+    /// The inference requests in flight at most, from their headers to their end: one more gets 503 at once, before
+    /// its body is read (`crate::intake`).
+    pub max_in_flight: usize,
+    /// The requests waiting at the admission point at most, in all its queues; one more gets 429.
+    pub max_queued: usize,
+    /// The bytes of request bodies the gateway holds at most, in all: a request whose body would pass it gets 503.
+    pub max_buffered_body_bytes: usize,
     /// Frames buffered between the upstream and a client before backpressure reaches the upstream.
     pub stream_buffer_frames: usize,
     /// How long a full stream buffer may stay full before the stream is aborted as stalled.
@@ -71,12 +78,30 @@ impl Config {
 }
 
 /// `[classes.<class>]`: what the requests of one class may ask for.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClassConfig {
     /// The cap on the class's replies, in tokens (`max_reply_tokens`; for realtime, `realtime_max_tokens` too): a
     /// request's body gets its route's own limit at the lower of the client's limit and the cap
     /// ([`crate::bounds`]), as degrade caps a reply under the lifecycle policy. `None` caps no reply.
     pub max_reply_tokens: Option<u32>,
+    /// The class's requests in flight at most: one more gets 503 at once, before its body is read.
+    pub max_in_flight: usize,
+}
+
+impl ClassConfig {
+    /// A class's defaults. The classes' in-flight bounds leave the other classes room under `max_in_flight`'s
+    /// default of 1,024: interactive and background requests together reach 768 at most, so a flood of them cannot
+    /// take the realtime class's 128. E2's heaviest point held about 30 in flight (24 agent sessions and voice).
+    fn defaults(class: SloClass) -> Self {
+        Self {
+            max_reply_tokens: None,
+            max_in_flight: match class {
+                SloClass::Realtime => 128,
+                SloClass::Interactive => 256,
+                SloClass::Background => 512,
+            },
+        }
+    }
 }
 
 /// One listener.
@@ -123,6 +148,8 @@ pub struct Tenant {
     pub default_class: SloClass,
     /// The strictest class the tenant may use; a stricter request is clamped to it.
     pub max_class: SloClass,
+    /// The tenant's requests in flight at most: one more gets 429 at once, before its body is read.
+    pub max_in_flight: usize,
 }
 
 /// The secret the tenants' cache salts are derived from: 32 bytes, which its `Debug` does not show.
@@ -233,6 +260,9 @@ struct RawConfig {
     realtime_max_tokens: Option<u32>,
     classes: RawClasses,
     max_choices: u32,
+    max_in_flight: usize,
+    max_queued: usize,
+    max_buffered_body_bytes: usize,
     stream_buffer_frames: usize,
     stall_timeout_s: f64,
     first_byte_timeout_s: f64,
@@ -260,6 +290,11 @@ impl Default for RawConfig {
             realtime_max_tokens: None,
             classes: RawClasses::default(),
             max_choices: 1,
+            // Envoy's circuit breakers' default for requests in flight.
+            max_in_flight: 1024,
+            max_queued: 256,
+            // Eight bodies of max_body_bytes' 32 MiB; E2's agent requests run to about 130 KB each.
+            max_buffered_body_bytes: 256 << 20,
             stream_buffer_frames: 64,
             stall_timeout_s: 30.0,
             first_byte_timeout_s: 600.0,
@@ -287,6 +322,7 @@ struct RawClasses {
 #[serde(default, deny_unknown_fields)]
 struct RawClass {
     max_reply_tokens: Option<u32>,
+    max_in_flight: Option<usize>,
 }
 
 impl RawClasses {
@@ -308,17 +344,22 @@ impl RawClasses {
             (Some(cap), None) => realtime.max_reply_tokens = Some(cap),
             (None, _) => {}
         }
-        let mut classes = SloClass::ALL.map(|_| ClassConfig::default());
+        let mut classes = SloClass::ALL.map(ClassConfig::defaults);
         for (class, raw) in SloClass::ALL
             .into_iter()
             .zip([realtime, interactive, background])
         {
-            if raw.max_reply_tokens == Some(0) {
-                return Err(format!("classes.{class}.max_reply_tokens must be positive"));
+            let config = &mut classes[class as usize];
+            for (key, zero) in [
+                ("max_reply_tokens", raw.max_reply_tokens == Some(0)),
+                ("max_in_flight", raw.max_in_flight == Some(0)),
+            ] {
+                if zero {
+                    return Err(format!("classes.{class}.{key} must be positive"));
+                }
             }
-            classes[class as usize] = ClassConfig {
-                max_reply_tokens: raw.max_reply_tokens,
-            };
+            config.max_reply_tokens = raw.max_reply_tokens;
+            config.max_in_flight = raw.max_in_flight.unwrap_or(config.max_in_flight);
         }
         Ok(classes)
     }
@@ -332,7 +373,7 @@ struct RawListen {
     tenant: Option<String>,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct RawTenant {
     keys_sha256: Vec<String>,
@@ -340,6 +381,20 @@ struct RawTenant {
     default_class: SloClass,
     /// Defaults to `default_class`: a tenant gets no stricter class unless the file says so.
     max_class: Option<SloClass>,
+    max_in_flight: usize,
+}
+
+impl Default for RawTenant {
+    fn default() -> Self {
+        Self {
+            keys_sha256: Vec::new(),
+            trusted: false,
+            default_class: SloClass::default(),
+            max_class: None,
+            // Half of max_in_flight's default: one tenant's flood leaves the others room.
+            max_in_flight: 512,
+        }
+    }
 }
 
 impl Config {
@@ -445,8 +500,21 @@ impl RawConfig {
             return Err("max_body_bytes must be positive".into());
         }
         let classes = self.classes.validate(self.realtime_max_tokens)?;
-        if self.max_choices == 0 {
-            return Err("max_choices must be positive".into());
+        for (key, zero) in [
+            ("max_choices", self.max_choices == 0),
+            ("max_in_flight", self.max_in_flight == 0),
+            ("max_queued", self.max_queued == 0),
+        ] {
+            if zero {
+                return Err(format!("{key} must be positive"));
+            }
+        }
+        if self.max_buffered_body_bytes < self.max_body_bytes {
+            return Err(format!(
+                "max_buffered_body_bytes ({}) must be at least max_body_bytes ({}), or no body of that size could \
+                 be read",
+                self.max_buffered_body_bytes, self.max_body_bytes
+            ));
         }
         if self.stream_buffer_frames == 0 {
             return Err("stream_buffer_frames must be positive".into());
@@ -479,6 +547,9 @@ impl RawConfig {
             max_body_bytes: self.max_body_bytes,
             classes,
             max_choices: self.max_choices,
+            max_in_flight: self.max_in_flight,
+            max_queued: self.max_queued,
+            max_buffered_body_bytes: self.max_buffered_body_bytes,
             stream_buffer_frames: self.stream_buffer_frames,
             stall_timeout: seconds("stall_timeout_s", self.stall_timeout_s)?,
             first_byte_timeout: seconds("first_byte_timeout_s", self.first_byte_timeout_s)?,
@@ -516,12 +587,16 @@ impl RawTenant {
                 })
             })
             .collect::<Result<_, _>>()?;
+        if self.max_in_flight == 0 {
+            return Err(format!("tenants.{name}.max_in_flight must be positive"));
+        }
         Ok(Tenant {
             name,
             keys_sha256,
             trusted: self.trusted,
             default_class: self.default_class,
             max_class,
+            max_in_flight: self.max_in_flight,
         })
     }
 }
@@ -745,6 +820,19 @@ mod tests {
             (tenant.trusted, tenant.default_class, tenant.max_class),
             (false, SloClass::Interactive, SloClass::Interactive)
         );
+        assert_eq!(tenant.max_in_flight, 512);
+        assert_eq!(
+            (
+                config.max_in_flight,
+                config.max_queued,
+                config.max_buffered_body_bytes
+            ),
+            (1024, 256, 256 << 20)
+        );
+        assert_eq!(
+            SloClass::ALL.map(|class| config.class(class).max_in_flight),
+            [128, 256, 512]
+        );
         assert_eq!(tenant.keys_sha256[0][..2], [0x2c, 0x26]);
     }
 
@@ -850,6 +938,45 @@ mod tests {
                 "",
                 format!("{a}\n[classes.realtime]\nmax_tokens = 1"),
                 "unknown field `max_tokens`",
+            ),
+        ] {
+            let err = config(top, &tables).unwrap_err();
+            assert!(err.contains(cause), "{err}");
+        }
+    }
+
+    #[test]
+    fn the_intakes_bounds_are_positive_and_hold_a_body_of_the_largest_size() {
+        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]\nmax_in_flight = 3");
+        let tables = format!("{a}\n[classes.background]\nmax_in_flight = 2");
+        let bounded = config("max_in_flight = 9\nmax_queued = 4", &tables).unwrap();
+        assert_eq!((bounded.max_in_flight, bounded.max_queued), (9, 4));
+        assert_eq!(bounded.tenants[0].max_in_flight, 3);
+        assert_eq!(
+            SloClass::ALL.map(|class| bounded.class(class).max_in_flight),
+            [128, 256, 2]
+        );
+        for (top, tables, cause) in [
+            (
+                "max_in_flight = 0",
+                a.clone(),
+                "max_in_flight must be positive",
+            ),
+            ("max_queued = 0", a.clone(), "max_queued must be positive"),
+            (
+                "max_body_bytes = 1000\nmax_buffered_body_bytes = 999",
+                a.clone(),
+                "max_buffered_body_bytes (999) must be at least max_body_bytes (1000)",
+            ),
+            (
+                "",
+                format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]\nmax_in_flight = 0"),
+                "tenants.a.max_in_flight must be positive",
+            ),
+            (
+                "",
+                format!("{a}\n[classes.realtime]\nmax_in_flight = 0"),
+                "classes.realtime.max_in_flight must be positive",
             ),
         ] {
             let err = config(top, &tables).unwrap_err();

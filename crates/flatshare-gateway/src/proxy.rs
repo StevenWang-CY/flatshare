@@ -8,15 +8,17 @@ use axum::body::Body;
 use axum::extract::Request;
 use axum::response::Response;
 use bytes::Bytes;
+use bytes::BytesMut;
 use http::header::{CONTENT_TYPE, HeaderValue};
 use http::uri::PathAndQuery;
 use http::{StatusCode, Version};
 use http_body::Body as _;
-use http_body_util::{BodyExt, LengthLimitError, Limited};
+use http_body_util::BodyExt;
 use hyper::body::Incoming;
 
 use crate::exchange::Exchange;
 use crate::harness::{Refusal, Ticket};
+use crate::intake::{BodyBytes, Refused};
 use crate::metrics::{Route, UpstreamError};
 use crate::relay;
 use crate::sanitize::{
@@ -55,10 +57,25 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     };
     ex.class = Some(class);
 
-    let body = match read_body(body, shared.max_body_bytes).await {
-        Ok(body) => body,
-        Err((status, code, message)) => return ex.error(status, code, message),
+    // The intake's bounds, before a byte of the body is read: a refused request costs the gateway no memory and no
+    // wait.
+    let mut permit = match shared.intake.admit(tenant, class) {
+        Ok(permit) => permit,
+        Err(refused) => {
+            let message = shared.intake.message(refused, tenant, class);
+            return ex.intake_refused(refused, message);
+        }
     };
+    let body = match read_body(body, shared.max_body_bytes, &mut permit.body).await {
+        Ok(body) => body,
+        Err(BodyError::Refused(refused)) => {
+            let message = shared.intake.message(refused, tenant, class);
+            return ex.intake_refused(refused, message);
+        }
+        Err(BodyError::Invalid(status, code, message)) => return ex.error(status, code, message),
+    };
+    // The request holds its place, and its body's bytes, until its record ends.
+    ex.permit = Some(permit);
     // The overhead starts once the body is in: until then the gateway waits on the client, as the engine
     // would.
     let read = Instant::now();
@@ -157,31 +174,57 @@ pub(crate) async fn models(app: App, request: Request) -> Response {
     forward(&app, ex, parts, UpstreamBody::empty(), None).await
 }
 
-/// Reads a request body of at most `limit` bytes.
+/// Why a request body was not read.
+#[derive(Debug)]
+pub(crate) enum BodyError {
+    /// The client's: too large (413) or unreadable (400).
+    Invalid(StatusCode, &'static str, String),
+    /// The gateway's budget for the bodies it holds cannot take it (503).
+    Refused(Refused),
+}
+
+/// Reads a request body of at most `limit` bytes, whose bytes `budget` takes from the gateway's budget as they
+/// arrive: a declared length all at once, before anything is read, and the rest chunk by chunk.
 pub(crate) async fn read_body(
-    body: Body,
+    mut body: Body,
     limit: usize,
-) -> Result<Bytes, (StatusCode, &'static str, String)> {
+    budget: &mut BodyBytes,
+) -> Result<Bytes, BodyError> {
     let too_large = || {
-        (
+        BodyError::Invalid(
             StatusCode::PAYLOAD_TOO_LARGE,
             "body_too_large",
             format!("the request body exceeds {limit} bytes"),
         )
     };
     // A declared length over the limit is refused before reading anything.
-    if body.size_hint().lower() > limit as u64 {
+    let declared = usize::try_from(body.size_hint().lower()).unwrap_or(usize::MAX);
+    if declared > limit {
         return Err(too_large());
     }
-    match Limited::new(body, limit).collect().await {
-        Ok(collected) => Ok(collected.to_bytes()),
-        Err(err) if err.is::<LengthLimitError>() => Err(too_large()),
-        Err(err) => Err((
-            StatusCode::BAD_REQUEST,
-            "unreadable_body",
-            format!("cannot read the request body: {err}"),
-        )),
+    budget.take(declared).map_err(BodyError::Refused)?;
+    let mut read = BytesMut::with_capacity(declared);
+    while let Some(frame) = body.frame().await {
+        let frame = frame.map_err(|err| {
+            BodyError::Invalid(
+                StatusCode::BAD_REQUEST,
+                "unreadable_body",
+                format!("cannot read the request body: {err}"),
+            )
+        })?;
+        let Ok(data) = frame.into_data() else {
+            continue;
+        };
+        let total = read.len() + data.len();
+        if total > limit {
+            return Err(too_large());
+        }
+        if let Some(more) = total.checked_sub(budget.taken()) {
+            budget.take(more).map_err(BodyError::Refused)?;
+        }
+        read.extend_from_slice(&data);
     }
+    Ok(read.freeze())
 }
 
 /// Sends the request upstream and relays the response. An admitted request's ticket goes with the relay, and is

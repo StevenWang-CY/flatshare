@@ -19,7 +19,7 @@ use flatshare_proto::{LifecycleEvent, SloClass};
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use http::{Method, StatusCode, Uri};
 use tokio::net::{TcpListener, UnixListener, UnixStream};
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use tokio::task::JoinSet;
 
 use crate::auth::{self, Tenant, Tenants};
@@ -27,6 +27,8 @@ use crate::config::{ClassConfig, Config, ListenAddr, MetricsKey, PrioritySignals
 use crate::events::{self, EventSink, Events};
 use crate::exchange::Exchange;
 use crate::harness::Admission;
+use crate::intake::{self, Intake};
+use crate::ledger::{self, Followed, Ledger, Load};
 use crate::metrics::{Metrics, Route};
 use crate::proxy;
 use crate::systemd::Inherited;
@@ -44,8 +46,12 @@ pub(crate) struct Shared {
     pub tenants: Tenants,
     /// The engine.
     pub upstream: Upstream,
+    /// The bounds on the requests in flight and their bodies, whatever the admission policy.
+    pub intake: Arc<Intake>,
     /// The admission point; `None` under policy "none", where requests go upstream at once.
     pub admission: Option<Arc<Admission>>,
+    /// Told of every change to what the intake and the admission point hold, for a successor's ledger.
+    pub changed: Arc<Notify>,
     pub upstream_priority: PrioritySignals,
     pub metrics: Arc<Metrics>,
     pub events: Events,
@@ -63,6 +69,35 @@ pub(crate) struct Shared {
 }
 
 impl Shared {
+    /// What the gateway holds on its engine, with what it counts of a predecessor's: a successor's ledger line.
+    pub fn load(&self) -> Load {
+        Load {
+            intake: self.intake.held(),
+            admission: self
+                .admission
+                .as_ref()
+                .map(|admission| admission.held().into()),
+            closed: self.intake.is_closed(),
+        }
+    }
+
+    /// What a reload's predecessor holds now, from its ledger, counted with the gateway's own until it exits.
+    pub fn set_predecessor(&self, load: &Load) {
+        self.intake.set_predecessor(load.intake.clone());
+        if let Some(admission) = &self.admission {
+            admission.set_predecessor(load.elsewhere());
+        }
+    }
+
+    /// Admits nothing more: the gateway handed its sockets to a successor. Its waiting requests get 503, and the
+    /// requests already admitted run on.
+    fn close(&self) {
+        self.intake.close();
+        if let Some(admission) = &self.admission {
+            admission.close();
+        }
+    }
+
     /// The configuration of `class`'s requests.
     pub fn class(&self, class: SloClass) -> &ClassConfig {
         &self.classes[class as usize]
@@ -183,12 +218,13 @@ impl Server {
         mut inherited: Inherited,
     ) -> io::Result<Self> {
         let tenants = Tenants::new(&config.tenants, &config.cache_salt_secret);
+        let changed = Arc::new(Notify::new());
         // The harness, and its metric families, only with an admission policy; made before anything is bound, so
         // that a configuration it refuses changes nothing.
         let admission = config
             .admission
             .as_ref()
-            .map(Admission::new)
+            .map(|admission| Admission::new(admission, config.max_queued, Arc::clone(&changed)))
             .transpose()
             .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
         let mut listeners = Vec::with_capacity(config.listeners.len());
@@ -240,10 +276,23 @@ impl Server {
             config.upstream_idle_timeout,
             metrics.node_ready(),
         );
+        let limits = intake::Limits {
+            in_flight: config.max_in_flight,
+            classes: config.classes.each_ref().map(|class| class.max_in_flight),
+            body_bytes: config.max_buffered_body_bytes,
+        };
+        let intake = Intake::new(
+            limits,
+            &tenants,
+            Arc::clone(&changed),
+            metrics.intake_gauges(),
+        );
         let shared = Shared {
             tenants,
             upstream,
+            intake: Arc::new(intake),
             admission,
+            changed,
             upstream_priority: config.upstream_priority,
             metrics,
             events: Events::new(config.event_dedup_capacity, config.event_dedup_ttl, sink),
@@ -286,6 +335,18 @@ impl Server {
     /// What tells [`Server::run`] that a successor serves the sockets.
     pub fn handover(&self) -> HandOver {
         self.handover.clone()
+    }
+
+    /// The gateway's ledger: what it holds on its engine, for a reload's successor to count ([`crate::ledger`]).
+    pub fn ledger(&self) -> Ledger {
+        Ledger(Arc::downgrade(&self.shared))
+    }
+
+    /// Counts what the predecessor whose ledger is at `path` holds with this gateway's own, until it exits. The
+    /// returned [`Followed`] completes once the predecessor admits nothing more, which a successor waits for before
+    /// it serves.
+    pub async fn follow(&self, path: &Path) -> io::Result<Followed> {
+        ledger::follow(path, Arc::downgrade(&self.shared)).await
     }
 
     /// Where the listeners are bound, in configuration order, with the assigned port for TCP port 0.
@@ -351,6 +412,14 @@ impl Server {
             "shutting down: no new connections; draining in-flight requests"
         );
         drop(stop);
+        // One admission point owns the admissions: from here on the successor's, which counts what this one holds and
+        // serves once this one says that it admits nothing more.
+        if self.handover.is_done() {
+            shared.close();
+            tracing::info!(
+                "handed over: admitting nothing more; the successor counts this gateway's requests until it exits"
+            );
+        }
         let drained = async { while serving.join_next().await.is_some() {} };
         let cut = async {
             tokio::time::sleep(grace).await;

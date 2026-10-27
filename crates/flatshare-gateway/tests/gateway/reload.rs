@@ -383,3 +383,164 @@ async fn a_gateway_that_bound_its_own_sockets_leaves_them_to_its_successor() {
     }
     let _ = std::fs::remove_file(&socket);
 }
+
+/// A background request of the agents tenant on its own connection, which the mock engine holds until released, sent
+/// again once when a draining gateway answers 503 `draining`, as its client is told to.
+fn held(target: &Target, tag: &'static str) -> JoinHandle<Reply> {
+    let target = target.clone();
+    tokio::spawn(async move {
+        let headers = [AGENTS_AUTH, (TAG, tag), (GATE, "1")];
+        let reply = call(&target, "POST", "/v1/chat/completions", &headers, CHAT).await;
+        if reply.status == 503 && reply.json()["error"]["code"] == "draining" {
+            return call(&target, "POST", "/v1/chat/completions", &headers, CHAT).await;
+        }
+        reply
+    })
+}
+
+/// Waits until the gateway serving `target` exports `series` at `value`: after a reload, the successor's, which a
+/// predecessor still accepting would not export.
+async fn metric_at(target: &Target, series: &str, value: f64) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let reply = call(target, "GET", "/metrics", &[], "").await;
+        let current = metric(std::str::from_utf8(&reply.body).unwrap(), series);
+        if current == Some(value) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{series} is {current:?}, expected {value}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// The successor of `first`, from the notification that it took over.
+async fn successor(unit: &Unit, first: &Process) -> Process {
+    first.signal(Signal::SIGHUP);
+    let notified = unit
+        .notified(Duration::from_secs(10))
+        .await
+        .expect("the successor's notification");
+    let pid: u32 = notified
+        .strip_prefix("MAINPID=")
+        .and_then(|rest| rest.strip_suffix("\nREADY=1"))
+        .unwrap_or_else(|| panic!("{notified:?}"))
+        .parse()
+        .unwrap();
+    assert_ne!(pid, first.0);
+    Process(pid)
+}
+
+/// Stops a gateway process and waits for it to exit.
+async fn stopped(process: Process) {
+    process.signal(Signal::SIGTERM);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while process.alive() {
+        assert!(Instant::now() < deadline, "the gateway stops on SIGTERM");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_reload_keeps_an_admission_policys_bound_over_both_gateways() {
+    let mock = Mock::start(Script::Json("{}")).await;
+    // Background requests run on into the drain, so that the predecessor holds its two while the successor serves.
+    let top = "drain_timeout_s = 20\nbackground_drain_s = 15\n\
+               [admission]\npolicy = \"static-cap\"\nbackground_max_in_flight = 2";
+    let (unit, tcp, unix) = Unit::new(&mock.upstream, top);
+    let child = unit.start(tcp, unix);
+    let first = Process(child.id());
+    assert_eq!(
+        unit.notified(Duration::from_secs(10)).await.as_deref(),
+        Some("READY=1")
+    );
+    let [tcp_target, unix_target] = unit.targets();
+    let waiting = "flatshare_gateway_admission_waiting{class=\"background\"}";
+    // The predecessor admits two and holds a third back.
+    let mut replies = vec![held(&tcp_target, "p1")];
+    mock.await_requests(1).await;
+    replies.push(held(&tcp_target, "p2"));
+    mock.await_requests(2).await;
+    let queued = {
+        let target = tcp_target.clone();
+        tokio::spawn(async move {
+            let headers = [AGENTS_AUTH, (TAG, "p3"), (GATE, "1")];
+            call(&target, "POST", "/v1/chat/completions", &headers, CHAT).await
+        })
+    };
+    metric_at(&unix_target, waiting, 1.0).await;
+
+    let second = successor(&unit, &first).await;
+    // The request waiting at the predecessor is refused, to be sent again: it never reached the engine.
+    let refused = soon(queued).await.unwrap();
+    assert_eq!(refused.status, 503);
+    assert_eq!(refused.json()["error"]["code"], "draining");
+    assert_eq!(refused.header("retry-after"), Some("1"));
+    // The successor counts the predecessor's two as its own: its requests wait.
+    metric_at(&unix_target, "flatshare_gateway_predecessor_in_flight", 2.0).await;
+    replies.push(held(&tcp_target, "s1"));
+    metric_at(&unix_target, waiting, 1.0).await;
+    replies.push(held(&tcp_target, "s2"));
+    metric_at(&unix_target, waiting, 2.0).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(mock.tags(), ["p1", "p2"]);
+    // As the predecessor's requests end, the successor's go up, one for one.
+    mock.release(1);
+    mock.await_requests(3).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(mock.tags(), ["p1", "p2", "s1"]);
+    mock.release(1);
+    mock.await_requests(4).await;
+    mock.release(2);
+    for reply in replies {
+        assert_eq!(soon(reply).await.unwrap().status, 200);
+    }
+    // Two gateways, one engine, and never more than the policy's two background requests on it.
+    assert_eq!(mock.peak(), 2);
+    assert_eq!(mock.tags(), ["p1", "p2", "s1", "s2"]);
+    let status = soon(wait(child)).await;
+    assert!(status.success(), "{status}");
+    metric_at(&unix_target, "flatshare_gateway_predecessor_in_flight", 0.0).await;
+    stopped(second).await;
+}
+
+#[tokio::test]
+async fn a_reload_keeps_the_in_flight_bound_over_both_gateways() {
+    let mock = Mock::start(Script::Json("{}")).await;
+    let top = "max_in_flight = 2\ndrain_timeout_s = 20\nbackground_drain_s = 15";
+    let (unit, tcp, unix) = Unit::new(&mock.upstream, top);
+    let child = unit.start(tcp, unix);
+    let first = Process(child.id());
+    assert_eq!(
+        unit.notified(Duration::from_secs(10)).await.as_deref(),
+        Some("READY=1")
+    );
+    let [tcp_target, unix_target] = unit.targets();
+    let mut replies = vec![held(&tcp_target, "p1")];
+    mock.await_requests(1).await;
+    replies.push(held(&tcp_target, "p2"));
+    mock.await_requests(2).await;
+    let second = successor(&unit, &first).await;
+    metric_at(&unix_target, "flatshare_gateway_predecessor_in_flight", 2.0).await;
+    // The predecessor's two fill the bound for both: the successor refuses at once.
+    let reply = call(&unix_target, "POST", "/v1/chat/completions", &[], CHAT).await;
+    assert_eq!(reply.status, 503);
+    assert_eq!(reply.json()["error"]["code"], "in_flight_limit");
+    // One ends, and one fits.
+    mock.release(1);
+    metric_at(&unix_target, "flatshare_gateway_predecessor_in_flight", 1.0).await;
+    let third = held(&tcp_target, "s1");
+    mock.await_requests(3).await;
+    let reply = call(&unix_target, "POST", "/v1/chat/completions", &[], CHAT).await;
+    assert_eq!(reply.status, 503);
+    mock.release(2);
+    for reply in replies.into_iter().chain([third]) {
+        assert_eq!(soon(reply).await.unwrap().status, 200);
+    }
+    assert_eq!(mock.peak(), 2);
+    let status = soon(wait(child)).await;
+    assert!(status.success(), "{status}");
+    stopped(second).await;
+}

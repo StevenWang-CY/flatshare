@@ -103,6 +103,10 @@ struct MockState {
     /// The permits gated answers wait for, granted in the order they began to wait.
     gate: Semaphore,
     dropped: mpsc::UnboundedSender<(Instant, Option<String>)>,
+    /// Inference requests the engine is working on (from their arrival to their response's end or drop), and the
+    /// most at once.
+    active: AtomicUsize,
+    peak: AtomicUsize,
 }
 
 /// An in-process engine on 127.0.0.1, or on a Unix socket ([`Mock::start_unix`]).
@@ -118,14 +122,24 @@ pub struct Mock {
 }
 
 /// Sends the time it is dropped, with the request's tag: held by a response body, or by a handler that has
-/// not answered yet.
+/// not answered yet. It counts the request as one the engine works on while it lives.
 struct DropSignal(
     mpsc::UnboundedSender<(Instant, Option<String>)>,
     Option<String>,
+    Arc<MockState>,
 );
+
+impl DropSignal {
+    fn new(state: &Arc<MockState>, tag: Option<String>) -> Self {
+        let active = state.active.fetch_add(1, Ordering::SeqCst) + 1;
+        state.peak.fetch_max(active, Ordering::SeqCst);
+        Self(state.dropped.clone(), tag, Arc::clone(state))
+    }
+}
 
 impl Drop for DropSignal {
     fn drop(&mut self) {
+        self.2.active.fetch_sub(1, Ordering::SeqCst);
         let _ = self.0.send((Instant::now(), self.1.take()));
     }
 }
@@ -188,6 +202,8 @@ impl Mock {
             healthy: AtomicBool::new(true),
             gate: Semaphore::new(0),
             dropped: dropped_tx,
+            active: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
         });
         let app = Router::new()
             .route("/v1/chat/completions", post(answer))
@@ -261,6 +277,11 @@ impl Mock {
         self.state.gate.add_permits(n);
     }
 
+    /// The most inference requests the engine worked on at once.
+    pub fn peak(&self) -> usize {
+        self.state.peak.load(Ordering::SeqCst)
+    }
+
     /// The tags of the requests received, in order of arrival.
     pub fn tags(&self) -> Vec<String> {
         self.requests()
@@ -310,7 +331,7 @@ async fn answer(State(state): State<Arc<MockState>>, request: Request) -> Respon
     let headers = request.headers();
     let tag = headers.get(TAG).map(|v| v.to_str().unwrap().to_owned());
     let gated = headers.contains_key(GATE);
-    let guard = DropSignal(state.dropped.clone(), tag);
+    let guard = DropSignal::new(&state, tag);
     state.record(request).await;
     match state.script.clone() {
         Script::Json(json) => {

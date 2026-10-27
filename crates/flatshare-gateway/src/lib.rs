@@ -15,6 +15,9 @@
 //! - **bounds on what a request asks for**: a reply cap per class (`[classes.<class>] max_reply_tokens`, and
 //!   `realtime_max_tokens`), written in each route's own fields as vLLM reads them, and at most `max_choices`
 //!   choices, without an admission policy as with one;
+//! - **intake bounds**, without an admission policy as with one: requests in flight in all, by class and by tenant,
+//!   taken before a body is read and refused at once, and a budget for the bodies held; a reload's successor counts
+//!   its predecessor's ([`ledger`]);
 //! - **relay**: responses pass through byte for byte, with backpressure, client-disconnect cancellation and a
 //!   stall timeout;
 //! - **lifecycle events** at `POST /v1/events`, deduplicated, then to the admission point and an [`EventSink`];
@@ -29,6 +32,8 @@ mod events;
 mod exchange;
 pub mod handover;
 mod harness;
+mod intake;
+mod ledger;
 mod metrics;
 mod proxy;
 mod relay;
@@ -40,5 +45,6 @@ mod usage;
 
 pub use config::{Config, ConfigError, ListenAddr};
 pub use events::{AcceptedEvent, EventSink, LogSink};
+pub use ledger::{Followed, Ledger};
 pub use server::{HandOver, MetricsReader, Server};
 pub use systemd::Inherited;

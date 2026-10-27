@@ -4,6 +4,7 @@ mod admission;
 mod common;
 mod drain;
 mod events;
+mod intake;
 mod lifecycle;
 mod metrics;
 mod proxy;

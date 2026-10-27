@@ -45,6 +45,7 @@ fn main() -> ExitCode {
         }
     };
     let predecessor = handover::predecessor();
+    let ledger_path = predecessor.and(handover::ledger());
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -71,6 +72,20 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
+        // A reload's successor counts what its predecessor holds on the engine until the predecessor exits.
+        let followed = match &ledger_path {
+            Some(path) => match server.follow(path).await {
+                Ok(followed) => Some(followed),
+                Err(err) => {
+                    tracing::warn!(
+                        "cannot read the predecessor's ledger at {}: {err}; its requests will not count",
+                        path.display()
+                    );
+                    None
+                }
+            },
+            None => None,
+        };
         // A reload's successor gets copies of the listening sockets.
         let listeners = match server.listener_fds() {
             Ok(listeners) => listeners,
@@ -88,9 +103,21 @@ fn main() -> ExitCode {
         if let Err(err) = ready {
             tracing::warn!("cannot say that the gateway is ready: {err}");
         }
+        // The predecessor admits nothing more once it reads the SIGTERM above; until it says so, both would admit.
+        if let Some(mut followed) = followed
+            && tokio::time::timeout(handover::CLOSE_WAIT, followed.closed())
+                .await
+                .is_err()
+        {
+            tracing::warn!(
+                "the predecessor did not say it admits nothing more within {:?}; serving anyway",
+                handover::CLOSE_WAIT
+            );
+        }
         let handed_over = server.handover();
+        let ledger = server.ledger();
         let shutdown = async move {
-            if handover::until_stopped(signals, listeners).await == Stopped::HandedOver {
+            if handover::until_stopped(signals, listeners, ledger).await == Stopped::HandedOver {
                 handed_over.done();
             }
         };

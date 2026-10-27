@@ -242,6 +242,17 @@ flatshare_gateway_duration_seconds_bucket{le="+Inf",class="realtime"} 0
 flatshare_gateway_streams_active{class="background"} 0
 flatshare_gateway_streams_active{class="interactive"} 0
 flatshare_gateway_streams_active{class="realtime"} 0
+# HELP flatshare_gateway_in_flight Inference requests past the intake, by class: from their headers to their end, reading their body, waiting at the admission point or relayed.
+# TYPE flatshare_gateway_in_flight gauge
+flatshare_gateway_in_flight{class="background"} 0
+flatshare_gateway_in_flight{class="interactive"} 0
+flatshare_gateway_in_flight{class="realtime"} 0
+# HELP flatshare_gateway_buffered_body_bytes Bytes of request bodies the gateway holds, which max_buffered_body_bytes bounds.
+# TYPE flatshare_gateway_buffered_body_bytes gauge
+flatshare_gateway_buffered_body_bytes 0
+# HELP flatshare_gateway_predecessor_in_flight A reload's predecessor's requests in flight, which the gateway counts with its own until the predecessor exits.
+# TYPE flatshare_gateway_predecessor_in_flight gauge
+flatshare_gateway_predecessor_in_flight 0
 # HELP flatshare_gateway_sanitized Request headers and body fields removed because clients may not set them.
 # TYPE flatshare_gateway_sanitized counter
 flatshare_gateway_sanitized_total{field="bootstrap_host"} 0
@@ -372,10 +383,16 @@ flatshare_gateway_admission_wait_seconds_bucket{le="600.0",class="realtime"} 0
 flatshare_gateway_admission_wait_seconds_bucket{le="+Inf",class="realtime"} 0
 # HELP flatshare_gateway_admission_refused Requests the admission point refused, by class and reason.
 # TYPE flatshare_gateway_admission_refused counter
+flatshare_gateway_admission_refused_total{class="background",reason="draining"} 0
+flatshare_gateway_admission_refused_total{class="background",reason="max_queued"} 0
 flatshare_gateway_admission_refused_total{class="background",reason="queue_full"} 0
 flatshare_gateway_admission_refused_total{class="background",reason="timeout"} 0
+flatshare_gateway_admission_refused_total{class="interactive",reason="draining"} 0
+flatshare_gateway_admission_refused_total{class="interactive",reason="max_queued"} 0
 flatshare_gateway_admission_refused_total{class="interactive",reason="queue_full"} 0
 flatshare_gateway_admission_refused_total{class="interactive",reason="timeout"} 0
+flatshare_gateway_admission_refused_total{class="realtime",reason="draining"} 0
+flatshare_gateway_admission_refused_total{class="realtime",reason="max_queued"} 0
 flatshare_gateway_admission_refused_total{class="realtime",reason="queue_full"} 0
 flatshare_gateway_admission_refused_total{class="realtime",reason="timeout"} 0
 # HELP flatshare_gateway_admission_resubmits Requests sent upstream again after a preemption dropped their attempt.

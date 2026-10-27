@@ -434,6 +434,8 @@ mod tests {
     fn tenant(trusted: bool, default_class: SloClass, max_class: SloClass) -> Tenant {
         Tenant {
             name: "agents".into(),
+            index: 0,
+            max_in_flight: 1,
             trusted,
             default_class,
             max_class,

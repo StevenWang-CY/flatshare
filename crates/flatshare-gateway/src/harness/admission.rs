@@ -14,16 +14,22 @@
 //! Under the lifecycle policy the admission point also follows the realtime sessions' turns ([`Realtime`]), from
 //! lifecycle events and realtime requests, and tells the core how many sessions are in each phase whenever that
 //! changes. A task ends the phases that time out.
+//!
+//! Across a reload, one admission point owns the admissions: the predecessor closes as it hands its sockets over
+//! ([`Admission::close`]: its waiting requests are refused with 503 and nothing more is admitted), and the successor
+//! counts what the predecessor still holds with its own ([`Admission::set_predecessor`], from [`crate::ledger`]) until
+//! it exits, so that the policy holds for the one engine both serve.
 
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use flatshare_core::admission::{
-    self, Action, Deferral, Estimate, Policy, RequestId, SessionUsage,
+    self, Action, Deferral, Elsewhere, Estimate, Policy, RequestId, SessionUsage,
 };
 use flatshare_proto::{LifecycleEvent, SessionId, SloClass};
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 
 use super::config;
 use super::metrics::{LifecycleMetrics, Metrics, Refusal};
@@ -38,7 +44,11 @@ pub(crate) struct Admission {
     policy: Policy,
     /// How long a request may wait.
     max_wait: Duration,
+    /// The requests each class's queue holds at most.
+    queue_limit: usize,
     metrics: Metrics,
+    /// Told of every decision, for a successor that counts what this point holds ([`crate::ledger`]).
+    changed: Arc<Notify>,
 }
 
 #[derive(Debug)]
@@ -50,6 +60,8 @@ struct State {
     sessions: Sessions,
     /// The lifecycle policy's realtime sessions.
     realtime: Option<Realtime>,
+    /// Set as the gateway hands its sockets to a successor: nothing more is admitted.
+    closed: bool,
 }
 
 /// What a held request was last told.
@@ -59,14 +71,20 @@ enum Signal {
     Admitted,
     /// Shed to make room: the request is no longer held, and its response must fail.
     Shed,
+    /// Refused as it waited, because the admission point closed ([`Admission::close`]): it is no longer held.
+    Closed,
 }
 
 impl Admission {
     /// The admission point and its metric families, the lifecycle policy's only under it; under that policy, with
     /// the task that ends the realtime sessions' phases as they time out. A configuration that the core refuses is
     /// an error that names the key it lacks ([`config::Admission::core`]).
-    pub fn new(config: &config::Admission) -> Result<Arc<Self>, String> {
-        let core = config.core()?;
+    pub fn new(
+        config: &config::Admission,
+        max_queued: usize,
+        changed: Arc<Notify>,
+    ) -> Result<Arc<Self>, String> {
+        let core = config.core()?.with_max_waiting(max_queued);
         let (metrics, realtime) = match config.policy {
             Policy::Lifecycle(lifecycle) => {
                 let metrics = LifecycleMetrics::new();
@@ -82,12 +100,15 @@ impl Admission {
             signals: HashMap::new(),
             sessions: Sessions::default(),
             realtime,
+            closed: false,
         };
         let admission = Arc::new(Self {
             state: Mutex::new(state),
             policy: config.policy,
             max_wait: config.max_wait,
+            queue_limit: config.queue_limit,
             metrics,
+            changed,
         });
         if let Some(timeout) = config.state_timeout {
             tokio::spawn(expire(Arc::downgrade(&admission), timeout));
@@ -127,14 +148,25 @@ impl Admission {
         let (sender, signal) = watch::channel(Signal::Admitted);
         let (id, tokens, deferred, reply_cap) = {
             let mut state = self.lock();
+            if state.closed {
+                drop(state);
+                self.metrics.refused(class, Refusal::Draining);
+                return Err(Refusal::Draining);
+            }
             let estimate = match (&key, estimated) {
                 (Some(key), Some(body_bytes)) => state.sessions.estimate(key, body_bytes),
                 _ => Estimate::default(),
             };
             let Ok(arrival) = state.core.arrive(class, estimate) else {
+                // Its class's queue, or all of them together (max_queued).
+                let refusal = if state.core.waiting(class) >= self.queue_limit {
+                    Refusal::QueueFull
+                } else {
+                    Refusal::Queued
+                };
                 drop(state);
-                self.metrics.refused(class, Refusal::QueueFull);
-                return Err(Refusal::QueueFull);
+                self.metrics.refused(class, refusal);
+                return Err(refusal);
             };
             if !arrival.admitted {
                 sender.send_replace(Signal::Waiting);
@@ -204,6 +236,36 @@ impl Admission {
         self.policy
     }
 
+    /// Admits nothing more, and refuses every waiting request (503 `draining`): the gateway handed its sockets to a
+    /// successor, which owns the admissions from now on. The admitted requests stay until they end.
+    pub fn close(&self) {
+        let mut state = self.lock();
+        state.closed = true;
+        let refused = state.core.close();
+        for id in &refused {
+            state.signal(*id, Signal::Closed);
+        }
+        state.settle();
+    }
+
+    /// What this admission point holds on the engine, with what it counts of a predecessor's. A read, which tells no
+    /// one of a change: the successor's ledger reads it as it is told of one.
+    pub fn held(&self) -> Elsewhere {
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .core
+            .held()
+    }
+
+    /// What a reload's predecessor holds now, counted with this point's own until it exits.
+    pub fn set_predecessor(&self, held: Elsewhere) {
+        let mut state = self.lock();
+        let actions = state.core.set_elsewhere(held);
+        state.apply(actions);
+        state.settle();
+    }
+
     /// The admission point's metric families, for the gateway's registry.
     pub fn metrics(&self) -> &Metrics {
         &self.metrics
@@ -213,8 +275,38 @@ impl Admission {
         matches!(self.policy, Policy::Lifecycle(_))
     }
 
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    /// The state, locked; every unlock tells a successor's ledger that what the point holds may have changed.
+    fn lock(&self) -> Locked<'_> {
+        Locked {
+            state: self.state.lock().unwrap_or_else(PoisonError::into_inner),
+            changed: &self.changed,
+        }
+    }
+}
+
+/// The admission point's state while it is locked.
+struct Locked<'a> {
+    state: MutexGuard<'a, State>,
+    changed: &'a Notify,
+}
+
+impl Deref for Locked<'_> {
+    type Target = State;
+
+    fn deref(&self) -> &State {
+        &self.state
+    }
+}
+
+impl DerefMut for Locked<'_> {
+    fn deref_mut(&mut self) -> &mut State {
+        &mut self.state
+    }
+}
+
+impl Drop for Locked<'_> {
+    fn drop(&mut self) {
+        self.changed.notify_waiters();
     }
 }
 
@@ -459,13 +551,28 @@ impl Ticket {
     /// Waits until the request is admitted, for at most `queue_timeout_s`; under the lifecycle policy, until it is
     /// admitted regardless after `max_defer_s`.
     async fn wait(&mut self) -> Result<(), Refusal> {
-        if *self.signal.borrow() == Signal::Admitted {
-            return Ok(());
+        let now = *self.signal.borrow();
+        match now {
+            Signal::Admitted => return Ok(()),
+            Signal::Closed => return Err(self.closed()),
+            Signal::Waiting | Signal::Shed => {}
         }
         let _waiting = self.admission.metrics.waiting(self.class);
-        let admitted = self.signal.wait_for(|signal| *signal == Signal::Admitted);
-        if let Ok(Ok(_)) = tokio::time::timeout(self.admission.max_wait, admitted).await {
-            return Ok(());
+        let decided = self
+            .signal
+            .wait_for(|signal| matches!(signal, Signal::Admitted | Signal::Closed));
+        let decided = match tokio::time::timeout(self.admission.max_wait, decided).await {
+            Ok(Ok(signal)) => Some(*signal),
+            _ => None,
+        };
+        match decided {
+            Some(Signal::Closed) => return Err(self.closed()),
+            Some(_) => return Ok(()),
+            None => {}
+        }
+        let closed = *self.signal.borrow() == Signal::Closed;
+        if closed {
+            return Err(self.closed());
         }
         let mut state = self.admission.lock();
         // The timer and the admission can cross: a request admitted meanwhile goes on.
@@ -488,6 +595,17 @@ impl Ticket {
         self.left = true;
         self.admission.metrics.refused(self.class, Refusal::Timeout);
         Err(Refusal::Timeout)
+    }
+
+    /// The refusal of a request the admission point refused as it closed: the core holds it no more.
+    fn closed(&mut self) -> Refusal {
+        self.left = true;
+        let signal = self.admission.lock().signals.remove(&self.id);
+        drop(signal);
+        self.admission
+            .metrics
+            .refused(self.class, Refusal::Draining);
+        Refusal::Draining
     }
 }
 

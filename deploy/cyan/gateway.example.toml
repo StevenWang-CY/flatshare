@@ -29,6 +29,12 @@ metrics_key_file = "<home>/.config/flatshare/metrics-key"
 # The choices a request may ask for: n (with use_beam_search, a beam's width) and best_of. vLLM runs each as a reply
 # of its own, so the default is 1; a request that asks for more gets 400.
 # max_choices = 1
+# The work the gateway holds, with or without an admission policy: inference requests in flight (one more gets 503
+# before its body is read; each tenant and class has its own bound too, below), the bytes of the bodies it holds, and
+# the requests waiting at an admission policy's queues in all. E2's heaviest point held about 30 requests in flight.
+# max_in_flight = 1024
+# max_buffered_body_bytes = 268435456
+# max_queued = 256
 
 # The host network. Other users of cyan can reach loopback, so requests here need a key.
 [[listen]]
@@ -52,6 +58,8 @@ keys_sha256 = ["<sha256 of the agents key>"]
 trusted = true
 default_class = "background"
 max_class = "interactive"
+# Each tenant's requests in flight at most (512 by default); one more gets 429 before its body is read.
+# max_in_flight = 512
 
 # An untrusted client: its X-Session-ID and X-Flatshare-Class are ignored, and it gets background, so that it never
 # outranks the agents (E2 replays its AIPerf traffic as the agents tenant).
@@ -63,8 +71,12 @@ default_class = "background"
 # limit and the cap (crates/flatshare-gateway/README.md, Bounds).
 # [classes.realtime]
 # max_reply_tokens = 64
+# max_in_flight = 128
+# [classes.interactive]
+# max_in_flight = 256
 # [classes.background]
 # max_reply_tokens = 8192
+# max_in_flight = 512
 
 # The admission policy (crates/flatshare-gateway/README.md#admission). Without the table, every request goes upstream
 # at once. E2's baselines set one policy and its keys:

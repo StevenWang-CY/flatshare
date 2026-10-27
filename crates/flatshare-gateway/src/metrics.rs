@@ -224,6 +224,7 @@ struct Resolved {
     first_byte: [Histogram; 3],
     duration: [Histogram; 3],
     streams_active: [Gauge; 3],
+    in_flight: [Gauge; 3],
     usage_tokens: [[Counter; USAGE_KINDS.len()]; 3],
     overhead: [Histogram; Route::INFERENCE.len()],
     request_body: [Histogram; Route::INFERENCE.len()],
@@ -253,6 +254,9 @@ pub(crate) struct Metrics {
     first_byte: Histograms<ClassLabels>,
     duration: Histograms<ClassLabels>,
     streams_active: Family<ClassLabels, Gauge>,
+    in_flight: Family<ClassLabels, Gauge>,
+    buffered_body_bytes: Gauge,
+    predecessor_in_flight: Gauge,
     sanitized: Family<FieldLabels, Counter>,
     class_clamped: Counter,
     upstream_errors: Family<KindLabels, Counter>,
@@ -286,6 +290,7 @@ impl Metrics {
         let duration: Histograms<ClassLabels> =
             Family::new_with_constructor(|| Histogram::new(LATENCY_BUCKETS));
         let streams_active: Family<ClassLabels, Gauge> = Family::default();
+        let in_flight: Family<ClassLabels, Gauge> = Family::default();
         let usage_tokens: Family<UsageLabels, Counter> = Family::default();
         let by_class = SloClass::ALL.map(SloClass::as_str);
         let by_route = Route::INFERENCE.map(Route::as_str);
@@ -302,6 +307,7 @@ impl Metrics {
             duration: by_class.map(|class| duration.get_or_create_owned(&ClassLabels { class })),
             streams_active: by_class
                 .map(|class| streams_active.get_or_create_owned(&ClassLabels { class })),
+            in_flight: by_class.map(|class| in_flight.get_or_create_owned(&ClassLabels { class })),
             usage_tokens: by_class.map(|class| {
                 USAGE_KINDS
                     .map(|kind| usage_tokens.get_or_create_owned(&UsageLabels { class, kind }))
@@ -319,6 +325,9 @@ impl Metrics {
             first_byte,
             duration,
             streams_active,
+            in_flight,
+            buffered_body_bytes: Gauge::default(),
+            predecessor_in_flight: Gauge::default(),
             sanitized: Family::default(),
             class_clamped: Counter::default(),
             upstream_errors: Family::default(),
@@ -386,6 +395,23 @@ impl Metrics {
             "streams_active",
             "Responses being relayed from the upstream",
             self.streams_active.clone(),
+        );
+        r.register(
+            "in_flight",
+            "Inference requests past the intake, by class: from their headers to their end, reading their body, \
+             waiting at the admission point or relayed",
+            self.in_flight.clone(),
+        );
+        r.register(
+            "buffered_body_bytes",
+            "Bytes of request bodies the gateway holds, which max_buffered_body_bytes bounds",
+            self.buffered_body_bytes.clone(),
+        );
+        r.register(
+            "predecessor_in_flight",
+            "A reload's predecessor's requests in flight, which the gateway counts with its own until the \
+             predecessor exits",
+            self.predecessor_in_flight.clone(),
         );
         r.register(
             "sanitized",
@@ -484,6 +510,15 @@ impl Metrics {
     /// The gauge of whether the engine is ready.
     pub fn node_ready(&self) -> Gauge {
         self.node_ready.clone()
+    }
+
+    /// The intake's gauges.
+    pub fn intake_gauges(&self) -> crate::intake::Gauges {
+        crate::intake::Gauges {
+            in_flight: self.resolved.in_flight.clone(),
+            body_bytes: self.buffered_body_bytes.clone(),
+            predecessor_in_flight: self.predecessor_in_flight.clone(),
+        }
     }
 
     pub fn sanitized(&self, field: &'static str) {
