@@ -1,8 +1,10 @@
 //! `flatshare-sim`: replays agent traces through a model of vLLM's two-tier KV cache.
 
 use std::fmt::Write as _;
+use std::num::ParseIntError;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::str::FromStr;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use flatshare_core::{
@@ -62,39 +64,40 @@ struct ReplayArgs {
     /// file.
     traces: PathBuf,
     /// Live session trees (AIPerf's lanes).
-    #[arg(long, default_value_t = 16)]
+    #[arg(long, default_value_t = 16, value_parser = count::<usize>)]
     concurrency: usize,
     /// Profiling duration in seconds.
-    #[arg(long, default_value_t = 600.0)]
+    #[arg(long, default_value_t = 600.0, value_parser = positive)]
     duration: f64,
     /// Grace period after the duration, in seconds.
-    #[arg(long, default_value_t = 60.0)]
+    #[arg(long, default_value_t = 60.0, value_parser = non_negative)]
     grace: f64,
     /// Cap on every think-time delay in seconds (`interTurnDelayCapSeconds`); 0 for none.
-    #[arg(long, default_value_t = 120.0)]
+    #[arg(long, default_value_t = 120.0, value_parser = non_negative)]
     think_cap: f64,
     /// AIPerf's `randomSeed`.
     #[arg(long, default_value_t = 11)]
     seed: u64,
     /// `trajectoryStartMinRatio`.
-    #[arg(long, default_value_t = 0.0)]
+    #[arg(long, default_value_t = 0.0, value_parser = ratio)]
     start_min: f64,
     /// `trajectoryStartMaxRatio`.
-    #[arg(long, default_value_t = 1.0)]
+    #[arg(long, default_value_t = 1.0, value_parser = ratio)]
     start_max: f64,
     /// Align each lane's first requests on its snapshot instant instead of sending the earliest at
     /// once (`burstPhaseStarts: false`).
     #[arg(long)]
     spread_starts: bool,
     /// `systemIdleGapCapSeconds`; 0 for none.
-    #[arg(long, default_value_t = 10.0)]
+    #[arg(long, default_value_t = 10.0, value_parser = non_negative)]
     idle_cap: f64,
-    /// Start at most this many session plays, the initial lanes included.
+    /// Recycle no lane once this many session plays have started, the initial lanes included; every lane
+    /// starts its first play.
     #[arg(long)]
     max_sessions: Option<u64>,
     /// Multiply hash-block and output tokens: 32 replays a 32x-scaled corpus at its original token
     /// counts.
-    #[arg(long, default_value_t = 1)]
+    #[arg(long, default_value_t = 1, value_parser = count::<u32>)]
     token_scale: u32,
     /// The pauses between a session's turns: the traces' delays, or TraceLab's tool waits in their
     /// place (capped by --think-cap).
@@ -167,7 +170,7 @@ struct CostArgs {
     #[arg(long)]
     step_costs: Option<PathBuf>,
     /// Decode inter-token latency in ms, for the idle service. Default: 15.6 (the W0 replay's p50).
-    #[arg(long)]
+    #[arg(long, value_parser = non_negative)]
     itl_ms: Option<f64>,
 }
 
@@ -218,14 +221,18 @@ fn read_host(path: &Path) -> Result<Host, String> {
 #[derive(Args)]
 struct CapacityArgs {
     /// GPU pool in tokens.
-    #[arg(long, default_value_t = FROZEN_BOX_POOL_TOKENS)]
+    #[arg(
+        long,
+        default_value_t = FROZEN_BOX_POOL_TOKENS,
+        value_parser = count::<u64>
+    )]
     pool_tokens: u64,
     /// CPU tier sizes as multiples of the pool, e.g. `--cpu-ratio 2,4,8`. Default: the frozen box's
     /// 20 GiB.
-    #[arg(long = "cpu-ratio", value_delimiter = ',')]
+    #[arg(long = "cpu-ratio", value_delimiter = ',', value_parser = non_negative)]
     cpu_ratios: Vec<f64>,
     /// CPU tier size in GiB, instead of a ratio.
-    #[arg(long, conflicts_with = "cpu_ratios")]
+    #[arg(long, conflicts_with = "cpu_ratios", value_parser = non_negative)]
     cpu_gib: Option<f64>,
 }
 
@@ -289,11 +296,11 @@ struct MrcArgs {
     #[arg(long, default_value_t = Arm::LruCpu)]
     reference: Arm,
     /// Capacities to run MIN at, as multiples of the GPU pool.
-    #[arg(long, value_delimiter = ',', default_value = "0.25,0.5,1,2,4,8")]
+    #[arg(long, value_delimiter = ',', default_value = "0.25,0.5,1,2,4,8", value_parser = positive)]
     min_at: Vec<f64>,
     /// How much larger the original token counts are. Default: 64 over the corpus's hash block size
     /// (32 for a 32x corpus); 1 skips the unscaled curves.
-    #[arg(long)]
+    #[arg(long, value_parser = count::<u32>)]
     unscale: Option<u32>,
     /// Write every curve point as CSV to this file.
     #[arg(long)]
@@ -313,10 +320,20 @@ struct RegimeArgs {
     #[command(flatten)]
     cost: CostArgs,
     /// Session counts (AIPerf's lanes): the KV pressure grows with them.
-    #[arg(long, value_delimiter = ',', default_value = "5,8,12,16,24,32,40")]
+    #[arg(
+        long,
+        value_delimiter = ',',
+        default_value = "5,8,12,16,24,32,40",
+        value_parser = count::<usize>
+    )]
     sessions: Vec<usize>,
     /// CPU tier sizes as multiples of the GPU pool.
-    #[arg(long = "cpu-ratio", value_delimiter = ',', default_value = "2,4,8")]
+    #[arg(
+        long = "cpu-ratio",
+        value_delimiter = ',',
+        default_value = "2,4,8",
+        value_parser = non_negative
+    )]
     cpu_ratios: Vec<f64>,
     /// Pause sources: trace, tracelab.
     #[arg(
@@ -330,7 +347,7 @@ struct RegimeArgs {
     #[arg(long, value_delimiter = ',', default_value = "11,12,13")]
     seeds: Vec<u64>,
     /// Cells to run at once. Default: the machine's cores.
-    #[arg(long)]
+    #[arg(long, value_parser = count::<usize>)]
     jobs: Option<usize>,
     /// Write one row per cell, seed and arm to this CSV file.
     #[arg(long)]
@@ -364,20 +381,21 @@ struct HardwareArgs {
     #[arg(
         long,
         value_delimiter = ',',
-        default_value = "5,8,12,16,24,32,40,64,96,128,192,256"
+        default_value = "5,8,12,16,24,32,40,64,96,128,192,256",
+        value_parser = count::<usize>
     )]
     sessions: Vec<usize>,
     /// Seeds; the Markdown gives each cell's mean over them.
     #[arg(long, value_delimiter = ',', default_value = "11,12,13")]
     seeds: Vec<u64>,
     /// The CPU tier as a multiple of each GPU's pool.
-    #[arg(long, default_value_t = 4.0)]
+    #[arg(long, default_value_t = 4.0, value_parser = non_negative)]
     cpu_ratio: f64,
     /// Voice calls the realtime tier needs KV free for, 1,024 tokens each.
     #[arg(long, default_value_t = 2)]
     calls: u64,
     /// Cells to run at once. Default: the machine's cores.
-    #[arg(long)]
+    #[arg(long, value_parser = count::<usize>)]
     jobs: Option<usize>,
     /// Write one row per cell and arm to this CSV file.
     #[arg(long)]
@@ -401,7 +419,7 @@ struct ForecastArgs {
     #[arg(long, value_delimiter = ',', default_value = "11,12,13,14,15")]
     seeds: Vec<u64>,
     /// Profiling duration of each cell's replay, in seconds.
-    #[arg(long, default_value_t = 600.0)]
+    #[arg(long, default_value_t = 600.0, value_parser = positive)]
     duration: f64,
     /// The card's E0 tier fits, read as `run` reads them: with --step-costs, the report adds the
     /// calibration point and the core at the box's pool with the card's fitted costs.
@@ -416,7 +434,8 @@ struct ForecastArgs {
         long,
         value_delimiter = ',',
         default_value = "24,28,32,36,40",
-        requires = "costs"
+        requires = "costs",
+        value_parser = count::<usize>
     )]
     fitted_sessions: Vec<usize>,
     /// The host the card runs on: the host.json benchmarks/a100/bench_host.py writes there. The
@@ -425,7 +444,7 @@ struct ForecastArgs {
     #[arg(long)]
     host: Option<PathBuf>,
     /// Cells to run at once. Default: the machine's cores.
-    #[arg(long)]
+    #[arg(long, value_parser = count::<usize>)]
     jobs: Option<usize>,
     /// Write the report to this Markdown file.
     #[arg(long)]
@@ -461,23 +480,77 @@ struct PlanArgs {
     /// A directory of <trace id>.json or a JSONL file.
     traces: PathBuf,
     /// Lanes to plan (the script's `--concurrency`).
-    #[arg(long, default_value_t = 16)]
+    #[arg(long, default_value_t = 16, value_parser = count::<usize>)]
     concurrency: usize,
     /// AIPerf's `randomSeed` (`--seed`).
     #[arg(long, default_value_t = 11)]
     seed: u64,
     /// `interTurnDelayCapSeconds` (`--cap`). Unlike `run`'s, 0 caps every delay at 0, as AIPerf does.
-    #[arg(long, default_value_t = 120.0)]
+    #[arg(long, default_value_t = 120.0, value_parser = non_negative)]
     think_cap: f64,
     /// `trajectoryStartMinRatio` (`--min-ratio`).
-    #[arg(long, default_value_t = 0.0)]
+    #[arg(long, default_value_t = 0.0, value_parser = ratio)]
     start_min: f64,
     /// `trajectoryStartMaxRatio` (`--max-ratio`).
-    #[arg(long, default_value_t = 1.0)]
+    #[arg(long, default_value_t = 1.0, value_parser = ratio)]
     start_max: f64,
     /// Plan only the first N traces.
     #[arg(long)]
     limit: Option<usize>,
+}
+
+/// A count of at least one: of lanes, sessions, threads, tokens or a scale.
+fn count<T>(s: &str) -> Result<T, String>
+where
+    T: FromStr<Err = ParseIntError> + PartialEq + From<u8>,
+{
+    let n: T = s.parse().map_err(|e: ParseIntError| e.to_string())?;
+    if n == T::from(0) {
+        Err("must be at least 1".into())
+    } else {
+        Ok(n)
+    }
+}
+
+/// A finite number above zero: a duration in seconds, or a capacity's multiple of the pool.
+fn positive(s: &str) -> Result<f64, String> {
+    let x = number(s)?;
+    if x > 0.0 {
+        Ok(x)
+    } else {
+        Err("must be above 0".into())
+    }
+}
+
+/// A finite number of zero or more: a grace period, a cap, a CPU tier's size, a decode rate.
+fn non_negative(s: &str) -> Result<f64, String> {
+    let x = number(s)?;
+    if x >= 0.0 {
+        Ok(x)
+    } else {
+        Err("must be 0 or more".into())
+    }
+}
+
+/// A share of a trace's time span, from 0 to 1.
+fn ratio(s: &str) -> Result<f64, String> {
+    let x = number(s)?;
+    if (0.0..=1.0).contains(&x) {
+        Ok(x)
+    } else {
+        Err("must be from 0 to 1".into())
+    }
+}
+
+fn number(s: &str) -> Result<f64, String> {
+    let x: f64 = s
+        .parse()
+        .map_err(|e: std::num::ParseFloatError| e.to_string())?;
+    if x.is_finite() {
+        Ok(x)
+    } else {
+        Err("must be a finite number".into())
+    }
 }
 
 fn main() -> ExitCode {
@@ -653,7 +726,7 @@ fn mrc(args: MrcArgs) -> Result<(), String> {
     let capacity = args.capacity.capacities(&cfg.geometry, 1)[0];
     let mut corpus = args.replay.corpus()?;
     let factor = match args.unscale {
-        Some(f) => f.max(1),
+        Some(f) => f,
         None => {
             let bs = corpus.plan(0)?.block_size;
             if 64 % bs != 0 {
@@ -1289,5 +1362,98 @@ mod tests {
         assert_eq!(d.sessions, [5, 8, 12, 16, 24, 32, 40]);
         assert_eq!(d.cpu_ratios, [2.0, 4.0, 8.0]);
         assert_eq!(d.pause_sources, [PausesArg::Trace, PausesArg::Tracelab]);
+    }
+
+    #[test]
+    fn values_that_describe_no_run_are_refused_by_their_option() {
+        // Each of these ran before, and wrote a table of nothing (no lanes, no profiling window, no sessions), of
+        // NaNs, or of a CPU tier silently dropped. A negative value comes after `=`, as `--duration -5` would be
+        // read as an option of its own.
+        for (args, option) in [
+            (&["run", "DATA", "--concurrency", "0"][..], "--concurrency"),
+            (&["run", "DATA", "--duration", "0"], "--duration"),
+            (&["run", "DATA", "--duration=-5"], "--duration"),
+            (&["run", "DATA", "--duration", "nan"], "--duration"),
+            (&["run", "DATA", "--duration", "inf"], "--duration"),
+            (&["run", "DATA", "--grace=-1"], "--grace"),
+            (&["run", "DATA", "--think-cap=-1"], "--think-cap"),
+            (&["run", "DATA", "--idle-cap=-1"], "--idle-cap"),
+            (&["run", "DATA", "--start-min", "1.5"], "--start-min"),
+            (&["run", "DATA", "--start-max=-0.1"], "--start-max"),
+            (&["run", "DATA", "--token-scale", "0"], "--token-scale"),
+            (&["run", "DATA", "--pool-tokens", "0"], "--pool-tokens"),
+            (&["run", "DATA", "--cpu-ratio", "4,-1"], "--cpu-ratio"),
+            (&["run", "DATA", "--cpu-gib=-1"], "--cpu-gib"),
+            (&["run", "DATA", "--itl-ms=-3"], "--itl-ms"),
+            (&["mrc", "DATA", "--min-at", "0,1"], "--min-at"),
+            (&["mrc", "DATA", "--unscale", "0"], "--unscale"),
+            (&["regime", "DATA", "--sessions", "0,8"], "--sessions"),
+            (&["regime", "DATA", "--cpu-ratio=-2"], "--cpu-ratio"),
+            (&["regime", "DATA", "--jobs", "0"], "--jobs"),
+            (&["hardware", "DATA", "--cpu-ratio=-2"], "--cpu-ratio"),
+            (&["hardware", "DATA", "--sessions", "0"], "--sessions"),
+            (&["forecast", "W", "L", "--duration", "0"], "--duration"),
+            (
+                &[
+                    "forecast",
+                    "W",
+                    "L",
+                    "--costs",
+                    "E0",
+                    "--step-costs",
+                    "S",
+                    "--fitted-sessions",
+                    "0",
+                ],
+                "--fitted-sessions",
+            ),
+        ] {
+            let err = parse(args)
+                .err()
+                .unwrap_or_else(|| panic!("{args:?} was taken"));
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ValueValidation,
+                "{args:?}"
+            );
+            assert!(err.to_string().contains(option), "{args:?}: {err}");
+        }
+        // The edges stay: 0 for no cap, no grace and no CPU tier, a start at the trace's first request, no calls.
+        for args in [
+            &[
+                "run",
+                "DATA",
+                "--think-cap",
+                "0",
+                "--idle-cap",
+                "0",
+                "--grace",
+                "0",
+            ][..],
+            &[
+                "run",
+                "DATA",
+                "--start-min",
+                "0",
+                "--start-max",
+                "0",
+                "--cpu-ratio",
+                "0",
+            ],
+            &[
+                "run",
+                "DATA",
+                "--cpu-gib",
+                "0",
+                "--itl-ms",
+                "0",
+                "--start-max",
+                "1",
+            ],
+            &["hardware", "DATA", "--cpu-ratio", "0", "--calls", "0"],
+            &["aiperf-plan", "DATA", "--think-cap", "0"],
+        ] {
+            assert!(parse(args).is_ok(), "{args:?}");
+        }
     }
 }

@@ -103,7 +103,8 @@ pub struct ReplayConfig {
     pub system_idle_cap_s: Option<f64>,
     /// `randomSeed`.
     pub seed: u64,
-    /// Stop starting sessions after this many (the initial lanes count). `None` for no limit.
+    /// Recycle no lane once this many session plays have started, the initial lanes included; every
+    /// lane starts its first play. `None` for no limit.
     pub max_sessions: Option<u64>,
     /// Tokens per engine block.
     pub block_tokens: u32,
