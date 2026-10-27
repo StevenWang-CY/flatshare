@@ -163,7 +163,7 @@ impl Pump {
                         }
                     }
                     ex.note_error(message);
-                    break Outcome::Error;
+                    break Outcome::TransportError;
                 }
                 // Trailers are not relayed; vLLM sends none.
                 Some(Ok(frame)) => match frame.into_data() {
@@ -173,6 +173,10 @@ impl Pump {
             };
             if ex.first_byte.is_none() {
                 ex.first_byte = Some(ex.received.elapsed());
+                // A 2xx response's first content: the engine generates.
+                if ex.status.is_some_and(|status| status.is_success()) {
+                    ex.succeeded();
+                }
                 // A realtime request's first byte frees the background work preempt-resubmit holds back for it.
                 if let Some(ticket) = &mut ticket {
                     ticket.first_byte();

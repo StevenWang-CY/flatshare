@@ -87,6 +87,20 @@ default_class = "background"
 # first_content_timeout_s = 600
 # idle_timeout_s = 600
 # total_timeout_s = 3600
+# The service level's objective for a class's first content, from the receipt (crates/flatshare-gateway/README.md,
+# Accounting): a valid request is good when it completes with its first content within it. Realtime's is the SLO's
+# 250 ms (docs/SLO.md); a class without one is good when it completes.
+# first_content_objective_s = 0.25
+
+# The inference canary (crates/flatshare-gateway/README.md, The engine's state): vLLM's /health runs no inference, so
+# the gateway finds the engine warming, serving, degraded or drained by its requests' successes and, only when none
+# succeeded within interval_s, a one-token completion at the lowest priority, which /ready answers by: 200 only while
+# serving. With their defaults; flatshare-bench e2 run switches it off for its points (enabled = false).
+# [canary]
+# enabled = true
+# interval_s = 30
+# timeout_s = 60
+# degraded_after = 3
 
 # The admission policy (crates/flatshare-gateway/README.md#admission). Without the table, every request goes upstream
 # at once. E2's baselines set one policy and its keys:

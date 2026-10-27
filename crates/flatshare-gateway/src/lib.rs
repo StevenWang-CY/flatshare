@@ -27,6 +27,7 @@
 
 mod auth;
 mod bounds;
+mod canary;
 pub mod config;
 mod deadline;
 mod events;

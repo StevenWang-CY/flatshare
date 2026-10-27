@@ -220,6 +220,12 @@ pub(crate) fn set_engine_headers(
     signals: PrioritySignals,
 ) {
     headers.insert(SESSION_ID.clone(), session_header(session));
+    set_priority(headers, class, signals);
+    headers.insert(REQUEST_ID.clone(), request_id.clone());
+}
+
+/// Sets the class's priority in the headers `signals` names: the request's, and the canary's.
+pub(crate) fn set_priority(headers: &mut HeaderMap, class: SloClass, signals: PrioritySignals) {
     if signals.vllm_header {
         headers.insert(
             VLLM_PRIORITY.clone(),
@@ -232,7 +238,6 @@ pub(crate) fn set_engine_headers(
             HeaderValue::from_static(smg_class(class)),
         );
     }
-    headers.insert(REQUEST_ID.clone(), request_id.clone());
 }
 
 /// The SMG class of an SLO class. SMG's fourth class, `default`, is what it gives a request without one.

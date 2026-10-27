@@ -150,7 +150,8 @@ async fn an_unreachable_upstream_is_502() {
         1.0,
     )
     .await;
-    gw.await_metric(&format!("{OUTCOME}\"error\"}}"), 1.0).await;
+    gw.await_metric(&format!("{OUTCOME}\"transport_error\"}}"), 1.0)
+        .await;
     assert_eq!(call(&gw.tcp, "GET", "/ready", &[], "").await.status, 503);
 }
 
@@ -331,7 +332,7 @@ async fn an_event_stream_the_upstream_breaks_off_ends_with_a_typed_error_then_an
     )
     .await;
     gw.await_metric(
-        "flatshare_gateway_request_outcomes_total{class=\"realtime\",outcome=\"error\"}",
+        "flatshare_gateway_request_outcomes_total{class=\"realtime\",outcome=\"transport_error\"}",
         1.0,
     )
     .await;

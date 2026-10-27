@@ -23,13 +23,14 @@ use tokio::sync::{Notify, watch};
 use tokio::task::JoinSet;
 
 use crate::auth::{self, Tenant, Tenants};
+use crate::canary::{self, Health};
 use crate::config::{ClassConfig, Config, ListenAddr, MetricsKey, PrioritySignals};
 use crate::events::{self, EventSink, Events};
 use crate::exchange::Exchange;
 use crate::harness::Admission;
 use crate::intake::{self, Intake};
 use crate::ledger::{self, Followed, Ledger, Load};
-use crate::metrics::{Metrics, Route};
+use crate::metrics::{EngineState, Metrics, Route};
 use crate::proxy;
 use crate::systemd::Inherited;
 use crate::upstream::Upstream;
@@ -52,6 +53,8 @@ pub(crate) struct Shared {
     pub admission: Option<Arc<Admission>>,
     /// Told of every change to what the intake and the admission point hold, for a successor's ledger.
     pub changed: Arc<Notify>,
+    /// The engine's state as inference finds it, which `GET /ready` answers by.
+    pub health: Arc<Health>,
     pub upstream_priority: PrioritySignals,
     pub metrics: Arc<Metrics>,
     pub events: Events,
@@ -286,12 +289,14 @@ impl Server {
             Arc::clone(&changed),
             metrics.intake_gauges(),
         );
+        let health = Health::new(config.canary, metrics.engine_state());
         let shared = Shared {
             tenants,
             upstream,
             intake: Arc::new(intake),
             admission,
             changed,
+            health: Arc::new(health),
             upstream_priority: config.upstream_priority,
             metrics,
             events: Events::new(config.event_dedup_capacity, config.event_dedup_ttl, sink),
@@ -303,8 +308,12 @@ impl Server {
             drain: Drain::new(config.background_drain),
             metrics_key: config.metrics_key,
         };
+        let shared = Arc::new(shared);
+        if config.canary.is_some() {
+            tokio::spawn(canary::run(Arc::downgrade(&shared)));
+        }
         Ok(Self {
-            shared: Arc::new(shared),
+            shared,
             listeners,
             inherited: given,
             sockets,
@@ -403,6 +412,7 @@ impl Server {
             }
         }
         shutdown.await;
+        shared.health.drain();
         let grace = shared.drain.grace;
         tracing::info!(
             drain_timeout_s = self.drain_timeout.as_secs_f64(),
@@ -554,11 +564,18 @@ async fn engine_metrics(State(app): State<App>, headers: HeaderMap) -> Response 
     }
 }
 
-/// 200 while the upstream's `/health` has answered within [`READY_WINDOW`]; otherwise it asks once more. 503 at once
-/// while a request has found the upstream broken and its probe has not answered since
-/// ([`crate::upstream::recover`]).
+/// 200 while the engine serves ([`crate::canary`]: an inference succeeded, and the canary has not failed since
+/// `degraded_after` times in a row; from the start without a canary) and its `/health` has answered within
+/// [`READY_WINDOW`], asking it once more otherwise. 503 while it is warming, degraded or drained, and at once while a
+/// request has found the upstream broken and its probe has not answered since ([`crate::upstream::recover`]).
 async fn ready(State(app): State<App>) -> Response {
-    let upstream = &app.shared.upstream;
+    let shared = &app.shared;
+    let state = shared.health.state();
+    if state != EngineState::Serving {
+        let body = format!("engine {}\n", state.as_str());
+        return (StatusCode::SERVICE_UNAVAILABLE, body).into_response();
+    }
+    let upstream = &shared.upstream;
     if upstream.ready() && upstream.answers(READY_WINDOW).await {
         (StatusCode::OK, "ready\n").into_response()
     } else {

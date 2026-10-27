@@ -39,6 +39,10 @@ pub const TAG: &str = "x-mock-tag";
 /// A request header that makes the mock engine hold its answer until [`Mock::release`]: a JSON response's
 /// headers, or an event stream's first chunk, as an engine holds them through a prefill.
 pub const GATE: &str = "x-mock-gate";
+/// A request header that makes the mock engine answer with this status and a JSON error, at once.
+pub const STATUS: &str = "x-mock-status";
+/// The header the gateway's inference canary sends.
+pub const CANARY: &str = "x-flatshare-canary";
 
 /// The mock engine's `/metrics`, as vLLM's exposition starts, with vLLM's content type.
 pub const ENGINE_METRICS: &str = "# HELP vllm:num_requests_running Number of requests in model execution batches.\n\
@@ -108,6 +112,9 @@ struct MockState {
     /// most at once.
     active: AtomicUsize,
     peak: AtomicUsize,
+    /// Whether it answers every inference request 503, or the canary's alone.
+    failing: AtomicBool,
+    failing_canary: AtomicBool,
 }
 
 /// An in-process engine on 127.0.0.1, or on a Unix socket ([`Mock::start_unix`]).
@@ -205,6 +212,8 @@ impl Mock {
             dropped: dropped_tx,
             active: AtomicUsize::new(0),
             peak: AtomicUsize::new(0),
+            failing: AtomicBool::new(false),
+            failing_canary: AtomicBool::new(false),
         });
         let app = Router::new()
             .route("/v1/chat/completions", post(answer))
@@ -238,6 +247,24 @@ impl Mock {
 
     pub fn set_healthy(&self, healthy: bool) {
         self.state.healthy.store(healthy, Ordering::SeqCst);
+    }
+
+    /// Answers every inference request 503 while `failing`, as an engine whose process lives but serves nothing.
+    pub fn set_failing(&self, failing: bool) {
+        self.state.failing.store(failing, Ordering::SeqCst);
+    }
+
+    /// Answers the gateway's canary 503 while `failing`, and the clients' requests as its script says.
+    pub fn set_failing_canary(&self, failing: bool) {
+        self.state.failing_canary.store(failing, Ordering::SeqCst);
+    }
+
+    /// The canary's requests the engine received.
+    pub fn canaries(&self) -> usize {
+        self.requests()
+            .iter()
+            .filter(|request| request.header(CANARY).is_some())
+            .count()
     }
 
     pub fn requests(&self) -> Vec<Recorded> {
@@ -332,8 +359,19 @@ async fn answer(State(state): State<Arc<MockState>>, request: Request) -> Respon
     let headers = request.headers();
     let tag = headers.get(TAG).map(|v| v.to_str().unwrap().to_owned());
     let gated = headers.contains_key(GATE);
+    let canary = headers.contains_key(CANARY);
+    let status = headers
+        .get(STATUS)
+        .map(|v| StatusCode::from_bytes(v.as_bytes()).unwrap());
     let guard = DropSignal::new(&state, tag);
     state.record(request).await;
+    let failing = state.failing.load(Ordering::SeqCst)
+        || (canary && state.failing_canary.load(Ordering::SeqCst));
+    if let Some(status) = status.or(failing.then_some(StatusCode::SERVICE_UNAVAILABLE)) {
+        let error =
+            r#"{"error":{"message":"the mock engine fails","type":"server_error","code":503}}"#;
+        return (status, [(CONTENT_TYPE, "application/json")], error).into_response();
+    }
     match state.script.clone() {
         Script::Json(json) => {
             if gated {
@@ -559,13 +597,20 @@ pub fn listeners_toml(
     toml.replace("tcp = \"127.0.0.1:0\"", &format!("tcp = \"{tcp}\""))
 }
 
-/// The test configuration's listeners and tenants, after `top`.
+/// The test configuration's listeners and tenants, after `top`. The canary is off unless `top` sets it: it would be
+/// a request at the mock engine that no test sent.
 fn harness_toml(socket: &std::path::Path, top: &str) -> String {
+    let canary = if top.contains("[canary]") {
+        ""
+    } else {
+        "[canary]\nenabled = false\n"
+    };
     format!(
         r#"log_level = "debug"
 cache_salt_secret_file = "{secret}"
 metrics_key_file = "{metrics_key}"
 {top}
+{canary}
 
 [[listen]]
 tcp = "127.0.0.1:0"

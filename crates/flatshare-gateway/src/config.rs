@@ -41,6 +41,8 @@ pub struct Config {
     /// What each class's requests may ask for (`[classes.<class>]`), by [`SloClass`] (strictest first; index a class
     /// with [`Config::class`]).
     pub classes: [ClassConfig; 3],
+    /// The inference canary; `None` when `[canary] enabled = false`, as E2's runs set it.
+    pub canary: Option<Canary>,
     /// The choices a request may ask for at most: its `n` (with `use_beam_search`, its beam's width) and its
     /// `best_of`. A request that asks for more gets 400.
     pub max_choices: u32,
@@ -94,6 +96,10 @@ pub struct ClassConfig {
     pub first_content_timeout: Duration,
     pub idle_timeout: Duration,
     pub total_timeout: Duration,
+    /// The service level's objective for the class's first content, from the receipt
+    /// (`first_content_objective_s`): a valid request is good when it completes with its first content within it.
+    /// `None`: completing is enough.
+    pub first_content_objective: Option<Duration>,
 }
 
 impl ClassConfig {
@@ -124,8 +130,20 @@ impl ClassConfig {
                 SloClass::Interactive => 1800,
                 SloClass::Background => 3600,
             }),
+            // docs/SLO.md's realtime first byte: 95% within 250 ms.
+            first_content_objective: realtime.then(|| Duration::from_millis(250)),
         }
     }
+}
+
+/// `[canary]`: the inference canary ([`crate::canary`]), a one-token generation at the lowest class's priority, sent
+/// only when no inference succeeded within `interval`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Canary {
+    pub interval: Duration,
+    pub timeout: Duration,
+    /// The consecutive failures, with nothing succeeding between them, that make the engine degraded.
+    pub degraded_after: u32,
 }
 
 /// One listener.
@@ -283,6 +301,7 @@ struct RawConfig {
     max_body_bytes: usize,
     realtime_max_tokens: Option<u32>,
     classes: RawClasses,
+    canary: RawCanary,
     max_choices: u32,
     max_in_flight: usize,
     max_queued: usize,
@@ -313,6 +332,7 @@ impl Default for RawConfig {
             max_body_bytes: 32 << 20,
             realtime_max_tokens: None,
             classes: RawClasses::default(),
+            canary: RawCanary::default(),
             max_choices: 1,
             // Envoy's circuit breakers' default for requests in flight.
             max_in_flight: 1024,
@@ -353,6 +373,46 @@ struct RawClass {
     first_content_timeout_s: Option<f64>,
     idle_timeout_s: Option<f64>,
     total_timeout_s: Option<f64>,
+    first_content_objective_s: Option<f64>,
+}
+
+/// `[canary]` as written.
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RawCanary {
+    enabled: bool,
+    interval_s: f64,
+    timeout_s: f64,
+    degraded_after: u32,
+}
+
+impl Default for RawCanary {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval_s: 30.0,
+            // A canary waits at the lowest priority behind every class's prefill.
+            timeout_s: 60.0,
+            degraded_after: 3,
+        }
+    }
+}
+
+impl RawCanary {
+    fn validate(self) -> Result<Option<Canary>, String> {
+        // Its other keys may stay set while it is off: E2's runs switch it off over the deployment's table.
+        if !self.enabled {
+            return Ok(None);
+        }
+        if self.degraded_after == 0 {
+            return Err("canary.degraded_after must be positive".into());
+        }
+        Ok(Some(Canary {
+            interval: seconds("canary.interval_s", self.interval_s)?,
+            timeout: seconds("canary.timeout_s", self.timeout_s)?,
+            degraded_after: self.degraded_after,
+        }))
+    }
 }
 
 impl RawClasses {
@@ -431,6 +491,10 @@ impl RawClasses {
                 if let Some(value) = set {
                     *timeout = seconds(&format!("classes.{class}.{key}"), value)?;
                 }
+            }
+            if let Some(objective) = raw.first_content_objective_s {
+                let key = format!("classes.{class}.first_content_objective_s");
+                config.first_content_objective = Some(seconds(&key, objective)?);
             }
         }
         Ok(classes)
@@ -621,6 +685,7 @@ impl RawConfig {
             metrics_key,
             max_body_bytes: self.max_body_bytes,
             classes,
+            canary: self.canary.validate()?,
             max_choices: self.max_choices,
             max_in_flight: self.max_in_flight,
             max_queued: self.max_queued,
@@ -1121,6 +1186,69 @@ mod tests {
             ),
         ] {
             let err = config_of("", tables).unwrap_err();
+            assert!(err.contains(cause), "{err}");
+        }
+    }
+
+    #[test]
+    fn the_canary_is_on_unless_switched_off_and_realtime_has_an_objective() {
+        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
+        let defaults = config("", &a).unwrap();
+        let canary = Canary {
+            interval: Duration::from_secs(30),
+            timeout: Duration::from_secs(60),
+            degraded_after: 3,
+        };
+        assert_eq!(defaults.canary, Some(canary));
+        assert_eq!(
+            SloClass::ALL.map(|class| defaults.class(class).first_content_objective),
+            [Some(Duration::from_millis(250)), None, None]
+        );
+        let set = config(
+            "",
+            &format!(
+                "{a}\n[canary]\ninterval_s = 5\ndegraded_after = 1\n[classes.interactive]\nfirst_content_objective_s = 2"
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            set.canary,
+            Some(Canary {
+                interval: Duration::from_secs(5),
+                degraded_after: 1,
+                ..canary
+            })
+        );
+        assert_eq!(
+            set.class(SloClass::Interactive).first_content_objective,
+            Some(Duration::from_secs(2))
+        );
+        // Off, its other keys may stay, as E2's runs merge enabled = false over the deployment's table.
+        let off = config(
+            "",
+            &format!("{a}\n[canary]\nenabled = false\ninterval_s = 5"),
+        )
+        .unwrap();
+        assert_eq!(off.canary, None);
+        for (tables, cause) in [
+            (
+                "[canary]\ndegraded_after = 0",
+                "canary.degraded_after must be positive",
+            ),
+            (
+                "[canary]\ntimeout_s = 0",
+                "canary.timeout_s must be a positive",
+            ),
+            (
+                "[canary]\nroute = \"/v1/completions\"",
+                "unknown field `route`",
+            ),
+            (
+                "[classes.realtime]\nfirst_content_objective_s = 0",
+                "classes.realtime.first_content_objective_s must be a positive",
+            ),
+        ] {
+            let err = config("", &format!("{a}\n{tables}")).unwrap_err();
             assert!(err.contains(cause), "{err}");
         }
     }

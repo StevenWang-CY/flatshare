@@ -58,8 +58,11 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         Err(err) => return ex.error(StatusCode::BAD_REQUEST, "invalid_class", err.to_string()),
     };
     ex.class = Some(class);
+    ex.offer();
     let deadlines = Deadlines::new(class, shared.class(class), ex.received);
     ex.deadlines = Some(deadlines);
+    ex.objective = shared.class(class).first_content_objective;
+    ex.health = Some(Arc::clone(&shared.health));
 
     // The intake's bounds, before a byte of the body is read: a refused request costs the gateway no memory and no
     // wait.
@@ -286,6 +289,7 @@ async fn forward(
     parts.extensions.clear();
 
     ex.forwarded = true;
+    ex.admit(ticket.is_some());
     let deadlines = ex.deadlines.expect("a forwarded request has its deadlines");
     // A background request without a response at the drain's cut is dropped, as is a shed one or one whose deadline
     // passes: dropping the request future closes its connection, which aborts the engine request.

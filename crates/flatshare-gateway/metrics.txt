@@ -1,12 +1,18 @@
 # HELP flatshare_gateway_requests API requests by tenant, route, class and response status (499: the client left before the response).
 # TYPE flatshare_gateway_requests counter
 flatshare_gateway_requests_total{tenant="",route="other",class="",status="404"} 0
-# HELP flatshare_gateway_request_outcomes Proxied requests by class and how they ended.
+# HELP flatshare_gateway_request_outcomes Inference requests with a class, by class and how they ended: one terminal event a request.
 # TYPE flatshare_gateway_request_outcomes counter
 flatshare_gateway_request_outcomes_total{class="background",outcome="cancelled"} 0
 flatshare_gateway_request_outcomes_total{class="background",outcome="completed"} 0
 flatshare_gateway_request_outcomes_total{class="background",outcome="drained"} 0
-flatshare_gateway_request_outcomes_total{class="background",outcome="error"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="invalid"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="not_ready"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="refused_body_bytes"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="refused_class"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="refused_in_flight"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="refused_queue"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="refused_tenant"} 0
 flatshare_gateway_request_outcomes_total{class="background",outcome="shed"} 0
 flatshare_gateway_request_outcomes_total{class="background",outcome="stalled"} 0
 flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_first_content"} 0
@@ -15,10 +21,19 @@ flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_idl
 flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_queue"} 0
 flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_total"} 0
 flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_upload"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="transport_error"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="upstream_client_error"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="upstream_server_error"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="cancelled"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="completed"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="drained"} 0
-flatshare_gateway_request_outcomes_total{class="interactive",outcome="error"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="invalid"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="not_ready"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="refused_body_bytes"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="refused_class"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="refused_in_flight"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="refused_queue"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="refused_tenant"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="shed"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="stalled"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_first_content"} 0
@@ -27,10 +42,19 @@ flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_id
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_queue"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_total"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_upload"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="transport_error"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="upstream_client_error"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="upstream_server_error"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="cancelled"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="completed"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="drained"} 0
-flatshare_gateway_request_outcomes_total{class="realtime",outcome="error"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="invalid"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="not_ready"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="refused_body_bytes"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="refused_class"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="refused_in_flight"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="refused_queue"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="refused_tenant"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="shed"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="stalled"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_first_content"} 0
@@ -39,6 +63,18 @@ flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_idle"
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_queue"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_total"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_upload"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="transport_error"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="upstream_client_error"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="upstream_server_error"} 0
+# HELP flatshare_gateway_requests_offered Inference requests received, by tenant, route and class, counted as their class is known.
+# TYPE flatshare_gateway_requests_offered counter
+flatshare_gateway_requests_offered_total{tenant="agents",route="/v1/chat/completions",class="background"} 0
+# HELP flatshare_gateway_requests_admitted Inference requests sent upstream, past the intake, the admission point and the readiness check, by tenant, route, class and whether an admission policy decided when (policy) or none did (none).
+# TYPE flatshare_gateway_requests_admitted counter
+flatshare_gateway_requests_admitted_total{tenant="agents",route="/v1/chat/completions",class="background",admission="policy"} 0
+# HELP flatshare_gateway_requests_terminal Inference requests ended, by tenant, route, class and outcome: one terminal event a request, offered minus terminal being those in flight.
+# TYPE flatshare_gateway_requests_terminal counter
+flatshare_gateway_requests_terminal_total{tenant="agents",route="/v1/chat/completions",class="background",outcome="completed"} 0
 # HELP flatshare_gateway_overhead_seconds Time from the end of a request's body to writing the request to the upstream: parse, sanitize, resolve, connection checkout.
 # TYPE flatshare_gateway_overhead_seconds histogram
 # UNIT flatshare_gateway_overhead_seconds seconds
@@ -255,6 +291,16 @@ flatshare_gateway_duration_seconds_bucket{le="120.0",class="realtime"} 0
 flatshare_gateway_duration_seconds_bucket{le="300.0",class="realtime"} 0
 flatshare_gateway_duration_seconds_bucket{le="600.0",class="realtime"} 0
 flatshare_gateway_duration_seconds_bucket{le="+Inf",class="realtime"} 0
+# HELP flatshare_gateway_sli_valid Inference requests the service level counts, by class: every one that ended, but for the client's faults and its cancellations before the class's first-content objective passed.
+# TYPE flatshare_gateway_sli_valid counter
+flatshare_gateway_sli_valid_total{class="background"} 0
+flatshare_gateway_sli_valid_total{class="interactive"} 0
+flatshare_gateway_sli_valid_total{class="realtime"} 0
+# HELP flatshare_gateway_sli_good Valid inference requests that met their class's objective, by class: a 2xx response relayed to its end (or cancelled by its client after its first content), its first content within the objective.
+# TYPE flatshare_gateway_sli_good counter
+flatshare_gateway_sli_good_total{class="background"} 0
+flatshare_gateway_sli_good_total{class="interactive"} 0
+flatshare_gateway_sli_good_total{class="realtime"} 0
 # HELP flatshare_gateway_streams_active Responses being relayed from the upstream.
 # TYPE flatshare_gateway_streams_active gauge
 flatshare_gateway_streams_active{class="background"} 0
@@ -498,4 +544,36 @@ flatshare_gateway_realtime_state_timeouts_total{state="user_speaking"} 0
 # HELP flatshare_gateway_node_ready Whether the engine is ready (1), or a request found it broken and its /health has not answered since (0), while its requests are answered 503.
 # TYPE flatshare_gateway_node_ready gauge
 flatshare_gateway_node_ready 0
+# HELP flatshare_gateway_engine_state The engine's state as inference finds it, 1 for the current one: warming until an inference succeeds, serving, degraded after the canary failed degraded_after times in a row, drained once the gateway drains.
+# TYPE flatshare_gateway_engine_state gauge
+flatshare_gateway_engine_state{state="degraded"} 0
+flatshare_gateway_engine_state{state="drained"} 0
+flatshare_gateway_engine_state{state="serving"} 0
+flatshare_gateway_engine_state{state="warming"} 0
+# HELP flatshare_gateway_canary_probes Inference canaries by result: a one-token generation the gateway sends when nothing succeeded within its interval.
+# TYPE flatshare_gateway_canary_probes counter
+flatshare_gateway_canary_probes_total{result="failure"} 0
+flatshare_gateway_canary_probes_total{result="success"} 0
+# HELP flatshare_gateway_canary_seconds Time an inference canary took, to its answer's end or its failure.
+# TYPE flatshare_gateway_canary_seconds histogram
+# UNIT flatshare_gateway_canary_seconds seconds
+flatshare_gateway_canary_seconds_sum 0.0
+flatshare_gateway_canary_seconds_count 0
+flatshare_gateway_canary_seconds_bucket{le="0.005"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.01"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.025"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.05"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.1"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.25"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.5"} 0
+flatshare_gateway_canary_seconds_bucket{le="1.0"} 0
+flatshare_gateway_canary_seconds_bucket{le="2.5"} 0
+flatshare_gateway_canary_seconds_bucket{le="5.0"} 0
+flatshare_gateway_canary_seconds_bucket{le="10.0"} 0
+flatshare_gateway_canary_seconds_bucket{le="30.0"} 0
+flatshare_gateway_canary_seconds_bucket{le="60.0"} 0
+flatshare_gateway_canary_seconds_bucket{le="120.0"} 0
+flatshare_gateway_canary_seconds_bucket{le="300.0"} 0
+flatshare_gateway_canary_seconds_bucket{le="600.0"} 0
+flatshare_gateway_canary_seconds_bucket{le="+Inf"} 0
 # EOF

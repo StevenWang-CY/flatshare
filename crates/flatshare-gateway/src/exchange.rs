@@ -2,6 +2,14 @@
 //! request ended. Dropping the record writes the request's metrics and its log line, so every exit path is
 //! recorded exactly once, including a client that leaves while its handler waits (hyper then drops the
 //! handler's future, and with it the record).
+//!
+//! An inference request is offered once, as its class is known (or at its end, if it ended first), admitted once if
+//! it went upstream, and ended once, with one outcome: so offered minus ended is what is in flight, a request that
+//! hangs included, and every failure is counted where the service level reads it. The SLI counts a request as valid
+//! unless its client is at fault (an [`Outcome::clients_fault`]) or its client cancelled it before the class's
+//! first-content objective had passed without its first content, and as good when it completed, a 2xx response
+//! relayed to its end, or was cancelled by its client after its first content, with its first content within the
+//! objective (any time, for a class without one; a class without one counts no cancellation).
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,6 +22,7 @@ use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue, RETRY_AFTER};
 use tracing::Level;
 
 use crate::bounds;
+use crate::canary::Health;
 use crate::deadline::{Deadlines, Phase, Timeout};
 use crate::harness::Refusal;
 use crate::intake::{Permit, Refused};
@@ -54,6 +63,12 @@ pub(crate) struct Exchange {
     pub permit: Option<Permit>,
     /// Its deadlines, once its class is known.
     pub deadlines: Option<Deadlines>,
+    /// Its class's first-content objective, for the SLI.
+    pub objective: Option<Duration>,
+    /// The engine's state, which an inference request's success keeps serving.
+    pub health: Option<Arc<Health>>,
+    /// Whether it was counted as offered.
+    offered: bool,
     outcome: Option<Outcome>,
     error: Option<String>,
 }
@@ -79,6 +94,9 @@ impl Exchange {
             summary: Summary::default(),
             permit: None,
             deadlines: None,
+            objective: None,
+            health: None,
+            offered: false,
             outcome: None,
             error: None,
         }
@@ -86,6 +104,30 @@ impl Exchange {
 
     pub fn metrics(&self) -> &Metrics {
         &self.metrics
+    }
+
+    /// Counts an inference request as offered, once, with its tenant, route and class as they are known.
+    pub fn offer(&mut self) {
+        if self.route.is_inference() && !std::mem::replace(&mut self.offered, true) {
+            self.metrics
+                .offered(self.tenant.as_ref(), self.route, self.class);
+        }
+    }
+
+    /// Counts an inference request as admitted: past the intake, the admission point and the readiness check, on its
+    /// way upstream; `policy` when an admission policy decided when.
+    pub fn admit(&self, policy: bool) {
+        if self.route.is_inference() {
+            self.metrics
+                .admitted(self.tenant.as_ref(), self.route, self.class, policy);
+        }
+    }
+
+    /// An inference succeeded: a 2xx response's first content arrived, or it was relayed to its end.
+    pub fn succeeded(&self) {
+        if let Some(health) = &self.health {
+            health.succeeded();
+        }
     }
 
     /// Adds the request id and, once resolved, the session id to response headers.
@@ -117,7 +159,9 @@ impl Exchange {
         };
         let body = serde_json::json!({"error": {"message": message, "type": kind, "code": code}});
         if self.forwarded {
-            self.outcome.get_or_insert(Outcome::Error);
+            self.outcome.get_or_insert(Outcome::TransportError);
+        } else if status.is_client_error() {
+            self.outcome.get_or_insert(Outcome::Invalid);
         }
         self.error = Some(message);
         self.respond(status, &body)
@@ -125,7 +169,13 @@ impl Exchange {
 
     /// The 503 for a request that no ready engine can take, sent without going upstream. `Retry-After` is `retry`,
     /// the interval of the readiness probe that will say when an engine answers again, in whole seconds.
-    pub fn not_ready(self, code: &str, message: impl Into<String>, retry: Duration) -> Response {
+    pub fn not_ready(
+        mut self,
+        code: &str,
+        message: impl Into<String>,
+        retry: Duration,
+    ) -> Response {
+        self.outcome.get_or_insert(Outcome::NotReady);
         let mut response = self.error(StatusCode::SERVICE_UNAVAILABLE, code, message);
         let seconds = retry.as_secs_f64().ceil().max(1.0) as u64;
         response
@@ -141,6 +191,7 @@ impl Exchange {
         let body = serde_json::json!({"error": {
             "message": message, "type": "invalid_request_error", "param": invalid.field(), "code": invalid.code(),
         }});
+        self.outcome = Some(Outcome::Invalid);
         self.error = Some(message);
         self.respond(StatusCode::BAD_REQUEST, &body)
     }
@@ -165,9 +216,13 @@ impl Exchange {
             Refused::Tenant => (StatusCode::TOO_MANY_REQUESTS, "tenant_in_flight_limit"),
             Refused::BodyBytes => (StatusCode::SERVICE_UNAVAILABLE, "body_budget_exhausted"),
         };
-        if refused == Refused::Draining {
-            self.outcome = Some(Outcome::Drained);
-        }
+        self.outcome = Some(match refused {
+            Refused::Draining => Outcome::Drained,
+            Refused::InFlight => Outcome::RefusedInFlight,
+            Refused::Class => Outcome::RefusedClass,
+            Refused::Tenant => Outcome::RefusedTenant,
+            Refused::BodyBytes => Outcome::RefusedBodyBytes,
+        });
         self.retry(status, code, message)
     }
 
@@ -203,6 +258,11 @@ impl Exchange {
     /// was not admitted in time.
     pub fn refused(mut self, refusal: Refusal) -> Response {
         let class = self.class.map_or("", SloClass::as_str);
+        self.outcome = Some(match refusal {
+            Refusal::QueueFull | Refusal::Queued => Outcome::RefusedQueue,
+            Refusal::Timeout => Outcome::TimeoutQueue,
+            Refusal::Draining => Outcome::Drained,
+        });
         match refusal {
             Refusal::QueueFull => self.retry(
                 StatusCode::TOO_MANY_REQUESTS,
@@ -219,14 +279,11 @@ impl Exchange {
                 "queue_timeout",
                 format!("the {class} request was not admitted within queue_timeout_s"),
             ),
-            Refusal::Draining => {
-                self.outcome = Some(Outcome::Drained);
-                self.retry(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "draining",
-                    "the gateway handed its sockets to a successor before admitting the request; send it again",
-                )
-            }
+            Refusal::Draining => self.retry(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "draining",
+                "the gateway handed its sockets to a successor before admitting the request; send it again",
+            ),
         }
     }
 
@@ -258,19 +315,67 @@ impl Exchange {
     pub fn finish(mut self, outcome: Outcome) {
         self.outcome = Some(outcome);
     }
+
+    /// The request's terminal outcome: a response relayed to its end is `completed` only with a 2xx status, and a
+    /// request without one ended as its client left.
+    fn terminal(&self) -> Outcome {
+        match (self.outcome, self.status) {
+            (Some(Outcome::Completed), Some(status)) if status.is_client_error() => {
+                Outcome::UpstreamClientError
+            }
+            (Some(Outcome::Completed), Some(status)) if !status.is_success() => {
+                Outcome::UpstreamServerError
+            }
+            (Some(outcome), _) => outcome,
+            (None, None) => Outcome::Cancelled,
+            (None, Some(status)) if status.is_client_error() => Outcome::Invalid,
+            (None, Some(status)) if status.is_success() => Outcome::Completed,
+            (None, Some(_)) => Outcome::TransportError,
+        }
+    }
+
+    /// How the SLI counts a request of a class that ended with `outcome` after `total`: `None` when it is not valid,
+    /// else whether it is good.
+    fn judged(&self, outcome: Outcome, total: Duration) -> Option<bool> {
+        let within = |first: Duration| self.objective.is_none_or(|objective| first <= objective);
+        match outcome {
+            outcome if outcome.clients_fault() => None,
+            Outcome::Completed => Some(self.first_byte.is_some_and(within)),
+            // A client that leaves is no failure of the service, unless the service had already met or missed the
+            // objective: the request is judged by its first content, or bad if the objective passed without one.
+            Outcome::Cancelled => match (self.objective, self.first_byte) {
+                (Some(_), Some(first)) => Some(within(first)),
+                (Some(objective), None) if total > objective => Some(false),
+                _ => None,
+            },
+            _ => Some(false),
+        }
+    }
 }
 
 impl Drop for Exchange {
     fn drop(&mut self) {
         let status = self.status.map_or(CLIENT_CLOSED, |s| s.as_u16());
         let total = self.received.elapsed();
-        let outcome = self
-            .forwarded
-            .then(|| self.outcome.unwrap_or(Outcome::Cancelled));
+        let inference = self.route.is_inference();
+        // Every inference request has an outcome, and a proxied model list one if it went upstream.
+        let outcome = (inference || self.forwarded).then(|| self.terminal());
+        self.offer();
         let metrics = &self.metrics;
         metrics.request(self.tenant.as_ref(), self.route, self.class, status);
-        if let (Some(class), Some(outcome)) = (self.class, outcome) {
-            metrics.outcome(class, outcome);
+        if let (true, Some(outcome)) = (inference, outcome) {
+            metrics.terminal(self.tenant.as_ref(), self.route, self.class, outcome);
+            if let Some(class) = self.class {
+                metrics.outcome(class, outcome);
+                if let Some(good) = self.judged(outcome, total) {
+                    metrics.sli(class, good);
+                }
+            }
+            if outcome == Outcome::Completed {
+                self.succeeded();
+            }
+        }
+        if let (Some(class), true) = (self.class, self.forwarded) {
             metrics.duration(class, total);
             if let Some(first_byte) = self.first_byte {
                 metrics.first_byte(class, first_byte);
@@ -310,7 +415,18 @@ impl Drop for Exchange {
                 )
             };
         }
-        if status >= 500 || matches!(outcome, Some(Outcome::Error | Outcome::Stalled)) {
+        let failed = matches!(
+            outcome,
+            Some(
+                Outcome::TransportError
+                    | Outcome::Stalled
+                    | Outcome::TimeoutHeaders
+                    | Outcome::TimeoutFirstContent
+                    | Outcome::TimeoutIdle
+                    | Outcome::TimeoutTotal
+            )
+        );
+        if status >= 500 || failed {
             request_line!(Level::WARN);
         } else {
             request_line!(Level::INFO);
