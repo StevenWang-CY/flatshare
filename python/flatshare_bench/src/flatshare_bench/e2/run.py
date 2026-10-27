@@ -13,7 +13,8 @@
    voice-plane namespace (``--save-audio`` has them save each call's audio, for the demo video) and
    snapshots again: the calls are the measurement window, through which an agent point samples the
    engine's KV use and requests every half second (``--kv-sample-s``; 0 samples nothing, as W5's points
-   ran: the sampler came after them), on one connection to the engine that it keeps for the window;
+   ran: the sampler came after them), on one connection to the engine that it keeps for the window. A
+   point without calls (``[voice] callers = 0``) runs no callers: its window is ``[agents] window_s``;
 5. it stops AIPerf, keeps the gateway's request log of the calls and the voice worker's journal of
    them (its turn lines and its sessions' event counts), and writes ``summary.json``.
 
@@ -22,6 +23,10 @@ and units (:mod:`.cyan`), and the tools' processes and the run's waits (:mod:`.t
 reaches the engine by its address (:mod:`flatshare_bench.transport`): on cyan, the tunnel's socket.
 Its engine check and cache resets need vLLM's development routes, which only the measurement drop-in
 serves (``deploy/phastform/variant.sh measure on``, which ``benchmarks/e2/campaign.sh`` runs).
+
+A point measures on one GPU node (``--node``, the host's own by default), which run.json names: on
+another node it starts that node's tunnel if need be and reaches the engine through the tunnel's socket,
+with cyan's gateway and voice worker pointed at the node for the point (:mod:`.cyan`).
 
 The GPU node's engine is switched by ``benchmarks/e2/campaign.sh`` (``variant.sh use``), never here.
 A failure ends the point: ``run.json`` keeps ``"status": "failed"`` and the error, and every process

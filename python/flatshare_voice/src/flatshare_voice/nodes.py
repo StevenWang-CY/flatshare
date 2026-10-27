@@ -122,8 +122,8 @@ class CallBinding:
             "class": REALTIME_CLASS,
             "reason": reason,
         }
-        if self.failed is not None:
-            body["failed_node"] = self.failed
+        if self.failed is not None and self.placement is not None:
+            body["failed_node"] = self.placement.node  # the node the call ran on, which failed
         headers = {SESSION_ID_HEADER: self.session_id, CLASS_HEADER: REALTIME_CLASS}
         context = {"session_id": self.session_id, "reason": reason}
         try:
