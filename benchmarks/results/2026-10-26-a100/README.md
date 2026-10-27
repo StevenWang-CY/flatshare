@@ -60,4 +60,4 @@ account name is left, and LiveKit's key is redacted as its secret is.
 ## The numbers
 
 The analysis is [`a100.md`](a100.md); [docs/HARDWARE.md](../../../docs/HARDWARE.md#what-it-measured-2026-10-26) gives
-each against the forecast and the box, and [the report](../../../docs/REPORT.md#57-another-gpu) what they say.
+each against the forecast and the box, and [the report](../../../docs/REPORT.md#67-the-rules-carry-to-an-a100) what they say.

@@ -33,7 +33,7 @@ E2_A100_REPORT ?= build/reproduce-e2-a100
 .PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-make-room test-trace test-make-room-ci \
   test-python schema metrics \
   reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 reproduce-e2-a100 figures e2-figures e2-w5-figure \
-  e2-gpus-figure method-figure brand \
+  e2-gpus-figure method-figure report-figures brand \
   demo-video forecast-a100 forecast-fitted profiles reproduce-a100 check-a100-calibration
 
 check: lint test
@@ -294,8 +294,15 @@ e2-gpus-figure:
 method-figure:
 	cd python/flatshare_bench && uv run -q python -m flatshare_bench.diagrams $(abspath docs/figures)
 
+# The technical report's figures, docs/figures/report-*.svg with the phone layouts of its first figure and its headline
+# (report-stages-narrow.svg, report-headline-narrow.svg), drawn by flatshare_bench.report from the committed records
+# each cites: W4's, W5's and the A100's E2 points, the probes, the window sweep, W5's voice replies and the scheduler's
+# cost per step (its data.py names them).
+report-figures:
+	cd python/flatshare_bench && uv run -q python -m flatshare_bench.report.figures $(abspath docs/figures)
+
 # Every figure under docs/figures that its records or its code draw; the bench's tests check each is current.
-figures: e2-figures e2-w5-figure e2-gpus-figure method-figure
+figures: e2-figures e2-w5-figure e2-gpus-figure method-figure report-figures
 
 # The logo, the mark and the social preview under docs/brand, drawn by flatshare_bench.brand (docs/brand/README.md);
 # the bench's tests check each is current.

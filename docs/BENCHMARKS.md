@@ -527,7 +527,7 @@ The rows name `make-room`'s switches: the KV preemption (at most 2 victims a ste
 The rows before the KV-load rule ran with the scheduler's state logged for each call that waited over 0.3 s; the stock rows' p95 is near that of E2's frozen box in the discriminating scenario (the realtime first byte, 8,556 ms). Each row is one run; the percentiles are inclusive, as E2's report computes them, from the run's per-turn lines.
 
 - **Why.** Between a call's turns, the agents' prefills cycle the GPU's free blocks, so the turn's prefix is evicted and loads back from the CPU tier, asynchronously. Every slow turn was in `WAITING_FOR_REMOTE_KVS` (the scheduler's state logged each step), with KV to spare. Once its load is done, a request waits for the waiting loop to promote it, and the waiting loop runs only on budget the running loop leaves; the agents' 512-token chunks left none. The budget cap now holds lower-priority prefill while a higher-priority request loads, as while it prefills.
-- **Each switch's share.** The KV preemption alone takes the calls' p95 from 7.26–8.24 s to 1.95–2.73 s, since a turn no longer waits for an agent request to finish; the budget cap takes it under 0.5 s. With the reserve as well, the median is lower (202 against 257 and 261 ms).
+- **Each switch's share.** The KV preemption alone takes the calls' p95 from 7.26–8.24 s to 1.95–2.73 s, since a turn no longer waits for an agent request to free its blocks; the budget cap takes it under 0.5 s. With the reserve as well, the median is lower (202 against 257 and 261 ms).
 - **E2's points show the same tail:** disc-a9-s24 on the module before this rule had its first token after 334 ms at the median and 2,146 ms at p95, against preempt-resubmit's 251 and 394 ms; its turns loaded about 40k tokens from the CPU tier, about their own prefixes.
 
 ### W5: the fixed make-room on Phastform
@@ -723,7 +723,7 @@ sample of the agents for its number; voice alone sets the SLO at 1,419 + 250 = 1
 | 15 | 1,424 | 5,710 / 8,312 | 1,609 / 7,922 | 95% |
 | Median | 1,419 | 4,986 / 8,633 | 1,634 / 8,651 | 96% |
 
-- **Every round under the SLO with the PRs' values**, by 6 to 60 ms; frozen 2.5 to 4.0 s over. The agents' whole-call
+- **Every round under the SLO with the PRs' values**, by 7 to 60 ms; frozen 2.5 to 4.0 s over. The agents' whole-call
   tokens/s with the PRs' values were 95–103% of frozen's round by round, and their TTFT p50 moved by −1.2 to +1.8 s
   (frozen's 5.8–18.9 s across the rounds, p99 22–38 s).
 - **Less often short of KV than modeled, as the box is.** Two calls found KV short (the measured running share) 4–9%
@@ -741,8 +741,8 @@ the LLM's first token at p95 from the voice worker beside the 512/256 points':
 | 12 | 3,289 / 13,990 | 1,843 / 14,145 | 101% | 414 ms, 216 ms |
 
 No turn of the 200 failed. Tuned vLLM made 1.40 and 1.42 times the agents' tokens of the 512/256 points on the same
-samples, its TTFT p50 1.0 and 2.0 s against frozen's 6.5 and 5.8 s; the PRs' values at 2,048/0 kept them all, 141 and
-174 ms over the SLO, the rest of their tail the LLM's first token behind the larger steps in flight.
+samples, its TTFT p50 1.0 and 2.0 s against frozen's 6.5 and 5.8 s; the PRs' values at 2,048/0 kept them all, 140 and
+173 ms over the SLO, the rest of their tail the LLM's first token behind the larger steps in flight.
 
 **A', 32 sessions at the box's pool** (round 1, seed 11; one point a configuration):
 

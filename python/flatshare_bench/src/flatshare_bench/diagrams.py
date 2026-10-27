@@ -108,7 +108,7 @@ def make_room_panel(
 
     # Stock vLLM: the pool is full; the turn waits beside it.
     y1 = y + 84
-    s.text(x0, y1 - 14, "stock vLLM", size=VALUE)
+    s.text(x0, y1 - 14, "vLLM 0.32", size=VALUE)
     _pool(s, x0, y1, before, pitch, height)
     for k in range(TURN):
         _cell(s, turn_x + pitch * k, y1, pitch - 4, height, VOICE)
@@ -119,7 +119,7 @@ def make_room_panel(
     s.text(
         x0,
         y1 + height + 62,
-        "The turn waits for an agent request to finish.",
+        "The turn waits until agent blocks are freed.",
         size=NOTE,
         cls="soft",
     )
@@ -145,8 +145,8 @@ def make_room_panel(
     )
     s.bracket(*span(taken[0], taken[-1] + 1), y3 + height + 12, "voice turn")
     s.bracket(*span(taken[-1] + 1, POOL), y3 + height + 12, "free")
-    # Where the victim went (docs/ARCHITECTURE.md §2): its KV stays in the CPU tier for its resume.
-    note = f"{victims[0][0].upper()}{victims[0][1:]} waits; its KV stays in the CPU tier for its resume."
+    # Where the victim went (docs/ARCHITECTURE.md §2): its KV is in the CPU tier when it is preempted.
+    note = f"{victims[0][0].upper()}{victims[0][1:]} waits; its KV is in the CPU tier."
     for k, line in enumerate(wrap(note, w - 52, NOTE)):
         s.text(x0, y3 + height + 64 + 22 * k, line, size=NOTE, cls="mute")
 
@@ -276,9 +276,9 @@ DESCRIPTION = (
     "two changes, then to text to speech and back to the caller; 24 coding-agent sessions send their "
     "requests to the same scheduler at priority 2, the voice turn's at priority 0; the scheduler allocates "
     "from the KV pool beneath it. Panel b, #63350, a pool of 12 KV blocks: two agent requests hold 5 each and "
-    f"2 are free, while a voice turn that needs {TURN} waits beside the pool; on stock vLLM it waits for an "
-    "agent request to finish, while #63350 preempts the latest agent request, agent B, and the turn takes "
-    "4 of its blocks; agent B waits, its KV kept in the CPU tier for its resume. Panel c, #63351, the "
+    f"2 are free, while a voice turn that needs {TURN} waits beside the pool; on vLLM 0.32 it waits until an "
+    "agent request frees its blocks, while #63350 preempts the latest agent request, agent B, and the turn takes "
+    "4 of its blocks; agent B waits, its KV in the CPU tier. Panel c, #63351, the "
     "engine's steps in time, one box a step, from the reply's first token: without #63351 each step of the reply also "
     f"carries an agent's prefill chunk, so in the time #63351 gives the reply its first {WINDOW} tokens the "
     "reply gets 14 without it; after the window, agent prefill resumes. Blocks and steps are illustrative."

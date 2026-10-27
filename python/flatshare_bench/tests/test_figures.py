@@ -13,6 +13,7 @@ import pytest
 from flatshare_bench import diagrams
 from flatshare_bench import figure_style as style
 from flatshare_bench.e2.report import load_points, read_dots, write_report
+from flatshare_bench.report import figures as report_figures
 
 REPO = Path(__file__).resolve().parents[3]
 DOCS = REPO / "docs" / "figures"
@@ -140,6 +141,8 @@ def drawn(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     write_report(rows, out / "gpus", dots=read_dots(A100 / "figure.toml"))
     # make method-figure.
     diagrams.render(out)
+    # make report-figures: the technical report's, each from the records it cites.
+    report = report_figures.main(out / "report")
     return {
         "e2-frontier.svg": out / "e2" / "frontier-weka-x32-long.svg",
         "e2-waterfall.svg": out / "e2" / "waterfall.svg",
@@ -149,7 +152,7 @@ def drawn(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
         "e2-voice-p95-gpus-narrow.svg": out / "gpus" / "voice-p95-narrow.svg",
         "method.svg": out / "method.svg",
         "method-narrow.svg": out / "method-narrow.svg",
-    }
+    } | {path.name: path for path in report}
 
 
 def test_every_svg_under_docs_figures_is_what_its_generator_draws(drawn: dict[str, Path]) -> None:

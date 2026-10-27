@@ -1,0 +1,662 @@
+"""The technical report's figures (flatshare_bench.report): each draws from the committed records and passes the style's
+checks, its text names the configurations as the report does, and the values it plots, which the report quotes, are
+the records' own: the medians, ranges and counts their reports (frontier.csv), summaries and the campaigns' own scripts
+give, and docs/BENCHMARKS.md states. That every report-*.svg under docs/figures is what its generator draws today,
+test_figures.py checks with every other figure."""
+
+from __future__ import annotations
+
+import csv
+import itertools
+import json
+import re
+import statistics
+import xml.etree.ElementTree as ET
+from collections.abc import Callable, Mapping
+from pathlib import Path
+
+import pytest
+
+from flatshare_bench.report import charts, data, figures
+
+REPO = Path(__file__).resolve().parents[3]
+SVG = "{http://www.w3.org/2000/svg}"
+CODES = re.compile(r"\bW\d\b|\bFB\b|\bRS\b|\barms? \d|\bw5-|\bdisc-|\ba100-|frozen|\bE[0-3]\b")
+"""What figure text never names: campaigns (W4, W5, FB, RS), arms, experiments, points and the records' names for
+tuned vLLM; the report's terms name configurations instead."""
+
+
+def frontier_rows(results: Path) -> dict[tuple[str, str], Mapping[str, str]]:
+    """A record set's committed frontier.csv, by (campaign, point)."""
+    with (results / "report" / "frontier.csv").open() as rows:
+        return {(r["campaign"], r["point"]): r for r in csv.DictReader(rows)}
+
+
+def summaries(results: Path, point: str, campaigns: tuple[str, ...]) -> list[dict]:
+    """The summary.json of each run of ``point`` in the campaigns named by their rounds' prefix (w5-r, w5-pr-r)."""
+    found = []
+    for campaign in campaigns:
+        for path in sorted(results.glob(f"{campaign}[0-9]/{point}/summary.json")):
+            found.append(json.loads(path.read_text()))
+    assert found, (point, campaigns)
+    return found
+
+
+@pytest.fixture(scope="module")
+def drawn(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
+    out = tmp_path_factory.mktemp("report")
+    return {path.name: path for path in figures.main(out)}
+
+
+# The figures --------------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("figure", figures.FIGURES, ids=lambda f: f.__name__)
+def test_each_figure_draws_and_passes_the_styles_checks(
+    figure: Callable[[Path], list[Path]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Draft mode would write a figure that fails its checks; nothing but a person laying one out sets it.
+    monkeypatch.delenv("FLATSHARE_FIGURE_DRAFT", raising=False)
+    for path in figure(tmp_path):
+        root = ET.parse(path).getroot()
+        narrow = path.stem.endswith("-narrow")
+        assert path.name.startswith("report-"), path.name
+        assert float(root.get("width")) == (420 if narrow else 1120), path.name
+        title, description = root.find(f"{SVG}title").text, root.find(f"{SVG}desc").text
+        assert title and description, path.name
+        # The alt text: a name, and one sentence that says what the figure shows.
+        assert not title.endswith("."), title
+        assert description.endswith(".") and not re.search(r"\. [A-Z]", description), description
+
+
+def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[str, Path]) -> None:
+    assert sorted(drawn) == sorted(
+        f"report-{name}.svg"
+        for name in (
+            "stages",
+            "stages-narrow",
+            "kv-timeline",
+            "isolation",
+            "tail",
+            "window",
+            "step-cost",
+            "headline",
+            "headline-narrow",
+            "cdf",
+            "agents",
+            "frontier",
+            "margin",
+            "a100",
+        )
+    )
+
+
+def text_of(path: Path) -> list[str]:
+    root = ET.parse(path).getroot()
+    found = ["".join(t.itertext()) for t in root.iter(f"{SVG}text")]
+    return [*found, root.find(f"{SVG}title").text, root.find(f"{SVG}desc").text]
+
+
+def test_figure_text_names_configurations_as_the_report_does(drawn: dict[str, Path]) -> None:
+    for name, path in drawn.items():
+        for text in text_of(path):
+            assert not CODES.search(text), (name, text)
+
+
+def test_a_log_scale_says_so_on_its_axis(drawn: dict[str, Path]) -> None:
+    logarithmic = (
+        "report-headline",
+        "report-cdf",
+        "report-frontier",
+        "report-step-cost",
+        "report-tail",
+    )
+    for name, path in drawn.items():
+        text = " ".join(text_of(path)[:-2])  # the art's text, not its title and description
+        assert ("log scale" in text) == name.startswith(logarithmic), name
+
+
+# The chart parts --------------------------------------------------------------------------------------------------
+
+
+def chart() -> charts.Chart:
+    return charts.Chart(400, 200, "A chart", "What it shows.")
+
+
+def test_a_label_over_a_mark_is_refused() -> None:
+    s = chart()
+    s.mark(110, 40, "blue")
+    s.text(100, 46, "a label")
+    with pytest.raises(ValueError, match="a label covers a mark: 'a label'"):
+        s.render()
+    with pytest.raises(ValueError, match="a mark's hue is one of"):
+        chart().mark(10, 10, "red")
+    with pytest.raises(ValueError, match="a stage is one of"):
+        chart().stack(10, 10, [(40, "queue")], 20)
+
+
+def test_a_rule_may_run_under_a_label_only_where_a_segment_painted_over_it_hides_it() -> None:
+    s = chart()
+    s.vrule(150, 10, 190, "grid")
+    s.stack(100, 60, [(120, "wait")], 30)
+    s.text(160, 81, "2.81 s", size=18, anchor="middle")
+    s.render()
+    # A rule painted after the segment shows across the label.
+    s = chart()
+    s.stack(100, 60, [(120, "wait")], 30)
+    s.vrule(150, 10, 190, "grid")
+    s.text(160, 81, "2.81 s", size=18, anchor="middle")
+    with pytest.raises(ValueError, match=r"a rule crosses the text '2\.81 s'"):
+        s.render()
+
+
+def test_a_charts_style_holds_its_parts_and_both_themes() -> None:
+    svg = chart().render()
+    assert svg.count("<style>") == 1 and ".mark{" in svg and ".s-wait{" in svg
+    # Each color the charts add has its dark value under the dark scheme.
+    light, dark = svg.split("@media(prefers-color-scheme:dark)")[-2:]
+    for name, (day, night) in charts.PALETTE.items():
+        assert f"--{name}:{day}" in light and f"--{name}:{night}" in dark, name
+
+
+def test_a_lines_key_is_a_level_stroke_in_the_lines_classes() -> None:
+    s = chart()
+    last = charts.legend(
+        s, 10, 30, [(charts.line_key("blue trace thick"), "the change")], width=300
+    )
+    svg = s.render()
+    assert last == 30 and 'd="M10 24.24H42" class="blue trace thick"' in svg and "the change" in svg
+
+
+def test_a_log_scale_and_an_ecdf() -> None:
+    x = charts.Scale(1000, 100000, 0, 200, log=True)
+    assert (x(1000), x(10000), x(100000)) == (0, 100, 200)
+    y = charts.Scale(0, 1, 100, 0)
+    steps = charts.ecdf([3000, 1000, 1000, 50000], x, y, cap=30000)
+    # Up a quarter for each sample, both of the ties at once, the last capped.
+    assert [round(py, 6) for _, py in steps] == [100, 100, 50, 50, 25, 25, 0]
+    assert steps[-1][0] == pytest.approx(x(30000))
+
+
+# The values -------------------------------------------------------------------------------------------------------
+
+
+def pooled(runs: list[dict], stage: str) -> float:
+    cells = [run["worker"]["waterfall"][stage] for run in runs]
+    return sum(c["n"] * c["mean"] for c in cells) / sum(c["n"] for c in cells)
+
+
+STAGE_CAMPAIGNS = {
+    data.VOICE_ALONE: ("w5-r",),
+    data.TUNED: ("w5-r", "w5-pr-r"),
+    data.MAKE_ROOM: ("w5-pr-r",),
+    data.CHANGE: ("w5-r", "w5-pr-r", "w5-ext-r"),
+}
+
+
+def test_the_stages_are_the_summaries_pooled_over_each_configurations_replies() -> None:
+    expected = {
+        # endpointing, the wait for the LLM's first token, the decode, TTS, transport; the mean V2V; runs, replies
+        data.VOICE_ALONE: ((756, 85, 218, 211, 352), 1623, 5, 295),
+        data.TUNED: ((825, 2815, 1066, 250, 343), 5299, 10, 590),
+        data.MAKE_ROOM: ((820, 783, 1207, 250, 356), 3415, 5, 295),
+        data.CHANGE: ((822, 289, 262, 242, 355), 1971, 15, 885),
+    }
+    for cell in data.stages():
+        parts, v2v, runs, replies = expected[cell.point]
+        assert (tuple(round(p) for p in cell.parts), round(cell.v2v), cell.runs, cell.replies) == (
+            parts,
+            v2v,
+            runs,
+            replies,
+        )
+        # Count-weighted over the summaries' stage means, and adding up to the mean V2V.
+        records = summaries(data.W5, cell.point, STAGE_CAMPAIGNS[cell.point])
+        decode = pooled(records, "llm_first_sentence_ms") - pooled(records, "llm_ttft_ms")
+        assert cell.decode == pytest.approx(decode)
+        assert cell.wait + cell.decode == pytest.approx(
+            pooled(records, "turn_to_first_sentence_ms")
+        )
+        assert cell.endpointing == pytest.approx(pooled(records, "end_of_turn_ms"))
+        assert sum(cell.parts) == pytest.approx(cell.v2v)
+        # The worker's own end-to-end mean is its stages', to within a millisecond of their counts' differences.
+        assert abs(sum(cell.parts[:4]) - pooled(records, "e2e_ms")) < 2
+
+
+def test_the_probes_are_their_logs_runs() -> None:
+    kv, prefill = data.probes("kv"), data.probes("prefill")
+    assert {e: [r.ttft for r in runs] for e, runs in kv.items()} == {
+        "stock": [4900, 4971, 4969, 4966],
+        "a": [219, 289, 290, 290],
+        "ab": [216, 290, 294, 289],
+    }
+    assert {e: statistics.median(r.ttft for r in runs) for e, runs in kv.items()} == {
+        "stock": 4967.5,
+        "a": 289.5,
+        "ab": 289.5,
+    }
+    assert {e: [r.t16 for r in runs] for e, runs in prefill.items()} == {
+        "stock": [1529, 1501, 1220, 1500],
+        "a": [1528, 1211, 1214, 1485],
+        "ab": [615, 536, 541, 609],
+    }
+    # docs/BENCHMARKS.md: the 16th token at 1,211-1,528 ms with make-room alone against 536-615 ms with the hold, the
+    # reply's tokens 60-66, 60-65 and 16-20 ms apart.
+    gaps = {e: [(r.t16 - r.ttft) / 15 for r in runs] for e, runs in prefill.items()}
+    assert {e: (round(min(g)), round(max(g))) for e, g in gaps.items()} == {
+        "stock": (60, 66),
+        "a": (60, 65),
+        "ab": (16, 20),
+    }
+    # Each case's turn was sent beside what its panel says.
+    assert {(r.agents, r.agent_tokens) for runs in kv.values() for r in runs} == {(2, 17999)}
+    assert {(r.agents, r.agent_tokens) for runs in prefill.values() for r in runs} == {(3, 10000)}
+    assert {r.prompt_tokens // 10 for runs in (*kv.values(), *prefill.values()) for r in runs} <= {
+        74,
+        75,
+    }
+
+
+def test_a_probe_line_the_parser_cannot_read_is_an_error(tmp_path: Path) -> None:
+    for engine in data.ENGINES:
+        (tmp_path / f"{engine}-kv.log").write_text(
+            "kv: priority-0 TTFT 290 ms, 16 tokens —, for 745 prompt tokens, sent with 2 priority-2 requests "
+            "of 17999 tokens running and 22 of 2274 blocks free; after it, 1 running and 1 waiting\n"
+        )
+    assert data.probes("kv", tmp_path)["ab"][0].t16 is None
+    (tmp_path / "a-kv.log").write_text("kv: something else\n")
+    with pytest.raises(ValueError, match=r"a-kv\.log: an unread line"):
+        data.probes("kv", tmp_path)
+
+
+def test_the_kv_timeline_is_its_logs_block() -> None:
+    samples = data.kv_timeline()
+    assert len(samples) == 46
+    first, last = samples[0], samples[-1]
+    assert (first.t, first.usage, first.running, first.waiting, first.tokens) == (
+        0.1,
+        0,
+        0,
+        0,
+        (0, 0),
+    )
+    assert (last.t, last.usage, last.running, last.waiting, last.tokens) == (
+        24.5,
+        0.517,
+        1,
+        1,
+        (812, 192),
+    )
+    # Read about every 0.55 s.
+    assert {round(b.t - a.t, 1) for a, b in itertools.pairwise(samples)} == {0.5, 0.6}
+    m = data.kv_moments(samples)
+    assert (m.full.t, m.full.usage) == (7.7, 0.987)
+    # The first read with both agent requests running and at most 24 of the pool's 2,274 blocks free.
+    assert (m.send.t, m.send.running, m.send.free_blocks) == (8.3, 2, 20)
+    # Nothing frees a block from then to the preemption.
+    held = [p.usage for p in samples if m.send.t <= p.t <= m.before.t]
+    assert held == sorted(held) and held[-1] == 1
+    # The step: from the whole pool with both requests running to half of it, one running and agent B waiting,
+    # stopped at 192 tokens while agent A decodes on.
+    assert (m.before.t, m.before.usage, m.before.running, m.before.waiting, m.before.tokens) == (
+        12.6,
+        1,
+        2,
+        0,
+        (191, 189),
+    )
+    assert (m.after.t, m.after.usage, m.after.running, m.after.waiting, m.after.tokens) == (
+        13.1,
+        0.501,
+        1,
+        1,
+        (218, 192),
+    )
+    assert {p.tokens[1] for p in samples if p.t >= m.after.t} == {192}
+    # The engine's preemption counter reads 0 throughout, so the figure marks the preemption by the requests running
+    # and waiting, not by it.
+    assert {p.preemptions for p in samples} == {0}
+
+
+def test_a_timeline_line_the_parser_cannot_read_is_an_error(tmp_path: Path) -> None:
+    log = tmp_path / "timeline.log"
+    read = "  0.1s usage 0.000 running 0 waiting 0 preemptions 0 tokens [0, 0]"
+    log.write_text(f"[05:25:42Z] timeline\n{read}\n[05:26:07Z] engine log\nanything\n")
+    assert len(data.kv_timeline(log)) == 1
+    log.write_text(f"[05:25:42Z] timeline\n{read}\n  0.6s usage high\n")
+    with pytest.raises(ValueError, match="an unread line in the timeline"):
+        data.kv_timeline(log)
+    log.write_text(f"{read}\n")
+    with pytest.raises(ValueError, match="0 timeline blocks"):
+        data.kv_timeline(log)
+
+
+TAILS = {
+    # turns, then p50 and p95 in ms as docs/BENCHMARKS.md's table of the PRs' probes prints them
+    ("fresh", "stock"): (96, "2,244", "6,830"),
+    ("fresh", "a"): (117, "716", "4,111"),
+    ("fresh", "ab"): (146, "236", "388"),
+    ("grow", "stock"): (102, "1,324", "7,158"),
+    ("grow", "a"): (125, "615", "1,073"),
+    ("grow", "ab"): (146, "258", "358"),
+}
+
+
+def test_the_tails_are_each_blocks_two_runs_turns() -> None:
+    tails = data.tails()
+    for (mode, engine), (turns, p50, p95) in TAILS.items():
+        t = tails[mode][engine]
+        assert (t.runs, len(t.turns), t.failed) == (2, turns, 0), (mode, engine)
+        assert (f"{t.percentile(50):,.0f}", f"{t.percentile(95):,.0f}") == (p50, p95), (
+            mode,
+            engine,
+        )
+        # The inclusive percentiles, as the probes' check.py computes its tables'.
+        q = statistics.quantiles(t.turns, n=20, method="inclusive")
+        assert (t.percentile(50), t.percentile(95)) == (statistics.median(t.turns), q[18])
+    # The figure's axis, 40 ms to 15 s, holds every turn: the fastest took 43 ms, the slowest 11.8 s.
+    every = [v for engines in tails.values() for t in engines.values() for v in t.turns]
+    assert (min(every), max(every)) == (43, 11804)
+
+
+def test_a_tail_run_whose_turns_disagree_with_its_summary_is_an_error(tmp_path: Path) -> None:
+    summary = (
+        "calls: {n} turns, 0 failed (counted at 30,000 ms), TTFT p50 236 p90 342 p95 388 max 516 ms; "
+        "agents: 0 of 12 stopped early"
+    )
+    for engine in data.ENGINES:
+        for mode in data.MODES:
+            (tmp_path / f"{engine}-tail-{mode}-1.log").write_text(
+                "03:26:12.611 call 1 ttft    236 ms\n" + summary.format(n=1) + "\n"
+            )
+    assert data.tails(tmp_path)["fresh"]["ab"].turns == (236,)
+    (tmp_path / "ab-tail-grow-1.log").write_text(
+        "03:26:12.611 call 1 ttft    236 ms\n" + summary.format(n=2) + "\n"
+    )
+    with pytest.raises(ValueError, match=r"ab-tail-grow-1\.log: its turns do not give"):
+        data.tails(tmp_path)
+    (tmp_path / "ab-tail-grow-1.log").write_text("03:26:12.611 call 1 slow\n" + summary.format(n=0))
+    with pytest.raises(ValueError, match=r"ab-tail-grow-1\.log: an unread line"):
+        data.tails(tmp_path)
+
+
+def test_the_replies_and_the_window_sweep() -> None:
+    tokens = data.reply_tokens()
+    assert (len(tokens), statistics.median(tokens), min(tokens), max(tokens)) == (5571, 23, 6, 52)
+    # "79% run past 16 tokens; one runs past 48."
+    assert (
+        sum(t <= 16 for t in tokens) == 1181 and f"{1 - data.share_within(tokens, 16):.0%}" == "79%"
+    )
+    assert sum(t > 48 for t in tokens) == 1
+    runs = data.knee()
+    assert [(r.window, r.run) for r in runs] == [
+        (w, k) for w in (16, 24, 32, 48, 64) for k in (1, 2)
+    ]
+    assert not any(r.failed for r in runs)
+    assert data.knee_medians(runs, "t40_p95") == {
+        16: 3759,
+        24: 2642,
+        32: 1853.5,
+        48: 1037,
+        64: 1018,
+    }
+    assert data.knee_medians(runs, "ttft_p95") == {16: 448.5, 24: 387, 32: 326.5, 48: 347, 64: 366}
+    prompt = data.knee_medians(runs, "prompt_tps")
+    assert prompt == {16: 3483, 24: 3443, 32: 3300, 48: 3205, 64: 3246}
+    assert f"{1 - prompt[48] / prompt[16]:.0%}" == "8%"
+
+
+def test_the_step_costs_are_the_baselines_cells() -> None:
+    costs = {c.key: c for c in data.step_costs()}
+    baseline = json.loads(data.STEP_COSTS.read_text())["cells"]
+    assert list(costs) == list(baseline)
+    for key, cell in baseline.items():
+        c = costs[key]
+        assert (c.stock, c.off, c.on) == (cell["stock_us"], cell["off_us"], cell["on_us"])
+        assert c.added == pytest.approx(
+            cell["change_us"], abs=0.11
+        )  # the cells round each to 0.1 µs
+    # Switched off, the change costs what stock vLLM does, within 1.1% at every state; deployed, it adds tens to
+    # hundreds of µs a step, and 1.7 ms where a voice turn too large for two victims waits behind a 999-block hit.
+    assert max(c.off_ratio for c in costs.values()) < 0.011
+    assert max(c.added for c in costs.values() if c.scenario == "A") == pytest.approx(149.1)
+    assert sorted(round(c.added) for c in costs.values()) == [
+        36, 38, 58, 87, 149, 160, 182, 247, 539, 543, 625, 644, 1719,
+    ]  # fmt: skip
+    assert (costs["B64-hit999"].variant, costs["B256-W10"].variant) == (
+        "a 999-block prefix hit",
+        "10 waiting",
+    )
+
+
+HEADLINE = {
+    # runs, the median V2V p95 and its range, the agents' tokens a second over the first 240 s (ms, tokens/s)
+    data.VOICE_ALONE: (5, 1784.3, 1764.2, 1818.7, None),
+    data.TUNED: (10, 10477.35, 8685.9, 12115.2, 3305.15),
+    data.ROUTER: (5, 2521.9, 2516.3, 2868.4, 3332.4),
+    data.MAKE_ROOM: (5, 5085.2, 4693.3, 6261.1, 3413.8),
+    data.HOLD_16: (5, 3093.8, 2868.5, 3191.5, 3298.0),
+    data.CHANGE: (15, 2236.0, 2132.0, 2397.4, 3202.7),
+}
+
+
+def test_the_headline_is_each_configurations_runs_in_frontier_csv() -> None:
+    rows = frontier_rows(data.W5)
+    configurations = data.headline()
+    assert [c.point for c in configurations] == list(HEADLINE)
+    for c in configurations:
+        assert (
+            len(c.runs),
+            round(c.p95, 2),
+            min(r.p95 for r in c.runs),
+            max(r.p95 for r in c.runs),
+        ) == (HEADLINE[c.point][:4]), c.point
+        assert c.tokens == HEADLINE[c.point][4], c.point
+        for run in c.runs:
+            row = rows[(run.campaign, c.point)]
+            assert run.p95 == float(row["v2v_p95_ms"]), (run.campaign, c.point)
+            if run.tokens is not None:
+                assert run.tokens == float(row["fixed_window_tokens_per_s"]), (
+                    run.campaign,
+                    c.point,
+                )
+    # The SLO, voice alone's median p95 plus 250 ms; the change 0.20 s over it, at 97% of tuned vLLM's tokens.
+    slo = data.slo_ms(data.w5_rows())
+    assert slo == pytest.approx(2034.3)
+    change, tuned = configurations[-1], configurations[1]
+    assert round(change.p95 - slo) == 202 and f"{change.tokens / tuned.tokens:.0%}" == "97%"
+    assert all(run.p95 > slo for run in change.runs)
+
+
+def test_every_turn_is_each_runs_measured_turns() -> None:
+    rows = data.w5_rows()
+    slo = data.slo_ms(rows)
+    shares, slowest = {}, {}
+    for c in data.headline(rows):
+        samples = c.samples()
+        campaigns = {r.campaign.rsplit("-r", 1)[0] + "-r" for r in c.runs}
+        records = summaries(data.W5, c.point, tuple(sorted(campaigns)))
+        # Each run's turns but its warm-up turns, a barge-in's second reply among them, as its summary counts them.
+        assert len(samples) == sum(r["voice"]["v2v_ms"]["n"] for r in records), c.point
+        assert max(samples) < 30000, c.point  # no turn went unanswered
+        shares[c.point] = round(sum(v <= slo for v in samples) / len(samples), 3)
+        slowest[c.point] = round(max(samples))
+    assert {p: shares[p] for p in figures.CDF_LINES} == {
+        data.VOICE_ALONE: 0.997,
+        data.TUNED: 0.098,
+        data.ROUTER: 0.559,
+        data.CHANGE: 0.677,
+    }
+    assert {p: slowest[p] for p in figures.CDF_LINES} == {
+        data.VOICE_ALONE: 2043,
+        data.TUNED: 18624,
+        data.ROUTER: 3366,
+        data.CHANGE: 3711,
+    }
+
+
+AGENTS = {
+    # runs; the median of the agents' TTFT p99 in s, of the steps the hold held agent prefill in (none without the
+    # hold's counter) and of make-room's own preemptions (none without make-room)
+    data.TUNED: (10, "106", None, None),
+    data.ROUTER: (5, "193", None, None),
+    data.MAKE_ROOM: (5, "112", "0%", 34),
+    data.HOLD_16: (5, "105", "25%", 32),
+    data.CHANGE: (15, "111", "33%", 31),
+}
+
+
+def test_what_the_agents_pay_is_each_runs_frontier_row_and_e3_counts() -> None:
+    rows, counts = frontier_rows(data.W5), data.e3_counts()
+    runs = data.agent_runs()
+    assert list(runs) == list(AGENTS)
+    for point, cells in runs.items():
+        shares = [r.held_share for r in cells if r.held_share is not None]
+        preemptions = [r.preemptions for r in cells if r.preemptions is not None]
+        assert len(shares) in (0, len(cells)) and len(preemptions) in (0, len(cells)), point
+        assert (
+            len(cells),
+            f"{statistics.median(r.ttft_p99 for r in cells) / 1000:.0f}",
+            f"{statistics.median(shares):.0%}" if shares else None,
+            statistics.median(preemptions) if preemptions else None,
+        ) == AGENTS[point], point
+        for run in cells:
+            row, count = rows[(run.campaign, point)], counts[(run.campaign, point)]
+            assert (run.ttft_p50, run.ttft_p99, run.tokens) == tuple(
+                float(row[k])
+                for k in ("agent_ttft_p50_ms", "agent_ttft_p99_ms", "fixed_window_tokens_per_s")
+            ), (run.campaign, point)
+            assert (run.steps, run.held, run.preemptions) == tuple(
+                int(count[k]) if count[k] else None
+                for k in ("engine_steps", "held_steps", "make_room_preemptions")
+            ), (run.campaign, point)
+    # The report's reading: the agents' median TTFT from 63 s on tuned vLLM to 72 s with the change, whose p99 lies
+    # within the spread of tuned vLLM's runs (96-129 s).
+    tuned, change = runs[data.TUNED], runs[data.CHANGE]
+    assert [round(statistics.median(r.ttft_p50 for r in c) / 1000) for c in (tuned, change)] == [
+        63,
+        72,
+    ]
+    spread = [round(f(r.ttft_p99 for r in tuned) / 1000) for f in (min, max)]
+    assert spread == [96, 129]
+    assert (
+        min(r.ttft_p99 for r in tuned)
+        < statistics.median(r.ttft_p99 for r in change)
+        < max(r.ttft_p99 for r in tuned)
+    )
+
+
+def test_the_frontier_is_every_deployable_configuration_of_w4s_discriminating_scenario() -> None:
+    points = data.frontier()
+    rows = frontier_rows(data.W4)
+    assert len(points) == 18
+    for p in points:
+        runs = [r for (_, point), r in rows.items() if point == p.point]
+        assert sorted(p.p95s) == sorted(float(r["v2v_p95_ms"]) for r in runs), p.point
+        # The agents' tokens a second over the calls' first 240 s, a window every run filled.
+        tokens = sorted(float(r["fixed_window_tokens_per_s"]) for r in runs)
+        assert sorted(p.tokens_per_run) == tokens, p.point
+        assert {r["fixed_window_s"] for r in runs} == {"240.0"}, p.point
+        assert {r["arm"] for r in runs} == {p.arm}, p.point
+    by_point = {p.point: p for p in points}
+    assert {
+        k: (round(by_point[k].p95), round(by_point[k].tokens)) for k in figures.FRONTIER_LABELS
+    } == {
+        "disc-frozen-s24": (10138, 3552),
+        "disc-a8b-smg-s24": (11050, 3446),
+        "disc-a8a-flow-s24": (10992, 3684),
+        "disc-a7b-sglang-hicache-s24": (11948, 4330),
+        "disc-a8c-resubmit-s24": (2591, 3593),
+        "disc-pr-ab48-s24": (2193, 3362),
+        "disc-a9-gateway-only-s24": (10993, 3633),
+        "disc-a5-queued8192-s24": (30000, 5584),
+    }
+    assert by_point["disc-a5-queued8192-s24"].failed_turns == 48
+    families = {}
+    for p in points:
+        families.setdefault(p.family, []).append(p.arm)
+    assert families == {
+        "tuned": ["4", "4", "5", "5"],
+        "operator": ["6", "6", "6"],
+        "engine": ["7a", "7b", "7b"],
+        "router": ["8a", "8b"],
+        "resubmit": ["8c"],
+        "lifecycle-change": ["9"],
+        "lifecycle": ["9-gateway-only"],
+        "change": ["9-pr-a", "9-pr-ab", "9-pr-ab48"],
+    }
+    # Nothing without the engine change, and nothing but the router that aborts agent requests, is under 5.6 s.
+    assert sorted(round(p.p95) for p in points if p.family not in ("change", "lifecycle-change"))[
+        :2
+    ] == [2591, 5671]
+    assert data.slo_ms(data.w4_rows()) == pytest.approx(2017.3)
+
+
+def test_the_margin_is_the_standard_scenarios_rounds_and_the_calls_per_gpu() -> None:
+    rows = data.w5_rows()
+    rounds = data.standard_rounds(rows)
+    assert [r for r, _, _ in rounds] == [1, 2, 3, 4, 5]
+    assert [round(change - tuned) for _, tuned, change in rounds] == [-109, -1413, -945, -250, -496]
+    counts = data.e3_counts()
+    # Every caller count on the samples the four- and six-caller rounds used, the first three.
+    seeds = {r["agents_seed"] for (_, p), r in counts.items() if p == data.CALLS[4][1]}
+    assert seeds == {"11", "12", "13"}
+    for c in data.calls(rows):
+        # Each count's own SLO, and the change over it in every run.
+        assert (c.callers, round(c.slo, 1)) in {(2, 2034.3), (4, 2044.5), (6, 2134.6)}
+        assert min(c.over) > 0
+        point = data.CALLS[c.callers][1]
+        held = sorted(
+            int(r["held_steps"]) / int(r["engine_steps"])
+            for (_, p), r in counts.items()
+            if p == point and r["agents_seed"] in seeds
+        )
+        assert sorted(c.held) == held, c.callers
+    summary = {
+        c.callers: (
+            len(c.over),
+            round(statistics.median(c.over)),
+            round(min(c.over)),
+            round(max(c.over)),
+            f"{statistics.median(c.held):.0%}",
+            f"{min(c.held):.0%}",
+            f"{max(c.held):.0%}",
+            round(statistics.median(c.tokens)),
+        )
+        for c in data.calls(rows)
+    }
+    assert summary == {
+        # Two callers' nine runs on these samples; over all 15 the median is the same 202 ms and 33%, at 3,203 tokens/s.
+        2: (9, 202, 98, 267, "33%", "26%", "38%", 3156),
+        4: (3, 269, 206, 370, "53%", "44%", "54%", 3055),
+        6: (3, 257, 226, 333, "64%", "57%", "68%", 2716),
+    }
+
+
+def test_the_a100_is_its_core_and_its_step_caps_rounds() -> None:
+    rows = data.a100_rows()
+    csv_rows = frontier_rows(data.A100)
+    pairs = data.a100(rows)
+    slo = data.slo_ms(rows)
+    assert slo == pytest.approx(1669.4)
+    tuned, change = pairs[512]
+    assert [round(r.p95) for r in tuned.runs] == [4163, 4783, 4986, 5169, 5710]
+    assert [round(r.p95) for r in change.runs] == [1663, 1658, 1611, 1634, 1609]
+    # Under the card's SLO in every round, by 6 to 60 ms.
+    assert (
+        round(slo - max(r.p95 for r in change.runs)),
+        round(slo - min(r.p95 for r in change.runs)),
+    ) == (7, 60)
+    assert (round(tuned.p95), round(change.p95)) == (4986, 1634)
+    tuned, change = pairs[2048]
+    assert [round(r.p95) for r in tuned.runs] == [4036, 3289]
+    assert [round(r.p95) for r in change.runs] == [1810, 1843]
+    assert [round(r.tokens) for r in (*tuned.runs, *change.runs)] == [15082, 13990, 15124, 14145]
+    for cap, (t, c) in pairs.items():
+        for config in (t, c):
+            for run in config.runs:
+                row = csv_rows[(run.campaign, config.point)]
+                assert (run.p95, run.tokens) == (
+                    float(row["v2v_p95_ms"]),
+                    float(row["fixed_window_tokens_per_s"]),
+                ), (cap, run.campaign)

@@ -12,7 +12,7 @@ The deployed configuration sends the priority and nothing else ([ADR-0006](adr/0
 
 ## Indicators
 
-E2's report computes these for every point (`flatshare-bench e2`; [EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) gives the method), except two: the server-side voice turn, from a W1 probe, and the control-plane overhead, the gateway's own histogram. The voice targets are stated against voice alone on the same box: experiments end a turn a fixed delay after the end of speech, and endpointing takes about 0.8 s of every turn (0.76–0.82 s at the mean in W5; [REPORT.md §5.2](REPORT.md#52-each-rules-share)), so the target is the degradation that agent load may add.
+E2's report computes these for every point (`flatshare-bench e2`; [EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) gives the method), except two: the server-side voice turn, from a W1 probe, and the control-plane overhead, the gateway's own histogram. The voice targets are stated against voice alone on the same box: experiments end a turn a fixed delay after the end of speech, and endpointing takes about 0.8 s of every turn (0.76–0.82 s at the mean in W5; [REPORT.md §6.2](REPORT.md#62-make-room-removes-the-wait-for-kv-and-the-hold-removes-agent-prefill-from-the-turns-steps)), so the target is the degradation that agent load may add.
 
 | Indicator | Definition | Target, or what is reported |
 |---|---|---|
