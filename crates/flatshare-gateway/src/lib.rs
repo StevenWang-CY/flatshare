@@ -28,6 +28,7 @@
 mod auth;
 mod bounds;
 pub mod config;
+mod deadline;
 mod events;
 mod exchange;
 pub mod handover;

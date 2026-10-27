@@ -8,10 +8,11 @@ use std::time::{Duration, Instant};
 
 use axum::extract::{Request, State};
 use axum::response::Response;
-use flatshare_proto::LifecycleEvent;
+use flatshare_proto::{LifecycleEvent, SloClass};
 use http::StatusCode;
 use serde_json::value::RawValue;
 
+use crate::deadline::Deadlines;
 use crate::exchange::Exchange;
 use crate::metrics::{Metrics, Route};
 use crate::proxy::{BodyError, read_body};
@@ -176,8 +177,15 @@ pub(crate) async fn post(State(app): State<App>, request: Request) -> Response {
     }
     // A batch's bytes come from the budget of the bodies the gateway holds, as a request's do.
     let mut budget = shared.intake.body();
-    let body = match read_body(body, shared.max_body_bytes, &mut budget).await {
+    // A batch has the interactive class's upload deadline.
+    let class = SloClass::Interactive;
+    let upload = Deadlines::new(class, shared.class(class), ex.received).upload();
+    let body = match read_body(body, shared.max_body_bytes, &mut budget, upload).await {
         Ok(body) => body,
+        Err(BodyError::Late(timeout)) => {
+            let message = format!("the events did not arrive within {}", timeout.key());
+            return ex.error(StatusCode::REQUEST_TIMEOUT, "upload_timeout", message);
+        }
         Err(BodyError::Invalid(status, code, message)) => return ex.error(status, code, message),
         Err(BodyError::Refused(_)) => {
             return ex.error(

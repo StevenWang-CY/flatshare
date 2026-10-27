@@ -9,18 +9,36 @@ flatshare_gateway_request_outcomes_total{class="background",outcome="drained"} 0
 flatshare_gateway_request_outcomes_total{class="background",outcome="error"} 0
 flatshare_gateway_request_outcomes_total{class="background",outcome="shed"} 0
 flatshare_gateway_request_outcomes_total{class="background",outcome="stalled"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_first_content"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_headers"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_idle"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_queue"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_total"} 0
+flatshare_gateway_request_outcomes_total{class="background",outcome="timeout_upload"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="cancelled"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="completed"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="drained"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="error"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="shed"} 0
 flatshare_gateway_request_outcomes_total{class="interactive",outcome="stalled"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_first_content"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_headers"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_idle"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_queue"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_total"} 0
+flatshare_gateway_request_outcomes_total{class="interactive",outcome="timeout_upload"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="cancelled"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="completed"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="drained"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="error"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="shed"} 0
 flatshare_gateway_request_outcomes_total{class="realtime",outcome="stalled"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_first_content"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_headers"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_idle"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_queue"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_total"} 0
+flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_upload"} 0
 # HELP flatshare_gateway_overhead_seconds Time from the end of a request's body to writing the request to the upstream: parse, sanitize, resolve, connection checkout.
 # TYPE flatshare_gateway_overhead_seconds histogram
 # UNIT flatshare_gateway_overhead_seconds seconds
@@ -292,10 +310,13 @@ flatshare_gateway_upstream_errors_total{kind="timeout"} 0
 # HELP flatshare_gateway_error_events Error events sent on event streams before the gateway aborted them, by type: upstream_unavailable when the upstream broke the stream off, draining when a draining gateway cut a background stream.
 # TYPE flatshare_gateway_error_events counter
 flatshare_gateway_error_events_total{class="background",type="draining"} 0
+flatshare_gateway_error_events_total{class="background",type="upstream_timeout"} 0
 flatshare_gateway_error_events_total{class="background",type="upstream_unavailable"} 0
 flatshare_gateway_error_events_total{class="interactive",type="draining"} 0
+flatshare_gateway_error_events_total{class="interactive",type="upstream_timeout"} 0
 flatshare_gateway_error_events_total{class="interactive",type="upstream_unavailable"} 0
 flatshare_gateway_error_events_total{class="realtime",type="draining"} 0
+flatshare_gateway_error_events_total{class="realtime",type="upstream_timeout"} 0
 flatshare_gateway_error_events_total{class="realtime",type="upstream_unavailable"} 0
 # HELP flatshare_gateway_events Lifecycle events by type, source and whether they repeated an earlier event.
 # TYPE flatshare_gateway_events counter

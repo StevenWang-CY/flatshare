@@ -62,7 +62,6 @@ pub(crate) struct Shared {
     pub max_choices: u32,
     pub stream_buffer_frames: usize,
     pub stall_timeout: Duration,
-    pub first_byte_timeout: Duration,
     pub drain: Drain,
     /// What `GET /metrics` asks of a request on a TCP listener.
     metrics_key: Option<MetricsKey>,
@@ -301,7 +300,6 @@ impl Server {
             max_choices: config.max_choices,
             stream_buffer_frames: config.stream_buffer_frames,
             stall_timeout: config.stall_timeout,
-            first_byte_timeout: config.first_byte_timeout,
             drain: Drain::new(config.background_drain),
             metrics_key: config.metrics_key,
         };

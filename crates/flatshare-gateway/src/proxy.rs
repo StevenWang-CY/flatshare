@@ -9,6 +9,7 @@ use axum::extract::Request;
 use axum::response::Response;
 use bytes::Bytes;
 use bytes::BytesMut;
+use flatshare_proto::SloClass;
 use http::header::{CONTENT_TYPE, HeaderValue};
 use http::uri::PathAndQuery;
 use http::{StatusCode, Version};
@@ -16,6 +17,7 @@ use http_body::Body as _;
 use http_body_util::BodyExt;
 use hyper::body::Incoming;
 
+use crate::deadline::{Deadlines, Phase, Timeout};
 use crate::exchange::Exchange;
 use crate::harness::{Refusal, Ticket};
 use crate::intake::{BodyBytes, Refused};
@@ -56,6 +58,8 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         Err(err) => return ex.error(StatusCode::BAD_REQUEST, "invalid_class", err.to_string()),
     };
     ex.class = Some(class);
+    let deadlines = Deadlines::new(class, shared.class(class), ex.received);
+    ex.deadlines = Some(deadlines);
 
     // The intake's bounds, before a byte of the body is read: a refused request costs the gateway no memory and no
     // wait.
@@ -66,12 +70,14 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
             return ex.intake_refused(refused, message);
         }
     };
-    let body = match read_body(body, shared.max_body_bytes, &mut permit.body).await {
+    let upload = deadlines.upload();
+    let body = match read_body(body, shared.max_body_bytes, &mut permit.body, upload).await {
         Ok(body) => body,
         Err(BodyError::Refused(refused)) => {
             let message = shared.intake.message(refused, tenant, class);
             return ex.intake_refused(refused, message);
         }
+        Err(BodyError::Late(timeout)) => return ex.timed_out(Phase::Upload, timeout),
         Err(BodyError::Invalid(status, code, message)) => return ex.error(status, code, message),
     };
     // The request holds its place, and its body's bytes, until its record ends.
@@ -113,16 +119,26 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         None => None,
         Some(admission) => {
             let arrived = Instant::now();
-            // A background request still waiting at the drain's cut leaves the queue.
+            // A background request still waiting at the drain's cut leaves the queue, and so does one whose wait
+            // reaches its deadline.
             let mut cut = shared.drain.cut_for(Some(class));
+            let (deadline, timeout) = deadlines.queue(arrived);
             let admitted = tokio::select! {
                 biased;
-                () = server::cut(&mut cut) => None,
-                admitted = admission.admit(tenant, class, session, body.json.len()) => Some(admitted),
+                () = server::cut(&mut cut) => Waited::Cut,
+                () = tokio::time::sleep_until(deadline.into()) => Waited::Late,
+                admitted = admission.admit(tenant, class, session, body.json.len()) => Waited::Done(admitted),
             };
-            let Some(admitted) = admitted else {
-                ex.admission_wait = Some(arrived.elapsed());
-                return ex.drained(shared.drain.grace);
+            let admitted = match admitted {
+                Waited::Done(admitted) => admitted,
+                Waited::Cut => {
+                    ex.admission_wait = Some(arrived.elapsed());
+                    return ex.drained(shared.drain.grace);
+                }
+                Waited::Late => {
+                    ex.admission_wait = Some(arrived.elapsed());
+                    return ex.timed_out(Phase::Queue, timeout);
+                }
             };
             match admitted {
                 Ok(ticket) => {
@@ -166,12 +182,28 @@ pub(crate) async fn models(app: App, request: Request) -> Response {
         return ex.unauthorized();
     };
     ex.tenant = Some(Arc::clone(&tenant.name));
+    // A model list has no class, and the interactive class's deadlines.
+    let interactive = SloClass::Interactive;
+    ex.deadlines = Some(Deadlines::new(
+        interactive,
+        shared.class(interactive),
+        ex.received,
+    ));
     sanitize_headers(&mut parts.headers, tenant.trusted, &shared.metrics);
     parts.headers.insert(REQUEST_ID.clone(), ex.id.clone());
     if !shared.upstream.ready() {
         return ex.not_ready("upstream_not_ready", NOT_READY, RECOVERY_PROBE);
     }
     forward(&app, ex, parts, UpstreamBody::empty(), None).await
+}
+
+/// What a wait at the admission point ended with.
+enum Waited<T> {
+    Done(T),
+    /// The drain's cut.
+    Cut,
+    /// The request's deadline.
+    Late,
 }
 
 /// Why a request body was not read.
@@ -181,14 +213,17 @@ pub(crate) enum BodyError {
     Invalid(StatusCode, &'static str, String),
     /// The gateway's budget for the bodies it holds cannot take it (503).
     Refused(Refused),
+    /// It had not arrived by its deadline (408).
+    Late(Timeout),
 }
 
-/// Reads a request body of at most `limit` bytes, whose bytes `budget` takes from the gateway's budget as they
-/// arrive: a declared length all at once, before anything is read, and the rest chunk by chunk.
+/// Reads a request body of at most `limit` bytes by `deadline`, whose bytes `budget` takes from the gateway's budget
+/// as they arrive: a declared length all at once, before anything is read, and the rest chunk by chunk.
 pub(crate) async fn read_body(
     mut body: Body,
     limit: usize,
     budget: &mut BodyBytes,
+    (deadline, timeout): (Instant, Timeout),
 ) -> Result<Bytes, BodyError> {
     let too_large = || {
         BodyError::Invalid(
@@ -204,7 +239,13 @@ pub(crate) async fn read_body(
     }
     budget.take(declared).map_err(BodyError::Refused)?;
     let mut read = BytesMut::with_capacity(declared);
-    while let Some(frame) = body.frame().await {
+    loop {
+        let Ok(frame) = tokio::time::timeout_at(deadline.into(), body.frame()).await else {
+            return Err(BodyError::Late(timeout));
+        };
+        let Some(frame) = frame else {
+            break;
+        };
         let frame = frame.map_err(|err| {
             BodyError::Invalid(
                 StatusCode::BAD_REQUEST,
@@ -245,22 +286,23 @@ async fn forward(
     parts.extensions.clear();
 
     ex.forwarded = true;
-    // A background request without a response at the drain's cut is dropped, as is a shed one: dropping the
-    // request future closes its connection, which aborts the engine request.
+    let deadlines = ex.deadlines.expect("a forwarded request has its deadlines");
+    // A background request without a response at the drain's cut is dropped, as is a shed one or one whose deadline
+    // passes: dropping the request future closes its connection, which aborts the engine request.
     let mut cut = shared.drain.cut_for(ex.class);
     let sending = async {
         match &mut ticket {
             Some(ticket) if ticket.preemptible() => {
-                resubmitting(shared, upstream, &mut ex, parts, body, ticket).await
+                resubmitting(upstream, &mut ex, parts, body, ticket, &deadlines).await
             }
             Some(ticket) if ticket.sheddable() => {
                 let request = http::Request::from_parts(parts, body);
                 tokio::select! {
-                    sent = send(shared, upstream, request) => sent.map(|response| (response, None)),
+                    sent = send(upstream, request, &deadlines) => sent.map(|response| (response, None)),
                     () = ticket.shed() => Err(Failure::Shed),
                 }
             }
-            _ => send(shared, upstream, http::Request::from_parts(parts, body))
+            _ => send(upstream, http::Request::from_parts(parts, body), &deadlines)
                 .await
                 .map(|response| (response, None)),
         }
@@ -304,9 +346,9 @@ async fn forward(
 enum Failure {
     /// The connection failed, or closed before the response headers (502).
     Upstream(hyper_util::client::legacy::Error),
-    /// Nothing within the first-byte timeout (504): no response headers, or for a preemptible request, no
-    /// first body frame.
-    Timeout(&'static str),
+    /// A deadline passed ([`crate::deadline`]): in the upstream's response (504), or waiting at the admission
+    /// point again after a preemption (503).
+    Late(Phase, Timeout),
     /// A preemptible request's response broke off before its first body frame (502).
     Body,
     /// A preempted request was not admitted again in time (503).
@@ -337,12 +379,7 @@ impl Failure {
                 let message = format!("upstream request failed: {}", causes(&err));
                 ex.error(StatusCode::BAD_GATEWAY, "upstream_unavailable", message)
             }
-            Self::Timeout(awaited) => {
-                ex.metrics().upstream_error(UpstreamError::Timeout);
-                let timeout = shared.first_byte_timeout;
-                let message = format!("no {awaited} from the upstream within {timeout:?}");
-                ex.error(StatusCode::GATEWAY_TIMEOUT, "upstream_timeout", message)
-            }
+            Self::Late(phase, timeout) => ex.timed_out(phase, timeout),
             Self::Body => {
                 ex.metrics().upstream_error(UpstreamError::Body);
                 let message = "the upstream response broke off before its first byte";
@@ -355,36 +392,38 @@ impl Failure {
     }
 }
 
-/// Sends a request upstream and waits for its response headers, for at most the first-byte timeout.
+/// Sends a request upstream and waits for its response headers, by the earliest of its deadlines that applies.
 async fn send(
-    shared: &Shared,
     upstream: &Upstream,
     request: http::Request<UpstreamBody>,
+    deadlines: &Deadlines,
 ) -> Result<http::Response<Incoming>, Failure> {
-    let response = upstream.request(request);
-    match tokio::time::timeout(shared.first_byte_timeout, response).await {
+    let (deadline, timeout) = deadlines.headers(Instant::now());
+    match tokio::time::timeout_at(deadline.into(), upstream.request(request)).await {
         Ok(response) => response.map_err(Failure::Upstream),
-        Err(_) => Err(Failure::Timeout("response headers")),
+        Err(_) => Err(Failure::Late(Phase::Upstream, timeout)),
     }
 }
 
 /// Sends a preemptible request and holds its response back until the first body frame. A preemption before
 /// that frame drops the attempt, which closes its connection and aborts the engine request, and the request
 /// goes again once it is admitted again. The client has seen nothing of the dropped attempt, so it gets one
-/// response whose first byte comes later. Each attempt has the first-byte timeout to its first frame.
+/// response whose first byte comes later. Each attempt has its own wait for its headers, and the request its deadlines
+/// from its receipt whatever the attempt: a retry never buys it more time, and comes only before the client has seen
+/// anything.
 async fn resubmitting(
-    shared: &Shared,
     upstream: &Upstream,
     ex: &mut Exchange,
     parts: http::request::Parts,
     body: UpstreamBody,
     ticket: &mut Ticket,
+    deadlines: &Deadlines,
 ) -> Result<(http::Response<Incoming>, Option<Bytes>), Failure> {
     let again = (parts.clone(), body.again());
     let mut request = http::Request::from_parts(parts, body);
     loop {
         tokio::select! {
-            attempt = first_frame(shared, upstream, request) => {
+            attempt = first_frame(upstream, request, deadlines) => {
                 let (response, first) = attempt?;
                 // A frame that arrives as the request is preempted belongs to the dropped attempt.
                 if first.is_none() || ticket.first_byte() {
@@ -396,34 +435,41 @@ async fn resubmitting(
             }
             () = ticket.preempted() => {}
         }
-        ticket.readmitted().await.map_err(Failure::Refused)?;
+        // Waiting at the admission point again, within the request's own deadlines.
+        let (deadline, timeout) = deadlines.queue(Instant::now());
+        match tokio::time::timeout_at(deadline.into(), ticket.readmitted()).await {
+            Ok(readmitted) => readmitted.map_err(Failure::Refused)?,
+            Err(_) => return Err(Failure::Late(Phase::Queue, timeout)),
+        }
         ex.resubmits += 1;
         request = http::Request::from_parts(again.0.clone(), again.1.again());
     }
 }
 
-/// Sends a request and reads its response to the first body frame, or to the end of a body without one.
+/// Sends a request and reads its response to the first body frame, or to the end of a body without one: its headers by
+/// the attempt's deadline, and its first frame by the request's.
 async fn first_frame(
-    shared: &Shared,
     upstream: &Upstream,
     request: http::Request<UpstreamBody>,
+    deadlines: &Deadlines,
 ) -> Result<(http::Response<Incoming>, Option<Bytes>), Failure> {
-    let attempt = async {
-        let response = upstream.request(request).await.map_err(Failure::Upstream)?;
-        let (parts, mut body) = response.into_parts();
-        let first = loop {
+    let (parts, mut body) = send(upstream, request, deadlines).await?.into_parts();
+    let (deadline, timeout) = deadlines.first_frame();
+    let first = async {
+        loop {
             match body.frame().await {
                 Some(Ok(frame)) => match frame.into_data() {
-                    Ok(data) => break Some(data),
+                    Ok(data) => break Ok(Some(data)),
                     Err(_) => continue,
                 },
-                Some(Err(_)) => return Err(Failure::Body),
-                None => break None,
+                Some(Err(_)) => break Err(Failure::Body),
+                None => break Ok(None),
             }
-        };
-        Ok((http::Response::from_parts(parts, body), first))
+        }
     };
-    tokio::time::timeout(shared.first_byte_timeout, attempt)
-        .await
-        .unwrap_or(Err(Failure::Timeout("first byte")))
+    let first = match tokio::time::timeout_at(deadline.into(), first).await {
+        Ok(first) => first?,
+        Err(_) => return Err(Failure::Late(Phase::Upstream, timeout)),
+    };
+    Ok((http::Response::from_parts(parts, body), first))
 }

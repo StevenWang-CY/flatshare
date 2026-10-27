@@ -55,7 +55,7 @@ pub struct Config {
     pub stream_buffer_frames: usize,
     /// How long a full stream buffer may stay full before the stream is aborted as stalled.
     pub stall_timeout: Duration,
-    /// How long to wait for the upstream's response headers before answering 504.
+    /// Every class's default `headers_timeout_s`: how long an attempt waits for the upstream's response headers.
     pub first_byte_timeout: Duration,
     /// How long a shutdown waits for in-flight requests.
     pub drain_timeout: Duration,
@@ -86,13 +86,27 @@ pub struct ClassConfig {
     pub max_reply_tokens: Option<u32>,
     /// The class's requests in flight at most: one more gets 503 at once, before its body is read.
     pub max_in_flight: usize,
+    /// The class's deadlines ([`crate::deadline`]): its body's upload, a wait at the admission point, an attempt's
+    /// response headers, the first content and the whole request from the receipt, and the wait between two frames.
+    pub upload_timeout: Duration,
+    pub queue_timeout: Duration,
+    pub headers_timeout: Duration,
+    pub first_content_timeout: Duration,
+    pub idle_timeout: Duration,
+    pub total_timeout: Duration,
 }
 
 impl ClassConfig {
     /// A class's defaults. The classes' in-flight bounds leave the other classes room under `max_in_flight`'s
     /// default of 1,024: interactive and background requests together reach 768 at most, so a flood of them cannot
     /// take the realtime class's 128. E2's heaviest point held about 30 in flight (24 agent sessions and voice).
-    fn defaults(class: SloClass) -> Self {
+    ///
+    /// The deadlines are a few times what the recorded runs took at most, so that none ends a request they made:
+    /// background first bytes ran to 232 s at p99 (W5's resubmitting arm), behind preemptions, realtime ones to 13.4 s
+    /// (the worst arm's p99), and no run met the 600 s first-byte timeout. A voice reply ran 52 tokens at most.
+    pub(crate) fn defaults(class: SloClass) -> Self {
+        let realtime = class == SloClass::Realtime;
+        let s = Duration::from_secs;
         Self {
             max_reply_tokens: None,
             max_in_flight: match class {
@@ -100,6 +114,16 @@ impl ClassConfig {
                 SloClass::Interactive => 256,
                 SloClass::Background => 512,
             },
+            upload_timeout: s(60),
+            queue_timeout: s(120),
+            headers_timeout: s(600),
+            first_content_timeout: s(if realtime { 60 } else { 600 }),
+            idle_timeout: s(if realtime { 30 } else { 600 }),
+            total_timeout: s(match class {
+                SloClass::Realtime => 300,
+                SloClass::Interactive => 1800,
+                SloClass::Background => 3600,
+            }),
         }
     }
 }
@@ -323,12 +347,23 @@ struct RawClasses {
 struct RawClass {
     max_reply_tokens: Option<u32>,
     max_in_flight: Option<usize>,
+    upload_timeout_s: Option<f64>,
+    queue_timeout_s: Option<f64>,
+    headers_timeout_s: Option<f64>,
+    first_content_timeout_s: Option<f64>,
+    idle_timeout_s: Option<f64>,
+    total_timeout_s: Option<f64>,
 }
 
 impl RawClasses {
     /// Each class's configuration, strictest first. `realtime_max_tokens` is the realtime class's
-    /// `max_reply_tokens`, from before there were classes' tables, and only one of the two may be set.
-    fn validate(self, realtime_max_tokens: Option<u32>) -> Result<[ClassConfig; 3], String> {
+    /// `max_reply_tokens`, from before there were classes' tables, and only one of the two may be set;
+    /// `first_byte_timeout` is every class's default `headers_timeout_s`.
+    fn validate(
+        self,
+        realtime_max_tokens: Option<u32>,
+        first_byte_timeout: Duration,
+    ) -> Result<[ClassConfig; 3], String> {
         let Self {
             mut realtime,
             interactive,
@@ -360,6 +395,43 @@ impl RawClasses {
             }
             config.max_reply_tokens = raw.max_reply_tokens;
             config.max_in_flight = raw.max_in_flight.unwrap_or(config.max_in_flight);
+            config.headers_timeout = first_byte_timeout;
+            for (key, set, timeout) in [
+                (
+                    "upload_timeout_s",
+                    raw.upload_timeout_s,
+                    &mut config.upload_timeout,
+                ),
+                (
+                    "queue_timeout_s",
+                    raw.queue_timeout_s,
+                    &mut config.queue_timeout,
+                ),
+                (
+                    "headers_timeout_s",
+                    raw.headers_timeout_s,
+                    &mut config.headers_timeout,
+                ),
+                (
+                    "first_content_timeout_s",
+                    raw.first_content_timeout_s,
+                    &mut config.first_content_timeout,
+                ),
+                (
+                    "idle_timeout_s",
+                    raw.idle_timeout_s,
+                    &mut config.idle_timeout,
+                ),
+                (
+                    "total_timeout_s",
+                    raw.total_timeout_s,
+                    &mut config.total_timeout,
+                ),
+            ] {
+                if let Some(value) = set {
+                    *timeout = seconds(&format!("classes.{class}.{key}"), value)?;
+                }
+            }
         }
         Ok(classes)
     }
@@ -499,7 +571,10 @@ impl RawConfig {
         if self.max_body_bytes == 0 {
             return Err("max_body_bytes must be positive".into());
         }
-        let classes = self.classes.validate(self.realtime_max_tokens)?;
+        let first_byte_timeout = seconds("first_byte_timeout_s", self.first_byte_timeout_s)?;
+        let classes = self
+            .classes
+            .validate(self.realtime_max_tokens, first_byte_timeout)?;
         for (key, zero) in [
             ("max_choices", self.max_choices == 0),
             ("max_in_flight", self.max_in_flight == 0),
@@ -552,7 +627,7 @@ impl RawConfig {
             max_buffered_body_bytes: self.max_buffered_body_bytes,
             stream_buffer_frames: self.stream_buffer_frames,
             stall_timeout: seconds("stall_timeout_s", self.stall_timeout_s)?,
-            first_byte_timeout: seconds("first_byte_timeout_s", self.first_byte_timeout_s)?,
+            first_byte_timeout,
             drain_timeout,
             background_drain,
             event_dedup_capacity: self.event_dedup_capacity,
@@ -980,6 +1055,72 @@ mod tests {
             ),
         ] {
             let err = config(top, &tables).unwrap_err();
+            assert!(err.contains(cause), "{err}");
+        }
+    }
+
+    #[test]
+    fn each_class_has_its_deadlines() {
+        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
+        let config_of = |top: &str, tables: &str| config(top, &format!("{a}\n{tables}"));
+        let defaults = config_of("", "").unwrap();
+        let s = Duration::from_secs;
+        let deadlines = |config: &Config, class| {
+            let c = config.class(class);
+            [
+                c.upload_timeout,
+                c.queue_timeout,
+                c.headers_timeout,
+                c.first_content_timeout,
+                c.idle_timeout,
+                c.total_timeout,
+            ]
+        };
+        assert_eq!(
+            deadlines(&defaults, SloClass::Realtime),
+            [s(60), s(120), s(600), s(60), s(30), s(300)]
+        );
+        assert_eq!(
+            deadlines(&defaults, SloClass::Interactive),
+            [s(60), s(120), s(600), s(600), s(600), s(1800)]
+        );
+        assert_eq!(
+            deadlines(&defaults, SloClass::Background),
+            [s(60), s(120), s(600), s(600), s(600), s(3600)]
+        );
+        // first_byte_timeout_s is every class's headers_timeout_s unless a class sets its own.
+        let set = config_of(
+            "first_byte_timeout_s = 90",
+            "[classes.background]\nheaders_timeout_s = 30\nidle_timeout_s = 2.5\ntotal_timeout_s = 7200",
+        )
+        .unwrap();
+        assert_eq!(set.class(SloClass::Realtime).headers_timeout, s(90));
+        assert_eq!(
+            deadlines(&set, SloClass::Background),
+            [
+                s(60),
+                s(120),
+                s(30),
+                s(600),
+                Duration::from_millis(2500),
+                s(7200)
+            ]
+        );
+        for (tables, cause) in [
+            (
+                "[classes.realtime]\nidle_timeout_s = 0",
+                "classes.realtime.idle_timeout_s must be a positive number of seconds",
+            ),
+            (
+                "[classes.interactive]\nupload_timeout_s = -1",
+                "classes.interactive.upload_timeout_s must be a positive",
+            ),
+            (
+                "[classes.background]\nfirst_byte_timeout_s = 1",
+                "unknown field",
+            ),
+        ] {
+            let err = config_of("", tables).unwrap_err();
             assert!(err.contains(cause), "{err}");
         }
     }

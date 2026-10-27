@@ -2,6 +2,7 @@
 
 mod admission;
 mod common;
+mod deadlines;
 mod drain;
 mod events;
 mod intake;

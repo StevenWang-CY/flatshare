@@ -20,6 +20,7 @@ use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::metrics::histogram::Histogram;
 use prometheus_client::registry::{Registry, Unit};
 
+use crate::deadline::Timeout;
 use crate::harness;
 use crate::usage::Usage;
 
@@ -68,17 +69,42 @@ pub(crate) enum Outcome {
     /// A background request still running `background_drain_s` into a drain: the gateway cut it, with a
     /// `draining` error event on a stream or a 503 before the response.
     Drained,
+    /// One of the request's deadlines passed ([`crate::deadline`]); the gateway cancelled the upstream request.
+    TimeoutUpload,
+    TimeoutQueue,
+    TimeoutHeaders,
+    TimeoutFirstContent,
+    TimeoutIdle,
+    TimeoutTotal,
 }
 
 impl Outcome {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 12] = [
         Self::Completed,
         Self::Cancelled,
         Self::Stalled,
         Self::Error,
         Self::Shed,
         Self::Drained,
+        Self::TimeoutUpload,
+        Self::TimeoutQueue,
+        Self::TimeoutHeaders,
+        Self::TimeoutFirstContent,
+        Self::TimeoutIdle,
+        Self::TimeoutTotal,
     ];
+
+    /// The outcome of a request whose `timeout` passed.
+    pub const fn timeout(timeout: Timeout) -> Self {
+        match timeout {
+            Timeout::Upload => Self::TimeoutUpload,
+            Timeout::Queue => Self::TimeoutQueue,
+            Timeout::Headers => Self::TimeoutHeaders,
+            Timeout::FirstContent => Self::TimeoutFirstContent,
+            Timeout::Idle => Self::TimeoutIdle,
+            Timeout::Total => Self::TimeoutTotal,
+        }
+    }
 
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -88,6 +114,12 @@ impl Outcome {
             Self::Error => "error",
             Self::Shed => "shed",
             Self::Drained => "drained",
+            Self::TimeoutUpload => "timeout_upload",
+            Self::TimeoutQueue => "timeout_queue",
+            Self::TimeoutHeaders => "timeout_headers",
+            Self::TimeoutFirstContent => "timeout_first_content",
+            Self::TimeoutIdle => "timeout_idle",
+            Self::TimeoutTotal => "timeout_total",
         }
     }
 }
@@ -99,15 +131,18 @@ pub(crate) enum ErrorEvent {
     Upstream,
     /// A draining gateway cut a background stream (503): the client may send it again.
     Draining,
+    /// A deadline passed while the upstream streamed (504): it stopped sending, or the request ran too long.
+    Timeout,
 }
 
 impl ErrorEvent {
-    const ALL: [Self; 2] = [Self::Upstream, Self::Draining];
+    const ALL: [Self; 3] = [Self::Upstream, Self::Draining, Self::Timeout];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Upstream => "upstream_unavailable",
             Self::Draining => "draining",
+            Self::Timeout => "upstream_timeout",
         }
     }
 
@@ -115,6 +150,7 @@ impl ErrorEvent {
         match self {
             Self::Upstream => 502,
             Self::Draining => 503,
+            Self::Timeout => 504,
         }
     }
 }
@@ -126,7 +162,8 @@ pub(crate) enum UpstreamError {
     Connect,
     /// The connection failed before the response headers arrived (502).
     Request,
-    /// No response headers within the first-byte timeout (504).
+    /// A deadline passed while the gateway waited on the upstream: its headers, its first content, a frame after
+    /// one, or the request's total (504, or an error event mid-stream).
     Timeout,
     /// The response body broke off.
     Body,

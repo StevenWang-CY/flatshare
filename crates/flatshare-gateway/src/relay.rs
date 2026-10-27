@@ -5,14 +5,16 @@
 //! the stall timeout the pump aborts both sides. When the client goes away, its body (the receiver) is dropped, the
 //! pump sees the channel close at once and drops the upstream body, which closes the upstream connection; vLLM
 //! aborts a request whose client disconnects. The pump also ends the response when the admission policy sheds the
-//! request, or at a drain's cut for a background one. A response cut short never ends cleanly: the client's body
-//! ends with an error, after the error event of vLLM's own streams on an event stream.
+//! request, at a drain's cut for a background one, and when one of the request's deadlines passes: its first content
+//! by its first-content deadline, each later frame within the idle timeout of the pump's turning back to the upstream,
+//! and the whole response by its total ([`crate::deadline`]). A response cut short never ends cleanly: the client's
+//! body ends with an error, after the error event of vLLM's own streams on an event stream.
 
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, ready};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use bytes::Bytes;
@@ -24,6 +26,7 @@ use hyper::body::Incoming;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, watch};
 
+use crate::deadline::{Deadlines, Timeout};
 use crate::exchange::Exchange;
 use crate::harness::Ticket;
 use crate::metrics::{ErrorEvent, Outcome, UpstreamError};
@@ -104,7 +107,10 @@ impl Pump {
         } = self;
         let _active = ex.class.map(|class| ex.metrics().stream_started(class));
         let sheddable = ticket.as_ref().is_some_and(Ticket::sheddable);
+        let deadlines = ex.deadlines;
         let outcome = loop {
+            // The first content by the request's deadline for it, every frame after within the idle timeout.
+            let (deadline, timeout) = next_deadline(deadlines.as_ref(), ex.first_byte.is_some());
             let frame = tokio::select! {
                 biased;
                 () = frames.closed() => break Outcome::Cancelled,
@@ -122,6 +128,20 @@ impl Pump {
                     }
                     ex.note_error(message);
                     break Outcome::Drained;
+                }
+                () = sleep_until(deadline) => {
+                    ex.metrics().upstream_error(UpstreamError::Timeout);
+                    let message = deadlines.map(|d| d.message(timeout)).unwrap_or_default();
+                    if scanner.is_events() {
+                        // Within the stall timeout: a client that stops reading gets none.
+                        let event = error_event(ErrorEvent::Timeout, &message, scanner.at_event_boundary());
+                        let sent = tokio::time::timeout(stall_timeout, frames.send(event)).await;
+                        if let (Ok(Ok(())), Some(class)) = (sent, ex.class) {
+                            ex.metrics().error_event(class, ErrorEvent::Timeout);
+                        }
+                    }
+                    ex.note_error(message);
+                    break Outcome::timeout(timeout);
                 }
                 frame = upstream.frame() => frame,
             };
@@ -164,12 +184,18 @@ impl Pump {
                     TrySendError::Full(data) => data,
                     TrySendError::Closed(_) => break Outcome::Cancelled,
                 };
+                let total = deadlines.map(|d| d.total().0);
                 let sent = tokio::select! {
                     biased;
                     () = shed(&mut ticket), if sheddable => break Outcome::Shed,
                     () = server::cut(&mut cut) => {
                         ex.note_error(server::drain_message(grace));
                         break Outcome::Drained;
+                    }
+                    // A client too slow for the request's total: the client's channel is full, so no event.
+                    () = sleep_until(total) => {
+                        ex.note_error(deadlines.map(|d| d.message(Timeout::Total)).unwrap_or_default());
+                        break Outcome::TimeoutTotal;
                     }
                     sent = tokio::time::timeout(stall_timeout, frames.send(data)) => sent,
                 };
@@ -181,10 +207,7 @@ impl Pump {
             }
             scanner.feed(&scanned);
         };
-        if matches!(
-            outcome,
-            Outcome::Stalled | Outcome::Error | Outcome::Shed | Outcome::Drained
-        ) {
+        if outcome != Outcome::Completed && outcome != Outcome::Cancelled {
             aborted.store(true, Ordering::Release);
         }
         // An unfinished upstream body closes its connection when dropped, which aborts the engine request.
@@ -209,6 +232,30 @@ fn error_event(kind: ErrorEvent, message: &str, at_boundary: bool) -> Bytes {
     });
     let start = if at_boundary { "" } else { "\n\n" };
     Bytes::from(format!("{start}data: {error}\n\n"))
+}
+
+/// The deadline of the next upstream frame, from now, and which it is: the request's first-content or total deadline
+/// for its first frame, the idle timeout or the total for the others; none for a request without deadlines.
+fn next_deadline(deadlines: Option<&Deadlines>, begun: bool) -> (Option<Instant>, Timeout) {
+    match deadlines {
+        Some(deadlines) if begun => {
+            let (at, timeout) = deadlines.next_frame(Instant::now());
+            (Some(at), timeout)
+        }
+        Some(deadlines) => {
+            let (at, timeout) = deadlines.first_frame();
+            (Some(at), timeout)
+        }
+        None => (None, Timeout::Total),
+    }
+}
+
+/// Completes at `deadline`; never without one.
+async fn sleep_until(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
+        None => std::future::pending().await,
+    }
 }
 
 /// Completes when the admission policy sheds the request.

@@ -399,12 +399,14 @@ fn held(target: &Target, tag: &'static str) -> JoinHandle<Reply> {
 }
 
 /// Waits until the gateway serving `target` exports `series` at `value`: after a reload, the successor's, which a
-/// predecessor still accepting would not export.
+/// predecessor still accepting would not export. A connection the predecessor accepts as it stops is closed without an
+/// answer, as a draining gateway closes its idle connections, and the poll tries again.
 async fn metric_at(target: &Target, series: &str, value: f64) {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        let reply = call(target, "GET", "/metrics", &[], "").await;
-        let current = metric(std::str::from_utf8(&reply.body).unwrap(), series);
+        let current = exposition(target)
+            .await
+            .and_then(|text| metric(&text, series));
         if current == Some(value) {
             return;
         }
@@ -412,8 +414,25 @@ async fn metric_at(target: &Target, series: &str, value: f64) {
             Instant::now() < deadline,
             "{series} is {current:?}, expected {value}"
         );
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
+}
+
+/// The exposition of the gateway that answers on `target`, the Unix socket; none for a connection closed unanswered.
+async fn exposition(target: &Target) -> Option<String> {
+    let Target::Unix(path) = target else {
+        unreachable!("the metrics need no key on the Unix socket")
+    };
+    let stream = UnixStream::connect(path).await.ok()?;
+    let (mut sender, connection) = http1::handshake(TokioIo::new(stream)).await.ok()?;
+    tokio::spawn(connection);
+    let request = http::Request::get("/metrics")
+        .header("host", "gateway")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let response = sender.send_request(request).await.ok()?;
+    let body = response.into_body().collect().await.ok()?.to_bytes();
+    String::from_utf8(body.to_vec()).ok()
 }
 
 /// The successor of `first`, from the notification that it took over.

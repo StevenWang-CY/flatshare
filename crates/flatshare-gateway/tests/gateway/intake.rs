@@ -2,112 +2,12 @@
 //! the bodies the gateway holds, taken as their bytes arrive; and the bound on the requests waiting at the admission
 //! point, in all its queues.
 
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use flatshare_gateway::{Config, LogSink};
 
 use crate::common::*;
-
-/// What a raw client got: the answer's head and body as text, and how long after its head was sent.
-struct Answer {
-    text: String,
-    after: Duration,
-}
-
-impl Answer {
-    fn status(&self) -> &str {
-        self.text.get(9..12).unwrap_or_default()
-    }
-
-    fn header(&self, name: &str) -> Option<&str> {
-        let head = self.text.split("\r\n\r\n").next()?;
-        head.lines().find_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            key.eq_ignore_ascii_case(name).then(|| value.trim())
-        })
-    }
-
-    fn json(&self) -> serde_json::Value {
-        let body = self
-            .text
-            .split_once("\r\n\r\n")
-            .map(|(_, body)| body)
-            .unwrap();
-        serde_json::from_str(body).unwrap()
-    }
-}
-
-/// Sends a request's `head` on a new connection, then each part of its body after its pause, and reads the answer
-/// for up to five seconds: a client whose body never comes, or comes slowly.
-fn raw(
-    addr: SocketAddr,
-    head: String,
-    parts: Vec<(Duration, Vec<u8>)>,
-) -> std::thread::JoinHandle<Answer> {
-    std::thread::spawn(move || {
-        let mut stream = TcpStream::connect(addr).unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let sent = Instant::now();
-        stream.write_all(head.as_bytes()).unwrap();
-        for (pause, part) in parts {
-            std::thread::sleep(pause);
-            // The gateway may have answered and closed already.
-            if stream.write_all(&part).is_err() {
-                break;
-            }
-        }
-        let mut bytes = Vec::new();
-        let mut buf = [0; 4096];
-        loop {
-            match stream.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => bytes.extend_from_slice(&buf[..n]),
-            }
-            // The whole answer: its head, and the body its Content-Length gives.
-            let text = String::from_utf8_lossy(&bytes);
-            if let Some((head, body)) = text.split_once("\r\n\r\n") {
-                let length = head.lines().find_map(|line| {
-                    let (key, value) = line.split_once(':')?;
-                    key.eq_ignore_ascii_case("content-length")
-                        .then(|| value.trim().parse::<usize>().ok())?
-                });
-                if length.is_some_and(|length| body.len() >= length) {
-                    break;
-                }
-            }
-        }
-        Answer {
-            text: String::from_utf8_lossy(&bytes).into_owned(),
-            after: sent.elapsed(),
-        }
-    })
-}
-
-/// A chat completion's head on the TCP listener, with `auth` and `framing` (its Content-Length or chunked encoding).
-fn head(auth: &str, framing: &str) -> String {
-    format!(
-        "POST /v1/chat/completions HTTP/1.1\r\nHost: gateway\r\nAuthorization: Bearer {auth}\r\n\
-         Content-Type: application/json\r\n{framing}\r\n\r\n"
-    )
-}
-
-fn tcp(gw: &Gateway) -> SocketAddr {
-    match gw.tcp {
-        Target::Tcp(addr) => addr,
-        Target::Unix(_) => unreachable!("the TCP listener"),
-    }
-}
-
-async fn answered(client: std::thread::JoinHandle<Answer>) -> Answer {
-    tokio::task::spawn_blocking(move || client.join().unwrap())
-        .await
-        .unwrap()
-}
 
 /// The answer a refused request gets: its status, its error's code, and `Retry-After: 1`.
 fn refused(answer: &Answer, status: &str, code: &str) {

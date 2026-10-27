@@ -14,9 +14,10 @@ use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue, RETRY_AFTER};
 use tracing::Level;
 
 use crate::bounds;
+use crate::deadline::{Deadlines, Phase, Timeout};
 use crate::harness::Refusal;
 use crate::intake::{Permit, Refused};
-use crate::metrics::{Metrics, Outcome, Route};
+use crate::metrics::{Metrics, Outcome, Route, UpstreamError};
 use crate::sanitize::{REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
 use crate::usage::Summary;
 
@@ -51,6 +52,8 @@ pub(crate) struct Exchange {
     pub summary: Summary,
     /// The request's place in the intake and its body's bytes, given back when the record ends.
     pub permit: Option<Permit>,
+    /// Its deadlines, once its class is known.
+    pub deadlines: Option<Deadlines>,
     outcome: Option<Outcome>,
     error: Option<String>,
 }
@@ -75,6 +78,7 @@ impl Exchange {
             first_byte: None,
             summary: Summary::default(),
             permit: None,
+            deadlines: None,
             outcome: None,
             error: None,
         }
@@ -165,6 +169,25 @@ impl Exchange {
             self.outcome = Some(Outcome::Drained);
         }
         self.retry(status, code, message)
+    }
+
+    /// The answer to a request whose `timeout` passed before any response began, by the `phase` it was in: 408 for an
+    /// upload, 503 with `Retry-After: 1` for a wait at the admission point (the engine never saw the request, or saw
+    /// only an attempt that was dropped), 504 for the upstream.
+    pub fn timed_out(mut self, phase: Phase, timeout: Timeout) -> Response {
+        let message = self.deadlines.map_or_else(
+            || format!("the request passed its {}", timeout.key()),
+            |deadlines| deadlines.message(timeout),
+        );
+        self.outcome = Some(Outcome::timeout(timeout));
+        match phase {
+            Phase::Upload => self.error(StatusCode::REQUEST_TIMEOUT, "upload_timeout", message),
+            Phase::Queue => self.retry(StatusCode::SERVICE_UNAVAILABLE, "queue_timeout", message),
+            Phase::Upstream => {
+                self.metrics.upstream_error(UpstreamError::Timeout);
+                self.error(StatusCode::GATEWAY_TIMEOUT, "upstream_timeout", message)
+            }
+        }
     }
 
     /// The 401 for a request without a known API key on a listener without a tenant.
