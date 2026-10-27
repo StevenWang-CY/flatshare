@@ -6,9 +6,9 @@ use std::io;
 use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use axum::Router;
 use axum::extract::{Request, State};
@@ -28,8 +28,9 @@ use crate::events::{self, EventSink, Events};
 use crate::exchange::Exchange;
 use crate::harness::Admission;
 use crate::metrics::{Metrics, Route};
-use crate::proxy::{self, Upstream};
+use crate::proxy;
 use crate::systemd::Inherited;
+use crate::upstream::Upstream;
 
 /// `GET /ready` succeeds while the upstream's `/health` has answered within this window.
 const READY_WINDOW: Duration = Duration::from_secs(1);
@@ -57,8 +58,6 @@ pub(crate) struct Shared {
     pub drain: Drain,
     /// What `GET /metrics` asks of a request on a TCP listener.
     metrics_key: Option<MetricsKey>,
-    /// When the one upstream's `/health` last succeeded.
-    healthy_at: Mutex<Option<Instant>>,
 }
 
 impl Shared {
@@ -241,7 +240,6 @@ impl Server {
             first_byte_timeout: config.first_byte_timeout,
             drain: Drain::new(config.background_drain),
             metrics_key: config.metrics_key,
-            healthy_at: Mutex::new(None),
         };
         Ok(Self {
             shared: Arc::new(shared),
@@ -475,25 +473,11 @@ async fn engine_metrics(State(app): State<App>, headers: HeaderMap) -> Response 
 }
 
 /// 200 while the upstream's `/health` has answered within [`READY_WINDOW`]; otherwise it asks once more. 503 at once
-/// while a request has found the upstream broken and its probe has not answered since ([`proxy::recover`]).
+/// while a request has found the upstream broken and its probe has not answered since
+/// ([`crate::upstream::recover`]).
 async fn ready(State(app): State<App>) -> Response {
-    let shared = &app.shared;
-    if !shared.upstream.ready() {
-        return (StatusCode::SERVICE_UNAVAILABLE, "upstream not ready\n").into_response();
-    }
-    let upstream = &shared.upstream;
-    let last = *shared
-        .healthy_at
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let fresh = last.is_some_and(|at| at.elapsed() < READY_WINDOW);
-    if fresh || upstream.healthy(READY_WINDOW).await {
-        if !fresh {
-            *shared
-                .healthy_at
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
-        }
+    let upstream = &app.shared.upstream;
+    if upstream.ready() && upstream.answers(READY_WINDOW).await {
         (StatusCode::OK, "ready\n").into_response()
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, "upstream not ready\n").into_response()
