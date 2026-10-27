@@ -116,6 +116,17 @@ recall 3.8–5.2%, entity recall 49.7–54.8%, summaries 73.5–85.8%, judge con
   gives different ones from run to run; 69 of the 200 are the same text in both. No record is the same text, though
   both are greedy: the cache's precision changes their tokens.
 
+## Qwen3-8B-FP8 on a card of its own: it does not fit
+
+The two-card comparison's resource gate ([RESOURCE-GATE.md](../../quality/RESOURCE-GATE.md)) lets a dedicated
+background card run a more capable model, so the same screen was to run once more with Qwen/Qwen3-8B-FP8 at revision
+220b46e3b2180893580a4454f21f22d3ebb187d3, on the box's engine settings otherwise (BF16 KV cache, a 5 GiB pool,
+max-model-len 32768) and with nothing else on the card. It does not fit Gray's 16 GB card. On 2026-10-27 at 23:39 UTC
+the engine loaded the weights (8.85 GiB) and reserved the 5 GiB pool, which holds 36,400 tokens as for the 4B (the same
+36 layers, 8 KV heads and head size 128), out of 15.34 GiB free; then its warmup ran out of memory, asking for 20 MiB
+with 13 MiB left, PyTorch holding 14.04 GiB and keeping 1.14 GiB more reserved but unallocated. The screen did not
+run.
+
 ## Files
 
 - `outputs.jsonl`: the 300 outputs, one a line: the task and its ids (QASPER's question and paper, Re-DocRED's document
