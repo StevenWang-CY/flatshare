@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler
 import pytest
 from servers import UnixServer, serve, socket_file, stop
 
+from flatshare_bench.cli import main
 from flatshare_bench.kv_metrics import fetch
 from flatshare_bench.transport import client, runtime_socket, socket_path
 
@@ -36,6 +37,27 @@ def test_an_address_is_http_or_a_unix_socket() -> None:
     ):
         with pytest.raises(ValueError, match=r"expected http://host:port|absolute socket path"):
             socket_path(wrong)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["kv-metrics", "snapshot", "{}", "out.prom"],
+        ["tiers", "--url", "{}", "--out", "run"],
+        ["voice-turn", "--audio", "turn.wav", "--llm", "{}", "--out", "run"],
+        ["drill", "cpu-tier", "--engine", "{}", "--out", "record.json"],
+    ],
+)
+def test_a_command_refuses_an_address_that_is_none_before_it_runs(
+    command: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Taken as it was given, such an address failed once the command made its client, with a traceback.
+    with pytest.raises(SystemExit) as refused:
+        main([word.format("unix:flatshare/engine.sock") for word in command])
+    assert refused.value.code == 2
+    assert "'unix:flatshare/engine.sock': a unix: address names an absolute socket path" in (
+        capsys.readouterr().err
+    )
 
 
 def test_a_unix_address_reaches_the_server_on_its_socket() -> None:

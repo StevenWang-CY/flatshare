@@ -1,4 +1,10 @@
-"""The ``flatshare-bench`` command line: trace scaling, latency probes, engine metrics and E2 points."""
+"""The ``flatshare-bench`` command line: trace scaling, latency probes, engine metrics and E2 points.
+
+Every command, and every action of one, has a function of its own (``set_defaults(func=...)``), which
+imports what it runs, so that a command loads only its own modules. A failure the tools foresee, an
+arm file, a host's settings or an engine they cannot measure with (``E2Error``), is one line on
+stderr, ``flatshare-bench COMMAND: ...``, and exit status 1.
+"""
 
 from __future__ import annotations
 
@@ -9,11 +15,23 @@ import signal
 import sys
 from pathlib import Path
 
+from flatshare_bench.e2.arm import E2Error
 from flatshare_bench.load import LoadSpec, parse_lengths
 from flatshare_bench.protocol import DEFAULT_MODEL, SloClass
-from flatshare_bench.transport import runtime_socket
+from flatshare_bench.transport import runtime_socket, socket_path
 
 ADDRESS = "http://host:port, or unix: and a socket's path"
+
+
+def _address(text: str) -> str:
+    """A server's address (:mod:`flatshare_bench.transport`), for argparse: one that is neither is an error
+    that names its flag before the command runs."""
+    try:
+        socket_path(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+    return text
+
 
 Commands = argparse._SubParsersAction  # what add_subparsers returns
 
@@ -104,13 +122,17 @@ def _add_mock_server(commands: Commands) -> None:
     mock.set_defaults(func=_mock)
 
 
-def _kv_metrics(args: argparse.Namespace) -> int:
-    from flatshare_bench.kv_metrics import compare, fetch
+def _kv_snapshot(args: argparse.Namespace) -> int:
+    from flatshare_bench.kv_metrics import fetch
 
-    if args.action == "snapshot":
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(fetch(args.address))
-        return 0
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(fetch(args.address))
+    return 0
+
+
+def _kv_compare(args: argparse.Namespace) -> int:
+    from flatshare_bench.kv_metrics import compare
+
     print(compare(args.before.read_text(), args.after.read_text()))
     return 0
 
@@ -127,13 +149,15 @@ def _add_kv_metrics(commands: Commands) -> None:
     snap = actions.add_parser("snapshot", help="save a server's /metrics to a file")
     snap.add_argument(
         "address",
+        type=_address,
         help=f"the server ({ADDRESS}), e.g. {runtime_socket('phastform-engine.sock')}, the engine's tunnel",
     )
     snap.add_argument("out", type=Path, help="file to write the exposition to")
+    snap.set_defaults(func=_kv_snapshot)
     cmp_ = actions.add_parser("compare", help="report the histograms between two snapshots")
     cmp_.add_argument("before", type=Path, help="the snapshot taken before the run")
     cmp_.add_argument("after", type=Path, help="the snapshot taken after it")
-    kv.set_defaults(func=_kv_metrics)
+    cmp_.set_defaults(func=_kv_compare)
 
 
 def _tiers(args: argparse.Namespace) -> int:
@@ -165,6 +189,7 @@ def _add_tiers(commands: Commands) -> None:
     )
     tiers.add_argument(
         "--url",
+        type=_address,
         default=runtime_socket("phastform-engine.sock"),
         help=f"the engine ({ADDRESS}; default %(default)s, its tunnel on cyan); it needs /metrics and "
         "an offload tier",
@@ -236,6 +261,7 @@ def _add_voice_turn(commands: Commands) -> None:
     ):
         turn.add_argument(
             f"--{server}",
+            type=_address,
             default=runtime_socket(socket),
             help=f"the {server.upper()} server ({ADDRESS}), its OpenAI API at /v1 (default %(default)s, "
             "its tunnel on cyan)",
@@ -282,59 +308,56 @@ def _add_voice_turn(commands: Commands) -> None:
     turn.set_defaults(func=_voice_turn)
 
 
-def _drill(args: argparse.Namespace) -> int:
-    import orjson
-
-    from flatshare_bench.drills import (
-        DrillConfig,
-        clients,
-        default_uds,
-        fill_cpu_tier,
-        report,
-        run_streams,
-        start_phases,
-    )
-    from flatshare_bench.e2.arm import E2Error
+def _drill_streams(args: argparse.Namespace) -> int:
+    from flatshare_bench.drills import DrillConfig, clients, default_uds, run_streams
     from flatshare_bench.e2.cyan import Host, agents_key, exclusive
     from flatshare_bench.transport import async_client
 
-    if args.action == "streams":
-        config = DrillConfig(
-            realtime=args.realtime,
-            background=args.background,
-            max_tokens=args.max_tokens,
-            deadline_s=args.deadline,
-            probe_interval_s=args.probe_interval,
-        )
-        drill_clients = clients(config, args.gateway, args.uds or default_uds())
-        engine = async_client(args.engine, timeout=10.0)
-        host = Host.load()
-        try:
-            with exclusive(host):  # never beside an E2 point
-                key = agents_key(host)
-                asyncio.run(
-                    run_streams(config, drill_clients, key, args.out, args.event_file, engine)
-                )
-        except E2Error as exc:
-            print(f"flatshare-bench drill: {exc}", file=sys.stderr)
-            return 1
-        return 0
-    if args.action == "cpu-tier":
-        try:
-            with exclusive(Host.load()):  # nothing else may use the engine meanwhile
-                engine = async_client(args.engine, timeout=300.0)
-                record = asyncio.run(fill_cpu_tier(engine, args.out, factor=args.factor))
-        except E2Error as exc:
-            print(f"flatshare-bench drill: {exc}", file=sys.stderr)
-            return 1
-        print(orjson.dumps(record, option=orjson.OPT_INDENT_2).decode())
-        return 0 if record["passed"] else 1
-    if args.action == "start":
-        for journal in args.journal:
-            print(f"{journal.name}:")
-            for phase, seconds in start_phases(journal.read_text()):
-                print(f"  {seconds:7.1f} s  {phase}")
-        return 0
+    config = DrillConfig(
+        realtime=args.realtime,
+        background=args.background,
+        max_tokens=args.max_tokens,
+        deadline_s=args.deadline,
+        probe_interval_s=args.probe_interval,
+    )
+    drill_clients = clients(config, args.gateway, args.uds or default_uds())
+    engine = async_client(args.engine, timeout=10.0)
+    host = Host.load()
+    with exclusive(host):  # never beside an E2 point
+        key = agents_key(host)
+        asyncio.run(run_streams(config, drill_clients, key, args.out, args.event_file, engine))
+    return 0
+
+
+def _drill_cpu_tier(args: argparse.Namespace) -> int:
+    import orjson
+
+    from flatshare_bench.drills import fill_cpu_tier
+    from flatshare_bench.e2.cyan import Host, exclusive
+    from flatshare_bench.transport import async_client
+
+    with exclusive(Host.load()):  # nothing else may use the engine meanwhile
+        engine = async_client(args.engine, timeout=300.0)
+        record = asyncio.run(fill_cpu_tier(engine, args.out, factor=args.factor))
+    print(orjson.dumps(record, option=orjson.OPT_INDENT_2).decode())
+    return 0 if record["passed"] else 1
+
+
+def _drill_start(args: argparse.Namespace) -> int:
+    from flatshare_bench.drills import start_phases
+
+    for journal in args.journal:
+        print(f"{journal.name}:")
+        for phase, seconds in start_phases(journal.read_text()):
+            print(f"  {seconds:7.1f} s  {phase}")
+    return 0
+
+
+def _drill_report(args: argparse.Namespace) -> int:
+    import orjson
+
+    from flatshare_bench.drills import report
+
     print(report(orjson.loads(args.record.read_bytes()), args.event, args.label))
     return 0
 
@@ -392,10 +415,12 @@ def _add_drill(commands: Commands) -> None:
     )
     streams.add_argument(
         "--engine",
+        type=_address,
         default=runtime_socket("phastform-engine.sock"),
         help=f"the engine, for its running requests ({ADDRESS}; default %(default)s, its tunnel on cyan)",
     )
     streams.add_argument("--out", type=Path, required=True, help="the record (JSON)")
+    streams.set_defaults(func=_drill_streams)
     summary = actions.add_parser("report", help="summarize a drill's record")
     summary.add_argument("record", type=Path, help="the record (JSON) that drill streams wrote")
     summary.add_argument(
@@ -406,11 +431,13 @@ def _add_drill(commands: Commands) -> None:
     summary.add_argument(
         "--label", default="the event", help="what --event names (default %(default)s)"
     )
+    summary.set_defaults(func=_drill_report)
     tier = actions.add_parser(
         "cpu-tier", help="fill the engine's CPU tier past its capacity and check what it then holds"
     )
     tier.add_argument(
         "--engine",
+        type=_address,
         default=runtime_socket("phastform-engine.sock"),
         help=f"the engine ({ADDRESS}; default %(default)s, its tunnel on cyan)",
     )
@@ -418,83 +445,94 @@ def _add_drill(commands: Commands) -> None:
         "--factor", type=float, default=2.0, help="the tier's capacity stored (default %(default)s)"
     )
     tier.add_argument("--out", type=Path, required=True, help="the record (JSON)")
+    tier.set_defaults(func=_drill_cpu_tier)
     start = actions.add_parser(
         "start", help="the phases of a server's start, from its journal (journalctl -o short-unix)"
     )
     start.add_argument(
         "journal", type=Path, nargs="+", help="a server's journal (journalctl -o short-unix)"
     )
-    drill.set_defaults(func=_drill)
+    start.set_defaults(func=_drill_start)
 
 
-def _e2(args: argparse.Namespace) -> int:
-    from flatshare_bench.e2.arm import E2Error, load_arm
-    from flatshare_bench.e2.cyan import Host, Systemd, reset_cyan
-    from flatshare_bench.e2.record import export_point, render
-    from flatshare_bench.e2.report import load_points, read_dots, write_report
+def _e2_run(args: argparse.Namespace) -> int:
+    from flatshare_bench.e2.cyan import Host
+    from flatshare_bench.e2.record import render
     from flatshare_bench.e2.run import gpu_sources, run_point
 
+    # A closed ssh session does not stop a point; SIGINT and SIGTERM do, after cleaning up.
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, _interrupted)
+    sources = gpu_sources(args.gpu_source) if args.gpu_source else None
+    host = Host.load()
+    if args.profile:
+        host = dataclasses.replace(host, profile=args.profile)
     try:
-        if args.action == "engine":
-            print(load_arm(args.arm).engine)
-        elif args.action == "reset":
-            applied = reset_cyan(Host.load(), Systemd())
-            for unit in ("gateway", "worker"):
-                print(f"{unit}: {'restarted' if applied[unit]['restarted'] else 'unchanged'}")
-        elif args.action == "run":
-            # A closed ssh session does not stop a point; SIGINT and SIGTERM do, after cleaning up.
-            signal.signal(signal.SIGHUP, signal.SIG_IGN)
-            signal.signal(signal.SIGTERM, _interrupted)
-            sources = gpu_sources(args.gpu_source) if args.gpu_source else None
-            host = Host.load()
-            if args.profile:
-                host = dataclasses.replace(host, profile=args.profile)
-            try:
-                summary = run_point(
-                    args.arm,
-                    args.out,
-                    host,
-                    save_audio=args.save_audio,
-                    gpu_source=sources,
-                    agents_seed=args.agents_seed,
-                    kv_sample_s=args.kv_sample_s,
-                )
-            except KeyboardInterrupt:
-                print(f"flatshare-bench e2: {args.arm.stem} interrupted", file=sys.stderr)
-                return 130
-            print(render(summary))
-        elif args.action == "export":
-            records = []
-            for run_dir in args.run_dirs:
-                if (record := export_point(run_dir, args.out)) is None:
-                    print(
-                        f"flatshare-bench e2: {run_dir}: the point did not complete",
-                        file=sys.stderr,
-                    )
-                else:
-                    records.append(record)
-                    print(record)
-            if not records:
-                print("flatshare-bench e2: no complete point to export", file=sys.stderr)
-                return 1
-        else:
-            rows, incomplete = load_points(args.run_dirs)
-            for run_dir in incomplete:
-                print(f"flatshare-bench e2: {run_dir}: the point did not complete", file=sys.stderr)
-            if not rows:
-                print("flatshare-bench e2: no complete point to report", file=sys.stderr)
-                return 1
-            try:
-                dots = read_dots(args.dots) if args.dots else ()
-                written = write_report(rows, args.out, args.waterfall, dots)
-            except ValueError as exc:  # a --waterfall point without turn lines, a bad --dots file
-                print(f"flatshare-bench e2: {exc}", file=sys.stderr)
-                return 1
-            for path in written:
-                print(path)
-    except E2Error as exc:
+        summary = run_point(
+            args.arm,
+            args.out,
+            host,
+            save_audio=args.save_audio,
+            gpu_source=sources,
+            agents_seed=args.agents_seed,
+            kv_sample_s=args.kv_sample_s,
+        )
+    except KeyboardInterrupt:
+        print(f"flatshare-bench e2: {args.arm.stem} interrupted", file=sys.stderr)
+        return 130
+    print(render(summary))
+    return 0
+
+
+def _e2_report(args: argparse.Namespace) -> int:
+    from flatshare_bench.e2.report import load_points, read_dots, write_report
+
+    rows, incomplete = load_points(args.run_dirs)
+    for run_dir in incomplete:
+        print(f"flatshare-bench e2: {run_dir}: the point did not complete", file=sys.stderr)
+    if not rows:
+        print("flatshare-bench e2: no complete point to report", file=sys.stderr)
+        return 1
+    try:
+        dots = read_dots(args.dots) if args.dots else ()
+        written = write_report(rows, args.out, args.waterfall, dots)
+    except ValueError as exc:  # a --waterfall point without turn lines, a bad --dots file
         print(f"flatshare-bench e2: {exc}", file=sys.stderr)
         return 1
+    for path in written:
+        print(path)
+    return 0
+
+
+def _e2_export(args: argparse.Namespace) -> int:
+    from flatshare_bench.e2.record import export_point
+
+    records = []
+    for run_dir in args.run_dirs:
+        if (record := export_point(run_dir, args.out)) is None:
+            print(f"flatshare-bench e2: {run_dir}: the point did not complete", file=sys.stderr)
+        else:
+            records.append(record)
+            print(record)
+    if not records:
+        print("flatshare-bench e2: no complete point to export", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _e2_engine(args: argparse.Namespace) -> int:
+    from flatshare_bench.e2.arm import load_arm
+
+    print(load_arm(args.arm).engine)
+    return 0
+
+
+def _e2_reset(args: argparse.Namespace) -> int:
+    from flatshare_bench.e2.cyan import Host, Systemd, reset_cyan
+
+    applied = reset_cyan(Host.load(), Systemd())
+    for unit in ("gateway", "worker"):
+        print(f"{unit}: {'restarted' if applied[unit]['restarted'] else 'unchanged'}")
     return 0
 
 
@@ -567,6 +605,7 @@ def _add_e2(commands: Commands) -> None:
         "none), as campaign.sh reads it at the point's start; run.json keeps it beside cyan's "
         "(repeatable, one per node)",
     )
+    run.set_defaults(func=_e2_run)
     report = actions.add_parser(
         "report",
         help="build the frontier from run directories",
@@ -599,6 +638,7 @@ def _add_e2(commands: Commands) -> None:
         "featured = true for the one to deploy), in its order, or [[group]] tables of rows, one "
         'per GPU (title = "...", and gpu = "..." where the GPUs ran the same points)',
     )
+    report.set_defaults(func=_e2_report)
     export = actions.add_parser(
         "export",
         help="write the compact records of run directories, from which report gives the same tables",
@@ -612,13 +652,15 @@ def _add_e2(commands: Commands) -> None:
         "run_dirs", type=Path, nargs="+", metavar="RUN_DIR", help="a point's run directory (e2 run)"
     )
     export.add_argument("--out", type=Path, required=True, help="records directory")
+    export.set_defaults(func=_e2_export)
     engine = actions.add_parser(
         "engine",
         help="print the engine an arm file needs, as deploy/phastform/variant.sh use takes it",
     )
     engine.add_argument("arm", type=Path, help="arm file (TOML)")
-    actions.add_parser("reset", help="undo what e2 run changed in cyan's units")
-    e2.set_defaults(func=_e2)
+    engine.set_defaults(func=_e2_engine)
+    reset = actions.add_parser("reset", help="undo what e2 run changed in cyan's units")
+    reset.set_defaults(func=_e2_reset)
 
 
 def _add_load_arguments(parser: argparse.ArgumentParser) -> None:
@@ -643,7 +685,7 @@ def _add_load_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="flatshare-bench", description=__doc__)
+    parser = argparse.ArgumentParser(prog="flatshare-bench", description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
     for add in (
         _add_scale_traces,
@@ -660,7 +702,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except E2Error as exc:
+        print(f"flatshare-bench {args.command}: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

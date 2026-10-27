@@ -1623,7 +1623,7 @@ def test_e2_run_takes_the_kv_samplers_interval(tmp_path: Path, monkeypatch) -> N
     finally:
         for signum, handler in handlers.items():
             signal.signal(signum, handler)
-    assert seen == [0.5, 0.0, 2.5]
+    assert seen == [e2.KV_SAMPLE_S, 0.0, 2.5]  # the CLI's default is the run's
 
 
 def test_a_campaign_sets_the_agents_seed_and_run_json_keeps_it(cyan: Cyan) -> None:

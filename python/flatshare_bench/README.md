@@ -172,7 +172,7 @@ vLLM's `prefix_cache_hits` and `external_prefix_cache_hits` counters, read aroun
 
 Both take `--background prefill:8192x1` or `decode:1024x8` to measure under agent load. They write `run.json`, the samples and `summary.json` to `--out`; each summary cell has the count, the mean and p10, p50, p90, p95 (where the SLOs are set) and p99. `tiers` exits 3 if any sample was invalid.
 
-Every command that reaches a server takes its address as the gateway's `upstream` is written: `http://host:port`, or `unix:` and the absolute path of its socket (`transport.py`). On cyan the defaults are the GPU node's servers through its tunnel's sockets, `unix:$XDG_RUNTIME_DIR/flatshare/phastform-engine.sock`, `-stt.sock` and `-tts.sock`; a request's path starts at the server's root (`/v1/...`, `/metrics`).
+Every command that reaches a server takes its address as the gateway's `upstream` is written: `http://host:port`, or `unix:` and the absolute path of its socket (`transport.py`); it refuses one that is neither before it runs, naming the flag. On cyan the defaults are the GPU node's servers through its tunnel's sockets, `unix:$XDG_RUNTIME_DIR/flatshare/phastform-engine.sock`, `-stt.sock` and `-tts.sock`; a request's path starts at the server's root (`/v1/...`, `/metrics`).
 
 ```bash
 flatshare-bench tiers --reps 5 --out runs/e0-idle
