@@ -1,0 +1,1067 @@
+//! Several GPU nodes behind one gateway (`[[nodes]]`): each node's engine and speech servers, its health as a whole
+//! pipeline, the sessions placed on it, and failover.
+//!
+//! - **Health.** A node is judged every `health_interval_s`, and at once when its engine's state or readiness
+//!   changes: its engine must be serving (its own idle-only canary, [`crate::canary`]) and ready (no request has found
+//!   it broken without its `/health` answering since, [`crate::upstream::recover`]), and its STT and TTS servers must
+//!   answer `/health` within `health_timeout_s`. A node starts unknown and is healthy after its first passed check;
+//!   `unhealthy_after` failed checks in a row make it unhealthy, and `healthy_after` passed ones healthy again. A node
+//!   is available while it is healthy and its engine ready: one whose engine a request found broken is passed over at
+//!   once, before it has failed enough checks to be unhealthy.
+//! - **Sticky placement.** A session is placed by its first request, or by `POST /v1/sessions`, on an available node
+//!   with its class's role (realtime for realtime sessions, background for interactive and background ones), and stays
+//!   there until it has gone `idle_s` without a request or a `session_closed` event ends it ([`placement`]). A
+//!   realtime session takes one of its node's `max_calls` call slots, on the node with the fewest calls; an agent's
+//!   goes to the node with the fewest agents' sessions, then the fewest requests in flight, so that its prefix cache
+//!   stays on one engine.
+//! - **Failover.** A node that is not available takes no new session, and a session placed on it is placed again by
+//!   its next request (or its next `POST /v1/sessions`), a move that is counted. A realtime session that finds no
+//!   available realtime node with a free call slot gets 503 with `Retry-After`. A node that carries realtime sessions
+//!   moved from a node that is not available covers for it: its interactive and background requests in flight are
+//!   held to `failover_background_max_in_flight` (0 by default, all of them deferred) until that node is available
+//!   again, or the moved sessions end.
+//! - **Interrupted turns.** A realtime request whose node fails before its first content (no connection, one that
+//!   closed before the response, or a body that broke off before its first frame) is sent once more on another
+//!   available node, within the deadlines of its receipt, after the first attempt is dropped; once its first content
+//!   has reached the client it is never sent again ([`crate::proxy`]).
+
+pub(crate) mod metrics;
+mod placement;
+pub(crate) mod routes;
+
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
+use std::time::{Duration, Instant};
+
+use flatshare_proto::{EventKind, LifecycleEvent, SessionId, SloClass};
+use prometheus_client::metrics::gauge::Gauge;
+use serde::{Deserialize, Serialize};
+use tokio::sync::{Notify, watch};
+use tokio::time::MissedTickBehavior;
+
+use crate::auth::{Tenant, Tenants};
+use crate::canary::{self, Health, Watched};
+use crate::config::{Canary, NodeConfig, Placement, PrioritySignals, UpstreamAddr};
+use crate::deadline::Timeout;
+use crate::engine::Engine;
+use crate::metrics::{EngineState, GaugeGuard};
+use crate::upstream::Upstream;
+
+pub(crate) use metrics::Unplaced;
+use metrics::{Reason, Series};
+use placement::{Found, Session, Table};
+pub(crate) use placement::{Key, SESSIONS};
+
+/// A node's verdict.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Verdict {
+    /// No check has passed yet, nor have `unhealthy_after` failed.
+    Unknown,
+    Healthy,
+    Unhealthy,
+}
+
+impl Verdict {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Healthy => "healthy",
+            Self::Unhealthy => "unhealthy",
+        }
+    }
+}
+
+/// A node's checks so far.
+#[derive(Debug)]
+struct Judged {
+    verdict: Verdict,
+    /// The failed and passed checks in a row.
+    failures: u32,
+    passes: u32,
+    /// Each component's last check: engine, STT, TTS.
+    last: [bool; 3],
+}
+
+impl Judged {
+    /// Records a check that `passed`, with `unhealthy_after` and `healthy_after`.
+    fn record(&mut self, passed: bool, unhealthy_after: u32, healthy_after: u32) {
+        if passed {
+            self.failures = 0;
+            self.passes = self.passes.saturating_add(1);
+        } else {
+            self.passes = 0;
+            self.failures = self.failures.saturating_add(1);
+        }
+        self.verdict = match self.verdict {
+            Verdict::Unknown if passed => Verdict::Healthy,
+            Verdict::Unknown | Verdict::Healthy if self.failures >= unhealthy_after => {
+                Verdict::Unhealthy
+            }
+            Verdict::Unhealthy if self.passes >= healthy_after => Verdict::Healthy,
+            verdict => verdict,
+        };
+    }
+}
+
+/// A speech server of a node, whose `/health` the node's health needs.
+#[derive(Debug)]
+pub(crate) struct Speech {
+    /// As configured, which `POST /v1/sessions` answers.
+    pub addr: UpstreamAddr,
+    client: Upstream,
+}
+
+/// One GPU node.
+#[derive(Debug)]
+pub(crate) struct Node {
+    pub index: usize,
+    pub name: Arc<str>,
+    pub realtime: bool,
+    pub background: bool,
+    pub max_calls: usize,
+    pub engine: Arc<Engine>,
+    pub stt: Option<Speech>,
+    pub tts: Option<Speech>,
+    judged: Mutex<Judged>,
+    /// Whether its verdict is healthy, and whether it was available at its last check.
+    healthy: AtomicBool,
+    was_available: AtomicBool,
+    /// Its requests in flight, by class.
+    in_flight: [AtomicU32; 3],
+    /// Its interactive and background requests in flight: what the failover's bound counts.
+    agents: AtomicU32,
+    series: Series,
+}
+
+impl Node {
+    /// Whether it takes new sessions and requests: healthy, and its engine ready.
+    pub fn available(&self) -> bool {
+        self.healthy.load(Ordering::Acquire) && self.engine.upstream.ready()
+    }
+
+    /// Whether it has the role that sessions of `class` need.
+    pub fn takes(&self, class: SloClass) -> bool {
+        match class {
+            SloClass::Realtime => self.realtime,
+            SloClass::Interactive | SloClass::Background => self.background,
+        }
+    }
+
+    pub fn verdict(&self) -> Verdict {
+        self.lock().verdict
+    }
+
+    fn in_flight(&self) -> u32 {
+        self.in_flight
+            .iter()
+            .map(|n| n.load(Ordering::Relaxed))
+            .sum()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Judged> {
+        self.judged.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// The nodes and the sessions placed on them.
+#[derive(Debug)]
+pub(crate) struct Nodes {
+    pub list: Vec<Arc<Node>>,
+    table: RwLock<Table>,
+    pub config: Placement,
+    metrics: metrics::Metrics,
+    /// Woken when a node's availability changes, a session placed for a failover ends, or an agent's request ends:
+    /// what the requests held back by a failover wait on.
+    changed: Notify,
+}
+
+/// A request's place on its node, from its placement to its end: dropping it ends the request there.
+#[derive(Debug)]
+pub(crate) struct Placed {
+    nodes: Arc<Nodes>,
+    pub node: Arc<Node>,
+    class: SloClass,
+    /// Its session as the table keys it; `None` for a session the gateway minted, which no later request names.
+    key: Option<Key>,
+    trusted: bool,
+    /// Its session's placement, when the table remembers it.
+    session: Option<Arc<Session>>,
+    /// Whether it counts among its node's requests in flight: from [`Nodes::admit`] on.
+    started: bool,
+}
+
+impl Drop for Placed {
+    fn drop(&mut self) {
+        if let Some(session) = &self.session {
+            session.ended(Instant::now());
+        }
+        if self.started {
+            let class = self.class as usize;
+            self.node.in_flight[class].fetch_sub(1, Ordering::Relaxed);
+            self.node.series.in_flight[class].dec();
+            if self.class != SloClass::Realtime {
+                self.node.agents.fetch_sub(1, Ordering::AcqRel);
+                self.nodes.changed.notify_waiters();
+            }
+        }
+    }
+}
+
+/// Why a request held back by a failover went no further.
+#[derive(Debug)]
+pub(crate) enum Held {
+    /// Its wait reached its deadline.
+    Late(Timeout),
+    /// The drain's cut.
+    Cut,
+}
+
+impl Nodes {
+    /// The nodes of `config`, each with its engine, its canary and its checks, and the task that ends idle
+    /// sessions' placements.
+    pub fn start(
+        config: &[NodeConfig],
+        placement: Placement,
+        canary: Option<Canary>,
+        signals: PrioritySignals,
+        idle_timeout: Duration,
+        metrics: &metrics::Metrics,
+    ) -> Arc<Self> {
+        let list: Vec<Arc<Node>> = config
+            .iter()
+            .enumerate()
+            .map(|(index, node)| {
+                let name: Arc<str> = node.name.as_str().into();
+                let series = metrics.series(&name);
+                let changed = Arc::new(Notify::new());
+                let health = Health::new(
+                    canary,
+                    Watched {
+                        gauges: series.engine_state.clone(),
+                        probes: series.probes.clone(),
+                        changed: Some(Arc::clone(&changed)),
+                        node: Some(Arc::clone(&name)),
+                    },
+                );
+                let upstream =
+                    Upstream::new(node.upstream.clone(), idle_timeout, series.ready.clone())
+                        .of_node(Arc::clone(&name));
+                let speech = |addr: &Option<UpstreamAddr>| {
+                    addr.as_ref().map(|addr| Speech {
+                        addr: addr.clone(),
+                        client: Upstream::new(addr.clone(), idle_timeout, Gauge::default())
+                            .of_node(Arc::clone(&name)),
+                    })
+                };
+                Arc::new(Node {
+                    index,
+                    realtime: node.realtime,
+                    background: node.background,
+                    max_calls: node.max_calls,
+                    engine: Arc::new(Engine {
+                        upstream,
+                        health: Arc::new(health),
+                        signals,
+                        changed,
+                    }),
+                    stt: speech(&node.stt),
+                    tts: speech(&node.tts),
+                    judged: Mutex::new(Judged {
+                        verdict: Verdict::Unknown,
+                        failures: 0,
+                        passes: 0,
+                        last: [false; 3],
+                    }),
+                    healthy: AtomicBool::new(false),
+                    was_available: AtomicBool::new(false),
+                    in_flight: Default::default(),
+                    agents: AtomicU32::new(0),
+                    name,
+                    series,
+                })
+            })
+            .collect();
+        let gauges = list
+            .iter()
+            .map(|node| node.series.sessions.clone())
+            .collect();
+        let nodes = Arc::new(Self {
+            list,
+            table: RwLock::new(Table::new(gauges)),
+            config: placement,
+            metrics: metrics.clone(),
+            changed: Notify::new(),
+        });
+        for node in &nodes.list {
+            if canary.is_some() {
+                tokio::spawn(canary::run(Arc::downgrade(&node.engine)));
+            }
+            tokio::spawn(watch(Arc::downgrade(&nodes), node.index));
+        }
+        tokio::spawn(expire(Arc::downgrade(&nodes), placement.idle));
+        nodes
+    }
+
+    /// The node named `name`.
+    pub fn named(&self, name: &str) -> Option<&Arc<Node>> {
+        self.list.iter().find(|node| &*node.name == name)
+    }
+
+    /// An available node's engine, the first in the configuration's order: for a request without a session, such
+    /// as a model list.
+    pub fn any(&self) -> Option<Arc<Engine>> {
+        self.list
+            .iter()
+            .find(|node| node.available())
+            .map(|node| Arc::clone(&node.engine))
+    }
+
+    /// Whether every role is taken by an available node, `GET /ready`'s answer; else the role that is not.
+    pub fn ready(&self) -> Result<(), &'static str> {
+        for (role, class) in [
+            ("realtime", SloClass::Realtime),
+            ("background", SloClass::Background),
+        ] {
+            if !self.list.iter().any(|n| n.takes(class) && n.available()) {
+                return Err(role);
+            }
+        }
+        Ok(())
+    }
+
+    /// Drains every engine: their states become `drained`.
+    pub fn drain(&self) {
+        for node in &self.list {
+            node.engine.health.drain();
+        }
+    }
+
+    /// Places a request of `class`, of a `trusted` tenant or not, whose session is `key`: on its session's node
+    /// while that node is available, otherwise on the node chosen for it, which a named session keeps. A request
+    /// of a session the gateway minted (`key` `None`) is placed on its own.
+    pub fn request(
+        self: &Arc<Self>,
+        key: Option<Key>,
+        class: SloClass,
+        trusted: bool,
+    ) -> Result<Placed, Unplaced> {
+        let available = |node: usize| self.list[node].available();
+        if let Some(key) = &key {
+            let table = self.read();
+            if let Found::On(session) = table.find(key, available) {
+                // Under the table's lock, so that the expiry, which writes it, cannot end the placement meanwhile.
+                session.began();
+                drop(table);
+                return Ok(self.placed(
+                    session.node,
+                    class,
+                    Some(key.clone()),
+                    trusted,
+                    Some(session),
+                ));
+            }
+        }
+        let mut table = self.write();
+        let found = match &key {
+            Some(key) => table.find(key, available),
+            None => Found::None,
+        };
+        let (node, session) = match found {
+            // Placed by another of its requests meanwhile.
+            Found::On(session) => {
+                session.began();
+                (session.node, Some(session))
+            }
+            found => {
+                let lost = match &found {
+                    Found::Lost(old) => Some(old.node),
+                    _ => None,
+                };
+                let node = self.choose(&table, class, None).inspect_err(|unplaced| {
+                    self.metrics.refused(class, *unplaced);
+                })?;
+                let session = key
+                    .as_ref()
+                    .and_then(|key| table.place(key, class, node, trusted, lost, Instant::now()));
+                if let Some(session) = &session {
+                    session.began();
+                }
+                drop(table);
+                let reason = if lost.is_some() {
+                    Reason::Moved
+                } else {
+                    Reason::New
+                };
+                self.placed_on(node, class, reason, lost, key.as_ref());
+                (node, session)
+            }
+        };
+        Ok(self.placed(node, class, key, trusted, session))
+    }
+
+    /// `POST /v1/sessions`: the node of `key`'s session, placed now as a session of `class` if it has none or its
+    /// node is not available.
+    pub fn session(
+        self: &Arc<Self>,
+        key: &Key,
+        class: SloClass,
+        trusted: bool,
+    ) -> Result<Arc<Node>, Unplaced> {
+        let mut table = self.write();
+        let lost = match table.find(key, |node| self.list[node].available()) {
+            Found::On(session) => return Ok(Arc::clone(&self.list[session.node])),
+            Found::Lost(old) => Some(old.node),
+            Found::None => None,
+        };
+        let refused = |unplaced: Unplaced| {
+            self.metrics.refused(class, unplaced);
+            unplaced
+        };
+        let node = self.choose(&table, class, None).map_err(refused)?;
+        table
+            .place(key, class, node, trusted, lost, Instant::now())
+            .ok_or(Unplaced::Full)
+            .map_err(refused)?;
+        drop(table);
+        let reason = if lost.is_some() {
+            Reason::Moved
+        } else {
+            Reason::New
+        };
+        self.placed_on(node, class, reason, lost, Some(key));
+        Ok(Arc::clone(&self.list[node]))
+    }
+
+    /// Sends a realtime request whose node failed before its first content to another available node: its session
+    /// moves there, counted as retried. `Err` when no other node takes it.
+    pub fn retry(self: &Arc<Self>, failed: &Placed) -> Result<Placed, Unplaced> {
+        let class = failed.class;
+        let from = failed.node.index;
+        let mut table = self.write();
+        let node = self
+            .choose(&table, class, Some(from))
+            .inspect_err(|unplaced| self.metrics.refused(class, *unplaced))?;
+        let session = failed.key.as_ref().and_then(|key| {
+            table.place(key, class, node, failed.trusted, Some(from), Instant::now())
+        });
+        if let Some(session) = &session {
+            session.began();
+        }
+        drop(table);
+        failed.node.series.retries.inc();
+        self.placed_on(
+            node,
+            class,
+            Reason::Retried,
+            Some(from),
+            failed.key.as_ref(),
+        );
+        let mut placed = self.placed(node, class, failed.key.clone(), failed.trusted, session);
+        self.count_in(&mut placed);
+        Ok(placed)
+    }
+
+    /// Counts a request in flight on its node, holding back an interactive or background one while its node
+    /// covers for a node that is not available: until fewer than `failover_background_max_in_flight` of them are in
+    /// flight there, the node no longer covers, its wait reaches `deadline`, or the drain's `cut` ends it. Returns
+    /// how long it waited.
+    pub async fn admit(
+        &self,
+        placed: &mut Placed,
+        (deadline, timeout): (Instant, Timeout),
+        mut cut: Option<watch::Receiver<bool>>,
+    ) -> Result<Duration, Held> {
+        if placed.class == SloClass::Realtime {
+            self.count_in(placed);
+            return Ok(Duration::ZERO);
+        }
+        let arrived = Instant::now();
+        let mut waiting: Option<GaugeGuard> = None;
+        loop {
+            // Enabled before the check, so that a change between the two wakes the wait.
+            let notified = self.changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.take_agent_slot(&placed.node) {
+                self.count_in(placed);
+                return Ok(arrived.elapsed());
+            }
+            if waiting.is_none() {
+                waiting = Some(GaugeGuard::new(placed.node.series.waiting.clone()));
+                tracing::debug!(
+                    node = &*placed.node.name,
+                    "an agent's request waits: the node covers for a node that is not available"
+                );
+            }
+            tokio::select! {
+                biased;
+                () = crate::server::cut(&mut cut) => return Err(Held::Cut),
+                () = tokio::time::sleep_until(deadline.into()) => return Err(Held::Late(timeout)),
+                () = &mut notified => {}
+            }
+        }
+    }
+
+    /// Whether `node` covers for a node that is not available: it carries realtime sessions moved from it.
+    pub fn covering(&self, node: usize) -> bool {
+        self.covering_in(&self.read(), node)
+    }
+
+    fn covering_in(&self, table: &Table, node: usize) -> bool {
+        table
+            .moved_in(node)
+            .any(|(from, _)| !self.list[from].available())
+    }
+
+    /// Takes a place among `node`'s agents' requests in flight: always while it does not cover for another node,
+    /// and only below `failover_background_max_in_flight` while it does.
+    fn take_agent_slot(&self, node: &Node) -> bool {
+        if !self.covering(node.index) {
+            node.agents.fetch_add(1, Ordering::AcqRel);
+            return true;
+        }
+        let limit =
+            u32::try_from(self.config.failover_background_max_in_flight).unwrap_or(u32::MAX);
+        node.agents
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < limit).then_some(n + 1)
+            })
+            .is_ok()
+    }
+
+    fn count_in(&self, placed: &mut Placed) {
+        let class = placed.class as usize;
+        placed.node.in_flight[class].fetch_add(1, Ordering::Relaxed);
+        placed.node.series.in_flight[class].inc();
+        placed.started = true;
+    }
+
+    /// A request's place on `node`, of `session`, whose request the caller counted (under the table's lock).
+    fn placed(
+        self: &Arc<Self>,
+        node: usize,
+        class: SloClass,
+        key: Option<Key>,
+        trusted: bool,
+        session: Option<Arc<Session>>,
+    ) -> Placed {
+        Placed {
+            nodes: Arc::clone(self),
+            node: Arc::clone(&self.list[node]),
+            class,
+            key,
+            trusted,
+            session,
+            started: false,
+        }
+    }
+
+    /// Counts a placement on `node`, and logs a move from `from`.
+    fn placed_on(
+        &self,
+        node: usize,
+        class: SloClass,
+        reason: Reason,
+        from: Option<usize>,
+        key: Option<&Key>,
+    ) {
+        let to = &self.list[node];
+        to.series.placements[class as usize][reason as usize].inc();
+        if let Some(from) = from {
+            let session = key.map(|key| key.session.as_str());
+            let from = &*self.list[from].name;
+            match reason {
+                Reason::Retried => tracing::warn!(
+                    session,
+                    from,
+                    to = &*to.name,
+                    "a realtime request is sent again on another node: its node failed before its first content"
+                ),
+                _ => tracing::info!(
+                    session,
+                    from,
+                    to = &*to.name,
+                    class = class.as_str(),
+                    "a session moves to another node: its node is not available"
+                ),
+            }
+            self.show_covering();
+        }
+    }
+
+    /// The node a new session of `class` goes to, not `exclude`: of the available nodes with its role, for a
+    /// realtime session the one with the fewest calls among those with a free call slot, and for an agent's the one
+    /// that covers for no failed node, then with the fewest agents' sessions, then the fewest requests in flight.
+    /// Ties go to the earlier node.
+    fn choose(
+        &self,
+        table: &Table,
+        class: SloClass,
+        exclude: Option<usize>,
+    ) -> Result<usize, Unplaced> {
+        let mut candidates = self
+            .list
+            .iter()
+            .filter(|node| Some(node.index) != exclude && node.takes(class) && node.available())
+            .peekable();
+        if candidates.peek().is_none() {
+            return Err(Unplaced::NoNode);
+        }
+        let chosen = if class == SloClass::Realtime {
+            candidates
+                .filter(|node| (table.held(node.index)[0] as usize) < node.max_calls)
+                .min_by_key(|node| (table.held(node.index)[0], node.in_flight(), node.index))
+                .ok_or(Unplaced::NoCallSlot)?
+        } else {
+            candidates
+                .min_by_key(|node| {
+                    let [_, interactive, background] = table.held(node.index);
+                    (
+                        self.covering_in(table, node.index),
+                        interactive + background,
+                        node.in_flight(),
+                        node.index,
+                    )
+                })
+                .expect("a candidate")
+        };
+        Ok(chosen.index)
+    }
+
+    /// Ends the placements of the sessions that `tenant`'s `session_closed` events close.
+    pub fn closed(&self, tenant: &Tenant, events: &[LifecycleEvent]) {
+        let closed: Vec<&SessionId> = events
+            .iter()
+            .filter(|event| matches!(event.kind, EventKind::SessionClosed))
+            .map(|event| &event.session_id)
+            .collect();
+        if closed.is_empty() {
+            return;
+        }
+        let mut table = self.write();
+        for session in closed {
+            table.forget(&Key {
+                tenant: tenant.index,
+                session: session.clone(),
+            });
+        }
+        drop(table);
+        self.show_covering();
+    }
+
+    /// Judges node `index` by a check of its components (engine, STT, TTS), logging a change of verdict, and wakes
+    /// the requests a failover holds back when its availability changed.
+    fn judge(&self, index: usize, checks: [bool; 3]) {
+        let node = &self.list[index];
+        for (gauge, passed) in node.series.components.iter().zip(checks) {
+            gauge.set(i64::from(passed));
+        }
+        let (before, after) = {
+            let mut judged = node.lock();
+            let before = judged.verdict;
+            judged.last = checks;
+            let passed = checks.iter().all(|passed| *passed);
+            judged.record(
+                passed,
+                self.config.unhealthy_after,
+                self.config.healthy_after,
+            );
+            (before, judged.verdict)
+        };
+        let healthy = after == Verdict::Healthy;
+        node.healthy.store(healthy, Ordering::Release);
+        node.series.healthy.set(i64::from(healthy));
+        if before != after {
+            let failed: Vec<&str> = metrics::COMPONENTS
+                .iter()
+                .zip(checks)
+                .filter(|(_, passed)| !passed)
+                .map(|(component, _)| *component)
+                .collect();
+            match after {
+                Verdict::Healthy => tracing::info!(node = &*node.name, "the node is healthy"),
+                Verdict::Unhealthy => tracing::warn!(
+                    node = &*node.name,
+                    failed = ?failed,
+                    "the node is unhealthy: it takes no new sessions, and its sessions move by their next request"
+                ),
+                Verdict::Unknown => {}
+            }
+        }
+        let available = node.available();
+        if node.was_available.swap(available, Ordering::AcqRel) != available {
+            self.show_covering();
+            self.changed.notify_waiters();
+        }
+    }
+
+    /// Sets each node's covering gauge.
+    fn show_covering(&self) {
+        let table = self.read();
+        for node in &self.list {
+            node.series
+                .covering
+                .set(i64::from(self.covering_in(&table, node.index)));
+        }
+    }
+
+    /// What a reload's successor takes over: each node's verdict and every placement, by name.
+    pub fn handover(&self, tenants: &Tenants) -> Handed {
+        let table = self.read();
+        let name = |node: usize| self.list[node].name.to_string();
+        Handed {
+            nodes: self
+                .list
+                .iter()
+                .map(|node| HandedNode {
+                    name: node.name.to_string(),
+                    verdict: node.verdict(),
+                })
+                .collect(),
+            sessions: table
+                .each()
+                .filter_map(|(key, session)| {
+                    Some(HandedSession {
+                        tenant: tenants.all().get(key.tenant)?.name.to_string(),
+                        session: key.session.clone(),
+                        node: name(session.node),
+                        class: session.class,
+                        trusted: session.trusted,
+                        moved_from: session.moved_from.map(name),
+                    })
+                })
+                .collect(),
+        }
+    }
+
+    /// Takes over what a reload's predecessor handed: the verdicts of the nodes not judged yet, and the placements
+    /// on nodes and of tenants this configuration still has.
+    pub fn restore(&self, handed: &Handed, tenants: &Tenants) {
+        let index = |name: &str| self.list.iter().position(|node| &*node.name == name);
+        for node in &handed.nodes {
+            let Some(i) = index(&node.name) else {
+                continue;
+            };
+            let target = &self.list[i];
+            let mut judged = target.lock();
+            if judged.verdict == Verdict::Unknown && node.verdict != Verdict::Unknown {
+                judged.verdict = node.verdict;
+                let healthy = node.verdict == Verdict::Healthy;
+                target.healthy.store(healthy, Ordering::Release);
+                target.series.healthy.set(i64::from(healthy));
+            }
+        }
+        let mut table = self.write();
+        let now = Instant::now();
+        let mut taken = 0usize;
+        for session in &handed.sessions {
+            let (Some(node), Some(tenant)) = (index(&session.node), tenants.index(&session.tenant))
+            else {
+                continue;
+            };
+            let key = Key {
+                tenant,
+                session: session.session.clone(),
+            };
+            if matches!(table.find(&key, |_| true), Found::None) {
+                let moved_from = session.moved_from.as_deref().and_then(index);
+                let placed =
+                    table.place(&key, session.class, node, session.trusted, moved_from, now);
+                taken += usize::from(placed.is_some());
+            }
+        }
+        drop(table);
+        for node in &self.list {
+            node.was_available
+                .store(node.available(), Ordering::Release);
+        }
+        self.show_covering();
+        tracing::info!(
+            sessions = taken,
+            "took over the predecessor's placements and its nodes' verdicts"
+        );
+    }
+
+    /// `GET /nodes`' body.
+    pub fn describe(&self) -> serde_json::Value {
+        let table = self.read();
+        let by_class = |counts: [u32; 3]| {
+            serde_json::json!({
+                "realtime": counts[0],
+                "interactive": counts[1],
+                "background": counts[2],
+            })
+        };
+        let nodes: Vec<serde_json::Value> = self
+            .list
+            .iter()
+            .map(|node| {
+                let judged = node.lock();
+                let [engine, stt, tts] = judged.last;
+                let speech = |speech: &Option<Speech>, check: bool| {
+                    speech.as_ref().map(|speech| {
+                        serde_json::json!({"address": speech.addr.to_string(), "check": check})
+                    })
+                };
+                let mut roles = Vec::new();
+                if node.realtime {
+                    roles.push("realtime");
+                }
+                if node.background {
+                    roles.push("background");
+                }
+                serde_json::json!({
+                    "name": &*node.name,
+                    "roles": roles,
+                    "verdict": judged.verdict.as_str(),
+                    "available": node.available(),
+                    "engine": {
+                        "address": node.engine.upstream.addr().to_string(),
+                        "state": node.engine.health.state().as_str(),
+                        "ready": node.engine.upstream.ready(),
+                        "check": engine,
+                    },
+                    "stt": speech(&node.stt, stt),
+                    "tts": speech(&node.tts, tts),
+                    "max_calls": node.max_calls,
+                    "covering": self.covering_in(&table, node.index),
+                    "sessions": by_class(table.held(node.index)),
+                    "in_flight": by_class(node.in_flight.each_ref().map(|n| n.load(Ordering::Relaxed))),
+                })
+            })
+            .collect();
+        serde_json::json!({"nodes": nodes, "sessions": table.len()})
+    }
+
+    fn read(&self) -> RwLockReadGuard<'_, Table> {
+        self.table.read().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn write(&self) -> RwLockWriteGuard<'_, Table> {
+        self.table.write().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// What a reload's predecessor hands its successor, in the ledger's closing line.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct Handed {
+    pub nodes: Vec<HandedNode>,
+    pub sessions: Vec<HandedSession>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HandedNode {
+    pub name: String,
+    pub verdict: Verdict,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HandedSession {
+    pub tenant: String,
+    pub session: SessionId,
+    pub node: String,
+    pub class: SloClass,
+    pub trusted: bool,
+    #[serde(default)]
+    pub moved_from: Option<String>,
+}
+
+/// Judges node `index` every `health_interval_s`, and at once when its engine's state or readiness changes, while
+/// the gateway runs.
+async fn watch(nodes: Weak<Nodes>, index: usize) {
+    let (node, interval, timeout) = match nodes.upgrade() {
+        Some(nodes) => (
+            Arc::clone(&nodes.list[index]),
+            nodes.config.health_interval,
+            nodes.config.health_timeout,
+        ),
+        None => return,
+    };
+    let mut ticks = tokio::time::interval(interval);
+    ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        {
+            let notified = node.engine.changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            tokio::select! {
+                _ = ticks.tick() => {}
+                () = &mut notified => {}
+            }
+        }
+        let engine = &node.engine;
+        let serving = engine.health.state() == EngineState::Serving && engine.upstream.ready();
+        let (stt, tts) = tokio::join!(
+            answers(node.stt.as_ref(), timeout),
+            answers(node.tts.as_ref(), timeout)
+        );
+        let Some(nodes) = nodes.upgrade() else {
+            return;
+        };
+        nodes.judge(index, [serving, stt, tts]);
+    }
+}
+
+/// Whether a speech server answers its `/health` within `timeout`; a node without one has nothing to check.
+async fn answers(speech: Option<&Speech>, timeout: Duration) -> bool {
+    match speech {
+        Some(speech) => speech.client.healthy(timeout).await,
+        None => true,
+    }
+}
+
+/// Ends the placements of the sessions idle for `idle`, until the nodes are gone. Every session idles out `idle`
+/// after it last went idle, so none that goes idle while this sleeps can idle out before it wakes.
+async fn expire(nodes: Weak<Nodes>, idle: Duration) {
+    let mut next = Instant::now() + idle;
+    loop {
+        tokio::time::sleep_until(next.into()).await;
+        let Some(nodes) = nodes.upgrade() else {
+            return;
+        };
+        let now = Instant::now();
+        let soonest = nodes.write().expire(now, idle);
+        nodes.show_covering();
+        // A call that carried another node's load may have ended.
+        nodes.changed.notify_waiters();
+        next = soonest.unwrap_or(now + idle);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{CacheSaltSecret, Tenant as TenantConfig};
+
+    fn tenants(names: &[&str]) -> Tenants {
+        let config: Vec<TenantConfig> = names
+            .iter()
+            .map(|name| TenantConfig {
+                name: (*name).to_owned(),
+                keys_sha256: Vec::new(),
+                trusted: true,
+                default_class: SloClass::Realtime,
+                max_class: SloClass::Realtime,
+                max_in_flight: 8,
+            })
+            .collect();
+        Tenants::new(&config, &CacheSaltSecret([0; 32]))
+    }
+
+    fn nodes(names: &[&str]) -> Arc<Nodes> {
+        let config: Vec<NodeConfig> = names
+            .iter()
+            .map(|name| NodeConfig {
+                name: (*name).to_owned(),
+                upstream: UpstreamAddr::Unix(format!("/nonexistent/{name}.sock").into()),
+                realtime: true,
+                background: true,
+                max_calls: 2,
+                stt: None,
+                tts: None,
+            })
+            .collect();
+        let names: Vec<Arc<str>> = names.iter().map(|name| Arc::from(*name)).collect();
+        // Checked rarely, so that the engines nobody serves are not judged during the test.
+        let placement = Placement {
+            health_interval: Duration::from_secs(3600),
+            ..Placement::default()
+        };
+        Nodes::start(
+            &config,
+            placement,
+            None,
+            PrioritySignals::default(),
+            Duration::from_secs(4),
+            &metrics::Metrics::new(&names),
+        )
+    }
+
+    fn session(tenant: &str, id: &str, node: &str, moved_from: Option<&str>) -> HandedSession {
+        HandedSession {
+            tenant: tenant.into(),
+            session: SessionId::new(id).unwrap(),
+            node: node.into(),
+            class: SloClass::Realtime,
+            trusted: true,
+            moved_from: moved_from.map(Into::into),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_successor_takes_the_placements_it_can_and_the_verdicts_of_nodes_it_has_not_judged() {
+        let successor = nodes(&["a", "b"]);
+        let tenants = tenants(&["voice"]);
+        // The test's runtime runs no other task until it waits, so no node has been checked yet; b is judged here,
+        // as if by the successor's own first check.
+        successor.list[1].lock().verdict = Verdict::Unhealthy;
+        let handed = Handed {
+            nodes: vec![
+                HandedNode {
+                    name: "a".into(),
+                    verdict: Verdict::Healthy,
+                },
+                HandedNode {
+                    name: "b".into(),
+                    verdict: Verdict::Healthy,
+                },
+                HandedNode {
+                    name: "c".into(),
+                    verdict: Verdict::Healthy,
+                },
+            ],
+            sessions: vec![
+                session("voice", "call-1", "b", Some("a")),
+                // A node or a tenant the successor's configuration no longer has.
+                session("voice", "call-2", "c", None),
+                session("bench", "call-3", "a", None),
+            ],
+        };
+        successor.restore(&handed, &tenants);
+        assert_eq!(
+            successor
+                .list
+                .iter()
+                .map(|n| n.verdict())
+                .collect::<Vec<_>>(),
+            [Verdict::Healthy, Verdict::Unhealthy]
+        );
+        let back = successor.handover(&tenants);
+        assert_eq!(back.sessions, [session("voice", "call-1", "b", Some("a"))]);
+        // The call holds one of b's call slots, and b covers for a while a is not available: a is, healthy.
+        assert_eq!(successor.read().held(1), [1, 0, 0]);
+        assert!(!successor.covering(1));
+    }
+
+    #[test]
+    fn a_node_is_unhealthy_after_n_failures_and_healthy_again_after_m_passes() {
+        let mut judged = Judged {
+            verdict: Verdict::Unknown,
+            failures: 0,
+            passes: 0,
+            last: [false; 3],
+        };
+        // Unknown: failures short of unhealthy_after leave it unknown, and its first pass makes it healthy.
+        judged.record(false, 3, 2);
+        judged.record(false, 3, 2);
+        assert_eq!(judged.verdict, Verdict::Unknown);
+        judged.record(true, 3, 2);
+        assert_eq!(judged.verdict, Verdict::Healthy);
+        // Two failures and a pass: still healthy; three in a row: unhealthy.
+        for passed in [false, false, true, false, false] {
+            judged.record(passed, 3, 2);
+        }
+        assert_eq!(judged.verdict, Verdict::Healthy);
+        judged.record(false, 3, 2);
+        assert_eq!(judged.verdict, Verdict::Unhealthy);
+        // One pass is not enough, and a failure starts the count again.
+        for passed in [true, false, true] {
+            judged.record(passed, 3, 2);
+            assert_eq!(judged.verdict, Verdict::Unhealthy);
+        }
+        judged.record(true, 3, 2);
+        assert_eq!(judged.verdict, Verdict::Healthy);
+    }
+}

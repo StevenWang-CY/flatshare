@@ -149,6 +149,8 @@ impl Pump {
                 None => break Outcome::Completed,
                 Some(Err(err)) => {
                     ex.metrics().upstream_error(UpstreamError::Body);
+                    // With [[nodes]], a node whose stream broke off is probed at once: its engine may be gone.
+                    ex.broke();
                     let message = format!("the upstream stream broke off: {}", causes(&err));
                     if scanner.is_events() {
                         // Within the stall timeout: a client that stops reading gets none.

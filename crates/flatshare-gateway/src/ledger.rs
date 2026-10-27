@@ -13,7 +13,8 @@
 //! [`crate::handover`]). The predecessor sends a line of JSON, a [`Load`], whenever what it holds changes, the last one
 //! with `closed` set once it has closed, and the connection closes when it exits, which the successor reads as nothing
 //! held. The successor waits for `closed`, for a second or two at most, before it serves, so that no request reaches
-//! both admission points. A successor that does not connect within the handover's timeout, such as a build from before
+//! both admission points. With `[[nodes]]` the closing line also hands over the nodes' verdicts and every session's
+//! placement ([`crate::nodes::Handed`]), which the successor takes before it serves. A successor that does not connect within the handover's timeout, such as a build from before
 //! the ledger, finds nothing: the directory is removed as soon as one connects or the time is up.
 
 use std::io;
@@ -40,6 +41,11 @@ pub(crate) struct Load {
     pub admission: Option<Admitted>,
     /// Whether it admits nothing more, having handed its sockets over.
     pub closed: bool,
+    /// With `[[nodes]]`, in the line that closes: its nodes' verdicts and its placements, which the successor takes
+    /// over, so that a reload moves no session and finds its nodes as they were. Absent otherwise, so that a gateway
+    /// with one upstream writes the lines it always did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nodes: Option<crate::nodes::Handed>,
 }
 
 /// What an admission point admitted ([`Elsewhere`]), as the ledger spells it.
@@ -231,8 +237,9 @@ pub(crate) async fn follow(path: &Path, shared: Weak<Shared>) -> io::Result<Foll
     Ok(Followed(followed))
 }
 
-/// A ledger's line is a few hundred bytes; a longer one is not a ledger's.
-const MAX_LINE: usize = 1 << 20;
+/// A ledger's line is a few hundred bytes, and with `[[nodes]]` its closing one holds every placement, at most
+/// 4,096 of a few hundred bytes each; a longer one is not a ledger's.
+const MAX_LINE: usize = 4 << 20;
 
 async fn read(stream: UnixStream, shared: Weak<Shared>, closed: watch::Sender<bool>) {
     let mut pending = Vec::new();
@@ -296,6 +303,7 @@ mod tests {
                 critical: 0,
             }),
             closed: true,
+            nodes: None,
         };
         let line = serde_json::to_string(&load).unwrap();
         assert!(!line.contains('\n'));
@@ -310,5 +318,36 @@ mod tests {
             .unwrap();
         assert_eq!(plain.elsewhere().admitted, [0, 1, 1]);
         assert!(!plain.closed);
+    }
+    #[test]
+    fn a_closing_line_hands_the_placements_over_and_a_lone_upstreams_lines_name_no_nodes() {
+        use crate::nodes::{Handed, HandedNode, HandedSession, Verdict};
+        let lone = Load {
+            closed: true,
+            ..Load::default()
+        };
+        let line = serde_json::to_string(&lone).unwrap();
+        assert!(!line.contains("nodes"), "{line}");
+        let handed = Load {
+            closed: true,
+            nodes: Some(Handed {
+                nodes: vec![HandedNode {
+                    name: "gray".into(),
+                    verdict: Verdict::Unhealthy,
+                }],
+                sessions: vec![HandedSession {
+                    tenant: "voice".into(),
+                    session: flatshare_proto::SessionId::new("call-1").unwrap(),
+                    node: "phastform".into(),
+                    class: flatshare_proto::SloClass::Realtime,
+                    trusted: true,
+                    moved_from: Some("gray".into()),
+                }],
+            }),
+            ..Load::default()
+        };
+        let line = serde_json::to_string(&handed).unwrap();
+        assert!(!line.contains('\n'));
+        assert_eq!(serde_json::from_str::<Load>(&line).unwrap(), handed);
     }
 }

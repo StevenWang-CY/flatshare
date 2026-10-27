@@ -32,7 +32,7 @@ use tokio::net::UnixStream;
 use tokio::time::MissedTickBehavior;
 
 use crate::config::UpstreamAddr;
-use crate::server::Shared;
+use crate::engine::Engine;
 
 /// How often the engine is probed while a request has found it broken, and the `Retry-After` of the requests
 /// answered meanwhile.
@@ -54,6 +54,8 @@ pub(crate) struct Upstream {
     ready_gauge: Gauge,
     /// When its `/health` last answered `GET /ready`.
     healthy_at: Mutex<Option<Instant>>,
+    /// Its node's name, for the log lines of its readiness; `None` for a gateway's one upstream.
+    node: Option<Arc<str>>,
 }
 
 /// One connection pool, keyed by the requests' authority; a socket's client connects every request to it.
@@ -124,7 +126,14 @@ impl Upstream {
             recovering: AtomicBool::new(false),
             ready_gauge,
             healthy_at: Mutex::new(None),
+            node: None,
         }
+    }
+
+    /// The same, for the engine or a speech server of the node `node`, which its log lines name.
+    pub fn of_node(mut self, node: Arc<str>) -> Self {
+        self.node = Some(node);
+        self
     }
 
     pub fn addr(&self) -> &UpstreamAddr {
@@ -136,20 +145,28 @@ impl Upstream {
         self.ready.load(Ordering::Relaxed)
     }
 
-    /// Records whether its `/health` answers, logging a change.
-    fn set_ready(&self, ready: bool) {
+    /// Records whether its `/health` answers, logging a change; returns whether it changed.
+    fn set_ready(&self, ready: bool) -> bool {
         self.ready_gauge.set(i64::from(ready));
         if self.ready.swap(ready, Ordering::Relaxed) == ready {
-            return;
+            return false;
         }
+        let node = self.node.as_deref();
         if ready {
-            tracing::info!("the upstream is ready again: its /health answers");
+            tracing::info!(node, "the upstream is ready again: its /health answers");
+        } else if node.is_some() {
+            tracing::warn!(
+                node,
+                "the node's engine is not ready: a request found it broken and its /health does not answer; it \
+                 takes no requests until it does"
+            );
         } else {
             tracing::warn!(
                 "the upstream is not ready: a request found it broken and its /health does not answer; requests \
                  are answered 503 until it does"
             );
         }
+        true
     }
 
     /// Whether the caller, whose request found the engine broken, is to start its probe ([`recover`]): false while
@@ -239,24 +256,28 @@ impl Upstream {
 }
 
 /// Probes the engine's `/health` after a request found it broken: at once, and every [`RECOVERY_PROBE`] until it
-/// answers. A failed probe makes it not ready, so that its requests are answered 503 without going upstream, and the
-/// probe that answers makes it ready again and ends the task. One request that fails on an engine that serves (a
-/// connection that broke) makes no request wait: the first probe answers.
-pub(crate) async fn recover(shared: Weak<Shared>) {
+/// answers. A failed probe makes it not ready, so that its requests are answered 503 without going upstream (a node's
+/// are placed on another node), and the probe that answers makes it ready again and ends the task. One request that
+/// fails on an engine that serves (a connection that broke) makes no request wait: the first probe answers.
+pub(crate) async fn recover(engine: Weak<Engine>) {
     let mut ticks = tokio::time::interval(RECOVERY_PROBE);
     ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
         ticks.tick().await;
-        let Some(shared) = shared.upgrade() else {
+        let Some(engine) = engine.upgrade() else {
             return;
         };
-        let upstream = &shared.upstream;
+        let upstream = &engine.upstream;
         if upstream.healthy(RECOVERY_PROBE).await {
             upstream.recovering.store(false, Ordering::Release);
-            upstream.set_ready(true);
+            if upstream.set_ready(true) {
+                engine.changed.notify_waiters();
+            }
             return;
         }
-        upstream.set_ready(false);
+        if upstream.set_ready(false) {
+            engine.changed.notify_waiters();
+        }
     }
 }
 

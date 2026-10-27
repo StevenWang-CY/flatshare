@@ -1,0 +1,133 @@
+# HELP flatshare_gateway_node_ready Whether each node's engine is ready (1), or a request found it broken and its /health has not answered since (0), while the node takes no requests.
+# TYPE flatshare_gateway_node_ready gauge
+flatshare_gateway_node_ready{node="gray"} 0
+flatshare_gateway_node_ready{node="phastform"} 0
+# HELP flatshare_gateway_engine_state Each node's engine's state as inference finds it, 1 for the current one: warming until an inference succeeds, serving, degraded after the canary failed degraded_after times in a row, drained once the gateway drains.
+# TYPE flatshare_gateway_engine_state gauge
+flatshare_gateway_engine_state{node="gray",state="degraded"} 0
+flatshare_gateway_engine_state{node="gray",state="drained"} 0
+flatshare_gateway_engine_state{node="gray",state="serving"} 0
+flatshare_gateway_engine_state{node="gray",state="warming"} 0
+flatshare_gateway_engine_state{node="phastform",state="degraded"} 0
+flatshare_gateway_engine_state{node="phastform",state="drained"} 0
+flatshare_gateway_engine_state{node="phastform",state="serving"} 0
+flatshare_gateway_engine_state{node="phastform",state="warming"} 0
+# HELP flatshare_gateway_canary_probes Inference canaries by node and result: a one-token generation the gateway sends a node's engine when nothing succeeded on it within its interval.
+# TYPE flatshare_gateway_canary_probes counter
+flatshare_gateway_canary_probes_total{node="gray",result="failure"} 0
+flatshare_gateway_canary_probes_total{node="gray",result="success"} 0
+flatshare_gateway_canary_probes_total{node="phastform",result="failure"} 0
+flatshare_gateway_canary_probes_total{node="phastform",result="success"} 0
+# HELP flatshare_gateway_canary_seconds Time an inference canary took, to its answer's end or its failure, by node.
+# TYPE flatshare_gateway_canary_seconds histogram
+# UNIT flatshare_gateway_canary_seconds seconds
+flatshare_gateway_canary_seconds_sum{node="gray"} 0.0
+flatshare_gateway_canary_seconds_count{node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.005",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.01",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.025",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.05",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.1",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.25",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.5",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="1.0",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="2.5",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="5.0",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="10.0",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="30.0",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="60.0",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="120.0",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="300.0",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="600.0",node="gray"} 0
+flatshare_gateway_canary_seconds_bucket{le="+Inf",node="gray"} 0
+flatshare_gateway_canary_seconds_sum{node="phastform"} 0.0
+flatshare_gateway_canary_seconds_count{node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.005",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.01",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.025",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.05",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.1",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.25",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="0.5",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="1.0",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="2.5",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="5.0",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="10.0",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="30.0",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="60.0",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="120.0",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="300.0",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="600.0",node="phastform"} 0
+flatshare_gateway_canary_seconds_bucket{le="+Inf",node="phastform"} 0
+# HELP flatshare_gateway_node_healthy Whether each node is healthy (1): its engine serving and ready and its speech servers answering, unhealthy_after failed checks in a row making it unhealthy and healthy_after passed ones healthy again.
+# TYPE flatshare_gateway_node_healthy gauge
+flatshare_gateway_node_healthy{node="gray"} 0
+flatshare_gateway_node_healthy{node="phastform"} 0
+# HELP flatshare_gateway_node_component_healthy Each node component's last check: the engine (serving and ready), the STT and the TTS server (answering /health).
+# TYPE flatshare_gateway_node_component_healthy gauge
+flatshare_gateway_node_component_healthy{node="gray",component="engine"} 0
+flatshare_gateway_node_component_healthy{node="gray",component="stt"} 0
+flatshare_gateway_node_component_healthy{node="gray",component="tts"} 0
+flatshare_gateway_node_component_healthy{node="phastform",component="engine"} 0
+flatshare_gateway_node_component_healthy{node="phastform",component="stt"} 0
+flatshare_gateway_node_component_healthy{node="phastform",component="tts"} 0
+# HELP flatshare_gateway_node_sessions The sessions placed on each node, by the class they were placed with.
+# TYPE flatshare_gateway_node_sessions gauge
+flatshare_gateway_node_sessions{node="gray",class="background"} 0
+flatshare_gateway_node_sessions{node="gray",class="interactive"} 0
+flatshare_gateway_node_sessions{node="gray",class="realtime"} 0
+flatshare_gateway_node_sessions{node="phastform",class="background"} 0
+flatshare_gateway_node_sessions{node="phastform",class="interactive"} 0
+flatshare_gateway_node_sessions{node="phastform",class="realtime"} 0
+# HELP flatshare_gateway_node_in_flight Inference requests in flight on each node, by class.
+# TYPE flatshare_gateway_node_in_flight gauge
+flatshare_gateway_node_in_flight{node="gray",class="background"} 0
+flatshare_gateway_node_in_flight{node="gray",class="interactive"} 0
+flatshare_gateway_node_in_flight{node="gray",class="realtime"} 0
+flatshare_gateway_node_in_flight{node="phastform",class="background"} 0
+flatshare_gateway_node_in_flight{node="phastform",class="interactive"} 0
+flatshare_gateway_node_in_flight{node="phastform",class="realtime"} 0
+# HELP flatshare_gateway_node_covering Whether each node carries realtime sessions moved from a node that is not available (1), which holds its interactive and background requests to failover_background_max_in_flight.
+# TYPE flatshare_gateway_node_covering gauge
+flatshare_gateway_node_covering{node="gray"} 0
+flatshare_gateway_node_covering{node="phastform"} 0
+# HELP flatshare_gateway_node_failover_waiting Interactive and background requests waiting on each node for the failover's bound.
+# TYPE flatshare_gateway_node_failover_waiting gauge
+flatshare_gateway_node_failover_waiting{node="gray"} 0
+flatshare_gateway_node_failover_waiting{node="phastform"} 0
+# HELP flatshare_gateway_placements Sessions placed, by node, class and reason: new (no node yet, or idled out), moved (its node was not available) or retried (its request sent again here after its node failed before the first content).
+# TYPE flatshare_gateway_placements counter
+flatshare_gateway_placements_total{node="gray",class="background",reason="moved"} 0
+flatshare_gateway_placements_total{node="gray",class="background",reason="new"} 0
+flatshare_gateway_placements_total{node="gray",class="background",reason="retried"} 0
+flatshare_gateway_placements_total{node="gray",class="interactive",reason="moved"} 0
+flatshare_gateway_placements_total{node="gray",class="interactive",reason="new"} 0
+flatshare_gateway_placements_total{node="gray",class="interactive",reason="retried"} 0
+flatshare_gateway_placements_total{node="gray",class="realtime",reason="moved"} 0
+flatshare_gateway_placements_total{node="gray",class="realtime",reason="new"} 0
+flatshare_gateway_placements_total{node="gray",class="realtime",reason="retried"} 0
+flatshare_gateway_placements_total{node="phastform",class="background",reason="moved"} 0
+flatshare_gateway_placements_total{node="phastform",class="background",reason="new"} 0
+flatshare_gateway_placements_total{node="phastform",class="background",reason="retried"} 0
+flatshare_gateway_placements_total{node="phastform",class="interactive",reason="moved"} 0
+flatshare_gateway_placements_total{node="phastform",class="interactive",reason="new"} 0
+flatshare_gateway_placements_total{node="phastform",class="interactive",reason="retried"} 0
+flatshare_gateway_placements_total{node="phastform",class="realtime",reason="moved"} 0
+flatshare_gateway_placements_total{node="phastform",class="realtime",reason="new"} 0
+flatshare_gateway_placements_total{node="phastform",class="realtime",reason="retried"} 0
+# HELP flatshare_gateway_placements_refused Sessions no node took, by class and reason: no_node (no available node of its role), no_call_slot (every available realtime node at max_calls) or table_full.
+# TYPE flatshare_gateway_placements_refused counter
+flatshare_gateway_placements_refused_total{class="background",reason="no_call_slot"} 0
+flatshare_gateway_placements_refused_total{class="background",reason="no_node"} 0
+flatshare_gateway_placements_refused_total{class="background",reason="table_full"} 0
+flatshare_gateway_placements_refused_total{class="interactive",reason="no_call_slot"} 0
+flatshare_gateway_placements_refused_total{class="interactive",reason="no_node"} 0
+flatshare_gateway_placements_refused_total{class="interactive",reason="table_full"} 0
+flatshare_gateway_placements_refused_total{class="realtime",reason="no_call_slot"} 0
+flatshare_gateway_placements_refused_total{class="realtime",reason="no_node"} 0
+flatshare_gateway_placements_refused_total{class="realtime",reason="table_full"} 0
+# HELP flatshare_gateway_node_retries Realtime requests sent again on another node after this node failed before their first content.
+# TYPE flatshare_gateway_node_retries counter
+flatshare_gateway_node_retries_total{node="gray"} 0
+flatshare_gateway_node_retries_total{node="phastform"} 0
+# EOF

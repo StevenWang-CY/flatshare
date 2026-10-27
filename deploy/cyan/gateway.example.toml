@@ -102,6 +102,38 @@ default_class = "background"
 # timeout_s = 60
 # degraded_after = 3
 
+# Two GPU nodes instead of one upstream (crates/flatshare-gateway/README.md, Nodes): leave `upstream` above out, and
+# give each node its engine and speech servers through cyan's tunnels. A node is healthy while its engine serves (its
+# own canary) and its STT and TTS answer /health; a session stays on its node, a call takes one of its max_calls, a
+# session whose node fails moves by its next request, and a node carrying calls moved from a failed one defers its
+# agents. The voice worker places a call with POST /v1/sessions, whose answer names the node's speech servers. No
+# [admission] table goes with [[nodes]]. For two mixed replicas that must each carry both calls when the other fails,
+# each node's max_calls is 2 and the worker admits two calls in all.
+# [[nodes]]
+# name = "phastform"
+# upstream = "unix:/run/user/1007/flatshare/phastform-engine.sock"
+# roles = ["realtime", "background"]
+# max_calls = 2
+# stt = "unix:/run/user/1007/flatshare/phastform-stt.sock"
+# tts = "unix:/run/user/1007/flatshare/phastform-tts.sock"
+#
+# [[nodes]]
+# name = "gray"
+# upstream = "unix:/run/user/1007/flatshare/gray-engine.sock"
+# stt = "unix:/run/user/1007/flatshare/gray-stt.sock"
+# tts = "unix:/run/user/1007/flatshare/gray-tts.sock"
+#
+# With their defaults: a session keeps its node 300 s without a request; each node is checked every second (a speech
+# server's /health within 1 s), unhealthy after 3 failed checks in a row and healthy again after 2 passed ones; and a
+# node that covers for a failed one runs none of its agents' requests until the failed node is healthy again.
+# [placement]
+# idle_s = 300
+# health_interval_s = 1
+# health_timeout_s = 1
+# unhealthy_after = 3
+# healthy_after = 2
+# failover_background_max_in_flight = 0
+
 # The admission policy (crates/flatshare-gateway/README.md#admission). Without the table, every request goes upstream
 # at once. E2's baselines set one policy and its keys:
 # [admission]

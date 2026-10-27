@@ -19,7 +19,16 @@ scrape_configs:
     static_configs:
       - targets: ["127.0.0.1:18080"]
 
-  # The engine's own /metrics, relayed.
+  # The engine's own /metrics, relayed. With [[nodes]], one job a node instead, naming it, as for Gray:
+  #   - job_name: flatshare-engine-gray
+  #     metrics_path: /metrics/engine
+  #     params: {node: [gray]}
+  #     authorization:
+  #       credentials_file: <home>/.config/flatshare/metrics-key
+  #     static_configs:
+  #       - targets: ["127.0.0.1:18080"]
+  #         labels:
+  #           node: gray
   - job_name: flatshare-engine
     metrics_path: /metrics/engine
     authorization:

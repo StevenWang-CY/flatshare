@@ -163,3 +163,50 @@ tests:
               state: warming
             exp_annotations:
               summary: No inference has succeeded since the gateway started, 15 minutes ago (an engine's cold start is about 9)
+
+  # With [[nodes]]: a node unhealthy for a minute pages, naming it; one that covers for five a ticket; a refused call a
+  # ticket.
+  - interval: 1m
+    input_series:
+      - series: 'flatshare_gateway_node_healthy{node="gray"}'
+        values: '1 1 0 0 0 0'
+      - series: 'flatshare_gateway_node_healthy{node="phastform"}'
+        values: '1x10'
+      - series: 'flatshare_gateway_node_covering{node="phastform"}'
+        values: '0 0 1x8'
+      - series: 'flatshare_gateway_placements_refused_total{class="realtime",reason="no_call_slot"}'
+        values: '0 0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: FlatshareNodeUnhealthy
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: FlatshareNodeUnhealthy
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              node: gray
+            exp_annotations:
+              summary: A GPU node is unhealthy, and its calls and agents move to the other node
+              description: >-
+                gray's engine does not serve or a speech server does not answer /health (see
+                flatshare_gateway_node_component_healthy, or GET /nodes): it takes no new session, and its sessions
+                move by their next request. Its calls fit the survivor only while it has call slots (max_calls).
+      - eval_time: 6m
+        alertname: FlatshareNodeCovering
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: FlatshareNodeCovering
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              node: phastform
+            exp_annotations:
+              summary: A node carries calls moved from a failed node, and holds its agents' requests back until that node is healthy again
+      - eval_time: 4m
+        alertname: FlatshareCallsRefused
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503

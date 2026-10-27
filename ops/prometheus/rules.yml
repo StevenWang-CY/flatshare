@@ -187,6 +187,32 @@ groups:
           severity: ticket
         annotations:
           summary: Requests ran past their class's deadlines waiting on the engine, which the gateway then cancelled
+      # With [[nodes]] (ops/RUNBOOK.md, Two GPU nodes): the engine's alerts above hold for each node, by its node
+      # label, and the nodes add theirs.
+      - alert: FlatshareNodeUnhealthy
+        expr: flatshare_gateway_node_healthy == 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: A GPU node is unhealthy, and its calls and agents move to the other node
+          description: >-
+            {{ $labels.node }}'s engine does not serve or a speech server does not answer /health (see
+            flatshare_gateway_node_component_healthy, or GET /nodes): it takes no new session, and its sessions move by
+            their next request. Its calls fit the survivor only while it has call slots (max_calls).
+      - alert: FlatshareNodeCovering
+        expr: flatshare_gateway_node_covering == 1
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: A node carries calls moved from a failed node, and holds its agents' requests back until that node is healthy again
+      - alert: FlatshareCallsRefused
+        expr: sum(increase(flatshare_gateway_placements_refused_total{class="realtime"}[10m])) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503
       - alert: FlatshareKvPoolFullWithWaiting
         expr: max(vllm:kv_cache_usage_perc) > 0.95 and sum(vllm:num_requests_waiting) > 0
         for: 10m

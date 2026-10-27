@@ -36,13 +36,24 @@ struct Unit {
 impl Unit {
     /// Binds the sockets, as the socket unit does, and writes the configuration, with `top`.
     fn new(upstream: &str, top: &str) -> (Self, TcpListener, UnixListener) {
+        Self::configured(|addr, socket| listeners_toml(upstream, addr, socket, top))
+    }
+
+    /// The same for a gateway of `[[nodes]]`, whose entries `nodes` holds.
+    fn with_nodes(nodes: &str) -> (Self, TcpListener, UnixListener) {
+        Self::configured(|addr, socket| nodes_listeners_toml(addr, socket, "", nodes))
+    }
+
+    fn configured(
+        toml: impl FnOnce(SocketAddr, &Path) -> String,
+    ) -> (Self, TcpListener, UnixListener) {
         let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = tcp.local_addr().unwrap();
         let socket = socket_path();
         let unix = UnixListener::bind(&socket).unwrap();
         let name = socket_path().with_extension("toml");
         let config = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name.file_name().unwrap());
-        std::fs::write(&config, listeners_toml(upstream, addr, &socket, top)).unwrap();
+        std::fs::write(&config, toml(addr, &socket)).unwrap();
         let manager_path = socket_path();
         let manager = UnixDatagram::bind(&manager_path).unwrap();
         let unit = Self {
@@ -561,5 +572,76 @@ async fn a_reload_keeps_the_in_flight_bound_over_both_gateways() {
     assert_eq!(mock.peak(), 2);
     let status = soon(wait(child)).await;
     assert!(status.success(), "{status}");
+    stopped(second).await;
+}
+
+#[tokio::test]
+async fn a_reload_keeps_every_sessions_node_and_the_nodes_call_slots() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let b = TestNode::start("b", Script::Json("{}")).await;
+    let nodes = format!(
+        "{}{}[placement]\nhealth_interval_s = 0.05\n",
+        a.toml("max_calls = 1"),
+        b.toml("max_calls = 1")
+    );
+    let (unit, tcp, unix) = Unit::with_nodes(&nodes);
+    let child = unit.start(tcp, unix);
+    let first = Process(child.id());
+    assert_eq!(
+        unit.notified(Duration::from_secs(10)).await.as_deref(),
+        Some("READY=1")
+    );
+    let [tcp_target, unix_target] = unit.targets();
+    for node in ["a", "b"] {
+        let series = format!("flatshare_gateway_node_healthy{{node=\"{node}\"}}");
+        metric_at(&unix_target, &series, 1.0).await;
+    }
+    let place = |session: &'static str| {
+        let target = unix_target.clone();
+        async move {
+            let body = format!(r#"{{"session_id":"{session}","class":"realtime"}}"#);
+            call(&target, "POST", "/v1/sessions", &[], &body).await
+        }
+    };
+    let node_of = |reply: Reply| {
+        assert_eq!(reply.status, 200, "{:?}", reply.body);
+        reply.json()["node"].as_str().unwrap().to_owned()
+    };
+    // Placed so that a successor placing them anew would choose otherwise: call-2 on b, call-3 on a where call-1
+    // ended, agent-1 on b beside agent-0 on a.
+    assert_eq!(node_of(place("call-1").await), "a");
+    assert_eq!(node_of(place("call-2").await), "b");
+    let closed = r#"{"event_id":"close-1","session_id":"call-1","at_ms":1792650010000,"source":"voice-worker",
+        "type":"session_closed"}"#;
+    assert_eq!(
+        call(&unix_target, "POST", "/v1/events", &[], closed)
+            .await
+            .status,
+        202
+    );
+    assert_eq!(node_of(place("call-3").await), "a");
+    let agent = |session: &'static str| {
+        let target = tcp_target.clone();
+        async move {
+            let headers = [AGENTS_AUTH, ("x-session-id", session)];
+            call(&target, "POST", "/v1/chat/completions", &headers, CHAT).await
+        }
+    };
+    assert_eq!(agent("agent-0").await.status, 200);
+    assert_eq!(agent("agent-1").await.status, 200);
+    assert_eq!((a.requests(), b.requests()), (1, 1));
+
+    let second = successor(&unit, &first).await;
+    let status = soon(wait(child)).await;
+    assert!(status.success(), "{status}");
+    // Only the successor serves now, and it took every placement over: each call on its node, every call slot
+    // taken, each agent's session where its prefix cache is.
+    assert_eq!(node_of(place("call-2").await), "b");
+    assert_eq!(node_of(place("call-3").await), "a");
+    let fourth = place("call-4").await;
+    assert_eq!(fourth.status, 503);
+    assert_eq!(fourth.json()["error"]["code"], "no_call_slot");
+    assert_eq!(agent("agent-1").await.status, 200);
+    assert_eq!((a.requests(), b.requests()), (1, 2));
     stopped(second).await;
 }

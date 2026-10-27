@@ -27,6 +27,7 @@ use crate::deadline::{Deadlines, Phase, Timeout};
 use crate::harness::Refusal;
 use crate::intake::{Permit, Refused};
 use crate::metrics::{Metrics, Outcome, Route, UpstreamError};
+use crate::nodes::{Placed, Unplaced};
 use crate::sanitize::{REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
 use crate::usage::Summary;
 
@@ -67,6 +68,12 @@ pub(crate) struct Exchange {
     pub objective: Option<Duration>,
     /// The engine's state, which an inference request's success keeps serving.
     pub health: Option<Arc<Health>>,
+    /// With `[[nodes]]`: the request's node, for its log line, and its place there, given back when the record
+    /// ends.
+    pub node: Option<Arc<str>>,
+    pub placed: Option<Placed>,
+    /// How many times it was sent again on another node after its node failed before its first content.
+    pub retries: u32,
     /// Whether it was counted as offered.
     offered: bool,
     outcome: Option<Outcome>,
@@ -96,6 +103,9 @@ impl Exchange {
             deadlines: None,
             objective: None,
             health: None,
+            node: None,
+            placed: None,
+            retries: 0,
             offered: false,
             outcome: None,
             error: None,
@@ -242,6 +252,38 @@ impl Exchange {
                 self.metrics.upstream_error(UpstreamError::Timeout);
                 self.error(StatusCode::GATEWAY_TIMEOUT, "upstream_timeout", message)
             }
+        }
+    }
+
+    /// The 503 for a session that no node takes, with `Retry-After: 1`: no available node of its class's role, every
+    /// available realtime node at its `max_calls`, or (`POST /v1/sessions`) a table whose every session is busy.
+    pub fn unplaced(self, unplaced: Unplaced, class: SloClass) -> Response {
+        let (code, message) = match unplaced {
+            Unplaced::NoNode => (
+                "no_healthy_node",
+                format!("no healthy node takes {class} sessions; ask again"),
+            ),
+            Unplaced::NoCallSlot => (
+                "no_call_slot",
+                "every healthy realtime node has max_calls calls: the call does not fit the nodes that serve"
+                    .to_owned(),
+            ),
+            Unplaced::Full => (
+                "placement_full",
+                format!(
+                    "each of the {} sessions placed has a request in flight",
+                    crate::nodes::SESSIONS
+                ),
+            ),
+        };
+        self.not_ready(code, message, Duration::from_secs(1))
+    }
+
+    /// The upstream broke a response off after it began: with `[[nodes]]`, its node's engine is probed, as for a
+    /// connection that fails.
+    pub fn broke(&self) {
+        if let Some(placed) = &self.placed {
+            placed.node.engine.found_broken();
         }
     }
 
@@ -395,6 +437,7 @@ impl Drop for Exchange {
                     request_id = self.id.to_str().unwrap_or_default(),
                     tenant = self.tenant.as_deref(),
                     session = self.session.as_ref().map(SessionId::as_str),
+                    node = self.node.as_deref(),
                     class = self.class.map(SloClass::as_str),
                     route = self.route.as_str(),
                     status,
@@ -404,6 +447,7 @@ impl Drop for Exchange {
                     aged = self.aged.then_some(true),
                     degraded = self.degraded.then_some(true),
                     resubmits = (self.resubmits > 0).then_some(self.resubmits),
+                    retries = (self.retries > 0).then_some(self.retries),
                     first_byte_ms = self.first_byte.map(ms),
                     total_ms = ms(total),
                     prompt_tokens = usage.map(|u| u.prompt),
