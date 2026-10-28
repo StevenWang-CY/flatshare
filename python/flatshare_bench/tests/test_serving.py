@@ -1,12 +1,14 @@
 """The box's serving profile (deploy/profiles/rtx-5060-ti-serve.toml): it renders the serving variant's drop-in and
 serving.json, which hold every setting the engine must run with and its required revisions, the measured configuration
-of W5's PR points; the drop-in runs exactly what serving.json names; and deploy/bin/serving-check passes an engine that
+of the sweep's PR point at the step cap it chose (W5's but for the step cap); the drop-in runs exactly what
+serving.json names, its step cap over the frozen box's engine.yaml; and deploy/bin/serving-check passes an engine that
 runs it and fails one that differs in any setting, the negative control, as well as a file the engine did not write."""
 
 from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.machinery
 import importlib.util
 import json
 import os
@@ -23,12 +25,27 @@ DEPLOY = REPO / "deploy"
 BOX = DEPLOY / "phastform"
 CHECK = DEPLOY / "bin" / "serving-check"
 SERVING = json.loads((BOX / "serving.json").read_text())
-MEASURED = REPO / "benchmarks/results/2026-10-24-e2-w5/w5-ext-r1/w5-disc-pr-ab48-s24/engine.json"
-"""The engine's configuration as /server_info gave it in a W5 point of the PRs' configuration."""
+MEASURED = (
+    REPO
+    / "benchmarks/results/2026-10-27-sweep/sweep-screen/sweep-disc-pr-ab48-b256-t0-s24/engine.json"
+)
+"""The engine's configuration as /server_info gave it in the sweep's point of the PRs' configuration at the step cap
+it chose."""
+W5 = REPO / "benchmarks/results/2026-10-24-e2-w5/w5-ext-r1/w5-disc-pr-ab48-s24/engine.json"
+"""The same in a W5 point of the PRs' configuration, at the frozen box's step cap."""
+STEP_CAP = ("max_num_batched_tokens", "long_prefill_token_threshold")
+"""The step cap's two settings, the [serving] table's own."""
+STEP_CAP_FLAGS = ("--max-num-batched-tokens", "--long-prefill-token-threshold")
+"""The flags the variant passes them as."""
 
 spec = importlib.util.spec_from_file_location("flatshare_profile_serving", DEPLOY / "profile.py")
 profile = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(profile)
+loader = importlib.machinery.SourceFileLoader("flatshare_serving_check", str(CHECK))
+serving_check = importlib.util.module_from_spec(
+    importlib.util.spec_from_loader(loader.name, loader)
+)
+loader.exec_module(serving_check)
 
 
 def sha256(path: Path) -> str:
@@ -45,7 +62,9 @@ def effective(serving: dict = SERVING, pid: int | None = None) -> dict:
     the ones it does not (the dtype, the scheduler's own step cap, the reserve in blocks), written by ``pid``."""
     report = copy.deepcopy(serving["engine"])
     report["model"] |= {"dtype": "torch.bfloat16", "quantization": "fp8"}
-    report["scheduler"] |= {"max_num_scheduled_tokens": 512, "enable_chunked_prefill": True}
+    # The scheduler's own step cap is the configured one where no max_num_scheduled_tokens is set.
+    step_cap = report["scheduler"]["max_num_batched_tokens"]
+    report["scheduler"] |= {"max_num_scheduled_tokens": step_cap, "enable_chunked_prefill": True}
     report["cache"] |= {"cache_dtype": "auto"}
     report["make_room"] |= {"reserve_blocks": 0}
     return report | {
@@ -113,8 +132,8 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
     }
     assert engine["scheduler"] == {
         "policy": "priority",
-        "max_num_batched_tokens": 512,
-        "long_prefill_token_threshold": 256,
+        "max_num_batched_tokens": 256,
+        "long_prefill_token_threshold": 0,
         "max_num_seqs": 256,
         "async_scheduling": True,
     }
@@ -147,29 +166,77 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
     assert SERVING["voice"] == {"mode": "serve", "max_calls": 2, "audio": "microphone"}
 
 
-def test_the_serving_profile_is_the_configuration_w5_measured() -> None:
-    # The PRs' configuration as W5 ran it, from the engine's own /server_info: the same model, revision, step cap,
-    # pool, CPU tier, policy, request slots and switches. Only the scheduler's module name differs, then make-room's
-    # (under the project's former name), now the serve module over it.
+COMPARED = {
+    "model": ("model", "revision", "max_model_len"),
+    "cache": ("block_size", "num_gpu_blocks", "kv_cache_memory_bytes", "enable_prefix_caching"),
+    "scheduler": (
+        "policy",
+        "max_num_batched_tokens",
+        "long_prefill_token_threshold",
+        "max_num_seqs",
+        "async_scheduling",
+    ),
+}
+"""The settings of serving.json's engine that a measured point's engine.json records, beside its CPU tier and
+make-room's switches."""
+
+
+def profile_settings(engine: dict = SERVING["engine"]) -> dict:
+    """serving.json's engine settings that a point's engine.json records, by their dotted names."""
+    return {
+        **{
+            f"{table}.{key}": engine[table][key] for table, keys in COMPARED.items() for key in keys
+        },
+        "kv_transfer.kv_connector": engine["kv_transfer"]["kv_connector"],
+        "kv_transfer.kv_connector_extra_config": engine["kv_transfer"]["kv_connector_extra_config"],
+        "make_room": engine["make_room"],
+    }
+
+
+def measured_settings(measured: dict) -> dict:
+    """The same settings from a point's engine.json, its model read as serving-check reads a snapshot of it in
+    Hugging Face's cache, as an engine that resolved the model offline reports it."""
+    model = serving_check.as_named({"model": measured["model_config"]})["model"]
+    return profile_settings(
+        {
+            "model": model,
+            "cache": measured["cache_config"],
+            "scheduler": measured["scheduler_config"],
+            "kv_transfer": measured["kv_transfer_config"],
+            "make_room": measured["additional_config"]["make_room"],
+        }
+    )
+
+
+def test_the_serving_profile_is_the_configuration_the_sweep_chose() -> None:
+    # The PRs' configuration at the step cap the sweep chose, as its screen ran it, from the engine's own /server_info:
+    # the same model, revision, step cap, pool, CPU tier, policy, request slots and switches. Only the scheduler's
+    # module differs, then make-room's, now the serve module over it.
     measured = json.loads(MEASURED.read_text())
     engine = SERVING["engine"]
-    model, cache, sched = (
-        measured[k] for k in ("model_config", "cache_config", "scheduler_config")
-    )
-    assert (model["model"], model["revision"], model["max_model_len"]) == tuple(
-        engine["model"][k] for k in ("model", "revision", "max_model_len")
-    )
-    for key in ("block_size", "num_gpu_blocks", "kv_cache_memory_bytes", "enable_prefix_caching"):
-        assert cache[key] == engine["cache"][key], key
-    for key in ("policy", "max_num_batched_tokens", "long_prefill_token_threshold", "max_num_seqs"):
-        assert sched[key] == engine["scheduler"][key], key
-    assert sched["async_scheduling"] is engine["scheduler"]["async_scheduling"]
-    assert measured["kv_transfer_config"]["kv_connector"] == engine["kv_transfer"]["kv_connector"]
+    assert measured_settings(measured) == profile_settings()
     assert (
-        measured["kv_transfer_config"]["kv_connector_extra_config"]
-        == engine["kv_transfer"]["kv_connector_extra_config"]
+        measured["scheduler_config"]["async_scheduling"] is engine["scheduler"]["async_scheduling"]
     )
-    assert measured["additional_config"]["make_room"] == engine["make_room"]
+    named = serving_check.as_named({"model": measured["model_config"]})["model"]
+    assert (named["tokenizer"], named["tokenizer_revision"]) == (
+        engine["model"]["tokenizer"],
+        engine["model"]["tokenizer_revision"],
+    )
+    # W5's point of the same configuration differs from it in the step cap alone, which was the frozen box's.
+    w5 = measured_settings(json.loads(W5.read_text()))
+    assert sorted(key for key, value in profile_settings().items() if w5[key] != value) == [
+        "scheduler.long_prefill_token_threshold",
+        "scheduler.max_num_batched_tokens",
+    ]
+    frozen = profile.load("rtx-5060-ti")["engine"]
+    assert (
+        w5["scheduler.max_num_batched_tokens"],
+        w5["scheduler.long_prefill_token_threshold"],
+    ) == (
+        frozen["max_num_batched_tokens"],
+        frozen["long_prefill_token_threshold"],
+    )
 
 
 def test_the_serving_variant_runs_what_serving_json_names() -> None:
@@ -185,6 +252,13 @@ def test_the_serving_variant_runs_what_serving_json_names() -> None:
     assert words[4] == "%h/flatshare/src/deploy/phastform/engine.yaml"
     flags = dict(zip(words[5::2], words[6::2], strict=False))
     assert flags["--scheduler-cls"] == SERVING["engine"]["scheduler_cls"]
+    # The step cap, once each, on the command line, which vLLM takes over engine.yaml's (the frozen box's).
+    sched = SERVING["engine"]["scheduler"]
+    assert [words.count(flag) for flag in STEP_CAP_FLAGS] == [1, 1]
+    assert [flags[flag] for flag in STEP_CAP_FLAGS] == [
+        str(sched["max_num_batched_tokens"]),
+        str(sched["long_prefill_token_threshold"]),
+    ]
     switches = {
         key.removeprefix("--additional-config.make_room."): value
         for key, value in flags.items()
@@ -207,6 +281,52 @@ def test_the_serving_variant_runs_what_serving_json_names() -> None:
         "/usr/bin/python3 %h/flatshare/src/deploy/bin/serving-check "
         "%h/flatshare/src/deploy/phastform/serving.json --engine ${FLATSHARE_ENGINE_EFFECTIVE} --pid ${MAINPID}"
     ]
+
+
+def test_the_step_cap_is_the_serving_tables_own(tmp_path: Path) -> None:
+    # serving.json's scheduler and the variant's command line take the [serving] table's step cap, and the node's
+    # engine.yaml keeps the base profile's, the frozen box's: the box's two differ, and another step cap (its
+    # threshold at the cap, the largest taken) moves the first two and leaves engine.yaml as it was.
+    frozen = profile.load("rtx-5060-ti")["engine"]
+    serve = profile.load("rtx-5060-ti-serve")
+    own = {key: serve["serving"][key] for key in STEP_CAP}
+    assert own != {key: frozen[key] for key in STEP_CAP}
+    engine_yaml = (BOX / "engine.yaml").read_text()
+    assert (
+        f"max-num-batched-tokens: {frozen['max_num_batched_tokens']}\n"
+        f"long-prefill-token-threshold: {frozen['long_prefill_token_threshold']}\n"
+    ) in engine_yaml
+    for name, change in (("box", {}), ("other", dict.fromkeys(STEP_CAP, 1024))):
+        serve["serving"] |= change
+        out = tmp_path / name
+        profile.render(serve, None, out)
+        want = own | change
+        scheduler = json.loads((out / "serving.json").read_text())["engine"]["scheduler"]
+        assert {key: scheduler[key] for key in STEP_CAP} == want
+        conf = (out / "variants" / "make-room-serve" / "flatshare-engine.conf").read_text()
+        [start] = [line for line in exec_lines(conf, "ExecStart") if line]
+        flags = dict(re.findall(r"(--[a-z-]+) ([^-$ ]\S*)", start))
+        assert [flags[flag] for flag in STEP_CAP_FLAGS] == [str(want[key]) for key in STEP_CAP]
+        assert (out / "engine.yaml").read_text() == engine_yaml
+
+
+def test_serving_check_fails_an_engine_that_runs_engine_yamls_step_cap(tmp_path: Path) -> None:
+    # The negative control of the step cap: an engine started without the variant's two flags runs engine.yaml's, the
+    # frozen box's, and the check names both settings.
+    frozen = profile.load("rtx-5060-ti")["engine"]
+    report = effective()
+    report["scheduler"] |= {key: frozen[key] for key in STEP_CAP}
+    report["scheduler"]["max_num_scheduled_tokens"] = frozen["max_num_batched_tokens"]
+    done = run_check(tmp_path, report=report)
+    assert done.returncode == 1, done.stdout + done.stderr
+    for key in STEP_CAP:
+        assert re.search(
+            rf"^  engine\.scheduler\.{key} +\S+  DIFFERS: runs {frozen[key]}$", done.stdout, re.M
+        ), key
+    assert done.stderr == (
+        "serving-check: 2 setting(s) differ from rtx-5060-ti-serve's: engine.scheduler.max_num_batched_tokens, "
+        "engine.scheduler.long_prefill_token_threshold\n"
+    )
 
 
 def test_make_room_keeps_arm_nines_values() -> None:
@@ -412,6 +532,21 @@ def test_serving_check_holds_the_voice_worker_to_the_profiles_admission(tmp_path
         ({"audio": "phone"}, "audio must be microphone or synthetic"),
         ({"max_calls": 0}, "max_calls must be 1 or more"),
         ({"variant": "make-room"}, "the serving variant is make-room-serve"),
+        # The step cap is the table's own: required, and refused by name out of its bounds.
+        ({"max_num_batched_tokens": None}, "[serving] needs max_num_batched_tokens, a int"),
+        (
+            {"long_prefill_token_threshold": None},
+            "[serving] needs long_prefill_token_threshold, a int",
+        ),
+        ({"max_num_batched_tokens": 0}, "max_num_batched_tokens must be 1 or more"),
+        (
+            {"max_num_batched_tokens": 512, "long_prefill_token_threshold": -1},
+            "long_prefill_token_threshold must be from 0 to max_num_batched_tokens (512), not -1",
+        ),
+        (
+            {"max_num_batched_tokens": 512, "long_prefill_token_threshold": 513},
+            "long_prefill_token_threshold must be from 0 to max_num_batched_tokens (512), not 513",
+        ),
     ],
 )
 def test_a_serving_table_is_checked_as_it_renders(
@@ -422,3 +557,4 @@ def test_a_serving_table_is_checked_as_it_renders(
     serve["serving"] = {key: value for key, value in serve["serving"].items() if value is not None}
     with pytest.raises(profile.ProfileError, match=re.escape(message)):
         profile.render(serve, None, tmp_path / "node")
+    assert not (tmp_path / "node").exists()  # refused before any file is written

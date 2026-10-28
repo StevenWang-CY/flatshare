@@ -31,7 +31,9 @@ setting of the engine's (model and tokenizer revisions, policy, step cap, pool, 
 vLLM version, the SHA-256 of the scheduler module and of the patches it is built from, and the calls the voice worker
 admits. `effective` prints it. deploy/bin/serving-check holds the running engine, and the voice worker in serve mode,
 to it: the engine writes what it runs as it starts (python/flatshare_vllm's serve module), since a production box
-serves no /server_info.
+serves no /server_info. The step cap is the serving profile's own ([serving]'s max_num_batched_tokens and
+long_prefill_token_threshold), which its variant passes over engine.yaml's, so that the node's files stay its base's:
+on the box, the frozen box's, which every experiment changes.
 
 The rules (docs/HARDWARE.md):
 - R2, memory budgets: vLLM refuses a start whose free memory is below gpu_memory_utilization x total, with
@@ -914,6 +916,8 @@ SERVING_KEYS = {
     "budget_cap": bool,
     "budget_cap_tokens": int,
     "reserve_tokens": int,
+    "max_num_batched_tokens": int,
+    "long_prefill_token_threshold": int,
     "block_size": int,
     "pool_tokens": int,
     "max_num_seqs": int,
@@ -930,7 +934,8 @@ AUDIO = ("microphone", "synthetic")
 def serving_config(profile: dict, values: dict[str, str]) -> dict:
     """serving.json: the configuration a serving profile's engine must run, each setting as the engine's own
     configuration names it, as deploy/bin/serving-check compares it with what the engine writes at start; the SHA-256
-    of make-room's patches, which build.py makes its module from; and the voice worker's admission."""
+    of make-room's patches, which build.py makes its module from; and the voice worker's admission. The step cap is
+    the [serving] table's, which the variant passes over engine.yaml's, not the base profile's [engine]."""
     serve = profile["serving"]
     name = values["profile.name"]
     for key, kind in SERVING_KEYS.items():
@@ -941,6 +946,14 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
     if serve["variant"] != "make-room-serve":
         raise ProfileError(
             f"{name}: the serving variant is make-room-serve, not {serve['variant']}"
+        )
+    step_cap, threshold = serve["max_num_batched_tokens"], serve["long_prefill_token_threshold"]
+    if step_cap < 1:
+        raise ProfileError(f"{name}: max_num_batched_tokens must be 1 or more")
+    if not 0 <= threshold <= step_cap:
+        raise ProfileError(
+            f"{name}: long_prefill_token_threshold must be from 0 to max_num_batched_tokens ({step_cap}), "
+            f"not {threshold}"
         )
     if serve["pool_tokens"] % serve["block_size"]:
         raise ProfileError(
@@ -972,8 +985,8 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
             },
             "scheduler": {
                 "policy": "priority",  # engine.yaml's for every profile (deploy/templates)
-                "max_num_batched_tokens": int(values["engine.max_num_batched_tokens"]),
-                "long_prefill_token_threshold": int(values["engine.long_prefill_token_threshold"]),
+                "max_num_batched_tokens": step_cap,
+                "long_prefill_token_threshold": threshold,
                 "max_num_seqs": serve["max_num_seqs"],
                 "async_scheduling": serve["async_scheduling"],
             },
@@ -1018,11 +1031,14 @@ def outputs(profile: dict) -> tuple[str, ...]:
 def render(profile: dict, host: dict | None, out: Path) -> dict:
     """Writes the node's directory to `out`; returns node.json's content."""
     values, plan, warnings = resolve(profile, host)
+    # A serving profile's table is checked before any file is written, its variant's drop-in among them, which takes
+    # some of its keys: a key it lacks or a value out of bounds is refused by name.
+    serving = serving_config(profile, values) if "serving" in profile else None
     for rel in outputs(profile):
         dest = out / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         if rel == "serving.json":
-            dest.write_text(json.dumps(serving_config(profile, values), indent=2) + "\n")
+            dest.write_text(json.dumps(serving, indent=2) + "\n")
         else:
             dest.write_text(fill((TEMPLATES / rel).read_text(), values))
     for rel in COPIED:

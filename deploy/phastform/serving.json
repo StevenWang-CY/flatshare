@@ -19,8 +19,8 @@
     },
     "scheduler": {
       "policy": "priority",
-      "max_num_batched_tokens": 512,
-      "long_prefill_token_threshold": 256,
+      "max_num_batched_tokens": 256,
+      "long_prefill_token_threshold": 0,
       "max_num_seqs": 256,
       "async_scheduling": true
     },

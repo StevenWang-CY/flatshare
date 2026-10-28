@@ -1,10 +1,12 @@
-# The box's serving configuration: the frozen box (rtx-5060-ti, every value of which it takes) running the change as
-# the report recommends deploying it, the configuration W5 measured as "#63350 and #63351" (its w5-disc-pr-ab48
-# points, whose engine.json has every engine value below): make-room with 2 preemptions a step, the budget cap with a
-# 48-token window, and no reserve. `profile.py render` writes its variant, make-room-serve, and serving.json, the
-# effective configuration the box must run, beside the frozen box's files in deploy/phastform, and `profile.py check
-# rtx-5060-ti-serve` keeps both current. deploy/bin/serving-check holds the running engine to serving.json at every
-# start of the variant and at each release, and the voice worker's serve mode admits the calls it names.
+# The box's serving configuration: the frozen box (rtx-5060-ti, every value of which it takes) running the change,
+# make-room with the PRs' switches below, at the step cap the sweep chose, with no long-prefill threshold: the sweep's
+# screens (benchmarks/results/2026-10-27-sweep, whose point of this configuration records every engine value below in
+# its engine.json) and the confirmation rounds (benchmarks/results/2026-10-28-rounds). Its variant, make-room-serve,
+# passes that step cap over engine.yaml's, which stays the frozen box's, the baseline every measurement changes.
+# `profile.py render` writes the variant and serving.json, the effective configuration the box must run, beside the
+# frozen box's files in deploy/phastform, and `profile.py check rtx-5060-ti-serve` keeps both current.
+# deploy/bin/serving-check holds the running engine to serving.json at every start of the variant and at each release,
+# and the voice worker's serve mode admits the calls it names.
 
 [profile]
 base = "rtx-5060-ti"
@@ -20,6 +22,10 @@ max_preemptions_per_step = 2
 budget_cap = true
 budget_cap_tokens = 48
 reserve_tokens = 0
+# The step cap the sweep chose for the change, with no long-prefill threshold (the records above): the variant passes
+# both over engine.yaml's, and serving.json holds the engine to them.
+max_num_batched_tokens = 256
+long_prefill_token_threshold = 0
 # The KV pool that kv_cache_memory's 5 GiB gives Qwen3-4B, 2,275 blocks of 16 tokens, and vLLM's own request slots and
 # asynchronous scheduling on this card, which engine.yaml leaves to vLLM: as W5's engine.json records them [measured].
 block_size = 16
@@ -29,9 +35,8 @@ async_scheduling = true
 # The module build.py writes from make-room's patches on vLLM 0.32.0's scheduler: the one Phastform's engine built on
 # 2026-10-27, and what python/flatshare_vllm's test_build.py builds from v0.32.0's source.
 scheduler_module_sha256 = "0d24d178977f3c1ba29cbf7de1a15355205137a542983e554191103376f36a46"
-# The calls the voice worker takes at once in serve mode: two, E2's discriminating scenario, the load at which this
-# configuration came closest to the SLO (W5: a p95 of 2,236 ms at the median of fifteen runs against 2,034 ms); with 4
-# and 6 callers it was further over (docs/BENCHMARKS.md, calls per GPU).
+# The calls the voice worker takes at once in serve mode: two, the calls of E2's discriminating scenario, at which the
+# sweep's screens and the confirmation rounds measured this configuration (the records above).
 max_calls = 2
 # The voice worker's audio configuration in serve mode: real callers' microphones, which the benchmark's synthetic
 # callers do not measure (python/flatshare_voice/README.md).
