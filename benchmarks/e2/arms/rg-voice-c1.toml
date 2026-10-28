@@ -1,0 +1,10 @@
+# The two-card comparison (benchmarks/quality/RESOURCE-GATE.md) and the sweep's confirmation, in rounds on fresh samples of the
+# agents (rounds.campaign files rg-r1 to rg-r3):
+# voice alone with one caller, the SLO's reference for a card that serves one call, each call opening with a warm-up
+# turn.
+arm = "1-c1"
+label = "voice alone, one caller, a warm-up turn opening each call"
+
+[voice]
+callers = 1
+warmup_turns = 1

@@ -205,11 +205,11 @@ def _json_lines(text: str) -> Iterator[dict[str, Any]]:
 
 def worker(journal: Path, warmup_turns: int = 0) -> dict[str, Any] | None:
     """The voice worker's own account of the calls, from its journal (voice-worker.log): each stage
-    of the waterfall over the turns, and the lifecycle events its sessions sent, dropped and failed
-    to deliver. None without a turn or session line in it; the events are None when no session sent
-    any (``FLATSHARE_EVENTS=off``, or an LLM that bypasses the gateway). The first ``warmup_turns`` turn
-    lines of each session are the replies to the call's warm-up turns, which have no interruption to
-    add a reply, and are left out."""
+    of the waterfall over the turns, the replies' playout (:func:`playout`), and the lifecycle events
+    its sessions sent, dropped and failed to deliver. None without a turn or session line in it; the
+    events are None when no session sent any (``FLATSHARE_EVENTS=off``, or an LLM that bypasses the
+    gateway). The first ``warmup_turns`` turn lines of each session are the replies to the call's
+    warm-up turns, which have no interruption to add a reply, and are left out."""
     if not journal.exists():
         return None
     turns, sessions = worker_lines(journal.read_text(errors="replace"))
@@ -227,6 +227,29 @@ def worker(journal: Path, warmup_turns: int = 0) -> dict[str, Any] | None:
             stage: summarize(t[stage] for t in turns if stage in t) for stage in WATERFALL
         },
         "events": events if counted else None,
+        "playout": playout(turns),
+    }
+
+
+def playout(turns: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The replies' playout, as the worker's turn lines give it from v1.7 (flatshare_voice's
+    ``Playout``): over the replies whose output reported its stretches of playback, those whose output
+    ran out of audio before the reply was over, the stalls' lengths, the replies whose synthesis fell
+    behind their playback, and the least audio each of those had ready. None without such a reply, as
+    from a worker before then."""
+    measured = [t for t in turns if "stalls_ms" in t]
+    if not measured:
+        return None
+    stalls = [stall for t in measured for stall in t["stalls_ms"]]
+    lows = [t["inventory_low_ms"] for t in measured if "inventory_low_ms" in t]
+    return {
+        "replies": len(measured),
+        "stalled": sum(1 for t in measured if t["stalls_ms"]),
+        "stalls_ms": summarize(stalls),
+        "fell_behind": len(lows),
+        "inventory_low_ms": summarize(lows),
+        "audio_s": round(sum(t.get("audio_ms", 0.0) for t in measured) / 1000, 1),
+        "played_s": round(sum(t.get("played_ms", 0.0) for t in measured) / 1000, 1),
     }
 
 

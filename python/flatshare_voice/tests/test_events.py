@@ -50,12 +50,50 @@ REPLY = {
 }
 
 
+class FakeSink(io.AudioOutput):
+    """The room's audio output, as the chain above it sees it: the frames that reach it, its pauses,
+    and the playback it reports, which a test calls for it."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            label="FakeSink",
+            next_in_chain=None,
+            capabilities=io.AudioOutputCapabilities(pause=True),
+        )
+        self.frames = 0
+        self.calls: list[str] = []
+
+    async def capture_frame(self, frame: rtc.AudioFrame) -> None:
+        await super().capture_frame(frame)
+        self.frames += 1
+
+    def flush(self) -> None:
+        super().flush()
+        self.calls.append("flush")
+
+    def clear_buffer(self) -> None:
+        self.calls.append("clear_buffer")
+
+    def pause(self) -> None:
+        self.calls.append("pause")
+
+    def resume(self) -> None:
+        self.calls.append("resume")
+
+
+def frame(seconds: float = 0.1) -> rtc.AudioFrame:
+    """A frame of silence ``seconds`` long, at Kokoro's 24 kHz."""
+    return rtc.AudioFrame.create(24_000, 1, round(24_000 * seconds))
+
+
 class FakeSession(rtc.EventEmitter[str]):
-    """What a Lifecycle uses of an AgentSession: its events, and its audio output's."""
+    """What a Lifecycle uses of an AgentSession: its events, and its audio output, which the
+    Lifecycle wraps."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.output = SimpleNamespace(audio=rtc.EventEmitter[str]())
+        self.sink = FakeSink()
+        self.output = SimpleNamespace(audio=self.sink)
 
     def user(self, state: str) -> None:
         self.emit("user_state_changed", UserStateChangedEvent(old_state="away", new_state=state))
@@ -65,9 +103,17 @@ class FakeSession(rtc.EventEmitter[str]):
         self.emit("conversation_item_added", ConversationItemAddedEvent(item=item))
 
     def playback(self, played_s: float, *, interrupted: bool) -> None:
-        self.output.audio.emit("playback_started", io.PlaybackStartedEvent(created_at=time.time()))
-        finished = io.PlaybackFinishedEvent(playback_position=played_s, interrupted=interrupted)
-        self.output.audio.emit("playback_finished", finished)
+        asyncio.run(self.speak(played_s, interrupted=interrupted))
+
+    async def speak(self, played_s: float, *, interrupted: bool) -> None:
+        """One reply's audio, a frame of it through the session's output, and its playback as the
+        room's output reports it."""
+        await self.output.audio.capture_frame(frame())
+        self.output.audio.flush()
+        started = time.time()
+        self.sink.on_playback_started(created_at=started)
+        self.sink.on_playback_progressed(started_at=started, offset=0.0, duration=played_s)
+        self.sink.on_playback_finished(playback_position=played_s, interrupted=interrupted)
 
 
 class Recorder:
@@ -158,6 +204,163 @@ def test_a_failing_hook_never_reaches_livekit(caplog: pytest.LogCaptureFixture) 
         {"type": "playback_started"},
         {"type": "playback_ended", "played_ms": 1000},
     ]
+
+
+# Playout
+
+
+class Clock:
+    """A wall clock that a test sets."""
+
+    def __init__(self, now: float = 100.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def playing(clock: Clock) -> tuple[FakeSink, events.Playout]:
+    sink = FakeSink()
+    return sink, events.Playout(sink, clock=clock)
+
+
+def arrive(playout: events.Playout, clock: Clock, *times: float) -> None:
+    """A 100 ms frame of a reply at each of ``times``, through the playout."""
+
+    async def scenario() -> None:
+        for at in times:
+            clock.now = at
+            await playout.capture_frame(frame())
+
+    asyncio.run(scenario())
+
+
+def test_a_reply_whose_output_ran_dry_gives_the_stall_and_no_inventory_left() -> None:
+    clock = Clock()
+    sink, playout = playing(clock)
+    # The first sentence's five frames come in a burst and play from 100.0 s. The second's three come
+    # at 100.7 s, 200 ms after the first sentence's audio ran out, and a third's two at 100.9 s,
+    # while 100 ms of the second's is still to play.
+    burst = (100.0, 100.01, 100.02, 100.03, 100.04)
+    arrive(playout, clock, *burst, 100.7, 100.71, 100.72, 100.9, 100.91)
+    playout.flush()
+    sink.on_playback_started(created_at=100.0)
+    sink.on_playback_progressed(started_at=100.0, offset=0.0, duration=0.5)
+    sink.on_playback_progressed(started_at=100.7, offset=0.5, duration=0.5)
+    sink.on_playback_finished(playback_position=1.0, interrupted=False)
+    assert playout.take() == {
+        "audio_ms": 1000.0,
+        "played_ms": 1000.0,
+        "stalls_ms": [200.0],
+        "inventory_low_ms": 0.0,
+    }
+    assert playout.take() == {}  # taken once
+    assert (sink.frames, sink.calls) == (10, ["flush"])
+
+
+def test_synthesis_that_fell_behind_without_running_out_gives_the_least_audio_left() -> None:
+    clock = Clock()
+    sink, playout = playing(clock)
+    # The second sentence's first frame comes at 100.4 s, with 100 ms of the first still to play.
+    arrive(playout, clock, 100.0, 100.01, 100.02, 100.03, 100.04, 100.4, 100.41, 100.42)
+    playout.flush()
+    sink.on_playback_progressed(started_at=100.0, offset=0.0, duration=0.8)
+    sink.on_playback_finished(playback_position=0.8, interrupted=False)
+    assert playout.take() == {
+        "audio_ms": 800.0,
+        "played_ms": 800.0,
+        "stalls_ms": [],
+        "inventory_low_ms": 100.0,
+    }
+
+
+def test_synthesis_ahead_of_playback_gives_no_inventory_low_and_the_start_counts_for_none() -> None:
+    clock = Clock()
+    sink, playout = playing(clock)
+    # A reply's first frame plays as soon as it arrives, so the audio ahead of the playhead starts at
+    # a frame; the frames after it come faster than they play.
+    arrive(playout, clock, 100.0, 100.08, 100.16)
+    playout.flush()
+    sink.on_playback_progressed(started_at=100.0, offset=0.0, duration=0.3)
+    sink.on_playback_finished(playback_position=0.3, interrupted=False)
+    assert playout.take() == {"audio_ms": 300.0, "played_ms": 300.0, "stalls_ms": []}
+
+
+def test_a_pause_is_no_stall_and_the_gap_between_two_segments_is_one() -> None:
+    clock = Clock()
+    sink, playout = playing(clock)
+    arrive(playout, clock, 100.0, 100.01, 100.02, 100.03, 100.04)
+    playout.flush()
+    # The session pauses the output for 400 ms (a sound of the caller's that it waits to read), and
+    # the 100 ms the room's output held then is discarded.
+    clock.now = 100.2
+    playout.pause()
+    clock.now = 100.6
+    playout.resume()
+    sink.on_playback_progressed(started_at=100.0, offset=0.0, duration=0.2)
+    sink.on_playback_progressed(started_at=100.6, offset=0.3, duration=0.2)
+    sink.on_playback_finished(playback_position=0.4, interrupted=False)
+    # The reply's second segment starts 300 ms after the first played out.
+    arrive(playout, clock, 101.1, 101.11)
+    playout.flush()
+    sink.on_playback_progressed(started_at=101.1, offset=0.0, duration=0.2)
+    sink.on_playback_finished(playback_position=0.2, interrupted=False)
+    assert playout.take() == {"audio_ms": 700.0, "played_ms": 600.0, "stalls_ms": [300.0]}
+    assert sink.calls == ["flush", "pause", "resume", "flush"]
+
+
+def test_a_sink_that_reports_no_stretch_leaves_stalls_and_inventory_unmeasured() -> None:
+    clock = Clock()
+    sink, playout = playing(clock)
+    arrive(playout, clock, 100.0, 100.5)
+    playout.flush()
+    sink.on_playback_finished(playback_position=0.2, interrupted=False)
+    assert playout.take() == {"audio_ms": 200.0, "played_ms": 200.0}
+
+
+def test_a_segment_that_never_passed_through_the_playout_is_not_its_own() -> None:
+    # A reply that was already going to the output below when the playout was put above it.
+    sink, playout = playing(Clock())
+    below = playout.next_in_chain
+    assert below is not None
+    asyncio.run(below.capture_frame(frame()))
+    below.flush()
+    sink.on_playback_progressed(started_at=100.0, offset=0.0, duration=0.1)
+    sink.on_playback_finished(playback_position=0.1, interrupted=False)
+    assert playout.take() == {}
+
+
+def test_the_session_waits_for_playout_and_clears_through_the_playout() -> None:
+    async def scenario() -> tuple[io.PlaybackFinishedEvent, FakeSink, events.Playout]:
+        sink, playout = playing(Clock())
+        await playout.capture_frame(frame())
+        playout.flush()
+        waiting = asyncio.create_task(playout.wait_for_playout())
+        await asyncio.sleep(0)
+        assert not waiting.done()
+        playout.clear_buffer()  # a barge-in
+        sink.on_playback_finished(playback_position=0.05, interrupted=True)
+        return await asyncio.wait_for(waiting, 1.0), sink, playout
+
+    finished, sink, playout = asyncio.run(scenario())
+    assert (finished.playback_position, finished.interrupted) == (0.05, True)
+    assert sink.calls == ["flush", "clear_buffer"]
+    assert playout.take() == {"audio_ms": 100.0, "played_ms": 50.0}
+
+
+def test_a_turn_line_ends_with_its_replys_playout(caplog: pytest.LogCaptureFixture) -> None:
+    session, _, _ = watched()
+    assert isinstance(session.output.audio, events.Playout)  # the replies' audio passes through it
+    caplog.set_level(logging.INFO, logger="flatshare_voice.turns")
+    session.message("user", USER)
+    session.playback(0.1, interrupted=False)
+    session.message("assistant", REPLY)
+    session.playback(0.1, interrupted=False)  # audio that no reply claims
+    session.message("user", USER)
+    session.message("assistant", REPLY)
+    first, second = (r for r in caplog.records if r.name == "flatshare_voice.turns")
+    assert (first.audio_ms, first.played_ms, first.stalls_ms) == (100.0, 100.0, [])
+    assert not hasattr(second, "audio_ms")
 
 
 # Delivery
@@ -341,7 +544,7 @@ def test_a_session_end_sends_its_last_events_and_logs_its_counts(
             events.observe(ctx, session, "s", uds=uds)  # type: ignore[arg-type]
             session.user("speaking")
             session.message("user", USER)
-            session.playback(1.5, interrupted=False)
+            await session.speak(1.5, interrupted=False)
             session.message("assistant", REPLY)
             session.emit("close", CloseEvent(reason=CloseReason.PARTICIPANT_DISCONNECTED))
             [shutdown] = callbacks

@@ -106,6 +106,16 @@ Each session tells the control plane when it will next need the GPU ([PROTOCOL.m
 | `tts_first_audio_ms` | that sentence | its first audio |
 | `e2e_ms` | the end of speech | the reply's first audio frame on the track: the agent's side of voice-to-voice |
 
+The line ends with the reply's playout, from a pass-through the worker puts at the top of the session's audio output (`events.Playout`), which notes when each frame of the reply reaches the output and the stretches LiveKit's room output reports as played (`playback_progressed`):
+
+| Field | Meaning |
+|---|---|
+| `audio_ms`, `played_ms` | The audio the reply handed to the output, and how much of it played (less after a barge-in, or a pause that discarded what the output held) |
+| `stalls_ms` | Each time the output ran out of audio while the reply had more to come, 10 ms (one WebRTC frame) or longer: the gaps between stretches of playback that no pause of the session's explains, the gap between two segments of a reply among them. Empty when the audio never ran out |
+| `inventory_low_ms` | The least audio ready ahead of the playhead once synthesis had fallen behind it, just before each frame that arrived later than the frame before it lasted; absent when synthesis stayed ahead of playback, as it does when the next sentence's audio is ready before the last one has played. The start of a reply is no such moment: its first frame plays as it arrives |
+
+A reply whose output reported no stretch of playback has only `audio_ms` and `played_ms`: its stalls and inventory are unmeasured, not zero.
+
 When a session ends, one line (logger `flatshare_voice.events`, message `session ended`) gives its `turns` and, with events on, `events_sent`, `events_dropped` (pushed out of the queue, or unsent at the end) and `events_failed` (sent but not accepted). `flatshare-bench e2 run` reads both kinds of line from the worker's journal.
 
 ## Measurement callers
