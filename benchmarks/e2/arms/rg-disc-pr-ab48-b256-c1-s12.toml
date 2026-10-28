@@ -1,0 +1,23 @@
+# The two-card comparison (benchmarks/quality/RESOURCE-GATE.md) and the sweep's confirmation, in rounds on fresh samples of the
+# agents (rounds.campaign files rg-r1 to rg-r3):
+# the change at the sweep's best step cap (256, a 48-token window, no reserve), with one call and half the agents: a
+# card of Flatshare pooling.
+arm = "9-pr-ab48-b256-c1"
+label = "vLLM PRs A and B, 48-token window, step cap 256, one caller beside 12 session trees, warm-up turn"
+
+[voice]
+callers = 1
+warmup_turns = 1
+
+[agents]
+sessions = 12
+data = "weka-x32-long"
+
+[engine]
+variant = "make-room"
+flags = [
+  "--additional-config.make_room.reserve_tokens", "0",
+  "--additional-config.make_room.budget_cap_tokens", "48",
+  "--max-num-batched-tokens", "256",
+  "--long-prefill-token-threshold", "0",
+]

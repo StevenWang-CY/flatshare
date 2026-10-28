@@ -1,0 +1,26 @@
+# The two-card comparison and the sweep's confirmation, round 2 of 3, on a fresh sample of the agents (seed 22):
+# each card's part of every arrangement in benchmarks/quality/RESOURCE-GATE.md as a point of its own (voice alone with
+# two callers and with one, the agents alone on the frozen box and on the agents-only card, one caller beside 12
+# session trees on the frozen box and on the change at a step cap of 256, and two callers beside 24 on the change at
+# 256, on the frozen box and on W5's 48-token configuration). Round N runs its engine groups in an order rotated by
+# one from round to round, on the GPU node FLATSHARE_GPU names, the rounds' nodes swapped between rounds.
+#   FLATSHARE_GPU=NODE benchmarks/e2/campaign.sh --pause benchmarks/e2/rg-r2.campaign
+
+agents-seed 22
+
+# engine agents-only
+arms/rg-disc-agents-only-s24.toml
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+arms/w5-disc-pr-ab48-s24.toml
+
+# engine make-room (48-token window) --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+arms/rg-disc-pr-ab48-b256-c1-s12.toml
+arms/sweep-disc-pr-ab48-b256-t0-s24.toml
+
+# engine frozen
+arms/w5-a1-voice.toml
+arms/rg-voice-c1.toml
+arms/rg-disc-agents-frozen-s24.toml
+arms/rg-disc-frozen-c1-s12.toml
+arms/w5-disc-frozen-s24.toml
