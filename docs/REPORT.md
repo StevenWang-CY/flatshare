@@ -27,7 +27,10 @@ it. The agents keep 97% of their token rate on tuned vLLM at the same 512-token 
 The nearest any control plane in front of the engine came is 2.52 s, by aborting and resubmitting agent requests, at a
 193 s p99 time to first token for the agents. On an A100 at the same KV pool and step cap, the rules take the p95 from
 4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds. At the card's default 2,048-token steps they
-keep all of the agents' throughput and leave the voice 0.14–0.17 s over the SLO.
+keep all of the agents' throughput and leave the voice 0.14–0.17 s over the SLO. On two RTX 5060 Ti cards, under a
+resource gate fixed before the runs, both calls and four agent sessions on one card with the rules, beside a card of
+agents alone, do 34% more background work than a card per workload, with 2.8% of the replies over the SLO. Most of that
+gain is the arrangement's: on stock vLLM the shared card qualifies at two sessions, and the same cards do 27% more.
 
 ## Contents
 
@@ -108,9 +111,12 @@ of the engine's steps, and not through the preemptions (§6.4). A router that ab
 agents' tail. A gateway policy timed by the conversation, with KV headroom held from the moment the caller starts to
 speak, leaves the tail where tuned vLLM leaves it (§6.5). The gain shrinks where the pool has room. As calls overlap,
 the tail grows and the hold keeps the agents' prefill out for longer (§6.6). On an A100 at the same KV pool and step
-cap, the rules take the p95 from 4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds (§6.7).
+cap, the rules take the p95 from 4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds (§6.7). On two
+RTX 5060 Ti cards, a resource gate fixed before the runs compared a card per workload, pooling and consolidation. Both
+calls and four agent sessions on one card, beside a card of agents alone, did 34% more background work than a card per
+workload within the SLO's 5% allowance, and stock vLLM's shared card, at two sessions, did 27% more (§6.8).
 
-This report makes four contributions.
+This report makes five contributions.
 
 - **It measures the failure end to end.** V2V is read from waveforms at the caller beside a replay of real coding-agent
   traces. Tuned vLLM, the router and the change run in rotated rounds over five samples of the traces, and every other
@@ -124,6 +130,9 @@ This report makes four contributions.
   campaign, from a class-aware KV reserve (§6.5).
 - **It bounds what a control plane in front of the engine can do** when agents' KV fills the pool (§6.5), and carries
   the result to a datacenter GPU (§6.7).
+- **It measures what sharing a card buys** over a card per workload on two cards, under a resource gate fixed before
+  the runs, and finds most of the gain in the arrangement rather than in the scheduler: the rules' own share is the two
+  agent sessions more that the shared card carries within the SLO (§6.8).
 
 ## 2. Background and motivation
 
@@ -451,7 +460,7 @@ vLLM's step cap of 512 tokens with a 256-token threshold per request bounds how 
 chunk. On the whole corpus at 16 sessions it lay within the noise of every other step cap swept. Beside the 24
 long-context sessions, a 1,024-token cap without a threshold did better in each of its five runs on one sample of the
 traces. It gave 8.79 s against 10.14 s with 9% more agent throughput, though still 6.8 s over the SLO (Table B3). The
-change was not measured at that cap on the RTX 5060 Ti.
+sweep of §6.9 measured the change at that cap and others.
 
 **Table 1. The configurations compared.** Each differs from tuned vLLM only in what the second column says. N is
 make-room's cap on victims a step, and T the prefill hold's window in output tokens.
@@ -759,13 +768,136 @@ prompt and 64 output tokens in flight, 26 at priority 0 and 230 at priority 2 in
 second, and their p99 TTFT rose from 1.1 s to 8.0 s while their median fell. Both are the hold of §6.6, at a rate of
 first tokens that no voice tier reaches.
 
+### 6.8 On two cards, consolidating both calls on one does 34% more background work, most of it without the change
+
+A second RTX 5060 Ti 16 GB runs on another host. An operator with the two cards can give the calls one and the agents
+the other (dedicated roles), run both cards mixed with one call each (pooling), or put both calls on one card beside as
+many agent sessions as it serves within the SLO and run agents alone on the other (consolidation). A resource gate fixed
+before the runs decides between them ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)). An arrangement
+qualifies if at most 5% of its replies, over its rounds pooled, are over its round's SLO for the card's callers. Sharing
+has resource value if a qualifying shared arrangement does at least 20% more background work than the best qualifying
+dedicated one, counted as the agents' tokens a second over the calls' first 240 s summed over both cards, at the median
+of the rounds. Three rounds each replayed a new sample of the agents' traces on one host, the hosts alternating from
+round to round, and measured each card's part of every arrangement as a run of its own. The change ran at the serving
+profile's 256-token step cap without a per-request threshold (§6.9).
+
+A card of agents alone does the most well short of 24 sessions (Table 6). Without speech servers, with its KV pool grown
+into their memory to 61,152 tokens and vLLM's default first-come-first-served scheduling at 2,048-token steps, it did
+7,893 tokens a second at 14 sessions, at the median of the rounds, and 4,232 at 24, where its pool thrashes and the
+agents' median TTFT is 48 s. The gate runs each dedicated card at its busiest count, so a baseline taken at 24 sessions
+would have been 46% lower. The controlled card, tuned vLLM with a shared card's pool and its speech servers idle, did
+6,302 tokens a second at its busiest, 12 sessions.
+
+Consolidation on the change qualifies with four sessions on the shared card (Figure 14a). Five of its 177 replies were
+over the SLO (2.8%), and at eight sessions 31 (17.5%). Beside the agents-only card at 14 sessions, the arrangement did
+10,596 tokens a second, 34.2% more than the best dedicated arrangement, past the hurdle (Figure 14b). Most of that gain
+is the arrangement's, not the change's. Stock vLLM's consolidated card qualifies at two sessions, with 4 of 177 replies
+over and 18 at four, and that arrangement did 27.3% more than the best dedicated one. The gate counts consolidation on
+the serving profile, and against stock vLLM's consolidation the change's own value is 5.4%, short of the hurdle. At two
+and four sessions both engines completed the same agents' requests in the window in every round, so there the shared
+card's part is the sessions' own pace, which the traces' think times set: the change's 5.4% is the two sessions more at
+which it qualifies. Pooling, one call a card beside 12 sessions each, qualifies on neither engine: of each one's 87
+replies, 24 of the change's and 53 of stock vLLM's were over the one-caller SLO.
+
+**Table 6. The two cards' arrangements.** Three rounds, each on a new sample of the agents' traces. Replies over the SLO
+are pooled over the rounds, and the agents' tokens a second over the calls' first 240 s are summed over both cards, at
+the median of the rounds, beside the share they add over the best dedicated arrangement. The agents' TTFT is the median
+of their cards' runs. The shared card's sessions are given first, then the second card's.
+
+| Arrangement | Agent sessions | Replies over the SLO | Agents' tokens/s | Over the best dedicated | Agents' TTFT p50 / p99 |
+|---|---:|---:|---:|---:|---:|
+| Dedicated roles, controlled | 0 + 12 | 0 / 177 | 6,302 | – | 4.4 / 31.0 s |
+| **Dedicated roles, best practical** | 0 + 14 | 0 / 177 | **7,893** | – | 5.1 / 41.0 s |
+| Pooling, stock vLLM | 12 + 12 | 53 / 87 | 13,188 | does not qualify | 4.7 / 29.2 s |
+| Pooling, the change | 12 + 12 | 24 / 87 | 12,111 | does not qualify | 4.8 / 37.2 s |
+| Consolidation, stock vLLM | 4 + 14 | 18 / 177 | 10,596 | does not qualify | 0.6 / 10.4 s |
+| Consolidation, stock vLLM | 2 + 14 | 4 / 177 | 10,051 | +27.3% | 0.4 / 7.8 s |
+| Consolidation, the change | 8 + 14 | 31 / 177 | 13,537 | does not qualify | 0.7 / 11.7 s |
+| **Consolidation, the change** | 4 + 14 | 5 / 177 | **10,596** | **+34.2%** | 0.6 / 10.8 s |
+| Consolidation, the change, with a warm spare | 4 + 12 | 5 / 177 | 9,652 | +22.3% | 0.5 / 10.7 s |
+
+<img src="figures/report-cards.svg" width="100%" alt="Two panels. (a) The consolidated card's share of replies over the SLO by agent sessions beside both calls, three rounds pooled: stock vLLM 2.3% at 2 sessions, 10.2% at 4, 39.0% at 8, 53.7% at 12 and 92.1% at 24; the change 1.1%, 2.8%, 17.5%, 18.6% and 20.9%, against the 5% requirement. (b) Each arrangement's agents' tokens per second summed over both cards, against 9,471, 20% over the best dedicated arrangement: dedicated roles 7,893 and 6,302; consolidation on stock vLLM at 2 sessions 10,051, on the change at 4 sessions 10,596 and 9,652 with a warm spare; the change at 8 sessions 13,537 and pooling 13,188 and 12,111, all three missing the requirement.">
+
+**Figure 14. On two cards, consolidating both calls on one card does the most background work within the SLO, on
+either engine.** (a) The consolidated card's replies over its round's SLO by its agent sessions, three rounds pooled, on
+stock vLLM (gray) and with the change (blue), against the requirement of at most 5% (dashed). (b) Each arrangement's
+agents' tokens per second over the calls' first 240 s, summed over both cards: bars the median of the rounds, ticks the
+rounds. Arrangements that miss the requirement are hatched, and the dashed line is 20% over the best dedicated
+arrangement.
+
+The SLO's 250 ms margin sets the envelope. Had it allowed 500 ms over voice alone, the change's consolidated card would
+qualify at every count measured, up to 24 sessions with 8 of 177 replies over, and stock vLLM's still only at two, with
+12 of 177 over at four. The voice agent's stage times show where the margin goes (Table 7). From eight sessions on, the
+transcript comes 51–71 ms later than with the calls alone, on either engine: the agents' steps take the GPU from the
+speech server, and the processes time-slice it. On stock vLLM the waits of §6.2 come on top. Its first sentence's p95
+grows from 437 ms with the calls alone to 909 ms at four sessions, 2,424 at eight and 9,719 at 24, where the change
+holds it to 534, 737 and 768. With the change, from eight sessions on, the transcript and the first sentence take
+176–249 ms longer at the median than with the calls alone, nearly all of the margin before any reply's own spread.
+
+**Table 7. The voice turn's stages on the consolidated card, in ms from the end of the caller's speech.** Medians over
+the three rounds of each run's median, or of its p95 where the column says so.
+
+| Card | Transcript | LLM first token | LLM first token, p95 | First sentence | First sentence, p95 | TTS first audio |
+|---|---:|---:|---:|---:|---:|---:|
+| The calls alone | 745 | 79 | 97 | 290 | 437 | 197 |
+| The change, 2 sessions | 756 | 81 | 129 | 306 | 467 | 190 |
+| The change, 4 sessions | 749 | 91 | 242 | 312 | 534 | 195 |
+| The change, 8 sessions | 800 | 145 | 442 | 411 | 737 | 203 |
+| The change, 12 sessions | 808 | 223 | 452 | 476 | 765 | 203 |
+| The change, 24 sessions | 811 | 215 | 333 | 464 | 768 | 215 |
+| Stock vLLM, 2 sessions | 757 | 84 | 125 | 308 | 472 | 192 |
+| Stock vLLM, 4 sessions | 746 | 92 | 414 | 294 | 909 | 194 |
+| Stock vLLM, 8 sessions | 796 | 189 | 808 | 521 | 2,424 | 201 |
+| Stock vLLM, 12 sessions | 811 | 284 | 2,678 | 675 | 3,150 | 202 |
+| Stock vLLM, 24 sessions | 816 | 2,929 | 8,493 | 3,792 | 9,719 | 210 |
+
+The gate counts no standby. In the best practical arrangements the second card runs no speech servers, so it cannot
+take the calls if the first card fails. A warm spare keeps them resident and runs its agents on the change's engine
+beside them. Alone on such a card the agents did the most at 12 sessions, 6,715 tokens a second, and consolidation at
+four sessions with a warm spare did 9,652 tokens a second, 22.3% more than the best dedicated arrangement, which has no
+standby. Section 7 gives this arrangement's deployment and Appendix D its failover drill.
+
+### 6.9 A 256-token step cap halves the change's replies over the SLO beside 24 sessions
+
+The evaluation of §6.1–§6.7 ran the change at tuned vLLM's step cap of 512 tokens with a 256-token threshold per
+request. A sweep screened the change at caps of 256, 512 and 1,024 tokens, with and without the threshold, at windows of
+48 and 96 tokens and beside the gateway's static caps on agent requests in flight, and stock vLLM at caps of 256 and
+1,024, one run a setting on the sample of the agents the evaluation was tuned on
+([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md)). The cap moved the change most. At 256 without
+the threshold, 9 of its 59 replies were over the SLO, against 24 at 512 and 33 at 1,024, and the static caps did less.
+Five rounds on new samples then ran the three configurations side by side at 24 sessions, each against its round's own
+SLO (Table 8). At 256 the change had fewer replies over the SLO than at 512 in each of the five rounds, 44 of 295
+against 94 (14.9% against 31.9%), with a pooled p95 of 2.15 s against 2.26 s, while tuned vLLM had 261 of 295 over. The
+smaller steps cost the agents 7% of their token rate, 3,067 tokens a second against 3,303, and their median TTFT rose
+from 78 s to 85 s. The serving profile runs the change at 256 tokens a step without a threshold. No cap brought 24
+sessions within the SLO's 5% allowance, which the shared card meets at four (§6.8).
+
+**Table 8. The step cap beside 24 sessions, in five rounds on new samples of the agents.** Each reply is held to its
+round's SLO, and the replies over it are pooled over the rounds and given by round. The 512-token rows keep the
+256-token threshold per request, and the 256-token row has none. Medians over the rounds otherwise.
+
+| Configuration | Median p95 V2V | Pooled p95 | Replies over the SLO | By round | Agents' tokens/s | Agents' TTFT p50 / p99 |
+|---|---:|---:|---:|---|---:|---:|
+| Tuned vLLM, 512-token steps | 12,010 ms | 11,766 ms | 261 / 295 | 53, 55, 55, 54, 44 | 3,399 | 69 / 109 s |
+| The change, 512-token steps | 2,246 ms | 2,259 ms | 94 / 295 | 16, 29, 25, 9, 15 | 3,303 | 78 / 117 s |
+| **The change, 256-token steps** | **2,098 ms** | 2,151 ms | **44 / 295** | 10, 17, 10, 4, 3 | 3,067 | 85 / 120 s |
+
 ## 7. Operating the change
 
-**The configuration.** The change runs on vLLM with priority scheduling, a step cap of 512 tokens and 256 per request,
-prefix caching, and a CPU KV tier about four times the GPU pool, written through. When the audio models share the GPU,
-the KV pool's size is fixed. Make-room runs with N = 2 and the prefill hold with T = 48. The gateway sets voice requests
-to priority 0 and background work to 2 from each client's identity, so that a background client cannot raise its own
-priority. No admission policy is needed in front.
+**The configuration.** The change runs on vLLM with priority scheduling, prefix caching, and a CPU KV tier about four
+times the GPU pool, written through. When the audio models share the GPU, the KV pool's size is fixed. Make-room runs
+with N = 2 and the prefill hold with T = 48. The evaluation of §6.1–§6.7 ran a step cap of 512 tokens and 256 per
+request, and the serving profile runs the cap the sweep chose for the change, 256 tokens a step without a per-request
+threshold (§6.9). The gateway sets voice requests to priority 0 and background work to 2 from each client's identity,
+so that a background client cannot raise its own priority.
+
+**Two cards.** The arrangement to deploy on two cards is consolidation with a warm spare (§6.8). The first card carries
+both calls and at most four agent sessions, the envelope measured beside them, and the second runs agents on the same
+engine with its speech servers resident, so that it can take the calls. The gateway places each call on the first card
+with a free call slot, in its configured order, and each agent session on the card with the fewest, up to each card's
+bound (`max_agents`); a session beyond every bound gets 503 `no_agent_slot` and tries again with its next request. When
+the first card fails, its calls move to the second by their next turn, and while the second card carries any call it
+holds its agents' requests, letting those already running finish.
 
 **Where it pays.** The change matters when background KV fills the pool, as when agent contexts of 10k tokens or more
 meet a pool that holds a few of them. On tuned vLLM the signs are KV usage near 100% while requests wait, and a realtime
@@ -843,31 +975,63 @@ colocating the cascade [[53](#ref-53), [54](#ref-54)], and Metronome shows full-
 fills the pool [[55](#ref-55)]. We add the voice tier's tail beside a background agent class in one engine, against the
 configurations an operator can deploy.
 
+**Adaptive prefill control.** Beside SLOWeave's sizing of chunks to deadlines [[37](#ref-37)], two recent controllers
+adapt the prefill that runs beside decodes from what they measure. DLFP resizes each prefill chunk from the interval
+between the host's scheduler calls. In vLLM it cut a 0.6B model's p99 inter-token latency by 27.7% at a 34.8% higher p99
+TTFT, and did not carry over to 8B and 32B models or to two-GPU tensor parallelism, which its authors trace to the
+interval being only a proxy for when the GPU finished a step [[56](#ref-56)]. AgentServe, on one consumer GPU as here,
+isolates agents' prefills from their decodes, budgets the prefills that resume a cached context, and reserves streaming
+multiprocessors for decodes with CUDA Green Contexts [[57](#ref-57)]. Both treat every request of their workload alike,
+with no class above the rest. We built no adaptive controller. At the two-card comparison's envelope (§6.8), what the
+voice tier still loses on a shared card is the speech servers' share of the GPU, which time-slices between processes:
+the transcript comes 51–71 ms later from eight agent sessions on, on stock vLLM and with the change alike, and no
+scheduling inside the engine removes that. DLFP's result says what such a controller would need, the device's step
+times rather than the host's rhythm.
+
+**What is new.** The mechanisms are not: co-serving a latency class with best-effort work, preempting for a waiting
+request while keeping the victim's KV in host memory, and holding prefill back for a priority request are all
+published, as above. Three things are this report's. Make-room brings V0's waiting-request preemption to vLLM's V1
+scheduler under chunked prefill and asynchronous scheduling, on vLLM's own CPU tier, as a change proposed to vLLM
+rather than a new engine. The prefill hold is bounded to a reply's first tokens and sized to the first sentence that a
+cascaded voice agent hands to speech synthesis, which we did not find elsewhere. And the measurements: a cascaded voice
+pipeline beside long-context coding agents on one GPU, with V2V read from waveforms, against the configurations an
+operator can deploy, and, across two cards under a resource gate fixed before the runs, what sharing a card buys over a
+card per workload.
+
 ## 9. Limitations
 
 Each result rests on assumptions about the setting, which we state here with how much the result depends on each.
 
-**One model, two GPUs.** Every result uses Qwen3-4B, on one RTX 5060 Ti whose 36,400-token pool the agents' contexts
-fill, and on an A100 SXM4 80 GB held to the same pool. The first wait depends on how often the pool is full and how long
-a turn then waits, and the second on how long a step with agent prefill takes. A larger pool, another model or a faster
-GPU changes both, and §6.6 and §6.7 show the change helping less where the pool has room and the step cap setting its
-cost on a faster card. On the A100 the rules meet the SLO at the RTX 5060 Ti's 512-token cap, which costs the agents
-about 30% of their throughput there. At vLLM's default of 2,048 tokens they keep all of it and leave the voice 0.14–0.17
-s over the SLO. The repository's simulator places other GPUs only by costs scaled from published peaks, which on the
-A100 missed decode attention by 1.8 times.
+**One model, two kinds of GPU.** Every result uses Qwen3-4B, on RTX 5060 Ti cards whose 36,400-token pool beside the
+speech servers the agents' contexts fill, one or, in §6.8, two on two hosts, and on an A100 SXM4 80 GB held to the same
+pool. The first wait depends on how often the pool is full and how long a turn then waits, and the second on how long a
+step with agent prefill takes. A larger pool, another model or a faster GPU changes both, and §6.6 and §6.7 show the
+change helping less where the pool has room and the step cap setting its cost on a faster card. On the A100 the rules
+meet the SLO at the RTX 5060 Ti's 512-token cap, which costs the agents about 30% of their throughput there. At vLLM's
+default of 2,048 tokens they keep all of it and leave the voice 0.14–0.17 s over the SLO. The repository's simulator
+places other GPUs only by costs scaled from published peaks, which on the A100 missed decode attention by 1.8 times.
 
 **A few calls per GPU.** The headline runs two callers. The hold's share of the engine's steps grows with the calls,
 from 33% with two to 64% with six, and with 4 and 6 callers the change misses each SLO in every round, by 0.26–0.27 s at
 the median. Replies whose windows overlap without a gap would stop the agents' prefill altogether (§6.6).
 
+**Two cards in three rounds.** The two-card comparison rests on three rounds, each on a new sample of the agents, and
+measured the consolidated card at 2, 4, 8, 12 and 24 sessions only, so the change's envelope lies between four and eight
+sessions and stock vLLM's between two and four. Each card's part of an arrangement ran as a run of its own, and the sums
+assume that one card's work does not slow the other's, as with the cards on two hosts that share only the control
+plane. At the envelope the agents' work is the traces' own pace, so the background measure there counts the load
+offered, not what the shared card could do.
+
 **Synthesized callers.** The callers speak scripted lines synthesized in six voices, and the agent's endpointing is
 fixed. Endpointing, which waits for the final transcript, takes 0.76 s of voice alone's V2V and 0.82 s of every
-configuration's under load, within 5 ms of one another. Real callers vary in pace, pauses and barge-ins, which these
-runs do not sample.
+configuration's under load, within 5 ms of one another. A sweep of the fixed endpointing found it to be the VAD's
+silence and about 0.2 s more: 0.3 s of silence in place of 0.55 brought voice alone's median V2V from 1.61 s to
+1.35 s and answered one of the corpus's 40 lines before it had ended. Real callers vary in pace, pauses and barge-ins,
+which these runs do not sample.
 
-**One step cap on the RTX 5060 Ti.** The change ran only at the 512-token cap there. Beside the long-context sessions, a
-1,024-token cap without a per-request threshold gave tuned vLLM a lower tail and 9% more agent throughput (§5.4), and
-how the change fares at that cap is not measured.
+**A step cap chosen on one sample.** The sweep screened the change's caps of 256, 512 and 1,024 tokens on the sample
+the evaluation was tuned on, one run a setting, and five rounds on new samples confirmed 256 against 512 beside the
+24 sessions (§6.9). Caps between those were not measured, and the results of §6.1–§6.7 stay at 512 tokens a step.
 
 **Scaled traces.** The agents replay Claude Code traces scaled 32× in blocks of tokens, so that every request fits the
 32k context. The scaling keeps which requests share which prefixes and changes the traces' timing. It also sets the KV
@@ -903,7 +1067,9 @@ consumer GPU comes to 2.24 s, 0.20 s over a strict SLO, with a third of the repl
 7–60 ms. The gain shrinks where the pool has room, the tail grows as calls overlap, and the step cap sets how much of
 the agents' throughput a tail under the SLO costs. For a realtime tier that shares a GPU with agents whose KV fills the
 pool, the place to act is the engine's scheduler: preempt for the waiting turn, and keep background prefill out of its
-first sentence.
+first sentence. With two cards, the larger gain is the arrangement: both calls and a few agents on one card, and the
+other card full of agents. What then limits the shared card is the speech servers' share of the GPU, which no
+scheduling inside the engine removes.
 
 ## References
 
@@ -1017,9 +1183,13 @@ first sentence.
 
 <a name="ref-55"></a>[55] J. Meng and B. Li. [Metronome: Bound the Cache, Keep the Beat for Real-Time Interaction Model Serving](https://arxiv.org/abs/2607.02640). arXiv:2607.02640, 2026.
 
-<a name="ref-56"></a>[56] Z. Ye et al. [FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving](https://arxiv.org/abs/2501.01005). In *MLSys 2025*.
+<a name="ref-56"></a>[56] G. Agarwal, A. Garg, and I. Singhal. [Decode-Latency Feedback Prefill: A Model-Free Controller and Its Generalization Limits](https://arxiv.org/abs/2609.38386). arXiv:2609.38386, 2026.
 
-<a name="ref-57"></a>[57] T. Dao. [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691). In *ICLR 2024*.
+<a name="ref-57"></a>[57] Y. Zhang, Y. Yan, N. Yang, and D. Yuan. [AgentServe: Algorithm-System Co-Design for Efficient Agentic AI Serving on a Consumer-Grade GPU](https://arxiv.org/abs/2603.10342). arXiv:2603.10342, 2026.
+
+<a name="ref-58"></a>[58] Z. Ye et al. [FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving](https://arxiv.org/abs/2501.01005). In *MLSys 2025*.
+
+<a name="ref-59"></a>[59] T. Dao. [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691). In *ICLR 2024*.
 
 ## Appendices
 
@@ -1226,6 +1396,12 @@ The engine's recovery is mostly its warm start. Its last process exited 7.6 s af
 s, and all three GPU servers restart together in 102.7 s on warm caches. A CPU tier filled to twice its size kept the
 engine healthy, and it restored the latest 8,192-token prompt in 294 ms against 1,112 ms to recompute it.
 
+On two GPU nodes, with both calls on the first and the second a warm spare (§6.8, §7), the drill places two calls as the
+voice worker does, runs a turn of each every 3 s beside two agents' streams, and then breaks the first node's engine.
+A SIGKILL moved both calls' next turns to the spare 0.7 s later, and stopping the engine 1.9 s later. None of the 300
+turns after the events failed, and none was in flight at either event. The spare held its agents' new requests while it
+carried the calls, and the killed engine was back 101 s after the kill.
+
 ### E. The forecast for the A100
 
 A forecast for the A100 SXM4 80 GB was written before the run, from the RTX 5060 Ti's measured costs scaled by the
@@ -1249,7 +1425,7 @@ A step model fitted on the A100's own calibration run explains the miss. Its dec
 KV read, 1.82 times the forecast, which is 858 GB/s or 42% of the card's bandwidth, where the RTX 5060 Ti's reaches 77%
 of its own. The per-token cost of the linear layers came in at the forecast's 41.4 µs. A step on the A100 is cheaper
 than on the RTX 5060 Ti by less than the cards' peaks say, and the KV case's wait is a count of decode steps.
-FlashInfer's attention [[56](#ref-56)] in place of FlashAttention 2 [[57](#ref-57)] shortened the wait by 8%, to
+FlashInfer's attention [[58](#ref-58)] in place of FlashAttention 2 [[59](#ref-59)] shortened the wait by 8%, to
 1,580–1,607 ms.
 
 The forecast also overstated how often two calls run short of KV. It placed the A100 at 10% of the time and the RTX 5060

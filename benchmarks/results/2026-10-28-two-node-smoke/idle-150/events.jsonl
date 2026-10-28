@@ -1,0 +1,4 @@
+{"at": 1793197916.886, "event": "agents_started", "run": 0, "seed": 26}
+{"at": 1793198027.907, "event": "window_started", "hours": 0.25}
+{"at": 1793198028.12, "event": "calls_started", "run": 0, "first_call": 0}
+{"at": 1793198927.905, "event": "window_ended", "by": "hours"}

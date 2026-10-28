@@ -1,0 +1,15 @@
+nodes: phastform (healthy, available), gray (healthy, available)
+[2026-10-28T15:04:12Z] kill: starting the client on cyan (2 calls, 2 agents)
+[2026-10-28T15:04:27Z] kill: the engine of phastform (phastform)
+[2026-10-28T15:04:27Z] kill of phastform at 1793199867.435560398; the calls go on for 240 s
+the phastform engine at 1793199867.436
+turns before the event: 10, 10 whole
+turns after the event: 148, 148 whole
+     +0.7 s drill-call-1 moved phastform -> gray
+     +0.7 s drill-call-2 moved phastform -> gray
+turns that failed after the first move: 0
+phastform passed over after 0.10344672203063965 s, unhealthy after 2.120526075363159 s, available again after 100.99492335319519 s
+a survivor covered for phastform for 238 s of polls
+agents' requests after the event: 5, 1 whole
+[2026-10-28T15:08:34Z] kill: done, ~/.cache/kosa-dev/flatshare-prod/exp/drills/node-kill-1
+DRILL-EXIT 0

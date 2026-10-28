@@ -42,6 +42,11 @@ E2's report computes these for every point (`flatshare-bench e2`; [EXPERIMENTS.m
 | W5, calls per GPU | 4 | 1,794 ms (1,780–1,894) | the median of three rounds | 2,044 ms |
 | W5, calls per GPU | 6 | 1,885 ms (1,878–1,885) | the median of three rounds | 2,135 ms |
 | The A100 run (an A100 SXM4 80 GB) | 2 | 1,419 ms (1,391–1,445) | the median of five rounds | 1,669 ms |
+| RG, the two-card rounds: round 1, Phastform | 2 / 1 | 1,750 / 1,738 ms | the round's own run, each round held to its own | 2,000 / 1,988 ms |
+| RG: round 2, Gray | 2 / 1 | 1,722 / 1,693 ms | the round's own run | 1,972 / 1,943 ms |
+| RG: round 3, Phastform | 2 / 1 | 1,760 / 1,732 ms | the round's own run | 2,010 / 1,982 ms |
+| RG: round 4, Gray (the sweep's confirmation only) | 2 | 1,830 ms | the round's own run | 2,080 ms |
+| RG: round 5, Phastform (the sweep's confirmation only) | 2 | 1,842 ms | the round's own run | 2,092 ms |
 
 Not computed: audio gaps (the continuity indicator), the interactive class's resume target, and the cache-contract honor rate, which went with leases.
 
