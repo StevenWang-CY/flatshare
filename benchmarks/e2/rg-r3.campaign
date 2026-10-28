@@ -1,10 +1,11 @@
 # The two-card comparison, round 3 of 3, and the sweep's confirmation, round 3 of 5 (rg-r4 and rg-r5 end it), on a
 # fresh sample of the agents (seed 23):
 # each card's part of every arrangement in benchmarks/quality/RESOURCE-GATE.md as a point of its own (voice alone with
-# two callers and with one, the agents alone on the frozen box and on the agents-only card, one caller beside 12
-# session trees on the frozen box and on the change at a step cap of 256, two callers beside 12 on both, a consolidated
-# card at half the agents and, for the consolidated card's envelope, at 8, 4 and 2 session trees, and two callers
-# beside 24 on the change at 256, on the frozen box and on W5's 48-token configuration). Round N runs its engine groups in an order rotated by one from round to round, on the GPU node
+# two callers and with one, the agents alone on the frozen box at 24 and 12 session trees and on the agents-only card at
+# 24, 20, 16 and 12, one caller beside 12 session trees on the frozen box and on the change at a step cap of 256, two
+# callers beside 12 on both, a consolidated card at half the agents and, for the consolidated card's envelope, at 8, 4
+# and 2 session trees, and two callers beside 24 on the change at 256, on the frozen box and on W5's 48-token
+# configuration). Round N runs its engine groups in an order rotated by one from round to round, on the GPU node
 # FLATSHARE_GPU names, the rounds' nodes swapped between rounds.
 #   FLATSHARE_GPU=NODE benchmarks/e2/campaign.sh --pause benchmarks/e2/rg-r3.campaign
 
@@ -25,6 +26,7 @@ arms/sweep-disc-pr-ab48-b256-t0-s24.toml
 arms/w5-a1-voice.toml
 arms/rg-voice-c1.toml
 arms/rg-disc-agents-frozen-s24.toml
+arms/rg-disc-agents-frozen-s12.toml
 arms/rg-disc-frozen-c1-s12.toml
 arms/rg-disc-frozen-s12.toml
 arms/rg-disc-frozen-s8.toml
@@ -34,3 +36,6 @@ arms/w5-disc-frozen-s24.toml
 
 # engine agents-only
 arms/rg-disc-agents-only-s24.toml
+arms/rg-disc-agents-only-s20.toml
+arms/rg-disc-agents-only-s16.toml
+arms/rg-disc-agents-only-s12.toml
