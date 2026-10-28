@@ -1,0 +1,206 @@
+{
+  "name": "sweep-disc-pr-ab96-b1024-t0-s24",
+  "arm": "9-pr-ab96-b1024-t0",
+  "label": "vLLM PRs A and B, 96-token window, step cap 1024, threshold 0, discriminating scenario, warm-up turn",
+  "window_s": 349.1,
+  "voice": {
+    "turns": 50,
+    "errors": 0,
+    "v2v_ms": {
+      "n": 59,
+      "p50": 2064.8,
+      "p95": 2414.6,
+      "p99": 2609.0
+    },
+    "barge_in_to_silence_ms": {
+      "n": 9,
+      "p50": 444.8,
+      "p95": 709.0,
+      "p99": 721.9
+    },
+    "barge_ins": 9
+  },
+  "worker": {
+    "sessions": 2,
+    "turns": 59,
+    "waterfall": {
+      "transcript_ms": {
+        "n": 58,
+        "mean": 811.72,
+        "p10": 799.32,
+        "p50": 810.2,
+        "p90": 828.94,
+        "p95": 830.98,
+        "p99": 832.09
+      },
+      "end_of_turn_ms": {
+        "n": 58,
+        "mean": 816.68,
+        "p10": 803.67,
+        "p50": 814.1,
+        "p90": 834.93,
+        "p95": 835.38,
+        "p99": 837.09
+      },
+      "llm_ttft_ms": {
+        "n": 59,
+        "mean": 433.02,
+        "p10": 207.68,
+        "p50": 422.2,
+        "p90": 670.16,
+        "p95": 721.69,
+        "p99": 873.93
+      },
+      "llm_first_sentence_ms": {
+        "n": 59,
+        "mean": 693.46,
+        "p10": 458.7,
+        "p50": 693.7,
+        "p90": 919.04,
+        "p95": 998.62,
+        "p99": 1210.94
+      },
+      "turn_to_first_sentence_ms": {
+        "n": 58,
+        "mean": 698.57,
+        "p10": 474.74,
+        "p50": 695.25,
+        "p90": 923.43,
+        "p95": 1003.53,
+        "p99": 1214.64
+      },
+      "tts_first_audio_ms": {
+        "n": 59,
+        "mean": 209.42,
+        "p10": 194.7,
+        "p50": 203.9,
+        "p90": 237.12,
+        "p95": 249.03,
+        "p99": 263.19
+      },
+      "e2e_ms": {
+        "n": 58,
+        "mean": 1725.75,
+        "p10": 1487.89,
+        "p50": 1724.65,
+        "p90": 1969.16,
+        "p95": 2040.93,
+        "p99": 2293.34
+      }
+    },
+    "events": {
+      "sent": 248,
+      "dropped": 0,
+      "failed": 0
+    }
+  },
+  "background": {
+    "requests": 107,
+    "errors": 0,
+    "without_usage": 0,
+    "requests_per_s": 0.307,
+    "prompt_tokens_per_s": 3829.4,
+    "completion_tokens_per_s": 16.7,
+    "tokens_per_s": 3846.1,
+    "ttft_ms": {
+      "n": 107,
+      "mean": 65430.19,
+      "p10": 54214.49,
+      "p50": 63285.63,
+      "p90": 82058.26,
+      "p95": 87222.08,
+      "p99": 88677.21
+    },
+    "itl_ms": {
+      "n": 102,
+      "mean": 49.72,
+      "p10": 19.32,
+      "p50": 32.12,
+      "p90": 112.88,
+      "p95": 129.21,
+      "p99": 172.52
+    },
+    "fixed_window": {
+      "seconds": 240.0,
+      "requests": 71,
+      "requests_per_s": 0.296,
+      "tokens_per_s": 3767.1
+    }
+  },
+  "gateway": {
+    "realtime_first_byte_ms": {
+      "n": 61,
+      "mean": 398.26,
+      "p50": 391.0,
+      "p95": 694.84,
+      "p99": 846.3,
+      "source": "log"
+    },
+    "background_first_byte_ms": {
+      "n": 107,
+      "mean": 65428.97,
+      "p50": 63284.47,
+      "p95": 87220.73,
+      "p99": 88676.18,
+      "source": "log"
+    },
+    "shed": null,
+    "refused": null,
+    "resubmitted": null,
+    "discarded_tokens": null,
+    "background_tokens_per_s": 3846.1,
+    "counters": {
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_turn_ended\"}": 62,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_started\"}": 61,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_ended\"}": 52,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"interrupted\"}": 9,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_speech_started\"}": 62,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"session_closed\"}": 1,
+      "flatshare_gateway_request_outcomes_total{class=\"background\",outcome=\"completed\"}": 107,
+      "flatshare_gateway_request_outcomes_total{class=\"realtime\",outcome=\"completed\"}": 61,
+      "flatshare_gateway_request_outcomes_total{class=\"realtime\",outcome=\"cancelled\"}": 1,
+      "flatshare_gateway_requests_total{class=\"\",route=\"/v1/models\",status=\"200\",tenant=\"voice\"}": 2,
+      "flatshare_gateway_requests_total{class=\"background\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"agents\"}": 107,
+      "flatshare_gateway_requests_total{class=\"\",route=\"/v1/events\",status=\"202\",tenant=\"voice\"}": 247,
+      "flatshare_gateway_requests_total{class=\"realtime\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"voice\"}": 62,
+      "flatshare_gateway_sanitized_total{field=\"x-request-id\"}": 104,
+      "flatshare_gateway_sanitized_total{field=\"priority\"}": 104,
+      "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"prompt\"}": 40557,
+      "flatshare_gateway_usage_tokens_total{class=\"background\",kind=\"prompt\"}": 1336771,
+      "flatshare_gateway_usage_tokens_total{class=\"background\",kind=\"completion\"}": 5831,
+      "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"cached\"}": 38912,
+      "flatshare_gateway_usage_tokens_total{class=\"background\",kind=\"cached\"}": 40928,
+      "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"completion\"}": 1341
+    }
+  },
+  "engine": {
+    "preemptions": 2,
+    "prompt_tokens_by_source": {
+      "local_compute": 1297531,
+      "local_cache_hit": 23296,
+      "external_kv_transfer": 56560
+    },
+    "refused": {
+      "max_num_queued_reqs": 0,
+      "max_num_queued_tokens": 0
+    },
+    "kv_offload_load_bytes": 8340111360,
+    "kv_offload_store_bytes": 192214204416
+  },
+  "kv": {
+    "samples": 699,
+    "running_share": 0.03,
+    "free_blocks": {
+      "p50": 994,
+      "min": 2
+    },
+    "running": {
+      "p50": 2.0,
+      "max": 4.0
+    },
+    "waiting": {
+      "p50": 18.0,
+      "max": 23.0
+    }
+  }
+}

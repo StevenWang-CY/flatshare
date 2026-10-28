@@ -1,0 +1,131 @@
+[2026-10-27T22:46:12Z] campaign sweep-screen2: 9 points, arm files at v1.5-13-g10ba5c3-dirty, the agents' seed 11
+[2026-10-27T22:46:13Z] sweep-disc-frozen-cap2-s24: pending, engine frozen
+[2026-10-27T22:46:14Z] sweep-disc-frozen-cap1-s24: pending, engine frozen
+[2026-10-27T22:46:14Z] sweep-disc-frozen-b256-t0-s24: pending, engine frozen --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-27T22:46:15Z] sweep-disc-pr-ab48-cap2-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-27T22:46:15Z] sweep-disc-pr-ab48-cap1-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-27T22:46:16Z] sweep-disc-pr-ab48-b256-cap4-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-27T22:46:16Z] sweep-disc-pr-ab48-b256-cap2-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-27T22:46:17Z] sweep-disc-pr-ab48-fp8-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --kv-cache-dtype fp8
+[2026-10-27T22:46:17Z] sweep-disc-pr-ab48-b256-fp8-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --kv-cache-dtype fp8
+[2026-10-27T22:46:38Z] campaign sweep-screen2: 9 points, arm files at v1.5-14-g7d4e760, the agents' seed 11
+[2026-10-27T22:46:39Z] sweep-disc-frozen-cap2-s24: pending, engine frozen
+[2026-10-27T22:46:42Z] campaign sweep-screen2: 9 points, arm files at v1.5-14-g7d4e760, the agents' seed 11
+[2026-10-27T22:46:43Z] sweep-disc-frozen-cap2-s24: pending, engine frozen
+[2026-10-27T22:46:43Z] sweep-disc-frozen-cap1-s24: pending, engine frozen
+[2026-10-27T22:46:44Z] sweep-disc-frozen-b256-t0-s24: pending, engine frozen --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-27T22:46:44Z] sweep-disc-pr-ab48-cap2-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-27T22:46:45Z] sweep-disc-pr-ab48-cap1-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-27T22:46:45Z] sweep-disc-pr-ab48-b256-cap4-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-27T22:46:46Z] sweep-disc-pr-ab48-b256-cap2-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-27T22:46:46Z] sweep-disc-pr-ab48-fp8-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --kv-cache-dtype fp8
+[2026-10-27T22:46:47Z] sweep-disc-pr-ab48-b256-fp8-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --kv-cache-dtype fp8
+[2026-10-27T22:46:47Z] sweep-disc-frozen-cap2-s24: phastform runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-27T22:48:18Z] sweep-disc-frozen-cap2-s24: phastform has v1.5
+[2026-10-27T22:48:18Z] sweep-disc-frozen-cap2-s24: measuring
+[22:48:21Z] configuring cyan for sweep-disc-frozen-cap2-s24
+[22:48:22Z] AIPerf: 24 session trees through the gateway, seed 11
+[22:49:30Z] AIPerf is profiling; 60 s of warm-up
+[22:50:30Z] calls: 2 callers, 25 turns each after 1 warm-up
+[22:57:03Z] stopping AIPerf
+sweep-disc-frozen-cap2-s24: V2V p50/p95/p99 2933.8/9360.6/10765.5 ms, 0 of 50 turns failed; background 0.287 requests/s, 3,556 tokens/s, agent TTFT p50/p99 70749.22/102619.88 ms
+[22:57:05Z] sweep-disc-frozen-cap2-s24: V2V p50/p95/p99 2933.8/9360.6/10765.5 ms, 0 of 50 turns failed; background 0.287 requests/s, 3,556 tokens/s, agent TTFT p50/p99 70749.22/102619.88 ms
+[2026-10-27T22:57:07Z] sweep-disc-frozen-cap1-s24: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-27T22:57:07Z] sweep-disc-frozen-cap1-s24: phastform has v1.5
+[2026-10-27T22:57:07Z] sweep-disc-frozen-cap1-s24: measuring
+[22:57:08Z] configuring cyan for sweep-disc-frozen-cap1-s24
+[22:57:08Z] AIPerf: 24 session trees through the gateway, seed 11
+[22:58:19Z] AIPerf is profiling; 60 s of warm-up
+[22:59:19Z] calls: 2 callers, 25 turns each after 1 warm-up
+[23:05:34Z] stopping AIPerf
+[23:05:36Z] sweep-disc-frozen-cap1-s24: V2V p50/p95/p99 2444.8/4420.9/5129.2 ms, 0 of 50 turns failed; background 0.273 requests/s, 3,422 tokens/s, agent TTFT p50/p99 75949.44/105245.27 ms
+sweep-disc-frozen-cap1-s24: V2V p50/p95/p99 2444.8/4420.9/5129.2 ms, 0 of 50 turns failed; background 0.273 requests/s, 3,422 tokens/s, agent TTFT p50/p99 75949.44/105245.27 ms
+[2026-10-27T23:05:37Z] sweep-disc-frozen-b256-t0-s24: phastform runs frozen --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-27T23:08:04Z] sweep-disc-frozen-b256-t0-s24: phastform has v1.5
+[2026-10-27T23:08:04Z] sweep-disc-frozen-b256-t0-s24: measuring
+[23:08:07Z] configuring cyan for sweep-disc-frozen-b256-t0-s24
+[23:08:07Z] AIPerf: 24 session trees through the gateway, seed 11
+[23:09:22Z] AIPerf is profiling; 60 s of warm-up
+[23:10:22Z] calls: 2 callers, 25 turns each after 1 warm-up
+[23:17:15Z] stopping AIPerf
+sweep-disc-frozen-b256-t0-s24: V2V p50/p95/p99 4542.1/9521.5/10143.8 ms, 0 of 50 turns failed; background 0.272 requests/s, 3,435 tokens/s, agent TTFT p50/p99 73676.62/104418.8 ms
+[23:17:17Z] sweep-disc-frozen-b256-t0-s24: V2V p50/p95/p99 4542.1/9521.5/10143.8 ms, 0 of 50 turns failed; background 0.272 requests/s, 3,435 tokens/s, agent TTFT p50/p99 73676.62/104418.8 ms
+[2026-10-27T23:17:18Z] sweep-disc-pr-ab48-cap2-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-27T23:18:58Z] sweep-disc-pr-ab48-cap2-s24: phastform has v1.5
+[2026-10-27T23:18:58Z] sweep-disc-pr-ab48-cap2-s24: measuring
+[23:19:01Z] configuring cyan for sweep-disc-pr-ab48-cap2-s24
+[23:19:01Z] AIPerf: 24 session trees through the gateway, seed 11
+[23:20:10Z] AIPerf is profiling; 60 s of warm-up
+[23:21:10Z] calls: 2 callers, 25 turns each after 1 warm-up
+[23:26:58Z] stopping AIPerf
+sweep-disc-pr-ab48-cap2-s24: V2V p50/p95/p99 1913.3/2166.8/2215.6 ms, 0 of 50 turns failed; background 0.277 requests/s, 3,414 tokens/s, agent TTFT p50/p99 73936.5/101744.5 ms
+[23:27:00Z] sweep-disc-pr-ab48-cap2-s24: V2V p50/p95/p99 1913.3/2166.8/2215.6 ms, 0 of 50 turns failed; background 0.277 requests/s, 3,414 tokens/s, agent TTFT p50/p99 73936.5/101744.5 ms
+[2026-10-27T23:27:01Z] sweep-disc-pr-ab48-cap1-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-27T23:27:02Z] sweep-disc-pr-ab48-cap1-s24: phastform has v1.5
+[2026-10-27T23:27:02Z] sweep-disc-pr-ab48-cap1-s24: measuring
+[23:27:03Z] configuring cyan for sweep-disc-pr-ab48-cap1-s24
+[23:27:03Z] AIPerf: 24 session trees through the gateway, seed 11
+[23:28:14Z] AIPerf is profiling; 60 s of warm-up
+[23:29:14Z] calls: 2 callers, 25 turns each after 1 warm-up
+[23:35:12Z] stopping AIPerf
+[23:35:14Z] sweep-disc-pr-ab48-cap1-s24: V2V p50/p95/p99 1894.2/2136.1/2194.4 ms, 0 of 50 turns failed; background 0.26 requests/s, 3,290 tokens/s, agent TTFT p50/p99 78348.66/108002.13 ms
+sweep-disc-pr-ab48-cap1-s24: V2V p50/p95/p99 1894.2/2136.1/2194.4 ms, 0 of 50 turns failed; background 0.26 requests/s, 3,290 tokens/s, agent TTFT p50/p99 78348.66/108002.13 ms
+[2026-10-27T23:35:15Z] sweep-disc-pr-ab48-b256-cap4-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-27T23:36:51Z] sweep-disc-pr-ab48-b256-cap4-s24: phastform has v1.5
+[2026-10-27T23:36:51Z] sweep-disc-pr-ab48-b256-cap4-s24: measuring
+[23:36:54Z] configuring cyan for sweep-disc-pr-ab48-b256-cap4-s24
+[23:36:54Z] AIPerf: 24 session trees through the gateway, seed 11
+[23:38:09Z] AIPerf is profiling; 60 s of warm-up
+[23:39:09Z] calls: 2 callers, 25 turns each after 1 warm-up
+[23:45:08Z] stopping AIPerf
+sweep-disc-pr-ab48-b256-cap4-s24: V2V p50/p95/p99 1868.3/2157.6/2283.6 ms, 0 of 50 turns failed; background 0.257 requests/s, 3,284 tokens/s, agent TTFT p50/p99 77548.22/106899.9 ms
+[23:45:10Z] sweep-disc-pr-ab48-b256-cap4-s24: V2V p50/p95/p99 1868.3/2157.6/2283.6 ms, 0 of 50 turns failed; background 0.257 requests/s, 3,284 tokens/s, agent TTFT p50/p99 77548.22/106899.9 ms
+[2026-10-27T23:45:11Z] sweep-disc-pr-ab48-b256-cap2-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-27T23:45:12Z] sweep-disc-pr-ab48-b256-cap2-s24: phastform has v1.5
+[2026-10-27T23:45:12Z] sweep-disc-pr-ab48-b256-cap2-s24: measuring
+[23:45:13Z] configuring cyan for sweep-disc-pr-ab48-b256-cap2-s24
+[23:45:13Z] AIPerf: 24 session trees through the gateway, seed 11
+[23:46:27Z] AIPerf is profiling; 60 s of warm-up
+[23:47:27Z] calls: 2 callers, 25 turns each after 1 warm-up
+[23:53:14Z] stopping AIPerf
+sweep-disc-pr-ab48-b256-cap2-s24: V2V p50/p95/p99 1866.3/2071.5/2311.1 ms, 0 of 50 turns failed; background 0.256 requests/s, 3,213 tokens/s, agent TTFT p50/p99 78573.5/111039.33 ms
+[23:53:17Z] sweep-disc-pr-ab48-b256-cap2-s24: V2V p50/p95/p99 1866.3/2071.5/2311.1 ms, 0 of 50 turns failed; background 0.256 requests/s, 3,213 tokens/s, agent TTFT p50/p99 78573.5/111039.33 ms
+[2026-10-27T23:53:18Z] sweep-disc-pr-ab48-fp8-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --kv-cache-dtype fp8
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-27T23:56:30Z] sweep-disc-pr-ab48-fp8-s24: phastform has v1.5
+[2026-10-27T23:56:30Z] sweep-disc-pr-ab48-fp8-s24: measuring
+[23:56:33Z] configuring cyan for sweep-disc-pr-ab48-fp8-s24
+[23:56:33Z] AIPerf: 24 session trees through the gateway, seed 11
+[23:57:47Z] AIPerf is profiling; 60 s of warm-up
+[23:58:47Z] calls: 2 callers, 25 turns each after 1 warm-up
+[00:10:26Z] failed: KeyboardInterrupt: 
+flatshare-bench e2: sweep-disc-pr-ab48-fp8-s24 interrupted
+[2026-10-28T00:10:26Z] campaign: sweep-disc-pr-ab48-fp8-s24 failed (exit status 130); its run directory is ~/.cache/kosa-dev/flatshare-prod/exp/e2/sweep-screen2/sweep-disc-pr-ab48-fp8-s24
+gateway: unchanged
+worker: unchanged
+[2026-10-28T00:10:29Z] phastform is paused; start it again with systemctl --user start flatshare.target

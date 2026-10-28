@@ -1,0 +1,18 @@
+[2026-10-28T01:29:03Z] campaign fp8-repro: 1 point, arm files at ?, the agents' seed 11
+[2026-10-28T01:29:04Z] sweep-disc-pr-ab48-fp8-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --kv-cache-dtype fp8
+[2026-10-28T01:29:04Z] sweep-disc-pr-ab48-fp8-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --kv-cache-dtype fp8
+variant: the measurement drop-in is on
+active
+active
+active
+[2026-10-28T01:33:01Z] sweep-disc-pr-ab48-fp8-s24: phastform has v1.6-21-ga4e6676
+[2026-10-28T01:33:01Z] sweep-disc-pr-ab48-fp8-s24: measuring
+[01:33:04Z] configuring cyan for sweep-disc-pr-ab48-fp8-s24
+[01:33:04Z] AIPerf: 24 session trees through the gateway, seed 11
+[01:36:07Z] AIPerf is profiling; 60 s of warm-up
+[01:37:07Z] calls: 2 callers, 25 turns each after 1 warm-up
+[01:39:39Z] failed: KeyboardInterrupt: 
+flatshare-bench e2: sweep-disc-pr-ab48-fp8-s24 interrupted
+[2026-10-28T01:39:40Z] campaign: sweep-disc-pr-ab48-fp8-s24 failed (exit status 130); its run directory is ~/.cache/kosa-dev/flatshare-prod/exp/e2/fp8-repro/sweep-disc-pr-ab48-fp8-s24
+gateway: restarted
+worker: unchanged
