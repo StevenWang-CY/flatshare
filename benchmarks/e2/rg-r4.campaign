@@ -1,0 +1,18 @@
+# The sweep's confirmation, round 4 of 5 (rg-r1 to rg-r3 are the first three, with the two-card comparison), on a
+# fresh sample of the agents (seed 24): voice alone with two callers, for the SLO, and two callers beside 24 session
+# trees on the frozen box, on W5's 48-token configuration and on the change at the sweep's best step cap of 256. Its
+# engine groups run in an order rotated from round 3's, on the GPU node FLATSHARE_GPU names, the rounds' nodes
+# swapped between rounds.
+#   FLATSHARE_GPU=NODE benchmarks/e2/campaign.sh --pause benchmarks/e2/rg-r4.campaign
+
+agents-seed 24
+
+# engine make-room (48-token window) --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+arms/sweep-disc-pr-ab48-b256-t0-s24.toml
+
+# engine frozen
+arms/w5-a1-voice.toml
+arms/w5-disc-frozen-s24.toml
+
+# engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+arms/w5-disc-pr-ab48-s24.toml
