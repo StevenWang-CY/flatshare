@@ -1,0 +1,32 @@
+{
+ "runs": [
+  {
+   "task": "qa",
+   "host": "gray",
+   "started": "2026-10-27T23:54:45Z",
+   "finished": "2026-10-27T23:57:36Z",
+   "items": 200
+  },
+  {
+   "task": "enrich",
+   "host": "gray",
+   "started": "2026-10-27T23:57:36Z",
+   "finished": "2026-10-28T01:14:35Z",
+   "items": 100
+  }
+ ],
+ "script_sha256": "c50126ddc84615dbc21573eaaedcbed1bc17de6db1104cd3143d90f00fac87f4",
+ "sample_sha256": "8356428aec89f030ddcf40cf573cd35df345955fab5c5b5c5869c262bef715f1",
+ "model": "Qwen/Qwen3-8B-FP8",
+ "max_model_len": 32768,
+ "qa": {
+  "top_k": 6,
+  "max_tokens": 256,
+  "sampling": "the engine's default"
+ },
+ "enrich": {
+  "max_tokens": 8192,
+  "temperature": 0
+ },
+ "engine_version": "0.32.0"
+}

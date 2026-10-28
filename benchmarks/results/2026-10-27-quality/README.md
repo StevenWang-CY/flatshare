@@ -10,7 +10,9 @@ sample, on Gray's RTX 5060 Ti on 2026-10-27 between 22:17 and 22:54 UTC, with th
 **The verdict is FAIL.** Nine of the eleven criteria fail, among them both tasks' central ones: of the questions the
 model answers, 50.6% are correct (42.8–58.4%, against 80%), and 23.9% of the facts in its records are (21.6–26.4%,
 against 80%). The judge agreed with itself on 134 of the 136 rulings it was asked again (98.5%), so the verdict is not
-inconclusive. The useful-workload pilot, which GATE.md runs only on a PASS, does not run.
+inconclusive. The useful-workload pilot, which GATE.md runs only on a PASS, does not run. The same screen fails
+too with an FP8 KV cache ([below](#with-an-fp8-kv-cache)) and with Qwen3-8B-FP8 on a card of its own
+([below](#qwen3-8b-fp8-on-a-card-of-its-own)).
 
 ## How it ran
 
@@ -116,16 +118,60 @@ recall 3.8–5.2%, entity recall 49.7–54.8%, summaries 73.5–85.8%, judge con
   gives different ones from run to run; 69 of the 200 are the same text in both. No record is the same text, though
   both are greedy: the cache's precision changes their tokens.
 
-## Qwen3-8B-FP8 on a card of its own: it does not fit
+## Qwen3-8B-FP8 on a card of its own
 
-The two-card comparison's resource gate ([RESOURCE-GATE.md](../../quality/RESOURCE-GATE.md)) lets a dedicated
-background card run a more capable model, so the same screen was to run once more with Qwen/Qwen3-8B-FP8 at revision
-220b46e3b2180893580a4454f21f22d3ebb187d3, on the box's engine settings otherwise (BF16 KV cache, a 5 GiB pool,
-max-model-len 32768) and with nothing else on the card. It does not fit Gray's 16 GB card. On 2026-10-27 at 23:39 UTC
-the engine loaded the weights (8.85 GiB) and reserved the 5 GiB pool, which holds 36,400 tokens as for the 4B (the same
-36 layers, 8 KV heads and head size 128), out of 15.34 GiB free; then its warmup ran out of memory, asking for 20 MiB
-with 13 MiB left, PyTorch holding 14.04 GiB and keeping 1.14 GiB more reserved but unallocated. The screen did not
-run.
+In the two-card comparison ([RESOURCE-GATE.md](../../quality/RESOURCE-GATE.md)) a dedicated background card runs
+without the voice servers and has their memory to spend. This run asks whether it could spend it on a more capable
+model that would pass; GATE.md's verdict is about the served model and stays FAIL. The same screen ran with
+Qwen/Qwen3-8B-FP8 at revision 220b46e3b2180893580a4454f21f22d3ebb187d3 alone on Gray's card, recorded in `qwen3-8b/`
+with the same files: the same sample, prompts, settings, judge and criteria, and the box's engine settings otherwise
+(max-model-len 32768), through a host-local drop-in for the run only, removed afterwards. Two starts:
+
+1. **BF16 KV cache in the box's 5 GiB pool: it does not fit.** At 23:39 UTC the engine loaded the weights (8.85 GiB)
+   and reserved the pool, which holds 36,400 tokens as for the 4B (the same 36 layers, 8 KV heads and head size 128),
+   out of 15.34 GiB free; then its warmup ran out of memory, asking for 20 MiB with 13 MiB left, PyTorch holding
+   14.04 GiB and keeping 1.14 GiB more reserved but unallocated.
+2. **FP8 KV cache in a 3 GiB pool: it runs**, at 23:48 UTC, with 43,680 tokens in the pool (more than the box's 36,400
+   BF16 ones) and 14,132 MiB on the card, on FlashInfer with the scale 1.0 as for the 4B's FP8 run. No smaller pool
+   was needed; below 2.25 GiB an FP8 pool could not hold one 32,768-token request.
+
+Qwen3-8B thinks before it answers unless its chat template is told not to, which the served Instruct-2507 model never
+does; the drop-in set the template's default (`--default-chat-template-kwargs '{"enable_thinking":false}'`), so the
+requests are those of the other runs, and no output holds a thinking block. Its default sampling is its own generation
+config: temperature 0.6, top-k 20, top-p 0.95. Its answers came at 39.5 tokens a second and its records at 46.7, where
+the 4B's came at 66.0 and 75.1, so its records took from 23:57 to 01:15 UTC; the engine ran without a restart.
+
+| Criterion | Threshold | 4B, BF16 KV (served) | 4B, FP8 KV | 8B, FP8 KV, own card |
+|---|---:|---:|---:|---:|
+| Precision | ≥ 80% | 50.6% (78 of 154), **fail** | 55.6% (84 of 151), **fail** | 38.4% (71 of 185), **fail** |
+| Coverage | ≥ 60% | 68.0% (68 of 100) | 72.0% (72 of 100) | 63.0% (63 of 100) |
+| Abstention | ≥ 70% | 60.0% (30 of 50), **fail** | 62.0% (31 of 50), **fail** | 24.0% (12 of 50), **fail** |
+| Citations: supporting | ≥ 80% | 94.1% (64 of 68) | 93.1% (67 of 72) | 88.9% (56 of 63) |
+| Citations: naming a given paragraph | all | 99.6% (272 of 273), **fail** | 100% (261 of 261) | 100% (211 of 211) |
+| Speakable | ≥ 95% | 91.6% (141 of 154), **fail** | 94.0% (142 of 151), **fail** | 97.3% (180 of 185) |
+| Accepted records | ≥ 95% | 76.0% (76 of 100), **fail** | 79.0% (79 of 100), **fail** | 73.0% (73 of 100), **fail** |
+| Fact precision | ≥ 80% | 23.9% (292 of 1,221), **fail** | 23.9% (341 of 1,427), **fail** | 28.4% (306 of 1,078), **fail** |
+| Fact recall | ≥ 20% | 3.8% (129 of 3,404), **fail** | 4.4% (151 of 3,404), **fail** | 4.0% (137 of 3,404), **fail** |
+| Entity recall | ≥ 70% | 46.9% (692 of 1,475), **fail** | 52.3% (771 of 1,475), **fail** | 46.6% (687 of 1,475), **fail** |
+| Summaries | ≥ 90% | 82.2% (125 of 152), **fail** | 80.4% (127 of 158), **fail** | 93.8% (137 of 146) |
+| Judge consistency | ≥ 90% | 98.5% (134 of 136) | 96.5% (139 of 144) | 98.4% (121 of 123) |
+| Retrieval recall (reported) | – | 66.7% (100 of 150) | 66.7% (100 of 150) | 66.7% (100 of 150) |
+
+The 8B's intervals, in `qwen3-8b/verdict.json`: precision 31.7–45.6%, coverage 53.2–71.8%, abstention 14.3–37.4%,
+supporting citations 78.8–94.5%, citations naming a given paragraph 98.2–100%, speakable 93.8–98.8%, accepted records
+63.6–80.7%, fact precision 25.8–31.1%, fact recall 3.4–4.7%, entity recall 44.0–49.1%, summaries 88.7–96.7%, judge
+consistency 94.3–99.6%.
+
+- **The larger model does not rescue the background job.** Its records fail four of the five criteria, much as the
+  4B's do: 73 of 100 accepted (17 looped to the 8,192-token cap and are not JSON, 16 repeating one kind of fact and
+  one its 17 entities; 9 have a name not copied verbatim, 1 a fact whose end is not an entity), and of their facts
+  28.4% are correct (25.8–31.1%, against 80%).
+  Only its summaries pass, 137 of 146 sentences stated by what they cite.
+- **On the answers it trades abstention for brevity.** It answers in fewer sentences (180 of 185 speakable, a pass)
+  but abstains on only 12 of the 50 unanswerable questions, and says the abstention sentence after an explanation 16
+  times, which counts as an answer; so it answers more and gets fewer right, 71 of 185.
+- **The pool is not what limits it.** 43,680 FP8 tokens hold more than the box's BF16 pool, and no request came near
+  them: the longest, prompt and reply, took 9,966.
 
 ## Files
 
@@ -141,6 +187,7 @@ run.
 - `verdict.json`: [`gate.py`](../../quality/gate.py)'s verdict from `scores.json` and `rulings.jsonl`;
   `python/flatshare_bench/tests/test_quality_gate.py` checks that it is what they give, and this table against it.
 - `fp8-kv/`: the same five files for the run with an FP8 KV cache.
+- `qwen3-8b/`: the same five files for Qwen3-8B-FP8 on a card of its own.
 
 ## The judge
 
