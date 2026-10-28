@@ -111,6 +111,19 @@ def status(**fields: Any) -> dict[str, Any]:
         ),
         (status(), status(admitting=False, reason="2 of 2 calls"), "capacity", "2 of 2 calls"),
         (status(refused=3), status(refused=4), "capacity", "refused 1 job request(s) meanwhile"),
+        # With node binding, a refusal while it had room is the gateway's: no node took the call.
+        (
+            status(refused=3, node_binding=True),
+            status(refused=4, node_binding=True),
+            "placement",
+            "refused 1 job request(s) meanwhile with room for the call: no GPU node took it",
+        ),
+        (
+            status(admitting=False, reason="2 of 2 calls", node_binding=True),
+            status(refused=4, node_binding=True),
+            "capacity",
+            "2 of 2 calls",
+        ),
         # The gate: an engine the gateway says does not serve, a release's drain; before full calls.
         (
             status(admitting=False, reason="the engine does not serve: /ready answered 503"),
@@ -147,8 +160,12 @@ def test_the_workers_status_is_read_as_it_wrote_it(tmp_path: Path) -> None:
                                 "refused": 5, "pid": 9, "profile": "rtx-5060-ti-serve"}))  # fmt: skip
     assert read_status(path, now=102.5) == {
         "mode": "serve", "max_calls": 2, "active_calls": 2, "admitting": False, "reason": "2 of 2 calls",
-        "refused": 5, "pid": 9, "age_s": 2.5,
+        "refused": 5, "pid": 9, "node_binding": None, "age_s": 2.5,
     }  # fmt: skip
+    status_of = json.loads(path.read_text()) | {"node_binding": True}
+    path.write_text(json.dumps(status_of))
+    # A worker that binds calls to GPU nodes says so.
+    assert read_status(path, now=102.5)["node_binding"] is True
     assert read_status(None) is None
 
 

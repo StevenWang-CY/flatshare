@@ -134,7 +134,16 @@ def read_status(path: Path | None, now: float | None = None) -> dict[str, Any] |
         return None
     if not isinstance(data, dict):
         return None
-    keys = ("mode", "max_calls", "active_calls", "admitting", "reason", "refused", "pid")
+    keys = (
+        "mode",
+        "max_calls",
+        "active_calls",
+        "admitting",
+        "reason",
+        "refused",
+        "pid",
+        "node_binding",
+    )
     found = {key: data.get(key) for key in keys}
     updated = data.get("updated")
     found["age_s"] = (
@@ -153,6 +162,9 @@ def refusal(before: Mapping[str, Any] | None, after: Mapping[str, Any] | None) -
       not serve (either status says so);
     - ``capacity``: it was full (either status says "N of M calls"), or it refused a job request meanwhile (its count of
       refusals rose: a request it decided on between two writes of the file);
+    - ``placement``: it refused a job request meanwhile while every status read showed room, and it binds calls to GPU
+      nodes (``node_binding``): the gateway placed the call on no node (none healthy, every one at its calls), or it
+      did not answer; a call that filled the worker between two writes is told the same way, rarely;
     - ``no_status``: no status file (a worker in bench mode writes none, and takes every call), or ``worker_down``: one
       too old to be a running worker's;
     - ``no_agent``: the worker admitted calls throughout and refused none: LiveKit gave the room no agent (the
@@ -177,7 +189,10 @@ def refusal(before: Mapping[str, Any] | None, after: Mapping[str, Any] | None) -
         return "capacity", closed[0]
     first, last = ((status or {}).get("refused") for status in (before, after))
     if isinstance(first, int) and isinstance(last, int) and last > first:
-        return "capacity", f"the worker refused {last - first} job request(s) meanwhile"
+        refused = f"the worker refused {last - first} job request(s) meanwhile"
+        if any(s.get("node_binding") is True for s in fresh):
+            return "placement", f"{refused} with room for the call: no GPU node took it"
+        return "capacity", refused
     return "no_agent", f"the worker admitted calls ({fresh[-1].get('reason')}) and refused none"
 
 
