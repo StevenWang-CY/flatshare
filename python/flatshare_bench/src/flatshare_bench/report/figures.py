@@ -34,6 +34,7 @@ from flatshare_bench.report.charts import (
     mark_key,
     pct,
     rug,
+    runs,
     seconds,
     stage_key,
     x_axis,
@@ -1360,6 +1361,172 @@ def a100(out: Path) -> list[Path]:
     return [s.save(out / "report-a100.svg")]
 
 
+# Two cards --------------------------------------------------------------------------------------------------------
+
+CARD_ENGINES = {"stock": ("stock vLLM", "gray"), "change": ("the change", "blue")}
+"""Each engine's name and hue."""
+CARD_KINDS = {
+    "dedicated": "Dedicated roles",
+    "consolidation": "Consolidation",
+    "pooling": "Pooling",
+}
+"""Each kind of arrangement's heading over its rows, in the figure's order."""
+CARD_DODGE = {"stock": -6.0, "change": 6.0}
+"""Each engine's offset from its number of sessions in panel a, so that two shares a percentage point apart, as at
+two sessions, stay apart."""
+CARD_TOKENS = Scale(0, 15000, 712, 1040)
+"""Panel b's agents' tokens a second, past the most any round did (14,352)."""
+CARD_VALUES = 1100
+"""Where panel b's medians end, in a column past every round: beside its bar, a value short of the hurdle's rule
+would cross it or read as its label."""
+
+
+def _cards_and(items: Sequence[str]) -> str:
+    """Items in prose: "a, b and c"."""
+    return ", ".join(items[:-1]) + f" and {items[-1]}" if len(items) > 1 else items[0]
+
+
+def _card_sessions(a: data.Arrangement) -> str:
+    return f"{a.sessions[0]} + {a.sessions[1]} sessions"
+
+
+def _card_row(a: data.Arrangement) -> str:
+    """An arrangement's name under its kind's heading."""
+    if a.kind == "dedicated":
+        return a.key.removeprefix("Dedicated roles, ")
+    return "+ a warm spare" if a.spare else CARD_ENGINES[a.engine][0]
+
+
+def _cards_description(c: data.TwoCards, sessions: Sequence[int]) -> str:
+    shares = " and ".join(
+        _cards_and([f"{cell.share:.1%}" for cell in cells])
+        + (" on stock vLLM" if engine == "stock" else " with the change")
+        for engine, cells in c.consolidated.items()
+    )
+    rows = []
+    for a in c.arrangements:
+        if a.kind == "dedicated":
+            what = f"dedicated roles, {_card_row(a)}"
+        elif a.spare:
+            what = "consolidation on the change with a warm spare"
+        else:
+            what = f"{a.kind} on {CARD_ENGINES[a.engine][0]}"
+        miss = "" if a.qualifies else ", missing the requirement"
+        rows.append(f"{what}, {_card_sessions(a)}: {a.tokens:,.0f}{miss}")
+    rounds = len(c.rounds)
+    return (
+        f"In panel a, the share of the consolidated card's replies over their round's SLO, the {rounds} rounds "
+        "pooled, by its agent sessions beside both calls, against the requirement of at most "
+        f"{c.requirement:.0%}: at {_cards_and([str(n) for n in sessions])} sessions, {shares}; in panel b, each "
+        "arrangement's agents' tokens a second over the calls' first 240 s summed over both cards, at the median of "
+        f"the {rounds} rounds, against {c.threshold:,.0f}, {c.hurdle:.0%} over the best dedicated arrangement: "
+        + "; ".join(rows)
+        + "."
+    )
+
+
+def cards(out: Path) -> list[Path]:
+    """report-cards.svg: two cards. (a) The consolidated card's replies over their round's SLO by its agent sessions
+    beside both calls, the rounds pooled, on stock vLLM and with the change, against the requirement. (b) Each
+    arrangement's agents' tokens a second over the calls' first 240 s summed over both cards: a bar at the median of
+    the rounds and a tick for each round, hatched where the arrangement misses the requirement, against the hurdle
+    over the best dedicated arrangement."""
+    c = data.two_cards()
+    sessions = [cell.sessions for cell in c.consolidated["stock"]]
+    if any([cell.sessions for cell in cells] != sessions for cells in c.consolidated.values()):
+        raise ValueError("the engines' consolidated cards ran different numbers of sessions")
+    s = Chart(WIDTH, 660, "What sharing two cards buys", _cards_description(c, sessions))
+    b = CARD_TOKENS
+    left, right = 498, b.start - 16  # panel b's titles and headings, and its rows' names
+    top, heading, pitch, thick = 92, 28, 50, 20
+
+    # (b)'s rows, under their kinds' headings, which set the plot's height.
+    rows = []
+    y = top + 4
+    for kind, name in CARD_KINDS.items():
+        members = [a for a in c.arrangements if a.kind == kind]
+        if not members:
+            continue
+        y += 8 if rows else 0
+        s.text(left, y + 16, name, size=NOTE, cls="mute")
+        y += heading
+        for a in members:
+            rows.append((y + pitch / 2, a))
+            y += pitch
+    bottom = y + 4
+
+    # (a) The consolidated card's replies over the SLO, on one axis of sessions.
+    a_x = Scale(-0.5, len(sessions) - 0.5, 96, 392)
+    a_y = Scale(0, 1, bottom, top + 18)
+    s.text(24, 30, "(a) Replies over the SLO", size=LABEL)
+    s.text(
+        24,
+        54,
+        f"the consolidated card, {len(c.rounds)} rounds pooled",
+        size=NOTE,
+        cls="soft",
+    )
+    marks = [0.0, 0.25, 0.5, 0.75, 1.0]
+    y_axis(s, a_y, marks, [pct(m) for m in marks], a_x.start, a_x.end)
+    last = x_axis(
+        s,
+        a_x,
+        list(range(len(sessions))),
+        [str(n) for n in sessions],
+        None,
+        a_y.start,
+        title="Agent sessions beside both calls",
+    )
+    s.rule(a_x.start, a_x.end, a_y(c.requirement), "slo")
+    s.text(
+        a_x.end + 10,
+        a_y(c.requirement) + 6,
+        f"at most {c.requirement:.0%}",
+        size=NOTE,
+        cls="orange tint",
+    )
+    for engine, cells in c.consolidated.items():
+        name, hue = CARD_ENGINES[engine]
+        points = [(a_x(k) + CARD_DODGE[engine], a_y(cell.share)) for k, cell in enumerate(cells)]
+        s.trace(points, f"{hue} trace")
+        for px, py in points:
+            s.mark(px, py, hue, filled=True)
+        s.text(points[-1][0] + 12, points[-1][1] + 6, name, size=NOTE, halo=True)
+
+    # (b) Each arrangement's agents' tokens a second, against the hurdle: its bar the median of the rounds, over
+    # each round's tick, which reaches past the bar so that it shows on the hatching too.
+    s.text(left, 30, "(b) Agents' tokens/s", size=LABEL)
+    s.text(
+        left,
+        54,
+        f"summed over both cards, median of {len(c.rounds)} rounds",
+        size=NOTE,
+        cls="soft",
+    )
+    ticks, labels = linear_ticks(b.hi, 5000)
+    x_axis(s, b, ticks, labels, top, bottom, title=TOKENS_TITLE)
+    for y, a in rows:
+        _, hue = CARD_ENGINES[a.engine]
+        s.text(right, y - 3, _card_row(a), size=VALUE, anchor="end")
+        s.text(right, y + 19, _card_sessions(a), size=NOTE, anchor="end", cls="soft")
+        length = b(a.tokens) - b.start
+        s.bar(b.start, y - thick / 2, length, thick, hue, hatched=not a.qualifies, name=a.name)
+        runs(s, [b(value) for value in a.rounds], y, hue, half=thick / 2 + 5)
+        s.text(CARD_VALUES, y + 6, f"{a.tokens:,.0f}", size=NOTE, anchor="end")
+    hurdle = b(c.threshold)
+    s.vrule(hurdle, top, bottom, "slo")
+    s.text(
+        hurdle,
+        top - 10,
+        f"{c.hurdle:.0%} over the best dedicated, {c.threshold:,.0f}",
+        size=NOTE,
+        anchor="middle",
+        cls="orange tint",
+    )
+    s.height = last + 14
+    return [s.save(out / "report-cards.svg")]
+
+
 # Every figure -----------------------------------------------------------------------------------------------------
 
 FIGURES = (
@@ -1375,6 +1542,7 @@ FIGURES = (
     frontier,
     margin,
     a100,
+    cards,
 )
 
 

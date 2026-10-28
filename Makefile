@@ -314,8 +314,8 @@ method-figure:
 
 # The technical report's figures, docs/figures/report-*.svg with the phone layouts of its first figure and its headline
 # (report-stages-narrow.svg, report-headline-narrow.svg), drawn by flatshare_bench.report from the committed records
-# each cites: W4's, W5's and the A100's E2 points, the probes, the window sweep, W5's voice replies and the scheduler's
-# cost per step (its data.py names them).
+# each cites: W4's, W5's and the A100's E2 points, the probes, the window sweep, W5's voice replies, the scheduler's
+# cost per step and the two-card comparison's rounds, through their gate.py (its data.py names them).
 report-figures:
 	cd python/flatshare_bench && uv run -q python -m flatshare_bench.report.figures $(abspath docs/figures)
 
