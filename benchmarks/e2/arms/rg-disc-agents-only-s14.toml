@@ -1,0 +1,16 @@
+# The resource gate (benchmarks/quality/RESOURCE-GATE.md): a dedicated card's agents at its best practical, as
+# rg-disc-agents-only-s24 but with 14 session trees, between the 12 at which round 1 found this card busiest and short
+# of saturation (its agents' median time to first token 0.2 s) and the 16 at which their requests began to queue
+# (5.9 s), so that the card's best number of agents is not missed by the counts measured (rg-r1 to rg-r3).
+arm = "2-agents-only-s14"
+label = "the agents alone on a dedicated card at 14 session trees, its pool in the speech servers' memory"
+
+[voice]
+callers = 0
+
+[agents]
+sessions = 14
+data = "weka-x32-long"
+
+[engine]
+variant = "agents-only"
