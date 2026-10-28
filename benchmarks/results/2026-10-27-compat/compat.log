@@ -1,0 +1,12 @@
+torch 2.14.0+cpu transformers 5.20.2
+COMPAT_RC=0
+uv run -q --no-project --python 3.12 python python/flatshare_vllm/scripts/compat_upstream.py --clone /home/USER/.cache/flatshare/vllm-upstream \
+  --git git --python /home/USER/flatshare-prod-compat/main-env/bin/python
+vLLM main 4d95f222e6 (2026-10-27); #63350 ee4bd6ae3e, #63351 9013ed433b
+#63350: merges into main cleanly
+#63351: merges into main cleanly
+the PRs' tests on their merges into main, on CPU (/home/USER/flatshare-prod-compat/main-env/bin/python):
+  #63350: tests/v1/core/test_priority_make_room.py: 51 passed, 1 warning in 43.34s
+  #63351: tests/v1/core/test_priority_make_room.py: 81 passed, 1 warning in 31.26s
+make-room's patches on v0.32.0, the pinned version: they apply
+make-room's patches on v0.33.0rc0: do not apply (make-room: 63350.patch: hunk @@ -53,6 +53,12 @@ from vllm.v1.core.sched.request_queue import ( does not match the scheduler at its line 53); its scheduler.py against v0.32.0: 1 file changed, 333 insertions(+), 41 deletions(-). The variant is written against v0.32.0, the pinned and deployed version
