@@ -1,0 +1,4 @@
+[2026-10-28T15:04:12Z] kill: starting the client on cyan (2 calls, 2 agents)
+[2026-10-28T15:04:27Z] kill: the engine of phastform (phastform)
+[2026-10-28T15:04:27Z] kill of phastform at 1793199867.435560398; the calls go on for 240 s
+[2026-10-28T15:08:34Z] kill: done, ~/.cache/kosa-dev/flatshare-prod/exp/drills/node-kill-1

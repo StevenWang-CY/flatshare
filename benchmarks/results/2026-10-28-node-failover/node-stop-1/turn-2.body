@@ -1,0 +1,36 @@
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}],"prompt_token_ids":null,"prompt_text":null}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":"Eight"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":"y"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":" years"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":" old"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":"—"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":"still"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":" counting"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":" down"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":" the"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":" days"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":" with"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":" grace"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":" and"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":" wonder"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{"content":"."},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-7b2bd07d4aff42c00000000000000e74","object":"chat.completion.chunk","created":1793200529,"model":"Qwen/Qwen3-4B-Instruct-2507-FP8","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop","stop_reason":null,"token_ids":null}],"system_fingerprint":"vllm-0.32.0-1287eb2f"}
+
+data: [DONE]
+

@@ -1,0 +1,5 @@
+[2026-10-28T15:11:10Z] stop: starting the client on cyan (2 calls, 2 agents)
+[2026-10-28T15:11:24Z] stop: the engine of phastform (phastform)
+[2026-10-28T15:11:31Z] stop of phastform at 1793200284.750789672; the calls go on for 240 s
+[2026-10-28T15:15:37Z] starting phastform's engine again
+[2026-10-28T15:17:07Z] stop: done, ~/.cache/kosa-dev/flatshare-prod/exp/drills/node-stop-1

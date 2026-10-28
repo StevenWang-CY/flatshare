@@ -1,0 +1,9 @@
+the phastform engine at 1793200284.751
+turns before the event: 10, 10 whole
+turns after the event: 152, 152 whole
+     +1.9 s drill-call-2 moved phastform -> gray
+     +1.9 s drill-call-1 moved phastform -> gray
+turns that failed after the first move: 0
+phastform passed over after 1.2762649059295654 s, unhealthy after 3.2958779335021973 s, available again after None s
+a survivor covered for phastform for 244 s of polls
+agents' requests after the event: 8, 2 whole
