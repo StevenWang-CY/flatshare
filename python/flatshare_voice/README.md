@@ -37,7 +37,7 @@ Flatshare's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §4.2](.
 | `FLATSHARE_AUDIO` | `synthetic` (bench mode's default) or `microphone` (serve mode's, the profile's) |
 | `FLATSHARE_VOICE_STATUS` | Serve mode: the file the worker writes its state to every second (`%t/flatshare/voice-worker.json` in the unit) |
 | `FLATSHARE_VOICE_DRAIN` | Serve mode: while this file exists the worker takes no new call (`%t/flatshare/voice-worker.drain`, which a release makes to drain the worker) |
-| `FLATSHARE_NODE_BINDING` | `on`, serve mode's default: each call asks the gateway for its GPU node and binds its STT and TTS to that node's sockets ([Nodes](#nodes)); `off`, bench mode's default, and refused `on` where `FLATSHARE_LLM_UDS` bypasses the gateway |
+| `FLATSHARE_NODE_BINDING` | `on`, serve mode's default: each call asks the gateway for its GPU node and binds its STT and TTS to that node's sockets ([Nodes](#nodes)); `off`, bench mode's default (the `node-binding` variant, `deploy/cyan/variants/node-binding`, turns it on there), and refused `on` where `FLATSHARE_LLM_UDS` bypasses the gateway |
 
 The worker reads these whenever it is to serve (`start`, which its unit runs, or `dev`, `console` or `connect`), before it registers with LiveKit: a socket that is not set, or a value its setting does not take, stops it with a line that names the setting (`journalctl --user -u flatshare-voice-worker`), so that no call reaches a worker that would fail it.
 

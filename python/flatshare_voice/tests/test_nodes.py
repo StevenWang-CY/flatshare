@@ -557,3 +557,29 @@ def test_node_binding_needs_the_gateway() -> None:
         Settings.from_env(env | {"FLATSHARE_NODE_BINDING": "on"})
     with pytest.raises(ValueError, match="FLATSHARE_NODE_BINDING must be off or on"):
         Settings.from_env(env | {"FLATSHARE_NODE_BINDING": "yes"})
+
+
+def test_the_node_binding_variant_has_bench_modes_calls_ask_for_their_node() -> None:
+    # deploy/cyan/variants/node-binding, for points and drills on two nodes: bench mode, which asks nothing by default,
+    # binds each call as serve mode does.
+    conf = (
+        Path(__file__).resolve().parents[3]
+        / "deploy"
+        / "cyan"
+        / "variants"
+        / "node-binding"
+        / "flatshare-voice-worker.conf"
+    )
+    set_by = dict(
+        line.removeprefix("Environment=").split("=", 1)
+        for line in conf.read_text().splitlines()
+        if line.startswith("Environment=")
+    )
+    env = {
+        "FLATSHARE_LLM_UDS": "/run/user/1007/flatshare/gateway.sock",
+        "FLATSHARE_STT_UDS": "/run/user/1007/flatshare/phastform-stt.sock",
+        "FLATSHARE_TTS_UDS": "/run/user/1007/flatshare/phastform-tts.sock",
+    }
+    assert set_by == {"FLATSHARE_NODE_BINDING": "on"}
+    assert Settings.from_env(env).node_binding is False
+    assert Settings.from_env(env | set_by).node_binding is True
