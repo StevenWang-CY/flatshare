@@ -15,6 +15,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 from collections import Counter
@@ -31,14 +32,24 @@ from servers import UnixServer, serve, socket_file, stop
 from flatshare_bench.cli import main
 from flatshare_bench.e2 import run as e2
 from flatshare_bench.e2 import tools
-from flatshare_bench.e2.arm import E2Error, Engine, Voice, flag_values, load_arm
+from flatshare_bench.e2.arm import (
+    AGENTS_WINDOW_S,
+    E2Error,
+    Engine,
+    Voice,
+    arm_record,
+    flag_values,
+    load_arm,
+)
 from flatshare_bench.e2.cyan import (
     E2_GATEWAY_TABLE,
     Host,
+    Node,
     Systemd,
     _merge,
     _write_private,
     exclusive,
+    node_drop_in,
     read_env,
     redacted,
     reset_cyan,
@@ -52,7 +63,8 @@ from flatshare_bench.e2.engine import (
     profile_flags,
     variant_flags,
 )
-from flatshare_bench.e2.record import current_name
+from flatshare_bench.e2.record import current_name, render
+from flatshare_bench.e2.report import load_points
 from flatshare_bench.e2.run import gpu_sources, run_point
 from flatshare_bench.e2.tools import Process
 
@@ -107,6 +119,63 @@ def _quick(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # The arm file
+
+
+AGENTS_ONLY = """\
+arm = "2-agents"
+label = "the agents alone, 4 sessions"
+
+[voice]
+callers = 0
+
+[agents]
+sessions = 4
+warmup = 0.2
+data = "corpus"
+window_s = 1
+"""
+
+
+def test_an_agents_only_point_has_no_calls_and_a_fixed_window(tmp_path: Path) -> None:
+    # A dedicated background card serves no call: [voice] callers = 0 with agent sessions, measured over [agents]
+    # window_s, by default AGENTS_WINDOW_S; a point with calls is measured over its calls and takes no window.
+    arm = load_arm(write(tmp_path, "agents.toml", AGENTS_ONLY))
+    assert (arm.voice.callers, arm.agents.sessions, arm.agents.window_s) == (0, 4, 1.0)
+    default = AGENTS_ONLY.replace("window_s = 1\n", "")
+    assert load_arm(write(tmp_path, "default.toml", default)).agents.window_s == AGENTS_WINDOW_S
+    assert arm_record(arm)["agents"]["window_s"] == 1.0
+    # A voice point's record names no window: it is the record points kept before the field.
+    voice = load_arm(write(tmp_path, "a1-voice.toml", VOICE_ALONE))
+    assert "window_s" not in arm_record(voice)["agents"]
+    assert arm_record(voice)["agents"] == {
+        "sessions": 0, "think_cap": 120.0, "warmup": 60.0, "data": "weka-x32", "seed": 11
+    }  # fmt: skip
+    for text, error in (
+        (AGENTS_ONLY.replace("sessions = 4", "sessions = 0"), "measures the agents alone"),
+        (AGENTS_ONLY.replace("callers = 0", "callers = -1"), "callers cannot be negative"),
+        (AGENTS_ONLY.replace("callers = 0", "callers = 2"), "window_s is the window of a point"),
+        (AGENTS_ONLY.replace("window_s = 1", "window_s = -5"), "window_s is seconds"),
+    ):
+        with pytest.raises(E2Error, match=re.escape(error)):
+            load_arm(write(tmp_path, "bad.toml", text))
+
+
+def test_the_agents_only_window_is_the_median_of_w5s_two_caller_calls() -> None:
+    import statistics
+
+    points = [
+        (
+            json.loads(path.read_text())["arm"],
+            json.loads(path.with_name("summary.json").read_text()),
+        )
+        for path in (REPO / "benchmarks" / "results" / "2026-10-24-e2-w5").glob("*/*/run.json")
+    ]
+    two = [(arm, summary["window_s"]) for arm, summary in points if arm["voice"]["callers"] == 2]
+    windows = [window for _, window in two]
+    assert (len(windows), min(windows), max(windows)) == (60, 336.0, 476.0)
+    assert statistics.median(windows) == AGENTS_WINDOW_S == 355.0
+    beside = [window for arm, window in two if arm["agents"]["sessions"]]
+    assert (len(beside), statistics.median(beside)) == (55, 357.0)  # with agents beside the calls
 
 
 def test_an_arm_file_fills_in_the_defaults(tmp_path: Path) -> None:
@@ -658,6 +727,39 @@ def test_the_engine_runs_exactly_the_switches_its_flags_set(tmp_path: Path) -> N
     ]
 
 
+def test_the_engine_check_holds_the_agents_only_cards_pool_and_scheduling() -> None:
+    # The dedicated background card's engine (variant agents-only): its grown pool by its bytes, its budget, and vLLM's
+    # default scheduling for the card, each checked; the box's engine, or the variant's with the box's pool, fails.
+    agents_only = vllm(
+        policy="fcfs",
+        max_num_batched_tokens=2048,
+        long_prefill_token_threshold=0,
+        kv_cache_memory_bytes=9019431321,
+        gpu_memory_utilization=0.88,
+    )
+    flags = check_engine(Engine("agents-only", ()), agents_only)
+    assert flags == {
+        "checked": [
+            "--scheduling-policy",
+            "--max-num-batched-tokens",
+            "--long-prefill-token-threshold",
+            "--kv-cache-memory",
+            "--gpu-memory-utilization",
+        ],
+        "unchecked": [],
+    }
+    box = vllm(kv_cache_memory_bytes=5368709120, gpu_memory_utilization=0.7)
+    with pytest.raises(
+        E2Error, match="policy = 'priority', the point needs --scheduling-policy fcfs"
+    ):
+        check_engine(Engine("agents-only", ()), box)
+    small = vllm(**STOCK_SCHEDULER, kv_cache_memory_bytes=5368709120, gpu_memory_utilization=0.88)
+    with pytest.raises(
+        E2Error, match="kv_cache_memory_bytes = 5368709120, the point needs --kv-cache"
+    ):
+        check_engine(Engine("agents-only", ()), small)
+
+
 def test_the_committed_points_ran_the_engines_their_arm_files_name() -> None:
     """Each vLLM point of the committed records passes the engine check of its arm file, its scheduler
     class among what is checked: the check refuses none of the engines the variants start."""
@@ -785,6 +887,68 @@ def test_a_host_file_sets_the_hosts_fields(tmp_path: Path) -> None:
     path.write_text("aiperf_cores = 21\n")
     with pytest.raises(E2Error, match="aiperf_cores must be strings"):
         Host.load(home)
+
+
+def test_a_point_reaches_its_gpu_node_by_its_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # cyan reaches its own node, Phastform, as its settings say, and another, Gray, through that node's tunnel's
+    # sockets here; a single host, whose settings name its engine, measures its own node alone.
+    monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1007")
+    home = tmp_path / "home"
+    cyan = Host.load(home)
+    assert (
+        cyan.node_for()
+        == cyan.node_for("phastform")
+        == Node("phastform", "unix:/run/user/1007/flatshare/phastform-engine.sock", own=True)
+    )
+    gray = cyan.node_for("gray")
+    assert gray == Node("gray", "unix:/run/user/1007/flatshare/gray-engine.sock", own=False)
+    assert (gray.socket("stt"), gray.tunnel) == (
+        "/run/user/1007/flatshare/gray-stt.sock",
+        "flatshare-tunnel@gray.service",
+    )
+    with pytest.raises(E2Error, match=re.escape("'gray/../x' is not a GPU node's name")):
+        cyan.node_for("gray/../x")
+    path = home / ".config" / "flatshare" / "e2-host.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        'engine_url = "unix:/run/user/1000/flatshare/engine.sock"\nnode = "localhost"\n'
+    )
+    single = Host.load(home)
+    assert single.node_for("localhost") == Node("localhost", single.engine_url, own=True)
+    with pytest.raises(E2Error, match="a point here measures localhost, not gray"):
+        single.node_for("gray")
+    # A single host's file from before it named its node: its own is localhost, as campaign.sh --local calls it.
+    path.write_text('engine_url = "unix:/run/user/1000/flatshare/engine.sock"\n')
+    assert Host.load(home).node == "localhost"
+    path.write_text('node = "a b"\n')
+    with pytest.raises(E2Error, match="node 'a b' is not a GPU node's name"):
+        Host.load(home)
+
+
+def test_the_workers_drop_in_for_another_node_points_its_sockets_at_that_nodes_tunnel() -> None:
+    gray = Node("gray", "unix:/run/user/1007/flatshare/gray-engine.sock", own=False)
+    through_gateway = node_drop_in(
+        gray, {"FLATSHARE_LLM_UDS": "/run/user/1007/flatshare/gateway.sock"}
+    )
+    assert through_gateway is not None
+    lines = through_gateway.splitlines()
+    assert lines[lines.index("[Unit]") :] == [
+        "[Unit]",
+        "Wants=flatshare-tunnel@gray.service",
+        "After=flatshare-tunnel@gray.service",
+        "[Service]",
+        "Environment=FLATSHARE_STT_UDS=%t/flatshare/gray-stt.sock",
+        "Environment=FLATSHARE_TTS_UDS=%t/flatshare/gray-tts.sock",
+    ]
+    # The bypass: the LLM straight to an engine's tunnel socket goes to Gray's engine as well.
+    bypass = node_drop_in(
+        gray, {"FLATSHARE_LLM_UDS": "/run/user/1007/flatshare/phastform-engine.sock"}
+    )
+    assert bypass is not None
+    assert bypass.splitlines()[-1] == "Environment=FLATSHARE_LLM_UDS=%t/flatshare/gray-engine.sock"
+    assert node_drop_in(Node("phastform", "unix:x", own=True), {}) is None
 
 
 # Processes
@@ -1951,6 +2115,133 @@ def test_smg_runs_only_for_the_points_that_route_through_it(cyan: Cyan) -> None:
     ) in cyan.systemd.calls and "flatshare-smg" in cyan.systemd.running
     run(cyan, "a1-voice", VOICE_ALONE)
     assert "flatshare-smg" not in cyan.systemd.running
+
+
+def test_a_point_on_gray_measures_there_and_the_reset_points_cyan_back(
+    cyan: Cyan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # FLATSHARE_GPU=gray: the point reads Gray's engine through gray-engine.sock (cyan's own engine address leads
+    # nowhere here), starts Gray's tunnel, and points the gateway's upstream and the worker's speech sockets at it for
+    # the point, all of which run.json names; the reset points them back at Phastform, and a point there changes
+    # nothing else.
+    runtime = Path(
+        tempfile.mkdtemp(prefix="flatshare-rt-")
+    )  # short: a socket's path must fit sun_path
+    (runtime / "flatshare").mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    (runtime / "flatshare" / "gray-engine.sock").symlink_to(cyan.engine.path)
+    host = replace(cyan.host, engine_url="unix:/nonexistent/phastform-engine.sock")
+    arm_file = write(cyan.arms, "a1-voice.toml", VOICE_ALONE)
+    out = cyan.host.root / "runs" / "rg" / "a1-voice"
+    sources = {"gray": "v1.6-41-gba09ebe"}
+    run_point(arm_file, out, host, cyan.systemd, node="gray", gpu_source=sources, kv_sample_s=None)
+    run_json = json.loads((out / "run.json").read_text())
+    assert (run_json["status"], run_json["node"]) == ("complete", "gray")
+    assert run_json["versions"]["gpu_source"] == sources
+    flatshare = runtime / "flatshare"
+    assert run_json["tunnel"] == {
+        "name": "gray",
+        "tunnel": "flatshare-tunnel@gray.service",
+        "tunnel_started": True,
+        "sockets": {s: str(flatshare / f"gray-{s}.sock") for s in ("engine", "stt", "tts")},
+    }
+    assert cyan.systemd.calls[0] == ("start", "flatshare-tunnel@gray.service")
+    generated = tomllib.loads((cyan.host.config / "gateway-e2.toml").read_text())
+    assert generated["upstream"] == f"unix:{flatshare}/gray-engine.sock"
+    assert run_json["cyan"]["gateway"]["config"]["upstream"] == generated["upstream"]
+    drop_in = cyan.host.units / "flatshare-voice-worker.service.d" / "variant-e2-node.conf"
+    assert "Environment=FLATSHARE_STT_UDS=%t/flatshare/gray-stt.sock" in drop_in.read_text()
+    assert run_json["cyan"]["worker"]["restarted"]
+    assert ("restart", "flatshare-voice-worker") in cyan.systemd.calls
+    # The campaign's next point on Gray finds cyan as the first left it.
+    cyan.systemd.calls.clear()
+    again = out.with_name("a1-voice-again")
+    run_point(
+        arm_file, again, host, cyan.systemd, node="gray", gpu_source=sources, kv_sample_s=None
+    )
+    assert cyan.systemd.calls == []
+    assert json.loads((again / "run.json").read_text())["tunnel"]["tunnel_started"] is False
+    applied = reset_cyan(host, cyan.systemd)
+    assert applied["gateway"]["restarted"] and applied["worker"]["restarted"]
+    assert not drop_in.exists()
+    # On Phastform, cyan's own node: no tunnel started, no drop-in, the upstream gateway.toml's.
+    cyan.systemd.calls.clear()
+    run(cyan, "a1-voice", VOICE_ALONE)
+    assert cyan.systemd.calls == [("daemon-reload",), ("restart", "flatshare-gateway")]
+    assert record(cyan, "a1-voice")["node"] == "phastform" and "tunnel" not in record(
+        cyan, "a1-voice"
+    )
+    deployed = tomllib.loads((cyan.host.config / "gateway.toml").read_text())
+    generated = tomllib.loads((cyan.host.config / "gateway-e2.toml").read_text())
+    assert generated["upstream"] == deployed["upstream"]
+
+
+def test_a_point_on_another_node_needs_its_own_routing_and_a_matching_revision(
+    cyan: Cyan,
+) -> None:
+    arm_file = write(cyan.arms, "a1-voice.toml", VOICE_ALONE)
+    with pytest.raises(
+        E2Error, match="the point measures on gray, and --gpu-source names phastform"
+    ):
+        run_point(
+            arm_file,
+            cyan.host.root / "runs" / "x",
+            cyan.host,
+            cyan.systemd,
+            node="gray",
+            gpu_source={"phastform": None},
+        )
+    smg = write(cyan.arms, "a8b.toml", 'arm = "8b"\nlabel = "SMG"\nrouter = "smg"\n')
+    with pytest.raises(E2Error, match="sets its own router or \\[gateway\\] upstream"):
+        run_point(
+            smg,
+            cyan.host.root / "runs" / "y",
+            cyan.host,
+            cyan.systemd,
+            node="gray",
+            kv_sample_s=None,
+        )
+    assert not any(cyan.host.units.glob("*.service.d/variant-e2-node.conf"))
+
+
+def test_an_agents_only_point_measures_the_agents_over_its_window(cyan: Cyan) -> None:
+    # No callers, no worker journal: the window is [agents] window_s after the warm-up, the agents' goodput over it is
+    # the point's measure, and its summary, record and render say there were no calls.
+    cyan.scheduler.update(STOCK_SCHEDULER)
+    # The gateway ends the agents' requests alone: no realtime request, since no call makes one.
+    cyan.systemd.journals["flatshare-gateway"] = lambda since, until: "\n".join(
+        logged_request(since + n / 100, "background", 200.0 + n) for n in range(1, 6)
+    )
+    arm = AGENTS_ONLY + "\n[engine]\nflags = " + json.dumps(
+        ["--scheduling-policy", "fcfs", "--max-num-batched-tokens", "2048",
+         "--long-prefill-token-threshold", "0"]
+    ) + "\n"  # fmt: skip
+    summary = run(cyan, "agents-s4", arm)
+    out = cyan.host.root / "runs" / "agents-s4"
+    assert not (out / "bots").exists() and not (out / "bots.log").exists()
+    assert not (out / "voice-worker.log").exists()
+    assert (summary["voice"], summary["worker"]) == (None, None)
+    assert 1.0 <= summary["window_s"] < 2.0
+    assert summary["background"]["requests"] > 0
+    assert summary["gateway"]["realtime_first_byte_ms"] == {"n": 0, "source": "log"}
+    assert summary["gateway"]["background_first_byte_ms"]["n"] == 5
+    run_json = record(cyan, "agents-s4")
+    assert run_json["status"] == "complete" and run_json["arm"]["agents"]["window_s"] == 1.0
+    window = run_json["window"]
+    assert 1.0 <= window["end"] - window["start"] < 2.0
+    assert render(summary).startswith("agents-s4: no calls, the agents alone for ")
+    # Its compact record has no callers' files, and the report reads it as its run directory.
+    records = cyan.host.root / "records"
+    main(["e2", "export", str(out), "--out", str(records)])
+    kept = records / "runs" / "agents-s4"
+    assert sorted(p.name for p in kept.iterdir()) == [
+        "arm.toml",
+        "engine.json",
+        "run.json",
+        "summary.json",
+    ]
+    rows, _ = load_points([out])
+    assert load_points([kept])[0] == rows
 
 
 def test_reset_puts_cyan_back(cyan: Cyan) -> None:

@@ -150,6 +150,7 @@ def test_serve_mode_admits_the_calls_its_serving_profile_names(tmp_path: Path) -
         "turn_detection": "model",
         "serving_profile": str(SERVING),
         "profile": "rtx-5060-ti-serve",
+        "node_binding": True,  # serve mode asks the gateway for each call's node
     }
     # The synthetic callers in serve mode, for a soak of the serving configuration.
     soak = settings(

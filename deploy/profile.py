@@ -124,6 +124,10 @@ BOX_ONLY = {
     "systemd/flatshare-engine-proxy.*": (
         "the sglang variant's socket in front of its TCP port, measured on the box only"
     ),
+    "variants/agents-only/*": (
+        "the dedicated background card's engine, its pool grown into the speech servers' memory on the box's card, "
+        "for the resource gate's two RTX 5060 Ti cards only"
+    ),
     "variants/make-room-v03/*": "W5's control, measured on the box only",
     "variants/pr54530/*": "E2 arm 7a's variant, measured on the box only",
     "variants/sglang/*": "E2 arm 7b's variant, measured on the box only",

@@ -518,10 +518,11 @@ def write_config(node: Node, home: Path | None = None) -> list[str]:
         "# flatshare-bench e2 run on this single host (deploy/a100/host.py config, from the node's core plan): "
         "the engine on\n"
         "# its own socket, no tunnel; the gateway's socket; the load generators' cores; the node's profile and its\n"
-        "# preflight.\n"
+        "# preflight; and the node's name, as campaign.sh --local calls it.\n"
         f'gateway_url = "{GATEWAY_URL}"\n'
         f"gateway_socket = {json.dumps('unix:' + str(runtime_dir(node.host) / 'flatshare' / 'gateway.sock'))}\n"
         f"engine_url = {json.dumps(engine_address(node.host))}\n"
+        'node = "localhost"\n'
         f'aiperf_cores = "{plan["aiperf"]}"\ncaller_cores = "{plan["callers"]}"\n'
         f'profile = "{node.node["profile"]}"\npreflight = {json.dumps(str(node.dir / "preflight.json"))}\n',
     )

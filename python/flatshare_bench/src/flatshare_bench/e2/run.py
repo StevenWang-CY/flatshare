@@ -13,7 +13,8 @@
    voice-plane namespace (``--save-audio`` has them save each call's audio, for the demo video) and
    snapshots again: the calls are the measurement window, through which an agent point samples the
    engine's KV use and requests every half second (``--kv-sample-s``; 0 samples nothing, as W5's points
-   ran: the sampler came after them), on one connection to the engine that it keeps for the window;
+   ran: the sampler came after them), on one connection to the engine that it keeps for the window. A
+   point without calls (``[voice] callers = 0``) runs no callers: its window is ``[agents] window_s``;
 5. it stops AIPerf, keeps the gateway's request log of the calls and the voice worker's journal of
    them (its turn lines and its sessions' event counts), and writes ``summary.json``.
 
@@ -22,6 +23,10 @@ and units (:mod:`.cyan`), and the tools' processes and the run's waits (:mod:`.t
 reaches the engine by its address (:mod:`flatshare_bench.transport`): on cyan, the tunnel's socket.
 Its engine check and cache resets need vLLM's development routes, which only the measurement drop-in
 serves (``deploy/phastform/variant.sh measure on``, which ``benchmarks/e2/campaign.sh`` runs).
+
+A point measures on one GPU node (``--node``, the host's own by default), which run.json names: on
+another node it starts that node's tunnel if need be and reaches the engine through the tunnel's socket,
+with cyan's gateway and voice worker pointed at the node for the point (:mod:`.cyan`).
 
 The GPU node's engine is switched by ``benchmarks/e2/campaign.sh`` (``variant.sh use``), never here.
 A failure ends the point: ``run.json`` keeps ``"status": "failed"`` and the error, and every process
@@ -44,7 +49,6 @@ import threading
 import time
 import tomllib
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -52,16 +56,20 @@ from typing import Any
 import httpx
 import orjson
 
-from flatshare_bench.e2.arm import Arm, E2Error, flag_values, load_arm
+from flatshare_bench.e2.arm import Arm, E2Error, arm_record, flag_values, load_arm
 from flatshare_bench.e2.cyan import (
     CONFIGS,
     GATEWAY,
+    NODE_NAME,
     WORKER,
     Host,
+    Node,
     Systemd,
     agents_key,
+    check_node,
     configure_cyan,
     exclusive,
+    reach_node,
     read_env,
     redacted,
 )
@@ -124,13 +132,18 @@ def run_point(
     gpu_source: Mapping[str, str | None] | None = None,
     agents_seed: int | None = None,
     kv_sample_s: float | None = KV_SAMPLE_S,
+    node: str | None = None,
 ) -> dict[str, Any]:
     """Measure the point of ``arm_file`` into the directory ``out``; returns the summary. A
     directory with a complete point is never overwritten, and an earlier attempt that did not
     complete is kept beside it. ``save_audio``, a run option rather than the arm's, has the callers
-    save each call's audio (``flatshare-voice bots --save-audio``). ``gpu_source`` is each GPU node's
-    deployed revision (its ~/flatshare/src/DEPLOYED, None where it has none), which campaign.sh
-    reads over its SSH at the point's start and run.json keeps beside cyan's; None when unknown.
+    save each call's audio (``flatshare-voice bots --save-audio``). ``node`` is the GPU node the point
+    measures on (the host's own when None: Phastform on cyan), which run.json names (``node``): on
+    another node the point reaches that node's tunnel, and cyan's gateway and voice worker are pointed
+    at it for the point (:func:`~flatshare_bench.e2.cyan.configure_cyan`). ``gpu_source`` is each GPU
+    node's deployed revision (its ~/flatshare/src/DEPLOYED, None where it has none), which campaign.sh
+    reads over its SSH at the point's start and run.json keeps beside cyan's; None when unknown, and
+    when given it names the point's node.
     ``agents_seed``, a campaign's (``agents-seed`` in its file), replaces the arm file's ``[agents]
     seed`` for AIPerf; run.json keeps the seed the replay ran with (``agents_seed``). An agent point
     samples the engine's KV every ``kv_sample_s`` while the calls run; 0 or None samples nothing (W5's
@@ -149,10 +162,16 @@ def run_point(
     seed = arm.agents.seed if agents_seed is None else agents_seed
     host = host or Host.load()
     systemd = systemd or Systemd()
+    on = host.node_for(node)
+    if gpu_source is not None and on.name not in gpu_source:
+        raise E2Error(
+            f"the point measures on {on.name}, and --gpu-source names {', '.join(gpu_source) or 'no node'}"
+        )
+    check_node(arm, host, on)
     with exclusive(host):
         _fresh(out)
         shutil.copyfile(arm_file, out / "arm.toml")
-        record = _Record(out, arm, host, gpu_source)
+        record = _Record(out, arm, host, gpu_source, on.name)
         record["save_audio"] = save_audio
         # The seed AIPerf replays with: the campaign's when it set one, else the arm file's.
         record["agents_seed"] = seed if arm.agents.sessions else None
@@ -166,7 +185,7 @@ def run_point(
                 record.say(f"killed {len(leftovers)} processes left by an earlier run: {leftovers}")
             with contextlib.ExitStack() as running:
                 summary = _measure(
-                    arm, out, host, systemd, record, running, save_audio, seed, kv_sample_s
+                    arm, out, host, on, systemd, record, running, save_audio, seed, kv_sample_s
                 )
         except BaseException as exc:
             record.fail(exc)
@@ -179,6 +198,7 @@ def _measure(
     arm: Arm,
     out: Path,
     host: Host,
+    node: Node,
     systemd: Systemd,
     record: _Record,
     running: contextlib.ExitStack,
@@ -190,15 +210,18 @@ def _measure(
     record["profile"] = host.profile
     if host.preflight:
         record["preflight"] = preflight_summary(Path(host.preflight))
-    server = _check_engine(arm, host.engine_url, out, record, base)
-    record.say(f"configuring cyan for {arm.name}")
-    record["cyan"] = configure_cyan(arm, host, systemd)
+    if (reached := reach_node(node, systemd)) is not None:
+        record.say(f"{node.name} through {node.tunnel}")
+        record["tunnel"] = reached
+    server = _check_engine(arm, node.engine_url, out, record, base)
+    record.say(f"configuring cyan for {arm.name}" + ("" if node.own else f" on {node.name}"))
+    record["cyan"] = configure_cyan(arm, host, systemd, node)
     until(
         lambda: _ready(host.gateway_url),
         60.0,
         f"{host.gateway_url}/ready did not answer within 60 s: the engine or the router is down",
     )
-    reset_prefix_cache(host.engine_url, server)
+    reset_prefix_cache(node.engine_url, server)
     # Before the replay and the calls the gateway is idle: the base of the check that its journal kept a
     # line for every request it ended.
     idle = (time.time(), _ended(host))
@@ -207,16 +230,22 @@ def _measure(
     aiperf = (
         _start_aiperf(arm, host, out, record, running, seed, model) if arm.agents.sessions else None
     )
-    start = _snapshot(host, out, "start")
+    start = _snapshot(host, node, out, "start")
     sampler = None
     if aiperf is not None and kv_sample_s is not None:
-        sampler = _KvSampler(host.engine_url, out / "metrics", kv_sample_s)
+        sampler = _KvSampler(node.engine_url, out / "metrics", kv_sample_s)
         running.callback(sampler.stop)
-    end, bots = _call(arm, host, out, record, running, aiperf, save_audio)
+    calls = arm.voice.callers > 0
+    if calls:
+        end, bots = _call(arm, host, out, record, running, aiperf, save_audio)
+    else:
+        assert aiperf is not None  # load_arm: a point without calls has agents
+        end = _agents_window(arm, record, aiperf, start)
     if sampler is not None:
         sampler.stop()
-    _snapshot(host, out, "end")
-    _callers_exit(bots)
+    _snapshot(host, node, out, "end")
+    if calls:
+        _callers_exit(bots)
     record["window"] = {"start": start, "end": end}
     if aiperf is not None:
         record.say("stopping AIPerf")
@@ -225,7 +254,8 @@ def _measure(
             raise aiperf.failure("failed when stopped")
     _gateway_log(systemd, out, start, end)
     record["gateway_log"] = _check_gateway_log(host, systemd, idle)
-    _worker_journal(systemd, out, start, arm.voice.callers)
+    if calls:
+        _worker_journal(systemd, out, start, arm.voice.callers)
     try:
         metrics = summarize_point(
             out,
@@ -233,6 +263,7 @@ def _measure(
             end,
             agents=bool(arm.agents.sessions),
             warmup_turns=arm.voice.warmup_turns,
+            calls=calls,
         )
     except ValueError as exc:
         raise E2Error(str(exc)) from None
@@ -336,6 +367,18 @@ def _call(
     if not ended.exists():  # they exited before their calls ended
         _callers_exit(bots)
     return end, bots
+
+
+def _agents_window(arm: Arm, record: _Record, aiperf: Process, start: float) -> float:
+    """An agents-only point's measurement window: ``[agents] window_s`` from ``start``, the first snapshot, while
+    AIPerf replays; returns when it ended. The replay must outlast it, as it must outlast a point's calls."""
+    record.say(f"no calls: the agents alone for {arm.agents.window_s:g} s")
+    end = start + arm.agents.window_s
+    while (left := end - time.time()) > 0:
+        if aiperf.exited():
+            raise aiperf.failure("exited during the window, so its load did not cover it")
+        pause(left)
+    return time.time()
 
 
 def _callers_exit(bots: Process) -> None:
@@ -477,12 +520,12 @@ class _KvSampler:
         self._thread.join()
 
 
-def _snapshot(host: Host, out: Path, when: str) -> float:
+def _snapshot(host: Host, node: Node, out: Path, when: str) -> float:
     """Save the gateway's ``/metrics`` (from its socket, which asks for no key) and the engine's;
     returns the time it finished."""
     metrics = out / "metrics"
     metrics.mkdir(exist_ok=True)
-    files = {f"gateway-{when}.prom": host.gateway_socket, f"engine-{when}.prom": host.engine_url}
+    files = {f"gateway-{when}.prom": host.gateway_socket, f"engine-{when}.prom": node.engine_url}
     for name, address in files.items():
         try:
             (metrics / name).write_text(fetch(address))
@@ -535,7 +578,12 @@ class _Record:
     """run.json, rewritten at each step so that a point that dies keeps its status, and run.log."""
 
     def __init__(
-        self, out: Path, arm: Arm, host: Host, gpu_source: Mapping[str, str | None] | None
+        self,
+        out: Path,
+        arm: Arm,
+        host: Host,
+        gpu_source: Mapping[str, str | None] | None,
+        node: str,
     ) -> None:
         self.path = out / "run.json"
         self.log = out / "run.log"
@@ -544,8 +592,10 @@ class _Record:
             "name": arm.name,
             "status": "running",
             "host": platform.node(),
+            # The GPU node the point measures on, whose deployed revision versions.gpu_source names.
+            "node": node,
             "started": time.time(),
-            "arm": asdict(arm),
+            "arm": arm_record(arm),
             "versions": _versions(host, gpu_source),
         }
         self._write()
@@ -631,9 +681,6 @@ def _versions(host: Host, gpu_source: Mapping[str, str | None] | None) -> dict[s
     }
 
 
-NODE_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
-"""A GPU node's name (its host's first label, as campaign.sh gives it), which unit, file and socket
-names carry."""
 _REVISION = re.compile(r"[A-Za-z0-9._+-]*")
 """A deployed revision as deploy/deploy.sh writes it (``git describe --always --dirty``)."""
 

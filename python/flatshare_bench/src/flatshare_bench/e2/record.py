@@ -81,15 +81,29 @@ def summarize_point(
     *,
     agents: bool,
     warmup_turns: int = 0,
+    calls: bool = True,
 ) -> dict[str, Any]:
     """The E2 metrics of the window ``start``..``end`` (epoch seconds) from a run directory. Raises
     ``ValueError`` when the point measured nothing to place on the frontier. The ``warmup_turns`` that
     open each call are measured by nothing: the callers leave them out, and so does the worker's
     account of the turns. The first bytes come from the gateway's request lines of the calls
-    (gateway.jsonl), without which the point fails."""
-    bots = orjson.loads((run_dir / "bots" / "summary.json").read_bytes())
-    if bots["v2v_ms"].get("n", 0) <= bots["v2v_ms"].get("censored", 0):
-        raise ValueError(f"the calls measured no voice-to-voice latency ({bots['errors']} failed)")
+    (gateway.jsonl), without which the point fails. A point without ``calls`` (``[voice] callers = 0``,
+    the agents alone over a fixed window) has no callers' summary and no worker journal: its ``voice``
+    and ``worker`` are None."""
+    voice = None
+    if calls:
+        bots = orjson.loads((run_dir / "bots" / "summary.json").read_bytes())
+        if bots["v2v_ms"].get("n", 0) <= bots["v2v_ms"].get("censored", 0):
+            raise ValueError(
+                f"the calls measured no voice-to-voice latency ({bots['errors']} failed)"
+            )
+        keys = ("turns", "errors", "v2v_ms", "barge_in_to_silence_ms", "barge_ins")
+        # The replies' end, length and pauses, from callers that read the agent's state (from v1.6).
+        voice = {key: bots[key] for key in keys} | (
+            {"replies": bots["replies"]} if "replies" in bots else {}
+        )
+    elif not agents:
+        raise ValueError("a point without calls measures the agents, and this one had none")
     metrics = run_dir / "metrics"
     records = run_dir / "aiperf" / "profile_export.jsonl"
     requests = gateway_requests(run_dir, start, end)
@@ -98,13 +112,10 @@ def summarize_point(
             "the gateway logged no request line for the calls (gateway.jsonl): the first bytes come "
             'from them, with its log_format = "json"'
         )
-    voice = ("turns", "errors", "v2v_ms", "barge_in_to_silence_ms", "barge_ins")
     summary = {
         "window_s": round(end - start, 1),
-        # The replies' end, length and pauses, from callers that read the agent's state (from v1.6).
-        "voice": {key: bots[key] for key in voice}
-        | ({"replies": bots["replies"]} if "replies" in bots else {}),
-        "worker": worker(run_dir / "voice-worker.log", warmup_turns),
+        "voice": voice,
+        "worker": worker(run_dir / "voice-worker.log", warmup_turns) if calls else None,
         "background": background(records, start, end) if agents else None,
         "gateway": gateway_counts(*_snapshots(metrics, "gateway"), end - start, requests),
         "engine": engine_counts(*_snapshots(metrics, "engine")),
@@ -499,9 +510,12 @@ def _series(name: str, labels: Labels) -> str:
 def render(summary: Mapping[str, Any]) -> str:
     """One line of a point's headline numbers."""
     voice = summary["voice"]
-    v2v = "/".join(str(voice["v2v_ms"].get(p)) for p in ("p50", "p95", "p99"))
-    line = f"{summary['name']}: V2V p50/p95/p99 {v2v} ms"
-    line += f", {voice['errors']} of {voice['turns']} turns failed"
+    if voice is None:
+        line = f"{summary['name']}: no calls, the agents alone for {summary['window_s']:g} s"
+    else:
+        v2v = "/".join(str(voice["v2v_ms"].get(p)) for p in ("p50", "p95", "p99"))
+        line = f"{summary['name']}: V2V p50/p95/p99 {v2v} ms"
+        line += f", {voice['errors']} of {voice['turns']} turns failed"
     if background := summary["background"]:
         ttft = "/".join(str(background["ttft_ms"].get(p)) for p in ("p50", "p99"))
         line += f"; background {background['requests_per_s']} requests/s"
@@ -716,9 +730,12 @@ def export_point(run_dir: Path, out: Path) -> Path | None:
         return None
     run, summary = point
     record = out / run_dir.absolute().parent.name / run_dir.absolute().name
-    (record / "bots").mkdir(parents=True, exist_ok=True)
+    record.mkdir(parents=True, exist_ok=True)
     for name in RECORD:
         if name != "run.json" and (run_dir / name).exists():
+            (record / name).parent.mkdir(
+                exist_ok=True
+            )  # bots/, which a point without calls has none of
             shutil.copyfile(run_dir / name, record / name)
     # As e2 run writes them, so that a run.json the record keeps as it was stays the same bytes. The
     # gateway's configuration names files under the account's home directory (its cache-salt secret).

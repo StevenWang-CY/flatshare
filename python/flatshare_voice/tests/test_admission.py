@@ -265,3 +265,77 @@ def test_the_status_file_says_what_the_worker_runs_and_passes_the_profiles_check
     assert sorted(p.name for p in tmp_path.iterdir()) == [
         "voice-worker.json"
     ]  # no staged file left
+
+
+def test_a_call_no_node_takes_is_refused_before_its_job_is_accepted() -> None:
+    # With nodes, each job's call is placed before it is accepted: a placement the gateway refuses (every realtime
+    # node at its max_calls, say) refuses the job, and a call being placed counts against max_calls meanwhile.
+    async def go() -> tuple[list[str | None], int]:
+        calls, gate = Calls(), asyncio.Event()
+        answers = iter([(True, "placed (200)"), (False, "no node takes the call: no_call_slot")])
+
+        async def place(job: Job) -> tuple[bool, str]:
+            await gate.wait()
+            return next(answers)
+
+        admission = Admission(1, calls, place=place)
+        first, second, third = Job(calls), Job(calls), Job(calls)
+        pending = asyncio.create_task(admission.request(first))
+        await asyncio.sleep(0.01)
+        # The first call is being placed: it holds the one slot, so a request now is refused at once.
+        await admission.request(second)
+        gate.set()
+        await pending
+        calls.n -= 1  # the first call ends
+        await admission.request(third)  # its placement is refused
+        return [job.answer for job in (first, second, third)], admission.refused
+
+    assert asyncio.run(go()) == (["accepted", "refused", "refused"], 2)
+
+
+def test_the_placement_at_admission_reads_the_gateways_answers() -> None:
+    # nodes.admit over a gateway socket: 200 places the call, 404 (no nodes) admits it by capacity, a 503 naming no
+    # node for it refuses it, and a gateway that does not answer refuses it too.
+    from aiohttp import web
+
+    from flatshare_voice import nodes
+
+    answers: list[tuple[int, dict]] = []
+
+    async def sessions(request: web.Request) -> web.Response:
+        await request.json()
+        status, body = answers.pop(0)
+        if status == 0:
+            await asyncio.sleep(5)
+        return web.json_response(body, status=status or 200)
+
+    async def go() -> list[tuple[bool, str]]:
+        app = web.Application()
+        app.router.add_post("/v1/sessions", sessions)
+        runner = web.AppRunner(app, access_log=None, shutdown_timeout=0.1)
+        await runner.setup()
+        # a short directory: socket paths are limited to 104 bytes on macOS
+        directory = tempfile.TemporaryDirectory(prefix="fs-adm-")
+        sock = Path(directory.name) / "gateway.sock"
+        await web.UnixSite(runner, str(sock)).start()
+        found = []
+        try:
+            for answer in (
+                (200, {"session_id": "voice-RM_a", "node": "gray"}),
+                (404, {"error": {"type": "not_found"}}),
+                (503, {"error": {"type": "no_call_slot"}}),
+                (503, {"error": {"type": "placement_full"}}),
+                (503, {"error": {"type": "in_flight_limit"}}),
+                (0, {}),
+            ):
+                answers.append(answer)
+                found.append(await nodes.admit(str(sock), "voice-RM_a", timeout=0.3))
+        finally:
+            await runner.cleanup()
+            directory.cleanup()
+        return found
+
+    results = asyncio.run(go())
+    assert [ok for ok, _ in results] == [True, True, False, False, False, False]
+    assert "no_call_slot" in results[2][1] and "placement_full" in results[3][1]
+    assert "did not place the call" in results[5][1]

@@ -133,6 +133,9 @@ ADMISSION_COLUMNS = (
 LIFECYCLE_POLICY = ("lifecycle", "leaseholder")
 """The names the gateway's ``[admission] policy`` gives the lifecycle policy: its own, and the one arm
 files and their records spelled before the project's rename (docs/GLOSSARY.md)."""
+NODE_COLUMNS = ("node",)
+"""The GPU node a point ran on, which its run.json names from v1.6 on (``flatshare-bench e2 run --node``); the
+records from before name none. frontier.md names each run's node where the rows ran on more than one."""
 WINDOW_COLUMNS = ("fixed_window_tokens_per_s", "fixed_window_s")
 """The background goodput over the calls' first GOODPUT_WINDOW_S, and that window's seconds: fewer for a
 point whose calls lasted less, which frontier.md marks with †."""
@@ -207,8 +210,10 @@ def _configuration(row: Mapping[str, Any]) -> tuple[str, str, str]:
 
 def _workload(data: str, callers: int, on: str = "", warmup_turns: int = 0) -> str:
     """A workload's name, as frontier.csv and frontier.md give it; ``on`` is :func:`hardware`'s, and
-    ``warmup_turns`` the warm-up turns its calls open with, where the report names them."""
-    name = f"{data}, {callers} caller{'' if callers == 1 else 's'}" + (f", {on}" if on else "")
+    ``warmup_turns`` the warm-up turns its calls open with, where the report names them. Points without
+    calls are a workload of their own: the agents alone ("weka-x32, no calls")."""
+    calls = "no calls" if not callers else f"{callers} caller{'' if callers == 1 else 's'}"
+    name = f"{data}, {calls}" + (f", {on}" if on else "")
     return name + (f", {_warmups(warmup_turns)}" if warmup_turns else "")
 
 
@@ -233,14 +238,17 @@ def hardware(gpu_name: str | None, model: str | None) -> str:
 
 def _row(run_dir: Path, run: Mapping[str, Any], summary: Mapping[str, Any]) -> dict[str, Any]:
     """A point's row of frontier.csv but for its workload, which load_points names."""
-    arm, voice = run["arm"], summary["voice"]
+    arm = run["arm"]
+    # A point without calls (the agents alone, [voice] callers = 0) has no voice and no callers' turns.
+    voice = summary["voice"] or {"turns": 0, "errors": 0, "barge_in_to_silence_ms": {}}
     background = summary["background"] or {}
     gateway, engine = summary["gateway"], summary["engine"]
     first_byte = gateway["realtime_first_byte_ms"]
     worker = summary.get("worker") or {}
     waterfall, events = worker.get("waterfall") or {}, worker.get("events") or {}
     # V2V from the callers' turns, where a failed turn counts at the reply timeout.
-    samples = v2v_samples(run_dir / "bots" / "turns.jsonl")
+    turns = run_dir / "bots" / "turns.jsonl"
+    samples = v2v_samples(turns) if summary["voice"] is not None else []
     v2v = percentiles(samples)
     settings = point_engine(run_dir)
     on = hardware((summary.get("gpu") or {}).get("name"), engine_model(settings))
@@ -291,6 +299,7 @@ def _row(run_dir: Path, run: Mapping[str, Any], summary: Mapping[str, Any]) -> d
     # warm-up turns: it ran none.
     row["data"] = arm["agents"]["data"]
     row["hardware"] = on
+    row["node"] = run.get("node")
     row["warmup_turns"] = arm["voice"].get("warmup_turns", 0)
     row["stage_means"] = {s: (c["n"], c["mean"]) for s, c in waterfall.items() if "mean" in c}
     row["v2v_samples"] = samples
@@ -594,6 +603,8 @@ def write_report(
     groups = configurations(rows)
     for members in _by_workload(rows):
         first = members[0]
+        if not _calls(members):
+            continue  # the agents alone: no V2V to draw goodput against
         slo = voice_slo(groups, first["callers"], first["hardware"], first["warmup_turns"])
         written.append(plot(members, out_dir / first["figure"], None if slo is None else slo[0]))
     if cells:
@@ -627,6 +638,8 @@ def _dot_group(
             raise ValueError(
                 f"{len(found)} configurations of {dot['point']}{on} in the report, not 1"
             )
+        if found[0]["v2v_p95_ms"] is None:
+            raise ValueError(f"{dot['point']} measured no calls: the figure draws V2V")
         chosen.append((found[0], dot))
     workloads = {c["workload"] for c, _ in chosen}
     if len(workloads) > 1:
@@ -653,6 +666,12 @@ def gpu_name(on: str) -> str:
     return re.sub(r"^NVIDIA (GeForce )?", "", gpu)
 
 
+def _calls(rows: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether the rows' points had calls: a workload of points without calls (the agents alone) has no V2V, no
+    voice SLO, no frontier and no figure."""
+    return any(r["callers"] for r in rows)
+
+
 def _by_workload(rows: Sequence[Mapping[str, Any]]) -> list[list[Mapping[str, Any]]]:
     """The rows of each workload, in the rows' order."""
     members: dict[str, list[Mapping[str, Any]]] = {}
@@ -670,7 +689,7 @@ def figure_name(data: str, callers: int, on: str = "", warmup_turns: int = 0) ->
     if data != STANDARD_WORKLOAD[0]:
         name += "-" + data.replace("/", "-")
     if callers != STANDARD_WORKLOAD[1]:
-        name += f"-{callers}-callers"
+        name += f"-{callers}-callers" if callers else "-no-calls"
     if on:
         name += "-" + re.sub(r"[^a-z0-9]+", "-", on.lower()).strip("-")
     if warmup_turns:
@@ -686,6 +705,7 @@ def _measured(rows: Sequence[Mapping[str, Any]]) -> list[tuple[str, ...]]:
         ADMISSION_COLUMNS,
         CPU_TIER_COLUMNS,
         WINDOW_COLUMNS,
+        NODE_COLUMNS,
     )
     return [group for group in groups if any(r[c] is not None for r in rows for c in group)]
 
@@ -723,6 +743,11 @@ def markdown(rows: Sequence[Mapping[str, Any]]) -> str:
         )
     if gpu_columns:
         intro += " SM clock (MHz) and temperature (°C) are the GPU's during the calls."
+    if _nodes_named(rows):
+        intro += (
+            " The points ran on more than one GPU node of the same card: each run names its node, and the runs "
+            "of one arm file on several nodes are repeats of one configuration."
+        )
     lines = ["# E2 frontier", "", intro]
     window = f" First {GOODPUT_WINDOW_S:.0f} s |" if window_columns else ""
     header = (
@@ -740,7 +765,11 @@ def markdown(rows: Sequence[Mapping[str, Any]]) -> str:
         for arm in sorted({r["arm"] for r in members}, key=arm_order):
             lines += ["", f"### Arm {arm}", "", header, align]
             lines += _arm_rows(
-                [r for r in members if r["arm"] == arm], groups, gpu_columns, window_columns
+                [r for r in members if r["arm"] == arm],
+                groups,
+                gpu_columns,
+                window_columns,
+                _nodes_named(rows),
             )
     if WORKER_COLUMNS in measured:
         lines += _stages(rows)
@@ -753,11 +782,31 @@ def markdown(rows: Sequence[Mapping[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _nodes_named(rows: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether frontier.md names each run's GPU node: where the rows ran on more than one."""
+    return len({r["node"] for r in rows if r.get("node")}) > 1
+
+
+def _run_name(r: Mapping[str, Any], repeated: bool, nodes: bool) -> str:
+    """A run's name in frontier.md's tables: its point, and its campaign where its configuration was measured in
+    several, and its node where the rows ran on several (``nodes``)."""
+    within = [r["campaign"]] if repeated else []
+    if nodes and r.get("node"):
+        within.append(r["node"])
+    return f"{r['point']} ({', '.join(within)})" if within else r["point"]
+
+
 def _slo_line(
     row: Mapping[str, Any], groups: Mapping[tuple[str, str, str], Mapping[str, Any]]
 ) -> str:
     """The sentence that opens the section of ``row``'s workload: its voice SLO, and its figure."""
     callers, figure = row["callers"], row["figure"]
+    if not callers:
+        return (
+            "Points without calls: the agents alone on the card, each over a fixed window (`[agents] window_s`) "
+            "where a point with calls is measured over its calls. No voice SLO applies, nothing is placed on a "
+            "frontier and no figure is drawn; the background goodput is the measure."
+        )
     slo = voice_slo(list(groups.values()), callers, row["hardware"], row["warmup_turns"])
     if slo is None:
         return (
@@ -782,9 +831,11 @@ def _arm_rows(
     groups: Mapping[tuple[str, str, str], Mapping[str, Any]],
     gpu_columns: bool,
     window_columns: bool,
+    nodes: bool = False,
 ) -> list[str]:
-    """An arm's table rows in a workload: a line per run, and a repeated configuration's medians.
-    An arm with one configuration marks no frontier: it is its own."""
+    """An arm's table rows in a workload: a line per run, and a repeated configuration's medians,
+    each run named with its node where ``nodes``. An arm with one configuration marks no frontier: it
+    is its own."""
     lines = []
     several = len({_configuration(r) for r in rows}) > 1
     for r in rows:
@@ -793,16 +844,17 @@ def _arm_rows(
         ttft = f"{_cell(r['agent_ttft_p50_ms'])} / {_cell(r['agent_ttft_p99_ms'])}"
         first_byte = _cell(r["realtime_first_byte_p95_ms"])
         # A repeated configuration's frontier mark goes on its medians' line.
-        name, mark = f"{r['point']}: {r['label']}", "•" if r["frontier"] and several else ""
+        name = _run_name(r, False, nodes)
+        name, mark = f"{name}: {r['label']}", "•" if r["frontier"] and several else ""
         if len(group["runs"]) > 1:
-            name, mark = f"{r['point']} ({r['campaign']})", ""
+            name, mark = _run_name(r, True, nodes), ""
         window = f" {_window(r, _cell(r['fixed_window_tokens_per_s']))} |" if window_columns else ""
         line = (
             f"| {name} | {mark} | {r['sessions']} "
             f"| {_cell(r['background_tokens_per_s'])} |{window} "
             f"{_cell(r['background_requests_per_s'], 2)} "
             f"| {_v2v(r['v2v_p50_ms'])} | {_v2v(r['v2v_p95_ms'])} | {_v2v(r['v2v_p99_ms'])} "
-            f"| {r['voice_errors']} of {r['voice_turns']} | {ttft} | {first_byte} "
+            f"| {_failed(r)} | {ttft} | {first_byte} "
             f"| {_cell(r['engine_preemptions'])} | {counts} |"
         )
         if gpu_columns:
@@ -842,7 +894,8 @@ def _spread(
         f"| {first['point']}: {first['label']}; median (range) of {len(runs)} runs "
         f"| {'•' if group['frontier'] and several else ''} | {first['sessions']} "
         f"| {spread('background_tokens_per_s')} |{window} | {spread('v2v_p50_ms')} "
-        f"| {spread('v2v_p95_ms')} | {spread('v2v_p99_ms')} | {spread('voice_errors')} "
+        f"| {spread('v2v_p95_ms')} | {spread('v2v_p99_ms')} "
+        f"| {spread('voice_errors') if first['callers'] else '—'} "
         f"| {spread('agent_ttft_p50_ms')} / {spread('agent_ttft_p99_ms')} | {first_byte} | | |"
     )
     return line + (" | |" if gpu_columns else "")
@@ -875,14 +928,14 @@ def _stages(rows: Sequence[Mapping[str, Any]]) -> list[str]:
         "| Turn to first sentence | TTS first audio | End to end | Events sent / dropped / failed |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
-    runs = Counter(map(_configuration, rows))
+    runs, nodes = Counter(map(_configuration, rows)), _nodes_named(rows)
     for r in timed:
         stages = [
             " / ".join(_cell(r[f"{stage.removesuffix('_ms')}_{q}_ms"]) for q in ("p50", "p95"))
             for stage in WATERFALL
         ]
         events = " / ".join(_cell(r[f"events_{kind}"]) for kind in ("sent", "dropped", "failed"))
-        name = f"{r['point']} ({r['campaign']})" if runs[_configuration(r)] > 1 else r["point"]
+        name = _run_name(r, runs[_configuration(r)] > 1, nodes)
         lines.append(f"| {name} | {' | '.join(stages)} | {events} |")
     return lines
 
@@ -903,11 +956,11 @@ def _admission(rows: Sequence[Mapping[str, Any]]) -> list[str]:
         "| Point | Deferred by the headroom | Deferred by the critical window | Degraded replies |",
         "|---|---:|---:|---:|",
     ]
-    runs = Counter(map(_configuration, rows))
+    runs, nodes = Counter(map(_configuration, rows)), _nodes_named(rows)
     for r in rows:
         if r["deferred_headroom"] is None:
             continue
-        name = f"{r['point']} ({r['campaign']})" if runs[_configuration(r)] > 1 else r["point"]
+        name = _run_name(r, runs[_configuration(r)] > 1, nodes)
         degraded = f"{_cell(r['degraded_replies'])} of {_cell(r['realtime_replies'])}"
         if r["degraded_share"] is not None:
             degraded += f" ({r['degraded_share']:.0%})"
@@ -941,11 +994,11 @@ def _cpu_tier(rows: Sequence[Mapping[str, Any]]) -> list[str]:
         "| Loaded beyond first scheduling | Stored to the CPU tier |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    runs = Counter(map(_configuration, rows))
+    runs, nodes = Counter(map(_configuration, rows)), _nodes_named(rows)
     for r in rows:
         if all(r[column] is None for column in CPU_TIER_COLUMNS):
             continue
-        name = f"{r['point']} ({r['campaign']})" if runs[_configuration(r)] > 1 else r["point"]
+        name = _run_name(r, runs[_configuration(r)] > 1, nodes)
         loaded, hits = r["cpu_tier_loaded_tokens"], r["first_schedule_cpu_hit_tokens"]
         beyond = None if loaded is None or hits is None else loaded - hits
         counts = (
@@ -989,6 +1042,11 @@ def _waterfall_table(cells: Sequence[Mapping[str, Any]]) -> list[str]:
             f"| {_cell(c['llm_ttft_ms'])} |"
         )
     return lines
+
+
+def _failed(row: Mapping[str, Any]) -> str:
+    """A run's failed-turns cell: of its turns, or — for a point without calls."""
+    return f"{row['voice_errors']} of {row['voice_turns']}" if row["callers"] else "—"
 
 
 def _cell(value: Any, digits: int = 0) -> str:

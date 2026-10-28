@@ -1097,3 +1097,163 @@ def test_any_failure_after_the_switch_switches_back(
     monkeypatch.setattr(release, "health", broken)
     assert host.switch(B) == 1
     assert (host.current(), calls) == (A, [B, A])
+
+
+UBUNTU_REFUSES = "unshare: write failed /proc/self/uid_map: Operation not permitted"
+"""unshare's error where the kernel refuses unprivileged user namespaces (Ubuntu 24.04, Gray's, 2026-10-27)."""
+
+
+def namespace_tools(bin_dir: Path, verdict: str) -> None:
+    """unshare and ip stand-ins for deploy/bin/private-net-check: unshare runs its command (``allowed``) or fails as
+    Gray's kernel makes it fail (``refused``); ``unknown`` leaves the tree without the check instead."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    run = (
+        f"echo '{UBUNTU_REFUSES}' >&2\nexit 1\n"
+        if verdict == "refused"
+        else 'while [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n'
+    )
+    for name, text in (("unshare", f"#!/bin/sh\n{run}"), ("ip", "#!/bin/sh\nexit 0\n")):
+        (bin_dir / name).write_text(text)
+        (bin_dir / name).chmod(0o755)
+
+
+@pytest.mark.parametrize("verdict", ["refused", "allowed", "unknown"])
+def test_grays_install_runs_the_gpu_servers_in_the_hosts_namespace_where_the_kernel_refuses_their_own(
+    tmp_path: Path, verdict: str
+) -> None:
+    # Gray's kernel refuses unprivileged user namespaces, where in-private-net fails a unit that asks for one: its
+    # install links the host-network drop-in into each of the three GPU servers, through ~/flatshare/src, replacing the
+    # hand-made one the engine had (2026-10-27); where they are allowed it removes it, and where the check cannot run
+    # it changes nothing.
+    home = tmp_path / "home"
+    tree = home / "flatshare" / "releases" / A
+    copied = ["gray/install.sh", "gray/private-net-host.conf", "phastform/systemd/flatshare.target"]
+    copied += [
+        f"gray/systemd/{unit}.conf"
+        for unit in ("flatshare-engine", "flatshare-stt", "flatshare-tts")
+    ]
+    if verdict != "unknown":
+        copied.append("bin/private-net-check")
+    for rel in copied:
+        (tree / "deploy" / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(DEPLOY / rel, tree / "deploy" / rel)
+    (home / "flatshare" / "src").symlink_to(f"releases/{A}")
+    bin_dir = tmp_path / "bin"
+    namespace_tools(bin_dir, verdict)
+    for tool in ("systemctl", "loginctl"):
+        (bin_dir / tool).write_text("#!/bin/sh\nexit 0\n")
+        (bin_dir / tool).chmod(0o755)
+    units = home / ".config" / "systemd" / "user"
+    hand_made = units / "flatshare-engine.service.d" / "private-net-host.conf"
+    hand_made.parent.mkdir(parents=True)
+    hand_made.write_text("[Service]\nEnvironment=FLATSHARE_PRIVATE_NET=host\n")
+    done = subprocess.run(
+        ["bash", str(tree / "deploy" / "gray" / "install.sh")],
+        env=os.environ | {"HOME": str(home), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 0, done.stderr
+    drop_ins = {
+        unit: units / f"{unit}.service.d" / "private-net-host.conf"
+        for unit in ("flatshare-engine", "flatshare-stt", "flatshare-tts")
+    }
+    src = home / "flatshare" / "src" / "deploy"
+    if verdict == "refused":
+        for path in drop_ins.values():
+            assert os.readlink(path) == f"{src}/gray/private-net-host.conf"
+            assert "Environment=FLATSHARE_PRIVATE_NET=host" in path.read_text().splitlines()
+        assert UBUNTU_REFUSES in done.stdout and "host's network namespace" in done.stdout
+    elif verdict == "allowed":
+        assert not any(path.exists() or path.is_symlink() for path in drop_ins.values())
+        assert "a network namespace of its own" in done.stdout
+    else:
+        assert (
+            hand_made.read_text().endswith("FLATSHARE_PRIVATE_NET=host\n")
+            and not hand_made.is_symlink()
+        )
+        assert not drop_ins["flatshare-stt"].exists() and not drop_ins["flatshare-tts"].exists()
+        assert "left as they were" in done.stderr
+
+
+class Environments(release.Systemd):
+    """A user manager whose units have the environments given, and nothing else."""
+
+    def __init__(self, envs: dict[str, dict[str, str]] | None = None) -> None:
+        self.envs = envs or {}
+
+    def environment(self, unit: str) -> dict[str, str]:
+        return self.envs.get(unit, {})
+
+
+def isolation_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verdict: str) -> Path:
+    """A release tree with the real private-net-check and Gray's host-network drop-in, on a host whose kernel
+    ``refused`` or ``allowed`` unprivileged user namespaces."""
+    tree = tmp_path / "tree"
+    for rel in ("bin/private-net-check", "gray/private-net-host.conf"):
+        (tree / "deploy" / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(DEPLOY / rel, tree / "deploy" / rel)
+    namespace_tools(tmp_path / "bin", verdict)
+    monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}")
+    return tree
+
+
+GPU = ("flatshare-engine.service", "flatshare-stt.service", "flatshare-tts.service")
+
+
+def test_a_gpu_nodes_manifest_records_where_each_server_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Gray, whose kernel refuses user namespaces: its install links the host-network drop-in at the switch, so the
+    # record says the host's namespace for all three, whatever the drop-ins said before (the engine's alone, by hand).
+    tree = isolation_tree(tmp_path, monkeypatch, "refused")
+    before = Environments({"flatshare-engine.service": {"FLATSHARE_PRIVATE_NET": "host"}})
+    gray = release.isolation(release.HOSTS["gray"], before, tree)
+    assert gray["user namespaces"].startswith(f"refused ({UBUNTU_REFUSES}")
+    for unit in GPU:
+        assert gray[unit].startswith("the host's network namespace (FLATSHARE_PRIVATE_NET=host)"), (
+            unit
+        )
+    # Phastform's directory has no such drop-in: on a kernel that refused, its servers could not start, and say so.
+    phastform = release.isolation(release.HOSTS["phastform"], Environments(), tree)
+    assert all(phastform[unit].endswith("cannot start") for unit in GPU)
+    assert release.isolation(release.HOSTS["cyan"], Environments(), tree) == {}
+
+
+def test_where_namespaces_are_allowed_each_gpu_server_has_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tree = isolation_tree(tmp_path, monkeypatch, "allowed")
+    for node in ("gray", "phastform"):
+        record = release.isolation(release.HOSTS[node], Environments(), tree)
+        assert record == dict.fromkeys(GPU, "a network namespace of its own") | {
+            "user namespaces": "allowed"
+        }
+
+
+def test_a_release_whose_gpu_server_could_not_start_is_not_switched_to(
+    host: Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A GPU node whose kernel refuses user namespaces, without the host-network drop-in: verification fails a release
+    # for a server that runs or would restart, since in-private-net would fail its start, and reports a stopped one.
+    namespace_tools(host.tmp / "bin", "refused")
+    gpu = release.HostSpec(
+        "testhost",
+        node="testhost",
+        envs=SPEC.envs,
+        units=SPEC.units,
+        artifacts=SPEC.artifacts,
+        gpu=True,
+    )
+    check = (DEPLOY / "bin" / "private-net-check").read_text()
+    host.prepare(A, "v1.0", **{"deploy/bin/private-net-check": check})
+    report = release.verify(host.layout, gpu, A, release.Systemd(), host.units)
+    assert not report.failed, report.failed
+    rows = {what: (ok, detail) for what, ok, detail in report.checks}
+    assert rows["box-a.service network namespace"] == (
+        True,
+        "a network namespace of its own, which the kernel refuses here: the server cannot start",
+    )
+    host.start("box-a.service")
+    report = release.verify(host.layout, gpu, A, release.Systemd(), host.units)
+    assert report.failed == ["box-a.service network namespace"]

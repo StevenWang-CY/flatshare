@@ -102,6 +102,17 @@ A host without a control host beside it, as the box has cyan, runs both: the GPU
 
 None of these differs between the frozen engine and make-room on one host, so a single host's comparisons are made within it.
 
+## A GPU node without user namespaces (Gray)
+
+Gray, the second RTX 5060 Ti, runs Ubuntu 24.04 with `kernel.apparmor_restrict_unprivileged_userns=1`, and its deploying user has no root to lift it, so an unprivileged user namespace is refused there (`unshare: write failed /proc/self/uid_map: Operation not permitted`, 2026-10-27): `in-private-net` cannot give a GPU server a network namespace of its own, and fails the unit of one that asks for it rather than run it without one. A two-host deployment handles it as the single host's preflight does, but by the node's install, explicitly and at every release:
+
+- **Found at every install.** [`deploy/bin/private-net-check`](../deploy/bin/private-net-check) tries what `in-private-net` does (`unshare --user --map-root-user --net`, then the loopback up) and says `allowed`, `refused` with unshare's own error and the sysctl's value, or `unknown` where the host has no `unshare` or `ip`. [`deploy/gray/install.sh`](../deploy/gray/install.sh), which every release runs at its switch, links [`deploy/gray/private-net-host.conf`](../deploy/gray/private-net-host.conf) into the engine's, the STT's and the TTS's drop-ins where the kernel refuses, removes it where it allows, and changes nothing where the check cannot tell. Phastform, whose kernel allows them, has no such drop-in, and its servers keep namespaces of their own.
+- **What the servers expose.** In the host's network namespace each server still serves only its Unix socket, in `$XDG_RUNTIME_DIR/flatshare` (mode 0700). What the host's other users can reach is what a namespace of its own would have hidden: the loopback TCP listeners of vLLM's engine cores on ephemeral ports (torch's gloo groups) and CUDA's abstract sockets. `deploy/bin/audit-listeners` accepts exactly those, by the servers' `FLATSHARE_PRIVATE_NET=host` mark, counts them apart, and fails on anything else of theirs, as on every host.
+- **Recorded and checked by each release.** The manifest's `isolation` says where each server runs and the check's verdict ([the runbook](../ops/RUNBOOK.md#a-gpu-node-without-user-namespaces-gray)), and a release whose GPU server runs or would restart fails its checks before the switch if that server would ask for a namespace the kernel refuses, as an unmarked one on such a kernel would.
+- **Undone the same way.** Allowing unprivileged user namespaces (`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, root's) and the next install remove the drop-in; each server takes its own namespace at its next start.
+
+None of it changes how a server schedules or how fast it answers, only what else on the host can reach its loopback listeners, so a point measured on Gray compares with one on Phastform as one card with the other.
+
 ## Running on another GPU, step by step
 
 From the workstation, with the repository at the revision to run and the corpora and the callers' audio (`weka-x32`, `weka-x32-long`, `callers`) in `FLATSHARE_DATA`:

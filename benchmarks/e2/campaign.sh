@@ -21,7 +21,11 @@
 # and lists the points with their engines, without switching or measuring anything. FLATSHARE_SSH is your ssh command
 # for the hosts, as for deploy.sh. FLATSHARE_CYAN names cyan (default cyan), and FLATSHARE_GPU the GPU node every point
 # of the campaign runs on (default phastform), one host, which run.json names after its first label (phastform for
-# phastform.example.org); each is an SSH host name or alias.
+# phastform.example.org); each is an SSH host name or alias. flatshare-bench e2 run measures each point on that node
+# (--node): cyan's own, Phastform, as cyan's units reach it, or another one, such as gray, through its tunnel there
+# (flatshare-tunnel@NODE), with cyan's gateway and voice worker pointed at that node for the points and put back by the
+# reset at the end. A campaign's run directories on cyan hold one node's points: a complete point measured on another
+# node stops the campaign, rather than stand in for one on this node.
 # FLATSHARE_PROFILE names the GPU node's hardware profile (deploy/profiles) for flatshare-bench e2 run's engine check,
 # when it is not the one cyan's host settings name, and FLATSHARE_NODE_DIR the GPU node's directory under its home,
 # whose variant.sh switches the engine (default flatshare/src/deploy/phastform; a node rendered from another profile has
@@ -103,6 +107,10 @@ fi
 runs=flatshare/runs/e2/$name # on cyan, under the home directory, as every path given to ssh here
 bench=flatshare/venvs/bench/bin/flatshare-bench
 complete() { echo "grep -qs '\"status\": \"complete\"' $runs/$1/run.json"; } # run.json as e2 run writes it
+# The GPU node a point's run.json names: its node, or before e2 run recorded one, the node its gpu_source names.
+ran_on() {
+  echo "python3 -c 'import json, sys; r = json.load(open(sys.argv[1])); print(r.get(\"node\") or next(iter((r.get(\"versions\") or {}).get(\"gpu_source\") or {}), \"\"))' $runs/$1/run.json"
+}
 if $list; then
   log() { echo "$*" >&2; } # --points writes no log
 else
@@ -267,6 +275,9 @@ for i in "${!points[@]}"; do
     busy=true
     die "$point: lost the connection to cyan (ssh exit status 255)"
   elif ((status == 0)); then
+    ran=$($ssh "$cyan" "$(ran_on "$point")") || ran=""
+    [[ -z $ran || $ran == "$node" ]] ||
+      die "$point is complete in $runs, measured on $ran: this campaign measures on $node, whose points need run directories of their own (a campaign file of another name)"
     fetch "$point"
     previous=${engines[$i]}
     continue
@@ -305,7 +316,7 @@ for i in "${!points[@]}"; do
   measuring=$(date -u +%s)
   sample_gpu "$point"
   status=0
-  $ssh "$cyan" "$bench e2 run $runs/arms/$point.toml --out $runs/$point${seed:+ --agents-seed $seed}${sampling:+ --kv-sample-s $sampling}$audio --gpu-source $node=$deployed$profile" 2>&1 |
+  $ssh "$cyan" "$bench e2 run $runs/arms/$point.toml --out $runs/$point --node $node${seed:+ --agents-seed $seed}${sampling:+ --kv-sample-s $sampling}$audio --gpu-source $node=$deployed$profile" 2>&1 |
     tee -a "$results/campaign.log" || status=$?
   stop_gpu "$point"
   if ((status == 255)); then
