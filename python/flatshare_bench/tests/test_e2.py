@@ -163,13 +163,19 @@ def test_an_agents_only_point_has_no_calls_and_a_fixed_window(tmp_path: Path) ->
 def test_the_agents_only_window_is_the_median_of_w5s_two_caller_calls() -> None:
     import statistics
 
-    windows = [
-        json.loads(path.with_name("summary.json").read_text())["window_s"]
+    points = [
+        (
+            json.loads(path.read_text())["arm"],
+            json.loads(path.with_name("summary.json").read_text()),
+        )
         for path in (REPO / "benchmarks" / "results" / "2026-10-24-e2-w5").glob("*/*/run.json")
-        if json.loads(path.read_text())["arm"]["voice"]["callers"] == 2
     ]
+    two = [(arm, summary["window_s"]) for arm, summary in points if arm["voice"]["callers"] == 2]
+    windows = [window for _, window in two]
     assert (len(windows), min(windows), max(windows)) == (60, 336.0, 476.0)
     assert statistics.median(windows) == AGENTS_WINDOW_S == 355.0
+    beside = [window for arm, window in two if arm["agents"]["sessions"]]
+    assert (len(beside), statistics.median(beside)) == (55, 357.0)  # with agents beside the calls
 
 
 def test_an_arm_file_fills_in_the_defaults(tmp_path: Path) -> None:
