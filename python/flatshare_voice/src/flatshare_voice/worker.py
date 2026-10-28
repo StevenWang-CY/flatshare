@@ -454,11 +454,16 @@ def serve(settings: Settings) -> Admission:
     too), so that the worker is full at max_calls."""
     global ADMISSION
     assert settings.max_calls is not None
+
+    async def place(job: Any) -> tuple[bool, str]:
+        return await nodes.admit(settings.llm_uds, room_session_id(job.room.sid))
+
     ADMISSION = Admission(
         settings.max_calls,
         active=active_calls,
         probe=EngineProbe(settings.llm_uds, settings.probe_path),
         drain=settings.drain_file,
+        place=place if settings.node_binding else None,
     )
     server.update_options(load_threshold=1.0)
     Monitor(ADMISSION, settings.status_file, settings.describe()).start()

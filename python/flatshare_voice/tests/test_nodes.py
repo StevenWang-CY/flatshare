@@ -32,13 +32,16 @@ HALF_SECOND = rtc.AudioFrame(np.zeros(8000, np.int16).tobytes(), 16000, 1, 8000)
 
 class Gateway:
     """The gateway's socket as a call sees it: ``POST /v1/sessions`` answers ``status`` and the placement on
-    ``node`` (with its speech sockets' names), or nothing while ``hang``; the chat route streams a reply, breaks it
+    ``node``, its speech sockets as the gateway's ``[[nodes]]`` name them (``unix:`` addresses in ``sockets``, the
+    tunnels' directory), a 503 of type ``refusal`` otherwise, or nothing while ``hang``; the chat route streams a reply, breaks it
     off with the gateway's ``upstream_unavailable`` error event (``stream = "broken"``), or answers ``status`` with
     an error of ``error`` type. Every request is kept, with its headers."""
 
-    def __init__(self) -> None:
+    def __init__(self, sockets: Path) -> None:
+        self.sockets = sockets
         self.node = "gray"
         self.status = 200
+        self.refusal = "no_call_slot"
         self.hang = False
         self.chat = "ok"
         self.chat_status = 200
@@ -53,9 +56,10 @@ class Gateway:
         if self.hang:
             await self.released.wait()
         if self.status != 200:
-            return web.json_response({"error": {"type": "no_ready_node"}}, status=self.status)
-        answer = {"session_id": SESSION, "node": self.node}
-        answer |= {"stt": f"{self.node}-stt.sock", "tts": f"{self.node}-tts.sock"}
+            return web.json_response({"error": {"type": self.refusal}}, status=self.status)
+        answer = {"session_id": SESSION, "class": "realtime", "node": self.node}
+        for server in ("stt", "tts"):
+            answer[server] = f"unix:{self.sockets / f'{self.node}-{server}.sock'}"
         return web.json_response(answer)
 
     async def chat_completions(self, request: web.Request) -> web.StreamResponse:
@@ -130,7 +134,7 @@ async def serving(path: Path, routes: list[web.RouteDef]) -> AsyncIterator[None]
 async def cluster(sockets: Path) -> AsyncIterator[tuple[Gateway, BreakingTTS]]:
     """The gateway on gateway.sock; Phastform's speech servers as the tunnels' phastform-*.sock (mocks in their own
     directory, linked), and Gray's STT as gray-stt.sock beside them and its TTS, which breaks, as gray-tts.sock."""
-    gateway, breaking = Gateway(), BreakingTTS()
+    gateway, breaking = Gateway(sockets), BreakingTTS()
     routes = [
         web.post("/v1/sessions", gateway.sessions),
         web.post("/v1/chat/completions", gateway.chat_completions),
@@ -339,6 +343,7 @@ def test_a_node_failure_ends_the_reply_and_the_callers_next_speech_rebinds_the_c
         ),  # the stream broken off by the node's upstream
         ("broken", 200, "upstream_timeout", True),
         ("ok", 502, "upstream_unavailable", True),
+        ("ok", 503, "no_healthy_node", True),  # no node of the session's role available
         ("ok", 503, "no_ready_node", True),
         ("ok", 503, "in_flight_limit", False),  # the gateway's capacity, not the node
         ("ok", 400, "invalid_request", False),
@@ -435,6 +440,19 @@ def test_the_conversation_survives_the_rebinding(
         {"session_id": SESSION, "node": "gray/..", "stt": "gray-stt.sock", "tts": "gray-tts.sock"},
         {"session_id": SESSION, "node": "gray", "stt": "../gray-stt.sock", "tts": "gray-tts.sock"},
         {"session_id": SESSION, "node": "gray", "stt": "gray-stt", "tts": "gray-tts.sock"},
+        # a unix: address or a path outside the configured sockets' directory
+        {
+            "session_id": SESSION,
+            "node": "gray",
+            "stt": "unix:/elsewhere/gray-stt.sock",
+            "tts": "gray-tts.sock",
+        },
+        {
+            "session_id": SESSION,
+            "node": "gray",
+            "stt": "/elsewhere/gray-stt.sock",
+            "tts": "gray-tts.sock",
+        },
         {"session_id": "voice-RM_other", "node": "gray", "stt": "a.sock", "tts": "b.sock"},
         ["gray"],
     ],

@@ -44,17 +44,69 @@ PLACEMENT_TIMEOUT_S = 1.0
 NODE_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
 """A GPU node's name, as the gateway and the tunnels name it."""
 SOCKET_NAME = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,122}\.sock")
-"""A speech socket's name in a placement: a file name alone, which the worker finds beside its configured sockets."""
+"""A speech socket's file name. A placement names the socket as the gateway's `[[nodes]]` configure it
+(``unix:/run/user/UID/flatshare/gray-stt.sock``), or by its file name alone; either way the worker takes it only beside
+its own configured sockets, in the same directory (the tunnels' on cyan)."""
 NO_NODES = frozenset({404, 405})
 """A gateway that serves no placement (a single upstream): the call keeps its configured sockets."""
-NODE_FAILURES = frozenset({"upstream_unavailable", "upstream_timeout", "no_ready_node"})
-"""The gateway's error types that say the session's node failed: an upstream that broke, stalled, or is down with no
-other node ready. Its other errors (a client's mistake, a full admission point, a drain) say nothing of the node."""
+NODE_FAILURES = frozenset(
+    {"upstream_unavailable", "upstream_timeout", "no_healthy_node", "no_ready_node"}
+)
+"""The gateway's error types that say the session's node failed: an upstream that broke or stalled, or no node of the
+session's role available (``no_healthy_node``; ``no_ready_node`` as an older contract named it). Its other errors (a
+client's mistake, a full admission point, a drain) say nothing of the node."""
+PLACEMENT_REFUSALS = frozenset({"no_call_slot", "no_healthy_node", "placement_full"})
+"""The gateway's 503 answers to a placement that say no node takes the call now: every available realtime node at its
+``max_calls``, no available realtime node, or a full placement table. Serve mode's admission refuses the call."""
 STREAM_FAILURES = tuple(f'"type":"{kind}"'.encode() for kind in sorted(NODE_FAILURES))
 """How those types appear in an event stream's error event, which the gateway sends before it breaks a stream off
 (``data: {"error": {..., "type": "upstream_unavailable", ...}}``, compact JSON)."""
 
 logger = logging.getLogger(__name__)
+
+
+def beside(named: str, configured: str) -> str | None:
+    """The path of the speech socket a placement names, beside the ``configured`` one: ``named`` is its file name, or
+    its ``unix:`` address or absolute path in the same directory. None for anything else, which places the call
+    nowhere."""
+    path = named.removeprefix("unix:")
+    if "/" in path:
+        if Path(path).parent != Path(configured).parent:
+            return None
+        path = Path(path).name
+    if not SOCKET_NAME.fullmatch(path):
+        return None
+    return str(Path(configured).with_name(path))
+
+
+async def admit(
+    gateway: str, session_id: str, timeout: float = PLACEMENT_TIMEOUT_S
+) -> tuple[bool, str]:
+    """Whether a node takes the call of ``session_id`` before its job is accepted (serve mode's admission): the
+    gateway places the session (``POST /v1/sessions``, reason ``start``), and the call's own placement at its start
+    finds the same node. A gateway without nodes (404, 405) admits it by capacity alone; a 503 that names no node for
+    it (PLACEMENT_REFUSALS) refuses it, as does a gateway that does not answer, which can place nothing."""
+    body = {"session_id": session_id, "class": REALTIME_CLASS, "reason": "start"}
+    headers = {SESSION_ID_HEADER: session_id, CLASS_HEADER: REALTIME_CLASS}
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.AsyncHTTPTransport(uds=gateway), timeout=timeout
+        ) as client:
+            response = await client.post(SESSIONS_URL, json=body, headers=headers)
+    except httpx.HTTPError as exc:
+        return False, f"the gateway did not place the call: {type(exc).__name__}: {exc}"
+    if response.status_code in NO_NODES or response.status_code == 200:
+        return True, f"placed ({response.status_code})"
+    try:
+        kind = response.json()["error"]["type"]
+    except (ValueError, KeyError, TypeError):
+        kind = None
+    if response.status_code == 503 and kind in PLACEMENT_REFUSALS:
+        return False, f"no node takes the call: {kind}"
+    return (
+        False,
+        f"the gateway placed the call nowhere: HTTP {response.status_code} {kind or ''}".rstrip(),
+    )
 
 
 class NodeFailed(httpx.TransportError):
@@ -172,13 +224,10 @@ class CallBinding:
         node, stt, tts = (answer.get(key) for key in ("node", "stt", "tts"))
         if not all(isinstance(value, str) for value in (node, stt, tts)):
             return None
-        if not NODE_NAME.fullmatch(node) or not all(map(SOCKET_NAME.fullmatch, (stt, tts))):
+        stt, tts = beside(stt, self.configured["stt"]), beside(tts, self.configured["tts"])
+        if not NODE_NAME.fullmatch(node) or stt is None or tts is None:
             return None
-        return Placement(
-            node,
-            str(Path(self.configured["stt"]).with_name(stt)),
-            str(Path(self.configured["tts"]).with_name(tts)),
-        )
+        return Placement(node, stt, tts)
 
     async def socket(self, server: str) -> str:
         """The socket a request to the call's ``server`` (``stt`` or ``tts``) goes to: its node's, the configured one

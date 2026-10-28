@@ -28,7 +28,7 @@ import os
 import socket
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -115,7 +115,10 @@ class EngineProbe:
 
 
 class JobRequest(Protocol):
-    """What admission needs of LiveKit's JobRequest."""
+    """What admission needs of LiveKit's JobRequest (its room, for the call's placement)."""
+
+    @property
+    def room(self) -> Any: ...
 
     async def accept(self) -> None: ...
 
@@ -132,6 +135,7 @@ class Admission:
         active: Callable[[], int],
         probe: EngineProbe | None = None,
         drain: str | os.PathLike[str] | None = None,
+        place: Callable[[JobRequest], Awaitable[tuple[bool, str]]] | None = None,
     ) -> None:
         if max_calls < 1:
             raise ValueError(f"max_calls must be 1 or more, got {max_calls}")
@@ -139,6 +143,9 @@ class Admission:
         self.active = active
         self.probe = probe
         self.drain = Path(drain) if drain else None
+        self.place = place
+        """With nodes, whether one takes the job's call (:func:`flatshare_voice.nodes.admit`), asked before it is
+        accepted, so that a call no node can serve is refused rather than accepted and left without speech."""
         self.accepting = 0
         self.refused = 0
 
@@ -173,9 +180,17 @@ class Admission:
             logger.warning("refusing a call: %s", reason, extra={"refused": self.refused})
             await job.reject(terminate=False)
             return
-        # No await between the count and this: the event loop decides one request at a time.
+        # No await between the count and this: the event loop decides one request at a time, and the call counts as
+        # being accepted while its placement is asked.
         self.accepting += 1
         try:
+            if self.place is not None:
+                placed, why = await self.place(job)
+                if not placed:
+                    self.refused += 1
+                    logger.warning("refusing a call: %s", why, extra={"refused": self.refused})
+                    await job.reject(terminate=False)
+                    return
             await job.accept()
         finally:
             self.accepting -= 1
