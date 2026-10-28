@@ -18,10 +18,13 @@
 //! - **Failover.** A node that is not available takes no new session, and a session placed on it is placed again by
 //!   its next request (or its next `POST /v1/sessions`), a move that is counted. A realtime session that finds no
 //!   available realtime node with a free call slot gets 503 with `Retry-After`, and so does an agent's that finds no
-//!   available background node with a free agent slot. A node that carries realtime sessions moved from a node that
-//!   is not available covers for it: its interactive and background requests in flight are held to
-//!   `failover_background_max_in_flight` (0 by default, all of them deferred) until that node is available again, or
-//!   the moved sessions end.
+//!   available background node with a free agent slot. A node that carries realtime sessions moved to it from another
+//!   node covers: its interactive and background requests in flight are held to `failover_background_max_in_flight`
+//!   (0 by default, all of them deferred) until the moved sessions end, whether or not the node they came from is
+//!   available again, so that a recovery does not leave them beside the node's whole agent load. With
+//!   `calls = "fill"` a realtime node after the first covers too while it carries any call, moved or new: it is a warm
+//!   spare that took calls only because the nodes before it were full or not available. The first realtime node never
+//!   covers for its own calls; its agents are bounded by `max_agents` alone.
 //! - **Interrupted turns.** A realtime request whose node fails before its first content (no connection, one that
 //!   closed before the response, or a body that broke off before its first frame) is sent once more on another
 //!   available node, within the deadlines of its receipt, after the first attempt is dropped; once its first content
@@ -175,8 +178,11 @@ pub(crate) struct Nodes {
     table: RwLock<Table>,
     pub config: Placement,
     metrics: metrics::Metrics,
-    /// Woken when a node's availability changes, a session placed for a failover ends, or an agent's request ends:
-    /// what the requests held back by a failover wait on.
+    /// The first node with the realtime role, in the configuration's order: with `calls = "fill"` the one whose own
+    /// calls never make it cover.
+    first_realtime: Option<usize>,
+    /// Woken whenever a node may have stopped covering (the table or a node's availability changed) and when an
+    /// agent's request ends: what the requests held back by a failover wait on.
     changed: Notify,
 }
 
@@ -291,11 +297,16 @@ impl Nodes {
             .iter()
             .map(|node| node.series.sessions.clone())
             .collect();
+        let first_realtime = list
+            .iter()
+            .find(|node| node.realtime)
+            .map(|node| node.index);
         let nodes = Arc::new(Self {
             list,
             table: RwLock::new(Table::new(gauges)),
             config: placement,
             metrics: metrics.clone(),
+            first_realtime,
             changed: Notify::new(),
         });
         for node in &nodes.list {
@@ -467,10 +478,9 @@ impl Nodes {
         Ok(placed)
     }
 
-    /// Counts a request in flight on its node, holding back an interactive or background one while its node
-    /// covers for a node that is not available: until fewer than `failover_background_max_in_flight` of them are in
-    /// flight there, the node no longer covers, its wait reaches `deadline`, or the drain's `cut` ends it. Returns
-    /// how long it waited.
+    /// Counts a request in flight on its node, holding back an interactive or background one while its node covers
+    /// ([`Nodes::covering`]): until fewer than `failover_background_max_in_flight` of them are in flight there, the
+    /// node no longer covers, its wait reaches `deadline`, or the drain's `cut` ends it. Returns how long it waited.
     pub async fn admit(
         &self,
         placed: &mut Placed,
@@ -496,7 +506,7 @@ impl Nodes {
                 waiting = Some(GaugeGuard::new(placed.node.series.waiting.clone()));
                 tracing::debug!(
                     node = &*placed.node.name,
-                    "an agent's request waits: the node covers for a node that is not available"
+                    "an agent's request waits: the node covers, carrying calls moved to it or a warm spare's"
                 );
             }
             tokio::select! {
@@ -508,19 +518,25 @@ impl Nodes {
         }
     }
 
-    /// Whether `node` covers for a node that is not available: it carries realtime sessions moved from it.
+    /// Whether `node` covers, which holds its agents' requests to `failover_background_max_in_flight`: while it
+    /// carries realtime sessions moved to it from another node, until they end, whether or not that node is available
+    /// again; and, with `calls = "fill"`, while it carries any call and is a realtime node after the first, a warm
+    /// spare that took calls only because the nodes before it were full or not available.
     pub fn covering(&self, node: usize) -> bool {
         self.covering_in(&self.read(), node)
     }
 
     fn covering_in(&self, table: &Table, node: usize) -> bool {
-        table
-            .moved_in(node)
-            .any(|(from, _)| !self.list[from].available())
+        let moved_in = table.moved_in(node).next().is_some();
+        let spare = self.config.calls == CallPlacement::Fill
+            && self.list[node].realtime
+            && Some(node) != self.first_realtime
+            && table.held(node)[0] > 0;
+        moved_in || spare
     }
 
-    /// Takes a place among `node`'s agents' requests in flight: always while it does not cover for another node,
-    /// and only below `failover_background_max_in_flight` while it does.
+    /// Takes a place among `node`'s agents' requests in flight: always while it does not cover, and only below
+    /// `failover_background_max_in_flight` while it does.
     fn take_agent_slot(&self, node: &Node) -> bool {
         if !self.covering(node.index) {
             node.agents.fetch_add(1, Ordering::AcqRel);
@@ -562,7 +578,8 @@ impl Nodes {
         }
     }
 
-    /// Counts a placement on `node`, and logs a move from `from`.
+    /// Counts a placement on `node`, logs a move from `from`, and shows each node's covering: a move can make a node
+    /// cover or end another's, and so can a new call on a warm spare.
     fn placed_on(
         &self,
         node: usize,
@@ -591,15 +608,15 @@ impl Nodes {
                     "a session moves to another node: its node is not available"
                 ),
             }
-            self.show_covering();
         }
+        self.show_covering();
     }
 
     /// The node a new session of `class` goes to, not `exclude`: of the available nodes with its role, for a
     /// realtime session, among those with a free call slot, the one with the fewest calls, then the fewest requests
     /// in flight (`calls = "spread"`), or the first (`"fill"`); and for an agent's, among those with a free agent slot
-    /// (below their `max_agents`, if they have one), the one that covers for no failed node, then with the fewest
-    /// agents' sessions, then the fewest requests in flight. Ties go to the earlier node.
+    /// (below their `max_agents`, if they have one), one that does not cover, then the one with the fewest agents'
+    /// sessions, then the fewest requests in flight. Ties go to the earlier node.
     fn choose(
         &self,
         table: &Table,
@@ -706,18 +723,21 @@ impl Nodes {
         let available = node.available();
         if node.was_available.swap(available, Ordering::AcqRel) != available {
             self.show_covering();
-            self.changed.notify_waiters();
         }
     }
 
-    /// Sets each node's covering gauge.
+    /// Sets each node's covering gauge, and wakes the requests a failover holds back, since a node may have stopped
+    /// covering: after each change of the table, and of a node's availability.
     fn show_covering(&self) {
-        let table = self.read();
-        for node in &self.list {
-            node.series
-                .covering
-                .set(i64::from(self.covering_in(&table, node.index)));
+        {
+            let table = self.read();
+            for node in &self.list {
+                node.series
+                    .covering
+                    .set(i64::from(self.covering_in(&table, node.index)));
+            }
         }
+        self.changed.notify_waiters();
     }
 
     /// What a reload's successor takes over: each node's verdict and every placement, by name.
@@ -938,9 +958,8 @@ async fn expire(nodes: Weak<Nodes>, idle: Duration) {
         };
         let now = Instant::now();
         let soonest = nodes.write().expire(now, idle);
+        // A call that made its node cover may have ended.
         nodes.show_covering();
-        // A call that carried another node's load may have ended.
-        nodes.changed.notify_waiters();
         next = soonest.unwrap_or(now + idle);
     }
 }
@@ -987,12 +1006,22 @@ mod tests {
 
     /// Nodes of `(name, max_agents)`, each with both roles and two call slots, placed by `placement`.
     fn started(nodes: &[(&str, Option<usize>)], placement: Placement) -> Arc<Nodes> {
+        let both: Vec<(&str, bool, Option<usize>)> = nodes
+            .iter()
+            .map(|(name, max_agents)| (*name, true, *max_agents))
+            .collect();
+        started_with(&both, placement)
+    }
+
+    /// Nodes of `(name, realtime, max_agents)`, each with the background role, the realtime role where `realtime`
+    /// says, and two call slots, placed by `placement`.
+    fn started_with(nodes: &[(&str, bool, Option<usize>)], placement: Placement) -> Arc<Nodes> {
         let config: Vec<NodeConfig> = nodes
             .iter()
-            .map(|(name, max_agents)| NodeConfig {
+            .map(|(name, realtime, max_agents)| NodeConfig {
                 name: (*name).to_owned(),
                 upstream: UpstreamAddr::Unix(format!("/nonexistent/{name}.sock").into()),
-                realtime: true,
+                realtime: *realtime,
                 background: true,
                 max_calls: 2,
                 max_agents: *max_agents,
@@ -1000,7 +1029,7 @@ mod tests {
                 tts: None,
             })
             .collect();
-        let names: Vec<Arc<str>> = nodes.iter().map(|(name, _)| Arc::from(*name)).collect();
+        let names: Vec<Arc<str>> = nodes.iter().map(|(name, ..)| Arc::from(*name)).collect();
         // Checked rarely, so that the engines nobody serves are not judged during the test.
         let placement = Placement {
             health_interval: Duration::from_secs(3600),
@@ -1029,6 +1058,27 @@ mod tests {
             nodes.judge(index, [false, true, true]);
         }
         assert!(!nodes.list[index].available());
+    }
+
+    /// Judges node `index` by passed checks until it is healthy again, and available.
+    fn recover(nodes: &Nodes, index: usize) {
+        for _ in 0..nodes.config.healthy_after {
+            nodes.judge(index, [true; 3]);
+        }
+        assert!(nodes.list[index].available());
+    }
+
+    /// The `session_closed` event of the session `id`, posted by its tenant, the first.
+    fn close(nodes: &Nodes, id: &str) {
+        let event: LifecycleEvent = serde_json::from_value(serde_json::json!({
+            "event_id": format!("close-{id}"),
+            "session_id": id,
+            "at_ms": 1,
+            "source": "voice-worker",
+            "type": "session_closed",
+        }))
+        .unwrap();
+        nodes.closed(&tenants(&["voice"]).all()[0], &[event]);
     }
 
     fn key(id: &str) -> Key {
@@ -1102,9 +1152,9 @@ mod tests {
         );
         let back = successor.handover(&tenants);
         assert_eq!(back.sessions, [session("voice", "call-1", "b", Some("a"))]);
-        // The call holds one of b's call slots, and b covers for a while a is not available: a is, healthy.
+        // The call holds one of b's call slots, and b covers while it carries the call moved from a, healthy as a is.
         assert_eq!(successor.read().held(1), [1, 0, 0]);
-        assert!(!successor.covering(1));
+        assert!(successor.covering(1));
     }
 
     #[test]
@@ -1261,10 +1311,15 @@ mod tests {
             place(&spread, "call-5", SloClass::Realtime),
             Err(Unplaced::NoCallSlot)
         );
-        // Agents' sessions spread either way.
+        // Agents' sessions spread where no node covers; with fill b, a spare that carries calls, covers, and they go
+        // to a.
+        assert_eq!(
+            place_new(&spread, "agent", 3, SloClass::Background),
+            ["a", "b", "a"]
+        );
         assert_eq!(
             place_new(&fill, "agent", 3, SloClass::Background),
-            ["a", "b", "a"]
+            ["a", "a", "a"]
         );
     }
 
@@ -1284,5 +1339,91 @@ mod tests {
         }
         assert_eq!(place(&nodes, "call-3", SloClass::Realtime).unwrap(), "a");
         assert_eq!(place(&nodes, "call-1", SloClass::Realtime).unwrap(), "b");
+    }
+
+    #[tokio::test]
+    async fn a_node_covers_while_it_carries_calls_moved_to_it_after_their_node_recovers() {
+        let nodes = nodes(&["a", "b"]);
+        all_healthy(&nodes);
+        assert_eq!(place_new(&nodes, "call", 2, SloClass::Realtime), ["a", "b"]);
+        fail(&nodes, 0);
+        assert_eq!(place(&nodes, "call-1", SloClass::Realtime).unwrap(), "b");
+        assert!(nodes.covering(1));
+        // a is available again, and b carries the moved call still: it covers until that call ends.
+        recover(&nodes, 0);
+        assert!(nodes.covering(1));
+        // b's own call ending changes nothing; the moved call's session_closed ends the covering.
+        close(&nodes, "call-2");
+        assert!(nodes.covering(1));
+        close(&nodes, "call-1");
+        assert!(!nodes.covering(1));
+        // The same for a moved call that idles out.
+        assert_eq!(place(&nodes, "call-3", SloClass::Realtime).unwrap(), "a");
+        fail(&nodes, 0);
+        assert_eq!(place(&nodes, "call-3", SloClass::Realtime).unwrap(), "b");
+        recover(&nodes, 0);
+        assert!(nodes.covering(1));
+        let idle = nodes.config.idle;
+        nodes.write().expire(Instant::now() + idle, idle);
+        assert!(!nodes.covering(1));
+        assert!(!nodes.covering(0));
+    }
+
+    #[tokio::test]
+    async fn with_fill_a_spare_covers_while_it_carries_a_new_call_until_the_call_ends() {
+        let nodes = placing(CallPlacement::Fill);
+        all_healthy(&nodes);
+        fail(&nodes, 0);
+        // A new call while a is down goes to b, which covers though no call moved there.
+        assert_eq!(place(&nodes, "call-1", SloClass::Realtime).unwrap(), "b");
+        assert_eq!(nodes.read().moved_in(1).count(), 0);
+        assert!(nodes.covering(1));
+        // a recovers and takes the next call, and b covers until its own call ends.
+        recover(&nodes, 0);
+        assert_eq!(place(&nodes, "call-2", SloClass::Realtime).unwrap(), "a");
+        assert!(nodes.covering(1));
+        close(&nodes, "call-1");
+        assert!(!nodes.covering(1));
+    }
+
+    #[tokio::test]
+    async fn with_fill_the_first_realtime_node_never_covers_for_its_own_calls() {
+        // g takes no calls, so a is the first realtime node.
+        let placement = Placement {
+            calls: CallPlacement::Fill,
+            ..Placement::default()
+        };
+        let nodes = started_with(
+            &[("g", false, None), ("a", true, None), ("b", true, None)],
+            placement,
+        );
+        all_healthy(&nodes);
+        assert_eq!(
+            place_new(&nodes, "call", 3, SloClass::Realtime),
+            ["a", "a", "b"]
+        );
+        // a carries two calls and does not cover; b, which took the third because a was full, does.
+        let covering: Vec<bool> = (0..3).map(|node| nodes.covering(node)).collect();
+        assert_eq!(covering, [false, false, true]);
+        // a's agents are bounded by max_agents alone: new agents go to the nodes that do not cover.
+        assert_eq!(
+            place_new(&nodes, "agent", 4, SloClass::Background),
+            ["g", "a", "g", "a"]
+        );
+    }
+
+    #[tokio::test]
+    async fn with_spread_a_nodes_own_calls_never_make_it_cover() {
+        let nodes = nodes(&["a", "b"]);
+        all_healthy(&nodes);
+        assert_eq!(
+            place_new(&nodes, "call", 4, SloClass::Realtime),
+            ["a", "b", "a", "b"]
+        );
+        assert!(!nodes.covering(0) && !nodes.covering(1));
+        // Nor through a failure and a recovery of the other node, so long as no call moved.
+        fail(&nodes, 0);
+        recover(&nodes, 0);
+        assert!(!nodes.covering(0) && !nodes.covering(1));
     }
 }

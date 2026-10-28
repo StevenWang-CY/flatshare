@@ -146,7 +146,7 @@ pub(crate) struct Series {
     /// Its sessions and its requests in flight, by class.
     pub sessions: [Gauge; 3],
     pub in_flight: [Gauge; 3],
-    /// 1 while it carries realtime sessions moved from a node that is not available.
+    /// 1 while it covers: it carries realtime sessions moved to it from another node, or, as a warm spare, any call.
     pub covering: Gauge,
     /// Its interactive and background requests waiting for the failover's bound.
     pub waiting: Gauge,
@@ -314,8 +314,9 @@ impl Metrics {
         );
         r.register(
             "node_covering",
-            "Whether each node carries realtime sessions moved from a node that is not available (1), which holds \
-             its interactive and background requests to failover_background_max_in_flight",
+            "Whether each node covers (1), which holds its interactive and background requests to \
+             failover_background_max_in_flight: it carries realtime sessions moved to it from another node, until they \
+             end, or, with calls set to fill, any call on a realtime node after the first",
             self.covering.clone(),
         );
         r.register(

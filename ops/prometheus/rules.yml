@@ -206,7 +206,7 @@ groups:
         labels:
           severity: ticket
         annotations:
-          summary: A node carries calls moved from a failed node, and holds its agents' requests back until that node is healthy again
+          summary: A node carries calls moved to it, or a warm spare's calls, and holds its agents' requests back until those calls end
       - alert: FlatshareCallsRefused
         expr: sum(increase(flatshare_gateway_placements_refused_total{class="realtime"}[10m])) > 0
         labels:

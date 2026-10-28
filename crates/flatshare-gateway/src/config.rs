@@ -184,8 +184,9 @@ pub struct Placement {
     /// make an unhealthy node healthy again (`healthy_after`).
     pub unhealthy_after: u32,
     pub healthy_after: u32,
-    /// The interactive and background requests in flight at most on a node that carries realtime sessions moved
-    /// from a node that is not healthy (`failover_background_max_in_flight`): the others wait.
+    /// The interactive and background requests in flight at most on a node that covers
+    /// (`failover_background_max_in_flight`): one that carries realtime sessions moved to it from another node, until
+    /// they end, or, with `calls = "fill"`, a realtime node after the first that carries any call. The others wait.
     pub failover_background_max_in_flight: usize,
     /// Which of the nodes with a free call slot a new or moved call goes to (`calls`).
     pub calls: CallPlacement,
@@ -199,7 +200,7 @@ pub enum CallPlacement {
     #[default]
     Spread,
     /// The first in the configuration's order: a later node takes calls only while the earlier ones are full or
-    /// not available, a warm spare.
+    /// not available, a warm spare, which covers while it carries any call.
     Fill,
 }
 

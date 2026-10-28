@@ -1381,7 +1381,7 @@
           "refId": "C"
         }
       ],
-      "description": "A node that carries calls moved from a failed node covers for it: its agents' requests in flight are held to failover_background_max_in_flight (0) until the failed node is healthy again."
+      "description": "A node that carries calls moved to it from another node covers until those calls end, whether or not that node is healthy again, and so does a warm spare (calls = \"fill\", a realtime node after the first) while it carries any call: its agents' requests in flight are held to failover_background_max_in_flight (0)."
     }
   ]
 }

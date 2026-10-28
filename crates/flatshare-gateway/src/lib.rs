@@ -23,7 +23,8 @@
 //! - **nodes** (`[[nodes]]`, [`nodes`]): several GPU nodes, each judged as a whole pipeline (its engine's canary and
 //!   readiness, its STT and TTS servers), sessions placed on them stickily with call slots and agents' bounds, and
 //!   failover: a session whose node fails moves by its next request, a realtime request whose node fails before its
-//!   first content is sent once more elsewhere, and a node that covers for a failed one defers its agents' requests;
+//!   first content is sent once more elsewhere, and a node that carries calls moved to it defers its agents' requests
+//!   until those calls end;
 //! - **lifecycle events** at `POST /v1/events`, deduplicated, then to the admission point and an [`EventSink`];
 //! - **metrics** at `GET /metrics` and one structured log line per request.
 //!

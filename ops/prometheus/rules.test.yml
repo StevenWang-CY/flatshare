@@ -202,7 +202,7 @@ tests:
               severity: ticket
               node: phastform
             exp_annotations:
-              summary: A node carries calls moved from a failed node, and holds its agents' requests back until that node is healthy again
+              summary: A node carries calls moved to it, or a warm spare's calls, and holds its agents' requests back until those calls end
       - eval_time: 4m
         alertname: FlatshareCallsRefused
         exp_alerts:

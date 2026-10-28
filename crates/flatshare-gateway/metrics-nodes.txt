@@ -87,7 +87,7 @@ flatshare_gateway_node_in_flight{node="gray",class="realtime"} 0
 flatshare_gateway_node_in_flight{node="phastform",class="background"} 0
 flatshare_gateway_node_in_flight{node="phastform",class="interactive"} 0
 flatshare_gateway_node_in_flight{node="phastform",class="realtime"} 0
-# HELP flatshare_gateway_node_covering Whether each node carries realtime sessions moved from a node that is not available (1), which holds its interactive and background requests to failover_background_max_in_flight.
+# HELP flatshare_gateway_node_covering Whether each node covers (1), which holds its interactive and background requests to failover_background_max_in_flight: it carries realtime sessions moved to it from another node, until they end, or, with calls set to fill, any call on a realtime node after the first.
 # TYPE flatshare_gateway_node_covering gauge
 flatshare_gateway_node_covering{node="gray"} 0
 flatshare_gateway_node_covering{node="phastform"} 0
