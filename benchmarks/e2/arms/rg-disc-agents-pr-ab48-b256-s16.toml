@@ -1,0 +1,22 @@
+# The two-card comparison (benchmarks/quality/RESOURCE-GATE.md), beside its arrangements: the agents alone on the
+# serving card's engine (the change at a step cap of 256, a 48-token window, no reserve), its speech servers resident
+# and idle, at 16 session trees: a warm spare's background card, which serves agents until the calls' card fails and
+# then takes the calls, measured so that what a spare costs the agents comes from the records (rg-r1 to rg-r3).
+arm = "9-pr-ab48-b256-agents-s16"
+label = "the agents alone on the serving card's engine at step cap 256, the speech servers idle, 16 session trees"
+
+[voice]
+callers = 0
+
+[agents]
+sessions = 16
+data = "weka-x32-long"
+
+[engine]
+variant = "make-room"
+flags = [
+  "--additional-config.make_room.reserve_tokens", "0",
+  "--additional-config.make_room.budget_cap_tokens", "48",
+  "--max-num-batched-tokens", "256",
+  "--long-prefill-token-threshold", "0",
+]
