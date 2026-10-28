@@ -64,6 +64,7 @@ from flatshare_bench.e2.engine import (
     variant_flags,
 )
 from flatshare_bench.e2.record import current_name, render
+from flatshare_bench.e2.record import worker as worker_account
 from flatshare_bench.e2.report import load_points
 from flatshare_bench.e2.run import gpu_sources, run_point
 from flatshare_bench.e2.tools import Process
@@ -1970,6 +1971,46 @@ def test_a_point_keeps_the_gateways_requests_and_the_workers_lines(cyan: Cyan) -
     assert worker_summary["waterfall"]["e2e_ms"]["p50"] == 1100.0
     assert worker_summary["waterfall"]["llm_ttft_ms"]["n"] == 1
     assert worker_summary["waterfall"]["end_of_turn_ms"] == {"n": 0}
+
+
+def test_the_workers_account_gives_the_replies_playout_where_its_lines_hold_it(
+    tmp_path: Path,
+) -> None:
+    def turn(n: int, **playout: Any) -> str:
+        return worker_line(TURNS, "turn", session_id="s0", turn=n, e2e_ms=1000.0, **playout)
+
+    journal = tmp_path / "voice-worker.log"
+    journal.write_text(
+        "\n".join(
+            [
+                turn(0, audio_ms=900.0, played_ms=900.0, stalls_ms=[400.0]),  # the warm-up
+                turn(1, audio_ms=2000.0, played_ms=2000.0, stalls_ms=[]),
+                turn(2, audio_ms=3000.0, played_ms=1500.0, stalls_ms=[], inventory_low_ms=80.0),
+                turn(
+                    3,
+                    audio_ms=2500.0,
+                    played_ms=2500.0,
+                    stalls_ms=[30.0, 250.0],
+                    inventory_low_ms=0.0,
+                ),
+                turn(4, audio_ms=500.0, played_ms=500.0),  # its output reported no stretch
+            ]
+        )
+    )
+    account = worker_account(journal, warmup_turns=1)
+    assert account is not None
+    assert account["playout"] == {
+        "replies": 3,
+        "stalled": 1,
+        "stalls_ms": {"n": 2, "mean": 140.0, "p10": 52.0, "p50": 140.0, "p90": 228.0, "p95": 239.0, "p99": 247.8},
+        "fell_behind": 2,
+        "inventory_low_ms": {"n": 2, "mean": 40.0, "p10": 8.0, "p50": 40.0, "p90": 72.0, "p95": 76.0, "p99": 79.2},
+        "audio_s": 7.5,
+        "played_s": 6.0,
+    }  # fmt: skip
+    # A worker before v1.7 gives no playout.
+    journal.write_text(turn(0))
+    assert worker_account(journal)["playout"] is None  # type: ignore[index]
 
 
 def test_a_call_opens_with_its_warm_up_turns_which_nothing_measures(cyan: Cyan) -> None:

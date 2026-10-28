@@ -22,7 +22,8 @@ LiveKit Agents 1.8.8 to those events, and ``EventSender`` posts them to the cont
 
 ``metrics_collected`` reports the end of the turn too, but 1.8.8 deprecates it, with a warning on
 every subscription, for each message's ``metrics``. Those also hold the stage times that ``Lifecycle``
-logs once per turn (logger ``flatshare_voice.turns``).
+logs once per turn (logger ``flatshare_voice.turns``), with the reply's playout: the audio it had
+ready to play and the times its output ran out (``Playout``).
 """
 
 from __future__ import annotations
@@ -30,13 +31,17 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
+import itertools
 import logging
+import math
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 import httpx2 as httpx
+from livekit import rtc
 from livekit.agents import (
     AgentSession,
     CloseEvent,
@@ -70,6 +75,9 @@ STAGES = (
     "e2e_ms",
 )
 """The stage times of a turn line, in the order of a turn (``Lifecycle``; flatshare-bench reads them)."""
+STALL_MIN_S = 0.010
+"""The shortest time without audio that counts as a stall: one 10 ms frame, the unit WebRTC sends
+audio in."""
 
 logger = logging.getLogger(__name__)
 turn_logger = logging.getLogger("flatshare_voice.turns")
@@ -184,6 +192,162 @@ class EventSender:
             )
 
 
+@dataclass
+class _Segment:
+    """One flushed piece of a reply's audio, from its first frame until it played out or was cut off."""
+
+    frames: list[tuple[float, float]]
+    """When each frame reached the output (``time.time()``), and its length in seconds."""
+    runs: list[tuple[float, float, float]]
+    """The stretches that played: when each began, where it starts in the segment's audio, and how
+    long it played, all in seconds."""
+    played: float
+    """How much of the segment played, as the output reported at its end."""
+
+
+class Playout(io.AudioOutput):
+    """The playable audio of each reply: a pass-through at the top of the session's audio output.
+
+    It notes when each frame of a reply reaches the output, ready to play; the stretches the room's
+    output reports as played (``playback_progressed``, which LiveKit Agents 1.8.8 reports once a
+    stretch can no longer be discarded); and when the session pauses the output, as it does while it
+    waits to see whether the caller's sound is an interruption. Over the segments that ended since it
+    was last called, :meth:`take` gives:
+
+    - ``audio_ms``, the audio the reply handed to the output, and ``played_ms``, how much of it played;
+    - ``stalls_ms``: each time the output ran out of audio while the reply had more to come, from
+      STALL_MIN_S on: the gaps between stretches of playback that no pause explains, the gap between
+      two segments of the reply among them;
+    - ``inventory_low_ms``: the least audio ready ahead of the playhead once synthesis had fallen
+      behind it, taken just before each frame that arrived later than the frame before it lasted. A
+      reply whose synthesis stayed ahead of its playback has none: its audio never ran low. The start
+      of a reply is no such moment: its first frame plays as soon as it arrives.
+
+    A sink that reports no stretch of playback gives no stalls and no inventory, which are then
+    unmeasured, not zero.
+    """
+
+    def __init__(self, sink: io.AudioOutput, *, clock: Callable[[], float] = time.time) -> None:
+        super().__init__(
+            label="FlatsharePlayout",
+            next_in_chain=sink,
+            capabilities=io.AudioOutputCapabilities(pause=True),
+        )
+        self._clock = clock
+        """The wall clock (``time.time``), which the stretches of playback are reported on."""
+        self._frames: list[tuple[float, float]] = []
+        self._runs: list[tuple[float, float, float]] = []
+        self._pauses: list[list[float]] = []
+        """When the session paused the output and resumed it (``math.inf`` while it is paused)."""
+        self._segments: list[_Segment] = []
+
+    @property
+    def sample_rate(self) -> int | None:
+        if self._sample_rate is not None:
+            return self._sample_rate
+        return self.next_in_chain.sample_rate if self.next_in_chain else None
+
+    async def capture_frame(self, frame: rtc.AudioFrame) -> None:
+        self._frames.append((self._clock(), frame.duration))
+        if self.next_in_chain:
+            await self.next_in_chain.capture_frame(frame)
+        await super().capture_frame(frame)
+
+    def flush(self) -> None:
+        super().flush()
+        if self.next_in_chain:
+            self.next_in_chain.flush()
+
+    def clear_buffer(self) -> None:
+        if self.next_in_chain:
+            self.next_in_chain.clear_buffer()
+
+    def pause(self) -> None:
+        self._pauses.append([self._clock(), math.inf])
+        super().pause()
+
+    def resume(self) -> None:
+        if self._pauses and self._pauses[-1][1] == math.inf:
+            self._pauses[-1][1] = self._clock()
+        super().resume()
+
+    def on_playback_progressed(self, *, started_at: float, offset: float, duration: float) -> None:
+        self._runs.append((started_at, offset, duration))
+        super().on_playback_progressed(started_at=started_at, offset=offset, duration=duration)
+
+    def on_playback_finished(
+        self,
+        *,
+        playback_position: float,
+        interrupted: bool,
+        synchronized_transcript: str | None = None,
+    ) -> None:
+        if self._pending_playback_count > 0:  # else LiveKit ignores it, a segment never captured
+            self._segments.append(_Segment(self._frames, self._runs, playback_position))
+            self._frames, self._runs = [], []
+        super().on_playback_finished(
+            playback_position=playback_position,
+            interrupted=interrupted,
+            synchronized_transcript=synchronized_transcript,
+        )
+
+    def take(self) -> dict[str, Any]:
+        """The playout of the segments that ended since the last call (the class's account), in ms;
+        nothing without one. Pauses that have ended are forgotten with them."""
+        segments, self._segments = self._segments, []
+        pauses = self._pauses
+        self._pauses = [p for p in pauses if p[1] == math.inf]
+        if not segments:
+            return {}
+        found: dict[str, Any] = {
+            "audio_ms": _ms(sum(length for s in segments for _, length in s.frames)),
+            "played_ms": _ms(sum(s.played for s in segments)),
+        }
+        if not any(s.runs for s in segments):
+            return found
+        # The segments play one after another, so their stretches in order are the reply's; a gap
+        # runs from the end of one stretch to the start of the next.
+        stretches = list(itertools.chain.from_iterable(sorted(s.runs) for s in segments))
+        gaps = [(a[0] + a[2], b[0]) for a, b in itertools.pairwise(stretches)]
+        found["stalls_ms"] = [
+            _ms(b - a)
+            for a, b in gaps
+            if b - a >= STALL_MIN_S and not any(p0 < b and p1 > a for p0, p1 in pauses)
+        ]
+        lows = [low for s in segments if (low := _inventory_low(s)) is not None]
+        if lows:
+            found["inventory_low_ms"] = _ms(min(lows))
+        return found
+
+
+def _inventory_low(segment: _Segment) -> float | None:
+    """The least audio ready ahead of a segment's playhead just before a frame that arrived later than
+    the frame before it lasted, once it had begun to play; None without such a frame, or without a
+    stretch of playback to place the playhead by."""
+    runs = sorted(segment.runs)
+    if not runs:
+        return None
+
+    def playhead(at: float) -> float:
+        position = 0.0
+        for started, offset, length in runs:
+            if at < started:
+                break
+            position = offset + min(at - started, length)
+        return position
+
+    lows, ready = [], 0.0
+    for (before, length), (at, _) in itertools.pairwise(segment.frames):
+        ready += length  # the audio that arrived before this frame
+        if at >= runs[0][0] and at - before > length:
+            lows.append(max(0.0, ready - playhead(at)))
+    return min(lows) if lows else None
+
+
+def _ms(seconds: float) -> float:
+    return round(seconds * 1000, 1)
+
+
 class Lifecycle:
     """One session's lifecycle events, and a line per turn with its stage times.
 
@@ -197,15 +361,20 @@ class Lifecycle:
         self._sender = sender
         self._user: llm.MetricsReport = {}
         """The metrics of the caller's last message, until the reply to it is added."""
+        self._playout: Playout | None = None
 
     def attach(self, session: AgentSession) -> None:
-        """Watch a started session: its audio output exists only from then on."""
+        """Watch a started session: its audio output exists only from then on. The replies' audio
+        then passes through a ``Playout`` on its way to it, before the first reply: the agent never
+        speaks first."""
         session.on("user_state_changed", _safely(self._user_state_changed))
         session.on("conversation_item_added", _safely(self._item_added))
         session.on("close", _safely(self._closed))
         if (audio := session.output.audio) is not None:
-            audio.on("playback_started", _safely(self._playback_started))
-            audio.on("playback_finished", _safely(self._playback_finished))
+            self._playout = Playout(audio)
+            session.output.audio = self._playout
+            self._playout.on("playback_started", _safely(self._playback_started))
+            self._playout.on("playback_finished", _safely(self._playback_finished))
 
     async def aclose(self) -> None:
         """Send the last events and log the session's end, with its turns and event counts."""
@@ -237,6 +406,9 @@ class Lifecycle:
         if message.role == "user":
             self._emit("user_turn_ended")
             self._user = message.metrics
+            if self._playout is not None:
+                # Audio no reply has claimed, which no later reply's line may take for its own.
+                self._playout.take()
         elif message.role == "assistant":
             self._log_turn(message)
 
@@ -262,7 +434,8 @@ class Lifecycle:
         - ``e2e_ms``: from the end of speech to the reply's first audio frame on the track, the agent's
           side of voice-to-voice.
 
-        A stage LiveKit did not measure is left out.
+        A stage LiveKit did not measure is left out. The line ends with the reply's playout
+        (``Playout``): it plays out before LiveKit adds the reply.
         """
         user, metrics = self._user, reply.metrics
         self._user = {}
@@ -288,7 +461,8 @@ class Lifecycle:
         if all(part is not None for part in parts):
             e2e, playback, tts, end_of_turn = parts
             stages["turn_to_first_sentence_ms"] = e2e - playback - tts - end_of_turn
-        times = {stage: round(s * 1000, 1) for stage, s in stages.items() if s is not None}
+        times = {stage: _ms(s) for stage, s in stages.items() if s is not None}
+        playout = self._playout.take() if self._playout is not None else {}
         turn_logger.info(
             "turn",
             extra={
@@ -296,6 +470,7 @@ class Lifecycle:
                 "turn": self.turns,
                 "interrupted": reply.interrupted,
                 **times,
+                **playout,
             },
         )
         self.turns += 1
