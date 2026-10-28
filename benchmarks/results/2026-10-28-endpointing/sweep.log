@@ -1,0 +1,11 @@
+[13:29:39Z] silence 0.55 s, delay 0.5 s: the worker restarted; 40 lines in order
+[13:38:18Z] silence 0.55 s, delay 0.5 s: 41 turns
+[13:38:24Z] silence 0.55 s, delay 0.2 s: the worker restarted; 40 lines in order
+[13:46:37Z] silence 0.55 s, delay 0.2 s: 41 turns
+[13:46:44Z] silence 0.4 s, delay 0.3 s: the worker restarted; 40 lines in order
+[13:55:14Z] silence 0.4 s, delay 0.3 s: 41 turns
+[13:55:20Z] silence 0.3 s, delay 0.2 s: the worker restarted; 40 lines in order
+[14:03:47Z] silence 0.3 s, delay 0.2 s: 41 turns
+[14:03:53Z] the worker runs its own settings again
+sweep: ~/.cache/kosa-dev/flatshare-prod/exp/endpointing/ep1
+SWEEP-EXIT 0

@@ -1,0 +1,36 @@
+{
+ "turns": 40,
+ "errors": 0,
+ "v2v_ms": {
+  "n": 40,
+  "p50": 1346.4,
+  "p95": 1501.7,
+  "p99": 1566.4
+ },
+ "barge_in_to_silence_ms": {
+  "n": 0
+ },
+ "barge_ins": 0,
+ "barge_ins_after_the_reply": 0,
+ "caller_max_lateness_ms": 0.0,
+ "replies": {
+  "n": 40,
+  "ended_by_state": 40,
+  "audio_ms": {
+   "n": 40,
+   "p50": 5594.9,
+   "p95": 7549.2,
+   "p99": 10971.6
+  },
+  "with_a_pause": 37,
+  "with_a_pause_over_500_ms": 26,
+  "with_a_pause_of_quiet_s": 0,
+  "longest_pause_ms": {
+   "n": 40,
+   "p50": 540.1,
+   "p95": 631.5,
+   "p99": 692.6
+  },
+  "concealed_share": 0.0
+ }
+}
