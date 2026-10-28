@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -39,6 +40,30 @@ SCHEMA = 1
 MISSING = object()
 PATCHES = Path("python/flatshare_vllm/src/flatshare_vllm/make-room")
 """Where a release keeps make-room's patches, relative to its root."""
+
+
+SNAPSHOT = re.compile(
+    r"(?:^|/)models--(?P<org>[^/]+?)--(?P<name>[^/]+)/snapshots/(?P<revision>[0-9a-f]{40})/?$"
+)
+"""A model in Hugging Face's cache, as vLLM names it once it has resolved the model offline: the directory of one
+revision of ORG/NAME."""
+
+
+def as_named(engine: dict) -> dict:
+    """The engine's report with a model or tokenizer that vLLM resolved to a snapshot in Hugging Face's cache read as
+    the ORG/NAME the snapshot is of, when the snapshot's revision is the revision the report gives for it (or the report
+    gives none, and takes the snapshot's); a snapshot of another revision stays a path, and differs."""
+    model = engine.get("model")
+    if not isinstance(model, dict):
+        return engine
+    named = dict(model)
+    for key, revision in (("model", "revision"), ("tokenizer", "tokenizer_revision")):
+        found = SNAPSHOT.search(str(model.get(key, "")))
+        if found is None or model.get(revision) not in (None, found["revision"]):
+            continue
+        named[key] = f"{found['org']}/{found['name']}"
+        named[revision] = found["revision"]
+    return {**engine, "model": named}
 
 
 class Unreadable(Exception):
@@ -125,7 +150,7 @@ def check(
         lines.append(
             f"serving-check: {name}'s engine, against the configuration the engine wrote ({written_by(engine, engine_pid, 'effective configuration')}):"
         )
-        compare(leaves(serving["engine"], engine, "engine"))
+        compare(leaves(serving["engine"], as_named(engine), "engine"))
     lines.append(
         f"serving-check: {name}'s make-room patches, against the release's in {root / PATCHES}:"
     )
