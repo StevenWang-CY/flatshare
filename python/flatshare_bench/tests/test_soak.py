@@ -60,9 +60,11 @@ from flatshare_bench.soak.summary import (
     _paused,
     export,
     load,
+    logins,
     read_series_csv,
     read_turns_csv,
     render_hour,
+    scrub,
     summarize,
     write_series_csv,
     write_turns_csv,
@@ -381,6 +383,7 @@ def synthetic_soak(directory: Path) -> Path:
         {"at": minute(89) + 30.1, "unit": unit, "message": f"{unit}: Failed with result 'signal'."},
         {"at": minute(89) + 31, "unit": unit, "message": f"{unit}: Scheduled restart job, restart counter is at 1."},
         {"at": minute(89) + 32, "unit": unit, "message": "Started flatshare-gateway.service - Flatshare gateway."},
+        {"at": minute(89) + 33, "unit": unit, "message": f"{unit}: a unit of alice's"},
     ]  # fmt: skip
     (directory / "units.jsonl").write_text("".join(json.dumps(u) + "\n" for u in units))
     checks = [{"node": "phastform", "verdict": "clear", "at": minute(n) + 1} for n in range(120)]
@@ -628,9 +631,19 @@ def test_a_compact_record_gives_the_same_summary_and_names_no_home(tmp_path: Pat
     for path in record.iterdir():
         text = path.read_text()
         assert "/home/" not in text and "alice" not in text, path.name
+    # The login its home paths gave away is written as a user wherever else it appears.
+    assert "a unit of USER's" in (record / "units.jsonl").read_text()
     assert "~/flatshare/src/deploy/phastform/serving.json" in (record / "soak.json").read_text()
     table = (record / "summary.md").read_text()
     assert table.startswith("# Soak summary") and "| all | 8 | 4 | 3 | 1 | 8 | 1 |" in table
+
+
+def test_a_record_names_no_login_its_home_paths_gave_away() -> None:
+    names = logins({"profile": "/home/alice/flatshare/serving.json"}, ["/Users/bob/x", "/root/y"])
+    assert names == {"alice", "bob"}
+    said = "alice's unit, alice@gray, bob. Not malice, alice-ci or /home/carol/z"
+    assert scrub(said, names) == "USER's unit, USER@gray, USER. Not malice, alice-ci or ~/z"
+    assert scrub({"a": [said]}, ()) == {"a": [said.replace("/home/carol", "~")]}
 
 
 def test_the_compact_tables_give_their_rows_back() -> None:

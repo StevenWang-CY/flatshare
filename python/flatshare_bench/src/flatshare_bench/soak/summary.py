@@ -82,8 +82,11 @@ _FLOATS = frozenset(
 )
 _BOOLS = frozenset({"warmup", "spoke_during_turn", "barge_in", "interrupted_speech"})
 _JSON = frozenset({"reply_pauses_ms", "interrupted_reply_pauses_ms", "received", "extra"})
-_HOME = re.compile(r"/(?:home|Users)/[^/\s\"']+|/root(?=/)")
-"""A path under a home directory, which a committed record writes from ``~`` (as e2 export does)."""
+_HOME = re.compile(r"/(?:home|Users)/([^/\s\"']+)|/root(?=/)")
+"""A path under a home directory, which a committed record writes from ``~`` (as e2 export does); its group is the
+login the directory gives away."""
+LOGIN_AS = "USER"
+"""What a committed record writes in place of a login its home paths gave away, wherever else it appears."""
 RECORD_FILES = (
     "soak.json",
     "summary.json",
@@ -902,15 +905,51 @@ def write_summary(out: Path, summary: Mapping[str, Any]) -> None:
 # The compact record
 
 
-def scrub(value: Any) -> Any:
-    """``value`` with every path under a home directory written from ``~``."""
-    if isinstance(value, str):
-        return _HOME.sub("~", value)
-    if isinstance(value, Mapping):
-        return {key: scrub(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [scrub(item) for item in value]
-    return value
+def logins(*values: Any) -> set[str]:
+    """The logins that the home directories named anywhere in ``values`` give away (``/home/LOGIN``)."""
+    found: set[str] = set()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, str):
+            found.update(match[1] for match in _HOME.finditer(value) if match[1])
+        elif isinstance(value, Mapping):
+            for item in value.values():
+                visit(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                visit(item)
+
+    for value in values:
+        visit(value)
+    return found
+
+
+def _login_words(names: Iterable[str]) -> list[re.Pattern[str]]:
+    """Each login as a word of its own: not a part of a longer name, a host's or a file's."""
+    return [
+        re.compile(rf"(?<![\w.-]){re.escape(name)}(?![\w-])")
+        for name in sorted(names, key=len, reverse=True)
+    ]
+
+
+def scrub(value: Any, names: Iterable[str] = ()) -> Any:
+    """``value`` with every path under a home directory written from ``~``, and each login of ``names`` (the ones
+    its home paths gave away, :func:`logins`) as LOGIN_AS wherever else it appears."""
+    words = _login_words(names)
+
+    def scrubbed(item: Any) -> Any:
+        if isinstance(item, str):
+            text = _HOME.sub("~", item)
+            for word in words:
+                text = word.sub(LOGIN_AS, text)
+            return text
+        if isinstance(item, Mapping):
+            return {key: scrubbed(inner) for key, inner in item.items()}
+        if isinstance(item, list):
+            return [scrubbed(inner) for inner in item]
+        return item
+
+    return scrubbed(value)
 
 
 def export(
@@ -922,17 +961,20 @@ def export(
     """Write the compact record of the soak in ``soak`` into ``out`` (RECORD_FILES): its record, the attempts, the
     turns as a CSV, the kept series as a CSV (a column a series), the events, the user manager's lines about cyan's
     units, the guard's checks, and the summary, which :func:`load` reads back to the same numbers. No raw scrape,
-    AIPerf export, request log or credential, and every path under a home directory from ``~``."""
+    AIPerf export, request log or credential, every path under a home directory from ``~``, and the login such a
+    path names as LOGIN_AS wherever else it appears."""
     data = load(soak)
     out.mkdir(parents=True, exist_ok=True)
-    record = scrub(data.record)
+    # The logins the record's home paths give away, which it carries nowhere else either.
+    names = logins(data.record, data.attempts, data.turns, data.events, data.units)
+    record = scrub(data.record, names)
     files = {
         "soak.json": json.dumps(record, indent=1) + "\n",
-        "attempts.jsonl": "".join(json.dumps(scrub(a)) + "\n" for a in data.attempts),
-        "turns.csv": write_turns_csv(data.turns),
+        "attempts.jsonl": "".join(json.dumps(scrub(a, names)) + "\n" for a in data.attempts),
+        "turns.csv": write_turns_csv(scrub(data.turns, names)),
         "series.csv": write_series_csv(data.scrapes),
-        "events.jsonl": "".join(json.dumps(scrub(e)) + "\n" for e in data.events),
-        "units.jsonl": "".join(json.dumps(scrub(u)) + "\n" for u in data.units),
+        "events.jsonl": "".join(json.dumps(scrub(e, names)) + "\n" for e in data.events),
+        "units.jsonl": "".join(json.dumps(scrub(u, names)) + "\n" for u in data.units),
         "guard.csv": write_guard_csv(data.checks),
     }
     for name, text in files.items():
@@ -941,10 +983,11 @@ def export(
     if reference is None:
         reference = (data.record.get("options") or {}).get("slo_reference_ms")
     write_summary(out, summarize(load(out), reference, slo_margin_ms))
+    words = _login_words(names)
     for name in RECORD_FILES:
         text = (out / name).read_text()
-        if _HOME.search(text):
+        if _HOME.search(text) or any(word.search(text) for word in words):
             raise ValueError(
-                f"{out / name} names a path under a home directory: the record is not one to commit"
+                f"{out / name} names a path under a home directory, or its login: the record is not one to commit"
             )
     return out
