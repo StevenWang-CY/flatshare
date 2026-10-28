@@ -187,6 +187,20 @@ pub struct Placement {
     /// The interactive and background requests in flight at most on a node that carries realtime sessions moved
     /// from a node that is not healthy (`failover_background_max_in_flight`): the others wait.
     pub failover_background_max_in_flight: usize,
+    /// Which of the nodes with a free call slot a new or moved call goes to (`calls`).
+    pub calls: CallPlacement,
+}
+
+/// `calls`: which of the available realtime nodes with a free call slot a new or moved call goes to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallPlacement {
+    /// The one with the fewest calls, then the fewest requests in flight: the calls spread over the nodes.
+    #[default]
+    Spread,
+    /// The first in the configuration's order: a later node takes calls only while the earlier ones are full or
+    /// not available, a warm spare.
+    Fill,
 }
 
 impl Default for Placement {
@@ -200,6 +214,7 @@ impl Default for Placement {
             unhealthy_after: 3,
             healthy_after: 2,
             failover_background_max_in_flight: 0,
+            calls: CallPlacement::Spread,
         }
     }
 }
@@ -527,6 +542,7 @@ struct RawPlacement {
     unhealthy_after: Option<u32>,
     healthy_after: Option<u32>,
     failover_background_max_in_flight: Option<usize>,
+    calls: Option<CallPlacement>,
 }
 
 impl RawPlacement {
@@ -562,6 +578,7 @@ impl RawPlacement {
             failover_background_max_in_flight: self
                 .failover_background_max_in_flight
                 .unwrap_or(defaults.failover_background_max_in_flight),
+            calls: self.calls.unwrap_or(defaults.calls),
         })
     }
 }
@@ -1577,6 +1594,7 @@ max_calls = 0
                 unhealthy_after: 3,
                 healthy_after: 2,
                 failover_background_max_in_flight: 0,
+                calls: CallPlacement::Spread,
             }
         );
         let tuned = format!(
@@ -1711,6 +1729,20 @@ max_calls = 0
             let err = nodes_config("", &nodes).unwrap_err();
             assert!(err.contains(cause), "{cause}: {err}");
         }
+    }
+
+    #[test]
+    fn calls_spread_unless_placement_says_fill_and_nothing_else() {
+        let placement = |calls: &str| format!("{TWO_NODES}[placement]\ncalls = \"{calls}\"\n");
+        let calls = |toml: &str| nodes_config("", toml).map(|config| config.placement.calls);
+        assert_eq!(calls(&placement("fill")), Ok(CallPlacement::Fill));
+        assert_eq!(calls(&placement("spread")), Ok(CallPlacement::Spread));
+        assert_eq!(calls(TWO_NODES), Ok(CallPlacement::Spread));
+        let err = calls(&placement("pack")).unwrap_err();
+        assert!(
+            err.contains("unknown variant `pack`, expected `spread` or `fill`"),
+            "{err}"
+        );
     }
 
     #[test]

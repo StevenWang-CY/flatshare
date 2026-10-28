@@ -1,8 +1,8 @@
 //! Several GPU nodes behind one gateway (`[[nodes]]`), on mock engines and mock speech servers: sticky placement, call
-//! slots and agents' bounds, a node failing as a whole pipeline (its engine, or only its TTS), sessions moving by their
-//! next request, the 503 when the survivors have no call slot, agents deferred on a node that covers for a failed one,
-//! a realtime request sent once more before its first content and never after, `/nodes`, `POST /v1/sessions`, and a
-//! gateway without `[[nodes]]` unchanged.
+//! slots, agents' bounds and calls that fill the nodes in order, a node failing as a whole pipeline (its engine, or
+//! only its TTS), sessions moving by their next request, the 503 when the survivors have no call slot, agents deferred
+//! on a node that covers for a failed one, a realtime request sent once more before its first content and never after,
+//! `/nodes`, `POST /v1/sessions`, and a gateway without `[[nodes]]` unchanged.
 
 use std::time::Duration;
 
@@ -328,6 +328,35 @@ async fn agents_keep_to_each_nodes_max_agents_and_one_no_node_fits_gets_503_unti
     agent_closed(&gw, "agent-2").await;
     assert_eq!(agent(&gw, "agent-4").await.status, 200);
     assert_eq!((a.requests(), b.requests()), (3, 2));
+}
+
+#[tokio::test]
+async fn with_fill_calls_go_to_the_next_node_only_when_the_first_is_full_or_fails() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let b = TestNode::start("b", Script::Json("{}")).await;
+    let placement = "[placement]\nhealth_interval_s = 0.02\nhealth_timeout_s = 0.5\nunhealthy_after = 2\n\
+                     healthy_after = 2\ncalls = \"fill\"\n";
+    let gw = Gateway::start_nodes(&[&a, &b], "", "", placement).await;
+    all_healthy(&gw, &[&a, &b]).await;
+    // a takes calls up to its max_calls (2), and b, a warm spare, only then.
+    assert_eq!(node_of(&gw, "call-1").await, "a");
+    assert_eq!(node_of(&gw, "call-2").await, "a");
+    assert_eq!(node_of(&gw, "call-3").await, "b");
+    // A call's end frees a slot on a, which the next call takes.
+    close(&gw, "call-1").await;
+    assert_eq!(node_of(&gw, "call-4").await, "a");
+    // a fails: its calls move to b while b has call slots, and a call that finds b full, moved or new, is refused as
+    // with spread.
+    a.tts.set_healthy(false);
+    gw.await_metric(&healthy("a"), 0.0).await;
+    assert_eq!(node_of(&gw, "call-2").await, "b");
+    unplaced(&place(&gw, "call-4").await, "no_call_slot");
+    unplaced(&place(&gw, "call-5").await, "no_call_slot");
+    // No max_agents: /nodes shows null.
+    assert_eq!(
+        nodes_view(&gw).await["nodes"][0].get("max_agents"),
+        Some(&serde_json::Value::Null)
+    );
 }
 
 #[tokio::test]

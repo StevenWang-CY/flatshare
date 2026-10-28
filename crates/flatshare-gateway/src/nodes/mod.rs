@@ -11,9 +11,10 @@
 //! - **Sticky placement.** A session is placed by its first request, or by `POST /v1/sessions`, on an available node
 //!   with its class's role (realtime for realtime sessions, background for interactive and background ones), and stays
 //!   there until it has gone `idle_s` without a request or a `session_closed` event ends it ([`placement`]). A
-//!   realtime session takes one of its node's `max_calls` call slots, on the node with the fewest calls; an agent's
-//!   takes one of its node's `max_agents` agent slots, where the node has that bound, on the node with the fewest
-//!   agents' sessions, then the fewest requests in flight, so that its prefix cache stays on one engine.
+//!   realtime session takes one of its node's `max_calls` call slots, on the node with the fewest calls, or with
+//!   `calls = "fill"` on the first in the configuration's order; an agent's takes one of its node's `max_agents` agent
+//!   slots, where the node has that bound, on the node with the fewest agents' sessions, then the fewest requests in
+//!   flight, so that its prefix cache stays on one engine.
 //! - **Failover.** A node that is not available takes no new session, and a session placed on it is placed again by
 //!   its next request (or its next `POST /v1/sessions`), a move that is counted. A realtime session that finds no
 //!   available realtime node with a free call slot gets 503 with `Retry-After`, and so does an agent's that finds no
@@ -42,7 +43,7 @@ use tokio::time::MissedTickBehavior;
 
 use crate::auth::{Tenant, Tenants};
 use crate::canary::{self, Health, Watched};
-use crate::config::{Canary, NodeConfig, Placement, PrioritySignals, UpstreamAddr};
+use crate::config::{CallPlacement, Canary, NodeConfig, Placement, PrioritySignals, UpstreamAddr};
 use crate::deadline::Timeout;
 use crate::engine::Engine;
 use crate::metrics::{EngineState, GaugeGuard};
@@ -595,9 +596,10 @@ impl Nodes {
     }
 
     /// The node a new session of `class` goes to, not `exclude`: of the available nodes with its role, for a
-    /// realtime session the one with the fewest calls among those with a free call slot, and for an agent's, among
-    /// those with a free agent slot (below their `max_agents`, if they have one), the one that covers for no failed
-    /// node, then with the fewest agents' sessions, then the fewest requests in flight. Ties go to the earlier node.
+    /// realtime session, among those with a free call slot, the one with the fewest calls, then the fewest requests
+    /// in flight (`calls = "spread"`), or the first (`"fill"`); and for an agent's, among those with a free agent slot
+    /// (below their `max_agents`, if they have one), the one that covers for no failed node, then with the fewest
+    /// agents' sessions, then the fewest requests in flight. Ties go to the earlier node.
     fn choose(
         &self,
         table: &Table,
@@ -613,10 +615,15 @@ impl Nodes {
             return Err(Unplaced::NoNode);
         }
         let chosen = if class == SloClass::Realtime {
-            candidates
-                .filter(|node| (table.held(node.index)[0] as usize) < node.max_calls)
-                .min_by_key(|node| (table.held(node.index)[0], node.in_flight(), node.index))
-                .ok_or(Unplaced::NoCallSlot)?
+            let mut free =
+                candidates.filter(|node| (table.held(node.index)[0] as usize) < node.max_calls);
+            let chosen = match self.config.calls {
+                CallPlacement::Spread => free
+                    .min_by_key(|node| (table.held(node.index)[0], node.in_flight(), node.index)),
+                // The list keeps the configuration's order.
+                CallPlacement::Fill => free.next(),
+            };
+            chosen.ok_or(Unplaced::NoCallSlot)?
         } else {
             candidates
                 .filter(|node| {
@@ -969,6 +976,15 @@ mod tests {
         started(nodes, Placement::default())
     }
 
+    /// Nodes a and b, their agents unbounded, that place calls by `calls`.
+    fn placing(calls: CallPlacement) -> Arc<Nodes> {
+        let placement = Placement {
+            calls,
+            ..Placement::default()
+        };
+        started(&[("a", None), ("b", None)], placement)
+    }
+
     /// Nodes of `(name, max_agents)`, each with both roles and two call slots, placed by `placement`.
     fn started(nodes: &[(&str, Option<usize>)], placement: Placement) -> Arc<Nodes> {
         let config: Vec<NodeConfig> = nodes
@@ -1218,5 +1234,55 @@ mod tests {
         let idle = nodes.config.idle;
         nodes.write().expire(Instant::now() + idle, idle);
         assert_eq!(place(&nodes, "agent-2", SloClass::Background).unwrap(), "a");
+    }
+
+    #[tokio::test]
+    async fn calls_fill_the_nodes_in_order_with_fill_and_spread_over_them_by_default() {
+        // fill: the first node until its two call slots are taken, and only then the next.
+        let fill = placing(CallPlacement::Fill);
+        all_healthy(&fill);
+        assert_eq!(
+            place_new(&fill, "call", 4, SloClass::Realtime),
+            ["a", "a", "b", "b"]
+        );
+        assert_eq!(
+            place(&fill, "call-5", SloClass::Realtime),
+            Err(Unplaced::NoCallSlot)
+        );
+        // spread, the default: the fewest calls first, the earlier node on a tie.
+        let spread = nodes(&["a", "b"]);
+        assert_eq!(spread.config.calls, CallPlacement::Spread);
+        all_healthy(&spread);
+        assert_eq!(
+            place_new(&spread, "call", 4, SloClass::Realtime),
+            ["a", "b", "a", "b"]
+        );
+        assert_eq!(
+            place(&spread, "call-5", SloClass::Realtime),
+            Err(Unplaced::NoCallSlot)
+        );
+        // Agents' sessions spread either way.
+        assert_eq!(
+            place_new(&fill, "agent", 3, SloClass::Background),
+            ["a", "b", "a"]
+        );
+    }
+
+    #[tokio::test]
+    async fn with_fill_a_call_goes_to_the_next_node_while_the_first_is_not_available() {
+        let nodes = placing(CallPlacement::Fill);
+        all_healthy(&nodes);
+        assert_eq!(place(&nodes, "call-1", SloClass::Realtime).unwrap(), "a");
+        fail(&nodes, 0);
+        // A new call goes to b, and so does the call whose node failed, which b then covers for.
+        assert_eq!(place(&nodes, "call-2", SloClass::Realtime).unwrap(), "b");
+        assert_eq!(place(&nodes, "call-1", SloClass::Realtime).unwrap(), "b");
+        assert!(nodes.covering(1));
+        // a is available again: new calls go to it first, and the moved call stays where it is.
+        for _ in 0..nodes.config.healthy_after {
+            nodes.judge(0, [true; 3]);
+        }
+        assert_eq!(place(&nodes, "call-3", SloClass::Realtime).unwrap(), "a");
+        assert_eq!(place(&nodes, "call-1", SloClass::Realtime).unwrap(), "b");
     }
 }

@@ -112,7 +112,8 @@ default_class = "background"
 # sessions (interactive and background together) to max_agents, the serving profile's envelope: the most agents its
 # card serves beside both calls within the voice SLO, as measured for the card (the 4 below stands in for that
 # number). An agent's session that finds every node at its bound gets 503 no_agent_slot; a node without max_agents,
-# as gray here, takes agents without a bound.
+# as gray here, takes agents without a bound. With calls = "fill" ([placement] below), phastform takes the calls and
+# gray is a warm spare: it runs agents, and takes the calls only when phastform fails.
 # [[nodes]]
 # name = "phastform"
 # upstream = "unix:/run/user/1007/flatshare/phastform-engine.sock"
@@ -129,8 +130,9 @@ default_class = "background"
 # tts = "unix:/run/user/1007/flatshare/gray-tts.sock"
 #
 # With their defaults: a session keeps its node 300 s without a request; each node is checked every second (a speech
-# server's /health within 1 s), unhealthy after 3 failed checks in a row and healthy again after 2 passed ones; and a
-# node that covers for a failed one runs none of its agents' requests until the failed node is healthy again.
+# server's /health within 1 s), unhealthy after 3 failed checks in a row and healthy again after 2 passed ones; a
+# node that covers for a failed one runs none of its agents' requests until the failed node is healthy again; and a
+# new or moved call goes to the node with the fewest calls.
 # [placement]
 # idle_s = 300
 # health_interval_s = 1
@@ -138,6 +140,11 @@ default_class = "background"
 # unhealthy_after = 3
 # healthy_after = 2
 # failover_background_max_in_flight = 0
+# calls = "spread"
+#
+# A warm spare instead: a new or moved call goes to the first node in this file's order with a free call slot, so that
+# gray takes calls only while phastform is full or not available.
+# calls = "fill"
 
 # The admission policy (crates/flatshare-gateway/README.md#admission). Without the table, every request goes upstream
 # at once. E2's baselines set one policy and its keys:
