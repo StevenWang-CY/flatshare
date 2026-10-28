@@ -48,17 +48,25 @@ pub(crate) enum Unplaced {
     NoNode,
     /// Every available node that takes realtime sessions has `max_calls` of them.
     NoCallSlot,
+    /// Every available node that takes agents' sessions has a `max_agents` and that many of them.
+    NoAgentSlot,
     /// `POST /v1/sessions` found the table full, every session in it with a request in flight.
     Full,
 }
 
 impl Unplaced {
-    pub const ALL: [Self; 3] = [Self::NoNode, Self::NoCallSlot, Self::Full];
+    pub const ALL: [Self; 4] = [
+        Self::NoNode,
+        Self::NoCallSlot,
+        Self::NoAgentSlot,
+        Self::Full,
+    ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::NoNode => "no_node",
             Self::NoCallSlot => "no_call_slot",
+            Self::NoAgentSlot => "no_agent_slot",
             Self::Full => "table_full",
         }
     }
@@ -138,7 +146,7 @@ pub(crate) struct Series {
     /// Its sessions and its requests in flight, by class.
     pub sessions: [Gauge; 3],
     pub in_flight: [Gauge; 3],
-    /// 1 while it carries realtime sessions moved from a node that is not available.
+    /// 1 while it covers: it carries realtime sessions moved to it from another node, or, as a warm spare, any call.
     pub covering: Gauge,
     /// Its interactive and background requests waiting for the failover's bound.
     pub waiting: Gauge,
@@ -306,8 +314,9 @@ impl Metrics {
         );
         r.register(
             "node_covering",
-            "Whether each node carries realtime sessions moved from a node that is not available (1), which holds \
-             its interactive and background requests to failover_background_max_in_flight",
+            "Whether each node covers (1), which holds its interactive and background requests to \
+             failover_background_max_in_flight: it carries realtime sessions moved to it from another node, until they \
+             end, or, with calls set to fill, any call on a realtime node after the first",
             self.covering.clone(),
         );
         r.register(
@@ -324,7 +333,8 @@ impl Metrics {
         r.register(
             "placements_refused",
             "Sessions no node took, by class and reason: no_node (no available node of its role), no_call_slot \
-             (every available realtime node at max_calls) or table_full",
+             (every available realtime node at max_calls), no_agent_slot (every available background node at \
+             max_agents) or table_full",
             self.refused.clone(),
         );
         r.register(

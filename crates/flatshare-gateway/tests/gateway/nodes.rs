@@ -1,8 +1,8 @@
-//! Several GPU nodes behind one gateway (`[[nodes]]`), on mock engines and mock speech servers: sticky placement and
-//! call slots, a node failing as a whole pipeline (its engine, or only its TTS), sessions moving by their next request,
-//! the 503 when the survivors have no call slot, agents deferred on a node that covers for a failed one, a realtime
-//! request sent once more before its first content and never after, `/nodes`, `POST /v1/sessions`, and a gateway
-//! without `[[nodes]]` unchanged.
+//! Several GPU nodes behind one gateway (`[[nodes]]`), on mock engines and mock speech servers: sticky placement, call
+//! slots, agents' bounds and calls that fill the nodes in order, a node failing as a whole pipeline (its engine, or
+//! only its TTS), sessions moving by their next request, the 503 when the survivors have no call slot, agents deferred
+//! on a node that covers until the calls moved to it, or a warm spare's, end, a realtime request sent once more before
+//! its first content and never after, `/nodes`, `POST /v1/sessions`, and a gateway without `[[nodes]]` unchanged.
 
 use std::time::Duration;
 
@@ -63,6 +63,16 @@ async fn close(gw: &Gateway, session: &str) {
             "source":"voice-worker","type":"session_closed"}}"#
     );
     let reply = call(&gw.unix, "POST", "/v1/events", &[], &body).await;
+    assert_eq!(reply.status, 202, "{:?}", reply.body);
+}
+
+/// The agents tenant's `session_closed` for its session `session`.
+async fn agent_closed(gw: &Gateway, session: &str) {
+    let body = format!(
+        r#"{{"event_id":"close-{session}","session_id":"{session}","at_ms":1792650010000,
+            "source":"client","type":"session_closed"}}"#
+    );
+    let reply = call(&gw.tcp, "POST", "/v1/events", &[AGENTS_AUTH], &body).await;
     assert_eq!(reply.status, 202, "{:?}", reply.body);
 }
 
@@ -267,7 +277,90 @@ async fn a_moved_call_that_finds_every_survivor_at_its_max_calls_gets_503() {
 }
 
 #[tokio::test]
-async fn a_node_covering_for_a_failed_one_defers_its_agents_until_the_failed_node_is_healthy() {
+async fn agents_keep_to_each_nodes_max_agents_and_one_no_node_fits_gets_503_until_a_slot_frees() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let b = TestNode::start("b", Script::Json("{}")).await;
+    let toml = format!(
+        "{}{}[placement]\nhealth_interval_s = 0.02\nhealth_timeout_s = 0.5\nunhealthy_after = 2\nhealthy_after = 2\n",
+        a.toml("max_agents = 2"),
+        b.toml("max_agents = 1")
+    );
+    let config = flatshare_gateway::Config::from_toml(&nodes_toml("", &toml)).unwrap();
+    let gw = Gateway::from_config(config, std::sync::Arc::new(flatshare_gateway::LogSink)).await;
+    all_healthy(&gw, &[&a, &b]).await;
+    // The fewest agents' sessions first, within each node's bound: a, b, a, and then neither has a free slot.
+    for session in ["agent-1", "agent-2", "agent-3"] {
+        assert_eq!(agent(&gw, session).await.status, 200);
+    }
+    assert_eq!((a.requests(), b.requests()), (2, 1));
+    unplaced(&agent(&gw, "agent-4").await, "no_agent_slot");
+    assert_eq!((a.requests(), b.requests()), (2, 1));
+    gw.await_metric(
+        "flatshare_gateway_placements_refused_total{class=\"background\",reason=\"no_agent_slot\"}",
+        1.0,
+    )
+    .await;
+    gw.await_metric(
+        "flatshare_gateway_request_outcomes_total{class=\"background\",outcome=\"not_ready\"}",
+        1.0,
+    )
+    .await;
+    // A placed agent keeps its node, and a call is no agent: a takes one beside its two agents.
+    assert_eq!(agent(&gw, "agent-1").await.status, 200);
+    assert_eq!(node_of(&gw, "call-1").await, "a");
+    // /nodes shows each node's bound beside its call slots.
+    let view = nodes_view(&gw).await;
+    let bounds: Vec<serde_json::Value> = view["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|node| serde_json::json!([node["max_calls"], node["max_agents"]]))
+        .collect();
+    assert_eq!(
+        bounds,
+        [serde_json::json!([2, 2]), serde_json::json!([2, 1])]
+    );
+    assert_eq!(
+        view["nodes"][0]["sessions"],
+        serde_json::json!({"realtime": 1, "interactive": 0, "background": 2})
+    );
+    // An agent's session_closed frees its slot, which the refused agent then takes.
+    agent_closed(&gw, "agent-2").await;
+    assert_eq!(agent(&gw, "agent-4").await.status, 200);
+    assert_eq!((a.requests(), b.requests()), (3, 2));
+}
+
+#[tokio::test]
+async fn with_fill_calls_go_to_the_next_node_only_when_the_first_is_full_or_fails() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let b = TestNode::start("b", Script::Json("{}")).await;
+    let placement = "[placement]\nhealth_interval_s = 0.02\nhealth_timeout_s = 0.5\nunhealthy_after = 2\n\
+                     healthy_after = 2\ncalls = \"fill\"\n";
+    let gw = Gateway::start_nodes(&[&a, &b], "", "", placement).await;
+    all_healthy(&gw, &[&a, &b]).await;
+    // a takes calls up to its max_calls (2), and b, a warm spare, only then.
+    assert_eq!(node_of(&gw, "call-1").await, "a");
+    assert_eq!(node_of(&gw, "call-2").await, "a");
+    assert_eq!(node_of(&gw, "call-3").await, "b");
+    // A call's end frees a slot on a, which the next call takes.
+    close(&gw, "call-1").await;
+    assert_eq!(node_of(&gw, "call-4").await, "a");
+    // a fails: its calls move to b while b has call slots, and a call that finds b full, moved or new, is refused as
+    // with spread.
+    a.tts.set_healthy(false);
+    gw.await_metric(&healthy("a"), 0.0).await;
+    assert_eq!(node_of(&gw, "call-2").await, "b");
+    unplaced(&place(&gw, "call-4").await, "no_call_slot");
+    unplaced(&place(&gw, "call-5").await, "no_call_slot");
+    // No max_agents: /nodes shows null.
+    assert_eq!(
+        nodes_view(&gw).await["nodes"][0].get("max_agents"),
+        Some(&serde_json::Value::Null)
+    );
+}
+
+#[tokio::test]
+async fn a_node_covering_for_a_failed_one_defers_its_agents_until_the_calls_moved_to_it_end() {
     let a = TestNode::start("a", Script::Json("{}")).await;
     let b = TestNode::start("b", Script::Json("{}")).await;
     let gw = Gateway::start_nodes(&[&a, &b], "", "", "").await;
@@ -291,12 +384,66 @@ async fn a_node_covering_for_a_failed_one_defers_its_agents_until_the_failed_nod
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(!waiting.is_finished());
     assert_eq!(b.requests(), 1, "only the call's turn reached b");
-    // a is healthy again: b covers no more, and the agent's request goes.
+    // a is healthy again, but b carries the moved call still: it covers, and the agent's request waits on.
     a.tts.set_healthy(true);
+    gw.await_metric(&healthy("a"), 1.0).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!waiting.is_finished());
+    assert_eq!(
+        metric(&gw.metrics().await, &covering("b")),
+        Some(1.0),
+        "b covers until the moved call ends"
+    );
+    // The call ends: b covers no more, and the agent's request goes.
+    close(&gw, "call-1").await;
     let reply = soon(waiting).await.unwrap();
     assert_eq!(reply.status, 200);
     gw.await_metric(&covering("b"), 0.0).await;
     assert_eq!(b.requests(), 2);
+}
+
+#[tokio::test]
+async fn with_fill_a_spare_given_a_new_call_covers_until_it_ends_though_the_first_recovers() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let b = TestNode::start("b", Script::Json("{}")).await;
+    let placement = "[placement]\nhealth_interval_s = 0.02\nhealth_timeout_s = 0.5\nunhealthy_after = 2\n\
+                     healthy_after = 2\ncalls = \"fill\"\n";
+    let gw = Gateway::start_nodes(&[&a, &b], "", "", placement).await;
+    all_healthy(&gw, &[&a, &b]).await;
+    // a fails before any call: a new call goes to b, the spare, which covers though no call moved there.
+    a.tts.set_healthy(false);
+    gw.await_metric(&healthy("a"), 0.0).await;
+    assert_eq!(node_of(&gw, "call-1").await, "b");
+    gw.await_metric(&covering("b"), 1.0).await;
+    let waiting = tokio::spawn({
+        let tcp = gw.tcp.clone();
+        async move {
+            let headers = [AGENTS_AUTH, ("x-session-id", "agent-1")];
+            call(&tcp, "POST", "/v1/chat/completions", &headers, CHAT).await
+        }
+    });
+    gw.await_metric("flatshare_gateway_node_failover_waiting{node=\"b\"}", 1.0)
+        .await;
+    // a is healthy again: the next call goes to a, which its own calls never make cover, and b covers while its call
+    // lasts, the agent's request on b waiting.
+    a.tts.set_healthy(true);
+    gw.await_metric(&healthy("a"), 1.0).await;
+    assert_eq!(node_of(&gw, "call-2").await, "a");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!waiting.is_finished());
+    let metrics = gw.metrics().await;
+    assert_eq!(
+        (
+            metric(&metrics, &covering("a")),
+            metric(&metrics, &covering("b"))
+        ),
+        (Some(0.0), Some(1.0))
+    );
+    // b's call ends: b covers no more, and the agent's request goes.
+    close(&gw, "call-1").await;
+    assert_eq!(soon(waiting).await.unwrap().status, 200);
+    gw.await_metric(&covering("b"), 0.0).await;
+    assert_eq!((a.requests(), b.requests()), (0, 1));
 }
 
 #[tokio::test]

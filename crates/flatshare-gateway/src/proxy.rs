@@ -192,7 +192,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         }
     };
 
-    // A node that covers for a failed one holds its agents' requests back; the time they wait is not the overhead.
+    // A node that covers holds its agents' requests back; the time they wait is not the overhead.
     if let (Target::Placed(placed), Some(nodes)) = (&mut target, shared.nodes()) {
         let arrived = Instant::now();
         let cut = shared.drain.cut_for(Some(class));

@@ -163,6 +163,9 @@ pub struct NodeConfig {
     pub background: bool,
     /// The realtime sessions placed on it at most: a call each.
     pub max_calls: usize,
+    /// The agents' sessions (interactive and background) placed on it at most, `None` for no bound: what a node
+    /// that carries calls may run beside them.
+    pub max_agents: Option<usize>,
     /// Its speech servers, whose `/health` its health needs, and which a call placed on it binds to.
     pub stt: Option<UpstreamAddr>,
     pub tts: Option<UpstreamAddr>,
@@ -181,9 +184,24 @@ pub struct Placement {
     /// make an unhealthy node healthy again (`healthy_after`).
     pub unhealthy_after: u32,
     pub healthy_after: u32,
-    /// The interactive and background requests in flight at most on a node that carries realtime sessions moved
-    /// from a node that is not healthy (`failover_background_max_in_flight`): the others wait.
+    /// The interactive and background requests in flight at most on a node that covers
+    /// (`failover_background_max_in_flight`): one that carries realtime sessions moved to it from another node, until
+    /// they end, or, with `calls = "fill"`, a realtime node after the first that carries any call. The others wait.
     pub failover_background_max_in_flight: usize,
+    /// Which of the nodes with a free call slot a new or moved call goes to (`calls`).
+    pub calls: CallPlacement,
+}
+
+/// `calls`: which of the available realtime nodes with a free call slot a new or moved call goes to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallPlacement {
+    /// The one with the fewest calls, then the fewest requests in flight: the calls spread over the nodes.
+    #[default]
+    Spread,
+    /// The first in the configuration's order: a later node takes calls only while the earlier ones are full or
+    /// not available, a warm spare, which covers while it carries any call.
+    Fill,
 }
 
 impl Default for Placement {
@@ -197,6 +215,7 @@ impl Default for Placement {
             unhealthy_after: 3,
             healthy_after: 2,
             failover_background_max_in_flight: 0,
+            calls: CallPlacement::Spread,
         }
     }
 }
@@ -495,6 +514,9 @@ struct RawNode {
     /// E2 measured two calls on one card.
     #[serde(default = "RawNode::two_calls")]
     max_calls: usize,
+    /// No bound unless set.
+    #[serde(default)]
+    max_agents: Option<usize>,
     #[serde(default)]
     stt: Option<String>,
     #[serde(default)]
@@ -521,6 +543,7 @@ struct RawPlacement {
     unhealthy_after: Option<u32>,
     healthy_after: Option<u32>,
     failover_background_max_in_flight: Option<usize>,
+    calls: Option<CallPlacement>,
 }
 
 impl RawPlacement {
@@ -556,6 +579,7 @@ impl RawPlacement {
             failover_background_max_in_flight: self
                 .failover_background_max_in_flight
                 .unwrap_or(defaults.failover_background_max_in_flight),
+            calls: self.calls.unwrap_or(defaults.calls),
         })
     }
 }
@@ -599,6 +623,20 @@ fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
                 "nodes.{name}.max_calls must be positive for a node with the realtime role"
             ));
         }
+        match node.max_agents {
+            Some(_) if !background => {
+                return Err(format!(
+                    "nodes.{name}.max_agents is for a node with the background role: this one takes no agents' \
+                     sessions"
+                ));
+            }
+            Some(0) => {
+                return Err(format!(
+                    "nodes.{name}.max_agents must be positive, or left out for no bound"
+                ));
+            }
+            _ => {}
+        }
         let speech = |key: &str, value: Option<String>| {
             value
                 .map(|raw| parse_address(&format!("nodes.{name}.{key}"), &raw))
@@ -611,6 +649,7 @@ fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
             realtime,
             background,
             max_calls: node.max_calls,
+            max_agents: node.max_agents,
             stt,
             tts,
             name,
@@ -1556,6 +1595,7 @@ max_calls = 0
                 unhealthy_after: 3,
                 healthy_after: 2,
                 failover_background_max_in_flight: 0,
+                calls: CallPlacement::Spread,
             }
         );
         let tuned = format!(
@@ -1655,6 +1695,55 @@ max_calls = 0
         )
         .unwrap_err();
         assert!(err.contains("[placement] needs [[nodes]]"), "{err}");
+    }
+
+    #[test]
+    fn a_node_with_the_background_role_may_bound_its_agents_sessions() {
+        let bounded = TWO_NODES.replace(
+            "phastform-tts.sock\"\n",
+            "phastform-tts.sock\"\nmax_agents = 4\n",
+        );
+        let two = nodes_config("", &bounded).unwrap();
+        let [phastform, gray] = &two.nodes[..] else {
+            panic!("{:?}", two.nodes)
+        };
+        // Without the key, no bound.
+        assert_eq!((phastform.max_agents, gray.max_agents), (Some(4), None));
+        let node = |name: &str, keys: &str| {
+            format!("[[nodes]]\nname = \"{name}\"\nupstream = \"unix:/run/{name}.sock\"\n{keys}\n")
+        };
+        let calls_only = format!(
+            "{}{}",
+            node("a", "roles = [\"realtime\"]\nmax_agents = 2"),
+            node("b", "roles = [\"background\"]")
+        );
+        for (nodes, cause) in [
+            (
+                node("a", "max_agents = 0"),
+                "nodes.a.max_agents must be positive, or left out for no bound",
+            ),
+            (
+                calls_only,
+                "nodes.a.max_agents is for a node with the background role",
+            ),
+        ] {
+            let err = nodes_config("", &nodes).unwrap_err();
+            assert!(err.contains(cause), "{cause}: {err}");
+        }
+    }
+
+    #[test]
+    fn calls_spread_unless_placement_says_fill_and_nothing_else() {
+        let placement = |calls: &str| format!("{TWO_NODES}[placement]\ncalls = \"{calls}\"\n");
+        let calls = |toml: &str| nodes_config("", toml).map(|config| config.placement.calls);
+        assert_eq!(calls(&placement("fill")), Ok(CallPlacement::Fill));
+        assert_eq!(calls(&placement("spread")), Ok(CallPlacement::Spread));
+        assert_eq!(calls(TWO_NODES), Ok(CallPlacement::Spread));
+        let err = calls(&placement("pack")).unwrap_err();
+        assert!(
+            err.contains("unknown variant `pack`, expected `spread` or `fill`"),
+            "{err}"
+        );
     }
 
     #[test]
