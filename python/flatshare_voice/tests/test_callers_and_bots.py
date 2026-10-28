@@ -316,6 +316,47 @@ def test_a_call_opens_with_its_warm_up_turns_and_measures_the_same_turns_after_t
     assert [json.loads(line) for line in logged] == warmed
 
 
+def test_a_caller_in_order_plays_the_corpus_lines_one_after_another(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(bots, "QUIET_S", 0.2)
+    lines = [line_clip(f"turn-{n:02}", 0.2) for n in range(8)]
+    corpus = SimpleNamespace(turns=lines, barge_ins=[line_clip("barge", 0.2)])
+    config = BotsConfig(
+        "ws://fake", "key", "secret", tmp_path, turns=3, barge_in=0.0, seed=3, warmup_turns=1
+    )
+    config = dataclasses.replace(config, think=(0.0, 0.0), in_order=True)
+
+    def call(index: int) -> list[dict[str, Any]]:
+        line = Line()
+        monkeypatch.setattr(audio.rtc, "AudioSource", line.source)
+        monkeypatch.setattr(audio.rtc, "AudioStream", line.stream)
+
+        async def play() -> list[dict[str, Any]]:
+            caller = Caller(config, corpus, index, "t")
+            tasks = [
+                asyncio.create_task(caller.microphone.run()),
+                asyncio.create_task(caller.agent_audio.consume(line)),
+            ]
+            await asyncio.sleep(0.2)
+            rows: list[dict[str, Any]] = []
+            with (tmp_path / f"turns-{index}.jsonl").open("w") as log:
+                await caller.play(rows, log)
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            return rows
+
+        return asyncio.run(play())
+
+    first, second = call(0), call(1)
+    # The warm-up turn draws its line as before; the measured turns take the lines in order, caller i
+    # from line i x turns.
+    assert [row["clip"] for row in first[1:]] == ["turn-00", "turn-01", "turn-02"]
+    assert [row["clip"] for row in second[1:]] == ["turn-03", "turn-04", "turn-05"]
+    assert first[0].get("warmup") and second[0].get("warmup")
+
+
 def test_a_call_told_to_stop_ends_before_its_next_turn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

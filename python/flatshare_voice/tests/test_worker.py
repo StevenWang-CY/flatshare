@@ -50,6 +50,61 @@ def test_experiments_fix_the_endpointing_and_can_turn_preemptive_generation_off(
     assert handling["preemptive_generation"] == {"enabled": False}
 
 
+def test_the_endpointing_sweep_sets_the_delay_and_the_vads_silence_over_the_configurations() -> (
+    None
+):
+    # Unset, the configuration's own: LiveKit's endpointing and Silero's defaults for the synthetic callers.
+    plain = settings(FLATSHARE_TURN_DETECTION="vad")
+    assert "endpointing" not in plain.turn_handling() and plain.vad_options() == {}
+    assert (plain.describe()["endpointing_min_delay"], plain.describe()["vad_min_silence"]) == (
+        None,
+        None,
+    )
+    swept = settings(
+        FLATSHARE_TURN_DETECTION="vad",
+        FLATSHARE_ENDPOINTING_MIN_DELAY="0.2",
+        FLATSHARE_VAD_MIN_SILENCE="0.3",
+    )
+    # Only the delay is given: LiveKit keeps the fixed mode and its 3 s at most.
+    assert swept.turn_handling()["endpointing"] == {"min_delay": 0.2}
+    assert swept.vad_options() == {"min_silence_duration": 0.3}
+    assert (swept.describe()["endpointing_min_delay"], swept.describe()["vad_min_silence"]) == (
+        0.2,
+        0.3,
+    )
+    # Over the microphone configuration, its other endpointing keys and VAD options stay.
+    microphone = settings(
+        FLATSHARE_AUDIO="microphone",
+        FLATSHARE_ENDPOINTING_MIN_DELAY="0",
+        FLATSHARE_VAD_MIN_SILENCE="0.4",
+    )
+    assert microphone.turn_handling()["endpointing"] == {
+        "mode": "fixed",
+        "min_delay": 0.0,
+        "max_delay": 3.0,
+    }
+    assert microphone.vad_options() == {
+        "activation_threshold": 0.6,
+        "min_speech_duration": 0.1,
+        "min_silence_duration": 0.4,
+    }
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("FLATSHARE_ENDPOINTING_MIN_DELAY", "-0.1"),
+        ("FLATSHARE_ENDPOINTING_MIN_DELAY", "3.5"),
+        ("FLATSHARE_ENDPOINTING_MIN_DELAY", "soon"),
+        ("FLATSHARE_VAD_MIN_SILENCE", "0"),
+        ("FLATSHARE_VAD_MIN_SILENCE", "4"),
+    ],
+)
+def test_an_endpointing_setting_out_of_its_range_is_refused_by_name(name: str, value: str) -> None:
+    with pytest.raises(ValueError, match=name):
+        settings(**{name: value})
+
+
 def test_events_go_to_the_control_planes_socket_unless_switched_off() -> None:
     assert settings().events_socket == GATEWAY
     assert settings(FLATSHARE_EVENTS="off").events_socket is None
@@ -151,6 +206,8 @@ def test_serve_mode_admits_the_calls_its_serving_profile_names(tmp_path: Path) -
         "serving_profile": str(SERVING),
         "profile": "rtx-5060-ti-serve",
         "node_binding": True,  # serve mode asks the gateway for each call's node
+        "endpointing_min_delay": None,  # the configuration's own
+        "vad_min_silence": None,
     }
     # The synthetic callers in serve mode, for a soak of the serving configuration.
     soak = settings(

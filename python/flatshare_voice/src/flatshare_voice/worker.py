@@ -68,6 +68,8 @@ a Unix socket each. The environment, set by ``flatshare-voice-worker.service``, 
 | ``FLATSHARE_VOICE_MODE`` | ``bench`` (default: every call taken) or ``serve`` (call-capacity admission) |
 | ``FLATSHARE_SERVING_PROFILE`` | Serve mode: the serving profile's serving.json, whose ``voice`` table it runs |
 | ``FLATSHARE_AUDIO`` | ``synthetic`` (bench mode's default) or ``microphone`` (serve mode's: the profile's) |
+| ``FLATSHARE_ENDPOINTING_MIN_DELAY`` | Seconds after the end of speech before a turn may end, from 0 to 3, over the audio configuration's (LiveKit's 0.5 by default) |
+| ``FLATSHARE_VAD_MIN_SILENCE`` | Seconds of silence that end speech for Silero VAD, above 0 and at most 3, over the audio configuration's (Silero's 0.55 by default) |
 | ``FLATSHARE_VOICE_STATUS`` | Serve mode: the file its state is written to every second |
 | ``FLATSHARE_VOICE_DRAIN`` | Serve mode: while this file exists, the worker takes no new call |
 | ``FLATSHARE_NODE_BINDING`` | ``on`` (serve mode's default): each call asks the gateway for its GPU node and binds its STT and TTS to that node's sockets (:mod:`.nodes`); ``off`` (bench mode's default) |
@@ -123,6 +125,10 @@ INSTRUCTIONS = (
 SERVES = frozenset({"start", "dev", "console", "connect"})
 """LiveKit's worker commands that run the agent's sessions, for which :func:`main` reads the settings."""
 
+MAX_DELAY_S = 3.0
+"""LiveKit's longest endpointing delay, its default ``max_delay``: the most a turn's end may wait, and so the most
+either of the endpointing settings may set."""
+
 AUDIO: dict[str, dict[str, Any]] = {
     # The measurement bots' audio, as every E2 point ran: files played into the room, so no echo and no room noise.
     "synthetic": {
@@ -176,6 +182,10 @@ class Settings:
     drain_file: str | None = None
     serving: Mapping[str, Any] = field(default_factory=dict)
     node_binding: bool = False
+    endpointing_min_delay: float | None = None
+    """Over the audio configuration's, as the endpointing sweep sets it; None keeps the configuration's."""
+    vad_min_silence: float | None = None
+    """Over the audio configuration's VAD, as the endpointing sweep sets it; None keeps the configuration's."""
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
@@ -223,6 +233,12 @@ class Settings:
             drain_file=env.get("FLATSHARE_VOICE_DRAIN") or None,
             serving=serving,
             node_binding=binding == "on",
+            endpointing_min_delay=_bounded(
+                env, "FLATSHARE_ENDPOINTING_MIN_DELAY", 0.0, MAX_DELAY_S
+            ),
+            vad_min_silence=_bounded(
+                env, "FLATSHARE_VAD_MIN_SILENCE", 0.0, MAX_DELAY_S, low_ok=False
+            ),
         )
 
     def turn_handling(self) -> dict[str, Any]:
@@ -238,13 +254,21 @@ class Settings:
             "interruption": dict(audio["interruption"]),
             "preemptive_generation": {"enabled": self.preemptive_generation},
         }
-        if audio["endpointing"] is not None:
-            handling["endpointing"] = dict(audio["endpointing"])
+        endpointing = dict(audio["endpointing"] or {})
+        if self.endpointing_min_delay is not None:
+            # LiveKit keeps its defaults for the keys left out: the fixed mode and 3 s at most.
+            endpointing["min_delay"] = self.endpointing_min_delay
+        if endpointing:
+            handling["endpointing"] = endpointing
         return handling
 
     def vad_options(self) -> dict[str, float]:
-        """Silero VAD's options for the audio configuration (its defaults for synthetic callers)."""
-        return dict(AUDIO[self.audio]["vad"])
+        """Silero VAD's options for the audio configuration (its defaults for synthetic callers), with the silence that
+        ends speech set over them when the settings name one."""
+        options = dict(AUDIO[self.audio]["vad"])
+        if self.vad_min_silence is not None:
+            options["min_silence_duration"] = self.vad_min_silence
+        return options
 
     @property
     def aec_warmup(self) -> float | None:
@@ -268,6 +292,8 @@ class Settings:
             "serving_profile": self.serving_profile,
             "profile": self.serving.get("profile"),
             "node_binding": self.node_binding,
+            "endpointing_min_delay": self.endpointing_min_delay,
+            "vad_min_silence": self.vad_min_silence,
         }
 
     @property
@@ -328,6 +354,23 @@ def _seconds(env: Mapping[str, str], name: str, default: float) -> float:
         value = math.nan
     if not 0 < value < math.inf:
         raise ValueError(f"{name} must be a number of seconds above 0, got {text!r}")
+    return value
+
+
+def _bounded(
+    env: Mapping[str, str], name: str, low: float, high: float, *, low_ok: bool = True
+) -> float | None:
+    """Setting ``name``, a number of seconds from ``low`` (or above it) to ``high``; None when it is not set."""
+    text = env.get(name)
+    if not text:
+        return None
+    try:
+        value = float(text)
+    except ValueError:
+        value = math.nan
+    if not ((low <= value if low_ok else low < value) and value <= high):
+        bound = f"from {low:g} to {high:g}" if low_ok else f"above {low:g} and at most {high:g}"
+        raise ValueError(f"{name} must be a number of seconds {bound}, got {text!r}")
     return value
 
 
