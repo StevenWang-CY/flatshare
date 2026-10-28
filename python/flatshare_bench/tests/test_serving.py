@@ -302,6 +302,31 @@ def test_serving_check_holds_the_releases_patches_to_the_profiles(tmp_path: Path
     assert re.search(r"^  patches\.63350\.patch +\S+  DIFFERS: runs nothing$", done.stdout, re.M)
 
 
+def test_serving_check_reads_a_snapshot_path_as_the_model_it_is_of(tmp_path: Path) -> None:
+    # Offline, vLLM resolves the model to its snapshot in Hugging Face's cache and reports that path as the model and
+    # the tokenizer, as the box's engine did at the first start of the serving variant: the snapshot of the pinned
+    # revision is the pinned model, and a snapshot of another revision is not.
+    report = effective()
+    model = report["model"]
+    revision = model["revision"]
+    cache = (
+        "/home/someone/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots"
+    )
+    resolved = model | {"model": f"{cache}/{revision}", "tokenizer": f"{cache}/{revision}"}
+    done = run_check(tmp_path, report=report | {"model": resolved})
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert re.search(
+        r'^  engine\.model\.model +"Qwen/Qwen3-4B-Instruct-2507-FP8"$', done.stdout, re.M
+    )
+    other = "0" * 40
+    stale = model | {"model": f"{cache}/{other}", "tokenizer": f"{cache}/{other}"}
+    done = run_check(tmp_path, report=report | {"model": stale})
+    assert done.returncode == 1
+    assert re.search(
+        r"^  engine\.model\.model +\S+  DIFFERS: runs .*snapshots/0{40}", done.stdout, re.M
+    )
+
+
 def test_serving_check_refuses_a_file_the_engine_did_not_write(tmp_path: Path) -> None:
     # A file of an earlier start (another pid), of another format, or none: exit 2, nothing compared.
     done = run_check(tmp_path, "--pid", "1")
