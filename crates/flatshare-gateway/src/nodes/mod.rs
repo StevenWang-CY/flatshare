@@ -12,14 +12,15 @@
 //!   with its class's role (realtime for realtime sessions, background for interactive and background ones), and stays
 //!   there until it has gone `idle_s` without a request or a `session_closed` event ends it ([`placement`]). A
 //!   realtime session takes one of its node's `max_calls` call slots, on the node with the fewest calls; an agent's
-//!   goes to the node with the fewest agents' sessions, then the fewest requests in flight, so that its prefix cache
-//!   stays on one engine.
+//!   takes one of its node's `max_agents` agent slots, where the node has that bound, on the node with the fewest
+//!   agents' sessions, then the fewest requests in flight, so that its prefix cache stays on one engine.
 //! - **Failover.** A node that is not available takes no new session, and a session placed on it is placed again by
 //!   its next request (or its next `POST /v1/sessions`), a move that is counted. A realtime session that finds no
-//!   available realtime node with a free call slot gets 503 with `Retry-After`. A node that carries realtime sessions
-//!   moved from a node that is not available covers for it: its interactive and background requests in flight are
-//!   held to `failover_background_max_in_flight` (0 by default, all of them deferred) until that node is available
-//!   again, or the moved sessions end.
+//!   available realtime node with a free call slot gets 503 with `Retry-After`, and so does an agent's that finds no
+//!   available background node with a free agent slot. A node that carries realtime sessions moved from a node that
+//!   is not available covers for it: its interactive and background requests in flight are held to
+//!   `failover_background_max_in_flight` (0 by default, all of them deferred) until that node is available again, or
+//!   the moved sessions end.
 //! - **Interrupted turns.** A realtime request whose node fails before its first content (no connection, one that
 //!   closed before the response, or a body that broke off before its first frame) is sent once more on another
 //!   available node, within the deadlines of its receipt, after the first attempt is dropped; once its first content
@@ -120,6 +121,8 @@ pub(crate) struct Node {
     pub realtime: bool,
     pub background: bool,
     pub max_calls: usize,
+    /// The agents' sessions placed on it at most; `None`, no bound.
+    pub max_agents: Option<usize>,
     pub engine: Arc<Engine>,
     pub stt: Option<Speech>,
     pub tts: Option<Speech>,
@@ -259,6 +262,7 @@ impl Nodes {
                     realtime: node.realtime,
                     background: node.background,
                     max_calls: node.max_calls,
+                    max_agents: node.max_agents,
                     engine: Arc::new(Engine {
                         upstream,
                         health: Arc::new(health),
@@ -591,9 +595,9 @@ impl Nodes {
     }
 
     /// The node a new session of `class` goes to, not `exclude`: of the available nodes with its role, for a
-    /// realtime session the one with the fewest calls among those with a free call slot, and for an agent's the one
-    /// that covers for no failed node, then with the fewest agents' sessions, then the fewest requests in flight.
-    /// Ties go to the earlier node.
+    /// realtime session the one with the fewest calls among those with a free call slot, and for an agent's, among
+    /// those with a free agent slot (below their `max_agents`, if they have one), the one that covers for no failed
+    /// node, then with the fewest agents' sessions, then the fewest requests in flight. Ties go to the earlier node.
     fn choose(
         &self,
         table: &Table,
@@ -615,16 +619,19 @@ impl Nodes {
                 .ok_or(Unplaced::NoCallSlot)?
         } else {
             candidates
+                .filter(|node| {
+                    node.max_agents
+                        .is_none_or(|max| (table.agents(node.index) as usize) < max)
+                })
                 .min_by_key(|node| {
-                    let [_, interactive, background] = table.held(node.index);
                     (
                         self.covering_in(table, node.index),
-                        interactive + background,
+                        table.agents(node.index),
                         node.in_flight(),
                         node.index,
                     )
                 })
-                .expect("a candidate")
+                .ok_or(Unplaced::NoAgentSlot)?
         };
         Ok(chosen.index)
     }
@@ -825,6 +832,7 @@ impl Nodes {
                     "stt": speech(&node.stt, stt),
                     "tts": speech(&node.tts, tts),
                     "max_calls": node.max_calls,
+                    "max_agents": node.max_agents,
                     "covering": self.covering_in(&table, node.index),
                     "sessions": by_class(table.held(node.index)),
                     "in_flight": by_class(node.in_flight.each_ref().map(|n| n.load(Ordering::Relaxed))),
@@ -951,23 +959,36 @@ mod tests {
     }
 
     fn nodes(names: &[&str]) -> Arc<Nodes> {
-        let config: Vec<NodeConfig> = names
+        let unbounded: Vec<(&str, Option<usize>)> =
+            names.iter().map(|name| (*name, None)).collect();
+        bounded(&unbounded)
+    }
+
+    /// Nodes of `(name, max_agents)`, each with both roles and two call slots.
+    fn bounded(nodes: &[(&str, Option<usize>)]) -> Arc<Nodes> {
+        started(nodes, Placement::default())
+    }
+
+    /// Nodes of `(name, max_agents)`, each with both roles and two call slots, placed by `placement`.
+    fn started(nodes: &[(&str, Option<usize>)], placement: Placement) -> Arc<Nodes> {
+        let config: Vec<NodeConfig> = nodes
             .iter()
-            .map(|name| NodeConfig {
+            .map(|(name, max_agents)| NodeConfig {
                 name: (*name).to_owned(),
                 upstream: UpstreamAddr::Unix(format!("/nonexistent/{name}.sock").into()),
                 realtime: true,
                 background: true,
                 max_calls: 2,
+                max_agents: *max_agents,
                 stt: None,
                 tts: None,
             })
             .collect();
-        let names: Vec<Arc<str>> = names.iter().map(|name| Arc::from(*name)).collect();
+        let names: Vec<Arc<str>> = nodes.iter().map(|(name, _)| Arc::from(*name)).collect();
         // Checked rarely, so that the engines nobody serves are not judged during the test.
         let placement = Placement {
             health_interval: Duration::from_secs(3600),
-            ..Placement::default()
+            ..placement
         };
         Nodes::start(
             &config,
@@ -977,6 +998,41 @@ mod tests {
             Duration::from_secs(4),
             &metrics::Metrics::new(&names),
         )
+    }
+
+    /// Judges every node by a passed check, as its first check would: each is healthy, and available.
+    fn all_healthy(nodes: &Nodes) {
+        for node in &nodes.list {
+            nodes.judge(node.index, [true; 3]);
+        }
+    }
+
+    /// Judges node `index` by failed checks of its engine until it is unhealthy, and not available.
+    fn fail(nodes: &Nodes, index: usize) {
+        for _ in 0..nodes.config.unhealthy_after {
+            nodes.judge(index, [false, true, true]);
+        }
+        assert!(!nodes.list[index].available());
+    }
+
+    fn key(id: &str) -> Key {
+        Key {
+            tenant: 0,
+            session: SessionId::new(id).unwrap(),
+        }
+    }
+
+    /// The node that a request of the session `id`, of `class`, is placed on; the request ends at once.
+    fn place(nodes: &Arc<Nodes>, id: &str, class: SloClass) -> Result<String, Unplaced> {
+        let placed = nodes.request(Some(key(id)), class, true)?;
+        Ok(placed.node.name.to_string())
+    }
+
+    /// Where `count` new sessions of `class`, `{prefix}-1` on, are placed, one after another.
+    fn place_new(nodes: &Arc<Nodes>, prefix: &str, count: usize, class: SloClass) -> Vec<String> {
+        (1..=count)
+            .map(|i| place(nodes, &format!("{prefix}-{i}"), class).unwrap())
+            .collect()
     }
 
     fn session(tenant: &str, id: &str, node: &str, moved_from: Option<&str>) -> HandedSession {
@@ -1063,5 +1119,104 @@ mod tests {
         }
         judged.record(true, 3, 2);
         assert_eq!(judged.verdict, Verdict::Healthy);
+    }
+
+    #[tokio::test]
+    async fn an_agents_session_goes_past_a_node_at_its_max_agents_to_one_with_a_free_slot() {
+        let nodes = bounded(&[("a", Some(2)), ("b", None)]);
+        all_healthy(&nodes);
+        // The fewest agents' sessions first: a, b, a, b. a then holds its two, so the fifth session, which that order
+        // would give a (two each, a the earlier), goes to b, as does every one after it: b has no bound.
+        assert_eq!(
+            place_new(&nodes, "agent", 6, SloClass::Background),
+            ["a", "b", "a", "b", "b", "b"]
+        );
+        assert_eq!((nodes.read().agents(0), nodes.read().agents(1)), (2, 4));
+        // A placed session keeps its node, and the bound is the agents' alone: a call still takes a's call slots.
+        assert_eq!(place(&nodes, "agent-1", SloClass::Background).unwrap(), "a");
+        assert_eq!(place(&nodes, "call-1", SloClass::Realtime).unwrap(), "a");
+        // /nodes shows each node's bound beside its call slots, none as null.
+        let view = nodes.describe();
+        let bound = |node: usize| view["nodes"][node].get("max_agents").cloned();
+        assert_eq!(
+            (bound(0), bound(1)),
+            (Some(serde_json::json!(2)), Some(serde_json::Value::Null))
+        );
+    }
+
+    #[tokio::test]
+    async fn an_agents_session_that_finds_every_node_at_its_max_agents_is_not_placed() {
+        let nodes = bounded(&[("a", Some(1)), ("b", Some(2))]);
+        all_healthy(&nodes);
+        // Interactive and background sessions count together.
+        assert_eq!(
+            place(&nodes, "agent-1", SloClass::Interactive).unwrap(),
+            "a"
+        );
+        assert_eq!(place(&nodes, "agent-2", SloClass::Background).unwrap(), "b");
+        assert_eq!(
+            place(&nodes, "agent-3", SloClass::Interactive).unwrap(),
+            "b"
+        );
+        for class in [SloClass::Interactive, SloClass::Background] {
+            assert_eq!(place(&nodes, "agent-4", class), Err(Unplaced::NoAgentSlot));
+        }
+        // As a request without a session takes no call slot but finds none when every node is full, so for agents.
+        assert_eq!(
+            nodes.request(None, SloClass::Background, true).err(),
+            Some(Unplaced::NoAgentSlot)
+        );
+        // The placed sessions keep their nodes, and a call still finds a's call slots.
+        assert_eq!(
+            place(&nodes, "agent-1", SloClass::Interactive).unwrap(),
+            "a"
+        );
+        assert_eq!(place(&nodes, "call-1", SloClass::Realtime).unwrap(), "a");
+        // With no available node of the role at all, it is no_node still.
+        fail(&nodes, 0);
+        fail(&nodes, 1);
+        assert_eq!(
+            place(&nodes, "agent-4", SloClass::Background),
+            Err(Unplaced::NoNode)
+        );
+    }
+
+    #[tokio::test]
+    async fn an_agents_session_moved_from_a_failed_node_needs_a_free_agent_slot_on_its_new_node() {
+        let nodes = bounded(&[("a", Some(1)), ("b", Some(1))]);
+        all_healthy(&nodes);
+        assert_eq!(
+            place_new(&nodes, "agent", 2, SloClass::Background),
+            ["a", "b"]
+        );
+        fail(&nodes, 0);
+        // agent-1's node is not available, and b holds its one agent's session: the request is not placed, and the
+        // session keeps its old placement until a request of it is.
+        assert_eq!(
+            place(&nodes, "agent-1", SloClass::Background),
+            Err(Unplaced::NoAgentSlot)
+        );
+        assert_eq!(nodes.read().agents(0), 1);
+        // b's session ends: agent-1's next request moves it there, counted.
+        nodes.write().forget(&key("agent-2"));
+        assert_eq!(place(&nodes, "agent-1", SloClass::Background).unwrap(), "b");
+        assert_eq!((nodes.read().agents(0), nodes.read().agents(1)), (0, 1));
+        let moved = &nodes.list[1].series.placements[SloClass::Background as usize];
+        assert_eq!(moved[Reason::Moved as usize].get(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_agents_session_that_idles_out_frees_its_agent_slot() {
+        let nodes = bounded(&[("a", Some(1))]);
+        all_healthy(&nodes);
+        assert_eq!(place(&nodes, "agent-1", SloClass::Background).unwrap(), "a");
+        assert_eq!(
+            place(&nodes, "agent-2", SloClass::Background),
+            Err(Unplaced::NoAgentSlot)
+        );
+        // idle_s after its last request ended, the expiry forgets agent-1, and its slot is free.
+        let idle = nodes.config.idle;
+        nodes.write().expire(Instant::now() + idle, idle);
+        assert_eq!(place(&nodes, "agent-2", SloClass::Background).unwrap(), "a");
     }
 }

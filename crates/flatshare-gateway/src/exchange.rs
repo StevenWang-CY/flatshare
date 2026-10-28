@@ -256,7 +256,8 @@ impl Exchange {
     }
 
     /// The 503 for a session that no node takes, with `Retry-After: 1`: no available node of its class's role, every
-    /// available realtime node at its `max_calls`, or (`POST /v1/sessions`) a table whose every session is busy.
+    /// available realtime node at its `max_calls` or background node at its `max_agents`, or (`POST /v1/sessions`) a
+    /// table whose every session is busy.
     pub fn unplaced(self, unplaced: Unplaced, class: SloClass) -> Response {
         let (code, message) = match unplaced {
             Unplaced::NoNode => (
@@ -266,6 +267,12 @@ impl Exchange {
             Unplaced::NoCallSlot => (
                 "no_call_slot",
                 "every healthy realtime node has max_calls calls: the call does not fit the nodes that serve"
+                    .to_owned(),
+            ),
+            Unplaced::NoAgentSlot => (
+                "no_agent_slot",
+                "every healthy background node has max_agents agents' sessions: the session does not fit the nodes \
+                 that serve"
                     .to_owned(),
             ),
             Unplaced::Full => (

@@ -109,9 +109,9 @@ pub(crate) async fn sessions(State(app): State<App>, request: Request) -> Respon
     ex.respond(StatusCode::OK, &body)
 }
 
-/// `GET /nodes`: each node's verdict, its engine's state and readiness, each component's last check, its roles and
-/// call slots, whether it covers for a failed node, and its sessions and requests in flight by class. It reads the
-/// metrics' rule: the metrics key on a TCP listener, nothing on a Unix socket.
+/// `GET /nodes`: each node's verdict, its engine's state and readiness, each component's last check, its roles, call
+/// slots and agents' bound, whether it covers for a failed node, and its sessions and requests in flight by class. It
+/// reads the metrics' rule: the metrics key on a TCP listener, nothing on a Unix socket.
 pub(crate) async fn nodes(State(app): State<App>, request: Request) -> Response {
     if let Some(refused) = metrics_refused(&app, request.headers()) {
         return refused;

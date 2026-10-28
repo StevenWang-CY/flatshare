@@ -115,14 +115,17 @@ flatshare_gateway_placements_total{node="phastform",class="interactive",reason="
 flatshare_gateway_placements_total{node="phastform",class="realtime",reason="moved"} 0
 flatshare_gateway_placements_total{node="phastform",class="realtime",reason="new"} 0
 flatshare_gateway_placements_total{node="phastform",class="realtime",reason="retried"} 0
-# HELP flatshare_gateway_placements_refused Sessions no node took, by class and reason: no_node (no available node of its role), no_call_slot (every available realtime node at max_calls) or table_full.
+# HELP flatshare_gateway_placements_refused Sessions no node took, by class and reason: no_node (no available node of its role), no_call_slot (every available realtime node at max_calls), no_agent_slot (every available background node at max_agents) or table_full.
 # TYPE flatshare_gateway_placements_refused counter
+flatshare_gateway_placements_refused_total{class="background",reason="no_agent_slot"} 0
 flatshare_gateway_placements_refused_total{class="background",reason="no_call_slot"} 0
 flatshare_gateway_placements_refused_total{class="background",reason="no_node"} 0
 flatshare_gateway_placements_refused_total{class="background",reason="table_full"} 0
+flatshare_gateway_placements_refused_total{class="interactive",reason="no_agent_slot"} 0
 flatshare_gateway_placements_refused_total{class="interactive",reason="no_call_slot"} 0
 flatshare_gateway_placements_refused_total{class="interactive",reason="no_node"} 0
 flatshare_gateway_placements_refused_total{class="interactive",reason="table_full"} 0
+flatshare_gateway_placements_refused_total{class="realtime",reason="no_agent_slot"} 0
 flatshare_gateway_placements_refused_total{class="realtime",reason="no_call_slot"} 0
 flatshare_gateway_placements_refused_total{class="realtime",reason="no_node"} 0
 flatshare_gateway_placements_refused_total{class="realtime",reason="table_full"} 0

@@ -48,17 +48,25 @@ pub(crate) enum Unplaced {
     NoNode,
     /// Every available node that takes realtime sessions has `max_calls` of them.
     NoCallSlot,
+    /// Every available node that takes agents' sessions has a `max_agents` and that many of them.
+    NoAgentSlot,
     /// `POST /v1/sessions` found the table full, every session in it with a request in flight.
     Full,
 }
 
 impl Unplaced {
-    pub const ALL: [Self; 3] = [Self::NoNode, Self::NoCallSlot, Self::Full];
+    pub const ALL: [Self; 4] = [
+        Self::NoNode,
+        Self::NoCallSlot,
+        Self::NoAgentSlot,
+        Self::Full,
+    ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::NoNode => "no_node",
             Self::NoCallSlot => "no_call_slot",
+            Self::NoAgentSlot => "no_agent_slot",
             Self::Full => "table_full",
         }
     }
@@ -324,7 +332,8 @@ impl Metrics {
         r.register(
             "placements_refused",
             "Sessions no node took, by class and reason: no_node (no available node of its role), no_call_slot \
-             (every available realtime node at max_calls) or table_full",
+             (every available realtime node at max_calls), no_agent_slot (every available background node at \
+             max_agents) or table_full",
             self.refused.clone(),
         );
         r.register(

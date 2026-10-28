@@ -163,6 +163,9 @@ pub struct NodeConfig {
     pub background: bool,
     /// The realtime sessions placed on it at most: a call each.
     pub max_calls: usize,
+    /// The agents' sessions (interactive and background) placed on it at most, `None` for no bound: what a node
+    /// that carries calls may run beside them.
+    pub max_agents: Option<usize>,
     /// Its speech servers, whose `/health` its health needs, and which a call placed on it binds to.
     pub stt: Option<UpstreamAddr>,
     pub tts: Option<UpstreamAddr>,
@@ -495,6 +498,9 @@ struct RawNode {
     /// E2 measured two calls on one card.
     #[serde(default = "RawNode::two_calls")]
     max_calls: usize,
+    /// No bound unless set.
+    #[serde(default)]
+    max_agents: Option<usize>,
     #[serde(default)]
     stt: Option<String>,
     #[serde(default)]
@@ -599,6 +605,20 @@ fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
                 "nodes.{name}.max_calls must be positive for a node with the realtime role"
             ));
         }
+        match node.max_agents {
+            Some(_) if !background => {
+                return Err(format!(
+                    "nodes.{name}.max_agents is for a node with the background role: this one takes no agents' \
+                     sessions"
+                ));
+            }
+            Some(0) => {
+                return Err(format!(
+                    "nodes.{name}.max_agents must be positive, or left out for no bound"
+                ));
+            }
+            _ => {}
+        }
         let speech = |key: &str, value: Option<String>| {
             value
                 .map(|raw| parse_address(&format!("nodes.{name}.{key}"), &raw))
@@ -611,6 +631,7 @@ fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
             realtime,
             background,
             max_calls: node.max_calls,
+            max_agents: node.max_agents,
             stt,
             tts,
             name,
@@ -1655,6 +1676,41 @@ max_calls = 0
         )
         .unwrap_err();
         assert!(err.contains("[placement] needs [[nodes]]"), "{err}");
+    }
+
+    #[test]
+    fn a_node_with_the_background_role_may_bound_its_agents_sessions() {
+        let bounded = TWO_NODES.replace(
+            "phastform-tts.sock\"\n",
+            "phastform-tts.sock\"\nmax_agents = 4\n",
+        );
+        let two = nodes_config("", &bounded).unwrap();
+        let [phastform, gray] = &two.nodes[..] else {
+            panic!("{:?}", two.nodes)
+        };
+        // Without the key, no bound.
+        assert_eq!((phastform.max_agents, gray.max_agents), (Some(4), None));
+        let node = |name: &str, keys: &str| {
+            format!("[[nodes]]\nname = \"{name}\"\nupstream = \"unix:/run/{name}.sock\"\n{keys}\n")
+        };
+        let calls_only = format!(
+            "{}{}",
+            node("a", "roles = [\"realtime\"]\nmax_agents = 2"),
+            node("b", "roles = [\"background\"]")
+        );
+        for (nodes, cause) in [
+            (
+                node("a", "max_agents = 0"),
+                "nodes.a.max_agents must be positive, or left out for no bound",
+            ),
+            (
+                calls_only,
+                "nodes.a.max_agents is for a node with the background role",
+            ),
+        ] {
+            let err = nodes_config("", &nodes).unwrap_err();
+            assert!(err.contains(cause), "{cause}: {err}");
+        }
     }
 
     #[test]

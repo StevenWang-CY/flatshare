@@ -1,8 +1,8 @@
-//! Several GPU nodes behind one gateway (`[[nodes]]`), on mock engines and mock speech servers: sticky placement and
-//! call slots, a node failing as a whole pipeline (its engine, or only its TTS), sessions moving by their next request,
-//! the 503 when the survivors have no call slot, agents deferred on a node that covers for a failed one, a realtime
-//! request sent once more before its first content and never after, `/nodes`, `POST /v1/sessions`, and a gateway
-//! without `[[nodes]]` unchanged.
+//! Several GPU nodes behind one gateway (`[[nodes]]`), on mock engines and mock speech servers: sticky placement, call
+//! slots and agents' bounds, a node failing as a whole pipeline (its engine, or only its TTS), sessions moving by their
+//! next request, the 503 when the survivors have no call slot, agents deferred on a node that covers for a failed one,
+//! a realtime request sent once more before its first content and never after, `/nodes`, `POST /v1/sessions`, and a
+//! gateway without `[[nodes]]` unchanged.
 
 use std::time::Duration;
 
@@ -63,6 +63,16 @@ async fn close(gw: &Gateway, session: &str) {
             "source":"voice-worker","type":"session_closed"}}"#
     );
     let reply = call(&gw.unix, "POST", "/v1/events", &[], &body).await;
+    assert_eq!(reply.status, 202, "{:?}", reply.body);
+}
+
+/// The agents tenant's `session_closed` for its session `session`.
+async fn agent_closed(gw: &Gateway, session: &str) {
+    let body = format!(
+        r#"{{"event_id":"close-{session}","session_id":"{session}","at_ms":1792650010000,
+            "source":"client","type":"session_closed"}}"#
+    );
+    let reply = call(&gw.tcp, "POST", "/v1/events", &[AGENTS_AUTH], &body).await;
     assert_eq!(reply.status, 202, "{:?}", reply.body);
 }
 
@@ -264,6 +274,60 @@ async fn a_moved_call_that_finds_every_survivor_at_its_max_calls_gets_503() {
     let ready = call(&gw.tcp, "GET", "/ready", &[], "").await;
     assert_eq!(ready.status, 503);
     assert_eq!(ready.body, "no healthy node for realtime\n");
+}
+
+#[tokio::test]
+async fn agents_keep_to_each_nodes_max_agents_and_one_no_node_fits_gets_503_until_a_slot_frees() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let b = TestNode::start("b", Script::Json("{}")).await;
+    let toml = format!(
+        "{}{}[placement]\nhealth_interval_s = 0.02\nhealth_timeout_s = 0.5\nunhealthy_after = 2\nhealthy_after = 2\n",
+        a.toml("max_agents = 2"),
+        b.toml("max_agents = 1")
+    );
+    let config = flatshare_gateway::Config::from_toml(&nodes_toml("", &toml)).unwrap();
+    let gw = Gateway::from_config(config, std::sync::Arc::new(flatshare_gateway::LogSink)).await;
+    all_healthy(&gw, &[&a, &b]).await;
+    // The fewest agents' sessions first, within each node's bound: a, b, a, and then neither has a free slot.
+    for session in ["agent-1", "agent-2", "agent-3"] {
+        assert_eq!(agent(&gw, session).await.status, 200);
+    }
+    assert_eq!((a.requests(), b.requests()), (2, 1));
+    unplaced(&agent(&gw, "agent-4").await, "no_agent_slot");
+    assert_eq!((a.requests(), b.requests()), (2, 1));
+    gw.await_metric(
+        "flatshare_gateway_placements_refused_total{class=\"background\",reason=\"no_agent_slot\"}",
+        1.0,
+    )
+    .await;
+    gw.await_metric(
+        "flatshare_gateway_request_outcomes_total{class=\"background\",outcome=\"not_ready\"}",
+        1.0,
+    )
+    .await;
+    // A placed agent keeps its node, and a call is no agent: a takes one beside its two agents.
+    assert_eq!(agent(&gw, "agent-1").await.status, 200);
+    assert_eq!(node_of(&gw, "call-1").await, "a");
+    // /nodes shows each node's bound beside its call slots.
+    let view = nodes_view(&gw).await;
+    let bounds: Vec<serde_json::Value> = view["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|node| serde_json::json!([node["max_calls"], node["max_agents"]]))
+        .collect();
+    assert_eq!(
+        bounds,
+        [serde_json::json!([2, 2]), serde_json::json!([2, 1])]
+    );
+    assert_eq!(
+        view["nodes"][0]["sessions"],
+        serde_json::json!({"realtime": 1, "interactive": 0, "background": 2})
+    );
+    // An agent's session_closed frees its slot, which the refused agent then takes.
+    agent_closed(&gw, "agent-2").await;
+    assert_eq!(agent(&gw, "agent-4").await.status, 200);
+    assert_eq!((a.requests(), b.requests()), (3, 2));
 }
 
 #[tokio::test]

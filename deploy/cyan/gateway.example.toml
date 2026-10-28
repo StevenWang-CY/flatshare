@@ -108,12 +108,17 @@ default_class = "background"
 # session whose node fails moves by its next request, and a node carrying calls moved from a failed one defers its
 # agents. The voice worker places a call with POST /v1/sessions, whose answer names the node's speech servers. No
 # [admission] table goes with [[nodes]]. For two mixed replicas that must each carry both calls when the other fails,
-# each node's max_calls is 2 and the worker admits two calls in all.
+# each node's max_calls is 2 and the worker admits two calls in all. A node that carries calls holds its agents'
+# sessions (interactive and background together) to max_agents, the serving profile's envelope: the most agents its
+# card serves beside both calls within the voice SLO, as measured for the card (the 4 below stands in for that
+# number). An agent's session that finds every node at its bound gets 503 no_agent_slot; a node without max_agents,
+# as gray here, takes agents without a bound.
 # [[nodes]]
 # name = "phastform"
 # upstream = "unix:/run/user/1007/flatshare/phastform-engine.sock"
 # roles = ["realtime", "background"]
 # max_calls = 2
+# max_agents = 4
 # stt = "unix:/run/user/1007/flatshare/phastform-stt.sock"
 # tts = "unix:/run/user/1007/flatshare/phastform-tts.sock"
 #

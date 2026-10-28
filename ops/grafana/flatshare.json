@@ -1321,7 +1321,7 @@
           "refId": "B"
         }
       ],
-      "description": "moved: a session placed again because its node was not available; retried: a realtime request sent again on another node after its node failed before the first content; no_call_slot: a call that fit no node."
+      "description": "moved: a session placed again because its node was not available; retried: a realtime request sent again on another node after its node failed before the first content; no_call_slot: a call that fit no node; no_agent_slot: an agent's session that fit no node's max_agents."
     },
     {
       "type": "timeseries",

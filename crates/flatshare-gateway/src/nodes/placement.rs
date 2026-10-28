@@ -122,6 +122,12 @@ impl Table {
         self.held[node]
     }
 
+    /// The agents' sessions placed on `node`, interactive and background: what its `max_agents` bounds.
+    pub fn agents(&self, node: usize) -> u32 {
+        let [_, interactive, background] = self.held[node];
+        interactive + background
+    }
+
     /// The nodes that `node` carries realtime sessions for, with how many.
     pub fn moved_in(&self, node: usize) -> impl Iterator<Item = (usize, u32)> + '_ {
         self.moved_in[node]
