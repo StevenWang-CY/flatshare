@@ -92,7 +92,8 @@ The turn runs from sending the audio to the first byte of TTS audio. That is the
 | Voice alone, fixed endpointing (experiments) | **1,614 ms** | **1,760 ms** | **1,889 ms** | 634 / 696 ms |
 | Beside the agent replay (16 agent sessions, 1.3 requests/s), fixed endpointing | 1,664 ms | **2,312 ms** | 3,013 ms | 563 / 687 ms |
 
-- **Endpointing dominates voice alone.** About 1 s of each turn is endpointing (VAD end of speech plus LiveKit's 0.5 s minimum); the server-side turn is the rest.
+- **Endpointing dominates voice alone.** About 0.75 s of each turn is endpointing: the VAD's 0.55 s of silence and about 0.2 s more, LiveKit's 0.5 s minimum delay never binding (the endpointing sweep below); the server-side turn and the transport are the rest.
+- **The endpointing sweep** (2026-10-28, [its record](../benchmarks/results/2026-10-28-endpointing/README.md)): one caller playing the corpus's 40 lines in order, voice alone on the serving profile, at four settings of the VAD's silence and the delay. The worker ended each turn about 0.2 s after the silence ran out at every delay tried (747, 753, 587 and 492 ms at the median with 0.55/0.5, 0.55/0.2, 0.4/0.3 and 0.3/0.2 s), so lowering the delay alone changed nothing, and 0.3 s of silence brought the V2V p50 from 1,612 to 1,346 ms. At 0.4 and 0.3 s one line of 40 was answered before it had ended, its pause after a first sentence taken for its end. Every E2 point keeps 0.55/0.5.
 - **The end-of-turn model adds a 3 s mode.** It judged about one line in six from the synthesized callers unfinished and waited for its 3 s maximum. Experiments therefore end turns a fixed delay after speech (the `vad-turns` variant), the same for every arm.
 - **Agent load breaks the voice SLO.** Beside a realistic agent replay, V2V p95 rises by 552 ms and p99 by 1.1 s, against an SLO of at most +250 ms. Agent TTFT stayed 149 ms p50 and 11.2 s p99.
 - **Nothing ran out of memory.** GPU memory held at 14.05 GiB, and neither the calls (50 turns) nor the replay (507 requests) had an error.
@@ -372,6 +373,50 @@ The cost to the agents by its mechanism, over W5's points ([EXPERIMENTS.md](EXPE
 - **Where the pool has room** (the standard scenario), make-room preempted 1 request a run at the median (0–7) and the cap held agent prefill back in 4% of the steps (3–13%); the loads beyond first scheduling are within the window's edges of zero (−74 and 115 tokens).
 - **The held prefill tokens are an upper bound.** The module W5's points ran counted each held chunk against the step's remaining budget, so a step that held several lower-priority prefills counts each of them. With `--long-prefill-token-threshold 256` a held chunk counts at most 256 of a step's 512 tokens, so a step overstates only when it held three or more; the 48-token runs count 215 tokens a held step at the median (171–260 over the fifteen runs), about one chunk's worth. The PRs bound a step's count by its budget since #63351's revision d1399e208, and so does the variant built from them.
 - **What a resume recomputes is not measured**: vLLM 0.32 counts a request's computed prompt tokens at its first scheduling only ([EXPERIMENTS.md](EXPERIMENTS.md#e3-the-background-tiers-cost-of-make-room)).
+
+### The step cap, screened and confirmed (SW, RG)
+
+SW, 2026-10-27: two screens of the PRs' configuration over the step cap, the per-request threshold, the window and the gateway's static cap on agent requests in flight, and of the frozen box at two step caps, one run a setting on W5's tuning sample (agent seed 11) beside the 24 sessions of the discriminating scenario ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md), whose `table.py` gives every point). The step cap moved the PRs most: 9 of 59 replies over W5's SLO at 256 without the threshold, 24 at 512 and 33 at 1,024; the static caps did less, and the frozen box missed at every setting. RG's five rounds (agent seeds 21–25, Phastform and Gray in turn, below) then ran the three configurations side by side, each round against its own SLO:
+
+| Configuration | Rounds | V2V p95: median of the rounds / pooled | Replies over the SLO | By round | Agents' tokens/s, first 240 s | Agent TTFT p50 / p99 |
+|---|---:|---:|---:|---|---:|---:|
+| The frozen box | 5 | 12,010 / 11,766 | 261 / 295 (88.5%) | 53, 55, 55, 54, 44 | 3,399 | 69 / 109 s |
+| #63350 + #63351, a 48-token window, 512/256 (W5's) | 5 | 2,246 / 2,259 | 94 / 295 (31.9%) | 16, 29, 25, 9, 15 | 3,303 | 78 / 117 s |
+| **#63350 + #63351, a 48-token window, 256 without a threshold** | 5 | **2,098 / 2,151** | **44 / 295 (14.9%)** | 10, 17, 10, 4, 3 | 3,067 | 85 / 120 s |
+
+- **The screens' choice stands.** At 256 tokens a step without a threshold the PRs had fewer replies over the SLO than at W5's 512/256 in each of the five rounds, half as many pooled, and the serving profile runs it. The agents pay 7% of their token rate for it (3,067 against 3,303 tokens/s) and their median TTFT rises from 78 to 85 s.
+- **Still over the requirement at 24 sessions.** 14.9% of the replies were over, where the SLO allows 5%; the two-card comparison below finds the shared card within it at four sessions. Each round's SLO is in [SLO.md](SLO.md#the-slos-reference-campaign-by-campaign), and the record's `gate.py` gives this table.
+
+### Two cards (RG)
+
+RG, 2026-10-28: the resource gate's comparison of the arrangements of two RTX 5060 Ti cards ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md), fixed before the runs), in three rounds on new samples of the agents' traces (agent seeds 21–23), on Phastform, Gray and Phastform in turn, the hosts and cyan at v1.6-27-gea7efd0. Each card's part of an arrangement is a point of its own, beside the discriminating scenario's sessions at the counts given; the change runs the serving profile, the PRs' switches with a 48-token window at a step cap of 256 without a per-request threshold. Each round's SLO is its voice alone's p95 plus 250 ms: 2,000, 1,972 and 2,010 ms with two callers, 1,988, 1,943 and 1,982 ms with one. Replies over the SLO are pooled over the rounds, and the agents' tokens/s over the calls' first 240 s are summed over the cards, the median of the rounds with each round's sum:
+
+| Arrangement | Sessions (shared + second card) | Replies over the SLO | Agents' tokens/s, first 240 s | Rounds | Agent TTFT p50 / p99 |
+|---|---:|---:|---:|---|---:|
+| Dedicated roles, controlled (the second card the frozen box, its speech servers idle) | 0 + 12 | 0 / 177 | 6,302 | 7,008, 6,302, 6,041 | 4.4 / 31.0 s |
+| **Dedicated roles, best practical** (the second card agents alone: a 61,152-token pool, FCFS, 2,048-token steps) | 0 + 14 | 0 / 177 | **7,893** | 8,282, 7,893, 4,710 | 5.1 / 41.0 s |
+| Stock pooling | 12 + 12 | 53 / 87 | 13,188 | 13,233, 13,188, 11,951 | 4.7 / 29.2 s |
+| Flatshare pooling | 12 + 12 | 24 / 87 | 12,111 | 13,138, 12,111, 11,374 | 4.8 / 37.2 s |
+| Consolidation, stock vLLM | 24 + 14 | 163 / 177 | 11,378 | 11,681, 11,378, 7,776 | 39.7 / 85.8 s |
+| Consolidation, stock vLLM | 12 + 14 | 95 / 177 | 14,191 | 14,987, 14,191, 11,055 | 4.6 / 33.5 s |
+| Consolidation, stock vLLM | 8 + 14 | 69 / 177 | 13,573 | 13,573, 14,267, 10,547 | 0.7 / 11.6 s |
+| Consolidation, stock vLLM | 4 + 14 | 18 / 177 | 10,596 | 11,655, 10,596, 8,308 | 0.6 / 10.4 s |
+| Consolidation, stock vLLM | 2 + 14 | 4 / 177 | 10,051 | 10,984, 10,051, 6,234 | 0.4 / 7.8 s |
+| Consolidation, the change | 24 + 14 | 37 / 177 | 11,075 | 11,466, 11,075, 7,435 | 48.0 / 92.5 s |
+| Consolidation, the change | 12 + 14 | 33 / 177 | 13,880 | 15,107, 13,880, 10,082 | 5.1 / 41.6 s |
+| Consolidation, the change | 8 + 14 | 31 / 177 | 13,537 | 13,537, 14,352, 10,392 | 0.7 / 11.7 s |
+| **Consolidation, the change** | 4 + 14 | 5 / 177 | **10,596** | 11,655, 10,596, 8,308 | 0.6 / 10.8 s |
+| Consolidation, the change | 2 + 14 | 2 / 177 | 10,050 | 10,982, 10,050, 6,213 | 0.4 / 9.8 s |
+| Consolidation, the change at W5's configuration | 24 + 14 | 70 / 177 | 11,196 | 11,596, 11,196, 7,553 | 44.4 / 88.0 s |
+
+- **The verdict.** An arrangement qualifies with at most 5% of its replies over the SLO. Consolidation on the change qualifies with four sessions on the shared card (2.8%) and not with eight (17.5%), and at four it did 34.2% more than the best qualifying dedicated arrangement, the agents' card at 14 sessions: past the gate's 20% hurdle. Pooling qualifies on neither engine.
+- **Most of it is the arrangement's.** Stock vLLM's shared card qualifies at two sessions, and that arrangement did 27.3% more than the best dedicated one; the change's own value, its envelope against stock's, is 5.4%, short of the hurdle. At two and four sessions both engines completed the same agents' requests in the calls' first 240 s in every round (at four, 44, 41 and 37), so there the shared card's part is the sessions' own pace, which the traces' think times set.
+- **The dedicated card's best count.** The agents' card did the most at 14 sessions (12 in the third round); at 24 its pool thrashes, the agents' median TTFT is 48 s and it did 4,232 tokens/s, 46% below its best.
+- **The margin.** With 500 ms over voice alone in place of 250, the change's shared card would qualify at every count measured, 8 of 177 replies over at 24 sessions, and stock vLLM's still only at two (12 of 177 at four).
+- **Where the margin goes.** From eight sessions on the transcript comes 51–71 ms later than with the calls alone on either engine (745 ms at the median), the speech server's share of the GPU, and on stock vLLM the first sentence's p95 grows to 909, 2,424 and 9,719 ms at 4, 8 and 24 sessions, where the change holds it to 534, 737 and 768 (437 alone).
+- **A warm spare**, the second card on the change's engine with its speech servers resident, did the most at 12 sessions, 6,715 tokens/s; with consolidation at four sessions, 9,652 tokens/s, 22.3% over the best dedicated arrangement, which has no standby.
+
+The records are in [`benchmarks/results/2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds), whose `gate.py` gives these tables, the margins, the agents' requests in the window and the stages from them.
 
 ## The control plane: flatshare-gateway in front of the engine
 
@@ -829,6 +874,15 @@ Each server's start, from its journal (`ops/drills/cold-start.sh`):
 | The box, the final build (`systemctl --user restart flatshare.target`) | 102.7 s | The units stopped within 8.1 s, then the three started at once: the TTS ready 22.9 s after its start, the STT 64.0 s, the engine 94.6 s (on v0.3-191 the engine waited for the STT to be ready, and the box took 161.4 s) |
 
 The engine's warm start is most of the recovery from an engine failure; on a new host, with empty caches, the first start takes six times as long.
+
+**Two GPU nodes** (2026-10-28, [the record](../benchmarks/results/2026-10-28-node-failover/README.md)): the serving arrangement, both calls on Phastform and Gray a warm spare (`calls = "fill"`), with `ops/drills/node-failover.sh` placing two calls as the voice worker does and running a 32-token turn of each every 3 s beside two agents' streams, then breaking Phastform's engine after five whole turns of each call:
+
+| Drill | Turns before / after the event, whole | Calls moved to Gray | Turns failed after the first move | Phastform passed over / unhealthy / available again | Gray covered |
+|---|---|---:|---:|---|---:|
+| SIGKILL to the engine; systemd starts it again | 10 of 10 / 148 of 148 | +0.7 s | 0 | +0.10 s / +2.1 s / +101.0 s | 238 s |
+| The engine stopped to the drill's end | 10 of 10 / 152 of 152 | +1.9 s | 0 | +1.3 s / +3.3 s / down to the end | 244 s |
+
+- **The calls moved within a turn,** and none of the 300 turns after the events failed; no turn was in flight at either event, so none was cut. Gray then covered to the drills' end, as the moved calls stayed on it, and the agents' requests that began meanwhile waited out their class's 120 s queue timeout and got 503 `queue_timeout`. A first run found the drill's own client sending a wrong model id, every request 404 before the event as after it; the runs above are the first after its fix.
 
 ## Load generation
 
