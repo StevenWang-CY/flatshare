@@ -35,6 +35,8 @@ Flatshare's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §4.2](.
 | `FLATSHARE_VOICE_MODE` | `bench` (default; the unit sets it): every call taken; or `serve`: call-capacity admission (below) |
 | `FLATSHARE_SERVING_PROFILE` | Serve mode: a serving profile's `serving.json` (the box's, `deploy/phastform/serving.json`), whose `voice` table names the calls admitted at once and the audio configuration |
 | `FLATSHARE_AUDIO` | `synthetic` (bench mode's default) or `microphone` (serve mode's, the profile's) |
+| `FLATSHARE_ENDPOINTING_MIN_DELAY` | Seconds, 0 to 3, after the end of speech before a turn may end, over the audio configuration's (LiveKit's 0.5 by default): the endpointing sweep's ([`benchmarks/endpointing`](../../benchmarks/endpointing/sweep.sh)) |
+| `FLATSHARE_VAD_MIN_SILENCE` | Seconds, above 0 and at most 3, of silence that end speech for Silero VAD, over the audio configuration's (Silero's 0.55 by default): the endpointing sweep's |
 | `FLATSHARE_VOICE_STATUS` | Serve mode: the file the worker writes its state to every second (`%t/flatshare/voice-worker.json` in the unit) |
 | `FLATSHARE_VOICE_DRAIN` | Serve mode: while this file exists the worker takes no new call (`%t/flatshare/voice-worker.drain`, which a release makes to drain the worker) |
 | `FLATSHARE_NODE_BINDING` | `on`, serve mode's default: each call asks the gateway for its GPU node and binds its STT and TTS to that node's sockets ([Nodes](#nodes)); `off`, bench mode's default (the `node-binding` variant, `deploy/cyan/variants/node-binding`, turns it on there), and refused `on` where `FLATSHARE_LLM_UDS` bypasses the gateway |
@@ -133,6 +135,8 @@ When a session ends, one line (logger `flatshare_voice.events`, message `session
 Every time comes from `time.monotonic()` in one process, so no clock offset enters. The run directory gets `run.json`, `turns.jsonl` and `summary.json`, which includes the microphone loop's worst lateness as a check that the caller kept up.
 
 With `--warmup-turns N` each call opens with N warm-up turns, played but not measured: a line and its reply, never interrupted, drawing their lines and pauses from a generator of their own, so that the measured turns after them are those of the same call without them. They are numbered first in `turns.jsonl`, with `"warmup": true`, and `summary.json` leaves them out.
+
+With `--in-order` each caller plays the corpus's turn lines in order rather than drawing each, caller i's measured turns from line i × TURNS on: one caller with as many turns as the corpus has lines plays every line once. The endpointing sweep ([`benchmarks/endpointing/sweep.sh`](../../benchmarks/endpointing/sweep.sh)) plays them so, and reads `spoke_during_turn`, a turn whose answer began before its line had ended, as a pause inside the line taken for the turn's end.
 
 A turn fails when the agent does not answer within the reply timeout (30 s), or does not stop speaking. Its line in `turns.jsonl` has an `error` and keeps what the turn measured before it. A turn draws its interruption with its line, so a failed turn leaves the turns after it as they were: a point with failures plays the same calls as the others. In `summary.json` a sample the timeout cut short counts at the timeout, censored (`censored` gives how many), never as missing: a turn that was never answered raises the percentiles instead of leaving them.
 

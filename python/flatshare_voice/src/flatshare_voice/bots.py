@@ -110,6 +110,10 @@ class BotsConfig:
     seed: int = 0
     warmup_turns: int = 0
     """Turns that open each call unmeasured: a line and its reply, no interruption."""
+    in_order: bool = False
+    """Play the corpus's turn lines in order rather than drawing each: caller i's measured turns from line
+    i x ``turns`` on, so that one caller with as many turns as lines plays every line once (the endpointing
+    sweep's check for replies that start inside a line)."""
     save_audio: bool = False
     """Write each call's audio and its turns' times after the calls: call-<i>.wav, call-<i>.json."""
 
@@ -176,7 +180,11 @@ class Caller:
         that a turn that fails takes as many draws as one answered: the turns after it play the
         lines and interruptions of the same call without the failure."""
         config, audio = self.config, self.agent_audio
-        clip = (warmup or self.rng).choice(self.corpus.turns)
+        if config.in_order and warmup is None:
+            measured = number - config.warmup_turns + self.index * config.turns
+            clip = self.corpus.turns[measured % len(self.corpus.turns)]
+        else:
+            clip = (warmup or self.rng).choice(self.corpus.turns)
         interruption, delay = None, 0.0
         if warmup is None and self.rng.random() < config.barge_in:
             delay = self.rng.uniform(*config.barge_in_delay)

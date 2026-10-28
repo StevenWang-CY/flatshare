@@ -40,6 +40,7 @@ def _bots(args: argparse.Namespace) -> int:
         barge_in=args.barge_in,
         seed=args.seed,
         warmup_turns=args.warmup_turns,
+        in_order=args.in_order,
         save_audio=args.save_audio,
     )
     summary = asyncio.run(run_bots(config, args.out))
@@ -104,6 +105,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="turns that open each call unmeasured: a line and its reply, no interruption, "
         'marked "warmup" in turns.jsonl and left out of the summary (default %(default)s)',
+    )
+    bots.add_argument(
+        "--in-order",
+        action="store_true",
+        help="play the corpus's turn lines in order rather than drawing each: caller i from line "
+        "i x TURNS on, every line once when TURNS is the number of lines and there is one caller",
     )
     bots.add_argument(
         "--save-audio",

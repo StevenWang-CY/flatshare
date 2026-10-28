@@ -235,6 +235,8 @@ def read_worker_status(path: Path, now: float | None = None) -> dict[str, Any] |
         "refused",
         "audio",
         "turn_detection",
+        "endpointing_min_delay",
+        "vad_min_silence",
         "node_binding",
         "profile",
     )

@@ -327,7 +327,7 @@ class Arrivals:
                 self._done(attempts, _skipped(config.run, number, wall_due, len(self._open)))
                 continue
             last_join = time.monotonic()
-            task = asyncio.create_task(self._attempt(number, wall_due, turns))
+            task = asyncio.create_task(self._attempt(number, wall_due, due, turns))
             self._open.add(task)
             task.add_done_callback(functools.partial(self._finished, attempts, number, wall_due))
         while self._open:
@@ -359,15 +359,20 @@ class Arrivals:
         room = caller.room
         return self.stopping is None and room.isconnected() and bool(agents(room))
 
-    async def _attempt(self, number: int, due: float, turns: _TurnLog) -> dict[str, Any]:
+    async def _attempt(
+        self, number: int, due: float, due_monotonic: float, turns: _TurnLog
+    ) -> dict[str, Any]:
         config = self.config
+        # Lateness on the monotonic clock the schedule waited on, never from the rounded wall times: a call waits
+        # until it is due, and a difference of rounded times put one a tenth of a millisecond early.
+        late = time.monotonic() - due_monotonic
         record: dict[str, Any] = {
             "run": config.run,
             "call": number,
             "due": round(due, 3),
             "started": round(time.time(), 3),
+            "late_ms": round(max(0.0, late) * 1000, 1),
         }
-        record["late_ms"] = round((record["started"] - due) * 1000, 1)
         status = config.worker_status
         before = read_status(status)
         record["worker"] = before
