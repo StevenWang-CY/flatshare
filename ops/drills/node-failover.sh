@@ -54,7 +54,7 @@ sys.exit(0 if len(nodes) >= 2 and all(n["available"] for n in nodes) else 1)
 EOF
 echo "$nodes" >"$out/nodes-before.json"
 
-# The client, written to cyan and run there detached: it needs only curl and the gateway.
+# The client, written to cyan and run there detached: it needs curl, python3 and the gateway.
 $ssh "$cyan" "mkdir -p $remote && cat >$remote/client.sh" <<'CLIENT'
 #!/usr/bin/env bash
 # The drill's client on cyan: CALLS calls' turns every GAP seconds, AGENTS agents' requests back to back, /nodes every
@@ -66,7 +66,9 @@ sock=/run/user/$(id -u)/flatshare/gateway.sock
 set -a
 . "$HOME/.config/flatshare/gateway-keys.env"
 set +a
-model=$(curl -fsS -m 5 --unix-socket "$sock" http://localhost/v1/models | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -n 1)
+# The model the engine serves: its list's first entry (each entry's permissions carry ids of their own).
+model=$(curl -fsS -m 5 --unix-socket "$sock" http://localhost/v1/models |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["data"][0]["id"])')
 node_of() { # node_of SESSION: the node POST /v1/sessions answers, or the status it got.
   local reply
   reply=$(curl -sS -m 5 --unix-socket "$sock" -H 'Content-Type: application/json' \
@@ -83,7 +85,7 @@ ended() { # ended FILE: how a stream ended.
   fi
 }
 call() { # call N: a call's turns.
-  local session=drill-call-$1 n=0 before after line began
+  local session=drill-call-$1 n=0 whole=0 before after line began
   before=$(node_of "$session")
   while [[ ! -e stop ]]; do
     began=$(date +%s.%N)
@@ -95,7 +97,9 @@ call() { # call N: a call's turns.
     printf '%s\t%s\t%s\t%s\t%b\t%s\n' "$began" "$session" "$before" "$after" "$line" "$(ended "turn-$1.body")" >>turns.tsv
     before=$after
     n=$((n + 1))
-    [[ $n == "$WARM" ]] && touch "warm-$1"
+    # The event waits for WARM whole turns of each call: a drill whose calls do not work measures nothing.
+    [[ ${line%%$'\t'*} == 200 && $(ended "turn-$1.body") == done ]] && whole=$((whole + 1))
+    [[ $whole == "$WARM" ]] && touch "warm-$1"
     sleep "$GAP"
   done
 }
@@ -133,7 +137,7 @@ for _ in $(seq 300); do
   sleep 1
 done
 [[ $($ssh "$cyan" "ls $remote/warm-* 2>/dev/null | wc -l") -ge $calls ]] ||
-  { $ssh "$cyan" "touch $remote/stop"; die "the calls did not reach $warm turns in 300 s: see $remote/client.log on cyan"; }
+  { $ssh "$cyan" "touch $remote/stop"; die "the calls did not reach $warm whole turns in 300 s: see $remote/turns.tsv and the turns' bodies on cyan"; }
 
 fail=${FLATSHARE_FAIL:-$($ssh "$cyan" "awk -F'\t' '\$2 == \"drill-call-1\" { node = \$4 } END { print node }' $remote/turns.tsv")}
 host=${FLATSHARE_FAIL_HOST:-$fail}
