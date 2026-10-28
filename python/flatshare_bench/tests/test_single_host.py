@@ -1740,6 +1740,62 @@ def test_gpu_guard_takes_a_units_cgroup_from_the_process_itself(tmp_path: Path) 
         assert "python3), outside the box's units" in refused.stderr
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="gpu-guard runs on Linux (GNU stat)")
+def test_gpu_guard_lists_the_gpus_processes_for_the_soaks_guard(tmp_path: Path) -> None:
+    # The soak's guard reads every compute process of a node's GPU, the box's own and another's, through a key that
+    # may run this alone (deploy/authorize-guard.sh): a line each, and an exit status that says whether another's
+    # holds the GPU, or whether nvidia-smi could tell. The units' own start check (no option) is as it was.
+    proc = tmp_path / "proc"
+    units = "/user.slice/user-1000.slice/user@1000.service/app.slice"
+    for pid, cgroup, name in (
+        (101, f"{units}/flatshare-engine.service", "python3"),
+        (104, "/user.slice/user-1000.slice/session-4.scope", "train.py"),
+    ):
+        (proc / str(pid)).mkdir(parents=True)
+        (proc / str(pid) / "cgroup").write_text(f"0::{cgroup}\n")
+        (proc / str(pid) / "status").write_text(f"Name:\t{name}\nPPid:\t1\n")
+        (proc / str(pid) / "environ").write_bytes(b"")
+        (proc / str(pid) / "comm").write_text(f"{name}\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    smi, asked = bin_dir / "nvidia-smi", tmp_path / "asked"
+    env = os.environ | {
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "FLATSHARE_PROCFS": str(proc),
+    }
+    env.pop("FLATSHARE_GPU_ID", None)
+
+    def listed(rows: str, status: int = 0) -> subprocess.CompletedProcess[str]:
+        smi.write_text(f"#!/bin/sh\necho \"$*\" >>{asked}\nprintf '{rows}'\nexit {status}\n")
+        smi.chmod(0o755)
+        return subprocess.run(
+            ["bash", str(BIN / "gpu-guard"), "--list"], env=env, capture_output=True, text=True
+        )
+
+    me = Path(proc).owner()
+    done = listed("101, 13990\\n")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == f"ours\t101\t{me}\t13990\tpython3\n"
+    # Another's process beside the units': listed, and the status says the GPU is taken. One that exited
+    # meanwhile (no /proc entry) is left out.
+    done = listed("101, 13990\\n104, 1200\\n555, 10\\n")
+    assert done.returncode == 1, done.stderr
+    assert done.stdout.splitlines() == [
+        f"ours\t101\t{me}\t13990\tpython3",
+        f"other\t104\t{me}\t1200\ttrain.py",
+    ]
+    assert listed("").returncode == 0  # no process at all: free
+    failed = listed("", status=6)
+    assert failed.returncode == 2 and "could not list the GPU's processes" in failed.stderr
+    assert set(asked.read_text().splitlines()) == {
+        "--query-compute-apps=pid,used_memory --format=csv,noheader,nounits"
+    }
+    wrong = subprocess.run(
+        ["bash", str(BIN / "gpu-guard"), "--lsit"], env=env, capture_output=True, text=True
+    )
+    assert wrong.returncode == 2 and "usage: gpu-guard [--list]" in wrong.stderr
+
+
 @pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="the audit reads /proc (Linux)")
 def test_block_0s_smoke_test_passes_its_listener_audit_under_flatshare_svc(host: dict) -> None:
     # Block 0 runs the box's smoke.sh, whose listener audit reads the host's listeners (a stand-in ss lists them,

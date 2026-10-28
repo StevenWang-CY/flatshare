@@ -3,7 +3,22 @@
 # owns it. The GPU nodes are shared hosts, and other work runs on them under this user too; starting beside it risks
 # an OOM for both and spoils both sides' timings. On a host that lends one of several GPUs the units name it
 # (FLATSHARE_GPU_ID, its UUID), and only its processes count; without it, every GPU's do.
+#
+# gpu-guard --list lists the GPU's compute processes instead, one a line, tab-separated: whose it is (ours, one of the
+# box's units, or other, anything else, whoever owns it), its pid, owner, used memory in MiB and name; it exits 1 when
+# one is another's, 2 when nvidia-smi cannot list them, 0 otherwise. The soak's guard reads it through
+# deploy/bin/node-report, over SSH with a key that may run nothing else (deploy/authorize-guard.sh), to stop the soak's
+# load while another's work holds the GPU.
 set -euo pipefail
+list=false
+case ${1:-} in
+  "") ;;
+  --list) list=true ;;
+  *)
+    echo "usage: gpu-guard [--list]" >&2
+    exit 2
+    ;;
+esac
 
 # The process table: /proc, or a stand-in's (FLATSHARE_PROCFS, the tests').
 proc=${FLATSHARE_PROCFS:-/proc}
@@ -25,6 +40,26 @@ ours() {
   done
   return 1
 }
+
+if $list; then
+  if ! apps=$(nvidia-smi ${FLATSHARE_GPU_ID:+-i "$FLATSHARE_GPU_ID"} --query-compute-apps=pid,used_memory \
+    --format=csv,noheader,nounits); then
+    echo "gpu-guard: nvidia-smi could not list the GPU's processes" >&2
+    exit 2
+  fi
+  status=0
+  while IFS=', ' read -r pid memory; do
+    [[ -n $pid ]] || continue
+    owner=$(stat -c %U "$proc/$pid" 2>/dev/null || true)
+    [[ -n $owner ]] || continue # it exited meanwhile
+    whose=ours
+    if ! ours "$pid"; then
+      whose=other status=1
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$whose" "$pid" "$owner" "$memory" "$(cat "$proc/$pid/comm" 2>/dev/null || true)"
+  done <<<"$apps"
+  exit "$status"
+fi
 
 # The GPU's compute processes. When nvidia-smi cannot list them, the guard cannot say the GPU is free, so it refuses:
 # read inside the loop's word list, a failure would list no process and pass.
