@@ -45,7 +45,7 @@ import random
 import time
 import uuid
 import wave
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, TextIO
@@ -269,8 +269,19 @@ class Caller:
         return None
 
     async def call(self, rows: list[dict[str, Any]], log: TextIO) -> None:
-        config = self.config
         tasks: set[asyncio.Task[None]] = set()
+        await self.join(tasks)
+        try:
+            await self.listening()
+            await self.play(rows, log)
+        finally:
+            await self.hang_up(tasks)
+
+    async def join(self, tasks: set[asyncio.Task[None]]) -> None:
+        """Join the call's room and publish the microphone, following the agent there: its audio once its track is
+        subscribed and its state as it changes. The microphone's loop and the agent's audio run as tasks in ``tasks``,
+        which :meth:`hang_up` ends."""
+        config = self.config
 
         @self.room.on("track_subscribed")
         def _on_track(track: rtc.Track, _: Any, participant: rtc.RemoteParticipant) -> None:
@@ -291,32 +302,40 @@ class Caller:
         options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
         await self.room.local_participant.publish_track(track, options)
         tasks.add(asyncio.create_task(self.microphone.run()))
-        try:
-            await until(
-                lambda: any(
-                    p.attributes.get(AGENT_STATE) == "listening" for p in agents(self.room)
-                ),
-                config.reply_timeout,
-                "the agent never listened",
-            )
-            self.agent_state.record("listening")
-            await asyncio.sleep(0.5)  # let the agent's audio input run on silence first
-            await self.play(rows, log)
-        finally:
-            self.max_lateness_s = self.microphone.max_lateness_s
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            await self.microphone.source.aclose()
-            await self.room.disconnect()
 
-    async def play(self, rows: list[dict[str, Any]], log: TextIO) -> None:
+    async def listening(self) -> None:
+        """Wait for the agent in the room to listen, within the reply timeout, then let its audio input run on
+        silence for half a second before the first line."""
+        await until(
+            lambda: any(p.attributes.get(AGENT_STATE) == "listening" for p in agents(self.room)),
+            self.config.reply_timeout,
+            "the agent never listened",
+        )
+        self.agent_state.record("listening")
+        await asyncio.sleep(0.5)  # let the agent's audio input run on silence first
+
+    async def hang_up(self, tasks: set[asyncio.Task[None]]) -> None:
+        """Leave the room: the tasks :meth:`join` started end, and the microphone closes."""
+        self.max_lateness_s = self.microphone.max_lateness_s
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await self.microphone.source.aclose()
+        await self.room.disconnect()
+
+    async def play(
+        self, rows: list[dict[str, Any]], log: TextIO, go_on: Callable[[], bool] | None = None
+    ) -> None:
         """The call's turns, each line to ``rows`` and ``log`` (turns.jsonl) as it ends, numbered in
         the order they are played: first the warm-up turns, marked ``"warmup": true``, whose lines
-        and pauses come from a generator of their own, then the measured turns."""
+        and pauses come from a generator of their own, then the measured turns. With ``go_on``, the
+        call ends before any turn it answers false for (``flatshare-voice arrivals``: its run ends,
+        or the agent left); without it, as E2's calls do, it plays every turn."""
         config = self.config
         warmup = random.Random(f"warmup-{config.seed}-{self.index}")
         for number in range(config.warmup_turns + config.turns):
+            if go_on is not None and not go_on():
+                return
             warm = number < config.warmup_turns
             try:
                 row = await self.turn(number, warmup if warm else None)
