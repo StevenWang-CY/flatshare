@@ -23,6 +23,19 @@ Numbers this page labels W4 ran the v0.3 variant, with three gaps that W5 fixed 
 
 The change matters when background KV fills the pool: agent contexts of 10k tokens or more against a pool that holds a few of them. On stock vLLM the signs are KV cache usage near 1 (`vllm:kv_cache_usage_perc`) while requests wait (`vllm:num_requests_waiting`), and a realtime time to first token of seconds at p95. Where the pool has room, the change does less: at the standard scenario's realistic load (16 agent sessions of the whole corpus) the KV preemption has little to do (0–7 preemptions a run), and the budget cap still keeps agent prefill out of each reply's first tokens. Over five rounds, each on its own sample of the agents, the PRs' configuration had the lower p95 in every round, 2.02–2.42 s against tuned vLLM's 2.15–3.83 s, and met the SLO in one ([BENCHMARKS.md](BENCHMARKS.md#the-standard-scenario-in-five-rounds-w5)).
 
+### Can the served model do the background work?
+
+Sharing the card shares the model: the background work runs on the model the call needs. Check that it does that work
+well enough before sharing a card for it. On a useful pair of jobs, answering questions about private documents in a
+call (QASPER) beside enriching new documents into searchable records (Re-DocRED), the served Qwen3-4B-Instruct-2507-FP8
+failed nine of the quality gate's eleven criteria, both tasks' central ones among them: 50.6% of the questions it
+answered were answered correctly, against 80%, and 23.9% of the facts in its records were right, against 80%. The
+screen failed as well with an FP8 KV cache and with Qwen3-8B-FP8 on a card of its own
+([the quality record](../benchmarks/results/2026-10-27-quality/README.md); [`benchmarks/quality`](../benchmarks/quality)
+runs it on another model or pair). The measurements on this page replay coding agents' traffic, which needs no
+answers to be right; they say what sharing costs the call, not whether the shared model's background answers are worth
+keeping.
+
 ## The configuration
 
 ### The engine
@@ -68,6 +81,7 @@ The benchmark's callers are synthetic: files played into the room, with no echo 
 
 - Whisper and Kokoro share the GPU by time-slicing; MPS does not help ([Voice on the shared GPU](BENCHMARKS.md#voice-on-the-shared-gpu)): the interference that matters is inside the LLM engine. Sharing still costs them a little: in the shared configurations of [What it buys](#what-it-buys), endpointing takes 822–825 ms instead of 756, and TTS's first audio 232–250 ms instead of 211 (means over W5's replies, from [W5's report](../benchmarks/results/2026-10-24-e2-w5/report/frontier.md#stage-waterfall)).
 - Pin each server to its own CPU cores: the engine on the GPU's NUMA node, the audio servers off it, as the box's units do ([`deploy/phastform/systemd`](../deploy/phastform/systemd)).
+- Keep them on the GPU. On the CPU they would give their 3.4 GiB to the KV pool, but Kokoro's first audio took 991 ms at the median with one call and 2,736 ms with two, against 211–242 ms for the GPU's whole TTS stage, and a Whisper transcript 9 s or more, on a 1.8 GHz Xeon faster than the box's ([the CPU record](../benchmarks/results/2026-10-27-cpu-audio/README.md)).
 
 ## What not to deploy
 
@@ -79,6 +93,7 @@ Measured in the same scenario:
 - **Another engine**: SGLang 0.5.22's priority preemption, with or without its host tier (11,948 ms with HiCache, five runs in W4).
 - **A static KV reservation** halves the tail (5,671 ms in W4) but stays seconds over the SLO.
 - **#63350 alone**: 5,085 ms (W5). The KV preemption without the budget cap gets the turn into the batch, and its reply then decodes beside agent prefill.
+- **An FP8 KV cache beside the CPU tier** (`--kv-cache-dtype fp8`): it holds twice the tokens in the same memory (72,816 against 36,400) and cost no quality the gate's screen saw, but under E2's load the engine died both times it ran, on a CUDA fault at a step's output copy with a CPU-tier transfer in flight, on vLLM 0.32.0 on this card ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md#the-fp8-kv-cache)).
 
 Without any engine change, aborting background requests that have no first byte yet and resubmitting them (`flatshare-gateway`'s `preempt-resubmit` policy) holds 2,522 ms (2,516–2,868) at tuned vLLM's throughput (3,332 against 3,305 agents' tokens/s over the calls' first 240 s), at the cost of the agents' tail (TTFT p99 193 s against 106 s): of the configurations measured on stock vLLM, the nearest to the SLO. It cannot reach a request that is already decoding, which the change can.
 
