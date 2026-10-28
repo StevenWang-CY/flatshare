@@ -263,12 +263,12 @@ A soak loads the box as it serves for hours and keeps every attempt and every sc
 
 ```sh
 bench=~/flatshare/venvs/bench/bin/flatshare-bench
-$bench soak run --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref-voice-alone   # the reference
-systemd-run --user --unit flatshare-soak -p KillMode=mixed -p TimeoutStopSec=900 \
-  $bench soak run --hours 24 --slo-reference P95 --calls-per-hour 20 --turns 10 --agents-sessions 16 \
-  --out ~/flatshare/runs/soak/NAME
-journalctl --user -u flatshare-soak -f                      # its progress: each tool's run, each hour's line
-systemctl --user stop flatshare-soak                        # ends it early, summary written (or SIGINT to the lock's pid)
+soak() { systemd-run --user --unit flatshare-soak --collect -p KillMode=mixed -p TimeoutStopSec=900 $bench soak run "$@"; }
+soak --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref-voice-alone   # the reference, first
+$bench soak report ~/flatshare/runs/soak/ref-voice-alone                         # once it has ended: its p95 is P95
+soak --hours 24 --slo-reference P95 --calls-per-hour 20 --turns 10 --agents-sessions 16 --out ~/flatshare/runs/soak/NAME
+journalctl --user -u flatshare-soak -f      # its progress: each tool's run, each hour's line
+systemctl --user stop flatshare-soak        # ends it early, its summary written
 ```
 
 The nodes are the gateway's: its `[[nodes]]`, or the node its `upstream` socket names (`phastform-engine.sock`), each guarded over SSH unless `--guard` says otherwise. At the window's end no call arrives any more, the calls in progress play their turns (for `--drain-s`, 600 s, at most) and AIPerf stops. SIGINT or SIGTERM ends a soak the same way, each call with its current turn; a second one hangs the calls up. A tool that ends early starts again, after a backoff if it keeps ending (10 s, then up to 10 minutes). While a guarded GPU holds another's process, or cannot be read three minutes in a row, the soak stops its calls and AIPerf, and starts them again once every GPU has been clear for five minutes (`--guard-clear-s`): the gateway places the load, so a pause stops all of it.
