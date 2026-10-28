@@ -1,0 +1,6 @@
+{
+ "vad_min_silence": 0.55,
+ "endpointing_min_delay": 0.2,
+ "worker_started": 1793194698,
+ "release": "releases/885a87483ccc"
+}
