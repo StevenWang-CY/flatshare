@@ -1417,6 +1417,35 @@ def test_the_cli_reports_and_exports_a_soak(
     assert (tmp_path / "record" / "series.csv").exists()
 
 
+class _GoneTerminal:
+    """A terminal whose ssh session has closed: every write fails."""
+
+    def write(self, _text: str) -> int:
+        raise OSError(5, "Input/output error")
+
+    def flush(self) -> None:
+        raise OSError(5, "Input/output error")
+
+
+def test_a_finished_soak_exits_0_when_its_terminal_has_gone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from flatshare_bench.soak import summary as summary_module
+
+    ran: list[Any] = []
+    monkeypatch.setattr(Host, "load", classmethod(lambda cls: "cyan"))
+    monkeypatch.setattr(soak_run, "run_soak", lambda *args: ran.append(args) or {"overall": {}})
+    monkeypatch.setattr(summary_module, "render_hour", lambda period: "calls 10, replies 90")
+    monkeypatch.setattr(sys, "stdout", _GoneTerminal())
+    hangup = signal.getsignal(signal.SIGHUP)
+    try:
+        assert main(["soak", "run", "--hours", "1", "--out", str(tmp_path / "s")]) == 0
+        assert signal.getsignal(signal.SIGHUP) is signal.SIG_IGN  # a closed session's hangup
+    finally:
+        signal.signal(signal.SIGHUP, hangup)
+    assert len(ran) == 1 and ran[0][2] == "cyan"
+
+
 def test_the_worker_status_is_read_with_its_age(tmp_path: Path) -> None:
     path = tmp_path / "status.json"
     assert read_worker_status(path) is None

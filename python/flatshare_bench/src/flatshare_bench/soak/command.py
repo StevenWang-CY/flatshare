@@ -5,6 +5,7 @@ loads nothing but argparse."""
 from __future__ import annotations
 
 import argparse
+import contextlib
 import signal
 import sys
 from pathlib import Path
@@ -58,10 +59,13 @@ def _soak_run(args: argparse.Namespace) -> int:
     try:
         summary = run_soak(options, args.out, Host.load())
     except KeyboardInterrupt:
-        print(f"flatshare-bench soak: {args.out} aborted", file=sys.stderr)
+        with contextlib.suppress(OSError):
+            print(f"flatshare-bench soak: {args.out} aborted", file=sys.stderr)
         return 130
-    if summary["overall"] is not None:
-        print(f"{args.out}: {render_hour(summary['overall'])}")
+    # A soak outlives the ssh session that started it: its last line may have no terminal to go to.
+    with contextlib.suppress(OSError):
+        if summary["overall"] is not None:
+            print(f"{args.out}: {render_hour(summary['overall'])}", flush=True)
     return 0
 
 
