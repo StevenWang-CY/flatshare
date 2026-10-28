@@ -79,7 +79,7 @@ too with an FP8 KV cache ([below](#with-an-fp8-kv-cache)) and with Qwen3-8B-FP8 
 
 ## With an FP8 KV cache
 
-The same screen ran once more with the engine's KV cache in FP8 (item P12), recorded in `fp8-kv/` with the same files,
+The same screen ran once more with the engine's KV cache in FP8, recorded in `fp8-kv/` with the same files,
 on 2026-10-27 between 22:54 and 23:31 UTC: the same sample, prompts, settings, judge and criteria, with a host-local
 drop-in on Gray adding `--kv-cache-dtype fp8` to the engine for this run only, and removed afterwards (its first
 start, with the flag's value unquoted in the drop-in, stopped at vLLM's argument parsing, before the GPU). vLLM 0.32.0
