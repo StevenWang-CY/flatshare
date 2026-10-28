@@ -1,0 +1,13 @@
+# The two-card comparison (benchmarks/quality/RESOURCE-GATE.md) and the sweep's confirmation, in rounds on fresh samples of the
+# agents (rounds.campaign files rg-r1 to rg-r3):
+# tuned vLLM, the frozen box, with both calls and half the agents: a consolidated card on stock vLLM below 24 session
+# trees.
+arm = "4-s12"
+label = "frozen box, two callers beside 12 session trees on weka-x32-long, a warm-up turn opening each call"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 12
+data = "weka-x32-long"

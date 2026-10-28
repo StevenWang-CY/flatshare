@@ -3,14 +3,16 @@
 Each value is computed the way the records' own reports compute it, so that a figure agrees with the tables of
 docs/BENCHMARKS.md: E2's points through :func:`flatshare_bench.e2.report.load_points` (V2V percentiles from the callers'
 turns, a warm-up turn left out, a stage's mean pooled over the replies of a configuration's runs), the probes from the
-lines probe.py and tail.py printed, as the campaigns' check.py and table.py read them, and the scheduler's cost per step
-from the baseline perf_schedule.py measured. A configuration measured in several campaigns pools its runs, as the
-report's tables do, and its median is the median over its runs.
+lines probe.py and tail.py printed, as the campaigns' check.py and table.py read them, the scheduler's cost per step
+from the baseline perf_schedule.py measured, and the two-card comparison through its record's own gate.py. A
+configuration measured in several campaigns pools its runs, as the report's tables do, and its median is the median
+over its runs.
 """
 
 from __future__ import annotations
 
 import csv
+import importlib.util
 import itertools
 import json
 import re
@@ -18,6 +20,7 @@ import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from flatshare_bench.e2.report import (
@@ -40,6 +43,9 @@ PROBES = RESULTS / "2026-10-24-w5-probes" / "pr-probes"
 KV_TIMELINE = RESULTS / "2026-10-23-make-room-probes" / "logs" / "gray-kvtimeline.log"
 KNEE = RESULTS / "2026-10-25-window-knee"
 STEP_COSTS = REPO / "benchmarks" / "perf" / "make-room-schedule.json"
+TWO_CARDS = RESULTS / "2026-10-28-rounds"
+"""The two-card comparison's rounds. Its gate.py is the comparison's single source of truth, and the figure reads only
+the rounds that gate.py's verdict counts (its ROUNDS), whatever else the record holds."""
 
 # W5's configurations in the discriminating scenario, by their points' names: each pools its runs over the campaigns
 # that ran it (tuned vLLM's W5 and PR campaigns, the change's W5, PR and extension campaigns).
@@ -858,3 +864,216 @@ def a100(
         cap: (configuration(rows, tuned), configuration(rows, change))
         for cap, (tuned, change) in A100_POINTS.items()
     }
+
+
+# The two cards ------------------------------------------------------------------------------------------------------
+
+CONSOLIDATED = {
+    "stock": "Consolidation, stock vLLM",
+    "change": "Consolidation, the change at a step cap of 256",
+}
+"""gate.py's consolidated card (its CONSOLIDATION) by engine: stock vLLM, and the change at the serving profile's step
+cap of 256 tokens."""
+POOLED = {"stock": "Stock pooling", "change": "Flatshare pooling"}
+"""gate.py's pooling (its POOLING) by engine: one call a card beside agents on each, on stock vLLM and on the change."""
+
+
+def two_cards_gate(root: Path = TWO_CARDS) -> ModuleType:
+    """The record's gate.py, loaded from its file as a module: the rounds its verdict counts, its arrangements' cards
+    and the functions that give its verdict."""
+    spec = importlib.util.spec_from_file_location("rounds_gate", root / "gate.py")
+    if spec is None or spec.loader is None:
+        raise ValueError(f"no gate.py under {root}")
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    return gate
+
+
+@dataclass(frozen=True)
+class Consolidated:
+    """The consolidated card beside both calls at one number of agent sessions, on one engine: how many of its replies
+    took longer than their round's SLO, and how many it made, over the rounds pooled."""
+
+    engine: str
+    sessions: int
+    over: int
+    replies: int
+
+    @property
+    def share(self) -> float:
+        """The share of its replies over the SLO, which the requirement bounds."""
+        return self.over / self.replies
+
+
+@dataclass(frozen=True)
+class Arrangement:
+    """One arrangement of the two cards as gate.py measures it: its name in gate.py's tables, the key of its kind of
+    card there (an AGENTS_ALONE, CONSOLIDATION or POOLING name), its kind ("dedicated", "consolidation" or "pooling")
+    and engine ("stock" or "change"), the agent sessions on each card, the card with the calls first, whether the
+    second card is a warm spare, its replies over their round's SLO and its replies, over the rounds pooled, whether
+    those meet the requirement, and the agents' tokens a second over the calls' first 240 s summed over both cards, in
+    each round in gate.py's order and at their median."""
+
+    name: str
+    key: str
+    kind: str
+    engine: str
+    sessions: tuple[int, int]
+    spare: bool
+    over: int
+    replies: int
+    qualifies: bool
+    rounds: tuple[float, ...]
+    tokens: float
+
+
+@dataclass(frozen=True)
+class TwoCards:
+    """The comparison: the rounds its verdict counts, its requirement (the share of the replies over the SLO an
+    arrangement may have at most) and its hurdle (how much more background work than the best qualifying dedicated
+    arrangement a qualifying shared one must do), each engine's consolidated card by its sessions, fewest first, and
+    its envelope (the most sessions at which it qualifies), the best qualifying dedicated arrangement, and the
+    arrangements in the figure's order."""
+
+    rounds: tuple[str, ...]
+    requirement: float
+    hurdle: float
+    consolidated: Mapping[str, tuple[Consolidated, ...]]
+    envelopes: Mapping[str, int]
+    best: Arrangement
+    arrangements: tuple[Arrangement, ...]
+
+    @property
+    def threshold(self) -> float:
+        """The background work a qualifying shared arrangement must reach for sharing to have resource value: the
+        hurdle over the best dedicated arrangement's."""
+        return (1 + self.hurdle) * self.best.tokens
+
+
+def _sessions(
+    points: Mapping[tuple[str, str], Mapping[str, Any]], rounds: Sequence[str], point: str
+) -> int:
+    """A point's agent sessions, which every round ran it with."""
+    found = {points[c, point]["sessions"] for c in rounds if (c, point) in points}
+    if len(found) != 1:
+        raise ValueError(f"{point}: agent sessions {sorted(found)} over the rounds, not one number")
+    return found.pop()
+
+
+def two_cards(root: Path = TWO_CARDS) -> TwoCards:
+    """The comparison over the rounds gate.py counts, by gate.py's own functions: each engine's consolidated card at
+    every number of sessions the rounds measured; then the dedicated arrangements, each card of agents at its busiest
+    and the best practical first; consolidation at each engine's envelope beside the best practical card, the
+    change's also with a warm spare as its second card and at the fewest sessions past its envelope; and pooling on
+    each engine. The dedicated cards run stock vLLM, at its defaults or as the shared card runs it."""
+    gate = two_cards_gate(root)
+    rounds = gate.ROUNDS
+    points = gate.rows(root, rounds)
+    slo = gate.slos(points, rounds)
+
+    def arrangement(
+        name: str,
+        key: str,
+        kind: str,
+        engine: str,
+        cards: Sequence[tuple[str, int]],
+        *,
+        spare: bool = False,
+    ) -> Arrangement:
+        over, replies = gate.foreground(points, slo, cards, rounds)
+        median, sums = gate.background(points, cards, rounds)
+        if median is None or len(sums) != len(rounds):
+            raise ValueError(f"{name}: a round did not measure each of its cards")
+        calls, agents = (_sessions(points, rounds, point) for point, n in cards for _ in range(n))
+        qualifies = replies > 0 and over <= gate.REQUIREMENT * replies
+        return Arrangement(
+            name,
+            key,
+            kind,
+            engine,
+            (calls, agents),
+            spare,
+            over,
+            replies,
+            qualifies,
+            tuple(sums),
+            median,
+        )
+
+    def busiest(key: str, sizes: Sequence[tuple[int, str]]) -> tuple[int, str]:
+        found = gate.busiest(points, sizes, rounds)
+        if found is None:
+            raise ValueError(f"{key}: no round measured it")
+        return found
+
+    dedicated = {}
+    for key, sizes in gate.AGENTS_ALONE.items():
+        sessions, point = busiest(key, sizes)
+        dedicated[key] = arrangement(
+            f"{key}, {sessions} session trees",
+            key,
+            "dedicated",
+            "stock",
+            ((gate.VOICE_ALONE[2], 1), (point, 1)),
+        )
+    # gate.py's best, the first of the most where two tie, in its order.
+    best = max((a for a in dedicated.values() if a.qualifies), key=lambda a: a.tokens)
+    second = busiest(gate.BEST_PRACTICAL, gate.AGENTS_ALONE[gate.BEST_PRACTICAL])[1]
+    consolidated, envelopes, shared = {}, {}, []
+    for engine, key in CONSOLIDATED.items():
+        sizes = gate.CONSOLIDATION[key]
+        consolidated[engine] = tuple(
+            Consolidated(engine, sessions, *gate.foreground(points, slo, ((point, 1),), rounds))
+            for sessions, point in sorted(sizes)
+        )
+        found = gate.envelope(points, slo, sizes, rounds)
+        if found is None:
+            raise ValueError(f"{key}: it qualifies at no number of sessions the rounds measured")
+        envelopes[engine] = found[0]
+        shared.append(
+            arrangement(
+                f"{key}, {found[0]} session trees",
+                key,
+                "consolidation",
+                engine,
+                ((found[1], 1), (second, 1)),
+            )
+        )
+    on_change = CONSOLIDATED["change"]
+    change, within = dict(gate.CONSOLIDATION[on_change]), envelopes["change"]
+    spare = busiest("the warm spare", gate.SPARE)[1]
+    shared.append(
+        arrangement(
+            f"Consolidation on the change at {within} session trees, with a warm spare",
+            on_change,
+            "consolidation",
+            "change",
+            ((change[within], 1), (spare, 1)),
+            spare=True,
+        )
+    )
+    past = min((s for s in change if s > within), default=None)
+    if past is None:
+        raise ValueError(f"{on_change}: the rounds measured no more sessions than its envelope's")
+    shared.append(
+        arrangement(
+            f"{on_change}, {past} session trees",
+            on_change,
+            "consolidation",
+            "change",
+            ((change[past], 1), (second, 1)),
+        )
+    )
+    pooled = [
+        arrangement(name, name, "pooling", engine, gate.POOLING[name])
+        for engine, name in POOLED.items()
+    ]
+    arrangements = (
+        dedicated[gate.BEST_PRACTICAL],
+        *(a for k, a in dedicated.items() if k != gate.BEST_PRACTICAL),
+        *shared,
+        *pooled,
+    )
+    return TwoCards(
+        tuple(rounds), gate.REQUIREMENT, gate.HURDLE, consolidated, envelopes, best, arrangements
+    )

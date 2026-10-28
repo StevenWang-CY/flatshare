@@ -7,6 +7,7 @@ test_figures.py checks with every other figure."""
 from __future__ import annotations
 
 import csv
+import importlib.util
 import itertools
 import json
 import re
@@ -14,6 +15,7 @@ import statistics
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -87,6 +89,7 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
             "frontier",
             "margin",
             "a100",
+            "cards",
         )
     )
 
@@ -711,3 +714,104 @@ def test_the_a100_is_its_core_and_its_step_caps_rounds() -> None:
                     float(row["v2v_p95_ms"]),
                     float(row["fixed_window_tokens_per_s"]),
                 ), (cap, run.campaign)
+
+
+def rounds_gate() -> ModuleType:
+    """The two-card record's own gate.py, loaded from its file."""
+    spec = importlib.util.spec_from_file_location("rounds_gate", data.TWO_CARDS / "gate.py")
+    assert spec is not None and spec.loader is not None
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    return gate
+
+
+ARRANGEMENTS = {
+    # The kind, the engine and the agent sessions on each card, the calls' first: the replies over the SLO and the
+    # replies, whether they meet the requirement, and the agents' tokens a second over the calls' first 240 s summed
+    # over both cards, at the median of the rounds.
+    ("dedicated", "stock", (0, 14)): (0, 177, True, "7,893"),
+    ("dedicated", "stock", (0, 12)): (0, 177, True, "6,302"),
+    ("consolidation", "stock", (2, 14)): (4, 177, True, "10,051"),
+    ("consolidation", "change", (4, 14)): (5, 177, True, "10,596"),
+    ("consolidation", "change", (4, 12)): (5, 177, True, "9,652"),  # with a warm spare
+    ("consolidation", "change", (8, 14)): (31, 177, False, "13,537"),
+    ("pooling", "stock", (12, 12)): (53, 87, False, "13,188"),
+    ("pooling", "change", (12, 12)): (24, 87, False, "12,111"),
+}
+
+
+def test_the_two_cards_are_their_gates_verdict(drawn: dict[str, Path]) -> None:
+    gate = rounds_gate()
+    cards = data.two_cards()
+    assert cards.rounds == gate.ROUNDS == ("rg-r1", "rg-r2", "rg-r3")
+    assert (cards.requirement, cards.hurdle) == (gate.REQUIREMENT, gate.HURDLE) == (0.05, 0.20)
+    # (a) Each engine's consolidated card as gate.py's own functions count it, its rounds pooled, and the envelope
+    # that gives: two sessions on stock vLLM, four with the change.
+    points = gate.rows(data.TWO_CARDS, gate.ROUNDS)
+    slo = gate.slos(points, gate.ROUNDS)
+    for engine, name in data.CONSOLIDATED.items():
+        sizes = gate.CONSOLIDATION[name]
+        cells = cards.consolidated[engine]
+        assert [(c.sessions, c.over, c.replies) for c in cells] == [
+            (sessions, *gate.foreground(points, slo, ((point, 1),), gate.ROUNDS))
+            for sessions, point in sorted(sizes)
+        ], engine
+        assert cards.envelopes[engine] == gate.envelope(points, slo, sizes, gate.ROUNDS)[0]
+    shares = {
+        engine: [(c.sessions, f"{c.share:.1%}") for c in cells]
+        for engine, cells in cards.consolidated.items()
+    }
+    assert shares == {
+        "stock": [(2, "2.3%"), (4, "10.2%"), (8, "39.0%"), (12, "53.7%"), (24, "92.1%")],
+        "change": [(2, "1.1%"), (4, "2.8%"), (8, "17.5%"), (12, "18.6%"), (24, "20.9%")],
+    }
+    assert {c.replies for cells in cards.consolidated.values() for c in cells} == {177}
+    assert cards.envelopes == {"stock": 2, "change": 4}
+    # (b) Each arrangement, in the figure's order, as the tables gate.py prints give it: its replies over the SLO,
+    # whether it qualifies, its median and its rounds; the warm spare's, beside the gate, from its own line.
+    found = {
+        (a.kind, a.engine, a.sessions): (a.over, a.replies, a.qualifies, f"{a.tokens:,.0f}")
+        for a in cards.arrangements
+    }
+    assert list(found.items()) == list(ARRANGEMENTS.items())
+    assert [a.spare for a in cards.arrangements] == [False] * 4 + [True] + [False] * 3
+    printed = gate.gate(data.TWO_CARDS).splitlines()
+    for a in cards.arrangements:
+        rounds = ", ".join(f"{r:,.0f}" for r in a.rounds)
+        assert len(a.rounds) == len(gate.ROUNDS) and a.tokens == statistics.median(a.rounds), a.name
+        assert a.qualifies == (a.over <= gate.REQUIREMENT * a.replies), a.name
+        if a.spare:
+            [line] = [line for line in printed if line.startswith(f"- {a.name} (")]
+            replies = f"{a.over}/{a.replies} replies over the SLO"
+            assert f": {replies}, {a.tokens:,.0f} tokens/s ({rounds})" in line, line
+            continue
+        [row] = [line for line in printed if line.startswith(f"| {a.name} |")]
+        share = f"{a.over}/{a.replies} ({100 * a.over / a.replies:.1f}%)"
+        verdict = "yes" if a.qualifies else "no"
+        cells = [cell.strip() for cell in row.strip("|").split("|")]
+        assert cells[2:6] == [share, verdict, f"{a.tokens:,.0f}", rounds], row
+    # The hurdle, 20% over the best qualifying dedicated arrangement, which each qualifying shared arrangement here
+    # passes; gate.py's verdict says so of both envelopes.
+    best = f"The best qualifying dedicated arrangement: {cards.best.name}, {cards.best.tokens:,.0f} tokens/s."
+    assert best in printed and cards.best is cards.arrangements[0]
+    assert f"{cards.threshold:,.0f}" == "9,471"  # 1.2 times 7,892.8
+    shared = [a for a in cards.arrangements if a.kind != "dedicated" and a.qualifies]
+    assert [a.tokens > cards.threshold for a in shared] == [True, True, True]
+    assert sum("meets the 20% hurdle" in line for line in printed) == 2
+    # Panel b's scale holds every round; the drawing hatches the three that miss the requirement, each in its engine's
+    # hue, and prints every median.
+    assert max(r for a in cards.arrangements for r in a.rounds) == pytest.approx(14352.2)
+    assert max(r for a in cards.arrangements for r in a.rounds) < figures.CARD_TOKENS.hi
+    svg, texts = drawn["report-cards.svg"].read_text(), set(text_of(drawn["report-cards.svg"]))
+    assert (svg.count('class="gray hatch"'), svg.count('class="blue hatch"')) == (1, 2)
+    assert {f"{a.tokens:,.0f}" for a in cards.arrangements} <= texts
+
+
+def test_the_two_cards_read_only_the_rounds_their_gate_counts(tmp_path: Path) -> None:
+    # The record's later rounds and logs change nothing the figure plots: a copy of the record with one more round
+    # reads the same.
+    (tmp_path / "gate.py").symlink_to(data.TWO_CARDS / "gate.py")
+    for campaign in rounds_gate().ROUNDS:
+        (tmp_path / campaign).symlink_to(data.TWO_CARDS / campaign, target_is_directory=True)
+    (tmp_path / "rg-r4").symlink_to(data.TWO_CARDS / "rg-r1", target_is_directory=True)
+    assert data.two_cards(tmp_path) == data.two_cards()

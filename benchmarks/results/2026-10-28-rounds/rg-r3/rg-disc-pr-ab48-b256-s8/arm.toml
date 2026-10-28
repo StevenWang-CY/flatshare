@@ -1,0 +1,21 @@
+# The two-card comparison (benchmarks/quality/RESOURCE-GATE.md), the consolidated card's envelope (rg-r1 to rg-r3):
+# the change at the sweep's best step cap (256, a 48-token window, no reserve) with both calls beside 8 session trees,
+# below the 12 at which round 1 put 7 of the card's 59 replies over the SLO.
+arm = "9-pr-ab48-b256-s8"
+label = "vLLM PRs A and B, 48-token window, step cap 256, two callers beside 8 session trees, warm-up turn"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 8
+data = "weka-x32-long"
+
+[engine]
+variant = "make-room"
+flags = [
+  "--additional-config.make_room.reserve_tokens", "0",
+  "--additional-config.make_room.budget_cap_tokens", "48",
+  "--max-num-batched-tokens", "256",
+  "--long-prefill-token-threshold", "0",
+]

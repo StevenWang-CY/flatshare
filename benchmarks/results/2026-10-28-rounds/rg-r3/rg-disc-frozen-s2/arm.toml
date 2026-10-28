@@ -1,0 +1,12 @@
+# The two-card comparison (benchmarks/quality/RESOURCE-GATE.md), the consolidated card's envelope on stock vLLM (rg-r1
+# to rg-r3): tuned vLLM, the frozen box, with both calls beside 2 session trees, below the 12 at which round 1 put 20
+# of the card's 59 replies over the SLO.
+arm = "4-s2"
+label = "frozen box, two callers beside 2 session trees on weka-x32-long, a warm-up turn opening each call"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 2
+data = "weka-x32-long"

@@ -1,0 +1,12 @@
+# The two-card comparison (benchmarks/quality/RESOURCE-GATE.md): dedicated roles' background card, controlled, as
+# rg-disc-agents-frozen-s24 but with 12 session trees, at which round 1 found a shared card doing more than this card at
+# 24 (rg-r1 to rg-r3).
+arm = "4-agents-only-s12"
+label = "the agents alone on the frozen box at 12 session trees, its speech servers idle"
+
+[voice]
+callers = 0
+
+[agents]
+sessions = 12
+data = "weka-x32-long"

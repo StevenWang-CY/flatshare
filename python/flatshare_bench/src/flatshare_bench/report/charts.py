@@ -1,12 +1,14 @@
 """The chart parts the report's figures share, on :mod:`flatshare_bench.figure_style`: value scales and their axes,
-markers in the shapes that tell gray comparators apart, rugs of runs, ECDF steps, stacked stage bars and legends.
+markers in the shapes that tell gray comparators apart, rugs of runs, ECDF steps, stacked stage bars, bars that a
+requirement hatches, and legends.
 
 The report's figures keep one encoding per meaning. Gray is vLLM without the change, tuned or stock, and every
 comparator; blue is the change, saturated for the configuration to deploy and pale ("sky") for a sibling of it; ink is
 voice alone; orange is the SLO, a dashed rule. A run is an open marker, or a thin tick where runs crowd within a few
 units, and a configuration's median a short thick tick or a filled marker. The stage bars stack the voice turn's stages in their order, the two the engine's scheduler sets in
 violet (the wait for the LLM's first token) and green (the decode of the reply's first sentence), the rest in grays of
-distinct lightness, so that neighbours stay apart in grayscale and for a color-blind reader.
+distinct lightness, so that neighbours stay apart in grayscale and for a color-blind reader. A bar is pale in its hue,
+or hatched in it on the page where what it measures misses the requirement it is read against.
 
 :class:`Chart` adds these parts' classes to the figure's style and, to :meth:`Figure.check`'s refusals, a label over a
 data mark.
@@ -207,6 +209,50 @@ class Chart(Figure):
             x += length
         return starts
 
+    def bar(
+        self,
+        x: float,
+        y: float,
+        length: float,
+        thickness: float,
+        hue: str,
+        *,
+        hatched: bool = False,
+        name: str = "a bar",
+    ) -> None:
+        """A horizontal bar from the axis at ``x``, its top at ``y``, its free end rounded: pale in ``hue`` (gray or
+        blue), or ``hatched`` in it on the page, for what misses its requirement. Its extent joins the marks no label
+        may cover."""
+        if hue not in BAR_FILLS:
+            raise ValueError(f"a bar's hue is one of {tuple(BAR_FILLS)}, not {hue!r}")
+        self.hbar(x, y, length, thickness, "open" if hatched else BAR_FILLS[hue])
+        if hatched:
+            self.path(_hatch(x, y, length, thickness, BAR_CORNER), f"{hue} hatch")
+        self.marks.append(Box(x, y, x + length, y + thickness, name))
+
+
+BAR_FILLS = {"gray": "lo", "blue": "soft"}
+"""A bar's fill by its hue: figure_style's pale gray for a comparator, its pale blue for the change."""
+BAR_CORNER = 3.0
+"""The radius of a bar's rounded free end, figure_style's."""
+HATCH_STEP = 6.0
+"""Between a hatched bar's lines, along it."""
+
+
+def _hatch(x: float, y: float, length: float, thickness: float, corner: float) -> str:
+    """A bar's hatching: rising diagonals HATCH_STEP apart along it, each clipped to the bar, its free end's corners
+    cut where they round, so that no line leaves the outline."""
+    x1, y1 = x + length, y + thickness
+    d = ""
+    # Each line is u + v = c; along it, inside the bar and short of its upper corner's cut, u runs over [lo, hi].
+    c = x + y + HATCH_STEP
+    while c < x1 + y1 - corner:
+        lo, hi = max(x, c - y1), min(x1, c - y, (x1 - corner - y + c) / 2)
+        if hi - lo > 0.5:
+            d += f"M{fmt(lo)} {fmt(c - lo)}L{fmt(hi)} {fmt(c - hi)}"
+        c += HATCH_STEP
+    return d
+
 
 def _inside(box: Box, cover: Box) -> bool:
     return cover.x0 <= box.x0 and box.x1 <= cover.x1 and cover.y0 <= box.y0 and box.y1 <= cover.y1
@@ -372,10 +418,16 @@ def rug(
     """A row's runs at canvas positions ``xs`` as thin ticks across the row, and their ``median`` (a canvas position)
     as a filled marker over them: a form that keeps runs within a few units of each other apart from a row's
     height."""
+    runs(s, xs, y, hue, half=half)
+    s.mark(median, y, hue, "circle" if shape == "dot" else shape, filled=True, r=5.2)
+
+
+def runs(s: Chart, xs: Sequence[float], y: float, hue: str, *, half: float = 10.0) -> None:
+    """A row's runs at canvas positions ``xs`` as thin ticks across the row at ``y``, each ``half`` long either side
+    of it: a rug's, or over a bar whose length is their median."""
     for x in xs:
         s.path(f"M{fmt(x)} {fmt(y - half)}V{fmt(y + half)}", f"{hue} run")
         s.marks.append(Box(x - 1, y - half, x + 1, y + half, f"a run at ({x:.0f}, {y:.0f})"))
-    s.mark(median, y, hue, "circle" if shape == "dot" else shape, filled=True, r=5.2)
 
 
 def column_rug(
