@@ -69,7 +69,7 @@ clear_start_limits() { systemctl --user reset-failed flatshare-engine flatshare-
 all_active() { local u; for u; do systemctl --user is-active -q "$u" || return 1; done; }
 # Whether none of the named units is active (none named: true).
 none_active() { local u; for u; do ! systemctl --user is-active -q "$u" || return 1; done; }
-# The GPU units the linked variant drop-ins keep from running (ConditionPathExists=!/), one a line; the others run.
+# The GPU units the linked variant drop-ins keep from running (ConditionPathExists=!/), into off; the others into on.
 off=() on=()
 kept_off() {
   local u f

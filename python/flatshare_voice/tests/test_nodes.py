@@ -257,6 +257,18 @@ def test_a_node_failure_ends_the_reply_and_the_callers_next_speech_rebinds_the_c
             failures: list[str] = []
             call = binding(sockets, on_failure=lambda: failures.append("cut"))
             await call.place("start")
+            # The requests the fence refuses, which LiveKit's retries of the cut sentence are.
+            refused: list[str] = []
+            socket = call.socket
+
+            async def counted(server: str) -> str:
+                try:
+                    return await socket(server)
+                except nodes.NodeFailed:
+                    refused.append(server)
+                    raise
+
+            call.socket = counted  # type: ignore[method-assign]
             stt, tts = speech(call)
             options = APIConnectOptions(max_retry=3, retry_interval=0.05, timeout=5.0)
             frames: list[rtc.AudioFrame] = []
@@ -282,11 +294,15 @@ def test_a_node_failure_ends_the_reply_and_the_callers_next_speech_rebinds_the_c
                 "after": after,
                 "placements": gateway.placements,
                 "history": call.history,
+                "refused": refused,
             }
 
     seen = asyncio.run(scenario())
     assert seen["failures"] == ["cut"] and seen["fenced"]
     assert seen["breaking"] == 1  # the cut sentence was synthesized once, by Gray, and never again
+    # LiveKit retried the sentence three times, and the fence refused each before it left the worker; then the STT's
+    # four attempts (LiveKit's default, a try and three retries) of the fenced call.
+    assert seen["refused"] == ["tts"] * 3 + ["stt"] * 4, seen["refused"]
     played = b"".join(bytes(frame.data) for frame in seen["frames"])
     assert len(played) <= len(seen["pcm"]) // 2 and seen["pcm"].startswith(played.rstrip(b"\0"))
     # The fenced call's STT reached no node; the next turn's went to Phastform, as did its reply's audio.
