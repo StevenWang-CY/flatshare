@@ -950,6 +950,11 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
     step_cap, threshold = serve["max_num_batched_tokens"], serve["long_prefill_token_threshold"]
     if step_cap < 1:
         raise ProfileError(f"{name}: max_num_batched_tokens must be 1 or more")
+    if step_cap < serve["max_num_seqs"]:
+        # vLLM 0.32.0's SchedulerConfig refuses the start below it.
+        raise ProfileError(
+            f"{name}: max_num_batched_tokens ({step_cap}) must be at least max_num_seqs ({serve['max_num_seqs']})"
+        )
     if not 0 <= threshold <= step_cap:
         raise ProfileError(
             f"{name}: long_prefill_token_threshold must be from 0 to max_num_batched_tokens ({step_cap}), "

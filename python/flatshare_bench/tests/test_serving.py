@@ -539,6 +539,11 @@ def test_serving_check_holds_the_voice_worker_to_the_profiles_admission(tmp_path
             "[serving] needs long_prefill_token_threshold, a int",
         ),
         ({"max_num_batched_tokens": 0}, "max_num_batched_tokens must be 1 or more"),
+        # vLLM 0.32.0 refuses a step cap below its request slots (256 here).
+        (
+            {"max_num_batched_tokens": 255, "long_prefill_token_threshold": 0},
+            "max_num_batched_tokens (255) must be at least max_num_seqs (256)",
+        ),
         (
             {"max_num_batched_tokens": 512, "long_prefill_token_threshold": -1},
             "long_prefill_token_threshold must be from 0 to max_num_batched_tokens (512), not -1",
