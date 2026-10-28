@@ -54,6 +54,7 @@ import numpy as np
 from livekit import api, rtc
 
 from flatshare_stats import percentiles, v2v_samples
+from flatshare_stats import replies as reply_summary
 
 from .audio import (
     AGENT_RATE,
@@ -400,23 +401,9 @@ def summarize(
 def replies(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """The replies the calls heard to their end (on a turn with an interruption, the reply to it): how the caller knew
     each had ended, how long its audio ran, its pauses of PAUSE_S or more, and, where the receiver counted them, the
-    share of the samples it played over them that it had to conceal, silence left out."""
-    longest = [max(r["reply_pauses_ms"], default=0.0) for r in rows]
-    found: dict[str, Any] = {
-        "n": len(rows),
-        "ended_by_state": sum(1 for r in rows if r.get("end_by") == "state"),
-        "audio_ms": percentiles(r["reply_audio_ms"] for r in rows),
-        "with_a_pause": sum(1 for m in longest if m > 0),
-        "with_a_pause_over_500_ms": sum(1 for m in longest if m > 500),
-        "with_a_pause_of_quiet_s": sum(1 for m in longest if m >= QUIET_S * 1000),
-        "longest_pause_ms": percentiles(longest),
-    }
-    received = [r["received"] for r in rows if "received" in r]
-    samples = sum(x["samples"] for x in received)
-    if samples:
-        concealed = sum(x["concealed"] - x["silent_concealed"] for x in received)
-        found["concealed_share"] = round(concealed / samples, 5)
-    return found
+    share of the samples it played over them that it had to conceal, silence left out (flatshare_stats.replies, which
+    the soak's summary shares, with a reply ended by QUIET_S of quiet)."""
+    return reply_summary(rows, quiet_ms=QUIET_S * 1000)
 
 
 async def run_bots(config: BotsConfig, out_dir: Path) -> dict[str, Any]:

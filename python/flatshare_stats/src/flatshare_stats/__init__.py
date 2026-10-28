@@ -5,6 +5,8 @@
   that a reader's tool recomputes the same p95 from the raw samples.
 - :func:`v2v_samples`: the voice-to-voice samples of the callers' turn lines, a reply that never
   came censored at the reply timeout.
+- :func:`replies`: the replies the callers heard to their end, from the same lines: how each ended,
+  how long its audio ran, its pauses and the audio its receiver concealed.
 - :func:`metric_samples`: the samples of a Prometheus text exposition, as vLLM and the gateway
   export them, or only those of the metrics a reader names.
 
@@ -71,6 +73,40 @@ def v2v_samples(turns: Iterable[Mapping[str, Any]], timeout_ms: float) -> tuple[
             censored += key not in turn
             samples.append(turn.get(key, timeout_ms))
     return samples, censored
+
+
+LONG_PAUSE_MS = 500.0
+"""A pause inside a reply longer than this is one a caller hears as the agent stopping (docs/SLO.md, pauses inside a
+reply): :func:`replies` counts the replies with one."""
+QUIET_MS = 1000.0
+"""The quiet that ended a reply when the callers read no agent state (``flatshare-voice bots``' QUIET_S): a pause of
+this length or more ended such a reply early, and :func:`replies` counts the replies with one."""
+
+
+def replies(turns: Iterable[Mapping[str, Any]], quiet_ms: float = QUIET_MS) -> dict[str, Any]:
+    """The replies the callers heard to their end, from their turn lines that time one (``reply_pauses_ms``; on a turn
+    with an interruption, the reply to it; the others are left out): how many, how many ended by the agent's state
+    rather than by silence (``end_by``), the percentiles of their audio's length, how many had a pause, one over
+    LONG_PAUSE_MS and one of ``quiet_ms`` or more, the percentiles of each reply's longest pause (0 for none) and,
+    where the caller's receiver counted them (``received``), the share of the samples it played over them that it
+    concealed, silence left out."""
+    heard = [turn for turn in turns if "reply_pauses_ms" in turn]
+    longest = [max(turn["reply_pauses_ms"], default=0.0) for turn in heard]
+    found: dict[str, Any] = {
+        "n": len(heard),
+        "ended_by_state": sum(1 for turn in heard if turn.get("end_by") == "state"),
+        "audio_ms": percentiles(turn["reply_audio_ms"] for turn in heard),
+        "with_a_pause": sum(1 for m in longest if m > 0),
+        "with_a_pause_over_500_ms": sum(1 for m in longest if m > LONG_PAUSE_MS),
+        "with_a_pause_of_quiet_s": sum(1 for m in longest if m >= quiet_ms),
+        "longest_pause_ms": percentiles(longest),
+    }
+    received = [turn["received"] for turn in heard if "received" in turn]
+    samples = sum(counts["samples"] for counts in received)
+    if samples:
+        concealed = sum(counts["concealed"] - counts["silent_concealed"] for counts in received)
+        found["concealed_share"] = round(concealed / samples, 5)
+    return found
 
 
 _VALUE = r'[^"\\\n]*(?:\\[\\"n][^"\\\n]*)*'
