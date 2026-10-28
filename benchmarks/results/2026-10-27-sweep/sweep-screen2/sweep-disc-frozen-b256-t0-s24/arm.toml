@@ -1,0 +1,14 @@
+# The step-cap and window sweep's second screen (sweep-screen2.campaign), on W5's first sample of the agents:
+# tuned vLLM at a step cap of 256 with no long-prefill threshold, each call opening with an unmeasured warm-up turn.
+arm = "4-b256-t0"
+label = "priority, step cap 256, long-prefill threshold 0, discriminating scenario, a warm-up turn opening each call"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 24
+data = "weka-x32-long"
+
+[engine]
+flags = ["--max-num-batched-tokens", "256", "--long-prefill-token-threshold", "0"]

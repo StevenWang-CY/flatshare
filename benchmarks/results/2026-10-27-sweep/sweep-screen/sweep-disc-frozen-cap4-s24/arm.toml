@@ -1,0 +1,17 @@
+# The step-cap and window sweep (sweep-screen.campaign, then sweep-r1.campaign to sweep-r5.campaign on fresh samples of
+# the agents): the frozen box behind the gateway's static cap of 4 background requests in flight, as disc-a6-cap4-s24.toml,
+# each call opening with an unmeasured warm-up turn.
+arm = "6-cap4"
+label = "frozen box + static cap, 4 background in flight, discriminating scenario, a warm-up turn opening each call"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 24
+data = "weka-x32-long"
+
+[gateway.admission]
+policy = "static-cap"
+background_max_in_flight = 4
+queue_timeout_s = 240

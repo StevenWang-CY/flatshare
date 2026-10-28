@@ -31,8 +31,9 @@ The lines last 2.76 s at the median, and the transcripts' word error rate is 3.8
 the TTS stage takes 211–242 ms and the voice turn's whole budget over voice alone is 250 ms (docs/SLO.md). The CPU's
 first audio alone is 0.75 s later with one call and seconds later with two, and a transcript takes 9 s or more: every
 utterance pays the encoder's pass over 30 s of padded audio, which turbo does not shorten. Neither server can move to
-these CPUs without breaking the SLO, so their GPU memory stays theirs; the KV cache in FP8 is the cheaper way to a
-larger pool.
+these CPUs without breaking the SLO, so their GPU memory stays theirs. The KV cache in FP8, which would double the
+pool in the same memory, is no way either: beside the CPU tier its engine died under E2's load both times it ran
+([the sweep's record](../2026-10-27-sweep/README.md#the-fp8-kv-cache)).
 
 To measure again (the TTS server started on the CPU on a socket, as `cpu_audio.py`'s docstring says):
 

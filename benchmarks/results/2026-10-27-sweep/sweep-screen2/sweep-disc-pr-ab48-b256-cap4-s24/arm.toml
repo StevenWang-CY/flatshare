@@ -1,0 +1,26 @@
+# The step-cap and window sweep's second screen (sweep-screen2.campaign), on W5's first sample of the agents:
+# the change as the PRs propose it (make-room, no reserve, a 48-token window) at a step cap of 256,
+# behind the gateway's static cap of 4 background requests in flight.
+arm = "9-pr-ab48-b256-cap4"
+label = "vLLM PRs A and B, 48-token window, step cap 256, static cap 4 background in flight, discriminating scenario, warm-up turn"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 24
+data = "weka-x32-long"
+
+[gateway.admission]
+policy = "static-cap"
+background_max_in_flight = 4
+queue_timeout_s = 240
+
+[engine]
+variant = "make-room"
+flags = [
+  "--additional-config.make_room.reserve_tokens", "0",
+  "--additional-config.make_room.budget_cap_tokens", "48",
+  "--max-num-batched-tokens", "256",
+  "--long-prefill-token-threshold", "0",
+]

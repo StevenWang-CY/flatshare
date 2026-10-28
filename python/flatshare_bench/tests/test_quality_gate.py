@@ -627,11 +627,17 @@ def test_the_committed_sample_is_what_sample_py_draws() -> None:
 # ---- the record --------------------------------------------------------------------------------------------------
 
 RECORD = REPO / "benchmarks" / "results" / "2026-10-27-quality"
-RUNS = ["", "fp8-kv"]
+# Each run's directory and the model it asked: the served one, with BF16 and with FP8 KV, then Qwen3-8B on a card of
+# its own with FP8 KV.
+RUNS = [
+    ("", "Qwen/Qwen3-4B-Instruct-2507-FP8"),
+    ("fp8-kv", "Qwen/Qwen3-4B-Instruct-2507-FP8"),
+    ("qwen3-8b", "Qwen/Qwen3-8B-FP8"),
+]
 
 
-@pytest.mark.parametrize("run", RUNS)
-def test_the_records_verdict_is_what_gate_py_computes(run: str) -> None:
+@pytest.mark.parametrize(("run", "model"), RUNS)
+def test_the_records_verdict_is_what_gate_py_computes(run: str, model: str) -> None:
     d = RECORD / run
     scores = json.loads((d / "scores.json").read_text())
     rows = [json.loads(line) for line in (d / "rulings.jsonl").read_text().splitlines()]
@@ -657,7 +663,7 @@ def test_the_records_verdict_is_what_gate_py_computes(run: str) -> None:
     )
     meta = json.loads((d / "generate.json").read_text())
     script = hashlib.sha256((QUALITY / "generate.py").read_bytes()).hexdigest()
-    assert meta["script_sha256"] == script and meta["model"] == "Qwen/Qwen3-4B-Instruct-2507-FP8"
+    assert meta["script_sha256"] == script and meta["model"] == model
     assert (
         meta["sample_sha256"] == hashlib.sha256((QUALITY / "sample.json").read_bytes()).hexdigest()
     )

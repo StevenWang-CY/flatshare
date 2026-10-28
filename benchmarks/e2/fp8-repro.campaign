@@ -1,0 +1,9 @@
+# The FP8 KV cache's reproduction: the second screen's FP8 point (sweep-screen2.campaign) once more, on the same sample
+# of the agents, to tell a fault the engine repeats from a one-off. Its first run's engine died a second into the calls
+# (benchmarks/results/2026-10-27-sweep).
+#   benchmarks/e2/campaign.sh --pause benchmarks/e2/fp8-repro.campaign
+
+agents-seed 11
+
+# engine make-room (48-token window) --kv-cache-dtype fp8
+arms/sweep-disc-pr-ab48-fp8-s24.toml
