@@ -1,0 +1,440 @@
+{
+ "kind": "soak-summary",
+ "status": "complete",
+ "ended_by": "hours",
+ "slo": null,
+ "window": {
+  "start": 1793196646.568189,
+  "end": 1793197546.568,
+  "planned_end": 1793197546.568189,
+  "hours": 0.25,
+  "last_scrape": 1793197580.896
+ },
+ "overall": {
+  "start": 1793196646.568,
+  "seconds": 900.0,
+  "calls": {
+   "attempted": 7,
+   "accepted": 6,
+   "refused": 1,
+   "refused_by": {
+    "capacity": 1
+   },
+   "failed": 0,
+   "failed_by": {},
+   "skipped": 0,
+   "abandoned": 0,
+   "ended": {
+    "completed": 6,
+    "dropped": 0,
+    "cut": 0
+   },
+   "refused_share": 0.1429
+  },
+  "turns": {
+   "measured": 60,
+   "failed": 0,
+   "warmup": 6,
+   "replies": {
+    "n": 74,
+    "p50": 1607.2,
+    "p95": 1803.1,
+    "p99": 1918.5
+   },
+   "heard": {
+    "n": 60,
+    "ended_by_state": 60,
+    "with_a_pause": 54,
+    "with_a_pause_over_500_ms": 30,
+    "longest_pause_ms": {
+     "n": 60,
+     "p50": 500.1,
+     "p95": 611.3,
+     "p99": 650.0
+    },
+    "concealed_share": 0.0,
+    "pause_over_500_ms_share": 0.5
+   }
+  },
+  "gateway": {
+   "span_s": 934.3,
+   "realtime_sli": {
+    "valid": 83,
+    "good": 83,
+    "good_share": 1.0
+   },
+   "realtime": {
+    "offered": 83,
+    "admitted": 83,
+    "ended": 83,
+    "completed": 83,
+    "cancelled": 0,
+    "failed": 0,
+    "outcomes": {
+     "completed": 83
+    }
+   },
+   "background": {
+    "offered": 1002,
+    "admitted": 837,
+    "ended": 1011,
+    "completed": 845,
+    "cancelled": 1,
+    "failed": 165,
+    "outcomes": {
+     "cancelled": 1,
+     "completed": 845,
+     "not_ready": 165
+    },
+    "prompt_tokens_per_s": 11185.7,
+    "completion_tokens_per_s": 40.4,
+    "tokens_per_s": 11226.1
+   },
+   "in_flight": {
+    "realtime": {
+     "n": 15,
+     "mean": 0.1333,
+     "max": 1.0
+    },
+    "background": {
+     "n": 15,
+     "mean": 3.4,
+     "max": 7.0
+    }
+   },
+   "upstream_errors": {},
+   "error_events": {},
+   "engine_state": {
+    "phastform": {
+     "serving": 15
+    },
+    "gray": {
+     "serving": 15
+    }
+   },
+   "nodes": {
+    "phastform": {
+     "healthy_scrapes": 15,
+     "covering_scrapes": 0,
+     "placements": {
+      "new": 8
+     },
+     "retries": 0
+    },
+    "gray": {
+     "healthy_scrapes": 15,
+     "covering_scrapes": 0,
+     "placements": {
+      "new": 2
+     },
+     "retries": 0
+    }
+   },
+   "placements_refused": {
+    "no_agent_slot": 165
+   }
+  },
+  "engines": {
+   "phastform": {
+    "scrapes": 15,
+    "preemptions": 0,
+    "kv_cache_usage": {
+     "n": 15,
+     "mean": 0.0417,
+     "max": 0.3619
+    },
+    "running": {
+     "n": 15,
+     "mean": 0.2667,
+     "max": 1.0
+    },
+    "waiting": {
+     "n": 15,
+     "mean": 0.0,
+     "max": 0.0
+    },
+    "prompt_tokens_per_s": 1939.7,
+    "generation_tokens_per_s": 9.3,
+    "prefix_cache_hit_share": 0.9254,
+    "finished": {
+     "length": 184,
+     "stop": 83
+    }
+   },
+   "gray": {
+    "scrapes": 15,
+    "preemptions": 2,
+    "kv_cache_usage": {
+     "n": 15,
+     "mean": 0.4635,
+     "max": 0.9468
+    },
+    "running": {
+     "n": 15,
+     "mean": 0.9333,
+     "max": 3.0
+    },
+    "waiting": {
+     "n": 15,
+     "mean": 2.2667,
+     "max": 6.0
+    },
+    "prompt_tokens_per_s": 9296.0,
+    "generation_tokens_per_s": 33.1,
+    "prefix_cache_hit_share": 0.0894,
+    "finished": {
+     "length": 661
+    }
+   }
+  },
+  "worker": {
+   "active_calls": {
+    "n": 15,
+    "mean": 0.9333,
+    "max": 2.0
+   },
+   "refused": 0
+  },
+  "errors": {
+   "turns_failed": 0,
+   "calls_failed": 0,
+   "calls_dropped": 0
+  },
+  "restarts": {
+   "units": {},
+   "unit_changes": 0,
+   "counter_resets": {},
+   "scrapes_failed": {},
+   "calls_runs_ended": 0,
+   "agents_runs_ended": 0
+  },
+  "guard": {
+   "checks": {
+    "clear": 28
+   },
+   "taken": 0,
+   "blind": 0,
+   "pauses": 0,
+   "paused_s": 0.0
+  },
+  "scrapes": {
+   "n": 15,
+   "failed": {}
+  }
+ },
+ "hours": [
+  {
+   "hour": 0,
+   "start": 1793196646.568,
+   "seconds": 900.0,
+   "calls": {
+    "attempted": 7,
+    "accepted": 6,
+    "refused": 1,
+    "refused_by": {
+     "capacity": 1
+    },
+    "failed": 0,
+    "failed_by": {},
+    "skipped": 0,
+    "abandoned": 0,
+    "ended": {
+     "completed": 6,
+     "dropped": 0,
+     "cut": 0
+    },
+    "refused_share": 0.1429
+   },
+   "turns": {
+    "measured": 60,
+    "failed": 0,
+    "warmup": 6,
+    "replies": {
+     "n": 74,
+     "p50": 1607.2,
+     "p95": 1803.1,
+     "p99": 1918.5
+    },
+    "heard": {
+     "n": 60,
+     "ended_by_state": 60,
+     "with_a_pause": 54,
+     "with_a_pause_over_500_ms": 30,
+     "longest_pause_ms": {
+      "n": 60,
+      "p50": 500.1,
+      "p95": 611.3,
+      "p99": 650.0
+     },
+     "concealed_share": 0.0,
+     "pause_over_500_ms_share": 0.5
+    }
+   },
+   "gateway": {
+    "span_s": 934.3,
+    "realtime_sli": {
+     "valid": 83,
+     "good": 83,
+     "good_share": 1.0
+    },
+    "realtime": {
+     "offered": 83,
+     "admitted": 83,
+     "ended": 83,
+     "completed": 83,
+     "cancelled": 0,
+     "failed": 0,
+     "outcomes": {
+      "completed": 83
+     }
+    },
+    "background": {
+     "offered": 1002,
+     "admitted": 837,
+     "ended": 1011,
+     "completed": 845,
+     "cancelled": 1,
+     "failed": 165,
+     "outcomes": {
+      "cancelled": 1,
+      "completed": 845,
+      "not_ready": 165
+     },
+     "prompt_tokens_per_s": 11185.7,
+     "completion_tokens_per_s": 40.4,
+     "tokens_per_s": 11226.1
+    },
+    "in_flight": {
+     "realtime": {
+      "n": 15,
+      "mean": 0.1333,
+      "max": 1.0
+     },
+     "background": {
+      "n": 15,
+      "mean": 3.4,
+      "max": 7.0
+     }
+    },
+    "upstream_errors": {},
+    "error_events": {},
+    "engine_state": {
+     "phastform": {
+      "serving": 15
+     },
+     "gray": {
+      "serving": 15
+     }
+    },
+    "nodes": {
+     "phastform": {
+      "healthy_scrapes": 15,
+      "covering_scrapes": 0,
+      "placements": {
+       "new": 8
+      },
+      "retries": 0
+     },
+     "gray": {
+      "healthy_scrapes": 15,
+      "covering_scrapes": 0,
+      "placements": {
+       "new": 2
+      },
+      "retries": 0
+     }
+    },
+    "placements_refused": {
+     "no_agent_slot": 165
+    }
+   },
+   "engines": {
+    "phastform": {
+     "scrapes": 15,
+     "preemptions": 0,
+     "kv_cache_usage": {
+      "n": 15,
+      "mean": 0.0417,
+      "max": 0.3619
+     },
+     "running": {
+      "n": 15,
+      "mean": 0.2667,
+      "max": 1.0
+     },
+     "waiting": {
+      "n": 15,
+      "mean": 0.0,
+      "max": 0.0
+     },
+     "prompt_tokens_per_s": 1939.7,
+     "generation_tokens_per_s": 9.3,
+     "prefix_cache_hit_share": 0.9254,
+     "finished": {
+      "length": 184,
+      "stop": 83
+     }
+    },
+    "gray": {
+     "scrapes": 15,
+     "preemptions": 2,
+     "kv_cache_usage": {
+      "n": 15,
+      "mean": 0.4635,
+      "max": 0.9468
+     },
+     "running": {
+      "n": 15,
+      "mean": 0.9333,
+      "max": 3.0
+     },
+     "waiting": {
+      "n": 15,
+      "mean": 2.2667,
+      "max": 6.0
+     },
+     "prompt_tokens_per_s": 9296.0,
+     "generation_tokens_per_s": 33.1,
+     "prefix_cache_hit_share": 0.0894,
+     "finished": {
+      "length": 661
+     }
+    }
+   },
+   "worker": {
+    "active_calls": {
+     "n": 15,
+     "mean": 0.9333,
+     "max": 2.0
+    },
+    "refused": 0
+   },
+   "errors": {
+    "turns_failed": 0,
+    "calls_failed": 0,
+    "calls_dropped": 0
+   },
+   "restarts": {
+    "units": {},
+    "unit_changes": 0,
+    "counter_resets": {},
+    "scrapes_failed": {},
+    "calls_runs_ended": 0,
+    "agents_runs_ended": 0
+   },
+   "guard": {
+    "checks": {
+     "clear": 28
+    },
+    "taken": 0,
+    "blind": 0,
+    "pauses": 0,
+    "paused_s": 0.0
+   },
+   "scrapes": {
+    "n": 15,
+    "failed": {}
+   }
+  }
+ ]
+}
