@@ -1,0 +1,13 @@
+# The two-card comparison (benchmarks/quality/RESOURCE-GATE.md) and the sweep's confirmation, in rounds on fresh samples of the
+# agents (rounds.campaign files rg-r1 to rg-r3):
+# the agents alone on a card with the shared card's engine, the frozen box's, and its speech servers running idle: dedicated
+# roles' background card, controlled.
+arm = "4-agents-only"
+label = "the agents alone on the frozen box, its speech servers idle"
+
+[voice]
+callers = 0
+
+[agents]
+sessions = 24
+data = "weka-x32-long"

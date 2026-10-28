@@ -1,0 +1,135 @@
+{
+  "kind": "e2-point",
+  "name": "rg-voice-c1",
+  "status": "complete",
+  "host": "cyan",
+  "node": "gray",
+  "started": 1793172969.5878134,
+  "arm": {
+    "name": "rg-voice-c1",
+    "arm": "1-c1",
+    "label": "voice alone, one caller, a warm-up turn opening each call",
+    "voice": {
+      "callers": 1,
+      "turns": 25,
+      "barge_in": 0.25,
+      "seed": 0,
+      "warmup_turns": 1,
+      "preemptive_generation": true,
+      "events": true
+    },
+    "agents": {
+      "sessions": 0,
+      "think_cap": 120.0,
+      "warmup": 60.0,
+      "data": "weka-x32",
+      "seed": 11
+    },
+    "gateway": {},
+    "engine": {
+      "variant": "frozen",
+      "flags": []
+    },
+    "router": null
+  },
+  "versions": {
+    "source": "v1.6-27-gea7efd0",
+    "gpu_source": {
+      "gray": "v1.6-27-gea7efd0"
+    },
+    "flatshare_bench": "1.6.0",
+    "aiperf": "0.13.0",
+    "flatshare_gateway": "flatshare-gateway 1.6.0"
+  },
+  "save_audio": false,
+  "agents_seed": null,
+  "kv_sample_s": null,
+  "profile": "rtx-5060-ti",
+  "tunnel": {
+    "name": "gray",
+    "tunnel": "flatshare-tunnel@gray.service",
+    "tunnel_started": false,
+    "sockets": {
+      "engine": "/run/user/1007/flatshare/gray-engine.sock",
+      "stt": "/run/user/1007/flatshare/gray-stt.sock",
+      "tts": "/run/user/1007/flatshare/gray-tts.sock"
+    }
+  },
+  "engine": {
+    "server": "vllm",
+    "version": "0.32.0",
+    "pool_tokens": 36400,
+    "flags": {
+      "checked": [
+        "--scheduling-policy",
+        "--max-num-batched-tokens",
+        "--long-prefill-token-threshold",
+        "--model",
+        "--revision",
+        "--max-model-len"
+      ],
+      "unchecked": []
+    }
+  },
+  "cyan": {
+    "router": null,
+    "gateway": {
+      "restarted": false,
+      "config": {
+        "upstream": "unix:/run/user/1007/flatshare/gray-engine.sock",
+        "upstream_idle_timeout_s": 55,
+        "log_format": "json",
+        "cache_salt_secret_file": "~/.config/flatshare/cache-salt-secret",
+        "metrics_key_file": "~/.config/flatshare/metrics-key",
+        "listen": [
+          {
+            "tcp": "127.0.0.1:18080"
+          },
+          {
+            "unix": "/run/user/1007/flatshare/gateway.sock",
+            "tenant": "voice"
+          }
+        ],
+        "tenants": {
+          "voice": {
+            "trusted": true,
+            "default_class": "realtime",
+            "max_class": "realtime"
+          },
+          "agents": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "trusted": true,
+            "default_class": "background",
+            "max_class": "interactive"
+          },
+          "bench": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "default_class": "interactive"
+          }
+        },
+        "canary": {
+          "enabled": false
+        }
+      }
+    },
+    "worker": {
+      "restarted": false,
+      "preemptive_generation": true,
+      "events": true
+    },
+    "llm_path": "/run/user/1007/flatshare/gateway.sock"
+  },
+  "window": {
+    "start": 1793172969.8987682,
+    "end": 1793173317.9337387
+  },
+  "gateway_log": {
+    "request_lines": 30,
+    "requests_ended": 30
+  },
+  "finished": 1793173320.1842453
+}

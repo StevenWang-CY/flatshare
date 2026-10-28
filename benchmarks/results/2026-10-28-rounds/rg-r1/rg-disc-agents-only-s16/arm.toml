@@ -1,0 +1,16 @@
+# The resource gate (benchmarks/quality/RESOURCE-GATE.md): a dedicated card's agents at its best practical, as
+# rg-disc-agents-only-s24 but with 16 session trees: the number of agents a card runs at once is part of the scheduling
+# that gives them the most, and round 1 found a shared card doing more at 12 than this card at 24, where its pool
+# thrashes (rg-r1 to rg-r3).
+arm = "2-agents-only-s16"
+label = "the agents alone on a dedicated card at 16 session trees, its pool in the speech servers' memory"
+
+[voice]
+callers = 0
+
+[agents]
+sessions = 16
+data = "weka-x32-long"
+
+[engine]
+variant = "agents-only"

@@ -1,0 +1,75 @@
+[2026-10-28T11:06:33Z] campaign rg-r4: 4 points, arm files at v1.6-46-g91de180, the agents' seed 24
+[2026-10-28T11:06:35Z] sweep-disc-pr-ab48-b256-t0-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T11:06:35Z] w5-a1-voice: pending, engine frozen
+[2026-10-28T11:06:36Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-28T11:06:36Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-28T12:03:15Z] campaign rg-r4: 4 points, arm files at v1.6-46-g91de180, the agents' seed 24
+[2026-10-28T12:03:16Z] sweep-disc-pr-ab48-b256-t0-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T12:03:17Z] w5-a1-voice: pending, engine frozen
+[2026-10-28T12:03:17Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-28T12:03:17Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-28T12:03:18Z] sweep-disc-pr-ab48-b256-t0-s24: gray runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-28T12:04:33Z] sweep-disc-pr-ab48-b256-t0-s24: gray has v1.6-27-gea7efd0
+[2026-10-28T12:04:33Z] sweep-disc-pr-ab48-b256-t0-s24: measuring
+[12:04:34Z] gray through flatshare-tunnel@gray.service
+[12:04:36Z] configuring cyan for sweep-disc-pr-ab48-b256-t0-s24 on gray
+[12:04:41Z] AIPerf: 24 session trees through the gateway, seed 24
+[12:07:43Z] AIPerf is profiling; 60 s of warm-up
+[12:08:43Z] calls: 2 callers, 25 turns each after 1 warm-up
+[12:14:06Z] stopping AIPerf
+[12:14:08Z] sweep-disc-pr-ab48-b256-t0-s24: V2V p50/p95/p99 1843.4/2093.2/2184.5 ms, 0 of 50 turns failed; background 0.286 requests/s, 3,106 tokens/s, agent TTFT p50/p99 84794.27/120178.8 ms
+sweep-disc-pr-ab48-b256-t0-s24: V2V p50/p95/p99 1843.4/2093.2/2184.5 ms, 0 of 50 turns failed; background 0.286 requests/s, 3,106 tokens/s, agent TTFT p50/p99 84794.27/120178.8 ms
+[2026-10-28T12:14:09Z] w5-a1-voice: gray runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-28T12:15:33Z] w5-a1-voice: gray has v1.6-27-gea7efd0
+[2026-10-28T12:15:33Z] w5-a1-voice: measuring
+[12:15:34Z] gray through flatshare-tunnel@gray.service
+[12:15:36Z] configuring cyan for w5-a1-voice on gray
+[12:15:36Z] calls: 2 callers, 25 turns each after 1 warm-up
+w5-a1-voice: V2V p50/p95/p99 1612.8/1829.6/1899.5 ms, 0 of 50 turns failed
+[12:21:10Z] w5-a1-voice: V2V p50/p95/p99 1612.8/1829.6/1899.5 ms, 0 of 50 turns failed
+[2026-10-28T12:21:12Z] w5-disc-frozen-s24: gray runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T12:21:13Z] w5-disc-frozen-s24: gray has v1.6-27-gea7efd0
+[2026-10-28T12:21:13Z] w5-disc-frozen-s24: measuring
+[12:21:14Z] gray through flatshare-tunnel@gray.service
+[12:21:14Z] configuring cyan for w5-disc-frozen-s24 on gray
+[12:21:14Z] AIPerf: 24 session trees through the gateway, seed 24
+[12:22:25Z] AIPerf is profiling; 60 s of warm-up
+[12:23:25Z] calls: 2 callers, 25 turns each after 1 warm-up
+[12:30:43Z] stopping AIPerf
+w5-disc-frozen-s24: V2V p50/p95/p99 4877.1/12010.1/12870.4 ms, 0 of 50 turns failed; background 0.32 requests/s, 3,336 tokens/s, agent TTFT p50/p99 68657.31/109414.63 ms
+[12:30:46Z] w5-disc-frozen-s24: V2V p50/p95/p99 4877.1/12010.1/12870.4 ms, 0 of 50 turns failed; background 0.32 requests/s, 3,336 tokens/s, agent TTFT p50/p99 68657.31/109414.63 ms
+[2026-10-28T12:30:47Z] w5-disc-pr-ab48-s24: gray runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-28T12:32:10Z] w5-disc-pr-ab48-s24: gray has v1.6-27-gea7efd0
+[2026-10-28T12:32:10Z] w5-disc-pr-ab48-s24: measuring
+[12:32:11Z] gray through flatshare-tunnel@gray.service
+[12:32:14Z] configuring cyan for w5-disc-pr-ab48-s24 on gray
+[12:32:14Z] AIPerf: 24 session trees through the gateway, seed 24
+[12:33:26Z] AIPerf is profiling; 60 s of warm-up
+[12:34:26Z] calls: 2 callers, 25 turns each after 1 warm-up
+[12:39:54Z] stopping AIPerf
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1956.6/2263.9/2898.5 ms, 0 of 50 turns failed; background 0.311 requests/s, 3,288 tokens/s, agent TTFT p50/p99 77701.25/114820.3 ms
+[12:39:56Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1956.6/2263.9/2898.5 ms, 0 of 50 turns failed; background 0.311 requests/s, 3,288 tokens/s, agent TTFT p50/p99 77701.25/114820.3 ms
+[2026-10-28T12:39:57Z] the frontier of rg-r4
+flatshare/runs/e2/rg-r4/report/frontier.csv
+flatshare/runs/e2/rg-r4/report/frontier.md
+flatshare/runs/e2/rg-r4/report/frontier.svg
+flatshare/runs/e2/rg-r4/report/frontier-weka-x32-long.svg
+flatshare/runs/e2/rg-r4/report/waterfall.svg
+gateway: restarted
+worker: restarted
+[2026-10-28T12:40:10Z] gray is paused; start it again with systemctl --user start flatshare.target
+[2026-10-28T12:40:10Z] done: ~/.cache/kosa-dev/flatshare-prod/exp/e2/rg-r4/report/frontier.md

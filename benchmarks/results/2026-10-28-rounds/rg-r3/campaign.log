@@ -1,0 +1,377 @@
+[2026-10-28T08:38:58Z] campaign rg-r3: 24 points, arm files at v1.6-46-g91de180, the agents' seed 23
+[2026-10-28T08:38:59Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-28T08:38:59Z] rg-disc-pr-ab48-b256-c1-s12: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:00Z] rg-disc-pr-ab48-b256-s12: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:00Z] rg-disc-pr-ab48-b256-s8: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:01Z] rg-disc-pr-ab48-b256-s4: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:01Z] rg-disc-pr-ab48-b256-s2: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:02Z] rg-disc-agents-pr-ab48-b256-s16: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:02Z] rg-disc-agents-pr-ab48-b256-s12: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:03Z] sweep-disc-pr-ab48-b256-t0-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:03Z] w5-a1-voice: pending, engine frozen
+[2026-10-28T08:39:03Z] rg-voice-c1: pending, engine frozen
+[2026-10-28T08:39:04Z] rg-disc-agents-frozen-s24: pending, engine frozen
+[2026-10-28T08:39:04Z] rg-disc-agents-frozen-s12: pending, engine frozen
+[2026-10-28T08:39:05Z] rg-disc-frozen-c1-s12: pending, engine frozen
+[2026-10-28T08:39:05Z] rg-disc-frozen-s12: pending, engine frozen
+[2026-10-28T08:39:06Z] rg-disc-frozen-s8: pending, engine frozen
+[2026-10-28T08:39:06Z] rg-disc-frozen-s4: pending, engine frozen
+[2026-10-28T08:39:07Z] rg-disc-frozen-s2: pending, engine frozen
+[2026-10-28T08:39:07Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-28T08:39:07Z] rg-disc-agents-only-s24: pending, engine agents-only
+[2026-10-28T08:39:08Z] rg-disc-agents-only-s20: pending, engine agents-only
+[2026-10-28T08:39:08Z] rg-disc-agents-only-s16: pending, engine agents-only
+[2026-10-28T08:39:09Z] rg-disc-agents-only-s14: pending, engine agents-only
+[2026-10-28T08:39:09Z] rg-disc-agents-only-s12: pending, engine agents-only
+[2026-10-28T08:39:09Z] campaign rg-r3: 24 points, arm files at v1.6-46-g91de180, the agents' seed 23
+[2026-10-28T08:39:10Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-28T08:39:11Z] rg-disc-pr-ab48-b256-c1-s12: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:11Z] rg-disc-pr-ab48-b256-s12: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:11Z] rg-disc-pr-ab48-b256-s8: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:12Z] rg-disc-pr-ab48-b256-s4: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:12Z] rg-disc-pr-ab48-b256-s2: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:13Z] rg-disc-agents-pr-ab48-b256-s16: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:13Z] rg-disc-agents-pr-ab48-b256-s12: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:14Z] sweep-disc-pr-ab48-b256-t0-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:39:14Z] w5-a1-voice: pending, engine frozen
+[2026-10-28T08:39:15Z] rg-voice-c1: pending, engine frozen
+[2026-10-28T08:39:15Z] rg-disc-agents-frozen-s24: pending, engine frozen
+[2026-10-28T08:39:15Z] rg-disc-agents-frozen-s12: pending, engine frozen
+[2026-10-28T08:39:16Z] rg-disc-frozen-c1-s12: pending, engine frozen
+[2026-10-28T08:39:16Z] rg-disc-frozen-s12: pending, engine frozen
+[2026-10-28T08:39:17Z] rg-disc-frozen-s8: pending, engine frozen
+[2026-10-28T08:39:17Z] rg-disc-frozen-s4: pending, engine frozen
+[2026-10-28T08:39:18Z] rg-disc-frozen-s2: pending, engine frozen
+[2026-10-28T08:39:18Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-28T08:39:18Z] rg-disc-agents-only-s24: pending, engine agents-only
+[2026-10-28T08:39:19Z] rg-disc-agents-only-s20: pending, engine agents-only
+[2026-10-28T08:39:19Z] rg-disc-agents-only-s16: pending, engine agents-only
+[2026-10-28T08:39:20Z] rg-disc-agents-only-s14: pending, engine agents-only
+[2026-10-28T08:39:20Z] rg-disc-agents-only-s12: pending, engine agents-only
+[2026-10-28T08:45:38Z] campaign rg-r3: 24 points, arm files at v1.6-46-g91de180, the agents' seed 23
+[2026-10-28T08:45:39Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-28T08:45:40Z] rg-disc-pr-ab48-b256-c1-s12: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:45:40Z] rg-disc-pr-ab48-b256-s12: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:45:41Z] rg-disc-pr-ab48-b256-s8: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:45:41Z] rg-disc-pr-ab48-b256-s4: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:45:42Z] rg-disc-pr-ab48-b256-s2: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:45:42Z] rg-disc-agents-pr-ab48-b256-s16: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:45:42Z] rg-disc-agents-pr-ab48-b256-s12: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:45:43Z] sweep-disc-pr-ab48-b256-t0-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T08:45:43Z] w5-a1-voice: pending, engine frozen
+[2026-10-28T08:45:44Z] rg-voice-c1: pending, engine frozen
+[2026-10-28T08:45:44Z] rg-disc-agents-frozen-s24: pending, engine frozen
+[2026-10-28T08:45:44Z] rg-disc-agents-frozen-s12: pending, engine frozen
+[2026-10-28T08:45:45Z] rg-disc-frozen-c1-s12: pending, engine frozen
+[2026-10-28T08:45:45Z] rg-disc-frozen-s12: pending, engine frozen
+[2026-10-28T08:45:46Z] rg-disc-frozen-s8: pending, engine frozen
+[2026-10-28T08:45:46Z] rg-disc-frozen-s4: pending, engine frozen
+[2026-10-28T08:45:47Z] rg-disc-frozen-s2: pending, engine frozen
+[2026-10-28T08:45:47Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-28T08:45:47Z] rg-disc-agents-only-s24: pending, engine agents-only
+[2026-10-28T08:45:48Z] rg-disc-agents-only-s20: pending, engine agents-only
+[2026-10-28T08:45:48Z] rg-disc-agents-only-s16: pending, engine agents-only
+[2026-10-28T08:45:49Z] rg-disc-agents-only-s14: pending, engine agents-only
+[2026-10-28T08:45:49Z] rg-disc-agents-only-s12: pending, engine agents-only
+[2026-10-28T08:45:50Z] w5-disc-pr-ab48-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-28T08:47:21Z] w5-disc-pr-ab48-s24: phastform has v1.6-27-gea7efd0
+[2026-10-28T08:47:21Z] w5-disc-pr-ab48-s24: measuring
+[08:47:24Z] configuring cyan for w5-disc-pr-ab48-s24
+[08:47:24Z] AIPerf: 24 session trees through the gateway, seed 23
+[08:50:45Z] AIPerf is profiling; 60 s of warm-up
+[08:51:45Z] calls: 2 callers, 25 turns each after 1 warm-up
+[08:57:34Z] stopping AIPerf
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1966.6/2248.8/2362.8 ms, 0 of 50 turns failed; background 0.224 requests/s, 2,949 tokens/s, agent TTFT p50/p99 115596.96/175398.8 ms
+[08:57:36Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1966.6/2248.8/2362.8 ms, 0 of 50 turns failed; background 0.224 requests/s, 2,949 tokens/s, agent TTFT p50/p99 115596.96/175398.8 ms
+[2026-10-28T08:57:37Z] rg-disc-pr-ab48-b256-c1-s12: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-28T08:59:12Z] rg-disc-pr-ab48-b256-c1-s12: phastform has v1.6-27-gea7efd0
+[2026-10-28T08:59:12Z] rg-disc-pr-ab48-b256-c1-s12: measuring
+[08:59:16Z] configuring cyan for rg-disc-pr-ab48-b256-c1-s12
+[08:59:16Z] AIPerf: 12 session trees through the gateway, seed 23
+[09:00:17Z] AIPerf is profiling; 60 s of warm-up
+[09:01:17Z] calls: 1 callers, 25 turns each after 1 warm-up
+[09:07:01Z] stopping AIPerf
+rg-disc-pr-ab48-b256-c1-s12: V2V p50/p95/p99 1911.6/2255.3/2314.5 ms, 0 of 25 turns failed; background 0.398 requests/s, 6,054 tokens/s, agent TTFT p50/p99 5216.38/70232.6 ms
+[09:07:03Z] rg-disc-pr-ab48-b256-c1-s12: V2V p50/p95/p99 1911.6/2255.3/2314.5 ms, 0 of 25 turns failed; background 0.398 requests/s, 6,054 tokens/s, agent TTFT p50/p99 5216.38/70232.6 ms
+[2026-10-28T09:07:05Z] rg-disc-pr-ab48-b256-s12: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T09:07:05Z] rg-disc-pr-ab48-b256-s12: phastform has v1.6-27-gea7efd0
+[2026-10-28T09:07:05Z] rg-disc-pr-ab48-b256-s12: measuring
+[09:07:06Z] configuring cyan for rg-disc-pr-ab48-b256-s12
+[09:07:06Z] AIPerf: 12 session trees through the gateway, seed 23
+[09:08:07Z] AIPerf is profiling; 60 s of warm-up
+[09:09:07Z] calls: 2 callers, 25 turns each after 1 warm-up
+[09:14:47Z] stopping AIPerf
+[09:14:50Z] rg-disc-pr-ab48-b256-s12: V2V p50/p95/p99 1852.4/2203.0/2286.6 ms, 0 of 50 turns failed; background 0.382 requests/s, 5,719 tokens/s, agent TTFT p50/p99 7455.79/63933.94 ms
+rg-disc-pr-ab48-b256-s12: V2V p50/p95/p99 1852.4/2203.0/2286.6 ms, 0 of 50 turns failed; background 0.382 requests/s, 5,719 tokens/s, agent TTFT p50/p99 7455.79/63933.94 ms
+[2026-10-28T09:14:51Z] rg-disc-pr-ab48-b256-s8: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T09:14:52Z] rg-disc-pr-ab48-b256-s8: phastform has v1.6-27-gea7efd0
+[2026-10-28T09:14:52Z] rg-disc-pr-ab48-b256-s8: measuring
+[09:14:52Z] configuring cyan for rg-disc-pr-ab48-b256-s8
+[09:14:52Z] AIPerf: 8 session trees through the gateway, seed 23
+[09:15:29Z] AIPerf is profiling; 60 s of warm-up
+[09:16:30Z] calls: 2 callers, 25 turns each after 1 warm-up
+[09:22:10Z] stopping AIPerf
+rg-disc-pr-ab48-b256-s8: V2V p50/p95/p99 1796.8/2244.4/2534.9 ms, 0 of 50 turns failed; background 0.435 requests/s, 6,540 tokens/s, agent TTFT p50/p99 674.97/6640.76 ms
+[09:22:12Z] rg-disc-pr-ab48-b256-s8: V2V p50/p95/p99 1796.8/2244.4/2534.9 ms, 0 of 50 turns failed; background 0.435 requests/s, 6,540 tokens/s, agent TTFT p50/p99 674.97/6640.76 ms
+[2026-10-28T09:22:13Z] rg-disc-pr-ab48-b256-s4: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T09:22:14Z] rg-disc-pr-ab48-b256-s4: phastform has v1.6-27-gea7efd0
+[2026-10-28T09:22:14Z] rg-disc-pr-ab48-b256-s4: measuring
+[09:22:15Z] configuring cyan for rg-disc-pr-ab48-b256-s4
+[09:22:15Z] AIPerf: 4 session trees through the gateway, seed 23
+[09:22:42Z] AIPerf is profiling; 60 s of warm-up
+[09:23:42Z] calls: 2 callers, 25 turns each after 1 warm-up
+[09:29:16Z] stopping AIPerf
+rg-disc-pr-ab48-b256-s4: V2V p50/p95/p99 1654.8/1886.0/1990.6 ms, 0 of 50 turns failed; background 0.156 requests/s, 3,615 tokens/s, agent TTFT p50/p99 594.59/5130.08 ms
+[09:29:18Z] rg-disc-pr-ab48-b256-s4: V2V p50/p95/p99 1654.8/1886.0/1990.6 ms, 0 of 50 turns failed; background 0.156 requests/s, 3,615 tokens/s, agent TTFT p50/p99 594.59/5130.08 ms
+[2026-10-28T09:29:20Z] rg-disc-pr-ab48-b256-s2: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T09:29:20Z] rg-disc-pr-ab48-b256-s2: phastform has v1.6-27-gea7efd0
+[2026-10-28T09:29:20Z] rg-disc-pr-ab48-b256-s2: measuring
+[09:29:21Z] configuring cyan for rg-disc-pr-ab48-b256-s2
+[09:29:21Z] AIPerf: 2 session trees through the gateway, seed 23
+[09:29:34Z] AIPerf is profiling; 60 s of warm-up
+[09:30:34Z] calls: 2 callers, 25 turns each after 1 warm-up
+[09:36:08Z] stopping AIPerf
+[09:36:10Z] rg-disc-pr-ab48-b256-s2: V2V p50/p95/p99 1623.1/1874.4/1934.3 ms, 0 of 50 turns failed; background 0.302 requests/s, 2,037 tokens/s, agent TTFT p50/p99 111.76/4807.33 ms
+rg-disc-pr-ab48-b256-s2: V2V p50/p95/p99 1623.1/1874.4/1934.3 ms, 0 of 50 turns failed; background 0.302 requests/s, 2,037 tokens/s, agent TTFT p50/p99 111.76/4807.33 ms
+[2026-10-28T09:36:12Z] rg-disc-agents-pr-ab48-b256-s16: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T09:36:13Z] rg-disc-agents-pr-ab48-b256-s16: phastform has v1.6-27-gea7efd0
+[2026-10-28T09:36:13Z] rg-disc-agents-pr-ab48-b256-s16: measuring
+[09:36:13Z] configuring cyan for rg-disc-agents-pr-ab48-b256-s16
+[09:36:13Z] AIPerf: 16 session trees through the gateway, seed 23
+[09:37:35Z] AIPerf is profiling; 60 s of warm-up
+[09:38:35Z] no calls: the agents alone for 355 s
+[09:44:30Z] stopping AIPerf
+rg-disc-agents-pr-ab48-b256-s16: no calls, the agents alone for 355 s; background 0.208 requests/s, 3,030 tokens/s, agent TTFT p50/p99 65593.15/119347.12 ms
+[09:44:33Z] rg-disc-agents-pr-ab48-b256-s16: no calls, the agents alone for 355 s; background 0.208 requests/s, 3,030 tokens/s, agent TTFT p50/p99 65593.15/119347.12 ms
+[2026-10-28T09:44:34Z] rg-disc-agents-pr-ab48-b256-s12: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T09:44:35Z] rg-disc-agents-pr-ab48-b256-s12: phastform has v1.6-27-gea7efd0
+[2026-10-28T09:44:35Z] rg-disc-agents-pr-ab48-b256-s12: measuring
+[09:44:35Z] configuring cyan for rg-disc-agents-pr-ab48-b256-s12
+[09:44:35Z] AIPerf: 12 session trees through the gateway, seed 23
+[09:45:36Z] AIPerf is profiling; 60 s of warm-up
+[09:46:36Z] no calls: the agents alone for 355 s
+[09:52:31Z] stopping AIPerf
+rg-disc-agents-pr-ab48-b256-s12: no calls, the agents alone for 355 s; background 0.406 requests/s, 6,255 tokens/s, agent TTFT p50/p99 5406.07/65357.78 ms
+[09:52:34Z] rg-disc-agents-pr-ab48-b256-s12: no calls, the agents alone for 355 s; background 0.406 requests/s, 6,255 tokens/s, agent TTFT p50/p99 5406.07/65357.78 ms
+[2026-10-28T09:52:35Z] sweep-disc-pr-ab48-b256-t0-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T09:52:36Z] sweep-disc-pr-ab48-b256-t0-s24: phastform has v1.6-27-gea7efd0
+[2026-10-28T09:52:36Z] sweep-disc-pr-ab48-b256-t0-s24: measuring
+[09:52:36Z] configuring cyan for sweep-disc-pr-ab48-b256-t0-s24
+[09:52:36Z] AIPerf: 24 session trees through the gateway, seed 23
+[09:54:16Z] AIPerf is profiling; 60 s of warm-up
+[09:55:17Z] calls: 2 callers, 25 turns each after 1 warm-up
+[10:00:59Z] stopping AIPerf
+[10:01:01Z] sweep-disc-pr-ab48-b256-t0-s24: V2V p50/p95/p99 1865.8/2272.1/2314.1 ms, 0 of 50 turns failed; background 0.202 requests/s, 2,824 tokens/s, agent TTFT p50/p99 126340.05/181724.53 ms
+sweep-disc-pr-ab48-b256-t0-s24: V2V p50/p95/p99 1865.8/2272.1/2314.1 ms, 0 of 50 turns failed; background 0.202 requests/s, 2,824 tokens/s, agent TTFT p50/p99 126340.05/181724.53 ms
+[2026-10-28T10:01:03Z] w5-a1-voice: phastform runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-28T10:02:42Z] w5-a1-voice: phastform has v1.6-27-gea7efd0
+[2026-10-28T10:02:42Z] w5-a1-voice: measuring
+[10:02:45Z] configuring cyan for w5-a1-voice
+[10:02:45Z] calls: 2 callers, 25 turns each after 1 warm-up
+[10:08:47Z] w5-a1-voice: V2V p50/p95/p99 1591.7/1760.0/1826.2 ms, 0 of 50 turns failed
+w5-a1-voice: V2V p50/p95/p99 1591.7/1760.0/1826.2 ms, 0 of 50 turns failed
+[2026-10-28T10:08:48Z] rg-voice-c1: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T10:08:49Z] rg-voice-c1: phastform has v1.6-27-gea7efd0
+[2026-10-28T10:08:49Z] rg-voice-c1: measuring
+[10:08:49Z] configuring cyan for rg-voice-c1
+[10:08:49Z] calls: 1 callers, 25 turns each after 1 warm-up
+[10:14:40Z] rg-voice-c1: V2V p50/p95/p99 1589.4/1731.7/1781.2 ms, 0 of 25 turns failed
+rg-voice-c1: V2V p50/p95/p99 1589.4/1731.7/1781.2 ms, 0 of 25 turns failed
+[2026-10-28T10:14:41Z] rg-disc-agents-frozen-s24: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T10:14:42Z] rg-disc-agents-frozen-s24: phastform has v1.6-27-gea7efd0
+[2026-10-28T10:14:42Z] rg-disc-agents-frozen-s24: measuring
+[10:14:42Z] configuring cyan for rg-disc-agents-frozen-s24
+[10:14:42Z] AIPerf: 24 session trees through the gateway, seed 23
+[10:16:16Z] AIPerf is profiling; 60 s of warm-up
+[10:17:16Z] no calls: the agents alone for 355 s
+[10:23:11Z] stopping AIPerf
+rg-disc-agents-frozen-s24: no calls, the agents alone for 355 s; background 0.234 requests/s, 3,065 tokens/s, agent TTFT p50/p99 101906.75/163786.02 ms
+[10:23:14Z] rg-disc-agents-frozen-s24: no calls, the agents alone for 355 s; background 0.234 requests/s, 3,065 tokens/s, agent TTFT p50/p99 101906.75/163786.02 ms
+[2026-10-28T10:23:15Z] rg-disc-agents-frozen-s12: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T10:23:16Z] rg-disc-agents-frozen-s12: phastform has v1.6-27-gea7efd0
+[2026-10-28T10:23:16Z] rg-disc-agents-frozen-s12: measuring
+[10:23:16Z] configuring cyan for rg-disc-agents-frozen-s12
+[10:23:16Z] AIPerf: 12 session trees through the gateway, seed 23
+[10:24:13Z] AIPerf is profiling; 60 s of warm-up
+[10:25:13Z] no calls: the agents alone for 355 s
+[10:31:09Z] stopping AIPerf
+rg-disc-agents-frozen-s12: no calls, the agents alone for 355 s; background 0.425 requests/s, 6,700 tokens/s, agent TTFT p50/p99 5091.1/66809.06 ms
+[10:31:11Z] rg-disc-agents-frozen-s12: no calls, the agents alone for 355 s; background 0.425 requests/s, 6,700 tokens/s, agent TTFT p50/p99 5091.1/66809.06 ms
+[2026-10-28T10:31:12Z] rg-disc-frozen-c1-s12: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T10:31:13Z] rg-disc-frozen-c1-s12: phastform has v1.6-27-gea7efd0
+[2026-10-28T10:31:13Z] rg-disc-frozen-c1-s12: measuring
+[10:31:13Z] configuring cyan for rg-disc-frozen-c1-s12
+[10:31:13Z] AIPerf: 12 session trees through the gateway, seed 23
+[10:32:11Z] AIPerf is profiling; 60 s of warm-up
+[10:33:11Z] calls: 1 callers, 25 turns each after 1 warm-up
+[10:39:21Z] stopping AIPerf
+[10:39:23Z] rg-disc-frozen-c1-s12: V2V p50/p95/p99 2264.5/3622.4/5462.5 ms, 0 of 25 turns failed; background 0.42 requests/s, 6,688 tokens/s, agent TTFT p50/p99 4710.56/66995.2 ms
+rg-disc-frozen-c1-s12: V2V p50/p95/p99 2264.5/3622.4/5462.5 ms, 0 of 25 turns failed; background 0.42 requests/s, 6,688 tokens/s, agent TTFT p50/p99 4710.56/66995.2 ms
+[2026-10-28T10:39:24Z] rg-disc-frozen-s12: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T10:39:25Z] rg-disc-frozen-s12: phastform has v1.6-27-gea7efd0
+[2026-10-28T10:39:25Z] rg-disc-frozen-s12: measuring
+[10:39:26Z] configuring cyan for rg-disc-frozen-s12
+[10:39:26Z] AIPerf: 12 session trees through the gateway, seed 23
+[10:40:24Z] AIPerf is profiling; 60 s of warm-up
+[10:41:24Z] calls: 2 callers, 25 turns each after 1 warm-up
+[10:47:47Z] stopping AIPerf
+[10:47:49Z] rg-disc-frozen-s12: V2V p50/p95/p99 2115.4/6794.5/8112.2 ms, 0 of 50 turns failed; background 0.423 requests/s, 6,820 tokens/s, agent TTFT p50/p99 4168.03/55881.17 ms
+rg-disc-frozen-s12: V2V p50/p95/p99 2115.4/6794.5/8112.2 ms, 0 of 50 turns failed; background 0.423 requests/s, 6,820 tokens/s, agent TTFT p50/p99 4168.03/55881.17 ms
+[2026-10-28T10:47:51Z] rg-disc-frozen-s8: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T10:47:51Z] rg-disc-frozen-s8: phastform has v1.6-27-gea7efd0
+[2026-10-28T10:47:51Z] rg-disc-frozen-s8: measuring
+[10:47:52Z] configuring cyan for rg-disc-frozen-s8
+[10:47:52Z] AIPerf: 8 session trees through the gateway, seed 23
+[10:48:27Z] AIPerf is profiling; 60 s of warm-up
+[10:49:27Z] calls: 2 callers, 25 turns each after 1 warm-up
+[10:55:38Z] stopping AIPerf
+rg-disc-frozen-s8: V2V p50/p95/p99 1882.3/3806.1/4420.3 ms, 0 of 50 turns failed; background 0.428 requests/s, 6,642 tokens/s, agent TTFT p50/p99 680.45/7407.35 ms
+[10:55:40Z] rg-disc-frozen-s8: V2V p50/p95/p99 1882.3/3806.1/4420.3 ms, 0 of 50 turns failed; background 0.428 requests/s, 6,642 tokens/s, agent TTFT p50/p99 680.45/7407.35 ms
+[2026-10-28T10:55:42Z] rg-disc-frozen-s4: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T10:55:43Z] rg-disc-frozen-s4: phastform has v1.6-27-gea7efd0
+[2026-10-28T10:55:43Z] rg-disc-frozen-s4: measuring
+[10:55:43Z] configuring cyan for rg-disc-frozen-s4
+[10:55:43Z] AIPerf: 4 session trees through the gateway, seed 23
+[10:56:09Z] AIPerf is profiling; 60 s of warm-up
+[10:57:09Z] calls: 2 callers, 25 turns each after 1 warm-up
+[11:02:52Z] stopping AIPerf
+rg-disc-frozen-s4: V2V p50/p95/p99 1633.8/2444.1/2916.6 ms, 0 of 50 turns failed; background 0.154 requests/s, 3,593 tokens/s, agent TTFT p50/p99 596.91/6048.37 ms
+[11:02:55Z] rg-disc-frozen-s4: V2V p50/p95/p99 1633.8/2444.1/2916.6 ms, 0 of 50 turns failed; background 0.154 requests/s, 3,593 tokens/s, agent TTFT p50/p99 596.91/6048.37 ms
+[2026-10-28T11:02:56Z] rg-disc-frozen-s2: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T11:02:57Z] rg-disc-frozen-s2: phastform has v1.6-27-gea7efd0
+[2026-10-28T11:02:57Z] rg-disc-frozen-s2: measuring
+[11:02:57Z] configuring cyan for rg-disc-frozen-s2
+[11:02:57Z] AIPerf: 2 session trees through the gateway, seed 23
+[11:03:10Z] AIPerf is profiling; 60 s of warm-up
+[11:04:11Z] calls: 2 callers, 25 turns each after 1 warm-up
+[11:09:45Z] stopping AIPerf
+rg-disc-frozen-s2: V2V p50/p95/p99 1623.3/1874.7/1935.9 ms, 0 of 50 turns failed; background 0.302 requests/s, 2,037 tokens/s, agent TTFT p50/p99 111.11/863.65 ms
+[11:09:47Z] rg-disc-frozen-s2: V2V p50/p95/p99 1623.3/1874.7/1935.9 ms, 0 of 50 turns failed; background 0.302 requests/s, 2,037 tokens/s, agent TTFT p50/p99 111.11/863.65 ms
+[2026-10-28T11:09:48Z] w5-disc-frozen-s24: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T11:09:49Z] w5-disc-frozen-s24: phastform has v1.6-27-gea7efd0
+[2026-10-28T11:09:49Z] w5-disc-frozen-s24: measuring
+[11:09:50Z] configuring cyan for w5-disc-frozen-s24
+[11:09:50Z] AIPerf: 24 session trees through the gateway, seed 23
+[11:11:24Z] AIPerf is profiling; 60 s of warm-up
+[11:12:24Z] calls: 2 callers, 25 turns each after 1 warm-up
+[11:20:24Z] stopping AIPerf
+w5-disc-frozen-s24: V2V p50/p95/p99 4903.5/12171.2/15927.3 ms, 0 of 50 turns failed; background 0.242 requests/s, 3,137 tokens/s, agent TTFT p50/p99 97155.04/167743.92 ms
+[11:20:26Z] w5-disc-frozen-s24: V2V p50/p95/p99 4903.5/12171.2/15927.3 ms, 0 of 50 turns failed; background 0.242 requests/s, 3,137 tokens/s, agent TTFT p50/p99 97155.04/167743.92 ms
+[2026-10-28T11:20:28Z] rg-disc-agents-only-s24: phastform runs agents-only
+variant: the measurement drop-in is already on
+active
+inactive
+inactive
+[2026-10-28T11:22:07Z] rg-disc-agents-only-s24: phastform has v1.6-27-gea7efd0
+[2026-10-28T11:22:07Z] rg-disc-agents-only-s24: measuring
+[11:22:10Z] configuring cyan for rg-disc-agents-only-s24
+[11:22:10Z] AIPerf: 24 session trees through the gateway, seed 23
+[11:23:36Z] AIPerf is profiling; 60 s of warm-up
+[11:24:36Z] no calls: the agents alone for 355 s
+[11:30:31Z] stopping AIPerf
+rg-disc-agents-only-s24: no calls, the agents alone for 355 s; background 0.299 requests/s, 3,815 tokens/s, agent TTFT p50/p99 74713.76/130347.74 ms
+[11:30:34Z] rg-disc-agents-only-s24: no calls, the agents alone for 355 s; background 0.299 requests/s, 3,815 tokens/s, agent TTFT p50/p99 74713.76/130347.74 ms
+[2026-10-28T11:30:35Z] rg-disc-agents-only-s20: phastform runs agents-only
+variant: the measurement drop-in is already on
+variant: the box already runs agents-only 
+[2026-10-28T11:30:36Z] rg-disc-agents-only-s20: phastform has v1.6-27-gea7efd0
+[2026-10-28T11:30:36Z] rg-disc-agents-only-s20: measuring
+[11:30:36Z] configuring cyan for rg-disc-agents-only-s20
+[11:30:36Z] AIPerf: 20 session trees through the gateway, seed 23
+[11:31:50Z] AIPerf is profiling; 60 s of warm-up
+[11:32:50Z] no calls: the agents alone for 355 s
+[11:38:46Z] stopping AIPerf
+rg-disc-agents-only-s20: no calls, the agents alone for 355 s; background 0.321 requests/s, 3,874 tokens/s, agent TTFT p50/p99 58881.48/105645.67 ms
+[11:38:48Z] rg-disc-agents-only-s20: no calls, the agents alone for 355 s; background 0.321 requests/s, 3,874 tokens/s, agent TTFT p50/p99 58881.48/105645.67 ms
+[2026-10-28T11:38:49Z] rg-disc-agents-only-s16: phastform runs agents-only
+variant: the measurement drop-in is already on
+variant: the box already runs agents-only 
+[2026-10-28T11:38:50Z] rg-disc-agents-only-s16: phastform has v1.6-27-gea7efd0
+[2026-10-28T11:38:50Z] rg-disc-agents-only-s16: measuring
+[11:38:50Z] configuring cyan for rg-disc-agents-only-s16
+[11:38:51Z] AIPerf: 16 session trees through the gateway, seed 23
+[11:40:01Z] AIPerf is profiling; 60 s of warm-up
+[11:41:01Z] no calls: the agents alone for 355 s
+[11:46:56Z] stopping AIPerf
+rg-disc-agents-only-s16: no calls, the agents alone for 355 s; background 0.273 requests/s, 3,804 tokens/s, agent TTFT p50/p99 44555.72/85236.07 ms
+[11:46:58Z] rg-disc-agents-only-s16: no calls, the agents alone for 355 s; background 0.273 requests/s, 3,804 tokens/s, agent TTFT p50/p99 44555.72/85236.07 ms
+[2026-10-28T11:46:59Z] rg-disc-agents-only-s14: phastform runs agents-only
+variant: the measurement drop-in is already on
+variant: the box already runs agents-only 
+[2026-10-28T11:47:00Z] rg-disc-agents-only-s14: phastform has v1.6-27-gea7efd0
+[2026-10-28T11:47:00Z] rg-disc-agents-only-s14: measuring
+[11:47:01Z] configuring cyan for rg-disc-agents-only-s14
+[11:47:01Z] AIPerf: 14 session trees through the gateway, seed 23
+[11:48:03Z] AIPerf is profiling; 60 s of warm-up
+[11:49:03Z] no calls: the agents alone for 355 s
+[11:54:58Z] stopping AIPerf
+rg-disc-agents-only-s14: no calls, the agents alone for 355 s; background 0.358 requests/s, 5,459 tokens/s, agent TTFT p50/p99 14754.22/69421.75 ms
+[11:55:00Z] rg-disc-agents-only-s14: no calls, the agents alone for 355 s; background 0.358 requests/s, 5,459 tokens/s, agent TTFT p50/p99 14754.22/69421.75 ms
+[2026-10-28T11:55:02Z] rg-disc-agents-only-s12: phastform runs agents-only
+variant: the measurement drop-in is already on
+variant: the box already runs agents-only 
+[2026-10-28T11:55:02Z] rg-disc-agents-only-s12: phastform has v1.6-27-gea7efd0
+[2026-10-28T11:55:02Z] rg-disc-agents-only-s12: measuring
+[11:55:03Z] configuring cyan for rg-disc-agents-only-s12
+[11:55:03Z] AIPerf: 12 session trees through the gateway, seed 23
+[11:55:56Z] AIPerf is profiling; 60 s of warm-up
+[11:56:56Z] no calls: the agents alone for 355 s
+[12:02:51Z] stopping AIPerf
+[12:02:53Z] rg-disc-agents-only-s12: no calls, the agents alone for 355 s; background 0.482 requests/s, 7,538 tokens/s, agent TTFT p50/p99 1854.41/37323.58 ms
+rg-disc-agents-only-s12: no calls, the agents alone for 355 s; background 0.482 requests/s, 7,538 tokens/s, agent TTFT p50/p99 1854.41/37323.58 ms
+[2026-10-28T12:02:54Z] the frontier of rg-r3
+flatshare/runs/e2/rg-r3/report/frontier.csv
+flatshare/runs/e2/rg-r3/report/frontier.md
+flatshare/runs/e2/rg-r3/report/frontier-1-warm-up-turn.svg
+flatshare/runs/e2/rg-r3/report/frontier-1-callers-1-warm-up-turn.svg
+flatshare/runs/e2/rg-r3/report/frontier-weka-x32-long-1-callers-1-warm-up-turn.svg
+flatshare/runs/e2/rg-r3/report/frontier-weka-x32-long-1-warm-up-turn.svg
+flatshare/runs/e2/rg-r3/report/waterfall.svg
+gateway: restarted
+worker: unchanged
+[2026-10-28T12:03:05Z] phastform is paused; start it again with systemctl --user start flatshare.target
+[2026-10-28T12:03:05Z] done: ~/.cache/kosa-dev/flatshare-prod/exp/e2/rg-r3/report/frontier.md

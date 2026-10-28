@@ -1,0 +1,71 @@
+[2026-10-28T12:40:19Z] campaign rg-r5: 4 points, arm files at v1.6-46-g91de180, the agents' seed 25
+[2026-10-28T12:40:20Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-28T12:40:20Z] sweep-disc-pr-ab48-b256-t0-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T12:40:21Z] w5-a1-voice: pending, engine frozen
+[2026-10-28T12:40:21Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-28T12:40:24Z] campaign rg-r5: 4 points, arm files at v1.6-46-g91de180, the agents' seed 25
+[2026-10-28T12:40:25Z] w5-disc-pr-ab48-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+[2026-10-28T12:40:26Z] sweep-disc-pr-ab48-b256-t0-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-10-28T12:40:26Z] w5-a1-voice: pending, engine frozen
+[2026-10-28T12:40:26Z] w5-disc-frozen-s24: pending, engine frozen
+[2026-10-28T12:40:27Z] w5-disc-pr-ab48-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-28T12:41:58Z] w5-disc-pr-ab48-s24: phastform has v1.6-27-gea7efd0
+[2026-10-28T12:41:58Z] w5-disc-pr-ab48-s24: measuring
+[12:42:01Z] configuring cyan for w5-disc-pr-ab48-s24
+[12:42:02Z] AIPerf: 24 session trees through the gateway, seed 25
+[12:45:23Z] AIPerf is profiling; 60 s of warm-up
+[12:46:23Z] calls: 2 callers, 25 turns each after 1 warm-up
+[12:52:13Z] stopping AIPerf
+[12:52:15Z] w5-disc-pr-ab48-s24: V2V p50/p95/p99 1933.6/2245.5/2343.5 ms, 0 of 50 turns failed; background 0.257 requests/s, 2,969 tokens/s, agent TTFT p50/p99 89625.63/148099.43 ms
+w5-disc-pr-ab48-s24: V2V p50/p95/p99 1933.6/2245.5/2343.5 ms, 0 of 50 turns failed; background 0.257 requests/s, 2,969 tokens/s, agent TTFT p50/p99 89625.63/148099.43 ms
+[2026-10-28T12:52:17Z] sweep-disc-pr-ab48-b256-t0-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-28T12:53:54Z] sweep-disc-pr-ab48-b256-t0-s24: phastform has v1.6-27-gea7efd0
+[2026-10-28T12:53:54Z] sweep-disc-pr-ab48-b256-t0-s24: measuring
+[12:53:57Z] configuring cyan for sweep-disc-pr-ab48-b256-t0-s24
+[12:53:57Z] AIPerf: 24 session trees through the gateway, seed 25
+[12:55:34Z] AIPerf is profiling; 60 s of warm-up
+[12:56:35Z] calls: 2 callers, 25 turns each after 1 warm-up
+[13:02:15Z] stopping AIPerf
+sweep-disc-pr-ab48-b256-t0-s24: V2V p50/p95/p99 1849.8/2064.0/2166.7 ms, 0 of 50 turns failed; background 0.235 requests/s, 2,831 tokens/s, agent TTFT p50/p99 100950.09/155075.71 ms
+[13:02:17Z] sweep-disc-pr-ab48-b256-t0-s24: V2V p50/p95/p99 1849.8/2064.0/2166.7 ms, 0 of 50 turns failed; background 0.235 requests/s, 2,831 tokens/s, agent TTFT p50/p99 100950.09/155075.71 ms
+[2026-10-28T13:02:18Z] w5-a1-voice: phastform runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-10-28T13:03:58Z] w5-a1-voice: phastform has v1.6-27-gea7efd0
+[2026-10-28T13:03:58Z] w5-a1-voice: measuring
+[13:04:01Z] configuring cyan for w5-a1-voice
+[13:04:01Z] calls: 2 callers, 25 turns each after 1 warm-up
+w5-a1-voice: V2V p50/p95/p99 1641.3/1841.5/1898.1 ms, 0 of 50 turns failed
+[13:09:53Z] w5-a1-voice: V2V p50/p95/p99 1641.3/1841.5/1898.1 ms, 0 of 50 turns failed
+[2026-10-28T13:09:55Z] w5-disc-frozen-s24: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-10-28T13:09:55Z] w5-disc-frozen-s24: phastform has v1.6-27-gea7efd0
+[2026-10-28T13:09:55Z] w5-disc-frozen-s24: measuring
+[13:09:56Z] configuring cyan for w5-disc-frozen-s24
+[13:09:56Z] AIPerf: 24 session trees through the gateway, seed 25
+[13:11:26Z] AIPerf is profiling; 60 s of warm-up
+[13:12:26Z] calls: 2 callers, 25 turns each after 1 warm-up
+[13:19:45Z] stopping AIPerf
+w5-disc-frozen-s24: V2V p50/p95/p99 4385.3/12309.3/12727.4 ms, 0 of 50 turns failed; background 0.269 requests/s, 3,043 tokens/s, agent TTFT p50/p99 90271.99/150658.15 ms
+[13:19:48Z] w5-disc-frozen-s24: V2V p50/p95/p99 4385.3/12309.3/12727.4 ms, 0 of 50 turns failed; background 0.269 requests/s, 3,043 tokens/s, agent TTFT p50/p99 90271.99/150658.15 ms
+[2026-10-28T13:19:48Z] the frontier of rg-r5
+flatshare/runs/e2/rg-r5/report/frontier.csv
+flatshare/runs/e2/rg-r5/report/frontier.md
+flatshare/runs/e2/rg-r5/report/frontier.svg
+flatshare/runs/e2/rg-r5/report/frontier-weka-x32-long.svg
+flatshare/runs/e2/rg-r5/report/waterfall.svg
+gateway: restarted
+worker: unchanged
+[2026-10-28T13:19:59Z] phastform is paused; start it again with systemctl --user start flatshare.target
+[2026-10-28T13:19:59Z] done: ~/.cache/kosa-dev/flatshare-prod/exp/e2/rg-r5/report/frontier.md

@@ -1,0 +1,142 @@
+{
+  "kind": "e2-point",
+  "name": "rg-disc-pr-ab48-b256-s12",
+  "status": "complete",
+  "host": "cyan",
+  "node": "phastform",
+  "started": 1793178426.3549519,
+  "arm": {
+    "name": "rg-disc-pr-ab48-b256-s12",
+    "arm": "9-pr-ab48-b256-s12",
+    "label": "vLLM PRs A and B, 48-token window, step cap 256, two callers beside 12 session trees, warm-up turn",
+    "voice": {
+      "callers": 2,
+      "turns": 25,
+      "barge_in": 0.25,
+      "seed": 0,
+      "warmup_turns": 1,
+      "preemptive_generation": true,
+      "events": true
+    },
+    "agents": {
+      "sessions": 12,
+      "think_cap": 120.0,
+      "warmup": 60.0,
+      "data": "weka-x32-long",
+      "seed": 11
+    },
+    "gateway": {},
+    "engine": {
+      "variant": "make-room",
+      "flags": [
+        "--additional-config.make_room.reserve_tokens",
+        "0",
+        "--additional-config.make_room.budget_cap_tokens",
+        "48",
+        "--max-num-batched-tokens",
+        "256",
+        "--long-prefill-token-threshold",
+        "0"
+      ]
+    },
+    "router": null
+  },
+  "versions": {
+    "source": "v1.6-27-gea7efd0",
+    "gpu_source": {
+      "phastform": "v1.6-27-gea7efd0"
+    },
+    "flatshare_bench": "1.6.0",
+    "aiperf": "0.13.0",
+    "flatshare_gateway": "flatshare-gateway 1.6.0"
+  },
+  "save_audio": false,
+  "agents_seed": 23,
+  "kv_sample_s": 0.5,
+  "profile": "rtx-5060-ti",
+  "engine": {
+    "server": "vllm",
+    "version": "0.32.0",
+    "pool_tokens": 36400,
+    "flags": {
+      "checked": [
+        "--scheduling-policy",
+        "--max-num-batched-tokens",
+        "--long-prefill-token-threshold",
+        "--model",
+        "--revision",
+        "--max-model-len",
+        "--scheduler-cls",
+        "--additional-config.make_room.max_preemptions_per_step",
+        "--additional-config.make_room.budget_cap",
+        "--additional-config.make_room.reserve_tokens",
+        "--additional-config.make_room.budget_cap_tokens"
+      ],
+      "unchecked": []
+    }
+  },
+  "cyan": {
+    "router": null,
+    "gateway": {
+      "restarted": false,
+      "config": {
+        "upstream": "unix:/run/user/1007/flatshare/phastform-engine.sock",
+        "upstream_idle_timeout_s": 55,
+        "log_format": "json",
+        "cache_salt_secret_file": "~/.config/flatshare/cache-salt-secret",
+        "metrics_key_file": "~/.config/flatshare/metrics-key",
+        "listen": [
+          {
+            "tcp": "127.0.0.1:18080"
+          },
+          {
+            "unix": "/run/user/1007/flatshare/gateway.sock",
+            "tenant": "voice"
+          }
+        ],
+        "tenants": {
+          "voice": {
+            "trusted": true,
+            "default_class": "realtime",
+            "max_class": "realtime"
+          },
+          "agents": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "trusted": true,
+            "default_class": "background",
+            "max_class": "interactive"
+          },
+          "bench": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "default_class": "interactive"
+          }
+        },
+        "canary": {
+          "enabled": false
+        }
+      }
+    },
+    "worker": {
+      "restarted": false,
+      "preemptive_generation": true,
+      "events": true
+    },
+    "llm_path": "/run/user/1007/flatshare/gateway.sock"
+  },
+  "window": {
+    "start": 1793178547.6624029,
+    "end": 1793178887.744752
+  },
+  "aiperf": {
+    "exit_status": 0
+  },
+  "gateway_log": {
+    "request_lines": 220,
+    "requests_ended": 220
+  },
+  "finished": 1793178890.1024399
+}
