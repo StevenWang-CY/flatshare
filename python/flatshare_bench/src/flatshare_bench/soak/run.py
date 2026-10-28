@@ -234,6 +234,8 @@ def read_worker_status(path: Path, now: float | None = None) -> dict[str, Any] |
         "reason",
         "refused",
         "audio",
+        "turn_detection",
+        "node_binding",
         "profile",
     )
     return {key: data.get(key) for key in keys} | {"age_s": None if age is None else round(age, 1)}

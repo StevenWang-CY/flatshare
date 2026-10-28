@@ -1425,6 +1425,11 @@ def test_the_worker_status_is_read_with_its_age(tmp_path: Path) -> None:
     )
     status = read_worker_status(path, now=101.25)
     assert status is not None and (status["age_s"], status["active_calls"]) == (1.2, 2)
+    # What the worker runs, as it describes itself: its endpointing and whether it binds calls to nodes.
+    described = {"audio": "synthetic", "turn_detection": "vad", "node_binding": True}
+    path.write_text(json.dumps({"updated": 100.0, "mode": "serve"} | described))
+    status = read_worker_status(path, now=101.25)
+    assert status is not None and {key: status[key] for key in described} == described
 
 
 def test_a_complete_soak_is_never_written_over(tmp_path: Path) -> None:
