@@ -446,6 +446,20 @@ def test_the_agents_state_says_when_it_stops_speaking() -> None:
     assert asyncio.run(state.left_speaking_after(4.5, 0.05)) is None
 
 
+def test_the_agents_state_is_read_on_a_long_running_hosts_clock() -> None:
+    # The callers' clock is the process's monotonic one, which on a host up for a year reads in the tens of millions
+    # of seconds, where a nanosecond is below the clock's resolution: the times rg-r1's first call saw on cyan.
+    state = audio.AgentState()
+    for at, name in (
+        (38207125.226, "listening"),
+        (38207128.66, "thinking"),
+        (38207129.288, "speaking"),
+    ):
+        state.record(name, at=at)
+    state.record("listening", at=38207135.704)
+    assert asyncio.run(state.left_speaking_after(38207129.36, 0.0)) == 38207135.704
+
+
 def test_a_replys_pauses_are_its_quiet_stretches_between_spans() -> None:
     heard = audio.AgentAudio()
     heard.spans = [[1.0, 1.8], [2.0, 2.5], [3.2, 3.6], [9.0, 9.5]]

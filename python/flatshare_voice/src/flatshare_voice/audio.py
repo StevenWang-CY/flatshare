@@ -287,8 +287,10 @@ class AgentState:
         change arrives within ``timeout`` (an agent that publishes no state)."""
         deadline = time.monotonic() + timeout
         while True:
-            for when, state in self.changes:
-                if when > t and state != SPEAKING and self.at(when - 1e-9) == SPEAKING:
+            # Each change against the one before it, not the state a moment before it: the clock reads in the tens
+            # of millions of seconds on a host that has been up for a year, where no small offset moves a time.
+            for (_, before), (when, state) in itertools.pairwise(self.changes):
+                if when > t and before == SPEAKING and state != SPEAKING:
                     return when
             if time.monotonic() >= deadline:
                 return None
