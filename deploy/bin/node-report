@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""node-report [since=EPOCH]: what a soak reads of a GPU node at each of its checks, one JSON object on stdout.
+
+The soak's guard key runs this and nothing else on the node, whatever its session asks (deploy/authorize-guard.sh):
+
+- ``gpu_guard``: the GPU's compute processes, each the box's own or another's (deploy/bin/gpu-guard --list): its exit
+  status, which node-report exits with (0 clear, 1 another's process holds the GPU, 2 nvidia-smi could not list
+  them), its output and the end of its errors;
+- ``journal``, given ``since`` (the session's command, SSH_ORIGINAL_COMMAND under the key's forced command, or the first
+  argument): the user manager's journal lines about the node's flatshare units from then on, their starts, stops,
+  restarts and failures, at most MAX_LINES, a failure's with the unit's own last lines (the request lines of a server
+  left out).
+
+Anything else asked is ignored, and nothing on the node changes. It runs with the node's /usr/bin/python3, so it uses
+nothing a Python 3.10's standard library lacks.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+SINCE = re.compile(r"since=([0-9]{9,11}(?:\.[0-9]{1,6})?)")
+MAX_LINES = 500
+OWN_LINES = 20
+TIMEOUT_S = 20.0
+
+
+def since_asked(argv, env):
+    """The time the soak asks the journal from: ``since=EPOCH``, its session's command or the first argument."""
+    asked = env.get("SSH_ORIGINAL_COMMAND") or (argv[1] if len(argv) > 1 else "")
+    found = SINCE.fullmatch(asked.strip())
+    return float(found.group(1)) if found else None
+
+
+def run(command):
+    try:
+        done = subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT_S)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 127, "", f"{type(exc).__name__}: {exc}"
+    return done.returncode, done.stdout, done.stderr
+
+
+def units():
+    """The node's flatshare units, as its user manager knows them."""
+    status, out, _ = run(
+        [
+            "systemctl",
+            "--user",
+            "list-units",
+            "flatshare-*",
+            "--all",
+            "--plain",
+            "--no-legend",
+            "--no-pager",
+        ]
+    )
+    return [line.split()[0] for line in out.splitlines() if line.strip()] if status == 0 else []
+
+
+def is_failure(message):
+    if "Failed with result" in message:
+        return True
+    return "Main process exited" in message and "status=0/SUCCESS" not in message
+
+
+def own_lines(unit, at):
+    """The unit's own last lines up to a second after ``at``, the servers' request lines left out."""
+    _, out, _ = run(
+        ["journalctl", "--user", f"_SYSTEMD_USER_UNIT={unit}", "--since", f"@{at - 120:.6f}",
+         "--until", f"@{at + 1:.6f}", "-o", "cat", "-n", str(OWN_LINES * 5), "--no-pager"]
+    )  # fmt: skip
+    kept = [
+        line.strip()
+        for line in out.splitlines()
+        if line.strip() and '"message":"request"' not in line and '"message": "request"' not in line
+    ]
+    return kept[-OWN_LINES:]
+
+
+def journal(names, since):
+    """The user manager's lines about ``names`` from ``since`` on (USER_UNIT is its field for the unit a line is
+    about; a unit's own output carries _SYSTEMD_USER_UNIT)."""
+    if not names:
+        return []
+    _, out, _ = run(
+        ["journalctl", "--user", "--since", f"@{since:.6f}", "-o", "json", "-n", str(MAX_LINES), "--no-pager",
+         *(f"USER_UNIT={name}" for name in names)]
+    )  # fmt: skip
+    found = []
+    for line in out.splitlines():
+        try:
+            entry = json.loads(line)
+            at = int(entry["__REALTIME_TIMESTAMP"]) / 1e6
+        except (ValueError, KeyError, TypeError):
+            continue
+        unit, message = entry.get("USER_UNIT"), entry.get("MESSAGE")
+        if (
+            not isinstance(unit, str)
+            or not unit.startswith("flatshare-")
+            or not isinstance(message, str)
+        ):
+            continue
+        line = {"at": round(at, 6), "unit": unit, "message": message}
+        if is_failure(message):
+            line["own_lines"] = own_lines(unit, at)
+        found.append(line)
+    return found
+
+
+def main():
+    since = since_asked(sys.argv, os.environ)
+    status, out, err = run(["bash", str(HERE / "gpu-guard"), "--list"])
+    report = {"gpu_guard": {"status": status, "stdout": out, "stderr": err[-2000:]}}
+    if since is not None:
+        report["journal"] = journal(units(), since)
+    print(json.dumps(report))
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())

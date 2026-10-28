@@ -45,7 +45,7 @@ import random
 import time
 import uuid
 import wave
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, TextIO
@@ -54,6 +54,7 @@ import numpy as np
 from livekit import api, rtc
 
 from flatshare_stats import percentiles, v2v_samples
+from flatshare_stats import replies as reply_summary
 
 from .audio import (
     AGENT_RATE,
@@ -268,8 +269,19 @@ class Caller:
         return None
 
     async def call(self, rows: list[dict[str, Any]], log: TextIO) -> None:
-        config = self.config
         tasks: set[asyncio.Task[None]] = set()
+        await self.join(tasks)
+        try:
+            await self.listening()
+            await self.play(rows, log)
+        finally:
+            await self.hang_up(tasks)
+
+    async def join(self, tasks: set[asyncio.Task[None]]) -> None:
+        """Join the call's room and publish the microphone, following the agent there: its audio once its track is
+        subscribed and its state as it changes. The microphone's loop and the agent's audio run as tasks in ``tasks``,
+        which :meth:`hang_up` ends."""
+        config = self.config
 
         @self.room.on("track_subscribed")
         def _on_track(track: rtc.Track, _: Any, participant: rtc.RemoteParticipant) -> None:
@@ -290,32 +302,40 @@ class Caller:
         options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
         await self.room.local_participant.publish_track(track, options)
         tasks.add(asyncio.create_task(self.microphone.run()))
-        try:
-            await until(
-                lambda: any(
-                    p.attributes.get(AGENT_STATE) == "listening" for p in agents(self.room)
-                ),
-                config.reply_timeout,
-                "the agent never listened",
-            )
-            self.agent_state.record("listening")
-            await asyncio.sleep(0.5)  # let the agent's audio input run on silence first
-            await self.play(rows, log)
-        finally:
-            self.max_lateness_s = self.microphone.max_lateness_s
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            await self.microphone.source.aclose()
-            await self.room.disconnect()
 
-    async def play(self, rows: list[dict[str, Any]], log: TextIO) -> None:
+    async def listening(self) -> None:
+        """Wait for the agent in the room to listen, within the reply timeout, then let its audio input run on
+        silence for half a second before the first line."""
+        await until(
+            lambda: any(p.attributes.get(AGENT_STATE) == "listening" for p in agents(self.room)),
+            self.config.reply_timeout,
+            "the agent never listened",
+        )
+        self.agent_state.record("listening")
+        await asyncio.sleep(0.5)  # let the agent's audio input run on silence first
+
+    async def hang_up(self, tasks: set[asyncio.Task[None]]) -> None:
+        """Leave the room: the tasks :meth:`join` started end, and the microphone closes."""
+        self.max_lateness_s = self.microphone.max_lateness_s
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await self.microphone.source.aclose()
+        await self.room.disconnect()
+
+    async def play(
+        self, rows: list[dict[str, Any]], log: TextIO, go_on: Callable[[], bool] | None = None
+    ) -> None:
         """The call's turns, each line to ``rows`` and ``log`` (turns.jsonl) as it ends, numbered in
         the order they are played: first the warm-up turns, marked ``"warmup": true``, whose lines
-        and pauses come from a generator of their own, then the measured turns."""
+        and pauses come from a generator of their own, then the measured turns. With ``go_on``, the
+        call ends before any turn it answers false for (``flatshare-voice arrivals``: its run ends,
+        or the agent left); without it, as E2's calls do, it plays every turn."""
         config = self.config
         warmup = random.Random(f"warmup-{config.seed}-{self.index}")
         for number in range(config.warmup_turns + config.turns):
+            if go_on is not None and not go_on():
+                return
             warm = number < config.warmup_turns
             try:
                 row = await self.turn(number, warmup if warm else None)
@@ -400,23 +420,9 @@ def summarize(
 def replies(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """The replies the calls heard to their end (on a turn with an interruption, the reply to it): how the caller knew
     each had ended, how long its audio ran, its pauses of PAUSE_S or more, and, where the receiver counted them, the
-    share of the samples it played over them that it had to conceal, silence left out."""
-    longest = [max(r["reply_pauses_ms"], default=0.0) for r in rows]
-    found: dict[str, Any] = {
-        "n": len(rows),
-        "ended_by_state": sum(1 for r in rows if r.get("end_by") == "state"),
-        "audio_ms": percentiles(r["reply_audio_ms"] for r in rows),
-        "with_a_pause": sum(1 for m in longest if m > 0),
-        "with_a_pause_over_500_ms": sum(1 for m in longest if m > 500),
-        "with_a_pause_of_quiet_s": sum(1 for m in longest if m >= QUIET_S * 1000),
-        "longest_pause_ms": percentiles(longest),
-    }
-    received = [r["received"] for r in rows if "received" in r]
-    samples = sum(x["samples"] for x in received)
-    if samples:
-        concealed = sum(x["concealed"] - x["silent_concealed"] for x in received)
-        found["concealed_share"] = round(concealed / samples, 5)
-    return found
+    share of the samples it played over them that it had to conceal, silence left out (flatshare_stats.replies, which
+    the soak's summary shares, with a reply ended by QUIET_S of quiet)."""
+    return reply_summary(rows, quiet_ms=QUIET_S * 1000)
 
 
 async def run_bots(config: BotsConfig, out_dir: Path) -> dict[str, Any]:

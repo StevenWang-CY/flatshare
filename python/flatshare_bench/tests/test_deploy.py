@@ -188,6 +188,161 @@ def test_authorizing_needs_all_three_keys_and_openbsd_netcat(tmp_path: Path) -> 
     assert authorized == f"{LOGIN}\n"
 
 
+def authorize_guard(
+    work: Path, authorized_keys: str = "", guard: bool = True, key: str | None = None
+) -> tuple[subprocess.CompletedProcess[str], str, Path]:
+    """Runs authorize-guard.sh from cyan to phastform, hosts kept under ``work``: cyan with its guard key ``key`` (none
+    when None: the script makes one), phastform with ``authorized_keys`` and, with ``guard``, the deployment's
+    node-report. Returns the run, the node's authorized_keys after it and cyan's home."""
+    hosts, bin_dir = work / "hosts", work / "bin"
+    for host in ("cyan", "phastform"):
+        (hosts / host / ".ssh").mkdir(parents=True)
+    if key is not None:
+        (hosts / "cyan" / ".ssh" / "flatshare_guard_ed25519").write_text("private\n")
+        (hosts / "cyan" / ".ssh" / "flatshare_guard_ed25519.pub").write_text(f"{key}\n")
+    if guard:
+        tool = hosts / "phastform" / "flatshare" / "src" / "deploy" / "bin" / "node-report"
+        tool.parent.mkdir(parents=True)
+        tool.write_text("#!/bin/sh\n")
+        tool.chmod(0o755)
+    authorized = hosts / "phastform" / ".ssh" / "authorized_keys"
+    authorized.write_text(authorized_keys)
+    bin_dir.mkdir()
+    (bin_dir / "fake-ssh").write_text(FAKE_SSH)
+    (bin_dir / "fake-ssh").chmod(0o755)
+    env = os.environ | {
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_HOSTS": str(hosts),
+        "FLATSHARE_SSH": "fake-ssh",
+    }
+    done = subprocess.run(
+        ["bash", str(DEPLOY / "authorize-guard.sh"), "cyan", "phastform"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    return done, authorized.read_text(), hosts / "cyan"
+
+
+GUARD_ENTRY = 'restrict,command="exec flatshare/src/deploy/bin/node-report"'
+"""The forced command of the guard key's entry: what a soak reads of the node (its GPU processes and its units'
+journal lines), and nothing else."""
+
+
+def test_the_guard_key_may_only_run_the_nodes_report(tmp_path: Path) -> None:
+    # cyan's guard key, made where it has none, gets one entry: no forwarding, no pty, and node-report for every session
+    # whatever it asks. An earlier entry of the key goes; every other entry stays as it was.
+    tunnel = f'restrict,command="exec nc -q0 -U /run/user/1/flatshare/engine.sock" {KEYS["engine"]}'
+    done, authorized, cyan = authorize_guard(tmp_path / "new", f"{LOGIN}\n{tunnel}\n")
+    assert done.returncode == 0, done.stderr
+    made = (cyan / ".ssh" / "flatshare_guard_ed25519.pub").read_text().split()
+    assert made[0] == "ssh-ed25519" and made[2].startswith("flatshare-guard@")
+    assert (cyan / ".ssh" / "flatshare_guard_ed25519").exists()
+    assert authorized.splitlines() == [LOGIN, tunnel, f"{GUARD_ENTRY} {' '.join(made)}"]
+    assert done.stdout.startswith("authorized: the guard key reads what a soak reads of ")
+    # A key it already has is kept, and its earlier entry replaced, with or without a comment.
+    for case, key in (("again", f"{KEYS['stt']} flatshare-guard@cyan"), ("bare", KEYS["stt"])):
+        earlier = f'restrict,command="/bin/true" {KEYS["stt"]} flatshare-guard@cyan'
+        done, authorized, cyan = authorize_guard(tmp_path / case, f"{LOGIN}\n{earlier}\n", key=key)
+        assert done.returncode == 0, done.stderr
+        assert authorized.splitlines() == [LOGIN, f"{GUARD_ENTRY} {key}"], case
+        assert (cyan / ".ssh" / "flatshare_guard_ed25519").read_text() == "private\n"
+
+
+def test_the_guard_key_is_not_authorized_on_a_node_without_its_report(tmp_path: Path) -> None:
+    done, authorized, _ = authorize_guard(tmp_path, f"{LOGIN}\n", guard=False, key=KEYS["tts"])
+    assert done.returncode == 2 and "has no ~/flatshare/src/deploy/bin/node-report" in done.stderr
+    assert authorized == f"{LOGIN}\n"
+
+
+NODE_JOURNAL = "\n".join(
+    json.dumps({"__REALTIME_TIMESTAMP": str(int(at * 1e6)), "USER_UNIT": unit, "MESSAGE": message})
+    for at, unit, message in (
+        (
+            1_800_000_010.5,
+            "flatshare-engine.service",
+            "flatshare-engine.service: Main process exited, code=killed",
+        ),
+        (
+            1_800_000_011.0,
+            "flatshare-engine.service",
+            "flatshare-engine.service: Scheduled restart job",
+        ),
+        (1_800_000_012.0, "other.service", "Started other.service"),
+    )
+)
+"""The node's user manager's lines about its units, as ``journalctl --user -o json`` gives them."""
+
+
+def node_report(tmp_path: Path, asked: str | None, argv: list[str] = (), status: int = 0):
+    """deploy/bin/node-report as the guard key's forced command runs it, its session's command ``asked``, beside a
+    stand-in gpu-guard (``status``) and on a node whose systemctl and journalctl are stand-ins that log their
+    arguments. Returns the run and the journal's calls."""
+    node = tmp_path / "node"
+    node.mkdir(parents=True, exist_ok=True)
+    (node / "node-report").write_text((DEPLOY / "bin" / "node-report").read_text())
+    (node / "gpu-guard").write_text(
+        f"#!/bin/sh\nprintf 'ours\\t2211\\tme\\t13990\\tpython3\\n'\nexit {status}\n"
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    calls = tmp_path / "journalctl.calls"
+    (bin_dir / "systemctl").write_text(
+        "#!/bin/sh\nprintf 'flatshare-engine.service loaded active running Flatshare engine\\n"
+        "flatshare-tts.service loaded active running Flatshare TTS\\n'\n"
+    )
+    (tmp_path / "journal.json").write_text(NODE_JOURNAL + "\n")
+    (bin_dir / "journalctl").write_text(
+        f'#!/bin/sh\necho "$*" >>{calls}\ncase "$*" in\n'
+        f'  *"-o json"*) cat {tmp_path / "journal.json"} ;;\n'
+        '  *) printf \'CUDA error: an illegal memory access\\n{"message":"request","status":200}\\n'
+        "Engine core proc died\\n' ;;\nesac\n"
+    )
+    for tool in ("systemctl", "journalctl"):
+        (bin_dir / tool).chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k != "SSH_ORIGINAL_COMMAND"}
+    env["PATH"] = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+    if asked is not None:
+        env["SSH_ORIGINAL_COMMAND"] = asked
+    done = subprocess.run(
+        [sys.executable, str(node / "node-report"), *argv], env=env, capture_output=True, text=True
+    )
+    return done, calls.read_text().splitlines() if calls.exists() else []
+
+
+def test_the_nodes_report_gives_its_gpus_processes_and_its_units_lines(tmp_path: Path) -> None:
+    # What the soak's guard key runs on a GPU node, whatever its session asks: gpu-guard --list, whose status it exits
+    # with, and, for a session that asks since=EPOCH, the user manager's lines about the node's flatshare units from
+    # then, a failure's with the unit's own last lines (a server's request lines left out).
+    done, calls = node_report(tmp_path / "asked", "since=1800000000.5")
+    assert done.returncode == 0, done.stderr
+    report = json.loads(done.stdout)
+    assert report["gpu_guard"] == {
+        "status": 0,
+        "stdout": "ours\t2211\tme\t13990\tpython3\n",
+        "stderr": "",
+    }
+    assert report["journal"] == [
+        {"at": 1_800_000_010.5, "unit": "flatshare-engine.service",
+         "message": "flatshare-engine.service: Main process exited, code=killed",
+         "own_lines": ["CUDA error: an illegal memory access", "Engine core proc died"]},
+        {"at": 1_800_000_011.0, "unit": "flatshare-engine.service",
+         "message": "flatshare-engine.service: Scheduled restart job"},
+    ]  # fmt: skip
+    asked = calls[0].split()
+    assert asked[:3] == ["--user", "--since", "@1800000000.500000"]
+    assert {"USER_UNIT=flatshare-engine.service", "USER_UNIT=flatshare-tts.service"} <= set(asked)
+    assert "_SYSTEMD_USER_UNIT=flatshare-engine.service" in calls[1]
+    # A session that asks anything else gets the GPU's processes alone, and the journal is not read.
+    for case, asked_for in (("other", "rm -rf ~"), ("none", None), ("shell", "since=1; id")):
+        done, calls = node_report(tmp_path / case, asked_for)
+        assert done.returncode == 0 and "journal" not in json.loads(done.stdout), case
+        assert calls == [], case
+    # Run on this host (a single host's guard), the time comes as its argument; the status is gpu-guard's.
+    done, _ = node_report(tmp_path / "local", None, ["since=1800000000"], status=1)
+    assert done.returncode == 1 and len(json.loads(done.stdout)["journal"]) == 2
+
+
 def test_cyans_install_makes_the_gateways_secret_and_metrics_key_once(tmp_path: Path) -> None:
     home, bin_dir = tmp_path / "home", tmp_path / "bin"
     home.mkdir()

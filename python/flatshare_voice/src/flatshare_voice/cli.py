@@ -113,6 +113,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bots.add_argument("--out", type=Path, required=True, help="run directory")
     bots.set_defaults(func=_bots)
+    from .arrivals_command import add_arrivals  # a soak's callers, their options beside them
+
+    add_arrivals(commands)
     return parser
 
 
@@ -143,10 +146,12 @@ def _share(text: str) -> float:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "bots" and (
+    if args.command in ("bots", "arrivals") and (
         missing := [name for name in LIVEKIT_CREDENTIALS if not os.environ.get(name)]
     ):
-        parser.error(f"bots needs {' and '.join(missing)} in the environment for its join tokens")
+        parser.error(
+            f"{args.command} needs {' and '.join(missing)} in the environment for its join tokens"
+        )
     return args.func(args)
 
 

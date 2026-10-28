@@ -1,4 +1,4 @@
-"""The ``flatshare-bench`` command line: trace scaling, latency probes, engine metrics and E2 points.
+"""The ``flatshare-bench`` command line: trace scaling, latency probes, engine metrics, E2 points and soaks.
 
 Every command, and every action of one, has a function of its own (``set_defaults(func=...)``), which
 imports what it runs, so that a command loads only its own modules. A failure the tools foresee, an
@@ -18,6 +18,7 @@ from pathlib import Path
 from flatshare_bench.e2.arm import E2Error
 from flatshare_bench.load import LoadSpec, parse_lengths
 from flatshare_bench.protocol import DEFAULT_MODEL, SloClass
+from flatshare_bench.soak.command import add_soak
 from flatshare_bench.transport import runtime_socket, socket_path
 
 ADDRESS = "http://host:port, or unix: and a socket's path"
@@ -704,6 +705,7 @@ def build_parser() -> argparse.ArgumentParser:
         _add_voice_turn,
         _add_e2,
         _add_drill,
+        add_soak,
     ):
         add(commands)
     return parser

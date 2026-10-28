@@ -6,7 +6,14 @@ import statistics
 
 import pytest
 
-from flatshare_stats import metric_samples, percentiles, quantiles, summarize, v2v_samples
+from flatshare_stats import (
+    metric_samples,
+    percentiles,
+    quantiles,
+    replies,
+    summarize,
+    v2v_samples,
+)
 
 
 def linear(xs: list[float], p: float) -> float:
@@ -79,6 +86,39 @@ def test_the_v2v_samples_take_each_reply_and_censor_the_ones_that_never_came() -
     ]
     assert v2v_samples(turns, 30_000.0) == ([1600.0, 1700.0, 1500.0, 30_000.0, 1650.0, 30_000.0], 2)
     assert v2v_samples([], 30_000.0) == ([], 0)
+
+
+def test_the_replies_summary_counts_their_ends_pauses_and_concealed_audio() -> None:
+    turns = [
+        {"turn": 0, "end_by": "state", "reply_audio_ms": 2000.0, "reply_pauses_ms": [],
+         "received": {"samples": 48_000, "concealed": 960, "silent_concealed": 480}},
+        {"turn": 1, "end_by": "state", "reply_audio_ms": 3000.0, "reply_pauses_ms": [320.0, 610.0],
+         "received": {"samples": 72_000, "concealed": 0, "silent_concealed": 0}},
+        {"turn": 2, "end_by": "silence", "reply_audio_ms": 1000.0, "reply_pauses_ms": [1000.0]},
+        {"turn": 3, "error": "the agent did not start speaking"},  # no reply heard to its end
+    ]  # fmt: skip
+    found = replies(turns)
+    assert {k: v for k, v in found.items() if k not in ("audio_ms", "longest_pause_ms")} == {
+        "n": 3,
+        "ended_by_state": 2,
+        "with_a_pause": 2,
+        "with_a_pause_over_500_ms": 2,  # 610 and 1,000 ms; 500 ms itself is not over
+        "with_a_pause_of_quiet_s": 1,
+        "concealed_share": round(
+            480 / 120_000, 5
+        ),  # concealed less silence, over the samples played
+    }
+    assert found["audio_ms"] == {"n": 3, "p50": 2000.0, "p95": 2900.0, "p99": 2980.0}
+    assert found["longest_pause_ms"] == {"n": 3, "p50": 610.0, "p95": 961.0, "p99": 992.2}
+    # The quiet that ends a reply is the caller's: a shorter one counts more replies as cut by it.
+    assert replies(turns, quiet_ms=600.0)["with_a_pause_of_quiet_s"] == 2
+    # A pause of exactly 500 ms is not over it; replies without receiver counts have no concealed share.
+    assert replies([{"end_by": "state", "reply_audio_ms": 900.0, "reply_pauses_ms": [500.0]}]) == {
+        "n": 1, "ended_by_state": 1, "audio_ms": {"n": 1, "p50": 900.0}, "with_a_pause": 1,
+        "with_a_pause_over_500_ms": 0, "with_a_pause_of_quiet_s": 0,
+        "longest_pause_ms": {"n": 1, "p50": 500.0},
+    }  # fmt: skip
+    assert replies([])["n"] == 0
 
 
 def test_metric_samples_reads_every_sample_and_skips_the_rest() -> None:

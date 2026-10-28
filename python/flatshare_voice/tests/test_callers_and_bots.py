@@ -316,6 +316,49 @@ def test_a_call_opens_with_its_warm_up_turns_and_measures_the_same_turns_after_t
     assert [json.loads(line) for line in logged] == warmed
 
 
+def test_a_call_told_to_stop_ends_before_its_next_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The arrivals' calls end when their run does, or when the agent has left (go_on); E2's calls, without go_on,
+    # play every turn. The lines up to the stop are those of the same call played through.
+    monkeypatch.setattr(bots, "QUIET_S", 0.2)
+    lines = [line_clip(f"turn-{n:02}", 0.2) for n in range(8)]
+    corpus = SimpleNamespace(turns=lines, barge_ins=[line_clip("barge", 0.2)])
+    config = BotsConfig("ws://fake", "key", "secret", tmp_path, turns=4, barge_in=0.0, seed=5)
+    config = dataclasses.replace(config, think=(0.0, 0.0))
+
+    def call(go_on: Any) -> list[dict[str, Any]]:
+        line = Line()
+        monkeypatch.setattr(audio.rtc, "AudioSource", line.source)
+        monkeypatch.setattr(audio.rtc, "AudioStream", line.stream)
+
+        async def play() -> list[dict[str, Any]]:
+            caller = Caller(config, corpus, 0, "t")
+            tasks = [
+                asyncio.create_task(caller.microphone.run()),
+                asyncio.create_task(caller.agent_audio.consume(line)),
+            ]
+            await asyncio.sleep(0.2)
+            rows: list[dict[str, Any]] = []
+            with (tmp_path / "turns.jsonl").open("w") as log:
+                if go_on is None:
+                    await caller.play(rows, log)
+                else:
+                    await caller.play(rows, log, go_on=lambda: go_on(rows))
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            return rows
+
+        return asyncio.run(play())
+
+    every = call(None)
+    stopped = call(lambda rows: len(rows) < 2)
+    assert [row["turn"] for row in every] == [0, 1, 2, 3]
+    assert [row["clip"] for row in stopped] == [row["clip"] for row in every[:2]]
+    assert call(lambda rows: False) == []  # told before its first turn: none
+
+
 def test_a_failed_turn_leaves_the_turns_after_it_as_they_were(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
