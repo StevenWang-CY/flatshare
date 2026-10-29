@@ -48,8 +48,6 @@ it changes no unit, configuration or release.
 
 ## Files
 
-- `results.json`: the run's output as written, 164,064 bytes.
-- `window.py`: the script as run, sha256 33636e78…59e307c7. Its strings are the run's own: its name in the review that
-  wrote it, its probe session's id, and its `rv3-*` rule for output directories. Its docstring was written for version
-  1.7's window; the run used version 1.8.
+- `results.json`: the run's output as written.
+- `window.py`: the script as run. It was written for version 1.7's window, as `rv3_window.py`; the run used version 1.8.
 - `table.py`: the tables above, from `results.json` (`python3 table.py`).

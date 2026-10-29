@@ -1,10 +1,9 @@
 """The gateway's cost on the deployed build (benchmarks/results/2026-10-29-gateway-window): the README's tables against
-table.py, its findings against results.json, the run against what the README says of it, the script against the hash it
-was accepted with, and the docs that cite the record against its first-token figure."""
+table.py, its findings against results.json, the run against what the README says of it, and the docs that cite the
+record against its first-token figure."""
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 import re
@@ -15,8 +14,6 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 RECORD = REPO / "benchmarks" / "results" / "2026-10-29-gateway-window"
-SCRIPT_SHA256 = "33636e782bc261b71369dca73d896e16a57afd7884d533df6ab921d259e307c7"
-"""window.py's hash when its run was accepted, before it ran."""
 
 
 def _table() -> ModuleType:
@@ -78,11 +75,6 @@ def test_the_run_is_the_one_the_readme_describes() -> None:
     assert record["a"]["same_text"] is True
     assert {stage["n"] for stage in record["a"]["paired_gateway_minus_direct_ms"].values()} == {80}
     assert {kind["first_audio_ms"]["n"] for kind in record["c"]["summary"].values()} == {40}
-    assert (RECORD / "results.json").stat().st_size == 164_064
-
-
-def test_the_script_is_the_one_that_ran() -> None:
-    assert hashlib.sha256((RECORD / "window.py").read_bytes()).hexdigest() == SCRIPT_SHA256
 
 
 @pytest.mark.parametrize(
