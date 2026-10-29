@@ -5,7 +5,7 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 ## Start here
 
 - [REPORT.md](REPORT.md): Why does a voice turn wait seconds beside coding agents on one GPU, what do the two scheduler rules recover, and at what cost to the agents?
-- [ARCHITECTURE.md](ARCHITECTURE.md): What is built: the change inside vLLM's scheduler, the deployment it was measured on, the harness, the simulator, and what was tried and dropped?
+- [ARCHITECTURE.md](ARCHITECTURE.md): How is the deployed system built, from the change inside vLLM's scheduler to the gateway, the voice worker, two cards with a warm spare and releases that roll back, and what was measured and dropped?
 - [GLOSSARY.md](GLOSSARY.md): What does a term or a record's label mean (the frozen box, arm 9, W0 to W8, the project's former names)?
 
 ## Deploy and operate
@@ -20,6 +20,8 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 
 - [BENCHMARKS.md](BENCHMARKS.md): What was measured, run by run, with each number's range and the records it comes from?
 - [EXPERIMENTS.md](EXPERIMENTS.md): How was each experiment (E0 to E3) designed and run: its question, arms, scenarios, metrics, repeats and builds?
+- [benchmarks/quality/GATE.md](../benchmarks/quality/GATE.md): Can the served model do both jobs of a useful pair: answer a caller's questions on private documents, and enrich new documents into searchable records in the background?
+- [benchmarks/quality/RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md): At the same service to the calls, which arrangement of two cards does the most background work, and is sharing them worth its complexity?
 - [METHODS.md](METHODS.md): What did each measurement rule in or out, in what order, and what carries to other hardware?
 - [PRIOR-ART.md](PRIOR-ART.md): How does Flatshare differ from the engines, routers and papers that co-serve latency classes, and what does it not claim?
 - [benchmarks/results](../benchmarks/results): Where are the committed records behind each number, one directory per campaign or probe, each with its README?
@@ -50,3 +52,10 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 - [benchmarks/e2](../benchmarks/e2/README.md): Which campaigns and arm files make up E2, and how are they run, reported and turned into the demo video?
 - [benchmarks/a100/rehearsal](../benchmarks/a100/rehearsal/README.md): How was the A100 kit rehearsed end to end on the box before the paid run?
 - [deploy/phastform/variants](../deploy/phastform/variants/README.md): Which engine variants and flags do E2's arms switch, and how is each checked?
+
+## The project
+
+- [CHANGELOG.md](../CHANGELOG.md): What changed in each release, and what must a deployment change when it upgrades?
+- [CONTRIBUTING.md](../CONTRIBUTING.md): How do I build and test the repository, and what does a change need before review?
+- [SECURITY.md](../SECURITY.md): How do I report a vulnerability, and which parts of the repository does a report cover?
+- [THIRD-PARTY.md](../THIRD-PARTY.md): What does the serving path run that Flatshare does not write, and under which licences?

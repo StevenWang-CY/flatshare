@@ -38,7 +38,7 @@ flatshare-gateway --config ~/.config/flatshare/gateway.toml
 - Leases, prefetch or a recompute ledger: the lease design was not pursued ([ADR-0006](../../docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)). Nor admission for interactive requests by predicted time to first token: the lifecycle policy does not hold interactive requests.
 - Retries, but for a realtime request whose node fails before its first content, sent once more on another node ([Nodes](#nodes)); or balancing single requests over several engines: with `[[nodes]]` a session is placed once and stays on the node that holds its KV, and KV never moves between nodes. Nor admission policies with `[[nodes]]`: each engine would need an admission point of its own, as the parked two-node design gave it (the `two-node` branch).
 - TLS. Every listener binds loopback or a private socket, and the upstream is a tunnel's socket or a loopback port.
-- The Anthropic Messages API: a translating layer in front of the gateway, such as agentic-api, calls its OpenAI-compatible routes.
+- The Anthropic Messages API: the gateway does not route `/v1/messages`, which gets 404, and agentic-api forwards a Messages request to its upstream's `/v1/messages`, so it cannot carry one through the gateway either.
 - Inferring `turn_started` and `turn_finished` from traffic. The finish reason is logged per request.
 - The Responses API's stop reasons (its usage is read).
 - What it leaves to the deployment:

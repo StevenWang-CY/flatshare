@@ -10,15 +10,16 @@ abstract: >-
   p95 of two calls rises from 1.78 s alone to 10.5 s, because a waiting voice
   turn cannot take KV cache from running agent requests and agent prefill
   shares every step of its reply. Two scheduler rules, proposed to vLLM as pull
-  requests #63350 and #63351 (under review), let a waiting higher-priority
-  request preempt lower-priority work for KV and keep lower-priority prefill out
-  of the steps of its first tokens. They bring the p95 to 2.24 s, 0.20 s over an
-  SLO of voice alone plus 250 ms, while the agents keep 97% of their throughput;
-  on an A100 SXM4 80 GB with the same model, KV pool and agents, they bring it
-  from 4.99 s to 1.63 s, under that card's SLO in each of five rounds. The
-  repository holds the scheduler variant for vLLM 0.32.0, the measurement
-  gateway and harness, a KV cache simulator, the deployment, and the committed
-  records from which its tables and figures are rebuilt.
+  requests #63350 and #63351 (both open with no review as of 2026-10-29), let a
+  waiting higher-priority request preempt lower-priority work for KV and keep
+  lower-priority prefill out of the steps of its first tokens. They bring the
+  p95 to 2.24 s, 0.20 s over an SLO of voice alone plus 250 ms, while the agents
+  keep 97% of their throughput; on an A100 SXM4 80 GB with the same model, KV
+  pool and agents, they bring it from 4.99 s to 1.63 s, under that card's SLO in
+  each of five rounds. The repository holds the scheduler variant for vLLM
+  0.32.0, the gateway that is the serving control plane, the measurement
+  harness, a KV cache simulator, the deployment, and the committed records from
+  which its tables and figures are rebuilt.
 authors:
   - family-names: Wang
     given-names: Chuyue

@@ -46,7 +46,7 @@ names](#former-names) maps them to the current ones.
 - **cyan**: the control host, CPU only: the gateway, LiveKit, the voice agent and the callers, and AIPerf.
 - **The frozen box**: the one pinned configuration every experiment on the box runs: vLLM 0.32.0 with
   Qwen3-4B-Instruct-2507-FP8, priority scheduling, a 512-token step cap and a 20 GiB CPU KV tier, beside Whisper (STT)
-  and Kokoro (TTS) on the same GPU ([ARCHITECTURE.md §3.1](ARCHITECTURE.md#31-the-frozen-box)). *Frozen* alone, as in
+  and Kokoro (TTS) on the same GPU ([ARCHITECTURE.md §5.1](ARCHITECTURE.md#31-the-frozen-box)). *Frozen* alone, as in
   the A100 run's tables, names the stock engine with the frozen box's flags on whatever card it runs.
 - **Gray**: the second GPU node, identical to Phastform: the probes' booked windows (the first make-room probes ran on
   it on 2026-10-23), the second card of the two-card rounds and the serving arrangement's warm spare.

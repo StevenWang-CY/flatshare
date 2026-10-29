@@ -1,6 +1,6 @@
 # flatshare-voice
 
-Flatshare's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §4.2](../../docs/ARCHITECTURE.md#42-the-voice-pipeline)), for a reader who runs or changes the voice agent or the measurement callers. The package holds:
+Flatshare's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §6.2](../../docs/ARCHITECTURE.md#42-the-voice-pipeline)), for a reader who runs or changes the voice agent or the measurement callers. The package holds:
 - the voice agent the deployment runs;
 - the lifecycle events it posts to the control plane, and its per-turn stage times;
 - the measurement callers that read voice-to-voice latency from waveforms;
