@@ -5,6 +5,83 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.8](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.8) (2026-10-29): a review of v1.7 fixed, and a free line offered at once
+
+What a review of v1.7's code, operations and documents found, fixed, and the one defect the 24-hour soak showed: LiveKit
+turned calls away while the voice worker had a line free. The measured results of v1.6 and v1.7 are unchanged.
+
+- **A free line is offered at once.** LiveKit kept a full voice worker marked full until the agents SDK's next status,
+  every 2.5 s, so a call arriving then got no agent although a line was free: the 24-hour soak turned 2 calls away so.
+  The worker now sends its status as soon as a call's process closes. With calls arriving faster than two lines take
+  them, a free line reached LiveKit 44 ms after a call's process exited, against 1.5 s before (medians), and the calls
+  turned away with a line free fell from 10 of 233 to 0
+  ([`2026-10-29-status-send`](benchmarks/results/2026-10-29-status-send)).
+- **Each node's agents, bounded and checked.** A node with both roles must say how many agents' sessions it takes
+  beside its calls (`max_agents`, a count or `"unbounded"`), and the gateway refuses to start without it: a call node
+  with no bound beside 24 agents' session trees put 37 of 177 replies over the SLO in the two-card rounds. An agent's
+  request that names no session takes no slot, and runs only on a node that carries no call and is below its bound, or
+  on an unbounded one, or gets 503 `no_agent_slot`. `GET /nodes` shows the placement (`calls` and
+  `failover_background_max_in_flight`), and a release on cyan holds the running gateway's nodes to the serving
+  profile's envelope, which the profile and `serving.json` now carry (`serving-check --nodes`): a release that finds a
+  node outside it fails and switches back. cyan's `install.sh` enables at boot the tunnels `gateway.toml` reaches, so a
+  reboot of cyan brings back the spare's.
+- **Placements end through the placement API.** With `[[nodes]]` the gateway serves `DELETE /v1/sessions/{id}`, which
+  ends a session's placement and frees its slot at once. The voice worker sends it at every bound call's end, whatever
+  `FLATSHARE_EVENTS` says, and in serve mode for a call it placed whose job does not run (a refusal after asking, or an
+  accept that fails), which held a call slot for `idle_s` and sent the next call to the spare. Serve mode posts
+  `session_closed` alone; the turns' events go out in bench mode, for E2's lifecycle policy.
+- **The voice worker reads the gateway's error codes.** It read every error's `type`, which names the kind only in a
+  stream's error event: a plain 502 `upstream_unavailable` or 503 `no_healthy_node` answer did not fence the call's
+  node, and a refused placement gave no reason. It reads a plain answer's `code` now, and the gateway's own code writes
+  the errors its tests and the worker's fakes share (`tests/fixtures/errors.json`, `make gateway-fixtures`).
+- **Make-room's preempting step in one pass.** The step in which make-room preempts counted the blocks its victims
+  release by mapping every block to its holders, three times over the victim's KV; with two agents filling the serving
+  profile's pool it took 27.8 times stock vLLM's step on peacock. The count now takes a block held once as released
+  where it sees it, which schedules identically (the trace against the old module, and both counts compared at 677,559
+  calls); the step falls to 3.5 times stock's. `make perf-make-room` times four states of the serving profile beside the
+  PRs' 13, that step among them, and Figure 7 sets the costs against the box's CPU, 1.68 times as long, and the box's
+  own steps. #63350 and #63351 carry the same commit, with rows for that step in their cost tables, and the patches are
+  written again from the fork's backport branches, rebuilt on it; the fork's tag `flatshare-v1.7-backport` keeps the
+  commits that v1.6's and v1.7's patch headers name. Both engines restart for the new module.
+- **The records and the engine's upkeep.** Every committed `engine.json` is held to the reduction that wrote it, and a
+  record's reduction to the settings `serving.json` pins, each exception named with why. make-room's patches are
+  generated from the fork's branches, and `make compat-upstream` gives each hunk's fit to a newer vLLM at three lines of
+  context and at one, and holds the backport to the PRs' heads but for the adaptations its patches' headers name.
+- **Releases.** A change to Markdown alone restarts no unit (the variants' README was an input of both engines). E2's
+  hint for an engine without `/server_info` says that the serving variant keeps vLLM's development routes off, and that
+  a measured point runs another variant.
+- **Operations.** Every alert links its row in the runbook's Failures table (`runbook_url`), and a test holds each alert
+  to a row that names it. promtool cases test the refusal and deadline tickets, the dashboard's engine panels are split
+  by node, and the overhead alert says which span it times. SLO.md names the voice SLO and the first-byte objective
+  apart, and says which alerts burn on each.
+- **Documentation.** ADRs 0007-0009 record the production program's decisions: the gateway as the serving control
+  plane, two cards with a warm spare, and immutable releases with the exact serving profile. ARCHITECTURE.md describes
+  the serving path. THIRD-PARTY.md lists what the serving path runs, with each licence; SECURITY.md says how a fix in a
+  pinned dependency ships. PRODUCTION.md says what the voice path keeps and where its numbers ran, and the runbook each
+  component's upgrade and rollback and each secret's rotation. The README opens on the results with their
+  denominators, among them the 256-token step cap's 44 of 295 replies over the SLO against 94 at 512, its table adds
+  the agents' TTFT p99 (the router's 193 s against the change's 111 s), and its Quick start comes before word 1,200;
+  the report's abstract carries the step cap's confirmation and says that most of the two cards' gain is the
+  arrangement's. The documents say the agents' token rate, not goodput, date the code of 2026-10-25 rather than call
+  it final, and say once, in the report's method, that each gate was fixed before its runs.
+- **Removed.** `policy = "leaseholder"`, the lifecycle policy's old name, and `realtime_max_tokens`, which
+  `[classes.realtime] max_reply_tokens` replaces; a configuration that sets either is refused at start. The benchmark of
+  a request's metric bookkeeping now times every series a request updates: 135-136 ns a request on one thread and
+  1,684-1,850 ns with four at once on an M5 Max, against 44-46 and 881-999 ns for the old set. A test holds the idle
+  deadline taking over at a stream's first frame.
+- **Upgrading from v1.7.**
+  - `gateway.toml`: a node with both roles needs `max_agents`, which the serving arrangement's has;
+    `realtime_max_tokens` and `policy = "leaseholder"` are refused at start. A gateway that refuses its configuration
+    fails the release, which switches back with the old gateway serving:
+    `grep -n 'realtime_max_tokens\|leaseholder\|\[\[nodes\]\]' ~/.config/flatshare/gateway.toml` on cyan says whether a
+    change is needed first.
+  - `serving.json` changes (the envelope, and make-room's module and patches), so both engines and the voice worker
+    restart at the first deploy.
+  - With `[[nodes]]`, a release enables cyan's tunnel to each node `gateway.toml` names; nothing disables one, so when a
+    window on Gray ends, `systemctl --user disable --now flatshare-tunnel@gray` (the runbook's Gray's windows).
+  - A client that ends its sessions with `session_closed` needs no change.
+- **The packages** are versioned 1.8.0, and are not published to a package index.
+
 ## [v1.7](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.7) (2026-10-29): two cards, measured against a gate fixed in advance
 
 The rest of the external audit of v1.5: the two-card comparison its resource gate asked for, the serving profile's step
