@@ -83,14 +83,29 @@ def _stage_description(cells: Sequence[data.Stages]) -> str:
     )
 
 
+STAGES_TITLE = "Where the voice turn's seconds go"
+
+
 def stages(out: Path) -> list[Path]:
     """report-stages.svg and its phone layout: where the voice turn's seconds go, a stacked bar a configuration of
     its stages' means, its length the mean V2V."""
     cells = data.stages()
     description = _stage_description(cells)
     return [
-        _stages_wide(cells, out / "report-stages.svg", description),
-        _stages_narrow(cells, out / "report-stages-narrow.svg", description),
+        _stages_wide(cells, out / "report-stages.svg", description, STAGES_TITLE),
+        _stages_narrow(cells, out / "report-stages-narrow.svg", description, STAGES_TITLE),
+    ]
+
+
+def deployable_stages(out: Path) -> list[Path]:
+    """report-deployable-stages.svg and its phone layout: the same stages for W4's configurations of
+    docs/BENCHMARKS.md's stage table (data.W4_STAGES), from W4's records."""
+    cells = data.stages(data.w4_rows(), data.W4_STAGES)
+    description = _stage_description(cells)
+    title = "Where the voice turn's seconds go on what an operator can deploy"
+    return [
+        _stages_wide(cells, out / "report-deployable-stages.svg", description, title),
+        _stages_narrow(cells, out / "report-deployable-stages-narrow.svg", description, title),
     ]
 
 
@@ -106,8 +121,8 @@ def _stage_bar(s: Chart, cells: data.Stages, scale: Scale, y: float, thick: floa
     s.text(scale(cells.v2v) + 8, y + thick / 2 + 6, f"{seconds(cells.v2v)} s", size=NOTE, halo=True)
 
 
-def _stages_wide(cells: Sequence[data.Stages], path: Path, description: str) -> Path:
-    s = Chart(WIDTH, 400, "Where the voice turn's seconds go", description)
+def _stages_wide(cells: Sequence[data.Stages], path: Path, description: str, title: str) -> Path:
+    s = Chart(WIDTH, 400, title, description)
     entries = [(stage_key(stage), STAGE_NAMES[stage]) for stage in STAGES]
     left = (WIDTH - legend_width(entries)) / 2
     legend(s, left, 30, entries, width=WIDTH - 2 * left + 1)
@@ -138,8 +153,8 @@ def _stages_wide(cells: Sequence[data.Stages], path: Path, description: str) -> 
     return s.save(path)
 
 
-def _stages_narrow(cells: Sequence[data.Stages], path: Path, description: str) -> Path:
-    s = Chart(NARROW, 400, "Where the voice turn's seconds go", description)
+def _stages_narrow(cells: Sequence[data.Stages], path: Path, description: str, title: str) -> Path:
+    s = Chart(NARROW, 400, title, description)
     x0, length = 18, 330
     entries = [(stage_key(stage), STAGE_NAMES[stage]) for stage in STAGES]
     y = legend(s, x0, 28, entries, width=NARROW - 2 * x0, pitch=25) + 10
@@ -1476,7 +1491,7 @@ FRONTIER_HEADINGS = (
     ("The operator's static answers", ("operator",)),
     ("What engines ship", ("engine",)),
     ("Routers", ("router", "resubmit")),
-    ("The lifecycle policy", ("lifecycle", "lifecycle-change")),
+    ("Timed by the conversation", ("lifecycle", "lifecycle-change")),
     ("The change", ("change",)),
 )
 """The figure's headings, each over the families (data.FAMILIES) whose configurations it names."""
@@ -1489,7 +1504,10 @@ def _frontier_hue(point: data.FrontierPoint) -> str:
     return "sky" if point.arm in SIBLINGS else FAMILY_MARKS[point.family][0]
 
 
-def _frontier_description(points: Sequence[data.FrontierPoint], slo: float) -> str:
+def _frontier_description(
+    points: Sequence[data.FrontierPoint], slo: float, calls: bool = False
+) -> str:
+    over = "the calls" if calls else "the calls' first 240 s"
     parts = []
     for p in points:
         name, note = data.label(p.point)
@@ -1498,14 +1516,14 @@ def _frontier_description(points: Sequence[data.FrontierPoint], slo: float) -> s
             if p.failed_turns
             else (f"{seconds(p.p95)} s")
         )
-        parts.append(f"{data.in_prose(name)}, {note}, {p95} at {p.tokens:,.0f} tokens/s")
+        tokens = p.calls_tokens if calls else p.tokens
+        parts.append(f"{data.in_prose(name)}, {note}, {p95} at {tokens:,.0f} tokens/s")
     return (
         f"Each of {len(points)} configurations beside 24 agent sessions of the traces with the largest contexts, a row "
         "under its family, in panel a its voice-to-voice p95 on a log scale against the SLO of "
         f"{seconds(slo)} s, the median of its runs and their range, and in panel b the agents' tokens a second over "
-        "the calls' first 240 s, only the engine change and the router that aborts agent requests coming near the SLO: "
-        + "; ".join(parts)
-        + "."
+        f"{over}, only the engine change and preempt-resubmit coming "
+        "near the SLO: " + "; ".join(parts) + "."
     )
 
 
@@ -1520,6 +1538,34 @@ def frontier(out: Path) -> list[Path]:
     return [
         _frontier_layout(points, slo, out / "report-frontier.svg", description, WIDTH),
         _frontier_layout(points, slo, out / "report-frontier-narrow.svg", description, NARROW),
+    ]
+
+
+def deployable(out: Path) -> list[Path]:
+    """report-deployable.svg and its phone layout: Figure 11 for W4's configurations an operator could deploy
+    (data.DEPLOYABLE), each with all its runs, its panel b the agents' tokens a second over the whole calls, as
+    docs/METHODS.md's table beside it gives them."""
+    points = [p for p in data.frontier() if p.point in data.DEPLOYABLE]
+    if {p.point for p in points} != set(data.DEPLOYABLE):
+        raise ValueError(
+            f"W4's records lack {sorted(set(data.DEPLOYABLE) - {p.point for p in points})}"
+        )
+    slo = data.slo_ms(data.w4_rows())
+    description = _frontier_description(points, slo, calls=True)
+    title = "What an operator can deploy, beside 24 agent sessions"
+    return [
+        _frontier_layout(
+            points, slo, out / "report-deployable.svg", description, WIDTH, title, calls=True
+        ),
+        _frontier_layout(
+            points,
+            slo,
+            out / "report-deployable-narrow.svg",
+            description,
+            NARROW,
+            title,
+            calls=True,
+        ),
     ]
 
 
@@ -1573,11 +1619,15 @@ def _frontier_p95(s: Chart, a: Scale, y: float, p: data.FrontierPoint) -> None:
         )
 
 
-def _frontier_tokens(s: Chart, b: Scale, y: float, p: data.FrontierPoint) -> None:
-    """Panel b's mark of a configuration: its median tokens a second, with its value."""
+def _frontier_tokens(
+    s: Chart, b: Scale, y: float, p: data.FrontierPoint, calls: bool = False
+) -> None:
+    """Panel b's mark of a configuration: its median tokens a second, over the calls' first 240 s or over the whole
+    calls, with its value."""
     _, shape, filled = FAMILY_MARKS[p.family]
+    tokens = p.calls_tokens if calls else p.tokens
     s.mark(
-        b(p.tokens),
+        b(tokens),
         y,
         _frontier_hue(p),
         shape,
@@ -1585,7 +1635,7 @@ def _frontier_tokens(s: Chart, b: Scale, y: float, p: data.FrontierPoint) -> Non
         r=FRONTIER_MARK,
         name=f"{p.point} tokens",
     )
-    s.text(b(p.tokens) + 12, y + 6, f"{p.tokens:,.0f}", size=NOTE, halo=True)
+    s.text(b(tokens) + 12, y + 6, f"{tokens:,.0f}", size=NOTE, halo=True)
 
 
 FRONTIER_TICKS = [1500, 2000, 3000, 5000, 10000, 20000, 30000]
@@ -1593,10 +1643,21 @@ FRONTIER_TICKS = [1500, 2000, 3000, 5000, 10000, 20000, 30000]
 
 
 def _frontier_layout(
-    points: Sequence[data.FrontierPoint], slo: float, path: Path, description: str, width: float
+    points: Sequence[data.FrontierPoint],
+    slo: float,
+    path: Path,
+    description: str,
+    width: float,
+    title: str = "Every configuration beside 24 agent sessions",
+    *,
+    calls: bool = False,
 ) -> Path:
+    """Figure 11's layout, its panel b over the calls' first 240 s, or with ``calls`` over the whole calls."""
     wide = width == WIDTH
-    s = Chart(width, 2400, "Every configuration beside 24 agent sessions", description)
+    s = Chart(width, 2400, title, description)
+    b_title = (
+        "over the calls" if calls else "first 240 s of the calls"
+    ) + " \N{BULLET} higher is better"
     rows = _frontier_rows(points)
     if wide:
         right = 330
@@ -1634,7 +1695,7 @@ def _frontier_layout(
             labels_b,
             top,
             bottom,
-            title="first 240 s of the calls \N{BULLET} higher is better",
+            title=b_title,
         )
         s.vrule(a(slo), top, bottom, "slo")
         s.text(
@@ -1648,12 +1709,12 @@ def _frontier_layout(
         )
         for row_y, p in placed:
             _frontier_p95(s, a, row_y, p)
-            _frontier_tokens(s, b, row_y, p)
+            _frontier_tokens(s, b, row_y, p, calls)
         s.height = last + 14
         return s.save(path)
     # The phone layout: panel a, then panel b, each configuration's name over its marks under its heading.
     last = 0.0
-    for k, (title, scale, ticks, labels, axis_title) in enumerate(
+    for k, (head, scale, ticks, labels, axis_title) in enumerate(
         (
             (
                 "(a) Voice-to-voice p95 (s, log scale)",
@@ -1662,17 +1723,11 @@ def _frontier_layout(
                 labels_a,
                 "lower is better",
             ),
-            (
-                "(b) Agents' tokens/s",
-                b,
-                marks_b,
-                labels_b,
-                "first 240 s of the calls \N{BULLET} higher is better",
-            ),
+            ("(b) Agents' tokens/s", b, marks_b, labels_b, b_title),
         )
     ):
         y = last + (48 if k else 30)
-        s.text(18, y, title, size=LABEL)
+        s.text(18, y, head, size=LABEL)
         if k == 0:
             y += 26
             s.text(
@@ -1690,7 +1745,7 @@ def _frontier_layout(
                     s.vrule(a(slo), band - 14, band + 14, "slo")
                     _frontier_p95(s, a, band, p)
                 else:
-                    _frontier_tokens(s, b, band, p)
+                    _frontier_tokens(s, b, band, p, calls)
                 y = band + 20
         last = x_axis(s, scale, ticks, labels, None, y)
         last += 25
@@ -2750,6 +2805,7 @@ def _starts_layout(
 
 FIGURES = (
     stages,
+    deployable_stages,
     kv_timeline,
     isolation,
     tail,
@@ -2759,6 +2815,7 @@ FIGURES = (
     cdf,
     agents,
     frontier,
+    deployable,
     margin,
     a100,
     cards,

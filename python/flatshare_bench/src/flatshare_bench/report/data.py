@@ -77,6 +77,30 @@ A100_POINTS = {
 DISCRIMINATING = "weka-x32-long, 2 callers"
 """W4's workload of the frontier figure: the 48 traces with the largest contexts, 24 sessions, two callers."""
 
+DEPLOYABLE = (
+    "disc-frozen-s24",
+    "disc-a4-b1024-t0-s24",
+    "disc-a6-reserve2048-s24",
+    "disc-a7b-sglang-hicache-s24",
+    "disc-a8c-resubmit-s24",
+    "disc-a9-s24",
+    "disc-pr-ab48-s24",
+)
+"""W4's configurations an operator could deploy, each with all its runs, the ablations left out: tuned vLLM and its
+best step cap, the static reservation, SGLang with HiCache, preempt-resubmit, the lifecycle policy over make-room and
+the change with a 48-token window (docs/METHODS.md, the results)."""
+W4_STAGES = (
+    "a1-voice",
+    "disc-frozen-s24",
+    "disc-a6-reserve2048-s24",
+    "disc-a8c-resubmit-s24",
+    "disc-a9-s24",
+    "disc-pr-ab48-s24",
+)
+"""The configurations whose voice turn docs/BENCHMARKS.md's stage table gives from W4's records, but for the change at
+its 16-token window: voice alone, tuned vLLM, the static reservation, preempt-resubmit, the lifecycle policy over
+make-room and the change with a 48-token window."""
+
 # The configurations' labels ------------------------------------------------------------------------------------------
 
 LABELS = {
@@ -97,8 +121,8 @@ LABELS = {
     "flow": ("llm-d's flow control", "emulated"),
     "smg": ("SMG 1.13.0", "as shipped"),
     "resubmit": ("Preempt-resubmit", "before the first byte"),
-    "lifecycle": ("On tuned vLLM", "the gateway's policy alone"),
-    "lifecycle-reserve": ("Over make-room", "its KV reserve on"),
+    "lifecycle": ("The lifecycle policy alone", "on tuned vLLM"),
+    "lifecycle-reserve": ("The lifecycle policy", "over make-room"),
     # The change and its parts.
     "kv-preemption": ("The KV preemption", "#63350"),
     "change": ("The change", "16-token window"),
@@ -109,8 +133,7 @@ LABELS = {
 under or beside it. Each figure takes its configurations' labels from here, so that a configuration reads the same in
 every figure. Its name alone tells it from every other configuration, so a legend or a line's label gives the name
 only; a figure whose rows differ in a setting the figure is about (the step cap's chart, the A100's card) gives that
-setting as the note instead. The lifecycle policy's two configurations are named under that heading. The change is the
-two pull requests at the budget cap's default 16-token window; the configuration to deploy is their switches with a
+setting as the note instead. The change is the two pull requests at the budget cap's default 16-token window; the configuration to deploy is their switches with a
 48-token window (docs/PRODUCTION.md), which W5 ran at the frozen box's 512-token steps and the deployment runs at
 256."""
 POINTS = {
@@ -184,6 +207,13 @@ def w5_rows(root: Path = W5) -> list[dict[str, Any]]:
     return _points("*/*/run.json", root)
 
 
+def _campaign_order(campaign: str) -> tuple[str, int]:
+    """A campaign's place among the rounds: W5's by their prefix and round (w5-pr-r3), and W4's, some of which name no
+    round (a9, w2c), by name."""
+    prefix, _, number = campaign.rpartition("-r")
+    return (prefix, int(number)) if prefix and number.isdigit() else (campaign, 0)
+
+
 def _runs(rows: Sequence[Mapping[str, Any]], point: str) -> list[Mapping[str, Any]]:
     runs = [row for row in rows if row["point"] == point]
     if not runs:
@@ -232,13 +262,29 @@ def _pooled(runs: Iterable[Mapping[str, Any]], stage: str) -> float:
     return sum(n * mean for n, mean in counted) / sum(n for n, _ in counted)
 
 
-def stages(rows: Sequence[Mapping[str, Any]] | None = None) -> list[Stages]:
-    """Voice alone, tuned vLLM, make-room and the change, each pooled over its runs as the stage waterfall pools them
-    (:func:`flatshare_bench.e2.report.stage_waterfall`)."""
+def stages(
+    rows: Sequence[Mapping[str, Any]] | None = None,
+    points: Sequence[str] = (VOICE_ALONE, TUNED, MAKE_ROOM, CHANGE),
+) -> list[Stages]:
+    """Each of ``points``, by default W5's voice alone, tuned vLLM, the KV preemption and the configuration to deploy,
+    pooled over its runs as the stage waterfall pools them (:func:`flatshare_bench.e2.report.stage_waterfall`): over
+    the runs with turn lines and without voice errors."""
     rows = w5_rows() if rows is None else rows
     found = []
-    for point in (VOICE_ALONE, TUNED, MAKE_ROOM, CHANGE):
-        runs = _runs(rows, point)
+    for point in points:
+        runs = sorted(
+            (
+                r
+                for r in rows
+                if r["point"] == point
+                and r["stage_means"]
+                and r["v2v_samples"]
+                and not r["voice_errors"]
+            ),
+            key=lambda r: _campaign_order(r["campaign"]),
+        )
+        if not runs:
+            raise ValueError(f"no run of {point} with turn lines")
         [cell] = stage_waterfall(runs)
         decode = _pooled(runs, "llm_first_sentence_ms") - _pooled(runs, "llm_ttft_ms")
         found.append(
@@ -812,6 +858,8 @@ class FrontierPoint:
     p95s: tuple[float, ...]
     tokens_per_run: tuple[float, ...]
     failed_turns: int
+    calls_tokens_per_run: tuple[float, ...] = ()
+    """The agents' tokens a second over each run's whole calls, the measure E2's report and METHODS' table give."""
 
     @property
     def p95(self) -> float:
@@ -820,6 +868,10 @@ class FrontierPoint:
     @property
     def tokens(self) -> float:
         return _median(self.tokens_per_run)
+
+    @property
+    def calls_tokens(self) -> float:
+        return _median(self.calls_tokens_per_run)
 
 
 def w4_rows(root: Path = W4) -> list[dict[str, Any]]:
@@ -837,6 +889,7 @@ def frontier(rows: Sequence[Mapping[str, Any]] | None = None) -> list[FrontierPo
             tuple(run["v2v_p95_ms"] for run in group["runs"]),
             tuple(run["fixed_window_tokens_per_s"] for run in group["runs"]),
             group["failed_turns"],
+            tuple(run["background_tokens_per_s"] for run in group["runs"]),
         )
         for group in configurations(rows)
         if group["workload"] == DISCRIMINATING and group["arm"] in FAMILY

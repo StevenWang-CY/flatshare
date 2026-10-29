@@ -244,9 +244,12 @@ The voice turn by stage (means over each configuration's replies, ms):
 | #63350 + #63351, 16 tokens | 826 | 914 | 245 | 353 | 2,336 | 265 |
 | #63350 + #63351, 48 tokens | 824 | 526 | 249 | 353 | 1,953 | 270 |
 
-![The voice turn by stage: stock vLLM loses its seconds in the reply's first sentence](figures/e2-waterfall.svg)
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-deployable-stages-narrow.svg">
+  <img src="figures/report-deployable-stages.svg" width="100%" alt="The voice turn's mean voice-to-voice time stacked by stage from the end of the caller's speech, beside 24 agent sessions but for voice alone: voice alone, 1.60 s, 0.09 s of it waiting for the LLM's first token and 0.21 s decoding the first sentence; tuned vLLM, 5.21 s, 2.78 s of it waiting for the LLM's first token and 1.02 s decoding the first sentence; a token reservation, 3.38 s, 0.95 s of it waiting for the LLM's first token and 1.01 s decoding the first sentence; preempt-resubmit, 2.02 s, 0.28 s of it waiting for the LLM's first token and 0.34 s decoding the first sentence; the lifecycle policy, 1.83 s, 0.23 s of it waiting for the LLM's first token and 0.20 s decoding the first sentence; the configuration to deploy, 1.95 s, 0.28 s of it waiting for the LLM's first token and 0.25 s decoding the first sentence.">
+</picture>
 
-The same stages as bars (`make e2-figures`), a row per point of the records: `a1-voice` is voice alone (four runs: its W2 run predates the worker's stage times), `disc-frozen-s24` the frozen box, `a6-reserve2048` the static reservation, `a8c-resubmit` preempt-resubmit, `a9` arm 9 and `pr-ab48` the PRs with a 48-token window. The violet stage is the reply to its first sentence; the LLM's first token, from its request, is in the table above.
+Only the reply to its first sentence changes from row to row: endpointing, TTS and transport stay within 0.1 s in every configuration. The bars give the table's configurations in its order but the 16-token one (`make report-figures`), each reply split at the LLM's first token, the wait for it in violet and the decode of the first sentence in green; voice alone has four runs, since its W2 run predates the worker's stage times. The LLM's first token, from its request, is in the table.
 
 What the repeats say:
 - **The change brings the voice tail to within 0.2 s of the SLO.** With full replies and a 48-token window, the PRs' configuration reaches 2,193 ms (2,168–2,286), 176 ms over the SLO, against the frozen box's 10,138 and preempt-resubmit's 2,591. Arm 9, whose gateway capped every reply at 16 tokens, reaches 2,057 ms: two of its five runs are under the SLO, and its median is 40 ms over it, within one point's spread. No configuration without the change has a run under the SLO; vLLM's queued-token limit refused 48 of its 50 voice turns, which count at the reply timeout.

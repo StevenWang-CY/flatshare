@@ -34,7 +34,7 @@ E2_A100_REPORT ?= build/reproduce-e2-a100
 
 .PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-make-room test-trace test-make-room-ci \
   test-python schema metrics gateway-fixtures check-rules \
-  reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 reproduce-e2-a100 figures e2-figures \
+  reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 reproduce-e2-a100 figures \
   e2-gpus-figure diagrams report-figures brand \
   demo-video forecast-a100 forecast-fitted profiles reproduce-a100 check-a100-calibration
 
@@ -273,20 +273,6 @@ reproduce-e2-a100:
 	@cd python/flatshare_bench && uv run -q flatshare-bench e2 report \
 	  $(abspath $(dir $(E2_A100_POINTS))) --out $(abspath $(E2_A100_REPORT))
 
-# E2's figures in the docs, docs/figures/e2-frontier.svg and e2-waterfall.svg, from the records of the configurations an
-# operator could deploy (the ablations left out), each with all its runs. The README's animation is demo.py's
-# (demo-video).
-E2_DEPLOYABLE := a1-voice disc-frozen-s24 disc-a4-b1024-t0-s24 disc-a6-reserve2048-s24 disc-a7b-sglang-hicache-s24 \
-  disc-a8c-resubmit-s24 disc-a9-s24 disc-pr-ab48-s24
-E2_STAGES := a1-voice disc-frozen-s24 disc-a6-reserve2048-s24 disc-a8c-resubmit-s24 disc-a9-s24 disc-pr-ab48-s24
-e2-figures:
-	@cd python/flatshare_bench && uv run -q flatshare-bench e2 report \
-	  $(abspath $(dir $(foreach p,$(E2_DEPLOYABLE),$(wildcard $(E2_RESULTS)/*/$(p)/run.json)))) \
-	  $(foreach p,$(E2_STAGES),--waterfall $(p)) --out $(abspath build/e2-figures) >/dev/null
-	@mkdir -p docs/figures
-	cp build/e2-figures/frontier-weka-x32-long.svg docs/figures/e2-frontier.svg
-	cp build/e2-figures/waterfall.svg docs/figures/e2-waterfall.svg
-
 # The README's chart of both GPUs, docs/figures/e2-voice-p95-gpus.svg and its phone layout e2-voice-p95-gpus-narrow.svg:
 # the rows the A100 run's figure.toml names, W5's from the box's records and the A100's from its own, each group
 # against its own voice alone's SLO (the A100 ran the box's arm files, so each group names the GPU its points ran on).
@@ -305,15 +291,17 @@ e2-gpus-figure:
 diagrams:
 	cd python/flatshare_bench && uv run -q python -m flatshare_bench.diagrams $(abspath docs/figures)
 
-# The technical report's figures, docs/figures/report-*.svg, some with a phone layout (NAME-narrow.svg), drawn by
+# The technical report's figures, docs/figures/report-*.svg, each with a phone layout (NAME-narrow.svg), drawn by
 # flatshare_bench.report from the committed records each cites: W4's, W5's and the A100's E2 points, the probes, the
 # window sweep, W5's voice replies, the scheduler's cost per step, the two-card comparison's and the step cap's rounds
-# through their gate.py, the 24-hour soak's summary and the failure drills' journals (its data.py names them).
+# through their gate.py, the 24-hour soak's summary and the failure drills' journals (its data.py names them). Among
+# them, report-deployable.svg and report-deployable-stages.svg, which METHODS and BENCHMARKS show: W4's configurations
+# an operator could deploy, and the voice turn of those its stage table gives.
 report-figures:
 	cd python/flatshare_bench && uv run -q python -m flatshare_bench.report.figures $(abspath docs/figures)
 
 # Every figure under docs/figures that its records or its code draw; the bench's tests check each is current.
-figures: e2-figures e2-gpus-figure diagrams report-figures
+figures: e2-gpus-figure diagrams report-figures
 
 # The logo, the mark and the social preview under docs/brand, drawn by flatshare_bench.brand (docs/brand/README.md);
 # the bench's tests check each is current.
