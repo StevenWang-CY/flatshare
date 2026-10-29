@@ -14,7 +14,9 @@
 //!   realtime session takes one of its node's `max_calls` call slots, on the node with the fewest calls, or with
 //!   `calls = "fill"` on the first in the configuration's order; an agent's takes one of its node's `max_agents` agent
 //!   slots, where the node has that bound, on the node with the fewest agents' sessions, then the fewest requests in
-//!   flight, so that its prefix cache stays on one engine.
+//!   flight, so that its prefix cache stays on one engine. An agent's request that names no session takes no slot,
+//!   so a node with that bound takes it only while the node holds no call, and one without (`"unbounded"`, or the
+//!   background role alone) beside its calls too.
 //! - **Failover.** A node that is not available takes no new session, and a session placed on it is placed again by
 //!   its next request (or its next `POST /v1/sessions`), a move that is counted. A realtime session that finds no
 //!   available realtime node with a free call slot gets 503 with `Retry-After`, and so does an agent's that finds no
@@ -394,9 +396,11 @@ impl Nodes {
                     Found::Lost(old) => Some(old.node),
                     _ => None,
                 };
-                let node = self.choose(&table, class, None).inspect_err(|unplaced| {
-                    self.metrics.refused(class, *unplaced);
-                })?;
+                let node = self
+                    .choose(&table, class, None, key.is_some())
+                    .inspect_err(|unplaced| {
+                        self.metrics.refused(class, *unplaced);
+                    })?;
                 let session = key
                     .as_ref()
                     .and_then(|key| table.place(key, class, node, trusted, lost, Instant::now()));
@@ -434,7 +438,7 @@ impl Nodes {
             self.metrics.refused(class, unplaced);
             unplaced
         };
-        let node = self.choose(&table, class, None).map_err(refused)?;
+        let node = self.choose(&table, class, None, true).map_err(refused)?;
         table
             .place(key, class, node, trusted, lost, Instant::now())
             .ok_or(Unplaced::Full)
@@ -456,7 +460,7 @@ impl Nodes {
         let from = failed.node.index;
         let mut table = self.write();
         let node = self
-            .choose(&table, class, Some(from))
+            .choose(&table, class, Some(from), failed.key.is_some())
             .inspect_err(|unplaced| self.metrics.refused(class, *unplaced))?;
         let session = failed.key.as_ref().and_then(|key| {
             table.place(key, class, node, failed.trusted, Some(from), Instant::now())
@@ -616,12 +620,15 @@ impl Nodes {
     /// realtime session, among those with a free call slot, the one with the fewest calls, then the fewest requests
     /// in flight (`calls = "spread"`), or the first (`"fill"`); and for an agent's, among those with a free agent slot
     /// (below their `max_agents`, if they have one), one that does not cover, then the one with the fewest agents'
-    /// sessions, then the fewest requests in flight. Ties go to the earlier node.
+    /// sessions, then the fewest requests in flight. Ties go to the earlier node. A request that names no session
+    /// (`named` false) takes no agent slot, so a node with a count of agents takes it only while that node holds no
+    /// call.
     fn choose(
         &self,
         table: &Table,
         class: SloClass,
         exclude: Option<usize>,
+        named: bool,
     ) -> Result<usize, Unplaced> {
         let mut candidates = self
             .list
@@ -644,8 +651,10 @@ impl Nodes {
         } else {
             candidates
                 .filter(|node| {
-                    node.max_agents
-                        .is_none_or(|max| (table.agents(node.index) as usize) < max)
+                    node.max_agents.is_none_or(|max| {
+                        (table.agents(node.index) as usize) < max
+                            && (named || table.held(node.index)[0] == 0)
+                    })
                 })
                 .min_by_key(|node| {
                     (
@@ -1245,6 +1254,52 @@ mod tests {
             place(&nodes, "agent-4", SloClass::Background),
             Err(Unplaced::NoNode)
         );
+    }
+
+    #[tokio::test]
+    async fn an_agents_request_that_names_no_session_keeps_off_a_bounded_node_while_it_carries_calls()
+     {
+        let placement = Placement {
+            calls: CallPlacement::Fill,
+            ..Placement::default()
+        };
+        let nodes = started(&[("phastform", Some(4)), ("gray", Some(12))], placement);
+        all_healthy(&nodes);
+        // Both calls on phastform, as the serving arrangement places them, three agents' sessions beside them and
+        // eight on gray.
+        assert_eq!(
+            place_new(&nodes, "call", 2, SloClass::Realtime),
+            ["phastform", "phastform"]
+        );
+        let placed = place_new(&nodes, "agent", 12, SloClass::Background);
+        let first = (1..=12).find(|i| placed[i - 1] == "phastform").unwrap();
+        close(&nodes, &format!("agent-{first}"));
+        assert_eq!((nodes.read().agents(0), nodes.read().agents(1)), (3, 8));
+        // Ten background requests that name no session, all in flight at once: phastform's bound cannot count them,
+        // so none runs beside its calls.
+        let mut held = Vec::new();
+        for _ in 0..10 {
+            let mut request = nodes.request(None, SloClass::Background, true).unwrap();
+            let deadline = (Instant::now() + Duration::from_secs(5), Timeout::Queue);
+            nodes.admit(&mut request, deadline, None).await.unwrap();
+            held.push(request);
+        }
+        assert!(held.iter().all(|placed| &*placed.node.name == "gray"));
+        let background = |node: usize| {
+            nodes.list[node].in_flight[SloClass::Background as usize].load(Ordering::Relaxed)
+        };
+        assert_eq!((background(0), background(1)), (0, 10));
+        // With gray not available, such a request finds no agent slot, as a session would.
+        fail(&nodes, 1);
+        assert_eq!(
+            nodes.request(None, SloClass::Interactive, true).err(),
+            Some(Unplaced::NoAgentSlot)
+        );
+        // Once phastform carries no call it takes them again, below its bound.
+        close(&nodes, "call-1");
+        close(&nodes, "call-2");
+        let request = nodes.request(None, SloClass::Background, true).unwrap();
+        assert_eq!(&*request.node.name, "phastform");
     }
 
     #[tokio::test]

@@ -113,7 +113,8 @@ default_class = "background"
 # agents its card serves beside both calls within the voice SLO, as measured for the card, 4 for an RTX 5060 Ti on the
 # serving profile. An agent's session that finds every node at its bound gets 503 no_agent_slot. A node with both roles
 # must set max_agents, or max_agents = "unbounded" to run its agents without one (the gateway refuses to start
-# otherwise); one with the background role alone has no bound unless it sets one. The blocks below are the serving
+# otherwise); one with the background role alone has no bound unless it sets one. An agent's request that names no
+# session takes no slot, so a node with a count takes it only while it holds no call. The blocks below are the serving
 # arrangement on two cards (docs/PRODUCTION.md, Two cards): with calls = "fill" ([placement] below), phastform takes
 # both calls and gray is a warm spare, which runs up to 12 agents' sessions and takes the calls only when phastform
 # fails, its agents waiting while it carries any call.
