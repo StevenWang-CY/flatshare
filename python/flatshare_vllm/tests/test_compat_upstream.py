@@ -4,6 +4,7 @@ and conflicts, the PRs' tests on a merge with a stand-in interpreter (the import
 failure main has too, an interpreter that cannot import main's scheduler, no network, an older git, and make-room's
 patches on releases (with VLLM_SRC, v0.32.0's real scheduler). It needs git 2.38 or newer (GIT names one)."""
 
+import difflib
 import importlib.util
 import os
 import re
@@ -396,6 +397,16 @@ def test_the_patches_apply_to_the_pinned_release_and_a_shifted_one_names_its_hun
         "does not match the scheduler at its line 53); its scheduler.py against v0.32.0: "
         "1 file changed, 2 insertions(+)." in proc.stdout
     )
+    # And every hunk as git apply finds it: each of the 24 two lines down, with 3 lines of context as with 1.
+    assert (
+        "  each hunk by git apply, the patches in order, with 3 lines of context and with 1: "
+        "24 and 24 of 24 apply\n" in proc.stdout
+    )
+    assert (
+        "    63350.patch #1 @@ -53,6 +53,12 @@: -C3 at 55 (offset 2 lines); -C1 at 55 (offset 2 lines)\n"
+        in proc.stdout
+    )
+    assert proc.stdout.count(" (offset 2 lines); -C1 at ") == 24
 
 
 @needs_merge_tree
@@ -409,3 +420,50 @@ def test_patches_that_do_not_apply_to_the_pinned_release_fail(tmp_path, upstream
         "make-room's patches on v0.32.0, the pinned version: FAIL: make-room: 63350.patch"
         in proc.stdout
     )
+    assert "with 1: 24 and 24 of 24 apply\n" in proc.stdout
+
+
+def unified(before: list[str], after: list[str]) -> str:
+    """A diff of the scheduler, as git writes one, from ``before`` to ``after`` (lines without their newlines)."""
+    lines = difflib.unified_diff(
+        [f"{line}\n" for line in before],
+        [f"{line}\n" for line in after],
+        f"a/{SCHED}/scheduler.py",
+        f"b/{SCHED}/scheduler.py",
+    )
+    return f"diff --git a/{SCHED}/scheduler.py b/{SCHED}/scheduler.py\n" + "".join(lines)
+
+
+def test_each_hunks_fit_is_where_git_apply_finds_it(tmp_path, compat):
+    """A newer release takes the patches hunk by hunk as git apply finds them, in order, with all of a hunk's context
+    and with one line of it: a hunk where it was, one that moved, one whose outer context changed and so needs less, one
+    whose removed line changed and fits nowhere, and the next patch's hunk, which rests on one rejected before it."""
+    pinned = [f"line {n}" for n in range(1, 41)]
+    first = [*pinned[:5], "one", *pinned[5:20], "two", *pinned[20:34], *pinned[35:]]
+    second = [*first[:22], "three", *first[22:]]  # after "two"
+    patches = [tmp_path / "first.patch", tmp_path / "second.patch"]
+    patches[0].write_text(unified(pinned, first))
+    patches[1].write_text(unified(first, second))
+    # The release: two lines added after line 10, and lines 18 and 35 edited.
+    release = [*pinned[:10], "new", "new", *pinned[10:]]
+    release[19], release[36] = "line 18, edited", "line 35, edited"
+    source = "".join(f"{line}\n" for line in release)
+    assert compat.fits(GIT, source, 3, patches) == [
+        ("first.patch #1 @@ -3,6 +3,7 @@", "at 3"),
+        ("first.patch #2 @@ -18,6 +19,7 @@", "rejected"),
+        ("first.patch #3 @@ -32,7 +34,6 @@", "rejected"),
+        ("second.patch #1 @@ -20,6 +20,7 @@", "rejected"),
+    ]
+    # The second hunk is two lines down, which git gives as 4: for each line of context it leaves out, it looks for the
+    # hunk a line further up, and the hunk starts a line further down.
+    assert compat.fits(GIT, source, 1, patches) == [
+        ("first.patch #1 @@ -3,6 +3,7 @@", "at 3"),
+        ("first.patch #2 @@ -18,6 +19,7 @@", "at 22 (offset 4 lines), context reduced to 2/2"),
+        ("first.patch #3 @@ -32,7 +34,6 @@", "rejected"),
+        ("second.patch #1 @@ -20,6 +20,7 @@", "at 22 (offset 2 lines)"),
+    ]
+    # A report that does not account for every hunk is no fit: here git found no file to patch.
+    other = tmp_path / "other.patch"
+    other.write_text(patches[0].read_text().replace(f"{SCHED}/scheduler.py", "vllm/other.py"))
+    with pytest.raises(compat.CannotCheck, match=r"git apply -C3 other\.patch: .*vllm/other\.py"):
+        compat.fits(GIT, source, 3, [other])

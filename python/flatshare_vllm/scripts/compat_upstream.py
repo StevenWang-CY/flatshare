@@ -18,7 +18,10 @@ release tags into it, and reports:
   and a PR's test run that takes longer fails its files. An interpreter that cannot import main's scheduler is
   reported as such, and runs nothing;
 - make-room's patches on a sparse checkout of the newest release, and of a newer release candidate if there is one
-  (``build.py make-room OUT --source-tree``): they apply, or the first hunk that does not.
+  (``build.py make-room OUT --source-tree``): they apply, or the first hunk that does not; and then, as build.py
+  takes a hunk only exactly at its line, each hunk's fit as ``git apply`` finds it, the patches in order, with all
+  three lines of its context (``-C3``) and with one (``-C1``): the line it applies at and its offset, any context git
+  left out, or that git rejects it, which leaves the hunks after it to apply to the rest.
 
 Exit status 1 for a conflict, a failed test or patches that do not apply to v0.32.0, the pinned version; 2 when it
 could not check (no network, an older git, an interpreter that cannot import main's scheduler or collect its tests, a
@@ -29,6 +32,7 @@ against 0.32.0, the pinned and deployed version, and says so.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import re
 import subprocess
@@ -42,6 +46,11 @@ PRS = (63350, 63351)
 PINNED = "v0.32.0"
 SCHEDULER = "vllm/v1/core/sched/scheduler.py"
 BUILD = Path(__file__).resolve().parents[1] / "src/flatshare_vllm/build.py"
+# build.py, for its table of make-room's patches, in the order it applies them, and its reading of a hunk's header.
+spec = importlib.util.spec_from_file_location("flatshare_vllm_build", BUILD)
+build = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(build)
+PATCHES = [BUILD.parent / "make-room" / name for name in build.VARIANTS["make-room"][0]]
 RELEASE = re.compile(r"v(\d+(?:\.\d+)+)(?:rc(\d+))?")
 # What a test run needs to import, from the source tree it runs on.
 IMPORTS = "import pytest, torch, vllm.v1.core.sched.scheduler"
@@ -299,6 +308,70 @@ def builds(git: Git, tag: str) -> str | None:
     return None if proc.returncode == 0 else last_line(proc.stderr).removeprefix("build.py: ")
 
 
+def hunk_fits(report: str, headers: list[str]) -> list[str] | None:
+    """Each hunk's fit as ``git apply --reject --verbose`` reports it, in the C locale, for a patch whose hunks have
+    ``headers``: "at L", the line it applied at, with the offset git found it at and the context it kept where they are
+    not the hunk's own; or "rejected". None if the report accounts for not every hunk, as when git applied nothing."""
+    every = set(range(1, len(headers) + 1))
+    rejected = {int(n) for n in re.findall(r"^Rejected hunk #(\d+)\.$", report, re.M)}
+    if re.search(r"^Applied patch .+ cleanly\.$", report, re.M):
+        applied = every
+    else:
+        applied = {int(n) for n in re.findall(r"^Hunk #(\d+) applied cleanly\.$", report, re.M)}
+    if applied | rejected != every or applied & rejected:
+        return None
+    moved = {
+        int(n): (int(at), int(offset))
+        for n, at, offset in re.findall(
+            r"^Hunk #(\d+) succeeded at (\d+) \(offset (-?\d+) lines?\)\.$", report, re.M
+        )
+    }
+    # git reports no line for a hunk it found where the hunk says it is: at its new start.
+    at = {n: moved.get(n, (int(build.HUNK.match(headers[n - 1])[3]), 0)) for n in applied}
+    found = {
+        n: f"at {line}" + (f" (offset {offset} lines)" if offset else "")
+        for n, (line, offset) in at.items()
+    }
+    # git names a hunk it kept less context for by the line it applied at, which a moved hunk's line gives too: the
+    # hunk that applied nearest to it.
+    for leading, trailing, line in re.findall(
+        r"^Context reduced to \((\d+)/(\d+)\) to apply fragment at (\d+)$", report, re.M
+    ):
+        n = min(applied, key=lambda n: abs(at[n][0] - int(line)))
+        found[n] += f", context reduced to {leading}/{trailing}"
+    return [found.get(n, "rejected") for n in sorted(every)]
+
+
+def fits(git: str, source: str, context: int, patches: list[Path]) -> list[tuple[str, str]]:
+    """Each hunk of ``patches``, by its patch, number and header, with its fit when git apply applies them in order to
+    ``source``, a scheduler.py, with at least ``context`` lines of context matching on each side of a change. A hunk
+    git rejects is left out, and the next ones apply to the rest, as a rebase would start."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        # A repository of its own, so that git apply reads the patches' paths from here, whatever encloses it.
+        proc = subprocess.run([git, "init", "-q", tmp], capture_output=True, text=True)
+        if proc.returncode:
+            raise CannotCheck(f"git init failed: {last_line(proc.stderr)}")
+        (root / SCHEDULER).parent.mkdir(parents=True)
+        (root / SCHEDULER).write_text(source)
+        rows = []
+        for patch in patches:
+            headers = [m[0] for m in map(build.HUNK.match, patch.read_text().splitlines()) if m]
+            proc = subprocess.run(
+                [git, "apply", "--reject", "--verbose", f"-C{context}", str(patch)],
+                cwd=root,
+                env=os.environ | {"LC_ALL": "C"},
+                capture_output=True,
+                text=True,
+            )
+            found = hunk_fits(proc.stderr, headers)
+            if found is None:
+                raise CannotCheck(f"git apply -C{context} {patch.name}: {last_line(proc.stderr)}")
+            labels = [f"{patch.name} #{n} {header}" for n, header in enumerate(headers, 1)]
+            rows += zip(labels, found, strict=True)
+    return rows
+
+
 def check(
     clone: Path, python: str | None, git_cmd: str, remote: str, timeout: float = TIMEOUT
 ) -> int:
@@ -412,6 +485,21 @@ def check(
                 f"{what}: do not apply ({why}){stat if diff.returncode == 0 else ''}. "
                 f"The variant is written against {PINNED}, the pinned and deployed version"
             )
+        if why is not None:
+            # build.py takes a hunk only at its line, exactly, and stops at the first it cannot; git apply, which
+            # looks for a hunk elsewhere and with less context, says how far each is from fitting.
+            release = worktree(git, "release", tag, ["vllm/v1/core/sched"]) / SCHEDULER
+            if not release.is_file():
+                print(f"  no hunk can fit: {tag} has no {SCHEDULER}")
+                continue
+            three, one = (fits(git.git, release.read_text(), c, PATCHES) for c in (3, 1))
+            took = [sum(fit != "rejected" for _, fit in rows) for rows in (three, one)]
+            print(
+                "  each hunk by git apply, the patches in order, with 3 lines of context and with 1: "
+                f"{took[0]} and {took[1]} of {len(one)} apply"
+            )
+            for (hunk, with_three), (_, with_one) in zip(three, one, strict=True):
+                print(f"    {hunk}: -C3 {with_three}; -C1 {with_one}")
     if failed:
         return 1
     if cannot:

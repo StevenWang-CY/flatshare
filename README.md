@@ -271,7 +271,8 @@ make test-make-room-ci               # CI's make-room job (Linux x86-64): the ch
                                      # against the PRs' patches, on vLLM's real scheduler
 make perf-make-room TORCH_PYTHON=PY  # the change's cost a scheduler step on CPU, its switches off against stock vLLM
                                      # and on against off, against peacock's baseline (PY: an absolute path)
-make compat-upstream                 # the PRs against vLLM's main, make-room's patches against vLLM's newest release
+make compat-upstream                 # the PRs against vLLM's main, make-room's patches against vLLM's newest
+                                     # release, hunk by hunk
 make reproduce-e2                    # E2's tables and figures from the committed records (W4)
 make reproduce-e2-w5                 # the same for W5's records
 make reproduce-e2-a100               # the same for the A100 run's records

@@ -17,7 +17,7 @@ GPU.
 | `make test-make-room-ci` | The make-room variant's behavior suite and its trace against the PRs' own patches, on vLLM's real scheduler with CPU torch: CI's `make-room` job | Linux x86-64, for the environment `python/flatshare_vllm/requirements-cpu.txt` pins (uv builds it in `build/cpu-env`) |
 | `make test-make-room TORCH_PYTHON=PY`, `make test-trace TORCH_PYTHON=PY` | The same two suites with an interpreter of your own | An absolute path to a Python with CPU torch 2.13 and vLLM 0.32.0's Python dependencies |
 | `make perf-make-room TORCH_PYTHON=PY` | The change's cost per scheduler step against the tracked baseline, measured on peacock | The same interpreter; on another machine, measure its own baseline first ([how](python/flatshare_vllm/README.md#upkeep-the-changes-cost-and-its-fit-upstream)) |
-| `make compat-upstream` | Whether #63350 and #63351 still merge into vLLM's main, and whether make-room's patches apply to vLLM's newest release | The network and git 2.38 or newer |
+| `make compat-upstream` | Whether #63350 and #63351 still merge into vLLM's main, and how make-room's patches fit vLLM's newest release, hunk by hunk | The network and git 2.38 or newer |
 | `make schema`, `make metrics` | Regenerate the wire types' JSON Schemas and the gateway's metrics exposition; a test fails until a changed type or metric is regenerated | |
 | `make reproduce-e2`, `make reproduce-e2-w5`, `make reproduce-e2-a100` | Rebuild E2's reports from the committed records | |
 | `make figures` | Regenerate the documents' figures from the records | |
