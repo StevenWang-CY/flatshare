@@ -29,10 +29,13 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 
 - [ADR-0001](adr/0001-control-plane-in-front-of-stock-vllm.md): Why was a control plane in front of stock vLLM built first, and what did E2 change about it?
 - [ADR-0002](adr/0002-one-lifecycle-event-schema.md): Why do voice and agents share one lifecycle-event schema?
-- [ADR-0003](adr/0003-realtime-is-never-shed.md): Why is a realtime request never refused, and where is its room made?
+- [ADR-0003](adr/0003-realtime-is-never-shed.md): Why does no admission policy refuse a realtime request, and where is its room made?
 - [ADR-0004](adr/0004-native-cpu-offload-tier.md): Why is the host tier vLLM's own CPU offload, and why was lease-aware eviction never switched on?
 - [ADR-0005](adr/0005-loopback-services-and-node-sticky-kv.md): How are the services kept off the hosts' networks, and what stays open on a shared host?
-- [ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md): Why does the engine change carry the realtime tier, with the gateway kept as a harness?
+- [ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md): Why does the engine change carry the realtime tier, with no admission policy in front?
+- [ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md): Why is the gateway the serving control plane, and where do E2's admission policies stay?
+- [ADR-0008](adr/0008-two-cards-consolidation-with-a-warm-spare.md): How do the two cards serve, and how does a call fail over between them?
+- [ADR-0009](adr/0009-immutable-releases-and-the-exact-serving-profile.md): How is a release made, and how is a box held to the configuration E2 measured?
 
 ## Components
 
