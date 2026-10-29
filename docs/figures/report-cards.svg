@@ -61,35 +61,35 @@
 <path d="M893.09 134V164" class="gray run"/>
 <path d="M884.59 134V164" class="gray run"/>
 <path d="M815 134V164" class="gray run"/>
-<text x="1100" y="155" text-anchor="end" font-size="18">7,893</text>
+<text x="927.11" y="155" class="halo" font-size="18">7,893</text>
 <text x="696" y="196" text-anchor="end" font-size="20">controlled</text>
 <text x="696" y="218" text-anchor="end" class="soft" font-size="18">0 + 12 sessions</text>
 <path d="M712 189H846.81Q849.81 189 849.81 192V206Q849.81 209 846.81 209H712Z" class="g-lo"/>
 <path d="M865.24 184V214" class="gray run"/>
 <path d="M849.81 184V214" class="gray run"/>
 <path d="M844.1 184V214" class="gray run"/>
-<text x="1100" y="205" text-anchor="end" font-size="18">6,302</text>
+<text x="927.11" y="205" class="halo" font-size="18">6,302</text>
 <text x="696" y="282" text-anchor="end" font-size="20">stock vLLM</text>
 <text x="696" y="304" text-anchor="end" class="soft" font-size="18">2 + 14 sessions</text>
 <path d="M712 275H928.77Q931.77 275 931.77 278V292Q931.77 295 928.77 295H712Z" class="g-lo"/>
 <path d="M952.18 270V300" class="gray run"/>
 <path d="M931.77 270V300" class="gray run"/>
 <path d="M848.32 270V300" class="gray run"/>
-<text x="1100" y="291" text-anchor="end" font-size="18">10,051</text>
+<text x="962.18" y="291" class="halo" font-size="18">10,051</text>
 <text x="696" y="332" text-anchor="end" font-size="20">the change</text>
 <text x="696" y="354" text-anchor="end" class="soft" font-size="18">4 + 14 sessions</text>
 <path d="M712 325H940.69Q943.69 325 943.69 328V342Q943.69 345 940.69 345H712Z" class="g-soft"/>
 <path d="M966.86 320V350" class="blue run"/>
 <path d="M943.69 320V350" class="blue run"/>
 <path d="M893.68 320V350" class="blue run"/>
-<text x="1100" y="341" text-anchor="end" font-size="18">10,596</text>
+<text x="976.86" y="341" class="halo" font-size="18">10,596</text>
 <text x="696" y="382" text-anchor="end" font-size="20">+ a warm spare</text>
 <text x="696" y="404" text-anchor="end" class="soft" font-size="18">4 + 12 sessions</text>
 <path d="M712 375H920.06Q923.06 375 923.06 378V392Q923.06 395 920.06 395H712Z" class="g-soft"/>
 <path d="M942.98 370V400" class="blue run"/>
 <path d="M917.94 370V400" class="blue run"/>
 <path d="M923.06 370V400" class="blue run"/>
-<text x="1100" y="391" text-anchor="end" font-size="18">9,652</text>
+<text x="952.98" y="391" class="halo" font-size="18">9,652</text>
 <text x="696" y="432" text-anchor="end" font-size="20">the change</text>
 <text x="696" y="454" text-anchor="end" class="soft" font-size="18">8 + 14 sessions</text>
 <path d="M712 425H1005.02Q1008.02 425 1008.02 428V442Q1008.02 445 1005.02 445H712Z" class="g-open"/>
@@ -97,7 +97,7 @@
 <path d="M1008.02 420V450" class="blue run"/>
 <path d="M1025.83 420V450" class="blue run"/>
 <path d="M939.25 420V450" class="blue run"/>
-<text x="1100" y="441" text-anchor="end" font-size="18">13,537</text>
+<text x="1035.83" y="441" class="halo" font-size="18">13,537</text>
 <text x="696" y="518" text-anchor="end" font-size="20">stock vLLM</text>
 <text x="696" y="540" text-anchor="end" class="soft" font-size="18">12 + 12 sessions</text>
 <path d="M712 511H997.38Q1000.38 511 1000.38 514V528Q1000.38 531 997.38 531H712Z" class="g-open"/>
@@ -105,7 +105,7 @@
 <path d="M1001.36 506V536" class="gray run"/>
 <path d="M1000.38 506V536" class="gray run"/>
 <path d="M973.34 506V536" class="gray run"/>
-<text x="1100" y="527" text-anchor="end" font-size="18">13,188</text>
+<text x="1011.36" y="527" class="halo" font-size="18">13,188</text>
 <text x="696" y="568" text-anchor="end" font-size="20">the change</text>
 <text x="696" y="590" text-anchor="end" class="soft" font-size="18">12 + 12 sessions</text>
 <path d="M712 561H973.82Q976.82 561 976.82 564V578Q976.82 581 973.82 581H712Z" class="g-open"/>
@@ -113,7 +113,7 @@
 <path d="M999.28 556V586" class="blue run"/>
 <path d="M976.82 556V586" class="blue run"/>
 <path d="M960.72 556V586" class="blue run"/>
-<text x="1100" y="577" text-anchor="end" font-size="18">12,111</text>
+<text x="1009.28" y="577" class="halo" font-size="18">12,111</text>
 <path d="M919.11 92V600" class="slo"/>
 <text x="919.11" y="82" text-anchor="middle" class="orange tint" font-size="18">20% over the best dedicated, 9,471</text>
 </svg>

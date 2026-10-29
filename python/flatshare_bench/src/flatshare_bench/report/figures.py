@@ -586,6 +586,24 @@ def _band_key() -> Key:
     return Key(22, draw)
 
 
+CLEAR = 6.0
+"""How near a label may come to a reference rule beside it, in units."""
+
+
+def _beside(
+    s: Chart, marks: tuple[float, float], baseline: float, label: str, rules: Sequence[float]
+) -> None:
+    """``label`` right of a row's marks (their leftmost and rightmost x), or left of them where it would reach one of
+    the vertical ``rules``: a label never crosses a reference rule."""
+    width = measure(label, NOTE)
+    for x0, anchor in ((marks[1] + 12, "start"), (marks[0] - 12, "end")):
+        left = x0 if anchor == "start" else x0 - width
+        if not any(left - CLEAR <= r <= left + width + CLEAR for r in rules):
+            s.text(x0, baseline, label, size=NOTE, anchor=anchor, halo=True)
+            return
+    raise ValueError(f"{label!r} reaches a rule on either side of its marks")
+
+
 def step_cost(out: Path) -> list[Path]:
     """report-step-cost.svg: the rules' cost per scheduler step on the host, a row per state under its scenario, the
     PRs' tables' steady states and then the serving profile's: stock vLLM's step, the change's with its switches off
@@ -619,7 +637,7 @@ def step_cost(out: Path) -> list[Path]:
     s.text(
         (x.start + x.end) / 2,
         top - 40,
-        f"the same on the box's CPU, {box:.2f} times as long (ms)",
+        f"the box's CPU (ms), scaled: the host's time \N{MULTIPLICATION SIGN} {box:.2f}",
         size=NOTE,
         anchor="middle",
         cls="soft",
@@ -672,7 +690,8 @@ def step_cost(out: Path) -> list[Path]:
         # What the change adds, right of the row's marks: the hold's is a saving, the deployed mark left of stock's.
         sign = "+" if cost.added >= 0 else "\N{MINUS SIGN}"
         label = f"{sign}{abs(cost.added):,.0f} µs"
-        s.text(x(max(cost.stock, cost.off, cost.on)) + 12, row_y + 6, label, size=NOTE, halo=True)
+        marks = (x(min(cost.stock, cost.off, cost.on)), x(max(cost.stock, cost.off, cost.on)))
+        _beside(s, marks, row_y + 6, label, [x(alone * 1000 / box), x(agents * 1000 / box)])
     s.height = last + 14
     return [s.save(out / "report-step-cost.svg")]
 
@@ -1214,6 +1233,11 @@ def _margin_description(
     )
 
 
+MARGIN_FLOOR = 1500
+"""Where Figure 12a's axis of p95 starts, in ms: its dumbbells encode position, and every round's two p95s lie between
+2.0 and 3.9 s, so an axis from zero would leave half the panel empty and squeeze the gaps at the SLO."""
+
+
 def margin(out: Path) -> list[Path]:
     """report-margin.svg: where the pool has room, and as calls overlap. (a) Where the pool has room: the standard
     scenario's rounds, tuned vLLM's p95 and the change's, joined per round. (b) to (d) As calls overlap: with 2, 4 and
@@ -1232,12 +1256,12 @@ def margin(out: Path) -> list[Path]:
 
     # (a) The standard scenario, round by round.
     a_x = Scale(0.5, len(rounds) + 0.5, 96, 440)
-    a_y = Scale(0, 4000, 548, 110)
+    a_y = Scale(MARGIN_FLOOR, 4000, 548, 110)
     s.text(24, 30, "(a) Where the pool has room", size=LABEL)
     s.text(24, 54, "16 agent sessions of the whole corpus", size=NOTE, cls="soft")
     s.text(24, 84, "V2V p95 (s)", size=NOTE, cls="soft")
-    marks, labels = linear_ticks(4, 1)
-    y_axis(s, a_y, [m * 1000 for m in marks], labels, a_x.start, a_x.end)
+    marks = [m / 2 for m in range(int(MARGIN_FLOOR / 500), 9)]
+    y_axis(s, a_y, [m * 1000 for m in marks], [f"{m:g}" for m in marks], a_x.start, a_x.end)
     x_axis(
         s,
         a_x,
@@ -1262,7 +1286,11 @@ def margin(out: Path) -> list[Path]:
         s.mark(a_x(k), a_y(change), "blue")
     last_round, tuned, change = rounds[-1]
     s.text(a_x(last_round) + 14, a_y(tuned) + 6, "Tuned vLLM", size=NOTE, halo=True)
-    s.text(a_x(last_round) + 14, a_y(change) + 6, "the change", size=NOTE, halo=True)
+    # The change's name beside its last mark, under the SLO's rule where it would cross it.
+    at = a_y(change) + 6
+    if at - 14 - CLEAR <= a_y(slo) <= at + 5 + CLEAR:
+        at = a_y(slo) + 14 + CLEAR + 1
+    s.text(a_x(last_round) + 14, at, "the change", size=NOTE, halo=True)
 
     # (b) to (d) As calls overlap, on one axis of callers, with room right of six for its labels.
     x = Scale(1, 7.5, 640, 1100)
@@ -1429,9 +1457,6 @@ CARD_DODGE = {"stock": -6.0, "change": 6.0}
 two sessions, stay apart."""
 CARD_TOKENS = Scale(0, 15000, 712, 1040)
 """Panel b's agents' tokens a second, past the most any round did (14,352)."""
-CARD_VALUES = 1100
-"""Where panel b's medians end, in a column past every round: beside its bar, a value short of the hurdle's rule
-would cross it or read as its label."""
 
 
 def _cards_and(items: Sequence[str]) -> str:
@@ -1476,6 +1501,15 @@ def _cards_description(c: data.TwoCards, sessions: Sequence[int]) -> str:
         + "; ".join(rows)
         + "."
     )
+
+
+def _at_end(s: Chart, x: float, baseline: float, label: str, rule: float) -> None:
+    """A bar's value at its end, from ``x``, or right of the vertical ``rule`` where it would cross it; on a halo, as
+    the gridlines run behind it."""
+    width = measure(label, NOTE)
+    if x - CLEAR <= rule <= x + width + CLEAR:
+        x = rule + CLEAR + 2
+    s.text(x, baseline, label, size=NOTE, halo=True)
 
 
 def cards(out: Path) -> list[Path]:
@@ -1565,7 +1599,8 @@ def cards(out: Path) -> list[Path]:
         length = b(a.tokens) - b.start
         s.bar(b.start, y - thick / 2, length, thick, hue, hatched=not a.qualifies, name=a.name)
         runs(s, [b(value) for value in a.rounds], y, hue, half=thick / 2 + 5)
-        s.text(CARD_VALUES, y + 6, f"{a.tokens:,.0f}", size=NOTE, anchor="end")
+        end = max(b(v) for v in (a.tokens, *a.rounds)) + 10
+        _at_end(s, end, y + 6, f"{a.tokens:,.0f}", b(c.threshold))
     hurdle = b(c.threshold)
     s.vrule(hurdle, top, bottom, "slo")
     s.text(
@@ -1758,9 +1793,7 @@ def _columns(s: Chart, hours: Sequence[float], x: Scale, y: Scale, width: float)
 def _day_rule(s: Chart, x: Scale, y: Scale, value: float, text: str, *, wide: bool) -> None:
     """The whole day's value as a dotted rule across the hours, named right of the plot, or on a phone in a key over
     the plot's top right."""
-    s.trace([(x.start, y(value)), (x.end, y(value))], "ink trace dotted", wire=False)
-    s.rules.append(((x.start, y(value)), (x.end, y(value))))
-    s.painted.append(len(s.items) - 1)
+    s.ref((x.start, y(value)), (x.end, y(value)), "ink trace dotted")
     if wide:
         s.text(x.end + 10, y(value) + 6, text, size=NOTE, cls="soft")
         return

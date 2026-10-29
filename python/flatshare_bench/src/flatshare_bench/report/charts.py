@@ -84,7 +84,7 @@ CHART_CSS = (
 
 class Chart(Figure):
     """A figure_style Figure whose style also holds the charts' classes (CHART_CSS), and whose check also refuses a
-    label set over a data mark."""
+    label set over a data mark, or across a reference rule."""
 
     def __init__(self, width: float, height: float, title: str, description: str):
         super().__init__(width, height, title, description)
@@ -95,29 +95,41 @@ class Chart(Figure):
         one may sit where a rule painted before it runs, which the fill hides."""
         self.painted: list[int] = []
         """Where each of the rules is painted among the items."""
+        self.kinds: list[str] = []
+        """Each rule's class: a gridline ("grid") may pass behind a label set on a halo, and nothing else may."""
 
     def rule(self, x0: float, x1: float, y: float, cls: str = "axis") -> None:
         self.painted.append(len(self.items))
+        self.kinds.append(cls)
         super().rule(x0, x1, y, cls)
 
     def vrule(self, x: float, y0: float, y1: float, cls: str = "axis") -> None:
         self.painted.append(len(self.items))
+        self.kinds.append(cls)
         super().vrule(x, y0, y1, cls)
+
+    def ref(self, a: tuple[float, float], b: tuple[float, float], cls: str) -> None:
+        """A reference line drawn as a trace (a dotted or dashed level), a rule no label may cross."""
+        self.trace([a, b], cls, wire=False)
+        self.rules.append((a, b))
+        self.painted.append(len(self.items) - 1)
+        self.kinds.append(cls)
 
     def render(self) -> str:
         return super().render().replace("</style>", CHART_CSS + "</style>", 1)
 
     def check(self) -> None:
-        """figure_style's checks, except that a rule may pass under a label inside a segment painted after the rule,
-        which hides it; and a label over a data mark is refused too."""
+        """figure_style's checks, except that a halo lets a label sit on a gridline alone, never across an axis or
+        a reference rule (an SLO, a requirement, a level), and a rule may pass under a label inside a segment painted
+        after the rule, which hides it; and a label over a data mark is refused too."""
         rules, self.rules = self.rules, []
         try:
             super().check()
         finally:
             self.rules = rules
-        for (a, b), at in zip(rules, self.painted, strict=True):
+        for (a, b), at, kind in zip(rules, self.painted, self.kinds, strict=True):
             for box in self.boxes:
-                if box.halo or not _segment_hits_box(a, b, box, pad=1.0):
+                if (box.halo and kind == "grid") or not _segment_hits_box(a, b, box, pad=1.0):
                     continue
                 if not any(_inside(box, cover) and at < over for cover, over in self.covers):
                     raise ValueError(f"a rule crosses the text {box.label!r} near {a}")
