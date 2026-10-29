@@ -10,27 +10,24 @@ F](#f-revision-history).
 > [!NOTE]
 > The scheduler change this report measures is proposed to vLLM as pull requests
 > [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351),
-> open and under review on 27 October 2026. Flatshare is an independent project and is not affiliated with vLLM.
+> open and under review on 29 October 2026. Flatshare is an independent project and is not affiliated with vLLM.
 
 ## Abstract
 
 A self-hosted voice agent needs its GPU only while it computes a reply, and coding agents could use the rest. On vLLM
-0.32, beside 24 coding-agent sessions on one RTX 5060 Ti, the p95 voice-to-voice latency of two calls rises from 1.78 s
-alone to 10.48 s. No configuration an operator can deploy today meets the SLO of voice alone plus 250 ms, 2.03 s. The
-time is lost in the scheduler. A waiting voice turn cannot take KV cache from running agent requests, and once admitted,
-the turn shares every step of its prefill and reply with agent prefill. We add two rules to vLLM's priority scheduler.
-Make-room lets the waiting turn preempt lower-priority requests for KV, keeping their cache in the CPU tier, and the
-prefill hold keeps lower-priority prefill out of the turn's steps until its reply's first sentence. Together they bring
-the p95 to 2.24 s at the median of 15 runs, 0.20 s over the SLO, where tuned vLLM leaves 90% of the replies over it. A
-third of the replies, 286 of 885, still take longer than the SLO allows, so the change narrows the gap without closing
-it. The agents keep 97% of their token rate on tuned vLLM at the same 512-token step cap. Make-room alone leaves 5.09 s.
-The nearest any control plane in front of the engine came is 2.52 s, by aborting and resubmitting agent requests, at a
-193 s p99 time to first token for the agents. On an A100 at the same KV pool and step cap, the rules take the p95 from
-4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds. At the card's default 2,048-token steps they
-keep all of the agents' throughput and leave the voice 0.14–0.17 s over the SLO. On two RTX 5060 Ti cards, under a
-resource gate, both calls and four agent sessions on one card with the rules, beside a card of agents alone, do 34% more
-background work than a card per workload, with 2.8% of the replies over the SLO. Most of that gain is the arrangement's:
-on stock vLLM the shared card qualifies at two sessions, and the same cards do 27% more.
+0.32, beside 24 coding-agent sessions on one RTX 5060 Ti, two calls' p95 voice-to-voice latency rises from 1.78 s alone
+to 10.48 s. No deployable configuration of vLLM 0.32 or SGLang 0.5.22 we measured meets the SLO of voice alone plus
+250 ms, 2.03 s. The nearest, a router that aborts agent requests, reaches 2.52 s at a 193 s agent p99 time to first
+token. In the scheduler, a waiting voice turn cannot take KV from running agent requests, and an admitted one shares its
+steps with agent prefill. We add two rules to vLLM's priority scheduler. Make-room lets the waiting turn preempt
+lower-priority requests for KV, and the prefill hold keeps their prefill out of the turn's steps until its reply's first
+sentence. Together they bring the p95 to 2.24 s and the replies over the SLO to 32%, 286 of 885, where tuned vLLM leaves
+90%. The agents keep 97% of their token rate at the same 512-token step cap. On an A100 at the same KV pool and step
+cap, the rules take the p95 from 4.99 s to 1.63 s, under that card's SLO in each of five rounds. On two RTX 5060 Ti
+cards, consolidating both calls and four agent sessions on one card does 34% more background work than dedicated cards
+within the SLO's allowance. Stock vLLM, consolidated at two sessions, does 27% more, so most of the gain is the
+arrangement's. At the 256-token step cap we deploy, 44 of 295 replies were over the SLO in five more rounds, against 94
+of 295 at 512.
 
 ## Contents
 
@@ -114,7 +111,8 @@ the tail grows and the hold keeps the agents' prefill out for longer (§6.6). On
 cap, the rules take the p95 from 4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds (§6.7). On two
 RTX 5060 Ti cards, a resource gate compared a card per workload, pooling and consolidation. Both calls and four agent
 sessions on one card, beside a card of agents alone, did 34% more background work than a card per workload within the
-SLO's 5% allowance, and stock vLLM's shared card, at two sessions, did 27% more (§6.8).
+SLO's 5% allowance, and stock vLLM's shared card, at two sessions, did 27% more (§6.8). At the 256-token step cap we
+deploy, the change had 44 of 295 replies over the SLO in five rounds on new samples, against 94 of 295 at 512 (§6.9).
 
 This report makes five contributions.
 
@@ -1108,11 +1106,12 @@ waiting turn and a hold on lower-priority prefill through the reply's first sent
 consumer GPU comes to 2.24 s, 0.20 s over a strict SLO, with a third of the replies still over it, while the agents keep
 97% of their token rate. On an A100 at the same pool and step cap it meets that card's SLO in each of five rounds, by
 7–60 ms. The gain shrinks where the pool has room, the tail grows as calls overlap, and the step cap sets how much of
-the agents' throughput a tail under the SLO costs. For a realtime tier that shares a GPU with agents whose KV fills the
-pool, the place to act is the engine's scheduler: preempt for the waiting turn, and keep background prefill out of its
-first sentence. With two cards, the larger gain is the arrangement: both calls and a few agents on one card, and the
-other card full of agents. What then limits the shared card is the speech servers' share of the GPU, which no
-scheduling inside the engine removes.
+the agents' throughput a tail under the SLO costs. The 256-token cap we deploy leaves fewer than half as many replies
+over the SLO beside 24 sessions as the 512-token cap. With two cards, the larger gain is the arrangement: both calls and
+a few agents on one card, and the other card full of agents. What then limits the shared card is the speech servers'
+share of the GPU, which no scheduling inside the engine removes. For a realtime tier that shares a GPU with agents whose
+KV fills the pool, the place to act is the engine's scheduler: preempt for the waiting turn, and keep background prefill
+out of its first sentence.
 
 ## References
 
@@ -1132,9 +1131,9 @@ scheduling inside the engine removes.
 
 <a name="ref-8"></a>[8] vLLM pull request #5958. [Adding priority scheduling](https://github.com/vllm-project/vllm/pull/5958). Merged 2024-09-25, in vLLM v0.6.2 to v0.10.2.
 
-<a name="ref-9"></a>[9] C. Wang. vLLM pull request #63350. [Priority scheduling: preempt for a waiting request under KV pressure](https://github.com/vllm-project/vllm/pull/63350). Opened 2026-10-23, open and under review on 2026-10-27.
+<a name="ref-9"></a>[9] C. Wang. vLLM pull request #63350. [Priority scheduling: preempt for a waiting request under KV pressure](https://github.com/vllm-project/vllm/pull/63350). Opened 2026-10-23, open and under review on 2026-10-29.
 
-<a name="ref-10"></a>[10] C. Wang. vLLM pull request #63351. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/63351). Opened 2026-10-23, open and under review on 2026-10-27.
+<a name="ref-10"></a>[10] C. Wang. vLLM pull request #63351. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/63351). Opened 2026-10-23, open and under review on 2026-10-29.
 
 <a name="ref-11"></a>[11] SemiAnalysis. [Claude Code traces (cc-traces-weka-062126)](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126). Hugging Face dataset.
 
