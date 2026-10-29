@@ -240,7 +240,9 @@ SGLang's own priority preemption: none meets the SLO, and most leave the p95 bet
 adds is the change to vLLM's scheduler, its end-to-end measurement against every deployable alternative, and two
 measured negative results: a gateway policy timed by the conversation (E2) and agent-side KV prefetch (E1). A separate
 SGLang pull request, [#45686](https://github.com/sgl-project/sglang/pull/45686), proposes the counterpart of #63350.
-`flatshare-gateway` is a small Rust harness for these experiments, not a fleet router.
+`flatshare-gateway` is the serving control plane the deployment runs (priorities, bounded intake, deadlines,
+failure-inclusive accounting, two-node placement and failover), with E2's admission policies as its harness; it is not a
+fleet router ([ADR-0007](docs/adr/0007-the-gateway-is-the-serving-control-plane.md)).
 [docs/PRIOR-ART.md](docs/PRIOR-ART.md) has the sources and where each result went upstream.
 
 ## Repository layout
