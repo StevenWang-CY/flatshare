@@ -20,6 +20,10 @@ LiveKit Agents 1.8.8 to those events, and ``EventSender`` posts them to the cont
   with LiveKit's default handling, which first pauses the audio after 0.5 s of speech.
 - ``session_closed``: ``close``, when the session closes after the caller has left.
 
+Bench mode sends them all, for E2's lifecycle policy, which follows each call's turn by them. Serve mode
+sends ``session_closed`` alone (``turn_events``): its gateway runs no admission policy, and acts on no
+other event.
+
 ``metrics_collected`` reports the end of the turn too, but 1.8.8 deprecates it, with a warning on
 every subscription, for each message's ``metrics``. Those also hold the stage times that ``Lifecycle``
 logs once per turn (logger ``flatshare_voice.turns``), with the reply's playout: the audio it had
@@ -352,13 +356,17 @@ class Lifecycle:
     """One session's lifecycle events, and a line per turn with its stage times.
 
     Without a sender (``FLATSHARE_EVENTS=off``, or an LLM that bypasses the control plane) only the turn
-    lines are logged.
+    lines are logged. Without ``turn_events`` (serve mode) the sender gets ``session_closed`` alone: the
+    turns' events are for E2's lifecycle policy, which serve mode's gateway does not run.
     """
 
-    def __init__(self, session_id: str, sender: EventSender | None) -> None:
+    def __init__(
+        self, session_id: str, sender: EventSender | None, *, turn_events: bool = True
+    ) -> None:
         self.session_id = session_id
         self.turns = 0
         self._sender = sender
+        self._turn_events = turn_events
         self._user: llm.MetricsReport = {}
         """The metrics of the caller's last message, until the reply to it is added."""
         self._playout: Playout | None = None
@@ -392,7 +400,7 @@ class Lifecycle:
         )
 
     def _emit(self, event_type: str, **fields: int) -> None:
-        if self._sender is not None:
+        if self._sender is not None and (self._turn_events or event_type == "session_closed"):
             self._sender.emit(event_type, **fields)
 
     def _user_state_changed(self, ev: UserStateChangedEvent) -> None:
@@ -477,12 +485,18 @@ class Lifecycle:
 
 
 def observe(
-    ctx: JobContext, session: AgentSession, session_id: str, *, uds: str | None
+    ctx: JobContext,
+    session: AgentSession,
+    session_id: str,
+    *,
+    uds: str | None,
+    turn_events: bool = True,
 ) -> Lifecycle:
     """Report a started session's lifecycle: its events to the control plane through ``uds`` (none
-    without one) and a line per turn. The job's shutdown sends the last events."""
+    without one; ``session_closed`` alone without ``turn_events``) and a line per turn. The job's
+    shutdown sends the last events."""
     sender = EventSender(session_id, uds=uds) if uds is not None else None
-    lifecycle = Lifecycle(session_id, sender)
+    lifecycle = Lifecycle(session_id, sender, turn_events=turn_events)
     lifecycle.attach(session)
     ctx.add_shutdown_callback(lifecycle.aclose)
     return lifecycle

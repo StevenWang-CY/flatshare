@@ -6,7 +6,9 @@ in bench mode), a call starts by asking the gateway for its node, ``POST /v1/ses
 the call's ``X-Session-ID`` (the contract is in the package's README, "Nodes"), and binds the call's STT and TTS to
 that node's sockets, which the answer names and which sit beside the configured ones (the tunnels' ``NODE-stt.sock``
 and ``NODE-tts.sock`` on cyan), and its LLM to the gateway with the session id, which routes it to the session's
-node. A gateway without nodes answers 404: the call keeps the configured sockets and is served as it always was.
+node. A gateway without nodes answers 404: the call keeps the configured sockets and is served as it always was. The
+call's end, whatever ends it, ends its placement (:func:`end`, ``DELETE /v1/sessions/ID``), so that its call slot is
+free for the next call at once, events or none.
 
 A request of the call that fails because its node did (the node's STT or TTS socket breaks, refuses or times out; the
 gateway answers the call's LLM request, or ends its stream, with an upstream failure) fences the call
@@ -107,6 +109,32 @@ async def admit(
         False,
         f"the gateway placed the call nowhere: HTTP {response.status_code} {kind or ''}".rstrip(),
     )
+
+
+async def end(gateway: str, session_id: str, timeout: float = PLACEMENT_TIMEOUT_S) -> None:
+    """End the placement of ``session_id``'s call (``DELETE /v1/sessions/ID``), which frees its call slot at once:
+    at the call's end, whatever ends it and whether or not its lifecycle events are on, and for a job placed but not
+    run (serve mode's admission). A session without a placement ends as well, and a gateway without nodes (404, 405)
+    holds none. A failure is logged, never raised: the placement then idles out, after the gateway's ``idle_s``."""
+    context = {"session_id": session_id}
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.AsyncHTTPTransport(uds=gateway), timeout=timeout
+        ) as client:
+            response = await client.delete(f"{SESSIONS_URL}/{session_id}")
+    except httpx.HTTPError as exc:
+        cause = f"{type(exc).__name__}: {exc}"  # a timeout's own message can be empty
+        logger.warning(
+            "the call's placement did not end: the gateway did not answer (%s)",
+            cause,
+            extra=context,
+        )
+        return
+    if response.status_code != 200 and response.status_code not in NO_NODES:
+        logger.warning(
+            "the call's placement did not end: HTTP %d: %s", response.status_code, response.text[:200],
+            extra=context,
+        )  # fmt: skip
 
 
 class NodeFailed(httpx.TransportError):

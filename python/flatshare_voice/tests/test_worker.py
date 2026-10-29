@@ -111,6 +111,11 @@ def test_events_go_to_the_control_planes_socket_unless_switched_off() -> None:
     # The bypass: the LLM goes straight to the engine, which takes no events.
     bypass = "/run/user/1007/flatshare/phastform-engine.sock"
     assert settings(FLATSHARE_EVENTS="on", FLATSHARE_LLM_UDS=bypass).events_socket is None
+    # Every event in bench mode, for E2's lifecycle policy; session_closed alone in serve mode, whose gateway acts on
+    # no other (test_events.py).
+    assert settings().turn_events is True
+    serve = settings(FLATSHARE_VOICE_MODE="serve", FLATSHARE_SERVING_PROFILE=str(SERVING))
+    assert (serve.events_socket, serve.turn_events) == (GATEWAY, False)
 
 
 def test_the_agent_names_the_boxs_model_unless_told_another() -> None:

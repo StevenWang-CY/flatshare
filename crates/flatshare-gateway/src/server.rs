@@ -13,7 +13,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{MethodRouter, get, post};
+use axum::routing::{MethodRouter, delete, get, post};
 use axum::serve::ListenerExt;
 use flatshare_proto::{LifecycleEvent, SloClass};
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
@@ -136,7 +136,8 @@ impl Shared {
         if let Some(admission) = &self.admission {
             admission.events(tenant, events);
         }
-        // A session_closed event ends its session's placement, and frees a call's slot.
+        // A session_closed event ends its session's placement, and frees a call's slot, as DELETE /v1/sessions/{id}
+        // does.
         if let Some(nodes) = self.nodes() {
             nodes.closed(tenant, events);
         }
@@ -550,10 +551,11 @@ where
 fn router(app: App) -> Router {
     let with_nodes = app.shared.nodes().is_some();
     let router = Router::new();
-    // Without [[nodes]] neither route exists: their paths are 404, as they always were.
+    // Without [[nodes]] none of these routes exists: their paths are 404, as they always were.
     let router = if with_nodes {
         router
             .route("/v1/sessions", post(nodes::routes::sessions))
+            .route("/v1/sessions/{id}", delete(nodes::routes::end))
             .route("/nodes", get(nodes::routes::nodes))
     } else {
         router

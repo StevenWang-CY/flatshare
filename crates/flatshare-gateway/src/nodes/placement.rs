@@ -173,11 +173,11 @@ impl Table {
         Some(placed)
     }
 
-    /// Ends the placement of `key`, if it has one.
-    pub fn forget(&mut self, key: &Key) {
-        if let Some(placed) = self.sessions.remove(key) {
-            self.release(&placed);
-        }
+    /// Ends the placement of `key`, if it has one, and returns it.
+    pub fn forget(&mut self, key: &Key) -> Option<Arc<Session>> {
+        let placed = self.sessions.remove(key)?;
+        self.release(&placed);
+        Some(placed)
     }
 
     /// Ends the placements of the sessions that went `idle` without a request, and returns when the next one will

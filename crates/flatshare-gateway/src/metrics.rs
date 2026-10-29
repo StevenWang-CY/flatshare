@@ -36,6 +36,8 @@ pub(crate) enum Route {
     Events,
     /// `POST /v1/sessions`, with `[[nodes]]`.
     Sessions,
+    /// `DELETE /v1/sessions/{id}`, with `[[nodes]]`.
+    Session,
     /// Any path or method the gateway does not serve.
     Other,
 }
@@ -57,6 +59,7 @@ impl Route {
             Self::Models => "/v1/models",
             Self::Events => "/v1/events",
             Self::Sessions => "/v1/sessions",
+            Self::Session => "/v1/sessions/{id}",
             Self::Other => "other",
         }
     }

@@ -136,6 +136,7 @@ class Admission:
         probe: EngineProbe | None = None,
         drain: str | os.PathLike[str] | None = None,
         place: Callable[[JobRequest], Awaitable[tuple[bool, str]]] | None = None,
+        unplace: Callable[[JobRequest], Awaitable[None]] | None = None,
     ) -> None:
         if max_calls < 1:
             raise ValueError(f"max_calls must be 1 or more, got {max_calls}")
@@ -146,6 +147,9 @@ class Admission:
         self.place = place
         """With nodes, whether one takes the job's call (:func:`flatshare_voice.nodes.admit`), asked before it is
         accepted, so that a call no node can serve is refused rather than accepted and left without speech."""
+        self.unplace = unplace
+        """With ``place``, what ends the placement of a job's call that does not run after all, refused or accepted
+        in vain (:func:`flatshare_voice.nodes.end`), so that its call slot is not held until it idles out."""
         self.accepting = 0
         self.refused = 0
 
@@ -171,7 +175,8 @@ class Admission:
 
     async def request(self, job: JobRequest) -> None:
         """Accept a job request within capacity, refuse it otherwise. A refused request may go to another worker
-        (``terminate=False``); with none, the room gets no agent."""
+        (``terminate=False``); with none, the room gets no agent. A call whose placement was asked for, and whose
+        job does not run after all (refused, or accepted in vain), has its placement ended (``unplace``)."""
         admitting, why = self.gate()
         calls = self.calls()
         if not admitting or calls >= self.max_calls:
@@ -189,9 +194,19 @@ class Admission:
                 if not placed:
                     self.refused += 1
                     logger.warning("refusing a call: %s", why, extra={"refused": self.refused})
+                    # A placement the gateway made after the worker stopped waiting holds a call slot all the
+                    # same; it ends before the job may go to another worker.
+                    if self.unplace is not None:
+                        await self.unplace(job)
                     await job.reject(terminate=False)
                     return
             await job.accept()
+        except Exception:
+            # The job does not run (LiveKit's AssignmentTimeoutError: no assignment within 7.5 s of the accept), so
+            # nothing of it would end its placement.
+            if self.unplace is not None:
+                await self.unplace(job)
+            raise
         finally:
             self.accepting -= 1
 

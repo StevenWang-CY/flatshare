@@ -44,7 +44,7 @@ Each tenant's `cache_salt` is the first 32 hex digits of HMAC-SHA-256 of the ten
 
 ## Lifecycle events
 
-The voice worker tells the gateway where each call is.
+The voice worker tells the gateway where each call is: in bench mode with every voice event below, which E2's lifecycle policy reads, and in serve mode with `session_closed` alone, the one event a gateway without an admission policy acts on.
 - **Delivery.** Trusted callers `POST` events to `/v1/events`, as one JSON object or an array of them, and get 202 `{"accepted": n, "duplicates": m}`. The voice worker posts over the gateway's Unix socket, where the voice tenant needs no key, from one background task per session, with a 1 s timeout and no retry: a late timing signal would mislead.
 - **Idempotency.** Events are idempotent by `(tenant, source, event_id)` within a window (by default 100,000 ids for 10 minutes): a repeat is acknowledged and ignored.
 - **Unknowns.** Unknown fields are ignored; an unknown `type` is rejected with 400, and so is the whole batch that contains it.
@@ -78,7 +78,7 @@ Under the lifecycle policy, the gateway keeps each realtime session's turn state
 
 ## Placement
 
-With `[[nodes]]`, `POST /v1/sessions` from a trusted tenant places a session on a GPU node before its first request and answers the node and its speech servers; when no node can take it, it gets 503 (`no_healthy_node`, `no_call_slot`, `no_agent_slot` or `placement_full`) with `Retry-After: 1`, and a `session_closed` event frees its slot ([the gateway's Nodes](../crates/flatshare-gateway/README.md#nodes)). Without `[[nodes]]` a gateway has one upstream and places nothing.
+With `[[nodes]]`, `POST /v1/sessions` from a trusted tenant places a session on a GPU node before its first request and answers the node and its speech servers; when no node can take it, it gets 503 (`no_healthy_node`, `no_call_slot`, `no_agent_slot` or `placement_full`) with `Retry-After: 1`. `DELETE /v1/sessions/{id}` from its tenant ends the placement and frees its slot at once, as a `session_closed` event does, and answers 200 whether or not the session had one; the voice worker ends each call it placed so, at the call's end and for a job that does not run after all ([the gateway's Nodes](../crates/flatshare-gateway/README.md#nodes)). Without `[[nodes]]` a gateway has one upstream and places nothing.
 
 ## Removed after v0.3
 
