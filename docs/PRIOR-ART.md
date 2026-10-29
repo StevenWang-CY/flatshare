@@ -1,6 +1,6 @@
 # Prior art
 
-*Checked against primary sources (papers, issue and PR threads, release notes, documentation, code) on 2026-10-22. Status is as of that date, except for Flatshare's own proposals to vLLM, as of 2026-10-23: pull requests #63350 and #63351, opened that day and under review since, and a comment with Flatshare's data on #40004; for what a novelty check added on 2026-10-26, vLLM's V0 scheduler (#5958, #19057) and the papers beside it, as of that day; and for Dynamo's and GAIE's releases, vLLM #61976 and llm-d #1119, rechecked on 2026-10-29. Dates are UTC.*
+*Checked against primary sources on 2026-10-22, some of them later ([the dates](#dates)). Dates are UTC.*
 
 This page is for engineers asking "how is this different from X?". Flatshare serves a realtime tier that no admission policy sheds (voice turns, bounded only by the calls the box admits and the gateway's own limits: [ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)) beside a best-effort tier that is harvested (background agents), on one vLLM replica. It was built to time the protection from lifecycle events: speech onset, end of turn and barge-in for voice, and tool waits for agents. In E2's discriminating scenario that protection could not act from a control plane in front, while the change in the engine (#63350 and #63351) takes the voice tail from 10.5 s to within 0.2 s of the SLO, and on an A100 SXM4 80 GB at the same pool from 4.99 s to 1.63 s, under that card's SLO; in the simulator (E1), knowing when agents return bought under 9% of the median resume latency, and session history bought nothing even at the tail.
 
@@ -286,3 +286,12 @@ One lifecycle-event schema for both workloads is an engineering choice with litt
 - **A better router.** `flatshare-gateway` is a small harness for experiments on one or two GPU nodes without Kubernetes, and `flatshare-core`'s lifecycle policy has run inside it since W3. What Flatshare proposed to other projects: the change, as vLLM pull requests #63350 and #63351 (opened 2026-10-23, under review), and E1's negative result for an agent-side lease and prefetch policy, as comments on vLLM #57103 and vllm-project/router #428. The lifecycle-event sink proposed to agentic-api (vllm-project/agentic-api#364) is separate from both.
 - **Measured results beyond the two cards measured.** E2 ran on one 16 GB consumer GPU with a 4B model and traces block-scaled 32×, and its core ran like for like on one A100 SXM4 80 GB, held to the box's pool ([the A100 run](HARDWARE.md#what-it-measured-2026-10-26)). Other cards, and the A100 at its own pool, are placed on E1's map in dimensionless terms (KV pressure, pause over restore time, restore over recompute time) by `flatshare-sim`, from modeled cost fits, labeled as modeled.
 - **Precedence.** Nothing here claims to be first or the only one. This page is a positioning statement, and each comparison rests on the sources cited.
+
+## Dates
+
+Each status is as of its date:
+
+- **2026-10-22:** every source, checked against the primary ones: papers, issue and PR threads, release notes, documentation and code.
+- **2026-10-23:** Flatshare's own proposals to vLLM, pull requests #63350 and #63351, opened that day, and a comment with Flatshare's data on #40004.
+- **2026-10-26:** what a novelty check added, vLLM's V0 scheduler (#5958, #19057) and the papers beside it.
+- **2026-10-29:** Dynamo's and GAIE's releases, vLLM #61976 and llm-d #1119, rechecked.
