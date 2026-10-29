@@ -30,10 +30,12 @@ from running agent requests, and once it runs, agent prefill shares every step o
 
 Two scheduler changes, proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and
 [#63351](https://github.com/vllm-project/vllm/pull/63351) (open as of 2026-10-29), bring that p95 to 2.24 s against an
-SLO of 2.03 s, and the replies over the SLO from 90% to 32% (286 of 885), while the agents keep 97% of their token rate.
-At the 256-token step cap the deployment runs, 44 of 295 replies were over their round's SLO in five rounds on new
-samples of the agents, against 94 of 295 at 512 tokens and 261 of 295 on tuned vLLM. On an A100 at the same KV pool and
-512-token steps, the changes take the p95 from 4.99 s to 1.63 s, under that card's SLO in each of five rounds.
+SLO of 2.03 s. The replies over the SLO fall from 90% to 32% (286 of 885), and the agents keep 97% of their token rate.
+
+- **At the 256-token step cap the deployment runs**, 44 of 295 replies were over their round's SLO in five rounds on
+  new samples of the agents, against 94 of 295 at 512 tokens and 261 of 295 on tuned vLLM.
+- **On an A100** at the same KV pool and 512-token steps, the changes take the p95 from 4.99 s to 1.63 s, under that
+  card's SLO in each of five rounds.
 
 <picture>
   <source media="(max-width: 767px) and (prefers-color-scheme: dark)" srcset="docs/figures/e2-demo-narrow-dark.webp">
@@ -62,10 +64,10 @@ after 9.6 s, and the two changes after 1.9 s
 | + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 43% | 3,298 | 71 s | 105 s |
 | + #63351 with a 48-token window: **the PRs' configuration** | **2,236 ms** | +202 ms | 32% | 3,203 | 72 s | 111 s |
 
-Medians of five runs, or 10 for tuned vLLM and 15 for the last row. The SLO is voice alone's p95 plus 250 ms and allows
-5% of the replies over it. The agents' tokens/s count the calls' first 240 s and are nearly all prompt tokens. The PRs'
-rows ran Flatshare's make-room variant of the PRs before their revision of 2026-10-25; on the revised code, five rounds
-on the same samples gave the last row 2.27 s ([the revision](docs/BENCHMARKS.md#after-w5-the-first-tokens-in-flight)).
+Medians of five runs, or 10 for tuned vLLM and 15 for the last row
+([the runs](docs/BENCHMARKS.md#the-discriminating-scenario-after-w5s-fixes-w5)). The SLO is voice alone's p95 plus
+250 ms and allows 5% of the replies over it. The agents' tokens/s count the calls' first 240 s and are nearly all prompt
+tokens.
 
 - **At the 256-token step cap**, in the five rounds on new samples, the PRs' median p95 was 2,098 ms, against
   2,246 ms at 512 tokens and 12,010 ms on tuned vLLM
@@ -190,20 +192,22 @@ used:
 | compare with llm-d, Dynamo, SMG, SGLang and published work | [docs/PRIOR-ART.md](docs/PRIOR-ART.md) |
 | run it on other hardware or on one host | [docs/HARDWARE.md](docs/HARDWARE.md) |
 | operate the hosts, and read what the failure drills showed | [ops/RUNBOOK.md](ops/RUNBOOK.md) |
-| look up a term (the box, arm 9, the window, W0 to W8) | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
+| look up a term | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
 
 ## Related systems
 
-llm-d, Dynamo, SMG and vllm-project/router act in front of the engine, and the voice turn loses its time inside the
-engine's scheduler. The end-to-end experiment, E2, measured SMG, llm-d's flow control (emulated), and vLLM's and
-SGLang's own priority preemption: none meets the SLO, and most leave the p95 between 8.8 and 12.1 s. What Flatshare
-adds is the change to vLLM's scheduler, its end-to-end measurement against the configurations of vLLM 0.32, SGLang
-0.5.22, SMG and llm-d's flow control (emulated) that an operator can deploy without it, and two measured negative
-results: a gateway policy timed by the conversation (E2) and agent-side KV prefetch (E1). A separate
-SGLang pull request, [#45686](https://github.com/sgl-project/sglang/pull/45686), proposes the counterpart of #63350.
-`flatshare-gateway` is the serving control plane the deployment runs (priorities, bounded intake, deadlines,
-failure-inclusive accounting, two-node placement and failover), with E2's admission policies as its harness; it is not a
-fleet router ([ADR-0007](docs/adr/0007-the-gateway-is-the-serving-control-plane.md)).
+- **llm-d, Dynamo, SMG and vllm-project/router act in front of the engine**, and the voice turn loses its time inside
+  the engine's scheduler. In the end-to-end experiment, E2, none of SMG, llm-d's flow control (emulated), or vLLM's and
+  SGLang's own priority preemption meets the SLO, and most configurations without the change leave the p95 between 8.6
+  and 12.1 s ([§6.5](docs/REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work)).
+- **Flatshare adds the change to vLLM's scheduler**, measured end to end against the configurations an operator can
+  deploy without it: vLLM 0.32, SGLang 0.5.22, SMG and llm-d's flow control (emulated). It also measured two negative
+  results, a gateway policy timed by the conversation (E2) and agent-side KV prefetch (E1). For SGLang, pull request
+  [#45686](https://github.com/sgl-project/sglang/pull/45686) proposes the counterpart of #63350.
+- **`flatshare-gateway` is the serving control plane** the deployment runs: priorities, bounded intake, deadlines,
+  failure-inclusive accounting, and two-node placement and failover, with E2's admission policies as its harness. It is
+  not a fleet router ([ADR-0007](docs/adr/0007-the-gateway-is-the-serving-control-plane.md)).
+
 [docs/PRIOR-ART.md](docs/PRIOR-ART.md) has the sources and where each result went upstream.
 
 ## Repository layout
