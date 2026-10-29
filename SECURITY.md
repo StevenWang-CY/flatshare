@@ -4,12 +4,12 @@ How to report a vulnerability in Flatshare, and which parts of the repository th
 
 ## Supported versions
 
-Fixes go into the latest release and `main`. At v1.2 (2026-10-26) that is:
+Fixes go into the latest release and `main`. At v1.7 that is:
 
 | Version | Supported |
 |---|---|
-| 1.2 (the latest release) and `main` | Yes |
-| 1.1 and earlier, including the releases named Leaseholder | No |
+| 1.7 (the latest release) and `main` | Yes |
+| 1.6 and earlier, including the releases named Leaseholder | No |
 
 ## Reporting a vulnerability
 
@@ -44,5 +44,7 @@ These limits are stated in the documents and are not vulnerabilities in this sen
   servers in the host's network namespace ([ARCHITECTURE.md §3.3](docs/ARCHITECTURE.md#33-network-and-security)).
 - The measurement drop-in turns on vLLM's development routes, which a production box runs without
   ([the drop-in](deploy/phastform/variants/README.md#the-measurement-drop-in)).
-- The gateway is a measurement harness, not a production gateway: no TLS, no bound on the request bodies it holds in
-  all, no read timeouts ([what it does not do](crates/flatshare-gateway/README.md#what-it-does-not-do)).
+- The gateway does not terminate TLS: every listener binds loopback or a private socket. It bounds the requests in
+  flight and the bodies they hold, and gives each class deadlines for its upload, its queue and its response, but it
+  does not bound the idle connections clients keep open
+  ([what it does not do](crates/flatshare-gateway/README.md#what-it-does-not-do)).
