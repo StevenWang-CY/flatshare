@@ -1,0 +1,241 @@
+{
+ "kind": "soak",
+ "status": "complete",
+ "host": "cyan",
+ "started": 1793294721.1725392,
+ "options": {
+  "hours": 0.333,
+  "slo_reference_ms": null,
+  "slo_margin_ms": 250.0,
+  "calls_per_hour": 720.0,
+  "turns": 2,
+  "warmup_turns": 1,
+  "barge_in": 0.25,
+  "caller_seed": 0,
+  "dispatch_timeout_s": 15.0,
+  "max_open": 8,
+  "agents_sessions": 0,
+  "agents_data": "weka-x32-long",
+  "agents_seed": 11,
+  "think_cap_s": 120.0,
+  "agents_warmup_s": 60.0,
+  "agents_run_hours": 0.0,
+  "scrape_s": 60.0,
+  "guard_s": 60.0,
+  "guards": {
+   "gray": "off"
+  },
+  "guard_clear_s": 300.0,
+  "guard_blind_after": 3,
+  "drain_s": 120.0,
+  "model": null,
+  "gpu_source": null
+ },
+ "versions": {
+  "source": "v1.6-56-g885a874",
+  "release": "885a87483ccc",
+  "gpu_source": null,
+  "flatshare_bench": "1.6.0",
+  "aiperf": "0.13.0",
+  "flatshare_gateway": "flatshare-gateway 1.6.0"
+ },
+ "calls_runs": [
+  {
+   "run": 0,
+   "started": 1793294721.9976754,
+   "first_call": 0,
+   "duration_s": 1199,
+   "ended": 1793295965.5438867,
+   "exit_status": 0,
+   "how": "planned",
+   "summary": {
+    "attempts": 233,
+    "outcomes": {
+     "accepted": 51,
+     "refused": 182,
+     "failed": 0,
+     "skipped": 10,
+     "abandoned": 0
+    },
+    "turns": 102,
+    "errors": 0
+   }
+  }
+ ],
+ "agents_runs": [],
+ "pauses": [],
+ "serving": {
+  "worker": {
+   "FLATSHARE_VOICE_MODE": "serve",
+   "FLATSHARE_AUDIO": "synthetic",
+   "FLATSHARE_TURN_DETECTION": "vad",
+   "FLATSHARE_LLM_UDS": "/run/user/1007/flatshare/gateway.sock",
+   "FLATSHARE_SERVING_PROFILE": "~/flatshare/src/deploy/phastform/serving.json",
+   "FLATSHARE_VOICE_STATUS": "/run/user/1007/flatshare/voice-worker.json",
+   "FLATSHARE_IDLE_PROCESSES": "4"
+  },
+  "worker_status": {
+   "mode": "serve",
+   "max_calls": 2,
+   "active_calls": 0,
+   "admitting": true,
+   "reason": "0 of 2 calls",
+   "refused": 0,
+   "audio": "synthetic",
+   "turn_detection": "vad",
+   "endpointing_min_delay": null,
+   "vad_min_silence": null,
+   "node_binding": true,
+   "profile": "rtx-5060-ti-serve",
+   "age_s": 0.2
+  },
+  "serving_profile": {
+   "profile": "rtx-5060-ti-serve",
+   "node": "Phastform",
+   "variant": "make-room-serve",
+   "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+   "scheduler": {
+    "policy": "priority",
+    "max_num_batched_tokens": 256,
+    "long_prefill_token_threshold": 0,
+    "max_num_seqs": 256,
+    "async_scheduling": true
+   },
+   "make_room": {
+    "max_preemptions_per_step": 2,
+    "budget_cap": true,
+    "budget_cap_tokens": 48,
+    "reserve_tokens": 0
+   },
+   "voice": {
+    "mode": "serve",
+    "max_calls": 2,
+    "audio": "microphone"
+   }
+  },
+  "gateway": {
+   "upstream_idle_timeout_s": 55,
+   "log_format": "json",
+   "cache_salt_secret_file": "~/.config/flatshare/cache-salt-secret",
+   "metrics_key_file": "~/.config/flatshare/metrics-key",
+   "listen": [
+    {
+     "tcp": "127.0.0.1:18080"
+    },
+    {
+     "unix": "/run/user/1007/flatshare/gateway.sock",
+     "tenant": "voice"
+    }
+   ],
+   "tenants": {
+    "voice": {
+     "trusted": true,
+     "default_class": "realtime",
+     "max_class": "realtime"
+    },
+    "agents": {
+     "keys_sha256": [
+      "<redacted>"
+     ],
+     "trusted": true,
+     "default_class": "background",
+     "max_class": "interactive"
+    },
+    "bench": {
+     "keys_sha256": [
+      "<redacted>"
+     ],
+     "default_class": "interactive"
+    }
+   },
+   "nodes": [
+    {
+     "name": "phastform",
+     "upstream": "unix:/run/user/1007/flatshare/phastform-engine.sock",
+     "roles": [
+      "realtime",
+      "background"
+     ],
+     "max_calls": 2,
+     "max_agents": 4,
+     "stt": "unix:/run/user/1007/flatshare/phastform-stt.sock",
+     "tts": "unix:/run/user/1007/flatshare/phastform-tts.sock"
+    },
+    {
+     "name": "gray",
+     "upstream": "unix:/run/user/1007/flatshare/gray-engine.sock",
+     "roles": [
+      "realtime",
+      "background"
+     ],
+     "max_calls": 2,
+     "max_agents": 12,
+     "stt": "unix:/run/user/1007/flatshare/gray-stt.sock",
+     "tts": "unix:/run/user/1007/flatshare/gray-tts.sock"
+    }
+   ],
+   "placement": {
+    "calls": "fill",
+    "idle_s": 150,
+    "health_interval_s": 1,
+    "health_timeout_s": 1,
+    "unhealthy_after": 3,
+    "healthy_after": 2,
+    "failover_background_max_in_flight": 0
+   }
+  },
+  "nodes": [
+   "phastform",
+   "gray"
+  ],
+  "with_nodes": true,
+  "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+  "guards": [
+   {
+    "node": "phastform",
+    "method": "ssh"
+   },
+   {
+    "node": "gray",
+    "method": "off"
+   }
+  ],
+  "first_checks": [
+   {
+    "node": "phastform",
+    "verdict": "clear",
+    "at": 1793294721.257,
+    "processes": [
+     {
+      "whose": "ours",
+      "pid": 1484110,
+      "owner": "self",
+      "memory_mib": 1156,
+      "name": "uvicorn"
+     },
+     {
+      "whose": "ours",
+      "pid": 1484465,
+      "owner": "self",
+      "memory_mib": 2498,
+      "name": "VLLM::EngineCor"
+     },
+     {
+      "whose": "ours",
+      "pid": 1512373,
+      "owner": "self",
+      "memory_mib": 10310,
+      "name": "VLLM::EngineCor"
+     }
+    ]
+   }
+  ]
+ },
+ "window": {
+  "start": 1793294721.854391,
+  "end": 1793295920.654391,
+  "hours": 0.333
+ },
+ "ended_by": "hours",
+ "finished": 1793295965.8511915
+}
