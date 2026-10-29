@@ -1,0 +1,4 @@
+{"at": 1793299181.802, "event": "scrape_failed", "source": "engine/gray", "error": "HTTP 502: {\"error\":{\"code\":\"upstream_unavailable\",\"message\":\"the engine's /metrics failed: client error (SendRequest): connection "}
+{"at": 1793299181.957, "event": "window_started", "hours": 0.333}
+{"at": 1793299182.076, "event": "calls_started", "run": 0, "first_call": 0}
+{"at": 1793300380.757, "event": "window_ended", "by": "hours"}
