@@ -4,6 +4,29 @@
 //! on a node that covers until the calls moved to it, or a warm spare's, end, a realtime request sent once more before
 //! its first content and never after, `/nodes`, `POST /v1/sessions`, `DELETE /v1/sessions/{id}`, and a gateway without
 //! `[[nodes]]` unchanged.
+//!
+//! Its tests: without `[[nodes]]`, no `/v1/sessions`, `/v1/sessions/{id}` or `/nodes` and the one engine's series;
+//! calls placed by `POST /v1/sessions` on the node with the fewest calls, with that node's speech servers in the
+//! answer, the same node asked again, a third call refused with 503 `no_call_slot` when both nodes have their
+//! `max_calls`, each call's turns on its node only, agents spread over the nodes and kept there, `/nodes`' sessions,
+//! and a `session_closed` freeing a slot; a node whose TTS fails unhealthy while its engine serves, its call moving by
+//! its next turn and its next `POST /v1/sessions` naming the new node, new calls elsewhere, and its health back after
+//! `healthy_after` checks; a node whose engine fails its canary degraded and unhealthy, its agents moving, and healthy
+//! again once the engine answers; a moved call and a new one refused when the survivor's call slot is taken, and
+//! `no_healthy_node` and `/ready`'s 503 when no node takes a role; agents held to each node's `max_agents`, one that
+//! fits no node refused with 503 `no_agent_slot` and counted until an agent's `session_closed` frees a slot, a call
+//! placed beside them all the same, and `/nodes`' bounds; under `calls = "fill"`, calls on the first node until its
+//! `max_calls`, then on the next, which takes the first's calls when it fails while it has call slots; a call ended by
+//! `DELETE /v1/sessions/{id}` freeing its slot at once and the spare's covering with it, so that the next call fills
+//! the first node again, and a second end, one after `session_closed` and one of a session never placed answered 200
+//! with `ended` false; an end refused for an untrusted tenant (403), without a key (401) and for an id that is no
+//! session id (400), and another trusted tenant's end of the same id ending nothing of the call; a node covering for a
+//! failed one holding its agents back after the failed node is healthy again, until the moved call's `session_closed`,
+//! and one held past its queue deadline answered 503 `queue_timeout` while calls go on; under `calls = "fill"`, a spare
+//! given a new call while the first node is down covering until that call ends, the first node, healthy again, taking
+//! the next call and never covering for it; a realtime request whose node is killed before its first content answered
+//! whole by the other node, counted as retried, its call moved; a stream that breaks after its first content ended with
+//! the error event and never sent again; `/ready`, `/metrics/engine?node=` and `/nodes` under the metrics key.
 
 use std::time::Duration;
 

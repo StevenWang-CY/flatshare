@@ -1,6 +1,10 @@
 //! A drain: what a stopping or reloading gateway does with the requests in flight. Realtime and interactive ones
 //! finish within the drain timeout; background ones are cut `background_drain_s` into it, so that no agent turn
 //! holds up a stop or a reload.
+//!
+//! Its tests: a graceful drain and its cut of background requests: a stream ends with the `draining` event at its
+//! grace, a request without a response and one still queued get 503 with `Retry-After`, one that ends in time is not
+//! cut, and realtime and interactive streams finish whole.
 
 use std::time::{Duration, Instant};
 

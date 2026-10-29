@@ -282,6 +282,8 @@ async fn read(stream: UnixStream, shared: Weak<Shared>, closed: watch::Sender<bo
     tracing::info!("the predecessor is gone: its requests no longer count with this gateway's");
 }
 
+/// The tests: a ledger line that reads back, a predecessor without a policy's requests counted as admitted, a closing
+/// line that hands placements over while a lone upstream's lines name no nodes.
 #[cfg(test)]
 mod tests {
     use super::*;

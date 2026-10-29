@@ -1,5 +1,13 @@
 //! Deadlines: each wait a request goes through ends by one, the upstream's work is cancelled when one passes, its
 //! place and bytes come back, and it has one outcome. A preempted request's retries keep the deadlines of its receipt.
+//!
+//! Its tests: response headers and then silence, ended at the first-content deadline with the `upstream_timeout` event
+//! and an abort; a stream that stops after two chunks, at the idle deadline; a stream past the total deadline; no
+//! response headers within a class's headers deadline, 504; an upload too slow, 408, never upstream; a request not
+//! admitted by its class's queue deadline under a policy whose own is a minute, 503 with `Retry-After`; a preempted
+//! request's retry inside the deadline of its receipt, and one held back past it, answered 503 at that deadline, not
+//! one counted from its preemption, and never sent again; a client that leaves while the engine holds its first token.
+//! Each with the engine's request dropped where it had one, one outcome, and the request's place back.
 
 use std::time::{Duration, Instant};
 

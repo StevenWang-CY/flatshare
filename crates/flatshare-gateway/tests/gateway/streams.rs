@@ -1,4 +1,11 @@
 //! Relaying: cancellation, backpressure, upstream failures, shutdown, and the Unix socket listener.
+//!
+//! Its tests: byte-exact SSE relay with usage; a client leaving mid-stream (the engine's body is dropped though the
+//! engine sends nothing more) and before the headers; a stalled reader, aborted after the stall timeout and ending in
+//! an error; an event stream the upstream breaks off (its bytes, then the error event, then an abort; a break inside an
+//! event ends that event first; a JSON body gets no event); 502 and 504.
+//!
+//! The Unix socket: stale file, mode, live-socket refusal, a directory others can enter refused, cleanup.
 
 use std::io;
 use std::os::unix::fs::PermissionsExt;

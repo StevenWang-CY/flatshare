@@ -989,6 +989,23 @@ async fn expire(nodes: Weak<Nodes>, idle: Duration) {
     }
 }
 
+/// The tests of the nodes, here and in placement.rs: the verdict's hysteresis (unknown until a pass or
+/// `unhealthy_after` failures, unhealthy after that many in a row, healthy again after `healthy_after` passes); the
+/// placement table (a session kept while its node is available and lost when not, two tenants' sessions of one id
+/// apart, a moved call counted for its old node until it ends, idling out, the session idle longest forgotten in a full
+/// table and never a busy one, the untrusted tenants' half); a successor taking the placements of the nodes and tenants
+/// it has and the verdicts of the nodes it has not judged; an agent's session placed only on a node below its
+/// `max_agents`, interactive and background counted together, refused when every node is at its bound, a moved one too,
+/// and a slot freed when its session idles out; an agent's request that names no session kept off a node with a count
+/// of agents while it carries calls; calls filling the nodes in order under `fill` and spread over them by default, the
+/// next node taking calls while the first is not available and the first taking new ones again once it is; a node
+/// covering while it carries calls moved to it, after their node recovers, until they end by `session_closed` or idling
+/// out, a spare under `fill` covering for a new call until it ends while the first realtime node never covers for its
+/// own and agents go to the nodes that do not cover, and under `spread` no node's own calls making it cover; a degraded
+/// node's engine asked every second where a lone engine's is asked every interval; `[[nodes]]`' and `[placement]`'s
+/// keys, defaults and refusals (`upstream` beside `[[nodes]]`, an admission policy, a name or an engine twice, roles,
+/// call slots, agents' bounds and a node with both roles that sets none, addresses, the rule for calls); the node
+/// exposition current, and the one engine's unlabeled series absent beside it.
 #[cfg(test)]
 mod tests {
     use super::*;

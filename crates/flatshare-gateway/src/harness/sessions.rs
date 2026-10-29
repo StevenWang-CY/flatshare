@@ -220,6 +220,7 @@ impl Sessions {
     }
 }
 
+/// The tests: the session table's bound, its untrusted half and its tenants.
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
