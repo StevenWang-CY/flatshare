@@ -1380,6 +1380,34 @@ def test_the_audit_accepts_the_gpu_servers_in_the_hosts_namespace_where_the_host
     ]
 
 
+def test_the_audit_names_both_where_some_gpu_servers_run_apart_and_some_in_the_hosts_namespace(
+    tmp_path: Path,
+) -> None:
+    # A host whose GPU servers run partly in network namespaces of their own and partly in the host's, marked
+    # FLATSHARE_PRIVATE_NET=host: the summary gives both parts. install.sh marks every GPU unit or none, so no host is
+    # so today, and the summary used to keep only the second.
+    host = Listeners(tmp_path)
+    socket_dir = host.runtime / "flatshare"
+    host.namespaced(
+        "flatshare-engine.service",
+        "net:[4026532864]",
+        [f"{socket_dir}/engine.sock", "36087", "@cuda-uvmfd-1"],
+    )
+    marked = {"FLATSHARE_PRIVATE_NET": "host"}
+    host.tcp("127.0.1.1:38043", "flatshare-stt.service", env=marked)
+    host.socket("@cuda-uvmfd-2", "flatshare-stt.service", env=marked)
+    host.socket(f"{socket_dir}/stt.sock", "flatshare-stt.service", env=marked)
+    sockets = [f"{socket_dir}/{name}.sock" for name in ("engine", "stt")]
+    done = host.audit(*(arg for path in sockets for arg in ("--expect", path)))
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == (
+        f"audit-listeners: ok: the box's units hold 2 Unix sockets, all in {host.runtime}, "
+        "and 0 TCP or UDP listeners, all allowed; flatshare-engine in network namespaces of their own, with 1 TCP "
+        "or UDP listeners and 1 abstract sockets there; the GPU servers run in the host's network namespace "
+        "(FLATSHARE_PRIVATE_NET=host) with 1 loopback TCP listeners and 1 abstract sockets\n"
+    )
+
+
 def test_the_audit_judges_nothing_from_another_network_namespace_than_the_user_managers(
     tmp_path: Path,
 ) -> None:
