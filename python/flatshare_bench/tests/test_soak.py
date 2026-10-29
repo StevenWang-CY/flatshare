@@ -881,9 +881,10 @@ def test_the_soaks_agents_run_as_e2s_do(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_the_default_rate_finds_the_worker_full_now_and_then() -> None:
-    # docs/EXPERIMENTS.md: calls of a warm-up and 10 turns at E2's pace (calls of 26 turns in about 280 to 430 s) last
-    # 118 to 182 s, so 20 calls an hour offer the worker's two slots 0.66 to 1.01 Erlang, and Erlang B gives the
-    # share of calls that find both taken: about one in nine to one in five.
+    # docs/EXPERIMENTS.md: calls of a warm-up and 10 turns at E2's pace (W5's two-caller calls of 26 turns, 336 to
+    # 476 s, which test_e2 holds to the records) last 142 to 201 s, so 20 calls an hour offer the worker's two slots
+    # 0.79 to 1.12 Erlang, and Erlang B gives the share of calls that find both taken: about one in seven to one in
+    # four.
     def erlang_b(servers: int, offered: float) -> float:
         blocked = 1.0
         for n in range(1, servers + 1):
@@ -892,9 +893,9 @@ def test_the_default_rate_finds_the_worker_full_now_and_then() -> None:
 
     options = SoakOptions(hours=24)
     turns = options.warmup_turns + options.turns
-    loads = [options.calls_per_hour * turns * (seconds / 26) / 3600 for seconds in (280, 430)]
-    assert [round(load, 2) for load in loads] == [0.66, 1.01]
-    assert [round(1 / erlang_b(2, load), 1) for load in loads] == [8.7, 4.9]
+    loads = [options.calls_per_hour * turns * (seconds / 26) / 3600 for seconds in (336, 476)]
+    assert [round(load, 2) for load in loads] == [0.79, 1.12]
+    assert [round(1 / erlang_b(2, load), 1) for load in loads] == [6.7, 4.4]
 
 
 def test_the_nodes_are_the_gateways() -> None:
