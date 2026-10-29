@@ -48,6 +48,6 @@ E2's report computes these for every point (`flatshare-bench e2`; [EXPERIMENTS.m
 | RG: round 4, Gray (the sweep's confirmation only) | 2 | 1,830 ms | the round's own run | 2,080 ms |
 | RG: round 5, Phastform (the sweep's confirmation only) | 2 | 1,842 ms | the round's own run | 2,092 ms |
 
-Not computed: audio gaps (the continuity indicator), the interactive class's resume target, and the cache-contract honor rate, which went with leases.
+Not computed: the interactive class's resume target, and the cache-contract honor rate, which went with leases. The plan's continuity indicator, audio gaps of 100 ms or more, is read from v1.6 and v1.7 as the pauses inside a reply, the concealed audio and the agent's playout above.
 
 The production objectives are the realtime first byte (95% within 250 ms) and the control-plane overhead (99% within 2 ms): [`ops/prometheus/rules.yml`](../ops/prometheus/rules.yml) records their error ratios over five windows (the realtime one as 1 − good/valid) and alerts on their burn rates over a 30-day budget, which `rules.test.yml`'s promtool tests check (`make check-rules`), and [`ops/grafana/flatshare.json`](../ops/grafana/flatshare.json) shows them beside the engine's state ([the runbook](../ops/RUNBOOK.md#monitoring)).
