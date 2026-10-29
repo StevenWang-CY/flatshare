@@ -152,10 +152,11 @@ metrics:
 	  metrics::tests::the_checked_in_exposition_is_current metrics::tests::the_checked_in_node_exposition_is_current
 
 # crates/flatshare-gateway/tests/fixtures/reply-caps.json, the gateway's rewrite of reply limits and choices case by
-# case, after a change to it; test-make-room parses its bodies with vLLM's own request models.
+# case, after a change to it; test-make-room parses its bodies with vLLM's own request models. And errors.json, the
+# errors the voice worker reads as the gateway sends them, which the voice tests' fake gateways send.
 gateway-fixtures:
-	FLATSHARE_GATEWAY_WRITE_FIXTURES=1 cargo test -q -p flatshare-gateway --lib \
-	  bounds::tests::the_reply_caps_fixture_is_current
+	FLATSHARE_GATEWAY_WRITE_FIXTURES=1 cargo test -q -p flatshare-gateway --lib -- \
+	  bounds::tests::the_reply_caps_fixture_is_current exchange::tests::the_errors_fixture_is_current
 
 # ops/prometheus's recording and alert rules, checked and run against their unit tests (rules.test.yml) by promtool,
 # Prometheus 3.5.0's, which PROMTOOL names; outside make check, which needs no Prometheus.
