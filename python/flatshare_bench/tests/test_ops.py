@@ -159,6 +159,8 @@ def test_the_rule_tests_feed_exported_series_and_test_the_objectives_alerts() ->
         "FlatshareNodeUnhealthy",
         "FlatshareNodeCovering",
         "FlatshareCallsRefused",
+        "FlatshareRequestsRefusedForCapacity",
+        "FlatshareDeadlinesMissed",
     } <= tested
 
 
