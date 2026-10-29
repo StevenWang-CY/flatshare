@@ -1,6 +1,6 @@
 [package]
 name = "flatshare-gateway"
-description = "Flatshare's HTTP gateway in front of a vLLM engine: API-key tenants, input sanitization, sessions and SLO-class priorities, experimental admission policies, SSE relay, lifecycle events and metrics"
+description = "Flatshare's serving control plane in front of vLLM: API-key tenants, input sanitization, sessions and SLO-class priorities, bounds on the work it holds and a deadline for every wait, sticky sessions on GPU nodes with failover, SSE relay, lifecycle events and metrics"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

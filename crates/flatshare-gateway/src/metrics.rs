@@ -447,22 +447,23 @@ pub(crate) struct Metrics {
 impl Metrics {
     /// The metrics of a gateway without an admission policy.
     pub fn new() -> Self {
-        Self::build(None)
+        Self::build(None, None)
     }
 
     /// The metrics of a gateway with an admission point, whose series `harness` holds.
     pub fn with_harness(harness: &harness::Metrics) -> Self {
-        Self::build(Some(harness))
+        Self::build(Some(harness), None)
     }
 
     /// The metrics of a gateway with `[[nodes]]`, whose engines' series `nodes` holds in place of the one engine's.
     pub fn with_nodes(nodes: &crate::nodes::metrics::Metrics) -> Self {
-        let mut metrics = Self::build(None);
-        metrics.nodes = Some(nodes.clone());
-        metrics.register(None)
+        Self::build(None, Some(nodes))
     }
 
-    fn build(harness: Option<&harness::Metrics>) -> Self {
+    fn build(
+        harness: Option<&harness::Metrics>,
+        nodes: Option<&crate::nodes::metrics::Metrics>,
+    ) -> Self {
         let outcomes: Family<OutcomeLabels, Counter> = Family::default();
         let overhead: Histograms<RouteLabels> =
             Family::new_with_constructor(|| Histogram::new(OVERHEAD_BUCKETS));
@@ -539,7 +540,7 @@ impl Metrics {
             events: Family::default(),
             usage_tokens,
             node_ready: Gauge::default(),
-            nodes: None,
+            nodes: nodes.cloned(),
             resolved,
         };
         for class in by_class {
