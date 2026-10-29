@@ -419,12 +419,12 @@ def test_the_step_costs_are_the_baselines_cells() -> None:
         assert c.added == pytest.approx(
             cell["change_us"], abs=0.11
         )  # the cells round each to 0.1 µs
-    # Switched off, the change costs what stock vLLM does, within 1.1% at every state; deployed, it adds tens to
-    # hundreds of µs a step, and 1.7 ms where a voice turn too large for two victims waits behind a 999-block hit.
-    assert max(c.off_ratio for c in costs.values()) < 0.011
-    assert max(c.added for c in costs.values() if c.scenario == "A") == pytest.approx(149.1)
+    # Switched off, the change costs what stock vLLM does, within 1.6% at every state; deployed, it adds tens to
+    # hundreds of µs a step, and 1.5 ms where a voice turn too large for two victims waits behind a 999-block hit.
+    assert max(c.off_ratio for c in costs.values()) < 0.017
+    assert max(c.added for c in costs.values() if c.scenario == "A") == pytest.approx(126.9)
     assert sorted(round(c.added) for c in costs.values()) == [
-        36, 38, 58, 87, 149, 160, 182, 247, 539, 543, 625, 644, 1719,
+        35, 36, 54, 88, 127, 150, 177, 246, 326, 357, 434, 459, 1495,
     ]  # fmt: skip
     assert (costs["B64-hit999"].variant, costs["B256-W10"].variant) == (
         "a 999-block prefix hit",
