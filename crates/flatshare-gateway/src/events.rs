@@ -8,15 +8,13 @@ use std::time::{Duration, Instant};
 
 use axum::extract::{Request, State};
 use axum::response::Response;
-use flatshare_proto::{LifecycleEvent, SloClass};
+use flatshare_proto::LifecycleEvent;
 use http::StatusCode;
 use serde_json::value::RawValue;
 
-use crate::deadline::Deadlines;
 use crate::exchange::Exchange;
 use crate::metrics::{Metrics, Route};
-use crate::proxy::{BodyError, read_body};
-use crate::server::App;
+use crate::server::{App, read_control_body, trusted_tenant};
 
 /// An event the gateway accepted: not a repeat of one seen within the deduplication window.
 #[derive(Clone, Debug)]
@@ -160,40 +158,19 @@ impl Seen {
 pub(crate) async fn post(State(app): State<App>, request: Request) -> Response {
     let shared = &app.shared;
     let mut ex = Exchange::new(&shared.metrics, Route::Events);
-    let (parts, body) = request.into_parts();
-    let Some(tenant) = shared
-        .tenants
-        .authenticate(&parts.headers, app.listener_tenant)
-    else {
-        return ex.unauthorized();
+    let action = "post lifecycle events";
+    let tenant = match trusted_tenant(&app, &mut ex, request.headers(), action) {
+        Ok(tenant) => tenant,
+        Err((status, code, message)) => return ex.error(status, code, message),
     };
-    ex.resolved.tenant = Some(Arc::clone(&tenant.name));
-    if !tenant.trusted {
-        return ex.error(
-            StatusCode::FORBIDDEN,
-            "untrusted_tenant",
-            "only trusted tenants may post lifecycle events",
-        );
-    }
-    // A batch's bytes come from the budget of the bodies the gateway holds, as a request's do.
+    // A batch's bytes come from the budget of the bodies the gateway holds, as a request's do, and it has the
+    // interactive class's upload deadline.
     let mut budget = shared.intake.body();
-    // A batch has the interactive class's upload deadline.
-    let class = SloClass::Interactive;
-    let upload = Deadlines::new(class, shared.class(class), ex.received).upload();
-    let body = match read_body(body, shared.max_body_bytes, &mut budget, upload).await {
+    let (body, again) = (request.into_body(), "send the events again");
+    let read = read_control_body(shared, ex.received, body, &mut budget, "events", again);
+    let body = match read.await {
         Ok(body) => body,
-        Err(BodyError::Late(timeout)) => {
-            let message = format!("the events did not arrive within {}", timeout.key());
-            return ex.error(StatusCode::REQUEST_TIMEOUT, "upload_timeout", message);
-        }
-        Err(BodyError::Invalid(status, code, message)) => return ex.error(status, code, message),
-        Err(BodyError::Refused(_)) => {
-            return ex.error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "body_budget_exhausted",
-                "the gateway holds max_buffered_body_bytes of request bodies; send the events again",
-            );
-        }
+        Err((status, code, message)) => return ex.error(status, code, message),
     };
     let events = match parse(&body) {
         Ok(events) => events,

@@ -40,6 +40,16 @@ const CLIENT_CLOSED: u16 = 499;
 const NOT_READY: &str =
     "the engine is not ready: a request found it broken and its /health has not answered since";
 
+/// An error answer's status, code and message, as [`Exchange::error`] takes them: what a step that cannot answer
+/// gives the record to answer.
+pub(crate) type ErrorAnswer = (StatusCode, &'static str, String);
+
+/// The 401 of a request without a known API key on a listener without a tenant.
+pub(crate) fn missing_key() -> ErrorAnswer {
+    let message = "missing or unknown API key".to_owned();
+    (StatusCode::UNAUTHORIZED, "invalid_api_key", message)
+}
+
 #[derive(Debug)]
 pub(crate) struct Exchange {
     metrics: Arc<Metrics>,
@@ -357,13 +367,10 @@ impl Exchange {
         }
     }
 
-    /// The 401 for a request without a known API key on a listener without a tenant.
+    /// The 401 for a request without a known API key on a listener without a tenant ([`missing_key`]).
     pub fn unauthorized(self) -> Response {
-        self.error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_api_key",
-            "missing or unknown API key",
-        )
+        let (status, code, message) = missing_key();
+        self.error(status, code, message)
     }
 
     /// The error for a request the admission point refused: 429 when its class's queue was full, 503 when it

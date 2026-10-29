@@ -8,13 +8,16 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::Router;
+use axum::body::Body;
+use axum::extract::rejection::PathRejection;
 use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{MethodRouter, delete, get, post};
 use axum::serve::ListenerExt;
+use bytes::Bytes;
 use flatshare_proto::{LifecycleEvent, SloClass};
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use http::{Method, StatusCode, Uri};
@@ -25,15 +28,16 @@ use tokio::task::JoinSet;
 use crate::auth::{self, Tenant, Tenants};
 use crate::canary::{self, Health, Watched};
 use crate::config::{ClassConfig, Config, Listen, ListenAddr, MetricsKey, PrioritySignals};
+use crate::deadline::Deadlines;
 use crate::engine::Engine;
 use crate::events::{self, EventSink, Events};
-use crate::exchange::Exchange;
+use crate::exchange::{self, ErrorAnswer, Exchange};
 use crate::harness::Admission;
-use crate::intake::{self, Intake};
+use crate::intake::{self, BodyBytes, Intake};
 use crate::ledger::{self, Followed, Ledger, Load};
 use crate::metrics::{EngineState, Metrics, Route};
 use crate::nodes::{self, Nodes};
-use crate::proxy;
+use crate::proxy::{self, BodyError, read_body};
 use crate::systemd::Inherited;
 use crate::upstream::Upstream;
 
@@ -579,16 +583,11 @@ where
 }
 
 fn router(app: App) -> Router {
-    let with_nodes = app.shared.nodes().is_some();
     let router = Router::new();
     // Without [[nodes]] none of these routes exists: their paths are 404, as they always were.
-    let router = if with_nodes {
-        router
-            .route("/v1/sessions", post(nodes::routes::sessions))
-            .route("/v1/sessions/{id}", delete(nodes::routes::end))
-            .route("/nodes", get(nodes::routes::nodes))
-    } else {
-        router
+    let router = match app.shared.nodes() {
+        Some(nodes) => nodes_routes(router, nodes),
+        None => router,
     };
     router
         .route("/v1/chat/completions", inference(Route::ChatCompletions))
@@ -627,6 +626,34 @@ fn router(app: App) -> Router {
         .with_state(app)
 }
 
+/// The routes a gateway with `[[nodes]]` adds, each handed the nodes.
+fn nodes_routes(router: Router<App>, nodes: &Arc<Nodes>) -> Router<App> {
+    let (sessions, end, list) = (Arc::clone(nodes), Arc::clone(nodes), Arc::clone(nodes));
+    router
+        .route(
+            "/v1/sessions",
+            post(move |State(app): State<App>, request: Request| async move {
+                nodes::routes::sessions(app, &sessions, request).await
+            }),
+        )
+        .route(
+            "/v1/sessions/{id}",
+            delete(
+                move |State(app): State<App>,
+                      id: Result<axum::extract::Path<String>, PathRejection>,
+                      headers: HeaderMap| async move {
+                    nodes::routes::end(app, &end, id, headers).await
+                },
+            ),
+        )
+        .route(
+            "/nodes",
+            get(move |State(app): State<App>, request: Request| async move {
+                nodes::routes::nodes(app, &list, request).await
+            }),
+        )
+}
+
 /// The method and path of a request that matched no route, for its error and log line. The `route` label of
 /// such a request is "other", so this is the only record of what was asked for; long paths are cut.
 fn request_line(method: &Method, uri: &Uri) -> String {
@@ -642,6 +669,64 @@ fn request_line(method: &Method, uri: &Uri) -> String {
 
 fn inference(route: Route) -> MethodRouter<App> {
     post(move |State(app): State<App>, request: Request| proxy::inference(app, route, request))
+}
+
+/// The tenant of a control route's request, which only a trusted tenant may make, recorded in `ex`. Or the error
+/// answer: 401 without a known API key on a listener without a tenant ([`exchange::missing_key`]), and 403 for an
+/// untrusted tenant, which may not `action`.
+pub(crate) fn trusted_tenant<'a>(
+    app: &'a App,
+    ex: &mut Exchange,
+    headers: &HeaderMap,
+    action: &str,
+) -> Result<&'a Tenant, ErrorAnswer> {
+    let Some(tenant) = app
+        .shared
+        .tenants
+        .authenticate(headers, app.listener_tenant)
+    else {
+        return Err(exchange::missing_key());
+    };
+    ex.resolved.tenant = Some(Arc::clone(&tenant.name));
+    if !tenant.trusted {
+        let message = format!("only trusted tenants may {action}");
+        return Err((StatusCode::FORBIDDEN, "untrusted_tenant", message));
+    }
+    Ok(tenant)
+}
+
+/// Reads a control route's body as a request's is read: its bytes from `budget`, the bodies' budget, as they arrive,
+/// by the interactive class's upload deadline from `received`. The error is the answer's status, code and message:
+/// 408 when the body, `what`, did not arrive in time, 413 or 400 for one too large or unreadable, and 503 when the
+/// budget is full, which says what to do `again`.
+pub(crate) async fn read_control_body(
+    shared: &Shared,
+    received: Instant,
+    body: Body,
+    budget: &mut BodyBytes,
+    what: &str,
+    again: &str,
+) -> Result<Bytes, ErrorAnswer> {
+    let interactive = SloClass::Interactive;
+    let upload = Deadlines::new(interactive, shared.class(interactive), received).upload();
+    read_body(body, shared.max_body_bytes, budget, upload)
+        .await
+        .map_err(|err| match err {
+            BodyError::Late(timeout) => {
+                let message = format!("the {what} did not arrive within {}", timeout.key());
+                (StatusCode::REQUEST_TIMEOUT, "upload_timeout", message)
+            }
+            BodyError::Invalid(status, code, message) => (status, code, message),
+            BodyError::Refused(_) => {
+                let message =
+                    format!("the gateway holds max_buffered_body_bytes of request bodies; {again}");
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "body_budget_exhausted",
+                    message,
+                )
+            }
+        })
 }
 
 /// The 401 of a request that may not read the metrics: one on a TCP listener without the metrics key. On a Unix
