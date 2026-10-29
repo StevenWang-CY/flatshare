@@ -1,17 +1,19 @@
 """The voice agent's settings, read from its environment, and the turn handling and lifecycle events they set; its
-two modes, bench (every call taken) and serve (call-capacity admission from the serving profile), and its two audio
-configurations, the synthetic callers' and real microphones'."""
+two modes, bench (every call taken) and serve (call-capacity admission from the serving profile, and the worker's status
+sent to LiveKit as each call ends), and its two audio configurations, the synthetic callers' and real microphones'."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import multiprocessing
 import os
 import sys
 from pathlib import Path
 
 import pytest
-from livekit.agents import inference
+from livekit.agents import AgentServer, JobExecutorType, inference, ipc, utils
+from livekit.protocol import agent
 
 from flatshare_voice import admission, plugins, worker
 from flatshare_voice.worker import Settings
@@ -127,10 +129,14 @@ def test_the_agent_names_the_boxs_model_unless_told_another() -> None:
 def started(monkeypatch: pytest.MonkeyPatch) -> list[object]:
     """What LiveKit's command line was given to run, with the options the worker set on its server
     first, in place of running it; the worker is told to serve, with the unit's sockets. Serve
-    mode's admission is the test's alone, and its monitor runs one round, without its thread."""
+    mode's admission is the test's alone, its monitor runs one round, without its thread, and its
+    status sends are noted, not hooked to the server."""
     runs: list[object] = []
     monkeypatch.setattr(worker.cli, "run_app", runs.append)
     monkeypatch.setattr(worker.server, "update_options", lambda **options: runs.append(options))
+    monkeypatch.setattr(
+        worker, "send_status_when_calls_end", lambda server: runs.append(("status", server))
+    )
     monkeypatch.setattr(sys, "argv", ["flatshare-voice-worker", "start"])
     monkeypatch.setattr(worker, "ADMISSION", None)
     monkeypatch.setattr(admission.Monitor, "start", admission.Monitor.tick)
@@ -291,10 +297,88 @@ def test_serve_mode_starts_admission_with_livekits_threshold_at_one(
     monkeypatch.setenv("FLATSHARE_VOICE_STATUS", str(status))
     monkeypatch.setenv("FLATSHARE_VOICE_DRAIN", str(tmp_path / "voice-worker.drain"))
     worker.main()
-    assert started == [{"num_idle_processes": 2}, {"load_threshold": 1.0}, worker.server]
+    # Bench mode's load is always 0, so its status never changes: only serve mode sends it as calls end.
+    assert started == [
+        {"num_idle_processes": 2},
+        {"load_threshold": 1.0},
+        ("status", worker.server),
+        worker.server,
+    ]
     assert worker.ADMISSION is not None and worker.ADMISSION.max_calls == 2
     # Its first round has asked the gateway, which this test has none of: no call is taken, and the file says why.
     written = json.loads(status.read_text())
     assert (written["mode"], written["max_calls"], written["admitting"]) == ("serve", 2, False)
     assert written["reason"].startswith("the engine does not serve: /ready on ")
     assert worker.load(worker.server) == 1.0
+
+
+class _CallProcess:
+    """A call's job process as the SDK's pool holds it: its job, which it keeps after the call ends, and ``join``, which
+    returns once the process has exited."""
+
+    def __init__(self) -> None:
+        self.running_job = object()
+        self.exited = asyncio.Event()
+
+    async def join(self) -> None:
+        await self.exited.wait()
+
+
+async def _close_a_call(send: bool) -> list[agent.UpdateWorkerStatus]:
+    """A server in serve mode's load at two calls (``max_calls``), as ``AgentServer.run()`` sets it up before it says it
+    has started, without its connection or processes: LiveKit told it is full, its message channel, and the SDK's own
+    process pool holding both calls. The first call's process exits, as the pool watches each of its processes, and the
+    worker statuses then queued for the server are what LiveKit is told."""
+    server = AgentServer(load_fnc=lambda server: len(server.active_jobs) / 2)
+    server.update_options(load_threshold=1.0)
+    if send:
+        worker.send_status_when_calls_end(server)
+    loop = asyncio.get_running_loop()
+    server._devmode = False
+    server._msg_chan = utils.aio.Chan[agent.WorkerMessage](128, loop=loop)
+    server._previous_status, server._worker_load, server._reserved_slots = (
+        agent.WorkerStatus.WS_FULL,
+        1.0,
+        0,
+    )
+    pool = server._proc_pool = ipc.proc_pool.ProcPool(
+        initialize_process_fnc=lambda proc: None,
+        job_entrypoint_fnc=worker.entrypoint,
+        session_end_fnc=None,
+        simulation_end_fnc=None,
+        num_idle_processes=0,
+        initialize_timeout=10.0,
+        close_timeout=10.0,
+        session_end_timeout=10.0,
+        inference_executor=None,
+        job_executor_type=JobExecutorType.PROCESS,
+        mp_ctx=multiprocessing.get_context("spawn"),
+        memory_warn_mb=0,
+        memory_limit_mb=0,
+        http_proxy=None,
+        loop=loop,
+    )
+    calls = [_CallProcess(), _CallProcess()]
+    pool._executors.extend(calls)  # type: ignore[arg-type]
+    server.emit("worker_started")
+    calls[0].exited.set()
+    await pool._monitor_process_task(calls[0])  # type: ignore[arg-type]
+    await asyncio.gather(*worker.STATUS_SENDS)
+    sent = []
+    while not server._msg_chan.empty():
+        sent.append(server._msg_chan.recv_nowait().update_worker)
+    return sent
+
+
+def test_serve_mode_tells_livekit_a_line_is_free_as_soon_as_a_calls_process_closes() -> None:
+    # The 24-hour soak's hour 19: at two calls one ended, and LiveKit still held the worker full by the status the
+    # agents SDK sends every 2.5 s, so a call that came after its process had closed got no agent though a line was
+    # free. The pool reports the process closed before it drops it from the running jobs: a status sent then would
+    # still say full.
+    assert asyncio.run(_close_a_call(send=False)) == []  # nothing until the SDK's next round
+    (update,) = asyncio.run(_close_a_call(send=True))
+    assert (update.status, update.load, update.job_count) == (
+        agent.WorkerStatus.WS_AVAILABLE,
+        0.5,
+        1,
+    )

@@ -11,11 +11,13 @@ It runs in one of two modes (``FLATSHARE_VOICE_MODE``):
   dispatches, its load always 0, so that other tenants' CPU load on a shared host cannot drain it.
 - ``serve``: call-capacity admission (:mod:`.admission`). The serving profile
   (``FLATSHARE_SERVING_PROFILE``, a serving profile's serving.json) names the calls the measured
-  envelope admits: the worker's load is its calls over that number, with LiveKit's load threshold
-  at 1, so that a full worker is marked full and the server sends it no job, and a job request
-  beyond it is refused. It takes no call while the gateway says the engine does not serve
-  (``/ready`` on the LLM's socket, or the engine's ``/health`` on the bypass), or while the file
-  ``FLATSHARE_VOICE_DRAIN`` names exists (a release's drain), and writes its state to the file
+  envelope admits: the worker's load is its calls over that number, with LiveKit's load threshold at
+  1, so that a full worker is marked full and the server sends it no job, and a job request beyond
+  it is refused. It sends the server its status as soon as a call's process closes, not at the
+  agents SDK's next round, so that a line is offered once it is free
+  (:func:`send_status_when_calls_end`). It takes no call while the gateway says the engine does not
+  serve (``/ready`` on the LLM's socket, or the engine's ``/health`` on the bypass), or while the
+  file ``FLATSHARE_VOICE_DRAIN`` names exists (a release's drain), and writes its state to the file
   ``FLATSHARE_VOICE_STATUS`` names every second.
 
 Two audio configurations (``FLATSHARE_AUDIO``), :data:`AUDIO`. ``synthetic``, bench mode's default,
@@ -85,7 +87,10 @@ a worker that would fail it.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+import logging
 import math
 import os
 import sys
@@ -105,12 +110,15 @@ from livekit.agents import (
     inference,
     room_io,
 )
+from livekit.agents.utils.aio import ChanClosed
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import silero
 
 from . import events, nodes, plugins
 from .admission import Admission, EngineProbe, Monitor
 from .protocol import AGENT_NAME, room_session_id
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "http://flatshare.invalid/v1"
 """Requests go over the Unix sockets; the host name never resolves."""
@@ -513,6 +521,42 @@ def active_calls() -> int:
         return 0
 
 
+STATUS_SENDS: set[asyncio.Task[None]] = set()
+"""The status sends under way, held until they finish (the event loop keeps only weak references to
+its tasks)."""
+
+
+def send_status_when_calls_end(server: AgentServer) -> None:
+    """Serve mode: once ``server`` runs, send LiveKit the worker's status, available or full, each
+    time one of its processes closes, as a call's does when the call ends. LiveKit Agents 1.8.8
+    reads the load every 0.5 s but sends the server the status only every 2.5 s
+    (``UPDATE_STATUS_INTERVAL``), and the server dispatches a room once and to no worker it holds
+    full: at ``max_calls``, a call that came in the seconds after another ended got no agent though
+    a line was free, as the 24-hour soak found. The pool reports a process closed and then takes it
+    out of the running jobs (``ProcPool._monitor_process_task``), so the send runs as a task, which
+    reads the load after that, with the SDK's own steps: the load read again
+    (``_refresh_worker_load``), then the status sent (``_update_worker_status``). One that fails is
+    logged; the SDK's next round sends the status."""
+
+    async def send() -> None:
+        try:
+            # A worker that is closing has no server left to tell.
+            with contextlib.suppress(ChanClosed):
+                await server._refresh_worker_load()
+                await server._update_worker_status()
+        except Exception:
+            logger.warning(
+                "could not send LiveKit the worker's status as a call ended", exc_info=True
+            )
+
+    def closed() -> None:
+        task = asyncio.get_running_loop().create_task(send())
+        STATUS_SENDS.add(task)
+        task.add_done_callback(STATUS_SENDS.discard)
+
+    server.on("worker_started", lambda: server._proc_pool.on("process_closed", closed))
+
+
 def admission(settings: Settings) -> Admission:
     """Serve mode's admission over ``server``'s running jobs and its probe of the engine; with node
     binding, each call placed before its job is accepted, and its placement ended if the job does
@@ -542,6 +586,7 @@ def serve(settings: Settings) -> Admission:
     global ADMISSION
     ADMISSION = admission(settings)
     server.update_options(load_threshold=1.0)
+    send_status_when_calls_end(server)
     Monitor(ADMISSION, settings.status_file, settings.describe()).start()
     return ADMISSION
 
