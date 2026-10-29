@@ -67,7 +67,8 @@ earlier point left on the box."""
 
 MEASURE = (
     "vLLM serves /server_info and the cache resets only in its development mode, which the measurement "
-    "drop-in sets: deploy/phastform/variant.sh measure on"
+    "drop-in sets (deploy/phastform/variant.sh measure on) beside any variant but the serving one, "
+    "make-room-serve, which keeps it off: a measured point runs another (variant.sh use NAME)"
 )
 
 

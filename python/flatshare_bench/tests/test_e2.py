@@ -2348,9 +2348,11 @@ def test_a_wrong_engine_fails_before_anything_starts(cyan: Cyan) -> None:
 def test_an_engine_without_the_measurement_drop_in_fails_the_point_and_says_so(
     cyan: Cyan, route: str
 ) -> None:
-    # A production box: vLLM without its development mode has neither route.
+    # A production box: vLLM without its development mode has neither route. The drop-in cannot turn it on beside
+    # the serving variant, so the hint says to run another.
     del cyan.engine.routes[route]
-    with pytest.raises(E2Error, match=f"no {route}.*variant.sh measure on"):
+    hint = f"no {route}.*variant.sh measure on.*make-room-serve.*variant.sh use"
+    with pytest.raises(E2Error, match=hint):
         run(cyan, "a1-voice", VOICE_ALONE)
     assert record(cyan, "a1-voice")["status"] == "failed"
 
