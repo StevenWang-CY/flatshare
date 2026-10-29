@@ -47,31 +47,45 @@ pub(crate) struct Exchange {
     pub id: HeaderValue,
     pub route: Route,
     pub received: Instant,
-    pub tenant: Option<Arc<str>>,
-    pub class: Option<SloClass>,
-    pub session: Option<SessionId>,
+    /// What the gateway resolved of the request.
+    pub resolved: Resolved,
     /// The status sent to the client; `None` until a response exists.
     pub status: Option<StatusCode>,
-    /// Whether the request was sent upstream, which makes it count towards outcomes.
-    pub forwarded: bool,
-    /// How long the request waited at the admission point; `None` without one.
+    /// How long the request waited before it went upstream: at the admission point, or held back by a node that
+    /// covers. `None` when it waited at neither.
     pub admission_wait: Option<Duration>,
-    /// Why the lifecycle policy deferred it.
-    pub deferred: Option<Deferral>,
-    /// Whether the lifecycle policy admitted it regardless, after `max_defer_s`.
-    pub aged: bool,
-    /// Whether the lifecycle policy's degrade capped its reply.
-    pub degraded: bool,
-    /// How many times it was sent upstream again after a preemption.
-    pub resubmits: u32,
     pub first_byte: Option<Duration>,
     pub summary: Summary,
     /// The request's place in the intake and its body's bytes, given back when the record ends.
     pub permit: Option<Permit>,
+    /// Where the request went.
+    pub routed: Routed,
+    /// What E2's harness did with the request, under an admission policy.
+    pub harness: Harness,
+    /// Whether the request was sent upstream, which makes it count towards outcomes.
+    forwarded: bool,
+    /// Whether it was counted as offered.
+    offered: bool,
+    /// How it ended, once a step knows; set only by [`Exchange::ends_as`] and [`Exchange::ends_as_unless_set`].
+    outcome: Option<Outcome>,
+    error: Option<String>,
+}
+
+/// What the gateway resolved of a request: its tenant, class and session, and its class's deadlines and objective.
+#[derive(Debug, Default)]
+pub(crate) struct Resolved {
+    pub tenant: Option<Arc<str>>,
+    pub class: Option<SloClass>,
+    pub session: Option<SessionId>,
     /// Its deadlines, once its class is known.
     pub deadlines: Option<Deadlines>,
     /// Its class's first-content objective, for the SLI.
     pub objective: Option<Duration>,
+}
+
+/// Where a request went: its engine, and with `[[nodes]]` its node.
+#[derive(Debug, Default)]
+pub(crate) struct Routed {
     /// The engine's state, which an inference request's success keeps serving.
     pub health: Option<Arc<Health>>,
     /// With `[[nodes]]`: the request's node, for its log line, and its place there, given back when the record
@@ -80,10 +94,20 @@ pub(crate) struct Exchange {
     pub placed: Option<Placed>,
     /// How many times it was sent again on another node after its node failed before its first content.
     pub retries: u32,
-    /// Whether it was counted as offered.
-    offered: bool,
-    outcome: Option<Outcome>,
-    error: Option<String>,
+}
+
+/// What E2's harness did with a request: the lifecycle policy's deferral, aging and degrade, and preempt-resubmit's
+/// resubmissions.
+#[derive(Debug, Default)]
+pub(crate) struct Harness {
+    /// Why the lifecycle policy deferred it.
+    pub deferred: Option<Deferral>,
+    /// Whether the lifecycle policy admitted it regardless, after `max_defer_s`.
+    pub aged: bool,
+    /// Whether the lifecycle policy's degrade capped its reply.
+    pub degraded: bool,
+    /// How many times it was sent upstream again after a preemption.
+    pub resubmits: u32,
 }
 
 impl Exchange {
@@ -93,25 +117,15 @@ impl Exchange {
             id: request_id(),
             route,
             received: Instant::now(),
-            tenant: None,
-            class: None,
-            session: None,
+            resolved: Resolved::default(),
             status: None,
-            forwarded: false,
             admission_wait: None,
-            deferred: None,
-            aged: false,
-            degraded: false,
-            resubmits: 0,
             first_byte: None,
             summary: Summary::default(),
             permit: None,
-            deadlines: None,
-            objective: None,
-            health: None,
-            node: None,
-            placed: None,
-            retries: 0,
+            routed: Routed::default(),
+            harness: Harness::default(),
+            forwarded: false,
             offered: false,
             outcome: None,
             error: None,
@@ -125,34 +139,45 @@ impl Exchange {
     /// Counts an inference request as offered, once, with its tenant, route and class as they are known.
     pub fn offer(&mut self) {
         if self.route.is_inference() && !std::mem::replace(&mut self.offered, true) {
-            self.metrics
-                .offered(self.tenant.as_ref(), self.route, self.class);
+            let Resolved { tenant, class, .. } = &self.resolved;
+            self.metrics.offered(tenant.as_ref(), self.route, *class);
         }
     }
 
     /// Records the class of an inference request as it is known: the request is offered, with the class's deadlines
     /// from its receipt and its first-content objective. Returns the deadlines.
     pub fn classify(&mut self, class: SloClass, config: &ClassConfig) -> Deadlines {
-        self.class = Some(class);
+        self.resolved.class = Some(class);
         self.offer();
         let deadlines = Deadlines::new(class, config, self.received);
-        self.deadlines = Some(deadlines);
-        self.objective = config.first_content_objective;
+        self.resolved.deadlines = Some(deadlines);
+        self.resolved.objective = config.first_content_objective;
         deadlines
     }
 
-    /// Counts an inference request as admitted: past the intake, the admission point and the readiness check, on its
-    /// way upstream; `policy` when an admission policy decided when.
-    pub fn admit(&self, policy: bool) {
+    /// The request goes upstream, which makes it count towards outcomes. An inference request is counted as
+    /// admitted: past the intake, the admission point and the readiness check; `policy` when an admission policy
+    /// decided when.
+    pub fn admit(&mut self, policy: bool) {
+        self.forwarded = true;
         if self.route.is_inference() {
+            let Resolved { tenant, class, .. } = &self.resolved;
             self.metrics
-                .admitted(self.tenant.as_ref(), self.route, self.class, policy);
+                .admitted(tenant.as_ref(), self.route, *class, policy);
         }
+    }
+
+    /// Records the request's place on a node: the node, for its log line, and its engine's state, which the request's
+    /// success keeps serving. A place it had before goes.
+    pub fn place_on(&mut self, placed: Placed) {
+        self.routed.node = Some(Arc::clone(&placed.node.name));
+        self.routed.health = Some(Arc::clone(&placed.node.engine.health));
+        self.routed.placed = Some(placed);
     }
 
     /// An inference succeeded: a 2xx response's first content arrived, or it was relayed to its end.
     pub fn succeeded(&self) {
-        if let Some(health) = &self.health {
+        if let Some(health) = &self.routed.health {
             health.succeeded();
         }
     }
@@ -160,7 +185,7 @@ impl Exchange {
     /// Adds the request id and, once resolved, the session id to response headers.
     pub fn decorate(&self, headers: &mut HeaderMap) {
         headers.insert(REQUEST_ID.clone(), self.id.clone());
-        if let Some(session) = &self.session {
+        if let Some(session) = &self.resolved.session {
             headers.insert(RESOLVED_SESSION_ID.clone(), session_header(session));
         }
     }
@@ -174,7 +199,9 @@ impl Exchange {
         response
     }
 
-    /// Answers with an OpenAI-format error, `{"error": {"message", "type", "code"}}`, and records it.
+    /// Answers with an OpenAI-format error, `{"error": {"message", "type", "code"}}`, and records it. Its outcome,
+    /// unless the caller set one first: `transport_error` once the request went upstream, `invalid` for a client
+    /// error before.
     pub fn error(mut self, status: StatusCode, code: &str, message: impl Into<String>) -> Response {
         let message = message.into();
         let kind = match status {
@@ -186,23 +213,24 @@ impl Exchange {
         };
         let body = serde_json::json!({"error": {"message": message, "type": kind, "code": code}});
         if self.forwarded {
-            self.outcome.get_or_insert(Outcome::TransportError);
+            self.ends_as_unless_set(Outcome::TransportError);
         } else if status.is_client_error() {
-            self.outcome.get_or_insert(Outcome::Invalid);
+            self.ends_as_unless_set(Outcome::Invalid);
         }
         self.error = Some(message);
         self.respond(status, &body)
     }
 
     /// The 503 for a request that no ready engine can take, sent without going upstream. `Retry-After` is `retry`,
-    /// the interval of the readiness probe that will say when an engine answers again, in whole seconds.
+    /// the interval of the readiness probe that will say when an engine answers again, in whole seconds. Its outcome
+    /// is `not_ready`, unless the caller set one first (a drain's is `drained`).
     pub fn not_ready(
         mut self,
         code: &str,
         message: impl Into<String>,
         retry: Duration,
     ) -> Response {
-        self.outcome.get_or_insert(Outcome::NotReady);
+        self.ends_as_unless_set(Outcome::NotReady);
         let mut response = self.error(StatusCode::SERVICE_UNAVAILABLE, code, message);
         let seconds = retry.as_secs_f64().ceil().max(1.0) as u64;
         response
@@ -218,13 +246,13 @@ impl Exchange {
     }
 
     /// The 400 for a body whose reply limits or choices the gateway does not forward ([`crate::bounds`]), with the
-    /// field at fault as the error's `param`.
+    /// field at fault as the error's `param`. Its outcome is `invalid`, over any other.
     pub fn invalid_field(mut self, invalid: &bounds::Invalid) -> Response {
         let message = invalid.to_string();
         let body = serde_json::json!({"error": {
             "message": message, "type": "invalid_request_error", "param": invalid.field(), "code": invalid.code(),
         }});
-        self.outcome = Some(Outcome::Invalid);
+        self.ends_as(Outcome::Invalid);
         self.error = Some(message);
         self.respond(StatusCode::BAD_REQUEST, &body)
     }
@@ -251,7 +279,8 @@ impl Exchange {
 
     /// The answer to a request the intake refused, before its body was read or as its bytes passed the budget: 429
     /// when its tenant has its requests in flight, 503 when the gateway, its class or the bodies' budget is full, or
-    /// when the gateway admits nothing more; each with `Retry-After: 1`.
+    /// when the gateway admits nothing more; each with `Retry-After: 1`. Its outcome, over any other, is the
+    /// refusal's.
     pub fn intake_refused(mut self, refused: Refused, message: String) -> Response {
         let (status, code) = match refused {
             Refused::Draining => (StatusCode::SERVICE_UNAVAILABLE, "draining"),
@@ -260,7 +289,7 @@ impl Exchange {
             Refused::Tenant => (StatusCode::TOO_MANY_REQUESTS, "tenant_in_flight_limit"),
             Refused::BodyBytes => (StatusCode::SERVICE_UNAVAILABLE, "body_budget_exhausted"),
         };
-        self.outcome = Some(match refused {
+        self.ends_as(match refused {
             Refused::Draining => Outcome::Drained,
             Refused::InFlight => Outcome::RefusedInFlight,
             Refused::Class => Outcome::RefusedClass,
@@ -272,13 +301,13 @@ impl Exchange {
 
     /// The answer to a request whose `timeout` passed before any response began, by the `phase` it was in: 408 for an
     /// upload, 503 with `Retry-After: 1` for a wait at the admission point (the engine never saw the request, or saw
-    /// only an attempt that was dropped), 504 for the upstream.
+    /// only an attempt that was dropped), 504 for the upstream. Its outcome, over any other, is the deadline's.
     pub fn timed_out(mut self, phase: Phase, timeout: Timeout) -> Response {
-        let message = self.deadlines.map_or_else(
+        let message = self.resolved.deadlines.map_or_else(
             || format!("the request passed its {}", timeout.key()),
             |deadlines| deadlines.message(timeout),
         );
-        self.outcome = Some(Outcome::timeout(timeout));
+        self.ends_as(Outcome::timeout(timeout));
         match phase {
             Phase::Upload => self.error(StatusCode::REQUEST_TIMEOUT, "upload_timeout", message),
             Phase::Queue => self.retry(StatusCode::SERVICE_UNAVAILABLE, "queue_timeout", message),
@@ -291,7 +320,7 @@ impl Exchange {
 
     /// The 503 for a session that no node takes, with `Retry-After: 1`: no available node of its class's role, every
     /// available realtime node at its `max_calls` or background node at its `max_agents`, or (`POST /v1/sessions`) a
-    /// table whose every session is busy.
+    /// table whose every session is busy. Its outcome is `not_ready`.
     pub fn unplaced(self, unplaced: Unplaced, class: SloClass) -> Response {
         let (code, message) = match unplaced {
             Unplaced::NoNode => (
@@ -323,7 +352,7 @@ impl Exchange {
     /// The upstream broke a response off after it began: with `[[nodes]]`, its node's engine is probed, as for a
     /// connection that fails.
     pub fn broke(&self) {
-        if let Some(placed) = &self.placed {
+        if let Some(placed) = &self.routed.placed {
             placed.node.engine.found_broken();
         }
     }
@@ -338,10 +367,11 @@ impl Exchange {
     }
 
     /// The error for a request the admission point refused: 429 when its class's queue was full, 503 when it
-    /// was not admitted in time.
+    /// was not admitted in time. Its outcome, over any other: `refused_queue`, `timeout_queue`, or `drained` for a
+    /// gateway that handed its sockets over.
     pub fn refused(mut self, refusal: Refusal) -> Response {
-        let class = self.class.map_or("", SloClass::as_str);
-        self.outcome = Some(match refusal {
+        let class = self.resolved.class.map_or("", SloClass::as_str);
+        self.ends_as(match refusal {
             Refusal::QueueFull | Refusal::Queued => Outcome::RefusedQueue,
             Refusal::Timeout => Outcome::TimeoutQueue,
             Refusal::Draining => Outcome::Drained,
@@ -377,8 +407,8 @@ impl Exchange {
         let waited = ticket.map_or(Duration::ZERO, Ticket::waited);
         self.admission_wait = Some(waited);
         if let Some(ticket) = ticket {
-            self.deferred = ticket.deferred();
-            self.aged = ticket.aged();
+            self.harness.deferred = ticket.deferred();
+            self.harness.aged = ticket.aged();
         }
         waited
     }
@@ -413,9 +443,9 @@ impl Exchange {
     }
 
     /// The 429 for a request the admission policy shed before its response began: its place went to a
-    /// stricter class.
+    /// stricter class. Its outcome is `shed`, over any other.
     pub fn shed(mut self) -> Response {
-        self.outcome = Some(Outcome::Shed);
+        self.ends_as(Outcome::Shed);
         self.error(
             StatusCode::TOO_MANY_REQUESTS,
             "shed",
@@ -424,9 +454,9 @@ impl Exchange {
     }
 
     /// The 503 for a background request that had no response yet at a drain's cut (`grace` into the drain):
-    /// `Retry-After: 1`, for the gateway that serves the sockets next.
+    /// `Retry-After: 1`, for the gateway that serves the sockets next. Its outcome is `drained`, over any other.
     pub fn drained(mut self, grace: Duration) -> Response {
-        self.outcome = Some(Outcome::Drained);
+        self.ends_as(Outcome::Drained);
         let message = crate::server::drain_message(grace);
         self.not_ready("draining", message, Duration::from_secs(1))
     }
@@ -436,9 +466,20 @@ impl Exchange {
         self.error = Some(message);
     }
 
-    /// Records how a forwarded request ended.
+    /// Records how a forwarded request ended: `outcome`, over any other.
     pub fn finish(mut self, outcome: Outcome) {
+        self.ends_as(outcome);
+    }
+
+    /// Sets how the request ended, over what an earlier step set: the caller knows.
+    fn ends_as(&mut self, outcome: Outcome) {
         self.outcome = Some(outcome);
+    }
+
+    /// Sets how the request ended unless an earlier step set it: the caller knows only its answer, and a step that
+    /// knew more set its outcome first.
+    fn ends_as_unless_set(&mut self, outcome: Outcome) {
+        self.outcome.get_or_insert(outcome);
     }
 
     /// The request's terminal outcome: a response relayed to its end is `completed` only with a 2xx status, and a
@@ -462,13 +503,14 @@ impl Exchange {
     /// How the SLI counts a request of a class that ended with `outcome` after `total`: `None` when it is not valid,
     /// else whether it is good.
     fn judged(&self, outcome: Outcome, total: Duration) -> Option<bool> {
-        let within = |first: Duration| self.objective.is_none_or(|objective| first <= objective);
+        let objective = self.resolved.objective;
+        let within = |first: Duration| objective.is_none_or(|objective| first <= objective);
         match outcome {
             outcome if outcome.clients_fault() => None,
             Outcome::Completed => Some(self.first_byte.is_some_and(within)),
             // A client that leaves is no failure of the service, unless the service had already met or missed the
             // objective: the request is judged by its first content, or bad if the objective passed without one.
-            Outcome::Cancelled => match (self.objective, self.first_byte) {
+            Outcome::Cancelled => match (objective, self.first_byte) {
                 (Some(_), Some(first)) => Some(within(first)),
                 (Some(objective), None) if total > objective => Some(false),
                 _ => None,
@@ -487,10 +529,16 @@ impl Drop for Exchange {
         let outcome = (inference || self.forwarded).then(|| self.terminal());
         self.offer();
         let metrics = &self.metrics;
-        metrics.request(self.tenant.as_ref(), self.route, self.class, status);
+        let Resolved {
+            tenant,
+            class,
+            session,
+            ..
+        } = &self.resolved;
+        metrics.request(tenant.as_ref(), self.route, *class, status);
         if let (true, Some(outcome)) = (inference, outcome) {
-            metrics.terminal(self.tenant.as_ref(), self.route, self.class, outcome);
-            if let Some(class) = self.class {
+            metrics.terminal(tenant.as_ref(), self.route, *class, outcome);
+            if let Some(class) = *class {
                 metrics.outcome(class, outcome);
                 if let Some(good) = self.judged(outcome, total) {
                     metrics.sli(class, good);
@@ -500,7 +548,7 @@ impl Drop for Exchange {
                 self.succeeded();
             }
         }
-        if let (Some(class), true) = (self.class, self.forwarded) {
+        if let (Some(class), true) = (*class, self.forwarded) {
             metrics.duration(class, total);
             if let Some(first_byte) = self.first_byte {
                 metrics.first_byte(class, first_byte);
@@ -518,19 +566,19 @@ impl Drop for Exchange {
                     target: "flatshare_gateway::request",
                     $level,
                     request_id = self.id.to_str().unwrap_or_default(),
-                    tenant = self.tenant.as_deref(),
-                    session = self.session.as_ref().map(SessionId::as_str),
-                    node = self.node.as_deref(),
-                    class = self.class.map(SloClass::as_str),
+                    tenant = tenant.as_deref(),
+                    session = session.as_ref().map(SessionId::as_str),
+                    node = self.routed.node.as_deref(),
+                    class = class.map(SloClass::as_str),
                     route = self.route.as_str(),
                     status,
                     outcome = outcome.map(Outcome::as_str),
                     admission_wait_ms = self.admission_wait.map(ms),
-                    deferred = self.deferred.map(Deferral::as_str),
-                    aged = self.aged.then_some(true),
-                    degraded = self.degraded.then_some(true),
-                    resubmits = (self.resubmits > 0).then_some(self.resubmits),
-                    retries = (self.retries > 0).then_some(self.retries),
+                    deferred = self.harness.deferred.map(Deferral::as_str),
+                    aged = self.harness.aged.then_some(true),
+                    degraded = self.harness.degraded.then_some(true),
+                    resubmits = (self.harness.resubmits > 0).then_some(self.harness.resubmits),
+                    retries = (self.routed.retries > 0).then_some(self.routed.retries),
                     first_byte_ms = self.first_byte.map(ms),
                     total_ms = ms(total),
                     prompt_tokens = usage.map(|u| u.prompt),

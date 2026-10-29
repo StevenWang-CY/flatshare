@@ -99,9 +99,10 @@ impl Pump {
     async fn run(mut self) {
         let _active = self
             .ex
+            .resolved
             .class
             .map(|class| self.ex.metrics().stream_started(class));
-        let deadlines = self.ex.deadlines;
+        let deadlines = self.ex.resolved.deadlines;
         let outcome = loop {
             // The first content by the request's deadline for it, every frame after within the idle timeout.
             let (deadline, timeout) =
@@ -199,7 +200,7 @@ impl Pump {
                     matches!(sent, Ok(Ok(())))
                 }
             };
-            if let (true, Some(class)) = (sent, self.ex.class) {
+            if let (true, Some(class)) = (sent, self.ex.resolved.class) {
                 self.ex.metrics().error_event(class, kind);
             }
         }
@@ -209,7 +210,7 @@ impl Pump {
     /// Waits for room in the client's full channel to send `data`, for at most the stall timeout. `Err` is how the
     /// response ends instead: a shed, a drain's cut, the request's total, a client that left or one too slow.
     async fn send_full(&mut self, data: Bytes) -> Result<(), Outcome> {
-        let deadlines = self.ex.deadlines;
+        let deadlines = self.ex.resolved.deadlines;
         let total = deadlines.map(|d| d.total().0);
         let sent = tokio::select! {
             biased;

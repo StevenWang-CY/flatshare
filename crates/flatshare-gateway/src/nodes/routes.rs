@@ -48,7 +48,7 @@ pub(crate) async fn sessions(State(app): State<App>, request: Request) -> Respon
     else {
         return ex.unauthorized();
     };
-    ex.tenant = Some(Arc::clone(&tenant.name));
+    ex.resolved.tenant = Some(Arc::clone(&tenant.name));
     if !tenant.trusted {
         return ex.error(
             StatusCode::FORBIDDEN,
@@ -88,17 +88,17 @@ pub(crate) async fn sessions(State(app): State<App>, request: Request) -> Respon
     if class != wanted {
         shared.metrics.class_clamped();
     }
-    ex.class = Some(class);
+    ex.resolved.class = Some(class);
     let key = Key {
         tenant: tenant.index,
         session: asked.session_id.clone(),
     };
-    ex.session = Some(asked.session_id);
+    ex.resolved.session = Some(asked.session_id);
     let node = match nodes.session(&key, class, tenant.trusted) {
         Ok(node) => node,
         Err(unplaced) => return ex.unplaced(unplaced, class),
     };
-    ex.node = Some(Arc::clone(&node.name));
+    ex.routed.node = Some(Arc::clone(&node.name));
     let address = |speech: &Option<super::Speech>| speech.as_ref().map(|s| s.addr.to_string());
     let body = serde_json::json!({
         "session_id": key.session.as_str(),
@@ -131,7 +131,7 @@ pub(crate) async fn end(
     let Some(tenant) = shared.tenants.authenticate(&headers, app.listener_tenant) else {
         return ex.unauthorized();
     };
-    ex.tenant = Some(Arc::clone(&tenant.name));
+    ex.resolved.tenant = Some(Arc::clone(&tenant.name));
     if !tenant.trusted {
         return ex.error(
             StatusCode::FORBIDDEN,
@@ -153,9 +153,10 @@ pub(crate) async fn end(
         }
     };
     let ended = nodes.end(&key);
-    ex.node = ended.map(|node| Arc::clone(&node.name));
-    let body = serde_json::json!({"session_id": key.session.as_str(), "ended": ex.node.is_some()});
-    ex.session = Some(key.session);
+    ex.routed.node = ended.map(|node| Arc::clone(&node.name));
+    let body =
+        serde_json::json!({"session_id": key.session.as_str(), "ended": ex.routed.node.is_some()});
+    ex.resolved.session = Some(key.session);
     ex.respond(StatusCode::OK, &body)
 }
 

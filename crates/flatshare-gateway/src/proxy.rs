@@ -93,7 +93,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     else {
         return ex.unauthorized();
     };
-    ex.tenant = Some(Arc::clone(&tenant.name));
+    ex.resolved.tenant = Some(Arc::clone(&tenant.name));
 
     let inputs = sanitize_headers(&mut parts.headers, tenant.trusted, &shared.metrics);
     let class = match resolve_class(tenant, inputs.class.as_ref()) {
@@ -107,7 +107,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     };
     let deadlines = ex.classify(class, shared.class(class));
     if let Engines::One(engine) = &shared.engines {
-        ex.health = Some(Arc::clone(&engine.health));
+        ex.routed.health = Some(Arc::clone(&engine.health));
     }
 
     // The intake's bounds, before a byte of the body is read: a refused request costs the gateway no memory and no
@@ -146,7 +146,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     parts
         .headers
         .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    let session = &*ex.session.insert(session);
+    let session = &*ex.resolved.session.insert(session);
     let mut target = match Target::for_request(shared, tenant, class, session, named) {
         Ok(target) => target,
         Err(NoTarget::NotReady) => return ex.engine_not_ready(),
@@ -189,7 +189,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     // Degrade's reply cap, over the class's: the lower of the two holds.
     if let Some(cap) = ticket.as_ref().and_then(Ticket::reply_cap) {
         body.json = cap_reply(&body.json, route, cap);
-        ex.degraded = true;
+        ex.harness.degraded = true;
     }
 
     let body = UpstreamBody::new(body.json, start, shared.metrics.overhead(route));
@@ -228,10 +228,10 @@ pub(crate) async fn models(app: App, request: Request) -> Response {
     else {
         return ex.unauthorized();
     };
-    ex.tenant = Some(Arc::clone(&tenant.name));
+    ex.resolved.tenant = Some(Arc::clone(&tenant.name));
     // A model list has no class, and the interactive class's deadlines.
     let interactive = SloClass::Interactive;
-    ex.deadlines = Some(Deadlines::new(
+    ex.resolved.deadlines = Some(Deadlines::new(
         interactive,
         shared.class(interactive),
         ex.received,
@@ -337,13 +337,12 @@ async fn forward(
         Target::Engine(engine) => (engine, None),
         Target::Placed(placed) => {
             let engine = Arc::clone(&placed.node.engine);
-            ex.node = Some(Arc::clone(&placed.node.name));
-            ex.health = Some(Arc::clone(&engine.health));
-            ex.placed = Some(placed);
+            ex.place_on(placed);
             // Only a realtime request is sent again, and only where another node could take it.
+            let realtime = ex.resolved.class == Some(SloClass::Realtime);
             let retry = shared
                 .nodes()
-                .filter(|nodes| ex.class == Some(SloClass::Realtime) && nodes.list.len() > 1);
+                .filter(|nodes| realtime && nodes.list.len() > 1);
             (engine, retry.cloned())
         }
     };
@@ -357,12 +356,14 @@ async fn forward(
     parts.version = Version::HTTP_11;
     parts.extensions.clear();
 
-    ex.forwarded = true;
     ex.admit(ticket.is_some());
-    let deadlines = ex.deadlines.expect("a forwarded request has its deadlines");
+    let deadlines = ex
+        .resolved
+        .deadlines
+        .expect("a forwarded request has its deadlines");
     // A background request without a response at the drain's cut is dropped, as is a shed one or one whose deadline
     // passes: dropping the request future closes its connection, which aborts the engine request.
-    let mut cut = shared.drain.cut_for(ex.class);
+    let mut cut = shared.drain.cut_for(ex.resolved.class);
     let sending = async {
         match &mut ticket {
             Some(ticket) if ticket.preemptible() => {
@@ -395,7 +396,7 @@ async fn forward(
             // answered 503, or a node's placed on another node ([`crate::upstream::recover`]). After a retry, the
             // engine is the second node's.
             if failure.broken() {
-                match &ex.placed {
+                match &ex.routed.placed {
                     Some(placed) => placed.node.engine.found_broken(),
                     None => engine.found_broken(),
                 }
@@ -521,7 +522,7 @@ async fn resubmitting(
             Ok(readmitted) => readmitted.map_err(Failure::Refused)?,
             Err(_) => return Err(Failure::Late(Phase::Queue, timeout)),
         }
-        ex.resubmits += 1;
+        ex.harness.resubmits += 1;
         request = http::Request::from_parts(again.0.clone(), again.1.again());
     }
 }
@@ -542,7 +543,7 @@ async fn retrying(
     deadlines: &Deadlines,
 ) -> Result<(http::Response<Incoming>, Option<Bytes>), Failure> {
     let again = (parts.clone(), body.again());
-    let placed = ex.placed.as_ref().expect("a placed request");
+    let placed = ex.routed.placed.as_ref().expect("a placed request");
     let engine = Arc::clone(&placed.node.engine);
     let request = http::Request::from_parts(parts, body);
     let failure = match first_frame(&engine.upstream, request, deadlines).await {
@@ -556,11 +557,9 @@ async fn retrying(
         return Err(failure);
     };
     let engine = Arc::clone(&moved.node.engine);
-    ex.node = Some(Arc::clone(&moved.node.name));
-    ex.health = Some(Arc::clone(&engine.health));
     // The first attempt's place on its node goes.
-    ex.placed = Some(moved);
-    ex.retries += 1;
+    ex.place_on(moved);
+    ex.routed.retries += 1;
     let (mut parts, body) = again;
     parts.uri = engine.upstream.uri(path);
     let request = http::Request::from_parts(parts, body);

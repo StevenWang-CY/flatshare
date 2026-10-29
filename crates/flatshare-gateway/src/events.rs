@@ -167,7 +167,7 @@ pub(crate) async fn post(State(app): State<App>, request: Request) -> Response {
     else {
         return ex.unauthorized();
     };
-    ex.tenant = Some(Arc::clone(&tenant.name));
+    ex.resolved.tenant = Some(Arc::clone(&tenant.name));
     if !tenant.trusted {
         return ex.error(
             StatusCode::FORBIDDEN,
