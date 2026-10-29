@@ -78,8 +78,8 @@ agents wait about a minute for a first token, which is the regime the change is 
   with the PRs' switch values. It schedules as the PRs' diff did before their revision of 2026-10-25, which ends the
   window's hold one step sooner for replies at least the window long
   ([the revision](docs/BENCHMARKS.md#after-w5-the-first-tokens-in-flight)).
-- **On the final code**, five more rounds on the same samples gave the last row 2.27 s, between 45 ms lower and 77 ms
-  higher than the same round in the table ([the records](benchmarks/results/2026-10-25-e2-fb)).
+- **On the code of 2026-10-25**, five more rounds on the same samples gave the last row 2.27 s, between 45 ms lower and
+  77 ms higher than the same round in the table ([the records](benchmarks/results/2026-10-25-e2-fb)).
 
 | The same two calls and 24 sessions on an A100 SXM4 80 GB | Voice p95 | Over the SLO | Agents' tokens/s | Agents' TTFT p50 |
 |---|---:|---:|---:|---:|
@@ -213,7 +213,7 @@ how it fails) and how to check it on your hardware.
   each call opens with an unmeasured warm-up turn. Baselines are configured as their documentation recommends.
 - **Reproducibility.** `make reproduce-e2-w5` and `make reproduce-e2-a100` rebuild the tables above from the committed
   records, the rounds' `gate.py` the two-card results, and `make figures` every figure. The gateway adds 0.29 ms to a
-  voice request's first token, paired against the engine's own socket on the final transport
+  voice request's first token, paired against the engine's own socket on the Unix-socket transport the deployment runs
   ([the gateway's cost](docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)).
 
 ## Documentation

@@ -86,9 +86,10 @@ names](#former-names) maps them to the current ones.
 - **E1**: the simulator's study of agent-side KV retention and prefetch; its result is negative.
 - **E2**: the voice SLO measured end to end beside background agents, against every deployable alternative.
 - **E3**: what make-room takes from the agents, from the engine's own counters.
-- **FB** (2026-10-25): the final benchmark, five rounds of W5's headline configurations (voice alone, the frozen box
-  and the PRs' 48-token configuration) on the final code, each round on the agents' sample of W5's round of the same
-  number ([BENCHMARKS.md](BENCHMARKS.md#the-final-code-against-w5-fb); the records are in
+- **FB** (2026-10-25): W5's headline configurations again (voice alone, the frozen box and the PRs' 48-token
+  configuration), in five rounds on the code of 2026-10-25 (v0.3-191: W6's transport, and the PRs' budget cap counting
+  the tokens in flight), each round on the agents' sample of W5's round of the same number
+  ([BENCHMARKS.md](BENCHMARKS.md#the-final-code-against-w5-fb); the records are in
   [`benchmarks/results/2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb)).
 - **G-sim**: E1's gate: if even the oracle closes under about 10% of resume TTFT over LRU plus the CPU tier in the
   realistic regime, no lease-aware policy runs on the GPU. Read at p50, E1 took this negative branch
