@@ -20,7 +20,7 @@ use std::io::Write as _;
 
 use serde_json::value::RawValue;
 
-use crate::metrics::Route;
+use crate::types::Route;
 
 /// The body fields that limit a reply's tokens, which a capped body has rewritten to its route's own.
 pub(crate) const REPLY_LIMITS: [&str; 3] =

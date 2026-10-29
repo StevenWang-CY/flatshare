@@ -29,8 +29,8 @@ use tokio::sync::{mpsc, watch};
 use crate::deadline::{Deadlines, Timeout};
 use crate::exchange::Exchange;
 use crate::harness::Ticket;
-use crate::metrics::{ErrorEvent, Outcome, UpstreamError};
 use crate::server::{self, Shared};
+use crate::types::{ErrorEvent, Outcome, UpstreamError};
 use crate::upstream::causes;
 use crate::usage::Scanner;
 

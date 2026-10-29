@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::config::{self, CacheSaltSecret, MetricsKey};
-use crate::sanitize::hex;
+use crate::util::hex;
 
 /// A tenant as the request path sees it.
 #[derive(Debug)]

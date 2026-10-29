@@ -52,8 +52,9 @@ use crate::canary::{self, Health, Watched};
 use crate::config::{CallPlacement, Canary, NodeConfig, Placement, PrioritySignals, UpstreamAddr};
 use crate::deadline::Timeout;
 use crate::engine::Engine;
-use crate::metrics::{EngineState, GaugeGuard};
+use crate::metrics::GaugeGuard;
 use crate::server::{self, Drain};
+use crate::types::EngineState;
 use crate::upstream::Upstream;
 
 pub(crate) use metrics::Unplaced;

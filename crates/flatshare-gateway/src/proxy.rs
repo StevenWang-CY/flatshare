@@ -24,7 +24,6 @@ use crate::engine::Engine;
 use crate::exchange::Exchange;
 use crate::harness::{Refusal, Ticket};
 use crate::intake::{BodyBytes, Refused};
-use crate::metrics::{Route, UpstreamError};
 use crate::nodes::{Key, Nodes, Placed, Unplaced};
 use crate::relay;
 use crate::sanitize::{
@@ -32,6 +31,7 @@ use crate::sanitize::{
     resolve_session, rewrite_body, sanitize_headers, set_engine_headers, strip_hop_by_hop,
 };
 use crate::server::{self, App, Engines, Shared};
+use crate::types::{Route, UpstreamError};
 use crate::upstream::{Upstream, UpstreamBody, causes};
 
 /// Where a request goes.

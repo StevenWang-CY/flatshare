@@ -50,8 +50,10 @@ mod relay;
 mod sanitize;
 mod server;
 pub mod systemd;
+mod types;
 mod upstream;
 mod usage;
+mod util;
 
 pub use config::{Config, ConfigError, ListenAddr};
 pub use events::{AcceptedEvent, EventSink, LogSink};

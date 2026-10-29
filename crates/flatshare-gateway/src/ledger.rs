@@ -128,7 +128,7 @@ impl Channel {
         // A fresh name, created with mode 700 (and not if it exists), so that no other user can connect.
         let dir = base.join(format!(
             "flatshare-gateway-ledger-{}",
-            &crate::sanitize::random_hex()[..16]
+            &crate::util::random_hex()[..16]
         ));
         std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
         let path = dir.join("ledger.sock");

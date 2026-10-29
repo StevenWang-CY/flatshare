@@ -36,8 +36,8 @@ use tokio::sync::Notify;
 
 use crate::config::Canary;
 use crate::engine::Engine;
-use crate::metrics::EngineState;
 use crate::sanitize::{REQUEST_ID, request_id, set_priority};
+use crate::types::EngineState;
 use crate::upstream::{UpstreamBody, causes};
 
 /// How often the canary asks while the engine is warming.

@@ -35,10 +35,11 @@ use crate::exchange::{self, ErrorAnswer, Exchange};
 use crate::harness::Admission;
 use crate::intake::{self, BodyBytes, Intake};
 use crate::ledger::{self, Followed, Ledger, Load};
-use crate::metrics::{EngineState, Metrics, Route};
+use crate::metrics::Metrics;
 use crate::nodes::{self, Nodes};
 use crate::proxy::{self, BodyError, read_body};
 use crate::systemd::Inherited;
+use crate::types::{EngineState, Route};
 use crate::upstream::Upstream;
 
 /// `GET /ready` succeeds while the upstream's `/health` has answered within this window.

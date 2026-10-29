@@ -27,9 +27,10 @@ use crate::config::ClassConfig;
 use crate::deadline::{Deadlines, Phase, Timeout};
 use crate::harness::{NotAdmitted, Refusal, Ticket};
 use crate::intake::{Permit, Refused};
-use crate::metrics::{Metrics, Outcome, Route, UpstreamError};
+use crate::metrics::Metrics;
 use crate::nodes::{Held, Placed, Unplaced};
 use crate::sanitize::{InvalidBody, REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
+use crate::types::{Outcome, Route, UpstreamError};
 use crate::upstream::RECOVERY_PROBE;
 use crate::usage::Summary;
 
@@ -621,7 +622,7 @@ mod tests {
     use http_body_util::BodyExt;
 
     use super::*;
-    use crate::metrics::ErrorEvent;
+    use crate::types::ErrorEvent;
 
     /// `tests/fixtures/errors.json`: the errors the voice worker reads, as the gateway sends them. An answer's
     /// `code` says what failed, while its `type` is the OpenAI class of its status. A stream's error event says it in
