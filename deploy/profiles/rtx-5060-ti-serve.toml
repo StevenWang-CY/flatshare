@@ -38,6 +38,11 @@ scheduler_module_sha256 = "0d24d178977f3c1ba29cbf7de1a15355205137a542983e5541911
 # The calls the voice worker takes at once in serve mode: two, the calls of E2's discriminating scenario, at which the
 # sweep's screens and the confirmation rounds measured this configuration (the records above).
 max_calls = 2
+# The agents' sessions a node that carries the calls runs beside them at most: the card's envelope on this
+# configuration in the rounds, 5 of 177 replies over the SLO beside 4 session trees and 31 beside 8
+# (benchmarks/results/2026-10-28-rounds). The gateway's [[nodes]] hold a node to theirs (max_agents), and each release
+# holds the running gateway to this one (deploy/bin/serving-check --nodes).
+max_agents = 4
 # The voice worker's audio configuration in serve mode: real callers' microphones, which the benchmark's synthetic
 # callers do not measure (python/flatshare_voice/README.md).
 audio = "microphone"

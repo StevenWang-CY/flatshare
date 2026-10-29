@@ -968,7 +968,57 @@ def test_a_release_prints_the_serving_profiles_configuration() -> None:
         "  make_room: max_preemptions_per_step 2, budget_cap true, budget_cap_tokens 48, reserve_tokens 0",
         "  scheduler flatshare_make_room_serve.AsyncScheduler over flatshare_make_room_scheduler 0d24d178977f3c1b",
         "  voice: serve mode, 2 calls at once, microphone audio",
+        "  gateway: at most 4 agents' sessions beside a node's calls",
     ]
+
+
+def test_a_serving_hosts_release_holds_the_gateways_nodes_to_the_envelope(
+    short_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The gateway's GET /nodes on its socket, as the file says; an empty file is a gateway of one upstream (404).
+    (short_dir / "flatshare").mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(short_dir))
+    answer = short_dir / "answer"
+
+    class Nodes(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = answer.read_bytes()
+            self.send_response(200 if body else 404)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    serving, check = DEPLOY / "phastform" / "serving.json", DEPLOY / "bin" / "serving-check"
+    both = ["realtime", "background"]
+    view = {
+        "nodes": [
+            {"name": "phastform", "roles": both, "max_calls": 2, "max_agents": 4},
+            {"name": "gray", "roles": both, "max_calls": 2, "max_agents": 12},
+        ],
+        "sessions": 0,
+        "placement": {"calls": "fill", "failover_background_max_in_flight": 0},
+    }
+    what = "the gateway's nodes against the serving profile's envelope"
+    server = serve(UnixServer(str(short_dir / "flatshare" / "gateway.sock"), Nodes))
+    try:
+        answer.write_text(json.dumps(view))
+        assert release.gateway_nodes(serving, check)[:2] == (what, True)
+        # A hand-written gateway.toml that runs the calls' node past the envelope fails the release, naming it.
+        view["nodes"][0]["max_agents"] = 12
+        answer.write_text(json.dumps(view))
+        _, ok, detail = release.gateway_nodes(serving, check)
+        assert not ok and detail.endswith("nodes.phastform.max_agents"), detail
+        answer.write_text("")
+        assert release.gateway_nodes(serving, check) == (what, True, "one upstream")
+        assert "the gateway runs one upstream" in capsys.readouterr().out
+    finally:
+        stop(server)
+    # No gateway on the socket.
+    _, ok, detail = release.gateway_nodes(serving, check)
+    assert not ok and detail.startswith("no answer"), detail
 
 
 def test_the_engine_drain_waits_for_its_requests_and_gives_up_at_its_bound(

@@ -164,6 +164,8 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
     }
     assert re.fullmatch(r"[0-9a-f]{64}", engine["scheduler_module"]["sha256"])
     assert SERVING["voice"] == {"mode": "serve", "max_calls": 2, "audio": "microphone"}
+    # The card's envelope beside the calls in the rounds (benchmarks/results/2026-10-28-rounds): four session trees.
+    assert SERVING["gateway"] == {"max_agents": 4}
 
 
 COMPARED = {
@@ -521,6 +523,62 @@ def test_serving_check_holds_the_voice_worker_to_the_profiles_admission(tmp_path
     assert done.returncode == 2 and "a file of an earlier start" in done.stderr
 
 
+def gateway_nodes(calls: str = "fill", cover: int = 0, **nodes: dict) -> dict:
+    """The gateway's GET /nodes answer for the serving arrangement on two cards (deploy/cyan/gateway.example.toml):
+    phastform with both calls and four agents' sessions, gray a warm spare with twelve; ``nodes`` changes a node's
+    entry, by name."""
+    entries = {
+        "phastform": {"roles": ["realtime", "background"], "max_calls": 2, "max_agents": 4},
+        "gray": {"roles": ["realtime", "background"], "max_calls": 2, "max_agents": 12},
+    }
+    for name, change in nodes.items():
+        entries[name] |= change
+    return {
+        "nodes": [{"name": name} | entry for name, entry in entries.items()],
+        "sessions": 0,
+        "placement": {"calls": calls, "failover_background_max_in_flight": cover},
+    }
+
+
+def test_serving_check_holds_the_gateways_nodes_to_the_profiles_envelope(tmp_path: Path) -> None:
+    view = tmp_path / "gateway-nodes.json"
+
+    def check(answer: dict) -> subprocess.CompletedProcess[str]:
+        view.write_text(json.dumps(answer))
+        return subprocess.run(
+            [sys.executable, str(CHECK), str(BOX / "serving.json"), "--nodes", str(view)],
+            capture_output=True,
+            text=True,
+        )
+
+    done = check(gateway_nodes())
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (
+        "serving-check: ok: gateway's nodes and patches as rtx-5060-ti-serve names them"
+        in done.stdout
+    )
+    assert re.search(r"nodes\.phastform\.max_agents +at most 4\n", done.stdout)
+    # With fill the spare's twelve sessions wait while it carries calls; it is not held to the envelope, its cover is.
+    assert "nodes.gray.max_agents" not in done.stdout
+    for answer, setting in [
+        (gateway_nodes(phastform={"max_agents": 12}), "nodes.phastform.max_agents"),
+        (gateway_nodes(phastform={"max_agents": None}), "nodes.phastform.max_agents"),
+        # Spread, every realtime node carries calls beside its own agents.
+        (gateway_nodes("spread"), "nodes.gray.max_agents"),
+        # A node that cannot take every call the worker admits loses one when the other fails.
+        (gateway_nodes(gray={"max_calls": 1}), "nodes.gray.max_calls"),
+        (gateway_nodes(cover=8), "placement.failover_background_max_in_flight"),
+    ]:
+        done = check(answer)
+        assert done.returncode == 1 and done.stderr.endswith(f"{setting}\n"), done.stderr
+    # A spare that takes no calls is no call node, and one node alone has no cover to hold.
+    alone = gateway_nodes(gray={"roles": ["background"], "max_calls": 0})
+    assert check(alone).returncode == 0
+    # A gateway before the placement was in /nodes cannot be held to the envelope.
+    done = check({"nodes": [], "sessions": 0})
+    assert done.returncode == 2 and "no placement" in done.stderr
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [
@@ -531,6 +589,8 @@ def test_serving_check_holds_the_voice_worker_to_the_profiles_admission(tmp_path
         ({"pool_tokens": 36401}, "pool_tokens is no whole number of 16-token blocks"),
         ({"audio": "phone"}, "audio must be microphone or synthetic"),
         ({"max_calls": 0}, "max_calls must be 1 or more"),
+        ({"max_agents": None}, "[serving] needs max_agents, a int"),
+        ({"max_agents": 0}, "max_agents must be 1 or more"),
         ({"variant": "make-room"}, "the serving variant is make-room-serve"),
         # The step cap is the table's own: required, and refused by name out of its bounds.
         ({"max_num_batched_tokens": None}, "[serving] needs max_num_batched_tokens, a int"),

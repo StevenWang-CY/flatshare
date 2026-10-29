@@ -924,6 +924,7 @@ SERVING_KEYS = {
     "async_scheduling": bool,
     "scheduler_module_sha256": str,
     "max_calls": int,
+    "max_agents": int,
     "audio": str,
 }
 """A [serving] table's keys and their types: each is required, and no other is taken."""
@@ -934,8 +935,9 @@ AUDIO = ("microphone", "synthetic")
 def serving_config(profile: dict, values: dict[str, str]) -> dict:
     """serving.json: the configuration a serving profile's engine must run, each setting as the engine's own
     configuration names it, as deploy/bin/serving-check compares it with what the engine writes at start; the SHA-256
-    of make-room's patches, which build.py makes its module from; and the voice worker's admission. The step cap is
-    the [serving] table's, which the variant passes over engine.yaml's, not the base profile's [engine]."""
+    of make-room's patches, which build.py makes its module from; the voice worker's admission; and the agents'
+    sessions that the gateway's nodes may run beside the calls. The step cap is the [serving] table's, which the
+    variant passes over engine.yaml's, not the base profile's [engine]."""
     serve = profile["serving"]
     name = values["profile.name"]
     for key, kind in SERVING_KEYS.items():
@@ -966,6 +968,8 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
         )
     if serve["max_calls"] < 1:
         raise ProfileError(f"{name}: max_calls must be 1 or more")
+    if serve["max_agents"] < 1:
+        raise ProfileError(f"{name}: max_agents must be 1 or more")
     if serve["audio"] not in AUDIO:
         raise ProfileError(f"{name}: audio must be {' or '.join(AUDIO)}, not {serve['audio']!r}")
     return {
@@ -1025,6 +1029,7 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
             patch: sha256(VLLM_PACKAGE / "make-room" / patch) for patch in make_room_patches()
         },
         "voice": {"mode": "serve", "max_calls": serve["max_calls"], "audio": serve["audio"]},
+        "gateway": {"max_agents": serve["max_agents"]},
     }
 
 

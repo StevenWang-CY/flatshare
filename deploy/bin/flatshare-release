@@ -456,6 +456,27 @@ def runtime_dir() -> Path:
     return Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "flatshare"
 
 
+def gateway_nodes(serving: Path, check: Path) -> tuple[str, bool, str]:
+    """The running gateway's nodes against the serving profile's envelope, on a host whose voice worker serves: what
+    the release reports. A gateway of one upstream places nothing, so it has no node's bounds to hold: said, and
+    passed."""
+    what = "the gateway's nodes against the serving profile's envelope"
+    try:
+        status, body = http_get(runtime_dir() / "gateway.sock", "/nodes")
+    except OSError as error:
+        return what, False, f"no answer ({error})"
+    if status == 404:
+        say("the gateway runs one upstream: no nodes to hold to the serving profile's envelope")
+        return what, True, "one upstream"
+    if status != 200:
+        return what, False, f"GET /nodes {status}"
+    answer = runtime_dir() / "gateway-nodes.json"
+    answer.write_text(body)
+    done = run([sys.executable, str(check), str(serving), "--nodes", str(answer)], check=False)
+    print(done.stdout, end="")
+    return what, done.returncode == 0, done.stderr.strip()
+
+
 def http_get(uds: Path, path: str, timeout: float = 5.0) -> tuple[int, str]:
     """GET ``path`` from the server on the Unix socket ``uds``: its status and body."""
 
@@ -1054,6 +1075,7 @@ def describe_serving(serving: dict) -> list[str]:
         f"  scheduler {engine['scheduler_cls']} over {engine['scheduler_module']['name']} "
         f"{engine['scheduler_module']['sha256'][:16]}",
         f"  voice: {voice['mode']} mode, {voice['max_calls']} calls at once, {voice['audio']} audio",
+        f"  gateway: at most {serving['gateway']['max_agents']} agents' sessions beside a node's calls",
     ]
 
 
@@ -1470,6 +1492,8 @@ def health(
                 done.returncode == 0,
                 done.stderr.strip(),
             )
+            if systemd.active("flatshare-gateway.service"):
+                report.add(*gateway_nodes(src / "deploy" / "phastform" / "serving.json", check))
     audit = src / "deploy" / "bin" / "audit-listeners"
     if audit.exists():
         done = run([sys.executable, str(audit)], check=False)

@@ -56,5 +56,8 @@
     "mode": "serve",
     "max_calls": 2,
     "audio": "microphone"
+  },
+  "gateway": {
+    "max_agents": 4
   }
 }

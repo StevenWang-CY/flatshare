@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """serving-check: hold what a box serves to its serving profile's effective configuration.
 
-    serving-check SERVING_JSON [--engine FILE [--pid PID]] [--voice FILE [--voice-pid PID]] [--root DIR]
+    serving-check SERVING_JSON [--engine FILE [--pid PID]] [--voice FILE [--voice-pid PID]] [--nodes FILE]
+                  [--root DIR]
 
 SERVING_JSON is a serving profile's serving.json (deploy/profile.py renders it; deploy/phastform's is the box's):
 every setting the engine must run with, the vLLM version, the SHA-256 of the scheduler module it must load and of the
@@ -11,8 +12,12 @@ scheduler writes the configuration it was built with to FLATSHARE_ENGINE_EFFECTI
 (python/flatshare_vllm's serve module), and --engine names that file. With --pid, the engine unit's main process, the
 file must have been written by that process or by its engine core, a child of it, so that a file an earlier start left
 never passes; the variant removes it before each start too. --voice names the voice worker's status file, which its
-serve mode writes (FLATSHARE_VOICE_STATUS), and --voice-pid its unit's main process. --root is the release whose
-patches are compared (by default the tree this script is in).
+serve mode writes (FLATSHARE_VOICE_STATUS), and --voice-pid its unit's main process. --nodes names the gateway's
+GET /nodes answer, which it holds to the profile's envelope: every node with the realtime role has the call slots the
+worker admits, every node that carries calls beside its own agents (the first realtime node with calls = "fill",
+every one with "spread") holds its agents' sessions to the profile's max_agents or fewer, and a covering node's
+agents in flight are held to as few. --root is the release whose patches are compared (by default the tree this
+script is in).
 
 It prints each setting of the profile with the value the engine runs where they differ, and the patches, then a
 verdict. The variant runs it after each start (ExecStartPost), so that an engine that runs anything else, a flag over
@@ -102,8 +107,46 @@ def leaves(expected: dict, actual: Any, prefix: str) -> list[tuple[str, Any, Any
     return rows
 
 
+class AtMost:
+    """A bound a setting may meet or stay under, as a node's agents' bound stays under the envelope's."""
+
+    def __init__(self, bound: int) -> None:
+        self.bound = bound
+
+    def holds(self, have: Any) -> bool:
+        return isinstance(have, int) and not isinstance(have, bool) and have <= self.bound
+
+
 def shown(value: Any) -> str:
+    if isinstance(value, AtMost):
+        return f"at most {value.bound}"
     return "nothing" if value is MISSING else json.dumps(value)
+
+
+def envelope(serving: dict, view: dict) -> list[tuple[str, Any, Any]]:
+    """The settings of the gateway's nodes (its GET /nodes answer) that the profile's envelope bounds, each with the
+    profile's value or bound."""
+    nodes, placement = view.get("nodes"), view.get("placement")
+    if not isinstance(nodes, list) or not isinstance(placement, dict):
+        raise Unreadable("the gateway's nodes have no placement: a gateway older than this check")
+    calls, agents = serving["voice"]["max_calls"], AtMost(serving["gateway"]["max_agents"])
+    realtime = [node for node in nodes if "realtime" in node.get("roles", ())]
+    # With "fill" only the first realtime node carries calls beside its own agents: a later one covers while it
+    # carries any, its agents held to the placement's bound.
+    beside = realtime[:1] if placement.get("calls") == "fill" else realtime
+    rows = [
+        (f"nodes.{node.get('name')}.max_calls", calls, node.get("max_calls", MISSING))
+        for node in realtime
+    ]
+    rows += [
+        (f"nodes.{node.get('name')}.max_agents", agents, node.get("max_agents", MISSING))
+        for node in beside
+        if "background" in node.get("roles", ())
+    ]
+    if len(realtime) > 1:
+        key = "failover_background_max_in_flight"
+        rows.append((f"placement.{key}", agents, placement.get(key, MISSING)))
+    return rows
 
 
 def written_by(report: dict, pid: int | None, what: str) -> str:
@@ -131,6 +174,7 @@ def check(
     engine_pid: int | None,
     voice: dict | None,
     voice_pid: int | None,
+    nodes: dict | None,
     root: Path,
 ) -> tuple[list[str], list[str]]:
     """The lines to print and the names of the settings that differ."""
@@ -140,7 +184,7 @@ def check(
     def compare(rows: list[tuple[str, Any, Any]]) -> None:
         width = max((len(row[0]) for row in rows), default=0)
         for key, want, have in rows:
-            if same(want, have):
+            if want.holds(have) if isinstance(want, AtMost) else same(want, have):
                 lines.append(f"  {key:<{width}}  {shown(want)}")
             else:
                 lines.append(f"  {key:<{width}}  {shown(want)}  DIFFERS: runs {shown(have)}")
@@ -165,6 +209,9 @@ def check(
             f"serving-check: {name}'s voice worker, against its status ({written_by(voice, voice_pid, 'voice status')}):"
         )
         compare(leaves(serving["voice"], voice, "voice"))
+    if nodes is not None:
+        lines.append(f"serving-check: {name}'s envelope, against the gateway's nodes:")
+        compare(envelope(serving, nodes))
     return lines, differ
 
 
@@ -177,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pid", type=int, help="the engine unit's main process ($MAINPID)")
     parser.add_argument("--voice", type=Path, help="the voice worker's status file (serve mode)")
     parser.add_argument("--voice-pid", type=int, help="the voice worker unit's main process")
+    parser.add_argument("--nodes", type=Path, help="the gateway's GET /nodes answer")
     parser.add_argument(
         "--root",
         type=Path,
@@ -190,7 +238,10 @@ def main(argv: list[str] | None = None) -> int:
             raise Unreadable(f"{args.serving} is no serving profile's serving.json")
         engine = read_json(args.engine, "effective configuration") if args.engine else None
         voice = read_json(args.voice, "voice status") if args.voice else None
-        lines, differ = check(serving, engine, args.pid, voice, args.voice_pid, args.root)
+        nodes = read_json(args.nodes, "gateway's nodes") if args.nodes else None
+        if nodes is not None and "gateway" not in serving:
+            raise Unreadable(f"{args.serving} names no gateway envelope to hold the nodes to")
+        lines, differ = check(serving, engine, args.pid, voice, args.voice_pid, nodes, args.root)
     except Unreadable as error:
         print(f"serving-check: {error}", file=sys.stderr)
         return 2
@@ -203,7 +254,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     checked = [
-        what for what, given in (("engine", engine), ("voice worker", voice)) if given is not None
+        what
+        for what, given in (("engine", engine), ("voice worker", voice), ("gateway's nodes", nodes))
+        if given is not None
     ]
     print(f"serving-check: ok: {' and '.join([*checked, 'patches'])} as {name} names them")
     return 0
