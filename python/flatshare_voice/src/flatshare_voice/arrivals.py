@@ -167,8 +167,8 @@ def refusal(before: Mapping[str, Any] | None, after: Mapping[str, Any] | None) -
       did not answer; a call that filled the worker between two writes is told the same way, rarely;
     - ``no_status``: no status file (a worker in bench mode writes none, and takes every call), or ``worker_down``: one
       too old to be a running worker's;
-    - ``no_agent``: the worker admitted calls throughout and refused none: LiveKit gave the room no agent (the
-      dispatch was lost).
+    - ``no_agent``: the worker admitted calls throughout and refused none: LiveKit gave the room no agent although the
+      worker had a line free, holding it full by the last status it had been sent, or losing the dispatch.
     """
     seen = [status for status in (before, after) if status is not None]
     if not seen:

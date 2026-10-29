@@ -3,9 +3,11 @@
 A box admits as many calls as its measured envelope does (the serving profile's ``voice.max_calls``), and no new call
 while its engine does not serve or while a release drains the worker. ``Admission`` decides both of LiveKit's ways in:
 
-- the worker's **load**, which LiveKit reads every 0.5 s and before it answers a job request: the calls in progress or
-  being accepted over ``max_calls``, and 1 while the worker takes no call. With LiveKit's load threshold at 1 the
-  worker is marked full at ``max_calls`` and the server sends it no job;
+- the worker's **load**, which LiveKit's agents SDK reads every 0.5 s and before it answers a job request: the calls in
+  progress or being accepted over ``max_calls``, and 1 while the worker takes no call. With LiveKit's load threshold at
+  1 the worker is marked full at ``max_calls`` and the server sends it no job. The SDK sends the server that status
+  every 2.5 s, and the worker sends it as well as soon as a call's process closes
+  (:func:`flatshare_voice.worker.send_status_when_calls_end`), so that the server offers a line once it is free;
 - each **job request**, refused once the calls in progress and being accepted reach ``max_calls``. LiveKit's own check
   of the load counts a request it has not launched yet at a guessed share, so two requests that arrive together could
   both pass it; this count is exact, since the event loop runs one request's decision at a time.
