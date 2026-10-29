@@ -4,7 +4,8 @@ Flatshare runs a realtime voice agent beside background LLM work on one GPU, or 
 - the serving path v1.7 deploys (§3): the serving profile that holds the engine to the measured configuration, the gateway as the serving control plane, the voice worker, two cards with a warm spare, releases that roll back, and what an operator watches;
 - its network and security (§4);
 - the configuration and hosts it was measured on (§5);
-- the harness that measured it against everything an operator can deploy today, and a KV-cache simulator (§6).
+- the harness that measured it against the configurations of vLLM 0.32, SGLang 0.5.22, SMG and llm-d's flow control
+  (emulated) that an operator can deploy without it, and a KV-cache simulator (§6).
 
 The designs that were measured and dropped are in §7, failure handling in §8 and testing in §9.
 

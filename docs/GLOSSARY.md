@@ -84,11 +84,13 @@ names](#former-names) maps them to the current ones.
 - **E0**: the tier cost model, what resuming an agent turn costs from the GPU cache, from host memory and by
   recompute.
 - **E1**: the simulator's study of agent-side KV retention and prefetch; its result is negative.
-- **E2**: the voice SLO measured end to end beside background agents, against every deployable alternative.
+- **E2**: the voice SLO measured end to end beside background agents, against the configurations of vLLM 0.32, SGLang
+  0.5.22, SMG and llm-d's flow control (emulated) that an operator can deploy without the change.
 - **E3**: what make-room takes from the agents, from the engine's own counters.
-- **FB** (2026-10-25): the final benchmark, five rounds of W5's headline configurations (voice alone, the frozen box
-  and the PRs' 48-token configuration) on the final code, each round on the agents' sample of W5's round of the same
-  number ([BENCHMARKS.md](BENCHMARKS.md#the-final-code-against-w5-fb); the records are in
+- **FB** (2026-10-25): W5's headline configurations again (voice alone, the frozen box and the PRs' 48-token
+  configuration), in five rounds on the code of 2026-10-25 (v0.3-191: W6's transport, and the PRs' budget cap counting
+  the tokens in flight), each round on the agents' sample of W5's round of the same number
+  ([BENCHMARKS.md](BENCHMARKS.md#the-final-code-against-w5-fb); the records are in
   [`benchmarks/results/2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb)).
 - **G-sim**: E1's gate: if even the oracle closes under about 10% of resume TTFT over LRU plus the CPU tier in the
   realistic regime, no lease-aware policy runs on the GPU. Read at p50, E1 took this negative branch
@@ -101,6 +103,10 @@ names](#former-names) maps them to the current ones.
   resubmits them; of the configurations an operator can deploy without the change, the nearest to the SLO.
 - **The prefill case**: the probe in which the voice-sized request arrives behind three 10,000-token priority-2
   prefills, with room in the pool, timed to its first and 16th tokens.
+- **RG** (2026-10-28): the two cards' rounds, five rounds on new samples of the agents' traces (agent seeds 21-25) on
+  Phastform and Gray in turn. Rounds 1-3 ran each card's part of every arrangement the resource gate compares, and all
+  five ran the sweep's three configurations at 24 sessions ([BENCHMARKS.md](BENCHMARKS.md#two-cards-rg); the records
+  are in [`benchmarks/results/2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds)).
 - **Round**: one run of each point of a campaign, in a rotated order, on the round's own sample of the agents'
   traces.
 - **RS** (2026-10-26): five rounds of the frozen box and the PRs' 48-token configuration on v1.2 with the KV
@@ -110,6 +116,11 @@ names](#former-names) maps them to the current ones.
 - **Run**: one measurement of a point.
 - **The standard scenario**: the whole corpus of agent traces at 16 agent sessions, the realistic load (and at 8 and
   24 in W2 and W4).
+- **SW** (2026-10-27): the sweep's two screens, one run a setting on W5's tuning sample of the agents (agent seed 11),
+  of the PRs' configuration over the step cap, the threshold per request, the window and the gateway's static caps on
+  agent requests in flight, and of the frozen box at two step caps
+  ([BENCHMARKS.md](BENCHMARKS.md#the-step-cap-screened-and-confirmed-sw-rg); the records are in
+  [`benchmarks/results/2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep)).
 - **W0 to W8**: the project's build and measurement stages. W0 (2026-10-22): the frozen box and its first replay; W1
   (2026-10-22): the gateway and the voice path; W2 (2026-10-22 to 23): E2's first batches; W3 (2026-10-23): the build
   with the voice agent's lifecycle events; W4 (2026-10-23 to 24): the discriminating scenario in rounds; W5
@@ -122,9 +133,11 @@ names](#former-names) maps them to the current ones.
 
 ## Measures
 
-- **Goodput**: the agents' prompt and completion tokens per second over the requests that complete during the calls;
-  **the first 240 s** (the fixed window) counts it over the calls' first 240 s, so that configurations whose calls last
-  longer are counted over the same span.
+- **The agents' token rate** (`goodput` in the records and the code): the agents' prompt and completion tokens per
+  second over the requests that complete during the calls; **the first 240 s** (the fixed window) counts it over the
+  calls' first 240 s, so that configurations whose calls last longer are counted over the same span. Nearly all of it
+  is prompt tokens (the generated share is about 0.47% in W5), and it is not goodput in the serving literature's sense,
+  the requests that meet their SLO.
 - **Percentiles** are inclusive everywhere, in the E2 report, the probes and the simulator: Python's
   `statistics.quantiles(..., method="inclusive")`, defined once in
   [`flatshare_stats`](../python/flatshare_stats/README.md).

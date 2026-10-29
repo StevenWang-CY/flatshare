@@ -76,7 +76,7 @@ VOICE_EVENTS = VOICE / "src" / "flatshare_voice" / "events.py"
 GATEWAY_METRICS = REPO / "crates" / "flatshare-gateway" / "metrics.txt"
 """The gateway's exposition under the lifecycle policy, every family it registers (``make metrics``
 writes it, and the gateway's tests check it is current)."""
-# The committed E2 records: W4's, W5's re-measure, FB's rounds on the final code, the Marlin dry run's point, and
+# The committed E2 records: W4's, W5's re-measure, FB's rounds on the code of 2026-10-25, the Marlin dry run's point, and
 # the A100 run's points (beside its other records, under e2/).
 RESULTS = REPO / "benchmarks" / "results" / "2026-10-23-e2"
 W5_RESULTS = REPO / "benchmarks" / "results" / "2026-10-24-e2-w5"

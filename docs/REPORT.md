@@ -10,27 +10,24 @@ F](#f-revision-history).
 > [!NOTE]
 > The scheduler change this report measures is proposed to vLLM as pull requests
 > [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351),
-> open and under review on 27 October 2026. Flatshare is an independent project and is not affiliated with vLLM.
+> open and under review on 29 October 2026. Flatshare is an independent project and is not affiliated with vLLM.
 
 ## Abstract
 
 A self-hosted voice agent needs its GPU only while it computes a reply, and coding agents could use the rest. On vLLM
-0.32, beside 24 coding-agent sessions on one RTX 5060 Ti, the p95 voice-to-voice latency of two calls rises from 1.78 s
-alone to 10.48 s. No configuration an operator can deploy today meets the SLO of voice alone plus 250 ms, 2.03 s. The
-time is lost in the scheduler. A waiting voice turn cannot take KV cache from running agent requests, and once admitted,
-the turn shares every step of its prefill and reply with agent prefill. We add two rules to vLLM's priority scheduler.
-Make-room lets the waiting turn preempt lower-priority requests for KV, keeping their cache in the CPU tier, and the
-prefill hold keeps lower-priority prefill out of the turn's steps until its reply's first sentence. Together they bring
-the p95 to 2.24 s at the median of 15 runs, 0.20 s over the SLO, where tuned vLLM leaves 90% of the replies over it. A
-third of the replies, 286 of 885, still take longer than the SLO allows, so the change narrows the gap without closing
-it. The agents keep 97% of their token rate on tuned vLLM at the same 512-token step cap. Make-room alone leaves 5.09 s.
-The nearest any control plane in front of the engine came is 2.52 s, by aborting and resubmitting agent requests, at a
-193 s p99 time to first token for the agents. On an A100 at the same KV pool and step cap, the rules take the p95 from
-4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds. At the card's default 2,048-token steps they
-keep all of the agents' throughput and leave the voice 0.14–0.17 s over the SLO. On two RTX 5060 Ti cards, under a
-resource gate fixed before the runs, both calls and four agent sessions on one card with the rules, beside a card of
-agents alone, do 34% more background work than a card per workload, with 2.8% of the replies over the SLO. Most of that
-gain is the arrangement's: on stock vLLM the shared card qualifies at two sessions, and the same cards do 27% more.
+0.32, beside 24 coding-agent sessions on one RTX 5060 Ti, two calls' p95 voice-to-voice latency rises from 1.78 s alone
+to 10.48 s. No deployable configuration of vLLM 0.32 or SGLang 0.5.22 we measured meets the SLO of voice alone plus
+250 ms, 2.03 s. The nearest, a router that aborts agent requests, reaches 2.52 s at a 193 s agent p99 time to first
+token. In the scheduler, a waiting voice turn cannot take KV from running agent requests, and an admitted one shares its
+steps with agent prefill. We add two rules to vLLM's priority scheduler. Make-room lets the waiting turn preempt
+lower-priority requests for KV, and the prefill hold keeps their prefill out of the turn's steps until its reply's first
+sentence. Together they bring the p95 to 2.24 s and the replies over the SLO to 32%, 286 of 885, where tuned vLLM leaves
+90%. The agents keep 97% of their token rate at the same 512-token step cap. On an A100 at the same KV pool and step
+cap, the rules take the p95 from 4.99 s to 1.63 s, under that card's SLO in each of five rounds. On two RTX 5060 Ti
+cards, consolidating both calls and four agent sessions on one card does 34% more background work than dedicated cards
+within the SLO's allowance. Stock vLLM, consolidated at two sessions, does 27% more, so most of the gain is the
+arrangement's. At the 256-token step cap we deploy, 44 of 295 replies were over the SLO in five more rounds, against 94
+of 295 at 512.
 
 ## Contents
 
@@ -112,9 +109,10 @@ agents' tail. A gateway policy timed by the conversation, with KV headroom held 
 speak, leaves the tail where tuned vLLM leaves it (§6.5). The gain shrinks where the pool has room. As calls overlap,
 the tail grows and the hold keeps the agents' prefill out for longer (§6.6). On an A100 at the same KV pool and step
 cap, the rules take the p95 from 4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds (§6.7). On two
-RTX 5060 Ti cards, a resource gate fixed before the runs compared a card per workload, pooling and consolidation. Both
-calls and four agent sessions on one card, beside a card of agents alone, did 34% more background work than a card per
-workload within the SLO's 5% allowance, and stock vLLM's shared card, at two sessions, did 27% more (§6.8).
+RTX 5060 Ti cards, a resource gate compared a card per workload, pooling and consolidation. Both calls and four agent
+sessions on one card, beside a card of agents alone, did 34% more background work than a card per workload within the
+SLO's 5% allowance, and stock vLLM's shared card, at two sessions, did 27% more (§6.8). At the 256-token step cap we
+deploy, the change had 44 of 295 replies over the SLO in five rounds on new samples, against 94 of 295 at 512 (§6.9).
 
 This report makes five contributions.
 
@@ -130,9 +128,9 @@ This report makes five contributions.
   campaign, from a class-aware KV reserve (§6.5).
 - **It bounds what a control plane in front of the engine can do** when agents' KV fills the pool (§6.5), and carries
   the result to a datacenter GPU (§6.7).
-- **It measures what sharing a card buys** over a card per workload on two cards, under a resource gate fixed before
-  the runs, and finds most of the gain in the arrangement rather than in the scheduler: the rules' own share is the two
-  agent sessions more that the shared card carries within the SLO (§6.8).
+- **It measures what sharing a card buys** over a card per workload on two cards, under a resource gate, and finds most
+  of the gain in the arrangement rather than in the scheduler: the rules' own share is the two agent sessions more that
+  the shared card carries within the SLO (§6.8).
 
 ## 2. Background and motivation
 
@@ -390,8 +388,8 @@ tests, so every GPU number in this report comes from the generated scheduler. An
 stood before their revision of 25 October 2026. The revision counts a reply's first tokens still in flight under
 asynchronous scheduling, so the hold ends one step sooner. Only a reply at least T tokens long reaches that step, which
 248 of the 305 replies with T = 16 (81%) did and 1 of the 2,469 with T = 48. §6.1 reports five rounds of the change on
-the final code, at T = 48 only, so Table 2's T = 16 row holds one step longer than the final code would for most of its
-replies.
+the code of 25 October, at T = 48 only, so Table 2's T = 16 row holds one step longer than that code would for most of
+its replies.
 
 **What a step costs.** The rules run on the host, inside `Scheduler.schedule()`. Figure 7 times that call on vLLM
 0.32.0's real scheduler on a 2.1 GHz Xeon Silver 4110, a CPU host faster than the GPU node's (Appendix C), in the 13
@@ -496,6 +494,11 @@ workloads. A p95 over 59 replies lies between the third- and fourth-slowest repl
 hundred milliseconds. Five rounds that agree in sign would arise by chance one time in sixteen if two configurations did
 not differ, so the rounds resolve the direction of a difference, and its size only roughly.
 
+Two comparisons are a gate's verdict: whether the served model can do useful background work (the quality gate,
+[GATE.md](../benchmarks/quality/GATE.md); §9) and which arrangement of two cards qualifies (the resource gate,
+[RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md); §6.8). Each gate's criteria and thresholds were committed
+before its runs, and its verdict is what its `gate.py` computes from the records.
+
 ## 6. Results
 
 ### 6.1 The two rules bring the voice tail to 2.24 s while the agents keep 97% of their throughput
@@ -548,10 +551,10 @@ runs: 295 for voice alone, 590 for tuned vLLM, 295 for the router and 885 for th
 the SLO, and the thin horizontal line marks the 95th percentile.
 
 The change's rows ran on the generated scheduler as it stood before the pull requests' revision (§4). Five more rounds
-on the final code replayed the same five samples of the agents. Besides counting the first tokens in flight, they
-reached the GPU servers' Unix sockets through an SSH tunnel and staggered the callers' joins by a quarter second. They
-gave a p95 of 2.27 s against 2.25 s for the same rounds before, −45 to +77 ms round by round. The differences lie within
-the spread of the change's own runs, so the numbers above stand for the code proposed to vLLM (Appendix B).
+on the code of 25 October replayed the same five samples of the agents. Besides counting the first tokens in flight,
+they reached the GPU servers' Unix sockets through an SSH tunnel and staggered the callers' joins by a quarter second.
+They gave a p95 of 2.27 s against 2.25 s for the same rounds before, −45 to +77 ms round by round. The differences lie
+within the spread of the change's own runs, so the numbers above stand for the code proposed to vLLM (Appendix B).
 
 ### 6.2 Make-room removes the wait for KV, and the hold removes agent prefill from the turn's steps
 
@@ -776,14 +779,14 @@ first tokens that no voice tier reaches.
 
 A second RTX 5060 Ti 16 GB runs on another host. An operator with the two cards can give the calls one and the agents
 the other (dedicated roles), run both cards mixed with one call each (pooling), or put both calls on one card beside as
-many agent sessions as it serves within the SLO and run agents alone on the other (consolidation). A resource gate fixed
-before the runs decides between them ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)). An arrangement
-qualifies if at most 5% of its replies, over its rounds pooled, are over its round's SLO for the card's callers. Sharing
-has resource value if a qualifying shared arrangement does at least 20% more background work than the best qualifying
-dedicated one, counted as the agents' tokens a second over the calls' first 240 s summed over both cards, at the median
-of the rounds. Three rounds each replayed a new sample of the agents' traces on one host, the hosts alternating from
-round to round, and measured each card's part of every arrangement as a run of its own. The change ran at the serving
-profile's 256-token step cap without a per-request threshold (§6.9).
+many agent sessions as it serves within the SLO and run agents alone on the other (consolidation). A resource gate
+decides between them ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)). An arrangement qualifies if at most
+5% of its replies, over its rounds pooled, are over its round's SLO for the card's callers. Sharing has resource value
+if a qualifying shared arrangement does at least 20% more background work than the best qualifying dedicated one,
+counted as the agents' tokens a second over the calls' first 240 s summed over both cards, at the median of the rounds.
+Three rounds each replayed a new sample of the agents' traces on one host, the hosts alternating from round to round,
+and measured each card's part of every arrangement as a run of its own. The change ran at the serving profile's
+256-token step cap without a per-request threshold (§6.9).
 
 A card of agents alone does the most well short of 24 sessions (Table 6). Without speech servers, with its KV pool grown
 into their memory to 61,152 tokens and vLLM's default first-come-first-served scheduling at 2,048-token steps, it did
@@ -1010,8 +1013,7 @@ scheduler under chunked prefill and asynchronous scheduling, on vLLM's own CPU t
 rather than a new engine. The prefill hold is bounded to a reply's first tokens and sized to the first sentence that a
 cascaded voice agent hands to speech synthesis, which we did not find elsewhere. And the measurements: a cascaded voice
 pipeline beside long-context coding agents on one GPU, with V2V read from waveforms, against the configurations an
-operator can deploy, and, across two cards under a resource gate fixed before the runs, what sharing a card buys over a
-card per workload.
+operator can deploy, and, across two cards under a resource gate, what sharing a card buys over a card per workload.
 
 ## 9. Limitations
 
@@ -1052,10 +1054,10 @@ the evaluation was tuned on, one run a setting, and five rounds on new samples c
 
 **What the shared model can do.** The agents' replay needs no answer to be right, so the results say what sharing costs
 the call, not whether the shared model's background work is worth keeping. The quality gate
-([GATE.md](../benchmarks/quality/GATE.md)), fixed before it ran, tried a useful pair of jobs: answering questions about
-private documents in a call (QASPER), beside enriching new documents into searchable records (Re-DocRED). The served
-model failed 9 of its 11 criteria. Of the questions it answered, 50.6% were answered correctly, against a bar of 80%,
-and of the facts in its records 23.9% were right, against 80%. Qwen3-8B-FP8 on a card of its own failed as well
+([GATE.md](../benchmarks/quality/GATE.md)) tried a useful pair of jobs: answering questions about private documents in a
+call (QASPER), beside enriching new documents into searchable records (Re-DocRED). The served model failed 9 of its 11
+criteria. Of the questions it answered, 50.6% were answered correctly, against a bar of 80%, and of the facts in its
+records 23.9% were right, against 80%. Qwen3-8B-FP8 on a card of its own failed as well
 ([the gate's record](../benchmarks/results/2026-10-27-quality/README.md)). A deployment that shares a card for
 background work has to check first that the model does that work.
 
@@ -1104,11 +1106,12 @@ waiting turn and a hold on lower-priority prefill through the reply's first sent
 consumer GPU comes to 2.24 s, 0.20 s over a strict SLO, with a third of the replies still over it, while the agents keep
 97% of their token rate. On an A100 at the same pool and step cap it meets that card's SLO in each of five rounds, by
 7–60 ms. The gain shrinks where the pool has room, the tail grows as calls overlap, and the step cap sets how much of
-the agents' throughput a tail under the SLO costs. For a realtime tier that shares a GPU with agents whose KV fills the
-pool, the place to act is the engine's scheduler: preempt for the waiting turn, and keep background prefill out of its
-first sentence. With two cards, the larger gain is the arrangement: both calls and a few agents on one card, and the
-other card full of agents. What then limits the shared card is the speech servers' share of the GPU, which no
-scheduling inside the engine removes.
+the agents' throughput a tail under the SLO costs. The 256-token cap we deploy leaves fewer than half as many replies
+over the SLO beside 24 sessions as the 512-token cap. With two cards, the larger gain is the arrangement: both calls and
+a few agents on one card, and the other card full of agents. What then limits the shared card is the speech servers'
+share of the GPU, which no scheduling inside the engine removes. For a realtime tier that shares a GPU with agents whose
+KV fills the pool, the place to act is the engine's scheduler: preempt for the waiting turn, and keep background prefill
+out of its first sentence.
 
 ## References
 
@@ -1128,9 +1131,9 @@ scheduling inside the engine removes.
 
 <a name="ref-8"></a>[8] vLLM pull request #5958. [Adding priority scheduling](https://github.com/vllm-project/vllm/pull/5958). Merged 2024-09-25, in vLLM v0.6.2 to v0.10.2.
 
-<a name="ref-9"></a>[9] C. Wang. vLLM pull request #63350. [Priority scheduling: preempt for a waiting request under KV pressure](https://github.com/vllm-project/vllm/pull/63350). Opened 2026-10-23, open and under review on 2026-10-27.
+<a name="ref-9"></a>[9] C. Wang. vLLM pull request #63350. [Priority scheduling: preempt for a waiting request under KV pressure](https://github.com/vllm-project/vllm/pull/63350). Opened 2026-10-23, open and under review on 2026-10-29.
 
-<a name="ref-10"></a>[10] C. Wang. vLLM pull request #63351. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/63351). Opened 2026-10-23, open and under review on 2026-10-27.
+<a name="ref-10"></a>[10] C. Wang. vLLM pull request #63351. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/63351). Opened 2026-10-23, open and under review on 2026-10-29.
 
 <a name="ref-11"></a>[11] SemiAnalysis. [Claude Code traces (cc-traces-weka-062126)](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126). Hugging Face dataset.
 
@@ -1244,7 +1247,7 @@ its tests where Table A1 says so. Table A1 maps each part of the report to its r
 | What | Records | Regenerated by |
 |---|---|---|
 | §6.1–§6.4 and §6.6, Figures 1, 8, 9, 10 and 12, Tables 2–4 | [`2026-10-24-e2-w5`](../benchmarks/results/2026-10-24-e2-w5) | `make reproduce-e2-w5`, `make figures` |
-| The final code's five rounds (§6.1) | [`2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb) | its `compare.py` |
+| The five rounds on the code of 25 October (§6.1) | [`2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb) | its `compare.py` |
 | §6.5, Figure 11 and Table B3 | [`2026-10-23-e2`](../benchmarks/results/2026-10-23-e2) | `make reproduce-e2`, `make figures` |
 | §6.7, Figure 13 and Table 5 | [`2026-10-26-a100`](../benchmarks/results/2026-10-26-a100) | `make reproduce-e2-a100`, `make figures` |
 | The A100 at a batch of 256 (§6.7) | [`2026-10-26-a100/batch`](../benchmarks/results/2026-10-26-a100/batch) | `make reproduce-a100` |
@@ -1289,25 +1292,25 @@ comparison took 26 minutes.
 
 **Expected variation.** A p95 over 59 replies lies between the third- and fourth-slowest reply. In the main evaluation
 the change's p95 ranged over 2.13–2.40 s in 15 runs, and tuned vLLM's over 8.7–12.1 s in ten. Five more rounds on the
-same samples moved tuned vLLM's p95 by −2,396 to +1,706 ms round by round, and the change's, on its final code, by −45
-to +77 ms. A repeat should therefore land near the ranges of Tables 2 and B1 rather than on their medians, and one round
-of the repeat put tuned vLLM at 8.37 s, below its range in Table 2.
+same samples moved tuned vLLM's p95 by −2,396 to +1,706 ms round by round, and the change's, on its code of 25 October,
+by −45 to +77 ms. A repeat should therefore land near the ranges of Tables 2 and B1 rather than on their medians, and
+one round of the repeat put tuned vLLM at 8.37 s, below its range in Table 2.
 
 **Differences from the code proposed to vLLM.** The measurements ran the generated scheduler on vLLM 0.32.0 (§4). It
 applies the pull requests' scheduler diff, ported to 0.32.0, and adds the reserve, which the measured configurations
 turn off, and its own log of the rules' counts. Its schedules match the pull requests' as they stood before their
-revision of 25 October 2026, which ends the hold one step sooner for a reply at least T tokens long. The final code's
-five rounds in §6.1 measure that difference.
+revision of 25 October 2026, which ends the hold one step sooner for a reply at least T tokens long. The five rounds on
+that code in §6.1 measure that difference.
 
 ### B. Results by round
 
 Each round replays its own sample of the agents' traces, the same sample in every configuration and set of rounds, so a
 column compares configurations on the same agents. Table B1 gives every run behind Table 2.
 
-**Table B1. The p95 V2V of every run behind Table 2, and of the change on the final code, by round (ms).** Three sets of
-rounds replayed the same five samples. The first ran voice alone, tuned vLLM and the change, the second tuned vLLM,
-make-room alone, both rules at T = 16 and the change, and the third the router and the change, beside the scenario where
-the pool has room. The last row is the change on the final code (§6.1).
+**Table B1. The p95 V2V of every run behind Table 2, and of the change on the code of 25 October, by round (ms).** Three
+sets of rounds replayed the same five samples. The first ran voice alone, tuned vLLM and the change, the second tuned
+vLLM, make-room alone, both rules at T = 16 and the change, and the third the router and the change, beside the scenario
+where the pool has room. The last row is the change on the code of 25 October (§6.1).
 
 | Configuration | Round 1 | Round 2 | Round 3 | Round 4 | Round 5 | Median |
 |---|---:|---:|---:|---:|---:|---:|
@@ -1320,7 +1323,7 @@ the pool has room. The last row is the change on the final code (§6.1).
 | The change, first set | 2,236 | 2,175 | 2,298 | 2,250 | 2,307 | 2,250 |
 | The change, second set | 2,174 | 2,301 | 2,189 | 2,232 | 2,397 | 2,232 |
 | The change, third set | 2,293 | 2,257 | 2,132 | 2,162 | 2,145 | 2,162 |
-| The change, final code | 2,313 | 2,246 | 2,253 | 2,268 | 2,343 | 2,268 |
+| The change, code of 25 October | 2,313 | 2,246 | 2,253 | 2,268 | 2,343 | 2,268 |
 
 **Table B2. Where the pool has room, and with more callers (p95 V2V, ms).** Sixteen sessions of the whole corpus beside
 two callers, and the 24 sessions beside four and six callers, against each caller count's own SLO.
@@ -1420,7 +1423,7 @@ needed, so the reserve and the guard on in-flight prefills could refuse a reques
 sized before the next step's decode growth, so a turn could need a second preemption a step later.
 
 **The records' directories.** Their names carry the campaigns' codes. `2026-10-24-e2-w5` holds the main evaluation,
-`2026-10-25-e2-fb` its repeat on the final code, `2026-10-23-e2` the campaign before it, `2026-10-26-e2-rs` the
+`2026-10-25-e2-fb` its repeat on the code of 25 October, `2026-10-23-e2` the campaign before it, `2026-10-26-e2-rs` the
 KV-sampling runs, and `2026-10-24-w5-probes` and `2026-10-25-w6-transport` the probes and the transport's check.
 
 **The hosts in the records.** The records name the RTX 5060 Ti node Phastform and an identical second node Gray, on

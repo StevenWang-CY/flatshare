@@ -4,7 +4,7 @@ Every measurement behind the other documents, run by run, with its range and the
 
 **Contents.**
 - The box and its costs: [the frozen box](#the-frozen-box), [E0, the tier cost model](#tier-cost-model-resuming-an-agent-turn-e0), [voice on the shared GPU](#voice-on-the-shared-gpu).
-- [E2, voice under agent load](#voice-under-agent-load-e2): W2's [standard](#the-standard-scenario-w2) and [discriminating](#the-discriminating-scenario-w2) scenarios; W4's [discriminating scenario in rounds](#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4) and [standard scenario repeated](#the-standard-scenario-repeated-w4); W5's [standard scenario in five rounds](#the-standard-scenario-in-five-rounds-w5), [discriminating scenario after its fixes](#the-discriminating-scenario-after-w5s-fixes-w5) and [calls per GPU](#calls-per-gpu-w5); [the final code](#the-final-code-against-w5-fb) (FB); [the box's running share](#the-boxs-running-share-rs) (RS); [E3, what make-room takes from the agents](#e3-what-make-room-takes-from-the-agents).
+- [E2, voice under agent load](#voice-under-agent-load-e2): W2's [standard](#the-standard-scenario-w2) and [discriminating](#the-discriminating-scenario-w2) scenarios; W4's [discriminating scenario in rounds](#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4) and [standard scenario repeated](#the-standard-scenario-repeated-w4); W5's [standard scenario in five rounds](#the-standard-scenario-in-five-rounds-w5), [discriminating scenario after its fixes](#the-discriminating-scenario-after-w5s-fixes-w5) and [calls per GPU](#calls-per-gpu-w5); [the code of 2026-10-25](#the-final-code-against-w5-fb) (FB); [the box's running share](#the-boxs-running-share-rs) (RS); [E3, what make-room takes from the agents](#e3-what-make-room-takes-from-the-agents).
 - The change's probes: [the KV case and the prefill case](#the-kv-case-make-room), [W5's modules](#w5-the-fixed-make-room-on-phastform), [the PRs' configuration](#the-prs-configuration-in-one-session-w5), [the first tokens in flight](#after-w5-the-first-tokens-in-flight), [the window's knee](#the-windows-knee).
 - What sits in front of the engine: [flatshare-gateway](#the-control-plane-flatshare-gateway-in-front-of-the-engine), [agentic-api](#the-api-layer-agentic-api-in-front-of-the-engine).
 - The agents and the simulator: [agent replay on the frozen box](#agent-replay-on-the-frozen-box-a-first-retention-headroom-signal), [at three loads, with the simulator's calibration](#agent-replay-at-three-loads-and-the-simulator-calibrated-on-it-w2), [E1 in the simulator](#e1-parking-in-the-simulator).
@@ -21,7 +21,7 @@ Every measurement behind the other documents, run by run, with its range and the
 | Cold start, first boot (includes a one-time FlashInfer JIT) | 7.5 min for all three servers |
 | Engine restart with warm caches | about 2 min |
 
-The two start rows are W0's (2026-10-22). On the final build the engine started in 88.8 s on warm caches and 531.8 s on empty ones, and a restart of all three servers took 102.7 s ([the drills](#failure-drills)).
+The two start rows are W0's (2026-10-22). On the build of 2026-10-25 (v0.3-295) the engine started in 88.8 s on warm caches and 531.8 s on empty ones, and a restart of all three servers took 102.7 s ([the drills](#failure-drills)).
 
 ## Tier cost model: resuming an agent turn (E0)
 
@@ -111,7 +111,7 @@ In stock mode the reply keeps streaming for the whole barge-in.
 
 ## Voice under agent load (E2)
 
-Each point: two callers (`flatshare-voice bots`, 25 turns each, a barge-in on a quarter of the turns) through LiveKit to the stock voice agent, beside the AIPerf replay of the 32× Claude Code corpus at a number of agent sessions, through `flatshare-gateway` ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) has the arms, [`benchmarks/e2`](../benchmarks/e2) the arm files and campaigns). V2V is read from waveforms at the callers, with fixed endpointing. Background goodput is the prompt and completion tokens per second of the agent requests that completed during the calls. The realtime first byte is the gateway's, exact from its request log. A turn the agent did not answer within the callers' 30 s reply timeout counts as a V2V sample censored at 30,000 ms; ≥ marks a percentile it sets, and a configuration with failed turns is not placed on the frontier.
+Each point: two callers (`flatshare-voice bots`, 25 turns each, a barge-in on a quarter of the turns) through LiveKit to the stock voice agent, beside the AIPerf replay of the 32× Claude Code corpus at a number of agent sessions, through `flatshare-gateway` ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) has the arms, [`benchmarks/e2`](../benchmarks/e2) the arm files and campaigns). V2V is read from waveforms at the callers, with fixed endpointing. The agents' token rate is the prompt and completion tokens per second of the agent requests that completed during the calls. The realtime first byte is the gateway's, exact from its request log. A turn the agent did not answer within the callers' 30 s reply timeout counts as a V2V sample censored at 30,000 ms; ≥ marks a percentile it sets, and a configuration with failed turns is not placed on the frontier.
 
 The voice SLO is V2V p95 at most 250 ms above voice alone: 1,744 ms alone in W2's batch, so 1,994 ms for W2's tables, which are one run per point. With 50 turns a point, a p95 lies between the third- and fourth-largest turn, so single runs differ by a few hundred milliseconds at p95. W4 repeats the discriminating scenario and measures voice alone four more times, on the W3 build (with W2's run, a median of 1,767 ms, so an SLO of 2,017 ms), [below the W2 tables](#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4).
 
@@ -135,7 +135,7 @@ At 16 agent sessions, every arm (V2V p50 / p95 / p99 in ms; the realtime first b
 | 4 | other cells (512/0, 1,024/256, 1,024/512) | 1,703–1,724 / 2,257–2,510 / 2,504–2,684 | 178–273 | 5,015–5,097 | |
 | 5 | `--watermark 0.1` | 1,703 / 2,495 / 2,986 | 216 | 5,001 | |
 | 5 | `--max-num-queued-tokens 8192` | 1,703 / 2,133 / ≥30,000 | 137 | 4,454 | 2 of 50 voice turns failed, counted at the callers' 30 s reply timeout: the limit refuses realtime requests too (43 refusals) |
-| 6 | static cap, 2 background in flight | 1,755 / 2,208 / 2,729 | 236 | 5,569 | the highest goodput |
+| 6 | static cap, 2 background in flight | 1,755 / 2,208 / 2,729 | 236 | 5,569 | the highest token rate |
 | 6 | static cap, 8 | 1,683 / 3,065 / 3,647 | 510 | 5,296 | |
 | 6 | static reservation, 2,048 tokens | 1,688 / 2,328 / 3,068 | 276 | 4,922 | |
 | 7a | `--max-num-seqs 12` | 1,710 / 2,104 / 2,984 | 161 | 4,981 | |
@@ -184,9 +184,9 @@ The voice turn by stage (means over the replies, ms; `waterfall.svg` draws them)
 
 What the discriminating scenario says:
 - **Every arm but one collapses, and the loss is the wait for KV.** V2V p95 is 5.7–12.1 s. Endpointing and TTS do not move; the turn loses its seconds between the end of the turn and the first sentence, most of them before the LLM's first token.
-- **Engine priority does not help here**, in any form measured: vLLM's priority scheduling with any step cap, #54530 (it preempts at the request-count cap, which does not bind here), SGLang's priority preemption, with or without its host tier. SGLang's host tier lifts agent goodput by a third, not the voice tail.
+- **Engine priority does not help here**, in any form measured: vLLM's priority scheduling with any step cap, #54530 (it preempts at the request-count cap, which does not bind here), SGLang's priority preemption, with or without its host tier. SGLang's host tier lifts the agents' token rate by a third, not the voice tail.
 - **Static answers fall short.** The 2,048-token reservation halves the tail (5.7 s), still 3.7 s over the SLO; concurrency caps do not help, because two contexts fill the pool. vLLM's queue limit refuses the voice turns with the rest (48 of 50 failed).
-- **Preempt-resubmit holds the tail** at 2.6 s p95, 0.6 s over the SLO, at the frozen box's goodput: it aborts the background requests that have no first byte yet, which frees their KV at once, and their resubmissions restore the prefixes already written through to the CPU tier rather than recompute them (at their first scheduling, the engine computed 0.65M prompt tokens and restored 0.62M, against 1.48M and 0.06M under the frozen box; the CPU tier's own counter, which sees a resume too, loaded 0.82M tokens against 0.22M). Its cost is the agents' tail. It cannot reach a request that is already decoding, which an engine-side preemption can (arm 9).
+- **Preempt-resubmit holds the tail** at 2.6 s p95, 0.6 s over the SLO, at the frozen box's token rate: it aborts the background requests that have no first byte yet, which frees their KV at once, and their resubmissions restore the prefixes already written through to the CPU tier rather than recompute them (at their first scheduling, the engine computed 0.65M prompt tokens and restored 0.62M, against 1.48M and 0.06M under the frozen box; the CPU tier's own counter, which sees a resume too, loaded 0.82M tokens against 0.22M). Its cost is the agents' tail. It cannot reach a request that is already decoding, which an engine-side preemption can (arm 9).
 - **An instrument note.** vLLM counts a preemption when the victim's next output reaches the frontend, so the per-point preemption counts are lower bounds ([the KV case](#the-kv-case-make-room)).
 
 ### The discriminating scenario in rounds, with arm 9 and the change (W4)
@@ -253,7 +253,7 @@ What the repeats say:
 - **Its budget cap is necessary, and either KV preemption or the reserve makes the room.** Without the budget cap the p95 stays at 5.3 s even with KV preemption and the reserve. With full replies the two forms gave 2,193 ms (the KV preemption, as the PRs) and 2,205 ms (the reserve, with arm 9's policy); with capped replies the reserve alone gave 2,037 ms and the KV preemption alone 2,116 ms (2,115–2,155, every run above arm 9's median), and with both the reserve kept the pool from filling, so the KV preemption never fired (0 preemptions in five runs). #63350 alone halves the frozen box's tail (5.8 s); with #63351 the turn's first token comes in 338 ms at p95 (frozen 7,834).
 - **The reply has to fit the window.** With the 16-token window a full reply (20–22 tokens at the median and up to 40, in the gateway's log) outruns it and decodes beside agent prefill again: 3.2–4.0 s whether the gateway runs or not. Degrade, which caps the reply at 16 tokens when the headroom is not there, capped every reply here; a 48-token window covers full replies instead, at 2,193 ms for the PRs alone and 2,205 ms with arm 9's gateway policy and reserve, about 140 ms over arm 9's capped replies: the price of a full reply's longer first sentence (526 against 429 ms).
 - **The gateway's lifecycle-timed mechanisms could not act here** (their counters are in the table above). Running agent requests held the pool, which the headroom can protect only by deferring new requests, so it never had its room: degrade capped 60 of 60 realtime requests in every run of arm 9. The critical-window throttle, checked after the headroom, deferred nothing while the headroom ran, even at a 0 ms budget. Room for a voice turn came from the engine alone: without the change, the policy leaves voice where stock vLLM does (10,993 ms). So E2 shows that headroom kept by deferring new requests cannot make room while running work holds the KV; a control plane can make room only by aborting admitted work, as preempt-resubmit does, at the agents' tail. Whether lifecycle timing helps where its mechanisms engage (in the standard scenario at 24 agent sessions the throttle deferred 27 requests) was not isolated.
-- **The cost to the agents.** Arm 9 keeps 92% of the frozen box's background goodput and the PRs alone 94%, with the agents' TTFT p99 unchanged (97–103 s against 99 s) and their median TTFT 11–16% longer (71.7–75.1 s against 64.7 s). Preempt-resubmit keeps 98% but its resubmissions take the agents' p99 to 160 s. Over the calls' first 240 s, a window of the same length for every configuration, the shares are 94.5% (arm 9), 94.7% (the PRs) and 101.2% (preempt-resubmit) of the frozen box's 3,552 tokens/s.
+- **The cost to the agents.** Arm 9 keeps 92% of the agents' token rate on the frozen box and the PRs alone 94%, with the agents' TTFT p99 unchanged (97–103 s against 99 s) and their median TTFT 11–16% longer (71.7–75.1 s against 64.7 s). Preempt-resubmit keeps 98% but its resubmissions take the agents' p99 to 160 s. Over the calls' first 240 s, a window of the same length for every configuration, the shares are 94.5% (arm 9), 94.7% (the PRs) and 101.2% (preempt-resubmit) of the frozen box's 3,552 tokens/s.
 - **The first turn does not set this tail.** Without each call's first turn, the medians of the runs' p95 are 2,058 ms for arm 9, 2,194 for the PRs' configuration and 10,224 for the frozen box, against 2,057, 2,193 and 10,138 with it.
 - **Spread.** A configuration near the SLO moves by about 150 ms in p95 from run to run; one that misses it moves by up to 1.9 s (the gateway policy on stock vLLM, 10,028–11,958 ms) and SGLang by 7 s. One run cannot rank configurations that miss.
 
@@ -267,7 +267,7 @@ W5's extension, 2026-10-25: the PRs' 48-token configuration and the frozen box a
 
 ### Instrument notes (W2 to W4)
 
-Background goodput counts the agent requests that completed during the calls, so its window is the calls' duration, which differs by configuration (about 280 s for arm 9, whose calls are fastest, to 430 s for the frozen box) against agent requests of about 75 s: edge effects differ by a few percent. The report also gives the goodput over the calls' first 240 s, a window of the same length for every point; every point with agents ran its calls at least that long.
+The agents' token rate counts the agent requests that completed during the calls, so its window is the calls' duration, which differs by configuration (about 280 s for arm 9, whose calls are fastest, to 430 s for the frozen box) against agent requests of about 75 s: edge effects differ by a few percent. The report also gives the rate over the calls' first 240 s, a window of the same length for every point; every point with agents ran its calls at least that long.
 
 vLLM counts a preemption when the victim next produces output, so per-point preemption counts are lower bounds. The prompt-token sources (computed, GPU hit, CPU hit) are counted at a request's first scheduling only; the CPU tier's own counter also sees a resume's loads. In W4's discriminating scenario it loaded, beyond first scheduling, 160–223k tokens a run on the frozen box (29–32 counted preemptions), 55–93k on the PRs' configuration with the 48-token window (37–43), 93–159k on #63350 alone (37–40) and 35–65k for arm 9 without the reserve (27–39). In that scenario a run without a counted preemption loads −0.5k to +0.8k tokens beyond first scheduling, so these loads are the victims' resumes; in the standard scenario the same difference spans −19k to +50k without one, so there it measures nothing. What a resume recomputes is not measured.
 
@@ -306,7 +306,7 @@ Differences between configurations that ran the same sample of the agents' trace
 | The 48-token window less preempt-resubmit (the extension) | −223, −603, −390, −360, −723 | −390 | +9 | −130 |
 
 What W5's re-measure says:
-- **W5's fixes cost nothing measurable.** Round by round, the fixed module differs from v0.3's by −158 to +164 ms in V2V p95 (median +8 ms), −6 ms in the first byte and −24 tokens/s of the agents' goodput: within the run-to-run spread of either.
+- **W5's fixes cost nothing measurable.** Round by round, the fixed module differs from v0.3's by −158 to +164 ms in V2V p95 (median +8 ms), −6 ms in the first byte and −24 tokens/s of the agents' token rate: within the run-to-run spread of either.
 - **The result holds over five samples of the agents' traces.** Over the campaigns the frozen box's p95 moves from 8.7 to 12.1 s from run to run; the 48-token window's stays at 2.13–2.40 s, 98–363 ms over W5's SLO of 2,034 ms (202 ms at the median of its fifteen runs). Reply by reply that is 286 of its 885 replies over the SLO (32%), where the SLO allows 5%, against 532 of the frozen box's 590 (90%), and the p95 of the fifteen runs' replies pooled is 2,268 ms (`flatshare_bench.report.data`, `Configuration.over` and `pooled_p95`). The five samples of the agents are the same in the three campaigns, with the same callers: the fifteen runs are five workload samples measured three times. In every round of the PR campaign the configurations rank the same: the frozen box, #63350 alone, both PRs at 16 tokens, both at 48.
 - **The campaigns agree.** Round by round, the 48-token window's p95 differs between the PR campaign and W5's by −109 to +126 ms (median −17 ms) and between the extension and W5's by −166 to +82 ms (median −88 ms); the frozen box's differs between the first two by −637 to +2,333 ms (median +92 ms), its tail varying by seconds from run to run within either campaign.
 - **Aborting agent requests also makes room, at the agents' tail.** Preempt-resubmit reaches 2,522 ms (2,516–2,868), 488 ms over the SLO, and the 48-token window is lower in every round, by 223 to 723 ms (median 390 ms). Its agents keep their throughput (3,332 tokens/s over the first 240 s), but their TTFT p99 is 193 s (160–232 s) against 106 s for the frozen box and 111 s for the 48-token window.
@@ -326,9 +326,11 @@ W5, 2026-10-25: voice alone and the PRs' 48-token configuration with 4 and with 
 
 - **More calls, about as far over the SLO.** The PRs' p95 is over its SLO in every round, by 269 ms (206–370) with 4 callers and 257 ms (226–333) with 6, against 202 ms at the median with two (the fifteen runs above). #63351 holds agent prefill while any call's first tokens are due, so the calls' overlapping replies hold it for longer: in 53% and 64% of the engine's steps over the calls, against 33% with two ([E3](#e3-what-make-room-takes-from-the-agents)), and the agents' throughput over the first 240 s falls to 3,055 and 2,716 tokens/s, from 3,203 with two.
 
-### The final code against W5 (FB)
+<a id="the-final-code-against-w5-fb"></a>
 
-FB, 2026-10-25: voice alone, the frozen box and the PRs' 48-token configuration on the final code, both hosts at v0.3-191-g987fd09: W6's transport (the GPU servers on Unix sockets behind cyan's tunnel of one SSH session a connection, the gateway on its socket unit), the budget cap counting a reply's tokens in flight as #63351 does since its revision 9013ed433, and the harness's fixes. Each round replays the sample of the agents of W5's round of the same number (agent seed 10 + N) with W5's arm files, every call opening with a warm-up turn, so each configuration compares with W5's campaign round by round. V2V p95 in ms, the median of the five rounds and their range, and the agents' tokens/s over the calls' first 240 s:
+### The code of 2026-10-25 against W5 (FB)
+
+FB, 2026-10-25: voice alone, the frozen box and the PRs' 48-token configuration on that day's code, both hosts at v0.3-191-g987fd09: W6's transport (the GPU servers on Unix sockets behind cyan's tunnel of one SSH session a connection, the gateway on its socket unit), the budget cap counting a reply's tokens in flight as #63351 does since its revision 9013ed433, and the harness's fixes. Each round replays the sample of the agents of W5's round of the same number (agent seed 10 + N) with W5's arm files, every call opening with a warm-up turn, so each configuration compares with W5's campaign round by round. V2V p95 in ms, the median of the five rounds and their range, and the agents' tokens/s over the calls' first 240 s:
 
 | Configuration | Rounds | W5 V2V p95 | FB V2V p95 | FB − W5, round by round | Agents' tokens/s, W5 / FB |
 |---|---:|---:|---:|---|---:|
@@ -336,7 +338,7 @@ FB, 2026-10-25: voice alone, the frozen box and the PRs' 48-token configuration 
 | The frozen box | 5 | 10,432 (8,686–10,770) | 10,399 (8,374–10,866) | −177, −2,396, +1,706, +761, +435 | 3,306 / 3,368 |
 | #63350 + #63351, a 48-token window | 5 | 2,250 (2,175–2,307) | 2,268 (2,246–2,343) | +77, +71, −45, +19, +36 | 3,156 / 3,252 |
 
-- **W5's numbers stand on the final code.** The PRs' configuration came out at 2,268 ms against 2,250 in the same five rounds of W5's campaign, higher in four rounds and lower in one, within what two sets of runs of it on the same samples show (W5's fifteen runs of it, whose median of 2,236 ms the tables above and the README give, span 2,132–2,397 ms). Its V2V p50 and its realtime first byte came out lower in four of the five rounds, by a median of 26 ms and 20 ms: the sockets and the pooled connections take a little off each turn and leave the tail where W5 measured it.
+- **W5's numbers stand on the code of 2026-10-25.** The PRs' configuration came out at 2,268 ms against 2,250 in the same five rounds of W5's campaign, higher in four rounds and lower in one, within what two sets of runs of it on the same samples show (W5's fifteen runs of it, whose median of 2,236 ms the tables above and the README give, span 2,132–2,397 ms). Its V2V p50 and its realtime first byte came out lower in four of the five rounds, by a median of 26 ms and 20 ms: the sockets and the pooled connections take a little off each turn and leave the tail where W5 measured it.
 - **The references moved as they move between runs.** Voice alone by −51 to +55 ms, inside W5's own range; the frozen box by −2,396 to +1,706 ms, as its p95 moves from run to run on the same sample (W5's ten runs of it span 8,686–12,115 ms). No turn failed in any of the 15 points. The records are in [`benchmarks/results/2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb), whose `compare.py` gives this table from them and W5's, with one row a round.
 
 ### The box's running share (RS)
@@ -368,7 +370,7 @@ The cost to the agents by its mechanism, over W5's points ([EXPERIMENTS.md](EXPE
 | 4 callers: 48 tokens | 3 | 6,349 | 3,321 (53%) | 747,879 | 54 | 65 | 111,679 | 3,055 |
 | 6 callers: 48 tokens | 3 | 6,727 | 4,332 (64%) | 1,067,013 | 64 | 70 | 82,548 | 2,716 |
 
-- **The agents pay through the budget cap.** At 48 tokens the cap held lower-priority prefill back in a third of the engine's steps over the calls (33%; 25% at 16 tokens). #63350 alone holds nothing, and there the agents' goodput is 3% above the frozen box's.
+- **The agents pay through the budget cap.** At 48 tokens the cap held lower-priority prefill back in a third of the engine's steps over the calls (33%; 25% at 16 tokens). #63350 alone holds nothing, and there the agents' token rate is 3% above the frozen box's.
 - **The KV preemption's victims are few.** make-room preempted about 31 requests a run at 48 tokens and 34 with #63350 alone, against a pool the agents fill; vLLM's own count of every preemption, the frozen box's growth preemptions included, is 46 against the frozen box's 31. The tokens loaded from the CPU tier beyond the requests' first scheduling, the victims' restores among them, are 117,044 at 48 tokens against the frozen box's 212,630 and preempt-resubmit's 273,461.
 - **Where the pool has room** (the standard scenario), make-room preempted 1 request a run at the median (0–7) and the cap held agent prefill back in 4% of the steps (3–13%); the loads beyond first scheduling are within the window's edges of zero (−74 and 115 tokens).
 - **The held prefill tokens are an upper bound.** The module W5's points ran counted each held chunk against the step's remaining budget, so a step that held several lower-priority prefills counts each of them. With `--long-prefill-token-threshold 256` a held chunk counts at most 256 of a step's 512 tokens, so a step overstates only when it held three or more; the 48-token runs count 215 tokens a held step at the median (171–260 over the fifteen runs), about one chunk's worth. The PRs bound a step's count by its budget since #63351's revision d1399e208, and so does the variant built from them.
@@ -389,7 +391,7 @@ SW, 2026-10-27: two screens of the PRs' configuration over the step cap, the per
 
 ### Two cards (RG)
 
-RG, 2026-10-28: the resource gate's comparison of the arrangements of two RTX 5060 Ti cards ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md), fixed before the runs), in three rounds on new samples of the agents' traces (agent seeds 21–23), on Phastform, Gray and Phastform in turn, the hosts and cyan at v1.6-7-g0993991. Each card's part of an arrangement is a point of its own, beside the discriminating scenario's sessions at the counts given; the change runs the serving profile, the PRs' switches with a 48-token window at a step cap of 256 without a per-request threshold. Each round's SLO is its voice alone's p95 plus 250 ms: 2,000, 1,972 and 2,010 ms with two callers, 1,988, 1,943 and 1,982 ms with one. Replies over the SLO are pooled over the rounds, and the agents' tokens/s over the calls' first 240 s are summed over the cards, the median of the rounds with each round's sum:
+RG, 2026-10-28: the resource gate's comparison of the arrangements of two RTX 5060 Ti cards ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)), in three rounds on new samples of the agents' traces (agent seeds 21–23), on Phastform, Gray and Phastform in turn, the hosts and cyan at v1.6-7-g0993991. Each card's part of an arrangement is a point of its own, beside the discriminating scenario's sessions at the counts given; the change runs the serving profile, the PRs' switches with a 48-token window at a step cap of 256 without a per-request threshold. Each round's SLO is its voice alone's p95 plus 250 ms: 2,000, 1,972 and 2,010 ms with two callers, 1,988, 1,943 and 1,982 ms with one. Replies over the SLO are pooled over the rounds, and the agents' tokens/s over the calls' first 240 s are summed over the cards, the median of the rounds with each round's sum:
 
 | Arrangement | Sessions (shared + second card) | Replies over the SLO | Agents' tokens/s, first 240 s | Rounds | Agent TTFT p50 / p99 |
 |---|---:|---:|---:|---|---:|
@@ -420,7 +422,7 @@ The records are in [`benchmarks/results/2026-10-28-rounds`](../benchmarks/result
 
 ### The 24-hour soak
 
-2026-10-28 to 29: the serving arrangement for 24 hours ([PRODUCTION.md](PRODUCTION.md#two-cards)), both calls on Phastform beside at most four agents' sessions and Gray a warm spare with at most 12, calls arriving at 20 an hour with ten turns each and 14 of the discriminating scenario's session trees for the agents, every attempt counted ([the soak](EXPERIMENTS.md#the-soak-the-production-path-for-hours)). Its SLO, 1,976 ms, is two hours of voice alone with the same calls plus 250 ms; by the rule fixed before it started, more than 7.5% of the replies over it after four hours would have stopped it, and 0.6% were.
+2026-10-28 to 29: the serving arrangement for 24 hours ([PRODUCTION.md](PRODUCTION.md#two-cards)), both calls on Phastform beside at most four agents' sessions and Gray a warm spare with at most 12, calls arriving at 20 an hour with ten turns each and 14 of the discriminating scenario's session trees for the agents, every attempt counted ([the soak](EXPERIMENTS.md#the-soak-the-production-path-for-hours)). Its SLO, 1,976 ms, is two hours of voice alone with the same calls plus 250 ms; by its stopping rule, more than 7.5% of the replies over it after four hours would have stopped it, and 0.6% were.
 
 | Run | Hours | Calls (accepted, refused, failed) | Turns (failed) | Replies | Over the SLO | Replies p95, ms | Realtime SLI | Background tokens/s | Restarts | Guard pauses |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -451,8 +453,8 @@ The gateway forwards over the SSH tunnel to the frozen box. Measured W1, 2026-10
 | Through flatshare-gateway | 44.1 ms | 223.3 ms | 370.3 ms | 12.14 / 12.69 ms |
 | **Paired median difference** | **+0.38 ms** | **+0.26 ms** | **+0.25 ms** | — |
 
-The same probe on the final transport (W6, 2026-10-25: every server on a Unix socket, the gateway's upstream the
-tunnel's engine socket), 40 rounds again, the same text on both paths ([records](../benchmarks/results/2026-10-25-w6-transport)):
+The same probe on W6's transport (2026-10-25: every server on a Unix socket, the gateway's upstream the tunnel's engine
+socket), 40 rounds again, the same text on both paths ([records](../benchmarks/results/2026-10-25-w6-transport)):
 
 | Path | First token p50 | First sentence p50 | End p50 | Gap between chunks, p50 / p99 |
 |---|---|---|---|---|
@@ -460,7 +462,7 @@ tunnel's engine socket), 40 rounds again, the same text on both paths ([records]
 | Through flatshare-gateway | 43.8 ms | 162.7 ms | 344.7 ms | 12.09 / 12.52 ms |
 | **Paired median difference** | **+0.29 ms** | **+0.40 ms** | **+0.45 ms** | — |
 
-**The final transport against W5's** (the transport A/B, 2026-10-25): `flatshare-bench voice-turn` (30 turns of the two LibriSpeech clips) and `flatshare-bench tiers` (5 reps) from cyan on the frozen engine, with the same clips, reps and cores, once through W5's tunnel, one SSH connection's TCP forwards (at v0.3-90), and once through the final build's, an SSH session of its own for each connection to each socket (at v0.3-274), p50 / p90 in ms ([records](../benchmarks/results/2026-10-25-w6-transport), whose `ab.py` prints this table):
+**W6's transport against W5's** (the transport A/B, 2026-10-25): `flatshare-bench voice-turn` (30 turns of the two LibriSpeech clips) and `flatshare-bench tiers` (5 reps) from cyan on the frozen engine, with the same clips, reps and cores, once through W5's tunnel, one SSH connection's TCP forwards (at v0.3-90), and once through W6's, an SSH session of its own for each connection to each socket (at v0.3-274), p50 / p90 in ms ([records](../benchmarks/results/2026-10-25-w6-transport), whose `ab.py` prints this table):
 
 | Stage | TCP forwards (W5's tunnel) | Sockets (flatshare-tunnel) | Sockets − TCP, p50 |
 |---|---:|---:|---:|
@@ -493,10 +495,10 @@ tunnel's engine socket), 40 rounds again, the same text on both paths ([records]
     | 60 s keep-alive | 0.08 ms | 38.5 ms | 49.8 ms |
 
   - The engine now keeps idle connections for 60 s (`VLLM_HTTP_TIMEOUT_KEEP_ALIVE`) and the gateway for 55 s.
-  - Through the final build's tunnel a new connection is a new SSH session: `GET /health` took 13.1–13.9 ms
-    on a new connection against 2.2–2.8 ms on a kept one, for each of the three sockets (p50 of 50,
-    cyan to Phastform), so about 11 ms, where through W5's forwards it was a channel, about 0.4 ms
-    (above). The servers keep idle connections 60 s for it, and the voice worker's clients 55 s.
+  - Through W6's tunnel a new connection is a new SSH session: `GET /health` took 13.1–13.9 ms on a new connection
+    against 2.2–2.8 ms on a kept one, for each of the three sockets (p50 of 50, cyan to Phastform), so about 11 ms,
+    where through W5's forwards it was a channel, about 0.4 ms (above). The servers keep idle connections 60 s for it,
+    and the voice worker's clients 55 s.
 - **End to end it is inside the run-to-run spread.**
   - Voice alone through the gateway: V2V p50 1,684, 1,600 and 1,633 ms over three runs.
   - Straight to the engine: 1,614 and 1,579 ms over two runs, every run with 0 errors.
@@ -868,7 +870,7 @@ and 12.32 in one copy (the box's 5.44, 6.03, 6.74, 6.76), and back to the host 1
 
 ## Failure drills
 
-The deployed box on the configuration to deploy (make-room with the PRs' switches and a 48-token window), on 2026-10-25, from `ops/drills` ([RUNBOOK.md](../ops/RUNBOOK.md#drills) runs them): the final build (v0.3-295 on both hosts), and W8's, before W6's hardening, beside it. Each drill opens two realtime streams through the gateway's voice-plane socket and four background ones through its TCP port, each decoding up to 2,000 tokens, then breaks something once every stream has its first byte; from the event on it probes both planes every second, each probe on a new connection, until the streams have ended and a request succeeds. The records, with W6's and an intermediate build's, are in [`benchmarks/results/2026-10-25-drills`](../benchmarks/results/2026-10-25-drills/README.md).
+The deployed box on the configuration to deploy (make-room with the PRs' switches and a 48-token window), on 2026-10-25, from `ops/drills` ([RUNBOOK.md](../ops/RUNBOOK.md#drills) runs them): the build of that day (v0.3-295 on both hosts), and W8's, before W6's hardening, beside it. Each drill opens two realtime streams through the gateway's voice-plane socket and four background ones through its TCP port, each decoding up to 2,000 tokens, then breaks something once every stream has its first byte; from the event on it probes both planes every second, each probe on a new connection, until the streams have ended and a request succeeds. The records, with W6's and an intermediate build's, are in [`benchmarks/results/2026-10-25-drills`](../benchmarks/results/2026-10-25-drills/README.md).
 
 | Drill | What the six streams saw | What the new requests got | W8, before W6 |
 |---|---|---|---|
@@ -878,7 +880,7 @@ The deployed box on the configuration to deploy (make-room with the PRs' switche
 | The gateway killed (SIGKILL; systemd starts it again a second later, its socket unit holding the listeners) | All broke 11–14 ms after | None of 4 failed; they waited for the gateway's start, the slowest 1.3 s | — |
 
 - **Where an engine's recovery goes.** The unit's last process exited 7.6 s after the kill (the GPU's teardown), systemd started the unit 5.1 s after that (`RestartSec`, 15 s in W8), and its warm start listened 92.1 s later. Until its `/health` answers, the gateway answers 503 with `Retry-After: 1` and does not reach for the engine.
-- **No KV or host memory outlives a killed engine.** The engine ran six requests before the kill and none after its restart, and `/dev/shm` held the CPU tier's 20.0 GiB before and after (an unlinked 21.5 GB file there, made again by each start); each kill, W8's and the final build's, left one 32-byte semaphore.
+- **No KV or host memory outlives a killed engine.** The engine ran six requests before the kill and none after its restart, and `/dev/shm` held the CPU tier's 20.0 GiB before and after (an unlinked 21.5 GB file there, made again by each start); each kill, W8's and v0.3-295's, left one 32-byte semaphore.
 - **A deploy without a gap.** Until W6 a deploy restarted the gateway, and new requests failed for as long as its longest stream took to finish, up to 30 s. Since W6 a deploy reloads it: the gateway hands its listening sockets to a successor that serves at once, and drains ([PRODUCTION.md](PRODUCTION.md#how-it-fails)). A restart drains too since the unit's `ExecStop` waits for the drain itself (v0.3-191's restart after a reload cut its streams: systemd 249 does not wait for a main process it did not start), and the requests sent meanwhile, queued in the socket's backlog, are answered once the new gateway serves: on v0.3-274, 5 of the restart's 42 probes got 502, where cyan's tunnel let the new gateway's burst of upstream connections pass a master's sessions and the node's sshd dropped them; the tunnel now waits for a master with room.
 - **The CPU tier overfilled (W8).** `flatshare-bench drill cpu-tier` stored 43.5 GB, 2.0 times the tier's 20 GiB, in 18 requests of 16,384 tokens (3.30 s each at the median); the engine stayed healthy, the latest 8,192-token prompt restored from the tier in 294 ms against 1,112 ms recomputed, and the first had been evicted (recomputed, no tier hit).
 
@@ -888,7 +890,7 @@ Each server's start, from its journal (`ops/drills/cold-start.sh`):
 |---|---:|---|
 | The engine, warm caches | 88.8 s | The API server up at 16.5 s, the engine process at 38.4 s, the weights loaded at 54.1 s, the KV cache at 55.4 s, the CUDA graphs captured at 84.1 s, listening at 87.9 s; torch.compile from its cache in 0.3 s |
 | The engine, empty caches, as on a new host | 531.8 s | The weights at 86.1 s; torch.compile 84 s (Dynamo 23 s, Inductor 43 s) and the profiling run 17 s, so the KV cache at 189.3 s; 337 s more to the CUDA graphs (526.6 s), of which the capture is 13 s and the rest kernel warmup and JIT builds, FlashInfer's sampling module among them |
-| The box, the final build (`systemctl --user restart flatshare.target`) | 102.7 s | The units stopped within 8.1 s, then the three started at once: the TTS ready 22.9 s after its start, the STT 64.0 s, the engine 94.6 s (on v0.3-191 the engine waited for the STT to be ready, and the box took 161.4 s) |
+| The box, v0.3-295 (`systemctl --user restart flatshare.target`) | 102.7 s | The units stopped within 8.1 s, then the three started at once: the TTS ready 22.9 s after its start, the STT 64.0 s, the engine 94.6 s (on v0.3-191 the engine waited for the STT to be ready, and the box took 161.4 s) |
 
 The engine's warm start is most of the recovery from an engine failure; on a new host, with empty caches, the first start takes six times as long.
 
