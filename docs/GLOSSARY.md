@@ -29,8 +29,10 @@ names](#former-names) maps them to the current ones.
   W5's points loaded equal but for its held-token count, which it overstated
   ([E3](BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)), and for the hold's last step under asynchronous
   scheduling with the budget cap, which it held a step past the window, as #63351 did before its revision of
-  2026-10-25 ([after W5](BENCHMARKS.md#after-w5-the-first-tokens-in-flight)). The technical report calls it the
-  generated scheduler and keeps *make-room* for #63350's rule.
+  2026-10-25 ([after W5](BENCHMARKS.md#after-w5-the-first-tokens-in-flight)). It finds the module that the sweep's and
+  the rounds' points loaded, built on 2026-10-27, equal in every step to today's, which differs from it only in
+  counting the blocks a preemption releases in one pass. The technical report calls it the generated scheduler and
+  keeps *make-room* for #63350's rule.
 - **The prefill hold**: the technical report's name for the budget cap, after #63351's title, "hold lower-priority
   prefill for first tokens". The report writes its window T.
 - **The reserve**: make-room's third switch, which keeps KV free for priority 0 by holding back lower-priority

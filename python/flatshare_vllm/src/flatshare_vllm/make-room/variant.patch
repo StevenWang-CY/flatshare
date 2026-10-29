@@ -6,7 +6,7 @@ The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
   d9d72c82f Leaseholder make-room variant: switches, reserve and log line
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
-index 4348b031f..087e812c2 100644
+index a4d4736b4..44bedfcde 100644
 --- a/vllm/v1/core/sched/scheduler.py
 +++ b/vllm/v1/core/sched/scheduler.py
 @@ -86,6 +86,8 @@ from vllm.v1.structured_output.utils import strip_speculative_padding

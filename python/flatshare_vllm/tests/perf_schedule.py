@@ -18,6 +18,19 @@ the measured steps, so that every step does the same work:
 The head shares its first blocks with a running request's prompt (127 of them unless a state says otherwise), so its
 prefix-cache lookup walks that many cached blocks.
 
+The box serves otherwise: in 256-token steps without a long-prefill threshold, asynchronously, a step in flight while
+the next is scheduled, with block frees deferred (its CPU tier's KV connector defers them), on a pool of 2,275 blocks.
+So the serving profile's states run in that configuration, which deploy/phastform/serving.json gives (SERVING), with
+vLLM's AsyncScheduler as stock vLLM, agents of priority 2 with 12k-token prompts and a voice turn of priority 0:
+
+  idle   R agents decoding with the pool 97% full, 20 more waiting whose prompts do not fit: no work of a higher
+         priority.
+  hold   R agents decoding with 60% of the pool and a voice reply decoding its first tokens while an agent that fits
+         waits: make-room holds that agent's prefill back, and stock vLLM prefills it beside the reply.
+  nofit  as idle, with a voice turn waiting that two victims cannot make room for: make-room gives up every step.
+  fire   as idle with the pool 99.5% full, and a voice turn arriving that does not fit: the step in which make-room
+         preempts, a single step and no steady state.
+
 A process times one state. It builds two schedulers of each configuration in that state, stock, off and on, and two more
 of off (off2), then the eight take turns of 5 steps, 5 of warm-up and 40 timed each, so that whatever else runs on the
 machine meanwhile slows them alike. A scheduler's cost is its 10th-percentile step (inclusive, as docs/GLOSSARY.md's
@@ -29,7 +42,11 @@ one's own: off/stock - 1, what the change costs a step with its switches off as 
 the PRs measured as main's within their tables' noise; and on/off - 1, what it costs in the configuration to deploy as a
 fraction of the step with its switches off. Neither moves on a machine that is uniformly faster or slower. The state's
 cost off in µs is the median over its processes; stock's is off's divided by off/stock, and on's off's times on/off. A
-round times every state once, a process each, the states in a rotated order, and a check is 3 rounds.
+fire state's process builds a scheduler of each configuration afresh for each of 12 trials (TRIALS), the
+configurations in a rotated order, and times the step that preempts on each: a configuration's cost is its trials'
+10th-percentile step, as if they were one scheduler's steps. A round times every state once, a process each, the
+states in a rotated order, then bench_host.py's Python workload, the machine's speed at the scheduler's kind of work
+(Figure 7 sets the costs against the box's CPU by it), and a check is 3 rounds.
 
 What it can see: a state fails when the change's own cost a step grows by the tolerance of the step with the switches
 on (the on/off table's "fails past", in µs), which is a small share of the change's cost where the change costs much
@@ -77,15 +94,25 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 BUILD = HERE.parent / "src/flatshare_vllm/build.py"
+SERVING_JSON = HERE.parents[2] / "deploy/phastform/serving.json"
+BENCH_HOST = HERE.parents[2] / "benchmarks/a100/bench_host.py"
 WARMUP, STEPS = 5, 40
 TURN = 5  # the steps a scheduler takes in a row
 INSTANCES = 2  # schedulers of each configuration in a process; the cheaper one's cost counts
 RUN_TOKENS = 2048  # each running request's prompt
 MAX_MODEL_LEN = 32768
+# The serving states' requests: agents of priority 2, with the prompt the agents' records average, 20 of them waiting;
+# and a voice turn of priority 0, its prompt the instructions and the call's history.
+AGENT_TOKENS = 12_000
+AGENTS_WAITING = 20
+TURN_TOKENS = 1_504
+TRIALS = 12  # a fire state's trials in a process, each on schedulers built afresh
 # The configurations, as make_room's keys: stock vLLM, vLLM's own Scheduler (STOCK_CLASS), without the change; make-room
-# with its switches off; and make-room in the configuration to deploy (docs/PRODUCTION.md).
+# with its switches off; and make-room in the configuration to deploy (docs/PRODUCTION.md). The serving states run
+# vLLM's AsyncScheduler (STOCK_ASYNC_CLASS) and make-room's.
 STOCK = "stock"
 STOCK_CLASS = "vllm.v1.core.sched.scheduler.Scheduler"
+STOCK_ASYNC_CLASS = "vllm.v1.core.sched.async_scheduler.AsyncScheduler"
 CONFIGS: dict[str, dict | None] = {
     STOCK: None,
     "off": None,
@@ -102,6 +129,21 @@ NOISE = "off2"
 TIMED = [*CONFIGS, NOISE]
 # A state's two ratios, by the key its cell holds each under: off/stock - 1 and on/off - 1.
 RATIOS = {"off/stock": "off_ratio", "on/off": "ratio"}
+
+
+def serving_scheduler_config() -> dict[str, int]:
+    """The serving profile's scheduler, as deploy/phastform/serving.json gives it: the step cap, the long-prefill
+    threshold, the request slots and the pool's blocks, in which the serving states run."""
+    engine = json.loads(SERVING_JSON.read_text())["engine"]
+    return {
+        "max_num_batched_tokens": engine["scheduler"]["max_num_batched_tokens"],
+        "long_prefill_token_threshold": engine["scheduler"]["long_prefill_token_threshold"],
+        "max_num_seqs": engine["scheduler"]["max_num_seqs"],
+        "num_gpu_blocks": engine["cache"]["num_gpu_blocks"],
+    }
+
+
+SERVING = serving_scheduler_config()
 # What a baseline must have been measured with for a check to compare against it.
 METHOD = {
     "warmup_steps": WARMUP,
@@ -113,6 +155,13 @@ METHOD = {
     "configs": CONFIGS,
     "stock": STOCK_CLASS,
     "schedulers": INSTANCES * len(TIMED),  # in each process, a check's and a baseline's alike
+    "serving": {
+        "scheduler": SERVING,
+        "stock": STOCK_ASYNC_CLASS,
+        "steps": "a step in flight while the next is scheduled, its output processed after; block frees deferred",
+        "trials": TRIALS,
+        "fire_cost": "the 10th-percentile step that preempts, inclusive, of a configuration's trials in a process",
+    },
 }
 
 
@@ -125,6 +174,7 @@ class State:
     waiting: int = 1000
     hit_blocks: int = 127
     free: int = 0  # free blocks at the start; 0: the default sizing
+    serving: bool = False  # in the serving profile's configuration (SERVING), asynchronous, not the PRs' tables'
 
 
 # The rows of the PRs' cost tables, in their order.
@@ -143,7 +193,16 @@ STATES = (
     State("C64", "C", "C", 64),
     State("C256", "C", "C", 256),
 )
-BY_KEY = {state.key: state for state in STATES}
+# The serving profile's states: as many running agents as the box has at the median (2), and enough small ones (16)
+# that two victims cannot make room.
+SERVING_STATES = (
+    State("idle-R2", "idle: only agents, the pool 97% full", "idle", 2, serving=True),
+    State("hold-R2", "hold: a reply's first tokens, an agent waiting", "hold", 2, serving=True),
+    State("nofit-R16", "no fit: a turn two victims cannot fit", "nofit", 16, serving=True),
+    State("fire-R2", "fire: the step that preempts for a voice turn", "fire", 2, serving=True),
+)
+ALL_STATES = STATES + SERVING_STATES
+BY_KEY = {state.key: state for state in ALL_STATES}
 
 
 class StateChanged(Exception):
@@ -179,15 +238,23 @@ def load(path: Path, name: str):
     return module
 
 
-def scheduler_class(module, config: str):
+def scheduler_class(module, config: str, serving: bool = False):
     """The class of a configuration's schedulers: stock vLLM's own Scheduler, as the suites import it, or
-    ``module``'s."""
+    ``module``'s; in a serving state, which schedules asynchronously, vLLM's AsyncScheduler or ``module``'s."""
+    if serving:
+        if config == STOCK:
+            from vllm.v1.core.sched.async_scheduler import AsyncScheduler
+
+            return AsyncScheduler
+        return module.AsyncScheduler
     return suite().StockScheduler if config == STOCK else module.Scheduler
 
 
 def steady_state(cls, model: str, state: State, switches: dict | None):
     """A scheduler of the class ``cls`` with ``switches`` in ``state``: the running requests decoding, the head and the
-    requests behind it waiting."""
+    requests behind it waiting; for a serving state, serving_state()'s."""
+    if state.serving:
+        return serving_state(cls, model, state, switches)
     T = suite()
     block = T.BLOCK
     R = state.running
@@ -237,9 +304,193 @@ def steady_state(cls, model: str, state: State, switches: dict | None):
     return sched
 
 
+# The serving profile's states: agents and a voice turn on its scheduler, run as the engine core runs it.
+
+
+class Tokens:
+    """Prompts that share no block: each takes the next token ids."""
+
+    def __init__(self) -> None:
+        self.next = 1000
+
+    def take(self, n: int) -> list[int]:
+        self.next += n
+        return list(range(self.next - n, self.next))
+
+
+def serving_scheduler(cls, model: str, switches: dict | None):
+    """A scheduler of the class ``cls`` with ``switches`` in the serving profile's configuration (SERVING), run as the
+    engine core runs it with asynchronous scheduling: a step in flight while the next is scheduled, and block frees
+    deferred (tests/test_make_room.py's Pipelined)."""
+    T = suite()
+    sched = T.scheduler(
+        cls,
+        model,
+        SERVING["num_gpu_blocks"],
+        switches,
+        max_num_batched_tokens=SERVING["max_num_batched_tokens"],
+        long_prefill_token_threshold=SERVING["long_prefill_token_threshold"],
+        max_model_len=MAX_MODEL_LEN,
+        prefix_caching=True,
+        max_num_seqs=SERVING["max_num_seqs"],
+    )
+    return T.Pipelined(sched)
+
+
+def decoding_agents(pipe, tokens: Tokens, running: int, fill: float, growth: int = 60) -> list:
+    """``running`` priority-2 agents decoding, holding ``fill`` of the pool between them, and room left for what their
+    decodes take in ``growth`` steps. They prefill one after another, a step's tokens at a time, while those done
+    decode, so their prompts leave 1/256 of the pool each for that, and their decodes fill the rest."""
+    T = suite()
+    pool = SERVING["num_gpu_blocks"] - 1  # vLLM's null block aside
+    per = int(pool * fill / running - pool / 256)
+    agents = [
+        # Lengths staggered within a block, so that the decodes do not all start a block in the same step.
+        T.request(
+            f"a{i}",
+            0,
+            2,
+            float(i),
+            max_tokens=100_000,
+            prompt=tokens.take(per * T.BLOCK - 40 - (i * 7) % T.BLOCK),
+        )
+        for i in range(running)
+    ]
+    for agent in agents:
+        pipe.sched.add_request(agent)
+    room = max(int(pool * (1 - fill)), running * growth // T.BLOCK + 8)
+    for _ in range(5000):
+        decoding = all(
+            a.status == T.RequestStatus.RUNNING and not a.is_prefill_chunk for a in agents
+        )
+        if decoding and T.free_blocks(pipe.sched) <= room:
+            return agents
+        if pipe.step().preempted_req_ids:
+            raise StateChanged(f"an agent was preempted while {running} filled the pool")
+    raise StateChanged(f"{running} agents never filled the pool")
+
+
+def waiting_agents(pipe, tokens: Tokens) -> None:
+    """AGENTS_WAITING priority-2 agents behind the running ones, each prompt AGENT_TOKENS long, which does not fit."""
+    T = suite()
+    for j in range(AGENTS_WAITING):
+        prompt = tokens.take(AGENT_TOKENS)
+        pipe.sched.add_request(T.request(f"w{j}", 0, 2, 1000.0 + j, max_tokens=512, prompt=prompt))
+
+
+def serving_state(cls, model: str, state: State, switches: dict | None):
+    """A scheduler of the class ``cls`` with ``switches`` in the serving profile's steady state ``state``, run as the
+    engine core runs it, and the check of each step timed in it: None while the step keeps the state, else how it
+    left it."""
+    T = suite()
+    pipe, tokens, R = serving_scheduler(cls, model, switches), Tokens(), state.running
+    if state.scenario == "idle":
+        decoding_agents(pipe, tokens, R, 0.97)
+        waiting_agents(pipe, tokens)
+        settle = 3
+
+        def check(out) -> str | None:
+            if len(out.num_scheduled_tokens) == R and not out.preempted_req_ids:
+                return None
+            return f"{len(out.num_scheduled_tokens)} scheduled, {len(out.preempted_req_ids or ())} preempted"
+
+    elif state.scenario == "hold":
+        # The reply's prefill fits beside the agents. Once it decodes, an agent arrives that fits the rest, ahead of
+        # agents that do not: stock vLLM prefills it beside the reply's first tokens, and make-room holds it back
+        # while they are fewer than its window's 48.
+        decoding_agents(pipe, tokens, R, 0.60)
+        voice = T.request("voice", 0, 0, 2000.0, max_tokens=200, prompt=tokens.take(TURN_TOKENS))
+        pipe.sched.add_request(voice)
+        for _ in range(40):
+            pipe.step()
+            if voice.status == T.RequestStatus.RUNNING and not voice.is_prefill_chunk:
+                break
+        else:
+            raise StateChanged(f"{state.key}: the voice turn never decoded")
+        pipe.sched.add_request(
+            T.request("agent", 0, 2, 500.0, max_tokens=512, prompt=tokens.take(AGENT_TOKENS))
+        )
+        waiting_agents(pipe, tokens)
+        holds = switches is not None and switches.get("budget_cap", False)
+        settle = 0  # the window counts from the reply's first token
+
+        def check(out) -> str | None:
+            if "voice" not in out.num_scheduled_tokens or out.preempted_req_ids:
+                return f"the reply not scheduled, or {len(out.preempted_req_ids or ())} preempted"
+            # Within the window, a token short of its end, which a token in flight may reach.
+            window = CONFIGS["on"]["budget_cap_tokens"] - 1
+            first = voice.num_output_tokens + voice.num_output_placeholders < window
+            if first and ("agent" not in out.num_scheduled_tokens) != holds:
+                return (
+                    "the agent's prefill " + ("not held" if holds else "held") + " beside the reply"
+                )
+            return None
+
+    elif state.scenario == "nofit":
+        agents = decoding_agents(pipe, tokens, R, 0.98)
+        waiting_agents(pipe, tokens)
+        # More blocks than the free ones and any two agents' (each holds about as many as another).
+        biggest = max(
+            len(pipe.sched.kv_cache_manager.get_blocks(a.request_id).blocks[0]) for a in agents
+        )
+        blocks = T.free_blocks(pipe.sched) + 2 * biggest + 40
+        prompt = tokens.take(blocks * T.BLOCK - 8)
+        pipe.sched.add_request(T.request("voice", 0, 0, 2000.0, max_tokens=64, prompt=prompt))
+        settle = 2
+
+        def check(out) -> str | None:
+            if "voice" not in out.num_scheduled_tokens and not out.preempted_req_ids:
+                return None
+            return f"the voice turn scheduled, or {len(out.preempted_req_ids or ())} preempted"
+
+    else:
+        raise ValueError(f"{state.key} is no steady state")
+    for _ in range(settle):
+        pipe.step()
+    return pipe, check
+
+
+def fire_state(cls, model: str, state: State, switches: dict | None):
+    """A scheduler of the class ``cls`` with ``switches`` just before the step that preempts: agents decoding with the
+    pool 99.5% full and agents waiting behind them, when a voice turn arrives that does not fit."""
+    T = suite()
+    pipe, tokens = serving_scheduler(cls, model, switches), Tokens()
+    decoding_agents(pipe, tokens, state.running, 0.995, growth=8)
+    waiting_agents(pipe, tokens)
+    for _ in range(3):
+        pipe.step()
+    pipe.sched.add_request(
+        T.request("voice", 0, 0, 2000.0, max_tokens=64, prompt=tokens.take(TURN_TOKENS))
+    )
+    return pipe
+
+
+def pipelined_step(pipe) -> tuple[object, float]:
+    """One step as Pipelined.step takes it, and its schedule() call's wall time in µs."""
+    t0 = time.perf_counter_ns()
+    out = pipe.sched.schedule()
+    t1 = time.perf_counter_ns()
+    pipe.in_flight.append((out, suite().output(pipe.sched, out)))
+    if len(pipe.in_flight) > 1:
+        pipe.process()
+    return out, (t1 - t0) / 1e3
+
+
+def serving_step(served, state: State, k: int) -> float:
+    """schedule()'s wall time in µs for one step of a serving state; StateChanged if the step left the state."""
+    pipe, check = served
+    out, took = pipelined_step(pipe)
+    why = check(out)
+    if why:
+        raise StateChanged(f"{state.key}: the state changed at step {k}: {why}")
+    return took
+
+
 def timed_step(sched, state: State, k: int) -> float:
     """schedule()'s wall time in µs for one step, its output fed back as a synchronous engine does; StateChanged if
-    the step schedules other than the running requests or preempts."""
+    the step schedules other than the running requests or preempts. A serving state's is serving_step()'s."""
+    if state.serving:
+        return serving_step(sched, state, k)
     t0 = time.perf_counter_ns()
     out = sched.schedule()
     t1 = time.perf_counter_ns()
@@ -261,13 +512,16 @@ def measure(
 ) -> dict[str, list[list[float]]]:
     """One process's measurement: INSTANCES schedulers of their own for each configuration in ``configs``, all in
     ``state``, then WARMUP and STEPS steps of each, the schedulers taking turns of TURN steps in an order rotated each
-    turn. Returns each configuration's timed steps in µs, scheduler by scheduler."""
+    turn. Returns each configuration's timed steps in µs, scheduler by scheduler (a fire state's: measure_fire())."""
     module = load(module_path, module_path.stem)
+    if state.scenario == "fire":
+        return measure_fire(module, model, state, configs)
     order = [(c, i) for i in range(INSTANCES) for c in configs]
     scheds = {}
     for c, i in order:
         config = "off" if c == NOISE else c
-        scheds[c, i] = steady_state(scheduler_class(module, config), model, state, CONFIGS[config])
+        cls = scheduler_class(module, config, state.serving)
+        scheds[c, i] = steady_state(cls, model, state, CONFIGS[config])
     gc.collect()
     gc.freeze()  # the states' objects: the collector need not walk them while steps are timed
     times: dict[tuple[str, int], list[float]] = {key: [] for key in order}
@@ -279,6 +533,34 @@ def measure(
                     times[key].append(t)
     gc.unfreeze()
     return {c: [times[c, i] for i in range(INSTANCES)] for c in configs}
+
+
+def measure_fire(
+    module, model: str, state: State, configs: list[str]
+) -> dict[str, list[list[float]]]:
+    """One process's measurement of a fire state: TRIALS trials, in each a scheduler of each configuration in
+    ``configs`` built afresh in the state, the configurations in an order rotated each trial, and on each the step
+    that preempts timed. make-room in the configuration to deploy must preempt in it and admit the voice turn in the
+    next step, and the others preempt nothing and admit nothing (StateChanged). Returns each configuration's timed
+    steps in µs, its trials' as one scheduler's."""
+    times: dict[str, list[float]] = {c: [] for c in configs}
+    for trial in range(TRIALS):
+        for c in rotated(configs, trial):
+            config = "off" if c == NOISE else c
+            pipe = fire_state(scheduler_class(module, config, True), model, state, CONFIGS[config])
+            gc.collect()
+            gc.freeze()  # as measure() does: the collector need not walk the state while the step is timed
+            out, took = pipelined_step(pipe)
+            gc.unfreeze()
+            preempted = len(out.preempted_req_ids or ())
+            admitted = "voice" in pipe.step().num_scheduled_tokens
+            if bool(preempted) != (config == "on") or admitted != (config == "on"):
+                raise StateChanged(
+                    f"{state.key}: {c} preempted {preempted} in the step and admitted the voice turn "
+                    f"{'' if admitted else 'not '}in the next"
+                )
+            times[c].append(took)
+    return {c: [times[c]] for c in configs}
 
 
 # The rounds: every state once in each, a process each, the states and configurations rotated.
@@ -314,7 +596,8 @@ def run(
     """``reps`` rounds of each set of rounds in ``runs``, named by a letter (a check's ``a``, a baseline's halves
     ``ab``, the states measured again ``c``), their rounds interleaved, every state in ``states`` in each, a process
     each, timing ``configs``. Returns each process's timed steps by configuration, and for each round the load average
-    before and after it and what else used the CPU as it started."""
+    before and after it, what else used the CPU as it started, and the machine's time at bench_host.py's workload as
+    it ended (python_speed())."""
     processes, load = [], []
     # The scheduler is Python; torch's thread pools would only take CPUs from what else runs.
     env = os.environ | {
@@ -357,6 +640,7 @@ def run(
                     "before": [round(x, 2) for x in before],
                     "after": [round(x, 2) for x in after],
                     "busy": others,
+                    "python_ms": python_speed(),
                 }
             )
     return {"processes": processes, "load": load}
@@ -376,7 +660,7 @@ def cheapest(schedulers: list[list[float]]) -> float:
 
 
 def cells(processes: list[dict]) -> dict[str, dict]:
-    """Each state's cell from its processes, in STATES' order: its two ratios, each the median over the processes of
+    """Each state's cell from its processes, in ALL_STATES' order: its two ratios, each the median over the processes of
     each one's own, which its turns pair: on/off - 1 (``ratio``) and off/stock - 1 (``off_ratio``); the cost off, the
     median over the processes, in µs, and stock's and on's from it by the ratios, so that off = stock x (1 +
     off_ratio) and on = off x (1 + ratio), and the change's in µs with the switches off and on; where the off
@@ -389,7 +673,7 @@ def cells(processes: list[dict]) -> dict[str, dict]:
         median = {c: min(map(statistics.median, t)) for c, t in proc["times_us"].items()}
         by_state.setdefault(proc["state"], []).append((p10, median))
     out = {}
-    for key in (s.key for s in STATES if s.key in by_state):
+    for key in (s.key for s in ALL_STATES if s.key in by_state):
         procs = [p10 for p10, _ in by_state[key]]
         ratios = [round(p["on"] / p["off"] - 1, 4) for p in procs]
         off_ratios = [round(p["off"] / p[STOCK] - 1, 4) for p in procs]
@@ -530,9 +814,14 @@ TABLES = {
 }
 
 
-def table(measured: dict[str, dict], baseline: dict | None, what: str = "on/off") -> str:
-    """The cells' ratio ``what`` (one of RATIOS) as a Markdown table, in the PRs' rows' order: the costs of the
-    configurations below and on top of it in µs, the change between them and the ratio. Against a baseline, "fails
+def table(
+    measured: dict[str, dict],
+    baseline: dict | None,
+    what: str = "on/off",
+    states: tuple[State, ...] = ALL_STATES,
+) -> str:
+    """The cells' ratio ``what`` (one of RATIOS) as a Markdown table, a row for each of ``states`` measured, in their
+    order: the costs of the configurations below and on top of it in µs, the change between them and the ratio. Against a baseline, "fails
     past" is how many µs a step more the configuration on top may cost before the state fails: the tolerance of its
     step at the baseline's ratio."""
     below, top, change, form = TABLES[what]
@@ -543,7 +832,7 @@ def table(measured: dict[str, dict], baseline: dict | None, what: str = "on/off"
         head += " baseline | excess | fails past | |"
         rule += "---:|---:|---:|---|"
     lines = [head, rule]
-    for state in STATES:
+    for state in states:
         cell = measured.get(state.key)
         if cell is None:
             continue
@@ -567,14 +856,30 @@ def table(measured: dict[str, dict], baseline: dict | None, what: str = "on/off"
     return "\n".join(lines)
 
 
+# The two sets of states the check times, each under what it is.
+PROFILES = (
+    ("In the PRs' cost tables' states", STATES),
+    (
+        "In the serving profile's states (deploy/phastform/serving.json: 256-token steps, asynchronous, block frees "
+        "deferred)",
+        SERVING_STATES,
+    ),
+)
+
+
 def tables(measured: dict[str, dict], baseline: dict | None) -> str:
-    """Both ratios' tables, each under what it compares."""
-    return (
-        "make-room with its switches off against stock vLLM (ratio: off/stock - 1):\n"
-        f"{table(measured, baseline, 'off/stock')}\n\n"
-        "make-room in the configuration to deploy against its switches off (ratio: on/off - 1):\n"
-        f"{table(measured, baseline, 'on/off')}"
-    )
+    """Both ratios' tables for each set of states measured, each under what it compares."""
+    parts = []
+    for name, states in PROFILES:
+        if not any(state.key in measured for state in states):
+            continue
+        parts.append(
+            f"{name}, make-room with its switches off against stock vLLM (ratio: off/stock - 1):\n"
+            f"{table(measured, baseline, 'off/stock', states)}\n\n"
+            f"{name}, make-room in the configuration to deploy against its switches off (ratio: on/off - 1):\n"
+            f"{table(measured, baseline, 'on/off', states)}"
+        )
+    return "\n\n".join(parts)
 
 
 def dumps(value, indent: int = 0) -> str:
@@ -667,6 +972,19 @@ def machine_check(here: dict, baseline: dict, any_machine: bool) -> str | None:
         f"{what}: ratios are CPU-specific, so measure one here (make perf-make-room UPDATE=1 "
         "PERF_BASELINE=build/perf-baseline.json PERF_BESIDE=...) and check against it, or pass --any-machine"
     )
+
+
+def python_speed() -> dict:
+    """This machine's time at bench_host.py's fixed Python workload, of the scheduler's kind, from bench_host.py run in
+    a process of its own as on the box (--no-gpu): the median and the fastest of its 7 runs on one core, in ms. Timed
+    as each round ends, its median over a baseline's rounds against the box's (crates/flatshare-sim/testdata/
+    box-host.json) says how much longer a cost measured here takes on the box's CPU."""
+    with tempfile.TemporaryDirectory() as out:
+        cmd = [sys.executable, str(BENCH_HOST), "--no-gpu", "--out", out]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode:
+            raise CannotMeasure(f"bench_host.py failed:\n{proc.stderr[-2000:]}")
+        return json.loads((Path(out) / "host.json").read_text())["python_ms"]
 
 
 def build_module(out: Path) -> Path:

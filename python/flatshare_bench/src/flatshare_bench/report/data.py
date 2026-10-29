@@ -43,6 +43,10 @@ PROBES = RESULTS / "2026-10-24-w5-probes" / "pr-probes"
 KV_TIMELINE = RESULTS / "2026-10-23-make-room-probes" / "logs" / "gray-kvtimeline.log"
 KNEE = RESULTS / "2026-10-25-window-knee"
 STEP_COSTS = REPO / "benchmarks" / "perf" / "make-room-schedule.json"
+BOX_HOST = REPO / "crates" / "flatshare-sim" / "testdata" / "box-host.json"
+"""The box's host as bench_host.py measured it: its CPU's time at the Python workload of the scheduler's kind."""
+VOICE_PATHS = RESULTS / "2026-10-25-w6-transport" / "llm-paths.json"
+"""W6's voice replies on the box, straight to the engine and through the gateway: the gaps between a reply's tokens."""
 TWO_CARDS = RESULTS / "2026-10-28-rounds"
 """The two-card comparison's rounds. Its gate.py is the comparison's single source of truth, and the figure reads only
 the rounds that gate.py's verdict counts (its ROUNDS), whatever else the record holds."""
@@ -463,13 +467,18 @@ SCENARIOS = {
     "A": "only lower-priority work",
     "B": "a waiting turn needs more room than two victims free",
     "C": "every running slot taken",
+    "idle": "only agents",
+    "hold": "a reply's first tokens, an agent waiting that fits",
+    "nofit": "a waiting turn needs more room than two victims free",
+    "fire": "the step that preempts for a waiting turn",
 }
-"""perf_schedule.py's steady states, as the figure names them (python/flatshare_vllm/tests/perf_schedule.py)."""
+"""perf_schedule.py's states, as the figure names them (python/flatshare_vllm/tests/perf_schedule.py): the steady
+states of the PRs' cost tables, A to C, then the serving profile's."""
 
 
 @dataclass(frozen=True)
 class StepCost:
-    """A steady state's cost of one call of Scheduler.schedule() on the host, in µs: stock vLLM 0.32.0's scheduler,
+    """A state's cost of one call of Scheduler.schedule() on the host, in µs: stock vLLM 0.32.0's scheduler,
     make-room's with its switches off, and make-room as deployed (two victims a step, the hold with its 48-token
     window, no reserve)."""
 
@@ -491,8 +500,16 @@ class StepCost:
         """What the switches off cost against stock vLLM, as a fraction of its step."""
         return self.off / self.stock - 1
 
+    @property
+    def serving(self) -> bool:
+        """Whether the state is the serving profile's, which schedules asynchronously in 256-token steps, rather than
+        one of the PRs' cost tables' states."""
+        return self.scenario not in ("A", "B", "C")
 
-STATE = re.compile(r"^(?P<scenario>[ABC])(?P<running>\d+)(?:-(?P<variant>.+))?$")
+
+STATE = re.compile(
+    r"^(?P<scenario>[ABC]|idle|hold|nofit|fire)(?:-R)?(?P<running>\d+)(?:-(?P<variant>.+))?$"
+)
 VARIANTS = {
     "": "",
     "hit999": "a 999-block prefix hit",
@@ -501,6 +518,36 @@ VARIANTS = {
 }
 """A state's variant, from its key's suffix: the waiting head's prefix hit (127 blocks unless named) and the waiting
 requests (1,000 unless named; the hit states have 100)."""
+
+
+def box_cpu(path: Path = STEP_COSTS, box: Path = BOX_HOST) -> float:
+    """How many times as long the box's CPU takes as the host that measured the step costs, at bench_host.py's Python
+    workload: the box's median time there (box-host.json) over the host's, the median of its times as each of the
+    baseline's rounds ended."""
+    box_ms = json.loads(box.read_text())["python_ms"]["p50"]
+    return box_ms / _median(
+        load["python_ms"]["p50"] for load in json.loads(path.read_text())["load"]
+    )
+
+
+def voice_step_ms(path: Path = VOICE_PATHS) -> float:
+    """A voice reply's decode step on the box with nothing beside it: the median gap between its tokens, straight to
+    the engine (W6)."""
+    return json.loads(path.read_text())["summary"]["direct"]["gap_p50_ms"]
+
+
+AGENTS_STEP_POINT = "sweep-disc-pr-ab48-b256-t0-s24"
+"""The serving profile's configuration beside both calls and 24 session trees, in each of the sweep's rounds."""
+
+
+def agents_step_ms(root: Path = TWO_CARDS) -> float:
+    """The agents' step on the box in the serving profile beside both calls at 24 session trees: the mean gap between
+    their tokens, the median over the rounds that gate.py's verdict counts (its ROUNDS)."""
+    gaps = []
+    for name in two_cards_gate(root).ROUNDS:
+        summary = json.loads((root / name / AGENTS_STEP_POINT / "summary.json").read_text())
+        gaps.append(summary["background"]["itl_ms"]["mean"])
+    return _median(gaps)
 
 
 def step_costs(path: Path = STEP_COSTS) -> list[StepCost]:

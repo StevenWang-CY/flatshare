@@ -1,14 +1,19 @@
 """The perf check's negative control, which make perf-make-room runs after the check (FLATSHARE_PERF=1): make-room built
 with two of #63350's optimizations undone fails the check against the checked-in baseline in the states where that work
-runs, make-room built with a cost on its switches-off path fails it against stock vLLM, and make-room itself passes it
-in those states, each timed in one process per state (a state that fails is measured again over two more).
+runs, make-room built with a cost on its switches-off path fails it against stock vLLM, make-room that counts the blocks
+a preemption releases as it did before it counted them in one pass fails it in the serving profile's state that runs the
+count every step, and make-room itself passes it in those states, each timed in one process per state (a state that
+fails is measured again over two more).
 
 Undone, each step that tries to make room sums the decodes' growth: in state B, where two victims cannot make room
 (44937b87a gave up before the sum), and in state C, where the head fits (e87503f22 checked the fit against a bound
 first). That is the change's cost with its switches on, which on/off measures. With both switches off, the peek at
 the waiting head returns before it looks for one (_peek_make_room_request); without that return, each step looks the
 head's prefix-cache hit up as it does with the switches on, a cost that stock vLLM does not pay and on/off cannot see,
-which off/stock measures. The control times the scheduler, as the check does, so CI never runs it."""
+which off/stock measures. The count of released blocks maps every block's holders again, a block held once among them,
+which schedules the same: in the serving profile it runs in each step in which make-room gives up on a voice turn that
+two victims cannot make room for (and three times in the step that preempts, which takes longer to time). The control
+times the scheduler, as the check does, so CI never runs it."""
 
 import json
 import os
@@ -53,6 +58,10 @@ OFF_PATH = (
 )
 # Where the head's lookup is a large share of the step: a few running requests, the head's 127-block hit.
 OFF_STATES = ("B16", "C16")
+# The released blocks counted through the map of every block's holders, as before the count took a block held once
+# where it saw it.
+HOLDERS = (("                if block.ref_cnt == 1:\n", "                if False:\n"),)
+HOLDER_STATES = ("nofit-R16",)
 
 
 @pytest.fixture(scope="module")
@@ -100,6 +109,18 @@ def test_a_module_costlier_with_its_switches_off_fails_the_check(real, tmp_path)
     print("\n".join(f"  {failure}" for failure in failures))
 
 
+def test_a_module_that_maps_every_blocks_holders_fails_the_check(real, tmp_path):
+    holders = mutant(real, HOLDERS, tmp_path / "holders")
+    failures = check(holders, tmp_path / "holders.json", HOLDER_STATES)
+    assert sorted(failure.split(":")[0] for failure in failures) == sorted(HOLDER_STATES), failures
+    assert all(" on/off " in failure for failure in failures), failures
+    print(
+        "\nand make-room that maps every block's holders to count the blocks a preemption releases fails:"
+    )
+    print("\n".join(f"  {failure}" for failure in failures))
+
+
 def test_make_room_passes_the_check_there(real, tmp_path):
-    assert check(real, tmp_path / "make-room.json", STATES + OFF_STATES) == []
-    print(f"\nand make-room passes it at {', '.join(STATES + OFF_STATES)}")
+    states = STATES + OFF_STATES + HOLDER_STATES
+    assert check(real, tmp_path / "make-room.json", states) == []
+    print(f"\nand make-room passes it at {', '.join(states)}")

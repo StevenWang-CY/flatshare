@@ -379,6 +379,84 @@ def test_the_states_are_the_prs_tables_rows():
         "budget_cap_tokens": 48,
         "reserve_tokens": 0,
     }
+    assert [s.key for s in P.SERVING_STATES] == ["idle-R2", "hold-R2", "nofit-R16", "fire-R2"]
+    assert all(s.serving for s in P.SERVING_STATES) and not any(s.serving for s in P.STATES)
+
+
+def test_the_serving_states_run_the_serving_profiles_scheduler():
+    """SERVING is deploy/phastform/serving.json's scheduler, which schedules asynchronously beside a KV connector that
+    defers block frees (kv_both), as the serving states run, with the suite's 16-token blocks and the PR states'
+    context; and its make-room switches are the configuration to deploy. A baseline measured in another profile is
+    measured otherwise."""
+    engine = json.loads(P.SERVING_JSON.read_text())["engine"]
+    assert P.SERVING == {
+        "max_num_batched_tokens": 256,
+        "long_prefill_token_threshold": 0,
+        "max_num_seqs": 256,
+        "num_gpu_blocks": 2275,
+    }
+    assert engine["scheduler"]["async_scheduling"] and engine["kv_transfer"]["kv_role"] == "kv_both"
+    assert (engine["cache"]["block_size"], engine["model"]["max_model_len"]) == (
+        16,
+        P.MAX_MODEL_LEN,
+    )
+    assert engine["make_room"] == P.CONFIGS["on"]
+    assert P.METHOD["serving"]["scheduler"] == P.SERVING
+
+
+def test_a_baselines_python_speed_is_bench_host_run_in_a_process_of_its_own():
+    """As the box's record was taken (crates/flatshare-sim/testdata/box-host.json, bench_host.py --no-gpu), so that the
+    figure's ratio of the two compares the same workload in the same kind of process."""
+    speed = P.python_speed()
+    box = json.loads(
+        (P.HERE.parents[2] / "crates/flatshare-sim/testdata/box-host.json").read_text()
+    )
+    assert set(speed) == set(box["python_ms"]) and speed["reps"] == box["python_ms"]["reps"] == 7
+    assert 0 < speed["min"] <= speed["p50"]
+
+
+def test_a_fire_states_trials_build_each_configurations_scheduler_afresh(monkeypatch):
+    """measure_fire() builds a scheduler of each configuration for each trial, the order rotated each trial, times the
+    step that preempts on each, and returns a configuration's trials as one scheduler's steps; stand-ins record it."""
+    built = []
+
+    def fire_state(cls, model, state, switches):
+        built.append((cls, switches))
+        fired = switches is not None
+        step = SimpleNamespace(num_scheduled_tokens={"voice": 1} if fired else {})
+        return SimpleNamespace(step=lambda: step, fired=fired)
+
+    def pipelined_step(pipe):
+        return SimpleNamespace(preempted_req_ids={"a1"} if pipe.fired else set()), float(len(built))
+
+    monkeypatch.setattr(P, "fire_state", fire_state)
+    monkeypatch.setattr(P, "pipelined_step", pipelined_step)
+    module = SimpleNamespace(AsyncScheduler="make-room's")
+    times = P.measure_fire(module, "model", P.BY_KEY["fire-R2"], ["off", "on"])
+    assert [switches for _, switches in built[:4]] == [None, P.CONFIGS["on"], P.CONFIGS["on"], None]
+    assert len(built) == 2 * P.TRIALS and {cls for cls, _ in built} == {"make-room's"}
+    assert times == {"off": [[1.0, 4.0, 5.0, 8.0, 9.0, 12.0, 13.0, 16.0, 17.0, 20.0, 21.0, 24.0]],
+                     "on": [[2.0, 3.0, 6.0, 7.0, 10.0, 11.0, 14.0, 15.0, 18.0, 19.0, 22.0, 23.0]]}  # fmt: skip
+
+    def misfired(pipe):
+        return SimpleNamespace(preempted_req_ids=set()), 1.0
+
+    monkeypatch.setattr(P, "pipelined_step", misfired)
+    with pytest.raises(P.StateChanged, match="fire-R2: on preempted 0 in the step"):
+        P.measure_fire(module, "model", P.BY_KEY["fire-R2"], ["on"])
+
+
+def test_the_tables_give_each_set_of_states_its_own():
+    measured = P.cells([process("B64", 1000, 1620), process("fire-R2", 200, 700)])
+    text = P.tables(measured, None)
+    prs, serving = text.split("\n\nIn the serving profile's states", 1)
+    assert prs.startswith("In the PRs' cost tables' states, make-room with its switches off")
+    assert "| B | 64 |" in prs and "fire" not in prs
+    assert (
+        "| fire: the step that preempts for a voice turn | 2 | 200 | 700 | +500 | +2.50 |"
+        in serving
+    )
+    assert "In the serving profile" not in P.tables(P.cells([process("B64", 1000, 1620)]), None)
 
 
 def test_the_json_puts_a_key_a_line_and_a_short_list_on_one():
@@ -508,7 +586,12 @@ def test_the_checked_in_baseline_is_complete_and_its_numbers_agree():
         (run, rep) for rep in range(1, reps + 1) for run in "ab"
     ]
     assert all(len(load["before"]) == len(load["after"]) == 3 for load in baseline["load"])
-    assert list(baseline["cells"]) == [s.key for s in P.STATES]
+    assert list(baseline["cells"]) == [s.key for s in P.ALL_STATES]
+    # Its machine at bench_host.py's workload as each round ended, as bench_host.py records the box's.
+    box = json.loads(
+        (P.HERE.parents[2] / "crates/flatshare-sim/testdata/box-host.json").read_text()
+    )
+    assert all(set(load["python_ms"]) == set(box["python_ms"]) for load in baseline["load"])
     for key, cell in baseline["cells"].items():
         for ratio in ("ratio", "off_ratio"):
             a, b = cell[f"{ratio}s_a"], cell[f"{ratio}s_b"]
@@ -556,16 +639,18 @@ def steps(module, model, key: str, config: str) -> list[int]:
     """WARMUP + STEPS steps of the state, as the measurement runs them (StateChanged if it is not steady), and in
     each the number of times make-room made room, or tried to: never, for stock vLLM's scheduler, which has none."""
     state = P.BY_KEY[key]
-    sched = P.steady_state(P.scheduler_class(module, config), model, state, P.CONFIGS[config])
+    cls = P.scheduler_class(module, config, state.serving)
+    sched = P.steady_state(cls, model, state, P.CONFIGS[config])
+    scheduler = sched[0].sched if state.serving else sched  # a serving state's is in its Pipelined
     calls = []
-    make_room = getattr(sched, "_make_room", None)
+    make_room = getattr(scheduler, "_make_room", None)
 
     def counted(*args):
         calls[-1] += 1
         return make_room(*args)
 
     if make_room is not None:
-        sched._make_room = counted
+        scheduler._make_room = counted
     for k in range(P.WARMUP + P.STEPS):
         calls.append(0)
         P.timed_step(sched, state, k)
@@ -575,17 +660,32 @@ def steps(module, model, key: str, config: str) -> list[int]:
 def test_stock_vllm_is_the_class_the_method_names(module):
     stock = P.scheduler_class(module, "stock")
     assert f"{stock.__module__}.{stock.__qualname__}" == P.METHOD["stock"]
+    stock = P.scheduler_class(module, "stock", serving=True)
+    assert f"{stock.__module__}.{stock.__qualname__}" == P.METHOD["serving"]["stock"]
+    assert P.scheduler_class(module, "on", serving=True) is module.AsyncScheduler
     assert P.scheduler_class(module, "off") is P.scheduler_class(module, "on") is module.Scheduler
 
 
-@pytest.mark.parametrize("key", list(P.BY_KEY))
+@pytest.mark.parametrize("key", [s.key for s in P.ALL_STATES if s.scenario != "fire"])
 def test_each_state_is_steady_and_runs_the_path_it_is_named_for(module, long_model, key):
     assert steps(module, long_model, key, "stock") == [0] * (P.WARMUP + P.STEPS)  # steady too
     on, off = steps(module, long_model, key, "on"), steps(module, long_model, key, "off")
     assert off == [0] * len(off)  # with the switches off, make-room never runs
-    if key.startswith("A"):
-        assert on == [0] * len(on)  # a priority-2 head: nothing to make room for
+    if key.startswith(("A", "idle", "hold")):
+        # A priority-2 head: nothing to make room for. hold's check holds the agent's prefill back as it steps.
+        assert on == [0] * len(on)
     else:
-        # B: every step evaluates make-room for the priority-0 head and preempts nobody (the state would change);
-        # C: every step finds that the head fits, with no slot for it.
+        # B and nofit: every step evaluates make-room for the priority-0 head and preempts nobody (the state would
+        # change); C: every step finds that the head fits, with no slot for it.
         assert on == [1] * len(on)
+
+
+@pytest.mark.parametrize("key", [s.key for s in P.SERVING_STATES if s.scenario == "fire"])
+def test_in_a_fire_state_make_room_alone_preempts_and_admits_the_turn_a_step_later(
+    module, long_model, key, monkeypatch
+):
+    """measure_fire() raises StateChanged unless make-room in the configuration to deploy preempts in the step it
+    times and admits the voice turn in the next, and stock vLLM and make-room with its switches off do neither."""
+    monkeypatch.setattr(P, "TRIALS", 1)
+    times = P.measure_fire(module, long_model, P.BY_KEY[key], P.TIMED)
+    assert {c: [len(t) for t in v] for c, v in times.items()} == {c: [1] for c in P.TIMED}

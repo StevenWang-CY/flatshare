@@ -12,7 +12,7 @@ The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
   f3768bde2 [Core] Priority scheduling: count a request's first tokens in flight (cherry-picked from 9013ed433)
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
-index 2e593a48b..4348b031f 100644
+index 842c6eb2e..a4d4736b4 100644
 --- a/vllm/v1/core/sched/scheduler.py
 +++ b/vllm/v1/core/sched/scheduler.py
 @@ -48,6 +48,7 @@ from vllm.v1.core.sched.output import (

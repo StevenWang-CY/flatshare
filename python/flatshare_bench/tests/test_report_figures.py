@@ -419,17 +419,34 @@ def test_the_step_costs_are_the_baselines_cells() -> None:
         assert c.added == pytest.approx(
             cell["change_us"], abs=0.11
         )  # the cells round each to 0.1 µs
-    # Switched off, the change costs what stock vLLM does, within 1.1% at every state; deployed, it adds tens to
-    # hundreds of µs a step, and 1.7 ms where a voice turn too large for two victims waits behind a 999-block hit.
-    assert max(c.off_ratio for c in costs.values()) < 0.011
-    assert max(c.added for c in costs.values() if c.scenario == "A") == pytest.approx(149.1)
+    # Switched off, the change costs what stock vLLM does, within 1.3% in the PRs' states and 3.1% in the serving
+    # profile's; deployed, it adds tens to hundreds of µs a step, 1.5 ms where a voice turn too large for two victims
+    # waits behind a 999-block hit, and it takes 30 µs off the step in which the hold keeps an agent's prefill back.
+    assert max(c.off_ratio for c in costs.values() if not c.serving) < 0.013
+    assert max(c.off_ratio for c in costs.values() if c.serving) < 0.031
+    assert max(c.added for c in costs.values() if c.scenario == "A") == pytest.approx(165.5)
     assert sorted(round(c.added) for c in costs.values()) == [
-        36, 38, 58, 87, 149, 160, 182, 247, 539, 543, 625, 644, 1719,
+        -30, 17, 36, 50, 62, 72, 89, 158, 166, 166, 260, 320, 364, 441, 463, 468, 1539,
     ]  # fmt: skip
     assert (costs["B64-hit999"].variant, costs["B256-W10"].variant) == (
         "a 999-block prefix hit",
         "10 waiting",
     )
+    serving = [(c.scenario, c.running, c.variant) for c in costs.values() if c.serving]
+    assert serving == [("idle", 2, ""), ("hold", 2, ""), ("nofit", 16, ""), ("fire", 2, "")]
+
+
+def test_the_step_costs_stand_beside_the_boxs_cpu_and_steps() -> None:
+    """The box's CPU takes 1.68 times as long as the host's at bench_host.py's workload, by its median against the
+    median of the host's as the baseline's rounds ended; a reply's step on the box alone is W6's median token gap, and
+    the agents' at 24 session trees their mean token gap at the median of the three rounds that the two-card verdict
+    counts (38.07, 38.23 and 30.49 ms; the sweep's other two rounds measured 37.26 and 34.61)."""
+    box = json.loads(data.BOX_HOST.read_text())["python_ms"]["p50"]
+    host = [load["python_ms"]["p50"] for load in json.loads(data.STEP_COSTS.read_text())["load"]]
+    assert data.box_cpu() == box / statistics.median(host) and box == pytest.approx(381.1, abs=0.01)
+    assert f"{data.box_cpu():.2f}" == "1.68"
+    assert data.voice_step_ms() == 12.08
+    assert data.agents_step_ms() == 38.07
 
 
 HEADLINE = {

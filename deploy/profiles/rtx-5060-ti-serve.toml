@@ -32,9 +32,11 @@ block_size = 16
 pool_tokens = 36400
 max_num_seqs = 256
 async_scheduling = true
-# The module build.py writes from make-room's patches on vLLM 0.32.0's scheduler: the one Phastform's engine built on
-# 2026-10-27, and what python/flatshare_vllm's test_build.py builds from v0.32.0's source.
-scheduler_module_sha256 = "0d24d178977f3c1ba29cbf7de1a15355205137a542983e554191103376f36a46"
+# The module build.py writes from make-room's patches on vLLM 0.32.0's scheduler, as python/flatshare_vllm's
+# test_build.py builds it from v0.32.0's source. It schedules identically to the one Phastform's engine built on
+# 2026-10-27 (0d24d178977f3c1b), which the records above measured, and differs from it only in how it counts the blocks
+# a preemption releases: make test-trace with TRACE_REFERENCE set to that module finds every step the same.
+scheduler_module_sha256 = "a5db4382ac5251aae9d626b4041f590a13d404115365265f0d3a646d356a502f"
 # The calls the voice worker takes at once in serve mode: two, the calls of E2's discriminating scenario, at which the
 # sweep's screens and the confirmation rounds measured this configuration (the records above).
 max_calls = 2
