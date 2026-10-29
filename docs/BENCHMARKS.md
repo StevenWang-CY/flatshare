@@ -380,6 +380,13 @@ The cost to the agents by its mechanism, over W5's points ([EXPERIMENTS.md](EXPE
 
 SW, 2026-10-27: two screens of the PRs' configuration over the step cap, the per-request threshold, the window and the gateway's static cap on agent requests in flight, and of the frozen box at two step caps, one run a setting on W5's tuning sample (agent seed 11) beside the 24 sessions of the discriminating scenario ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md), whose `table.py` gives every point). The step cap moved the PRs most: 9 of 59 replies over W5's SLO at 256 without the threshold, 24 at 512 and 33 at 1,024; the static caps did less, and the frozen box missed at every setting. RG's five rounds (agent seeds 21–25, Phastform and Gray in turn, below) then ran the three configurations side by side, each round against its own SLO:
 
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-step-cap-narrow.svg">
+  <img src="figures/report-step-cap.svg" width="100%" alt="In panel a, the share of each of five rounds' replies over that round's SLO beside 24 agent sessions, against the requirement of at most 5%, and in panel b each round's agents' tokens a second over the calls' first 240 s with their median: Tuned vLLM, 512-token steps, 53, 55, 55, 54, 44 of 59 by round, 261 of 295 in all, at 3,399 agents' tokens a second; the change, 512-token steps, 16, 29, 25, 9, 15 of 59 by round, 94 of 295 in all, at 3,303 agents' tokens a second; the change, 256-token steps, 10, 17, 10, 4, 3 of 59 by round, 44 of 295 in all, at 3,067 agents' tokens a second.">
+</picture>
+
+**At 256 tokens a step the change had fewer replies over the SLO than at 512 in every round, and no configuration met the 5% requirement in any.** (a) Each round's share of its 59 replies over that round's SLO, beside 24 coding-agent sessions; the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s, each round a tick and the median a marker.
+
 | Configuration | Rounds | V2V p95: median of the rounds / pooled | Replies over the SLO | By round | Agents' tokens/s, first 240 s | Agent TTFT p50 / p99 |
 |---|---:|---:|---:|---|---:|---:|
 | The frozen box | 5 | 12,010 / 11,766 | 261 / 295 (88.5%) | 53, 55, 55, 54, 44 | 3,399 | 69 / 109 s |
@@ -423,6 +430,13 @@ The records are in [`benchmarks/results/2026-10-28-rounds`](../benchmarks/result
 ### The 24-hour soak
 
 2026-10-28 to 29: the serving arrangement for 24 hours ([PRODUCTION.md](PRODUCTION.md#two-cards)), both calls on Phastform beside at most four agents' sessions and Gray a warm spare with at most 12, calls arriving at 20 an hour with ten turns each and 14 of the discriminating scenario's session trees for the agents, every attempt counted ([the soak](EXPERIMENTS.md#the-soak-the-production-path-for-hours)). Its SLO, 1,976 ms, is two hours of voice alone with the same calls plus 250 ms; by its stopping rule, more than 7.5% of the replies over it after four hours would have stopped it, and 0.6% were.
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-soak-narrow.svg">
+  <img src="figures/report-soak.svg" width="100%" alt="Each of the soak's 24 hours as a column: in panel a, the share of that hour's replies over the SLO of 1,976 ms against the requirement of at most 5%, 74 of 5,058 replies (1.5%) over the day, at most 14 of 254 (5.5%) in hour 4; in panel b, the agents' tokens a second, 3,529 over the day, 9,300 in hour 0 and 582 to 5,402 in each hour after.">
+</picture>
+
+**Over the 24 hours 1.5% of the replies were over the SLO, and only hour 4, at 5.5%, went over the 5% requirement.** (a) Each hour's share of its replies over the SLO, the requirement dashed and the day's share dotted. (b) The agents' tokens a second by hour, the day's dotted: 9,300 in hour 0, as AIPerf resumes its 14 sessions at once.
 
 | Run | Hours | Calls (accepted, refused, failed) | Turns (failed) | Replies | Over the SLO | Replies p95, ms | Realtime SLI | Background tokens/s | Restarts | Guard pauses |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -894,7 +908,12 @@ Each server's start, from its journal (`ops/drills/cold-start.sh`):
 | The engine, empty caches, as on a new host | 531.8 s | The weights at 86.1 s; torch.compile 84 s (Dynamo 23 s, Inductor 43 s) and the profiling run 17 s, so the KV cache at 189.3 s; 337 s more to the CUDA graphs (526.6 s), of which the capture is 13 s and the rest kernel warmup and JIT builds, FlashInfer's sampling module among them |
 | The box, v0.3-295 (`systemctl --user restart flatshare.target`) | 102.7 s | The units stopped within 8.1 s, then the three started at once: the TTS ready 22.9 s after its start, the STT 64.0 s, the engine 94.6 s (on v0.3-191 the engine waited for the STT to be ready, and the box took 161.4 s) |
 
-The engine's warm start is most of the recovery from an engine failure; on a new host, with empty caches, the first start takes six times as long.
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-starts-narrow.svg">
+  <img src="figures/report-starts.svg" width="100%" alt="Three bars of the engine's phases on one axis of seconds: killed mid-decode, it was down 12.7 s, its unit's last process gone 7.6 s after the kill and systemd's restart 5.1 s later, and its warm start listened 92.1 s after the restart, a request answered 106.2 s after the kill; a warm start was ready at 88.8 s, its weights loaded at 54.1 s and its CUDA graphs captured at 84.1 s; and a cold start, with empty caches, was ready at 531.8 s, its weights at 86.1 s, its KV cache at 189.3 s after compiling and profiling and its CUDA graphs at 526.6 s after the kernels' warmup and JIT builds.">
+</picture>
+
+**The engine's recovery from a kill is mostly its warm start, and on empty caches a start takes six times as long.** Each bar stacks a start's phases from its journal, as the table above gives them, in seconds from the kill or from the unit's start; the dashed box is the killed engine down, until systemd starts it again.
 
 **Two GPU nodes** (2026-10-28, [the record](../benchmarks/results/2026-10-28-node-failover/README.md)): the serving arrangement, both calls on Phastform and Gray a warm spare (`calls = "fill"`), with `ops/drills/node-failover.sh` placing two calls as the voice worker does and running a 32-token turn of each every 3 s beside two agents' streams, then breaking Phastform's engine after five whole turns of each call:
 

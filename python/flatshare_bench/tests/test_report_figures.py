@@ -7,6 +7,7 @@ test_figures.py checks with every other figure."""
 from __future__ import annotations
 
 import csv
+import html
 import importlib.util
 import itertools
 import json
@@ -966,3 +967,64 @@ def test_the_starts_are_the_drills_journals(drawn: dict[str, Path]) -> None:
         "ready, 531.8 s",
         "down 12.7 s, then a warm start",
     } <= texts
+
+
+REPORT = REPO / "docs" / "REPORT.md"
+BENCHMARKS = REPO / "docs" / "BENCHMARKS.md"
+
+
+def shown(doc: Path, name: str) -> tuple[str, str]:
+    """Where ``doc`` shows the figure ``name`` with its phone layout: its alt text, and the caption under it."""
+    found = re.search(
+        rf'<source media="\(max-width: 767px\)" srcset="figures/{name}-narrow\.svg">\n'
+        rf'  <img src="figures/{name}\.svg" width="100%" alt="([^"]*)">\n</picture>\n\n(.+?)\n\n',
+        doc.read_text(),
+        re.S,
+    )
+    assert found, (doc.name, name)
+    return html.unescape(found[1]), " ".join(found[2].split())
+
+
+def test_the_deployed_results_figures_say_what_their_records_do(drawn: dict[str, Path]) -> None:
+    # REPORT (Figures 15, D1 and D2) and BENCHMARKS show each chart with the drawing's own description as its alt
+    # text, and a caption that opens with its claim, in the numbers the records give (the tests above hold the
+    # claims against the records).
+    caps, soak, starts = data.step_caps(), data.soak(), data.starts()
+    sessions = {int(c.point.rsplit("-s", 1)[1]) for c in caps}
+    [per_round] = {r.replies for c in caps for r in c.rounds}
+    worst = max(soak.hours, key=lambda h: h.share)
+    aiperf = (data.SOAK.parents[1] / "aiperf-start.txt").read_text()
+    [resumed] = re.findall(r"resuming (\d+) trajectory sessions \(burst", aiperf)
+    times = {6: "six"}[round(starts["cold"].at(figures.READY) / starts["warm"].at(figures.READY))]
+    requirement = f"{figures.REQUIREMENT:.0%}"
+    figures_shown = {
+        "report-step-cap": (
+            "Figure 15",
+            "At 256 tokens a step the change had fewer replies over the SLO than at 512 in every round, and no "
+            f"configuration met the {requirement} requirement in any.",
+            f"(a) Each round's share of its {per_round} replies over that round's SLO, beside "
+            f"{sessions.pop()} coding-agent sessions; the dashed line is the requirement.",
+        ),
+        "report-starts": (
+            "Figure D1",
+            "The engine's recovery from a kill is mostly its warm start, and on empty caches a start takes "
+            f"{times} times as long.",
+            "the dashed box is the killed engine down, until systemd starts it again.",
+        ),
+        "report-soak": (
+            "Figure D2",
+            f"Over the {len(soak.hours)} hours {soak.share:.1%} of the replies were over the SLO, and only hour "
+            f"{worst.hour}, at {worst.share:.1%}, went over the {requirement} requirement.",
+            f"{soak.hours[0].tokens:,.0f} in hour 0, as AIPerf resumes its {resumed} sessions at once.",
+        ),
+    }
+    report = REPORT.read_text()
+    for name, (number, claim, key) in figures_shown.items():
+        description = ET.parse(drawn[f"{name}.svg"]).getroot().find(f"{SVG}desc").text
+        for doc, opening in ((REPORT, f"**{number}. {claim}** "), (BENCHMARKS, f"**{claim}** ")):
+            alt, caption = shown(doc, name)
+            assert alt == description, (doc.name, name)
+            assert caption.startswith(opening), (doc.name, caption)
+            assert key.lower() in caption.lower(), (doc.name, caption)
+        # Besides its caption, the report's text and its Table A1 name each.
+        assert len(re.findall(rf"{number}\b", report)) >= 3, number

@@ -883,16 +883,26 @@ request. A sweep screened the change at caps of 256, 512 and 1,024 tokens, with 
 ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md)). The cap moved the change most. At 256 without
 the threshold, 9 of its 59 replies were over the SLO, against 24 at 512 and 33 at 1,024, and the static caps did less.
 Five rounds on new samples then ran the three configurations side by side at 24 sessions, each against its round's own
-SLO (Table 8). At 256 the change had fewer replies over the SLO than at 512 in each of the five rounds, 44 of 295
-against 94 (14.9% against 31.9%), with a pooled p95 of 2.15 s against 2.26 s, while tuned vLLM had 261 of 295 over. The
-smaller steps cost the agents 7% of their token rate, 3,067 tokens a second against 3,303, and their median TTFT rose
-from 78 s to 85 s. The smaller steps also left the pool room. At 256 tokens its fewest free blocks in a run were 10–89,
-against 0–2 at 512, and vLLM counted 0–4 preemptions a run, make-room's among them, against 39–50. In the sweep's run at
-256 it counted none, so there the change's 9 replies over the SLO, against stock vLLM's 51 of 59 at the same cap, are
-the hold's. Beside the envelope's four sessions (§6.8) make-room preempted none in any of three rounds. At 256 tokens
-the hold and the step cap carry the change, and make-room stays in the profile for a pool that fills, as it does at 512.
-The serving profile runs the change at 256 tokens a step without a threshold. No cap brought 24 sessions within the
-SLO's 5% allowance, which the shared card meets at four (§6.8).
+SLO (Figure 15, Table 8). At 256 the change had fewer replies over the SLO than at 512 in each of the five rounds, 44 of
+295 against 94 (14.9% against 31.9%), with a pooled p95 of 2.15 s against 2.26 s, while tuned vLLM had 261 of 295 over.
+The smaller steps cost the agents 7% of their token rate, 3,067 tokens a second against 3,303, and their median TTFT
+rose from 78 s to 85 s. The smaller steps also left the pool room. At 256 tokens its fewest free blocks in a run were
+10–89, against 0–2 at 512, and vLLM counted 0–4 preemptions a run, make-room's among them, against 39–50. In the sweep's
+run at 256 it counted none, so there the change's 9 replies over the SLO, against stock vLLM's 51 of 59 at the same cap,
+are the hold's. Beside the envelope's four sessions (§6.8) make-room preempted none in any of three rounds. At 256
+tokens the hold and the step cap carry the change, and make-room stays in the profile for a pool that fills, as it does
+at 512. The serving profile runs the change at 256 tokens a step without a threshold. No cap brought 24 sessions within
+the SLO's 5% allowance, which the shared card meets at four (§6.8).
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-step-cap-narrow.svg">
+  <img src="figures/report-step-cap.svg" width="100%" alt="In panel a, the share of each of five rounds' replies over that round's SLO beside 24 agent sessions, against the requirement of at most 5%, and in panel b each round's agents' tokens a second over the calls' first 240 s with their median: Tuned vLLM, 512-token steps, 53, 55, 55, 54, 44 of 59 by round, 261 of 295 in all, at 3,399 agents' tokens a second; the change, 512-token steps, 16, 29, 25, 9, 15 of 59 by round, 94 of 295 in all, at 3,303 agents' tokens a second; the change, 256-token steps, 10, 17, 10, 4, 3 of 59 by round, 44 of 295 in all, at 3,067 agents' tokens a second.">
+</picture>
+
+**Figure 15. At 256 tokens a step the change had fewer replies over the SLO than at 512 in every round, and no
+configuration met the 5% requirement in any.** (a) Each round's share of its 59 replies over that round's SLO, beside 24
+coding-agent sessions; the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s,
+each round a tick and the median a marker. The 512-token configurations keep the 256-token threshold per request.
 
 **Table 8. The step cap beside 24 sessions, in five rounds on new samples of the agents.** Each reply is held to its
 round's SLO, and the replies over it are pooled over the rounds and given by round. The 512-token rows keep the
@@ -921,7 +931,7 @@ bound (`max_agents`); a session beyond every bound gets 503 `no_agent_slot` and 
 the first card fails, its calls move to the second by their next turn, and while the second card carries any call it
 holds its agents' requests, letting those already running finish. Over a 24-hour soak of this arrangement, 1.5% of its
 5,058 replies were over the SLO and 5.5% in its worst hour, no call failed, nothing restarted, and the second card
-carried no call (Appendix D).
+carried no call (Appendix D, Figure D2).
 
 **Where it pays.** The change matters when background KV fills the pool, as when agent contexts of 10k tokens or more
 meet a pool that holds a few of them. On tuned vLLM the signs are KV usage near 100% while requests wait, and a realtime
@@ -1271,13 +1281,13 @@ its tests where Table A1 says so. Table A1 maps each part of the report to its r
 | The earlier campaign's reply lengths (§3.3) | [The earlier campaign's section of BENCHMARKS.md](BENCHMARKS.md#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4), from the gateway's log | The v0.3 release's raw records |
 | The simulator's result on agents' KV (§8) | [The simulator's tables in BENCHMARKS.md](BENCHMARKS.md#e1-parking-in-the-simulator) | `make reproduce-e1` |
 | Replies whose windows overlap (§6.6) | The test of overlapping replies in [`test_make_room.py`](../python/flatshare_vllm/tests/test_make_room.py) | `make test-make-room` |
-| The failure drills (Appendix D) | [`2026-10-25-drills`](../benchmarks/results/2026-10-25-drills) | its README |
+| The failure drills (Appendix D, Figure D1) | [`2026-10-25-drills`](../benchmarks/results/2026-10-25-drills) | its README, `make figures` |
 | The first sentences' tokens (§6.3) | [`2026-10-27-first-sentence`](../benchmarks/results/2026-10-27-first-sentence) | [`first_sentence.py`](../benchmarks/replies/first_sentence.py) |
 | §6.8, Figure 14 and Tables 6 and 7 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds) | its `gate.py`, `make figures` |
-| §6.9 and Table 8 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds), and the screens in [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep) | `gate.py`'s sweep, the screens' `table.py` |
+| §6.9, Figure 15 and Table 8 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds), and the screens in [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep) | `gate.py`'s sweep, the screens' `table.py`, `make figures` |
 | The endpointing sweep (§9) | [`2026-10-28-endpointing`](../benchmarks/results/2026-10-28-endpointing) | [`summary.py`](../benchmarks/endpointing/summary.py) |
 | The drills on two GPU nodes (Appendix D) | [`2026-10-28-node-failover`](../benchmarks/results/2026-10-28-node-failover) | its README |
-| The 24-hour soak (§7, Appendix D) | [`2026-10-28-soak`](../benchmarks/results/2026-10-28-soak) | its `table.py`, `flatshare-bench soak report` |
+| The 24-hour soak (§7, Appendix D, Figure D2) | [`2026-10-28-soak`](../benchmarks/results/2026-10-28-soak) | its `table.py`, `flatshare-bench soak report`, `make figures` |
 | The quality gate (§9) | [`2026-10-27-quality`](../benchmarks/results/2026-10-27-quality) | [`gate.py`](../benchmarks/quality/gate.py) |
 | The pool's two ways out (§9) | [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep), [`2026-10-27-quality/fp8-kv`](../benchmarks/results/2026-10-27-quality/fp8-kv) and [`2026-10-27-cpu-audio`](../benchmarks/results/2026-10-27-cpu-audio) | their READMEs |
 | The next vLLM release (§9) | [`2026-10-27-compat`](../benchmarks/results/2026-10-27-compat) | `make compat-upstream` |
@@ -1453,10 +1463,21 @@ probe after the event used a new connection. Table D1 gives what the streams and
 | The gateway restarted | As in the reload | None of 42 failed; those sent during the 20.7 s drain were answered once the new gateway started |
 | The gateway killed | All broke within 11–14 ms | None of 4 failed; the slowest waited 1.3 s for the gateway's restart |
 
-The engine's recovery is mostly its warm start. Its last process exited 7.6 s after the kill, systemd started it again
-5.1 s later, and it listened 92.1 s after that. On empty caches, as on a new host, the engine's first start takes 531.8
-s, and all three GPU servers restart together in 102.7 s on warm caches. A CPU tier filled to twice its size kept the
-engine healthy, and it restored the latest 8,192-token prompt in 294 ms against 1,112 ms to recompute it.
+The engine's recovery is mostly its warm start (Figure D1). Its last process exited 7.6 s after the kill, systemd
+started it again 5.1 s later, and it listened 92.1 s after that. On empty caches, as on a new host, the engine's first
+start takes 531.8 s, and all three GPU servers restart together in 102.7 s on warm caches. A CPU tier filled to twice
+its size kept the engine healthy, and it restored the latest 8,192-token prompt in 294 ms against 1,112 ms to recompute
+it.
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-starts-narrow.svg">
+  <img src="figures/report-starts.svg" width="100%" alt="Three bars of the engine's phases on one axis of seconds: killed mid-decode, it was down 12.7 s, its unit's last process gone 7.6 s after the kill and systemd's restart 5.1 s later, and its warm start listened 92.1 s after the restart, a request answered 106.2 s after the kill; a warm start was ready at 88.8 s, its weights loaded at 54.1 s and its CUDA graphs captured at 84.1 s; and a cold start, with empty caches, was ready at 531.8 s, its weights at 86.1 s, its KV cache at 189.3 s after compiling and profiling and its CUDA graphs at 526.6 s after the kernels' warmup and JIT builds.">
+</picture>
+
+**Figure D1. The engine's recovery from a kill is mostly its warm start, and on empty caches a start takes six times as
+long.** Each bar stacks a start's phases from its journal, in seconds from the kill or from the unit's start; compiling
+counts in the KV cache's phase, and the kernels' warmup and JIT builds in the CUDA graphs'. The dashed box is the killed
+engine down, until systemd starts it again.
 
 On two GPU nodes, with both calls on the first and the second a warm spare (§6.8, §7), the drill places two calls as the
 voice worker does, runs a turn of each every 3 s beside two agents' streams, and then breaks the first node's engine. A
@@ -1465,11 +1486,20 @@ turns after the events failed, and none was in flight at either event. The spare
 carried the calls, and each got 503 `queue_timeout` 120 s later; the killed engine was back 101 s after the kill.
 
 A 24-hour soak of that arrangement, calls arriving at 20 an hour beside 14 agents' session trees, put 74 of its 5,058
-replies over the SLO (1.5%; 5.5% in the worst hour). Of its 476 calls, 72 found both lines busy and 2 were turned away
-with a line free, LiveKit still holding the worker full from its last status
+replies over the SLO (1.5%; 5.5% in the worst hour; Figure D2). Of its 476 calls, 72 found both lines busy and 2 were
+turned away with a line free, LiveKit still holding the worker full from its last status
 ([PRODUCTION.md](PRODUCTION.md#calls-what-the-box-admits)); none failed, no unit restarted, and the spare never carried
 a call; on the calls' card the budget cap held prefill back in 4,853 steps and make-room never had to preempt
 ([the record](../benchmarks/results/2026-10-28-soak/README.md)).
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-soak-narrow.svg">
+  <img src="figures/report-soak.svg" width="100%" alt="Each of the soak's 24 hours as a column: in panel a, the share of that hour's replies over the SLO of 1,976 ms against the requirement of at most 5%, 74 of 5,058 replies (1.5%) over the day, at most 14 of 254 (5.5%) in hour 4; in panel b, the agents' tokens a second, 3,529 over the day, 9,300 in hour 0 and 582 to 5,402 in each hour after.">
+</picture>
+
+**Figure D2. Over the 24 hours 1.5% of the replies were over the SLO, and only hour 4, at 5.5%, went over the 5%
+requirement.** (a) Each hour's share of its replies over the SLO, the requirement dashed and the day's share dotted. (b)
+The agents' tokens a second by hour, the day's dotted: 9,300 in hour 0, as AIPerf resumes its 14 sessions at once.
 
 ### E. The forecast for the A100
 
