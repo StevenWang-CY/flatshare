@@ -2126,3 +2126,10 @@ def test_deploy_releases_the_gateway_built_from_this_commit_or_one_of_the_same_c
     git(repo, "commit", "-q", "-am", "the gateway changes")
     done = subprocess.run(deploy, env=env, capture_output=True, text=True)
     assert done.returncode == 2 and "has no binary built from these crates" in done.stderr
+
+
+def test_the_tts_unit_keeps_the_replies_text_out_of_the_journal() -> None:
+    # Kokoro-FastAPI (its api/src/main.py) logs at DEBUG unless API_LOG_LEVEL says otherwise, and its text processor logs
+    # the first 50 characters of each chunk it speaks at INFO: with real callers, the agent's replies in the journal.
+    unit = (DEPLOY / "phastform" / "systemd" / "flatshare-tts.service").read_text().splitlines()
+    assert "Environment=API_LOG_LEVEL=WARNING" in unit

@@ -15,6 +15,10 @@ Environment=PYTHONPATH=%h/flatshare/vendor/Kokoro-FastAPI:%h/flatshare/vendor/Ko
 Environment=MODEL_DIR=src/models
 Environment=VOICES_DIR=src/voices/v1_0
 Environment=WEB_PLAYER_PATH=%h/flatshare/vendor/Kokoro-FastAPI/web
+# Kokoro-FastAPI logs at DEBUG unless told otherwise, and at INFO it logs the first 50 characters of each chunk of
+# text it speaks: the agent's replies, which can repeat what a caller said. Its warnings and errors keep them out of
+# the journal.
+Environment=API_LOG_LEVEL=WARNING
 {{units.gpu_select}}
 {{units.tts_library_path}}
 # On a Unix socket in a directory only this user may enter, as the engine (flatshare-engine.service says why). uvicorn
