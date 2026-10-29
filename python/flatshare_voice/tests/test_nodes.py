@@ -12,6 +12,7 @@ import tempfile
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -35,7 +36,8 @@ class Gateway:
     ``node``, its speech sockets as the gateway's ``[[nodes]]`` name them (``unix:`` addresses in ``sockets``, the
     tunnels' directory), a 503 of type ``refusal`` otherwise, or nothing while ``hang``; the chat route streams a reply, breaks it
     off with the gateway's ``upstream_unavailable`` error event (``stream = "broken"``), or answers ``status`` with
-    an error of ``error`` type. Every request is kept, with its headers."""
+    an error of ``error`` type. Every request is kept, with its headers, and each session ``DELETE /v1/sessions/ID``
+    ends."""
 
     def __init__(self, sockets: Path) -> None:
         self.sockets = sockets
@@ -48,6 +50,7 @@ class Gateway:
         self.error = "upstream_unavailable"
         self.placements: list[dict[str, Any]] = []
         self.chats: list[dict[str, Any]] = []
+        self.ended: list[str] = []
         self.released = asyncio.Event()
 
     async def sessions(self, request: web.Request) -> web.Response:
@@ -61,6 +64,10 @@ class Gateway:
         for server in ("stt", "tts"):
             answer[server] = f"unix:{self.sockets / f'{self.node}-{server}.sock'}"
         return web.json_response(answer)
+
+    async def end(self, request: web.Request) -> web.Response:
+        self.ended.append(request.match_info["id"])
+        return web.json_response({"session_id": request.match_info["id"], "ended": True})
 
     async def chat_completions(self, request: web.Request) -> web.StreamResponse:
         body = await request.json()
@@ -137,6 +144,7 @@ async def cluster(sockets: Path) -> AsyncIterator[tuple[Gateway, BreakingTTS]]:
     gateway, breaking = Gateway(sockets), BreakingTTS()
     routes = [
         web.post("/v1/sessions", gateway.sessions),
+        web.delete("/v1/sessions/{id}", gateway.end),
         web.post("/v1/chat/completions", gateway.chat_completions),
     ]
     async with (
@@ -233,20 +241,27 @@ def test_without_nodes_a_call_keeps_its_configured_sockets_and_nothing_changes(
         async with cluster(sockets) as (gateway, _):
             gateway.status = 404
             settings = Settings.from_env(env)
-            bound = await worker.bind_call(settings, SESSION)
+            callbacks: list[Any] = []
+            ctx = SimpleNamespace(add_shutdown_callback=callbacks.append)
+            bound = await worker.bind_call(ctx, settings, SESSION)  # type: ignore[arg-type]
             stt, _, tts = worker.call_plugins(settings, SESSION, bound)
             await stt.recognize([HALF_SECOND])
             await synthesize(tts)
+            for callback in callbacks:  # the job's end, which ends no placement: there is none
+                await callback()
             return bound, gateway
 
     bound, gateway = asyncio.run(scenario())
-    assert bound is None and len(gateway.placements) == 1
+    assert bound is None and len(gateway.placements) == 1 and gateway.ended == []
     assert (
         len(mocks["phastform"].transcriptions()) == len(mocks["phastform"].speech_requests()) == 1
     )
-    # Node binding off, as bench mode has it: no placement is asked for at all.
+    # Node binding off, as bench mode has it: no placement is asked for at all, and none ended.
     off = Settings.from_env(env | {"FLATSHARE_NODE_BINDING": "off"})
-    assert asyncio.run(worker.bind_call(off, SESSION)) is None
+    callbacks: list[Any] = []
+    ctx = SimpleNamespace(add_shutdown_callback=callbacks.append)
+    assert asyncio.run(worker.bind_call(ctx, off, SESSION)) is None  # type: ignore[arg-type]
+    assert callbacks == []
 
 
 def test_a_node_failure_ends_the_reply_and_the_callers_next_speech_rebinds_the_call(

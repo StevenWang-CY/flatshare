@@ -105,7 +105,8 @@ default_class = "background"
 # own canary) and its STT and TTS answer /health; a session stays on its node, a call takes one of its max_calls, a
 # session whose node fails moves by its next request, and a node carrying calls moved from a failed one defers its
 # agents until those calls end. The voice worker places a call with POST /v1/sessions, whose answer names the node's
-# speech servers. No [admission] table goes with [[nodes]]. For two mixed replicas that must each carry both calls when
+# speech servers, and ends the placement with DELETE /v1/sessions/ID when the call ends, which frees its call slot at
+# once. No [admission] table goes with [[nodes]]. For two mixed replicas that must each carry both calls when
 # the other fails, each node's max_calls is 2 and the worker admits two calls in all. A node that carries calls holds
 # its agents' sessions (interactive and background together) to max_agents, the serving profile's envelope: the most
 # agents its card serves beside both calls within the voice SLO, as measured for the card, 4 for an RTX 5060 Ti on the

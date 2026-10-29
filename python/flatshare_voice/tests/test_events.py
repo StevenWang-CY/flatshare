@@ -1,5 +1,6 @@
 """Lifecycle events and turn lines: LiveKit's signals driven through the hooks of a stand-in session,
-and the delivery to a fake control plane on a Unix socket."""
+the delivery to a fake control plane on a Unix socket, and a call's end, which ends its placement
+whatever its events."""
 
 from __future__ import annotations
 
@@ -28,12 +29,14 @@ from livekit.agents import (
 )
 from livekit.agents.voice import io
 
-from flatshare_voice import events
+from flatshare_voice import events, worker
 
 SCHEMA = (
     Path(__file__).resolve().parents[3]
     / "crates/flatshare-proto/schema/lifecycle_event.schema.json"
 )
+SERVING = Path(__file__).resolve().parents[3] / "deploy" / "phastform" / "serving.json"
+"""The box's serving profile, which serve mode reads."""
 
 # LiveKit's metrics of one turn, in seconds: the caller's message, then the reply.
 USER = {
@@ -368,12 +371,15 @@ def test_a_turn_line_ends_with_its_replys_playout(caplog: pytest.LogCaptureFixtu
 
 class FakeGateway:
     """``POST /v1/events`` on a Unix socket. Keeps each batch; ``answers`` sets how each request is
-    answered in turn (a status, or ``"hang"``), and 202 follows."""
+    answered in turn (a status, or ``"hang"``), and 202 follows. With nodes, as the gateway's
+    ``POST /v1/sessions`` places a call (on gray) and ``DELETE /v1/sessions/ID`` ends it, whose ids
+    it keeps."""
 
     def __init__(self, path: str) -> None:
         self.path = path
         self.batches: list[list[dict[str, Any]]] = []
         self.answers: list[int | str] = []
+        self.ended: list[str] = []
         self.released = asyncio.Event()
 
     async def _post(self, request: web.Request) -> web.Response:
@@ -385,6 +391,20 @@ class FakeGateway:
         return web.json_response(
             {"accepted": len(self.batches[-1]), "duplicates": 0}, status=answer
         )
+
+    async def _place(self, request: web.Request) -> web.Response:
+        session_id = (await request.json())["session_id"]
+        answer = {
+            "session_id": session_id,
+            "node": "gray",
+            "stt": "gray-stt.sock",
+            "tts": "gray-tts.sock",
+        }
+        return web.json_response(answer)
+
+    async def _end(self, request: web.Request) -> web.Response:
+        self.ended.append(request.match_info["id"])
+        return web.json_response({"session_id": request.match_info["id"], "ended": True})
 
 
 @pytest.fixture
@@ -398,7 +418,13 @@ def socket_path() -> Iterator[str]:
 async def gateway(path: str) -> AsyncIterator[FakeGateway]:
     fake = FakeGateway(path)
     app = web.Application()
-    app.add_routes([web.post("/v1/events", fake._post)])
+    app.add_routes(
+        [
+            web.post("/v1/events", fake._post),
+            web.post("/v1/sessions", fake._place),
+            web.delete("/v1/sessions/{id}", fake._end),
+        ]
+    )
     runner = web.AppRunner(app, access_log=None, shutdown_timeout=0.1)
     await runner.setup()
     await web.UnixSite(runner, path).start()
@@ -568,3 +594,70 @@ def test_a_session_end_sends_its_last_events_and_logs_its_counts(
     [ended] = [r for r in caplog.records if r.getMessage() == "session ended"]
     assert ended.turns == 1 and not hasattr(ended, "events_sent")
     assert [r.name for r in caplog.records].count("flatshare_voice.turns") == 1
+
+
+@pytest.mark.parametrize(
+    ("mode", "switch", "sent"),
+    [
+        (
+            "serve",
+            "on",
+            [
+                "user_speech_started",
+                "user_turn_ended",
+                "playback_started",
+                "playback_ended",
+                "session_closed",
+            ],
+        ),
+        (
+            "bench",
+            "on",
+            [
+                "user_speech_started",
+                "user_turn_ended",
+                "playback_started",
+                "playback_ended",
+                "session_closed",
+            ],
+        ),
+        ("serve", "off", []),
+    ],
+)
+def test_a_calls_end_ends_its_placement_whatever_its_events(
+    socket_path: str, mode: str, switch: str, sent: list[str]
+) -> None:
+    # A call as the worker's entrypoint runs one, placed on a node (worker.bind_call) and its session observed:
+    # whatever FLATSHARE_EVENTS says, the job's end ends the call's placement.
+    sockets = Path(socket_path).parent
+    env = {
+        "FLATSHARE_LLM_UDS": socket_path,
+        "FLATSHARE_STT_UDS": str(sockets / "phastform-stt.sock"),
+        "FLATSHARE_TTS_UDS": str(sockets / "phastform-tts.sock"),
+        "FLATSHARE_VOICE_MODE": mode,
+        "FLATSHARE_SERVING_PROFILE": str(SERVING),
+        "FLATSHARE_NODE_BINDING": "on",  # serve mode's default, and bench mode's node-binding variant
+        "FLATSHARE_EVENTS": switch,
+    }
+
+    async def scenario() -> FakeGateway:
+        async with gateway(socket_path) as fake:
+            settings = worker.Settings.from_env(env)
+            session, callbacks = FakeSession(), []
+            ctx = SimpleNamespace(add_shutdown_callback=callbacks.append)
+            binding = await worker.bind_call(ctx, settings, "voice-RM_a")  # type: ignore[arg-type]
+            assert binding is not None and binding.placement is not None
+            events.observe(ctx, session, "voice-RM_a", uds=settings.events_socket)  # type: ignore[arg-type]
+            session.user("speaking")
+            session.message("user", USER)
+            await session.speak(1.5, interrupted=False)
+            session.message("assistant", REPLY)
+            session.emit("close", CloseEvent(reason=CloseReason.PARTICIPANT_DISCONNECTED))
+            # The job's end, which runs its shutdown callbacks together.
+            await asyncio.gather(*(callback() for callback in callbacks))
+            await binding.aclose()
+            return fake
+
+    fake = asyncio.run(scenario())
+    assert [e["type"] for batch in fake.batches for e in batch] == sent
+    assert fake.ended == ["voice-RM_a"]

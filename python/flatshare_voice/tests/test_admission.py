@@ -1,7 +1,8 @@
 """Serve mode's call-capacity admission (flatshare_voice.admission): the worker's load and its limit, LiveKit's own
 availability check over that load, the exact count of job requests that arrive together, the engine's state from the
-gateway's /ready (and the fallback where it has none), a release's drain, and the status file that
-deploy/bin/serving-check holds to the serving profile."""
+gateway's /ready (and the fallback where it has none), a release's drain, the status file that
+deploy/bin/serving-check holds to the serving profile, and the placement of a call before its job is accepted, ended
+when the job does not run."""
 
 from __future__ import annotations
 
@@ -291,6 +292,87 @@ def test_a_call_no_node_takes_is_refused_before_its_job_is_accepted() -> None:
         return [job.answer for job in (first, second, third)], admission.refused
 
     assert asyncio.run(go()) == (["accepted", "refused", "refused"], 2)
+
+
+def test_a_placed_call_whose_job_does_not_run_ends_its_placement() -> None:
+    # Serve mode's admission (worker.admission) over a gateway socket. A call placed before its job is accepted, whose
+    # accept then fails as LiveKit 1.8.8's does when the server assigns the job to no one within 7.5 s
+    # (AssignmentTimeoutError), ends its placement (DELETE /v1/sessions/ID) rather than hold a call slot until it
+    # idles out; so does a call refused after its placement was asked, before its job may go to another worker. A
+    # call whose job is accepted keeps its placement, which the job's end ends (test_events.py).
+    from aiohttp import web
+    from livekit.agents import AssignmentTimeoutError
+
+    from flatshare_voice import worker
+
+    asked: list[str] = []
+
+    async def ready(request: web.Request) -> web.Response:
+        return web.Response(text="ready\n")
+
+    async def place(request: web.Request) -> web.Response:
+        session_id = (await request.json())["session_id"]
+        asked.append(f"POST {session_id}")
+        if session_id == "voice-RM_full":
+            return web.json_response({"error": {"type": "no_call_slot"}}, status=503)
+        return web.json_response({"session_id": session_id, "node": "gray"})
+
+    async def end(request: web.Request) -> web.Response:
+        asked.append(f"DELETE {request.match_info['id']}")
+        return web.json_response({"session_id": request.match_info["id"], "ended": True})
+
+    class Call:
+        """A job request of the room ``sid``, its answers noted beside the gateway's requests; ``assigned`` False
+        fails its accept."""
+
+        def __init__(self, sid: str, assigned: bool = True) -> None:
+            self.room = SimpleNamespace(sid=sid)
+            self.assigned = assigned
+
+        async def accept(self) -> None:
+            asked.append(f"accept {self.room.sid}")
+            if not self.assigned:
+                raise AssignmentTimeoutError()
+
+        async def reject(self, *, terminate: bool = True) -> None:
+            asked.append(f"reject {self.room.sid}")
+
+    async def go() -> int:
+        app = web.Application()
+        app.router.add_get("/ready", ready)
+        app.router.add_post("/v1/sessions", place)
+        app.router.add_delete("/v1/sessions/{id}", end)
+        runner = web.AppRunner(app, access_log=None, shutdown_timeout=0.1)
+        await runner.setup()
+        # a short directory: socket paths are limited to 104 bytes on macOS
+        directory = tempfile.TemporaryDirectory(prefix="fs-adm-")
+        sock = str(Path(directory.name) / "gateway.sock")
+        await web.UnixSite(runner, sock).start()
+        try:
+            env = {
+                "FLATSHARE_LLM_UDS": sock,
+                "FLATSHARE_STT_UDS": "/run/user/1007/flatshare/phastform-stt.sock",
+                "FLATSHARE_TTS_UDS": "/run/user/1007/flatshare/phastform-tts.sock",
+                "FLATSHARE_VOICE_MODE": "serve",
+                "FLATSHARE_SERVING_PROFILE": str(SERVING),
+            }
+            admission = worker.admission(worker.Settings.from_env(env))
+            await asyncio.to_thread(admission.probe.ask)  # the engine serves: /ready answers 200
+            with pytest.raises(AssignmentTimeoutError):
+                await admission.request(Call("RM_lost", assigned=False))
+            await admission.request(Call("RM_full"))
+            await admission.request(Call("RM_ok"))
+        finally:
+            await runner.cleanup()
+            directory.cleanup()
+        return admission.accepting
+
+    assert asyncio.run(go()) == 0
+    assert asked == [
+        "POST voice-RM_lost", "accept RM_lost", "DELETE voice-RM_lost",
+        "POST voice-RM_full", "DELETE voice-RM_full", "reject RM_full",
+        "POST voice-RM_ok", "accept RM_ok",
+    ]  # fmt: skip
 
 
 def test_the_placement_at_admission_reads_the_gateways_answers() -> None:

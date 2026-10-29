@@ -44,6 +44,8 @@ gateway which GPU node it is on, binds its STT and TTS to that node's sockets an
 gateway with the session id, and when its node fails it ends the reply under way and asks again at
 the caller's next speech, the conversation's transcript kept (:mod:`.nodes`); a gateway without
 nodes answers that it places nothing, and the call is served on the configured sockets as before.
+The call's end, whatever ends it, ends its placement, events or none, and serve mode's admission
+ends the placement of a job it placed that does not run after all.
 
 Each session posts its lifecycle events (speech onset, end of turn, playback, barge-in) to the
 control plane over the LLM's socket, and logs a line per turn with its stage times (:mod:`.events`).
@@ -409,14 +411,24 @@ server = AgentServer(
 )
 
 
-async def bind_call(settings: Settings, session_id: str) -> nodes.CallBinding | None:
+async def bind_call(
+    ctx: JobContext, settings: Settings, session_id: str
+) -> nodes.CallBinding | None:
     """The call's node binding (:mod:`.nodes`), placed: None with node binding off, or where the gateway
     has no nodes (it answers that it places nothing), and the call is served on the configured sockets as
     it always was. A placement that did not answer leaves the binding to ask again at the call's first
-    request."""
+    request. The job's end, whatever ends it and whether or not the call's events are on, ends the call's
+    placement (:func:`nodes.end`)."""
     if not settings.node_binding:
         return None
     binding = nodes.CallBinding(session_id, settings.llm_uds, settings.stt_uds, settings.tts_uds)
+
+    async def end_placement() -> None:
+        if binding.nodes is not False:  # a gateway without nodes placed nothing
+            await nodes.end(settings.llm_uds, session_id)
+
+    # Before the placement is asked for, so that a job that ends while it is asked ends it as well.
+    ctx.add_shutdown_callback(end_placement)
     await binding.place("start")
     if binding.nodes is False:
         await binding.aclose()
@@ -451,7 +463,7 @@ async def entrypoint(ctx: JobContext) -> None:
     settings = Settings.from_env()  # as main() read them, in this job's process
     session_id = room_session_id(ctx.job.room.sid)
     # The call's GPU node, before anything of it runs, where the gateway fronts several.
-    binding = await bind_call(settings, session_id)
+    binding = await bind_call(ctx, settings, session_id)
     stt, llm, tts = call_plugins(settings, session_id, binding)
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
@@ -491,23 +503,34 @@ def active_calls() -> int:
         return 0
 
 
-def serve(settings: Settings) -> Admission:
-    """Serve mode's admission over ``server``'s running jobs, its probe of the engine and its
-    status file, started; LiveKit's load threshold at 1 (a plain float, so that dev mode holds it
-    too), so that the worker is full at max_calls."""
-    global ADMISSION
+def admission(settings: Settings) -> Admission:
+    """Serve mode's admission over ``server``'s running jobs and its probe of the engine; with node
+    binding, each call placed before its job is accepted, and its placement ended if the job does
+    not run after all."""
     assert settings.max_calls is not None
 
     async def place(job: Any) -> tuple[bool, str]:
         return await nodes.admit(settings.llm_uds, room_session_id(job.room.sid))
 
-    ADMISSION = Admission(
+    async def unplace(job: Any) -> None:
+        await nodes.end(settings.llm_uds, room_session_id(job.room.sid))
+
+    return Admission(
         settings.max_calls,
         active=active_calls,
         probe=EngineProbe(settings.llm_uds, settings.probe_path),
         drain=settings.drain_file,
         place=place if settings.node_binding else None,
+        unplace=unplace if settings.node_binding else None,
     )
+
+
+def serve(settings: Settings) -> Admission:
+    """Serve mode's admission (:func:`admission`) and its status file, started; LiveKit's load
+    threshold at 1 (a plain float, so that dev mode holds it too), so that the worker is full at
+    max_calls."""
+    global ADMISSION
+    ADMISSION = admission(settings)
     server.update_options(load_threshold=1.0)
     Monitor(ADMISSION, settings.status_file, settings.describe()).start()
     return ADMISSION
