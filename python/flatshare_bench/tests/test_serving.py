@@ -51,6 +51,10 @@ DASH = quick_start.DASH
 """The en dash between a range's ends, as the quick start's result prints it."""
 VENV = "~/vllm-0.32"
 """The environment README.md's quick start makes and activates, which `pip install` then fills."""
+ENGINE_REQUIREMENTS = BOX / "requirements" / "engine.txt"
+"""The deployment's engine environment, every package pinned, its CUDA compiler among them."""
+PIN = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9,._-]+\])?==([^\s;#]+)")
+"""A pinned requirement, ``name==version`` or ``name[extras]==version``."""
 
 spec = importlib.util.spec_from_file_location("flatshare_profile_serving", DEPLOY / "profile.py")
 profile = importlib.util.module_from_spec(spec)
@@ -184,22 +188,38 @@ def quick_start_flags(engine: dict) -> dict[str, str]:
     }
 
 
+def pins(requirements: list[str]) -> dict[str, str]:
+    """The versions of pinned requirements by their normalized names, their extras and comments aside."""
+    found = {}
+    for requirement in requirements:
+        if pinned := PIN.fullmatch(requirement.split("#", 1)[0].strip()):
+            found[re.sub(r"[-_.]+", "-", pinned.group(1)).lower()] = pinned.group(2)
+    return found
+
+
 def check_quick_start(readme: str) -> None:
     """Asserts that the quick start of ``readme`` probes stock vLLM, then make-room, each at the serving profile's
-    engine settings. It installs the release build.py takes, in an environment of the deployment's Python, and points
-    CUDA_HOME at the CUDA 13 toolkit that environment carries, as Gray's engine unit does. Both engines take the same
-    model, context, request slots and step cap, and make-room the module build.py writes, with the profile's
-    switches."""
+    engine settings. It installs in an environment of the deployment's Python, and pins every package it names: vLLM
+    at the release build.py takes, and each at the version of the deployment's engine environment, as its CUDA
+    compiler. It points CUDA_HOME at the CUDA 13 toolkit that environment carries, as Gray's engine unit does. Both
+    engines take the same model, context, request slots and step cap, and make-room the module build.py writes, with
+    the profile's switches."""
     serve = profile.load("rtx-5060-ti-serve")
     values, _, _ = profile.resolve(serve, None)
     engine = profile.serving_config(serve, values)["engine"]
     commands = quick_start_commands(readme)
+    venv, install, cuda = commands[:3]
+    assert venv == shlex.split(
+        f"uv venv --python {release.PYTHON} --seed {VENV} && . {VENV}/bin/activate"
+    )
+    assert install[:2] == ["pip", "install"]
+    wanted = pins(install[2:])
+    assert len(wanted) == len(install) - 2, f"an argument that is no pin: {install}"
+    assert wanted.get("vllm") == engine["vllm_version"]
+    deployed = pins(ENGINE_REQUIREMENTS.read_text().splitlines())
+    assert {name: deployed.get(name) for name in wanted} == wanted
     toolkit = profile.VENV_CUDA.removeprefix("%h/flatshare/venvs/engine/")
-    assert commands[:3] == [
-        shlex.split(f"uv venv --python {release.PYTHON} --seed {VENV} && . {VENV}/bin/activate"),
-        ["pip", "install", f"vllm=={engine['vllm_version']}"],
-        ["export", f"CUDA_HOME=$VIRTUAL_ENV/{toolkit}"],
-    ]
+    assert cuda == ["export", f"CUDA_HOME=$VIRTUAL_ENV/{toolkit}"]
     (stock_env, stock), (env, make_room) = quick_start_engines(readme)
     assert (stock_env, stock) == ({}, quick_start_flags(engine))
     # make-room loads the module that build.py writes into the directory on its PYTHONPATH.
@@ -236,7 +256,6 @@ def test_the_readmes_quick_start_serves_the_profiles_engine_settings_on_both_eng
         ),
         ("vllm==0.32.0", "vllm==0.33.0"),
         ("--python 3.12", "--python 3.10"),
-        ("pip install vllm==0.32.0\n", ""),
         ("nvidia/cu13 ", "nvidia/cu12 "),
         ("PYTHONPATH=~/make-room", "PYTHONPATH=~/elsewhere"),
         (f"\npython {PROBE} http://127.0.0.1:8000 kv\n```\n\nStop", "\n```\n\nStop"),
@@ -246,7 +265,6 @@ def test_the_readmes_quick_start_serves_the_profiles_engine_settings_on_both_eng
         "another stock step cap",
         "another release",
         "another python",
-        "no install",
         "another toolkit",
         "another module directory",
         "no stock probe",
@@ -258,6 +276,50 @@ def test_a_quick_start_that_drifts_from_the_profile_fails_the_check(old: str, ne
     assert readme.count(old) == 1, old
     with pytest.raises(AssertionError):
         check_quick_start(readme.replace(old, new))
+
+
+def with_install(readme: str, edit) -> str:
+    """``readme`` with its quick start's `pip install` line replaced by ``edit`` of its words, or removed where
+    ``edit`` gives none."""
+    [line] = re.findall(r"^pip install .*$", readme, re.M)
+    words = edit(shlex.split(line))
+    return readme.replace(f"{line}\n", f"{shlex.join(words)}\n" if words else "")
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda words: None,
+        lambda words: [
+            re.sub(r"==.*", "", word) if word.startswith("vllm") else word for word in words
+        ],
+        lambda words: [*words, "cuda-toolkit[nvcc]==13.4.0"],
+        lambda words: [*words, "flatshare-unknown==1.0"],
+    ],
+    ids=[
+        "no install",
+        "an unpinned release",
+        "a compiler the deployment does not pin",
+        "an unknown package",
+    ],
+)
+def test_an_install_that_drifts_from_the_deployment_fails_the_check(edit) -> None:
+    # The negative control of the install line, whatever it pins: each of these edits of it fails.
+    with pytest.raises(AssertionError):
+        check_quick_start(with_install(README.read_text(), edit))
+
+
+def test_an_install_that_pins_the_deployments_cuda_compiler_passes_the_check() -> None:
+    # The positive control: the install line with cuda-toolkit's nvcc extra at the deployment's version, which pins its
+    # CUDA compiler to CUDA 13.0's (engine.txt), passes as the check stands.
+    compiler = pins(ENGINE_REQUIREMENTS.read_text().splitlines())["cuda-toolkit"]
+    pinned = [f"cuda-toolkit[nvcc]=={compiler}"]
+    readme = with_install(
+        README.read_text(),
+        lambda words: [word for word in words if not word.startswith("cuda-toolkit")] + pinned,
+    )
+    assert f"'cuda-toolkit[nvcc]=={compiler}'" in readme
+    check_quick_start(readme)
 
 
 def check_quick_start_result(readme: str) -> None:
