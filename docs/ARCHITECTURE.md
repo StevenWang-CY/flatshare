@@ -80,7 +80,7 @@ Every measurement on the box runs one pinned configuration, with the audio model
 
 | Host | Role |
 |---|---|
-| **Phastform** | The GPU node of every E2 point but the A100 run's, paused when idle |
+| **Phastform** | The first GPU node: every E2 point but the A100 run's before the two-card rounds, which ran on it and Gray in turn, and the serving arrangement's first card; paused when idle |
 | **Gray** | A second, identical GPU node: the probes' booked windows, the second card of the two-card rounds, and the warm spare of the serving arrangement on two nodes; cyan reaches it through `flatshare-tunnel@gray` |
 | **cyan** | The control host: `flatshare-gateway`, LiveKit and the voice worker, the measurement callers and AIPerf, each on its own cores |
 | **peacock** | Linux release builds of `flatshare-gateway` and `flatshare-sim`, and simulator runs |

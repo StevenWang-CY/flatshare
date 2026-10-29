@@ -9,7 +9,7 @@ One RTX 5060 Ti 16 GB (sm_120) on PCIe Gen3 x8, in a host with two Xeon E5-2609 
 - **CPU tier:** vLLM's native `OffloadingConnector`, 20 GiB in `/dev/shm`, written through (generated tokens too).
 - **Audio on the same card:** Whisper large-v3-turbo (STT) on vLLM and Kokoro-82M (TTS), time-sliced with the LLM. Edge deployments co-locate the three this way, as NVIDIA's single-GPU voice-agent profile does.
 
-A second, identical card (Gray) is deployed the same way, for the probes and the two-node points, which never ran ([below](#two-gpus-dedicate-or-pool)). Other hardware is placed on the results by a model, labeled as such, except an A100 SXM4 80 GB, which ran E2's core like for like on 2026-10-26 ([below](#what-transfers-to-other-hardware)).
+A second, identical card (Gray) is deployed the same way, for the probes, the second card of the two-card comparison and the warm spare of the serving arrangement ([below](#two-gpus-dedicate-or-pool)). Other hardware is placed on the results by a model, labeled as such, except an A100 SXM4 80 GB, which ran E2's core like for like on 2026-10-26 ([below](#what-transfers-to-other-hardware)).
 
 ## What an agent turn costs to resume (E0)
 
@@ -116,7 +116,7 @@ The regime where a waiting voice turn is blocked by KV (#40004) follows how long
 
 ## Two GPUs: dedicate or pool
 
-Three configurations of two GPU nodes were planned: a voice node and an agent node (dedicate); two mixed nodes with least-loaded placement; two mixed nodes with Flatshare's placement, which sends a new call to the node with the fewest calls and a new agent session to the node holding the least background KV. They never ran: another user's work has held the second card since 2026-10-23, and none was free before v1.0. The gateway's placement of sessions on several nodes, which keeps each on its node, and the harness's points on two nodes were built for them, and are parked on the `two-node` branch ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load)).
+Three configurations of two GPU nodes were planned: a voice node and an agent node (dedicate); two mixed nodes with least-loaded placement; two mixed nodes with Flatshare's placement, which sends a new call to the node with the fewest calls and a new agent session to the node holding the least background KV. None ran in E2, while another user's work held the second card from 2026-10-23. v1.7 compared a card per workload, pooling (one call and 12 sessions a card) and consolidation (both calls and four sessions on one card, beside a card of agents alone) on two RTX 5060 Ti cards in three rounds, each card's part of an arrangement as a run of its own: consolidation did 34% more background work than a card per workload, and pooling qualified on neither engine ([the report, §6.8](REPORT.md#68-on-two-cards-consolidating-both-calls-on-one-does-34-more-background-work-most-of-it-without-the-change); [the rounds](../benchmarks/results/2026-10-28-rounds/README.md)). The gateway's placement of sessions on several nodes, which keeps each on its node, ships ([Nodes](../crates/flatshare-gateway/README.md#nodes)); the harness's points that front two nodes at once stay on the `two-node` branch ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load)).
 
 ## How the runs were made
 
@@ -135,4 +135,4 @@ Three configurations of two GPU nodes were planned: a voice node and an agent no
 - Every run of W2–W4 replays the same workload sample (agent seed 11, caller seed 0): their ranges are timing noise, not workload variation. W5's five rounds replay five samples (agent seeds 11–15), the same five for every configuration.
 - In W4 the PRs' configurations ran in a session of their own, after the rounds and with no control (10-23 23:16Z – 10-24 01:35Z); W5 re-measured them in rounds beside the frozen box.
 - vLLM 0.32's prompt-token counters see only a request's first scheduling: what a preempted request reloads or recomputes when it resumes is not in them. The records also keep the CPU tier's own load counter, which sees a resume's loads; what a resume recomputes is not measured.
-- The two-node points never ran, and their code is parked on the `two-node` branch.
+- Each card's part of a two-card arrangement ran as a run of its own; no E2 point fronted two nodes at once, and that harness code is on the `two-node` branch.
