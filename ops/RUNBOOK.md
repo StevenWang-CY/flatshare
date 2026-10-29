@@ -43,7 +43,7 @@ deploy/deploy.sh phastform --status              # its releases, current and pre
 deploy/deploy.sh phastform --rollback            # back to the previous release (--to ID: another one)
 ```
 
-**A release** is the commit `HEAD` names (`git archive`) and nothing else, no untracked, ignored or uncommitted file, with `DEPLOYED`, the commit's `git describe`, which every E2 point records: `deploy.sh` refuses a tree that has changes it would not carry. It uploads the release to the host and runs [`deploy/bin/flatshare-release`](../deploy/bin/flatshare-release) there, which keeps the deployment under `~/flatshare`:
+**A release** is the commit `HEAD` names (`git archive`) and nothing else, no untracked, ignored or uncommitted file, with `DEPLOYED`, the commit's `git describe`, which every E2 point records: `deploy.sh` refuses a tree that has changes it would not carry. It uploads the release to the host and runs [`deploy/bin/flatshare-release`](../deploy/bin/flatshare-release) there (Python's standard library alone, for the host's `python3`, 3.10 or newer), which keeps the deployment under `~/flatshare`:
 
 | Path | What it is |
 |---|---|
@@ -66,7 +66,20 @@ deploy/deploy.sh phastform --rollback            # back to the previous release 
 6. **Check**: each restarted unit active and not restarting for `--settle` seconds (10); on the box, the engine's configuration against `serving.json` where it runs `make-room-serve`, printed; on cyan, the gateway's `/health` and, in serve mode, the voice worker's admission and the gateway's nodes (its `GET /nodes`, which a gateway of one upstream passes) against `serving.json`; the listener audit (`deploy/bin/audit-listeners`).
 7. **On any failure after the switch** it switches back: `current` to the release before, `previous` as it was, the same units restarted on it and checked; `deploy.sh` exits 1, or 3 if switching back failed too. On success it keeps the newest 3 releases (`--keep`), current, previous and any release a running process imports from, and removes the rest and the environments none of them links.
 
-A unit's Python processes import the release current named when the first of them started, whatever a switch does meanwhile: the environments' editable installs read the release that `FLATSHARE_RELEASE` names, which that first interpreter sets from `current` and its children inherit (the voice worker's job processes, an E2 point's tools), and pruning keeps any release a process names so. Do not release to cyan while an E2 campaign runs: a release refuses only while a point holds the lock, and one between two points would change the arm files and the harness that the next point reads. `--no-switch` prepares and verifies only, to warm a release before a window; `deploy.sh HOST --rollback` switches to `previous` by steps 2 to 7. Do not run scripts from a release's own directory: links made from there (by `variant.sh`, say) would outlive it, which is why the install scripts link through `~/flatshare/src` whichever path ran them.
+**Exit status** of `flatshare-release`, which `deploy.sh` passes on:
+
+| Status | When |
+|---|---|
+| 0 | Success |
+| 1 | A check or a command failed, or a switch failed and was switched back |
+| 2 | Used wrongly, or the host or the upload was not ready: nothing switched |
+| 3 | Switching back failed too |
+
+Not ready covers, among other cases: another operation holding the release lock, an E2 point measuring, calls left after the drain, an upload that differs from its hash, and a layout from before releases without `--adopt`.
+
+A unit's Python processes import the release current named when the first of them started, whatever a switch does meanwhile: the environments' editable installs read the release that `FLATSHARE_RELEASE` names, which that first interpreter sets from `current` and its children inherit (the voice worker's job processes, an E2 point's tools), and pruning keeps any release a process names so. Each editable install is a `.pth` line that appends the package's source directory under that release.
+
+Do not release to cyan while an E2 campaign runs: a release refuses only while a point holds the lock, and one between two points would change the arm files and the harness that the next point reads. `--no-switch` prepares and verifies only, to warm a release before a window; `deploy.sh HOST --rollback` switches to `previous` by steps 2 to 7. Do not run scripts from a release's own directory: links made from there (by `variant.sh`, say) would outlive it, which is why the install scripts link through `~/flatshare/src` whichever path ran them.
 
 **The gateway's binary.** `deploy/build-gateway.sh BUILD_HOST [OUT]` builds this commit's on a Linux host with rustup whose glibc is not newer than cyan's (peacock and cyan run Ubuntu 22.04), from `git archive HEAD` with `cargo build --release --locked -p flatshare-gateway`, into `build/flatshare-gateway-ID` and its provenance beside it (`.json`), and `deploy.sh cyan --gateway FILE` puts it in the release, refusing one built from another commit. Without `--gateway`, `deploy.sh` carries the binary of the release cyan runs when its crates (`crates/`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`) are this commit's, and refuses otherwise. `flatshare-gateway --version` names the version it was built at, which every E2 point records (`versions.flatshare_gateway`).
 

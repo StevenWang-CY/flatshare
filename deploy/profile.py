@@ -8,59 +8,10 @@
     profile.py effective PROFILE
     profile.py check-vllm DIR [FLAG...]
 
-`detect` writes the host's facts as JSON: the GPU as `nvidia-smi` shows it (name, memory, compute capability, driver,
-PCIe link, MIG mode, power limit, NUMA node), the CPUs by NUMA node, RAM, /dev/shm, shmem huge pages, the kernel, a
-container or VM, root and sudo, systemd's user manager and lingering, user namespaces, a CUDA toolkit, ninja and uv,
-the directory of the driver's libcuda.so.1, and whether the linker searches it (the GPU units name it where it does
-not), and with --peer the TCP round trip to a control-plane host. `render` writes a node's directory: deploy/templates
-filled from the profile (engine.yaml, stt.yaml, the units, the make-room drop-in), the box's scripts and the mps
-variant as they are, and node.json, the profile's values resolved with the core plan and its warnings. A profile's
-"auto" values come from the host's facts by the rules below; a profile without them, as the frozen box's, needs no
-host. `check` renders a profile into a scratch directory and compares it byte for byte with its repository copy
-(the box's: deploy/phastform), printing each difference, and `update` writes the rendered files back into it after
-a template changes (`make profiles`). When the box's own files change, a change to its units for one, `check` shows
-the lines to carry into deploy/templates, and a file added to the box's directory has to be rendered, copied or named
-in BOX_ONLY before the tests pass. `check-vllm` parses a rendered engine.yaml and stt.yaml with vLLM's own argument
-parser and builds their engine configs, as `vllm serve` would, without starting an engine: run it with the engine
-venv's Python on a GPU host.
-
-A serving profile is a profile with a [serving] table (the box's: rtx-5060-ti-serve, on rtx-5060-ti): the configuration
-the box serves, as against the frozen box that experiments change. It renders, beside the node's files, its engine
-variant's drop-in (variants/make-room-serve) and serving.json, the effective configuration the box must run: every
-setting of the engine's (model and tokenizer revisions, policy, step cap, pool, CPU tier, make-room's switches), the
-vLLM version, the SHA-256 of the scheduler module and of the patches it is built from, and the calls the voice worker
-admits. `effective` prints it. deploy/bin/serving-check holds the running engine, and the voice worker in serve mode,
-to it: the engine writes what it runs as it starts (python/flatshare_vllm's serve module), since a production box
-serves no /server_info. The step cap is the serving profile's own ([serving]'s max_num_batched_tokens and
-long_prefill_token_threshold), which its variant passes over engine.yaml's, so that the node's files stay its base's:
-on the box, the frozen box's, which every experiment changes.
-
-The rules (docs/HARDWARE.md):
-- R2, memory budgets: vLLM refuses a start whose free memory is below gpu_memory_utilization x total, with
-  kv-cache-memory set too, so the box's budgets in GiB carry over: utilization = budget / the card's memory, rounded
-  up to 0.01. Both vLLM servers fix their KV pools, so neither sizes its pool from the memory free at its start and
-  the three servers start at once: each one's check passes in any order wherever starting the audio servers first
-  passed, since the engine's worst case, the audio servers resident, is that order's, and the STT's, the engine
-  resident, holds while the two budgets and the TTS's share (budgets.tts_gib) fit the card together, the engine
-  within its budget; a server's start-up peak (profiling pass, graph capture) meets the margin they leave. A profile
-  where they take more than 0.95 of it, the ceiling of one budget alone, is refused: vLLM's total is the card's memory
-  less the driver's reserve. A node whose engine outgrows its budget (C''s 14B) starts it after the audio servers
-  instead (text.engine_order).
-- R3, the CPU tier: the box's ratio to the pool (20 GiB over 5 GiB), bounded by /dev/shm (less 2 GiB) and by the RAM
-  available less what a single host keeps for its other processes, in whole GiB; below the pool's own size it is
-  refused, since a tier no larger than the pool only mirrors it.
-- R7, the core plan: the engine, the audio servers, the gateway, the voice plane, AIPerf and the callers take their
-  shares of the host's CPUs in proportion 8:4:2:8:8:4 (34 CPUs give each its want), the engine on the GPU's NUMA node
-  and the audio servers off it where there is another. 17 CPUs, half the wants, is the floor for measuring; below it
-  the plan still holds every component, and warns.
-- R8, the install path: the box's cu130 lock where the driver runs CUDA 13.0, natively (R580 and newer) or through
-  the forward-compatibility libraries a data-center GPU on R535 or R570 can load (cuda-compat-13-0, installed);
-  the cu129 lock (deploy/a100/requirements) on any other driver from R525; none below. JIT compiles with the host's
-  toolkit of the runtime's CUDA version where it has one, else with the venv's CUDA 13.0 compiler (cu130) or with CUDA
-  12.9's toolkit, which bootstrap.sh installs into ~/flatshare/cuda-12.9 (cu129: CUDA 12's wheels carry no nvcc).
-
-A profile whose [profile] table names a base takes the base's values under its own, table by table: the A100's
-second model (a100-40gb-qwen3-14b) is the core's profile with its own model, pool and directory.
+It records a host's facts, renders a node's directory from a profile and those facts by the rules of docs/HARDWARE.md,
+holds a profile's rendering to its repository copy, prints a serving profile's serving.json, and parses a rendered
+node's configs with vLLM's own parser. The reference, with the rules, is docs/HARDWARE.md#the-hardware-profile and
+docs/HARDWARE.md#the-rules; a serving profile's is deploy/phastform/variants/README.md#the-serving-profile.
 
 Standard library only (Python 3.11 or newer), so that a bare host runs it before any venv exists.
 """
