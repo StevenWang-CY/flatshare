@@ -1,0 +1,14 @@
+box: Phastform; GPU, driver and memory in use at the start: NVIDIA GeForce RTX 5060 Ti, 580.173.02, 2 MiB
+tree: v1.8, 5a7e31cb2153682ecf2081952b1fc91daafc3bbf (its git archive: the files a clone at that commit has)
+uv: uv 0.11.27 (x86_64-unknown-linux-gnu); Using CPython 3.12.13
+vllm 0.32.0, torch 2.13.0+cu130, CUDA 13.0
+nvcc: Build cuda_13.0.r13.0/compiler.36424714_0
+cuda-toolkit 13.0.3.0
+nvidia-cuda-cccl 13.3.4.3.1
+nvidia-cuda-crt 13.0.88
+nvidia-cuda-nvcc 13.0.88
+nvidia-cuda-runtime 13.0.96
+stock: non-default args: {'model_tag': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'host': '127.0.0.1', 'model': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'max_model_len': 32768, 'max_num_batched_tokens': 256, 'max_num_seqs': 256, 'scheduling_policy': 'priority'}
+stock: GPU KV cache size: 62,992 tokens, Maximum concurrency for 32,768 tokens per request: 1.92x
+make-room: non-default args: {'model_tag': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'host': '127.0.0.1', 'model': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'max_model_len': 32768, 'max_num_batched_tokens': 256, 'max_num_seqs': 256, 'scheduling_policy': 'priority', 'scheduler_cls': 'flatshare_make_room_scheduler.AsyncScheduler', 'additional_config': {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': True, 'budget_cap_tokens': 48, 'reserve_tokens': 0}}}
+make-room: GPU KV cache size: 62,992 tokens, Maximum concurrency for 32,768 tokens per request: 1.92x
