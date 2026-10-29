@@ -200,7 +200,12 @@ With `[[nodes]]` the gateway fronts several GPU nodes, each an engine and its sp
 
 ## Errors
 
-Errors the gateway generates use OpenAI's format, `{"error": {"message", "type", "code"}}`, and carry `X-Request-Id`: the `code` says what failed, and the `type` is the OpenAI class of the status. Responses from the engine pass through unchanged. An event stream the upstream breaks off after its headers ends with an error event instead ([Relay](#what-it-does)), vLLM's own shape, whose `type` says what failed (`upstream_unavailable`, `upstream_timeout` or `draining`) and whose `code` is the status. [`tests/fixtures/errors.json`](tests/fixtures/errors.json) holds the errors the voice worker reads in both shapes, as the gateway sends them.
+Responses from the engine pass through unchanged. The gateway's own errors come in two shapes, which name the failure in different fields:
+
+- **An answer**, sent before any response has begun, has OpenAI's format, `{"error": {"message", "type", "code"}}`, and carries `X-Request-Id`. Its `code` names the failure, as in the table below, and its `type` is the status's OpenAI class.
+- **An error event** ends an event stream that has begun ([Relay](#what-it-does)), in vLLM's own shape, `data: {"error": {"message", "type", "param", "code"}}`. Its `type` names the failure (`upstream_unavailable`, `upstream_timeout` or `draining`), and its `code` is the status.
+
+[`tests/fixtures/errors.json`](tests/fixtures/errors.json) holds the errors the voice worker reads in both shapes, as the gateway sends them.
 
 | Status | `code` | When |
 |---|---|---|
