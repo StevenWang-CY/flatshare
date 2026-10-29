@@ -254,15 +254,16 @@ The PRs' values met the SLO in every round, by 7 to 60 ms; frozen missed it by 2
 tokens/s over the calls' first 240 s with the PRs' values were 94–111% of frozen's (a median of 96%), their whole-call
 tokens/s 95–103%, and no turn of the 750 failed. The forecast put the core's running share at 10% [modeled].
 
-**The probes (blocks 1 to 3)**, against the forecast and the box:
+**The probes (blocks 1 to 3)**, against the forecast and the box. The box's column is the report's, the four runs of its
+§2.4 on Phastform, against which [Table E1](REPORT.md#e-the-forecast-for-the-a100) compares the A100:
 
-| Probe | A100 SXM4 80 GB | Forecast, central (low–high) [modeled] | The box |
+| Probe | A100 SXM4 80 GB | Forecast, central (low–high) [modeled] | The box (Table E1) |
 |---|---:|---:|---:|
-| KV case, stock 512/256: the voice turn's wait | 1,748 ms (1,721–1,750, 3 runs) | 1,328–1,369 ms (1,082–1,377) | 4,923–5,077 ms (Gray) |
+| KV case, stock 512/256: the voice turn's wait | 1,748 ms (1,721–1,750, 3 runs) | 1,328–1,369 ms (1,082–1,377) | 4,968 ms (4,900–4,971) |
 | KV case, stock at vLLM's default 2,048/0 | 1,642 ms (1,620–1,645, 3 runs) | | |
-| KV case, the PRs' values: the first token | 175 ms (150–176, 3 runs) | 126–145 ms (109–146) | 225 and 297 ms (Gray) |
-| Prefill case, stock: the reply's token gap (1st to 16th) | 32 ms (3 runs) | 32.8 ms (25.7–35.4) | 69 ms (Gray) |
-| Prefill case, the PRs' values: the token gap | 7 ms (3 runs) | 5.6 ms (3.7–5.6) | 17 ms (Gray) |
+| KV case, the PRs' values: the first token | 175 ms (150–176, 3 runs) | 126–145 ms (109–146) | 290 ms (216–294) |
+| Prefill case, stock: the reply's token gap (1st to 16th) | 32 ms (3 runs) | 32.8 ms (25.7–35.4) | 60–66 ms |
+| Prefill case, the PRs' values: the token gap | 7 ms (3 runs) | 5.6 ms (3.7–5.6) | 16–20 ms |
 | The calls' first-token p95 beside 12 agents, 512/256 | 3,114 ms (3,102–3,126, 2 runs) | | 7,631 and 7,643 ms (the kit's rehearsal) |
 | The same at 2,048/0, and at 1,536/768 | 2,526 ms (2,518–2,535) and 3,566 ms (3,446–3,687) | | |
 | The same, the PRs' values | 173 ms (167–179, 2 runs) | | |
