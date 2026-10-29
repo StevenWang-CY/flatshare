@@ -1126,29 +1126,51 @@ def _cdf_description(configurations: Sequence[data.Configuration], slo: float) -
 
 
 def cdf(out: Path) -> list[Path]:
-    """report-cdf.svg: every measured turn's V2V as ECDFs, pooled over each configuration's runs (the warm-up turns
-    left out, a turn that got no reply counted at 30 s), for voice alone, tuned vLLM, the abort-and-resubmit router
-    and the change."""
+    """report-cdf.svg and its phone layout: every measured turn's V2V as ECDFs, pooled over each configuration's runs
+    (the warm-up turns left out, a turn that got no reply counted at 30 s), for voice alone, tuned vLLM, the
+    abort-and-resubmit router and the change."""
     rows = data.w5_rows()
     configurations = [c for c in data.headline(rows) if c.point in CDF_LINES]
     slo = data.slo_ms(rows)
-    s = Chart(WIDTH, 480, "Every turn's voice-to-voice time", _cdf_description(configurations, slo))
-    x = Scale(CDF_TICKS[0], CDF_TICKS[-1], 96, 1040, log=True)
-    y = Scale(0, 1, 420, 70)
-    s.text(24, 34, "Share of replies", size=NOTE, cls="soft")
+    description = _cdf_description(configurations, slo)
+    return [
+        _cdf_layout(configurations, slo, out / "report-cdf.svg", description, WIDTH),
+        _cdf_layout(configurations, slo, out / "report-cdf-narrow.svg", description, NARROW),
+    ]
+
+
+def _cdf_layout(
+    configurations: Sequence[data.Configuration],
+    slo: float,
+    path: Path,
+    description: str,
+    width: float,
+) -> Path:
+    wide = width == WIDTH
+    s = Chart(width, 900, "Every turn's voice-to-voice time", description)
+    title = "Voice-to-voice time of a reply (s, log scale)"
+    if wide:
+        x = Scale(CDF_TICKS[0], CDF_TICKS[-1], 96, 1040, log=True)
+        y = Scale(0, 1, 420, 70)
+        s.text(24, 34, "Share of replies", size=NOTE, cls="soft")
+    else:  # the lines named in a key over the plot, where a phone's plot has no room after their ends
+        keys = [(line_key(cls), name) for point, (name, cls) in CDF_LINES.items()]
+        last_key = legend(s, 18, 30, keys, width=width - 36, pitch=25)
+        s.text(18, last_key + 40, "Share of replies", size=NOTE, cls="soft")
+        x = Scale(CDF_TICKS[0], CDF_TICKS[-1], 64, width - 22, log=True)
+        y = Scale(0, 1, last_key + 80 + 300, last_key + 80)
     marks = [0.0, 0.25, 0.5, 0.75, 1.0]
     y_axis(s, y, marks, [pct(m) for m in marks], x.start, x.end)
     for tick in CDF_TICKS[1:]:
         s.vrule(x(tick), y.end, y.start, "grid")
-    last = x_axis(
-        s,
-        x,
-        CDF_TICKS,
-        [f"{t / 1000:g}" for t in CDF_TICKS],
-        None,
-        y.start,
-        title="Voice-to-voice time of a reply (s, log scale)",
-    )
+    labels = [f"{t / 1000:g}" for t in CDF_TICKS]
+    if wide:
+        last = x_axis(s, x, CDF_TICKS, labels, None, y.start, title=title)
+    else:
+        last = x_axis(s, x, CDF_TICKS, labels, None, y.start)
+        for line in wrap(title, width - 36, NOTE):
+            last += 25
+            s.text(18, last, line, size=NOTE, cls="soft")
     s.rule(x.start, x.end, y(0.95), "rule")
     s.text(x.start + 10, y(0.95) + 22, "p95", size=NOTE, cls="soft")
     s.vrule(x(slo), y.start, y.end, "slo")
@@ -1161,20 +1183,21 @@ def cdf(out: Path) -> list[Path]:
         points = ecdf(c.samples(), x, y, cap=REPLY_TIMEOUT_MS)
         s.trace(points, cls)
         lines[c.point] = (name, points)
-    # The labels: the change's and tuned vLLM's after their tails' ends, the router's beside its line where it parts
-    # from the change's, voice alone's in the space left of its line.
-    for point in (data.CHANGE, data.TUNED):
-        name, points = lines[point]
-        end = points[-1]
-        s.text(end[0] + 10, end[1] + 6, name, size=NOTE, halo=True)
-    router = next(c for c in configurations if c.point == data.ROUTER)
-    at = x(_quantile(router.samples(), 0.88))
-    s.text(at + 12, y(0.88) + 6, lines[data.ROUTER][0], size=NOTE, halo=True)
-    alone = next(c for c in configurations if c.point == data.VOICE_ALONE)
-    at = x(_quantile(alone.samples(), 0.8))
-    s.text(at - 12, y(0.8) + 6, lines[data.VOICE_ALONE][0], size=NOTE, anchor="end", halo=True)
+    if wide:
+        # The labels: the change's and tuned vLLM's after their tails' ends, the router's beside its line where it
+        # parts from the change's, voice alone's in the space left of its line.
+        for point in (data.CHANGE, data.TUNED):
+            name, points = lines[point]
+            end = points[-1]
+            s.text(end[0] + 10, end[1] + 6, name, size=NOTE, halo=True)
+        router = next(c for c in configurations if c.point == data.ROUTER)
+        at = x(_quantile(router.samples(), 0.88))
+        s.text(at + 12, y(0.88) + 6, lines[data.ROUTER][0], size=NOTE, halo=True)
+        alone = next(c for c in configurations if c.point == data.VOICE_ALONE)
+        at = x(_quantile(alone.samples(), 0.8))
+        s.text(at - 12, y(0.8) + 6, lines[data.VOICE_ALONE][0], size=NOTE, anchor="end", halo=True)
     s.height = last + 14
-    return [s.save(out / "report-cdf.svg")]
+    return s.save(path)
 
 
 def _quantile(samples: Sequence[float], share: float) -> float:
@@ -1238,26 +1261,57 @@ def _agent_row(
 
 
 def agents(out: Path) -> list[Path]:
-    """report-agents.svg: what the agents pay, run by run, for the headline's configurations that run agents, in its
-    rows. (a) The agents' TTFT p99. (b) The share of the engine's steps in which the prefill hold kept agent prefill
-    out. (c) make-room's own preemptions. Each run a tick, the median a filled marker with its value."""
+    """report-agents.svg and its phone layout: what the agents pay, run by run, for the headline's configurations that
+    run agents, in its rows. (a) The agents' TTFT p99. (b) The share of the engine's steps in which the prefill hold
+    kept agent prefill out. (c) make-room's own preemptions. Each run a tick, the median a filled marker with its
+    value."""
     runs = data.agent_runs()
-    s = Chart(WIDTH, 440, "What the agents pay", _agents_description(runs))
+    description = _agents_description(runs)
+    return [
+        _agents_wide(runs, out / "report-agents.svg", description),
+        _agents_narrow(runs, out / "report-agents-narrow.svg", description),
+    ]
+
+
+AGENT_TICKS = (
+    ([0, 100, 200], ["0", "100", "200"]),
+    ([0, 0.25, 0.5], [pct(v) for v in (0, 0.25, 0.5)]),
+    ([0, 25, 50], ["0", "25", "50"]),
+)
+AGENT_TOPS = (250, 0.5, 50)
+"""Each panel's scale's end: the slowest run's TTFT p99 (230 s), the most steps held (38%), the most preemptions
+(46)."""
+
+
+def _agent_cell(s: Chart, k: int, scale: Scale, y: float, point: str, cells) -> None:
+    """Panel ``k``'s mark of a configuration's runs at ``y``, or what it has not."""
+    if k == 0:
+        p99s = [r.ttft_p99 / 1000 for r in cells]
+        _agent_row(s, p99s, scale, y, point, f"{statistics.median(p99s):.0f} s")
+    elif k == 1:
+        shares = [r.held_share for r in cells if r.held_share is not None]
+        if shares:
+            _agent_row(s, shares, scale, y, point, pct(statistics.median(shares)))
+        else:
+            s.text(scale.start + 10, y + 6, "no hold", size=NOTE, cls="mute", halo=True)
+    else:
+        preemptions = [r.preemptions for r in cells if r.preemptions is not None]
+        if preemptions:
+            _agent_row(s, preemptions, scale, y, point, f"{statistics.median(preemptions):.0f}")
+        else:
+            s.text(scale.start + 10, y + 6, "no make-room", size=NOTE, cls="mute", halo=True)
+
+
+def _agents_wide(runs: dict[str, list[data.AgentRun]], path: Path, description: str) -> Path:
+    s = Chart(WIDTH, 440, "What the agents pay", description)
     right = 276
-    a = Scale(0, 250, 300, 520)
-    b = Scale(0, 0.5, 580, 800)
-    c = Scale(0, 50, 860, 1080)
-    ticks = (
-        ([0, 100, 200], ["0", "100", "200"]),
-        ([0, 0.25, 0.5], [pct(v) for v in (0, 0.25, 0.5)]),
-        ([0, 25, 50], ["0", "25", "50"]),
-    )
+    scales = [Scale(0, top, x, x + 220) for top, x in zip(AGENT_TOPS, (300, 580, 860), strict=True)]
     top, pitch = 52, 60
     ys = [top + 32 + pitch * k for k in range(len(runs))]
     bottom = ys[-1] + 32
     last = 0.0
     for (title, axis_title), scale, (marks, labels) in zip(
-        AGENT_PANELS, (a, b, c), ticks, strict=True
+        AGENT_PANELS, scales, AGENT_TICKS, strict=True
     ):
         s.text(scale.start, 30, title, size=LABEL)
         last = x_axis(s, scale, marks, labels, top, bottom, title=axis_title)
@@ -1272,20 +1326,42 @@ def agents(out: Path) -> list[Path]:
             anchor="end",
             cls="soft",
         )
-        p99s = [r.ttft_p99 / 1000 for r in cells]
-        _agent_row(s, p99s, a, y, point, f"{statistics.median(p99s):.0f} s")
-        shares = [r.held_share for r in cells if r.held_share is not None]
-        if shares:
-            _agent_row(s, shares, b, y, point, pct(statistics.median(shares)))
-        else:
-            s.text(b.start + 10, y + 6, "no hold", size=NOTE, cls="mute", halo=True)
-        preemptions = [r.preemptions for r in cells if r.preemptions is not None]
-        if preemptions:
-            _agent_row(s, preemptions, c, y, point, f"{statistics.median(preemptions):.0f}")
-        else:
-            s.text(c.start + 10, y + 6, "no make-room", size=NOTE, cls="mute", halo=True)
+        for k, scale in enumerate(scales):
+            _agent_cell(s, k, scale, y, point, cells)
     s.height = last + 14
-    return [s.save(out / "report-agents.svg")]
+    return s.save(path)
+
+
+def _agents_narrow(runs: dict[str, list[data.AgentRun]], path: Path, description: str) -> Path:
+    """The phone layout: the three panels one above the other, each configuration's name over its runs."""
+    s = Chart(NARROW, 2200, "What the agents pay", description)
+    x0 = 18
+    last = 0.0
+    for k, ((title, axis_title), top_value, (marks, labels)) in enumerate(
+        zip(AGENT_PANELS, AGENT_TOPS, AGENT_TICKS, strict=True)
+    ):
+        scale = Scale(0, top_value, x0, NARROW - 70)
+        y = last + (48 if k else 30)
+        s.text(x0, y, title, size=LABEL)
+        y += 10
+        for point, cells in runs.items():
+            name, note, _, _ = HEADLINE_ROWS[point]
+            box = s.text(x0, y + 20, name, size=VALUE)
+            detail = f"{note}, {_runs_of_count(len(cells))}"
+            if box.x1 + 8 + measure(detail, NOTE) <= NARROW - x0:
+                s.text(box.x1 + 8, y + 20, detail, size=NOTE, cls="soft")
+                band = y + 50
+            else:
+                s.text(x0, y + 42, detail, size=NOTE, cls="soft")
+                band = y + 72
+            band_grid(s, scale, marks, band - 18, band + 18)
+            _agent_cell(s, k, scale, band, point, cells)
+            y = band + 22
+        last = x_axis(s, scale, marks, labels, None, y)
+        last += 25
+        s.text(x0, last, axis_title, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
 
 
 # Every configuration ---------------------------------------------------------------------------------------------
@@ -1447,11 +1523,109 @@ def margin(out: Path) -> list[Path]:
     rounds = data.standard_rounds(rows)
     calls = data.calls(rows)
     slo = data.slo_ms(rows)
+    description = _margin_description(rounds, calls, slo)
+    return [
+        _margin_wide(rounds, calls, slo, out / "report-margin.svg", description),
+        _margin_narrow(rounds, calls, slo, out / "report-margin-narrow.svg", description),
+    ]
+
+
+MARGIN_PANELS = (
+    ("(b) p95 over the SLO (ms)", (0, 400), [0, 200, 400], "over", "{:+,.0f}"),
+    ("(c) Steps holding agent prefill", (0, 1), [0, 0.5, 1], "held", "{:.0%}"),
+    ("(d) Agents' tokens/s, first 240 s", (0, 4000), [0, 2000, 4000], "tokens", "{:,.0f}"),
+)
+"""Panels b to d: each one's title, its scale's range, its ticks, the field it draws and its values' format."""
+
+
+def _margin_round(s: Chart, a_x: Scale, a_y: Scale, rounds, slo: float) -> None:
+    """Panel a's marks: the SLO's rule, each round's two p95s joined, the configurations named at the last round."""
+    s.rule(a_x.start, a_x.end, a_y(slo), "slo")
+    s.text(
+        a_x.start + 6,
+        a_y(slo) + 22,
+        f"SLO {seconds(slo)} s",
+        size=NOTE,
+        cls="orange tint",
+        halo=True,
+    )
+    for k, tuned, change in rounds:
+        s.trace([(a_x(k), a_y(tuned)), (a_x(k), a_y(change))], "hair", wire=False)
+        s.mark(a_x(k), a_y(tuned), "gray")
+        s.mark(a_x(k), a_y(change), "blue")
+
+
+def _margin_calls(s: Chart, calls, x: Scale, y: Scale, field: str, text: str) -> None:
+    """A panel of b to d: each caller count's runs and their median, with its value; in b each count's SLO."""
+    if field == "over":
+        s.rule(x.start, x.end, y(0), "slo")
+    for c in calls:
+        values = list(getattr(c, field))
+        middle = statistics.median(values)
+        column_rug(s, x(c.callers), [y(v) for v in values], "blue", median=y(middle))
+        s.text(x(c.callers) + 18, y(middle) + 6, text.format(middle), size=NOTE, halo=True)
+        if field == "over":
+            s.text(
+                x(c.callers) + 18,
+                y(0) - 7,
+                f"SLO {seconds(c.slo)} s",
+                size=NOTE,
+                cls="orange tint",
+                halo=True,
+            )
+
+
+def _margin_narrow(rounds, calls, slo: float, path: Path, description: str) -> Path:
+    """The phone layout: panel a, then b to d one above the other on the same axis of callers."""
+    s = Chart(NARROW, 1600, "Where the pool has room, and as calls overlap", description)
+    x0 = 18
+    a_x = Scale(0.5, len(rounds) + 0.5, 64, NARROW - 110)
+    a_y = Scale(MARGIN_FLOOR, 4000, 400, 130)
+    s.text(x0, 30, "(a) Where the pool has room", size=LABEL)
+    s.text(x0, 56, "16 agent sessions of the whole corpus", size=NOTE, cls="soft")
+    s.text(x0, 96, "V2V p95 (s)", size=NOTE, cls="soft")
+    marks = [m / 2 for m in range(int(MARGIN_FLOOR / 500), 9)]
+    y_axis(s, a_y, [m * 1000 for m in marks], [f"{m:g}" for m in marks], a_x.start, a_x.end)
+    last = x_axis(
+        s,
+        a_x,
+        [r for r, _, _ in rounds],
+        [str(r) for r, _, _ in rounds],
+        None,
+        a_y.start,
+        title="Round",
+    )
+    _margin_round(s, a_x, a_y, rounds, slo)
+    last_round, tuned, change = rounds[-1]
+    s.text(a_x(last_round) + 14, a_y(tuned) + 6, "Tuned vLLM", size=NOTE, halo=True)
+    at = a_y(change) + 6
+    if at - 14 - CLEAR <= a_y(slo) <= at + 5 + CLEAR:
+        at = a_y(slo) + 14 + CLEAR + 1
+    s.text(a_x(last_round) + 14, at, "the change", size=NOTE, halo=True)
+    x = Scale(1, 7.8, 54, NARROW - 30)  # room right of six for its labels
+    callers = [c.callers for c in calls]
+    y = last + 30
+    for title, (lo, hi), ticks, field, text in MARGIN_PANELS:
+        y += 40
+        s.text(x0, y, title, size=LABEL)
+        scale = Scale(lo, hi, y + 140, y + 36)
+        labels = [f"{t:.0%}" if field == "held" else f"{t:,.0f}" for t in ticks]
+        y_axis(s, scale, ticks, labels, x.start, x.end, axis=field != "over")
+        _margin_calls(s, calls, x, scale, field, text)
+        y = scale.start
+    last = x_axis(
+        s, x, callers, [str(n) for n in callers], None, y, title="Calls beside 24 agent sessions"
+    )
+    s.height = last + 14
+    return s.save(path)
+
+
+def _margin_wide(rounds, calls, slo: float, path: Path, description: str) -> Path:
     s = Chart(
         WIDTH,
         620,
         "Where the pool has room, and as calls overlap",
-        _margin_description(rounds, calls, slo),
+        description,
     )
 
     # (a) The standard scenario, round by round.
@@ -1471,19 +1645,7 @@ def margin(out: Path) -> list[Path]:
         a_y.start,
         title="Round",
     )
-    s.rule(a_x.start, a_x.end, a_y(slo), "slo")
-    s.text(
-        a_x.start + 6,
-        a_y(slo) + 22,
-        f"SLO {seconds(slo)} s",
-        size=NOTE,
-        cls="orange tint",
-        halo=True,
-    )
-    for k, tuned, change in rounds:
-        s.trace([(a_x(k), a_y(tuned)), (a_x(k), a_y(change))], "hair", wire=False)
-        s.mark(a_x(k), a_y(tuned), "gray")
-        s.mark(a_x(k), a_y(change), "blue")
+    _margin_round(s, a_x, a_y, rounds, slo)
     last_round, tuned, change = rounds[-1]
     s.text(a_x(last_round) + 14, a_y(tuned) + 6, "Tuned vLLM", size=NOTE, halo=True)
     # The change's name beside its last mark, under the SLO's rule where it would cross it.
@@ -1495,37 +1657,17 @@ def margin(out: Path) -> list[Path]:
     # (b) to (d) As calls overlap, on one axis of callers, with room right of six for its labels.
     x = Scale(1, 7.5, 640, 1100)
     callers = [c.callers for c in calls]
-    panels = (
-        ("(b) p95 over the SLO (ms)", Scale(0, 400, 220, 110), [0, 200, 400], "over", "{:+,.0f}"),
-        ("(c) Steps holding agent prefill", Scale(0, 1, 384, 274), [0, 0.5, 1], "held", "{:.0%}"),
-        (
-            "(d) Agents' tokens/s, first 240 s",
-            Scale(0, 4000, 548, 438),
-            [0, 2000, 4000],
-            "tokens",
-            "{:,.0f}",
-        ),
-    )
+    panels = [
+        (title, Scale(lo, hi, start, start - 110), ticks, field, text)
+        for (title, (lo, hi), ticks, field, text), start in zip(
+            MARGIN_PANELS, (220, 384, 548), strict=True
+        )
+    ]
     for title, y, ticks, field, text in panels:
         s.text(560, y.end - 22, title, size=LABEL)
         labels = [f"{t:.0%}" if field == "held" else f"{t:,.0f}" for t in ticks]
         y_axis(s, y, ticks, labels, x.start, x.end, axis=field != "over")
-        if field == "over":
-            s.rule(x.start, x.end, y(0), "slo")
-        for c in calls:
-            values = list(getattr(c, field))
-            middle = statistics.median(values)
-            column_rug(s, x(c.callers), [y(v) for v in values], "blue", median=y(middle))
-            s.text(x(c.callers) + 18, y(middle) + 6, text.format(middle), size=NOTE, halo=True)
-            if field == "over":
-                s.text(
-                    x(c.callers) + 18,
-                    y(0) - 7,
-                    f"SLO {seconds(c.slo)} s",
-                    size=NOTE,
-                    cls="orange tint",
-                    halo=True,
-                )
+        _margin_calls(s, calls, x, y, field, text)
     last = x_axis(
         s,
         x,
@@ -1536,7 +1678,7 @@ def margin(out: Path) -> list[Path]:
         title="Calls beside 24 agent sessions",
     )
     s.height = last + 14
-    return [s.save(out / "report-margin.svg")]
+    return s.save(path)
 
 
 # The A100 ---------------------------------------------------------------------------------------------------------
