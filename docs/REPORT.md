@@ -169,9 +169,10 @@ running request, the latest arrival among equals. The waiting loop stops at the 
 nothing preempts on a waiting request's behalf [[7](#ref-7)].
 
 Two further mechanisms matter here. vLLM's offloading connector keeps a CPU tier of KV that is written through as tokens
-are computed, so a request whose blocks were evicted from the GPU reloads them instead of recomputing them. Asynchronous
-scheduling plans each step before the previous step's output is processed. It keeps the GPU busy, and it leaves up to
-two steps in flight. With it and a CPU tier, as here, a preempted request's blocks are freed one step late.
+are computed, by default a prompt's alone and here generated tokens too (`offload_prompt_only: false`), so a request
+whose blocks were evicted from the GPU reloads them instead of recomputing them. Asynchronous scheduling plans each step
+before the previous step's output is processed. It keeps the GPU busy, and it leaves up to two steps in flight. With it
+and a CPU tier, as here, a preempted request's blocks are freed one step late.
 
 ### 2.4 The two waits in isolation
 
@@ -930,58 +931,61 @@ existing engine's scheduler rather than build a new one.
 **Preemption for a waiting request, with the victim's KV kept.** vLLM's V0 scheduler preempted lower-priority running
 requests for the highest-priority waiting request from v0.6.2 until V0 was removed, but only with chunked prefill off
 and by recomputing the victims [[8](#ref-8)]. Priority scheduling in the V1 scheduler [[27](#ref-27)] preempts among
-running requests only [[7](#ref-7)], and its open fixes preempt at the request-count cap [[18](#ref-18)], which does not
-bind when KV fills. SGLang's priority preemption [[6](#ref-6)] stops when KV memory runs out, and a draft adds
-preemption on KV exhaustion with a best-effort keep of the victim's KV [[28](#ref-28)]. Research systems preempt for a
-waiting or arriving request and keep the victim's KV in host memory. TokenFlow writes KV through as it is generated
-[[29](#ref-29)], ConServe checkpoints each new token's KV [[1](#ref-1)], Chiron migrates evicted batch requests' KV to
-CPU memory [[24](#ref-24)], and ProServe and FastServe copy it there ahead of need [[26](#ref-26), [30](#ref-30)].
-Semantic Scheduling, implemented in vLLM, preempts running requests of lower urgency for an urgent one until it fits,
-discarding or offloading each victim's KV, whichever is cheaper [[31](#ref-31)]. Llumnix keeps memory headroom for
-high-priority requests and migrates others away [[32](#ref-32)], and LayerKV traces long-context TTFT to queueing for KV
-blocks [[33](#ref-33)]. Make-room is V0's rule in V1's scheduler, under chunked prefill and asynchronous scheduling, on
-vLLM's own CPU tier.
+running requests only [[7](#ref-7)]. Its open fixes preempt at the request-count cap [[18](#ref-18)], which does not
+bind when KV fills, and one of them also preempts lower-priority running requests, one at a time, when a waiting
+request's allocation fails, until it fits or none is left [[28](#ref-28)]. SGLang's priority preemption [[6](#ref-6)]
+stops when KV memory runs out, and an open pull request adds preemption on KV exhaustion with a best-effort keep of the
+victim's KV in its prefix cache [[29](#ref-29)]. Research systems preempt for a waiting or arriving request and keep the
+victim's KV in host memory. TokenFlow writes KV through as it is generated [[30](#ref-30)], ConServe checkpoints each
+new token's KV [[1](#ref-1)], Chiron migrates evicted batch requests' KV to CPU memory [[24](#ref-24)], and ProServe and
+FastServe copy it there ahead of need [[26](#ref-26), [31](#ref-31)]. Semantic Scheduling, implemented in vLLM, preempts
+running requests of lower urgency for an urgent one until it fits, discarding or offloading each victim's KV, whichever
+is cheaper [[32](#ref-32)]. Llumnix keeps memory headroom for high-priority requests and migrates others away
+[[33](#ref-33)], and LayerKV traces long-context TTFT to queueing for KV blocks [[34](#ref-34)]. Make-room is V0's rule
+in V1's scheduler, under chunked prefill and asynchronous scheduling, on vLLM's own CPU tier. Unlike the open fix that
+preempts for KV [[28](#ref-28)], it preempts only when at most N victims make room, and then as few as do.
 
 **Keeping prefill out of a priority request's way.** Chunked prefill bounds how long a decode waits behind a prefill
-[[12](#ref-12)], and disaggregated serving moves prefill to other GPUs altogether [[34](#ref-34), [35](#ref-35)], which
+[[12](#ref-12)], and disaggregated serving moves prefill to other GPUs altogether [[35](#ref-35), [36](#ref-36)], which
 a single GPU cannot do. Semantic Scheduling also keeps new prefills out of the batch while its most urgent request
-decodes [[31](#ref-31)], and VoxServe, serving speech language models, prioritizes newly admitted requests until their
-first audio chunk [[36](#ref-36)]. SLOWeave sizes every prefill chunk to the earliest decode deadline, for all decodes
-alike [[37](#ref-37)]. Within vLLM, a proposed decode-priority cadence admitted prefill only every N steps while any
-decode ran, and was closed unmerged [[38](#ref-38)]. vLLM's `prefill_schedule_interval` admits new prefills only every N
-steps, which after v0.32.0 applies to a single engine as well as to the data-parallel MoE engine [[39](#ref-39)]. Both
-hold prefill back for every decode alike. The prefill hold differs in its bound. It holds only lower-priority prefill,
-and only through a reply's first tokens, a window sized to cover whole replies and with them the first sentence the
-voice agent hands to speech synthesis.
+decodes [[32](#ref-32)], and VoxServe, serving speech language models, prioritizes newly admitted requests until their
+first audio chunk [[37](#ref-37)]. SLOWeave sizes every prefill chunk to the earliest decode deadline, for all decodes
+alike [[38](#ref-38)]. Within vLLM, a proposed decode-priority cadence admitted prefill only every N steps while any
+decode ran, and was closed unmerged [[39](#ref-39)]. In v0.32.0, vLLM's `prefill_schedule_interval` admits new prefill
+requests only every N steps, in the data-parallel MoE engine alone; a change that v0.32.0 does not include applies it to
+a single engine too, and a deferred step then carries no prefill at all, chunks of a prompt already admitted included
+[[40](#ref-40)]. Both hold prefill back for every decode alike. The prefill hold differs in its bound. It holds only
+lower-priority prefill, and only through a reply's first tokens, a window sized to cover whole replies and with them the
+first sentence the voice agent hands to speech synthesis.
 
-**Routers and gateways.** llm-d's flow control [[19](#ref-19)], SMG [[20](#ref-20)], Dynamo [[40](#ref-40)], AIBrix
-[[41](#ref-41)] and vLLM's router [[42](#ref-42)] admit, order, shed or evict requests in front of the engine. llm-d's
+**Routers and gateways.** llm-d's flow control [[19](#ref-19)], SMG [[20](#ref-20)], Dynamo [[41](#ref-41)], AIBrix
+[[42](#ref-42)] and vLLM's router [[43](#ref-43)] admit, order, shed or evict requests in front of the engine. llm-d's
 flow control (emulated), SMG and an abort-and-resubmit policy are baselines here. Some end running background requests,
 as llm-d's in-flight eviction does, but none can preempt a running request and keep its work, and the voice turn waits
 for the KV that running requests hold.
 
-**KV across agents' pauses.** InferCept [[43](#ref-43)], KVFlow [[44](#ref-44)], TokenCake [[45](#ref-45)], Continuum
-[[46](#ref-46)] and MORI [[47](#ref-47)] park, retain or prefetch agents' KV around tool calls. CachedAttention
-[[48](#ref-48)] and Pensieve [[49](#ref-49)] keep a conversation's KV between its turns, and on production prefix-cache
-traces LRU is hard to beat [[50](#ref-50)]. These systems decide which agent's KV stays. The change decides when a
+**KV across agents' pauses.** InferCept [[44](#ref-44)], KVFlow [[45](#ref-45)], TokenCake [[46](#ref-46)], Continuum
+[[47](#ref-47)] and MORI [[48](#ref-48)] park, retain or prefetch agents' KV around tool calls. CachedAttention
+[[49](#ref-49)] and Pensieve [[50](#ref-50)] keep a conversation's KV between its turns, and on production prefix-cache
+traces LRU is hard to beat [[51](#ref-51)]. These systems decide which agent's KV stays. The change decides when a
 realtime request may take KV from them, and it uses vLLM's own eviction and CPU tier. In the repository's simulator,
 even knowing exactly when each agent returns from a tool call shortens the median resume by under 9% against LRU with
 the CPU tier, and its p90 by up to 28% at low pressure. The session history a deployment has gains nothing. The change
 therefore leaves the agents' KV to vLLM.
 
 **Voice under contention.** LiveKit's preemptive generation, Endpoint Anticipation and PredGen start the LLM earlier in
-the turn [[13](#ref-13), [51](#ref-51), [52](#ref-52)]. Unmute and NVIDIA's single-GPU voice agent document the cost of
-colocating the cascade [[53](#ref-53), [54](#ref-54)], and Metronome shows full-duplex models collapsing when session KV
-fills the pool [[55](#ref-55)]. We add the voice tier's tail beside a background agent class in one engine, against the
+the turn [[13](#ref-13), [52](#ref-52), [53](#ref-53)]. Unmute and NVIDIA's single-GPU voice agent document the cost of
+colocating the cascade [[54](#ref-54), [55](#ref-55)], and Metronome shows full-duplex models collapsing when session KV
+fills the pool [[56](#ref-56)]. We add the voice tier's tail beside a background agent class in one engine, against the
 configurations an operator can deploy.
 
-**Adaptive prefill control.** Beside SLOWeave's sizing of chunks to deadlines [[37](#ref-37)], two recent controllers
+**Adaptive prefill control.** Beside SLOWeave's sizing of chunks to deadlines [[38](#ref-38)], two recent controllers
 adapt the prefill that runs beside decodes from what they measure. DLFP resizes each prefill chunk from the interval
 between the host's scheduler calls. In vLLM it cut a 0.6B model's p99 inter-token latency by 27.7% at a 34.8% higher p99
 TTFT, and did not carry over to 8B and 32B models or to two-GPU tensor parallelism, which its authors trace to the
-interval being only a proxy for when the GPU finished a step [[56](#ref-56)]. AgentServe, on one consumer GPU as here,
+interval being only a proxy for when the GPU finished a step [[57](#ref-57)]. AgentServe, on one consumer GPU as here,
 isolates agents' prefills from their decodes, budgets the prefills that resume a cached context, and reserves streaming
-multiprocessors for decodes with CUDA Green Contexts [[57](#ref-57)]. Both treat every request of their workload alike,
+multiprocessors for decodes with CUDA Green Contexts [[58](#ref-58)]. Both treat every request of their workload alike,
 with no class above the rest. We built no adaptive controller. At the two-card comparison's envelope (§6.8), what the
 voice tier still loses on a shared card is the speech servers' share of the GPU, which time-slices between processes:
 the transcript comes 51–71 ms later from eight agent sessions on, on stock vLLM and with the change alike, and no
@@ -1127,69 +1131,71 @@ scheduling inside the engine removes.
 
 <a name="ref-27"></a>[27] vLLM pull request #19057. [Implement priority scheduling in V1 engine](https://github.com/vllm-project/vllm/pull/19057). Merged 2025-06-23.
 
-<a name="ref-28"></a>[28] SGLang pull request #45686. [Fire priority preemption when KV runs out, and keep retracted KV behind a flag](https://github.com/sgl-project/sglang/pull/45686). Draft opened 2026-10-21.
+<a name="ref-28"></a>[28] vLLM pull request #40087. [Priority scheduling supports preemption of requests in the running queue by requests in the waiting queue](https://github.com/vllm-project/vllm/pull/40087). Opened 2026-04-17, last pushed 2026-07-14, open on 2026-10-29.
 
-<a name="ref-29"></a>[29] J. Chen et al. [TokenFlow: Responsive LLM Text Streaming Serving under Request Burst via Preemptive Scheduling](https://arxiv.org/abs/2510.02758). In *EuroSys 2026*.
+<a name="ref-29"></a>[29] SGLang pull request #45686. [Fire priority preemption when KV runs out, and keep retracted KV behind a flag](https://github.com/sgl-project/sglang/pull/45686). Opened 2026-10-21, open on 2026-10-29.
 
-<a name="ref-30"></a>[30] B. Wu et al. [FastServe: Iteration-Level Preemptive Scheduling for Large Language Model Inference](https://www.usenix.org/conference/nsdi26/presentation/wu-bingyang). In *NSDI 2026*.
+<a name="ref-30"></a>[30] J. Chen et al. [TokenFlow: Responsive LLM Text Streaming Serving under Request Burst via Preemptive Scheduling](https://arxiv.org/abs/2510.02758). In *EuroSys 2026*.
 
-<a name="ref-31"></a>[31] W. Hua et al. [Semantic Scheduling for LLM Inference](https://arxiv.org/abs/2506.12204). arXiv:2506.12204, 2025.
+<a name="ref-31"></a>[31] B. Wu et al. [FastServe: Iteration-Level Preemptive Scheduling for Large Language Model Inference](https://www.usenix.org/conference/nsdi26/presentation/wu-bingyang). In *NSDI 2026*.
 
-<a name="ref-32"></a>[32] B. Sun et al. [Llumnix: Dynamic Scheduling for Large Language Model Serving](https://www.usenix.org/conference/osdi24/presentation/sun-biao). In *OSDI 2024*.
+<a name="ref-32"></a>[32] W. Hua et al. [Semantic Scheduling for LLM Inference](https://arxiv.org/abs/2506.12204). arXiv:2506.12204, 2025.
 
-<a name="ref-33"></a>[33] Y. Xiong et al. [LayerKV: Optimizing Large Language Model Serving with Layer-wise KV Cache Management](https://arxiv.org/abs/2410.00428). arXiv:2410.00428, 2024.
+<a name="ref-33"></a>[33] B. Sun et al. [Llumnix: Dynamic Scheduling for Large Language Model Serving](https://www.usenix.org/conference/osdi24/presentation/sun-biao). In *OSDI 2024*.
 
-<a name="ref-34"></a>[34] Y. Zhong et al. [DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving](https://arxiv.org/abs/2401.09670). In *OSDI 2024*.
+<a name="ref-34"></a>[34] Y. Xiong et al. [LayerKV: Optimizing Large Language Model Serving with Layer-wise KV Cache Management](https://arxiv.org/abs/2410.00428). arXiv:2410.00428, 2024.
 
-<a name="ref-35"></a>[35] P. Patel et al. [Splitwise: Efficient generative LLM inference using phase splitting](https://arxiv.org/abs/2311.18677). In *ISCA 2024*.
+<a name="ref-35"></a>[35] Y. Zhong et al. [DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving](https://arxiv.org/abs/2401.09670). In *OSDI 2024*.
 
-<a name="ref-36"></a>[36] K. Kamahori et al. [VoxServe: Streaming-Centric Serving System for Speech Language Models](https://arxiv.org/abs/2602.00269). arXiv:2602.00269, 2026.
+<a name="ref-36"></a>[36] P. Patel et al. [Splitwise: Efficient generative LLM inference using phase splitting](https://arxiv.org/abs/2311.18677). In *ISCA 2024*.
 
-<a name="ref-37"></a>[37] S. Song et al. [Deadline-Aware Adaptive Prefill Chunking for Efficient Large Language Model Serving](https://arxiv.org/abs/2609.07883). arXiv:2609.07883, 2026.
+<a name="ref-37"></a>[37] K. Kamahori et al. [VoxServe: Streaming-Centric Serving System for Speech Language Models](https://arxiv.org/abs/2602.00269). arXiv:2602.00269, 2026.
 
-<a name="ref-38"></a>[38] vLLM pull request #56848. [Add decode-priority prefill cadence for single-node decode ITL](https://github.com/vllm-project/vllm/pull/56848). Opened 2026-09-14, closed unmerged 2026-09-17.
+<a name="ref-38"></a>[38] S. Song et al. [Deadline-Aware Adaptive Prefill Chunking for Efficient Large Language Model Serving](https://arxiv.org/abs/2609.07883). arXiv:2609.07883, 2026.
 
-<a name="ref-39"></a>[39] vLLM pull request #54627. [Apply prefill_schedule_interval outside data parallelism](https://github.com/vllm-project/vllm/pull/54627). Merged 2026-10-15, after v0.32.0.
+<a name="ref-39"></a>[39] vLLM pull request #56848. [Add decode-priority prefill cadence for single-node decode ITL](https://github.com/vllm-project/vllm/pull/56848). Opened 2026-09-14, closed unmerged 2026-09-17.
 
-<a name="ref-40"></a>[40] NVIDIA. [Dynamo](https://github.com/ai-dynamo/dynamo), version 1.5.1.
+<a name="ref-40"></a>[40] vLLM pull request #54627. [Apply prefill_schedule_interval outside data parallelism](https://github.com/vllm-project/vllm/pull/54627). Merged 2026-10-15; not in v0.32.0.
 
-<a name="ref-41"></a>[41] [AIBrix](https://github.com/vllm-project/aibrix), version 0.8.0.
+<a name="ref-41"></a>[41] NVIDIA. [Dynamo](https://github.com/ai-dynamo/dynamo), version 1.5.1.
 
-<a name="ref-42"></a>[42] [vLLM router](https://github.com/vllm-project/router), version 0.1.16.
+<a name="ref-42"></a>[42] [AIBrix](https://github.com/vllm-project/aibrix), version 0.8.0.
 
-<a name="ref-43"></a>[43] R. Abhyankar et al. [InferCept: Efficient Intercept Support for Augmented Large Language Model Inference](https://proceedings.mlr.press/v235/abhyankar24a.html). In *ICML 2024*.
+<a name="ref-43"></a>[43] [vLLM router](https://github.com/vllm-project/router), version 0.1.16.
 
-<a name="ref-44"></a>[44] Z. Pan et al. [KVFlow: Efficient Prefix Caching for Accelerating LLM-Based Multi-Agent Workflows](https://arxiv.org/abs/2507.07400). In *NeurIPS 2025*.
+<a name="ref-44"></a>[44] R. Abhyankar et al. [InferCept: Efficient Intercept Support for Augmented Large Language Model Inference](https://proceedings.mlr.press/v235/abhyankar24a.html). In *ICML 2024*.
 
-<a name="ref-45"></a>[45] Z. Bian et al. [TokenCake: A KV-Cache-centric Serving Framework for LLM-based Multi-Agent Applications](https://arxiv.org/abs/2510.18586). In *EuroSys 2027*.
+<a name="ref-45"></a>[45] Z. Pan et al. [KVFlow: Efficient Prefix Caching for Accelerating LLM-Based Multi-Agent Workflows](https://arxiv.org/abs/2507.07400). In *NeurIPS 2025*.
 
-<a name="ref-46"></a>[46] H. Li et al. [Continuum: Efficient and Robust Multi-Turn LLM Agent Scheduling with KV Cache Time-to-Live](https://arxiv.org/abs/2511.02230). In *ICLR 2026 Workshop on Lifelong Agents*.
+<a name="ref-46"></a>[46] Z. Bian et al. [TokenCake: A KV-Cache-centric Serving Framework for LLM-based Multi-Agent Applications](https://arxiv.org/abs/2510.18586). In *EuroSys 2027*.
 
-<a name="ref-47"></a>[47] T. Xia et al. [Idleness is Relative: Exploiting Tool-Call Idle Windows for Offloading in Agentic Systems with MORI](https://arxiv.org/abs/2606.00866). arXiv:2606.00866, 2026.
+<a name="ref-47"></a>[47] H. Li et al. [Continuum: Efficient and Robust Multi-Turn LLM Agent Scheduling with KV Cache Time-to-Live](https://arxiv.org/abs/2511.02230). In *ICLR 2026 Workshop on Lifelong Agents*.
 
-<a name="ref-48"></a>[48] B. Gao et al. [Cost-Efficient Large Language Model Serving for Multi-turn Conversations with CachedAttention](https://arxiv.org/abs/2403.19708). In *USENIX ATC 2024*.
+<a name="ref-48"></a>[48] T. Xia et al. [Idleness is Relative: Exploiting Tool-Call Idle Windows for Offloading in Agentic Systems with MORI](https://arxiv.org/abs/2606.00866). arXiv:2606.00866, 2026.
 
-<a name="ref-49"></a>[49] L. Yu, J. Lin, and J. Li. [Stateful Large Language Model Serving with Pensieve](https://arxiv.org/abs/2312.05516). In *EuroSys 2025*.
+<a name="ref-49"></a>[49] B. Gao et al. [Cost-Efficient Large Language Model Serving for Multi-turn Conversations with CachedAttention](https://arxiv.org/abs/2403.19708). In *USENIX ATC 2024*.
 
-<a name="ref-50"></a>[50] Y. Liu, M. Yu, and J. Yang. [When Fancy Eviction Fails: Rethinking Cache Replacement For LLM Prefix Reuse](https://arxiv.org/abs/2609.28870). arXiv:2609.28870, 2026.
+<a name="ref-50"></a>[50] L. Yu, J. Lin, and J. Li. [Stateful Large Language Model Serving with Pensieve](https://arxiv.org/abs/2312.05516). In *EuroSys 2025*.
 
-<a name="ref-51"></a>[51] S. Udupa et al. [Endpoint Anticipation for Low-Latency Spoken Dialogue](https://arxiv.org/abs/2606.13450). In *Interspeech 2026*.
+<a name="ref-51"></a>[51] Y. Liu, M. Yu, and J. Yang. [When Fancy Eviction Fails: Rethinking Cache Replacement For LLM Prefix Reuse](https://arxiv.org/abs/2609.28870). arXiv:2609.28870, 2026.
 
-<a name="ref-52"></a>[52] S. Li and A. Grover. [PredGen: Accelerated Inference of Large Language Models through Input-Time Speculation for Real-Time Speech Interaction](https://arxiv.org/abs/2506.15556). arXiv:2506.15556, 2025.
+<a name="ref-52"></a>[52] S. Udupa et al. [Endpoint Anticipation for Low-Latency Spoken Dialogue](https://arxiv.org/abs/2606.13450). In *Interspeech 2026*.
 
-<a name="ref-53"></a>[53] Kyutai. [Unmute](https://github.com/kyutai-labs/unmute).
+<a name="ref-53"></a>[53] S. Li and A. Grover. [PredGen: Accelerated Inference of Large Language Models through Input-Time Speculation for Real-Time Speech Interaction](https://arxiv.org/abs/2506.15556). arXiv:2506.15556, 2025.
 
-<a name="ref-54"></a>[54] NVIDIA. [Nemotron voice agent blueprint](https://github.com/NVIDIA-AI-Blueprints/nemotron-voice-agent).
+<a name="ref-54"></a>[54] Kyutai. [Unmute](https://github.com/kyutai-labs/unmute).
 
-<a name="ref-55"></a>[55] J. Meng and B. Li. [Metronome: Bound the Cache, Keep the Beat for Real-Time Interaction Model Serving](https://arxiv.org/abs/2607.02640). arXiv:2607.02640, 2026.
+<a name="ref-55"></a>[55] NVIDIA. [Nemotron voice agent blueprint](https://github.com/NVIDIA-AI-Blueprints/nemotron-voice-agent).
 
-<a name="ref-56"></a>[56] G. Agarwal, A. Garg, and I. Singhal. [Decode-Latency Feedback Prefill: A Model-Free Controller and Its Generalization Limits](https://arxiv.org/abs/2609.38386). arXiv:2609.38386, 2026.
+<a name="ref-56"></a>[56] J. Meng and B. Li. [Metronome: Bound the Cache, Keep the Beat for Real-Time Interaction Model Serving](https://arxiv.org/abs/2607.02640). arXiv:2607.02640, 2026.
 
-<a name="ref-57"></a>[57] Y. Zhang, Y. Yan, N. Yang, and D. Yuan. [AgentServe: Algorithm-System Co-Design for Efficient Agentic AI Serving on a Consumer-Grade GPU](https://arxiv.org/abs/2603.10342). arXiv:2603.10342, 2026.
+<a name="ref-57"></a>[57] G. Agarwal, A. Garg, and I. Singhal. [Decode-Latency Feedback Prefill: A Model-Free Controller and Its Generalization Limits](https://arxiv.org/abs/2609.38386). arXiv:2609.38386, 2026.
 
-<a name="ref-58"></a>[58] Z. Ye et al. [FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving](https://arxiv.org/abs/2501.01005). In *MLSys 2025*.
+<a name="ref-58"></a>[58] Y. Zhang, Y. Yan, N. Yang, and D. Yuan. [AgentServe: Algorithm-System Co-Design for Efficient Agentic AI Serving on a Consumer-Grade GPU](https://arxiv.org/abs/2603.10342). arXiv:2603.10342, 2026.
 
-<a name="ref-59"></a>[59] T. Dao. [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691). In *ICLR 2024*.
+<a name="ref-59"></a>[59] Z. Ye et al. [FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving](https://arxiv.org/abs/2501.01005). In *MLSys 2025*.
+
+<a name="ref-60"></a>[60] T. Dao. [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691). In *ICLR 2024*.
 
 ## Appendices
 
@@ -1425,7 +1431,7 @@ A step model fitted on the A100's own calibration run explains the miss. Its dec
 KV read, 1.82 times the forecast, which is 858 GB/s or 42% of the card's bandwidth, where the RTX 5060 Ti's reaches 77%
 of its own. The per-token cost of the linear layers came in at the forecast's 41.4 µs. A step on the A100 is cheaper
 than on the RTX 5060 Ti by less than the cards' peaks say, and the KV case's wait is a count of decode steps.
-FlashInfer's attention [[58](#ref-58)] in place of FlashAttention 2 [[59](#ref-59)] shortened the wait by 8%, to
+FlashInfer's attention [[59](#ref-59)] in place of FlashAttention 2 [[60](#ref-60)] shortened the wait by 8%, to
 1,580–1,607 ms.
 
 The forecast also overstated how often two calls run short of KV. It placed the A100 at 10% of the time and the RTX 5060

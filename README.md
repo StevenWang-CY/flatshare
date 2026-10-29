@@ -217,7 +217,7 @@ engine's scheduler. The end-to-end experiment, E2, measured SMG, llm-d's flow co
 SGLang's own priority preemption: none meets the SLO, and most leave the p95 between 8.8 and 12.1 s. What Flatshare
 adds is the change to vLLM's scheduler, its end-to-end measurement against every deployable alternative, and two
 measured negative results: a gateway policy timed by the conversation (E2) and agent-side KV prefetch (E1). A separate
-draft for SGLang, [#45686](https://github.com/sgl-project/sglang/pull/45686), proposes the counterpart of #63350.
+SGLang pull request, [#45686](https://github.com/sgl-project/sglang/pull/45686), proposes the counterpart of #63350.
 `flatshare-gateway` is a small Rust harness for these experiments, not a fleet router.
 [docs/PRIOR-ART.md](docs/PRIOR-ART.md) has the sources and where each result went upstream.
 
