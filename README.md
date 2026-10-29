@@ -93,7 +93,7 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
 1. **vLLM 0.32 cannot preempt for a waiting request.** Its scheduler preempts only so that a running request can grow,
    and its waiting loop stops at the first request it cannot allocate. Behind two 18k-token agent requests in a full
    pool, a 750-token voice turn waits 4.9–5.0 s for its first token, and 219–290 ms with #63350
-   ([the KV case](docs/BENCHMARKS.md#the-kv-case-make-room)).
+   ([the KV case](docs/BENCHMARKS.md#the-prs-configuration-in-one-session-w5)).
 2. **Admitting the turn is not enough.** A step cap bounds a step's tokens, not its time. Beside three agent prefills
    the reply's tokens arrive 60–65 ms apart with #63350 alone and 16–20 ms apart with #63351.
 3. **The hold must cover the reply's first sentence**, because the voice agent hands text to speech its first complete
@@ -132,27 +132,49 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
 ## Quick start
 
 The make-room variant builds vLLM 0.32.0's scheduler with the two PRs, backported, from an installed vLLM, without
-modifying the installation. In an environment with vLLM 0.32.0 and a GPU it supports:
+modifying the installation. On a host with a GPU that vLLM 0.32.0 supports, install it and build the variant:
 
 ```sh
+pip install vllm==0.32.0
 git clone https://github.com/StevenWang-CY/flatshare && cd flatshare
 python python/flatshare_vllm/src/flatshare_vllm/build.py make-room ~/make-room
+```
+
+Serve stock vLLM with the serving profile's settings. Once it is up, run the probe from a second shell: it sends a voice
+turn behind two long agent requests that fill the KV pool.
+
+```sh
 # Without --max-model-len vLLM takes the model's 262,144 tokens, which no 16 GB card holds, and without --max-num-seqs
 # 1,024 request slots on a card of 70 GiB or more whose name lacks "a100", more than the step cap, which vLLM refuses.
+vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-len 32768 --max-num-seqs 256 \
+  --scheduling-policy priority --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
+```
+
+Stop the engine, then serve the same settings with make-room and run the probe again:
+
+```sh
 PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-len 32768 --max-num-seqs 256 \
   --scheduling-policy priority --max-num-batched-tokens 256 --long-prefill-token-threshold 0 \
   --scheduler-cls flatshare_make_room_scheduler.AsyncScheduler \
   --additional-config.make_room.max_preemptions_per_step 2 \
   --additional-config.make_room.budget_cap true --additional-config.make_room.budget_cap_tokens 48 \
   --additional-config.make_room.reserve_tokens 0
-python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv   # a voice turn behind two long agent requests
+python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
 ```
 
-Send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV tier from
-[`engine.yaml`](deploy/phastform/engine.yaml), which holds the box's 32k context and fixed KV pool too. The step cap is
-the serving profile's, 256 tokens a step without a per-request threshold, which the sweep chose for the PRs and the
-two-card results ran; the table above ran 512 with a 256-token threshold. `probe.py` sizes its requests from the
-engine's KV pool and context length, so the check runs unchanged on another card. Then read:
+The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On the box it was 4,900–4,971 ms on
+stock vLLM and 216–294 ms with make-room, in four runs each
+([stock](benchmarks/results/2026-10-24-w5-probes/pr-probes/stock-kv.log),
+[make-room](benchmarks/results/2026-10-24-w5-probes/pr-probes/ab-kv.log)). Both ran at
+[`engine.yaml`](deploy/phastform/engine.yaml)'s 512-token steps, and make-room at its default 16-token window
+([what ran](benchmarks/results/2026-10-24-w5-probes/README.md)). `probe.py` sizes its requests from the engine's KV
+pool and context length, so the check runs unchanged on another card.
+
+To serve beside agents, send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV
+tier from `engine.yaml`, which holds the box's 32k context and fixed KV pool too. The commands' step cap is the serving
+profile's, 256 tokens a step without a per-request threshold, which the sweep chose for the PRs and the two-card results
+ran. The Results table ran 512 with a 256-token threshold. Then read:
 
 - [docs/PRODUCTION.md](docs/PRODUCTION.md) to configure and size it, to check that your deployment is in its regime, and
   for what to watch and how it fails;

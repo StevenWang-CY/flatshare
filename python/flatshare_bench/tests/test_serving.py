@@ -2,8 +2,9 @@
 serving.json, which hold every setting the engine must run with and its required revisions, the measured configuration
 of the sweep's PR point at the step cap it chose (W5's but for the step cap), every setting of which a point's record
 keeps but those UNRECORDED names; the drop-in runs exactly what serving.json names, its step cap over the frozen box's
-engine.yaml; and deploy/bin/serving-check passes an engine that runs it and fails one that differs in any setting, the
-negative control, as well as a file the engine did not write."""
+engine.yaml; README.md's quick start serves its engine settings on stock vLLM and with make-room; and
+deploy/bin/serving-check passes an engine that runs it and fails one that differs in any setting, the negative control,
+as well as a file the engine did not write."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -40,6 +42,10 @@ STEP_CAP = ("max_num_batched_tokens", "long_prefill_token_threshold")
 """The step cap's two settings, the [serving] table's own."""
 STEP_CAP_FLAGS = ("--max-num-batched-tokens", "--long-prefill-token-threshold")
 """The flags the variant passes them as."""
+README = REPO / "README.md"
+BUILD = "python/flatshare_vllm/src/flatshare_vllm/build.py"
+PROBE = "python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py"
+"""The scripts README.md's quick start runs, from the repository's root."""
 
 spec = importlib.util.spec_from_file_location("flatshare_profile_serving", DEPLOY / "profile.py")
 profile = importlib.util.module_from_spec(spec)
@@ -120,6 +126,81 @@ def test_the_serving_profile_renders_the_boxs_serving_files(tmp_path: Path) -> N
         text=True,
     )
     assert done.returncode == 2 and "no serving profile" in done.stderr
+
+
+def quick_start(readme: str) -> list[list[str]]:
+    """The commands of README.md's Quick start, in order: each ``sh`` block's lines joined across their continuations
+    and split as the shell splits them, without their comments."""
+    section = readme.split("\n## Quick start\n", 1)[1].split("\n## ", 1)[0]
+    blocks = re.findall(r"^```sh\n(.*?)^```$", section, re.M | re.S)
+    return [
+        words
+        for block in blocks
+        for line in block.replace("\\\n", " ").splitlines()
+        if (words := shlex.split(line, comments=True))
+    ]
+
+
+def quick_start_engines(readme: str) -> list[tuple[dict[str, str], dict[str, str]]]:
+    """Each ``vllm serve`` of README.md's Quick start, in order: the environment it sets, and its model and flags."""
+    engines = []
+    for words in quick_start(readme):
+        env = {}
+        while words and "=" in words[0] and not words[0].startswith("-"):
+            key, _, value = words.pop(0).partition("=")
+            env[key] = value
+        if words[:2] == ["vllm", "serve"]:
+            flags = words[3:]
+            engines.append(
+                (env, {"model": words[2], **dict(zip(flags[::2], flags[1::2], strict=True))})
+            )
+    return engines
+
+
+def quick_start_flags(engine: dict) -> dict[str, str]:
+    """The arguments of a ``vllm serve`` at the serving profile's engine settings, as the quick start passes them: the
+    model and its context, priority scheduling, the request slots and the step cap. It leaves the rest to engine.yaml,
+    which its text points to: the fixed KV pool, the CPU tier and the model's revision."""
+    return {
+        "model": engine["model"]["model"],
+        "--max-model-len": str(engine["model"]["max_model_len"]),
+        "--max-num-seqs": str(engine["scheduler"]["max_num_seqs"]),
+        "--scheduling-policy": engine["scheduler"]["policy"],
+        "--max-num-batched-tokens": str(engine["scheduler"]["max_num_batched_tokens"]),
+        "--long-prefill-token-threshold": str(engine["scheduler"]["long_prefill_token_threshold"]),
+    }
+
+
+def test_the_readmes_quick_start_serves_the_profiles_engine_settings_on_both_engines() -> None:
+    # The quick start probes stock vLLM, then make-room, each at the serving profile's engine settings: the release
+    # build.py takes, the same model, context, request slots and step cap on both engines, and on make-room the module
+    # build.py writes, with the profile's switches. A flag that drifts from the profile, in either command or in the
+    # profile, fails here.
+    serve = profile.load("rtx-5060-ti-serve")
+    values, _, _ = profile.resolve(serve, None)
+    engine = profile.serving_config(serve, values)["engine"]
+    readme = README.read_text()
+    commands = quick_start(readme)
+    assert commands[0] == ["pip", "install", f"vllm=={engine['vllm_version']}"]
+    (stock_env, stock), (env, make_room) = quick_start_engines(readme)
+    assert (stock_env, stock) == ({}, quick_start_flags(engine))
+    # make-room loads the module that build.py writes into the directory on its PYTHONPATH.
+    assert [words for words in commands if BUILD in words] == [
+        ["python", BUILD, "make-room", env.pop("PYTHONPATH")]
+    ]
+    assert env == {}
+    assert make_room == {
+        **quick_start_flags(engine),
+        "--scheduler-cls": f"{engine['scheduler_module']['name']}.AsyncScheduler",
+        **{
+            f"--additional-config.make_room.{key}": str(value).lower()
+            for key, value in engine["make_room"].items()
+        },
+    }
+    # Each engine is probed in the KV case at vLLM's default address, by the command after its start.
+    starts = [i for i, words in enumerate(commands) if "serve" in words[:3]]
+    probe = ["python", PROBE, "http://127.0.0.1:8000", "kv"]
+    assert [commands[i + 1] for i in starts] == [probe, probe]
 
 
 def test_serving_json_holds_every_effective_setting_and_its_required_revisions() -> None:
