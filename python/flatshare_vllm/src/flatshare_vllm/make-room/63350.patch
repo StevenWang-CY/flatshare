@@ -18,7 +18,7 @@ The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
     them.
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
-index cec96d2a4..2e593a48b 100644
+index cec96d2a4..842c6eb2e 100644
 --- a/vllm/v1/core/sched/scheduler.py
 +++ b/vllm/v1/core/sched/scheduler.py
 @@ -53,6 +53,12 @@ from vllm.v1.core.sched.request_queue import (
@@ -129,7 +129,7 @@ index cec96d2a4..2e593a48b 100644
                  new_blocks = self.kv_cache_manager.allocate_slots(
                      request,
                      num_tokens_past_hit,
-@@ -3091,6 +3157,285 @@ class Scheduler(SchedulerInterface):
+@@ -3091,6 +3157,294 @@ class Scheduler(SchedulerInterface):
              self._request_remaining_blocks(req) for req in self._inflight_prefills
          )
  
@@ -394,17 +394,26 @@ index cec96d2a4..2e593a48b 100644
 +        ]
 +        for victim in victims:
 +            groups.extend(self.kv_cache_manager.get_blocks(victim.request_id).blocks)
++        block_pool = self.kv_cache_manager.block_pool
++        # Each holder of a block holds one reference to it: a block with one is
++        # released where it is seen, and only a shared block's holders are
++        # counted.
++        num_blocks = 0
 +        for group in groups:
 +            for block in group:
-+                holders[id(block)] += 1
-+                blocks[id(block)] = block
-+        block_pool = self.kv_cache_manager.block_pool
-+        num_blocks = sum(
-+            holders[key] == block.ref_cnt
-+            and key not in hit_blocks
-+            and block.pool is block_pool
-+            and not block.is_null
-+            for key, block in blocks.items()
++                if (
++                    block.pool is not block_pool
++                    or block.is_null
++                    or (hit_blocks and id(block) in hit_blocks)
++                ):
++                    continue
++                if block.ref_cnt == 1:
++                    num_blocks += 1
++                else:
++                    holders[id(block)] += 1
++                    blocks[id(block)] = block
++        num_blocks += sum(
++            holders[key] == block.ref_cnt for key, block in blocks.items()
 +        )
 +        return num_blocks + sum(
 +            self._request_remaining_blocks(req)
