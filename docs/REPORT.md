@@ -835,8 +835,9 @@ grows from 437 ms with the calls alone to 909 ms at four sessions, 2,424 at eigh
 holds it to 534, 737 and 768. With the change, from eight sessions on, the transcript and the first sentence take
 176–249 ms longer at the median than with the calls alone, nearly all of the margin before any reply's own spread.
 
-**Table 7. The voice turn's stages on the consolidated card, in ms from the end of the caller's speech.** Medians over
-the three rounds of each run's median, or of its p95 where the column says so.
+**Table 7. The voice turn's stages on the consolidated card, in ms: the transcript from the end of the caller's speech,
+the LLM's first token and first sentence from its request, and TTS's first audio from that sentence.** Medians over the
+three rounds of each run's median, or of its p95 where the column says so.
 
 | Card | Transcript | LLM first token | LLM first token, p95 | First sentence | First sentence, p95 | TTS first audio |
 |---|---:|---:|---:|---:|---:|---:|

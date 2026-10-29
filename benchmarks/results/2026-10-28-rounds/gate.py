@@ -404,8 +404,9 @@ STAGES = (
     ("llm_first_sentence_ms", "p95", "First sentence, p95"),
     ("tts_first_audio_ms", "p50", "TTS first audio"),
 )
-"""The voice worker's stages from the end of the caller's speech (summary.json's worker.waterfall), each a percentile
-of a point's turns."""
+"""The voice worker's stage timings (summary.json's worker.waterfall), each a percentile of a point's turns: the
+transcript from the end of the caller's speech, the LLM's first token and first sentence from its request, and TTS's
+first audio from that sentence."""
 
 
 def stages(root: Path = HERE) -> str:
