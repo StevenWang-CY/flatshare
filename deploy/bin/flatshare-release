@@ -226,7 +226,6 @@ def gpu_units(node: str) -> tuple[Unit, ...]:
     )
 
 
-GPU_TOOLS: dict[str, str] = {}
 CYAN = HostSpec(
     "cyan",
     node="cyan",
