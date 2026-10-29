@@ -1459,6 +1459,33 @@ def test_a_record_of_campaigns_keeps_its_points_as_export_writes_them(
         assert not re.search(r"/(home|Users|root)/", path.read_text()), path  # no account
 
 
+UNREDUCED = ("2026-10-26-a100-rehearsal/e2/a100-r1/w5-disc-pr-ab48-s24",)
+"""The complete points whose engine.json is the engine's whole configuration, as the run wrote it, rather than what a
+record keeps of it: the release kit's rehearsal's point, every other file of which is what the export writes."""
+
+
+def test_a_committed_points_engine_json_reduces_to_itself() -> None:
+    # A record's engine.json is what engine_settings keeps of the engine's configuration, so reducing it again changes
+    # nothing. That holds for every complete point under benchmarks/results, in any record set and at any depth, so a
+    # change to the reduction that would drop or change what some record keeps (the sweep's and the rounds' points
+    # keep the tokenizer) fails here, before a record is exported with it. An attempt that did not complete keeps the
+    # engine's whole configuration, which the export makes no record of.
+    results = REPO / "benchmarks" / "results"
+    engines = [
+        path
+        for path in sorted(results.rglob("engine.json"))
+        if json.loads((path.parent / "run.json").read_text())["status"] == "complete"
+        and str(path.parent.relative_to(results)) not in UNREDUCED
+    ]
+    assert engines
+    for path in engines:
+        kept = json.loads(path.read_text())
+        again = engine_settings(kept)
+        assert set(again) == set(kept), path
+        for section, settings in kept.items():
+            assert again[section] == settings, f"{path}: {section}"
+
+
 def test_each_campaigns_report_is_what_its_points_give(tmp_path: Path) -> None:
     # A record of campaigns keeps each campaign's report beside its points, as make reproduce-e2 writes it from
     # them; the attempts that did not complete are left out of it, as load_points leaves them.
