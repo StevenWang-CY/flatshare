@@ -871,8 +871,13 @@ Five rounds on new samples then ran the three configurations side by side at 24 
 SLO (Table 8). At 256 the change had fewer replies over the SLO than at 512 in each of the five rounds, 44 of 295
 against 94 (14.9% against 31.9%), with a pooled p95 of 2.15 s against 2.26 s, while tuned vLLM had 261 of 295 over. The
 smaller steps cost the agents 7% of their token rate, 3,067 tokens a second against 3,303, and their median TTFT rose
-from 78 s to 85 s. The serving profile runs the change at 256 tokens a step without a threshold. No cap brought 24
-sessions within the SLO's 5% allowance, which the shared card meets at four (§6.8).
+from 78 s to 85 s. The smaller steps also left the pool room. At 256 tokens its fewest free blocks in a run were 10–89,
+against 0–2 at 512, and vLLM counted 0–4 preemptions a run, make-room's among them, against 39–50. In the sweep's run at
+256 it counted none, so there the change's 9 replies over the SLO, against stock vLLM's 51 of 59 at the same cap, are
+the hold's. Beside the envelope's four sessions (§6.8) make-room preempted none in any of three rounds. At 256 tokens
+the hold and the step cap carry the change, and make-room stays in the profile for a pool that fills, as it does at 512.
+The serving profile runs the change at 256 tokens a step without a threshold. No cap brought 24 sessions within the
+SLO's 5% allowance, which the shared card meets at four (§6.8).
 
 **Table 8. The step cap beside 24 sessions, in five rounds on new samples of the agents.** Each reply is held to its
 round's SLO, and the replies over it are pooled over the rounds and given by round. The 512-token rows keep the
