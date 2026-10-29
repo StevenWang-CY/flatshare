@@ -665,7 +665,8 @@ impl Metrics {
         r.register(
             "error_events",
             "Error events sent on event streams before the gateway aborted them, by type: upstream_unavailable when \
-             the upstream broke the stream off, draining when a draining gateway cut a background stream",
+             the upstream broke the stream off, draining when a draining gateway cut a background stream, \
+             upstream_timeout when a deadline passed while the upstream streamed",
             self.error_events.clone(),
         );
         r.register(
