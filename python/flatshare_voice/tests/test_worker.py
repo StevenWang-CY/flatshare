@@ -5,9 +5,11 @@ sent to LiveKit as each call ends), and its two audio configurations, the synthe
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import multiprocessing
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -382,3 +384,25 @@ def test_serve_mode_tells_livekit_a_line_is_free_as_soon_as_a_calls_process_clos
         0.5,
         1,
     )
+
+
+def table_names(text: str) -> set[str]:
+    """The variables named in the first column of the Markdown table rows in ``text``."""
+    return {
+        name
+        for line in text.splitlines()
+        if line.startswith("|")
+        for name in re.findall(r"FLATSHARE_[A-Z_]+", line.split("|")[1])
+    }
+
+
+def test_both_settings_tables_name_every_variable_from_env_reads() -> None:
+    # The worker's settings are tabled twice, in its module docstring and in the package's README: each variable
+    # Settings.from_env reads is in both, so that a setting added to the code without its rows fails here.
+    read = set(re.findall(r"FLATSHARE_[A-Z_]+", inspect.getsource(Settings.from_env)))
+    assert "FLATSHARE_LLM_UDS" in read
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+    assert read <= table_names(worker.__doc__), sorted(read - table_names(worker.__doc__))
+    assert read <= table_names(readme), sorted(read - table_names(readme))
+    # The negative control: a README whose table lacks one of them fails.
+    assert not read <= table_names(readme.replace("FLATSHARE_EVENTS", "FLATSHARE_EVENT"))
