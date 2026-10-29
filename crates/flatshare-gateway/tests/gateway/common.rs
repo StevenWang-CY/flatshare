@@ -43,6 +43,8 @@ pub const GATE: &str = "x-mock-gate";
 pub const STATUS: &str = "x-mock-status";
 /// The header the gateway's inference canary sends.
 pub const CANARY: &str = "x-flatshare-canary";
+/// A `[[nodes]]` entry's key for a node with both roles whose agents run without a bound, which it must say.
+pub const UNBOUNDED: &str = "max_agents = \"unbounded\"";
 
 /// The mock engine's `/metrics`, as vLLM's exposition starts, with vLLM's content type.
 pub const ENGINE_METRICS: &str = "# HELP vllm:num_requests_running Number of requests in model execution batches.\n\

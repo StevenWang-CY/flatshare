@@ -581,8 +581,8 @@ async fn a_reload_keeps_every_sessions_node_and_the_nodes_call_slots() {
     let b = TestNode::start("b", Script::Json("{}")).await;
     let nodes = format!(
         "{}{}[placement]\nhealth_interval_s = 0.05\n",
-        a.toml("max_calls = 1"),
-        b.toml("max_calls = 1")
+        a.toml(&format!("max_calls = 1\n{UNBOUNDED}")),
+        b.toml(&format!("max_calls = 1\n{UNBOUNDED}"))
     );
     let (unit, tcp, unix) = Unit::with_nodes(&nodes);
     let child = unit.start(tcp, unix);
