@@ -186,7 +186,7 @@ python3 ~/flatshare/src/deploy/bin/serving-check ~/flatshare/src/deploy/phastfor
 - `deploy/cyan/variants/node-binding/flatshare-voice-worker.conf` has bench mode's calls ask for their node too (`FLATSHARE_NODE_BINDING=on`), for points and drills on two GPU nodes behind the gateway's `[[nodes]]`; a gateway without nodes answers 404, and every call keeps the unit's sockets.
 - `deploy/cyan/variants/qwen3-14b/flatshare-voice-worker.conf` makes the agent's requests name Qwen3-14B-FP8 (`FLATSHARE_LLM_MODEL`), for an engine that serves it in place of the box's model: the A100 kit's optional arm C' (`benchmarks/a100/cprime.sh` links it and removes it).
 
-**Lifecycle events.** Each session's end logs its counts (`journalctl --user -u flatshare-voice-worker | grep '"session ended"'`: `events_sent`, `events_dropped`, `events_failed`), and the gateway counts what it received in `flatshare_gateway_events_total{source="voice-worker"}`. With the LLM on an engine's socket (the bypass) the worker sends none.
+**Lifecycle events.** Each session's end logs its counts (`journalctl --user -u flatshare-voice-worker | grep '"session ended"'`: `events_sent`, `events_dropped`, `events_failed`), and the gateway counts what it received in `flatshare_gateway_events_total{source="voice-worker"}`. With the LLM on an engine's socket (the bypass) the worker sends none. In serve mode it sends `session_closed` alone, at the call's end, and in bench mode every event, for E2's lifecycle policy.
 
 **Measurement callers.** Render the corpus once with the TTS server. The callers run inside the namespace:
 

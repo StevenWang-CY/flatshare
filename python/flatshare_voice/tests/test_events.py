@@ -1,6 +1,6 @@
 """Lifecycle events and turn lines: LiveKit's signals driven through the hooks of a stand-in session,
-the delivery to a fake control plane on a Unix socket, and a call's end, which ends its placement
-whatever its events."""
+the delivery to a fake control plane on a Unix socket, and a call's events in each mode and the end
+of its placement."""
 
 from __future__ import annotations
 
@@ -599,17 +599,10 @@ def test_a_session_end_sends_its_last_events_and_logs_its_counts(
 @pytest.mark.parametrize(
     ("mode", "switch", "sent"),
     [
-        (
-            "serve",
-            "on",
-            [
-                "user_speech_started",
-                "user_turn_ended",
-                "playback_started",
-                "playback_ended",
-                "session_closed",
-            ],
-        ),
+        # Serve mode's gateway runs no admission policy and acts on session_closed alone: no event goes out
+        # during the call's turns.
+        ("serve", "on", ["session_closed"]),
+        # Bench mode's events, which E2's lifecycle policy reads, as they always were.
         (
             "bench",
             "on",
@@ -624,11 +617,11 @@ def test_a_session_end_sends_its_last_events_and_logs_its_counts(
         ("serve", "off", []),
     ],
 )
-def test_a_calls_end_ends_its_placement_whatever_its_events(
+def test_a_calls_end_ends_its_placement_and_serve_mode_posts_session_closed_alone(
     socket_path: str, mode: str, switch: str, sent: list[str]
 ) -> None:
-    # A call as the worker's entrypoint runs one, placed on a node (worker.bind_call) and its session observed:
-    # whatever FLATSHARE_EVENTS says, the job's end ends the call's placement.
+    # A call as the worker's entrypoint runs one, placed on a node (worker.bind_call) and its session observed with
+    # the mode's events: whatever FLATSHARE_EVENTS says, the job's end ends the call's placement.
     sockets = Path(socket_path).parent
     env = {
         "FLATSHARE_LLM_UDS": socket_path,
@@ -647,7 +640,8 @@ def test_a_calls_end_ends_its_placement_whatever_its_events(
             ctx = SimpleNamespace(add_shutdown_callback=callbacks.append)
             binding = await worker.bind_call(ctx, settings, "voice-RM_a")  # type: ignore[arg-type]
             assert binding is not None and binding.placement is not None
-            events.observe(ctx, session, "voice-RM_a", uds=settings.events_socket)  # type: ignore[arg-type]
+            uds, turn_events = settings.events_socket, settings.turn_events
+            events.observe(ctx, session, "voice-RM_a", uds=uds, turn_events=turn_events)  # type: ignore[arg-type]
             session.user("speaking")
             session.message("user", USER)
             await session.speak(1.5, interrupted=False)

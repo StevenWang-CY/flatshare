@@ -47,11 +47,12 @@ nodes answers that it places nothing, and the call is served on the configured s
 The call's end, whatever ends it, ends its placement, events or none, and serve mode's admission
 ends the placement of a job it placed that does not run after all.
 
-Each session posts its lifecycle events (speech onset, end of turn, playback, barge-in) to the
-control plane over the LLM's socket, and logs a line per turn with its stage times (:mod:`.events`).
-``FLATSHARE_EVENTS=off`` stops the events, so that E2 can measure arm 9, the lifecycle policy, with
-and without them; they stop as well when the LLM bypasses the control plane, whose socket alone
-takes them.
+Each session posts its lifecycle events (speech onset, end of turn, playback, barge-in, its close)
+to the control plane over the LLM's socket in bench mode, for E2's lifecycle policy, and its close
+(``session_closed``) alone in serve mode, whose gateway acts on no other; it logs a line per turn
+with its stage times (:mod:`.events`). ``FLATSHARE_EVENTS=off`` stops the events, so that E2 can
+measure arm 9, the lifecycle policy, with and without them; they stop as well when the LLM bypasses
+the control plane, whose socket alone takes them.
 
 The worker runs inside the voice-plane network namespace, where the only route to the servers is
 a Unix socket each. The environment, set by ``flatshare-voice-worker.service``, configures it:
@@ -65,7 +66,7 @@ a Unix socket each. The environment, set by ``flatshare-voice-worker.service``, 
 | ``FLATSHARE_LLM_TIMEOUT`` | Seconds before an LLM request fails (default 30: a cold prefill exceeds 10) |
 | ``FLATSHARE_TURN_DETECTION`` | ``model`` (default: the end-of-turn model) or ``vad`` (fixed endpointing, for experiments) |
 | ``FLATSHARE_PREEMPTIVE_GENERATION`` | ``true`` (default, LiveKit's) or ``false`` |
-| ``FLATSHARE_EVENTS`` | ``on`` (default: lifecycle events to the control plane) or ``off`` |
+| ``FLATSHARE_EVENTS`` | ``on`` (default: lifecycle events to the control plane, ``session_closed`` alone in serve mode) or ``off`` |
 | ``FLATSHARE_LLM_MODEL`` | The model the agent's requests name (default the box's, ``plugins.LLM_MODEL``) |
 | ``FLATSHARE_VOICE_MODE`` | ``bench`` (default: every call taken) or ``serve`` (call-capacity admission) |
 | ``FLATSHARE_SERVING_PROFILE`` | Serve mode: the serving profile's serving.json, whose ``voice`` table it runs |
@@ -304,6 +305,13 @@ class Settings:
         control plane through the engine's tunnel, which has no ``/v1/events``."""
         return self.llm_uds if self.events and not self.llm_uds.endswith(ENGINE_TUNNEL) else None
 
+    @property
+    def turn_events(self) -> bool:
+        """Whether the turns' lifecycle events go out with ``session_closed``: in bench mode, for E2's
+        lifecycle policy. Serve mode's gateway runs no admission policy, and acts on ``session_closed``
+        alone."""
+        return self.mode == "bench"
+
 
 def _serving(env: Mapping[str, str]) -> dict[str, Any]:
     """Serve mode's ``voice`` table of the serving profile FLATSHARE_SERVING_PROFILE names, with
@@ -491,7 +499,9 @@ async def entrypoint(ctx: JobContext) -> None:
         record=False,
     )
     # Nothing it reports can happen earlier: the caller's audio flows only once start() returns.
-    events.observe(ctx, session, session_id, uds=settings.events_socket)
+    events.observe(
+        ctx, session, session_id, uds=settings.events_socket, turn_events=settings.turn_events
+    )
 
 
 def active_calls() -> int:

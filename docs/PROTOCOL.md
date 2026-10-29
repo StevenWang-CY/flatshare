@@ -44,7 +44,7 @@ Each tenant's `cache_salt` is the first 32 hex digits of HMAC-SHA-256 of the ten
 
 ## Lifecycle events
 
-The voice worker tells the gateway where each call is.
+The voice worker tells the gateway where each call is: in bench mode with every voice event below, which E2's lifecycle policy reads, and in serve mode with `session_closed` alone, the one event a gateway without an admission policy acts on.
 - **Delivery.** Trusted callers `POST` events to `/v1/events`, as one JSON object or an array of them, and get 202 `{"accepted": n, "duplicates": m}`. The voice worker posts over the gateway's Unix socket, where the voice tenant needs no key, from one background task per session, with a 1 s timeout and no retry: a late timing signal would mislead.
 - **Idempotency.** Events are idempotent by `(tenant, source, event_id)` within a window (by default 100,000 ids for 10 minutes): a repeat is acknowledged and ignored.
 - **Unknowns.** Unknown fields are ignored; an unknown `type` is rejected with 400, and so is the whole batch that contains it.
