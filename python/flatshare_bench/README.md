@@ -311,7 +311,9 @@ The background goodput comes from AIPerf's records rather than from the gateway'
 
 ```bash
 flatshare-bench soak run --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref     # voice alone: the reference
-flatshare-bench soak run --hours 24 --slo-reference 1784 --out ~/flatshare/runs/soak/day   # 20 calls an hour, 16 agents
+flatshare-bench soak report ~/flatshare/runs/soak/ref                                       # once it has ended: its p95 is P95
+flatshare-bench soak run --hours 24 --slo-reference P95 --agents-sessions 14 \
+  --out ~/flatshare/runs/soak/day        # 20 calls an hour; 14 agents' trees, under two nodes' 4 + 12 (the runbook's Soaks)
 flatshare-bench soak report ~/flatshare/runs/soak/day                                       # the hours' table
 flatshare-bench soak export ~/flatshare/runs/soak/day --out benchmarks/results/2026-10-28-soak
 ```
