@@ -51,6 +51,8 @@ DASH = quick_start.DASH
 """The en dash between a range's ends, as the quick start's result prints it."""
 VENV = "~/vllm-0.32"
 """The environment README.md's quick start makes and activates, which `pip install` then fills."""
+PROBE_LINE = f". {VENV}/bin/activate && python {PROBE} http://127.0.0.1:8000 kv"
+"""The quick start's probe, in the KV case at vLLM's default address, from a shell that activates the environment."""
 ENGINE_REQUIREMENTS = BOX / "requirements" / "engine.txt"
 """The deployment's engine environment, every package pinned, its CUDA compiler among them."""
 PIN = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9,._-]+\])?==([^\s;#]+)")
@@ -199,27 +201,38 @@ def pins(requirements: list[str]) -> dict[str, str]:
 
 def check_quick_start(readme: str) -> None:
     """Asserts that the quick start of ``readme`` probes stock vLLM, then make-room, each at the serving profile's
-    engine settings. It installs in an environment of the deployment's Python, and pins every package it names: vLLM
-    at the release build.py takes, and each at the version of the deployment's engine environment, as its CUDA
-    compiler. It points CUDA_HOME at the CUDA 13 toolkit that environment carries, as Gray's engine unit does. Both
-    engines take the same model, context, request slots and step cap, and make-room the module build.py writes, with
-    the profile's switches."""
+    engine settings. It installs in an environment of the deployment's Python and pins every package it names at the
+    deployment's version, vLLM at the release build.py takes and CUDA 13.0's compiler among them. It points CUDA_HOME
+    at the CUDA 13 toolkit that environment carries, as Gray's engine unit does, and links the toolkit's CUDA runtime
+    where FlashInfer's JIT looks for it. Both engines take the same model, context, request slots and step cap, and
+    make-room the module build.py writes, with the profile's switches. Each is probed from the environment."""
     serve = profile.load("rtx-5060-ti-serve")
     values, _, _ = profile.resolve(serve, None)
     engine = profile.serving_config(serve, values)["engine"]
     commands = quick_start_commands(readme)
-    venv, install, cuda = commands[:3]
+    venv, install, cuda, flashinfer = commands[:4]
     assert venv == shlex.split(
         f"uv venv --python {release.PYTHON} --seed {VENV} && . {VENV}/bin/activate"
     )
+    # The install: every argument a pin at the deployment's version (engine.txt), vLLM's the profile's release, and
+    # cuda-toolkit's nvcc extra the deployment's CUDA compiler, which a plain install leaves at a later CUDA than
+    # torch's runtime headers.
     assert install[:2] == ["pip", "install"]
     wanted = pins(install[2:])
     assert len(wanted) == len(install) - 2, f"an argument that is no pin: {install}"
-    assert wanted.get("vllm") == engine["vllm_version"]
     deployed = pins(ENGINE_REQUIREMENTS.read_text().splitlines())
     assert {name: deployed.get(name) for name in wanted} == wanted
+    assert wanted.get("vllm") == engine["vllm_version"]
+    assert f"cuda-toolkit[nvcc]=={deployed['cuda-toolkit']}" in install
+    # The toolkit: the deployment's, with its CUDA runtime linked as the libcudart.so that FlashInfer's JIT links,
+    # where its extra link flags look, as the deployment links its own (profile.py's units.cuda_ldflags).
     toolkit = profile.VENV_CUDA.removeprefix("%h/flatshare/venvs/engine/")
     assert cuda == ["export", f"CUDA_HOME=$VIRTUAL_ENV/{toolkit}"]
+    major = re.fullmatch(r".*/cu(\d+)", toolkit)[1]
+    assert flashinfer == shlex.split(
+        "export FLASHINFER_EXTRA_LDFLAGS=-L$CUDA_HOME/lib"
+        f" && ln -sf libcudart.so.{major} $CUDA_HOME/lib/libcudart.so"
+    )
     (stock_env, stock), (env, make_room) = quick_start_engines(readme)
     assert (stock_env, stock) == ({}, quick_start_flags(engine))
     # make-room loads the module that build.py writes into the directory on its PYTHONPATH.
@@ -235,9 +248,9 @@ def check_quick_start(readme: str) -> None:
             for key, value in engine["make_room"].items()
         },
     }
-    # Each engine is probed in the KV case at vLLM's default address, by the command after its start.
+    # Each engine is probed, by the command after its start, from the environment.
     starts = [i for i, words in enumerate(commands) if "serve" in words[:3]]
-    probe = ["python", PROBE, "http://127.0.0.1:8000", "kv"]
+    probe = shlex.split(PROBE_LINE)
     assert [commands[i + 1] for i in starts] == [probe, probe]
 
 
@@ -251,14 +264,18 @@ def test_the_readmes_quick_start_serves_the_profiles_engine_settings_on_both_eng
     [
         ("budget_cap_tokens 48", "budget_cap_tokens 16"),
         (
-            "--max-num-batched-tokens 256 --long-prefill-token-threshold 0\npython",
-            "--max-num-batched-tokens 512 --long-prefill-token-threshold 0\npython",
+            "--max-num-batched-tokens 256 --long-prefill-token-threshold 0\n.",
+            "--max-num-batched-tokens 512 --long-prefill-token-threshold 0\n.",
         ),
         ("vllm==0.32.0", "vllm==0.33.0"),
         ("--python 3.12", "--python 3.10"),
         ("nvidia/cu13 ", "nvidia/cu12 "),
+        ("-L$CUDA_HOME/lib ", "-L$CUDA_HOME/lib64 "),
+        ("ln -sf libcudart.so.13 ", "ln -sf libcudart.so.12 "),
+        ("export FLASHINFER_EXTRA_LDFLAGS=", "# export FLASHINFER_EXTRA_LDFLAGS="),
         ("PYTHONPATH=~/make-room", "PYTHONPATH=~/elsewhere"),
-        (f"\npython {PROBE} http://127.0.0.1:8000 kv\n```\n\nStop", "\n```\n\nStop"),
+        (f"\n{PROBE_LINE}\n```\n\nStop", "\n```\n\nStop"),
+        (f"\n{PROBE_LINE}\n```\n\nStop", f"\npython {PROBE} http://127.0.0.1:8000 kv\n```\n\nStop"),
     ],
     ids=[
         "another window",
@@ -266,8 +283,12 @@ def test_the_readmes_quick_start_serves_the_profiles_engine_settings_on_both_eng
         "another release",
         "another python",
         "another toolkit",
+        "FlashInfer's link flags elsewhere",
+        "another CUDA runtime",
+        "no FlashInfer link",
         "another module directory",
         "no stock probe",
+        "a probe outside the environment",
     ],
 )
 def test_a_quick_start_that_drifts_from_the_profile_fails_the_check(old: str, new: str) -> None:
@@ -282,7 +303,7 @@ def with_install(readme: str, edit) -> str:
     """``readme`` with its quick start's `pip install` line replaced by ``edit`` of its words, or removed where
     ``edit`` gives none."""
     [line] = re.findall(r"^pip install .*$", readme, re.M)
-    words = edit(shlex.split(line))
+    words = edit(shlex.split(line, comments=True))
     return readme.replace(f"{line}\n", f"{shlex.join(words)}\n" if words else "")
 
 
@@ -293,33 +314,30 @@ def with_install(readme: str, edit) -> str:
         lambda words: [
             re.sub(r"==.*", "", word) if word.startswith("vllm") else word for word in words
         ],
-        lambda words: [*words, "cuda-toolkit[nvcc]==13.4.0"],
+        lambda words: [word for word in words if not word.startswith("cuda-toolkit")],
+        lambda words: [word.replace("[nvcc]", "") for word in words],
+        lambda words: [
+            *(word for word in words if not word.startswith("cuda-toolkit")),
+            "cuda-toolkit[nvcc]==13.4.0",
+        ],
         lambda words: [*words, "flatshare-unknown==1.0"],
     ],
     ids=[
         "no install",
         "an unpinned release",
+        "no compiler pin",
+        "the toolkit without its compiler",
         "a compiler the deployment does not pin",
         "an unknown package",
     ],
 )
 def test_an_install_that_drifts_from_the_deployment_fails_the_check(edit) -> None:
-    # The negative control of the install line, whatever it pins: each of these edits of it fails.
+    # The negative control of the install line: each of these edits of it fails.
+    readme = README.read_text()
+    edited = with_install(readme, edit)
+    assert edited != readme
     with pytest.raises(AssertionError):
-        check_quick_start(with_install(README.read_text(), edit))
-
-
-def test_an_install_that_pins_the_deployments_cuda_compiler_passes_the_check() -> None:
-    # The positive control: the install line with cuda-toolkit's nvcc extra at the deployment's version, which pins its
-    # CUDA compiler to CUDA 13.0's (engine.txt), passes as the check stands.
-    compiler = pins(ENGINE_REQUIREMENTS.read_text().splitlines())["cuda-toolkit"]
-    pinned = [f"cuda-toolkit[nvcc]=={compiler}"]
-    readme = with_install(
-        README.read_text(),
-        lambda words: [word for word in words if not word.startswith("cuda-toolkit")] + pinned,
-    )
-    assert f"'cuda-toolkit[nvcc]=={compiler}'" in readme
-    check_quick_start(readme)
+        check_quick_start(edited)
 
 
 def check_quick_start_result(readme: str) -> None:

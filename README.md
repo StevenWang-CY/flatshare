@@ -137,21 +137,22 @@ modifying the installation. On a host with a GPU that vLLM 0.32.0 supports, inst
 
 ```sh
 uv venv --python 3.12 --seed ~/vllm-0.32 && . ~/vllm-0.32/bin/activate   # vLLM 0.32.0 needs Python 3.11 to 3.14
-pip install vllm==0.32.0
-export CUDA_HOME=$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cu13   # vLLM compiles its FP8 kernels at start with CUDA 13's nvcc
+pip install vllm==0.32.0 'cuda-toolkit[nvcc]==13.0.3.0'   # CUDA 13.0's compiler, matching torch's runtime headers
+export CUDA_HOME=$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cu13   # vLLM compiles its FP8 kernels at start with it
+export FLASHINFER_EXTRA_LDFLAGS=-L$CUDA_HOME/lib && ln -sf libcudart.so.13 $CUDA_HOME/lib/libcudart.so   # FlashInfer links -lcudart
 git clone https://github.com/StevenWang-CY/flatshare && cd flatshare
 python python/flatshare_vllm/src/flatshare_vllm/build.py make-room ~/make-room
 ```
 
-Serve stock vLLM with the serving profile's settings. Once it is up, run the probe from a second shell, in the clone and
-with the environment active: it sends a voice turn behind two long agent requests that fill the KV pool.
+Serve stock vLLM with the serving profile's settings. Once it is up, run the probe from a second shell in the clone: it
+sends a voice turn behind two long agent requests that fill the KV pool.
 
 ```sh
 # Without --max-model-len vLLM takes the model's 262,144 tokens, which no 16 GB card holds, and without --max-num-seqs
 # 1,024 request slots on a card of 70 GiB or more whose name lacks "a100", more than the step cap, which vLLM refuses.
 vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-len 32768 --max-num-seqs 256 \
   --scheduling-policy priority --max-num-batched-tokens 256 --long-prefill-token-threshold 0
-python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
+. ~/vllm-0.32/bin/activate && python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
 ```
 
 Stop the engine, then serve the same settings with make-room and run the probe again:
@@ -163,7 +164,7 @@ PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-le
   --additional-config.make_room.max_preemptions_per_step 2 \
   --additional-config.make_room.budget_cap true --additional-config.make_room.budget_cap_tokens 48 \
   --additional-config.make_room.reserve_tokens 0
-python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
+. ~/vllm-0.32/bin/activate && python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
 ```
 
 <!-- quick-start probe -->
