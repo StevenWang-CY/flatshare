@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use flatshare_proto::SloClass;
 use http::uri::{Authority, Scheme, Uri};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// `[admission]`, which E2's harness reads (`harness`).
@@ -194,7 +194,7 @@ pub struct Placement {
 }
 
 /// `calls`: which of the available realtime nodes with a free call slot a new or moved call goes to.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CallPlacement {
     /// The one with the fewest calls, then the fewest requests in flight: the calls spread over the nodes.

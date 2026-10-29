@@ -875,7 +875,14 @@ impl Nodes {
                 })
             })
             .collect();
-        serde_json::json!({"nodes": nodes, "sessions": table.len()})
+        serde_json::json!({
+            "nodes": nodes,
+            "sessions": table.len(),
+            "placement": {
+                "calls": self.config.calls,
+                "failover_background_max_in_flight": self.config.failover_background_max_in_flight,
+            },
+        })
     }
 
     fn read(&self) -> RwLockReadGuard<'_, Table> {

@@ -228,7 +228,7 @@ One point runs at a time: the pid of the running one is in `~/flatshare/runs/.fl
 The gateway can front two GPU nodes (Phastform and Gray), as dedicated roles or as two mixed replicas, with deliberate failover between them rather than an implied HA claim ([`benchmarks/quality/RESOURCE-GATE.md`](../benchmarks/quality/RESOURCE-GATE.md) compares the arrangements). Each node runs the box as Phastform does (its engine, STT and TTS), and cyan reaches each through a tunnel of its own, `flatshare-tunnel@NODE`, whose sockets are `NODE-engine.sock`, `NODE-stt.sock` and `NODE-tts.sock` in `/run/user/$UID/flatshare/`. `gateway.toml` then has a `[[nodes]]` entry per node in place of `upstream`, each with its engine, roles, `max_calls`, `max_agents` (which a node with both roles must set, to a count or `"unbounded"`), and speech servers, no `[admission]` table, and optionally `[placement]` (`deploy/cyan/gateway.example.toml` has both nodes; [the gateway's README](../crates/flatshare-gateway/README.md#nodes) every key). A reload takes the change, and the successor keeps every session's node. Lowering `max_agents` or `max_calls` takes effect for new sessions; placed ones keep their nodes until they end.
 
 ```sh
-curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/nodes | jq   # each node's verdict, components, calls and agents
+curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/nodes | jq   # each node's verdict, components, calls and agents, and the placement
 curl -s 127.0.0.1:18080/ready                                                       # 200 while each role has an available node
 ```
 

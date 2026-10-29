@@ -172,6 +172,10 @@ async fn sessions_keep_their_node_and_calls_take_its_call_slots() {
     );
     assert_eq!(first["tts"]["check"], true);
     assert_eq!(view["sessions"], 4);
+    assert_eq!(
+        view["placement"],
+        serde_json::json!({"calls": "spread", "failover_background_max_in_flight": 0})
+    );
     // The call's end frees its slot.
     close(&gw, "call-1").await;
     assert_eq!(node_of(&gw, "call-3").await, "a");
@@ -352,6 +356,7 @@ async fn with_fill_calls_go_to_the_next_node_only_when_the_first_is_full_or_fail
     assert_eq!(node_of(&gw, "call-2").await, "b");
     unplaced(&place(&gw, "call-4").await, "no_call_slot");
     unplaced(&place(&gw, "call-5").await, "no_call_slot");
+    assert_eq!(nodes_view(&gw).await["placement"]["calls"], "fill");
     // Unbounded: /nodes shows null.
     assert_eq!(
         nodes_view(&gw).await["nodes"][0].get("max_agents"),
