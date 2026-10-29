@@ -142,10 +142,12 @@ groups:
           severity: page
         annotations:
           runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareenginenotready
-          summary: The gateway finds the engine down and answers its requests 503 (upstream_not_ready or no_ready_node)
+          summary: The gateway finds an engine down, and its requests go to another node or get 503
           description: >-
-            A request found the engine broken and its /health has not answered since. An engine restart takes about
-            two minutes (the W8 drill: 112 s); a tunnel down shows in flatshare-tunnel@NODE's journal.
+            A request found the engine broken and its /health has not answered since. With one upstream, its requests
+            get 503 upstream_not_ready; with [[nodes]], that node's sessions move to another, and a request gets 503
+            no_healthy_node only when no node of its role is ready. An engine restart takes about two minutes (the W8
+            drill: 112 s); a tunnel down shows in flatshare-tunnel@NODE's journal.
       - alert: FlatshareEngineDegraded
         expr: flatshare_gateway_engine_state{state="degraded"} == 1
         for: 2m
