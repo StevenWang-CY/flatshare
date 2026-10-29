@@ -419,17 +419,21 @@ def test_the_step_costs_are_the_baselines_cells() -> None:
         assert c.added == pytest.approx(
             cell["change_us"], abs=0.11
         )  # the cells round each to 0.1 µs
-    # Switched off, the change costs what stock vLLM does, within 1.6% at every state; deployed, it adds tens to
-    # hundreds of µs a step, and 1.5 ms where a voice turn too large for two victims waits behind a 999-block hit.
-    assert max(c.off_ratio for c in costs.values()) < 0.017
-    assert max(c.added for c in costs.values() if c.scenario == "A") == pytest.approx(126.9)
+    # Switched off, the change costs what stock vLLM does, within 1.3% in the PRs' states and 3.1% in the serving
+    # profile's; deployed, it adds tens to hundreds of µs a step, 1.5 ms where a voice turn too large for two victims
+    # waits behind a 999-block hit, and it takes 30 µs off the step in which the hold keeps an agent's prefill back.
+    assert max(c.off_ratio for c in costs.values() if not c.serving) < 0.013
+    assert max(c.off_ratio for c in costs.values() if c.serving) < 0.031
+    assert max(c.added for c in costs.values() if c.scenario == "A") == pytest.approx(165.5)
     assert sorted(round(c.added) for c in costs.values()) == [
-        35, 36, 54, 88, 127, 150, 177, 246, 326, 357, 434, 459, 1495,
+        -30, 17, 36, 50, 62, 72, 89, 158, 166, 166, 260, 320, 364, 441, 463, 468, 1539,
     ]  # fmt: skip
     assert (costs["B64-hit999"].variant, costs["B256-W10"].variant) == (
         "a 999-block prefix hit",
         "10 waiting",
     )
+    serving = [(c.scenario, c.running, c.variant) for c in costs.values() if c.serving]
+    assert serving == [("idle", 2, ""), ("hold", 2, ""), ("nofit", 16, ""), ("fire", 2, "")]
 
 
 HEADLINE = {

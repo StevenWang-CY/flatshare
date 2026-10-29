@@ -545,29 +545,40 @@ def _step_row(cost: data.StepCost) -> str:
     return f"{cost.running} running" + (f", {cost.variant}" if cost.variant else "")
 
 
+STEP_SETS = {
+    False: "In the pull requests' cost tables",
+    True: "In the serving profile: 256-token steps, scheduled asynchronously",
+}
+"""The two sets of states, each under its heading: the PRs' tables' steady states, and the box's configuration."""
+
+
 def _step_description(costs: Sequence[data.StepCost]) -> str:
     worst = max(costs, key=lambda c: c.off_ratio)
     rows = "; ".join(
-        f"{data.SCENARIOS[c.scenario]}, {_step_row(c)}: {c.stock:,.0f}, {c.off:,.0f} and {c.on:,.0f} µs"
+        f"{'in the serving profile, ' if c.serving else ''}{data.SCENARIOS[c.scenario]}, {_step_row(c)}: "
+        f"{c.stock:,.0f}, {c.off:,.0f} and {c.on:,.0f} µs"
         for c in costs
     )
+    least, most = (
+        f"{f(c.added for c in costs):+,.0f}".replace("-", "\N{MINUS SIGN}") for f in (min, max)
+    )
     return (
-        "The wall time of one call of vLLM 0.32.0's Scheduler.schedule() on the host's CPU in each steady state, on a "
+        "The wall time of one call of vLLM 0.32.0's Scheduler.schedule() on the host's CPU in each state, on a "
         f"log scale beside a decode step on the RTX 5060 Ti of {DECODE_STEP_MS[0]} to {DECODE_STEP_MS[1]} ms, for "
         f"stock vLLM, the change with its switches off (within {worst.off_ratio:.1%} of stock's in every state) and "
-        f"the change as deployed (adding {min(c.added for c in costs):,.0f} to {max(c.added for c in costs):,.0f} µs "
-        f"a step): {rows}."
+        f"the change as deployed (its change to the step from {least} to {most} µs): {rows}."
     )
 
 
 def step_cost(out: Path) -> list[Path]:
-    """report-step-cost.svg: the rules' cost per scheduler step on the host, a row per steady state under its
-    scenario: stock vLLM's step, the change's with its switches off (on stock's, within a percent), and the change's
-    as deployed, with what it adds, on a log scale that also holds a decode step on the RTX 5060 Ti."""
+    """report-step-cost.svg: the rules' cost per scheduler step on the host, a row per state under its scenario, the
+    PRs' tables' steady states and then the serving profile's: stock vLLM's step, the change's with its switches off
+    (on stock's, within a few percent), and the change's as deployed, with what it adds, on a log scale that also
+    holds a decode step on the RTX 5060 Ti."""
     costs = data.step_costs()
     s = Chart(WIDTH, 600, "The rules' cost per scheduler step", _step_description(costs))
     right = 372
-    x = Scale(100, 30000, 400, 1090, log=True)
+    x = Scale(20, 30000, 400, 1090, log=True)
     entries = [
         (mark_key("gray"), "vLLM 0.32"),
         (mark_key("gray", "dot", filled=True), "the change, its switches off"),
@@ -577,8 +588,15 @@ def step_cost(out: Path) -> list[Path]:
     top = 76
     layout = []
     y = top + 4
-    scenario = None
+    scenario = serving = None
     for cost in costs:
+        if cost.serving != serving:
+            serving = cost.serving
+            y += 14 if layout else 0
+            lines = wrap(STEP_SETS[serving], right - 24, NOTE)
+            for k, line in enumerate(lines):
+                s.text(24, y + 20 + 22 * k, line, size=NOTE)
+            y += 22 * len(lines) + 8
         if cost.scenario != scenario:
             scenario = cost.scenario
             lines = wrap(
@@ -593,7 +611,7 @@ def step_cost(out: Path) -> list[Path]:
     bottom = y + 6
     lo, hi = DECODE_STEP_MS
     s.rect(x(lo * 1000), top, x(hi * 1000) - x(lo * 1000), bottom - top, "gray band")
-    ticks = [100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+    ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
     last = x_axis(
         s,
         x,
@@ -619,7 +637,10 @@ def step_cost(out: Path) -> list[Path]:
         s.mark(x(cost.stock), row_y, "gray", r=6.5)
         s.mark(x(cost.off), row_y, "gray", "dot", filled=True)
         s.mark(x(cost.on), row_y, "blue", filled=True)
-        s.text(x(cost.on) + 12, row_y + 6, f"+{cost.added:,.0f} µs", size=NOTE, halo=True)
+        # What the change adds, right of the row's marks: the hold's is a saving, the deployed mark left of stock's.
+        sign = "+" if cost.added >= 0 else "\N{MINUS SIGN}"
+        label = f"{sign}{abs(cost.added):,.0f} µs"
+        s.text(x(max(cost.stock, cost.off, cost.on)) + 12, row_y + 6, label, size=NOTE, halo=True)
     s.height = last + 14
     return [s.save(out / "report-step-cost.svg")]
 

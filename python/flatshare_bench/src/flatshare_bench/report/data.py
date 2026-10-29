@@ -463,13 +463,18 @@ SCENARIOS = {
     "A": "only lower-priority work",
     "B": "a waiting turn needs more room than two victims free",
     "C": "every running slot taken",
+    "idle": "only agents",
+    "hold": "a reply's first tokens, an agent waiting that fits",
+    "nofit": "a waiting turn needs more room than two victims free",
+    "fire": "the step that preempts for a waiting turn",
 }
-"""perf_schedule.py's steady states, as the figure names them (python/flatshare_vllm/tests/perf_schedule.py)."""
+"""perf_schedule.py's states, as the figure names them (python/flatshare_vllm/tests/perf_schedule.py): the steady
+states of the PRs' cost tables, A to C, then the serving profile's."""
 
 
 @dataclass(frozen=True)
 class StepCost:
-    """A steady state's cost of one call of Scheduler.schedule() on the host, in µs: stock vLLM 0.32.0's scheduler,
+    """A state's cost of one call of Scheduler.schedule() on the host, in µs: stock vLLM 0.32.0's scheduler,
     make-room's with its switches off, and make-room as deployed (two victims a step, the hold with its 48-token
     window, no reserve)."""
 
@@ -491,8 +496,16 @@ class StepCost:
         """What the switches off cost against stock vLLM, as a fraction of its step."""
         return self.off / self.stock - 1
 
+    @property
+    def serving(self) -> bool:
+        """Whether the state is the serving profile's, which schedules asynchronously in 256-token steps, rather than
+        one of the PRs' cost tables' states."""
+        return self.scenario not in ("A", "B", "C")
 
-STATE = re.compile(r"^(?P<scenario>[ABC])(?P<running>\d+)(?:-(?P<variant>.+))?$")
+
+STATE = re.compile(
+    r"^(?P<scenario>[ABC]|idle|hold|nofit|fire)(?:-R)?(?P<running>\d+)(?:-(?P<variant>.+))?$"
+)
 VARIANTS = {
     "": "",
     "hit999": "a 999-block prefix hit",
