@@ -1,0 +1,407 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="3006" viewBox="0 0 420 3006" font-size="21" role="img" aria-labelledby="title desc">
+<title id="title">Every configuration beside 24 agent sessions</title>
+<desc id="desc">Each of 18 configurations beside 24 agent sessions of the traces with the largest contexts, a row under its family, in panel a its voice-to-voice p95 on a log scale against the SLO of 2.02 s, the median of its runs and their range, and in panel b the agents' tokens a second over the calls' first 240 s, only the engine change and the router that aborts agent requests coming near the SLO: tuned vLLM, 512-token steps, 10.14 s at 3,552 tokens/s; 1,024-token steps, no long-prefill threshold, 8.79 s at 3,888 tokens/s; a KV watermark, 10%, 10.65 s at 3,649 tokens/s; a queued-token limit, 8,192 tokens, at least 30 s, 48 turns failed at 5,584 tokens/s; a token reservation, 2,048 tokens, 5.67 s at 3,551 tokens/s; a static cap, 2 agent requests in flight, 8.57 s at 3,446 tokens/s; a static cap, 8 agent requests in flight, 9.88 s at 3,586 tokens/s; vLLM with #54530, at most 12 sequences, 10.93 s at 3,624 tokens/s; SGLang 0.5.22, priority with preemption, 12.05 s at 3,577 tokens/s; SGLang with HiCache, 4x, write-through, 11.95 s at 4,330 tokens/s; llm-d's flow control, emulated, 10.99 s at 3,684 tokens/s; SMG 1.13.0, as shipped, 11.05 s at 3,446 tokens/s; the abort-and-resubmit router, before the first byte, 2.59 s at 3,593 tokens/s; over make-room, its KV reserve on, 2.06 s at 3,355 tokens/s; on tuned vLLM, the gateway's policy alone, 10.99 s at 3,633 tokens/s; make-room alone, #63350, 5.77 s at 3,572 tokens/s; both rules, 16-token window, 3.23 s at 3,540 tokens/s; both rules, 48-token window, 2.19 s at 3,362 tokens/s.</desc>
+<!-- Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 (python/flatshare_bench/src/flatshare_bench/fonts/OFL.txt). -->
+<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,d09GRgABAAAAAB10AA4AAAAALRgAAiFIAAAAAAAAAAAAAAAAAAAAAAAAAABHREVGAAAZqAAAABYAAAAWABAAREdQT1MAABnAAAACzQAAB0wSSAEzR1NVQgAAHJAAAADkAAAB8v7Q/KFPUy8yAAABtAAAAEkAAABgWvMAsmNtYXAAAALsAAAAiAAAALID0SRPZ2FzcAAAGaAAAAAIAAAACAAAABBnbHlmAAAEAAAAFFQAAB0MR78dqmhlYWQAAAFEAAAANgAAADYbiXwjaGhlYQAAAXwAAAAgAAAAJAeVAmdobXR4AAACAAAAAOkAAAEQhhkIX2xvY2EAAAN0AAAAigAAAIoOfgcPbWF4cAAAAZwAAAAYAAAAIABJAFRuYW1lAAAYVAAAATYAAAJyNbVG8XBvc3QAABmMAAAAEwAAACD/tQAzAAEAAAACIUgeIArGXw889QAOA+gAAAAA2//GWwAAAADcyFF3/+//FQOvAxEAAAAGAAIAAAAAAAB4nGNgZGBg+vVfiOEX84b/7/8nMK9nAIqgABcAw04IAHicY2BkYGBwYQhmYGEAAUYGNAAAD/MAnnicY2Bh0mWcwMDKwMDUxRTBwMDgDaEZ4xiMGHUYkEADUBCZHxziGcFwgEFBQYnp138hhl8s4ow7GaBqGG8yTQRSCgxMAPpGC/YAAAB4nC3OL0tDcRTG8e95bnEDEQZOvPfur3ODyV2YiuBwzKhZMIjFKPgOBIPRaDcbDTZh3SJ7Bzq0idygDpM/TzB8OIfDw8PRMUXeQU9EOqWlG/qa0I8Kvo9pao9udEGqqd+vWbMfVnTEgm7DLLoLM3uhrSJzNqahhIZNaNo6JXtjUbuUrUJdVWJLiKMD30dO3rtMWQXPn1OxKzo2YFXbLNk0fOoj5PYcfu01fKnGiY28r+c2KGlIaqn/k5JYTMo3W25ol7TskKqr8cCm92X2yJl2qFvu2Zx913YDN/8/M9d1PdfRPdkf/yQ4zwAAAHicY2BgYGJgYGAGYhEgyQimWRjmAWkFIGQB08oMqgyaDPoMlgzODB4Mvgz+DCEM4QyZDJUKSv//w1WoM+gwGDA4MrgzeANVBDGEMSQyZINU/H/IIMogxwACnP8P/t/3f8//3f93/t/xf/3/dQ9EwXaCgBRUDSYwZTBmMAGabcZgyGAEAIBGHzEAAABSAFIAigDSAQYBQwGLAdoCBwJJAnYCxgMVA0ADcwO+BAsESAR2BLgE7AUnBZgF2wYNBlUGdwbYBxwHRgeOB80IBAhJCHEIpgjXCSUJdAm8CfQKKgpiCpsK2Ar4CzoLVQt2C4wLmQu0C84L2wvnC/0MLAxZDHkMrAzxDQ4NPw14DZAN4g4ZDoYAAHicfVkJlBxlna+v+qiZvrur6+quq6u6q/q+qnuqe2a6p+fOXEkmFznG3CRAEiAREiPIFcBjFczTQILgscKKuIj62BWPt/rYpy4r+kBdUTYciRwq+nwrGBRI935V3TPTCeibNzP1fT31/a/f/////b9BrIijdQm61uJHLAiGpJEKgtgi/ojNH/Fb5HKpbimXFFmyE0GSJIJ2WSqX+rSi8eyxEJiktJfwE3Tt+W+iU+d/D86+ECelCFnJp5MOZzigbZ0trCtFcvkIznECG+L5L1u+rb3zVcua80+G1MGSPp4d0AXKF8BxipiozQkjpfR0Y2Aw8rjA0HKUokUEQaFuCPrf6F2IgMgIosnlYl+fjms4SWpExFhAJVU1gtkNPTVds8j/8zNWEulfJP5IJuLN170iiTnUFpKxYqJsPXulhQ/oVXDu/JlCnOetPr+TIzdf4aI8hPtlQCNQWhTKm0SPIyFERQoIEmkL8ZcURS5HTHsxgkfhL7VYR8vGtuwnLYRW7DPdBTY2n0wkvN5EAnhuv2p1PbWqdOPnxEZZLK/NTUSjY1vGZhZ43pNMgFNx1cWvmR4d9VsxZVxfvxDrCev56hDT/K0FHTk/NDYwgiAAKbb+gn4AvQ+RYHQkxfC6GQUoT9cIWVmMkLGm7Hawf+/HJ9d9enu5obhc7l5e8u2d239tbf/E+GVJOn6Lc+M9Ow6cXB0IEN6Xd2685/bdNwxqWaK2siPnYSgnZcr5O2KMpWlzWSPgBgEFHvrcF9Z/aqs+HHO53Q5O8u9ZfcW11+3LDfMuRXkzGeq70vn1z191alUgEPS9vHvDZ247dTdL7o/G3KLI5Y4LMSjZ8Pgr0OPaxd6GIqCMSLlr5Q8uBx5uGSsw2jyTSTgdiSwQcslesMJ44uGTM5lpnoWfNB+DT7w7nQYfUzMBng9k1AcfbD+l483DqbQHBiSd+s530imP4XHoafQxqE/lvfXRdBN0suEDD4phoK2RVjSRKLd1Gmm+mE24HIk8EKEmtn+Wo37C9xdWjYV/DQQmGWu+EFTHZzf2upJp3pPq0uy7n41kSZ+X54GHY37cfIUK8nyQmZ7e+Ggy5TO0S0LtKlA77j21g/7RNAhMXUNDTR9EmEuNAyae8orpbLEeY7wi74mr4G416eN5f1JtrowEvdGBlHEyC+G/Bp6cgSfLXSdrMN20d3nfL1vgl7kDsNcScY9HjT/5c+vP/kNWPB4l2jynKi7r7+g/WD2qwnuLGrhNUb18sxe8yXvVWHNbVDXcrkbBI+efRWPNA1rRC7O92HoDfQSi0Gto0413mHAw4/pMLJhQBAd33Tk3d+eu3XfMzt2xc9/lfTuGdxza51pz6oo9p9avPbHr8vs2Ju+5e/Oxyc989BP3w5OhiehJ0zr9Is8tHm/kNWUYKGctqpHXZigtVDvcEgbGmq8qitupxM/NXDuizSX8qTGdzkgPJHRooZcJs55kapeydvf0vCTyrngSPMyKHp6bbFQmVIfVUdi2KhLg62uraZJyfD2RcIE+YB1dNThuMbwvt/4PPAMth6ijZFXj0XZFUdQsupyMukbBXMTaKU/xFkNtWTJdMiP0CoH8pFYZKcwm4tO50oZStsi5aCyE8cTErFZJjsUio3qkvNBfgsnq8Hl/NT4VLlTT/RmKKq0olScVr4/7r7WrQS4XKydJXMk3Mv2rYSkLQO280Hsz0HvhZd9BmXZM1iOUnEXlDhC+13w+mfQ0dJ12Ck400SM46b7KEHQL705lwBmyX3/0Ub2fbAqZlBsBrXOtt2G0jyOw0NtkyzKKgxROaTredrxZauwY2B9/mYRl0+UWKf9R1SbfYLOLMqz1Am1DuWICVnMvHkw0n7l8N6g7GXcQwguWelPKWxZDSsGUYnxBr5qS2oJw6GJTMnSquTbkGmKhVPRU+C7r3cxTVF4FqMJ6rhFsB1lfSOKAbdZluyxiO9TjGP2pHPXYwSea70ddQxkA88qHR5un14HoXDru5HnJJXqaf94FZuk0noSJzStGX1NafwOnwcttPFJGxa1b9MWOKy9VYKJTdSkz0Kpst+tlD2pu3tdfi9Umx0KZTIpOe8OpVX1rxjw+D+XwMhklQtqscmN7ZnUxLhaxRj6uK6FAT3pYj2ayFMMWxdmVvxECHqcvGpEigrLrASefV2NpQ7Oe1jnwKvo4wiBxBME1v7acgYYKflPHQhn3m+1hMSU/GrKEVhaLM8n6/onG+oCXc/k+48nH89VQsJRXaujjzZ+K5eru4U0frPMOtCjhKNv8QfP3fr5vi55fXzYrUARK/gr0iYAgMcqDyu38N1mGLGUtSz0InMTxwoq++ub84f2T80mS8njDodr4zFyh9mlPfEQZ3Dd++BP1dIaSJGrThi3XxqFVkdZfURRaFUGypr87Dqa0csceXTOLJ4HJZdmsNbp/sdY8WZlT6pcP5TNWL4fhN4RJlriJsrJzFjkfsmdzQytHewb3NtYeadDHIkGUlc9/WaXC1DiTW4EHQI9QWNi2d4vhWQna9w1oH20gflkHkoqY6Q6j7EEtGkSjZH9zcEelur1/zW5r8z9BejKR0KI+PJAff+x5QGej5aqjetXqdQf6Dl0+tilNyoRHGVJANTYcnzb8GIA/rkOfQBJd2VrWYFfo61A2I45t4whY7tq5KzRfj8mu2Vlgd7uCtVJhiPbjtNNBBdjgBz/oSyc5t6ICLZmtpSEfiEokwXg8lDa0Ndn8iaq4IXMiWgT4FbSuiEwga5bs08vdv6DDdUIlyEUl2rStzSpRc9WGlOEDI/x6h1YZf/a94Rk+ESfknBxN7Fk1VLhpq5PZuYpOBjG8MD50aX9hfsdVPtddA1MRUasydks8TV6mFEp5NVd8TdTCjK5ae+NUeDCMEiOFmY0M1mexeYvKxJoezJF2kwFXsVocT+Jn2JjvEj5NhDiXFYAnSpO16cGhxqThVxIGMQ0xVFjqkB3wY+3OaOyV/ct4MjMHkkXDRjT9isz3uNQE1x/rEaXfqAIXdPlvD1tyM/FUmXWEc5yHpx9OjCdYqflWiHdxHJlEkZAH4qn5dFqR9GHhR3ERoghiBwD0CwgBsdzVqZdBDJtWFz0H4IzEYSTp8N4Q6hEiVzOiEAoJAusWWUCJXpRjm8c40YUGJYqKRChKMiwNQUvD0NJyR8IFVunLhdkgQBQEb9v0RQKkAfCbDONlHPQtYfvNFm+Q+xUdU/Rk8Wu0wBPPkX7Mep8dGswkwBsijobl5uRNFr/L0cPzvUw2lvhhmLFznA3D3NZvnFTotj7ACvUh/p7FwPpKhMco3I3fyvSKUc4tsOCc4IJnn/8iJ7gMm6DfLDWIz+nu6HWC1zag+1SiXfYobakML/3RYtDNPVT5Y1TszcjqMMFlXxK5XoJw+j5EWxOzWqrstSZWxgcmMEE6K0HtVJofNLXzKPIPG6l0sPlOMsRxToEHdDiActy8XMhFE8npLU8Kqp/jAir//WweTxCvS4q3bQGaghb8I/x124B1K4+mXo0KWDhJxQfIHjH6sgGKoNtzIwWsianc2EivGDEw8W+Dg3gq2Gyxops1McKE/YZm0fzChp/CzcU69iLUw23EZXla6HC05YwF6OVHKpeO7j1S3V1LVLjR0erEpOPY0akDtZuuWneoP64szC8c2r79yD54JtmKgnPwzJgxB9guwhxxUQ9qU7Ol4oD5eRTg53MhN+Mgb2As0Zl0cSY1sHuQ1UirL6m6yxP1SrzmcfDJ06yQBH/iSAj7dclM9dKR9UeH3d5jouQ6vfuybZuSePNth0ib/SIK3ob6hI0qaut4WzbFL1btdscA3Z2CBG//OaG6LZGJwsqFwb1Doi6EY3SyhcQKhKMYH5ql+0+zHkn4Gpe8/rLVR0Z8ROT8FxUeAMIPMCXxvq19GzUDq5Ddg2vBb+EM+m68d5zRrqDLQATUWxGhtzfs9V1PWxQ9ynFhv48J2P3pgC8R45wcC/BwGGX5vZUyH2JDfn+Jf0kQHVCa2voLuBramoNVW9XMtm5Sz8X2C8mYSTzbNlJdccCSlpCvrit5fz431tjUUPI48ActYV9/Vsr1DY2tyM5lUloQJXr+da4myLQI6eKwXm/4e4lTk2VR4rJidLSSq0JuQhl2xyCyKuhOyD0WGYDRuvqMIbTdqIzuH8PxCGQ1WV2GVf3gQZyjw5t94VhwYBT0UeRM445k85VyMmicR7XOoSx43pgxDY5lVKhOozeiZhSxC9v+8/XxcOJmUlMVnY/kP07TUceNpC0+65jf8+OEH7De5unZihQCWDwAn4+nyTA1pxrcpfV66y3wZ/DrDpc1GKU5IgdJAdX0rooJmWxv/oQ7GCJ/zlF263rcTmwAdj78CCd47eCoIDg5zu1yBJwvDNbOWv0uvwMGUjUk/Kn1FvoWlKAv8diLpaj/SCwazl9hvTZ7l5tkyWd4CrNeEsCIFU4XwZJPs5AtzgfswVXAxrIPczzURG4+163Nc/39/85DfBnLXsL5v/39L1pxt8dpKgdaTajgWahbdbFflHKo3LmUMcvSsnIGgijtAtUwY+wCZ58OEdhQ0LoGVjPmSyGJ+cBlfjpEPJMPM7Q1F/T56QcYxX/FdYTAcr1uh3OHfNhF23swjiO4e08woV6OpVxqMj3Gsi6nm+UY8iNf5VnDc29AZvJHqF2xw7QNTGvt6xvVsnSbYfqse+jALB50ToiH8VDC4REFnOj9FBYK/1KiHNadbmwHahGYh3jWeS+nN16jWSpIpgbLTkcpCIb9OMe73Q7KeboAJJvX5jWCyDX3zG41xlBkJ0T5O7Cb4cadls3g1Jp+Ac9Wl3k1LG6wqjgbG/BAhrCEVhULM+n6gXKhPxQs55ms1OsuOCChPuFd5teJNqUmWFfz9wGuwwd/Cflg7AI+CElZu4517ne6ySDRPG+SQR/NbRssTeFFR7Ec0aUjR3zxaIcIVucjsRjtm5HSoUal3mGBbVk3oz8wK9e7ZZlFyyS4XcLI5jumMA8ebJQLDRqGH6dwln744S5pM5Icj0WMqZcqDm3uiOvI+wX6E2NWWayUF8t7N9f1t9rWEcHNK4bXMBRJO3ojoVL1Rz/yxGTWrRoS+1dKYk5NEoxAkr7G2hEoUom72/ckaBJGL7XEjbSLuB7xHs0ZIC+pghHC3LRq8r38b2XB4INsNYaJskH2Nni7iB7XTQdp3tO5oQE28BzETXdXkJc4kM3gQATN3hIySYYYAj6BVpzNj7CiyYDg9I7SUPPchZq3c1H9R3wOeTkTCmSC9pttriD3ayaq6snCI4zAB08TkMzdaw/nIZlD13khkbN53b09gON6mdx7MTnDBmMO8y7boC3qjxr6Qx/1RGSDwKErvW3yBhC9dT3yOHIUCRodCiZupw2bEfagEy5cCfm8XEjkFTUcT97K9DD5uF0kaTmXSPZHSXhCvfVX5JvIIcTZVQMgOo7ynMhyotgjMaGYEqJkw0/R1pfAdohhi3EXA7SFCrDpmyw8/IRvTcD+9CxkPogNaw82lFnlQMV39Pjxo74DW7Z8lq3/7oH7X62Fpp46cffTxnkCfKvafotS287WzUTP+a7cvPlK481vsyuevvvEU1Oh2qv3P/A7+E4Z/A35OPSTFc7gRjnaolwC/vaEcReTQZ4FHhA2tIvBT4DnzJlnh+H+AeQYWAA3GhbqXRa+VBkaqlQajWMzpf7RkYH+ccScIUSURa+EiICzti7r8BzzW8c0gzYSsvkN93W4//kce+Aa8tBRLs/fy+bZqw+TRz4Uzofvs99H3is+Gr8z8S3w7W99K3Fn/FG4ME4PQz7xC/QWxG/wGEpavsEyp7yuke7NwXUlWtu1YnhnhSmvGxgYHqoPNBrO8sIHRrYdXzN3fG/j8EJf9I5Pnjz+yRPHj0MbjfH2IfRGMwMiyxwR67Rx8FDzXyb7Pbi3QT3ODY6zfAx8KUT19ET08y/GjPgp8P2n0FvNySlS1s0WYLyvLtdeDCN089obfK15+GRxJDLaXxhnaWr3VHVDITZVvnXin+Kin5NOamvXlSqjyYpjanVqrpye39D3IZslmoFSBlqvg+9CKYWlKbhzl94u6saV4yJLhpK17v8q2L+SyeNBPJgpMmIlWlybD+JSI6HnMoMhqnr93LpaLj4an73e7WfcPpZmKL2QGYkpUj2eLiTi7tvmqqUGb3FlhjNj78vCSBgl8gx6G+Lo5FukDGDCE3KM0PwyuG5T8zVQqO3Z03zieetnh8CDza3jU1ZQRjo2fAc9bOCDki6wIIuqKh7BZKyt8FffT+BBFfK4Wiw9/b6iqw4CvtfCa2+ZGTvqrvhDNMPWS5WxqAd4gW3+kD25adXc3pKBkkzrDfAEejucqqPLd73GFQhGLdbuJay0ubVleltm24P70IlrVroxYVBds3PvlmK1Vuc0ka26pq6bOvrQVivnmLh6CvDi1Tv3HJTnto0tUKV0fbtu3p23/gqjf9isATJuNldVjxCvrPrDCyyPe4Q4uKEHzTjEiOWUYPwvKAs1/D76YegD879j7brRp5e7AW1fjJylc5fRps5dU9C5Sw7ytaxWDhY26MVV2VAl1z/KHjyazo5Xc6PMsKMY1fPawKBr5WxczwuWqK5L2ZFotB6PllIhS3RwKL5qLajIQ6XRhqaJpco+fjhfLGvZzJDhRRXG6XHTi3K7Nuqqfbk6mgri3ffm69Hxa+acdmlAWbNz39aZhdTm+8vpUUZPF2o1N9czfHAeCMJVuy49OH399M1f2QBi5cbQdn3l9olLEFiLMq3X0A+j9yASkkdqZjZqQAbtsUjFlgaDtnval1p49xaJlTrRND4C3QuUyzT35cGlNiYnBMIUarGmZvJaNT2b5RLRTIRS83ekpvNaf2o2X9KlulDgwqxYEpuPLT2i95yfR7f4vXYH6mT9+kLf8FB1S1+ADnjUZqMCl43qlvKIvjU3r+XS+XlwePEJ+X8RkX7veJydkTtOw1AQRa/5FBRkAVQWFUgQSAoKuoCEFMlSCESINh/jGIUY+UNgV6yDFbAWKs4825EjOvT0PHfu3Pm8saRdXWlb3s6epE9uiT0d4JV4Sy19VXjfO9R3hVu68H50rUSv+lCqWJHmyuWrq3NOR6cOdUG+RsRC7D2or0fQDZlL9Bn4lvxEzyimrkJPBXYOl7r4kauc0ynTpc44Ef1MUWiiNlmJXmAzuBiVsbX3rqd1p+NG/5FW8GZDNLnusBGZC43pavPGrnc9p82eUCsnzxT2mlKxwE7xl3ihZjAFeAZOwfn65X0F2AHzmbZZOdiocALz4LIz+MRpO7zSrt+YbLNvPc1Yb9zYvWPC1yKralsWtb49DR3O2ab/Z7cZVVO3R9tZ202xwNrfiIgPqBD8L+sX9ldmvQAAeJxjYGYAg/+bGIwZsAAALJIB6AAAAQAB//8ADwABAAAADAAAAAAAAAACAAEAAABDAAEAAHicrVU9bxNBEH3rL+xL7DM4cWxHBBOCSIEiB2QKCiqUioKCP4BQRJHIQhYNEhUVFW0a/wYqkJAL3LggjQvcpLGE3Lg5WbKEXIRieTu3PvvsU2jY1ezO186bndvbhQLgoIYnSDw9evYClVfvmqeovG4en6By+vJtAxUk6AOtYXzVyXGzgbThhBLIUIoxxg1KMery/qxKnB/L2hIaeI8P+IhPaLGP8Rnf8JvzGN/xA7/wkzSm5hKXCsrhSrM6jiTjZpGDi+vYRBFl3MQObqGKPdzFPezjgLkfoo5H9M5qDzmSS1Ko6YmMIxn7tOd1F0VSTXeYl6KXrzmn5ow5KzwgrkHP6ynlGj0OSTHKE1kVF65Ia023Q9JXQTG4Rlao027WjSiLlnFjiS+mHkkk32CbmohG3xk3Ig1n3JXNEa8pcUMRRLoIuKHYd6Ktkc314/lxLcbFDIE7N2Nft1hD49Xn2BZd7x/5JpcV+o+dJysWz6DOsmaVl2x+Vj5hYzHT+RgZ16/phpU68xxW/Vfrrzt6YDq5M7vzge+pu6zzOfbFNtCtxSzm0bm+F2TemyPqNis8ZO+yexLD1lL32LvcYU/4bmRWs3oMiTBd0k2XvcM7DmXnhSvATHr2JHrBmfSi1l7ZnOAreiI5Ene2e8eeeG8xs4jvNgmdh3bINl3lFneB4OSt2q3GmUv8lv4ZGhkUycQlrn9i3GD/bgSKROA6syZ0JiWuN/+HrN7+hfxug7Auah/WHjq//709Jx0JF8M6ydTtGu/5hNzzKeJucedl9gJvMlOVKnZ5d+7xRt7GffYqb+YD3MZD9l25n+/Iu1BnjCJv9AIjbmFNEFzGXjcnAuZFyXOM89Xx95a1GSl5b9LMJMM5xSxKHNVCztmAK5M2+WL4eCnBiAVWw2WIt8aetJEVV+cDjzi7spRmbgnm4hLREZTsApLBMa1AtNxfazdhmQAAAHicY2BkYGDgYjBh8GJgcXHzCWGQS64symGQSi9KzWaQykksyWOQYwABFhDx/z8DSD1jTmZ6IgMHkMUK4jEwMTAD5bkYxBjUGMwY3BjCGNIYyhjaGKYxLGNgB6pjBGM2oNoZaPw1aPwDaPwraPxHSHyQSz6g8d+g8V+g8T+h8d8BXQ7ygRAQS4BFWMEyokDMAiQ1GbQYtDHUsCGpEWQQZ5BkkAKqgalgAKthB6vRRFODag4H3ByQCLoJnGBxbagsyP+icPVsDCJQNhMDH9AGDQYdBj0GfRTbQKrEkHRA7QEAsywdUw==) format('woff')}@font-face{font-family:'Flatshare Math';font-style:normal;font-weight:400;src:url(data:font/woff;base64,d09GRgABAAAAAAXEAA8AAAAABzwAAiFIAAAAAAAAAAAAAAAAAAAAAAAAAABHREVGAAAEtAAAABUAAAAWABAAA0dQT1MAAATMAAAAIAAAACBEdkx1R1NVQgAABOwAAAA7AAAAPACs9pZNQVRIAAAFKAAAAJkAAAD6CNE7TU9TLzIAAAHIAAAAVQAAAGCMm5OTY21hcAAAAiwAAAAuAAAANAAMIrhnYXNwAAAErAAAAAgAAAAIAAAAEGdseWYAAAJkAAAA+QAAAQ7GcYZ9aGVhZAAAAVgAAAA2AAAANhp/fFtoaGVhAAABkAAAACAAAAAkBooB72htdHgAAAIgAAAACgAAAAoFdABRbG9jYQAAAlwAAAAIAAAACABsANltYXhwAAABsAAAABgAAAAgAAgAOm5hbWUAAANgAAABNgAAAnI1qkbhcG9zdAAABJgAAAATAAAAIP+1ADMAAQAAAAIhSCArvapfDzz1AA4D6AAAAADb/8ZZAAAAANzIUW8ACv9XAooDEQAAAAYAAgAAAAAAAHicY2BkYGD69V+I4RfTBQYuBi6mLgagCApgAgB5zAR+eJxjYGRgYGBmsGRgYQABRgY0AAAGjgBDeJxjYGE6yjiBgZWBgfEL4xcGBoZfEBqIjRmlGRiYmNiYWVlYmZhZGCDAAUozBId4RjAcUEpRSmX69V+I4ReXM1smUJgRJMd4k2kikFJgYAIAOuoQQAAAAAJdAAoC0ABHAEcAAHicY2BgYGJgYGAGYhEgyQimWRgUgDQLEAL5Sqn//wPJlP//784FyzMAAFhzBuMAAAAAAFIAbACHeJxjYGHg+h/OFMwsyMDMwM6gw2DBwMCqKKjILKgoyKhsamLHbGqipqzEJioiJiYqwqasZGpiZmwEYvMxi4qDBNQgIkzBf7czeZr8k2Nk1hBTUhSzMNDR4uKWFjKO8zEMMVHUN1BUk5OWlZWXkZJbybzrTzVz0J91jHJS6jYm5q561uby4gJCwsLiom62vvJOJjpeDtY2il0SCvKSEsoqDEwM7v+nMXUx5TOwMXAxMKgymjKKsrKKKpoqMnX93cvk/M+VcTeINmGU4GKUdLpz954Luh5GRlNVVVNGQagext3/XJmcQXoYff69cLh7x+nf838OLgBm+D0RAAAAeJydkblOw1AQRa9ZCgryAVQWFUgQSAoKuoCEFMkoLBGizYZjZGLkhcBf8R18Ad9CxXljO3JEh56e586d5c4bS9rWhTblbe1I+uSW2NMeXok31NJXhXe9fX1XuKUz70eXSvSqD6WKFGquXL66OuV0dGyoC/I1JDbD3oP6egRdUbkgPwPfUJ/omYyJdeipwM7hUosfWOccpUznOuGE6LmMQmO1qUr0ApvBRWQ5tvbe9bRSOmzoD7WE93WtkXW6Qz2kMsZPbd7ItOs53ewJvXLqXIZ7TZkRYyf4C7yZpjAFeApOwfnq5X0F2AHzudxm52CtwxHMg1Vn8Inldnilu35jsnXdepqR3riRvWPM10WW1bZc1On2dGs4Z5v+n91mdE1tj25nbZsixrq/ERIf0CH4X9Uv0DhmogAAeJxjYGYAg/+bGIwZsAAALJIB6AAAAQAB//8AD3icY2BkYGDgYYAAJgZGCAkAARcAFAAAAAABAAAACgAcAB4AAURGTFQACAAEAAAAAP//AAAAAAAAeJxjYGRgYOBisGCwYmB1cfMJYVBIrizKYdBKL0rNZtDKSSzJY9DKTSzJYNBiYAGqZPj/nwEOAFRCCzMAeJxjYGRgYOBieMDwhsGNwZxVl52DYRoDAyMTED9gYGCaAJS9BGQXAOkFQDoDSP8B4gogfgbEILU1QFoDiNuBbB0IzTQPyL7GwMDMA6QbgfxNULVAeWYFIN8PyHeBYCZPIG5A0GDxaQh5sL44KHs9kjgyOxSIV0HZILMdGRj+bQTS5gwcQCgGxHxAXgrQp1wMIAD0NQAH8BtIAAAA) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}svg{--sky:#6fa1e3;--stage-endpointing:#dde1e7;--stage-wait:#9d87d8;--stage-decode:#a4dac1;--stage-tts:#8a929e;--stage-transport:#f3f4f6}@media(prefers-color-scheme:dark){svg{--sky:#3b69a6;--stage-endpointing:#2d333b;--stage-wait:#6a56ad;--stage-decode:#245c45;--stage-tts:#7d8692;--stage-transport:#1a1f26}}.sky{--c:var(--sky);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}.mark{fill:var(--page);stroke:var(--c);stroke-width:1.4}.mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.2}.cross{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round}.trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}.trace.thick{stroke-width:2.4}.trace.dashed{stroke-dasharray:8 5}.trace.dotted{stroke-width:2.6;stroke-dasharray:0 5.5;stroke-linecap:round}.median{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.hair{fill:none;stroke:var(--axis);stroke-width:1}.ref{fill:none;stroke:var(--c);stroke-width:1.5}.range{fill:none;stroke:var(--c);stroke-width:1.4}.run{fill:none;stroke:var(--c);stroke-width:1.5;stroke-linecap:butt}.band{fill:var(--a)}.arrow{fill:none;stroke:var(--c);stroke-width:1.6}.arrow-head{fill:var(--c)}.s-endpointing{fill:var(--stage-endpointing);stroke:var(--bar-line);stroke-width:1.1}.s-wait{fill:var(--stage-wait);stroke:var(--bar-line);stroke-width:1.1}.s-decode{fill:var(--stage-decode);stroke:var(--bar-line);stroke-width:1.1}.s-tts{fill:var(--stage-tts);stroke:var(--bar-line);stroke-width:1.1}.s-transport{fill:var(--stage-transport);stroke:var(--bar-line);stroke-width:1.1}</style>
+<rect class="page" width="420" height="3006"/>
+<text x="18" y="30">(a) Voice-to-voice p95 (s, log scale)</text>
+<text x="65.85" y="56" text-anchor="middle" class="orange tint" font-size="18">SLO 2.02 s</text>
+<text x="18" y="82" class="mute" font-size="18">vLLM tuned by its own settings</text>
+<text x="18" y="110" font-size="20">Tuned vLLM</text>
+<text x="136.66" y="110" class="soft" font-size="18">512-token steps</text>
+<path d="M34 122V150" class="axis"/>
+<path d="M64.92 122V150" class="grid"/>
+<path d="M108.5 122V150" class="grid"/>
+<path d="M163.41 122V150" class="grid"/>
+<path d="M237.91 122V150" class="grid"/>
+<path d="M312.42 122V150" class="grid"/>
+<path d="M356 122V150" class="grid"/>
+<path d="M65.85 122V150" class="slo"/>
+<path d="M229.62 136H246.29" class="gray range"/>
+<path d="M233.78 136A5.6 5.6 0 1 0 244.98 136A5.6 5.6 0 1 0 233.78 136Z" class="gray mark-fill"/>
+<text x="256.29" y="142" class="halo" font-size="18">10.14 s</text>
+<text x="18" y="176" font-size="20">1,024-token steps</text>
+<text x="171.84" y="176" class="soft" font-size="18">no long-prefill threshold</text>
+<path d="M34 188V216" class="axis"/>
+<path d="M64.92 188V216" class="grid"/>
+<path d="M108.5 188V216" class="grid"/>
+<path d="M163.41 188V216" class="grid"/>
+<path d="M237.91 188V216" class="grid"/>
+<path d="M312.42 188V216" class="grid"/>
+<path d="M356 188V216" class="grid"/>
+<path d="M65.85 188V216" class="slo"/>
+<path d="M216.07 202H232.29" class="gray range"/>
+<path d="M218.43 202A5.6 5.6 0 1 0 229.63 202A5.6 5.6 0 1 0 218.43 202Z" class="gray mark-fill"/>
+<text x="242.29" y="208" class="halo" font-size="18">8.79 s</text>
+<text x="18" y="242" font-size="20">A KV watermark</text>
+<text x="170.24" y="242" class="soft" font-size="18">10%</text>
+<path d="M34 254V282" class="axis"/>
+<path d="M64.92 254V282" class="grid"/>
+<path d="M108.5 254V282" class="grid"/>
+<path d="M163.41 254V282" class="grid"/>
+<path d="M237.91 254V282" class="grid"/>
+<path d="M312.42 254V282" class="grid"/>
+<path d="M356 254V282" class="grid"/>
+<path d="M65.85 254V282" class="slo"/>
+<path d="M239.05 268A5.6 5.6 0 1 0 250.25 268A5.6 5.6 0 1 0 239.05 268Z" class="gray mark-fill"/>
+<text x="260.25" y="274" class="halo" font-size="18">10.65 s</text>
+<text x="18" y="308" font-size="20">A queued-token limit</text>
+<text x="18" y="330" class="soft" font-size="18">8,192 tokens, 48 turns failed</text>
+<path d="M34 342V370" class="axis"/>
+<path d="M64.92 342V370" class="grid"/>
+<path d="M108.5 342V370" class="grid"/>
+<path d="M163.41 342V370" class="grid"/>
+<path d="M237.91 342V370" class="grid"/>
+<path d="M312.42 342V370" class="grid"/>
+<path d="M356 342V370" class="grid"/>
+<path d="M65.85 342V370" class="slo"/>
+<path d="M350.4 356A5.6 5.6 0 1 0 361.6 356A5.6 5.6 0 1 0 350.4 356Z" class="gray mark-fill"/>
+<text x="340.4" y="362" text-anchor="end" class="halo" font-size="18">≥30 s</text>
+<text x="18" y="394" class="mute" font-size="18">The operator's static answers</text>
+<text x="18" y="422" font-size="20">A token reservation</text>
+<text x="192.66" y="422" class="soft" font-size="18">2,048 tokens</text>
+<path d="M34 434V462" class="axis"/>
+<path d="M64.92 434V462" class="grid"/>
+<path d="M108.5 434V462" class="grid"/>
+<path d="M163.41 434V462" class="grid"/>
+<path d="M237.91 434V462" class="grid"/>
+<path d="M312.42 434V462" class="grid"/>
+<path d="M356 434V462" class="grid"/>
+<path d="M65.85 434V462" class="slo"/>
+<path d="M161.38 448H179.33" class="gray range"/>
+<path d="M176.94 441.28L183.66 448L176.94 454.72L170.22 448Z" class="gray mark-fill"/>
+<text x="192.54" y="454" class="halo" font-size="18">5.67 s</text>
+<text x="18" y="488" font-size="20">A static cap</text>
+<text x="123.74" y="488" class="soft" font-size="18">2 agent requests in flight</text>
+<path d="M34 500V528" class="axis"/>
+<path d="M64.92 500V528" class="grid"/>
+<path d="M108.5 500V528" class="grid"/>
+<path d="M163.41 500V528" class="grid"/>
+<path d="M237.91 500V528" class="grid"/>
+<path d="M312.42 500V528" class="grid"/>
+<path d="M356 500V528" class="grid"/>
+<path d="M65.85 500V528" class="slo"/>
+<path d="M221.37 507.28L228.09 514L221.37 520.72L214.65 514Z" class="gray mark-fill"/>
+<text x="236.97" y="520" class="halo" font-size="18">8.57 s</text>
+<text x="18" y="554" font-size="20">A static cap</text>
+<text x="123.74" y="554" class="soft" font-size="18">8 agent requests in flight</text>
+<path d="M34 566V594" class="axis"/>
+<path d="M64.92 566V594" class="grid"/>
+<path d="M108.5 566V594" class="grid"/>
+<path d="M163.41 566V594" class="grid"/>
+<path d="M237.91 566V594" class="grid"/>
+<path d="M312.42 566V594" class="grid"/>
+<path d="M356 566V594" class="grid"/>
+<path d="M65.85 566V594" class="slo"/>
+<path d="M236.57 573.28L243.29 580L236.57 586.72L229.85 580Z" class="gray mark-fill"/>
+<text x="252.17" y="586" class="halo" font-size="18">9.88 s</text>
+<text x="18" y="618" class="mute" font-size="18">What engines ship</text>
+<text x="18" y="646" font-size="20">vLLM with #54530</text>
+<text x="185.8" y="646" class="soft" font-size="18">at most 12 sequences</text>
+<path d="M34 658V686" class="axis"/>
+<path d="M64.92 658V686" class="grid"/>
+<path d="M108.5 658V686" class="grid"/>
+<path d="M163.41 658V686" class="grid"/>
+<path d="M237.91 658V686" class="grid"/>
+<path d="M312.42 658V686" class="grid"/>
+<path d="M356 658V686" class="grid"/>
+<path d="M65.85 658V686" class="slo"/>
+<path d="M242.15 666.68L252.79 677.32M242.15 677.32L252.79 666.68" class="gray cross"/>
+<text x="263.07" y="678" class="halo" font-size="18">10.93 s</text>
+<text x="18" y="712" font-size="20">SGLang 0.5.22</text>
+<text x="147.08" y="712" class="soft" font-size="18">priority with preemption</text>
+<path d="M34 724V752" class="axis"/>
+<path d="M64.92 724V752" class="grid"/>
+<path d="M108.5 724V752" class="grid"/>
+<path d="M163.41 724V752" class="grid"/>
+<path d="M237.91 724V752" class="grid"/>
+<path d="M312.42 724V752" class="grid"/>
+<path d="M356 724V752" class="grid"/>
+<path d="M65.85 724V752" class="slo"/>
+<path d="M252.65 732.68L263.29 743.32M252.65 743.32L263.29 732.68" class="gray cross"/>
+<text x="273.57" y="744" class="halo" font-size="18">12.05 s</text>
+<text x="18" y="778" font-size="20">SGLang with HiCache</text>
+<text x="214.88" y="778" class="soft" font-size="18">4x, write-through</text>
+<path d="M34 790V818" class="axis"/>
+<path d="M64.92 790V818" class="grid"/>
+<path d="M108.5 790V818" class="grid"/>
+<path d="M163.41 790V818" class="grid"/>
+<path d="M237.91 790V818" class="grid"/>
+<path d="M312.42 790V818" class="grid"/>
+<path d="M356 790V818" class="grid"/>
+<path d="M65.85 790V818" class="slo"/>
+<path d="M231.19 804H293.05" class="gray range"/>
+<path d="M251.73 798.68L262.37 809.32M251.73 809.32L262.37 798.68" class="gray cross"/>
+<text x="303.05" y="810" class="halo" font-size="18">11.95 s</text>
+<text x="18" y="842" class="mute" font-size="18">Routers</text>
+<text x="18" y="870" font-size="20">llm-d's flow control</text>
+<text x="190.1" y="870" class="soft" font-size="18">emulated</text>
+<path d="M34 882V910" class="axis"/>
+<path d="M64.92 882V910" class="grid"/>
+<path d="M108.5 882V910" class="grid"/>
+<path d="M163.41 882V910" class="grid"/>
+<path d="M237.91 882V910" class="grid"/>
+<path d="M312.42 882V910" class="grid"/>
+<path d="M356 882V910" class="grid"/>
+<path d="M65.85 882V910" class="slo"/>
+<path d="M248.08 888.72L254.39 899.64L241.78 899.64Z" class="gray mark-fill"/>
+<text x="263.68" y="902" class="halo" font-size="18">10.99 s</text>
+<text x="18" y="936" font-size="20">SMG 1.13.0</text>
+<text x="122.48" y="936" class="soft" font-size="18">as shipped</text>
+<path d="M34 948V976" class="axis"/>
+<path d="M64.92 948V976" class="grid"/>
+<path d="M108.5 948V976" class="grid"/>
+<path d="M163.41 948V976" class="grid"/>
+<path d="M237.91 948V976" class="grid"/>
+<path d="M312.42 948V976" class="grid"/>
+<path d="M356 948V976" class="grid"/>
+<path d="M65.85 948V976" class="slo"/>
+<path d="M248.65 954.72L254.95 965.64L242.34 965.64Z" class="gray mark-fill"/>
+<text x="264.25" y="968" class="halo" font-size="18">11.05 s</text>
+<text x="18" y="1002" font-size="20">The abort-and-resubmit router</text>
+<text x="18" y="1024" class="soft" font-size="18">before the first byte</text>
+<path d="M34 1036V1064" class="axis"/>
+<path d="M64.92 1036V1064" class="grid"/>
+<path d="M108.5 1036V1064" class="grid"/>
+<path d="M163.41 1036V1064" class="grid"/>
+<path d="M237.91 1036V1064" class="grid"/>
+<path d="M312.42 1036V1064" class="grid"/>
+<path d="M356 1036V1064" class="grid"/>
+<path d="M65.85 1036V1064" class="slo"/>
+<path d="M70.69 1050H95.7" class="gray range"/>
+<path d="M87.92 1045.18L97.55 1045.18L97.55 1054.82L87.92 1054.82Z" class="gray mark-fill"/>
+<text x="108.33" y="1056" class="halo" font-size="18">2.59 s</text>
+<text x="18" y="1088" class="mute" font-size="18">The lifecycle policy</text>
+<text x="18" y="1116" font-size="20">Over make-room</text>
+<text x="170.2" y="1116" class="soft" font-size="18">its KV reserve on</text>
+<path d="M34 1128V1156" class="axis"/>
+<path d="M64.92 1128V1156" class="grid"/>
+<path d="M108.5 1128V1156" class="grid"/>
+<path d="M163.41 1128V1156" class="grid"/>
+<path d="M237.91 1128V1156" class="grid"/>
+<path d="M312.42 1128V1156" class="grid"/>
+<path d="M356 1128V1156" class="grid"/>
+<path d="M65.85 1128V1156" class="slo"/>
+<path d="M63.83 1142H71.87" class="sky range"/>
+<path d="M67.95 1135.28L74.67 1142L67.95 1148.72L61.23 1142Z" class="sky mark"/>
+<text x="83.55" y="1148" class="halo" font-size="18">2.06 s</text>
+<text x="18" y="1182" font-size="20">On tuned vLLM</text>
+<text x="161.86" y="1182" class="soft" font-size="18">the gateway's policy alone</text>
+<path d="M34 1194V1222" class="axis"/>
+<path d="M64.92 1194V1222" class="grid"/>
+<path d="M108.5 1194V1222" class="grid"/>
+<path d="M163.41 1194V1222" class="grid"/>
+<path d="M237.91 1194V1222" class="grid"/>
+<path d="M312.42 1194V1222" class="grid"/>
+<path d="M356 1194V1222" class="grid"/>
+<path d="M65.85 1194V1222" class="slo"/>
+<path d="M238.22 1208H257.13" class="gray range"/>
+<path d="M248.09 1201.28L254.81 1208L248.09 1214.72L241.37 1208Z" class="gray mark"/>
+<text x="267.13" y="1214" class="halo" font-size="18">10.99 s</text>
+<text x="18" y="1246" class="mute" font-size="18">The change</text>
+<text x="18" y="1274" font-size="20">make-room alone</text>
+<text x="175.3" y="1274" class="soft" font-size="18">#63350</text>
+<path d="M34 1286V1314" class="axis"/>
+<path d="M64.92 1286V1314" class="grid"/>
+<path d="M108.5 1286V1314" class="grid"/>
+<path d="M163.41 1286V1314" class="grid"/>
+<path d="M237.91 1286V1314" class="grid"/>
+<path d="M312.42 1286V1314" class="grid"/>
+<path d="M356 1286V1314" class="grid"/>
+<path d="M65.85 1286V1314" class="slo"/>
+<path d="M175.83 1300H184.13" class="sky range"/>
+<path d="M173.27 1300A5.6 5.6 0 1 0 184.47 1300A5.6 5.6 0 1 0 173.27 1300Z" class="sky mark-fill"/>
+<text x="194.47" y="1306" class="halo" font-size="18">5.77 s</text>
+<text x="18" y="1340" font-size="20">Both rules</text>
+<text x="113.02" y="1340" class="soft" font-size="18">16-token window</text>
+<path d="M34 1352V1380" class="axis"/>
+<path d="M64.92 1352V1380" class="grid"/>
+<path d="M108.5 1352V1380" class="grid"/>
+<path d="M163.41 1352V1380" class="grid"/>
+<path d="M237.91 1352V1380" class="grid"/>
+<path d="M312.42 1352V1380" class="grid"/>
+<path d="M356 1352V1380" class="grid"/>
+<path d="M65.85 1352V1380" class="slo"/>
+<path d="M116.1 1366H158.38" class="sky range"/>
+<path d="M110.81 1366A5.6 5.6 0 1 0 122.01 1366A5.6 5.6 0 1 0 110.81 1366Z" class="sky mark-fill"/>
+<text x="168.38" y="1372" class="halo" font-size="18">3.23 s</text>
+<text x="18" y="1406" font-size="20">Both rules</text>
+<text x="113.02" y="1406" class="soft" font-size="18">48-token window</text>
+<path d="M34 1418V1446" class="axis"/>
+<path d="M64.92 1418V1446" class="grid"/>
+<path d="M108.5 1418V1446" class="grid"/>
+<path d="M163.41 1418V1446" class="grid"/>
+<path d="M237.91 1418V1446" class="grid"/>
+<path d="M312.42 1418V1446" class="grid"/>
+<path d="M356 1418V1446" class="grid"/>
+<path d="M65.85 1418V1446" class="slo"/>
+<path d="M73.62 1432H79.27" class="blue range"/>
+<path d="M69.22 1432A5.6 5.6 0 1 0 80.42 1432A5.6 5.6 0 1 0 69.22 1432Z" class="blue mark-fill"/>
+<text x="90.42" y="1438" class="halo" font-size="18">2.19 s</text>
+<text x="34" y="1475" text-anchor="middle" class="mute" font-size="18">1.5</text>
+<text x="64.92" y="1475" text-anchor="middle" class="mute" font-size="18">2</text>
+<text x="108.5" y="1475" text-anchor="middle" class="mute" font-size="18">3</text>
+<text x="163.41" y="1475" text-anchor="middle" class="mute" font-size="18">5</text>
+<text x="237.91" y="1475" text-anchor="middle" class="mute" font-size="18">10</text>
+<text x="312.42" y="1475" text-anchor="middle" class="mute" font-size="18">20</text>
+<text x="356" y="1475" text-anchor="middle" class="mute" font-size="18">30</text>
+<path d="M34 1452H356" class="axis"/>
+<text x="18" y="1500" class="soft" font-size="18">lower is better</text>
+<text x="18" y="1548">(b) Agents' tokens/s</text>
+<text x="18" y="1574" class="mute" font-size="18">vLLM tuned by its own settings</text>
+<text x="18" y="1602" font-size="20">Tuned vLLM</text>
+<text x="136.66" y="1602" class="soft" font-size="18">512-token steps</text>
+<path d="M34 1614V1642" class="axis"/>
+<path d="M141.33 1614V1642" class="grid"/>
+<path d="M248.67 1614V1642" class="grid"/>
+<path d="M356 1614V1642" class="grid"/>
+<path d="M87.61 1628A5.6 5.6 0 1 0 98.81 1628A5.6 5.6 0 1 0 87.61 1628Z" class="gray mark-fill"/>
+<text x="105.21" y="1634" class="halo" font-size="18">3,552</text>
+<text x="18" y="1668" font-size="20">1,024-token steps</text>
+<text x="171.84" y="1668" class="soft" font-size="18">no long-prefill threshold</text>
+<path d="M34 1680V1708" class="axis"/>
+<path d="M141.33 1680V1708" class="grid"/>
+<path d="M248.67 1680V1708" class="grid"/>
+<path d="M356 1680V1708" class="grid"/>
+<path d="M123.69 1694A5.6 5.6 0 1 0 134.89 1694A5.6 5.6 0 1 0 123.69 1694Z" class="gray mark-fill"/>
+<text x="141.29" y="1700" class="halo" font-size="18">3,888</text>
+<text x="18" y="1734" font-size="20">A KV watermark</text>
+<text x="170.24" y="1734" class="soft" font-size="18">10%</text>
+<path d="M34 1746V1774" class="axis"/>
+<path d="M141.33 1746V1774" class="grid"/>
+<path d="M248.67 1746V1774" class="grid"/>
+<path d="M356 1746V1774" class="grid"/>
+<path d="M98.07 1760A5.6 5.6 0 1 0 109.27 1760A5.6 5.6 0 1 0 98.07 1760Z" class="gray mark-fill"/>
+<text x="115.67" y="1766" class="halo" font-size="18">3,649</text>
+<text x="18" y="1800" font-size="20">A queued-token limit</text>
+<text x="18" y="1822" class="soft" font-size="18">8,192 tokens, 48 turns failed</text>
+<path d="M34 1834V1862" class="axis"/>
+<path d="M141.33 1834V1862" class="grid"/>
+<path d="M248.67 1834V1862" class="grid"/>
+<path d="M356 1834V1862" class="grid"/>
+<path d="M305.71 1848A5.6 5.6 0 1 0 316.91 1848A5.6 5.6 0 1 0 305.71 1848Z" class="gray mark-fill"/>
+<text x="323.31" y="1854" class="halo" font-size="18">5,584</text>
+<text x="18" y="1886" class="mute" font-size="18">The operator's static answers</text>
+<text x="18" y="1914" font-size="20">A token reservation</text>
+<text x="192.66" y="1914" class="soft" font-size="18">2,048 tokens</text>
+<path d="M34 1926V1954" class="axis"/>
+<path d="M141.33 1926V1954" class="grid"/>
+<path d="M248.67 1926V1954" class="grid"/>
+<path d="M356 1926V1954" class="grid"/>
+<path d="M93.17 1933.28L99.89 1940L93.17 1946.72L86.45 1940Z" class="gray mark-fill"/>
+<text x="105.17" y="1946" class="halo" font-size="18">3,551</text>
+<text x="18" y="1980" font-size="20">A static cap</text>
+<text x="123.74" y="1980" class="soft" font-size="18">2 agent requests in flight</text>
+<path d="M34 1992V2020" class="axis"/>
+<path d="M141.33 1992V2020" class="grid"/>
+<path d="M248.67 1992V2020" class="grid"/>
+<path d="M356 1992V2020" class="grid"/>
+<path d="M81.89 1999.28L88.61 2006L81.89 2012.72L75.17 2006Z" class="gray mark-fill"/>
+<text x="93.89" y="2012" class="halo" font-size="18">3,446</text>
+<text x="18" y="2046" font-size="20">A static cap</text>
+<text x="123.74" y="2046" class="soft" font-size="18">8 agent requests in flight</text>
+<path d="M34 2058V2086" class="axis"/>
+<path d="M141.33 2058V2086" class="grid"/>
+<path d="M248.67 2058V2086" class="grid"/>
+<path d="M356 2058V2086" class="grid"/>
+<path d="M96.94 2065.28L103.66 2072L96.94 2078.72L90.22 2072Z" class="gray mark-fill"/>
+<text x="108.94" y="2078" class="halo" font-size="18">3,586</text>
+<text x="18" y="2110" class="mute" font-size="18">What engines ship</text>
+<text x="18" y="2138" font-size="20">vLLM with #54530</text>
+<text x="185.8" y="2138" class="soft" font-size="18">at most 12 sequences</text>
+<path d="M34 2150V2178" class="axis"/>
+<path d="M141.33 2150V2178" class="grid"/>
+<path d="M248.67 2150V2178" class="grid"/>
+<path d="M356 2150V2178" class="grid"/>
+<path d="M95.69 2158.68L106.33 2169.32M95.69 2169.32L106.33 2158.68" class="gray cross"/>
+<text x="113.01" y="2170" class="halo" font-size="18">3,624</text>
+<text x="18" y="2204" font-size="20">SGLang 0.5.22</text>
+<text x="147.08" y="2204" class="soft" font-size="18">priority with preemption</text>
+<path d="M34 2216V2244" class="axis"/>
+<path d="M141.33 2216V2244" class="grid"/>
+<path d="M248.67 2216V2244" class="grid"/>
+<path d="M356 2216V2244" class="grid"/>
+<path d="M90.61 2224.68L101.25 2235.32M90.61 2235.32L101.25 2224.68" class="gray cross"/>
+<text x="107.93" y="2236" class="halo" font-size="18">3,577</text>
+<text x="18" y="2270" font-size="20">SGLang with HiCache</text>
+<text x="214.88" y="2270" class="soft" font-size="18">4x, write-through</text>
+<path d="M34 2282V2310" class="axis"/>
+<path d="M141.33 2282V2310" class="grid"/>
+<path d="M248.67 2282V2310" class="grid"/>
+<path d="M356 2282V2310" class="grid"/>
+<path d="M171.42 2290.68L182.06 2301.32M171.42 2301.32L182.06 2290.68" class="gray cross"/>
+<text x="188.74" y="2302" class="halo" font-size="18">4,330</text>
+<text x="18" y="2334" class="mute" font-size="18">Routers</text>
+<text x="18" y="2362" font-size="20">llm-d's flow control</text>
+<text x="190.1" y="2362" class="soft" font-size="18">emulated</text>
+<path d="M34 2374V2402" class="axis"/>
+<path d="M141.33 2374V2402" class="grid"/>
+<path d="M248.67 2374V2402" class="grid"/>
+<path d="M356 2374V2402" class="grid"/>
+<path d="M107.47 2380.72L113.77 2391.64L101.17 2391.64Z" class="gray mark-fill"/>
+<text x="119.47" y="2394" class="halo" font-size="18">3,684</text>
+<text x="18" y="2428" font-size="20">SMG 1.13.0</text>
+<text x="122.48" y="2428" class="soft" font-size="18">as shipped</text>
+<path d="M34 2440V2468" class="axis"/>
+<path d="M141.33 2440V2468" class="grid"/>
+<path d="M248.67 2440V2468" class="grid"/>
+<path d="M356 2440V2468" class="grid"/>
+<path d="M81.88 2446.72L88.19 2457.64L75.58 2457.64Z" class="gray mark-fill"/>
+<text x="93.88" y="2460" class="halo" font-size="18">3,446</text>
+<text x="18" y="2494" font-size="20">The abort-and-resubmit router</text>
+<text x="18" y="2516" class="soft" font-size="18">before the first byte</text>
+<path d="M34 2528V2556" class="axis"/>
+<path d="M141.33 2528V2556" class="grid"/>
+<path d="M248.67 2528V2556" class="grid"/>
+<path d="M356 2528V2556" class="grid"/>
+<path d="M92.81 2537.18L102.44 2537.18L102.44 2546.82L92.81 2546.82Z" class="gray mark-fill"/>
+<text x="109.63" y="2548" class="halo" font-size="18">3,593</text>
+<text x="18" y="2580" class="mute" font-size="18">The lifecycle policy</text>
+<text x="18" y="2608" font-size="20">Over make-room</text>
+<text x="170.2" y="2608" class="soft" font-size="18">its KV reserve on</text>
+<path d="M34 2620V2648" class="axis"/>
+<path d="M141.33 2620V2648" class="grid"/>
+<path d="M248.67 2620V2648" class="grid"/>
+<path d="M356 2620V2648" class="grid"/>
+<path d="M72.12 2627.28L78.84 2634L72.12 2640.72L65.4 2634Z" class="sky mark"/>
+<text x="84.12" y="2640" class="halo" font-size="18">3,355</text>
+<text x="18" y="2674" font-size="20">On tuned vLLM</text>
+<text x="161.86" y="2674" class="soft" font-size="18">the gateway's policy alone</text>
+<path d="M34 2686V2714" class="axis"/>
+<path d="M141.33 2686V2714" class="grid"/>
+<path d="M248.67 2686V2714" class="grid"/>
+<path d="M356 2686V2714" class="grid"/>
+<path d="M101.96 2693.28L108.68 2700L101.96 2706.72L95.24 2700Z" class="gray mark"/>
+<text x="113.96" y="2706" class="halo" font-size="18">3,633</text>
+<text x="18" y="2738" class="mute" font-size="18">The change</text>
+<text x="18" y="2766" font-size="20">make-room alone</text>
+<text x="175.3" y="2766" class="soft" font-size="18">#63350</text>
+<path d="M34 2778V2806" class="axis"/>
+<path d="M141.33 2778V2806" class="grid"/>
+<path d="M248.67 2778V2806" class="grid"/>
+<path d="M356 2778V2806" class="grid"/>
+<path d="M89.83 2792A5.6 5.6 0 1 0 101.03 2792A5.6 5.6 0 1 0 89.83 2792Z" class="sky mark-fill"/>
+<text x="107.43" y="2798" class="halo" font-size="18">3,572</text>
+<text x="18" y="2832" font-size="20">Both rules</text>
+<text x="113.02" y="2832" class="soft" font-size="18">16-token window</text>
+<path d="M34 2844V2872" class="axis"/>
+<path d="M141.33 2844V2872" class="grid"/>
+<path d="M248.67 2844V2872" class="grid"/>
+<path d="M356 2844V2872" class="grid"/>
+<path d="M86.41 2858A5.6 5.6 0 1 0 97.61 2858A5.6 5.6 0 1 0 86.41 2858Z" class="sky mark-fill"/>
+<text x="104.01" y="2864" class="halo" font-size="18">3,540</text>
+<text x="18" y="2898" font-size="20">Both rules</text>
+<text x="113.02" y="2898" class="soft" font-size="18">48-token window</text>
+<path d="M34 2910V2938" class="axis"/>
+<path d="M141.33 2910V2938" class="grid"/>
+<path d="M248.67 2910V2938" class="grid"/>
+<path d="M356 2910V2938" class="grid"/>
+<path d="M67.23 2924A5.6 5.6 0 1 0 78.43 2924A5.6 5.6 0 1 0 67.23 2924Z" class="blue mark-fill"/>
+<text x="84.83" y="2930" class="halo" font-size="18">3,362</text>
+<text x="34" y="2967" text-anchor="middle" class="mute" font-size="18">3,000</text>
+<text x="141.33" y="2967" text-anchor="middle" class="mute" font-size="18">4,000</text>
+<text x="248.67" y="2967" text-anchor="middle" class="mute" font-size="18">5,000</text>
+<text x="356" y="2967" text-anchor="middle" class="mute" font-size="18">6,000</text>
+<path d="M34 2944H356" class="axis"/>
+<text x="18" y="2992" class="soft" font-size="18">first 240 s of the calls • higher is better</text>
+</svg>

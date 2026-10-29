@@ -812,13 +812,16 @@ def step_cost(out: Path) -> list[Path]:
     between them, on which the box's own steps stand: a voice reply's alone and beside held agent prefill, and the
     agents' at 24 session trees."""
     costs = data.step_costs()
-    box = data.box_cpu()
-    alone, agents = data.voice_step_ms(), data.agents_step_ms()
+    paths = [
+        _step_cost_wide(costs, out / "report-step-cost.svg"),
+        _step_cost_narrow(costs, out / "report-step-cost-narrow.svg"),
+    ]
+    return paths
+
+
+def _step_keys(alone: float, agents: float) -> list[tuple[Key, str]]:
     lo, hi = DECODE_STEP_MS
-    s = Chart(WIDTH, 600, "The rules' cost per scheduler step", _step_description(costs))
-    right = 372
-    x = Scale(20, 30000, 400, 1090, log=True)
-    entries = [
+    return [
         (mark_key("gray"), "vLLM 0.32"),
         (mark_key("gray", "dot", filled=True), "the change, its switches off"),
         (mark_key("blue", filled=True), "the change as deployed"),
@@ -826,7 +829,108 @@ def step_cost(out: Path) -> list[Path]:
         (_band_key(), f"beside held agent prefill, {lo}\N{EN DASH}{hi} ms"),
         (line_key("gray trace dashed"), f"the agents' step at 24 session trees, {agents:.0f} ms"),
     ]
-    last = legend(s, x.start, 30, entries, width=x.end - x.start)
+
+
+def _step_marks(s: Chart, x: Scale, cost, row_y: float, rules: Sequence[float]) -> None:
+    """A state's marks: vLLM 0.32's ring, the change's with its switches off and as deployed, joined, and what it adds
+    beside them."""
+    s.trace([(x(cost.off), row_y), (x(cost.on), row_y)], "blue trace", wire=False)
+    s.mark(x(cost.stock), row_y, "gray", r=6.5)
+    s.mark(x(cost.off), row_y, "gray", "dot", filled=True)
+    s.mark(x(cost.on), row_y, "blue", filled=True)
+    # What the change adds, right of the row's marks: the hold's is a saving, the deployed mark left of stock's.
+    sign = "+" if cost.added >= 0 else "\N{MINUS SIGN}"
+    label = f"{sign}{abs(cost.added):,.0f} µs"
+    marks = (x(min(cost.stock, cost.off, cost.on)), x(max(cost.stock, cost.off, cost.on)))
+    _beside(s, marks, row_y + 6, label, rules)
+
+
+STEP_NARROW_TICKS = [20, 100, 1000, 10000]
+"""The phone layout's ticks on the host's axis, its decades: the wide figure's ten would crowd it."""
+
+
+def _step_cost_narrow(costs, path: Path) -> Path:
+    """The phone layout: the key, the box's axis, then each state's name over its marks under its set's and its
+    scenario's headings, and the host's axis."""
+    box = data.box_cpu()
+    alone, agents = data.voice_step_ms(), data.agents_step_ms()
+    lo, hi = DECODE_STEP_MS
+    s = Chart(NARROW, 2600, "The rules' cost per scheduler step", _step_description(costs))
+    x0 = 18
+    x = Scale(
+        20, 30000, x0 + 10, NARROW - 22, log=True
+    )  # its first tick's label clear of the canvas's edge
+    last = legend(s, x0, 30, _step_keys(alone, agents), width=NARROW - 2 * x0, pitch=25)
+    title = f"the box's CPU (ms), scaled: the host's time \N{MULTIPLICATION SIGN} {box:.2f}"
+    y = last + 16
+    for line in wrap(title, NARROW - 2 * x0, NOTE):
+        y += 25
+        s.text(x0, y, line, size=NOTE, cls="soft")
+    top = y + 44
+    for tick in (100, 1000, 10000):
+        if x.lo <= tick / box <= x.hi:
+            s.vrule(x(tick / box), top - 5, top, "axis")
+            s.text(
+                x(tick / box), top - 12, f"{tick / 1000:g}", size=NOTE, anchor="middle", cls="mute"
+            )
+    s.rule(x.start, x.end, top)
+    layout = []
+    y = top + 4
+    scenario = serving = None
+    # The headings and the states' names end short of the box's reference lines, which run the whole column.
+    room = x(alone * 1000 / box) - 10 - x0
+    for cost in costs:
+        if cost.serving != serving:
+            serving = cost.serving
+            y += 14 if layout else 0
+            for line in wrap(STEP_SETS[serving], room, NOTE):
+                s.text(x0, y + 20, line, size=NOTE)
+                y += 22
+            y += 8
+        if cost.scenario != scenario:
+            scenario = cost.scenario
+            text = data.SCENARIOS[scenario][0].upper() + data.SCENARIOS[scenario][1:]
+            y += 6 if layout else 0
+            for line in wrap(text, room, NOTE):
+                s.text(x0, y + 20, line, size=NOTE, cls="mute")
+                y += 22
+            y += 8
+        lines = wrap(_step_row(cost), room, VALUE)
+        for k, line in enumerate(lines):
+            s.text(x0, y + 20 + 24 * k, line, size=VALUE)
+        y += 24 * (len(lines) - 1)
+        layout.append((y + 44, cost))
+        y += 66
+    bottom = y + 6
+    s.rect(
+        x(lo * 1000 / box), top, x(hi * 1000 / box) - x(lo * 1000 / box), bottom - top, "gray band"
+    )
+    s.vrule(x(alone * 1000 / box), top, bottom, "gray trace dotted")
+    s.vrule(x(agents * 1000 / box), top, bottom, "gray trace dashed")
+    rules = [x(alone * 1000 / box), x(agents * 1000 / box)]
+    for row_y, cost in layout:
+        band_grid(s, x, STEP_NARROW_TICKS, row_y - 14, row_y + 14)
+        _step_marks(s, x, cost, row_y, rules)
+    last = x_axis(
+        s, x, STEP_NARROW_TICKS, [f"{t / 1000:g}" for t in STEP_NARROW_TICKS], None, bottom
+    )
+    for line in wrap(
+        "Scheduler.schedule()'s wall time a step on the host (ms, log scale)", NARROW - 2 * x0, NOTE
+    ):
+        last += 25
+        s.text(x0, last, line, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
+
+
+def _step_cost_wide(costs, path: Path) -> Path:
+    box = data.box_cpu()
+    alone, agents = data.voice_step_ms(), data.agents_step_ms()
+    lo, hi = DECODE_STEP_MS
+    s = Chart(WIDTH, 600, "The rules' cost per scheduler step", _step_description(costs))
+    right = 372
+    x = Scale(20, 30000, 400, 1090, log=True)
+    last = legend(s, x.start, 30, _step_keys(alone, agents), width=x.end - x.start)
     top = last + 80
     for tick in BOX_TICKS:
         if x.lo <= tick / box <= x.hi:
@@ -883,17 +987,9 @@ def step_cost(out: Path) -> list[Path]:
     )
     for row_y, cost in layout:
         s.text(right, row_y + 6, _step_row(cost), size=VALUE, anchor="end")
-        s.trace([(x(cost.off), row_y), (x(cost.on), row_y)], "blue trace", wire=False)
-        s.mark(x(cost.stock), row_y, "gray", r=6.5)
-        s.mark(x(cost.off), row_y, "gray", "dot", filled=True)
-        s.mark(x(cost.on), row_y, "blue", filled=True)
-        # What the change adds, right of the row's marks: the hold's is a saving, the deployed mark left of stock's.
-        sign = "+" if cost.added >= 0 else "\N{MINUS SIGN}"
-        label = f"{sign}{abs(cost.added):,.0f} µs"
-        marks = (x(min(cost.stock, cost.off, cost.on)), x(max(cost.stock, cost.off, cost.on)))
-        _beside(s, marks, row_y + 6, label, [x(alone * 1000 / box), x(agents * 1000 / box)])
+        _step_marks(s, x, cost, row_y, [x(alone * 1000 / box), x(agents * 1000 / box)])
     s.height = last + 14
-    return [s.save(out / "report-step-cost.svg")]
+    return s.save(path)
 
 
 # The headline -----------------------------------------------------------------------------------------------------
@@ -1380,18 +1476,38 @@ FAMILY_MARKS = {
 SIBLINGS = {"9-pr-a", "9-pr-ab"}
 """The change's configurations other than the one to deploy, in the pale blue: make-room alone, and both rules at
 16 tokens."""
-FRONTIER_LABELS = {
-    "disc-frozen-s24": ("Tuned vLLM", "leader-down"),
-    "disc-a8b-smg-s24": ("SMG", "left"),
-    "disc-a8a-flow-s24": ("llm-d (emulated)", "right"),
-    "disc-a7b-sglang-hicache-s24": ("SGLang with HiCache", "right"),
-    "disc-a8c-resubmit-s24": ("the abort-and-resubmit router", "right"),
-    "disc-pr-ab48-s24": ("the change", "above-left"),
-    "disc-a9-gateway-only-s24": ("the lifecycle policy", "leader-up"),
-    "disc-a5-queued8192-s24": ("vLLM's queued-token limit: 48 of 50 turns failed", "left"),
+FRONTIER_NAMES = {
+    "disc-frozen-s24": ("Tuned vLLM", "512-token steps"),
+    "disc-a4-b1024-t0-s24": ("1,024-token steps", "no long-prefill threshold"),
+    "disc-a5-watermark10-s24": ("A KV watermark", "10%"),
+    "disc-a5-queued8192-s24": ("A queued-token limit", "8,192 tokens"),
+    "disc-a6-reserve2048-s24": ("A token reservation", "2,048 tokens"),
+    "disc-a6-cap2-s24": ("A static cap", "2 agent requests in flight"),
+    "disc-a6-cap8-s24": ("A static cap", "8 agent requests in flight"),
+    "disc-a7a-pr54530-s24": ("vLLM with #54530", "at most 12 sequences"),
+    "disc-a7b-sglang-s24": ("SGLang 0.5.22", "priority with preemption"),
+    "disc-a7b-sglang-hicache-s24": ("SGLang with HiCache", "4x, write-through"),
+    "disc-a8a-flow-s24": ("llm-d's flow control", "emulated"),
+    "disc-a8b-smg-s24": ("SMG 1.13.0", "as shipped"),
+    "disc-a8c-resubmit-s24": ("The abort-and-resubmit router", "before the first byte"),
+    "disc-a9-gateway-only-s24": ("On tuned vLLM", "the gateway's policy alone"),
+    "disc-a9-s24": ("Over make-room", "its KV reserve on"),
+    "disc-pr-a-s24": ("make-room alone", "#63350"),
+    "disc-pr-ab-s24": ("Both rules", "16-token window"),
+    "disc-pr-ab48-s24": ("Both rules", "48-token window"),
 }
-"""The points the figure names, each its label and where it sits from its marker; the caption names the rest by
-their families' markers."""
+"""Each configuration's row: its name and the note beside it, as its record's arm file sets it."""
+FRONTIER_HEADINGS = (
+    ("vLLM tuned by its own settings", ("tuned",)),
+    ("The operator's static answers", ("operator",)),
+    ("What engines ship", ("engine",)),
+    ("Routers", ("router", "resubmit")),
+    ("The lifecycle policy", ("lifecycle", "lifecycle-change")),
+    ("The change", ("change",)),
+)
+"""The figure's headings, each over the families (data.FAMILIES) whose configurations it names."""
+FRONTIER_TOKENS = (3000, 6000)
+"""Panel b's scale, past the most any configuration did (5,584 tokens a second)."""
 FRONTIER_MARK = 5.6
 
 
@@ -1400,90 +1516,224 @@ def _frontier_hue(point: data.FrontierPoint) -> str:
 
 
 def _frontier_description(points: Sequence[data.FrontierPoint], slo: float) -> str:
-    named = {p.point: p for p in points}
     parts = []
-    for point_name, (label, _) in FRONTIER_LABELS.items():
-        p = named[point_name]
-        p95 = "at least 30 s" if p.failed_turns else f"{seconds(p.p95)} s"
-        parts.append(f"{label.split(':')[0]} {p95} at {p.tokens:,.0f} tokens/s")
+    for p in points:
+        name, note = FRONTIER_NAMES[p.point]
+        p95 = (
+            f"at least {REPLY_TIMEOUT_MS / 1000:.0f} s, {p.failed_turns} turns failed"
+            if p.failed_turns
+            else (f"{seconds(p.p95)} s")
+        )
+        first = name.split(" ", 1)[0]
+        if first[0].isupper() and (
+            len(first) == 1 or first[1:].islower()
+        ):  # "Tuned", "A", not "SGLang"
+            name = name[0].lower() + name[1:]
+        parts.append(f"{name}, {note}, {p95} at {p.tokens:,.0f} tokens/s")
     return (
-        f"Each of {len(points)} configurations beside 24 agent sessions of the traces with "
-        "the largest contexts, at the median of its runs with their range, the agents' tokens a second over the calls' "
-        f"first 240 s against the voice-to-voice p95 on a log scale and the SLO of {seconds(slo)} s, only the engine "
-        "change and the router "
-        "that aborts agent requests coming near it: " + "; ".join(parts) + "."
+        f"Each of {len(points)} configurations beside 24 agent sessions of the traces with the largest contexts, a row "
+        "under its family, in panel a its voice-to-voice p95 on a log scale against the SLO of "
+        f"{seconds(slo)} s, the median of its runs and their range, and in panel b the agents' tokens a second over "
+        "the calls' first 240 s, only the engine change and the router that aborts agent requests coming near the SLO: "
+        + "; ".join(parts)
+        + "."
     )
 
 
 def frontier(out: Path) -> list[Path]:
-    """report-frontier.svg: every configuration of W4's discriminating scenario but arm 9's ablations, at its
-    median over its runs: the agents' tokens a second over the calls' first 240 s against the V2V p95 on a log scale,
-    a thin bar from its runs' least p95 to their greatest, its marker by its family, against the SLO."""
+    """report-frontier.svg and its phone layout: every configuration of W4's discriminating scenario but arm 9's
+    ablations, a row under its family's heading. (a) Its V2V p95 on a log scale, the median of its runs with a thin
+    bar over their range, its marker by its family, against the SLO. (b) The agents' tokens a second over the calls'
+    first 240 s, the median of its runs."""
     points = data.frontier()
     slo = data.slo_ms(data.w4_rows())
-    s = Chart(WIDTH, 560, "Every configuration on one plane", _frontier_description(points, slo))
-    x = Scale(3000, 5800, 110, 1080)
-    y = Scale(1500, 30000, 520, 70, log=True)
-    ticks_y = [1500, 2000, 3000, 5000, 10000, 20000, 30000]
-    y_axis(s, y, ticks_y, [f"{t / 1000:g}" for t in ticks_y], x.start, x.end)
-    ticks_x = [3000, 3500, 4000, 4500, 5000, 5500]
-    for t in ticks_x[1:]:
-        s.vrule(x(t), y.end, y.start, "grid")
-    last = x_axis(
-        s,
-        x,
-        ticks_x,
-        [f"{t:,}" for t in ticks_x],
-        None,
-        y.start,
-        title="Agents' tokens/s, first 240 s of the calls \N{BULLET} higher is better",
-    )
-    s.text(
-        24,
-        34,
-        "Voice-to-voice p95 (s, log scale) \N{BULLET} lower is better",
-        size=NOTE,
-        cls="soft",
-    )
-    s.rule(x.start, x.end, y(slo), "slo")
-    s.text(
-        x.end - 6, y(slo) + 22, f"SLO {seconds(slo)} s", size=NOTE, anchor="end", cls="orange tint"
-    )
-    where = {}
-    for point in points:
-        _, shape, filled, _ = FAMILY_MARKS[point.family]
-        hue = _frontier_hue(point)
-        px, py = x(point.tokens), y(min(point.p95, REPLY_TIMEOUT_MS))
-        if len(point.p95s) > 1:
-            low, high = min(point.p95s), min(max(point.p95s), REPLY_TIMEOUT_MS)
-            s.path(f"M{fmt(px)} {fmt(y(low))}V{fmt(y(high))}", f"{hue} range")
-        s.mark(px, py, hue, shape, filled=filled, r=FRONTIER_MARK, name=point.point)
-        where[point.point] = (px, py, point)
-    for name, (label, side) in FRONTIER_LABELS.items():
-        px, py, point = where[name]
-        if side == "right":
-            s.text(px + 13, py + 6, label, size=NOTE, halo=True)
-        elif side == "left":
-            s.text(px - 13, py + 6, label, size=NOTE, anchor="end", halo=True)
-        elif side == "above-left":
-            s.text(px - 8, py - 14, label, size=NOTE, anchor="end", halo=True)
-        else:  # a leader into the clear space above or below the cluster, between its other markers
-            down = side == "leader-down"
-            reach = (40, 44) if down else (46, -46)
-            start = (px + 6, py + (8 if down else -6))
-            end = (px + reach[0], py + reach[1])
-            s.trace([start, end], "hair")
-            s.text(end[0] + 4, end[1] + (16 if down else -2), label, size=NOTE, halo=True)
-    entries = [
-        (mark_key(hue, shape, filled=filled, r=FRONTIER_MARK), name)
-        for hue, shape, filled, name in FAMILY_MARKS.values()
+    description = _frontier_description(points, slo)
+    return [
+        _frontier_layout(points, slo, out / "report-frontier.svg", description, WIDTH),
+        _frontier_layout(points, slo, out / "report-frontier-narrow.svg", description, NARROW),
     ]
-    entries.insert(
-        7, (mark_key("sky", filled=True, r=FRONTIER_MARK), "make-room alone, or a 16-token window")
+
+
+def _frontier_note(p: data.FrontierPoint) -> str:
+    """A configuration's note, with its failed turns where it has any."""
+    note = FRONTIER_NAMES[p.point][1]
+    return f"{note}, {p.failed_turns} turns failed" if p.failed_turns else note
+
+
+def _frontier_rows(
+    points: Sequence[data.FrontierPoint],
+) -> list[tuple[str, list[data.FrontierPoint]]]:
+    """The configurations under their headings, in the order of E2's report within each."""
+    rows = []
+    for heading, families in FRONTIER_HEADINGS:
+        members = [p for p in points if p.family in families]
+        if members:
+            rows.append((heading, members))
+    placed = {p.point for _, members in rows for p in members}
+    if placed != {p.point for p in points} or set(FRONTIER_NAMES) != placed:
+        raise ValueError(f"the frontier names {sorted(set(FRONTIER_NAMES) ^ placed)} wrongly")
+    return rows
+
+
+def _frontier_p95(s: Chart, a: Scale, y: float, p: data.FrontierPoint) -> None:
+    """Panel a's marks of a configuration: its runs' range and its median p95 (at the reply timeout where turns
+    failed), with its value right of them, or left where it would pass the scale's end."""
+    _, shape, filled, _ = FAMILY_MARKS[p.family]
+    hue = _frontier_hue(p)
+    p95 = min(p.p95, REPLY_TIMEOUT_MS)
+    low, high = min(p.p95s), min(max(p.p95s), REPLY_TIMEOUT_MS)
+    if len(p.p95s) > 1:
+        s.path(f"M{fmt(a(low))} {fmt(y)}H{fmt(a(high))}", f"{hue} range")
+    s.mark(a(p95), y, hue, shape, filled=filled, r=FRONTIER_MARK, name=p.point)
+    text = (
+        f"\N{GREATER-THAN OR EQUAL TO}{p95 / 1000:.0f} s"
+        if p.failed_turns
+        else f"{seconds(p.p95)} s"
     )
-    legend_columns(s, 24, last + 46, entries, columns=3, column=362)
-    s.height = last + 46 + 26 * 2 + 14
-    return [s.save(out / "report-frontier.svg")]
+    right = max(a(high), a(p95) + FRONTIER_MARK) + 10
+    if right + measure(text, NOTE) <= a.end + 36:
+        s.text(right, y + 6, text, size=NOTE, halo=True)
+    else:
+        s.text(
+            min(a(low), a(p95) - FRONTIER_MARK) - 10,
+            y + 6,
+            text,
+            size=NOTE,
+            anchor="end",
+            halo=True,
+        )
+
+
+def _frontier_tokens(s: Chart, b: Scale, y: float, p: data.FrontierPoint) -> None:
+    """Panel b's mark of a configuration: its median tokens a second, with its value."""
+    _, shape, filled, _ = FAMILY_MARKS[p.family]
+    s.mark(
+        b(p.tokens),
+        y,
+        _frontier_hue(p),
+        shape,
+        filled=filled,
+        r=FRONTIER_MARK,
+        name=f"{p.point} tokens",
+    )
+    s.text(b(p.tokens) + 12, y + 6, f"{p.tokens:,.0f}", size=NOTE, halo=True)
+
+
+FRONTIER_TICKS = [1500, 2000, 3000, 5000, 10000, 20000, 30000]
+"""Panel a's log axis of p95, from 1.5 s, under every configuration's fastest run, to the reply timeout."""
+
+
+def _frontier_layout(
+    points: Sequence[data.FrontierPoint], slo: float, path: Path, description: str, width: float
+) -> Path:
+    wide = width == WIDTH
+    s = Chart(width, 2400, "Every configuration beside 24 agent sessions", description)
+    rows = _frontier_rows(points)
+    if wide:
+        right = 330
+        a = Scale(1500, 30000, 352, 760, log=True)
+        b = Scale(*FRONTIER_TOKENS, 830, 1040)
+        heads = (a.start, b.start)
+        s.text(heads[0], 30, "(a) Voice-to-voice p95 (s, log scale)", size=LABEL)
+        s.text(heads[1], 30, "(b) Agents' tokens/s", size=LABEL)
+        top = 56
+    else:
+        # The scales start in from the canvas's edge, so that their first ticks' labels stay on it.
+        a = Scale(1500, 30000, 34, width - 64, log=True)
+        b = Scale(*FRONTIER_TOKENS, 34, width - 64)
+    marks_b, labels_b = linear_ticks(FRONTIER_TOKENS[1], 1000)
+    marks_b, labels_b = marks_b[3:], labels_b[3:]
+    labels_a = [f"{t / 1000:g}" for t in FRONTIER_TICKS]
+    if wide:
+        y = top + 14
+        placed = []
+        for heading, members in rows:
+            s.text(24, y + 16, heading, size=NOTE, cls="mute")
+            y += 26
+            for p in members:
+                name, note = FRONTIER_NAMES[p.point][0], _frontier_note(p)
+                s.text(right, y + 14, name, size=VALUE, anchor="end")
+                s.text(right, y + 36, note, size=NOTE, anchor="end", cls="soft")
+                placed.append((y + 18, p))
+                y += 50
+        bottom = y + 2
+        last = x_axis(s, a, FRONTIER_TICKS, labels_a, top, bottom, title="lower is better")
+        x_axis(
+            s,
+            b,
+            marks_b,
+            labels_b,
+            top,
+            bottom,
+            title="first 240 s of the calls \N{BULLET} higher is better",
+        )
+        s.vrule(a(slo), top, bottom, "slo")
+        s.text(
+            a(slo),
+            top - 6,
+            f"SLO {seconds(slo)} s",
+            size=NOTE,
+            anchor="middle",
+            cls="orange tint",
+            halo=True,
+        )
+        for row_y, p in placed:
+            _frontier_p95(s, a, row_y, p)
+            _frontier_tokens(s, b, row_y, p)
+        s.height = last + 14
+        return s.save(path)
+    # The phone layout: panel a, then panel b, each configuration's name over its marks under its heading.
+    last = 0.0
+    for k, (title, scale, ticks, labels, axis_title) in enumerate(
+        (
+            (
+                "(a) Voice-to-voice p95 (s, log scale)",
+                a,
+                FRONTIER_TICKS,
+                labels_a,
+                "lower is better",
+            ),
+            (
+                "(b) Agents' tokens/s",
+                b,
+                marks_b,
+                labels_b,
+                "first 240 s of the calls \N{BULLET} higher is better",
+            ),
+        )
+    ):
+        y = last + (48 if k else 30)
+        s.text(18, y, title, size=LABEL)
+        if k == 0:
+            y += 26
+            s.text(
+                a(slo), y, f"SLO {seconds(slo)} s", size=NOTE, anchor="middle", cls="orange tint"
+            )
+        y += 8
+        for heading, members in rows:
+            s.text(18, y + 18, heading, size=NOTE, cls="mute")
+            y += 26
+            for p in members:
+                name, note = FRONTIER_NAMES[p.point][0], _frontier_note(p)
+                box = s.text(18, y + 20, name, size=VALUE)
+                if box.x1 + 8 + measure(note, NOTE) <= width - 18:
+                    s.text(box.x1 + 8, y + 20, note, size=NOTE, cls="soft")
+                    band = y + 46
+                else:
+                    s.text(18, y + 42, note, size=NOTE, cls="soft")
+                    band = y + 68
+                band_grid(s, scale, ticks, band - 14, band + 14)
+                if k == 0:
+                    s.vrule(a(slo), band - 14, band + 14, "slo")
+                    _frontier_p95(s, a, band, p)
+                else:
+                    _frontier_tokens(s, b, band, p)
+                y = band + 20
+        last = x_axis(s, scale, ticks, labels, None, y)
+        last += 25
+        s.text(18, last, axis_title, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
 
 
 # Where the pool has room, and as calls overlap --------------------------------------------------------------------
