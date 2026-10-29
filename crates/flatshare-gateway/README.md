@@ -132,7 +132,7 @@ The `[admission]` table sets the admission policy. A key that belongs to other p
 
 | Key | Default | Policies | Meaning |
 |---|---|---|---|
-| `policy` | `"none"` | | `"none"` (every request goes upstream at once), `"static-cap"`, `"token-reservation"`, `"flow-control"`, `"preempt-resubmit"` or `"lifecycle"` (`"leaseholder"` in arm files from before the project's rename) |
+| `policy` | `"none"` | | `"none"` (every request goes upstream at once), `"static-cap"`, `"token-reservation"`, `"flow-control"`, `"preempt-resubmit"` or `"lifecycle"` |
 | `background_max_in_flight` | required | `static-cap` | Background requests in flight at most |
 | `pool_tokens` | 36400 | `token-reservation`; `lifecycle` with `headroom` or `degrade` | The KV pool in tokens; the default is the frozen box's |
 | `reserved_tokens` | required | `token-reservation` | Pool tokens background requests leave free; less than `pool_tokens` |
@@ -171,7 +171,7 @@ The first four policies are E2's baselines, the simple answers an operator would
 
 ### The lifecycle policy
 
-**The lifecycle policy** (`policy = "lifecycle"`, or `leaseholder` as arm files spelled it before the project's rename) is what E2's arm 9 runs with make-room. Realtime requests go upstream at once and are never queued or refused ([ADR-0003](../../docs/adr/0003-realtime-is-never-shed.md)); background requests yield to the realtime sessions' turns; interactive requests are not held. `flatshare-core` decides from how many realtime sessions are in each state of their turn; the gateway keeps the states and the clocks.
+**The lifecycle policy** (`policy = "lifecycle"`) is what E2's arm 9 runs with make-room. Realtime requests go upstream at once and are never queued or refused ([ADR-0003](../../docs/adr/0003-realtime-is-never-shed.md)); background requests yield to the realtime sessions' turns; interactive requests are not held. `flatshare-core` decides from how many realtime sessions are in each state of their turn; the gateway keeps the states and the clocks.
 - **Realtime sessions.** Accepted lifecycle events move a session, keyed by its session id, through `idle`, `user_speaking` (`user_speech_started`), `critical` (`user_turn_ended`), `playback` (`playback_started`, the reply's first audio) and back to `idle` (`playback_ended`). `interrupted` is the user speaking again, and `session_closed` forgets the session. A realtime request also puts its session in `critical`: LiveKit's preemptive generation sends it before the end of turn is decided.
   - *Lost or reordered events.* An event moves its session to the event's state whatever the state was, in the order the gateway receives events, and every state but `idle` ends after `state_timeout_s` without an event or a request, counted. A lost event holds a session at most that long.
   - *Without events.* A session that has posted none (its client sends none, or the voice worker's events are off) is `critical` while a realtime request of it is in flight, and the request's end ends it; with events, the reply's first audio does.
@@ -413,7 +413,7 @@ What the numbers say:
 
 The unit tests pin:
 
-- **The configuration rules:** each admission policy's own keys and defaults; the lifecycle policy's switches, the mechanisms each of its keys needs on, and its old name; `realtime_max_tokens`; every arm file's `[gateway]` table over the deploy example.
+- **The configuration rules:** each admission policy's own keys and defaults; the lifecycle policy's switches, the mechanisms each of its keys needs on, and its old name refused; `realtime_max_tokens`; every arm file's `[gateway]` table over the deploy example.
 - **The realtime sessions:** their states, timeouts and false alarms, and their place in the session table.
 - **The session table:** its bound, its untrusted half and its tenants.
 - **Bounds:** each route's limit read as vLLM reads it, the cap at the lower of the two, each route's own fields written; every field twice, every value that is not a count, `n` and `best_of` over `max_choices` and under 1 refused; a cap in the rewrite equal byte for byte to the cap of the rewritten body, and degrade's over a class's keeping the lower; the fixture of 285 cases current.
