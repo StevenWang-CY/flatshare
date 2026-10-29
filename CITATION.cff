@@ -22,8 +22,8 @@ abstract: >-
 authors:
   - family-names: Wang
     given-names: Chuyue
-version: 1.7.0
-date-released: 2026-10-27
+version: 1.8.0
+date-released: 2026-10-29
 license: Apache-2.0
 repository-code: "https://github.com/StevenWang-CY/flatshare"
 url: "https://github.com/StevenWang-CY/flatshare"
@@ -41,7 +41,7 @@ preferred-citation:
   authors:
     - family-names: Wang
       given-names: Chuyue
-  version: "1.5"
-  date-published: 2026-10-27
-  url: "https://github.com/StevenWang-CY/flatshare/blob/v1.5/docs/REPORT.md"
+  version: "1.8"
+  date-published: 2026-10-29
+  url: "https://github.com/StevenWang-CY/flatshare/blob/v1.8/docs/REPORT.md"
   repository-code: "https://github.com/StevenWang-CY/flatshare"
