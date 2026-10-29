@@ -24,7 +24,7 @@ from livekit.agents import APIConnectOptions, APIError, llm
 from flatshare_voice import nodes, plugins, worker
 from flatshare_voice.worker import Settings
 
-from .mocks import FIRST_SENTENCE, TRANSCRIPT, OpenAIMocks, _tone
+from .mocks import FIRST_SENTENCE, TRANSCRIPT, OpenAIMocks, _tone, gateway_answer, gateway_event
 
 BASE_URL = "http://flatshare.invalid/v1"
 SESSION = "voice-RM_a1b2c3"
@@ -34,10 +34,11 @@ HALF_SECOND = rtc.AudioFrame(np.zeros(8000, np.int16).tobytes(), 16000, 1, 8000)
 class Gateway:
     """The gateway's socket as a call sees it: ``POST /v1/sessions`` answers ``status`` and the placement on
     ``node``, its speech sockets as the gateway's ``[[nodes]]`` name them (``unix:`` addresses in ``sockets``, the
-    tunnels' directory), a 503 of type ``refusal`` otherwise, or nothing while ``hang``; the chat route streams a reply, breaks it
-    off with the gateway's ``upstream_unavailable`` error event (``stream = "broken"``), or answers ``status`` with
-    an error of ``error`` type. Every request is kept, with its headers, and each session ``DELETE /v1/sessions/ID``
-    ends."""
+    tunnels' directory), the gateway's own answer for ``refusal`` otherwise (its 404 for a ``status`` of 404), or
+    nothing while ``hang``; the chat route streams a reply, breaks it off with the gateway's error event for ``error``
+    (``stream = "broken"``), or answers with the gateway's own answer for ``error``, whose status is ``chat_status``.
+    The errors are the gateway's, from its fixture of them. Every request is kept, with its headers, and each session
+    ``DELETE /v1/sessions/ID`` ends."""
 
     def __init__(self, sockets: Path) -> None:
         self.sockets = sockets
@@ -59,7 +60,8 @@ class Gateway:
         if self.hang:
             await self.released.wait()
         if self.status != 200:
-            return web.json_response({"error": {"type": self.refusal}}, status=self.status)
+            status, body = gateway_answer("not_found" if self.status == 404 else self.refusal)
+            return web.json_response(body, status=status)
         answer = {"session_id": SESSION, "class": "realtime", "node": self.node}
         for server in ("stt", "tts"):
             answer[server] = f"unix:{self.sockets / f'{self.node}-{server}.sock'}"
@@ -75,8 +77,9 @@ class Gateway:
             {"headers": {k.lower(): v for k, v in request.headers.items()}, "body": body}
         )
         if self.chat_status != 200:
-            error = {"error": {"message": "x", "type": self.error, "code": self.chat_status}}
-            return web.json_response(error, status=self.chat_status)
+            status, error = gateway_answer(self.error)
+            assert status == self.chat_status, (self.error, status)
+            return web.json_response(error, status=status)
         response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
         await response.prepare(request)
         chunk = {
@@ -88,11 +91,8 @@ class Gateway:
         }
         await response.write(f"data: {json.dumps(chunk)}\n\n".encode())
         if self.chat == "broken":
-            # As the gateway breaks a stream off when its upstream does: the error event, compact JSON, then the end.
-            error = {
-                "error": {"code": 502, "message": "upstream", "param": None, "type": self.error}
-            }
-            await response.write(f"data: {json.dumps(error, separators=(',', ':'))}\n\n".encode())
+            # As the gateway breaks a stream off when its upstream does: its error event, then the end.
+            await response.write(gateway_event(self.error))
             return response
         await response.write(b"data: [DONE]\n\n")
         return response
@@ -359,9 +359,8 @@ def test_a_node_failure_ends_the_reply_and_the_callers_next_speech_rebinds_the_c
         ("broken", 200, "upstream_timeout", True),
         ("ok", 502, "upstream_unavailable", True),
         ("ok", 503, "no_healthy_node", True),  # no node of the session's role available
-        ("ok", 503, "no_ready_node", True),
         ("ok", 503, "in_flight_limit", False),  # the gateway's capacity, not the node
-        ("ok", 400, "invalid_request", False),
+        ("ok", 400, "invalid_json", False),
     ],
 )
 def test_the_calls_llm_goes_to_the_gateway_with_its_session_and_a_node_failure_fences_it(

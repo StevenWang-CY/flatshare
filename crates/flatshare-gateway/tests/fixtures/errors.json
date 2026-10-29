@@ -1,0 +1,19 @@
+{
+  "about": "The gateway's errors that the voice worker reads (src/exchange.rs, src/relay.rs). Each answer has its status and its body: the error's code says what failed, and its type is the OpenAI class of its status. Each event is the line a stream ends with, whose type says what failed and whose code is the status. Written by `make gateway-fixtures`, checked by the gateway's tests, and sent by the fake gateways of python/flatshare_voice's tests. The messages are examples.",
+  "answers": [
+    {"body":{"error":{"code":"not_found","message":"no such route: POST /v1/sessions","type":"invalid_request_error"}},"code":"not_found","status":404},
+    {"body":{"error":{"code":"no_call_slot","message":"every healthy realtime node has max_calls calls: the call does not fit the nodes that serve","type":"server_error"}},"code":"no_call_slot","status":503},
+    {"body":{"error":{"code":"no_healthy_node","message":"no healthy node takes realtime sessions; ask again","type":"server_error"}},"code":"no_healthy_node","status":503},
+    {"body":{"error":{"code":"placement_full","message":"each of the 4096 sessions placed has a request in flight","type":"server_error"}},"code":"placement_full","status":503},
+    {"body":{"error":{"code":"upstream_unavailable","message":"the upstream response broke off before its first byte","type":"server_error"}},"code":"upstream_unavailable","status":502},
+    {"body":{"error":{"code":"upstream_timeout","message":"the request passed its first_content_timeout_s","type":"server_error"}},"code":"upstream_timeout","status":504},
+    {"body":{"error":{"code":"no_healthy_node","message":"no healthy node takes realtime sessions; ask again","type":"server_error"}},"code":"no_healthy_node","status":503},
+    {"body":{"error":{"code":"in_flight_limit","message":"the gateway has max_in_flight requests in flight","type":"server_error"}},"code":"in_flight_limit","status":503},
+    {"body":{"error":{"code":"invalid_json","message":"the request body is not valid JSON","type":"invalid_request_error"}},"code":"invalid_json","status":400}
+  ],
+  "events": [
+    {"data":"data: {\"error\":{\"code\":502,\"message\":\"the upstream stream broke off\",\"param\":null,\"type\":\"upstream_unavailable\"}}\n\n","type":"upstream_unavailable"},
+    {"data":"data: {\"error\":{\"code\":504,\"message\":\"the upstream stream broke off\",\"param\":null,\"type\":\"upstream_timeout\"}}\n\n","type":"upstream_timeout"},
+    {"data":"data: {\"error\":{\"code\":503,\"message\":\"the upstream stream broke off\",\"param\":null,\"type\":\"draining\"}}\n\n","type":"draining"}
+  ]
+}

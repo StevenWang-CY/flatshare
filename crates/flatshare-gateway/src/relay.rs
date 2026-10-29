@@ -232,7 +232,7 @@ impl Pump {
 /// The error event of vLLM's own streams (`data: {"error": {...}}`), which the gateway sends before it aborts an
 /// event stream, so that a client learns why: the upstream broke it off, or a draining gateway cut it. A client
 /// that ignores it still sees the broken stream. After a partial event, a blank line ends that event first.
-fn error_event(kind: ErrorEvent, message: &str, at_boundary: bool) -> Bytes {
+pub(crate) fn error_event(kind: ErrorEvent, message: &str, at_boundary: bool) -> Bytes {
     let error = serde_json::json!({
         "error": {"message": message, "type": kind.as_str(), "param": null, "code": kind.code()},
     });

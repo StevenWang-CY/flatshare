@@ -51,17 +51,17 @@ SOCKET_NAME = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,122}\.sock")
 its own configured sockets, in the same directory (the tunnels' on cyan)."""
 NO_NODES = frozenset({404, 405})
 """A gateway that serves no placement (a single upstream): the call keeps its configured sockets."""
-NODE_FAILURES = frozenset(
-    {"upstream_unavailable", "upstream_timeout", "no_healthy_node", "no_ready_node"}
-)
-"""The gateway's error types that say the session's node failed: an upstream that broke or stalled, or no node of the
-session's role available (``no_healthy_node``; ``no_ready_node`` as an older contract named it). Its other errors (a
-client's mistake, a full admission point, a drain) say nothing of the node."""
+NODE_FAILURES = frozenset({"upstream_unavailable", "upstream_timeout", "no_healthy_node"})
+"""The gateway's errors that say the session's node failed: an upstream that broke or stalled, or no node of the
+session's role available. An answer names its error in its ``code`` (its ``type`` is the status's OpenAI class), and
+a stream's error event in its ``type`` (crates/flatshare-gateway/tests/fixtures/errors.json has both). Its other
+errors (a client's mistake, the gateway's own capacity, a drain) say nothing of the node."""
 PLACEMENT_REFUSALS = frozenset({"no_call_slot", "no_healthy_node", "placement_full"})
-"""The gateway's 503 answers to a placement that say no node takes the call now: every available realtime node at its
-``max_calls``, no available realtime node, or a full placement table. Serve mode's admission refuses the call."""
+"""The ``code`` of the gateway's 503 answers to a placement that say no node takes the call now: every available
+realtime node at its ``max_calls``, no available realtime node, or a full placement table. Serve mode's admission
+refuses the call."""
 STREAM_FAILURES = tuple(f'"type":"{kind}"'.encode() for kind in sorted(NODE_FAILURES))
-"""How those types appear in an event stream's error event, which the gateway sends before it breaks a stream off
+"""How those errors appear in an event stream's error event, which the gateway sends before it breaks a stream off
 (``data: {"error": {..., "type": "upstream_unavailable", ...}}``, compact JSON)."""
 
 logger = logging.getLogger(__name__)
@@ -100,14 +100,14 @@ async def admit(
     if response.status_code in NO_NODES or response.status_code == 200:
         return True, f"placed ({response.status_code})"
     try:
-        kind = response.json()["error"]["type"]
+        code = response.json()["error"]["code"]
     except (ValueError, KeyError, TypeError):
-        kind = None
-    if response.status_code == 503 and kind in PLACEMENT_REFUSALS:
-        return False, f"no node takes the call: {kind}"
+        code = None
+    if response.status_code == 503 and code in PLACEMENT_REFUSALS:
+        return False, f"no node takes the call: {code}"
     return (
         False,
-        f"the gateway placed the call nowhere: HTTP {response.status_code} {kind or ''}".rstrip(),
+        f"the gateway placed the call nowhere: HTTP {response.status_code} {code or ''}".rstrip(),
     )
 
 
@@ -442,12 +442,12 @@ class GatewayTransport(httpx.AsyncBaseTransport):
 
 
 def _names_failure(body: bytes) -> bool:
-    """Whether an error answer's body (``{"error": {"type": ...}}``) names a failure of the session's node."""
+    """Whether an error answer's body (``{"error": {"code": ...}}``) names a failure of the session's node."""
     try:
         error = json.loads(body).get("error", {})
     except (ValueError, AttributeError):
         return False
-    return isinstance(error, dict) and error.get("type") in NODE_FAILURES
+    return isinstance(error, dict) and error.get("code") in NODE_FAILURES
 
 
 def watch(session: Any, binding: CallBinding) -> None:

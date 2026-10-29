@@ -484,3 +484,107 @@ impl Drop for Exchange {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use http_body_util::BodyExt;
+
+    use super::*;
+    use crate::metrics::ErrorEvent;
+
+    /// `tests/fixtures/errors.json`: the errors the voice worker reads, as the gateway sends them. An answer's
+    /// `code` says what failed, while its `type` is the OpenAI class of its status. A stream's error event says it in
+    /// its `type`, and its `code` is the status. `python/flatshare_voice`'s tests send these bodies from their fake
+    /// gateways. `FLATSHARE_GATEWAY_WRITE_FIXTURES=1` writes it anew (`make gateway-fixtures`).
+    #[tokio::test]
+    async fn the_errors_fixture_is_current() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/errors.json");
+        let metrics = Arc::new(Metrics::new());
+        let placement = || Exchange::new(&metrics, Route::Sessions);
+        let chat = || Exchange::new(&metrics, Route::ChatCompletions);
+        let mut answers = Vec::new();
+        for response in [
+            // A gateway without [[nodes]]: the fallback's answer to POST /v1/sessions.
+            Exchange::new(&metrics, Route::Other).error(
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "no such route: POST /v1/sessions",
+            ),
+            placement().unplaced(Unplaced::NoCallSlot, SloClass::Realtime),
+            placement().unplaced(Unplaced::NoNode, SloClass::Realtime),
+            placement().unplaced(Unplaced::Full, SloClass::Realtime),
+            chat().error(
+                StatusCode::BAD_GATEWAY,
+                "upstream_unavailable",
+                "the upstream response broke off before its first byte",
+            ),
+            chat().timed_out(Phase::Upstream, Timeout::FirstContent),
+            chat().unplaced(Unplaced::NoNode, SloClass::Realtime),
+            chat().intake_refused(
+                Refused::InFlight,
+                "the gateway has max_in_flight requests in flight".to_owned(),
+            ),
+            chat().error(
+                StatusCode::BAD_REQUEST,
+                "invalid_json",
+                "the request body is not valid JSON",
+            ),
+        ] {
+            let status = response.status().as_u16();
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            let entry =
+                serde_json::json!({"status": status, "code": body["error"]["code"], "body": body});
+            answers.push(serde_json::to_string(&entry).unwrap());
+        }
+        let events: Vec<String> = [
+            ErrorEvent::Upstream,
+            ErrorEvent::Timeout,
+            ErrorEvent::Draining,
+        ]
+        .into_iter()
+        .map(|kind| {
+            let data = crate::relay::error_event(kind, "the upstream stream broke off", true);
+            let entry = serde_json::json!({
+                "type": kind.as_str(), "data": String::from_utf8(data.to_vec()).unwrap(),
+            });
+            serde_json::to_string(&entry).unwrap()
+        })
+        .collect();
+        let about = "The gateway's errors that the voice worker reads (src/exchange.rs, src/relay.rs). Each answer has \
+                     its status and its body: the error's code says what failed, and its type is the OpenAI class \
+                     of its status. Each event is the line a stream ends with, whose type says what failed and whose \
+                     code is the status. Written by `make gateway-fixtures`, checked by the gateway's tests, and sent \
+                     by the fake gateways of python/flatshare_voice's tests. The messages are examples.";
+        let fixture = format!(
+            "{{\n  \"about\": {},\n  \"answers\": [\n    {}\n  ],\n  \"events\": [\n    {}\n  ]\n}}\n",
+            serde_json::to_string(about).unwrap(),
+            answers.join(",\n    "),
+            events.join(",\n    ")
+        );
+        if std::env::var_os("FLATSHARE_GATEWAY_WRITE_FIXTURES").is_some() {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, &fixture).unwrap();
+        }
+        let on_disk = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            on_disk == fixture,
+            "{} is stale; write it anew with `make gateway-fixtures`",
+            path.display()
+        );
+        // The two shapes differ in where the failure is named, which is what the worker must read.
+        let parsed: serde_json::Value = serde_json::from_str(&fixture).unwrap();
+        let first = &parsed["answers"][1]["body"]["error"];
+        assert_eq!(
+            (first["type"].as_str(), first["code"].as_str()),
+            (Some("server_error"), Some("no_call_slot"))
+        );
+        assert!(
+            parsed["events"][0]["data"]
+                .as_str()
+                .unwrap()
+                .contains(r#""type":"upstream_unavailable""#)
+        );
+    }
+}
