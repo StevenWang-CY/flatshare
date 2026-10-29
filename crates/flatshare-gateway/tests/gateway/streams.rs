@@ -156,9 +156,9 @@ async fn an_unreachable_upstream_is_502() {
 }
 
 #[tokio::test]
-async fn no_response_headers_within_the_first_byte_timeout_is_504() {
+async fn no_response_headers_within_the_headers_timeout_is_504() {
     let mut mock = Mock::start(Script::Slow(Duration::from_secs(10))).await;
-    let gw = Gateway::start(mock.addr, "first_byte_timeout_s = 0.2").await;
+    let gw = Gateway::start(mock.addr, "headers_timeout_s = 0.2").await;
     let started = Instant::now();
     let reply = call(
         &gw.tcp,
