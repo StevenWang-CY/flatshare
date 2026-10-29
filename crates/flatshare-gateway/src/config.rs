@@ -20,8 +20,8 @@ use crate::harness::config::RawAdmission;
 /// A validated configuration.
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// The engine, spoken to over plain HTTP/1.1. With `[[nodes]]`, which name their own engines, the first node's.
-    pub upstream: UpstreamAddr,
+    /// The engine, spoken to over plain HTTP/1.1; `None` with `[[nodes]]`, which name their own engines.
+    pub upstream: Option<UpstreamAddr>,
     /// The GPU nodes (`[[nodes]]`), each with its engine and speech servers, in the file's order; empty for a gateway
     /// with one `upstream`, which serves it as it always has.
     pub nodes: Vec<NodeConfig>,
@@ -843,10 +843,10 @@ impl Config {
 impl RawConfig {
     fn validate(self) -> Result<Config, String> {
         let nodes = validate_nodes(self.nodes)?;
-        let upstream = match (nodes.first(), self.upstream.is_empty()) {
-            (None, _) => parse_upstream(&self.upstream)?,
-            (Some(first), true) => first.upstream.clone(),
-            (Some(_), false) => {
+        let upstream = match (nodes.is_empty(), self.upstream.is_empty()) {
+            (true, _) => Some(parse_upstream(&self.upstream)?),
+            (false, true) => None,
+            (false, false) => {
                 return Err(
                     "set upstream or [[nodes]], not both: each node names its own engine".into(),
                 );
@@ -1245,7 +1245,10 @@ mod tests {
     #[test]
     fn defaults_follow_the_spec() {
         let config = config("", &format!("[tenants.agents]\nkeys_sha256 = [\"{KEY}\"]")).unwrap();
-        assert_eq!(config.upstream.to_string(), "http://127.0.0.1:18000");
+        assert_eq!(
+            config.upstream.as_ref().map(ToString::to_string),
+            Some("http://127.0.0.1:18000".to_owned())
+        );
         assert_eq!(config.upstream_idle_timeout, Duration::from_secs(4));
         let vllm = PrioritySignals {
             vllm_header: true,
@@ -1610,8 +1613,8 @@ max_calls = 0
             (gray.realtime, gray.background, &gray.tts),
             (false, true, &None)
         );
-        // The first node's engine stands for the one upstream (the start line, the default node).
-        assert_eq!(two.upstream, phastform.upstream);
+        // Each node names its own engine: there is no one upstream.
+        assert_eq!(two.upstream, None);
         assert_eq!(two.placement, Placement::default());
         assert_eq!(
             two.placement,
@@ -1814,7 +1817,7 @@ max_calls = 0
                 "upstream = \"{value}\"\n{}\n[[listen]]\ntcp = \"127.0.0.1:0\"\n{a}",
                 secret_file(&SECRET_FILE)
             ))
-            .map(|config| config.upstream)
+            .map(|config| config.upstream.unwrap())
             .map_err(|e| e.to_string())
         };
         let socket = "/run/user/1007/flatshare/phastform-engine.sock";
