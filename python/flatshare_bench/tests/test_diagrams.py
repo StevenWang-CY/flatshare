@@ -85,17 +85,15 @@ def test_the_request_path_is_the_gateways_order_and_its_refusals_its_error_table
     # body read and rewritten (its fields sanitized, its reply capped) and the session resolved, the placement, and
     # the forward, whose relay and accounting follow.
     proxy = (GATEWAY / "src" / "proxy.rs").read_text()
-    inference = proxy.split("pub(crate) async fn inference(", 1)[1].split(
-        "\npub(crate) async fn", 1
-    )[0]
+    inference = proxy.split("pub(crate) async fn inference(", 1)[1].split("\n}\n", 1)[0]
     calls = [
         "authenticate(",
         "resolve_class(",
         "intake.admit(",
         "read_body(",
-        "rewrite_body(",
+        "rewrite(shared",
         "resolve_session(",
-        "nodes.request(",
+        "Target::for_request(",
         "forward(&app",
     ]
     at = [inference.index(call) for call in calls]

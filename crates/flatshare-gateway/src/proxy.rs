@@ -10,7 +10,7 @@ use axum::extract::Request;
 use axum::response::Response;
 use bytes::Bytes;
 use bytes::BytesMut;
-use flatshare_proto::SloClass;
+use flatshare_proto::{SessionId, SloClass};
 use http::header::{CONTENT_TYPE, HeaderValue};
 use http::uri::PathAndQuery;
 use http::{StatusCode, Version};
@@ -18,24 +18,21 @@ use http_body::Body as _;
 use http_body_util::BodyExt;
 use hyper::body::Incoming;
 
+use crate::auth::Tenant;
 use crate::deadline::{Deadlines, Phase, Timeout};
 use crate::engine::Engine;
 use crate::exchange::Exchange;
 use crate::harness::{Refusal, Ticket};
 use crate::intake::{BodyBytes, Refused};
 use crate::metrics::{Route, UpstreamError};
-use crate::nodes::{Held, Key, Nodes, Placed};
+use crate::nodes::{Key, Nodes, Placed, Unplaced};
 use crate::relay;
 use crate::sanitize::{
-    Bounds, InvalidBody, REQUEST_ID, cap_reply, names_session, resolve_class, resolve_session,
-    rewrite_body, sanitize_headers, set_engine_headers, strip_hop_by_hop,
+    self, Bounds, InvalidBody, REQUEST_ID, cap_reply, names_session, resolve_class,
+    resolve_session, rewrite_body, sanitize_headers, set_engine_headers, strip_hop_by_hop,
 };
 use crate::server::{self, App, Engines, Shared};
-use crate::upstream::{RECOVERY_PROBE, Upstream, UpstreamBody, causes};
-
-/// The message of the 503 that a request gets while the engine is not ready.
-const NOT_READY: &str =
-    "the engine is not ready: a request found it broken and its /health has not answered since";
+use crate::upstream::{Upstream, UpstreamBody, causes};
 
 /// Where a request goes.
 pub(crate) enum Target {
@@ -43,6 +40,46 @@ pub(crate) enum Target {
     Engine(Arc<Engine>),
     /// A request placed on a node, whose engine it goes to.
     Placed(Placed),
+}
+
+/// Why a request has nowhere to go.
+enum NoTarget {
+    /// The gateway's one engine is not ready.
+    NotReady,
+    /// No node takes the request's session.
+    Unplaced(Unplaced),
+}
+
+impl Target {
+    /// Where `tenant`'s request of `class` and `session` goes: the one engine while it is ready, or with `[[nodes]]` the
+    /// session's node, or a node chosen for it. A request of a session the gateway minted (`named` false) is placed
+    /// alone.
+    fn for_request(
+        shared: &Shared,
+        tenant: &Tenant,
+        class: SloClass,
+        session: &SessionId,
+        named: bool,
+    ) -> Result<Self, NoTarget> {
+        match &shared.engines {
+            Engines::One(engine) => {
+                if !engine.upstream.ready() {
+                    return Err(NoTarget::NotReady);
+                }
+                Ok(Self::Engine(Arc::clone(engine)))
+            }
+            Engines::Nodes(nodes) => {
+                let key = named.then(|| Key {
+                    tenant: tenant.index,
+                    session: session.clone(),
+                });
+                nodes
+                    .request(key, class, tenant.trusted)
+                    .map(Self::Placed)
+                    .map_err(NoTarget::Unplaced)
+            }
+        }
+    }
 }
 
 /// `POST /v1/chat/completions`, `/v1/completions` and `/v1/responses`.
@@ -68,11 +105,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
         }
         Err(err) => return ex.error(StatusCode::BAD_REQUEST, "invalid_class", err.to_string()),
     };
-    ex.class = Some(class);
-    ex.offer();
-    let deadlines = Deadlines::new(class, shared.class(class), ex.received);
-    ex.deadlines = Some(deadlines);
-    ex.objective = shared.class(class).first_content_objective;
+    let deadlines = ex.classify(class, shared.class(class));
     if let Engines::One(engine) = &shared.engines {
         ex.health = Some(Arc::clone(&engine.health));
     }
@@ -102,92 +135,41 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     // would.
     let read = Instant::now();
     shared.metrics.request_body(route, read - ex.received);
-    let signals = shared.upstream_priority;
-    let priority = signals.body.then(|| class.engine_priority());
-    // The class's reply cap and the choices, in the rewrite's one pass over the body.
-    let bounds = Bounds {
-        route,
-        cap: shared.class(class).max_reply_tokens,
-        max_choices: shared.max_choices,
-    };
-    let mut body = match rewrite_body(&body, &tenant.cache_salt, priority, bounds, &shared.metrics)
-    {
+    let mut body = match rewrite(shared, tenant, class, route, &body) {
         Ok(body) => body,
-        Err(InvalidBody::Json(err)) => {
-            let message = InvalidBody::Json(err).to_string();
-            return ex.error(StatusCode::BAD_REQUEST, "invalid_json", message);
-        }
-        Err(InvalidBody::Bounds(invalid)) => return ex.invalid_field(&invalid),
+        Err(invalid) => return ex.invalid_body(&invalid),
     };
     let named = names_session(&inputs, body.prompt_cache_key.as_deref());
     let session = resolve_session(tenant, &inputs, body.prompt_cache_key.as_deref());
+    let signals = shared.upstream_priority;
     set_engine_headers(&mut parts.headers, &session, class, &ex.id, signals);
     parts
         .headers
         .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     let session = &*ex.session.insert(session);
-    let mut target = match &shared.engines {
-        Engines::One(engine) => {
-            if !engine.upstream.ready() {
-                return ex.not_ready("upstream_not_ready", NOT_READY, RECOVERY_PROBE);
-            }
-            Target::Engine(Arc::clone(engine))
-        }
-        // The session's node, or a node chosen for it: a request of a session the gateway minted is placed alone.
-        Engines::Nodes(nodes) => {
-            let key = named.then(|| Key {
-                tenant: tenant.index,
-                session: session.clone(),
-            });
-            match nodes.request(key, class, tenant.trusted) {
-                Ok(placed) => Target::Placed(placed),
-                Err(unplaced) => return ex.unplaced(unplaced, class),
-            }
-        }
+    let mut target = match Target::for_request(shared, tenant, class, session, named) {
+        Ok(target) => target,
+        Err(NoTarget::NotReady) => return ex.engine_not_ready(),
+        Err(NoTarget::Unplaced(unplaced)) => return ex.unplaced(unplaced, class),
     };
 
-    // The admission point. Its decisions are the gateway's overhead; the time a request waits there is not.
+    // The admission point, under an [admission] policy. Its decisions are the gateway's overhead; the time a request
+    // waits there is not.
     let mut start = read;
     let ticket = match &shared.admission {
         None => None,
         Some(admission) => {
             let arrived = Instant::now();
-            // A background request still waiting at the drain's cut leaves the queue, and so does one whose wait
-            // reaches its deadline.
-            let mut cut = shared.drain.cut_for(Some(class));
-            let (deadline, timeout) = deadlines.queue(arrived);
-            let admitted = tokio::select! {
-                biased;
-                () = server::cut(&mut cut) => Waited::Cut,
-                () = tokio::time::sleep_until(deadline.into()) => Waited::Late,
-                admitted = admission.admit(tenant, class, session, body.json.len()) => Waited::Done(admitted),
-            };
-            let admitted = match admitted {
-                Waited::Done(admitted) => admitted,
-                Waited::Cut => {
-                    ex.admission_wait = Some(arrived.elapsed());
-                    return ex.drained(shared.drain.grace);
-                }
-                Waited::Late => {
-                    ex.admission_wait = Some(arrived.elapsed());
-                    return ex.timed_out(Phase::Queue, timeout);
-                }
-            };
-            match admitted {
+            let (queue, len) = (deadlines.queue(arrived), body.json.len());
+            match admission
+                .wait(tenant, class, session, len, queue, &shared.drain)
+                .await
+            {
                 Ok(ticket) => {
-                    let waited = ticket.as_ref().map_or(Duration::ZERO, Ticket::waited);
-                    ex.admission_wait = Some(waited);
-                    if let Some(ticket) = &ticket {
-                        ex.deferred = ticket.deferred();
-                        ex.aged = ticket.aged();
-                    }
-                    start += waited;
+                    start += ex.admitted_after(ticket.as_ref());
                     ticket
                 }
-                Err(refusal) => {
-                    ex.admission_wait = Some(arrived.elapsed());
-                    return ex.refused(refusal);
-                }
+                Err(not) => return ex.not_admitted(not, arrived.elapsed(), shared.drain.grace),
             }
         }
     };
@@ -195,33 +177,44 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
     // A node that covers holds its agents' requests back; the time they wait is not the overhead.
     if let (Target::Placed(placed), Some(nodes)) = (&mut target, shared.nodes()) {
         let arrived = Instant::now();
-        let cut = shared.drain.cut_for(Some(class));
-        match nodes.admit(placed, deadlines.queue(arrived), cut).await {
-            Ok(waited) => {
-                if !waited.is_zero() {
-                    ex.admission_wait = Some(waited);
-                    start += waited;
-                }
-            }
-            Err(held) => {
-                ex.admission_wait = Some(arrived.elapsed());
-                return match held {
-                    Held::Late(timeout) => ex.timed_out(Phase::Queue, timeout),
-                    Held::Cut => ex.drained(shared.drain.grace),
-                };
-            }
+        match nodes
+            .hold(placed, deadlines.queue(arrived), &shared.drain)
+            .await
+        {
+            Ok(waited) => start += ex.held_back(waited),
+            Err(held) => return ex.not_released(held, arrived.elapsed(), shared.drain.grace),
         }
     }
 
     // Degrade's reply cap, over the class's: the lower of the two holds.
-    let degrade = ticket.as_ref().and_then(Ticket::reply_cap);
-    if let Some(cap) = degrade {
+    if let Some(cap) = ticket.as_ref().and_then(Ticket::reply_cap) {
         body.json = cap_reply(&body.json, route, cap);
+        ex.degraded = true;
     }
-    ex.degraded = degrade.is_some();
 
     let body = UpstreamBody::new(body.json, start, shared.metrics.overhead(route));
     forward(&app, ex, parts, body, ticket, target).await
+}
+
+/// The body as the engine is to get it, in the rewrite's one pass ([`rewrite_body`]): the tenant's cache salt, the
+/// class's priority where the upstream reads it from the body, and the class's reply cap and the bound on choices.
+fn rewrite(
+    shared: &Shared,
+    tenant: &Tenant,
+    class: SloClass,
+    route: Route,
+    body: &[u8],
+) -> Result<sanitize::Body, InvalidBody> {
+    let priority = shared
+        .upstream_priority
+        .body
+        .then(|| class.engine_priority());
+    let bounds = Bounds {
+        route,
+        cap: shared.class(class).max_reply_tokens,
+        max_choices: shared.max_choices,
+    };
+    rewrite_body(body, &tenant.cache_salt, priority, bounds, &shared.metrics)
 }
 
 /// `GET /v1/models`: authenticated and sanitized, with no session or class.
@@ -248,7 +241,7 @@ pub(crate) async fn models(app: App, request: Request) -> Response {
     let engine = match &shared.engines {
         Engines::One(engine) => {
             if !engine.upstream.ready() {
-                return ex.not_ready("upstream_not_ready", NOT_READY, RECOVERY_PROBE);
+                return ex.engine_not_ready();
             }
             Arc::clone(engine)
         }
@@ -263,15 +256,6 @@ pub(crate) async fn models(app: App, request: Request) -> Response {
     };
     let target = Target::Engine(engine);
     forward(&app, ex, parts, UpstreamBody::empty(), None, target).await
-}
-
-/// What a wait at the admission point ended with.
-enum Waited<T> {
-    Done(T),
-    /// The drain's cut.
-    Cut,
-    /// The request's deadline.
-    Late,
 }
 
 /// Why a request body was not read.

@@ -24,7 +24,7 @@ use tokio::task::JoinSet;
 
 use crate::auth::{self, Tenant, Tenants};
 use crate::canary::{self, Health, Watched};
-use crate::config::{ClassConfig, Config, ListenAddr, MetricsKey, PrioritySignals};
+use crate::config::{ClassConfig, Config, Listen, ListenAddr, MetricsKey, PrioritySignals};
 use crate::engine::Engine;
 use crate::events::{self, EventSink, Events};
 use crate::exchange::Exchange;
@@ -154,7 +154,7 @@ pub(crate) struct Drain {
 }
 
 impl Drain {
-    fn new(grace: Duration) -> Self {
+    pub fn new(grace: Duration) -> Self {
         Self {
             cut: watch::channel(false).0,
             grace,
@@ -248,7 +248,7 @@ impl Server {
     pub async fn bind_with(
         config: Config,
         sink: Arc<dyn EventSink>,
-        mut inherited: Inherited,
+        inherited: Inherited,
     ) -> io::Result<Self> {
         let tenants = Tenants::new(&config.tenants, &config.cache_salt_secret);
         let changed = Arc::new(Notify::new());
@@ -260,130 +260,17 @@ impl Server {
             .map(|admission| Admission::new(admission, config.max_queued, Arc::clone(&changed)))
             .transpose()
             .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
-        let mut listeners = Vec::with_capacity(config.listeners.len());
-        let mut sockets = Vec::new();
         let given = inherited.len();
-        // Every inherited socket is matched before anything is bound, so that a start that fails changes nothing.
-        let taken: Vec<_> = config
-            .listeners
-            .iter()
-            .map(|listen| match &listen.addr {
-                ListenAddr::Tcp(addr) => (inherited.take_tcp(*addr), None),
-                ListenAddr::Unix(path) => (None, inherited.take_unix(path)),
-            })
-            .collect();
-        inherited.none_left()?;
-        for (listen, taken) in config.listeners.iter().zip(taken) {
-            let tenant = listen
-                .tenant
-                .as_deref()
-                .and_then(|name| tenants.index(name));
-            let listener = match (&listen.addr, taken) {
-                (ListenAddr::Tcp(_), (Some(listener), _)) => {
-                    listener.set_nonblocking(true)?;
-                    Listener::Tcp(TcpListener::from_std(listener)?)
-                }
-                (ListenAddr::Tcp(addr), _) => Listener::Tcp(
-                    TcpListener::bind(addr)
-                        .await
-                        .map_err(|e| context(e, addr))?,
-                ),
-                (ListenAddr::Unix(path), (_, Some(listener))) => {
-                    listener.set_nonblocking(true)?;
-                    Listener::Unix(UnixListener::from_std(listener)?, path.clone())
-                }
-                (ListenAddr::Unix(path), _) => {
-                    let (listener, file) = bind_unix(path).await?;
-                    sockets.push(file);
-                    Listener::Unix(listener, path.clone())
-                }
-            };
-            listeners.push((listener, tenant));
-        }
-        let names: Vec<Arc<str>> = config
-            .nodes
-            .iter()
-            .map(|n| n.name.as_str().into())
-            .collect();
-        let node_metrics = (!names.is_empty()).then(|| nodes::metrics::Metrics::new(&names));
-        let metrics = Arc::new(match (&admission, &node_metrics) {
-            (Some(admission), _) => Metrics::with_harness(admission.metrics()),
-            (None, Some(nodes)) => Metrics::with_nodes(nodes),
-            (None, None) => Metrics::new(),
-        });
-        let engines = match &node_metrics {
-            Some(node_metrics) => Engines::Nodes(Nodes::start(
-                &config.nodes,
-                config.placement,
-                config.canary,
-                config.upstream_priority,
-                config.upstream_idle_timeout,
-                node_metrics,
-            )),
-            None => {
-                let health = Health::new(
-                    config.canary,
-                    Watched {
-                        gauges: metrics.engine_state(),
-                        probes: metrics.probes(),
-                        changed: None,
-                        node: None,
-                    },
-                );
-                let engine = Arc::new(Engine {
-                    upstream: Upstream::new(
-                        config
-                            .upstream
-                            .expect("a configuration without [[nodes]] has its upstream"),
-                        config.upstream_idle_timeout,
-                        metrics.node_ready(),
-                    ),
-                    health: Arc::new(health),
-                    signals: config.upstream_priority,
-                    changed: Arc::new(Notify::new()),
-                });
-                if config.canary.is_some() {
-                    tokio::spawn(canary::run(Arc::downgrade(&engine)));
-                }
-                Engines::One(engine)
-            }
-        };
-        let limits = intake::Limits {
-            in_flight: config.max_in_flight,
-            classes: config.classes.each_ref().map(|class| class.max_in_flight),
-            body_bytes: config.max_buffered_body_bytes,
-        };
-        let intake = Intake::new(
-            limits,
-            &tenants,
-            Arc::clone(&changed),
-            metrics.intake_gauges(),
-        );
-        let shared = Shared {
-            tenants,
-            engines,
-            intake: Arc::new(intake),
-            admission,
-            changed,
-            upstream_priority: config.upstream_priority,
-            metrics,
-            events: Events::new(config.event_dedup_capacity, config.event_dedup_ttl, sink),
-            max_body_bytes: config.max_body_bytes,
-            classes: config.classes,
-            max_choices: config.max_choices,
-            stream_buffer_frames: config.stream_buffer_frames,
-            stall_timeout: config.stall_timeout,
-            drain: Drain::new(config.background_drain),
-            metrics_key: config.metrics_key,
-        };
-        let shared = Arc::new(shared);
+        let (listeners, sockets) = bind_listeners(&config.listeners, &tenants, inherited).await?;
+        let drain_timeout = config.drain_timeout;
+        let shared = shared(config, tenants, admission, changed, sink);
         Ok(Self {
-            shared,
+            shared: Arc::new(shared),
             listeners,
             inherited: given,
             sockets,
             handover: HandOver::default(),
-            drain_timeout: config.drain_timeout,
+            drain_timeout,
         })
     }
 
@@ -531,6 +418,149 @@ impl Server {
         if self.handover.is_done() {
             self.sockets.into_iter().for_each(SocketFile::keep);
         }
+    }
+}
+
+/// Every configured listener, in configuration order, with the tenant it names, and the socket files the gateway
+/// bound itself: each listener taken from `inherited`, the socket of the same address, or else bound. Every inherited
+/// socket is matched before anything is bound, so that a start that fails changes nothing.
+async fn bind_listeners(
+    configured: &[Listen],
+    tenants: &Tenants,
+    mut inherited: Inherited,
+) -> io::Result<(Vec<(Listener, Option<usize>)>, Vec<SocketFile>)> {
+    let mut listeners = Vec::with_capacity(configured.len());
+    let mut sockets = Vec::new();
+    let taken: Vec<_> = configured
+        .iter()
+        .map(|listen| match &listen.addr {
+            ListenAddr::Tcp(addr) => (inherited.take_tcp(*addr), None),
+            ListenAddr::Unix(path) => (None, inherited.take_unix(path)),
+        })
+        .collect();
+    inherited.none_left()?;
+    for (listen, taken) in configured.iter().zip(taken) {
+        let tenant = listen
+            .tenant
+            .as_deref()
+            .and_then(|name| tenants.index(name));
+        let listener = match (&listen.addr, taken) {
+            (ListenAddr::Tcp(_), (Some(listener), _)) => {
+                listener.set_nonblocking(true)?;
+                Listener::Tcp(TcpListener::from_std(listener)?)
+            }
+            (ListenAddr::Tcp(addr), _) => Listener::Tcp(
+                TcpListener::bind(addr)
+                    .await
+                    .map_err(|e| context(e, addr))?,
+            ),
+            (ListenAddr::Unix(path), (_, Some(listener))) => {
+                listener.set_nonblocking(true)?;
+                Listener::Unix(UnixListener::from_std(listener)?, path.clone())
+            }
+            (ListenAddr::Unix(path), _) => {
+                let (listener, file) = bind_unix(path).await?;
+                sockets.push(file);
+                Listener::Unix(listener, path.clone())
+            }
+        };
+        listeners.push((listener, tenant));
+    }
+    Ok((listeners, sockets))
+}
+
+/// The gateway's metrics, with the harness's families under an admission policy and the nodes' with `[[nodes]]`, and
+/// what it sends its requests to: the nodes, each with its engine, or the one upstream's engine and its canary.
+fn engines(config: &Config, admission: Option<&Arc<Admission>>) -> (Arc<Metrics>, Engines) {
+    let names: Vec<Arc<str>> = config
+        .nodes
+        .iter()
+        .map(|n| n.name.as_str().into())
+        .collect();
+    let node_metrics = (!names.is_empty()).then(|| nodes::metrics::Metrics::new(&names));
+    let metrics = Arc::new(match (admission, &node_metrics) {
+        (Some(admission), _) => Metrics::with_harness(admission.metrics()),
+        (None, Some(nodes)) => Metrics::with_nodes(nodes),
+        (None, None) => Metrics::new(),
+    });
+    let engines = match &node_metrics {
+        Some(node_metrics) => Engines::Nodes(Nodes::start(
+            &config.nodes,
+            config.placement,
+            config.canary,
+            config.upstream_priority,
+            config.upstream_idle_timeout,
+            node_metrics,
+        )),
+        None => {
+            let health = Health::new(
+                config.canary,
+                Watched {
+                    gauges: metrics.engine_state(),
+                    probes: metrics.probes(),
+                    changed: None,
+                    node: None,
+                },
+            );
+            let engine = Arc::new(Engine {
+                upstream: Upstream::new(
+                    config
+                        .upstream
+                        .clone()
+                        .expect("a configuration without [[nodes]] has its upstream"),
+                    config.upstream_idle_timeout,
+                    metrics.node_ready(),
+                ),
+                health: Arc::new(health),
+                signals: config.upstream_priority,
+                changed: Arc::new(Notify::new()),
+            });
+            if config.canary.is_some() {
+                tokio::spawn(canary::run(Arc::downgrade(&engine)));
+            }
+            Engines::One(engine)
+        }
+    };
+    (metrics, engines)
+}
+
+/// The state every listener shares: the tenants, the engines and their metrics, the intake's bounds, the admission
+/// point under an admission policy, the lifecycle events' window and `sink`, and the configuration's limits.
+fn shared(
+    config: Config,
+    tenants: Tenants,
+    admission: Option<Arc<Admission>>,
+    changed: Arc<Notify>,
+    sink: Arc<dyn EventSink>,
+) -> Shared {
+    let (metrics, engines) = engines(&config, admission.as_ref());
+    let limits = intake::Limits {
+        in_flight: config.max_in_flight,
+        classes: config.classes.each_ref().map(|class| class.max_in_flight),
+        body_bytes: config.max_buffered_body_bytes,
+    };
+    let intake = Intake::new(
+        limits,
+        &tenants,
+        Arc::clone(&changed),
+        metrics.intake_gauges(),
+    );
+    Shared {
+        tenants,
+        engines,
+        intake: Arc::new(intake),
+        admission,
+        changed,
+        upstream_priority: config.upstream_priority,
+        metrics,
+        events: Events::new(config.event_dedup_capacity, config.event_dedup_ttl, sink),
+        max_body_bytes: config.max_body_bytes,
+        classes: config.classes,
+        max_choices: config.max_choices,
+        stream_buffer_frames: config.stream_buffer_frames,
+        stall_timeout: config.stall_timeout,
+        drain: Drain::new(config.background_drain),
+        metrics_key: config.metrics_key,
     }
 }
 

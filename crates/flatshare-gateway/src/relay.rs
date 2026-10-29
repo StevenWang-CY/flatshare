@@ -63,6 +63,7 @@ pub(crate) fn start(
         ex,
         scanner,
         stall_timeout: shared.stall_timeout,
+        sheddable: ticket.as_ref().is_some_and(Ticket::sheddable),
         ticket,
         cut,
         grace: shared.drain.grace,
@@ -85,6 +86,8 @@ struct Pump {
     scanner: Scanner,
     stall_timeout: Duration,
     ticket: Option<Ticket>,
+    /// Whether the admission policy may shed the request.
+    sheddable: bool,
     /// What the request waits on for a drain's cut, and the grace it had.
     cut: Option<watch::Receiver<bool>>,
     grace: Duration,
@@ -93,78 +96,40 @@ struct Pump {
 impl Pump {
     /// Relays until either side ends, until the admission policy sheds the request, or until a drain's cut ends a
     /// background one.
-    async fn run(self) {
-        let Self {
-            mut upstream,
-            frames,
-            aborted,
-            mut ex,
-            mut scanner,
-            stall_timeout,
-            mut ticket,
-            mut cut,
-            grace,
-        } = self;
-        let _active = ex.class.map(|class| ex.metrics().stream_started(class));
-        let sheddable = ticket.as_ref().is_some_and(Ticket::sheddable);
-        let deadlines = ex.deadlines;
+    async fn run(mut self) {
+        let _active = self
+            .ex
+            .class
+            .map(|class| self.ex.metrics().stream_started(class));
+        let deadlines = self.ex.deadlines;
         let outcome = loop {
             // The first content by the request's deadline for it, every frame after within the idle timeout.
-            let (deadline, timeout) = next_deadline(deadlines.as_ref(), ex.first_byte.is_some());
+            let (deadline, timeout) =
+                next_deadline(deadlines.as_ref(), self.ex.first_byte.is_some());
             let frame = tokio::select! {
                 biased;
-                () = frames.closed() => break Outcome::Cancelled,
-                () = shed(&mut ticket), if sheddable => break Outcome::Shed,
-                () = server::cut(&mut cut) => {
-                    let message = server::drain_message(grace);
-                    // At once or not at all: a drain does not wait for a client that stops reading.
-                    if scanner.is_events()
-                        && frames
-                            .try_send(error_event(ErrorEvent::Draining, &message, scanner.at_event_boundary()))
-                            .is_ok()
-                        && let Some(class) = ex.class
-                    {
-                        ex.metrics().error_event(class, ErrorEvent::Draining);
-                    }
-                    ex.note_error(message);
+                () = self.frames.closed() => break Outcome::Cancelled,
+                () = shed(&mut self.ticket), if self.sheddable => break Outcome::Shed,
+                () = server::cut(&mut self.cut) => {
+                    self.end_with(ErrorEvent::Draining, server::drain_message(self.grace)).await;
                     break Outcome::Drained;
                 }
                 () = sleep_until(deadline) => {
-                    ex.metrics().upstream_error(UpstreamError::Timeout);
+                    self.ex.metrics().upstream_error(UpstreamError::Timeout);
                     let message = deadlines.map(|d| d.message(timeout)).unwrap_or_default();
-                    if scanner.is_events() {
-                        // Within the stall timeout: a client that stops reading gets none.
-                        let event = error_event(ErrorEvent::Timeout, &message, scanner.at_event_boundary());
-                        let sent = tokio::time::timeout(stall_timeout, frames.send(event)).await;
-                        if let (Ok(Ok(())), Some(class)) = (sent, ex.class) {
-                            ex.metrics().error_event(class, ErrorEvent::Timeout);
-                        }
-                    }
-                    ex.note_error(message);
+                    self.end_with(ErrorEvent::Timeout, message).await;
                     break Outcome::timeout(timeout);
                 }
-                frame = upstream.frame() => frame,
+                frame = self.upstream.frame() => frame,
             };
             let data = match frame {
                 None => break Outcome::Completed,
                 Some(Err(err)) => {
-                    ex.metrics().upstream_error(UpstreamError::Body);
+                    self.ex.metrics().upstream_error(UpstreamError::Body);
                     // With [[nodes]], a node whose stream broke off is probed at once: its engine may be gone.
-                    ex.broke();
+                    self.ex.broke();
                     let message = format!("the upstream stream broke off: {}", causes(&err));
-                    if scanner.is_events() {
-                        // Within the stall timeout: a client that stops reading gets none.
-                        let event = error_event(
-                            ErrorEvent::Upstream,
-                            &message,
-                            scanner.at_event_boundary(),
-                        );
-                        let sent = tokio::time::timeout(stall_timeout, frames.send(event)).await;
-                        if let (Ok(Ok(())), Some(class)) = (sent, ex.class) {
-                            ex.metrics().error_event(class, ErrorEvent::Upstream);
-                        }
-                    }
-                    ex.note_error(message);
+                    self.end_with(ErrorEvent::Upstream, message).await;
                     break Outcome::TransportError;
                 }
                 // Trailers are not relayed; vLLM sends none.
@@ -173,46 +138,38 @@ impl Pump {
                     Err(_) => continue,
                 },
             };
-            if ex.first_byte.is_none() {
-                ex.first_byte = Some(ex.received.elapsed());
+            if self.ex.first_byte.is_none() {
+                self.ex.first_byte = Some(self.ex.received.elapsed());
                 // A 2xx response's first content: the engine generates.
-                if ex.status.is_some_and(|status| status.is_success()) {
-                    ex.succeeded();
+                if self.ex.status.is_some_and(|status| status.is_success()) {
+                    self.ex.succeeded();
                 }
                 // A realtime request's first byte frees the background work preempt-resubmit holds back for it.
-                if let Some(ticket) = &mut ticket {
+                if let Some(ticket) = &mut self.ticket {
                     ticket.first_byte();
                 }
             }
             let scanned = data.clone();
-            if let Err(err) = frames.try_send(data) {
-                let data = match err {
-                    TrySendError::Full(data) => data,
-                    TrySendError::Closed(_) => break Outcome::Cancelled,
-                };
-                let total = deadlines.map(|d| d.total().0);
-                let sent = tokio::select! {
-                    biased;
-                    () = shed(&mut ticket), if sheddable => break Outcome::Shed,
-                    () = server::cut(&mut cut) => {
-                        ex.note_error(server::drain_message(grace));
-                        break Outcome::Drained;
+            match self.frames.try_send(data) {
+                Ok(()) => {}
+                Err(TrySendError::Closed(_)) => break Outcome::Cancelled,
+                Err(TrySendError::Full(data)) => {
+                    if let Err(outcome) = self.send_full(data).await {
+                        break outcome;
                     }
-                    // A client too slow for the request's total: the client's channel is full, so no event.
-                    () = sleep_until(total) => {
-                        ex.note_error(deadlines.map(|d| d.message(Timeout::Total)).unwrap_or_default());
-                        break Outcome::TimeoutTotal;
-                    }
-                    sent = tokio::time::timeout(stall_timeout, frames.send(data)) => sent,
-                };
-                match sent {
-                    Ok(Ok(())) => {}
-                    Ok(Err(_)) => break Outcome::Cancelled,
-                    Err(_) => break Outcome::Stalled,
                 }
             }
-            scanner.feed(&scanned);
+            self.scanner.feed(&scanned);
         };
+        let Self {
+            upstream,
+            frames,
+            aborted,
+            mut ex,
+            scanner,
+            ticket,
+            ..
+        } = self;
         if outcome != Outcome::Completed && outcome != Outcome::Cancelled {
             aborted.store(true, Ordering::Release);
         }
@@ -226,6 +183,53 @@ impl Pump {
             drop(ticket);
         }
         ex.finish(outcome);
+    }
+
+    /// Ends an event stream with the error event of `kind`, sent and counted only if the client takes it: a drain's
+    /// at once or not at all (a drain does not wait for a client that stops reading), the others within the stall
+    /// timeout. `message` goes to the request's log line whatever the response.
+    async fn end_with(&mut self, kind: ErrorEvent, message: String) {
+        if self.scanner.is_events() {
+            let event = error_event(kind, &message, self.scanner.at_event_boundary());
+            let sent = match kind {
+                ErrorEvent::Draining => self.frames.try_send(event).is_ok(),
+                ErrorEvent::Upstream | ErrorEvent::Timeout => {
+                    let sent =
+                        tokio::time::timeout(self.stall_timeout, self.frames.send(event)).await;
+                    matches!(sent, Ok(Ok(())))
+                }
+            };
+            if let (true, Some(class)) = (sent, self.ex.class) {
+                self.ex.metrics().error_event(class, kind);
+            }
+        }
+        self.ex.note_error(message);
+    }
+
+    /// Waits for room in the client's full channel to send `data`, for at most the stall timeout. `Err` is how the
+    /// response ends instead: a shed, a drain's cut, the request's total, a client that left or one too slow.
+    async fn send_full(&mut self, data: Bytes) -> Result<(), Outcome> {
+        let deadlines = self.ex.deadlines;
+        let total = deadlines.map(|d| d.total().0);
+        let sent = tokio::select! {
+            biased;
+            () = shed(&mut self.ticket), if self.sheddable => return Err(Outcome::Shed),
+            () = server::cut(&mut self.cut) => {
+                self.ex.note_error(server::drain_message(self.grace));
+                return Err(Outcome::Drained);
+            }
+            // A client too slow for the request's total: the client's channel is full, so no event.
+            () = sleep_until(total) => {
+                self.ex.note_error(deadlines.map(|d| d.message(Timeout::Total)).unwrap_or_default());
+                return Err(Outcome::TimeoutTotal);
+            }
+            sent = tokio::time::timeout(self.stall_timeout, self.frames.send(data)) => sent,
+        };
+        match sent {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(_)) => Err(Outcome::Cancelled),
+            Err(_) => Err(Outcome::Stalled),
+        }
     }
 }
 

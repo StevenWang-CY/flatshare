@@ -872,124 +872,27 @@ impl RawConfig {
             );
         }
 
-        let mut tenants = Vec::with_capacity(self.tenants.len());
-        let mut digests = HashSet::new();
-        for (name, raw) in self.tenants {
-            let tenant = raw.validate(name)?;
-            for digest in &tenant.keys_sha256 {
-                if !digests.insert(*digest) {
-                    return Err(format!(
-                        "tenants.{}: an API key digest is listed twice",
-                        tenant.name
-                    ));
-                }
-            }
-            tenants.push(tenant);
-        }
-        if tenants.is_empty() {
-            return Err("no [tenants.<name>] table".into());
-        }
-
-        let mut listeners = Vec::with_capacity(self.listen.len());
-        for (i, raw) in self.listen.into_iter().enumerate() {
-            let addr = match (raw.tcp, raw.unix) {
-                (Some(addr), None) if addr.ip().is_loopback() => ListenAddr::Tcp(addr),
-                (Some(addr), None) => {
-                    return Err(format!(
-                        "listen[{i}]: tcp {addr} is not a loopback address: the gateway has no TLS, so API keys \
-                         would cross the network in cleartext"
-                    ));
-                }
-                (None, Some(path)) if path.is_absolute() => ListenAddr::Unix(path),
-                (None, Some(path)) => {
-                    return Err(format!(
-                        "listen[{i}]: unix path {} is not absolute",
-                        path.display()
-                    ));
-                }
-                _ => return Err(format!("listen[{i}]: set exactly one of tcp or unix")),
-            };
-            if let Some(tenant) = &raw.tenant {
-                if !tenants.iter().any(|t| &t.name == tenant) {
-                    return Err(format!("listen[{i}]: unknown tenant {tenant:?}"));
-                }
-                if matches!(addr, ListenAddr::Tcp(_)) {
-                    return Err(format!(
-                        "listen[{i}]: a TCP listener cannot name a tenant, because other users of the host can \
-                         reach it; give the tenant an API key instead"
-                    ));
-                }
-            }
-            listeners.push(Listen {
-                addr,
-                tenant: raw.tenant,
-            });
-        }
-        if listeners.is_empty() {
-            return Err("no [[listen]] entry".into());
-        }
-        for tenant in &tenants {
-            let reachable = !tenant.keys_sha256.is_empty()
-                || listeners
-                    .iter()
-                    .any(|l| l.tenant.as_ref() == Some(&tenant.name));
-            if !reachable {
-                return Err(format!(
-                    "tenants.{}: no API key and no listener names it, so no request can reach it",
-                    tenant.name
-                ));
-            }
-        }
+        let tenants = validate_tenants(self.tenants)?;
+        let listeners = validate_listeners(self.listen, &tenants)?;
         let cache_salt_secret = cache_salt_secret(self.cache_salt_secret_file)?;
         let tcp = listeners
             .iter()
             .any(|l| matches!(l.addr, ListenAddr::Tcp(_)));
         let metrics_key = metrics_key(self.metrics_key_file, tcp)?;
-
-        if self.max_body_bytes == 0 {
-            return Err("max_body_bytes must be positive".into());
-        }
-        if self.first_byte_timeout_s.is_some() {
-            return Err(
-                "first_byte_timeout_s is now headers_timeout_s, every class's default wait for an attempt's \
-                 response headers"
-                    .into(),
-            );
-        }
-        let headers_timeout = seconds("headers_timeout_s", self.headers_timeout_s)?;
-        let classes = self.classes.validate(headers_timeout)?;
-        for (key, zero) in [
-            ("max_choices", self.max_choices == 0),
-            ("max_in_flight", self.max_in_flight == 0),
-            ("max_queued", self.max_queued == 0),
-        ] {
-            if zero {
-                return Err(format!("{key} must be positive"));
-            }
-        }
-        if self.max_buffered_body_bytes < self.max_body_bytes {
-            return Err(format!(
-                "max_buffered_body_bytes ({}) must be at least max_body_bytes ({}), or no body of that size could \
-                 be read",
-                self.max_buffered_body_bytes, self.max_body_bytes
-            ));
-        }
-        if self.stream_buffer_frames == 0 {
-            return Err("stream_buffer_frames must be positive".into());
-        }
-        if self.event_dedup_capacity == 0 {
-            return Err("event_dedup_capacity must be positive".into());
-        }
-        let drain_timeout = seconds("drain_timeout_s", self.drain_timeout_s)?;
-        let background_drain = Duration::try_from_secs_f64(self.background_drain_s)
-            .ok()
-            .filter(|grace| *grace <= drain_timeout)
-            .ok_or_else(|| {
-                format!(
-                    "background_drain_s must be a number of seconds from 0 to drain_timeout_s ({})",
-                    self.drain_timeout_s
-                )
-            })?;
+        let limits = validate_limits(RawLimits {
+            max_body_bytes: self.max_body_bytes,
+            first_byte_timeout_s: self.first_byte_timeout_s,
+            headers_timeout_s: self.headers_timeout_s,
+            classes: self.classes,
+            max_choices: self.max_choices,
+            max_in_flight: self.max_in_flight,
+            max_queued: self.max_queued,
+            max_buffered_body_bytes: self.max_buffered_body_bytes,
+            stream_buffer_frames: self.stream_buffer_frames,
+            event_dedup_capacity: self.event_dedup_capacity,
+            drain_timeout_s: self.drain_timeout_s,
+            background_drain_s: self.background_drain_s,
+        })?;
         Ok(Config {
             upstream,
             nodes,
@@ -1005,7 +908,7 @@ impl RawConfig {
             cache_salt_secret,
             metrics_key,
             max_body_bytes: self.max_body_bytes,
-            classes,
+            classes: limits.classes,
             canary: self.canary.validate()?,
             max_choices: self.max_choices,
             max_in_flight: self.max_in_flight,
@@ -1013,15 +916,174 @@ impl RawConfig {
             max_buffered_body_bytes: self.max_buffered_body_bytes,
             stream_buffer_frames: self.stream_buffer_frames,
             stall_timeout: seconds("stall_timeout_s", self.stall_timeout_s)?,
-            headers_timeout,
-            drain_timeout,
-            background_drain,
+            headers_timeout: limits.headers_timeout,
+            drain_timeout: limits.drain_timeout,
+            background_drain: limits.background_drain,
             event_dedup_capacity: self.event_dedup_capacity,
             event_dedup_ttl: seconds("event_dedup_ttl_s", self.event_dedup_ttl_s)?,
             log_format: self.log_format,
             log_level: self.log_level,
         })
     }
+}
+
+/// The `[tenants.<name>]` tables, in their names' order: no API key digest listed twice, and at least one tenant.
+fn validate_tenants(raw: BTreeMap<String, RawTenant>) -> Result<Vec<Tenant>, String> {
+    let mut tenants = Vec::with_capacity(raw.len());
+    let mut digests = HashSet::new();
+    for (name, raw) in raw {
+        let tenant = raw.validate(name)?;
+        for digest in &tenant.keys_sha256 {
+            if !digests.insert(*digest) {
+                return Err(format!(
+                    "tenants.{}: an API key digest is listed twice",
+                    tenant.name
+                ));
+            }
+        }
+        tenants.push(tenant);
+    }
+    if tenants.is_empty() {
+        return Err("no [tenants.<name>] table".into());
+    }
+    Ok(tenants)
+}
+
+/// The `[[listen]]` entries: each a loopback TCP address or an absolute Unix socket path, a tenant named by a Unix
+/// socket's alone, at least one entry, and every tenant reachable, by an API key or a listener that names it.
+fn validate_listeners(raw: Vec<RawListen>, tenants: &[Tenant]) -> Result<Vec<Listen>, String> {
+    let mut listeners = Vec::with_capacity(raw.len());
+    for (i, raw) in raw.into_iter().enumerate() {
+        let addr = match (raw.tcp, raw.unix) {
+            (Some(addr), None) if addr.ip().is_loopback() => ListenAddr::Tcp(addr),
+            (Some(addr), None) => {
+                return Err(format!(
+                    "listen[{i}]: tcp {addr} is not a loopback address: the gateway has no TLS, so API keys \
+                     would cross the network in cleartext"
+                ));
+            }
+            (None, Some(path)) if path.is_absolute() => ListenAddr::Unix(path),
+            (None, Some(path)) => {
+                return Err(format!(
+                    "listen[{i}]: unix path {} is not absolute",
+                    path.display()
+                ));
+            }
+            _ => return Err(format!("listen[{i}]: set exactly one of tcp or unix")),
+        };
+        if let Some(tenant) = &raw.tenant {
+            if !tenants.iter().any(|t| &t.name == tenant) {
+                return Err(format!("listen[{i}]: unknown tenant {tenant:?}"));
+            }
+            if matches!(addr, ListenAddr::Tcp(_)) {
+                return Err(format!(
+                    "listen[{i}]: a TCP listener cannot name a tenant, because other users of the host can \
+                     reach it; give the tenant an API key instead"
+                ));
+            }
+        }
+        listeners.push(Listen {
+            addr,
+            tenant: raw.tenant,
+        });
+    }
+    if listeners.is_empty() {
+        return Err("no [[listen]] entry".into());
+    }
+    for tenant in tenants {
+        let reachable = !tenant.keys_sha256.is_empty()
+            || listeners
+                .iter()
+                .any(|l| l.tenant.as_ref() == Some(&tenant.name));
+        if !reachable {
+            return Err(format!(
+                "tenants.{}: no API key and no listener names it, so no request can reach it",
+                tenant.name
+            ));
+        }
+    }
+    Ok(listeners)
+}
+
+/// The top-level keys that bound what the gateway takes and holds, `headers_timeout_s` with the classes it is the
+/// default of, and the drain's, as written.
+struct RawLimits {
+    max_body_bytes: usize,
+    first_byte_timeout_s: Option<IgnoredAny>,
+    headers_timeout_s: f64,
+    classes: RawClasses,
+    max_choices: u32,
+    max_in_flight: usize,
+    max_queued: usize,
+    max_buffered_body_bytes: usize,
+    stream_buffer_frames: usize,
+    event_dedup_capacity: usize,
+    drain_timeout_s: f64,
+    background_drain_s: f64,
+}
+
+/// What [`validate_limits`] makes of its keys, beside their own values: each class's configuration, and the
+/// durations of the deadlines' default and of the drain.
+struct Limits {
+    headers_timeout: Duration,
+    classes: [ClassConfig; 3],
+    drain_timeout: Duration,
+    background_drain: Duration,
+}
+
+/// The limits: each bound positive, the bodies' budget at least one body, each class's table, and a background
+/// drain within the drain.
+fn validate_limits(raw: RawLimits) -> Result<Limits, String> {
+    if raw.max_body_bytes == 0 {
+        return Err("max_body_bytes must be positive".into());
+    }
+    if raw.first_byte_timeout_s.is_some() {
+        return Err(
+            "first_byte_timeout_s is now headers_timeout_s, every class's default wait for an attempt's response \
+             headers"
+                .into(),
+        );
+    }
+    let headers_timeout = seconds("headers_timeout_s", raw.headers_timeout_s)?;
+    let classes = raw.classes.validate(headers_timeout)?;
+    for (key, zero) in [
+        ("max_choices", raw.max_choices == 0),
+        ("max_in_flight", raw.max_in_flight == 0),
+        ("max_queued", raw.max_queued == 0),
+    ] {
+        if zero {
+            return Err(format!("{key} must be positive"));
+        }
+    }
+    if raw.max_buffered_body_bytes < raw.max_body_bytes {
+        return Err(format!(
+            "max_buffered_body_bytes ({}) must be at least max_body_bytes ({}), or no body of that size could be \
+             read",
+            raw.max_buffered_body_bytes, raw.max_body_bytes
+        ));
+    }
+    if raw.stream_buffer_frames == 0 {
+        return Err("stream_buffer_frames must be positive".into());
+    }
+    if raw.event_dedup_capacity == 0 {
+        return Err("event_dedup_capacity must be positive".into());
+    }
+    let drain_timeout = seconds("drain_timeout_s", raw.drain_timeout_s)?;
+    let background_drain = Duration::try_from_secs_f64(raw.background_drain_s)
+        .ok()
+        .filter(|grace| *grace <= drain_timeout)
+        .ok_or_else(|| {
+            format!(
+                "background_drain_s must be a number of seconds from 0 to drain_timeout_s ({})",
+                raw.drain_timeout_s
+            )
+        })?;
+    Ok(Limits {
+        headers_timeout,
+        classes,
+        drain_timeout,
+        background_drain,
+    })
 }
 
 impl RawTenant {

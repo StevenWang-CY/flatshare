@@ -23,16 +23,22 @@ use tracing::Level;
 
 use crate::bounds;
 use crate::canary::Health;
+use crate::config::ClassConfig;
 use crate::deadline::{Deadlines, Phase, Timeout};
-use crate::harness::Refusal;
+use crate::harness::{NotAdmitted, Refusal, Ticket};
 use crate::intake::{Permit, Refused};
 use crate::metrics::{Metrics, Outcome, Route, UpstreamError};
-use crate::nodes::{Placed, Unplaced};
-use crate::sanitize::{REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
+use crate::nodes::{Held, Placed, Unplaced};
+use crate::sanitize::{InvalidBody, REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
+use crate::upstream::RECOVERY_PROBE;
 use crate::usage::Summary;
 
 /// The status recorded for a request whose client left before any response: nginx's "client closed request".
 const CLIENT_CLOSED: u16 = 499;
+
+/// The message of the 503 that a request gets while the engine is not ready.
+const NOT_READY: &str =
+    "the engine is not ready: a request found it broken and its /health has not answered since";
 
 #[derive(Debug)]
 pub(crate) struct Exchange {
@@ -124,6 +130,17 @@ impl Exchange {
         }
     }
 
+    /// Records the class of an inference request as it is known: the request is offered, with the class's deadlines
+    /// from its receipt and its first-content objective. Returns the deadlines.
+    pub fn classify(&mut self, class: SloClass, config: &ClassConfig) -> Deadlines {
+        self.class = Some(class);
+        self.offer();
+        let deadlines = Deadlines::new(class, config, self.received);
+        self.deadlines = Some(deadlines);
+        self.objective = config.first_content_objective;
+        deadlines
+    }
+
     /// Counts an inference request as admitted: past the intake, the admission point and the readiness check, on its
     /// way upstream; `policy` when an admission policy decided when.
     pub fn admit(&self, policy: bool) {
@@ -194,6 +211,12 @@ impl Exchange {
         response
     }
 
+    /// The 503 for a request while the gateway's one engine is not ready, with `Retry-After` the interval of the
+    /// probe that will say when it answers again ([`crate::upstream::recover`]).
+    pub fn engine_not_ready(self) -> Response {
+        self.not_ready("upstream_not_ready", NOT_READY, RECOVERY_PROBE)
+    }
+
     /// The 400 for a body whose reply limits or choices the gateway does not forward ([`crate::bounds`]), with the
     /// field at fault as the error's `param`.
     pub fn invalid_field(mut self, invalid: &bounds::Invalid) -> Response {
@@ -204,6 +227,17 @@ impl Exchange {
         self.outcome = Some(Outcome::Invalid);
         self.error = Some(message);
         self.respond(StatusCode::BAD_REQUEST, &body)
+    }
+
+    /// The 400 for a body the gateway does not rewrite: not a JSON object, or with a reply limit or choices it does
+    /// not forward ([`crate::bounds`]).
+    pub fn invalid_body(self, invalid: &InvalidBody) -> Response {
+        match invalid {
+            InvalidBody::Json(_) => {
+                self.error(StatusCode::BAD_REQUEST, "invalid_json", invalid.to_string())
+            }
+            InvalidBody::Bounds(bounds) => self.invalid_field(bounds),
+        }
     }
 
     /// An error with `Retry-After: 1`, for a request the gateway did not take that its client may send again.
@@ -333,6 +367,48 @@ impl Exchange {
                 "draining",
                 "the gateway handed its sockets to a successor before admitting the request; send it again",
             ),
+        }
+    }
+
+    /// Records the wait of a request the admission point admitted, with its `ticket` (`None` for a class the policy
+    /// does not hold, admitted at once), and why the lifecycle policy deferred it or admitted it regardless. Returns
+    /// how long it waited.
+    pub fn admitted_after(&mut self, ticket: Option<&Ticket>) -> Duration {
+        let waited = ticket.map_or(Duration::ZERO, Ticket::waited);
+        self.admission_wait = Some(waited);
+        if let Some(ticket) = ticket {
+            self.deferred = ticket.deferred();
+            self.aged = ticket.aged();
+        }
+        waited
+    }
+
+    /// The answer to a request that went no further after `waited` at the admission point: refused, past its
+    /// deadline, or cut by a drain `grace` into it.
+    pub fn not_admitted(mut self, not: NotAdmitted, waited: Duration, grace: Duration) -> Response {
+        self.admission_wait = Some(waited);
+        match not {
+            NotAdmitted::Refused(refusal) => self.refused(refusal),
+            NotAdmitted::Late(timeout) => self.timed_out(Phase::Queue, timeout),
+            NotAdmitted::Cut => self.drained(grace),
+        }
+    }
+
+    /// Records how long a covering node held the request back, if at all. Returns it.
+    pub fn held_back(&mut self, waited: Duration) -> Duration {
+        if !waited.is_zero() {
+            self.admission_wait = Some(waited);
+        }
+        waited
+    }
+
+    /// The answer to a request that a covering node held back for `waited`, until its deadline or a drain's cut
+    /// `grace` into the drain.
+    pub fn not_released(mut self, held: Held, waited: Duration, grace: Duration) -> Response {
+        self.admission_wait = Some(waited);
+        match held {
+            Held::Late(timeout) => self.timed_out(Phase::Queue, timeout),
+            Held::Cut => self.drained(grace),
         }
     }
 
