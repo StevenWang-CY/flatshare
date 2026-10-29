@@ -2,9 +2,9 @@
 serving.json, which hold every setting the engine must run with and its required revisions, the measured configuration
 of the sweep's PR point at the step cap it chose (W5's but for the step cap), every setting of which a point's record
 keeps but those UNRECORDED names; the drop-in runs exactly what serving.json names, its step cap over the frozen box's
-engine.yaml; README.md's quick start serves its engine settings on stock vLLM and with make-room; and
-deploy/bin/serving-check passes an engine that runs it and fails one that differs in any setting, the negative control,
-as well as a file the engine did not write."""
+engine.yaml; README.md's quick start serves its engine settings on stock vLLM and with make-room, and quotes the probe
+logs it links; and deploy/bin/serving-check passes an engine that runs it and fails one that differs in any setting,
+the negative control, as well as a file the engine did not write."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from flatshare_bench import quick_start
 from flatshare_bench.e2.record import engine_settings
 
 REPO = Path(__file__).resolve().parents[3]
@@ -46,6 +47,8 @@ README = REPO / "README.md"
 BUILD = "python/flatshare_vllm/src/flatshare_vllm/build.py"
 PROBE = "python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py"
 """The scripts README.md's quick start runs, from the repository's root."""
+DASH = quick_start.DASH
+"""The en dash between a range's ends, as the quick start's result prints it."""
 VENV = "~/vllm-0.32"
 """The environment README.md's quick start makes and activates, which `pip install` then fills."""
 
@@ -255,6 +258,111 @@ def test_a_quick_start_that_drifts_from_the_profile_fails_the_check(old: str, ne
     assert readme.count(old) == 1, old
     with pytest.raises(AssertionError):
         check_quick_start(readme.replace(old, new))
+
+
+def check_quick_start_result(readme: str) -> None:
+    """Asserts that the result the quick start of ``readme`` quotes, the block between its markers, is what
+    quick_start.block writes from the two probe logs the block links, each a file of a committed record."""
+    text = quick_start.current(readme)
+    links = dict(re.findall(r"\[(stock|make-room)\]\(([^)\s]+)\)", text))
+    assert sorted(links) == ["make-room", "stock"], text
+    for link in links.values():
+        assert link.startswith("benchmarks/results/") and (README.parent / link).is_file(), link
+    logs = [README.parent / links[name] for name in ("stock", "make-room")]
+    assert text == quick_start.block(*logs)
+
+
+def test_the_readmes_quick_start_quotes_the_probe_logs_it_links() -> None:
+    # A number edited by hand, a log that is missing, or new logs not yet filled in fail here; the fill is
+    # `python -m flatshare_bench.quick_start STOCK_LOG MAKE_ROOM_LOG --write README.md`.
+    check_quick_start_result(README.read_text())
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (f"4,900{DASH}4,971 ms", f"4,900{DASH}4,972 ms"),
+        ("in four runs each", "in five runs each"),
+        ("pr-probes/ab-kv.log", "pr-probes/ab-kv-missing.log"),
+        (
+            "[stock](benchmarks/results/2026-10-24-w5-probes/pr-probes/stock-kv.log)",
+            "[stock](benchmarks/results/2026-10-24-w5-probes/pr-probes/a-kv.log)",
+        ),
+    ],
+    ids=["a wrong number", "a wrong count", "a missing log", "another log"],
+)
+def test_a_quick_start_result_that_is_not_its_logs_fails_the_check(old: str, new: str) -> None:
+    # The negative control: a number, a count or a link that the logs do not give fails.
+    readme = README.read_text()
+    assert quick_start.current(readme).count(old) == 1, old
+    with pytest.raises(AssertionError):
+        check_quick_start_result(readme.replace(old, new))
+
+
+RUN = (
+    "kv: priority-0 TTFT {} ms, 16 tokens 600 ms, for 746 prompt tokens, sent with 2 priority-2 requests of 17999 "
+    "tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting\n"
+)
+"""A run's line in a probe log of the KV case, as probe.py prints it, with its first-token time to fill in."""
+
+
+def test_the_quick_start_fill_reads_each_run_and_refuses_what_it_cannot_quote(
+    tmp_path: Path,
+) -> None:
+    stock, make_room = tmp_path / "stock-kv.log", tmp_path / "make-room-kv.log"
+    stock.write_text(RUN.format(4900) * 2)
+    make_room.write_text(RUN.format(216) + "\n" + RUN.format(1294))
+    assert quick_start.ttfts(make_room) == [216, 1294]
+    text = " ".join(quick_start.block(stock, make_room, tmp_path / "README.md").split())
+    # One value where every run agrees, separators from a thousand on, the count in words, links from the README.
+    assert (
+        f"it was 4,900 ms on stock vLLM and 216{DASH}1,294 ms with make-room, in two runs each"
+        in text
+    )
+    assert text.endswith("([stock](stock-kv.log), [make-room](make-room-kv.log)).")
+    assert [quick_start.runs(n) for n in (1, 4, 9, 10)] == [
+        "one run",
+        "four runs",
+        "nine runs",
+        "10 runs",
+    ]
+    # A line that is no run of the KV case, a log without a run, and logs of different counts are refused.
+    make_room.write_text(RUN.format(216) + "prefill: priority-0 TTFT 300 ms, 16 tokens 575 ms\n")
+    with pytest.raises(ValueError, match=r"make-room-kv\.log:2: not a run of the KV case"):
+        quick_start.ttfts(make_room)
+    make_room.write_text("\n")
+    with pytest.raises(ValueError, match="no run"):
+        quick_start.ttfts(make_room)
+    make_room.write_text(RUN.format(216))
+    with pytest.raises(ValueError, match="one count for both"):
+        quick_start.block(stock, make_room)
+
+
+def test_the_quick_start_fill_writes_the_block_and_nothing_else(tmp_path: Path, capsys) -> None:
+    record = tmp_path / "benchmarks" / "results" / "quick-start"
+    record.mkdir(parents=True)
+    (record / "stock-kv.log").write_text(RUN.format(4875) + RUN.format(5012))
+    (record / "make-room-kv.log").write_text(RUN.format(231) + RUN.format(250))
+    readme = tmp_path / "README.md"
+    before = f"# A\n\nText.\n\n{quick_start.START}\nOld result.\n{quick_start.END}\n\nAfter.\n"
+    readme.write_text(before)
+    logs = [str(record / "stock-kv.log"), str(record / "make-room-kv.log")]
+    assert quick_start.main([*logs, "--write", str(readme)]) == 0
+    new = quick_start.block(*logs, readme)
+    assert readme.read_text() == before.replace("Old result.\n", new)
+    assert "[stock](benchmarks/results/quick-start/stock-kv.log)" in new
+    assert f"4,875{DASH}5,012 ms on stock vLLM and 231{DASH}250 ms with make-room" in " ".join(
+        new.split()
+    )
+    # Without --write it prints the block, linked from the repository's README.
+    assert quick_start.main(logs) == 0
+    assert capsys.readouterr().out == quick_start.block(*logs)
+    # A README without the markers, or with two blocks, is refused and left as it was.
+    for text in ("No block.\n", before + before):
+        readme.write_text(text)
+        assert quick_start.main([*logs, "--write", str(readme)]) == 1
+        assert readme.read_text() == text
+    assert "one block" in capsys.readouterr().err
 
 
 def test_serving_json_holds_every_effective_setting_and_its_required_revisions() -> None:

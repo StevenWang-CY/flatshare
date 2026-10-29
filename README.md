@@ -166,13 +166,16 @@ PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-le
 python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
 ```
 
+<!-- quick-start probe -->
 The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On the box it was 4,900–4,971 ms on
 stock vLLM and 216–294 ms with make-room, in four runs each
 ([stock](benchmarks/results/2026-10-24-w5-probes/pr-probes/stock-kv.log),
-[make-room](benchmarks/results/2026-10-24-w5-probes/pr-probes/ab-kv.log)). Both ran at
-[`engine.yaml`](deploy/phastform/engine.yaml)'s 512-token steps, and make-room at its default 16-token window
-([what ran](benchmarks/results/2026-10-24-w5-probes/README.md)). `probe.py` sizes its requests from the engine's KV
-pool and context length, so the check runs unchanged on another card.
+[make-room](benchmarks/results/2026-10-24-w5-probes/pr-probes/ab-kv.log)).
+<!-- /quick-start probe -->
+
+Both ran at [`engine.yaml`](deploy/phastform/engine.yaml)'s 512-token steps, and make-room at its default 16-token
+window ([what ran](benchmarks/results/2026-10-24-w5-probes/README.md)). `probe.py` sizes its requests from the engine's
+KV pool and context length, so the check runs unchanged on another card.
 
 To serve beside agents, send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV
 tier from `engine.yaml`, which holds the box's 32k context and fixed KV pool too. The commands' step cap is the serving
