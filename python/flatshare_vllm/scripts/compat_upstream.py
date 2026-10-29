@@ -1,5 +1,5 @@
-"""Whether the engine change still fits vLLM upstream: #63350 and #63351 against vLLM's moving main, and make-room's
-patches against vLLM's newest release.
+"""Whether the engine change still fits vLLM upstream: #63350 and #63351 against vLLM's moving main, make-room's
+backport of them against their heads, and its patches against vLLM's newest release.
 
     python scripts/compat_upstream.py [--clone DIR] [--python TORCH_PYTHON] [--git GIT] [--remote URL]
 
@@ -12,29 +12,39 @@ release tags into it, and reports:
   cleanly (``git merge-tree --write-tree``, git 2.38 or newer), or the files that conflict. A PR stacked on one that
   main holds carries that one's commits, so only its own changes are merged, from that PR's head (``--merge-base``,
   git 2.40);
+- the backport, 63350.patch and 63351.patch, against the PRs' heads: the lines each PR adds to scheduler.py, from
+  where it leaves the PR it is stacked on or main, against those its patch adds, each net of those it removes. Where
+  they differ, the lines must be those ADAPTED names, each under the commit whose "Backport:" paragraph in the patch's
+  header says how v0.32.0 made it differ;
 - with ``--python``, an interpreter with CPU torch and the Python dependencies of vLLM's main: on each clean merge, the
   test files the PR adds or changes (``tests/**/test_*.py`` in its diff), run on CPU from the merge's source; a test
   that fails on main too is main's, not the PR's. Each step that runs the interpreter has ``--timeout`` seconds (900),
   and a PR's test run that takes longer fails its files. An interpreter that cannot import main's scheduler is
   reported as such, and runs nothing;
 - make-room's patches on a sparse checkout of the newest release, and of a newer release candidate if there is one
-  (``build.py make-room OUT --source-tree``): they apply, or the first hunk that does not.
+  (``build.py make-room OUT --source-tree``): they apply, or the first hunk that does not; and then, as build.py
+  takes a hunk only exactly at its line, each hunk's fit as ``git apply`` finds it, the patches in order, with all
+  three lines of its context (``-C3``) and with one (``-C1``): the line it applies at and its offset, any context git
+  left out, or that git rejects it, which leaves the hunks after it to apply to the rest.
 
-Exit status 1 for a conflict, a failed test or patches that do not apply to v0.32.0, the pinned version; 2 when it
-could not check (no network, an older git, an interpreter that cannot import main's scheduler or collect its tests, a
-PR none of whose tests ran); 0 otherwise, also when a newer release does not take the patches: the variant is written
-against 0.32.0, the pinned and deployed version, and says so.
+Exit status 1 for a conflict, a failed test, a backport that differs from the PRs' heads in a line no Backport
+paragraph names, or patches that do not apply to v0.32.0, the pinned version; 2 when it could not check (no network,
+an older git, an interpreter that cannot import main's scheduler or collect its tests, a PR none of whose tests ran);
+0 otherwise, also when a newer release does not take the patches: the variant is written against 0.32.0, the pinned
+and deployed version, and says so.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import re
 import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from collections import Counter
 from pathlib import Path
 
 REMOTE = "https://github.com/vllm-project/vllm"
@@ -42,6 +52,67 @@ PRS = (63350, 63351)
 PINNED = "v0.32.0"
 SCHEDULER = "vllm/v1/core/sched/scheduler.py"
 BUILD = Path(__file__).resolve().parents[1] / "src/flatshare_vllm/build.py"
+# build.py, for its table of make-room's patches, in the order it applies them, and its reading of a hunk's header.
+spec = importlib.util.spec_from_file_location("flatshare_vllm_build", BUILD)
+build = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(build)
+PATCHES = [BUILD.parent / "make-room" / name for name in build.VARIANTS["make-room"][0]]
+ADAPTED = {
+    "63350.patch": {
+        # v0.32.0's SchedulerStats has no field for make-room's preemptions: the scheduler counts them.
+        "58ca55361": (
+            (
+                "# Requests preempted to make room since the last scheduler stats.",
+                "num_priority_preemptions = self._num_priority_preemptions",
+                "num_priority_preemptions=num_priority_preemptions,",
+                "self._num_priority_preemptions = 0",
+            ),
+            ("# Requests preempted to make room.",),
+        ),
+    },
+    "63351.patch": {
+        # v0.32.0's request queues stay stock: the queues' new method is the scheduler's _has_lower_priority_than.
+        "b703ac4d7": (
+            ("queue.has_lower_priority_than(request.priority)",),
+            (
+                "PriorityRequestQueue,",
+                "self._has_lower_priority_than(queue, request.priority)",
+                "@staticmethod",
+                "def _has_lower_priority_than(queue: RequestQueue, priority: int) -> bool:",
+                '"""Whether a request in `queue` has a lower priority, a larger value,',
+                "than `priority`: a priority queue's largest requests are among its",
+                'heap\'s leaves, its second half."""',
+                "if isinstance(queue, PriorityRequestQueue):",
+                "heap = queue._heap",
+                "return any(req.priority > priority for req in heap[len(heap) // 2 :])",
+                "return any(req.priority > priority for req in queue)",
+            ),
+        ),
+        # Nor for the budget cap's holds: the scheduler counts them too.
+        "1104add2b": (
+            (
+                "# The budget cap's holds since the last scheduler stats: the steps in",
+                "# which it held lower-priority prefill back, and the prefill tokens it",
+                "# held back in them; and the last such step, with the tokens held back in",
+                "# it so far.",
+                "num_prefill_held_steps = self._num_prefill_held_steps",
+                "num_prefill_held_steps=num_prefill_held_steps,",
+                "num_prefill_held_tokens = self._num_prefill_held_tokens",
+                "num_prefill_held_tokens=num_prefill_held_tokens,",
+                "self._num_prefill_held_steps = 0",
+                "self._num_prefill_held_tokens = 0",
+            ),
+            (
+                "# The budget cap's holds: the steps in which it held lower-priority",
+                "# prefill back, and the prefill tokens it held back in them; and the last",
+                "# such step, with the tokens held back in it so far.",
+            ),
+        ),
+    },
+}
+"""The lines in which make-room's backport of the PRs differs from their heads, by patch and by the commit whose
+"Backport:" paragraph in that patch's header says how v0.32.0 made it differ: the PR's lines and the backport's, each
+stripped, as the comparison counts them. The comparison holds every other line the PRs add to the patches'."""
 RELEASE = re.compile(r"v(\d+(?:\.\d+)+)(?:rc(\d+))?")
 # What a test run needs to import, from the source tree it runs on.
 IMPORTS = "import pytest, torch, vllm.v1.core.sched.scheduler"
@@ -299,6 +370,149 @@ def builds(git: Git, tag: str) -> str | None:
     return None if proc.returncode == 0 else last_line(proc.stderr).removeprefix("build.py: ")
 
 
+def hunk_fits(report: str, headers: list[str]) -> list[str] | None:
+    """Each hunk's fit as ``git apply --reject --verbose`` reports it, in the C locale, for a patch whose hunks have
+    ``headers``: "at L", the line it applied at, with the offset git found it at and the context it kept where they are
+    not the hunk's own; or "rejected". None if the report accounts for not every hunk, as when git applied nothing."""
+    every = set(range(1, len(headers) + 1))
+    rejected = {int(n) for n in re.findall(r"^Rejected hunk #(\d+)\.$", report, re.M)}
+    if re.search(r"^Applied patch .+ cleanly\.$", report, re.M):
+        applied = every
+    else:
+        applied = {int(n) for n in re.findall(r"^Hunk #(\d+) applied cleanly\.$", report, re.M)}
+    if applied | rejected != every or applied & rejected:
+        return None
+    moved = {
+        int(n): (int(at), int(offset))
+        for n, at, offset in re.findall(
+            r"^Hunk #(\d+) succeeded at (\d+) \(offset (-?\d+) lines?\)\.$", report, re.M
+        )
+    }
+    # git reports no line for a hunk it found where the hunk says it is: at its new start.
+    at = {n: moved.get(n, (int(build.HUNK.match(headers[n - 1])[3]), 0)) for n in applied}
+    found = {
+        n: f"at {line}" + (f" (offset {offset} lines)" if offset else "")
+        for n, (line, offset) in at.items()
+    }
+    # git names a hunk it kept less context for by the line it applied at, which a moved hunk's line gives too: the
+    # hunk that applied nearest to it.
+    for leading, trailing, line in re.findall(
+        r"^Context reduced to \((\d+)/(\d+)\) to apply fragment at (\d+)$", report, re.M
+    ):
+        n = min(applied, key=lambda n: abs(at[n][0] - int(line)))
+        found[n] += f", context reduced to {leading}/{trailing}"
+    return [found.get(n, "rejected") for n in sorted(every)]
+
+
+def fits(git: str, source: str, context: int, patches: list[Path]) -> list[tuple[str, str]]:
+    """Each hunk of ``patches``, by its patch, number and header, with its fit when git apply applies them in order to
+    ``source``, a scheduler.py, with at least ``context`` lines of context matching on each side of a change. A hunk
+    git rejects is left out, and the next ones apply to the rest, as a rebase would start."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        # A repository of its own, so that git apply reads the patches' paths from here, whatever encloses it.
+        proc = subprocess.run([git, "init", "-q", tmp], capture_output=True, text=True)
+        if proc.returncode:
+            raise CannotCheck(f"git init failed: {last_line(proc.stderr)}")
+        (root / SCHEDULER).parent.mkdir(parents=True)
+        (root / SCHEDULER).write_text(source)
+        rows = []
+        for patch in patches:
+            headers = [m[0] for m in map(build.HUNK.match, patch.read_text().splitlines()) if m]
+            proc = subprocess.run(
+                [git, "apply", "--reject", "--verbose", f"-C{context}", str(patch)],
+                cwd=root,
+                env=os.environ | {"LC_ALL": "C"},
+                capture_output=True,
+                text=True,
+            )
+            found = hunk_fits(proc.stderr, headers)
+            if found is None:
+                raise CannotCheck(f"git apply -C{context} {patch.name}: {last_line(proc.stderr)}")
+            labels = [f"{patch.name} #{n} {header}" for n, header in enumerate(headers, 1)]
+            rows += zip(labels, found, strict=True)
+    return rows
+
+
+def added_lines(diff: str) -> Counter[str]:
+    """The lines a diff of scheduler.py adds, net of those it removes, so that a line it moves counts in neither: each
+    stripped, blank ones aside, as the backport is compared with the PRs. A patch's header, before its diff, is none."""
+    added, removed = Counter(), Counter()
+    hunks = False
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            hunks = False
+        elif line.startswith("@@"):
+            hunks = True
+        elif hunks and line.startswith(("+", "-")) and line[1:].strip():
+            (added if line[0] == "+" else removed)[line[1:].strip()] += 1
+    return added - removed
+
+
+def compare(
+    theirs: Counter[str], ours: Counter[str], adapted: dict[str, tuple[tuple[str, ...], ...]]
+) -> tuple[Counter[str], Counter[str], Counter[str], Counter[str]]:
+    """A PR's lines (``theirs``) against its patch's (``ours``): of the lines each has and the other lacks, those that
+    ``adapted`` names, the PR's then the patch's, and those it does not, the PR's then the patch's."""
+    named = [Counter(line for lines in adapted.values() for line in lines[side]) for side in (0, 1)]
+    only = (theirs - ours, ours - theirs)
+    return only[0] & named[0], only[1] & named[1], only[0] - named[0], only[1] - named[1]
+
+
+def against_heads(git: Git) -> bool:
+    """Prints how make-room's backport of the PRs, 63350.patch and 63351.patch, differs from the PRs' heads in the lines
+    each adds to scheduler.py, and returns whether it differs in a line that no "Backport:" paragraph of their headers
+    names (ADAPTED). A PR is compared by its own changes: from where it leaves the PR it is stacked on, or main."""
+    print("the backport against the PRs' heads, by the lines each adds to scheduler.py:")
+    patches = {patch.name: patch for patch in PATCHES}
+    base, unnamed, adapted = "origin/main", 0, [0, 0]
+    for pr in PRS:
+        head, name = f"origin/pull/{pr}", f"{pr}.patch"
+        if base != "origin/main" and git.run("merge-base", "--is-ancestor", base, head).returncode:
+            base = "origin/main"  # rebased off the PR before it
+        start = git("merge-base", base, head).strip()
+        if base == "origin/main" and start == git("rev-parse", head).strip():
+            print(f"  #{pr}: main holds its head, which leaves no base to compare its changes from")
+            base = head
+            continue
+        theirs = added_lines(git("diff", start, head, "--", SCHEDULER))
+        ours = added_lines(patches[name].read_text())
+        named_theirs, named_ours, other_theirs, other_ours = compare(theirs, ours, ADAPTED[name])
+        named = sum(named_theirs.values()) + sum(named_ours.values())
+        listed = sum(len(lines) for both in ADAPTED[name].values() for lines in both)
+        line = (
+            f"  #{pr} and {name}: {sum((theirs & ours).values())} of #{pr}'s {sum(theirs.values())} lines are "
+            f"the backport's; its other {sum(named_theirs.values())} and {sum(named_ours.values())} of the "
+            f"backport's {sum(ours.values())} are adapted ({', '.join(ADAPTED[name])})"
+        )
+        if named < listed:
+            line += f"; {listed - named} of the lines named as adapted no longer differ"
+        differs = sum(other_theirs.values()) + sum(other_ours.values())
+        print(
+            line
+            + (f"; it DIFFERS in {differs} lines no Backport paragraph names:" if differs else "")
+        )
+        for whose, lines in ((f"#{pr}'s", other_theirs), (f"{name}'s", other_ours)):
+            shown = sorted(lines.elements())
+            for text in shown[:10]:
+                print(f"    {whose}: {text}")
+            if len(shown) > 10:
+                print(f"    and {len(shown) - 10} more of {whose}")
+        unnamed += differs
+        adapted = [adapted[0] + sum(named_theirs.values()), adapted[1] + sum(named_ours.values())]
+        base = head
+    if unnamed:
+        print(
+            f"backport DIFFERS from the PRs' heads in {unnamed} lines no Backport paragraph names"
+        )
+    else:
+        print(
+            f"backport = the PRs' heads but for {adapted[0]} adapted lines of theirs and {adapted[1]} of its own, "
+            "which the patches' headers name"
+        )
+    return bool(unnamed)
+
+
 def check(
     clone: Path, python: str | None, git_cmd: str, remote: str, timeout: float = TIMEOUT
 ) -> int:
@@ -347,6 +561,7 @@ def check(
         else:
             merges[pr] = (tree, held.get(on))
             print(f"{subject} {'merge' if on else 'merges'} into main cleanly{suffix}")
+    failed |= against_heads(git)
 
     cannot = None
     if not python and merges:
@@ -412,6 +627,21 @@ def check(
                 f"{what}: do not apply ({why}){stat if diff.returncode == 0 else ''}. "
                 f"The variant is written against {PINNED}, the pinned and deployed version"
             )
+        if why is not None:
+            # build.py takes a hunk only at its line, exactly, and stops at the first it cannot; git apply, which
+            # looks for a hunk elsewhere and with less context, says how far each is from fitting.
+            release = worktree(git, "release", tag, ["vllm/v1/core/sched"]) / SCHEDULER
+            if not release.is_file():
+                print(f"  no hunk can fit: {tag} has no {SCHEDULER}")
+                continue
+            three, one = (fits(git.git, release.read_text(), c, PATCHES) for c in (3, 1))
+            took = [sum(fit != "rejected" for _, fit in rows) for rows in (three, one)]
+            print(
+                "  each hunk by git apply, the patches in order, with 3 lines of context and with 1: "
+                f"{took[0]} and {took[1]} of {len(one)} apply"
+            )
+            for (hunk, with_three), (_, with_one) in zip(three, one, strict=True):
+                print(f"    {hunk}: -C3 {with_three}; -C1 {with_one}")
     if failed:
         return 1
     if cannot:
