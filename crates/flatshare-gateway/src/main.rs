@@ -18,7 +18,7 @@ use tracing_subscriber::filter::LevelFilter;
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "Flatshare gateway: the serving harness in front of vLLM"
+    about = "Flatshare gateway: the serving control plane in front of vLLM"
 )]
 struct Args {
     /// The configuration file (TOML).

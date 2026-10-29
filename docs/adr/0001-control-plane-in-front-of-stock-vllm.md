@@ -1,6 +1,6 @@
 # ADR-0001: A session-aware control plane in front of stock vLLM
 
-- **Status:** accepted, 2026-10-22; superseded in part by [ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md): the deployment's realtime tier is carried by an engine change, and this control plane is the experiment harness
+- **Status:** accepted, 2026-10-22; superseded in part by [ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md), since the deployment's realtime tier is carried by an engine change, and by [ADR-0007](0007-the-gateway-is-the-serving-control-plane.md): this control plane serves the deployment without an admission policy, which stays E2's harness
 - **Deciders:** Chuyue Wang
 
 ## Context

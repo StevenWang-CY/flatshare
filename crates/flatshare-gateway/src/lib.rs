@@ -1,4 +1,5 @@
-//! `flatshare-gateway`: the Flatshare harness in front of one vLLM engine, or of several GPU nodes.
+//! `flatshare-gateway`: Flatshare's serving control plane in front of one vLLM engine, or of several GPU nodes, with
+//! E2's admission policies as its harness ([`harness`]), which only an `[admission]` table runs.
 //!
 //! It carries Flatshare's request contract and nothing a stock proxy would not need:
 //! - **auth**: tenants from API-key digests (constant-time match), or from the listener for a private Unix

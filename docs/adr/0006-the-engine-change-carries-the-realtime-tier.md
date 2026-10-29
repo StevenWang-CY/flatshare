@@ -1,6 +1,6 @@
 # ADR-0006: The engine change carries the realtime tier; the control plane is a harness
 
-- **Status:** accepted, 2026-10-24
+- **Status:** accepted, 2026-10-24; superseded in part by [ADR-0007](0007-the-gateway-is-the-serving-control-plane.md): the gateway is the serving control plane, and only its admission policies are E2's harness
 - **Deciders:** Chuyue Wang
 - **Supersedes in part:** [ADR-0001](0001-control-plane-in-front-of-stock-vllm.md) (the engine stays stock, and the control plane compensates with admission and headroom), [ADR-0003](0003-realtime-is-never-shed.md) (room made by the control plane), and the lease and prefetch consequences of [ADR-0002](0002-one-lifecycle-event-schema.md) and [ADR-0004](0004-native-cpu-offload-tier.md)
 
@@ -40,3 +40,4 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
 - **Aborting work makes room** (2026-10-25). The Context's "a control plane can only defer new ones" is too strong: a control plane can make room only by aborting background work, as E2's preempt-resubmit baseline does at the agents' tail. Only the engine can take KV from a request already decoding, so the decision stands.
 - **W5's re-measure** (2026-10-25). W5 fixed the change's gaps and re-measured it in rounds, each on its own sample of the agents' traces: over fifteen runs in three campaigns, the PRs with a 48-token window reach a p95 of 2.24 s at the median (2.13–2.40 s) against W5's SLO of 2.03 s, and the frozen box 10.5 s over ten runs (8.7–12.1 s) ([BENCHMARKS.md](../BENCHMARKS.md#the-discriminating-scenario-after-w5s-fixes-w5)). The Context keeps the numbers the decision was taken on.
 - **Another GPU** (2026-10-26). On an A100 SXM4 80 GB at the box's pool, the change took the p95 from 4.99 s to 1.63 s, under that card's SLO in each of five rounds, and the agents' throughput held ([HARDWARE.md](../HARDWARE.md#what-it-measured-2026-10-26)).
+- **The gateway serves** (2026-10-27). The production program built bounds, deadlines, failure-inclusive accounting and, on 2026-10-28, two-node placement into the gateway, which the deployment depends on. "Stays the experiment harness" holds only for its admission policies ([ADR-0007](0007-the-gateway-is-the-serving-control-plane.md)). The decision on the engine and the priorities stands.

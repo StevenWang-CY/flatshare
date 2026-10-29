@@ -32,9 +32,14 @@ In scope:
   modes, the SSH tunnel keys' `restrict` entries and forced commands, the network namespaces of the GPU servers and
   the voice plane, the listener audit, and the secrets the install scripts write.
 
-Report anything else in the repository the same way; it is research code (the engine variants, the benchmark
-harness, the simulator), and a security issue there is fixed as a bug. Vulnerabilities in vLLM, SGLang, LiveKit, SMG
-or another project Flatshare runs belong to that project's own security process.
+- **The serving engine's build** ([`python/flatshare_vllm`](python/flatshare_vllm/README.md)): the module `build.py`
+  writes from make-room's patches, the serve module that the `make-room-serve` variant loads, and
+  `deploy/bin/serving-check`, which holds the engine to the serving profile.
+
+Report anything else in the repository the same way. It is measurement code (the other engine variants, the benchmark
+harness, E2's admission policies in the gateway, the simulator), and a security issue there is fixed as a bug.
+Vulnerabilities in vLLM, SGLang, LiveKit, SMG or another project Flatshare runs belong to that project's own security
+process.
 
 These limits are stated in the documents and are not vulnerabilities in this sense:
 

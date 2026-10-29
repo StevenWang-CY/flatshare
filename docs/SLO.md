@@ -8,7 +8,7 @@ This page defines the service classes, the indicators measured for each, the voi
 | `interactive` | Agent loops with a person waiting | 1 | None measured: no E2 arm runs this class |
 | `background` | Batch agents, trace replays | 2 | Background goodput and the agents' time to first token |
 
-The deployed configuration sends the priority and nothing else ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)). Under the lifecycle policy (`policy = "lifecycle"`), an experiment arm, a realtime request is never queued or refused ([ADR-0003](adr/0003-realtime-is-never-shed.md)).
+The deployed configuration runs no admission policy: the gateway sends the class's priority, bounds each class's work and deadlines, and places calls and agents' sessions on the nodes ([the service contract](PRODUCTION.md#the-service-contract); [ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)). Under the lifecycle policy (`policy = "lifecycle"`), an experiment arm, the policy never queues or refuses a realtime request ([ADR-0003](adr/0003-realtime-is-never-shed.md)), and the gateway's own bounds still apply.
 
 ## Indicators
 
