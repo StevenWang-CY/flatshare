@@ -15,34 +15,34 @@
 <path d="M96 100H930" class="grid"/>
 <text x="88" y="106" text-anchor="end" class="mute" font-size="18">6%</text>
 <path d="M96 100V300" class="axis"/>
-<rect x="102.6" y="287.33" width="21.54" height="12.67" class="g-soft"/>
-<rect x="137.35" y="274.75" width="21.54" height="25.25" class="g-soft"/>
-<rect x="172.1" y="258.85" width="21.54" height="41.15" class="g-soft"/>
-<rect x="206.85" y="300" width="21.54" height="0" class="g-soft"/>
-<rect x="241.6" y="116.27" width="21.54" height="183.73" class="g-soft"/>
-<rect x="276.35" y="203.85" width="21.54" height="96.15" class="g-soft"/>
-<rect x="311.1" y="258.85" width="21.54" height="41.15" class="g-soft"/>
-<rect x="345.85" y="227.54" width="21.54" height="72.46" class="g-soft"/>
-<rect x="380.6" y="224.92" width="21.54" height="75.08" class="g-soft"/>
-<rect x="415.35" y="225.51" width="21.54" height="74.49" class="g-soft"/>
-<rect x="450.1" y="221.17" width="21.54" height="78.83" class="g-soft"/>
-<rect x="484.85" y="249.24" width="21.54" height="50.76" class="g-soft"/>
-<rect x="519.6" y="247.09" width="21.54" height="52.91" class="g-soft"/>
-<rect x="554.35" y="300" width="21.54" height="0" class="g-soft"/>
-<rect x="589.1" y="255.85" width="21.54" height="44.15" class="g-soft"/>
-<rect x="623.85" y="258.59" width="21.54" height="41.41" class="g-soft"/>
-<rect x="658.6" y="300" width="21.54" height="0" class="g-soft"/>
-<rect x="693.35" y="278.77" width="21.54" height="21.23" class="g-soft"/>
-<rect x="728.1" y="225.09" width="21.54" height="74.91" class="g-soft"/>
-<rect x="762.85" y="200.12" width="21.54" height="99.88" class="g-soft"/>
-<rect x="797.6" y="300" width="21.54" height="0" class="g-soft"/>
-<rect x="832.35" y="273.33" width="21.54" height="26.67" class="g-soft"/>
-<rect x="867.1" y="300" width="21.54" height="0" class="g-soft"/>
-<rect x="901.85" y="300" width="21.54" height="0" class="g-soft"/>
+<rect x="102.6" y="287.33" width="21.54" height="12.67" class="g-hi"/>
+<rect x="137.35" y="274.75" width="21.54" height="25.25" class="g-hi"/>
+<rect x="172.1" y="258.85" width="21.54" height="41.15" class="g-hi"/>
+<rect x="206.85" y="300" width="21.54" height="0" class="g-hi"/>
+<rect x="241.6" y="116.27" width="21.54" height="183.73" class="g-hi"/>
+<rect x="276.35" y="203.85" width="21.54" height="96.15" class="g-hi"/>
+<rect x="311.1" y="258.85" width="21.54" height="41.15" class="g-hi"/>
+<rect x="345.85" y="227.54" width="21.54" height="72.46" class="g-hi"/>
+<rect x="380.6" y="224.92" width="21.54" height="75.08" class="g-hi"/>
+<rect x="415.35" y="225.51" width="21.54" height="74.49" class="g-hi"/>
+<rect x="450.1" y="221.17" width="21.54" height="78.83" class="g-hi"/>
+<rect x="484.85" y="249.24" width="21.54" height="50.76" class="g-hi"/>
+<rect x="519.6" y="247.09" width="21.54" height="52.91" class="g-hi"/>
+<rect x="554.35" y="300" width="21.54" height="0" class="g-hi"/>
+<rect x="589.1" y="255.85" width="21.54" height="44.15" class="g-hi"/>
+<rect x="623.85" y="258.59" width="21.54" height="41.41" class="g-hi"/>
+<rect x="658.6" y="300" width="21.54" height="0" class="g-hi"/>
+<rect x="693.35" y="278.77" width="21.54" height="21.23" class="g-hi"/>
+<rect x="728.1" y="225.09" width="21.54" height="74.91" class="g-hi"/>
+<rect x="762.85" y="200.12" width="21.54" height="99.88" class="g-hi"/>
+<rect x="797.6" y="300" width="21.54" height="0" class="g-hi"/>
+<rect x="832.35" y="273.33" width="21.54" height="26.67" class="g-hi"/>
+<rect x="867.1" y="300" width="21.54" height="0" class="g-hi"/>
+<rect x="901.85" y="300" width="21.54" height="0" class="g-hi"/>
 <path d="M96 133.33H930" class="slo"/>
 <text x="940" y="139.33" class="orange tint" font-size="18">at most 5%</text>
 <text x="269.15" y="118.27" class="halo" font-size="18">5.5%</text>
-<path d="M96 251.23H930" class="gray trace dotted"/>
+<path d="M96 251.23H930" class="ink trace dotted"/>
 <text x="940" y="257.23" class="soft" font-size="18">the day, 1.5%</text>
 <text x="113.38" y="323" text-anchor="middle" class="mute" font-size="18">0</text>
 <text x="321.88" y="323" text-anchor="middle" class="mute" font-size="18">6</text>
@@ -58,32 +58,32 @@
 <path d="M96 396H930" class="grid"/>
 <text x="88" y="402" text-anchor="end" class="mute" font-size="18">10,000</text>
 <path d="M96 396V586" class="axis"/>
-<rect x="102.6" y="409.3" width="21.54" height="176.7" class="g-soft"/>
-<rect x="137.35" y="495.04" width="21.54" height="90.96" class="g-soft"/>
-<rect x="172.1" y="483.37" width="21.54" height="102.63" class="g-soft"/>
-<rect x="206.85" y="518.53" width="21.54" height="67.47" class="g-soft"/>
-<rect x="241.6" y="518.02" width="21.54" height="67.98" class="g-soft"/>
-<rect x="276.35" y="525.31" width="21.54" height="60.69" class="g-soft"/>
-<rect x="311.1" y="539.22" width="21.54" height="46.78" class="g-soft"/>
-<rect x="345.85" y="520.39" width="21.54" height="65.61" class="g-soft"/>
-<rect x="380.6" y="528.31" width="21.54" height="57.69" class="g-soft"/>
-<rect x="415.35" y="524.73" width="21.54" height="61.27" class="g-soft"/>
-<rect x="450.1" y="529.16" width="21.54" height="56.84" class="g-soft"/>
-<rect x="484.85" y="491.72" width="21.54" height="94.28" class="g-soft"/>
-<rect x="519.6" y="494.65" width="21.54" height="91.35" class="g-soft"/>
-<rect x="554.35" y="534.08" width="21.54" height="51.92" class="g-soft"/>
-<rect x="589.1" y="513.13" width="21.54" height="72.87" class="g-soft"/>
-<rect x="623.85" y="514.27" width="21.54" height="71.73" class="g-soft"/>
-<rect x="658.6" y="509.03" width="21.54" height="76.97" class="g-soft"/>
-<rect x="693.35" y="527.75" width="21.54" height="58.25" class="g-soft"/>
-<rect x="728.1" y="502.49" width="21.54" height="83.51" class="g-soft"/>
-<rect x="762.85" y="522.67" width="21.54" height="63.33" class="g-soft"/>
-<rect x="797.6" y="565.23" width="21.54" height="20.77" class="g-soft"/>
-<rect x="832.35" y="562.08" width="21.54" height="23.92" class="g-soft"/>
-<rect x="867.1" y="551.42" width="21.54" height="34.58" class="g-soft"/>
-<rect x="901.85" y="574.95" width="21.54" height="11.05" class="g-soft"/>
+<rect x="102.6" y="409.3" width="21.54" height="176.7" class="g-hi"/>
+<rect x="137.35" y="495.04" width="21.54" height="90.96" class="g-hi"/>
+<rect x="172.1" y="483.37" width="21.54" height="102.63" class="g-hi"/>
+<rect x="206.85" y="518.53" width="21.54" height="67.47" class="g-hi"/>
+<rect x="241.6" y="518.02" width="21.54" height="67.98" class="g-hi"/>
+<rect x="276.35" y="525.31" width="21.54" height="60.69" class="g-hi"/>
+<rect x="311.1" y="539.22" width="21.54" height="46.78" class="g-hi"/>
+<rect x="345.85" y="520.39" width="21.54" height="65.61" class="g-hi"/>
+<rect x="380.6" y="528.31" width="21.54" height="57.69" class="g-hi"/>
+<rect x="415.35" y="524.73" width="21.54" height="61.27" class="g-hi"/>
+<rect x="450.1" y="529.16" width="21.54" height="56.84" class="g-hi"/>
+<rect x="484.85" y="491.72" width="21.54" height="94.28" class="g-hi"/>
+<rect x="519.6" y="494.65" width="21.54" height="91.35" class="g-hi"/>
+<rect x="554.35" y="534.08" width="21.54" height="51.92" class="g-hi"/>
+<rect x="589.1" y="513.13" width="21.54" height="72.87" class="g-hi"/>
+<rect x="623.85" y="514.27" width="21.54" height="71.73" class="g-hi"/>
+<rect x="658.6" y="509.03" width="21.54" height="76.97" class="g-hi"/>
+<rect x="693.35" y="527.75" width="21.54" height="58.25" class="g-hi"/>
+<rect x="728.1" y="502.49" width="21.54" height="83.51" class="g-hi"/>
+<rect x="762.85" y="522.67" width="21.54" height="63.33" class="g-hi"/>
+<rect x="797.6" y="565.23" width="21.54" height="20.77" class="g-hi"/>
+<rect x="832.35" y="562.08" width="21.54" height="23.92" class="g-hi"/>
+<rect x="867.1" y="551.42" width="21.54" height="34.58" class="g-hi"/>
+<rect x="901.85" y="574.95" width="21.54" height="11.05" class="g-hi"/>
 <text x="130.15" y="421.3" class="halo" font-size="18">9,300</text>
-<path d="M96 518.95H930" class="gray trace dotted"/>
+<path d="M96 518.95H930" class="ink trace dotted"/>
 <text x="940" y="524.95" class="soft" font-size="18">the day, 3,529</text>
 <text x="113.38" y="609" text-anchor="middle" class="mute" font-size="18">0</text>
 <text x="321.88" y="609" text-anchor="middle" class="mute" font-size="18">6</text>

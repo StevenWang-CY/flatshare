@@ -20,7 +20,6 @@ from flatshare_bench.e2.record import REPLY_TIMEOUT_MS
 from flatshare_bench.figure_style import LABEL, NARROW, NOTE, VALUE, WIDTH, Box, fmt, measure, wrap
 from flatshare_bench.report import data
 from flatshare_bench.report.charts import (
-    BAR_FILLS,
     STAGES,
     Chart,
     Key,
@@ -1747,24 +1746,25 @@ def _soak_description(soak: data.Soak) -> str:
 
 
 def _columns(s: Chart, hours: Sequence[float], x: Scale, y: Scale, width: float) -> None:
-    """Each hour's value as a column from the scale's start, pale in the change's blue, as the charts' bars are."""
+    """Each hour's value as a column from the scale's start, in the blue the charts give the configuration to deploy
+    (figure_style's "hi" bar), which the soak ran."""
     for hour, value in enumerate(hours):
         left = x(hour) - width / 2
         top = y(value)
-        s.rect(left, top, width, y.start - top, f"g-{BAR_FILLS['blue']}")
+        s.rect(left, top, width, y.start - top, "g-hi")
         s.marks.append(Box(left, top, left + width, y.start, f"hour {hour}'s column"))
 
 
 def _day_rule(s: Chart, x: Scale, y: Scale, value: float, text: str, *, wide: bool) -> None:
     """The whole day's value as a dotted rule across the hours, named right of the plot, or on a phone in a key over
     the plot's top right."""
-    s.trace([(x.start, y(value)), (x.end, y(value))], "gray trace dotted", wire=False)
+    s.trace([(x.start, y(value)), (x.end, y(value))], "ink trace dotted", wire=False)
     s.rules.append(((x.start, y(value)), (x.end, y(value))))
     s.painted.append(len(s.items) - 1)
     if wide:
         s.text(x.end + 10, y(value) + 6, text, size=NOTE, cls="soft")
         return
-    entry = [(line_key("gray trace dotted", 24), text)]
+    entry = [(line_key("ink trace dotted", 24), text)]
     legend(s, x.end - legend_width(entry), y.end - 14, entry, width=x.end - x.start)
 
 
