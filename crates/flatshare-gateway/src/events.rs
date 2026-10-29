@@ -6,17 +6,10 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use axum::extract::{Request, State};
-use axum::response::Response;
 use flatshare_proto::LifecycleEvent;
-use http::StatusCode;
 use serde_json::value::RawValue;
 
-use crate::exchange::Exchange;
 use crate::metrics::Metrics;
-use crate::server::{read_control_body, trusted_tenant};
-use crate::state::App;
-use crate::types::Route;
 
 /// An event the gateway accepted: not a repeat of one seen within the deduplication window.
 #[derive(Clone, Debug)]
@@ -85,7 +78,7 @@ impl Events {
 
     /// Records a batch, returning how many events were new and how many were repeats. The new ones go to `admit`
     /// (the admission point) in the order they were accepted, and then to the sink.
-    fn ingest(
+    pub fn ingest(
         &self,
         tenant: &Arc<str>,
         events: Vec<LifecycleEvent>,
@@ -155,40 +148,9 @@ impl Seen {
     }
 }
 
-/// `POST /v1/events`: one event object or an array of them. Answers 202 `{"accepted": n, "duplicates": m}`.
-/// A batch is validated in full before any of it is recorded.
-pub(crate) async fn post(State(app): State<App>, request: Request) -> Response {
-    let shared = &app.shared;
-    let mut ex = Exchange::new(&shared.metrics, Route::Events);
-    let action = "post lifecycle events";
-    let tenant = match trusted_tenant(&app, &mut ex, request.headers(), action) {
-        Ok(tenant) => tenant,
-        Err((status, code, message)) => return ex.error(status, code, message),
-    };
-    // A batch's bytes come from the budget of the bodies the gateway holds, as a request's do, and it has the
-    // interactive class's upload deadline.
-    let mut budget = shared.intake.body();
-    let (body, again) = (request.into_body(), "send the events again");
-    let read = read_control_body(shared, ex.received, body, &mut budget, "events", again);
-    let body = match read.await {
-        Ok(body) => body,
-        Err((status, code, message)) => return ex.error(status, code, message),
-    };
-    let events = match parse(&body) {
-        Ok(events) => events,
-        Err(message) => return ex.error(StatusCode::BAD_REQUEST, "invalid_event", message),
-    };
-    let (accepted, duplicates) =
-        shared
-            .events
-            .ingest(&tenant.name, events, &shared.metrics, |fresh| {
-                shared.lifecycle(tenant, fresh)
-            });
-    let body = serde_json::json!({"accepted": accepted, "duplicates": duplicates});
-    ex.respond(StatusCode::ACCEPTED, &body)
-}
-
-fn parse(body: &[u8]) -> Result<Vec<LifecycleEvent>, String> {
+/// The events of a `POST /v1/events` body: one event object or an array of them, each with an `event_id` of 1 to
+/// [`LifecycleEvent::MAX_ID_LEN`] bytes.
+pub(crate) fn parse(body: &[u8]) -> Result<Vec<LifecycleEvent>, String> {
     let events = if body.trim_ascii_start().starts_with(b"[") {
         let items: Vec<&RawValue> =
             serde_json::from_slice(body).map_err(|e| format!("invalid JSON array: {e}"))?;

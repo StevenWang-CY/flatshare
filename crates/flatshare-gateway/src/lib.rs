@@ -48,6 +48,7 @@ mod metrics;
 mod nodes;
 mod proxy;
 mod relay;
+mod routes;
 mod sanitize;
 mod server;
 mod state;

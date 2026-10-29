@@ -12,9 +12,9 @@ use http::StatusCode;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::Deserialize;
 
-use super::{Key, Nodes};
+use super::{metrics_refused, read_control_body, trusted_tenant};
 use crate::exchange::Exchange;
-use crate::server::{metrics_refused, read_control_body, trusted_tenant};
+use crate::nodes::{Key, Nodes, Speech};
 use crate::state::App;
 use crate::types::Route;
 
@@ -69,7 +69,7 @@ pub(crate) async fn sessions(app: App, nodes: &Arc<Nodes>, request: Request) -> 
         Err(unplaced) => return ex.unplaced(unplaced, class),
     };
     ex.routed.node = Some(Arc::clone(&node.name));
-    let address = |speech: &Option<super::Speech>| speech.as_ref().map(|s| s.addr.to_string());
+    let address = |speech: &Option<Speech>| speech.as_ref().map(|s| s.addr.to_string());
     let body = serde_json::json!({
         "session_id": key.session.as_str(),
         "class": class,

@@ -1,4 +1,5 @@
-//! Listeners, routes and the process lifecycle: bind every listener, serve, and drain on shutdown.
+//! Listeners and the process lifecycle: bind every listener, serve its routes ([`crate::routes`]), and drain on
+//! shutdown.
 
 use std::fmt::Display;
 use std::future::{Future, IntoFuture};
@@ -8,47 +9,29 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use axum::Router;
-use axum::body::Body;
-use axum::extract::rejection::PathRejection;
-use axum::extract::{Request, State};
-use axum::response::{IntoResponse, Response};
-use axum::routing::{MethodRouter, delete, get, post};
 use axum::serve::ListenerExt;
-use bytes::Bytes;
-use flatshare_proto::SloClass;
-use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
-use http::{Method, StatusCode, Uri};
 use tokio::net::{TcpListener, UnixListener, UnixStream};
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinSet;
 
-use crate::auth::{self, Tenant, Tenants};
+use crate::auth::Tenants;
 use crate::canary::{self, Health, Watched};
 use crate::config::{Config, Listen, ListenAddr};
-use crate::deadline::Deadlines;
 use crate::drain::Drain;
 use crate::engine::Engine;
-use crate::events::{self, EventSink, Events};
-use crate::exchange::{self, ErrorAnswer, Exchange};
+use crate::events::{EventSink, Events};
 use crate::harness::Admission;
-use crate::intake::{self, BodyBytes, Intake};
+use crate::intake::{self, Intake};
 use crate::ledger::{self, Followed, Ledger};
 use crate::metrics::Metrics;
 use crate::nodes::{self, Nodes};
-use crate::proxy::{self, BodyError, read_body};
+use crate::routes;
 use crate::state::{App, Engines, Shared};
 use crate::systemd::Inherited;
-use crate::types::{EngineState, Route};
 use crate::upstream::Upstream;
-
-/// `GET /ready` succeeds while the upstream's `/health` has answered within this window.
-const READY_WINDOW: Duration = Duration::from_secs(1);
-
-/// How long `GET /metrics/engine` waits for the engine's `/metrics`: Prometheus' default scrape timeout.
-const ENGINE_METRICS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A gateway with every listener bound.
 #[derive(Debug)]
@@ -201,7 +184,7 @@ impl Server {
         let (stop, stopped) = watch::channel(());
         let mut serving = JoinSet::new();
         for (listener, listener_tenant) in self.listeners {
-            let router = router(App {
+            let router = routes::router(App {
                 shared: Arc::clone(&self.shared),
                 listener_tenant,
                 private: matches!(listener, Listener::Unix(..)),
@@ -428,262 +411,6 @@ where
         .into_future()
 }
 
-fn router(app: App) -> Router {
-    let router = Router::new();
-    // Without [[nodes]] none of these routes exists: their paths are 404, as they always were.
-    let router = match app.shared.nodes() {
-        Some(nodes) => nodes_routes(router, nodes),
-        None => router,
-    };
-    router
-        .route("/v1/chat/completions", inference(Route::ChatCompletions))
-        .route("/v1/completions", inference(Route::Completions))
-        .route("/v1/responses", inference(Route::Responses))
-        .route(
-            "/v1/models",
-            get(|State(app): State<App>, request: Request| proxy::models(app, request)),
-        )
-        .route("/v1/events", post(events::post))
-        .route("/metrics", get(metrics))
-        .route("/metrics/engine", get(engine_metrics))
-        .route("/health", get(|| async { "ok\n" }))
-        .route("/ready", get(ready))
-        .fallback(
-            |State(app): State<App>, method: Method, uri: Uri| async move {
-                Exchange::new(&app.shared.metrics, Route::Other).error(
-                    StatusCode::NOT_FOUND,
-                    "not_found",
-                    format!("no such route: {}", request_line(&method, &uri)),
-                )
-            },
-        )
-        .method_not_allowed_fallback(
-            |State(app): State<App>, method: Method, uri: Uri| async move {
-                Exchange::new(&app.shared.metrics, Route::Other).error(
-                    StatusCode::METHOD_NOT_ALLOWED,
-                    "method_not_allowed",
-                    format!(
-                        "the route does not accept this method: {}",
-                        request_line(&method, &uri)
-                    ),
-                )
-            },
-        )
-        .with_state(app)
-}
-
-/// The routes a gateway with `[[nodes]]` adds, each handed the nodes.
-fn nodes_routes(router: Router<App>, nodes: &Arc<Nodes>) -> Router<App> {
-    let (sessions, end, list) = (Arc::clone(nodes), Arc::clone(nodes), Arc::clone(nodes));
-    router
-        .route(
-            "/v1/sessions",
-            post(move |State(app): State<App>, request: Request| async move {
-                nodes::routes::sessions(app, &sessions, request).await
-            }),
-        )
-        .route(
-            "/v1/sessions/{id}",
-            delete(
-                move |State(app): State<App>,
-                      id: Result<axum::extract::Path<String>, PathRejection>,
-                      headers: HeaderMap| async move {
-                    nodes::routes::end(app, &end, id, headers).await
-                },
-            ),
-        )
-        .route(
-            "/nodes",
-            get(move |State(app): State<App>, request: Request| async move {
-                nodes::routes::nodes(app, &list, request).await
-            }),
-        )
-}
-
-/// The method and path of a request that matched no route, for its error and log line. The `route` label of
-/// such a request is "other", so this is the only record of what was asked for; long paths are cut.
-fn request_line(method: &Method, uri: &Uri) -> String {
-    const MAX_PATH: usize = 256;
-    let path = uri.path();
-    let end = (0..=MAX_PATH.min(path.len()))
-        .rev()
-        .find(|&i| path.is_char_boundary(i))
-        .unwrap_or(0);
-    let cut = if end < path.len() { "…" } else { "" };
-    format!("{method} {}{cut}", &path[..end])
-}
-
-fn inference(route: Route) -> MethodRouter<App> {
-    post(move |State(app): State<App>, request: Request| proxy::inference(app, route, request))
-}
-
-/// The tenant of a control route's request, which only a trusted tenant may make, recorded in `ex`. Or the error
-/// answer: 401 without a known API key on a listener without a tenant ([`exchange::missing_key`]), and 403 for an
-/// untrusted tenant, which may not `action`.
-pub(crate) fn trusted_tenant<'a>(
-    app: &'a App,
-    ex: &mut Exchange,
-    headers: &HeaderMap,
-    action: &str,
-) -> Result<&'a Tenant, ErrorAnswer> {
-    let Some(tenant) = app
-        .shared
-        .tenants
-        .authenticate(headers, app.listener_tenant)
-    else {
-        return Err(exchange::missing_key());
-    };
-    ex.resolved.tenant = Some(Arc::clone(&tenant.name));
-    if !tenant.trusted {
-        let message = format!("only trusted tenants may {action}");
-        return Err((StatusCode::FORBIDDEN, "untrusted_tenant", message));
-    }
-    Ok(tenant)
-}
-
-/// Reads a control route's body as a request's is read: its bytes from `budget`, the bodies' budget, as they arrive,
-/// by the interactive class's upload deadline from `received`. The error is the answer's status, code and message:
-/// 408 when the body, `what`, did not arrive in time, 413 or 400 for one too large or unreadable, and 503 when the
-/// budget is full, which says what to do `again`.
-pub(crate) async fn read_control_body(
-    shared: &Shared,
-    received: Instant,
-    body: Body,
-    budget: &mut BodyBytes,
-    what: &str,
-    again: &str,
-) -> Result<Bytes, ErrorAnswer> {
-    let interactive = SloClass::Interactive;
-    let upload = Deadlines::new(interactive, shared.class(interactive), received).upload();
-    read_body(body, shared.max_body_bytes, budget, upload)
-        .await
-        .map_err(|err| match err {
-            BodyError::Late(timeout) => {
-                let message = format!("the {what} did not arrive within {}", timeout.key());
-                (StatusCode::REQUEST_TIMEOUT, "upload_timeout", message)
-            }
-            BodyError::Invalid(status, code, message) => (status, code, message),
-            BodyError::Refused(_) => {
-                let message =
-                    format!("the gateway holds max_buffered_body_bytes of request bodies; {again}");
-                (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "body_budget_exhausted",
-                    message,
-                )
-            }
-        })
-}
-
-/// The 401 of a request that may not read the metrics: one on a TCP listener without the metrics key. On a Unix
-/// socket, private to its owner, no key is asked for, as for the requests of its tenant.
-pub(crate) fn metrics_refused(app: &App, headers: &HeaderMap) -> Option<Response> {
-    let key = app.shared.metrics_key.as_ref();
-    let allowed = app.private || key.is_some_and(|key| auth::is_metrics_key(headers, key));
-    (!allowed).then(|| {
-        Exchange::new(&app.shared.metrics, Route::Other).error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_api_key",
-            "missing or unknown metrics key",
-        )
-    })
-}
-
-async fn metrics(State(app): State<App>, headers: HeaderMap) -> Response {
-    if let Some(refused) = metrics_refused(&app, &headers) {
-        return refused;
-    }
-    let content_type =
-        HeaderValue::from_static("application/openmetrics-text; version=1.0.0; charset=utf-8");
-    ([(CONTENT_TYPE, content_type)], app.shared.metrics.encode()).into_response()
-}
-
-/// `GET /metrics/engine`: the engine's own `/metrics`, under the rule of the gateway's, so that a scraper reaches
-/// the engine without a TCP route to it. With `[[nodes]]`, `?node=NAME` names the node whose engine's.
-async fn engine_metrics(State(app): State<App>, headers: HeaderMap, uri: Uri) -> Response {
-    if let Some(refused) = metrics_refused(&app, &headers) {
-        return refused;
-    }
-    let shared = &app.shared;
-    let error = |status, code, message: String| {
-        Exchange::new(&shared.metrics, Route::Other).error(status, code, message)
-    };
-    let upstream = match &shared.engines {
-        Engines::One(engine) => &engine.upstream,
-        Engines::Nodes(nodes) => {
-            let asked = uri
-                .query()
-                .and_then(|query| query.split('&').find_map(|pair| pair.strip_prefix("node=")));
-            let names = || {
-                let names: Vec<&str> = nodes.list.iter().map(|node| &*node.name).collect();
-                names.join(", ")
-            };
-            match asked {
-                None => {
-                    let message = format!("name a node: /metrics/engine?node=NAME, of {}", names());
-                    return error(StatusCode::BAD_REQUEST, "node_required", message);
-                }
-                Some(name) => match nodes.named(name) {
-                    Some(node) => &node.engine.upstream,
-                    None => {
-                        let message = format!("no node {name:?}: the nodes are {}", names());
-                        return error(StatusCode::NOT_FOUND, "unknown_node", message);
-                    }
-                },
-            }
-        }
-    };
-    match upstream.metrics(ENGINE_METRICS_TIMEOUT).await {
-        Ok(response) => response,
-        Err(message) => Exchange::new(&shared.metrics, Route::Other).error(
-            StatusCode::BAD_GATEWAY,
-            "upstream_unavailable",
-            message,
-        ),
-    }
-}
-
-/// 200 while the engine serves ([`crate::canary`]: an inference succeeded, and the canary has not failed since
-/// `degraded_after` times in a row; from the start without a canary) and its `/health` has answered within
-/// [`READY_WINDOW`], asking it once more otherwise. 503 while it is warming, degraded or drained, and at once while a
-/// request has found the upstream broken and its probe has not answered since ([`crate::upstream::recover`]). With
-/// `[[nodes]]`, 200 while each role is taken by an available node, and 503 naming the role that is not, or once the
-/// gateway drains.
-async fn ready(State(app): State<App>) -> Response {
-    let shared = &app.shared;
-    let engine = match &shared.engines {
-        Engines::One(engine) => engine,
-        // Every role taken by an available node: healthy, and its engine ready.
-        Engines::Nodes(nodes) => {
-            if nodes
-                .list
-                .iter()
-                .any(|node| node.engine.health.state() == EngineState::Drained)
-            {
-                return (StatusCode::SERVICE_UNAVAILABLE, "gateway drained\n").into_response();
-            }
-            return match nodes.ready() {
-                Ok(()) => (StatusCode::OK, "ready\n").into_response(),
-                Err(role) => {
-                    let body = format!("no healthy node for {role}\n");
-                    (StatusCode::SERVICE_UNAVAILABLE, body).into_response()
-                }
-            };
-        }
-    };
-    let state = engine.health.state();
-    if state != EngineState::Serving {
-        let body = format!("engine {}\n", state.as_str());
-        return (StatusCode::SERVICE_UNAVAILABLE, body).into_response();
-    }
-    let upstream = &engine.upstream;
-    if upstream.ready() && upstream.answers(READY_WINDOW).await {
-        (StatusCode::OK, "ready\n").into_response()
-    } else {
-        (StatusCode::SERVICE_UNAVAILABLE, "upstream not ready\n").into_response()
-    }
-}
-
 /// A gateway's metrics, read in process ([`Server::metrics`]).
 #[derive(Clone, Debug)]
 pub struct MetricsReader(Arc<Metrics>);
@@ -773,15 +500,6 @@ fn context(err: io::Error, what: impl Display) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn request_lines_name_the_method_and_cut_long_paths() {
-        let uri: Uri = "/prometheus/metrics?x=1".parse().unwrap();
-        assert_eq!(request_line(&Method::GET, &uri), "GET /prometheus/metrics");
-        let long: Uri = format!("/{}", "a".repeat(300)).parse().unwrap();
-        let line = request_line(&Method::POST, &long);
-        assert_eq!(line, format!("POST /{}…", "a".repeat(255)));
-    }
 
     #[tokio::test]
     async fn a_socket_is_bound_only_in_a_directory_that_others_cannot_enter() {

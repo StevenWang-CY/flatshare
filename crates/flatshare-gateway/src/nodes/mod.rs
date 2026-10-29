@@ -35,7 +35,6 @@
 
 pub(crate) mod metrics;
 mod placement;
-pub(crate) mod routes;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
