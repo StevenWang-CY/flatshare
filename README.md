@@ -65,12 +65,12 @@ within it, and the agents keep 98% of their tokens a second. Over both calls of 
 | + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 43% | 3,298 | 71 s |
 | + #63351 with a 48-token window: **the PRs' configuration** | **2,236 ms** | +202 ms | 32% | 3,203 | 72 s |
 
-Each value is the median of five rounds. Each round replays its own sample of the agents' traces and runs every
-configuration in a rotated order (10 runs for tuned vLLM and 15 for the last row, which more than one campaign ran).
-The SLO is the voice-alone p95 plus 250 ms and allows 5% of the replies over it; the replies over it are counted over
-all of a configuration's runs. The agents' tokens/s count the calls' first 240 s of a replay of coding agents' requests,
-and nearly all of them are prompt tokens: the replay runs no task. These agents wait
-about a minute for a first token, which is the regime the change is for
+Each value is the median of a configuration's runs: five, one a round, or 10 for tuned vLLM and 15 for the last row,
+which two and three campaigns ran in the same five rounds. Each round replays its own sample of the agents' traces and
+runs every configuration in a rotated order. The SLO is the voice-alone p95 plus 250 ms and allows 5% of the replies
+over it; the replies over it are counted over all of a configuration's runs. The agents' tokens/s count the calls' first
+240 s of a replay of coding agents' requests, and nearly all of them are prompt tokens: the replay runs no task. These
+agents wait about a minute for a first token, which is the regime the change is for
 ([is yours?](docs/PRODUCTION.md#is-your-deployment-in-this-regime)). Every run and range is in
 [BENCHMARKS.md](docs/BENCHMARKS.md#voice-under-agent-load-e2).
 
