@@ -14,8 +14,10 @@ names](#former-names) maps them to the current ones.
   [#63350](https://github.com/vllm-project/vllm/pull/63350) for a full KV cache and
   [#63351](https://github.com/vllm-project/vllm/pull/63351) for prefill beside a priority request's first tokens.
   [ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351) states their rules.
-- **The configuration to deploy**: the frozen box's engine with the KV preemption at 2 a step, the budget cap with a
-  48-token window and no reserve ([PRODUCTION.md](PRODUCTION.md#the-configuration)).
+- **The configuration to deploy**: the change's switches, the KV preemption at 2 a step and the budget cap with a
+  48-token window and no reserve, at the serving profile's step cap of 256 tokens without a per-request threshold
+  ([PRODUCTION.md](PRODUCTION.md#the-configuration)). W5's evaluation ran the same switches on the frozen box's engine,
+  at 512 tokens a step with a 256-token threshold.
 - **The KV preemption** (#63350; **KV make-room** in make-room's switches, and **make-room** in the technical report): a
   waiting request of a higher priority that lacks KV preempts running requests of a lower priority, at most N a step
   (`--max-priority-preemptions-per-step`).
@@ -36,8 +38,7 @@ names](#former-names) maps them to the current ones.
 
 ## The box and the hosts
 
-- **The box**: the RTX 5060 Ti 16 GB host and the frozen box it runs: Phastform, the GPU node of every E2 point but
-  the A100 run's.
+- **The box**: the RTX 5060 Ti 16 GB host and the frozen box it runs: Phastform, and Gray, deployed the same way.
 - **The CPU tier**: vLLM's `OffloadingConnector` writing each request's KV through to host memory as it is computed,
   so that an evicted or preempted request can reload it; 20 GiB on the box.
 - **cyan**: the control host, CPU only: the gateway, LiveKit, the voice agent and the callers, and AIPerf.
@@ -45,7 +46,8 @@ names](#former-names) maps them to the current ones.
   Qwen3-4B-Instruct-2507-FP8, priority scheduling, a 512-token step cap and a 20 GiB CPU KV tier, beside Whisper (STT)
   and Kokoro (TTS) on the same GPU ([ARCHITECTURE.md §3.1](ARCHITECTURE.md#31-the-frozen-box)). *Frozen* alone, as in
   the A100 run's tables, names the stock engine with the frozen box's flags on whatever card it runs.
-- **Gray**: the second GPU node, identical to Phastform, on which the first make-room probes ran (2026-10-23).
+- **Gray**: the second GPU node, identical to Phastform: the probes' booked windows (the first make-room probes ran on
+  it on 2026-10-23), the second card of the two-card rounds and the serving arrangement's warm spare.
 - **peacock**: a CPU host for builds and tests, and the machine of the change's per-step cost baseline
   (`make perf-make-room`).
 - **Phastform**: the box's host: one RTX 5060 Ti 16 GB, two Xeon E5-2609 v4 and 188 GiB of RAM.

@@ -1429,10 +1429,10 @@ s, and all three GPU servers restart together in 102.7 s on warm caches. A CPU t
 engine healthy, and it restored the latest 8,192-token prompt in 294 ms against 1,112 ms to recompute it.
 
 On two GPU nodes, with both calls on the first and the second a warm spare (§6.8, §7), the drill places two calls as the
-voice worker does, runs a turn of each every 3 s beside two agents' streams, and then breaks the first node's engine.
-A SIGKILL moved both calls' next turns to the spare 0.7 s later, and stopping the engine 1.9 s later. None of the 300
+voice worker does, runs a turn of each every 3 s beside two agents' streams, and then breaks the first node's engine. A
+SIGKILL moved both calls' next turns to the spare 0.7 s later, and stopping the engine 1.9 s later. None of the 300
 turns after the events failed, and none was in flight at either event. The spare held its agents' new requests while it
-carried the calls, and the killed engine was back 101 s after the kill.
+carried the calls, and each got 503 `queue_timeout` 120 s later; the killed engine was back 101 s after the kill.
 
 ### E. The forecast for the A100
 

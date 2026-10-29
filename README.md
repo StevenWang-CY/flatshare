@@ -63,14 +63,14 @@ within it, and the agents keep 98% of their tokens a second. Over both calls of 
 | Tuned, with a router that aborts agent requests before their first byte and resubmits them | 2,522 ms | +488 ms | 44% | 3,332 | 32 s |
 | + #63350: a waiting request preempts lower-priority work for KV | 5,085 ms | +3,051 ms | 89% | 3,414 | 67 s |
 | + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 43% | 3,298 | 71 s |
-| + #63351 with a 48-token window: **the configuration to deploy** | **2,236 ms** | +202 ms | 32% | 3,203 | 72 s |
+| + #63351 with a 48-token window: **the PRs' configuration** | **2,236 ms** | +202 ms | 32% | 3,203 | 72 s |
 
-Each value is the median of five rounds. Each round replays its own sample of the agents' traces and runs every
-configuration in a rotated order (10 runs for tuned vLLM and 15 for the last row, which more than one campaign ran).
-The SLO is the voice-alone p95 plus 250 ms and allows 5% of the replies over it; the replies over it are counted over
-all of a configuration's runs. The agents' tokens/s count the calls' first 240 s of a replay of coding agents' requests,
-and nearly all of them are prompt tokens: the replay runs no task. These agents wait
-about a minute for a first token, which is the regime the change is for
+Each value is the median of a configuration's runs: five, one a round, or 10 for tuned vLLM and 15 for the last row,
+which two and three campaigns ran in the same five rounds. Each round replays its own sample of the agents' traces and
+runs every configuration in a rotated order. The SLO is the voice-alone p95 plus 250 ms and allows 5% of the replies
+over it; the replies over it are counted over all of a configuration's runs. The agents' tokens/s count the calls' first
+240 s of a replay of coding agents' requests, and nearly all of them are prompt tokens: the replay runs no task. These
+agents wait about a minute for a first token, which is the regime the change is for
 ([is yours?](docs/PRODUCTION.md#is-your-deployment-in-this-regime)). Every run and range is in
 [BENCHMARKS.md](docs/BENCHMARKS.md#voice-under-agent-load-e2).
 
@@ -162,7 +162,7 @@ modifying the installation. In an environment with vLLM 0.32.0 and a GPU it supp
 ```sh
 git clone https://github.com/StevenWang-CY/flatshare && cd flatshare
 python python/flatshare_vllm/src/flatshare_vllm/build.py make-room ~/make-room
-PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 \
+PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-len 32768 --max-num-seqs 256 \
   --scheduling-policy priority --max-num-batched-tokens 512 --long-prefill-token-threshold 256 \
   --scheduler-cls flatshare_make_room_scheduler.AsyncScheduler \
   --additional-config.make_room.max_preemptions_per_step 2 \
@@ -172,9 +172,12 @@ python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.
 ```
 
 Send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV tier from
-[`engine.yaml`](deploy/phastform/engine.yaml). `probe.py` sizes its requests from the engine's KV pool and context
-length, so the check runs unchanged on another card. [docs/PRODUCTION.md](docs/PRODUCTION.md) has the whole
-configuration (the CPU tier, the priorities, what to watch and how it fails) and how to check it on your hardware.
+[`engine.yaml`](deploy/phastform/engine.yaml), which holds the box's 32k context and fixed KV pool too; without a
+context length vLLM takes the model's 262,144 tokens, which no 16 GB card holds, and on an H100 or a larger card it
+defaults to 1,024 request slots, more than this step cap, which vLLM refuses. `probe.py` sizes its requests from the
+engine's KV pool and context length, so the check runs unchanged on another card.
+[docs/PRODUCTION.md](docs/PRODUCTION.md) has the whole configuration (the CPU tier, the priorities, what to watch and
+how it fails) and how to check it on your hardware.
 
 ## How it was measured
 
@@ -190,8 +193,9 @@ configuration (the CPU tier, the priorities, what to watch and how it fails) and
   with their think times, through the gateway at a lower priority.
 - **Rounds.** Every configuration runs in each round, in a rotated order, on the round's own sample of the agents, and
   each call opens with an unmeasured warm-up turn. Baselines are configured as their documentation recommends.
-- **Reproducibility.** `make reproduce-e2` rebuilds every table and figure from the committed records. The gateway
-  adds 0.29 ms to a voice request's first token, paired against the engine's own socket on the final transport
+- **Reproducibility.** `make reproduce-e2-w5` and `make reproduce-e2-a100` rebuild the tables above from the committed
+  records, the rounds' `gate.py` the two-card results, and `make figures` every figure. The gateway adds 0.29 ms to a
+  voice request's first token, paired against the engine's own socket on the final transport
   ([the gateway's cost](docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)).
 
 ## Documentation

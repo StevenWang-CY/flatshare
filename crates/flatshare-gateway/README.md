@@ -2,7 +2,7 @@
 
 `flatshare-gateway` is the process in front of one vLLM engine. It carries Flatshare's request contract: who a request belongs to, which session and SLO class it has, and which engine inputs a client may not set. It relays responses byte for byte, cancels the engine request when the client leaves, and ingests lifecycle events. Its admission point runs `flatshare-core`'s admission policies: the E2 baselines it emulates, and the lifecycle policy (`policy = "lifecycle"`), which E2's arm 9 runs with make-room: KV headroom timed by lifecycle events, a prefill budget in the critical window, a realtime class that is never shed and degrades instead. What E2 measured of it is [below](#the-lifecycle-policy), and what its lifecycle timing could and could not do in [METHODS.md](../../docs/METHODS.md#what-lifecycle-timing-could-and-could-not-do). A deployment can cap each class's replies, and every request's choices, without a policy ([Bounds](#what-it-does)).
 
-It is a harness, not a general-purpose router: one upstream, loopback listeners, and nothing a stock proxy would not need besides the contract above. Its cost is measured below. The configuration to deploy ran behind it without an admission policy: the gateway set each request's priority from its SLO class ([PRODUCTION.md](../../docs/PRODUCTION.md#the-priorities)).
+It is a harness, not a general-purpose router: one upstream, or several GPU nodes with sticky sessions ([Nodes](#nodes)), loopback listeners, and nothing a stock proxy would not need besides the contract above. Its cost is measured below. The configuration to deploy ran behind it without an admission policy: the gateway set each request's priority from its SLO class ([PRODUCTION.md](../../docs/PRODUCTION.md#the-priorities)).
 
 ## Running
 
