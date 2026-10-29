@@ -5,6 +5,70 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.7](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.7) (2026-10-29): two cards, measured against a gate fixed in advance
+
+The rest of the external audit of v1.5: the two-card comparison its resource gate asked for, the serving profile's step
+cap, the gateway and the deployment on two GPU nodes, a failover drill and a soak of the arrangement, and the
+operator's service contract. The single-card headline of v1.6 is unchanged.
+
+- **Two cards.** Three rounds, each on a new sample of the agents and on the two hosts in turn, measured each card's
+  part of every arrangement that [the resource gate](benchmarks/quality/RESOURCE-GATE.md) compares
+  ([`2026-10-28-rounds`](benchmarks/results/2026-10-28-rounds), whose `gate.py` gives the verdict). Consolidation,
+  both calls and four agent sessions on one card with the change beside a card of agents alone, did 34.2% more
+  background work than the best dedicated arrangement, with 5 of 177 replies over the SLO: past the gate's 20%
+  hurdle. Stock vLLM's shared card qualifies at two sessions, and that arrangement did 27.3% more, so most of the gain
+  is the arrangement's; the change's own value is 5.4%. One call and 12 sessions on each card qualified on neither
+  engine. The dedicated card's agents did the most at 14 sessions, not 24, where their pool thrashes.
+- **The serving profile's step cap.** The profile now runs the change at 256 tokens a step without a per-request
+  threshold, the cap the sweep's screens chose ([`2026-10-27-sweep`](benchmarks/results/2026-10-27-sweep)).
+  Five rounds on new samples confirmed it beside 24 sessions: 44 of 295 replies over each round's SLO, against 94
+  at the box's 512-token cap, fewer in every round, at 7% less of the agents' token rate. A profile whose step cap
+  is below the engine's request slots is refused, since vLLM 0.32.0 refuses to start with it.
+- **The gateway on two nodes.** A node bounds the agents' sessions it holds (`max_agents`, 503 `no_agent_slot` with
+  `Retry-After: 1` beyond it), and `[placement] calls = "fill"` places the calls on the first node with a free call
+  slot, so that the second node is a warm spare. A node covers for a failed one, holding its agents, until the calls
+  moved to it have ended, and a warm spare while it carries any call. The configuration is in
+  [`deploy/cyan/gateway.example.toml`](deploy/cyan/gateway.example.toml) and the runbook's
+  [Two GPU nodes](ops/RUNBOOK.md#two-gpu-nodes).
+- **The service contract.** [docs/PRODUCTION.md](docs/PRODUCTION.md#two-cards) says what the two cards accept (two
+  calls, 16 agent sessions), what each side gets, what is refused under overload, and how a failure is recovered.
+- **The failover drills** ([`2026-10-28-node-failover`](benchmarks/results/2026-10-28-node-failover)). With the
+  first card's engine killed and then stopped, both calls' next turns went to the spare within 0.7 and 1.9 s, and none
+  of the 300 turns after failed; the drill's own client, which sent a wrong model id, is fixed, and the drill now waits
+  for whole turns before it breaks a node. Two smokes of the arrangement
+  ([`2026-10-28-two-node-smoke`](benchmarks/results/2026-10-28-two-node-smoke)) set the placement's idle time to 150 s:
+  a client that never ends its sessions holds an ended session's agent slot until it idles out.
+- **The soak.** 24 hours of the serving arrangement ([`2026-10-28-soak`](benchmarks/results/2026-10-28-soak)), after two
+  hours of voice alone with the same calls set its SLO at 1,976 ms: 74 of 5,058 replies over it (1.5%), 5.5% in the
+  worst hour; 476 calls, 72 refused with both lines busy, 2 turned away with a line free, LiveKit still holding the
+  worker full from its last status ([docs/PRODUCTION.md](docs/PRODUCTION.md#calls-what-the-box-admits)), and none
+  failed; nothing restarted or paused, and the spare carried no call. The agents did 9,300 tokens a second in the first
+  hour, the replay's start, where the rounds' windows sit, and 582–5,402 in each hour after.
+- **The endpointing sweep** ([`2026-10-28-endpointing`](benchmarks/results/2026-10-28-endpointing)). The fixed
+  endpointing every measurement runs waits out the VAD's silence and about 0.2 s more, LiveKit's delay never binding:
+  0.3 s of silence answers 0.27 s sooner at the median, and cut one line in 40 short at its first sentence. The
+  measured default stays. Answering the audit's last question, no adaptive scheduler is built: the two-card envelope
+  is set by the speech servers' share of the GPU, which no scheduling in the engine removes.
+- **The report** is at version 1.7: the two cards (§6.8) and the step cap, with the rule that carries its 256-token
+  steps (§6.9), operating two cards (§7), adaptive prefill control and what is new (§8), among its limitations the
+  quality gate, the two ways to a larger pool and the next vLLM release (§9), which v1.6 measured and left out of it,
+  and its header, which v1.6 left at 1.5.
+- **Corrections.** The prior art said vLLM's open fixes preempt only at the request cap, but #40087 also preempts for a
+  waiting request's KV, one victim at a time; [docs/PRIOR-ART.md](docs/PRIOR-ART.md) and the report's §8 now say how
+  #63350 differs. They also misdated `prefill_schedule_interval`'s single-engine change and called SGLang's #45686 a
+  draft that keeps KV in host memory. [SECURITY.md](SECURITY.md) named v1.2 and a gateway without body bounds or
+  deadlines, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) a two-node design that never ran. The example
+  `gateway.toml` now holds the serving arrangement, two engine alerts hold for each node with `[[nodes]]`, and the
+  quality gate's records no longer carry a hash of the judge's login. [README.md](README.md)'s limits now include the
+  quality gate the served model failed, which only the report gave.
+- **Upgrading from v1.6.** The serving variant's engine flags change, so a deploy restarts the engine. `gateway.toml`
+  takes `max_agents` on a node and `[placement] calls`; without them nothing changes. The voice worker takes
+  `FLATSHARE_VAD_MIN_SILENCE` and `FLATSHARE_ENDPOINTING_MIN_DELAY`, bounded and refused by name, and
+  `flatshare-bench soak` and `flatshare-voice arrivals` are new. With `[[nodes]]`, Prometheus scrapes each node's
+  engine as its own job, labeled with its node ([`prometheus.example.yml`](ops/prometheus/prometheus.example.yml)),
+  which the engine's alerts now group by.
+- **The packages** are versioned 1.7.0, and are not published to a package index.
+
 ## [v1.6](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.6) (2026-10-28): what an external audit found, fixed
 
 No headline measurement changed. An external audit of v1.5 found defects in the gateway and the deployment and asked

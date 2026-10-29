@@ -418,6 +418,23 @@ RG, 2026-10-28: the resource gate's comparison of the arrangements of two RTX 50
 
 The records are in [`benchmarks/results/2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds), whose `gate.py` gives these tables, the margins, the agents' requests in the window and the stages from them.
 
+### The 24-hour soak
+
+2026-10-28 to 29: the serving arrangement for 24 hours ([PRODUCTION.md](PRODUCTION.md#two-cards)), both calls on Phastform beside at most four agents' sessions and Gray a warm spare with at most 12, calls arriving at 20 an hour with ten turns each and 14 of the discriminating scenario's session trees for the agents, every attempt counted ([the soak](EXPERIMENTS.md#the-soak-the-production-path-for-hours)). Its SLO, 1,976 ms, is two hours of voice alone with the same calls plus 250 ms; by the rule fixed before it started, more than 7.5% of the replies over it after four hours would have stopped it, and 0.6% were.
+
+| Run | Hours | Calls (accepted, refused, failed) | Turns (failed) | Replies | Over the SLO | Replies p95, ms | Realtime SLI | Background tokens/s | Restarts | Guard pauses |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Voice alone | 2 | 35 (31, 4, 0) | 310 (0) | 395 | the reference | 1,726 | 1.000 | 0 | 0 | 0 |
+| The serving arrangement | 24 | 476 (402, 74, 0) | 4,020 (0) | 5,058 | 74 (1.5%) | 1,828 | 0.996 | 3,529 | 0 | 0 |
+
+- **The calls kept the SLO over the day.** 74 of the 5,058 replies were over the SLO, 1.5%, inside the contract's 5% ([SLO.md](SLO.md)). The worst hour, hour 4, put 14 of 254 over (5.5%); 30 calls arrived in it, and 9 of them got no agent, both lines being busy. Of the day's 476 calls the worker answered 402 and 74 got no agent: 72 with both lines busy and 2 while a line was free (below); none failed, dropped or was cut, and none of the 4,020 turns failed.
+- **Two calls found no agent with a line free.** Calls 262 and 386 came 1.0 and 1.2 s after a call's process had exited, while the last status the worker had sent LiveKit was still full ([`worker-events.tsv`](../benchmarks/results/2026-10-28-soak/worker-events.tsv)), so the server dispatched them to no worker, and it dispatches a room once; the worker sent `available` 1.5 and 0.8 s after they came. LiveKit Agents 1.8.8 reads the worker's load every 0.5 s and sends the server its status only every 2.5 s: over the day LiveKit learned of a line freed from a full worker 1.6 s after the call's process exited, at the median of the 173 such exits, and 3.0 s at most. The soak counts 386 as `no_agent` and 262 as refused for capacity, as its reason reads the worker's status file, which showed both lines busy when its caller gave up 15 s later.
+- **Nothing restarted, paused or went unread.** No unit failed or restarted, the guard never paused the load, and none of the 1,440 scrapes failed.
+- **The spare stayed a spare.** Every call was placed on Phastform, which held both at once at most, and Gray carried none and never covered, at each scrape of the gateway.
+- **The agents ran at their traces' own pace.** They did 3,529 tokens a second over the day, 27,273 requests completed and 0 failed, 9,300 in hour 0 against 582–5,402 in each hour after: AIPerf resumes its 14 trajectory sessions in one burst at its start ([its log](../benchmarks/results/2026-10-28-soak/aiperf-start.txt)), and the replay then keeps its traces' recorded pace, two thirds of its turns waiting on others of their tree. The gateway held 11 agents' sessions at once in hour 0, at the median of its scrapes, and 1–10 in each hour after (1–2 in the last four), while AIPerf kept its 14 trees open to the end ([its last lines](../benchmarks/results/2026-10-28-soak/aiperf-end.txt)). The rounds' windows, the calls' first 240 s a minute into the replay (the two-card rounds above), sit in that start, so their agents' rates are the replay's first minutes, not a day's.
+
+The record is in [`benchmarks/results/2026-10-28-soak`](../benchmarks/results/2026-10-28-soak/README.md), whose `table.py` gives this table, the hours' and the spare's.
+
 ## The control plane: flatshare-gateway in front of the engine
 
 On cyan, the voice agent and the agent replay reach the engine through `flatshare-gateway`:

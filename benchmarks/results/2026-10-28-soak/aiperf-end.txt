@@ -1,0 +1,6 @@
+# AIPerf's own log at the end of the serving arrangement's agents (run 0), when the soak stopped it at the window's end, times
+# UTC: every request it sent completed, and its 14 session-tree slots were still open at teardown.
+17:24:05.317 NOTICE   Phase profiling (profiling) sending complete | sent=27,346, completed=27,346, in_flight=0 | sessions: sent=53, completed=53 (runner.py:1103)
+17:24:05.319 INFO     BranchOrchestrator stats: spawned=1714 completed=1324 errored=0 suspended=129 resumed=129 parents_failed_due_to_child_error=0 joins_suppressed=0 delayed=1550 (branch_orchestrator.py:1845)
+17:24:05.319 WARNING  BranchOrchestrator leaked state at cleanup: 0 active_joins, 0 future_joins, 382 tracked children, 14 parents with descendants (branch_orchestrator.py:1862)
+17:24:05.320 INFO     Session-tree slots for phase profiling: peak_open=14 (target concurrency 14); released 14 still-open at teardown; late_events=0 (runner.py:610)

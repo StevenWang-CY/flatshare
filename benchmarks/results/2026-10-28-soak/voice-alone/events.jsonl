@@ -1,0 +1,5 @@
+{"at": 1793200817.384, "event": "window_started", "hours": 2.0}
+{"at": 1793200817.542, "event": "calls_started", "run": 0, "first_call": 0}
+{"at": 1793207930.695, "event": "calls_ended", "run": 0, "exit_status": 0, "restart_in_s": 10.0}
+{"at": 1793207940.709, "event": "calls_started", "run": 1, "first_call": 34}
+{"at": 1793208017.383, "event": "window_ended", "by": "hours"}

@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.5, 27 October 2026. Code, records and figures at tag
-[v1.5](https://github.com/StevenWang-CY/flatshare/tree/v1.5) of
+Flatshare technical report, version 1.7, 29 October 2026. Code, records and figures at tag
+[v1.7](https://github.com/StevenWang-CY/flatshare/tree/v1.7) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -338,12 +338,13 @@ Algorithm 2. The prefill hold, in each scheduler step (window T, in output token
 
 T is counted in output tokens, but the voice agent does not speak its first token. It hands speech synthesis its first
 complete sentence, at least 20 characters by LiveKit's default [[13](#ref-13)], so T must cover at least the first
-sentence. No record counts the tokens of first sentences, so we size T to cover whole replies, which bounds them. In a
-single-sample campaign before the main evaluation, this agent's replies ran 20–22 tokens at the median and at most 40,
-and we set T = 48. Figure 6a gives the lengths of the 5,571 replies the voice agent completed in the main evaluation.
-They ran 23 tokens at the median and 52 at most, so a 16-token window ends before 79% of them do and a 48-token window
-covers all but one. Within a reply a longer window costs the agents nothing more, because a hold ends when its reply
-ends (§6.3), though a KV load that never completes holds for up to T steps.
+sentence. The evaluation's records keep each reply's tokens but not its text, so we size T to cover whole replies, which
+bounds them; §6.3 counts the first sentences afterwards, 39 tokens at most. In a single-sample campaign before the main
+evaluation, this agent's replies ran 20–22 tokens at the median and at most 40, and we set T = 48. Figure 6a gives the
+lengths of the 5,571 replies the voice agent completed in the main evaluation. They ran 23 tokens at the median and 52
+at most, so a 16-token window ends before 79% of them do and a 48-token window covers all but one. Within a reply a
+longer window costs the agents nothing more, because a hold ends when its reply ends (§6.3), though a KV load that never
+completes holds for up to T steps.
 
 <img src="figures/report-window.svg" width="100%" alt="Three panels. (a) A step curve of the replies' output tokens: 21% end within 16 tokens and all but 1 of 5,571 within 48. (b) The 40th token's p95 falls from about 3.8 s at a 16-token window to about 1.0 s at 48 and 64, while the first token stays near 0.4 s. (c) The agents' prompt tokens per second fall 8% from 16 to 48 and no further.">
 
@@ -906,7 +907,9 @@ engine with its speech servers resident, so that it can take the calls. The gate
 with a free call slot, in its configured order, and each agent session on the card with the fewest, up to each card's
 bound (`max_agents`); a session beyond every bound gets 503 `no_agent_slot` and tries again with its next request. When
 the first card fails, its calls move to the second by their next turn, and while the second card carries any call it
-holds its agents' requests, letting those already running finish.
+holds its agents' requests, letting those already running finish. Over a 24-hour soak of this arrangement, 1.5% of its
+5,058 replies were over the SLO and 5.5% in its worst hour, no call failed, nothing restarted, and the second card
+carried no call (Appendix D).
 
 **Where it pays.** The change matters when background KV fills the pool, as when agent contexts of 10k tokens or more
 meet a pool that holds a few of them. On tuned vLLM the signs are KV usage near 100% while requests wait, and a realtime
@@ -1030,9 +1033,11 @@ the median. Replies whose windows overlap without a gap would stop the agents' p
 **Two cards in three rounds.** The two-card comparison rests on three rounds, each on a new sample of the agents, and
 measured the consolidated card at 2, 4, 8, 12 and 24 sessions only, so the change's envelope lies between four and eight
 sessions and stock vLLM's between two and four. Each card's part of an arrangement ran as a run of its own, and the sums
-assume that one card's work does not slow the other's, as with the cards on two hosts that share only the control
-plane. At the envelope the agents' work is the traces' own pace, so the background measure there counts the load
-offered, not what the shared card could do.
+assume that one card's work does not slow the other's, as with the cards on two hosts that share only the control plane.
+At the envelope the agents' work is the traces' own pace, so the background measure there counts the load offered, not
+what the shared card could do. Their window, the calls' first 240 s a minute into the replay, holds its start, when
+AIPerf resumes every session at once: over the 24-hour soak the same arrangement's agents did 9,300 tokens a second in
+the first hour and 582–5,402 in each hour after.
 
 **Synthesized callers.** The callers speak scripted lines synthesized in six voices, and the agent's endpointing is
 fixed. Endpointing, which waits for the final transcript, takes 0.76 s of voice alone's V2V and 0.82 s of every
@@ -1255,6 +1260,12 @@ its tests where Table A1 says so. Table A1 maps each part of the report to its r
 | The simulator's result on agents' KV (§8) | [The simulator's tables in BENCHMARKS.md](BENCHMARKS.md#e1-parking-in-the-simulator) | `make reproduce-e1` |
 | Replies whose windows overlap (§6.6) | The test of overlapping replies in [`test_make_room.py`](../python/flatshare_vllm/tests/test_make_room.py) | `make test-make-room` |
 | The failure drills (Appendix D) | [`2026-10-25-drills`](../benchmarks/results/2026-10-25-drills) | its README |
+| The first sentences' tokens (§6.3) | [`2026-10-27-first-sentence`](../benchmarks/results/2026-10-27-first-sentence) | [`first_sentence.py`](../benchmarks/replies/first_sentence.py) |
+| §6.8, Figure 14 and Tables 6 and 7 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds) | its `gate.py`, `make figures` |
+| §6.9 and Table 8 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds), and the screens in [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep) | `gate.py`'s sweep, the screens' `table.py` |
+| The endpointing sweep (§9) | [`2026-10-28-endpointing`](../benchmarks/results/2026-10-28-endpointing) | [`summary.py`](../benchmarks/endpointing/summary.py) |
+| The drills on two GPU nodes (Appendix D) | [`2026-10-28-node-failover`](../benchmarks/results/2026-10-28-node-failover) | its README |
+| The 24-hour soak (§7, Appendix D) | [`2026-10-28-soak`](../benchmarks/results/2026-10-28-soak) | its `table.py`, `flatshare-bench soak report` |
 | The quality gate (§9) | [`2026-10-27-quality`](../benchmarks/results/2026-10-27-quality) | [`gate.py`](../benchmarks/quality/gate.py) |
 | The pool's two ways out (§9) | [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep), [`2026-10-27-quality/fp8-kv`](../benchmarks/results/2026-10-27-quality/fp8-kv) and [`2026-10-27-cpu-audio`](../benchmarks/results/2026-10-27-cpu-audio) | their READMEs |
 | The next vLLM release (§9) | [`2026-10-27-compat`](../benchmarks/results/2026-10-27-compat) | `make compat-upstream` |
@@ -1263,7 +1274,7 @@ The repository's tests fail when a committed figure differs from what its record
 records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists every measurement run by run, and
 [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
-**Hosting.** Tag v1.5 holds the code, the records and this report. The raw records, the gateway's request logs and each
+**Hosting.** Tag v1.7 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in
 [v1.0](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.0), the A100 run's in
 [v1.1](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.1), the KV-sampling runs' in
@@ -1441,6 +1452,13 @@ SIGKILL moved both calls' next turns to the spare 0.7 s later, and stopping the 
 turns after the events failed, and none was in flight at either event. The spare held its agents' new requests while it
 carried the calls, and each got 503 `queue_timeout` 120 s later; the killed engine was back 101 s after the kill.
 
+A 24-hour soak of that arrangement, calls arriving at 20 an hour beside 14 agents' session trees, put 74 of its 5,058
+replies over the SLO (1.5%; 5.5% in the worst hour). Of its 476 calls, 72 found both lines busy and 2 were turned away
+with a line free, LiveKit still holding the worker full from its last status
+([PRODUCTION.md](PRODUCTION.md#calls-what-the-box-admits)); none failed, no unit restarted, and the spare never carried
+a call; on the calls' card the budget cap held prefill back in 4,853 steps and make-room never had to preempt
+([the record](../benchmarks/results/2026-10-28-soak/README.md)).
+
 ### E. The forecast for the A100
 
 A forecast for the A100 SXM4 80 GB was written before the run, from the RTX 5060 Ti's measured costs scaled by the
@@ -1479,6 +1497,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.7 | 2026-10-29 | Two cards measured against a resource gate fixed before the runs, the serving profile's 256-token step cap, operating two cards and their 24-hour soak, the endpointing sweep, adaptive prefill control and what is new beside the related work, Table A1's records for them and for the first sentences, §3.3's sentence on those, and the version and tag the report names, which 1.6 left at 1.5. Corrected: §8 on vLLM's open fixes (#40087 preempts for KV too), on `prefill_schedule_interval` and on SGLang's #45686, and §2.3 on what the CPU tier keeps by default; added to §9: the quality gate, the two ways to a larger pool and the next vLLM release, which 1.6 measured and left out |
 | 1.6 | 2026-10-28 | The share of replies over the SLO and the pooled p95 beside each configuration's median p95, what the agents' token rate measures, the reuse of the five samples of the agents, and how long the first sentences are |
 | 1.5 | 2026-10-27 | Rewritten in full: the design and two algorithms, thirteen figures and five tables drawn from the records, references, and appendices |
 | 1.4 | 2026-10-27 | Unchanged: the release rewrote the repository's history |
