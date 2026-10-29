@@ -19,7 +19,18 @@ scrape_configs:
     static_configs:
       - targets: ["127.0.0.1:18080"]
 
-  # The engine's own /metrics, relayed. With [[nodes]], one job a node instead, naming it, as for Gray:
+  # The engine's own /metrics, relayed, labeled with its node: the engine's rules group by `node`. With [[nodes]] the
+  # gateway refuses /metrics/engine without ?node= (400 node_required), so this job gives way to one job a node, named
+  # after it (the rules match flatshare-engine and flatshare-engine-NAME), as for the two cards:
+  #   - job_name: flatshare-engine-phastform
+  #     metrics_path: /metrics/engine
+  #     params: {node: [phastform]}
+  #     authorization:
+  #       credentials_file: <home>/.config/flatshare/metrics-key
+  #     static_configs:
+  #       - targets: ["127.0.0.1:18080"]
+  #         labels:
+  #           node: phastform
   #   - job_name: flatshare-engine-gray
   #     metrics_path: /metrics/engine
   #     params: {node: [gray]}

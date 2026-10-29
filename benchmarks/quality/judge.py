@@ -190,11 +190,10 @@ def account(workdir: Path) -> dict:
     return {"email": status.get("email"), "subscription": status.get("subscriptionType")}
 
 
-def fingerprint(login: dict) -> str:
-    """The login a ruling ran on, as its subscription and a short hash of its email, which stays out of the
-    record."""
-    email = hashlib.sha256((login.get("email") or "").encode()).hexdigest()[:12]
-    return f"{login.get('subscription')}:{email}"
+def plan(login: dict) -> str:
+    """The login a ruling ran on, as the record keeps it: its subscription plan, never its email or a hash of it,
+    which anyone who guesses the address could confirm."""
+    return str(login.get("subscription"))
 
 
 def opus_check(out: dict) -> tuple[str, int]:
@@ -244,7 +243,7 @@ class Judge:
         self.workdir, self.rulings, self.jobs = workdir, rulings, jobs
         self.lock = threading.Lock()
         self.account = account(workdir)
-        print(f"judge: login {fingerprint(self.account)}", file=sys.stderr)
+        print(f"judge: login on {plan(self.account)}", file=sys.stderr)
 
     def batch(self, kind: str, items: list[dict], pass_: str) -> list[dict]:
         system, labels, _ = RATERS[kind]
@@ -290,7 +289,7 @@ class Judge:
                         "model": model,
                         "output_tokens": tokens,
                         "seconds": round(time.monotonic() - t0, 1),
-                        "account": fingerprint(self.account),
+                        "account": plan(self.account),
                         "at": at,
                     }
                     for k, it in enumerate(items, 1)

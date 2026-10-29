@@ -183,7 +183,7 @@ consistency 94.3–99.6%.
   hash of each item that went to the judge.
 - `rulings.jsonl`: the judge's 1,492 rulings, one a line: the item's hash, its kind, the rater's version, the pass
   (first, or the re-ask), the ruling and its reason, the batch and the place in it, the model and its output tokens,
-  the login's fingerprint and the time.
+  the login's subscription plan and the time.
 - `verdict.json`: [`gate.py`](../../quality/gate.py)'s verdict from `scores.json` and `rulings.jsonl`;
   `python/flatshare_bench/tests/test_quality_gate.py` checks that it is what they give, and this table against it.
 - `fp8-kv/`: the same five files for the run with an FP8 KV cache.
@@ -207,7 +207,7 @@ kind with only what a rater needs: the question, the annotators' answers and the
 dropped; or the cited sentences and the fact (head, relation, tail) or the summary sentence. The model's name never
 appears. The answer is the output's `structured_output`, which must rule on every item of the batch once. Every call's
 `modelUsage` named `claude-opus-5-5` with output tokens and no other model with any, and `claude auth status` before and
-after every batch showed the same subscription login (its fingerprint, `max:23c8ae0a0562`, is in every ruling). The
+after every batch showed the same subscription login (every ruling records its plan, `max`). The
 1,356 first rulings came in 69 batches and the re-ask in 8, all on the first attempt, between 22:27 and 23:06 UTC.
 Rulings are cached by the item's hash and the rater's version, so a second run asks nothing again. The re-ask drew 136
 of the 1,356 items, a tenth rounded up, with seed 2026 and asked them again in fresh batches in another order; 134

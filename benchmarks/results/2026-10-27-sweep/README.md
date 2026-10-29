@@ -72,8 +72,9 @@ What the screens say, each from one run on one sample, for the rounds to confirm
   card), and carry the step cap of 256 against W5's configuration and the frozen box at 24 to confirm the choice.
 
 The FP8 point of the second screen (`sweep-screen2/sweep-disc-pr-ab48-fp8-s24`, the change with an FP8 KV cache in the
-same 5 GiB) has a `run.json` and no summary: its engine died about a minute into the calls, and the point was stopped
-([below](#the-fp8-kv-cache)). The campaign stopped there, so `sweep-disc-pr-ab48-b256-fp8-s24` never ran.
+same 5 GiB) has a `run.json` and no summary: its engine died a second into the calls, a minute after the agents' replay
+began profiling, and the point was stopped ([below](#the-fp8-kv-cache)). The campaign stopped there, so
+`sweep-disc-pr-ab48-b256-fp8-s24` never ran.
 
 ## The FP8 KV cache
 
