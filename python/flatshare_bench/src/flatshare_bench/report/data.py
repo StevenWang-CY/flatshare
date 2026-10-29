@@ -4,9 +4,10 @@ Each value is computed the way the records' own reports compute it, so that a fi
 docs/BENCHMARKS.md: E2's points through :func:`flatshare_bench.e2.report.load_points` (V2V percentiles from the callers'
 turns, a warm-up turn left out, a stage's mean pooled over the replies of a configuration's runs), the probes from the
 lines probe.py and tail.py printed, as the campaigns' check.py and table.py read them, the scheduler's cost per step
-from the baseline perf_schedule.py measured, and the two-card comparison through its record's own gate.py. A
-configuration measured in several campaigns pools its runs, as the report's tables do, and its median is the median
-over its runs.
+from the baseline perf_schedule.py measured, the two-card comparison and the step cap's rounds through their record's
+own gate.py, the 24-hour soak from its summary as its table.py reads it, and the engine's starts and kill from the
+drills' journals through :func:`flatshare_bench.drills.start_phases`. A configuration measured in several campaigns
+pools its runs, as the report's tables do, and its median is the median over its runs.
 """
 
 from __future__ import annotations
@@ -1123,4 +1124,207 @@ def two_cards(root: Path = TWO_CARDS) -> TwoCards:
     )
     return TwoCards(
         tuple(rounds), gate.REQUIREMENT, gate.HURDLE, consolidated, envelopes, best, arrangements
+    )
+
+
+# The step cap's five rounds -----------------------------------------------------------------------------------------
+
+STEP_CAP_POINTS = {
+    "w5-disc-frozen-s24": ("tuned", 512),
+    "w5-disc-pr-ab48-s24": ("change", 512),
+    "sweep-disc-pr-ab48-b256-t0-s24": ("change", 256),
+}
+"""gate.py's SWEEP by point: tuned vLLM and the change at W5's 512-token steps (with its 256-token threshold per
+request), and the change at the serving profile's 256-token steps without one."""
+
+
+@dataclass(frozen=True)
+class StepCapRound:
+    """One configuration in one of the sweep's rounds beside the 24 agent sessions: its replies over the round's SLO,
+    its replies, and the agents' tokens a second over the calls' first 240 s."""
+
+    round: int
+    over: int
+    replies: int
+    tokens: float
+
+    @property
+    def share(self) -> float:
+        return self.over / self.replies
+
+
+@dataclass(frozen=True)
+class StepCap:
+    """A configuration of the step cap's comparison: its point, its engine ("tuned" or "change"), its step cap in
+    tokens and its rounds, in gate.py's order."""
+
+    point: str
+    engine: str
+    cap: int
+    rounds: tuple[StepCapRound, ...]
+
+    @property
+    def over(self) -> int:
+        return sum(r.over for r in self.rounds)
+
+    @property
+    def replies(self) -> int:
+        return sum(r.replies for r in self.rounds)
+
+    @property
+    def tokens(self) -> float:
+        """The agents' tokens a second, the median over the rounds."""
+        return _median(r.tokens for r in self.rounds)
+
+
+def step_caps(root: Path = TWO_CARDS) -> list[StepCap]:
+    """gate.py's SWEEP over its SWEEP_ROUNDS, each reply held to its round's SLO, by gate.py's own functions (as
+    Table 8 counts them)."""
+    gate = two_cards_gate(root)
+    rounds = gate.SWEEP_ROUNDS
+    points = gate.rows(root, rounds)
+    slo = gate.slos(points, rounds)
+    found = []
+    for point in gate.SWEEP:
+        engine, cap = STEP_CAP_POINTS[point]
+        cells = []
+        for campaign in rounds:
+            over, replies = gate.foreground(points, slo, ((point, 1),), (campaign,))
+            tokens = points[campaign, point]["fixed_window_tokens_per_s"]
+            cells.append(StepCapRound(_round(campaign), over, replies, tokens))
+        found.append(StepCap(point, engine, cap, tuple(cells)))
+    return found
+
+
+# The 24-hour soak ---------------------------------------------------------------------------------------------------
+
+SOAK = RESULTS / "2026-10-28-soak" / "serving-24h" / "summary.json"
+"""The 24-hour soak's summary (flatshare-bench soak report), whose hours the record's table.py reads."""
+
+
+@dataclass(frozen=True)
+class SoakHour:
+    """One of the soak's hours: the calls' replies, those over the SLO, and the agents' tokens a second, the gateway's
+    count of their prompt and generated tokens."""
+
+    hour: int
+    replies: int
+    over: int
+    tokens: float
+
+    @property
+    def share(self) -> float:
+        return self.over / self.replies
+
+
+@dataclass(frozen=True)
+class Soak:
+    """The soak: its SLO in ms (voice alone's p95 plus the margin), its hours, and the whole day's replies, those over
+    the SLO and the agents' tokens a second."""
+
+    slo: float
+    hours: tuple[SoakHour, ...]
+    replies: int
+    over: int
+    tokens: float
+
+    @property
+    def share(self) -> float:
+        return self.over / self.replies
+
+
+def soak(path: Path = SOAK) -> Soak:
+    """The soak's summary, its hours as table.py reads them. A day of other than 24 whole hours is an error."""
+    summary = json.loads(path.read_text())
+    if summary["status"] != "complete" or summary["window"]["hours"] != 24:
+        raise ValueError(f"{path}: not a complete 24-hour soak")
+    hours = tuple(
+        SoakHour(
+            h["hour"],
+            h["turns"]["replies"]["n"],
+            h["turns"]["replies"]["over_slo"],
+            h["gateway"]["background"]["tokens_per_s"],
+        )
+        for h in summary["hours"]
+    )
+    if [h.hour for h in hours] != list(range(24)):
+        raise ValueError(f"{path}: hours {[h.hour for h in hours]}, not 0 to 23")
+    overall = summary["overall"]
+    return Soak(
+        summary["slo"]["threshold_ms"],
+        hours,
+        overall["turns"]["replies"]["n"],
+        overall["turns"]["replies"]["over_slo"],
+        overall["gateway"]["background"]["tokens_per_s"],
+    )
+
+
+# The engine's starts and the kill drill ------------------------------------------------------------------------------
+
+DRILLS = RESULTS / "2026-10-25-drills"
+STARTS = {"warm": "start-engine", "cold": "start-engine-cold"}
+"""The engine's starts, by their caches: ops/drills/cold-start.sh engine, and engine --cold."""
+KILL = "v0.3-295-engine-kill"
+"""The engine-kill drill on the final build of 2026-10-25, BENCHMARKS' failure drills' row."""
+
+
+@dataclass(frozen=True)
+class Start:
+    """An engine's start as its journal shows it: each phase's end in seconds from the unit's start, in the order of
+    flatshare_bench.drills.START_PHASES."""
+
+    phases: tuple[tuple[str, float], ...]
+
+    def at(self, phase: str) -> float:
+        return dict(self.phases)[phase]
+
+
+@dataclass(frozen=True)
+class Kill:
+    """The engine-kill drill, each time in seconds from the kill: when the streams in flight ended (their error
+    events), the unit's last process exited (systemd's "Failed with result" line), systemd started it again, and the
+    first request after it succeeded; and that start's phases."""
+
+    streams: tuple[float, ...]
+    gone: float
+    restarted: float
+    first_success: float
+    start: Start
+
+
+def starts(root: Path = DRILLS) -> dict[str, Start]:
+    """The warm and the cold start, by flatshare_bench.drills.start_phases over each one's journal."""
+    from flatshare_bench.drills import START_PHASES, start_phases
+
+    found = {}
+    for kind, name in STARTS.items():
+        phases = start_phases((root / name / "lh-engine-journal.txt").read_text())
+        if [p for p, _ in phases] != [p for p, _ in START_PHASES]:
+            raise ValueError(f"{name}: its journal shows {phases}, not every phase")
+        found[kind] = Start(tuple(phases))
+    return found
+
+
+def kill(root: Path = DRILLS) -> Kill:
+    """The engine-kill drill: its record's event and streams (drill.json), its engine's journal from the kill on."""
+    from flatshare_bench.drills import START_PHASES, start_phases
+
+    record = json.loads((root / KILL / "drill.json").read_text())
+    event = record["event"]
+    journal = (root / KILL / "engine-journal.txt").read_text()
+    stamped = [
+        (float(line.split(" ", 1)[0]), line) for line in journal.splitlines() if line[:1].isdigit()
+    ]
+    [gone] = [t for t, line in stamped if "Failed with result" in line]
+    restarted = max(t for t, line in stamped if re.search(START_PHASES[0][1], line))
+    successes = [a["answered"] for a in record["probe"]["attempts"] if a["outcome"] == "ok"]
+    phases = start_phases(journal)
+    if [p for p, _ in phases] != [p for p, _ in START_PHASES]:
+        raise ValueError(f"{KILL}: its restart shows {phases}, not every phase")
+    return Kill(
+        tuple(sorted(s["ended"] - event for s in record["streams"])),
+        gone - event,
+        restarted - event,
+        min(successes) - event,
+        Start(tuple(phases)),
     )

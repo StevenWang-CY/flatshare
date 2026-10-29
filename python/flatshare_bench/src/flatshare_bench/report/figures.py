@@ -17,9 +17,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from flatshare_bench.e2.record import REPLY_TIMEOUT_MS
-from flatshare_bench.figure_style import LABEL, NARROW, NOTE, VALUE, WIDTH, fmt, measure, wrap
+from flatshare_bench.figure_style import LABEL, NARROW, NOTE, VALUE, WIDTH, Box, fmt, measure, wrap
 from flatshare_bench.report import data
 from flatshare_bench.report.charts import (
+    BAR_FILLS,
     STAGES,
     Chart,
     Key,
@@ -1580,6 +1581,446 @@ def cards(out: Path) -> list[Path]:
     return [s.save(out / "report-cards.svg")]
 
 
+# The step cap's five rounds ----------------------------------------------------------------------------------------
+
+STEP_CAP_ROWS = {
+    ("tuned", 512): ("Tuned vLLM", "512-token steps", "gray", "circle", False),
+    ("change", 512): ("The change", "512-token steps", "sky", "circle", False),
+    ("change", 256): ("The change", "256-token steps", "blue", "circle", True),
+}
+"""Each configuration of the step cap's comparison by (engine, step cap): its name, the note under it, its hue, its
+marker and whether the marker is filled (the configuration to deploy's)."""
+REQUIREMENT = 0.05
+"""The share of a run's replies the SLO allows over its threshold (docs/SLO.md, the two-card gate's requirement): the
+line the step cap's rounds and the soak's hours are read against."""
+ALLOWED = f"at most {REQUIREMENT:.0%}"
+
+
+def _step_cap_name(c: data.StepCap) -> str:
+    name, note, _, _, _ = STEP_CAP_ROWS[(c.engine, c.cap)]
+    return f"{name}, {note}"
+
+
+def _step_cap_description(caps: Sequence[data.StepCap]) -> str:
+    rows = "; ".join(
+        f"{_step_cap_name(c).lower() if c.engine == 'change' else _step_cap_name(c)}, "
+        f"{', '.join(str(r.over) for r in c.rounds)} of {c.rounds[0].replies} by round, {c.over} of {c.replies} "
+        f"in all, at {c.tokens:,.0f} agents' tokens a second"
+        for c in caps
+    )
+    return (
+        "In panel a, the share of each of five rounds' replies over that round's SLO beside 24 agent sessions, against "
+        f"the requirement of {ALLOWED}, and in panel b each round's agents' tokens a second over the calls' first 240 s "
+        f"with their median: {rows}."
+    )
+
+
+def step_cap(out: Path) -> list[Path]:
+    """report-step-cap.svg and its phone layout: the step cap that ships. (a) Each round's replies over its SLO for
+    tuned vLLM and the change at 512-token steps and at 256, against the requirement. (b) The agents' tokens a second
+    in each round, and their median."""
+    caps = data.step_caps()
+    description = _step_cap_description(caps)
+    return [
+        _step_cap_wide(caps, out / "report-step-cap.svg", description),
+        _step_cap_narrow(caps, out / "report-step-cap-narrow.svg", description),
+    ]
+
+
+def _step_cap_rounds(s: Chart, caps: Sequence[data.StepCap], x: Scale, y: Scale) -> None:
+    """Panel a's marks: in each round the three configurations' shares over the SLO, joined by a hair."""
+    for k in range(len(caps[0].rounds)):
+        shares = [c.rounds[k].share for c in caps]
+        at = x(caps[0].rounds[k].round)
+        s.trace([(at, y(min(shares))), (at, y(max(shares)))], "hair", wire=False)
+        for c in caps:
+            _, _, hue, shape, filled = STEP_CAP_ROWS[(c.engine, c.cap)]
+            s.mark(at, y(c.rounds[k].share), hue, shape, filled=filled)
+
+
+def _step_cap_requirement(s: Chart, x: Scale, y: Scale) -> None:
+    s.rule(x.start, x.end, y(REQUIREMENT), "slo")
+    s.text(x.start + 6, y(REQUIREMENT) - 8, ALLOWED, size=NOTE, cls="orange tint", halo=True)
+
+
+def _step_cap_tokens(s: Chart, c: data.StepCap, b: Scale, y: float) -> None:
+    """A configuration's agents' tokens a second, each round a tick, their median a marker with its value."""
+    _, _, hue, shape, _ = STEP_CAP_ROWS[(c.engine, c.cap)]
+    xs = [b(r.tokens) for r in c.rounds]
+    rug(s, xs, y, hue, shape, median=b(c.tokens), half=RUN_HALF)
+    s.text(max(xs) + 12, y + 6, f"{c.tokens:,.0f}", size=NOTE, halo=True)
+
+
+def _step_cap_wide(caps: Sequence[data.StepCap], path: Path, description: str) -> Path:
+    s = Chart(WIDTH, 520, "The step cap that ships", description)
+    rounds = [r.round for r in caps[0].rounds]
+    x = Scale(0.5, len(rounds) + 0.5, 96, 420)
+    y = Scale(0, 1, 440, 90)
+    s.text(24, 30, "(a) Replies over the SLO, each round", size=LABEL)
+    s.text(24, 64, "Share of the round's replies", size=NOTE, cls="soft")
+    marks = [0.0, 0.25, 0.5, 0.75, 1.0]
+    y_axis(s, y, marks, [pct(m) for m in marks], x.start, x.end)
+    x_axis(s, x, rounds, [str(r) for r in rounds], None, y.start, title="Round")
+    _step_cap_requirement(s, x, y)
+    _step_cap_rounds(s, caps, x, y)
+    # Each configuration named at its last round's mark, right of the plot.
+    for c in caps:
+        name, note, _, _, _ = STEP_CAP_ROWS[(c.engine, c.cap)]
+        last = y(c.rounds[-1].share)
+        s.text(x.end + 12, last + 6, f"{name}, {note}", size=NOTE, halo=True)
+    # (b) The agents' tokens a second, a row a configuration.
+    b = Scale(0, 4000, 840, 1040)
+    right = b.start - 24
+    s.text(660, 30, "(b) Agents' tokens/s", size=LABEL)
+    top, pitch = 90, 64
+    ys = [top + 34 + pitch * k for k in range(len(caps))]
+    ticks, labels = linear_ticks(4000, 2000)
+    last = x_axis(s, b, ticks, labels, top, ys[-1] + 34, title=TOKENS_TITLE)
+    for row_y, c in zip(ys, caps, strict=True):
+        name, note, _, _, _ = STEP_CAP_ROWS[(c.engine, c.cap)]
+        s.text(right, row_y - 4, name, size=VALUE, anchor="end")
+        s.text(right, row_y + 19, note, size=NOTE, anchor="end", cls="soft")
+        _step_cap_tokens(s, c, b, row_y)
+    s.height = max(last, y.start + 50) + 14
+    return s.save(path)
+
+
+def _step_cap_narrow(caps: Sequence[data.StepCap], path: Path, description: str) -> Path:
+    s = Chart(NARROW, 1000, "The step cap that ships", description)
+    x0 = 18
+    rounds = [r.round for r in caps[0].rounds]
+    s.text(x0, 30, "(a) Replies over the SLO, each round", size=LABEL)
+    entries = []
+    for c in caps:
+        name, note, hue, shape, filled = STEP_CAP_ROWS[(c.engine, c.cap)]
+        entries.append((mark_key(hue, shape, filled=filled), f"{name}, {note}"))
+    baseline = legend_columns(s, x0, 62, entries, columns=1, column=0)
+    s.text(x0, baseline + 40, "Share of the round's replies", size=NOTE, cls="soft")
+    x = Scale(0.5, len(rounds) + 0.5, 64, NARROW - 24)
+    y = Scale(0, 1, baseline + 360, baseline + 70)
+    marks = [0.0, 0.25, 0.5, 0.75, 1.0]
+    y_axis(s, y, marks, [pct(m) for m in marks], x.start, x.end)
+    last = x_axis(s, x, rounds, [str(r) for r in rounds], None, y.start, title="Round")
+    _step_cap_requirement(s, x, y)
+    _step_cap_rounds(s, caps, x, y)
+    # (b) The agents' tokens a second, a band a configuration under its name.
+    b = Scale(0, 4000, x0, 300)
+    yy = last + 56
+    s.text(x0, yy, "(b) Agents' tokens/s", size=LABEL)
+    yy += 12
+    marks_b = [0, 2000, 4000]
+    for c in caps:
+        name, note, _, _, _ = STEP_CAP_ROWS[(c.engine, c.cap)]
+        box = s.text(x0, yy + 18, name, size=VALUE)
+        s.text(box.x1 + 7, yy + 18, note, size=NOTE, cls="soft")
+        band = yy + 40
+        band_grid(s, b, marks_b, band - 12, band + 12)
+        _step_cap_tokens(s, c, b, band)
+        yy = band + 16
+    last = x_axis(s, b, marks_b, linear_ticks(4000, 2000)[1], None, yy)
+    for line in wrap(TOKENS_TITLE, NARROW - 36, NOTE):
+        last += 25
+        s.text(x0, last, line, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
+
+
+# The 24-hour soak ---------------------------------------------------------------------------------------------------
+
+SOAK_SHARE_TOP = 0.06
+"""Panel a's scale, past the worst hour's 5.5%."""
+SOAK_TOKENS_TOP = 10000
+"""Panel b's scale, past the first hour's 9,300 tokens a second."""
+
+
+def _soak_description(soak: data.Soak) -> str:
+    worst = max(soak.hours, key=lambda h: h.share)
+    first, rest = soak.hours[0], soak.hours[1:]
+    return (
+        f"Each of the soak's 24 hours as a column: in panel a, the share of that hour's replies over the SLO of "
+        f"{soak.slo:,.0f} ms against the requirement of {ALLOWED}, {soak.over} of {soak.replies:,} replies "
+        f"({soak.share:.1%}) over the day, at most {worst.over} of {worst.replies} ({worst.share:.1%}) in hour "
+        f"{worst.hour}; in panel b, the agents' tokens a second, {soak.tokens:,.0f} over the day, "
+        f"{first.tokens:,.0f} in hour 0 and {min(h.tokens for h in rest):,.0f} to "
+        f"{max(h.tokens for h in rest):,.0f} in each hour after."
+    )
+
+
+def _columns(s: Chart, hours: Sequence[float], x: Scale, y: Scale, width: float) -> None:
+    """Each hour's value as a column from the scale's start, pale in the change's blue, as the charts' bars are."""
+    for hour, value in enumerate(hours):
+        left = x(hour) - width / 2
+        top = y(value)
+        s.rect(left, top, width, y.start - top, f"g-{BAR_FILLS['blue']}")
+        s.marks.append(Box(left, top, left + width, y.start, f"hour {hour}'s column"))
+
+
+def _day_rule(s: Chart, x: Scale, y: Scale, value: float, text: str, *, wide: bool) -> None:
+    """The whole day's value as a dotted rule across the hours, named right of the plot, or on a phone in a key over
+    the plot's top right."""
+    s.trace([(x.start, y(value)), (x.end, y(value))], "gray trace dotted", wire=False)
+    s.rules.append(((x.start, y(value)), (x.end, y(value))))
+    s.painted.append(len(s.items) - 1)
+    if wide:
+        s.text(x.end + 10, y(value) + 6, text, size=NOTE, cls="soft")
+        return
+    entry = [(line_key("gray trace dotted", 24), text)]
+    legend(s, x.end - legend_width(entry), y.end - 14, entry, width=x.end - x.start)
+
+
+def soak(out: Path) -> list[Path]:
+    """report-soak.svg and its phone layout: the 24-hour soak by hour. (a) Each hour's replies over the SLO, against
+    the requirement, beside the day's share. (b) The agents' tokens a second, beside the day's."""
+    s_data = data.soak()
+    description = _soak_description(s_data)
+    return [
+        _soak_layout(s_data, out / "report-soak.svg", description, WIDTH),
+        _soak_layout(s_data, out / "report-soak-narrow.svg", description, NARROW),
+    ]
+
+
+def _soak_layout(soak: data.Soak, path: Path, description: str, width: float) -> Path:
+    wide = width == WIDTH
+    s = Chart(width, 800, "The 24-hour soak", description)
+    x0, x1 = (96.0, WIDTH - 190.0) if wide else (64.0, NARROW - 24.0)
+    x = Scale(-0.5, 23.5, x0, x1)
+    column = (x(1) - x(0)) * 0.62
+    worst = max(soak.hours, key=lambda h: h.share)
+    hour_ticks = [0, 6, 12, 18, 23]
+    # (a) The replies over the SLO, by hour.
+    s.text(24 if wide else 18, 30, "(a) Replies over the SLO, by hour", size=LABEL)
+    s.text(24 if wide else 18, 64, "Share of the hour's replies", size=NOTE, cls="soft")
+    a = Scale(0, SOAK_SHARE_TOP, 300, 100)
+    ticks = [0.0, 0.02, 0.04, 0.06]
+    y_axis(s, a, ticks, [pct(v) for v in ticks], x.start, x.end)
+    _columns(s, [h.share for h in soak.hours], x, a, column)
+    s.rule(x.start, x.end, a(REQUIREMENT), "slo")
+    if wide:
+        s.text(x.end + 10, a(REQUIREMENT) + 6, ALLOWED, size=NOTE, cls="orange tint")
+    else:
+        s.text(
+            x.end,
+            a(REQUIREMENT) - 8,
+            ALLOWED,
+            size=NOTE,
+            anchor="end",
+            cls="orange tint",
+            halo=True,
+        )
+    s.text(
+        x(worst.hour) + column / 2 + 6,
+        a(worst.share) + 2,
+        f"{worst.share:.1%}",
+        size=NOTE,
+        halo=True,
+    )
+    _day_rule(s, x, a, soak.share, f"the day, {soak.share:.1%}", wide=wide)
+    x_axis(s, x, hour_ticks, [str(h) for h in hour_ticks], None, a.start)
+    # (b) The agents' tokens a second, by hour.
+    top_b = a.start + (96 if wide else 120)
+    s.text(
+        24 if wide else 18,
+        top_b - (34 if wide else 58),
+        "(b) Agents' tokens/s, by hour",
+        size=LABEL,
+    )
+    b = Scale(0, SOAK_TOKENS_TOP, top_b + 190, top_b)
+    marks_b, labels_b = linear_ticks(SOAK_TOKENS_TOP, 5000)
+    y_axis(s, b, marks_b, labels_b, x.start, x.end)
+    _columns(s, [h.tokens for h in soak.hours], x, b, column)
+    first = soak.hours[0]
+    s.text(
+        x(0) + column / 2 + 6, b(first.tokens) + 12, f"{first.tokens:,.0f}", size=NOTE, halo=True
+    )
+    _day_rule(s, x, b, soak.tokens, f"the day, {soak.tokens:,.0f}", wide=wide)
+    last = x_axis(
+        s,
+        x,
+        hour_ticks,
+        [str(h) for h in hour_ticks],
+        None,
+        b.start,
+        title="Hours since the soak began",
+    )
+    s.height = last + 14
+    return s.save(path)
+
+
+# The engine's starts and the kill drill ------------------------------------------------------------------------------
+
+PHASES = (
+    ("load", "process, weights"),
+    ("kv", "compile, KV cache"),
+    ("graphs", "kernels, CUDA graphs"),
+    ("serve", "until it serves"),
+)
+"""The phases of a start's bar, each its key and its name in the legend, from the unit's start
+(flatshare_bench.drills.START_PHASES): the engine's process until its weights are loaded, torch.compile and the
+profiling run until its KV cache is allocated, the kernels' warmup and JIT builds until its CUDA graphs are captured,
+and its server until it serves: its unit ready (the health check), or after the kill a request answered. Before a
+restart's, the killed engine down ("down", its unit's teardown and systemd's restart delay), which its row's note
+names."""
+PHASE_ENDS = {
+    "load": "the weights are loaded",
+    "kv": "the KV cache is allocated",
+    "graphs": "the CUDA graphs are captured",
+}
+"""The start phase (drills.START_PHASES) each of the bar's phases ends at."""
+READY = "the unit is ready (its health check)"
+PHASE_CSS = (
+    "svg{--phase-graphs:#858d99}@media(prefers-color-scheme:dark){svg{--phase-graphs:#969fab}}"
+    ".p-down{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1;stroke-dasharray:4 3}"
+    ".p-load{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}"
+    ".p-kv{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}"
+    ".p-graphs{fill:var(--phase-graphs);stroke:var(--bar-line);stroke-width:1.1}"
+    ".p-serve{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}"
+)
+"""The phases' fills: the engine down, open and dashed; a start's three long phases in grays that darken with the
+start (figure_style's pale and mid gray, then a gray that clears a delta E (OKLab) of 15 from the mid gray in each
+theme); its last seconds open."""
+STARTS_TOP = 540
+"""The time axis, past the cold start's 531.8 s."""
+
+
+class Phases(Chart):
+    """A chart whose style also holds the phases' fills (PHASE_CSS)."""
+
+    def render(self) -> str:
+        return super().render().replace("</style>", PHASE_CSS + "</style>", 1)
+
+    def phases(
+        self, x: Scale, y: float, thick: float, spans: Sequence[tuple[str, float, float]]
+    ) -> None:
+        """A bar of ``spans`` (key, from, to in seconds), its free end rounded, each a mark no label may cover."""
+        for k, (key, start, end) in enumerate(spans):
+            x0, x1 = x(start), x(end)
+            self._hpath(x0, y, x1 - x0, thick, f"p-{key}", 3.0 if k == len(spans) - 1 else 0.0)
+            self.marks.append(Box(x0, y, x1, y + thick, key))
+
+
+def _phase_key(key: str) -> Key:
+    def draw(s: Chart, x: float, baseline: float) -> None:
+        s._hpath(x, baseline - 0.66 * NOTE, 22, 0.7 * NOTE, f"p-{key}", 0.0)
+
+    return Key(22, draw)
+
+
+def _start_spans(start: data.Start, offset: float, end: float) -> list[tuple[str, float, float]]:
+    """A start's phases from ``offset`` seconds, the last until ``end``."""
+    spans, at = [], offset
+    for key, phase in PHASE_ENDS.items():
+        to = offset + start.at(phase)
+        spans.append((key, at, to))
+        at = to
+    return [*spans, ("serve", at, end)]
+
+
+def _starts_rows(
+    warm: data.Start, cold: data.Start, kill: data.Kill
+) -> list[tuple[str, str, list[tuple[str, float, float]], str]]:
+    """Each bar: its name and note, its spans, and the label at its end."""
+    ready_warm, ready_cold = warm.at(READY), cold.at(READY)
+    return [
+        (
+            "The engine killed",
+            f"down {kill.restarted:.1f} s, then a warm start",
+            [
+                ("down", 0.0, kill.restarted),
+                *_start_spans(kill.start, kill.restarted, kill.first_success),
+            ],
+            f"a request answered, {kill.first_success:.1f} s",
+        ),
+        (
+            "A warm start",
+            "compile and JIT caches full",
+            _start_spans(warm, 0.0, ready_warm),
+            f"ready, {ready_warm:.1f} s",
+        ),
+        (
+            "A cold start",
+            "empty caches, as on a new host",
+            _start_spans(cold, 0.0, ready_cold),
+            f"ready, {ready_cold:.1f} s",
+        ),
+    ]
+
+
+def _starts_description(warm: data.Start, cold: data.Start, kill: data.Kill) -> str:
+    weights, kv, graphs = (cold.at(PHASE_ENDS[key]) for key in ("load", "kv", "graphs"))
+    return (
+        "Three bars of the engine's phases on one axis of seconds: killed mid-decode, it was down "
+        f"{kill.restarted:.1f} s, its unit's last process gone {kill.gone:.1f} s after the kill and systemd's restart "
+        f"{kill.restarted - kill.gone:.1f} s later, and its warm start listened "
+        f"{kill.start.at('the server listens'):.1f} s after the restart, a request answered "
+        f"{kill.first_success:.1f} s after the kill; a warm start was ready at {warm.at(READY):.1f} s, its weights "
+        f"loaded at {warm.at(PHASE_ENDS['load']):.1f} s and its CUDA graphs captured at "
+        f"{warm.at(PHASE_ENDS['graphs']):.1f} s; and a cold start, with empty caches, was ready at "
+        f"{cold.at(READY):.1f} s, its weights at {weights:.1f} s, its KV cache at {kv:.1f} s after compiling and "
+        f"profiling and its CUDA graphs at {graphs:.1f} s after the kernels' warmup and JIT builds."
+    )
+
+
+def starts(out: Path) -> list[Path]:
+    """report-starts.svg and its phone layout: the engine's recovery from a kill, its warm start and its start on empty
+    caches, each a bar of its phases on one time axis."""
+    found = data.starts()
+    warm, cold, kill = found["warm"], found["cold"], data.kill()
+    rows = _starts_rows(warm, cold, kill)
+    description = _starts_description(warm, cold, kill)
+    return [
+        _starts_layout(rows, out / "report-starts.svg", description, WIDTH),
+        _starts_layout(rows, out / "report-starts-narrow.svg", description, NARROW),
+    ]
+
+
+def _starts_layout(
+    rows: list[tuple[str, str, list[tuple[str, float, float]], str]],
+    path: Path,
+    description: str,
+    width: float,
+) -> Path:
+    s = Phases(width, 800, "The engine's starts and its recovery", description)
+    entries = [(_phase_key(key), name) for key, name in PHASES]
+    title = "Seconds from the kill, or from the unit's start"
+    if width == WIDTH:
+        legend(s, 24, 30, entries, width=WIDTH - 48)
+        x = Scale(0, STARTS_TOP, 300, 976)
+        top, pitch, thick = 64.0, 70.0, 24.0
+        ys = [top + 30 + pitch * k for k in range(len(rows))]
+        bottom = ys[-1] + thick + 20
+        ticks = list(range(0, STARTS_TOP + 1, 60))
+        last = x_axis(s, x, ticks, [str(t) for t in ticks], top, bottom, title=title)
+        for y, (name, note, spans, end) in zip(ys, rows, strict=True):
+            s.text(276, y + 8, name, size=VALUE, anchor="end")
+            s.text(276, y + 31, note, size=NOTE, anchor="end", cls="soft")
+            s.phases(x, y, thick, spans)
+            s.text(x(spans[-1][2]) + 10, y + thick / 2 + 6, end, size=NOTE, halo=True)
+    else:
+        x0 = 18.0
+        y = legend(s, x0, 30, entries, width=NARROW - 2 * x0, pitch=25) + 16
+        x = Scale(0, STARTS_TOP, x0, NARROW - x0)
+        thick = 22.0
+        ticks = [0, 120, 240, 360, 480]
+        for name, note, spans, end in rows:
+            s.text(x0, y + 20, name, size=VALUE)
+            s.text(x0, y + 42, note, size=NOTE, cls="soft")
+            band = y + 52
+            band_grid(s, x, ticks, band - 4, band + thick + 4)
+            s.phases(x, band, thick, spans)
+            tip = x(spans[-1][2])
+            if tip + 10 + measure(end, NOTE) <= NARROW - 4:
+                s.text(tip + 10, band + thick / 2 + 6, end, size=NOTE, halo=True)
+            else:  # over the bar's end, on its note's line
+                s.text(tip, y + 42, end, size=NOTE, anchor="end")
+            y = band + thick + 10
+        last = x_axis(s, x, ticks, [str(t) for t in ticks], None, y)
+        for line in wrap(title, NARROW - 2 * x0, NOTE):
+            last += 25
+            s.text(x0, last, line, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
+
+
 # Every figure -----------------------------------------------------------------------------------------------------
 
 FIGURES = (
@@ -1596,6 +2037,9 @@ FIGURES = (
     margin,
     a100,
     cards,
+    step_cap,
+    soak,
+    starts,
 )
 
 

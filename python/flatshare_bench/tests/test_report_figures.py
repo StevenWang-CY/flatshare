@@ -90,6 +90,12 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
             "margin",
             "a100",
             "cards",
+            "step-cap",
+            "step-cap-narrow",
+            "soak",
+            "soak-narrow",
+            "starts",
+            "starts-narrow",
         )
     )
 
@@ -832,3 +838,131 @@ def test_the_two_cards_read_only_the_rounds_their_gate_counts(tmp_path: Path) ->
         (tmp_path / campaign).symlink_to(data.TWO_CARDS / campaign, target_is_directory=True)
     (tmp_path / "rg-r4").symlink_to(data.TWO_CARDS / "rg-r1", target_is_directory=True)
     assert data.two_cards(tmp_path) == data.two_cards()
+
+
+# The deployed result: the step cap, the soak and the engine's starts -------------------------------------------------
+
+
+def test_the_step_cap_is_its_rounds_as_gate_py_counts_them(drawn: dict[str, Path]) -> None:
+    gate = rounds_gate()
+    caps = data.step_caps()
+    assert [c.point for c in caps] == list(gate.SWEEP) == list(data.STEP_CAP_POINTS)
+    assert all(c.point.endswith("-s24") for c in caps)  # beside 24 agent sessions
+    assert [(c.engine, c.cap) for c in caps] == [("tuned", 512), ("change", 512), ("change", 256)]
+    assert figures.REQUIREMENT == gate.REQUIREMENT == 0.05
+    # Each configuration's lines in gate.py's sweep: its replies over the SLO pooled and by round, and its agents'
+    # median over the rounds.
+    printed = gate.sweep(data.TWO_CARDS).splitlines()
+    for c in caps:
+        [line, by_round] = [line for line in printed if line.startswith(f"| {c.point} |")]
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        assert cells[4] == f"{c.over}/{c.replies} ({100 * c.over / c.replies:.1f}%)", line
+        assert cells[5] == f"{c.tokens:,.0f}", line
+        rounds = " | ".join(f"{r.over}/{r.replies}" for r in c.rounds)
+        assert by_round == f"| {c.point} | {rounds} |", by_round
+        assert c.tokens == statistics.median(r.tokens for r in c.rounds)
+    assert [r.round for c in caps for r in c.rounds] == [1, 2, 3, 4, 5] * 3
+    assert {r.replies for c in caps for r in c.rounds} == {59}
+    assert [(c.over, c.replies) for c in caps] == [(261, 295), (94, 295), (44, 295)]
+    assert [[r.over for r in c.rounds] for c in caps] == [
+        [53, 55, 55, 54, 44],
+        [16, 29, 25, 9, 15],
+        [10, 17, 10, 4, 3],
+    ]
+    assert [f"{c.tokens:,.0f}" for c in caps] == ["3,399", "3,303", "3,067"]
+    # The claim its captions open with, true of every round: the change had fewer replies over the SLO at 256 tokens
+    # a step than at 512 (and tuned vLLM more than either), and no configuration was within the requirement.
+    tuned, at512, at256 = caps
+    rounds = zip(tuned.rounds, at512.rounds, at256.rounds, strict=True)
+    assert all(a.over > b.over > c.over for a, b, c in rounds)
+    assert all(r.share > figures.REQUIREMENT for c in caps for r in c.rounds)
+    assert {f"{c.tokens:,.0f}" for c in caps} <= set(text_of(drawn["report-step-cap.svg"]))
+
+
+def soak_table() -> ModuleType:
+    """The soak record's own table.py, loaded from its file."""
+    spec = importlib.util.spec_from_file_location("soak_table", data.SOAK.parents[1] / "table.py")
+    assert spec is not None and spec.loader is not None
+    table = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(table)
+    return table
+
+
+def test_the_soak_is_its_summarys_hours(drawn: dict[str, Path]) -> None:
+    soak = data.soak()
+    table = soak_table()
+    assert [h.hour for h in soak.hours] == list(range(24))
+    assert sum(h.replies for h in soak.hours) == soak.replies == 5058
+    assert sum(h.over for h in soak.hours) == soak.over == 74
+    assert (f"{soak.share:.1%}", f"{soak.tokens:,.0f}", f"{soak.slo:,.0f}") == (
+        "1.5%",
+        "3,529",
+        "1,976",
+    )
+    # The record's own tables: the day's row, and the least and the most of the hours.
+    [day] = [
+        line
+        for line in table.table().splitlines()
+        if line.startswith("| The serving arrangement |")
+    ]
+    assert f"| {soak.replies:,} | {soak.over} ({soak.share:.1%}) |" in day, day
+    assert f"| {soak.tokens:,.0f} |" in day, day
+    rows = {
+        line.split("|")[1].strip(): line
+        for line in table.hours().splitlines()
+        if line.startswith("| ")
+    }
+    for name, pick in (("Least", min), ("Most", max)):
+        cells = [cell.strip() for cell in rows[name].strip("|").split("|")]
+        assert cells[2] == f"{pick(h.share for h in soak.hours):.1%}", rows[name]
+        assert cells[5] == f"{pick(h.tokens for h in soak.hours):,.0f}", rows[name]
+    # The claim its captions open with: one hour over the requirement, hour 4, 14 of its 254 replies.
+    assert [(h.hour, h.over, h.replies) for h in soak.hours if h.share > figures.REQUIREMENT] == [
+        (4, 14, 254)
+    ]
+    assert f"{max(h.share for h in soak.hours):.1%}" == "5.5%"
+    # The agents: 9,300 tokens a second in hour 0, when AIPerf resumes its 14 sessions at once, 582 to 5,402 after.
+    first, *rest = soak.hours
+    assert f"{first.tokens:,.0f}" == "9,300"
+    assert (f"{min(h.tokens for h in rest):,.0f}", f"{max(h.tokens for h in rest):,.0f}") == (
+        "582",
+        "5,402",
+    )
+    aiperf = (data.SOAK.parents[1] / "aiperf-start.txt").read_text()
+    assert "resuming 14 trajectory sessions (burst" in aiperf
+    texts = set(text_of(drawn["report-soak.svg"]))
+    assert {"5.5%", "9,300", "the day, 1.5%", "the day, 3,529", figures.ALLOWED} <= texts
+
+
+def test_the_starts_are_the_drills_journals(drawn: dict[str, Path]) -> None:
+    starts, kill = data.starts(), data.kill()
+    # Each start's phases as its record's report.txt prints them, from the same journal.
+    for kind, name in data.STARTS.items():
+        printed = re.findall(
+            r"^ +([\d.]+) s  (.+)$", (data.DRILLS / name / "report.txt").read_text(), re.M
+        )
+        assert [(phase, f"{at:.1f}") for phase, at in starts[kind].phases] == [
+            (p, t) for t, p in printed
+        ], kind
+    warm, cold = starts["warm"], starts["cold"]
+    assert (f"{warm.at(figures.READY):.1f}", f"{cold.at(figures.READY):.1f}") == ("88.8", "531.8")
+    # The kill, as its record's report gives it and as BENCHMARKS and the report do: the unit's last process gone
+    # 7.6 s after it, systemd's restart 5.1 s later, the warm start listening 92.1 s after that, and a request
+    # answered 106.2 s after the kill.
+    report = (data.DRILLS / data.KILL / "report.txt").read_text()
+    assert f"the first success answered {kill.first_success:.1f} s after the engine kill" in report
+    assert (f"{kill.gone:.1f}", f"{kill.restarted - kill.gone:.1f}") == ("7.6", "5.1")
+    assert f"{kill.start.at('the server listens'):.1f}" == "92.1"
+    assert f"{kill.first_success:.1f}" == "106.2"
+    assert len(kill.streams) == 6 and max(kill.streams) < 0.012
+    # The claim its captions open with: the warm start most of the recovery, and a start on empty caches six times
+    # a warm one.
+    assert (kill.first_success - kill.restarted) / kill.first_success > 0.5
+    assert round(cold.at(figures.READY) / warm.at(figures.READY)) == 6
+    texts = set(text_of(drawn["report-starts.svg"]))
+    assert {
+        "a request answered, 106.2 s",
+        "ready, 88.8 s",
+        "ready, 531.8 s",
+        "down 12.7 s, then a warm start",
+    } <= texts
