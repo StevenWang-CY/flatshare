@@ -22,6 +22,7 @@ from flatshare_bench.report import data
 from flatshare_bench.report.charts import (
     STAGES,
     Chart,
+    Key,
     Scale,
     band_grid,
     column_rug,
@@ -537,8 +538,11 @@ def window(out: Path) -> list[Path]:
 # The rules' cost per step -----------------------------------------------------------------------------------------
 
 DECODE_STEP_MS = (16, 20)
-"""A decode step on the RTX 5060 Ti, from the gaps between a reply's tokens with agent prefill held back (the
-prefill case's 16-20 ms a token, docs/BENCHMARKS.md), against which the figure sets the scheduler's cost."""
+"""A voice reply's decode step on the RTX 5060 Ti beside agent prefill that the hold keeps back, from the gaps between
+its tokens (the prefill case's 16-20 ms a token, docs/BENCHMARKS.md): one of the box's steps against which the figure
+sets the scheduler's cost, with a reply's step alone (W6) and the agents' at 24 session trees (the rounds)."""
+BOX_TICKS = (100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000)
+"""The box's CPU's axis, in µs."""
 
 
 def _step_row(cost: data.StepCost) -> str:
@@ -562,20 +566,37 @@ def _step_description(costs: Sequence[data.StepCost]) -> str:
     least, most = (
         f"{f(c.added for c in costs):+,.0f}".replace("-", "\N{MINUS SIGN}") for f in (min, max)
     )
+    lo, hi = DECODE_STEP_MS
     return (
         "The wall time of one call of vLLM 0.32.0's Scheduler.schedule() on the host's CPU in each state, on a "
-        f"log scale beside a decode step on the RTX 5060 Ti of {DECODE_STEP_MS[0]} to {DECODE_STEP_MS[1]} ms, for "
-        f"stock vLLM, the change with its switches off (within {worst.off_ratio:.1%} of stock's in every state) and "
-        f"the change as deployed (its change to the step from {least} to {most} µs): {rows}."
+        f"log scale whose second axis is the box's CPU, {data.box_cpu():.2f} times as long, beside the box's steps "
+        f"(a voice reply's alone, {data.voice_step_ms():.0f} ms; beside held agent prefill, {lo} to {hi} ms; the "
+        f"agents' at 24 session trees, {data.agents_step_ms():.0f} ms), for stock vLLM, the change with its switches "
+        f"off (within {worst.off_ratio:.1%} of stock's in every state) and the change as deployed (its change to the "
+        f"step from {least} to {most} µs): {rows}."
     )
+
+
+def _band_key() -> Key:
+    """The box's band of steps in a legend: a short stretch of it."""
+
+    def draw(s: Chart, x: float, baseline: float) -> None:
+        s.rect(x, baseline - 0.75 * NOTE, 22, 0.9 * NOTE, "gray band")
+
+    return Key(22, draw)
 
 
 def step_cost(out: Path) -> list[Path]:
     """report-step-cost.svg: the rules' cost per scheduler step on the host, a row per state under its scenario, the
     PRs' tables' steady states and then the serving profile's: stock vLLM's step, the change's with its switches off
     (on stock's, within a few percent), and the change's as deployed, with what it adds, on a log scale that also
-    holds a decode step on the RTX 5060 Ti."""
+    holds a decode step on the RTX 5060 Ti. Its second axis is the box's CPU, the host's times bench_host.py's factor
+    between them, on which the box's own steps stand: a voice reply's alone and beside held agent prefill, and the
+    agents' at 24 session trees."""
     costs = data.step_costs()
+    box = data.box_cpu()
+    alone, agents = data.voice_step_ms(), data.agents_step_ms()
+    lo, hi = DECODE_STEP_MS
     s = Chart(WIDTH, 600, "The rules' cost per scheduler step", _step_description(costs))
     right = 372
     x = Scale(20, 30000, 400, 1090, log=True)
@@ -583,9 +604,27 @@ def step_cost(out: Path) -> list[Path]:
         (mark_key("gray"), "vLLM 0.32"),
         (mark_key("gray", "dot", filled=True), "the change, its switches off"),
         (mark_key("blue", filled=True), "the change as deployed"),
+        (line_key("gray trace dotted"), f"a reply's step on the box alone, {alone:.0f} ms"),
+        (_band_key(), f"beside held agent prefill, {lo}\N{EN DASH}{hi} ms"),
+        (line_key("gray trace dashed"), f"the agents' step at 24 session trees, {agents:.0f} ms"),
     ]
-    legend(s, x.start, 30, entries, width=x.end - x.start)
-    top = 76
+    last = legend(s, x.start, 30, entries, width=x.end - x.start)
+    top = last + 80
+    for tick in BOX_TICKS:
+        if x.lo <= tick / box <= x.hi:
+            s.vrule(x(tick / box), top - 5, top, "axis")
+            s.text(
+                x(tick / box), top - 12, f"{tick / 1000:g}", size=NOTE, anchor="middle", cls="mute"
+            )
+    s.text(
+        (x.start + x.end) / 2,
+        top - 40,
+        f"the same on the box's CPU, {box:.2f} times as long (ms)",
+        size=NOTE,
+        anchor="middle",
+        cls="soft",
+    )
+    s.rule(x.start, x.end, top)
     layout = []
     y = top + 4
     scenario = serving = None
@@ -609,8 +648,11 @@ def step_cost(out: Path) -> list[Path]:
         layout.append((y + 14, cost))
         y += 30
     bottom = y + 6
-    lo, hi = DECODE_STEP_MS
-    s.rect(x(lo * 1000), top, x(hi * 1000) - x(lo * 1000), bottom - top, "gray band")
+    s.rect(
+        x(lo * 1000 / box), top, x(hi * 1000 / box) - x(lo * 1000 / box), bottom - top, "gray band"
+    )
+    s.vrule(x(alone * 1000 / box), top, bottom, "gray trace dotted")
+    s.vrule(x(agents * 1000 / box), top, bottom, "gray trace dashed")
     ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
     last = x_axis(
         s,
@@ -621,16 +663,6 @@ def step_cost(out: Path) -> list[Path]:
         bottom,
         title="Scheduler.schedule()'s wall time a step on the host (ms, log scale)",
     )
-    for k, line in enumerate(("a decode step on", f"the RTX 5060 Ti, {lo}\N{EN DASH}{hi} ms")):
-        s.text(
-            x(lo * 1000) - 10,
-            top + 26 + 22 * k,
-            line,
-            size=NOTE,
-            anchor="end",
-            cls="soft",
-            halo=True,
-        )
     for row_y, cost in layout:
         s.text(right, row_y + 6, _step_row(cost), size=VALUE, anchor="end")
         s.trace([(x(cost.off), row_y), (x(cost.on), row_y)], "blue trace", wire=False)

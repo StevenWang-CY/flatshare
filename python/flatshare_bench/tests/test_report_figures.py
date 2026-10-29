@@ -436,6 +436,19 @@ def test_the_step_costs_are_the_baselines_cells() -> None:
     assert serving == [("idle", 2, ""), ("hold", 2, ""), ("nofit", 16, ""), ("fire", 2, "")]
 
 
+def test_the_step_costs_stand_beside_the_boxs_cpu_and_steps() -> None:
+    """The box's CPU takes 1.68 times as long as the host's at bench_host.py's workload, by its median against the
+    median of the host's as the baseline's rounds ended; a reply's step on the box alone is W6's median token gap, and
+    the agents' at 24 session trees their mean token gap at the median of the three rounds that the two-card verdict
+    counts (38.07, 38.23 and 30.49 ms; the sweep's other two rounds measured 37.26 and 34.61)."""
+    box = json.loads(data.BOX_HOST.read_text())["python_ms"]["p50"]
+    host = [load["python_ms"]["p50"] for load in json.loads(data.STEP_COSTS.read_text())["load"]]
+    assert data.box_cpu() == box / statistics.median(host) and box == pytest.approx(381.1, abs=0.01)
+    assert f"{data.box_cpu():.2f}" == "1.68"
+    assert data.voice_step_ms() == 12.08
+    assert data.agents_step_ms() == 38.07
+
+
 HEADLINE = {
     # runs, the median V2V p95 and its range, the agents' tokens a second over the first 240 s (ms, tokens/s)
     data.VOICE_ALONE: (5, 1784.3, 1764.2, 1818.7, None),

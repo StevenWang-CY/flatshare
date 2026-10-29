@@ -1,153 +1,179 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1068" viewBox="0 0 1120 1068" font-size="21" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1154" viewBox="0 0 1120 1154" font-size="21" role="img" aria-labelledby="title desc">
 <title id="title">The rules' cost per scheduler step</title>
-<desc id="desc">The wall time of one call of vLLM 0.32.0's Scheduler.schedule() on the host's CPU in each state, on a log scale beside a decode step on the RTX 5060 Ti of 16 to 20 ms, for stock vLLM, the change with its switches off (within 3.1% of stock's in every state) and the change as deployed (its change to the step from −30 to +1,539 µs): only lower-priority work, 16 running: 370, 374 and 437 µs; only lower-priority work, 64 running: 837, 842 and 931 µs; only lower-priority work, 256 running: 2,856, 2,844 and 3,010 µs; only lower-priority work, 64 running, a 999-block prefix hit: 1,587, 1,581 and 1,630 µs; only lower-priority work, 64 running, no prefix hit: 677, 685 and 721 µs; a waiting turn needs more room than two victims free, 16 running: 322, 325 and 645 µs; a waiting turn needs more room than two victims free, 64 running: 825, 826 and 1,190 µs; a waiting turn needs more room than two victims free, 256 running: 2,636, 2,644 and 3,085 µs; a waiting turn needs more room than two victims free, 256 running, 10 waiting: 2,711, 2,740 and 3,204 µs; a waiting turn needs more room than two victims free, 64 running, a 999-block prefix hit: 1,624, 1,635 and 3,174 µs; every running slot taken, 16 running: 183, 185 and 343 µs; every running slot taken, 64 running: 649, 655 and 822 µs; every running slot taken, 256 running: 2,455, 2,463 and 2,723 µs; in the serving profile, only agents, 2 running: 66, 68 and 84 µs; in the serving profile, a reply's first tokens, an agent waiting that fits, 2 running: 112, 114 and 84 µs; in the serving profile, a waiting turn needs more room than two victims free, 16 running: 223, 228 and 299 µs; in the serving profile, the step that preempts for a waiting turn, 2 running: 189, 194 and 661 µs.</desc>
+<desc id="desc">The wall time of one call of vLLM 0.32.0's Scheduler.schedule() on the host's CPU in each state, on a log scale whose second axis is the box's CPU, 1.68 times as long, beside the box's steps (a voice reply's alone, 12 ms; beside held agent prefill, 16 to 20 ms; the agents' at 24 session trees, 38 ms), for stock vLLM, the change with its switches off (within 3.1% of stock's in every state) and the change as deployed (its change to the step from −30 to +1,539 µs): only lower-priority work, 16 running: 370, 374 and 437 µs; only lower-priority work, 64 running: 837, 842 and 931 µs; only lower-priority work, 256 running: 2,856, 2,844 and 3,010 µs; only lower-priority work, 64 running, a 999-block prefix hit: 1,587, 1,581 and 1,630 µs; only lower-priority work, 64 running, no prefix hit: 677, 685 and 721 µs; a waiting turn needs more room than two victims free, 16 running: 322, 325 and 645 µs; a waiting turn needs more room than two victims free, 64 running: 825, 826 and 1,190 µs; a waiting turn needs more room than two victims free, 256 running: 2,636, 2,644 and 3,085 µs; a waiting turn needs more room than two victims free, 256 running, 10 waiting: 2,711, 2,740 and 3,204 µs; a waiting turn needs more room than two victims free, 64 running, a 999-block prefix hit: 1,624, 1,635 and 3,174 µs; every running slot taken, 16 running: 183, 185 and 343 µs; every running slot taken, 64 running: 649, 655 and 822 µs; every running slot taken, 256 running: 2,455, 2,463 and 2,723 µs; in the serving profile, only agents, 2 running: 66, 68 and 84 µs; in the serving profile, a reply's first tokens, an agent waiting that fits, 2 running: 112, 114 and 84 µs; in the serving profile, a waiting turn needs more room than two victims free, 16 running: 223, 228 and 299 µs; in the serving profile, the step that preempts for a waiting turn, 2 running: 189, 194 and 661 µs.</desc>
 <!-- Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 (python/flatshare_bench/src/flatshare_bench/fonts/OFL.txt). -->
-<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}svg{--sky:#6fa1e3;--stage-endpointing:#dde1e7;--stage-wait:#9d87d8;--stage-decode:#a4dac1;--stage-tts:#8a929e;--stage-transport:#f3f4f6}@media(prefers-color-scheme:dark){svg{--sky:#3b69a6;--stage-endpointing:#2d333b;--stage-wait:#6a56ad;--stage-decode:#245c45;--stage-tts:#7d8692;--stage-transport:#1a1f26}}.sky{--c:var(--sky);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}.mark{fill:var(--page);stroke:var(--c);stroke-width:1.4}.mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.2}.cross{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round}.trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}.trace.thick{stroke-width:2.4}.trace.dashed{stroke-dasharray:8 5}.trace.dotted{stroke-width:2.6;stroke-dasharray:0 5.5;stroke-linecap:round}.median{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.hair{fill:none;stroke:var(--axis);stroke-width:1}.ref{fill:none;stroke:var(--c);stroke-width:1.5}.range{fill:none;stroke:var(--c);stroke-width:1.4}.run{fill:none;stroke:var(--c);stroke-width:1.5;stroke-linecap:butt}.band{fill:var(--a)}.arrow{fill:none;stroke:var(--c);stroke-width:1.6}.arrow-head{fill:var(--c)}.s-endpointing{fill:var(--stage-endpointing);stroke:var(--bar-line);stroke-width:1.1}.s-wait{fill:var(--stage-wait);stroke:var(--bar-line);stroke-width:1.1}.s-decode{fill:var(--stage-decode);stroke:var(--bar-line);stroke-width:1.1}.s-tts{fill:var(--stage-tts);stroke:var(--bar-line);stroke-width:1.1}.s-transport{fill:var(--stage-transport);stroke:var(--bar-line);stroke-width:1.1}</style>
-<rect class="page" width="1120" height="1068"/>
+<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}svg{--sky:#6fa1e3;--stage-endpointing:#dde1e7;--stage-wait:#9d87d8;--stage-decode:#a4dac1;--stage-tts:#8a929e;--stage-transport:#f3f4f6}@media(prefers-color-scheme:dark){svg{--sky:#3b69a6;--stage-endpointing:#2d333b;--stage-wait:#6a56ad;--stage-decode:#245c45;--stage-tts:#7d8692;--stage-transport:#1a1f26}}.sky{--c:var(--sky);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}.mark{fill:var(--page);stroke:var(--c);stroke-width:1.4}.mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.2}.cross{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round}.trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}.trace.thick{stroke-width:2.4}.trace.dashed{stroke-dasharray:8 5}.trace.dotted{stroke-width:2.6;stroke-dasharray:0 5.5;stroke-linecap:round}.median{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.hair{fill:none;stroke:var(--axis);stroke-width:1}.ref{fill:none;stroke:var(--c);stroke-width:1.5}.range{fill:none;stroke:var(--c);stroke-width:1.4}.run{fill:none;stroke:var(--c);stroke-width:1.5;stroke-linecap:butt}.band{fill:var(--a)}.arrow{fill:none;stroke:var(--c);stroke-width:1.6}.arrow-head{fill:var(--c)}.s-endpointing{fill:var(--stage-endpointing);stroke:var(--bar-line);stroke-width:1.1}.s-wait{fill:var(--stage-wait);stroke:var(--bar-line);stroke-width:1.1}.s-decode{fill:var(--stage-decode);stroke:var(--bar-line);stroke-width:1.1}.s-tts{fill:var(--stage-tts);stroke:var(--bar-line);stroke-width:1.1}.s-transport{fill:var(--stage-transport);stroke:var(--bar-line);stroke-width:1.1}</style>
+<rect class="page" width="1120" height="1154"/>
 <path d="M402 24.24A5 5 0 1 0 412 24.24A5 5 0 1 0 402 24.24Z" class="gray mark"/>
 <text x="422" y="30" font-size="18">vLLM 0.32</text>
 <path d="M531.1 24.24A3.1 3.1 0 1 0 537.3 24.24A3.1 3.1 0 1 0 531.1 24.24Z" class="gray mark-fill"/>
 <text x="549.2" y="30" font-size="18">the change, its switches off</text>
 <path d="M778.9 24.24A5 5 0 1 0 788.9 24.24A5 5 0 1 0 778.9 24.24Z" class="blue mark-fill"/>
 <text x="798.9" y="30" font-size="18">the change as deployed</text>
-<text x="24" y="100" font-size="18">In the pull requests' cost tables</text>
-<text x="24" y="130" class="mute" font-size="18">Only lower-priority work</text>
-<text x="24" y="316" class="mute" font-size="18">A waiting turn needs more</text>
-<text x="24" y="338" class="mute" font-size="18">room than two victims free</text>
-<text x="24" y="524" class="mute" font-size="18">Every running slot taken</text>
-<text x="24" y="658" font-size="18">In the serving profile: 256-token</text>
-<text x="24" y="680" font-size="18">steps, scheduled asynchronously</text>
-<text x="24" y="716" class="mute" font-size="18">Only agents</text>
-<text x="24" y="782" class="mute" font-size="18">A reply's first tokens, an</text>
-<text x="24" y="804" class="mute" font-size="18">agent waiting that fits</text>
-<text x="24" y="870" class="mute" font-size="18">A waiting turn needs more</text>
-<text x="24" y="892" class="mute" font-size="18">room than two victims free</text>
-<text x="24" y="958" class="mute" font-size="18">The step that preempts for a waiting turn</text>
-<rect x="1030.69" y="76" width="21.05" height="928" class="gray band"/>
-<path d="M400 76V1004" class="axis"/>
-<text x="400" y="1027" text-anchor="middle" class="mute" font-size="18">0.02</text>
-<path d="M486.45 76V1004" class="grid"/>
-<text x="486.45" y="1027" text-anchor="middle" class="mute" font-size="18">0.05</text>
-<path d="M551.85 76V1004" class="grid"/>
-<text x="551.85" y="1027" text-anchor="middle" class="mute" font-size="18">0.1</text>
-<path d="M617.25 76V1004" class="grid"/>
-<text x="617.25" y="1027" text-anchor="middle" class="mute" font-size="18">0.2</text>
-<path d="M703.7 76V1004" class="grid"/>
-<text x="703.7" y="1027" text-anchor="middle" class="mute" font-size="18">0.5</text>
-<path d="M769.1 76V1004" class="grid"/>
-<text x="769.1" y="1027" text-anchor="middle" class="mute" font-size="18">1</text>
-<path d="M834.5 76V1004" class="grid"/>
-<text x="834.5" y="1027" text-anchor="middle" class="mute" font-size="18">2</text>
-<path d="M920.95 76V1004" class="grid"/>
-<text x="920.95" y="1027" text-anchor="middle" class="mute" font-size="18">5</text>
-<path d="M986.35 76V1004" class="grid"/>
-<text x="986.35" y="1027" text-anchor="middle" class="mute" font-size="18">10</text>
-<path d="M1051.74 76V1004" class="grid"/>
-<text x="1051.74" y="1027" text-anchor="middle" class="mute" font-size="18">20</text>
-<path d="M400 1004H1090" class="axis"/>
-<text x="745" y="1054" text-anchor="middle" class="soft" font-size="18">Scheduler.schedule()'s wall time a step on the host (ms, log scale)</text>
-<text x="1020.69" y="102" text-anchor="end" class="soft halo" font-size="18">a decode step on</text>
-<text x="1020.69" y="124" text-anchor="end" class="soft halo" font-size="18">the RTX 5060 Ti, 16–20 ms</text>
-<text x="372" y="160" text-anchor="end" font-size="20">16 running</text>
-<path d="M676.41 154H690.91" class="blue trace"/>
-<path d="M668.89 154A6.5 6.5 0 1 0 681.89 154A6.5 6.5 0 1 0 668.89 154Z" class="gray mark"/>
-<path d="M673.31 154A3.1 3.1 0 1 0 679.51 154A3.1 3.1 0 1 0 673.31 154Z" class="gray mark-fill"/>
-<path d="M685.91 154A5 5 0 1 0 695.91 154A5 5 0 1 0 685.91 154Z" class="blue mark-fill"/>
-<text x="702.91" y="160" class="halo" font-size="18">+62 µs</text>
-<text x="372" y="190" text-anchor="end" font-size="20">64 running</text>
-<path d="M752.92 184H762.39" class="blue trace"/>
-<path d="M745.83 184A6.5 6.5 0 1 0 758.83 184A6.5 6.5 0 1 0 745.83 184Z" class="gray mark"/>
-<path d="M749.82 184A3.1 3.1 0 1 0 756.02 184A3.1 3.1 0 1 0 749.82 184Z" class="gray mark-fill"/>
-<path d="M757.39 184A5 5 0 1 0 767.39 184A5 5 0 1 0 757.39 184Z" class="blue mark-fill"/>
-<text x="774.39" y="190" class="halo" font-size="18">+89 µs</text>
-<text x="372" y="220" text-anchor="end" font-size="20">256 running</text>
-<path d="M867.73 214H873.06" class="blue trace"/>
-<path d="M861.59 214A6.5 6.5 0 1 0 874.59 214A6.5 6.5 0 1 0 861.59 214Z" class="gray mark"/>
-<path d="M864.63 214A3.1 3.1 0 1 0 870.83 214A3.1 3.1 0 1 0 864.63 214Z" class="gray mark-fill"/>
-<path d="M868.06 214A5 5 0 1 0 878.06 214A5 5 0 1 0 868.06 214Z" class="blue mark-fill"/>
-<text x="885.06" y="220" class="halo" font-size="18">+166 µs</text>
-<text x="372" y="250" text-anchor="end" font-size="20">64 running, a 999-block prefix hit</text>
-<path d="M812.31 244H815.22" class="blue trace"/>
-<path d="M806.15 244A6.5 6.5 0 1 0 819.15 244A6.5 6.5 0 1 0 806.15 244Z" class="gray mark"/>
-<path d="M809.21 244A3.1 3.1 0 1 0 815.41 244A3.1 3.1 0 1 0 809.21 244Z" class="gray mark-fill"/>
-<path d="M810.22 244A5 5 0 1 0 820.22 244A5 5 0 1 0 810.22 244Z" class="blue mark-fill"/>
-<text x="827.22" y="250" class="halo" font-size="18">+50 µs</text>
-<text x="372" y="280" text-anchor="end" font-size="20">64 running, no prefix hit</text>
-<path d="M733.43 274H738.2" class="blue trace"/>
-<path d="M725.78 274A6.5 6.5 0 1 0 738.78 274A6.5 6.5 0 1 0 725.78 274Z" class="gray mark"/>
-<path d="M730.33 274A3.1 3.1 0 1 0 736.53 274A3.1 3.1 0 1 0 730.33 274Z" class="gray mark-fill"/>
-<path d="M733.2 274A5 5 0 1 0 743.2 274A5 5 0 1 0 733.2 274Z" class="blue mark-fill"/>
-<text x="750.2" y="280" class="halo" font-size="18">+36 µs</text>
-<text x="372" y="368" text-anchor="end" font-size="20">16 running</text>
-<path d="M662.97 362H727.67" class="blue trace"/>
-<path d="M655.59 362A6.5 6.5 0 1 0 668.59 362A6.5 6.5 0 1 0 655.59 362Z" class="gray mark"/>
-<path d="M659.87 362A3.1 3.1 0 1 0 666.07 362A3.1 3.1 0 1 0 659.87 362Z" class="gray mark-fill"/>
-<path d="M722.67 362A5 5 0 1 0 732.67 362A5 5 0 1 0 722.67 362Z" class="blue mark-fill"/>
-<text x="739.67" y="368" class="halo" font-size="18">+320 µs</text>
-<text x="372" y="398" text-anchor="end" font-size="20">64 running</text>
-<path d="M751.01 392H785.5" class="blue trace"/>
-<path d="M744.46 392A6.5 6.5 0 1 0 757.46 392A6.5 6.5 0 1 0 744.46 392Z" class="gray mark"/>
-<path d="M747.91 392A3.1 3.1 0 1 0 754.11 392A3.1 3.1 0 1 0 747.91 392Z" class="gray mark-fill"/>
-<path d="M780.5 392A5 5 0 1 0 790.5 392A5 5 0 1 0 780.5 392Z" class="blue mark-fill"/>
-<text x="797.5" y="398" class="halo" font-size="18">+364 µs</text>
-<text x="372" y="428" text-anchor="end" font-size="20">256 running</text>
-<path d="M860.82 422H875.38" class="blue trace"/>
-<path d="M854.07 422A6.5 6.5 0 1 0 867.07 422A6.5 6.5 0 1 0 854.07 422Z" class="gray mark"/>
-<path d="M857.72 422A3.1 3.1 0 1 0 863.92 422A3.1 3.1 0 1 0 857.72 422Z" class="gray mark-fill"/>
-<path d="M870.38 422A5 5 0 1 0 880.38 422A5 5 0 1 0 870.38 422Z" class="blue mark-fill"/>
-<text x="887.38" y="428" class="halo" font-size="18">+441 µs</text>
-<text x="372" y="458" text-anchor="end" font-size="20">256 running, 10 waiting</text>
-<path d="M864.21 452H878.95" class="blue trace"/>
-<path d="M856.69 452A6.5 6.5 0 1 0 869.69 452A6.5 6.5 0 1 0 856.69 452Z" class="gray mark"/>
-<path d="M861.11 452A3.1 3.1 0 1 0 867.31 452A3.1 3.1 0 1 0 861.11 452Z" class="gray mark-fill"/>
-<path d="M873.95 452A5 5 0 1 0 883.95 452A5 5 0 1 0 873.95 452Z" class="blue mark-fill"/>
-<text x="890.95" y="458" class="halo" font-size="18">+463 µs</text>
-<text x="372" y="488" text-anchor="end" font-size="20">64 running, a 999-block prefix hit</text>
-<path d="M815.5 482H878.07" class="blue trace"/>
-<path d="M808.34 482A6.5 6.5 0 1 0 821.34 482A6.5 6.5 0 1 0 808.34 482Z" class="gray mark"/>
-<path d="M812.4 482A3.1 3.1 0 1 0 818.6 482A3.1 3.1 0 1 0 812.4 482Z" class="gray mark-fill"/>
-<path d="M873.07 482A5 5 0 1 0 883.07 482A5 5 0 1 0 873.07 482Z" class="blue mark-fill"/>
-<text x="890.07" y="488" class="halo" font-size="18">+1,539 µs</text>
-<text x="372" y="554" text-anchor="end" font-size="20">16 running</text>
-<path d="M609.89 548H668.17" class="blue trace"/>
-<path d="M602.47 548A6.5 6.5 0 1 0 615.47 548A6.5 6.5 0 1 0 602.47 548Z" class="gray mark"/>
-<path d="M606.79 548A3.1 3.1 0 1 0 612.99 548A3.1 3.1 0 1 0 606.79 548Z" class="gray mark-fill"/>
-<path d="M663.17 548A5 5 0 1 0 673.17 548A5 5 0 1 0 663.17 548Z" class="blue mark-fill"/>
-<text x="680.17" y="554" class="halo" font-size="18">+158 µs</text>
-<text x="372" y="584" text-anchor="end" font-size="20">64 running</text>
-<path d="M729.23 578H750.57" class="blue trace"/>
-<path d="M721.87 578A6.5 6.5 0 1 0 734.87 578A6.5 6.5 0 1 0 721.87 578Z" class="gray mark"/>
-<path d="M726.13 578A3.1 3.1 0 1 0 732.33 578A3.1 3.1 0 1 0 726.13 578Z" class="gray mark-fill"/>
-<path d="M745.57 578A5 5 0 1 0 755.57 578A5 5 0 1 0 745.57 578Z" class="blue mark-fill"/>
-<text x="762.57" y="584" class="halo" font-size="18">+166 µs</text>
-<text x="372" y="614" text-anchor="end" font-size="20">256 running</text>
-<path d="M854.14 608H863.61" class="blue trace"/>
-<path d="M847.32 608A6.5 6.5 0 1 0 860.32 608A6.5 6.5 0 1 0 847.32 608Z" class="gray mark"/>
-<path d="M851.04 608A3.1 3.1 0 1 0 857.24 608A3.1 3.1 0 1 0 851.04 608Z" class="gray mark-fill"/>
-<path d="M858.61 608A5 5 0 1 0 868.61 608A5 5 0 1 0 858.61 608Z" class="blue mark-fill"/>
-<text x="875.61" y="614" class="halo" font-size="18">+260 µs</text>
-<text x="372" y="746" text-anchor="end" font-size="20">2 running</text>
-<path d="M514.77 740H535.74" class="blue trace"/>
-<path d="M505.43 740A6.5 6.5 0 1 0 518.43 740A6.5 6.5 0 1 0 505.43 740Z" class="gray mark"/>
-<path d="M511.67 740A3.1 3.1 0 1 0 517.87 740A3.1 3.1 0 1 0 511.67 740Z" class="gray mark-fill"/>
-<path d="M530.74 740A5 5 0 1 0 540.74 740A5 5 0 1 0 530.74 740Z" class="blue mark-fill"/>
-<text x="547.74" y="746" class="halo" font-size="18">+17 µs</text>
-<text x="372" y="834" text-anchor="end" font-size="20">2 running</text>
-<path d="M563.8 828H534.95" class="blue trace"/>
-<path d="M556.04 828A6.5 6.5 0 1 0 569.04 828A6.5 6.5 0 1 0 556.04 828Z" class="gray mark"/>
-<path d="M560.7 828A3.1 3.1 0 1 0 566.9 828A3.1 3.1 0 1 0 560.7 828Z" class="gray mark-fill"/>
-<path d="M529.95 828A5 5 0 1 0 539.95 828A5 5 0 1 0 529.95 828Z" class="blue mark-fill"/>
-<text x="575.8" y="834" class="halo" font-size="18">−30 µs</text>
-<text x="372" y="922" text-anchor="end" font-size="20">16 running</text>
-<path d="M629.4 916H655.31" class="blue trace"/>
-<path d="M621.06 916A6.5 6.5 0 1 0 634.06 916A6.5 6.5 0 1 0 621.06 916Z" class="gray mark"/>
-<path d="M626.3 916A3.1 3.1 0 1 0 632.5 916A3.1 3.1 0 1 0 626.3 916Z" class="gray mark-fill"/>
-<path d="M650.31 916A5 5 0 1 0 660.31 916A5 5 0 1 0 650.31 916Z" class="blue mark-fill"/>
-<text x="667.31" y="922" class="halo" font-size="18">+72 µs</text>
-<text x="372" y="988" text-anchor="end" font-size="20">2 running</text>
-<path d="M614.18 982H730.07" class="blue trace"/>
-<path d="M605.26 982A6.5 6.5 0 1 0 618.26 982A6.5 6.5 0 1 0 605.26 982Z" class="gray mark"/>
-<path d="M611.08 982A3.1 3.1 0 1 0 617.28 982A3.1 3.1 0 1 0 611.08 982Z" class="gray mark-fill"/>
-<path d="M725.07 982A5 5 0 1 0 735.07 982A5 5 0 1 0 725.07 982Z" class="blue mark-fill"/>
-<text x="742.07" y="988" class="halo" font-size="18">+468 µs</text>
+<path d="M400 50.24H432" class="gray trace dotted"/>
+<text x="440" y="56" font-size="18">a reply's step on the box alone, 12 ms</text>
+<rect x="744.08" y="42.5" width="22" height="16.2" class="gray band"/>
+<text x="774.08" y="56" font-size="18">beside held agent prefill, 16–20 ms</text>
+<path d="M400 76.24H432" class="gray trace dashed"/>
+<text x="440" y="82" font-size="18">the agents' step at 24 session trees, 38 ms</text>
+<path d="M502.78 157V162" class="axis"/>
+<text x="502.78" y="150" text-anchor="middle" class="mute" font-size="18">0.1</text>
+<path d="M568.18 157V162" class="axis"/>
+<text x="568.18" y="150" text-anchor="middle" class="mute" font-size="18">0.2</text>
+<path d="M654.63 157V162" class="axis"/>
+<text x="654.63" y="150" text-anchor="middle" class="mute" font-size="18">0.5</text>
+<path d="M720.03 157V162" class="axis"/>
+<text x="720.03" y="150" text-anchor="middle" class="mute" font-size="18">1</text>
+<path d="M785.43 157V162" class="axis"/>
+<text x="785.43" y="150" text-anchor="middle" class="mute" font-size="18">2</text>
+<path d="M871.88 157V162" class="axis"/>
+<text x="871.88" y="150" text-anchor="middle" class="mute" font-size="18">5</text>
+<path d="M937.28 157V162" class="axis"/>
+<text x="937.28" y="150" text-anchor="middle" class="mute" font-size="18">10</text>
+<path d="M1002.67 157V162" class="axis"/>
+<text x="1002.67" y="150" text-anchor="middle" class="mute" font-size="18">20</text>
+<path d="M1089.13 157V162" class="axis"/>
+<text x="1089.13" y="150" text-anchor="middle" class="mute" font-size="18">50</text>
+<text x="745" y="122" text-anchor="middle" class="soft" font-size="18">the same on the box's CPU, 1.68 times as long (ms)</text>
+<path d="M400 162H1090" class="axis"/>
+<text x="24" y="186" font-size="18">In the pull requests' cost tables</text>
+<text x="24" y="216" class="mute" font-size="18">Only lower-priority work</text>
+<text x="24" y="402" class="mute" font-size="18">A waiting turn needs more</text>
+<text x="24" y="424" class="mute" font-size="18">room than two victims free</text>
+<text x="24" y="610" class="mute" font-size="18">Every running slot taken</text>
+<text x="24" y="744" font-size="18">In the serving profile: 256-token</text>
+<text x="24" y="766" font-size="18">steps, scheduled asynchronously</text>
+<text x="24" y="802" class="mute" font-size="18">Only agents</text>
+<text x="24" y="868" class="mute" font-size="18">A reply's first tokens, an</text>
+<text x="24" y="890" class="mute" font-size="18">agent waiting that fits</text>
+<text x="24" y="956" class="mute" font-size="18">A waiting turn needs more</text>
+<text x="24" y="978" class="mute" font-size="18">room than two victims free</text>
+<text x="24" y="1044" class="mute" font-size="18">The step that preempts for a waiting turn</text>
+<rect x="981.62" y="162" width="21.05" height="928" class="gray band"/>
+<path d="M955.11 162V1090" class="gray trace dotted"/>
+<path d="M1063.41 162V1090" class="gray trace dashed"/>
+<path d="M400 162V1090" class="axis"/>
+<text x="400" y="1113" text-anchor="middle" class="mute" font-size="18">0.02</text>
+<path d="M486.45 162V1090" class="grid"/>
+<text x="486.45" y="1113" text-anchor="middle" class="mute" font-size="18">0.05</text>
+<path d="M551.85 162V1090" class="grid"/>
+<text x="551.85" y="1113" text-anchor="middle" class="mute" font-size="18">0.1</text>
+<path d="M617.25 162V1090" class="grid"/>
+<text x="617.25" y="1113" text-anchor="middle" class="mute" font-size="18">0.2</text>
+<path d="M703.7 162V1090" class="grid"/>
+<text x="703.7" y="1113" text-anchor="middle" class="mute" font-size="18">0.5</text>
+<path d="M769.1 162V1090" class="grid"/>
+<text x="769.1" y="1113" text-anchor="middle" class="mute" font-size="18">1</text>
+<path d="M834.5 162V1090" class="grid"/>
+<text x="834.5" y="1113" text-anchor="middle" class="mute" font-size="18">2</text>
+<path d="M920.95 162V1090" class="grid"/>
+<text x="920.95" y="1113" text-anchor="middle" class="mute" font-size="18">5</text>
+<path d="M986.35 162V1090" class="grid"/>
+<text x="986.35" y="1113" text-anchor="middle" class="mute" font-size="18">10</text>
+<path d="M1051.74 162V1090" class="grid"/>
+<text x="1051.74" y="1113" text-anchor="middle" class="mute" font-size="18">20</text>
+<path d="M400 1090H1090" class="axis"/>
+<text x="745" y="1140" text-anchor="middle" class="soft" font-size="18">Scheduler.schedule()'s wall time a step on the host (ms, log scale)</text>
+<text x="372" y="246" text-anchor="end" font-size="20">16 running</text>
+<path d="M676.41 240H690.91" class="blue trace"/>
+<path d="M668.89 240A6.5 6.5 0 1 0 681.89 240A6.5 6.5 0 1 0 668.89 240Z" class="gray mark"/>
+<path d="M673.31 240A3.1 3.1 0 1 0 679.51 240A3.1 3.1 0 1 0 673.31 240Z" class="gray mark-fill"/>
+<path d="M685.91 240A5 5 0 1 0 695.91 240A5 5 0 1 0 685.91 240Z" class="blue mark-fill"/>
+<text x="702.91" y="246" class="halo" font-size="18">+62 µs</text>
+<text x="372" y="276" text-anchor="end" font-size="20">64 running</text>
+<path d="M752.92 270H762.39" class="blue trace"/>
+<path d="M745.83 270A6.5 6.5 0 1 0 758.83 270A6.5 6.5 0 1 0 745.83 270Z" class="gray mark"/>
+<path d="M749.82 270A3.1 3.1 0 1 0 756.02 270A3.1 3.1 0 1 0 749.82 270Z" class="gray mark-fill"/>
+<path d="M757.39 270A5 5 0 1 0 767.39 270A5 5 0 1 0 757.39 270Z" class="blue mark-fill"/>
+<text x="774.39" y="276" class="halo" font-size="18">+89 µs</text>
+<text x="372" y="306" text-anchor="end" font-size="20">256 running</text>
+<path d="M867.73 300H873.06" class="blue trace"/>
+<path d="M861.59 300A6.5 6.5 0 1 0 874.59 300A6.5 6.5 0 1 0 861.59 300Z" class="gray mark"/>
+<path d="M864.63 300A3.1 3.1 0 1 0 870.83 300A3.1 3.1 0 1 0 864.63 300Z" class="gray mark-fill"/>
+<path d="M868.06 300A5 5 0 1 0 878.06 300A5 5 0 1 0 868.06 300Z" class="blue mark-fill"/>
+<text x="885.06" y="306" class="halo" font-size="18">+166 µs</text>
+<text x="372" y="336" text-anchor="end" font-size="20">64 running, a 999-block prefix hit</text>
+<path d="M812.31 330H815.22" class="blue trace"/>
+<path d="M806.15 330A6.5 6.5 0 1 0 819.15 330A6.5 6.5 0 1 0 806.15 330Z" class="gray mark"/>
+<path d="M809.21 330A3.1 3.1 0 1 0 815.41 330A3.1 3.1 0 1 0 809.21 330Z" class="gray mark-fill"/>
+<path d="M810.22 330A5 5 0 1 0 820.22 330A5 5 0 1 0 810.22 330Z" class="blue mark-fill"/>
+<text x="827.22" y="336" class="halo" font-size="18">+50 µs</text>
+<text x="372" y="366" text-anchor="end" font-size="20">64 running, no prefix hit</text>
+<path d="M733.43 360H738.2" class="blue trace"/>
+<path d="M725.78 360A6.5 6.5 0 1 0 738.78 360A6.5 6.5 0 1 0 725.78 360Z" class="gray mark"/>
+<path d="M730.33 360A3.1 3.1 0 1 0 736.53 360A3.1 3.1 0 1 0 730.33 360Z" class="gray mark-fill"/>
+<path d="M733.2 360A5 5 0 1 0 743.2 360A5 5 0 1 0 733.2 360Z" class="blue mark-fill"/>
+<text x="750.2" y="366" class="halo" font-size="18">+36 µs</text>
+<text x="372" y="454" text-anchor="end" font-size="20">16 running</text>
+<path d="M662.97 448H727.67" class="blue trace"/>
+<path d="M655.59 448A6.5 6.5 0 1 0 668.59 448A6.5 6.5 0 1 0 655.59 448Z" class="gray mark"/>
+<path d="M659.87 448A3.1 3.1 0 1 0 666.07 448A3.1 3.1 0 1 0 659.87 448Z" class="gray mark-fill"/>
+<path d="M722.67 448A5 5 0 1 0 732.67 448A5 5 0 1 0 722.67 448Z" class="blue mark-fill"/>
+<text x="739.67" y="454" class="halo" font-size="18">+320 µs</text>
+<text x="372" y="484" text-anchor="end" font-size="20">64 running</text>
+<path d="M751.01 478H785.5" class="blue trace"/>
+<path d="M744.46 478A6.5 6.5 0 1 0 757.46 478A6.5 6.5 0 1 0 744.46 478Z" class="gray mark"/>
+<path d="M747.91 478A3.1 3.1 0 1 0 754.11 478A3.1 3.1 0 1 0 747.91 478Z" class="gray mark-fill"/>
+<path d="M780.5 478A5 5 0 1 0 790.5 478A5 5 0 1 0 780.5 478Z" class="blue mark-fill"/>
+<text x="797.5" y="484" class="halo" font-size="18">+364 µs</text>
+<text x="372" y="514" text-anchor="end" font-size="20">256 running</text>
+<path d="M860.82 508H875.38" class="blue trace"/>
+<path d="M854.07 508A6.5 6.5 0 1 0 867.07 508A6.5 6.5 0 1 0 854.07 508Z" class="gray mark"/>
+<path d="M857.72 508A3.1 3.1 0 1 0 863.92 508A3.1 3.1 0 1 0 857.72 508Z" class="gray mark-fill"/>
+<path d="M870.38 508A5 5 0 1 0 880.38 508A5 5 0 1 0 870.38 508Z" class="blue mark-fill"/>
+<text x="887.38" y="514" class="halo" font-size="18">+441 µs</text>
+<text x="372" y="544" text-anchor="end" font-size="20">256 running, 10 waiting</text>
+<path d="M864.21 538H878.95" class="blue trace"/>
+<path d="M856.69 538A6.5 6.5 0 1 0 869.69 538A6.5 6.5 0 1 0 856.69 538Z" class="gray mark"/>
+<path d="M861.11 538A3.1 3.1 0 1 0 867.31 538A3.1 3.1 0 1 0 861.11 538Z" class="gray mark-fill"/>
+<path d="M873.95 538A5 5 0 1 0 883.95 538A5 5 0 1 0 873.95 538Z" class="blue mark-fill"/>
+<text x="890.95" y="544" class="halo" font-size="18">+463 µs</text>
+<text x="372" y="574" text-anchor="end" font-size="20">64 running, a 999-block prefix hit</text>
+<path d="M815.5 568H878.07" class="blue trace"/>
+<path d="M808.34 568A6.5 6.5 0 1 0 821.34 568A6.5 6.5 0 1 0 808.34 568Z" class="gray mark"/>
+<path d="M812.4 568A3.1 3.1 0 1 0 818.6 568A3.1 3.1 0 1 0 812.4 568Z" class="gray mark-fill"/>
+<path d="M873.07 568A5 5 0 1 0 883.07 568A5 5 0 1 0 873.07 568Z" class="blue mark-fill"/>
+<text x="890.07" y="574" class="halo" font-size="18">+1,539 µs</text>
+<text x="372" y="640" text-anchor="end" font-size="20">16 running</text>
+<path d="M609.89 634H668.17" class="blue trace"/>
+<path d="M602.47 634A6.5 6.5 0 1 0 615.47 634A6.5 6.5 0 1 0 602.47 634Z" class="gray mark"/>
+<path d="M606.79 634A3.1 3.1 0 1 0 612.99 634A3.1 3.1 0 1 0 606.79 634Z" class="gray mark-fill"/>
+<path d="M663.17 634A5 5 0 1 0 673.17 634A5 5 0 1 0 663.17 634Z" class="blue mark-fill"/>
+<text x="680.17" y="640" class="halo" font-size="18">+158 µs</text>
+<text x="372" y="670" text-anchor="end" font-size="20">64 running</text>
+<path d="M729.23 664H750.57" class="blue trace"/>
+<path d="M721.87 664A6.5 6.5 0 1 0 734.87 664A6.5 6.5 0 1 0 721.87 664Z" class="gray mark"/>
+<path d="M726.13 664A3.1 3.1 0 1 0 732.33 664A3.1 3.1 0 1 0 726.13 664Z" class="gray mark-fill"/>
+<path d="M745.57 664A5 5 0 1 0 755.57 664A5 5 0 1 0 745.57 664Z" class="blue mark-fill"/>
+<text x="762.57" y="670" class="halo" font-size="18">+166 µs</text>
+<text x="372" y="700" text-anchor="end" font-size="20">256 running</text>
+<path d="M854.14 694H863.61" class="blue trace"/>
+<path d="M847.32 694A6.5 6.5 0 1 0 860.32 694A6.5 6.5 0 1 0 847.32 694Z" class="gray mark"/>
+<path d="M851.04 694A3.1 3.1 0 1 0 857.24 694A3.1 3.1 0 1 0 851.04 694Z" class="gray mark-fill"/>
+<path d="M858.61 694A5 5 0 1 0 868.61 694A5 5 0 1 0 858.61 694Z" class="blue mark-fill"/>
+<text x="875.61" y="700" class="halo" font-size="18">+260 µs</text>
+<text x="372" y="832" text-anchor="end" font-size="20">2 running</text>
+<path d="M514.77 826H535.74" class="blue trace"/>
+<path d="M505.43 826A6.5 6.5 0 1 0 518.43 826A6.5 6.5 0 1 0 505.43 826Z" class="gray mark"/>
+<path d="M511.67 826A3.1 3.1 0 1 0 517.87 826A3.1 3.1 0 1 0 511.67 826Z" class="gray mark-fill"/>
+<path d="M530.74 826A5 5 0 1 0 540.74 826A5 5 0 1 0 530.74 826Z" class="blue mark-fill"/>
+<text x="547.74" y="832" class="halo" font-size="18">+17 µs</text>
+<text x="372" y="920" text-anchor="end" font-size="20">2 running</text>
+<path d="M563.8 914H534.95" class="blue trace"/>
+<path d="M556.04 914A6.5 6.5 0 1 0 569.04 914A6.5 6.5 0 1 0 556.04 914Z" class="gray mark"/>
+<path d="M560.7 914A3.1 3.1 0 1 0 566.9 914A3.1 3.1 0 1 0 560.7 914Z" class="gray mark-fill"/>
+<path d="M529.95 914A5 5 0 1 0 539.95 914A5 5 0 1 0 529.95 914Z" class="blue mark-fill"/>
+<text x="575.8" y="920" class="halo" font-size="18">−30 µs</text>
+<text x="372" y="1008" text-anchor="end" font-size="20">16 running</text>
+<path d="M629.4 1002H655.31" class="blue trace"/>
+<path d="M621.06 1002A6.5 6.5 0 1 0 634.06 1002A6.5 6.5 0 1 0 621.06 1002Z" class="gray mark"/>
+<path d="M626.3 1002A3.1 3.1 0 1 0 632.5 1002A3.1 3.1 0 1 0 626.3 1002Z" class="gray mark-fill"/>
+<path d="M650.31 1002A5 5 0 1 0 660.31 1002A5 5 0 1 0 650.31 1002Z" class="blue mark-fill"/>
+<text x="667.31" y="1008" class="halo" font-size="18">+72 µs</text>
+<text x="372" y="1074" text-anchor="end" font-size="20">2 running</text>
+<path d="M614.18 1068H730.07" class="blue trace"/>
+<path d="M605.26 1068A6.5 6.5 0 1 0 618.26 1068A6.5 6.5 0 1 0 605.26 1068Z" class="gray mark"/>
+<path d="M611.08 1068A3.1 3.1 0 1 0 617.28 1068A3.1 3.1 0 1 0 611.08 1068Z" class="gray mark-fill"/>
+<path d="M725.07 1068A5 5 0 1 0 735.07 1068A5 5 0 1 0 725.07 1068Z" class="blue mark-fill"/>
+<text x="742.07" y="1074" class="halo" font-size="18">+468 µs</text>
 </svg>
