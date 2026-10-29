@@ -307,7 +307,7 @@ If you use Flatshare or its measurements, please cite the repository ([CITATION.
   author  = {Wang, Chuyue},
   title   = {Flatshare},
   year    = {2026},
-  version = {1.6.0},
+  version = {1.7.0},
   url     = {https://github.com/StevenWang-CY/flatshare}
 }
 ```
