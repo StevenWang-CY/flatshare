@@ -37,7 +37,7 @@ use super::realtime::Realtime;
 use super::sessions::{Key, Sessions};
 use crate::auth::Tenant;
 use crate::deadline::Timeout;
-use crate::server::{self, Drain};
+use crate::drain::{self, Drain};
 
 /// The gateway's admission point.
 #[derive(Debug)]
@@ -248,7 +248,7 @@ impl Admission {
         let mut cut = drain.cut_for(Some(class));
         tokio::select! {
             biased;
-            () = server::cut(&mut cut) => Err(NotAdmitted::Cut),
+            () = drain::cut(&mut cut) => Err(NotAdmitted::Cut),
             () = tokio::time::sleep_until(deadline.into()) => Err(NotAdmitted::Late(timeout)),
             admitted = self.admit(tenant, class, session, body_bytes) => {
                 admitted.map_err(NotAdmitted::Refused)

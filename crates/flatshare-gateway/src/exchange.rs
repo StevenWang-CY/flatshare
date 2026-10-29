@@ -465,7 +465,7 @@ impl Exchange {
     /// `Retry-After: 1`, for the gateway that serves the sockets next. Its outcome is `drained`, over any other.
     pub fn drained(mut self, grace: Duration) -> Response {
         self.ends_as(Outcome::Drained);
-        let message = crate::server::drain_message(grace);
+        let message = crate::drain::drain_message(grace);
         self.not_ready("draining", message, Duration::from_secs(1))
     }
 

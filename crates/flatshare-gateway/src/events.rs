@@ -14,7 +14,8 @@ use serde_json::value::RawValue;
 
 use crate::exchange::Exchange;
 use crate::metrics::Metrics;
-use crate::server::{App, read_control_body, trusted_tenant};
+use crate::server::{read_control_body, trusted_tenant};
+use crate::state::App;
 use crate::types::Route;
 
 /// An event the gateway accepted: not a repeat of one seen within the deduplication window.

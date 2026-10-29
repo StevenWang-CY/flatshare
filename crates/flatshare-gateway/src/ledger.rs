@@ -29,7 +29,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::watch;
 
 use crate::intake;
-use crate::server::Shared;
+use crate::state::Shared;
 
 /// What a gateway holds on its engine, one line of the ledger.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

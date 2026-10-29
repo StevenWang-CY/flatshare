@@ -14,7 +14,8 @@ use serde::Deserialize;
 
 use super::{Key, Nodes};
 use crate::exchange::Exchange;
-use crate::server::{App, metrics_refused, read_control_body, trusted_tenant};
+use crate::server::{metrics_refused, read_control_body, trusted_tenant};
+use crate::state::App;
 use crate::types::Route;
 
 /// The body of `POST /v1/sessions`; unknown fields are ignored.

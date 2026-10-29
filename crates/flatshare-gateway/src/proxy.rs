@@ -20,6 +20,7 @@ use hyper::body::Incoming;
 
 use crate::auth::Tenant;
 use crate::deadline::{Deadlines, Phase, Timeout};
+use crate::drain;
 use crate::engine::Engine;
 use crate::exchange::Exchange;
 use crate::harness::{Refusal, Ticket};
@@ -30,7 +31,7 @@ use crate::sanitize::{
     self, Bounds, InvalidBody, REQUEST_ID, cap_reply, names_session, resolve_class,
     resolve_session, rewrite_body, sanitize_headers, set_engine_headers, strip_hop_by_hop,
 };
-use crate::server::{self, App, Engines, Shared};
+use crate::state::{App, Engines, Shared};
 use crate::types::{Route, UpstreamError};
 use crate::upstream::{Upstream, UpstreamBody, causes};
 
@@ -386,7 +387,7 @@ async fn forward(
     };
     let sent = tokio::select! {
         biased;
-        () = server::cut(&mut cut) => Err(Failure::Drained),
+        () = drain::cut(&mut cut) => Err(Failure::Drained),
         sent = sending => sent,
     };
     let (response, first) = match sent {

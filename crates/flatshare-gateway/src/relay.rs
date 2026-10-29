@@ -27,9 +27,10 @@ use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, watch};
 
 use crate::deadline::{Deadlines, Timeout};
+use crate::drain::{self, drain_message};
 use crate::exchange::Exchange;
 use crate::harness::Ticket;
-use crate::server::{self, Shared};
+use crate::state::Shared;
 use crate::types::{ErrorEvent, Outcome, UpstreamError};
 use crate::upstream::causes;
 use crate::usage::Scanner;
@@ -111,8 +112,8 @@ impl Pump {
                 biased;
                 () = self.frames.closed() => break Outcome::Cancelled,
                 () = shed(&mut self.ticket), if self.sheddable => break Outcome::Shed,
-                () = server::cut(&mut self.cut) => {
-                    self.end_with(ErrorEvent::Draining, server::drain_message(self.grace)).await;
+                () = drain::cut(&mut self.cut) => {
+                    self.end_with(ErrorEvent::Draining, drain_message(self.grace)).await;
                     break Outcome::Drained;
                 }
                 () = sleep_until(deadline) => {
@@ -215,8 +216,8 @@ impl Pump {
         let sent = tokio::select! {
             biased;
             () = shed(&mut self.ticket), if self.sheddable => return Err(Outcome::Shed),
-            () = server::cut(&mut self.cut) => {
-                self.ex.note_error(server::drain_message(self.grace));
+            () = drain::cut(&mut self.cut) => {
+                self.ex.note_error(drain_message(self.grace));
                 return Err(Outcome::Drained);
             }
             // A client too slow for the request's total: the client's channel is full, so no event.

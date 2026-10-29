@@ -51,9 +51,9 @@ use crate::auth::{Tenant, Tenants};
 use crate::canary::{self, Health, Watched};
 use crate::config::{CallPlacement, Canary, NodeConfig, Placement, PrioritySignals, UpstreamAddr};
 use crate::deadline::Timeout;
+use crate::drain::{self, Drain};
 use crate::engine::Engine;
 use crate::metrics::GaugeGuard;
-use crate::server::{self, Drain};
 use crate::types::EngineState;
 use crate::upstream::Upstream;
 
@@ -519,7 +519,7 @@ impl Nodes {
             }
             tokio::select! {
                 biased;
-                () = server::cut(&mut cut) => return Err(Held::Cut),
+                () = drain::cut(&mut cut) => return Err(Held::Cut),
                 () = tokio::time::sleep_until(deadline.into()) => return Err(Held::Late(timeout)),
                 () = &mut notified => {}
             }
