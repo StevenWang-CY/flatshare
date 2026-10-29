@@ -207,6 +207,25 @@ def test_the_readme_animation_is_a_looping_webp_in_each_theme_and_layout() -> No
     assert max(spans) - min(spans) <= 20 and min(spans) > 5_000, spans  # within a frame at 60 fps
 
 
+def test_the_readme_figure_labels_its_rows_from_the_report_label_table(
+    drawn: dict[str, Path],
+) -> None:
+    # The README's figure names each configuration as every chart of the report does (report.data.LABELS): its rows'
+    # figure.toml gives none, and a note only where the A100's card calls for one.
+    from flatshare_bench.report import data
+
+    groups = read_dots(A100 / "figure.toml")
+    assert not any("label" in row for g in groups for row in g["rows"])
+    expected = {data.label(row["point"])[0] for g in groups for row in g["rows"]}
+    assert expected == {"Tuned vLLM", "Preempt-resubmit", "The configuration to deploy"}
+    notes = [row["note"] for g in groups for row in g["rows"] if "note" in row]
+    assert notes == ["for the RTX 5060 Ti", "the card's best"]
+    for name in ("e2-voice-p95-gpus.svg", "e2-voice-p95-gpus-narrow.svg"):
+        words = " ".join(re.findall(r">([^<]+)</text>", drawn[name].read_text()))
+        assert all(label in words for label in expected), name
+        assert "#63350 and #63351" not in words and "A router" not in words, name
+
+
 def test_the_figures_set_their_type_in_its_sizes_and_never_in_bold(drawn: dict[str, Path]) -> None:
     allowed = SIZES | {round(size * 0.72, 2) for size in SIZES}
     for name, path in drawn.items():

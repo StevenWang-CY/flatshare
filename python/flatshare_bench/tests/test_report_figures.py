@@ -124,6 +124,46 @@ def test_figure_text_names_configurations_as_the_report_does(drawn: dict[str, Pa
             assert not CODES.search(text), (name, text)
 
 
+RETIRED = (
+    "make-room + prefill hold",
+    "+ make-room",
+    "+ the prefill hold",
+    "make-room alone",
+    "Both rules",
+    "abort-and-resubmit",
+    "A router",
+    "Tuned vLLM 0.32",
+    "as deployed",
+    "#63350 and #63351",
+)
+"""The labels the charts gave one configuration or another before data.LABELS, which no chart's text gives now."""
+
+
+def test_every_chart_labels_its_configurations_from_one_table(drawn: dict[str, Path]) -> None:
+    # One label a configuration, in GLOSSARY's terms: each name in the table tells its configuration from every other
+    # (the lifecycle policy's two are named under its heading), and no chart's drawn text, nor its description, gives
+    # a configuration another label.
+    names = [name for name, _ in data.LABELS.values()]
+    shared = {name for name in names if names.count(name) > 1}
+    assert shared == {"A static cap"}, (
+        shared
+    )  # told apart by their notes, in the one figure that shows them
+    assert set(data.POINTS.values()) <= set(data.LABELS)
+    for name, path in drawn.items():
+        texts = text_of(path)
+        for text in texts:
+            assert not any(retired in text for retired in RETIRED), (name, text)
+        assert "vLLM 0.32" not in texts[:-2], name  # stock vLLM's former row and legend name
+    # The configurations the tables name stay apart: tuned vLLM is the baseline, the change is both pull requests at
+    # the budget cap's default window, and the configuration to deploy their switches with a 48-token window.
+    assert data.label("w5-disc-frozen-s24") == ("Tuned vLLM", "the baseline")
+    assert data.label("w5-disc-pr-ab-s24") == ("The change", "16-token window")
+    assert data.label("w5-disc-pr-ab48-s24") == ("The configuration to deploy", "48-token window")
+    assert data.label("sweep-disc-pr-ab48-b256-t0-s24") == data.label("w5-disc-pr-ab48-s24")
+    with pytest.raises(ValueError, match="no label for w5-disc-a9-no-throttle-s24"):
+        data.label("w5-disc-a9-no-throttle-s24")
+
+
 def test_a_log_scale_says_so_on_its_axis(drawn: dict[str, Path]) -> None:
     logarithmic = (
         "report-headline",
@@ -669,8 +709,10 @@ def test_the_frontier_is_every_deployable_configuration_of_w4s_discriminating_sc
         assert {r["fixed_window_s"] for r in runs} == {"240.0"}, p.point
         assert {r["arm"] for r in runs} == {p.arm}, p.point
     by_point = {p.point: p for p in points}
-    # The figure names every configuration, under its family's heading.
-    assert set(figures.FRONTIER_NAMES) == set(by_point)
+    # The figure names every configuration as the label table does, under its family's heading.
+    assert {point: data.label(point)[0] for point in by_point}[
+        "disc-pr-ab48-s24"
+    ] == "The configuration to deploy"
     assert sorted(
         p.point for _, members in figures._frontier_rows(points) for p in members
     ) == sorted(by_point)
