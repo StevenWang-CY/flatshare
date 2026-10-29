@@ -353,7 +353,7 @@ flatshare_gateway_upstream_errors_total{kind="body"} 0
 flatshare_gateway_upstream_errors_total{kind="connect"} 0
 flatshare_gateway_upstream_errors_total{kind="request"} 0
 flatshare_gateway_upstream_errors_total{kind="timeout"} 0
-# HELP flatshare_gateway_error_events Error events sent on event streams before the gateway aborted them, by type: upstream_unavailable when the upstream broke the stream off, draining when a draining gateway cut a background stream.
+# HELP flatshare_gateway_error_events Error events sent on event streams before the gateway aborted them, by type: upstream_unavailable when the upstream broke the stream off, draining when a draining gateway cut a background stream, upstream_timeout when a deadline passed while the upstream streamed.
 # TYPE flatshare_gateway_error_events counter
 flatshare_gateway_error_events_total{class="background",type="draining"} 0
 flatshare_gateway_error_events_total{class="background",type="upstream_timeout"} 0

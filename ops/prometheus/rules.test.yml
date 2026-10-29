@@ -220,15 +220,18 @@ tests:
               runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharecallsrefused
               summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503
 
-  # The request outcomes' tickets: a refusal for capacity opens one by class, a missed deadline one by class and
-  # deadline, each while the last ten minutes hold one; completed requests open neither.
+  # The request outcomes' tickets, from requests_terminal summed over its tenants and routes: refusals for capacity
+  # open one ticket by class, two tenants' and two bounds' together, and a missed deadline one by class and deadline,
+  # each while the last ten minutes hold one; completed requests open neither.
   - interval: 1m
     input_series:
-      - series: 'flatshare_gateway_request_outcomes_total{class="background",outcome="refused_in_flight"}'
+      - series: 'flatshare_gateway_requests_terminal_total{tenant="agents",route="/v1/chat/completions",class="background",outcome="refused_in_flight"}'
         values: '0 0 0 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3'
-      - series: 'flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_first_content"}'
+      - series: 'flatshare_gateway_requests_terminal_total{tenant="bench",route="/v1/completions",class="background",outcome="refused_class"}'
+        values: '0 0 0 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2'
+      - series: 'flatshare_gateway_requests_terminal_total{tenant="voice",route="/v1/chat/completions",class="realtime",outcome="timeout_first_content"}'
         values: '0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
-      - series: 'flatshare_gateway_request_outcomes_total{class="interactive",outcome="completed"}'
+      - series: 'flatshare_gateway_requests_terminal_total{tenant="agents",route="/v1/responses",class="interactive",outcome="completed"}'
         values: '0+5x19'
     alert_rule_test:
       - eval_time: 2m
@@ -262,6 +265,20 @@ tests:
               runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharedeadlinesmissed
               summary: Requests ran past their class's deadlines waiting on the engine, which the gateway then cancelled
       - eval_time: 18m
+        alertname: FlatshareDeadlinesMissed
+        exp_alerts: []
+  # request_outcomes, the family E2's records read, opens neither: the same outcomes counted there alone fire nothing.
+  - interval: 1m
+    input_series:
+      - series: 'flatshare_gateway_request_outcomes_total{class="background",outcome="refused_in_flight"}'
+        values: '0 0 0 3 3 3 3 3 3 3'
+      - series: 'flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_first_content"}'
+        values: '0 0 0 0 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: FlatshareRequestsRefusedForCapacity
+        exp_alerts: []
+      - eval_time: 6m
         alertname: FlatshareDeadlinesMissed
         exp_alerts: []
 

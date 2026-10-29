@@ -75,10 +75,10 @@ default_class = "background"
 # [classes.background]
 # max_reply_tokens = 8192
 # max_in_flight = 512
-# Each class's deadlines, with their defaults (realtime / interactive / background): the body's upload (60 s), a wait
-# at the admission point (120 s), an attempt's response headers (first_byte_timeout_s, 600 s), the first content from
-# the receipt (60 / 600 / 600 s), the wait for each frame after (30 / 600 / 600 s), and the whole request (300 / 1800 /
-# 3600 s). E2's background first bytes ran to 232 s at p99 behind preemptions, its realtime ones to 13.4 s.
+# Each class's deadlines, with their defaults (realtime / interactive / background): the body's upload (60 s), a wait at
+# the admission point (120 s), an attempt's response headers (the top-level headers_timeout_s, 600 s), the first content
+# from the receipt (60 / 600 / 600 s), the wait for each frame after (30 / 600 / 600 s), and the whole request (300 /
+# 1800 / 3600 s). E2's background first bytes ran to 232 s at p99 behind preemptions, its realtime ones to 13.4 s.
 # upload_timeout_s = 60
 # queue_timeout_s = 120
 # headers_timeout_s = 600

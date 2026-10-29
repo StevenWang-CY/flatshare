@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use flatshare_proto::SloClass;
 use http::uri::{Authority, Scheme, Uri};
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -62,8 +63,9 @@ pub struct Config {
     pub stream_buffer_frames: usize,
     /// How long a full stream buffer may stay full before the stream is aborted as stalled.
     pub stall_timeout: Duration,
-    /// Every class's default `headers_timeout_s`: how long an attempt waits for the upstream's response headers.
-    pub first_byte_timeout: Duration,
+    /// The top-level `headers_timeout_s`, every class's default: how long an attempt waits for the upstream's response
+    /// headers.
+    pub headers_timeout: Duration,
     /// How long a shutdown waits for in-flight requests.
     pub drain_timeout: Duration,
     /// How far into a drain background requests go on before the gateway cuts them, so that a stop or a reload
@@ -114,7 +116,7 @@ impl ClassConfig {
     ///
     /// The deadlines are a few times what the recorded runs took at most, so that none ends a request they made:
     /// background first bytes ran to 232 s at p99 (W5's resubmitting arm), behind preemptions, realtime ones to 13.4 s
-    /// (the worst arm's p99), and no run met the 600 s first-byte timeout. A voice reply ran 52 tokens at most.
+    /// (the worst arm's p99), and no run met the 600 s headers timeout. A voice reply ran 52 tokens at most.
     pub(crate) fn defaults(class: SloClass) -> Self {
         let realtime = class == SloClass::Realtime;
         let s = Duration::from_secs;
@@ -384,7 +386,9 @@ struct RawConfig {
     max_buffered_body_bytes: usize,
     stream_buffer_frames: usize,
     stall_timeout_s: f64,
-    first_byte_timeout_s: f64,
+    headers_timeout_s: f64,
+    /// The old name of `headers_timeout_s`, refused with a message that names the new one.
+    first_byte_timeout_s: Option<IgnoredAny>,
     drain_timeout_s: f64,
     background_drain_s: f64,
     event_dedup_capacity: usize,
@@ -418,7 +422,8 @@ impl Default for RawConfig {
             max_buffered_body_bytes: 256 << 20,
             stream_buffer_frames: 64,
             stall_timeout_s: 30.0,
-            first_byte_timeout_s: 600.0,
+            headers_timeout_s: 600.0,
+            first_byte_timeout_s: None,
             drain_timeout_s: 30.0,
             background_drain_s: 5.0,
             event_dedup_capacity: 100_000,
@@ -719,9 +724,9 @@ fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
 }
 
 impl RawClasses {
-    /// Each class's configuration, strictest first; `first_byte_timeout` is every class's default
+    /// Each class's configuration, strictest first; `headers_timeout` is every class's default
     /// `headers_timeout_s`.
-    fn validate(self, first_byte_timeout: Duration) -> Result<[ClassConfig; 3], String> {
+    fn validate(self, headers_timeout: Duration) -> Result<[ClassConfig; 3], String> {
         let Self {
             realtime,
             interactive,
@@ -743,7 +748,7 @@ impl RawClasses {
             }
             config.max_reply_tokens = raw.max_reply_tokens;
             config.max_in_flight = raw.max_in_flight.unwrap_or(config.max_in_flight);
-            config.headers_timeout = first_byte_timeout;
+            config.headers_timeout = headers_timeout;
             for (key, set, timeout) in [
                 (
                     "upload_timeout_s",
@@ -944,8 +949,15 @@ impl RawConfig {
         if self.max_body_bytes == 0 {
             return Err("max_body_bytes must be positive".into());
         }
-        let first_byte_timeout = seconds("first_byte_timeout_s", self.first_byte_timeout_s)?;
-        let classes = self.classes.validate(first_byte_timeout)?;
+        if self.first_byte_timeout_s.is_some() {
+            return Err(
+                "first_byte_timeout_s is now headers_timeout_s, every class's default wait for an attempt's \
+                 response headers"
+                    .into(),
+            );
+        }
+        let headers_timeout = seconds("headers_timeout_s", self.headers_timeout_s)?;
+        let classes = self.classes.validate(headers_timeout)?;
         for (key, zero) in [
             ("max_choices", self.max_choices == 0),
             ("max_in_flight", self.max_in_flight == 0),
@@ -1001,7 +1013,7 @@ impl RawConfig {
             max_buffered_body_bytes: self.max_buffered_body_bytes,
             stream_buffer_frames: self.stream_buffer_frames,
             stall_timeout: seconds("stall_timeout_s", self.stall_timeout_s)?,
-            first_byte_timeout,
+            headers_timeout,
             drain_timeout,
             background_drain,
             event_dedup_capacity: self.event_dedup_capacity,
@@ -1262,7 +1274,7 @@ mod tests {
         assert_eq!(
             [
                 config.stall_timeout,
-                config.first_byte_timeout,
+                config.headers_timeout,
                 config.drain_timeout,
                 config.background_drain
             ],
@@ -1463,9 +1475,9 @@ mod tests {
             deadlines(&defaults, SloClass::Background),
             [s(60), s(120), s(600), s(600), s(600), s(3600)]
         );
-        // first_byte_timeout_s is every class's headers_timeout_s unless a class sets its own.
+        // The top-level headers_timeout_s is every class's unless a class sets its own.
         let set = config_of(
-            "first_byte_timeout_s = 90",
+            "headers_timeout_s = 90",
             "[classes.background]\nheaders_timeout_s = 30\nidle_timeout_s = 2.5\ntotal_timeout_s = 7200",
         )
         .unwrap();
@@ -1497,6 +1509,18 @@ mod tests {
         ] {
             let err = config_of("", tables).unwrap_err();
             assert!(err.contains(cause), "{err}");
+        }
+        // Its old name is refused with a message that names the new one, whatever its value, and beside the new key.
+        for top in [
+            "first_byte_timeout_s = 90",
+            "first_byte_timeout_s = \"90\"",
+            "headers_timeout_s = 90\nfirst_byte_timeout_s = 90",
+        ] {
+            let err = config_of(top, "").unwrap_err();
+            assert!(
+                err.contains("first_byte_timeout_s is now headers_timeout_s"),
+                "{top}: {err}"
+            );
         }
     }
 
