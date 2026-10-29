@@ -58,7 +58,7 @@ Arm 10 of E2's original plan (MPS with an active-thread split, audio off the GPU
 - **The gateway.** Its decisions: deferrals by reason, degraded replies and resubmissions. It also counts the headroom's false alarms, and a record keeps the counters that moved: none of E2's records has one, since every utterance of the callers is a turn.
 - **The GPU.** Its clocks and temperature.
 
-Audio gaps, abort latency, wasted tokens and cost per token were in the original plan and are not computed.
+Abort latency, wasted tokens and cost per token were in the original plan and are not computed. Its audio gaps of 100 ms or more are read, from v1.6 and v1.7, as the pauses inside a reply, the concealed audio and the agent's playout ([SLO.md](SLO.md#indicators)).
 
 **Volume and builds.**
 - **Runs.** W2 measured each baseline once (50 turns). W3–W4 repeated the discriminating scenario in rounds, rotating the order of the engine groups so that no configuration always runs at the same hour. Each headline configuration has five runs (250 turns); each ablation and PR configuration has three (150). Two exceptions: the PRs' configurations and arm 9's 48-token window ran after the rounds, in a session of their own (10-23 23:16Z – 10-24 01:35Z) with no frozen-box, arm-9 or voice-alone point, and arm 9's ablations always ran in one order. Every run of W2–W4 replays the same workload sample (agent seed 11, caller seed 0), so their ranges measure timing noise only.

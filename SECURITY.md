@@ -42,8 +42,8 @@ These limits are stated in the documents and are not vulnerabilities in this sen
   voice plane's processes keep that user's uid ([ADR-0005](docs/adr/0005-loopback-services-and-node-sticky-kv.md#unix-sockets-end-to-end-w6-2026-10-25)).
 - The `sglang` engine variant listens on 127.0.0.1:8000, and a host without unprivileged user namespaces runs its GPU
   servers in the host's network namespace ([ARCHITECTURE.md §3.3](docs/ARCHITECTURE.md#33-network-and-security)).
-- The measurement drop-in turns on vLLM's development routes, which a production box runs without
-  ([the drop-in](deploy/phastform/variants/README.md#the-measurement-drop-in)).
+- The measurement drop-in turns on vLLM's development routes, which the serving variant turns off again, so a production
+  box runs without them ([the drop-in](deploy/phastform/variants/README.md#the-measurement-drop-in)).
 - The gateway does not terminate TLS: every listener binds loopback or a private socket. It bounds the requests in
   flight and the bodies they hold, and gives each class deadlines for its upload, its queue and its response, but it
   does not bound the idle connections clients keep open

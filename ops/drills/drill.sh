@@ -20,7 +20,7 @@
 # FLATSHARE_SSH, FLATSHARE_CYAN (default cyan) and FLATSHARE_GPU (default phastform) as for benchmarks/e2/campaign.sh,
 # with one GPU node: the hosts by SSH host names or aliases. The drill runs on whatever variant the node runs: switch it
 # first with deploy/phastform/variant.sh use. The scheduler class comes from /server_info, which only the measurement
-# drop-in serves (variant.sh measure on); without it the scheduler file is empty.
+# drop-in serves (variant.sh measure on), and never the serving variant; without it the scheduler file is empty.
 set -euo pipefail
 usage() { echo "usage: drill.sh engine-kill|gateway-reload|gateway-restart|gateway-kill [NAME]" >&2; exit 2; }
 (($# >= 1 && $# <= 2)) || usage

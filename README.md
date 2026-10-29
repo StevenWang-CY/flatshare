@@ -129,10 +129,19 @@ reply's tokens beside agent prefill and with it held (60–65 and 16–20 ms).*
 
 ## Limits and costs
 
+- **What the shared model can do.** The agents' replay needs no answer to be right, so the results say what sharing
+  costs the call, not whether the background work is worth doing. On a useful pair of jobs, questions about private
+  documents in a call (QASPER) beside enriching new documents into records (Re-DocRED), the served model failed 9 of the
+  11 criteria of a quality gate fixed before it ran: 50.6% of the questions it answered were right, and 23.9% of the
+  facts in its records, against 80% for each. Qwen3-8B-FP8 on a card of its own failed too
+  ([the gate](benchmarks/quality/GATE.md); [its record](benchmarks/results/2026-10-27-quality/README.md)). A deployment
+  that shares a card for background work has to check first that the model can do that work.
 - **A pool with room.** At a realistic load of the whole corpus (16 sessions), where the pool has room, #63350 has
-  little to do (0–7 preemptions a run) and the cap holds agent prefill in 3–13% of the steps. The PRs' p95 was lower
-  in every one of five rounds, by 109–1,413 ms, but met the SLO in only one: 2,021–2,419 ms against tuned vLLM's
-  2,147–3,832 ms.
+  little to do (0–7 preemptions a run) and the cap holds agent prefill in 3–13% of the steps. The PRs' p95 was lower in
+  every one of five rounds, by 109–1,413 ms, but met the SLO in only one: 2,021–2,419 ms against tuned vLLM's
+  2,147–3,832 ms. The serving profile's 256-token steps leave the pool room beside 24 sessions too: the engine preempted
+  0–4 requests a run there and none beside four, so at that cap the hold and the step cap do the work
+  ([§6.9](docs/REPORT.md#69-a-256-token-step-cap-halves-the-changes-replies-over-the-slo-beside-24-sessions)).
 - **Many calls.** #63351 holds agent prefill while any call's first tokens are due, so overlapping replies hold it for
   longer. With 4 and 6 callers, each count against its own voice-alone SLO, the PRs' p95 exceeded it in every round, by
   0.27 s and 0.26 s at the median, against 0.20 s with two ([how it fails](docs/PRODUCTION.md#how-it-fails)). At a
