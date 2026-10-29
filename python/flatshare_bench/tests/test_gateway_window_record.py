@@ -1,6 +1,6 @@
 """The gateway's cost on the deployed build (benchmarks/results/2026-10-29-gateway-window): the README's tables against
-table.py, its findings against results.json, the run against what the README says of it, and the script against
-the hash it was accepted with."""
+table.py, its findings against results.json, the run against what the README says of it, the script against the hash it
+was accepted with, and the docs that cite the record against its first-token figure."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import json
 import re
 from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 RECORD = REPO / "benchmarks" / "results" / "2026-10-29-gateway-window"
@@ -27,6 +29,10 @@ def _table() -> ModuleType:
 
 def _results() -> dict:
     return json.loads((RECORD / "results.json").read_text())
+
+
+def _first_token() -> str:
+    return f"{_results()['a']['paired_gateway_minus_direct_ms']['first_ms']['p50']:+.2f} ms"
 
 
 def test_the_readmes_tables_are_what_the_results_give() -> None:
@@ -77,3 +83,12 @@ def test_the_run_is_the_one_the_readme_describes() -> None:
 
 def test_the_script_is_the_one_that_ran() -> None:
     assert hashlib.sha256((RECORD / "window.py").read_bytes()).hexdigest() == SCRIPT_SHA256
+
+
+@pytest.mark.parametrize(
+    "doc", ["README.md", "docs/SLO.md", "docs/REPORT.md", "crates/flatshare-gateway/README.md"]
+)
+def test_each_doc_that_cites_the_record_gives_its_first_token_figure(doc: str) -> None:
+    text = (REPO / doc).read_text()
+    assert "benchmarks/results/2026-10-29-gateway-window" in text
+    assert _first_token() in text

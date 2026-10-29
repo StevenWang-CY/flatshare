@@ -171,9 +171,9 @@ engine's KV pool and context length, so the check runs unchanged on another card
   each call opens with an unmeasured warm-up turn. Baselines are configured as their documentation recommends.
 - **Reproducibility.** `make reproduce-e2-w5` and `make reproduce-e2-a100` rebuild the table above and the A100's
   results from the committed records, the rounds' `gate.py` the step cap's and the two cards', and `make figures` every
-  figure. The gateway adds 0.29 ms to a voice request's first token, paired against the engine's own socket on the
-  Unix-socket transport the deployment runs
-  ([the gateway's cost](docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)).
+  figure. Measured on v1.8 (5a7e31c), the gateway adds +0.12 ms to a voice request's first token at the median, paired
+  against the engine's own socket over 80 requests, and none of 82 requests spent over 2 ms in its own leg
+  ([the record](benchmarks/results/2026-10-29-gateway-window/README.md)).
 
 ## Documentation
 
