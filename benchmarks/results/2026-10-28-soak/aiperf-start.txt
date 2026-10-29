@@ -1,0 +1,7 @@
+# AIPerf's own log at the start of the serving arrangement's agents (run 0, its profiling phase), times UTC:
+# it resumes its 14 trajectory sessions in one burst, and each lane recycles into a new root drawn from the dataset.
+17:23:03.005 INFO     Replay interval barriers active: 34532 requests, 23071 gated turns, join-widths={1: 21088, 2: 1402, 3: 446, 4: 121, 5: 10, 6: 4} (replay_dependencies.py:183)
+17:23:03.005 INFO     PROFILING setup: 14 trajectory lanes; recycle draws roots from the dataset sampler (agentic_replay.py:411)
+17:23:03.005 INFO     PROFILING: 6 rootless + 0 gated-parent lanes of 14 dispatch no root credit at start and hold a lane credit instead (so they still count toward concurrency); rootless lanes recycle into a fresh root once their background subagents drain (agentic_replay.py:417)
+17:23:03.005 NOTICE   Phase profiling (profiling) started | phase_index=0 | profiling_index=0 | target: 87900.0s duration (runner.py:660)
+17:23:03.006 INFO     PROFILING execute: resuming 14 trajectory sessions (burst; first-request spread 0.0s) (agentic_replay.py:1173)
