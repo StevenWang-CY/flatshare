@@ -60,6 +60,15 @@ def test_the_style_refuses_what_a_reader_would_trip_on() -> None:
     s.text(100, 80, "a name")
     with pytest.raises(ValueError, match="a rule crosses the text 'a name'"):
         s.render()
+    # A label sits inside a panel, a group or the KV pool's outline, or outside it, never across its border.
+    s = figure()
+    s.group(20, 20, 100, 80)
+    s.text(30, 50, "inside")
+    s.text(140, 50, "outside")
+    s.render()
+    s.text(100, 90, "across")
+    with pytest.raises(ValueError, match="a label crosses a border: 'across'"):
+        s.render()
     with pytest.raises(ValueError, match="make room for its shaft"):
         figure().flow([(10, 50), (24, 50)])  # under 2.2 head lengths
     figure().flow([(10, 50), (10 + style.MIN_SHAFT * style.FLOW_HEAD, 50)])
@@ -139,8 +148,8 @@ def drawn(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     rows, incomplete = load_points(sorted(run.parent for run in W5.glob("*/*/run.json")) + a100)
     assert rows and not incomplete
     write_report(rows, out / "gpus", dots=read_dots(A100 / "figure.toml"))
-    # make method-figure.
-    diagrams.render(out)
+    # make diagrams: the method figure and the system diagrams.
+    drawn = diagrams.render(out / "diagrams")
     # make report-figures: the technical report's, each from the records it cites.
     report = report_figures.main(out / "report")
     return {
@@ -150,9 +159,7 @@ def drawn(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
         "e2-voice-p95-narrow.svg": out / "w5" / "voice-p95-narrow.svg",
         "e2-voice-p95-gpus.svg": out / "gpus" / "voice-p95.svg",
         "e2-voice-p95-gpus-narrow.svg": out / "gpus" / "voice-p95-narrow.svg",
-        "method.svg": out / "method.svg",
-        "method-narrow.svg": out / "method-narrow.svg",
-    } | {path.name: path for path in report}
+    } | {path.name: path for path in (*drawn, *report)}
 
 
 def test_every_svg_under_docs_figures_is_what_its_generator_draws(drawn: dict[str, Path]) -> None:
@@ -215,6 +222,6 @@ def test_the_figures_set_their_type_in_its_sizes_and_never_in_bold(drawn: dict[s
         assert "font-weight:400" in svg and not re.search(r"font-weight:(?!400)|bold", svg), name
         # Each paints its own page, under prefers-color-scheme's palette.
         assert '<rect class="page"' in svg and "prefers-color-scheme:dark" in svg, name
-        # Orange text clears 4.5:1 on the page alone, not on a panel's ground: the method figure sets none.
-        if name.startswith("method"):
+        # Orange text clears 4.5:1 on the page alone, not on a panel's ground: the diagrams set none.
+        if not name.startswith(("e2-", "report-")):
             assert 'class="orange tint' not in svg, name

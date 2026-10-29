@@ -470,6 +470,9 @@ class Figure:
         """Connectors, which no label may cross, and what each may (its ``ignore``)."""
         self.rules: list[tuple[tuple[float, float], tuple[float, float]]] = []
         """Gridlines, axes and reference rules, which only a label set on a halo may cross."""
+        self.borders: list[tuple[float, float, float, float]] = []
+        """Panels', groups' and the KV pool's outlines (x, y, w, h), which a label sits inside or outside, never
+        across."""
         self.glyphs: dict[str, set[str]] = {face: set() for face in FACES}
 
     # Text -------------------------------------------------------------------------------------
@@ -630,6 +633,7 @@ class Figure:
         rounded by ``rx``, its title inside the top left and its letter at the top right on the
         same baseline. Returns the title's baseline."""
         self.rect(x, y, w, h, f"panel-{ground}", rx=rx)
+        self.borders.append((x, y, w, h))
         baseline = y + 14 + 0.7 * LABEL
         self.text(x + 18, baseline, title)
         if letter:
@@ -639,6 +643,7 @@ class Figure:
     def group(self, x: float, y: float, w: float, h: float, *, rx: float = 10) -> None:
         """A dashed container around components that act together, its corners rounded by ``rx``."""
         self.rect(x, y, w, h, "group", rx=rx)
+        self.borders.append((x, y, w, h))
 
     def box(
         self,
@@ -670,6 +675,7 @@ class Figure:
     def memory(self, x: float, y: float, w: float, h: float, *, rx: float = 6) -> None:
         """Physical KV memory: a dashed outline over a faint ground, its corners rounded by ``rx``."""
         self.rect(x, y, w, h, "memory", rx=rx)
+        self.borders.append((x, y, w, h))
 
     def cells(
         self,
@@ -777,7 +783,8 @@ class Figure:
     # Checks and export ------------------------------------------------------------------------
 
     def check(self) -> None:
-        """Refuse text off the canvas, overlapping text, and a connector across text."""
+        """Refuse text off the canvas, overlapping text, a connector across text, a rule across text not on a
+        halo, and text across a panel's, a group's or the KV pool's outline."""
         for k, box in enumerate(self.boxes):
             if box.x0 < 1 or box.y0 < 1 or box.x1 > self.width - 1 or box.y1 > self.height - 1:
                 raise ValueError(f"text leaves the canvas: {box.label!r} {box}")
@@ -795,6 +802,12 @@ class Figure:
             for box in self.boxes:
                 if not box.halo and _segment_hits_box(a, b, box, pad=1.0):
                     raise ValueError(f"a rule crosses the text {box.label!r} near {a}")
+        for x, y, w, h in self.borders:
+            corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)]
+            edges = list(itertools.pairwise(corners))
+            for box in self.boxes:
+                if any(_segment_hits_box(a, b, box, pad=1.0) for a, b in edges):
+                    raise ValueError(f"a label crosses a border: {box.label!r} near {(x, y)}")
 
     def _font_css(self) -> str:
         rules = []

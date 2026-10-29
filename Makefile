@@ -35,7 +35,7 @@ E2_A100_REPORT ?= build/reproduce-e2-a100
 .PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-make-room test-trace test-make-room-ci \
   test-python schema metrics gateway-fixtures check-rules \
   reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 reproduce-e2-a100 figures e2-figures e2-w5-figure \
-  e2-gpus-figure method-figure report-figures brand \
+  e2-gpus-figure diagrams report-figures brand \
   demo-video forecast-a100 forecast-fitted profiles reproduce-a100 check-a100-calibration
 
 check: lint test
@@ -308,9 +308,11 @@ e2-gpus-figure:
 	cp build/e2-gpus-figure/voice-p95.svg docs/figures/e2-voice-p95-gpus.svg
 	cp build/e2-gpus-figure/voice-p95-narrow.svg docs/figures/e2-voice-p95-gpus-narrow.svg
 
-# The README's method figure, docs/figures/method.svg and its phone layout method-narrow.svg: the voice agent and the
-# coding agents on one GPU, and the two scheduler rules of #63350 and #63351, drawn by flatshare_bench.diagrams.
-method-figure:
+# The docs' diagrams, drawn by flatshare_bench.diagrams, each with its phone layout (NAME-narrow.svg): the README's
+# method figure, docs/figures/method.svg (the voice agent and the coding agents on one GPU, and the two scheduler rules
+# of #63350 and #63351), docs/ARCHITECTURE.md's figures of the serving path (architecture.svg, request-path.svg,
+# two-cards.svg, release.svg) and ops/RUNBOOK.md's triage.svg.
+diagrams:
 	cd python/flatshare_bench && uv run -q python -m flatshare_bench.diagrams $(abspath docs/figures)
 
 # The technical report's figures, docs/figures/report-*.svg with the phone layouts of its first figure and its headline
@@ -321,7 +323,7 @@ report-figures:
 	cd python/flatshare_bench && uv run -q python -m flatshare_bench.report.figures $(abspath docs/figures)
 
 # Every figure under docs/figures that its records or its code draw; the bench's tests check each is current.
-figures: e2-figures e2-w5-figure e2-gpus-figure method-figure report-figures
+figures: e2-figures e2-w5-figure e2-gpus-figure diagrams report-figures
 
 # The logo, the mark and the social preview under docs/brand, drawn by flatshare_bench.brand (docs/brand/README.md);
 # the bench's tests check each is current.
