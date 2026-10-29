@@ -264,14 +264,18 @@ async fn read(stream: UnixStream, shared: Weak<Shared>, closed: watch::Sender<bo
                 }
                 Err(err) => {
                     tracing::warn!(
-                        "the predecessor's ledger sent a line that is not a load: {err}"
+                        error = %err,
+                        "the predecessor's ledger sent a line that is not a load"
                     );
                     break 'stream;
                 }
             }
         }
         if pending.len() > MAX_LINE {
-            tracing::warn!("the predecessor's ledger sent a line longer than {MAX_LINE} bytes");
+            tracing::warn!(
+                max_bytes = MAX_LINE,
+                "the predecessor's ledger sent a line too long"
+            );
             break;
         }
     }

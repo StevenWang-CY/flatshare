@@ -120,14 +120,14 @@ pub async fn until_stopped(
                 // Without a ledger the reload goes on, but the successor's bounds and policy count only its own requests.
                 let path = ledger
                     .open(TIMEOUT)
-                    .inspect_err(|err| tracing::warn!("reload: cannot open the ledger for the successor: {err}"))
+                    .inspect_err(|err| tracing::warn!(error = %err, "reload: cannot open the ledger for the successor"))
                     .ok();
                 match spawn(&listeners, path.as_deref()) {
                     Ok(child) => {
                         tracing::info!(successor = child.id(), "reload: started a successor on the listening sockets");
                         successor = Some((child, tokio::time::Instant::now() + TIMEOUT));
                     }
-                    Err(err) => tracing::error!("reload failed: cannot start a successor: {err}; serving on"),
+                    Err(err) => tracing::error!(error = %err, "reload failed: cannot start a successor; serving on"),
                 }
             }
             _ = poll.tick(), if successor.is_some() => {
@@ -135,13 +135,15 @@ pub async fn until_stopped(
                     if let Some(status) = exited(child) {
                         tracing::error!(
                             successor = child.id(),
-                            "reload failed: the successor exited ({status}) before it took over; serving on"
+                            status = %status,
+                            "reload failed: the successor exited before it took over; serving on"
                         );
                         successor = None;
                     } else if tokio::time::Instant::now() >= *deadline {
                         tracing::error!(
                             successor = child.id(),
-                            "reload failed: the successor did not take over within {TIMEOUT:?}; stopped it; serving on"
+                            timeout_s = TIMEOUT.as_secs_f64(),
+                            "reload failed: the successor did not take over in time; stopped it; serving on"
                         );
                         let _ = child.kill();
                         let _ = child.wait();

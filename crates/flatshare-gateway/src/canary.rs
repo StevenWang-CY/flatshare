@@ -152,13 +152,14 @@ impl Health {
             tracing::warn!(
                 node = self.watched.node.as_deref(),
                 failures,
-                "the engine is degraded: the inference canary failed {failures} times in a row with nothing \
-                 succeeding: {cause}"
+                cause,
+                "the engine is degraded: the inference canary failed degraded_after times in a row with nothing \
+                 succeeding"
             );
             self.show(EngineState::Degraded);
         } else {
             let node = self.watched.node.as_deref();
-            tracing::debug!(node, "the inference canary failed: {cause}");
+            tracing::debug!(node, cause, "the inference canary failed");
         }
     }
 

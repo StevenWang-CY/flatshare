@@ -197,7 +197,7 @@ impl Server {
                 Listener::Tcp(listener) => {
                     let listener = listener.tap_io(|stream| {
                         if let Err(err) = stream.set_nodelay(true) {
-                            tracing::debug!("cannot set TCP_NODELAY: {err}");
+                            tracing::debug!(error = %err, "cannot set TCP_NODELAY");
                         }
                     });
                     serving.spawn(serve(listener, router, signal));
@@ -436,7 +436,7 @@ impl SocketFile {
 impl Drop for SocketFile {
     fn drop(&mut self) {
         if let Err(err) = std::fs::remove_file(&self.0) {
-            tracing::warn!("cannot remove {}: {err}", self.0.display());
+            tracing::warn!(path = %self.0.display(), error = %err, "cannot remove the socket file");
         }
     }
 }

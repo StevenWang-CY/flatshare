@@ -40,7 +40,7 @@ fn main() -> ExitCode {
     let inherited = match Inherited::from_env() {
         Ok(inherited) => inherited,
         Err(err) => {
-            tracing::error!("cannot take the inherited sockets: {err}");
+            tracing::error!(error = %err, "cannot take the inherited sockets");
             return ExitCode::FAILURE;
         }
     };
@@ -52,7 +52,7 @@ fn main() -> ExitCode {
     {
         Ok(runtime) => runtime,
         Err(err) => {
-            tracing::error!("cannot start the runtime: {err}");
+            tracing::error!(error = %err, "cannot start the runtime");
             return ExitCode::FAILURE;
         }
     };
@@ -61,14 +61,14 @@ fn main() -> ExitCode {
         let signals = match Signals::install() {
             Ok(signals) => signals,
             Err(err) => {
-                tracing::error!("cannot install signal handlers: {err}");
+                tracing::error!(error = %err, "cannot install signal handlers");
                 return ExitCode::FAILURE;
             }
         };
         let server = match Server::bind_with(config, Arc::new(LogSink), inherited).await {
             Ok(server) => server,
             Err(err) => {
-                tracing::error!("cannot listen: {err}");
+                tracing::error!(error = %err, "cannot listen");
                 return ExitCode::FAILURE;
             }
         };
@@ -78,8 +78,9 @@ fn main() -> ExitCode {
                 Ok(followed) => Some(followed),
                 Err(err) => {
                     tracing::warn!(
-                        "cannot read the predecessor's ledger at {}: {err}; its requests will not count",
-                        path.display()
+                        path = %path.display(),
+                        error = %err,
+                        "cannot read the predecessor's ledger; its requests will not count"
                     );
                     None
                 }
@@ -90,7 +91,7 @@ fn main() -> ExitCode {
         let listeners = match server.listener_fds() {
             Ok(listeners) => listeners,
             Err(err) => {
-                tracing::error!("cannot keep the listening sockets for a reload: {err}");
+                tracing::error!(error = %err, "cannot keep the listening sockets for a reload");
                 return ExitCode::FAILURE;
             }
         };
@@ -101,7 +102,7 @@ fn main() -> ExitCode {
             None => systemd::notify("READY=1"),
         };
         if let Err(err) = ready {
-            tracing::warn!("cannot say that the gateway is ready: {err}");
+            tracing::warn!(error = %err, "cannot say that the gateway is ready");
         }
         // The predecessor admits nothing more once it reads the SIGTERM above; until it says so, both would admit.
         if let Some(mut followed) = followed
@@ -110,8 +111,8 @@ fn main() -> ExitCode {
                 .is_err()
         {
             tracing::warn!(
-                "the predecessor did not say it admits nothing more within {:?}; serving anyway",
-                handover::CLOSE_WAIT
+                wait_s = handover::CLOSE_WAIT.as_secs_f64(),
+                "the predecessor did not say in time that it admits nothing more; serving anyway"
             );
         }
         let handed_over = server.handover();
