@@ -147,6 +147,42 @@ async fn partial_sse_then_silence_end_at_the_idle_deadline() {
 }
 
 #[tokio::test]
+async fn the_idle_deadline_takes_over_from_the_first_contents_at_the_first_frame() {
+    // A first-content deadline far longer than the idle one: a relay that kept waiting by the first after a stream's
+    // first frame would hold a silent stream for its whole minute, and the test above would still pass, ten minutes
+    // later, at background's default.
+    let sent = chunks(1);
+    let relayed = sent.concat();
+    let mut mock = Mock::start(Script::Quiet { chunks: sent }).await;
+    let gw = Gateway::start(
+        mock.addr,
+        "[classes.background]\nfirst_content_timeout_s = 60\nidle_timeout_s = 0.3",
+    )
+    .await;
+    let started = Instant::now();
+    let (status, bytes, aborted, ended) =
+        tokio::time::timeout(Duration::from_secs(5), stream(&gw.tcp, &[AGENTS_AUTH]))
+            .await
+            .expect("the idle deadline ends the stream, not the first content's");
+    assert_eq!(status, 200);
+    assert!(aborted);
+    let event = timeout_event(&relayed, &bytes);
+    assert!(
+        event["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("idle_timeout_s")
+    );
+    let after = ended - started;
+    assert!(
+        after >= Duration::from_millis(300) && after < Duration::from_secs(2),
+        "{after:?}"
+    );
+    mock.next_drop(Duration::from_secs(2)).await;
+    one_outcome(&gw, "background", "timeout_idle").await;
+}
+
+#[tokio::test]
 async fn a_stream_that_runs_past_the_total_deadline_is_cut() {
     let mut mock = Mock::start(Script::Sse {
         chunks: chunks(20),
