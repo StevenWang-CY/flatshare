@@ -72,7 +72,7 @@ ADAPTED = {
     },
     "63351.patch": {
         # v0.32.0's request queues stay stock: the queues' new method is the scheduler's _has_lower_priority_than.
-        "b703ac4d7": (
+        "6511bc916": (
             ("queue.has_lower_priority_than(request.priority)",),
             (
                 "PriorityRequestQueue,",
@@ -89,7 +89,7 @@ ADAPTED = {
             ),
         ),
         # Nor for the budget cap's holds: the scheduler counts them too.
-        "1104add2b": (
+        "f1614decc": (
             (
                 "# The budget cap's holds since the last scheduler stats: the steps in",
                 "# which it held lower-priority prefill back, and the prefill tokens it",

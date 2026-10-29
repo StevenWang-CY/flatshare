@@ -599,7 +599,7 @@ def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, up
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert (
         "  #63351 and 63351.patch: 155 of #63351's 167 lines are the backport's; its other 11 and 14 of the "
-        "backport's 170 are adapted (b703ac4d7, 1104add2b); it DIFFERS in 2 lines no Backport paragraph names:\n"
+        "backport's 170 are adapted (6511bc916, f1614decc); it DIFFERS in 2 lines no Backport paragraph names:\n"
         f"    #63351's: {old.replace(' < ', ' <= ')}"
         f"    63351.patch's: {old}"
     ) in proc.stdout
@@ -612,7 +612,7 @@ def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, up
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert (
-        "(b703ac4d7, 1104add2b); 2 of the lines named as adapted no longer differ\n" in proc.stdout
+        "(6511bc916, f1614decc); 2 of the lines named as adapted no longer differ\n" in proc.stdout
     )
     assert (
         "backport = the PRs' heads but for 14 adapted lines of theirs and 14 of its own"
