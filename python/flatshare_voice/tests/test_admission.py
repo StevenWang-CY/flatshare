@@ -26,6 +26,8 @@ from livekit.agents import AgentServer
 
 from flatshare_voice.admission import Admission, EngineProbe, Monitor
 
+from .mocks import gateway_answer
+
 REPO = Path(__file__).resolve().parents[3]
 SERVING = REPO / "deploy" / "phastform" / "serving.json"
 
@@ -314,7 +316,8 @@ def test_a_placed_call_whose_job_does_not_run_ends_its_placement() -> None:
         session_id = (await request.json())["session_id"]
         asked.append(f"POST {session_id}")
         if session_id == "voice-RM_full":
-            return web.json_response({"error": {"type": "no_call_slot"}}, status=503)
+            status, body = gateway_answer("no_call_slot")
+            return web.json_response(body, status=status)
         return web.json_response({"session_id": session_id, "node": "gray"})
 
     async def end(request: web.Request) -> web.Response:
@@ -404,10 +407,10 @@ def test_the_placement_at_admission_reads_the_gateways_answers() -> None:
         try:
             for answer in (
                 (200, {"session_id": "voice-RM_a", "node": "gray"}),
-                (404, {"error": {"type": "not_found"}}),
-                (503, {"error": {"type": "no_call_slot"}}),
-                (503, {"error": {"type": "placement_full"}}),
-                (503, {"error": {"type": "in_flight_limit"}}),
+                gateway_answer("not_found"),
+                gateway_answer("no_call_slot"),
+                gateway_answer("placement_full"),
+                gateway_answer("in_flight_limit"),
                 (0, {}),
             ):
                 answers.append(answer)

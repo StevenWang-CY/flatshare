@@ -23,6 +23,25 @@ TRANSCRIPT = "Tell me a long story."
 FIRST_SENTENCE = "Once upon a time, a lighthouse keeper kept a log of every ship."
 STORY = "Night after night the keeper climbed the stairs and lit the lamp."
 TTS_SAMPLE_RATE = 24_000
+GATEWAY_ERRORS = json.loads(
+    (
+        Path(__file__).resolve().parents[3] / "crates/flatshare-gateway/tests/fixtures/errors.json"
+    ).read_text()
+)
+"""The gateway's errors that the worker reads, as the gateway sends them: its answers, each named by its error's
+``code``, and its streams' error events, each named by its ``type`` (written by the gateway's own tests)."""
+
+
+def gateway_answer(code: str) -> tuple[int, dict[str, Any]]:
+    """The gateway's answer whose error is ``code``: its status and its body."""
+    answer = next(answer for answer in GATEWAY_ERRORS["answers"] if answer["code"] == code)
+    return answer["status"], answer["body"]
+
+
+def gateway_event(kind: str) -> bytes:
+    """The error event with which the gateway ends a stream that failed for ``kind``."""
+    event = next(event for event in GATEWAY_ERRORS["events"] if event["type"] == kind)
+    return event["data"].encode()
 
 
 @dataclass
