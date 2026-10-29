@@ -324,4 +324,5 @@ names ([docs/GLOSSARY.md](docs/GLOSSARY.md)).
 
 Flatshare is an independent project by Chuyue (Steven) Wang. It is not affiliated with, endorsed by, or sponsored by
 the vLLM project, LiveKit, or any other project or organization named in this repository. Their names identify only
-the software Flatshare runs on and measures. Flatshare is released under the [Apache License 2.0](LICENSE).
+the software Flatshare runs on and measures. Flatshare is released under the [Apache License 2.0](LICENSE); the software
+and models it runs keep their own licences ([THIRD-PARTY.md](THIRD-PARTY.md)).

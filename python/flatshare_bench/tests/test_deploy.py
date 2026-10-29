@@ -2223,3 +2223,32 @@ def test_the_tts_unit_keeps_the_replies_text_out_of_the_journal() -> None:
     # the first 50 characters of each chunk it speaks at INFO: with real callers, the agent's replies in the journal.
     unit = (DEPLOY / "phastform" / "systemd" / "flatshare-tts.service").read_text().splitlines()
     assert "Environment=API_LOG_LEVEL=WARNING" in unit
+
+
+def test_third_party_names_the_versions_the_environments_lock() -> None:
+    # THIRD-PARTY.md's licences are those of the versions it names: a lock that moves one of them must re-check its
+    # licence there, so the versions are held to the locks.
+    locks = {}
+    for env in ("engine", "tts"):
+        pins = (DEPLOY / "phastform" / "requirements" / f"{env}.txt").read_text()
+        locks[env] = dict(re.findall(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?==([^\s;\\]+)", pins, re.M))
+    lock = tomllib.loads((REPO / "python" / "flatshare_voice" / "uv.lock").read_text())
+    locks["voice"] = {p["name"]: p["version"] for p in lock["package"] if "version" in p}
+    text = (REPO / "THIRD-PARTY.md").read_text()
+    named = []
+    # The table of packages whose licences are not permissive: | `name` | version(s) | the processes that load it,
+    # each with its environment in parentheses | licence |
+    rows = re.findall(r"^\| `([a-z0-9_.-]+)` \| ([^|]+) \| ([^|]+) \|", text, re.M)
+    for name, versions, loaded in rows:
+        # "4.70.1 (engine), 4.67.1 (TTS)" names each environment's version; a lone version is every one's.
+        per_env = {e.lower(): v for v, e in re.findall(r"([0-9][^ ,]*) \(([A-Za-z]+)\)", versions)}
+        envs = re.findall(r"\((engine|TTS|voice)\)", loaded)
+        assert envs, (name, loaded)
+        for env in (e.lower() for e in envs):
+            named.append((name, per_env.get(env, versions.strip()), env))
+    # The list of packages that declare no licence: - `name` version (environment): ...
+    listed = re.findall(r"^- `([a-z0-9_.-]+)` ([0-9][^ ]*) \(([a-zA-Z]+)\)", text, re.M)
+    named += [(name, version, env.lower()) for name, version, env in listed]
+    assert len(named) >= 15, named
+    wrong = [(n, v, e, locks[e].get(n)) for n, v, e in named if locks[e].get(n) != v]
+    assert wrong == [], wrong

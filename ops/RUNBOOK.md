@@ -91,6 +91,40 @@ On cyan, `install.sh` also disables and unlinks the units of this tree that the 
 3. On cyan, rename the variables in the env files from `LH_*` to `FLATSHARE_*`, their values unchanged; in `gateway.toml`, the paths under `/run/user/UID/lh/` and `~/.config/leaseholder/` and the units it names; and the tunnel keys from `~/.ssh/lh_tunnel_*` to `flatshare_tunnel_*`.
 4. Deploy as on a new host: `deploy.sh`, the bootstrap (which rebuilds the venvs, whose scripts name the old tree), the gateway, `authorize-tunnel.sh` (which takes the entries of the keys' former names off the node too) and the units; on Phastform, `variant.sh use` the variant the box ran.
 
+## Upgrading a component
+
+| Component | Upgrade | Rollback |
+|---|---|---|
+| vLLM and the Python environments | A new lock: the release builds a new environment beside the old ones | `deploy.sh HOST --rollback`, offline and atomic |
+| The gateway's binary | Carried by each release | Atomic, with the release |
+| Flatshare's code and the serving profile | Each release | Atomic |
+| The models | Change the revision in `engine.yaml` or `stt.yaml`, run `deploy/phastform/bootstrap.sh` on each node to fetch it (the units load offline), then release | Atomic while the old revision is still in the Hugging Face cache |
+| LiveKit | Change its two pins (`livekit=` in `deploy/cyan/bootstrap.sh`, and `tools` in `deploy/bin/flatshare-release`), run `bootstrap.sh`, which replaces the binary in place, then release | Not atomic: a rollback fails its check, since the binary is not the old release's version. Run the old release's `bootstrap.sh` first |
+| Kokoro-FastAPI | Change its commit where it is pinned (`flatshare-release`'s `vendor`, `deploy/phastform/bootstrap.sh` and `deploy/a100/bootstrap.sh`), run `deploy/phastform/bootstrap.sh`, which moves the shared checkout, then release | Not atomic: a release refuses a checkout at another commit. Check out the old commit first (`git -C ~/flatshare/vendor/Kokoro-FastAPI checkout COMMIT`) |
+
+Each manual case fails closed: the release refuses to switch, rather than run a component its manifest does not name.
+
+## State and secrets
+
+What each restart keeps:
+- **A reload** of the gateway keeps everything: its successor takes the listeners, the placements and the nodes' verdicts from the ledger.
+- **A restart or a crash** of the gateway loses the placements, the verdicts and the covering state, which are memory only. Sessions are placed again by their next request.
+- **A restart of LiveKit or of the voice worker** ends the calls. LiveKit's rooms are memory only.
+- **A restart of the engine** loses its KV, on the GPU and in the CPU tier.
+
+| Item | Where | If lost | Rotation |
+|---|---|---|---|
+| `gateway.toml` | cyan, `~/.config/flatshare/` | Written by hand: keep a copy | Edit, then `systemctl --user reload flatshare-gateway` |
+| Tenants' keys | Clients hold them; `gateway.toml` holds their SHA-256 (`keys_sha256`) | Issue new ones | Add the new key's digest beside the old one, reload, move the clients, then remove the old digest and reload |
+| The metrics key | cyan, `~/.config/flatshare/metrics-key` (`install.sh` makes it once) | `install.sh` makes a new one | Replace the file, then reload the gateway. Prometheus reads the file (`credentials_file`) at each scrape, so it needs no reload, and a scrape between the two gets 401 |
+| The cache-salt secret | cyan, `~/.config/flatshare/cache-salt-secret` (`install.sh` makes it once) | `install.sh` makes a new one | Replace the file and reload. Every tenant's salt changes, so every prefix cache starts cold |
+| LiveKit's API key and secret | cyan, `~/.config/flatshare/livekit.env` (`bootstrap.sh` makes it once) | `bootstrap.sh` makes new ones | Remove the file, run `bootstrap.sh`, then restart LiveKit and the worker in a drain window, which ends the calls |
+| The tunnels' keys | cyan, `~/.ssh/flatshare_tunnel_{engine,stt,tts}_ed25519` | `bootstrap.sh` makes new ones | Remove them, run `bootstrap.sh`, run `deploy/authorize-tunnel.sh cyan NODE` for each node (it replaces the old entries), then restart `flatshare-tunnel@NODE` |
+| Each tunnel's target | cyan, `~/.config/flatshare/tunnel-NODE.env` | Written by hand | Edit, then restart `flatshare-tunnel@NODE` |
+| Which engine variant a node runs | The node, `~/.config/systemd/user/flatshare-engine.service.d/` | `deploy/phastform/variant.sh use make-room-serve` | |
+
+Nothing here needs a backup but `gateway.toml` and the tunnels' targets: the scripts make the rest again, or a release restores it.
+
 ## Start, stop, status
 
 ```sh
