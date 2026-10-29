@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # make-room-patches.sh VLLM_CLONE: write make-room's three patches (src/flatshare_vllm/make-room/*.patch) from the
-# backport's branches in a vLLM clone. Each branch is v0.32.0 with commits on top, and each patch is the scheduler.py
-# part of one branch's commits. Its header names the commits that change scheduler.py and, under a commit that v0.32.0
-# made differ from its PR commit, the paragraph of its message that says how ("Backport: ..."):
-#   up-make-room-kv-v0.32.0   v0.32.0 + #63350's commits, cherry-picked            -> 63350.patch
-#   up-budget-cap-v0.32.0     up-make-room-kv-v0.32.0 + #63351's commits           -> 63351.patch
-#   up-make-room-v0.32.0      up-budget-cap-v0.32.0 + the variant's one commit     -> variant.patch
-# A change to the PRs is made on their branches (vLLM main), cherry-picked onto these, and the patches rewritten
-# here. KV_REF, CAP_REF and VARIANT_REF name other branches.
+# backport's branches, which the fork https://github.com/StevenWang-CY/vllm publishes. VLLM_CLONE is a clone of the
+# fork with vLLM's v0.32.0 tag fetched into it, which the fork does not carry
+# (git -C VLLM_CLONE fetch https://github.com/vllm-project/vllm tag v0.32.0). Each branch is v0.32.0 with commits on
+# top, and each patch is the scheduler.py part of one branch's commits. Its header names the commits that change
+# scheduler.py and, under a commit that v0.32.0 made differ from its PR commit, the paragraph of its message that says
+# how ("Backport: ..."):
+#   v0.32.0-priority-make-room-kv        v0.32.0 + #63350's commits, cherry-picked                 -> 63350.patch
+#   v0.32.0-priority-prefill-budget-cap  v0.32.0-priority-make-room-kv + #63351's commits          -> 63351.patch
+#   v0.32.0-leaseholder-make-room        v0.32.0-priority-prefill-budget-cap + the variant's commit -> variant.patch
+# A change to the PRs is made on their branches (the fork's priority-make-room-kv and priority-prefill-budget-cap, on
+# vLLM main), cherry-picked onto these and pushed to the fork, and the patches rewritten here from the clone's copies
+# of the fork's branches (origin/...). KV_REF, CAP_REF and VARIANT_REF name other branches.
 set -euo pipefail
-clone=${1:?usage: make-room-patches.sh VLLM_CLONE}
-kv=${KV_REF:-up-make-room-kv-v0.32.0}
-cap=${CAP_REF:-up-budget-cap-v0.32.0}
-variant=${VARIANT_REF:-up-make-room-v0.32.0}
+clone=${1:?usage: make-room-patches.sh VLLM_CLONE (a clone of https://github.com/StevenWang-CY/vllm)}
+kv=${KV_REF:-origin/v0.32.0-priority-make-room-kv}
+cap=${CAP_REF:-origin/v0.32.0-priority-prefill-budget-cap}
+variant=${VARIANT_REF:-origin/v0.32.0-leaseholder-make-room}
 out=$(cd "$(dirname "$0")/../src/flatshare_vllm/make-room" && pwd)
 scheduler=vllm/v1/core/sched/scheduler.py
 git -C "$clone" merge-base --is-ancestor v0.32.0 "$kv"

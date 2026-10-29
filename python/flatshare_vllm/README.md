@@ -9,7 +9,7 @@ src/flatshare_vllm/make-room/    63350.patch and 63351.patch, the PRs' scheduler
 src/flatshare_vllm/pr54530/      pr54530.patch, #54530 ported to v0.32.0 by hand; probe.py
 src/flatshare_vllm/serve/        flatshare_make_room_serve.py, the serving variant's scheduler class: make-room's,
                                  which writes the configuration the engine runs as it starts
-scripts/make-room-patches.sh     rewrites make-room's patches from the backport's branches in a vLLM clone
+scripts/make-room-patches.sh     rewrites make-room's patches from the backport's branches, in a clone of the fork
 scripts/compat_upstream.py       make compat-upstream: the PRs against vLLM's main, the patches against its newest release
 tests/                           the build, make-room's behavior, make-room traced against the PRs, its cost per step
 ```
@@ -26,7 +26,7 @@ The serving variant, `make-room-serve` ([`deploy/phastform/variants`](../../depl
 
 ## One source for the change
 
-The PRs are the change's only source. A change is made on their branches, on vLLM main, and cherry-picked onto the backport: three branches of v0.32.0 in a vLLM clone, `up-make-room-kv-v0.32.0` (#63350's commits), `up-budget-cap-v0.32.0` (#63351's on top) and `up-make-room-v0.32.0` (the variant's commit on top). `scripts/make-room-patches.sh CLONE` then rewrites the three patches, each the `scheduler.py` diff of one branch's commits, with the commits named in its header.
+The PRs are the change's only source. A change is made on their branches, on vLLM main (`priority-make-room-kv` and `priority-prefill-budget-cap` on the fork [StevenWang-CY/vllm](https://github.com/StevenWang-CY/vllm)), and cherry-picked onto the backport: three branches of v0.32.0 that the fork publishes, `v0.32.0-priority-make-room-kv` (#63350's commits), `v0.32.0-priority-prefill-budget-cap` (#63351's on top) and `v0.32.0-leaseholder-make-room` (the variant's commit on top). `scripts/make-room-patches.sh CLONE`, in a clone of the fork with vLLM's `v0.32.0` tag fetched into it, then rewrites the three patches from them, each the `scheduler.py` diff of one branch's commits, with the commits named in its header.
 
 `tests/test_trace.py` keeps the variant and the PRs from drifting:
 
