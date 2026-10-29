@@ -11,9 +11,11 @@ Two callers, 25 turns each, beside 24 coding-agent sessions whose contexts fill 
 | Voice alone | 5 | 1,784 ms (1,764–1,819) | 1 / 295 | — | — |
 | Shared, tuned vLLM 0.32 (priority, step cap 512/256, a CPU KV tier) | 10 | 10,477 ms (8,686–12,115) | 532 / 590 | 3,305 | 106 s |
 | Shared, abort-and-resubmit in a router, the same engine | 5 | 2,522 ms (2,516–2,868) | 130 / 295 | 3,332 | 193 s |
-| **Shared, this configuration** | 15 | **2,236 ms (2,132–2,397)** | 286 / 885 | 3,203 | 111 s |
+| **Shared, this configuration at the box's 512/256** | 15 | **2,236 ms (2,132–2,397)** | 286 / 885 | 3,203 | 111 s |
 
 On stock vLLM the shared GPU leaves the voice p95 at over five times its SLO: a waiting voice turn cannot take KV from running agents ([vLLM #40004](https://github.com/vllm-project/vllm/issues/40004)), and once it runs, agent prefill chunks share every step of its reply. With this configuration the tail comes within about 0.2 s of the SLO (202 ms at the median), the agents keep 97% of their token rate over the calls' first 240 s, and their TTFT p99 stays within the runs' spread. The SLO is still missed: it allows 5% of the replies over its threshold, and 32% of this configuration's are over it, against 90% on tuned vLLM. A deployment that must meet it admits less background work beside the calls than this scenario's 24 sessions (the serving profile states the envelope). Capping every reply at 16 tokens in the gateway as well (arm 9, make-room with the lifecycle policy) brought W4's p95 to 2,057 ms, 40 ms over W4's SLO, at the cost of the replies; W5 did not re-measure it. Without the change, the alternative is a GPU per workload.
+
+These rows ran the box's step cap, 512 tokens a step with a 256-token threshold. The serving profile runs the change at 256 tokens a step without a threshold, which five later rounds on new samples confirmed: 44 of 295 replies over each round's SLO against 94 at 512/256, at 7% less of the agents' token rate ([the step cap](BENCHMARKS.md#the-step-cap-screened-and-confirmed-sw-rg)).
 
 On an A100 SXM4 80 GB held to the box's pool, model and agents, the same configuration took the voice p95 from 4,986 to 1,634 ms, under that card's SLO of 1,669 ms in each of five rounds, and the agents' throughput held ([the A100 run](HARDWARE.md#what-it-measured-2026-10-26)).
 
