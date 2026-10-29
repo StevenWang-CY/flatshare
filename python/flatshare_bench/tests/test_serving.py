@@ -1,8 +1,9 @@
 """The box's serving profile (deploy/profiles/rtx-5060-ti-serve.toml): it renders the serving variant's drop-in and
 serving.json, which hold every setting the engine must run with and its required revisions, the measured configuration
-of the sweep's PR point at the step cap it chose (W5's but for the step cap); the drop-in runs exactly what
-serving.json names, its step cap over the frozen box's engine.yaml; and deploy/bin/serving-check passes an engine that
-runs it and fails one that differs in any setting, the negative control, as well as a file the engine did not write."""
+of the sweep's PR point at the step cap it chose (W5's but for the step cap), every setting of which a point's record
+keeps but those UNRECORDED names; the drop-in runs exactly what serving.json names, its step cap over the frozen box's
+engine.yaml; and deploy/bin/serving-check passes an engine that runs it and fails one that differs in any setting, the
+negative control, as well as a file the engine did not write."""
 
 from __future__ import annotations
 
@@ -20,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from flatshare_bench.e2.record import engine_settings
+
 REPO = Path(__file__).resolve().parents[3]
 DEPLOY = REPO / "deploy"
 BOX = DEPLOY / "phastform"
@@ -29,8 +32,8 @@ MEASURED = (
     REPO
     / "benchmarks/results/2026-10-27-sweep/sweep-screen/sweep-disc-pr-ab48-b256-t0-s24/engine.json"
 )
-"""The engine's configuration as /server_info gave it in the sweep's point of the PRs' configuration at the step cap
-it chose."""
+"""The record of the engine's configuration in the sweep's point of the PRs' configuration at the step cap it chose:
+what engine_settings keeps of the /server_info it gave."""
 W5 = REPO / "benchmarks/results/2026-10-24-e2-w5/w5-ext-r1/w5-disc-pr-ab48-s24/engine.json"
 """The same in a W5 point of the PRs' configuration, at the frozen box's step cap."""
 STEP_CAP = ("max_num_batched_tokens", "long_prefill_token_threshold")
@@ -195,19 +198,24 @@ def profile_settings(engine: dict = SERVING["engine"]) -> dict:
     }
 
 
+def served(measured: dict) -> dict:
+    """A point's engine.json by serving.json's names: its model, scheduler, scheduler class, cache and CPU tier, and
+    make-room's switches, which vLLM keeps in its additional configuration."""
+    return {
+        "scheduler_cls": measured["scheduler_config"]["scheduler_cls"],
+        "model": measured["model_config"],
+        "scheduler": measured["scheduler_config"],
+        "cache": measured["cache_config"],
+        "kv_transfer": measured["kv_transfer_config"],
+        "make_room": measured["additional_config"]["make_room"],
+    }
+
+
 def measured_settings(measured: dict) -> dict:
     """The same settings from a point's engine.json, its model read as serving-check reads a snapshot of it in
     Hugging Face's cache, as an engine that resolved the model offline reports it."""
     model = serving_check.as_named({"model": measured["model_config"]})["model"]
-    return profile_settings(
-        {
-            "model": model,
-            "cache": measured["cache_config"],
-            "scheduler": measured["scheduler_config"],
-            "kv_transfer": measured["kv_transfer_config"],
-            "make_room": measured["additional_config"]["make_room"],
-        }
-    )
+    return profile_settings(served(measured) | {"model": model})
 
 
 def test_the_serving_profile_is_the_configuration_the_sweep_chose() -> None:
@@ -239,6 +247,46 @@ def test_the_serving_profile_is_the_configuration_the_sweep_chose() -> None:
         frozen["max_num_batched_tokens"],
         frozen["long_prefill_token_threshold"],
     )
+
+
+UNRECORDED = {
+    "engine.vllm_version": "the release, which a record's run.json names (its engine's version)",
+    "engine.scheduler_module.name": "the build, which a record names by the revision the GPU node ran (run.json's "
+    "versions), from which build.py writes the module",
+    "engine.scheduler_module.sha256": "the same",
+    "engine.serve_module_sha256": "the same",
+    "engine.cache.pool_tokens": "the blocks times their size, as run.json's engine gives it",
+    "engine.cache.gpu_memory_utilization": "where kv_cache_memory_bytes fixes the pool, as every profile does, vLLM "
+    "sizes nothing by it and only checks that this share of the card is free at start",
+    "engine.kv_transfer.kv_role": "deploy/templates/engine.yaml's kv_both for every profile, which no variant or arm "
+    "changes",
+}
+"""serving.json's engine settings that a point's record (engine_settings, what flatshare-bench e2 export writes of its
+engine.json) does not keep, and why. It keeps every other one (a test holds it), so that a setting the profile comes
+to pin and the reduction drops fails there, until the reduction keeps it or it is here, and not later, in the
+comparison with a record exported without it."""
+
+
+def test_a_record_keeps_each_engine_setting_serving_json_pins_but_the_unrecorded() -> None:
+    # An engine that runs serving.json reports its settings in vLLM's configuration, and a point's record keeps what
+    # engine_settings reduces that to: read back by serving.json's names, as serving-check compares them, it has every
+    # setting but those UNRECORDED names. 15e96e3's export dropped the tokenizer, which serving.json pins, and only the
+    # test above found it, on a record that had lost it.
+    engine = SERVING["engine"]
+    configured = {
+        "model_config": engine["model"],
+        "scheduler_config": engine["scheduler"] | {"scheduler_cls": engine["scheduler_cls"]},
+        "cache_config": engine["cache"],
+        "kv_transfer_config": engine["kv_transfer"],
+        "additional_config": {"make_room": engine["make_room"]},
+    }
+    kept = served(engine_settings(configured))
+    dropped = [
+        name
+        for name, want, have in serving_check.leaves(engine, kept, "engine")
+        if not serving_check.same(want, have)
+    ]
+    assert set(dropped) == set(UNRECORDED)
 
 
 def test_the_serving_variant_runs_what_serving_json_names() -> None:
