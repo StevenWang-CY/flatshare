@@ -109,10 +109,11 @@ groups:
         labels:
           severity: page
         annotations:
-          summary: The gateway itself holds requests over 2 ms, fast enough to spend the overhead SLO's budget
+          summary: The gateway's request leg takes over 2 ms, fast enough to spend the overhead SLO's budget
           description: >-
-            {{ $value | humanizePercentage }} of requests spent over 2 ms in the gateway (the SLO's p99). Its CPU (cores
-            0-7 on cyan) or its admission policy's decisions are the suspects.
+            {{ $value | humanizePercentage }} of requests took over 2 ms in the gateway from the end of their body to
+            the upstream write (the SLO's p99; the response's relay is not in it). Its CPU (cores 0-7 on cyan) or its
+            admission policy's decisions are the suspects.
       - alert: FlatshareOverheadBudgetSlowBurn
         expr: flatshare:overhead_slow:ratio_rate3d > 0.01 and flatshare:overhead_slow:ratio_rate6h > 0.01
         labels:
