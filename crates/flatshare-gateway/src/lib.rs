@@ -12,9 +12,9 @@
 //! - **admission**, E2's harness (`harness`): a `flatshare_core::admission` policy decides when a request goes
 //!   upstream, and the gateway does the waiting and the cancellation; under the lifecycle policy it also follows
 //!   the realtime sessions' turns from lifecycle events and realtime requests;
-//! - **bounds on what a request asks for**: a reply cap per class (`[classes.<class>] max_reply_tokens`, and
-//!   `realtime_max_tokens`), written in each route's own fields as vLLM reads them, and at most `max_choices`
-//!   choices, without an admission policy as with one;
+//! - **bounds on what a request asks for**: a reply cap per class (`[classes.<class>] max_reply_tokens`), written in
+//!   each route's own fields as vLLM reads them, and at most `max_choices` choices, without an admission policy as
+//!   with one;
 //! - **intake bounds**, without an admission policy as with one: requests in flight in all, by class and by tenant,
 //!   taken before a body is read and refused at once, and a budget for the bodies held; a reload's successor counts
 //!   its predecessor's ([`ledger`]);

@@ -502,7 +502,7 @@ async fn an_admission_point_exposes_its_policys_series() {
 #[tokio::test]
 async fn a_deployment_caps_every_realtime_reply_without_an_admission_policy() {
     let mock = Mock::start(Script::Json("{}")).await;
-    let gw = Gateway::start(mock.addr, "realtime_max_tokens = 24").await;
+    let gw = Gateway::start(mock.addr, "[classes.realtime]\nmax_reply_tokens = 24").await;
     let chat = |cap: &str| {
         format!(r#"{{"model":"qwen","messages":[{{"role":"user","content":"hi"}}]{cap}}}"#)
     };
@@ -613,7 +613,7 @@ async fn each_classs_cap_is_written_in_its_routes_own_field() {
 #[tokio::test]
 async fn limits_and_choices_the_engine_could_read_otherwise_are_400() {
     let mock = Mock::start(Script::Json("{}")).await;
-    let gw = Gateway::start(mock.addr, "realtime_max_tokens = 24").await;
+    let gw = Gateway::start(mock.addr, "[classes.realtime]\nmax_reply_tokens = 24").await;
     for (asked, code, param) in [
         // vLLM accepted n = 8 and would run eight choices.
         (r#"{"messages":[],"n":8}"#, "too_many_choices", "n"),
