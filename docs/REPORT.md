@@ -419,10 +419,11 @@ step at 24 session trees (38 ms).
 
 **The measurement harness.** Around the engine, the repository holds the system that measured it. A gateway written in
 Rust, the control plane the deployment runs, gives each client a class and a priority from its identity, and adds less
-than 0.5 ms to a voice request's first token at the median, paired against a direct call. The voice agent is a LiveKit
-Agents worker [[13](#ref-13)] with its stock turn handling and fixed endpointing, the callers are LiveKit clients that
-play scripted lines and record what they hear, and AIPerf [[14](#ref-14)] replays the agents' traces. Appendix A gives
-the records behind every table and figure, and what regenerates each.
+than 0.5 ms to a voice request's first token at the median, paired against a direct call (+0.12 ms on version 1.8,
+[its record](../benchmarks/results/2026-10-29-gateway-window/README.md)). The voice agent is a LiveKit Agents worker
+[[13](#ref-13)] with its stock turn handling and fixed endpointing, the callers are LiveKit clients that play scripted
+lines and record what they hear, and AIPerf [[14](#ref-14)] replays the agents' traces. Appendix A gives the records
+behind every table and figure, and what regenerates each.
 
 ## 5. Evaluation setup
 

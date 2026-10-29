@@ -1,0 +1,4 @@
+kv: priority-0 TTFT 1963 ms, 16 tokens —, for 750 prompt tokens, sent with 3 priority-2 requests of 20863 tokens running and 6 of 3936 blocks free; after it, 2 running and 1 waiting
+kv: priority-0 TTFT 1967 ms, 16 tokens 2380 ms, for 749 prompt tokens, sent with 3 priority-2 requests of 20863 tokens running and 6 of 3936 blocks free; after it, 3 running and 1 waiting
+kv: priority-0 TTFT 1964 ms, 16 tokens 2377 ms, for 748 prompt tokens, sent with 3 priority-2 requests of 20863 tokens running and 6 of 3936 blocks free; after it, 3 running and 1 waiting
+kv: priority-0 TTFT 1967 ms, 16 tokens 2380 ms, for 747 prompt tokens, sent with 3 priority-2 requests of 20863 tokens running and 6 of 3936 blocks free; after it, 3 running and 1 waiting
