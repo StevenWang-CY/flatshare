@@ -40,12 +40,12 @@ on five fresh samples of the agents.
     (ea7efd0); rounds 2 and 3 ran every point inside their engine groups.
   - beside the gate, a warm spare's card: the agents alone on the change at 256 with its speech servers idle
     (`rg-disc-agents-pr-ab48-b256-s16` and `-s12`), the second card when it must be able to take the calls.
-- **The records** are kept as W5's are (`run.json`, `arm.toml`, `engine.json`, `summary.json`, the callers'
-  `bots/summary.json` and `bots/turns.jsonl`), with each campaign's `campaign.log` and report, home directories
-  written as `~`. A point that did not complete is kept beside the one that did (`run.json` names its status): the
-  one here is round 1's first voice alone (`rg-r1/w5-a1-voice.incomplete-20261028T020909Z`), stopped at its first
-  turns on v1.6-21-ga4e6676, whose callers waited out every reply to 60 s, misreading the agent's state; the release
-  the rounds ran fixed it.
+- **The records** are kept as W5's are, as `flatshare-bench e2 export` writes a point (`run.json`, `arm.toml`,
+  `engine.json`, `summary.json`, the callers' `bots/summary.json` and `bots/turns.jsonl`), with each campaign's
+  `campaign.log` and report, home directories written as `~`. A point that did not complete is kept beside the one that
+  did (`run.json` names its status): the one here is round 1's first voice alone
+  (`rg-r1/w5-a1-voice.incomplete-20261028T020909Z`), stopped at its first turns on v1.6-21-ga4e6676, whose callers
+  waited out every reply to 60 s, misreading the agent's state; the release the rounds ran fixed it.
 
 [`gate.py`](gate.py) gives the gate's verdict and the sweep's table from these records
 (`cd python/flatshare_bench && uv run python ../../benchmarks/results/2026-10-28-rounds/gate.py`), and

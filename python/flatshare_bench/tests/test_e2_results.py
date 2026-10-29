@@ -88,6 +88,10 @@ A100_E2 = A100_RESULTS / "e2"
 # The A100 report's points, as the Makefile's E2_A100_POINTS names them: the core's rounds and the arms paired with
 # its first two; A' (32 sessions) is a workload of its own, which make reproduce-a100 reports.
 A100_REPORTED = ("a100-r", "a100-tuned-r", "a100-prtuned-r")
+# Records of campaigns: each campaign's points beside its log, and the report it gives, and the attempts that did not
+# complete, a run.json without a summary.
+ROUNDS = REPO / "benchmarks" / "results" / "2026-10-28-rounds"
+SWEEP = REPO / "benchmarks" / "results" / "2026-10-27-sweep"
 
 
 def record(end: float, *, phase: str = "profiling", ttft: float = 100.0, **extra: Any) -> str:
@@ -1405,6 +1409,52 @@ def test_a_committed_record_exports_to_itself(tmp_path: Path, results: Path) -> 
         assert sorted(p.relative_to(again) for p in again.rglob("*") if p.is_file()) == files
         for name in files:
             assert (again / name).read_bytes() == (record / name).read_bytes(), record / name
+
+
+@pytest.mark.parametrize(
+    ("results", "complete"), [(ROUNDS, 80), (SWEEP, 18)], ids=["rounds", "sweep"]
+)
+def test_a_record_of_campaigns_keeps_its_points_as_export_writes_them(
+    tmp_path: Path, results: Path, complete: int
+) -> None:
+    # Each complete point is what flatshare-bench e2 export writes, so that every column of its campaign's report,
+    # the GPU's clock and temperature among them, comes from the record; the attempts that did not complete keep
+    # what they have. No file names a credential or an account.
+    dirs = sorted(run.parent for run in results.glob("*/*/run.json"))
+    points = [d for d in dirs if (d / "summary.json").exists()]
+    assert len(points) == complete and len(dirs) > complete
+    for record in points:
+        again = export_point(record, tmp_path)
+        assert again is not None and again.relative_to(tmp_path) == record.relative_to(results)
+        files = sorted(p.relative_to(record) for p in record.rglob("*") if p.is_file())
+        assert sorted(p.relative_to(again) for p in again.rglob("*") if p.is_file()) == files
+        for name in files:
+            assert (again / name).read_bytes() == (record / name).read_bytes(), record / name
+        assert set(json.loads((record / "summary.json").read_text())["gpu"]) >= {
+            "sm_clock_p50_mhz",
+            "temperature_max_c",
+        }
+    for path in (p for d in dirs for p in d.rglob("*") if p.is_file()):
+        if path.suffix == ".json":
+            assert not unredacted(json.loads(path.read_text())), path
+        assert not re.search(r"/(home|Users|root)/", path.read_text()), path  # no account
+
+
+def test_each_campaigns_report_is_what_its_points_give(tmp_path: Path) -> None:
+    # A record of campaigns keeps each campaign's report beside its points, as make reproduce-e2 writes it from
+    # them; the attempts that did not complete are left out of it, as load_points leaves them.
+    reports = sorted(REPO.glob("benchmarks/results/*/*/report"))
+    assert {ROUNDS / f"rg-r{n}" / "report" for n in range(1, 6)} | {
+        SWEEP / "sweep-screen" / "report"
+    } <= set(reports)
+    for committed in reports:
+        rows, _ = load_points(sorted(run.parent for run in committed.parent.glob("*/run.json")))
+        written = write_report(
+            rows, tmp_path / committed.parent.parent.name / committed.parent.name
+        )
+        assert sorted(p.name for p in written) == sorted(p.name for p in committed.iterdir())
+        for path in written:
+            assert path.read_bytes() == (committed / path.name).read_bytes(), committed / path.name
 
 
 @pytest.mark.parametrize(
