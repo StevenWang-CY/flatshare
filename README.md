@@ -132,16 +132,19 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
 ## Quick start
 
 The make-room variant builds vLLM 0.32.0's scheduler with the two PRs, backported, from an installed vLLM, without
-modifying the installation. On a host with a GPU that vLLM 0.32.0 supports, install it and build the variant:
+modifying the installation. On a host with a GPU that vLLM 0.32.0 supports, install it and build the variant
+([uv](https://docs.astral.sh/uv/) fetches Python 3.12 where the host's is older):
 
 ```sh
+uv venv --python 3.12 --seed ~/vllm-0.32 && . ~/vllm-0.32/bin/activate   # vLLM 0.32.0 needs Python 3.11 to 3.14
 pip install vllm==0.32.0
+export CUDA_HOME=$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cu13   # vLLM compiles its FP8 kernels at start with CUDA 13's nvcc
 git clone https://github.com/StevenWang-CY/flatshare && cd flatshare
 python python/flatshare_vllm/src/flatshare_vllm/build.py make-room ~/make-room
 ```
 
-Serve stock vLLM with the serving profile's settings. Once it is up, run the probe from a second shell: it sends a voice
-turn behind two long agent requests that fill the KV pool.
+Serve stock vLLM with the serving profile's settings. Once it is up, run the probe from a second shell, in the clone and
+with the environment active: it sends a voice turn behind two long agent requests that fill the KV pool.
 
 ```sh
 # Without --max-model-len vLLM takes the model's 262,144 tokens, which no 16 GB card holds, and without --max-num-seqs

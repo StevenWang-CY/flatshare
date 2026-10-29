@@ -46,6 +46,8 @@ README = REPO / "README.md"
 BUILD = "python/flatshare_vllm/src/flatshare_vllm/build.py"
 PROBE = "python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py"
 """The scripts README.md's quick start runs, from the repository's root."""
+VENV = "~/vllm-0.32"
+"""The environment README.md's quick start makes and activates, which `pip install` then fills."""
 
 spec = importlib.util.spec_from_file_location("flatshare_profile_serving", DEPLOY / "profile.py")
 profile = importlib.util.module_from_spec(spec)
@@ -55,6 +57,14 @@ serving_check = importlib.util.module_from_spec(
     importlib.util.spec_from_loader(loader.name, loader)
 )
 loader.exec_module(serving_check)
+release_loader = importlib.machinery.SourceFileLoader(
+    "flatshare_release_serving", str(DEPLOY / "bin" / "flatshare-release")
+)
+release = importlib.util.module_from_spec(
+    importlib.util.spec_from_loader(release_loader.name, release_loader)
+)
+sys.modules[release_loader.name] = release  # its dataclasses look their module up
+release_loader.exec_module(release)
 
 
 def sha256(path: Path) -> str:
@@ -128,7 +138,7 @@ def test_the_serving_profile_renders_the_boxs_serving_files(tmp_path: Path) -> N
     assert done.returncode == 2 and "no serving profile" in done.stderr
 
 
-def quick_start(readme: str) -> list[list[str]]:
+def quick_start_commands(readme: str) -> list[list[str]]:
     """The commands of README.md's Quick start, in order: each ``sh`` block's lines joined across their continuations
     and split as the shell splits them, without their comments."""
     section = readme.split("\n## Quick start\n", 1)[1].split("\n## ", 1)[0]
@@ -144,7 +154,7 @@ def quick_start(readme: str) -> list[list[str]]:
 def quick_start_engines(readme: str) -> list[tuple[dict[str, str], dict[str, str]]]:
     """Each ``vllm serve`` of README.md's Quick start, in order: the environment it sets, and its model and flags."""
     engines = []
-    for words in quick_start(readme):
+    for words in quick_start_commands(readme):
         env = {}
         while words and "=" in words[0] and not words[0].startswith("-"):
             key, _, value = words.pop(0).partition("=")
@@ -171,17 +181,22 @@ def quick_start_flags(engine: dict) -> dict[str, str]:
     }
 
 
-def test_the_readmes_quick_start_serves_the_profiles_engine_settings_on_both_engines() -> None:
-    # The quick start probes stock vLLM, then make-room, each at the serving profile's engine settings: the release
-    # build.py takes, the same model, context, request slots and step cap on both engines, and on make-room the module
-    # build.py writes, with the profile's switches. A flag that drifts from the profile, in either command or in the
-    # profile, fails here.
+def check_quick_start(readme: str) -> None:
+    """Asserts that the quick start of ``readme`` probes stock vLLM, then make-room, each at the serving profile's
+    engine settings. It installs the release build.py takes, in an environment of the deployment's Python, and points
+    CUDA_HOME at the CUDA 13 toolkit that environment carries, as Gray's engine unit does. Both engines take the same
+    model, context, request slots and step cap, and make-room the module build.py writes, with the profile's
+    switches."""
     serve = profile.load("rtx-5060-ti-serve")
     values, _, _ = profile.resolve(serve, None)
     engine = profile.serving_config(serve, values)["engine"]
-    readme = README.read_text()
-    commands = quick_start(readme)
-    assert commands[0] == ["pip", "install", f"vllm=={engine['vllm_version']}"]
+    commands = quick_start_commands(readme)
+    toolkit = profile.VENV_CUDA.removeprefix("%h/flatshare/venvs/engine/")
+    assert commands[:3] == [
+        shlex.split(f"uv venv --python {release.PYTHON} --seed {VENV} && . {VENV}/bin/activate"),
+        ["pip", "install", f"vllm=={engine['vllm_version']}"],
+        ["export", f"CUDA_HOME=$VIRTUAL_ENV/{toolkit}"],
+    ]
     (stock_env, stock), (env, make_room) = quick_start_engines(readme)
     assert (stock_env, stock) == ({}, quick_start_flags(engine))
     # make-room loads the module that build.py writes into the directory on its PYTHONPATH.
@@ -201,6 +216,45 @@ def test_the_readmes_quick_start_serves_the_profiles_engine_settings_on_both_eng
     starts = [i for i, words in enumerate(commands) if "serve" in words[:3]]
     probe = ["python", PROBE, "http://127.0.0.1:8000", "kv"]
     assert [commands[i + 1] for i in starts] == [probe, probe]
+
+
+def test_the_readmes_quick_start_serves_the_profiles_engine_settings_on_both_engines() -> None:
+    # A flag that drifts from the profile, in either command or in the profile, fails here.
+    check_quick_start(README.read_text())
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("budget_cap_tokens 48", "budget_cap_tokens 16"),
+        (
+            "--max-num-batched-tokens 256 --long-prefill-token-threshold 0\npython",
+            "--max-num-batched-tokens 512 --long-prefill-token-threshold 0\npython",
+        ),
+        ("vllm==0.32.0", "vllm==0.33.0"),
+        ("--python 3.12", "--python 3.10"),
+        ("pip install vllm==0.32.0\n", ""),
+        ("nvidia/cu13 ", "nvidia/cu12 "),
+        ("PYTHONPATH=~/make-room", "PYTHONPATH=~/elsewhere"),
+        (f"\npython {PROBE} http://127.0.0.1:8000 kv\n```\n\nStop", "\n```\n\nStop"),
+    ],
+    ids=[
+        "another window",
+        "another stock step cap",
+        "another release",
+        "another python",
+        "no install",
+        "another toolkit",
+        "another module directory",
+        "no stock probe",
+    ],
+)
+def test_a_quick_start_that_drifts_from_the_profile_fails_the_check(old: str, new: str) -> None:
+    # The negative control: each edit of the README's quick start, the stock probe's removal among them, fails.
+    readme = README.read_text()
+    assert readme.count(old) == 1, old
+    with pytest.raises(AssertionError):
+        check_quick_start(readme.replace(old, new))
 
 
 def test_serving_json_holds_every_effective_setting_and_its_required_revisions() -> None:
