@@ -447,6 +447,96 @@ def test_cyans_install_drops_links_to_units_the_repository_no_longer_has(tmp_pat
     assert linked == {p.name for p in (DEPLOY / "cyan" / "systemd").iterdir()}  # the units it has
 
 
+CYAN_NODES = """\
+[[nodes]]
+name = "phastform"
+upstream = "unix:/run/user/1007/flatshare/phastform-engine.sock"
+roles = ["realtime", "background"]
+stt = "unix:/run/user/1007/flatshare/phastform-stt.sock"
+tts = "unix:/run/user/1007/flatshare/phastform-tts.sock"
+
+[[nodes]]  # the warm spare
+name = "gray"
+upstream = "unix:/run/user/1007/flatshare/gray-engine.sock"
+roles = ["realtime", "background"]
+stt = "unix:/run/user/1007/flatshare/gray-stt.sock"
+tts = "unix:/run/user/1007/flatshare/gray-tts.sock"
+
+[placement]
+calls = "fill"
+"""
+"""gateway.toml's [[nodes]] on the two cards, through cyan's tunnels (deploy/cyan/gateway.example.toml)."""
+CYAN_ENABLED = "--user enable -q flatshare-voicenet.service flatshare-livekit.service {} flatshare-voice-worker.service"
+
+
+def cyans_install(tmp_path: Path, gateway_toml: str, targets: tuple[str, ...]) -> tuple[str, str]:
+    """cyan's install.sh beside this gateway.toml and these nodes' tunnel targets: its enable call, and what it
+    says."""
+    home, bin_dir = tmp_path / "home", tmp_path / "bin"
+    config = home / ".config" / "flatshare"
+    config.mkdir(parents=True)
+    (config / "gateway.toml").write_text(gateway_toml)
+    for node in targets:
+        (config / f"tunnel-{node}.env").write_text(f"FLATSHARE_TUNNEL_TARGET=user@{node}\n")
+    bin_dir.mkdir()
+    (bin_dir / "systemctl").write_text(LINKED_SYSTEMCTL)
+    (bin_dir / "loginctl").write_text("#!/bin/sh\n")
+    for tool in ("systemctl", "loginctl"):
+        (bin_dir / tool).chmod(0o755)
+    env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    done = subprocess.run(
+        ["bash", str(DEPLOY / "cyan" / "install.sh")], env=env, capture_output=True, text=True
+    )
+    assert done.returncode == 0, done.stderr
+    return (home / "systemctl.log").read_text().splitlines()[-1], done.stdout
+
+
+def test_cyans_install_enables_the_tunnel_of_each_node_the_gateway_reaches(tmp_path: Path) -> None:
+    # Gray's beside Phastform's while gateway.toml's [[nodes]] reach it: a reboot of cyan must bring back both
+    # nodes' tunnels, where the install enabled Phastform's alone and the spare's had to be started by hand.
+    enabled, said = cyans_install(tmp_path, CYAN_NODES, ("gray", "phastform"))
+    assert enabled == CYAN_ENABLED.format(
+        "flatshare-tunnel@phastform.service flatshare-tunnel@gray.service"
+    )
+    assert said == ""
+
+
+def test_cyans_install_leaves_a_tunnel_the_gateway_does_not_reach_as_it_was(tmp_path: Path) -> None:
+    # One upstream, as the example has it, its [[nodes]] commented out, beside the target an E2 run on Gray set up:
+    # enabling Gray's tunnel would hold an SSH session to a shared host that nothing here uses.
+    example = (DEPLOY / "cyan" / "gateway.example.toml").read_text()
+    assert '# upstream = "unix:/run/user/1007/flatshare/gray-engine.sock"' in example
+    enabled, said = cyans_install(tmp_path, example, ("gray", "phastform"))
+    assert enabled == CYAN_ENABLED.format("flatshare-tunnel@phastform.service")
+    assert said == ""
+
+
+def test_cyans_install_says_when_a_tunnel_it_reaches_has_no_target(tmp_path: Path) -> None:
+    # A unit whose EnvironmentFile is missing fails at every start: the install leaves it off and says why, in what
+    # a release shows of it (its standard output).
+    enabled, said = cyans_install(tmp_path, CYAN_NODES, ("phastform",))
+    assert enabled == CYAN_ENABLED.format("flatshare-tunnel@phastform.service")
+    assert (
+        "reaches gray's tunnel, which has no target (~/.config/flatshare/tunnel-gray.env)" in said
+    )
+
+
+def test_cyans_install_enables_the_tunnel_of_the_one_upstream(tmp_path: Path) -> None:
+    # One upstream on the spare, as while Phastform is out: its tunnel comes back with a reboot of cyan too.
+    example = (DEPLOY / "cyan" / "gateway.example.toml").read_text()
+    on_gray = example.replace(
+        'upstream = "unix:/run/user/1007/flatshare/phastform-engine.sock"\n',
+        'upstream = "unix:/run/user/1007/flatshare/gray-engine.sock"\n',
+        1,
+    )
+    assert on_gray != example
+    enabled, said = cyans_install(tmp_path, on_gray, ("gray", "phastform"))
+    assert enabled == CYAN_ENABLED.format(
+        "flatshare-tunnel@phastform.service flatshare-tunnel@gray.service"
+    )
+    assert said == ""
+
+
 FAKE_SYSTEMCTL = """\
 #!/bin/sh
 # systemctl --user ...: a GPU node's user manager, every unit running; logs each call that changes something.

@@ -31,7 +31,33 @@ for link in "$units"/*; do
   rm -f "$link"
 done
 systemctl --user daemon-reload
-systemctl --user enable -q flatshare-voicenet.service flatshare-livekit.service flatshare-tunnel@phastform.service \
+# The tunnels the gateway reaches: Phastform's, as before, and each other node's whose sockets gateway.toml names, so
+# that a reboot of cyan brings back every node the gateway sends to. A tunnel's sockets are NODE-engine.sock,
+# NODE-stt.sock and NODE-tts.sock in %t/flatshare; gateway.toml names them as its one upstream, or as its [[nodes]]
+# tables' upstream, stt and tts. No other: a target set up for something else (tunnel-NODE.env, outside the
+# repository), such as an E2 run's on Gray, leaves its tunnel as it was. A node's own servers start in its windows, by
+# hand (ops/RUNBOOK.md).
+tunnels=(flatshare-tunnel@phastform.service)
+gateway_toml=$HOME/.config/flatshare/gateway.toml
+if [[ -f $gateway_toml ]]; then
+  while read -r address; do
+    [[ $address =~ ^unix:/.*/flatshare/([^/]+)-(engine|stt|tts)\.sock$ ]] || continue
+    node=${BASH_REMATCH[1]}
+    [[ " ${tunnels[*]} " == *" flatshare-tunnel@$node.service "* ]] && continue
+    if [[ -e $HOME/.config/flatshare/tunnel-$node.env ]]; then
+      tunnels+=("flatshare-tunnel@$node.service")
+    else
+      echo "install: gateway.toml reaches $node's tunnel, which has no target" \
+        "(~/.config/flatshare/tunnel-$node.env): the gateway finds $node unhealthy (ops/RUNBOOK.md, Two GPU nodes)"
+    fi
+  done < <(awk '
+    BEGIN { reached = 1 }
+    /^[[:space:]]*\[/ { reached = /^[[:space:]]*\[\[[[:space:]]*nodes[[:space:]]*\]\]/; next }
+    reached && /^[[:space:]]*(upstream|stt|tts)[[:space:]]*=/ && match($0, /"[^"]*"/) {
+      print substr($0, RSTART + 1, RLENGTH - 2)
+    }' "$gateway_toml")
+fi
+systemctl --user enable -q flatshare-voicenet.service flatshare-livekit.service "${tunnels[@]}" \
   flatshare-voice-worker.service
 # The gateway's binary is the release's (bin/flatshare-gateway, a link into current, which deploy.sh's release checked
 # against the source's version before it switched). Installed outside a release, from a tree deployed otherwise, it
