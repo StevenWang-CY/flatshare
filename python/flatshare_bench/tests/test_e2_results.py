@@ -1698,7 +1698,12 @@ def test_the_voice_figure_draws_the_named_configurations_in_order(tmp_path: Path
         assert (
             ">3,350<" in figure and ">100%<" in figure and ">3,150<" in figure and ">94%<" in figure
         )
-        assert "Two voice calls beside 16 coding-agent sessions on one RTX 5060 Ti" in figure
+        # Its title is the claim, how near the SLO the configuration to deploy brings the tail (2.25 against 2.01 s),
+        # over the workload, in lines a phone's layout breaks; its third panel is the agents' TTFT p99.
+        words = " ".join(re.findall(r">([^<]+)</text>", figure))
+        assert "The configuration to deploy brings the voice tail within 0.24 s of the SLO" in words
+        assert "Two voice calls beside 16 coding-agent sessions on one RTX 5060 Ti" in words
+        assert ">Agents' TTFT p99<" in figure
         assert (
             'class="g-hi"' in figure
             and 'class="g-mid"' in figure

@@ -336,8 +336,8 @@ def plot_waterfall(cells: Sequence[Mapping[str, Any]], path: Path) -> Path:
 # The README's voice-p95.svg ----------------------------------------------------------------------
 
 
-def _title(groups: Sequence[Mapping[str, Any]]) -> str:
-    """The figure's title, from its records: the calls, the agents and, for one group, the GPU."""
+def _workload(groups: Sequence[Mapping[str, Any]]) -> str:
+    """The figure's workload, from its records: the calls, the agents and, for one group, the GPU."""
     callers, sessions = groups[0]["callers"], groups[0]["sessions"]
     calls = (
         f"{NUMBERS[callers]} voice calls" if callers < len(NUMBERS) else f"{callers} voice calls"
@@ -346,11 +346,30 @@ def _title(groups: Sequence[Mapping[str, Any]]) -> str:
     return title + (f" on one {groups[0]['gpu']}" if len(groups) == 1 else "")
 
 
+def _title(groups: Sequence[Mapping[str, Any]]) -> str:
+    """The figure's claim, from its records: how near its group's SLO the configuration to deploy brings the voice
+    tail on each card, as far over it as the furthest, rounded up to the hundredth of a second."""
+    featured = [
+        (configuration["v2v_p95_ms"], g["slo"])
+        for g in groups
+        for configuration, spec in g["rows"]
+        if spec.get("featured") and g["slo"]
+    ]
+    if not featured:
+        return _workload(groups)
+    where = "each card's SLO" if len(groups) > 1 else "the SLO"
+    over = max(p95 - slo for p95, slo in featured)
+    if over <= 0:
+        return f"The configuration to deploy keeps the voice tail within {where}"
+    return f"The configuration to deploy brings the voice tail within {math.ceil(over / 10) / 100:.2f} s of {where}"
+
+
 def plot_voice(groups: Sequence[Mapping[str, Any]], path: Path, narrow: Path) -> list[Path]:
     """voice-p95.svg and its phone layout: each group's configurations (``rows``: the
-    configuration and its row of figure.toml) as rows of two panels, the V2V p95 against the
-    group's voice SLO (``slo`` ms) and the agents' tokens/s over the fixed window with each one's
-    share of the group's first row, each the median over the configuration's runs. A group is the
+    configuration and its row of figure.toml) as rows of three panels, the V2V p95 against the
+    group's voice SLO (``slo`` ms), the agents' tokens/s over the fixed window with each one's
+    share of the group's first row, and the agents' TTFT p99, each the median over the
+    configuration's runs. The title states how near the SLO the configuration to deploy comes. A group is the
     configurations of one GPU (``gpu``); with several, each is headed by its ``title``. The row to
     deploy (``featured``) is the saturated blue, the change's other rows (``change``) pale blue,
     the rest gray. ``callers`` and ``sessions`` are the groups' workload, which the title names."""
@@ -358,11 +377,13 @@ def plot_voice(groups: Sequence[Mapping[str, Any]], path: Path, narrow: Path) ->
         [g["slo"] or 0.0 for g in groups] + [c["v2v_p95_ms"] for g in groups for c, _ in g["rows"]]
     )
     tokens = max([c["fixed_window_tokens_per_s"] or 0.0 for g in groups for c, _ in g["rows"]])
+    ttft = max([c["agent_ttft_p99_ms"] or 0.0 for g in groups for c, _ in g["rows"]])
     title = _title(groups)
     description = _describe(groups)
+    tops = (p95_top, max(tokens, 1.0), max(ttft, 1000.0))
     return [
-        _voice_wide(groups, path, title, description, p95_top, max(tokens, 1.0)),
-        _voice_narrow(groups, narrow, title, description, p95_top, max(tokens, 1.0)),
+        _voice_wide(groups, path, title, description, *tops),
+        _voice_narrow(groups, narrow, title, description, *tops),
     ]
 
 
@@ -402,37 +423,42 @@ def _note(configuration: Mapping[str, Any], spec: Mapping[str, Any]) -> str:
     return ", ".join(parts)
 
 
+def _ttft(configuration: Mapping[str, Any]) -> str:
+    return f"{configuration['agent_ttft_p99_ms'] / 1000:.0f}"
+
+
 def _describe(groups: Sequence[Mapping[str, Any]]) -> str:
     sentences = []
     for g in groups:
         head = f"{g['gpu']}: " if len(groups) > 1 else ""
         rows = "; ".join(
             f"{spec['label']}{', ' + spec['note'] if spec.get('note') else ''}, "
-            f"{_seconds(c['v2v_p95_ms'])} s and {c['fixed_window_tokens_per_s']:,.0f} tokens/s"
-            f" ({_share(g, c)} of the first row's) over {len(c['runs'])} runs"
+            f"{_seconds(c['v2v_p95_ms'])} s, {c['fixed_window_tokens_per_s']:,.0f} tokens/s"
+            f" ({_share(g, c)} of the first row's) and a TTFT p99 of {_ttft(c)} s over {len(c['runs'])} runs"
             for c, spec in g["rows"]
         )
         slo = f" against an SLO of {_seconds(g['slo'])} s" if g["slo"] else ""
-        sentences.append(f"{head}voice-to-voice p95{slo} and the agents' tokens/s: {rows}.")
+        sentences.append(
+            f"{head}voice-to-voice p95{slo}, the agents' tokens/s and their TTFT p99: {rows}."
+        )
     return " ".join(sentences)
 
 
-def _voice_wide(groups, path, title, description, p95_top, tokens_top) -> Path:
-    right, ax0, alen, bx0, blen = 238, 262, 420, 764, 200
-    marks_a, marks_b = ticks(p95_top / 1000, alen), ticks(tokens_top, blen)
-    top_a, top_b = marks_a[-1] * 1000, marks_b[-1]
+def _voice_wide(groups, path, title, description, p95_top, tokens_top, ttft_top) -> Path:
+    right = 238
+    a, b, c = (262, 300), (632, 150), (930, 110)  # each panel's start and length
+    marks_a, marks_b = ticks(p95_top / 1000, a[1]), ticks(tokens_top, b[1])
+    marks_c = ticks(ttft_top / 1000, c[1])
+    top_a, top_b, top_c = marks_a[-1] * 1000, marks_b[-1], marks_c[-1] * 1000
     s = Figure(WIDTH, 400, title, description)
     s.text(WIDTH / 2, 38, title, size=TITLE, anchor="middle")
-    _panel_heads(
-        s, ax0 + alen / 2, 96, "Voice-to-voice p95", "seconds, median of the runs • Lower is better"
-    )
-    _panel_heads(
-        s,
-        bx0 + blen / 2 + 24,
-        96,
-        "Agents' throughput",
-        "tokens/s, % of the baseline • Higher is better",
-    )
+    s.text(WIDTH / 2, 64, _workload(groups), size=NOTE, anchor="middle", cls="soft")
+    for (x0, length), head, sub in (
+        (a, "Voice-to-voice p95", "seconds • lower is better"),
+        (b, "Agents' throughput", "tokens/s, % of the baseline"),
+        (c, "Agents' TTFT p99", "seconds • lower is better"),
+    ):
+        _panel_heads(s, x0 + length / 2, 104, head, sub)
     top = 164  # the SLO's label; the plot starts under it
     y = top + 16
     pitch, thick = 54, 26
@@ -451,25 +477,33 @@ def _voice_wide(groups, path, title, description, p95_top, tokens_top) -> Path:
         spans.append((first, y - pitch + thick + 6, g))
         y += 10
     bottom = y - 10 + 2
-    _axis(s, ax0, alen, marks_a, top + 8, bottom)
-    _axis(s, bx0, blen, marks_b, top + 8, bottom)
+    for (x0, length), marks in ((a, marks_a), (b, marks_b), (c, marks_c)):
+        _axis(s, x0, length, marks, top + 8, bottom)
     values = []
     for bar_y, g, configuration, spec in bars:
         p95 = configuration["v2v_p95_ms"]
-        s.hbar(ax0, bar_y, alen * p95 / top_a, thick, _bar(spec))
-        values.append((ax0 + alen * p95 / top_a + 8, bar_y + 19, _seconds(p95), ""))
+        end = a[0] + a[1] * p95 / top_a
+        s.hbar(a[0], bar_y, end - a[0], thick, _bar(spec))
+        values.append((end + 8, bar_y + 19, _seconds(p95), ""))
         tokens = configuration["fixed_window_tokens_per_s"]
         if tokens is None:
-            values.append((bx0 + 8, bar_y + 19, "\N{EN DASH}", "soft"))
-            continue
-        s.hbar(bx0, bar_y, blen * tokens / top_b, thick, _bar(spec))
-        values.append((bx0 + blen * tokens / top_b + 8, bar_y + 19, f"{tokens:,.0f}", ""))
-        if share := _share(g, configuration):
-            width = measure(f"{tokens:,.0f}", NOTE)
-            values.append((bx0 + blen * tokens / top_b + 8 + width + 8, bar_y + 19, share, "soft"))
+            values.append((b[0] + 8, bar_y + 19, "\N{EN DASH}", "soft"))
+        else:
+            end = b[0] + b[1] * tokens / top_b
+            s.hbar(b[0], bar_y, end - b[0], thick, _bar(spec))
+            values.append((end + 8, bar_y + 19, f"{tokens:,.0f}", ""))
+            if share := _share(g, configuration):
+                width = measure(f"{tokens:,.0f}", NOTE)
+                values.append((end + 8 + width + 8, bar_y + 19, share, "soft"))
+        if configuration["agent_ttft_p99_ms"] is None:
+            values.append((c[0] + 8, bar_y + 19, "\N{EN DASH}", "soft"))
+        else:
+            end = c[0] + c[1] * configuration["agent_ttft_p99_ms"] / top_c
+            s.hbar(c[0], bar_y, end - c[0], thick, _bar(spec))
+            values.append((end + 8, bar_y + 19, _ttft(configuration), ""))
     for k, (first, last, g) in enumerate(spans):
         if g["slo"]:
-            x = ax0 + alen * g["slo"] / top_a
+            x = a[0] + a[1] * g["slo"] / top_a
             label_y = top if k == 0 else first - 8
             s.vrule(x, label_y + 8, last, "slo")
             s.text(
@@ -491,17 +525,23 @@ def _voice_wide(groups, path, title, description, p95_top, tokens_top) -> Path:
     return s.save(path)
 
 
-def _voice_narrow(groups, path, title, description, p95_top, tokens_top) -> Path:
+def _voice_narrow(groups, path, title, description, p95_top, tokens_top, ttft_top) -> Path:
     s = Figure(NARROW, 400, title, description)
     cx = NARROW / 2
     y = 32
     for line in wrap(title, NARROW - 32, TITLE):
         s.text(cx, y, line, size=TITLE, anchor="middle")
         y += 29
+    for line in wrap(_workload(groups), NARROW - 32, NOTE):
+        s.text(cx, y - 4, line, size=NOTE, anchor="middle", cls="soft")
+        y += 24
     x0, length = 18, 296
     marks_a, marks_b = ticks(p95_top / 1000, length), ticks(tokens_top, length)
+    marks_c = ticks(ttft_top / 1000, length)
 
-    def panel(y: float, head: str, sub: str, marks: list[float], scale: float, show) -> float:
+    def panel(
+        y: float, head: str, sub: str, marks: list[float], scale: float, show, *, slos: bool = False
+    ) -> float:
         _panel_heads(s, cx, y + 20, head, sub)
         y += 62
         top = marks[-1] * scale
@@ -510,7 +550,7 @@ def _voice_narrow(groups, path, title, description, p95_top, tokens_top) -> Path
             if len(groups) > 1:
                 s.text(x0, y + 16, g["title"], size=NOTE, cls="mute")
                 y += 28
-            slo = g["slo"] if scale == 1000 else None
+            slo = g["slo"] if slos else None
             if slo:
                 s.text(
                     x0 + length * slo / top,
@@ -571,15 +611,22 @@ def _voice_narrow(groups, path, title, description, p95_top, tokens_top) -> Path
         share = _share(g, configuration)
         return amount, [(f"{amount:,.0f}", ""), *([(share, "soft")] if share else [])]
 
-    y = panel(y + 6, "Voice-to-voice p95", "seconds • Lower is better", marks_a, 1000, p95)
+    def ttft(g, configuration):
+        amount = configuration["agent_ttft_p99_ms"]
+        return None if amount is None else (amount, [(_ttft(configuration), "")])
+
+    y = panel(
+        y + 6, "Voice-to-voice p95", "seconds • lower is better", marks_a, 1000, p95, slos=True
+    )
     y = panel(
         y + 10,
         "Agents' throughput",
-        "tokens/s, % of the baseline • Higher is better",
+        "tokens/s, % of the baseline • higher is better",
         marks_b,
         1,
         tokens,
     )
+    y = panel(y + 10, "Agents' TTFT p99", "seconds • lower is better", marks_c, 1000, ttft)
     y += 16  # the notes' first baseline as far under the ticks as the wide figure's
     for note in _voice_notes(groups):
         for line in wrap(note, NARROW - 36, NOTE):
