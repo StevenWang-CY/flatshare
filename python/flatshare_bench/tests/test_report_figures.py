@@ -870,13 +870,18 @@ def test_the_two_cards_are_their_gates_verdict(drawn: dict[str, Path]) -> None:
     shared = [a for a in cards.arrangements if a.kind != "dedicated" and a.qualifies]
     assert [a.tokens > cards.threshold for a in shared] == [True, True, True]
     assert sum("meets the 20% hurdle" in line for line in printed) == 2
-    # Panel b's scale holds every round; the drawing hatches the three that miss the requirement, each in its engine's
-    # hue, and prints every median.
+    # Panel b's scale holds every round. Each layout hatches the three that miss the requirement, each in its
+    # engine's hue, says so in a key under panel b's subtitle, a gray hatched bar, and prints every median.
     assert max(r for a in cards.arrangements for r in a.rounds) == pytest.approx(14352.2)
     assert max(r for a in cards.arrangements for r in a.rounds) < figures.CARD_TOKENS.hi
-    svg, texts = drawn["report-cards.svg"].read_text(), set(text_of(drawn["report-cards.svg"]))
-    assert (svg.count('class="gray hatch"'), svg.count('class="blue hatch"')) == (1, 2)
-    assert {f"{a.tokens:,.0f}" for a in cards.arrangements} <= texts
+    missed = [a.engine for a in cards.arrangements if not a.qualifies]
+    assert sorted(missed) == ["change", "change", "stock"]
+    for name in ("report-cards.svg", "report-cards-narrow.svg"):
+        svg, texts = drawn[name].read_text(), set(text_of(drawn[name]))
+        assert svg.count('class="gray hatch"') == missed.count("stock") + 1, name
+        assert svg.count('class="blue hatch"') == missed.count("change"), name
+        assert f"misses the {cards.requirement:.0%} requirement" in texts, name
+        assert {f"{a.tokens:,.0f}" for a in cards.arrangements} <= texts, name
 
 
 def test_the_two_cards_read_only_the_rounds_their_gate_counts(tmp_path: Path) -> None:

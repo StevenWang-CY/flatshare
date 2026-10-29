@@ -27,6 +27,7 @@ from flatshare_bench.report.charts import (
     band_grid,
     column_rug,
     ecdf,
+    hatch_key,
     legend,
     legend_columns,
     legend_width,
@@ -2127,6 +2128,12 @@ def _cards_description(c: data.TwoCards, sessions: Sequence[int]) -> str:
     )
 
 
+def _cards_key(s: Chart, c: data.TwoCards, x: float, baseline: float) -> None:
+    """Panel b's key under its subtitle: a hatched bar is an arrangement that misses the requirement."""
+    entry = [(hatch_key(), f"misses the {c.requirement:.0%} requirement")]
+    legend(s, x, baseline, entry, width=legend_width(entry))
+
+
 def _at_end(s: Chart, x: float, baseline: float, label: str, rule: float) -> None:
     """A bar's value at its end, from ``x``, or right of the vertical ``rule`` where it would cross it; on a halo, as
     the gridlines run behind it."""
@@ -2214,8 +2221,9 @@ def _cards_narrow(c: data.TwoCards, sessions: Sequence[int], path: Path, descrip
         size=NOTE,
         cls="soft",
     )
+    _cards_key(s, c, x0, y + 50)
     b = Scale(CARD_TOKENS.lo, CARD_TOKENS.hi, x0, NARROW - 80)
-    top = y + 70
+    top = y + 96
     y = top + 4
     thick = 18
     ticks, labels = linear_ticks(b.hi, 5000)
@@ -2315,6 +2323,7 @@ def _cards_wide(c: data.TwoCards, sessions: Sequence[int], path: Path, descripti
         size=NOTE,
         cls="soft",
     )
+    _cards_key(s, c, left, top - 10)
     ticks, labels = linear_ticks(b.hi, 5000)
     x_axis(s, b, ticks, labels, top, bottom, title=TOKENS_TITLE)
     for y, a in rows:

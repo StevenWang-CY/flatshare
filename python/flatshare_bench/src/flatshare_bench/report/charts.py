@@ -506,6 +506,15 @@ def stage_key(stage: str) -> Key:
     return Key(22, draw)
 
 
+def hatch_key(hue: str = "gray") -> Key:
+    """A hatched bar's key: a short bar hatched in ``hue``, as a bar that misses its requirement is drawn."""
+
+    def draw(s: Chart, x: float, baseline: float) -> None:
+        s.bar(x, baseline - 0.66 * NOTE, 22, 0.7 * NOTE, hue, hatched=True, name="a legend's key")
+
+    return Key(22, draw)
+
+
 def line_key(cls: str, width: float = 32) -> Key:
     """A data line's key: a short level stroke in its classes (a hue and "trace", and its weight or dashes)."""
 
