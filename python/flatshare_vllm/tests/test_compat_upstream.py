@@ -1,8 +1,10 @@
 """scripts/compat_upstream.py (make compat-upstream) against a local stand-in for vLLM's repository: a bare repository
 with a main branch, the PRs' heads as refs/pull/N/head and release tags, served blobless over file://. Clean merges
 and conflicts, the PRs' tests on a merge with a stand-in interpreter (the import check answered, pytest real), a
-failure main has too, an interpreter that cannot import main's scheduler, no network, an older git, and make-room's
-patches on releases (with VLLM_SRC, v0.32.0's real scheduler). It needs git 2.38 or newer (GIT names one)."""
+failure main has too, an interpreter that cannot import main's scheduler, no network, an older git; the backport
+against the PRs' heads, whose lines in the scheduler are the backport's but for its adaptations, as upstream; and
+make-room's patches on releases (with VLLM_SRC, v0.32.0's real scheduler), and each hunk's fit by git apply. It needs
+git 2.38 or newer (GIT names one)."""
 
 import difflib
 import importlib.util
@@ -11,11 +13,15 @@ import re
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/compat_upstream.py"
+spec = importlib.util.spec_from_file_location("flatshare_compat_upstream", SCRIPT)
+compat_upstream = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(compat_upstream)
 GIT = os.environ.get("GIT", "git")
 # git as the tests run it, the fake upstream's and the script's alike: without the developer's own config (commit
 # signing, hooks), which the tests do not test.
@@ -43,10 +49,7 @@ needs_vllm_src = pytest.mark.skipif(not VLLM_SRC, reason="needs VLLM_SRC, a vLLM
 
 @pytest.fixture(scope="module")
 def compat():
-    spec = importlib.util.spec_from_file_location("flatshare_compat_upstream", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return compat_upstream
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -113,6 +116,27 @@ def scheduler_files(real: bool, shift: int = 0) -> dict[str, str]:
     }
 
 
+def pr_lines(pr: int) -> str:
+    """The lines #pr adds to the scheduler, one a line, as compat_upstream compares them with the backport: its patch's,
+    with the PR's own where ADAPTED names an adaptation."""
+    patch = next(p for p in compat_upstream.PATCHES if p.name == f"{pr}.patch")
+    lines = compat_upstream.added_lines(patch.read_text())
+    for theirs, ours in compat_upstream.ADAPTED[patch.name].values():
+        lines = lines - Counter(ours) + Counter(theirs)
+    return "".join(f"{line}\n" for line in sorted(lines.elements()))
+
+
+def heads(scheduler: str) -> tuple[dict[str, str], dict[str, str]]:
+    """The scheduler of #63350's head on ``scheduler``, its base's, and of #63351's on #63350's: each with the lines its
+    PR adds, so that the backport is the PRs' heads but for its adaptations, as it is upstream."""
+    kv = scheduler + pr_lines(63350)
+    return {f"{SCHED}/scheduler.py": kv}, {f"{SCHED}/scheduler.py": kv + pr_lines(63351)}
+
+
+STAND_IN = scheduler_files(real=False)[f"{SCHED}/scheduler.py"]
+KV, CAP = heads(STAND_IN)
+"""The PRs' heads' scheduler, #63351's stacked on #63350's, on the stand-in one."""
+
 BASE = {
     "vllm/__init__.py": "",
     "vllm/other.py": "a = 0\n",
@@ -162,12 +186,14 @@ def run(tmp_path, remote: str, *args: str, env: dict | None = None) -> subproces
 
 
 def standard(upstream: Upstream, pr_tests: str = "def test_pr():\n    assert True\n") -> str:
-    """main moved on from the PRs' base; #63350 adds a test file, #63351 (on it) changes another file; one release,
-    which the stand-in scheduler does not take make-room's patches."""
+    """main moved on from the PRs' base; #63350 adds a test file, #63351 (on it) changes another file, and each adds
+    its lines to the scheduler; one release, which the stand-in scheduler does not take make-room's patches."""
     base = upstream.commit(None, BASE | scheduler_files(real=False), "base")
     main = upstream.commit(base, {"vllm/main_only.py": "m = 1\n"}, "main moves on")
-    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n", "tests/test_pr.py": pr_tests}, "#63350")
-    cap = upstream.commit(kv, {"vllm/cap.py": "c = 1\n"}, "#63351")
+    kv = upstream.commit(
+        base, {"vllm/kv.py": "k = 1\n", "tests/test_pr.py": pr_tests} | KV, "#63350"
+    )
+    cap = upstream.commit(kv, {"vllm/cap.py": "c = 1\n"} | CAP, "#63351")
     return upstream.serve(main, {63350: kv, 63351: cap}, {"v0.40.0": base})
 
 
@@ -179,6 +205,10 @@ def test_clean_merges_run_the_tests_the_prs_add(tmp_path, upstream, python):
     assert "#63351: merges into main cleanly" in proc.stdout
     assert "#63350: tests/test_pr.py: 1 passed" in proc.stdout
     assert "#63351: tests/test_pr.py: 1 passed" in proc.stdout  # #63351's diff holds #63350's
+    assert (
+        "backport = the PRs' heads but for 15 adapted lines of theirs and 15 of its own, which the patches' "
+        "headers name\n" in proc.stdout
+    )
     # Its stand-in scheduler is not v0.32.0's: reported, and no failure.
     assert re.search(
         r"patches on v0\.40\.0: do not apply \(make-room: 63350\.patch: hunk", proc.stdout
@@ -197,8 +227,10 @@ def test_without_an_interpreter_no_test_runs(tmp_path, upstream):
 def test_a_conflict_names_its_files_and_fails(tmp_path, upstream, python):
     base = upstream.commit(None, BASE | scheduler_files(real=False), "base")
     main = upstream.commit(base, {"vllm/other.py": "a = 1\n"}, "main changes other.py")
-    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"}, "#63350")
-    cap = upstream.commit(kv, {"vllm/other.py": "a = 2\n", "vllm/cap.py": "c = 1\n"}, "#63351")
+    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"} | KV, "#63350")
+    cap = upstream.commit(
+        kv, {"vllm/other.py": "a = 2\n", "vllm/cap.py": "c = 1\n"} | CAP, "#63351"
+    )
     remote = upstream.serve(main, {63350: kv, 63351: cap}, {"v0.40.0": base})
     proc = run(tmp_path, remote, "--python", python)
     assert proc.returncode == 1, proc.stdout + proc.stderr
@@ -213,9 +245,9 @@ def test_a_failing_test_fails_and_one_main_fails_too_is_mains(tmp_path, upstream
     main = upstream.commit(base, {"vllm/main_only.py": "m = 1\n"})
     # #63350 changes tests/test_core.py, adding a test that passes; #63351 adds one that fails.
     kv = upstream.commit(
-        base, {"tests/test_core.py": core + "\n\ndef test_kv():\n    assert True\n"}
+        base, {"tests/test_core.py": core + "\n\ndef test_kv():\n    assert True\n"} | KV
     )
-    cap = upstream.commit(kv, {"tests/test_cap.py": "def test_cap():\n    assert 1 == 2\n"})
+    cap = upstream.commit(kv, {"tests/test_cap.py": "def test_cap():\n    assert 1 == 2\n"} | CAP)
     remote = upstream.serve(main, {63350: kv, 63351: cap}, {"v0.40.0": base})
     proc = run(tmp_path, remote, "--python", python)
     assert proc.returncode == 1, proc.stdout + proc.stderr
@@ -242,8 +274,10 @@ def test_a_pr_test_that_hangs_fails_its_file_when_the_time_runs_out(tmp_path, up
     base = upstream.commit(None, BASE | scheduler_files(real=False))
     main = upstream.commit(base, {"vllm/main_only.py": "m = 1\n"})
     hangs = "import time\n\n\ndef test_pr():\n    time.sleep(120)\n"
-    kv = upstream.commit(base, {"tests/test_pr.py": hangs})
-    cap = upstream.commit(base, {"vllm/cap.py": "c = 1\n"})
+    kv = upstream.commit(base, {"tests/test_pr.py": hangs} | KV)
+    cap = upstream.commit(
+        base, {"vllm/cap.py": "c = 1\n", f"{SCHED}/scheduler.py": STAND_IN + pr_lines(63351)}
+    )
     remote = upstream.serve(main, {63350: kv, 63351: cap}, {"v0.40.0": base})
     proc = run(tmp_path, remote, "--python", python, "--timeout", "4")
     assert proc.returncode == 1, proc.stdout + proc.stderr
@@ -265,8 +299,9 @@ def test_an_interpreter_that_cannot_import_mains_scheduler_runs_nothing(tmp_path
 def test_an_interpreter_that_cannot_run_mains_tests_runs_nothing(tmp_path, upstream, python):
     base = upstream.commit(None, BASE | scheduler_files(real=False))
     main = upstream.commit(base, {"tests/conftest.py": "import not_installed_here\n"})
-    kv = upstream.commit(base, {"tests/test_pr.py": "def test_pr():\n    assert True\n"})
-    remote = upstream.serve(main, {63350: kv, 63351: kv}, {"v0.40.0": base})
+    kv = upstream.commit(base, {"tests/test_pr.py": "def test_pr():\n    assert True\n"} | KV)
+    cap = upstream.commit(kv, CAP)
+    remote = upstream.serve(main, {63350: kv, 63351: cap}, {"v0.40.0": base})
     proc = run(tmp_path, remote, "--python", python)
     assert proc.returncode == 2, proc.stdout + proc.stderr
     assert "cannot run vLLM main's tests in tests (" in proc.stdout
@@ -279,10 +314,10 @@ def test_a_pr_main_squash_merged_is_reported_and_not_merged_again(tmp_path, upst
     head is no ancestor of main. Main edits the same file afterwards, so merging the stale head would conflict, and
     so would #63351's head, which carries #63350's commits: its own changes, on #63350's head, merge."""
     base = upstream.commit(None, BASE | scheduler_files(real=False))
-    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"}, "Make room under KV pressure")
-    cap = upstream.commit(kv, {"vllm/cap.py": "c = 1\n"}, "Cap prefill")
+    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"} | KV, "Make room under KV pressure")
+    cap = upstream.commit(kv, {"vllm/cap.py": "c = 1\n"} | CAP, "Cap prefill")
     squashed = upstream.commit(
-        base, {"vllm/kv.py": "k = 1\n"}, "[Core] Make room under KV pressure (#63350)"
+        base, {"vllm/kv.py": "k = 1\n"} | KV, "[Core] Make room under KV pressure (#63350)"
     )
     main = upstream.commit(squashed, {"vllm/kv.py": "k = 2\n"}, "Tune it (#70001)")
     proc = run(tmp_path, upstream.serve(main, {63350: kv, 63351: cap}, {"v0.40.0": base}))
@@ -299,9 +334,9 @@ def test_a_pr_main_squash_merged_is_reported_and_not_merged_again(tmp_path, upst
 @needs_merge_tree
 def test_a_stacked_prs_own_conflict_with_main_is_reported(tmp_path, upstream):
     base = upstream.commit(None, BASE | scheduler_files(real=False))
-    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"}, "Make room")
-    cap = upstream.commit(kv, {"vllm/other.py": "a = 2\n"}, "Cap prefill")
-    squashed = upstream.commit(base, {"vllm/kv.py": "k = 1\n"}, "Make room (#63350)")
+    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"} | KV, "Make room")
+    cap = upstream.commit(kv, {"vllm/other.py": "a = 2\n"} | CAP, "Cap prefill")
+    squashed = upstream.commit(base, {"vllm/kv.py": "k = 1\n"} | KV, "Make room (#63350)")
     main = upstream.commit(squashed, {"vllm/other.py": "a = 3\n"}, "Other (#70002)")
     proc = run(tmp_path, upstream.serve(main, {63350: kv, 63351: cap}, {"v0.40.0": base}))
     assert proc.returncode == 1, proc.stdout + proc.stderr
@@ -315,15 +350,23 @@ def test_a_stacked_prs_own_conflict_with_main_is_reported(tmp_path, upstream):
 def test_a_pr_merged_into_main_or_whose_changes_main_has_is_reported(tmp_path, upstream):
     base = upstream.commit(None, BASE | scheduler_files(real=False))
     kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"})
-    main = upstream.commit(
-        kv, {"vllm/main_only.py": "m = 1\n"}
-    )  # a true merge: kv is main's ancestor
-    # #63351's change, made on main under a subject that does not name it.
-    cap = upstream.commit(base, {"vllm/main_only.py": "m = 1\n"})
+    # #63351's change, its lines in the scheduler among it, made on main under a subject that does not name it; and a
+    # true merge of #63350, kv an ancestor of main, which leaves the backport nothing to compare its head from.
+    change = {"vllm/main_only.py": "m = 1\n", f"{SCHED}/scheduler.py": STAND_IN + pr_lines(63351)}
+    main = upstream.commit(kv, change)
+    cap = upstream.commit(base, change)
     proc = run(tmp_path, upstream.serve(main, {63350: kv, 63351: cap}, {"v0.40.0": base}))
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "#63350: merged into main\n" in proc.stdout
     assert "#63351: its changes are in main already\n" in proc.stdout
+    assert (
+        "  #63350: main holds its head, which leaves no base to compare its changes from\n"
+        in proc.stdout
+    )
+    assert (
+        "backport = the PRs' heads but for 11 adapted lines of theirs and 14 of its own"
+        in proc.stdout
+    )
 
 
 @needs_merge_tree
@@ -383,9 +426,11 @@ def test_the_patches_apply_to_the_pinned_release_and_a_shifted_one_names_its_hun
 ):
     base = upstream.commit(None, BASE | scheduler_files(real=True), "v0.32.0")
     rc = upstream.commit(base, scheduler_files(real=True, shift=2), "v0.32.1rc0")
-    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"})
+    on_kv, on_cap = heads(scheduler_files(real=True)[f"{SCHED}/scheduler.py"])
+    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"} | on_kv)
+    cap = upstream.commit(kv, on_cap)
     proc = run(
-        tmp_path, upstream.serve(rc, {63350: kv, 63351: kv}, {"v0.32.0": base, "v0.32.1rc0": rc})
+        tmp_path, upstream.serve(rc, {63350: kv, 63351: cap}, {"v0.32.0": base, "v0.32.1rc0": rc})
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "make-room's patches on v0.32.0, the pinned version: they apply\n" in proc.stdout
@@ -413,8 +458,10 @@ def test_the_patches_apply_to_the_pinned_release_and_a_shifted_one_names_its_hun
 @needs_vllm_src
 def test_patches_that_do_not_apply_to_the_pinned_release_fail(tmp_path, upstream):
     base = upstream.commit(None, BASE | scheduler_files(real=True, shift=1), "v0.32.0, edited")
-    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"})
-    proc = run(tmp_path, upstream.serve(base, {63350: kv, 63351: kv}, {"v0.32.0": base}))
+    on_kv, on_cap = heads(scheduler_files(real=True, shift=1)[f"{SCHED}/scheduler.py"])
+    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"} | on_kv)
+    cap = upstream.commit(kv, on_cap)
+    proc = run(tmp_path, upstream.serve(base, {63350: kv, 63351: cap}, {"v0.32.0": base}))
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert (
         "make-room's patches on v0.32.0, the pinned version: FAIL: make-room: 63350.patch"
@@ -467,3 +514,107 @@ def test_each_hunks_fit_is_where_git_apply_finds_it(tmp_path, compat):
     other.write_text(patches[0].read_text().replace(f"{SCHED}/scheduler.py", "vllm/other.py"))
     with pytest.raises(compat.CannotCheck, match=r"git apply -C3 other\.patch: .*vllm/other\.py"):
         compat.fits(GIT, source, 3, [other])
+
+
+def test_the_lines_a_diff_adds_are_net_of_those_it_removes(compat):
+    # A patch's header names no line; a line moved is in neither count; blank lines aside, each line stripped, and a
+    # removed line that starts with two dashes is no file header.
+    diff = (
+        "vLLM #1, backported to v0.32.0: a header.\n\n"
+        "diff --git a/s.py b/s.py\n--- a/s.py\n+++ b/s.py\n"
+        "@@ -1,3 +1,5 @@\n"
+        " def f():\n"
+        "-    moved = 1\n"
+        "+    added = 2\n"
+        "+\n"
+        "     kept = 3\n"
+        "+    moved = 1\n"
+        "@@ -9,1 +11,1 @@\n"
+        "--- a comment\n"
+        "+-- a comment, changed\n"
+    )
+    assert compat.added_lines(diff) == Counter({"added = 2": 1, "-- a comment, changed": 1})
+
+
+def test_a_pr_and_its_patch_differ_only_where_adapted_names_them(compat):
+    adapted = {"0123abcde": (("stats(n)",), ("count(n)",))}
+    theirs = Counter({"a": 1, "b": 1, "stats(n)": 1})
+    ours = Counter({"a": 1, "b": 1, "count(n)": 1})
+    assert compat.compare(theirs, ours, adapted) == (
+        Counter({"stats(n)": 1}),
+        Counter({"count(n)": 1}),
+        Counter(),
+        Counter(),
+    )
+    # A line the PR changed since, which no adaptation names, is a difference on each side.
+    changed = theirs - Counter({"b": 1}) + Counter({"b2": 1})
+    assert compat.compare(changed, ours, adapted)[2:] == (Counter({"b2": 1}), Counter({"b": 1}))
+    # An adaptation the PR no longer differs in is no difference either.
+    assert compat.compare(ours, ours, adapted) == (Counter(), Counter(), Counter(), Counter())
+
+
+def test_each_adaptation_is_under_a_backport_paragraph_of_its_patch(compat):
+    """ADAPTED names an adaptation only under a commit that its patch's header gives a "Backport:" paragraph (as
+    make-room-patches.sh writes it, indented under the commit's line), and each line it names as the backport's is
+    one the patch adds."""
+    for name, adaptations in compat.ADAPTED.items():
+        text = next(p for p in compat.PATCHES if p.name == name).read_text()
+        paragraphs, commit = {}, None
+        for line in text.split("\ndiff --git ", 1)[0].splitlines():
+            if match := re.match(r"  ([0-9a-f]{9}) ", line):
+                commit = match[1]
+            elif commit and line.startswith("    "):
+                paragraphs[commit] = paragraphs.get(commit, "") + line.strip() + " "
+        backports = {commit for commit, text in paragraphs.items() if text.startswith("Backport")}
+        assert set(adaptations) <= backports, name
+        lines = compat.added_lines(text)
+        for commit, (_, ours) in adaptations.items():
+            assert Counter(ours) <= lines, commit
+
+
+@needs_merge_tree
+def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, upstream):
+    """#63351 pushed again with a line the backport does not have fails the comparison, which names the line on each
+    side. A head that took the backport's own form of an adapted line is no failure: the adaptation is stale."""
+    old = "if self.current_step - start < self.priority_prefill_budget_cap_tokens\n"
+    assert old in pr_lines(63351)
+    base = upstream.commit(None, BASE | scheduler_files(real=False), "base")
+    main = upstream.commit(base, {"vllm/main_only.py": "m = 1\n"}, "main moves on")
+    kv = upstream.commit(base, KV, "#63350")
+    pushed, adopted = (
+        upstream.commit(
+            kv, {f"{SCHED}/scheduler.py": CAP[f"{SCHED}/scheduler.py"].replace(*change)}
+        )
+        for change in (
+            (old, old.replace(" < ", " <= ")),
+            (
+                "queue.has_lower_priority_than(request.priority)\n",
+                "self._has_lower_priority_than(queue, request.priority)\n",
+            ),
+        )
+    )
+    proc = run(
+        tmp_path / "pushed", upstream.serve(main, {63350: kv, 63351: pushed}, {"v0.40.0": base})
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert (
+        "  #63351 and 63351.patch: 155 of #63351's 167 lines are the backport's; its other 11 and 14 of the "
+        "backport's 170 are adapted (b703ac4d7, 1104add2b); it DIFFERS in 2 lines no Backport paragraph names:\n"
+        f"    #63351's: {old.replace(' < ', ' <= ')}"
+        f"    63351.patch's: {old}"
+    ) in proc.stdout
+    assert (
+        "backport DIFFERS from the PRs' heads in 2 lines no Backport paragraph names\n"
+        in proc.stdout
+    )
+    proc = run(
+        tmp_path / "adopted", upstream.serve(main, {63350: kv, 63351: adopted}, {"v0.40.0": base})
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert (
+        "(b703ac4d7, 1104add2b); 2 of the lines named as adapted no longer differ\n" in proc.stdout
+    )
+    assert (
+        "backport = the PRs' heads but for 14 adapted lines of theirs and 14 of its own"
+        in proc.stdout
+    )
