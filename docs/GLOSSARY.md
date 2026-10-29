@@ -122,9 +122,11 @@ names](#former-names) maps them to the current ones.
 
 ## Measures
 
-- **Goodput**: the agents' prompt and completion tokens per second over the requests that complete during the calls;
-  **the first 240 s** (the fixed window) counts it over the calls' first 240 s, so that configurations whose calls last
-  longer are counted over the same span.
+- **The agents' token rate** (`goodput` in the records and the code): the agents' prompt and completion tokens per
+  second over the requests that complete during the calls; **the first 240 s** (the fixed window) counts it over the
+  calls' first 240 s, so that configurations whose calls last longer are counted over the same span. Nearly all of it
+  is prompt tokens (the generated share is about 0.47% in W5), and it is not goodput in the serving literature's sense,
+  the requests that meet their SLO.
 - **Percentiles** are inclusive everywhere, in the E2 report, the probes and the simulator: Python's
   `statistics.quantiles(..., method="inclusive")`, defined once in
   [`flatshare_stats`](../python/flatshare_stats/README.md).

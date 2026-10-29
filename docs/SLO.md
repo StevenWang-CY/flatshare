@@ -6,7 +6,7 @@ This page defines the service classes, the indicators measured for each, the voi
 |---|---|---|---|
 | `realtime` | Voice turns | 0 | Voice V2V, the voice turn's stages, the realtime first byte |
 | `interactive` | Agent loops with a person waiting | 1 | None measured: no E2 arm runs this class |
-| `background` | Batch agents, trace replays | 2 | Background goodput and the agents' time to first token |
+| `background` | Batch agents, trace replays | 2 | The agents' token rate and their time to first token |
 
 The deployed configuration runs no admission policy: the gateway sends the class's priority, bounds each class's work and deadlines, and places calls and agents' sessions on the nodes ([the service contract](PRODUCTION.md#the-service-contract); [ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)). Under the lifecycle policy (`policy = "lifecycle"`), an experiment arm, the policy never queues or refuses a realtime request ([ADR-0003](adr/0003-realtime-is-never-shed.md)), and the gateway's own bounds still apply.
 
@@ -26,7 +26,7 @@ E2's report computes these for every point (`flatshare-bench e2`; [EXPERIMENTS.m
 | Realtime first byte | The gateway's request log, exact to the millisecond | Reported per point |
 | Barge-in to silence | The caller starts speaking during the agent's speech, until the agent's audio falls below threshold: how long a cancelled reply keeps playing | Reported per point |
 | Server-side voice turn | The utterance sent to STT, until the first byte of TTS audio (`flatshare-bench voice-turn`): the part serving controls | p90 ≤ 800 ms (voice alone: 589 ms p50 and 665 ms p90, W1) |
-| Background goodput | The prompt and completion tokens per second of the agent requests that complete during the calls | Reported: the frontier's x-axis, over the calls' duration, which differs by configuration, and over the calls' first 240 s, the same span for every point, which the headline tables give |
+| The agents' token rate | The prompt and completion tokens per second of the agent requests that complete during the calls | Reported: the frontier's x-axis, over the calls' duration, which differs by configuration, and over the calls' first 240 s, the same span for every point, which the headline tables give |
 | Agents' time to first token | AIPerf's per-request records | p50 and p99, reported |
 | The gateway's decisions | Under an admission policy: deferrals by reason, degraded replies and resubmissions (`flatshare_gateway_admission_*`) | Reported per point. The gateway also counts the headroom's false alarms, which no E2 run had: every utterance of the callers is a turn |
 | Realtime first byte, in production | The gateway's service level for the realtime class, failures included: `flatshare_gateway_sli_good_total` over `flatshare_gateway_sli_valid_total` (`class="realtime"`), where a valid request is good when it completes with its first content within 250 ms of its receipt, and one that fails, is refused for capacity, times out or hangs is a miss (the first byte's histogram never sees those; [the gateway's README](../crates/flatshare-gateway/README.md#accounting)) | 95% good, first content within 250 ms: voice alone's p95 (66 ms, W4) plus most of the 250 ms the voice SLO allows a turn. The shared configurations of W4 all miss it, as they miss the voice SLO (the PRs with a 48-token window 372 ms, arm 9 290 ms), and voice alone holds it. It is the first-byte objective, which the production alerts burn on, since V2V needs the callers' waveforms ([below](#the-production-objectives)) |
