@@ -53,3 +53,24 @@ These limits are stated in the documents and are not vulnerabilities in this sen
   flight and the bodies they hold, and gives each class deadlines for its upload, its queue and its response, but it
   does not bound the idle connections clients keep open
   ([what it does not do](crates/flatshare-gateway/README.md#what-it-does-not-do)).
+
+## Fixes in pinned dependencies
+
+A release pins everything it serves ([THIRD-PARTY.md](THIRD-PARTY.md)):
+- vLLM 0.32.0, with make-room's patches built into its scheduler;
+- the Python environments' locks;
+- LiveKit server 1.13.10 and LiveKit Agents 1.8.8;
+- Kokoro-FastAPI at its measured commit;
+- the models at their revisions.
+
+Their advisories are published by their projects: the GitHub security advisories of vLLM, PyTorch and LiveKit, and
+the OSV database for the locked Python packages. A vulnerability in one of them goes to its project. One in how
+Flatshare uses or pins it is reported here, as above.
+
+A fix in a pinned dependency ships as a Flatshare release that moves the pin. Like any release, it goes through CI
+and the release tool, whose checks hold the box to it ([PRODUCTION.md](docs/PRODUCTION.md#releasing-a-change)):
+- **A fix on the pinned line**, such as a vLLM 0.32.x, needs make-room's patches to apply to the new version first.
+- **A fix only in a later line** needs make-room's patches rebased onto that line first.
+  - `make compat-upstream` says whether they still apply
+    ([the engine's upkeep](python/flatshare_vllm/README.md#upkeep-the-changes-cost-and-its-fit-upstream)).
+  - The rebased engine must pass the same checks before a release moves to it.
