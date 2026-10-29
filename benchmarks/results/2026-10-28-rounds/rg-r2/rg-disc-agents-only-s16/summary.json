@@ -100,5 +100,10 @@
       "p50": 4.0,
       "max": 14.0
     }
+  },
+  "gpu": {
+    "sm_clock_p50_mhz": 2625,
+    "temperature_max_c": 89,
+    "name": "NVIDIA GeForce RTX 5060 Ti"
   }
 }

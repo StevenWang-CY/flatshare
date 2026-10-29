@@ -189,5 +189,10 @@
     "kv_offload_load_bytes": null,
     "kv_offload_store_bytes": 375128064
   },
-  "kv": null
+  "kv": null,
+  "gpu": {
+    "sm_clock_p50_mhz": 2587,
+    "temperature_max_c": 65,
+    "name": "NVIDIA GeForce RTX 5060 Ti"
+  }
 }

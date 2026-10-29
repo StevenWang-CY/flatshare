@@ -1,13 +1,13 @@
 # The step-cap and window sweep's screens (2026-10-27)
 
 W5 measured the change at the box's step cap of 512 tokens, where stock vLLM had done better at 1,024 and the change
-never ran ([BENCHMARKS](../../../docs/BENCHMARKS.md)). The sweep runs the change, and stock vLLM beside it, over the step
-cap, the long-prefill threshold, the first-tokens window and the gateway's static cap on background requests, first as
-two screens on the sample of the agents that W5 tuned on (seed 11), then on fresh samples in five rounds
+never ran ([BENCHMARKS](../../../docs/BENCHMARKS.md)). The sweep runs the change, and stock vLLM beside it, over the
+step cap, the long-prefill threshold, the first-tokens window and the gateway's static cap on background requests, first
+as two screens on the sample of the agents that W5 tuned on (seed 11), then on fresh samples in five rounds
 ([`rg-r1`](../../e2/rg-r1.campaign) to [`rg-r5`](../../e2/rg-r5.campaign)), which confirm or overturn what the screens
-pick. These are the screens' records, kept as [W5's](../2026-10-24-e2-w5) keep each point: `run.json`, `arm.toml`,
-`engine.json`, `summary.json` and the callers' `bots/summary.json` and `bots/turns.jsonl`, with the first screen's
-report (`sweep-screen/report`).
+pick. These are the screens' records, kept as [W5's](../2026-10-24-e2-w5) keep each point, as
+`flatshare-bench e2 export` writes it: `run.json`, `arm.toml`, `engine.json`, `summary.json` and the callers'
+`bots/summary.json` and `bots/turns.jsonl`, with the first screen's report (`sweep-screen/report`).
 
 Both screens ran on Phastform's RTX 5060 Ti with vLLM 0.32.0 and Qwen3-4B-Instruct-2507-FP8, Phastform and cyan at
 v1.5 (`versions` in each `run.json`), one run a point: two callers, each call opening with a warm-up turn, beside 24
