@@ -158,7 +158,7 @@ groups:
         annotations:
           summary: No inference has succeeded since the gateway started, 15 minutes ago (an engine's cold start is about 9)
       - alert: FlatshareEngineMetricsDown
-        expr: up{job="flatshare-engine"} == 0
+        expr: up{job=~"flatshare-engine(-.+)?"} == 0
         for: 5m
         labels:
           severity: ticket
@@ -214,7 +214,7 @@ groups:
         annotations:
           summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503
       - alert: FlatshareKvPoolFullWithWaiting
-        expr: max(vllm:kv_cache_usage_perc) > 0.95 and sum(vllm:num_requests_waiting) > 0
+        expr: max by (node) (vllm:kv_cache_usage_perc) > 0.95 and on (node) sum by (node) (vllm:num_requests_waiting) > 0
         for: 10m
         labels:
           severity: ticket

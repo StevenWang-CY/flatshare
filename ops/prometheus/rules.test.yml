@@ -1,5 +1,6 @@
 # promtool's unit tests of rules.yml (make check-rules): the failure-inclusive service level and its burn-rate alerts,
-# admission coverage, and the engine's states. Each input is a counter's value a minute.
+# admission coverage, the engine's states, and the engine's metrics and KV per node. Each input is a counter's value
+# a minute.
 rule_files:
   - rules.yml
 
@@ -210,3 +211,73 @@ tests:
               severity: ticket
             exp_annotations:
               summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503
+
+  # The engine's relayed metrics. With one upstream, its job; with [[nodes]], a job a node (prometheus.example.yml): a
+  # node whose job scrapes nothing for 5 minutes opens a ticket naming it, and the other node's stays quiet.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="flatshare-engine", node="phastform"}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FlatshareEngineMetricsDown
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: flatshare-engine
+              node: phastform
+            exp_annotations:
+              summary: The gateway cannot relay the engine's /metrics (the engine or its tunnel is down)
+  - interval: 1m
+    input_series:
+      - series: 'up{job="flatshare-engine-phastform", node="phastform"}'
+        values: '1x15'
+      - series: 'up{job="flatshare-engine-gray", node="gray"}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FlatshareEngineMetricsDown
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: flatshare-engine-gray
+              node: gray
+            exp_annotations:
+              summary: The gateway cannot relay the engine's /metrics (the engine or its tunnel is down)
+
+  # A full KV pool with requests waiting is one engine's regime: one node's full pool beside another node's queue is
+  # not it, and a node with both is.
+  - interval: 1m
+    input_series:
+      - series: 'vllm:kv_cache_usage_perc{node="phastform"}'
+        values: '0.99x15'
+      - series: 'vllm:num_requests_waiting{node="phastform"}'
+        values: '0x15'
+      - series: 'vllm:kv_cache_usage_perc{node="gray"}'
+        values: '0.5x15'
+      - series: 'vllm:num_requests_waiting{node="gray"}'
+        values: '3x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: FlatshareKvPoolFullWithWaiting
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'vllm:kv_cache_usage_perc{node="phastform"}'
+        values: '0.99x15'
+      - series: 'vllm:num_requests_waiting{node="phastform"}'
+        values: '2x15'
+      - series: 'vllm:kv_cache_usage_perc{node="gray"}'
+        values: '0.5x15'
+      - series: 'vllm:num_requests_waiting{node="gray"}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: FlatshareKvPoolFullWithWaiting
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              node: phastform
+            exp_annotations:
+              summary: The engine's KV pool is full while requests wait, the regime where voice turns need the engine change
+              description: See docs/PRODUCTION.md, "Is your deployment in this regime?".
