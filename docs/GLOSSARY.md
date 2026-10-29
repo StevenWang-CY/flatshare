@@ -84,7 +84,8 @@ names](#former-names) maps them to the current ones.
 - **E0**: the tier cost model, what resuming an agent turn costs from the GPU cache, from host memory and by
   recompute.
 - **E1**: the simulator's study of agent-side KV retention and prefetch; its result is negative.
-- **E2**: the voice SLO measured end to end beside background agents, against every deployable alternative.
+- **E2**: the voice SLO measured end to end beside background agents, against the configurations of vLLM 0.32, SGLang
+  0.5.22, SMG and llm-d's flow control (emulated) that an operator can deploy without the change.
 - **E3**: what make-room takes from the agents, from the engine's own counters.
 - **FB** (2026-10-25): W5's headline configurations again (voice alone, the frozen box and the PRs' 48-token
   configuration), in five rounds on the code of 2026-10-25 (v0.3-191: W6's transport, and the PRs' budget cap counting
