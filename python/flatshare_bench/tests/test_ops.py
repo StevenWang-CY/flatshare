@@ -90,6 +90,15 @@ def test_every_metric_the_rules_and_dashboards_name_is_exported() -> None:
     assert metric_names('rate(flatshare_gateway_first_bytes_seconds_bucket{le="0.25"}[5m])') - known
 
 
+def test_the_dashboards_keep_each_nodes_engine_apart() -> None:
+    # With [[nodes]] each engine's metrics come in under its node label (prometheus.example.yml): a panel that sums
+    # the engines together would show one node's full KV pool beside the other node's waiting requests as one engine.
+    engine = [expr for expr in dashboard_exprs() if "vllm:" in expr]
+    assert len(engine) >= 9
+    for expr in engine:
+        assert re.search(r"\bby \([^)]*\bnode\b", expr), expr
+
+
 def test_the_rules_name_their_records_and_alerts_as_the_docs_do() -> None:
     for rule in rules():
         if "record" in rule:
