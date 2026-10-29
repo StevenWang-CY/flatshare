@@ -470,6 +470,9 @@ class Figure:
         """Connectors, which no label may cross, and what each may (its ``ignore``)."""
         self.rules: list[tuple[tuple[float, float], tuple[float, float]]] = []
         """Gridlines, axes and reference rules, which only a label set on a halo may cross."""
+        self.borders: list[tuple[float, float, float, float]] = []
+        """Panels', groups' and the KV pool's outlines (x, y, w, h), which a label sits inside or outside, never
+        across."""
         self.glyphs: dict[str, set[str]] = {face: set() for face in FACES}
 
     # Text -------------------------------------------------------------------------------------
@@ -624,20 +627,23 @@ class Figure:
         letter: str | None = None,
         *,
         ground: str = "a",
+        rx: float = 12,
     ) -> float:
-        """A panel on the lavender ("a") or gray ("b") ground inside a dashed rounded border, its
-        title inside the top left and its letter at the top right on the same baseline. Returns
-        the title's baseline."""
-        self.rect(x, y, w, h, f"panel-{ground}", rx=12)
+        """A panel on the lavender ("a") or gray ("b") ground inside a dashed border, its corners
+        rounded by ``rx``, its title inside the top left and its letter at the top right on the
+        same baseline. Returns the title's baseline."""
+        self.rect(x, y, w, h, f"panel-{ground}", rx=rx)
+        self.borders.append((x, y, w, h))
         baseline = y + 14 + 0.7 * LABEL
         self.text(x + 18, baseline, title)
         if letter:
             self.text(x + w - 18, baseline, f"({letter})", anchor="end")
         return baseline
 
-    def group(self, x: float, y: float, w: float, h: float) -> None:
-        """A dashed container around components that act together."""
-        self.rect(x, y, w, h, "group", rx=10)
+    def group(self, x: float, y: float, w: float, h: float, *, rx: float = 10) -> None:
+        """A dashed container around components that act together, its corners rounded by ``rx``."""
+        self.rect(x, y, w, h, "group", rx=rx)
+        self.borders.append((x, y, w, h))
 
     def box(
         self,
@@ -650,12 +656,14 @@ class Figure:
         kind: str = "box",
         size: float = LABEL,
         pitch: float | None = None,
+        rx: float = 8,
     ) -> None:
-        """A component: a rounded box, white ("box") or the change's own ("ours"), its name centred
-        inside on one line or several. A label that does not fit inside is refused."""
+        """A component: a box, white ("box") or the change's own ("ours"), its corners rounded by
+        ``rx``, its name centred inside on one line or several. A label that does not fit inside is
+        refused."""
         if kind not in ("box", "ours"):
             raise ValueError(f"a component is a box or ours, not {kind!r}")
-        self.rect(x, y, w, h, kind, rx=8)
+        self.rect(x, y, w, h, kind, rx=rx)
         lines = [lines] if isinstance(lines, str) else lines
         pitch = pitch or size * 1.22
         first = y + h / 2 - pitch * (len(lines) - 1) / 2 + 0.33 * size
@@ -664,9 +672,10 @@ class Figure:
             if box.x0 < x + 6 or box.x1 > x + w - 6 or box.y0 < y + 3 or box.y1 > y + h - 3:
                 raise ValueError(f"{line!r} does not fit inside its box")
 
-    def memory(self, x: float, y: float, w: float, h: float) -> None:
-        """Physical KV memory: a dashed outline over a faint ground."""
-        self.rect(x, y, w, h, "memory", rx=6)
+    def memory(self, x: float, y: float, w: float, h: float, *, rx: float = 6) -> None:
+        """Physical KV memory: a dashed outline over a faint ground, its corners rounded by ``rx``."""
+        self.rect(x, y, w, h, "memory", rx=rx)
+        self.borders.append((x, y, w, h))
 
     def cells(
         self,
@@ -678,15 +687,16 @@ class Figure:
         height: float,
         gap: float = 0,
         hatched: set[int] | frozenset[int] = frozenset(),
+        rx: float = 2,
     ) -> None:
         """A row of KV blocks: each a cell in its owner's hue, an empty cell where ``None``; a
-        hatched cell is one being taken."""
+        hatched cell is one being taken. ``rx`` rounds the cells' corners."""
         for k, hue in enumerate(hues):
             cx = x + k * (cell + gap)
             if hue is None:
-                self.rect(cx, y, cell, height, "cell-empty", rx=2)
+                self.rect(cx, y, cell, height, "cell-empty", rx=rx)
                 continue
-            self.rect(cx, y, cell, height, f"{hue} cell", rx=2)
+            self.rect(cx, y, cell, height, f"{hue} cell", rx=rx)
             if k in hatched:
                 step = 5.0
                 d = "".join(
@@ -773,7 +783,8 @@ class Figure:
     # Checks and export ------------------------------------------------------------------------
 
     def check(self) -> None:
-        """Refuse text off the canvas, overlapping text, and a connector across text."""
+        """Refuse text off the canvas, overlapping text, a connector across text, a rule across text not on a
+        halo, and text across a panel's, a group's or the KV pool's outline."""
         for k, box in enumerate(self.boxes):
             if box.x0 < 1 or box.y0 < 1 or box.x1 > self.width - 1 or box.y1 > self.height - 1:
                 raise ValueError(f"text leaves the canvas: {box.label!r} {box}")
@@ -791,6 +802,12 @@ class Figure:
             for box in self.boxes:
                 if not box.halo and _segment_hits_box(a, b, box, pad=1.0):
                     raise ValueError(f"a rule crosses the text {box.label!r} near {a}")
+        for x, y, w, h in self.borders:
+            corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)]
+            edges = list(itertools.pairwise(corners))
+            for box in self.boxes:
+                if any(_segment_hits_box(a, b, box, pad=1.0) for a, b in edges):
+                    raise ValueError(f"a label crosses a border: {box.label!r} near {(x, y)}")
 
     def _font_css(self) -> str:
         rules = []
