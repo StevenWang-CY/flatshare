@@ -266,7 +266,8 @@ bench=~/flatshare/venvs/bench/bin/flatshare-bench
 soak() { systemd-run --user --unit flatshare-soak --collect -p KillMode=mixed -p TimeoutStopSec=900 $bench soak run "$@"; }
 soak --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref-voice-alone   # the reference, first
 $bench soak report ~/flatshare/runs/soak/ref-voice-alone                         # once it has ended: its p95 is P95
-soak --hours 24 --slo-reference P95 --calls-per-hour 20 --turns 10 --agents-sessions 16 --out ~/flatshare/runs/soak/NAME
+soak --hours 24 --slo-reference P95 --calls-per-hour 20 --turns 10 --agents-sessions 14 --agents-data weka-x32-long \
+  --out ~/flatshare/runs/soak/NAME     # two nodes bounding agents at 4 + 12: a few under the bounds (Two GPU nodes, Sizing)
 journalctl --user -u flatshare-soak -f      # its progress: each tool's run, each hour's line
 systemctl --user stop flatshare-soak        # ends it early, its summary written
 ```

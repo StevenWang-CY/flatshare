@@ -47,6 +47,7 @@ E2's report computes these for every point (`flatshare-bench e2`; [EXPERIMENTS.m
 | RG: round 3, Phastform | 2 / 1 | 1,760 / 1,732 ms | the round's own run | 2,010 / 1,982 ms |
 | RG: round 4, Gray (the sweep's confirmation only) | 2 | 1,830 ms | the round's own run | 2,080 ms |
 | RG: round 5, Phastform (the sweep's confirmation only) | 2 | 1,842 ms | the round's own run | 2,092 ms |
+| The 24-hour soak, serve mode | 2 at once, 20 an hour | 1,726 ms | two hours of voice alone with the same calls | 1,976 ms |
 
 Not computed: the interactive class's resume target, and the cache-contract honor rate, which went with leases. The plan's continuity indicator, audio gaps of 100 ms or more, is read from v1.6 and v1.7 as the pauses inside a reply, the concealed audio and the agent's playout above.
 

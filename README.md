@@ -99,6 +99,13 @@ Values are medians of five rounds at 512-token steps and of two rounds, on the f
   samples, the PRs kept all of that throughput and halved the p95, to 0.14 and 0.17 s over the SLO. The larger steps
   add a wait for the steps already in flight when a voice turn arrives, which no scheduling rule takes back.
 
+**On two RTX 5060 Ti cards**, under a resource gate fixed before the runs, both calls and four agent sessions on one
+card with the PRs, beside a card of agents alone, did 34% more background work than a card per workload, with 5 of 177
+replies (2.8%) over the SLO, where the gate allows 5%. Most of that is the arrangement's: on stock vLLM the shared card
+qualifies at two sessions, and the same two cards did 27% more. One call and 12 sessions on each card qualified on
+neither engine ([the rounds](benchmarks/results/2026-10-28-rounds/README.md);
+[the deployment](docs/PRODUCTION.md#two-cards)).
+
 ## How it works
 
 <picture>
@@ -172,7 +179,7 @@ modifying the installation. In an environment with vLLM 0.32.0 and a GPU it supp
 git clone https://github.com/StevenWang-CY/flatshare && cd flatshare
 python python/flatshare_vllm/src/flatshare_vllm/build.py make-room ~/make-room
 PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-len 32768 --max-num-seqs 256 \
-  --scheduling-policy priority --max-num-batched-tokens 512 --long-prefill-token-threshold 256 \
+  --scheduling-policy priority --max-num-batched-tokens 256 --long-prefill-token-threshold 0 \
   --scheduler-cls flatshare_make_room_scheduler.AsyncScheduler \
   --additional-config.make_room.max_preemptions_per_step 2 \
   --additional-config.make_room.budget_cap true --additional-config.make_room.budget_cap_tokens 48 \
@@ -183,8 +190,10 @@ python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.
 Send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV tier from
 [`engine.yaml`](deploy/phastform/engine.yaml), which holds the box's 32k context and fixed KV pool too; without a
 context length vLLM takes the model's 262,144 tokens, which no 16 GB card holds, and on an H100 or a larger card it
-defaults to 1,024 request slots, more than this step cap, which vLLM refuses. `probe.py` sizes its requests from the
-engine's KV pool and context length, so the check runs unchanged on another card.
+defaults to 1,024 request slots, more than this step cap, which vLLM refuses. The step cap is the serving profile's,
+256 tokens a step without a per-request threshold, which the sweep chose for the PRs. The two-card results above ran it;
+the single-card ones ran 512 with a 256-token threshold, but for the A100's rounds at vLLM's default of 2,048.
+`probe.py` sizes its requests from the engine's KV pool and context length, so the check runs unchanged on another card.
 [docs/PRODUCTION.md](docs/PRODUCTION.md) has the whole configuration (the CPU tier, the priorities, what to watch and
 how it fails) and how to check it on your hardware.
 
