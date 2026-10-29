@@ -99,12 +99,11 @@ Values are medians of five rounds at 512-token steps and of two rounds, on the f
   samples, the PRs kept all of that throughput and halved the p95, to 0.14 and 0.17 s over the SLO. The larger steps
   add a wait for the steps already in flight when a voice turn arrives, which no scheduling rule takes back.
 
-**On two RTX 5060 Ti cards**, under a resource gate fixed before the runs, both calls and four agent sessions on one
-card with the PRs, beside a card of agents alone, did 34% more background work than a card per workload, with 5 of 177
-replies (2.8%) over the SLO, where the gate allows 5%. Most of that is the arrangement's: on stock vLLM the shared card
-qualifies at two sessions, and the same two cards did 27% more. One call and 12 sessions on each card qualified on
-neither engine ([the rounds](benchmarks/results/2026-10-28-rounds/README.md);
-[the deployment](docs/PRODUCTION.md#two-cards)).
+**On two RTX 5060 Ti cards**, both calls and four agent sessions on one card with the PRs, beside a card of agents
+alone, did 34% more background work than a card per workload, with 5 of 177 replies (2.8%) over the SLO, where the
+resource gate allows 5%. Most of that is the arrangement's: on stock vLLM the shared card qualifies at two sessions, and
+the same two cards did 27% more. One call and 12 sessions on each card qualified on neither engine
+([the rounds](benchmarks/results/2026-10-28-rounds/README.md); [the deployment](docs/PRODUCTION.md#two-cards)).
 
 ## How it works
 
@@ -139,10 +138,10 @@ reply's tokens beside agent prefill and with it held (60–65 and 16–20 ms).*
 - **What the shared model can do.** The agents' replay needs no answer to be right, so the results say what sharing
   costs the call, not whether the background work is worth doing. On a useful pair of jobs, questions about private
   documents in a call (QASPER) beside enriching new documents into records (Re-DocRED), the served model failed 9 of the
-  11 criteria of a quality gate fixed before it ran: 50.6% of the questions it answered were right, and 23.9% of the
-  facts in its records, against 80% for each. Qwen3-8B-FP8 on a card of its own failed too
-  ([the gate](benchmarks/quality/GATE.md); [its record](benchmarks/results/2026-10-27-quality/README.md)). A deployment
-  that shares a card for background work has to check first that the model can do that work.
+  11 criteria of a quality gate: 50.6% of the questions it answered were right, and 23.9% of the facts in its records,
+  against 80% for each. Qwen3-8B-FP8 on a card of its own failed too ([the gate](benchmarks/quality/GATE.md);
+  [its record](benchmarks/results/2026-10-27-quality/README.md)). A deployment that shares a card for background work
+  has to check first that the model can do that work.
 - **A pool with room.** At a realistic load of the whole corpus (16 sessions), where the pool has room, #63350 has
   little to do (0–7 preemptions a run) and the cap holds agent prefill in 3–13% of the steps. The PRs' p95 was lower in
   every one of five rounds, by 109–1,413 ms, but met the SLO in only one: 2,021–2,419 ms against tuned vLLM's

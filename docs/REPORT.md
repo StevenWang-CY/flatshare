@@ -28,9 +28,9 @@ The nearest any control plane in front of the engine came is 2.52 s, by aborting
 193 s p99 time to first token for the agents. On an A100 at the same KV pool and step cap, the rules take the p95 from
 4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds. At the card's default 2,048-token steps they
 keep all of the agents' throughput and leave the voice 0.14–0.17 s over the SLO. On two RTX 5060 Ti cards, under a
-resource gate fixed before the runs, both calls and four agent sessions on one card with the rules, beside a card of
-agents alone, do 34% more background work than a card per workload, with 2.8% of the replies over the SLO. Most of that
-gain is the arrangement's: on stock vLLM the shared card qualifies at two sessions, and the same cards do 27% more.
+resource gate, both calls and four agent sessions on one card with the rules, beside a card of agents alone, do 34% more
+background work than a card per workload, with 2.8% of the replies over the SLO. Most of that gain is the arrangement's:
+on stock vLLM the shared card qualifies at two sessions, and the same cards do 27% more.
 
 ## Contents
 
@@ -112,9 +112,9 @@ agents' tail. A gateway policy timed by the conversation, with KV headroom held 
 speak, leaves the tail where tuned vLLM leaves it (§6.5). The gain shrinks where the pool has room. As calls overlap,
 the tail grows and the hold keeps the agents' prefill out for longer (§6.6). On an A100 at the same KV pool and step
 cap, the rules take the p95 from 4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds (§6.7). On two
-RTX 5060 Ti cards, a resource gate fixed before the runs compared a card per workload, pooling and consolidation. Both
-calls and four agent sessions on one card, beside a card of agents alone, did 34% more background work than a card per
-workload within the SLO's 5% allowance, and stock vLLM's shared card, at two sessions, did 27% more (§6.8).
+RTX 5060 Ti cards, a resource gate compared a card per workload, pooling and consolidation. Both calls and four agent
+sessions on one card, beside a card of agents alone, did 34% more background work than a card per workload within the
+SLO's 5% allowance, and stock vLLM's shared card, at two sessions, did 27% more (§6.8).
 
 This report makes five contributions.
 
@@ -130,9 +130,9 @@ This report makes five contributions.
   campaign, from a class-aware KV reserve (§6.5).
 - **It bounds what a control plane in front of the engine can do** when agents' KV fills the pool (§6.5), and carries
   the result to a datacenter GPU (§6.7).
-- **It measures what sharing a card buys** over a card per workload on two cards, under a resource gate fixed before
-  the runs, and finds most of the gain in the arrangement rather than in the scheduler: the rules' own share is the two
-  agent sessions more that the shared card carries within the SLO (§6.8).
+- **It measures what sharing a card buys** over a card per workload on two cards, under a resource gate, and finds most
+  of the gain in the arrangement rather than in the scheduler: the rules' own share is the two agent sessions more that
+  the shared card carries within the SLO (§6.8).
 
 ## 2. Background and motivation
 
@@ -496,6 +496,11 @@ workloads. A p95 over 59 replies lies between the third- and fourth-slowest repl
 hundred milliseconds. Five rounds that agree in sign would arise by chance one time in sixteen if two configurations did
 not differ, so the rounds resolve the direction of a difference, and its size only roughly.
 
+Two comparisons are a gate's verdict: whether the served model can do useful background work (the quality gate,
+[GATE.md](../benchmarks/quality/GATE.md); §9) and which arrangement of two cards qualifies (the resource gate,
+[RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md); §6.8). Each gate's criteria and thresholds were committed
+before its runs, and its verdict is what its `gate.py` computes from the records.
+
 ## 6. Results
 
 ### 6.1 The two rules bring the voice tail to 2.24 s while the agents keep 97% of their throughput
@@ -776,14 +781,14 @@ first tokens that no voice tier reaches.
 
 A second RTX 5060 Ti 16 GB runs on another host. An operator with the two cards can give the calls one and the agents
 the other (dedicated roles), run both cards mixed with one call each (pooling), or put both calls on one card beside as
-many agent sessions as it serves within the SLO and run agents alone on the other (consolidation). A resource gate fixed
-before the runs decides between them ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)). An arrangement
-qualifies if at most 5% of its replies, over its rounds pooled, are over its round's SLO for the card's callers. Sharing
-has resource value if a qualifying shared arrangement does at least 20% more background work than the best qualifying
-dedicated one, counted as the agents' tokens a second over the calls' first 240 s summed over both cards, at the median
-of the rounds. Three rounds each replayed a new sample of the agents' traces on one host, the hosts alternating from
-round to round, and measured each card's part of every arrangement as a run of its own. The change ran at the serving
-profile's 256-token step cap without a per-request threshold (§6.9).
+many agent sessions as it serves within the SLO and run agents alone on the other (consolidation). A resource gate
+decides between them ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)). An arrangement qualifies if at most
+5% of its replies, over its rounds pooled, are over its round's SLO for the card's callers. Sharing has resource value
+if a qualifying shared arrangement does at least 20% more background work than the best qualifying dedicated one,
+counted as the agents' tokens a second over the calls' first 240 s summed over both cards, at the median of the rounds.
+Three rounds each replayed a new sample of the agents' traces on one host, the hosts alternating from round to round,
+and measured each card's part of every arrangement as a run of its own. The change ran at the serving profile's
+256-token step cap without a per-request threshold (§6.9).
 
 A card of agents alone does the most well short of 24 sessions (Table 6). Without speech servers, with its KV pool grown
 into their memory to 61,152 tokens and vLLM's default first-come-first-served scheduling at 2,048-token steps, it did
@@ -1010,8 +1015,7 @@ scheduler under chunked prefill and asynchronous scheduling, on vLLM's own CPU t
 rather than a new engine. The prefill hold is bounded to a reply's first tokens and sized to the first sentence that a
 cascaded voice agent hands to speech synthesis, which we did not find elsewhere. And the measurements: a cascaded voice
 pipeline beside long-context coding agents on one GPU, with V2V read from waveforms, against the configurations an
-operator can deploy, and, across two cards under a resource gate fixed before the runs, what sharing a card buys over a
-card per workload.
+operator can deploy, and, across two cards under a resource gate, what sharing a card buys over a card per workload.
 
 ## 9. Limitations
 
@@ -1052,10 +1056,10 @@ the evaluation was tuned on, one run a setting, and five rounds on new samples c
 
 **What the shared model can do.** The agents' replay needs no answer to be right, so the results say what sharing costs
 the call, not whether the shared model's background work is worth keeping. The quality gate
-([GATE.md](../benchmarks/quality/GATE.md)), fixed before it ran, tried a useful pair of jobs: answering questions about
-private documents in a call (QASPER), beside enriching new documents into searchable records (Re-DocRED). The served
-model failed 9 of its 11 criteria. Of the questions it answered, 50.6% were answered correctly, against a bar of 80%,
-and of the facts in its records 23.9% were right, against 80%. Qwen3-8B-FP8 on a card of its own failed as well
+([GATE.md](../benchmarks/quality/GATE.md)) tried a useful pair of jobs: answering questions about private documents in a
+call (QASPER), beside enriching new documents into searchable records (Re-DocRED). The served model failed 9 of its 11
+criteria. Of the questions it answered, 50.6% were answered correctly, against a bar of 80%, and of the facts in its
+records 23.9% were right, against 80%. Qwen3-8B-FP8 on a card of its own failed as well
 ([the gate's record](../benchmarks/results/2026-10-27-quality/README.md)). A deployment that shares a card for
 background work has to check first that the model does that work.
 
