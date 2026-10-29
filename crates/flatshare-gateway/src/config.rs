@@ -163,8 +163,9 @@ pub struct NodeConfig {
     pub background: bool,
     /// The realtime sessions placed on it at most: a call each.
     pub max_calls: usize,
-    /// The agents' sessions (interactive and background) placed on it at most, `None` for no bound: what a node
-    /// that carries calls may run beside them.
+    /// The agents' sessions (interactive and background) placed on it at most, `None` for no bound (a node with the
+    /// background role alone that sets none, or one that says `"unbounded"`): what a node that carries calls may run
+    /// beside them.
     pub max_agents: Option<usize>,
     /// Its speech servers, whose `/health` its health needs, and which a call placed on it binds to.
     pub stt: Option<UpstreamAddr>,
@@ -514,9 +515,9 @@ struct RawNode {
     /// E2 measured two calls on one card.
     #[serde(default = "RawNode::two_calls")]
     max_calls: usize,
-    /// No bound unless set.
+    /// Required with both roles; with the background role alone, no bound unless set.
     #[serde(default)]
-    max_agents: Option<usize>,
+    max_agents: Option<RawMaxAgents>,
     #[serde(default)]
     stt: Option<String>,
     #[serde(default)]
@@ -530,6 +531,46 @@ impl RawNode {
 
     fn two_calls() -> usize {
         2
+    }
+}
+
+/// A node's `max_agents` as written: a count of agents' sessions, or `"unbounded"`.
+#[derive(Clone, Copy, Debug)]
+enum RawMaxAgents {
+    Count(usize),
+    Unbounded,
+}
+
+impl<'de> Deserialize<'de> for RawMaxAgents {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Bound;
+        impl serde::de::Visitor<'_> for Bound {
+            type Value = RawMaxAgents;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a count of agents' sessions, or \"unbounded\"")
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, count: i64) -> Result<Self::Value, E> {
+                usize::try_from(count)
+                    .map(RawMaxAgents::Count)
+                    .map_err(|_| E::invalid_value(serde::de::Unexpected::Signed(count), &self))
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, count: u64) -> Result<Self::Value, E> {
+                usize::try_from(count)
+                    .map(RawMaxAgents::Count)
+                    .map_err(|_| E::invalid_value(serde::de::Unexpected::Unsigned(count), &self))
+            }
+
+            fn visit_str<E: serde::de::Error>(self, word: &str) -> Result<Self::Value, E> {
+                match word {
+                    "unbounded" => Ok(RawMaxAgents::Unbounded),
+                    _ => Err(E::invalid_value(serde::de::Unexpected::Str(word), &self)),
+                }
+            }
+        }
+        deserializer.deserialize_any(Bound)
     }
 }
 
@@ -623,20 +664,31 @@ fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
                 "nodes.{name}.max_calls must be positive for a node with the realtime role"
             ));
         }
-        match node.max_agents {
+        // A node with both roles and no bound runs its agents unbounded beside its calls, the measured failure (beside
+        // 24 session trees, 37 of 177 replies over the SLO: benchmarks/results/2026-10-28-rounds), so it names a bound
+        // or says that it runs none.
+        let max_agents = match node.max_agents {
             Some(_) if !background => {
                 return Err(format!(
                     "nodes.{name}.max_agents is for a node with the background role: this one takes no agents' \
                      sessions"
                 ));
             }
-            Some(0) => {
+            Some(RawMaxAgents::Count(0)) => {
                 return Err(format!(
-                    "nodes.{name}.max_agents must be positive, or left out for no bound"
+                    "nodes.{name}.max_agents must be positive, or \"unbounded\""
                 ));
             }
-            _ => {}
-        }
+            Some(RawMaxAgents::Count(count)) => Some(count),
+            Some(RawMaxAgents::Unbounded) => None,
+            None if realtime && background => {
+                return Err(format!(
+                    "nodes.{name}.max_agents must be set for a node with both roles: the agents' sessions it runs \
+                     beside its calls, or \"unbounded\""
+                ));
+            }
+            None => None,
+        };
         let speech = |key: &str, value: Option<String>| {
             value
                 .map(|raw| parse_address(&format!("nodes.{name}.{key}"), &raw))
@@ -649,7 +701,7 @@ fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
             realtime,
             background,
             max_calls: node.max_calls,
-            max_agents: node.max_agents,
+            max_agents,
             stt,
             tts,
             name,
@@ -1549,6 +1601,7 @@ name = "phastform"
 upstream = "unix:/run/user/1007/flatshare/phastform-engine.sock"
 stt = "unix:/run/user/1007/flatshare/phastform-stt.sock"
 tts = "unix:/run/user/1007/flatshare/phastform-tts.sock"
+max_agents = 4
 
 [[nodes]]
 name = "gray"
@@ -1622,7 +1675,9 @@ max_calls = 0
         let node = |name: &str, keys: &str| {
             format!("[[nodes]]\nname = \"{name}\"\nupstream = \"unix:/run/{name}.sock\"\n{keys}\n")
         };
-        let both = format!("{}{}", node("a", ""), node("b", ""));
+        // A node with both roles, bounded, so that each case below fails for its own cause.
+        let bounded = |name: &str, keys: &str| node(name, &format!("max_agents = 4\n{keys}"));
+        let both = format!("{}{}", bounded("a", ""), bounded("b", ""));
         for (top, nodes, cause) in [
             (
                 "upstream = \"http://127.0.0.1:18000\"",
@@ -1636,14 +1691,14 @@ max_calls = 0
             ),
             (
                 "",
-                format!("{}{}", node("a", ""), node("a", "")),
+                format!("{}{}", bounded("a", ""), bounded("a", "")),
                 "nodes: \"a\" is named twice",
             ),
             (
                 "",
                 format!(
                     "{}[[nodes]]\nname = \"b\"\nupstream = \"unix:/run/a.sock\"\n",
-                    node("a", "")
+                    bounded("a", "")
                 ),
                 "nodes.b.upstream is nodes.a's",
             ),
@@ -1666,7 +1721,7 @@ max_calls = 0
             ),
             (
                 "",
-                node("a", "tts = \"http://127.0.0.1:9000/tts\""),
+                bounded("a", "tts = \"http://127.0.0.1:9000/tts\""),
                 "nodes.a.tts \"http://127.0.0.1:9000/tts\": expected",
             ),
             (
@@ -1698,17 +1753,18 @@ max_calls = 0
     }
 
     #[test]
-    fn a_node_with_the_background_role_may_bound_its_agents_sessions() {
-        let bounded = TWO_NODES.replace(
-            "phastform-tts.sock\"\n",
-            "phastform-tts.sock\"\nmax_agents = 4\n",
-        );
-        let two = nodes_config("", &bounded).unwrap();
+    fn a_node_with_both_roles_bounds_its_agents_sessions_or_says_unbounded() {
+        let two = nodes_config("", TWO_NODES).unwrap();
         let [phastform, gray] = &two.nodes[..] else {
             panic!("{:?}", two.nodes)
         };
-        // Without the key, no bound.
+        // A node with the background role alone needs no bound.
         assert_eq!((phastform.max_agents, gray.max_agents), (Some(4), None));
+        let unbounded = TWO_NODES.replace("max_agents = 4", "max_agents = \"unbounded\"");
+        assert_eq!(
+            nodes_config("", &unbounded).unwrap().nodes[0].max_agents,
+            None
+        );
         let node = |name: &str, keys: &str| {
             format!("[[nodes]]\nname = \"{name}\"\nupstream = \"unix:/run/{name}.sock\"\n{keys}\n")
         };
@@ -1719,8 +1775,20 @@ max_calls = 0
         );
         for (nodes, cause) in [
             (
+                node("a", ""),
+                "nodes.a.max_agents must be set for a node with both roles",
+            ),
+            (
                 node("a", "max_agents = 0"),
-                "nodes.a.max_agents must be positive, or left out for no bound",
+                "nodes.a.max_agents must be positive, or \"unbounded\"",
+            ),
+            (
+                node("a", "max_agents = \"many\""),
+                "expected a count of agents' sessions, or \"unbounded\"",
+            ),
+            (
+                node("a", "max_agents = -1"),
+                "expected a count of agents' sessions, or \"unbounded\"",
             ),
             (
                 calls_only,

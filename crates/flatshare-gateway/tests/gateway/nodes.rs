@@ -118,7 +118,7 @@ async fn without_nodes_the_gateway_places_nothing_and_exports_its_one_engine() {
 async fn sessions_keep_their_node_and_calls_take_its_call_slots() {
     let a = TestNode::start("a", Script::Json("{}")).await;
     let b = TestNode::start("b", Script::Json("{}")).await;
-    let gw = Gateway::start_nodes(&[&a, &b], "max_calls = 1", "", "").await;
+    let gw = Gateway::start_nodes(&[&a, &b], &format!("max_calls = 1\n{UNBOUNDED}"), "", "").await;
     all_healthy(&gw, &[&a, &b]).await;
     // A call is placed before it speaks, on the node with the fewest calls, and learns its speech servers.
     let first = place(&gw, "call-1").await;
@@ -186,7 +186,7 @@ async fn a_node_whose_tts_fails_takes_no_new_call_and_its_calls_move_by_their_ne
     // While b covers for a, one agent's request at a time goes on b.
     let placement = "[placement]\nhealth_interval_s = 0.02\nunhealthy_after = 2\nhealthy_after = 2\n\
                      failover_background_max_in_flight = 1\n";
-    let gw = Gateway::start_nodes(&[&a, &b], "", "", placement).await;
+    let gw = Gateway::start_nodes(&[&a, &b], UNBOUNDED, "", placement).await;
     all_healthy(&gw, &[&a, &b]).await;
     assert_eq!(node_of(&gw, "call-1").await, "a");
     assert_eq!(turn(&gw, "call-1").await.status, 200);
@@ -231,7 +231,7 @@ async fn a_node_whose_engine_fails_its_canary_is_unhealthy_and_its_requests_go_e
     let a = TestNode::start("a", Script::Json("{}")).await;
     let b = TestNode::start("b", Script::Json("{}")).await;
     let canary = "[canary]\ninterval_s = 0.05\ntimeout_s = 1\ndegraded_after = 1";
-    let gw = Gateway::start_nodes(&[&a, &b], "", canary, "").await;
+    let gw = Gateway::start_nodes(&[&a, &b], UNBOUNDED, canary, "").await;
     all_healthy(&gw, &[&a, &b]).await;
     assert_eq!(agent(&gw, "agent-1").await.status, 200);
     assert_eq!(a.requests(), 1);
@@ -256,7 +256,7 @@ async fn a_node_whose_engine_fails_its_canary_is_unhealthy_and_its_requests_go_e
 async fn a_moved_call_that_finds_every_survivor_at_its_max_calls_gets_503() {
     let a = TestNode::start("a", Script::Json("{}")).await;
     let b = TestNode::start("b", Script::Json("{}")).await;
-    let gw = Gateway::start_nodes(&[&a, &b], "max_calls = 1", "", "").await;
+    let gw = Gateway::start_nodes(&[&a, &b], &format!("max_calls = 1\n{UNBOUNDED}"), "", "").await;
     all_healthy(&gw, &[&a, &b]).await;
     assert_eq!(node_of(&gw, "call-1").await, "a");
     assert_eq!(node_of(&gw, "call-2").await, "b");
@@ -336,7 +336,7 @@ async fn with_fill_calls_go_to_the_next_node_only_when_the_first_is_full_or_fail
     let b = TestNode::start("b", Script::Json("{}")).await;
     let placement = "[placement]\nhealth_interval_s = 0.02\nhealth_timeout_s = 0.5\nunhealthy_after = 2\n\
                      healthy_after = 2\ncalls = \"fill\"\n";
-    let gw = Gateway::start_nodes(&[&a, &b], "", "", placement).await;
+    let gw = Gateway::start_nodes(&[&a, &b], UNBOUNDED, "", placement).await;
     all_healthy(&gw, &[&a, &b]).await;
     // a takes calls up to its max_calls (2), and b, a warm spare, only then.
     assert_eq!(node_of(&gw, "call-1").await, "a");
@@ -352,7 +352,7 @@ async fn with_fill_calls_go_to_the_next_node_only_when_the_first_is_full_or_fail
     assert_eq!(node_of(&gw, "call-2").await, "b");
     unplaced(&place(&gw, "call-4").await, "no_call_slot");
     unplaced(&place(&gw, "call-5").await, "no_call_slot");
-    // No max_agents: /nodes shows null.
+    // Unbounded: /nodes shows null.
     assert_eq!(
         nodes_view(&gw).await["nodes"][0].get("max_agents"),
         Some(&serde_json::Value::Null)
@@ -363,7 +363,7 @@ async fn with_fill_calls_go_to_the_next_node_only_when_the_first_is_full_or_fail
 async fn a_node_covering_for_a_failed_one_defers_its_agents_until_the_calls_moved_to_it_end() {
     let a = TestNode::start("a", Script::Json("{}")).await;
     let b = TestNode::start("b", Script::Json("{}")).await;
-    let gw = Gateway::start_nodes(&[&a, &b], "", "", "").await;
+    let gw = Gateway::start_nodes(&[&a, &b], UNBOUNDED, "", "").await;
     all_healthy(&gw, &[&a, &b]).await;
     assert_eq!(node_of(&gw, "call-1").await, "a");
     assert_eq!(agent(&gw, "agent-1").await.status, 200);
@@ -408,7 +408,7 @@ async fn with_fill_a_spare_given_a_new_call_covers_until_it_ends_though_the_firs
     let b = TestNode::start("b", Script::Json("{}")).await;
     let placement = "[placement]\nhealth_interval_s = 0.02\nhealth_timeout_s = 0.5\nunhealthy_after = 2\n\
                      healthy_after = 2\ncalls = \"fill\"\n";
-    let gw = Gateway::start_nodes(&[&a, &b], "", "", placement).await;
+    let gw = Gateway::start_nodes(&[&a, &b], UNBOUNDED, "", placement).await;
     all_healthy(&gw, &[&a, &b]).await;
     // a fails before any call: a new call goes to b, the spare, which covers though no call moved there.
     a.tts.set_healthy(false);
@@ -451,7 +451,7 @@ async fn an_agent_deferred_past_its_queue_deadline_gets_503_and_a_call_is_never_
     let a = TestNode::start("a", Script::Json("{}")).await;
     let b = TestNode::start("b", Script::Json("{}")).await;
     let top = "[classes.background]\nqueue_timeout_s = 0.3";
-    let gw = Gateway::start_nodes(&[&a, &b], "", top, "").await;
+    let gw = Gateway::start_nodes(&[&a, &b], UNBOUNDED, top, "").await;
     all_healthy(&gw, &[&a, &b]).await;
     assert_eq!(node_of(&gw, "call-1").await, "a");
     a.tts.set_healthy(false);
@@ -486,7 +486,7 @@ async fn a_realtime_request_whose_node_fails_before_its_first_content_is_sent_on
     let b = TestNode::start("b", chunks("b")).await;
     // Pooled connections that idle a moment are not reused: a killed engine's are gone, as a real one's are.
     let top = "upstream_idle_timeout_s = 0.05";
-    let gw = Gateway::start_nodes(&[&a, &b], "", top, "").await;
+    let gw = Gateway::start_nodes(&[&a, &b], UNBOUNDED, top, "").await;
     all_healthy(&gw, &[&a, &b]).await;
     assert_eq!(node_of(&gw, "call-1").await, "a");
     a.engine.kill(true);
@@ -526,7 +526,7 @@ async fn a_realtime_stream_that_breaks_after_its_first_content_is_never_sent_aga
     };
     let a = TestNode::start("a", broken).await;
     let b = TestNode::start("b", chunks("b")).await;
-    let gw = Gateway::start_nodes(&[&a, &b], "", "", "").await;
+    let gw = Gateway::start_nodes(&[&a, &b], UNBOUNDED, "", "").await;
     all_healthy(&gw, &[&a, &b]).await;
     assert_eq!(node_of(&gw, "call-1").await, "a");
     let headers = [("x-session-id", "call-1")];
@@ -571,7 +571,7 @@ async fn ready_and_the_engines_metrics_name_the_nodes() {
     let b = TestNode::start("b", Script::Json("{}")).await;
     let toml = format!(
         "{}{}[placement]\nhealth_interval_s = 0.02\nunhealthy_after = 2\nhealthy_after = 2\n",
-        a.toml(""),
+        a.toml(UNBOUNDED),
         b.toml("roles = [\"background\"]")
     );
     let config = flatshare_gateway::Config::from_toml(&nodes_toml("", &toml)).unwrap();
