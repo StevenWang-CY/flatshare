@@ -68,7 +68,7 @@ Where the gateway fronts several GPU nodes, it places each session on one and ke
 2. **On a node failure**, ends the reply under way and takes no request until the caller speaks again. A failure is a transport error or a timeout on the node's STT or TTS socket, before the answer or while its audio comes, or the gateway's answer to the call's LLM request, or its stream's error event, naming one (below). The session's speech is interrupted where the caller's audio stands, and every request of the call, a retry of the cut sentence or reply among them, is refused before it leaves the worker: a reply cut by a node failure is never continued, retried or followed by a new generation over the audio already played.
 3. **At the caller's next speech** (Silero's start of speech, at least half a second before the turn's transcription), asks again, and its STT, TTS and LLM go to the node the gateway names from that turn on. The conversation's transcript is the session's chat context, kept in the worker, so the next reply runs on the new node with all of it; the KV is only a cache, which the new node prefills again.
 
-Without nodes nothing changes: today's gateway, with one upstream, has no placement route and answers 404, and the call is served on the configured sockets, as before, without another request. In bench mode, as every measurement ran, nothing is asked at all.
+Without nodes nothing changes: a gateway with one upstream has no placement route and answers 404, and the call is served on the configured sockets, as before, without another request. In bench mode, as every measurement ran, nothing is asked at all.
 
 **The contract with the gateway** (crates/flatshare-gateway, `[[nodes]]`; what the worker assumes, and its tests' fake gateway serves):
 
