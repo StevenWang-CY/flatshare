@@ -4,10 +4,11 @@ the runs that measured them, as the block between README.md's quick-start probe 
     python -m flatshare_bench.quick_start STOCK_LOG MAKE_ROOM_LOG [--write README.md]
 
 Each log is probe.py's output in the KV case (python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py), one line
-a run, appended: ``kv: priority-0 TTFT 4900 ms, 16 tokens 5185 ms, ...``. The block gives each engine's range of those
-times, the count of runs, which both logs must share, and both logs linked from the README. The command prints the
-block, or with --write replaces the one between the markers, so that a record of new runs changes the README by this
-command alone. test_serving holds the README's block to the logs it links.
+a run, appended: ``kv: priority-0 TTFT 4900 ms, 16 tokens 5185 ms, ...``. Both sit in one record's directory, beside
+its README.md. The block gives each engine's range of those times, on the KV pool vLLM sized from the card, since the
+quick start fixes none; the count of runs, which both logs must share; and the logs and the record's README, linked
+from the README. The command prints the block, or with --write replaces the one between the markers, so that a record
+of new runs changes the README by this command alone. test_serving holds the README's block to the logs it links.
 """
 
 from __future__ import annotations
@@ -67,25 +68,38 @@ def runs(count: int) -> str:
 
 
 def block(stock_log: Path, make_room_log: Path, readme: Path = README) -> str:
-    """The block's text: each engine's range of first-token times, the count of runs both logs share, and the two
-    logs linked from ``readme``, wrapped at the README's width."""
+    """The block's text: each engine's range of first-token times on the card's own KV pool, the count of runs both
+    logs share, and the two logs and their record's README linked from ``readme``, wrapped at the README's width."""
     stock, make_room = ttfts(stock_log), ttfts(make_room_log)
     if len(stock) != len(make_room):
         raise ValueError(
             f"{stock_log} has {len(stock)} runs and {make_room_log} {len(make_room)}: "
             "the block gives one count for both"
         )
+    record = Path(stock_log).resolve().parent
+    if Path(make_room_log).resolve().parent != record or not (record / "README.md").is_file():
+        raise ValueError(
+            f"{stock_log} and {make_room_log}: the logs need one directory, beside their record's README.md"
+        )
     base = Path(readme).resolve().parent
 
-    def link(log: Path) -> str:
-        return Path(os.path.relpath(Path(log).resolve(), base)).as_posix()
+    def link(path: Path) -> str:
+        return Path(os.path.relpath(Path(path).resolve(), base)).as_posix()
 
     text = (
-        "The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On the box it was "
-        f"{span(stock)} ms on stock vLLM and {span(make_room)} ms with make-room, in {runs(len(stock))} each "
-        f"([stock]({link(stock_log)}), [make-room]({link(make_room_log)}))."
+        "The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On the box, with the "
+        f"card's own KV pool, it was {span(stock)} ms on stock vLLM and {span(make_room)} ms with make-room, in "
+        f"{runs(len(stock))} each ([stock]({link(stock_log)}), [make-room]({link(make_room_log)}), "
+        f"[the record]({link(record / 'README.md')}))."
     )
-    return textwrap.fill(text, WIDTH, break_long_words=False, break_on_hyphens=False) + "\n"
+    return wrap(text)
+
+
+def wrap(text: str) -> str:
+    """``text`` wrapped at the README's width, never inside a link's text or a span of code."""
+    whole = re.sub(r"\[[^\]]*\]|`[^`]*`", lambda part: part[0].replace(" ", "\0"), text)
+    lines = textwrap.fill(whole, WIDTH, break_long_words=False, break_on_hyphens=False)
+    return lines.replace("\0", " ") + "\n"
 
 
 def current(text: str) -> str:

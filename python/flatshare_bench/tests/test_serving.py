@@ -342,10 +342,12 @@ def test_an_install_that_drifts_from_the_deployment_fails_the_check(edit) -> Non
 
 def check_quick_start_result(readme: str) -> None:
     """Asserts that the result the quick start of ``readme`` quotes, the block between its markers, is what
-    quick_start.block writes from the two probe logs the block links, each a file of a committed record."""
+    quick_start.block writes from the two probe logs the block links, beside the record's README it links too, each
+    a file of a committed record."""
     text = quick_start.current(readme)
-    links = dict(re.findall(r"\[(stock|make-room)\]\(([^)\s]+)\)", text))
-    assert sorted(links) == ["make-room", "stock"], text
+    found = re.findall(r"\[(stock|make-room|the record)\]\(([^)\s]+)\)", " ".join(text.split()))
+    links = dict(found)
+    assert sorted(links) == ["make-room", "stock", "the record"], text
     for link in links.values():
         assert link.startswith("benchmarks/results/") and (README.parent / link).is_file(), link
     logs = [README.parent / links[name] for name in ("stock", "make-room")]
@@ -353,30 +355,55 @@ def check_quick_start_result(readme: str) -> None:
 
 
 def test_the_readmes_quick_start_quotes_the_probe_logs_it_links() -> None:
-    # A number edited by hand, a log that is missing, or new logs not yet filled in fail here; the fill is
+    # A number edited by hand, a link that is missing, or new logs not yet filled in fail here; the fill is
     # `python -m flatshare_bench.quick_start STOCK_LOG MAKE_ROOM_LOG --write README.md`.
     check_quick_start_result(README.read_text())
 
 
+def with_result(readme: str, edit) -> str:
+    """``readme`` with its quick start's result, the block between its markers, replaced by ``edit`` of it."""
+    text = quick_start.current(readme)
+    return readme.replace(text, edit(text))
+
+
+def swapped(text: str) -> str:
+    """A result with the links of its two logs swapped."""
+    links = dict(re.findall(r"\[(stock|make-room)\]\(([^)\s]+)\)", text))
+    return (
+        text.replace(links["stock"], "STOCK")
+        .replace(links["make-room"], links["stock"])
+        .replace("STOCK", links["make-room"])
+    )
+
+
 @pytest.mark.parametrize(
-    ("old", "new"),
+    "edit",
     [
-        (f"4,900{DASH}4,971 ms", f"4,900{DASH}4,972 ms"),
-        ("in four runs each", "in five runs each"),
-        ("pr-probes/ab-kv.log", "pr-probes/ab-kv-missing.log"),
-        (
-            "[stock](benchmarks/results/2026-10-24-w5-probes/pr-probes/stock-kv.log)",
-            "[stock](benchmarks/results/2026-10-24-w5-probes/pr-probes/a-kv.log)",
+        lambda text: re.sub(
+            r"(it was\s+)(\d)", lambda m: m[1] + str(int(m[2]) % 9 + 1), text, count=1
         ),
+        lambda text: re.sub(r"in\s+\w+\s+runs?\s+each", "in eleven runs each", text),
+        lambda text: re.sub(r"(\[make-room\]\([^)\s]+)\)", r"\1.missing)", text),
+        lambda text: re.sub(r"(\[the record\]\([^)\s]+)\)", r"\1.missing)", text),
+        swapped,
+        lambda text: re.sub(r"with\s+the\s+card's\s+own\s+KV\s+pool,\s+", "", text),
     ],
-    ids=["a wrong number", "a wrong count", "a missing log", "another log"],
+    ids=[
+        "a wrong number",
+        "a wrong count",
+        "a missing log",
+        "a missing record",
+        "the logs swapped",
+        "no pool",
+    ],
 )
-def test_a_quick_start_result_that_is_not_its_logs_fails_the_check(old: str, new: str) -> None:
-    # The negative control: a number, a count or a link that the logs do not give fails.
+def test_a_quick_start_result_that_is_not_its_logs_fails_the_check(edit) -> None:
+    # The negative control: a number, a count, a link or the pool that the logs and their record do not give fails.
     readme = README.read_text()
-    assert quick_start.current(readme).count(old) == 1, old
+    edited = with_result(readme, edit)
+    assert edited != readme
     with pytest.raises(AssertionError):
-        check_quick_start_result(readme.replace(old, new))
+        check_quick_start_result(edited)
 
 
 RUN = (
@@ -389,23 +416,37 @@ RUN = (
 def test_the_quick_start_fill_reads_each_run_and_refuses_what_it_cannot_quote(
     tmp_path: Path,
 ) -> None:
-    stock, make_room = tmp_path / "stock-kv.log", tmp_path / "make-room-kv.log"
+    record = tmp_path / "record"
+    record.mkdir()
+    (record / "README.md").write_text("# The record\n")
+    stock, make_room = record / "stock-kv.log", record / "make-room-kv.log"
     stock.write_text(RUN.format(4900) * 2)
     make_room.write_text(RUN.format(216) + "\n" + RUN.format(1294))
     assert quick_start.ttfts(make_room) == [216, 1294]
     text = " ".join(quick_start.block(stock, make_room, tmp_path / "README.md").split())
-    # One value where every run agrees, separators from a thousand on, the count in words, links from the README.
+    # One value where every run agrees, separators from a thousand on, the count in words, the pool, and the links
+    # from the README.
     assert (
-        f"it was 4,900 ms on stock vLLM and 216{DASH}1,294 ms with make-room, in two runs each"
-        in text
+        "On the box, with the card's own KV pool, it was 4,900 ms on stock vLLM and "
+        f"216{DASH}1,294 ms with make-room, in two runs each" in text
     )
-    assert text.endswith("([stock](stock-kv.log), [make-room](make-room-kv.log)).")
+    assert text.endswith(
+        "([stock](record/stock-kv.log), [make-room](record/make-room-kv.log), [the record](record/README.md))."
+    )
     assert [quick_start.runs(n) for n in (1, 4, 9, 10)] == [
         "one run",
         "four runs",
         "nine runs",
         "10 runs",
     ]
+    # Logs in two directories, or without their record's README, are refused.
+    elsewhere = tmp_path / "elsewhere-kv.log"
+    elsewhere.write_text(RUN.format(216) * 2)
+    with pytest.raises(ValueError, match="one directory"):
+        quick_start.block(stock, elsewhere)
+    (record / "README.md").unlink()
+    with pytest.raises(ValueError, match="one directory"):
+        quick_start.block(stock, make_room)
     # A line that is no run of the KV case, a log without a run, and logs of different counts are refused.
     make_room.write_text(RUN.format(216) + "prefill: priority-0 TTFT 300 ms, 16 tokens 575 ms\n")
     with pytest.raises(ValueError, match=r"make-room-kv\.log:2: not a run of the KV case"):
@@ -421,6 +462,7 @@ def test_the_quick_start_fill_reads_each_run_and_refuses_what_it_cannot_quote(
 def test_the_quick_start_fill_writes_the_block_and_nothing_else(tmp_path: Path, capsys) -> None:
     record = tmp_path / "benchmarks" / "results" / "quick-start"
     record.mkdir(parents=True)
+    (record / "README.md").write_text("# The record\n")
     (record / "stock-kv.log").write_text(RUN.format(4875) + RUN.format(5012))
     (record / "make-room-kv.log").write_text(RUN.format(231) + RUN.format(250))
     readme = tmp_path / "README.md"
@@ -430,10 +472,10 @@ def test_the_quick_start_fill_writes_the_block_and_nothing_else(tmp_path: Path, 
     assert quick_start.main([*logs, "--write", str(readme)]) == 0
     new = quick_start.block(*logs, readme)
     assert readme.read_text() == before.replace("Old result.\n", new)
-    assert "[stock](benchmarks/results/quick-start/stock-kv.log)" in new
-    assert f"4,875{DASH}5,012 ms on stock vLLM and 231{DASH}250 ms with make-room" in " ".join(
-        new.split()
-    )
+    flat = " ".join(new.split())
+    assert f"4,875{DASH}5,012 ms on stock vLLM and 231{DASH}250 ms with make-room" in flat
+    assert "[stock](benchmarks/results/quick-start/stock-kv.log)" in flat
+    assert "[the record](benchmarks/results/quick-start/README.md)" in flat
     # Without --write it prints the block, linked from the repository's README.
     assert quick_start.main(logs) == 0
     assert capsys.readouterr().out == quick_start.block(*logs)

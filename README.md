@@ -145,7 +145,7 @@ python python/flatshare_vllm/src/flatshare_vllm/build.py make-room ~/make-room
 ```
 
 Serve stock vLLM with the serving profile's settings. Once it is up, run the probe from a second shell in the clone: it
-sends a voice turn behind two long agent requests that fill the KV pool.
+sends a voice turn behind long agent requests that fill the KV pool.
 
 ```sh
 # Without --max-model-len vLLM takes the model's 262,144 tokens, which no 16 GB card holds, and without --max-num-seqs
@@ -168,20 +168,21 @@ PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-le
 ```
 
 <!-- quick-start probe -->
-The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On the box it was 4,900–4,971 ms on
-stock vLLM and 216–294 ms with make-room, in four runs each
-([stock](benchmarks/results/2026-10-24-w5-probes/pr-probes/stock-kv.log),
-[make-room](benchmarks/results/2026-10-24-w5-probes/pr-probes/ab-kv.log)).
+The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On the box, with the card's own KV pool,
+it was 1,963–1,967 ms on stock vLLM and 258–292 ms with make-room, in four runs each
+([stock](benchmarks/results/2026-10-29-quick-start/stock-kv.log),
+[make-room](benchmarks/results/2026-10-29-quick-start/make-room-kv.log),
+[the record](benchmarks/results/2026-10-29-quick-start/README.md)).
 <!-- /quick-start probe -->
 
-Both ran at [`engine.yaml`](deploy/phastform/engine.yaml)'s 512-token steps, and make-room at its default 16-token
-window ([what ran](benchmarks/results/2026-10-24-w5-probes/README.md)). `probe.py` sizes its requests from the engine's
-KV pool and context length, so the check runs unchanged on another card.
+Both ran at the serving profile's step cap, 256 tokens a step without a per-request threshold, and make-room with the
+PRs' configuration: the KV preemption at 2 a step and the budget cap with a 48-token window, no reserve. `probe.py`
+sizes its requests from the engine's KV pool and context length, so the check runs unchanged on another card.
 
 To serve beside agents, send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV
-tier from `engine.yaml`, which holds the box's 32k context and fixed KV pool too. The commands' step cap is the serving
-profile's, 256 tokens a step without a per-request threshold, which the sweep chose for the PRs and the two-card results
-ran. The Results table ran 512 with a 256-token threshold. Then read:
+tier from [`engine.yaml`](deploy/phastform/engine.yaml), which holds the box's 32k context and fixed KV pool too. The
+sweep chose that step cap for the PRs, and the two-card results ran it. The Results table ran 512 with a 256-token
+threshold. Then read:
 
 - [docs/PRODUCTION.md](docs/PRODUCTION.md) to configure and size it, to check that your deployment is in its regime, and
   for what to watch and how it fails;
