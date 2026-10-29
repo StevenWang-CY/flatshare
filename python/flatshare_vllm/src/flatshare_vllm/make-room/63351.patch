@@ -2,14 +2,14 @@ vLLM #63351 (https://github.com/vllm-project/vllm/pull/63351), backported to v0.
 
 The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
 
-  e873633ac [Core] Priority scheduling: hold lower-priority prefill for first tokens (cherry-picked from dbe86f3d8)
-  b703ac4d7 [Core] Priority scheduling: skip the prefix lookup when the cap would hold nothing (cherry-picked from d0102c343)
+  39022a5da [Core] Priority scheduling: hold lower-priority prefill for first tokens (cherry-picked from dbe86f3d8)
+  6511bc916 [Core] Priority scheduling: skip the prefix lookup when the cap would hold nothing (cherry-picked from d0102c343)
     Backport: v0.32.0's request queues stay stock, so the queue method
     is the scheduler's _has_lower_priority_than here, with the same answer.
-  1104add2b [Core] Priority scheduling: count the budget cap's holds in scheduler stats (cherry-picked from 685fdbcf3)
+  f1614decc [Core] Priority scheduling: count the budget cap's holds in scheduler stats (cherry-picked from 685fdbcf3)
     Backport: v0.32.0's SchedulerStats and Prometheus logger have no field
     for them, so the scheduler counts them and make_stats leaves them.
-  f3768bde2 [Core] Priority scheduling: count a request's first tokens in flight (cherry-picked from 9013ed433)
+  e40d7c135 [Core] Priority scheduling: count a request's first tokens in flight (cherry-picked from 9013ed433)
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
 index 842c6eb2e..a4d4736b4 100644

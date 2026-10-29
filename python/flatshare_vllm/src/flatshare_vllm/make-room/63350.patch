@@ -16,6 +16,7 @@ The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
     Backport: v0.32.0's SchedulerStats and Prometheus logger have no field
     for them, so the scheduler counts the preemptions and make_stats leaves
     them.
+  560d53bd2 [Core] Priority scheduling: count the blocks a preemption releases in one pass (cherry-picked from f1afbfd68)
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
 index cec96d2a4..842c6eb2e 100644

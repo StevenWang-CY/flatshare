@@ -392,22 +392,30 @@ the code of 25 October, at T = 48 only, so Table 2's T = 16 row holds one step l
 its replies.
 
 **What a step costs.** The rules run on the host, inside `Scheduler.schedule()`. Figure 7 times that call on vLLM
-0.32.0's real scheduler on a 2.1 GHz Xeon Silver 4110, a CPU host faster than the GPU node's (Appendix C), in the 13
-steady states of the pull requests' cost tables. With the switches off, the call costs what vLLM's does, within 1.1% in
-every state. With the deployed values it costs 36–149 µs more while only lower-priority work runs, at most 18% of the
-call's own time. It costs 0.54–0.64 ms more when a waiting high-priority request needs more room than two victims free,
-1.7 ms more when that request's prefix-cache hit is 999 blocks long, and 160–247 µs more when every running slot is
-taken. A voice reply's decode step on the RTX 5060 Ti takes 12 ms with nothing beside it, and 16–20 ms beside
-agent prefill that the hold keeps back.
+0.32.0's real scheduler on a 2.1 GHz Xeon Silver 4110, which runs the scheduler's kind of Python 1.68 times as fast as
+the GPU node's CPU (`bench_host.py`, 227 ms against 381; Appendix C), in the 13 steady states of the pull requests' cost
+tables and in four states of the serving profile, its 256-token steps scheduled asynchronously as the box runs them.
+With the switches off, the call costs what vLLM's does, within 1.3% in the pull requests' states and 1.5–4.9 µs more, at
+most 3.1%, in the serving profile's short steps. With the deployed values it costs 36–166 µs more while only
+lower-priority work runs, at most 17% of the call's own time. It costs 0.32–0.46 ms more when a waiting high-priority
+request needs more room than two victims free, 1.5 ms more when that request's prefix-cache hit is 999 blocks long, and
+158–260 µs more when every running slot is taken. In the serving profile it costs 17 µs more beside agents alone, 30 µs
+less while the hold keeps an agent's prefill out of a reply's first steps, 72 µs more in each step that gives up on a
+turn two victims cannot make room for, and 0.47 ms more in the step that preempts for a voice turn, 3.5 times vLLM's
+step. On the box's CPU that step takes 1.1 ms, against a voice reply's decode step of 12 ms with nothing beside it,
+16–20 ms beside agent prefill that the hold keeps back, and the agents' 38 ms at 24 session trees.
 
-<img src="figures/report-step-cost.svg" width="100%" alt="A dot plot of 13 scheduler states in three groups on a log axis from 0.1 to 20 ms. In each state the change with its switches off sits on vLLM 0.32's ring. As deployed it adds 36 to 149 microseconds when only lower-priority work runs, 539 to 1,719 microseconds when a waiting turn needs more room than two victims free, and 160 to 247 microseconds with every running slot taken, all far left of a 16 to 20 ms decode step.">
+<img src="figures/report-step-cost.svg" width="100%" alt="A dot plot of 17 scheduler states in two sets on a log axis from 0.02 to 20 ms of the host's time, with a second axis for the box's CPU, 1.68 times as long. In each state the change with its switches off sits on vLLM 0.32's ring. In the pull requests' states, as deployed it adds 36 to 166 microseconds when only lower-priority work runs, 320 to 1,539 microseconds when a waiting turn needs more room than two victims free, and 158 to 260 microseconds with every running slot taken; in the serving profile's, 17 microseconds beside agents alone, 30 fewer while the hold keeps an agent's prefill back, 72 when a turn cannot fit, and 468 in the step that preempts. All sit far left of the box's steps: a reply's 12 ms alone, 16 to 20 ms beside held agent prefill, and the agents' 38 ms at 24 session trees.">
 
-**Figure 7. With its switches off the scheduler costs what vLLM's does, and the deployed values add 36 µs to 1.7 ms to a
-scheduler call.** Wall time of one `Scheduler.schedule()` call on vLLM 0.32.0's scheduler on a 2.1 GHz Xeon, in the 13
-steady states of the pull requests' cost tables, each mark the 10th-percentile step of its state, on a log scale. Rings
-are vLLM 0.32, small dots the change with its switches off, and blue dots the change as deployed, labeled with what it
-adds. The shaded band is a voice reply's decode step on the RTX 5060 Ti beside agent prefill that the hold keeps
-back; with nothing beside it, a step takes 12 ms.
+**Figure 7. With its switches off the scheduler costs what vLLM's does, and the deployed values change a scheduler call
+by −30 µs to 1.5 ms, far below the box's steps.** Wall time of one `Scheduler.schedule()` call on vLLM 0.32.0's
+scheduler on a 2.1 GHz Xeon, in the 13 steady states of the pull requests' cost tables and four states of the serving
+profile (256-token steps scheduled asynchronously; the step that preempts timed on schedulers built afresh), each mark
+the 10th-percentile step of its state, on a log scale; the second axis is the box's CPU, 1.68 times as long by
+`bench_host.py`. Rings are vLLM 0.32, small dots the change with its switches off, and blue dots the change as deployed,
+labeled with what it adds. On the box's axis, the dotted line is a voice reply's decode step with nothing beside it (12
+ms), the shaded band its step beside agent prefill that the hold keeps back (16–20 ms), and the dashed line the agents'
+step at 24 session trees (38 ms).
 
 **The measurement harness.** Around the engine, the repository holds the system that measured it. A gateway written in
 Rust, the control plane the deployment runs, gives each client a class and a priority from its identity, and adds less

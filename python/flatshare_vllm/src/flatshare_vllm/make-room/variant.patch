@@ -3,7 +3,7 @@ What only Flatshare's make-room variant has, on #63350 and #63351: the switches 
 
 The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
 
-  d9d72c82f Leaseholder make-room variant: switches, reserve and log line
+  5f96ab21c Leaseholder make-room variant: switches, reserve and log line
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
 index a4d4736b4..44bedfcde 100644

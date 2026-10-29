@@ -48,9 +48,9 @@
     }
   },
   "patches": {
-    "63350.patch": "73517c12ce8b8551b6d55e39e4dbe801e4fd802d86bf8a52b21345af15ad92d1",
-    "63351.patch": "c4c466168ab7f423ac5427ed2658b6619dd9db8033ca5a84c38ddc7bd30c8c0c",
-    "variant.patch": "88b33eb8a3ff909d00a2bf547f5de5f93aa8986fb92032a020e5df2b5acdcebf"
+    "63350.patch": "98b96f663fbff69a069a0dce64492e02618d595c3bfd2f5df57ee3ad093cf09f",
+    "63351.patch": "8d227e79fc55c596e7e1de63d901f015d8d79b71ce6b0472e950959ae4577ca5",
+    "variant.patch": "ff5a98aaf5f57738ea1b3f32cc3d19ee01f81c961f8f0f75f336e3cfcd411860"
   },
   "voice": {
     "mode": "serve",
