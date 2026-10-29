@@ -1,5 +1,11 @@
 """flatshare-bench e2 run against fakes: the gateway and the engine on loopback, a recording systemctl,
-and stand-ins for AIPerf and the callers that run as real processes, so stopping them is real."""
+and stand-ins for AIPerf and the callers that run as real processes, so stopping them is real.
+
+This module runs whole E2 points against a fake gateway and engine on loopback, a recording `systemctl` and stand-ins
+for AIPerf and the callers that run as real processes (`tests/fakes/`): the sequence, the units each arm restarts, the
+engine check, failures at each step with every process stopped, the point directory's rules, the committed arm files,
+and the logs a point keeps: the gateway's request lines and the worker's journal, waiting for its sessions to end only
+when they will."""
 
 from __future__ import annotations
 

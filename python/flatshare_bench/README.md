@@ -304,7 +304,22 @@ The background goodput comes from AIPerf's records rather than from the gateway'
 - **The stage waterfall** (`waterfall.svg`, and its table in `frontier.md`) splits each configuration's voice turn into stages that follow one another, as means over the replies of its runs: endpointing (`end_of_turn_ms`), the reply to its first sentence (`turn_to_first_sentence_ms`) and TTS to first audio (`tts_first_audio_ms`), from the worker's turn lines, then the rest of the callers' V2V, transport and playout (the mean V2V less the three). So a bar is as long as the mean V2V, which it prints at its end; the reply to its first sentence, the LLM's stage, is its one hue among grays, and each run of rows from one workload sits under the workload's name. The table beside it gives the median and p95 of the callers' samples in `bots/turns.jsonl`, and the LLM's own time to first token (`llm_ttft_ms`), from its request: under preemptive generation the request starts at the final transcript, before the end of the turn, so it lies across the first two stages. `--waterfall POINT` (repeatable) draws only those configurations, in that order; by default every one with turn lines.
 - **Columns only some points have** appear when one of the points has them: the worker's stage times (p50 and p95 of each, in a table of their own in `frontier.md`, which counts the points without the worker's turn lines rather than listing them) and event counts; from `gpu.csv` (or a compact record's summary), the GPU's median SM clock and highest temperature during the calls; and under the gateway's lifecycle policy (`policy = "lifecycle"`; `leaseholder` in the records from before the project's rename), from its counters, what the policy did: the background requests it deferred by what held them back when they arrived (`deferred_headroom`, `deferred_critical`) and the realtime replies it capped (`degraded_replies` of `realtime_replies`, `degraded_share`), in a table of their own in `frontier.md`. A mechanism that deferred or capped nothing in a point did not act there. On vLLM, the engine's prompt tokens by source at their first scheduling (`first_schedule_computed_tokens`, `first_schedule_gpu_hit_tokens`, `first_schedule_cpu_hit_tokens`) and the CPU tier's loads and stores of every scheduling, resumes included (`cpu_tier_loaded_tokens`, `cpu_tier_stored_tokens`), in tokens at the bytes of KV a token takes in the engine's pool, its KV cache's bytes over its tokens from the point's `engine.json` (`kv_bytes_per_token`, 147,492 on the frozen box against the model's exact 147,456), in a table of their own in `frontier.md` with what the CPU tier loaded beyond first scheduling: the loads of requests resumed after a preemption, give or take those of requests whose load and first scheduling are not both within the calls.
 
-**The compact record.** `flatshare-bench e2 export RUN_DIR... --out DIR` writes each complete point's record into `DIR/CAMPAIGN/POINT`, where its run directory sits in its campaign: `run.json` (with `versions.gpu_source` null where the run did not record it), `arm.toml`, the callers' `summary.json` and `turns.jsonl`, a `summary.json` that keeps what the report takes from the files the record leaves out (the first bytes of both classes exactly from `gateway.jsonl`, `"source": "log"`, from `gpu.csv` the GPU's clock and temperature, `gpu`, from AIPerf's records the goodput over the calls' first 240 s, and from the engine's metric snapshots the CPU tier's loads and stores, both of which a point measured before its summary kept them gains this way), and an `engine.json` reduced to what says which engine the point ran on. For vLLM that is the model by its Hugging Face id and revision, `max_model_len`, dtype and quantization; from `cache_config` the block size, prefix caching, the KV dtype and the pool (`kv_cache_memory_bytes`, `num_gpu_blocks`); from `scheduler_config` the policy, `max_num_batched_tokens`, `long_prefill_token_threshold`, `max_num_seqs`, async scheduling, `watermark`, `max_num_queued_tokens` and the scheduler class (`scheduler_cls`, null for vLLM's own), the settings `e2 run` checks the arms' flags against; the CPU tier's connector with its `kv_connector_extra_config`; and `additional_config`. For SGLang it is the same of its server arguments (`SGLANG_ENGINE` in `e2/record.py`). Any path under a home directory is written from `~`. A record is about 15 kB and holds no credential: the callers' `run.json`, which names LiveKit's API key, stays out. The report gives the same tables and figures from the records as from the run directories, byte for byte (its figures carry no date), so the records are what goes into the repository, under [`benchmarks/results/2026-10-23-e2`](../../benchmarks/results/2026-10-23-e2/README.md), and `make reproduce-e2` regenerates the report from them with this venv. The raw run directories (the gateway's request log, AIPerf's exports, the metric snapshots, the worker's journal, the GPU's samples, the tools' logs) are an asset of the [v0.3 release](https://github.com/StevenWang-CY/flatshare/releases/tag/v0.3), `leaseholder-e2-runs-2026-10-24.tar.gz` (named before the project's rename).
+**The compact record.** `flatshare-bench e2 export RUN_DIR... --out DIR` writes each complete point's record into `DIR/CAMPAIGN/POINT`, where its run directory sits in its campaign:
+
+- `run.json`, with `versions.gpu_source` null where the run did not record it;
+- `arm.toml`, and the callers' `summary.json` and `turns.jsonl`;
+- a `summary.json` that keeps what the report takes from the files the record leaves out: the first bytes of both classes exactly from `gateway.jsonl` (`"source": "log"`), from `gpu.csv` the GPU's clock and temperature (`gpu`), from AIPerf's records the goodput over the calls' first 240 s, and from the engine's metric snapshots the CPU tier's loads and stores, both of which a point measured before its summary kept them gains this way;
+- an `engine.json` reduced to what says which engine the point ran on. For vLLM that is:
+  - the model by its Hugging Face id and revision, `max_model_len`, dtype and quantization;
+  - from `cache_config`, the block size, prefix caching, the KV dtype and the pool (`kv_cache_memory_bytes`, `num_gpu_blocks`);
+  - from `scheduler_config`, the policy, `max_num_batched_tokens`, `long_prefill_token_threshold`, `max_num_seqs`, async scheduling, `watermark`, `max_num_queued_tokens` and the scheduler class (`scheduler_cls`, null for vLLM's own): the settings `e2 run` checks the arms' flags against;
+  - the CPU tier's connector with its `kv_connector_extra_config`, and `additional_config`.
+
+  For SGLang it is the same of its server arguments (`SGLANG_ENGINE` in `e2/record.py`).
+
+Any path under a home directory is written from `~`. A record is about 15 kB and holds no credential: the callers' `run.json`, which names LiveKit's API key, stays out. The report gives the same tables and figures from the records as from the run directories, byte for byte (its figures carry no date), so the records are what goes into the repository, under [`benchmarks/results/2026-10-23-e2`](../../benchmarks/results/2026-10-23-e2/README.md), and `make reproduce-e2` regenerates the report from them with this venv.
+
+The raw run directories (the gateway's request log, AIPerf's exports, the metric snapshots, the worker's journal, the GPU's samples, the tools' logs) are an asset of the [v0.3 release](https://github.com/StevenWang-CY/flatshare/releases/tag/v0.3), `leaseholder-e2-runs-2026-10-24.tar.gz` (named before the project's rename).
 
 ## Soaks
 
@@ -415,27 +430,13 @@ The tests are offline and take a few seconds. CI runs them with `make test-pytho
 uv run --extra test pytest      # in python/flatshare_bench
 ```
 
-They cover the scaling math and schema, the loader's prefix reproduction (both loaders, through
-AIPerf's own reconstruction with a tokenizer-free prompt generator), the plugin's headers and
-body as AIPerf's transport sends them, the wire names and class-to-priority mapping against
-`flatshare-proto`, the YAML template and the probes against in-process fake servers.
-`tests/test_dataset_cache.py` builds an E2 point's dataset with AIPerf's own dataset manager on
-four committed traces: a hit replays a miss's dataset and an uncached build's byte for byte, and
-a changed plugin misses. `tests/test_e2.py`
-runs whole E2 points against a fake gateway and engine on
-loopback, a recording `systemctl` and stand-ins for AIPerf and the callers that run as real
-processes (`tests/fakes/`): the sequence, the units each arm restarts, the engine check, failures
-at each step with every process stopped, the point directory's rules, the committed arm files, and
-the logs a point keeps: the gateway's request lines and the worker's journal, waiting for its
-sessions to end only when they will. `tests/test_e2_results.py` covers the summary over the window,
-the exact first bytes from a request log, the Pareto marking within each arm and workload, each
-workload's section, voice SLO and figure (its families, the arms' names and what it leaves off its
-scale), repeated points placed at their medians with every run kept, the stage waterfall's means
-and V2V marks, the report's columns that only some points have, compact records that give the
-report of their run directories byte for byte, the committed records (complete, without
-credentials, exported again to themselves, and giving the report committed beside them, every file byte for byte; and
-every complete point's `engine.json`, in whichever record set, reduced again to itself), the names of the lines the voice
-worker writes, and the series the record and the report read from the gateway: each in its checked-in exposition
-(`crates/flatshare-gateway/metrics.txt`), and each count the sum of the series it is made of. `tests/test_campaign.py` runs `benchmarks/e2/campaign.sh` against stand-ins for the hosts (an ssh that runs each command in a directory per host, rsync, cyan's `flatshare-bench` and the GPU node's `variant.sh`): what each point is measured with. `tests/test_soak.py` holds the soak's scraper to the gateway's committed expositions (`metrics.txt`, `metrics-nodes.txt`) and vLLM 0.32's metric names, its summary's numbers to a synthetic two-hour record (a gateway that restarts, an engine's scrape that fails, calls refused and dropped, turns after the window), the compact record to the same summary with no home path in it, the guard's checks and pauses, and AIPerf's environment to E2's, and runs whole soaks against a fake cyan (a gateway on a Unix socket, a recording user manager, stand-ins for AIPerf and the callers): its tools, scrapes and record, each hour's summary, SIGINT, the guard's pause and resume, a tool that fails and starts again, the lock, and each check that refuses a start. `tests/test_demo.py` runs the demo
-video's renderer on a synthetic pair of calls ([`benchmarks/e2`](../../benchmarks/e2/README.md#the-demo-video));
-its encoding test is marked `integration` and left out of CI.
+They cover the scaling math and schema, the loader's prefix reproduction (both loaders, through AIPerf's own reconstruction with a tokenizer-free prompt generator), the plugin's headers and body as AIPerf's transport sends them, the wire names and class-to-priority mapping against `flatshare-proto`, the YAML template and the probes against in-process fake servers. The larger suites, whose module docstrings list what each holds:
+
+| Test file | What it holds |
+|---|---|
+| `tests/test_dataset_cache.py` | An E2 point's dataset from AIPerf's own dataset manager: a hit replays a miss's byte for byte |
+| `tests/test_e2.py` | Whole E2 points against fakes on loopback: the sequence, the units, failures at each step, the logs |
+| `tests/test_e2_results.py` | The report and the records: summaries, the frontier, the waterfall, compact and committed records |
+| `tests/test_campaign.py` | `benchmarks/e2/campaign.sh` against stand-ins for the hosts: what each point is measured with |
+| `tests/test_soak.py` | The soak's scraper, summary, record and guard, and whole soaks against a fake cyan |
+| `tests/test_demo.py` | The demo video's renderer on a synthetic pair of calls; its encoding test is `integration`, out of CI |

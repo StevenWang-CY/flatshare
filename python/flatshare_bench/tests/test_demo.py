@@ -6,7 +6,10 @@ The turns, the soundtrack, the motion's curves and the frames run here, headless
 numpy, matplotlib and Pillow, at a low resolution: their size, their count, and that no text leaves
 its room or overlaps another at any moment the calls change. Encoding needs the ffmpeg that the
 script's own dependencies bring: that test runs the script with uv as the docs do, and is marked
-integration, so CI leaves it out."""
+integration, so CI leaves it out.
+
+This module runs the demo video's renderer on a synthetic pair of calls (benchmarks/e2/README.md, the demo video); its
+encoding test is marked `integration` and left out of CI."""
 
 from __future__ import annotations
 
