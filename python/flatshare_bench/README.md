@@ -308,7 +308,7 @@ The background goodput comes from AIPerf's records rather than from the gateway'
 
 ## Soaks
 
-`flatshare-bench soak run --hours H --out DIR` loads the box as it serves for hours, on cyan: calls arriving on a schedule against the voice worker in serve mode ([`flatshare-voice arrivals`](../flatshare_voice/README.md#arriving-calls-a-soaks)), AIPerf's agentic replay through the gateway as E2 runs it, a scrape of the service every minute and a guard on the GPUs. [docs/EXPERIMENTS.md](../../docs/EXPERIMENTS.md#the-soak-the-production-path-for-hours) says what it measures and [ops/RUNBOOK.md](../../ops/RUNBOOK.md#soaks) how to run one; `soak report DIR` prints its summary from its directory or its compact record, and `soak export DIR --out RECORD` writes the record to commit.
+`flatshare-bench soak run --hours H --out DIR` loads the box as it serves for hours, on cyan: calls arriving on a schedule against the voice worker in serve mode ([`flatshare-voice arrivals`](../flatshare_voice/README.md#arriving-calls-a-soaks)), AIPerf's agentic replay through the gateway as E2 runs it, a scrape of the service every minute and a guard on the GPUs. [docs/EXPERIMENTS.md](../../docs/EXPERIMENTS.md#the-soak-the-production-path-for-hours) says what it measures and [benchmarks/e2/README.md](../../benchmarks/e2/README.md#soaks) how to run one; `soak report DIR` prints its summary from its directory or its compact record, and `soak export DIR --out RECORD` writes the record to commit.
 
 ```bash
 flatshare-bench soak run --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref     # voice alone: the reference

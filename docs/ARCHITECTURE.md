@@ -138,7 +138,7 @@ The gateway's `/metrics`, and each engine's, relayed by node, feed Prometheus ([
   - broken streams, refusals for capacity and missed deadlines;
   - each node's health and covering, refused calls, and a full KV pool with requests waiting.
 
-A Grafana dashboard shows the same ([`ops/grafana`](../ops/grafana/flatshare.json)). The alerts are rules for an operator's Prometheus: nothing in the repository pages anyone. The 24-hour soak ([RUNBOOK.md](../ops/RUNBOOK.md#soaks)) is the arrangement's long-run check.
+A Grafana dashboard shows the same ([`ops/grafana`](../ops/grafana/flatshare.json)). The alerts are rules for an operator's Prometheus: nothing in the repository pages anyone. The 24-hour soak ([benchmarks/e2/README.md](../benchmarks/e2/README.md#soaks)) is the arrangement's long-run check.
 
 <a id="33-network-and-security"></a>
 
