@@ -388,6 +388,10 @@ def tree_hash(files: dict[str, str]) -> str:
 
 
 def matches(rel: str, patterns: tuple[str, ...]) -> bool:
+    """Whether ``patterns`` take the release file ``rel`` as an input. A Markdown file never is one: no unit reads
+    documentation, and a glob over a directory, such as an engine's variants/*, also covers the README there."""
+    if rel.endswith(".md"):
+        return False
     return any(fnmatch.fnmatchcase(rel, pattern) for pattern in patterns)
 
 

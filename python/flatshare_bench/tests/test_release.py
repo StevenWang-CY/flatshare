@@ -503,6 +503,36 @@ def test_a_switch_restarts_only_active_units_whose_inputs_changed(host: Host) ->
     ]
 
 
+def test_a_change_to_markdown_alone_restarts_nothing(host: Host) -> None:
+    # box-b's python/app/src/* also covers a README beside the code, as the engine's deploy/phastform/variants/*
+    # covers that directory's README.md: a fix to the README alone drained and restarted both GPU nodes' engines.
+    host.prepare(A, "v1.0")
+    assert host.switch(A) == 0
+    host.start("box-a.service", "box-b.service", "box-gw.service")
+    host.calls()
+    host.prepare(B, "v1.0", **{"python/app/src/app/README.md": "How the app works.\n"})
+    assert host.switch(B) == 0
+    assert host.calls() == []
+    # The same glob still takes a file the unit reads.
+    host.prepare(
+        C,
+        "v1.0",
+        **{
+            "python/app/src/app/README.md": "How the app works.\n",
+            "python/app/src/app/extra.py": "X = 1\n",
+        },
+    )
+    assert host.switch(C) == 0
+    assert host.calls() == ["restart box-b.service"]
+    # The engines' own glob: it takes a variant's drop-in, never the README beside them.
+    for node in ("phastform", "gray"):
+        engine = next(u for u in release.HOSTS[node].units if u.name == "flatshare-engine.service")
+        assert release.matches(
+            "deploy/phastform/variants/make-room-serve/flatshare-engine.conf", engine.inputs
+        )
+        assert not release.matches("deploy/phastform/variants/README.md", engine.inputs)
+
+
 def test_the_compatibility_paths_lead_into_current(host: Host) -> None:
     host.prepare(A, "v1.0")
     host.switch(A)
