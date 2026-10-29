@@ -90,6 +90,15 @@ def test_every_metric_the_rules_and_dashboards_name_is_exported() -> None:
     assert metric_names('rate(flatshare_gateway_first_bytes_seconds_bucket{le="0.25"}[5m])') - known
 
 
+def test_the_dashboards_keep_each_nodes_engine_apart() -> None:
+    # With [[nodes]] each engine's metrics come in under its node label (prometheus.example.yml): a panel that sums
+    # the engines together would show one node's full KV pool beside the other node's waiting requests as one engine.
+    engine = [expr for expr in dashboard_exprs() if "vllm:" in expr]
+    assert len(engine) >= 9
+    for expr in engine:
+        assert re.search(r"\bby \([^)]*\bnode\b", expr), expr
+
+
 def test_the_rules_name_their_records_and_alerts_as_the_docs_do() -> None:
     for rule in rules():
         if "record" in rule:
@@ -123,6 +132,24 @@ def test_the_rules_name_their_records_and_alerts_as_the_docs_do() -> None:
     assert 'flatshare_gateway_overhead_seconds_bucket{le="0.002",' in gateway
 
 
+def test_every_alert_opens_its_row_in_the_runbook() -> None:
+    # An alert's runbook_url is the runbook on main at the alert's own anchor: an id on the row of its Failures table
+    # that names the alert. So a new alert needs its row, and every anchor there names an alert.
+    runbook = (OPS / "RUNBOOK.md").read_text()
+    failures = runbook.split("\n## Failures\n", 1)[1].split("\n## ", 1)[0]
+    rows = {}
+    for line in failures.splitlines():
+        for anchor in re.findall(r'<a id="([^"]+)"></a>', line):
+            rows[anchor] = line
+    base = "https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#"
+    alerts = [rule for rule in rules() if "alert" in rule]
+    for rule in alerts:
+        alert = rule["alert"]
+        assert rule["annotations"]["runbook_url"] == base + alert.lower(), alert
+        assert f"`{alert}`" in rows.get(alert.lower(), ""), f"{alert}: no row names it"
+    assert set(rows) == {rule["alert"].lower() for rule in alerts}
+
+
 def test_the_rule_tests_feed_exported_series_and_test_the_objectives_alerts() -> None:
     tests = yaml.safe_load((OPS / "prometheus" / "rules.test.yml").read_text())
     assert tests["rule_files"] == ["rules.yml"]
@@ -141,6 +168,8 @@ def test_the_rule_tests_feed_exported_series_and_test_the_objectives_alerts() ->
         "FlatshareNodeUnhealthy",
         "FlatshareNodeCovering",
         "FlatshareCallsRefused",
+        "FlatshareRequestsRefusedForCapacity",
+        "FlatshareDeadlinesMissed",
     } <= tested
 
 

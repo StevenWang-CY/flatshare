@@ -797,7 +797,7 @@
     },
     {
       "type": "row",
-      "title": "The engine (vLLM, relayed by the gateway)",
+      "title": "The engine (vLLM, relayed by the gateway), by node",
       "id": 12,
       "collapsed": false,
       "gridPos": {
@@ -843,8 +843,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(vllm:num_requests_running)",
-          "legendFormat": "running",
+          "expr": "sum by (node) (vllm:num_requests_running)",
+          "legendFormat": "running, {{node}}",
           "refId": "A"
         },
         {
@@ -852,8 +852,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(vllm:num_requests_waiting)",
-          "legendFormat": "waiting",
+          "expr": "sum by (node) (vllm:num_requests_waiting)",
+          "legendFormat": "waiting, {{node}}",
           "refId": "B"
         }
       ]
@@ -893,8 +893,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max(vllm:kv_cache_usage_perc)",
-          "legendFormat": "KV cache usage",
+          "expr": "max by (node) (vllm:kv_cache_usage_perc)",
+          "legendFormat": "KV cache usage, {{node}}",
           "refId": "A"
         },
         {
@@ -902,8 +902,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(vllm:num_preemptions_total[5m]))",
-          "legendFormat": "preemptions/s",
+          "expr": "sum by (node) (rate(vllm:num_preemptions_total[5m]))",
+          "legendFormat": "preemptions/s, {{node}}",
           "refId": "B"
         }
       ],
@@ -944,8 +944,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (source) (rate(vllm:prompt_tokens_by_source_total[5m]))",
-          "legendFormat": "{{source}}",
+          "expr": "sum by (node, source) (rate(vllm:prompt_tokens_by_source_total[5m]))",
+          "legendFormat": "{{node}} {{source}}",
           "refId": "A"
         }
       ],
@@ -986,8 +986,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket[5m])))",
-          "legendFormat": "time to first token",
+          "expr": "histogram_quantile(0.95, sum by (node, le) (rate(vllm:time_to_first_token_seconds_bucket[5m])))",
+          "legendFormat": "time to first token, {{node}}",
           "refId": "A"
         },
         {
@@ -995,12 +995,12 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:request_queue_time_seconds_bucket[5m])))",
-          "legendFormat": "queue time",
+          "expr": "histogram_quantile(0.95, sum by (node, le) (rate(vllm:request_queue_time_seconds_bucket[5m])))",
+          "legendFormat": "queue time, {{node}}",
           "refId": "B"
         }
       ],
-      "description": "Every class together; the gateway's panels split them."
+      "description": "Each node's engine, every class together; the gateway's panels split the classes."
     },
     {
       "type": "timeseries",
@@ -1037,8 +1037,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(vllm:kv_offload_store_bytes_total[5m]))",
-          "legendFormat": "stored",
+          "expr": "sum by (node) (rate(vllm:kv_offload_store_bytes_total[5m]))",
+          "legendFormat": "stored, {{node}}",
           "refId": "A"
         },
         {
@@ -1046,8 +1046,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(vllm:kv_offload_load_bytes_total[5m]))",
-          "legendFormat": "loaded",
+          "expr": "sum by (node) (rate(vllm:kv_offload_load_bytes_total[5m]))",
+          "legendFormat": "loaded, {{node}}",
           "refId": "B"
         }
       ]

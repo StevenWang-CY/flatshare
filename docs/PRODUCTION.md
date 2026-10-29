@@ -129,7 +129,7 @@ Without any engine change, aborting background requests that have no first byte 
 - **Voice**: V2V p95 per call from the voice stack, and the realtime time to first token at p95 (the gateway's request log, or vLLM's per-request metrics). The voice agent's per-turn stage times split a slow turn into endpointing, the LLM's first sentence and TTS ([the stages](BENCHMARKS.md#voice-under-agent-load-e2)).
 - **The engine**: KV usage, running and waiting requests, and preemptions; `vllm:num_preemptions_total` counts a victim when its next output reaches the frontend, so it lags. The CPU tier's loads beyond the requests' first scheduling show what preempted requests restored; what they recompute, no vLLM 0.32 counter shows, since it counts a request's computed prompt tokens at its first scheduling only ([E3](BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)).
 - **Background**: completed tokens a second and the agents' TTFT p99, where a preemption policy moves the cost.
-- [`ops/`](../ops) has these as code: the Prometheus scrape configuration (the gateway, and the engine through it), the SLO's burn-rate alerts on the realtime first byte (95% within 250 ms) and the gateway's overhead, health alerts, and a Grafana dashboard ([the runbook](../ops/RUNBOOK.md#monitoring)).
+- [`ops/`](../ops) has these as code: the Prometheus scrape configuration (the gateway, and the engine through it), the burn-rate alerts of the two production objectives, the voice requests' first byte (95% within 250 ms) and the gateway's overhead ([SLO.md](SLO.md#the-production-objectives)), health alerts, and a Grafana dashboard ([the runbook](../ops/RUNBOOK.md#monitoring)).
 
 ## How it fails
 
