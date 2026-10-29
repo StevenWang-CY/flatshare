@@ -811,6 +811,24 @@ def test_points_that_differ_in_warm_up_turns_are_workloads_of_their_own(tmp_path
     assert figure_name("weka-x32", 2, warmup_turns=2) == "frontier-2-warm-up-turns.svg"
 
 
+def test_a_records_engine_json_keeps_the_tokenizer_where_the_engine_named_one() -> None:
+    # Named as the model is, from the snapshot vLLM resolved it to, so that a serving profile's tokenizer and its
+    # revision compare with it; a record without one, as those exported before, gets none.
+    other = VLLM_CONFIG["model_config"] | {
+        "tokenizer": "Qwen/Qwen3-4B",
+        "tokenizer_revision": "abc123",
+    }
+    assert {
+        k: engine_settings(VLLM_CONFIG | {"model_config": other})["model_config"][k]
+        for k in ("tokenizer", "tokenizer_revision")
+    } == {"tokenizer": "Qwen/Qwen3-4B", "tokenizer_revision": "abc123"}
+    bare = {k: v for k, v in VLLM_CONFIG["model_config"].items() if k != "tokenizer"}
+    assert "tokenizer" not in engine_settings(VLLM_CONFIG | {"model_config": bare})["model_config"]
+    # A record exports to itself.
+    kept = engine_settings(VLLM_CONFIG)
+    assert engine_settings(kept)["model_config"] == kept["model_config"]
+
+
 def test_a_records_engine_json_keeps_the_linear_kernel_where_the_engine_reported_it() -> None:
     kernel = {"linear_backend": "marlin", "moe_backend": "auto"}
     assert engine_settings(VLLM_CONFIG | {"kernel_config": kernel})["kernel_config"] == {
@@ -1157,7 +1175,8 @@ VLLM_CONFIG = {
 def test_a_records_engine_json_says_what_the_point_ran_on() -> None:
     assert engine_settings(VLLM_CONFIG) == {
         "model_config": {"model": "Qwen/Qwen3-4B-Instruct-2507-FP8", "revision": "859180"}
-        | {"max_model_len": 32768, "dtype": "torch.bfloat16", "quantization": "fp8"},
+        | {"max_model_len": 32768, "dtype": "torch.bfloat16", "quantization": "fp8"}
+        | {"tokenizer": "Qwen/Qwen3-4B-Instruct-2507-FP8", "tokenizer_revision": "859180"},
         "cache_config": {"block_size": 16, "enable_prefix_caching": True, "cache_dtype": "auto"}
         | {"kv_cache_memory_bytes": 5368709120, "num_gpu_blocks": 2275},
         "scheduler_config": {"policy": "priority", "max_num_batched_tokens": 512}

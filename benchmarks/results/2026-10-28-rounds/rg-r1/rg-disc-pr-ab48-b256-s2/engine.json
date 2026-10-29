@@ -4,7 +4,9 @@
     "revision": "8591804019c8b22094c3b5b4454e0edc05dffc98",
     "max_model_len": 32768,
     "dtype": "torch.bfloat16",
-    "quantization": "fp8"
+    "quantization": "fp8",
+    "tokenizer": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+    "tokenizer_revision": "8591804019c8b22094c3b5b4454e0edc05dffc98"
   },
   "cache_config": {
     "block_size": 16,

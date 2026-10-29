@@ -648,6 +648,10 @@ VLLM_ENGINE_REPORTED = {"kernel_config": ("linear_backend",)}
 """What a record keeps of a vLLM engine's configuration where its engine.json has it, which those
 before 2026-10-25 do not: the linear kernel the point asked for (``--linear-backend``; ``auto``
 lets vLLM choose by the GPU, Marlin for this checkpoint on sm80 and sm89)."""
+VLLM_TOKENIZER = ("tokenizer", "tokenizer_revision")
+"""The model's tokenizer and its revision, which a record keeps where its engine.json names a tokenizer, as
+those exported before 2026-10-29 do not: a serving profile pins them beside the model, and they are named, as
+the model is, by the Hugging Face id rather than the path in the cache."""
 SGLANG_ENGINE = (
     "model_path",
     "revision",
@@ -774,8 +778,8 @@ def export_point(run_dir: Path, out: Path) -> Path | None:
 
 def engine_settings(config: Mapping[str, Any]) -> dict[str, Any]:
     """An engine's configuration (engine.json, from its /server_info) reduced to VLLM_ENGINE or
-    SGLANG_ENGINE, with the model named by its Hugging Face id and revision rather than its path in
-    the cache, and every path under a home directory from ``~``."""
+    SGLANG_ENGINE, with the model, and its tokenizer where it names one, named by the Hugging Face id
+    and revision rather than the path in the cache, and every path under a home directory from ``~``."""
     if "model_config" not in config:  # SGLang's server arguments
         return _home({key: config.get(key) for key in SGLANG_ENGINE})
     settings: dict[str, Any] = {
@@ -791,6 +795,10 @@ def engine_settings(config: Mapping[str, Any]) -> dict[str, Any]:
     model = settings["model_config"]
     if model:
         model |= dict(zip(("model", "revision"), model_id(model), strict=True))
+        source = config["model_config"]
+        if "tokenizer" in source:
+            tokenizer = {"model": source["tokenizer"], "revision": source.get("tokenizer_revision")}
+            model |= dict(zip(VLLM_TOKENIZER, model_id(tokenizer), strict=True))
     return _home(settings)
 
 
