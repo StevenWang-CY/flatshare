@@ -6,21 +6,21 @@
 <rect class="page" width="1120" height="782"/>
 <text x="24" y="34">One GPU: a voice agent beside coding agents</text>
 <text x="1096" y="34" text-anchor="end">(a)</text>
-<rect x="24" y="81" width="104" height="46" rx="8" class="box"/>
+<rect x="24" y="81" width="104" height="46" class="box"/>
 <text x="76" y="110.93" text-anchor="middle">Caller</text>
-<rect x="176" y="81" width="151.14" height="46" rx="8" class="box"/>
+<rect x="176" y="81" width="151.14" height="46" class="box"/>
 <text x="251.57" y="110.93" text-anchor="middle">Speech to text</text>
-<rect x="24" y="145" width="303.14" height="46" rx="8" class="box"/>
+<rect x="24" y="145" width="303.14" height="46" class="box"/>
 <text x="175.57" y="174.93" text-anchor="middle">24 coding-agent sessions</text>
-<rect x="780.42" y="81" width="154.9" height="46" rx="8" class="box"/>
+<rect x="780.42" y="81" width="154.9" height="46" class="box"/>
 <text x="857.88" y="110.93" text-anchor="middle">Text to speech</text>
-<rect x="992" y="81" width="104" height="46" rx="8" class="box"/>
+<rect x="992" y="81" width="104" height="46" class="box"/>
 <text x="1044" y="110.93" text-anchor="middle">Caller</text>
-<rect x="435.14" y="81" width="233.28" height="110" rx="8" class="ours"/>
+<rect x="435.14" y="81" width="233.28" height="110" class="ours"/>
 <text x="551.78" y="130.4" text-anchor="middle" font-size="20">vLLM 0.32 scheduler</text>
 <text x="551.78" y="154.8" text-anchor="middle" font-size="20">with #63350, #63351</text>
-<rect x="427.14" y="73" width="249.28" height="126" rx="10" class="group"/>
-<rect x="451.14" y="229" width="169.28" height="40" rx="6" class="memory"/>
+<rect x="427.14" y="73" width="249.28" height="126" class="group"/>
+<rect x="451.14" y="229" width="169.28" height="40" class="memory"/>
 <text x="535.78" y="255" text-anchor="middle" font-size="20">KV pool</text>
 <path d="M535.78 191L535.78 229" class="flow"/>
 <path d="M128 104L168.7 104" class="flow"/>
@@ -36,27 +36,27 @@
 <text x="688.42" y="94" class="mute" font-size="18">the reply</text>
 <path d="M935.33 104L984.7 104" class="flow"/>
 <path d="M989.5 104L981.5 108.8L981.5 99.2Z" class="flow-head"/>
-<rect x="24" y="330" width="532" height="440" rx="12" class="panel-a"/>
+<rect x="24" y="330" width="532" height="440" class="panel-a"/>
 <text x="42" y="358.7">#63350: make room for KV</text>
 <text x="538" y="358.7" text-anchor="end">(b)</text>
 <text x="50" y="400" font-size="20">vLLM 0.32</text>
-<rect x="44" y="408" width="320" height="36" rx="6" class="memory"/>
-<rect x="50" y="414" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="76" y="414" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="102" y="414" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="128" y="414" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="154" y="414" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="180" y="414" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="206" y="414" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="232" y="414" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="258" y="414" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="284" y="414" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="310" y="414" width="22" height="24" rx="2" class="cell-empty"/>
-<rect x="336" y="414" width="22" height="24" rx="2" class="cell-empty"/>
-<rect x="392" y="414" width="22" height="24" rx="2" class="green cell"/>
-<rect x="418" y="414" width="22" height="24" rx="2" class="green cell"/>
-<rect x="444" y="414" width="22" height="24" rx="2" class="green cell"/>
-<rect x="470" y="414" width="22" height="24" rx="2" class="green cell"/>
+<rect x="44" y="408" width="320" height="36" class="memory"/>
+<rect x="50" y="414" width="22" height="24" class="gray cell"/>
+<rect x="76" y="414" width="22" height="24" class="gray cell"/>
+<rect x="102" y="414" width="22" height="24" class="gray cell"/>
+<rect x="128" y="414" width="22" height="24" class="gray cell"/>
+<rect x="154" y="414" width="22" height="24" class="gray cell"/>
+<rect x="180" y="414" width="22" height="24" class="gray cell"/>
+<rect x="206" y="414" width="22" height="24" class="gray cell"/>
+<rect x="232" y="414" width="22" height="24" class="gray cell"/>
+<rect x="258" y="414" width="22" height="24" class="gray cell"/>
+<rect x="284" y="414" width="22" height="24" class="gray cell"/>
+<rect x="310" y="414" width="22" height="24" class="cell-empty"/>
+<rect x="336" y="414" width="22" height="24" class="cell-empty"/>
+<rect x="392" y="414" width="22" height="24" class="green cell"/>
+<rect x="418" y="414" width="22" height="24" class="green cell"/>
+<rect x="444" y="414" width="22" height="24" class="green cell"/>
+<rect x="470" y="414" width="22" height="24" class="green cell"/>
 <path d="M50 444V450H176V444" class="bracket"/>
 <text x="113" y="468.96" text-anchor="middle" font-size="18">agent A</text>
 <path d="M180 444V450H306V444" class="bracket"/>
@@ -67,43 +67,43 @@
 <text x="442" y="468.96" text-anchor="middle" font-size="18">voice turn</text>
 <text x="50" y="500" class="soft" font-size="18">The turn waits until agent blocks are freed.</text>
 <text x="50" y="560" font-size="20">#63350</text>
-<rect x="44" y="568" width="320" height="36" rx="6" class="memory"/>
-<rect x="50" y="574" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="76" y="574" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="102" y="574" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="128" y="574" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="154" y="574" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="180" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="44" y="568" width="320" height="36" class="memory"/>
+<rect x="50" y="574" width="22" height="24" class="gray cell"/>
+<rect x="76" y="574" width="22" height="24" class="gray cell"/>
+<rect x="102" y="574" width="22" height="24" class="gray cell"/>
+<rect x="128" y="574" width="22" height="24" class="gray cell"/>
+<rect x="154" y="574" width="22" height="24" class="gray cell"/>
+<rect x="180" y="574" width="22" height="24" class="gray cell"/>
 <path d="M180 574L180 574M180 579L185 574M180 584L190 574M180 589L195 574M180 594L200 574M181 598L202 577M186 598L202 582M191 598L202 587M196 598L202 592M201 598L202 597" class="gray hatch"/>
-<rect x="206" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="206" y="574" width="22" height="24" class="gray cell"/>
 <path d="M206 574L206 574M206 579L211 574M206 584L216 574M206 589L221 574M206 594L226 574M207 598L228 577M212 598L228 582M217 598L228 587M222 598L228 592M227 598L228 597" class="gray hatch"/>
-<rect x="232" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="232" y="574" width="22" height="24" class="gray cell"/>
 <path d="M232 574L232 574M232 579L237 574M232 584L242 574M232 589L247 574M232 594L252 574M233 598L254 577M238 598L254 582M243 598L254 587M248 598L254 592M253 598L254 597" class="gray hatch"/>
-<rect x="258" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="258" y="574" width="22" height="24" class="gray cell"/>
 <path d="M258 574L258 574M258 579L263 574M258 584L268 574M258 589L273 574M258 594L278 574M259 598L280 577M264 598L280 582M269 598L280 587M274 598L280 592M279 598L280 597" class="gray hatch"/>
-<rect x="284" y="574" width="22" height="24" rx="2" class="gray cell"/>
+<rect x="284" y="574" width="22" height="24" class="gray cell"/>
 <path d="M284 574L284 574M284 579L289 574M284 584L294 574M284 589L299 574M284 594L304 574M285 598L306 577M290 598L306 582M295 598L306 587M300 598L306 592M305 598L306 597" class="gray hatch"/>
-<rect x="310" y="574" width="22" height="24" rx="2" class="cell-empty"/>
-<rect x="336" y="574" width="22" height="24" rx="2" class="cell-empty"/>
-<rect x="392" y="574" width="22" height="24" rx="2" class="green cell"/>
-<rect x="418" y="574" width="22" height="24" rx="2" class="green cell"/>
-<rect x="444" y="574" width="22" height="24" rx="2" class="green cell"/>
-<rect x="470" y="574" width="22" height="24" rx="2" class="green cell"/>
+<rect x="310" y="574" width="22" height="24" class="cell-empty"/>
+<rect x="336" y="574" width="22" height="24" class="cell-empty"/>
+<rect x="392" y="574" width="22" height="24" class="green cell"/>
+<rect x="418" y="574" width="22" height="24" class="green cell"/>
+<rect x="444" y="574" width="22" height="24" class="green cell"/>
+<rect x="470" y="574" width="22" height="24" class="green cell"/>
 <path d="M180 568V562H306V568" class="bracket"/>
 <text x="243" y="554" text-anchor="middle" font-size="18">agent B, preempted</text>
-<rect x="44" y="656" width="320" height="36" rx="6" class="memory"/>
-<rect x="50" y="662" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="76" y="662" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="102" y="662" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="128" y="662" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="154" y="662" width="22" height="24" rx="2" class="gray cell"/>
-<rect x="180" y="662" width="22" height="24" rx="2" class="green cell"/>
-<rect x="206" y="662" width="22" height="24" rx="2" class="green cell"/>
-<rect x="232" y="662" width="22" height="24" rx="2" class="green cell"/>
-<rect x="258" y="662" width="22" height="24" rx="2" class="green cell"/>
-<rect x="284" y="662" width="22" height="24" rx="2" class="cell-empty"/>
-<rect x="310" y="662" width="22" height="24" rx="2" class="cell-empty"/>
-<rect x="336" y="662" width="22" height="24" rx="2" class="cell-empty"/>
+<rect x="44" y="656" width="320" height="36" class="memory"/>
+<rect x="50" y="662" width="22" height="24" class="gray cell"/>
+<rect x="76" y="662" width="22" height="24" class="gray cell"/>
+<rect x="102" y="662" width="22" height="24" class="gray cell"/>
+<rect x="128" y="662" width="22" height="24" class="gray cell"/>
+<rect x="154" y="662" width="22" height="24" class="gray cell"/>
+<rect x="180" y="662" width="22" height="24" class="green cell"/>
+<rect x="206" y="662" width="22" height="24" class="green cell"/>
+<rect x="232" y="662" width="22" height="24" class="green cell"/>
+<rect x="258" y="662" width="22" height="24" class="green cell"/>
+<rect x="284" y="662" width="22" height="24" class="cell-empty"/>
+<rect x="310" y="662" width="22" height="24" class="cell-empty"/>
+<rect x="336" y="662" width="22" height="24" class="cell-empty"/>
 <path d="M442 601L442 620Q442 626 436 626L236 626Q230 626 230 632L230 649.18" class="green line"/>
 <path d="M230 653.5L226.4 646.3L233.6 646.3Z" class="green line-head"/>
 <path d="M180 692V698H280V692" class="bracket"/>
@@ -111,99 +111,99 @@
 <path d="M284 692V698H358V692" class="bracket"/>
 <text x="321" y="716.96" text-anchor="middle" font-size="18">free</text>
 <text x="50" y="750" class="mute" font-size="18">Agent B waits; its KV is in the CPU tier.</text>
-<rect x="588" y="330" width="508" height="440" rx="12" class="panel-b"/>
+<rect x="588" y="330" width="508" height="440" class="panel-b"/>
 <text x="606" y="358.7">#63351: hold agent prefill</text>
 <text x="1078" y="358.7" text-anchor="end">(c)</text>
-<rect x="614" y="389" width="14" height="16" rx="2" class="green cell"/>
+<rect x="614" y="389" width="14" height="16" class="green cell"/>
 <text x="636" y="402" font-size="18">the reply's token</text>
-<rect x="783.39" y="389" width="30" height="16" rx="2" class="gray cell"/>
+<rect x="783.39" y="389" width="30" height="16" class="gray cell"/>
 <text x="821.39" y="402" font-size="18">an agent's prefill chunk</text>
 <text x="614" y="440" font-size="20">without #63351</text>
-<rect x="614" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="621.11" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="642.62" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="649.72" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="671.23" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="678.34" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="699.85" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="706.95" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="728.46" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="735.57" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="757.08" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="764.18" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="785.69" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="792.8" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="814.31" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="821.42" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="842.92" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="850.03" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="871.54" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="878.65" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="900.15" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="907.26" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="928.77" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="935.88" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="957.38" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="964.49" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="986" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="993.11" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="1014.62" y="452" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="1021.72" y="452" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="614" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="621.11" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="642.62" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="649.72" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="671.23" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="678.34" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="699.85" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="706.95" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="728.46" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="735.57" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="757.08" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="764.18" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="785.69" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="792.8" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="814.31" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="821.42" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="842.92" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="850.03" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="871.54" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="878.65" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="900.15" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="907.26" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="928.77" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="935.88" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="957.38" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="964.49" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="986" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="993.11" y="452" width="20.31" height="24" class="gray cell"/>
+<rect x="1014.62" y="452" width="7.11" height="24" class="green cell"/>
+<rect x="1021.72" y="452" width="20.31" height="24" class="gray cell"/>
 <path d="M614 482V488H1013.42V482" class="bracket"/>
 <text x="813.71" y="506.96" text-anchor="middle" font-size="18">14 tokens</text>
 <text x="614" y="540" font-size="20">with #63351</text>
-<rect x="614" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="622.31" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="630.62" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="638.92" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="647.23" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="655.54" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="663.85" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="672.15" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="680.46" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="688.77" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="697.08" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="705.38" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="713.69" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="722" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="730.31" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="738.62" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="746.92" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="755.23" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="763.54" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="771.85" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="780.15" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="788.46" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="796.77" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="805.08" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="813.38" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="821.69" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="830" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="838.31" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="846.62" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="854.92" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="863.23" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="871.54" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="879.85" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="888.15" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="896.46" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="904.77" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="913.08" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="921.38" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="929.69" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="938" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="946.31" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="954.62" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="962.92" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="971.23" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="979.54" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="987.85" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="996.15" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="1004.46" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="1012.77" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="1019.88" y="552" width="20.31" height="24" rx="1.5" class="gray cell"/>
-<rect x="1041.38" y="552" width="7.11" height="24" rx="1.5" class="green cell"/>
-<rect x="1048.49" y="552" width="20.31" height="24" rx="1.5" class="gray cell"/>
+<rect x="614" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="622.31" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="630.62" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="638.92" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="647.23" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="655.54" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="663.85" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="672.15" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="680.46" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="688.77" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="697.08" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="705.38" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="713.69" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="722" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="730.31" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="738.62" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="746.92" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="755.23" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="763.54" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="771.85" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="780.15" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="788.46" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="796.77" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="805.08" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="813.38" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="821.69" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="830" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="838.31" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="846.62" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="854.92" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="863.23" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="871.54" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="879.85" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="888.15" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="896.46" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="904.77" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="913.08" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="921.38" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="929.69" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="938" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="946.31" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="954.62" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="962.92" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="971.23" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="979.54" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="987.85" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="996.15" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="1004.46" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="1012.77" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="1019.88" y="552" width="20.31" height="24" class="gray cell"/>
+<rect x="1041.38" y="552" width="7.11" height="24" class="green cell"/>
+<rect x="1048.49" y="552" width="20.31" height="24" class="gray cell"/>
 <path d="M614 582V588H1011.57V582" class="bracket"/>
 <text x="812.78" y="606.96" text-anchor="middle" font-size="18">the reply's first 48 tokens</text>
 <path d="M1012.77 582V588H1068.8V582" class="bracket"/>

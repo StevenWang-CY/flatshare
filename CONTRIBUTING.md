@@ -37,8 +37,11 @@ What CI does not run:
 - **The scheduler change.** Its source is the two pull requests proposed to vLLM, #63350 and #63351; make-room's
   patches are rewritten from their branches ([one source](python/flatshare_vllm/README.md#one-source-for-the-change)).
   A change to the rules belongs on those pull requests, or in an issue here first.
-- **Records.** Never edit a file under `benchmarks/results`. A new measurement gets a dated directory of its own,
-  with a README that says what ran, on which revision, and the command that recomputes its tables.
+- **Records.** A record in `benchmarks/results` is frozen once a release carries it, and is still being written until
+  then. A new measurement gets a dated directory of its own, with a README that says what ran, on which revision, and
+  the command that recomputes its tables. After release only two parts of a record change: its `report/`, which that
+  command rewrites when the report's code changes, and its `figure.toml`, which names the points a figure draws, with
+  that figure.
 - **Documents.** A number comes from a record, a test or a script, and says which; a term is the one
   [the glossary](docs/GLOSSARY.md) gives; [docs/README.md](docs/README.md) says which document a fact belongs in.
 

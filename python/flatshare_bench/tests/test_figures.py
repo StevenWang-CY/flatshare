@@ -134,10 +134,6 @@ def drawn(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     rows, incomplete = load_points(deployable)
     assert rows and not incomplete
     write_report(rows, out / "e2", makefile_list("E2_STAGES"))
-    # make e2-w5-figure: the rows figure.toml names, from all of W5's records.
-    rows, incomplete = load_points(sorted(run.parent for run in W5.glob("*/*/run.json")))
-    assert rows and not incomplete
-    write_report(rows, out / "w5", dots=read_dots(W5 / "figure.toml"))
     # make e2-gpus-figure: the rows the A100's figure.toml names, from W5's records and the A100's core, tuned vLLM's
     # and the PRs' values' at its step cap.
     a100 = sorted(
@@ -155,8 +151,6 @@ def drawn(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     return {
         "e2-frontier.svg": out / "e2" / "frontier-weka-x32-long.svg",
         "e2-waterfall.svg": out / "e2" / "waterfall.svg",
-        "e2-voice-p95.svg": out / "w5" / "voice-p95.svg",
-        "e2-voice-p95-narrow.svg": out / "w5" / "voice-p95-narrow.svg",
         "e2-voice-p95-gpus.svg": out / "gpus" / "voice-p95.svg",
         "e2-voice-p95-gpus-narrow.svg": out / "gpus" / "voice-p95-narrow.svg",
     } | {path.name: path for path in (*drawn, *report)}

@@ -160,6 +160,23 @@ def test_a_rule_may_run_under_a_label_only_where_a_segment_painted_over_it_hides
         s.render()
 
 
+def test_a_halo_lets_a_label_sit_on_a_gridline_and_on_no_other_rule() -> None:
+    s = chart()
+    s.vrule(150, 10, 190, "grid")
+    s.text(140, 81, "a value", size=18, halo=True)
+    s.render()
+    for draw in (
+        lambda s: s.vrule(150, 10, 190, "slo"),
+        lambda s: s.vrule(150, 10, 190, "axis"),
+        lambda s: s.ref((10, 76), (390, 76), "ink trace dotted"),
+    ):
+        s = chart()
+        draw(s)
+        s.text(140, 81, "a value", size=18, halo=True)
+        with pytest.raises(ValueError, match="a rule crosses the text 'a value'"):
+            s.render()
+
+
 def test_a_charts_style_holds_its_parts_and_both_themes() -> None:
     svg = chart().render()
     assert svg.count("<style>") == 1 and ".mark{" in svg and ".s-wait{" in svg
@@ -443,7 +460,7 @@ def test_the_step_costs_are_the_baselines_cells() -> None:
     assert serving == [("idle", 2, ""), ("hold", 2, ""), ("nofit", 16, ""), ("fire", 2, "")]
 
 
-def test_the_step_costs_stand_beside_the_boxs_cpu_and_steps() -> None:
+def test_the_step_costs_stand_beside_the_boxs_cpu_and_steps(tmp_path: Path) -> None:
     """The box's CPU takes 1.68 times as long as the host's at bench_host.py's workload, by its median against the
     median of the host's as the baseline's rounds ended; a reply's step on the box alone is W6's median token gap, and
     the agents' at 24 session trees their mean token gap at the median of the three rounds that the two-card verdict
@@ -452,6 +469,11 @@ def test_the_step_costs_stand_beside_the_boxs_cpu_and_steps() -> None:
     host = [load["python_ms"]["p50"] for load in json.loads(data.STEP_COSTS.read_text())["load"]]
     assert data.box_cpu() == box / statistics.median(host) and box == pytest.approx(381.1, abs=0.01)
     assert f"{data.box_cpu():.2f}" == "1.68"
+    # Its top axis says it is a scaling of the host's.
+    [path] = figures.step_cost(tmp_path)
+    assert "the box's CPU (ms), scaled: the host's time \N{MULTIPLICATION SIGN} 1.68" in text_of(
+        path
+    )
     assert data.voice_step_ms() == 12.08
     assert data.agents_step_ms() == 38.07
 
@@ -675,6 +697,9 @@ def test_the_margin_is_the_standard_scenarios_rounds_and_the_calls_per_gpu() -> 
     rounds = data.standard_rounds(rows)
     assert [r for r, _, _ in rounds] == [1, 2, 3, 4, 5]
     assert [round(change - tuned) for _, tuned, change in rounds] == [-109, -1413, -945, -250, -496]
+    # Panel a's axis starts at 1.5 s, under every round's p95 and the SLO.
+    assert min(min(tuned, change) for _, tuned, change in rounds) > figures.MARGIN_FLOOR
+    assert data.slo_ms(rows) > figures.MARGIN_FLOOR
     counts = data.e3_counts()
     # Every caller count on the samples the four- and six-caller rounds used, the first three.
     seeds = {r["agents_seed"] for (_, p), r in counts.items() if p == data.CALLS[4][1]}

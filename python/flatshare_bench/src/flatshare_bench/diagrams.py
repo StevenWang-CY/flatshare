@@ -73,11 +73,11 @@ def make_room(free: int, holders: tuple[tuple[str, int], ...], need: int) -> lis
 def _cell(s: Figure, x: float, y: float, width: float, height: float, kind: str | None) -> None:
     """One KV block: an agent's (gray), the voice turn's (green), preempted (an agent's, hatched) or free."""
     if kind is None:
-        s.rect(x, y, width, height, "cell-empty", rx=2)
+        s.rect(x, y, width, height, "cell-empty")
     elif kind == "preempted":
         s.cells(x, y, [AGENT], cell=width, height=height, hatched=frozenset({0}))
     else:
-        s.rect(x, y, width, height, f"{kind} cell", rx=2)
+        s.rect(x, y, width, height, f"{kind} cell")
 
 
 def _pool(
@@ -184,13 +184,13 @@ def hold_prefill_panel(
     height = 24
     # The panel's key: what a step holds, on one line where it fits.
     ky = y + 72
-    s.rect(x0, ky - 13, 14, 16, f"{VOICE} cell", rx=2)
+    s.rect(x0, ky - 13, 14, 16, f"{VOICE} cell")
     first = s.text(x0 + 22, ky, "the reply's token", size=NOTE)
     second = "an agent's prefill chunk"
     kx = first.x1 + 22
     if kx + 38 + measure(second, NOTE) > x + w - 18:
         kx, ky = x0, ky + 26
-    s.rect(kx, ky - 13, 30, 16, f"{AGENT} cell", rx=2)
+    s.rect(kx, ky - 13, 30, 16, f"{AGENT} cell")
     s.text(kx + 38, ky, second, size=NOTE)
     shift = ky - (y + 72)  # the rows start under the key
 
@@ -200,9 +200,9 @@ def hold_prefill_panel(
         ms = SHARED_MS if shared else DECODE_MS
         left, width = x0 + at * unit, ms * unit - 1.2
         decode = DECODE_MS * unit - 1.2
-        s.rect(left, row_y, decode, height, f"{VOICE} cell", rx=1.5)
+        s.rect(left, row_y, decode, height, f"{VOICE} cell")
         if shared:
-            s.rect(left + decode, row_y, width - decode, height, f"{AGENT} cell", rx=1.5)
+            s.rect(left + decode, row_y, width - decode, height, f"{AGENT} cell")
         return at + ms
 
     # Without #63351 (stock vLLM, or #63350 alone, whose gaps the steps are drawn from): every step shares
@@ -291,8 +291,6 @@ def strip(s: Figure, top: float) -> dict[str, tuple[float, float, float, float]]
 # steel-blue arrows; a host or a namespace is a dashed group. In a process diagram the main path runs down a column of
 # steps, and each step's way out leaves to its right on a thin gray arrow to what it answers.
 
-SQUARE = 0.0
-"""The system diagrams' corner radius: square boxes, groups and cells."""
 STEP_H = 40.0
 """A step's box in a process diagram."""
 LINE = 22.0
@@ -389,7 +387,7 @@ def _ladder(
     tops = []
     for k, step in enumerate(steps):
         tops.append(y)
-        s.box(x, y, width, STEP_H, step.name, rx=SQUARE)
+        s.box(x, y, width, STEP_H, step.name)
         mid = y + STEP_H / 2
         lowest = max(lowest, y + STEP_H)
         if step.answers and below:
@@ -501,11 +499,11 @@ def _host(s: Figure, x: float, y: float, w: float, h: float, name: str, *, secon
     """A host: a dashed group on the gray ground with its name inside at the top left, or, for the second card, the
     dashed outline alone. Returns the name's baseline."""
     if second:
-        s.group(x, y, w, h, rx=SQUARE)
+        s.group(x, y, w, h)
         baseline = y + 14 + 0.7 * LABEL
         s.text(x + 18, baseline, name)
         return baseline
-    return s.panel(x, y, w, h, name, ground="b", rx=SQUARE)
+    return s.panel(x, y, w, h, name, ground="b")
 
 
 def _node_units(
@@ -518,7 +516,7 @@ def _node_units(
     for lines, (_, socket, kind) in zip(names, SERVERS, strict=True):
         h = UNIT_H + 22 * (len(lines) - 1)
         if own:
-            s.group(x - 6, y - 6, w + 12, h + 12, rx=SQUARE)
+            s.group(x - 6, y - 6, w + 12, h + 12)
         _unit(s, x, y, w, lines, socket, f"{kind} dashed" if second else kind)
         middles.append(y + h / 2)
         y += h + 22
@@ -572,7 +570,7 @@ def _architecture_wide(path: Path, title: str) -> Path:
     # The gateway, under the first node's tunnel, so that the worker's speech beside it reaches that tunnel's side;
     # its engine requests go to each node's tunnel.
     gx, gw, gy = 364.0, 120.0, tunnels[0][1] + 16
-    s.box(gx, gy, gw, 44, "Gateway", rx=SQUARE)
+    s.box(gx, gy, gw, 44, "Gateway")
     split = tx + tw / 2
     s.flow([(gx + gw, gy + 22), (split, gy + 22), (split, tunnels[0][1])], radius=0)
     s.flow([(split, gy + 22), (split, tunnels[1][0])], hue=SECOND, radius=0)
@@ -581,13 +579,13 @@ def _architecture_wide(path: Path, title: str) -> Path:
     # socket and whose speech to the node's tunnel, each flow labelled right of the namespace's border.
     vx, vw = 56.0, 160.0
     space = (40.0, gy - 228, 200.0, 228 + 44 + 22)
-    s.group(*space, rx=SQUARE)
+    s.group(*space)
     label_x = space[0] + space[2] + 10
     s.text(space[0] + 12, space[1] + 26, "voice-plane namespace", size=NOTE, cls="soft")
     s.text(space[0] + 12, space[1] + 48, "no route out", size=NOTE, cls="mute")
-    s.box(vx, gy - 164, vw, 44, "Callers", rx=SQUARE)
-    s.box(vx, gy - 82, vw, 44, "LiveKit server", rx=SQUARE)
-    s.box(vx, gy, vw, 44, "Voice worker", rx=SQUARE)
+    s.box(vx, gy - 164, vw, 44, "Callers")
+    s.box(vx, gy - 82, vw, 44, "LiveKit server")
+    s.box(vx, gy, vw, 44, "Voice worker")
     s.flow([(vx + 50, gy - 120), (vx + 50, gy - 82)])
     s.text(vx + 62, gy - 95, "WebRTC", size=NOTE, cls="soft")
     s.flow([(vx + 50, gy - 38), (vx + 50, gy)])
@@ -598,7 +596,7 @@ def _architecture_wide(path: Path, title: str) -> Path:
     s.text(label_x, speech - 9, "stt.sock, tts.sock", size=NOTE, cls="soft")
     # The coding agents, in cyan's host network, through the one TCP listener.
     ay = space[1] + space[3] + 70
-    s.box(vx, ay, vw, 44, "Coding agents", rx=SQUARE)
+    s.box(vx, ay, vw, 44, "Coding agents")
     s.flow([(vx + vw, ay + 22), (gx + gw / 2, ay + 22), (gx + gw / 2, gy + 44)], radius=0)
     s.text(label_x, ay + 13, "127.0.0.1:18080", size=NOTE)
     s.text(label_x, ay + 45, KEY, size=NOTE, cls="mute")
@@ -630,11 +628,11 @@ def _architecture_narrow(path: Path, title: str) -> Path:
         cls="soft",
     )
     # The voice plane, its units in a column, each flow labelled on its right.
-    s.group(x0 + 16, space_top, x1 - x0 - 32, rows[-1] + 44 + 22 - space_top, rx=SQUARE)
+    s.group(x0 + 16, space_top, x1 - x0 - 32, rows[-1] + 44 + 22 - space_top)
     s.text(x0 + 28, space_top + 26, "voice-plane namespace", size=NOTE, cls="soft")
     s.text(x1 - 28, space_top + 26, "no route out", size=NOTE, anchor="end", cls="mute")
     for row, name in zip(rows, ("Callers", "LiveKit server", "Voice worker"), strict=True):
-        s.box(vx, row, vw, 44, name, rx=SQUARE)
+        s.box(vx, row, vw, 44, name)
     mid = vx + vw / 2
     s.flow([(mid, rows[0] + 44), (mid, rows[1])])
     s.text(mid + 10, rows[0] + 44 + 26, "WebRTC", size=NOTE, cls="soft")
@@ -642,7 +640,7 @@ def _architecture_narrow(path: Path, title: str) -> Path:
     s.flow([(mid, rows[2] + 44), (mid, gy)])
     s.text(mid + 10, rows[2] + 44 + 50, "gateway.sock", size=NOTE, cls="soft")
     # The gateway between the tunnels, each node's beside it; the worker's speech to the first node's.
-    s.box(gx, gy, gw, 44, "Gateway", rx=SQUARE)
+    s.box(gx, gy, gw, 44, "Gateway")
     for tx, (name, _, _, second) in zip((left, right), NODES, strict=True):
         _box(s, tx, gy - 10, tw, th, ["Tunnel to", name], "box dashed" if second else "box")
     s.flow([(gx, gy + 22), (left + tw, gy + 22)])
@@ -653,7 +651,7 @@ def _architecture_narrow(path: Path, title: str) -> Path:
     s.text(speech + 10, rows[2] + 44 + 44, "stt.sock,", size=NOTE, cls="soft")
     s.text(speech + 10, rows[2] + 44 + 66, "tts.sock", size=NOTE, cls="soft")
     # The coding agents, under the gateway, through the one TCP listener.
-    s.box(gx - 20, ay, gw + 40, 44, "Coding agents", rx=SQUARE)
+    s.box(gx - 20, ay, gw + 40, 44, "Coding agents")
     s.flow([(line, ay), (line, gy + 44)])
     s.text(line + 10, ay - 38, "127.0.0.1:18080", size=NOTE)
     s.text(line + 10, ay - 16, KEY, size=NOTE, cls="mute")
@@ -831,7 +829,6 @@ def _card(
             height=slot,
             gap=pitch - slot,
             hatched=frozenset(range(count)) if agents == "held" and row == 1 else frozenset(),
-            rx=SQUARE,
         )
         if row == 0:
             centres = [left + k * pitch + slot / 2 for k in range(count)]
@@ -857,7 +854,7 @@ def two_cards(out: Path) -> list[Path]:
             first, second = py + 56, py + 56 + CARD_H + 84
             # Side by side, the panels share a height; stacked, only (b) holds the bracket under its spare.
             ph = second + CARD_H + 20 + (HELD_H if wide or letter == "b" else 0) - py
-            s.panel(px, py, panel_w, ph, heading, letter, ground="b", rx=SQUARE)
+            s.panel(px, py, panel_w, ph, heading, letter, ground="b")
             cx = px + 20
             between = first + CARD_H + 48
             if letter == "a":
@@ -970,14 +967,14 @@ def release(out: Path) -> list[Path]:
             s.text(spine + 12, restart + STEP_H / 2 - 9, "a failure", size=NOTE, cls="soft")
             s.flow([(back_x + back_w, restart + STEP_H / 2), (700, restart + STEP_H / 2)], hue=EXIT)
             answers_x, baseline = 710.0, restart + STEP_H / 2 + 6
-        s.box(back_x, back_y, back_w, STEP_H, "Switch back", rx=SQUARE)
+        s.box(back_x, back_y, back_w, STEP_H, "Switch back")
         if below:
             s.flow([(back_x + 20, back_y + STEP_H), (back_x + 20, back_y + STEP_H + 26)], hue=EXIT)
         last = _answers(s, answers_x, baseline, SWITCH_BACK, 46)
         # Through the check, it serves.
         serving = max(check + STEP_H + 30, (last + 24) if below else 0)
         s.flow([(main, check + STEP_H), (main, serving)])
-        s.box(x, serving, box_w, STEP_H, "Serving", rx=SQUARE)
+        s.box(x, serving, box_w, STEP_H, "Serving")
         s.text(x + box_w + 14, serving + STEP_H / 2 + 6, "exit 0", size=NOTE, cls="mute")
         s.height = max(lowest, last, serving + STEP_H) + 24
         paths.append(s.save(path))

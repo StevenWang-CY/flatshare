@@ -8,13 +8,15 @@
 <text x="24" y="54" class="soft" font-size="18">16 agent sessions of the whole corpus</text>
 <text x="24" y="84" class="soft" font-size="18">V2V p95 (s)</text>
 <path d="M96 548H440" class="axis"/>
-<text x="88" y="554" text-anchor="end" class="mute" font-size="18">0</text>
-<path d="M96 438.5H440" class="grid"/>
-<text x="88" y="444.5" text-anchor="end" class="mute" font-size="18">1</text>
-<path d="M96 329H440" class="grid"/>
-<text x="88" y="335" text-anchor="end" class="mute" font-size="18">2</text>
-<path d="M96 219.5H440" class="grid"/>
-<text x="88" y="225.5" text-anchor="end" class="mute" font-size="18">3</text>
+<text x="88" y="554" text-anchor="end" class="mute" font-size="18">1.5</text>
+<path d="M96 460.4H440" class="grid"/>
+<text x="88" y="466.4" text-anchor="end" class="mute" font-size="18">2</text>
+<path d="M96 372.8H440" class="grid"/>
+<text x="88" y="378.8" text-anchor="end" class="mute" font-size="18">2.5</text>
+<path d="M96 285.2H440" class="grid"/>
+<text x="88" y="291.2" text-anchor="end" class="mute" font-size="18">3</text>
+<path d="M96 197.6H440" class="grid"/>
+<text x="88" y="203.6" text-anchor="end" class="mute" font-size="18">3.5</text>
 <path d="M96 110H440" class="grid"/>
 <text x="88" y="116" text-anchor="end" class="mute" font-size="18">4</text>
 <path d="M96 110V548" class="axis"/>
@@ -25,25 +27,25 @@
 <text x="405.6" y="571" text-anchor="middle" class="mute" font-size="18">5</text>
 <path d="M96 548H440" class="axis"/>
 <text x="268" y="598" text-anchor="middle" class="soft" font-size="18">Round</text>
-<path d="M96 325.24H440" class="slo"/>
-<text x="102" y="347.24" class="orange tint halo" font-size="18">SLO 2.03 s</text>
-<path d="M130.4 312.91V324.87" class="hair"/>
-<path d="M125.4 312.91A5 5 0 1 0 135.4 312.91A5 5 0 1 0 125.4 312.91Z" class="gray mark"/>
-<path d="M125.4 324.87A5 5 0 1 0 135.4 324.87A5 5 0 1 0 125.4 324.87Z" class="blue mark"/>
-<path d="M199.2 128.4V283.11" class="hair"/>
-<path d="M194.2 128.4A5 5 0 1 0 204.2 128.4A5 5 0 1 0 194.2 128.4Z" class="gray mark"/>
-<path d="M194.2 283.11A5 5 0 1 0 204.2 283.11A5 5 0 1 0 194.2 283.11Z" class="blue mark"/>
-<path d="M268 212.15V315.6" class="hair"/>
-<path d="M263 212.15A5 5 0 1 0 273 212.15A5 5 0 1 0 263 212.15Z" class="gray mark"/>
-<path d="M263 315.6A5 5 0 1 0 273 315.6A5 5 0 1 0 263 315.6Z" class="blue mark"/>
-<path d="M336.8 296.13V323.56" class="hair"/>
-<path d="M331.8 296.13A5 5 0 1 0 341.8 296.13A5 5 0 1 0 331.8 296.13Z" class="gray mark"/>
-<path d="M331.8 323.56A5 5 0 1 0 341.8 323.56A5 5 0 1 0 331.8 323.56Z" class="blue mark"/>
-<path d="M405.6 272.45V326.73" class="hair"/>
-<path d="M400.6 272.45A5 5 0 1 0 410.6 272.45A5 5 0 1 0 400.6 272.45Z" class="gray mark"/>
-<path d="M400.6 326.73A5 5 0 1 0 410.6 326.73A5 5 0 1 0 400.6 326.73Z" class="blue mark"/>
-<text x="419.6" y="278.45" class="halo" font-size="18">Tuned vLLM</text>
-<text x="419.6" y="332.73" class="halo" font-size="18">the change</text>
+<path d="M96 454.39H440" class="slo"/>
+<text x="102" y="476.39" class="orange tint halo" font-size="18">SLO 2.03 s</text>
+<path d="M130.4 434.66V453.79" class="hair"/>
+<path d="M125.4 434.66A5 5 0 1 0 135.4 434.66A5 5 0 1 0 125.4 434.66Z" class="gray mark"/>
+<path d="M125.4 453.79A5 5 0 1 0 135.4 453.79A5 5 0 1 0 125.4 453.79Z" class="blue mark"/>
+<path d="M199.2 139.43V386.97" class="hair"/>
+<path d="M194.2 139.43A5 5 0 1 0 204.2 139.43A5 5 0 1 0 194.2 139.43Z" class="gray mark"/>
+<path d="M194.2 386.97A5 5 0 1 0 204.2 386.97A5 5 0 1 0 194.2 386.97Z" class="blue mark"/>
+<path d="M268 273.44V438.96" class="hair"/>
+<path d="M263 273.44A5 5 0 1 0 273 273.44A5 5 0 1 0 263 273.44Z" class="gray mark"/>
+<path d="M263 438.96A5 5 0 1 0 273 438.96A5 5 0 1 0 263 438.96Z" class="blue mark"/>
+<path d="M336.8 407.8V451.69" class="hair"/>
+<path d="M331.8 407.8A5 5 0 1 0 341.8 407.8A5 5 0 1 0 331.8 407.8Z" class="gray mark"/>
+<path d="M331.8 451.69A5 5 0 1 0 341.8 451.69A5 5 0 1 0 331.8 451.69Z" class="blue mark"/>
+<path d="M405.6 369.93V456.77" class="hair"/>
+<path d="M400.6 369.93A5 5 0 1 0 410.6 369.93A5 5 0 1 0 400.6 369.93Z" class="gray mark"/>
+<path d="M400.6 456.77A5 5 0 1 0 410.6 456.77A5 5 0 1 0 400.6 456.77Z" class="blue mark"/>
+<text x="419.6" y="375.93" class="halo" font-size="18">Tuned vLLM</text>
+<text x="419.6" y="475.39" class="halo" font-size="18">the change</text>
 <text x="560" y="88">(b) p95 over the SLO (ms)</text>
 <path d="M640 220H1100" class="grid"/>
 <text x="632" y="226" text-anchor="end" class="mute" font-size="18">0</text>
