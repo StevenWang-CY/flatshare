@@ -171,7 +171,7 @@ systemctl --user show -p MainPID flatshare-gateway  # a reload changes it: the s
 ```sh
 curl -s 127.0.0.1:18080/health                    # the process is up
 curl -s 127.0.0.1:18080/ready                     # 200 while the engine serves and its /health answers; else 503 and why
-curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/metrics | grep -E 'flatshare_gateway_(request_outcomes|upstream_errors)_total'
+curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/metrics | grep -E 'flatshare_gateway_(requests_terminal|upstream_errors)_total'
 journalctl --user -u flatshare-gateway -f         # one JSON line per request and per lifecycle event
 ```
 

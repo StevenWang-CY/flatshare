@@ -256,7 +256,7 @@ An inference succeeds when a client's request gets a 2xx response's first conten
 | Metric | Labels | Meaning |
 |---|---|---|
 | `flatshare_gateway_requests_total` | `tenant`, `route`, `class`, `status` | API requests. `tenant` is empty when unauthenticated, `class` for routes without one; status 499 means the client left before any response |
-| `flatshare_gateway_request_outcomes_total` | `class`, `outcome` | Inference requests with a class, by outcome, one a request ([Accounting](#accounting)): `completed` only for a 2xx response relayed to its end |
+| `flatshare_gateway_request_outcomes_total` | `class`, `outcome` | Inference requests with a class, by outcome, one a request ([Accounting](#accounting)): `completed` only for a 2xx response relayed to its end. E2's records and the soak's scrapes read it; the alerts and the dashboard read `requests_terminal_total` |
 | `flatshare_gateway_requests_offered_total` | `tenant`, `route`, `class` | Inference requests received, each once ([Accounting](#accounting)) |
 | `flatshare_gateway_requests_admitted_total` | `tenant`, `route`, `class`, `admission` | Inference requests sent upstream, each once: `admission` is `policy` when an admission policy decided when, `none` otherwise |
 | `flatshare_gateway_requests_terminal_total` | `tenant`, `route`, `class`, `outcome` | Inference requests ended, each once, by outcome |
