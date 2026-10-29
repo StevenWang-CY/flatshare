@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// `[admission]`, which E2's harness reads (`harness`).
-pub use crate::harness::config::Admission;
+pub use crate::harness::config::AdmissionConfig;
 use crate::harness::config::RawAdmission;
 
 /// A validated configuration.
@@ -34,9 +34,9 @@ pub struct Config {
     /// How a request's class reaches the upstream as a priority.
     pub upstream_priority: PrioritySignals,
     /// The admission point; `None` (policy "none") sends every request upstream at once.
-    pub admission: Option<Admission>,
+    pub admission: Option<AdmissionConfig>,
     pub listeners: Vec<Listen>,
-    pub tenants: Vec<Tenant>,
+    pub tenants: Vec<TenantConfig>,
     /// The key of every tenant's `cache_salt`, from `cache_salt_secret_file`.
     pub cache_salt_secret: CacheSaltSecret,
     /// What `GET /metrics` asks of a request on a TCP listener, from `metrics_key_file`; `None` without one,
@@ -258,7 +258,7 @@ impl fmt::Display for UpstreamAddr {
 
 /// A tenant: who a request belongs to, what it may ask for, and its cache namespace.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Tenant {
+pub struct TenantConfig {
     pub name: String,
     /// SHA-256 digests of the tenant's API keys. The keys themselves never appear in the configuration.
     pub keys_sha256: Vec<[u8; 32]>,
@@ -928,7 +928,7 @@ impl RawConfig {
 }
 
 /// The `[tenants.<name>]` tables, in their names' order: no API key digest listed twice, and at least one tenant.
-fn validate_tenants(raw: BTreeMap<String, RawTenant>) -> Result<Vec<Tenant>, String> {
+fn validate_tenants(raw: BTreeMap<String, RawTenant>) -> Result<Vec<TenantConfig>, String> {
     let mut tenants = Vec::with_capacity(raw.len());
     let mut digests = HashSet::new();
     for (name, raw) in raw {
@@ -951,7 +951,10 @@ fn validate_tenants(raw: BTreeMap<String, RawTenant>) -> Result<Vec<Tenant>, Str
 
 /// The `[[listen]]` entries: each a loopback TCP address or an absolute Unix socket path, a tenant named by a Unix
 /// socket's alone, at least one entry, and every tenant reachable, by an API key or a listener that names it.
-fn validate_listeners(raw: Vec<RawListen>, tenants: &[Tenant]) -> Result<Vec<Listen>, String> {
+fn validate_listeners(
+    raw: Vec<RawListen>,
+    tenants: &[TenantConfig],
+) -> Result<Vec<Listen>, String> {
     let mut listeners = Vec::with_capacity(raw.len());
     for (i, raw) in raw.into_iter().enumerate() {
         let addr = match (raw.tcp, raw.unix) {
@@ -1087,7 +1090,7 @@ fn validate_limits(raw: RawLimits) -> Result<Limits, String> {
 }
 
 impl RawTenant {
-    fn validate(self, name: String) -> Result<Tenant, String> {
+    fn validate(self, name: String) -> Result<TenantConfig, String> {
         if !valid_name(&name) {
             return Err(format!(
                 "tenant name {name:?}: use 1 to 64 characters from [A-Za-z0-9._-]"
@@ -1113,7 +1116,7 @@ impl RawTenant {
         if self.max_in_flight == 0 {
             return Err(format!("tenants.{name}.max_in_flight must be positive"));
         }
-        Ok(Tenant {
+        Ok(TenantConfig {
             name,
             keys_sha256,
             trusted: self.trusted,

@@ -224,7 +224,7 @@ impl Drop for Placed {
 
 /// Why a request held back by a failover went no further.
 #[derive(Debug)]
-pub(crate) enum Held {
+pub(crate) enum NotReleased {
     /// Its wait reached its deadline.
     Late(Timeout),
     /// The drain's cut.
@@ -492,7 +492,7 @@ impl Nodes {
         placed: &mut Placed,
         (deadline, timeout): (Instant, Timeout),
         drain: &Drain,
-    ) -> Result<Duration, Held> {
+    ) -> Result<Duration, NotReleased> {
         let mut cut = drain.cut_for(Some(placed.class));
         if placed.class == SloClass::Realtime {
             self.count_in(placed);
@@ -518,8 +518,8 @@ impl Nodes {
             }
             tokio::select! {
                 biased;
-                () = drain::cut(&mut cut) => return Err(Held::Cut),
-                () = tokio::time::sleep_until(deadline.into()) => return Err(Held::Late(timeout)),
+                () = drain::cut(&mut cut) => return Err(NotReleased::Cut),
+                () = tokio::time::sleep_until(deadline.into()) => return Err(NotReleased::Late(timeout)),
                 () = &mut notified => {}
             }
         }
@@ -1011,7 +1011,7 @@ async fn expire(nodes: Weak<Nodes>, idle: Duration) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{CacheSaltSecret, Tenant as TenantConfig};
+    use crate::config::{CacheSaltSecret, TenantConfig};
 
     fn tenants(names: &[&str]) -> Tenants {
         let config: Vec<TenantConfig> = names

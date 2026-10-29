@@ -13,7 +13,7 @@ use crate::config::seconds;
 
 /// `[admission]`: the policy that decides when a request goes upstream, and the bounds of its queues.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Admission {
+pub struct AdmissionConfig {
     pub policy: Policy,
     /// The requests each class's queue may hold; a request that would wait beyond them gets 429.
     pub queue_limit: usize,
@@ -28,7 +28,7 @@ pub struct Admission {
     pub step_tokens: Option<u64>,
 }
 
-impl Admission {
+impl AdmissionConfig {
     /// The core's admission point for this configuration, or an error that names the key it lacks: the lifecycle
     /// policy's throttle prices prefills in steps of `step_tokens`, and needs them.
     pub(crate) fn core(&self) -> Result<admission::Admission, String> {
@@ -117,7 +117,7 @@ enum TriggerName {
 
 impl RawAdmission {
     /// The admission point the table configures; `None` under policy "none".
-    pub(crate) fn validate(self) -> Result<Option<Admission>, String> {
+    pub(crate) fn validate(self) -> Result<Option<AdmissionConfig>, String> {
         let name = self.policy.as_str();
         let reads: &[&str] = match self.policy {
             PolicyName::None => &[],
@@ -239,7 +239,7 @@ impl RawAdmission {
             PolicyName::PreemptResubmit => Policy::PreemptResubmit,
             PolicyName::Lifecycle => unreachable!("validated above"),
         };
-        Ok(Some(Admission {
+        Ok(Some(AdmissionConfig {
             policy,
             queue_limit,
             // A minute ends a wait well before clients give up on their own (AIPerf's replay after 300 s,
@@ -255,7 +255,7 @@ impl RawAdmission {
 
     /// The lifecycle policy. Each mechanism is on unless switched off and needs its own keys while it is on, and a
     /// key may be set only while a mechanism that reads it is on.
-    fn lifecycle(self, queue_limit: usize) -> Result<Admission, String> {
+    fn lifecycle(self, queue_limit: usize) -> Result<AdmissionConfig, String> {
         let headroom = self.headroom.unwrap_or(true);
         let throttle = self.throttle.unwrap_or(true);
         let degrade = self.degrade.unwrap_or(true);
@@ -372,14 +372,14 @@ impl RawAdmission {
         // Longer than any state of an E2 caller's turn lasts (lines of 2 to 3 s, replies of a few seconds of
         // audio), so only a lost event ends a state by timeout.
         let state_timeout_s = self.state_timeout_s.unwrap_or(10.0);
-        let admission = Admission {
+        let admission = AdmissionConfig {
             policy: Policy::Lifecycle(lifecycle),
             queue_limit,
             max_wait: seconds("admission.max_defer_s", max_defer_s)?,
             state_timeout: Some(seconds("admission.state_timeout_s", state_timeout_s)?),
             step_tokens,
         };
-        // The server makes the admission point by the core's rule (`Admission::core`), and the file is validated in
+        // The server makes the admission point by the core's rule (`AdmissionConfig::core`), and the file is validated in
         // full before anything binds. No file breaks the rule: the throttle's step budget defaults to 512 tokens.
         admission.core()?;
         Ok(admission)
@@ -391,7 +391,7 @@ mod tests {
     use super::*;
 
     /// `[admission]` from its keys, as the configuration file holds them.
-    fn parse(keys: &str) -> Result<Option<Admission>, String> {
+    fn parse(keys: &str) -> Result<Option<AdmissionConfig>, String> {
         toml::from_str::<RawAdmission>(keys)
             .map_err(|e| e.to_string())?
             .validate()
@@ -405,7 +405,7 @@ mod tests {
         let cap = admission("policy = \"static-cap\"\nbackground_max_in_flight = 4").unwrap();
         assert_eq!(
             cap,
-            Some(Admission {
+            Some(AdmissionConfig {
                 policy: Policy::StaticCap {
                     background_max_in_flight: 4
                 },
@@ -503,7 +503,7 @@ mod tests {
         let lifecycle = parse(&format!("policy = \"lifecycle\"\n{keys}")).unwrap();
         assert!(matches!(
             lifecycle,
-            Some(Admission {
+            Some(AdmissionConfig {
                 policy: Policy::Lifecycle(_),
                 ..
             })
@@ -529,7 +529,7 @@ mod tests {
         };
         assert_eq!(
             arm9,
-            Admission {
+            AdmissionConfig {
                 policy: Policy::Lifecycle(full),
                 queue_limit: 1024,
                 max_wait: Duration::from_secs(10),

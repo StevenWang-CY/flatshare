@@ -35,7 +35,7 @@ pub(crate) struct Tenants {
 }
 
 impl Tenants {
-    pub fn new(config: &[config::Tenant], secret: &CacheSaltSecret) -> Self {
+    pub fn new(config: &[config::TenantConfig], secret: &CacheSaltSecret) -> Self {
         let tenants = config
             .iter()
             .enumerate()
@@ -128,7 +128,7 @@ mod tests {
     }
 
     fn tenants() -> Tenants {
-        let tenant = |name: &str, keys: &[&str]| config::Tenant {
+        let tenant = |name: &str, keys: &[&str]| config::TenantConfig {
             name: name.into(),
             keys_sha256: keys.iter().map(|k| Sha256::digest(k).into()).collect(),
             trusted: false,

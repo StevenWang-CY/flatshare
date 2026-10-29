@@ -28,7 +28,7 @@ use crate::deadline::{Deadlines, Phase, Timeout};
 use crate::harness::{NotAdmitted, Refusal, Ticket};
 use crate::intake::{Permit, Refused};
 use crate::metrics::Metrics;
-use crate::nodes::{Held, Placed, Unplaced};
+use crate::nodes::{NotReleased, Placed, Unplaced};
 use crate::sanitize::{InvalidBody, REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
 use crate::types::{Outcome, Route, UpstreamError};
 use crate::upstream::RECOVERY_PROBE;
@@ -423,9 +423,9 @@ impl Exchange {
 
     /// The answer to a request that went no further after `waited` at the admission point: refused, past its
     /// deadline, or cut by a drain `grace` into it.
-    pub fn not_admitted(mut self, not: NotAdmitted, waited: Duration, grace: Duration) -> Response {
+    pub fn not_admitted(mut self, why: NotAdmitted, waited: Duration, grace: Duration) -> Response {
         self.admission_wait = Some(waited);
-        match not {
+        match why {
             NotAdmitted::Refused(refusal) => self.refused(refusal),
             NotAdmitted::Late(timeout) => self.timed_out(Phase::Queue, timeout),
             NotAdmitted::Cut => self.drained(grace),
@@ -442,11 +442,11 @@ impl Exchange {
 
     /// The answer to a request that a covering node held back for `waited`, until its deadline or a drain's cut
     /// `grace` into the drain.
-    pub fn not_released(mut self, held: Held, waited: Duration, grace: Duration) -> Response {
+    pub fn not_released(mut self, why: NotReleased, waited: Duration, grace: Duration) -> Response {
         self.admission_wait = Some(waited);
-        match held {
-            Held::Late(timeout) => self.timed_out(Phase::Queue, timeout),
-            Held::Cut => self.drained(grace),
+        match why {
+            NotReleased::Late(timeout) => self.timed_out(Phase::Queue, timeout),
+            NotReleased::Cut => self.drained(grace),
         }
     }
 

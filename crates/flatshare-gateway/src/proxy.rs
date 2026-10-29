@@ -170,7 +170,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
                     start += ex.admitted_after(ticket.as_ref());
                     ticket
                 }
-                Err(not) => return ex.not_admitted(not, arrived.elapsed(), shared.drain.grace),
+                Err(why) => return ex.not_admitted(why, arrived.elapsed(), shared.drain.grace),
             }
         }
     };
@@ -183,7 +183,7 @@ pub(crate) async fn inference(app: App, route: Route, request: Request) -> Respo
             .await
         {
             Ok(waited) => start += ex.held_back(waited),
-            Err(held) => return ex.not_released(held, arrived.elapsed(), shared.drain.grace),
+            Err(why) => return ex.not_released(why, arrived.elapsed(), shared.drain.grace),
         }
     }
 

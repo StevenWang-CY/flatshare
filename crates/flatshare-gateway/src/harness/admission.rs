@@ -91,9 +91,9 @@ enum Signal {
 impl Admission {
     /// The admission point and its metric families, the lifecycle policy's only under it; under that policy, with
     /// the task that ends the realtime sessions' phases as they time out. A configuration that the core refuses is
-    /// an error that names the key it lacks ([`config::Admission::core`]).
+    /// an error that names the key it lacks ([`config::AdmissionConfig::core`]).
     pub fn new(
-        config: &config::Admission,
+        config: &config::AdmissionConfig,
         max_queued: usize,
         changed: Arc<Notify>,
     ) -> Result<Arc<Self>, String> {
