@@ -79,6 +79,17 @@ The voice worker runs in one of two modes ([`worker.py`](../python/flatshare_voi
 
 The benchmark's callers are synthetic: files played into the room, with no echo and no room noise. Serve mode's audio is the profile's other configuration, `microphone`, for real callers, which no benchmark measured: LiveKit's end-of-turn model ends a turn, since people pause inside a sentence (the experiments' fixed endpointing is refused with it); the VAD needs a clearer and longer onset to count speech (an activation of 0.6 against 0.5, 0.1 s against 0.05) and an interruption 0.6 s of speech, so that a click or a door does not cut the agent off, and an interruption that no transcript follows within 2 s lets the agent resume; and LiveKit's 3 s AEC warm-up stays on, so that a loudspeaker's echo of the agent does not cut its first reply. Noise suppression is the caller's client's (a browser's WebRTC applies its own), since LiveKit's noise cancellation needs LiveKit Cloud. Measure it with your own callers before relying on it. With fixed endpointing, as the measurements run it, a turn waits out the VAD's silence (0.55 s) and about 0.2 s more, and LiveKit's 0.5 s endpointing delay does not bind: 0.3 s of silence answered 0.27 s sooner at the median, and took the pause after a first sentence for the end of one line in 40 ([the endpointing sweep](../benchmarks/results/2026-10-28-endpointing/README.md)).
 
+### What the voice path keeps
+
+| Data | Where | Kept until |
+|---|---|---|
+| Callers' audio | Memory only: LiveKit records nothing (it has no egress), and the STT and TTS servers keep no audio | The call's end |
+| Transcripts and the agent's replies | The voice worker's memory, which a failover's re-synthesis needs for the sentence it cut | The call's end |
+| The engine's KV | GPU memory, and the CPU tier's mapping in `/dev/shm` (mode 0600, the deploying user's) | Eviction, or the engine's stop |
+| Metadata: session ids, room and participant names, timings, token counts, outcomes | The hosts' user journals: the gateway's request lines, the worker's turn lines, LiveKit's room events | As long as the hosts' journald keeps them |
+
+The logs keep no transcript or reply at the levels the units run: the gateway's request line holds ids, timings, token counts and the outcome; the engines log no request (vLLM's `--enable-log-requests` is off); LiveKit Agents logs a transcript only at DEBUG, below the worker's INFO; and the TTS server's unit sets `API_LOG_LEVEL=WARNING`, since at INFO Kokoro-FastAPI logs the first 50 characters of every chunk it synthesizes. Nothing in the repository sets the journals' retention: an operator with real callers sets it, for example with `SystemMaxUse=` in journald.conf or `journalctl --vacuum-time=`, and decides consent and retention.
+
 ### The audio models
 
 - Whisper and Kokoro share the GPU by time-slicing; MPS does not help ([Voice on the shared GPU](BENCHMARKS.md#voice-on-the-shared-gpu)): the interference that matters is inside the LLM engine. Sharing still costs them a little: in the shared configurations of [What it buys](#what-it-buys), endpointing takes 822–825 ms instead of 756, and TTS's first audio 232–250 ms instead of 211 (means over W5's replies, from [W5's report](../benchmarks/results/2026-10-24-e2-w5/report/frontier.md#stage-waterfall)).

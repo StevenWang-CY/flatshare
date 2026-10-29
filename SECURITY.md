@@ -43,6 +43,9 @@ process.
 
 These limits are stated in the documents and are not vulnerabilities in this sense:
 
+- The voice path keeps callers' audio and transcripts in memory until the call's end, and its metadata in the
+  hosts' journals for as long as journald keeps them, a retention the operator sets
+  ([what the voice path keeps](docs/PRODUCTION.md#what-the-voice-path-keeps)).
 - The engine's Unix sockets keep the hosts' other users out, not other processes of the deploying user, and the
   voice plane's processes keep that user's uid ([ADR-0005](docs/adr/0005-loopback-services-and-node-sticky-kv.md#unix-sockets-end-to-end-w6-2026-10-25)).
 - The `sglang` engine variant listens on 127.0.0.1:8000, and a host without unprivileged user namespaces runs its GPU
