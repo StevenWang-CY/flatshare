@@ -398,7 +398,8 @@ steady states of the pull requests' cost tables. With the switches off, the call
 every state. With the deployed values it costs 36–149 µs more while only lower-priority work runs, at most 18% of the
 call's own time. It costs 0.54–0.64 ms more when a waiting high-priority request needs more room than two victims free,
 1.7 ms more when that request's prefix-cache hit is 999 blocks long, and 160–247 µs more when every running slot is
-taken. A decode step on the RTX 5060 Ti takes 16–20 ms.
+taken. A voice reply's decode step on the RTX 5060 Ti takes 12 ms with nothing beside it, and 16–20 ms beside
+agent prefill that the hold keeps back.
 
 <img src="figures/report-step-cost.svg" width="100%" alt="A dot plot of 13 scheduler states in three groups on a log axis from 0.1 to 20 ms. In each state the change with its switches off sits on vLLM 0.32's ring. As deployed it adds 36 to 149 microseconds when only lower-priority work runs, 539 to 1,719 microseconds when a waiting turn needs more room than two victims free, and 160 to 247 microseconds with every running slot taken, all far left of a 16 to 20 ms decode step.">
 
@@ -406,7 +407,8 @@ taken. A decode step on the RTX 5060 Ti takes 16–20 ms.
 scheduler call.** Wall time of one `Scheduler.schedule()` call on vLLM 0.32.0's scheduler on a 2.1 GHz Xeon, in the 13
 steady states of the pull requests' cost tables, each mark the 10th-percentile step of its state, on a log scale. Rings
 are vLLM 0.32, small dots the change with its switches off, and blue dots the change as deployed, labeled with what it
-adds. The shaded band is a decode step on the RTX 5060 Ti.
+adds. The shaded band is a voice reply's decode step on the RTX 5060 Ti beside agent prefill that the hold keeps
+back; with nothing beside it, a step takes 12 ms.
 
 **The measurement harness.** Around the engine, the repository holds the system that measured it. A gateway written in
 Rust gives each client a class and a priority from its identity, and adds less than 0.5 ms to a voice request's first
