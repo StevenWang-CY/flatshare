@@ -1,6 +1,11 @@
 //! The intake: requests in flight in all, by class and by tenant, refused before their bodies are read; the budget of
 //! the bodies the gateway holds, taken as their bytes arrive; and the bound on the requests waiting at the admission
 //! point, in all its queues.
+//!
+//! Its tests: a gateway, a class and a tenant at their bounds refusing at once a request whose body never comes
+//! (declared or chunked), never reading it, while the other classes and tenants are served; the body budget refusing a
+//! declared length before reading it and a chunked body at the chunk that passes it, and its bytes back at the
+//! request's end; the admission queues held at `max_queued` in all, under a class's `queue_limit`.
 
 use std::sync::Arc;
 use std::time::Duration;

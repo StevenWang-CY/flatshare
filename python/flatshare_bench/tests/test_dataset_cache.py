@@ -3,7 +3,9 @@
 Each build runs AIPerf 0.13.0's own dataset manager offline, as ``aiperf profile`` builds an E2 point's
 dataset: ``configs/agentic_replay.yaml`` as AIPerf's resolver chain resolves it, on four of the
 committed 32x traces, with a tokenizer that AIPerf loads from a directory.
-"""
+
+This module builds an E2 point's dataset with AIPerf's own dataset manager on four committed traces: a hit replays a
+miss's dataset and an uncached build's byte for byte, and a changed plugin misses."""
 
 from __future__ import annotations
 

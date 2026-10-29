@@ -5,44 +5,13 @@
     flatshare-svc journalctl [--user] -u UNIT [--since T] [--until T] [-o cat|short-unix|short]
     flatshare-svc run UNIT                                            one unit's runner, which `start` spawns
 
-A container, or a host where lingering cannot be turned on, has no systemd user manager to run the units. With
-deploy/bin/shims first on PATH, `systemctl` and `journalctl` are this program, so that variant.sh, install.sh,
-campaign.sh and flatshare-bench e2 run work unchanged. It reads each unit and its drop-ins (UNIT.d/*.conf, in name
-order) from ~/.config/systemd/user, where install.sh and variant.sh link them, afresh at every command, and implements
-the directives the repository's units use: Type=exec or simple (the main process's execution is its start, even if it
-exits at once) or notify (the main process's READY=1 on NOTIFY_SOCKET is its start, as sd_notify sends it);
-ExecStartPre, ExecStart, ExecStartPost, ExecStop and ExecStopPost (an empty assignment resets the list; a leading `-`
-ignores a command's failure); Environment and EnvironmentFile (`-` for an optional file); WorkingDirectory; CPUAffinity;
-NUMAPolicy=preferred with NUMAMask (through numactl, when the host has it; otherwise the journal says it was not
-applied); KillSignal, TimeoutStartSec and TimeoutStopSec; Restart (no, on-failure, always), RestartSec,
-StartLimitIntervalSec and StartLimitBurst; and Wants, Requires, BindsTo, PartOf and After among the units, a target's
-Wants included; a unit that Wants= names and that does not exist is left out, as systemd leaves it (a tunnel a single
-host has none of), where one Requires= or BindsTo= names fails the start. A socket unit starts and stops as a target
-does, holding no listener: the service it would pass its sockets to binds its own (the gateway does without LISTEN_FDS).
-The specifiers %n and %N (the unit's name, and that name without its suffix), %h, %t, %u, %U and %% and systemd's $NAME
-(a word of its own, split at whitespace) and ${NAME} (in place) expansions apply to the command lines. A start refuses a
-unit with any other specifier in a command line (ExecReload's too, although flatshare-svc runs no reload) before
-anything of the start runs, as systemd will not start a unit whose lines it cannot expand: a line that only a stop runs
-would otherwise fail at the stop, with the unit's processes running.
+It reads the units and their drop-ins from ~/.config/systemd/user and runs them as systemd would, each under a runner
+of its own with a journal per unit; with deploy/bin/shims first on PATH, `systemctl` and `journalctl` are this
+program. The reference, with the directives it implements and how a start and a stop behave, is
+docs/HARDWARE.md#flatshare-svc.
 
-Each started unit has a runner (`flatshare-svc run UNIT`, in a session of its own) that runs its commands, with
-FLATSHARE_SVC_UNIT=UNIT in their environment where systemd would put them in the unit's cgroup, relays their output into
-the unit's journal with UTC times, restarts it as Restart says and stops it on SIGTERM. When the main process
-exits on its own, what is left of its group is ended as a stop ends it (KillSignal, then SIGKILL after
-TimeoutStopSec) before ExecStopPost and any restart, as systemd ends what is left of the unit's cgroup: an engine
-core that outlived its server would otherwise hold the GPU, and the restart's gpu-guard refuse to start beside it. The
-unit is deactivating meanwhile, as systemd's is, and a start waits for that to be over. On Linux the runner is the
-subreaper of the unit's processes, and reaps those whose parent exited before them, as systemd's manager does: left to
-init, which in a container may reap none, each would stay a member of its group as a zombie, and every restart and stop
-would wait out TimeoutStopSec and more. `start` returns
-once a unit's ExecStartPost commands have succeeded, as systemd's does, and fails as systemd's does when it cannot;
-`stop` returns only once every process it stops has exited: the unit's own (ExecStop, then KillSignal, then SIGKILL
-after TimeoutStopSec, the signals and ExecStopPost also when ExecStop fails or cannot run, the unit then ending
-failed), those of the units bound to it or part of it, and a target's units with the target. The state is in
-$XDG_STATE_HOME/flatshare-svc (default ~/.local/state/flatshare-svc): UNIT.json and the journals, log/UNIT.log.
-
-Standard library only, for a bare host, and the host's own python3, 3.10 (Ubuntu 22.04's) or newer: the shims run
-it before any venv exists. Linux applies CPUAffinity; elsewhere (the tests' hosts) it is recorded only.
+Standard library only, for a bare host, and the host's own python3, 3.10 (Ubuntu 22.04's) or newer: the shims run it
+before any venv exists.
 """
 
 from __future__ import annotations

@@ -300,6 +300,8 @@ impl Drop for Permit {
     }
 }
 
+/// The tests: each bound refusing at once and a permit freeing its place; one budget for every body, events' among
+/// them; a predecessor's requests counted, by tenant too, until it is gone; a closed intake admitting nothing.
 #[cfg(test)]
 mod tests {
     use super::*;

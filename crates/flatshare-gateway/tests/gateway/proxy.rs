@@ -1,4 +1,12 @@
 //! Requests: authentication, sanitization, session and class resolution, bodies, passthrough, other routes.
+//!
+//! Its tests: header and body sanitization; each upstream priority signal; session order, hashing and minting; classes
+//! and clamping; per-tenant cache salts; 401, 400, 413, 404 and 405.
+//!
+//! Bounds: the realtime class's `max_reply_tokens`, which caps every realtime reply in both of Chat Completions' fields
+//! and no other class's without a policy, a body with only `max_output_tokens` among them; a class's `max_reply_tokens`
+//! in Completions' and Responses' own fields; `n`, `best_of`, a field given twice and a limit that is not a count
+//! refused with 400 before anything goes upstream.
 
 use std::time::Duration;
 

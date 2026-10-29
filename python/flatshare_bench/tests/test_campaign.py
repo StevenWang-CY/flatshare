@@ -1,6 +1,9 @@
 """benchmarks/e2/campaign.sh against stand-ins for the hosts: ssh runs each command in a directory per
 host (fakes/campaign/ssh), rsync copies between them, and cyan's flatshare-bench and the GPU node's
-variant.sh log what they are asked to do."""
+variant.sh log what they are asked to do.
+
+This module runs `benchmarks/e2/campaign.sh` against stand-ins for the hosts (an ssh that runs each command in a
+directory per host, rsync, cyan's `flatshare-bench` and the GPU node's `variant.sh`): what each point is measured with."""
 
 from __future__ import annotations
 

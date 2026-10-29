@@ -1,6 +1,19 @@
 //! Failure-inclusive accounting: every inference request offered once, admitted once if it went upstream and ended
 //! once; the service level's valid and good requests, which failures, timeouts and hangs lower; and the engine's state,
 //! which the inference canary and the requests' successes drive and `GET /ready` answers by.
+//!
+//! Its tests: an answer at once, a 500, a completion whose first content came after the 250 ms objective, a hang ended
+//! at its deadline (504, the engine's request dropped) and a client that left past the objective each counted valid,
+//! one good among them, while a 400 from the engine, a body refused as invalid and a client that left before the
+//! objective are not valid, each with its outcome, and every request offered once; a class without an objective good
+//! when it completes; an unauthorized request and an unknown class offered and ended with what is known of them, a
+//! request admitted through a policy and one past it, one refused at the intake, offered less ended at zero once all
+//! ended, and a refusal for capacity valid; a canary against an engine that fails it keeping the engine warming
+//! (`/ready` 503 `engine warming`), its first success serving it, two failures in a row degrading it (503 `engine
+//! degraded`), the engine serving again on its recovery, the canary one token at the lowest priority and never counted
+//! as a request, and the drain; and an engine whose canary fails while clients' requests succeed, which no canary is
+//! sent to while they succeed more often than its interval, degraded once idle, and serving again on a client's
+//! success.
 
 use std::time::Duration;
 

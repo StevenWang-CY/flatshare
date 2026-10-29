@@ -152,6 +152,10 @@ fn earliest<const N: usize>(deadlines: [(Instant, Timeout); N]) -> (Instant, Tim
         .expect("at least one deadline")
 }
 
+/// The tests: each wait bounded by the earliest that applies, a retry's headers by the first content, a late wait at
+/// the admission point by the request's own deadlines, a total shorter than a phase cutting it; every class's defaults
+/// and keys, the top-level `headers_timeout_s` as their headers default, and its old name, `first_byte_timeout_s`,
+/// refused with the new one.
 #[cfg(test)]
 mod tests {
     use super::*;

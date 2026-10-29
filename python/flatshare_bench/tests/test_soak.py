@@ -2,7 +2,15 @@
 the summary's numbers on a synthetic record and the compact record that gives them back, the guard's checks and its
 pauses, and whole soaks against a fake cyan (a gateway on a Unix socket, a recording user manager, stand-ins for AIPerf
 and the callers that run as real processes): their tools, scrapes and record, SIGINT, the guard's pause, a tool that
-fails, the lock and the checks that refuse a start."""
+fails, the lock and the checks that refuse a start.
+
+This module holds the soak's scraper to the gateway's committed expositions (`metrics.txt`, `metrics-nodes.txt`) and
+vLLM 0.32's metric names, its summary's numbers to a synthetic two-hour record (a gateway that restarts, an engine's
+scrape that fails, calls refused and dropped, turns after the window), the compact record to the same summary with no
+home path in it, the guard's checks and pauses, and AIPerf's environment to E2's, and runs whole soaks against a fake
+cyan (a gateway on a Unix socket, a recording user manager, stand-ins for AIPerf and the callers): its tools, scrapes
+and record, each hour's summary, SIGINT, the guard's pause and resume, a tool that fails and starts again, the lock, and
+each check that refuses a start."""
 
 from __future__ import annotations
 

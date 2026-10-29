@@ -1,6 +1,11 @@
 //! An upstream on a Unix socket, as the engine serves on its GPU node and the tunnel on the control host: requests and
 //! streams, pooled connections and their idle timeout, cancellation, a socket nobody serves, and an engine that
 //! restarts behind it.
+//!
+//! Its tests: an engine on a Unix socket (requests and streams, one pooled connection until the idle timeout,
+//! cancellation, a socket nobody serves); an engine that restarts (one 502, then 503 with `Retry-After` without going
+//! upstream until its `/health` answers, then requests again); a connection that breaks on an engine that serves (no
+//! request waits).
 
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};

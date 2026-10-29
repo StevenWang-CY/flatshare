@@ -283,6 +283,11 @@ async fn probe(engine: &Engine, timeout: Duration) -> Result<(), String> {
         .map_err(|_| format!("the canary got no answer within {timeout:?}"))?
 }
 
+/// The tests: warming, serving, degraded and drained by the successes and the canary's failures, a failure while
+/// warming keeping it warming, a drained engine staying drained, and none of it without a canary; the canary due at
+/// once while warming, a second after each, and an interval after the later of the last success and the last canary
+/// while serving; the canary on unless switched off, its other keys allowed while it is off and a zero or unknown one
+/// refused; realtime's objective of 250 ms, and another class's when set.
 #[cfg(test)]
 mod tests {
     use super::*;

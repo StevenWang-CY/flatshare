@@ -1,5 +1,7 @@
 //! `/metrics` and `/metrics/engine`: the metrics key on the TCP listener, none on the private socket, and the
 //! engine's exposition relayed.
+//!
+//! Its tests also hold the exposition: each policy's series, and none without one.
 
 use http::StatusCode;
 

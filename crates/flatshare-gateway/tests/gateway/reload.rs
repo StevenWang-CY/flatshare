@@ -1,6 +1,17 @@
 //! The binary as its systemd unit runs it: on the listening sockets of `flatshare-gateway.socket` (`LISTEN_FDS`, from
 //! fd 3 on), telling the manager when it is ready (`NOTIFY_SOCKET`), and reloading on SIGHUP, which hands the sockets
 //! to a successor.
+//!
+//! Its tests: the binary as systemd runs it, on its `LISTEN_FDS` sockets with `READY=1` to a `NOTIFY_SOCKET`, and its
+//! reload (a successor takes over with `MAINPID=` while a voice turn finishes whole, an agent turn is cut at its grace
+//! and a request every 20 ms on each socket succeeds; a successor that cannot start changes nothing; a gateway that
+//! bound its own sockets leaves their files to its successor), and the bounds over both processes of a reload: under a
+//! static cap of two background requests, the predecessor's waiting request refused with 503 `draining` as it hands
+//! over, the successor's requests waiting while the predecessor's two run and going up one for one as they end, never
+//! more than two at the engine; and `max_in_flight` of two, the successor refusing while the predecessor holds both and
+//! taking one as one ends; and with `[[nodes]]`, a successor that keeps every session's node and every call slot,
+//! sessions placed so that placing them anew would put them elsewhere, and ends a placement it took over by `DELETE
+//! /v1/sessions/{id}`, its slot free at once.
 
 use std::net::{SocketAddr, TcpListener};
 use std::os::fd::OwnedFd;

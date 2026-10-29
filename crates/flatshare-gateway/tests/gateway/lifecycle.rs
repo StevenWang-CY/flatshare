@@ -1,6 +1,15 @@
 //! The lifecycle policy: lifecycle events through `/v1/events`, then requests. The pool is 1,000 tokens and a turn's
 //! headroom 200, so one armed session leaves background requests 800; a background request of about 600 tokens
 //! fits alone, and two do not.
+//!
+//! Its tests: a background request deferred while a session is armed and sent when its reply's first audio is posted,
+//! with the realtime request going past it; the critical window's prefill budget, and a lost `playback_started` that
+//! `playback_ended` makes up for; aging, oversize and not; a degraded reply's `max_tokens` lowered in the body the
+//! engine receives, and to the lower of degrade's cap and the realtime class's `max_reply_tokens` with both; a cough's
+//! arming that times out, counted as a false alarm with its token-seconds; a realtime request without events that is
+//! its own critical window; a new session in a full table taking the place of one idle session; realtime requests that
+//! go while the background queue is full. Breaking the headroom, the throttle, degrade, the oversize count or aging in
+//! `flatshare-core` fails at least one of them.
 
 use std::io;
 use std::net::SocketAddr;

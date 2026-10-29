@@ -113,11 +113,14 @@ def test_the_request_path_is_the_gateways_order_and_its_refusals_its_error_table
 
 def test_the_release_is_the_release_tools_states_and_exits() -> None:
     tool = (DEPLOY / "bin" / "flatshare-release").read_text()
+    # The exits as the tool's reference states them: its docstring links the runbook's Deploy, whose table gives them.
+    assert "ops/RUNBOOK.md#deploy" in tool
     assert (
-        "Exit status: 0 on success; 1 when a check fails or a switch was switched back; 2 when it is used wrongly or "
-        "the host\nis not ready (another operation holds the lock, an upload that differs from its hash, an old layout "
-        "without --adopt);\n3 when switching back failed too."
-    ) in tool
+        "| 0 | Success |\n"
+        "| 1 | A check or a command failed, or a switch failed and was switched back |\n"
+        "| 2 | Used wrongly, or the host or the upload was not ready: nothing switched |\n"
+        "| 3 | Switching back failed too |\n"
+    ) in RUNBOOK.read_text()
     # The verification's failure is a check's (exit 1), the drain's a host not ready (exit 2), and both switch nothing.
     assert "fails its checks ({', '.join(checks.failed)}): nothing switched\"" in tool
     assert 'raise NotReady(\n                f"the voice worker still has {calls} call(s)' in tool

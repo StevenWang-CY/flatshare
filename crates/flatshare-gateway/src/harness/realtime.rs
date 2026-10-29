@@ -306,6 +306,7 @@ impl Realtime {
     }
 }
 
+/// The tests: the realtime sessions' states, timeouts and false alarms, and their place in the session table.
 #[cfg(test)]
 mod tests {
     use flatshare_proto::SessionId;

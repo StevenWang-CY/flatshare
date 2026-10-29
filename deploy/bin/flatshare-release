@@ -11,42 +11,10 @@
     flatshare-release adopt --host NAME
     flatshare-release tree-hash DIR
 
-deploy/deploy.sh runs `deploy` on the host with the commit's tree uploaded to UPLOAD (git archive, DEPLOYED, and on the
-control host the gateway's binary). The layout under ~/flatshare (--root):
-
-    releases/ID/        one release: the commit's tree, read-only, with MANIFEST.json, and venvs/NAME, links to its
-                        environments
-    envs/NAME-KEY/      a Python environment, shared by every release whose inputs give the same KEY (the SHA-256 of
-                        its lock file and what else decides it): a release links an environment, never rebuilds one
-    current             a link to the release the host runs, replaced in one rename
-    previous            a link to the release current replaced, which rollback switches back to
-    src -> current      the path the units and scripts name (%h/flatshare/src/...)
-    venvs/NAME          a link to current/venvs/NAME, for the units' %h/flatshare/venvs/NAME/...
-    bin/flatshare-gateway  on the control host, a link to current/bin/flatshare-gateway; bin/ keeps the host's tools
-
-`deploy` prepares the release, verifies it and switches to it. Preparing checks the upload against the tree's hash that
-deploy.sh computed, builds each environment the release's lock files ask for that no release has built yet, makes each
-release Python package's editable install read the release a process tree started under (FLATSHARE_RELEASE, below),
-compiles the packages, writes the manifest and renames the upload into releases/ID. Verifying, before any switch: every
-file against the manifest, each environment's imports, the binaries' versions, the serving profile's patches and the
-scheduler module they build on the installed vLLM, the variant drop-ins the host links, and the models the GPU units
-read offline. Switching: drain what the switch would cut (the voice worker's calls in serve mode, the engine's
-requests), point previous at the release current names, replace current, link the units (the host's install.sh),
-restart or reload each active unit whose inputs changed (the release files it reads, its environments and binaries,
-compared by hash with the release it ran under), and check health: each restarted unit active without restarting,
-the engine's configuration against the serving profile, the gateway, the voice worker's admission, the listener audit.
-Any failure switches back to the release before and restarts the same units on it. `rollback` switches to previous by
-the same steps. A successful switch keeps the newest --keep releases (3), current, previous and any release a running
-process was started under, and removes the rest and the environments none of them links.
-
-A release's packages are installed editable into the shared environments, with a .pth line that appends the package's
-source directory under the release named by FLATSHARE_RELEASE, which the first interpreter of a process tree sets from
-current's target if it is unset, so that a tree (the voice worker and its job processes, an E2 point) imports one
-release's code whatever a switch does meanwhile, and children inherit it.
-
-Exit status: 0 on success; 1 when a check fails or a switch was switched back; 2 when it is used wrongly or the host
-is not ready (another operation holds the lock, an upload that differs from its hash, an old layout without --adopt);
-3 when switching back failed too.
+deploy/deploy.sh runs `deploy` on the host with the commit's tree uploaded to UPLOAD. It prepares the release under
+~/flatshare (--root), verifies it, drains what a switch would cut, switches to it in one rename, restarts or reloads
+the units whose inputs changed and checks them, and switches back on any failure. The reference, with the layout, the
+manifest, the steps and the exit statuses, is ops/RUNBOOK.md#deploy.
 
 Standard library only, for the host's python3 (3.10 or newer).
 """

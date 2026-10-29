@@ -1,4 +1,14 @@
-"""E2's results: a point's summary from its run directory, and the frontier across points."""
+"""E2's results: a point's summary from its run directory, and the frontier across points.
+
+This module covers the summary over the window, the exact first bytes from a request log, the Pareto marking within each
+arm and workload, each workload's section, voice SLO and figure (its families, the arms' names and what it leaves off
+its scale), repeated points placed at their medians with every run kept, the stage waterfall's means and V2V marks, the
+report's columns that only some points have, compact records that give the report of their run directories byte for
+byte, the committed records (complete, without credentials, exported again to themselves, and giving the report
+committed beside them, every file byte for byte; and every complete point's `engine.json`, in whichever record set,
+reduced again to itself), the names of the lines the voice worker writes, and the series the record and the report read
+from the gateway: each in its checked-in exposition (`crates/flatshare-gateway/metrics.txt`), and each count the sum of
+the series it is made of."""
 
 from __future__ import annotations
 

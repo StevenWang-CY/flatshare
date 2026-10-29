@@ -1,5 +1,8 @@
 //! Listening sockets the gateway inherits, as systemd's socket activation passes them (`LISTEN_FDS`), so that they
 //! outlive any one gateway process. `reload.rs` runs the binary on them.
+//!
+//! Its tests: a connection made before the gateway exists is served, an inherited socket's file stays, a listener
+//! without one is bound, and an unnamed one is refused before anything binds.
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};

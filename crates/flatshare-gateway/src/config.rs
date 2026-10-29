@@ -1203,6 +1203,9 @@ pub(crate) fn seconds(key: &str, value: f64) -> Result<Duration, String> {
         .ok_or_else(|| format!("{key} must be a positive number of seconds"))
 }
 
+/// The tests: each admission policy's own keys and defaults; the lifecycle policy's switches, the mechanisms each of
+/// its keys needs on, and its old name refused; the realtime class's cap from before the classes' tables refused; every
+/// arm file's `[gateway]` table over the deploy example; and the checks of the cache salts' secret file.
 #[cfg(test)]
 mod tests {
     use std::sync::LazyLock;

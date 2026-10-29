@@ -150,6 +150,31 @@ def test_every_alert_opens_its_row_in_the_runbook() -> None:
     assert set(rows) == {rule["alert"].lower() for rule in alerts}
 
 
+def test_the_runbooks_alert_table_gives_each_rules_severity_and_duration() -> None:
+    # The table that opens Failures: a row per alert, with its rule's severity and `for` as the rules give them, and a
+    # link to the alert's own row.
+    runbook = (OPS / "RUNBOOK.md").read_text()
+    table = runbook.split("\n### The alerts\n\n", 1)[1].split("\n\n", 1)[0].splitlines()
+    assert table[:2] == ["| Alert | Severity | First check | Row |", "|---|---|---|---|"]
+    rows = {}
+    for line in table[2:]:
+        alert, severity, _, row = (cell.strip() for cell in line.strip().strip("|").split(" | "))
+        rows[alert.strip("`")] = (severity, row)
+    alerts = [rule for rule in rules() if "alert" in rule]
+    assert sorted(rows) == sorted(rule["alert"] for rule in alerts)
+    for rule in alerts:
+        severity, row = rows[rule["alert"]]
+        want = rule["labels"]["severity"].capitalize()
+        if "for" in rule:
+            minutes = re.fullmatch(r"(\d+)m", rule["for"])
+            assert minutes, (
+                f"{rule['alert']}: the table gives a rule's `for` in minutes, not {rule['for']}"
+            )
+            want += f" after {minutes[1]} min"
+        assert severity == want, rule["alert"]
+        assert row.endswith(f"](#{rule['alert'].lower()})"), rule["alert"]
+
+
 def test_the_rule_tests_feed_exported_series_and_test_the_objectives_alerts() -> None:
     tests = yaml.safe_load((OPS / "prometheus" / "rules.test.yml").read_text())
     assert tests["rule_files"] == ["rules.yml"]

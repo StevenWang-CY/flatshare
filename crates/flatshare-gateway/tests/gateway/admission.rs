@@ -1,4 +1,14 @@
 //! The admission point: caps, queues, timeouts, token reservations and flow control.
+//!
+//! Its tests: a static cap that holds while realtime passes, its first-in, first-out queue, 429 at the queue limit, 503
+//! at the queue timeout, and a waiting client that leaves and gives its place up; token reservation priced from a
+//! session's last usage, the usage of one tenant's session pricing no other tenant's of the same id, and the trusted
+//! tenants' usage kept through an untrusted tenant's flood of 4,096 sessions; flow control's strict band order with
+//! arrival order within a band, and the shedding of the newest background request for a blocked realtime one, before
+//! its response (429, the engine's request dropped) and in the middle of a stream (an error); preempt-resubmit, where a
+//! background request preempted before its first byte, waiting for its response headers or in prefill behind them, is
+//! dropped at the engine and sent again after the realtime request's first byte, background arriving meanwhile waits
+//! too, the client gets one whole response, and a response already streaming is never preempted.
 
 use std::time::{Duration, Instant};
 
