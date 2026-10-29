@@ -2,8 +2,9 @@
 serving.json, which hold every setting the engine must run with and its required revisions, the measured configuration
 of the sweep's PR point at the step cap it chose (W5's but for the step cap), every setting of which a point's record
 keeps but those UNRECORDED names; the drop-in runs exactly what serving.json names, its step cap over the frozen box's
-engine.yaml; and deploy/bin/serving-check passes an engine that runs it and fails one that differs in any setting, the
-negative control, as well as a file the engine did not write."""
+engine.yaml; README.md's quick start serves its engine settings on stock vLLM and with make-room, and quotes the probe
+logs it links; and deploy/bin/serving-check passes an engine that runs it and fails one that differs in any setting,
+the negative control, as well as a file the engine did not write."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -21,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from flatshare_bench import quick_start
 from flatshare_bench.e2.record import engine_settings
 
 REPO = Path(__file__).resolve().parents[3]
@@ -40,6 +43,20 @@ STEP_CAP = ("max_num_batched_tokens", "long_prefill_token_threshold")
 """The step cap's two settings, the [serving] table's own."""
 STEP_CAP_FLAGS = ("--max-num-batched-tokens", "--long-prefill-token-threshold")
 """The flags the variant passes them as."""
+README = REPO / "README.md"
+BUILD = "python/flatshare_vllm/src/flatshare_vllm/build.py"
+PROBE = "python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py"
+"""The scripts README.md's quick start runs, from the repository's root."""
+DASH = quick_start.DASH
+"""The en dash between a range's ends, as the quick start's result prints it."""
+VENV = "~/vllm-0.32"
+"""The environment README.md's quick start makes and activates, which `pip install` then fills."""
+PROBE_LINE = f". {VENV}/bin/activate && python {PROBE} http://127.0.0.1:8000 kv"
+"""The quick start's probe, in the KV case at vLLM's default address, from a shell that activates the environment."""
+ENGINE_REQUIREMENTS = BOX / "requirements" / "engine.txt"
+"""The deployment's engine environment, every package pinned, its CUDA compiler among them."""
+PIN = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9,._-]+\])?==([^\s;#]+)")
+"""A pinned requirement, ``name==version`` or ``name[extras]==version``."""
 
 spec = importlib.util.spec_from_file_location("flatshare_profile_serving", DEPLOY / "profile.py")
 profile = importlib.util.module_from_spec(spec)
@@ -49,6 +66,14 @@ serving_check = importlib.util.module_from_spec(
     importlib.util.spec_from_loader(loader.name, loader)
 )
 loader.exec_module(serving_check)
+release_loader = importlib.machinery.SourceFileLoader(
+    "flatshare_release_serving", str(DEPLOY / "bin" / "flatshare-release")
+)
+release = importlib.util.module_from_spec(
+    importlib.util.spec_from_loader(release_loader.name, release_loader)
+)
+sys.modules[release_loader.name] = release  # its dataclasses look their module up
+release_loader.exec_module(release)
 
 
 def sha256(path: Path) -> str:
@@ -120,6 +145,346 @@ def test_the_serving_profile_renders_the_boxs_serving_files(tmp_path: Path) -> N
         text=True,
     )
     assert done.returncode == 2 and "no serving profile" in done.stderr
+
+
+def quick_start_commands(readme: str) -> list[list[str]]:
+    """The commands of README.md's Quick start, in order: each ``sh`` block's lines joined across their continuations
+    and split as the shell splits them, without their comments."""
+    section = readme.split("\n## Quick start\n", 1)[1].split("\n## ", 1)[0]
+    blocks = re.findall(r"^```sh\n(.*?)^```$", section, re.M | re.S)
+    return [
+        words
+        for block in blocks
+        for line in block.replace("\\\n", " ").splitlines()
+        if (words := shlex.split(line, comments=True))
+    ]
+
+
+def quick_start_engines(readme: str) -> list[tuple[dict[str, str], dict[str, str]]]:
+    """Each ``vllm serve`` of README.md's Quick start, in order: the environment it sets, and its model and flags."""
+    engines = []
+    for words in quick_start_commands(readme):
+        env = {}
+        while words and "=" in words[0] and not words[0].startswith("-"):
+            key, _, value = words.pop(0).partition("=")
+            env[key] = value
+        if words[:2] == ["vllm", "serve"]:
+            flags = words[3:]
+            engines.append(
+                (env, {"model": words[2], **dict(zip(flags[::2], flags[1::2], strict=True))})
+            )
+    return engines
+
+
+def quick_start_flags(engine: dict) -> dict[str, str]:
+    """The arguments of a ``vllm serve`` at the serving profile's engine settings, as the quick start passes them: the
+    model and its context, priority scheduling, the request slots and the step cap. It leaves the rest to engine.yaml,
+    which its text points to: the fixed KV pool, the CPU tier and the model's revision."""
+    return {
+        "model": engine["model"]["model"],
+        "--max-model-len": str(engine["model"]["max_model_len"]),
+        "--max-num-seqs": str(engine["scheduler"]["max_num_seqs"]),
+        "--scheduling-policy": engine["scheduler"]["policy"],
+        "--max-num-batched-tokens": str(engine["scheduler"]["max_num_batched_tokens"]),
+        "--long-prefill-token-threshold": str(engine["scheduler"]["long_prefill_token_threshold"]),
+    }
+
+
+def pins(requirements: list[str]) -> dict[str, str]:
+    """The versions of pinned requirements by their normalized names, their extras and comments aside."""
+    found = {}
+    for requirement in requirements:
+        if pinned := PIN.fullmatch(requirement.split("#", 1)[0].strip()):
+            found[re.sub(r"[-_.]+", "-", pinned.group(1)).lower()] = pinned.group(2)
+    return found
+
+
+def check_quick_start(readme: str) -> None:
+    """Asserts that the quick start of ``readme`` probes stock vLLM, then make-room, each at the serving profile's
+    engine settings. It installs in an environment of the deployment's Python and pins every package it names at the
+    deployment's version, vLLM at the release build.py takes and CUDA 13.0's compiler among them. It points CUDA_HOME
+    at the CUDA 13 toolkit that environment carries, as Gray's engine unit does, and links the toolkit's CUDA runtime
+    where FlashInfer's JIT looks for it. Both engines take the same model, context, request slots and step cap, and
+    make-room the module build.py writes, with the profile's switches. Each is probed from the environment."""
+    serve = profile.load("rtx-5060-ti-serve")
+    values, _, _ = profile.resolve(serve, None)
+    engine = profile.serving_config(serve, values)["engine"]
+    commands = quick_start_commands(readme)
+    venv, install, cuda, flashinfer = commands[:4]
+    assert venv == shlex.split(
+        f"uv venv --python {release.PYTHON} --seed {VENV} && . {VENV}/bin/activate"
+    )
+    # The install: every argument a pin at the deployment's version (engine.txt), vLLM's the profile's release, and
+    # cuda-toolkit's nvcc extra the deployment's CUDA compiler, which a plain install leaves at a later CUDA than
+    # torch's runtime headers.
+    assert install[:2] == ["pip", "install"]
+    wanted = pins(install[2:])
+    assert len(wanted) == len(install) - 2, f"an argument that is no pin: {install}"
+    deployed = pins(ENGINE_REQUIREMENTS.read_text().splitlines())
+    assert {name: deployed.get(name) for name in wanted} == wanted
+    assert wanted.get("vllm") == engine["vllm_version"]
+    assert f"cuda-toolkit[nvcc]=={deployed['cuda-toolkit']}" in install
+    # The toolkit: the deployment's, with its CUDA runtime linked as the libcudart.so that FlashInfer's JIT links,
+    # where its extra link flags look, as the deployment links its own (profile.py's units.cuda_ldflags).
+    toolkit = profile.VENV_CUDA.removeprefix("%h/flatshare/venvs/engine/")
+    assert cuda == ["export", f"CUDA_HOME=$VIRTUAL_ENV/{toolkit}"]
+    major = re.fullmatch(r".*/cu(\d+)", toolkit)[1]
+    assert flashinfer == shlex.split(
+        "export FLASHINFER_EXTRA_LDFLAGS=-L$CUDA_HOME/lib"
+        f" && ln -sf libcudart.so.{major} $CUDA_HOME/lib/libcudart.so"
+    )
+    (stock_env, stock), (env, make_room) = quick_start_engines(readme)
+    assert (stock_env, stock) == ({}, quick_start_flags(engine))
+    # make-room loads the module that build.py writes into the directory on its PYTHONPATH.
+    assert [words for words in commands if BUILD in words] == [
+        ["python", BUILD, "make-room", env.pop("PYTHONPATH")]
+    ]
+    assert env == {}
+    assert make_room == {
+        **quick_start_flags(engine),
+        "--scheduler-cls": f"{engine['scheduler_module']['name']}.AsyncScheduler",
+        **{
+            f"--additional-config.make_room.{key}": str(value).lower()
+            for key, value in engine["make_room"].items()
+        },
+    }
+    # Each engine is probed, by the command after its start, from the environment.
+    starts = [i for i, words in enumerate(commands) if "serve" in words[:3]]
+    probe = shlex.split(PROBE_LINE)
+    assert [commands[i + 1] for i in starts] == [probe, probe]
+
+
+def test_the_readmes_quick_start_serves_the_profiles_engine_settings_on_both_engines() -> None:
+    # A flag that drifts from the profile, in either command or in the profile, fails here.
+    check_quick_start(README.read_text())
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("budget_cap_tokens 48", "budget_cap_tokens 16"),
+        (
+            "--max-num-batched-tokens 256 --long-prefill-token-threshold 0\n.",
+            "--max-num-batched-tokens 512 --long-prefill-token-threshold 0\n.",
+        ),
+        ("vllm==0.32.0", "vllm==0.33.0"),
+        ("--python 3.12", "--python 3.10"),
+        ("nvidia/cu13 ", "nvidia/cu12 "),
+        ("-L$CUDA_HOME/lib ", "-L$CUDA_HOME/lib64 "),
+        ("ln -sf libcudart.so.13 ", "ln -sf libcudart.so.12 "),
+        ("export FLASHINFER_EXTRA_LDFLAGS=", "# export FLASHINFER_EXTRA_LDFLAGS="),
+        ("PYTHONPATH=~/make-room", "PYTHONPATH=~/elsewhere"),
+        (f"\n{PROBE_LINE}\n```\n\nStop", "\n```\n\nStop"),
+        (f"\n{PROBE_LINE}\n```\n\nStop", f"\npython {PROBE} http://127.0.0.1:8000 kv\n```\n\nStop"),
+    ],
+    ids=[
+        "another window",
+        "another stock step cap",
+        "another release",
+        "another python",
+        "another toolkit",
+        "FlashInfer's link flags elsewhere",
+        "another CUDA runtime",
+        "no FlashInfer link",
+        "another module directory",
+        "no stock probe",
+        "a probe outside the environment",
+    ],
+)
+def test_a_quick_start_that_drifts_from_the_profile_fails_the_check(old: str, new: str) -> None:
+    # The negative control: each edit of the README's quick start, the stock probe's removal among them, fails.
+    readme = README.read_text()
+    assert readme.count(old) == 1, old
+    with pytest.raises(AssertionError):
+        check_quick_start(readme.replace(old, new))
+
+
+def with_install(readme: str, edit) -> str:
+    """``readme`` with its quick start's `pip install` line replaced by ``edit`` of its words, or removed where
+    ``edit`` gives none."""
+    [line] = re.findall(r"^pip install .*$", readme, re.M)
+    words = edit(shlex.split(line, comments=True))
+    return readme.replace(f"{line}\n", f"{shlex.join(words)}\n" if words else "")
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda words: None,
+        lambda words: [
+            re.sub(r"==.*", "", word) if word.startswith("vllm") else word for word in words
+        ],
+        lambda words: [word for word in words if not word.startswith("cuda-toolkit")],
+        lambda words: [word.replace("[nvcc]", "") for word in words],
+        lambda words: [
+            *(word for word in words if not word.startswith("cuda-toolkit")),
+            "cuda-toolkit[nvcc]==13.4.0",
+        ],
+        lambda words: [*words, "flatshare-unknown==1.0"],
+    ],
+    ids=[
+        "no install",
+        "an unpinned release",
+        "no compiler pin",
+        "the toolkit without its compiler",
+        "a compiler the deployment does not pin",
+        "an unknown package",
+    ],
+)
+def test_an_install_that_drifts_from_the_deployment_fails_the_check(edit) -> None:
+    # The negative control of the install line: each of these edits of it fails.
+    readme = README.read_text()
+    edited = with_install(readme, edit)
+    assert edited != readme
+    with pytest.raises(AssertionError):
+        check_quick_start(edited)
+
+
+def check_quick_start_result(readme: str) -> None:
+    """Asserts that the result the quick start of ``readme`` quotes, the block between its markers, is what
+    quick_start.block writes from the two probe logs the block links, beside the record's README it links too, each
+    a file of a committed record."""
+    text = quick_start.current(readme)
+    found = re.findall(r"\[(stock|make-room|the record)\]\(([^)\s]+)\)", " ".join(text.split()))
+    links = dict(found)
+    assert sorted(links) == ["make-room", "stock", "the record"], text
+    for link in links.values():
+        assert link.startswith("benchmarks/results/") and (README.parent / link).is_file(), link
+    logs = [README.parent / links[name] for name in ("stock", "make-room")]
+    assert text == quick_start.block(*logs)
+
+
+def test_the_readmes_quick_start_quotes_the_probe_logs_it_links() -> None:
+    # A number edited by hand, a link that is missing, or new logs not yet filled in fail here; the fill is
+    # `python -m flatshare_bench.quick_start STOCK_LOG MAKE_ROOM_LOG --write README.md`.
+    check_quick_start_result(README.read_text())
+
+
+def with_result(readme: str, edit) -> str:
+    """``readme`` with its quick start's result, the block between its markers, replaced by ``edit`` of it."""
+    text = quick_start.current(readme)
+    return readme.replace(text, edit(text))
+
+
+def swapped(text: str) -> str:
+    """A result with the links of its two logs swapped."""
+    links = dict(re.findall(r"\[(stock|make-room)\]\(([^)\s]+)\)", text))
+    return (
+        text.replace(links["stock"], "STOCK")
+        .replace(links["make-room"], links["stock"])
+        .replace("STOCK", links["make-room"])
+    )
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda text: re.sub(
+            r"(it was\s+)(\d)", lambda m: m[1] + str(int(m[2]) % 9 + 1), text, count=1
+        ),
+        lambda text: re.sub(r"in\s+\w+\s+runs?\s+each", "in eleven runs each", text),
+        lambda text: re.sub(r"(\[make-room\]\([^)\s]+)\)", r"\1.missing)", text),
+        lambda text: re.sub(r"(\[the record\]\([^)\s]+)\)", r"\1.missing)", text),
+        swapped,
+        lambda text: re.sub(r"with\s+the\s+card's\s+own\s+KV\s+pool,\s+", "", text),
+    ],
+    ids=[
+        "a wrong number",
+        "a wrong count",
+        "a missing log",
+        "a missing record",
+        "the logs swapped",
+        "no pool",
+    ],
+)
+def test_a_quick_start_result_that_is_not_its_logs_fails_the_check(edit) -> None:
+    # The negative control: a number, a count, a link or the pool that the logs and their record do not give fails.
+    readme = README.read_text()
+    edited = with_result(readme, edit)
+    assert edited != readme
+    with pytest.raises(AssertionError):
+        check_quick_start_result(edited)
+
+
+RUN = (
+    "kv: priority-0 TTFT {} ms, 16 tokens 600 ms, for 746 prompt tokens, sent with 2 priority-2 requests of 17999 "
+    "tokens running and 22 of 2274 blocks free; after it, 2 running and 1 waiting\n"
+)
+"""A run's line in a probe log of the KV case, as probe.py prints it, with its first-token time to fill in."""
+
+
+def test_the_quick_start_fill_reads_each_run_and_refuses_what_it_cannot_quote(
+    tmp_path: Path,
+) -> None:
+    record = tmp_path / "record"
+    record.mkdir()
+    (record / "README.md").write_text("# The record\n")
+    stock, make_room = record / "stock-kv.log", record / "make-room-kv.log"
+    stock.write_text(RUN.format(4900) * 2)
+    make_room.write_text(RUN.format(216) + "\n" + RUN.format(1294))
+    assert quick_start.ttfts(make_room) == [216, 1294]
+    text = " ".join(quick_start.block(stock, make_room, tmp_path / "README.md").split())
+    # One value where every run agrees, separators from a thousand on, the count in words, the pool, and the links
+    # from the README.
+    assert (
+        "On the box, with the card's own KV pool, it was 4,900 ms on stock vLLM and "
+        f"216{DASH}1,294 ms with make-room, in two runs each" in text
+    )
+    assert text.endswith(
+        "([stock](record/stock-kv.log), [make-room](record/make-room-kv.log), [the record](record/README.md))."
+    )
+    assert [quick_start.runs(n) for n in (1, 4, 9, 10)] == [
+        "one run",
+        "four runs",
+        "nine runs",
+        "10 runs",
+    ]
+    # Logs in two directories, or without their record's README, are refused.
+    elsewhere = tmp_path / "elsewhere-kv.log"
+    elsewhere.write_text(RUN.format(216) * 2)
+    with pytest.raises(ValueError, match="one directory"):
+        quick_start.block(stock, elsewhere)
+    (record / "README.md").unlink()
+    with pytest.raises(ValueError, match="one directory"):
+        quick_start.block(stock, make_room)
+    # A line that is no run of the KV case, a log without a run, and logs of different counts are refused.
+    make_room.write_text(RUN.format(216) + "prefill: priority-0 TTFT 300 ms, 16 tokens 575 ms\n")
+    with pytest.raises(ValueError, match=r"make-room-kv\.log:2: not a run of the KV case"):
+        quick_start.ttfts(make_room)
+    make_room.write_text("\n")
+    with pytest.raises(ValueError, match="no run"):
+        quick_start.ttfts(make_room)
+    make_room.write_text(RUN.format(216))
+    with pytest.raises(ValueError, match="one count for both"):
+        quick_start.block(stock, make_room)
+
+
+def test_the_quick_start_fill_writes_the_block_and_nothing_else(tmp_path: Path, capsys) -> None:
+    record = tmp_path / "benchmarks" / "results" / "quick-start"
+    record.mkdir(parents=True)
+    (record / "README.md").write_text("# The record\n")
+    (record / "stock-kv.log").write_text(RUN.format(4875) + RUN.format(5012))
+    (record / "make-room-kv.log").write_text(RUN.format(231) + RUN.format(250))
+    readme = tmp_path / "README.md"
+    before = f"# A\n\nText.\n\n{quick_start.START}\nOld result.\n{quick_start.END}\n\nAfter.\n"
+    readme.write_text(before)
+    logs = [str(record / "stock-kv.log"), str(record / "make-room-kv.log")]
+    assert quick_start.main([*logs, "--write", str(readme)]) == 0
+    new = quick_start.block(*logs, readme)
+    assert readme.read_text() == before.replace("Old result.\n", new)
+    flat = " ".join(new.split())
+    assert f"4,875{DASH}5,012 ms on stock vLLM and 231{DASH}250 ms with make-room" in flat
+    assert "[stock](benchmarks/results/quick-start/stock-kv.log)" in flat
+    assert "[the record](benchmarks/results/quick-start/README.md)" in flat
+    # Without --write it prints the block, linked from the repository's README.
+    assert quick_start.main(logs) == 0
+    assert capsys.readouterr().out == quick_start.block(*logs)
+    # A README without the markers, or with two blocks, is refused and left as it was.
+    for text in ("No block.\n", before + before):
+        readme.write_text(text)
+        assert quick_start.main([*logs, "--write", str(readme)]) == 1
+        assert readme.read_text() == text
+    assert "one block" in capsys.readouterr().err
 
 
 def test_serving_json_holds_every_effective_setting_and_its_required_revisions() -> None:

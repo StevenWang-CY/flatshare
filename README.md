@@ -30,10 +30,12 @@ from running agent requests, and once it runs, agent prefill shares every step o
 
 Two scheduler changes, proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and
 [#63351](https://github.com/vllm-project/vllm/pull/63351) (open as of 2026-10-29), bring that p95 to 2.24 s against an
-SLO of 2.03 s, and the replies over the SLO from 90% to 32% (286 of 885), while the agents keep 97% of their token rate.
-At the 256-token step cap the deployment runs, 44 of 295 replies were over their round's SLO in five rounds on new
-samples of the agents, against 94 of 295 at 512 tokens and 261 of 295 on tuned vLLM. On an A100 at the same KV pool and
-512-token steps, the changes take the p95 from 4.99 s to 1.63 s, under that card's SLO in each of five rounds.
+SLO of 2.03 s. The replies over the SLO fall from 90% to 32% (286 of 885), and the agents keep 97% of their token rate.
+
+- **At the 256-token step cap the deployment runs**, 44 of 295 replies were over their round's SLO in five rounds on
+  new samples of the agents, against 94 of 295 at 512 tokens and 261 of 295 on tuned vLLM.
+- **On an A100** at the same KV pool and 512-token steps, the changes take the p95 from 4.99 s to 1.63 s, under that
+  card's SLO in each of five rounds.
 
 <picture>
   <source media="(max-width: 767px) and (prefers-color-scheme: dark)" srcset="docs/figures/e2-demo-narrow-dark.webp">
@@ -62,10 +64,10 @@ after 9.6 s, and the two changes after 1.9 s
 | + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 43% | 3,298 | 71 s | 105 s |
 | + #63351 with a 48-token window: **the PRs' configuration** | **2,236 ms** | +202 ms | 32% | 3,203 | 72 s | 111 s |
 
-Medians of five runs, or 10 for tuned vLLM and 15 for the last row. The SLO is voice alone's p95 plus 250 ms and allows
-5% of the replies over it. The agents' tokens/s count the calls' first 240 s and are nearly all prompt tokens. The PRs'
-rows ran Flatshare's make-room variant of the PRs before their revision of 2026-10-25; on the revised code, five rounds
-on the same samples gave the last row 2.27 s ([the revision](docs/BENCHMARKS.md#after-w5-the-first-tokens-in-flight)).
+Medians of five runs, or 10 for tuned vLLM and 15 for the last row
+([the runs](docs/BENCHMARKS.md#the-discriminating-scenario-after-w5s-fixes-w5)). The SLO is voice alone's p95 plus
+250 ms and allows 5% of the replies over it. The agents' tokens/s count the calls' first 240 s and are nearly all prompt
+tokens.
 
 - **At the 256-token step cap**, in the five rounds on new samples, the PRs' median p95 was 2,098 ms, against
   2,246 ms at 512 tokens and 12,010 ms on tuned vLLM
@@ -91,7 +93,7 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
 1. **vLLM 0.32 cannot preempt for a waiting request.** Its scheduler preempts only so that a running request can grow,
    and its waiting loop stops at the first request it cannot allocate. Behind two 18k-token agent requests in a full
    pool, a 750-token voice turn waits 4.9–5.0 s for its first token, and 219–290 ms with #63350
-   ([the KV case](docs/BENCHMARKS.md#the-kv-case-make-room)).
+   ([the KV case](docs/BENCHMARKS.md#the-prs-configuration-in-one-session-w5)).
 2. **Admitting the turn is not enough.** A step cap bounds a step's tokens, not its time. Beside three agent prefills
    the reply's tokens arrive 60–65 ms apart with #63350 alone and 16–20 ms apart with #63351.
 3. **The hold must cover the reply's first sentence**, because the voice agent hands text to speech its first complete
@@ -130,27 +132,57 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
 ## Quick start
 
 The make-room variant builds vLLM 0.32.0's scheduler with the two PRs, backported, from an installed vLLM, without
-modifying the installation. In an environment with vLLM 0.32.0 and a GPU it supports:
+modifying the installation. On a host with a GPU that vLLM 0.32.0 supports, install it and build the variant
+([uv](https://docs.astral.sh/uv/) fetches Python 3.12 where the host's is older):
 
 ```sh
+uv venv --python 3.12 --seed ~/vllm-0.32 && . ~/vllm-0.32/bin/activate   # vLLM 0.32.0 needs Python 3.11 to 3.14
+pip install vllm==0.32.0 'cuda-toolkit[nvcc]==13.0.3.0'   # CUDA 13.0's compiler, matching torch's runtime headers
+export CUDA_HOME=$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cu13   # vLLM compiles its FP8 kernels at start with it
+export FLASHINFER_EXTRA_LDFLAGS=-L$CUDA_HOME/lib && ln -sf libcudart.so.13 $CUDA_HOME/lib/libcudart.so   # FlashInfer links -lcudart
 git clone https://github.com/StevenWang-CY/flatshare && cd flatshare
 python python/flatshare_vllm/src/flatshare_vllm/build.py make-room ~/make-room
+```
+
+Serve stock vLLM with the serving profile's settings. Once it is up, run the probe from a second shell in the clone: it
+sends a voice turn behind long agent requests that fill the KV pool.
+
+```sh
 # Without --max-model-len vLLM takes the model's 262,144 tokens, which no 16 GB card holds, and without --max-num-seqs
 # 1,024 request slots on a card of 70 GiB or more whose name lacks "a100", more than the step cap, which vLLM refuses.
+vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-len 32768 --max-num-seqs 256 \
+  --scheduling-policy priority --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+. ~/vllm-0.32/bin/activate && python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
+```
+
+Stop the engine, then serve the same settings with make-room and run the probe again:
+
+```sh
 PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-len 32768 --max-num-seqs 256 \
   --scheduling-policy priority --max-num-batched-tokens 256 --long-prefill-token-threshold 0 \
   --scheduler-cls flatshare_make_room_scheduler.AsyncScheduler \
   --additional-config.make_room.max_preemptions_per_step 2 \
   --additional-config.make_room.budget_cap true --additional-config.make_room.budget_cap_tokens 48 \
   --additional-config.make_room.reserve_tokens 0
-python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv   # a voice turn behind two long agent requests
+. ~/vllm-0.32/bin/activate && python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
 ```
 
-Send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV tier from
-[`engine.yaml`](deploy/phastform/engine.yaml), which holds the box's 32k context and fixed KV pool too. The step cap is
-the serving profile's, 256 tokens a step without a per-request threshold, which the sweep chose for the PRs and the
-two-card results ran; the table above ran 512 with a 256-token threshold. `probe.py` sizes its requests from the
-engine's KV pool and context length, so the check runs unchanged on another card. Then read:
+<!-- quick-start probe -->
+The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On the box, with the card's own KV pool,
+it was 1,963–1,967 ms on stock vLLM and 258–292 ms with make-room, in four runs each
+([stock](benchmarks/results/2026-10-29-quick-start/stock-kv.log),
+[make-room](benchmarks/results/2026-10-29-quick-start/make-room-kv.log),
+[the record](benchmarks/results/2026-10-29-quick-start/README.md)).
+<!-- /quick-start probe -->
+
+Both ran at the serving profile's step cap, 256 tokens a step without a per-request threshold, and make-room with the
+PRs' configuration: the KV preemption at 2 a step and the budget cap with a 48-token window, no reserve. `probe.py`
+sizes its requests from the engine's KV pool and context length, so the check runs unchanged on another card.
+
+To serve beside agents, send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV
+tier from [`engine.yaml`](deploy/phastform/engine.yaml), which holds the box's 32k context and fixed KV pool too. The
+sweep chose that step cap for the PRs, and the two-card results ran it. The Results table ran 512 with a 256-token
+threshold. Then read:
 
 - [docs/PRODUCTION.md](docs/PRODUCTION.md) to configure and size it, to check that your deployment is in its regime, and
   for what to watch and how it fails;
@@ -190,20 +222,22 @@ used:
 | compare with llm-d, Dynamo, SMG, SGLang and published work | [docs/PRIOR-ART.md](docs/PRIOR-ART.md) |
 | run it on other hardware or on one host | [docs/HARDWARE.md](docs/HARDWARE.md) |
 | operate the hosts, and read what the failure drills showed | [ops/RUNBOOK.md](ops/RUNBOOK.md) |
-| look up a term (the box, arm 9, the window, W0 to W8) | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
+| look up a term | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
 
 ## Related systems
 
-llm-d, Dynamo, SMG and vllm-project/router act in front of the engine, and the voice turn loses its time inside the
-engine's scheduler. The end-to-end experiment, E2, measured SMG, llm-d's flow control (emulated), and vLLM's and
-SGLang's own priority preemption: none meets the SLO, and most leave the p95 between 8.8 and 12.1 s. What Flatshare
-adds is the change to vLLM's scheduler, its end-to-end measurement against the configurations of vLLM 0.32, SGLang
-0.5.22, SMG and llm-d's flow control (emulated) that an operator can deploy without it, and two measured negative
-results: a gateway policy timed by the conversation (E2) and agent-side KV prefetch (E1). A separate
-SGLang pull request, [#45686](https://github.com/sgl-project/sglang/pull/45686), proposes the counterpart of #63350.
-`flatshare-gateway` is the serving control plane the deployment runs (priorities, bounded intake, deadlines,
-failure-inclusive accounting, two-node placement and failover), with E2's admission policies as its harness; it is not a
-fleet router ([ADR-0007](docs/adr/0007-the-gateway-is-the-serving-control-plane.md)).
+- **llm-d, Dynamo, SMG and vllm-project/router act in front of the engine**, and the voice turn loses its time inside
+  the engine's scheduler. In the end-to-end experiment, E2, none of SMG, llm-d's flow control (emulated), or vLLM's and
+  SGLang's own priority preemption meets the SLO, and most configurations without the change leave the p95 between 8.6
+  and 12.1 s ([§6.5](docs/REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work)).
+- **Flatshare adds the change to vLLM's scheduler**, measured end to end against the configurations an operator can
+  deploy without it: vLLM 0.32, SGLang 0.5.22, SMG and llm-d's flow control (emulated). It also measured two negative
+  results, a gateway policy timed by the conversation (E2) and agent-side KV prefetch (E1). For SGLang, pull request
+  [#45686](https://github.com/sgl-project/sglang/pull/45686) proposes the counterpart of #63350.
+- **`flatshare-gateway` is the serving control plane** the deployment runs: priorities, bounded intake, deadlines,
+  failure-inclusive accounting, and two-node placement and failover, with E2's admission policies as its harness. It is
+  not a fleet router ([ADR-0007](docs/adr/0007-the-gateway-is-the-serving-control-plane.md)).
+
 [docs/PRIOR-ART.md](docs/PRIOR-ART.md) has the sources and where each result went upstream.
 
 ## Repository layout

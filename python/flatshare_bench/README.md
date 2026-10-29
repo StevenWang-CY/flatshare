@@ -21,6 +21,7 @@ points.
 | `flatshare-bench drill` | `drills.py` | The client side of the failure drills (`ops/drills`): streams through the gateway while the engine dies or the gateway reloads, restarts or dies, the probe of both planes from the event's moment on (every attempt kept, each on a new connection), the engine's running requests sampled and stamped meanwhile, and the summary (`streams`, `report`); the CPU tier filled past its capacity (`cpu-tier`); a server's start timed from its journal (`start`) |
 | `flatshare-bench soak` | `soak/` (`run.py`, `scrape.py`, `guard.py`, `summary.py`, `command.py`) | The production path for hours on cyan: arriving calls against the serving worker, AIPerf's replay, the service's own counts every minute, a guard on the GPUs, every attempt kept (`run`); its summary per hour and overall (`report`) and its compact record (`export`) |
 | background load | `load.py` | `prefill:<tokens>x<n>` (cold prefills) or `decode:<tokens>x<n>` (long decodes) beside a probe |
+| `python -m flatshare_bench.quick_start` | `quick_start.py` | The README's quick-start result from the probe's logs, printed or written between its markers (`--write README.md`) |
 
 Python 3.12. AIPerf, pinned to `aiperf==0.13.0`, is the `aiperf` extra, which the `test` extra
 includes: `flatshare-bench e2 run` and the plugins need it, a report does not, so `make reproduce-e2` syncs
