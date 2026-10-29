@@ -4,8 +4,10 @@
 //! Every label takes its values from a fixed set or from the configuration (tenant names), so the number of series
 //! is bounded. Every series except those of requests (labeled with a status) and lifecycle events is created at
 //! start, so it exports zero before traffic. The series a proxied request updates whose labels are fixed (its
-//! class, its outcome, its route) are resolved then too, so that its bookkeeping takes no family's lock and hashes no
-//! labels: of the families it touches, only requests by tenant and status are looked up per request.
+//! class, its outcome, its route) are resolved then too, so that their bookkeeping takes no family's lock and hashes
+//! no labels. The families labeled by tenant are looked up per request: requests by status, and offered, admitted and
+//! terminal requests by route and class, the last three about two thirds of a request's bookkeeping (the benchmark
+//! below).
 
 use std::hash::Hash;
 use std::sync::Arc;
@@ -1141,9 +1143,9 @@ mod tests {
         assert_eq!(nonzero, changed.len() + 4, "{text}");
     }
 
-    /// What a proxied request's metric bookkeeping costs (its upload, overhead, stream, request, outcome, duration,
-    /// first byte and usage), with one thread at it and with four at once. `cargo test --release -p
-    /// flatshare-gateway --lib metrics -- --ignored --nocapture` prints it.
+    /// What a proxied request's metric bookkeeping costs (its upload, overhead, stream, offered, admitted, request,
+    /// terminal, outcome, service level, duration, first byte and usage), with one thread at it and with four at once.
+    /// `cargo test --release -p flatshare-gateway --lib metrics -- --ignored --nocapture` prints it.
     #[test]
     #[ignore = "a benchmark, for --release"]
     fn what_a_requests_bookkeeping_costs() {
@@ -1156,12 +1158,17 @@ mod tests {
             cached: 448,
         };
         let class = SloClass::Interactive;
+        let route = Route::ChatCompletions;
         let request = || {
-            metrics.request_body(Route::ChatCompletions, Duration::from_micros(3));
-            metrics.overhead(Route::ChatCompletions).observe(30e-6);
+            metrics.offered(Some(&tenant), route, Some(class));
+            metrics.request_body(route, Duration::from_micros(3));
+            metrics.admitted(Some(&tenant), route, Some(class), false);
+            metrics.overhead(route).observe(30e-6);
             drop(metrics.stream_started(class));
-            metrics.request(Some(&tenant), Route::ChatCompletions, Some(class), 200);
+            metrics.request(Some(&tenant), route, Some(class), 200);
+            metrics.terminal(Some(&tenant), route, Some(class), Outcome::Completed);
             metrics.outcome(class, Outcome::Completed);
+            metrics.sli(class, true);
             metrics.duration(class, Duration::from_micros(80));
             metrics.first_byte(class, Duration::from_micros(70));
             metrics.usage(class, &usage);

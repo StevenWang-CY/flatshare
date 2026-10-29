@@ -89,9 +89,8 @@ enum PolicyName {
     TokenReservation,
     FlowControl,
     PreemptResubmit,
-    /// The lifecycle policy (`policy = "lifecycle"`; arm files from before the project's rename, and their
-    /// records, spell it `leaseholder`).
-    #[serde(alias = "leaseholder")]
+    /// The lifecycle policy (`policy = "lifecycle"`). The records of arm files from before the project's rename spell
+    /// it `leaseholder`, which only the report reads (`flatshare_bench.e2.report`).
     Lifecycle,
 }
 
@@ -498,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn flatshare_is_the_lifecycle_policys_name_in_e2s_arm_files() {
+    fn the_lifecycle_policy_is_named_lifecycle_and_its_old_name_is_refused() {
         let keys =
             "headroom_tokens = 1024\ncritical_prefill_budget_ms = 150\ndegrade_max_tokens = 16";
         let lifecycle = parse(&format!("policy = \"lifecycle\"\n{keys}")).unwrap();
@@ -509,10 +508,9 @@ mod tests {
                 ..
             })
         ));
-        assert_eq!(
-            parse(&format!("policy = \"leaseholder\"\n{keys}")).unwrap(),
-            lifecycle
-        );
+        // No arm file spells it leaseholder any more; only the records of earlier ones do.
+        let err = parse(&format!("policy = \"leaseholder\"\n{keys}")).unwrap_err();
+        assert!(err.contains("unknown variant `leaseholder`"), "{err}");
     }
 
     #[test]

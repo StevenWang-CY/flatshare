@@ -20,8 +20,8 @@ use crate::harness::config::RawAdmission;
 /// A validated configuration.
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// The engine, spoken to over plain HTTP/1.1. With `[[nodes]]`, which name their own engines, the first node's.
-    pub upstream: UpstreamAddr,
+    /// The engine, spoken to over plain HTTP/1.1; `None` with `[[nodes]]`, which name their own engines.
+    pub upstream: Option<UpstreamAddr>,
     /// The GPU nodes (`[[nodes]]`), each with its engine and speech servers, in the file's order; empty for a gateway
     /// with one `upstream`, which serves it as it always has.
     pub nodes: Vec<NodeConfig>,
@@ -87,9 +87,9 @@ impl Config {
 /// `[classes.<class>]`: what the requests of one class may ask for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClassConfig {
-    /// The cap on the class's replies, in tokens (`max_reply_tokens`; for realtime, `realtime_max_tokens` too): a
-    /// request's body gets its route's own limit at the lower of the client's limit and the cap
-    /// ([`crate::bounds`]), as degrade caps a reply under the lifecycle policy. `None` caps no reply.
+    /// The cap on the class's replies, in tokens (`max_reply_tokens`): a request's body gets its route's own limit at
+    /// the lower of the client's limit and the cap ([`crate::bounds`]), as degrade caps a reply under the lifecycle
+    /// policy. `None` caps no reply.
     pub max_reply_tokens: Option<u32>,
     /// The class's requests in flight at most: one more gets 503 at once, before its body is read.
     pub max_in_flight: usize,
@@ -376,7 +376,6 @@ struct RawConfig {
     cache_salt_secret_file: Option<PathBuf>,
     metrics_key_file: Option<PathBuf>,
     max_body_bytes: usize,
-    realtime_max_tokens: Option<u32>,
     classes: RawClasses,
     canary: RawCanary,
     max_choices: u32,
@@ -409,7 +408,6 @@ impl Default for RawConfig {
             cache_salt_secret_file: None,
             metrics_key_file: None,
             max_body_bytes: 32 << 20,
-            realtime_max_tokens: None,
             classes: RawClasses::default(),
             canary: RawCanary::default(),
             max_choices: 1,
@@ -721,29 +719,14 @@ fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
 }
 
 impl RawClasses {
-    /// Each class's configuration, strictest first. `realtime_max_tokens` is the realtime class's
-    /// `max_reply_tokens`, from before there were classes' tables, and only one of the two may be set;
-    /// `first_byte_timeout` is every class's default `headers_timeout_s`.
-    fn validate(
-        self,
-        realtime_max_tokens: Option<u32>,
-        first_byte_timeout: Duration,
-    ) -> Result<[ClassConfig; 3], String> {
+    /// Each class's configuration, strictest first; `first_byte_timeout` is every class's default
+    /// `headers_timeout_s`.
+    fn validate(self, first_byte_timeout: Duration) -> Result<[ClassConfig; 3], String> {
         let Self {
-            mut realtime,
+            realtime,
             interactive,
             background,
         } = self;
-        match (realtime_max_tokens, realtime.max_reply_tokens) {
-            (Some(0), _) => return Err("realtime_max_tokens must be positive".into()),
-            (Some(_), Some(_)) => {
-                return Err(
-                    "realtime_max_tokens and classes.realtime.max_reply_tokens are the same cap: set one".into(),
-                );
-            }
-            (Some(cap), None) => realtime.max_reply_tokens = Some(cap),
-            (None, _) => {}
-        }
         let mut classes = SloClass::ALL.map(ClassConfig::defaults);
         for (class, raw) in SloClass::ALL
             .into_iter()
@@ -860,10 +843,10 @@ impl Config {
 impl RawConfig {
     fn validate(self) -> Result<Config, String> {
         let nodes = validate_nodes(self.nodes)?;
-        let upstream = match (nodes.first(), self.upstream.is_empty()) {
-            (None, _) => parse_upstream(&self.upstream)?,
-            (Some(first), true) => first.upstream.clone(),
-            (Some(_), false) => {
+        let upstream = match (nodes.is_empty(), self.upstream.is_empty()) {
+            (true, _) => Some(parse_upstream(&self.upstream)?),
+            (false, true) => None,
+            (false, false) => {
                 return Err(
                     "set upstream or [[nodes]], not both: each node names its own engine".into(),
                 );
@@ -962,9 +945,7 @@ impl RawConfig {
             return Err("max_body_bytes must be positive".into());
         }
         let first_byte_timeout = seconds("first_byte_timeout_s", self.first_byte_timeout_s)?;
-        let classes = self
-            .classes
-            .validate(self.realtime_max_tokens, first_byte_timeout)?;
+        let classes = self.classes.validate(first_byte_timeout)?;
         for (key, zero) in [
             ("max_choices", self.max_choices == 0),
             ("max_in_flight", self.max_in_flight == 0),
@@ -1264,7 +1245,10 @@ mod tests {
     #[test]
     fn defaults_follow_the_spec() {
         let config = config("", &format!("[tenants.agents]\nkeys_sha256 = [\"{KEY}\"]")).unwrap();
-        assert_eq!(config.upstream.to_string(), "http://127.0.0.1:18000");
+        assert_eq!(
+            config.upstream.as_ref().map(ToString::to_string),
+            Some("http://127.0.0.1:18000".to_owned())
+        );
         assert_eq!(config.upstream_idle_timeout, Duration::from_secs(4));
         let vllm = PrioritySignals {
             vllm_header: true,
@@ -1376,9 +1360,6 @@ mod tests {
         let caps =
             |config: &Config| SloClass::ALL.map(|class| config.class(class).max_reply_tokens);
         assert_eq!(caps(&config("", &a).unwrap()), [None; 3]);
-        // realtime_max_tokens is the realtime class's cap, as it was before the classes' tables.
-        let capped = config("realtime_max_tokens = 64", &a).unwrap();
-        assert_eq!(caps(&capped), [Some(64), None, None]);
         let tables = format!(
             "{a}\n[classes.realtime]\nmax_reply_tokens = 48\n[classes.background]\nmax_reply_tokens = 4096"
         );
@@ -1387,15 +1368,11 @@ mod tests {
             [Some(48), None, Some(4096)]
         );
         for (top, tables, cause) in [
-            (
-                "realtime_max_tokens = 0",
-                a.clone(),
-                "realtime_max_tokens must be positive",
-            ),
+            // The realtime class's cap from before the classes' tables is gone: its table's sets it.
             (
                 "realtime_max_tokens = 64",
-                format!("{a}\n[classes.realtime]\nmax_reply_tokens = 48"),
-                "realtime_max_tokens and classes.realtime.max_reply_tokens are the same cap",
+                a.clone(),
+                "unknown field `realtime_max_tokens`",
             ),
             (
                 "",
@@ -1636,8 +1613,8 @@ max_calls = 0
             (gray.realtime, gray.background, &gray.tts),
             (false, true, &None)
         );
-        // The first node's engine stands for the one upstream (the start line, the default node).
-        assert_eq!(two.upstream, phastform.upstream);
+        // Each node names its own engine: there is no one upstream.
+        assert_eq!(two.upstream, None);
         assert_eq!(two.placement, Placement::default());
         assert_eq!(
             two.placement,
@@ -1840,7 +1817,7 @@ max_calls = 0
                 "upstream = \"{value}\"\n{}\n[[listen]]\ntcp = \"127.0.0.1:0\"\n{a}",
                 secret_file(&SECRET_FILE)
             ))
-            .map(|config| config.upstream)
+            .map(|config| config.upstream.unwrap())
             .map_err(|e| e.to_string())
         };
         let socket = "/run/user/1007/flatshare/phastform-engine.sock";

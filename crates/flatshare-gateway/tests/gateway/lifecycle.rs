@@ -275,7 +275,10 @@ async fn degrade_caps_a_realtime_reply_when_the_headroom_was_not_kept() {
 async fn a_degraded_reply_takes_the_lower_of_its_caps() {
     let mock = Mock::start(Script::Json("{}")).await;
     let keys = "headroom = false\nthrottle = false\nheadroom_tokens = 200\ndegrade_max_tokens = 16";
-    let top = format!("realtime_max_tokens = 64\n{}", lifecycle(keys));
+    let top = format!(
+        "{}\n[classes.realtime]\nmax_reply_tokens = 64",
+        lifecycle(keys)
+    );
     let gw = Gateway::start(mock.addr, &top).await;
     let asked = r#"{"model":"qwen","messages":[{"role":"user","content":"hi"}],"max_tokens":200}"#;
     // With the pool free, the deployment's cap.

@@ -331,7 +331,9 @@ impl Server {
                 );
                 let engine = Arc::new(Engine {
                     upstream: Upstream::new(
-                        config.upstream,
+                        config
+                            .upstream
+                            .expect("a configuration without [[nodes]] has its upstream"),
                         config.upstream_idle_timeout,
                         metrics.node_ready(),
                     ),
