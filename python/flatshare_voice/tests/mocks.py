@@ -13,6 +13,8 @@ import json
 import threading
 import time
 from dataclasses import dataclass
+from email.parser import BytesParser
+from email.policy import HTTP
 from pathlib import Path
 from typing import Any
 
@@ -234,10 +236,7 @@ class OpenAIMocks:
         return web.json_response({"accepted": len(batch), "duplicates": 0}, status=202)
 
     async def _transcribe(self, request: web.Request) -> web.Response:
-        form = await request.post()
-        audio = form.get("file")
-        size = len(audio.file.read()) if isinstance(audio, web.FileField) else 0
-        fields = {name: value for name, value in form.items() if isinstance(value, str)}
+        fields, size = _form(request.headers.get("Content-Type", ""), await request.read())
         with self._lock:
             self._transcriptions.append(Transcription(time.monotonic(), fields, size))
         return web.json_response({"text": TRANSCRIPT})
@@ -269,6 +268,25 @@ def _chunk(
         "model": model,
         "choices": choices,
     }
+
+
+def _form(content_type: str, body: bytes) -> tuple[dict[str, str], int]:
+    """A multipart/form-data body's text fields, and the size of its ``file`` part (0 without one), as aiohttp's
+    ``request.post()`` would give them. The standard library parses the whole body: aiohttp's multipart reader calls
+    its deprecated ``unread_data()`` when a short read is followed by a long one (aiohttp 3.14.5), which depends on how
+    the upload's bytes arrive."""
+    header = f"Content-Type: {content_type}\r\n\r\n".encode()
+    message = BytesParser(policy=HTTP).parsebytes(header + body)
+    fields: dict[str, str] = {}
+    files: dict[str | None, int] = {}
+    for part in message.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        payload = part.get_payload(decode=True) or b""
+        if part.get_filename() is not None:
+            files.setdefault(name, len(payload))
+        elif part.get_content_maintype() == "text":
+            fields[name] = payload.decode(part.get_content_charset("utf-8"))
+    return fields, files.get("file", 0)
 
 
 def _sse(payload: dict[str, Any]) -> bytes:

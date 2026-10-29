@@ -420,7 +420,7 @@ def main(argv: list[str]) -> int:
             f"listeners and {isolated['abstract']} abstract sockets there"
         )
     if any(degraded.values()):
-        own = (
+        own += (
             "; the GPU servers run in the host's network namespace (FLATSHARE_PRIVATE_NET=host) with "
             f"{degraded['tcp']} loopback TCP listeners and {degraded['abstract']} abstract sockets"
         )

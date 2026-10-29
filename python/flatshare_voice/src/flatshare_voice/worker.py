@@ -96,6 +96,7 @@ import os
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from livekit.agents import (
@@ -330,7 +331,7 @@ def _serving(env: Mapping[str, str]) -> dict[str, Any]:
             "FLATSHARE_SERVING_PROFILE is not set: serve mode admits the calls its serving.json names"
         )
     try:
-        profile = json.loads(open(path, encoding="utf-8").read())  # noqa: SIM115
+        profile = json.loads(Path(path).read_text(encoding="utf-8"))
         voice = profile["voice"]
         max_calls = voice["max_calls"]
         audio = voice["audio"]

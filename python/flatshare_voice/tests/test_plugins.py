@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
+import httpx2 as httpx
 import numpy as np
 import pytest
 from livekit import rtc
@@ -77,6 +79,51 @@ def test_stt_transcribes_over_uds(mocks: OpenAIMocks) -> None:
     assert request.fields["model"] == plugins.STT_MODEL
     assert request.fields["language"] == "en"
     assert request.audio_bytes == 44 + 16000  # WAV header + 0.5 s of 16-bit mono
+
+
+@pytest.mark.filterwarnings("error::DeprecationWarning")
+def test_the_stt_fake_reads_an_upload_whole_however_its_bytes_arrive() -> None:
+    # The fake parses the multipart body itself (mocks._form). aiohttp's own reader calls its deprecated
+    # unread_data() when a short read is followed by a long one, as here: the file's bytes arrive 8, then 4, then the
+    # rest. A field outside ASCII, and file bytes that look like line ends and a boundary's dashes, arrive as sent.
+    audio = bytes(range(256)) * 64 + b"\r\n--\r\n" * 8
+    fields = {"model": plugins.STT_MODEL, "language": "en", "prompt": "Grüße aus Köln"}
+    boundary = "flatshare-test-boundary"
+    head = "".join(
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'
+        for name, value in fields.items()
+    )
+    head += f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="turn.wav"\r\n'
+    head += "Content-Type: audio/wav\r\n\r\n"
+    tail = f"\r\n--{boundary}--\r\n".encode()
+    pieces = [head.encode() + audio[:8], audio[8:12], audio[12:] + tail]
+
+    def upload() -> Iterator[bytes]:
+        for i, piece in enumerate(pieces):
+            if i:
+                time.sleep(0.05)
+            yield piece
+
+    with (
+        tempfile.TemporaryDirectory(prefix="flatshare-voice-") as sockets,
+        OpenAIMocks(Path(sockets)) as mocks,
+        httpx.Client(transport=httpx.HTTPTransport(uds=mocks.stt_uds)) as client,
+    ):
+        response = client.post(
+            f"{BASE_URL}/audio/transcriptions",
+            content=upload(),
+            headers={
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "Content-Length": str(sum(map(len, pieces))),
+            },
+        )
+        seen = mocks.transcriptions()
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"text": TRANSCRIPT}
+    [request] = seen
+    assert request.fields == fields
+    assert request.audio_bytes == len(audio)
 
 
 def test_tts_returns_raw_pcm_over_uds(mocks: OpenAIMocks) -> None:
