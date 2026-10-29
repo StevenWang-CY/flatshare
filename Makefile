@@ -34,7 +34,7 @@ E2_A100_REPORT ?= build/reproduce-e2-a100
 
 .PHONY: check lint lint-rust lint-python fmt test test-rust test-vllm test-make-room test-trace test-make-room-ci \
   test-python schema metrics gateway-fixtures check-rules \
-  reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 reproduce-e2-a100 figures e2-figures e2-w5-figure \
+  reproduce-e1 reproduce-calibration reproduce-e2 reproduce-e2-w5 reproduce-e2-a100 figures e2-figures \
   e2-gpus-figure diagrams report-figures brand \
   demo-video forecast-a100 forecast-fitted profiles reproduce-a100 check-a100-calibration
 
@@ -287,16 +287,6 @@ e2-figures:
 	cp build/e2-figures/frontier-weka-x32-long.svg docs/figures/e2-frontier.svg
 	cp build/e2-figures/waterfall.svg docs/figures/e2-waterfall.svg
 
-# REPORT.md's chart, docs/figures/e2-voice-p95.svg and its phone layout e2-voice-p95-narrow.svg, from W5's records:
-# the configurations figure.toml names, each run in the same rounds over the same five samples of the agents' traces.
-e2-w5-figure:
-	@cd python/flatshare_bench && uv run -q flatshare-bench e2 report \
-	  $(abspath $(dir $(wildcard $(E2_W5_RESULTS)/*/*/run.json))) \
-	  --dots $(abspath $(E2_W5_RESULTS)/figure.toml) --out $(abspath build/e2-w5-figure) >/dev/null
-	@mkdir -p docs/figures
-	cp build/e2-w5-figure/voice-p95.svg docs/figures/e2-voice-p95.svg
-	cp build/e2-w5-figure/voice-p95-narrow.svg docs/figures/e2-voice-p95-narrow.svg
-
 # The README's chart of both GPUs, docs/figures/e2-voice-p95-gpus.svg and its phone layout e2-voice-p95-gpus-narrow.svg:
 # the rows the A100 run's figure.toml names, W5's from the box's records and the A100's from its own, each group
 # against its own voice alone's SLO (the A100 ran the box's arm files, so each group names the GPU its points ran on).
@@ -323,7 +313,7 @@ report-figures:
 	cd python/flatshare_bench && uv run -q python -m flatshare_bench.report.figures $(abspath docs/figures)
 
 # Every figure under docs/figures that its records or its code draw; the bench's tests check each is current.
-figures: e2-figures e2-w5-figure e2-gpus-figure diagrams report-figures
+figures: e2-figures e2-gpus-figure diagrams report-figures
 
 # The logo, the mark and the social preview under docs/brand, drawn by flatshare_bench.brand (docs/brand/README.md);
 # the bench's tests check each is current.

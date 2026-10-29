@@ -548,9 +548,6 @@ class Figure:
             f'class="{cls}"/>'
         )
 
-    def circle(self, x: float, y: float, r: float, cls: str) -> None:
-        self.items.append(f'<circle cx="{fmt(x)}" cy="{fmt(y)}" r="{fmt(r)}" class="{cls}"/>')
-
     def path(self, d: str, cls: str) -> None:
         self.items.append(f'<path d="{d}" class="{cls}"/>')
 
