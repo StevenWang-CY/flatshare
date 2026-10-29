@@ -10,7 +10,8 @@
 //!   once, before it has failed enough checks to be unhealthy.
 //! - **Sticky placement.** A session is placed by its first request, or by `POST /v1/sessions`, on an available node
 //!   with its class's role (realtime for realtime sessions, background for interactive and background ones), and stays
-//!   there until it has gone `idle_s` without a request or a `session_closed` event ends it ([`placement`]). A
+//!   there until it has gone `idle_s` without a request, or its tenant ends it, by `DELETE /v1/sessions/{id}` or by
+//!   a `session_closed` lifecycle event, as at a call's end ([`placement`]). A
 //!   realtime session takes one of its node's `max_calls` call slots, on the node with the fewest calls, or with
 //!   `calls = "fill"` on the first in the configuration's order; an agent's takes one of its node's `max_agents` agent
 //!   slots, where the node has that bound, on the node with the fewest agents' sessions, then the fewest requests in
@@ -688,6 +689,14 @@ impl Nodes {
         }
         drop(table);
         self.show_covering();
+    }
+
+    /// `DELETE /v1/sessions/{id}`: ends the placement of `key`'s session, as its `session_closed` event does, and
+    /// returns the node it was on; `None` for a session without one (never placed, or ended already).
+    pub fn end(&self, key: &Key) -> Option<Arc<Node>> {
+        let ended = self.write().forget(key)?;
+        self.show_covering();
+        Some(Arc::clone(&self.list[ended.node]))
     }
 
     /// Judges node `index` by a check of its components (engine, STT, TTS), logging a change of verdict, and wakes

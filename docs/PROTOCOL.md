@@ -78,7 +78,7 @@ Under the lifecycle policy, the gateway keeps each realtime session's turn state
 
 ## Placement
 
-With `[[nodes]]`, `POST /v1/sessions` from a trusted tenant places a session on a GPU node before its first request and answers the node and its speech servers; when no node can take it, it gets 503 (`no_healthy_node`, `no_call_slot`, `no_agent_slot` or `placement_full`) with `Retry-After: 1`, and a `session_closed` event frees its slot ([the gateway's Nodes](../crates/flatshare-gateway/README.md#nodes)). Without `[[nodes]]` a gateway has one upstream and places nothing.
+With `[[nodes]]`, `POST /v1/sessions` from a trusted tenant places a session on a GPU node before its first request and answers the node and its speech servers; when no node can take it, it gets 503 (`no_healthy_node`, `no_call_slot`, `no_agent_slot` or `placement_full`) with `Retry-After: 1`. `DELETE /v1/sessions/{id}` from its tenant ends the placement and frees its slot at once, as a `session_closed` event does, and answers 200 whether or not the session had one ([the gateway's Nodes](../crates/flatshare-gateway/README.md#nodes)). Without `[[nodes]]` a gateway has one upstream and places nothing.
 
 ## Removed after v0.3
 

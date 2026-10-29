@@ -2,7 +2,8 @@
 //! slots, agents' bounds and calls that fill the nodes in order, a node failing as a whole pipeline (its engine, or
 //! only its TTS), sessions moving by their next request, the 503 when the survivors have no call slot, agents deferred
 //! on a node that covers until the calls moved to it, or a warm spare's, end, a realtime request sent once more before
-//! its first content and never after, `/nodes`, `POST /v1/sessions`, and a gateway without `[[nodes]]` unchanged.
+//! its first content and never after, `/nodes`, `POST /v1/sessions`, `DELETE /v1/sessions/{id}`, and a gateway without
+//! `[[nodes]]` unchanged.
 
 use std::time::Duration;
 
@@ -66,6 +67,16 @@ async fn close(gw: &Gateway, session: &str) {
     assert_eq!(reply.status, 202, "{:?}", reply.body);
 }
 
+/// The voice worker's `DELETE /v1/sessions/{id}` for `session`: whether it ended a placement.
+async fn end(gw: &Gateway, session: &str) -> bool {
+    let path = format!("/v1/sessions/{session}");
+    let reply = call(&gw.unix, "DELETE", &path, &[], "").await;
+    assert_eq!(reply.status, 200, "{:?}", reply.body);
+    let answer = reply.json();
+    assert_eq!(answer["session_id"], session);
+    answer["ended"].as_bool().unwrap()
+}
+
 /// The agents tenant's `session_closed` for its session `session`.
 async fn agent_closed(gw: &Gateway, session: &str) {
     let body = format!(
@@ -94,10 +105,17 @@ async fn without_nodes_the_gateway_places_nothing_and_exports_its_one_engine() {
     let mock = Mock::start(Script::Json("{}")).await;
     let gw = Gateway::start(mock.addr, "").await;
     let session = r#"{"session_id":"call-1","class":"realtime"}"#;
-    for (method, path) in [("POST", "/v1/sessions"), ("GET", "/nodes")] {
+    for (method, path) in [
+        ("POST", "/v1/sessions"),
+        ("DELETE", "/v1/sessions/call-1"),
+        ("GET", "/nodes"),
+    ] {
         let reply = call(&gw.unix, method, path, &[], session).await;
         assert_eq!(reply.status, 404, "{method} {path}");
-        assert_eq!(reply.json()["error"]["code"], "not_found");
+        let error = &reply.json()["error"];
+        assert_eq!(error["code"], "not_found");
+        // The fallback's answer, for a route that does not exist.
+        assert_eq!(error["message"], format!("no such route: {method} {path}"));
     }
     let metrics = gw.metrics().await;
     assert!(
@@ -362,6 +380,73 @@ async fn with_fill_calls_go_to_the_next_node_only_when_the_first_is_full_or_fail
         nodes_view(&gw).await["nodes"][0].get("max_agents"),
         Some(&serde_json::Value::Null)
     );
+}
+
+#[tokio::test]
+async fn a_call_ended_by_delete_frees_its_slot_at_once_and_ending_it_again_succeeds() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let b = TestNode::start("b", Script::Json("{}")).await;
+    let placement = "[placement]\nhealth_interval_s = 0.02\nhealth_timeout_s = 0.5\nunhealthy_after = 2\n\
+                     healthy_after = 2\ncalls = \"fill\"\n";
+    let gw = Gateway::start_nodes(
+        &[&a, &b],
+        &format!("max_calls = 1\n{UNBOUNDED}"),
+        "",
+        placement,
+    )
+    .await;
+    all_healthy(&gw, &[&a, &b]).await;
+    // a takes the first call and b, the warm spare, the second, covering while it carries it; a third fits neither.
+    assert_eq!(node_of(&gw, "call-1").await, "a");
+    assert_eq!(node_of(&gw, "call-2").await, "b");
+    gw.await_metric(&covering("b"), 1.0).await;
+    unplaced(&place(&gw, "call-3").await, "no_call_slot");
+    // A call's end frees its slot at once, and the spare covers no more: the next call fits, and on a, where it
+    // would otherwise have found a's slot taken until the ended call's placement idled out.
+    assert!(end(&gw, "call-2").await);
+    assert_eq!(metric(&gw.metrics().await, &covering("b")), Some(0.0));
+    assert!(end(&gw, "call-1").await);
+    assert_eq!(node_of(&gw, "call-3").await, "a");
+    // Ending a call again, one its session_closed ended, or one never placed ends nothing, and succeeds.
+    assert!(!end(&gw, "call-1").await);
+    close(&gw, "call-3").await;
+    assert!(!end(&gw, "call-3").await);
+    assert!(!end(&gw, "call-9").await);
+    gw.await_metric(
+        "flatshare_gateway_requests_total{tenant=\"voice\",route=\"/v1/sessions/{id}\",class=\"\",status=\"200\"}",
+        5.0,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn only_its_trusted_tenant_ends_a_session_and_an_id_that_is_no_session_id_is_refused() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let gw = Gateway::start_nodes(&[&a], &format!("max_calls = 1\n{UNBOUNDED}"), "", "").await;
+    all_healthy(&gw, &[&a]).await;
+    assert_eq!(node_of(&gw, "call-1").await, "a");
+    let path = "/v1/sessions/call-1";
+    let untrusted = call(&gw.tcp, "DELETE", path, &[BENCH_AUTH], "").await;
+    assert_eq!(untrusted.status, 403, "{:?}", untrusted.body);
+    assert_eq!(untrusted.json()["error"]["code"], "untrusted_tenant");
+    let keyless = call(&gw.tcp, "DELETE", path, &[], "").await;
+    assert_eq!(keyless.status, 401, "{:?}", keyless.body);
+    assert_eq!(keyless.json()["error"]["code"], "invalid_api_key");
+    // A space, a byte that is no UTF-8 and 129 characters: none is a session id.
+    let long = format!("/v1/sessions/{}", "c".repeat(129));
+    for path in ["/v1/sessions/call%201", "/v1/sessions/%FF", &long] {
+        let invalid = call(&gw.unix, "DELETE", path, &[], "").await;
+        assert_eq!(invalid.status, 400, "{path}: {:?}", invalid.body);
+        assert_eq!(invalid.json()["error"]["code"], "invalid_session");
+    }
+    // Another trusted tenant's session of that id is another session, which it ends without touching the call.
+    let other = call(&gw.tcp, "DELETE", path, &[AGENTS_AUTH], "").await;
+    assert_eq!(other.status, 200, "{:?}", other.body);
+    assert_eq!(other.json()["ended"], false);
+    // The call holds a's one slot still, until its own tenant ends it.
+    unplaced(&place(&gw, "call-2").await, "no_call_slot");
+    assert!(end(&gw, "call-1").await);
+    assert_eq!(node_of(&gw, "call-2").await, "a");
 }
 
 #[tokio::test]

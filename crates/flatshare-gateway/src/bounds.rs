@@ -68,7 +68,7 @@ impl Asked {
                 Limit::Count(count) => Some(count),
             },
             Route::Responses => output.count(),
-            Route::Models | Route::Events | Route::Sessions | Route::Other => None,
+            Route::Models | Route::Events | Route::Sessions | Route::Session | Route::Other => None,
         }
     }
 
@@ -197,7 +197,7 @@ pub(crate) fn write_limit(json: &mut Vec<u8>, route: Route, limit: u64) {
         Route::ChatCompletions => &["max_completion_tokens", "max_tokens"],
         Route::Completions => &["max_tokens"],
         Route::Responses => &["max_output_tokens"],
-        Route::Models | Route::Events | Route::Sessions | Route::Other => &[],
+        Route::Models | Route::Events | Route::Sessions | Route::Session | Route::Other => &[],
     };
     for field in fields {
         write!(json, "\"{field}\":{limit},").expect("writing to a Vec cannot fail");

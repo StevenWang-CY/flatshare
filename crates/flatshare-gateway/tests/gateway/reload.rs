@@ -643,5 +643,10 @@ async fn a_reload_keeps_every_sessions_node_and_the_nodes_call_slots() {
     assert_eq!(fourth.json()["error"]["code"], "no_call_slot");
     assert_eq!(agent("agent-1").await.status, 200);
     assert_eq!((a.requests(), b.requests()), (1, 2));
+    // A placement taken over ends as the successor's own: call-2's end frees its slot on b at once.
+    let ended = call(&unix_target, "DELETE", "/v1/sessions/call-2", &[], "").await;
+    assert_eq!(ended.status, 200, "{:?}", ended.body);
+    assert_eq!(ended.json()["ended"], true);
+    assert_eq!(node_of(place("call-4").await), "b");
     stopped(second).await;
 }

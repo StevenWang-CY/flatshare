@@ -209,7 +209,7 @@ impl Default for Placement {
     fn default() -> Self {
         Self {
             // The 5 minutes a prefix cache is worth keeping a session for; E2's agents think for 2 minutes at most,
-            // and a call's sessions end with its session_closed event.
+            // and a call's session ends with the call (DELETE /v1/sessions/{id}, or its session_closed event).
             idle: Duration::from_secs(300),
             health_interval: Duration::from_secs(1),
             health_timeout: Duration::from_secs(1),
