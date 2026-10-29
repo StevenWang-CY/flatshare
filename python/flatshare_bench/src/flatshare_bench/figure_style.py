@@ -624,11 +624,11 @@ class Figure:
         letter: str | None = None,
         *,
         ground: str = "a",
-        rx: float = 12,
+        rx: float = 0,
     ) -> float:
         """A panel on the lavender ("a") or gray ("b") ground inside a dashed border, its corners
-        rounded by ``rx``, its title inside the top left and its letter at the top right on the
-        same baseline. Returns the title's baseline."""
+        square unless ``rx`` rounds them, its title inside the top left and its letter at the top
+        right on the same baseline. Returns the title's baseline."""
         self.rect(x, y, w, h, f"panel-{ground}", rx=rx)
         self.borders.append((x, y, w, h))
         baseline = y + 14 + 0.7 * LABEL
@@ -637,8 +637,9 @@ class Figure:
             self.text(x + w - 18, baseline, f"({letter})", anchor="end")
         return baseline
 
-    def group(self, x: float, y: float, w: float, h: float, *, rx: float = 10) -> None:
-        """A dashed container around components that act together, its corners rounded by ``rx``."""
+    def group(self, x: float, y: float, w: float, h: float, *, rx: float = 0) -> None:
+        """A dashed container around components that act together, its corners square unless
+        ``rx`` rounds them."""
         self.rect(x, y, w, h, "group", rx=rx)
         self.borders.append((x, y, w, h))
 
@@ -653,11 +654,11 @@ class Figure:
         kind: str = "box",
         size: float = LABEL,
         pitch: float | None = None,
-        rx: float = 8,
+        rx: float = 0,
     ) -> None:
-        """A component: a box, white ("box") or the change's own ("ours"), its corners rounded by
-        ``rx``, its name centred inside on one line or several. A label that does not fit inside is
-        refused."""
+        """A component: a box, white ("box") or the change's own ("ours"), its corners square unless
+        ``rx`` rounds them, its name centred inside on one line or several. A label that does not
+        fit inside is refused."""
         if kind not in ("box", "ours"):
             raise ValueError(f"a component is a box or ours, not {kind!r}")
         self.rect(x, y, w, h, kind, rx=rx)
@@ -669,8 +670,9 @@ class Figure:
             if box.x0 < x + 6 or box.x1 > x + w - 6 or box.y0 < y + 3 or box.y1 > y + h - 3:
                 raise ValueError(f"{line!r} does not fit inside its box")
 
-    def memory(self, x: float, y: float, w: float, h: float, *, rx: float = 6) -> None:
-        """Physical KV memory: a dashed outline over a faint ground, its corners rounded by ``rx``."""
+    def memory(self, x: float, y: float, w: float, h: float, *, rx: float = 0) -> None:
+        """Physical KV memory: a dashed outline over a faint ground, its corners square unless
+        ``rx`` rounds them."""
         self.rect(x, y, w, h, "memory", rx=rx)
         self.borders.append((x, y, w, h))
 
@@ -684,10 +686,10 @@ class Figure:
         height: float,
         gap: float = 0,
         hatched: set[int] | frozenset[int] = frozenset(),
-        rx: float = 2,
+        rx: float = 0,
     ) -> None:
         """A row of KV blocks: each a cell in its owner's hue, an empty cell where ``None``; a
-        hatched cell is one being taken. ``rx`` rounds the cells' corners."""
+        hatched cell is one being taken. The cells are square unless ``rx`` rounds them."""
         for k, hue in enumerate(hues):
             cx = x + k * (cell + gap)
             if hue is None:

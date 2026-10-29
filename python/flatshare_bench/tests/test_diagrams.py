@@ -52,6 +52,12 @@ def test_each_diagram_draws_both_layouts_square_and_says_the_same_in_each(
     assert words(wide) == words(narrow), words(wide) ^ words(narrow)
 
 
+def test_the_method_figure_is_square_too(tmp_path: Path) -> None:
+    method, narrow, *_ = diagrams.render(tmp_path)
+    for path in (method, narrow):
+        assert " rx=" not in path.read_text(), path.name
+
+
 def error_table() -> set[tuple[str, str]]:
     """Every (status, code) the gateway README's error table gives."""
     readme = (GATEWAY / "README.md").read_text()

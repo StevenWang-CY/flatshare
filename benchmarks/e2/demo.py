@@ -708,29 +708,6 @@ def bar_shape(x: float, y: float, w: float, h: float, end: str, r: float = 3.0) 
     )
 
 
-def round_rect(x: float, y: float, w: float, h: float, r: float) -> np.ndarray:
-    """The outline of a rectangle at (x, y), ``w`` by ``h``, its four corners rounded as a bar's
-    are (quadratic corners of radius ``r``), as a polygon."""
-    r = max(0.0, min(r, w / 2, h / 2))
-    s = np.linspace(0.0, 1.0, 9)[:, None]
-
-    def corner(
-        a: tuple[float, float], c: tuple[float, float], b: tuple[float, float]
-    ) -> np.ndarray:
-        pa, pc, pb = (np.asarray(p, dtype=float) for p in (a, c, b))
-        return (1 - s) ** 2 * pa + 2 * (1 - s) * s * pc + s**2 * pb
-
-    x1, y1 = x + w, y + h
-    return np.vstack(
-        [
-            corner((x, y + r), (x, y), (x + r, y)),
-            corner((x1 - r, y), (x1, y), (x1, y + r)),
-            corner((x1, y1 - r), (x1, y1), (x1 - r, y1)),
-            corner((x + r, y1), (x, y1), (x, y1 - r)),
-        ]
-    )
-
-
 @dataclass
 class Segment:
     """A text's content from ``start`` until the next segment's: fixed, or a function of the
@@ -1038,7 +1015,8 @@ class Dashboard:
         x0, y0, x1, y1 = lay.boxes[side]
         pad = lay.pad
         room = (x0 + 4, y0 + 4, x1 - 4, y1 - 4)
-        ground = round_rect(x0, y0, x1 - x0, y1 - y0, 12.0)
+        # The panel's ground, square as the figures' panels are.
+        ground = np.array([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], dtype=float)
         board.patch(ground, "ground-b", "border", style.PANEL_LINE, dashes=(6.0, 4.0))
         board.text(x0 + pad, y0 + lay.name, call.label, style.LABEL, room=room)
         heard = None
