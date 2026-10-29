@@ -1037,6 +1037,22 @@ which these runs do not sample.
 the evaluation was tuned on, one run a setting, and five rounds on new samples confirmed 256 against 512 beside the
 24 sessions (§6.9). Caps between those were not measured, and the results of §6.1–§6.7 stay at 512 tokens a step.
 
+**What the shared model can do.** The agents' replay needs no answer to be right, so the results say what sharing costs
+the call, not whether the shared model's background work is worth keeping. The quality gate
+([GATE.md](../benchmarks/quality/GATE.md)), fixed before it ran, tried a useful pair of jobs: answering questions about
+private documents in a call (QASPER), beside enriching new documents into searchable records (Re-DocRED). The served
+model failed 9 of its 11 criteria. Of the questions it answered, 50.6% were answered correctly, against a bar of 80%,
+and of the facts in its records 23.9% were right, against 80%. Qwen3-8B-FP8 on a card of its own failed as well
+([the gate's record](../benchmarks/results/2026-10-27-quality/README.md)). A deployment that shares a card for
+background work has to check first that the model does that work.
+
+**The pool stays as it is.** Two ways to a larger KV pool on this card did not hold. An FP8 KV cache doubles the pool's
+tokens and cost no quality the gate's screen saw. Beside the CPU tier, though, the engine died both times it ran under
+the main scenario's load, on a CUDA fault at a step's output copy
+([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md)). On the CPU the speech servers would give their
+memory to the pool, but Kokoro's first audio took 991 ms with one call against 211–242 ms for the whole TTS stage on the
+GPU ([the CPU record](../benchmarks/results/2026-10-27-cpu-audio/README.md)).
+
 **Scaled traces.** The agents replay Claude Code traces scaled 32× in blocks of tokens, so that every request fits the
 32k context. The scaling keeps which requests share which prefixes and changes the traces' timing. It also sets the KV
 pressure that the first wait depends on, and the scenario where the pool has room (§6.6) shows how much the result
@@ -1050,6 +1066,12 @@ not on the voice tier's latency.
 **The generated scheduler, not the branches.** The evaluation ran the change on the generated scheduler on vLLM 0.32.0
 with the pull requests' switch values. The trace test holds it and the pull requests' diff, ported to 0.32.0, to the
 same schedules, but the branches on vLLM's main ran only in their CPU tests.
+
+**One vLLM version.** Every measurement ran on vLLM 0.32.0, the latest release when the results were taken. On
+2026-10-27 both pull requests still merged cleanly into vLLM's main in a local merge and passed their tests there on the
+CPU, and make-room's patches did not apply to the next release candidate, v0.33.0rc0, whose scheduler no longer matches
+their first hunk, so an upgrade starts by rebasing them
+([the check's record](../benchmarks/results/2026-10-27-compat/README.md)).
 
 **One cap on victims.** Every run with make-room used N = 2, so how the results depend on N is not measured.
 
@@ -1225,6 +1247,9 @@ its tests where Table A1 says so. Table A1 maps each part of the report to its r
 | The simulator's result on agents' KV (§8) | [The simulator's tables in BENCHMARKS.md](BENCHMARKS.md#e1-parking-in-the-simulator) | `make reproduce-e1` |
 | Replies whose windows overlap (§6.6) | The test of overlapping replies in [`test_make_room.py`](../python/flatshare_vllm/tests/test_make_room.py) | `make test-make-room` |
 | The failure drills (Appendix D) | [`2026-10-25-drills`](../benchmarks/results/2026-10-25-drills) | its README |
+| The quality gate (§9) | [`2026-10-27-quality`](../benchmarks/results/2026-10-27-quality) | [`gate.py`](../benchmarks/quality/gate.py) |
+| The pool's two ways out (§9) | [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep), [`2026-10-27-quality/fp8-kv`](../benchmarks/results/2026-10-27-quality/fp8-kv) and [`2026-10-27-cpu-audio`](../benchmarks/results/2026-10-27-cpu-audio) | their READMEs |
+| The next vLLM release (§9) | [`2026-10-27-compat`](../benchmarks/results/2026-10-27-compat) | `make compat-upstream` |
 
 The repository's tests fail when a committed figure differs from what its records give, so the figures here are the
 records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists every measurement run by run, and
