@@ -87,6 +87,7 @@ groups:
         labels:
           severity: page
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharerealtimefirstbytebudgetburn
           summary: Voice turns burn the realtime class's budget (95% good, first content within 250 ms) fast
           description: >-
             {{ $value | humanizePercentage }} of valid realtime requests missed: failed, timed out, were refused for
@@ -100,6 +101,7 @@ groups:
         labels:
           severity: ticket
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharerealtimefirstbytebudgetslowburn
           summary: Three days of voice turns spend the realtime class's budget faster than it lasts
       - alert: FlatshareOverheadBudgetBurn
         expr: |
@@ -109,6 +111,7 @@ groups:
         labels:
           severity: page
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareoverheadbudgetburn
           summary: The gateway's request leg takes over 2 ms, fast enough to spend the overhead SLO's budget
           description: >-
             {{ $value | humanizePercentage }} of requests took over 2 ms in the gateway from the end of their body to
@@ -119,6 +122,7 @@ groups:
         labels:
           severity: ticket
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareoverheadbudgetslowburn
           summary: Three days of requests spend the gateway overhead SLO's budget faster than it lasts
 
   - name: flatshare-health
@@ -129,6 +133,7 @@ groups:
         labels:
           severity: page
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharegatewaydown
           summary: Prometheus cannot read the gateway's /metrics on cyan
       - alert: FlatshareEngineNotReady
         expr: flatshare_gateway_node_ready == 0
@@ -136,6 +141,7 @@ groups:
         labels:
           severity: page
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareenginenotready
           summary: The gateway finds the engine down and answers its requests 503 (upstream_not_ready or no_ready_node)
           description: >-
             A request found the engine broken and its /health has not answered since. An engine restart takes about
@@ -146,6 +152,7 @@ groups:
         labels:
           severity: page
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareenginedegraded
           summary: The engine answers /health but its inference fails, and /ready answers 503
           description: >-
             The gateway's inference canary failed degraded_after times in a row with no request succeeding between:
@@ -157,6 +164,7 @@ groups:
         labels:
           severity: ticket
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareenginewarming
           summary: No inference has succeeded since the gateway started, 15 minutes ago (an engine's cold start is about 9)
       - alert: FlatshareEngineMetricsDown
         expr: up{job=~"flatshare-engine(-.+)?"} == 0
@@ -164,12 +172,14 @@ groups:
         labels:
           severity: ticket
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareenginemetricsdown
           summary: The gateway cannot relay the engine's /metrics (the engine or its tunnel is down)
       - alert: FlatshareStreamsBroken
         expr: sum(increase(flatshare_gateway_error_events_total{type="upstream_unavailable"}[10m])) > 0
         labels:
           severity: ticket
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharestreamsbroken
           summary: The upstream broke off event streams, which their clients saw end with an error event
       - alert: FlatshareRequestsRefusedForCapacity
         expr: |
@@ -177,6 +187,7 @@ groups:
         labels:
           severity: ticket
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharerequestsrefusedforcapacity
           summary: The gateway refused requests because its bounds were full (max_in_flight, a class's, the bodies' budget or max_queued)
           description: >-
             See flatshare:requests_terminal:rate5m by outcome and flatshare_gateway_in_flight; a reload's predecessor
@@ -187,6 +198,7 @@ groups:
         labels:
           severity: ticket
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharedeadlinesmissed
           summary: Requests ran past their class's deadlines waiting on the engine, which the gateway then cancelled
       # With [[nodes]] (ops/RUNBOOK.md, Two GPU nodes): the engine's alerts above hold for each node, by its node
       # label, and the nodes add theirs.
@@ -196,6 +208,7 @@ groups:
         labels:
           severity: page
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharenodeunhealthy
           summary: A GPU node is unhealthy, and its calls and agents move to the other node
           description: >-
             {{ $labels.node }}'s engine does not serve or a speech server does not answer /health (see
@@ -207,12 +220,14 @@ groups:
         labels:
           severity: ticket
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharenodecovering
           summary: A node carries calls moved to it, or a warm spare's calls, and holds its agents' requests back until those calls end
       - alert: FlatshareCallsRefused
         expr: sum(increase(flatshare_gateway_placements_refused_total{class="realtime"}[10m])) > 0
         labels:
           severity: ticket
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharecallsrefused
           summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503
       - alert: FlatshareKvPoolFullWithWaiting
         expr: max by (node) (vllm:kv_cache_usage_perc) > 0.95 and on (node) sum by (node) (vllm:num_requests_waiting) > 0
@@ -220,5 +235,6 @@ groups:
         labels:
           severity: ticket
         annotations:
+          runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharekvpoolfullwithwaiting
           summary: The engine's KV pool is full while requests wait, the regime where voice turns need the engine change
           description: See docs/PRODUCTION.md, "Is your deployment in this regime?".

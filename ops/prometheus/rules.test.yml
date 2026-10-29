@@ -53,6 +53,7 @@ tests:
               severity: page
               class: realtime
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharerealtimefirstbytebudgetburn
               summary: Voice turns burn the realtime class's budget (95% good, first content within 250 ms) fast
               description: >-
                 100% of valid realtime requests missed: failed, timed out, were refused for capacity, or had their
@@ -76,6 +77,7 @@ tests:
               severity: page
               class: realtime
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharerealtimefirstbytebudgetburn
               summary: Voice turns burn the realtime class's budget (95% good, first content within 250 ms) fast
               description: >-
                 50% of valid realtime requests missed: failed, timed out, were refused for capacity, or had their
@@ -109,6 +111,7 @@ tests:
               severity: ticket
               class: realtime
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharerealtimefirstbytebudgetslowburn
               summary: Three days of voice turns spend the realtime class's budget faster than it lasts
       - eval_time: 4330m
         alertname: FlatshareRealtimeFirstByteBudgetBurn
@@ -147,6 +150,7 @@ tests:
               severity: page
               state: degraded
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareenginedegraded
               summary: The engine answers /health but its inference fails, and /ready answers 503
               description: >-
                 The gateway's inference canary failed degraded_after times in a row with no request succeeding
@@ -163,6 +167,7 @@ tests:
               severity: ticket
               state: warming
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareenginewarming
               summary: No inference has succeeded since the gateway started, 15 minutes ago (an engine's cold start is about 9)
 
   # With [[nodes]]: a node unhealthy for a minute pages, naming it; one that covers for five a ticket; a refused call a
@@ -188,6 +193,7 @@ tests:
               severity: page
               node: gray
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharenodeunhealthy
               summary: A GPU node is unhealthy, and its calls and agents move to the other node
               description: >-
                 gray's engine does not serve or a speech server does not answer /health (see
@@ -203,6 +209,7 @@ tests:
               severity: ticket
               node: phastform
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharenodecovering
               summary: A node carries calls moved to it, or a warm spare's calls, and holds its agents' requests back until those calls end
       - eval_time: 4m
         alertname: FlatshareCallsRefused
@@ -210,6 +217,7 @@ tests:
           - exp_labels:
               severity: ticket
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharecallsrefused
               summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503
 
   # The engine's relayed metrics. With one upstream, its job; with [[nodes]], a job a node (prometheus.example.yml): a
@@ -227,6 +235,7 @@ tests:
               job: flatshare-engine
               node: phastform
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareenginemetricsdown
               summary: The gateway cannot relay the engine's /metrics (the engine or its tunnel is down)
   - interval: 1m
     input_series:
@@ -243,6 +252,7 @@ tests:
               job: flatshare-engine-gray
               node: gray
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareenginemetricsdown
               summary: The gateway cannot relay the engine's /metrics (the engine or its tunnel is down)
 
   # A full KV pool with requests waiting is one engine's regime: one node's full pool beside another node's queue is
@@ -279,5 +289,6 @@ tests:
               severity: ticket
               node: phastform
             exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharekvpoolfullwithwaiting
               summary: The engine's KV pool is full while requests wait, the regime where voice turns need the engine change
               description: See docs/PRODUCTION.md, "Is your deployment in this regime?".
