@@ -101,6 +101,10 @@ names](#former-names) maps them to the current ones.
   resubmits them; of the configurations an operator can deploy without the change, the nearest to the SLO.
 - **The prefill case**: the probe in which the voice-sized request arrives behind three 10,000-token priority-2
   prefills, with room in the pool, timed to its first and 16th tokens.
+- **RG** (2026-10-28): the two cards' rounds, five rounds on new samples of the agents' traces (agent seeds 21-25) on
+  Phastform and Gray in turn. Rounds 1-3 ran each card's part of every arrangement the resource gate compares, and all
+  five ran the sweep's three configurations at 24 sessions ([BENCHMARKS.md](BENCHMARKS.md#two-cards-rg); the records
+  are in [`benchmarks/results/2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds)).
 - **Round**: one run of each point of a campaign, in a rotated order, on the round's own sample of the agents'
   traces.
 - **RS** (2026-10-26): five rounds of the frozen box and the PRs' 48-token configuration on v1.2 with the KV
@@ -110,6 +114,11 @@ names](#former-names) maps them to the current ones.
 - **Run**: one measurement of a point.
 - **The standard scenario**: the whole corpus of agent traces at 16 agent sessions, the realistic load (and at 8 and
   24 in W2 and W4).
+- **SW** (2026-10-27): the sweep's two screens, one run a setting on W5's tuning sample of the agents (agent seed 11),
+  of the PRs' configuration over the step cap, the threshold per request, the window and the gateway's static caps on
+  agent requests in flight, and of the frozen box at two step caps
+  ([BENCHMARKS.md](BENCHMARKS.md#the-step-cap-screened-and-confirmed-sw-rg); the records are in
+  [`benchmarks/results/2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep)).
 - **W0 to W8**: the project's build and measurement stages. W0 (2026-10-22): the frozen box and its first replay; W1
   (2026-10-22): the gateway and the voice path; W2 (2026-10-22 to 23): E2's first batches; W3 (2026-10-23): the build
   with the voice agent's lifecycle events; W4 (2026-10-23 to 24): the discriminating scenario in rounds; W5
