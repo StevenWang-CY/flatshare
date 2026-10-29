@@ -1712,19 +1712,29 @@ def a100(out: Path) -> list[Path]:
     rows = data.a100_rows()
     pairs = data.a100(rows)
     slo = data.slo_ms(rows)
-    s = Chart(WIDTH, 520, "The rules on an A100", _a100_description(pairs, slo))
+    description = _a100_description(pairs, slo)
+    return [
+        _a100_layout(pairs, slo, out / "report-a100.svg", description, WIDTH),
+        _a100_layout(pairs, slo, out / "report-a100-narrow.svg", description, NARROW),
+    ]
+
+
+def _a100_layout(pairs, slo: float, path: Path, description: str, width: float) -> Path:
+    """Panels a and b side by side, or on a phone one above the other."""
+    wide = width == WIDTH
+    s = Chart(width, 1000, "The rules on an A100", description)
     y_top = 6000
 
     # (a) By round, at 512-token steps.
     tuned, change = pairs[512]
-    a_x = Scale(0.5, len(tuned.runs) + 0.5, 96, 400)
-    y = Scale(0, y_top, 450, 104)
-    s.text(24, 30, "(a) Each round, 512-token steps", size=LABEL)
-    s.text(24, 84, "V2V p95 (s)", size=NOTE, cls="soft")
+    a_x = Scale(0.5, len(tuned.runs) + 0.5, 96, 400) if wide else Scale(0.5, 5.5, 64, width - 100)
+    y = Scale(0, y_top, 450, 104) if wide else Scale(0, y_top, 400, 104)
+    s.text(24 if wide else 18, 30, "(a) Each round, 512-token steps", size=LABEL)
+    s.text(24 if wide else 18, 84, "V2V p95 (s)", size=NOTE, cls="soft")
     marks, labels = linear_ticks(y_top / 1000, 1)
     y_axis(s, y, [m * 1000 for m in marks], labels, a_x.start, a_x.end)
     rounds = [run.round for run in tuned.runs]
-    x_axis(s, a_x, rounds, [str(r) for r in rounds], None, y.start, title="Round")
+    a_bottom = x_axis(s, a_x, rounds, [str(r) for r in rounds], None, y.start, title="Round")
     s.rule(a_x.start, a_x.end, y(slo), "slo")
     s.text(
         a_x.start + 6, y(slo) + 22, f"SLO {seconds(slo)} s", size=NOTE, cls="orange tint", halo=True
@@ -1741,9 +1751,18 @@ def a100(out: Path) -> list[Path]:
     s.text(a_x(last.round) + 14, y(last.p95) + 6, "Tuned vLLM", size=NOTE, halo=True)
     s.text(a_x(last.round) + 14, y(change.runs[-1].p95) - 10, "the change", size=NOTE, halo=True)
 
-    # (b) The trade-off at both step caps.
-    b_x = Scale(0, 16000, 580, 1040)
-    s.text(500, 30, "(b) The agents' throughput against the voice tail", size=LABEL)
+    # (b) The trade-off at both step caps: beside (a), or on a phone under it, on the same scale of p95.
+    if wide:
+        b_x = Scale(0, 16000, 580, 1040)
+        s.text(500, 30, "(b) The agents' throughput against the voice tail", size=LABEL)
+    else:
+        b_x = Scale(0, 16000, 64, width - 32)  # its last tick's label on the canvas
+        lines = wrap("(b) The agents' throughput against the voice tail", width - 36, LABEL)
+        for k, line in enumerate(lines):
+            s.text(18, a_bottom + 56 + 26 * k, line, size=LABEL)
+        top = a_bottom + 56 + 26 * len(lines) + 30
+        s.text(18, top - 4, "V2V p95 (s)", size=NOTE, cls="soft")
+        y = Scale(0, y_top, top + 20 + 346, top + 20)
     y_axis(s, y, [m * 1000 for m in marks], labels, b_x.start, b_x.end)
     ticks = [0, 4000, 8000, 12000, 16000]
     for t in ticks[1:]:
@@ -1779,9 +1798,22 @@ def a100(out: Path) -> list[Path]:
         s.mark(*start, "gray", filled=True, r=5.6)
         s.mark(*end, "blue", filled=True, r=5.6)
         centre = statistics.mean(b_x(run.tokens) for run in (*t.runs, *c.runs))
-        s.text(centre, y(slo) + 40, f"{cap:,}-token steps", size=NOTE, anchor="middle", halo=True)
+        name = f"{cap:,}-token steps"
+        if wide:
+            s.text(centre, y(slo) + 40, name, size=NOTE, anchor="middle", halo=True)
+        else:  # each under its cluster, kept on the canvas, the second a line lower
+            half = measure(name, NOTE) / 2
+            at = min(max(centre, b_x.start + half), b_x.end - half)
+            s.text(
+                at,
+                y(slo) + 40 + (22 if cap != min(pairs) else 0),
+                name,
+                size=NOTE,
+                anchor="middle",
+                halo=True,
+            )
     s.height = bottom + 14
-    return [s.save(out / "report-a100.svg")]
+    return s.save(path)
 
 
 # Two cards --------------------------------------------------------------------------------------------------------
@@ -1864,7 +1896,114 @@ def cards(out: Path) -> list[Path]:
     sessions = [cell.sessions for cell in c.consolidated["stock"]]
     if any([cell.sessions for cell in cells] != sessions for cells in c.consolidated.values()):
         raise ValueError("the engines' consolidated cards ran different numbers of sessions")
-    s = Chart(WIDTH, 660, "What sharing two cards buys", _cards_description(c, sessions))
+    description = _cards_description(c, sessions)
+    return [
+        _cards_wide(c, sessions, out / "report-cards.svg", description),
+        _cards_narrow(c, sessions, out / "report-cards-narrow.svg", description),
+    ]
+
+
+def _cards_lines(s: Chart, c: data.TwoCards, a_x: Scale, a_y: Scale) -> None:
+    """Panel a's lines: each engine's consolidated card by its sessions, named after its last mark."""
+    for engine, cells in c.consolidated.items():
+        name, hue = CARD_ENGINES[engine]
+        points = [(a_x(k) + CARD_DODGE[engine], a_y(cell.share)) for k, cell in enumerate(cells)]
+        s.trace(points, f"{hue} trace")
+        for px, py in points:
+            s.mark(px, py, hue, filled=True)
+        s.text(points[-1][0] + 12, points[-1][1] + 6, name, size=NOTE, halo=True)
+
+
+def _cards_bar(
+    s: Chart, c: data.TwoCards, a: data.Arrangement, b: Scale, y: float, thick: float
+) -> None:
+    """Panel b's bar of an arrangement: the median of its rounds, each round's tick, the value at its end."""
+    _, hue = CARD_ENGINES[a.engine]
+    length = b(a.tokens) - b.start
+    s.bar(b.start, y - thick / 2, length, thick, hue, hatched=not a.qualifies, name=a.name)
+    runs(s, [b(value) for value in a.rounds], y, hue, half=thick / 2 + 5)
+    end = max(b(v) for v in (a.tokens, *a.rounds)) + 10
+    _at_end(s, end, y + 6, f"{a.tokens:,.0f}", b(c.threshold))
+
+
+def _cards_narrow(c: data.TwoCards, sessions: Sequence[int], path: Path, description: str) -> Path:
+    """The phone layout: panel a over panel b, each arrangement's name over its bar."""
+    s = Chart(NARROW, 1600, "What sharing two cards buys", description)
+    x0 = 18
+    s.text(x0, 30, "(a) Replies over the SLO", size=LABEL)
+    s.text(x0, 54, f"the consolidated card, {len(c.rounds)} rounds pooled", size=NOTE, cls="soft")
+    a_x = Scale(-0.5, len(sessions) - 0.5, 64, NARROW - 112)
+    a_y = Scale(0, 1, 340, 90)
+    marks = [0.0, 0.25, 0.5, 0.75, 1.0]
+    y_axis(s, a_y, marks, [pct(m) for m in marks], a_x.start, a_x.end)
+    last = x_axis(
+        s,
+        a_x,
+        list(range(len(sessions))),
+        [str(n) for n in sessions],
+        None,
+        a_y.start,
+        title="Agent sessions beside both calls",
+    )
+    s.rule(a_x.start, a_x.end, a_y(c.requirement), "slo")
+    s.text(
+        a_x.end + 10,
+        a_y(c.requirement) + 6,
+        f"at most {c.requirement:.0%}",
+        size=NOTE,
+        cls="orange tint",
+    )
+    _cards_lines(s, c, a_x, a_y)
+    # (b) Each arrangement's agents' tokens a second, against the hurdle, under its kind's heading.
+    y = last + 56
+    s.text(x0, y, "(b) Agents' tokens/s", size=LABEL)
+    s.text(
+        x0,
+        y + 24,
+        f"summed over both cards, median of {len(c.rounds)} rounds",
+        size=NOTE,
+        cls="soft",
+    )
+    b = Scale(CARD_TOKENS.lo, CARD_TOKENS.hi, x0, NARROW - 80)
+    top = y + 70
+    y = top + 4
+    thick = 18
+    ticks, labels = linear_ticks(b.hi, 5000)
+    for kind, heading in CARD_KINDS.items():
+        members = [a for a in c.arrangements if a.kind == kind]
+        if not members:
+            continue
+        s.text(x0, y + 18, heading, size=NOTE, cls="mute")
+        y += 26
+        for a in members:
+            box = s.text(x0, y + 20, _card_row(a), size=VALUE)
+            s.text(box.x1 + 8, y + 20, _card_sessions(a), size=NOTE, cls="soft")
+            band = y + 46
+            band_grid(s, b, ticks, band - 16, band + 16)
+            _cards_bar(s, c, a, b, band, thick)
+            # The hurdle's rule across each band, over its bar as in the wide layout, clear of the names over them.
+            s.vrule(b(c.threshold), band - 16, band + 16, "slo")
+            y = band + 22
+    bottom = y + 4
+    hurdle = b(c.threshold)
+    s.text(
+        hurdle,
+        top - 10,
+        f"{c.hurdle:.0%} over the best dedicated, {c.threshold:,.0f}",
+        size=NOTE,
+        anchor="middle",
+        cls="orange tint",
+    )
+    last = x_axis(s, b, ticks, labels, None, bottom)
+    for line in wrap(TOKENS_TITLE, NARROW - 2 * x0, NOTE):
+        last += 25
+        s.text(x0, last, line, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
+
+
+def _cards_wide(c: data.TwoCards, sessions: Sequence[int], path: Path, description: str) -> Path:
+    s = Chart(WIDTH, 660, "What sharing two cards buys", description)
     b = CARD_TOKENS
     left, right = 498, b.start - 16  # panel b's titles and headings, and its rows' names
     top, heading, pitch, thick = 92, 28, 50, 20
@@ -1914,13 +2053,7 @@ def cards(out: Path) -> list[Path]:
         size=NOTE,
         cls="orange tint",
     )
-    for engine, cells in c.consolidated.items():
-        name, hue = CARD_ENGINES[engine]
-        points = [(a_x(k) + CARD_DODGE[engine], a_y(cell.share)) for k, cell in enumerate(cells)]
-        s.trace(points, f"{hue} trace")
-        for px, py in points:
-            s.mark(px, py, hue, filled=True)
-        s.text(points[-1][0] + 12, points[-1][1] + 6, name, size=NOTE, halo=True)
+    _cards_lines(s, c, a_x, a_y)
 
     # (b) Each arrangement's agents' tokens a second, against the hurdle: its bar the median of the rounds, over
     # each round's tick, which reaches past the bar so that it shows on the hatching too.
@@ -1935,14 +2068,9 @@ def cards(out: Path) -> list[Path]:
     ticks, labels = linear_ticks(b.hi, 5000)
     x_axis(s, b, ticks, labels, top, bottom, title=TOKENS_TITLE)
     for y, a in rows:
-        _, hue = CARD_ENGINES[a.engine]
         s.text(right, y - 3, _card_row(a), size=VALUE, anchor="end")
         s.text(right, y + 19, _card_sessions(a), size=NOTE, anchor="end", cls="soft")
-        length = b(a.tokens) - b.start
-        s.bar(b.start, y - thick / 2, length, thick, hue, hatched=not a.qualifies, name=a.name)
-        runs(s, [b(value) for value in a.rounds], y, hue, half=thick / 2 + 5)
-        end = max(b(v) for v in (a.tokens, *a.rounds)) + 10
-        _at_end(s, end, y + 6, f"{a.tokens:,.0f}", b(c.threshold))
+        _cards_bar(s, c, a, b, y, thick)
     hurdle = b(c.threshold)
     s.vrule(hurdle, top, bottom, "slo")
     s.text(
@@ -1954,7 +2082,7 @@ def cards(out: Path) -> list[Path]:
         cls="orange tint",
     )
     s.height = last + 14
-    return [s.save(out / "report-cards.svg")]
+    return s.save(path)
 
 
 # The step cap's five rounds ----------------------------------------------------------------------------------------
