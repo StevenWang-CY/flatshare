@@ -79,18 +79,29 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
             "stages",
             "stages-narrow",
             "kv-timeline",
+            "kv-timeline-narrow",
             "isolation",
+            "isolation-narrow",
             "tail",
+            "tail-narrow",
             "window",
+            "window-narrow",
             "step-cost",
+            "step-cost-narrow",
             "headline",
             "headline-narrow",
             "cdf",
+            "cdf-narrow",
             "agents",
+            "agents-narrow",
             "frontier",
+            "frontier-narrow",
             "margin",
+            "margin-narrow",
             "a100",
+            "a100-narrow",
             "cards",
+            "cards-narrow",
             "step-cap",
             "step-cap-narrow",
             "soak",
@@ -469,11 +480,10 @@ def test_the_step_costs_stand_beside_the_boxs_cpu_and_steps(tmp_path: Path) -> N
     host = [load["python_ms"]["p50"] for load in json.loads(data.STEP_COSTS.read_text())["load"]]
     assert data.box_cpu() == box / statistics.median(host) and box == pytest.approx(381.1, abs=0.01)
     assert f"{data.box_cpu():.2f}" == "1.68"
-    # Its top axis says it is a scaling of the host's.
-    [path] = figures.step_cost(tmp_path)
-    assert "the box's CPU (ms), scaled: the host's time \N{MULTIPLICATION SIGN} 1.68" in text_of(
-        path
-    )
+    # Its top axis says it is a scaling of the host's, in both layouts.
+    scaled = "the box's CPU (ms), scaled: the host's time \N{MULTIPLICATION SIGN} 1.68"
+    for path in figures.step_cost(tmp_path):
+        assert scaled in text_of(path), path.name
     assert data.voice_step_ms() == 12.08
     assert data.agents_step_ms() == 38.07
 
@@ -659,9 +669,22 @@ def test_the_frontier_is_every_deployable_configuration_of_w4s_discriminating_sc
         assert {r["fixed_window_s"] for r in runs} == {"240.0"}, p.point
         assert {r["arm"] for r in runs} == {p.arm}, p.point
     by_point = {p.point: p for p in points}
-    assert {
-        k: (round(by_point[k].p95), round(by_point[k].tokens)) for k in figures.FRONTIER_LABELS
-    } == {
+    # The figure names every configuration, under its family's heading.
+    assert set(figures.FRONTIER_NAMES) == set(by_point)
+    assert sorted(
+        p.point for _, members in figures._frontier_rows(points) for p in members
+    ) == sorted(by_point)
+    named = (
+        "disc-frozen-s24",
+        "disc-a8b-smg-s24",
+        "disc-a8a-flow-s24",
+        "disc-a7b-sglang-hicache-s24",
+        "disc-a8c-resubmit-s24",
+        "disc-pr-ab48-s24",
+        "disc-a9-gateway-only-s24",
+        "disc-a5-queued8192-s24",
+    )
+    assert {k: (round(by_point[k].p95), round(by_point[k].tokens)) for k in named} == {
         "disc-frozen-s24": (10138, 3552),
         "disc-a8b-smg-s24": (11050, 3446),
         "disc-a8a-flow-s24": (10992, 3684),
@@ -847,13 +870,18 @@ def test_the_two_cards_are_their_gates_verdict(drawn: dict[str, Path]) -> None:
     shared = [a for a in cards.arrangements if a.kind != "dedicated" and a.qualifies]
     assert [a.tokens > cards.threshold for a in shared] == [True, True, True]
     assert sum("meets the 20% hurdle" in line for line in printed) == 2
-    # Panel b's scale holds every round; the drawing hatches the three that miss the requirement, each in its engine's
-    # hue, and prints every median.
+    # Panel b's scale holds every round. Each layout hatches the three that miss the requirement, each in its
+    # engine's hue, says so in a key under panel b's subtitle, a gray hatched bar, and prints every median.
     assert max(r for a in cards.arrangements for r in a.rounds) == pytest.approx(14352.2)
     assert max(r for a in cards.arrangements for r in a.rounds) < figures.CARD_TOKENS.hi
-    svg, texts = drawn["report-cards.svg"].read_text(), set(text_of(drawn["report-cards.svg"]))
-    assert (svg.count('class="gray hatch"'), svg.count('class="blue hatch"')) == (1, 2)
-    assert {f"{a.tokens:,.0f}" for a in cards.arrangements} <= texts
+    missed = [a.engine for a in cards.arrangements if not a.qualifies]
+    assert sorted(missed) == ["change", "change", "stock"]
+    for name in ("report-cards.svg", "report-cards-narrow.svg"):
+        svg, texts = drawn[name].read_text(), set(text_of(drawn[name]))
+        assert svg.count('class="gray hatch"') == missed.count("stock") + 1, name
+        assert svg.count('class="blue hatch"') == missed.count("change"), name
+        assert f"misses the {cards.requirement:.0%} requirement" in texts, name
+        assert {f"{a.tokens:,.0f}" for a in cards.arrangements} <= texts, name
 
 
 def test_the_two_cards_read_only_the_rounds_their_gate_counts(tmp_path: Path) -> None:
