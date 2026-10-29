@@ -62,7 +62,7 @@ The voice worker tells the gateway where each call is: in bench mode with every 
 | `source` | `voice-worker`, `agentic-api` or `client` |
 | `type` | The event type, below |
 
-Under the lifecycle policy, the gateway keeps each realtime session's turn state from the voice events ([ARCHITECTURE.md §6](ARCHITECTURE.md#6-tested-and-not-adopted)). Every state but idle times out after `state_timeout_s` without an event, so a lost event holds a session at most that long, and a realtime request opens its session's critical window too. Under any other policy it keeps no turn state: the events are accepted and counted, and change no decision.
+Under the lifecycle policy, the gateway keeps each realtime session's turn state from the voice events ([ARCHITECTURE.md §7](ARCHITECTURE.md#6-tested-and-not-adopted)). Every state but idle times out after `state_timeout_s` without an event, so a lost event holds a session at most that long, and a realtime request opens its session's critical window too. Under any other policy it keeps no turn state: the events are accepted and counted, and change no decision.
 
 | `type` | Extra fields | Sent by | Under the lifecycle policy |
 |---|---|---|---|
