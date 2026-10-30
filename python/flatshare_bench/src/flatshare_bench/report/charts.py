@@ -315,7 +315,7 @@ SHAPES: dict[str, tuple[Callable[[float, float, float], str], float]] = {
     "dot": (_dot, 0.62),
 }
 """Each marker's path at a radius, and its half extent in radii. A comparator's shape names its family in grayscale:
-tuned vLLM a circle, the abort-and-resubmit router a square, other routers a triangle, a gateway's policy a diamond,
+tuned vLLM a circle, preempt-resubmit a square, the other routers a triangle, a gateway's policy a diamond,
 another engine a cross, voice alone a small dot."""
 
 

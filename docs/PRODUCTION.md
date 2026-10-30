@@ -50,7 +50,7 @@ Two callers, 25 turns each, beside 24 coding-agent sessions whose contexts fill 
 |---|---:|---:|---:|---:|---:|
 | Voice alone | 5 | 1,784 ms (1,764–1,819) | 1 / 295 | — | — |
 | Shared, tuned vLLM 0.32 (priority, step cap 512/256, a CPU KV tier) | 10 | 10,477 ms (8,686–12,115) | 532 / 590 | 3,305 | 106 s |
-| Shared, abort-and-resubmit in a router, the same engine | 5 | 2,522 ms (2,516–2,868) | 130 / 295 | 3,332 | 193 s |
+| Shared, preempt-resubmit in a router, the same engine | 5 | 2,522 ms (2,516–2,868) | 130 / 295 | 3,332 | 193 s |
 | **Shared, this configuration at the box's 512/256** | 15 | **2,236 ms (2,132–2,397)** | 286 / 885 | 3,203 | 111 s |
 
 These rows ran the box's step cap, 512 tokens a step with a 256-token threshold; the serving profile's 256-token steps are [above](#what-the-configuration-to-deploy-measured).

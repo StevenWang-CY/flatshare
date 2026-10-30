@@ -759,7 +759,7 @@ FAMILIES = {
 """The frontier figure's families of W4's arms (docs/EXPERIMENTS.md), by the arms E2's report gives the points: vLLM
 tuned by its own settings (arm 4, priority scheduling with a step cap, the frozen box's 512/256 among them, and arm 5,
 vLLM's other knobs); the operator's static answers in the gateway (6); what engines ship (7: vLLM with #54530, SGLang
-with and without HiCache); the routers (8a, llm-d's flow control emulated; 8b, SMG), the abort-and-resubmit router
+with and without HiCache); the routers (8a, llm-d's flow control emulated; 8b, SMG), preempt-resubmit
 (8c); the lifecycle policy in front of tuned vLLM (arm 9's gateway-only ablation); the change as the PRs propose it
 (make-room alone, both rules at 16 and at 48 tokens, all on W4's v0.3 variant); and arm 9, the lifecycle policy over
 that variant with its KV reserve on, a 16-token window and every reply capped at 16 tokens. Arms 1-3

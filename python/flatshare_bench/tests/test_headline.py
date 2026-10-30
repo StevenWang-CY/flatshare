@@ -38,7 +38,7 @@ ROWS = {
     "vLLM 0.32, tuned": FROZEN,
     "Shared, tuned vLLM 0.32": FROZEN,
     "Tuned, with a router": RESUBMIT,
-    "Shared, abort-and-resubmit": RESUBMIT,
+    "Shared, preempt-resubmit": RESUBMIT,
     "+ #63350: a waiting request": ("w5-pr:w5-disc-pr-a-s24",),
     "+ #63351: agent prefill": ("w5-pr:w5-disc-pr-ab-s24",),
     "+ #63351 with a 48-token window": AB48,
