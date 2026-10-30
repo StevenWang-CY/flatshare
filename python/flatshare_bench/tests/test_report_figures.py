@@ -331,11 +331,11 @@ def test_the_deployable_stages_are_benchmarks_w4_stage_table(drawn: dict[str, Pa
     )
     names = (
         "Voice alone",
-        "The frozen box",
-        "Static reservation",
+        "Tuned vLLM",
+        "A token reservation",
         "Preempt-resubmit",
-        "Arm 9",
-        "#63350 + #63351, 48 tokens",
+        "The lifecycle policy over make-room",
+        "The configuration to deploy",
     )
     cells = data.stages(data.w4_rows(), data.W4_STAGES)
     assert [c.point for c in cells] == list(data.W4_STAGES)
@@ -372,11 +372,11 @@ def test_the_deployable_frontier_is_methods_table_over_the_whole_calls(
         "METHODS.md", "| Configuration | V2V p95 | Background tokens/s | Agent TTFT p99 |"
     )
     shared = {
-        "The frozen box (tuned vLLM)": "disc-frozen-s24",
-        "Static reservation, 2,048 tokens": "disc-a6-reserve2048-s24",
+        "Tuned vLLM": "disc-frozen-s24",
+        "A token reservation, 2,048 tokens": "disc-a6-reserve2048-s24",
         "Preempt-resubmit": "disc-a8c-resubmit-s24",
-        "Arm 9, every reply capped at 16 tokens": "disc-a9-s24",
-        "#63350 + #63351, 48-token window": "disc-pr-ab48-s24",
+        "The lifecycle policy over make-room, every reply capped at 16 tokens": "disc-a9-s24",
+        "The configuration to deploy, 48-token window": "disc-pr-ab48-s24",
     }
     texts = set(text_of(drawn["report-deployable.svg"]))
     for name, point in shared.items():
@@ -1172,7 +1172,7 @@ def shown(doc: Path, name: str) -> tuple[str, str]:
 
 def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) -> None:
     # METHODS and BENCHMARKS show W4's two charts with the drawing's own description as the alt text, under a caption
-    # whose claim holds for every mark: only the engine change comes within 0.2 s of the SLO, every other deployable
+    # whose claim holds for every mark: only the change comes within 0.2 s of the SLO, every other deployable
     # configuration 0.5 s or more over it; and only the LLM's part of the turn changes, the other stages within 0.1 s.
     methods, benchmarks = REPO / "docs" / "METHODS.md", REPO / "docs" / "BENCHMARKS.md"
     for doc, name in (
@@ -1197,7 +1197,7 @@ def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) 
     )
     _, caption = shown(methods, "report-deployable")
     assert caption.startswith(
-        "Only the configurations that run the engine change come within 0.2 s of the SLO, at the median of their "
+        "Only the configurations that run the change come within 0.2 s of the SLO, at the median of their "
         "runs; every other configuration an operator can deploy stays 0.5 s or more over it."
     )
     cells = data.stages(data.w4_rows(), data.W4_STAGES)
