@@ -430,22 +430,22 @@ as the GPU node's CPU (`bench_host.py`, 227 ms against 381; Appendix C).
 | The pull requests' 13 steady states, switches off | Nothing: it costs what vLLM's call does | Within 1.3% |
 | The serving profile's 4 states, 256-token steps scheduled asynchronously as on the box, switches off | 1.5–4.9 µs in their short steps | 3.1% |
 | The pull requests' states, the deployed values | 36–166 µs with only lower-priority work running, at most 17% of the call; 158–260 µs with every running slot taken; 0.32–0.46 ms when a waiting high-priority request needs more room than two victims free | 1.5 ms, when that request's prefix-cache hit is 999 blocks long |
-| The serving profile's states, the deployed values | 17 µs beside agents alone; −30 µs while the hold keeps an agent's prefill out of a reply's first steps; 72 µs in each step that gives up on a turn two victims cannot make room for | 0.47 ms in the step that preempts for a voice turn, timed on schedulers built afresh: 3.5 times vLLM's step |
+| The serving profile's states, the deployed values | 17 µs beside agents alone; −30 µs while the budget cap keeps an agent's prefill out of a reply's first steps; 72 µs in each step that gives up on a turn two victims cannot make room for | 0.47 ms in the step that preempts for a voice turn, timed on schedulers built afresh: 3.5 times vLLM's step |
 
 On the box's CPU that step takes 1.1 ms, against a voice reply's decode step of 12 ms with nothing beside it, 16–20 ms
-beside agent prefill that the hold keeps back, and the agents' 38 ms at 24 session trees.
+beside agent prefill that the budget cap keeps back, and the agents' 38 ms at 24 agent sessions.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-step-cost-narrow.svg">
-  <img src="figures/report-step-cost.svg" width="100%" alt="A dot plot of 17 scheduler states in two sets on a log axis from 0.02 to 20 ms of the host's time, with a second axis for the box's CPU, 1.68 times as long. In each state the change with its switches off sits on stock vLLM's ring. In the pull requests' states, the configuration to deploy adds 36 to 166 microseconds when only lower-priority work runs, 320 to 1,539 microseconds when a waiting turn needs more room than two victims free, and 158 to 260 microseconds with every running slot taken; in the serving profile's, 17 microseconds beside agents alone, 30 fewer while the hold keeps an agent's prefill back, 72 when a turn cannot fit, and 468 in the step that preempts. All sit far left of the box's steps: a reply's 12 ms alone, 16 to 20 ms beside held agent prefill, and the agents' 38 ms at 24 session trees.">
+  <img src="figures/report-step-cost.svg" width="100%" alt="A dot plot of 17 scheduler states in two sets on a log axis from 0.02 to 20 ms of the host's time, with a second axis for the box's CPU, 1.68 times as long. In each state the change with its switches off sits on stock vLLM's ring. In the pull requests' states, the configuration to deploy adds 36 to 166 microseconds when only lower-priority work runs, 320 to 1,539 microseconds when a waiting turn needs more room than two victims free, and 158 to 260 microseconds with every running slot taken; in the serving profile's, 17 microseconds beside agents alone, 30 fewer while the budget cap keeps an agent's prefill back, 72 when a turn cannot fit, and 468 in the step that preempts. All sit far left of the box's steps: a reply's 12 ms alone, 16 to 20 ms beside held agent prefill, and the agents' 38 ms at 24 agent sessions.">
 </picture>
 
 **Figure 7. With its switches off the scheduler costs what vLLM's does, and the deployed values change a scheduler call
 by −30 µs to 1.5 ms, far below the box's steps.** Each mark is a state's 10th-percentile `Scheduler.schedule()` call, on
 a log scale: a ring for vLLM 0.32, a small dot for the change with its switches off, and a blue dot, labeled with what
 it adds, for the change as deployed. On the second axis, the box's CPU, the dotted line is a voice reply's decode step
-with nothing beside it (12 ms), the shaded band its step beside agent prefill that the hold keeps back (16–20 ms), and
-the dashed line the agents' step at 24 session trees (38 ms).
+with nothing beside it (12 ms), the shaded band its step beside agent prefill that the budget cap keeps back (16–20 ms),
+and the dashed line the agents' step at 24 agent sessions (38 ms).
 
 **The measurement harness.** Around the engine, the repository holds the system that measured it. A gateway written in
 Rust, the control plane the deployment runs, gives each client a class and a priority from its identity, and adds less
@@ -682,7 +682,7 @@ scheduling, and the loads are the tokens the CPU tier loaded beyond those, the v
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-agents-narrow.svg">
-  <img src="figures/report-agents.svg" width="100%" alt="Three panels in five rows. (a) The agents' p99 time to first token: 106 s on tuned vLLM, 193 s with preempt-resubmit, and 112, 105 and 111 s with the KV preemption, the change at its 16-token window and the configuration to deploy. (b) The hold's share of steps: 0%, 25% and 33% for those three. (c) Their preemptions a run, by make-room's own count: 34, 32 and 31.">
+  <img src="figures/report-agents.svg" width="100%" alt="Three panels in five rows. (a) The agents' p99 time to first token: 106 s on tuned vLLM, 193 s with preempt-resubmit, and 112, 105 and 111 s with the KV preemption, the change at its 16-token window and the configuration to deploy. (b) The share of steps in which the budget cap held agent prefill: 0%, 25% and 33% for those three. (c) Their preemptions a run, by make-room's own count: 34, 32 and 31.">
 </picture>
 
 **Figure 10. The agents' first-token tail stays at tuned vLLM's with the change and nearly doubles with the router.**
@@ -720,7 +720,7 @@ configurations ran after the campaign's rounds, in a session of their own.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-frontier-narrow.svg">
-  <img src="figures/report-frontier.svg" width="100%" alt="Rows of 18 configurations under their families' headings, in two panels: the median p95 voice-to-voice latency on a log axis against the SLO, and the agents' tokens per second. Tuned vLLM, its settings, the static answers, other engines and the routers sit between about 5.7 and 12 s, and a queued-token limit at the 30 s cap. Preempt-resubmit is at 2.59 s, and the configurations with the engine change run from 2.06 s to the KV preemption's 5.77 s, beside the token reservation's 5.67 s. The SLO is 2.02 s.">
+  <img src="figures/report-frontier.svg" width="100%" alt="Rows of 18 configurations under their families' headings, in two panels: the median p95 voice-to-voice latency on a log axis against the SLO, and the agents' tokens per second. Tuned vLLM, its settings, the static answers, other engines and the routers sit between about 5.7 and 12 s, and a queued-token limit at the 30 s cap. Preempt-resubmit is at 2.59 s, and the configurations with the change run from 2.06 s to the KV preemption's 5.77 s, beside the token reservation's 5.67 s. The SLO is 2.02 s.">
 </picture>
 
 **Figure 11. No configuration without the engine change comes within a second of the SLO except by aborting agent
@@ -765,7 +765,7 @@ vLLM and 0.30 s with voice alone.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-margin-narrow.svg">
-  <img src="figures/report-margin.svg" width="100%" alt="Four panels. (a) Over five rounds with 16 sessions of the whole corpus, the configuration to deploy's p95 is at or below tuned vLLM's in every round, from 2.02 to 2.42 s against 2.15 to 3.83 s, near the 2.03 s SLO. (b) Beside the 24 sessions its p95 is over each SLO by a median of 202, 269 and 257 ms with 2, 4 and 6 callers. (c) The hold covers 33%, 53% and 64% of the steps. (d) The agents make 3,156, 3,055 and 2,716 tokens a second, on the same three samples.">
+  <img src="figures/report-margin.svg" width="100%" alt="Four panels. (a) Over five rounds with 16 sessions of the whole corpus, the configuration to deploy's p95 is at or below tuned vLLM's in every round, from 2.02 to 2.42 s against 2.15 to 3.83 s, near the 2.03 s SLO. (b) Beside the 24 sessions its p95 is over each SLO by a median of 202, 269 and 257 ms with 2, 4 and 6 callers. (c) The budget cap holds agent prefill in 33%, 53% and 64% of the steps. (d) The agents make 3,156, 3,055 and 2,716 tokens a second, on the same three samples.">
 </picture>
 
 **Figure 12. The change helps less where the pool has room, and overlapping calls hold the agents' prefill for longer.**

@@ -754,9 +754,9 @@ def _window_layout(tokens: Sequence[int], runs, path: Path, description: str, wi
 # The rules' cost per step -----------------------------------------------------------------------------------------
 
 DECODE_STEP_MS = (16, 20)
-"""A voice reply's decode step on the RTX 5060 Ti beside agent prefill that the hold keeps back, from the gaps between
+"""A voice reply's decode step on the RTX 5060 Ti beside agent prefill that the budget cap keeps back, from the gaps between
 its tokens (the prefill case's 16-20 ms a token, docs/BENCHMARKS.md): one of the box's steps against which the figure
-sets the scheduler's cost, with a reply's step alone (W6) and the agents' at 24 session trees (the rounds)."""
+sets the scheduler's cost, with a reply's step alone (W6) and the agents' at 24 agent sessions (the rounds)."""
 BOX_TICKS = (100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000)
 """The box's CPU's axis, in µs."""
 
@@ -787,7 +787,7 @@ def _step_description(costs: Sequence[data.StepCost]) -> str:
         "The wall time of one call of vLLM 0.32.0's Scheduler.schedule() on the host's CPU in each state, on a "
         f"log scale whose second axis is the box's CPU, {data.box_cpu():.2f} times as long, beside the box's steps "
         f"(a voice reply's alone, {data.voice_step_ms():.0f} ms; beside held agent prefill, {lo} to {hi} ms; the "
-        f"agents' at 24 session trees, {data.agents_step_ms():.0f} ms), for stock vLLM, the change with its switches "
+        f"agents' at 24 agent sessions, {data.agents_step_ms():.0f} ms), for stock vLLM, the change with its switches "
         f"off (within {worst.off_ratio:.1%} of stock's in every state) and the configuration to deploy (its change to "
         f"the step from {least} to {most} µs): {rows}."
     )
@@ -826,7 +826,7 @@ def step_cost(out: Path) -> list[Path]:
     (on stock's, within a few percent), and the configuration to deploy's, with what it adds, on a log scale that also
     holds a decode step on the RTX 5060 Ti. Its second axis is the box's CPU, the host's times bench_host.py's factor
     between them, on which the box's own steps stand: a voice reply's alone and beside held agent prefill, and the
-    agents' at 24 session trees."""
+    agents' at 24 agent sessions."""
     costs = data.step_costs()
     paths = [
         _step_cost_wide(costs, out / "report-step-cost.svg"),
@@ -843,7 +843,7 @@ def _step_keys(alone: float, agents: float) -> list[tuple[Key, str]]:
         (mark_key("blue", filled=True), data.label("deploy")[0]),
         (line_key("gray trace dotted"), f"a reply's step on the box alone, {alone:.0f} ms"),
         (_band_key(), f"beside held agent prefill, {lo}\N{EN DASH}{hi} ms"),
-        (line_key("gray trace dashed"), f"the agents' step at 24 session trees, {agents:.0f} ms"),
+        (line_key("gray trace dashed"), f"the agents' step at 24 agent sessions, {agents:.0f} ms"),
     ]
 
 
@@ -854,7 +854,7 @@ def _step_marks(s: Chart, x: Scale, cost, row_y: float, rules: Sequence[float]) 
     s.mark(x(cost.stock), row_y, "gray", r=6.5)
     s.mark(x(cost.off), row_y, "gray", "dot", filled=True)
     s.mark(x(cost.on), row_y, "blue", filled=True)
-    # What the change adds, right of the row's marks: the hold's is a saving, the deployed mark left of stock's.
+    # What the change adds, right of the row's marks: the budget cap's is a saving, the deployed mark left of stock's.
     sign = "+" if cost.added >= 0 else "\N{MINUS SIGN}"
     label = f"{sign}{abs(cost.added):,.0f} µs"
     marks = (x(min(cost.stock, cost.off, cost.on)), x(max(cost.stock, cost.off, cost.on)))
@@ -1238,8 +1238,8 @@ def _cdf_description(configurations: Sequence[data.Configuration], slo: float) -
 
 def cdf(out: Path) -> list[Path]:
     """report-cdf.svg and its phone layout: every measured turn's V2V as ECDFs, pooled over each configuration's runs
-    (the warm-up turns left out, a turn that got no reply counted at 30 s), for voice alone, tuned vLLM, the
-    abort-and-resubmit router and the change."""
+    (the warm-up turns left out, a turn that got no reply counted at 30 s), for voice alone, tuned vLLM,
+    preempt-resubmit and the configuration to deploy."""
     rows = data.w5_rows()
     configurations = [c for c in data.headline(rows) if c.point in CDF_LINES]
     slo = data.slo_ms(rows)
@@ -1341,7 +1341,7 @@ def _agents_description(runs: dict[str, list[data.AgentRun]]) -> str:
         text += (
             f", agent prefill held in {statistics.median(shares):.0%} of the steps"
             if shares
-            else ", no hold"
+            else ", no budget cap"
         )
         text += (
             f", {statistics.median(preemptions):.0f} preemptions by make-room"
@@ -1351,7 +1351,7 @@ def _agents_description(runs: dict[str, list[data.AgentRun]]) -> str:
         rows.append(text)
     return (
         "For each configuration beside 24 agent sessions, each run and the median of the agents' TTFT p99, of the "
-        "share of the engine's steps over the calls in which the prefill hold kept agent prefill out, and of "
+        "share of the engine's steps over the calls in which the budget cap kept agent prefill out, and of "
         "make-room's own preemptions over the calls: " + "; ".join(rows) + "."
     )
 
@@ -1373,7 +1373,7 @@ def _agent_row(
 
 def agents(out: Path) -> list[Path]:
     """report-agents.svg and its phone layout: what the agents pay, run by run, for the headline's configurations that
-    run agents, in its rows. (a) The agents' TTFT p99. (b) The share of the engine's steps in which the prefill hold
+    run agents, in its rows. (a) The agents' TTFT p99. (b) The share of the engine's steps in which the budget cap
     kept agent prefill out. (c) make-room's own preemptions. Each run a tick, the median a filled marker with its
     value."""
     runs = data.agent_runs()
@@ -1404,7 +1404,7 @@ def _agent_cell(s: Chart, k: int, scale: Scale, y: float, point: str, cells) -> 
         if shares:
             _agent_row(s, shares, scale, y, point, pct(statistics.median(shares)))
         else:
-            s.text(scale.start + 10, y + 6, "no hold", size=NOTE, cls="mute", halo=True)
+            s.text(scale.start + 10, y + 6, "no budget cap", size=NOTE, cls="mute", halo=True)
     else:
         preemptions = [r.preemptions for r in cells if r.preemptions is not None]
         if preemptions:
@@ -1522,7 +1522,7 @@ def _frontier_description(
         f"Each of {len(points)} configurations beside 24 agent sessions of the traces with the largest contexts, a row "
         "under its family, in panel a its voice-to-voice p95 on a log scale against the SLO of "
         f"{seconds(slo)} s, the median of its runs and their range, and in panel b the agents' tokens a second over "
-        f"{over}, only the engine change and preempt-resubmit coming "
+        f"{over}, only the change and preempt-resubmit coming "
         "near the SLO: " + "; ".join(parts) + "."
     )
 
@@ -1773,7 +1773,7 @@ def _margin_description(
     paired = ", ".join(f"{seconds(t)} and {seconds(c)} s" for _, t, c in rounds)
     counts = "; ".join(
         f"{c.callers} callers, {statistics.median(c.over):+,.0f} ms over their SLO of {seconds(c.slo)} s at the "
-        f"median of {len(c.over)} runs ({min(c.over):+,.0f} to {max(c.over):+,.0f}), the hold in "
+        f"median of {len(c.over)} runs ({min(c.over):+,.0f} to {max(c.over):+,.0f}), agent prefill held in "
         f"{statistics.median(c.held):.0%} of the steps, the agents at {statistics.median(c.tokens):,.0f} tokens/s"
         for c in calls
     )
@@ -1782,7 +1782,7 @@ def _margin_description(
         f"the change's in each of five rounds against the SLO of {seconds(slo)} s ({paired}); in panels b to d, the "
         "change with two, four and six calls beside 24 agent sessions, on the same three samples of the agents, each "
         "run's p95 over that many callers' SLO, "
-        "the share of the engine's steps in which the prefill hold held agent prefill, and the agents' tokens a "
+        "the share of the engine's steps in which the budget cap held agent prefill, and the agents' tokens a "
         f"second over the calls' first 240 s ({counts})."
     )
 
@@ -1796,7 +1796,7 @@ def margin(out: Path) -> list[Path]:
     """report-margin.svg: where the pool has room, and as calls overlap. (a) Where the pool has room: the standard
     scenario's rounds, tuned vLLM's p95 and the change's, joined per round. (b) to (d) As calls overlap: with 2, 4 and
     6 calls on the same three samples of the agents, the change's p95 over that many callers' SLO, the share of steps
-    the hold held agent prefill in, and the agents' tokens a second; each run an open marker, the median a tick."""
+    the budget cap held agent prefill in, and the agents' tokens a second; each run an open marker, the median a tick."""
     rows = data.w5_rows()
     rounds = data.standard_rounds(rows)
     calls = data.calls(rows)

@@ -591,11 +591,11 @@ def voice_step_ms(path: Path = VOICE_PATHS) -> float:
 
 
 AGENTS_STEP_POINT = "sweep-disc-pr-ab48-b256-t0-s24"
-"""The serving profile's configuration beside both calls and 24 session trees, in each of the sweep's rounds."""
+"""The serving profile's configuration beside both calls and 24 agent sessions, in each of the sweep's rounds."""
 
 
 def agents_step_ms(root: Path = TWO_CARDS) -> float:
-    """The agents' step on the box in the serving profile beside both calls at 24 session trees: the mean gap between
+    """The agents' step on the box in the serving profile beside both calls at 24 agent sessions: the mean gap between
     their tokens, the median over the rounds that gate.py's verdict counts (its ROUNDS)."""
     gaps = []
     for name in two_cards_gate(root).ROUNDS:
@@ -1114,6 +1114,7 @@ def two_cards(root: Path = TWO_CARDS) -> TwoCards:
             raise ValueError(f"{key}: no round measured it")
         return found
 
+    # Each arrangement's name is gate.py's own row name, as the frozen record prints it.
     dedicated = {}
     for key, sizes in gate.AGENTS_ALONE.items():
         sessions, point = busiest(key, sizes)
