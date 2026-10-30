@@ -14,7 +14,7 @@ PY_PACKAGES := $(filter-out python/flatshare_vllm,$(patsubst %/pyproject.toml,%,
 # their shebang) and the engine variants (not the recorded runs' own scripts under benchmarks/results).
 PY_SOURCES := python crates/flatshare-sim/scripts $(sort $(wildcard benchmarks/e2/*.py benchmarks/a100/*.py \
   benchmarks/replies/*.py benchmarks/audio/*.py benchmarks/quality/*.py benchmarks/endpointing/*.py deploy/*.py \
-  deploy/bin/*.py deploy/a100/*.py \
+  deploy/bin/*.py deploy/a100/*.py deploy/container/*.py \
   deploy/phastform/variants/*/*.py) \
   $(shell grep -ls '^$(HASH)!.*python' deploy/bin/*))
 # E2's committed records (flatshare-bench e2 export), one directory per point under its campaign, and where

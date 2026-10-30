@@ -266,7 +266,7 @@ benchmarks/audio/         speech to text and text to speech on the CPU
 benchmarks/perf/          the baseline of the scheduler step's cost on CPU
 benchmarks/results/       the committed records, one directory per campaign or probe
 deploy/                   per-host bootstrap, hardware profiles, systemd units, the engine variants' drop-ins, tunnels,
-                          single-host mode
+                          single-host mode, the serving engine's container image
 ops/                      the runbook, the failure drills, Prometheus rules and a Grafana dashboard
 docs/                     the documents above, ADRs, figures and the logo
 ```

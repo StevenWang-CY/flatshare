@@ -102,6 +102,8 @@ The repository's serving variant, [`variants/make-room-serve`](../deploy/phastfo
 
 The evaluation measured the configuration to deploy as this variant with these switch values; ported to 0.32.0, the pull requests' diff schedules identically to it ([GLOSSARY.md](GLOSSARY.md#the-change-and-its-parts)). Since #63351's revision of 2026-10-25, the pull request and the variant both count a request's first tokens in flight under asynchronous scheduling, which the frozen box runs; the main evaluation's measurements (W5) ran the earlier count, which held a step past the window ([after the main evaluation](BENCHMARKS.md#after-w5-the-first-tokens-in-flight)).
 
+A stack that runs vLLM's image rather than the box's units runs the same engine from [`deploy/container`](../deploy/container/README.md): an image on vLLM 0.32.0's own, `vllm/vllm-openai:v0.32.0`, whose entrypoint gives `vllm serve` this variant's flags from `serving.json` and holds the engine to it at each start, as the unit does, stopping it and exiting 1 on any difference. It ran on the box's GPU with rootless podman ([what was verified](../deploy/container/README.md#verified)).
+
 ### The priorities
 
 Voice requests go at priority 0 and background work at 2; in vLLM a lower value is served first. A client can send `priority` in the request body or the `X-Vllm-Priority` header. A gateway in front should set it from the caller's identity instead, so that a background client cannot raise its own; `flatshare-gateway` maps each tenant to a class and caps it with `max_class`. Nothing else in front is needed: the configuration to deploy ran without an admission policy.
