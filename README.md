@@ -222,6 +222,7 @@ used:
 | compare with llm-d, Dynamo, SMG, SGLang and published work | [docs/PRIOR-ART.md](docs/PRIOR-ART.md) |
 | run it on other hardware or on one host | [docs/HARDWARE.md](docs/HARDWARE.md) |
 | operate the hosts, and read what the failure drills showed | [ops/RUNBOOK.md](ops/RUNBOOK.md) |
+| know what a release may change, and what to change when you upgrade | [CONTRIBUTING.md](CONTRIBUTING.md#versions-and-compatibility), then [CHANGELOG.md](CHANGELOG.md) |
 | look up a term | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
 
 ## Related systems

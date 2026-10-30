@@ -1,7 +1,7 @@
 # Contributing to Flatshare
 
-How to build and test the repository, what a change needs before review, and where questions go. Contributions are
-under the project's [Apache-2.0](LICENSE) license, and everyone taking part follows the
+How to build and test the repository, what a change needs before review, what a release may change, and where
+questions go. Contributions are under the project's [Apache-2.0](LICENSE) license, and everyone taking part follows the
 [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Build and test
@@ -44,6 +44,20 @@ What CI does not run:
   that figure.
 - **Documents.** A number comes from a record, a test or a script, and says which; a term is the one
   [the glossary](docs/GLOSSARY.md) gives; [docs/README.md](docs/README.md) says which document a fact belongs in.
+
+## Versions and compatibility
+
+Releases are numbered vMAJOR.MINOR, and every package of a release carries its version: 1.8.0 at v1.8.
+
+- **What a minor release may change.** What an operator configures and reads: configuration keys, what is refused,
+  and outcome names. In v1.6 the gateway began to refuse a request whose `n` exceeds `max_choices`, 1 by default, and
+  the outcome `error` became `transport_error`. In v1.8 it refuses to start with a node that has both roles and no
+  `max_agents`.
+- **Where each change is listed.** In [CHANGELOG.md](CHANGELOG.md), under "Upgrading from" the release before it, with
+  what to change in a configuration or a client that relied on the old behavior.
+- **How a renamed key is refused.** Its old name is refused at start, as an unknown key is, and the message names the
+  key that replaces it: for `first_byte_timeout_s`, `headers_timeout_s`. The gateway exits 2 with the file and the
+  cause, so a configuration written for the release before never runs with a default in the renamed key's place.
 
 ## Commits and pull requests
 
