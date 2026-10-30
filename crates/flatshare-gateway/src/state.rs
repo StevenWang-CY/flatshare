@@ -91,12 +91,15 @@ impl Shared {
         }
     }
 
-    /// Admits nothing more: the gateway handed its sockets to a successor. Its waiting requests get 503, and the
-    /// requests already admitted run on.
+    /// Admits nothing more: the gateway handed its sockets to a successor. Its waiting requests get 503, those a
+    /// covering node holds back among them, and the requests already admitted run on.
     pub fn close(&self) {
         self.intake.close();
         if let Some(admission) = &self.admission {
             admission.close();
+        }
+        if let Some(nodes) = self.nodes() {
+            nodes.close();
         }
     }
 

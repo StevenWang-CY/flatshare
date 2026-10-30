@@ -188,6 +188,9 @@ pub(crate) struct Nodes {
     /// Woken whenever a node may have stopped covering (the table or a node's availability changed) and when an
     /// agent's request ends: what the requests held back by a failover wait on.
     changed: Notify,
+    /// Set when the gateway hands its sockets to a successor ([`Nodes::close`]): a request it would hold back is
+    /// refused instead, to be sent to the successor.
+    closed: AtomicBool,
 }
 
 /// A request's place on its node, from its placement to its end: dropping it ends the request there.
@@ -229,6 +232,8 @@ pub(crate) enum NotReleased {
     Late(Timeout),
     /// The drain's cut.
     Cut,
+    /// The gateway handed its sockets to a successor while the request waited ([`Nodes::close`]).
+    Draining,
 }
 
 impl Nodes {
@@ -312,6 +317,7 @@ impl Nodes {
             metrics: metrics.clone(),
             first_realtime,
             changed: Notify::new(),
+            closed: AtomicBool::new(false),
         });
         for node in &nodes.list {
             if canary.is_some() {
@@ -486,7 +492,8 @@ impl Nodes {
 
     /// Counts a request in flight on its node, holding back an interactive or background one while its node covers
     /// ([`Nodes::covering`]): until fewer than `failover_background_max_in_flight` of them are in flight there, the
-    /// node no longer covers, its wait reaches `deadline`, or the drain's cut ends it. Returns how long it waited.
+    /// node no longer covers, its wait reaches `deadline`, the drain's cut ends it, or the gateway hands its sockets
+    /// to a successor ([`Nodes::close`]). Returns how long it waited.
     pub async fn hold(
         &self,
         placed: &mut Placed,
@@ -509,6 +516,9 @@ impl Nodes {
                 self.count_in(placed);
                 return Ok(arrived.elapsed());
             }
+            if self.closed.load(Ordering::Acquire) {
+                return Err(NotReleased::Draining);
+            }
             if waiting.is_none() {
                 waiting = Some(GaugeGuard::new(placed.node.series.waiting.clone()));
                 tracing::debug!(
@@ -523,6 +533,14 @@ impl Nodes {
                 () = &mut notified => {}
             }
         }
+    }
+
+    /// Holds no request back any more: the gateway handed its sockets to a successor, which places from now on. A
+    /// request waiting in [`Nodes::hold`] is refused at once, and so is one that would wait from now on; one its node
+    /// can take still goes, as the requests already admitted run on.
+    pub fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.changed.notify_waiters();
     }
 
     /// Whether `node` covers, which holds its agents' requests to `failover_background_max_in_flight`: while it
@@ -1336,6 +1354,40 @@ mod tests {
         close(&nodes, "call-2");
         let request = nodes.request(None, SloClass::Background, true).unwrap();
         assert_eq!(&*request.node.name, "phastform");
+    }
+
+    #[tokio::test]
+    async fn a_request_a_covering_node_holds_back_is_refused_when_the_gateway_hands_over() {
+        let nodes = placing(CallPlacement::Fill);
+        all_healthy(&nodes);
+        // a fails before any call: the call goes to b, the spare, which then covers and holds its agents' requests.
+        fail(&nodes, 0);
+        assert_eq!(place_new(&nodes, "call", 1, SloClass::Realtime), ["b"]);
+        assert!(nodes.covering(1));
+        let drain = Drain::new(Duration::ZERO);
+        let deadline = (Instant::now() + Duration::from_secs(60), Timeout::Queue);
+        // An interactive request, which the drain's cut never ends, its queue deadline a minute away.
+        let mut request = nodes.request(None, SloClass::Interactive, true).unwrap();
+        assert_eq!(&*request.node.name, "b");
+        let held = nodes.hold(&mut request, deadline, &drain);
+        tokio::pin!(held);
+        let waits = tokio::time::timeout(Duration::from_millis(50), &mut held).await;
+        assert!(waits.is_err(), "b holds it back");
+        // The gateway hands its sockets to a successor: the request is refused at once, to be sent there.
+        nodes.close();
+        let refused = tokio::time::timeout(Duration::from_secs(1), held).await;
+        assert!(
+            matches!(refused, Ok(Err(NotReleased::Draining))),
+            "{refused:?}"
+        );
+        // So is a request that would wait from then on; a call, which no node holds back, still goes.
+        let mut next = nodes.request(None, SloClass::Background, true).unwrap();
+        let refused = nodes.hold(&mut next, deadline, &drain).await;
+        assert!(matches!(refused, Err(NotReleased::Draining)), "{refused:?}");
+        let mut call = nodes
+            .request(Some(key("call-1")), SloClass::Realtime, true)
+            .unwrap();
+        assert!(nodes.hold(&mut call, deadline, &drain).await.is_ok());
     }
 
     #[tokio::test]
