@@ -1,0 +1,10 @@
+# The build context of deploy/container/Dockerfile, which copies it whole to /opt/flatshare: the files the image and
+# its entrypoint use, at their paths in the repository, and nothing else (python/flatshare_vllm/tests/test_container.py
+# holds both ways).
+*
+!python/flatshare_vllm/src/flatshare_vllm/
+!deploy/phastform/engine.yaml
+!deploy/phastform/serving.json
+!deploy/bin/serving-check
+!deploy/container/serve.py
+**/__pycache__
