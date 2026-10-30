@@ -1636,7 +1636,9 @@ def write_excerpt(
     narrow: bool = False,
 ) -> int:
     """The calls' turns as the dashboard, a looping animated WebP (lossless), silent: each frame
-    stored as what changed from the one before. Returns its frames."""
+    stored as what changed from the one before. The loop starts on the first turn's result held
+    (:func:`held_result`), so that a viewer that shows only the first frame, or a poster of it,
+    shows both replies and their V2V rather than two empty panels. Returns its frames."""
     import imageio_ffmpeg
 
     if path.suffix != ".webp":
@@ -1645,6 +1647,7 @@ def write_excerpt(
         timeline, summary, width=width, theme=theme, form="narrow" if narrow else "wide"
     )
     count = round(timeline.seconds * fps)
+    start = min(math.ceil(held_result(timeline) * fps), count - 1)
     size = f"{width}x{frames.board.height}"
     command = [
         imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-v", "error", "-nostdin",
@@ -1652,8 +1655,22 @@ def write_excerpt(
         "-c:v", "libwebp_anim", "-lossless", "1", "-compression_level", "6", "-loop", "0",
         str(path),
     ]  # fmt: skip
-    _pipe(command, (frames.draw(index / fps) for index in range(count)))
+    order = [*range(start, count), *range(start)]  # the same loop, from the held result
+    _pipe(command, (frames.draw(index / fps) for index in order))
     return count
+
+
+def held_result(timeline: Timeline) -> float:
+    """When the first shown turn's result is held, on the video's clock: every reply of the turn
+    on both calls given and its V2V arrived (ENTER_S after the last), before the turn's drawing
+    leaves. A frame from then until the turn leaves shows both replies and both V2Vs."""
+    last = max(w.until for side in (0, 1) for w in timeline.waits(side) if w.turn == 0)
+    held = last + ENTER_S
+    if held >= timeline.offsets[1] - TURN_EXIT_S:
+        raise ValueError(
+            f"the first turn leaves at {timeline.offsets[1]:.2f} s, before its result holds"
+        )
+    return held
 
 
 def _pipe(command: list[str], frames: Iterator[np.ndarray]) -> None:

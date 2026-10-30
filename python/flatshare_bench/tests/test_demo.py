@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -287,6 +288,38 @@ def test_the_excerpt_loops_silently(timeline: Any, summary: Any) -> None:
     assert all(side.playhead.get_alpha() < 0.05 for side in frames.sides)
     bars = [bar for side in frames.sides for _, bar, _, _ in side.bars]
     assert bars and all(bar.get_alpha() < 0.05 for bar in bars)
+
+
+def test_the_excerpt_opens_on_the_first_turns_held_result(
+    timeline: Any, summary: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A viewer that shows only an animation's first frame, or a poster of it, sees both replies and their V2V rather
+    # than two empty panels: the loop starts where the first turn's result holds and runs on through its own start.
+    held = demo.held_result(timeline)
+    first = [w for side in (0, 1) for w in timeline.waits(side) if w.turn == 0]
+    assert max(w.until for w in first) < held < timeline.offsets[1] - demo.TURN_EXIT_S
+    frames = demo.Dashboard(timeline, summary, width=320)
+    frames.update(held)
+    for side, panel in enumerate(frames.sides):
+        assert panel.clock.get_text() == f"{timeline.waits(side)[0].seconds:.1f} s"
+        assert panel.clock.get_alpha() == 1.0
+    fps = 4
+    drawn: list[np.ndarray] = []
+    monkeypatch.setattr(demo, "_pipe", lambda command, frames_: drawn.extend(frames_))
+    monkeypatch.setitem(sys.modules, "imageio_ffmpeg", type(sys)("imageio_ffmpeg"))
+    sys.modules["imageio_ffmpeg"].get_ffmpeg_exe = lambda: "ffmpeg"
+    count = demo.write_excerpt(
+        timeline, summary, tmp_path / "e.webp", width=320, fps=fps, theme="light"
+    )
+    assert count == round(timeline.seconds * fps) == len(drawn)
+    opening = drawn[0]
+    assert np.array_equal(opening, frames.draw(math.ceil(held * fps) / fps))
+    assert np.array_equal(
+        drawn[count - math.ceil(held * fps)], frames.draw(0.0)
+    )  # then the loop runs on
+    assert not np.array_equal(
+        opening, frames.draw(0.0)
+    )  # not the empty dashboard the turn starts on
 
 
 def test_the_video_is_its_planned_frames_each_its_size(timeline: Any, summary: Any) -> None:
