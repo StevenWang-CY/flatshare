@@ -143,8 +143,10 @@ impl Summary {
         let Some(data) = line.strip_prefix(b"data:") else {
             return;
         };
-        // Most chunks carry neither field, or `"finish_reason":null`: skip them without parsing.
-        if (has_value(data, b"\"usage\"") || has_value(data, b"\"finish_reason\""))
+        // Most chunks carry none of the fields, or `"finish_reason":null`: skip them without parsing.
+        if (has_value(data, b"\"usage\"")
+            || has_value(data, b"\"finish_reason\"")
+            || has_value(data, b"\"stop_reason\""))
             && let Ok(envelope) = serde_json::from_slice(data)
         {
             self.absorb(envelope);
@@ -163,9 +165,26 @@ impl Summary {
             .into_iter()
             .flatten()
             .find_map(|choice| choice.finish_reason)
+            .or_else(|| {
+                envelope
+                    .stop_reason
+                    .or_else(|| envelope.delta.and_then(|d| d.stop_reason))
+                    .map(finish_reason)
+            })
         {
             self.finish_reason = Some(reason);
         }
+    }
+}
+
+/// The Messages API's `stop_reason` as the finish reason the other APIs give: vLLM 0.32 derives the one from the
+/// other, so each maps back. A reason it does not derive is kept as it is.
+fn finish_reason(stop_reason: String) -> String {
+    match stop_reason.as_str() {
+        "end_turn" | "stop_sequence" => "stop".into(),
+        "max_tokens" => "length".into(),
+        "tool_use" => "tool_calls".into(),
+        _ => stop_reason,
     }
 }
 
@@ -180,13 +199,20 @@ fn has_value(json: &[u8], key: &[u8]) -> bool {
     })
 }
 
-/// The fields read from a response object, an SSE chunk, or a Responses API stream event (which wraps the
-/// response object).
+/// The fields read from a response object, an SSE chunk, a Responses API stream event (which wraps the response
+/// object), or a Messages API message or `message_delta` event (whose `delta` carries the stop reason).
 #[derive(Deserialize)]
 struct Envelope {
     usage: Option<RawUsage>,
     choices: Option<Vec<Choice>>,
     response: Option<ResponseObject>,
+    stop_reason: Option<String>,
+    delta: Option<Delta>,
+}
+
+#[derive(Deserialize)]
+struct Delta {
+    stop_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -200,7 +226,8 @@ struct Choice {
 }
 
 /// Chat Completions and Completions name the fields `prompt_tokens` and `completion_tokens`; the Responses API
-/// names them `input_tokens` and `output_tokens`.
+/// names them `input_tokens` and `output_tokens`. The Messages API counts the cache's reads and writes apart from its
+/// `input_tokens`, so its prompt is the three together and its cached tokens are the reads.
 #[derive(Deserialize)]
 struct RawUsage {
     #[serde(alias = "input_tokens")]
@@ -209,6 +236,8 @@ struct RawUsage {
     completion_tokens: Option<u64>,
     #[serde(alias = "input_tokens_details")]
     prompt_tokens_details: Option<TokenDetails>,
+    cache_read_input_tokens: Option<u64>,
+    cache_creation_input_tokens: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -218,13 +247,20 @@ struct TokenDetails {
 
 impl From<RawUsage> for Usage {
     fn from(raw: RawUsage) -> Self {
+        let read = raw.cache_read_input_tokens.unwrap_or(0);
+        let written = raw.cache_creation_input_tokens.unwrap_or(0);
         Self {
-            prompt: raw.prompt_tokens.unwrap_or(0),
+            prompt: raw
+                .prompt_tokens
+                .unwrap_or(0)
+                .saturating_add(read)
+                .saturating_add(written),
             completion: raw.completion_tokens.unwrap_or(0),
             cached: raw
                 .prompt_tokens_details
                 .and_then(|d| d.cached_tokens)
-                .unwrap_or(0),
+                .unwrap_or(0)
+                .saturating_add(read),
         }
     }
 }
@@ -322,6 +358,32 @@ mod tests {
         let body = br#"{"id":"r","output":[],"usage":{"input_tokens":40,"output_tokens":7,
             "input_tokens_details":{"cached_tokens":32}}}"#;
         assert_eq!(scan("application/json", &[body]).usage, Some(usage));
+    }
+
+    #[test]
+    fn messages_api_events_and_bodies_count_the_cache_in_the_prompt() {
+        // vLLM 0.32 gives the Messages API's input_tokens without the cache's reads and writes, and its stop reason in
+        // the closing message_delta; the request line keeps chat's meanings.
+        let start =
+            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":\
+            {\"input_tokens\":1958,\"output_tokens\":0}}}\n\n";
+        let delta = b"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\
+            \"max_tokens\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":1958,\"output_tokens\":96,\
+            \"cache_read_input_tokens\":16384}}\n\n";
+        let expected = Summary {
+            usage: Some(Usage {
+                prompt: 18342,
+                completion: 96,
+                cached: 16384,
+            }),
+            finish_reason: Some("length".into()),
+        };
+        assert_eq!(scan("text/event-stream", &[start, delta]), expected);
+        let body = br#"{"id":"m","type":"message","content":[],"stop_reason":"tool_use","usage":{"input_tokens":1942,
+            "output_tokens":96,"cache_read_input_tokens":16384,"cache_creation_input_tokens":16}}"#;
+        let summary = scan("application/json", &[body]);
+        assert_eq!(summary.usage, expected.usage);
+        assert_eq!(summary.finish_reason.as_deref(), Some("tool_calls"));
     }
 
     #[test]
