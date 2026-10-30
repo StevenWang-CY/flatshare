@@ -56,11 +56,12 @@ static HOP_BY_HOP: [HeaderName; 8] = [
     header::UPGRADE,
 ];
 
-/// Request headers that do not apply to the upstream request: the client's key, which only the gateway checks;
-/// the gateway's host; the length and type of a body the gateway rewrites; and `Expect`, which the gateway
-/// already answered by reading the body.
-static NOT_FORWARDED: [HeaderName; 5] = [
+/// Request headers that do not apply to the upstream request: the client's key, which only the gateway checks, in
+/// either header an API puts it in (the Messages API's clients send `x-api-key`); the gateway's host; the length and
+/// type of a body the gateway rewrites; and `Expect`, which the gateway already answered by reading the body.
+static NOT_FORWARDED: [HeaderName; 6] = [
     header::AUTHORIZATION,
+    HeaderName::from_static("x-api-key"),
     header::HOST,
     header::CONTENT_LENGTH,
     header::CONTENT_TYPE,
@@ -915,6 +916,7 @@ mod tests {
             ("x-flatshare-anything", "1"),
             ("x-claude-code-session-id", "cc-1"),
             ("authorization", "Bearer k"),
+            ("x-api-key", "sk-ant-theirs"),
             ("connection", "keep-alive, x-hop"),
             ("x-hop", "1"),
             ("content-length", "10"),

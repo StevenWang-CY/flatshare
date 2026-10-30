@@ -9,6 +9,10 @@ pub(crate) enum Route {
     ChatCompletions,
     Completions,
     Responses,
+    /// `POST /v1/messages`, the Anthropic Messages API, as Claude Code sends it.
+    Messages,
+    /// `POST /v1/messages/count_tokens`: a Messages body's prompt tokens, generating nothing.
+    CountTokens,
     Models,
     Events,
     /// `POST /v1/sessions`, with `[[nodes]]`.
@@ -21,8 +25,13 @@ pub(crate) enum Route {
 
 impl Route {
     /// The routes that proxy a request body, whose overhead and upload are timed.
-    pub(crate) const INFERENCE: [Self; 3] =
-        [Self::ChatCompletions, Self::Completions, Self::Responses];
+    pub(crate) const INFERENCE: [Self; 5] = [
+        Self::ChatCompletions,
+        Self::Completions,
+        Self::Responses,
+        Self::Messages,
+        Self::CountTokens,
+    ];
 
     /// Whether the route is an inference route, whose requests are offered, admitted and ended.
     pub fn is_inference(self) -> bool {
@@ -34,6 +43,8 @@ impl Route {
             Self::ChatCompletions => "/v1/chat/completions",
             Self::Completions => "/v1/completions",
             Self::Responses => "/v1/responses",
+            Self::Messages => "/v1/messages",
+            Self::CountTokens => "/v1/messages/count_tokens",
             Self::Models => "/v1/models",
             Self::Events => "/v1/events",
             Self::Sessions => "/v1/sessions",
