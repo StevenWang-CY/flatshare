@@ -1,42 +1,67 @@
 # Glossary
 
 The terms the other documents use, for a reader who meets one they do not know, each with where it is defined in full,
-sorted within each section. Code identifiers and the records' labels (point names, arm labels) keep their names; prose
-uses the names below. The project was called Leaseholder through v1.1, and the records keep its former names: [Former
-names](#former-names) maps them to the current ones.
+sorted within each section. [One name for each concept](#one-name-for-each-concept) gives the name the documents and the
+figures use for each concept, and the names it replaces. Code identifiers and the records' labels (point names, arm
+labels) keep their names. The project was called Leaseholder through v1.1, and the records keep its former names:
+[Former names](#former-names) maps them to the current ones.
+
+## One name for each concept
+
+Each concept has one name in the documents and in the figures. The figures take theirs from one table in the code,
+[`flatshare_bench.labels`](../python/flatshare_bench/src/flatshare_bench/labels.py), and this table gives the same
+names. Where a retired name stays for another concept, as make-room does for the engine variant, the Never column says
+which use it retires.
+
+| Concept | Use | Never |
+|---|---|---|
+| #63350 and #63351 together, as a change to vLLM's priority scheduling | the change | the PRs, the engine change, the scheduler change |
+| The two proposals on GitHub: their diff, branches and state | the pull requests, or #63350 and #63351 | the PRs |
+| #63350's rule | the KV preemption | make-room (for the rule), KV make-room |
+| #63351's rule, and how many first tokens it covers | the budget cap, and its window | the prefill hold, the hold |
+| The engine variant that runs the change on vLLM 0.32.0 | make-room | the generated scheduler |
+| Both rules at the budget cap's default window of 16 tokens | the change at its 16-token window | make-room and the hold |
+| Both rules at two preemptions a step, a 48-token window and no reserve | the configuration to deploy | the PRs' configuration, the PRs' values |
+| Stock vLLM with the box's tuning, the baseline of a comparison | tuned vLLM | the frozen box (for the baseline), the frozen engine, frozen |
+| A policy that aborts agent requests with no first byte and resubmits them | preempt-resubmit | abort-and-resubmit, the router |
+| One replayed Claude Code session with its subagents | an agent session | session tree |
+| The agents' prompt and completion tokens a second | the agents' token rate | goodput |
+| One card for the calls and another for the agents | dedicated roles | a card per workload |
+| Two cards, both calls on the first and a warm spare | the arrangement to deploy | the serving arrangement |
 
 ## The change and its parts
 
 - **The budget cap** (#63351): lower-priority prefill sits out the steps of a higher-priority request's first tokens.
   **Its window** is how many first tokens it covers (`--priority-prefill-budget-cap-tokens`, 16 by default; 48 in the
-  configuration to deploy).
+  configuration to deploy), which the technical report writes T. The name is the flag's, and #63351's title says what it
+  does: "hold lower-priority prefill for first tokens".
 - **The change**: the two pull requests proposed to vLLM (open, with no maintainer review as of 2026-10-29) that change
   priority scheduling, [#63350](https://github.com/vllm-project/vllm/pull/63350) for a full KV cache and
   [#63351](https://github.com/vllm-project/vllm/pull/63351) for prefill beside a priority request's first tokens.
-  [ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351) states their rules.
+  [ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351) states their rules. **The pull requests** are the
+  proposals themselves, their diff, branches and state. In a figure *the change* is both rules at the budget cap's
+  default 16-token window.
 - **The configuration to deploy**: the change's switches, the KV preemption at 2 a step and the budget cap with a
   48-token window and no reserve, at the serving profile's step cap of 256 tokens without a per-request threshold
   ([PRODUCTION.md](PRODUCTION.md#the-configuration)). W5's evaluation ran the same switches on the frozen box's engine,
   at 512 tokens a step with a 256-token threshold.
-- **The KV preemption** (#63350; **KV make-room** in make-room's switches, and **make-room** in the technical report): a
-  waiting request of a higher priority that lacks KV preempts running requests of a lower priority, at most N a step
-  (`--max-priority-preemptions-per-step`).
-- **make-room**: the engine variant that builds vLLM 0.32.0's scheduler at each start from the PRs' scheduler diff,
-  backported to 0.32.0, and a patch of its own (its switches, the reserve and its counters), and loads it with
-  `--scheduler-cls` ([python/flatshare_vllm](../python/flatshare_vllm/README.md)). E2 measured the PRs' configuration
-  as make-room with the PRs' switch values, to which the PRs' diff, ported to 0.32.0, schedules identically:
-  `tests/test_trace.py` runs both on the same request traces and requires every step to be equal, and finds the module
-  W5's points loaded equal but for its held-token count, which it overstated
-  ([E3](BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)), and for the hold's last step under asynchronous
-  scheduling with the budget cap, which it held a step past the window, as #63351 did before its revision of
-  2026-10-25 ([after W5](BENCHMARKS.md#after-w5-the-first-tokens-in-flight)). It finds the module that the sweep's and
-  the rounds' points loaded, built on 2026-10-27, equal in every step to today's, which differs from it only in
-  counting the blocks a preemption releases in one pass. The technical report calls it the generated scheduler and
-  keeps *make-room* for #63350's rule.
-- **The prefill hold**: the technical report's name for the budget cap, after #63351's title, "hold lower-priority
-  prefill for first tokens". The report writes its window T.
+- **The KV preemption** (#63350): a waiting request of a higher priority that lacks KV preempts running requests of a
+  lower priority, at most N a step (`--max-priority-preemptions-per-step`; in make-room,
+  `make_room.max_preemptions_per_step`).
+- **make-room**: the engine variant that builds vLLM 0.32.0's scheduler at each start from the pull requests' scheduler
+  diff, backported to 0.32.0, and a patch of its own (its switches, the reserve and its counters), and loads it with
+  `--scheduler-cls` ([python/flatshare_vllm](../python/flatshare_vllm/README.md)). The name is the variant's only:
+  #63350's rule is the KV preemption. E2 measured the change as make-room with the pull requests' switch values, to
+  which their diff, ported to 0.32.0, schedules identically.
+  - `tests/test_trace.py` runs both on the same request traces and requires every step to be equal. It finds the module
+    W5's points loaded equal but for its held-token count, which it overstated
+    ([E3](BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)), and for the budget cap's last held step under
+    asynchronous scheduling, a step past the window, as #63351 held before its revision of 2026-10-25
+    ([after W5](BENCHMARKS.md#after-w5-the-first-tokens-in-flight)).
+  - It finds the module that the sweep's and the rounds' points loaded, built on 2026-10-27, equal in every step to
+    today's, which differs from it only in counting the blocks a preemption releases in one pass.
 - **The reserve**: make-room's third switch, which keeps KV free for priority 0 by holding back lower-priority
-  admissions. The PRs leave it out.
+  admissions. The pull requests leave it out.
 
 ## The box and the hosts
 
@@ -46,17 +71,17 @@ names](#former-names) maps them to the current ones.
 - **cyan**: the control host, CPU only: the gateway, LiveKit, the voice agent and the callers, and AIPerf.
 - **The frozen box**: the one pinned configuration every experiment on the box runs: vLLM 0.32.0 with
   Qwen3-4B-Instruct-2507-FP8, priority scheduling, a 512-token step cap and a 20 GiB CPU KV tier, beside Whisper (STT)
-  and Kokoro (TTS) on the same GPU ([ARCHITECTURE.md §5.1](ARCHITECTURE.md#31-the-frozen-box)). *Frozen* alone, as in
-  the A100 run's tables, names the stock engine with the frozen box's flags on whatever card it runs.
+  and Kokoro (TTS) on the same GPU ([ARCHITECTURE.md §5.1](ARCHITECTURE.md#31-the-frozen-box)). Beside other
+  configurations its engine is tuned vLLM, which the A100 run's records label *frozen* on whatever card it runs.
 - **Gray**: the second GPU node, identical to Phastform: the probes' booked windows (the first make-room probes ran on
-  it on 2026-10-23), the second card of the two-card rounds and the serving arrangement's warm spare.
+  it on 2026-10-23), the second card of the two-card rounds and the arrangement to deploy's warm spare.
 - **peacock**: a CPU host for builds and tests, and the machine of the change's per-step cost baseline
   (`make perf-make-room`).
 - **Phastform**: the box's host: one RTX 5060 Ti 16 GB, two Xeon E5-2609 v4 and 188 GiB of RAM.
 - **Stock vLLM**: vLLM 0.32.0 without the change, whatever its flags.
-- **Tuned vLLM**: stock vLLM as an operator would tune it. On the box it is the frozen box. On the A100 the technical
-  report names its step cap: at 512-token steps it runs the box's tuning, as the core compares, and at 2,048/0 the
-  card's best stock step cap ([the A100 run](HARDWARE.md#what-it-measured-2026-10-26)).
+- **Tuned vLLM**: stock vLLM as an operator would tune it. On the box it is the frozen box's engine. On the A100 the
+  technical report names its step cap: at 512-token steps it runs the box's tuning, as the core compares, and at 2,048/0
+  the card's best stock step cap ([the A100 run](HARDWARE.md#what-it-measured-2026-10-26)).
 
 ## Classes and priorities
 
@@ -68,10 +93,10 @@ names](#former-names) maps them to the current ones.
 
 - **A' and C'**: two of the A100 run's optional arms: A', the box's pool at 32 agent sessions (one round ran), and C',
   Qwen3-14B-FP8 at an A100 40 GB's own pool (not run) ([HARDWARE.md](HARDWARE.md#the-optional-arms)).
-- **The A100 run** (A1, 2026-10-26): the release's kit on an A100 SXM4 80 GB on Google Colab. Its **core** repeated
-  E2's discriminating scenario like for like (the box's model, pool, 512/256 and CPU tier, W5's arm files and five
-  samples) with E0, the probes and a calibration point, and its **arms** after the core were the batch (256 requests
-  in flight), tuned vLLM at 2,048/0, the PRs' values at that cap, A' (32 sessions) and FlashInfer's attention
+- **The A100 run** (A1, 2026-10-26): the release's kit on an A100 SXM4 80 GB on Google Colab. Its **core** repeated E2's
+  discriminating scenario like for like (the box's model, pool, 512/256 and CPU tier, W5's arm files and five samples)
+  with E0, the probes and a calibration point, and its **arms** after the core were the batch (256 requests in flight),
+  tuned vLLM at 2,048/0, the configuration to deploy at that cap, A' (32 sessions) and FlashInfer's attention
   ([HARDWARE.md](HARDWARE.md#what-it-measured-2026-10-26)).
 - **Agent session**: one replayed Claude Code session with its subagents, the replay's unit (a "session tree" in
   AIPerf).
@@ -87,9 +112,9 @@ names](#former-names) maps them to the current ones.
 - **E2**: the voice SLO measured end to end beside background agents, against the configurations of vLLM 0.32, SGLang
   0.5.22, SMG and llm-d's flow control (emulated) that an operator can deploy without the change.
 - **E3**: what make-room takes from the agents, from the engine's own counters.
-- **FB** (2026-10-25): W5's headline configurations again (voice alone, the frozen box and the PRs' 48-token
-  configuration), in five rounds on the code of 2026-10-25 (v0.3-191: W6's transport, and the PRs' budget cap counting
-  the tokens in flight), each round on the agents' sample of W5's round of the same number
+- **FB** (2026-10-25): W5's headline configurations again (voice alone, tuned vLLM and the configuration to deploy), in
+  five rounds on the code of 2026-10-25 (v0.3-191: W6's transport, and #63351's budget cap counting the tokens in
+  flight), each round on the agents' sample of W5's round of the same number
   ([BENCHMARKS.md](BENCHMARKS.md#the-final-code-against-w5-fb); the records are in
   [`benchmarks/results/2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb)).
 - **G-sim**: E1's gate: if even the oracle closes under about 10% of resume TTFT over LRU plus the CPU tier in the
@@ -109,27 +134,28 @@ names](#former-names) maps them to the current ones.
   are in [`benchmarks/results/2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds)).
 - **Round**: one run of each point of a campaign, in a rotated order, on the round's own sample of the agents'
   traces.
-- **RS** (2026-10-26): five rounds of the frozen box and the PRs' 48-token configuration on v1.2 with the KV
-  sampler on, each round on the agents' sample of W5's round of the same number, which measured the box's running
-  share ([BENCHMARKS.md](BENCHMARKS.md#the-boxs-running-share-rs); the records are in
+- **RS** (2026-10-26): five rounds of tuned vLLM and the configuration to deploy on v1.2 with the KV sampler on, each
+  round on the agents' sample of W5's round of the same number, which measured the box's running share
+  ([BENCHMARKS.md](BENCHMARKS.md#the-boxs-running-share-rs); the records are in
   [`benchmarks/results/2026-10-26-e2-rs`](../benchmarks/results/2026-10-26-e2-rs)).
 - **Run**: one measurement of a point.
 - **The standard scenario**: the whole corpus of agent traces at 16 agent sessions, the realistic load (and at 8 and
   24 in W2 and W4).
 - **SW** (2026-10-27): the sweep's two screens, one run a setting on W5's tuning sample of the agents (agent seed 11),
-  of the PRs' configuration over the step cap, the threshold per request, the window and the gateway's static caps on
-  agent requests in flight, and of the frozen box at two step caps
+  of the configuration to deploy over the step cap, the threshold per request, the window and the gateway's static caps
+  on agent requests in flight, and of tuned vLLM at two other step caps
   ([BENCHMARKS.md](BENCHMARKS.md#the-step-cap-screened-and-confirmed-sw-rg); the records are in
   [`benchmarks/results/2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep)).
 - **W0 to W8**: the project's build and measurement stages. W0 (2026-10-22): the frozen box and its first replay; W1
   (2026-10-22): the gateway and the voice path; W2 (2026-10-22 to 23): E2's first batches; W3 (2026-10-23): the build
-  with the voice agent's lifecycle events; W4 (2026-10-23 to 24): the discriminating scenario in rounds; W5
-  (2026-10-24 to 25): the fixed make-room and the PRs' configuration in five rounds; W6 to W8 (2026-10-25): production
+  with the voice agent's lifecycle events; W4 (2026-10-23 to 24): the discriminating scenario in rounds; W5 (2026-10-24
+  to 25): the fixed make-room and the configuration to deploy in five rounds; W6 to W8 (2026-10-25): production
   hardening, refactors and failure drills.
-- **W5's campaigns**: *W5's campaign* (voice alone, the frozen box and the PRs' 48-token configuration, with make-room
-  as v0.3 built it as its control), *the PR campaign* (the frozen box, #63350 alone, and both PRs at 16 and at 48
-  tokens), *the extension* (preempt-resubmit, the PRs' 48-token configuration again, and the standard scenario's pair),
-  each of five rounds, and *calls per GPU*, of three ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load)).
+- **W5's campaigns**: *W5's campaign* (voice alone, tuned vLLM and the configuration to deploy, with make-room as v0.3
+  built it as its control), *the PR campaign* (tuned vLLM, the KV preemption alone, the change at its 16-token window
+  and the configuration to deploy), *the extension* (preempt-resubmit, the configuration to deploy again, and the
+  standard scenario's pair), each of five rounds, and *calls per GPU*, of three
+  ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load)).
 
 ## Measures
 
