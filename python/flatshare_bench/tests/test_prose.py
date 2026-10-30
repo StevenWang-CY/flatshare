@@ -22,8 +22,9 @@ SKIPPED = ("benchmarks/results/", "CHANGELOG.md")
 """Markdown kept as written: the records' directory and the release history."""
 WRITTEN = "Written by `flatshare-sim forecast`"
 """How a forecast the simulator wrote opens."""
-BUILD = {".venv", "node_modules", "target"}
-"""Directories a build or a test run fills, whose Markdown is not the repository's."""
+BUILD = {".venv", "build", "node_modules", "target"}
+"""Directories a build or a test run fills, whose Markdown is not the repository's: build/ holds what make writes,
+such as make reproduce-e2's report."""
 HTML = re.compile(
     r"^</?(p|picture|source|img|h\d|div|a|br|details|summary|table|tr|td|th|sub|sup)\b",
     re.IGNORECASE,
@@ -90,14 +91,15 @@ def words(unit: str) -> int:
     return sum(1 for token in text.split() if re.search(r"[A-Za-z0-9]", token))
 
 
-def documents() -> list[Path]:
-    """Every Markdown file of the repository but those SKIPPED and the forecasts the simulator wrote."""
+def documents(top: Path = REPO) -> list[Path]:
+    """Every Markdown file under top, the repository by default, but those SKIPPED and the forecasts the simulator
+    wrote."""
     found = []
-    for root, dirs, files in os.walk(REPO):
+    for root, dirs, files in os.walk(top):
         dirs[:] = sorted(d for d in dirs if d not in BUILD)
         for name in sorted(files):
             path = Path(root) / name
-            if name.endswith(".md") and not path.relative_to(REPO).as_posix().startswith(SKIPPED):
+            if name.endswith(".md") and not path.relative_to(top).as_posix().startswith(SKIPPED):
                 first = units(path.read_text())[:1]
                 if not (first and first[0][1].startswith(WRITTEN)):
                     found.append(path)
@@ -145,3 +147,17 @@ def test_the_scan_reads_the_docs_and_skips_the_records() -> None:
     assert not any(path.startswith(SKIPPED) for path in read)
     assert "benchmarks/a100/forecast.md" not in read
     assert "benchmarks/a100/rehearsal/README.md" in read
+
+
+def test_the_scan_skips_what_a_build_or_a_run_writes(tmp_path: Path) -> None:
+    for name in (
+        "README.md",
+        "build/reproduce-e2/frontier.md",
+        "target/doc/index.md",
+        "python/x/.venv/notes.md",
+        "benchmarks/results/run/README.md",
+        "CHANGELOG.md",
+    ):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("# A record\n\nSome words.\n")
+    assert [path.relative_to(tmp_path).as_posix() for path in documents(tmp_path)] == ["README.md"]
