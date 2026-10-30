@@ -24,7 +24,9 @@
 //! failed one holding its agents back after the failed node is healthy again, until the moved call's `session_closed`,
 //! and one held past its queue deadline answered 503 `queue_timeout` while calls go on; under `calls = "fill"`, a spare
 //! given a new call while the first node is down covering until that call ends, the first node, healthy again, taking
-//! the next call and never covering for it; a realtime request whose node is killed before its first content answered
+//! the next call and never covering for it; a draining node passed over for a new call, its turn and an agent's
+//! request though it is healthy and first, `/nodes` saying it drains and is drained, and `/ready` counting the other;
+//! a realtime request whose node is killed before its first content answered
 //! whole by the other node, counted as retried, its call moved; a stream that breaks after its first content ended with
 //! the error event and never sent again; `/ready`, `/metrics/engine?node=` and `/nodes` under the metrics key.
 
@@ -295,6 +297,28 @@ async fn a_node_whose_engine_fails_its_canary_is_unhealthy_and_its_requests_go_e
     // A degraded node's canary asks every second, so its recovery shows within a second or two.
     a.engine.set_failing(false);
     gw.await_metric(&healthy("a"), 1.0).await;
+}
+
+#[tokio::test]
+async fn a_draining_node_takes_no_new_session_and_says_when_it_is_drained() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let b = TestNode::start("b", Script::Json("{}")).await;
+    let drains = format!("{UNBOUNDED}\ndraining = true");
+    let gw = Gateway::start_nodes_each(&[(&a, &drains), (&b, UNBOUNDED)], "", "").await;
+    all_healthy(&gw, &[&a, &b]).await;
+    gw.await_metric("flatshare_gateway_node_draining{node=\"a\"}", 1.0)
+        .await;
+    // a is healthy and first in the order, yet a new call, its turn and an agent's request all go to b.
+    assert_eq!(node_of(&gw, "call-1").await, "b");
+    assert_eq!(turn(&gw, "call-1").await.status, 200);
+    assert_eq!(agent(&gw, "agent-1").await.status, 200);
+    assert_eq!((a.requests(), b.requests()), (0, 2));
+    // /nodes: a drains and, holding nothing, is drained; b does neither. /ready counts b for both roles.
+    let view = nodes_view(&gw).await;
+    let flags = |node: &serde_json::Value| (node["draining"].clone(), node["drained"].clone());
+    assert_eq!(flags(&view["nodes"][0]), (true.into(), true.into()));
+    assert_eq!(flags(&view["nodes"][1]), (false.into(), false.into()));
+    assert_eq!(call(&gw.tcp, "GET", "/ready", &[], "").await.status, 200);
 }
 
 #[tokio::test]

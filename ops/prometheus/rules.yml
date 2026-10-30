@@ -208,8 +208,9 @@ groups:
           summary: Requests ran past their class's deadlines waiting on the engine, which the gateway then cancelled
       # With [[nodes]] (ops/RUNBOOK.md, Two GPU nodes): the engine's alerts above hold for each node, by its node
       # label, and the nodes add theirs.
+      # A node that drains is taken out on purpose: stopped once it is drained, it pages no one.
       - alert: FlatshareNodeUnhealthy
-        expr: flatshare_gateway_node_healthy == 0
+        expr: flatshare_gateway_node_healthy == 0 unless on (node) flatshare_gateway_node_draining == 1
         for: 1m
         labels:
           severity: page

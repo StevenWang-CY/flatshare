@@ -1226,9 +1226,18 @@
           "expr": "min by (node, component) (flatshare_gateway_node_component_healthy)",
           "legendFormat": "{{node}} {{component}}",
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "flatshare_gateway_node_draining",
+          "legendFormat": "draining, {{node}}",
+          "refId": "D"
         }
       ],
-      "description": "1 while healthy: its engine serving and ready, its STT and TTS answering /health. A node is passed over at once when a request finds its engine broken, and unhealthy after unhealthy_after failed checks in a row."
+      "description": "1 while healthy: its engine serving and ready, its STT and TTS answering /health. A node is passed over at once when a request finds its engine broken, and unhealthy after unhealthy_after failed checks in a row. Draining is 1 while the configuration drains the node: it takes no new session, and once it is drained it may be stopped without a page."
     },
     {
       "type": "timeseries",

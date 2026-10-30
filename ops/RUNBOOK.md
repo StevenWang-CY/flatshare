@@ -333,9 +333,22 @@ curl -s 127.0.0.1:18080/ready                                                   
   - *Setting `idle_s`.* Set it just above the agents' longest pause between requests (150 s for the replay, whose think times are capped at 120 s) and offer a few sessions under the bounds ([the two-node smokes](../benchmarks/results/2026-10-28-two-node-smoke/README.md)).
 - **The drill.** `ops/drills/node-failover.sh kill|stop` places two calls and runs their turns every 3 s beside two agents' streams, kills (or stops) the engine of the first call's node, and reports the turns before and after, the moves, when the node was passed over and healthy again, and how long the survivor covered for it ([Drills](#drills)).
 
-There is no graceful drain of one node: stopping a node's engine for maintenance is a failure that the calls ride out as above.
+<a id="drain-one-node"></a>**Drain one node** for maintenance, such as a rolling engine upgrade, so that no call fails:
 
-**Gray's windows.** Gray is shared, so its servers start for a window by hand (`systemctl --user start flatshare.target` on Gray, and `stop` after), and its target is not enabled at boot (`deploy/gray/install.sh`). cyan's tunnel to it is, while the gateway uses it: cyan's `install.sh`, which each release runs, enables `flatshare-tunnel@gray` while `gateway.toml` names Gray's sockets and cyan has its target (`tunnel-gray.env`), and says so when the target is missing. It never disables one, so when a window ends, reload the gateway without Gray's node, then `systemctl --user disable --now flatshare-tunnel@gray`.
+1. In the node's `[[nodes]]` entry in `~/.config/flatshare/gateway.toml` on cyan, set `draining = true`, and reload the gateway (`systemctl --user reload flatshare-gateway`). The successor keeps every placement: the node's calls stay on it, new calls go to the other node, and its agents' sessions move there by their next request.
+2. Wait until it is drained, when its last call has ended and no request is in flight there:
+
+   ```sh
+   curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/nodes | jq '.nodes[] | {name, draining, drained, sessions}'
+   ```
+
+   A call ends at its `DELETE /v1/sessions/{id}`, which the voice worker sends when the caller hangs up, or `idle_s` after its last turn.
+3. Stop the node (`systemctl --user stop flatshare.target flatshare-engine flatshare-stt flatshare-tts` there). `FlatshareNodeUnhealthy` stays quiet for a node that drains. Upgrade it, or release to it, and start it again.
+4. Once `/nodes` shows it healthy, remove `draining` and reload: it takes new sessions again.
+
+While one node drains, the other carries every new call, so it needs a call slot for each (`max_calls`). With `calls = "fill"`, a warm spare that takes them covers: its agents' requests are held back, as in a failover, until those calls end. Drain in a quiet window. The gateway's tests drain one of two nodes (`src/nodes/`); a drill on both GPU nodes waits for a window in which Gray serves.
+
+**Gray's windows.** Gray is shared, so its servers start for a window by hand (`systemctl --user start flatshare.target` on Gray, and `stop` after), and its target is not enabled at boot (`deploy/gray/install.sh`). cyan's tunnel to it is, while the gateway uses it: cyan's `install.sh`, which each release runs, enables `flatshare-tunnel@gray` while `gateway.toml` names Gray's sockets and cyan has its target (`tunnel-gray.env`), and says so when the target is missing. It never disables one, so when a window ends, drain Gray ([above](#drain-one-node)) so that its calls end there, reload the gateway without Gray's node, then `systemctl --user disable --now flatshare-tunnel@gray`.
 
 ## Drills
 
@@ -410,7 +423,7 @@ Every alert's `runbook_url` opens its row here. Without an alert, start from [th
 | `FlatshareEngineMetricsDown` | Ticket after 5 min | The gateway's `/metrics/engine` relay, on cyan | [Engine](#flatshareenginemetricsdown) |
 | `FlatshareStreamsBroken` | Ticket | The engine's and the tunnel's journals at those times | [Engine](#flatsharestreamsbroken) |
 | `FlatshareKvPoolFullWithWaiting` | Ticket after 10 min | Whether the engine runs `make-room-serve` | [Engine](#flatsharekvpoolfullwithwaiting) |
-| `FlatshareNodeUnhealthy` | Page after 1 min | `/nodes`, which names the failed component | [Two nodes](#flatsharenodeunhealthy) |
+| `FlatshareNodeUnhealthy` | Page after 1 min | `/nodes`, which names the failed component; a node that drains does not page | [Two nodes](#flatsharenodeunhealthy) |
 | `FlatshareNodeCovering` | Ticket after 5 min | Expected while moved calls end; the failed node's alerts say why | [Two nodes](#flatsharenodecovering) |
 | `FlatshareCallsRefused` | Ticket | `/nodes`: each node's calls | [Two nodes](#flatsharecallsrefused) |
 
@@ -565,4 +578,4 @@ A point's errors from `flatshare-bench e2 run` are in [E2's README](../benchmark
 
 ## Pausing
 
-Nothing should hold the shared GPU while idle. To pause the GPU node, run `systemctl --user stop flatshare.target flatshare-engine flatshare-stt flatshare-tts`, which returns once the units are down (stopping the target alone returns while they still stop); restart it with `systemctl --user start flatshare.target`. The target stays enabled, so a reboot brings the frozen box back. With `[[nodes]]`, a node paused while `gateway.toml` names it is unhealthy to the gateway, and pages (`FlatshareNodeUnhealthy`): reload the gateway without it first, as a window's end does ([Two GPU nodes](#two-gpu-nodes)). Gray is on a shared host: outside the arrangement to deploy, start it only for a booked window (`gpu-guard` refuses while another process holds the GPU) and stop it after; as the arrangement's warm spare it runs while the arrangement serves. The engine takes about 20 s to stop, releasing its pinned CPU tier.
+Nothing should hold the shared GPU while idle. To pause the GPU node, run `systemctl --user stop flatshare.target flatshare-engine flatshare-stt flatshare-tts`, which returns once the units are down (stopping the target alone returns while they still stop); restart it with `systemctl --user start flatshare.target`. The target stays enabled, so a reboot brings the frozen box back. With `[[nodes]]`, a node paused while `gateway.toml` names it is unhealthy to the gateway, and pages (`FlatshareNodeUnhealthy`) unless it drains: drain it first ([Drain one node](#drain-one-node)), or reload the gateway without it, as a window's end does ([Two GPU nodes](#two-gpu-nodes)). Gray is on a shared host: outside the arrangement to deploy, start it only for a booked window (`gpu-guard` refuses while another process holds the GPU) and stop it after; as the arrangement's warm spare it runs while the arrangement serves. The engine takes about 20 s to stop, releasing its pinned CPU tier.

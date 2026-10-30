@@ -170,6 +170,33 @@ tests:
               runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatshareenginewarming
               summary: No inference has succeeded since the gateway started, 15 minutes ago (an engine's cold start is about 9)
 
+  # With [[nodes]], a node that drains goes down, as its maintenance stops it once it is drained: no page. A node that
+  # does not drain, down as long, pages.
+  - interval: 1m
+    input_series:
+      - series: 'flatshare_gateway_node_healthy{node="phastform"}'
+        values: '1 0x6'
+      - series: 'flatshare_gateway_node_draining{node="phastform"}'
+        values: '1x7'
+      - series: 'flatshare_gateway_node_healthy{node="gray"}'
+        values: '1 0x6'
+      - series: 'flatshare_gateway_node_draining{node="gray"}'
+        values: '0x7'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: FlatshareNodeUnhealthy
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              node: gray
+            exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharenodeunhealthy
+              summary: A GPU node is unhealthy, and its calls and agents move to the other node
+              description: >-
+                gray's engine does not serve or a speech server does not answer /health (see
+                flatshare_gateway_node_component_healthy, or GET /nodes): it takes no new session, and its sessions
+                move by their next request. Its calls fit the survivor only while it has call slots (max_calls).
+
   # With [[nodes]]: a node unhealthy for a minute pages, naming it; one that covers for five a ticket; a refused call a
   # ticket.
   - interval: 1m

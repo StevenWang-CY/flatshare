@@ -28,6 +28,10 @@
 //!   `calls = "fill"` a realtime node after the first covers too while it carries any call, moved or new: it is a warm
 //!   spare that took calls only because the nodes before it were full or not available. The first realtime node never
 //!   covers for its own calls; its agents are bounded by `max_agents` alone.
+//! - **Draining.** A node set `draining` takes no new session, and `/ready` does not count it for its roles. Its calls
+//!   keep it until they end, and its agents' sessions move by their next request, counted as moves, so that it empties
+//!   for maintenance (a rolling engine upgrade) without an error; `/nodes` says when it is `drained`. A drain is set in
+//!   the configuration and taken by a reload, whose successor keeps the placements it hands over.
 //! - **Interrupted turns.** A realtime request whose node fails before its first content (no connection, one that
 //!   closed before the response, or a body that broke off before its first frame) is sent once more on another
 //!   available node, within the deadlines of its receipt, after the first attempt is dropped; once its first content
@@ -134,6 +138,8 @@ pub(crate) struct Node {
     pub engine: Arc<Engine>,
     pub stt: Option<Speech>,
     pub tts: Option<Speech>,
+    /// Whether it drains (`draining`): it takes no new session, and keeps only its calls.
+    pub draining: bool,
     judged: Mutex<Judged>,
     /// Whether its verdict is healthy, and whether it was available at its last check.
     healthy: AtomicBool,
@@ -157,6 +163,16 @@ impl Node {
             SloClass::Realtime => self.realtime,
             SloClass::Interactive | SloClass::Background => self.background,
         }
+    }
+
+    /// Whether a new session of `class` may be placed on it: it has the role, is available, and does not drain.
+    fn takes_new(&self, class: SloClass) -> bool {
+        self.takes(class) && self.available() && !self.draining
+    }
+
+    /// Whether a session of `class` placed on it stays: while it is available, and, while it drains, a call alone.
+    fn keeps(&self, class: SloClass) -> bool {
+        self.available() && (class == SloClass::Realtime || !self.draining)
     }
 
     pub fn verdict(&self) -> Verdict {
@@ -287,6 +303,7 @@ impl Nodes {
                     }),
                     stt: speech(&node.stt),
                     tts: speech(&node.tts),
+                    draining: node.draining,
                     judged: Mutex::new(Judged {
                         verdict: Verdict::Unknown,
                         failures: 0,
@@ -302,6 +319,27 @@ impl Nodes {
                 })
             })
             .collect();
+        for node in &list {
+            node.series.draining.set(i64::from(node.draining));
+            if node.draining {
+                tracing::warn!(
+                    node = &*node.name,
+                    "the node drains: it takes no new session, keeps its calls until they end, and its agents' \
+                     sessions move by their next request"
+                );
+            }
+        }
+        for (role, class) in [
+            ("realtime", SloClass::Realtime),
+            ("background", SloClass::Background),
+        ] {
+            if !list.iter().any(|node| node.takes(class) && !node.draining) {
+                tracing::warn!(
+                    role,
+                    "every node with the {role} role drains: no new {role} session can be placed"
+                );
+            }
+        }
         let gauges = list
             .iter()
             .map(|node| node.series.sessions.clone())
@@ -334,22 +372,24 @@ impl Nodes {
         self.list.iter().find(|node| &*node.name == name)
     }
 
-    /// An available node's engine, the first in the configuration's order: for a request without a session, such
-    /// as a model list.
+    /// An available node's engine, the first in the configuration's order and one that does not drain if there is
+    /// one: for a request without a session, such as a model list.
     pub fn any(&self) -> Option<Arc<Engine>> {
-        self.list
-            .iter()
-            .find(|node| node.available())
+        let available = || self.list.iter().filter(|node| node.available());
+        available()
+            .find(|node| !node.draining)
+            .or_else(|| available().next())
             .map(|node| Arc::clone(&node.engine))
     }
 
-    /// Whether every role is taken by an available node, `GET /ready`'s answer; else the role that is not.
+    /// Whether every role is taken by an available node that does not drain, `GET /ready`'s answer; else the role
+    /// that is not.
     pub fn ready(&self) -> Result<(), &'static str> {
         for (role, class) in [
             ("realtime", SloClass::Realtime),
             ("background", SloClass::Background),
         ] {
-            if !self.list.iter().any(|n| n.takes(class) && n.available()) {
+            if !self.list.iter().any(|n| n.takes_new(class)) {
                 return Err(role);
             }
         }
@@ -364,18 +404,19 @@ impl Nodes {
     }
 
     /// Places a request of `class`, of a `trusted` tenant or not, whose session is `key`: on its session's node
-    /// while that node is available, otherwise on the node chosen for it, which a named session keeps. A request
-    /// of a session the gateway minted (`key` `None`) is placed on its own.
+    /// while that node keeps it (available, and for an agent's session not draining), otherwise on the node chosen
+    /// for it, which a named session keeps. A request of a session the gateway minted (`key` `None`) is placed on its
+    /// own.
     pub fn request(
         self: &Arc<Self>,
         key: Option<Key>,
         class: SloClass,
         trusted: bool,
     ) -> Result<Placed, Unplaced> {
-        let available = |node: usize| self.list[node].available();
+        let keeps = |node: usize, class: SloClass| self.list[node].keeps(class);
         if let Some(key) = &key {
             let table = self.read();
-            if let Found::On(session) = table.find(key, available) {
+            if let Found::On(session) = table.find(key, keeps) {
                 // Under the table's lock, so that the expiry, which writes it, cannot end the placement meanwhile.
                 session.began();
                 drop(table);
@@ -390,7 +431,7 @@ impl Nodes {
         }
         let mut table = self.write();
         let found = match &key {
-            Some(key) => table.find(key, available),
+            Some(key) => table.find(key, keeps),
             None => Found::None,
         };
         let (node, session) = match found {
@@ -429,7 +470,7 @@ impl Nodes {
     }
 
     /// `POST /v1/sessions`: the node of `key`'s session, placed now as a session of `class` if it has none or its
-    /// node is not available.
+    /// node does not keep it.
     pub fn session(
         self: &Arc<Self>,
         key: &Key,
@@ -437,7 +478,7 @@ impl Nodes {
         trusted: bool,
     ) -> Result<Arc<Node>, Unplaced> {
         let mut table = self.write();
-        let lost = match table.find(key, |node| self.list[node].available()) {
+        let lost = match table.find(key, |node, class| self.list[node].keeps(class)) {
             Found::On(session) => return Ok(Arc::clone(&self.list[session.node])),
             Found::Lost(old) => Some(old.node),
             Found::None => None,
@@ -615,15 +656,22 @@ impl Nodes {
     ) {
         let to = &self.list[node];
         to.series.placements[class as usize][reason as usize].inc();
-        if let Some(from) = from {
+        if let Some(from_index) = from {
             let session = key.map(|key| key.session.as_str());
-            let from = &*self.list[from].name;
+            let from = &*self.list[from_index].name;
             match reason {
                 Reason::Retried => tracing::warn!(
                     session,
                     from,
                     to = &*to.name,
                     "a realtime request is sent again on another node: its node failed before its first content"
+                ),
+                _ if self.list[from_index].available() => tracing::info!(
+                    session,
+                    from,
+                    to = &*to.name,
+                    class = class.as_str(),
+                    "an agent's session moves to another node: its node drains"
                 ),
                 _ => tracing::info!(
                     session,
@@ -637,7 +685,8 @@ impl Nodes {
         self.show_covering();
     }
 
-    /// The node a new session of `class` goes to, not `exclude`: of the available nodes with its role, for a
+    /// The node a new session of `class` goes to, not `exclude`: of the available nodes with its role that do not
+    /// drain, for a
     /// realtime session, among those with a free call slot, the one with the fewest calls, then the fewest requests
     /// in flight (`calls = "spread"`), or the first (`"fill"`); and for an agent's, among those with a free agent slot
     /// (below their `max_agents`, if they have one), one that does not cover, then the one with the fewest agents'
@@ -654,7 +703,7 @@ impl Nodes {
         let mut candidates = self
             .list
             .iter()
-            .filter(|node| Some(node.index) != exclude && node.takes(class) && node.available())
+            .filter(|node| Some(node.index) != exclude && node.takes_new(class))
             .peekable();
         if candidates.peek().is_none() {
             return Err(Unplaced::NoNode);
@@ -836,7 +885,7 @@ impl Nodes {
                 tenant,
                 session: session.session.clone(),
             };
-            if matches!(table.find(&key, |_| true), Found::None) {
+            if matches!(table.find(&key, |_, _| true), Found::None) {
                 let moved_from = session.moved_from.as_deref().and_then(index);
                 let placed =
                     table.place(&key, session.class, node, session.trusted, moved_from, now);
@@ -899,6 +948,10 @@ impl Nodes {
                     "max_calls": node.max_calls,
                     "max_agents": node.max_agents,
                     "covering": self.covering_in(&table, node.index),
+                    "draining": node.draining,
+                    "drained": node.draining
+                        && table.held(node.index) == [0; 3]
+                        && node.in_flight() == 0,
                     "sessions": by_class(table.held(node.index)),
                     "in_flight": by_class(node.in_flight.each_ref().map(|n| n.load(Ordering::Relaxed))),
                 })
@@ -1021,7 +1074,10 @@ async fn expire(nodes: Weak<Nodes>, idle: Duration) {
 /// next node taking calls while the first is not available and the first taking new ones again once it is; a node
 /// covering while it carries calls moved to it, after their node recovers, until they end by `session_closed` or idling
 /// out, a spare under `fill` covering for a new call until it ends while the first realtime node never covers for its
-/// own and agents go to the nodes that do not cover, and under `spread` no node's own calls making it cover; a degraded
+/// own and agents go to the nodes that do not cover, and under `spread` no node's own calls making it cover; a
+/// draining node, after a reload, keeping its call (by its requests and `POST /v1/sessions`) while new calls and its
+/// agent's moved session go to the other node, out of `/ready` and model lists, and drained once the call ends, and a
+/// role whose every node drains placing nothing; a degraded
 /// node's engine asked every second where a lone engine's is asked every interval; `[[nodes]]`' and `[placement]`'s
 /// keys, defaults and refusals (`upstream` beside `[[nodes]]`, an admission policy, a name or an engine twice, roles,
 /// call slots, agents' bounds and a node with both roles that sets none, addresses, the rule for calls); the node
@@ -1078,6 +1134,15 @@ mod tests {
     /// Nodes of `(name, realtime, max_agents)`, each with the background role, the realtime role where `realtime`
     /// says, and two call slots, placed by `placement`.
     fn started_with(nodes: &[(&str, bool, Option<usize>)], placement: Placement) -> Arc<Nodes> {
+        started_draining(nodes, placement, &[])
+    }
+
+    /// As [`started_with`], the nodes named in `draining` draining.
+    fn started_draining(
+        nodes: &[(&str, bool, Option<usize>)],
+        placement: Placement,
+        draining: &[&str],
+    ) -> Arc<Nodes> {
         let config: Vec<NodeConfig> = nodes
             .iter()
             .map(|(name, realtime, max_agents)| NodeConfig {
@@ -1089,6 +1154,7 @@ mod tests {
                 max_agents: *max_agents,
                 stt: None,
                 tts: None,
+                draining: draining.contains(name),
             })
             .collect();
         let names: Vec<Arc<str>> = nodes.iter().map(|(name, ..)| Arc::from(*name)).collect();
@@ -1172,6 +1238,72 @@ mod tests {
             trusted: true,
             moved_from: moved_from.map(Into::into),
         }
+    }
+
+    #[tokio::test]
+    async fn a_draining_node_keeps_its_calls_moves_its_agents_and_takes_nothing_new() {
+        // Before the reload: a call and an agent's session on a.
+        let before = nodes(&["a", "b"]);
+        all_healthy(&before);
+        assert_eq!(place(&before, "call-1", SloClass::Realtime).unwrap(), "a");
+        assert_eq!(
+            place(&before, "agent-1", SloClass::Background).unwrap(),
+            "a"
+        );
+        let tenants = tenants(&["voice"]);
+        let handed = before.handover(&tenants);
+        // The reload's successor drains a, and takes the placements handed over.
+        let both = [("a", true, None), ("b", true, None)];
+        let after = started_draining(&both, Placement::default(), &["a"]);
+        all_healthy(&after);
+        after.restore(&handed, &tenants);
+        assert_eq!(after.list[0].series.draining.get(), 1);
+        // The call keeps a, by its requests and by POST /v1/sessions; a new call goes to b.
+        assert_eq!(place(&after, "call-1", SloClass::Realtime).unwrap(), "a");
+        let asked = after.session(&key("call-1"), SloClass::Realtime, true);
+        assert_eq!(&*asked.unwrap().name, "a");
+        assert_eq!(place(&after, "call-2", SloClass::Realtime).unwrap(), "b");
+        // The agent's session moves by its next request, counted as a move, and a new one goes to b.
+        assert_eq!(place(&after, "agent-1", SloClass::Background).unwrap(), "b");
+        let moved = &after.list[1].series.placements[SloClass::Background as usize];
+        assert_eq!(moved[Reason::Moved as usize].get(), 1);
+        assert_eq!(place(&after, "agent-2", SloClass::Background).unwrap(), "b");
+        // b alone answers for the roles, and a request without a session goes to b's engine.
+        assert_eq!(after.ready(), Ok(()));
+        assert!(Arc::ptr_eq(&after.any().unwrap(), &after.list[1].engine));
+        // /nodes: a drains, and is drained once its call ends.
+        let a = |nodes: &Nodes| nodes.describe()["nodes"][0].clone();
+        assert_eq!(
+            (&a(&after)["draining"], &a(&after)["drained"]),
+            (&true.into(), &false.into())
+        );
+        assert_eq!(a(&after)["sessions"]["realtime"], 1);
+        close(&after, "call-1");
+        assert_eq!(a(&after)["drained"], true);
+    }
+
+    #[tokio::test]
+    async fn a_role_whose_every_node_drains_is_not_ready_and_takes_no_new_session() {
+        let nodes = started_draining(
+            &[("a", true, None), ("b", false, None)],
+            Placement::default(),
+            &["a"],
+        );
+        all_healthy(&nodes);
+        assert_eq!(nodes.ready(), Err("realtime"));
+        assert!(matches!(
+            place(&nodes, "call-1", SloClass::Realtime),
+            Err(Unplaced::NoNode)
+        ));
+        assert_eq!(place(&nodes, "agent-1", SloClass::Background).unwrap(), "b");
+        // Without the drain a takes calls: the configuration's key alone made the difference.
+        let plain = started_with(
+            &[("a", true, None), ("b", false, None)],
+            Placement::default(),
+        );
+        all_healthy(&plain);
+        assert_eq!(place(&plain, "call-1", SloClass::Realtime).unwrap(), "a");
+        assert_eq!(plain.describe()["nodes"][0]["draining"], false);
     }
 
     #[tokio::test]

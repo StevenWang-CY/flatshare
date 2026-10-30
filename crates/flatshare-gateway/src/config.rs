@@ -172,6 +172,9 @@ pub struct NodeConfig {
     /// Its speech servers, whose `/health` its health needs, and which a call placed on it binds to.
     pub stt: Option<UpstreamAddr>,
     pub tts: Option<UpstreamAddr>,
+    /// Whether it drains (`draining`): it takes no new session, keeps its calls until they end, and its agents'
+    /// sessions move by their next request, so that it empties for maintenance without an error.
+    pub draining: bool,
 }
 
 /// `[placement]`: how sessions are placed on the nodes, and when a node is healthy.
@@ -525,6 +528,8 @@ struct RawNode {
     stt: Option<String>,
     #[serde(default)]
     tts: Option<String>,
+    #[serde(default)]
+    draining: bool,
 }
 
 impl RawNode {
@@ -707,6 +712,7 @@ fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
             max_agents,
             stt,
             tts,
+            draining: node.draining,
             name,
         });
     }
@@ -1772,6 +1778,13 @@ max_calls = 0
             (gray.realtime, gray.background, &gray.tts),
             (false, true, &None)
         );
+        // No node drains unless its configuration says so; `draining = true` drains that node alone.
+        assert_eq!((phastform.draining, gray.draining), (false, false));
+        let drained =
+            TWO_NODES.replacen("max_agents = 4\n", "max_agents = 4\ndraining = true\n", 1);
+        let drained = nodes_config("", &drained).unwrap();
+        let drains: Vec<bool> = drained.nodes.iter().map(|node| node.draining).collect();
+        assert_eq!(drains, [true, false]);
         // Each node names its own engine: there is no one upstream.
         assert_eq!(two.upstream, None);
         assert_eq!(two.placement, Placement::default());
