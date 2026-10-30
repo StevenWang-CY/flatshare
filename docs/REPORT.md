@@ -18,16 +18,19 @@ A self-hosted voice agent needs its GPU only while it computes a reply, and codi
 0.32, beside 24 coding-agent sessions on one RTX 5060 Ti, two calls' p95 voice-to-voice latency rises from 1.78 s alone
 to 10.48 s. No deployable configuration of vLLM 0.32 or SGLang 0.5.22 we measured meets the SLO of voice alone plus
 250 ms, 2.03 s. The nearest, a router that aborts agent requests, reaches 2.52 s at a 193 s agent p99 time to first
-token. In the scheduler, a waiting voice turn cannot take KV from running agent requests, and an admitted one shares its
-steps with agent prefill. We add two rules to vLLM's priority scheduler. Make-room lets the waiting turn preempt
+token.
+
+In the scheduler, a waiting voice turn cannot take KV from running agent requests, and an admitted one shares its steps
+with agent prefill. We add two rules to vLLM's priority scheduler. Make-room lets the waiting turn preempt
 lower-priority requests for KV, and the prefill hold keeps their prefill out of the turn's steps until its reply's first
 sentence. Together they bring the p95 to 2.24 s and the replies over the SLO to 32%, 286 of 885, where tuned vLLM leaves
-90%. The agents keep 97% of their token rate at the same 512-token step cap. On an A100 at the same KV pool and step
-cap, the rules take the p95 from 4.99 s to 1.63 s, under that card's SLO in each of five rounds. On two RTX 5060 Ti
-cards, consolidating both calls and four agent sessions on one card does 34% more background work than dedicated cards
-within the SLO's allowance. Stock vLLM, consolidated at two sessions, does 27% more, so most of the gain is the
-arrangement's. At the 256-token step cap we deploy, 44 of 295 replies were over the SLO in five more rounds, against 94
-of 295 at 512.
+90%. The agents keep 97% of their token rate at the same 512-token step cap.
+
+On an A100 at the same KV pool and step cap, the rules take the p95 from 4.99 s to 1.63 s, under that card's SLO in each
+of five rounds. On two RTX 5060 Ti cards, consolidating both calls and four agent sessions on one card does 34% more
+background work than dedicated cards within the SLO's allowance. Stock vLLM, consolidated at two sessions, does 27%
+more, so most of the gain is the arrangement's. At the 256-token step cap we deploy, 44 of 295 replies were over the SLO
+in five more rounds, against 94 of 295 at 512.
 
 ## Contents
 
@@ -56,11 +59,13 @@ send long prompts that share long prefixes, and they spend much of each session 
 The two workloads do not share a GPU well on today's engines. We run a voice agent beside 24 Claude Code sessions on one
 RTX 5060 Ti with vLLM 0.32 [[4](#ref-4)], tuned on a typical load as an operator would tune it (§5.4). The voice tier
 runs at the highest priority, a 512-token step cap bounds how long a decode waits behind a prefill chunk, and a CPU KV
-tier is written through as tokens are computed. With the voice agent alone, the median reply begins 1.62 s after the
-caller stops speaking. Beside the agents, the median reply begins after 4.61 s and 7% after more than 10 s, and the p95
-voice-to-voice latency (V2V) of two calls rises from 1.78 s to 10.48 s. Figure 1 shows where the seconds go.
-Endpointing, speech synthesis and the network barely move. The turn waits 2.81 s at the mean for the LLM's first token,
-against 0.09 s alone, and then takes 1.07 s to decode the first sentence it can speak, against 0.22 s.
+tier is written through as tokens are computed.
+
+With the voice agent alone, the median reply begins 1.62 s after the caller stops speaking. Beside the agents, the
+median reply begins after 4.61 s and 7% after more than 10 s, and the p95 voice-to-voice latency (V2V) of two calls
+rises from 1.78 s to 10.48 s. Figure 1 shows where the seconds go. Endpointing, speech synthesis and the network barely
+move. The turn waits 2.81 s at the mean for the LLM's first token, against 0.09 s alone, and then takes 1.07 s to decode
+the first sentence it can speak, against 0.22 s.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-stages-narrow.svg">
@@ -98,21 +103,25 @@ every decode proceeds. We size T to cover whole replies, and with them the first
 hands to speech synthesis. Both rules count blocks, tokens and steps, so neither needs a model of the hardware, and both
 are off by default. They are proposed to vLLM as two stacked pull requests [[9](#ref-9), [10](#ref-10)].
 
-With both rules and T = 48, the p95 V2V falls to 2.24 s at the median of 15 runs, 0.20 s over the SLO, and the agents
-keep 97% of their token rate (§6.1). The SLO allows 5% of the replies over its threshold, and 32% of the change's are
-over it, against 90% on tuned vLLM. Make-room cuts the wait for the first token from 2.81 s to 0.78 s. The hold removes
-most of the rest, which is the turn's own prefill sharing steps with agent prefill, and cuts the decode of the first
-sentence from 1.21 s to 0.26 s (§6.2). A window shorter than the replies leaves their later tokens beside agent prefill,
-so at T = 16 the p95 stays at 3.09 s (§6.3). The agents pay through the hold, which keeps their prefill out of a third
-of the engine's steps, and not through the preemptions (§6.4). A router that aborts agent requests makes room at the
-agents' tail. A gateway policy timed by the conversation, with KV headroom held from the moment the caller starts to
-speak, leaves the tail where tuned vLLM leaves it (§6.5). The gain shrinks where the pool has room. As calls overlap,
-the tail grows and the hold keeps the agents' prefill out for longer (§6.6). On an A100 at the same KV pool and step
-cap, the rules take the p95 from 4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds (§6.7). On two
-RTX 5060 Ti cards, a resource gate compared a card per workload, pooling and consolidation. Both calls and four agent
-sessions on one card, beside a card of agents alone, did 34% more background work than a card per workload within the
-SLO's 5% allowance, and stock vLLM's shared card, at two sessions, did 27% more (§6.8). At the 256-token step cap we
-deploy, the change had 44 of 295 replies over the SLO in five rounds on new samples, against 94 of 295 at 512 (§6.9).
+**Results at a glance.** Two callers beside 24 coding-agent sessions on one RTX 5060 Ti, unless a row says otherwise.
+
+| Result | Number | Section |
+|---|---|---|
+| Both rules at T = 48 bring the voice tail near the SLO | p95 2.24 s at the median of 15 runs, 0.20 s over the SLO | §6.1 |
+| Replies over the SLO, which allows 5% | 32% with both rules, 90% on tuned vLLM | §6.1 |
+| The agents' token rate with both rules | 97% of tuned vLLM's | §6.1 |
+| Make-room cuts the wait for the first token | 2.81 s to 0.78 s | §6.2 |
+| The hold removes most of the rest, the turn's own prefill sharing steps with agent prefill | The first sentence's decode, 1.21 s to 0.26 s | §6.2 |
+| A window shorter than the replies leaves their later tokens beside agent prefill | p95 3.09 s at T = 16 | §6.3 |
+| The agents pay through the hold, not through the preemptions | Their prefill held out of a third of the engine's steps | §6.4 |
+| A router that aborts agent requests makes room at the agents' tail | p95 2.52 s at an agents' p99 TTFT of 193 s, against 106 s | §6.4, §6.5 |
+| A gateway policy timed by the conversation, its KV headroom held from the caller's speech onset, leaves the tail where tuned vLLM leaves it | p95 10.99 s against 10.14 s, on one sample of the agents | §6.5 |
+| The gain shrinks where the pool has room | 0.47 s over tuned vLLM at 16 sessions of the whole corpus, against 8.24 s | §6.6 |
+| As calls overlap, the tail grows and the hold keeps the agents' prefill out for longer | 0.26 s over the SLO and the hold in 64% of the steps with six callers, against 0.20 s and 33% with two | §6.6 |
+| The rules carry to an A100 at the same KV pool and step cap | p95 4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds | §6.7 |
+| On two RTX 5060 Ti cards under a resource gate, consolidation: both calls and four agent sessions on one card, beside a card of agents alone | 34% more background work than a card per workload, within the SLO's 5% allowance | §6.8 |
+| Most of that gain is the arrangement's: stock vLLM's shared card qualifies at two sessions | 27% more | §6.8 |
+| The 256-token step cap we deploy, in five rounds on new samples | 44 of 295 replies over the SLO, against 94 of 295 at 512 | §6.9 |
 
 This report makes five contributions.
 
