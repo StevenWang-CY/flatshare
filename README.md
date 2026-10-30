@@ -97,9 +97,9 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
    ([the KV case](docs/BENCHMARKS.md#the-prs-configuration-in-one-session-w5)).
 2. **Admitting the turn is not enough.** A step cap bounds a step's tokens, not its time. Beside three agent prefills
    the reply's tokens arrive 60–65 ms apart with #63350 alone and 16–20 ms apart with #63351.
-3. **The hold must cover the reply's first sentence**, because the voice agent hands text to speech its first complete
-   sentence rather than its first token. This agent's replies run 23 tokens at the median and 52 at most, so a 16-token
-   window leaves the p95 at 3.1 s.
+3. **The budget cap's window must cover the reply's first sentence**, because the voice agent hands text to speech its
+   first complete sentence rather than its first token. This agent's replies run 23 tokens at the median and 52 at most,
+   so a 16-token window leaves the p95 at 3.1 s.
 4. **A control plane in front of the engine can make room only by aborting work.** Only the engine can take KV from a
    decoding request, so preempt-resubmit, which aborts and resubmits agent requests, reaches 2.52 s at the agents'
    expense.

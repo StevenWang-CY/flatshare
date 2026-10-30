@@ -12,7 +12,7 @@ points.
 | `flatshare-bench scale-traces` | `traces.py` | Shrinks every request of the corpus by 32x or 64x while keeping its prefix structure |
 | AIPerf loader `weka_trace_scaled` | `aiperf_plugin.py` | AIPerf's Weka loader, fixed to read each trace's own block size |
 | AIPerf endpoint `flatshare_chat` | `aiperf_plugin.py` | Chat completions plus `X-Session-ID`, `X-Flatshare-Class`, `prompt_cache_key` and `priority` |
-| `configs/agentic_replay.yaml`, `configs/aiperf.env` | | AIPerf `agentic_replay` run: steady-state session trees with recycling |
+| `configs/agentic_replay.yaml`, `configs/aiperf.env` | | AIPerf `agentic_replay` run: steady-state agent sessions with recycling |
 | `flatshare-bench mock-server` | `mock_server.py` | Recording OpenAI-compatible mock on 127.0.0.1 for CPU-only dry runs |
 | `flatshare-bench tiers` | `tiers.py` | E0: time to first token from the GPU pool, the CPU tier and recompute, verified per sample by vLLM's prefix-cache counters; optional background load |
 | `flatshare-bench voice-turn` | `voice_turn.py` | One server-side voice turn timed per stage (STT, LLM first sentence, TTS first audio); optional background load |
@@ -106,10 +106,10 @@ prompt length matches the trace exactly; without it they do not.
 
 ## AIPerf `agentic_replay`
 
-`agentic_replay` keeps N session trees live. Each lane starts at a random point of a trace,
-replays it with recorded think times and subagents, then recycles a trace with a fresh
-cache-bust marker. AIPerf 0.13.0 selects it only from YAML. `configs/agentic_replay.yaml` is the
-template. AIPerf substitutes `${VAR:default}` when it loads the file:
+`agentic_replay` keeps N agent sessions live (session trees, in AIPerf's terms). Each lane starts at a random point of a
+trace, replays it with recorded think times and subagents, then recycles a trace with a fresh cache-bust marker. AIPerf
+0.13.0 selects it only from YAML. `configs/agentic_replay.yaml` is the template. AIPerf substitutes `${VAR:default}`
+when it loads the file:
 
 | Variable | Default |
 |---|---|
@@ -117,7 +117,7 @@ template. AIPerf substitutes `${VAR:default}` when it loads the file:
 | `FLATSHARE_BENCH_API_KEY` | empty: no `Authorization` header. Through `flatshare-gateway`, a tenant's key. Only a trusted tenant's `X-Session-ID` and `X-Flatshare-Class` are honored, so a replay that keeps its sessions and classes uses the `agents` key |
 | `FLATSHARE_BENCH_DATA` | `data/weka-x32` (a `scale-traces` output directory) |
 | `FLATSHARE_BENCH_MODEL`, `FLATSHARE_BENCH_TOKENIZER` | `Qwen/Qwen3-4B-Instruct-2507-FP8` |
-| `FLATSHARE_BENCH_SESSIONS` | 16 live session trees |
+| `FLATSHARE_BENCH_SESSIONS` | 16 live agent sessions |
 | `FLATSHARE_BENCH_DURATION` | 1800 s |
 | `FLATSHARE_BENCH_GRACE` | 120 s |
 | `FLATSHARE_BENCH_THINK_CAP` | 600 s cap on each think time |
@@ -143,12 +143,12 @@ delete the directory to reclaim them (the cache once filled a host's disk).
 
 Things to know:
 
-- **Burst starts.** With spread starts, each lane first waits out its recorded gap after its
-  random start point, and `interTurnDelayCapSeconds` does not cap that wait. A 60 s check
-  reached 2 of 8 session trees and 31 requests; with burst starts it reached 8 of 8 and 236.
-  Set `FLATSHARE_BENCH_BURST_STARTS=false` to replay each lane's first arrival at its recorded gap.
-- **Grace period.** AIPerf waits the whole grace period whenever session trees are still open,
-  which in `agentic_replay` is nearly always.
+- **Burst starts.** With spread starts, each lane first waits out its recorded gap after its random start point, and
+  `interTurnDelayCapSeconds` does not cap that wait. A 60 s check reached 2 of 8 agent sessions and 31 requests; with
+  burst starts it reached 8 of 8 and 236. Set `FLATSHARE_BENCH_BURST_STARTS=false` to replay each lane's first arrival
+  at its recorded gap.
+- **Grace period.** AIPerf waits the whole grace period whenever agent sessions are still open, which in
+  `agentic_replay` is nearly always.
 - **vLLM flags.** Cached-token counts need `--enable-prompt-tokens-details`; the `priority` field
   takes effect only with `--scheduling-policy priority`.
 - **Assistant history.** AIPerf replays assistant content synthesized from hash blocks, never the
@@ -249,7 +249,7 @@ A point runs in this order:
 | `[voice] warmup_turns` | 0 | Turns that open each call before its `turns`, played but not measured (`flatshare-voice bots --warmup-turns`): marked `"warmup": true` in `bots/turns.jsonl`, they are in no V2V sample, and the worker's lines for them, each session's first, are in no stage |
 | `[voice] preemptive_generation` | `true` | LiveKit's preemptive generation in the voice worker (`FLATSHARE_PREEMPTIVE_GENERATION`) |
 | `[voice] events` | `true` | The voice worker's lifecycle events to the gateway (`FLATSHARE_EVENTS`); `false` measures a point without them |
-| `[agents] sessions` | 0 | Session trees AIPerf keeps live, through the gateway as the `agents` tenant with `FLATSHARE_GATEWAY_AGENTS_KEY` from `~/.config/flatshare/gateway-keys.env`; 0 is voice alone |
+| `[agents] sessions` | 0 | Agent sessions AIPerf keeps live, through the gateway as the `agents` tenant with `FLATSHARE_GATEWAY_AGENTS_KEY` from `~/.config/flatshare/gateway-keys.env`; 0 is voice alone |
 | `[agents] think_cap` | 120 | Cap on each recorded think time, in seconds |
 | `[agents] warmup` | 60 | Seconds of profiling before the calls start |
 | `[agents] data` | `"weka-x32"` | The corpus, a `scale-traces` directory under `~/flatshare/data` |
@@ -293,8 +293,8 @@ A component that fails fails the point: `run.json` keeps `failed` and the error,
 The background goodput comes from AIPerf's records rather than from the gateway's request outcomes, whose `completed` counts a response relayed in full whatever its status: it cannot tell a request the engine refused from one it served. The gateway's token rate stays beside it as a check. A node's share, which AIPerf cannot tell apart, counts the gateway's request lines that completed with status 200.
 
 **The report.** `flatshare-bench e2 report RUN_DIR... --out DIR` writes `frontier.csv`, `frontier.md`, a frontier figure per workload and `waterfall.svg`, SVG drawn in the docs' figure style by `figure_style.py`, which embeds a subset of the STIX Two fonts in `fonts/` (fontTools, pinned to 4.67.0, makes the subsets, so the figures come out as the committed bytes). A point's workload is the agents' corpus (`[agents] data`) and the number of callers (`frontier.csv`'s `workload`, such as `weka-x32, 2 callers`), with the GPU and the model where they are not the frozen box's (`weka-x32-long, 2 callers, NVIDIA A100-SXM4-80GB`, as the A100 run's records name it; a record whose samples name no GPU ran on the box) and the warm-up turns that open its calls where the report's points differ in them (`weka-x32, 2 callers, 1 warm-up turn`; a record set has one count, W4's none and W5's one), and points of different workloads are never compared: a point is on its arm's frontier when no other point of the arm and workload harvests at least as much background goodput at a V2V p95 at least as low, and one of the two strictly better. `frontier.md` has a section per workload, which opens with its voice SLO and the name of its figure, with a table per arm in it, ordered by background goodput, where • marks the arm's frontier when the arm has more than one configuration (a lone configuration is its own). Run directories without a complete point are named and left out.
-- **The frontier figures.** `frontier.svg` draws the arm file's own workload (`weka-x32`, 2 callers); another workload's figure is named after its corpus and its callers where they differ (`frontier-weka-x32-long.svg`, `frontier-4-callers.svg`), after its GPU and model off the box (`frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg`), and after its warm-up turns where its name gives them (`frontier-1-warm-up-turn.svg`). A figure gives each configuration a row under its family's heading, in E2's order (stock vLLM, arms 1–5; operator answers, 6; engines, 7; routers, 8; make-room, 9; MPS, 10), named by its label without the clauses its workload gives, and two bars from zero: its voice-to-voice p95, against the voice SLO, and the agents' goodput over the calls, each the median of its runs. The SLO is a dashed rule 250 ms above voice alone (arm 1) with as many callers on the same GPU and model and as many warm-up turns, from whichever corpus, since voice alone replays none; a workload without that point says so. The engine change's configurations are blue, the one to deploy (`9-pr-ab48`) saturated and the others pale, and every other configuration gray; an open bar is a configuration off its arm's frontier. A configuration past its workload's fence for far outliers (three interquartile ranges above the upper quartile of the V2V p95s) has its bar cut square at the scale's end, its value printed, so that one collapse does not flatten the rest.
-- **Configurations of their own.** Arm 9's ablations and the PRs' configurations say `arm = 9` in their arm files, as run, but each is a configuration of its own: the report gives each its own arm (`9-no-headroom`, `9-pr-ab48`; `CONFIGURATION_ARMS` in `e2/report.py`), so that none is placed on arm 9's frontier or joined to it. Where their labels name the PRs by letter (PR A, PRs A and B), the report names them by number, #63350 and #63351, as the docs do (`PR_LABELS`). The records stay as run.
+- **The frontier figures.** `frontier.svg` draws the arm file's own workload (`weka-x32`, 2 callers); another workload's figure is named after its corpus and its callers where they differ (`frontier-weka-x32-long.svg`, `frontier-4-callers.svg`), after its GPU and model off the box (`frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg`), and after its warm-up turns where its name gives them (`frontier-1-warm-up-turn.svg`). A figure gives each configuration a row under its family's heading, in E2's order (stock vLLM, arms 1–5; operator answers, 6; engines, 7; routers, 8; make-room, 9; MPS, 10), named by its label without the clauses its workload gives, and two bars from zero: its voice-to-voice p95, against the voice SLO, and the agents' goodput over the calls, each the median of its runs. The SLO is a dashed rule 250 ms above voice alone (arm 1) with as many callers on the same GPU and model and as many warm-up turns, from whichever corpus, since voice alone replays none; a workload without that point says so. The change's configurations are blue, the one to deploy (`9-pr-ab48`) saturated and the others pale, and every other configuration gray; an open bar is a configuration off its arm's frontier. A configuration past its workload's fence for far outliers (three interquartile ranges above the upper quartile of the V2V p95s) has its bar cut square at the scale's end, its value printed, so that one collapse does not flatten the rest.
+- **Configurations of their own.** Arm 9's ablations and the change's configurations say `arm = 9` in their arm files, as run, but each is a configuration of its own: the report gives each its own arm (`9-no-headroom`, `9-pr-ab48`; `CONFIGURATION_ARMS` in `e2/report.py`), so that none is placed on arm 9's frontier or joined to it. Where their labels name the pull requests by letter (PR A, PRs A and B), the report names them by number, #63350 and #63351, as the docs do (`PR_LABELS`). The records stay as run.
 - **Repeats.** Points measured from the same arm file in several campaigns, under the same point name, are repeats of one configuration. `frontier.md` keeps a row per run, named by its campaign (`frontier.csv`'s `campaign`: the directory that holds the run directory), then gives the configuration's median and range (min–max) of V2V p50/p95/p99, background tokens/s (over the whole calls and over their first 240 s), the agents' TTFT p50 and p99, the realtime first byte p95 and failed turns, with its run count. The frontier places the configuration at its medians, and its figure draws its medians, its run count under its name. A configuration measured once is shown as before.
 - **The goodput over a fixed window.** Beside each point's background goodput over its whole calls, whose length differs by configuration, `frontier.md` gives its goodput over their first 240 s (`frontier.csv`'s `fixed_window_tokens_per_s`, with its `fixed_window_s`), and for a repeated configuration their median and range; † marks one over a point's whole calls, which lasted less. The frontier stays placed by the goodput over the whole calls.
 - **Failed turns.** V2V comes from the callers' measured turns in `bots/turns.jsonl` (not the warm-up turns that open each call under `[voice] warmup_turns`), where a turn the agent did not answer within the callers' reply timeout counts as a sample censored at 30,000 ms, in every percentile: `frontier.md` marks a percentile such a sample sets with `≥`. A configuration with failed turns is not placed on the frontier and keeps no other point off it; its figure cuts its bar at the scale's end with its censored value (`≥30.00`) and names its failed turns under its name, and the stage waterfall leaves its runs out.
@@ -420,7 +420,7 @@ Results on 2026-10-22, against the mock:
 
 | Run | Requests | Every request carries the four fields | `X-Session-ID` is the tree root |
 |---|---|---|---|
-| AIPerf, 8 session trees, 60 s | 7 warmup + 236, 0 errors | 243/243 | 243/243 (103 subagent requests) |
+| AIPerf, 8 agent sessions, 60 s | 7 warmup + 236, 0 errors | 243/243 | 243/243 (103 subagent requests) |
 
 ## Tests
 

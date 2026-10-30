@@ -81,7 +81,7 @@ Without nodes nothing changes: a gateway with one upstream has no placement rout
 
 ## Lifecycle events and turn lines
 
-Each session tells the control plane when it will next need the GPU ([PROTOCOL.md](../../docs/PROTOCOL.md#lifecycle-events)), with events of the session `voice-<room SID>` from source `voice-worker`: in bench mode all of them, for E2's lifecycle policy, and in serve mode `session_closed` alone, since the serving arrangement's gateway runs no admission policy and acts on no other. Each comes from one LiveKit hook:
+Each session tells the control plane when it will next need the GPU ([PROTOCOL.md](../../docs/PROTOCOL.md#lifecycle-events)), with events of the session `voice-<room SID>` from source `voice-worker`: in bench mode all of them, for E2's lifecycle policy, and in serve mode `session_closed` alone, since the arrangement to deploy's gateway runs no admission policy and acts on no other. Each comes from one LiveKit hook:
 
 | Event | LiveKit 1.8.8 hook | When it fires |
 |---|---|---|
