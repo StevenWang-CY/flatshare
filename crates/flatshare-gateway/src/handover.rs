@@ -117,7 +117,7 @@ pub async fn until_stopped(
                     tracing::warn!(successor = child.id(), "reload: a successor is starting already");
                     continue;
                 }
-                // Without a ledger the reload goes on, but the successor's bounds and policy count only its own requests.
+                // With no ledger the reload goes on, but the successor's bounds and policy count only its own requests.
                 let path = ledger
                     .open(TIMEOUT)
                     .inspect_err(|err| tracing::warn!(error = %err, "reload: cannot open the ledger for the successor"))

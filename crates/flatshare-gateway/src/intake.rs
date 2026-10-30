@@ -1,12 +1,12 @@
 //! The gateway's bounds on the work it holds, whatever its admission policy: inference requests in flight, in all
-//! (`max_in_flight`), by class (`[classes.<class>] max_in_flight`) and by tenant (`[tenants.<name>] max_in_flight`), and
-//! the bytes of the request bodies it buffers (`max_buffered_body_bytes`).
+//! (`max_in_flight`), by class (`[classes.<class>] max_in_flight`) and by tenant (`[tenants.<name>] max_in_flight`),
+//! and the bytes of the request bodies it buffers (`max_buffered_body_bytes`).
 //!
 //! A request takes its permit once its tenant and class are known and before a byte of its body is read, and a
 //! refused one is answered at once, so that a flood of requests costs the gateway neither memory nor a wait: 503 with
-//! `Retry-After` when the gateway or the class is full, 429 when the tenant is. A body's bytes are taken from the budget
-//! chunk by chunk as they arrive, its whole declared length first when it has one, and a body the budget cannot hold
-//! gets 503. A request holds its permit and its bytes until its end, whatever ends it: the permit is the request's
+//! `Retry-After` when the gateway or the class is full, 429 when the tenant is. A body's bytes are taken from the
+//! budget chunk by chunk as they arrive, its whole declared length first when it has one, and a body the budget cannot
+//! hold gets 503. A request holds its permit and its bytes until its end, whatever ends it: the permit is the request's
 //! [`crate::exchange::Exchange`]'s, dropped with its record.
 //!
 //! While a reload's predecessor drains, the successor counts the predecessor's requests and bytes with its own

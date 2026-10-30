@@ -118,8 +118,8 @@ pub(crate) async fn end(
 
 /// `GET /nodes`: each node's verdict, its engine's state and readiness, each component's last check, its roles, call
 /// slots and agents' bound, whether it covers (holds its agents back for calls moved to it or a warm spare's), and
-/// its sessions and requests in flight by class; and how calls are placed and a covering node's agents held. It reads the metrics' rule: the metrics key on a TCP listener,
-/// nothing on a Unix socket.
+/// its sessions and requests in flight by class; and how calls are placed and a covering node's agents held. It reads
+/// the metrics' rule: the metrics key on a TCP listener, nothing on a Unix socket.
 pub(crate) async fn nodes(app: App, nodes: &Arc<Nodes>, request: Request) -> Response {
     if let Some(refused) = metrics_refused(&app, request.headers()) {
         return refused;

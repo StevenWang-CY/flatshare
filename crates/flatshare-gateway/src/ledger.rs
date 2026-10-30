@@ -14,8 +14,9 @@
 //! with `closed` set once it has closed, and the connection closes when it exits, which the successor reads as nothing
 //! held. The successor waits for `closed`, for a second or two at most, before it serves, so that no request reaches
 //! both admission points. With `[[nodes]]` the closing line also hands over the nodes' verdicts and every session's
-//! placement ([`crate::nodes::Handed`]), which the successor takes before it serves. A successor that does not connect within the handover's timeout, such as a build from before
-//! the ledger, finds nothing: the directory is removed as soon as one connects or the time is up.
+//! placement ([`crate::nodes::Handed`]), which the successor takes before it serves. A successor that does not connect
+//! within the handover's timeout, such as a build from before the ledger, finds nothing: the directory is removed as
+//! soon as one connects or the time is up.
 
 use std::io;
 use std::os::unix::fs::DirBuilderExt;
