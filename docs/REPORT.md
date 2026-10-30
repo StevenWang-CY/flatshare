@@ -429,12 +429,18 @@ that code would for most of its replies.
 0.32.0's real scheduler on a 2.1 GHz Xeon Silver 4110. That host runs the scheduler's kind of Python 1.68 times as fast
 as the GPU node's CPU (`bench_host.py`, 227 ms against 381; Appendix C).
 
-| State set | What the change adds to a call | At most |
+The table gives what the change adds to a call in each situation, the first with its switches off and the rest with
+the deployed values, in the pull requests' 13 steady states and in the serving profile's 4, whose 256-token steps are
+scheduled asynchronously as on the box.
+
+| Situation | The pull requests' 13 states | The serving profile's 4 states |
 |---|---|---|
-| The pull requests' 13 steady states, switches off | Nothing: it costs what vLLM's call does | Within 1.3% |
-| The serving profile's 4 states, 256-token steps scheduled asynchronously as on the box, switches off | 1.5–4.9 µs in their short steps | 3.1% |
-| The pull requests' states, the deployed values | 36–166 µs with only lower-priority work running, at most 17% of the call; 158–260 µs with every running slot taken; 0.32–0.46 ms when a waiting high-priority request needs more room than two victims free | 1.5 ms, when that request's prefix-cache hit is 999 blocks long |
-| The serving profile's states, the deployed values | 17 µs beside agents alone; −30 µs while the budget cap keeps an agent's prefill out of a reply's first steps; 72 µs in each step that gives up on a turn two victims cannot make room for | 0.47 ms in the step that preempts for a voice turn, timed on schedulers built afresh: 3.5 times vLLM's step |
+| Switches off | Nothing: what vLLM's call costs, within 1.3% | 1.5–4.9 µs in their short steps, at most 3.1% |
+| Only lower-priority work running | 36–166 µs, at most 17% of the call | 17 µs, beside agents alone |
+| Every running slot taken | 158–260 µs | – |
+| The budget cap keeping an agent's prefill out of a reply's first steps | – | −30 µs |
+| A waiting high-priority request that two victims cannot make room for | 0.32–0.46 ms; 1.5 ms when its prefix-cache hit is 999 blocks long | 72 µs in each step that gives up on it |
+| The step that preempts for a voice turn | – | 0.47 ms, 3.5 times vLLM's step, on schedulers built afresh |
 
 On the box's CPU that step takes 1.1 ms, against a voice reply's decode step of 12 ms with nothing beside it, 16–20 ms
 beside agent prefill that the budget cap keeps back, and the agents' 38 ms at 24 agent sessions.
