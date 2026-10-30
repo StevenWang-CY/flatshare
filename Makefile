@@ -296,7 +296,8 @@ diagrams:
 # window sweep, W5's voice replies, the scheduler's cost per step, the two-card comparison's and the step cap's rounds
 # through their gate.py, the 24-hour soak's summary and the failure drills' journals (its data.py names them). Among
 # them, report-deployable.svg and report-deployable-stages.svg, which BENCHMARKS shows: W4's configurations
-# an operator could deploy, and the voice turn of those its stage table gives.
+# an operator could deploy, and the voice turn of those its stage table gives; and report-campaigns.svg, the campaign
+# map EXPERIMENTS shows, from every campaign's run.json files.
 report-figures:
 	cd python/flatshare_bench && uv run -q python -m flatshare_bench.report.figures $(abspath docs/figures)
 

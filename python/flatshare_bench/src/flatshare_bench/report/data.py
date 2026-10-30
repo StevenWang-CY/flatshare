@@ -1389,3 +1389,162 @@ def kill(root: Path = DRILLS) -> Kill:
         min(successes) - event,
         Start(tuple(phases)),
     )
+
+
+# The campaign map -----------------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Campaign:
+    """One bar of the campaign map, from its record's runs: the code the documents give it, the question it measured,
+    the span from its first run's start to its last run's end (Unix seconds), its complete points, its rounds (the
+    directories of its rounds), the agents' samples its points replayed (their seeds) and the code it ran (its points'
+    ``versions.source``, in the order they first ran), with the releases that code belongs to."""
+
+    code: str
+    question: str
+    record: str
+    start: float
+    end: float
+    points: int
+    rounds: int
+    seeds: tuple[int, ...]
+    revisions: tuple[str, ...]
+    releases: tuple[str, ...] = ()
+    """The releases its revisions belong to, in words (:func:`release`), each once."""
+    hours: tuple[float, ...] = ()
+    """A soak's runs, in hours: voice alone's, then the serving one's."""
+
+
+CAMPAIGNS = (
+    ("W2", "Every arm an operator can deploy, once each", "2026-10-23-e2", r"w2[bc]?", None),
+    (
+        "W3\u2013W4",
+        "The headline configurations, the lifecycle policy and the change",
+        "2026-10-23-e2",
+        r"a9(-standard|-window)?|[rs]\d|upstream(-r\d)?",
+        r"a9|r\d",
+    ),
+    (
+        "W5",
+        "The fixed make-room and the configuration to deploy",
+        "2026-10-24-e2-w5",
+        r"w5-.+",
+        r"w5-.*r\d",
+    ),
+    (
+        "FB",
+        "The configuration to deploy on the code of 25 October",
+        "2026-10-25-e2-fb",
+        r"fb-r\d",
+        r"fb-r\d",
+    ),
+    (
+        "The A100 run",
+        "The main comparison like for like on an A100",
+        "2026-10-26-a100",
+        r"block\d|a100-.+",
+        r"a100-r\d",
+    ),
+    ("RS", "How often two calls find KV short", "2026-10-26-e2-rs", r"rs-r\d", r"rs-r\d"),
+    (
+        "SW",
+        "The step cap, the threshold and the window, screened",
+        "2026-10-27-sweep",
+        r"sweep-screen2?",
+        None,
+    ),
+    (
+        "RG",
+        "Two cards' arrangements, and the step cap confirmed",
+        "2026-10-28-rounds",
+        r"rg-r\d",
+        r"rg-r\d",
+    ),
+    ("The soak", "The arrangement to deploy, serving for a day", "2026-10-28-soak", None, None),
+)
+"""Each campaign of the map: its code, the question it measured, its record and the directories of its runs and of
+its rounds (a pattern each), in the order the campaigns ran. The soak's runs are its soak.json files."""
+
+
+def first_release(changelog: Path = REPO / "CHANGELOG.md") -> str:
+    """The first release: the last CHANGELOG.md lists, the tag no earlier commit could be described from."""
+    return re.findall(r"(?m)^## \[(v\d+\.\d+)\]", changelog.read_text())[-1]
+
+
+def release(revision: str, first: str) -> str:
+    """The release a run's code belongs to, in words, from the ``git describe --always --dirty`` its node recorded
+    (``versions.source``): "v1.0" for a tagged commit, "after v0.3" for one past a tag (v0.3-71-g66deebb), and
+    "before" the ``first`` release for a commit no tag yet preceded, which describe names by its hash alone."""
+    found = re.fullmatch(r"(v\d+\.\d+)(-\d+-g[0-9a-f]+)?(-dirty)?", revision)
+    if found:
+        return f"after {found[1]}" if found[2] else found[1]
+    if re.fullmatch(r"[0-9a-f]{7,40}(-dirty)?", revision):
+        return f"before {first}"
+    raise ValueError(f"not what git describe --always prints: {revision!r}")
+
+
+def campaigns(root: Path = RESULTS) -> list[Campaign]:
+    """The campaign map's bars, from the records' run.json files (a soak's soak.json): each campaign's span over all
+    its runs, a failed point and the A100 run's probe blocks among them, and its points, samples and code from its
+    complete E2 points."""
+    found, first = [], first_release()
+    for code, question, record, dirs, rounds in CAMPAIGNS:
+        base = root / record
+        if dirs is None:
+            runs = [json.loads(p.read_text()) for p in sorted(base.glob("*/soak.json"))]
+            points = [r for r in runs if r["status"] == "complete"]
+            seeds = sorted(
+                {r["options"]["agents_seed"] for r in points if r["options"]["agents_sessions"]}
+            )
+            ordered = sorted(points, key=lambda r: r["started"])
+            hours = tuple(round((r["finished"] - r["started"]) / 3600, 1) for r in ordered)
+            in_rounds = 0
+        else:
+            paths = [
+                p
+                for p in sorted(base.glob("**/run.json"))
+                if re.fullmatch(dirs, p.parent.parent.name)
+            ]
+            runs = [json.loads(p.read_text()) for p in paths]
+            points = [r for r in runs if r["kind"] == "e2-point" and r["status"] == "complete"]
+            seeds = sorted(
+                {
+                    r.get("agents_seed") or r["arm"]["agents"]["seed"]
+                    for r in points
+                    if r["arm"]["agents"]["sessions"]
+                }
+            )
+            hours = ()
+            in_rounds = (
+                len(
+                    {
+                        p.parent.parent.name
+                        for p in paths
+                        if re.fullmatch(rounds, p.parent.parent.name)
+                    }
+                )
+                if rounds
+                else 0
+            )
+        revisions = []
+        for r in sorted(points, key=lambda r: r["started"]):
+            if r["versions"]["source"] not in revisions:
+                revisions.append(r["versions"]["source"])
+        releases = list(dict.fromkeys(release(r, first) for r in revisions))
+        found.append(
+            Campaign(
+                code,
+                question,
+                record,
+                min(r["started"] for r in runs),
+                max(r.get("finished") or r["started"] for r in runs),
+                len(points),
+                in_rounds,
+                tuple(seeds),
+                tuple(revisions),
+                tuple(releases),
+                hours,
+            )
+        )
+    return found

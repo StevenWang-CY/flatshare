@@ -93,17 +93,14 @@ which use it retires.
 
 - **A' and C'**: two of the A100 run's optional arms: A', the box's pool at 32 agent sessions (one round ran), and C',
   Qwen3-14B-FP8 at an A100 40 GB's own pool (not run) ([BENCHMARKS.md](BENCHMARKS.md#the-optional-arms)).
-- **The A100 run** (A1, 2026-10-26): the release's kit on an A100 SXM4 80 GB on Google Colab. Its **core** repeated E2's
-  discriminating scenario like for like (the box's model, pool, 512/256 and CPU tier, W5's arm files and five samples)
-  with E0, the probes and a calibration point, and its **arms** after the core were the batch (256 requests in flight),
-  tuned vLLM at 2,048/0, the configuration to deploy at that cap, A' (32 sessions) and FlashInfer's attention
-  ([BENCHMARKS.md](BENCHMARKS.md#what-it-measured-2026-10-26)).
 - **Agent session**: one replayed Claude Code session with its subagents, the replay's unit (a "session tree" in
   AIPerf).
 - **Arm**: one engine and gateway configuration of E2, numbered by family: 1, voice alone; 2 to 5, stock vLLM and its
   own knobs; 6, static answers in the gateway; 7, what engines ship; 8, what routers ship; 9, make-room with the
   lifecycle policy; 10, MPS, planned and not run ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load)).
-- **Campaign**: a set of rounds.
+- **Campaign**: a set of rounds, or of runs, under one code: W2, W3–W4, W5, FB, the A100 run (A1), RS, SW, RG and the
+  soak. [The campaign map](EXPERIMENTS.md#which-campaign-measured-what-on-which-code) gives each one's code, what it
+  measured, when it ran, its rounds and its samples of the agents' traces, and the code it ran.
 - **The discriminating scenario**: 24 agent sessions of the 48 traces with the longest contexts, whose KV fills the
   pool.
 - **E0**: the tier cost model, what resuming an agent turn costs from the GPU cache, from host memory and by
@@ -112,11 +109,6 @@ which use it retires.
 - **E2**: the voice SLO measured end to end beside background agents, against the configurations of vLLM 0.32, SGLang
   0.5.22, SMG and llm-d's flow control (emulated) that an operator can deploy without the change.
 - **E3**: what make-room takes from the agents, from the engine's own counters.
-- **FB** (2026-10-25): W5's headline configurations again (voice alone, tuned vLLM and the configuration to deploy), in
-  five rounds on the code of 2026-10-25 (v0.3-191: W6's transport, and #63351's budget cap counting the tokens in
-  flight), each round on the agents' sample of W5's round of the same number
-  ([BENCHMARKS.md](BENCHMARKS.md#the-final-code-against-w5-fb); the records are in
-  [`benchmarks/results/2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb)).
 - **G-sim**: E1's gate: if even the oracle closes under about 10% of resume TTFT over LRU plus the CPU tier in the
   realistic regime, no lease-aware policy runs on the GPU. Read at p50, E1 took this negative branch
   ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)).
@@ -128,24 +120,11 @@ which use it retires.
   resubmits them; of the configurations an operator can deploy without the change, the nearest to the SLO.
 - **The prefill case**: the probe in which the voice-sized request arrives behind three 10,000-token priority-2
   prefills, with room in the pool, timed to its first and 16th tokens.
-- **RG** (2026-10-28): the two cards' rounds, five rounds on new samples of the agents' traces (agent seeds 21-25) on
-  Phastform and Gray in turn. Rounds 1-3 ran each card's part of every arrangement the resource gate compares, and all
-  five ran the sweep's three configurations at 24 sessions ([BENCHMARKS.md](BENCHMARKS.md#two-cards-rg); the records
-  are in [`benchmarks/results/2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds)).
 - **Round**: one run of each point of a campaign, in a rotated order, on the round's own sample of the agents'
   traces.
-- **RS** (2026-10-26): five rounds of tuned vLLM and the configuration to deploy on v1.2 with the KV sampler on, each
-  round on the agents' sample of W5's round of the same number, which measured the box's running share
-  ([BENCHMARKS.md](BENCHMARKS.md#the-boxs-running-share-rs); the records are in
-  [`benchmarks/results/2026-10-26-e2-rs`](../benchmarks/results/2026-10-26-e2-rs)).
 - **Run**: one measurement of a point.
 - **The standard scenario**: the whole corpus of agent traces at 16 agent sessions, the realistic load (and at 8 and
   24 in W2 and W4).
-- **SW** (2026-10-27): the sweep's two screens, one run a setting on W5's tuning sample of the agents (agent seed 11),
-  of the configuration to deploy over the step cap, the threshold per request, the window and the gateway's static caps
-  on agent requests in flight, and of tuned vLLM at two other step caps
-  ([BENCHMARKS.md](BENCHMARKS.md#the-step-cap-screened-and-confirmed-sw-rg); the records are in
-  [`benchmarks/results/2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep)).
 - **W0 to W8**: the project's build and measurement stages. W0 (2026-10-22): the frozen box and its first replay; W1
   (2026-10-22): the gateway and the voice path; W2 (2026-10-22 to 23): E2's first batches; W3 (2026-10-23): the build
   with the voice agent's lifecycle events; W4 (2026-10-23 to 24): the discriminating scenario in rounds; W5 (2026-10-24

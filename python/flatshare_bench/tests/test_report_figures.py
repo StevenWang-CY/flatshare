@@ -13,6 +13,7 @@ import itertools
 import json
 import re
 import statistics
+import subprocess
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -112,6 +113,8 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
             "soak-narrow",
             "starts",
             "starts-narrow",
+            "campaigns",
+            "campaigns-narrow",
         )
     )
 
@@ -124,6 +127,8 @@ def text_of(path: Path) -> list[str]:
 
 def test_figure_text_names_configurations_as_the_report_does(drawn: dict[str, Path]) -> None:
     for name, path in drawn.items():
+        if name.startswith("report-campaigns"):
+            continue  # the campaign map is the codes' key: it names each campaign by its code, and only there
         for text in text_of(path):
             assert not CODES.search(text), (name, text)
 
@@ -1242,7 +1247,9 @@ FIGURES_ABOVE_TABLES = {
 """The report's charts that BENCHMARKS shows, by the first line of the table each draws."""
 
 
-def test_benchmarks_shows_each_report_chart_above_the_table_it_draws(drawn: dict[str, Path]) -> None:
+def test_benchmarks_shows_each_report_chart_above_the_table_it_draws(
+    drawn: dict[str, Path],
+) -> None:
     # BENCHMARKS shows each of the report's charts above the table it draws: the chart for the reader, the table as
     # the ledger. Each has the drawing's own description as its alt text and the report's claim, word for word,
     # opening its caption, and the first table after it is the one it draws.
@@ -1251,7 +1258,9 @@ def test_benchmarks_shows_each_report_chart_above_the_table_it_draws(drawn: dict
         alt, caption = shown(BENCHMARKS, name)
         assert alt == ET.parse(drawn[f"{name}.svg"]).getroot().find(f"{SVG}desc").text, name
         found = re.search(
-            rf'<img src="figures/{name}\.svg"[^>]*>\n</picture>\n\n\*\*Figure \w+\. (.+?)\*\*', report, re.S
+            rf'<img src="figures/{name}\.svg"[^>]*>\n</picture>\n\n\*\*Figure \w+\. (.+?)\*\*',
+            report,
+            re.S,
         )
         assert found, name
         assert caption.startswith(f"**{' '.join(found[1].split())}**"), (name, caption)
@@ -1303,3 +1312,123 @@ def test_the_deployed_results_figures_say_what_their_records_do(drawn: dict[str,
             assert key.lower() in caption.lower(), (doc.name, caption)
         # Besides its caption, the report's text and its Table A1 name each.
         assert len(re.findall(rf"{number}\b", report)) >= 3, number
+
+
+# The campaign map ---------------------------------------------------------------------------------------------------
+
+
+def test_the_campaign_map_is_its_records() -> None:
+    # Each bar is its record's runs, as their run.json files (the soak's soak.json) give them: W2 to W4's 129 points
+    # and W5's 72, the counts make reproduce-e2 and reproduce-e2-w5 rebuild from; each campaign's rounds, its samples
+    # of the agents' traces and the code it ran. RG's one failed point, a voice-alone run stopped at its first turns
+    # on v1.6-21, counts in its span and not in its points or its code.
+    found = {c.code: c for c in data.campaigns()}
+    assert list(found) == [
+        "W2",
+        "W3\u2013W4",
+        "W5",
+        "FB",
+        "The A100 run",
+        "RS",
+        "SW",
+        "RG",
+        "The soak",
+    ]
+    assert found["W2"].points + found["W3\u2013W4"].points == 129 and found["W5"].points == 72
+    five, rounds = (
+        (11, 12, 13, 14, 15),
+        {"W3\u2013W4": 5, "W5": 18, "FB": 5, "The A100 run": 5, "RS": 5, "RG": 5},
+    )
+    expected = {
+        "W2": ((11,), ("419e181", "03af728")),
+        "W3\u2013W4": ((11,), ("03af728",)),
+        "W5": (five, ("v0.3-71-g66deebb", "v0.3-90-gd43b46d")),
+        "FB": (five, ("v0.3-191-g987fd09",)),
+        "The A100 run": (five, ("v1.0",)),
+        "RS": (five, ("v1.2",)),
+        "SW": ((11,), ("v1.5",)),
+        "RG": ((21, 22, 23, 24, 25), ("v1.6-27-gea7efd0",)),
+        "The soak": ((26,), ("v1.6-56-g885a874",)),
+    }
+    assert {code: (c.seeds, c.revisions) for code, c in found.items()} == expected
+    # The map names each campaign's code by its release, from those revisions (the exact ones stay in the records).
+    assert {code: c.releases for code, c in found.items()} == {
+        "W2": ("before v0.1",),
+        "W3\u2013W4": ("before v0.1",),
+        "W5": ("after v0.3",),
+        "FB": ("after v0.3",),
+        "The A100 run": ("v1.0",),
+        "RS": ("v1.2",),
+        "SW": ("v1.5",),
+        "RG": ("after v1.6",),
+        "The soak": ("after v1.6",),
+    }
+    assert {code: c.rounds for code, c in found.items() if c.rounds} == rounds
+    assert found["The soak"].hours == (2.0, 24.0)
+    failed = [
+        json.loads(p.read_text())
+        for p in (data.RESULTS / "2026-10-28-rounds").glob("rg-r1/*/run.json")
+        if json.loads(p.read_text())["status"] != "complete"
+    ]
+    assert [r["versions"]["source"] for r in failed] == ["v1.6-21-ga4e6676"]
+    assert found["RG"].start == min(r["started"] for r in failed)
+    # The campaigns follow one another, each within the map's eight days.
+    spans = [(c.start, c.end) for c in found.values()]
+    assert all(a[1] <= b[0] for a, b in itertools.pairwise(spans))
+    end = figures.MAP_START + figures.MAP_DAYS * figures.DAY
+    assert spans[0][0] >= figures.MAP_START and spans[-1][1] <= end
+
+
+def test_experiments_shows_the_campaign_map_over_its_table(drawn: dict[str, Path]) -> None:
+    # EXPERIMENTS shows the map with the drawing's own description as its alt text, and right under it the table of
+    # its bars: each campaign's span, points, rounds and samples and code as the records give them, and its record.
+    experiments = REPO / "docs" / "EXPERIMENTS.md"
+    alt, caption = shown(experiments, "report-campaigns")
+    assert alt == ET.parse(drawn["report-campaigns.svg"]).getroot().find(f"{SVG}desc").text
+    assert caption.startswith("**Nine campaigns from 23 to 29 October 2026 measured the results")
+    assert len(data.campaigns()) == 9
+    header = "| Campaign | Ran, UTC | Points | Rounds and samples | Code | Records |"
+    after = experiments.read_text().split('<img src="figures/report-campaigns.svg"', 1)[1]
+    assert next(line for line in after.splitlines() if line.startswith("|")) == header
+    table = doc_table("EXPERIMENTS.md", header)
+    for c in data.campaigns():
+        code, *cells = figures.campaign_row(c)
+        assert table[code] == [
+            *cells,
+            f"[`{c.record}`](../benchmarks/results/{c.record}/README.md)",
+        ], code
+    assert len(table) == len(data.campaigns())
+
+
+def test_a_campaigns_release_is_what_git_says_of_its_revision() -> None:
+    # A run records the `git describe --always --dirty` of the code its node ran: a tag, a tag and the commits past
+    # it, or a commit's hash alone where no tag preceded it. data.release reads them so, and git agrees where this
+    # clone has the history (CI's shallow clone has no tags, and this part skips there): the first tag is the first
+    # release CHANGELOG lists, each tag a revision names exists, and each bare hash, through REVISIONS.md's map to
+    # this history (whose tags before v1.0 sit off its main line), is a commit made before the first tag.
+    first = data.first_release()
+    assert first == "v0.1"
+    assert data.release("v1.2", first) == "v1.2"
+    assert data.release("v0.3-71-g66deebb", first) == "after v0.3"
+    assert data.release("v1.6-27-gea7efd0-dirty", first) == "after v1.6"
+    assert data.release("419e181", first) == "before v0.1"
+    with pytest.raises(ValueError):
+        data.release("unknown", first)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(REPO), *args], capture_output=True, text=True
+        ).stdout.strip()
+
+    tags = git("tag", "--sort=version:refname").split()
+    if not tags:
+        pytest.skip("this clone has no tags")
+    assert tags[0] == first
+    revisions = {r for c in data.campaigns() for r in c.revisions}
+    named = {m[1] for r in revisions if (m := re.fullmatch(r"(v\d+\.\d+)(-.*)?", r))}
+    assert named and named <= set(tags), named - set(tags)
+    table = (REPO / "docs" / "REVISIONS.md").read_text()
+    first_made = int(git("log", "-1", "--format=%ct", f"{first}^{{commit}}"))
+    for bare in sorted(r for r in revisions if not r.startswith("v")):
+        [commit] = re.findall(rf"^\| `{bare}` \|.*?/commit/([0-9a-f]{{40}})\)", table, re.M)
+        assert int(git("log", "-1", "--format=%ct", commit)) < first_made, bare

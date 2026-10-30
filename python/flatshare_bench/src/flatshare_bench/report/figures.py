@@ -2801,6 +2801,146 @@ def _starts_layout(
     return s.save(path)
 
 
+# The campaign map -------------------------------------------------------------------------------------------------
+
+MAP_START = 1792627200.0  # 2026-10-22 00:00 UTC
+MAP_DAYS = 8
+"""The campaign map's axis: 22 October 2026 to the end of the 29th, UTC, a day a band."""
+DAY = 86400.0
+
+
+def _when(t: float) -> tuple[str, str]:
+    """A moment as its day ("23 October") and its time of day ("08:59"), UTC."""
+    import datetime
+
+    at = datetime.datetime.fromtimestamp(t, datetime.UTC)
+    return f"{at.day} October", at.strftime("%H:%M")
+
+
+def _span(c: data.Campaign) -> str:
+    """A campaign's span in prose: "23 October 00:13 to 08:59", or across days, "23 October 10:57 to 24 October 01:35"."""
+    (d0, t0), (d1, t1) = _when(c.start), _when(c.end)
+    return f"{d0} {t0} to {t1}" if d0 == d1 else f"{d0} {t0} to {d1} {t1}"
+
+
+def _count(n: int, one: str, many: str) -> str:
+    return f"one {one}" if n == 1 else f"{n} {many}"
+
+
+def _rounds_and_samples(c: data.Campaign) -> str:
+    """A campaign's rounds and its samples of the agents' traces, or a soak's runs."""
+    if c.hours:
+        alone, serving = c.hours
+        return f"{alone:.0f} hours of voice alone, then {serving:.0f} hours serving"
+    if c.rounds:
+        runs = _count(c.rounds, "round", "rounds") + (
+            " and its arms" if c.code == "The A100 run" else ""
+        )
+    else:
+        runs = "one run a setting" if c.code == "SW" else "one run a point"
+    return f"{runs}, {_count(len(c.seeds), 'sample', 'samples')}"
+
+
+def _releases(c: data.Campaign) -> str:
+    """The code a campaign ran, as the release it belongs to: "v1.0", "code after v0.3", "code before v0.1"."""
+    return " and ".join(r if r.startswith("v") else f"code {r}" for r in c.releases)
+
+
+def _campaign_detail(c: data.Campaign) -> str:
+    """What a campaign's bar carries beside its question: its rounds and samples, and the release its code was."""
+    return f"{_rounds_and_samples(c)}, on {_releases(c)}"
+
+
+def campaign_row(c: data.Campaign) -> tuple[str, str, str, str, str]:
+    """A campaign's row in EXPERIMENTS' table under the map: its code, when it ran, its points, its rounds and
+    samples, and the release its code was (BENCHMARKS and the records name the exact revision)."""
+    points = "\u2013" if c.hours else f"{c.points:,}"
+    return c.code, _span(c), points, _rounds_and_samples(c), " and ".join(c.releases)
+
+
+def _campaigns_description(found: Sequence[data.Campaign]) -> str:
+    rows = "; ".join(
+        f"{c.code[0].lower() + c.code[1:] if c.code.startswith('The ') else c.code}, "
+        f"{c.question[0].lower() + c.question[1:]}, {_span(c)}, {_campaign_detail(c)}"
+        for c in found
+    )
+    return (
+        "A timeline of 22 to 29 October 2026, UTC, a bar for each campaign from its first run's start to its last "
+        f"run's end, with what it measured, its rounds and samples, and the code it ran: {rows}."
+    )
+
+
+def campaigns(out: Path) -> list[Path]:
+    """report-campaigns.svg and its phone layout: the campaign map. Each campaign a bar on one time axis, from its
+    first run's start to its last run's end, its code and question beside it, then its rounds, its samples of the
+    agents' traces and the code it ran, all from its record's run.json files (data.campaigns)."""
+    found = data.campaigns()
+    description = _campaigns_description(found)
+    return [
+        _campaigns_layout(found, out / "report-campaigns.svg", description, WIDTH),
+        _campaigns_layout(found, out / "report-campaigns-narrow.svg", description, NARROW),
+    ]
+
+
+def _campaigns_layout(
+    found: Sequence[data.Campaign], path: Path, description: str, width: float
+) -> Path:
+    wide = width == WIDTH
+    s = Chart(width, 2000, "Which campaign measured what, on which code", description)
+    x0 = 24.0 if wide else 18.0
+    column = 500.0 if wide else NARROW - 2 * x0
+    x = Scale(
+        MAP_START,
+        MAP_START + MAP_DAYS * DAY,
+        556.0 if wide else x0,
+        WIDTH - 24.0 if wide else NARROW - x0,
+    )
+    nights = [MAP_START + k * DAY for k in range(MAP_DAYS + 1)]
+    noons = [MAP_START + (k + 0.5) * DAY for k in range(MAP_DAYS)]
+    days = [str(22 + k) for k in range(MAP_DAYS)]
+    thick, line = 16.0, 22.0
+    y = 16.0
+    rows = []
+    for c in found:
+        question = wrap(c.question, column, NOTE)
+        detail = wrap(_campaign_detail(c), column, NOTE)
+        rows.append((c, question, detail, y))
+        if wide:
+            y += 20 + line * (len(question) + len(detail)) + 20
+        else:
+            y += 20 + line * len(question) + 14 + thick + 8 + line * len(detail) + 20
+    bottom = y - 8
+    if wide:
+        band_grid(s, x, nights, 8, bottom)
+    for c, question, detail, top in rows:
+        s.text(x0, top + 20, c.code, size=VALUE)
+        at = top + 20
+        for text in question:
+            at += line
+            s.text(x0, at, text, size=NOTE, cls="soft")
+        if wide:
+            band = top + 6
+        else:
+            band = at + 14
+            band_grid(s, x, nights, band - 4, band + thick + 4)
+            at = band + thick + 4
+        s.bar(x(c.start), band, max(x(c.end) - x(c.start), 3.0), thick, "gray", name=c.code)
+        for text in detail:
+            at += line
+            s.text(x0, at, text, size=NOTE, cls="mute")
+    last = x_axis(s, x, noons, days, None, bottom)
+    s.rule(x.start, x.end, bottom)
+    title = "Day of October 2026, UTC"
+    if wide:
+        s.text((x.start + x.end) / 2, last + 27, title, size=NOTE, anchor="middle", cls="soft")
+        last += 27
+    else:
+        last += 27
+        s.text(x0, last, title, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
+
+
 # Every figure -----------------------------------------------------------------------------------------------------
 
 FIGURES = (
@@ -2822,6 +2962,7 @@ FIGURES = (
     step_cap,
     soak,
     starts,
+    campaigns,
 )
 
 

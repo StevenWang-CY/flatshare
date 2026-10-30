@@ -1,6 +1,6 @@
 # Benchmarks
 
-Every measurement behind the other documents, by the question it answers, with its range and the records it comes from: the home of each number, for a reader checking a claim. Under each question a provenance line names the campaigns or probes that measured it; the codes, W0 to W8, FB, RS, SW and RG, are defined in [GLOSSARY.md](GLOSSARY.md#experiments-and-how-they-are-counted).
+Every measurement behind the other documents, by the question it answers, with its range and the records it comes from: the home of each number, for a reader checking a claim. Under each question a provenance line names the campaigns or probes that measured it: [the campaign map](EXPERIMENTS.md#which-campaign-measured-what-on-which-code) gives each campaign's code, and [GLOSSARY.md](GLOSSARY.md#experiments-and-how-they-are-counted) the stages W0 to W8.
 
 The measurements ran on one RTX 5060 Ti 16 GB (sm_120, PCIe Gen3 x8) in Phastform, a host with two Xeon E5-2609 v4 at 1.7 GHz and 188 GiB of RAM, with vLLM 0.32.0, and the run of 2026-10-26 on an A100 SXM4 80 GB ([its own section](#the-a100-run-2026-10-26)). The change measured here is pull requests #63350 and #63351, proposed to vLLM (open, with no maintainer review as of 2026-10-29), run as the make-room variant ([GLOSSARY.md](GLOSSARY.md#the-change-and-its-parts)).
 
@@ -442,7 +442,7 @@ RS ran tuned vLLM and the configuration to deploy on v1.2, with W5's arm files a
 
 **Provenance:** SW, 2026-10-27; RG, 2026-10-28.
 
-SW ran two screens of the configuration to deploy over the step cap, the per-request threshold, the window and the gateway's static cap on agent requests in flight, and of stock vLLM at two step caps, one run a setting on W5's tuning sample (agent seed 11) beside the 24 sessions of the discriminating scenario ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md), whose `table.py` gives every point). The step cap moved the configuration to deploy most: 9 of 59 replies over W5's SLO at 256 without the threshold, 24 at 512 and 33 at 1,024; the static caps did less, and stock vLLM missed at every setting, with 41 to 58 replies over. RG's five rounds (agent seeds 21–25, Phastform and Gray in turn, below) then ran the three configurations side by side, each round against its own SLO:
+SW ran two screens of the configuration to deploy over the step cap (256, 512 and 1,024 tokens, with and without a 256-token threshold per request), the window (48 and 96 tokens) and the gateway's static cap on agent requests in flight, and of stock vLLM at step caps of 256 and 1,024, one run a setting on W5's tuning sample (agent seed 11) beside the 24 sessions of the discriminating scenario ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md), whose `table.py` gives every point). The step cap moved the configuration to deploy most: 9 of 59 replies over W5's SLO at 256 without the threshold, 24 at 512 and 33 at 1,024; the static caps did less, and stock vLLM missed at every setting, with 41 to 58 replies over. RG's five rounds (agent seeds 21–25, Phastform and Gray in turn, below) then ran the three configurations side by side, each round against its own SLO:
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-step-cap-narrow.svg">
