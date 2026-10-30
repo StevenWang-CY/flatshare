@@ -307,7 +307,9 @@ The gateway sends each event stream vLLM's error event, of type `upstream_unavai
 
 When the first card's engine or speech servers fail, its calls move to the spare by their next turn, and while the spare carries any call its agents' new requests wait for their class's queue timeout (120 s) and are then answered 503 `queue_timeout` (those already running finish), and the first card's agents' sessions find the spare at its bound and get 503 `no_agent_slot` until a slot frees.
 
-In the drills ([the record](../benchmarks/results/2026-10-28-node-failover/README.md)) both calls' next turns reached the spare 0.7 s after a SIGKILL to the first card's engine and 1.9 s after its stop, and none of the 300 turns after failed; the killed engine was back 101 s after the kill. Once the first card is healthy again it takes the new calls, the calls moved to the spare stay there until they end, and the spare's agents run again after them; there is no graceful drain of one card.
+In the drills ([the record](../benchmarks/results/2026-10-28-node-failover/README.md)) both calls' next turns reached the spare 0.7 s after a SIGKILL to the first card's engine and 1.9 s after its stop, and none of the 300 turns after failed; the killed engine was back 101 s after the kill. Once the first card is healthy again it takes the new calls, the calls moved to the spare stay there until they end, and the spare's agents run again after them.
+
+For maintenance, a card can be drained instead of failed ([the runbook's steps](../ops/RUNBOOK.md#drain-one-node)): it takes no new session, its calls end on it, and it is stopped once `/nodes` says it is drained, so that no turn is cut. The gateway's tests drain one of two nodes; the two cards have not run the drill yet.
 
 ### The gateway restarts
 

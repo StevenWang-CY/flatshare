@@ -74,11 +74,11 @@ impl Session {
 /// What became of a session's placement.
 #[derive(Debug)]
 pub(crate) enum Found {
-    /// It holds: its node is available.
+    /// It holds: its node keeps it.
     On(Arc<Session>),
     /// There is none: a new session, or one that idled out.
     None,
-    /// Its node is not available.
+    /// Its node does not keep it: the node is not available, or it drains and the session is an agent's.
     Lost(Arc<Session>),
 }
 
@@ -108,10 +108,10 @@ impl Table {
         }
     }
 
-    /// The placement of `key`, if it holds on a node that is `available`.
-    pub fn find(&self, key: &Key, available: impl Fn(usize) -> bool) -> Found {
+    /// The placement of `key`, if it holds: its node `keeps` a session of its class.
+    pub fn find(&self, key: &Key, keeps: impl Fn(usize, SloClass) -> bool) -> Found {
         match self.sessions.get(key) {
-            Some(placed) if available(placed.node) => Found::On(Arc::clone(placed)),
+            Some(placed) if keeps(placed.node, placed.class) => Found::On(Arc::clone(placed)),
             Some(placed) => Found::Lost(Arc::clone(placed)),
             None => Found::None,
         }
@@ -271,7 +271,7 @@ mod tests {
     }
 
     fn node_of(table: &Table, key: &Key) -> Option<usize> {
-        match table.find(key, |_| true) {
+        match table.find(key, |_, _| true) {
             Found::On(placed) => Some(placed.node),
             _ => None,
         }
@@ -283,10 +283,13 @@ mod tests {
         let now = Instant::now();
         let call = key(0, "call");
         table.place(&call, SloClass::Realtime, 1, true, None, now);
-        assert!(matches!(table.find(&call, |_| true), Found::On(p) if p.node == 1));
-        assert!(matches!(table.find(&call, |node| node != 1), Found::Lost(p) if p.node == 1));
+        assert!(matches!(table.find(&call, |_, _| true), Found::On(p) if p.node == 1));
+        assert!(matches!(table.find(&call, |node, _| node != 1), Found::Lost(p) if p.node == 1));
         // Two trusted tenants may name sessions alike: they are two sessions.
-        assert!(matches!(table.find(&key(1, "call"), |_| true), Found::None));
+        assert!(matches!(
+            table.find(&key(1, "call"), |_, _| true),
+            Found::None
+        ));
         assert_eq!(table.held(1), [1, 0, 0]);
         assert_eq!(table.gauges[1][0].get(), 1);
     }

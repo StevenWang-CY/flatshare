@@ -91,6 +91,10 @@ flatshare_gateway_node_in_flight{node="phastform",class="realtime"} 0
 # TYPE flatshare_gateway_node_covering gauge
 flatshare_gateway_node_covering{node="gray"} 0
 flatshare_gateway_node_covering{node="phastform"} 0
+# HELP flatshare_gateway_node_draining Whether each node drains (1), as its draining key sets it: it takes no new session, keeps its calls until they end, and its agents' sessions move by their next request.
+# TYPE flatshare_gateway_node_draining gauge
+flatshare_gateway_node_draining{node="gray"} 0
+flatshare_gateway_node_draining{node="phastform"} 0
 # HELP flatshare_gateway_node_failover_waiting Interactive and background requests waiting on each node for the failover's bound.
 # TYPE flatshare_gateway_node_failover_waiting gauge
 flatshare_gateway_node_failover_waiting{node="gray"} 0

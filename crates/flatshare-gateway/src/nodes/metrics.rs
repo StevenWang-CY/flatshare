@@ -127,6 +127,7 @@ pub(crate) struct Metrics {
     sessions: Family<NodeClassLabels, Gauge>,
     in_flight: Family<NodeClassLabels, Gauge>,
     covering: Family<NodeLabels, Gauge>,
+    draining: Family<NodeLabels, Gauge>,
     waiting: Family<NodeLabels, Gauge>,
     placements: Family<PlacementLabels, Counter>,
     refused: Family<RefusedLabels, Counter>,
@@ -149,6 +150,8 @@ pub(crate) struct Series {
     pub in_flight: [Gauge; 3],
     /// 1 while it covers: it carries realtime sessions moved to it from another node, or, as a warm spare, any call.
     pub covering: Gauge,
+    /// 1 while it drains, as the configuration sets it.
+    pub draining: Gauge,
     /// Its interactive and background requests waiting for the failover's bound.
     pub waiting: Gauge,
     /// Its placements by class and reason, in [`Reason::ALL`] order.
@@ -170,6 +173,7 @@ impl Metrics {
             sessions: Family::default(),
             in_flight: Family::default(),
             covering: Family::default(),
+            draining: Family::default(),
             waiting: Family::default(),
             placements: Family::default(),
             refused: Family::default(),
@@ -235,6 +239,9 @@ impl Metrics {
             in_flight: by_class(&self.in_flight),
             covering: self
                 .covering
+                .get_or_create_owned(&NodeLabels { node: node() }),
+            draining: self
+                .draining
                 .get_or_create_owned(&NodeLabels { node: node() }),
             waiting: self
                 .waiting
@@ -319,6 +326,12 @@ impl Metrics {
              failover_background_max_in_flight: it carries realtime sessions moved to it from another node, until they \
              end, or, with calls set to fill, any call on a realtime node after the first",
             self.covering.clone(),
+        );
+        r.register(
+            "node_draining",
+            "Whether each node drains (1), as its draining key sets it: it takes no new session, keeps its calls \
+             until they end, and its agents' sessions move by their next request",
+            self.draining.clone(),
         );
         r.register(
             "node_failover_waiting",

@@ -125,6 +125,9 @@ default_class = "background"
 # max_agents = 4
 # stt = "unix:/run/user/1007/flatshare/phastform-stt.sock"
 # tts = "unix:/run/user/1007/flatshare/phastform-tts.sock"
+# For its maintenance, such as an engine upgrade: then reload. It takes no new session, keeps its calls until they
+# end, and its agents' sessions move to gray; /nodes says when it is drained (ops/RUNBOOK.md, Drain one node).
+# draining = true
 #
 # [[nodes]]
 # name = "gray"

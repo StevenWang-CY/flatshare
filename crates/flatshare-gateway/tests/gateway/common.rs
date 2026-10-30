@@ -752,7 +752,13 @@ impl Gateway {
     /// A gateway of `nodes`, each with `keys` in its entry, and `top`'s keys; the nodes are judged every 20 ms, two
     /// checks making them unhealthy and two healthy again, unless `placement` sets its own `[placement]` table.
     pub async fn start_nodes(nodes: &[&TestNode], keys: &str, top: &str, placement: &str) -> Self {
-        let entries: String = nodes.iter().map(|node| node.toml(keys)).collect();
+        let each: Vec<(&TestNode, &str)> = nodes.iter().map(|node| (*node, keys)).collect();
+        Self::start_nodes_each(&each, top, placement).await
+    }
+
+    /// As [`Gateway::start_nodes`], each node with its own keys.
+    pub async fn start_nodes_each(nodes: &[(&TestNode, &str)], top: &str, placement: &str) -> Self {
+        let entries: String = nodes.iter().map(|(node, keys)| node.toml(keys)).collect();
         let placement = if placement.is_empty() {
             "[placement]\nhealth_interval_s = 0.02\nhealth_timeout_s = 0.5\nunhealthy_after = 2\nhealthy_after = 2\n"
         } else {
