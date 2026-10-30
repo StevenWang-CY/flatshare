@@ -349,21 +349,30 @@ Responses from the engine pass through unchanged. The gateway's own errors come 
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `invalid_class`, `invalid_json`, `invalid_event`, `invalid_session`, `unreadable_body` | An unknown `X-Flatshare-Class`; a body that is not a JSON object, or that cannot be read; an invalid lifecycle event; a `POST /v1/sessions` body without a valid session id, or with an unknown class, and a `DELETE /v1/sessions/{id}` whose id is no session id |
+| 400 | `invalid_class`, `invalid_json`, `invalid_event`, `invalid_session`, `unreadable_body` | An unknown `X-Flatshare-Class`; a body that is not a JSON object, or that cannot be read; an invalid lifecycle event or session (note 1) |
 | 400, 404 | `node_required`, `unknown_node` | With `[[nodes]]`, `GET /metrics/engine` without `?node=NAME`, or naming no node |
 | 408 | `upload_timeout` | The body did not arrive within its class's `upload_timeout_s` (or its `total_timeout_s`) |
-| 400 | `duplicate_field`, `invalid_reply_limit`, `invalid_choices`, `too_many_choices` | A body that sets one of `max_tokens`, `max_completion_tokens`, `max_output_tokens`, `n` and `best_of` twice; a reply limit that is not null or a whole number; an `n` or `best_of` that is not null or a whole number from 1; one over `max_choices`. The error's `param` names the field ([Bounds](#bounds)) |
+| 400 | `duplicate_field`, `invalid_reply_limit`, `invalid_choices`, `too_many_choices` | A body that sets a limit or choice field twice, or to anything but null or a whole number; one over `max_choices` (note 2) |
 | 401 | `invalid_api_key` | No known key, on a listener without a tenant; for `/metrics` and `/metrics/engine` on a TCP listener, no metrics key |
 | 403 | `untrusted_tenant` | Lifecycle events, `POST /v1/sessions` or `DELETE /v1/sessions/{id}` from an untrusted tenant |
 | 404, 405 | `not_found`, `method_not_allowed` | Any other route or method |
 | 413 | `body_too_large` | A body over `max_body_bytes` |
-| 429 | `queue_full`, `shed` | The request's class queue at the admission point is full (`queue_limit`), or its queues together are (`max_queued`), with `Retry-After: 1`; a background request shed by flow control before its response began. The `type` is `rate_limit_error` |
+| 429 | `queue_full`, `shed` | A full queue at the admission point, with `Retry-After: 1`; a background request shed by flow control before its response began (note 3) |
 | 429 | `tenant_in_flight_limit` | The tenant has its `max_in_flight` requests in flight, with `Retry-After: 1`, before the body is read |
 | 502 | `upstream_unavailable` | The engine could not be reached, or closed the connection before answering; for `/metrics/engine`, it did not answer within 10 s |
-| 503 | `queue_timeout`, `upstream_not_ready` | Not admitted within the policy's `queue_timeout_s`, or by the class's `queue_timeout_s`, `first_content_timeout_s` or `total_timeout_s` while it waited (a preempted request's second wait among them); the engine is not ready (a request found it broken and its `/health` has not answered since); each with `Retry-After: 1` |
-| 503 | `no_healthy_node`, `no_call_slot`, `no_agent_slot`, `placement_full` | With `[[nodes]]`: no available node takes the session's role; every available realtime node has `max_calls` calls; every available background node has `max_agents` agents' sessions; `POST /v1/sessions` finds every session in the table with a request in flight. Each with `Retry-After: 1` |
-| 503 | `in_flight_limit`, `class_in_flight_limit`, `body_budget_exhausted`, `draining` | The gateway or the class has its `max_in_flight` requests in flight, before the body is read; the body would pass `max_buffered_body_bytes`; a gateway that handed its sockets to a successor (or that drains) admits nothing more. Each with `Retry-After: 1` |
-| 504 | `upstream_timeout` | No response headers within the class's `headers_timeout_s` (the top-level `headers_timeout_s` by default), or no first content, or no end, by the request's `first_content_timeout_s` or `total_timeout_s` from its receipt, before a response began |
+| 503 | `queue_timeout`, `upstream_not_ready` | Not admitted in time (note 4); the engine is not ready (note 5); each with `Retry-After: 1` |
+| 503 | `no_healthy_node`, `no_call_slot`, `no_agent_slot`, `placement_full` | With `[[nodes]]`, no available node can take the session (note 6). Each with `Retry-After: 1` |
+| 503 | `in_flight_limit`, `class_in_flight_limit`, `body_budget_exhausted`, `draining` | The gateway or the class has its `max_in_flight` requests in flight; the body would pass `max_buffered_body_bytes`; the gateway drains (note 7). Each with `Retry-After: 1` |
+| 504 | `upstream_timeout` | No response headers within the class's `headers_timeout_s`, or no first content or no end in time, before a response began (note 8) |
+
+1. An invalid session is a `POST /v1/sessions` body without a valid session id, or with an unknown class, or a `DELETE /v1/sessions/{id}` whose id is no session id.
+2. The fields are `max_tokens`, `max_completion_tokens`, `max_output_tokens`, `n` and `best_of`. A reply limit that is not null or a whole number is `invalid_reply_limit`, and an `n` or `best_of` that is not null or a whole number from 1 is `invalid_choices`. The error's `param` names the field ([Bounds](#bounds)).
+3. The full queue is the request's class queue (`queue_limit`), or its queues together (`max_queued`). The `type` is `rate_limit_error`.
+4. `queue_timeout`: not admitted within the policy's `queue_timeout_s`, or by the class's `queue_timeout_s`, `first_content_timeout_s` or `total_timeout_s` while it waited (a preempted request's second wait among them).
+5. `upstream_not_ready`: a request found the engine broken and its `/health` has not answered since.
+6. `no_healthy_node`: no available node takes the session's role. `no_call_slot`: every available realtime node has `max_calls` calls. `no_agent_slot`: every available background node has `max_agents` agents' sessions. `placement_full`: `POST /v1/sessions` finds every session in the table with a request in flight.
+7. The in-flight bounds answer before the body is read. `draining`: a gateway that handed its sockets to a successor (or that drains) admits nothing more.
+8. The class's `headers_timeout_s` is the top-level `headers_timeout_s` by default. The first content and the end are due by the request's `first_content_timeout_s` and `total_timeout_s`, from its receipt.
 
 ## Accounting
 
@@ -375,13 +384,21 @@ Every inference request is counted three times, with labels from fixed sets and 
 | `upstream_client_error`, `upstream_server_error` | A response relayed to its end with a 4xx status (the request's own fault, such as a prompt over the context), or with another status |
 | `transport_error` | The upstream failed: no connection, one that closed before the response headers, or a body that broke off |
 | `cancelled`, `stalled` | The client left first; it stopped reading for `stall_timeout_s` |
-| `shed`, `drained` | An admission policy gave its place to a stricter class; a drain cut it, or a gateway that had handed its sockets over did not admit it |
+| `shed`, `drained` | An admission policy gave its place to a stricter class; a drain cut it, or kept it out (note 1) |
 | `timeout_upload`, `timeout_queue`, `timeout_headers`, `timeout_first_content`, `timeout_idle`, `timeout_total` | One of its deadlines passed ([Deadlines](#deadlines)) |
-| `refused_in_flight`, `refused_class`, `refused_tenant`, `refused_body_bytes`, `refused_queue` | The intake refused it before reading its body (the gateway, its class or its tenant at its `max_in_flight`, or the bodies' budget full), or the admission point's queues were full |
+| `refused_in_flight`, `refused_class`, `refused_tenant`, `refused_body_bytes`, `refused_queue` | The intake refused it before reading its body (note 2), or the admission point's queues were full |
 | `not_ready` | The engine was not ready: a request had found it broken and its `/health` had not answered since |
 | `invalid` | The gateway refused it as malformed or unauthorized: 400, 401, 404, 405 or 413 |
 
-The service level counts, by class, its valid requests and the good ones among them (`flatshare_gateway_sli_valid_total`, `flatshare_gateway_sli_good_total`), and `ops/prometheus/rules.yml`'s objective and burn-rate alerts read 1 − good/valid. Valid is every request that ended, but for the client's faults: `invalid`, `upstream_client_error`, `timeout_upload`, `refused_tenant` (a tenant over its own bound) and `stalled`. Good is `completed` with its first content within the class's `first_content_objective_s`, or `completed` alone for a class without one. So a request that fails, is refused for capacity, times out or hangs until its deadline counts as a miss. The error ratio used to read the first byte's histogram, which has no sample of a request that never got a first byte, so an engine that failed every request left it without data. A client's cancellation is judged by what the service had done by then: in a class with an objective, a request cancelled after its first content is good or bad by that first content, one cancelled without it is bad once the objective had passed and not valid before; a class without one leaves its cancellations out.
+1. Kept out: a gateway that had handed its sockets over did not admit it.
+2. The gateway, its class or its tenant was at its `max_in_flight`, or the bodies' budget was full.
+
+The service level counts, by class, its valid requests and the good ones among them (`flatshare_gateway_sli_valid_total`, `flatshare_gateway_sli_good_total`), and `ops/prometheus/rules.yml`'s objective and burn-rate alerts read 1 − good/valid.
+- **Valid** is every request that ended, but for the client's faults: `invalid`, `upstream_client_error`, `timeout_upload`, `refused_tenant` (a tenant over its own bound) and `stalled`.
+- **Good** is `completed` with its first content within the class's `first_content_objective_s`, or `completed` alone for a class without one. So a request that fails, is refused for capacity, times out or hangs until its deadline counts as a miss.
+- **A client's cancellation** is judged by what the service had done by then: in a class with an objective, a request cancelled after its first content is good or bad by that first content, one cancelled without it is bad once the objective had passed and not valid before; a class without one leaves its cancellations out.
+
+The error ratio used to read the first byte's histogram, which has no sample of a request that never got a first byte, so an engine that failed every request left it without data.
 
 ## The engine's state
 
