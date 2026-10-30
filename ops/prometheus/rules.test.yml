@@ -220,18 +220,18 @@ tests:
               runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharecallsrefused
               summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503
 
-  # The request outcomes' tickets, from requests_terminal summed over its tenants and routes: refusals for capacity
-  # open one ticket by class, two tenants' and two bounds' together, and a missed deadline one by class and deadline,
-  # each while the last ten minutes hold one; completed requests open neither.
+  # The request outcomes' tickets, from request_outcomes, whose series exist at zero from the gateway's start: refusals
+  # for capacity open one ticket by class, two bounds' together, and a missed deadline one by class and deadline, each
+  # while the last ten minutes hold one; completed requests open neither. A class's first event counts.
   - interval: 1m
     input_series:
-      - series: 'flatshare_gateway_requests_terminal_total{tenant="agents",route="/v1/chat/completions",class="background",outcome="refused_in_flight"}'
+      - series: 'flatshare_gateway_request_outcomes_total{class="background",outcome="refused_in_flight"}'
         values: '0 0 0 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3'
-      - series: 'flatshare_gateway_requests_terminal_total{tenant="bench",route="/v1/completions",class="background",outcome="refused_class"}'
+      - series: 'flatshare_gateway_request_outcomes_total{class="background",outcome="refused_class"}'
         values: '0 0 0 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2'
-      - series: 'flatshare_gateway_requests_terminal_total{tenant="voice",route="/v1/chat/completions",class="realtime",outcome="timeout_first_content"}'
+      - series: 'flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_first_content"}'
         values: '0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
-      - series: 'flatshare_gateway_requests_terminal_total{tenant="agents",route="/v1/responses",class="interactive",outcome="completed"}'
+      - series: 'flatshare_gateway_request_outcomes_total{class="interactive",outcome="completed"}'
         values: '0+5x19'
     alert_rule_test:
       - eval_time: 2m
@@ -267,20 +267,41 @@ tests:
       - eval_time: 18m
         alertname: FlatshareDeadlinesMissed
         exp_alerts: []
-  # request_outcomes, the family E2's records read, opens neither: the same outcomes counted there alone fire nothing.
+  # A class's first refusal and first missed deadline, as the gateway exports them: request_outcomes' series exist at
+  # zero from its start, and requests_terminal's appear with that request, which increase() does not count. Each
+  # first event opens its ticket.
   - interval: 1m
     input_series:
       - series: 'flatshare_gateway_request_outcomes_total{class="background",outcome="refused_in_flight"}'
-        values: '0 0 0 3 3 3 3 3 3 3'
+        values: '0 0 0 1 1 1 1 1 1 1'
+      - series: 'flatshare_gateway_requests_terminal_total{tenant="agents",route="/v1/chat/completions",class="background",outcome="refused_in_flight"}'
+        values: '_ _ _ 1 1 1 1 1 1 1'
       - series: 'flatshare_gateway_request_outcomes_total{class="realtime",outcome="timeout_first_content"}'
         values: '0 0 0 0 1 1 1 1 1 1'
+      - series: 'flatshare_gateway_requests_terminal_total{tenant="voice",route="/v1/chat/completions",class="realtime",outcome="timeout_first_content"}'
+        values: '_ _ _ _ 1 1 1 1 1 1'
     alert_rule_test:
       - eval_time: 6m
         alertname: FlatshareRequestsRefusedForCapacity
-        exp_alerts: []
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              class: background
+            exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharerequestsrefusedforcapacity
+              summary: The gateway refused requests because its bounds were full (max_in_flight, a class's, the bodies' budget or max_queued)
+              description: "See flatshare:requests_terminal:rate5m by outcome and flatshare_gateway_in_flight; a reload's
+                predecessor counts too while it drains (flatshare_gateway_predecessor_in_flight)."
       - eval_time: 6m
         alertname: FlatshareDeadlinesMissed
-        exp_alerts: []
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              class: realtime
+              outcome: timeout_first_content
+            exp_annotations:
+              runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharedeadlinesmissed
+              summary: Requests ran past their class's deadlines waiting on the engine, which the gateway then cancelled
 
   # The engine's relayed metrics. With one upstream, its job; with [[nodes]], a job a node (prometheus.example.yml): a
   # node whose job scrapes nothing for 5 minutes opens a ticket naming it, and the other node's stays quiet.

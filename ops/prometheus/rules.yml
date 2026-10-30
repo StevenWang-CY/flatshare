@@ -183,11 +183,13 @@ groups:
         annotations:
           runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharestreamsbroken
           summary: The upstream broke off event streams, which their clients saw end with an error event
-      # The outcomes' tickets read requests_terminal, as flatshare:requests_terminal:rate5m and the dashboard do, summed
-      # over its tenants and routes: one ticket a class for a refusal, one a class and deadline for a missed deadline.
+      # The outcomes' tickets read request_outcomes, whose series the gateway creates at zero when it starts, so that a
+      # class's first refusal or missed deadline counts: requests_terminal's series, by tenant and route, appear at their
+      # first request, which increase() does not count. One ticket a class for a refusal, one a class and deadline for a
+      # missed deadline; flatshare:requests_terminal:rate5m and the dashboard give the tenants and routes.
       - alert: FlatshareRequestsRefusedForCapacity
         expr: |
-          sum by (class) (increase(flatshare_gateway_requests_terminal_total{outcome=~"refused_in_flight|refused_class|refused_body_bytes|refused_queue"}[10m])) > 0
+          sum by (class) (increase(flatshare_gateway_request_outcomes_total{outcome=~"refused_in_flight|refused_class|refused_body_bytes|refused_queue"}[10m])) > 0
         labels:
           severity: ticket
         annotations:
@@ -198,7 +200,7 @@ groups:
             counts too while it drains (flatshare_gateway_predecessor_in_flight).
       - alert: FlatshareDeadlinesMissed
         expr: |
-          sum by (class, outcome) (increase(flatshare_gateway_requests_terminal_total{outcome=~"timeout_headers|timeout_first_content|timeout_idle|timeout_total"}[10m])) > 0
+          sum by (class, outcome) (increase(flatshare_gateway_request_outcomes_total{outcome=~"timeout_headers|timeout_first_content|timeout_idle|timeout_total"}[10m])) > 0
         labels:
           severity: ticket
         annotations:

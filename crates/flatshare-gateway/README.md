@@ -420,8 +420,8 @@ An inference succeeds when a client's request gets a 2xx response's first conten
 
 - **`GET /metrics`** serves the OpenMetrics text format from a registry the gateway owns; on a TCP listener it needs the metrics key (`metrics_key_file`), on a Unix socket nothing.
 - **`GET /metrics/engine`** relays the engine's own `/metrics` under the same rule, with its status and content type, within 10 s (502 when the engine does not answer), for a scraper that has no route to the engine: the deployment's engines listen on Unix sockets.
-- **The exposition.** [`metrics.txt`](metrics.txt) is the exposition of a gateway under the lifecycle policy before any traffic, every family the gateway exports, with each family's series sorted by their labels and one series at zero for the two families that have none yet (requests and lifecycle events): a test keeps it current, `make metrics` writes it anew, and the checks of `ops/`'s dashboards and alerts read the gateway's names from it.
-- **The series.** Label values come from fixed sets or from the configuration, so the number of series is bounded. Every series except those of `flatshare_gateway_requests_total` and `flatshare_gateway_events_total` exists from the start, at zero.
+- **The exposition.** [`metrics.txt`](metrics.txt) is the exposition of a gateway under the lifecycle policy before any traffic, every family the gateway exports, with each family's series sorted by their labels and one series at zero for each family that has none before traffic (requests by status, lifecycle events, and requests offered, admitted and ended): a test keeps it current, `make metrics` writes it anew, and the checks of `ops/`'s dashboards and alerts read the gateway's names from it.
+- **The series.** Label values come from fixed sets or from the configuration, so the number of series is bounded. Every series exists from the start, at zero, but those that traffic makes, which appear at their first count: requests by status (`flatshare_gateway_requests_total`), lifecycle events (`flatshare_gateway_events_total`), and requests offered, admitted and ended, by tenant and route (`flatshare_gateway_requests_offered_total`, `_admitted_total` and `_terminal_total`).
 - **The policies' series.** The admission point's, `flatshare_gateway_admission_*` and `flatshare_gateway_realtime_*`, exist only with an `[admission]` policy, and the lifecycle policy's only under it: a gateway without one exports none of them, and one under another policy none of the lifecycle policy's, so that a count it does not keep reads as absent rather than zero.
 
 | Metric | Labels | Meaning |
@@ -466,7 +466,7 @@ An inference succeeds when a client's request gets a 2xx response's first conten
 | `flatshare_gateway_canary_probes_total` | `result` | Inference canaries, by `success` or `failure` |
 | `flatshare_gateway_canary_seconds` | | The time a canary took, to its answer's end or its failure |
 
-1. It counts `completed` only for a 2xx response relayed to its end. E2's records and the soak's scrapes read it; the alerts and the dashboard read `requests_terminal_total`.
+1. It counts `completed` only for a 2xx response relayed to its end. E2's records and the soak's scrapes read it, and so do the outcome alerts, since its series exist from the start and a class's first refusal or missed deadline counts; the dashboard reads `requests_terminal_total`.
 2. It covers parse, sanitization, resolution, admission and connection checkout, without the time a request waits for admission. It is the number behind the 2 ms SLO; its buckets start from 50 µs, with 2 ms as a bound.
 3. `timeout`: a deadline passed while the gateway waited on the upstream: its headers, its first content, a frame after one, or the request's total.
 4. `upstream_unavailable`: the upstream broke the stream off (`body` errors). `draining`: a draining gateway cut a background stream. `upstream_timeout`: a deadline passed while it streamed.
