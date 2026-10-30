@@ -148,11 +148,13 @@ This report makes five contributions.
 A cascaded voice agent answers in four stages. It transcribes the caller's speech, decides that the caller has finished
 (endpointing), streams the transcript through the LLM, and hands speech synthesis the reply's first complete sentence as
 soon as the LLM has produced it. The caller hears nothing until that sentence is spoken. We measure voice-to-voice
-latency (V2V) from the end of the caller's speech to the agent's first audio. With the voice agent alone on the GPU, a
-turn's mean V2V is 1.62 s. Endpointing, which here ends a fixed delay after voice activity stops and once the final
-transcript is in, takes 0.76 s, the LLM's first sentence 0.30 s, the first audio 0.21 s, and transport and playout 0.35
-s. The LLM's share is small, but it sits on the critical path, and its first sentence rather than its whole reply sets
-the wait. Our SLO allows voice alone's p95 V2V plus 250 ms, which is 2.03 s with two callers.
+latency (V2V) from the end of the caller's speech to the agent's first audio.
+
+With the voice agent alone on the GPU, a turn's mean V2V is 1.62 s. Endpointing, which here ends a fixed delay after
+voice activity stops and once the final transcript is in, takes 0.76 s, the LLM's first sentence 0.30 s, the first audio
+0.21 s, and transport and playout 0.35 s. The LLM's share is small, but it sits on the critical path, and its first
+sentence rather than its whole reply sets the wait. Our SLO allows voice alone's p95 V2V plus 250 ms, which is 2.03 s
+with two callers.
 
 ### 2.2 Coding agents as background work
 
@@ -169,11 +171,13 @@ vLLM batches requests continuously and stores KV in fixed-size blocks [[4](#ref-
 scheduler first schedules the running requests, a decode token each or the next chunk of a prefill, and then admits
 waiting requests while the step's token budget and the free blocks last. Chunked prefill [[12](#ref-12)] splits a long
 prompt over many steps so that decodes do not stall behind it, and a step cap (512 tokens here) with a per-request
-threshold (256 tokens) bounds each step's prefill. Under priority scheduling the waiting loop first takes the requests
-that already hold KV, then the others in priority order, and a lower value is served first. The running loop takes
-running requests in the order they were admitted, and when one cannot grow, the scheduler preempts the lowest-priority
-running request, the latest arrival among equals. The waiting loop stops at the first request it cannot allocate, and
-nothing preempts on a waiting request's behalf [[7](#ref-7)].
+threshold (256 tokens) bounds each step's prefill.
+
+Under priority scheduling the waiting loop first takes the requests that already hold KV, then the others in priority
+order, and a lower value is served first. The running loop takes running requests in the order they were admitted, and
+when one cannot grow, the scheduler preempts the lowest-priority running request, the latest arrival among equals. The
+waiting loop stops at the first request it cannot allocate, and nothing preempts on a waiting request's behalf
+[[7](#ref-7)].
 
 Two further mechanisms matter here. vLLM's offloading connector keeps a CPU tier of KV that is written through as tokens
 are computed, by default a prompt's alone and here generated tokens too (`offload_prompt_only: false`), so a request
@@ -257,12 +261,13 @@ and agent prefill resumes after them.
 At the start of each step, before the running loop, make-room finds r, the highest-priority waiting request that the
 waiting loop can schedule in this step (Algorithm 1, line 2). A request still loading its KV from the CPU tier,
 compiling a grammar, awaiting streaming input or awaiting output still in flight from before a preemption is passed
-over, as is one whose LoRA adapter cannot join the running ones. If r lacks KV for its whole remaining sequence, net of
-its prefix-cache hit, make-room preempts running requests of a strictly lower priority through vLLM's own preemption
-path. It takes victims in the order vLLM's running loop preempts in, the lowest priority first and then the latest
-arrival, which spares older work. It preempts as few as make r fit, at most N in a step, and none if N would not suffice
-(lines 4–9). It does nothing in a step whose prefills are deferred, while new requests are paused, or while the KV
-connector has block frees pending (line 1).
+over, as is one whose LoRA adapter cannot join the running ones.
+
+If r lacks KV for its whole remaining sequence, net of its prefix-cache hit, make-room preempts running requests of a
+strictly lower priority through vLLM's own preemption path. It takes victims in the order vLLM's running loop preempts
+in, the lowest priority first and then the latest arrival, which spares older work. It preempts as few as make r fit, at
+most N in a step, and none if N would not suffice (lines 4–9). It does nothing in a step whose prefills are deferred,
+while new requests are paused, or while the KV connector has block frees pending (line 1).
 
 Three details make the count of room match what vLLM allocates. Prefix caching shares blocks between requests, so a
 block counts as freed only when every request that holds it is a victim, and r's own prefix-hit blocks never count,
@@ -322,12 +327,14 @@ the requests behind it are still considered.
 
 Two bounds keep the hold from stalling the engine. A waiting request or a KV load holds nothing while the engine already
 runs as many requests as it may (its running slots), since neither could be promoted and holding prefill would only
-stall the running requests. A voice turn whose prefix was evicted between turns reloads it from the CPU tier over
-several steps. The load holds lower-priority prefill for its first T steps and again from the step in which it
-completes, so a load that never completes holds nothing after T steps. In a closed-loop probe at T = 16, a build that
-held nothing during loads made the calls' first token 125–131 ms later at the median than the version measured before
-the main evaluation, which held through them (§6.5). The load's completion is seen only at a step boundary, and agent
-prefill makes those steps about three times longer.
+stall the running requests.
+
+A voice turn whose prefix was evicted between turns reloads it from the CPU tier over several steps. The load holds
+lower-priority prefill for its first T steps and again from the step in which it completes, so a load that never
+completes holds nothing after T steps. In a closed-loop probe at T = 16, a build that held nothing during loads made the
+calls' first token 125–131 ms later at the median than the version measured before the main evaluation, which held
+through them (§6.5). The load's completion is seen only at a step boundary, and agent prefill makes those steps about
+three times longer.
 
 The hold covers a reply's first tokens and not its whole decode. A voice agent speaks once its first sentence is
 complete, so protecting the rest of the reply buys the caller nothing and costs the agents prefill steps.
@@ -356,11 +363,12 @@ T is counted in output tokens, but the voice agent does not speak its first toke
 complete sentence, at least 20 characters by LiveKit's default [[13](#ref-13)], so T must cover at least the first
 sentence. The evaluation's records keep each reply's tokens but not its text, so we size T to cover whole replies, which
 bounds them; §6.3 counts the first sentences afterwards, 39 tokens at most. In a single-sample campaign before the main
-evaluation, this agent's replies ran 20–22 tokens at the median and at most 40, and we set T = 48. Figure 6a gives the
-lengths of the 5,571 replies the voice agent completed in the main evaluation. They ran 23 tokens at the median and 52
-at most, so a 16-token window ends before 79% of them do and a 48-token window covers all but one. Within a reply a
-longer window costs the agents nothing more, because a hold ends when its reply ends (§6.3), though a KV load that never
-completes holds for up to T steps.
+evaluation, this agent's replies ran 20–22 tokens at the median and at most 40, and we set T = 48.
+
+Figure 6a gives the lengths of the 5,571 replies the voice agent completed in the main evaluation. They ran 23 tokens at
+the median and 52 at most, so a 16-token window ends before 79% of them do and a 48-token window covers all but one.
+Within a reply a longer window costs the agents nothing more, because a hold ends when its reply ends (§6.3), though a
+KV load that never completes holds for up to T steps.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-window-narrow.svg">
@@ -470,11 +478,13 @@ unanswered.
 **Agents.** AIPerf replays the SemiAnalysis Claude Code traces closed-loop through the gateway, with their sessions,
 subagents and think times, the think times capped at 120 s. Each trace records a request as a list of 64-token prefix
 blocks. We shrink every block 32×, which shrinks each request and its output 32× while keeping which requests share
-which prefixes, so every request fits the 32k context. The main scenario runs 24 sessions drawn from the 48 traces with
-the longest contexts (a median request of 13.9k tokens), where running agents' KV fills the pool. A second scenario runs
-16 sessions of the whole corpus (a median of 7.9k tokens), where the pool has room (§6.6). The gateway sends voice
-requests at priority 0 and agent requests at priority 2. On tuned vLLM the agents are oversubscribed, with a median TTFT
-of 63 s, so their throughput measures what the GPU leaves them.
+which prefixes, so every request fits the 32k context.
+
+The main scenario runs 24 sessions drawn from the 48 traces with the longest contexts (a median request of 13.9k
+tokens), where running agents' KV fills the pool. A second scenario runs 16 sessions of the whole corpus (a median of
+7.9k tokens), where the pool has room (§6.6). The gateway sends voice requests at priority 0 and agent requests at
+priority 2. On tuned vLLM the agents are oversubscribed, with a median TTFT of 63 s, so their throughput measures what
+the GPU leaves them.
 
 ### 5.3 Metrics and the SLO
 
@@ -516,13 +526,16 @@ In the main scenario each configuration runs in five rounds. Round n replays its
 same sample for every configuration, and runs the configurations in an order rotated from round to round, so that none
 always runs at the same hour. Other comparisons run fewer: §6.5's single-sample campaign one to five times, the calls
 per GPU three rounds, and the A100's 2,048-token rows two. A configuration measured in more than one set of rounds is
-pooled over them, which gives 10 runs of tuned vLLM and 15 of the change. We report each configuration's median p95 over
-its runs, with their range, beside the share of its replies over the SLO and the p95 of its replies pooled. We compare
-configurations round by round on the same sample of the agents. The three sets of rounds replay the same five samples of
-the agents with the same callers, so the change's 15 runs are five samples measured three times, not fifteen independent
-workloads. A p95 over 59 replies lies between the third- and fourth-slowest reply, so single runs differ by a few
-hundred milliseconds. Five rounds that agree in sign would arise by chance one time in sixteen if two configurations did
-not differ, so the rounds resolve the direction of a difference, and its size only roughly.
+pooled over them, which gives 10 runs of tuned vLLM and 15 of the change.
+
+We report each configuration's median p95 over its runs, with their range, beside the share of its replies over the SLO
+and the p95 of its replies pooled. We compare configurations round by round on the same sample of the agents. The three
+sets of rounds replay the same five samples of the agents with the same callers, so the change's 15 runs are five
+samples measured three times, not fifteen independent workloads.
+
+A p95 over 59 replies lies between the third- and fourth-slowest reply, so single runs differ by a few hundred
+milliseconds. Five rounds that agree in sign would arise by chance one time in sixteen if two configurations did not
+differ, so the rounds resolve the direction of a difference, and its size only roughly.
 
 Two comparisons are a gate's verdict: whether the served model can do useful background work (the quality gate,
 [GATE.md](../benchmarks/quality/GATE.md); §9) and which arrangement of two cards qualifies (the resource gate,
@@ -533,14 +546,16 @@ before its runs, and its verdict is what its `gate.py` computes from the records
 
 ### 6.1 The two rules bring the voice tail to 2.24 s while the agents keep 97% of their throughput
 
-With both rules and T = 48, the p95 V2V is 2.24 s over 15 runs, against 10.48 s on tuned vLLM. The agents complete 3,203
-tokens a second against 3,305 at the same 512-token step cap (Figure 8, Table 2). A 1,024-token step cap gave tuned vLLM
-9% more agent throughput in the earlier campaign, and still missed the SLO by seconds (§5.4). The change misses the SLO
-by 0.20 s at the median, and none of its 15 runs met it (2.13–2.40 s). Reply by reply, 286 of its 885 replies (32%) took
-longer than the SLO's 2,034 ms, where the SLO allows 5%, and the p95 of all of them taken together is 2,268 ms. On tuned
-vLLM 532 of 590 replies (90%) took longer. The fastest run of tuned vLLM missed it by 6.7 s. Of the configurations an
-operator can deploy today, the abort-and-resubmit router comes nearest, 0.49 s over the SLO. Round by round, on the same
-sample of the agents, the change was faster than the router in all five rounds, by 223–723 ms (390 ms at the median).
+With both rules and T = 48, the p95 V2V is 2.24 s over 15 runs, against 10.48 s on tuned vLLM. The agents complete
+3,203 tokens a second against 3,305 at the same 512-token step cap (Figure 8, Table 2). A 1,024-token step cap gave
+tuned vLLM 9% more agent throughput in the earlier campaign, and still missed the SLO by seconds (§5.4). The change
+misses the SLO by 0.20 s at the median, and none of its 15 runs met it (2.13–2.40 s).
+
+Reply by reply, 286 of its 885 replies (32%) took longer than the SLO's 2,034 ms, where the SLO allows 5%, and the p95
+of all of them taken together is 2,268 ms. On tuned vLLM 532 of 590 replies (90%) took longer. The fastest run of tuned
+vLLM missed it by 6.7 s. Of the configurations an operator can deploy today, the abort-and-resubmit router comes
+nearest, 0.49 s over the SLO. Round by round, on the same sample of the agents, the change was faster than the router in
+all five rounds, by 223–723 ms (390 ms at the median).
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-headline-narrow.svg">
@@ -626,25 +641,29 @@ A sweep of the window against whole replies of 40 tokens, beside closed-loop age
 covers the reply (Figure 6b). Windows of 16, 24 and 32 tokens left the 40th token's p95 at 3.76, 2.64 and 1.85 s, and
 windows of 48 and 64 tokens at 1.04 and 1.02 s. The first token, which the window does not touch, stayed at 326–448 ms
 at every window. The agents' prompt throughput fell 8% from 16 to 48 tokens and no further at 64 (Figure 6c), since a
-hold ends with its reply, so a window longer than the replies costs no more than one just long enough. The voice agent
-here is prompted for one or two short sentences, and an agent prompted for longer answers needs a longer window. The
-records keep each reply's tokens but not its text. So we asked the engine for 320 of the agent's replies to the callers'
-lines again, and counted the tokens up to the one that completes each reply's first sentence. They took 15 tokens at the
-median, 29 at the 95th percentile and 39 at most: a 48-token window covers every first sentence, and a 16-token window
-56% of them.
+hold ends with its reply, so a window longer than the replies costs no more than one just long enough.
+
+The voice agent here is prompted for one or two short sentences, and an agent prompted for longer answers needs a longer
+window. The records keep each reply's tokens but not its text. So we asked the engine for 320 of the agent's replies to
+the callers' lines again, and counted the tokens up to the one that completes each reply's first sentence. They took
+15 tokens at the median, 29 at the 95th percentile and 39 at most: a 48-token window covers every first sentence, and a
+16-token window 56% of them.
 
 ### 6.4 The agents pay through the hold, not through the preemptions
 
 The agents keep 97% of their token rate with the change (Table 4, Figure 10): 96.7% at the median of the ten rounds that
-ran both on the same sample, and 94.2–98.7% round by round. The rate counts the tokens of a replay of coding agents'
-requests over the calls' first 240 s. The replay rebuilds each recorded request's prompt from its prefix blocks and asks
-for its recorded output, both scaled down 32 times; it runs no task and judges no result. Over the whole call 99.5% of
-the agents' tokens are prompt tokens, and the engine generates 16 tokens a second for them with the change and 17 on
-tuned vLLM. So the 97% measures the prefill work the agents keep, not the tasks they would complete. Their median TTFT
-rises from 63 s to 72 s, and their p99 of 111 s lies within the spread of tuned vLLM's runs (96–129 s). The engine's own
-counts show where the 3% goes. The hold kept lower-priority prefill out of 33% of the engine's steps at T = 48 and 25%
-at T = 16. With make-room alone, which holds nothing, the agents completed about as many tokens as on tuned vLLM,
-0.1–6.2% more round by round and 0.4% more at the median.
+ran both on the same sample, and 94.2–98.7% round by round. Their median TTFT rises from 63 s to 72 s, and their p99 of
+111 s lies within the spread of tuned vLLM's runs (96–129 s).
+
+The rate counts the tokens of a replay of coding agents' requests over the calls' first 240 s. The replay rebuilds each
+recorded request's prompt from its prefix blocks and asks for its recorded output, both scaled down 32 times; it runs no
+task and judges no result. Over the whole call 99.5% of the agents' tokens are prompt tokens, and the engine generates
+16 tokens a second for them with the change and 17 on tuned vLLM. So the 97% measures the prefill work the agents keep,
+not the tasks they would complete.
+
+The engine's own counts show where the 3% goes. The hold kept lower-priority prefill out of 33% of the engine's steps at
+T = 48 and 25% at T = 16. With make-room alone, which holds nothing, the agents completed about as many tokens as on
+tuned vLLM, 0.1–6.2% more round by round and 0.4% more at the median.
 
 **Table 4. What each configuration takes from the agents.** Medians over each configuration's runs, counted over the
 calls, except the agents' tokens a second, which count the calls' first 240 s as in Table 2. Make-room's preemptions are
@@ -704,26 +723,29 @@ configurations ran after the campaign's rounds, in a session of their own.
 </picture>
 
 **Figure 11. No configuration without the engine change comes within a second of the SLO except by aborting agent
-work.** Each configuration is a row under its family, beside 24 coding-agent sessions on one sample of their traces:
-(a) its median p95 V2V, with a line over the range of its runs, and (b) its agents' tokens per second over the calls'
-first 240 s. These runs come from the campaign before the main evaluation (Table B3). Gray marks vLLM without the engine change and every comparator,
-and blue the engine change, which ran the earlier version of the generated scheduler (§6.5). The pale blue diamond is
-the lifecycle policy over it, with the KV reserve on, the hold at T = 16 and every reply capped at 16 tokens. Shapes
-mark the families the headings name. The dashed line is the SLO, 2.02 s, and unanswered turns count at 30 s.
+work.** Each configuration is a row under its family, beside 24 coding-agent sessions on one sample of their traces in
+the campaign before the main evaluation (Table B3): (a) its median p95 V2V, with a line over the range of its runs, and
+(b) its agents' tokens per second over the calls' first 240 s. Gray marks vLLM without the engine change and every
+comparator, and blue the engine change, which ran the earlier version of the generated scheduler (§6.5). The pale blue
+diamond is the lifecycle policy over it, with the KV reserve on, the hold at T = 16 and every reply capped at 16 tokens.
+Shapes mark the families the headings name. The dashed line is the SLO, 2.02 s, and unanswered turns count at 30 s.
 
 A gateway policy timed by the conversation, the lifecycle policy, could not act here. It holds KV headroom for a call
 from the caller's speech onset by deferring new agent requests, throttles agent prefill while a turn is answered, and
 caps a reply at 16 tokens when the headroom is short. On tuned vLLM it left the p95 at 10.99 s, against 10.14 s for
 tuned vLLM's own five runs on the same sample of the agents' traces. Running agent requests held the pool, and deferring
 new requests frees nothing that running ones hold, so the headroom was never there and the policy capped all 60 of its
-realtime requests in every run. Over the earlier generated scheduler, with the hold at T = 16 and its 2,048-token KV
-reserve on, the same policy reached 2.06 s. There the reserve kept the pool from filling, so make-room never fired, and
-every reply was capped at 16 tokens and so fitted the window. Leaving out the policy's headroom, its throttle or its
-lifecycle events moved the p95 by less than the spread of its runs (2.03–2.05 s). Its reply cap and the hold did matter.
-Without the cap the p95 rose to 3.84 s, and the engine alone, with no policy, gave 4.03 s, because full replies outran
-the 16-token window. Without the hold it rose to 5.29 s. With a 48-token window and full replies, the reserve again made
-room without a preemption, and the policy gave 2.21 s against 2.19 s for the pull requests' configuration. The room came
-from the engine's reserve, and what the policy added was a shorter reply.
+realtime requests in every run.
+
+Over the earlier generated scheduler, with the hold at T = 16 and its 2,048-token KV reserve on, the same policy reached
+2.06 s. There the reserve kept the pool from filling, so make-room never fired, and every reply was capped at 16 tokens
+and so fitted the window. Leaving out the policy's headroom, its throttle or its lifecycle events moved the p95 by less
+than the spread of its runs (2.03–2.05 s).
+
+Its reply cap and the hold did matter. Without the cap the p95 rose to 3.84 s, and the engine alone, with no policy,
+gave 4.03 s, because full replies outran the 16-token window. Without the hold it rose to 5.29 s. With a 48-token window
+and full replies, the reserve again made room without a preemption, and the policy gave 2.21 s against 2.19 s for the
+pull requests' configuration. The room came from the engine's reserve, and what the policy added was a shorter reply.
 
 The abort-and-resubmit router is the one control-plane answer that makes room, and it does so by aborting admitted work
 (§6.4). A control plane sees requests, not KV blocks or steps. It can hold back work that has not started and end work
@@ -755,24 +777,28 @@ medians.
 More calls make the hold longer (Figure 12b and 12c). The hold keeps lower-priority prefill out while any call's first
 tokens are due, so overlapping replies extend it. The rounds with 4 and 6 callers replayed the first three samples of
 the agents. From the second of them on, the callers joined their rooms a quarter second apart rather than at once, a
-stagger that ends within each call's warm-up turn. Each against its own SLO, the change's p95 missed in every round, by
-269 ms (206–370) and 257 ms (226–333) at the median, against 202 ms with two callers on the same samples. The hold grew
-to 53% and 64% of the engine's steps, from 33%, and the agents' throughput fell 3% and 14%, to 3,055 and 2,716 tokens a
-second from 3,156. The limit is where the windows of successive replies overlap. A test on vLLM's scheduler on CPU sends
-replies at least 48 tokens long at a fixed rate beside six agents' prefills. At one reply every 200 steps the agents
-kept 82% of the prompt tokens they get on vLLM, and at one every 50 they kept 9%. At one every 40, where each reply's
-window of about 49 steps overlaps the next, they kept none. At 16–20 ms a step, that is about one realtime reply a
-second across all calls.
+stagger that ends within each call's warm-up turn.
+
+Each against its own SLO, the change's p95 missed in every round, by 269 ms (206–370) and 257 ms (226–333) at the
+median, against 202 ms with two callers on the same samples. The hold grew to 53% and 64% of the engine's steps, from
+33%, and the agents' throughput fell 3% and 14%, to 3,055 and 2,716 tokens a second from 3,156.
+
+The limit is where the windows of successive replies overlap. A test on vLLM's scheduler on CPU sends replies at least
+48 tokens long at a fixed rate beside six agents' prefills. At one reply every 200 steps the agents kept 82% of the
+prompt tokens they get on vLLM, and at one every 50 they kept 9%. At one every 40, where each reply's window of about 49
+steps overlaps the next, they kept none. At 16–20 ms a step, that is about one realtime reply a second across all calls.
 
 ### 6.7 The rules carry to an A100
 
 An A100 SXM4 80 GB ran the main comparison like for like, on the same five samples of the agents. It ran the same model,
 a 5 GiB KV pool, the 512-token step cap, a 20 GiB CPU tier, 24 sessions of the long traces and two callers, and only the
 card, its precision path and the host changed. The A100 has no FP8 units, so the model ran on Marlin's weight-only FP8
-kernels [[21](#ref-21)]. Voice alone gave a p95 of 1.42 s, so this card's SLO is 1.67 s. The change took the p95 from
-4.99 s to 1.63 s, under the SLO in all five rounds by 7–60 ms (Figure 13a, Table 5). Round by round the agents'
-throughput was 94–111% of tuned vLLM's, and their median TTFT moved by −1.2 to +1.8 s. With 32 sessions at the same
-pool, in one round, the p95 was 1.62 s against 5.22 s, at 98% of tuned vLLM's throughput.
+kernels [[21](#ref-21)].
+
+Voice alone gave a p95 of 1.42 s, so this card's SLO is 1.67 s. The change took the p95 from 4.99 s to 1.63 s, under the
+SLO in all five rounds by 7–60 ms (Figure 13a, Table 5). Round by round the agents' throughput was 94–111% of tuned
+vLLM's, and their median TTFT moved by −1.2 to +1.8 s. With 32 sessions at the same pool, in one round, the p95 was
+1.62 s against 5.22 s, at 98% of tuned vLLM's throughput.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-a100-narrow.svg">
@@ -806,12 +832,14 @@ bandwidth (Appendix E).
 
 The step cap trades the voice's tail against the agents' throughput (Figure 13b). The 512-token cap was chosen on the
 RTX 5060 Ti (§5.4), and on the A100 it costs the agents about 30% of their throughput on the two samples both caps ran.
+
 At vLLM's default of 2,048 tokens a step with no per-request threshold, tuned vLLM gave the agents 1.40 and 1.42 times
 their throughput at 512-token steps on the two samples it ran, with the p95 at 4.04 and 3.29 s. With the rules at that
-cap the agents kept 100% and 101% of it, and the p95 was 1.81 and 1.84 s, 0.14 and 0.17 s over the SLO. The larger steps
-lengthen the LLM's first token to 412 and 414 ms at p95, against 183 and 216 ms with 512-token steps on the same two
-samples. A turn that arrives while steps are in flight waits for them, and no scheduling rule takes back a step already
-running.
+cap the agents kept 100% and 101% of it, and the p95 was 1.81 and 1.84 s, 0.14 and 0.17 s over the SLO.
+
+The larger steps lengthen the LLM's first token to 412 and 414 ms at p95, against 183 and 216 ms with 512-token steps on
+the same two samples. A turn that arrives while steps are in flight waits for them, and no scheduling rule takes back a
+step already running.
 
 At a datacenter batch, the scheduler change costs nothing measurable and the hold is the cost. With 256 requests of 48
 prompt and 64 output tokens in flight, 26 at priority 0 and 230 at priority 2 in closed loop, the switches off made
@@ -824,11 +852,14 @@ first tokens that no voice tier reaches.
 
 A second RTX 5060 Ti 16 GB runs on another host. An operator with the two cards can give the calls one and the agents
 the other (dedicated roles), run both cards mixed with one call each (pooling), or put both calls on one card beside as
-many agent sessions as it serves within the SLO and run agents alone on the other (consolidation). A resource gate
-decides between them ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)). An arrangement qualifies if at most
-5% of its replies, over its rounds pooled, are over its round's SLO for the card's callers. Sharing has resource value
-if a qualifying shared arrangement does at least 20% more background work than the best qualifying dedicated one,
-counted as the agents' tokens a second over the calls' first 240 s summed over both cards, at the median of the rounds.
+many agent sessions as it serves within the SLO and run agents alone on the other (consolidation).
+
+A resource gate decides between them ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)). An arrangement
+qualifies if at most 5% of its replies, over its rounds pooled, are over its round's SLO for the card's callers. Sharing
+has resource value if a qualifying shared arrangement does at least 20% more background work than the best qualifying
+dedicated one, counted as the agents' tokens a second over the calls' first 240 s summed over both cards, at the median
+of the rounds.
+
 Three rounds each replayed a new sample of the agents' traces on one host, the hosts alternating from round to round,
 and measured each card's part of every arrangement as a run of its own. The change ran at the serving profile's
 256-token step cap without a per-request threshold (§6.9).
@@ -842,14 +873,17 @@ would have been 46% lower. The controlled card, tuned vLLM with a shared card's 
 
 Consolidation on the change qualifies with four sessions on the shared card (Figure 14a). Five of its 177 replies were
 over the SLO (2.8%), and at eight sessions 31 (17.5%). Beside the agents-only card at 14 sessions, the arrangement did
-10,596 tokens a second, 34.2% more than the best dedicated arrangement, past the hurdle (Figure 14b). Most of that gain
-is the arrangement's, not the change's. Stock vLLM's consolidated card qualifies at two sessions, with 4 of 177 replies
-over and 18 at four, and that arrangement did 27.3% more than the best dedicated one. The gate counts consolidation on
-the serving profile, and against stock vLLM's consolidation the change's own value is 5.4%, short of the hurdle. At two
-and four sessions both engines completed the same agents' requests in the window in every round, so there the shared
-card's part is the sessions' own pace, which the traces' think times set: the change's 5.4% is the two sessions more at
-which it qualifies. Pooling, one call a card beside 12 sessions each, qualifies on neither engine: of each one's 87
-replies, 24 of the change's and 53 of stock vLLM's were over the one-caller SLO.
+10,596 tokens a second, 34.2% more than the best dedicated arrangement, past the hurdle (Figure 14b).
+
+Most of that gain is the arrangement's, not the change's. Stock vLLM's consolidated card qualifies at two sessions, with
+4 of 177 replies over and 18 at four, and that arrangement did 27.3% more than the best dedicated one. The gate counts
+consolidation on the serving profile, and against stock vLLM's consolidation the change's own value is 5.4%, short of
+the hurdle. At two and four sessions both engines completed the same agents' requests in the window in every round, so
+there the shared card's part is the sessions' own pace, which the traces' think times set: the change's 5.4% is the two
+sessions more at which it qualifies.
+
+Pooling, one call a card beside 12 sessions each, qualifies on neither engine: of each one's 87 replies, 24 of the
+change's and 53 of stock vLLM's were over the one-caller SLO.
 
 **Table 6. The two cards' arrangements.** Three rounds, each on a new sample of the agents' traces. Replies over the SLO
 are pooled over the rounds, and the agents' tokens a second over the calls' first 240 s are summed over both cards, at
@@ -882,12 +916,16 @@ arrangement.
 
 The SLO's 250 ms margin sets the envelope. Had it allowed 500 ms over voice alone, the change's consolidated card would
 qualify at every count measured, up to 24 sessions with 8 of 177 replies over, and stock vLLM's still only at two, with
-12 of 177 over at four. The voice agent's stage times show where the margin goes (Table 7). From eight sessions on, the
-transcript comes 51–71 ms later than with the calls alone, on either engine: the agents' steps take the GPU from the
-speech server, and the processes time-slice it. On stock vLLM the waits of §6.2 come on top. Its first sentence's p95
-grows from 437 ms with the calls alone to 909 ms at four sessions, 2,424 at eight and 9,719 at 24, where the change
-holds it to 534, 737 and 768. With the change, from eight sessions on, the transcript and the first sentence take
-176–249 ms longer at the median than with the calls alone, nearly all of the margin before any reply's own spread.
+12 of 177 over at four.
+
+The voice agent's stage times show where the margin goes (Table 7). From eight sessions on, the transcript comes
+51–71 ms later than with the calls alone, on either engine: the agents' steps take the GPU from the speech server, and
+the processes time-slice it.
+
+On stock vLLM the waits of §6.2 come on top. Its first sentence's p95 grows from 437 ms with the calls alone to 909 ms
+at four sessions, 2,424 at eight and 9,719 at 24, where the change holds it to 534, 737 and 768. With the change, from
+eight sessions on, the transcript and the first sentence take 176–249 ms longer at the median than with the calls alone,
+nearly all of the margin before any reply's own spread.
 
 **Table 7. The voice turn's stages on the consolidated card, in ms: the transcript from the end of the caller's speech,
 the LLM's first token and first sentence from its request, and TTS's first audio from that sentence.** Medians over the
@@ -916,22 +954,18 @@ standby. Section 7 gives this arrangement's deployment and Appendix D its failov
 ### 6.9 A 256-token step cap halves the change's replies over the SLO beside 24 sessions
 
 The evaluation of §6.1–§6.7 ran the change at tuned vLLM's step cap of 512 tokens with a 256-token threshold per
-request. A sweep screened the change at caps of 256, 512 and 1,024 tokens, with and without the threshold, at windows of
-48 and 96 tokens and beside the gateway's static caps on agent requests in flight, and stock vLLM at caps of 256 and
-1,024, one run a setting on the sample of the agents the evaluation was tuned on
+request. A sweep screened the change at caps of 256, 512 and 1,024 tokens, with and without the threshold, and at
+windows of 48 and 96 tokens, also beside the gateway's static caps on agent requests in flight. It screened stock vLLM
+at caps of 256 and 1,024. Each setting ran once, on the sample of the agents the evaluation was tuned on
 ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md)). The cap moved the change most. At 256 without
 the threshold, 9 of its 59 replies were over the SLO, against 24 at 512 and 33 at 1,024, and the static caps did less.
+
 Five rounds on new samples then ran the three configurations side by side at 24 sessions, each against its round's own
 SLO (Figure 15, Table 8). At 256 the change had fewer replies over the SLO than at 512 in each of the five rounds, 44 of
 295 against 94 (14.9% against 31.9%), with a pooled p95 of 2.15 s against 2.26 s, while tuned vLLM had 261 of 295 over.
 The smaller steps cost the agents 7% of their token rate, 3,067 tokens a second against 3,303, and their median TTFT
-rose from 78 s to 85 s. The smaller steps also left the pool room. At 256 tokens its fewest free blocks in a run were
-10–89, against 0–2 at 512, and vLLM counted 0–4 preemptions a run, make-room's among them, against 39–50. In the sweep's
-run at 256 it counted none, so there the change's 9 replies over the SLO, against stock vLLM's 51 of 59 at the same cap,
-are the hold's. Beside the envelope's four sessions (§6.8) make-room preempted none in any of three rounds. At 256
-tokens the hold and the step cap carry the change, and make-room stays in the profile for a pool that fills, as it does
-at 512. The serving profile runs the change at 256 tokens a step without a threshold. No cap brought 24 sessions within
-the SLO's 5% allowance, which the shared card meets at four (§6.8).
+rose from 78 s to 85 s. No cap brought 24 sessions within the SLO's 5% allowance, which the shared card meets at four
+(§6.8).
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-step-cap-narrow.svg">
@@ -942,6 +976,13 @@ the SLO's 5% allowance, which the shared card meets at four (§6.8).
 configuration met the 5% requirement in any.** (a) Each round's share of its 59 replies over that round's SLO, beside 24
 coding-agent sessions; the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s,
 each round a tick and the median a marker. The 512-token configurations keep the 256-token threshold per request.
+
+The smaller steps also left the pool room. At 256 tokens its fewest free blocks in a run were 10–89, against 0–2 at 512,
+and vLLM counted 0–4 preemptions a run, make-room's among them, against 39–50. In the sweep's run at 256 it counted
+none, so there the change's 9 replies over the SLO, against stock vLLM's 51 of 59 at the same cap, are the hold's.
+Beside the envelope's four sessions (§6.8) make-room preempted none in any of three rounds. At 256 tokens the hold and
+the step cap carry the change, and make-room stays in the profile for a pool that fills, as it does at 512. The serving
+profile runs the change at 256 tokens a step without a threshold.
 
 **Table 8. The step cap beside 24 sessions, in five rounds on new samples of the agents.** Each reply is held to its
 round's SLO, and the replies over it are pooled over the rounds and given by round. The 512-token rows keep the
@@ -966,10 +1007,11 @@ so that a background client cannot raise its own priority.
 both calls and at most four agent sessions, the envelope measured beside them, and the second runs agents on the same
 engine with its speech servers resident, so that it can take the calls. The gateway places each call on the first card
 with a free call slot, in its configured order, and each agent session on the card with the fewest, up to each card's
-bound (`max_agents`); a session beyond every bound gets 503 `no_agent_slot` and tries again with its next request. When
-the first card fails, its calls move to the second by their next turn, and while the second card carries any call it
-holds its agents' requests, letting those already running finish. Over a 24-hour soak of this arrangement, 1.5% of its
-5,058 replies were over the SLO and 5.5% in its worst hour, no call failed, nothing restarted, and the second card
+bound (`max_agents`); a session beyond every bound gets 503 `no_agent_slot` and tries again with its next request.
+
+When the first card fails, its calls move to the second by their next turn, and while the second card carries any call
+it holds its agents' requests, letting those already running finish. Over a 24-hour soak of this arrangement, 1.5% of
+its 5,058 replies were over the SLO and 5.5% in its worst hour, no call failed, nothing restarted, and the second card
 carried no call (Appendix D, Figure D2).
 
 **Where it pays.** The change matters when background KV fills the pool, as when agent contexts of 10k tokens or more
@@ -1005,30 +1047,38 @@ requests for the highest-priority waiting request from v0.6.2 until V0 was remov
 and by recomputing the victims [[8](#ref-8)]. Priority scheduling in the V1 scheduler [[27](#ref-27)] preempts among
 running requests only [[7](#ref-7)]. Its open fixes preempt at the request-count cap [[18](#ref-18)], which does not
 bind when KV fills, and one of them also preempts lower-priority running requests, one at a time, when a waiting
-request's allocation fails, until it fits or none is left [[28](#ref-28)]. SGLang's priority preemption [[6](#ref-6)]
-stops when KV memory runs out, and an open pull request adds preemption on KV exhaustion with a best-effort keep of the
-victim's KV in its prefix cache [[29](#ref-29)]. Research systems preempt for a waiting or arriving request and keep the
-victim's KV in host memory. TokenFlow writes KV through as it is generated [[30](#ref-30)], ConServe checkpoints each
-new token's KV [[1](#ref-1)], Chiron migrates evicted batch requests' KV to CPU memory [[24](#ref-24)], and ProServe and
-FastServe copy it there ahead of need [[26](#ref-26), [31](#ref-31)]. Semantic Scheduling, implemented in vLLM, preempts
-running requests of lower urgency for an urgent one until it fits, discarding or offloading each victim's KV, whichever
-is cheaper [[32](#ref-32)]. Llumnix keeps memory headroom for high-priority requests and migrates others away
-[[33](#ref-33)], and LayerKV traces long-context TTFT to queueing for KV blocks [[34](#ref-34)]. Make-room is V0's rule
-in V1's scheduler, under chunked prefill and asynchronous scheduling, on vLLM's own CPU tier. Unlike the open fix that
-preempts for KV [[28](#ref-28)], it preempts only when at most N victims make room, and then as few as do.
+request's allocation fails, until it fits or none is left [[28](#ref-28)].
+
+SGLang's priority preemption [[6](#ref-6)] stops when KV memory runs out, and an open pull request adds preemption on KV
+exhaustion with a best-effort keep of the victim's KV in its prefix cache [[29](#ref-29)]. Research systems preempt for
+a waiting or arriving request and keep the victim's KV in host memory. TokenFlow writes KV through as it is generated
+[[30](#ref-30)], ConServe checkpoints each new token's KV [[1](#ref-1)], Chiron migrates evicted batch requests' KV to
+CPU memory [[24](#ref-24)], and ProServe and FastServe copy it there ahead of need [[26](#ref-26), [31](#ref-31)].
+
+Semantic Scheduling, implemented in vLLM, preempts running requests of lower urgency for an urgent one until it fits,
+discarding or offloading each victim's KV, whichever is cheaper [[32](#ref-32)]. Llumnix keeps memory headroom for
+high-priority requests and migrates others away [[33](#ref-33)], and LayerKV traces long-context TTFT to queueing for KV
+blocks [[34](#ref-34)].
+
+Make-room is V0's rule in V1's scheduler, under chunked prefill and asynchronous scheduling, on vLLM's own CPU tier.
+Unlike the open fix that preempts for KV [[28](#ref-28)], it preempts only when at most N victims make room, and then as
+few as do.
 
 **Keeping prefill out of a priority request's way.** Chunked prefill bounds how long a decode waits behind a prefill
 [[12](#ref-12)], and disaggregated serving moves prefill to other GPUs altogether [[35](#ref-35), [36](#ref-36)], which
 a single GPU cannot do. Semantic Scheduling also keeps new prefills out of the batch while its most urgent request
 decodes [[32](#ref-32)], and VoxServe, serving speech language models, prioritizes newly admitted requests until their
 first audio chunk [[37](#ref-37)]. SLOWeave sizes every prefill chunk to the earliest decode deadline, for all decodes
-alike [[38](#ref-38)]. Within vLLM, a proposed decode-priority cadence admitted prefill only every N steps while any
-decode ran, and was closed unmerged [[39](#ref-39)]. In v0.32.0, vLLM's `prefill_schedule_interval` admits new prefill
-requests only every N steps, in the data-parallel MoE engine alone; a change that v0.32.0 does not include applies it to
-a single engine too, and a deferred step then carries no prefill at all, chunks of a prompt already admitted included
-[[40](#ref-40)]. Both hold prefill back for every decode alike. The prefill hold differs in its bound. It holds only
-lower-priority prefill, and only through a reply's first tokens, a window sized to cover whole replies and with them the
-first sentence the voice agent hands to speech synthesis.
+alike [[38](#ref-38)].
+
+Within vLLM, a proposed decode-priority cadence admitted prefill only every N steps while any decode ran, and was closed
+unmerged [[39](#ref-39)]. In v0.32.0, vLLM's `prefill_schedule_interval` admits new prefill requests only every N steps,
+in the data-parallel MoE engine alone; a change that v0.32.0 does not include applies it to a single engine too, and a
+deferred step then carries no prefill at all, chunks of a prompt already admitted included [[40](#ref-40)]. Both hold
+prefill back for every decode alike.
+
+The prefill hold differs in its bound. It holds only lower-priority prefill, and only through a reply's first tokens, a
+window sized to cover whole replies and with them the first sentence the voice agent hands to speech synthesis.
 
 **Routers and gateways.** llm-d's flow control [[19](#ref-19)], SMG [[20](#ref-20)], Dynamo [[41](#ref-41)], AIBrix
 [[42](#ref-42)] and vLLM's router [[43](#ref-43)] admit, order, shed or evict requests in front of the engine. llm-d's
@@ -1055,23 +1105,28 @@ configurations an operator can deploy.
 adapt the prefill that runs beside decodes from what they measure. DLFP resizes each prefill chunk from the interval
 between the host's scheduler calls. In vLLM it cut a 0.6B model's p99 inter-token latency by 27.7% at a 34.8% higher p99
 TTFT, and did not carry over to 8B and 32B models or to two-GPU tensor parallelism, which its authors trace to the
-interval being only a proxy for when the GPU finished a step [[57](#ref-57)]. AgentServe, on one consumer GPU as here,
-isolates agents' prefills from their decodes, budgets the prefills that resume a cached context, and reserves streaming
-multiprocessors for decodes with CUDA Green Contexts [[58](#ref-58)]. Both treat every request of their workload alike,
-with no class above the rest. We built no adaptive controller. At the two-card comparison's envelope (§6.8), what the
-voice tier still loses on a shared card is the speech servers' share of the GPU, which time-slices between processes:
-the transcript comes 51–71 ms later from eight agent sessions on, on stock vLLM and with the change alike, and no
-scheduling inside the engine removes that. DLFP's result says what such a controller would need, the device's step
-times rather than the host's rhythm.
+interval being only a proxy for when the GPU finished a step [[57](#ref-57)].
+
+AgentServe, on one consumer GPU as here, isolates agents' prefills from their decodes, budgets the prefills that resume
+a cached context, and reserves streaming multiprocessors for decodes with CUDA Green Contexts [[58](#ref-58)]. Both
+treat every request of their workload alike, with no class above the rest.
+
+We built no adaptive controller. At the two-card comparison's envelope (§6.8), what the voice tier still loses on a
+shared card is the speech servers' share of the GPU, which time-slices between processes: the transcript comes 51–71 ms
+later from eight agent sessions on, on stock vLLM and with the change alike, and no scheduling inside the engine removes
+that. DLFP's result says what such a controller would need, the device's step times rather than the host's rhythm.
 
 **What is new.** The mechanisms are not: co-serving a latency class with best-effort work, preempting for a waiting
-request while keeping the victim's KV in host memory, and holding prefill back for a priority request are all
-published, as above. Three things are this report's. Make-room brings V0's waiting-request preemption to vLLM's V1
-scheduler under chunked prefill and asynchronous scheduling, on vLLM's own CPU tier, as a change proposed to vLLM
-rather than a new engine. The prefill hold is bounded to a reply's first tokens and sized to the first sentence that a
-cascaded voice agent hands to speech synthesis, which we did not find elsewhere. And the measurements: a cascaded voice
-pipeline beside long-context coding agents on one GPU, with V2V read from waveforms, against the configurations an
-operator can deploy, and, across two cards under a resource gate, what sharing a card buys over a card per workload.
+request while keeping the victim's KV in host memory, and holding prefill back for a priority request are all published,
+as above. Three things are this report's.
+
+- Make-room brings V0's waiting-request preemption to vLLM's V1 scheduler under chunked prefill and asynchronous
+  scheduling, on vLLM's own CPU tier, as a change proposed to vLLM rather than a new engine.
+- The prefill hold is bounded to a reply's first tokens and sized to the first sentence that a cascaded voice agent
+  hands to speech synthesis, which we did not find elsewhere.
+- The measurements: a cascaded voice pipeline beside long-context coding agents on one GPU, with V2V read from
+  waveforms, against the configurations an operator can deploy, and, across two cards under a resource gate, what
+  sharing a card buys over a card per workload.
 
 ## 9. Limitations
 
@@ -1081,10 +1136,12 @@ Each result rests on assumptions about the setting, which we state here with how
 speech servers the agents' contexts fill, one or, in §6.8, two on two hosts, and on an A100 SXM4 80 GB held to the same
 pool. The first wait depends on how often the pool is full and how long a turn then waits, and the second on how long a
 step with agent prefill takes. A larger pool, another model or a faster GPU changes both, and §6.6 and §6.7 show the
-change helping less where the pool has room and the step cap setting its cost on a faster card. On the A100 the rules
-meet the SLO at the RTX 5060 Ti's 512-token cap, which costs the agents about 30% of their throughput there. At vLLM's
-default of 2,048 tokens they keep all of it and leave the voice 0.14–0.17 s over the SLO. The repository's simulator
-places other GPUs only by costs scaled from published peaks, which on the A100 missed decode attention by 1.8 times.
+change helping less where the pool has room and the step cap setting its cost on a faster card.
+
+On the A100 the rules meet the SLO at the RTX 5060 Ti's 512-token cap, which costs the agents about 30% of their
+throughput there. At vLLM's default of 2,048 tokens they keep all of it and leave the voice 0.14–0.17 s over the SLO.
+The repository's simulator places other GPUs only by costs scaled from published peaks, which on the A100 missed decode
+attention by 1.8 times.
 
 **A few calls per GPU.** The headline runs two callers. The hold's share of the engine's steps grows with the calls,
 from 33% with two to 64% with six, and with 4 and 6 callers the change misses each SLO in every round, by 0.26–0.27 s at
@@ -1094,6 +1151,7 @@ the median. Replies whose windows overlap without a gap would stop the agents' p
 measured the consolidated card at 2, 4, 8, 12 and 24 sessions only, so the change's envelope lies between four and eight
 sessions and stock vLLM's between two and four. Each card's part of an arrangement ran as a run of its own, and the sums
 assume that one card's work does not slow the other's, as with the cards on two hosts that share only the control plane.
+
 At the envelope the agents' work is the traces' own pace, so the background measure there counts the load offered, not
 what the shared card could do. Their window, the calls' first 240 s a minute into the replay, holds its start, when
 AIPerf resumes every session at once: over the 24-hour soak the same arrangement's agents did 9,300 tokens a second in
@@ -1160,16 +1218,18 @@ A voice agent that shares its GPU with coding agents loses its seconds inside th
 waiting turn cannot take KV from running background requests, and a running reply shares its steps with background
 prefill. A control plane in front of the engine sees neither, so it can make room only by aborting the agents' work. Two
 rules inside vLLM's priority scheduler remove both waits by counting blocks and tokens alone, a preemption for the
-waiting turn and a hold on lower-priority prefill through the reply's first sentence. With them the voice tail on a
-consumer GPU comes to 2.24 s, 0.20 s over a strict SLO, with a third of the replies still over it, while the agents keep
-97% of their token rate. On an A100 at the same pool and step cap it meets that card's SLO in each of five rounds, by
-7–60 ms. The gain shrinks where the pool has room, the tail grows as calls overlap, and the step cap sets how much of
-the agents' throughput a tail under the SLO costs. The 256-token cap we deploy leaves fewer than half as many replies
-over the SLO beside 24 sessions as the 512-token cap. With two cards, the larger gain is the arrangement: both calls and
-a few agents on one card, and the other card full of agents. What then limits the shared card is the speech servers'
-share of the GPU, which no scheduling inside the engine removes. For a realtime tier that shares a GPU with agents whose
-KV fills the pool, the place to act is the engine's scheduler: preempt for the waiting turn, and keep background prefill
-out of its first sentence.
+waiting turn and a hold on lower-priority prefill through the reply's first sentence.
+
+With them the voice tail on a consumer GPU comes to 2.24 s, 0.20 s over a strict SLO, with a third of the replies still
+over it, while the agents keep 97% of their token rate. On an A100 at the same pool and step cap it meets that card's
+SLO in each of five rounds, by 7–60 ms. The gain shrinks where the pool has room, the tail grows as calls overlap, and
+the step cap sets how much of the agents' throughput a tail under the SLO costs. The 256-token cap we deploy leaves
+fewer than half as many replies over the SLO beside 24 sessions as the 512-token cap.
+
+With two cards, the larger gain is the arrangement: both calls and a few agents on one card, and the other card full of
+agents. What then limits the shared card is the speech servers' share of the GPU, which no scheduling inside the engine
+removes. For a realtime tier that shares a GPU with agents whose KV fills the pool, the place to act is the engine's
+scheduler: preempt for the waiting turn, and keep background prefill out of its first sentence.
 
 ## References
 
