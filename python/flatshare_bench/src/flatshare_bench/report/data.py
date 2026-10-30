@@ -94,7 +94,7 @@ DEPLOYABLE = (
 )
 """W4's configurations an operator could deploy, each with all its runs, the ablations left out: tuned vLLM and its
 best step cap, the static reservation, SGLang with HiCache, preempt-resubmit, the lifecycle policy over make-room and
-the change with a 48-token window (docs/METHODS.md, the results)."""
+the change with a 48-token window (docs/BENCHMARKS.md, W4's rounds)."""
 W4_STAGES = (
     "a1-voice",
     "disc-frozen-s24",
@@ -781,7 +781,7 @@ class FrontierPoint:
     tokens_per_run: tuple[float, ...]
     failed_turns: int
     calls_tokens_per_run: tuple[float, ...] = ()
-    """The agents' tokens a second over each run's whole calls, the measure E2's report and METHODS' table give."""
+    """The agents' tokens a second over each run's whole calls, the measure E2's report and BENCHMARKS' W4 table give."""
 
     @property
     def p95(self) -> float:

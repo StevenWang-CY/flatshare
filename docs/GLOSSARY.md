@@ -184,12 +184,12 @@ which use it retires.
 - **The critical window**: a voice turn's span from the end of the caller's turn to the reply's first audio, in which
   the lifecycle policy's throttle budgets background prefill.
 - **KV pressure**: the agents' live working set over the KV pool, one of the coordinates that locate a card and a
-  workload on E1's map ([METHODS.md](METHODS.md#what-transfers-to-other-hardware)).
+  workload on E1's map ([REPORT.md §6.7](REPORT.md#67-the-rules-carry-to-an-a100)).
 - **The lifecycle policy** (`policy = "lifecycle"`): the gateway policy timed by the conversation, which E2 measured as
   a negative result. Its **headroom** keeps one voice turn of KV free from speech onset by deferring new background
   requests, its **throttle** budgets background prefill from the end of a turn to the reply's first audio, **degrade**
   caps a reply at 16 tokens when the headroom was not there, and **aging** admits deferred work after 10 s
-  ([METHODS.md](METHODS.md#what-lifecycle-timing-could-and-could-not-do)).
+  ([REPORT.md §6.5](REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work)).
 - **The realistic regime** (E1): the simulator's replay with the traces' own think times and the CPU tier at four times
   the pool, the box's ratio, over 20 seeds; E1's gate is read in it
   ([BENCHMARKS.md](BENCHMARKS.md#e1-parking-in-the-simulator)).

@@ -1544,7 +1544,7 @@ def frontier(out: Path) -> list[Path]:
 def deployable(out: Path) -> list[Path]:
     """report-deployable.svg and its phone layout: Figure 11 for W4's configurations an operator could deploy
     (data.DEPLOYABLE), each with all its runs, its panel b the agents' tokens a second over the whole calls, as
-    docs/METHODS.md's table beside it gives them."""
+    docs/BENCHMARKS.md's W4 table under it gives them."""
     points = [p for p in data.frontier() if p.point in data.DEPLOYABLE]
     if {p.point for p in points} != set(data.DEPLOYABLE):
         raise ValueError(

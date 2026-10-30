@@ -752,8 +752,12 @@ realtime requests in every run.
 
 Over the earlier make-room, with the budget cap at T = 16 and its 2,048-token KV reserve on, the same policy reached
 2.06 s. There the reserve kept the pool from filling, so the KV preemption never fired, and every reply was capped at
-16 tokens and so fitted the window. Leaving out the policy's headroom, its throttle or its lifecycle events moved the
-p95 by less than the spread of its runs (2.03–2.05 s).
+16 tokens and so fitted the window.
+
+Leaving out the policy's headroom, its throttle or its lifecycle events, arming the headroom at the voice request
+instead of at speech onset, or setting the throttle's budget to 0 or 500 ms left the median p95 at 2.03–2.12 s over
+three runs each, within the range of the whole policy's five runs (1.98–2.13 s). The throttle, checked after the
+headroom, deferred nothing while the headroom ran, even at a 0 ms budget.
 
 Its reply cap and the budget cap did matter. Without the cap the p95 rose to 3.84 s, and the engine alone, with no
 policy, gave 4.03 s, because full replies outran the 16-token window. Without the budget cap it rose to 5.29 s. With a
@@ -765,6 +769,19 @@ Preempt-resubmit is the one control-plane answer that makes room, and it does so
 control plane sees requests, not KV blocks or steps. It can hold back work that has not started and end work that has,
 losing what it computed, but only the engine can preempt a decoding request and keep its work, or keep agent prefill out
 of a reply's steps.
+
+Timing by the conversation was the premise this work started from: a realtime tier would need to know what is coming,
+when a caller starts to speak or an agent's tool returns. Neither side found a use for what a deployment knows. For the
+voice turn the headroom could not act, as above.
+
+In the repository's simulator, knowing exactly when each agent returns shortens the median resume by under 9%, since
+that resume is already a GPU hit or a short restore bound by the host link, and its p90 by up to 28%, about 80–90 ms,
+only at low pressure, by hiding a restore inside the pause (§8). The session history a deployment has gains nothing.
+
+These runs do not show that such timing never helps. Where its mechanisms engage, as beside 24 sessions of the whole
+corpus, where the throttle deferred 27 requests, they were not isolated from the change. What had an effect is the
+engine's scheduling: a realtime request's admission, KV load and first tokens without lower-priority prefill beside
+them, and a reply that fits that window, which [PRODUCTION.md](PRODUCTION.md) turns into a configuration to deploy.
 
 ### 6.6 The gain shrinks where the pool has room, and the tail grows as calls overlap
 
@@ -863,6 +880,29 @@ switches off made 1.018 times vLLM's output tokens a second. With the deployed v
 fell from 574 to 177 ms and their tokens came 4.1 times as fast. The priority-2 requests' output fell 8.8%, from 6,589
 to 6,008 tokens a second, and their p99 TTFT rose from 1.1 s to 8.0 s while their median fell. Both are the budget cap
 holding prefill, as in §6.6, at a rate of first tokens that no voice tier reaches.
+
+What carries to another card is the mechanism and the regime's sign, not the length of a wait. The repository's
+simulator states the regime in coordinates that leave the hardware out: KV pressure, the live working set over the pool;
+π, the median pause over the restore time; and ρ, restore over recompute at the median prompt.
+
+These coordinates place a card and a workload on one map, but they do not carry a gain to another card, which also
+depends on how much of a resumed turn is the restore. At the same π of 21 and a pressure of 2.1–2.6, knowing when each
+agent returns gains 32% of the resume p90 on the RTX 5060 Ti and 4% on an H100 modeled at 4×.
+
+The simulator places an L4, an A100 40 GB and an H100 SXM on that map, with the RTX 5060 Ti's measured costs scaled by
+the ratios of their published peaks: memory bandwidth for the weight and KV reads, the rate of the kernel path vLLM
+0.32.0 takes for the linear layers (FP8 on the H100, BF16 through Marlin on the L4 and the A100), BF16 for attention,
+and the host link for restores. Its restores on PCIe Gen4 match vLLM's published L20 measurement within 10%.
+
+How often a waiting turn finds no KV follows how long the agents' contexts are against the pool, which the card's memory
+sets, and how much of the pool the realtime tier needs. On the 32× replay, running agents leave two calls short of KV
+12% of the time at 24 sessions on the RTX 5060 Ti, at most 1% of the time up to 24 sessions on the L4 and at any count
+on the A100, and never on the H100.
+
+Replayed at each card's own scaling (the L4 at 16×, the A100 at 8×, the H100 at 4×), the L4 is short 9–22% of the time
+at 16–32 sessions, the A100 2–10% at 16–40 and the H100 0–7%, or 25–65% for a realtime tier sized to the RTX 5060 Ti's
+share of the pool. These shares are modeled. The two measured, at the RTX 5060 Ti's pool and 24 sessions beside tuned
+vLLM, are the 8.1% and 5.7% above, where the simulator gave 17% and 10%.
 
 ### 6.8 On two cards, consolidating both calls on one does 34% more background work, most of it without the change
 
@@ -1400,6 +1440,7 @@ its tests where Table A1 says so. Table A1 maps each part of the report to its r
 | The gateway's overhead (§4) | [`2026-10-25-w6-transport`](../benchmarks/results/2026-10-25-w6-transport) | its `llm_paths.py` |
 | The earlier campaign's reply lengths (§3.3) | [The earlier campaign's section of BENCHMARKS.md](BENCHMARKS.md#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4), from the gateway's log | The v0.3 release's raw records |
 | The simulator's result on agents' KV (§8) | [The simulator's tables in BENCHMARKS.md](BENCHMARKS.md#e1-parking-in-the-simulator) | `make reproduce-e1` |
+| Other cards on the simulator's map, and how often it has them leave two calls short of KV (§6.7), modeled | [Other hardware, modeled](../crates/flatshare-sim/README.md#other-hardware-modeled) | `flatshare-sim hardware` |
 | Replies whose windows overlap (§6.6) | The test of overlapping replies in [`test_make_room.py`](../python/flatshare_vllm/tests/test_make_room.py) | `make test-make-room` |
 | The failure drills (Appendix D, Figure D1) | [`2026-10-25-drills`](../benchmarks/results/2026-10-25-drills) | its README, `make figures` |
 | The first sentences' tokens (§6.3) | [`2026-10-27-first-sentence`](../benchmarks/results/2026-10-27-first-sentence) | [`first_sentence.py`](../benchmarks/replies/first_sentence.py) |
@@ -1642,10 +1683,15 @@ first 16 tokens. The forecast gives its central range and, in parentheses, its l
 
 A step model fitted on the A100's own calibration run explains the miss. Its decode attention cost 171.9 ns per token of
 KV read, 1.82 times the forecast, which is 858 GB/s or 42% of the card's bandwidth, where the RTX 5060 Ti's reaches 77%
-of its own. The per-token cost of the linear layers came in at the forecast's 41.4 µs. A step on the A100 is cheaper
-than on the RTX 5060 Ti by less than the cards' peaks say, and the KV case's wait is a count of decode steps.
-FlashInfer's attention [[59](#ref-59)] in place of FlashAttention 2 [[60](#ref-60)] shortened the wait by 8%, to
-1,580–1,607 ms.
+of its own. The per-token cost of the linear layers came in at 1.00 times the forecast's 41.4 µs, as modeled for
+Marlin's W8A16 GEMMs, and a step's fixed cost at 1.16 times the forecast's. A step on the A100 is cheaper than on the
+RTX 5060 Ti by less than the cards' peaks say, and the KV case's wait is a count of decode steps. FlashInfer's attention
+[[59](#ref-59)] in place of FlashAttention 2 [[60](#ref-60)] shortened the wait by 8%, to 1,580–1,607 ms.
+
+The host, which the published peaks leave out, set the cost of a GPU hit and a restore. Placed on the measured host, the
+forecast came within 9% of the A100's GPU hits and 10% of its CPU restores at the mean, from 69% and 22% off before the
+run, while recompute, which the host does not set, stayed 17% off. So the length of a wait on another card comes from
+that card's own calibration point.
 
 The forecast also overstated how often two calls run short of KV. It placed the A100 at 10% of the time and the RTX 5060
 Ti at 17%, against the 5.7% and 8.1% measured beside tuned vLLM.

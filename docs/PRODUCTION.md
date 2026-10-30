@@ -1,6 +1,6 @@
 # Running a voice agent beside background work on one GPU
 
-This guide is for an operator who serves a realtime voice agent (speech to text, an LLM, text to speech) from their own GPU with vLLM, and wants the same GPU to run background LLM work: coding agents, post-call summaries, batch jobs. It opens with what the deployment promises and what it measured, then gives the configuration, what each part buys, what to watch and how it fails. The numbers come from one RTX 5060 Ti 16 GB serving Qwen3-4B-Instruct-2507-FP8 beside Whisper and Kokoro ([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2)), and an A100 SXM4 80 GB ran the same comparison on 2026-10-26 ([the A100 run](BENCHMARKS.md#what-it-measured-2026-10-26)). The mechanisms are not specific to the card, though what each costs is; the simulator's regime map places other hardware by a model ([METHODS.md](METHODS.md#what-transfers-to-other-hardware)).
+This guide is for an operator who serves a realtime voice agent (speech to text, an LLM, text to speech) from their own GPU with vLLM, and wants the same GPU to run background LLM work: coding agents, post-call summaries, batch jobs. It opens with what the deployment promises and what it measured, then gives the configuration, what each part buys, what to watch and how it fails. The numbers come from one RTX 5060 Ti 16 GB serving Qwen3-4B-Instruct-2507-FP8 beside Whisper and Kokoro ([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2)), and an A100 SXM4 80 GB ran the same comparison on 2026-10-26 ([the A100 run](BENCHMARKS.md#what-it-measured-2026-10-26)). The mechanisms are not specific to the card, though what each costs is; the simulator's regime map places other hardware by a model ([the report's §6.7](REPORT.md#67-the-rules-carry-to-an-a100)).
 
 ## What you deploy and what it promises
 
@@ -234,7 +234,7 @@ Measured in the same scenario, beside the 24 sessions; the p95s are medians of e
 
 | Don't deploy | Measured | Why not |
 |---|---|---|
-| Lifecycle-timed protection in a gateway: KV headroom held from speech onset, a prefill throttle while a voice turn is answered | 10,993 ms without the change, as stock | With agents' KV filling the pool these could not act; a gateway can make room only by aborting admitted work, at the agents' tail ([why](METHODS.md#what-lifecycle-timing-could-and-could-not-do)) |
+| Lifecycle-timed protection in a gateway: KV headroom held from speech onset, a prefill throttle while a voice turn is answered | 10,993 ms without the change, as stock | With agents' KV filling the pool these could not act; a gateway can make room only by aborting admitted work, at the agents' tail ([why](REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work)) |
 | vLLM's development mode (`VLLM_SERVER_DEV_MODE=1`) | — | It serves routes such as `/collective_rpc`, `/sleep` and `/update_weights`, which `--api-key` does not guard ([the routes](../deploy/phastform/variants/README.md#the-measurement-drop-in)) |
 | KV cache events on TCP | — | They carry every cached block's token ids and session id, and vLLM sends them to whoever binds the endpoint. The frozen box publishes none |
 | `--watermark` | no change | — |

@@ -295,7 +295,7 @@ diagrams:
 # flatshare_bench.report from the committed records each cites: W4's, W5's and the A100's E2 points, the probes, the
 # window sweep, W5's voice replies, the scheduler's cost per step, the two-card comparison's and the step cap's rounds
 # through their gate.py, the 24-hour soak's summary and the failure drills' journals (its data.py names them). Among
-# them, report-deployable.svg and report-deployable-stages.svg, which METHODS and BENCHMARKS show: W4's configurations
+# them, report-deployable.svg and report-deployable-stages.svg, which BENCHMARKS shows: W4's configurations
 # an operator could deploy, and the voice turn of those its stage table gives.
 report-figures:
 	cd python/flatshare_bench && uv run -q python -m flatshare_bench.report.figures $(abspath docs/figures)

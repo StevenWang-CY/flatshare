@@ -355,11 +355,12 @@ def test_the_deployable_stages_are_benchmarks_w4_stage_table(drawn: dict[str, Pa
     ]  # voice alone's W2 run predates the worker's stage times
 
 
-def test_the_deployable_frontier_is_methods_table_over_the_whole_calls(
+def test_the_deployable_frontier_is_benchmarks_w4_table_over_the_whole_calls(
     drawn: dict[str, Path],
 ) -> None:
     # W4's configurations an operator could deploy, each with all its runs; panel b the agents' tokens a second over
-    # the whole calls, frontier.csv's per run, as METHODS' table gives the configurations it shares with the figure.
+    # the whole calls, frontier.csv's per run, as BENCHMARKS' W4 table under the chart gives every configuration the
+    # chart draws (METHODS' shorter table, which this test read, left with METHODS).
     points = {p.point: p for p in data.frontier() if p.point in data.DEPLOYABLE}
     assert sorted(points) == sorted(data.DEPLOYABLE)
     rows = frontier_rows(data.W4)
@@ -369,18 +370,24 @@ def test_the_deployable_frontier_is_methods_table_over_the_whole_calls(
             float(r["background_tokens_per_s"]) for r in runs
         )
     table = doc_table(
-        "METHODS.md", "| Configuration | V2V p95 | Background tokens/s | Agent TTFT p99 |"
+        "BENCHMARKS.md",
+        "| Configuration | Runs | V2V p50 / p95 / p99 | p95 range | First byte p95 | Background tokens/s "
+        "| Agent TTFT p50 / p99 |",
     )
-    shared = {
+    shown = {
         "Tuned vLLM": "disc-frozen-s24",
+        "1,024-token steps, no threshold": "disc-a4-b1024-t0-s24",
         "A token reservation, 2,048 tokens": "disc-a6-reserve2048-s24",
-        "Preempt-resubmit": "disc-a8c-resubmit-s24",
-        "The lifecycle policy over make-room, every reply capped at 16 tokens": "disc-a9-s24",
-        "The configuration to deploy, 48-token window": "disc-pr-ab48-s24",
+        "SGLang with HiCache": "disc-a7b-sglang-hicache-s24",
+        "Preempt-resubmit before the first byte": "disc-a8c-resubmit-s24",
+        "**The lifecycle policy over make-room** (arm 9), every reply capped at 16 tokens": "disc-a9-s24",
+        "**The configuration to deploy, 48-token window**": "disc-pr-ab48-s24",
     }
+    assert sorted(shown.values()) == sorted(data.DEPLOYABLE)
     texts = set(text_of(drawn["report-deployable.svg"]))
-    for name, point in shared.items():
-        p95, tokens = table[name][0].split(" ms", 1)[0], table[name][1]
+    for name, point in shown.items():
+        cells = [cell.replace("**", "") for cell in table[name]]
+        p95, tokens = cells[1].split(" / ")[1], cells[4]
         assert (f"{points[point].p95:,.0f}", f"{points[point].calls_tokens:,.0f}") == (
             p95,
             tokens,
@@ -1171,13 +1178,13 @@ def shown(doc: Path, name: str) -> tuple[str, str]:
 
 
 def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) -> None:
-    # METHODS and BENCHMARKS show W4's two charts with the drawing's own description as the alt text, under a caption
-    # whose claim holds for every mark: only the change comes within 0.2 s of the SLO, every other deployable
-    # configuration 0.5 s or more over it; and only the LLM's part of the turn changes, the other stages within 0.1 s.
-    methods, benchmarks = REPO / "docs" / "METHODS.md", REPO / "docs" / "BENCHMARKS.md"
+    # BENCHMARKS shows W4's two charts, each above the table it draws, with the drawing's own description as the alt
+    # text, under a caption whose claim holds for every mark: only the change comes within 0.2 s of the SLO, every
+    # other deployable configuration 0.5 s or more over it; and only the LLM's part of the turn changes, the other
+    # stages within 0.1 s. METHODS showed them too until it left its parts to the report and BENCHMARKS.
+    benchmarks = REPO / "docs" / "BENCHMARKS.md"
     for doc, name in (
-        (methods, "report-deployable"),
-        (methods, "report-deployable-stages"),
+        (benchmarks, "report-deployable"),
         (benchmarks, "report-deployable-stages"),
     ):
         alt, _ = shown(doc, name)
@@ -1195,7 +1202,7 @@ def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) 
         max(over[p] for p in change) < 200
         and min(v for p, v in over.items() if p not in change) >= 500
     )
-    _, caption = shown(methods, "report-deployable")
+    _, caption = shown(benchmarks, "report-deployable")
     assert caption.startswith(
         "Only the configurations that run the change come within 0.2 s of the SLO, at the median of their "
         "runs; every other configuration an operator can deploy stays 0.5 s or more over it."
@@ -1205,12 +1212,17 @@ def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) 
         values = [getattr(c, stage) for c in cells]
         assert max(values) - min(values) < 100, stage
     assert max(c.wait + c.decode for c in cells) - min(c.wait + c.decode for c in cells) > 3000
-    assert shown(methods, "report-deployable-stages")[1].startswith(
-        "Only the LLM's part of the turn changes from row to row: endpointing, TTS and transport stay within 0.1 s"
-    )
     assert shown(benchmarks, "report-deployable-stages")[1].startswith(
         "Only the reply to its first sentence changes from row to row: endpointing, TTS and transport stay within"
     )
+    # Each chart sits right above the table it draws: its caption, then the table.
+    text = benchmarks.read_text()
+    for name, header in (
+        ("report-deployable", "| Configuration | Runs | V2V p50 / p95 / p99 | p95 range |"),
+        ("report-deployable-stages", "| Configuration | Endpointing | Reply to first sentence |"),
+    ):
+        after = text.split(f'<img src="figures/{name}.svg"', 1)[1].split("</picture>\n\n", 1)[1]
+        assert after.split("\n\n", 2)[1].startswith(header), name
 
 
 def test_the_deployed_results_figures_say_what_their_records_do(drawn: dict[str, Path]) -> None:

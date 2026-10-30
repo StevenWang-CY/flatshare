@@ -129,7 +129,7 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
   best, 2,048-token steps, the configuration to deploy leaves the voice p95 0.14–0.17 s over the SLO
   ([§6.7](docs/REPORT.md#67-the-rules-carry-to-an-a100)). Other cards are placed only by the simulator, whose costs
   scaled from published peaks missed the A100's decode attention by 1.8 times
-  ([what transfers](docs/METHODS.md#what-transfers-to-other-hardware)).
+  ([what transfers](docs/REPORT.md#67-the-rules-carry-to-an-a100)).
 
 ## Quick start
 
@@ -221,7 +221,7 @@ used:
 | deploy the change and watch it | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
 | see how it works in vLLM's scheduler | [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-the-change-63350-and-63351), then the two PR diffs |
 | see every number, with its runs and ranges | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
-| know how each experiment was designed and run | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) and [docs/METHODS.md](docs/METHODS.md) |
+| know how each experiment was designed and run | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) |
 | compare with llm-d, Dynamo, SMG, SGLang and published work | [docs/PRIOR-ART.md](docs/PRIOR-ART.md) |
 | run it on other hardware or on one host | [docs/HARDWARE.md](docs/HARDWARE.md) |
 | operate the hosts, and read what the failure drills showed | [ops/RUNBOOK.md](ops/RUNBOOK.md) |
