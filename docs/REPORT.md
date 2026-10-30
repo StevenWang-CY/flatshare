@@ -895,10 +895,10 @@ of their cards' runs. The shared card's sessions are given first, then the secon
 |---|---:|---:|---:|---:|---:|
 | Dedicated roles, controlled | 0 + 12 | 0 / 177 | 6,302 | – | 4.4 / 31.0 s |
 | **Dedicated roles, best practical** | 0 + 14 | 0 / 177 | **7,893** | – | 5.1 / 41.0 s |
-| Pooling, stock vLLM | 12 + 12 | 53 / 87 | 13,188 | does not qualify | 4.7 / 29.2 s |
+| Pooling, tuned vLLM | 12 + 12 | 53 / 87 | 13,188 | does not qualify | 4.7 / 29.2 s |
 | Pooling, the change | 12 + 12 | 24 / 87 | 12,111 | does not qualify | 4.8 / 37.2 s |
-| Consolidation, stock vLLM | 4 + 14 | 18 / 177 | 10,596 | does not qualify | 0.6 / 10.4 s |
-| Consolidation, stock vLLM | 2 + 14 | 4 / 177 | 10,051 | +27.3% | 0.4 / 7.8 s |
+| Consolidation, tuned vLLM | 4 + 14 | 18 / 177 | 10,596 | does not qualify | 0.6 / 10.4 s |
+| Consolidation, tuned vLLM | 2 + 14 | 4 / 177 | 10,051 | +27.3% | 0.4 / 7.8 s |
 | Consolidation, the change | 8 + 14 | 31 / 177 | 13,537 | does not qualify | 0.7 / 11.7 s |
 | **Consolidation, the change** | 4 + 14 | 5 / 177 | **10,596** | **+34.2%** | 0.6 / 10.8 s |
 | Consolidation, the change, with a warm spare | 4 + 12 | 5 / 177 | 9,652 | +22.3% | 0.5 / 10.7 s |
@@ -992,8 +992,8 @@ round's SLO, and the replies over it are pooled over the rounds and given by rou
 | Configuration | Median p95 V2V | Pooled p95 | Replies over the SLO | By round | Agents' tokens/s | Agents' TTFT p50 / p99 |
 |---|---:|---:|---:|---|---:|---:|
 | Tuned vLLM, 512-token steps | 12,010 ms | 11,766 ms | 261 / 295 | 53, 55, 55, 54, 44 | 3,399 | 69 / 109 s |
-| The change, 512-token steps | 2,246 ms | 2,259 ms | 94 / 295 | 16, 29, 25, 9, 15 | 3,303 | 78 / 117 s |
-| **The change, 256-token steps** | **2,098 ms** | 2,151 ms | **44 / 295** | 10, 17, 10, 4, 3 | 3,067 | 85 / 120 s |
+| The configuration to deploy, 512-token steps | 2,246 ms | 2,259 ms | 94 / 295 | 16, 29, 25, 9, 15 | 3,303 | 78 / 117 s |
+| **The configuration to deploy, 256-token steps** | **2,098 ms** | 2,151 ms | **44 / 295** | 10, 17, 10, 4, 3 | 3,067 | 85 / 120 s |
 
 ## 7. Operating the change
 

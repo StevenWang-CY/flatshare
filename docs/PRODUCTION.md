@@ -207,12 +207,12 @@ With two cards, put both calls on one and fill the other with agents. A resource
 
 The envelope is the most agents' sessions beside both calls at which a card qualifies, three rounds pooled, and the SLO's margin over voice alone sets it ([the rounds' margins](../benchmarks/results/2026-10-28-rounds/README.md#beside-the-gate-the-margin)):
 
-| Margin over voice alone's p95 | The change, 256-token steps | Stock vLLM |
+| Margin over voice alone's p95 | The configuration to deploy, 256-token steps | Tuned vLLM |
 |---|---|---|
 | 250 ms, the SLO | 4 sessions: 5 of 177 replies over | 2 sessions: 4 of 177 over |
 | 500 ms | 24 sessions, every count measured: 8 of 177 over at 24 | 2 sessions: 1 of 177 over, and 12 of 177 at four |
 
-At 500 ms the change's card qualifies at every count measured, up to 24 sessions, and stock vLLM's still only at two.
+At 500 ms the card qualifies with the configuration to deploy at every count measured, up to 24 sessions, and with tuned vLLM still only at two.
 
 ### Setting it up
 

@@ -407,13 +407,13 @@ RG, 2026-10-28: the resource gate's comparison of the arrangements of two RTX 50
 |---|---:|---:|---:|---|---:|
 | Dedicated roles, controlled (the second card the frozen box, its speech servers idle) | 0 + 12 | 0 / 177 | 6,302 | 7,008, 6,302, 6,041 | 4.4 / 31.0 s |
 | **Dedicated roles, best practical** (the second card agents alone: a 61,152-token pool, FCFS, 2,048-token steps) | 0 + 14 | 0 / 177 | **7,893** | 8,282, 7,893, 4,710 | 5.1 / 41.0 s |
-| Stock pooling | 12 + 12 | 53 / 87 | 13,188 | 13,233, 13,188, 11,951 | 4.7 / 29.2 s |
-| Flatshare pooling | 12 + 12 | 24 / 87 | 12,111 | 13,138, 12,111, 11,374 | 4.8 / 37.2 s |
-| Consolidation, stock vLLM | 24 + 14 | 163 / 177 | 11,378 | 11,681, 11,378, 7,776 | 39.7 / 85.8 s |
-| Consolidation, stock vLLM | 12 + 14 | 95 / 177 | 14,191 | 14,987, 14,191, 11,055 | 4.6 / 33.5 s |
-| Consolidation, stock vLLM | 8 + 14 | 69 / 177 | 13,573 | 13,573, 14,267, 10,547 | 0.7 / 11.6 s |
-| Consolidation, stock vLLM | 4 + 14 | 18 / 177 | 10,596 | 11,655, 10,596, 8,308 | 0.6 / 10.4 s |
-| Consolidation, stock vLLM | 2 + 14 | 4 / 177 | 10,051 | 10,984, 10,051, 6,234 | 0.4 / 7.8 s |
+| Pooling, tuned vLLM | 12 + 12 | 53 / 87 | 13,188 | 13,233, 13,188, 11,951 | 4.7 / 29.2 s |
+| Pooling, the change | 12 + 12 | 24 / 87 | 12,111 | 13,138, 12,111, 11,374 | 4.8 / 37.2 s |
+| Consolidation, tuned vLLM | 24 + 14 | 163 / 177 | 11,378 | 11,681, 11,378, 7,776 | 39.7 / 85.8 s |
+| Consolidation, tuned vLLM | 12 + 14 | 95 / 177 | 14,191 | 14,987, 14,191, 11,055 | 4.6 / 33.5 s |
+| Consolidation, tuned vLLM | 8 + 14 | 69 / 177 | 13,573 | 13,573, 14,267, 10,547 | 0.7 / 11.6 s |
+| Consolidation, tuned vLLM | 4 + 14 | 18 / 177 | 10,596 | 11,655, 10,596, 8,308 | 0.6 / 10.4 s |
+| Consolidation, tuned vLLM | 2 + 14 | 4 / 177 | 10,051 | 10,984, 10,051, 6,234 | 0.4 / 7.8 s |
 | Consolidation, the change | 24 + 14 | 37 / 177 | 11,075 | 11,466, 11,075, 7,435 | 48.0 / 92.5 s |
 | Consolidation, the change | 12 + 14 | 33 / 177 | 13,880 | 15,107, 13,880, 10,082 | 5.1 / 41.6 s |
 | Consolidation, the change | 8 + 14 | 31 / 177 | 13,537 | 13,537, 14,352, 10,392 | 0.7 / 11.7 s |

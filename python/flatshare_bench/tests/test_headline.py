@@ -60,21 +60,22 @@ GOODPUT = "agents' tokens/s, first 240 s"
 MINUS = "\u2212"  # a negative difference's sign, as the docs print it
 STEP_CAPS = {
     "Tuned vLLM, 512-token steps": "w5-disc-frozen-s24",
-    "The change, 512-token steps": "w5-disc-pr-ab48-s24",
-    "The change, 256-token steps": "sweep-disc-pr-ab48-b256-t0-s24",
+    "The configuration to deploy, 512-token steps": "w5-disc-pr-ab48-s24",
+    "The configuration to deploy, 256-token steps": "sweep-disc-pr-ab48-b256-t0-s24",
 }
 """Table 8's rows (§6.9), by their first cell, and the point of the two-card record each reports (gate.py's SWEEP)."""
 VOICE_CARD = ("w5-a1-voice", 1)  # the calls alone on a card
 AGENTS_CARD = ("rg-disc-agents-only-s14", 1)  # the agents alone, the best practical dedicated card
 TWO_CARDS = {
     # Table 6's rows (§6.8), by their first two cells, and the cards each arrangement runs as gate.py counts them:
-    # the card with the calls first; a pooled arrangement runs its one point on both cards.
+    # the card with the calls first; a pooled arrangement runs its one point on both cards. The rounds' stock engine
+    # ran the frozen box's flags, tuned vLLM in GLOSSARY's terms, as Figure 14 names it.
     ("Dedicated roles, controlled", "0 + 12"): (VOICE_CARD, ("rg-disc-agents-frozen-s12", 1)),
     ("Dedicated roles, best practical", "0 + 14"): (VOICE_CARD, AGENTS_CARD),
-    ("Pooling, stock vLLM", "12 + 12"): (("rg-disc-frozen-c1-s12", 2),),
+    ("Pooling, tuned vLLM", "12 + 12"): (("rg-disc-frozen-c1-s12", 2),),
     ("Pooling, the change", "12 + 12"): (("rg-disc-pr-ab48-b256-c1-s12", 2),),
-    ("Consolidation, stock vLLM", "4 + 14"): (("rg-disc-frozen-s4", 1), AGENTS_CARD),
-    ("Consolidation, stock vLLM", "2 + 14"): (("rg-disc-frozen-s2", 1), AGENTS_CARD),
+    ("Consolidation, tuned vLLM", "4 + 14"): (("rg-disc-frozen-s4", 1), AGENTS_CARD),
+    ("Consolidation, tuned vLLM", "2 + 14"): (("rg-disc-frozen-s2", 1), AGENTS_CARD),
     ("Consolidation, the change", "8 + 14"): (("rg-disc-pr-ab48-b256-s8", 1), AGENTS_CARD),
     ("Consolidation, the change", "4 + 14"): (("rg-disc-pr-ab48-b256-s4", 1), AGENTS_CARD),
     ("Consolidation, the change, with a warm spare", "4 + 12"): (
@@ -241,8 +242,8 @@ def test_the_readmes_opening_and_the_reports_abstract_are_the_records() -> None:
         share(*change_over),
         "{} of {}".format(*change_over),
         f"{kept:.0%} of their token rate",
-        caps["The change, 256-token steps"],
-        caps["The change, 512-token steps"],
+        caps["The configuration to deploy, 256-token steps"],
+        caps["The configuration to deploy, 512-token steps"],
         f"from {a100_tuned.p95 / 1000:.2f} s to {a100_change.p95 / 1000:.2f} s, under that card's SLO in each of "
         f"{WORDS[len(a100_change.runs)]} rounds",
     ]
