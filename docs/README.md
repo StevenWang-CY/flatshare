@@ -4,25 +4,24 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 
 ## Start here
 
-- [REPORT.md](REPORT.md): Why does a voice turn wait seconds beside coding agents on one GPU, what do the two scheduler rules recover, and at what cost to the agents?
+- [REPORT.md](REPORT.md): Why does a voice turn wait seconds beside coding agents on one GPU, what do the two scheduler rules recover, at what cost to the agents, and what carries to other hardware?
 - [ARCHITECTURE.md](ARCHITECTURE.md): How is the deployed system built, from the change inside vLLM's scheduler to the gateway, the voice worker, two cards with a warm spare and releases that roll back, and what was measured and dropped?
 - [GLOSSARY.md](GLOSSARY.md): What does a term or a record's label mean (the frozen box, arm 9, W0 to W8, the project's former names)?
 
 ## Deploy and operate
 
 - [PRODUCTION.md](PRODUCTION.md): How do I deploy the change beside a voice agent, is my deployment in the regime where it pays, what should I watch, and how does it fail?
-- [HARDWARE.md](HARDWARE.md): What does the deployment need from another GPU or a single host, how is it rendered there, and what did the A100 run measure?
+- [HARDWARE.md](HARDWARE.md): What does the deployment need from another GPU or a single host, and how is a node rendered there?
 - [SLO.md](SLO.md): Which service classes share the GPU, which indicators are measured for each, and what is each campaign's SLO?
 - [PROTOCOL.md](PROTOCOL.md): What does the gateway accept from callers and send to the engine: sessions, headers and lifecycle events?
 - [ops/RUNBOOK.md](../ops/RUNBOOK.md): How are the hosts deployed, checked, operated and recovered, and how are the failure drills run?
 
 ## The evidence
 
-- [BENCHMARKS.md](BENCHMARKS.md): What was measured, run by run, with each number's range and the records it comes from?
-- [EXPERIMENTS.md](EXPERIMENTS.md): How was each experiment (E0 to E3) designed and run: its question, arms, scenarios, metrics, repeats and builds?
+- [BENCHMARKS.md](BENCHMARKS.md): Where does each number come from, question by question, with its runs, ranges and records (the A100 run's among them), and what did the campaigns before W5 measure?
+- [EXPERIMENTS.md](EXPERIMENTS.md): How was each experiment (E0 to E3) designed and run, and which campaign measured what, on which code (the campaign map)?
 - [benchmarks/quality/GATE.md](../benchmarks/quality/GATE.md): Can the served model do both jobs of a useful pair: answer a caller's questions on private documents, and enrich new documents into searchable records in the background?
 - [benchmarks/quality/RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md): At the same service to the calls, which arrangement of two cards does the most background work, and is sharing them worth its complexity?
-- [METHODS.md](METHODS.md): What did each measurement rule in or out, in what order, and what carries to other hardware?
 - [PRIOR-ART.md](PRIOR-ART.md): How does Flatshare differ from the engines, routers and papers that co-serve latency classes, and what does it not claim?
 - [benchmarks/results](../benchmarks/results): Where are the committed records behind each number, one directory per campaign or probe, each with its README?
 - [REVISIONS.md](REVISIONS.md): Which commit of this history holds each revision the records name, since the history was rewritten on 2026-10-27?
