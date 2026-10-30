@@ -5,6 +5,36 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.12](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.12) (2026-10-30): drain one node, and v1.11's open items
+
+What v1.11 left open, done: the relay's held upstream at a passed deadline, a drain of one node for maintenance, and
+the pins' advisories. No measured result changes.
+
+- **A passed deadline ends the engine's request.** When one of a stream's deadlines passed while its client's channel
+  was full, the relay waited up to `stall_timeout_s` (30 s) to send the error event, and kept the engine's request
+  open meanwhile for a client that would get a timeout
+  ([#1](https://github.com/StevenWang-CY/flatshare/issues/1)). It now lets the upstream go first, as the gateway's
+  README said it did, and the event still reaches a client that reads again within the stall timeout. A broken
+  upstream is let go the same way.
+- **Drain one node.** With `[[nodes]]`, a node set `draining = true`, once a reload takes the key, takes no new
+  session, keeps its calls until they end, and lets its agents' sessions move by their next request. `/ready` does
+  not count it, and `/nodes` shows `draining`, and `drained` once it holds no session and no request.
+  `flatshare_gateway_node_draining`, which the dashboard's node panel draws, keeps `FlatshareNodeUnhealthy` quiet for
+  it, so that it can be stopped and upgraded without a page. The runbook gives the steps; a drill on the two GPU nodes
+  waits for a window in which both serve.
+- **Pillow 13.0.0** in the bench's lock fixes 39 advisories against 12.3.0. It overrides AIPerf 0.13.0's
+  `pillow~=12.3.0`, and AIPerf's image paths give the same bytes under it. The demo script takes it too.
+- **The advisories the pins carry.** SECURITY.md lists the two left: setuptools 80.10.2, held by vLLM 0.32.0's
+  `setuptools<81`, whose two advisories' paths do not run on the Linux hosts, and diskcache 5.6.3, which has no fixed
+  release and serves only the SGLang comparator. A test holds each entry to the files it names.
+- **The packages** are versioned 1.12.0, and are not published to a package index.
+- **Upgrading from v1.11.**
+  - `draining` is a new key of `[[nodes]]`, off by default, so no configuration needs a change. A v1.11 gateway
+    refuses it as an unknown key.
+  - A rules file copied from `ops/prometheus/rules.yml` needs `FlatshareNodeUnhealthy`'s expression taken from it
+    again, or a drained node that is stopped pages.
+  - `/nodes` answers two more fields for each node, `draining` and `drained`.
+
 ## [v1.11](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.11) (2026-10-30): a sweep of v1.10, fixed
 
 What a sweep of v1.10's code, configuration, dependencies and documents found, fixed. No measured result changes.
