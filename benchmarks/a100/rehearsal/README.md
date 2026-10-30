@@ -11,7 +11,7 @@
 - `deploy/a100/pull.sh`;
 - `make reproduce-a100` over the pulled records.
 
-All of it runs under `FLATSHARE_SUPERVISOR=flatshare-svc` in a home of its own, `~/a100-rehearsal`, beside the box's deployment, which shares the account. The rehearsal leaves that deployment as it found it, and checks that it did. On 2026-10-25 two runs stopped at defects of the kit, which a third ran past once each was fixed ([the records](../../results/2026-10-25-a100-rehearsal/README.md)). On 2026-10-26 the release's kit ran every step in one pass from a fresh home: 76 minutes on the box, the GPU in use for 64 of them, from `gpu` to `block4` ([its records](../../results/2026-10-26-a100-rehearsal/README.md)). The A100 run followed the same day, from 04:07Z ([what it measured](../../../docs/HARDWARE.md#what-it-measured-2026-10-26)).
+All of it runs under `FLATSHARE_SUPERVISOR=flatshare-svc` in a home of its own, `~/a100-rehearsal`, beside the box's deployment, which shares the account. The rehearsal leaves that deployment as it found it, and checks that it did. On 2026-10-25 two runs stopped at defects of the kit, which a third ran past once each was fixed ([the records](../../results/2026-10-25-a100-rehearsal/README.md)). On 2026-10-26 the release's kit ran every step in one pass from a fresh home: 76 minutes on the box, the GPU in use for 64 of them, from `gpu` to `block4` ([its records](../../results/2026-10-26-a100-rehearsal/README.md)). The A100 run followed the same day, from 04:07Z ([what it measured](../../../docs/BENCHMARKS.md#what-it-measured-2026-10-26)).
 
 Two features of the kit exist for the rehearsal, and `check` refuses a checkout to push (`REHEARSAL_REPO`) without them:
 
@@ -374,7 +374,7 @@ These are the A100's paths that the box cannot take:
 - **A host without user namespaces**, where the voice plane and the GPU servers run in the host's network namespace (`FLATSHARE_VOICENET=host`, `FLATSHARE_PRIVATE_NET=host`), which the CPU test's degraded-line case stands in for.
 - **The rest of the run:** blocks 2, 3 and 5 to 10, the optional arms, and a reboot mid-run.
 
-The A100 run took some of these paths on 2026-10-26, on a Colab container; what differed there from the rehearsal's host, the driver's libraries outside the linker's search among them, is in [HARDWARE.md](../../../docs/HARDWARE.md#on-google-colab).
+The A100 run took some of these paths on 2026-10-26, on a Colab container; what differed there from the rehearsal's host, the driver's libraries outside the linker's search among them, is in [BENCHMARKS.md](../../../docs/BENCHMARKS.md#on-google-colab).
 
 ## The CPU test
 

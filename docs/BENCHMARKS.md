@@ -1,14 +1,32 @@
 # Benchmarks
 
-Every measurement behind the other documents, run by run, with its range and the records it comes from: the home of each number, for a reader checking a claim. It covers W0 to W8 ([the stages](GLOSSARY.md#experiments-and-how-they-are-counted)) on one RTX 5060 Ti 16 GB (sm_120, PCIe Gen3 x8) in Phastform, a host with two Xeon E5-2609 v4 at 1.7 GHz and 188 GiB of RAM, with vLLM 0.32.0, and the run of 2026-10-26 on an A100 SXM4 80 GB ([its own section](#the-a100-run-2026-10-26)). The change measured here is pull requests #63350 and #63351, proposed to vLLM (open, with no maintainer review as of 2026-10-29), run as the make-room variant ([GLOSSARY.md](GLOSSARY.md#the-change-and-its-parts)). The numbers come from the frozen box ([`deploy/phastform`](../deploy/phastform)), the `flatshare-bench` probes and the E2 harness in this repository, run from cyan through the SSH tunnel as the control plane reaches the engine; the first make-room probes (2026-10-23) ran on Gray, the identical second box, and the later ones on Phastform. Earlier probe numbers are kept only where W1 has not re-measured them, and are marked. A record names the revision it ran on as `git describe` of the history before it was rewritten on 2026-10-27; [REVISIONS.md](REVISIONS.md) gives each one's commit now.
+Every measurement behind the other documents, by the question it answers, with its range and the records it comes from: the home of each number, for a reader checking a claim. Under each question a provenance line names the campaigns or probes that measured it: [the campaign map](EXPERIMENTS.md#which-campaign-measured-what-on-which-code) gives each campaign's code, and [GLOSSARY.md](GLOSSARY.md#experiments-and-how-they-are-counted) the stages W0 to W8.
+
+The measurements ran on one RTX 5060 Ti 16 GB (sm_120, PCIe Gen3 x8) in Phastform, a host with two Xeon E5-2609 v4 at 1.7 GHz and 188 GiB of RAM, with vLLM 0.32.0, and the run of 2026-10-26 on an A100 SXM4 80 GB ([its own section](#the-a100-run-2026-10-26)). The change measured here is pull requests #63350 and #63351, proposed to vLLM (open, with no maintainer review as of 2026-10-29), run as the make-room variant ([GLOSSARY.md](GLOSSARY.md#the-change-and-its-parts)).
+
+The numbers come from the frozen box ([`deploy/phastform`](../deploy/phastform)), the `flatshare-bench` probes and the E2 harness in this repository, run from cyan through the SSH tunnel as the control plane reaches the engine; the first make-room probes (2026-10-23) ran on Gray, the identical second box, and the later ones on Phastform. Earlier probe numbers are kept only where W1 has not re-measured them, and are marked. A record names the revision it ran on as `git describe` of the history before it was rewritten on 2026-10-27; [REVISIONS.md](REVISIONS.md) gives each one's commit now.
 
 **Contents.**
-- The box and its costs: [the frozen box](#the-frozen-box), [E0, the tier cost model](#tier-cost-model-resuming-an-agent-turn-e0), [voice on the shared GPU](#voice-on-the-shared-gpu).
-- [E2, voice under agent load](#voice-under-agent-load-e2): W2's [standard](#the-standard-scenario-w2) and [discriminating](#the-discriminating-scenario-w2) scenarios; W4's [discriminating scenario in rounds](#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4) and [standard scenario repeated](#the-standard-scenario-repeated-w4); W5's [standard scenario in five rounds](#the-standard-scenario-in-five-rounds-w5), [discriminating scenario after its fixes](#the-discriminating-scenario-after-w5s-fixes-w5) and [calls per GPU](#calls-per-gpu-w5); [the code of 2026-10-25](#the-final-code-against-w5-fb) (FB); [the box's running share](#the-boxs-running-share-rs) (RS); [E3, what make-room takes from the agents](#e3-what-make-room-takes-from-the-agents).
-- The change's probes: [the KV case and the prefill case](#the-kv-case-make-room), [W5's modules](#w5-the-fixed-make-room-on-phastform), [the probes the pull requests cite](#the-prs-configuration-in-one-session-w5), [the first tokens in flight](#after-w5-the-first-tokens-in-flight), [the window's knee](#the-windows-knee).
-- What sits in front of the engine: [flatshare-gateway](#the-control-plane-flatshare-gateway-in-front-of-the-engine), [agentic-api](#the-api-layer-agentic-api-in-front-of-the-engine).
-- The agents and the simulator: [agent replay on the frozen box](#agent-replay-on-the-frozen-box-a-first-retention-headroom-signal), [at three loads, with the simulator's calibration](#agent-replay-at-three-loads-and-the-simulator-calibrated-on-it-w2), [E1 in the simulator](#e1-parking-in-the-simulator).
-- [The A100 run](#the-a100-run-2026-10-26), [failure drills](#failure-drills), [load generation](#load-generation), and [the engine plugins removed after v0.3](#engine-plugins).
+- [The frozen box](#the-frozen-box)
+- [What does resuming an agent turn cost?](#what-does-resuming-an-agent-turn-cost)
+- [What does agent load do to a voice turn on the same GPU?](#what-does-agent-load-do-to-a-voice-turn-on-the-same-gpu)
+- [Why does a voice turn wait beside agents?](#why-does-a-voice-turn-wait-beside-agents)
+- [How is a point of voice under agent load measured?](#how-is-a-point-of-voice-under-agent-load-measured)
+- [How close does each configuration bring the voice tail to its SLO?](#how-close-does-each-configuration-bring-the-voice-tail-to-its-slo)
+- [What changes where the pool has room, and with more calls?](#what-changes-where-the-pool-has-room-and-with-more-calls)
+- [What does the change take from the agents?](#what-does-the-change-take-from-the-agents)
+- [How often do running agents leave two calls short of KV?](#how-often-do-running-agents-leave-two-calls-short-of-kv)
+- [Which step cap should the change run at?](#which-step-cap-should-the-change-run-at)
+- [Which arrangement of two cards does the most background work?](#which-arrangement-of-two-cards-does-the-most-background-work)
+- [Does the arrangement to deploy keep its SLO over a day?](#does-the-arrangement-to-deploy-keep-its-slo-over-a-day)
+- [Do the rules carry to a datacenter card?](#do-the-rules-carry-to-a-datacenter-card)
+- [What does a failure do to the calls and the agents?](#what-does-a-failure-do-to-the-calls-and-the-agents)
+- [What does the gateway add to a request?](#what-does-the-gateway-add-to-a-request)
+- [What does an API layer add to an agent's turn?](#what-does-an-api-layer-add-to-an-agents-turn)
+- [How do the agents use the KV cache?](#how-do-the-agents-use-the-kv-cache)
+- [Does knowing when an agent returns help?](#does-knowing-when-an-agent-returns-help)
+- [Is the replayed load faithful to the traces?](#is-the-replayed-load-faithful-to-the-traces)
+- [History](#history)
 
 ## The frozen box
 
@@ -23,7 +41,11 @@ Every measurement behind the other documents, run by run, with its range and the
 
 The two start rows are W0's (2026-10-22). On the build of 2026-10-25 (v0.3-295) the engine started in 88.8 s on warm caches and 531.8 s on empty ones, and a restart of all three servers took 102.7 s ([the drills](#failure-drills)).
 
-## Tier cost model: resuming an agent turn (E0)
+<a id="tier-cost-model-resuming-an-agent-turn-e0"></a>
+
+## What does resuming an agent turn cost?
+
+**Provenance:** E0, on the frozen box, 2026-10-22.
 
 `flatshare-bench tiers` sends a unique prompt of L random token ids three times, each asking for one token: cold (recomputed), again at once (a GPU prefix-cache hit), and after other prompts pushed it out of the GPU pool (restored from the CPU tier). vLLM's prefix-cache counters, read around each request, verify where its tokens came from; no sample of these runs was invalid. Time to first token (TTFT), p50 of 5 samples, frozen box (Qwen3-4B-FP8, audio servers resident, 36,400-token pool, 20 GiB write-through CPU tier, step cap 512/256), 2026-10-22:
 
@@ -60,7 +82,11 @@ Restoring beats recomputing at every measured length (from 1,024 tokens). In the
 
 The earlier probe (2026-10-21, BF16 weights, no audio servers) measured 0.18 s / 0.57 s / 4.75 s at 16k for GPU hit / restore / recompute.
 
-## Voice on the shared GPU
+<a id="voice-on-the-shared-gpu"></a>
+
+## What does agent load do to a voice turn on the same GPU?
+
+**Provenance:** W1's probes, 2026-10-22; W0's barge-in check; the endpointing sweep, 2026-10-28.
 
 `flatshare-bench voice-turn` runs the cascade a voice agent runs, against the frozen box through the tunnel:
 1. the caller's utterance goes to STT (LibriSpeech clips of 2.0 and 3.2 s);
@@ -109,179 +135,176 @@ In stock mode the reply keeps streaming for the whole barge-in.
 - Whisper large-v3-turbo on vLLM took 144 / 166 / 221 ms for 2 / 5 / 10 s utterances at concurrency 1;
 - Kokoro-82M reached first audio for one sentence in 154–179 ms.
 
-## Voice under agent load (E2)
+<a id="the-kv-case-make-room"></a>
+
+## Why does a voice turn wait beside agents?
+
+**Provenance:** the probes on Gray, 2026-10-23, and on Phastform around W5, 2026-10-24 and 25.
+
+Three probes isolate the two waits ([the report's §2.4](REPORT.md#24-the-two-waits-in-isolation)): the KV case, a voice-sized request sent into a pool that two agent requests fill; the prefill case, the same request sent beside three agent prefills; and the calls' tail, two calls beside closed-loop agents.
+
+### The three probes on Gray (2026-10-23)
+
+`python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py` reproduces the KV case of vLLM [#40004](https://github.com/vllm-project/vllm/issues/40004) on the frozen box's image, on Gray (the second RTX 5060 Ti, with the same units, pins and pool), on 2026-10-23. Two priority-2 requests of 17,999 prompt tokens, each decoding up to 4,096 tokens, fill the 36,400-token pool. Once the engine reports both running and at most 24 blocks free, a priority-0 chat request of about 750 tokens is sent, and its time to first token is measured. The outputs of this section's runs, with each run's revision and switches, are in [`benchmarks/results/2026-10-23-make-room-probes`](../benchmarks/results/2026-10-23-make-room-probes), whose `check.py` recomputes the three tables.
+
+The rows name `make-room`'s switches: the KV preemption (at most 2 victims a step), the budget cap and the 2,048-token reserve. Pull request [#63350](https://github.com/vllm-project/vllm/pull/63350), proposed to vLLM (open, with no maintainer review as of 2026-10-29), carries the KV preemption, and [#63351](https://github.com/vllm-project/vllm/pull/63351), stacked on it, the budget cap, without the reserve. The KV case runs without the reserve, which would keep the second priority-2 request out of the full pool; 22 of 2,274 blocks were free when the request was sent, in every run on a full pool.
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-kv-timeline-narrow.svg">
+  <img src="figures/report-kv-timeline.svg" width="100%" alt="In panel a, the share of the KV pool's 2,274 blocks in use on stock vLLM while the KV case's two agent requests of 18k prompt tokens prefill and decode, read about every 0.55 s: 98.7% at 7.7 s, 20 blocks free at 8.3 s, where the KV case sends its voice turn, none freed until 12.6 s, and 50.1% at 13.1 s, once vLLM has preempted agent B so that agent A can grow; in panel b, each request's output tokens, both decoding into the last free blocks until agent B stops at 192 tokens while agent A reaches 812 by 24.5 s.">
+</picture>
+
+**On vLLM 0.32 a full KV pool frees nothing until a running request cannot grow.** The report's Figure 2 ([§2.4](REPORT.md#24-the-two-waits-in-isolation)); the first bullet under the table below describes the same timeline.
+
+| Scheduler | Runs | Priority-0 TTFT | Then |
+|---|---:|---|---|
+| Stock vLLM 0.32.0, priority scheduling | 3 | 4,923, 5,069, 5,077 ms | 2 running, 1 waiting |
+| `make-room`, the KV preemption alone (#63350) | 2 | 247, 321 ms | 2 running, 1 waiting |
+| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | 2 | 225, 297 ms | 2 running, 1 waiting |
+| Either, on an idle pool | 4 | 107–137 ms | — |
+
+- **Why stock waits.** A KV timeline of the same load on the stock scheduler (`/metrics` every half second) shows the two prefills filling the pool to 98.7% at 7.7 s, then decoding into its last free blocks until 12.6 s, when one of them cannot grow and vLLM preempts the later one, and use falls to 50%. A priority-0 request that arrives in between waits: the waiting loop stops at its failed allocation, and running requests are preempted only for each other's growth. Here it waited 4.9 to 5.1 s.
+- **What make-room does.** It preempts one priority-2 request at once, through the stock preemption path; with the OffloadingConnector the victim's KV is in the CPU tier for its resume. Both runs end in the same state, one agent request waiting, but the voice turn's first token comes 4.6 to 4.9 s sooner. The budget cap changes nothing here, since the priority-2 requests are decoding rather than prefilling: the 16th token came after 535 and 610 ms with the KV preemption alone, and 514 and 586 ms with the budget cap.
+- **An instrument note.** `vllm:num_preemptions_total` stayed 0 through the stock timeline's preemption: vLLM counts a preemption when the victim's next output reaches the frontend, so a victim still waiting is not counted yet. E2's per-point engine counters therefore miss victims that resume after a point's window, and the probe reads the running and waiting counts instead.
+
+**The prefill case.** The probe's `prefill` case sends three priority-2 requests of 10,000 prompt tokens, which prefill beside each other with room left in the pool, and the voice turn once all three run. It times the turn's first token and its 16th, the end of the budget cap's window (on Gray, 2026-10-23; the median and range where a row has four runs or more):
+
+| Scheduler | Runs | Priority-0 TTFT | 16th token |
+|---|---:|---|---|
+| Stock vLLM 0.32.0, priority scheduling | 6 | 361 ms (290–596) | 1,395 ms (1,226–1,683) |
+| `make-room` without the budget cap (`budget_cap_tokens 0`), with the reserve | 2 | 324, 339 ms | 1,248, 1,277 ms |
+| `make-room`, the KV preemption alone (#63350) | 4 | 381 ms (329–589) | 1,423 ms (1,370–1,674) |
+| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | 4 | 320 ms (263–328) | 573 ms (564–618) |
+| `make-room` as arm 9 runs it, with the reserve | 2 | 282, 354 ms | 578, 651 ms |
+
+- **Why.** Every step of the reply carried the agents' prefill chunks, up to 512 tokens, so its tokens came 62 to 73 ms apart, on stock vLLM as with the KV preemption alone, which finds KV to spare here and changes nothing; with the budget cap they come 16 to 20 ms apart. The first token still waits for the step in flight when the turn arrives. E2's first arm-9 point, on the first module, showed the same loss at scale: its waterfall put it in the reply's first sentence (1,335 ms at the median against 536 ms to the first token).
+- **Spread.** The case varies with how far the three prefills have got when the turn arrives: stock vLLM's first two runs gave 1,226 ms each, four later ones 1,367–1,683 ms. With two runs a row, the KV preemption alone would have looked slower than stock.
+
+**The calls' first-token tail.** `python/flatshare_vllm/src/flatshare_vllm/make-room/tail.py` runs 12 closed-loop agent sessions at priority 2 beside two calls at priority 0 for 240 s and gives the calls' time to first token. The agents' prompts are 6–30k tokens, either fresh each turn, as E2's discriminating replay computes about 95% of its prompt tokens, or growing by a tool result each turn, so that they reuse the CPU tier; a call turns every 4–8 s with 16 output tokens, the budget cap's window, so neither this check nor the prefill case shows a reply that outruns the window. On Gray, 2026-10-23:
+
+| Scheduler | Agents' prompts | Call turns | TTFT p50 / p90 / p95 / max |
+|---|---|---:|---|
+| Stock vLLM 0.32.0, priority scheduling, the box's flags | fresh | 47 | 3,081 / 6,529 / 8,239 / 11,094 ms |
+| Stock vLLM 0.32.0, priority scheduling, the box's flags | growing | 50 | 1,359 / 6,816 / 7,258 / 8,692 ms |
+| `make-room`, the KV preemption alone (#63350) | fresh | 60 | 643 / 1,715 / 2,730 / 6,298 ms |
+| `make-room`, the KV preemption alone (#63350) | growing | 60 | 540 / 1,102 / 1,950 / 3,325 ms |
+| `make-room` with the reserve, before its KV-load rule | fresh | 68 | 361 / 1,546 / 2,812 / 4,120 ms |
+| `make-room` with the reserve, before its KV-load rule | growing | 70 | 425 / 605 / 2,395 / 3,544 ms |
+| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | fresh | 73 | 257 / 346 / 353 / 370 ms |
+| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | growing | 73 | 261 / 387 / 434 / 604 ms |
+| `make-room` as arm 9 runs it, with the reserve | fresh | 73 | 202 / 283 / 316 / 398 ms |
+| `make-room` as arm 9 runs it, with the reserve | growing | 73 | 202 / 289 / 324 / 678 ms |
+
+The rows before the KV-load rule ran with the scheduler's state logged for each call that waited over 0.3 s; the stock rows' p95 is near that of tuned vLLM in E2's discriminating scenario (the realtime first byte, 8,556 ms). Each row is one run; the percentiles are inclusive, as E2's report computes them, from the run's per-turn lines.
+
+- **Why.** Between a call's turns, the agents' prefills cycle the GPU's free blocks, so the turn's prefix is evicted and loads back from the CPU tier, asynchronously. Every slow turn was in `WAITING_FOR_REMOTE_KVS` (the scheduler's state logged each step), with KV to spare. Once its load is done, a request waits for the waiting loop to promote it, and the waiting loop runs only on budget the running loop leaves; the agents' 512-token chunks left none. The budget cap now holds lower-priority prefill while a higher-priority request loads, as while it prefills.
+- **Each switch's share.** The KV preemption alone takes the calls' p95 from 7.26–8.24 s to 1.95–2.73 s, since a turn no longer waits for an agent request to free its blocks; the budget cap takes it under 0.5 s. With the reserve as well, the median is lower (202 against 257 and 261 ms).
+- **E2's points show the same tail:** disc-a9-s24 on the module before this rule had its first token after 334 ms at the median and 2,146 ms at p95, against preempt-resubmit's 251 and 394 ms; its turns loaded about 40k tokens from the CPU tier, about their own prefixes.
+
+<a id="w5-the-fixed-make-room-on-phastform"></a>
+
+### W5's modules on Phastform (2026-10-24)
+
+W5 fixed make-room's rules ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351)) and checked each module on Phastform's RTX 5060 Ti, the GPU of every E2 point until the two-card rounds, with the frozen box's units, pins and pool, on 2026-10-24. Every block ran make-room with the pull requests' own values (the KV preemption at 2 victims a step, the budget cap with its 16-token window, no reserve): the KV case 3 times, the prefill case 4 times, and `tail.py` with fresh and with growing prompts twice each, one block per module. The outputs are in [`benchmarks/results/2026-10-24-w5-probes`](../benchmarks/results/2026-10-24-w5-probes), whose `check.py` recomputes the table (the median and range where a cell has four runs; a tail cell pools both runs' 145–146 turns, none failed, and its percentiles are inclusive, as E2's report computes them):
+
+| Module | KV case TTFT | Prefill case TTFT / 16th token | Calls' TTFT, fresh prompts, p50 / p95 | Growing prompts, p50 / p95 |
+|---|---|---|---:|---:|
+| v0.3's, which E2 measured before W5 | 212, 286, 287 ms | 322 (302–365) / 619 (599–661) ms | 227 / 365 ms | 236 / 388 ms |
+| W5's fixes as first written: a KV load in flight holds nothing until it is done | 215, 289, 290 ms | 368 (355–395) / 664 (652–692) ms | 358 / 567 ms | 361 / 563 ms |
+| The same, with a load in flight holding lower-priority prefill for its first 16 steps | 217, 290, 291 ms | 316 (311–323) / 611 (560–620) ms | 248 / 371 ms | 251 / 393 ms |
+| As merged: the bounded load hold | 216, 290, 291 ms | 309 (301–318) / 606 (597–614) ms | 232 / 356 ms | 238 / 382 ms |
+
+- **What the first fixes cost, and what gave it back.** Holding nothing while a load is in flight lets the agents' prefill run through a call's KV load: the calls' first token came 125–131 ms later at the median and 175–202 ms later at p95 than on v0.3's module. Holding prefill for the load's first 16 steps gives it back, and bounds a load that never completes, which v0.3's unbounded hold did not; the merged module is within 5 ms of v0.3's at the median and 6–9 ms below it at p95.
+- **The KV case and the prefill case do not move** across the four modules: the voice turn's first token comes 212–291 ms after it is sent into a full pool (stock vLLM waits 4.9–5.1 s), and its 16th 606–664 ms after it is sent behind three agent prefills.
+- **The engine's make-room lines.** The first fixes' generated module rebound the scheduler's logger, so its counter lines never reached the journal; the merged module keeps vLLM's logger (v0.3's logged none).
+
+<a id="the-prs-configuration-in-one-session-w5"></a>
+
+<a id="the-probes-the-pull-requests-cite-in-one-session-w5"></a>
+
+### The probes the pull requests cite, in one session (2026-10-25)
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-isolation-narrow.svg">
+  <img src="figures/report-isolation.svg" width="100%" alt="Four probe runs on the RTX 5060 Ti for each of stock vLLM, the KV preemption and the change at its 16-token window: in panel a, the KV case, the voice turn's first token while two agent requests of 18k tokens hold the pool (stock vLLM 4,900–4,971 ms; the KV preemption 219–290 ms; the change 216–294 ms); in panel b, the prefill case, its first token to its 16th while three agent prefills of 10k tokens run, the 16th at stock vLLM 1,220–1,529 ms; the KV preemption 1,211–1,528 ms; the change 536–615 ms.">
+</picture>
+
+**In isolation, a voice-sized request waits seconds for KV, and agent prefill slows each of its tokens three- to fourfold.** The report's Figure 3 ([§2.4](REPORT.md#24-the-two-waits-in-isolation)); its runs are the KV case's and the prefill case's in the table below.
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-tail-narrow.svg">
+  <img src="figures/report-tail.svg" width="100%" alt="The cumulative share of two calls' turns by their time to first token beside 12 closed-loop agent sessions, pooled over two 240 s runs of each scheduler, on a log scale with the 95th percentile marked: in panel a, with the agents' prompts fresh each turn, the p50 and p95 at 2,244 and 6,830 ms on stock vLLM (96 turns), 716 and 4,111 ms with the KV preemption (117 turns), 236 and 388 ms with the change (146 turns); in panel b, with each agent's prompt grown by a tool result, the p50 and p95 at 1,324 and 7,158 ms on stock vLLM (102 turns), 615 and 1,073 ms with the KV preemption (125 turns), 258 and 358 ms with the change (146 turns).">
+</picture>
+
+**Beside closed-loop agents, the KV preemption shortens the calls' first-token tail and the budget cap removes it.** The report's Figure 4 ([§2.4](REPORT.md#24-the-two-waits-in-isolation)); its turns are the tail's in the table below.
+
+The probes #63350 and #63351 cite, on Phastform on 2026-10-25, after the PR campaign and on the make-room it ran: stock vLLM 0.32.0 on the frozen box, the KV preemption alone, and the change at the budget cap's default 16-token window, two preemptions a step and no reserve. Each block ran the KV case and the prefill case four times and `tail.py` with fresh and with growing prompts twice ([`pr-probes/`](../benchmarks/results/2026-10-24-w5-probes)); a tail cell pools both runs' turns, none failed, at inclusive percentiles:
+
+| Engine | KV case TTFT | Prefill case TTFT / 16th token | Calls' TTFT, fresh prompts, p50 / p95 | Growing prompts, p50 / p95 |
+|---|---|---|---:|---:|
+| Stock vLLM 0.32.0, priority scheduling | 4,968 ms (4,900–4,971) | 529 (313–558) / 1,500 (1,220–1,529) ms | 2,244 / 6,830 ms | 1,324 / 7,158 ms |
+| #63350 alone (the KV preemption) | 290 ms (219–290) | 416 (304–556) / 1,350 (1,211–1,528) ms | 716 / 4,111 ms | 615 / 1,073 ms |
+| #63350 and #63351 (the budget cap, 16 tokens) | 290 ms (216–294) | 304 (292–318) / 575 (536–615) ms | 236 / 388 ms | 258 / 358 ms |
+
+- **The KV case is #63350's.** The voice turn has its first token after 0.22–0.29 s instead of 4.9–5.0 s, and the budget cap changes nothing there. In one run with both, the reply ended before its 16th token; this case measures the first.
+- **The prefill case and the tail are #63351's.** With #63350 alone, which finds KV to spare in the prefill case, the reply's tokens still come 60–65 ms apart behind the agents' chunks and the calls' p95 stays at 1.1–4.1 s; with the budget cap they come 16–20 ms apart and the p95 is under 0.4 s.
+
+<a id="after-w5-the-first-tokens-in-flight"></a>
+
+### The first tokens in flight (after W5)
+
+The frozen box schedules asynchronously: vLLM schedules a step before it has processed the output of the step before it. W5's make-room, like #63351 until its revision of 2026-10-25 ([9013ed433](https://github.com/vllm-project/vllm/pull/63351)), counted a request's first tokens from the outputs processed, which lag a step behind those scheduled, so the budget cap held lower-priority prefill back one step past its window. Both now count the tokens in flight too (vLLM's output placeholders); a test on vLLM's own scheduler holds a 4-token window as many steps under asynchronous scheduling as without, and fails on the earlier count. Traced against the module W5 ran, the fixed make-room schedules alike in all 6,040 cases without the budget cap or with synchronous scheduling, and differently in 2,224 of the 2,712 asynchronous cases with it.
+
+Only a reply of at least the window's tokens meets that step, since a shorter one ends its hold when it ends. At the 16-token window, each such reply held agent prefill back a 17th step: 81% (248 of 305) of the replies in W5's 16-token points. At the 48-token window, 1 of the 2,469 replies in W5's 48-token points reached 48 tokens, so their measurements stand but for that one. The probes above measure the first token and the 16th, both before the step.
+
+### The window's knee
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-window-narrow.svg">
+  <img src="figures/report-window.svg" width="100%" alt="In panel a, the cumulative share of 5,571 voice replies by their output tokens, 23 at the median and 52 at most, 21% ending within a 16-token window and all but 1 within a 48-token one; in panel b, the p95 of a 40-token reply's last token by the window, the median of two runs (16 tokens 3.76 s; 24 tokens 2.64 s; 32 tokens 1.85 s; 48 tokens 1.04 s; 64 tokens 1.02 s), its first token's staying between 326 and 448 ms; in panel c, the agents' prompt tokens a second, 3,483 at 16 tokens and 3,205 at 48, 8% less.">
+</picture>
+
+**A window that covers the replies keeps their tokens fast, and a longer one costs the agents nothing more.** The report's Figure 6 ([§3.3](REPORT.md#33-sizing-the-window)); panel a draws W5's replies, and panels b and c the table below.
+
+`knee.sh` on Phastform on 2026-10-25, on the box's units and pool: make-room with the pull requests' switches at a budget-cap window of 16, 24, 32, 48 and 64 tokens, each read back from the engine, and for each two 240 s runs of `tail.py` beside the box's closed-loop agents, with fresh prompts and call replies of 40 tokens timed to their first, 16th and last token ([the records](../benchmarks/results/2026-10-25-window-knee/README.md)). The medians of each window's two runs, in ms; no turn failed:
+
+| Window (tokens) | First token p95 | 16th token p95 | 40th token p95 | Agents' prompt tokens/s |
+|---:|---:|---:|---:|---:|
+| 16 | 448 | 726 | 3,759 | 3,483 |
+| 24 | 387 | 648 | 2,642 | 3,443 |
+| 32 | 326 | 572 | 1,854 | 3,300 |
+| 48 | 347 | 616 | 1,037 | 3,205 |
+| 64 | 366 | 612 | 1,018 | 3,246 |
+
+The reply's tail falls until the window covers the reply, 3.8 s at 16 tokens to 1.0 s at 48, and moves no further at 64; the first token, which the window does not touch, stays at 326–448 ms. The agents' prompt throughput falls 8% from 16 to 48 and no further, since a hold ends with its reply: a window longer than the replies costs no more than one just long enough ([choosing N](PRODUCTION.md#the-replys-first-tokens)).
+
+<a id="voice-under-agent-load-e2"></a>
+
+## How is a point of voice under agent load measured?
+
+**Provenance:** E2, in every campaign from W2 (2026-10-22) to RG (2026-10-28).
 
 Each point: two callers (`flatshare-voice bots`, 25 turns each, a barge-in on a quarter of the turns) through LiveKit to the stock voice agent, beside the AIPerf replay of the 32× Claude Code corpus at a number of agent sessions, through `flatshare-gateway` ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) has the arms, [`benchmarks/e2`](../benchmarks/e2) the arm files and campaigns). V2V is read from waveforms at the callers, with fixed endpointing. The agents' token rate is the prompt and completion tokens per second of the agent requests that completed during the calls. The realtime first byte is the gateway's, exact from its request log. A turn the agent did not answer within the callers' 30 s reply timeout counts as a V2V sample censored at 30,000 ms; ≥ marks a percentile it sets, and a configuration with failed turns is not placed on the frontier.
 
-The voice SLO is V2V p95 at most 250 ms above voice alone: 1,744 ms alone in W2's batch, so 1,994 ms for W2's tables, which are one run per point. With 50 turns a point, a p95 lies between the third- and fourth-largest turn, so single runs differ by a few hundred milliseconds at p95. W4 repeats the discriminating scenario and measures voice alone four more times, on the W3 build (with W2's run, a median of 1,767 ms, so an SLO of 2,017 ms), [below the W2 tables](#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4).
+The voice SLO is V2V p95 at most 250 ms above voice alone: 1,744 ms alone in W2's batch, so 1,994 ms for W2's tables, which are one run per point. With 50 turns a point, a p95 lies between the third- and fourth-largest turn, so single runs differ by a few hundred milliseconds at p95. W4 repeats the discriminating scenario and measures voice alone four more times, on the W3 build (with W2's run, a median of 1,767 ms, so an SLO of 2,017 ms), [in History](#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4).
 
-### The standard scenario (W2)
+<a id="the-discriminating-scenario-after-w5s-fixes-w5"></a>
 
-The whole corpus, 2026-10-22/23, on the W2 build (SGLang with HiCache on the W3 build, from w2c). V2V p95 and, in brackets, the realtime first byte p95, in ms:
+## How close does each configuration bring the voice tail to its SLO?
 
-| Agent sessions | Background tokens/s | Arm 2: stock defaults (FCFS, 2,048-token chunks) | Arm 3: + priority | Arm 4: + step cap 512/256 (tuned vLLM) | Arm 7b: SGLang 0.5.22 |
-|---|---:|---:|---:|---:|---:|
-| 0 (voice alone) | 0 | 1,744 (96), frozen box | | | |
-| 8 | 2,700–2,800 | 1,886 (114) | 1,871 (80) | — | 3,228 (1,440); with HiCache 1,822 (97) |
-| 16 | 4,900–5,600 | 2,406 (446) | 2,400 (333) | 2,215 (224) | 8,477 (2,284); with HiCache 2,218 (249) |
-| 24 | 9,200–9,600 | 3,008 (1,280) | 4,360 (2,243) | 3,865 (542) | — |
+**Provenance:** W5, 2026-10-24/25, three campaigns of five rounds; FB, 2026-10-25. The campaigns before W5, on one sample of the agents' traces, are in [History](#history).
 
-At 16 agent sessions, every arm (V2V p50 / p95 / p99 in ms; the realtime first byte p95; background tokens/s):
-
-| Arm | Point | V2V p50 / p95 / p99 | First byte p95 | Background tokens/s | Notes |
-|---|---|---:|---:|---:|---|
-| 4 | tuned vLLM: step cap 512, long-prefill threshold 256 | 1,736 / 2,215 / 2,925 | 224 | 5,068 | |
-| 4 | step cap 1,024, no threshold | 1,687 / 2,167 / 2,479 | 144 | 5,246 | the best cell; within noise of tuned vLLM |
-| 4 | other cells (512/0, 1,024/256, 1,024/512) | 1,703–1,724 / 2,257–2,510 / 2,504–2,684 | 178–273 | 5,015–5,097 | |
-| 5 | `--watermark 0.1` | 1,703 / 2,495 / 2,986 | 216 | 5,001 | |
-| 5 | `--max-num-queued-tokens 8192` | 1,703 / 2,133 / ≥30,000 | 137 | 4,454 | 2 of 50 voice turns failed, counted at the callers' 30 s reply timeout: the limit refuses realtime requests too (43 refusals) |
-| 6 | static cap, 2 background in flight | 1,755 / 2,208 / 2,729 | 236 | 5,569 | the highest token rate |
-| 6 | static cap, 8 | 1,683 / 3,065 / 3,647 | 510 | 5,296 | |
-| 6 | static reservation, 2,048 tokens | 1,688 / 2,328 / 3,068 | 276 | 4,922 | |
-| 7a | `--max-num-seqs 12` | 1,710 / 2,104 / 2,984 | 161 | 4,981 | |
-| 7a | `--max-num-seqs 12` with #54530 | 1,728 / 2,736 / 3,103 | 461 | 4,897 | |
-| 7b | SGLang 0.5.22, priority preemption | 1,882 / 8,477 / 9,458 | 2,284 | 5,543 | no host tier: half its prompt tokens hit, against about 90% for vLLM with its CPU tier |
-| 7b | SGLang with HiCache (4×, written through) | 1,720 / 2,218 / 4,088 | 249 | 4,924 | the host tier, for parity with vLLM's |
-| 8a | llm-d flow control, emulated (ceilings 6/6/6) | 1,768 / 2,468 / 2,821 | 216 | 5,413 | 1 background request shed |
-| 8b | SMG 1.13.0, as shipped | 1,723 / 2,202 / 3,255 | 237 | 5,545 | |
-| 8c | preempt-resubmit before the first byte | 1,678 / 2,520 / 2,711 | 235 | 5,090 | 11 resubmissions |
-| factor | tuned vLLM, preemptive generation off | 1,687 / 2,278 / 2,953 | 294 | 5,121 | |
-| calls | tuned vLLM, 4 callers / 6 callers | 1,747 / 2,599 / 3,135 · 1,735 / 2,670 / 3,471 | 428 · 413 | 5,296 · 5,067 | 4 callers alone: 1,655 / 2,017 / 2,110 |
-
-What the standard scenario says:
-- **At 8 agent sessions every vLLM arm measured in W2 holds the voice SLO** (1,871–1,886 ms against 1,994). SGLang does not (3,228 ms).
-- **At 16, the realistic operating point, none clearly does, and the arms are within noise of each other.** Tuned vLLM, the best stock cell, `--max-num-seqs 12`, SMG and the static cap of 2 land at 2,104–2,215 ms, 110–221 ms above the SLO; `--max-num-queued-tokens` refuses work, voice turns included (2 of 50 failed), and lands above it too (2,133 ms). No gateway policy or engine knob separates itself from tuned vLLM here.
-- **The step cap shows in the realtime first byte, not in V2V.** At 24 agent sessions, priority scheduling alone gives a first-byte p95 of 2,243 ms and the 512/256 step cap 542 ms, but V2V p95 is 4,360 against 3,865 ms: the rest of the turn, decoding to the first sentence and TTS, still shares the GPU with agent prefills. No arm holds the SLO at 24.
-- **SGLang's deficit was its missing host tier.** Without one it is the worst arm at every load; with HiCache, written through like vLLM's CPU tier, it matches vLLM: 1,822 ms at 8 agent sessions and 2,218 ms at 16 (on the W3 build), against tuned vLLM's 2,215 ms (on the W2 build).
-- **Preemptive generation off** changes nothing measurable (2,278 against 2,215 ms), and **more callers** cost what they cost alone and some: four callers beside 16 agent sessions reach 2,599 ms against 2,017 ms for four callers alone (their SLO 2,267 ms).
-
-### The discriminating scenario (W2)
-
-W2's third batch, 2026-10-23, on the W3 build like everything after it: 24 agent sessions of the 48 traces with the largest contexts (`weka-x32-long`, 13.9k tokens at the median request), beside the same two callers, one run per point. The pool holds two or three of these contexts, and the agents' working set is far beyond both tiers: under tuned vLLM about 95% of their prompt tokens are computed, and agents wait 40–71 s for a first token at the median under every arm but preempt-resubmit (28 s) and the queued-token limit, which refuses them. It is the regime where running agent KV fills the pool. V2V p50 / p95 / p99 and the realtime first byte p95 in ms; background tokens/s:
-
-| Arm | Point | V2V p50 / p95 / p99 | First byte p95 | Background tokens/s | Notes |
-|---|---|---:|---:|---:|---|
-| 4 | tuned vLLM | 4,270 / 10,811 / 12,427 | 8,556 | 3,703 | |
-| 4 | step cap 1,024, no threshold | 4,816 / 8,789 / 10,024 | 6,523 | 4,097 | |
-| 5 | `--watermark 0.1` | 4,843 / 10,647 / 13,583 | 8,201 | 3,712 | |
-| 5 | `--max-num-queued-tokens 8192` | ≥30,000 / ≥30,000 / ≥30,000 | 56 | 5,597 | 48 of 50 voice turns failed, counted at the 30 s reply timeout: 1,132 requests refused, voice turns among them |
-| 6 | static cap, 2 / 8 background in flight | 3,363 / 8,573 / 10,385 · 5,713 / 9,876 / 11,369 | 6,320 · 7,502 | 3,566 · 3,785 | |
-| 6 | static reservation, 2,048 tokens | 3,311 / 5,706 / 6,317 | 3,631 | 3,633 | |
-| 7a | `--max-num-seqs 12` with #54530 | 4,687 / 10,930 / 11,870 | 7,964 | 3,718 | |
-| 7b | SGLang 0.5.22, priority preemption | 5,367 / 12,051 / 17,937 | 6,451 | 3,678 | |
-| 7b | SGLang with HiCache (4×, written through) | 4,274 / 10,497 / 13,193 | 5,000 | 4,908 | |
-| 8a | llm-d flow control, emulated | 4,221 / 10,992 / 11,277 | 8,172 | 4,006 | 60 background requests shed |
-| 8b | SMG 1.13.0 | 3,511 / 11,050 / 13,839 | 8,783 | 3,557 | |
-| 8c | preempt-resubmit before the first byte | 1,960 / 2,591 / 2,684 | 374 | 3,901 | 1,080 resubmissions; agent TTFT p99 140 s |
-
-The voice turn by stage (means over the replies, ms; `waterfall.svg` draws them):
-
-| Point | Endpointing | Reply to first sentence | TTS first audio | Transport and playout | Mean V2V | LLM first token |
-|---|---:|---:|---:|---:|---:|---:|
-| tuned vLLM | 827 | 3,651 | 276 | 326 | 5,080 | 2,701 |
-| static reservation, 2,048 tokens | 830 | 2,173 | 250 | 351 | 3,604 | 1,068 |
-| preempt-resubmit | 827 | 627 | 223 | 358 | 2,034 | 265 |
-
-What the discriminating scenario says:
-- **Every arm but one collapses, and the loss is the wait for KV.** V2V p95 is 5.7–12.1 s. Endpointing and TTS do not move; the turn loses its seconds between the end of the turn and the first sentence, most of them before the LLM's first token.
-- **Engine priority does not help here**, in any form measured: vLLM's priority scheduling with any step cap, #54530 (it preempts at the request-count cap, which does not bind here), SGLang's priority preemption, with or without its host tier. SGLang's host tier lifts the agents' token rate by a third, not the voice tail.
-- **Static answers fall short.** The 2,048-token reservation halves the tail (5.7 s), still 3.7 s over the SLO; concurrency caps do not help, because two contexts fill the pool. vLLM's queue limit refuses the voice turns with the rest (48 of 50 failed).
-- **Preempt-resubmit holds the tail** at 2.6 s p95, 0.6 s over the SLO, at tuned vLLM's token rate: it aborts the background requests that have no first byte yet, which frees their KV at once, and their resubmissions restore the prefixes already written through to the CPU tier rather than recompute them (at their first scheduling, the engine computed 0.65M prompt tokens and restored 0.62M, against 1.48M and 0.06M under tuned vLLM; the CPU tier's own counter, which sees a resume too, loaded 0.82M tokens against 0.22M). Its cost is the agents' tail. It cannot reach a request that is already decoding, which an engine-side preemption can (arm 9).
-- **An instrument note.** vLLM counts a preemption when the victim's next output reaches the frontend, so the per-point preemption counts are lower bounds ([the KV case](#the-kv-case-make-room)).
-
-### The discriminating scenario in rounds, with arm 9 and the change (W4)
-
-W4, 2026-10-23/24, in rounds: w2c and a9 are round 0, `r1`–`r4` repeat it, each round grouping its points by engine and rotating the groups' order, so that no configuration always runs at the same hour, except that the change's configurations and arm 9's 48-token window ran after the rounds, in a session of their own with no tuned-vLLM, arm-9 or voice-alone point (10-23 23:16Z – 10-24 01:35Z), and arm 9's ablations always ran in one order. Every headline configuration has five runs, each of arm 9's ablations and each configuration of the change three, and voice alone, the SLO's reference, five (1,744–1,805 ms, median 1,767 ms, so the SLO is 2,017 ms). All on the W3 build but one run of voice alone, W2's 1,744 ms (the four on the W3 build give 1,768.5 ms); [`benchmarks/e2`](../benchmarks/e2/README.md) lists the campaigns. The median of the runs, and for V2V p95 its range:
-
-| Configuration | Runs | V2V p50 / p95 / p99 | p95 range | First byte p95 | Background tokens/s | Agent TTFT p50 / p99 |
-|---|---:|---:|---:|---:|---:|---:|
-| Voice alone | 5 | 1,611 / 1,767 / 1,799 | 1,744–1,805 | 66 | — | — |
-| Tuned vLLM | 5 | 4,520 / 10,138 / 12,110 | 9,257–10,811 | 7,834 | 3,710 | 65 / 99 s |
-| 1,024-token steps, no threshold | 5 | 4,348 / 8,789 / 10,024 | 8,161–9,490 | 6,523 | 4,097 | 57 / 85 s |
-| A token reservation, 2,048 tokens | 5 | 3,127 / 5,671 / 6,681 | 4,906–5,798 | 3,190 | 3,564 | 69 / 102 s |
-| SGLang with HiCache | 5 | 4,705 / 11,948 / 18,063 | 9,394–16,702 | 8,012 | 4,723 | 46 / 82 s |
-| Preempt-resubmit before the first byte | 5 | 1,960 / 2,591 / 2,684 | 2,110–2,663 | 374 | 3,630 | 31 / 160 s |
-| **The lifecycle policy over make-room** (arm 9), every reply capped at 16 tokens | 5 | 1,825 / **2,057** / 2,139 | 1,980–2,134 | 290 | 3,411 | 75 / 103 s |
-| The KV preemption (#63350 alone) | 3 | 3,246 / 5,773 / 8,110 | 5,612–6,063 | 2,785 | 3,633 | 66 / 97 s |
-| The change, 16-token window | 3 | 1,986 / 3,229 / 4,135 | 3,220–4,772 | 338 | 3,568 | 71 / 100 s |
-| **The configuration to deploy, 48-token window** | 3 | 1,943 / **2,193** / 2,281 | 2,168–2,286 | 372 | 3,493 | 72 / 97 s |
-
-The change's configurations ran the make-room variant on vLLM 0.32.0 with the pull requests' switch values (two preemptions a step, the budget cap, no reserve), to which the pull requests' diff, ported to 0.32.0, schedules identically ([GLOSSARY.md](GLOSSARY.md#the-change-and-its-parts)), behind the gateway without an admission policy and with full replies. Arm 9 without one part at a time, three runs each (V2V p95, median and range, ms):
-
-| Arm 9 without | V2V p95 | Range | | Arm 9 without | V2V p95 | Range |
-|---|---:|---:|---|---|---:|---:|
-| the critical-window throttle | 2,049 | 1,995–2,081 | | degrade | 3,837 | 2,890–4,079 |
-| the headroom | 2,033 | 1,947–2,071 | | degrade, with a 48-token window | 2,205 | 2,098–2,289 |
-| the lifecycle events | 2,036 | 2,005–2,048 | | the gateway policy (engine only) | 4,034 | 2,984–4,062 |
-| (headroom armed by the request) | 2,124 | 2,008–2,165 | | the KV preemption | 2,037 | 1,990–2,039 |
-| (budget 0 ms / 500 ms) | 2,109 / 2,060 | 2,094–2,166 / 1,990–2,080 | | the reserve | 2,116 | 2,115–2,155 |
-| | | | | the budget cap | 5,295 | 5,063–6,115 |
-| | | | | the change (gateway only) | 10,993 | 10,028–11,958 |
-
-What the gateway's policy did in each run, as its counters at the end of the calls (60 realtime requests a run, preemptive generation included):
-
-| Configuration | Runs | Headroom deferrals | Critical-window deferrals | Realtime requests degraded |
-|---|---:|---:|---:|---:|
-| Arm 9 | 5 | 31–45 | 0 | 60 |
-| Without the throttle | 3 | 38–52 | — | 60 |
-| Throttle budget 0 / 500 ms | 3 each | 39–49 / 39–48 | 0 / 0 | 60 |
-| Without the headroom | 3 | — | 1–3 | 60 |
-| Headroom armed by the request | 3 | 9–11 | 0 | 60 |
-| Without the lifecycle events | 3 | 4–6 | 0 | 60 |
-| Without degrade, a 48-token window | 3 | 41–50 | 0 | — |
-| The gateway only (stock engine) | 3 | 71–86 | 0 | 60 |
-| Standard scenario, 16 / 24 agent sessions | 3 / 1 | 5–10 / 41 | 0–4 / 27 | 0 / 1 |
-
-The voice turn by stage (means over each configuration's replies, ms):
-
-| Configuration | Endpointing | Reply to first sentence | TTS first audio | Transport and playout | Mean V2V | LLM first token |
-|---|---:|---:|---:|---:|---:|---:|
-| Voice alone | 757 | 297 | 199 | 352 | 1,605 | 80 |
-| Tuned vLLM | 822 | 3,801 | 244 | 343 | 5,211 | 2,760 |
-| A token reservation | 827 | 1,967 | 238 | 346 | 3,378 | 935 |
-| Preempt-resubmit | 826 | 622 | 222 | 353 | 2,023 | 274 |
-| The lifecycle policy over make-room | 824 | 429 | 222 | 354 | 1,830 | 221 |
-| The change, 16-token window | 826 | 914 | 245 | 353 | 2,336 | 265 |
-| The configuration to deploy | 824 | 526 | 249 | 353 | 1,953 | 270 |
-
-<picture>
-  <source media="(max-width: 767px)" srcset="figures/report-deployable-stages-narrow.svg">
-  <img src="figures/report-deployable-stages.svg" width="100%" alt="The voice turn's mean voice-to-voice time stacked by stage from the end of the caller's speech, beside 24 agent sessions but for voice alone: voice alone, 1.60 s, 0.09 s of it waiting for the LLM's first token and 0.21 s decoding the first sentence; tuned vLLM, 5.21 s, 2.78 s of it waiting for the LLM's first token and 1.02 s decoding the first sentence; a token reservation, 3.38 s, 0.95 s of it waiting for the LLM's first token and 1.01 s decoding the first sentence; preempt-resubmit, 2.02 s, 0.28 s of it waiting for the LLM's first token and 0.34 s decoding the first sentence; the lifecycle policy, 1.83 s, 0.23 s of it waiting for the LLM's first token and 0.20 s decoding the first sentence; the configuration to deploy, 1.95 s, 0.28 s of it waiting for the LLM's first token and 0.25 s decoding the first sentence.">
-</picture>
-
-Only the reply to its first sentence changes from row to row: endpointing, TTS and transport stay within 0.1 s in every configuration. The bars give the table's configurations in its order but the 16-token one (`make report-figures`), each reply split at the LLM's first token, the wait for it in violet and the decode of the first sentence in green; voice alone has four runs, since its W2 run predates the worker's stage times. The LLM's first token, from its request, is in the table.
-
-What the repeats say:
-- **The change brings the voice tail to within 0.2 s of the SLO.** With full replies, the configuration to deploy reaches 2,193 ms (2,168–2,286), 176 ms over the SLO, against tuned vLLM's 10,138 and preempt-resubmit's 2,591. Arm 9, whose gateway capped every reply at 16 tokens, reaches 2,057 ms: two of its five runs are under the SLO, and its median is 40 ms over it, within one point's spread; W5 did not measure it again. No configuration without the change has a run under the SLO; vLLM's queued-token limit refused 48 of its 50 voice turns, which count at the reply timeout.
-- **Its budget cap is necessary, and either KV preemption or the reserve makes the room.** Without the budget cap the p95 stays at 5.3 s even with KV preemption and the reserve. With full replies the two forms gave 2,193 ms (the KV preemption, in the configuration to deploy) and 2,205 ms (the reserve, with arm 9's policy); with capped replies the reserve alone gave 2,037 ms and the KV preemption alone 2,116 ms (2,115–2,155, every run above arm 9's median), and with both the reserve kept the pool from filling, so the KV preemption never fired (0 preemptions in five runs). The KV preemption alone halves tuned vLLM's tail (5.8 s); with the budget cap the turn's first token comes in 338 ms at p95 (tuned vLLM 7,834).
-- **The reply has to fit the window.** With the 16-token window a full reply (20–22 tokens at the median and up to 40, in the gateway's log) outruns it and decodes beside agent prefill again: 3.2–4.0 s whether the gateway runs or not. Degrade, which caps the reply at 16 tokens when the headroom is not there, capped every reply here; a 48-token window covers full replies instead, at 2,193 ms for the configuration to deploy and 2,205 ms with arm 9's gateway policy and reserve, about 140 ms over arm 9's capped replies: the price of a full reply's longer first sentence (526 against 429 ms).
-- **The gateway's lifecycle-timed mechanisms could not act here** (their counters are in the table above). Running agent requests held the pool, which the headroom can protect only by deferring new requests, so it never had its room: degrade capped 60 of 60 realtime requests in every run of arm 9. The critical-window throttle, checked after the headroom, deferred nothing while the headroom ran, even at a 0 ms budget. Room for a voice turn came from the engine alone: without the change, the policy leaves voice where stock vLLM does (10,993 ms). So E2 shows that headroom kept by deferring new requests cannot make room while running work holds the KV; a control plane can make room only by aborting admitted work, as preempt-resubmit does, at the agents' tail. Whether lifecycle timing helps where its mechanisms engage (in the standard scenario at 24 agent sessions the throttle deferred 27 requests) was not isolated.
-- **The cost to the agents.** Against tuned vLLM, arm 9 keeps 92% of the agents' token rate and the configuration to deploy 94%, with the agents' TTFT p99 unchanged (97–103 s against 99 s) and their median TTFT 11–16% longer (71.7–75.1 s against 64.7 s). Preempt-resubmit keeps 98% but its resubmissions take the agents' p99 to 160 s. Over the calls' first 240 s, a window of the same length for every configuration, the shares are 94.5% (arm 9), 94.7% (the configuration to deploy) and 101.2% (preempt-resubmit) of tuned vLLM's 3,552 tokens/s.
-- **The first turn does not set this tail.** Without each call's first turn, the medians of the runs' p95 are 2,058 ms for arm 9, 2,194 for the configuration to deploy and 10,224 for tuned vLLM, against 2,057, 2,193 and 10,138 with it.
-- **Spread.** A configuration near the SLO moves by about 150 ms in p95 from run to run; one that misses it moves by up to 1.9 s (the gateway policy on stock vLLM, 10,028–11,958 ms) and SGLang by 7 s. One run cannot rank configurations that miss.
-
-### The standard scenario, repeated (W4)
-
-The whole corpus on 2026-10-23, three runs of each at the realistic load of 16 agent sessions (tuned vLLM's third run is W2's): arm 9's p95 is 2,196 ms (2,193–2,446) against tuned vLLM's 2,323 (2,215–2,530), both over the SLO and within noise of each other, at 5,244 and 5,167 tokens/s. Each call's first turn is slower under load (a mean of 2.4–2.5 s against 1.8 s for the later turns) and sets part of this p95: without it, 2,037 and 2,186 ms. Where the pool is not full the KV preemption has nothing to do, and the gateway rarely degrades a reply here, so a full reply's first sentence outruns the 16-token window as in the discriminating scenario. One run each at 8 and 24 agent sessions gives 2,060 and 2,375 ms; W2's single runs there, on the W2 build, were 1,871 (priority alone) and 3,865 ms (tuned vLLM), so the 1.5 s at 24, where the pool fills, is indicative only.
-
-### The standard scenario in five rounds (W5)
-
-W5's extension, 2026-10-25: the configuration to deploy and tuned vLLM at 16 agent sessions of the whole corpus, in each of five rounds on the round's own sample of it (agent seeds 11–15), every call opening with a warm-up turn. The configuration to deploy had the lower p95 in every round, by 109, 1,413, 945, 250 and 496 ms (median 496): 2,050 ms (2,021–2,419) against tuned vLLM's 2,516 (2,147–3,832), at 6,815 and 7,131 agents' tokens/s over the first 240 s (round by round −287 at the median, from −540 to +260). It met W5's SLO of 2,034 ms in one round, tuned vLLM in none. Were there no difference, five rounds would agree in sign one time in sixteen: they resolve the direction, not the size, which follows the sample (tuned vLLM's p95 moves by 1.7 s across them, the other's by 0.4 s). Here the KV preemption took 0–7 requests a run and the budget cap held agent prefill back in 3–13% of the steps, against 26–39% in the discriminating scenario ([E3](#e3-what-make-room-takes-from-the-agents)). W4's three runs above, on one sample, had found arm 9, whose 16-token window a full reply outruns, within noise of tuned vLLM.
-
-### Instrument notes (W2 to W4)
-
-The agents' token rate counts the agent requests that completed during the calls, so its window is the calls' duration, which differs by configuration (about 280 s for arm 9, whose calls are fastest, to 430 s for tuned vLLM) against agent requests of about 75 s: edge effects differ by a few percent. The report also gives the rate over the calls' first 240 s, a window of the same length for every point; every point with agents ran its calls at least that long.
-
-vLLM counts a preemption when the victim next produces output, so per-point preemption counts are lower bounds. The prompt-token sources (computed, GPU hit, CPU hit) are counted at a request's first scheduling only; the CPU tier's own counter also sees a resume's loads. In W4's discriminating scenario it loaded, beyond first scheduling, 160–223k tokens a run on tuned vLLM (29–32 counted preemptions), 55–93k on the configuration to deploy (37–43), 93–159k on the KV preemption alone (37–40) and 35–65k for arm 9 without the reserve (27–39). In that scenario a run without a counted preemption loads −0.5k to +0.8k tokens beyond first scheduling, so these loads are the victims' resumes; in the standard scenario the same difference spans −19k to +50k without one, so there it measures nothing. What a resume recomputes is not measured.
-
-SGLang's KV pool came out at 33,683–34,679 tokens against vLLM's 36,400, 5–7% smaller: its static memory fraction sets it.
-
-### The discriminating scenario after W5's fixes (W5)
-
-W5, 2026-10-24/25. After W5's fixes to make-room ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351)) and to this harness, three campaigns of five rounds re-measured the configurations the pull requests and the README cite, on the fixed make-room, round N of each on the agents' sample of seed 10 + N ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) has the rounds' design):
+After W5's fixes to make-room ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351)) and to this harness, three campaigns of five rounds re-measured the configurations the pull requests and the README cite, on the fixed make-room, round N of each on the agents' sample of seed 10 + N ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) has the rounds' design):
 - W5's campaign: voice alone, tuned vLLM and the configuration to deploy, and as its control the same configuration on make-room as v0.3 built it (`make-room-v03`), which E2 measured before W5;
 - the PR campaign: tuned vLLM, the KV preemption alone, and the change at 16 tokens and the configuration to deploy;
-- the extension: preempt-resubmit (arm 8c, a router policy that aborts agent requests before their first byte and resubmits them) and the configuration to deploy again, and the standard scenario's pair ([above](#the-standard-scenario-in-five-rounds-w5)).
+- the extension: preempt-resubmit (arm 8c, a router policy that aborts agent requests before their first byte and resubmits them) and the configuration to deploy again, and the standard scenario's pair ([below](#the-standard-scenario-in-five-rounds-w5)).
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-headline-narrow.svg">
+  <img src="figures/report-headline.svg" width="100%" alt="Each run's voice-to-voice p95 on a log scale against the SLO of 2.03 s, and the agents' tokens a second over the calls' first 240 s, with each configuration's median: Voice alone, no agents: V2V p95 1.78 s at the median of 5 runs (1.76 to 1.82 s); Tuned vLLM, the baseline: V2V p95 10.48 s at the median of 10 runs (8.69 to 12.12 s), the agents' 3,305 tokens/s (100% of tuned vLLM's); Preempt-resubmit, before the first byte: V2V p95 2.52 s at the median of 5 runs (2.52 to 2.87 s), the agents' 3,332 tokens/s (101% of tuned vLLM's); The KV preemption, #63350: V2V p95 5.09 s at the median of 5 runs (4.69 to 6.26 s), the agents' 3,414 tokens/s (103% of tuned vLLM's); The change, 16-token window: V2V p95 3.09 s at the median of 5 runs (2.87 to 3.19 s), the agents' 3,298 tokens/s (100% of tuned vLLM's); The configuration to deploy, 48-token window: V2V p95 2.24 s at the median of 15 runs (2.13 to 2.40 s), the agents' 3,203 tokens/s (97% of tuned vLLM's).">
+</picture>
+
+**The two rules bring the voice tail to 0.20 s over the SLO, and the agents keep most of their throughput.** The report's Figure 8 ([§6.1](REPORT.md#61-the-two-rules-bring-the-voice-tail-to-224-s-while-the-agents-keep-97-of-their-throughput)); its runs are those of the table below.
 
 Voice alone gave 1,764–1,819 ms (median 1,784 ms), so W5's SLO is 2,034 ms. The records are in [`benchmarks/results/2026-10-24-e2-w5`](../benchmarks/results/2026-10-24-e2-w5) (`make reproduce-e2-w5`; its `compare.py` gives these tables). The median of the five runs, and for V2V p95 its range:
 
@@ -316,22 +339,11 @@ What W5's re-measure says:
 - **Nearly every whole reply fits the 48-token window.** W5's gateway logged 5,571 voice replies over its campaigns: 23 tokens at the median and 52 at most; 79% of them run past 16 tokens and one past 48. The window has to cover only a reply's first sentence, which the voice agent hands TTS whole.
 - **The cost to the agents comes from the budget cap.** Over the calls' first 240 s they keep 98% of their throughput at 48 tokens and all of it at 16 (3,236 and 3,298 against 3,304 tokens/s in the PR campaign; at 48 tokens 97% over the fifteen runs, 3,203 against tuned vLLM's 3,305); with the KV preemption alone they gain 3%. In the PR campaign their median TTFT rises from 63 to 74 s at 48 tokens (from 63 to 72 s over the pooled runs), and their p99 stays within the runs' spread (105–115 s against 107 s). [E3](#e3-what-make-room-takes-from-the-agents) says where it goes.
 
-### Calls per GPU (W5)
-
-W5, 2026-10-25: voice alone and the configuration to deploy with 4 and with 6 callers, beside the same 24 agent sessions of the discriminating scenario, in three rounds on the round's own sample of the agents' traces (agent seeds 11–13), every call opening with a warm-up turn. Each configuration's SLO is voice alone's p95 with as many callers plus 250 ms ([SLO.md](SLO.md#the-slos-reference-campaign-by-campaign)).
-
-| Configuration | Callers | V2V p50 / p95 / p99 | p95 range | First byte p95 | Agents' tokens/s, first 240 s | Agent TTFT p50 / p99 |
-|---|---:|---:|---:|---:|---:|---:|
-| Voice alone | 4 | 1,647 / 1,794 / 1,936 | 1,780–1,894 | 66 | — | — |
-| **The configuration to deploy** | 4 | 1,993 / 2,313 / 2,512 | 2,250–2,415 | 385 | 3,055 | 78 / 109 s |
-| Voice alone | 6 | 1,637 / 1,885 / 2,028 | 1,878–1,885 | 82 | — | — |
-| **The configuration to deploy** | 6 | 2,016 / 2,392 / 2,533 | 2,360–2,468 | 379 | 2,716 | 83 / 125 s |
-
-- **More calls, about as far over the SLO.** Its p95 is over its SLO in every round, by 269 ms (206–370) with 4 callers and 257 ms (226–333) with 6, against 202 ms at the median with two (the fifteen runs above). The budget cap holds agent prefill while any call's first tokens are due, so the calls' overlapping replies hold it for longer: in 53% and 64% of the engine's steps over the calls, against 33% with two ([E3](#e3-what-make-room-takes-from-the-agents)), and the agents' throughput over the first 240 s falls to 3,055 and 2,716 tokens/s, from 3,203 with two.
-
 <a id="the-final-code-against-w5-fb"></a>
 
-### The code of 2026-10-25 against W5 (FB)
+<a id="the-code-of-2026-10-25-against-w5-fb"></a>
+
+### The code of 2026-10-25 against W5
 
 FB, 2026-10-25: voice alone, tuned vLLM and the configuration to deploy on that day's code, both hosts at v0.3-191-g987fd09: W6's transport (the GPU servers on Unix sockets behind cyan's tunnel of one SSH session a connection, the gateway on its socket unit), the budget cap counting a reply's tokens in flight as #63351 does since its revision 9013ed433, and the harness's fixes. Each round replays the sample of the agents of W5's round of the same number (agent seed 10 + N) with W5's arm files, every call opening with a warm-up turn, so each configuration compares with W5's campaign round by round. V2V p95 in ms, the median of the five rounds and their range, and the agents' tokens/s over the calls' first 240 s:
 
@@ -344,19 +356,48 @@ FB, 2026-10-25: voice alone, tuned vLLM and the configuration to deploy on that 
 - **W5's numbers stand on the code of 2026-10-25.** The configuration to deploy came out at 2,268 ms against 2,250 in the same five rounds of W5's campaign, higher in four rounds and lower in one, within what two sets of runs of it on the same samples show (W5's fifteen runs of it, whose median of 2,236 ms the tables above and the README give, span 2,132–2,397 ms). Its V2V p50 and its realtime first byte came out lower in four of the five rounds, by a median of 26 ms and 20 ms: the sockets and the pooled connections take a little off each turn and leave the tail where W5 measured it.
 - **The references moved as they move between runs.** Voice alone by −51 to +55 ms, inside W5's own range; tuned vLLM by −2,396 to +1,706 ms, as its p95 moves from run to run on the same sample (W5's ten runs of it span 8,686–12,115 ms). No turn failed in any of the 15 points. The records are in [`benchmarks/results/2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb), whose `compare.py` gives this table from them and W5's, with one row a round, in the record's names: the frozen box is tuned vLLM, and #63350 + #63351 with a 48-token window the configuration to deploy.
 
-### The box's running share (RS)
+<a id="the-standard-scenario-in-five-rounds-w5"></a>
 
-RS, 2026-10-26: tuned vLLM and the configuration to deploy on v1.2, with W5's arm files and the engine's free KV sampled every 0.5 s, which W5's and FB's points ran without. Each round replays the sample of the agents of W5's round of the same number (agent seed 10 + N), as the A100 run's core did, so each configuration compares with the A100's round by round on the same agents. The running share is the share of the samples in which free KV was under two calls' 2,048 tokens while the agents ran; beside it, the box's V2V p95 in ms and the agents' tokens/s over the calls' first 240 s. The median of the five rounds and their range:
+## What changes where the pool has room, and with more calls?
 
-| Configuration | Rounds | Running share, the box | Running share, the A100 | V2V p95 on the box, ms | Agents' tokens/s on the box |
-|---|---:|---:|---:|---:|---:|
-| The frozen box | 5 | 8.1% (7.1–8.9%) | 5.7% (4.2–9.1%) | 9,818 (9,200–11,636) | 3,356 (3,040–3,690) |
-| #63350 + #63351, a 48-token window | 5 | 6.1% (5.4–7.4%) | 6.3% (2.4–6.9%) | 2,169 (2,143–2,277) | 3,160 (2,903–3,496) |
+**Provenance:** W5's extension and its calls per GPU, 2026-10-25. W4's single-sample runs where the pool has room are in [History](#history).
 
-- **About half the modeled share, on both cards.** Two calls found KV short 8.1% of the time beside tuned vLLM on the box and 5.7% on the A100, on the same five samples of the agents (the box higher in four of the five rounds), and 6.1% and 6.3% beside the configuration to deploy. The simulator places the box at 17% on its measured costs and the A100 at 10% [modeled], 2.1 and 1.8 times what each card measured beside tuned vLLM. What sets the cards' voice tails apart is how long a turn waits once KV is short: behind two 18k-token agent requests in a full pool, stock vLLM's wait is 4.9–5.0 s on the box ([W5's probes](#the-prs-configuration-in-one-session-w5)) and 1.72–1.75 s on the A100.
-- **The rest stays within W5's runs.** With the sampler on, tuned vLLM's p95 of 9,818 ms and the 2,169 ms of the configuration to deploy lie within W5's runs of each (8,686–12,115 and 2,132–2,397 ms), and the agents made 3,356 and 3,160 tokens/s against W5's 3,305 and 3,203. No turn of the 500 failed. The records are in [`benchmarks/results/2026-10-26-e2-rs`](../benchmarks/results/2026-10-26-e2-rs), whose `running_share.py` gives this table from them and the A100 core's, with one row a round, in the record's names, as above.
+W5's extension, 2026-10-25: the configuration to deploy and tuned vLLM at 16 agent sessions of the whole corpus, in each of five rounds on the round's own sample of it (agent seeds 11–15), every call opening with a warm-up turn. The configuration to deploy had the lower p95 in every round, by 109, 1,413, 945, 250 and 496 ms (median 496): 2,050 ms (2,021–2,419) against tuned vLLM's 2,516 (2,147–3,832), at 6,815 and 7,131 agents' tokens/s over the first 240 s (round by round −287 at the median, from −540 to +260). It met W5's SLO of 2,034 ms in one round, tuned vLLM in none. Were there no difference, five rounds would agree in sign one time in sixteen: they resolve the direction, not the size, which follows the sample (tuned vLLM's p95 moves by 1.7 s across them, the other's by 0.4 s). Here the KV preemption took 0–7 requests a run and the budget cap held agent prefill back in 3–13% of the steps, against 26–39% in the discriminating scenario ([E3](#e3-what-make-room-takes-from-the-agents)). W4's three runs, on one sample ([in History](#the-standard-scenario-repeated-w4)), had found arm 9, whose 16-token window a full reply outruns, within noise of tuned vLLM.
 
-### E3: what make-room takes from the agents
+<a id="calls-per-gpu-w5"></a>
+
+### Calls per GPU
+
+W5, 2026-10-25: voice alone and the configuration to deploy with 4 and with 6 callers, beside the same 24 agent sessions of the discriminating scenario, in three rounds on the round's own sample of the agents' traces (agent seeds 11–13), every call opening with a warm-up turn. Each configuration's SLO is voice alone's p95 with as many callers plus 250 ms ([SLO.md](SLO.md#the-slos-reference-campaign-by-campaign)).
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-margin-narrow.svg">
+  <img src="figures/report-margin.svg" width="100%" alt="In panel a, with 16 agent sessions of the whole corpus, where the pool has room, tuned vLLM's V2V p95 and the change's in each of five rounds against the SLO of 2.03 s (2.15 and 2.04 s, 3.83 and 2.42 s, 3.07 and 2.12 s, 2.30 and 2.05 s, 2.52 and 2.02 s); in panels b to d, the change with two, four and six calls beside 24 agent sessions, on the same three samples of the agents, each run's p95 over that many callers' SLO, the share of the engine's steps in which the budget cap held agent prefill, and the agents' tokens a second over the calls' first 240 s (2 callers, +202 ms over their SLO of 2.03 s at the median of 9 runs (+98 to +267), agent prefill held in 33% of the steps, the agents at 3,156 tokens/s; 4 callers, +269 ms over their SLO of 2.04 s at the median of 3 runs (+206 to +370), agent prefill held in 53% of the steps, the agents at 3,055 tokens/s; 6 callers, +257 ms over their SLO of 2.13 s at the median of 3 runs (+226 to +333), agent prefill held in 64% of the steps, the agents at 2,716 tokens/s).">
+</picture>
+
+**The configuration to deploy helps less where the pool has room, and overlapping calls hold the agents' prefill for longer.** The report's Figure 12 ([§6.6](REPORT.md#66-the-gain-shrinks-where-the-pool-has-room-and-the-tail-grows-as-calls-overlap)); panel a draws the five rounds above, and panels b to d the table below.
+
+| Configuration | Callers | V2V p50 / p95 / p99 | p95 range | First byte p95 | Agents' tokens/s, first 240 s | Agent TTFT p50 / p99 |
+|---|---:|---:|---:|---:|---:|---:|
+| Voice alone | 4 | 1,647 / 1,794 / 1,936 | 1,780–1,894 | 66 | — | — |
+| **The configuration to deploy** | 4 | 1,993 / 2,313 / 2,512 | 2,250–2,415 | 385 | 3,055 | 78 / 109 s |
+| Voice alone | 6 | 1,637 / 1,885 / 2,028 | 1,878–1,885 | 82 | — | — |
+| **The configuration to deploy** | 6 | 2,016 / 2,392 / 2,533 | 2,360–2,468 | 379 | 2,716 | 83 / 125 s |
+
+- **More calls, about as far over the SLO.** Its p95 is over its SLO in every round, by 269 ms (206–370) with 4 callers and 257 ms (226–333) with 6, against 202 ms at the median with two (the fifteen runs above). The budget cap holds agent prefill while any call's first tokens are due, so the calls' overlapping replies hold it for longer: in 53% and 64% of the engine's steps over the calls, against 33% with two ([E3](#e3-what-make-room-takes-from-the-agents)), and the agents' throughput over the first 240 s falls to 3,055 and 2,716 tokens/s, from 3,203 with two.
+
+<a id="e3-what-make-room-takes-from-the-agents"></a>
+
+## What does the change take from the agents?
+
+**Provenance:** E3, on W5's points, 2026-10-24/25.
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-agents-narrow.svg">
+  <img src="figures/report-agents.svg" width="100%" alt="For each configuration beside 24 agent sessions, each run and the median of the agents' TTFT p99, of the share of the engine's steps over the calls in which the budget cap kept agent prefill out, and of make-room's own preemptions over the calls: Tuned vLLM (the baseline, 10 runs): TTFT p99 106 s (96 to 129), no budget cap, no make-room; Preempt-resubmit (before the first byte, 5 runs): TTFT p99 193 s (160 to 232), no budget cap, no make-room; The KV preemption (#63350, 5 runs): TTFT p99 112 s (98 to 131), agent prefill held in 0% of the steps, 34 preemptions by make-room; The change (16-token window, 5 runs): TTFT p99 105 s (99 to 130), agent prefill held in 25% of the steps, 32 preemptions by make-room; The configuration to deploy (48-token window, 15 runs): TTFT p99 111 s (94 to 132), agent prefill held in 33% of the steps, 31 preemptions by make-room.">
+</picture>
+
+**The agents' first-token tail stays at tuned vLLM's with the configuration to deploy and nearly doubles with preempt-resubmit.** The report's Figure 10 ([§6.4](REPORT.md#64-the-agents-pay-through-the-budget-cap-not-through-the-preemptions)); its TTFT p99 is the W5 table's, and its held steps and preemptions are the table below's.
 
 The cost to the agents by its mechanism, over W5's points ([EXPERIMENTS.md](EXPERIMENTS.md#e3-the-background-tiers-cost-of-make-room) has the counters and their limits). The median of each configuration's runs:
 
@@ -379,9 +420,29 @@ The cost to the agents by its mechanism, over W5's points ([EXPERIMENTS.md](EXPE
 - **The held prefill tokens are an upper bound.** The module W5's points ran counted each held chunk against the step's remaining budget, so a step that held several lower-priority prefills counts each of them. With `--long-prefill-token-threshold 256` a held chunk counts at most 256 of a step's 512 tokens, so a step overstates only when it held three or more; the 48-token runs count 215 tokens a held step at the median (171–260 over the fifteen runs), about one chunk's worth. The pull requests bound a step's count by its budget since #63351's revision d1399e208, and so does the variant built from them.
 - **What a resume recomputes is not measured**: vLLM 0.32 counts a request's computed prompt tokens at its first scheduling only ([EXPERIMENTS.md](EXPERIMENTS.md#e3-the-background-tiers-cost-of-make-room)).
 
-### The step cap, screened and confirmed (SW, RG)
+<a id="the-boxs-running-share-rs"></a>
 
-SW, 2026-10-27: two screens of the configuration to deploy over the step cap, the per-request threshold, the window and the gateway's static cap on agent requests in flight, and of stock vLLM at two step caps, one run a setting on W5's tuning sample (agent seed 11) beside the 24 sessions of the discriminating scenario ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md), whose `table.py` gives every point). The step cap moved the configuration to deploy most: 9 of 59 replies over W5's SLO at 256 without the threshold, 24 at 512 and 33 at 1,024; the static caps did less, and stock vLLM missed at every setting. RG's five rounds (agent seeds 21–25, Phastform and Gray in turn, below) then ran the three configurations side by side, each round against its own SLO:
+## How often do running agents leave two calls short of KV?
+
+**Provenance:** RS, 2026-10-26, beside the A100 run's core.
+
+RS ran tuned vLLM and the configuration to deploy on v1.2, with W5's arm files and the engine's free KV sampled every 0.5 s, which W5's and FB's points ran without. Each round replays the sample of the agents of W5's round of the same number (agent seed 10 + N), as the A100 run's core did, so each configuration compares with the A100's round by round on the same agents. The running share is the share of the samples in which free KV was under two calls' 2,048 tokens while the agents ran; beside it, the box's V2V p95 in ms and the agents' tokens/s over the calls' first 240 s. The median of the five rounds and their range:
+
+| Configuration | Rounds | Running share, the box | Running share, the A100 | V2V p95 on the box, ms | Agents' tokens/s on the box |
+|---|---:|---:|---:|---:|---:|
+| The frozen box | 5 | 8.1% (7.1–8.9%) | 5.7% (4.2–9.1%) | 9,818 (9,200–11,636) | 3,356 (3,040–3,690) |
+| #63350 + #63351, a 48-token window | 5 | 6.1% (5.4–7.4%) | 6.3% (2.4–6.9%) | 2,169 (2,143–2,277) | 3,160 (2,903–3,496) |
+
+- **About half the modeled share, on both cards.** Two calls found KV short 8.1% of the time beside tuned vLLM on the box and 5.7% on the A100, on the same five samples of the agents (the box higher in four of the five rounds), and 6.1% and 6.3% beside the configuration to deploy. The simulator places the box at 17% on its measured costs and the A100 at 10% [modeled], 2.1 and 1.8 times what each card measured beside tuned vLLM. What sets the cards' voice tails apart is how long a turn waits once KV is short: behind two 18k-token agent requests in a full pool, stock vLLM's wait is 4.9–5.0 s on the box ([W5's probes](#the-prs-configuration-in-one-session-w5)) and 1.72–1.75 s on the A100.
+- **The rest stays within W5's runs.** With the sampler on, tuned vLLM's p95 of 9,818 ms and the 2,169 ms of the configuration to deploy lie within W5's runs of each (8,686–12,115 and 2,132–2,397 ms), and the agents made 3,356 and 3,160 tokens/s against W5's 3,305 and 3,203. No turn of the 500 failed. The records are in [`benchmarks/results/2026-10-26-e2-rs`](../benchmarks/results/2026-10-26-e2-rs), whose `running_share.py` gives this table from them and the A100 core's, with one row a round, in the record's names, as above.
+
+<a id="the-step-cap-screened-and-confirmed-sw-rg"></a>
+
+## Which step cap should the change run at?
+
+**Provenance:** SW, 2026-10-27; RG, 2026-10-28.
+
+SW ran two screens of the configuration to deploy over the step cap (256, 512 and 1,024 tokens, with and without a 256-token threshold per request), the window (48 and 96 tokens) and the gateway's static cap on agent requests in flight, and of stock vLLM at step caps of 256 and 1,024, one run a setting on W5's tuning sample (agent seed 11) beside the 24 sessions of the discriminating scenario ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md), whose `table.py` gives every point). The step cap moved the configuration to deploy most: 9 of 59 replies over W5's SLO at 256 without the threshold, 24 at 512 and 33 at 1,024; the static caps did less, and stock vLLM missed at every setting, with 41 to 58 replies over. RG's five rounds (agent seeds 21–25, Phastform and Gray in turn, below) then ran the three configurations side by side, each round against its own SLO:
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-step-cap-narrow.svg">
@@ -399,9 +460,20 @@ SW, 2026-10-27: two screens of the configuration to deploy over the step cap, th
 - **The screens' choice stands.** At 256 tokens a step without a threshold the configuration to deploy had fewer replies over the SLO than at W5's 512/256 in each of the five rounds, half as many pooled, and the serving profile runs it. The agents pay 7% of their token rate for it (3,067 against 3,303 tokens/s) and their median TTFT rises from 78 to 85 s.
 - **Still over the requirement at 24 sessions.** 14.9% of the replies were over, where the SLO allows 5%; the two-card comparison below finds the shared card within it at four sessions. Each round's SLO is in [SLO.md](SLO.md#the-slos-reference-campaign-by-campaign), and the record's `gate.py` gives this table.
 
-### Two cards (RG)
+<a id="two-cards-rg"></a>
 
-RG, 2026-10-28: the resource gate's comparison of the arrangements of two RTX 5060 Ti cards ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)), in three rounds on new samples of the agents' traces (agent seeds 21–23), on Phastform, Gray and Phastform in turn, the hosts and cyan at v1.6-7-g0993991. Each card's part of an arrangement is a point of its own, beside the discriminating scenario's sessions at the counts given; the change runs the serving profile, the pull requests' switches with a 48-token window at a step cap of 256 without a per-request threshold. Each round's SLO is its voice alone's p95 plus 250 ms: 2,000, 1,972 and 2,010 ms with two callers, 1,988, 1,943 and 1,982 ms with one. Replies over the SLO are pooled over the rounds, and the agents' tokens/s over the calls' first 240 s are summed over the cards, the median of the rounds with each round's sum:
+## Which arrangement of two cards does the most background work?
+
+**Provenance:** RG, 2026-10-28.
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-cards-narrow.svg">
+  <img src="figures/report-cards.svg" width="100%" alt="In panel a, the share of the consolidated card's replies over their round's SLO, the 3 rounds pooled, by its agent sessions beside both calls, against the requirement of at most 5%: at 2, 4, 8, 12 and 24 sessions, 2.3%, 10.2%, 39.0%, 53.7% and 92.1% on tuned vLLM and 1.1%, 2.8%, 17.5%, 18.6% and 20.9% on the configuration to deploy; in panel b, each arrangement's agents' tokens a second over the calls' first 240 s summed over both cards, at the median of the 3 rounds, against 9,471, 20% over the best dedicated arrangement: dedicated roles, best practical, 0 + 14 sessions: 7,893; dedicated roles, controlled, 0 + 12 sessions: 6,302; consolidation on tuned vLLM, 2 + 14 sessions: 10,051; consolidation on the configuration to deploy, 4 + 14 sessions: 10,596; consolidation on the configuration to deploy with a warm spare, 4 + 12 sessions: 9,652; consolidation on the configuration to deploy, 8 + 14 sessions: 13,537, missing the requirement; pooling on tuned vLLM, 12 + 12 sessions: 13,188, missing the requirement; pooling on the configuration to deploy, 12 + 12 sessions: 12,111, missing the requirement.">
+</picture>
+
+**On two cards, consolidating both calls on one card does the most background work within the SLO, on either engine.** The report's Figure 14 ([§6.8](REPORT.md#68-on-two-cards-consolidating-both-calls-on-one-does-34-more-background-work-most-of-it-without-the-change)); its shares and sums are those of the table below.
+
+RG ran the resource gate's comparison of the arrangements of two RTX 5060 Ti cards ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)), in three rounds on new samples of the agents' traces (agent seeds 21–23), on Phastform, Gray and Phastform in turn, the hosts and cyan at v1.6-7-g0993991. Each card's part of an arrangement is a point of its own, beside the discriminating scenario's sessions at the counts given; the change runs the serving profile, the pull requests' switches with a 48-token window at a step cap of 256 without a per-request threshold. Each round's SLO is its voice alone's p95 plus 250 ms: 2,000, 1,972 and 2,010 ms with two callers, 1,988, 1,943 and 1,982 ms with one. Replies over the SLO are pooled over the rounds, and the agents' tokens/s over the calls' first 240 s are summed over the cards, the median of the rounds with each round's sum:
 
 | Arrangement | Sessions (shared + second card) | Replies over the SLO | Agents' tokens/s, first 240 s | Rounds | Agent TTFT p50 / p99 |
 |---|---:|---:|---:|---|---:|
@@ -430,9 +502,13 @@ RG, 2026-10-28: the resource gate's comparison of the arrangements of two RTX 50
 
 The records are in [`benchmarks/results/2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds), whose `gate.py` gives these tables, the margins, the agents' requests in the window and the stages from them.
 
-### The 24-hour soak
+<a id="the-24-hour-soak"></a>
 
-2026-10-28 to 29: the arrangement to deploy for 24 hours ([PRODUCTION.md](PRODUCTION.md#two-cards)), both calls on Phastform beside at most four agents' sessions and Gray a warm spare with at most 12, calls arriving at 20 an hour with ten turns each and 14 of the discriminating scenario's agent sessions for the agents, every attempt counted ([the soak](EXPERIMENTS.md#the-soak-the-production-path-for-hours)). Its SLO, 1,976 ms, is two hours of voice alone with the same calls plus 250 ms; by its stopping rule, more than 7.5% of the replies over it after four hours would have stopped it, and 0.6% were.
+## Does the arrangement to deploy keep its SLO over a day?
+
+**Provenance:** the soak, 2026-10-28 to 29.
+
+The soak ran the arrangement to deploy for 24 hours ([PRODUCTION.md](PRODUCTION.md#two-cards)), both calls on Phastform beside at most four agents' sessions and Gray a warm spare with at most 12, calls arriving at 20 an hour with ten turns each and 14 of the discriminating scenario's agent sessions for the agents, every attempt counted ([the soak](EXPERIMENTS.md#the-soak-the-production-path-for-hours)). Its SLO, 1,976 ms, is two hours of voice alone with the same calls plus 250 ms; by its stopping rule, more than 7.5% of the replies over it after four hours would have stopped it, and 0.6% were.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-soak-narrow.svg">
@@ -456,7 +532,277 @@ The table is the record's `table.py` output, whose serving arrangement is the ar
 
 The record is in [`benchmarks/results/2026-10-28-soak`](../benchmarks/results/2026-10-28-soak/README.md), whose `table.py` gives this table, the hours' and the spare's.
 
-## The control plane: flatshare-gateway in front of the engine
+<a id="the-a100-run-2026-10-26"></a>
+
+## Do the rules carry to a datacenter card?
+
+**Provenance:** the A100 run, 2026-10-26, with the kit's rehearsal (2026-10-25 and 26) and the Marlin dry run (2026-10-25) on the box.
+
+An A100 SXM4 80 GB on Google Colab ([the runtime](#on-google-colab): 12 vCPUs of a 2.20 GHz Cascade Lake Xeon, whose PCIe 3.0 root ports set the link to host memory) ran the release's kit ([how the run was laid out](#how-the-run-was-laid-out)): E2's core like for like, the box's model at its revision, its 5 GiB pool, 512/256 and 20 GiB CPU tier, 24 sessions of the long traces and two callers, W5's arm files and samples of the agents. Only the card, its precision path (Marlin's W8A16, no FP8 units) and the host change.
+
+Staging, `gpu` and `warm` took 19 minutes (`warm` 9 of them, the four compile configurations from empty caches on the host's 12 vCPUs), and the core's blocks 0 to 10 ran back to back in 3 hours 13 minutes, each E2 round in 26 minutes. Records: [`benchmarks/results/2026-10-26-a100`](../benchmarks/results/2026-10-26-a100/README.md). The analysis reads the run against the forecast written before it for this card, [`forecast-80gb.md`](../benchmarks/a100/forecast-80gb.md), in the records' [`a100.md`](../benchmarks/results/2026-10-26-a100/a100.md).
+
+### What it measured (2026-10-26)
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-a100-narrow.svg">
+  <img src="figures/report-a100.svg" width="100%" alt="On the A100 beside 24 agent sessions: in panel a, at the RTX 5060 Ti's 512-token steps, tuned vLLM's V2V p95 and the change's in each of five rounds against the card's SLO of 1.67 s (4.16 and 1.66 s, 4.78 and 1.66 s, 4.99 and 1.61 s, 5.17 and 1.63 s, 5.71 and 1.61 s); in panel b, the agents' tokens a second over the calls' first 240 s against the V2V p95, each run and the medians, an arrow from tuned vLLM's median to the change's at the same step cap (at 512-token steps tuned vLLM 4.99 s at 8,633 tokens/s, the change 1.63 s at 8,651 tokens/s, medians of 5 runs each; at 2,048-token steps tuned vLLM 3.66 s at 14,536 tokens/s, the change 1.83 s at 14,635 tokens/s, medians of 2 runs each).">
+</picture>
+
+**On an A100 the rules meet the card's SLO in every round, and the step cap trades the voice's tail against the agents' throughput.** The report's Figure 13 ([§6.7](REPORT.md#67-the-rules-carry-to-an-a100)); panel a draws the table below, and panel b the 2,048/0 table after it as well.
+
+**E2, the core's five rounds** (W5's arm files and samples of the agents, seeds 11 to 15). Voice alone ran at a p95 of 1,419 ms (1,391–1,445), so the SLO is 1,419 + 250 = 1,669 ms. The V2V p95 (ms) and the agents' tokens a second over the calls' first 240 s, each round on W5's sample of the agents for its number:
+
+| Agents' sample (seed) | Voice alone | Tuned vLLM, the box's 512/256 | The configuration to deploy | Its tokens/s, of tuned vLLM's |
+|---|---:|---:|---:|---:|
+| 11 | 1,445 | 4,163 / 10,749 | 1,663 / 10,125 | 94% |
+| 12 | 1,414 | 4,783 / 9,820 | 1,658 / 10,851 | 111% |
+| 13 | 1,419 | 4,986 / 8,398 | 1,611 / 8,025 | 96% |
+| 14 | 1,391 | 5,169 / 8,633 | 1,634 / 8,651 | 100% |
+| 15 | 1,424 | 5,710 / 8,312 | 1,609 / 7,922 | 95% |
+| Median | 1,419 | 4,986 / 8,633 | 1,634 / 8,651 | 96% |
+
+- **Every round under the SLO with the configuration to deploy**, by 7 to 60 ms (−35 ms at the median); tuned vLLM was 2.5 to 4.0 s over (+3,317 ms at the median). No turn of the 750 failed.
+- **The agents kept their throughput.** With the configuration to deploy their whole-call tokens/s were 95–103% of tuned vLLM's round by round, and their TTFT p50 moved by −1.2 to +1.8 s (tuned vLLM's 5.8–18.9 s across the rounds, p99 22–38 s). At the median of the rounds their TTFT p50 / p99 was 14 / 26 s, against tuned vLLM's 12 / 26 s.
+- **Less often short of KV than modeled, as the box is.** Two calls found KV short (the measured running share) 4–9% of the time beside tuned vLLM and 2–7% beside the configuration to deploy, 6% at the median of either, against the forecast's 10% for this card [modeled]. On the same samples RS measured 7–9% and 5–7% on the box, against the simulator's 17% ([RS](#the-boxs-running-share-rs)). Tuned vLLM preempted 29–75 agent requests a point, the configuration to deploy 31–78.
+
+**At vLLM's default 2,048/0**, the card's best stock cap in the probes (of the stock step caps it gave the A100 its lowest calls' tail, so tuned vLLM's arm ran it), on rounds 1 and 2's samples: tuned vLLM, then the configuration to deploy at that cap (arm 8), the V2V p95 (ms) / the agents' tokens a second over the calls' first 240 s, with the LLM's first token at p95 from the voice worker beside the 512/256 points':
+
+| Agents' sample (seed) | Tuned vLLM, 2,048/0 | The configuration to deploy, 2,048/0 | Of tuned vLLM's tokens/s | Its LLM first token p95: 2,048/0, 512/256 |
+|---|---:|---:|---:|---:|
+| 11 | 4,036 / 15,082 | 1,810 / 15,124 | 100% | 412 ms, 183 ms |
+| 12 | 3,289 / 13,990 | 1,843 / 14,145 | 101% | 414 ms, 216 ms |
+
+- **At its own best cap, tuned vLLM's voice tail stays two to 2.4 times its SLO**, against 4,163 and 4,783 ms at 512/256 on the same samples. It made 1.40 and 1.42 times the agents' tokens of the 512/256 points, and 1.49 and 1.29 times those of the configuration to deploy at 512/256, its agents' TTFT p50 1.0 and 2.0 s against 6.5 and 5.8 s at 512/256: on this card the box's 512/256 costs the agents about 30% of their tokens.
+- **The configuration to deploy at 2,048/0 kept the agents' tokens, 140 and 173 ms over the SLO.** Its agents' TTFT p50 was 1.0 and 2.0 s and p99 18.4 and 11.2 s, against tuned vLLM's 1.0 and 2.0 s and 17.3 and 11.4 s. No turn of the 200 failed. The voice turn's stages are those of the configuration to deploy at 512 tokens but one, the LLM's first token in the table.
+- **Why the step cap trades the voice's tail against the agents' throughput.** A turn that arrives with steps in flight waits for them, two under asynchronous scheduling, and at 2,048 tokens a step of agent prefill carries four times the tokens; the budget cap acts only on the steps scheduled after the turn arrives. So, with the change as without, 512/256 meets the SLO at 70% of the card's best throughput, and 2,048/0 keeps all of it 0.14–0.17 s over.
+
+**A', 32 sessions at the box's pool** (round 1, seed 11, one point a configuration; round 2 would have ended past the deadline with one point of two):
+
+| Configuration | V2V p95 | Agents' tokens/s, first 240 s | Agents' TTFT p50 / p99 | Preemptions | Running share |
+|---|---:|---:|---:|---:|---:|
+| Tuned vLLM, the box's 512/256 | 5,222 ms | 8,649 | 24.5 / 55.8 s | 57 | 6.5% |
+| The configuration to deploy | **1,617 ms** | 8,487 (98%) | 25.9 / 52.3 s | 65 | 6.5% |
+
+The configuration to deploy was 52 ms under the SLO, and no turn of the 100 failed. At the box's pool more agents made fewer tokens than 24 sessions did on the same sample (10,749 and 10,125 tokens a second), waiting longer for KV. The forecast placed 32 sessions at a running share of 18% (fitted: 15%) [modeled], against 6.5% measured: the simulator overstates how often this card runs short, here and in the core (10% forecast, 6% measured).
+
+**The probes (blocks 1 to 3)**, against the forecast and the box. The box's column is the report's, the four runs of its §2.4 on Phastform, against which [Table E1](REPORT.md#e-the-forecast-for-the-a100) compares the A100; each run's numbers are in [`a100.md`](../benchmarks/results/2026-10-26-a100/a100.md):
+
+| Probe | A100 SXM4 80 GB | Forecast, central (low–high) [modeled] | The box (Table E1) |
+|---|---:|---:|---:|
+| KV case, stock 512/256: the voice turn's wait | 1,748 ms (1,721–1,750, 3 runs) | 1,328–1,369 ms (1,082–1,377) | 4,968 ms (4,900–4,971) |
+| KV case, stock at vLLM's default 2,048/0 | 1,642 ms (1,620–1,645, 3 runs) | | |
+| KV case, the configuration to deploy: the first token | 175 ms (150–176, 3 runs) | 126–145 ms (109–146) | 290 ms (216–294) |
+| Prefill case, stock: the reply's token gap (1st to 16th) | 32 ms (3 runs) | 32.8 ms (25.7–35.4) | 60–66 ms |
+| Prefill case, the configuration to deploy: the token gap | 7 ms (3 runs) | 5.6 ms (3.7–5.6) | 16–20 ms |
+| The calls' first-token p95 beside 12 agents, 512/256 | 3,114 ms (3,102–3,126, 2 runs) | | 7,631 and 7,643 ms (the kit's rehearsal) |
+| The same at 2,048/0, and at 1,536/768 | 2,526 ms (2,518–2,535) and 3,566 ms (3,446–3,687) | | |
+| The same, the configuration to deploy | 173 ms (167–179, 2 runs) | | |
+
+The calls' tail runs had 57–75 turns each, and none failed.
+
+**FlashInfer's attention** (the backend arm after the core: tuned vLLM at 512/256, the KV case x3): the voice turn's wait was 1,580, 1,600 and 1,607 ms against FlashAttention 2's 1,721–1,750, 8% shorter at the median. The two 18k-token decodes take the same steps on either backend, so the wait reads the decode step: FlashInfer's is shorter on these contexts, a backend's share of the tail that the rules leave as it is.
+
+The backend block refused its first start, since vLLM 0.32 logs FlashInfer's selection as `FlashInfer resolved query dtypes`, not in the line its check read; the check reads both since, and the block ran again.
+
+**E0** (block 1, 3 repetitions, p50 in ms):
+
+| Prompt tokens | Recomputed | GPU hit | Restored from host RAM |
+|---|---:|---:|---:|
+| 1,024 | 64 | 18 | 32 |
+| 2,048 | 128 | 21 | 49 |
+| 4,096 | 269 | 25 | 81 |
+| 8,192 | 602 | 32 | 139 |
+| 16,384 | **1,471** | **46** | **268** |
+| 24,576 | 2,607 | 61 | 379 |
+| 31,744 | 3,825 | 75 | 483 |
+
+Fitted, with the box's fits in parentheses: a GPU hit 17 ms + 1.80 µs/token (35 ms + 3.8), a CPU restore 2.8 ms + 12.9 µs/token over it, 11.5 GB/s of KV (6.2), and a recompute 4.2 ms + 56.5 µs/token + 2.01 ns/token² (48 ms + 63 µs + 8.1 ns): at 16,384 tokens 46 ms, 268 ms and 1,471 ms against the box's 97, 509 and 3,264. Restoring beats recomputing from 1,024 tokens, as on the box. Under the 512-token step cap a cold prefill's linear cost is nearly the box's: without FP8 units the card runs the checkpoint's GEMMs through Marlin's weight-only path.
+
+**The step model** (block 5, the calibration point: AIPerf's replay of the whole corpus at 16 sessions, 709 requests, fitted with `crates/flatshare-sim/scripts/fit_step_cost.py` and the card's own E0): a step's fixed cost 4.5 ms, 41.36 µs a token (Marlin's W8A16 GEMMs as modeled), 4.07 ns a token pair and 171.9 ns a KV token read, against the forecast's 3.88 ms, 41.33 µs, 2.59 ns and 94.3 ns.
+
+Decode attention is the miss, 1.82 times the forecast: 858 GB/s of KV, 42% of the card's bandwidth, where the box's FlashAttention 2 reaches 77% of its own. The fit reproduces the point's 18,380 decode steps to −3.0% at the median (p10/p90 −8.6/+8.0%) and E0's cells to −0.7%.
+
+**The scheduler at a batch of 256** (`batch.sh`, 9 minutes: `vllm bench serve` keeping 26 requests at priority 0 and 230 at priority 2 in flight, 48 prompt and 64 output tokens each, so that all 256 hold their KV at once; one run an engine):
+
+| Engine | Output tokens/s | Priority 0: TTFT p50 / p99 | Priority 0: TPOT p50 | Priority 2: TTFT p50 / p99 | Priority 2: TPOT p50 | Running p50 / max |
+|---|---:|---:|---:|---:|---:|---:|
+| Tuned vLLM | 7,524 | 166 / 574 ms | 28.6 ms | 341 / 1,086 ms | 29.1 ms | 201 / 254 |
+| make-room, its switches off | 7,661 | 133 / 510 ms | 30.9 ms | 214 / 1,212 ms | 30.8 ms | 215 / 256 |
+| make-room, the configuration to deploy | 8,672 | 90 / 177 ms | 6.9 ms | 283 / 7,971 ms | 28.6 ms | 154 / 230 |
+
+- **The code path costs nothing at the batch.** With its switches off make-room schedules as vLLM does, and it made 1.018 of vLLM's output tokens a second, with more requests running at once (215 at the median against 201), which is also why each one's TPOT is longer.
+- **The deployed values turn the priorities' latencies around.** Priority 0's first tokens come 3.2 times as soon at p99 and their tokens 4.1 times as fast, since the budget cap keeps priority 2 prefill out of their first 48 tokens' steps; closed loop at a concurrency of 26, the priority 0 client completes its requests 2.8 times as fast, and the engine makes 1.153 of vLLM's tokens a second. The priority 2 requests pay at their tail: TTFT p99 7.3 times tuned vLLM's, its median lower, as a steady stream of priority 0 first tokens holds their prefill back.
+
+**The host** (`bench_host.py`, the GPU units stopped): Python's fixed workload in 227 ms at the median (the box's Xeon E5-2609 v4, 381 ms); pinned host memory to the card 10.08 GB/s at the CPU tier's 32 KiB pages, 11.09 at 64 KiB, 12.28 at 2,304 KiB (a 16-token block of all 36 layers) and 12.32 in one copy (the box's 5.44, 6.03, 6.74, 6.76), and back to the host 10.61, 11.62, 12.80 and 12.86.
+
+- **The link runs at PCIe 3.0's rate.** The card negotiates PCIe Gen4 x16, but the host's Xeon is a Cascade Lake, whose root ports are PCIe 3.0: the copies run at a Gen3 x16 rate, 39% of the card's link, where the box's PCIe 3.0 x8 reaches 86% of its own.
+- **The host sets E0's GPU hit and restore.** E0's GPU-hit slope, the host's work on a prompt, is half the box's (1.80 against 3.79 µs a token, by least squares), as Python's time is 0.60 of it. Placed on this host ([`forecast-80gb-on-host.md`](../benchmarks/a100/forecast-80gb-on-host.md), `make forecast-a100 GPU=a100-80gb HOST_JSON=...`), the forecast's E0 cells come within 9% of the measured GPU hits and 10% of the CPU restores at the mean, from 69% and 22% off before the run; recompute, which the host does not set, stays 17% off.
+- **The host does not set the running share.** Placed on it, the forecast gives the core 11% and A' 18%, against 6% and 6.5% measured, so the host is not what the simulator misses there. It overstates the box's too: 17% against the 8.1% RS measured on the same samples ([RS](#the-boxs-running-share-rs)).
+
+### How the run was laid out
+
+The A100 run asks whether make-room's result carries to a datacenter card. Its core is like-for-like with the box: the box's model at its revision, its 5 GiB pool, 512/256, the 20 GiB CPU tier, 24 sessions of `weka-x32-long`, two callers, W5's three arm files and five rounds at seeds 11 to 15; only the card, its precision path and the host change. So a difference within the A100 is the change's, and a difference from the box is the card's. [HARDWARE.md](HARDWARE.md#running-on-another-gpu-step-by-step) has the steps that deploy the kit on a host.
+
+A forecast written before the run gives every term the run measures, modeled, for each card the run could draw: [`forecast.md`](../benchmarks/a100/forecast.md) for the A100 40 GB, the card the run was planned on, and [`forecast-80gb.md`](../benchmarks/a100/forecast-80gb.md) for the A100 SXM4 80 GB (`make forecast-a100 GPU=a100-80gb`: the same compute, 2,039 GB/s of HBM2e against 1,555). The analysis compares a run against the forecast for the card its records name (`node/host.json`): `forecast-80gb.md` for an A100 80 GB, as on 2026-10-26, and `forecast.md` otherwise.
+
+For the A100 SXM4 80 GB the forecast gives the KV case's stock wait as 1,328–1,369 ms and make-room's first token as 126–145 ms. In the core scenario it gives a running share, the time running agent requests leave two calls short of KV, of 10% against the box's 17%, and the card 71% busy (its step time over the replay's) against the box's 100%. For the A100 40 GB the same four are 1,636–1,688 ms, 134–158 ms, 13% and 76%.
+
+#### The core, block by block
+
+[`benchmarks/a100/run.sh`](../benchmarks/a100/run.sh) runs it on the host; each block is complete when it ends and is skipped once done, so a stop anywhere leaves whole comparisons and a rerun resumes. The plan's minutes are the box's measured ones where they exist and estimates otherwise; the last column is what each block took on the A100 on 2026-10-26 (`blocks.log` in [its records](../benchmarks/results/2026-10-26-a100/README.md)):
+
+| Block | Work | Minutes (estimate) | Complete after it | Minutes on the A100 |
+|---|---|---:|---|---:|
+| 0 | `bootstrap.sh gpu` and `warm` (on the box's kernels in [the rehearsal](#the-kit-rehearsed-on-the-box), measured: the three servers' first start from empty caches 20.5 minutes to ready, each of the three other compile configurations, make-room's in the configuration to deploy among them, 2.5 to 2.9 minutes), the box's `smoke.sh` from the source tree (its listener audit included), one 2-turn call through LiveKit | 44 | the deployment, every compile configuration warm | 3 |
+| 1 | tuned vLLM: E0 (`flatshare-bench tiers --reps 3`), the KV case x3, the prefill case x3, the calls' tail x2 with whole 40-token replies ([`probes.sh`](../benchmarks/a100/probes.sh) 1) | 25 | tuned vLLM's side of the probes, E0's cells | 12 |
+| 2 | stock at vLLM's default, 2,048/0: KV x3, tail x2; stock at the time-equivalent cap (`--cap`, 1,536): KV x1, tail x2 | 26 | the stock step-cap settings | 20 |
+| 3 | the configuration to deploy (make-room, no reserve, a 48-token window): KV x3, prefill x3, tail x2 | 17 | the probe comparison on the A100 | 10 |
+| 4 | E2 round 1 ([`a100-r1.campaign`](../benchmarks/a100/a100-r1.campaign)): the configuration to deploy, voice alone, tuned vLLM | 29 | one E2 round | 26 |
+| 5 | the calibration point ([`calibration.sh`](../benchmarks/a100/calibration.sh)): AIPerf's replay of the whole corpus at 16 sessions straight to a fresh engine with tuned vLLM's flags (through `flatshare-forward`'s loopback port), 600 s + 60 s | 17 | the step model's data | 17 |
+| 6-9 | rounds 2 to 5, the engine groups alternating so that no switch falls between rounds | 4 x 28 | three rounds by about 3.6 h, five by about 4.5 h | 4 x 26 |
+| 10 | the GPU units stopped; the last pull | 10 | the core, about 4.7 h | 0.1 |
+
+The rehearsal ran block 0 in 34 minutes on the box from a fresh home (`gpu` 1.4, `warm` 28.8, the smoke test and the call 4.1) and block 1 in 16. The estimates keep their margin for a host whose install path, CPUs and kernels are not the box's; `--estimate` replaces them once a host is measured. On the A100, `bootstrap.sh gpu` and `warm` ran before `run.sh`, in 3 and 9 minutes, so block 0 found every compile configuration warm, and the core's blocks took 3 hours 13 minutes against the 4.7 hours estimated.
+
+`run.sh --until HH:MM` (UTC) starts no block whose estimate above would end after then, and hands that one deadline, as an epoch, to every campaign and to C', which start no point that cannot end before it: a point is budgeted by the longest of its kind measured on this host once one has run (`durations.tsv`), by W5's durations before. A campaign stopped so leaves its block undone and the run exits 0; any failure exits 1.
+
+`--estimate BLOCK=MINUTES` puts another estimate in the table's place for a block or an arm (a host measured faster or slower, or an E2 block run for its first point alone, which the campaign's own budget then stops at the deadline).
+
+During every agent point `flatshare-bench e2 run` samples the engine's `/metrics` every 0.5 s, from which each point's summary gives the measured running share (the time free KV is under two calls' 2,048 tokens). W5's and FB's points on the box ran without this sampler; RS measured the box's afterwards on W5's samples, 8.1% beside tuned vLLM against the forecast's 17% ([RS](#the-boxs-running-share-rs)).
+
+#### The optional arms
+
+Each arm is complete in itself and runs after the core (`run.sh NAME`); the list is in the plan's order, and arm 8 was added during the run. On 2026-10-26 the batch, tuned vLLM, the configuration to deploy at tuned vLLM's cap, A' (one round) and FlashInfer's attention ran, in that order: they set the core beside the card's own best stock configuration. C' (about 95 minutes), the pull requests' own code (45) and preempt-resubmit (36) did not run, since the balance left after the core went to those five ([what it measured](#what-it-measured-2026-10-26)).
+
+1. **C'** ([`cprime.sh`](../benchmarks/a100/cprime.sh)): Qwen3-14B-FP8 at the A100 40 GB's own pool, 117,344 tokens (modeled), at 40 sessions, on its own node (`a100-40gb-qwen3-14b`), the agent's requests naming it (the `qwen3-14b` worker variant): its first starts, the pool checked, a smoke reply without `<think>`, E0 with one rep, its own voice alone, then three rounds of tuned vLLM (the step cap with the lowest calls' first-token p95 in blocks 1 and 2, [`probe_results.py`](../benchmarks/a100/probe_results.py) `pick-stock`) against the configuration to deploy. About 95 minutes.
+2. **The pull requests' own code** ([`branches.sh`](../benchmarks/a100/branches.sh)): vLLM at the pull requests' tip with their switches on against vLLM at their base, two Python-only installs over precompiled binaries staged beforehand (`branches.sh stage BASE HEAD`), each through the probes: KV x3, prefill x2, tail x2. About 45 minutes.
+3. **Preempt-resubmit** on the stock engine (`a100-resubmit-r3` to `-r5`): three points, seeds 13 to 15. About 36 minutes.
+4. **The scheduler at a datacenter batch** ([`batch.sh`](../benchmarks/a100/batch.sh)): `vllm bench serve` keeping 256 requests in flight, 10% at priority 0, on tuned vLLM and on make-room with its switches off and on, each request small enough (48 prompt and 64 output tokens, 8 blocks at most) that all 256 hold their KV at once in the core's pool (2,048 of its 2,275 blocks), so the arm measures the scheduler's per-step cost at a batch of 256 rather than a queue behind the KV; the engine's running requests, sampled once a second, show the batch formed (`ENGINE-running.json`), and a pool too small for it is refused. The clients load their tokenizer from the engine's own snapshot, at the revision `engine.yaml` pins, since offline the model's name resolves to nothing where the download was by commit. About 15 minutes [estimate: four engine switches and two cold make-room compiles].
+5. **A'** (`a100-aprime-r1`, `-r2`): the box's pool at 32 sessions, where the forecast places the A100 closest to the box's regime (a running share of 18%), each round tuned vLLM and the configuration to deploy on one sample of the agents; voice alone, the SLO's reference, is the core's five points on the same card. About 56 minutes.
+6. **Tuned vLLM** (`a100-tuned-r1`, `-r2`): the stock engine at the step cap whose calls' first-token p95 was the lowest in blocks 1 and 2 on this card (`probe_results.py pick-stock`), otherwise the core's tuned vLLM point, on the samples of the core's rounds 1 and 2, so that each pairs with that round's tuned vLLM point and the configuration to deploy. The core keeps the box's 512/256, the box's best, so that a difference within the A100 is the change's; this arm sets the change beside the stock engine at the A100's own best. About 28 minutes.
+7. **FlashInfer's attention** (`run.sh backend`, [`probes.sh`](../benchmarks/a100/probes.sh) `backend`): tuned vLLM with FlashInfer's attention in place of FlashAttention 2 (`--attention-backend FLASHINFER`) through the KV case x3, whose two 18k-token decodes take the same steps on either backend, so that its wait reads the decode step on each; the block stops before a run unless the engine's log at that start names FlashInfer. The calibration fitted the A100's decode attention at 42% of the card's bandwidth, where the box's reaches 77% of its own. About 12 minutes, more at the first start, which JIT-compiles FlashInfer's attention kernels for the card.
+8. **The configuration to deploy at the A100's best stock step cap** (`run.sh prtuned`, `a100-prtuned-r1`, `-r2`): the configuration to deploy with tuned vLLM's 2,048/0 ([`a100-pr-ab48-2048-s24.toml`](../benchmarks/a100/arms/a100-pr-ab48-2048-s24.toml)), on the samples of the core's rounds 1 and 2, so that each pairs with tuned vLLM's round. Added during the run, when tuned vLLM's first round gave the agents 40% more tokens a second at 2,048/0 than the box's 512/256 on the same sample, the voice as far over its SLO: whether the configuration to deploy keeps the voice under its SLO at the card's own best cap. About 24 minutes.
+
+MIG (a 3g.20gb voice instance beside a 4g.20gb agent instance) needs administrator rights and a GPU reset and is not scripted.
+
+#### The analysis
+
+`make reproduce-a100 RECORDS=<the pulled host directory> CORPUS=<weka-x32>` writes `build/reproduce-a100/a100.md` ([`analysis.py`](../benchmarks/a100/analysis.py)), each section from what the records hold:
+
+- the step model fitted on the calibration point with the card's own E0, each term beside the forecast as a ratio;
+- flatshare-sim with those costs against the measured point, as the box's calibration table;
+- the probes beside the forecast and the box;
+- `flatshare-bench e2 report` over the A100's points alone (the core's, with tuned vLLM and the configuration to deploy at its cap, then A' with the core's voice alone), each round's points side by side and each configuration's measured running share;
+- the batch arm's output tokens a second against tuned vLLM's, each priority's latency beside them;
+- the host around the card;
+- the two cards in regime coordinates only.
+
+The run of 2026-10-26 has its own as [`a100.md`](../benchmarks/results/2026-10-26-a100/a100.md) in its records.
+
+The host is measured by [`bench_host.py`](../benchmarks/a100/bench_host.py), with the GPU units stopped (`flatshare/venvs/engine/bin/python flatshare/src/benchmarks/a100/bench_host.py --out flatshare/runs/a100/host`): its link from pinned host memory to the card through vLLM's own batched page copies, at the CPU tier's page sizes, each way, and its CPU at a fixed Python workload, the two of the host's costs the forecast takes from the box. The analysis reads them with E0's GPU hit (the host's work on a prompt, which grows with it) and its CPU restore beyond the GPU hit (the transfer).
+
+`make check-a100-calibration EXPORTS=<the v0.3 calibration exports> CORPUS=<weka-x32>` runs the analysis's calibration code on the box's three W2 points with the box's E0, and checks that it gives the box's own table rows.
+
+#### On Google Colab
+
+The run of 2026-10-26 had an A100 SXM4 80 GB on a Colab runtime with high RAM: a container (Ubuntu 24.04, root, no systemd user manager) with 12 vCPUs of a 2.20 GHz Xeon (Cascade Lake), 167 GiB of RAM, an 82 GiB `/dev/shm`, driver 580.82.07 and CUDA 13.0's toolkit. Colab's command-line client ([google-colab-cli](https://github.com/googlecolab/google-colab-cli), its `colab` command, signed in once) makes the runtime and reaches it:
+
+```sh
+colab new -s a100 --gpu A100 --high-mem   # the runtime, billed in compute units from here to `colab stop -s a100`
+colab usage                               # the balance and the rate (6.77 units an hour for this runtime)
+```
+
+An SSH host entry whose `ProxyCommand` is `colab ssh --proxy-mode -s a100` carries `push.sh`, `pull.sh` and every command (`FLATSHARE_SSH="ssh -F <that file>"`). Four things differ from the hosts the kit was rehearsed on:
+
+1. **One connection.** The bridge carries one SSH connection at a time and refuses a second (HTTP 429): the host entry multiplexes every command over one master connection (`ControlMaster auto`, `ControlPersist`), so that `pull.sh`'s copy every two minutes, a watch and a command typed meanwhile share it, and the run starts detached (`nohup setsid`), held by no connection.
+2. **No user manager.** The first stage chose flatshare-svc.
+3. **The driver's libraries outside the linker's search** (`/usr/lib64-nvidia`): `bootstrap.sh gpu` refused the host until the GPU units named that directory, which the kit now does ([single-host mode](HARDWARE.md#single-host-mode)); this run's host had it registered by hand (`/etc/ld.so.conf.d`, `ldconfig`) before the fix.
+4. **Billing from creation to stop**, whatever the card does: staging ran before the GPU stages, the core's blocks back to back, and the optional arms were queued to start as the core ended, under one deadline the balance set; the records were pulled every two minutes, and the runtime stopped once the last pull was in. This run's runtime lived 5 hours 5 minutes (04:07Z to 09:12Z) and used 34.35 compute units of 37.38, at 6.77 an hour; the GPU stages held the card from 04:28Z to 09:12Z, 93% of that time.
+
+### The kit, rehearsed on the box
+
+[`benchmarks/a100/rehearsal`](../benchmarks/a100/rehearsal/README.md) runs the kit's every step on Phastform, the box's host standing in for the A100's, in a home of its own under flatshare-svc beside the box's deployment: `push.sh`, `bootstrap.sh stage`, `gpu` and `warm`, `run.sh` over block 0, block 1's probes and block 4's first point with the deadline's stop, `pull.sh` and `make reproduce-a100`, then a check that the box's deployment is as it found it.
+
+On 2026-10-25 ([the records](../benchmarks/results/2026-10-25-a100-rehearsal/README.md)) it found two defects of the kit before the A100's hours would have: run as a script, `deploy/profile.py` stood in for the standard library's `profile` module when vLLM's import reached cProfile, which failed `bootstrap.sh gpu`; and under flatshare-svc, `gpu-guard` took an engine core for a foreign process once its title had blanked its /proc/PID/environ, so `warm` started no engine (the listener audit read the same environment).
+
+The release's kit then ran every step in one pass from a fresh home on 2026-10-26 ([its records](../benchmarks/results/2026-10-26-a100-rehearsal/README.md)): 76 minutes, the GPU in use for 64 of them, 29 of those in `warm`, whose first start from empty caches took 20.5. Through the kit the box measured what it measures through its own deployment: the KV case's first token after 4,853–4,929 ms (Gray's: 4,923–5,077 ms), and the configuration to deploy at a V2V p95 of 2,333 ms (the box's two-host deployment: 2,132–2,397 ms over W5's fifteen runs), the control plane on the same host's 16 CPUs.
+
+### The Marlin dry run on the box
+
+Two sessions on Phastform tested the A100's code path before the A100 run: the FP8 checkpoint through `MarlinFP8ScaledMMLinearKernel` (W8A16), FlashAttention 2 on LBHNC, the CPU tier, make-room and the harness, on a real GPU. They measured function, not the A100's magnitudes: the box runs Marlin and BF16 at 47.4 TFLOPS with FP32 accumulation, so its linear layers on Marlin take at least about 153 µs a token against DeepGEMM's fitted 48 [derived].
+
+- [`marlin-session1.sh`](../benchmarks/a100/marlin-session1.sh), about 25 minutes of GPU time: E0 on tuned vLLM (DeepGEMM), then on Marlin (`--linear-backend marlin`, checked by the engine log and `/server_info`, with `smoke.sh`), then make-room's KV and prefill cases and the tail on Marlin, and tuned vLLM back. `--fallback` selects Marlin by disabling the four block-FP8 kernels ahead of it (`VLLM_DISABLED_KERNELS`) instead of the flag.
+- [`marlin-session2.sh`](../benchmarks/a100/marlin-session2.sh), about 30 minutes: [`bench_marlin.py`](../benchmarks/a100/bench_marlin.py) (Marlin, BF16 and DeepGEMM at Qwen3-4B's four linear shapes, M 1 to 1,024: Marlin's factor over BF16 on the box, one data point beside PR #61224's 1.42 on an L4, which does not say how it timed its GEMMs), the probes at a 3 GiB pool and a 16,384-token context (which size themselves from it), and one E2 point on Marlin ([`marlin-dry.campaign`](../benchmarks/a100/marlin-dry.campaign)), without the KV sampler, as W5's points it is read against ran.
+
+`bench_marlin.py` gives each call's GPU time as the call runs inside a CUDA graph, which is where vLLM 0.32.0 runs these layers: it captures every step of up to 512 tokens by default, the box's step cap. Ten calls, each after an L2 flush, are captured in one graph and ten flushes in another; each graph is replayed between two CUDA events, and one call's time is the calls' median replay less the flushes', over ten.
+
+A call timed alone between two events measures the host's dispatch of its kernels instead, which the GPU waits for: the first bench timed that way, and session 2 keeps its `gemm.csv` as `gemm-events.csv` and runs the GEMMs again. Marlin's calls share one lock workspace, as the engine's do.
+
+The bench runs in the engine unit's environment (`deploy/a100/host.py with-engine-env deploy/phastform ...`), because DeepGEMM builds its kernels with nvcc at their first call and needs the unit's `CUDA_HOME` (CUDA 13.0 on the box; without it DeepGEMM takes `/usr/local/cuda`'s older nvcc, and its rows say "DeepGEMM needs nvcc: set CUDA_HOME").
+
+Both run from the workstation with `FLATSHARE_SSH`, `FLATSHARE_GPU` and `FLATSHARE_CYAN` as for `campaign.sh`, keep each step's outputs on its host, skip a step done before, and copy the outputs to `FLATSHARE_OUT` (`~/flatshare/hosts/marlin-dry`).
+
+#### What it measured (2026-10-25)
+
+Session 1 ran on the box's deployment of W5 (its servers on TCP; the same steps) and session 2's GEMM step on the corrected `bench_marlin.py`; then session 2 ran in full on the deployment of W6 (v0.3-191-g987fd09, the servers on sockets), its GEMM step giving each M's sum within 0.005 of the first run's. The records are in [`benchmarks/results/2026-10-25-marlin-dry`](../benchmarks/results/2026-10-25-marlin-dry).
+
+- **The A100's path runs on a real GPU.** With `--linear-backend marlin` the engine selected `MarlinFP8ScaledMMLinearKernel` for the FP8 checkpoint, with FLASH_ATTN, FlashAttention 2 and the LBHNC layout; `/server_info` named `marlin`, and `smoke.sh` passed.
+- **E0 on Marlin.** A prefill's per-token term rose from 65.4 µs on DeepGEMM to 175.7 µs, at the box's BF16 rate (at least about 153 µs a token for the linear layers, above); the GPU-pool hit (3.34 against 3.88 µs a token) and the CPU-tier restore (27.11 against 27.01 µs a token) did not move with the linear kernel.
+- **make-room on Marlin, in the configuration to deploy.** The KV case's priority-0 first token came after 299 and 370 ms (W5's probes on DeepGEMM: 219–290 ms); in the prefill case the reply ran about 16 ms a token beside three 10,000-token prefills; the calls' tail over 240 s beside 12 agents: 73 turns, first-token p95 432 ms, none failed.
+- **Marlin against BF16,** summed over Qwen3-4B's four linear shapes, each call inside a CUDA graph: 0.50 to 0.56 of BF16's time for M of 1 to 64, 0.97 at 128, 1.08 to 1.09 at 256 to 1,024. Weight-only FP8 halves the bytes of a memory-bound GEMV and costs about 9% where the GEMM is compute-bound and both run at the BF16 rate; DeepGEMM's W8A8, at the box's FP8 rate, takes 0.34 of BF16's time at M of 1,024. The forecast's A100 term was 29.2 µs a token times 1.0 to 1.42, and the box's 1.08 to 1.09 one point near the range's low end; the A100's calibration point then measured 41.36 µs a token, the range's high end ([what it measured](#what-it-measured-2026-10-26)).
+- **The probes at a 3 GiB pool.** At 1,364 blocks and a 16,384-token context the probes sized their cases from the pool: the KV case's two background requests of 10,719 tokens left 22 blocks free, and the prefill case ran three of 6,000. make-room's priority-0 first token came after 173 and 248 ms, and the calls' tail over 120 s beside 13 agents ran 36 turns, first-token p95 332 ms, none failed.
+- **E2 on Marlin.** The configuration to deploy in the discriminating scenario, on W5's round-1 sample of the agents, against FB's round 1 on DeepGEMM, the same code and sample ([`2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb)): the voice turn's p95 2,240 ms against 2,313 (W5's fifteen runs: 2,132–2,397 ms), none of 50 turns failed; its p50 2,028 against 1,883 ms, with the reply's first token 83 ms later at the median (348 against 265 ms). The calls' prompts were 96% cached, so that time is the agents' prefill in the steps a call joins, whose tokens take 2.7 times as long on Marlin (E0, above). The agents' tokens a second fell 28%, from 3,416 to 2,457. On the box Marlin and BF16 run at one rate, so the point shows the A100's path working end to end and the direction of its cost, not the A100's magnitudes.
+
+<a id="failure-drills"></a>
+
+## What does a failure do to the calls and the agents?
+
+**Provenance:** the drills, 2026-10-25, the build of that day beside W8's; the drills on two GPU nodes, 2026-10-28.
+
+The deployed box on the configuration to deploy (make-room with the pull requests' switches and a 48-token window), on 2026-10-25, from `ops/drills` ([RUNBOOK.md](../ops/RUNBOOK.md#drills) runs them): the build of that day (v0.3-295 on both hosts), and W8's, before W6's hardening, beside it. Each drill opens two realtime streams through the gateway's voice-plane socket and four background ones through its TCP port, each decoding up to 2,000 tokens, then breaks something once every stream has its first byte; from the event on it probes both planes every second, each probe on a new connection, until the streams have ended and a request succeeds. The records, with W6's and an intermediate build's, are in [`benchmarks/results/2026-10-25-drills`](../benchmarks/results/2026-10-25-drills/README.md).
+
+| Drill | What the six streams saw | What the new requests got | W8, before W6 |
+|---|---|---|---|
+| The engine killed (SIGKILL to every process of `flatshare-engine`, mid-decode) | Each got vLLM's error event, `upstream_unavailable`, 8–11 ms after the kill | 210 of 212 probes failed at once (2 answered 502, then 503 `upstream_not_ready` without reaching for the engine), until one succeeded 106.2 s after the kill | Every body cut 54–57 ms after the kill, with no error event; a request succeeded 112.3 s after it |
+| The gateway reloaded (`systemctl --user reload flatshare-gateway`, a deploy's) | The realtime streams finished whole, 20.9 s after; the background ones ended 5.0 s after, with the `draining` error event | None of 42 probes failed or waited: the slowest was answered in 0.13 s | — (a deploy restarted the gateway) |
+| The gateway restarted (`systemctl --user restart flatshare-gateway`), 30 s after the reload | As the reload's: the realtime streams whole, 20.7 s after; the background ones `draining`, 5.0 s after | None of 42 failed; those sent during the drain waited in the socket's backlog and were answered once the new gateway started, 20.7 s after the restart (the slowest in 19.8 s) | Every stream finished, 22.4–23.2 s after, while the gateway refused new connections; the probe ran after the drain |
+| The gateway killed (SIGKILL; systemd starts it again a second later, its socket unit holding the listeners) | All broke 11–14 ms after | None of 4 failed; they waited for the gateway's start, the slowest 1.3 s | — |
+
+- **Where an engine's recovery goes.** The unit's last process exited 7.6 s after the kill (the GPU's teardown), systemd started the unit 5.1 s after that (`RestartSec`, 15 s in W8), and its warm start listened 92.1 s later. Until its `/health` answers, the gateway answers 503 with `Retry-After: 1` and does not reach for the engine.
+- **No KV or host memory outlives a killed engine.** The engine ran six requests before the kill and none after its restart, and `/dev/shm` held the CPU tier's 20.0 GiB before and after (an unlinked 21.5 GB file there, made again by each start); each kill, W8's and v0.3-295's, left one 32-byte semaphore.
+- **A deploy without a gap.** Until W6 a deploy restarted the gateway, and new requests failed for as long as its longest stream took to finish, up to 30 s. Since W6 a deploy reloads it: the gateway hands its listening sockets to a successor that serves at once, and drains ([PRODUCTION.md](PRODUCTION.md#how-it-fails)). A restart drains too since the unit's `ExecStop` waits for the drain itself (v0.3-191's restart after a reload cut its streams: systemd 249 does not wait for a main process it did not start), and the requests sent meanwhile, queued in the socket's backlog, are answered once the new gateway serves: on v0.3-274, 5 of the restart's 42 probes got 502, where cyan's tunnel let the new gateway's burst of upstream connections pass a master's sessions and the node's sshd dropped them; the tunnel now waits for a master with room.
+- **The CPU tier overfilled (W8).** `flatshare-bench drill cpu-tier` stored 43.5 GB, 2.0 times the tier's 20 GiB, in 18 requests of 16,384 tokens (3.30 s each at the median); the engine stayed healthy, the latest 8,192-token prompt restored from the tier in 294 ms against 1,112 ms recomputed, and the first had been evicted (recomputed, no tier hit).
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-starts-narrow.svg">
+  <img src="figures/report-starts.svg" width="100%" alt="Three bars of the engine's phases on one axis of seconds: killed mid-decode, it was down 12.7 s, its unit's last process gone 7.6 s after the kill and systemd's restart 5.1 s later, and its warm start listened 92.1 s after the restart, a request answered 106.2 s after the kill; a warm start was ready at 88.8 s, its weights loaded at 54.1 s and its CUDA graphs captured at 84.1 s; and a cold start, with empty caches, was ready at 531.8 s, its weights at 86.1 s, its KV cache at 189.3 s after compiling and profiling and its CUDA graphs at 526.6 s after the kernels' warmup and JIT builds.">
+</picture>
+
+**The engine's recovery from a kill is mostly its warm start, and on empty caches a start takes six times as long.** Each bar stacks a start's phases from its journal, as the table below gives them, in seconds from the kill or from the unit's start; the dashed box is the killed engine down, until systemd starts it again.
+
+Each server's start, from its journal (`ops/drills/cold-start.sh`):
+
+| Start | Unit start to ready | Where the time goes |
+|---|---:|---|
+| The engine, warm caches | 88.8 s | The API server up at 16.5 s, the engine process at 38.4 s, the weights loaded at 54.1 s, the KV cache at 55.4 s, the CUDA graphs captured at 84.1 s, listening at 87.9 s; torch.compile from its cache in 0.3 s |
+| The engine, empty caches, as on a new host | 531.8 s | The weights at 86.1 s; torch.compile 84 s (Dynamo 23 s, Inductor 43 s) and the profiling run 17 s, so the KV cache at 189.3 s; 337 s more to the CUDA graphs (526.6 s), of which the capture is 13 s and the rest kernel warmup and JIT builds, FlashInfer's sampling module among them |
+| The box, v0.3-295 (`systemctl --user restart flatshare.target`) | 102.7 s | The units stopped within 8.1 s, then the three started at once: the TTS ready 22.9 s after its start, the STT 64.0 s, the engine 94.6 s (on v0.3-191 the engine waited for the STT to be ready, and the box took 161.4 s) |
+
+**Two GPU nodes** (2026-10-28, [the record](../benchmarks/results/2026-10-28-node-failover/README.md)): the arrangement to deploy, both calls on Phastform and Gray a warm spare (`calls = "fill"`), with `ops/drills/node-failover.sh` placing two calls as the voice worker does and running a 32-token turn of each every 3 s beside two agents' streams, then breaking Phastform's engine after five whole turns of each call:
+
+| Drill | Turns before / after the event, whole | Calls moved to Gray | Turns failed after the first move | Phastform passed over / unhealthy / available again | Gray covered |
+|---|---|---:|---:|---|---:|
+| SIGKILL to the engine; systemd starts it again | 10 of 10 / 148 of 148 | +0.7 s | 0 | +0.10 s / +2.1 s / +101.0 s | 238 s |
+| The engine stopped to the drill's end | 10 of 10 / 152 of 152 | +1.9 s | 0 | +1.3 s / +3.3 s / down to the end | 244 s |
+
+- **The calls moved within a turn,** and none of the 300 turns after the events failed; no turn was in flight at either event, so none was cut. Gray then covered to the drills' end, as the moved calls stayed on it, and the agents' requests that began meanwhile waited out their class's 120 s queue timeout and got 503 `queue_timeout`. A first run found the drill's own client sending a wrong model id, every request 404 before the event as after it; the runs above are the first after its fix.
+
+<a id="the-control-plane-flatshare-gateway-in-front-of-the-engine"></a>
+
+## What does the gateway add to a request?
+
+**Provenance:** W1, 2026-10-22; W6's transport, 2026-10-25; v1.8, 2026-10-29.
 
 On cyan, the voice agent and the agent replay reach the engine through `flatshare-gateway`:
 - the voice agent on a private Unix socket, as tenant `voice` (realtime class);
@@ -531,7 +877,11 @@ On v1.8 (c3b5007), the deployed build, the same pairing over 80 rounds measured 
   - there were no upstream errors;
   - agent TTFT was 141 and 146 ms p50, and 9.9 and 9.2 s p99.
 
-## The API layer: agentic-api in front of the engine
+<a id="the-api-layer-agentic-api-in-front-of-the-engine"></a>
+
+## What does an API layer add to an agent's turn?
+
+**Provenance:** agentic-api's own benchmark against the frozen box, 2026-10-22.
 
 A coding agent such as Claude Code or Codex reaches a self-hosted engine through an API layer that serves the APIs it speaks, so that layer's cost is part of every agent turn. This section measures one, the vLLM project's [agentic-api](https://github.com/vllm-project/agentic-api), with that project's own `response_provider` benchmark, which compares its WebSocket, HTTP/SSE and JSON paths with direct vLLM, all five arms at once against the frozen box with tool calling on (agentic-api a7dc7b5, 2026-10-22). E2's agents, replayed by AIPerf, reach the engine through `flatshare-gateway` alone. Per-turn latency for a 4-round tool loop, p50 in ms:
 
@@ -547,126 +897,13 @@ A coding agent such as Claude Code or Codex reaches a self-hosted engine through
 
 The method, all five arms, correctness and the history-rehydration runs are in [`benchmarks/results/2026-10-22-agentic-api-http-baseline`](../benchmarks/results/2026-10-22-agentic-api-http-baseline/).
 
-## Engine plugins
+<a id="agent-replay-on-the-frozen-box-a-first-retention-headroom-signal"></a>
 
-The lease-aware plugins of v0.3 ([its tree](https://github.com/StevenWang-CY/flatshare/tree/v0.3/python/leaseholder_vllm), where the package has its former name, `leaseholder_vllm`), measured in W1 and never used; they were removed after v0.3 ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)).
+## How do the agents use the KV cache?
 
-`LeasePolicy` at a full-size tier of 18,204 chunks (40 GiB of Qwen3-4B BF16 KV), against vLLM's real offload manager on CPU:
+**Provenance:** W0's replay and W2's three loads, 2026-10-22.
 
-| Operation | LeasePolicy | Stock LRU |
-|---|---|---|
-| `prepare_store` plus evicting 128 chunks, mostly leased | 0.30 ms | 0.21 ms |
-| Finishing a 1,011-chunk session: renewal | 0.39 ms | — |
-| Finishing a 1,011-chunk session: class change | 0.28 ms | — |
-
-**Live check on the frozen box** ([its tests in the v0.3 tree](https://github.com/StevenWang-CY/flatshare/tree/v0.3/python/leaseholder_vllm/tests/live)):
-- the lease hint reached both plugins;
-- `X-Session-ID` appeared in GPU-tier KV events and in no CPU-tier one, and `LeaseConnector` mirrored it into the hint;
-- a 7,921-token prompt was written through to the CPU tier. After the GPU prefix cache was reset, the same prompt was restored with 7,920 tokens from the CPU tier, as reported by both the hit receipt and `usage.prompt_tokens_details.cached_tokens`.
-
-## The KV case: make room
-
-`python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py` reproduces the KV case of vLLM [#40004](https://github.com/vllm-project/vllm/issues/40004) on the frozen box's image, on Gray (the second RTX 5060 Ti, with the same units, pins and pool), on 2026-10-23. Two priority-2 requests of 17,999 prompt tokens, each decoding up to 4,096 tokens, fill the 36,400-token pool. Once the engine reports both running and at most 24 blocks free, a priority-0 chat request of about 750 tokens is sent, and its time to first token is measured. The outputs of this section's runs, with each run's revision and switches, are in [`benchmarks/results/2026-10-23-make-room-probes`](../benchmarks/results/2026-10-23-make-room-probes), whose `check.py` recomputes the three tables.
-
-The rows name `make-room`'s switches: the KV preemption (at most 2 victims a step), the budget cap and the 2,048-token reserve. Pull request [#63350](https://github.com/vllm-project/vllm/pull/63350), proposed to vLLM (open, with no maintainer review as of 2026-10-29), carries the KV preemption, and [#63351](https://github.com/vllm-project/vllm/pull/63351), stacked on it, the budget cap, without the reserve. The KV case runs without the reserve, which would keep the second priority-2 request out of the full pool; 22 of 2,274 blocks were free when the request was sent, in every run on a full pool.
-
-| Scheduler | Runs | Priority-0 TTFT | Then |
-|---|---:|---|---|
-| Stock vLLM 0.32.0, priority scheduling | 3 | 4,923, 5,069, 5,077 ms | 2 running, 1 waiting |
-| `make-room`, the KV preemption alone (#63350) | 2 | 247, 321 ms | 2 running, 1 waiting |
-| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | 2 | 225, 297 ms | 2 running, 1 waiting |
-| Either, on an idle pool | 4 | 107–137 ms | — |
-
-- **Why stock waits.** A KV timeline of the same load on the stock scheduler (`/metrics` every half second) shows the two prefills filling the pool to 98.7% at 7.7 s, then decoding into its last free blocks until 12.6 s, when one of them cannot grow and vLLM preempts the later one, and use falls to 50%. A priority-0 request that arrives in between waits: the waiting loop stops at its failed allocation, and running requests are preempted only for each other's growth. Here it waited 4.9 to 5.1 s.
-- **What make-room does.** It preempts one priority-2 request at once, through the stock preemption path; with the OffloadingConnector the victim's KV is in the CPU tier for its resume. Both runs end in the same state, one agent request waiting, but the voice turn's first token comes 4.6 to 4.9 s sooner. The budget cap changes nothing here, since the priority-2 requests are decoding rather than prefilling: the 16th token came after 535 and 610 ms with the KV preemption alone, and 514 and 586 ms with the budget cap.
-- **An instrument note.** `vllm:num_preemptions_total` stayed 0 through the stock timeline's preemption: vLLM counts a preemption when the victim's next output reaches the frontend, so a victim still waiting is not counted yet. E2's per-point engine counters therefore miss victims that resume after a point's window, and the probe reads the running and waiting counts instead.
-
-**The prefill case.** The probe's `prefill` case sends three priority-2 requests of 10,000 prompt tokens, which prefill beside each other with room left in the pool, and the voice turn once all three run. It times the turn's first token and its 16th, the end of the budget cap's window (on Gray, 2026-10-23; the median and range where a row has four runs or more):
-
-| Scheduler | Runs | Priority-0 TTFT | 16th token |
-|---|---:|---|---|
-| Stock vLLM 0.32.0, priority scheduling | 6 | 361 ms (290–596) | 1,395 ms (1,226–1,683) |
-| `make-room` without the budget cap (`budget_cap_tokens 0`), with the reserve | 2 | 324, 339 ms | 1,248, 1,277 ms |
-| `make-room`, the KV preemption alone (#63350) | 4 | 381 ms (329–589) | 1,423 ms (1,370–1,674) |
-| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | 4 | 320 ms (263–328) | 573 ms (564–618) |
-| `make-room` as arm 9 runs it, with the reserve | 2 | 282, 354 ms | 578, 651 ms |
-
-- **Why.** Every step of the reply carried the agents' prefill chunks, up to 512 tokens, so its tokens came 62 to 73 ms apart, on stock vLLM as with the KV preemption alone, which finds KV to spare here and changes nothing; with the budget cap they come 16 to 20 ms apart. The first token still waits for the step in flight when the turn arrives. E2's first arm-9 point, on the first module, showed the same loss at scale: its waterfall put it in the reply's first sentence (1,335 ms at the median against 536 ms to the first token).
-- **Spread.** The case varies with how far the three prefills have got when the turn arrives: stock vLLM's first two runs gave 1,226 ms each, four later ones 1,367–1,683 ms. With two runs a row, the KV preemption alone would have looked slower than stock.
-
-**The calls' first-token tail.** `python/flatshare_vllm/src/flatshare_vllm/make-room/tail.py` runs 12 closed-loop agent sessions at priority 2 beside two calls at priority 0 for 240 s and gives the calls' time to first token. The agents' prompts are 6–30k tokens, either fresh each turn, as E2's discriminating replay computes about 95% of its prompt tokens, or growing by a tool result each turn, so that they reuse the CPU tier; a call turns every 4–8 s with 16 output tokens, the budget cap's window, so neither this check nor the prefill case shows a reply that outruns the window. On Gray, 2026-10-23:
-
-| Scheduler | Agents' prompts | Call turns | TTFT p50 / p90 / p95 / max |
-|---|---|---:|---|
-| Stock vLLM 0.32.0, priority scheduling, the box's flags | fresh | 47 | 3,081 / 6,529 / 8,239 / 11,094 ms |
-| Stock vLLM 0.32.0, priority scheduling, the box's flags | growing | 50 | 1,359 / 6,816 / 7,258 / 8,692 ms |
-| `make-room`, the KV preemption alone (#63350) | fresh | 60 | 643 / 1,715 / 2,730 / 6,298 ms |
-| `make-room`, the KV preemption alone (#63350) | growing | 60 | 540 / 1,102 / 1,950 / 3,325 ms |
-| `make-room` with the reserve, before its KV-load rule | fresh | 68 | 361 / 1,546 / 2,812 / 4,120 ms |
-| `make-room` with the reserve, before its KV-load rule | growing | 70 | 425 / 605 / 2,395 / 3,544 ms |
-| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | fresh | 73 | 257 / 346 / 353 / 370 ms |
-| `make-room`, the KV preemption and the budget cap (#63350 and #63351) | growing | 73 | 261 / 387 / 434 / 604 ms |
-| `make-room` as arm 9 runs it, with the reserve | fresh | 73 | 202 / 283 / 316 / 398 ms |
-| `make-room` as arm 9 runs it, with the reserve | growing | 73 | 202 / 289 / 324 / 678 ms |
-
-The rows before the KV-load rule ran with the scheduler's state logged for each call that waited over 0.3 s; the stock rows' p95 is near that of tuned vLLM in E2's discriminating scenario (the realtime first byte, 8,556 ms). Each row is one run; the percentiles are inclusive, as E2's report computes them, from the run's per-turn lines.
-
-- **Why.** Between a call's turns, the agents' prefills cycle the GPU's free blocks, so the turn's prefix is evicted and loads back from the CPU tier, asynchronously. Every slow turn was in `WAITING_FOR_REMOTE_KVS` (the scheduler's state logged each step), with KV to spare. Once its load is done, a request waits for the waiting loop to promote it, and the waiting loop runs only on budget the running loop leaves; the agents' 512-token chunks left none. The budget cap now holds lower-priority prefill while a higher-priority request loads, as while it prefills.
-- **Each switch's share.** The KV preemption alone takes the calls' p95 from 7.26–8.24 s to 1.95–2.73 s, since a turn no longer waits for an agent request to free its blocks; the budget cap takes it under 0.5 s. With the reserve as well, the median is lower (202 against 257 and 261 ms).
-- **E2's points show the same tail:** disc-a9-s24 on the module before this rule had its first token after 334 ms at the median and 2,146 ms at p95, against preempt-resubmit's 251 and 394 ms; its turns loaded about 40k tokens from the CPU tier, about their own prefixes.
-
-### W5: the fixed make-room on Phastform
-
-W5 fixed make-room's rules ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351)) and checked each module on Phastform's RTX 5060 Ti, the GPU of every E2 point until the two-card rounds, with the frozen box's units, pins and pool, on 2026-10-24. Every block ran make-room with the pull requests' own values (the KV preemption at 2 victims a step, the budget cap with its 16-token window, no reserve): the KV case 3 times, the prefill case 4 times, and `tail.py` with fresh and with growing prompts twice each, one block per module. The outputs are in [`benchmarks/results/2026-10-24-w5-probes`](../benchmarks/results/2026-10-24-w5-probes), whose `check.py` recomputes the table (the median and range where a cell has four runs; a tail cell pools both runs' 145–146 turns, none failed, and its percentiles are inclusive, as E2's report computes them):
-
-| Module | KV case TTFT | Prefill case TTFT / 16th token | Calls' TTFT, fresh prompts, p50 / p95 | Growing prompts, p50 / p95 |
-|---|---|---|---:|---:|
-| v0.3's, which E2 measured before W5 | 212, 286, 287 ms | 322 (302–365) / 619 (599–661) ms | 227 / 365 ms | 236 / 388 ms |
-| W5's fixes as first written: a KV load in flight holds nothing until it is done | 215, 289, 290 ms | 368 (355–395) / 664 (652–692) ms | 358 / 567 ms | 361 / 563 ms |
-| The same, with a load in flight holding lower-priority prefill for its first 16 steps | 217, 290, 291 ms | 316 (311–323) / 611 (560–620) ms | 248 / 371 ms | 251 / 393 ms |
-| As merged: the bounded load hold | 216, 290, 291 ms | 309 (301–318) / 606 (597–614) ms | 232 / 356 ms | 238 / 382 ms |
-
-- **What the first fixes cost, and what gave it back.** Holding nothing while a load is in flight lets the agents' prefill run through a call's KV load: the calls' first token came 125–131 ms later at the median and 175–202 ms later at p95 than on v0.3's module. Holding prefill for the load's first 16 steps gives it back, and bounds a load that never completes, which v0.3's unbounded hold did not; the merged module is within 5 ms of v0.3's at the median and 6–9 ms below it at p95.
-- **The KV case and the prefill case do not move** across the four modules: the voice turn's first token comes 212–291 ms after it is sent into a full pool (stock vLLM waits 4.9–5.1 s), and its 16th 606–664 ms after it is sent behind three agent prefills.
-- **The engine's make-room lines.** The first fixes' generated module rebound the scheduler's logger, so its counter lines never reached the journal; the merged module keeps vLLM's logger (v0.3's logged none).
-
-<a id="the-prs-configuration-in-one-session-w5"></a>
-
-### The probes the pull requests cite, in one session (W5)
-
-The probes #63350 and #63351 cite, on Phastform on 2026-10-25, after the PR campaign and on the make-room it ran: stock vLLM 0.32.0 on the frozen box, the KV preemption alone, and the change at the budget cap's default 16-token window, two preemptions a step and no reserve. Each block ran the KV case and the prefill case four times and `tail.py` with fresh and with growing prompts twice ([`pr-probes/`](../benchmarks/results/2026-10-24-w5-probes)); a tail cell pools both runs' turns, none failed, at inclusive percentiles:
-
-| Engine | KV case TTFT | Prefill case TTFT / 16th token | Calls' TTFT, fresh prompts, p50 / p95 | Growing prompts, p50 / p95 |
-|---|---|---|---:|---:|
-| Stock vLLM 0.32.0, priority scheduling | 4,968 ms (4,900–4,971) | 529 (313–558) / 1,500 (1,220–1,529) ms | 2,244 / 6,830 ms | 1,324 / 7,158 ms |
-| #63350 alone (the KV preemption) | 290 ms (219–290) | 416 (304–556) / 1,350 (1,211–1,528) ms | 716 / 4,111 ms | 615 / 1,073 ms |
-| #63350 and #63351 (the budget cap, 16 tokens) | 290 ms (216–294) | 304 (292–318) / 575 (536–615) ms | 236 / 388 ms | 258 / 358 ms |
-
-- **The KV case is #63350's.** The voice turn has its first token after 0.22–0.29 s instead of 4.9–5.0 s, and the budget cap changes nothing there. In one run with both, the reply ended before its 16th token; this case measures the first.
-- **The prefill case and the tail are #63351's.** With #63350 alone, which finds KV to spare in the prefill case, the reply's tokens still come 60–65 ms apart behind the agents' chunks and the calls' p95 stays at 1.1–4.1 s; with the budget cap they come 16–20 ms apart and the p95 is under 0.4 s.
-
-
-### After W5: the first tokens in flight
-
-The frozen box schedules asynchronously: vLLM schedules a step before it has processed the output of the step before it. W5's make-room, like #63351 until its revision of 2026-10-25 ([9013ed433](https://github.com/vllm-project/vllm/pull/63351)), counted a request's first tokens from the outputs processed, which lag a step behind those scheduled, so the budget cap held lower-priority prefill back one step past its window. Both now count the tokens in flight too (vLLM's output placeholders); a test on vLLM's own scheduler holds a 4-token window as many steps under asynchronous scheduling as without, and fails on the earlier count. Traced against the module W5 ran, the fixed make-room schedules alike in all 6,040 cases without the budget cap or with synchronous scheduling, and differently in 2,224 of the 2,712 asynchronous cases with it.
-
-Only a reply of at least the window's tokens meets that step, since a shorter one ends its hold when it ends. At the 16-token window, each such reply held agent prefill back a 17th step: 81% (248 of 305) of the replies in W5's 16-token points. At the 48-token window, 1 of the 2,469 replies in W5's 48-token points reached 48 tokens, so their measurements stand but for that one. The probes above measure the first token and the 16th, both before the step.
-
-### The window's knee
-
-`knee.sh` on Phastform on 2026-10-25, on the box's units and pool: make-room with the pull requests' switches at a budget-cap window of 16, 24, 32, 48 and 64 tokens, each read back from the engine, and for each two 240 s runs of `tail.py` beside the box's closed-loop agents, with fresh prompts and call replies of 40 tokens timed to their first, 16th and last token ([the records](../benchmarks/results/2026-10-25-window-knee/README.md)). The medians of each window's two runs, in ms; no turn failed:
-
-| Window (tokens) | First token p95 | 16th token p95 | 40th token p95 | Agents' prompt tokens/s |
-|---:|---:|---:|---:|---:|
-| 16 | 448 | 726 | 3,759 | 3,483 |
-| 24 | 387 | 648 | 2,642 | 3,443 |
-| 32 | 326 | 572 | 1,854 | 3,300 |
-| 48 | 347 | 616 | 1,037 | 3,205 |
-| 64 | 366 | 612 | 1,018 | 3,246 |
-
-The reply's tail falls until the window covers the reply, 3.8 s at 16 tokens to 1.0 s at 48, and moves no further at 64; the first token, which the window does not touch, stays at 326–448 ms. The agents' prompt throughput falls 8% from 16 to 48 and no further, since a hold ends with its reply: a window longer than the replies costs no more than one just long enough ([choosing N](PRODUCTION.md#the-replys-first-tokens)).
-
-## Agent replay on the frozen box: a first retention-headroom signal
+### One replay at 16 sessions, a first retention-headroom signal
 
 Measured in W0: AIPerf `agentic_replay` of the 32×-scaled Claude Code corpus, 16 agent sessions, think times capped at 120 s, `ignore_eos`, 10 minutes, against the frozen box through the tunnel. `flatshare-bench kv-metrics` compared vLLM's sampled KV block histograms over the run.
 
@@ -699,7 +936,9 @@ Measured in W0: AIPerf `agentic_replay` of the 32×-scaled Claude Code corpus, 1
 - With the 4× write-through CPU tier, those misses cost a restore, not a recompute. W0 read the headroom on this configuration as GPU placement and prefetch timing, not CPU-tier retention; E1 has since superseded that reading: in the simulator even perfect knowledge of the returns buys under 9% of the median resume ([below](#agent-replay-at-three-loads-and-the-simulator-calibrated-on-it-w2)).
 - The reuse-gap histogram counts only blocks that survived until reuse, so it is biased short. This is a signal, and the simulator's clairvoyant reference is the measurement.
 
-## Agent replay at three loads, and the simulator calibrated on it (W2)
+<a id="agent-replay-at-three-loads-and-the-simulator-calibrated-on-it-w2"></a>
+
+### Three loads, and the simulator calibrated on them
 
 AIPerf `agentic_replay` of the 32× corpus against the frozen box (straight to the engine, think times capped at 120 s, 10 minutes plus a 60 s grace), each on a freshly started engine, 2026-10-22. TTFT is AIPerf's profiling phase; the prompt-token split is vLLM's `prompt_tokens_by_source` counters over the whole run, warm-up included. `make reproduce-calibration` recomputes the table, and the simulator's figures below, from the runs' exports, an asset of the [v0.3 release](https://github.com/StevenWang-CY/flatshare/releases/tag/v0.3) ([`crates/flatshare-sim`](../crates/flatshare-sim/README.md#calibration-against-the-gpu-operating-points)).
 
@@ -710,9 +949,17 @@ AIPerf `agentic_replay` of the 32× corpus against the frozen box (straight to t
 | 24 | 1,568 | 175 / 1,415 / 15,605 ms | 22.0 ms | 51.4 / 33.4 / 15.2% | 2 |
 
 - **Repeatability.** Three 16-session runs (W0's, one on a warm engine and the fresh one above) agree within 1.5 points on the split and range from 787 to 1,023 ms at TTFT p90. At 24 sessions a run on a warm engine was slower (TTFT p90 1,900 ms).
-- **The simulator against them.** `flatshare-sim` with the W2 contention model (the step loop and a fitted step time; [its README](../crates/flatshare-sim/README.md#the-contention-model)) reproduces resume TTFT p50 / p90 within 4–8% at 8 and 16 sessions, also when each point is left out of the fit, and request counts within 1%. At 24 sessions it is 18% / 30% fast, because restores take 163 ms longer there than modeled; the likely cause is store traffic, which the model omits.
+- **The simulator against them.** `flatshare-sim` with the W2 contention model (the step loop and a fitted step time; [its README](../crates/flatshare-sim/README.md#the-contention-model)), fitted to E0's cells and these three operating points, reproduces resume TTFT p50 / p90 within 4–8% at 8 and 16 sessions, also when each point is left out of the fit, and request counts within 1%. At 24 sessions it is 18% / 30% fast, because restores take 163 ms longer there than modeled; the likely cause is store traffic, which the model omits.
 
-**E1 in the simulator: does knowing when a session returns help?** Resume TTFT gain over LRU + the CPU tier, in the realistic regime (the traces' think times, the CPU tier at 4×, 20 seeds): the mean of the per-seed gains, and in parentheses, where it differs by more than 2 points, the gain of the seeds' mean latencies:
+<a id="e1-parking-in-the-simulator"></a>
+
+## Does knowing when an agent returns help?
+
+**Provenance:** E1, in the simulator, 2026-10-22 to 24, calibrated on W2's replay.
+
+`flatshare-sim` ([its README](../crates/flatshare-sim/README.md) has the model, its calibration and its validation) replays the 32× corpus through a model of vLLM 0.32's two-tier KV cache and step loop, with each parking arm in place of the engine's own LRU and CPU offload ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking) has the design).
+
+**At a glance.** Resume TTFT gain over LRU + the CPU tier, in the realistic regime (the traces' think times, the CPU tier at 4×, 20 seeds): the mean of the per-seed gains, and in parentheses, where it differs by more than 2 points, the gain of the seeds' mean latencies:
 
 | Agent sessions (KV pressure) | `lru-cpu` resume p50 / p90 | Oracle prefetch p50 / p90 | Clairvoyant reference p50 / p90 |
 |---|---|---|---|
@@ -721,13 +968,7 @@ AIPerf `agentic_replay` of the 32× corpus against the frozen box (straight to t
 | 16 (3.2) | 139 / 895 ms | +8.2% (+10%) / +13.2% (−3%) | +1.7% / +9.4% |
 | 24 (4.4, outside the calibration) | 208 / 1,645 ms | −2.4% (−24%) / −16.9% (−24%) | +2.3% / +10.9% |
 
-Even perfect knowledge buys under 9% of the median resume, which is already a GPU hit or a short restore. At the tail it buys 28% at low pressure (about 80–90 ms of the p90), more than the clairvoyant reference, because a prefetch hides a restore inside the pause; session history, the knowledge a deployment has, buys nothing. Read at p50, this is G-sim's negative branch ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)): the CPU-tier policy plugin stays off. The oracle's rows were corrected on 2026-10-24: its simulated prefetch had fired late for the turns AIPerf's idle cap sends early. The full regime map, with TraceLab's pauses, the history-level arms and the 2× and 8× tiers, is [below](#e1-parking-in-the-simulator). So is the placement of an L4, an A100 and an H100 on the same map, from costs modeled on their published peaks and the kernel path vLLM takes on each ([Other hardware, modeled](../crates/flatshare-sim/README.md#other-hardware-modeled)); none of its numbers is measured, and one card has since been: [the A100 run](#the-a100-run-2026-10-26).
-
-## E1: parking, in the simulator
-
-`flatshare-sim` ([its README](../crates/flatshare-sim/README.md) has the model, its calibration and its validation)
-replays the 32× corpus through a model of vLLM 0.32's two-tier KV cache and step loop, with each parking arm in place of
-the engine's own LRU and CPU offload ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking) has the design).
+Even perfect knowledge buys under 9% of the median resume, which is already a GPU hit or a short restore. At the tail it buys 28% at low pressure (about 80–90 ms of the p90), more than the clairvoyant reference, because a prefetch hides a restore inside the pause; session history, the knowledge a deployment has, buys nothing. Read at p50, this is G-sim's negative branch ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)): the CPU-tier policy plugin stays off. The oracle's rows were corrected on 2026-10-24: its simulated prefetch had fired late for the turns AIPerf's idle cap sends early. The full regime map, with TraceLab's pauses, the history-level arms and the 2× and 8× tiers, is [below](#the-regime-map). So is the placement of an L4, an A100 and an H100 on the same map, from costs modeled on their published peaks and the kernel path vLLM takes on each ([Other hardware, modeled](../crates/flatshare-sim/README.md#other-hardware-modeled)); none of its numbers is measured, and one card has since been: [the A100 run](#the-a100-run-2026-10-26).
 
 ### The regime map
 
@@ -765,9 +1006,12 @@ With trace pauses up to 24 sessions, `mori` loses 1–15% at p50 and 10–24% at
 - **p50.** +3% at 8 and 12 sessions, +8% at 16 (+10%: 139 to 125 ms) and −2% at 24 (−24%). The median resumed turn is a GPU hit or a short restore, and a restore turned into a hit saves only its transfer and the two steps it waits after it.
 - **p90.** +28% at 8 and 12 sessions (pressure 1.6–2.4: 78 and 88 ms of `lru-cpu`'s 267 and 299 ms) and +13% at W0's 16 sessions (−3%), whose seed range is wider than the effect (−43 to +50%). At 24 sessions (pressure 4.4) it is −17% (−24%): its loads queue with the demand restores on the one load stream and stall the step loop as they do.
 - **The reference.** The clairvoyant gap itself is 0.5–2.3% at p50 and 8–16% at p90. The oracle passes it at 8 and 12 sessions at both percentiles: a prefetch hides a restore inside the pause, which no eviction order can.
-- **The history level**, the information a deployment has without tools that report when they will return, closes nothing: its best arm gains 3.6% at p90 at 8 sessions and loses 7–10% from 12 sessions on, its prefetches mistimed by heavy-tailed pauses.
+- **The history level**, the information a deployment has without tools that report when they will return, closes nothing: its best arm gains 3.6% at p90 at 8 sessions and loses 7–10% from 12 sessions on, its prefetches mistimed by heavy-tailed pauses. TTL holds are neutral.
 - **TraceLab's tool pauses** (π about 3, a pause about three restores long): the oracle gains at most 7% (p90, 12 sessions) and loses from 16 sessions on.
 - **Caveat.** The model under-predicts restores at 24 sessions (above), and a dearer restore at high pressure would raise both what prefetching saves and what its loads cost.
+- **Both forms of the gate read the same way.** It was first written on the clairvoyant reference's headroom over LRU + CPU and changed to the oracle's gain ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)): at p50 the clairvoyant reference gains 0.5–2.3% and the oracle −2 to +8%, under the gate; at p90 the clairvoyant reference gains 8–16% (over 10% at 8 and 24 sessions) and the oracle up to 29%.
+- **Modeled on an L4, an A100 and an H100,** at their own scalings, lifecycle information buys at most 14%, 13% and 8% of resume TTFT p90.
+- **What follows.** The decision not to deploy a lease-aware policy rests on what a deployment can know: no client sends tool return times, and session history gains nothing. The lease-aware CPU-tier policy built for E1, `LeasePolicy`, was never switched on and was removed after v0.3 ([the plugins](#engine-plugins)): the tail gain needs each tool's return time ahead of the return. E1's regime map was posted as comments on vLLM #57103 and vllm-project/router #428, and corrected there on 2026-10-24 after a timing bug in the simulated oracle was fixed: its prefetch fired late for the turns AIPerf's idle cap sends early.
 
 ### Miss-ratio curves
 
@@ -789,153 +1033,229 @@ Three sequences: the 32× replay; the same admission order with every prompt cut
 - **Prefixes stay whole.** LRU's per-block and per-prefix ratios are equal: tail-first eviction never leaves a hole in a cached prefix. MIN's are equal to three decimals.
 - **Headroom.** At the pool's size MIN misses 22.9% of prompt tokens where LRU misses 35.6%. MIN is down to the cold misses (4.1%) at four times the pool, LRU at eight.
 
-## The A100 run (2026-10-26)
+<a id="load-generation"></a>
 
-An A100 SXM4 80 GB on Google Colab (12 vCPUs of a 2.20 GHz Cascade Lake Xeon, whose PCIe 3.0 root ports set the link to
-host memory), the release's kit ([HARDWARE.md](HARDWARE.md#the-a100-run)): E2's core like for like, the box's model at
-its revision, its 5 GiB pool, 512/256 and 20 GiB CPU tier, 24 sessions of the long traces and two callers, W5's arm
-files and samples of the agents; only the card, its precision path (Marlin's W8A16, no FP8 units) and the host change.
-Records: [`benchmarks/results/2026-10-26-a100`](../benchmarks/results/2026-10-26-a100/README.md); the analysis against
-the forecast written before the run is its [`a100.md`](../benchmarks/results/2026-10-26-a100/a100.md).
+## Is the replayed load faithful to the traces?
 
-**E2, by round.** The V2V p95 (ms) and the agents' tokens a second over the calls' first 240 s, each round on W5's
-sample of the agents for its number; voice alone sets the SLO at 1,419 + 250 = 1,669 ms. No turn of the 750 failed.
-
-| Agents' sample (seed) | Voice alone | Tuned vLLM, the box's 512/256 | The configuration to deploy | Its tokens/s, of tuned vLLM's |
-|---|---:|---:|---:|---:|
-| 11 | 1,445 | 4,163 / 10,749 | 1,663 / 10,125 | 94% |
-| 12 | 1,414 | 4,783 / 9,820 | 1,658 / 10,851 | 111% |
-| 13 | 1,419 | 4,986 / 8,398 | 1,611 / 8,025 | 96% |
-| 14 | 1,391 | 5,169 / 8,633 | 1,634 / 8,651 | 100% |
-| 15 | 1,424 | 5,710 / 8,312 | 1,609 / 7,922 | 95% |
-| Median | 1,419 | 4,986 / 8,633 | 1,634 / 8,651 | 96% |
-
-- **Every round under the SLO with the configuration to deploy**, by 7 to 60 ms; tuned vLLM 2.5 to 4.0 s over. The
-  agents' whole-call tokens/s with the configuration to deploy were 95–103% of tuned vLLM's round by round, and their
-  TTFT p50 moved by −1.2 to +1.8 s (tuned vLLM's 5.8–18.9 s across the rounds, p99 22–38 s).
-- **Less often short of KV than modeled, as the box is.** Two calls found KV short (the measured running share) 4–9% of
-  the time beside tuned vLLM and 2–7% beside the configuration to deploy, against the forecast's 10% for this card
-  [modeled]. On the same samples RS measured 7–9% and 5–7% on the box, against the simulator's 17%
-  ([RS](#the-boxs-running-share-rs)). Tuned vLLM preempted 29–75 agent requests a point, the configuration to deploy
-  31–78.
-
-**At vLLM's default 2,048/0**, the card's best stock cap in the probes, on rounds 1 and 2's samples: tuned vLLM, then
-the configuration to deploy at that cap (arm 8), the V2V p95 (ms) / the agents' tokens a second over the calls' first
-240 s, with the LLM's first token at p95 from the voice worker beside the 512/256 points':
-
-| Agents' sample (seed) | Tuned vLLM, 2,048/0 | The configuration to deploy, 2,048/0 | Of tuned vLLM's tokens/s | Its LLM first token p95: 2,048/0, 512/256 |
-|---|---:|---:|---:|---:|
-| 11 | 4,036 / 15,082 | 1,810 / 15,124 | 100% | 412 ms, 183 ms |
-| 12 | 3,289 / 13,990 | 1,843 / 14,145 | 101% | 414 ms, 216 ms |
-
-No turn of the 200 failed. Tuned vLLM made 1.40 and 1.42 times the agents' tokens of the 512/256 points on the same
-samples, its TTFT p50 1.0 and 2.0 s against 6.5 and 5.8 s at 512/256; the configuration to deploy at 2,048/0 kept them
-all, 140 and 173 ms over the SLO, the rest of their tail the LLM's first token behind the larger steps in flight.
-
-**A', 32 sessions at the box's pool** (round 1, seed 11; one point a configuration):
-
-| Configuration | V2V p95 | Agents' tokens/s, first 240 s | Agents' TTFT p50 / p99 | Preemptions | Running share |
-|---|---:|---:|---:|---:|---:|
-| Tuned vLLM, the box's 512/256 | 5,222 ms | 8,649 | 24.5 / 55.8 s | 57 | 6.5% |
-| The configuration to deploy | **1,617 ms** | 8,487 (98%) | 25.9 / 52.3 s | 65 | 6.5% |
-
-No turn of the 100 failed. With 24 sessions on the same sample the agents made 10,749 and 10,125 tokens a second; the
-forecast placed 32 sessions at a running share of 18% (fitted: 15%) [modeled].
-
-**The probes** (blocks 1 to 3; each run's numbers in [`a100.md`](../benchmarks/results/2026-10-26-a100/a100.md)): the KV
-case's wait on stock vLLM 1,721–1,750 ms at 512/256 and 1,620–1,645 ms at vLLM's default 2,048/0, and the first token
-with the configuration to deploy 150–176 ms; the prefill case's token gap, 1st to 16th, 32 ms on stock vLLM and 7 ms
-with the configuration to deploy; the calls' first-token p95 beside 12 agents 3,102–3,126 ms at 512/256, 2,518–2,535 ms
-at 2,048/0, 3,446–3,687 ms at 1,536/768 and 167–179 ms with the configuration to deploy, over 57–75 turns a run, none
-failed. With FlashInfer's attention in place of FlashAttention 2 (the backend arm, after the core), the KV case's wait
-on stock vLLM at 512/256 was 1,580–1,607 ms, 8% shorter at the median.
-
-**E0** (block 1, 3 repetitions, p50 in ms):
-
-| Prompt tokens | Recomputed | GPU hit | Restored from host RAM |
-|---|---:|---:|---:|
-| 1,024 | 64 | 18 | 32 |
-| 2,048 | 128 | 21 | 49 |
-| 4,096 | 269 | 25 | 81 |
-| 8,192 | 602 | 32 | 139 |
-| 16,384 | **1,471** | **46** | **268** |
-| 24,576 | 2,607 | 61 | 379 |
-| 31,744 | 3,825 | 75 | 483 |
-
-Fitted: a GPU hit 17 ms + 1.80 µs/token, a CPU restore 2.8 ms + 12.9 µs/token over it (11.5 GB/s of KV), a recompute 4.2
-ms + 56.5 µs/token + 2.01 ns/token². Restoring beats recomputing from 1,024 tokens.
-
-**The step model** (the calibration point: AIPerf's replay of the whole corpus at 16 sessions, 709 requests, fitted with
-`crates/flatshare-sim/scripts/fit_step_cost.py` and E0): a step's fixed cost 4.5 ms, 41.36 µs a token, 4.07 ns a token
-pair, 171.9 ns a KV token read; the forecast's 3.88 ms, 41.33 µs, 2.59 ns and 94.3 ns. It reproduces the point's 18,380
-decode steps to −3.0% at the median (p10/p90 −8.6/+8.0%).
-
-**The scheduler at a batch of 256** (`batch.sh`: `vllm bench serve` keeping 26 requests at priority 0 and 230 at
-priority 2 in flight, 48 prompt and 64 output tokens each, so that all 256 hold their KV at once; one run an engine):
-
-| Engine | Output tokens/s | Priority 0: TTFT p50 / p99 | Priority 0: TPOT p50 | Priority 2: TTFT p50 / p99 | Priority 2: TPOT p50 | Running p50 / max |
-|---|---:|---:|---:|---:|---:|---:|
-| Tuned vLLM | 7,524 | 166 / 574 ms | 28.6 ms | 341 / 1,086 ms | 29.1 ms | 201 / 254 |
-| make-room, its switches off | 7,661 | 133 / 510 ms | 30.9 ms | 214 / 1,212 ms | 30.8 ms | 215 / 256 |
-| make-room, the configuration to deploy | 8,672 | 90 / 177 ms | 6.9 ms | 283 / 7,971 ms | 28.6 ms | 154 / 230 |
-
-- **The code path costs nothing at the batch.** With its switches off make-room schedules as vLLM does, and it made
-  1.018 of vLLM's output tokens a second, with more requests running at once (215 at the median against 201), which is
-  also why each one's TPOT is longer.
-- **The deployed values turn the priorities' latencies around.** Priority 0's first tokens come 3.2 times as soon at p99
-  and their tokens 4.1 times as fast, since the budget cap keeps priority 2 prefill out of their first 48 tokens' steps;
-  closed loop at a concurrency of 26, the priority 0 client completes its requests 2.8 times as fast, and the engine
-  makes 1.153 of vLLM's tokens a second. The priority 2 requests pay at their tail: TTFT p99 7.3 times tuned vLLM's, its
-  median lower, as a steady stream of priority 0 first tokens holds their prefill back.
-
-**The host** (`bench_host.py`): Python's fixed workload 227 ms at the median (the box's 381); pinned host memory to the
-card 10.08 GB/s at the CPU tier's 32 KiB pages, 11.09 at 64 KiB, 12.28 at 2,304 KiB (a 16-token block of all 36 layers)
-and 12.32 in one copy (the box's 5.44, 6.03, 6.74, 6.76), and back to the host 10.61, 11.62, 12.80 and 12.86.
-
-## Failure drills
-
-The deployed box on the configuration to deploy (make-room with the pull requests' switches and a 48-token window), on 2026-10-25, from `ops/drills` ([RUNBOOK.md](../ops/RUNBOOK.md#drills) runs them): the build of that day (v0.3-295 on both hosts), and W8's, before W6's hardening, beside it. Each drill opens two realtime streams through the gateway's voice-plane socket and four background ones through its TCP port, each decoding up to 2,000 tokens, then breaks something once every stream has its first byte; from the event on it probes both planes every second, each probe on a new connection, until the streams have ended and a request succeeds. The records, with W6's and an intermediate build's, are in [`benchmarks/results/2026-10-25-drills`](../benchmarks/results/2026-10-25-drills/README.md).
-
-| Drill | What the six streams saw | What the new requests got | W8, before W6 |
-|---|---|---|---|
-| The engine killed (SIGKILL to every process of `flatshare-engine`, mid-decode) | Each got vLLM's error event, `upstream_unavailable`, 8–11 ms after the kill | 210 of 212 probes failed at once (2 answered 502, then 503 `upstream_not_ready` without reaching for the engine), until one succeeded 106.2 s after the kill | Every body cut 54–57 ms after the kill, with no error event; a request succeeded 112.3 s after it |
-| The gateway reloaded (`systemctl --user reload flatshare-gateway`, a deploy's) | The realtime streams finished whole, 20.9 s after; the background ones ended 5.0 s after, with the `draining` error event | None of 42 probes failed or waited: the slowest was answered in 0.13 s | — (a deploy restarted the gateway) |
-| The gateway restarted (`systemctl --user restart flatshare-gateway`), 30 s after the reload | As the reload's: the realtime streams whole, 20.7 s after; the background ones `draining`, 5.0 s after | None of 42 failed; those sent during the drain waited in the socket's backlog and were answered once the new gateway started, 20.7 s after the restart (the slowest in 19.8 s) | Every stream finished, 22.4–23.2 s after, while the gateway refused new connections; the probe ran after the drain |
-| The gateway killed (SIGKILL; systemd starts it again a second later, its socket unit holding the listeners) | All broke 11–14 ms after | None of 4 failed; they waited for the gateway's start, the slowest 1.3 s | — |
-
-- **Where an engine's recovery goes.** The unit's last process exited 7.6 s after the kill (the GPU's teardown), systemd started the unit 5.1 s after that (`RestartSec`, 15 s in W8), and its warm start listened 92.1 s later. Until its `/health` answers, the gateway answers 503 with `Retry-After: 1` and does not reach for the engine.
-- **No KV or host memory outlives a killed engine.** The engine ran six requests before the kill and none after its restart, and `/dev/shm` held the CPU tier's 20.0 GiB before and after (an unlinked 21.5 GB file there, made again by each start); each kill, W8's and v0.3-295's, left one 32-byte semaphore.
-- **A deploy without a gap.** Until W6 a deploy restarted the gateway, and new requests failed for as long as its longest stream took to finish, up to 30 s. Since W6 a deploy reloads it: the gateway hands its listening sockets to a successor that serves at once, and drains ([PRODUCTION.md](PRODUCTION.md#how-it-fails)). A restart drains too since the unit's `ExecStop` waits for the drain itself (v0.3-191's restart after a reload cut its streams: systemd 249 does not wait for a main process it did not start), and the requests sent meanwhile, queued in the socket's backlog, are answered once the new gateway serves: on v0.3-274, 5 of the restart's 42 probes got 502, where cyan's tunnel let the new gateway's burst of upstream connections pass a master's sessions and the node's sshd dropped them; the tunnel now waits for a master with room.
-- **The CPU tier overfilled (W8).** `flatshare-bench drill cpu-tier` stored 43.5 GB, 2.0 times the tier's 20 GiB, in 18 requests of 16,384 tokens (3.30 s each at the median); the engine stayed healthy, the latest 8,192-token prompt restored from the tier in 294 ms against 1,112 ms recomputed, and the first had been evicted (recomputed, no tier hit).
-
-Each server's start, from its journal (`ops/drills/cold-start.sh`):
-
-| Start | Unit start to ready | Where the time goes |
-|---|---:|---|
-| The engine, warm caches | 88.8 s | The API server up at 16.5 s, the engine process at 38.4 s, the weights loaded at 54.1 s, the KV cache at 55.4 s, the CUDA graphs captured at 84.1 s, listening at 87.9 s; torch.compile from its cache in 0.3 s |
-| The engine, empty caches, as on a new host | 531.8 s | The weights at 86.1 s; torch.compile 84 s (Dynamo 23 s, Inductor 43 s) and the profiling run 17 s, so the KV cache at 189.3 s; 337 s more to the CUDA graphs (526.6 s), of which the capture is 13 s and the rest kernel warmup and JIT builds, FlashInfer's sampling module among them |
-| The box, v0.3-295 (`systemctl --user restart flatshare.target`) | 102.7 s | The units stopped within 8.1 s, then the three started at once: the TTS ready 22.9 s after its start, the STT 64.0 s, the engine 94.6 s (on v0.3-191 the engine waited for the STT to be ready, and the box took 161.4 s) |
-
-<picture>
-  <source media="(max-width: 767px)" srcset="figures/report-starts-narrow.svg">
-  <img src="figures/report-starts.svg" width="100%" alt="Three bars of the engine's phases on one axis of seconds: killed mid-decode, it was down 12.7 s, its unit's last process gone 7.6 s after the kill and systemd's restart 5.1 s later, and its warm start listened 92.1 s after the restart, a request answered 106.2 s after the kill; a warm start was ready at 88.8 s, its weights loaded at 54.1 s and its CUDA graphs captured at 84.1 s; and a cold start, with empty caches, was ready at 531.8 s, its weights at 86.1 s, its KV cache at 189.3 s after compiling and profiling and its CUDA graphs at 526.6 s after the kernels' warmup and JIT builds.">
-</picture>
-
-**The engine's recovery from a kill is mostly its warm start, and on empty caches a start takes six times as long.** Each bar stacks a start's phases from its journal, as the table above gives them, in seconds from the kill or from the unit's start; the dashed box is the killed engine down, until systemd starts it again.
-
-**Two GPU nodes** (2026-10-28, [the record](../benchmarks/results/2026-10-28-node-failover/README.md)): the arrangement to deploy, both calls on Phastform and Gray a warm spare (`calls = "fill"`), with `ops/drills/node-failover.sh` placing two calls as the voice worker does and running a 32-token turn of each every 3 s beside two agents' streams, then breaking Phastform's engine after five whole turns of each call:
-
-| Drill | Turns before / after the event, whole | Calls moved to Gray | Turns failed after the first move | Phastform passed over / unhealthy / available again | Gray covered |
-|---|---|---:|---:|---|---:|
-| SIGKILL to the engine; systemd starts it again | 10 of 10 / 148 of 148 | +0.7 s | 0 | +0.10 s / +2.1 s / +101.0 s | 238 s |
-| The engine stopped to the drill's end | 10 of 10 / 152 of 152 | +1.9 s | 0 | +1.3 s / +3.3 s / down to the end | 244 s |
-
-- **The calls moved within a turn,** and none of the 300 turns after the events failed; no turn was in flight at either event, so none was cut. Gray then covered to the drills' end, as the moved calls stayed on it, and the agents' requests that began meanwhile waited out their class's 120 s queue timeout and got 503 `queue_timeout`. A first run found the drill's own client sending a wrong model id, every request 404 before the event as after it; the runs above are the first after its fix.
-
-## Load generation
+**Provenance:** W0 and W2, 2026-10-22.
 
 - AIPerf 0.13.0 `agentic_replay` over the SemiAnalysis Claude Code traces: 99.4% of turns arrive within 50 ms of their recorded delay.
 - Block scaling makes all 98,827 requests fit:
   - 32× fits a 32k context, with main-agent context p50 7.9k and p90 20.3k tokens;
   - 64× fits 16k.
 - Load generators run on cyan, on pinned cores; another host considered for them had a p99 timing noise of 200–350 ms, which ruled it out.
+- The callers play their lines at most 116 ms late, at six callers, and under 60 ms late elsewhere; no point was rejected for it.
+
+## History
+
+The campaigns before W5 replayed one sample of the agents' traces (agent seed 11, caller seed 0), one to five runs a configuration, so their ranges measure timing noise only. The report's §6.5 and its Table B3 use them, and W5 measured the headline configurations again in rounds on five samples ([above](#how-close-does-each-configuration-bring-the-voice-tail-to-its-slo)). The engine plugins of v0.3, measured once and removed, close the section.
+
+<a id="the-standard-scenario-w2"></a>
+
+### Every arm where the pool has room, one run a point
+
+**Provenance:** W2, 2026-10-22/23.
+
+The whole corpus, 2026-10-22/23, on the W2 build (SGLang with HiCache on the W3 build, from w2c). V2V p95 and, in brackets, the realtime first byte p95, in ms:
+
+| Agent sessions | Background tokens/s | Arm 2: stock defaults (FCFS, 2,048-token chunks) | Arm 3: + priority | Arm 4: + step cap 512/256 (tuned vLLM) | Arm 7b: SGLang 0.5.22 |
+|---|---:|---:|---:|---:|---:|
+| 0 (voice alone) | 0 | 1,744 (96), frozen box | | | |
+| 8 | 2,700–2,800 | 1,886 (114) | 1,871 (80) | — | 3,228 (1,440); with HiCache 1,822 (97) |
+| 16 | 4,900–5,600 | 2,406 (446) | 2,400 (333) | 2,215 (224) | 8,477 (2,284); with HiCache 2,218 (249) |
+| 24 | 9,200–9,600 | 3,008 (1,280) | 4,360 (2,243) | 3,865 (542) | — |
+
+At 16 agent sessions, every arm (V2V p50 / p95 / p99 in ms; the realtime first byte p95; background tokens/s):
+
+| Arm | Point | V2V p50 / p95 / p99 | First byte p95 | Background tokens/s | Notes |
+|---|---|---:|---:|---:|---|
+| 4 | tuned vLLM: step cap 512, long-prefill threshold 256 | 1,736 / 2,215 / 2,925 | 224 | 5,068 | |
+| 4 | step cap 1,024, no threshold | 1,687 / 2,167 / 2,479 | 144 | 5,246 | the best cell; within noise of tuned vLLM |
+| 4 | other cells (512/0, 1,024/256, 1,024/512) | 1,703–1,724 / 2,257–2,510 / 2,504–2,684 | 178–273 | 5,015–5,097 | |
+| 5 | `--watermark 0.1` | 1,703 / 2,495 / 2,986 | 216 | 5,001 | |
+| 5 | `--max-num-queued-tokens 8192` | 1,703 / 2,133 / ≥30,000 | 137 | 4,454 | 2 of 50 voice turns failed, counted at the callers' 30 s reply timeout: the limit refuses realtime requests too (43 refusals) |
+| 6 | static cap, 2 background in flight | 1,755 / 2,208 / 2,729 | 236 | 5,569 | the highest token rate |
+| 6 | static cap, 8 | 1,683 / 3,065 / 3,647 | 510 | 5,296 | |
+| 6 | static reservation, 2,048 tokens | 1,688 / 2,328 / 3,068 | 276 | 4,922 | |
+| 7a | `--max-num-seqs 12` | 1,710 / 2,104 / 2,984 | 161 | 4,981 | |
+| 7a | `--max-num-seqs 12` with #54530 | 1,728 / 2,736 / 3,103 | 461 | 4,897 | |
+| 7b | SGLang 0.5.22, priority preemption | 1,882 / 8,477 / 9,458 | 2,284 | 5,543 | no host tier: half its prompt tokens hit, against about 90% for vLLM with its CPU tier |
+| 7b | SGLang with HiCache (4×, written through) | 1,720 / 2,218 / 4,088 | 249 | 4,924 | the host tier, for parity with vLLM's |
+| 8a | llm-d flow control, emulated (ceilings 6/6/6) | 1,768 / 2,468 / 2,821 | 216 | 5,413 | 1 background request shed |
+| 8b | SMG 1.13.0, as shipped | 1,723 / 2,202 / 3,255 | 237 | 5,545 | |
+| 8c | preempt-resubmit before the first byte | 1,678 / 2,520 / 2,711 | 235 | 5,090 | 11 resubmissions |
+| factor | tuned vLLM, preemptive generation off | 1,687 / 2,278 / 2,953 | 294 | 5,121 | |
+| calls | tuned vLLM, 4 callers / 6 callers | 1,747 / 2,599 / 3,135 · 1,735 / 2,670 / 3,471 | 428 · 413 | 5,296 · 5,067 | 4 callers alone: 1,655 / 2,017 / 2,110 |
+
+What the standard scenario says:
+- **At 8 agent sessions every vLLM arm measured in W2 holds the voice SLO** (1,871–1,886 ms against 1,994). SGLang does not (3,228 ms).
+- **At 16, the realistic operating point, none clearly does, and the arms are within noise of each other.** Tuned vLLM, the best stock cell, `--max-num-seqs 12`, SMG and the static cap of 2 land at 2,104–2,215 ms, 110–221 ms above the SLO; `--max-num-queued-tokens` refuses work, voice turns included (2 of 50 failed), and lands above it too (2,133 ms). No gateway policy or engine knob separates itself from tuned vLLM here.
+- **The step cap shows in the realtime first byte, not in V2V.** At 24 agent sessions, priority scheduling alone gives a first-byte p95 of 2,243 ms and the 512/256 step cap 542 ms, but V2V p95 is 4,360 against 3,865 ms: the rest of the turn, decoding to the first sentence and TTS, still shares the GPU with agent prefills. No arm holds the SLO at 24.
+- **SGLang's deficit was its missing host tier.** Without one it is the worst arm at every load; with HiCache, written through like vLLM's CPU tier, it matches vLLM: 1,822 ms at 8 agent sessions and 2,218 ms at 16 (on the W3 build), against tuned vLLM's 2,215 ms (on the W2 build).
+- **Preemptive generation off** changes nothing measurable (2,278 against 2,215 ms), and **more callers** cost what they cost alone and some: four callers beside 16 agent sessions reach 2,599 ms against 2,017 ms for four callers alone (their SLO 2,267 ms).
+
+<a id="the-discriminating-scenario-w2"></a>
+
+### Every arm where agent KV fills the pool, one run a point
+
+**Provenance:** W2's third batch, 2026-10-23.
+
+W2's third batch, 2026-10-23, on the W3 build like everything after it: 24 agent sessions of the 48 traces with the largest contexts (`weka-x32-long`, 13.9k tokens at the median request), beside the same two callers, one run per point. The pool holds two or three of these contexts, and the agents' working set is far beyond both tiers: under tuned vLLM about 95% of their prompt tokens are computed, and agents wait 40–71 s for a first token at the median under every arm but preempt-resubmit (28 s) and the queued-token limit, which refuses them. It is the regime where running agent KV fills the pool. V2V p50 / p95 / p99 and the realtime first byte p95 in ms; background tokens/s:
+
+| Arm | Point | V2V p50 / p95 / p99 | First byte p95 | Background tokens/s | Notes |
+|---|---|---:|---:|---:|---|
+| 4 | tuned vLLM | 4,270 / 10,811 / 12,427 | 8,556 | 3,703 | |
+| 4 | step cap 1,024, no threshold | 4,816 / 8,789 / 10,024 | 6,523 | 4,097 | |
+| 5 | `--watermark 0.1` | 4,843 / 10,647 / 13,583 | 8,201 | 3,712 | |
+| 5 | `--max-num-queued-tokens 8192` | ≥30,000 / ≥30,000 / ≥30,000 | 56 | 5,597 | 48 of 50 voice turns failed, counted at the 30 s reply timeout: 1,132 requests refused, voice turns among them |
+| 6 | static cap, 2 / 8 background in flight | 3,363 / 8,573 / 10,385 · 5,713 / 9,876 / 11,369 | 6,320 · 7,502 | 3,566 · 3,785 | |
+| 6 | static reservation, 2,048 tokens | 3,311 / 5,706 / 6,317 | 3,631 | 3,633 | |
+| 7a | `--max-num-seqs 12` with #54530 | 4,687 / 10,930 / 11,870 | 7,964 | 3,718 | |
+| 7b | SGLang 0.5.22, priority preemption | 5,367 / 12,051 / 17,937 | 6,451 | 3,678 | |
+| 7b | SGLang with HiCache (4×, written through) | 4,274 / 10,497 / 13,193 | 5,000 | 4,908 | |
+| 8a | llm-d flow control, emulated | 4,221 / 10,992 / 11,277 | 8,172 | 4,006 | 60 background requests shed |
+| 8b | SMG 1.13.0 | 3,511 / 11,050 / 13,839 | 8,783 | 3,557 | |
+| 8c | preempt-resubmit before the first byte | 1,960 / 2,591 / 2,684 | 374 | 3,901 | 1,080 resubmissions; agent TTFT p99 140 s |
+
+The voice turn by stage (means over the replies, ms; `waterfall.svg` draws them):
+
+| Point | Endpointing | Reply to first sentence | TTS first audio | Transport and playout | Mean V2V | LLM first token |
+|---|---:|---:|---:|---:|---:|---:|
+| tuned vLLM | 827 | 3,651 | 276 | 326 | 5,080 | 2,701 |
+| static reservation, 2,048 tokens | 830 | 2,173 | 250 | 351 | 3,604 | 1,068 |
+| preempt-resubmit | 827 | 627 | 223 | 358 | 2,034 | 265 |
+
+What the discriminating scenario says:
+- **Every arm but one collapses, and the loss is the wait for KV.** V2V p95 is 5.7–12.1 s. Endpointing and TTS do not move; the turn loses its seconds between the end of the turn and the first sentence, most of them before the LLM's first token.
+- **Engine priority does not help here**, in any form measured: vLLM's priority scheduling with any step cap, #54530 (it preempts at the request-count cap, which does not bind here), SGLang's priority preemption, with or without its host tier. SGLang's host tier lifts the agents' token rate by a third, not the voice tail.
+- **Static answers fall short.** The 2,048-token reservation halves the tail (5.7 s), still 3.7 s over the SLO; concurrency caps do not help, because two contexts fill the pool. vLLM's queue limit refuses the voice turns with the rest (48 of 50 failed).
+- **Preempt-resubmit holds the tail** at 2.6 s p95, 0.6 s over the SLO, at tuned vLLM's token rate: it aborts the background requests that have no first byte yet, which frees their KV at once, and their resubmissions restore the prefixes already written through to the CPU tier rather than recompute them (at their first scheduling, the engine computed 0.65M prompt tokens and restored 0.62M, against 1.48M and 0.06M under tuned vLLM; the CPU tier's own counter, which sees a resume too, loaded 0.82M tokens against 0.22M). Its cost is the agents' tail. It cannot reach a request that is already decoding, which an engine-side preemption can (arm 9).
+- **An instrument note.** vLLM counts a preemption when the victim's next output reaches the frontend, so the per-point preemption counts are lower bounds ([the KV case](#the-kv-case-make-room)).
+
+<a id="the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4"></a>
+
+### The headline configurations, arm 9 and the change, in rounds on one sample
+
+**Provenance:** W4, 2026-10-23/24.
+
+W4, 2026-10-23/24, in rounds: w2c and a9 are round 0, `r1`–`r4` repeat it, each round grouping its points by engine and rotating the groups' order, so that no configuration always runs at the same hour, except that the change's configurations and arm 9's 48-token window ran after the rounds, in a session of their own with no tuned-vLLM, arm-9 or voice-alone point (10-23 23:16Z – 10-24 01:35Z), and arm 9's ablations always ran in one order. Every headline configuration has five runs, each of arm 9's ablations and each configuration of the change three, and voice alone, the SLO's reference, five (1,744–1,805 ms, median 1,767 ms, so the SLO is 2,017 ms). All on the W3 build but one run of voice alone, W2's 1,744 ms (the four on the W3 build give 1,768.5 ms); [`benchmarks/e2`](../benchmarks/e2/README.md) lists the campaigns. The median of the runs, and for V2V p95 its range:
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-deployable-narrow.svg">
+  <img src="figures/report-deployable.svg" width="100%" alt="Each of 7 configurations beside 24 agent sessions of the traces with the largest contexts, a row under its family, in panel a its voice-to-voice p95 on a log scale against the SLO of 2.02 s, the median of its runs and their range, and in panel b the agents' tokens a second over the calls, only the change and preempt-resubmit coming near the SLO: tuned vLLM, the baseline, 10.14 s at 3,710 tokens/s; 1,024-token steps, no long-prefill threshold, 8.79 s at 4,097 tokens/s; a token reservation, 2,048 tokens, 5.67 s at 3,564 tokens/s; SGLang with HiCache, 4x, write-through, 11.95 s at 4,723 tokens/s; preempt-resubmit, before the first byte, 2.59 s at 3,630 tokens/s; the lifecycle policy, over make-room, 2.06 s at 3,411 tokens/s; the configuration to deploy, 48-token window, 2.19 s at 3,493 tokens/s.">
+</picture>
+
+Only the configurations that run the change come within 0.2 s of the SLO, at the median of their runs; every other configuration an operator can deploy stays 0.5 s or more over it. Each row is a configuration of the discriminating scenario at the median of its runs, a thin bar over their range, its marker by its family; the configuration to deploy is the saturated blue. Panel b gives the agents' tokens a second over the whole calls, as the table below does.
+
+| Configuration | Runs | V2V p50 / p95 / p99 | p95 range | First byte p95 | Background tokens/s | Agent TTFT p50 / p99 |
+|---|---:|---:|---:|---:|---:|---:|
+| Voice alone | 5 | 1,611 / 1,767 / 1,799 | 1,744–1,805 | 66 | — | — |
+| Tuned vLLM | 5 | 4,520 / 10,138 / 12,110 | 9,257–10,811 | 7,834 | 3,710 | 65 / 99 s |
+| 1,024-token steps, no threshold | 5 | 4,348 / 8,789 / 10,024 | 8,161–9,490 | 6,523 | 4,097 | 57 / 85 s |
+| A token reservation, 2,048 tokens | 5 | 3,127 / 5,671 / 6,681 | 4,906–5,798 | 3,190 | 3,564 | 69 / 102 s |
+| SGLang with HiCache | 5 | 4,705 / 11,948 / 18,063 | 9,394–16,702 | 8,012 | 4,723 | 46 / 82 s |
+| Preempt-resubmit before the first byte | 5 | 1,960 / 2,591 / 2,684 | 2,110–2,663 | 374 | 3,630 | 31 / 160 s |
+| **The lifecycle policy over make-room** (arm 9), every reply capped at 16 tokens | 5 | 1,825 / **2,057** / 2,139 | 1,980–2,134 | 290 | 3,411 | 75 / 103 s |
+| The KV preemption (#63350 alone) | 3 | 3,246 / 5,773 / 8,110 | 5,612–6,063 | 2,785 | 3,633 | 66 / 97 s |
+| The change, 16-token window | 3 | 1,986 / 3,229 / 4,135 | 3,220–4,772 | 338 | 3,568 | 71 / 100 s |
+| **The configuration to deploy, 48-token window** | 3 | 1,943 / **2,193** / 2,281 | 2,168–2,286 | 372 | 3,493 | 72 / 97 s |
+
+The change's configurations ran the make-room variant on vLLM 0.32.0 with the pull requests' switch values (two preemptions a step, the budget cap, no reserve), to which the pull requests' diff, ported to 0.32.0, schedules identically ([GLOSSARY.md](GLOSSARY.md#the-change-and-its-parts)), behind the gateway without an admission policy and with full replies. Arm 9 without one part at a time, three runs each (V2V p95, median and range, ms):
+
+| Arm 9 without | V2V p95 | Range | | Arm 9 without | V2V p95 | Range |
+|---|---:|---:|---|---|---:|---:|
+| the critical-window throttle | 2,049 | 1,995–2,081 | | degrade | 3,837 | 2,890–4,079 |
+| the headroom | 2,033 | 1,947–2,071 | | degrade, with a 48-token window | 2,205 | 2,098–2,289 |
+| the lifecycle events | 2,036 | 2,005–2,048 | | the gateway policy (engine only) | 4,034 | 2,984–4,062 |
+| (headroom armed by the request) | 2,124 | 2,008–2,165 | | the KV preemption | 2,037 | 1,990–2,039 |
+| (budget 0 ms / 500 ms) | 2,109 / 2,060 | 2,094–2,166 / 1,990–2,080 | | the reserve | 2,116 | 2,115–2,155 |
+| | | | | the budget cap | 5,295 | 5,063–6,115 |
+| | | | | the change (gateway only) | 10,993 | 10,028–11,958 |
+
+What the gateway's policy did in each run, as its counters at the end of the calls (60 realtime requests a run, preemptive generation included):
+
+| Configuration | Runs | Headroom deferrals | Critical-window deferrals | Realtime requests degraded |
+|---|---:|---:|---:|---:|
+| Arm 9 | 5 | 31–45 | 0 | 60 |
+| Without the throttle | 3 | 38–52 | — | 60 |
+| Throttle budget 0 / 500 ms | 3 each | 39–49 / 39–48 | 0 / 0 | 60 |
+| Without the headroom | 3 | — | 1–3 | 60 |
+| Headroom armed by the request | 3 | 9–11 | 0 | 60 |
+| Without the lifecycle events | 3 | 4–6 | 0 | 60 |
+| Without degrade, a 48-token window | 3 | 41–50 | 0 | — |
+| The gateway only (stock engine) | 3 | 71–86 | 0 | 60 |
+| Standard scenario, 16 / 24 agent sessions | 3 / 1 | 5–10 / 41 | 0–4 / 27 | 0 / 1 |
+
+The voice turn by stage (means over each configuration's replies, ms):
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-deployable-stages-narrow.svg">
+  <img src="figures/report-deployable-stages.svg" width="100%" alt="The voice turn's mean voice-to-voice time stacked by stage from the end of the caller's speech, beside 24 agent sessions but for voice alone: voice alone, 1.60 s, 0.09 s of it waiting for the LLM's first token and 0.21 s decoding the first sentence; tuned vLLM, 5.21 s, 2.78 s of it waiting for the LLM's first token and 1.02 s decoding the first sentence; a token reservation, 3.38 s, 0.95 s of it waiting for the LLM's first token and 1.01 s decoding the first sentence; preempt-resubmit, 2.02 s, 0.28 s of it waiting for the LLM's first token and 0.34 s decoding the first sentence; the lifecycle policy, 1.83 s, 0.23 s of it waiting for the LLM's first token and 0.20 s decoding the first sentence; the configuration to deploy, 1.95 s, 0.28 s of it waiting for the LLM's first token and 0.25 s decoding the first sentence.">
+</picture>
+
+Only the reply to its first sentence changes from row to row: endpointing, TTS and transport stay within 0.1 s in every configuration. The bars give the configurations of the table below, in its order, but the 16-token one (`make report-figures`), each reply split at the LLM's first token, the wait for it in violet and the decode of the first sentence in green; voice alone has four runs, since its W2 run predates the worker's stage times. The LLM's first token, from its request, is in the table's last column.
+
+| Configuration | Endpointing | Reply to first sentence | TTS first audio | Transport and playout | Mean V2V | LLM first token |
+|---|---:|---:|---:|---:|---:|---:|
+| Voice alone | 757 | 297 | 199 | 352 | 1,605 | 80 |
+| Tuned vLLM | 822 | 3,801 | 244 | 343 | 5,211 | 2,760 |
+| A token reservation | 827 | 1,967 | 238 | 346 | 3,378 | 935 |
+| Preempt-resubmit | 826 | 622 | 222 | 353 | 2,023 | 274 |
+| The lifecycle policy over make-room | 824 | 429 | 222 | 354 | 1,830 | 221 |
+| The change, 16-token window | 826 | 914 | 245 | 353 | 2,336 | 265 |
+| The configuration to deploy | 824 | 526 | 249 | 353 | 1,953 | 270 |
+
+What the repeats say:
+- **The change brings the voice tail to within 0.2 s of the SLO.** With full replies, the configuration to deploy reaches 2,193 ms (2,168–2,286), 176 ms over the SLO, against tuned vLLM's 10,138 and preempt-resubmit's 2,591. Arm 9, whose gateway capped every reply at 16 tokens, reaches 2,057 ms: two of its five runs are under the SLO, and its median is 40 ms over it, within one point's spread; W5 did not measure it again. No configuration without the change has a run under the SLO; vLLM's queued-token limit refused 48 of its 50 voice turns, which count at the reply timeout.
+- **Its budget cap is necessary, and either KV preemption or the reserve makes the room.** Without the budget cap the p95 stays at 5.3 s even with KV preemption and the reserve. With full replies the two forms gave 2,193 ms (the KV preemption, in the configuration to deploy) and 2,205 ms (the reserve, with arm 9's policy); with capped replies the reserve alone gave 2,037 ms and the KV preemption alone 2,116 ms (2,115–2,155, every run above arm 9's median), and with both the reserve kept the pool from filling, so the KV preemption never fired (0 preemptions in five runs). The KV preemption alone halves tuned vLLM's tail (5.8 s); with the budget cap the turn's first token comes in 338 ms at p95 (tuned vLLM 7,834).
+- **The reply has to fit the window.** With the 16-token window a full reply (20–22 tokens at the median and up to 40, in the gateway's log) outruns it and decodes beside agent prefill again: 3.2–4.0 s whether the gateway runs or not. Degrade, which caps the reply at 16 tokens when the headroom is not there, capped every reply here; a 48-token window covers full replies instead, at 2,193 ms for the configuration to deploy and 2,205 ms with arm 9's gateway policy and reserve, about 140 ms over arm 9's capped replies: the price of a full reply's longer first sentence (526 against 429 ms).
+- **The gateway's lifecycle-timed mechanisms could not act here** (their counters are in the table above). Running agent requests held the pool, which the headroom can protect only by deferring new requests, so it never had its room: degrade capped 60 of 60 realtime requests in every run of arm 9. The critical-window throttle, checked after the headroom, deferred nothing while the headroom ran, even at a 0 ms budget. Room for a voice turn came from the engine alone: without the change, the policy leaves voice where stock vLLM does (10,993 ms). So E2 shows that headroom kept by deferring new requests cannot make room while running work holds the KV; a control plane can make room only by aborting admitted work, as preempt-resubmit does, at the agents' tail. Whether lifecycle timing helps where its mechanisms engage (in the standard scenario at 24 agent sessions the throttle deferred 27 requests) was not isolated.
+- **The cost to the agents.** Against tuned vLLM, arm 9 keeps 92% of the agents' token rate and the configuration to deploy 94%, with the agents' TTFT p99 unchanged (97–103 s against 99 s) and their median TTFT 11–16% longer (71.7–75.1 s against 64.7 s). Preempt-resubmit keeps 98% but its resubmissions take the agents' p99 to 160 s. Over the calls' first 240 s, a window of the same length for every configuration, the shares are 94.5% (arm 9), 94.7% (the configuration to deploy) and 101.2% (preempt-resubmit) of tuned vLLM's 3,552 tokens/s.
+- **The first turn does not set this tail.** Without each call's first turn, the medians of the runs' p95 are 2,058 ms for arm 9, 2,194 for the configuration to deploy and 10,224 for tuned vLLM, against 2,057, 2,193 and 10,138 with it.
+- **Spread.** A configuration near the SLO moves by about 150 ms in p95 from run to run; one that misses it moves by up to 1.9 s (the gateway policy on stock vLLM, 10,028–11,958 ms) and SGLang by 7 s. One run cannot rank configurations that miss.
+
+**Arm 9's engine half took three versions**, each driven by a loss found in a point's stage breakdown and isolated by a probe before the module changed; the points measured on the first two are kept and reported, not placed on the frontier:
+1. The KV preemption alone passed its probe (a voice turn behind two 18k-token requests in a full pool: 4.9 s to the first token on stock vLLM, 0.25–0.32 s with it) and lost the first E2 point to preempt-resubmit, at a V2V p95 of 4.3 s against 2.6 s. The stages put the loss between the reply's first token and its first sentence: the agents' 512-token prefill chunks shared every step of the reply.
+2. Holding lower-priority prefill for a turn's first tokens fixed the decode (232 ms from first token to first sentence at the median, against 300 ms for preempt-resubmit) and left a first-token tail, a p95 of 2.1 s.
+3. The tail was a turn whose prefix the agents had evicted from the GPU between turns, loading back from the CPU tier: once its KV had arrived, it waited for the scheduler's waiting loop, which runs only on budget the running prefills leave. Holding prefill through the load took a synthetic load's call TTFT p95 from 2.8 s to 0.3 s ([the calls' first-token tail](#the-kv-case-make-room)).
+
+<a id="the-standard-scenario-repeated-w4"></a>
+
+### The standard scenario, repeated on one sample
+
+**Provenance:** W4, 2026-10-23.
+
+The whole corpus on 2026-10-23, three runs of each at the realistic load of 16 agent sessions (tuned vLLM's third run is W2's): arm 9's p95 is 2,196 ms (2,193–2,446) against tuned vLLM's 2,323 (2,215–2,530), both over the SLO and within noise of each other, at 5,244 and 5,167 tokens/s. Each call's first turn is slower under load (a mean of 2.4–2.5 s against 1.8 s for the later turns) and sets part of this p95: without it, 2,037 and 2,186 ms. Where the pool is not full the KV preemption has nothing to do, and the gateway rarely degrades a reply here, so a full reply's first sentence outruns the 16-token window as in the discriminating scenario. One run each at 8 and 24 agent sessions gives 2,060 and 2,375 ms; W2's single runs there, on the W2 build, were 1,871 (priority alone) and 3,865 ms (tuned vLLM), so the 1.5 s at 24, where the pool fills, is indicative only.
+
+<a id="instrument-notes-w2-to-w4"></a>
+
+### Instrument notes for W2 to W4
+
+**Provenance:** W2 to W4, 2026-10-22 to 24.
+
+The agents' token rate counts the agent requests that completed during the calls, so its window is the calls' duration, which differs by configuration (about 280 s for arm 9, whose calls are fastest, to 430 s for tuned vLLM) against agent requests of about 75 s: edge effects differ by a few percent. The report also gives the rate over the calls' first 240 s, a window of the same length for every point; every point with agents ran its calls at least that long.
+
+vLLM counts a preemption when the victim next produces output, so per-point preemption counts are lower bounds. The prompt-token sources (computed, GPU hit, CPU hit) are counted at a request's first scheduling only; the CPU tier's own counter also sees a resume's loads. In W4's discriminating scenario it loaded, beyond first scheduling, 160–223k tokens a run on tuned vLLM (29–32 counted preemptions), 55–93k on the configuration to deploy (37–43), 93–159k on the KV preemption alone (37–40) and 35–65k for arm 9 without the reserve (27–39). In that scenario a run without a counted preemption loads −0.5k to +0.8k tokens beyond first scheduling, so these loads are the victims' resumes; in the standard scenario the same difference spans −19k to +50k without one, so there it measures nothing. What a resume recomputes is not measured.
+
+SGLang's KV pool came out at 33,683–34,679 tokens against vLLM's 36,400, 5–7% smaller: its static memory fraction sets it.
+
+<a id="engine-plugins"></a>
+
+### The engine plugins removed after v0.3
+
+**Provenance:** W1, 2026-10-22.
+
+The lease-aware plugins of v0.3 ([its tree](https://github.com/StevenWang-CY/flatshare/tree/v0.3/python/leaseholder_vllm), where the package has its former name, `leaseholder_vllm`), measured in W1 and never used; they were removed after v0.3 ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)).
+
+`LeasePolicy` at a full-size tier of 18,204 chunks (40 GiB of Qwen3-4B BF16 KV), against vLLM's real offload manager on CPU:
+
+| Operation | LeasePolicy | Stock LRU |
+|---|---|---|
+| `prepare_store` plus evicting 128 chunks, mostly leased | 0.30 ms | 0.21 ms |
+| Finishing a 1,011-chunk session: renewal | 0.39 ms | — |
+| Finishing a 1,011-chunk session: class change | 0.28 ms | — |
+
+**Live check on the frozen box** ([its tests in the v0.3 tree](https://github.com/StevenWang-CY/flatshare/tree/v0.3/python/leaseholder_vllm/tests/live)):
+- the lease hint reached both plugins;
+- `X-Session-ID` appeared in GPU-tier KV events and in no CPU-tier one, and `LeaseConnector` mirrored it into the hint;
+- a 7,921-token prompt was written through to the CPU tier. After the GPU prefix cache was reset, the same prompt was restored with 7,920 tokens from the CPU tier, as reported by both the hit receipt and `usage.prompt_tokens_details.cached_tokens`.

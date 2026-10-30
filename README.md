@@ -129,7 +129,7 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
   best, 2,048-token steps, the configuration to deploy leaves the voice p95 0.14–0.17 s over the SLO
   ([§6.7](docs/REPORT.md#67-the-rules-carry-to-an-a100)). Other cards are placed only by the simulator, whose costs
   scaled from published peaks missed the A100's decode attention by 1.8 times
-  ([what transfers](docs/METHODS.md#what-transfers-to-other-hardware)).
+  ([what transfers](docs/REPORT.md#67-the-rules-carry-to-an-a100)).
 
 ## Quick start
 
@@ -189,14 +189,17 @@ threshold. Then read:
 - [docs/PRODUCTION.md](docs/PRODUCTION.md) to configure and size it, to check that your deployment is in its regime, and
   for what to watch and how it fails;
 - [ops/RUNBOOK.md](ops/RUNBOOK.md) to operate the hosts and run the failure drills;
-- [docs/HARDWARE.md](docs/HARDWARE.md) to run it on another GPU or on a single host.
+- [docs/HARDWARE.md](docs/HARDWARE.md) to run it on another GPU or on a single host, as a measurement kit and not a
+  deployment: nothing of it starts at boot, and releases, rollback and the serving check reach only this lab's hosts
+  ([what another host lacks](docs/PRODUCTION.md#checking-it-on-your-hardware)).
 
 ## How it was measured
 
 - **The cards.** One RTX 5060 Ti 16 GB (the docs call this machine "the box") runs vLLM 0.32 with
   Qwen3-4B-Instruct-2507-FP8 and a 36,400-token KV pool, Whisper and Kokoro on the same GPU, a 20 GiB CPU KV tier, and
   NUMA-pinned units. An A100 SXM4 80 GB on Google Colab ran the same deployment, rendered from a hardware profile, with
-  the control plane on the same host and the RTX 5060 Ti's KV pool ([the A100 run](docs/HARDWARE.md#the-a100-run)).
+  the control plane on the same host and the RTX 5060 Ti's KV pool
+  ([the A100 run](docs/BENCHMARKS.md#the-a100-run-2026-10-26)).
 - **Voice-to-voice from waveforms.** Two LiveKit callers speak scripted lines, synthesized in six voices, to a stock
   LiveKit voice agent, and time the end of their speech to the agent's first audio. The agent logs each turn's stages.
 - **The agents.** AIPerf replays the 48 longest-context Claude Code sessions of SemiAnalysis' traces, block-scaled 32×,
@@ -220,7 +223,7 @@ used:
 | deploy the change and watch it | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
 | see how it works in vLLM's scheduler | [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-the-change-63350-and-63351), then the two PR diffs |
 | see every number, with its runs and ranges | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
-| know how each experiment was designed and run | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) and [docs/METHODS.md](docs/METHODS.md) |
+| know how each experiment was designed and run | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) |
 | compare with llm-d, Dynamo, SMG, SGLang and published work | [docs/PRIOR-ART.md](docs/PRIOR-ART.md) |
 | run it on other hardware or on one host | [docs/HARDWARE.md](docs/HARDWARE.md) |
 | operate the hosts, and read what the failure drills showed | [ops/RUNBOOK.md](ops/RUNBOOK.md) |
