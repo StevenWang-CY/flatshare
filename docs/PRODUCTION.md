@@ -16,10 +16,10 @@ What the two cards promise at that configuration, and what they do not:
 | A call's turns | The voice agent's: one at a time, its replies one or two short sentences, the first sentence within the 48-token window, and interruptions answered |
 | Agents accepted | 16 sessions at once, four on the first card and 12 on the spare; one more gets 503 `no_agent_slot` with `Retry-After: 1` |
 | The calls' outcome | At most 5% of the replies over the SLO: the rounds measured 2.8% at four sessions, the 24-hour soak 1.5% |
-| The agents' outcome | Their tokens a second and time to first token as measured: 9,652 tokens a second, a TTFT of 0.5 s at the median and 10.7 s at p99 |
+| The agents' outcome | Their tokens a second and time to first token, as measured: 9,652 tokens a second; 0.5 s at the median, 10.7 s at p99 |
 | Overload | Refused, never queued without bound: a call beyond two, an agent's session beyond 16, a request beyond the intake's bounds |
 | Recovery | The first card's calls move to the spare by their next turn; the spare's agents wait while it carries them ([How it fails](#how-it-fails)) |
-| Not covered | More than two calls at once, replies longer than the window, real callers' microphones, and an outage of both cards or of the control plane on cyan |
+| Not covered | More than two calls at once, replies longer than the window, real callers' microphones, and an outage of both cards or of cyan's control plane |
 
 - **Agents' slots.** A slot frees when its session ends or idles out (`idle_s`, 150 s here, without a request), and every request is bounded per class and tenant by the gateway's intake, refused at once beyond it with `Retry-After`. A client that starts new sessions without ending the old ones holds the slots of those it has left until they idle out: end a session with `DELETE /v1/sessions/{id}` or a `session_closed` event, or offer a few sessions under the bounds ([the two-node smokes](../benchmarks/results/2026-10-28-two-node-smoke/README.md)).
 - **Requests without a session.** The bounds count agents' sessions: a background request that names none (no trusted `X-Session-ID`, `X-Claude-Code-Session-ID` or `prompt_cache_key`) takes no agent slot, so it runs only on a card that carries no call and holds fewer sessions than its `max_agents`, and gets 503 `no_agent_slot` when no card does ([Nodes](../crates/flatshare-gateway/README.md#nodes)).
@@ -87,7 +87,7 @@ The serving profile's engine: the frozen box's [`engine.yaml`](../deploy/phastfo
 | `--max-num-batched-tokens` | `256` | The step cap: it bounds how long a running decode waits behind a prefill chunk, and the sweep chose 256 for the change ([its screens](../benchmarks/results/2026-10-27-sweep/README.md)) | [`rtx-5060-ti-serve.toml`](../deploy/profiles/rtx-5060-ti-serve.toml) |
 | `--long-prefill-token-threshold` | `0` | No per-request prefill cap: steps of at most 256 tokens | `rtx-5060-ti-serve.toml` |
 | `--enable-prefix-caching` | on | Agents' requests share long prefixes | `engine.yaml` |
-| `--kv-transfer-config` | A CPU KV tier written through: vLLM's `OffloadingConnector`, `offload_prompt_only: false`, 20 GiB, about four times the GPU pool | A preempted agent reloads its KV from host memory rather than recompute it: 509 ms against 3.26 s for a 16k-token context ([the tier cost model](BENCHMARKS.md#tier-cost-model-resuming-an-agent-turn-e0)) | `engine.yaml` |
+| `--kv-transfer-config` | A CPU KV tier written through: vLLM's `OffloadingConnector`, `offload_prompt_only: false`, 20 GiB, about four times the GPU pool | A preempted agent reloads its KV from host memory: 509 ms against 3.26 s recomputed for a 16k-token context ([the tier cost model](BENCHMARKS.md#tier-cost-model-resuming-an-agent-turn-e0)) | `engine.yaml` |
 | `--kv-cache-memory` | 5 GiB, a fixed pool of 36,400 tokens | When the audio models share the GPU, the pool depends neither on the profiler nor on the audio servers' memory at start | `engine.yaml` |
 | `--max-priority-preemptions-per-step` | `2` | Make-room ([#63350](https://github.com/vllm-project/vllm/pull/63350)): a waiting request of a higher priority preempts running requests of a lower priority when it lacks KV, at most 2 a step | `rtx-5060-ti-serve.toml` |
 | `--priority-prefill-budget-cap`, `--priority-prefill-budget-cap-tokens` | on, `48` | The budget cap ([#63351](https://github.com/vllm-project/vllm/pull/63351)): prefills of a lower priority sit out the steps of its first tokens ([below](#the-replys-first-tokens) for the 48) | `rtx-5060-ti-serve.toml` |
@@ -244,7 +244,9 @@ Measured in the same scenario, beside the 24 sessions; the p95s are medians of e
 | SGLang 0.5.22's priority preemption, with or without its host tier | 11,948 ms with HiCache, five runs | — |
 | A static KV reservation | 5,671 ms | It halves the tail but stays seconds over the SLO |
 | #63350 alone | 5,085 ms | The KV preemption without the budget cap gets the turn into the batch, and its reply then decodes beside agent prefill |
-| An FP8 KV cache beside the CPU tier (`--kv-cache-dtype fp8`), on vLLM 0.32.0 on this card | Twice the tokens in the same memory (72,816 against 36,400), and no quality lost in the gate's screen | Beside two calls and 24 agent sessions the engine died both times it ran, on a CUDA fault at a step's output copy with a CPU-tier transfer in flight ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md#the-fp8-kv-cache)) |
+| An FP8 KV cache beside the CPU tier (`--kv-cache-dtype fp8`), on vLLM 0.32.0 on this card | Twice the tokens in the same memory (72,816 against 36,400), and no quality lost in the gate's screen | Beside two calls and 24 agent sessions the engine died both times it ran, on a CUDA fault (note 1) |
+
+1. The fault came at a step's output copy, with a CPU-tier transfer in flight ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md#the-fp8-kv-cache)).
 
 - **The lifecycle policy's timing** came from the voice agent's turn events, which serve mode does not send.
 - **Development mode** runs only on a measured box, from the measurement drop-in (`variant.sh measure on`), for the harness's `/server_info` and cache resets.
