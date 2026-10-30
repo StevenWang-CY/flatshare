@@ -1,5 +1,5 @@
-"""bench_marlin.py: Qwen3-4B-Instruct-2507-FP8's linear layers on this GPU, kernel against kernel (docs/HARDWARE.md, the
-Marlin dry run, session 2 of the Marlin dry run): the GPU time of one layer's GEMM for M tokens, as vLLM 0.32.0 runs
+"""bench_marlin.py: Qwen3-4B-Instruct-2507-FP8's linear layers on this GPU, kernel against kernel (docs/BENCHMARKS.md,
+the Marlin dry run, session 2 of the Marlin dry run): the GPU time of one layer's GEMM for M tokens, as vLLM 0.32.0 runs
 it, - Marlin: the FP8 checkpoint's block-scaled weights through MarlinFP8ScaledMMLinearKernel's path, W8A16
 (process_fp8_weight_block_strategy, prepare_fp8_layer_for_marlin, apply_fp8_marlin_linear: vLLM's marlin_gemm), a
 layer's calls sharing one lock workspace as the engine's do (marlin_make_workspace_new, once); - BF16: torch's GEMM on

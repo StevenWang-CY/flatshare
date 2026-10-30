@@ -1,4 +1,4 @@
-# The A100 run's optional arm 8, the PRs' values at the A100's best stock step cap (docs/HARDWARE.md, the optional
+# The A100 run's optional arm 8, the PRs' values at the A100's best stock step cap (docs/BENCHMARKS.md, the optional
 # arms), round 2 of 2: on the agents' sample of the core's round 2 (seed 10 + N), so that it pairs with tuned vLLM's
 # round 2 and with that round's frozen point and the PRs' values at 512/256. On the A100 host:
 #   FLATSHARE_NODE_DIR=flatshare/node flatshare/src/benchmarks/e2/campaign.sh --local \

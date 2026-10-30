@@ -63,7 +63,7 @@ after 9.6 s, and the two changes after 1.9 s
 | Tuned, with a router that aborts agent requests before their first byte and resubmits them | 2,522 ms | +488 ms | 44% | 3,332 | 32 s | 193 s |
 | + #63350: a waiting request preempts lower-priority work for KV | 5,085 ms | +3,051 ms | 89% | 3,414 | 67 s | 112 s |
 | + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 43% | 3,298 | 71 s | 105 s |
-| + #63351 with a 48-token window: **the PRs' configuration** | **2,236 ms** | +202 ms | 32% | 3,203 | 72 s | 111 s |
+| + #63351 with a 48-token window: **the configuration to deploy** | **2,236 ms** | +202 ms | 32% | 3,203 | 72 s | 111 s |
 
 Medians of five runs, or 10 for tuned vLLM and 15 for the last row
 ([the runs](docs/BENCHMARKS.md#the-discriminating-scenario-after-w5s-fixes-w5)). The SLO is voice alone's p95 plus

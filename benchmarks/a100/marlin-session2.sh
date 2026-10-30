@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# marlin-session2.sh: session 2 of the Marlin dry run on the box (docs/HARDWARE.md, the Marlin dry run), from the
+# marlin-session2.sh: session 2 of the Marlin dry run on the box (docs/BENCHMARKS.md, the Marlin dry run), from the
 # workstation, after session 1, with the GPU free and the box at a revision that has benchmarks/a100. About 30 minutes:
 #   1. the GEMMs: the engine stopped, the STT and TTS idle, bench_marlin.py at Qwen3-4B's four linear shapes for
 #      M of 1 to 1,024 (Marlin W8A16, torch BF16, DeepGEMM W8A8), each call's GPU time in a CUDA graph, in the engine

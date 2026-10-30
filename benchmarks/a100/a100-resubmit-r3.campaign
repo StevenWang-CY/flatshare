@@ -1,4 +1,4 @@
-# The A100 run's optional arm 3 (docs/HARDWARE.md, the optional arms): the stock frozen engine behind the gateway's
+# The A100 run's optional arm 3 (docs/BENCHMARKS.md, the optional arms): the stock frozen engine behind the gateway's
 # preempt-resubmit, the best arm without an engine change on the box (W5's extension), one point of the agents' sample
 # of seed 13. The three campaigns, seeds 13 to 15, run on the frozen engine with no switch between them. On the A100
 # host, from the home directory:

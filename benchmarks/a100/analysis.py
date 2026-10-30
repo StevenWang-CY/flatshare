@@ -1,4 +1,4 @@
-"""The A100 run's analysis (docs/HARDWARE.md, the analysis), on a CPU, from a single host's records as
+"""The A100 run's analysis (docs/BENCHMARKS.md, the analysis), on a CPU, from a single host's records as
 deploy/a100/pull.sh copies them.
 
     python3 benchmarks/a100/analysis.py report HOST_DIR --corpus WEKA_X32 --flatshare-sim FLATSHARE_SIM --out OUT

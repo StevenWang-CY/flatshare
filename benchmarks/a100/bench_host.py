@@ -1,5 +1,5 @@
-"""bench_host.py: the host around the card, the two of its costs the forecast takes from the box (docs/HARDWARE.md, the
-host check): the link's copy rate between pinned host memory and this GPU, each way, and the CPU's speed at Python.
+"""bench_host.py: the host around the card, the two of its costs the forecast takes from the box (docs/BENCHMARKS.md,
+the analysis): the link's copy rate between pinned host memory and this GPU, each way, and the CPU's speed at Python.
 
 The link. vLLM 0.32.0's CPU tier moves KV in pages, one page a layer and block (K and V apart in the LBHNC layout the
 connector requires: 32 KiB for Qwen3-4B's 16-token block of 8 KV heads of 128 at BF16), all of a transfer's pages in one

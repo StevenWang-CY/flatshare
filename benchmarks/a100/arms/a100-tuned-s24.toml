@@ -1,4 +1,4 @@
-# The A100 run's optional arm 6, tuned vLLM (docs/HARDWARE.md, the optional arms): the frozen engine at the step cap
+# The A100 run's optional arm 6, tuned vLLM (docs/BENCHMARKS.md, the optional arms): the frozen engine at the step cap
 # whose calls' first-token p95 was the lowest in blocks 1 and 2 on this card (probe_results.py pick-stock), vLLM's
 # default chunking, 2,048/0, arm 3's engine. The core keeps the box's 512/256, the box's best, so that a difference
 # within the A100 is the change's; this arm is the stock engine at the A100's own best. Otherwise

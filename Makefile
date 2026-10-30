@@ -223,7 +223,7 @@ forecast-fitted:
 	  $(if $(HOST_JSON),--host $(HOST_JSON)) --markdown $(OUT) >/dev/null
 	@ls $(OUT)
 
-# The A100 run's analysis (benchmarks/a100/analysis.py; docs/HARDWARE.md, the analysis) from a single host's records
+# The A100 run's analysis (benchmarks/a100/analysis.py; docs/BENCHMARKS.md, the analysis) from a single host's records
 # as deploy/a100/pull.sh copies them, and the 32x corpus, into build/reproduce-a100/a100.md, with the bench venv for
 # E2's report. check-a100-calibration runs its calibration code on the box's W2 points (the calibration exports, as
 # reproduce-calibration takes them) and checks that it gives the box's rows. Usage: make reproduce-a100 RECORDS=<dir>

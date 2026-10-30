@@ -5,10 +5,15 @@ How Flatshare's measurements were designed and run, for a reader who wants to au
 | # | Experiment | Question | Ran, and where its numbers are |
 |---|---|---|---|
 | E0 | **The tier cost model** | What does resuming an agent turn cost from the GPU cache, from host RAM and recomputed? | On the frozen box, 2026-10-22 ([BENCHMARKS.md](BENCHMARKS.md#what-does-resuming-an-agent-turn-cost)); `flatshare-core` carries the fits |
-| E2 | **Voice under agent load** | How close does each configuration an operator can deploy bring the voice tail to its SLO, at what cost to background agents, and what does each mechanism of arm 9 (make-room with the lifecycle policy) contribute? | On one GPU node from W2 to RG ([BENCHMARKS.md](BENCHMARKS.md#how-close-does-each-configuration-bring-the-voice-tail-to-its-slo)), its core again on an A100 SXM4 80 GB ([BENCHMARKS.md](BENCHMARKS.md#what-it-measured-2026-10-26)), and on two cards in v1.7's rounds, each card's part of an arrangement a run of its own ([the rounds](../benchmarks/results/2026-10-28-rounds/README.md)); no point fronted two nodes at once ([below](#e2-voice-under-agent-load)) |
-| E3 | **The background tier's cost of make-room** | What does make-room take from the agents, and through which rule: the budget cap's hold on their prefill, or the KV preemption's victims and their restores? | On W5's points, from the engine's own counts ([BENCHMARKS.md](BENCHMARKS.md#what-does-the-change-take-from-the-agents)) |
+| E2 | **Voice under agent load** | How close does each configuration an operator can deploy bring the voice tail to its SLO, at what cost to background agents? (note 1) | On one GPU node from W2 to RG ([BENCHMARKS.md](BENCHMARKS.md#how-close-does-each-configuration-bring-the-voice-tail-to-its-slo)) and its core again on an A100 SXM4 80 GB ([BENCHMARKS.md](BENCHMARKS.md#what-it-measured-2026-10-26)) (note 2) |
+| E3 | **The background tier's cost of make-room** | What does make-room take from the agents, and through which rule: the budget cap or the KV preemption? (note 3) | On W5's points, from the engine's own counts ([BENCHMARKS.md](BENCHMARKS.md#what-does-the-change-take-from-the-agents)) |
 | E1 | **Parking** | How much of the gap between LRU plus CPU offload and a clairvoyant reference does each level of lifecycle information close, on resume latency? | In the simulator ([BENCHMARKS.md](BENCHMARKS.md#does-knowing-when-an-agent-returns-help)) |
-| Soak | **The production path for hours** | Does the box, as it serves, keep its voice SLO, its admission and its background service over a day of arriving calls and agents, and what fails, restarts or is refused meanwhile? | Once, for 24 hours of the arrangement to deploy on two GPU nodes, 2026-10-28 to 29 ([BENCHMARKS.md](BENCHMARKS.md#does-the-arrangement-to-deploy-keep-its-slo-over-a-day); [the record](../benchmarks/results/2026-10-28-soak/README.md)) |
+| Soak | **The production path for hours** | Does the box, as it serves, keep its voice SLO, admission and background service over a day of arriving calls and agents? (note 4) | Once, for 24 hours of the arrangement to deploy on two GPU nodes, 2026-10-28 to 29 ([BENCHMARKS.md](BENCHMARKS.md#does-the-arrangement-to-deploy-keep-its-slo-over-a-day); [the record](../benchmarks/results/2026-10-28-soak/README.md)) |
+
+1. E2 also asks: what does each mechanism of arm 9 (make-room with the lifecycle policy) contribute?
+2. Also on two cards in v1.7's rounds, each card's part of an arrangement a run of its own ([the rounds](../benchmarks/results/2026-10-28-rounds/README.md)); no point fronted two nodes at once ([below](#e2-voice-under-agent-load)).
+3. The budget cap's hold on the agents' prefill, or the KV preemption's victims and their restores.
+4. The soak also asks what fails, restarts or is refused meanwhile.
 
 The original E3, a recompute ledger validated by injected causes with cache contracts as an SLI, was dropped with leases ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)).
 
@@ -56,8 +61,10 @@ Each result in [BENCHMARKS.md](BENCHMARKS.md) names the campaign that measured i
 | 5 | vLLM's own knobs | `--watermark 0.1`; `--max-num-queued-tokens 8192` |
 | 6 | Static answers | A background concurrency cap of 2 or 8; a static 2,048-token KV reservation |
 | 7 | What engines ship | `--max-num-seqs 12`, with and without #54530 ported to 0.32.0; SGLang 0.5.22's priority preemption, with and without its host tier (HiCache) |
-| 8 | What routers ship | llm-d's flow control, emulated in the gateway (ceilings 6/6/6); SMG 1.13.0's priority scheduler, as shipped; preempt-resubmit, which aborts background work before its first byte and resubmits it |
+| 8 | What routers ship | llm-d's flow control, emulated in the gateway (ceilings 6/6/6); SMG 1.13.0's priority scheduler, as shipped; preempt-resubmit (note 1) |
 | 9 | make-room with the lifecycle policy | The change and the lifecycle policy, below, with single-mechanism ablations |
+
+1. Preempt-resubmit aborts background work before its first byte and resubmits it.
 
 Arm 10 of E2's original plan (MPS with an active-thread split, audio off the GPU) was not run: W1's MPS comparison had already shown that the interference that matters is inside the engine ([BENCHMARKS.md](BENCHMARKS.md#voice-on-the-shared-gpu)).
 

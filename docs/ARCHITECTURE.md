@@ -165,9 +165,11 @@ Every measurement on the box runs one pinned configuration, with the audio model
 
 | Component | Configuration | GPU memory |
 |---|---|---|
-| LLM | vLLM 0.32.0, `Qwen/Qwen3-4B-Instruct-2507-FP8`, 32k context, `--kv-cache-memory` 5 GiB (36,400 tokens), prefix caching, priority scheduling, step cap 512/256, KV cache metrics, the `OffloadingConnector` (20 GiB in `/dev/shm`, write-through, generated tokens included) | ≈ 10.6 GiB |
+| LLM | vLLM 0.32.0, `Qwen/Qwen3-4B-Instruct-2507-FP8`, 32k context, `--kv-cache-memory` 5 GiB (36,400 tokens), step cap 512/256 (note 1) | ≈ 10.6 GiB |
 | STT | vLLM 0.32.0 serving `openai/whisper-large-v3-turbo` at `/v1/audio/transcriptions`, `--kv-cache-memory` 437.5 MiB (4,020 tokens) | ≈ 2.4 GiB |
 | TTS | Kokoro-82M on Kokoro-FastAPI 0.9.1-rc1 at `/v1/audio/speech` | ≈ 1.0 GiB |
+
+1. The LLM also runs with prefix caching, priority scheduling, KV cache metrics and the `OffloadingConnector` (20 GiB in `/dev/shm`, write-through, generated tokens included).
 
 - **Units.** Each server is a `systemd --user` unit, restarted on failure. `flatshare.target` starts the three at once: both vLLM servers fix their KV pools, so neither profiles memory at its start, and each one's free-memory check passes in any order while the budgets fit the card together ([HARDWARE.md](HARDWARE.md#the-rules), R2); a unit counts as started once its health endpoint answers, and the box once the engine does. `gpu-guard` refuses to start a GPU unit while another user's process holds the GPU, or when `nvidia-smi` cannot list the GPU's processes.
 - **NUMA.** vLLM runs on the GPU's node (node 1, cores 8–15), the audio servers on node 0. The CPU tier's shared memory prefers node 1.
@@ -179,12 +181,10 @@ Every measurement on the box runs one pinned configuration, with the audio model
 
 Figure 1 shows the hosts. cyan has 48 threads and no GPU; Phastform and Gray each have an RTX 5060 Ti 16 GB and 188 GiB of RAM, and run the frozen box (§5.1). A measurement adds, in cyan's host network, AIPerf's agent replay on pinned cores, and in the voice plane's namespace the measurement callers (`livekit-rtc`) and SMG (arm 8b).
 
-| Host | Role |
-|---|---|
-| **Phastform** | The first GPU node: every E2 point but the A100 run's before the two-card rounds, which ran on it and Gray in turn, and the arrangement to deploy's first card; paused when idle |
-| **Gray** | A second, identical GPU node: the probes' booked windows, the second card of the two-card rounds, and the warm spare of the arrangement to deploy on two nodes; cyan reaches it through `flatshare-tunnel@gray` |
-| **cyan** | The control host: `flatshare-gateway`, LiveKit and the voice worker, the measurement callers and AIPerf, each on its own cores |
-| **peacock** | Linux release builds of `flatshare-gateway` and `flatshare-sim`, and simulator runs |
+- **Phastform**, the first GPU node: every E2 point but the A100 run's before the two-card rounds, which ran on it and Gray in turn, and the arrangement to deploy's first card. It is paused when idle.
+- **Gray**, a second, identical GPU node: the probes' booked windows, the second card of the two-card rounds, and the warm spare of the arrangement to deploy on two nodes. cyan reaches it through `flatshare-tunnel@gray`.
+- **cyan**, the control host: `flatshare-gateway`, LiveKit and the voice worker, the measurement callers and AIPerf, each on its own cores.
+- **peacock**: Linux release builds of `flatshare-gateway` and `flatshare-sim`, and simulator runs.
 
 Another GPU node's files come from a hardware profile (`deploy/profiles/`, rendered by `deploy/profile.py`, which renders the box's own files byte for byte), and a host without cyan beside it runs the GPU servers and the control plane together, on loopback and its own cores, under systemd or a small supervisor where it has none ([HARDWARE.md](HARDWARE.md)). The A100 run of 2026-10-26 ran that way, in a Google Colab container under the small supervisor ([the A100 run](BENCHMARKS.md#on-google-colab)).
 
@@ -208,7 +208,13 @@ E2 ran the worker of §3.4 in bench mode, which takes every call LiveKit dispatc
 
 ### 6.3 E2's harness
 
-`flatshare-bench e2` ([`benchmarks/e2`](../benchmarks/e2/README.md)) runs an arm file as a point: it switches the GPU node to the arm's engine, checks the engine against its `/server_info` (each setting the frozen box's, the variant's and the arm's flags set, the scheduler class the variant loads, and exactly the `additional_config` its flags build, so that no variant passes for another; a setting the engine does not report is listed as unchecked), starts AIPerf's agent replay through the gateway, runs the calls, and saves the point's records: the callers' turns, the gateway's request log, AIPerf's exports, the worker's journal, the GPU's clocks once a second, the metrics around the calls, and the revisions deployed on cyan and on the GPU node. A campaign measures a list of arm files in order and resumes where it stopped. `flatshare-bench e2 export` writes each point's compact record, committed in [`benchmarks/results`](../benchmarks/results/2026-10-23-e2/README.md); `make reproduce-e2` rebuilds the report (tables, frontiers and the stage waterfall) from them, and `make figures` the docs' figures.
+`flatshare-bench e2` ([`benchmarks/e2`](../benchmarks/e2/README.md)) runs an arm file as a point:
+- it switches the GPU node to the arm's engine;
+- it checks the engine against its `/server_info`: each setting the frozen box's, the variant's and the arm's flags set, the scheduler class the variant loads, and exactly the `additional_config` its flags build, so that no variant passes for another (a setting the engine does not report is listed as unchecked);
+- it starts AIPerf's agent replay through the gateway and runs the calls;
+- it saves the point's records: the callers' turns, the gateway's request log, AIPerf's exports, the worker's journal, the GPU's clocks once a second, the metrics around the calls, and the revisions deployed on cyan and on the GPU node.
+
+A campaign measures a list of arm files in order and resumes where it stopped. `flatshare-bench e2 export` writes each point's compact record, committed in [`benchmarks/results`](../benchmarks/results/2026-10-23-e2/README.md); `make reproduce-e2` rebuilds the report (tables, frontiers and the stage waterfall) from them, and `make figures` the docs' figures.
 
 No counter shows what a preempted request recomputes when it resumes: vLLM 0.32 counts a request's computed prompt tokens at its first scheduling only. E3 measured the rest of what make-room takes from the agents from the counters every W5 point keeps ([E3](BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)).
 
@@ -216,7 +222,11 @@ Beside E2, two gates in [`benchmarks/quality`](../benchmarks/quality) judged whe
 
 ### 6.4 The simulator (E1)
 
-`flatshare-sim` ([`crates/flatshare-sim`](../crates/flatshare-sim/README.md)) replays the SemiAnalysis Claude Code traces, block-scaled 32× (32k context), as AIPerf's `agentic_replay` sends them, through a model of vLLM 0.32's two-tier prefix cache and its step loop (the step cap, chunked prefill, first come first served, as at one priority), with a step time fitted to the box. It reproduces resume TTFT p50 and p90 within 8% at 8 and 16 agent sessions and is 18–30% optimistic at 24. Its arms are LRU with and without the CPU tier, TTL holds, prefetch timed by session history or by an oracle, simplified Tokencake, MORI and InferCept, and a clairvoyant reference (Belady's MIN in each tier). `flatshare-sim hardware` places an L4, an A100 40 GB and an H100 SXM on the same regime map, with the box's costs scaled by their published peaks, labeled as modeled. `flatshare-sim forecast` wrote the A100 run's forecast before it ran ([`forecast-80gb.md`](../benchmarks/a100/forecast-80gb.md)), which placed each mechanism and missed the KV case's waits by about 30% ([the A100 run](BENCHMARKS.md#what-it-measured-2026-10-26)).
+`flatshare-sim` ([`crates/flatshare-sim`](../crates/flatshare-sim/README.md)) replays the SemiAnalysis Claude Code traces, block-scaled 32× (32k context), as AIPerf's `agentic_replay` sends them, through a model of vLLM 0.32's two-tier prefix cache and its step loop (the step cap, chunked prefill, first come first served, as at one priority), with a step time fitted to the box. It reproduces resume TTFT p50 and p90 within 8% at 8 and 16 agent sessions and is 18–30% optimistic at 24.
+
+Its arms are LRU with and without the CPU tier, TTL holds, prefetch timed by session history or by an oracle, simplified Tokencake, MORI and InferCept, and a clairvoyant reference (Belady's MIN in each tier).
+
+`flatshare-sim hardware` places an L4, an A100 40 GB and an H100 SXM on the same regime map, with the box's costs scaled by their published peaks, labeled as modeled. `flatshare-sim forecast` wrote the A100 run's forecast before it ran ([`forecast-80gb.md`](../benchmarks/a100/forecast-80gb.md)), which placed each mechanism and missed the KV case's waits by about 30% ([the A100 run](BENCHMARKS.md#what-it-measured-2026-10-26)).
 
 <a id="6-tested-and-not-adopted"></a>
 
@@ -234,24 +244,29 @@ Two mechanisms were built, measured and not adopted, and the rest of the origina
 
 | Failure | Behavior | Evidence |
 |---|---|---|
-| Engine crash | The unit restarts 5 s after its last process exits; streams in flight end with the gateway's `upstream_unavailable` error event, then one 502 and 503s with `Retry-After` until the engine's `/health` answers; sessions re-prefill on the next turn | Once in E2, an out-of-memory kill; the engine-kill drill of 2026-10-25: each stream got the error event 8–11 ms after the kill, and a request succeeded 106.2 s after it, 92.1 s of that the engine's warm start ([the drills](BENCHMARKS.md#failure-drills); [PRODUCTION.md](PRODUCTION.md#how-it-fails)) |
-| Gateway restart or crash | `flatshare-gateway.socket` holds the listeners. A reload hands them to a successor and drains: nothing is refused or waits. A restart or a crash leaves new connections waiting in the backlog, for the drain or about a second. Background requests in flight are cut 5 s into a drain with a `draining` error | The binary's reload tests (a request every 20 ms on each socket through a reload, all answered); the gateway drills of 2026-10-25: a reload and a restart failed none of 42 requests, and a kill none of 4 ([the drills](BENCHMARKS.md#failure-drills)) |
-| GPU node loss | With one node, as an engine crash: a request that finds the engine broken starts a probe of its `/health`, and the gateway answers 503 with `Retry-After` without going upstream until it answers. With `[[nodes]]` the node takes no new session, and each of its sessions is placed again by its next request on an available node of its role, its KV left behind; a realtime request whose node fails before its first content is sent once more on another node, and a node that covers defers its agents' requests beyond `failover_background_max_in_flight` (0 by default) until the moved calls end | The gateway's upstream and node tests; the failover drills, where both calls' next turns went to the spare 0.7 s after a kill and 1.9 s after a stop and none of the 300 turns after failed ([`2026-10-28-node-failover`](../benchmarks/results/2026-10-28-node-failover)) |
+| Engine crash | The unit restarts 5 s after its last process exits; sessions re-prefill on the next turn (note 1) | Once in E2, an out-of-memory kill; the engine-kill drill of 2026-10-25 (note 2) |
+| Gateway restart or crash | `flatshare-gateway.socket` holds the listeners. A reload hands them to a successor and drains: nothing is refused or waits (note 3) | The binary's reload tests; the gateway drills of 2026-10-25 (note 4) |
+| GPU node loss | With one node, as an engine crash; with `[[nodes]]`, each of its sessions moves to an available node of its role (note 5) | The gateway's upstream and node tests; the failover drills (note 6) |
 | Slow client | Backpressure through the bounded buffer, then an upstream abort | A stalled reader |
 | Client disconnect | Upstream abort; vLLM aborts the request | Mid-stream disconnects |
 | Host memory pressure | `systemd-oomd` may pick the engine; a campaign run again resumes at its failed point | [RUNBOOK.md](../ops/RUNBOOK.md#failures) |
 | Another user's GPU work | `gpu-guard` refuses to start the box; a point measured beside foreign GPU work is measured again | [RUNBOOK.md](../ops/RUNBOOK.md#checks-before-heavy-work-on-a-shared-host) |
 
+1. Streams in flight end with the gateway's `upstream_unavailable` error event, then one 502 and 503s with `Retry-After` until the engine's `/health` answers.
+2. Each stream got the error event 8–11 ms after the kill, and a request succeeded 106.2 s after it, 92.1 s of that the engine's warm start ([the drills](BENCHMARKS.md#failure-drills); [PRODUCTION.md](PRODUCTION.md#how-it-fails)).
+3. A restart or a crash leaves new connections waiting in the backlog, for the drain or about a second. Background requests in flight are cut 5 s into a drain with a `draining` error.
+4. The reload tests send a request every 20 ms on each socket through a reload, all answered. In the gateway drills a reload and a restart failed none of 42 requests, and a kill none of 4 ([the drills](BENCHMARKS.md#failure-drills)).
+5. With one node, a request that finds the engine broken starts a probe of its `/health`, and the gateway answers 503 with `Retry-After` without going upstream until it answers. With `[[nodes]]` the node takes no new session, and each of its sessions is placed again by its next request, its KV left behind. A realtime request whose node fails before its first content is sent once more on another node, and a node that covers defers its agents' requests beyond `failover_background_max_in_flight` (0 by default) until the moved calls end.
+6. Both calls' next turns went to the spare 0.7 s after a kill and 1.9 s after a stop, and none of the 300 turns after failed ([`2026-10-28-node-failover`](../benchmarks/results/2026-10-28-node-failover)).
+
 ## 9. Testing
 
-| Layer | Tests |
-|---|---|
-| `flatshare-proto` | Wire formats pinned by examples; schemas kept current |
-| `flatshare-core` | The cost model against E0's cells, the KV geometry, the step-time model; each admission policy's decisions on hand-made sequences of requests and turns |
-| `flatshare-sim` | The AIPerf port against AIPerf's own plan; the step loop on hand-made sequences; the clairvoyant tiers against exhaustive search; every arm end to end on a 16-trace subset; `make reproduce-e1` regenerates E1's tables (not in CI: the corpus stays outside the repository) |
-| `flatshare-gateway` | Against in-process mock engines and speech servers: disconnects, backpressure, sanitization and tenant-scoped sessions, the intake's bounds, every deadline, the accounting and the engine's state, the nodes' placement, failover and covering, event idempotency, every admission policy, the reload and its drain; the proxy's overhead in process |
-| Engine | The generated `make-room` module built from v0.32.0's source; its behavior on vLLM's real scheduler with CPU torch, and its trace against the pull requests' own patches; the GPU probes |
-| Voice | A hermetic LiveKit test in the voice-plane namespace (barge-in, headers, lifecycle events in order); unit tests of the event delivery, serve mode's admission and the node binding |
-| Deploy and ops | The serving profile's rendering and `serving-check` against an engine that differs; the release tool's prepare, switch, switch-back and rollback on stand-in hosts; the units, install scripts and listener audit; the alert rules under promtool |
-| E2 | The report, its figures and the demo renderer on synthetic points; `make reproduce-e2` and `make figures` rebuild them from the committed records (not in CI) |
-| CI | GitHub Actions on CPU: rustfmt, clippy and ruff, every Rust test, the engine variants' build tests against vLLM's source, the Python unit tests, and make-room's behavior and trace suites on CPU torch |
+- **`flatshare-proto`**: wire formats pinned by examples; schemas kept current.
+- **`flatshare-core`**: the cost model against E0's cells, the KV geometry, the step-time model; each admission policy's decisions on hand-made sequences of requests and turns.
+- **`flatshare-sim`**: the AIPerf port against AIPerf's own plan; the step loop on hand-made sequences; the clairvoyant tiers against exhaustive search; every arm end to end on a 16-trace subset; `make reproduce-e1` regenerates E1's tables (not in CI: the corpus stays outside the repository).
+- **`flatshare-gateway`**, against in-process mock engines and speech servers: disconnects, backpressure, sanitization and tenant-scoped sessions, the intake's bounds, every deadline, the accounting and the engine's state, the nodes' placement, failover and covering, event idempotency, every admission policy, the reload and its drain; the proxy's overhead in process.
+- **Engine**: the generated `make-room` module built from v0.32.0's source; its behavior on vLLM's real scheduler with CPU torch, and its trace against the pull requests' own patches; the GPU probes.
+- **Voice**: a hermetic LiveKit test in the voice-plane namespace (barge-in, headers, lifecycle events in order); unit tests of the event delivery, serve mode's admission and the node binding.
+- **Deploy and ops**: the serving profile's rendering and `serving-check` against an engine that differs; the release tool's prepare, switch, switch-back and rollback on stand-in hosts; the units, install scripts and listener audit; the alert rules under promtool.
+- **E2**: the report, its figures and the demo renderer on synthetic points; `make reproduce-e2` and `make figures` rebuild them from the committed records (not in CI).
+- **CI**, GitHub Actions on CPU: rustfmt, clippy and ruff, every Rust test, the engine variants' build tests against vLLM's source, the Python unit tests, and make-room's behavior and trace suites on CPU torch.

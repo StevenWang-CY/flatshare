@@ -42,7 +42,7 @@ ROWS = {
     "+ #63350: a waiting request": ("w5-pr:w5-disc-pr-a-s24",),
     "+ #63351: agent prefill": ("w5-pr:w5-disc-pr-ab-s24",),
     "+ #63351 with a 48-token window": AB48,
-    "Shared, this configuration": AB48,
+    "Shared, the configuration to deploy": AB48,
 }
 """Each headline row, by the start of its first cell, and the points (campaign:point) whose runs it reports."""
 README_COLUMNS = [

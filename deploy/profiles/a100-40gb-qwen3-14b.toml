@@ -1,6 +1,6 @@
-# Qwen3-14B-FP8 on one A100 40 GB at the card's own pool: the A100 run's optional arm C' (docs/HARDWARE.md, the optional
-# arms), a second model in a pool it was not made to bind, which the like-for-like core does not answer. Every value it
-# does not set is a100-40gb's, the base. It renders into its own directory, ~/flatshare/node-14b, whose units
+# Qwen3-14B-FP8 on one A100 40 GB at the card's own pool: the A100 run's optional arm C' (docs/BENCHMARKS.md, the
+# optional arms), a second model in a pool it was not made to bind, which the like-for-like core does not answer. Every
+# value it does not set is a100-40gb's, the base. It renders into its own directory, ~/flatshare/node-14b, whose units
 # benchmarks/a100/cprime.sh installs in place of the core's for the arm and puts back after it.
 
 [profile]

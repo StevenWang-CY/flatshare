@@ -120,9 +120,11 @@ and both are off by default. They are proposed to vLLM as two stacked pull reque
 | The gain shrinks where the pool has room | 0.47 s over tuned vLLM at 16 sessions of the whole corpus, against 8.24 s | §6.6 |
 | As calls overlap, the tail grows and the budget cap keeps the agents' prefill out for longer | 0.26 s over the SLO and agent prefill held in 64% of the steps with six callers, against 0.20 s and 33% with two | §6.6 |
 | The rules carry to an A100 at the same KV pool and step cap | p95 4.99 s to 1.63 s, 7–60 ms under that card's SLO in each of five rounds | §6.7 |
-| On two RTX 5060 Ti cards under a resource gate, consolidation: both calls and four agent sessions on one card, beside a card of agents alone | 34% more background work than dedicated roles, a card for the calls and one for the agents, within the SLO's 5% allowance | §6.8 |
+| Consolidation on two RTX 5060 Ti cards under a resource gate (note 1) | 34% more background work than dedicated roles, a card for the calls and one for the agents, within the SLO's 5% allowance | §6.8 |
 | Most of that gain is the arrangement's: tuned vLLM's shared card qualifies at two sessions | 27% more | §6.8 |
 | The 256-token step cap we deploy, in five rounds on new samples | 44 of 295 replies over the SLO, against 94 of 295 at 512 | §6.9 |
+
+1. Consolidation puts both calls and four agent sessions on one card, beside a card of agents alone.
 
 This report makes five contributions.
 
@@ -521,15 +523,20 @@ preemption's cap on victims a step, and T the budget cap's window in output toke
 | Configuration | What it changes | Where |
 |---|---|---|
 | Voice alone | No agents; the SLO's reference | §6.1 |
-| Tuned vLLM | vLLM 0.32 with priority scheduling (voice 0, agents 2), a 512-token step cap with a 256-token threshold per request, prefix caching and a CPU KV tier written through | §6 |
+| Tuned vLLM | vLLM 0.32 with priority scheduling (voice 0, agents 2), a 512-token step cap, prefix caching and a CPU KV tier (note 1) | §6 |
 | The KV preemption | #63350 with N = 2 | §6.1–§6.4 |
 | The change (T = 16) | #63350 and #63351 with N = 2 and T = 16, the budget cap's default window | §6.1–§6.4 |
 | **The configuration to deploy** | #63350 and #63351 with N = 2 and T = 48 | §6 |
-| Preempt-resubmit | A gateway that aborts agent requests without a first byte when a voice request arrives, and resubmits them once the voice request has its first byte | §6.1, §6.4, §6.5 |
+| Preempt-resubmit | A gateway that aborts agent requests without a first byte when a voice request arrives (note 2) | §6.1, §6.4, §6.5 |
 | vLLM's settings | A 1,024-token step cap without a per-request threshold; a KV watermark of 10%; a limit of 8,192 queued tokens; `--max-num-seqs 12` with #54530 [[18](#ref-18)] | §6.5 |
 | Static answers | A gateway that caps agent requests in flight at 2 or 8, or reserves 2,048 tokens of KV for voice | §6.5 |
 | Other engines and routers | SGLang 0.5.22's priority preemption, with and without its host tier [[5](#ref-5), [6](#ref-6)]; llm-d's flow control, emulated in the gateway [[19](#ref-19)]; SMG 1.13.0 [[20](#ref-20)] | §6.5 |
-| A gateway policy timed by the conversation (the lifecycle policy) | KV headroom held from the caller's speech onset by deferring agent requests, a throttle on agent prefill while a turn is answered, and replies capped at 16 tokens when headroom is short | §6.5 |
+| A gateway policy timed by the conversation (the lifecycle policy) | KV headroom held from the caller's speech onset, a throttle on agent prefill and a reply cap (note 3) | §6.5 |
+
+1. The step cap has a 256-token threshold per request, and the CPU KV tier is written through.
+2. It resubmits them once the voice request has its first byte.
+3. The headroom is held by deferring agent requests, the throttle acts while a turn is answered, and replies are capped
+   at 16 tokens when headroom is short.
 
 ### 5.5 Rounds and estimation
 

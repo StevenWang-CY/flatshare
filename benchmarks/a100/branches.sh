@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# branches.sh stage BASE HEAD | run [--flags "FLAG..."]: the A100 run's optional arm 2 (docs/HARDWARE.md, the optional
+# branches.sh stage BASE HEAD | run [--flags "FLAG..."]: the A100 run's optional arm 2 (docs/BENCHMARKS.md, the optional
 # arms, P-1's pair), on this host: the PRs' own code, vLLM at HEAD (the stacked PRs' tip) with their switches on against
 # vLLM at BASE (main, where the PRs branch off) as it is, where the core measured make-room, their port onto vLLM
 # 0.32.0.
