@@ -1,5 +1,5 @@
 //! The sessions placed on the nodes: each one's node, what each node holds, and the realtime sessions each node
-//! carries for another. The table is the parked two-node design's, with call slots and moves.
+//! carries for another, with each node's call slots and the sessions moved to it.
 //!
 //! A session is keyed by its tenant and its id, since two trusted tenants may name sessions alike. At most
 //! [`SESSIONS`] are remembered: a new session that finds the table full takes the place of the session idle longest,

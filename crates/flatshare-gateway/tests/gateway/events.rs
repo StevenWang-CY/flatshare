@@ -101,7 +101,7 @@ async fn events_are_validated_deduplicated_and_taken_only_from_trusted_tenants()
     assert_eq!(metric(&metrics, &series(true)), Some(2.0));
 }
 
-/// The review's probe P3: another trusted tenant posts the voice worker's next event id, with the voice worker as
+/// Another trusted tenant posts the voice worker's next event id, with the voice worker as
 /// its source, before the voice worker does. The voice worker's own event is still new.
 #[tokio::test]
 async fn another_tenant_cannot_make_the_voice_workers_events_repeats() {

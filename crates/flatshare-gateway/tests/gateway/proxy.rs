@@ -104,8 +104,8 @@ async fn sglangs_engine_fields_are_removed_as_well() {
     );
 }
 
-/// The review's probe P2: vLLM 0.32 takes `ec_transfer_params`, the encoder-cache connector's input, on every route
-/// as it takes `kv_transfer_params`, so a client's never reaches the engine. The Responses API's `background` and
+/// A client's `ec_transfer_params`, the encoder-cache connector's input, which vLLM 0.32 takes on every route as it
+/// takes `kv_transfer_params`, never reaches the engine. The Responses API's `background` and
 /// `store` pass: the deployed engine refuses a background response, since its response store is off.
 #[tokio::test]
 async fn the_encoder_cache_connectors_input_is_removed_as_well() {

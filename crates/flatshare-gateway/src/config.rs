@@ -2068,7 +2068,7 @@ max_calls = 0
 
     #[test]
     fn a_tcp_listener_binds_loopback() {
-        // The review's probe P1: beyond loopback, bearer keys would cross the network in cleartext, and the
+        // A TCP listener off loopback is refused: there bearer keys would cross the network in cleartext, and the
         // keyless /metrics, /health and /ready would answer it.
         let listen = |tcp: &str| {
             Config::from_toml(&format!(
@@ -2158,7 +2158,7 @@ max_calls = 0
         );
     }
 
-    /// The review's probe P5: every committed arm file's `[gateway]` table, merged into the deploy example as
+    /// Every committed arm file's `[gateway]` table, merged into the deploy example as
     /// `flatshare-bench e2 run` merges it into cyan's gateway.toml, is a configuration this build takes. A key renamed
     /// here would otherwise show only when the gateway failed to start on cyan.
     #[test]
