@@ -36,6 +36,8 @@ use super::metrics::{LifecycleMetrics, Metrics, Refusal};
 use super::realtime::Realtime;
 use super::sessions::{Key, Sessions};
 use crate::auth::Tenant;
+use crate::deadline::Timeout;
+use crate::drain::{self, Drain};
 
 /// The gateway's admission point.
 #[derive(Debug)]
@@ -64,6 +66,17 @@ struct State {
     closed: bool,
 }
 
+/// Why a request that waited at the admission point went no further.
+#[derive(Debug)]
+pub(crate) enum NotAdmitted {
+    /// The admission point refused it.
+    Refused(Refusal),
+    /// Its wait reached its deadline.
+    Late(Timeout),
+    /// The drain's cut.
+    Cut,
+}
+
 /// What a held request was last told.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Signal {
@@ -78,9 +91,9 @@ enum Signal {
 impl Admission {
     /// The admission point and its metric families, the lifecycle policy's only under it; under that policy, with
     /// the task that ends the realtime sessions' phases as they time out. A configuration that the core refuses is
-    /// an error that names the key it lacks ([`config::Admission::core`]).
+    /// an error that names the key it lacks ([`config::AdmissionConfig::core`]).
     pub fn new(
-        config: &config::Admission,
+        config: &config::AdmissionConfig,
         max_queued: usize,
         changed: Arc<Notify>,
     ) -> Result<Arc<Self>, String> {
@@ -216,6 +229,31 @@ impl Admission {
             self.metrics.deferral(reason, ticket.waited);
         }
         Ok(Some(ticket))
+    }
+
+    /// Takes a request through the admission point ([`Admission::admit`]) for as long as it may wait there: until
+    /// `deadline`, the earliest of its deadlines that bounds the wait, and for a background request until the drain's
+    /// cut. Returns its ticket, `None` for a class the policy does not hold, or why it went no further.
+    pub async fn wait(
+        self: &Arc<Self>,
+        tenant: &Tenant,
+        class: SloClass,
+        session: &SessionId,
+        body_bytes: usize,
+        (deadline, timeout): (Instant, Timeout),
+        drain: &Drain,
+    ) -> Result<Option<Ticket>, NotAdmitted> {
+        // A background request still waiting at the drain's cut leaves the queue, and so does one whose wait reaches
+        // its deadline.
+        let mut cut = drain.cut_for(Some(class));
+        tokio::select! {
+            biased;
+            () = drain::cut(&mut cut) => Err(NotAdmitted::Cut),
+            () = tokio::time::sleep_until(deadline.into()) => Err(NotAdmitted::Late(timeout)),
+            admitted = self.admit(tenant, class, session, body_bytes) => {
+                admitted.map_err(NotAdmitted::Refused)
+            }
+        }
     }
 
     /// Lifecycle events of `tenant`'s sessions that the gateway accepted, in the order it received them: the

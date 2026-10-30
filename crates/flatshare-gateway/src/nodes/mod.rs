@@ -35,7 +35,6 @@
 
 pub(crate) mod metrics;
 mod placement;
-pub(crate) mod routes;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
@@ -44,15 +43,17 @@ use std::time::{Duration, Instant};
 use flatshare_proto::{EventKind, LifecycleEvent, SessionId, SloClass};
 use prometheus_client::metrics::gauge::Gauge;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Notify, watch};
+use tokio::sync::Notify;
 use tokio::time::MissedTickBehavior;
 
 use crate::auth::{Tenant, Tenants};
 use crate::canary::{self, Health, Watched};
 use crate::config::{CallPlacement, Canary, NodeConfig, Placement, PrioritySignals, UpstreamAddr};
 use crate::deadline::Timeout;
+use crate::drain::{self, Drain};
 use crate::engine::Engine;
-use crate::metrics::{EngineState, GaugeGuard};
+use crate::metrics::GaugeGuard;
+use crate::types::EngineState;
 use crate::upstream::Upstream;
 
 pub(crate) use metrics::Unplaced;
@@ -200,7 +201,7 @@ pub(crate) struct Placed {
     trusted: bool,
     /// Its session's placement, when the table remembers it.
     session: Option<Arc<Session>>,
-    /// Whether it counts among its node's requests in flight: from [`Nodes::admit`] on.
+    /// Whether it counts among its node's requests in flight: from [`Nodes::hold`] on.
     started: bool,
 }
 
@@ -223,7 +224,7 @@ impl Drop for Placed {
 
 /// Why a request held back by a failover went no further.
 #[derive(Debug)]
-pub(crate) enum Held {
+pub(crate) enum NotReleased {
     /// Its wait reached its deadline.
     Late(Timeout),
     /// The drain's cut.
@@ -485,13 +486,14 @@ impl Nodes {
 
     /// Counts a request in flight on its node, holding back an interactive or background one while its node covers
     /// ([`Nodes::covering`]): until fewer than `failover_background_max_in_flight` of them are in flight there, the
-    /// node no longer covers, its wait reaches `deadline`, or the drain's `cut` ends it. Returns how long it waited.
-    pub async fn admit(
+    /// node no longer covers, its wait reaches `deadline`, or the drain's cut ends it. Returns how long it waited.
+    pub async fn hold(
         &self,
         placed: &mut Placed,
         (deadline, timeout): (Instant, Timeout),
-        mut cut: Option<watch::Receiver<bool>>,
-    ) -> Result<Duration, Held> {
+        drain: &Drain,
+    ) -> Result<Duration, NotReleased> {
+        let mut cut = drain.cut_for(Some(placed.class));
         if placed.class == SloClass::Realtime {
             self.count_in(placed);
             return Ok(Duration::ZERO);
@@ -516,8 +518,8 @@ impl Nodes {
             }
             tokio::select! {
                 biased;
-                () = crate::server::cut(&mut cut) => return Err(Held::Cut),
-                () = tokio::time::sleep_until(deadline.into()) => return Err(Held::Late(timeout)),
+                () = drain::cut(&mut cut) => return Err(NotReleased::Cut),
+                () = tokio::time::sleep_until(deadline.into()) => return Err(NotReleased::Late(timeout)),
                 () = &mut notified => {}
             }
         }
@@ -1009,7 +1011,7 @@ async fn expire(nodes: Weak<Nodes>, idle: Duration) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{CacheSaltSecret, Tenant as TenantConfig};
+    use crate::config::{CacheSaltSecret, TenantConfig};
 
     fn tenants(names: &[&str]) -> Tenants {
         let config: Vec<TenantConfig> = names
@@ -1314,7 +1316,8 @@ mod tests {
         for _ in 0..10 {
             let mut request = nodes.request(None, SloClass::Background, true).unwrap();
             let deadline = (Instant::now() + Duration::from_secs(5), Timeout::Queue);
-            nodes.admit(&mut request, deadline, None).await.unwrap();
+            let drain = Drain::new(Duration::ZERO);
+            nodes.hold(&mut request, deadline, &drain).await.unwrap();
             held.push(request);
         }
         assert!(held.iter().all(|placed| &*placed.node.name == "gray"));

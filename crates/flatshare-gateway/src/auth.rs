@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::config::{self, CacheSaltSecret, MetricsKey};
-use crate::sanitize::hex;
+use crate::util::hex;
 
 /// A tenant as the request path sees it.
 #[derive(Debug)]
@@ -35,7 +35,7 @@ pub(crate) struct Tenants {
 }
 
 impl Tenants {
-    pub fn new(config: &[config::Tenant], secret: &CacheSaltSecret) -> Self {
+    pub fn new(config: &[config::TenantConfig], secret: &CacheSaltSecret) -> Self {
         let tenants = config
             .iter()
             .enumerate()
@@ -128,7 +128,7 @@ mod tests {
     }
 
     fn tenants() -> Tenants {
-        let tenant = |name: &str, keys: &[&str]| config::Tenant {
+        let tenant = |name: &str, keys: &[&str]| config::TenantConfig {
             name: name.into(),
             keys_sha256: keys.iter().map(|k| Sha256::digest(k).into()).collect(),
             trusted: false,

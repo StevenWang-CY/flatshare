@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use flatshare_gateway::config::Admission;
+use flatshare_gateway::config::AdmissionConfig;
 use flatshare_gateway::{Config, LogSink, Server};
 
 use crate::common::*;
@@ -176,7 +176,7 @@ async fn a_throttle_without_a_step_budget_is_refused_by_its_key() {
     let unused = SocketAddr::from(([127, 0, 0, 1], 9));
     let mut config = Config::from_toml(&gateway_toml(unused, &path, &throttle_alone(100))).unwrap();
     let admission = config.admission.take().unwrap();
-    config.admission = Some(Admission {
+    config.admission = Some(AdmissionConfig {
         step_tokens: None,
         ..admission
     });

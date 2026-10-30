@@ -10,39 +10,20 @@ could stop its tools left (:func:`kill_left`). Every wait of a run looks again e
 from __future__ import annotations
 
 import contextlib
-import math
 import os
 import re
 import signal
 import subprocess
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from flatshare_bench.e2.arm import E2Error
+from flatshare_bench.e2.wait import POLL_S
 
 if TYPE_CHECKING:
     from flatshare_bench.e2.cyan import Host
-
-POLL_S = 1.0
-"""How often a run checks on the tools and services it waits for."""
-
-
-def until(done: Callable[[], bool], timeout: float, message: str) -> None:
-    """Return once ``done()``, asked every POLL_S; past ``timeout`` seconds, raise an E2Error that
-    says ``message``."""
-    deadline = time.monotonic() + timeout
-    while not done():
-        if time.monotonic() > deadline:
-            raise E2Error(message)
-        time.sleep(POLL_S)
-
-
-def pause(at_most: float = math.inf) -> None:
-    """Wait before a run looks again at what it waits for: POLL_S, or ``at_most`` seconds if that is
-    less."""
-    time.sleep(min(POLL_S, at_most))
 
 
 TOOL_MARK = "FLATSHARE_E2_TOOL"

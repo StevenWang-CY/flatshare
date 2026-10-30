@@ -13,7 +13,8 @@ use prometheus_client::metrics::histogram::Histogram;
 use prometheus_client::registry::{Registry, Unit};
 
 use crate::canary::Probes;
-use crate::metrics::{EngineState, LATENCY_BUCKETS};
+use crate::metrics::LATENCY_BUCKETS;
+use crate::types::EngineState;
 
 /// What a node's health is made of, as the `component` label: its engine (serving and ready), its STT and its TTS
 /// server (answering `/health`).

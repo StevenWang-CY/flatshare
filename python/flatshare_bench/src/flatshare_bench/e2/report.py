@@ -27,6 +27,12 @@ from typing import Any
 
 import orjson
 
+from flatshare_bench.e2.groups import (
+    STACKED,
+    arm_order,
+    configurations,
+)
+from flatshare_bench.e2.groups import configuration as _configuration
 from flatshare_bench.e2.record import (
     GOODPUT_WINDOW_S,
     REPLY_TIMEOUT_MS,
@@ -203,11 +209,6 @@ def load_points(run_dirs: Iterable[Path]) -> tuple[list[dict[str, Any]], list[Pa
     return rows, incomplete
 
 
-def _configuration(row: Mapping[str, Any]) -> tuple[str, str, str]:
-    """What makes the runs of one configuration: its workload, its arm and its arm file's name."""
-    return row["workload"], row["arm"], row["point"]
-
-
 def _workload(data: str, callers: int, on: str = "", warmup_turns: int = 0) -> str:
     """A workload's name, as frontier.csv and frontier.md give it; ``on`` is :func:`hardware`'s, and
     ``warmup_turns`` the warm-up turns its calls open with, where the report names them. Points without
@@ -370,44 +371,6 @@ def _gpu(kept: Mapping[str, Any]) -> dict[str, int | None]:
     return {column: clocks.get(column.removeprefix("gpu_")) for column in GPU_COLUMNS}
 
 
-REPEATED = (
-    "background_tokens_per_s",
-    "fixed_window_tokens_per_s",
-    "v2v_p50_ms",
-    "v2v_p95_ms",
-    "v2v_p99_ms",
-    "agent_ttft_p50_ms",
-    "agent_ttft_p99_ms",
-    "realtime_first_byte_p95_ms",
-    "voice_errors",
-)
-"""The columns a configuration measured in several campaigns takes the median of over its runs, and
-frontier.md gives with their range."""
-
-
-def configurations(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """The configurations the rows measured, in the order of their first runs: each arm file's runs,
-    one per campaign that measured it, with the median of each REPEATED column over the runs that
-    measured it (the run's own value for a configuration measured once), and the failed turns and
-    the turns of all its runs."""
-    runs: dict[tuple[str, str, str], list[Mapping[str, Any]]] = {}
-    for row in rows:
-        runs.setdefault(_configuration(row), []).append(row)
-    return [
-        {"workload": workload, "arm": arm, "point": point, "runs": measured}
-        | {"frontier": all(r["frontier"] for r in measured)}
-        | {column: _median(r[column] for r in measured) for column in REPEATED}
-        | {"failed_turns": sum(r["voice_errors"] for r in measured)}
-        | {"turns": sum(r["voice_turns"] for r in measured)}
-        for (workload, arm, point), measured in runs.items()
-    ]
-
-
-def _median(values: Iterable[float | None]) -> float | None:
-    measured = [v for v in values if v is not None]
-    return statistics.median(measured) if measured else None
-
-
 def mark_frontier(rows: Sequence[dict[str, Any]]) -> None:
     """Mark the points that no other point of their arm and workload dominates. A point with failed
     turns is left off: its V2V is censored, not measured, so it neither takes a place on the
@@ -456,21 +419,6 @@ def voice_slo(
         return None
     p95 = statistics.median(g["v2v_p95_ms"] for g in alone)
     return p95 + SLO_MARGIN_MS, [g["point"] for g in alone]
-
-
-def arm_order(arm: str) -> tuple[int, str]:
-    """Arms in E2's order: 2 before 10, 7a before 7b."""
-    number = re.match(r"\d+", arm)
-    return (int(number[0]) if number else 1000, arm)
-
-
-STACKED = (
-    ("end_of_turn_ms", "Endpointing"),
-    ("turn_to_first_sentence_ms", "Reply to first sentence"),
-    ("tts_first_audio_ms", "TTS first audio"),
-)
-"""The worker's stages that follow one another from the end of the caller's speech, as the stage
-waterfall stacks them; the rest of the callers' V2V is transport and playout."""
 
 
 def stage_waterfall(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:

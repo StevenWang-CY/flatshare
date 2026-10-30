@@ -29,7 +29,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::watch;
 
 use crate::intake;
-use crate::server::Shared;
+use crate::state::Shared;
 
 /// What a gateway holds on its engine, one line of the ledger.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,7 +128,7 @@ impl Channel {
         // A fresh name, created with mode 700 (and not if it exists), so that no other user can connect.
         let dir = base.join(format!(
             "flatshare-gateway-ledger-{}",
-            &crate::sanitize::random_hex()[..16]
+            &crate::util::random_hex()[..16]
         ));
         std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
         let path = dir.join("ledger.sock");
@@ -264,14 +264,18 @@ async fn read(stream: UnixStream, shared: Weak<Shared>, closed: watch::Sender<bo
                 }
                 Err(err) => {
                     tracing::warn!(
-                        "the predecessor's ledger sent a line that is not a load: {err}"
+                        error = %err,
+                        "the predecessor's ledger sent a line that is not a load"
                     );
                     break 'stream;
                 }
             }
         }
         if pending.len() > MAX_LINE {
-            tracing::warn!("the predecessor's ledger sent a line longer than {MAX_LINE} bytes");
+            tracing::warn!(
+                max_bytes = MAX_LINE,
+                "the predecessor's ledger sent a line too long"
+            );
             break;
         }
     }

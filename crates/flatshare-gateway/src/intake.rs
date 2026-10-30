@@ -308,9 +308,9 @@ mod tests {
     use crate::config::{self, CacheSaltSecret};
 
     fn intake(limits: Limits, tenants: &[(&str, usize)]) -> (Arc<Intake>, Tenants) {
-        let tenants: Vec<config::Tenant> = tenants
+        let tenants: Vec<config::TenantConfig> = tenants
             .iter()
-            .map(|&(name, max_in_flight)| config::Tenant {
+            .map(|&(name, max_in_flight)| config::TenantConfig {
                 name: name.into(),
                 keys_sha256: Vec::new(),
                 trusted: false,

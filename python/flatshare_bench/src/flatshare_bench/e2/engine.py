@@ -20,7 +20,7 @@ import httpx
 
 from flatshare_bench.e2.arm import E2Error, Engine, flag_values
 from flatshare_bench.e2.record import model_id
-from flatshare_bench.e2.tools import until
+from flatshare_bench.e2.wait import until
 from flatshare_bench.kv_metrics import fetch
 from flatshare_bench.tiers import pool_tokens
 from flatshare_bench.transport import client

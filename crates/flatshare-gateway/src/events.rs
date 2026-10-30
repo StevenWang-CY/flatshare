@@ -6,17 +6,10 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use axum::extract::{Request, State};
-use axum::response::Response;
-use flatshare_proto::{LifecycleEvent, SloClass};
-use http::StatusCode;
+use flatshare_proto::LifecycleEvent;
 use serde_json::value::RawValue;
 
-use crate::deadline::Deadlines;
-use crate::exchange::Exchange;
-use crate::metrics::{Metrics, Route};
-use crate::proxy::{BodyError, read_body};
-use crate::server::App;
+use crate::metrics::Metrics;
 
 /// An event the gateway accepted: not a repeat of one seen within the deduplication window.
 #[derive(Clone, Debug)]
@@ -85,7 +78,7 @@ impl Events {
 
     /// Records a batch, returning how many events were new and how many were repeats. The new ones go to `admit`
     /// (the admission point) in the order they were accepted, and then to the sink.
-    fn ingest(
+    pub fn ingest(
         &self,
         tenant: &Arc<str>,
         events: Vec<LifecycleEvent>,
@@ -155,61 +148,9 @@ impl Seen {
     }
 }
 
-/// `POST /v1/events`: one event object or an array of them. Answers 202 `{"accepted": n, "duplicates": m}`.
-/// A batch is validated in full before any of it is recorded.
-pub(crate) async fn post(State(app): State<App>, request: Request) -> Response {
-    let shared = &app.shared;
-    let mut ex = Exchange::new(&shared.metrics, Route::Events);
-    let (parts, body) = request.into_parts();
-    let Some(tenant) = shared
-        .tenants
-        .authenticate(&parts.headers, app.listener_tenant)
-    else {
-        return ex.unauthorized();
-    };
-    ex.tenant = Some(Arc::clone(&tenant.name));
-    if !tenant.trusted {
-        return ex.error(
-            StatusCode::FORBIDDEN,
-            "untrusted_tenant",
-            "only trusted tenants may post lifecycle events",
-        );
-    }
-    // A batch's bytes come from the budget of the bodies the gateway holds, as a request's do.
-    let mut budget = shared.intake.body();
-    // A batch has the interactive class's upload deadline.
-    let class = SloClass::Interactive;
-    let upload = Deadlines::new(class, shared.class(class), ex.received).upload();
-    let body = match read_body(body, shared.max_body_bytes, &mut budget, upload).await {
-        Ok(body) => body,
-        Err(BodyError::Late(timeout)) => {
-            let message = format!("the events did not arrive within {}", timeout.key());
-            return ex.error(StatusCode::REQUEST_TIMEOUT, "upload_timeout", message);
-        }
-        Err(BodyError::Invalid(status, code, message)) => return ex.error(status, code, message),
-        Err(BodyError::Refused(_)) => {
-            return ex.error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "body_budget_exhausted",
-                "the gateway holds max_buffered_body_bytes of request bodies; send the events again",
-            );
-        }
-    };
-    let events = match parse(&body) {
-        Ok(events) => events,
-        Err(message) => return ex.error(StatusCode::BAD_REQUEST, "invalid_event", message),
-    };
-    let (accepted, duplicates) =
-        shared
-            .events
-            .ingest(&tenant.name, events, &shared.metrics, |fresh| {
-                shared.lifecycle(tenant, fresh)
-            });
-    let body = serde_json::json!({"accepted": accepted, "duplicates": duplicates});
-    ex.respond(StatusCode::ACCEPTED, &body)
-}
-
-fn parse(body: &[u8]) -> Result<Vec<LifecycleEvent>, String> {
+/// The events of a `POST /v1/events` body: one event object or an array of them, each with an `event_id` of 1 to
+/// [`LifecycleEvent::MAX_ID_LEN`] bytes.
+pub(crate) fn parse(body: &[u8]) -> Result<Vec<LifecycleEvent>, String> {
     let events = if body.trim_ascii_start().starts_with(b"[") {
         let items: Vec<&RawValue> =
             serde_json::from_slice(body).map_err(|e| format!("invalid JSON array: {e}"))?;

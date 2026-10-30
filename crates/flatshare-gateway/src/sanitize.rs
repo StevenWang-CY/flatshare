@@ -17,7 +17,9 @@ use sha2::{Digest, Sha256};
 use crate::auth::Tenant;
 use crate::bounds;
 use crate::config::PrioritySignals;
-use crate::metrics::{Metrics, Route};
+use crate::metrics::Metrics;
+use crate::types::Route;
+use crate::util::{hex, random_hex};
 
 pub(crate) static SESSION_ID: HeaderName = HeaderName::from_static(headers::SESSION_ID);
 pub(crate) static VLLM_PRIORITY: HeaderName = HeaderName::from_static(headers::VLLM_PRIORITY);
@@ -406,23 +408,6 @@ impl<'de> serde::Deserialize<'de> for TopLevel<'de> {
         }
         deserializer.deserialize_map(Members)
     }
-}
-
-/// Lowercase hexadecimal.
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    bytes
-        .iter()
-        .flat_map(|b| [DIGITS[usize::from(b >> 4)], DIGITS[usize::from(b & 15)]])
-        .map(char::from)
-        .collect()
-}
-
-/// 128 random bits as 32 hex digits, from the operating system's generator.
-pub(crate) fn random_hex() -> String {
-    let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).expect("the operating system's random number generator failed");
-    hex(&bytes)
 }
 
 /// A request id: 32 hex digits, a random per-process prefix and a counter. Request ids must be unique, not
