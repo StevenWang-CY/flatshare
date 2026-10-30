@@ -234,7 +234,7 @@ groups:
           severity: ticket
         annotations:
           runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharecallsrefused
-          summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503
+          summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503, or 502 when sent again after their node failed
       - alert: FlatshareKvPoolFullWithWaiting
         expr: max by (node) (vllm:kv_cache_usage_perc) > 0.95 and on (node) sum by (node) (vllm:num_requests_waiting) > 0
         for: 10m

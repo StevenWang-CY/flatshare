@@ -218,7 +218,7 @@ tests:
               severity: ticket
             exp_annotations:
               runbook_url: https://github.com/StevenWang-CY/flatshare/blob/main/ops/RUNBOOK.md#flatsharecallsrefused
-              summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503
+              summary: Calls found no available node with a free call slot (no_call_slot) or none of the realtime role, and got 503, or 502 when sent again after their node failed
 
   # The request outcomes' tickets, from request_outcomes, whose series exist at zero from the gateway's start: refusals
   # for capacity open one ticket by class, two bounds' together, and a missed deadline one by class and deadline, each
