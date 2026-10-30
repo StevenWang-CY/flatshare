@@ -196,7 +196,8 @@ threshold. Then read:
 - **The cards.** One RTX 5060 Ti 16 GB (the docs call this machine "the box") runs vLLM 0.32 with
   Qwen3-4B-Instruct-2507-FP8 and a 36,400-token KV pool, Whisper and Kokoro on the same GPU, a 20 GiB CPU KV tier, and
   NUMA-pinned units. An A100 SXM4 80 GB on Google Colab ran the same deployment, rendered from a hardware profile, with
-  the control plane on the same host and the RTX 5060 Ti's KV pool ([the A100 run](docs/HARDWARE.md#the-a100-run)).
+  the control plane on the same host and the RTX 5060 Ti's KV pool
+  ([the A100 run](docs/BENCHMARKS.md#the-a100-run-2026-10-26)).
 - **Voice-to-voice from waveforms.** Two LiveKit callers speak scripted lines, synthesized in six voices, to a stock
   LiveKit voice agent, and time the end of their speech to the agent's first audio. The agent logs each turn's stages.
 - **The agents.** AIPerf replays the 48 longest-context Claude Code sessions of SemiAnalysis' traces, block-scaled 32×,

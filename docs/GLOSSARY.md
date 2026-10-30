@@ -81,7 +81,7 @@ which use it retires.
 - **Stock vLLM**: vLLM 0.32.0 without the change, whatever its flags.
 - **Tuned vLLM**: stock vLLM as an operator would tune it. On the box it is the frozen box's engine. On the A100 the
   technical report names its step cap: at 512-token steps it runs the box's tuning, as the core compares, and at 2,048/0
-  the card's best stock step cap ([the A100 run](HARDWARE.md#what-it-measured-2026-10-26)).
+  the card's best stock step cap ([the A100 run](BENCHMARKS.md#what-it-measured-2026-10-26)).
 
 ## Classes and priorities
 
@@ -92,12 +92,12 @@ which use it retires.
 ## Experiments and how they are counted
 
 - **A' and C'**: two of the A100 run's optional arms: A', the box's pool at 32 agent sessions (one round ran), and C',
-  Qwen3-14B-FP8 at an A100 40 GB's own pool (not run) ([HARDWARE.md](HARDWARE.md#the-optional-arms)).
+  Qwen3-14B-FP8 at an A100 40 GB's own pool (not run) ([BENCHMARKS.md](BENCHMARKS.md#the-optional-arms)).
 - **The A100 run** (A1, 2026-10-26): the release's kit on an A100 SXM4 80 GB on Google Colab. Its **core** repeated E2's
   discriminating scenario like for like (the box's model, pool, 512/256 and CPU tier, W5's arm files and five samples)
   with E0, the probes and a calibration point, and its **arms** after the core were the batch (256 requests in flight),
   tuned vLLM at 2,048/0, the configuration to deploy at that cap, A' (32 sessions) and FlashInfer's attention
-  ([HARDWARE.md](HARDWARE.md#what-it-measured-2026-10-26)).
+  ([BENCHMARKS.md](BENCHMARKS.md#what-it-measured-2026-10-26)).
 - **Agent session**: one replayed Claude Code session with its subagents, the replay's unit (a "session tree" in
   AIPerf).
 - **Arm**: one engine and gateway configuration of E2, numbered by family: 1, voice alone; 2 to 5, stock vLLM and its
@@ -171,7 +171,7 @@ which use it retires.
   response, from its request log, exact to the millisecond ([SLO.md](SLO.md#indicators)).
 - **Running share**: the share of the time in which free KV is under two calls' 2,048 tokens. The A100 run and RS
   measured it from the engine's metrics, sampled every 0.5 s, and flatshare-sim models it
-  ([HARDWARE.md](HARDWARE.md#the-core-block-by-block)).
+  ([BENCHMARKS.md](BENCHMARKS.md#the-core-block-by-block)).
 - **The SLO**: voice V2V p95 at most 250 ms above voice alone with as many callers. Its reference is measured per
   campaign ([SLO.md](SLO.md#the-slos-reference-campaign-by-campaign)).
 - **TTFT** (time to first token): for the agents, from AIPerf's per-request records; for a probe, from sending its
