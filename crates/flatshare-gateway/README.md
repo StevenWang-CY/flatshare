@@ -409,22 +409,31 @@ vLLM 0.32's `/health` answers 200 while its API server and engine core live, and
 - `degraded` once the canary has failed `degraded_after` times in a row with nothing succeeding between (a failure while warming keeps the engine warming: it never served);
 - `drained` from the start of the gateway's drain.
 
-An inference succeeds when a client's request gets a 2xx response's first content, or is relayed to its end, and when the canary does: a completion of one token (`POST /v1/completions`, `"prompt": "ping"`, `max_tokens` 1, temperature 0 and no model, so the engine's own), at the background class's priority in the signals `upstream_priority` lists, with `X-Flatshare-Canary: 1` and a request id of its own for the engine's logs, read to its end within `timeout_s`. It goes through the upstream's connection pool and outside every bound, count and outcome above; `flatshare_gateway_canary_probes_total` and `flatshare_gateway_canary_seconds` count it. The canary is idle-only: it asks, one at a time, only when no inference succeeded within `interval_s` of the last success or canary, so while clients' requests succeed it sends nothing, and an engine that real traffic shows serving gets no load from it. Requests go upstream in every state: the state changes `/ready` and the alerts, not the proxy. With `[canary] enabled = false` the engine is `serving` from the start.
+An inference succeeds when a client's request gets a 2xx response's first content, or is relayed to its end, and when the canary does. Requests go upstream in every state: the state changes `/ready` and the alerts, not the proxy.
+
+- **The canary** is a completion of one token (`POST /v1/completions`, `"prompt": "ping"`, `max_tokens` 1, temperature 0 and no model, so the engine's own), at the background class's priority in the signals `upstream_priority` lists, with `X-Flatshare-Canary: 1` and a request id of its own for the engine's logs, read to its end within `timeout_s`.
+- **Outside the accounting.** It goes through the upstream's connection pool and outside every bound, count and outcome above; `flatshare_gateway_canary_probes_total` and `flatshare_gateway_canary_seconds` count it.
+- **Idle-only.** The canary asks, one at a time, only when no inference succeeded within `interval_s` of the last success or canary, so while clients' requests succeed it sends nothing, and an engine that real traffic shows serving gets no load from it.
+- **Off.** With `[canary] enabled = false` the engine is `serving` from the start.
 
 ## Metrics and logs
 
-`GET /metrics` serves the OpenMetrics text format from a registry the gateway owns; on a TCP listener it needs the metrics key (`metrics_key_file`), on a Unix socket nothing. [`metrics.txt`](metrics.txt) is the exposition of a gateway under the lifecycle policy before any traffic, every family the gateway exports, with each family's series sorted by their labels and one series at zero for the two families that have none yet (requests and lifecycle events): a test keeps it current, `make metrics` writes it anew, and the checks of `ops/`'s dashboards and alerts read the gateway's names from it. `GET /metrics/engine` relays the engine's own `/metrics` under the same rule, with its status and content type, within 10 s (502 when the engine does not answer), for a scraper that has no route to the engine: the deployment's engines listen on Unix sockets. Label values come from fixed sets or from the configuration, so the number of series is bounded. Every series except those of `flatshare_gateway_requests_total` and `flatshare_gateway_events_total` exists from the start, at zero. The admission point's, `flatshare_gateway_admission_*` and `flatshare_gateway_realtime_*`, exist only with an `[admission]` policy, and the lifecycle policy's only under it: a gateway without one exports none of them, and one under another policy none of the lifecycle policy's, so that a count it does not keep reads as absent rather than zero.
+- **`GET /metrics`** serves the OpenMetrics text format from a registry the gateway owns; on a TCP listener it needs the metrics key (`metrics_key_file`), on a Unix socket nothing.
+- **`GET /metrics/engine`** relays the engine's own `/metrics` under the same rule, with its status and content type, within 10 s (502 when the engine does not answer), for a scraper that has no route to the engine: the deployment's engines listen on Unix sockets.
+- **The exposition.** [`metrics.txt`](metrics.txt) is the exposition of a gateway under the lifecycle policy before any traffic, every family the gateway exports, with each family's series sorted by their labels and one series at zero for the two families that have none yet (requests and lifecycle events): a test keeps it current, `make metrics` writes it anew, and the checks of `ops/`'s dashboards and alerts read the gateway's names from it.
+- **The series.** Label values come from fixed sets or from the configuration, so the number of series is bounded. Every series except those of `flatshare_gateway_requests_total` and `flatshare_gateway_events_total` exists from the start, at zero.
+- **The policies' series.** The admission point's, `flatshare_gateway_admission_*` and `flatshare_gateway_realtime_*`, exist only with an `[admission]` policy, and the lifecycle policy's only under it: a gateway without one exports none of them, and one under another policy none of the lifecycle policy's, so that a count it does not keep reads as absent rather than zero.
 
 | Metric | Labels | Meaning |
 |---|---|---|
 | `flatshare_gateway_requests_total` | `tenant`, `route`, `class`, `status` | API requests. `tenant` is empty when unauthenticated, `class` for routes without one; status 499 means the client left before any response |
-| `flatshare_gateway_request_outcomes_total` | `class`, `outcome` | Inference requests with a class, by outcome, one a request ([Accounting](#accounting)): `completed` only for a 2xx response relayed to its end. E2's records and the soak's scrapes read it; the alerts and the dashboard read `requests_terminal_total` |
+| `flatshare_gateway_request_outcomes_total` | `class`, `outcome` | Inference requests with a class, by outcome, one a request ([Accounting](#accounting)) (note 1) |
 | `flatshare_gateway_requests_offered_total` | `tenant`, `route`, `class` | Inference requests received, each once ([Accounting](#accounting)) |
 | `flatshare_gateway_requests_admitted_total` | `tenant`, `route`, `class`, `admission` | Inference requests sent upstream, each once: `admission` is `policy` when an admission policy decided when, `none` otherwise |
 | `flatshare_gateway_requests_terminal_total` | `tenant`, `route`, `class`, `outcome` | Inference requests ended, each once, by outcome |
 | `flatshare_gateway_sli_valid_total` | `class` | The requests the service level counts: every one that ended, but for the client's faults and its cancellations before the class's objective passed |
 | `flatshare_gateway_sli_good_total` | `class` | The valid requests that met their class's objective: completed, with their first content within `first_content_objective_s` |
-| `flatshare_gateway_overhead_seconds` | `route` | The end of a request's body to the moment hyper writes the request to an upstream connection: parse, sanitization, resolution, admission and connection checkout, without the time a request waits for admission. The number behind the 2 ms SLO; buckets from 50 µs, with 2 ms as a bound |
+| `flatshare_gateway_overhead_seconds` | `route` | The end of a request's body to the moment hyper writes the request to an upstream connection (note 2) |
 | `flatshare_gateway_request_body_seconds` | `route` | Receipt of a request's headers to the end of its body: the client's upload, which a direct call to the engine waits for too |
 | `flatshare_gateway_first_byte_seconds` | `class` | Receipt to the first response body byte from the upstream |
 | `flatshare_gateway_duration_seconds` | `class` | Receipt to the end of the upstream response |
@@ -434,17 +443,17 @@ An inference succeeds when a client's request gets a 2xx response's first conten
 | `flatshare_gateway_predecessor_in_flight` | | A reload's predecessor's requests in flight, which the gateway counts with its own until the predecessor exits; 0 otherwise |
 | `flatshare_gateway_sanitized_total` | `field` | Inputs removed because clients may not set them |
 | `flatshare_gateway_class_clamped_total` | | Requests whose class was stricter than their tenant's `max_class` |
-| `flatshare_gateway_upstream_errors_total` | `kind` | `connect`, `request`, `timeout` (a deadline passed while the gateway waited on the upstream: its headers, its first content, a frame after one, or the request's total), `body` |
-| `flatshare_gateway_error_events_total` | `class`, `type` | Event streams that got an error event before their abort, by its type: `upstream_unavailable`, the upstream broke the stream off (`body` errors); `draining`, a draining gateway cut a background stream; `upstream_timeout`, a deadline passed while it streamed |
+| `flatshare_gateway_upstream_errors_total` | `kind` | `connect`, `request`, `timeout` (note 3), `body` |
+| `flatshare_gateway_error_events_total` | `class`, `type` | Event streams that got an error event before their abort, by its type (note 4) |
 | `flatshare_gateway_events_total` | `type`, `source`, `duplicate` | Lifecycle events received |
 | `flatshare_gateway_usage_tokens_total` | `class`, `kind` | `prompt`, `completion` and `cached` tokens from response usage |
-| `flatshare_gateway_admission_admitted_total` | `class` | Requests the admission point let go upstream, whether they waited or not, and those of classes the policy does not hold; this and the series below, with an `[admission]` policy only |
+| `flatshare_gateway_admission_admitted_total` | `class` | Requests the admission point let go upstream, whether they waited or not, and those of classes the policy does not hold (note 5) |
 | `flatshare_gateway_admission_waiting` | `class` | Requests waiting at the admission point |
 | `flatshare_gateway_admission_wait_seconds` | `class` | Arrival at the admission point to admission |
-| `flatshare_gateway_admission_refused_total` | `class`, `reason` | Requests the admission point refused: `queue_full` (429, the class's queue), `max_queued` (429, its queues together), `timeout` (503) or `draining` (503, as it closed for a reload's successor) |
+| `flatshare_gateway_admission_refused_total` | `class`, `reason` | Requests the admission point refused: `queue_full` (429, the class's queue), `max_queued` (429, its queues together), `timeout` (503) or `draining` (note 6) |
 | `flatshare_gateway_admission_resubmits_total` | `class` | Requests sent upstream again after a preemption dropped their attempt |
 | `flatshare_gateway_admission_discarded_tokens_total` | `class` | Estimated prompt tokens of the attempts preemptions dropped: at most the prefill they discarded |
-| `flatshare_gateway_admission_deferred_total` | `reason` | Background requests the lifecycle policy deferred, by what held them back when they arrived: `headroom` or `critical`; this and the series below, under the lifecycle policy only |
+| `flatshare_gateway_admission_deferred_total` | `reason` | Background requests the lifecycle policy deferred, by what held them back when they arrived: `headroom` or `critical` (note 7) |
 | `flatshare_gateway_admission_deferral_seconds` | `reason` | Arrival to admission of those requests |
 | `flatshare_gateway_admission_aged_total` | `oversize` | Deferred requests admitted regardless after `max_defer_s`; `oversize="true"`: their estimate alone was more than the headroom leaves |
 | `flatshare_gateway_admission_degraded_total` | | Realtime requests whose reply was capped at `degrade_max_tokens` |
@@ -452,10 +461,19 @@ An inference succeeds when a client's request gets a 2xx response's first conten
 | `flatshare_gateway_admission_false_alarm_token_seconds_total` | | Estimated background tokens the headroom held back during false alarms, times how long |
 | `flatshare_gateway_realtime_sessions` | `state` | Realtime sessions the lifecycle policy follows, by state: `idle`, `user_speaking`, `critical`, `playback` |
 | `flatshare_gateway_realtime_state_timeouts_total` | `state` | Sessions that stayed in a state for `state_timeout_s` without an event, by the state: lost or missing events |
-| `flatshare_gateway_node_ready` | | 1 while the engine is ready; 0 while a request has found it broken and its `/health` has not answered since, which its requests get 503 for |
+| `flatshare_gateway_node_ready` | | 1 while the engine is ready; 0 while a request has found it broken and its `/health` has not answered since (note 8) |
 | `flatshare_gateway_engine_state` | `state` | 1 for the engine's state as inference finds it, 0 for the others: `warming`, `serving`, `degraded`, `drained` ([The engine's state](#the-engines-state)) |
 | `flatshare_gateway_canary_probes_total` | `result` | Inference canaries, by `success` or `failure` |
 | `flatshare_gateway_canary_seconds` | | The time a canary took, to its answer's end or its failure |
+
+1. It counts `completed` only for a 2xx response relayed to its end. E2's records and the soak's scrapes read it; the alerts and the dashboard read `requests_terminal_total`.
+2. It covers parse, sanitization, resolution, admission and connection checkout, without the time a request waits for admission. It is the number behind the 2 ms SLO; its buckets start from 50 µs, with 2 ms as a bound.
+3. `timeout`: a deadline passed while the gateway waited on the upstream: its headers, its first content, a frame after one, or the request's total.
+4. `upstream_unavailable`: the upstream broke the stream off (`body` errors). `draining`: a draining gateway cut a background stream. `upstream_timeout`: a deadline passed while it streamed.
+5. This and the series below exist with an `[admission]` policy only.
+6. `draining` is a 503, as the admission point closed for a reload's successor.
+7. This and the series below exist under the lifecycle policy only.
+8. While it is 0, the engine's requests get 503.
 
 With `[[nodes]]`, the one engine's four families above (`node_ready`, `engine_state`, `canary_probes_total`, `canary_seconds`) are exported by node instead, under the same names with a `node` label first, and the nodes add theirs; [`metrics-nodes.txt`](metrics-nodes.txt) is what a gateway of two nodes exports in their place, kept current as `metrics.txt` is:
 
@@ -465,11 +483,14 @@ With `[[nodes]]`, the one engine's four families above (`node_ready`, `engine_st
 | `flatshare_gateway_node_component_healthy` | `node`, `component` | Each component's last check: `engine` (serving and ready), `stt`, `tts` (answering `/health`) |
 | `flatshare_gateway_node_sessions` | `node`, `class` | The sessions placed on the node, by the class they were placed with |
 | `flatshare_gateway_node_in_flight` | `node`, `class` | Its inference requests in flight |
-| `flatshare_gateway_node_covering` | `node` | 1 while it covers, its agents' requests held to `failover_background_max_in_flight`: it carries realtime sessions moved to it from another node, until they end, or, with `calls = "fill"`, it is a realtime node after the first and carries any call |
+| `flatshare_gateway_node_covering` | `node` | 1 while it covers, its agents' requests held to `failover_background_max_in_flight` (note 1) |
 | `flatshare_gateway_node_failover_waiting` | `node` | Its agents' requests waiting for that bound |
-| `flatshare_gateway_placements_total` | `node`, `class`, `reason` | Sessions placed on the node: `new` (no node yet, or idled out), `moved` (its node was not available), `retried` (its realtime request sent again here after its node failed before the first content) |
+| `flatshare_gateway_placements_total` | `node`, `class`, `reason` | Sessions placed on the node, by reason: `new`, `moved` or `retried` (note 2) |
 | `flatshare_gateway_placements_refused_total` | `class`, `reason` | Sessions no node took: `no_node`, `no_call_slot`, `no_agent_slot`, `table_full` |
 | `flatshare_gateway_node_retries_total` | `node` | Realtime requests sent again on another node after this node failed before their first content |
+
+1. A node covers while it carries realtime sessions moved to it from another node, until they end, or, with `calls = "fill"`, while it is a realtime node after the first and carries any call.
+2. `new`: no node yet, or idled out. `moved`: its node was not available. `retried`: its realtime request was sent again here after its node failed before the first content.
 
 Each request writes one log line at its end (target `flatshare_gateway::request`, level `warn` for 5xx, `transport_error`, `stalled` and the upstream's deadlines, `timeout_headers`, `timeout_first_content`, `timeout_idle` and `timeout_total`): `request_id`, `tenant`, `session`, `node` (with `[[nodes]]`), `class`, `route`, `status`, `outcome`, `admission_wait_ms` (under an admission policy, or when a covering node held the request back), `deferred` (what held a deferred request back under the lifecycle policy: `headroom` or `critical`), `aged` (when aging admitted it), `degraded` (a realtime request whose reply degrade capped), `resubmits` (when preempted), `retries` (when sent again on another node), `first_byte_ms`, `total_ms`, `prompt_tokens`, `completion_tokens`, `cached_tokens`, `finish_reason` and, for the gateway's own errors, `error`. Lifecycle events log under `flatshare_gateway::events`, and an engine found broken or ready again, or degraded or serving again, a node that becomes healthy or unhealthy, and a session that moves log a line.
 
@@ -566,7 +587,7 @@ What the numbers say:
 |---|---|---|
 | The request contract | `proxy.rs` | Sanitization, priorities, sessions, classes, salts, and 401, 400, 413, 404 and 405 |
 | Bounds | `proxy.rs` | Each class's reply cap in each route's fields; refused limits and choices |
-| The Messages API | `messages.rs` | Chat's tenants, classes and sessions; a client's priority, salt and transfer fields stripped; the realtime cap on `max_tokens`; a stream byte for byte; count_tokens with no limit |
+| The Messages API | `messages.rs` | Chat's tenants, classes and sessions; a client's priority, salt and transfer fields stripped; the realtime cap on `max_tokens`; streams byte for byte; count_tokens uncapped |
 | The relay | `streams.rs` | Byte-exact SSE, clients that leave, stalled readers, broken streams, 502 and 504 |
 | The upstream | `upstream.rs` | An engine on a Unix socket, an engine that restarts, a broken connection |
 | Events and metrics | `events.rs`, `metrics.rs` | Events; the exposition, each policy's series and none without one |
