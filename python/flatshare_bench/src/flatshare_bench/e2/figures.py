@@ -14,6 +14,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from flatshare_bench import labels
 from flatshare_bench.e2.groups import STACKED, arm_order, configurations
 from flatshare_bench.e2.record import REPLY_TIMEOUT_MS
 from flatshare_bench.figure_style import (
@@ -392,17 +393,14 @@ def plot_voice(groups: Sequence[Mapping[str, Any]], path: Path, narrow: Path) ->
 
 def _labelled(groups: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """The groups with each row's label and note: figure.toml's where it gives them, else the label table's for the
-    row's point (:data:`flatshare_bench.report.data.LABELS`), so that a configuration reads the same in this figure
+    row's point (:data:`flatshare_bench.labels.LABELS`), so that a configuration reads the same in this figure
     as in every other."""
-    # The report's one label table; the report reads this package, so it is imported where it is used.
-    from flatshare_bench.report.data import label
-
     found = []
     for g in groups:
         rows = []
         for configuration, spec in g["rows"]:
             if "label" not in spec:
-                name, note = label(spec["point"])
+                name, note = labels.label(spec["point"])
                 spec = {**spec, "label": name, "note": spec.get("note", note)}
             rows.append((configuration, spec))
         found.append({**g, "rows": rows})
