@@ -1,6 +1,6 @@
 # Runbook
 
-How to deploy, check, operate and recover the Flatshare hosts, for whoever operates the box and its control host; a deployment on other hardware, or on one host, follows [HARDWARE.md](../docs/HARDWARE.md). Every service runs as a `systemd --user` unit. Lingering is enabled on each host, so units survive logout and start at boot.
+How to deploy, check, operate and recover the Flatshare hosts, for whoever operates the box and its control host. On other hardware, or on one host, [HARDWARE.md](../docs/HARDWARE.md) renders a node and runs the measurement kit, which is not a deployment: nothing of it starts at boot, and the releases, rollback and serving check below reach only phastform, gray and cyan ([PRODUCTION.md](../docs/PRODUCTION.md#checking-it-on-your-hardware)). Every service runs as a `systemd --user` unit. Lingering is enabled on each host, so units survive logout and start at boot.
 
 | Host | Units | Listeners |
 |---|---|---|

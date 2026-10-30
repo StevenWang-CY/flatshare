@@ -189,7 +189,9 @@ threshold. Then read:
 - [docs/PRODUCTION.md](docs/PRODUCTION.md) to configure and size it, to check that your deployment is in its regime, and
   for what to watch and how it fails;
 - [ops/RUNBOOK.md](ops/RUNBOOK.md) to operate the hosts and run the failure drills;
-- [docs/HARDWARE.md](docs/HARDWARE.md) to run it on another GPU or on a single host.
+- [docs/HARDWARE.md](docs/HARDWARE.md) to run it on another GPU or on a single host, as a measurement kit and not a
+  deployment: nothing of it starts at boot, and releases, rollback and the serving check reach only this lab's hosts
+  ([what another host lacks](docs/PRODUCTION.md#checking-it-on-your-hardware)).
 
 ## How it was measured
 
