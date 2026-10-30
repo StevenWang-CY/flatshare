@@ -421,32 +421,62 @@ A soak runs in this order:
 |---|---|---|
 | `--hours` | required | The window, at most two weeks |
 | `--slo-reference MS`, `--slo-margin MS` | none, 250 | Voice alone's V2V p95 with the same calls on the same box; the summary counts the replies over it plus the margin |
-| `--calls-per-hour`, `--turns`, `--warmup-turns` | 20, 10, 1 | The calls' Poisson rate, their measured turns, and the unmeasured turns that open each (a serving worker's AEC warm-up ignores an interruption of its first reply) |
+| `--calls-per-hour` | 20 | The calls' Poisson rate |
+| `--turns` | 10 | Each call's measured turns |
+| `--warmup-turns` | 1 | The unmeasured turns that open each call (a serving worker's AEC warm-up ignores an interruption of its first reply) |
 | `--barge-in`, `--caller-seed` | 0.25, 0 | As `bots`' |
-| `--dispatch-timeout`, `--max-open`, `--drain-s` | 15, 8, 600 | How long a caller waits for the agent before the call counts as refused; attempts open at once (one due beyond them is skipped); how long the calls in progress at the window's end may play on |
+| `--dispatch-timeout` | 15 | How long a caller waits for the agent before the call counts as refused |
+| `--max-open` | 8 | Attempts open at once (one due beyond them is skipped) |
+| `--drain-s` | 600 | How long the calls in progress at the window's end may play on |
 | `--agents-sessions`, `--agents-data`, `--agents-seed`, `--think-cap`, `--agents-warmup` | 16, `weka-x32`, 11, 120, 60 | AIPerf's replay as E2's `[agents]` table sets it; 0 sessions is voice alone |
 | `--agents-run-hours` | 0 | Start AIPerf again after this many hours of a run; 0, one run for the window |
 | `--model` | the serving profile's | The model AIPerf asks for |
 | `--scrape-s`, `--guard-s`, `--guard-clear-s` | 60, 60, 300 | The scrapes' and the guard's intervals, and the guard's hold-off before a paused load resumes |
-| `--guard NODE=METHOD` | `ssh` (`local` on a single host) | How a node's GPU and units' journal are read (`deploy/bin/node-report`): `ssh` (the guard key, `~/.ssh/flatshare_guard_ed25519`, at the target `~/.config/flatshare/tunnel-NODE.env` names; `deploy/authorize-guard.sh` lets it run node-report alone), `ssh:TARGET`, `local` or `off` |
+| `--guard NODE=METHOD` | `ssh` (`local` on a single host) | How a node's GPU and units' journal are read (`deploy/bin/node-report`): `ssh`, `ssh:TARGET`, `local` or `off` (note 1) |
 | `--gpu-source NODE=REVISION` | none | A GPU node's deployed revision, which the record keeps |
+
+1. `ssh` uses the guard key, `~/.ssh/flatshare_guard_ed25519`, at the target `~/.config/flatshare/tunnel-NODE.env` names; `deploy/authorize-guard.sh` lets it run node-report alone.
 
 **The soak directory.**
 
 | File | Contents |
 |---|---|
-| `soak.json` | `status` (`running`, then `complete` with `ended_by`: `hours`, `SIGINT` or `SIGTERM`; or `failed` with the `error`), the host, the options, the versions (cyan's `DEPLOYED` and release, `flatshare-bench`, AIPerf, the gateway's binary, the GPU nodes' where given), `serving` (the worker's settings and its status at the start, the serving profile, the gateway's configuration without key digests, the nodes and their guards' methods, the first checks), `window`, `calls_runs` and `agents_runs` (each run's start and end, exit status, how it ended, the callers' counts or AIPerf's own summary, a failed run's log tail), `pauses` (each with its start, end and why), `leftovers_killed` |
+| `soak.json` | `status`, the host, the options, the versions, `serving`, `window`, the runs, `pauses` and `leftovers_killed` (note 1) |
 | `soak.log` | Each step, timestamped, and each hour's line |
-| `events.jsonl` | `window_started`, `window_ended`, each tool's `*_started` and `*_ended`, `guard_taken`, `guard_blind`, `guard_failed`, `guard_clear`, `load_paused`, `load_resumed`, `scrape_failed` and `scrape_answered`, `counter_reset` (a source's counter went down: its process restarted), `unit_changed` |
-| `calls/run-NNN/` | A run of the callers: `attempts.jsonl` (a line an attempt: its outcome, reason, the worker's status as it was made, its turns), `turns.jsonl` (a line a turn, as `bots` writes it, with `run` and `at`), `run.json`, `summary.json`, `arrivals.log` |
+| `events.jsonl` | `window_started`, `window_ended`, each tool's `*_started` and `*_ended`, `guard_taken`, `guard_blind`, `guard_failed`, `guard_clear`, `load_paused`, `load_resumed`, `scrape_failed`, `scrape_answered`, `counter_reset` (a source's counter went down: its process restarted), `unit_changed` |
+| `calls/run-NNN/` | A run of the callers: `attempts.jsonl`, `turns.jsonl`, `run.json`, `summary.json`, `arrivals.log` (note 2) |
 | `agents/run-NNN/` | A run of AIPerf: `aiperf.log` and `aiperf/` (its exports: `profile_export.jsonl` holds one record per request) |
-| `series.jsonl` | A line a scrape: its time and label (`before`, `window`, `after`), the gateway's and each engine's kept series (`soak/scrape.py`'s `GATEWAY_KEPT` and `ENGINE_KEPT`, vLLM's `model_name` label left out), the worker's status, the units' states and each source that failed |
+| `series.jsonl` | A line a scrape: its time and label (`before`, `window`, `after`) and what it read (note 3) |
 | `scrapes/HOUR.gz` | Every scrape whole: each source's text after a line `# soak-scrape AT SOURCE STATUS` (`soak/scrape.py`'s `read_raw` reads them back) |
-| `units.jsonl` | The user managers' journal lines about the flatshare units (`USER_UNIT`), cyan's and each guarded GPU node's (through its `node-report`, named `NODE:UNIT`), a failure's with the unit's own last lines, the tunnels' targets hidden |
+| `units.jsonl` | The user managers' journal lines about the flatshare units (`USER_UNIT`), cyan's and each guarded GPU node's (note 4) |
 | `guard.jsonl` | Every check of a node's GPU: its verdict and processes, each `ours` or `other` and its owner as `self` or `another`, never by name |
 | `summary.json`, `summary.md` | The summary, per hour and overall |
 
-**`summary.json`.** `slo` (the reference, the margin, the threshold), `window` (its start and end, its hours), `overall` and `hours`, each a period: `calls` (`attempted`: accepted, refused and failed; `accepted`, `refused`, `refused_by`, `failed`, `failed_by`, `skipped`, `abandoned`, `ended`: completed, dropped, cut; `refused_share`), `turns` (`measured`, `failed`, `warmup`; `replies`: count, censored, p50, p95, p99, `over_slo` and `over_slo_share`; `heard`: the replies heard to their end, those ended by state, with a pause, with one over 500 ms and its share, the longest pause's percentiles, the concealed share), `gateway` (`realtime_sli` good, valid and their share; `realtime` and `background` offered, admitted, ended, completed, cancelled, failed and by outcome, the background's prompt, completion and total tokens a second over the time the counts span less the pauses; `in_flight`; `upstream_errors`; `error_events`; `engine_state`, scrapes in each state by node; with nodes `nodes`, each one's healthy and covering scrapes, placements and retries, and `placements_refused`), `engines` (by node: preemptions, KV use and running and waiting requests, mean and highest, prompt and generation tokens a second, the prefix cache's hit share, requests finished by reason), `worker` (its calls, mean and highest, and the job requests it refused), `errors`, `restarts` (by unit: started, stopped, failed, exited, restart scheduled, reloaded; counter resets and failed scrapes by source; the tools' runs that ended early), `guard` (checks by verdict, episodes, pauses and paused seconds) and `scrapes`. An attempt belongs to the hour it was due in, a turn to the one it ended in, a counter's increase to the one its later scrape is in; the last hour has what came after the window's end.
+1. `soak.json` holds:
+   - `status`: `running`, then `complete` with `ended_by` (`hours`, `SIGINT` or `SIGTERM`), or `failed` with the `error`;
+   - the host, the options, the versions (cyan's `DEPLOYED` and release, `flatshare-bench`, AIPerf, the gateway's binary, the GPU nodes' where given);
+   - `serving`: the worker's settings and its status at the start, the serving profile, the gateway's configuration without key digests, the nodes and their guards' methods, the first checks;
+   - `window`;
+   - `calls_runs` and `agents_runs`: each run's start and end, exit status, how it ended, the callers' counts or AIPerf's own summary, a failed run's log tail;
+   - `pauses`, each with its start, end and why;
+   - `leftovers_killed`.
+2. `attempts.jsonl` has a line an attempt: its outcome, reason, the worker's status as it was made, its turns. `turns.jsonl` has a line a turn, as `bots` writes it, with `run` and `at`.
+3. What it read: the gateway's and each engine's kept series (`soak/scrape.py`'s `GATEWAY_KEPT` and `ENGINE_KEPT`, vLLM's `model_name` label left out), the worker's status, the units' states and each source that failed.
+4. A guarded node's lines come through its `node-report`, named `NODE:UNIT`. A failure's come with the unit's own last lines, and the tunnels' targets are hidden.
+
+**`summary.json`.** `slo` (the reference, the margin, the threshold), `window` (its start and end, its hours), and `overall` and `hours`, each a period with these keys:
+
+- `calls`: `attempted` (accepted, refused and failed); `accepted`, `refused`, `refused_by`, `failed`, `failed_by`, `skipped`, `abandoned`; `ended` (completed, dropped, cut); `refused_share`.
+- `turns`: `measured`, `failed`, `warmup`; `replies` (count, censored, p50, p95, p99, `over_slo` and `over_slo_share`); `heard` (the replies heard to their end, those ended by state, with a pause, with one over 500 ms and its share, the longest pause's percentiles, the concealed share).
+- `gateway`: `realtime_sli` good, valid and their share; `realtime` and `background` offered, admitted, ended, completed, cancelled, failed and by outcome, the background's prompt, completion and total tokens a second over the time the counts span less the pauses; `in_flight`; `upstream_errors`; `error_events`; `engine_state`, scrapes in each state by node; with nodes `nodes`, each one's healthy and covering scrapes, placements and retries, and `placements_refused`.
+- `engines`, by node: preemptions, KV use and running and waiting requests, mean and highest, prompt and generation tokens a second, the prefix cache's hit share, requests finished by reason.
+- `worker`: its calls, mean and highest, and the job requests it refused.
+- `errors`.
+- `restarts`, by unit: started, stopped, failed, exited, restart scheduled, reloaded; counter resets and failed scrapes by source; the tools' runs that ended early.
+- `guard`: checks by verdict, episodes, pauses and paused seconds.
+- `scrapes`.
+
+An attempt belongs to the hour it was due in, a turn to the one it ended in, a counter's increase to the one its later scrape is in; the last hour has what came after the window's end.
 
 **The compact record** (`soak export`): `soak.json` and the JSON lines with every path under a home directory written from `~`, and the login such a path names written as `USER` wherever else it appears, `turns.csv` (a column a key of the turn lines, the pauses and the receiver's counts as JSON, any other key in `extra`), `series.csv` (a column a kept series, `SOURCE|SERIES`), `guard.csv` (each check's time, node, verdict and other processes), and the summary; no raw scrape, AIPerf export, request log or credential. `soak report` gives the same summary from it as from the directory.
 
