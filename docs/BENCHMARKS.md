@@ -388,7 +388,7 @@ SW, 2026-10-27: two screens of the PRs' configuration over the step cap, the per
   <img src="figures/report-step-cap.svg" width="100%" alt="In panel a, the share of each of five rounds' replies over that round's SLO beside 24 agent sessions, against the requirement of at most 5%, and in panel b each round's agents' tokens a second over the calls' first 240 s with their median: tuned vLLM, 512-token steps, 53, 55, 55, 54, 44 of 59 by round, 261 of 295 in all, at 3,399 agents' tokens a second; the configuration to deploy, 512-token steps, 16, 29, 25, 9, 15 of 59 by round, 94 of 295 in all, at 3,303 agents' tokens a second; the configuration to deploy, 256-token steps, 10, 17, 10, 4, 3 of 59 by round, 44 of 295 in all, at 3,067 agents' tokens a second.">
 </picture>
 
-**At 256 tokens a step the change had fewer replies over the SLO than at 512 in every round, and no configuration met the 5% requirement in any.** (a) Each round's share of its 59 replies over that round's SLO, beside 24 coding-agent sessions; the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s, each round a tick and the median a marker.
+**At 256 tokens a step the configuration to deploy had fewer replies over the SLO than at 512 in every round, and no configuration met the 5% requirement in any.** (a) Each round's share of its 59 replies over that round's SLO, beside 24 coding-agent sessions; the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s, each round a tick and the median a marker.
 
 | Configuration | Rounds | V2V p95: median of the rounds / pooled | Replies over the SLO | By round | Agents' tokens/s, first 240 s | Agent TTFT p50 / p99 |
 |---|---:|---:|---:|---|---:|---:|

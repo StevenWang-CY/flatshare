@@ -1228,8 +1228,8 @@ def test_the_deployed_results_figures_say_what_their_records_do(drawn: dict[str,
     figures_shown = {
         "report-step-cap": (
             "Figure 15",
-            "At 256 tokens a step the change had fewer replies over the SLO than at 512 in every round, and no "
-            f"configuration met the {requirement} requirement in any.",
+            "At 256 tokens a step the configuration to deploy had fewer replies over the SLO than at 512 in every "
+            f"round, and no configuration met the {requirement} requirement in any.",
             f"(a) Each round's share of its {per_round} replies over that round's SLO, beside "
             f"{sessions.pop()} coding-agent sessions; the dashed line is the requirement.",
         ),
