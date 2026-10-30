@@ -1,3 +1,5 @@
+<a id="adr-0006-the-engine-change-carries-the-realtime-tier-the-control-plane-is-a-harness"></a>
+
 # ADR-0006: The change carries the realtime tier; the control plane is a harness
 
 - **Status:** accepted, 2026-10-24; superseded in part by [ADR-0007](0007-the-gateway-is-the-serving-control-plane.md): the gateway is the serving control plane, and only its admission policies are E2's harness
