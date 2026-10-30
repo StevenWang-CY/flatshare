@@ -108,6 +108,23 @@ Voice requests go at priority 0 and background work at 2; in vLLM a lower value 
 
 `flatshare-gateway` is the deployment's serving control plane ([ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)): what it does not do, such as TLS or a bound on idle connections, is listed in [its README](../crates/flatshare-gateway/README.md#what-it-does-not-do), and the engine must be reachable only through it. vLLM's `--api-key` guards only its `/v1`, `/v2`, `/inference` and `/cohere` routes, so serve the engine on a Unix socket in a directory only its user may enter (`--uds`, as [`deploy/phastform/systemd`](../deploy/phastform/systemd) does) and reach it from the gateway on that socket, or through a tunnel that may reach nothing else ([ADR-0005](adr/0005-loopback-services-and-node-sticky-kv.md#unix-sockets-end-to-end-w6-2026-10-25)).
 
+### An existing LiveKit or Pipecat agent
+
+The voice worker here is a LiveKit Agents worker ([`flatshare_voice`](../python/flatshare_voice/README.md)). Another voice agent keeps its own pipeline and points its LLM client at the gateway, under the same contract:
+
+| | What to set |
+|---|---|
+| The endpoint | The gateway's OpenAI-compatible routes (`/v1/chat/completions`, `/v1/completions`, `/v1/responses`): on cyan, `http://127.0.0.1:18080/v1` with a tenant's key, or the voice plane's Unix socket, whose tenant needs none ([`gateway.example.toml`](../deploy/cyan/gateway.example.toml)) |
+| The class | The call's requests in `realtime`: a tenant of that `default_class`, as `[tenants.voice]`, or `X-Flatshare-Class: realtime` from a trusted tenant whose `max_class` allows it |
+| The session | One `X-Session-ID` a call, from a trusted tenant ([PROTOCOL.md](PROTOCOL.md#sessions)) |
+| The priorities | The gateway sends each class's, realtime 0 and background 2, and removes a client's own `priority` or `X-Vllm-Priority` ([PROTOCOL.md](PROTOCOL.md#headers)) |
+| The agents | A tenant of class `background`, as `[tenants.agents]` |
+| The window | `--priority-prefill-budget-cap-tokens` covers the agent's first sentence at its longest ([The reply's first tokens](#the-replys-first-tokens)) |
+| LiveKit Agents | `openai.LLM(model=..., base_url=..., api_key=..., extra_headers={...})`, the headers as [`plugins.py`](../python/flatshare_voice/src/flatshare_voice/plugins.py)'s `make_llm` sets them |
+| Pipecat | `OpenAILLMService(base_url=..., api_key=..., default_headers={...})`; no Pipecat agent ran here |
+
+With two cards a call's speech servers are its node's: the voice worker places each call with `POST /v1/sessions` and binds its STT and TTS to the node that answers ([Nodes](../crates/flatshare-gateway/README.md#nodes)). Only this repository's worker has been measured.
+
 ### The reply's first tokens
 
 The budget cap protects a reply for its first N tokens. The caller hears nothing until the reply's first complete sentence reaches TTS (the voice agent hands TTS whole sentences, a sentence once it reaches 20 characters, LiveKit's default), so N must cover the first sentence, not the first token. A reply whose first sentence is longer decodes the rest of it beside agent prefill again: its tokens come 60–65 ms apart instead of 16–20 ms ([the prefill case](BENCHMARKS.md#the-prs-configuration-in-one-session-w5)).
@@ -185,6 +202,17 @@ With two cards, put both calls on one and fill the other with agents. A resource
 </picture>
 
 **Figure 1. Both calls fill the first card, and the spare takes them by their next turn when the first fails.** (a) Each card has two call slots (`max_calls = 2`) and up to 4 or 12 agents' sessions (`max_agents`), and `calls = "fill"` places each call on the first card with a free call slot. (b) In the failover drills, both calls' next turns reached the spare 0.7 s after a SIGKILL to the first card's engine and 1.9 s after its stop ([the record](../benchmarks/results/2026-10-28-node-failover/README.md)); the spare holds its agents' requests, hatched, until the moved calls end.
+
+### The envelope at a looser margin
+
+The envelope is the most agents' sessions beside both calls at which a card qualifies, three rounds pooled, and the SLO's margin over voice alone sets it ([the rounds' margins](../benchmarks/results/2026-10-28-rounds/README.md#beside-the-gate-the-margin)):
+
+| Margin over voice alone's p95 | The change, 256-token steps | Stock vLLM |
+|---|---|---|
+| 250 ms, the SLO | 4 sessions: 5 of 177 replies over | 2 sessions: 4 of 177 over |
+| 500 ms | 24 sessions, every count measured: 8 of 177 over at 24 | 2 sessions: 1 of 177 over, and 12 of 177 at four |
+
+At 500 ms the change's card qualifies at every count measured, up to 24 sessions, and stock vLLM's still only at two.
 
 ### Setting it up
 
@@ -290,6 +318,8 @@ A deploy takes a new gateway with `systemctl --user reload flatshare-gateway`: t
 The CPU tier lives in shared memory charged to the engine's cgroup, so a memory-pressure killer such as `systemd-oomd` picks the engine first under a host-wide stall ([the runbook](../ops/RUNBOOK.md#failures)). Keep the host's swap and memory pressure low; where `systemd-oomd` acts for the engine's own manager, `ManagedOOMPreference=avoid` on the engine's unit makes it a last resort.
 
 ## Checking it on your hardware
+
+On another host, [HARDWARE.md](HARDWARE.md) renders the node from a hardware profile and runs the A100 run's kit, which is not a deployment: nothing of it starts at boot, and releases, rollback and the release's serving check reach only this lab's hosts, phastform, gray and cyan.
 
 - `python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py ENGINE kv` sends a voice-sized request at priority 0 while long priority-2 requests hold the pool, and `probe.py ENGINE prefill` sends it behind three long prefills; each sizes its requests from the engine's pool and context, takes about a minute and prints the turn's first token and its 16th, with the engine's state before and after (`--reply 40`: a whole 40-token reply, timed to its last token too). ENGINE is the engine's address, `unix:` and its socket (the GPU node's, by default) or `http://host:port`.
 - `tail.py ENGINE SECONDS [AGENTS] [fresh|grow] [--reply TOKENS]` runs closed-loop agents beside two calls, by default as many as keep the frozen box's KV pressure on your pool (12 on the box's), and prints the calls' TTFT distribution and the agents' throughput; `--reply` times whole replies to their 16th and last token.
