@@ -442,7 +442,7 @@ RS ran tuned vLLM and the configuration to deploy on v1.2, with W5's arm files a
 
 **Provenance:** SW, 2026-10-27; RG, 2026-10-28.
 
-SW ran two screens of the configuration to deploy over the step cap, the per-request threshold, the window and the gateway's static cap on agent requests in flight, and of stock vLLM at two step caps, one run a setting on W5's tuning sample (agent seed 11) beside the 24 sessions of the discriminating scenario ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md), whose `table.py` gives every point). The step cap moved the configuration to deploy most: 9 of 59 replies over W5's SLO at 256 without the threshold, 24 at 512 and 33 at 1,024; the static caps did less, and stock vLLM missed at every setting. RG's five rounds (agent seeds 21–25, Phastform and Gray in turn, below) then ran the three configurations side by side, each round against its own SLO:
+SW ran two screens of the configuration to deploy over the step cap, the per-request threshold, the window and the gateway's static cap on agent requests in flight, and of stock vLLM at two step caps, one run a setting on W5's tuning sample (agent seed 11) beside the 24 sessions of the discriminating scenario ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md), whose `table.py` gives every point). The step cap moved the configuration to deploy most: 9 of 59 replies over W5's SLO at 256 without the threshold, 24 at 512 and 33 at 1,024; the static caps did less, and stock vLLM missed at every setting, with 41 to 58 replies over. RG's five rounds (agent seeds 21–25, Phastform and Gray in turn, below) then ran the three configurations side by side, each round against its own SLO:
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-step-cap-narrow.svg">
@@ -949,7 +949,7 @@ AIPerf `agentic_replay` of the 32× corpus against the frozen box (straight to t
 | 24 | 1,568 | 175 / 1,415 / 15,605 ms | 22.0 ms | 51.4 / 33.4 / 15.2% | 2 |
 
 - **Repeatability.** Three 16-session runs (W0's, one on a warm engine and the fresh one above) agree within 1.5 points on the split and range from 787 to 1,023 ms at TTFT p90. At 24 sessions a run on a warm engine was slower (TTFT p90 1,900 ms).
-- **The simulator against them.** `flatshare-sim` with the W2 contention model (the step loop and a fitted step time; [its README](../crates/flatshare-sim/README.md#the-contention-model)) reproduces resume TTFT p50 / p90 within 4–8% at 8 and 16 sessions, also when each point is left out of the fit, and request counts within 1%. At 24 sessions it is 18% / 30% fast, because restores take 163 ms longer there than modeled; the likely cause is store traffic, which the model omits.
+- **The simulator against them.** `flatshare-sim` with the W2 contention model (the step loop and a fitted step time; [its README](../crates/flatshare-sim/README.md#the-contention-model)), fitted to E0's cells and these three operating points, reproduces resume TTFT p50 / p90 within 4–8% at 8 and 16 sessions, also when each point is left out of the fit, and request counts within 1%. At 24 sessions it is 18% / 30% fast, because restores take 163 ms longer there than modeled; the likely cause is store traffic, which the model omits.
 
 <a id="e1-parking-in-the-simulator"></a>
 
@@ -1006,9 +1006,12 @@ With trace pauses up to 24 sessions, `mori` loses 1–15% at p50 and 10–24% at
 - **p50.** +3% at 8 and 12 sessions, +8% at 16 (+10%: 139 to 125 ms) and −2% at 24 (−24%). The median resumed turn is a GPU hit or a short restore, and a restore turned into a hit saves only its transfer and the two steps it waits after it.
 - **p90.** +28% at 8 and 12 sessions (pressure 1.6–2.4: 78 and 88 ms of `lru-cpu`'s 267 and 299 ms) and +13% at W0's 16 sessions (−3%), whose seed range is wider than the effect (−43 to +50%). At 24 sessions (pressure 4.4) it is −17% (−24%): its loads queue with the demand restores on the one load stream and stall the step loop as they do.
 - **The reference.** The clairvoyant gap itself is 0.5–2.3% at p50 and 8–16% at p90. The oracle passes it at 8 and 12 sessions at both percentiles: a prefetch hides a restore inside the pause, which no eviction order can.
-- **The history level**, the information a deployment has without tools that report when they will return, closes nothing: its best arm gains 3.6% at p90 at 8 sessions and loses 7–10% from 12 sessions on, its prefetches mistimed by heavy-tailed pauses.
+- **The history level**, the information a deployment has without tools that report when they will return, closes nothing: its best arm gains 3.6% at p90 at 8 sessions and loses 7–10% from 12 sessions on, its prefetches mistimed by heavy-tailed pauses. TTL holds are neutral.
 - **TraceLab's tool pauses** (π about 3, a pause about three restores long): the oracle gains at most 7% (p90, 12 sessions) and loses from 16 sessions on.
 - **Caveat.** The model under-predicts restores at 24 sessions (above), and a dearer restore at high pressure would raise both what prefetching saves and what its loads cost.
+- **Both forms of the gate read the same way.** It was first written on the clairvoyant reference's headroom over LRU + CPU and changed to the oracle's gain ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)): at p50 the clairvoyant reference gains 0.5–2.3% and the oracle −2 to +8%, under the gate; at p90 the clairvoyant reference gains 8–16% (over 10% at 8 and 24 sessions) and the oracle up to 29%.
+- **Modeled on an L4, an A100 and an H100,** at their own scalings, lifecycle information buys at most 14%, 13% and 8% of resume TTFT p90.
+- **What follows.** The decision not to deploy a lease-aware policy rests on what a deployment can know: no client sends tool return times, and session history gains nothing. The lease-aware CPU-tier policy built for E1, `LeasePolicy`, was never switched on and was removed after v0.3 ([the plugins](#engine-plugins)): the tail gain needs each tool's return time ahead of the return. E1's regime map was posted as comments on vLLM #57103 and vllm-project/router #428, and corrected there on 2026-10-24 after a timing bug in the simulated oracle was fixed: its prefetch fired late for the turns AIPerf's idle cap sends early.
 
 ### Miss-ratio curves
 
@@ -1041,6 +1044,7 @@ Three sequences: the 32× replay; the same admission order with every prompt cut
   - 32× fits a 32k context, with main-agent context p50 7.9k and p90 20.3k tokens;
   - 64× fits 16k.
 - Load generators run on cyan, on pinned cores; another host considered for them had a p99 timing noise of 200–350 ms, which ruled it out.
+- The callers play their lines at most 116 ms late, at six callers, and under 60 ms late elsewhere; no point was rejected for it.
 
 ## History
 
