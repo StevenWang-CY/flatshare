@@ -17,11 +17,23 @@ points.
 | `flatshare-bench tiers` | `tiers.py` | E0: time to first token from the GPU pool, the CPU tier and recompute, verified per sample by vLLM's prefix-cache counters; optional background load |
 | `flatshare-bench voice-turn` | `voice_turn.py` | One server-side voice turn timed per stage (STT, LLM first sentence, TTS first audio); optional background load |
 | `flatshare-bench kv-metrics` | `kv_metrics.py` | KV block lifecycle histograms compared across a run |
-| `flatshare-bench e2` | `e2/` (`arm.py`, `run.py`, `engine.py`, `cyan.py`, `tools.py`, `record.py`, `report.py`, `figures.py`) | E2 points: one measured from its arm file on cyan (`run`, with the engine check, cyan's units and the tools' processes), the frontier across points (`report`), and their compact records (`export`) |
-| `flatshare-bench drill` | `drills.py` | The client side of the failure drills (`ops/drills`): streams through the gateway while the engine dies or the gateway reloads, restarts or dies, the probe of both planes from the event's moment on (every attempt kept, each on a new connection), the engine's running requests sampled and stamped meanwhile, and the summary (`streams`, `report`); the CPU tier filled past its capacity (`cpu-tier`); a server's start timed from its journal (`start`) |
-| `flatshare-bench soak` | `soak/` (`run.py`, `scrape.py`, `guard.py`, `summary.py`, `command.py`) | The production path for hours on cyan: arriving calls against the serving worker, AIPerf's replay, the service's own counts every minute, a guard on the GPUs, every attempt kept (`run`); its summary per hour and overall (`report`) and its compact record (`export`) |
+| `flatshare-bench e2` | `e2/` (`arm.py`, `run.py`, `engine.py`, `cyan.py`, `tools.py`, `record.py`, `report.py`, `figures.py`) | E2 points: one measured from its arm file on cyan (`run`), the frontier across points (`report`), and their compact records (`export`) (note 1) |
+| `flatshare-bench drill` | `drills.py` | The client side of the failure drills (`ops/drills`): `streams`, `report`, `cpu-tier` and `start` (note 2) |
+| `flatshare-bench soak` | `soak/` (`run.py`, `scrape.py`, `guard.py`, `summary.py`, `command.py`) | The production path for hours on cyan (`run`), its summary per hour and overall (`report`) and its compact record (`export`) (note 3) |
 | background load | `load.py` | `prefill:<tokens>x<n>` (cold prefills) or `decode:<tokens>x<n>` (long decodes) beside a probe |
 | `python -m flatshare_bench.quick_start` | `quick_start.py` | The README's quick-start result from the probe's logs, printed or written between its markers (`--write README.md`) |
+
+1. `e2 run` measures a point with the engine check, cyan's units and the tools' processes
+   ([E2 points](#e2-points)).
+2. The drill's subcommands:
+   - `streams`, `report`: streams through the gateway while the engine dies or the gateway reloads,
+     restarts or dies, the probe of both planes from the event's moment on (every attempt kept, each
+     on a new connection), the engine's running requests sampled and stamped meanwhile, and the
+     summary;
+   - `cpu-tier`: the CPU tier filled past its capacity;
+   - `start`: a server's start timed from its journal.
+3. `soak run`: arriving calls against the serving worker, AIPerf's replay, the service's own counts
+   every minute, a guard on the GPUs, every attempt kept ([Soaks](#soaks)).
 
 Python 3.12. AIPerf, pinned to `aiperf==0.13.0`, is the `aiperf` extra, which the `test` extra
 includes: `flatshare-bench e2 run` and the plugins need it, a report does not, so `make reproduce-e2` syncs
@@ -114,7 +126,7 @@ when it loads the file:
 | Variable | Default |
 |---|---|
 | `FLATSHARE_BENCH_URL` | `http://127.0.0.1:8000/v1/chat/completions` |
-| `FLATSHARE_BENCH_API_KEY` | empty: no `Authorization` header. Through `flatshare-gateway`, a tenant's key. Only a trusted tenant's `X-Session-ID` and `X-Flatshare-Class` are honored, so a replay that keeps its sessions and classes uses the `agents` key |
+| `FLATSHARE_BENCH_API_KEY` | empty: no `Authorization` header. Through `flatshare-gateway`, a tenant's key (note 1) |
 | `FLATSHARE_BENCH_DATA` | `data/weka-x32` (a `scale-traces` output directory) |
 | `FLATSHARE_BENCH_MODEL`, `FLATSHARE_BENCH_TOKENIZER` | `Qwen/Qwen3-4B-Instruct-2507-FP8` |
 | `FLATSHARE_BENCH_SESSIONS` | 16 live agent sessions |
@@ -126,20 +138,25 @@ when it loads the file:
 | `FLATSHARE_BENCH_RAW` | `false`; `true` also exports every request with its headers and payload |
 | `FLATSHARE_BENCH_SEED` | 11 |
 
-Source `configs/aiperf.env` first. It turns AIPerf's dataset cache on, keeps the session-id
-override off, and raises the dataset timeouts that the full corpus (about 300 s to load and
-17-22 GB of RAM) exceeds. AIPerf takes these settings only from the environment. The cache keeps
-the memory-mapped dataset a run builds, under `~/.cache/aiperf/dataset_mmap`, for any later run
-with the same corpus bytes, tokenizer, seed and dataset settings on the same AIPerf build, so the
-points of an E2 round, which replay one corpus with one seed, build their dataset once: on
-peacock the 48 long traces' dataset took 138 to 165 s to build and 5 s to load, byte for byte the
-same. AIPerf 0.13.0 caches only its own trace types. The plugin adds `weka_trace_scaled`, and
-keeps its datasets in a directory named by a hash of its own code and version
-(`flatshare-<hash>`), which AIPerf's key does not cover, so a changed loader never loads a
-dataset an older one built (`aiperf_plugin.cache_datasets`). As for AIPerf's own trace types, a
-run then writes no `inputs.json`, which took 124 MB of each point's directory for the long
-traces. Nothing evicts an entry, 0.14 GB for the long traces and 0.33 GB for the whole corpus:
-delete the directory to reclaim them (the cache once filled a host's disk).
+1. Only a trusted tenant's `X-Session-ID` and `X-Flatshare-Class` are honored, so a replay that keeps its
+   sessions and classes uses the `agents` key.
+
+Source `configs/aiperf.env` first. It turns AIPerf's dataset cache on, keeps the session-id override
+off, and raises the dataset timeouts that the full corpus (about 300 s to load and 17-22 GB of RAM)
+exceeds. AIPerf takes these settings only from the environment. The dataset cache:
+
+- **Reuse.** The cache keeps the memory-mapped dataset a run builds, under
+  `~/.cache/aiperf/dataset_mmap`, for any later run with the same corpus bytes, tokenizer, seed and
+  dataset settings on the same AIPerf build. So the points of an E2 round, which replay one corpus
+  with one seed, build their dataset once: on peacock the 48 long traces' dataset took 138 to 165 s
+  to build and 5 s to load, byte for byte the same.
+- **The plugin's loader.** AIPerf 0.13.0 caches only its own trace types. The plugin adds
+  `weka_trace_scaled`, and keeps its datasets in a directory named by a hash of its own code and
+  version (`flatshare-<hash>`), which AIPerf's key does not cover, so a changed loader never loads a
+  dataset an older one built (`aiperf_plugin.cache_datasets`). As for AIPerf's own trace types, a
+  run then writes no `inputs.json`, which took 124 MB of each point's directory for the long traces.
+- **Its size.** Nothing evicts an entry, 0.14 GB for the long traces and 0.33 GB for the whole
+  corpus: delete the directory to reclaim them (the cache once filled a host's disk).
 
 Things to know:
 
