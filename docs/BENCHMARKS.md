@@ -41,7 +41,7 @@ The numbers come from the frozen box ([`deploy/phastform`](../deploy/phastform))
 
 1. In the earlier probe, a remote NUMA node cost at most 1% of pinned bandwidth.
 
-The two start rows are W0's (2026-10-22). On the build of 2026-10-25 (v0.3-295) the engine started in 88.8 s on warm caches and 531.8 s on empty ones, and a restart of all three servers took 102.7 s ([the drills](#failure-drills)).
+The two start rows are W0's (2026-10-22). On W8's build of 2026-10-25 the engine started in 88.8 s on warm caches and 531.8 s on empty ones, and on v0.3-295 a restart of all three servers took 102.7 s ([the drills](#failure-drills)).
 
 <a id="tier-cost-model-resuming-an-agent-turn-e0"></a>
 
@@ -286,7 +286,7 @@ The reply's tail falls until the window covers the reply, 3.8 s at 16 tokens to 
 
 **Provenance:** E2, in every campaign from W2 (2026-10-22) to RG (2026-10-28).
 
-Each point: two callers (`flatshare-voice bots`, 25 turns each, a barge-in on a quarter of the turns) through LiveKit to the stock voice agent, beside the AIPerf replay of the 32× Claude Code corpus at a number of agent sessions, through `flatshare-gateway` ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) has the arms, [`benchmarks/e2`](../benchmarks/e2) the arm files and campaigns). V2V is read from waveforms at the callers, with fixed endpointing. The agents' token rate is the prompt and completion tokens per second of the agent requests that completed during the calls. The realtime first byte is the gateway's, exact from its request log. A turn the agent did not answer within the callers' 30 s reply timeout counts as a V2V sample censored at 30,000 ms; ≥ marks a percentile it sets, and a configuration with failed turns is not placed on the frontier.
+Each point: two callers (`flatshare-voice bots`, 25 turns each, a barge-in on 9 of the 50 measured turns) through LiveKit to the stock voice agent, beside the AIPerf replay of the 32× Claude Code corpus at a number of agent sessions, through `flatshare-gateway` ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) has the arms, [`benchmarks/e2`](../benchmarks/e2) the arm files and campaigns). V2V is read from waveforms at the callers, with fixed endpointing. The agents' token rate is the prompt and completion tokens per second of the agent requests that completed during the calls. The realtime first byte is the gateway's, exact from its request log. A turn the agent did not answer within the callers' 30 s reply timeout counts as a V2V sample censored at 30,000 ms; ≥ marks a percentile it sets, and a configuration with failed turns is not placed on the frontier.
 
 The voice SLO is V2V p95 at most 250 ms above voice alone: 1,744 ms alone in W2's batch, so 1,994 ms for W2's tables, which are one run per point. With 50 turns a point, a p95 lies between the third- and fourth-largest turn, so single runs differ by a few hundred milliseconds at p95. W4 repeats the discriminating scenario and measures voice alone four more times, on the W3 build (with W2's run, a median of 1,767 ms, so an SLO of 2,017 ms), [in History](#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4).
 
@@ -849,7 +849,7 @@ socket), 40 rounds again, the same text on both paths ([records](../benchmarks/r
 | Through flatshare-gateway | 43.8 ms | 162.7 ms | 344.7 ms | 12.09 / 12.52 ms |
 | **Paired median difference** | **+0.29 ms** | **+0.40 ms** | **+0.45 ms** | — |
 
-On v1.8 (c3b5007), the deployed build, the same pairing over 80 rounds measured +0.12 ms on the first token, +0.06 ms on the first sentence and +0.20 ms at the end ([its record](../benchmarks/results/2026-10-29-gateway-window/README.md)).
+On v1.8 (c3b5007), the build deployed on 2026-10-29, the same pairing over 80 rounds measured +0.12 ms on the first token, +0.06 ms on the first sentence and +0.20 ms at the end ([its record](../benchmarks/results/2026-10-29-gateway-window/README.md)).
 
 **W6's transport against W5's** (the transport A/B, 2026-10-25): `flatshare-bench voice-turn` (30 turns of the two LibriSpeech clips) and `flatshare-bench tiers` (5 reps) from cyan on the box's engine, with the same clips, reps and cores, once through W5's tunnel, one SSH connection's TCP forwards (at v0.3-90), and once through W6's, an SSH session of its own for each connection to each socket (at v0.3-274), p50 / p90 in ms ([records](../benchmarks/results/2026-10-25-w6-transport), whose `ab.py` prints this table):
 

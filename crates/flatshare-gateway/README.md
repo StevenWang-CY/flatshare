@@ -110,7 +110,7 @@ Every wait a request goes through has a deadline from its class's `[classes.<cla
 - **A background request cut by the drain.** A stream ends with the `draining` error event, `data: {"error": {..., "type": "draining", "param": null, "code": 503}}`, and an abort. A request without a response yet gets 503 `draining` with `Retry-After: 1`.
 - **The reload.** The gateway starts its successor from the binary at its own path and with its own arguments, so from the build and the configuration on disk, with its listening sockets from fd 3 on (`LISTEN_FDS`). The successor takes them instead of binding, tells systemd that it is the unit's main process and ready (`MAINPID=`, `READY=1`), and sends SIGTERM to its predecessor. Both accept on the same sockets until then, so no connection is refused or waits. [`deploy/bin/flatshare-gateway-reload`](../../deploy/bin/flatshare-gateway-reload) waits for the unit's main process to change.
 - **The listeners.** A reload keeps them: a change to `[[listen]]` takes a restart, with the socket unit's. Under socket activation (`flatshare-gateway.socket` on cyan) the sockets outlive a stop and a crash as well: the connections made until the next gateway serves wait in the backlog, for the drain on a restart and about a second after a crash, instead of being refused.
-- **One admission point over both processes** (`src/ledger.rs`). While a reload's predecessor drains, the two serve one engine. The predecessor admits nothing more once it hands its sockets over: a request still waiting at its admission point, or reaching its intake, gets 503 `draining` with `Retry-After: 1`, never having gone upstream, for its client to send to the successor.
+- **One admission point over both processes** (`src/ledger.rs`). While a reload's predecessor drains, the two serve one engine. The predecessor admits nothing more once it hands its sockets over: a request still waiting at its admission point or held back by a node that covers, or reaching its intake, gets 503 `draining` with `Retry-After: 1`, never having gone upstream, for its client to send to the successor.
 - **What the predecessor still holds.** Each time that changes, it tells the successor through a Unix socket in a directory of its own (mode 700, its path in the successor's environment): its requests in flight in all, by class and by tenant, their bodies' bytes, and its admission point's admitted requests, background tokens, realtime requests without a first byte and armed sessions. The successor counts them with its own, in its bounds and in its policy's decisions, until the predecessor exits (`flatshare_gateway_predecessor_in_flight`).
 - **No request reaches both.** The successor serves only once the predecessor says that it admits nothing more (2 s at most). The predecessor keeps its realtime and interactive requests, and its background ones for `background_drain_s` at most. A successor from a build before the ledger, or one that cannot reach it, counts only its own.
 
@@ -127,7 +127,8 @@ Every wait a request goes through has a deadline from its class's `[classes.<cla
 
 ## Configuration
 
-Unknown keys are errors, so a misspelled setting fails at start instead of silently taking its default.
+Unknown keys are errors, so a misspelled setting fails at start instead of silently taking its default. So does a
+duration (a key that ends in `_s`) over 1e9 seconds, about 32 years.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -387,7 +388,7 @@ Every inference request is counted three times, with labels from fixed sets and 
 | `shed`, `drained` | An admission policy gave its place to a stricter class; a drain cut it, or kept it out (note 1) |
 | `timeout_upload`, `timeout_queue`, `timeout_headers`, `timeout_first_content`, `timeout_idle`, `timeout_total` | One of its deadlines passed ([Deadlines](#deadlines)) |
 | `refused_in_flight`, `refused_class`, `refused_tenant`, `refused_body_bytes`, `refused_queue` | The intake refused it before reading its body (note 2), or the admission point's queues were full |
-| `not_ready` | The engine was not ready: a request had found it broken and its `/health` had not answered since |
+| `not_ready` | The engine was not ready: a request had found it broken and its `/health` had not answered since. With `[[nodes]]`, also a request no node could take: `no_healthy_node`, `no_call_slot`, `no_agent_slot` or `placement_full`, whose 503 names which |
 | `invalid` | The gateway refused it as malformed or unauthorized: 400, 401, 404, 405 or 413 |
 
 1. Kept out: a gateway that had handed its sockets over did not admit it.
@@ -420,8 +421,8 @@ An inference succeeds when a client's request gets a 2xx response's first conten
 
 - **`GET /metrics`** serves the OpenMetrics text format from a registry the gateway owns; on a TCP listener it needs the metrics key (`metrics_key_file`), on a Unix socket nothing.
 - **`GET /metrics/engine`** relays the engine's own `/metrics` under the same rule, with its status and content type, within 10 s (502 when the engine does not answer), for a scraper that has no route to the engine: the deployment's engines listen on Unix sockets.
-- **The exposition.** [`metrics.txt`](metrics.txt) is the exposition of a gateway under the lifecycle policy before any traffic, every family the gateway exports, with each family's series sorted by their labels and one series at zero for the two families that have none yet (requests and lifecycle events): a test keeps it current, `make metrics` writes it anew, and the checks of `ops/`'s dashboards and alerts read the gateway's names from it.
-- **The series.** Label values come from fixed sets or from the configuration, so the number of series is bounded. Every series except those of `flatshare_gateway_requests_total` and `flatshare_gateway_events_total` exists from the start, at zero.
+- **The exposition.** [`metrics.txt`](metrics.txt) is the exposition of a gateway under the lifecycle policy before any traffic, every family the gateway exports, with each family's series sorted by their labels and one series at zero for each family that has none before traffic (requests by status, lifecycle events, and requests offered, admitted and ended): a test keeps it current, `make metrics` writes it anew, and the checks of `ops/`'s dashboards and alerts read the gateway's names from it.
+- **The series.** Label values come from fixed sets or from the configuration, so the number of series is bounded. Every series exists from the start, at zero, but those that traffic makes, which appear at their first count: requests by status (`flatshare_gateway_requests_total`), lifecycle events (`flatshare_gateway_events_total`), and requests offered, admitted and ended, by tenant and route (`flatshare_gateway_requests_offered_total`, `_admitted_total` and `_terminal_total`).
 - **The policies' series.** The admission point's, `flatshare_gateway_admission_*` and `flatshare_gateway_realtime_*`, exist only with an `[admission]` policy, and the lifecycle policy's only under it: a gateway without one exports none of them, and one under another policy none of the lifecycle policy's, so that a count it does not keep reads as absent rather than zero.
 
 | Metric | Labels | Meaning |
@@ -466,7 +467,7 @@ An inference succeeds when a client's request gets a 2xx response's first conten
 | `flatshare_gateway_canary_probes_total` | `result` | Inference canaries, by `success` or `failure` |
 | `flatshare_gateway_canary_seconds` | | The time a canary took, to its answer's end or its failure |
 
-1. It counts `completed` only for a 2xx response relayed to its end. E2's records and the soak's scrapes read it; the alerts and the dashboard read `requests_terminal_total`.
+1. It counts `completed` only for a 2xx response relayed to its end. E2's records and the soak's scrapes read it, and so do the outcome alerts, since its series exist from the start and a class's first refusal or missed deadline counts; the dashboard reads `requests_terminal_total`.
 2. It covers parse, sanitization, resolution, admission and connection checkout, without the time a request waits for admission. It is the number behind the 2 ms SLO; its buckets start from 50 µs, with 2 ms as a bound.
 3. `timeout`: a deadline passed while the gateway waited on the upstream: its headers, its first content, a frame after one, or the request's total.
 4. `upstream_unavailable`: the upstream broke the stream off (`body` errors). `draining`: a draining gateway cut a background stream. `upstream_timeout`: a deadline passed while it streamed.
@@ -535,7 +536,7 @@ What the numbers say:
 
 **In place on cyan** ([BENCHMARKS](../../docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)):
 - on the W1 build (2026-10-22, before the admission policies), with the voice agent and the agent replay as clients, the gateway's own time was 0.13 ms on average for voice requests;
-- paired against the engine's own socket, the gateway added 0.38 ms to a voice request's first token on the W1 build, and 0.29 ms on the final transport (W6, 2026-10-25: every server on a Unix socket, the gateway's upstream the tunnel's engine socket; [the records](../../benchmarks/results/2026-10-25-w6-transport/README.md)). On v1.8 (c3b5007), the deployed build, it added +0.12 ms at the median over 80 pairs ([its record](../../benchmarks/results/2026-10-29-gateway-window/README.md)).
+- paired against the engine's own socket, the gateway added 0.38 ms to a voice request's first token on the W1 build, and 0.29 ms on the final transport (W6, 2026-10-25: every server on a Unix socket, the gateway's upstream the tunnel's engine socket; [the records](../../benchmarks/results/2026-10-25-w6-transport/README.md)). On v1.8 (c3b5007), the build deployed on 2026-10-29, it added +0.12 ms at the median over 80 pairs ([its record](../../benchmarks/results/2026-10-29-gateway-window/README.md)).
 
 **Admission policies.** The benchmark's second table prices each policy: background requests, which every policy holds, through one gateway per policy, with limits the runs never reach so that a policy adds its bookkeeping and never a wait, and through a gateway without a policy, which runs the same requests just before. Each gateway's own histogram follows the table. On the M5 Max only (not on cyan), the medians of eight runs on 2026-10-22, with the machine busy with other work, for the 2 KiB non-streaming rows:
 

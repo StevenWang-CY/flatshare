@@ -11,7 +11,8 @@
 //! more than two at the engine; and `max_in_flight` of two, the successor refusing while the predecessor holds both and
 //! taking one as one ends; and with `[[nodes]]`, a successor that keeps every session's node and every call slot,
 //! sessions placed so that placing them anew would put them elsewhere, and ends a placement it took over by `DELETE
-//! /v1/sessions/{id}`, its slot free at once.
+//! /v1/sessions/{id}`, its slot free at once; and a request that a covering node holds back, refused with 503
+//! `draining` as the predecessor hands its sockets over.
 
 use std::net::{SocketAddr, TcpListener};
 use std::os::fd::OwnedFd;
@@ -659,5 +660,61 @@ async fn a_reload_keeps_every_sessions_node_and_the_nodes_call_slots() {
     assert_eq!(ended.status, 200, "{:?}", ended.body);
     assert_eq!(ended.json()["ended"], true);
     assert_eq!(node_of(place("call-4").await), "b");
+    stopped(second).await;
+}
+
+#[tokio::test]
+async fn a_reload_refuses_a_request_that_a_covering_node_holds_back() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let b = TestNode::start("b", Script::Json("{}")).await;
+    let nodes = format!(
+        "{}{}[placement]\nhealth_interval_s = 0.05\nunhealthy_after = 2\nhealthy_after = 2\ncalls = \"fill\"\n",
+        a.toml(UNBOUNDED),
+        b.toml(UNBOUNDED)
+    );
+    let (unit, tcp, unix) = Unit::with_nodes(&nodes);
+    let child = unit.start(tcp, unix);
+    let first = Process(child.id());
+    assert_eq!(
+        unit.notified(Duration::from_secs(10)).await.as_deref(),
+        Some("READY=1")
+    );
+    let [tcp_target, unix_target] = unit.targets();
+    let series =
+        |metric: &str, node: &str| format!("flatshare_gateway_node_{metric}{{node=\"{node}\"}}");
+    for node in ["a", "b"] {
+        metric_at(&unix_target, &series("healthy", node), 1.0).await;
+    }
+    // a fails before any call: the call goes to b, the spare, which then covers and holds its agents' requests back.
+    a.tts.set_healthy(false);
+    metric_at(&unix_target, &series("healthy", "a"), 0.0).await;
+    let body = r#"{"session_id":"call-1","class":"realtime"}"#;
+    let placed = call(&unix_target, "POST", "/v1/sessions", &[], body).await;
+    assert_eq!(placed.json()["node"], "b", "{:?}", placed.body);
+    metric_at(&unix_target, &series("covering", "b"), 1.0).await;
+    // An interactive request, which the drain's cut never ends, waits on b, its queue deadline 120 s away.
+    let waiting = tokio::spawn({
+        let target = tcp_target.clone();
+        async move {
+            let headers = [
+                AGENTS_AUTH,
+                ("x-session-id", "agent-1"),
+                ("x-flatshare-class", "interactive"),
+            ];
+            call(&target, "POST", "/v1/chat/completions", &headers, CHAT).await
+        }
+    });
+    metric_at(&unix_target, &series("failover_waiting", "b"), 1.0).await;
+
+    let second = successor(&unit, &first).await;
+    // The held request is refused as the predecessor hands its sockets over, never having gone upstream, rather than
+    // left to wait until the drain's timeout ends the process.
+    let refused = soon(waiting).await.unwrap();
+    assert_eq!(refused.status, 503, "{:?}", refused.body);
+    assert_eq!(refused.json()["error"]["code"], "draining");
+    assert_eq!(refused.header("retry-after"), Some("1"));
+    assert_eq!(b.requests(), 0);
+    let status = soon(wait(child)).await;
+    assert!(status.success(), "{status}");
     stopped(second).await;
 }

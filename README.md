@@ -60,7 +60,7 @@ after 9.6 s, and the two changes after 1.9 s
 |---|---:|---:|---:|---:|---:|---:|
 | Voice alone, the SLO's reference | 1,784 ms | — | 0.3% | — | — | — |
 | vLLM 0.32, tuned: priority scheduling, a 512-token step cap, a CPU KV tier | 10,477 ms | +8,443 ms | 90% | 3,305 | 63 s | 106 s |
-| Tuned, with a router that aborts agent requests before their first byte and resubmits them | 2,522 ms | +488 ms | 44% | 3,332 | 32 s | 193 s |
+| Tuned, with preempt-resubmit: a gateway policy that aborts agent requests before their first byte and resubmits them | 2,522 ms | +488 ms | 44% | 3,332 | 32 s | 193 s |
 | + #63350: a waiting request preempts lower-priority work for KV | 5,085 ms | +3,051 ms | 89% | 3,414 | 67 s | 112 s |
 | + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 43% | 3,298 | 71 s | 105 s |
 | + #63351 with a 48-token window: **the configuration to deploy** | **2,236 ms** | +202 ms | 32% | 3,203 | 72 s | 111 s |
@@ -221,7 +221,7 @@ used:
 |---|---|
 | read the work as one paper: the problem, the change, the results and their limits | [docs/REPORT.md](docs/REPORT.md), the technical report |
 | deploy the change and watch it | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
-| see how it works in vLLM's scheduler | [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-the-change-63350-and-63351), then the two PR diffs |
+| see how it works in vLLM's scheduler | [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-the-change-63350-and-63351), then the two pull requests' diffs |
 | see every number, with its runs and ranges | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
 | know how each experiment was designed and run | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) |
 | compare with llm-d, Dynamo, SMG, SGLang and published work | [docs/PRIOR-ART.md](docs/PRIOR-ART.md) |

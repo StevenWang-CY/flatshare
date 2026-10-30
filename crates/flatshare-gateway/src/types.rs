@@ -91,7 +91,9 @@ pub(crate) enum Outcome {
     RefusedBodyBytes,
     /// The admission point's queues were full.
     RefusedQueue,
-    /// The engine was not ready: a request had found it broken and its `/health` had not answered since.
+    /// The engine was not ready: a request had found it broken and its `/health` had not answered since. With
+    /// `[[nodes]]`, also a request that no node could take (`no_healthy_node`, `no_call_slot`, `no_agent_slot`,
+    /// `placement_full`), its 503 naming which.
     NotReady,
     /// The gateway refused it as malformed or unauthorized: 400, 401, 404, 405 or 413.
     Invalid,

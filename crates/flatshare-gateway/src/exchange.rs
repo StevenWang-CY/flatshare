@@ -447,6 +447,7 @@ impl Exchange {
         match why {
             NotReleased::Late(timeout) => self.timed_out(Phase::Queue, timeout),
             NotReleased::Cut => self.drained(grace),
+            NotReleased::Draining => self.refused(Refusal::Draining),
         }
     }
 
