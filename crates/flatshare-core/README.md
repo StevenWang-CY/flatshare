@@ -5,9 +5,12 @@ Pure, deterministic code with no I/O and no clock: callers pass token counts and
 | Module | What it holds | Used by |
 |---|---|---|
 | `cost` | What serving a prompt costs from each tier, the E0 model fitted on the frozen box ([BENCHMARKS.md](../../docs/BENCHMARKS.md#tier-cost-model-resuming-an-agent-turn-e0)), and decode time | `flatshare-sim` |
-| `step` | What one engine step costs from what it carries (step tokens, attention pairs and context, a prefill beside decodes), fitted by `flatshare-sim`'s `scripts/fit_step_cost.py` on three operating points of the frozen box | `flatshare-sim`'s contention model; `admission`'s prefill price |
-| `admission` | Whether a request goes upstream now, waits or is refused: the E2 baselines (static cap, token reservation, flow control, preempt-resubmit) and the lifecycle policy (below), driven by arrivals, first bytes and departures (and the realtime sessions' turns), and the token estimate they share | `flatshare-gateway`'s admission point |
+| `step` | What one engine step costs from what it carries (note 1) | `flatshare-sim`'s contention model; `admission`'s prefill price |
+| `admission` | Whether a request goes upstream now, waits or is refused (note 2) | `flatshare-gateway`'s admission point |
 | `geometry` | KV bytes per token, the engine block and tier capacities in blocks | `flatshare-sim`; the gateway's default pool (`FROZEN_BOX_POOL_TOKENS`) |
+
+1. A step carries its step tokens, attention pairs and context, and a prefill beside decodes. The model is fitted by `flatshare-sim`'s `scripts/fit_step_cost.py` on three operating points of the frozen box.
+2. It holds the E2 baselines (static cap, token reservation, flow control, preempt-resubmit) and the lifecycle policy (below), driven by arrivals, first bytes and departures (and the realtime sessions' turns), and the token estimate they share.
 
 **The lifecycle policy** (`Policy::Lifecycle`; the gateway's `policy = "lifecycle"`) is a variant of `admission::Policy` beside the baselines, pure and without a clock like them; what it keeps beyond what every policy does is the admission point's only under it. E2's arm 9 is make-room with it. Realtime requests go upstream at once, never queued and never refused ([ADR-0003](../../docs/adr/0003-realtime-is-never-shed.md)). Background requests yield to the realtime sessions' turns, which the caller tracks from lifecycle events and reports as two counts (`Turns`: sessions whose user is speaking, and sessions in their critical window, from the end of the user's turn to the reply's first audio). Each mechanism can be switched off for the ablations:
 - *headroom*: while sessions are armed (from speech onset, or only in the critical window), a background request goes upstream only if the estimated tokens of the background requests in flight and its own leave `headroom_tokens` of the pool free for each armed session;
