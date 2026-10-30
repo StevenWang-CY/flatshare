@@ -3,7 +3,7 @@
 # dependencies = [
 #     "numpy==2.5.4",
 #     "matplotlib==3.11.2",
-#     "pillow==12.3.0",
+#     "pillow==13.0.0",
 #     "fonttools==4.67.0",
 #     "imageio-ffmpeg==0.6.0",
 # ]
