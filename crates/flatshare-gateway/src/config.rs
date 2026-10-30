@@ -1261,7 +1261,16 @@ fn parse_digest(hex: &str) -> Option<[u8; 32]> {
     Some(digest)
 }
 
+/// The longest duration a key takes, about 32 years: a clock overflows, and panics, past about 9.2e18 s from now, so
+/// every deadline and expiry stays far inside it.
+const MAX_SECONDS: f64 = 1e9;
+
 pub(crate) fn seconds(key: &str, value: f64) -> Result<Duration, String> {
+    if value > MAX_SECONDS {
+        return Err(format!(
+            "{key} must be at most {MAX_SECONDS:e} seconds (about 32 years)"
+        ));
+    }
     Duration::try_from_secs_f64(value)
         .ok()
         .filter(|d| !d.is_zero())
@@ -1270,12 +1279,15 @@ pub(crate) fn seconds(key: &str, value: f64) -> Result<Duration, String> {
 
 /// The tests: each admission policy's own keys and defaults; the lifecycle policy's switches, the mechanisms each of
 /// its keys needs on, and its old name refused; the realtime class's cap from before the classes' tables refused; every
-/// arm file's `[gateway]` table over the deploy example; and the checks of the cache salts' secret file.
+/// duration's bound of 1e9 s; every arm file's `[gateway]` table over the deploy example; and the checks of the cache
+/// salts' secret file.
 #[cfg(test)]
 mod tests {
     use std::sync::LazyLock;
+    use std::time::Instant;
 
     use super::*;
+    use crate::deadline::Deadlines;
 
     /// SHA-256 of "foo".
     const KEY: &str = "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae";
@@ -1590,6 +1602,61 @@ mod tests {
                 "{top}: {err}"
             );
         }
+    }
+
+    #[test]
+    fn every_duration_is_at_most_1e9_seconds_well_inside_the_clock() {
+        let a = format!("[tenants.a]\nkeys_sha256 = [\"{KEY}\"]");
+        // At the bound, a class's deadlines are all points in time.
+        let longest = config(
+            "",
+            &format!(
+                "{a}\n[classes.background]\nupload_timeout_s = 1e9\nqueue_timeout_s = 1e9\n\
+                 headers_timeout_s = 1e9\nfirst_content_timeout_s = 1e9\nidle_timeout_s = 1e9\n\
+                 total_timeout_s = 1e9"
+            ),
+        )
+        .unwrap();
+        let now = Instant::now();
+        let deadlines = Deadlines::new(
+            SloClass::Background,
+            longest.class(SloClass::Background),
+            now,
+        );
+        let (total, _) = deadlines.total();
+        assert_eq!(total - now, Duration::from_secs(1_000_000_000));
+        for (at, _) in [
+            deadlines.upload(),
+            deadlines.queue(now),
+            deadlines.headers(now),
+            deadlines.first_frame(),
+            deadlines.next_frame(now),
+        ] {
+            assert_eq!(at, total);
+        }
+        // Past it, a class's key, a top-level one, the canary's and the placement's are refused at start: 1e19 s
+        // would have loaded and then panicked each request of the class, or the placement's expiry.
+        for (top, tables, key) in [
+            (
+                "",
+                "[classes.background]\ntotal_timeout_s = 1e19",
+                "classes.background.total_timeout_s",
+            ),
+            ("stall_timeout_s = 1.000001e9", "", "stall_timeout_s"),
+            ("", "[canary]\ninterval_s = 1e19", "canary.interval_s"),
+        ] {
+            let err = config(top, &format!("{a}\n{tables}")).unwrap_err();
+            assert!(
+                err.contains(&format!("{key} must be at most 1e9 seconds")),
+                "{err}"
+            );
+        }
+        let err =
+            nodes_config("", &format!("{TWO_NODES}[placement]\nidle_s = 1e19\n")).unwrap_err();
+        assert!(
+            err.contains("placement.idle_s must be at most 1e9 seconds"),
+            "{err}"
+        );
     }
 
     #[test]

@@ -127,7 +127,8 @@ Every wait a request goes through has a deadline from its class's `[classes.<cla
 
 ## Configuration
 
-Unknown keys are errors, so a misspelled setting fails at start instead of silently taking its default.
+Unknown keys are errors, so a misspelled setting fails at start instead of silently taking its default. So does a
+duration (a key that ends in `_s`) over 1e9 seconds, about 32 years.
 
 | Key | Default | Meaning |
 |---|---|---|
