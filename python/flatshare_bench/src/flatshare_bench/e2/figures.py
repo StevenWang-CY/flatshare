@@ -14,8 +14,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from flatshare_bench.e2.groups import STACKED, arm_order, configurations
 from flatshare_bench.e2.record import REPLY_TIMEOUT_MS
-from flatshare_bench.e2.report import STACKED, arm_order, configurations
 from flatshare_bench.figure_style import (
     NARROW,
     NOTE,

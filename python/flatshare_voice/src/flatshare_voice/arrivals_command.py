@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 
-from . import cli
+from . import options
 
 
 def add_arrivals(commands: argparse._SubParsersAction) -> None:
@@ -42,13 +42,13 @@ def add_arrivals(commands: argparse._SubParsersAction) -> None:
     )
     arrivals.add_argument(
         "--turns",
-        type=cli._positive,
+        type=options._positive,
         default=10,
         help="measured turns per call (default %(default)s)",
     )
     arrivals.add_argument(
         "--barge-in",
-        type=cli._share,
+        type=options._share,
         default=0.25,
         help="share of turns with an interruption, from 0 to 1 (default %(default)s)",
     )
@@ -61,20 +61,20 @@ def add_arrivals(commands: argparse._SubParsersAction) -> None:
     )
     arrivals.add_argument(
         "--warmup-turns",
-        type=cli._count,
+        type=options._count,
         default=1,
         help="unmeasured turns that open each call, as bots' (default %(default)s: a serving worker's AEC "
         "warm-up ignores an interruption of its first reply)",
     )
     arrivals.add_argument(
         "--run",
-        type=cli._count,
+        type=options._count,
         default=0,
         help="the run's number in its soak (default %(default)s)",
     )
     arrivals.add_argument(
         "--first-call",
-        type=cli._count,
+        type=options._count,
         default=0,
         help="the number of the run's first call: the soak's calls so far (default %(default)s)",
     )
@@ -86,7 +86,7 @@ def add_arrivals(commands: argparse._SubParsersAction) -> None:
     )
     arrivals.add_argument(
         "--max-open",
-        type=cli._positive,
+        type=options._positive,
         default=8,
         help="attempts open at once at most; a call due beyond them is skipped (default %(default)s)",
     )
@@ -104,7 +104,7 @@ def _arrivals(args: argparse.Namespace) -> int:
     from .arrivals import ArrivalsConfig, default_status_file, run_arrivals
     from .bots import BotsConfig
 
-    api_key, api_secret = (os.environ[name] for name in cli.LIVEKIT_CREDENTIALS)
+    api_key, api_secret = (os.environ[name] for name in options.LIVEKIT_CREDENTIALS)
     bots = BotsConfig(
         url=args.url,
         api_key=api_key,

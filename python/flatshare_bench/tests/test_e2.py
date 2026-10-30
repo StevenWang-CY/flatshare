@@ -37,7 +37,7 @@ from servers import UnixServer, serve, socket_file, stop
 
 from flatshare_bench.cli import main
 from flatshare_bench.e2 import run as e2
-from flatshare_bench.e2 import tools
+from flatshare_bench.e2 import tools, wait
 from flatshare_bench.e2.arm import (
     AGENTS_WINDOW_S,
     E2Error,
@@ -120,7 +120,7 @@ def write(directory: Path, name: str, text: str) -> Path:
 
 @pytest.fixture(autouse=True)
 def _quick(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(tools, "POLL_S", 0.02)
+    monkeypatch.setattr(wait, "POLL_S", 0.02)
     for name in ("FAKE_AIPERF", "FAKE_BOTS"):
         monkeypatch.delenv(name, raising=False)
 

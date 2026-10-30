@@ -89,7 +89,8 @@ from flatshare_bench.e2.record import (
     summarize_point,
     worker_lines,
 )
-from flatshare_bench.e2.tools import NEEDS_WAITID, Process, kill_left, pause, tool_scope, until
+from flatshare_bench.e2.tools import NEEDS_WAITID, Process, kill_left, tool_scope
+from flatshare_bench.e2.wait import pause, until
 from flatshare_bench.kv_metrics import fetch
 from flatshare_bench.transport import client
 from flatshare_stats import metric_samples

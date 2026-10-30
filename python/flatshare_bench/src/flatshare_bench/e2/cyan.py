@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from flatshare_bench.e2.arm import Arm, E2Error, Voice
-from flatshare_bench.e2.tools import until
+from flatshare_bench.e2.wait import until
 from flatshare_bench.transport import UNIX, runtime_socket
 
 CONFIGS = Path(__file__).resolve().parents[3] / "configs"
