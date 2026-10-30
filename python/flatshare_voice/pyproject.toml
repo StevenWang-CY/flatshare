@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "flatshare-voice"
-version = "1.8.0"
+version = "1.9.0"
 description = "Flatshare's realtime voice plane on LiveKit Agents 1.8.8: the voice agent, measurement callers and plugin factory"
 readme = "README.md"
 license = "Apache-2.0"
