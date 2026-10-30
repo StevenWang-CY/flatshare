@@ -28,15 +28,15 @@ On vLLM 0.32 with 24 coding-agent sessions on one RTX 5060 Ti, the voice agent's
 1.78 s, with voice alone, to 10.5 s. The time is lost in vLLM's scheduler: a waiting voice turn cannot take KV cache
 from running agent requests, and once it runs, agent prefill shares every step of its reply.
 
-Two scheduler changes, proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and
+Two scheduler rules, proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and
 [#63351](https://github.com/vllm-project/vllm/pull/63351) (open, with no maintainer review as of 2026-10-29), bring that
 p95 to 2.24 s against an SLO of 2.03 s. The replies over the SLO fall from 90% to 32% (286 of 885), and the agents keep
 97% of their token rate.
 
 - **At the 256-token step cap the deployment runs**, 44 of 295 replies were over their round's SLO in five rounds on
   new samples of the agents, against 94 of 295 at 512 tokens and 261 of 295 on tuned vLLM.
-- **On an A100** at the same KV pool and 512-token steps, the changes take the p95 from 4.99 s to 1.63 s, under that
-  card's SLO in each of five rounds.
+- **On an A100** at the same KV pool and 512-token steps, the configuration to deploy takes the p95 from 4.99 s to
+  1.63 s, under that card's SLO in each of five rounds.
 
 <picture>
   <source media="(max-width: 767px) and (prefers-color-scheme: dark)" srcset="docs/figures/e2-demo-narrow-dark.webp">
@@ -70,15 +70,15 @@ Medians of five runs, or 10 for tuned vLLM and 15 for the last row
 250 ms and allows 5% of the replies over it. The agents' tokens/s count the calls' first 240 s and are nearly all prompt
 tokens.
 
-- **At the 256-token step cap**, in the five rounds on new samples, the PRs' median p95 was 2,098 ms, against
-  2,246 ms at 512 tokens and 12,010 ms on tuned vLLM
+- **At the 256-token step cap**, in the five rounds on new samples, the median p95 of the configuration to deploy was
+  2,098 ms, against 2,246 ms at 512 tokens and 12,010 ms on tuned vLLM
   ([§6.9](docs/REPORT.md#69-a-256-token-step-cap-halves-the-changes-replies-over-the-slo-beside-24-sessions)).
-- **On the A100**, at the RTX 5060 Ti's KV pool and 512-token step cap, the PRs' p95 was 7–60 ms under that card's SLO
-  of 1.67 s, with the agents at 8,651 tokens a second against tuned vLLM's 8,633
+- **On the A100**, at the RTX 5060 Ti's KV pool and 512-token step cap, the p95 of the configuration to deploy was
+  7–60 ms under that card's SLO of 1.67 s, with the agents at 8,651 tokens a second against tuned vLLM's 8,633
   ([§6.7](docs/REPORT.md#67-the-rules-carry-to-an-a100)).
-- **On two RTX 5060 Ti cards**, both calls and four agent sessions on one card with the PRs, and agents alone on the
-  other, did 34% more background work than a card per workload, with 5 of 177 replies over the SLO. On stock vLLM the
-  same arrangement, with two sessions, did 27% more, so most of the gain is the arrangement's
+- **On two RTX 5060 Ti cards**, both calls and four agent sessions on one card with the configuration to deploy, and
+  agents alone on the other, did 34% more background work than dedicated roles, with 5 of 177 replies over the SLO. On
+  tuned vLLM the same arrangement, with two sessions, did 27% more, so most of the gain is the arrangement's
   ([the rounds](benchmarks/results/2026-10-28-rounds/README.md); [the deployment](docs/PRODUCTION.md#two-cards)).
 
 ## How it works
@@ -101,7 +101,8 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
    sentence rather than its first token. This agent's replies run 23 tokens at the median and 52 at most, so a 16-token
    window leaves the p95 at 3.1 s.
 4. **A control plane in front of the engine can make room only by aborting work.** Only the engine can take KV from a
-   decoding request, so the router that aborts and resubmits agent requests reaches 2.52 s at the agents' expense.
+   decoding request, so preempt-resubmit, which aborts and resubmits agent requests, reaches 2.52 s at the agents'
+   expense.
 
 ## Limits and costs
 
@@ -112,28 +113,28 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
   against 80% for each. Qwen3-8B-FP8 on a card of its own failed too ([the gate](benchmarks/quality/GATE.md);
   [its record](benchmarks/results/2026-10-27-quality/README.md)). A deployment that shares a card for background work
   has to check first that the model can do that work.
-- **Still above the SLO's 5%.** Beside 24 sessions the PRs left 32% of the replies over the SLO at 512-token steps and
-  14.9% at 256.
-- **A pool with room.** At 16 sessions of the whole corpus, where the pool has room, the PRs met the SLO in one of
-  five rounds. The serving profile's 256-token steps leave the pool room beside 24 sessions too: the engine preempted
-  0–4 requests a run there and none beside four, so at that cap the hold and the step cap do the work
-  ([§6.9](docs/REPORT.md#69-a-256-token-step-cap-halves-the-changes-replies-over-the-slo-beside-24-sessions)).
-- **Many calls.** Overlapping replies hold agent prefill for longer, and with 4 and 6 callers the PRs' p95 exceeded
-  each count's SLO in every round ([how it fails](docs/PRODUCTION.md#how-it-fails)).
-- **The agents pay through the prefill hold**, which keeps their prefill out of 33% of the engine's steps during the
+- **Still above the SLO's 5%.** Beside 24 sessions the configuration to deploy left 32% of the replies over the SLO at
+  512-token steps and 14.9% at 256.
+- **A pool with room.** At 16 sessions of the whole corpus, where the pool has room, the configuration to deploy met the
+  SLO in one of five rounds. The serving profile's 256-token steps leave the pool room beside 24 sessions too: the
+  engine preempted 0–4 requests a run there and none beside four, so at that cap the budget cap and the step cap do the
+  work ([§6.9](docs/REPORT.md#69-a-256-token-step-cap-halves-the-changes-replies-over-the-slo-beside-24-sessions)).
+- **Many calls.** Overlapping replies hold agent prefill for longer, and with 4 and 6 callers the p95 of the
+  configuration to deploy exceeded each count's SLO in every round ([how it fails](docs/PRODUCTION.md#how-it-fails)).
+- **The agents pay through the budget cap**, which keeps their prefill out of 33% of the engine's steps during the
   calls, and the 256-token steps cost them 7% of their token rate against 512. No vLLM 0.32 counter shows what a
   preempted request recomputes when it resumes
   ([the agents' cost](docs/BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)).
 - **Other GPUs.** On the A100 the 512-token step cap costs the agents 30% of their throughput, and at the card's own
-  best, 2,048-token steps, the PRs leave the voice p95 0.14–0.17 s over the SLO
+  best, 2,048-token steps, the configuration to deploy leaves the voice p95 0.14–0.17 s over the SLO
   ([§6.7](docs/REPORT.md#67-the-rules-carry-to-an-a100)). Other cards are placed only by the simulator, whose costs
   scaled from published peaks missed the A100's decode attention by 1.8 times
   ([what transfers](docs/METHODS.md#what-transfers-to-other-hardware)).
 
 ## Quick start
 
-The make-room variant builds vLLM 0.32.0's scheduler with the two PRs, backported, from an installed vLLM, without
-modifying the installation. On a host with a GPU that vLLM 0.32.0 supports, install it and build the variant
+The make-room variant builds vLLM 0.32.0's scheduler with the two pull requests, backported, from an installed vLLM,
+without modifying the installation. On a host with a GPU that vLLM 0.32.0 supports, install it and build the variant
 ([uv](https://docs.astral.sh/uv/) fetches Python 3.12 where the host's is older):
 
 ```sh
@@ -176,13 +177,13 @@ it was 1,963–1,967 ms on stock vLLM and 258–292 ms with make-room, in four r
 [the record](benchmarks/results/2026-10-29-quick-start/README.md)).
 <!-- /quick-start probe -->
 
-Both ran at the serving profile's step cap, 256 tokens a step without a per-request threshold, and make-room with the
-PRs' configuration: the KV preemption at 2 a step and the budget cap with a 48-token window, no reserve. `probe.py`
+Both ran at the serving profile's step cap, 256 tokens a step without a per-request threshold, and make-room in the
+configuration to deploy: the KV preemption at 2 a step and the budget cap with a 48-token window, no reserve. `probe.py`
 sizes its requests from the engine's KV pool and context length, so the check runs unchanged on another card.
 
 To serve beside agents, send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV
 tier from [`engine.yaml`](deploy/phastform/engine.yaml), which holds the box's 32k context and fixed KV pool too. The
-sweep chose that step cap for the PRs, and the two-card results ran it. The Results table ran 512 with a 256-token
+sweep chose that step cap for the change, and the two-card results ran it. The Results table ran 512 with a 256-token
 threshold. Then read:
 
 - [docs/PRODUCTION.md](docs/PRODUCTION.md) to configure and size it, to check that your deployment is in its regime, and
@@ -249,7 +250,7 @@ crates/flatshare-proto/   wire types and their JSON Schemas
 crates/flatshare-core/    cost and step-time models, KV geometry, the admission policies E2 compares
 crates/flatshare-gateway/ the serving control plane, with E2's admission policies as its harness
 crates/flatshare-sim/     the KV cache simulator behind E1
-python/flatshare_vllm/    the change on vLLM 0.32: the PRs as patches, the build, probes and tests
+python/flatshare_vllm/    the change on vLLM 0.32: the pull requests as patches, the build, probes and tests
 python/flatshare_bench/   the E2 harness, trace conversion, probes, drills, figures and the logo
 python/flatshare_voice/   the voice agent and the measurement callers
 python/flatshare_stats/   the statistics the measurements publish, each defined once
@@ -274,10 +275,10 @@ Development needs Rust 1.98, uv, Python 3.12 and GNU Make 3.81 or newer (macOS's
 ```sh
 make check                           # lint and the tests of CI's main job
 make test-make-room-ci               # CI's make-room job (Linux x86-64): the change's behavior suite and its trace
-                                     # against the PRs' patches, on vLLM's real scheduler
+                                     # against the pull requests' patches, on vLLM's real scheduler
 make perf-make-room TORCH_PYTHON=PY  # the change's cost a scheduler step on CPU, its switches off against stock vLLM
                                      # and on against off, against benchmarks/perf's baseline (PY: an absolute path)
-make compat-upstream                 # the PRs against vLLM's main and the backport against their heads,
+make compat-upstream                 # the pull requests against vLLM's main and the backport against their heads,
                                      # make-room's patches against vLLM's newest release, hunk by hunk
 make reproduce-e2                    # E2's tables and figures from the committed records (W4)
 make reproduce-e2-w5                 # the same for W5's records

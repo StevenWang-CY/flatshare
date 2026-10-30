@@ -21,27 +21,27 @@ Neither mechanism is specific to the card, though what each costs is: the first 
 
 ## 2. The change: #63350 and #63351
 
-The variant `make-room` ([`python/flatshare_vllm`](../python/flatshare_vllm/README.md)) is built at each engine start from the installed vLLM 0.32.0's scheduler, without modifying vLLM: `build.py` applies the PRs' scheduler diff, backported to 0.32.0, and the variant's own patch, every hunk where it must be, and the engine loads the module with `--scheduler-cls`. It adds three switches to priority scheduling, each a key of `--additional-config` and off by default:
+The variant `make-room` ([`python/flatshare_vllm`](../python/flatshare_vllm/README.md)) is built at each engine start from the installed vLLM 0.32.0's scheduler, without modifying vLLM: `build.py` applies the pull requests' scheduler diff, backported to 0.32.0, and the variant's own patch, every hunk where it must be, and the engine loads the module with `--scheduler-cls`. It adds three switches to priority scheduling, each a key of `--additional-config` and off by default:
 
 | Switch | Variant key | Upstream |
 |---|---|---|
-| KV make-room | `make_room.max_preemptions_per_step` | `--max-priority-preemptions-per-step` ([#63350](https://github.com/vllm-project/vllm/pull/63350)) |
+| The KV preemption | `make_room.max_preemptions_per_step` | `--max-priority-preemptions-per-step` ([#63350](https://github.com/vllm-project/vllm/pull/63350)) |
 | The budget cap | `make_room.budget_cap`, `make_room.budget_cap_tokens` | `--priority-prefill-budget-cap`, `--priority-prefill-budget-cap-tokens` ([#63351](https://github.com/vllm-project/vllm/pull/63351)) |
 | The reserve | `make_room.reserve_tokens` | none: carried in the variant only |
 
 Each switch in a sentence; [REPORT §3](REPORT.md#3-design) gives the two rules in full, with its Figure 5 and Algorithms 1 and 2:
-- **KV make-room.** When the highest-priority waiting request lacks KV for its whole sequence, the scheduler preempts running requests of a strictly lower priority through vLLM's own path, the lowest priority and then the latest arrival first, as few as make it fit, at most N a step and none if N would not suffice, their KV kept in the CPU tier ([§3.1](REPORT.md#31-make-room)).
+- **The KV preemption.** When the highest-priority waiting request lacks KV for its whole sequence, the scheduler preempts running requests of a strictly lower priority through vLLM's own path, the lowest priority and then the latest arrival first, as few as make it fit, at most N a step and none if N would not suffice, their KV kept in the CPU tier ([§3.1](REPORT.md#31-make-room)).
 - **The budget cap.** Lower-priority prefill sits out the steps of a request's first `budget_cap_tokens` output tokens (16 by default), from the step in which the request fits, and decodes are never cut ([§3.2](REPORT.md#32-the-prefill-hold)).
 - **The reserve.** Requests of a positive priority value are admitted only while their whole sequences leave the reserve free: a class-aware watermark, where `--watermark` is class-blind.
 
-What E2 found ([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2)): the budget cap is necessary, and either KV make-room or the reserve does the rest. The window has to cover the reply's first sentence: this voice agent's replies run 23 tokens at the median and 52 at most, their first sentences 15 tokens at the median and 39 at most ([the first-sentence record](../benchmarks/results/2026-10-27-first-sentence)), and at 16 tokens full replies decode beside agent prefill again (3,094 ms at p95 in W5), where 48 tokens covers all but one of them (2,236 ms). The configuration to deploy is the two PRs' switches with a 48-token window and no reserve.
+What E2 found ([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2)): the budget cap is necessary, and either the KV preemption or the reserve does the rest. The window has to cover the reply's first sentence: this voice agent's replies run 23 tokens at the median and 52 at most, their first sentences 15 tokens at the median and 39 at most ([the first-sentence record](../benchmarks/results/2026-10-27-first-sentence)), and at 16 tokens full replies decode beside agent prefill again (3,094 ms at p95 in W5), where 48 tokens covers all but one of them (2,236 ms). The configuration to deploy is the pull requests' switches with a 48-token window and no reserve.
 
-**The gaps E2 measured with before W5.** The v0.3 variant and the PRs as first opened had three gaps, whose effect W4's E2 numbers include. W5 fixed them in the variant (main, up to b656c25), together with further defects found in review, and the PRs carry the same fixes; W5's numbers ran the fixed variant. The gaps were:
+**The gaps E2 measured with before W5.** The v0.3 variant and the pull requests as first opened had three gaps, whose effect W4's E2 numbers include. W5 fixed them in the variant (main, up to b656c25), together with further defects found in review, and the pull requests carry the same fixes; W5's numbers ran the fixed variant. The gaps were:
 - the budget cap did not hold a lower-priority request that already held its KV, such as one whose CPU-tier load had finished (vLLM's `kv_holding_waiting` queue, which it drains before `waiting`);
 - the KV shortfall counted the blocks of a request's cached prefix as needed, so the reserve and the in-flight gate could refuse a request that stock vLLM admits;
 - victims were sized before the next step's decode growth, so a turn could need a second preemption a step later.
 
-**Tests.** CPU tests run the variant on vLLM's real scheduler with CPU torch, and trace it against the PRs' own patches step for step. CI builds the generated module from v0.32.0's source, and its make-room job runs both suites on Linux x86-64 (`make test-make-room-ci`). GPU probes measure the KV case, the prefill case and closed-loop agents beside calls ([`probe.py`, `tail.py`](../python/flatshare_vllm/src/flatshare_vllm/make-room)).
+**Tests.** CPU tests run the variant on vLLM's real scheduler with CPU torch, and trace it against the pull requests' own patches step for step. CI builds the generated module from v0.32.0's source, and its make-room job runs both suites on Linux x86-64 (`make test-make-room-ci`). GPU probes measure the KV case, the prefill case and closed-loop agents beside calls ([`probe.py`, `tail.py`](../python/flatshare_vllm/src/flatshare_vllm/make-room)).
 
 ## 3. The serving path
 
@@ -57,7 +57,7 @@ This section is the serving path, from the configuration to the alerts: the serv
 ### 3.1 The serving profile
 
 `deploy/profiles/rtx-5060-ti-serve.toml` names the configuration to serve ([ADR-0009](adr/0009-immutable-releases-and-the-exact-serving-profile.md)):
-- the frozen box (§5.1) running the change with the PRs' switches: two preemptions a step, the budget cap at 48 tokens, and no reserve;
+- the frozen box (§5.1) running the configuration to deploy: two preemptions a step, the budget cap at 48 tokens, and no reserve;
 - the step cap the sweep chose, 256 tokens a step without a long-prefill threshold ([the sweep](../benchmarks/results/2026-10-27-sweep/README.md), confirmed in [the rounds](../benchmarks/results/2026-10-28-rounds/README.md));
 - the hash of the scheduler module, the calls the voice worker admits (two), and real callers' audio.
 
@@ -94,7 +94,7 @@ The engine's state comes from inference: its requests' successes, and an idle-on
 
 ### 3.4 The voice worker
 
-LiveKit server 1.13 and LiveKit Agents 1.8.8, with Silero VAD on CPU, run the voice agent on the control host, in a network namespace with no route out (§4) ([`python/flatshare_voice`](../python/flatshare_voice/README.md)). STT and TTS reach the GPU node through Unix-socket tunnels, and the LLM goes through the gateway's socket as the realtime class. In serve mode, which the serving arrangement runs, the worker:
+LiveKit server 1.13 and LiveKit Agents 1.8.8, with Silero VAD on CPU, run the voice agent on the control host, in a network namespace with no route out (§4) ([`python/flatshare_voice`](../python/flatshare_voice/README.md)). STT and TTS reach the GPU node through Unix-socket tunnels, and the LLM goes through the gateway's socket as the realtime class. In serve mode, which the arrangement to deploy runs, the worker:
 - **admits calls by capacity:** at most the profile's two at once, and none while the engine does not serve (the gateway's `/ready`), so that a call it could not answer gets no agent rather than a slow one;
 - **places each call** on a GPU node with `POST /v1/sessions` before it speaks, binds the call's STT and TTS to that node's sockets, refuses a call that finds no free slot, and ends the placement with `DELETE /v1/sessions/{id}` when the call ends or its job does not run, which frees the slot at once;
 - **hears real callers,** with LiveKit's end-of-turn model and its AEC warm-up, which no benchmark measured (§6.2);
@@ -181,8 +181,8 @@ Figure 1 shows the hosts. cyan has 48 threads and no GPU; Phastform and Gray eac
 
 | Host | Role |
 |---|---|
-| **Phastform** | The first GPU node: every E2 point but the A100 run's before the two-card rounds, which ran on it and Gray in turn, and the serving arrangement's first card; paused when idle |
-| **Gray** | A second, identical GPU node: the probes' booked windows, the second card of the two-card rounds, and the warm spare of the serving arrangement on two nodes; cyan reaches it through `flatshare-tunnel@gray` |
+| **Phastform** | The first GPU node: every E2 point but the A100 run's before the two-card rounds, which ran on it and Gray in turn, and the arrangement to deploy's first card; paused when idle |
+| **Gray** | A second, identical GPU node: the probes' booked windows, the second card of the two-card rounds, and the warm spare of the arrangement to deploy on two nodes; cyan reaches it through `flatshare-tunnel@gray` |
 | **cyan** | The control host: `flatshare-gateway`, LiveKit and the voice worker, the measurement callers and AIPerf, each on its own cores |
 | **peacock** | Linux release builds of `flatshare-gateway` and `flatshare-sim`, and simulator runs |
 
@@ -250,7 +250,7 @@ Two mechanisms were built, measured and not adopted, and the rest of the origina
 | `flatshare-core` | The cost model against E0's cells, the KV geometry, the step-time model; each admission policy's decisions on hand-made sequences of requests and turns |
 | `flatshare-sim` | The AIPerf port against AIPerf's own plan; the step loop on hand-made sequences; the clairvoyant tiers against exhaustive search; every arm end to end on a 16-trace subset; `make reproduce-e1` regenerates E1's tables (not in CI: the corpus stays outside the repository) |
 | `flatshare-gateway` | Against in-process mock engines and speech servers: disconnects, backpressure, sanitization and tenant-scoped sessions, the intake's bounds, every deadline, the accounting and the engine's state, the nodes' placement, failover and covering, event idempotency, every admission policy, the reload and its drain; the proxy's overhead in process |
-| Engine | The generated `make-room` module built from v0.32.0's source; its behavior on vLLM's real scheduler with CPU torch, and its trace against the PRs' own patches; the GPU probes |
+| Engine | The generated `make-room` module built from v0.32.0's source; its behavior on vLLM's real scheduler with CPU torch, and its trace against the pull requests' own patches; the GPU probes |
 | Voice | A hermetic LiveKit test in the voice-plane namespace (barge-in, headers, lifecycle events in order); unit tests of the event delivery, serve mode's admission and the node binding |
 | Deploy and ops | The serving profile's rendering and `serving-check` against an engine that differs; the release tool's prepare, switch, switch-back and rollback on stand-in hosts; the units, install scripts and listener audit; the alert rules under promtool |
 | E2 | The report, its figures and the demo renderer on synthetic points; `make reproduce-e2` and `make figures` rebuild them from the committed records (not in CI) |

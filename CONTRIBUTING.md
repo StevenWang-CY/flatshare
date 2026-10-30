@@ -14,7 +14,7 @@ GPU.
 |---|---|---|
 | `make check` | `make lint` (rustfmt, clippy with warnings as errors, ruff's check and format) and `make test` (every Rust test, the engine variants' build tests against vLLM v0.32.0's source, each Python package's unit tests): CI's `rust` and `python` jobs | The network on first use, to make a sparse vLLM checkout in `~/.cache/flatshare` |
 | `make fmt` | rustfmt and ruff's fixes | |
-| `make test-make-room-ci` | The make-room variant's behavior suite and its trace against the PRs' own patches, on vLLM's real scheduler with CPU torch: CI's `make-room` job | Linux x86-64, for the environment `python/flatshare_vllm/requirements-cpu.txt` pins (uv builds it in `build/cpu-env`) |
+| `make test-make-room-ci` | The make-room variant's behavior suite and its trace against the pull requests' own patches, on vLLM's real scheduler with CPU torch: CI's `make-room` job | Linux x86-64, for the environment `python/flatshare_vllm/requirements-cpu.txt` pins (uv builds it in `build/cpu-env`) |
 | `make test-make-room TORCH_PYTHON=PY`, `make test-trace TORCH_PYTHON=PY` | The same two suites with an interpreter of your own | An absolute path to a Python with CPU torch 2.13 and vLLM 0.32.0's Python dependencies |
 | `make perf-make-room TORCH_PYTHON=PY` | The change's cost per scheduler step against the tracked baseline, measured on peacock | The same interpreter; on another machine, measure its own baseline first ([how](python/flatshare_vllm/README.md#upkeep-the-changes-cost-and-its-fit-upstream)) |
 | `make compat-upstream` | Whether #63350 and #63351 still merge into vLLM's main, whether make-room's backport is still their heads but for the adaptations its patches' headers name, and how its patches fit vLLM's newest release, hunk by hunk | The network and git 2.38 or newer |
@@ -34,9 +34,9 @@ What CI does not run:
 
 ## Changes
 
-- **The scheduler change.** Its source is the two pull requests proposed to vLLM, #63350 and #63351; make-room's
-  patches are rewritten from their branches ([one source](python/flatshare_vllm/README.md#one-source-for-the-change)).
-  A change to the rules belongs on those pull requests, or in an issue here first.
+- **The change.** Its source is the two pull requests proposed to vLLM, #63350 and #63351; make-room's patches are
+  rewritten from their branches ([one source](python/flatshare_vllm/README.md#one-source-for-the-change)). A change to
+  the rules belongs on those pull requests, or in an issue here first.
 - **Records.** A record in `benchmarks/results` is frozen once a release carries it, and is still being written until
   then. A new measurement gets a dated directory of its own, with a README that says what ran, on which revision, and
   the command that recomputes its tables. After release only two parts of a record change: its `report/`, which that
