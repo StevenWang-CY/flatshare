@@ -220,7 +220,7 @@ pub(crate) fn write_limit(json: &mut Vec<u8>, route: Route, limit: u64) {
 /// The tests: each route's limit read as vLLM reads it, the cap at the lower of the two, each route's own fields
 /// written; every field twice, every value that is not a count, `n` and `best_of` over `max_choices` and under 1
 /// refused; a cap in the rewrite equal byte for byte to the cap of the rewritten body, and degrade's over a class's
-/// keeping the lower; the fixture of 285 cases current.
+/// keeping the lower; the fixture of 380 cases current.
 #[cfg(test)]
 mod tests {
     use super::*;
