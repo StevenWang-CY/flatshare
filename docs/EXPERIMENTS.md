@@ -43,7 +43,7 @@ Each result in [BENCHMARKS.md](BENCHMARKS.md) names the campaign that measured i
 ## E2: voice under agent load
 
 **A point** is one run of an arm file ([`benchmarks/e2`](../benchmarks/e2/README.md)):
-- **Voice.** Two callers (`flatshare-voice bots`) call the voice agent through LiveKit, 25 turns each, with scripted lines of known end times and a barge-in on a quarter of the turns: 50 turns a point. V2V runs from the end of the caller's speech to the agent's first audio, read from waveforms on one clock, with fixed endpointing.
+- **Voice.** Two callers (`flatshare-voice bots`) call the voice agent through LiveKit, 25 turns each, with scripted lines of known end times and a barge-in on 9 of the 50 measured turns, each turn's chance a quarter of the turns: 50 turns a point. V2V runs from the end of the caller's speech to the agent's first audio, read from waveforms on one clock, with fixed endpointing.
 - **Agents.** AIPerf replays the SemiAnalysis Claude Code traces closed-loop through the gateway as background requests, block-scaled 32× so that every request fits the 32k context, with their subagents and think times capped at 120 s.
 - **Scenarios.**
   - The standard scenario replays the whole corpus at 8, 16 and 24 agent sessions.

@@ -41,7 +41,7 @@ The numbers come from the frozen box ([`deploy/phastform`](../deploy/phastform))
 
 1. In the earlier probe, a remote NUMA node cost at most 1% of pinned bandwidth.
 
-The two start rows are W0's (2026-10-22). On the build of 2026-10-25 (v0.3-295) the engine started in 88.8 s on warm caches and 531.8 s on empty ones, and a restart of all three servers took 102.7 s ([the drills](#failure-drills)).
+The two start rows are W0's (2026-10-22). On W8's build of 2026-10-25 the engine started in 88.8 s on warm caches and 531.8 s on empty ones, and on v0.3-295 a restart of all three servers took 102.7 s ([the drills](#failure-drills)).
 
 <a id="tier-cost-model-resuming-an-agent-turn-e0"></a>
 
@@ -286,7 +286,7 @@ The reply's tail falls until the window covers the reply, 3.8 s at 16 tokens to 
 
 **Provenance:** E2, in every campaign from W2 (2026-10-22) to RG (2026-10-28).
 
-Each point: two callers (`flatshare-voice bots`, 25 turns each, a barge-in on a quarter of the turns) through LiveKit to the stock voice agent, beside the AIPerf replay of the 32× Claude Code corpus at a number of agent sessions, through `flatshare-gateway` ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) has the arms, [`benchmarks/e2`](../benchmarks/e2) the arm files and campaigns). V2V is read from waveforms at the callers, with fixed endpointing. The agents' token rate is the prompt and completion tokens per second of the agent requests that completed during the calls. The realtime first byte is the gateway's, exact from its request log. A turn the agent did not answer within the callers' 30 s reply timeout counts as a V2V sample censored at 30,000 ms; ≥ marks a percentile it sets, and a configuration with failed turns is not placed on the frontier.
+Each point: two callers (`flatshare-voice bots`, 25 turns each, a barge-in on 9 of the 50 measured turns) through LiveKit to the stock voice agent, beside the AIPerf replay of the 32× Claude Code corpus at a number of agent sessions, through `flatshare-gateway` ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load) has the arms, [`benchmarks/e2`](../benchmarks/e2) the arm files and campaigns). V2V is read from waveforms at the callers, with fixed endpointing. The agents' token rate is the prompt and completion tokens per second of the agent requests that completed during the calls. The realtime first byte is the gateway's, exact from its request log. A turn the agent did not answer within the callers' 30 s reply timeout counts as a V2V sample censored at 30,000 ms; ≥ marks a percentile it sets, and a configuration with failed turns is not placed on the frontier.
 
 The voice SLO is V2V p95 at most 250 ms above voice alone: 1,744 ms alone in W2's batch, so 1,994 ms for W2's tables, which are one run per point. With 50 turns a point, a p95 lies between the third- and fourth-largest turn, so single runs differ by a few hundred milliseconds at p95. W4 repeats the discriminating scenario and measures voice alone four more times, on the W3 build (with W2's run, a median of 1,767 ms, so an SLO of 2,017 ms), [in History](#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4).
 
