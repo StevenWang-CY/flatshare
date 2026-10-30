@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# probes.sh BLOCK [--cap TOKENS]: one of the A100 run's probe blocks (docs/HARDWARE.md, the core block by block) on this
-# host, the GPU node rendered at ~/flatshare/node (FLATSHARE_NODE_DIR another): engine-level runs on one engine
+# probes.sh BLOCK [--cap TOKENS]: one of the A100 run's probe blocks (docs/BENCHMARKS.md, the core block by block) on
+# this host, the GPU node rendered at ~/flatshare/node (FLATSHARE_NODE_DIR another): engine-level runs on one engine
 # configuration at a time, E0's cells (flatshare-bench tiers), make-room's KV and prefill cases (probe.py) and the
 # calls' tail beside agents (tail.py with whole 40-token replies, at the box's KV pressure for the pool). Each run
 # writes ~/flatshare/runs/a100/blockN/NAME: a .txt of the probe's output, renamed from .partial once the probe has

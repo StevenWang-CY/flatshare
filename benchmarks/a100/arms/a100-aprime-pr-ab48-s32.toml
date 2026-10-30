@@ -1,4 +1,4 @@
-# The A100 run's optional arm 5, A' (docs/HARDWARE.md, the optional arms): the PRs' values at the box's pool with 32
+# The A100 run's optional arm 5, A' (docs/BENCHMARKS.md, the optional arms): the PRs' values at the box's pool with 32
 # sessions in place of 24, where the forecast puts the A100 closest to the box's regime (a running share of 18% against
 # the box's 17%, benchmarks/a100/forecast.md). Otherwise w5-disc-pr-ab48-s24.toml, as the core runs it; the calibration
 # (block 5) checks the session count before A' runs.

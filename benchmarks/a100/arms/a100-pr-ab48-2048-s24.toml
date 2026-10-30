@@ -1,4 +1,4 @@
-# The A100 run's optional arm 8, the PRs' values at the A100's best stock step cap (docs/HARDWARE.md, the optional
+# The A100 run's optional arm 8, the PRs' values at the A100's best stock step cap (docs/BENCHMARKS.md, the optional
 # arms): the PRs' 48-token configuration on vLLM's default chunking, 2,048/0, tuned vLLM's step cap (arm 6), so that it
 # pairs with tuned vLLM on the same samples of the agents, as the core pairs the PRs' values with the box's 512/256.
 # Otherwise w5-disc-pr-ab48-s24.toml.

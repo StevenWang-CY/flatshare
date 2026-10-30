@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cprime.sh [--sessions N] [--rounds N] [--cap TOKENS]: the A100 run's optional arm 1, C' (docs/HARDWARE.md, the
+# cprime.sh [--sessions N] [--rounds N] [--cap TOKENS]: the A100 run's optional arm 1, C' (docs/BENCHMARKS.md, the
 # optional arms), on this host after the core: Qwen3-14B-FP8 at the card's own pool
 # (deploy/profiles/a100-40gb-qwen3-14b.toml, rendered into ~/flatshare/node-14b), at N sessions (40, the forecast's
 # largest running share for it), in N rounds (3) of tuned stock against the PRs' values, the first with the 14B's own

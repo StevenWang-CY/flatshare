@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # calibration.sh [--sessions N] [--seed S]: one of flatshare-sim's calibration points on this host (block 5 of the A100
-# run, docs/HARDWARE.md, the core block by block; the box's are W2's, crates/flatshare-sim/README.md): on a freshly
+# run, docs/BENCHMARKS.md, the core block by block; the box's are W2's, crates/flatshare-sim/README.md): on a freshly
 # started frozen engine, AIPerf's agentic_replay of the whole 32x corpus (~/flatshare/data/weka-x32) straight to the
 # engine at N sessions (16), 600 s plus 60 s of grace, a 120 s think cap, seed S (11), burst starts, with the engine's
 # /metrics before and after. The engine serves on its socket only and AIPerf speaks TCP only, so AIPerf reaches it

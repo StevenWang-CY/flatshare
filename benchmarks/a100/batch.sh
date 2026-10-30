@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# batch.sh [--rounds N]: the A100 run's optional arm 4 (docs/HARDWARE.md, the optional arms, P-1's slot S-7), on this
+# batch.sh [--rounds N]: the A100 run's optional arm 4 (docs/BENCHMARKS.md, the optional arms, P-1's slot S-7), on this
 # host: the scheduler's cost at a datacenter batch. vllm bench serve keeps 256 requests in flight on the core's engine,
 # 26 of them (10%) at priority 0 and 230 at priority 2 (two clients side by side, each its requests' priority in
 # --extra-body), N rounds (20) of each client's concurrency, on three engines in turn: frozen (stock vLLM 0.32.0),

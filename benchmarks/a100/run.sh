@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run.sh [--until HH:MM] [--cap TOKENS] [--estimate BLOCK=MINUTES]... [BLOCK...]: the A100 run on this host
-# (docs/HARDWARE.md, the core block by block), block by block. A block is complete when it ends, a block done before is
-# skipped, so that a rerun resumes and a stop anywhere leaves whole comparisons; without BLOCK it runs the core, 0 to
+# (docs/BENCHMARKS.md, the core block by block), block by block. A block is complete when it ends, a block done before
+# is skipped, so that a rerun resumes and a stop anywhere leaves whole comparisons; without BLOCK it runs the core, 0 to
 # 10, in order. Started from an SSH session, it outlives the session:
 #   nohup setsid bash ~/flatshare/src/benchmarks/a100/run.sh >>~/flatshare/runs/a100/run.log 2>&1 </dev/null &
 # The core:
@@ -12,7 +12,7 @@
 #   5     the calibration point (calibration.sh, 16 sessions)
 #   6-9   E2 rounds 2 to 5
 #   10    the GPU units stopped; the records stay for deploy/a100/pull.sh
-# The optional arms (docs/HARDWARE.md, the optional arms), by name, in its order: cprime (cprime.sh), branches
+# The optional arms (docs/BENCHMARKS.md, the optional arms), by name, in its order: cprime (cprime.sh), branches
 # (branches.sh run, once branches.sh stage has built the two envs), resubmit (the stock engine behind the gateway's
 # preempt-resubmit, seeds 13 to 15), batch (batch.sh), aprime (the box's pool at 32 sessions, two rounds), tuned (the
 # stock engine at the A100's best step cap in the probes, 2,048/0, on the samples of the core's rounds 1 and 2),
@@ -61,7 +61,7 @@ if [[ -n $until ]]; then
   ((deadline > now)) || deadline=$((deadline + 86400))
 fi
 
-# docs/HARDWARE.md's estimates, in minutes, for --until (block 0 assumes staging did not warm the caches), or the last
+# docs/BENCHMARKS.md's estimates, in minutes, for --until (block 0 assumes staging did not warm the caches), or the last
 # --estimate given for the block.
 minutes() {
   local pair given=""

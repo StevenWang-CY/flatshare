@@ -1,8 +1,8 @@
-# The Marlin dry run's E2 point (docs/HARDWARE.md, the Marlin dry run, session 2; benchmarks/a100/marlin-dry.campaign):
-# W5's w5-disc-pr-ab48-s24.toml, the PRs' values on make-room at 24 sessions of weka-x32-long, with the FP8 checkpoint
-# through Marlin (W8A16, --linear-backend marlin) as vLLM 0.32.0 runs it on the A100, on the box's own card. It tests
-# the A100's code path end to end; the box's magnitudes on Marlin are not the A100's (its BF16 rate is 47.4 TFLOPS with
-# FP32 accumulation).
+# The Marlin dry run's E2 point (docs/BENCHMARKS.md, the Marlin dry run, session 2;
+# benchmarks/a100/marlin-dry.campaign): W5's w5-disc-pr-ab48-s24.toml, the PRs' values on make-room at 24 sessions of
+# weka-x32-long, with the FP8 checkpoint through Marlin (W8A16, --linear-backend marlin) as vLLM 0.32.0 runs it on the
+# A100, on the box's own card. It tests the A100's code path end to end; the box's magnitudes on Marlin are not the
+# A100's (its BF16 rate is 47.4 TFLOPS with FP32 accumulation).
 arm = "9-pr-ab48"
 label = "vLLM PRs A and B with a 48-token window, the linear layers on Marlin, a warm-up turn opening each call"
 
