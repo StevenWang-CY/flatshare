@@ -40,7 +40,9 @@ import re
 import stat
 import subprocess
 import sys
+from collections import Counter
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 
 PROC = Path(os.environ.get("FLATSHARE_AUDIT_PROC", "/proc"))
@@ -281,38 +283,87 @@ def listeners(*options: str) -> list[tuple[str, str, list[str]]]:
     return found
 
 
-def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="audit-listeners", description=__doc__.split("\n\n")[0])
-    parser.add_argument(
-        "--expect", action="append", default=[], metavar="SOCKET", help="a socket that must listen"
-    )
-    expected = parser.parse_args(argv).expect
-    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-    # ss lists the audit's own namespace: anywhere but the host's it would judge another namespace's listeners.
+@dataclass
+class Counts:
+    """What the audit accepted, by where it found it: its summary line's numbers."""
+
+    ours: Counter[str] = field(default_factory=Counter)
+    """Our units' file sockets (unix) and TCP or UDP listeners (tcp), each judged."""
+    voice: Counter[str] = field(default_factory=Counter)
+    """The voice plane's in the host's network namespace (FLATSHARE_VOICENET=host): udp, tcp and unix."""
+    degraded: Counter[str] = field(default_factory=Counter)
+    """The GPU servers' in the host's network namespace (FLATSHARE_PRIVATE_NET=host): tcp and abstract."""
+    isolated: Counter[str] = field(default_factory=Counter)
+    """Those in our units' network namespaces of their own: inet and abstract."""
+    namespaced: set[str] = field(default_factory=set)
+    """The units with processes in network namespaces of their own."""
+
+    def __add__(self, other: Counts) -> Counts:
+        return Counts(
+            self.ours + other.ours,
+            self.voice + other.voice,
+            self.degraded + other.degraded,
+            self.isolated + other.isolated,
+            self.namespaced | other.namespaced,
+        )
+
+
+def host_namespace() -> tuple[str, str]:
+    """The host's network namespace, and why the audit cannot run here (empty when it can): ss lists the audit's own
+    namespace, so anywhere but the host's it would judge another namespace's listeners."""
     try:
         host, here = host_netns(), netns("self")
     except Unreadable as err:
-        print(f"audit-listeners: cannot read the network namespaces: {err}", file=sys.stderr)
-        return 2
+        return "", f"cannot read the network namespaces: {err}"
     if not host or host != here:
-        print(
-            f"audit-listeners: run it in the host's network namespace ({host}, the user manager's): this one is "
-            f"{here}",
-            file=sys.stderr,
+        return "", (
+            f"run it in the host's network namespace ({host}, the user manager's): this one is "
+            f"{here}"
         )
-        return 2
-    problems = []
-    socket_dir = Path(runtime, "flatshare")
-    if socket_dir.exists():
-        mode = stat.S_IMODE(socket_dir.stat().st_mode)
-        if mode != 0o700 or socket_dir.stat().st_uid != os.getuid():
-            problems.append(
-                f"{socket_dir} is mode {mode:o}, owned by uid {socket_dir.stat().st_uid}: it must be 0700 and ours"
-            )
+    return host, ""
 
-    ours = {"tcp": 0, "unix": 0}
-    voice = {"udp": 0, "tcp": 0, "unix": 0}
-    degraded = {"tcp": 0, "abstract": 0}
+
+def check_socket_dir(runtime: str) -> list[str]:
+    """$XDG_RUNTIME_DIR/flatshare must be 0700 and ours."""
+    socket_dir = Path(runtime, "flatshare")
+    if not socket_dir.exists():
+        return []
+    mode = stat.S_IMODE(socket_dir.stat().st_mode)
+    if mode != 0o700 or socket_dir.stat().st_uid != os.getuid():
+        return [
+            f"{socket_dir} is mode {mode:o}, owned by uid {socket_dir.stat().st_uid}: it must be 0700 and ours"
+        ]
+    return []
+
+
+def judge_inet(
+    unit: str, kind: str, address: str, pids: list[str], its: list[str], counts: Counts
+) -> str | None:
+    """Counts one TCP or UDP listener of ``unit`` (its processes ``its`` among the holders ``pids``), and returns
+    its problem, or None where it may listen."""
+    if in_host_namespace(unit, its) and (kind == "udp" or LOOPBACK.match(address)):
+        counts.voice["udp" if kind == "udp" else "tcp"] += 1
+        return None
+    if (
+        marked_private(unit, its)
+        and kind == "tcp"
+        and LOOPBACK.match(address)
+        and ephemeral(address)
+    ):
+        counts.degraded["tcp"] += 1
+        return None
+    counts.ours["tcp"] += 1
+    sglang = unit == "flatshare-engine.service" and any(map(is_sglang, pids))
+    if address in ALLOWED.get(unit, ()) or (sglang and LOOPBACK.match(address)):
+        return None
+    return f"{unit} listens on {kind} {address}"
+
+
+def check_inet() -> tuple[list[str], Counts]:
+    """Our units' TCP and UDP listeners (ss -lntup), each where ALLOWED says, and each allowed address held by its
+    unit alone."""
+    problems: list[str] = []
+    counts = Counts()
     held: dict[str, set[str]] = {}
     for kind, address, pids in listeners("-lntup"):
         by_unit = units_of(pids)
@@ -323,48 +374,43 @@ def main(argv: list[str]) -> int:
             units |= {unit for unit, allowed in ALLOWED.items() if address in allowed}
         held.setdefault(address, set()).update(units)
         for unit in sorted(units):
-            if in_host_namespace(unit, by_unit.get(unit, [])) and (
-                kind == "udp" or LOOPBACK.match(address)
-            ):
-                voice["udp" if kind == "udp" else "tcp"] += 1
-                continue
-            if (
-                marked_private(unit, by_unit.get(unit, []))
-                and kind == "tcp"
-                and LOOPBACK.match(address)
-                and ephemeral(address)
-            ):
-                degraded["tcp"] += 1
-                continue
-            ours["tcp"] += 1
-            sglang = unit == "flatshare-engine.service" and any(map(is_sglang, pids))
-            if address in ALLOWED.get(unit, ()) or (sglang and LOOPBACK.match(address)):
-                continue
-            problems.append(f"{unit} listens on {kind} {address}")
+            if problem := judge_inet(unit, kind, address, pids, by_unit.get(unit, []), counts):
+                problems.append(problem)
     for unit, addresses in ALLOWED.items():
         for address in addresses:
             if address in held and unit not in held[address]:
                 problems.append(
                     f"{address} is held by a process that is not {unit}'s: another user's?"
                 )
+    return problems, counts
 
-    unix_paths = set()
+
+def check_unix(runtime: str) -> tuple[list[str], Counts, set[str]]:
+    """Our units' Unix sockets (ss -lxp), each under ``runtime``, and every path that listens."""
+    problems: list[str] = []
+    counts = Counts()
+    paths = set()
     for _kind, path, pids in listeners("-lxp"):
-        unix_paths.add(path)
+        paths.add(path)
         for unit, its in sorted(units_of(pids).items()):
             if in_host_namespace(unit, its) and not path.startswith("@"):
                 # Its file sockets are reached through the file system, as from its own namespace; an abstract one
                 # would be any user's here.
-                voice["unix"] += 1
+                counts.voice["unix"] += 1
                 continue
             if marked_private(unit, its) and path.startswith(CUDA_ABSTRACT):
-                degraded["abstract"] += 1
+                counts.degraded["abstract"] += 1
                 continue
-            ours["unix"] += 1
+            counts.ours["unix"] += 1
             if not path.startswith(f"{runtime}/"):
                 where = "an abstract socket" if path.startswith("@") else "a socket"
                 problems.append(f"{unit} listens on {where} outside {runtime}: {path}")
-    # Our units' processes in a network namespace other than the host's (the voice plane's aside, as above).
+    return problems, counts, paths
+
+
+def namespaced(host: str) -> tuple[dict[str, list[tuple[str, str]]], list[str]]:
+    """Our units' processes in a network namespace other than the host's, the voice plane's aside, by namespace; and
+    those whose namespace cannot be read."""
     spaces: dict[str, list[tuple[str, str]]] = {}
     unreadable = []
     for pid, unit in our_processes().items():
@@ -375,9 +421,18 @@ def main(argv: list[str]) -> int:
             continue
         if space and space != host and unit not in VOICE:
             spaces.setdefault(space, []).append((pid, unit))
-    if unreadable:
-        problems.append(f"cannot read the network namespace of {', '.join(unreadable)}")
-    isolated = {"inet": 0, "abstract": 0}
+    return spaces, unreadable
+
+
+def check_namespaces(host: str, runtime: str) -> tuple[list[str], Counts, set[str]]:
+    """Our units' listeners in namespaces of their own, from the namespaces' tables: file sockets judged as the
+    host's, the others counted; and the paths that listen there."""
+    spaces, unreadable = namespaced(host)
+    problems = (
+        [f"cannot read the network namespace of {', '.join(unreadable)}"] if unreadable else []
+    )
+    counts = Counts()
+    paths: set[str] = set()
     for _space, members in sorted(spaces.items()):
         holders: dict[str, set[str]] = {}
         for pid, unit in members:
@@ -388,21 +443,22 @@ def main(argv: list[str]) -> int:
             if not units:
                 continue  # none of ours holds it
             if kind == "inet" or address.startswith("@"):
-                isolated["abstract" if kind == "unix" else "inet"] += 1
+                counts.isolated["abstract" if kind == "unix" else "inet"] += 1
                 continue
-            unix_paths.add(address)
+            paths.add(address)
             for unit in sorted(units):
-                ours["unix"] += 1
+                counts.ours["unix"] += 1
                 if not address.startswith(f"{runtime}/"):
                     problems.append(f"{unit} listens on a socket outside {runtime}: {address}")
-    for path in expected:
-        if path not in unix_paths:
-            problems.append(f"nothing listens on {path}")
+    counts.namespaced = {
+        unit.removesuffix(".service") for members in spaces.values() for _, unit in members
+    }
+    return problems, counts, paths
 
-    for problem in problems:
-        print(f"audit-listeners: {problem}", file=sys.stderr)
-    if problems:
-        return 1
+
+def summary(counts: Counts, runtime: str) -> str:
+    """The audit's line when it finds no problem."""
+    voice, degraded, isolated = counts.voice, counts.degraded, counts.isolated
     plane = ""
     if any(voice.values()):
         plane = (
@@ -411,23 +467,44 @@ def main(argv: list[str]) -> int:
             f"and {voice['unix']} file socket{'s' if voice['unix'] != 1 else ''}"
         )
     own = ""
-    if spaces:
-        units = sorted(
-            {unit.removesuffix(".service") for members in spaces.values() for _, unit in members}
-        )
+    if counts.namespaced:
         own = (
-            f"; {', '.join(units)} in network namespaces of their own, with {isolated['inet']} TCP or UDP "
-            f"listeners and {isolated['abstract']} abstract sockets there"
+            f"; {', '.join(sorted(counts.namespaced))} in network namespaces of their own, with {isolated['inet']} "
+            f"TCP or UDP listeners and {isolated['abstract']} abstract sockets there"
         )
     if any(degraded.values()):
         own += (
             "; the GPU servers run in the host's network namespace (FLATSHARE_PRIVATE_NET=host) with "
             f"{degraded['tcp']} loopback TCP listeners and {degraded['abstract']} abstract sockets"
         )
-    print(
-        f"audit-listeners: ok: the box's units hold {ours['unix']} Unix sockets, all in {runtime}, "
-        f"and {ours['tcp']} TCP or UDP listeners, all allowed{own}{plane}"
+    return (
+        f"audit-listeners: ok: the box's units hold {counts.ours['unix']} Unix sockets, all in {runtime}, "
+        f"and {counts.ours['tcp']} TCP or UDP listeners, all allowed{own}{plane}"
     )
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="audit-listeners", description=__doc__.split("\n\n")[0])
+    parser.add_argument(
+        "--expect", action="append", default=[], metavar="SOCKET", help="a socket that must listen"
+    )
+    expected = parser.parse_args(argv).expect
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    host, misplaced = host_namespace()
+    if misplaced:
+        print(f"audit-listeners: {misplaced}", file=sys.stderr)
+        return 2
+    problems = check_socket_dir(runtime)
+    inet, inet_counts = check_inet()
+    unix, unix_counts, paths = check_unix(runtime)
+    spaces, space_counts, space_paths = check_namespaces(host, runtime)
+    missing = [f"nothing listens on {path}" for path in expected if path not in paths | space_paths]
+    problems += inet + unix + spaces + missing
+    for problem in problems:
+        print(f"audit-listeners: {problem}", file=sys.stderr)
+    if problems:
+        return 1
+    print(summary(inet_counts + unix_counts + space_counts, runtime))
     return 0
 
 
