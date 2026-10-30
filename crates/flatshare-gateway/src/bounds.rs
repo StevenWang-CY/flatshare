@@ -4,9 +4,10 @@
 //!
 //! vLLM 0.32's request models allow fields they do not know, and each route reads its own limit: Chat Completions
 //! `max_completion_tokens` and, when that is null or absent, its deprecated `max_tokens`; Completions `max_tokens`
-//! alone, 16 when absent and no limit when null; the Responses API `max_output_tokens` alone. A field of another route
-//! is extra, and ignored. A capped body is therefore rewritten to its route's own fields: Chat Completions gets both of
-//! its fields at the same value, Completions `max_tokens` and Responses `max_output_tokens`, each the lower of the
+//! alone, 16 when absent and no limit when null; the Responses API `max_output_tokens` alone; and the Messages API
+//! `max_tokens`, which it requires, as the chat request it makes of the body (count_tokens reads none). A field of
+//! another route is extra, and ignored. A capped body is therefore rewritten to its route's own fields: Chat Completions gets both of
+//! its fields at the same value, Completions and Messages `max_tokens` and Responses `max_output_tokens`, each the lower of the
 //! client's limit and the cap, and the fields the route does not read are removed. Python's `json` keeps the last of
 //! a key given twice, which the gateway's own parse would not, so a body that sets one of these fields twice is
 //! refused, as is a value that is not null or a whole number (vLLM's pydantic models would read `"64"` or `64.0` as a
@@ -68,7 +69,13 @@ impl Asked {
                 Limit::Count(count) => Some(count),
             },
             Route::Responses => output.count(),
-            Route::Models | Route::Events | Route::Sessions | Route::Session | Route::Other => None,
+            Route::Messages => tokens.count(),
+            Route::CountTokens
+            | Route::Models
+            | Route::Events
+            | Route::Sessions
+            | Route::Session
+            | Route::Other => None,
         }
     }
 
@@ -197,7 +204,13 @@ pub(crate) fn write_limit(json: &mut Vec<u8>, route: Route, limit: u64) {
         Route::ChatCompletions => &["max_completion_tokens", "max_tokens"],
         Route::Completions => &["max_tokens"],
         Route::Responses => &["max_output_tokens"],
-        Route::Models | Route::Events | Route::Sessions | Route::Session | Route::Other => &[],
+        Route::Messages => &["max_tokens"],
+        Route::CountTokens
+        | Route::Models
+        | Route::Events
+        | Route::Sessions
+        | Route::Session
+        | Route::Other => &[],
     };
     for field in fields {
         write!(json, "\"{field}\":{limit},").expect("writing to a Vec cannot fail");
@@ -447,6 +460,10 @@ mod tests {
             ),
             (Route::Completions, r#""model":"qwen","prompt":"hi""#),
             (Route::Responses, r#""model":"qwen","input":"hi""#),
+            (
+                Route::Messages,
+                r#""model":"qwen","messages":[{"role":"user","content":"hi"}]"#,
+            ),
         ];
         let mut inputs = Vec::new();
         for (route, content) in routes {

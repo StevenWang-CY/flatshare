@@ -9,6 +9,7 @@ mod drain;
 mod events;
 mod intake;
 mod lifecycle;
+mod messages;
 mod metrics;
 mod nodes;
 mod proxy;

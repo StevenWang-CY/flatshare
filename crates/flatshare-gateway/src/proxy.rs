@@ -83,7 +83,7 @@ impl Target {
     }
 }
 
-/// `POST /v1/chat/completions`, `/v1/completions` and `/v1/responses`.
+/// `POST /v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages` and `/v1/messages/count_tokens`.
 pub(crate) async fn inference(app: App, route: Route, request: Request) -> Response {
     let shared = &app.shared;
     let mut ex = Exchange::new(&shared.metrics, route);

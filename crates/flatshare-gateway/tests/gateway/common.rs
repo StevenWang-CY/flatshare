@@ -246,6 +246,8 @@ impl Mock {
             .route("/v1/chat/completions", post(answer))
             .route("/v1/completions", post(answer))
             .route("/v1/responses", post(answer))
+            .route("/v1/messages", post(answer))
+            .route("/v1/messages/count_tokens", post(answer))
             .route("/v1/models", get(models))
             .route(
                 "/metrics",

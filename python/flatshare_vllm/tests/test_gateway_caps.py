@@ -2,7 +2,8 @@
 of the gateway's fixture (crates/flatshare-gateway/tests/fixtures/reply-caps.json, which the gateway's own tests keep
 equal to what it does) is parsed by vLLM's request model for its route, and the reply limit and the choices it would
 schedule are derived as its serving layer derives them (vllm/entrypoints/openai/*/serving.py: get_max_tokens over the
-route's own field, then to_sampling_params, or to_beam_search_params under beam search).
+route's own field, then to_sampling_params, or to_beam_search_params under beam search). A Messages body is read by
+vLLM's AnthropicMessagesRequest, which requires max_tokens, and scheduled as the chat request vLLM makes of it.
 
 A body the gateway forwards under a cap must be scheduled with the limit the gateway wrote, never more than the cap, and
 with no more choices than max_choices; one it forwards without a cap must mean to vLLM what the client's did. A body it
@@ -22,6 +23,7 @@ import pytest
 chat = pytest.importorskip("vllm.entrypoints.openai.chat_completion.protocol")
 completion = pytest.importorskip("vllm.entrypoints.openai.completion.protocol")
 responses = pytest.importorskip("vllm.entrypoints.openai.responses.protocol")
+anthropic = pytest.importorskip("vllm.entrypoints.anthropic.protocol")
 api_utils = pytest.importorskip("vllm.entrypoints.serve.utils.api_utils")
 exceptions = pytest.importorskip("vllm.exceptions")
 
@@ -41,6 +43,7 @@ MODELS = {
     "/v1/chat/completions": chat.ChatCompletionRequest,
     "/v1/completions": completion.CompletionRequest,
     "/v1/responses": responses.ResponsesRequest,
+    "/v1/messages": anthropic.AnthropicMessagesRequest,
 }
 # A context longer than every limit in the fixture, and a short prompt: a body without a limit runs to the context.
 MAX_MODEL_LEN = 32768
@@ -58,6 +61,16 @@ def scheduled(route: str, body: str) -> tuple[int, int]:
     pydantic's validation, so a key given twice is its last value. Raises one of REFUSED where vLLM refuses the
     body."""
     request = MODELS[route].model_validate(json.loads(body))
+    if route == "/v1/messages":
+        # vLLM serves a Messages body as the chat request it makes of it, with both limits at its max_tokens
+        # (vllm/entrypoints/anthropic/serving.py, to_chat_completion_request).
+        chat_body = {
+            "model": request.model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": request.max_tokens,
+            "max_completion_tokens": request.max_tokens,
+        }
+        return scheduled("/v1/chat/completions", json.dumps(chat_body))
     if route == "/v1/chat/completions":
         asked = (
             request.max_completion_tokens

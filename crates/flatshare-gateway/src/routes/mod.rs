@@ -41,6 +41,8 @@ pub(crate) fn router(app: App) -> Router {
         .route("/v1/chat/completions", inference(Route::ChatCompletions))
         .route("/v1/completions", inference(Route::Completions))
         .route("/v1/responses", inference(Route::Responses))
+        .route("/v1/messages", inference(Route::Messages))
+        .route("/v1/messages/count_tokens", inference(Route::CountTokens))
         .route(
             "/v1/models",
             get(|State(app): State<App>, request: Request| proxy::models(app, request)),
