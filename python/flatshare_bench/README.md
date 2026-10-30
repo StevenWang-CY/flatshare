@@ -17,11 +17,23 @@ points.
 | `flatshare-bench tiers` | `tiers.py` | E0: time to first token from the GPU pool, the CPU tier and recompute, verified per sample by vLLM's prefix-cache counters; optional background load |
 | `flatshare-bench voice-turn` | `voice_turn.py` | One server-side voice turn timed per stage (STT, LLM first sentence, TTS first audio); optional background load |
 | `flatshare-bench kv-metrics` | `kv_metrics.py` | KV block lifecycle histograms compared across a run |
-| `flatshare-bench e2` | `e2/` (`arm.py`, `run.py`, `engine.py`, `cyan.py`, `tools.py`, `record.py`, `report.py`, `figures.py`) | E2 points: one measured from its arm file on cyan (`run`, with the engine check, cyan's units and the tools' processes), the frontier across points (`report`), and their compact records (`export`) |
-| `flatshare-bench drill` | `drills.py` | The client side of the failure drills (`ops/drills`): streams through the gateway while the engine dies or the gateway reloads, restarts or dies, the probe of both planes from the event's moment on (every attempt kept, each on a new connection), the engine's running requests sampled and stamped meanwhile, and the summary (`streams`, `report`); the CPU tier filled past its capacity (`cpu-tier`); a server's start timed from its journal (`start`) |
-| `flatshare-bench soak` | `soak/` (`run.py`, `scrape.py`, `guard.py`, `summary.py`, `command.py`) | The production path for hours on cyan: arriving calls against the serving worker, AIPerf's replay, the service's own counts every minute, a guard on the GPUs, every attempt kept (`run`); its summary per hour and overall (`report`) and its compact record (`export`) |
+| `flatshare-bench e2` | `e2/` (`arm.py`, `run.py`, `engine.py`, `cyan.py`, `tools.py`, `record.py`, `report.py`, `figures.py`) | E2 points: one measured from its arm file on cyan (`run`), the frontier across points (`report`), and their compact records (`export`) (note 1) |
+| `flatshare-bench drill` | `drills.py` | The client side of the failure drills (`ops/drills`): `streams`, `report`, `cpu-tier` and `start` (note 2) |
+| `flatshare-bench soak` | `soak/` (`run.py`, `scrape.py`, `guard.py`, `summary.py`, `command.py`) | The production path for hours on cyan (`run`), its summary per hour and overall (`report`) and its compact record (`export`) (note 3) |
 | background load | `load.py` | `prefill:<tokens>x<n>` (cold prefills) or `decode:<tokens>x<n>` (long decodes) beside a probe |
 | `python -m flatshare_bench.quick_start` | `quick_start.py` | The README's quick-start result from the probe's logs, printed or written between its markers (`--write README.md`) |
+
+1. `e2 run` measures a point with the engine check, cyan's units and the tools' processes
+   ([E2 points](#e2-points)).
+2. The drill's subcommands:
+   - `streams`, `report`: streams through the gateway while the engine dies or the gateway reloads,
+     restarts or dies, the probe of both planes from the event's moment on (every attempt kept, each
+     on a new connection), the engine's running requests sampled and stamped meanwhile, and the
+     summary;
+   - `cpu-tier`: the CPU tier filled past its capacity;
+   - `start`: a server's start timed from its journal.
+3. `soak run`: arriving calls against the serving worker, AIPerf's replay, the service's own counts
+   every minute, a guard on the GPUs, every attempt kept ([Soaks](#soaks)).
 
 Python 3.12. AIPerf, pinned to `aiperf==0.13.0`, is the `aiperf` extra, which the `test` extra
 includes: `flatshare-bench e2 run` and the plugins need it, a report does not, so `make reproduce-e2` syncs
@@ -114,7 +126,7 @@ when it loads the file:
 | Variable | Default |
 |---|---|
 | `FLATSHARE_BENCH_URL` | `http://127.0.0.1:8000/v1/chat/completions` |
-| `FLATSHARE_BENCH_API_KEY` | empty: no `Authorization` header. Through `flatshare-gateway`, a tenant's key. Only a trusted tenant's `X-Session-ID` and `X-Flatshare-Class` are honored, so a replay that keeps its sessions and classes uses the `agents` key |
+| `FLATSHARE_BENCH_API_KEY` | empty: no `Authorization` header. Through `flatshare-gateway`, a tenant's key (note 1) |
 | `FLATSHARE_BENCH_DATA` | `data/weka-x32` (a `scale-traces` output directory) |
 | `FLATSHARE_BENCH_MODEL`, `FLATSHARE_BENCH_TOKENIZER` | `Qwen/Qwen3-4B-Instruct-2507-FP8` |
 | `FLATSHARE_BENCH_SESSIONS` | 16 live agent sessions |
@@ -126,20 +138,25 @@ when it loads the file:
 | `FLATSHARE_BENCH_RAW` | `false`; `true` also exports every request with its headers and payload |
 | `FLATSHARE_BENCH_SEED` | 11 |
 
-Source `configs/aiperf.env` first. It turns AIPerf's dataset cache on, keeps the session-id
-override off, and raises the dataset timeouts that the full corpus (about 300 s to load and
-17-22 GB of RAM) exceeds. AIPerf takes these settings only from the environment. The cache keeps
-the memory-mapped dataset a run builds, under `~/.cache/aiperf/dataset_mmap`, for any later run
-with the same corpus bytes, tokenizer, seed and dataset settings on the same AIPerf build, so the
-points of an E2 round, which replay one corpus with one seed, build their dataset once: on
-peacock the 48 long traces' dataset took 138 to 165 s to build and 5 s to load, byte for byte the
-same. AIPerf 0.13.0 caches only its own trace types. The plugin adds `weka_trace_scaled`, and
-keeps its datasets in a directory named by a hash of its own code and version
-(`flatshare-<hash>`), which AIPerf's key does not cover, so a changed loader never loads a
-dataset an older one built (`aiperf_plugin.cache_datasets`). As for AIPerf's own trace types, a
-run then writes no `inputs.json`, which took 124 MB of each point's directory for the long
-traces. Nothing evicts an entry, 0.14 GB for the long traces and 0.33 GB for the whole corpus:
-delete the directory to reclaim them (the cache once filled a host's disk).
+1. Only a trusted tenant's `X-Session-ID` and `X-Flatshare-Class` are honored, so a replay that keeps its
+   sessions and classes uses the `agents` key.
+
+Source `configs/aiperf.env` first. It turns AIPerf's dataset cache on, keeps the session-id override
+off, and raises the dataset timeouts that the full corpus (about 300 s to load and 17-22 GB of RAM)
+exceeds. AIPerf takes these settings only from the environment. The dataset cache:
+
+- **Reuse.** The cache keeps the memory-mapped dataset a run builds, under
+  `~/.cache/aiperf/dataset_mmap`, for any later run with the same corpus bytes, tokenizer, seed and
+  dataset settings on the same AIPerf build. So the points of an E2 round, which replay one corpus
+  with one seed, build their dataset once: on peacock the 48 long traces' dataset took 138 to 165 s
+  to build and 5 s to load, byte for byte the same.
+- **The plugin's loader.** AIPerf 0.13.0 caches only its own trace types. The plugin adds
+  `weka_trace_scaled`, and keeps its datasets in a directory named by a hash of its own code and
+  version (`flatshare-<hash>`), which AIPerf's key does not cover, so a changed loader never loads a
+  dataset an older one built (`aiperf_plugin.cache_datasets`). As for AIPerf's own trace types, a
+  run then writes no `inputs.json`, which took 124 MB of each point's directory for the long traces.
+- **Its size.** Nothing evicts an entry, 0.14 GB for the long traces and 0.33 GB for the whole
+  corpus: delete the directory to reclaim them (the cache once filled a host's disk).
 
 Things to know:
 
@@ -224,14 +241,26 @@ flatshare-bench e2 export ~/flatshare/runs/e2/w2b/* --out benchmarks/results/202
 flatshare-bench e2 reset                     # cyan's units as gateway.toml and the worker's defaults have them
 ```
 
-**The GPU node.** A point measures on one GPU node, `--node NODE`, which `run.json` names (`node`) beside the node's deployed revision (`versions.gpu_source`; `--gpu-source`, when given, must name the node): by default the host's own, cyan's Phastform, reached as cyan's settings and units have it (`phastform-engine.sock`, the worker's `phastform-stt.sock` and `phastform-tts.sock`), with nothing changed. On another node, `gray` say, the point reaches that node through its tunnel's sockets on cyan, `gray-engine.sock`, `gray-stt.sock` and `gray-tts.sock` (`flatshare-tunnel@gray`, which it starts when it is not running, and which stays up after): it reads the engine there, runs the gateway with its `upstream` at the node's engine socket, and gives the voice worker a generated drop-in (`variant-e2-node.conf`) with the node's speech sockets, and its engine's where the worker's LLM bypasses the gateway; `run.json` keeps the tunnel and the sockets (`tunnel`), and `flatshare-bench e2 reset` removes the drop-in and puts the gateway back on `gateway.toml`. An arm with its own `router` or `[gateway] upstream`, which reach Phastform's engine, and a `gateway.toml` with `[[nodes]]`, whose placement would route the point's requests itself, are refused on another node before anything starts. A single host measures its own node alone: its settings name its engine and its node (`node = "localhost"`, as `campaign.sh --local` calls it).
+**The GPU node.** A point measures on one GPU node, `--node NODE`, which `run.json` names (`node`) beside the node's deployed revision (`versions.gpu_source`; `--gpu-source`, when given, must name the node):
+
+- **By default**, the host's own: cyan's Phastform, reached as cyan's settings and units have it (`phastform-engine.sock`, the worker's `phastform-stt.sock` and `phastform-tts.sock`), with nothing changed.
+- **On another node**, `gray` say, the point reaches that node through its tunnel's sockets on cyan, `gray-engine.sock`, `gray-stt.sock` and `gray-tts.sock` (`flatshare-tunnel@gray`, which it starts when it is not running, and which stays up after). It reads the engine there, runs the gateway with its `upstream` at the node's engine socket, and gives the voice worker a generated drop-in (`variant-e2-node.conf`) with the node's speech sockets, and its engine's where the worker's LLM bypasses the gateway. `run.json` keeps the tunnel and the sockets (`tunnel`), and `flatshare-bench e2 reset` removes the drop-in and puts the gateway back on `gateway.toml`.
+- **Refused on another node** before anything starts: an arm with its own `router` or `[gateway] upstream`, which reach Phastform's engine, and a `gateway.toml` with `[[nodes]]`, whose placement would route the point's requests itself.
+- **A single host** measures its own node alone: its settings name its engine and its node (`node = "localhost"`, as `campaign.sh --local` calls it).
 
 A point runs in this order:
-1. **The engine.** Its `/server_info` (on vLLM it needs the development mode of the measurement drop-in, `deploy/phastform/variant.sh measure on`, which a campaign runs) gives the server, its version, the KV pool and its settings. They must be those of the engine's command line as `variant.sh use` makes it, or the point fails before anything starts and names the `variant.sh use` command that fixes it: on vLLM what the GPU node's `engine.yaml` sets by its hardware profile ([`deploy/profiles`](../../deploy/profiles); the frozen box's unless `--profile NAME` or the host's settings name another): the policy, the step cap and the long-prefill threshold, the model, its revision and the context; then the flags of the command the variant's `flatshare-engine.conf` starts, then the arm's `[engine]` flags, the last of a repeated flag winning. vLLM's settings are its cache, scheduler and kernel configuration's (`--linear-backend` among them) and its model's, by its Hugging Face id where offline mode reports its path in the cache. On vLLM the scheduler class (`scheduler_cls`) must be the one `--scheduler-cls` names, vLLM's own without it, and `additional_config` exactly what the `--additional-config.KEY` flags build (make-room's switches), so that a frozen, make-room or pr54530 engine, or make-room with another switch, cannot pass for another. A flag whose setting the engine does not report is recorded as unchecked.
+1. **The engine.** Its `/server_info` (on vLLM it needs the development mode of the measurement drop-in, `deploy/phastform/variant.sh measure on`, which a campaign runs) gives the server, its version, the KV pool and its settings. They must be those of the engine's command line as `variant.sh use` makes it, or the point fails before anything starts and names the `variant.sh use` command that fixes it:
+   - **The command line**, on vLLM: what the GPU node's `engine.yaml` sets by its hardware profile ([`deploy/profiles`](../../deploy/profiles); the frozen box's unless `--profile NAME` or the host's settings name another): the policy, the step cap and the long-prefill threshold, the model, its revision and the context; then the flags of the command the variant's `flatshare-engine.conf` starts, then the arm's `[engine]` flags, the last of a repeated flag winning.
+   - **vLLM's settings** are its cache, scheduler and kernel configuration's (`--linear-backend` among them) and its model's, by its Hugging Face id where offline mode reports its path in the cache.
+   - **The scheduler.** On vLLM the scheduler class (`scheduler_cls`) must be the one `--scheduler-cls` names, vLLM's own without it, and `additional_config` exactly what the `--additional-config.KEY` flags build (make-room's switches), so that a frozen, make-room or pr54530 engine, or make-room with another switch, cannot pass for another.
+   - **Unchecked flags.** A flag whose setting the engine does not report is recorded as unchecked.
 2. **cyan's units.** SMG runs only for `router = "smg"`. Every point runs the gateway on `~/.config/flatshare/gateway-e2.toml` (mode 600) through the `e2-gateway` drop-in: `gateway.toml` with the gateway's inference canary off (`[canary] enabled = false`) and the arm's `[gateway]` table merged in. The canary would send an idle engine one-token completions, beside the point's requests and in the engine's counters that the point reads, and it holds a restarted gateway's `/ready` until one succeeds; the recorded campaigns ran without it, and `flatshare-bench e2 reset` puts the gateway back on `gateway.toml`, the canary with it. The voice worker's preemptive generation is switched with the `no-preemptive-generation` drop-in, and its lifecycle events with `no-events`. Only a unit whose configuration changes restarts, and the worker must register again within 90 s. The worker must end turns with fixed endpointing (`vad-turns`), or nothing runs.
 3. **A cold start.** The engine's prefix cache, and vLLM's CPU tier, are emptied.
 4. **The replay.** With agent sessions, AIPerf starts on cores 16–23, asking for the engine's model (the profile's, or the arm's `--model`), and the calls wait for its profiling phase plus the warm-up.
-5. **The window.** The gateway's and the engine's `/metrics` are saved, `flatshare-voice bots` runs in the voice-plane namespace on cores 24–31, and they are saved again. The calls are the window every metric covers; AIPerf must outlast them. A point without calls (`[voice] callers = 0`, the agents alone on a card that serves none) runs no callers: its window is `[agents] window_s` from the first snapshot (355 s by default, the median length of a two-caller point's calls over W5's 60 such points, 336 to 476 s), and it keeps no worker journal. Through them an agent point samples the engine's `/metrics` every 0.5 s for its KV use and its running and waiting requests (`metrics/engine-kv.csv`), on one connection, kept alive for the window and opened again only after a failed request (through cyan's tunnel a new connection is a new SSH session on the GPU node); `--kv-sample-s SECONDS` sets another interval and 0 samples nothing, as W5's points ran (the sampler came after them). With `--save-audio`, a run option rather than the arm's, the callers also save each call's audio for the demo video (`flatshare-voice bots --save-audio`), which measures nothing differently: they write it once their calls have ended, and the window and the second `/metrics` end with the calls, at the callers' summary, not with their exit.
+5. **The window.** The gateway's and the engine's `/metrics` are saved, `flatshare-voice bots` runs in the voice-plane namespace on cores 24–31, and they are saved again. The calls are the window every metric covers; AIPerf must outlast them.
+   - **A point without calls** (`[voice] callers = 0`, the agents alone on a card that serves none) runs no callers: its window is `[agents] window_s` from the first snapshot (355 s by default, the median length of a two-caller point's calls over W5's 60 such points, 336 to 476 s), and it keeps no worker journal.
+   - **The KV sampler.** Through the calls an agent point samples the engine's `/metrics` every 0.5 s for its KV use and its running and waiting requests (`metrics/engine-kv.csv`), on one connection, kept alive for the window and opened again only after a failed request (through cyan's tunnel a new connection is a new SSH session on the GPU node). `--kv-sample-s SECONDS` sets another interval and 0 samples nothing, as W5's points ran (the sampler came after them).
+   - **Saved audio.** With `--save-audio`, a run option rather than the arm's, the callers also save each call's audio for the demo video (`flatshare-voice bots --save-audio`), which measures nothing differently: they write it once their calls have ended, and the window and the second `/metrics` end with the calls, at the callers' summary, not with their exit.
 6. **The end.** AIPerf gets SIGINT, cancels its requests and writes its exports. The gateway's request lines for the window go to `gateway.jsonl`, and the voice worker's journal from the start of the calls to `voice-worker.log`, once every call's session has logged its end (at most 30 s). Then `summary.json` is written.
 
 **The host's settings.** cyan's addresses, cores and the GPU node's profile are `flatshare-bench`'s defaults. Another control host, a single host running every part, sets them in `~/.config/flatshare/e2-host.toml`, strings keyed by `Host`'s fields in `e2/cyan.py`: `gateway_url`, `gateway_socket`, `engine_url` (each an address: `http://host:port`, or `unix:` and a socket's path), `aiperf_cores`, `caller_cores`, `profile` and `preflight`, whose not-ok checks each point's `run.json` keeps (`deploy/a100/host.py config` writes them from the profile's core plan, [`docs/HARDWARE.md`](../../docs/HARDWARE.md#single-host-mode)); any other key is an error.
@@ -246,7 +275,7 @@ A point runs in this order:
 | `[voice] callers`, `turns` | 2, 25 | Concurrent calls, and turns per call; `callers = 0` is a point without calls, the agents alone over `[agents] window_s`, which needs agent sessions |
 | `[voice] barge_in` | 0.25 | Share of turns on which the caller interrupts the reply |
 | `[voice] seed` | 0 | The callers' seed |
-| `[voice] warmup_turns` | 0 | Turns that open each call before its `turns`, played but not measured (`flatshare-voice bots --warmup-turns`): marked `"warmup": true` in `bots/turns.jsonl`, they are in no V2V sample, and the worker's lines for them, each session's first, are in no stage |
+| `[voice] warmup_turns` | 0 | Turns that open each call before its `turns`, played but not measured (`flatshare-voice bots --warmup-turns`) (note 1) |
 | `[voice] preemptive_generation` | `true` | LiveKit's preemptive generation in the voice worker (`FLATSHARE_PREEMPTIVE_GENERATION`) |
 | `[voice] events` | `true` | The voice worker's lifecycle events to the gateway (`FLATSHARE_EVENTS`); `false` measures a point without them |
 | `[agents] sessions` | 0 | Agent sessions AIPerf keeps live, through the gateway as the `agents` tenant with `FLATSHARE_GATEWAY_AGENTS_KEY` from `~/.config/flatshare/gateway-keys.env`; 0 is voice alone |
@@ -254,46 +283,86 @@ A point runs in this order:
 | `[agents] warmup` | 60 | Seconds of profiling before the calls start |
 | `[agents] data` | `"weka-x32"` | The corpus, a `scale-traces` directory under `~/flatshare/data` |
 | `[agents] seed` | 11 | AIPerf's seed, which a campaign's `agents-seed` line replaces for its points (`flatshare-bench e2 run --agents-seed`) |
-| `[agents] window_s` | 355 | A point without calls: its window in seconds, after the warm-up (`AGENTS_WINDOW_S`, the median length of W5's two-caller points' calls). A point with calls takes none (an error), and its `run.json` names none |
-| `[gateway]` | none | Merged into `gateway.toml` as it is, over the canary's `enabled = false`, tables key by key: `upstream`, `upstream_priority`, `[gateway.admission]` and any other key of [`flatshare-gateway`'s configuration](../../crates/flatshare-gateway/README.md). `[gateway.nodes]` and `[gateway.placement]`, for points on several GPU nodes, are refused: those points are on the `two-node` branch |
+| `[agents] window_s` | 355 | A point without calls: its window in seconds, after the warm-up (note 2) |
+| `[gateway]` | none | Merged into `gateway.toml` as it is, over the canary's `enabled = false`, tables key by key (note 3) |
 | `[engine] variant` | `"frozen"` | A directory of [`deploy/phastform/variants`](../../deploy/phastform/variants/README.md), or `frozen` |
 | `[engine] flags` | `[]` | Engine flags, each a plain word, added to its command line |
+
+1. Marked `"warmup": true` in `bots/turns.jsonl`, warm-up turns are in no V2V sample, and the worker's lines for them, each session's first, are in no stage.
+2. 355 s is `AGENTS_WINDOW_S`, the median length of W5's two-caller points' calls. A point with calls takes none (an error), and its `run.json` names none.
+3. Its keys: `upstream`, `upstream_priority`, `[gateway.admission]` and any other key of [`flatshare-gateway`'s configuration](../../crates/flatshare-gateway/README.md). `[gateway.nodes]` and `[gateway.placement]`, for points on several GPU nodes, are refused: those points are on the `two-node` branch.
 
 **The run directory.**
 
 | File | Contents |
 |---|---|
 | `arm.toml` | The arm file as run |
-| `run.json` | `status` (`running`, then `complete`, or `failed` with the `error`); the host; `node`, the GPU node the point measured on, and on another node than the host's own its `tunnel` (the unit, whether the point started it, the sockets); start and end; the arm as read; `profile`, the hardware profile the engine check held the engine to; `save_audio`, the run option; `agents_seed`, the seed AIPerf replayed with (the campaign's `--agents-seed`, else the arm file's; null for voice alone); `kv_sample_s`, the KV sampler's interval (null for voice alone or `--kv-sample-s 0`); versions (cyan's deployed commit from `~/flatshare/src/DEPLOYED`, the GPU node's beside it as `gpu_source` (by node, from `--gpu-source NODE=REVISION`, which `campaign.sh` reads from the node's own `DEPLOYED` as the point starts; null when nothing named it), `flatshare-bench`, AIPerf, `flatshare-gateway`); the engine (server, version, KV pool, flags checked and unchecked); what cyan ran (which units restarted, the gateway's configuration without key digests); the window; AIPerf's exit status |
+| `run.json` | The point's `status`, the host and node, its times, the arm, its options, the versions, the engine, what cyan ran, the window (note 1) |
 | `run.log` | Each step, timestamped |
 | `engine.json` | The engine's whole configuration from `/server_info`, without credentials |
 | `aiperf.log`, `aiperf/` | AIPerf's output and artifacts: `profile_export.jsonl` holds one record per request |
 | `bots.log`, `bots/` | The callers' output and run directory (`turns.jsonl`, `summary.json`, and with `--save-audio` each call's `call-<i>.wav` and `call-<i>.json`) |
-| `metrics/` | `gateway-start.prom`, `gateway-end.prom`, `engine-start.prom`, `engine-end.prom`. An agent point's `engine-kv.csv`: a line per sample of the engine's `/metrics` every 0.5 s through the calls, its time, `vllm:kv_cache_usage_perc`, and the running and waiting requests |
-| `gateway.jsonl` | The gateway's request lines for the window (`journalctl --user -u flatshare-gateway --since --until`, the JSON lines whose message is `request`): class, status, outcome, `first_byte_ms`, `total_ms`, `admission_wait_ms` and tokens. The first bytes come from them: a gateway that logs text (`log_format` other than `"json"`) logs none, and the point fails when it is summarized |
-| `voice-worker.log` | The voice worker's journal from the start of the calls: a line per turn with its stage times, a line per session at its end with its lifecycle-event counts ([`flatshare-voice`](../flatshare_voice/README.md#lifecycle-events-and-turn-lines)) |
-| `gpu.csv` | Written by `campaign.sh`, not by `e2 run`: the GPU node's `nvidia-smi` samples, once a second while the point ran (timestamps in UTC, SM and memory clocks, temperature, power, clock event reasons and, since 2026-10-25, the GPU's name) |
+| `metrics/` | `gateway-start.prom`, `gateway-end.prom`, `engine-start.prom`, `engine-end.prom`. An agent point's `engine-kv.csv` (note 2) |
+| `gateway.jsonl` | The gateway's request lines for the window: class, status, outcome, `first_byte_ms`, `total_ms`, `admission_wait_ms` and tokens (note 3) |
+| `voice-worker.log` | The voice worker's journal from the start of the calls (note 4) |
+| `gpu.csv` | Written by `campaign.sh`, not by `e2 run`: the GPU node's `nvidia-smi` samples, once a second while the point ran (note 5) |
 | `summary.json` | The point's E2 metrics |
 
-A component that fails fails the point: `run.json` keeps `failed` and the error, and a tool's error gives its exit status and the last lines of its log. AIPerf and the callers run in process groups of their own and are stopped through them, with SIGINT and then SIGKILL for whatever is left, also when the point fails or `flatshare-bench e2 run` gets SIGINT or SIGTERM. Closing the SSH session that started it does not stop a point. A complete point is never overwritten; an incomplete one is moved aside to `DIR.incomplete-<UTC time>`, and a directory that holds anything else is refused. One `e2 run` or `e2 reset` runs at a time; the lock file, `~/flatshare/runs/.flatshare-bench-e2.lock`, holds its pid. Every process a tool starts carries the run's mark in its environment, under its root (`~/flatshare`), and a point's start kills what a run under the same root left, never the tools of a run under another, such as a test session's beside another's.
+1. `run.json` holds:
+   - `status`: `running`, then `complete`, or `failed` with the `error`;
+   - the host; `node`, the GPU node the point measured on, and on another node than the host's own its `tunnel` (the unit, whether the point started it, the sockets);
+   - start and end; the arm as read;
+   - `profile`, the hardware profile the engine check held the engine to; `save_audio`, the run option;
+   - `agents_seed`, the seed AIPerf replayed with (the campaign's `--agents-seed`, else the arm file's; null for voice alone);
+   - `kv_sample_s`, the KV sampler's interval (null for voice alone or `--kv-sample-s 0`);
+   - versions: cyan's deployed commit from `~/flatshare/src/DEPLOYED`, the GPU node's beside it as `gpu_source` (by node, from `--gpu-source NODE=REVISION`, which `campaign.sh` reads from the node's own `DEPLOYED` as the point starts; null when nothing named it), `flatshare-bench`, AIPerf, `flatshare-gateway`;
+   - the engine: server, version, KV pool, flags checked and unchecked;
+   - what cyan ran: which units restarted, the gateway's configuration without key digests;
+   - the window; AIPerf's exit status.
+2. `engine-kv.csv` has a line per sample of the engine's `/metrics` every 0.5 s through the calls: its time, `vllm:kv_cache_usage_perc`, and the running and waiting requests.
+3. The lines come from `journalctl --user -u flatshare-gateway --since --until`, the JSON lines whose message is `request`. The first bytes come from them: a gateway that logs text (`log_format` other than `"json"`) logs none, and the point fails when it is summarized.
+4. A line per turn with its stage times, a line per session at its end with its lifecycle-event counts ([`flatshare-voice`](../flatshare_voice/README.md#lifecycle-events-and-turn-lines)).
+5. Timestamps in UTC, SM and memory clocks, temperature, power, clock event reasons and, since 2026-10-25, the GPU's name.
+
+**Failures and stops.** A component that fails fails the point: `run.json` keeps `failed` and the error, and a tool's error gives its exit status and the last lines of its log.
+
+- **Stopping.** AIPerf and the callers run in process groups of their own and are stopped through them, with SIGINT and then SIGKILL for whatever is left, also when the point fails or `flatshare-bench e2 run` gets SIGINT or SIGTERM. Closing the SSH session that started it does not stop a point.
+- **An existing directory.** A complete point is never overwritten; an incomplete one is moved aside to `DIR.incomplete-<UTC time>`, and a directory that holds anything else is refused.
+- **One at a time.** One `e2 run` or `e2 reset` runs at a time; the lock file, `~/flatshare/runs/.flatshare-bench-e2.lock`, holds its pid.
+- **Leftovers.** Every process a tool starts carries the run's mark in its environment, under its root (`~/flatshare`), and a point's start kills what a run under the same root left, never the tools of a run under another, such as a test session's beside another's.
 
 **`summary.json`.** Every metric covers the calls. A metric the gateway or the engine does not export is null, never zero, and a counter that went down (its process restarted during the calls) fails the point.
 
-| Key | Contents |
-|---|---|
-| `window_s` | Length of the calls |
-| `voice` | From the callers: turns, errors, `v2v_ms` and `barge_in_to_silence_ms` (n, p50, p95, p99) and barge-ins; null for a point without calls, whose `worker` is null too |
-| `worker` | Null without the worker's lines. From `voice-worker.log`: `sessions` that logged their end, `turns` (without each session's first `[voice] warmup_turns` turn lines, its replies to the warm-up turns), the `waterfall` (each stage of the turn lines: `transcript_ms`, `end_of_turn_ms`, `llm_ttft_ms`, `llm_first_sentence_ms`, `turn_to_first_sentence_ms`, `tts_first_audio_ms`, `e2e_ms`, with n, mean, p10, p50, p90, p95, p99) and the lifecycle `events` its sessions sent, dropped and failed to deliver (null when it sent none: `events = false`, or the LLM bypassed the gateway) |
-| `background` | Null for voice alone. From AIPerf's records of the agent requests that ended during the calls: requests, errors (failed and cancelled requests count as lost), requests/s, prompt, completion and total tokens/s from the server's usage counts, `ttft_ms`, and `itl_ms`, AIPerf's inter-token latency per request (the time after its first token over the tokens after it, for requests of two tokens or more), the step time a decoding agent sees; and the same goodput over the calls' first 240 s (`GOODPUT_WINDOW_S`), the same span for every point, where the calls' own length differs by configuration (`fixed_window`: its `seconds`, fewer for calls that lasted less, `requests`, `requests_per_s` and `tokens_per_s`) |
-| `gateway` | `realtime_first_byte_ms` and `background_first_byte_ms` (n, mean, p50, p95, p99): exact, from `gateway.jsonl` (`"source": "log"`); what its admission point shed, refused and resubmitted, and the prompt tokens of the attempts it dropped; `background_tokens_per_s`, its own count from response usage; and every counter that moved |
-| `engine` | vLLM's preemptions; its prompt tokens by source at their first scheduling (local compute, GPU-pool and CPU-tier hits; vLLM 0.32 counts none at a preempted request's resume); queue-limit rejections; and the CPU tier's own loads into the GPU pool and stores from it, every one of them, in bytes (`kv_offload_load_bytes`, `kv_offload_store_bytes`, from `vllm:kv_offload_load_bytes_total` and `vllm:kv_offload_store_bytes_total`) |
-| `kv` | Null for voice alone. From `metrics/engine-kv.csv` and the pool in `engine.json`: the `samples` in the calls, the `running_share`, the share of them in which the KV that running requests hold left less than two calls' KV free (2,048 tokens, flatshare-sim's realtime tier: the measured counterpart of its `realtime_blocked_share`; vLLM counts a cached block whose requests are gone as free), `free_blocks` (p50, min), and `running` and `waiting` (p50, max) |
-| `gpu` | Only in a compact record (`flatshare-bench e2 export`): from `gpu.csv`, the GPU's median SM clock (`sm_clock_p50_mhz`) and highest temperature (`temperature_max_c`) during the calls, and its `name` where the samples carry it |
+- `window_s`: length of the calls.
+- `voice`: from the callers, turns, errors, `v2v_ms` and `barge_in_to_silence_ms` (n, p50, p95, p99) and barge-ins; null for a point without calls, whose `worker` is null too.
+- `worker`: null without the worker's lines. From `voice-worker.log`:
+  - `sessions` that logged their end;
+  - `turns`, without each session's first `[voice] warmup_turns` turn lines, its replies to the warm-up turns;
+  - the `waterfall`: each stage of the turn lines (`transcript_ms`, `end_of_turn_ms`, `llm_ttft_ms`, `llm_first_sentence_ms`, `turn_to_first_sentence_ms`, `tts_first_audio_ms`, `e2e_ms`), with n, mean, p10, p50, p90, p95, p99;
+  - the lifecycle `events` its sessions sent, dropped and failed to deliver (null when it sent none: `events = false`, or the LLM bypassed the gateway).
+- `background`: null for voice alone. From AIPerf's records of the agent requests that ended during the calls:
+  - requests, errors (failed and cancelled requests count as lost), requests/s, prompt, completion and total tokens/s from the server's usage counts;
+  - `ttft_ms`, and `itl_ms`, AIPerf's inter-token latency per request (the time after its first token over the tokens after it, for requests of two tokens or more), the step time a decoding agent sees;
+  - the same goodput over the calls' first 240 s (`GOODPUT_WINDOW_S`), the same span for every point, where the calls' own length differs by configuration: `fixed_window`, its `seconds` (fewer for calls that lasted less), `requests`, `requests_per_s` and `tokens_per_s`.
+- `gateway`: `realtime_first_byte_ms` and `background_first_byte_ms` (n, mean, p50, p95, p99), exact, from `gateway.jsonl` (`"source": "log"`); what its admission point shed, refused and resubmitted, and the prompt tokens of the attempts it dropped; `background_tokens_per_s`, its own count from response usage; and every counter that moved.
+- `engine`: vLLM's preemptions; its prompt tokens by source at their first scheduling (local compute, GPU-pool and CPU-tier hits; vLLM 0.32 counts none at a preempted request's resume); queue-limit rejections; and the CPU tier's own loads into the GPU pool and stores from it, every one of them, in bytes (`kv_offload_load_bytes`, `kv_offload_store_bytes`, from `vllm:kv_offload_load_bytes_total` and `vllm:kv_offload_store_bytes_total`).
+- `kv`: null for voice alone. From `metrics/engine-kv.csv` and the pool in `engine.json`:
+  - the `samples` in the calls;
+  - the `running_share`, the share of them in which the KV that running requests hold left less than two calls' KV free (2,048 tokens, flatshare-sim's realtime tier: the measured counterpart of its `realtime_blocked_share`; vLLM counts a cached block whose requests are gone as free);
+  - `free_blocks` (p50, min), and `running` and `waiting` (p50, max).
+- `gpu`: only in a compact record (`flatshare-bench e2 export`). From `gpu.csv`, the GPU's median SM clock (`sm_clock_p50_mhz`) and highest temperature (`temperature_max_c`) during the calls, and its `name` where the samples carry it.
 
 The background goodput comes from AIPerf's records rather than from the gateway's request outcomes, whose `completed` counts a response relayed in full whatever its status: it cannot tell a request the engine refused from one it served. The gateway's token rate stays beside it as a check. A node's share, which AIPerf cannot tell apart, counts the gateway's request lines that completed with status 200.
 
-**The report.** `flatshare-bench e2 report RUN_DIR... --out DIR` writes `frontier.csv`, `frontier.md`, a frontier figure per workload and `waterfall.svg`, SVG drawn in the docs' figure style by `figure_style.py`, which embeds a subset of the STIX Two fonts in `fonts/` (fontTools, pinned to 4.67.0, makes the subsets, so the figures come out as the committed bytes). A point's workload is the agents' corpus (`[agents] data`) and the number of callers (`frontier.csv`'s `workload`, such as `weka-x32, 2 callers`), with the GPU and the model where they are not the frozen box's (`weka-x32-long, 2 callers, NVIDIA A100-SXM4-80GB`, as the A100 run's records name it; a record whose samples name no GPU ran on the box) and the warm-up turns that open its calls where the report's points differ in them (`weka-x32, 2 callers, 1 warm-up turn`; a record set has one count, W4's none and W5's one), and points of different workloads are never compared: a point is on its arm's frontier when no other point of the arm and workload harvests at least as much background goodput at a V2V p95 at least as low, and one of the two strictly better. `frontier.md` has a section per workload, which opens with its voice SLO and the name of its figure, with a table per arm in it, ordered by background goodput, where • marks the arm's frontier when the arm has more than one configuration (a lone configuration is its own). Run directories without a complete point are named and left out.
-- **The frontier figures.** `frontier.svg` draws the arm file's own workload (`weka-x32`, 2 callers); another workload's figure is named after its corpus and its callers where they differ (`frontier-weka-x32-long.svg`, `frontier-4-callers.svg`), after its GPU and model off the box (`frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg`), and after its warm-up turns where its name gives them (`frontier-1-warm-up-turn.svg`). A figure gives each configuration a row under its family's heading, in E2's order (stock vLLM, arms 1–5; operator answers, 6; engines, 7; routers, 8; make-room, 9; MPS, 10), named by its label without the clauses its workload gives, and two bars from zero: its voice-to-voice p95, against the voice SLO, and the agents' goodput over the calls, each the median of its runs. The SLO is a dashed rule 250 ms above voice alone (arm 1) with as many callers on the same GPU and model and as many warm-up turns, from whichever corpus, since voice alone replays none; a workload without that point says so. The change's configurations are blue, the one to deploy (`9-pr-ab48`) saturated and the others pale, and every other configuration gray; an open bar is a configuration off its arm's frontier. A configuration past its workload's fence for far outliers (three interquartile ranges above the upper quartile of the V2V p95s) has its bar cut square at the scale's end, its value printed, so that one collapse does not flatten the rest.
+**The report.** `flatshare-bench e2 report RUN_DIR... --out DIR` writes `frontier.csv`, `frontier.md`, a frontier figure per workload and `waterfall.svg`, SVG drawn in the docs' figure style by `figure_style.py`, which embeds a subset of the STIX Two fonts in `fonts/` (fontTools, pinned to 4.67.0, makes the subsets, so the figures come out as the committed bytes). Run directories without a complete point are named and left out.
+- **Workloads.** A point's workload is the agents' corpus (`[agents] data`) and the number of callers (`frontier.csv`'s `workload`, such as `weka-x32, 2 callers`), with the GPU and the model where they are not the frozen box's (`weka-x32-long, 2 callers, NVIDIA A100-SXM4-80GB`, as the A100 run's records name it; a record whose samples name no GPU ran on the box) and the warm-up turns that open its calls where the report's points differ in them (`weka-x32, 2 callers, 1 warm-up turn`; a record set has one count, W4's none and W5's one).
+- **The frontier.** Points of different workloads are never compared: a point is on its arm's frontier when no other point of the arm and workload harvests at least as much background goodput at a V2V p95 at least as low, and one of the two strictly better.
+- **`frontier.md`** has a section per workload, which opens with its voice SLO and the name of its figure, with a table per arm in it, ordered by background goodput, where • marks the arm's frontier when the arm has more than one configuration (a lone configuration is its own).
+- **The frontier figures.** `frontier.svg` draws the arm file's own workload (`weka-x32`, 2 callers); another workload's figure is named after its corpus and its callers where they differ (`frontier-weka-x32-long.svg`, `frontier-4-callers.svg`), after its GPU and model off the box (`frontier-weka-x32-long-nvidia-a100-sxm4-80gb.svg`), and after its warm-up turns where its name gives them (`frontier-1-warm-up-turn.svg`).
+  - A figure gives each configuration a row under its family's heading, in E2's order (stock vLLM, arms 1–5; operator answers, 6; engines, 7; routers, 8; make-room, 9; MPS, 10), named by its label without the clauses its workload gives, and two bars from zero: its voice-to-voice p95, against the voice SLO, and the agents' goodput over the calls, each the median of its runs.
+  - The SLO is a dashed rule 250 ms above voice alone (arm 1) with as many callers on the same GPU and model and as many warm-up turns, from whichever corpus, since voice alone replays none; a workload without that point says so.
+  - The change's configurations are blue, the one to deploy (`9-pr-ab48`) saturated and the others pale, and every other configuration gray; an open bar is a configuration off its arm's frontier.
+  - A configuration past its workload's fence for far outliers (three interquartile ranges above the upper quartile of the V2V p95s) has its bar cut square at the scale's end, its value printed, so that one collapse does not flatten the rest.
 - **Configurations of their own.** Arm 9's ablations and the change's configurations say `arm = 9` in their arm files, as run, but each is a configuration of its own: the report gives each its own arm (`9-no-headroom`, `9-pr-ab48`; `CONFIGURATION_ARMS` in `e2/report.py`), so that none is placed on arm 9's frontier or joined to it. Where their labels name the pull requests by letter (PR A, PRs A and B), the report names them by number, #63350 and #63351, as the docs do (`PR_LABELS`). The records stay as run.
 - **Repeats.** Points measured from the same arm file in several campaigns, under the same point name, are repeats of one configuration. `frontier.md` keeps a row per run, named by its campaign (`frontier.csv`'s `campaign`: the directory that holds the run directory), then gives the configuration's median and range (min–max) of V2V p50/p95/p99, background tokens/s (over the whole calls and over their first 240 s), the agents' TTFT p50 and p99, the realtime first byte p95 and failed turns, with its run count. The frontier places the configuration at its medians, and its figure draws its medians, its run count under its name. A configuration measured once is shown as before.
 - **The goodput over a fixed window.** Beside each point's background goodput over its whole calls, whose length differs by configuration, `frontier.md` gives its goodput over their first 240 s (`frontier.csv`'s `fixed_window_tokens_per_s`, with its `fixed_window_s`), and for a repeated configuration their median and range; † marks one over a point's whole calls, which lasted less. The frontier stays placed by the goodput over the whole calls.
@@ -301,8 +370,16 @@ The background goodput comes from AIPerf's records rather than from the gateway'
 - **Points without calls** (`[voice] callers = 0`) are a workload of their own, the agents alone (`weka-x32, no calls`): their goodput is in the tables and `frontier.csv` beside every other point's, with no V2V, no failed turns (—), no voice SLO, no frontier and no figure, and the voice figure (`--dots`) refuses one. A card's part of an arrangement in the resource gate ([RESOURCE-GATE.md](../../benchmarks/quality/RESOURCE-GATE.md)) is read from them and from the voice points beside them.
 - **The GPU node.** `frontier.csv` gives each run's `node` where a record names one (from v1.6), and `frontier.md` names it beside each run's campaign where the rows ran on more than one node; the runs of one arm file on several nodes, as the resource gate's rounds swap the cards, are repeats of one configuration, at their medians.
 - **The realtime first byte** is exact from the run directory's `gateway.jsonl`, even one fetched after the run (from the journal, for the window in `run.json`), and otherwise the summary's, which took it from the same log; `realtime_first_byte_source` says so (`log`, in every record).
-- **The stage waterfall** (`waterfall.svg`, and its table in `frontier.md`) splits each configuration's voice turn into stages that follow one another, as means over the replies of its runs: endpointing (`end_of_turn_ms`), the reply to its first sentence (`turn_to_first_sentence_ms`) and TTS to first audio (`tts_first_audio_ms`), from the worker's turn lines, then the rest of the callers' V2V, transport and playout (the mean V2V less the three). So a bar is as long as the mean V2V, which it prints at its end; the reply to its first sentence, the LLM's stage, is its one hue among grays, and each run of rows from one workload sits under the workload's name. The table beside it gives the median and p95 of the callers' samples in `bots/turns.jsonl`, and the LLM's own time to first token (`llm_ttft_ms`), from its request: under preemptive generation the request starts at the final transcript, before the end of the turn, so it lies across the first two stages. `--waterfall POINT` (repeatable) draws only those configurations, in that order; by default every one with turn lines.
-- **Columns only some points have** appear when one of the points has them: the worker's stage times (p50 and p95 of each, in a table of their own in `frontier.md`, which counts the points without the worker's turn lines rather than listing them) and event counts; from `gpu.csv` (or a compact record's summary), the GPU's median SM clock and highest temperature during the calls; and under the gateway's lifecycle policy (`policy = "lifecycle"`; `leaseholder` in the records from before the project's rename), from its counters, what the policy did: the background requests it deferred by what held them back when they arrived (`deferred_headroom`, `deferred_critical`) and the realtime replies it capped (`degraded_replies` of `realtime_replies`, `degraded_share`), in a table of their own in `frontier.md`. A mechanism that deferred or capped nothing in a point did not act there. On vLLM, the engine's prompt tokens by source at their first scheduling (`first_schedule_computed_tokens`, `first_schedule_gpu_hit_tokens`, `first_schedule_cpu_hit_tokens`) and the CPU tier's loads and stores of every scheduling, resumes included (`cpu_tier_loaded_tokens`, `cpu_tier_stored_tokens`), in tokens at the bytes of KV a token takes in the engine's pool, its KV cache's bytes over its tokens from the point's `engine.json` (`kv_bytes_per_token`, 147,492 on the frozen box against the model's exact 147,456), in a table of their own in `frontier.md` with what the CPU tier loaded beyond first scheduling: the loads of requests resumed after a preemption, give or take those of requests whose load and first scheduling are not both within the calls.
+- **The stage waterfall** (`waterfall.svg`, and its table in `frontier.md`) splits each configuration's voice turn into stages that follow one another, as means over the replies of its runs: endpointing (`end_of_turn_ms`), the reply to its first sentence (`turn_to_first_sentence_ms`) and TTS to first audio (`tts_first_audio_ms`), from the worker's turn lines, then the rest of the callers' V2V, transport and playout (the mean V2V less the three).
+  - A bar is as long as the mean V2V, which it prints at its end; the reply to its first sentence, the LLM's stage, is its one hue among grays, and each run of rows from one workload sits under the workload's name.
+  - The table beside it gives the median and p95 of the callers' samples in `bots/turns.jsonl`, and the LLM's own time to first token (`llm_ttft_ms`), from its request: under preemptive generation the request starts at the final transcript, before the end of the turn, so it lies across the first two stages.
+  - `--waterfall POINT` (repeatable) draws only those configurations, in that order; by default every one with turn lines.
+- **Columns only some points have** appear when one of the points has them:
+  - the worker's stage times (p50 and p95 of each, in a table of their own in `frontier.md`, which counts the points without the worker's turn lines rather than listing them) and event counts;
+  - from `gpu.csv` (or a compact record's summary), the GPU's median SM clock and highest temperature during the calls;
+  - under the gateway's lifecycle policy (`policy = "lifecycle"`; `leaseholder` in the records from before the project's rename), from its counters, what the policy did: the background requests it deferred by what held them back when they arrived (`deferred_headroom`, `deferred_critical`) and the realtime replies it capped (`degraded_replies` of `realtime_replies`, `degraded_share`), in a table of their own in `frontier.md`. A mechanism that deferred or capped nothing in a point did not act there.
+  - on vLLM, the engine's prompt tokens by source at their first scheduling (`first_schedule_computed_tokens`, `first_schedule_gpu_hit_tokens`, `first_schedule_cpu_hit_tokens`) and the CPU tier's loads and stores of every scheduling, resumes included (`cpu_tier_loaded_tokens`, `cpu_tier_stored_tokens`), in tokens at the bytes of KV a token takes in the engine's pool, its KV cache's bytes over its tokens from the point's `engine.json` (`kv_bytes_per_token`, 147,492 on the frozen box against the model's exact 147,456);
+  - beside them, in a table of their own in `frontier.md`, what the CPU tier loaded beyond first scheduling: the loads of requests resumed after a preemption, give or take those of requests whose load and first scheduling are not both within the calls.
 
 **The compact record.** `flatshare-bench e2 export RUN_DIR... --out DIR` writes each complete point's record into `DIR/CAMPAIGN/POINT`, where its run directory sits in its campaign:
 
@@ -344,32 +421,62 @@ A soak runs in this order:
 |---|---|---|
 | `--hours` | required | The window, at most two weeks |
 | `--slo-reference MS`, `--slo-margin MS` | none, 250 | Voice alone's V2V p95 with the same calls on the same box; the summary counts the replies over it plus the margin |
-| `--calls-per-hour`, `--turns`, `--warmup-turns` | 20, 10, 1 | The calls' Poisson rate, their measured turns, and the unmeasured turns that open each (a serving worker's AEC warm-up ignores an interruption of its first reply) |
+| `--calls-per-hour` | 20 | The calls' Poisson rate |
+| `--turns` | 10 | Each call's measured turns |
+| `--warmup-turns` | 1 | The unmeasured turns that open each call (a serving worker's AEC warm-up ignores an interruption of its first reply) |
 | `--barge-in`, `--caller-seed` | 0.25, 0 | As `bots`' |
-| `--dispatch-timeout`, `--max-open`, `--drain-s` | 15, 8, 600 | How long a caller waits for the agent before the call counts as refused; attempts open at once (one due beyond them is skipped); how long the calls in progress at the window's end may play on |
+| `--dispatch-timeout` | 15 | How long a caller waits for the agent before the call counts as refused |
+| `--max-open` | 8 | Attempts open at once (one due beyond them is skipped) |
+| `--drain-s` | 600 | How long the calls in progress at the window's end may play on |
 | `--agents-sessions`, `--agents-data`, `--agents-seed`, `--think-cap`, `--agents-warmup` | 16, `weka-x32`, 11, 120, 60 | AIPerf's replay as E2's `[agents]` table sets it; 0 sessions is voice alone |
 | `--agents-run-hours` | 0 | Start AIPerf again after this many hours of a run; 0, one run for the window |
 | `--model` | the serving profile's | The model AIPerf asks for |
 | `--scrape-s`, `--guard-s`, `--guard-clear-s` | 60, 60, 300 | The scrapes' and the guard's intervals, and the guard's hold-off before a paused load resumes |
-| `--guard NODE=METHOD` | `ssh` (`local` on a single host) | How a node's GPU and units' journal are read (`deploy/bin/node-report`): `ssh` (the guard key, `~/.ssh/flatshare_guard_ed25519`, at the target `~/.config/flatshare/tunnel-NODE.env` names; `deploy/authorize-guard.sh` lets it run node-report alone), `ssh:TARGET`, `local` or `off` |
+| `--guard NODE=METHOD` | `ssh` (`local` on a single host) | How a node's GPU and units' journal are read (`deploy/bin/node-report`): `ssh`, `ssh:TARGET`, `local` or `off` (note 1) |
 | `--gpu-source NODE=REVISION` | none | A GPU node's deployed revision, which the record keeps |
+
+1. `ssh` uses the guard key, `~/.ssh/flatshare_guard_ed25519`, at the target `~/.config/flatshare/tunnel-NODE.env` names; `deploy/authorize-guard.sh` lets it run node-report alone.
 
 **The soak directory.**
 
 | File | Contents |
 |---|---|
-| `soak.json` | `status` (`running`, then `complete` with `ended_by`: `hours`, `SIGINT` or `SIGTERM`; or `failed` with the `error`), the host, the options, the versions (cyan's `DEPLOYED` and release, `flatshare-bench`, AIPerf, the gateway's binary, the GPU nodes' where given), `serving` (the worker's settings and its status at the start, the serving profile, the gateway's configuration without key digests, the nodes and their guards' methods, the first checks), `window`, `calls_runs` and `agents_runs` (each run's start and end, exit status, how it ended, the callers' counts or AIPerf's own summary, a failed run's log tail), `pauses` (each with its start, end and why), `leftovers_killed` |
+| `soak.json` | `status`, the host, the options, the versions, `serving`, `window`, the runs, `pauses` and `leftovers_killed` (note 1) |
 | `soak.log` | Each step, timestamped, and each hour's line |
-| `events.jsonl` | `window_started`, `window_ended`, each tool's `*_started` and `*_ended`, `guard_taken`, `guard_blind`, `guard_failed`, `guard_clear`, `load_paused`, `load_resumed`, `scrape_failed` and `scrape_answered`, `counter_reset` (a source's counter went down: its process restarted), `unit_changed` |
-| `calls/run-NNN/` | A run of the callers: `attempts.jsonl` (a line an attempt: its outcome, reason, the worker's status as it was made, its turns), `turns.jsonl` (a line a turn, as `bots` writes it, with `run` and `at`), `run.json`, `summary.json`, `arrivals.log` |
+| `events.jsonl` | `window_started`, `window_ended`, each tool's `*_started` and `*_ended`, `guard_taken`, `guard_blind`, `guard_failed`, `guard_clear`, `load_paused`, `load_resumed`, `scrape_failed`, `scrape_answered`, `counter_reset` (a source's counter went down: its process restarted), `unit_changed` |
+| `calls/run-NNN/` | A run of the callers: `attempts.jsonl`, `turns.jsonl`, `run.json`, `summary.json`, `arrivals.log` (note 2) |
 | `agents/run-NNN/` | A run of AIPerf: `aiperf.log` and `aiperf/` (its exports: `profile_export.jsonl` holds one record per request) |
-| `series.jsonl` | A line a scrape: its time and label (`before`, `window`, `after`), the gateway's and each engine's kept series (`soak/scrape.py`'s `GATEWAY_KEPT` and `ENGINE_KEPT`, vLLM's `model_name` label left out), the worker's status, the units' states and each source that failed |
+| `series.jsonl` | A line a scrape: its time and label (`before`, `window`, `after`) and what it read (note 3) |
 | `scrapes/HOUR.gz` | Every scrape whole: each source's text after a line `# soak-scrape AT SOURCE STATUS` (`soak/scrape.py`'s `read_raw` reads them back) |
-| `units.jsonl` | The user managers' journal lines about the flatshare units (`USER_UNIT`), cyan's and each guarded GPU node's (through its `node-report`, named `NODE:UNIT`), a failure's with the unit's own last lines, the tunnels' targets hidden |
+| `units.jsonl` | The user managers' journal lines about the flatshare units (`USER_UNIT`), cyan's and each guarded GPU node's (note 4) |
 | `guard.jsonl` | Every check of a node's GPU: its verdict and processes, each `ours` or `other` and its owner as `self` or `another`, never by name |
 | `summary.json`, `summary.md` | The summary, per hour and overall |
 
-**`summary.json`.** `slo` (the reference, the margin, the threshold), `window` (its start and end, its hours), `overall` and `hours`, each a period: `calls` (`attempted`: accepted, refused and failed; `accepted`, `refused`, `refused_by`, `failed`, `failed_by`, `skipped`, `abandoned`, `ended`: completed, dropped, cut; `refused_share`), `turns` (`measured`, `failed`, `warmup`; `replies`: count, censored, p50, p95, p99, `over_slo` and `over_slo_share`; `heard`: the replies heard to their end, those ended by state, with a pause, with one over 500 ms and its share, the longest pause's percentiles, the concealed share), `gateway` (`realtime_sli` good, valid and their share; `realtime` and `background` offered, admitted, ended, completed, cancelled, failed and by outcome, the background's prompt, completion and total tokens a second over the time the counts span less the pauses; `in_flight`; `upstream_errors`; `error_events`; `engine_state`, scrapes in each state by node; with nodes `nodes`, each one's healthy and covering scrapes, placements and retries, and `placements_refused`), `engines` (by node: preemptions, KV use and running and waiting requests, mean and highest, prompt and generation tokens a second, the prefix cache's hit share, requests finished by reason), `worker` (its calls, mean and highest, and the job requests it refused), `errors`, `restarts` (by unit: started, stopped, failed, exited, restart scheduled, reloaded; counter resets and failed scrapes by source; the tools' runs that ended early), `guard` (checks by verdict, episodes, pauses and paused seconds) and `scrapes`. An attempt belongs to the hour it was due in, a turn to the one it ended in, a counter's increase to the one its later scrape is in; the last hour has what came after the window's end.
+1. `soak.json` holds:
+   - `status`: `running`, then `complete` with `ended_by` (`hours`, `SIGINT` or `SIGTERM`), or `failed` with the `error`;
+   - the host, the options, the versions (cyan's `DEPLOYED` and release, `flatshare-bench`, AIPerf, the gateway's binary, the GPU nodes' where given);
+   - `serving`: the worker's settings and its status at the start, the serving profile, the gateway's configuration without key digests, the nodes and their guards' methods, the first checks;
+   - `window`;
+   - `calls_runs` and `agents_runs`: each run's start and end, exit status, how it ended, the callers' counts or AIPerf's own summary, a failed run's log tail;
+   - `pauses`, each with its start, end and why;
+   - `leftovers_killed`.
+2. `attempts.jsonl` has a line an attempt: its outcome, reason, the worker's status as it was made, its turns. `turns.jsonl` has a line a turn, as `bots` writes it, with `run` and `at`.
+3. What it read: the gateway's and each engine's kept series (`soak/scrape.py`'s `GATEWAY_KEPT` and `ENGINE_KEPT`, vLLM's `model_name` label left out), the worker's status, the units' states and each source that failed.
+4. A guarded node's lines come through its `node-report`, named `NODE:UNIT`. A failure's come with the unit's own last lines, and the tunnels' targets are hidden.
+
+**`summary.json`.** `slo` (the reference, the margin, the threshold), `window` (its start and end, its hours), and `overall` and `hours`, each a period with these keys:
+
+- `calls`: `attempted` (accepted, refused and failed); `accepted`, `refused`, `refused_by`, `failed`, `failed_by`, `skipped`, `abandoned`; `ended` (completed, dropped, cut); `refused_share`.
+- `turns`: `measured`, `failed`, `warmup`; `replies` (count, censored, p50, p95, p99, `over_slo` and `over_slo_share`); `heard` (the replies heard to their end, those ended by state, with a pause, with one over 500 ms and its share, the longest pause's percentiles, the concealed share).
+- `gateway`: `realtime_sli` good, valid and their share; `realtime` and `background` offered, admitted, ended, completed, cancelled, failed and by outcome, the background's prompt, completion and total tokens a second over the time the counts span less the pauses; `in_flight`; `upstream_errors`; `error_events`; `engine_state`, scrapes in each state by node; with nodes `nodes`, each one's healthy and covering scrapes, placements and retries, and `placements_refused`.
+- `engines`, by node: preemptions, KV use and running and waiting requests, mean and highest, prompt and generation tokens a second, the prefix cache's hit share, requests finished by reason.
+- `worker`: its calls, mean and highest, and the job requests it refused.
+- `errors`.
+- `restarts`, by unit: started, stopped, failed, exited, restart scheduled, reloaded; counter resets and failed scrapes by source; the tools' runs that ended early.
+- `guard`: checks by verdict, episodes, pauses and paused seconds.
+- `scrapes`.
+
+An attempt belongs to the hour it was due in, a turn to the one it ended in, a counter's increase to the one its later scrape is in; the last hour has what came after the window's end.
 
 **The compact record** (`soak export`): `soak.json` and the JSON lines with every path under a home directory written from `~`, and the login such a path names written as `USER` wherever else it appears, `turns.csv` (a column a key of the turn lines, the pauses and the receiver's counts as JSON, any other key in `extra`), `series.csv` (a column a kept series, `SOURCE|SERIES`), `guard.csv` (each check's time, node, verdict and other processes), and the summary; no raw scrape, AIPerf export, request log or credential. `soak report` gives the same summary from it as from the directory.
 
