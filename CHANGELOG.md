@@ -5,6 +5,21 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.10](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.10) (2026-10-30): no wall of text left
+
+The paragraphs v1.9 left over 150 words, in the component READMEs, the runbook and the measurement documents, split
+where their ideas change, and a test that holds the limit. No result, number or behaviour changes.
+
+- **No wall of text.** No paragraph or list item of the documents outside the records holds more than 150 words: the
+  67 that did, in 13 files and up to 305 words (the gateway README's), are split where their ideas change or turned
+  into lists and tables, and long table cells move to numbered notes under their tables. Every number, link target
+  and anchor stays, checked file by file on every commit. `test_prose.py` now holds the limit over every Markdown file
+  but the records, the CHANGELOG and the simulator's written forecasts, so a new wall fails CI.
+- **Names and pointers.** The README's and PRODUCTION's headline rows name the configuration to deploy, as GLOSSARY
+  does; ADR-0006 keeps its old title's anchor; and the A100 kit's comments point at BENCHMARKS, where the run's layout,
+  arms, analysis and Marlin dry run moved in v1.9.
+- **The packages** are versioned 1.10.0, and are not published to a package index.
+
 ## [v1.9](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.9) (2026-10-30): the documents made clear and visual, and the Messages API
 
 What a review of v1.8 for clarity, visuals and production parity found, fixed: the documents read at a glance, every

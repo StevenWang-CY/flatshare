@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.9, 30 October 2026. Code, records and figures at tag
-[v1.9](https://github.com/StevenWang-CY/flatshare/tree/v1.9) of
+Flatshare technical report, version 1.10, 30 October 2026. Code, records and figures at tag
+[v1.10](https://github.com/StevenWang-CY/flatshare/tree/v1.10) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -1718,6 +1718,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.10 | 2026-10-30 | Results at a glance and Table 1 with their long cells moved to notes under the tables |
 | 1.9 | 2026-10-30 | Its results at a glance in §1; the step cap, the 24-hour soak and the engine's starts as Figures 15, D2 and D1, and every chart with its phone layout; what a scheduler step costs as a table by situation, with Figure 7's caption cut to its claim; the gateway's cost measured on the deployed build; what lifecycle timing could do and what carries to other hardware, from METHODS, closing §6.5, §6.7 and Appendix E; the long paragraphs split at their ideas; and each rule and configuration under the one name GLOSSARY gives it |
 | 1.8 | 2026-10-29 | What a scheduler step costs in the serving profile's states, make-room's preempting step in one pass, and Figure 7 set against the box's CPU; the abstract with the step cap's confirmation and the two cards' gain, most of it the arrangement's; the method's statement that each gate was fixed before its runs; the code of 25 October named by its date; and the gateway named the control plane the deployment runs |
 | 1.7 | 2026-10-29 | Two cards measured against a resource gate fixed before the runs, the serving profile's 256-token step cap, operating two cards and their 24-hour soak, the endpointing sweep, adaptive prefill control and what is new beside the related work, Table A1's records for them and for the first sentences, §3.3's sentence on those, and the version and tag the report names, which 1.6 left at 1.5. Corrected: §8 on vLLM's open fixes (#40087 preempts for KV too), on `prefill_schedule_interval` and on SGLang's #45686, and §2.3 on what the CPU tier keeps by default; added to §9: the quality gate, the two ways to a larger pool and the next vLLM release, which 1.6 measured and left out |
