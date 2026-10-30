@@ -5,7 +5,8 @@
 # the two rounds of tuned vLLM and the PRs' values at that cap (the core's first two samples). Each group is read
 # against its card's voice alone's SLO, with the agents' throughput as a share of its first row's. The A100 ran the
 # box's own arm files, so each group names the GPU its points ran on. Rows as in W5's figure.toml: `change` marks the
-# rows that run the two PRs' rules, `featured` each group's configuration to deploy, `note` a row's second line.
+# rows that run the two PRs' rules and `featured` each group's configuration to deploy. flatshare_bench.report.data's
+# LABELS labels each row; `note` gives tuned vLLM's row on the A100 the note its card calls for.
 
 [[group]]
 title = "RTX 5060 Ti 16 GB"
@@ -13,18 +14,12 @@ gpu = "RTX 5060 Ti"
 
 [[group.row]]
 point = "w5-disc-frozen-s24"
-label = "Tuned vLLM 0.32"
-note = "the baseline"
 
 [[group.row]]
 point = "w5-disc-a8c-resubmit-s24"
-label = "A router"
-note = "aborts and resubmits"
 
 [[group.row]]
 point = "w5-disc-pr-ab48-s24"
-label = "#63350 and #63351"
-note = "48-token window"
 change = true
 featured = true
 
@@ -34,13 +29,10 @@ gpu = "A100-SXM4-80GB"
 
 [[group.row]]
 point = "w5-disc-frozen-s24"
-label = "Tuned vLLM 0.32"
 note = "for the RTX 5060 Ti"
 
 [[group.row]]
 point = "w5-disc-pr-ab48-s24"
-label = "#63350 and #63351"
-note = "48-token window"
 change = true
 featured = true
 
@@ -50,12 +42,9 @@ gpu = "A100-SXM4-80GB"
 
 [[group.row]]
 point = "a100-tuned-s24"
-label = "Tuned vLLM 0.32"
 note = "the card's best"
 
 [[group.row]]
 point = "a100-pr-ab48-2048-s24"
-label = "#63350 and #63351"
-note = "48-token window"
 change = true
 featured = true

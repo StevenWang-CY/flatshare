@@ -372,7 +372,10 @@ def plot_voice(groups: Sequence[Mapping[str, Any]], path: Path, narrow: Path) ->
     configuration's runs. The title states how near the SLO the configuration to deploy comes. A group is the
     configurations of one GPU (``gpu``); with several, each is headed by its ``title``. The row to
     deploy (``featured``) is the saturated blue, the change's other rows (``change``) pale blue,
-    the rest gray. ``callers`` and ``sessions`` are the groups' workload, which the title names."""
+    the rest gray. ``callers`` and ``sessions`` are the groups' workload, which the title names. A row that
+    figure.toml gives no label takes its point's from the report's label table, and its note too unless the row
+    gives one (:func:`_labelled`)."""
+    groups = _labelled(groups)
     p95_top = max(
         [g["slo"] or 0.0 for g in groups] + [c["v2v_p95_ms"] for g in groups for c, _ in g["rows"]]
     )
@@ -385,6 +388,25 @@ def plot_voice(groups: Sequence[Mapping[str, Any]], path: Path, narrow: Path) ->
         _voice_wide(groups, path, title, description, *tops),
         _voice_narrow(groups, narrow, title, description, *tops),
     ]
+
+
+def _labelled(groups: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The groups with each row's label and note: figure.toml's where it gives them, else the label table's for the
+    row's point (:data:`flatshare_bench.report.data.LABELS`), so that a configuration reads the same in this figure
+    as in every other."""
+    # The report's one label table; the report reads this package, so it is imported where it is used.
+    from flatshare_bench.report.data import label
+
+    found = []
+    for g in groups:
+        rows = []
+        for configuration, spec in g["rows"]:
+            if "label" not in spec:
+                name, note = label(spec["point"])
+                spec = {**spec, "label": name, "note": spec.get("note", note)}
+            rows.append((configuration, spec))
+        found.append({**g, "rows": rows})
+    return found
 
 
 def _bar(spec: Mapping[str, Any]) -> str:
@@ -470,11 +492,22 @@ def _voice_wide(groups, path, title, description, p95_top, tokens_top, ttft_top)
             y += 36
         first = y
         for configuration, spec in g["rows"]:
-            s.text(right, y + 12, spec["label"], size=VALUE, anchor="end")
-            s.text(right, y + 34, _note(configuration, spec), size=NOTE, anchor="end", cls="soft")
+            lines = wrap(spec["label"], right - 24, VALUE)
+            for k, line in enumerate(lines):
+                s.text(right, y + 12 + 22 * k, line, size=VALUE, anchor="end")
+            extra = 22 * (len(lines) - 1)
+            s.text(
+                right,
+                y + 34 + extra,
+                _note(configuration, spec),
+                size=NOTE,
+                anchor="end",
+                cls="soft",
+            )
             bars.append((y, g, configuration, spec))
-            y += pitch
-        spans.append((first, y - pitch + thick + 6, g))
+            last = y
+            y += pitch + extra
+        spans.append((first, last + thick + 6, g))
         y += 10
     bottom = y - 10 + 2
     for (x0, length), marks in ((a, marks_a), (b, marks_b), (c, marks_c)):
@@ -563,8 +596,12 @@ def _voice_narrow(groups, path, title, description, p95_top, tokens_top, ttft_to
                 y += 22
             for configuration, spec in g["rows"]:
                 name = s.text(x0, y + 18, spec["label"], size=VALUE)
-                if spec.get("note"):
-                    s.text(name.x1 + 7, y + 18, spec["note"], size=NOTE, cls="soft")
+                note = spec.get("note", "")
+                if note and name.x1 + 7 + measure(note, NOTE) <= NARROW - 18:
+                    s.text(name.x1 + 7, y + 18, note, size=NOTE, cls="soft")
+                elif note:
+                    y += 22
+                    s.text(x0, y + 18, note, size=NOTE, cls="soft")
                 band = y + 27
                 for mark in marks:
                     s.vrule(

@@ -1717,8 +1717,14 @@ def test_the_voice_figure_draws_the_named_configurations_in_order(tmp_path: Path
     figure_toml.write_text('[[row]]\npoint = "w5-gone"\nlabel = "Gone"\n')
     with pytest.raises(ValueError, match="0 configurations of w5-gone in the report, not 1"):
         write_report(rows, out, dots=read_dots(figure_toml))
+    # A row without a label takes its point's from the report's label table, which names the records' points: one it
+    # does not name is refused by name.
+    figure_toml.write_text('[[row]]\npoint = "w5-frozen"\n')
+    with pytest.raises(ValueError, match="no label for w5-frozen"):
+        write_report(rows, tmp_path / "unlabelled", dots=read_dots(figure_toml))
     for bad, error in (
-        ('[[row]]\npoint = "w5-pr"\n', "a row without a point or a label"),
+        ('[[row]]\nlabel = "PR"\n', "a row without a point"),
+        ('[[row]]\npoint = "w5-pr"\nlabel = 3\n', "whose label is not a string"),
         ('[[row]]\npoint = "w5-pr"\nlabel = "PR"\ncolor = "blue"\n', "keys other than"),
         ('[[row]]\npoint = "w5-pr"\nlabel = "PR"\nchange = "yes"\n', "change is not true or false"),
         ('[[row]]\npoint = "w5-pr"\nlabel = "PR"\nfeatured = true\n', "does not run the change"),

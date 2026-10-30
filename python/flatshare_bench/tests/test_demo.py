@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -24,12 +25,17 @@ from typing import Any
 import numpy as np
 import pytest
 
+from flatshare_bench.report.data import LABELS
+
 DEMO = Path(__file__).resolve().parents[3] / "benchmarks" / "e2" / "demo.py"
 _spec = importlib.util.spec_from_file_location("demo", DEMO)
 assert _spec is not None and _spec.loader is not None
 demo = importlib.util.module_from_spec(_spec)
 sys.modules["demo"] = demo
 _spec.loader.exec_module(demo)
+
+NAMES = (LABELS["tuned"][0], LABELS["deploy"][0])
+"""The two configurations the README's animation shows, named as every chart names them."""
 
 RATE = 24_000
 WALL = 1_800_000_000.0  # 2027-01-15 UTC
@@ -111,9 +117,9 @@ def frontier(path: Path, on: str = "", scale: float = 1.0) -> Path:
 @pytest.fixture
 def pair(tmp_path: Path) -> tuple[Path, Path]:
     slow = saved_call(
-        tmp_path / "frozen", [3.0, 2.5, 4.0], label="Frozen box", point="frozen", tokens=900.0
+        tmp_path / "frozen", [3.0, 2.5, 4.0], label=NAMES[0], point="frozen", tokens=900.0
     )
-    fast = saved_call(tmp_path / "a9", [1.0, 0.8, 1.2], label="Arm 9", point="a9", tokens=880.0)
+    fast = saved_call(tmp_path / "a9", [1.0, 0.8, 1.2], label=NAMES[1], point="a9", tokens=880.0)
     return slow, fast
 
 
@@ -129,7 +135,7 @@ def summary(pair: tuple[Path, Path], tmp_path: Path) -> Any:
 
 def test_both_calls_take_their_measured_turns_together(timeline: Any) -> None:
     calls = timeline.calls
-    assert [call.label for call in calls] == ["Frozen box", "Arm 9"]
+    assert [call.label for call in calls] == list(NAMES)
     assert [call.gpu for call in calls] == ["RTX 5060 Ti"] * 2  # no samples: the box's
     # The warm-up turn is left out; each turn lasts as long as the slower call's.
     assert timeline.first == 1 and timeline.turns == 3
@@ -274,6 +280,11 @@ def test_no_text_leaves_its_room_or_overlaps_another(
         frames.check(0.0)
 
 
+def test_make_names_the_configurations_as_the_charts_do() -> None:
+    makefile = (DEMO.parents[2] / "Makefile").read_text()
+    assert f'--labels "{NAMES[0]}" "{NAMES[1]}"' in makefile
+
+
 def test_the_excerpt_loops_silently(timeline: Any, summary: Any) -> None:
     narrow = demo.Dashboard(timeline, summary, width=340, form="narrow")
     assert narrow.board.across == 420 and narrow.draw(1.0).shape[1] == 340
@@ -287,6 +298,38 @@ def test_the_excerpt_loops_silently(timeline: Any, summary: Any) -> None:
     assert all(side.playhead.get_alpha() < 0.05 for side in frames.sides)
     bars = [bar for side in frames.sides for _, bar, _, _ in side.bars]
     assert bars and all(bar.get_alpha() < 0.05 for bar in bars)
+
+
+def test_the_excerpt_opens_on_the_first_turns_held_result(
+    timeline: Any, summary: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A viewer that shows only an animation's first frame, or a poster of it, sees both replies and their V2V rather
+    # than two empty panels: the loop starts where the first turn's result holds and runs on through its own start.
+    held = demo.held_result(timeline)
+    first = [w for side in (0, 1) for w in timeline.waits(side) if w.turn == 0]
+    assert max(w.until for w in first) < held < timeline.offsets[1] - demo.TURN_EXIT_S
+    frames = demo.Dashboard(timeline, summary, width=320)
+    frames.update(held)
+    for side, panel in enumerate(frames.sides):
+        assert panel.clock.get_text() == f"{timeline.waits(side)[0].seconds:.1f} s"
+        assert panel.clock.get_alpha() == 1.0
+    fps = 4
+    drawn: list[np.ndarray] = []
+    monkeypatch.setattr(demo, "_pipe", lambda command, frames_: drawn.extend(frames_))
+    monkeypatch.setitem(sys.modules, "imageio_ffmpeg", type(sys)("imageio_ffmpeg"))
+    sys.modules["imageio_ffmpeg"].get_ffmpeg_exe = lambda: "ffmpeg"
+    count = demo.write_excerpt(
+        timeline, summary, tmp_path / "e.webp", width=320, fps=fps, theme="light"
+    )
+    assert count == round(timeline.seconds * fps) == len(drawn)
+    opening = drawn[0]
+    assert np.array_equal(opening, frames.draw(math.ceil(held * fps) / fps))
+    assert np.array_equal(
+        drawn[count - math.ceil(held * fps)], frames.draw(0.0)
+    )  # then the loop runs on
+    assert not np.array_equal(
+        opening, frames.draw(0.0)
+    )  # not the empty dashboard the turn starts on
 
 
 def test_the_video_is_its_planned_frames_each_its_size(timeline: Any, summary: Any) -> None:

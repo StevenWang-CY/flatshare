@@ -253,5 +253,5 @@ Two mechanisms were built, measured and not adopted, and the rest of the origina
 | Engine | The generated `make-room` module built from v0.32.0's source; its behavior on vLLM's real scheduler with CPU torch, and its trace against the PRs' own patches; the GPU probes |
 | Voice | A hermetic LiveKit test in the voice-plane namespace (barge-in, headers, lifecycle events in order); unit tests of the event delivery, serve mode's admission and the node binding |
 | Deploy and ops | The serving profile's rendering and `serving-check` against an engine that differs; the release tool's prepare, switch, switch-back and rollback on stand-in hosts; the units, install scripts and listener audit; the alert rules under promtool |
-| E2 | The report, its figures and the demo renderer on synthetic points; `make reproduce-e2` and `make e2-figures` rebuild them from the committed records (not in CI) |
+| E2 | The report, its figures and the demo renderer on synthetic points; `make reproduce-e2` and `make figures` rebuild them from the committed records (not in CI) |
 | CI | GitHub Actions on CPU: rustfmt, clippy and ruff, every Rust test, the engine variants' build tests against vLLM's source, the Python unit tests, and make-room's behavior and trace suites on CPU torch |

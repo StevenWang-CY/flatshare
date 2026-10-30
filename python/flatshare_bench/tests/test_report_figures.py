@@ -78,6 +78,8 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
         for name in (
             "stages",
             "stages-narrow",
+            "deployable-stages",
+            "deployable-stages-narrow",
             "kv-timeline",
             "kv-timeline-narrow",
             "isolation",
@@ -96,6 +98,8 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
             "agents-narrow",
             "frontier",
             "frontier-narrow",
+            "deployable",
+            "deployable-narrow",
             "margin",
             "margin-narrow",
             "a100",
@@ -124,11 +128,53 @@ def test_figure_text_names_configurations_as_the_report_does(drawn: dict[str, Pa
             assert not CODES.search(text), (name, text)
 
 
+RETIRED = (
+    "make-room + prefill hold",
+    "+ make-room",
+    "+ the prefill hold",
+    "make-room alone",
+    "Both rules",
+    "abort-and-resubmit",
+    "A router",
+    "Tuned vLLM 0.32",
+    "as deployed",
+    "#63350 and #63351",
+)
+"""The labels the charts gave one configuration or another before data.LABELS, which no chart's text gives now."""
+
+
+def test_every_chart_labels_its_configurations_from_one_table(drawn: dict[str, Path]) -> None:
+    # One label a configuration, in GLOSSARY's terms: each name in the table tells its configuration from every other
+    # (the lifecycle policy's two are named under its heading), and no chart's drawn text, nor its description, gives
+    # a configuration another label.
+    names = [name for name, _ in data.LABELS.values()]
+    shared = {name for name in names if names.count(name) > 1}
+    assert shared == {"A static cap"}, (
+        shared
+    )  # told apart by their notes, in the one figure that shows them
+    assert set(data.POINTS.values()) <= set(data.LABELS)
+    for name, path in drawn.items():
+        texts = text_of(path)
+        for text in texts:
+            assert not any(retired in text for retired in RETIRED), (name, text)
+        assert "vLLM 0.32" not in texts[:-2], name  # stock vLLM's former row and legend name
+    # The configurations the tables name stay apart: tuned vLLM is the baseline, the change is both pull requests at
+    # the budget cap's default window, and the configuration to deploy their switches with a 48-token window.
+    assert data.label("w5-disc-frozen-s24") == ("Tuned vLLM", "the baseline")
+    assert data.label("w5-disc-pr-ab-s24") == ("The change", "16-token window")
+    assert data.label("w5-disc-pr-ab48-s24") == ("The configuration to deploy", "48-token window")
+    assert data.label("sweep-disc-pr-ab48-b256-t0-s24") == data.label("w5-disc-pr-ab48-s24")
+    with pytest.raises(ValueError, match="no label for w5-disc-a9-no-throttle-s24"):
+        data.label("w5-disc-a9-no-throttle-s24")
+
+
 def test_a_log_scale_says_so_on_its_axis(drawn: dict[str, Path]) -> None:
     logarithmic = (
         "report-headline",
         "report-cdf",
         "report-frontier",
+        "report-deployable.svg",
+        "report-deployable-narrow",
         "report-step-cost",
         "report-tail",
     )
@@ -259,6 +305,90 @@ def test_the_stages_are_the_summaries_pooled_over_each_configurations_replies() 
         assert sum(cell.parts) == pytest.approx(cell.v2v)
         # The worker's own end-to-end mean is its stages', to within a millisecond of their counts' differences.
         assert abs(sum(cell.parts[:4]) - pooled(records, "e2e_ms")) < 2
+
+
+def doc_table(doc: str, header: str) -> dict[str, list[str]]:
+    """The rows of the Markdown table under ``header`` (its first line) in ``doc``, by their first cell."""
+    lines = (REPO / "docs" / doc).read_text().splitlines()
+    start = lines.index(header)
+    rows = {}
+    for line in lines[start + 2 :]:
+        if not line.startswith("|"):
+            break
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        rows[cells[0]] = cells[1:]
+    return rows
+
+
+def test_the_deployable_stages_are_benchmarks_w4_stage_table(drawn: dict[str, Path]) -> None:
+    # BENCHMARKS' stage table, from W4's records: each configuration's endpointing, reply to its first sentence, TTS
+    # first audio, transport and playout and mean V2V, as the figure's bars give them, the reply split at the LLM's
+    # first token. The figure leaves out the change at its 16-token window.
+    table = doc_table(
+        "BENCHMARKS.md",
+        "| Configuration | Endpointing | Reply to first sentence | TTS first audio | Transport and playout | Mean V2V "
+        "| LLM first token |",
+    )
+    names = (
+        "Voice alone",
+        "The frozen box",
+        "Static reservation",
+        "Preempt-resubmit",
+        "Arm 9",
+        "#63350 + #63351, 48 tokens",
+    )
+    cells = data.stages(data.w4_rows(), data.W4_STAGES)
+    assert [c.point for c in cells] == list(data.W4_STAGES)
+    texts = set(text_of(drawn["report-deployable-stages.svg"]))
+    for name, c in zip(names, cells, strict=True):
+        stated = [int(cell.replace(",", "")) for cell in table[name][:5]]
+        drawn_parts = [c.endpointing, c.wait + c.decode, c.tts, c.transport, c.v2v]
+        assert [round(v) for v in drawn_parts] == stated, name
+        assert f"{c.v2v / 1000:.2f} s" in texts, name
+    assert [c.runs for c in cells] == [
+        4,
+        5,
+        5,
+        5,
+        5,
+        3,
+    ]  # voice alone's W2 run predates the worker's stage times
+
+
+def test_the_deployable_frontier_is_methods_table_over_the_whole_calls(
+    drawn: dict[str, Path],
+) -> None:
+    # W4's configurations an operator could deploy, each with all its runs; panel b the agents' tokens a second over
+    # the whole calls, frontier.csv's per run, as METHODS' table gives the configurations it shares with the figure.
+    points = {p.point: p for p in data.frontier() if p.point in data.DEPLOYABLE}
+    assert sorted(points) == sorted(data.DEPLOYABLE)
+    rows = frontier_rows(data.W4)
+    for point, p in points.items():
+        runs = [r for (_, name), r in rows.items() if name == point]
+        assert sorted(p.calls_tokens_per_run) == sorted(
+            float(r["background_tokens_per_s"]) for r in runs
+        )
+    table = doc_table(
+        "METHODS.md", "| Configuration | V2V p95 | Background tokens/s | Agent TTFT p99 |"
+    )
+    shared = {
+        "The frozen box (tuned vLLM)": "disc-frozen-s24",
+        "Static reservation, 2,048 tokens": "disc-a6-reserve2048-s24",
+        "Preempt-resubmit": "disc-a8c-resubmit-s24",
+        "Arm 9, every reply capped at 16 tokens": "disc-a9-s24",
+        "#63350 + #63351, 48-token window": "disc-pr-ab48-s24",
+    }
+    texts = set(text_of(drawn["report-deployable.svg"]))
+    for name, point in shared.items():
+        p95, tokens = table[name][0].split(" ms", 1)[0], table[name][1]
+        assert (f"{points[point].p95:,.0f}", f"{points[point].calls_tokens:,.0f}") == (
+            p95,
+            tokens,
+        ), name
+        assert {
+            f"{points[point].calls_tokens:,.0f}",
+            f"{charts.seconds(points[point].p95)} s",
+        } <= texts, name
 
 
 def test_the_probes_are_their_logs_runs() -> None:
@@ -669,8 +799,10 @@ def test_the_frontier_is_every_deployable_configuration_of_w4s_discriminating_sc
         assert {r["fixed_window_s"] for r in runs} == {"240.0"}, p.point
         assert {r["arm"] for r in runs} == {p.arm}, p.point
     by_point = {p.point: p for p in points}
-    # The figure names every configuration, under its family's heading.
-    assert set(figures.FRONTIER_NAMES) == set(by_point)
+    # The figure names every configuration as the label table does, under its family's heading.
+    assert {point: data.label(point)[0] for point in by_point}[
+        "disc-pr-ab48-s24"
+    ] == "The configuration to deploy"
     assert sorted(
         p.point for _, members in figures._frontier_rows(points) for p in members
     ) == sorted(by_point)
@@ -1036,6 +1168,49 @@ def shown(doc: Path, name: str) -> tuple[str, str]:
     )
     assert found, (doc.name, name)
     return html.unescape(found[1]), " ".join(found[2].split())
+
+
+def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) -> None:
+    # METHODS and BENCHMARKS show W4's two charts with the drawing's own description as the alt text, under a caption
+    # whose claim holds for every mark: only the engine change comes within 0.2 s of the SLO, every other deployable
+    # configuration 0.5 s or more over it; and only the LLM's part of the turn changes, the other stages within 0.1 s.
+    methods, benchmarks = REPO / "docs" / "METHODS.md", REPO / "docs" / "BENCHMARKS.md"
+    for doc, name in (
+        (methods, "report-deployable"),
+        (methods, "report-deployable-stages"),
+        (benchmarks, "report-deployable-stages"),
+    ):
+        alt, _ = shown(doc, name)
+        assert alt == ET.parse(drawn[f"{name}.svg"]).getroot().find(f"{SVG}desc").text, (
+            doc.name,
+            name,
+        )
+    slo = data.slo_ms(data.w4_rows())
+    over = {p.point: p.p95 - slo for p in data.frontier() if p.point in data.DEPLOYABLE}
+    change = {
+        "disc-a9-s24",
+        "disc-pr-ab48-s24",
+    }  # the lifecycle policy over make-room, and the change itself
+    assert (
+        max(over[p] for p in change) < 200
+        and min(v for p, v in over.items() if p not in change) >= 500
+    )
+    _, caption = shown(methods, "report-deployable")
+    assert caption.startswith(
+        "Only the configurations that run the engine change come within 0.2 s of the SLO, at the median of their "
+        "runs; every other configuration an operator can deploy stays 0.5 s or more over it."
+    )
+    cells = data.stages(data.w4_rows(), data.W4_STAGES)
+    for stage in ("endpointing", "tts", "transport"):
+        values = [getattr(c, stage) for c in cells]
+        assert max(values) - min(values) < 100, stage
+    assert max(c.wait + c.decode for c in cells) - min(c.wait + c.decode for c in cells) > 3000
+    assert shown(methods, "report-deployable-stages")[1].startswith(
+        "Only the LLM's part of the turn changes from row to row: endpointing, TTS and transport stay within 0.1 s"
+    )
+    assert shown(benchmarks, "report-deployable-stages")[1].startswith(
+        "Only the reply to its first sentence changes from row to row: endpointing, TTS and transport stay within"
+    )
 
 
 def test_the_deployed_results_figures_say_what_their_records_do(drawn: dict[str, Path]) -> None:

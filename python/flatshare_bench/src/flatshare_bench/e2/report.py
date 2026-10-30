@@ -519,9 +519,9 @@ def _pooled(runs: Iterable[Mapping[str, Any]], stage: str) -> float | None:
 
 
 DOT_KEYS = ("point", "label", "note", "change", "featured")
-"""The keys of a row of figure.toml: the point's name and the row's label, a note the row's second
-line gives before its runs, whether it runs the engine change, and whether it is the configuration
-to deploy."""
+"""The keys of a row of figure.toml: the point's name and the row's label (which the report's label
+table gives where the row does not), a note the row's second line gives before its runs, whether it
+runs the engine change, and whether it is the configuration to deploy."""
 
 
 def read_dots(path: Path) -> list[dict[str, Any]]:
@@ -529,9 +529,10 @@ def read_dots(path: Path) -> list[dict[str, Any]]:
     at its top as one group, or ``[[group]]`` tables, each with a ``title`` and ``[[group.row]]``
     tables, for a figure of several GPUs, and the ``gpu`` its points ran on where the GPUs ran the
     same arm files (as :func:`gpu_name` gives it: "A100-SXM4-80GB"). A row names its point
-    (``point``) and its label (``label``), and may give a ``note``, whether it runs the engine
-    change (``change``) and whether it is the configuration to deploy (``featured``, at most one a
-    group; it runs the change), both false by default. A ValueError names what is wrong."""
+    (``point``), and may give its label (``label``; without one the figure takes the report's
+    label table's), a ``note``, whether it runs the engine change (``change``) and whether it is
+    the configuration to deploy (``featured``, at most one a group; it runs the change), both
+    false by default. A ValueError names what is wrong."""
     try:
         data = tomllib.loads(path.read_text())
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -549,8 +550,10 @@ def read_dots(path: Path) -> list[dict[str, Any]]:
         if len(groups) > 1 and not isinstance(group.get("title"), str):
             raise ValueError(f"{path}: a group without a title, among several")
         for row in group["row"]:
-            if not isinstance(row.get("point"), str) or not isinstance(row.get("label"), str):
-                raise ValueError(f"{path}: a row without a point or a label: {row}")
+            if not isinstance(row.get("point"), str) or not isinstance(row.get("label", ""), str):
+                raise ValueError(
+                    f"{path}: a row without a point, or whose label is not a string: {row}"
+                )
             if set(row) - set(DOT_KEYS):
                 keys = ", ".join(DOT_KEYS[:-1]) + f" and {DOT_KEYS[-1]}"
                 raise ValueError(f"{path}: a row with keys other than {keys}: {row}")

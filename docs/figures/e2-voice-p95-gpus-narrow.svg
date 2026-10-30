@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="420" height="2140" viewBox="0 0 420 2140" font-size="21" role="img" aria-labelledby="title desc">
 <title id="title">The configuration to deploy brings the voice tail within 0.21 s of each card's SLO</title>
-<desc id="desc">RTX 5060 Ti: voice-to-voice p95 against an SLO of 2.03 s, the agents' tokens/s and their TTFT p99: Tuned vLLM 0.32, the baseline, 10.48 s, 3,305 tokens/s (100% of the first row's) and a TTFT p99 of 106 s over 10 runs; A router, aborts and resubmits, 2.52 s, 3,332 tokens/s (101% of the first row's) and a TTFT p99 of 193 s over 5 runs; #63350 and #63351, 48-token window, 2.24 s, 3,203 tokens/s (97% of the first row's) and a TTFT p99 of 111 s over 15 runs. A100-SXM4-80GB: voice-to-voice p95 against an SLO of 1.67 s, the agents' tokens/s and their TTFT p99: Tuned vLLM 0.32, for the RTX 5060 Ti, 4.99 s, 8,633 tokens/s (100% of the first row's) and a TTFT p99 of 26 s over 5 runs; #63350 and #63351, 48-token window, 1.63 s, 8,651 tokens/s (100% of the first row's) and a TTFT p99 of 26 s over 5 runs. A100-SXM4-80GB: voice-to-voice p95 against an SLO of 1.67 s, the agents' tokens/s and their TTFT p99: Tuned vLLM 0.32, the card's best, 3.66 s, 14,536 tokens/s (100% of the first row's) and a TTFT p99 of 14 s over 2 runs; #63350 and #63351, 48-token window, 1.83 s, 14,635 tokens/s (101% of the first row's) and a TTFT p99 of 15 s over 2 runs.</desc>
+<desc id="desc">RTX 5060 Ti: voice-to-voice p95 against an SLO of 2.03 s, the agents' tokens/s and their TTFT p99: Tuned vLLM, the baseline, 10.48 s, 3,305 tokens/s (100% of the first row's) and a TTFT p99 of 106 s over 10 runs; Preempt-resubmit, before the first byte, 2.52 s, 3,332 tokens/s (101% of the first row's) and a TTFT p99 of 193 s over 5 runs; The configuration to deploy, 48-token window, 2.24 s, 3,203 tokens/s (97% of the first row's) and a TTFT p99 of 111 s over 15 runs. A100-SXM4-80GB: voice-to-voice p95 against an SLO of 1.67 s, the agents' tokens/s and their TTFT p99: Tuned vLLM, for the RTX 5060 Ti, 4.99 s, 8,633 tokens/s (100% of the first row's) and a TTFT p99 of 26 s over 5 runs; The configuration to deploy, 48-token window, 1.63 s, 8,651 tokens/s (100% of the first row's) and a TTFT p99 of 26 s over 5 runs. A100-SXM4-80GB: voice-to-voice p95 against an SLO of 1.67 s, the agents' tokens/s and their TTFT p99: Tuned vLLM, the card's best, 3.66 s, 14,536 tokens/s (100% of the first row's) and a TTFT p99 of 14 s over 2 runs; The configuration to deploy, 48-token window, 1.83 s, 14,635 tokens/s (101% of the first row's) and a TTFT p99 of 15 s over 2 runs.</desc>
 <!-- Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 (python/flatshare_bench/src/flatshare_bench/fonts/OFL.txt). -->
-<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}</style>
+<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}</style>
 <rect class="page" width="420" height="2140"/>
 <text x="210" y="32" text-anchor="middle" font-size="23">The configuration to deploy</text>
 <text x="210" y="61" text-anchor="middle" font-size="23">brings the voice tail within</text>
@@ -12,8 +12,8 @@
 <text x="210" y="194" text-anchor="middle" class="soft" font-size="18">seconds • lower is better</text>
 <text x="18" y="227" class="mute" font-size="18">RTX 5060 Ti 16 GB</text>
 <text x="68.18" y="253" text-anchor="middle" class="orange tint" font-size="18">SLO 2.03 s</text>
-<text x="18" y="279" font-size="20">Tuned vLLM 0.32</text>
-<text x="174.96" y="279" class="soft" font-size="18">the baseline</text>
+<text x="18" y="279" font-size="20">Tuned vLLM</text>
+<text x="135.66" y="279" class="soft" font-size="18">the baseline</text>
 <path d="M18 288V316" class="axis"/>
 <path d="M67.33 288V316" class="grid"/>
 <path d="M116.67 288V316" class="grid"/>
@@ -24,8 +24,8 @@
 <path d="M18 292H273.44Q276.44 292 276.44 295V309Q276.44 312 273.44 312H18Z" class="g-mid"/>
 <text x="283.44" y="307" class="halo" font-size="18">10.48</text>
 <path d="M68.18 288V316" class="slo"/>
-<text x="18" y="341" font-size="20">A router</text>
-<text x="96.52" y="341" class="soft" font-size="18">aborts and resubmits</text>
+<text x="18" y="341" font-size="20">Preempt-resubmit</text>
+<text x="178.58" y="341" class="soft" font-size="18">before the first byte</text>
 <path d="M18 350V378" class="axis"/>
 <path d="M67.33 350V378" class="grid"/>
 <path d="M116.67 350V378" class="grid"/>
@@ -36,8 +36,8 @@
 <path d="M18 354H77.21Q80.21 354 80.21 357V371Q80.21 374 77.21 374H18Z" class="g-mid"/>
 <text x="87.21" y="369" class="halo" font-size="18">2.52</text>
 <path d="M68.18 350V378" class="slo"/>
-<text x="18" y="403" font-size="20">#63350 and #63351</text>
-<text x="188.22" y="403" class="soft" font-size="18">48-token window</text>
+<text x="18" y="403" font-size="20">The configuration to deploy</text>
+<text x="259.6" y="403" class="soft" font-size="18">48-token window</text>
 <path d="M18 412V440" class="axis"/>
 <path d="M67.33 412V440" class="grid"/>
 <path d="M116.67 412V440" class="grid"/>
@@ -50,8 +50,8 @@
 <path d="M68.18 412V440" class="slo"/>
 <text x="18" y="463" class="mute" font-size="18">A100, 512-token steps</text>
 <text x="59.18" y="489" text-anchor="middle" class="orange tint" font-size="18">SLO 1.67 s</text>
-<text x="18" y="515" font-size="20">Tuned vLLM 0.32</text>
-<text x="174.96" y="515" class="soft" font-size="18">for the RTX 5060 Ti</text>
+<text x="18" y="515" font-size="20">Tuned vLLM</text>
+<text x="135.66" y="515" class="soft" font-size="18">for the RTX 5060 Ti</text>
 <path d="M18 524V552" class="axis"/>
 <path d="M67.33 524V552" class="grid"/>
 <path d="M116.67 524V552" class="grid"/>
@@ -62,8 +62,8 @@
 <path d="M18 528H137.99Q140.99 528 140.99 531V545Q140.99 548 137.99 548H18Z" class="g-mid"/>
 <text x="147.99" y="543" class="halo" font-size="18">4.99</text>
 <path d="M59.18 524V552" class="slo"/>
-<text x="18" y="577" font-size="20">#63350 and #63351</text>
-<text x="188.22" y="577" class="soft" font-size="18">48-token window</text>
+<text x="18" y="577" font-size="20">The configuration to deploy</text>
+<text x="259.6" y="577" class="soft" font-size="18">48-token window</text>
 <path d="M18 586V614" class="axis"/>
 <path d="M67.33 586V614" class="grid"/>
 <path d="M116.67 586V614" class="grid"/>
@@ -76,8 +76,8 @@
 <path d="M59.18 586V614" class="slo"/>
 <text x="18" y="637" class="mute" font-size="18">A100, 2,048-token steps</text>
 <text x="59.18" y="663" text-anchor="middle" class="orange tint" font-size="18">SLO 1.67 s</text>
-<text x="18" y="689" font-size="20">Tuned vLLM 0.32</text>
-<text x="174.96" y="689" class="soft" font-size="18">the card's best</text>
+<text x="18" y="689" font-size="20">Tuned vLLM</text>
+<text x="135.66" y="689" class="soft" font-size="18">the card's best</text>
 <path d="M18 698V726" class="axis"/>
 <path d="M67.33 698V726" class="grid"/>
 <path d="M116.67 698V726" class="grid"/>
@@ -88,8 +88,8 @@
 <path d="M18 702H105.35Q108.35 702 108.35 705V719Q108.35 722 105.35 722H18Z" class="g-mid"/>
 <text x="115.35" y="717" class="halo" font-size="18">3.66</text>
 <path d="M59.18 698V726" class="slo"/>
-<text x="18" y="751" font-size="20">#63350 and #63351</text>
-<text x="188.22" y="751" class="soft" font-size="18">48-token window</text>
+<text x="18" y="751" font-size="20">The configuration to deploy</text>
+<text x="259.6" y="751" class="soft" font-size="18">48-token window</text>
 <path d="M18 760V788" class="axis"/>
 <path d="M67.33 760V788" class="grid"/>
 <path d="M116.67 760V788" class="grid"/>
@@ -111,8 +111,8 @@
 <text x="210" y="860" text-anchor="middle">Agents' throughput</text>
 <text x="210" y="885" text-anchor="middle" class="soft" font-size="18">tokens/s, % of the baseline • higher is better</text>
 <text x="18" y="918" class="mute" font-size="18">RTX 5060 Ti 16 GB</text>
-<text x="18" y="948" font-size="20">Tuned vLLM 0.32</text>
-<text x="174.96" y="948" class="soft" font-size="18">the baseline</text>
+<text x="18" y="948" font-size="20">Tuned vLLM</text>
+<text x="135.66" y="948" class="soft" font-size="18">the baseline</text>
 <path d="M18 957V985" class="axis"/>
 <path d="M116.67 957V985" class="grid"/>
 <path d="M215.33 957V985" class="grid"/>
@@ -120,8 +120,8 @@
 <path d="M18 961H80.22Q83.22 961 83.22 964V978Q83.22 981 80.22 981H18Z" class="g-mid"/>
 <text x="90.22" y="976" class="halo" font-size="18">3,305</text>
 <text x="137.27" y="976" class="soft halo" font-size="18">100%</text>
-<text x="18" y="1010" font-size="20">A router</text>
-<text x="96.52" y="1010" class="soft" font-size="18">aborts and resubmits</text>
+<text x="18" y="1010" font-size="20">Preempt-resubmit</text>
+<text x="178.58" y="1010" class="soft" font-size="18">before the first byte</text>
 <path d="M18 1019V1047" class="axis"/>
 <path d="M116.67 1019V1047" class="grid"/>
 <path d="M215.33 1019V1047" class="grid"/>
@@ -129,8 +129,8 @@
 <path d="M18 1023H80.76Q83.76 1023 83.76 1026V1040Q83.76 1043 80.76 1043H18Z" class="g-mid"/>
 <text x="90.76" y="1038" class="halo" font-size="18">3,332</text>
 <text x="137.81" y="1038" class="soft halo" font-size="18">101%</text>
-<text x="18" y="1072" font-size="20">#63350 and #63351</text>
-<text x="188.22" y="1072" class="soft" font-size="18">48-token window</text>
+<text x="18" y="1072" font-size="20">The configuration to deploy</text>
+<text x="259.6" y="1072" class="soft" font-size="18">48-token window</text>
 <path d="M18 1081V1109" class="axis"/>
 <path d="M116.67 1081V1109" class="grid"/>
 <path d="M215.33 1081V1109" class="grid"/>
@@ -139,8 +139,8 @@
 <text x="88.2" y="1100" class="halo" font-size="18">3,203</text>
 <text x="135.25" y="1100" class="soft halo" font-size="18">97%</text>
 <text x="18" y="1132" class="mute" font-size="18">A100, 512-token steps</text>
-<text x="18" y="1162" font-size="20">Tuned vLLM 0.32</text>
-<text x="174.96" y="1162" class="soft" font-size="18">for the RTX 5060 Ti</text>
+<text x="18" y="1162" font-size="20">Tuned vLLM</text>
+<text x="135.66" y="1162" class="soft" font-size="18">for the RTX 5060 Ti</text>
 <path d="M18 1171V1199" class="axis"/>
 <path d="M116.67 1171V1199" class="grid"/>
 <path d="M215.33 1171V1199" class="grid"/>
@@ -148,8 +148,8 @@
 <path d="M18 1175H185.35Q188.35 1175 188.35 1178V1192Q188.35 1195 185.35 1195H18Z" class="g-mid"/>
 <text x="195.35" y="1190" class="halo" font-size="18">8,633</text>
 <text x="242.4" y="1190" class="soft halo" font-size="18">100%</text>
-<text x="18" y="1224" font-size="20">#63350 and #63351</text>
-<text x="188.22" y="1224" class="soft" font-size="18">48-token window</text>
+<text x="18" y="1224" font-size="20">The configuration to deploy</text>
+<text x="259.6" y="1224" class="soft" font-size="18">48-token window</text>
 <path d="M18 1233V1261" class="axis"/>
 <path d="M116.67 1233V1261" class="grid"/>
 <path d="M215.33 1233V1261" class="grid"/>
@@ -158,8 +158,8 @@
 <text x="195.72" y="1252" class="halo" font-size="18">8,651</text>
 <text x="242.77" y="1252" class="soft halo" font-size="18">100%</text>
 <text x="18" y="1284" class="mute" font-size="18">A100, 2,048-token steps</text>
-<text x="18" y="1314" font-size="20">Tuned vLLM 0.32</text>
-<text x="174.96" y="1314" class="soft" font-size="18">the card's best</text>
+<text x="18" y="1314" font-size="20">Tuned vLLM</text>
+<text x="135.66" y="1314" class="soft" font-size="18">the card's best</text>
 <path d="M18 1323V1351" class="axis"/>
 <path d="M116.67 1323V1351" class="grid"/>
 <path d="M215.33 1323V1351" class="grid"/>
@@ -167,8 +167,8 @@
 <path d="M18 1327H301.85Q304.85 1327 304.85 1330V1344Q304.85 1347 301.85 1347H18Z" class="g-mid"/>
 <text x="311.85" y="1342" class="halo" font-size="18">14,536</text>
 <text x="367.81" y="1342" class="soft halo" font-size="18">100%</text>
-<text x="18" y="1376" font-size="20">#63350 and #63351</text>
-<text x="188.22" y="1376" class="soft" font-size="18">48-token window</text>
+<text x="18" y="1376" font-size="20">The configuration to deploy</text>
+<text x="259.6" y="1376" class="soft" font-size="18">48-token window</text>
 <path d="M18 1385V1413" class="axis"/>
 <path d="M116.67 1385V1413" class="grid"/>
 <path d="M215.33 1385V1413" class="grid"/>
@@ -184,8 +184,8 @@
 <text x="210" y="1485" text-anchor="middle">Agents' TTFT p99</text>
 <text x="210" y="1510" text-anchor="middle" class="soft" font-size="18">seconds • lower is better</text>
 <text x="18" y="1543" class="mute" font-size="18">RTX 5060 Ti 16 GB</text>
-<text x="18" y="1573" font-size="20">Tuned vLLM 0.32</text>
-<text x="174.96" y="1573" class="soft" font-size="18">the baseline</text>
+<text x="18" y="1573" font-size="20">Tuned vLLM</text>
+<text x="135.66" y="1573" class="soft" font-size="18">the baseline</text>
 <path d="M18 1582V1610" class="axis"/>
 <path d="M92 1582V1610" class="grid"/>
 <path d="M166 1582V1610" class="grid"/>
@@ -193,8 +193,8 @@
 <path d="M314 1582V1610" class="grid"/>
 <path d="M18 1586H172.23Q175.23 1586 175.23 1589V1603Q175.23 1606 172.23 1606H18Z" class="g-mid"/>
 <text x="182.23" y="1601" class="halo" font-size="18">106</text>
-<text x="18" y="1635" font-size="20">A router</text>
-<text x="96.52" y="1635" class="soft" font-size="18">aborts and resubmits</text>
+<text x="18" y="1635" font-size="20">Preempt-resubmit</text>
+<text x="178.58" y="1635" class="soft" font-size="18">before the first byte</text>
 <path d="M18 1644V1672" class="axis"/>
 <path d="M92 1644V1672" class="grid"/>
 <path d="M166 1644V1672" class="grid"/>
@@ -202,8 +202,8 @@
 <path d="M314 1644V1672" class="grid"/>
 <path d="M18 1648H300.36Q303.36 1648 303.36 1651V1665Q303.36 1668 300.36 1668H18Z" class="g-mid"/>
 <text x="310.36" y="1663" class="halo" font-size="18">193</text>
-<text x="18" y="1697" font-size="20">#63350 and #63351</text>
-<text x="188.22" y="1697" class="soft" font-size="18">48-token window</text>
+<text x="18" y="1697" font-size="20">The configuration to deploy</text>
+<text x="259.6" y="1697" class="soft" font-size="18">48-token window</text>
 <path d="M18 1706V1734" class="axis"/>
 <path d="M92 1706V1734" class="grid"/>
 <path d="M166 1706V1734" class="grid"/>
@@ -212,8 +212,8 @@
 <path d="M18 1710H179.46Q182.46 1710 182.46 1713V1727Q182.46 1730 179.46 1730H18Z" class="g-hi"/>
 <text x="189.46" y="1725" class="halo" font-size="18">111</text>
 <text x="18" y="1757" class="mute" font-size="18">A100, 512-token steps</text>
-<text x="18" y="1787" font-size="20">Tuned vLLM 0.32</text>
-<text x="174.96" y="1787" class="soft" font-size="18">for the RTX 5060 Ti</text>
+<text x="18" y="1787" font-size="20">Tuned vLLM</text>
+<text x="135.66" y="1787" class="soft" font-size="18">for the RTX 5060 Ti</text>
 <path d="M18 1796V1824" class="axis"/>
 <path d="M92 1796V1824" class="grid"/>
 <path d="M166 1796V1824" class="grid"/>
@@ -221,8 +221,8 @@
 <path d="M314 1796V1824" class="grid"/>
 <path d="M18 1800H53.25Q56.25 1800 56.25 1803V1817Q56.25 1820 53.25 1820H18Z" class="g-mid"/>
 <text x="63.25" y="1815" class="halo" font-size="18">26</text>
-<text x="18" y="1849" font-size="20">#63350 and #63351</text>
-<text x="188.22" y="1849" class="soft" font-size="18">48-token window</text>
+<text x="18" y="1849" font-size="20">The configuration to deploy</text>
+<text x="259.6" y="1849" class="soft" font-size="18">48-token window</text>
 <path d="M18 1858V1886" class="axis"/>
 <path d="M92 1858V1886" class="grid"/>
 <path d="M166 1858V1886" class="grid"/>
@@ -231,8 +231,8 @@
 <path d="M18 1862H53.59Q56.59 1862 56.59 1865V1879Q56.59 1882 53.59 1882H18Z" class="g-hi"/>
 <text x="63.59" y="1877" class="halo" font-size="18">26</text>
 <text x="18" y="1909" class="mute" font-size="18">A100, 2,048-token steps</text>
-<text x="18" y="1939" font-size="20">Tuned vLLM 0.32</text>
-<text x="174.96" y="1939" class="soft" font-size="18">the card's best</text>
+<text x="18" y="1939" font-size="20">Tuned vLLM</text>
+<text x="135.66" y="1939" class="soft" font-size="18">the card's best</text>
 <path d="M18 1948V1976" class="axis"/>
 <path d="M92 1948V1976" class="grid"/>
 <path d="M166 1948V1976" class="grid"/>
@@ -240,8 +240,8 @@
 <path d="M314 1948V1976" class="grid"/>
 <path d="M18 1952H36.22Q39.22 1952 39.22 1955V1969Q39.22 1972 36.22 1972H18Z" class="g-mid"/>
 <text x="46.22" y="1967" class="halo" font-size="18">14</text>
-<text x="18" y="2001" font-size="20">#63350 and #63351</text>
-<text x="188.22" y="2001" class="soft" font-size="18">48-token window</text>
+<text x="18" y="2001" font-size="20">The configuration to deploy</text>
+<text x="259.6" y="2001" class="soft" font-size="18">48-token window</text>
 <path d="M18 2010V2038" class="axis"/>
 <path d="M92 2010V2038" class="grid"/>
 <path d="M166 2010V2038" class="grid"/>

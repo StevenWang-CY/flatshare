@@ -17,20 +17,10 @@ from flatshare_bench.report import figures as report_figures
 
 REPO = Path(__file__).resolve().parents[3]
 DOCS = REPO / "docs" / "figures"
-W4 = REPO / "benchmarks" / "results" / "2026-10-23-e2"
 W5 = REPO / "benchmarks" / "results" / "2026-10-24-e2-w5"
 A100 = REPO / "benchmarks" / "results" / "2026-10-26-a100"
 SIZES = {style.TITLE, style.LABEL, style.VALUE, style.NOTE}
 """The type's sizes, one per role; a sub- or superscript sets its role's size at 72%."""
-
-
-def makefile_list(name: str) -> list[str]:
-    """A list the Makefile sets with ``name :=``, across its continued lines."""
-    found = re.search(
-        rf"^{name} := ((?:.*\\\n)*.*)$", (REPO / "Makefile").read_text(), re.MULTILINE
-    )
-    assert found, name
-    return found[1].replace("\\\n", " ").split()
 
 
 def figure() -> style.Figure:
@@ -125,15 +115,6 @@ def test_every_ink_clears_four_and_a_half_to_one_on_every_ground(palette: dict[s
 def drawn(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     """Every figure `make figures` copies into docs/figures, drawn afresh, by the name it takes there."""
     out = tmp_path_factory.mktemp("figures")
-    # make e2-figures: the configurations an operator could deploy, and the waterfall's points.
-    deployable = [
-        run.parent
-        for name in makefile_list("E2_DEPLOYABLE")
-        for run in W4.glob(f"*/{name}/run.json")
-    ]
-    rows, incomplete = load_points(deployable)
-    assert rows and not incomplete
-    write_report(rows, out / "e2", makefile_list("E2_STAGES"))
     # make e2-gpus-figure: the rows the A100's figure.toml names, from W5's records and the A100's core, tuned vLLM's
     # and the PRs' values' at its step cap.
     a100 = sorted(
@@ -149,8 +130,6 @@ def drawn(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     # make report-figures: the technical report's, each from the records it cites.
     report = report_figures.main(out / "report")
     return {
-        "e2-frontier.svg": out / "e2" / "frontier-weka-x32-long.svg",
-        "e2-waterfall.svg": out / "e2" / "waterfall.svg",
         "e2-voice-p95-gpus.svg": out / "gpus" / "voice-p95.svg",
         "e2-voice-p95-gpus-narrow.svg": out / "gpus" / "voice-p95-narrow.svg",
     } | {path.name: path for path in (*drawn, *report)}
@@ -205,6 +184,25 @@ def test_the_readme_animation_is_a_looping_webp_in_each_theme_and_layout() -> No
     assert seen["e2-demo-narrow"][0][0] == 680
     spans = {span for _, span in seen.values()}
     assert max(spans) - min(spans) <= 20 and min(spans) > 5_000, spans  # within a frame at 60 fps
+
+
+def test_the_readme_figure_labels_its_rows_from_the_report_label_table(
+    drawn: dict[str, Path],
+) -> None:
+    # The README's figure names each configuration as every chart of the report does (report.data.LABELS): its rows'
+    # figure.toml gives none, and a note only where the A100's card calls for one.
+    from flatshare_bench.report import data
+
+    groups = read_dots(A100 / "figure.toml")
+    assert not any("label" in row for g in groups for row in g["rows"])
+    expected = {data.label(row["point"])[0] for g in groups for row in g["rows"]}
+    assert expected == {"Tuned vLLM", "Preempt-resubmit", "The configuration to deploy"}
+    notes = [row["note"] for g in groups for row in g["rows"] if "note" in row]
+    assert notes == ["for the RTX 5060 Ti", "the card's best"]
+    for name in ("e2-voice-p95-gpus.svg", "e2-voice-p95-gpus-narrow.svg"):
+        words = " ".join(re.findall(r">([^<]+)</text>", drawn[name].read_text()))
+        assert all(label in words for label in expected), name
+        assert "#63350 and #63351" not in words and "A router" not in words, name
 
 
 def test_the_figures_set_their_type_in_its_sizes_and_never_in_bold(drawn: dict[str, Path]) -> None:
