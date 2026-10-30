@@ -5,6 +5,26 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.13](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.13) (2026-10-30): the serving engine in a container
+
+The serving engine on vLLM's own image, verified on the box's GPU. No measured result changes.
+
+- **The container recipe.** [`deploy/container`](deploy/container/README.md) builds an image on
+  `vllm/vllm-openai:v0.32.0` with make-room's scheduler at the serving profile's settings, for a stack that runs
+  vLLM's image rather than the box's systemd units. Its entrypoint gives `vllm serve` the make-room-serve drop-in's
+  flags from `serving.json` and holds the engine to that file at each start, as the unit does: an engine that runs
+  anything else is stopped, and the container exits 1. Every compile and JIT cache the engine's start reads is under
+  one directory, so that a volume there keeps a restart warm. A test holds the entrypoint's flags to the drop-in's,
+  the image's tag to the profile's vLLM version, its caches to the A100 profile's and the CUDA driver's, and the
+  build context to the files the image uses.
+- **Verified on the box's GPU** with rootless podman, the GPU through CDI: the check passed, the engine answered a
+  completion and a chat completion at priority 0, and it stopped in 8.1 to 8.3 s. With the cache volume filled, a
+  start reached the check in 90 s, as the box's unit starts its engine in 88.8 s; empty, in 708 s, and with every
+  cache warm but the CUDA driver's, in 431 s. Started with a step cap of 512, the check named the step cap, and the
+  container exited 1. The KV cache's CPU tier needs `--shm-size 24g`.
+- **The packages** are versioned 1.13.0, and are not published to a package index.
+- **Upgrading from v1.12.** Nothing changes for the box, the gateway or a configuration.
+
 ## [v1.12](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.12) (2026-10-30): drain one node, and v1.11's open items
 
 What v1.11 left open, done: the relay's held upstream at a passed deadline, a drain of one node for maintenance, and
