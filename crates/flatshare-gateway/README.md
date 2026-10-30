@@ -131,48 +131,69 @@ Unknown keys are errors, so a misspelled setting fails at start instead of silen
 
 | Key | Default | Meaning |
 |---|---|---|
-| `upstream` | required without `[[nodes]]` | The engine: `http://host:port`, or `unix:` and the absolute path of its socket, such as a tunnel's (`unix:/run/user/1007/flatshare/phastform-engine.sock`). Either is spoken to over HTTP/1.1 with pooled connections. Several GPU nodes are `[[nodes]]` entries instead (below), and then `upstream` is not set |
-| `upstream_idle_timeout_s` | 4 | How long an idle upstream connection is kept for reuse. Keep it below the engine's keep-alive (`VLLM_HTTP_TIMEOUT_KEEP_ALIVE`, 5 s by default), or a request can go out on a connection the engine is closing |
-| `upstream_priority` | `["vllm-header"]` | Where the class's priority goes upstream: any of `"vllm-header"`, `"body"` and `"smg-header"`. The empty list sends none, as a plain client does: E2's stock arm. vLLM 0.32's FCFS scheduler ignores priorities rather than rejecting them |
-| `cache_salt_secret_file` | required | An absolute path: a file of 32 random bytes in hex that only its owner may open (mode 600), which `deploy/cyan/install.sh` writes once. It keys every tenant's `cache_salt`, so that a client which reaches the engine directly cannot compute another tenant's salt from its name. A missing or unreadable file, one other users may open, or one that holds anything else stops the gateway at start. A new secret changes every salt, which orphans every tenant's prefix cache |
-| `metrics_key_file` | required with a TCP listener | An absolute path: a file of one key on one line that only its owner may open, which `deploy/cyan/install.sh` writes once. `GET /metrics` and `/metrics/engine` on a TCP listener need it as `Authorization: Bearer <key>` (401 otherwise): every user of the host reaches loopback, and the metrics name the tenants and their traffic. The gateway keeps its SHA-256 and compares in constant time, as for tenants' keys. On a Unix socket, whose file mode keeps other users out, no key is asked for |
+| `upstream` | required without `[[nodes]]` | The engine: `http://host:port`, or `unix:` and the absolute path of its socket, such as a tunnel's (`unix:/run/user/1007/flatshare/phastform-engine.sock`) (note 1) |
+| `upstream_idle_timeout_s` | 4 | How long an idle upstream connection is kept for reuse; keep it below the engine's keep-alive (note 2) |
+| `upstream_priority` | `["vllm-header"]` | Where the class's priority goes upstream: any of `"vllm-header"`, `"body"` and `"smg-header"` (note 3) |
+| `cache_salt_secret_file` | required | An absolute path: a file of 32 random bytes in hex that only its owner may open (mode 600) (note 4) |
+| `metrics_key_file` | required with a TCP listener | An absolute path: a file of one key on one line that only its owner may open (note 5) |
 | `max_body_bytes` | 33554432 (32 MiB) | Larger request bodies get 413 |
-| `max_buffered_body_bytes` | 268435456 (256 MiB) | The bytes of request bodies the gateway holds at most, in all, from their first chunk to their request's end; a body that would pass it gets 503 `body_budget_exhausted` (at once for a declared length). At least `max_body_bytes` ([Bounds](#bounds)) |
-| `max_in_flight` | 1024 | The inference requests in flight at most, from their headers to their end; one more gets 503 `in_flight_limit` before its body is read. Envoy's circuit breakers' default |
-| `max_queued` | 256 | The requests waiting at the admission point at most, in all its queues and whatever their classes; one more gets 429 `queue_full`. Without an `[admission]` policy nothing waits |
-| `max_choices` | 1 | The choices a request may ask for at most: its `n` (with `use_beam_search`, its beam's width) and its `best_of`. One more is 400 `too_many_choices`. vLLM runs every choice it is asked for (it took `n = 8`), each a reply's worth of decode and KV |
+| `max_buffered_body_bytes` | 268435456 (256 MiB) | The bytes of request bodies the gateway holds at most, in all, from their first chunk to their request's end (note 6) |
+| `max_in_flight` | 1024 | The inference requests in flight at most, from their headers to their end; one more gets 503 `in_flight_limit` before its body is read (note 7) |
+| `max_queued` | 256 | The requests waiting at the admission point at most, in all its queues and whatever their classes; one more gets 429 `queue_full` (note 8) |
+| `max_choices` | 1 | The choices a request may ask for at most: its `n` and its `best_of`; one more is 400 `too_many_choices` (note 9) |
 | `stream_buffer_frames` | 64 | Frames buffered between the upstream and a client |
 | `stall_timeout_s` | 30 | How long that buffer may stay full before the stream is aborted |
-| `headers_timeout_s` | 600 | Every class's default `headers_timeout_s` (below): how long an attempt waits for the upstream's response headers before 504. Its old name, `first_byte_timeout_s`, is refused at start with this one |
+| `headers_timeout_s` | 600 | Every class's default `headers_timeout_s` (below): how long an attempt waits for the upstream's response headers before 504 (note 10) |
 | `drain_timeout_s` | 30 | How long a shutdown waits for in-flight requests |
-| `background_drain_s` | 5 | How far into a drain background requests go on: then a background stream ends with the `draining` error event and an abort, and a background request without a response yet, or still waiting at the admission point, gets 503 `draining` with `Retry-After: 1`, so that its client sends it again to the gateway that serves next. Realtime and interactive requests have the whole `drain_timeout_s`. From 0 (cut as the drain starts) to `drain_timeout_s` |
+| `background_drain_s` | 5 | How far into a drain background requests go on, from 0 (cut as the drain starts) to `drain_timeout_s` (note 11) |
 | `event_dedup_capacity` | 100000 | Lifecycle-event ids remembered for deduplication |
 | `event_dedup_ttl_s` | 600 | How long an event id is remembered |
 | `log_format` | `"text"` | `"text"` or `"json"` (one object per line) |
 | `log_level` | `"info"` | `error`, `warn`, `info`, `debug` or `trace` |
 
+1. Either is spoken to over HTTP/1.1 with pooled connections. Several GPU nodes are `[[nodes]]` entries instead (below), and then `upstream` is not set.
+2. The engine's keep-alive is `VLLM_HTTP_TIMEOUT_KEEP_ALIVE`, 5 s by default. Unless the gateway's is below it, a request can go out on a connection the engine is closing.
+3. The empty list sends none, as a plain client does: E2's stock arm. vLLM 0.32's FCFS scheduler ignores priorities rather than rejecting them.
+4. `deploy/cyan/install.sh` writes the file once. It keys every tenant's `cache_salt`, so that a client which reaches the engine directly cannot compute another tenant's salt from its name. A missing or unreadable file, one other users may open, or one that holds anything else stops the gateway at start. A new secret changes every salt, which orphans every tenant's prefix cache.
+5. `deploy/cyan/install.sh` writes the file once. `GET /metrics` and `/metrics/engine` on a TCP listener need it as `Authorization: Bearer <key>` (401 otherwise): every user of the host reaches loopback, and the metrics name the tenants and their traffic. The gateway keeps its SHA-256 and compares in constant time, as for tenants' keys. On a Unix socket, whose file mode keeps other users out, no key is asked for.
+6. A body that would pass it gets 503 `body_budget_exhausted` (at once for a declared length). It must be at least `max_body_bytes` ([Bounds](#bounds)).
+7. 1024 is Envoy's circuit breakers' default.
+8. Without an `[admission]` policy nothing waits.
+9. With `use_beam_search`, a request's `n` is its beam's width. vLLM runs every choice it is asked for (it took `n = 8`), each a reply's worth of decode and KV.
+10. Its old name, `first_byte_timeout_s`, is refused at start with this one.
+11. Past it, a background stream ends with the `draining` error event and an abort, and a background request without a response yet, or still waiting at the admission point, gets 503 `draining` with `Retry-After: 1`, so that its client sends it again to the gateway that serves next. Realtime and interactive requests have the whole `drain_timeout_s`.
+
 Each `[classes.<class>]` table (`realtime`, `interactive`, `background`; any of them, or none) sets what the requests of one class may ask for:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `max_reply_tokens` | none | The cap on the class's replies, in tokens, with or without an admission policy: a body gets its route's own limit at the lower of the client's limit and the cap ([Bounds](#bounds)), as degrade caps a reply. Under the lifecycle policy a degraded reply gets the lower of the two caps |
+| `max_reply_tokens` | none | The cap on the class's replies, in tokens, with or without an admission policy (note 1) |
 | `max_in_flight` | realtime 128, interactive 256, background 512 | The class's inference requests in flight at most; one more gets 503 `class_in_flight_limit` before its body is read |
 | `upload_timeout_s` | 60 | The request body's upload, from the receipt of its headers: then 408 `upload_timeout` |
-| `queue_timeout_s` | 120 | Each wait at the admission point, the first and one after a preemption: then 503 `queue_timeout` with `Retry-After: 1`. The `[admission]` policy's own `queue_timeout_s` (60 s) or `max_defer_s` (10 s) comes first by default |
-| `headers_timeout_s` | the top-level `headers_timeout_s` | Each attempt's wait for the upstream's response headers: then 504 `upstream_timeout`. vLLM sends a stream's headers at once and a JSON body's at the end of its generation |
+| `queue_timeout_s` | 120 | Each wait at the admission point, the first and one after a preemption: then 503 `queue_timeout` with `Retry-After: 1` (note 2) |
+| `headers_timeout_s` | the top-level `headers_timeout_s` | Each attempt's wait for the upstream's response headers: then 504 `upstream_timeout` (note 3) |
 | `first_content_timeout_s` | realtime 60, interactive 600, background 600 | The first body frame, from the request's receipt, whatever its attempts: then 504, or the `upstream_timeout` error event once the response has begun |
-| `idle_timeout_s` | realtime 30, interactive 600, background 600 | Each wait for a body frame after the first, from the moment the relay turns back to the upstream: then the error event and an abort |
+| `idle_timeout_s` | realtime 30, interactive 600, background 600 | Each wait for a body frame after the first: then the error event and an abort (note 4) |
 | `total_timeout_s` | realtime 300, interactive 1800, background 3600 | The whole request, from its receipt to its response's end; it bounds every wait above |
-| `first_content_objective_s` | realtime 0.25, the others none | The class's objective in the service level ([Accounting](#accounting)): a valid request is good when it completes with its first content within this, from its receipt. None: completing is enough. Realtime's is docs/SLO.md's 250 ms |
+| `first_content_objective_s` | realtime 0.25, the others none | The class's objective in the service level ([Accounting](#accounting)), for its first content (note 5) |
+
+1. A body gets its route's own limit at the lower of the client's limit and the cap ([Bounds](#bounds)), as degrade caps a reply. Under the lifecycle policy a degraded reply gets the lower of the two caps.
+2. The `[admission]` policy's own `queue_timeout_s` (60 s) or `max_defer_s` (10 s) comes first by default.
+3. vLLM sends a stream's headers at once and a JSON body's at the end of its generation.
+4. The wait counts from the moment the relay turns back to the upstream.
+5. A valid request is good when it completes with its first content within this, from its receipt. None: completing is enough. Realtime's is docs/SLO.md's 250 ms.
 
 The `[canary]` table sets the inference canary, which finds the engine's state by its inference ([The engine's state](#the-engines-state)):
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled` | `true` | `false` sends no canary and leaves the engine `serving` from the start, so that `/ready` asks only the engine's `/health`, as before the canary. E2's points run with it off (`flatshare-bench e2 run`). The other keys may stay set while it is off |
-| `interval_s` | 30 | How long no inference may succeed before the canary asks, from the later of the last success and the last canary. While the engine warms, every second, or every `interval_s` if that is shorter |
+| `enabled` | `true` | `false` sends no canary and leaves the engine `serving` from the start (note 1) |
+| `interval_s` | 30 | How long no inference may succeed before the canary asks, from the later of the last success and the last canary (note 2) |
 | `timeout_s` | 60 | How long one canary may take, to its answer's end; then it failed. It waits at the lowest class's priority, behind every class's prefill |
 | `degraded_after` | 3 | The canaries failed in a row, with no inference succeeding between them, that make a serving engine `degraded` |
+
+1. With it off, `/ready` asks only the engine's `/health`, as before the canary. E2's points run with it off (`flatshare-bench e2 run`). The other keys may stay set while it is off.
+2. While the engine warms, the canary asks every second, or every `interval_s` if that is shorter.
 
 Each `[[nodes]]` entry is a GPU node behind the gateway ([Nodes](#nodes)), its engine and speech servers as cyan's tunnels reach them; with any, `upstream` is not set and no `[admission]` policy may be, and some node must take each role:
 
@@ -181,31 +202,41 @@ Each `[[nodes]]` entry is a GPU node behind the gateway ([Nodes](#nodes)), its e
 | `name` | required | The node's name, from `[A-Za-z0-9._-]`: the metrics' `node` label, `/nodes` and `POST /v1/sessions`' answers |
 | `upstream` | required | Its engine, as the top-level `upstream` is written: `unix:/run/user/1007/flatshare/gray-engine.sock` |
 | `roles` | `["realtime", "background"]` | The sessions it takes: `realtime` (calls), `background` (agents: interactive and background requests), or both |
-| `max_calls` | 2 | The realtime sessions placed on it at most, a call each (E2 measured two calls on one card); one more that no other node takes gets 503 `no_call_slot`. Positive with the realtime role |
-| `max_agents` | required with both roles | The agents' sessions placed on it at most, interactive and background together; one more that no other node takes gets 503 `no_agent_slot`. On a node that carries calls, the agents its card serves beside them within the voice SLO: a node with both roles sets it, or `"unbounded"` to run its agents without a bound, and a gateway with one that does neither refuses to start. A node with the background role alone takes agents without a bound unless it sets one. Positive or `"unbounded"`, and only with the background role |
-| `stt`, `tts` | none | Its speech servers, as `upstream` is written (`unix:/run/user/1007/flatshare/gray-stt.sock`): its health needs their `/health`, and `POST /v1/sessions` names them for the call to bind. A node without them is judged by its engine alone |
+| `max_calls` | 2 | The realtime sessions placed on it at most, a call each; one more that no other node takes gets 503 `no_call_slot` (note 1) |
+| `max_agents` | required with both roles | The agents' sessions placed on it at most, interactive and background together; one more that no other node takes gets 503 `no_agent_slot` (note 2) |
+| `stt`, `tts` | none | Its speech servers, as `upstream` is written (`unix:/run/user/1007/flatshare/gray-stt.sock`) (note 3) |
+
+1. E2 measured two calls on one card. It must be positive with the realtime role.
+2. On a node that carries calls, it is the agents its card serves beside them within the voice SLO: a node with both roles sets it, or `"unbounded"` to run its agents without a bound, and a gateway with one that does neither refuses to start. A node with the background role alone takes agents without a bound unless it sets one. It must be positive or `"unbounded"`, and is only for the background role.
+3. The node's health needs their `/health`, and `POST /v1/sessions` names them for the call to bind. A node without them is judged by its engine alone.
 
 The `[placement]` table, which needs `[[nodes]]`, sets how sessions are placed and when a node is healthy:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `idle_s` | 300 | How long a session keeps its node without a request; its next request is placed again. The minutes a prefix cache is worth keeping a session for; a call's session ends with the call (`DELETE /v1/sessions/{id}`, or its `session_closed` event) |
+| `idle_s` | 300 | How long a session keeps its node without a request; its next request is placed again (note 1) |
 | `health_interval_s` | 1 | How often each node is checked: its engine serving and ready, its STT and TTS answering `/health` |
 | `health_timeout_s` | 1 | How long a speech server's `/health` may take |
 | `unhealthy_after` | 3 | The failed checks in a row that make a healthy node unhealthy |
 | `healthy_after` | 2 | The passed checks in a row that make an unhealthy node healthy again |
-| `failover_background_max_in_flight` | 0 | The interactive and background requests in flight at most on a node that covers ([Nodes](#nodes): it carries realtime sessions moved to it from another node, or, with `calls = "fill"`, it is a realtime node after the first and carries any call); the others wait, as at an admission point, until those calls end. 0 defers them all |
-| `calls` | `"spread"` | Which of the available realtime nodes with a free call slot a new or moved call goes to: `"spread"`, the one with the fewest calls, then the fewest requests in flight; `"fill"`, the first in the file's order, so that a later node takes calls only while the earlier ones are full or not available, a warm spare, which covers while it carries any call |
+| `failover_background_max_in_flight` | 0 | The interactive and background requests in flight at most on a node that covers ([Nodes](#nodes)); 0 defers them all (note 2) |
+| `calls` | `"spread"` | Which of the available realtime nodes with a free call slot a new or moved call goes to: `"spread"` or `"fill"` (note 3) |
+
+1. The default is the minutes a prefix cache is worth keeping a session for; a call's session ends with the call (`DELETE /v1/sessions/{id}`, or its `session_closed` event).
+2. A node covers while it carries realtime sessions moved to it from another node, or, with `calls = "fill"`, while it is a realtime node after the first and carries any call. The interactive and background requests beyond the bound wait, as at an admission point, until those calls end.
+3. `"spread"`: the one with the fewest calls, then the fewest requests in flight. `"fill"`: the first in the file's order, so that a later node takes calls only while the earlier ones are full or not available, a warm spare, which covers while it carries any call.
 
 Each `[[listen]]` entry sets exactly one of `tcp = "127.0.0.1:18080"`, a loopback address, or `unix = "/absolute/path.sock"`, and a Unix entry may set `tenant`. Each `[tenants.<name>]` table (names from `[A-Za-z0-9._-]`) sets:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `keys_sha256` | `[]` | Hex SHA-256 digests of the tenant's API keys; the keys never appear in the file. A tenant with no keys must be named by a listener |
+| `keys_sha256` | `[]` | Hex SHA-256 digests of the tenant's API keys, which never appear in the file. A tenant with no keys must be named by a listener |
 | `trusted` | `false` | May set `X-Session-ID` and `X-Flatshare-Class`, post lifecycle events, and with `[[nodes]]` place and end sessions (`POST /v1/sessions`, `DELETE /v1/sessions/{id}`) |
 | `default_class` | `"interactive"` | The class of requests that do not choose one |
 | `max_class` | `default_class` | The strictest class the tenant may use |
-| `max_in_flight` | 512 | The tenant's inference requests in flight at most; one more gets 429 `tenant_in_flight_limit` before its body is read. Half of `max_in_flight`'s default, so that one tenant's flood leaves the others room |
+| `max_in_flight` | 512 | The tenant's inference requests in flight at most; one more gets 429 `tenant_in_flight_limit` before its body is read (note 1) |
+
+1. The default is half of `max_in_flight`'s, so that one tenant's flood leaves the others room.
 
 The `[admission]` table sets the admission policy. A key that belongs to other policies than the chosen one is an error, like an unknown key, and so, under `lifecycle`, is a key that no mechanism switched on reads.
 
@@ -217,17 +248,21 @@ The `[admission]` table sets the admission policy. A key that belongs to other p
 | `reserved_tokens` | required | `token-reservation` | Pool tokens background requests leave free; less than `pool_tokens` |
 | `ceilings` | required | `flow-control` | `{ realtime = 16, interactive = 12, background = 8 }`: each class is dispatched while fewer requests than its ceiling are in flight. The ceilings must not increase from realtime to background |
 | `headroom` | `true` | `lifecycle` | Keep KV headroom free for the armed realtime sessions |
-| `headroom_tokens` | required with `headroom` or `degrade` | `lifecycle` with `headroom` or `degrade` | The KV of one realtime turn, its prompt and its reply: the headroom kept per armed session, and what a realtime request must find free not to be degraded. Less than `pool_tokens` |
-| `trigger` | `"onset"` | `lifecycle` with `headroom` | What arms the headroom: `"onset"`, the user's speech onset, until the reply's first audio; `"request"`, the critical window alone, from the end of the user's turn or the realtime request, whichever comes first |
+| `headroom_tokens` | required with `headroom` or `degrade` | `lifecycle` with `headroom` or `degrade` | The KV of one realtime turn, its prompt and its reply (note 1) |
+| `trigger` | `"onset"` | `lifecycle` with `headroom` | What arms the headroom: `"onset"` or `"request"` (note 2) |
 | `throttle` | `true` | `lifecycle` | Budget the background prefill admitted in a critical window |
 | `critical_prefill_budget_ms` | required with `throttle` | `lifecycle` with `throttle` | The predicted prefill time the background requests admitted in one critical window may take in all; 0 admits none |
 | `max_num_batched_tokens` | 512 | `lifecycle` with `throttle` | The engine's `--max-num-batched-tokens`, in whose steps the throttle prices a prefill |
 | `degrade` | `true` | `lifecycle` | Cap the reply of a realtime request that finds less than `headroom_tokens` free |
 | `degrade_max_tokens` | required with `degrade` | `lifecycle` with `degrade` | That cap, in tokens |
 | `max_defer_s` | 10 | `lifecycle` with `headroom` or `throttle` | How long a background request may be deferred; it is then admitted regardless. Longer than an E2 caller's turn is armed, about 4 s |
-| `state_timeout_s` | 10 | `lifecycle` | How long a realtime session stays in a state of its turn that no event moves it on from. Longer than any state of an E2 caller's turn |
+| `state_timeout_s` | 10 | `lifecycle` | How long a realtime session stays in a state of its turn that no event moves it on from (note 3) |
 | `queue_limit` | 1024 | all but `none`; `lifecycle` with `headroom` or `throttle` | Requests each class's queue holds; one more gets 429. The lifecycle policy queues only background requests |
 | `queue_timeout_s` | 60 | all but `none` and `lifecycle` | How long a request may wait before it gets 503. The lifecycle policy refuses no request for its wait |
+
+1. It is the headroom kept per armed session, and what a realtime request must find free not to be degraded. It must be less than `pool_tokens`.
+2. `"onset"`: the user's speech onset, until the reply's first audio. `"request"`: the critical window alone, from the end of the user's turn or the realtime request, whichever comes first.
+3. The default is longer than any state of an E2 caller's turn.
 
 ## Admission
 
