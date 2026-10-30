@@ -32,7 +32,8 @@ the tunnel's sockets. No call was in progress.
 - **No request spent over 2 ms in the gateway's own leg** (0 of 82), and the 99th percentile was at most 0.2 ms, inside
   the overhead objective ([SLO.md](../../../docs/SLO.md#the-production-objectives)).
 - **A clause's first audio comes about 10 ms before a sentence's** (10.3 ms between the medians, 124 and 135 ms), so
-  speaking a clause first would save about that much of a 2,034 ms SLO.
+  speaking a clause first would save about that much of the main evaluation's 2,034 ms SLO: voice alone's 1,784 ms
+  plus 250 ms ([W5's row in SLO.md](../../../docs/SLO.md#the-slos-reference-campaign-by-campaign)).
 - **W6's 0.29 ms** ([its record](../2026-10-25-w6-transport/README.md)) was its own build's measurement, v0.3-191.
 
 ## How it ran

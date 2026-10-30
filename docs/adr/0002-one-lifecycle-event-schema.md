@@ -31,6 +31,6 @@ Since 2026-10-23 the voice worker posts its events to `/v1/events`, and the gate
 
 Since 2026-10-24 (W5) events are idempotent by `(tenant, source, event_id)`, so that a trusted tenant cannot make another's events repeats, and the control plane infers no events: the `inferred` source is gone.
 
-Since 2026-10-28, with `[[nodes]]`, a `session_closed` event also ends the session's placement and frees its call or agent slot ([ADR-0008](0008-two-cards-consolidation-with-a-warm-spare.md)), without an admission policy. In the serving arrangement it is the one event that acts ([ADR-0007](0007-the-gateway-is-the-serving-control-plane.md)).
+Since 2026-10-28, with `[[nodes]]`, a `session_closed` event also ends the session's placement and frees its call or agent slot ([ADR-0008](0008-two-cards-consolidation-with-a-warm-spare.md)), without an admission policy. In the arrangement to deploy it is the one event that acts ([ADR-0007](0007-the-gateway-is-the-serving-control-plane.md)).
 
 Since v1.8 a tenant can end a session's placement with `DELETE /v1/sessions/{id}` too, and the voice worker does so at each call's end. In serve mode the worker posts `session_closed` alone, and the turns' events only in bench mode, for E2's lifecycle policy; the gateway keeps `session_closed` as a client's way to end a session.

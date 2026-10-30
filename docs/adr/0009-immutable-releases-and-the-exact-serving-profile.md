@@ -7,14 +7,14 @@
 
 The external audit of 2026-10-27 found that what a box would deploy was not what E2 measured, and that a deploy could not be undone:
 - **The defaults were not the measured configuration.**
-  - The make-room variant's drop-in reserved 2,048 tokens and set no window, so it ran 16 tokens, where the PRs' configuration runs no reserve and 48.
+  - The make-room variant's drop-in reserved 2,048 tokens and set no window, so it ran 16 tokens, where the configuration to deploy runs no reserve and 48.
   - The voice worker admitted every call (`load_fnc` returned 0), and only the benchmark's callers bounded the calls.
 - **A deploy wrote into the live tree.** `deploy.sh` copied the source over `~/flatshare/src`, wrote `DEPLOYED` and ran `install.sh`. A deploy left no manifest, and nothing could switch back: two hosts at one version could hold different trees.
 
 ## Decision
 
 - **A serving profile names the configuration to serve** (`deploy/profiles/rtx-5060-ti-serve.toml`):
-  - the frozen box's engine running the change, with the PRs' switches (two preemptions a step, the budget cap at 48 tokens, no reserve);
+  - the frozen box's engine running the configuration to deploy (two preemptions a step, the budget cap at 48 tokens, no reserve);
   - the step cap the sweep chose (256 tokens a step, no long-prefill threshold: [the sweep](../../benchmarks/results/2026-10-27-sweep/README.md), confirmed in [the rounds](../../benchmarks/results/2026-10-28-rounds/README.md));
   - the module's hash, the calls the worker admits, and real callers' audio.
 

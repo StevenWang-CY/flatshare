@@ -17,7 +17,7 @@ What vLLM 0.32.0 runs for the box's checkpoint, Qwen3-4B-Instruct-2507-FP8 (bloc
 | T4 (sm75) | Marlin with FP16 activations | Triton attention | **modeled**; the preflight labels both |
 | Older than sm75, CPU-only, ROCm | — | — | not supported by this deployment: vLLM 0.32.0 needs sm75, and the CPU KV tier's platform differs off CUDA |
 
-The KV layout follows the CPU tier's connector, not the card: vLLM's `OffloadingConnector` requires LBHNC, so every CUDA card with the tier runs it. What changes in what the results mean is in [the preflight](#the-preflight): within one card, the frozen engine against make-room compares as on the box; across cards, only in the regime's coordinates and each card's distance to its own SLO.
+The KV layout follows the CPU tier's connector, not the card: vLLM's `OffloadingConnector` requires LBHNC, so every CUDA card with the tier runs it. What changes in what the results mean is in [the preflight](#the-preflight): within one card, tuned vLLM against make-room compares as on the box; across cards, only in the regime's coordinates and each card's distance to its own SLO.
 
 ## The hardware profile
 
@@ -121,7 +121,7 @@ A host without a control host beside it, as the box has cyan, runs both: the GPU
 - **The measurement drop-in** ([`deploy/phastform/measure`](../deploy/phastform/measure)): the A100 run reads vLLM's development routes, as the box's measurements do (`/server_info`, `/reset_prefix_cache`): `campaign.sh` turns the drop-in on before each point, and `host.py warm` before its starts.
 - **The campaign runs on the host** (`benchmarks/e2/campaign.sh --local`), so a dropped workstation link stops nothing, and [`deploy/a100/pull.sh`](../deploy/a100/pull.sh) copies each point, the probes, the node's records, the warm starts' and the units' logs (exported from the host's journal, or `flatshare-svc`'s, since the last round) to the workstation every two minutes.
 
-None of these differs between the frozen engine and make-room on one host, so a single host's comparisons are made within it.
+None of these differs between tuned vLLM and make-room on one host, so a single host's comparisons are made within it.
 
 ### flatshare-svc
 
@@ -211,12 +211,12 @@ A forecast written before the run gives every term the run measures, modeled, fo
 
 | Block | Work | Minutes (estimate) | Complete after it | Minutes on the A100 |
 |---|---|---:|---|---:|
-| 0 | `bootstrap.sh gpu` and `warm` (on the box's kernels in [the rehearsal](#the-kit-rehearsed-on-the-box), measured: the three servers' first start from empty caches 20.5 minutes to ready, each of the three other compile configurations, make-room's at the PRs' values among them, 2.5 to 2.9 minutes), the box's `smoke.sh` from the source tree (its listener audit included), one 2-turn call through LiveKit | 44 | the deployment, every compile configuration warm | 3 |
-| 1 | the frozen engine: E0 (`flatshare-bench tiers --reps 3`), the KV case x3, the prefill case x3, the calls' tail x2 with whole 40-token replies ([`probes.sh`](../benchmarks/a100/probes.sh) 1) | 25 | the frozen side of the probes, E0's cells | 12 |
+| 0 | `bootstrap.sh gpu` and `warm` (on the box's kernels in [the rehearsal](#the-kit-rehearsed-on-the-box), measured: the three servers' first start from empty caches 20.5 minutes to ready, each of the three other compile configurations, make-room's in the configuration to deploy among them, 2.5 to 2.9 minutes), the box's `smoke.sh` from the source tree (its listener audit included), one 2-turn call through LiveKit | 44 | the deployment, every compile configuration warm | 3 |
+| 1 | tuned vLLM: E0 (`flatshare-bench tiers --reps 3`), the KV case x3, the prefill case x3, the calls' tail x2 with whole 40-token replies ([`probes.sh`](../benchmarks/a100/probes.sh) 1) | 25 | tuned vLLM's side of the probes, E0's cells | 12 |
 | 2 | stock at vLLM's default, 2,048/0: KV x3, tail x2; stock at the time-equivalent cap (`--cap`, 1,536): KV x1, tail x2 | 26 | the stock step-cap settings | 20 |
-| 3 | the PRs' values (make-room, no reserve, a 48-token window): KV x3, prefill x3, tail x2 | 17 | the probe comparison on the A100 | 10 |
-| 4 | E2 round 1 ([`a100-r1.campaign`](../benchmarks/a100/a100-r1.campaign)): the PRs' values, voice alone, frozen | 29 | one E2 round | 26 |
-| 5 | the calibration point ([`calibration.sh`](../benchmarks/a100/calibration.sh)): AIPerf's replay of the whole corpus at 16 sessions straight to a fresh frozen engine (through `flatshare-forward`'s loopback port), 600 s + 60 s | 17 | the step model's data | 17 |
+| 3 | the configuration to deploy (make-room, no reserve, a 48-token window): KV x3, prefill x3, tail x2 | 17 | the probe comparison on the A100 | 10 |
+| 4 | E2 round 1 ([`a100-r1.campaign`](../benchmarks/a100/a100-r1.campaign)): the configuration to deploy, voice alone, tuned vLLM | 29 | one E2 round | 26 |
+| 5 | the calibration point ([`calibration.sh`](../benchmarks/a100/calibration.sh)): AIPerf's replay of the whole corpus at 16 sessions straight to a fresh engine with tuned vLLM's flags (through `flatshare-forward`'s loopback port), 600 s + 60 s | 17 | the step model's data | 17 |
 | 6-9 | rounds 2 to 5, the engine groups alternating so that no switch falls between rounds | 4 x 28 | three rounds by about 3.6 h, five by about 4.5 h | 4 x 26 |
 | 10 | the GPU units stopped; the last pull | 10 | the core, about 4.7 h | 0.1 |
 
@@ -224,26 +224,26 @@ The rehearsal ran block 0 in 34 minutes on the box from a fresh home (`gpu` 1.4,
 
 `run.sh --until HH:MM` (UTC) starts no block whose estimate above would end after then, and hands that one deadline, as an epoch, to every campaign and to C', which start no point that cannot end before it: a point is budgeted by the longest of its kind measured on this host once one has run (`durations.tsv`), by W5's durations before. A campaign stopped so leaves its block undone and the run exits 0; any failure exits 1. `--estimate BLOCK=MINUTES` puts another estimate in the table's place for a block or an arm (a host measured faster or slower, or an E2 block run for its first point alone, which the campaign's own budget then stops at the deadline).
 
-During every agent point `flatshare-bench e2 run` samples the engine's `/metrics` every 0.5 s, from which each point's summary gives the measured running share (the time free KV is under two calls' 2,048 tokens). W5's and FB's points on the box ran without this sampler; RS measured the box's afterwards on W5's samples, 8.1% beside the frozen engine against the forecast's 17% ([RS](BENCHMARKS.md#the-boxs-running-share-rs)).
+During every agent point `flatshare-bench e2 run` samples the engine's `/metrics` every 0.5 s, from which each point's summary gives the measured running share (the time free KV is under two calls' 2,048 tokens). W5's and FB's points on the box ran without this sampler; RS measured the box's afterwards on W5's samples, 8.1% beside tuned vLLM against the forecast's 17% ([RS](BENCHMARKS.md#the-boxs-running-share-rs)).
 
 ### The optional arms
 
-Each arm is complete in itself and runs after the core (`run.sh NAME`); the list is in the plan's order, and arm 8 was added during the run. On 2026-10-26 the batch, tuned vLLM, the PRs' values at tuned vLLM's cap, A' (one round) and FlashInfer's attention ran, in that order; C', the PRs' own code and preempt-resubmit did not ([what it measured](#what-it-measured-2026-10-26)).
+Each arm is complete in itself and runs after the core (`run.sh NAME`); the list is in the plan's order, and arm 8 was added during the run. On 2026-10-26 the batch, tuned vLLM, the configuration to deploy at tuned vLLM's cap, A' (one round) and FlashInfer's attention ran, in that order; C', the pull requests' own code and preempt-resubmit did not ([what it measured](#what-it-measured-2026-10-26)).
 
-1. **C'** ([`cprime.sh`](../benchmarks/a100/cprime.sh)): Qwen3-14B-FP8 at the A100 40 GB's own pool, 117,344 tokens (modeled), at 40 sessions, on its own node (`a100-40gb-qwen3-14b`), the agent's requests naming it (the `qwen3-14b` worker variant): its first starts, the pool checked, a smoke reply without `<think>`, E0 with one rep, its own voice alone, then three rounds of tuned vLLM (the step cap with the lowest calls' first-token p95 in blocks 1 and 2, [`probe_results.py`](../benchmarks/a100/probe_results.py) `pick-stock`) against the PRs' values. About 95 minutes.
-2. **The PRs' own code** ([`branches.sh`](../benchmarks/a100/branches.sh)): vLLM at the PRs' tip with their switches on against vLLM at their base, two Python-only installs over precompiled binaries staged beforehand (`branches.sh stage BASE HEAD`), each through the probes: KV x3, prefill x2, tail x2. About 45 minutes.
+1. **C'** ([`cprime.sh`](../benchmarks/a100/cprime.sh)): Qwen3-14B-FP8 at the A100 40 GB's own pool, 117,344 tokens (modeled), at 40 sessions, on its own node (`a100-40gb-qwen3-14b`), the agent's requests naming it (the `qwen3-14b` worker variant): its first starts, the pool checked, a smoke reply without `<think>`, E0 with one rep, its own voice alone, then three rounds of tuned vLLM (the step cap with the lowest calls' first-token p95 in blocks 1 and 2, [`probe_results.py`](../benchmarks/a100/probe_results.py) `pick-stock`) against the configuration to deploy. About 95 minutes.
+2. **The pull requests' own code** ([`branches.sh`](../benchmarks/a100/branches.sh)): vLLM at the pull requests' tip with their switches on against vLLM at their base, two Python-only installs over precompiled binaries staged beforehand (`branches.sh stage BASE HEAD`), each through the probes: KV x3, prefill x2, tail x2. About 45 minutes.
 3. **Preempt-resubmit** on the stock engine (`a100-resubmit-r3` to `-r5`): three points, seeds 13 to 15. About 36 minutes.
-4. **The scheduler at a datacenter batch** ([`batch.sh`](../benchmarks/a100/batch.sh)): `vllm bench serve` keeping 256 requests in flight, 10% at priority 0, on frozen and on make-room with its switches off and on, each request small enough (48 prompt and 64 output tokens, 8 blocks at most) that all 256 hold their KV at once in the core's pool (2,048 of its 2,275 blocks), so the arm measures the scheduler's per-step cost at a batch of 256 rather than a queue behind the KV; the engine's running requests, sampled once a second, show the batch formed (`ENGINE-running.json`), and a pool too small for it is refused. The clients load their tokenizer from the engine's own snapshot, at the revision `engine.yaml` pins, since offline the model's name resolves to nothing where the download was by commit. About 15 minutes [estimate: four engine switches and two cold make-room compiles].
-5. **A'** (`a100-aprime-r1`, `-r2`): the box's pool at 32 sessions, where the forecast places the A100 closest to the box's regime (a running share of 18%), each round the frozen engine and the PRs' values on one sample of the agents; voice alone, the SLO's reference, is the core's five points on the same card. About 56 minutes.
-6. **Tuned vLLM** (`a100-tuned-r1`, `-r2`): the stock engine at the step cap whose calls' first-token p95 was the lowest in blocks 1 and 2 on this card (`probe_results.py pick-stock`), otherwise the core's frozen point, on the samples of the core's rounds 1 and 2, so that each pairs with that round's frozen point and the PRs' values. The core keeps the box's 512/256, the box's best, so that a difference within the A100 is the change's; this arm sets the change beside the stock engine at the A100's own best. About 28 minutes.
-7. **FlashInfer's attention** (`run.sh backend`, [`probes.sh`](../benchmarks/a100/probes.sh) `backend`): the frozen engine with FlashInfer's attention in place of FlashAttention 2 (`--attention-backend FLASHINFER`) through the KV case x3, whose two 18k-token decodes take the same steps on either backend, so that its wait reads the decode step on each; the block stops before a run unless the engine's log at that start names FlashInfer. The calibration fitted the A100's decode attention at 42% of the card's bandwidth, where the box's reaches 77% of its own. About 12 minutes, more at the first start, which JIT-compiles FlashInfer's attention kernels for the card.
-8. **The PRs' values at the A100's best stock step cap** (`run.sh prtuned`, `a100-prtuned-r1`, `-r2`): the PRs' 48-token configuration with tuned vLLM's 2,048/0 ([`a100-pr-ab48-2048-s24.toml`](../benchmarks/a100/arms/a100-pr-ab48-2048-s24.toml)), on the samples of the core's rounds 1 and 2, so that each pairs with tuned vLLM's round. Added during the run, when tuned vLLM's first round gave the agents 40% more tokens a second at 2,048/0 than the box's 512/256 on the same sample, the voice as far over its SLO: whether the PRs keep the voice under its SLO at the card's own best cap. About 24 minutes.
+4. **The scheduler at a datacenter batch** ([`batch.sh`](../benchmarks/a100/batch.sh)): `vllm bench serve` keeping 256 requests in flight, 10% at priority 0, on tuned vLLM and on make-room with its switches off and on, each request small enough (48 prompt and 64 output tokens, 8 blocks at most) that all 256 hold their KV at once in the core's pool (2,048 of its 2,275 blocks), so the arm measures the scheduler's per-step cost at a batch of 256 rather than a queue behind the KV; the engine's running requests, sampled once a second, show the batch formed (`ENGINE-running.json`), and a pool too small for it is refused. The clients load their tokenizer from the engine's own snapshot, at the revision `engine.yaml` pins, since offline the model's name resolves to nothing where the download was by commit. About 15 minutes [estimate: four engine switches and two cold make-room compiles].
+5. **A'** (`a100-aprime-r1`, `-r2`): the box's pool at 32 sessions, where the forecast places the A100 closest to the box's regime (a running share of 18%), each round tuned vLLM and the configuration to deploy on one sample of the agents; voice alone, the SLO's reference, is the core's five points on the same card. About 56 minutes.
+6. **Tuned vLLM** (`a100-tuned-r1`, `-r2`): the stock engine at the step cap whose calls' first-token p95 was the lowest in blocks 1 and 2 on this card (`probe_results.py pick-stock`), otherwise the core's tuned vLLM point, on the samples of the core's rounds 1 and 2, so that each pairs with that round's tuned vLLM point and the configuration to deploy. The core keeps the box's 512/256, the box's best, so that a difference within the A100 is the change's; this arm sets the change beside the stock engine at the A100's own best. About 28 minutes.
+7. **FlashInfer's attention** (`run.sh backend`, [`probes.sh`](../benchmarks/a100/probes.sh) `backend`): tuned vLLM with FlashInfer's attention in place of FlashAttention 2 (`--attention-backend FLASHINFER`) through the KV case x3, whose two 18k-token decodes take the same steps on either backend, so that its wait reads the decode step on each; the block stops before a run unless the engine's log at that start names FlashInfer. The calibration fitted the A100's decode attention at 42% of the card's bandwidth, where the box's reaches 77% of its own. About 12 minutes, more at the first start, which JIT-compiles FlashInfer's attention kernels for the card.
+8. **The configuration to deploy at the A100's best stock step cap** (`run.sh prtuned`, `a100-prtuned-r1`, `-r2`): the configuration to deploy with tuned vLLM's 2,048/0 ([`a100-pr-ab48-2048-s24.toml`](../benchmarks/a100/arms/a100-pr-ab48-2048-s24.toml)), on the samples of the core's rounds 1 and 2, so that each pairs with tuned vLLM's round. Added during the run, when tuned vLLM's first round gave the agents 40% more tokens a second at 2,048/0 than the box's 512/256 on the same sample, the voice as far over its SLO: whether the configuration to deploy keeps the voice under its SLO at the card's own best cap. About 24 minutes.
 
 MIG (a 3g.20gb voice instance beside a 4g.20gb agent instance) needs administrator rights and a GPU reset and is not scripted.
 
 ### The analysis
 
-`make reproduce-a100 RECORDS=<the pulled host directory> CORPUS=<weka-x32>` writes `build/reproduce-a100/a100.md` ([`analysis.py`](../benchmarks/a100/analysis.py)), each section from what the records hold: the step model fitted on the calibration point with the card's own E0, each term beside the forecast as a ratio; flatshare-sim with those costs against the measured point, as the box's calibration table; the probes beside the forecast and the box; `flatshare-bench e2 report` over the A100's points alone (the core's with tuned vLLM's and the PRs' values' at its cap, then A' with the core's voice alone), each round's points side by side and each configuration's measured running share; the batch arm's output tokens a second against the frozen engine's, each priority's latency beside them; the host around the card; and the two cards in regime coordinates only. The run of 2026-10-26 has its own as [`a100.md`](../benchmarks/results/2026-10-26-a100/a100.md) in its records.
+`make reproduce-a100 RECORDS=<the pulled host directory> CORPUS=<weka-x32>` writes `build/reproduce-a100/a100.md` ([`analysis.py`](../benchmarks/a100/analysis.py)), each section from what the records hold: the step model fitted on the calibration point with the card's own E0, each term beside the forecast as a ratio; flatshare-sim with those costs against the measured point, as the box's calibration table; the probes beside the forecast and the box; `flatshare-bench e2 report` over the A100's points alone (the core's, with tuned vLLM and the configuration to deploy at its cap, then A' with the core's voice alone), each round's points side by side and each configuration's measured running share; the batch arm's output tokens a second against tuned vLLM's, each priority's latency beside them; the host around the card; and the two cards in regime coordinates only. The run of 2026-10-26 has its own as [`a100.md`](../benchmarks/results/2026-10-26-a100/a100.md) in its records.
 
 The host is measured by [`bench_host.py`](../benchmarks/a100/bench_host.py), with the GPU units stopped (`flatshare/venvs/engine/bin/python flatshare/src/benchmarks/a100/bench_host.py --out flatshare/runs/a100/host`): its link from pinned host memory to the card through vLLM's own batched page copies, at the CPU tier's page sizes, each way, and its CPU at a fixed Python workload, the two of the host's costs the forecast takes from the box. The analysis reads them with E0's GPU hit (the host's work on a prompt, which grows with it) and its CPU restore beyond the GPU hit (the transfer).
 
@@ -292,12 +292,13 @@ back in 3 hours 13 minutes, each E2 round in 26 minutes. Its records are
 
 | Two calls beside 24 coding-agent sessions | Voice p95, median (range) | Over the SLO | Agents' tokens/s | Agents' TTFT p50 / p99 | Running share |
 |---|---:|---:|---:|---:|---:|
-| Frozen, the box's flags (512/256) | 4,986 ms (4,163–5,710 ms) | +3,317 ms | 8,633 | 12 s / 26 s | 6% (4–9%) |
-| The PRs' values (make-room, a 48-token window) | **1,634 ms** (1,609–1,663 ms) | −35 ms | 8,651 | 14 s / 26 s | 6% (2–7%) |
+| Tuned vLLM, the box's flags (512/256) | 4,986 ms (4,163–5,710 ms) | +3,317 ms | 8,633 | 12 s / 26 s | 6% (4–9%) |
+| The configuration to deploy (make-room, a 48-token window) | **1,634 ms** (1,609–1,663 ms) | −35 ms | 8,651 | 14 s / 26 s | 6% (2–7%) |
 
-The PRs' values met the SLO in every round, by 7 to 60 ms; frozen missed it by 2.5 to 4.0 s. Round by round, the agents'
-tokens/s over the calls' first 240 s with the PRs' values were 94–111% of frozen's (a median of 96%), their whole-call
-tokens/s 95–103%, and no turn of the 750 failed. The forecast put the core's running share at 10% [modeled].
+The configuration to deploy met the SLO in every round, by 7 to 60 ms; tuned vLLM missed it by 2.5 to 4.0 s. Round by
+round, the agents' tokens/s over the calls' first 240 s with the configuration to deploy were 94–111% of tuned vLLM's (a
+median of 96%), their whole-call tokens/s 95–103%, and no turn of the 750 failed. The forecast put the core's running
+share at 10% [modeled].
 
 **The probes (blocks 1 to 3)**, against the forecast and the box. The box's column is the report's, the four runs of its
 §2.4 on Phastform, against which [Table E1](REPORT.md#e-the-forecast-for-the-a100) compares the A100:
@@ -306,52 +307,53 @@ tokens/s 95–103%, and no turn of the 750 failed. The forecast put the core's r
 |---|---:|---:|---:|
 | KV case, stock 512/256: the voice turn's wait | 1,748 ms (1,721–1,750, 3 runs) | 1,328–1,369 ms (1,082–1,377) | 4,968 ms (4,900–4,971) |
 | KV case, stock at vLLM's default 2,048/0 | 1,642 ms (1,620–1,645, 3 runs) | | |
-| KV case, the PRs' values: the first token | 175 ms (150–176, 3 runs) | 126–145 ms (109–146) | 290 ms (216–294) |
+| KV case, the configuration to deploy: the first token | 175 ms (150–176, 3 runs) | 126–145 ms (109–146) | 290 ms (216–294) |
 | Prefill case, stock: the reply's token gap (1st to 16th) | 32 ms (3 runs) | 32.8 ms (25.7–35.4) | 60–66 ms |
-| Prefill case, the PRs' values: the token gap | 7 ms (3 runs) | 5.6 ms (3.7–5.6) | 16–20 ms |
+| Prefill case, the configuration to deploy: the token gap | 7 ms (3 runs) | 5.6 ms (3.7–5.6) | 16–20 ms |
 | The calls' first-token p95 beside 12 agents, 512/256 | 3,114 ms (3,102–3,126, 2 runs) | | 7,631 and 7,643 ms (the kit's rehearsal) |
 | The same at 2,048/0, and at 1,536/768 | 2,526 ms (2,518–2,535) and 3,566 ms (3,446–3,687) | | |
-| The same, the PRs' values | 173 ms (167–179, 2 runs) | | |
+| The same, the configuration to deploy | 173 ms (167–179, 2 runs) | | |
 
 Of the stock step caps, vLLM's default 2,048/0 gave the A100 its lowest calls' tail, so tuned vLLM's arm ran it.
 
-**The arms after the core**, in the order they ran: the batch, tuned vLLM, the PRs' values at tuned vLLM's cap (arm 8,
-added once tuned vLLM's first round was in), A' (its first round) and FlashInfer's attention. C' (about 95 minutes),
-the PRs' own code (45) and preempt-resubmit (36) did not run: the balance left after the core went to the five that set
-the core beside the card's own best stock configuration.
+**The arms after the core**, in the order they ran: the batch, tuned vLLM, the configuration to deploy at tuned vLLM's
+cap (arm 8, added once tuned vLLM's first round was in), A' (its first round) and FlashInfer's attention. C' (about 95
+minutes), the pull requests' own code (45) and preempt-resubmit (36) did not run: the balance left after the core went
+to the five that set the core beside the card's own best stock configuration.
 
 - **The scheduler at a batch of 256** (9 minutes): with its switches off make-room made 1.018 of vLLM's output tokens a
   second (7,661 against 7,524), with 215 requests running at the median against 201, so its code path costs nothing this
-  batch shows. With the PRs' values the priority 0 requests' TTFT p99 went from 574 to 177 ms and their TPOT p50 from
-  28.6 to 6.9 ms, the engine's output to 1.153 of vLLM's, and the priority 2 requests' TTFT p99 from 1,086 to 7,971 ms
-  (p50 341 to 283 ms): 26 priority 0 requests in closed loop keep first tokens due in most steps, and #63351 holds
-  lower-priority prefill out of those steps ([BENCHMARKS.md](BENCHMARKS.md#the-a100-run-2026-10-26)).
-- **Tuned vLLM, 2,048/0** (rounds 1 and 2, seeds 11 and 12): V2V p95 4,036 and 3,289 ms, against frozen's 4,163 and
-  4,783 and the PRs' values' 1,663 and 1,658 on the same samples; the agents 15,082 and 13,990 tokens a second over the
-  calls' first 240 s, 1.40 and 1.42 times frozen's and 1.49 and 1.29 times the PRs' values'. At the A100's own best
-  stock cap the voice tail stays two to 2.4 times its SLO, while the box's 512/256 costs the agents about 30% of their
-  tokens.
-- **The PRs' values at 2,048/0** (arm 8, the same two samples): V2V p95 1,810 and 1,843 ms, 140 and 173 ms over the SLO,
-  against tuned vLLM's 4,036 and 3,289 ms on the same samples; the agents at 100% and 101% of tuned vLLM's tokens a
-  second (15,124 and 14,145), their TTFT p50 1.0 and 2.0 s and p99 18.4 and 11.2 s, against tuned vLLM's 1.0 and 2.0 s
-  and 17.3 and 11.4 s; no turn of the 100 failed. The voice turn's stages are the 512-token PRs' but one: the LLM's
-  first token, 412 and 414 ms at p95 against 183 and 216 ms at 512/256 on the same samples. A turn that arrives with
-  steps in flight waits for them, two under asynchronous scheduling, and at 2,048 tokens a step of agent prefill carries
-  four times the tokens; the hold acts only on the steps scheduled after the turn arrives. So the step cap trades the
-  voice's tail against the agents' throughput, with the PRs as without: 512/256 meets the SLO at 70% of the card's best
-  throughput, 2,048/0 keeps all of it 0.14–0.17 s over.
-- **A' at 32 sessions** (round 1, seed 11; round 2 would have ended past the deadline with one point of two): frozen V2V
-  p95 5,222 ms, the PRs' values 1,617 ms, 52 ms under the SLO; the agents 8,649 and 8,487 tokens a second (98%), their
-  TTFT p50 24.5 and 25.9 s, 57 and 65 preemptions, no turn of the 100 failed. At the box's pool more agents make fewer
-  tokens than 24 do on the same sample (10,749 and 10,125), waiting longer for KV, and two calls found KV short 6.5% of
-  the time beside either engine, where the forecast placed 32 sessions at 18% (the fitted forecast at 15%): the
-  simulator overstates how often this card runs short, here and in the core (10% forecast, 6% measured).
-- **FlashInfer's attention** (the frozen engine at 512/256, the KV case x3): the voice turn's wait 1,580, 1,600 and
-  1,607 ms against FlashAttention 2's 1,721–1,750, 8% shorter at the median. The two 18k-token decodes take the same
-  steps on either backend, so the wait reads the decode step: FlashInfer's is shorter on these contexts, a backend's
-  share of the tail that the rules leave as it is. The block refused its first start, since vLLM 0.32 logs FlashInfer's
-  selection as `FlashInfer resolved query dtypes`, not in the line its check read; the check reads both since, and the
-  block ran again.
+  batch shows. With the configuration to deploy the priority 0 requests' TTFT p99 went from 574 to 177 ms and their TPOT
+  p50 from 28.6 to 6.9 ms, the engine's output to 1.153 of vLLM's, and the priority 2 requests' TTFT p99 from 1,086 to
+  7,971 ms (p50 341 to 283 ms): 26 priority 0 requests in closed loop keep first tokens due in most steps, and #63351
+  holds lower-priority prefill out of those steps ([BENCHMARKS.md](BENCHMARKS.md#the-a100-run-2026-10-26)).
+- **Tuned vLLM, 2,048/0** (rounds 1 and 2, seeds 11 and 12): V2V p95 4,036 and 3,289 ms, against 4,163 and 4,783 at
+  512/256, and 1,663 and 1,658 with the configuration to deploy, on the same samples; the agents 15,082 and
+  13,990 tokens a second over the calls' first 240 s, 1.40 and 1.42 times their tokens at 512/256, and 1.49 and 1.29
+  times those with the configuration to deploy. At the A100's own best stock cap the voice tail stays two to 2.4 times
+  its SLO, while the box's 512/256 costs the agents about 30% of their tokens.
+- **The configuration to deploy at 2,048/0** (arm 8, the same two samples): V2V p95 1,810 and 1,843 ms, 140 and 173 ms
+  over the SLO, against tuned vLLM's 4,036 and 3,289 ms on the same samples; the agents at 100% and 101% of tuned vLLM's
+  tokens a second (15,124 and 14,145), their TTFT p50 1.0 and 2.0 s and p99 18.4 and 11.2 s, against tuned vLLM's 1.0
+  and 2.0 s and 17.3 and 11.4 s; no turn of the 100 failed. The voice turn's stages are those of the configuration to
+  deploy at 512 tokens but one: the LLM's first token, 412 and 414 ms at p95 against 183 and 216 ms at 512/256 on the
+  same samples. A turn that arrives with steps in flight waits for them, two under asynchronous scheduling, and at
+  2,048 tokens a step of agent prefill carries four times the tokens; the budget cap acts only on the steps scheduled
+  after the turn arrives. So the step cap trades the voice's tail against the agents' throughput, with the change as
+  without: 512/256 meets the SLO at 70% of the card's best throughput, 2,048/0 keeps all of it 0.14–0.17 s over.
+- **A' at 32 sessions** (round 1, seed 11; round 2 would have ended past the deadline with one point of two): V2V p95
+  5,222 ms on tuned vLLM and 1,617 ms with the configuration to deploy, 52 ms under the SLO; the agents 8,649 and
+  8,487 tokens a second (98%), their TTFT p50 24.5 and 25.9 s, 57 and 65 preemptions, no turn of the 100 failed. At the
+  box's pool more agents make fewer tokens than 24 do on the same sample (10,749 and 10,125), waiting longer for KV, and
+  two calls found KV short 6.5% of the time beside either engine, where the forecast placed 32 sessions at 18% (the
+  fitted forecast at 15%): the simulator overstates how often this card runs short, here and in the core (10% forecast,
+  6% measured).
+- **FlashInfer's attention** (tuned vLLM at 512/256, the KV case x3): the voice turn's wait 1,580, 1,600 and 1,607 ms
+  against FlashAttention 2's 1,721–1,750, 8% shorter at the median. The two 18k-token decodes take the same steps on
+  either backend, so the wait reads the decode step: FlashInfer's is shorter on these contexts, a backend's share of the
+  tail that the rules leave as it is. The block refused its first start, since vLLM 0.32 logs FlashInfer's selection as
+  `FlashInfer resolved query dtypes`, not in the line its check read; the check reads both since, and the block ran
+  again.
 
 **The step model (block 5)**, fitted on the calibration point (AIPerf's replay of the whole corpus at 16 sessions, 709
 requests) with the card's own E0: a step's fixed cost 4.5 ms (the forecast's 3.88), 41.36 µs a token (41.33: Marlin's
@@ -385,13 +387,13 @@ RS measured on the same samples ([RS](BENCHMARKS.md#the-boxs-running-share-rs)).
 
 On 2026-10-25 ([the records](../benchmarks/results/2026-10-25-a100-rehearsal/README.md)) it found two defects of the kit before the A100's hours would have: run as a script, `deploy/profile.py` stood in for the standard library's `profile` module when vLLM's import reached cProfile, which failed `bootstrap.sh gpu`; and under flatshare-svc, `gpu-guard` took an engine core for a foreign process once its title had blanked its /proc/PID/environ, so `warm` started no engine (the listener audit read the same environment).
 
-The release's kit then ran every step in one pass from a fresh home on 2026-10-26 ([its records](../benchmarks/results/2026-10-26-a100-rehearsal/README.md)): 76 minutes, the GPU in use for 64 of them, 29 of those in `warm`, whose first start from empty caches took 20.5. Through the kit the box measured what it measures through its own deployment: the KV case's first token after 4,853–4,929 ms (Gray's: 4,923–5,077 ms), and the PRs' 48-token configuration at a V2V p95 of 2,333 ms (the box's two-host deployment: 2,132–2,397 ms over W5's fifteen runs), the control plane on the same host's 16 CPUs.
+The release's kit then ran every step in one pass from a fresh home on 2026-10-26 ([its records](../benchmarks/results/2026-10-26-a100-rehearsal/README.md)): 76 minutes, the GPU in use for 64 of them, 29 of those in `warm`, whose first start from empty caches took 20.5. Through the kit the box measured what it measures through its own deployment: the KV case's first token after 4,853–4,929 ms (Gray's: 4,923–5,077 ms), and the configuration to deploy at a V2V p95 of 2,333 ms (the box's two-host deployment: 2,132–2,397 ms over W5's fifteen runs), the control plane on the same host's 16 CPUs.
 
 ## The Marlin dry run on the box
 
 Two sessions on Phastform tested the A100's code path before the A100 run: the FP8 checkpoint through `MarlinFP8ScaledMMLinearKernel` (W8A16), FlashAttention 2 on LBHNC, the CPU tier, make-room and the harness, on a real GPU. They measured function, not the A100's magnitudes: the box runs Marlin and BF16 at 47.4 TFLOPS with FP32 accumulation, so its linear layers on Marlin take at least about 153 µs a token against DeepGEMM's fitted 48 [derived].
 
-- [`marlin-session1.sh`](../benchmarks/a100/marlin-session1.sh), about 25 minutes of GPU time: E0 on the frozen engine (DeepGEMM), then on Marlin (`--linear-backend marlin`, checked by the engine log and `/server_info`, with `smoke.sh`), then make-room's KV and prefill cases and the tail on Marlin, and the frozen engine back. `--fallback` selects Marlin by disabling the four block-FP8 kernels ahead of it (`VLLM_DISABLED_KERNELS`) instead of the flag.
+- [`marlin-session1.sh`](../benchmarks/a100/marlin-session1.sh), about 25 minutes of GPU time: E0 on tuned vLLM (DeepGEMM), then on Marlin (`--linear-backend marlin`, checked by the engine log and `/server_info`, with `smoke.sh`), then make-room's KV and prefill cases and the tail on Marlin, and tuned vLLM back. `--fallback` selects Marlin by disabling the four block-FP8 kernels ahead of it (`VLLM_DISABLED_KERNELS`) instead of the flag.
 - [`marlin-session2.sh`](../benchmarks/a100/marlin-session2.sh), about 30 minutes: [`bench_marlin.py`](../benchmarks/a100/bench_marlin.py) (Marlin, BF16 and DeepGEMM at Qwen3-4B's four linear shapes, M 1 to 1,024: Marlin's factor over BF16 on the box, one data point beside PR #61224's 1.42 on an L4, which does not say how it timed its GEMMs), the probes at a 3 GiB pool and a 16,384-token context (which size themselves from it), and one E2 point on Marlin ([`marlin-dry.campaign`](../benchmarks/a100/marlin-dry.campaign)), without the KV sampler, as W5's points it is read against ran.
 
 `bench_marlin.py` gives each call's GPU time as the call runs inside a CUDA graph, which is where vLLM 0.32.0 runs these layers: it captures every step of up to 512 tokens by default, the box's step cap. Ten calls, each after an L2 flush, are captured in one graph and ten flushes in another; each graph is replayed between two CUDA events, and one call's time is the calls' median replay less the flushes', over ten. A call timed alone between two events measures the host's dispatch of its kernels instead, which the GPU waits for: the first bench timed that way, and session 2 keeps its `gemm.csv` as `gemm-events.csv` and runs the GEMMs again. Marlin's calls share one lock workspace, as the engine's do. The bench runs in the engine unit's environment (`deploy/a100/host.py with-engine-env deploy/phastform ...`), because DeepGEMM builds its kernels with nvcc at their first call and needs the unit's `CUDA_HOME` (CUDA 13.0 on the box; without it DeepGEMM takes `/usr/local/cuda`'s older nvcc, and its rows say "DeepGEMM needs nvcc: set CUDA_HOME").
@@ -404,7 +406,7 @@ Session 1 ran on the box's deployment of W5 (its servers on TCP; the same steps)
 
 - **The A100's path runs on a real GPU.** With `--linear-backend marlin` the engine selected `MarlinFP8ScaledMMLinearKernel` for the FP8 checkpoint, with FLASH_ATTN, FlashAttention 2 and the LBHNC layout; `/server_info` named `marlin`, and `smoke.sh` passed.
 - **E0 on Marlin.** A prefill's per-token term rose from 65.4 µs on DeepGEMM to 175.7 µs, at the box's BF16 rate (at least about 153 µs a token for the linear layers, above); the GPU-pool hit (3.34 against 3.88 µs a token) and the CPU-tier restore (27.11 against 27.01 µs a token) did not move with the linear kernel.
-- **make-room on Marlin, at the PRs' values.** The KV case's priority-0 first token came after 299 and 370 ms (W5's probes on DeepGEMM: 219–290 ms); in the prefill case the reply ran about 16 ms a token beside three 10,000-token prefills; the calls' tail over 240 s beside 12 agents: 73 turns, first-token p95 432 ms, none failed.
+- **make-room on Marlin, in the configuration to deploy.** The KV case's priority-0 first token came after 299 and 370 ms (W5's probes on DeepGEMM: 219–290 ms); in the prefill case the reply ran about 16 ms a token beside three 10,000-token prefills; the calls' tail over 240 s beside 12 agents: 73 turns, first-token p95 432 ms, none failed.
 - **Marlin against BF16,** summed over Qwen3-4B's four linear shapes, each call inside a CUDA graph: 0.50 to 0.56 of BF16's time for M of 1 to 64, 0.97 at 128, 1.08 to 1.09 at 256 to 1,024. Weight-only FP8 halves the bytes of a memory-bound GEMV and costs about 9% where the GEMM is compute-bound and both run at the BF16 rate; DeepGEMM's W8A8, at the box's FP8 rate, takes 0.34 of BF16's time at M of 1,024. The forecast's A100 term was 29.2 µs a token times 1.0 to 1.42, and the box's 1.08 to 1.09 one point near the range's low end; the A100's calibration point then measured 41.36 µs a token, the range's high end ([what it measured](#what-it-measured-2026-10-26)).
 - **The probes at a 3 GiB pool.** At 1,364 blocks and a 16,384-token context the probes sized their cases from the pool: the KV case's two background requests of 10,719 tokens left 22 blocks free, and the prefill case ran three of 6,000. make-room's priority-0 first token came after 173 and 248 ms, and the calls' tail over 120 s beside 13 agents ran 36 turns, first-token p95 332 ms, none failed.
-- **E2 on Marlin.** The PRs' 48-token configuration in the discriminating scenario, on W5's round-1 sample of the agents, against FB's round 1 on DeepGEMM, the same code and sample ([`2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb)): the voice turn's p95 2,240 ms against 2,313 (W5's fifteen runs: 2,132–2,397 ms), none of 50 turns failed; its p50 2,028 against 1,883 ms, with the reply's first token 83 ms later at the median (348 against 265 ms). The calls' prompts were 96% cached, so that time is the agents' prefill in the steps a call joins, whose tokens take 2.7 times as long on Marlin (E0, above). The agents' tokens a second fell 28%, from 3,416 to 2,457. On the box Marlin and BF16 run at one rate, so the point shows the A100's path working end to end and the direction of its cost, not the A100's magnitudes.
+- **E2 on Marlin.** The configuration to deploy in the discriminating scenario, on W5's round-1 sample of the agents, against FB's round 1 on DeepGEMM, the same code and sample ([`2026-10-25-e2-fb`](../benchmarks/results/2026-10-25-e2-fb)): the voice turn's p95 2,240 ms against 2,313 (W5's fifteen runs: 2,132–2,397 ms), none of 50 turns failed; its p50 2,028 against 1,883 ms, with the reply's first token 83 ms later at the median (348 against 265 ms). The calls' prompts were 96% cached, so that time is the agents' prefill in the steps a call joins, whose tokens take 2.7 times as long on Marlin (E0, above). The agents' tokens a second fell 28%, from 3,416 to 2,457. On the box Marlin and BF16 run at one rate, so the point shows the A100's path working end to end and the direction of its cost, not the A100's magnitudes.

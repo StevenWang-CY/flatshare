@@ -217,3 +217,28 @@ def test_the_figures_set_their_type_in_its_sizes_and_never_in_bold(drawn: dict[s
         # Orange text clears 4.5:1 on the page alone, not on a panel's ground: the diagrams set none.
         if not name.startswith(("e2-", "report-")):
             assert 'class="orange tint' not in svg, name
+
+
+GLOSSARY = REPO / "docs" / "GLOSSARY.md"
+
+
+def retired_names() -> list[str]:
+    """The names GLOSSARY.md's "One name for each concept" table retires (its Never column), but those it retires for
+    one use only, which it marks with a note in parentheses, as "make-room (for the rule)" stays the variant's name."""
+    table = GLOSSARY.read_text().split("## One name for each concept", 1)[1].split("\n## ", 1)[0]
+    rows = [line for line in table.splitlines() if line.startswith("|")][2:]
+    assert rows, "GLOSSARY.md has no One name for each concept table"
+    names = [name.strip() for row in rows for name in row.strip("|").split("|")[2].split(",")]
+    return [name for name in names if "(" not in name]
+
+
+def test_every_figure_names_each_concept_as_the_glossary_does(drawn: dict[str, Path]) -> None:
+    # No figure's drawn text, title or description gives a concept a name the glossary retired: the figures take their
+    # configurations' names from flatshare_bench.labels, and their other words follow the same table.
+    retired = retired_names()
+    assert {"the prefill hold", "session tree", "abort-and-resubmit"} <= set(retired)
+    for name, path in drawn.items():
+        svg = re.sub(r"<style>.*?</style>", " ", path.read_text(), flags=re.S)
+        text = " ".join(re.sub(r"<[^>]+>", " ", svg).split())
+        for old in retired:
+            assert not re.search(rf"(?<![\w-]){re.escape(old)}s?(?![\w-])", text, re.I), (name, old)

@@ -41,8 +41,8 @@
   - with `[[nodes]]`, places calls and agents' sessions on the GPU nodes and fails over between them (ADR-0008).
 
   The gateway's README says how ([What it does](../../crates/flatshare-gateway/README.md#what-it-does)).
-- **No admission policy serves.** The gateway refuses an `[admission]` policy beside `[[nodes]]`, and the serving
-  arrangement runs none with one upstream either. The engine change makes the room ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)).
+- **No admission policy serves.** The gateway refuses an `[admission]` policy beside `[[nodes]]`, and the arrangement
+  to deploy runs none with one upstream either. The change makes the room ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)).
 - **E2's admission policies stay in the same binary, as its harness** (`src/harness/`). The proxy reaches them only
   through a request's admission ticket. A gateway without `[admission]` runs none of their code and exports none of
   their metric families, and the reproduction of E2's records needs them.
@@ -61,4 +61,4 @@
   ([SLO.md](../SLO.md#indicators)), which its README measures.
 - **The harness is split by configuration, not by build.** Moving E2's policies into a second binary was considered
   and declined (RV3, 2026-10-29). It would add a build and ship path, and E2 re-runs on the GPUs, for readability
-  alone, while the configuration already keeps the policies out of the serving arrangement.
+  alone, while the configuration already keeps the policies out of the arrangement to deploy.

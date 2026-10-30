@@ -34,7 +34,7 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 - [ADR-0003](adr/0003-realtime-is-never-shed.md): Why does no admission policy refuse a realtime request, and where is its room made?
 - [ADR-0004](adr/0004-native-cpu-offload-tier.md): Why is the host tier vLLM's own CPU offload, and why was lease-aware eviction never switched on?
 - [ADR-0005](adr/0005-loopback-services-and-node-sticky-kv.md): How are the services kept off the hosts' networks, and what stays open on a shared host?
-- [ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md): Why does the engine change carry the realtime tier, with no admission policy in front?
+- [ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md): Why does the change carry the realtime tier, with no admission policy in front?
 - [ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md): Why is the gateway the serving control plane, and where do E2's admission policies stay?
 - [ADR-0008](adr/0008-two-cards-consolidation-with-a-warm-spare.md): How do the two cards serve, and how does a call fail over between them?
 - [ADR-0009](adr/0009-immutable-releases-and-the-exact-serving-profile.md): How is a release made, and how is a box held to the configuration E2 measured?
@@ -45,7 +45,7 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 - [crates/flatshare-core](../crates/flatshare-core/README.md): What do the cost, step and KV models and the admission policies compute?
 - [crates/flatshare-proto](../crates/flatshare-proto/README.md): Which wire types and JSON Schemas do the components share?
 - [crates/flatshare-sim](../crates/flatshare-sim/README.md): How does the simulator model vLLM's KV cache and step loop, how was it calibrated, and what does it place on other GPUs?
-- [python/flatshare_vllm](../python/flatshare_vllm/README.md): How is the change built on vLLM 0.32.0, held equal to the PRs, tested, and checked for cost and fit?
+- [python/flatshare_vllm](../python/flatshare_vllm/README.md): How is the change built on vLLM 0.32.0, held equal to the pull requests, tested, and checked for cost and fit?
 - [python/flatshare_bench](../python/flatshare_bench/README.md): How are the traces scaled and replayed, what do the probes measure, and what does an E2 point record?
 - [python/flatshare_voice](../python/flatshare_voice/README.md): How does the voice agent run, which lifecycle events does it post, and how do the callers measure voice-to-voice latency?
 - [python/flatshare_stats](../python/flatshare_stats/README.md): How is each published statistic defined?
