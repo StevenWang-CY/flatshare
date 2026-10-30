@@ -1,6 +1,6 @@
 # Architecture
 
-Flatshare runs a realtime voice agent beside background LLM work on one GPU, or on two. Its central part is a change to vLLM's scheduler: a waiting realtime request can take KV from running background requests, and background prefill sits out the realtime reply's first tokens. It is proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351), open and under review, and runs on vLLM 0.32 as the engine variant `make-room` (§2). Around it are:
+Flatshare runs a realtime voice agent beside background LLM work on one GPU, or on two. Its central part is a change to vLLM's scheduler: a waiting realtime request can take KV from running background requests, and background prefill sits out the realtime reply's first tokens. It is proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) (open, with no maintainer review as of 2026-10-29), and runs on vLLM 0.32 as the engine variant `make-room` (§2). Around it are:
 - the serving path the deployment runs (§3): one GPU node, or two cards with a warm spare where a second card is available;
 - its network and security (§4);
 - the configuration and hosts it was measured on (§5);

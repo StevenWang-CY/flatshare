@@ -15,7 +15,6 @@ import statistics
 import subprocess
 import sys
 from collections.abc import Sequence
-from datetime import datetime
 from pathlib import Path
 
 from flatshare_bench.report import data
@@ -260,12 +259,14 @@ def test_the_readmes_opening_and_the_reports_abstract_are_the_records() -> None:
         f"consolidated at {WORDS[cards.envelopes['stock']]} sessions, does {gains['stock']:.0%} more",
     ]:
         assert phrase in abstract, phrase
-    # The pull requests' state under one date: the README's opening, the report's note and its two references.
-    [date] = set(re.findall(r"\(open as of (\d{4}-\d{2}-\d{2})\)", readme))
+    # The pull requests' state in one wording and under one date: the README's opening, the report's note and its two
+    # references.
+    state = r"open, with no maintainer review as of (\d{4}-\d{2}-\d{2})"
+    [date] = set(re.findall(rf"\({state}\)", readme))
     text = REPORT.read_text()
-    [noted] = re.findall(r"open and under review on (\d{1,2} \w+ \d{4})\.", text)
-    listed = re.findall(r"pull request #6335[01]\. .*?, open and under review on ([\d-]+)\.", text)
-    assert datetime.strptime(noted, "%d %B %Y").date().isoformat() == date
+    [noted] = re.findall(rf"(?m)^> .*\b{state}\.", text)
+    listed = re.findall(rf"pull request #6335[01]\. .*?, {state}\.", text)
+    assert noted == date
     assert listed == [date, date]
 
 

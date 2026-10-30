@@ -9,8 +9,9 @@ F](#f-revision-history).
 
 > [!NOTE]
 > The scheduler change this report measures is proposed to vLLM as pull requests
-> [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351),
-> open and under review on 29 October 2026. Flatshare is an independent project and is not affiliated with vLLM.
+> [#63350](https://github.com/vllm-project/vllm/pull/63350) and
+> [#63351](https://github.com/vllm-project/vllm/pull/63351), open, with no maintainer review as of 2026-10-29. Flatshare
+> is an independent project and is not affiliated with vLLM.
 
 ## Abstract
 
@@ -1249,9 +1250,9 @@ scheduler: preempt for the waiting turn, and keep background prefill out of its 
 
 <a name="ref-8"></a>[8] vLLM pull request #5958. [Adding priority scheduling](https://github.com/vllm-project/vllm/pull/5958). Merged 2024-09-25, in vLLM v0.6.2 to v0.10.2.
 
-<a name="ref-9"></a>[9] C. Wang. vLLM pull request #63350. [Priority scheduling: preempt for a waiting request under KV pressure](https://github.com/vllm-project/vllm/pull/63350). Opened 2026-10-23, open and under review on 2026-10-29.
+<a name="ref-9"></a>[9] C. Wang. vLLM pull request #63350. [Priority scheduling: preempt for a waiting request under KV pressure](https://github.com/vllm-project/vllm/pull/63350). Opened 2026-10-23, open, with no maintainer review as of 2026-10-29.
 
-<a name="ref-10"></a>[10] C. Wang. vLLM pull request #63351. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/63351). Opened 2026-10-23, open and under review on 2026-10-29.
+<a name="ref-10"></a>[10] C. Wang. vLLM pull request #63351. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/63351). Opened 2026-10-23, open, with no maintainer review as of 2026-10-29.
 
 <a name="ref-11"></a>[11] SemiAnalysis. [Claude Code traces (cc-traces-weka-062126)](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126). Hugging Face dataset.
 

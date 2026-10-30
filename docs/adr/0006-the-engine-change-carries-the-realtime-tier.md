@@ -18,7 +18,7 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
   - [#63350](https://github.com/vllm-project/vllm/pull/63350): a waiting request of a higher priority preempts running lower-priority work for KV, at most two requests a step;
   - [#63351](https://github.com/vllm-project/vllm/pull/63351): lower-priority prefill sits out the request's first tokens, with a window long enough for the reply's first sentence (48 tokens for this voice agent).
 
-  There is no reserve. The PRs are proposed to vLLM and under review; the `make-room` variant runs the same change on vLLM 0.32.0 meanwhile.
+  There is no reserve. The pull requests are proposed to vLLM (open, with no maintainer review as of 2026-10-29); the `make-room` variant runs the same change on vLLM 0.32.0 meanwhile.
 - **The priority comes from the caller's identity.** A gateway maps each tenant to a class and caps it, so a client cannot raise its own priority.
 - **No admission policy in front.** `flatshare-gateway` stays the experiment harness: its baselines and the lifecycle policy remain E2's arms, and the measured configuration ran without either.
 - **Not pursued:**
@@ -27,7 +27,7 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
 
 ## Consequences
 
-- **What deploys is a set of vLLM flags** ([PRODUCTION.md](../PRODUCTION.md)). The change is proposed to vLLM rather than kept as a fork; while it is under review, the variant pins vLLM 0.32.0, and its build refuses any other version.
+- **What deploys is a set of vLLM flags** ([PRODUCTION.md](../PRODUCTION.md)). The change is proposed to vLLM rather than kept as a fork; while it is open, the variant pins vLLM 0.32.0, and its build refuses any other version.
 - **The other ADRs stand with these changes:**
   - ADR-0001's design describes the experiment harness, not the deployment;
   - ADR-0003's decision stands, with the room made in the engine;

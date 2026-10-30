@@ -10,8 +10,8 @@ names](#former-names) maps them to the current ones.
 - **The budget cap** (#63351): lower-priority prefill sits out the steps of a higher-priority request's first tokens.
   **Its window** is how many first tokens it covers (`--priority-prefill-budget-cap-tokens`, 16 by default; 48 in the
   configuration to deploy).
-- **The change**: the two pull requests proposed to vLLM, open and under review, that change priority scheduling,
-  [#63350](https://github.com/vllm-project/vllm/pull/63350) for a full KV cache and
+- **The change**: the two pull requests proposed to vLLM (open, with no maintainer review as of 2026-10-29) that change
+  priority scheduling, [#63350](https://github.com/vllm-project/vllm/pull/63350) for a full KV cache and
   [#63351](https://github.com/vllm-project/vllm/pull/63351) for prefill beside a priority request's first tokens.
   [ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351) states their rules.
 - **The configuration to deploy**: the change's switches, the KV preemption at 2 a step and the budget cap with a

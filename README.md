@@ -29,8 +29,9 @@ On vLLM 0.32 with 24 coding-agent sessions on one RTX 5060 Ti, the voice agent's
 from running agent requests, and once it runs, agent prefill shares every step of its reply.
 
 Two scheduler changes, proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and
-[#63351](https://github.com/vllm-project/vllm/pull/63351) (open as of 2026-10-29), bring that p95 to 2.24 s against an
-SLO of 2.03 s. The replies over the SLO fall from 90% to 32% (286 of 885), and the agents keep 97% of their token rate.
+[#63351](https://github.com/vllm-project/vllm/pull/63351) (open, with no maintainer review as of 2026-10-29), bring that
+p95 to 2.24 s against an SLO of 2.03 s. The replies over the SLO fall from 90% to 32% (286 of 885), and the agents keep
+97% of their token rate.
 
 - **At the 256-token step cap the deployment runs**, 44 of 295 replies were over their round's SLO in five rounds on
   new samples of the agents, against 94 of 295 at 512 tokens and 261 of 295 on tuned vLLM.
