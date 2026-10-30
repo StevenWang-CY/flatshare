@@ -35,7 +35,7 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
   - ADR-0003's decision stands, with the room made in the engine;
   - a window that covers the reply's first sentence makes degrade unnecessary.
 - **The v0 lease and ledger code is removed after v0.3:** `flatshare-proto`'s lease hint and ledger rows, the header that marked synthetic requests, and `flatshare_vllm`'s `LeasePolicy` and `LeaseConnector`. Done on 2026-10-24; the v0.3 tree keeps them.
-- **The change's known gaps** ([ARCHITECTURE.md §2](../ARCHITECTURE.md#2-the-change-63350-and-63351)) were open in the v0.3 variant and in both PRs as first opened, and E2 measured the change with them. W5 fixed them, with the further defects its review found, in the variant (main, up to b656c25); the pull requests carry the same fixes.
+- **The change's known gaps** ([ARCHITECTURE.md §2](../ARCHITECTURE.md#2-the-change-63350-and-63351)) were open in the v0.3 variant and in both pull requests as first opened, and E2 measured the change with them. W5 fixed them, with the further defects its review found, in the variant (main, up to b656c25); the pull requests carry the same fixes.
 
 ## Later
 

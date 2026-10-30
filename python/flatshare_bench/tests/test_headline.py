@@ -37,7 +37,7 @@ ROWS = {
     "Voice alone": ALONE,
     "vLLM 0.32, tuned": FROZEN,
     "Shared, tuned vLLM 0.32": FROZEN,
-    "Tuned, with a router": RESUBMIT,
+    "Tuned, with preempt-resubmit": RESUBMIT,
     "Shared, preempt-resubmit": RESUBMIT,
     "+ #63350: a waiting request": ("w5-pr:w5-disc-pr-a-s24",),
     "+ #63351: agent prefill": ("w5-pr:w5-disc-pr-ab-s24",),

@@ -13,7 +13,7 @@ In the simulator (E1), knowing when agents return bought under 9% of the median 
 > Flatshare applies known co-serving and KV-tiering mechanisms to a workload pair that no published system we found measures together, a cascaded voice pipeline beside long-context agents on one GPU. It does so in two forms: a change to vLLM's V1 scheduler, measured end to end against what an operator can deploy today, and lifecycle timing in a control plane, which in E2's discriminating scenario could not act.
 
 **Claimed.** Two parts, argued in [What is distinctive](#what-is-distinctive):
-1. **The engine "make room" fix.**
+1. **The change.**
    - #63350 brings vLLM V0's preemption for a waiting request to V1's scheduler, extended to chunked prefill and to the CPU tier, which keeps the victim's KV for its resume (how much a resume restores and how much it recomputes, no vLLM 0.32 counter shows).
    - #63351 holds lower-priority prefill out of the request's first tokens, a window that must cover the first sentence the voice agent hands to text to speech; E2 found that part necessary, and the KV preemption, or a class-aware KV reserve in its place, does the rest.
    - Both ideas are published, and an open pull request from April, #40087, also preempts for a waiting request in V1's scheduler, one victim at a time until it fits; what is ours is the change to V1's scheduler that preempts only when at most N victims make room, the budget cap bounded to the reply's first tokens and sized to its first sentence, and their measurement end to end.
@@ -330,7 +330,7 @@ Notes on the table:
 ## What is distinctive
 
 Each point below rests on the sources above, as of 2026-10-22, or 2026-10-26 for what the novelty check added.
-1. **The engine "make room" fix.**
+1. **The change.**
    - vLLM's V1 scheduler (0.32) preempts among running requests but never for a waiting one (#40004, open since 2026-04-16); its open fixes cover the `max_num_seqs` cap, and one, #40087, also preempts lower-priority running requests one at a time when a waiting request's allocation fails, until it fits or none is left. Its V0 scheduler did preempt for the highest-priority waiting request, from v0.6.2 to v0.10.2 (#5958): only with chunked prefill off, with no cap, and recomputing the victims. V1's priority scheduling (#19057) left it out, and v0.11.0 removed V0.
    - SGLang's priority preemption does not fire when KV memory runs out; a fix was opened on 2026-10-21 (#45686).
    - Research systems preempt for a waiting or arriving request and keep the victim's KV in host memory: TokenFlow writes it through as it is generated, ConServe checkpoints each new token's KV, Chiron migrates it to CPU memory, and ProServe and FastServe copy it there ahead of need. ConServe is built atop vLLM, and Echo, which recomputes its victims, on V0's #5958.

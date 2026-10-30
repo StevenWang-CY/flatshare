@@ -18,7 +18,7 @@ F](#f-revision-history).
 A self-hosted voice agent needs its GPU only while it computes a reply, and coding agents could use the rest. On vLLM
 0.32, beside 24 coding-agent sessions on one RTX 5060 Ti, two calls' p95 voice-to-voice latency rises from 1.78 s alone
 to 10.48 s. No deployable configuration of vLLM 0.32 or SGLang 0.5.22 we measured meets the SLO of voice alone plus
-250 ms, 2.03 s. The nearest, a router that aborts agent requests, reaches 2.52 s at a 193 s agent p99 time to first
+250 ms, 2.03 s. The nearest, a gateway policy that aborts agent requests, reaches 2.52 s at a 193 s agent p99 time to first
 token.
 
 In the scheduler, a waiting voice turn cannot take KV from running agent requests, and an admitted one shares its steps

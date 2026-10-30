@@ -58,3 +58,4 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 - [CONTRIBUTING.md](../CONTRIBUTING.md): How do I build and test the repository, and what does a change need before review?
 - [SECURITY.md](../SECURITY.md): How do I report a vulnerability, and which parts of the repository does a report cover?
 - [THIRD-PARTY.md](../THIRD-PARTY.md): What does the serving path run that Flatshare does not write, and under which licences?
+- [brand/README.md](brand/README.md): How are the logo, the mark and the social preview drawn, and how may they be used?

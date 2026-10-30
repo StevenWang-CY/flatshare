@@ -98,7 +98,7 @@ which use it retires.
 - **Arm**: one engine and gateway configuration of E2, numbered by family: 1, voice alone; 2 to 5, stock vLLM and its
   own knobs; 6, static answers in the gateway; 7, what engines ship; 8, what routers ship; 9, make-room with the
   lifecycle policy; 10, MPS, planned and not run ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load)).
-- **Campaign**: a set of rounds, or of runs, under one code: W2, W3–W4, W5, FB, the A100 run (A1), RS, SW, RG and the
+- **Campaign**: a set of rounds, or of runs, under one code: W2, W3–W4, W5, FB, the A100 run, RS, SW, RG and the
   soak. [The campaign map](EXPERIMENTS.md#which-campaign-measured-what-on-which-code) gives each one's code, what it
   measured, when it ran, its rounds and its samples of the agents' traces, and the code it ran.
 - **The discriminating scenario**: 24 agent sessions of the 48 traces with the longest contexts, whose KV fills the
