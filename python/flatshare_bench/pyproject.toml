@@ -63,5 +63,11 @@ markers = [
     "integration: needs more than this venv (the demo video's encoding runs the script with uv)",
 ]
 
+[tool.uv]
+# AIPerf 0.13.0 pins pillow~=12.3.0, and pillow 13.0.0 fixes 39 advisories against 12.3.0. AIPerf's image paths, which
+# the agents' text replay never takes, run alike under 13.0.0: every module imports, and its image and video
+# generators, its encoder and its dataset loader give the same bytes.
+override-dependencies = ["pillow>=13.0.0,<14"]
+
 [tool.uv.sources]
 flatshare-stats = { path = "../flatshare_stats", editable = true }

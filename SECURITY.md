@@ -77,3 +77,26 @@ and the release tool, whose checks hold the box to it ([PRODUCTION.md](docs/PROD
   - `make compat-upstream` says whether they still apply
     ([the engine's upkeep](python/flatshare_vllm/README.md#upkeep-the-changes-cost-and-its-fit-upstream)).
   - The rebased engine must pass the same checks before a release moves to it.
+
+### Advisories the pins carry
+
+Two pins carry advisories that cannot reach a Flatshare host. Each stays for the reason given, and moves when that
+reason goes. `python/flatshare_bench/tests/test_security_versions.py` holds each to the files it names.
+
+- **`setuptools==80.10.2`**, in the engine's environment (`deploy/phastform/requirements/engine.txt`), the A100
+  kit's (`deploy/a100/requirements/engine-cu129.txt`) and CI's CPU environment for make-room
+  (`python/flatshare_vllm/requirements-cpu.txt`).
+  - PYSEC-2026-3447 (CVE-2026-59890), fixed in 83.0.0: on macOS, a file name in Unicode's decomposed form can slip
+    past a MANIFEST.in exclusion when an sdist is built.
+  - GHSA-xmj3-9gf7-h52w, fixed in 84.1.0: on Windows, a wheel installed the legacy way can write an `__init__.py`
+    outside its directory.
+  - It stays because vLLM 0.32.0 requires `setuptools<81`. The engine's hosts run Linux and install pinned wheels,
+    so neither path runs there. The pin moves with the vLLM release that lifts that bound.
+- **`diskcache==5.6.3`**, in the SGLang variant's environment (`deploy/phastform/variants/sglang/requirements.txt`).
+  - PYSEC-2026-2447 (CVE-2025-69872), with no fixed release: pickle data that an attacker writes into the cache
+    directory runs as code when it is read.
+  - The variant is a comparator in E2's records and is not deployed, and its cache directory belongs to the deploying
+    user.
+
+The bench's lock takes Pillow 13.0.0, which fixes 39 advisories against 12.3.0, over AIPerf 0.13.0's `pillow~=12.3.0`
+(the override in `python/flatshare_bench/pyproject.toml`). AIPerf's image paths give the same bytes under it.
