@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "flatshare-bench"
-version = "1.8.0"
+version = "1.9.0"
 description = "Flatshare's benchmark toolchain: block-scaled agent traces, AIPerf plugins, latency probes, E2's harness and report, and the failure drills' client"
 readme = "README.md"
 # The figures' STIX Two fonts (src/flatshare_bench/fonts) are under the SIL Open Font License 1.1, the rest under

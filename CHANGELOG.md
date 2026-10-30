@@ -5,6 +5,63 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.9](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.9) (2026-10-30): the documents made clear and visual, and the Messages API
+
+What a review of v1.8 for clarity, visuals and production parity found, fixed: the documents read at a glance, every
+chart has a phone layout, the operator documents gain figures, the gateway's request path reads as its steps, and the
+gateway routes the Anthropic Messages API that Claude Code speaks. The measured results of v1.6 to v1.8 are unchanged.
+
+- **The Messages API.** `/v1/messages` and `/v1/messages/count_tokens` go through the gateway under the chat routes'
+  contract: tenants, classes, sessions, sanitization and placement, with a class's reply cap on `max_tokens`. Claude
+  Code reaches the deployment with `ANTHROPIC_BASE_URL` and the tenant's key in `ANTHROPIC_AUTH_TOKEN`; a client's
+  `x-api-key` is never forwarded to the engine. The request line counts a Messages prompt with its cache reads and
+  writes, as for chat. On the deployment, both ways in answered a plain, a streamed and a count_tokens request.
+- **The quick start, run as written.** It installs vLLM 0.32.0 as the deployment pins it (Python 3.12, CUDA 13.0's
+  compiler, FlashInfer's link to pip's CUDA runtime), probes stock vLLM before make-room, and quotes what the probe
+  measured on the box: the voice turn's first token in 258–292 ms with make-room against 1,963–1,967 ms on stock vLLM
+  ([`2026-10-29-quick-start`](benchmarks/results/2026-10-29-quick-start)). Tests hold the commands to the serving
+  profile and the result to its logs.
+- **The gateway's cost on the deployed build.** On v1.8 it adds +0.12 ms to a voice request's first token at the median,
+  paired against the engine's own socket over 80 requests
+  ([`2026-10-29-gateway-window`](benchmarks/results/2026-10-29-gateway-window)).
+- **Figures.** ARCHITECTURE shows the serving path in four figures (the hosts and their sockets, a request's steps and
+  refusals, the two cards, a release and its exits), and the runbook a triage figure from a failing call to its rows.
+  REPORT charts the step cap the deployment runs, the 24-hour soak and the engine's starts. Every chart in REPORT,
+  BENCHMARKS and the README has a phone layout, one label table names each configuration in GLOSSARY's terms, the
+  README's animation opens on its result, and a campaign map shows which campaign measured what, on which code.
+- **Documents.** The README opens on its headline in two sentences. REPORT splits its long paragraphs at their ideas and
+  gives its results at a glance in a table. PRODUCTION opens on its service contract and the deployed results, with the
+  envelope at a looser margin and notes for an existing LiveKit or Pipecat agent. The runbook's Failures open with an
+  alert table, held to the rules by a test, and a triage figure. The gateway's bounds, SLO.md's alerts and PRIOR-ART are
+  tables of short facts. Each concept goes by the one name GLOSSARY's table gives it, in the prose, the tables and the
+  figures, and each fact has one home: BENCHMARKS asks one question a section, each chart above the table it draws;
+  EXPERIMENTS keeps to the design; METHODS and HARDWARE's A100 part moved to the report and BENCHMARKS, and every old
+  link still lands.
+- **Defects.** `first_byte_timeout_s` bounded the upstream's headers, never the first byte: it is `headers_timeout_s`.
+  The capacity and deadline alerts read the counter family their description and the dashboard read. The gateway
+  registers its metrics once. SECURITY.md named v1.7 as the supported release at v1.8; a test now holds it to the
+  CHANGELOG.
+- **Code.** The gateway's request path reads as its steps, its handlers live in a routes module, imports point down its
+  layers, and its log lines carry their values as fields. The Python packages import one way, with no cycles. No
+  behaviour changes.
+- **Policy.** CONTRIBUTING says what a minor release may change and that each such change is listed under "Upgrading",
+  and that a record is frozen once a release carries it, but for its `report/` and its `figure.toml`.
+- **Upgrading from v1.8.**
+  - `gateway.toml`: a configuration that sets `first_byte_timeout_s` is refused at start, naming `headers_timeout_s`.
+    `grep -n first_byte_timeout_s ~/.config/flatshare/gateway.toml` on cyan says whether a change is needed first.
+  - `FlatshareRequestsRefusedForCapacity` and `FlatshareDeadlinesMissed` compute from `requests_terminal_total`, with
+    the same thresholds and labels. A copy of `rules.yml` kept elsewhere needs the same change; `request_outcomes_total`
+    is still exported.
+  - New routes: `POST /v1/messages` and `POST /v1/messages/count_tokens` (404 before). Their requests count in the
+    offered, admitted and terminal families, and add series to the overhead and body histograms.
+  - Log lines: 18 of the gateway's messages carry their values as fields (`error`, `path`, `wait_s`, `status`,
+    `timeout_s`, `max_bytes`, `failures`, `cause`) beside a constant message, and six reword where a value stood. A
+    query for an old line with its value inside matches its message and reads the field; the request line and the
+    "reload failed:" prefix are unchanged.
+  - `make e2-figures` and `make e2-w5-figure` are gone: `make figures` draws `report-deployable` and
+    `report-deployable-stages` in place of `e2-frontier.svg` and `e2-waterfall.svg`.
+- **The packages** are versioned 1.9.0, and are not published to a package index.
+
 ## [v1.8](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.8) (2026-10-29): a review of v1.7 fixed, and a free line offered at once
 
 What a review of v1.7's code, operations and documents found, fixed, and the one defect the 24-hour soak showed: LiveKit
