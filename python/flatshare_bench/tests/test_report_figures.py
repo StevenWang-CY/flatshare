@@ -1225,6 +1225,41 @@ def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) 
         assert after.split("\n\n", 2)[1].startswith(header), name
 
 
+FIGURES_ABOVE_TABLES = {
+    "report-kv-timeline": "| Scheduler | Runs | Priority-0 TTFT | Then |",
+    "report-isolation": "| Engine | KV case TTFT | Prefill case TTFT / 16th token |",
+    "report-tail": "| Engine | KV case TTFT | Prefill case TTFT / 16th token |",
+    "report-window": "| Window (tokens) | First token p95 |",
+    "report-headline": "| Configuration | Campaign | V2V p50 / p95 / p99 |",
+    "report-margin": "| Configuration | Callers | V2V p50 / p95 / p99 |",
+    "report-agents": "| Configuration | Runs | Engine steps over the calls |",
+    "report-cards": "| Arrangement | Sessions (shared + second card) |",
+    "report-a100": "| Agents' sample (seed) | Voice alone | Tuned vLLM, the box's 512/256 |",
+    "report-step-cap": "| Configuration | Rounds | V2V p95: median of the rounds / pooled |",
+    "report-starts": "| Start | Unit start to ready | Where the time goes |",
+    "report-soak": "| Run | Hours | Calls (accepted, refused, failed) |",
+}
+"""The report's charts that BENCHMARKS shows, by the first line of the table each draws."""
+
+
+def test_benchmarks_shows_each_report_chart_above_the_table_it_draws(drawn: dict[str, Path]) -> None:
+    # BENCHMARKS shows each of the report's charts above the table it draws: the chart for the reader, the table as
+    # the ledger. Each has the drawing's own description as its alt text and the report's claim, word for word,
+    # opening its caption, and the first table after it is the one it draws.
+    report, text = REPORT.read_text(), BENCHMARKS.read_text()
+    for name, header in FIGURES_ABOVE_TABLES.items():
+        alt, caption = shown(BENCHMARKS, name)
+        assert alt == ET.parse(drawn[f"{name}.svg"]).getroot().find(f"{SVG}desc").text, name
+        found = re.search(
+            rf'<img src="figures/{name}\.svg"[^>]*>\n</picture>\n\n\*\*Figure \w+\. (.+?)\*\*', report, re.S
+        )
+        assert found, name
+        assert caption.startswith(f"**{' '.join(found[1].split())}**"), (name, caption)
+        after = text.split(f'<img src="figures/{name}.svg"', 1)[1]
+        first_table = next(line for line in after.splitlines() if line.startswith("|"))
+        assert first_table.startswith(header), (name, first_table)
+
+
 def test_the_deployed_results_figures_say_what_their_records_do(drawn: dict[str, Path]) -> None:
     # REPORT (Figures 15, D1 and D2) and BENCHMARKS show each chart with the drawing's own description as its alt
     # text, and a caption that opens with its claim, in the numbers the records give (the tests above hold the
