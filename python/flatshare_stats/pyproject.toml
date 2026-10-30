@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "flatshare-stats"
-version = "1.10.0"
+version = "1.11.0"
 description = "The statistics Flatshare's measurements publish, defined once: inclusive percentiles, censored voice-to-voice samples, Prometheus text expositions"
 readme = "README.md"
 license = "Apache-2.0"

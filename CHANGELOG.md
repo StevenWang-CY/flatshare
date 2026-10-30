@@ -5,6 +5,47 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.11](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.11) (2026-10-30): a sweep of v1.10, fixed
+
+What a sweep of v1.10's code, configuration, dependencies and documents found, fixed. No measured result changes.
+
+- **A held request at a reload.** With `[[nodes]]`, a covering node holds back its agents' interactive and background
+  requests. A reload's predecessor now refuses one it still holds with 503 `draining` and `Retry-After: 1`, as the
+  gateway's README and the runbook said it would. Before, it kept the request past `drain_timeout_s` and the process
+  stopped with it unanswered, logged as 499 `cancelled`.
+- **The outcome alerts' first event.** `FlatshareRequestsRefusedForCapacity` and `FlatshareDeadlinesMissed` read
+  `flatshare_gateway_request_outcomes_total`, whose series exist at zero from the gateway's start. On
+  `requests_terminal_total`, whose series appear with their first request, `increase()` missed a class's first
+  refusal or missed deadline after each start or reload. The rules' tests now hold that first event.
+- **A duration past the clock.** A key that ends in `_s` took any value up to about 1.8e19 s, but the gateway adds
+  these durations to the clock, which panics past about 9.2e18 s from now: with `total_timeout_s = 1e19` every
+  request of its class closed unanswered, and with `placement.idle_s = 1e19` no session idled out. The gateway now
+  refuses a duration over 1e9 s, about 32 years, at start.
+- **Dependencies.** ctutils 0.4.4 fixes RUSTSEC-2026-0385 under the gateway's and the simulator's digests (the gateway
+  compares key digests with `subtle`, not through it), and brotli 1.2.1 fixes PYSEC-2026-4322 in the bench's lock,
+  where only AIPerf's compression middleware uses it. `cargo audit` reports no vulnerability. pillow stays at 12.3.0,
+  which AIPerf 0.13.0 pins.
+- **Documents.** CITATION's preferred citation and the report's hosting line name the current release, and a test
+  holds the citation to the report's header. Four facts now match their records: PRODUCTION's two-card claim, the
+  engine's start times and their builds, the killed engine's 0.13 s, and 9 of the 50 measured turns with a barge-in.
+  Stale statements are brought up to date (the refused `leaseholder` policy, the gateway as the serving control plane,
+  ARCHITECTURE with the Messages API, the agents' 150 s `idle_s`), each concept goes by the glossary's name, and
+  `not_ready` is documented for placement refusals.
+- **Headers, alerts and notes.** PROTOCOL lists the canary's `X-Flatshare-Canary`, which reaches the engine, and its
+  rule that `X-Flatshare-` headers end at the gateway now names callers' headers. `FlatshareCallsRefused`'s summary
+  and the runbook's row name the 502 a call gets when it is sent again after its node failed, besides the 503
+  `no_call_slot`. bounds.rs's notes count the reply-caps fixture's 380 cases, not 285.
+- **Tests.** `test_prose` skips make's `build/`, where `make reproduce-*` writes its reports.
+- **The packages** are versioned 1.11.0, and are not published to a package index.
+- **Upgrading from v1.10.**
+  - During a reload with `[[nodes]]`, a request a covering node holds back gets 503 `draining` with `Retry-After: 1`
+    and outcome `drained`, instead of a closed connection after `drain_timeout_s`.
+  - A key that ends in `_s` over 1e9 s (about 32 years) now fails at start, and the message names the key. v1.10
+    loaded one up to about 1.8e19 s, and from about 9.2e18 s it overflowed the clock. No example or deploy
+    configuration comes near the bound: the longest default is background's `total_timeout_s`, 3,600 s.
+  - A rules file copied from `ops/prometheus/rules.yml` needs the two outcome alerts' expressions, and
+    `FlatshareCallsRefused`'s summary, taken from it again.
+
 ## [v1.10](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.10) (2026-10-30): no wall of text left
 
 The paragraphs v1.9 left over 150 words, in the component READMEs, the runbook and the measurement documents, split

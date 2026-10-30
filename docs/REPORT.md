@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.10, 30 October 2026. Code, records and figures at tag
-[v1.10](https://github.com/StevenWang-CY/flatshare/tree/v1.10) of
+Flatshare technical report, version 1.11, 30 October 2026. Code, records and figures at tag
+[v1.11](https://github.com/StevenWang-CY/flatshare/tree/v1.11) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -1470,7 +1470,7 @@ The repository's tests fail when a committed figure differs from what its record
 records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists every measurement run by run, and
 [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
-**Hosting.** Tag v1.10 holds the code, the records and this report. The raw records, the gateway's request logs and each
+**Hosting.** Tag v1.11 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in
 [v1.0](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.0), the A100 run's in
 [v1.1](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.1), the KV-sampling runs' in
@@ -1718,6 +1718,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.11 | 2026-10-30 | Preempt-resubmit named as the gateway policy it is, and Appendix A's hosting line at the current tag |
 | 1.10 | 2026-10-30 | Results at a glance and Table 1 with their long cells moved to notes under the tables |
 | 1.9 | 2026-10-30 | Its results at a glance in §1; the step cap, the 24-hour soak and the engine's starts as Figures 15, D2 and D1, and every chart with its phone layout; what a scheduler step costs as a table by situation, with Figure 7's caption cut to its claim; the gateway's cost measured on the deployed build; what lifecycle timing could do and what carries to other hardware, from METHODS, closing §6.5, §6.7 and Appendix E; the long paragraphs split at their ideas; and each rule and configuration under the one name GLOSSARY gives it |
 | 1.8 | 2026-10-29 | What a scheduler step costs in the serving profile's states, make-room's preempting step in one pass, and Figure 7 set against the box's CPU; the abstract with the step cap's confirmation and the two cards' gain, most of it the arrangement's; the method's statement that each gate was fixed before its runs; the code of 25 October named by its date; and the gateway named the control plane the deployment runs |
