@@ -8,7 +8,9 @@
 //! request, at a drain's cut for a background one, and when one of the request's deadlines passes: its first content
 //! by its first-content deadline, each later frame within the idle timeout of the pump's turning back to the upstream,
 //! and the whole response by its total ([`crate::deadline`]). A response cut short never ends cleanly: the client's
-//! body ends with an error, after the error event of vLLM's own streams on an event stream.
+//! body ends with an error, after the error event of vLLM's own streams on an event stream. At a passed deadline, and
+//! when the upstream breaks, the pump lets the upstream go before that event waits, up to the stall timeout, for room
+//! in a slow client's channel, so that the engine's request ends with the deadline and not a stall timeout later.
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -58,7 +60,7 @@ pub(crate) fn start(
     }
     let aborted = Arc::new(AtomicBool::new(false));
     let pump = Pump {
-        upstream,
+        upstream: Some(upstream),
         frames,
         aborted: Arc::clone(&aborted),
         ex,
@@ -77,11 +79,14 @@ pub(crate) fn start(
     })
 }
 
-/// The task that reads one upstream body into the client's channel.
-struct Pump {
-    upstream: Incoming,
+/// The task that reads one upstream body into the client's channel: hyper's [`Incoming`] when serving, a body of the
+/// tests' own in the unit tests below.
+struct Pump<B = Incoming> {
+    /// The upstream body, held while the response lasts; let go before the error event waits for the client when a
+    /// deadline passes or the upstream breaks.
+    upstream: Option<B>,
     frames: mpsc::Sender<Bytes>,
-    /// Set before the pump stops on a stall, an upstream error, a shed or a drain's cut.
+    /// Set before the pump stops on a stall, a passed deadline, an upstream error, a shed or a drain's cut.
     aborted: Arc<AtomicBool>,
     ex: Exchange,
     scanner: Scanner,
@@ -94,7 +99,11 @@ struct Pump {
     grace: Duration,
 }
 
-impl Pump {
+impl<B> Pump<B>
+where
+    B: http_body::Body<Data = Bytes> + Unpin,
+    B::Error: std::error::Error + 'static,
+{
     /// Relays until either side ends, until the admission policy sheds the request, or until a drain's cut ends a
     /// background one.
     async fn run(mut self) {
@@ -118,11 +127,13 @@ impl Pump {
                 }
                 () = sleep_until(deadline) => {
                     self.ex.metrics().upstream_error(UpstreamError::Timeout);
+                    // The engine's request ends with its deadline, not after the error event's wait for the client.
+                    drop(self.upstream.take());
                     let message = deadlines.map(|d| d.message(timeout)).unwrap_or_default();
                     self.end_with(ErrorEvent::Timeout, message).await;
                     break Outcome::timeout(timeout);
                 }
-                frame = self.upstream.frame() => frame,
+                frame = self.upstream.as_mut().expect("held until the response ends").frame() => frame,
             };
             let data = match frame {
                 None => break Outcome::Completed,
@@ -131,6 +142,7 @@ impl Pump {
                     // With [[nodes]], a node whose stream broke off is probed at once: its engine may be gone.
                     self.ex.broke();
                     let message = format!("the upstream stream broke off: {}", causes(&err));
+                    drop(self.upstream.take());
                     self.end_with(ErrorEvent::Upstream, message).await;
                     break Outcome::TransportError;
                 }
@@ -282,8 +294,8 @@ async fn shed(ticket: &mut Option<Ticket>) {
 #[derive(Debug)]
 struct ClientBody {
     frames: mpsc::Receiver<Bytes>,
-    /// Set by the pump before it stops on a stall, an upstream error or a shed, so the client sees an error
-    /// instead of a clean end: a truncated response must not look complete.
+    /// Set by the pump before it stops on a stall, a passed deadline, an upstream error, a shed or a drain's cut, so
+    /// the client sees an error instead of a clean end: a truncated response must not look complete.
     aborted: Arc<AtomicBool>,
     /// Whether a frame was handed to hyper since it last found the body pending. hyper drops what it has not
     /// written when a body errors, so an abort waits one poll, in which hyper writes out the last frames, such as
@@ -329,5 +341,164 @@ impl http_body::Body for ClientBody {
             }
             None => Poll::Ready(None),
         }
+    }
+}
+
+/// The tests: a passed deadline and a broken upstream each let the upstream go before the error event waits for a
+/// client whose channel is full, so that the engine's request ends then, and a client that catches up within the
+/// stall timeout still gets what was buffered and then the event. A body the test feeds stands in for hyper's and
+/// says when the pump drops it; the client's channel holds one frame, so the first fills it.
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use flatshare_proto::SloClass;
+    use http::HeaderValue;
+    use tokio::sync::oneshot;
+
+    use super::*;
+    use crate::config::ClassConfig;
+    use crate::metrics::Metrics;
+    use crate::types::Route;
+
+    /// Longer than any wait the tests allow, so that an upstream let go only after the event's wait fails them.
+    const STALL: Duration = Duration::from_secs(10);
+
+    const FRAME: &[u8] = b"data: {\"choices\":[]}\n\n";
+
+    /// An upstream body that the test feeds, and that says when it is dropped: when the engine's request would end.
+    struct Upstream {
+        frames: mpsc::UnboundedReceiver<Result<Bytes, io::Error>>,
+        dropped: Option<oneshot::Sender<Instant>>,
+    }
+
+    impl http_body::Body for Upstream {
+        type Data = Bytes;
+        type Error = io::Error;
+
+        fn poll_frame(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Option<Result<Frame<Bytes>, io::Error>>> {
+            self.frames
+                .poll_recv(cx)
+                .map(|frame| frame.map(|frame| frame.map(Frame::data)))
+        }
+    }
+
+    impl Drop for Upstream {
+        fn drop(&mut self) {
+            if let Some(dropped) = self.dropped.take() {
+                let _ = dropped.send(Instant::now());
+            }
+        }
+    }
+
+    type Feed = mpsc::UnboundedSender<Result<Bytes, io::Error>>;
+
+    /// A background event stream's pump with `config`'s deadlines, the feed of its upstream, the instant its upstream
+    /// is dropped, and the client's end of a one-frame channel.
+    fn pump(
+        config: &ClassConfig,
+    ) -> (
+        Pump<Upstream>,
+        Feed,
+        oneshot::Receiver<Instant>,
+        mpsc::Receiver<Bytes>,
+    ) {
+        let (feed, frames) = mpsc::unbounded_channel();
+        let (dropped, when) = oneshot::channel();
+        let mut ex = Exchange::new(&Arc::new(Metrics::new()), Route::ChatCompletions);
+        ex.resolved.class = Some(SloClass::Background);
+        ex.resolved.deadlines = Some(Deadlines::new(SloClass::Background, config, ex.received));
+        let (sender, client) = mpsc::channel(1);
+        let pump = Pump {
+            upstream: Some(Upstream {
+                frames,
+                dropped: Some(dropped),
+            }),
+            frames: sender,
+            aborted: Arc::new(AtomicBool::new(false)),
+            ex,
+            scanner: Scanner::for_content_type(Some(&HeaderValue::from_static(
+                "text/event-stream",
+            ))),
+            stall_timeout: STALL,
+            ticket: None,
+            sheddable: false,
+            cut: None,
+            grace: Duration::ZERO,
+        };
+        (pump, feed, when, client)
+    }
+
+    /// How long after `since` the upstream was dropped; fails when it is still held 2 s on, long before `STALL`.
+    async fn dropped_after(when: oneshot::Receiver<Instant>, since: Instant) -> Duration {
+        let at = tokio::time::timeout(Duration::from_secs(2), when)
+            .await
+            .expect("the upstream is still held 2 s on")
+            .expect("the upstream says when it is dropped");
+        at.duration_since(since)
+    }
+
+    /// Reads the rest of the client's channel: what was buffered, then the error event, then its close.
+    async fn rest(client: &mut mpsc::Receiver<Bytes>) -> Vec<String> {
+        let mut frames = Vec::new();
+        while let Some(frame) = client.recv().await {
+            frames.push(String::from_utf8(frame.to_vec()).unwrap());
+        }
+        frames
+    }
+
+    #[tokio::test]
+    async fn a_passed_deadline_lets_the_upstream_go_before_the_error_event_waits() {
+        let mut config = ClassConfig::defaults(SloClass::Background);
+        config.idle_timeout = Duration::from_millis(100);
+        let (pump, feed, when, mut client) = pump(&config);
+        // The first frame fills the client's channel, and then the engine goes quiet: the idle deadline passes with
+        // no room for the error event.
+        feed.send(Ok(Bytes::from_static(FRAME))).unwrap();
+        let started = Instant::now();
+        let task = tokio::spawn(pump.run());
+        let after = dropped_after(when, started).await;
+        assert!(
+            after >= Duration::from_millis(100) && after < Duration::from_secs(1),
+            "the upstream was dropped {after:?} after the start"
+        );
+        // The client catches up within the stall timeout: the buffered frame, the event, and the end.
+        let frames = rest(&mut client).await;
+        assert_eq!(frames.len(), 2, "{frames:?}");
+        assert_eq!(frames[0].as_bytes(), FRAME);
+        assert!(
+            frames[1].contains(r#""type":"upstream_timeout""#),
+            "{}",
+            frames[1]
+        );
+        task.await.unwrap();
+        drop(feed);
+    }
+
+    #[tokio::test]
+    async fn a_broken_upstream_is_let_go_before_the_error_event_waits() {
+        let (pump, feed, when, mut client) = pump(&ClassConfig::defaults(SloClass::Background));
+        feed.send(Ok(Bytes::from_static(FRAME))).unwrap();
+        feed.send(Err(io::Error::other("connection reset")))
+            .unwrap();
+        let started = Instant::now();
+        let task = tokio::spawn(pump.run());
+        let after = dropped_after(when, started).await;
+        assert!(
+            after < Duration::from_secs(1),
+            "the upstream was dropped {after:?} after the start"
+        );
+        let frames = rest(&mut client).await;
+        assert_eq!(frames.len(), 2, "{frames:?}");
+        assert!(
+            frames[1].contains(r#""type":"upstream_unavailable""#),
+            "{}",
+            frames[1]
+        );
+        assert!(frames[1].contains("connection reset"), "{}", frames[1]);
+        task.await.unwrap();
     }
 }

@@ -92,7 +92,7 @@ Every wait a request goes through has a deadline from its class's `[classes.<cla
 | The whole request, from its receipt to its response's end | `total_timeout_s` | realtime 300 s, interactive 1,800 s, background 3,600 s | 504 `upstream_timeout`, or the error event once the response has begun |
 
 - **A passed deadline** drops the upstream request, which closes its connection and aborts the engine's work, gives the request's place and bytes back, and is recorded once. Behind a 503 `queue_timeout`, the engine never saw the request, or saw only a dropped attempt.
-- **Once an event stream has begun**, the client gets the error event of vLLM's streams, `data: {"error": {..., "type": "upstream_timeout", "param": null, "code": 504}}`, then an abort, so that the stream never ends cleanly and never with `[DONE]`. A JSON body is aborted.
+- **Once an event stream has begun**, the client gets the error event of vLLM's streams, `data: {"error": {..., "type": "upstream_timeout", "param": null, "code": 504}}`, then an abort, so that the stream never ends cleanly and never with `[DONE]`. A JSON body is aborted. The engine's request ends first, at the deadline: a client whose buffer is full gets the event if it reads again within `stall_timeout_s`.
 - **Logical deadlines.** The first content and the total count from the request's receipt: a request that preempt-resubmit sends again keeps them, so a retry never buys it more time, and a retry comes only before the client has seen anything.
 - **A slow reader** costs the engine no time against `idle_timeout_s`, which counts from the moment the relay turns back to the upstream.
 - **The defaults** are a few times what the recorded runs took at most, so that none ends a request they made: background first bytes ran to 232 s at p99 behind preemptions (W5's resubmitting arm), realtime ones to 13.4 s (the worst arm's p99), and no run met the 600 s headers timeout.
@@ -612,4 +612,5 @@ The unit tests, each beside the module it tests:
 | The intake and the ledger | `src/intake.rs`, `src/ledger.rs` | Each bound, one body budget, a predecessor's requests, the ledger's lines |
 | The engine's state | `src/canary.rs` | Its states, the canary's schedule and keys, the classes' objectives |
 | Deadlines | `src/deadline.rs` | The earliest deadline, retries, every class's defaults, the renamed key refused |
+| The relay | `src/relay.rs` | A passed deadline and a broken upstream let the upstream go before the error event waits for a client whose buffer is full |
 | The rest | `src/auth.rs`, `src/config.rs`, `src/sanitize.rs`, `src/events.rs`, `src/usage.rs`, `src/metrics.rs` | Cache salts and their secret's file, hashed session ids, the key match, the dedup window, the SSE scanner, the metric series |
