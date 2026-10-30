@@ -25,12 +25,17 @@ from typing import Any
 import numpy as np
 import pytest
 
+from flatshare_bench.report.data import LABELS
+
 DEMO = Path(__file__).resolve().parents[3] / "benchmarks" / "e2" / "demo.py"
 _spec = importlib.util.spec_from_file_location("demo", DEMO)
 assert _spec is not None and _spec.loader is not None
 demo = importlib.util.module_from_spec(_spec)
 sys.modules["demo"] = demo
 _spec.loader.exec_module(demo)
+
+NAMES = (LABELS["tuned"][0], LABELS["deploy"][0])
+"""The two configurations the README's animation shows, named as every chart names them."""
 
 RATE = 24_000
 WALL = 1_800_000_000.0  # 2027-01-15 UTC
@@ -112,9 +117,9 @@ def frontier(path: Path, on: str = "", scale: float = 1.0) -> Path:
 @pytest.fixture
 def pair(tmp_path: Path) -> tuple[Path, Path]:
     slow = saved_call(
-        tmp_path / "frozen", [3.0, 2.5, 4.0], label="Frozen box", point="frozen", tokens=900.0
+        tmp_path / "frozen", [3.0, 2.5, 4.0], label=NAMES[0], point="frozen", tokens=900.0
     )
-    fast = saved_call(tmp_path / "a9", [1.0, 0.8, 1.2], label="Arm 9", point="a9", tokens=880.0)
+    fast = saved_call(tmp_path / "a9", [1.0, 0.8, 1.2], label=NAMES[1], point="a9", tokens=880.0)
     return slow, fast
 
 
@@ -130,7 +135,7 @@ def summary(pair: tuple[Path, Path], tmp_path: Path) -> Any:
 
 def test_both_calls_take_their_measured_turns_together(timeline: Any) -> None:
     calls = timeline.calls
-    assert [call.label for call in calls] == ["Frozen box", "Arm 9"]
+    assert [call.label for call in calls] == list(NAMES)
     assert [call.gpu for call in calls] == ["RTX 5060 Ti"] * 2  # no samples: the box's
     # The warm-up turn is left out; each turn lasts as long as the slower call's.
     assert timeline.first == 1 and timeline.turns == 3
@@ -273,6 +278,11 @@ def test_no_text_leaves_its_room_or_overlaps_another(
     frames.board.texts[0] = (artist, (room[0] + 400, *room[1:]))
     with pytest.raises(ValueError, match="leaves its room"):
         frames.check(0.0)
+
+
+def test_make_names_the_configurations_as_the_charts_do() -> None:
+    makefile = (DEMO.parents[2] / "Makefile").read_text()
+    assert f'--labels "{NAMES[0]}" "{NAMES[1]}"' in makefile
 
 
 def test_the_excerpt_loops_silently(timeline: Any, summary: Any) -> None:

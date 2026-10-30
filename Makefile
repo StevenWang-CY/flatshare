@@ -320,7 +320,7 @@ demo-video:
 	@test -n "$(DEMO)" || { echo "make demo-video DEMO=<the directory of $(DEMO_POINTS)>" >&2; exit 2; }
 	@mkdir -p $(dir $(DEMO_OUT)) docs/figures
 	uv run -q benchmarks/e2/demo.py $(addprefix $(abspath $(DEMO))/,$(DEMO_POINTS)) \
-	  --labels "Tuned vLLM 0.32" "#63350 and #63351" --summary $(E2_W5_RESULTS)/report/frontier.csv \
+	  --labels "Tuned vLLM" "The configuration to deploy" --summary $(E2_W5_RESULTS)/report/frontier.csv \
 	  --also $(E2_A100_RESULTS)/report/frontier.csv \
 	  --heading "A voice agent and coding agents on one GPU" --turns 10 --out $(DEMO_OUT) \
 	  --excerpt docs/figures/e2-demo

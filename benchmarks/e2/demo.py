@@ -1042,10 +1042,15 @@ class Dashboard:
         over = board.text(x0 + pad, y0 + lay.verdict, "", style.NOTE, "orange", room=hero)
         within = board.text(x0 + pad, y0 + lay.verdict, "", style.NOTE, "soft", room=hero)
         self._hero(side, status, clock, over, within)
-        # The waits' plot: each reply's V2V as a bar, on one scale for both panels.
-        board.text(
-            plot_x1, y0 + lay.name, "voice-to-voice, s", style.NOTE, "mute", ha="right", room=room
-        )
+        # The waits' plot: each reply's V2V as a bar, on one scale for both panels. Its note shares the names' line,
+        # so where the longer name leaves it no room, both panels give it in the glossary's short form.
+        note = "voice-to-voice, s"
+        taken = pad + max(style.measure(c.label, style.LABEL) for c in timeline.calls) + 16
+        if lay.sound:
+            taken += style.measure("sound on", style.NOTE) + 16
+        if lay.plot[2] - style.measure(note, style.NOTE) < taken:
+            note = "V2V, s"
+        board.text(plot_x1, y0 + lay.name, note, style.NOTE, "mute", ha="right", room=room)
         height = plot_base - plot_top
         step = self.marks[1] - self.marks[0]
         for mark in self.marks:
@@ -1402,7 +1407,11 @@ def closing_card(
         f"sessions{where}"
     )
     board.text(W / 2, top + 27, sub, style.NOTE, "soft", ha="center")
-    right, ax0, alen, bx0, blen = 238.0, 262.0, 420.0, 764.0, 200.0
+    # The names' column is as wide as the longer name needs, and the first panel gives up the rest; it ends where it
+    # always does.
+    right = max(238.0, 24.0 + max(board.width_of(call.label, style.VALUE) for call in calls))
+    ax0, bx0, blen = right + 24.0, 764.0, 200.0
+    alen = 682.0 - ax0
     heads = top + 84
     panels = (
         (ax0 + alen / 2, "Voice-to-voice p95", "seconds, median of the runs"),
