@@ -52,8 +52,8 @@ enum NoTarget {
 }
 
 impl Target {
-    /// Where `tenant`'s request of `class` and `session` goes: the one engine while it is ready, or with `[[nodes]]` the
-    /// session's node, or a node chosen for it. A request of a session the gateway minted (`named` false) is placed
+    /// Where `tenant`'s request of `class` and `session` goes: the one engine while it is ready, or with `[[nodes]]`
+    /// the session's node, or a node chosen for it. A request of a session the gateway minted (`named` false) is placed
     /// alone.
     fn for_request(
         shared: &Shared,

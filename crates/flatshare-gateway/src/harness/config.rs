@@ -379,8 +379,8 @@ impl RawAdmission {
             state_timeout: Some(seconds("admission.state_timeout_s", state_timeout_s)?),
             step_tokens,
         };
-        // The server makes the admission point by the core's rule (`AdmissionConfig::core`), and the file is validated in
-        // full before anything binds. No file breaks the rule: the throttle's step budget defaults to 512 tokens.
+        // The server makes the admission point by the core's rule (`AdmissionConfig::core`), and the file is validated
+        // in full before anything binds. No file breaks the rule: the throttle's step budget defaults to 512 tokens.
         admission.core()?;
         Ok(admission)
     }

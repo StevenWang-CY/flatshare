@@ -6,12 +6,12 @@
 //! `max_completion_tokens` and, when that is null or absent, its deprecated `max_tokens`; Completions `max_tokens`
 //! alone, 16 when absent and no limit when null; the Responses API `max_output_tokens` alone; and the Messages API
 //! `max_tokens`, which it requires, as the chat request it makes of the body (count_tokens reads none). A field of
-//! another route is extra, and ignored. A capped body is therefore rewritten to its route's own fields: Chat Completions gets both of
-//! its fields at the same value, Completions and Messages `max_tokens` and Responses `max_output_tokens`, each the lower of the
-//! client's limit and the cap, and the fields the route does not read are removed. Python's `json` keeps the last of
-//! a key given twice, which the gateway's own parse would not, so a body that sets one of these fields twice is
-//! refused, as is a value that is not null or a whole number (vLLM's pydantic models would read `"64"` or `64.0` as a
-//! count, which the gateway does not try to reproduce).
+//! another route is extra, and ignored. A capped body is therefore rewritten to its route's own fields: Chat
+//! Completions gets both of its fields at the same value, Completions and Messages `max_tokens` and Responses
+//! `max_output_tokens`, each the lower of the client's limit and the cap, and the fields the route does not read are
+//! removed. Python's `json` keeps the last of a key given twice, which the gateway's own parse would not, so a body
+//! that sets one of these fields twice is refused, as is a value that is not null or a whole number (vLLM's pydantic
+//! models would read `"64"` or `64.0` as a count, which the gateway does not try to reproduce).
 //!
 //! `n` is a request's choices, and with `use_beam_search` its beam's width; `best_of`, which vLLM 0.32 no longer reads,
 //! is the same multiplier for engines that do. Both are bounded by `max_choices`.
