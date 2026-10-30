@@ -387,7 +387,7 @@ Every inference request is counted three times, with labels from fixed sets and 
 | `shed`, `drained` | An admission policy gave its place to a stricter class; a drain cut it, or kept it out (note 1) |
 | `timeout_upload`, `timeout_queue`, `timeout_headers`, `timeout_first_content`, `timeout_idle`, `timeout_total` | One of its deadlines passed ([Deadlines](#deadlines)) |
 | `refused_in_flight`, `refused_class`, `refused_tenant`, `refused_body_bytes`, `refused_queue` | The intake refused it before reading its body (note 2), or the admission point's queues were full |
-| `not_ready` | The engine was not ready: a request had found it broken and its `/health` had not answered since |
+| `not_ready` | The engine was not ready: a request had found it broken and its `/health` had not answered since. With `[[nodes]]`, also a request no node could take: `no_healthy_node`, `no_call_slot`, `no_agent_slot` or `placement_full`, whose 503 names which |
 | `invalid` | The gateway refused it as malformed or unauthorized: 400, 401, 404, 405 or 413 |
 
 1. Kept out: a gateway that had handed its sockets over did not admit it.
