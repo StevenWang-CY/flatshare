@@ -9,7 +9,7 @@ Flatshare runs a realtime voice agent beside background LLM work on one GPU, or 
 
 The designs that were measured and dropped are in §7, failure handling in §8 and testing in §9.
 
-This document describes what is built, as of v1.7, for a reader who wants to know how the parts work and fit together before reading or changing the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers, [PRIOR-ART.md](PRIOR-ART.md) what is new here and what is prior work, the [ADRs](README.md#decisions) the decisions, and [GLOSSARY.md](GLOSSARY.md) the terms.
+This document describes what is built, as of v1.10, for a reader who wants to know how the parts work and fit together before reading or changing the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers, [PRIOR-ART.md](PRIOR-ART.md) what is new here and what is prior work, the [ADRs](README.md#decisions) the decisions, and [GLOSSARY.md](GLOSSARY.md) the terms.
 
 ## 1. The problem in the engine
 
@@ -71,7 +71,7 @@ A GPU node runs the three servers of §5.1, the engine on the serving variant. E
 
 ### 3.3 The gateway
 
-`flatshare-gateway` ([`crates/flatshare-gateway`](../crates/flatshare-gateway/README.md)) is the serving control plane, on the control host ([ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)). A request takes the steps of Figure 2.
+`flatshare-gateway` ([`crates/flatshare-gateway`](../crates/flatshare-gateway/README.md)) is the serving control plane, on the control host ([ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)). It serves the OpenAI routes and the Anthropic Messages API (`/v1/messages`, `/v1/messages/count_tokens`), through which Claude Code connects ([its routes](../crates/flatshare-gateway/README.md)). A request takes the steps of Figure 2.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/request-path-narrow.svg">

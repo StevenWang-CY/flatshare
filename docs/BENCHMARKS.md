@@ -849,7 +849,7 @@ socket), 40 rounds again, the same text on both paths ([records](../benchmarks/r
 | Through flatshare-gateway | 43.8 ms | 162.7 ms | 344.7 ms | 12.09 / 12.52 ms |
 | **Paired median difference** | **+0.29 ms** | **+0.40 ms** | **+0.45 ms** | — |
 
-On v1.8 (5a7e31c), the deployed build, the same pairing over 80 rounds measured +0.12 ms on the first token, +0.06 ms on the first sentence and +0.20 ms at the end ([its record](../benchmarks/results/2026-10-29-gateway-window/README.md)).
+On v1.8 (5a7e31c), the build deployed on 2026-10-29, the same pairing over 80 rounds measured +0.12 ms on the first token, +0.06 ms on the first sentence and +0.20 ms at the end ([its record](../benchmarks/results/2026-10-29-gateway-window/README.md)).
 
 **W6's transport against W5's** (the transport A/B, 2026-10-25): `flatshare-bench voice-turn` (30 turns of the two LibriSpeech clips) and `flatshare-bench tiers` (5 reps) from cyan on the box's engine, with the same clips, reps and cores, once through W5's tunnel, one SSH connection's TCP forwards (at v0.3-90), and once through W6's, an SSH session of its own for each connection to each socket (at v0.3-274), p50 / p90 in ms ([records](../benchmarks/results/2026-10-25-w6-transport), whose `ab.py` prints this table):
 

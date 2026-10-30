@@ -194,5 +194,6 @@ their release assets (`leaseholder-*.tar.gz`):
 | `policy = "leaseholder"`, the lifecycle policy | `policy = "lifecycle"` |
 
 The code that reads records accepts the former names of what it reads: the gateway's metrics, the voice worker's
-loggers, the scheduler modules and the policy's name, which the gateway's configuration still accepts too. The report
+loggers, the scheduler modules and the policy's name; the gateway's configuration refuses `policy = "leaseholder"` since
+v1.8. The report
 shows arm 9's labels as its arm files give them now, `Arm 9` for `Leaseholder`.
