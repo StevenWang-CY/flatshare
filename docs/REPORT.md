@@ -129,9 +129,9 @@ and both are off by default. They are proposed to vLLM as two stacked pull reque
 This report makes five contributions.
 
 - **It measures the failure end to end.** V2V is read from waveforms at the caller beside a replay of real coding-agent
-  traces. Tuned vLLM, preempt-resubmit and the configuration to deploy run in rotated rounds over five samples of the
-  traces, and every other configuration an operator can deploy in a single-sample campaign of one to five runs each (§5,
-  §6.1, §6.5).
+  traces. Tuned vLLM, preempt-resubmit and the configuration to deploy run in five rotated rounds, each entering the
+  same traces at start points of its own, and every other configuration an operator can deploy in a single-sample
+  campaign of one to five runs each (§5, §6.1, §6.5).
 - **It changes vLLM's priority scheduling** with two rules that run on vLLM 0.32 without modifying the installed engine
   (§3, §4). The first brings V0's preemption for a waiting request to the V1 scheduler under chunked prefill, with the
   CPU tier keeping the victims' KV. The second holds lower-priority prefill back only through a reply's first tokens, a
@@ -493,11 +493,12 @@ subagents and think times, the think times capped at 120 s. Each trace records a
 blocks. We shrink every block 32×, which shrinks each request and its output 32× while keeping which requests share
 which prefixes, so every request fits the 32k context.
 
-The main scenario runs 24 sessions drawn from the 48 traces with the longest contexts (a median request of 13.9k
-tokens), where running agents' KV fills the pool. A second scenario runs 16 sessions of the whole corpus (a median of
-7.9k tokens), where the pool has room (§6.6). The gateway sends voice requests at priority 0 and agent requests at
-priority 2. On tuned vLLM the agents are oversubscribed, with a median TTFT of 63 s, so their throughput measures what
-the GPU leaves them.
+The main scenario runs 24 sessions at once on the 48 traces with the longest contexts (a median request of 13.9k
+tokens), where running agents' KV fills the pool. A second scenario runs 16 on the whole corpus (a median of 7.9k
+tokens), where the pool has room (§6.6). In both, AIPerf's sequential sampler starts the sessions on the first traces by
+file name and gives a session that ends the next trace in order, the same in every run (§5.5). The gateway sends voice
+requests at priority 0 and agent requests at priority 2. On tuned vLLM the agents are oversubscribed, with a median TTFT
+of 63 s, so their throughput measures what the GPU leaves them.
 
 ### 5.3 Metrics and the SLO
 
@@ -540,11 +541,15 @@ preemption's cap on victims a step, and T the budget cap's window in output toke
 
 ### 5.5 Rounds and estimation
 
-In the main scenario each configuration runs in five rounds. Round n replays its own sample of the agents' traces, the
-same sample for every configuration, and runs the configurations in an order rotated from round to round, so that none
+In the main scenario each configuration runs in five rounds. Round n replays its own sample of the agents, the same
+sample for every configuration, and runs the configurations in an order rotated from round to round, so that none
 always runs at the same hour. Other comparisons run fewer: §6.5's single-sample campaign one to five times, the calls
 per GPU three rounds, and the A100's 2,048-token rows two. A configuration measured in more than one set of rounds is
 pooled over them, which gives 10 runs of tuned vLLM and 15 of the configuration to deploy.
+
+A sample is a draw of where each session enters its trace. The sampler gives every round the same traces in the same
+order, and the round's agent seed (10 + n) draws each session's start point in its trace, so the rounds vary which part
+of each trace runs beside the calls, not which traces run (§9).
 
 We report each configuration's median p95 over its runs, with their range, beside the share of its replies over the SLO
 and the p95 of its replies pooled. We compare configurations round by round on the same sample of the agents. The three
@@ -1263,6 +1268,12 @@ GPU ([the CPU record](../benchmarks/results/2026-10-27-cpu-audio/README.md)).
 pressure that the first wait depends on, and the scenario where the pool has room (§6.6) shows how much the result
 depends on that pressure.
 
+**What the rounds sample.** Every round enters the same traces: the main scenario's sessions start on the first 24 of
+the 48 by file name, and a session that ends takes the next in the same order. The rounds therefore sample where each
+session enters its trace, not which traces run, and the results generalize over those start points, not over the
+corpus's other traces. AIPerf's shuffle sampling would draw the traces too; it belongs to a campaign of its own, since
+it would break the pairing with every committed round.
+
 **What a resume recomputes.** A preempted request's KV is in the CPU tier when it is preempted, and on resume vLLM
 reloads what the tier still holds. vLLM 0.32's counters bound what resumes reload, at most the 117k tokens loaded beyond
 first scheduling, about 2.7k a counted preemption, but not what they recompute. This bears on the agents' cost (§6.4),
@@ -1497,8 +1508,8 @@ in §6.1 measure that difference.
 
 ### B. Results by round
 
-Each round replays its own sample of the agents' traces, the same sample in every configuration and set of rounds, so a
-column compares configurations on the same agents. Table B1 gives every run behind Table 2.
+Each round replays its own sample of the agents (its start points in the same traces, §5.5), the same sample in every
+configuration and set of rounds, so a column compares configurations on the same agents. Table B1 gives every run behind Table 2.
 
 **Table B1. The p95 V2V of every run behind Table 2, and of the configuration to deploy on the code of 25 October, by
 round (ms).** Three sets of rounds replayed the same five samples. The first ran voice alone, tuned vLLM and the

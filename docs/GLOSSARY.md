@@ -120,9 +120,11 @@ which use it retires.
   resubmits them; of the configurations an operator can deploy without the change, the nearest to the SLO.
 - **The prefill case**: the probe in which the voice-sized request arrives behind three 10,000-token priority-2
   prefills, with room in the pool, timed to its first and 16th tokens.
-- **Round**: one run of each point of a campaign, in a rotated order, on the round's own sample of the agents'
-  traces.
+- **Round**: one run of each point of a campaign, in a rotated order, on the round's own sample of the agents.
 - **Run**: one measurement of a point.
+- **Sample of the agents**: a draw, by AIPerf's seed (`agents-seed`), of where each agent session enters its trace.
+  AIPerf's sequential sampler gives every sample the same traces in the same order, so samples differ in start points,
+  not in which traces run.
 - **The standard scenario**: the whole corpus of agent traces at 16 agent sessions, the realistic load (and at 8 and
   24 in W2 and W4).
 - **W0 to W8**: the project's build and measurement stages. W0 (2026-10-22): the frozen box and its first replay; W1

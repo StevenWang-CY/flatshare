@@ -4,7 +4,7 @@ How E2 is run, for a reader who measures a campaign or adds an arm. An E2 point 
 
 A line in a campaign file can also set, for all of its points:
 
-- `agents-seed N`: AIPerf's seed, in place of each arm file's `[agents] seed`, so that each round of a repeated campaign replays a workload sample of its own while its points stay paired.
+- `agents-seed N`: AIPerf's seed, in place of each arm file's `[agents] seed`, so that each round of a repeated campaign replays a sample of the agents of its own while its points stay paired: the seed draws where each session enters its trace, and AIPerf's sequential sampler gives every round the same traces in the same order.
 - `kv-sample-s SECONDS`: `flatshare-bench e2 run --kv-sample-s`, how often an agent point samples the engine's KV use and requests for the measured running share (0.5 s by default, on one connection to the engine that it keeps for the calls). `kv-sample-s 0` samples nothing, as W5's points ran, the sampler having come after them, so that a campaign read against W5's matches its instrumentation (the Marlin dry run's point, `benchmarks/a100/marlin-dry.campaign`).
 - `save-audio`: the callers save each call's audio, for [the demo video](#the-demo-video) (`flatshare-bench e2 run --save-audio`).
 
