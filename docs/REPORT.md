@@ -1105,8 +1105,8 @@ agents' completed tokens a second and their p99 TTFT, where a preemption policy 
 **How it fails.** A voice turn that N preemptions cannot make room for waits as on vLLM, and load made only of realtime
 requests leaves nothing to preempt. Overlapping calls hold the background tier for longer, up to the limit of §6.6. An
 engine failure breaks every stream it serves. In the failure drills, each stream of a killed engine received an error
-event within 8–11 ms, and a request succeeded again 106 s after the kill, 92 s of it the engine's warm start. A gateway
-reload, as a deploy performs, failed none of 42 requests (Appendix D).
+event 6–11 ms after the kill command, and a request succeeded again 106 s after the kill, 92 s of it the engine's warm
+start. A gateway reload, as a deploy performs, failed none of 42 requests (Appendix D).
 
 ## 8. Related work
 
@@ -1637,16 +1637,18 @@ measured on peacock.
 ### D. Failure drills
 
 The deployed configuration was broken on purpose while two voice streams and four agent streams were decoding, and each
-probe after the event used a new connection. Table D1 gives what the streams and the new requests saw.
+probe after the event used a new connection. Times after a kill count from the drill's stamp just before its
+`systemctl kill`, which for the engine kill is taken on the GPU node while cyan times the streams. Table D1 gives what
+the streams and the new requests saw.
 
 **Table D1. What a failure does to the streams in flight and to new requests.**
 
 | Drill | The six streams in flight | New requests |
 |---|---|---|
-| The engine killed mid-decode | Each received an error event 8–11 ms after the kill | Refused at once until the engine's warm start; a request succeeded 106.2 s after the kill |
+| The engine killed mid-decode | Each received an error event 6–11 ms after the kill command | Refused at once until the engine's warm start; a request succeeded 106.2 s after the kill |
 | The gateway reloaded, as a deploy does | The voice streams finished whole, 20.9 s later; the agents' streams ended after 5.0 s with a draining event | None of 42 failed or waited; the slowest was answered in 0.13 s |
 | The gateway restarted | As in the reload | None of 42 failed; those sent during the 20.7 s drain were answered once the new gateway started |
-| The gateway killed | All broke within 11–14 ms | None of 4 failed; the slowest waited 1.3 s for the gateway's restart |
+| The gateway killed | All broke 10–14 ms after the kill command | None of 4 failed; the slowest waited 1.3 s for the gateway's restart |
 
 The engine's recovery is mostly its warm start (Figure D1). Its last process exited 7.6 s after the kill, systemd
 started it again 5.1 s later, and it listened 92.1 s after that. On empty caches, as on a new host, the engine's first
