@@ -971,7 +971,7 @@ AIPerf `agentic_replay` of the 32× corpus against the frozen box (straight to t
 | 24 | 1,568 | 175 / 1,415 / 15,605 ms | 22.0 ms | 51.4 / 33.4 / 15.2% | 2 |
 
 - **Repeatability.** Three 16-session runs (W0's, one on a warm engine and the fresh one above) agree within 1.5 points on the split and range from 787 to 1,023 ms at TTFT p90. At 24 sessions a run on a warm engine was slower (TTFT p90 1,900 ms).
-- **The simulator against them.** `flatshare-sim` with the W2 contention model (the step loop and a fitted step time; [its README](../crates/flatshare-sim/README.md#the-contention-model)), fitted to E0's cells and these three operating points, reproduces resume TTFT p50 / p90 within 4–8% at 8 and 16 sessions, also when each point is left out of the fit, and request counts within 1%. At 24 sessions it is 18% / 30% fast, because restores take 163 ms longer there than modeled; the likely cause is store traffic, which the model omits.
+- **The simulator against them.** `flatshare-sim` with the W2 contention model (the step loop and a fitted step time; [its README](../crates/flatshare-sim/README.md#the-contention-model)), fitted to E0's cells and these three operating points, reproduces resume TTFT p50 / p90 within 3–8% at 8 and 16 sessions, and within 0–5% when each point is left out of the fit, and request counts within 1%. At 24 sessions it is 18% / 30% fast, because restores take 163 ms longer there than modeled; the likely cause is store traffic, which the model omits.
 
 <a id="e1-parking-in-the-simulator"></a>
 

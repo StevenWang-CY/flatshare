@@ -81,7 +81,7 @@ pub fn intercept(
 
 /// The history information level: an exponentially weighted mean (α = 0.5) of each session's
 /// pauses, per tool when the pauses name one; a session that has not paused yet (or not after that
-/// tool) is predicted by its own mean over every tool, then by the mean over every session.
+/// tool) is predicted by the same mean of its pauses after any tool, then of every session's pauses.
 #[derive(Debug, Default)]
 pub struct PauseHistory {
     by_tool: IdMap<f64>,

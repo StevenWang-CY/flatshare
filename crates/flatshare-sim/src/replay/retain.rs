@@ -104,9 +104,10 @@ impl Replay<'_> {
         }
         if let Some(back) = back {
             if self.retention != Retention::InferCept {
-                // Start the load so that it ends just before the session returns. The oracle knows
-                // when the turn is sent, so its load moves with the dispatch when the idle cap pulls
-                // that forward; the history level predicts the engine's time.
+                // Start the load a whole context's restore time before the session returns, so that it
+                // ends by then, earlier by what is already on the GPU. The oracle knows when the turn
+                // is sent, so its load moves with the dispatch when the idle cap pulls that forward;
+                // the history level predicts the engine's time.
                 let lead = ns(self.cost.restore_ms(tokens) + 1.0);
                 let start = back.saturating_sub(lead).max(self.now);
                 let prefetch = Event::Retain {
