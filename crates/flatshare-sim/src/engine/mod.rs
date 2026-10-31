@@ -314,20 +314,29 @@ impl Engine {
         self.add_hold(slots)
     }
 
-    /// Blocks of `prefix` after its start cached in the pool that the CPU tier holds: what
-    /// [`prefetch`](Self::prefetch) loads.
+    /// Blocks of `prefix` after its start cached in the pool that the CPU tier holds and that the
+    /// pool can take now, beside the cached start pinned: what a prefetch begun now loads, and so
+    /// what it pays for. A load never moves a block it has nowhere to put, as a connector that
+    /// allocates its destination first never does.
     pub fn prefetchable(&self, prefix: &[BlockId]) -> u32 {
         let (g, c) = self.lookup(prefix, prefix.len());
-        (c - g) as u32
+        // Pinning the cached start takes its free blocks out of the pool's free ones.
+        let free_start = prefix[..g]
+            .iter()
+            .filter(|&&b| self.refs[self.hit_slot(b) as usize] == 0)
+            .count();
+        (c - g).min(self.gpu.free_blocks().saturating_sub(free_start)) as u32
     }
 
-    /// Loads the [`prefetchable`](Self::prefetchable) blocks of `prefix` into free GPU blocks (as
-    /// many as are free) and holds them with the cached start until [`release`](Self::release).
-    /// `None` when nothing is held.
-    pub fn prefetch(&mut self, prefix: &[BlockId]) -> Option<u64> {
+    /// Loads at most `paid` of the blocks of `prefix` after its cached start that the CPU tier
+    /// holds into free GPU blocks (as many as are free), and holds them with the cached start
+    /// until [`release`](Self::release). `paid` is what [`prefetchable`](Self::prefetchable) gave
+    /// when the load began, so no prefetch places more than it paid for. `None` when nothing is
+    /// held.
+    pub fn prefetch(&mut self, prefix: &[BlockId], paid: u32) -> Option<u64> {
         let (g, c) = self.lookup(prefix, prefix.len());
         let mut slots: Vec<(u32, u32)> = (0..g).map(|j| (self.pin(prefix[j]), j as u32)).collect();
-        let loaded = (c - g).min(self.gpu.free_blocks());
+        let loaded = (c - g).min(self.gpu.free_blocks()).min(paid as usize);
         for (j, &b) in prefix.iter().enumerate().skip(g).take(loaded) {
             let slot = self.allocate();
             self.cache(slot, b);
@@ -893,7 +902,7 @@ mod tests {
         e.submit(2, req(200, 7, 1, 1)).unwrap();
         e.finish(2, 0);
         assert_eq!(e.prefetchable(&prefix(100, 4)), 4);
-        let hold = e.prefetch(&prefix(100, 4)).unwrap();
+        let hold = e.prefetch(&prefix(100, 4), 4).unwrap();
         assert_eq!(
             (e.stats.prefetched_blocks, e.prefetchable(&prefix(100, 4))),
             (4, 0)
@@ -903,6 +912,27 @@ mod tests {
         e.release(hold);
         e.finish(3, 0);
         assert_eq!(e.stats.restored_blocks, 0);
+    }
+
+    #[test]
+    fn a_prefetch_pays_only_for_the_blocks_the_pool_can_take_when_it_begins() {
+        let mut e = engine(9, 64);
+        e.submit(1, req(100, 4, 1, 1)).unwrap();
+        e.finish(1, 0);
+        e.submit(2, req(200, 7, 1, 1)).unwrap();
+        e.finish(2, 0);
+        // A running request pins 6 of the pool's 8 blocks: of the 4 blocks the CPU tier holds for
+        // request 1, 2 fit, and the load pays for those 2 alone.
+        e.submit(3, req(300, 5, 1, 1)).unwrap();
+        assert_eq!(e.prefetchable(&prefix(100, 4)), 2);
+        let hold = e.prefetch(&prefix(100, 4), 2).unwrap();
+        assert_eq!(e.stats.prefetched_blocks, 2);
+        // Nor does it place more than it paid for when more is free by its end.
+        e.release(hold);
+        e.finish(3, 0);
+        let more = e.prefetch(&prefix(100, 4), 1).unwrap();
+        assert_eq!(e.stats.prefetched_blocks, 3);
+        e.release(more);
     }
 
     #[test]

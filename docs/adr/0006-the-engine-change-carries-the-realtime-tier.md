@@ -12,7 +12,7 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
 - **Nothing deployable today fixes it.** Tuned vLLM leaves the voice tail at 10.1 s at p95. Every gateway baseline and both engines' priority preemption leave it at 8.8–12.1 s. Aborting background work before its first byte and resubmitting it reaches 2.6 s, at the cost of the agents' tail.
 - **The change does.** With the configuration to deploy the tail is 2.19 s, against an SLO of 2.02 s, at 94% of stock's background throughput. Flatshare's arm 9 reaches 2.06 s with every reply capped at 16 tokens.
 - **The control plane could not make room.** Flatshare's admission policy holds KV headroom from speech onset and throttles background prefill while a turn is answered. In front of stock vLLM it left the tail where stock does (10,993 ms). Beside the change its mechanisms could not act. Running agent requests held the pool, and a control plane can only defer new ones, so the headroom was never there: degrade capped 60 of 60 replies in every run. The throttle, checked after the headroom, deferred nothing.
-- **E1 measured the agent side.** In the simulator, even an oracle that knows when each agent returns closes under 9% of resume TTFT at p50; at p90 it closes 28% at low pressure, but session history, the information a deployment has, closes nothing ([EXPERIMENTS.md](../EXPERIMENTS.md#e1-parking)).
+- **E1 measured the agent side.** In the simulator, even an oracle that knows when each agent returns closes under 8% of resume TTFT at p50; at p90 it closes 28–29% at low pressure, but session history, the information a deployment has, closes nothing ([EXPERIMENTS.md](../EXPERIMENTS.md#e1-parking)).
 
 ## Decision
 

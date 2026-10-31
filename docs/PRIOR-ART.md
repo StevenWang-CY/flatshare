@@ -6,7 +6,7 @@ This page is for engineers asking "how is this different from X?". Flatshare ser
 
 It was built to time the protection from lifecycle events: speech onset, end of turn and barge-in for voice, and tool waits for agents. In E2's discriminating scenario that protection could not act from a control plane in front, while the change in the engine (#63350 and #63351) takes the voice tail from 10.5 s to within 0.2 s of the SLO, and on an A100 SXM4 80 GB at the same pool from 4.99 s to 1.63 s, under that card's SLO.
 
-In the simulator (E1), knowing when agents return bought under 9% of the median resume latency, and session history bought nothing even at the tail.
+In the simulator (E1), knowing when agents return bought under 8% of the median resume latency, and session history bought nothing even at the tail.
 
 ## Positioning
 

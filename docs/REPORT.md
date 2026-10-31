@@ -792,8 +792,8 @@ Timing by the conversation was the premise this work started from: a realtime ti
 when a caller starts to speak or an agent's tool returns. Neither side found a use for what a deployment knows. For the
 voice turn the headroom could not act, as above.
 
-In the repository's simulator, knowing exactly when each agent returns shortens the median resume by under 9%, since
-that resume is already a GPU hit or a short restore bound by the host link, and its p90 by up to 28%, about 80–90 ms,
+In the repository's simulator, knowing exactly when each agent returns shortens the median resume by under 8%, since
+that resume is already a GPU hit or a short restore bound by the host link, and its p90 by up to 29%, about 80–90 ms,
 only at low pressure, by hiding a restore inside the pause (§8). The session history a deployment has gains nothing.
 
 These runs do not show that such timing never helps. Where its mechanisms engage, as beside 24 sessions of the whole
@@ -1166,8 +1166,8 @@ that running requests hold.
 [[49](#ref-49)] and Pensieve [[50](#ref-50)] keep a conversation's KV between its turns, and on production prefix-cache
 traces LRU is hard to beat [[51](#ref-51)]. These systems decide which agent's KV stays. The change decides when a
 realtime request may take KV from them, and it uses vLLM's own eviction and CPU tier. In the repository's simulator,
-even knowing exactly when each agent returns from a tool call shortens the median resume by under 9% against LRU with
-the CPU tier, and its p90 by up to 28% at low pressure. The session history a deployment has gains nothing. The change
+even knowing exactly when each agent returns from a tool call shortens the median resume by under 8% against LRU with
+the CPU tier, and its p90 by up to 29% at low pressure. The session history a deployment has gains nothing. The change
 therefore leaves the agents' KV to vLLM.
 
 **Voice under contention.** LiveKit's preemptive generation, Endpoint Anticipation and PredGen start the LLM earlier in

@@ -32,6 +32,8 @@ pub(super) struct Paused {
     tool: Option<u16>,
     /// The engine's hold on its KV.
     hold: Option<u64>,
+    /// The blocks its prefetch paid for when it began, the most it places when it ends.
+    paid: u32,
 }
 
 impl Replay<'_> {
@@ -127,6 +129,7 @@ impl Replay<'_> {
             since: self.now,
             tool,
             hold,
+            paid: 0,
         });
     }
 
@@ -191,9 +194,11 @@ impl Replay<'_> {
                 }
             }
             RetainStep::Prefetch => {
-                let context = &self.streams[s].context;
-                let tokens =
-                    self.engine.prefetchable(context) as u64 * self.cfg.block_tokens as u64;
+                let paid = self.engine.prefetchable(&self.streams[s].context);
+                if let Some(p) = self.streams[s].paused.as_mut() {
+                    p.paid = paid;
+                }
+                let tokens = paid as u64 * self.cfg.block_tokens as u64;
                 let end = match &mut self.scheduler {
                     Some(s) if tokens > 0 => s.load(self.now, tokens),
                     _ => self.now + ns(self.cost.restore_ms(tokens)),
@@ -202,8 +207,8 @@ impl Replay<'_> {
             }
             RetainStep::Prefetched => {
                 let stream = &mut self.streams[s];
-                let hold = self.engine.prefetch(&stream.context);
                 let p = stream.paused.as_mut().expect("checked above");
+                let hold = self.engine.prefetch(&stream.context, p.paid);
                 debug_assert!(p.hold.is_none());
                 p.hold = hold;
             }
