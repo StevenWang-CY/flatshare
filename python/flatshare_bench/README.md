@@ -531,7 +531,7 @@ Results on 2026-10-22, against the mock:
 
 ## Tests
 
-The tests are offline and take a few seconds. CI runs them with `make test-python`:
+The tests are offline and take four to five minutes, more than half of it in the last six suites below, which test the deployment, its releases and the A100 run's kit: those scripts have no package of their own, so their tests live here. CI runs them with `make test-python`:
 
 ```bash
 uv run --extra test pytest      # in python/flatshare_bench
@@ -547,3 +547,9 @@ They cover the scaling math and schema, the loader's prefix reproduction (both l
 | `tests/test_campaign.py` | `benchmarks/e2/campaign.sh` against stand-ins for the hosts: what each point is measured with |
 | `tests/test_soak.py` | The soak's scraper, summary, record and guard, and whole soaks against a fake cyan |
 | `tests/test_demo.py` | The demo video's renderer on a synthetic pair of calls; its encoding test is `integration`, out of CI |
+| `tests/test_deploy.py` | The deployment against stand-ins for ssh and systemd: what the GPU nodes serve and the tunnels reach, cyan's install, the script that authorizes cyan's tunnel keys |
+| `tests/test_single_host.py` | Single-host mode: `deploy/bin/flatshare-svc` and its shims, which run the user units without a systemd user manager, and `deploy/bin/flatshare-forward` |
+| `tests/test_release.py` | `deploy/bin/flatshare-release` on a temporary host: a release prepared, verified and switched to, the switch back, rollback, the drain and pruning |
+| `tests/test_a100_host.py` | `deploy/a100/host.py`, a single host's layer over its GPU node's files, against stand-ins for its tools and the engine |
+| `tests/test_a100_dry_run.py` | The A100 run's core end to end on a CPU (`benchmarks/a100/run.sh`), against stand-ins for the engine, AIPerf and the host's tools |
+| `tests/test_rehearse.py` | `benchmarks/a100/rehearsal/rehearse.sh` on a CPU: the single-host rehearsal's every step against stand-ins for the hosts |
