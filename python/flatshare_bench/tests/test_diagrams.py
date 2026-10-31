@@ -121,7 +121,10 @@ def test_the_release_is_the_release_tools_states_and_exits() -> None:
     ) in RUNBOOK.read_text()
     # The verification's failure is a check's (exit 1), the drain's a host not ready (exit 2), and both switch nothing.
     assert "fails its checks ({', '.join(checks.failed)}): nothing switched\"" in tool
-    assert 'raise NotReady(\n                f"the voice worker still has {calls} call(s)' in tool
+    assert (
+        'raise NotReady(\n                    f"the voice worker still has {known} after {timeout:g} s: nothing switched'
+        in tool
+    )
     assert (
         'raise NotReady(\n            f"an E2 point (pid {pid}) measures on this host: nothing switched'
         in tool
@@ -133,7 +136,7 @@ def test_the_release_is_the_release_tools_states_and_exits() -> None:
         "Drain": (("exit 2", "nothing switched"),),
     }
     assert [lead for lead, _ in diagrams.SWITCH_BACK] == ["exit 1", "exit 3"]
-    assert 'say(f"the host runs {old} again")\n        return 1' in tool
+    assert 'say(f"the host runs {old} again")\n            return 1' in tool
     assert 'say(f"switching back to {old} failed too: ' in tool
     # The runbook's steps, in its order.
     steps = re.findall(r"^\d\. \*\*([A-Z][a-z]+)", RUNBOOK.read_text(), re.M)[:6]

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import re
@@ -17,6 +18,8 @@ import shutil
 import stat
 import subprocess
 import sys
+import threading
+import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -635,74 +638,239 @@ def test_rollback_switches_to_previous_by_the_same_steps(
     assert f"the host runs release {B} (v1.1); previous is {A}" in capsys.readouterr().out
 
 
-def test_a_drain_waits_for_the_voice_workers_calls_and_a_timeout_switches_nothing(
-    host: Host,
-) -> None:
-    # box-b as the voice worker is: its restart cuts calls, so a switch that restarts it drains it first.
-    status, drain = release.voice_files()
+class Worker:
+    """The voice worker's status as serve mode writes it, every 50 ms here (every second in the worker): its calls,
+    whether it admits (not while the drain file exists), and when it was written. ``updates`` false stops the writes,
+    as a worker that hangs or restarts does."""
+
+    def __init__(self, calls: int, mode: str = "serve") -> None:
+        self.calls, self.mode, self.updates = calls, mode, True
+        self.status, self.drain = release.voice_files()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def write(self) -> None:
+        status = {
+            "mode": self.mode,
+            "active_calls": self.calls,
+            "admitting": not self.drain.exists(),
+            "updated": time.time(),
+        }
+        self.status.write_text(json.dumps(status))
+
+    def _run(self) -> None:
+        while not self._stop.wait(0.05):
+            if self.updates:
+                self.write()
+
+    def __enter__(self) -> Worker:
+        self.write()
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._stop.set()
+        self._thread.join()
+
+
+def voice_spec() -> release.HostSpec:
+    """SPEC with box-b as the voice worker is: its restart cuts calls, so a switch that restarts it drains it first."""
     voice = release.Unit(
         "box-b.service",
         inputs=("deploy/testhost/b.conf", "python/app/src/*"),
         envs=("app",),
         drain="voice",
     )
-    spec = release.HostSpec(
+    return release.HostSpec(
         SPEC.name, SPEC.node, SPEC.envs, (SPEC.units[0], voice, SPEC.units[2]), SPEC.artifacts
     )
-    host.prepare(A, "v1.0")
-    release.switch(
+
+
+def switch_to(host: Host, spec: release.HostSpec, rid: str, drain_timeout: float) -> int:
+    return release.switch(
         host.layout,
         spec,
-        A,
+        rid,
         release.Systemd(),
         action="switch",
-        drain_timeout=1,
+        drain_timeout=drain_timeout,
         force=False,
         settle_s=0,
         keep=3,
         units_dir=host.units,
     )
+
+
+def test_a_drain_waits_for_the_voice_workers_calls_and_a_timeout_switches_nothing(
+    host: Host,
+) -> None:
+    spec = voice_spec()
+    host.prepare(A, "v1.0")
+    switch_to(host, spec, A, 1)
     host.start("box-b.service")
-    status.write_text(json.dumps({"mode": "serve", "active_calls": 1}))
     host.prepare(B, "v1.1", **{"deploy/testhost/b.conf": "[Service]\nNice=5\n"})
     host.calls()
-    with pytest.raises(
-        release.NotReady, match=r"still has 1 call\(s\) after 0.2 s: nothing switched"
-    ):
-        release.switch(
-            host.layout,
-            spec,
-            B,
-            release.Systemd(),
-            action="switch",
-            drain_timeout=0.2,
-            force=False,
-            settle_s=0,
-            keep=3,
-            units_dir=host.units,
-        )
-    assert host.current() == A and not drain.exists() and host.calls() == []
-    # The calls end: the drain holds new ones off until the restart, and then it is gone.
-    status.write_text(json.dumps({"mode": "serve", "active_calls": 0}))
-    assert (
-        release.switch(
-            host.layout,
-            spec,
-            B,
-            release.Systemd(),
-            action="switch",
-            drain_timeout=1,
-            force=False,
-            settle_s=0,
-            keep=3,
-            units_dir=host.units,
-        )
-        == 0
-    )
-    assert host.current() == B and not drain.exists() and host.calls() == ["restart box-b.service"]
+    with Worker(calls=1) as worker:
+        with pytest.raises(
+            release.NotReady, match=r"still has 1 call\(s\) after 0.2 s: nothing switched"
+        ):
+            switch_to(host, spec, B, 0.2)
+        assert host.current() == A and not worker.drain.exists() and host.calls() == []
+        # The calls end: the drain holds new ones off until the restart, and then it is gone.
+        worker.calls = 0
+        assert switch_to(host, spec, B, 1) == 0
+    assert host.current() == B and not worker.drain.exists()
+    assert host.calls() == ["restart box-b.service"]
     # Bench mode has no drain: its restart cuts its calls.
-    status.write_text(json.dumps({"mode": "bench", "active_calls": 2}))
-    assert release.drain_voice(0.1, force=False) is False and not drain.exists()
+    with Worker(calls=2, mode="bench") as worker:
+        assert release.drain_voice(0.1, False, lambda: True) is False
+        assert not worker.drain.exists()
+
+
+def test_a_drain_trusts_only_a_status_the_worker_wrote_after_it_began(host: Host) -> None:
+    status, drain = release.voice_files()
+    # The worker's last status, written a second before the drain: no call then, but one accepted in that second
+    # would not be in it yet. It does not end the drain, and neither does a missing one.
+    old = {"mode": "serve", "active_calls": 0, "admitting": True, "updated": time.time() - 1}
+    status.write_text(json.dumps(old))
+    with pytest.raises(release.NotReady, match=r"no status since the drain began after 1\.5 s"):
+        release.drain_voice(1.5, False, lambda: True)
+    assert not drain.exists()
+    # A worker that restarts mid-drain removes the drain file and, until it writes, its status: the drain makes the
+    # file again, and ends once a status written after it began says it admits nothing and has no call.
+    with Worker(calls=0) as worker:
+        worker.updates = False
+        status.write_text(json.dumps(old))
+        ended = []
+        waiting = threading.Thread(
+            target=lambda: ended.append(release.drain_voice(5, False, lambda: True))
+        )
+        waiting.start()
+        time.sleep(0.3)
+        assert not ended
+        drain.unlink()
+        status.unlink()
+        time.sleep(1.2)
+        assert drain.exists() and not ended
+        worker.updates = True
+        waiting.join(timeout=3)
+        assert ended == [True] and drain.exists()
+    drain.unlink()
+    # A worker whose unit is not active has no call in progress, whatever its last status said.
+    status.write_text(json.dumps({**old, "active_calls": 2}))
+    assert release.drain_voice(1, False, lambda: False) is True
+    drain.unlink()
+
+
+def test_a_drain_that_is_interrupted_takes_its_file_with_it(
+    host: Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    drain = release.voice_files()[1]
+    with Worker(calls=1):
+
+        def interrupted(_: float) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(release.time, "sleep", interrupted)
+        with pytest.raises(KeyboardInterrupt):
+            release.drain_voice(300, False, lambda: True)
+    # The worker would refuse every new call while the file existed, until `undrain` or its next start.
+    assert not drain.exists()
+
+
+class Terminal(io.StringIO):
+    """The operator's terminal over ssh: once ``gone``, every write fails as a closed pipe's does."""
+
+    gone = False
+
+    def write(self, text: str) -> int:
+        if self.gone:
+            raise BrokenPipeError(32, "Broken pipe")
+        return super().write(text)
+
+    def flush(self) -> None:
+        if self.gone:
+            raise BrokenPipeError(32, "Broken pipe")
+
+
+def test_a_switch_whose_terminal_goes_away_still_switches_back(
+    host: Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host.prepare(A, "v1.0")
+    host.switch(A)
+    host.start("box-a.service")
+    host.prepare(B, "v1.1", **{"deploy/testhost/a.conf": "[Service]\nNice=5\n"})
+    (host.systemd / "failing").write_text(B)  # B's restarted unit fails
+    terminal = Terminal()
+    monkeypatch.setattr(sys, "stdout", terminal)
+    real_apply = release.apply
+
+    def apply_then_disconnect(*args: object, **kwargs: object) -> None:
+        real_apply(*args, **kwargs)
+        # The operator's ssh session goes while the restart runs (an engine's takes about 90 s).
+        terminal.gone = True
+
+    monkeypatch.setattr(release, "apply", apply_then_disconnect)
+    with release.outliving_the_terminal(host.layout, ["flatshare-release", "deploy"]):
+        assert host.switch(B) == 1
+    assert host.current() == A
+    assert host.state()["box-a.service"]["ActiveState"] == "active"
+    assert host.layout.unfinished() is None
+    # What the operator no longer saw is in the release log.
+    log = host.layout.output.read_text()
+    assert "flatshare-release deploy" in log
+    assert f"switching back to {A}" in log and f"the host runs {A} again" in log
+
+
+def test_a_switch_cut_short_is_finished_by_the_next(
+    host: Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host.prepare(A, "v1.0")
+    host.switch(A)
+    host.start("box-a.service", "box-b.service")
+    host.prepare(B, "v1.1", **{"deploy/testhost/a.conf": "[Service]\nNice=5\n"})
+    host.calls()
+    real_apply = release.apply
+
+    def killed(layout: release.Layout, spec: release.HostSpec, rid: str, *_: object) -> None:
+        # Current names B, then the run is killed before it restarts anything: no except clause runs.
+        release.replace_link(layout.current, f"releases/{rid}")
+        raise SystemExit(137)
+
+    monkeypatch.setattr(release, "apply", killed)
+    with pytest.raises(SystemExit):
+        host.switch(B)
+    assert host.current() == B and host.calls() == []
+    assert host.layout.unfinished()["target"] == B
+    assert release.main(["--root", str(host.root), "status"]) == 0
+    # Deploying B again finishes the switch rather than reporting it done: every active unit restarts.
+    monkeypatch.setattr(release, "apply", real_apply)
+    assert host.switch(B) == 0
+    assert host.calls() == ["restart box-a.service box-b.service"]
+    assert host.layout.unfinished() is None
+
+
+def test_an_e2_points_drop_ins_hold_a_switch_off(host: Host) -> None:
+    host.prepare(A, "v1.0")
+    host.switch(A)
+    host.prepare(B, "v1.1")
+    # An E2 point's gateway drop-in left linked (a campaign that lost its host, a point run by hand without reset).
+    drop_in = host.units / "flatshare-gateway.service.d" / "variant-e2-gateway.conf"
+    drop_in.parent.mkdir()
+    drop_in.write_text("[Service]\n")
+    with pytest.raises(
+        release.NotReady,
+        match=r"E2 point's drop-ins \(flatshare-gateway.service.d/variant-e2-gateway.conf\)",
+    ):
+        host.switch(B)
+    assert host.current() == A
+    assert host.switch(B, force=True) == 0
+
+
+def test_a_release_and_a_soak_refuse_the_same_e2_drop_ins() -> None:
+    from flatshare_bench.soak import run as soak
+
+    assert release.E2_DROP_INS == soak.E2_DROP_INS
 
 
 def test_an_e2_point_on_the_host_holds_a_switch_off(host: Host) -> None:
