@@ -1,6 +1,6 @@
 """``flatshare-voice arrivals``: the calls' Poisson arrivals, the accounting of every attempt (accepted, refused and
-why, failed, skipped), the turns' lines, and the end of a run on SIGINT, against fake callers that meet what a test
-plans for each call."""
+why, failed, skipped), the turns' lines, and the end of a run, once its time has passed or on SIGINT, against fake
+callers that meet what a test plans for each call."""
 
 from __future__ import annotations
 
@@ -252,8 +252,9 @@ def run_calls(
     **config: Any,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], Arrivals]:
     """A run of calls due at ``offsets`` (seconds from its start), call k meeting ``plans[k]`` (a plain call by
-    default), with the worker's status ``worker`` (written as fresh), SIGINT sent at each of ``signals``. Returns the
-    summary and the attempts' and turns' lines."""
+    default), with the worker's status ``worker`` (written as fresh), SIGINT sent at each of ``signals``. The run's
+    time ends at its last call's arrival unless ``duration_s`` says otherwise. Returns the summary and the attempts'
+    and turns' lines."""
     monkeypatch.setattr(arrivals, "arrival_offsets", lambda *_: iter(offsets))
     monkeypatch.setattr(arrivals, "JOIN_STAGGER_S", 0.0)
     out = tmp_path / "run"
@@ -261,7 +262,11 @@ def run_calls(
     if worker is not None:
         path.write_text(json.dumps(worker | {"updated": time.time() + 3600}))
     bots = BotsConfig("ws://fake", "key", "secret", tmp_path, turns=turns, warmup_turns=1)
-    settings = {"calls_per_hour": 60.0, "duration_s": 3600.0, "dispatch_timeout": 0.2} | config
+    settings = {
+        "calls_per_hour": 60.0,
+        "duration_s": max(offsets, default=0.0),
+        "dispatch_timeout": 0.2,
+    } | config
     made: list[FakeCaller] = []
 
     def caller(config: BotsConfig, corpus: Any, index: int, run_id: str) -> FakeCaller:
@@ -448,6 +453,25 @@ def test_a_run_ends_when_its_calls_end_after_the_last_arrival(
     assert summary["outcomes"]["accepted"] == 1
 
 
+def test_a_run_ends_when_its_time_has_passed_though_its_last_call_ended_before(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A call due at once, of four turns of 0.01 s, in a run of 0.5 s: the run lasts its time rather than ending with
+    # the call, as the soak that runs it for the rest of a window counts on.
+    started = time.monotonic()
+    summary, lines, _, run = run_calls(tmp_path, monkeypatch, {}, [0.0], duration_s=0.5)
+    assert time.monotonic() - started >= 0.5
+    record = json.loads((tmp_path / "run" / "run.json").read_text())
+    assert record["finished"] - record["started"] >= 0.5 and run.stopping is None
+    assert [line["ended"] for line in lines] == ["completed"] and summary["attempts"] == 1
+    # SIGINT still ends the run at once while it waits.
+    started = time.monotonic()
+    _, _, _, run = run_calls(
+        tmp_path / "stopped", monkeypatch, {}, [0.0], duration_s=60.0, signals=(0.2,)
+    )
+    assert time.monotonic() - started < 5.0 and run.stopping == "SIGINT"
+
+
 def test_the_runs_summary_counts_its_attempts_and_measured_turns() -> None:
     records = [
         {"outcome": "accepted", "ended": "completed", "caller_max_lateness_ms": 4.0},
@@ -573,8 +597,9 @@ def test_the_real_callers_record_each_outcome_through_a_room(
         for key, value in ({"refuse": None, "agent_after": 0.05} | room).items():
             monkeypatch.setattr(FakeLiveKitRoom, key, value)
         out = tmp_path / f"run-{len(FakeLiveKitRoom.rooms)}"
+        # One call, due at the run's start, where its time ends: the run ends with the call.
         monkeypatch.setattr(arrivals, "arrival_offsets", lambda *_: iter([0.0]))
-        config = ArrivalsConfig(bots_config, 60.0, 60.0, dispatch_timeout=0.5, worker_status=path)
+        config = ArrivalsConfig(bots_config, 60.0, 0.0, dispatch_timeout=0.5, worker_status=path)
         asyncio.run(Arrivals(config, out, corpus).run())
         [attempt] = [json.loads(x) for x in (out / "attempts.jsonl").read_text().splitlines()]
         turns = [json.loads(x) for x in (out / "turns.jsonl").read_text().splitlines()]

@@ -330,6 +330,9 @@ class Arrivals:
             task = asyncio.create_task(self._attempt(number, wall_due, due, turns))
             self._open.add(task)
             task.add_done_callback(functools.partial(self._finished, attempts, number, wall_due))
+        # The run lasts its time though its last call ends before it: a soak starts its callers again after a run that
+        # ends early.
+        await self._until(start + config.duration_s)
         while self._open:
             await asyncio.wait(set(self._open))
 
