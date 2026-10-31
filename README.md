@@ -220,6 +220,7 @@ used:
 | To | Read |
 |---|---|
 | read the work as one paper: the problem, the change, the results and their limits | [docs/REPORT.md](docs/REPORT.md), the technical report |
+| see the whole system at a glance: the change, and the planes that measure it and run it | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#at-a-glance) |
 | deploy the change and watch it | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
 | see how it works in vLLM's scheduler | [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-the-change-63350-and-63351), then the two pull requests' diffs |
 | see every number, with its runs and ranges | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |

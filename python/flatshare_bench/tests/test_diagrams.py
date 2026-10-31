@@ -2,8 +2,8 @@
 checks and says the same in each, and what it shows is what the files it depicts say. The request path's steps run in
 the gateway's order with the refusals of its README's error table; the release's states and exits are the release
 tool's and the runbook's; the triage's rows are alerts whose runbook URLs open them; the two cards' bounds are the
-example gateway.toml's and their failover the drills' record's; and the architecture's sockets, listener and
-namespaces are the units' and the gateway's. That every SVG under docs/figures is what its generator draws today,
+example gateway.toml's and their failover the drills' record's; the architecture's sockets, listener and
+namespaces are the units' and the gateway's; and the overview's parts are the repository's. That every SVG under docs/figures is what its generator draws today,
 test_figures.py checks with every other figure."""
 
 from __future__ import annotations
@@ -230,3 +230,24 @@ def test_the_architecture_is_the_units_sockets_listeners_and_namespaces() -> Non
             "ExecStart=%h/flatshare/src/deploy/bin/in-voicenet "
             in (cyan / "systemd" / unit).read_text()
         )
+
+
+def test_the_overviews_parts_are_the_repositorys() -> None:
+    # Each serving part is a directory of the repository, drawn by its last name.
+    for _, directory in diagrams.SERVING_PARTS:
+        assert (REPO / directory).is_dir(), directory
+    # The engine carries the two pull requests the README proposes.
+    readme = (REPO / "README.md").read_text()
+    assert {"63350", "63351"} <= set(
+        re.findall(r"github\.com/vllm-project/vllm/pull/(\d+)", readme)
+    )
+    assert diagrams.SERVING_PARTS[2][0][0] == "vLLM 0.32 + #63350, #63351"
+    # The operations plane's parts exist: the profile's check, the release tool, the drills and the container.
+    assert (DEPLOY / "bin" / "serving-check").is_file()
+    assert (DEPLOY / "deploy.sh").is_file()
+    assert (DEPLOY / "container" / "Dockerfile").is_file()
+    assert "draining" in (GATEWAY / "README.md").read_text()
+    assert [name for name, _ in diagrams.PLANES] == [
+        "Measurement: how we know",
+        "Operations: how it runs",
+    ]

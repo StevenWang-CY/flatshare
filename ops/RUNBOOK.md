@@ -8,7 +8,7 @@ How to deploy, check, operate and recover the Flatshare hosts, for whoever opera
 | Gray (second GPU node, in windows) | The same units as Phastform, with Gray's drop-ins; `flatshare.target` is not enabled at boot | As on Phastform: no TCP listener but the engine cores' loopback ones on ephemeral ports, which the listener audit accepts there, with CUDA's abstract sockets |
 | cyan (control) | `flatshare-tunnel@phastform`, `flatshare-gateway`, `flatshare-voicenet`, `flatshare-livekit`, `flatshare-voice-worker`, and at times `flatshare-smg` and `flatshare-tunnel@gray` | The gateway's 127.0.0.1:18080, the only TCP listener in the host's network; Unix sockets in `/run/user/$UID/flatshare/` |
 
-Figure 1 of [ARCHITECTURE.md](../docs/ARCHITECTURE.md#3-the-serving-path) draws the hosts, their sockets and the one TCP listener.
+Figure 2 of [ARCHITECTURE.md](../docs/ARCHITECTURE.md#3-the-serving-path) draws the hosts, their sockets and the one TCP listener.
 
 Notes on the table:
 

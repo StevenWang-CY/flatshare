@@ -9,7 +9,30 @@ Flatshare runs a realtime voice agent beside background LLM work on one GPU, or 
 
 The designs that were measured and dropped are in §7, failure handling in §8 and testing in §9.
 
-This document describes what is built, as of v1.10, for a reader who wants to know how the parts work and fit together before reading or changing the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers, [PRIOR-ART.md](PRIOR-ART.md) what is new here and what is prior work, the [ADRs](README.md#decisions) the decisions, and [GLOSSARY.md](GLOSSARY.md) the terms.
+This document describes what is built, as of v1.14, for a reader who wants to know how the parts work and fit together before reading or changing the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers, [PRIOR-ART.md](PRIOR-ART.md) what is new here and what is prior work, the [ADRs](README.md#decisions) the decisions, and [GLOSSARY.md](GLOSSARY.md) the terms.
+
+## At a glance
+
+Flatshare is one change to vLLM's scheduler and three planes around it (Figure 1). The serving plane carries a voice turn and the agents' requests through one GPU: callers reach the voice worker and coding agents reach the gateway, which gives each client its class and priority and places it on a GPU node, and vLLM with [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) schedules both over the GPU's KV pool and the CPU tier, beside the speech servers. The measurement plane made every number the report gives, and the operations plane holds production to the measured configuration and decides what a failure does.
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/overview-narrow.svg">
+  <img src="figures/overview.svg" width="100%" alt="Three panels around one engine change: in the serving plane, callers reach the voice worker and coding agents reach the gateway, which sends both to vLLM 0.32 with #63350 and #63351, the KV preemption and the budget cap, over the GPU's KV pool and the CPU tier beside the speech servers; beside it the measurement plane, with the scripted callers, AIPerf's replay of Claude Code traces, the E2 harness, probes and counters, gates, and the cost model and simulator; and the operations plane, with the serving profile and its serving-check, immutable releases, two cards with a warm spare, drain and failover, failure drills and a 24-hour soak, and the container.">
+</picture>
+
+**Figure 1. The change sits in the serving plane, and the measurement and operations planes stand beside it.** Blue is the change, white a component, and a dashed outline the engine's KV memory. Each part below names its home in the repository and the section that describes it.
+
+| Plane | Part | In the repository | Here |
+|---|---|---|---|
+| Serving | The change on vLLM 0.32: the pull requests as patches, the build, probes and tests | [`python/flatshare_vllm`](../python/flatshare_vllm/README.md) | §2 |
+| Serving | The gateway, and the wire types it speaks | [`crates/flatshare-gateway`](../crates/flatshare-gateway/README.md), [`crates/flatshare-proto`](../crates/flatshare-proto) | §3.3 |
+| Serving | The voice worker, and the callers that measure it | [`python/flatshare_voice`](../python/flatshare_voice/README.md) | §3.4 |
+| Serving | A GPU node's units and the engine's variants | [`deploy/phastform`](../deploy/phastform) | §3.2 |
+| Measurement | The E2 harness, trace conversion, probes, drills and figures | [`python/flatshare_bench`](../python/flatshare_bench), [`benchmarks/`](../benchmarks) | §6.3 |
+| Measurement | The statistics the records publish, each defined once | [`python/flatshare_stats`](../python/flatshare_stats) | §6 |
+| Measurement | The cost and step-time models, and the KV cache simulator | [`crates/flatshare-core`](../crates/flatshare-core), [`crates/flatshare-sim`](../crates/flatshare-sim) | §6.4 |
+| Operations | The serving profile, releases, two cards and the container | [`deploy/`](../deploy) | §3.1, §3.5, §3.6 |
+| Operations | The runbook, the failure drills, alert rules and a dashboard | [`ops/`](../ops) | §8 |
 
 ## 1. The problem in the engine
 
@@ -45,14 +68,14 @@ What E2 found ([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2)): the bu
 
 ## 3. The serving path
 
-This section is the serving path, from the configuration to the alerts: the serving profile, a GPU node, the gateway, the voice worker, two cards, releases and what to watch. [PRODUCTION.md](PRODUCTION.md) gives the operator's view of it, and [RUNBOOK.md](../ops/RUNBOOK.md) the commands. Figure 1 shows its hosts and the sockets between them.
+This section is the serving path, from the configuration to the alerts: the serving profile, a GPU node, the gateway, the voice worker, two cards, releases and what to watch. [PRODUCTION.md](PRODUCTION.md) gives the operator's view of it, and [RUNBOOK.md](../ops/RUNBOOK.md) the commands. Figure 2 shows its hosts and the sockets between them.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/architecture-narrow.svg">
   <img src="figures/architecture.svg" width="100%" alt="Three hosts as dashed groups. On cyan, the control host, the callers, the LiveKit server and the voice worker sit in the voice plane's network namespace, which has no route out. The worker sends its LLM requests to the gateway through gateway.sock and its speech to the tunnel to Phastform through stt.sock and tts.sock; the coding agents reach the gateway through 127.0.0.1:18080, TCP with a tenant's key; the gateway sends its engine requests through engine.sock to the tunnel to Phastform, and, dashed, to the tunnel to Gray. Each tunnel carries SSH sessions to its node's three servers: vLLM 0.32 with make-room on engine.sock, shaded as the change, Whisper STT on stt.sock and Kokoro TTS on tts.sock. On Phastform, an RTX 5060 Ti, each server has a network namespace of its own; Gray, a second card when present, is drawn dashed, its servers in the host's namespace.">
 </picture>
 
-**Figure 1. Outside the voice plane the units meet only at Unix sockets, which SSH bridges between hosts, and the gateway's port is the only TCP listener in cyan's host network.** Dashed groups are hosts and network namespaces, and the change's engine is blue. A tunnel per node serves the node's sockets on cyan as `NODE-engine.sock`, `NODE-stt.sock` and `NODE-tts.sock` (§4). Gray, dashed, is the second card of the two-card arrangement (§3.5), which the gateway reaches only through `[[nodes]]`. The callers are the measurement's (§6.2).
+**Figure 2. Outside the voice plane the units meet only at Unix sockets, which SSH bridges between hosts, and the gateway's port is the only TCP listener in cyan's host network.** Dashed groups are hosts and network namespaces, and the change's engine is blue. A tunnel per node serves the node's sockets on cyan as `NODE-engine.sock`, `NODE-stt.sock` and `NODE-tts.sock` (§4). Gray, dashed, is the second card of the two-card arrangement (§3.5), which the gateway reaches only through `[[nodes]]`. The callers are the measurement's (§6.2).
 
 ### 3.1 The serving profile
 
@@ -71,14 +94,14 @@ A GPU node runs the three servers of §5.1, the engine on the serving variant. E
 
 ### 3.3 The gateway
 
-`flatshare-gateway` ([`crates/flatshare-gateway`](../crates/flatshare-gateway/README.md)) is the serving control plane, on the control host ([ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)). It serves the OpenAI routes and the Anthropic Messages API (`/v1/messages`, `/v1/messages/count_tokens`), through which Claude Code connects ([its routes](../crates/flatshare-gateway/README.md)). A request takes the steps of Figure 2.
+`flatshare-gateway` ([`crates/flatshare-gateway`](../crates/flatshare-gateway/README.md)) is the serving control plane, on the control host ([ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)). It serves the OpenAI routes and the Anthropic Messages API (`/v1/messages`, `/v1/messages/count_tokens`), through which Claude Code connects ([its routes](../crates/flatshare-gateway/README.md)). A request takes the steps of Figure 3.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/request-path-narrow.svg">
   <img src="figures/request-path.svg" width="100%" alt="A column of seven steps, each step's main refusals leaving to its right with their status and code. Authenticate, on no known key or an unknown class: 401 invalid_api_key, 400 invalid_class. Bound, on a bound full or a body too large: 503 in_flight_limit, 429 tenant_in_flight_limit, 413 body_too_large. Sanitize, on a body that is no JSON object or asks too many choices: 400 invalid_json, 400 too_many_choices. Place, with no engine ready or no free slot: 503 upstream_not_ready, no_healthy_node, no_call_slot, no_agent_slot. Forward, on no answer or no headers in time: 502 upstream_unavailable, 504 upstream_timeout. Relay, on a stream cut short: an error event of type upstream_unavailable, upstream_timeout or draining. Account records one outcome for every request. The gateway's error table lists every code.">
 </picture>
 
-**Figure 2. A request is refused at the first step it fails, and the first four refuse it before the engine sees it.** Each refusal carries its status and code; once a stream has begun, it ends with an error event of that type instead. The figure names each step's main codes; [the gateway's errors](../crates/flatshare-gateway/README.md#errors) lists every one. A passed deadline, or a client that leaves, cancels the engine's work.
+**Figure 3. A request is refused at the first step it fails, and the first four refuse it before the engine sees it.** Each refusal carries its status and code; once a stream has begun, it ends with an error event of that type instead. The figure names each step's main codes; [the gateway's errors](../crates/flatshare-gateway/README.md#errors) lists every one. A passed deadline, or a client that leaves, cancels the engine's work.
 
 | Step | What it does |
 |---|---|
@@ -105,14 +128,14 @@ Of the lifecycle events it posts only each call's `session_closed`; the turns' e
 
 ### 3.5 Two cards
 
-Where a second card is available, the arrangement puts each card in a `[[nodes]]` entry of `gateway.toml` ([ADR-0008](adr/0008-two-cards-consolidation-with-a-warm-spare.md); [`deploy/cyan/gateway.example.toml`](../deploy/cyan/gateway.example.toml) has both), and the runbook's [Two GPU nodes](../ops/RUNBOOK.md#two-gpu-nodes) says how to run it. Figure 3 shows its placement and its failover.
+Where a second card is available, the arrangement puts each card in a `[[nodes]]` entry of `gateway.toml` ([ADR-0008](adr/0008-two-cards-consolidation-with-a-warm-spare.md); [`deploy/cyan/gateway.example.toml`](../deploy/cyan/gateway.example.toml) has both), and the runbook's [Two GPU nodes](../ops/RUNBOOK.md#two-gpu-nodes) says how to run it. Figure 4 shows its placement and its failover.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/two-cards-narrow.svg">
   <img src="figures/two-cards.svg" width="100%" alt="Two panels of two cards, each with a row of two call slots and a row of agents' slots, four on Phastform and twelve on Gray. (a) In service: both calls fill Phastform's call slots beside its four agents' slots, and Gray, the warm spare, runs agents only, its call slots empty, under calls = fill. (b) The first card failed: Phastform's engine is down and its slots empty; both calls take Gray's call slots at their next turn, 0.7 s after a kill and 1.9 s after a stop, and Gray, covering, holds its twelve agents' slots, hatched, under a bracket that reads held until the calls end.">
 </picture>
 
-**Figure 3. Both calls fill the first card, and the spare takes them by their next turn when the first fails.** (a) Each card has two call slots (`max_calls = 2`) and up to 4 or 12 agents' sessions (`max_agents`), and `calls = "fill"` places each call on the first card with a free call slot. (b) In the failover drills, both calls' next turns reached the spare 0.7 s after a SIGKILL to the first card's engine and 1.9 s after its stop ([the record](../benchmarks/results/2026-10-28-node-failover)); the spare holds its agents' requests, hatched, until the moved calls end.
+**Figure 4. Both calls fill the first card, and the spare takes them by their next turn when the first fails.** (a) Each card has two call slots (`max_calls = 2`) and up to 4 or 12 agents' sessions (`max_agents`), and `calls = "fill"` places each call on the first card with a free call slot. (b) In the failover drills, both calls' next turns reached the spare 0.7 s after a SIGKILL to the first card's engine and 1.9 s after its stop ([the record](../benchmarks/results/2026-10-28-node-failover)); the spare holds its agents' requests, hatched, until the moved calls end.
 
 - **Health.** A node is healthy while its whole pipeline is: its engine serving and ready, and its STT and TTS answering `/health`.
 - **Sessions stay on their node,** since KV never moves: a session whose node fails is placed again by its next request, and a realtime request whose node failed before its first content is sent once more on the other node.
@@ -120,14 +143,14 @@ Where a second card is available, the arrangement puts each card in a `[[nodes]]
 
 ### 3.6 Releases
 
-`deploy/deploy.sh HOST` makes an immutable release under `~/flatshare/releases/`, with a manifest of what it holds ([PRODUCTION.md](PRODUCTION.md#releasing-a-change); [ADR-0009](adr/0009-immutable-releases-and-the-exact-serving-profile.md)), and takes it through the states of Figure 4. The drain is of what the switch would cut, the worker's calls and the engine's requests; the switch moves the `current` link and restarts only the units whose inputs changed; and the check runs those of §3.1. A release rolls back to the previous one offline.
+`deploy/deploy.sh HOST` makes an immutable release under `~/flatshare/releases/`, with a manifest of what it holds ([PRODUCTION.md](PRODUCTION.md#releasing-a-change); [ADR-0009](adr/0009-immutable-releases-and-the-exact-serving-profile.md)), and takes it through the states of Figure 5. The drain is of what the switch would cut, the worker's calls and the engine's requests; the switch moves the `current` link and restarts only the units whose inputs changed; and the check runs those of §3.1. A release rolls back to the previous one offline.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/release-narrow.svg">
   <img src="figures/release.svg" width="100%" alt="A column of a release's states from deploy.sh HOST: prepare, verify, drain, switch, restart, check and serving. Prepare exits 2 with nothing switched when the host is locked or the upload changed; verify exits 1 with nothing switched when a check fails; drain exits 2 with nothing switched when calls do not end or an E2 point runs. A failure in the switch, the restart or the check leads to switch back, which exits 1 with the release before running again, or 3 when switching back failed too. Serving exits 0, and --rollback enters at verify.">
 </picture>
 
-**Figure 4. A release switches nothing until it has verified and drained, and switches back by itself when anything after the switch fails.** `deploy.sh`'s exit status says where it stopped, and `--rollback` takes the previous release through the same states from the verification.
+**Figure 5. A release switches nothing until it has verified and drained, and switches back by itself when anything after the switch fails.** `deploy.sh`'s exit status says where it stopped, and `--rollback` takes the previous release through the same states from the verification.
 
 ### 3.7 What to watch
 
@@ -145,8 +168,8 @@ A Grafana dashboard shows the same ([`ops/grafana`](../ops/grafana/flatshare.jso
 ## 4. Network and security
 
 See [ADR-0005](adr/0005-loopback-services-and-node-sticky-kv.md).
-- **Unix sockets end to end** (Figure 1). On the GPU nodes the engine, STT and TTS serve on Unix sockets in `$XDG_RUNTIME_DIR/flatshare`, a directory of mode 0700, and listen on no TCP port: vLLM's `--api-key` guards only its `/v1`, `/v2`, `/inference` and `/cohere` routes, so the directory is what keeps the hosts' other users from the engine. cyan reaches each socket through `flatshare-tunnel@NODE`, a `systemd --user` unit, with one SSH key per socket. The node lets that key run one command for every session, whatever its client asks, `exec nc -q0 -U SOCKET`, under `restrict`, which allows no forwarding of any kind. Each connection on cyan's socket of the same name is one session, multiplexed over a few SSH connections.
-- **One TCP listener on cyan** (Figure 1). The gateway's 127.0.0.1:18080, with keys, is the only TCP listener in cyan's host network; its `/metrics`, and the engine's that it relays, need the metrics key there. SMG's arm runs in the voice plane's namespace, between two proxies. `deploy/bin/audit-listeners` checks each host after every deploy and in the smoke test: no TCP listener of the box's units outside that set, and their sockets only in `$XDG_RUNTIME_DIR`.
+- **Unix sockets end to end** (Figure 2). On the GPU nodes the engine, STT and TTS serve on Unix sockets in `$XDG_RUNTIME_DIR/flatshare`, a directory of mode 0700, and listen on no TCP port: vLLM's `--api-key` guards only its `/v1`, `/v2`, `/inference` and `/cohere` routes, so the directory is what keeps the hosts' other users from the engine. cyan reaches each socket through `flatshare-tunnel@NODE`, a `systemd --user` unit, with one SSH key per socket. The node lets that key run one command for every session, whatever its client asks, `exec nc -q0 -U SOCKET`, under `restrict`, which allows no forwarding of any kind. Each connection on cyan's socket of the same name is one session, multiplexed over a few SSH connections.
+- **One TCP listener on cyan** (Figure 2). The gateway's 127.0.0.1:18080, with keys, is the only TCP listener in cyan's host network; its `/metrics`, and the engine's that it relays, need the metrics key there. SMG's arm runs in the voice plane's namespace, between two proxies. `deploy/bin/audit-listeners` checks each host after every deploy and in the smoke test: no TCP listener of the box's units outside that set, and their sockets only in `$XDG_RUNTIME_DIR`.
 - **No KV events.** The engine publishes none: they carry every cached block's token ids, and vLLM sends them to whoever binds its TCP endpoint.
 - **The servers' own network namespaces.** Each GPU server runs in a network namespace of its own with a loopback alone ([`deploy/bin/in-private-net`](../deploy/bin/in-private-net)): vLLM's engine cores listen on the loopback for torch's gloo groups, and CUDA keeps abstract sockets, which in the host's namespace every user of the node reaches. Their sockets are files, which a namespace does not hide. Where the kernel refuses unprivileged user namespaces, which the single host's preflight finds and Gray's install finds at every release (`deploy/bin/private-net-check`), their drop-ins mark the servers `FLATSHARE_PRIVATE_NET=host` and they run in the host's, where the listener audit accepts only their engine cores' loopback listeners on ephemeral ports and CUDA's abstract sockets; anywhere else a namespace that cannot be made fails the unit.
 - **Development mode for measurement only.** A production box runs vLLM without its development and RL routes (`/collective_rpc`, `/sleep`, `/update_weights` and the others); a measured box adds them with a drop-in (`variant.sh measure on`) for the harness's `/server_info` and cache resets, on the engine's socket only.
@@ -179,7 +202,7 @@ Every measurement on the box runs one pinned configuration, with the audio model
 
 ### 5.2 Hosts
 
-Figure 1 shows the hosts. cyan has 48 threads and no GPU; Phastform and Gray each have an RTX 5060 Ti 16 GB and 188 GiB of RAM, and run the frozen box (§5.1). A measurement adds, in cyan's host network, AIPerf's agent replay on pinned cores, and in the voice plane's namespace the measurement callers (`livekit-rtc`) and SMG (arm 8b).
+Figure 2 shows the hosts. cyan has 48 threads and no GPU; Phastform and Gray each have an RTX 5060 Ti 16 GB and 188 GiB of RAM, and run the frozen box (§5.1). A measurement adds, in cyan's host network, AIPerf's agent replay on pinned cores, and in the voice plane's namespace the measurement callers (`livekit-rtc`) and SMG (arm 8b).
 
 - **Phastform**, the first GPU node: every E2 point but the A100 run's before the two-card rounds, which ran on it and Gray in turn, and the arrangement to deploy's first card. It is paused when idle.
 - **Gray**, a second, identical GPU node: the probes' booked windows, the second card of the two-card rounds, and the warm spare of the arrangement to deploy on two nodes. cyan reaches it through `flatshare-tunnel@gray`.

@@ -15,8 +15,9 @@ budget cap holds lower-priority prefill from the step the turn fits until it has
 cuts a decode. A step's length is drawn in the ratio of the recorded gaps between a reply's tokens beside
 agent prefill and with it held (the README's "What it shows": 60-65 ms and 16-20 ms), at the middle of each.
 
-The system diagrams, square-cornered: docs/ARCHITECTURE.md's figures of the serving path, architecture.svg (the hosts,
-their units and the sockets between them), request-path.svg (a request's steps through the gateway and each one's
+The system diagrams, square-cornered: docs/ARCHITECTURE.md's figures, overview.svg (the system at a glance: the
+engine change in the serving plane, and the measurement and operations planes beside it), then the serving path's,
+architecture.svg (the hosts, their units and the sockets between them), request-path.svg (a request's steps through the gateway and each one's
 refusals), two-cards.svg (the two-card arrangement's placement and its measured failover) and release.svg (a release's
 states and exits), and ops/RUNBOOK.md's triage.svg (five checks from a failing call to its runbook row). Each draws
 what the files it depicts say, which tests/test_diagrams.py holds it to.
@@ -684,6 +685,145 @@ def _architecture_narrow(path: Path, title: str) -> Path:
     return s.save(path)
 
 
+# The system at a glance --------------------------------------------------------------------------------------------
+
+SERVING_PARTS = (
+    (["Voice worker"], "python/flatshare_voice"),
+    (["Gateway"], "crates/flatshare-gateway"),
+    (["vLLM 0.32 + #63350, #63351", "the KV preemption, the budget cap"], "python/flatshare_vllm"),
+)
+"""The serving plane's own parts, each with the directory it lives in, drawn by its last name: the voice worker, the
+gateway, and the engine with the change, its two rules named as the report names them (docs/REPORT.md §3)."""
+MEASUREMENT = (
+    ("Scripted callers", "V2V read from waveforms"),
+    ("AIPerf replay", "Claude Code traces"),
+    ("E2 harness", "rotated rounds"),
+    ("Probes and counters", "each wait on the GPU"),
+    ("Gates", "criteria fixed before runs"),
+    ("Cost model, simulator", "regime map, A100 forecast"),
+)
+"""The measurement plane: what made every number (docs/REPORT.md §5 and Appendix A)."""
+OPERATIONS = (
+    ("Serving profile", "serving-check at each start"),
+    ("Immutable releases", "switched back on failure"),
+    ("Two cards", "consolidation, warm spare"),
+    ("Drain and failover", "sessions placed again"),
+    ("Failure drills", "and a 24-hour soak"),
+    ("Container", "vLLM's image, caches kept"),
+)
+"""The operations plane: what holds production to the measured configuration and what it does when a part fails
+(docs/ARCHITECTURE.md §3, §8; docs/PRODUCTION.md)."""
+PLANES = (
+    ("Measurement: how we know", MEASUREMENT),
+    ("Operations: how it runs", OPERATIONS),
+)
+OVERVIEW_DESCRIPTION = (
+    "Three panels around one engine change: in the serving plane, callers reach the voice worker and coding agents "
+    "reach the gateway, which sends both to vLLM 0.32 with #63350 and #63351, the KV preemption and the budget cap, "
+    "over the GPU's KV pool and the CPU tier beside the speech servers; beside it the measurement plane, with the "
+    "scripted callers, AIPerf's replay of Claude Code traces, the E2 harness, probes and counters, gates, and the cost "
+    "model and simulator; and the operations plane, with the serving profile and its serving-check, immutable "
+    "releases, two cards with a warm spare, drain and failover, failure drills and a 24-hour soak, and the container."
+)
+MEMORY = "GPU KV pool · CPU tier"
+SPEECH = "beside the STT and TTS servers"
+"""The engine's memory, under it, and where it runs: one GPU with the speech servers (docs/REPORT.md §5.1)."""
+
+
+def overview(out: Path) -> list[Path]:
+    """overview.svg and its phone layout: the system at a glance."""
+    title = "The system at a glance"
+    return [
+        _overview_wide(out / "overview.svg", title),
+        _overview_narrow(out / "overview-narrow.svg", title),
+    ]
+
+
+def _serving_height(engine: list[str]) -> float:
+    """The serving panel's height with an engine box of ``engine``'s lines, as _serving lays it out."""
+    return (
+        52 + 44 + 40 + UNIT_H + 40 + UNIT_H + 40 + (UNIT_H + 22 * (len(engine) - 1)) + 40 + 48 + 44
+    )
+
+
+def _serving(s: Figure, x: float, y: float, w: float, engine: list[str]) -> None:
+    """The serving plane's parts in its panel at ``y``: the callers and the coding agents, the voice worker under the
+    callers, the gateway, the engine with the change and its memory, each flow downward."""
+    half = (w - 36 - 16) / 2
+    left, right = x + 18, x + 18 + half + 16
+    top = y + 52
+    s.box(left, top, half, 44, "Callers")
+    s.box(right, top, half, 44, "Coding agents")
+    (worker, worker_dir), (gateway, gateway_dir), (_, engine_dir) = SERVING_PARTS
+    worker_y = top + 44 + 40
+    worker_h = _unit(s, left, worker_y, half, worker, Path(worker_dir).name)
+    gateway_y = worker_y + worker_h + 40
+    gateway_h = _unit(s, left, gateway_y, w - 36, gateway, Path(gateway_dir).name)
+    engine_y = gateway_y + gateway_h + 40
+    engine_h = _unit(s, left, engine_y, w - 36, engine, Path(engine_dir).name, "ours")
+    memory_y = engine_y + engine_h + 40
+    s.memory(left, memory_y, w - 36, 48)
+    s.text(x + w / 2, memory_y + 24 + 0.33 * VALUE, MEMORY, size=VALUE, anchor="middle")
+    s.text(x + w / 2, memory_y + 48 + 26, SPEECH, size=NOTE, anchor="middle", cls="soft")
+    mid_left, mid_right = left + half / 2, right + half / 2
+    s.flow([(mid_left, top + 44), (mid_left, worker_y)])
+    s.flow([(mid_left, worker_y + worker_h), (mid_left, gateway_y)])
+    s.flow([(mid_right, top + 44), (mid_right, gateway_y)])
+    s.flow([(x + w / 2, gateway_y + gateway_h), (x + w / 2, engine_y)])
+    s.flow([(x + w / 2, engine_y + engine_h), (x + w / 2, memory_y)])
+    assert memory_y + 48 + 44 == y + _serving_height(engine)
+
+
+def _plane(
+    s: Figure,
+    x: float,
+    y: float,
+    w: float,
+    title: str,
+    parts: tuple[tuple[str, str], ...],
+    gap: float,
+    h: float,
+) -> None:
+    """A side plane: its panel, ``h`` tall, on the gray ground and its parts in a column, each a box with its note."""
+    s.panel(x, y, w, h, title, ground="b")
+    y += 52
+    for name, note in parts:
+        y += _unit(s, x + 24, y, w - 48, name, note) + gap
+
+
+def _overview_wide(path: Path, title: str) -> Path:
+    """The serving plane in the middle, the measurement plane left of it and the operations plane right."""
+    s = Diagram(WIDTH, 600, title, OVERVIEW_DESCRIPTION)
+    side, gap = 300.0, 28.0
+    middle = WIDTH - 2 * side - 4 * 24
+    engine = SERVING_PARTS[2][0]
+    side_h = 52 + len(MEASUREMENT) * UNIT_H + (len(MEASUREMENT) - 1) * gap + 24
+    h = max(_serving_height(engine), side_h)
+    s.panel(24 + side + 24, 12, middle, h, "Serving: what runs")
+    _serving(s, 24 + side + 24, 12, middle, engine)
+    for (name, parts), x in zip(PLANES, (24.0, WIDTH - 24 - side), strict=True):
+        _plane(s, x, 12, side, name, parts, gap, h)
+    s.height = 12 + h + 12
+    return s.save(path)
+
+
+def _overview_narrow(path: Path, title: str) -> Path:
+    """The phone layout: the serving plane on top, then the measurement plane and the operations plane."""
+    s = Diagram(NARROW, 1800, title, OVERVIEW_DESCRIPTION)
+    x0, w, gap = 16.0, NARROW - 32, 16.0
+    engine = [SERVING_PARTS[2][0][0], "the KV preemption,", "the budget cap"]
+    h = _serving_height(engine)
+    s.panel(x0, 12, w, h, "Serving: what runs")
+    _serving(s, x0, 12, w, engine)
+    y = 12 + h + 24
+    for name, parts in PLANES:
+        plane_h = 52 + len(parts) * UNIT_H + (len(parts) - 1) * gap + 24
+        _plane(s, x0, y, w, name, parts, gap, plane_h)
+        y += plane_h + 24
+    s.height = y - 12
+    return s.save(path)
+
+
 # A request's path through the gateway ------------------------------------------------------------------------------
 
 REQUEST_STEPS = (
@@ -1150,7 +1290,7 @@ def _narrow(path: Path) -> Path:
     return s.save(path)
 
 
-SYSTEM = (architecture, request_path, two_cards, release, triage)
+SYSTEM = (overview, architecture, request_path, two_cards, release, triage)
 """The system diagrams, in docs/ARCHITECTURE.md's order, then the runbook's."""
 
 
