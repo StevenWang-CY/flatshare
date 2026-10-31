@@ -15,7 +15,7 @@ use crate::harness::Admission;
 use crate::intake::Intake;
 use crate::ledger::Load;
 use crate::metrics::Metrics;
-use crate::nodes::Nodes;
+use crate::nodes::{Closing, Nodes};
 
 /// What the gateway sends its requests to.
 #[derive(Debug)]
@@ -99,7 +99,7 @@ impl Shared {
             admission.close();
         }
         if let Some(nodes) = self.nodes() {
-            nodes.close();
+            nodes.close(Closing::HandedOver);
         }
     }
 

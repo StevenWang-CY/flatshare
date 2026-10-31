@@ -28,7 +28,7 @@ use crate::deadline::{Deadlines, Phase, Timeout};
 use crate::harness::{NotAdmitted, Refusal, Ticket};
 use crate::intake::{Permit, Refused};
 use crate::metrics::Metrics;
-use crate::nodes::{NotReleased, Placed, Unplaced};
+use crate::nodes::{Closing, NotReleased, Placed, Unplaced};
 use crate::sanitize::{InvalidBody, REQUEST_ID, RESOLVED_SESSION_ID, request_id, session_header};
 use crate::types::{Outcome, Route, UpstreamError};
 use crate::upstream::RECOVERY_PROBE;
@@ -440,15 +440,23 @@ impl Exchange {
         waited
     }
 
-    /// The answer to a request that a covering node held back for `waited`, until its deadline or a drain's cut
-    /// `grace` into the drain.
+    /// The answer to a request that a covering node held back for `waited`, until its deadline, a drain's cut `grace`
+    /// into the drain, or the gateway's close: 503 `draining` with `Retry-After: 1` when it handed its sockets to a
+    /// successor or stops, the request never having gone upstream. That outcome is `drained`.
     pub fn not_released(mut self, why: NotReleased, waited: Duration, grace: Duration) -> Response {
         self.admission_wait = Some(waited);
-        match why {
-            NotReleased::Late(timeout) => self.timed_out(Phase::Queue, timeout),
-            NotReleased::Cut => self.drained(grace),
-            NotReleased::Draining => self.refused(Refusal::Draining),
-        }
+        let message = match why {
+            NotReleased::Late(timeout) => return self.timed_out(Phase::Queue, timeout),
+            NotReleased::Cut => return self.drained(grace),
+            NotReleased::Closed(Closing::HandedOver) => {
+                "the gateway handed its sockets to a successor before a node took the request; send it again"
+            }
+            NotReleased::Closed(Closing::Stopping) => {
+                "the gateway is stopping, and a node covering for a failed one had held the request back; send it again"
+            }
+        };
+        self.ends_as(Outcome::Drained);
+        self.retry(StatusCode::SERVICE_UNAVAILABLE, "draining", message)
     }
 
     /// The 429 for a request the admission policy shed before its response began: its place went to a
@@ -492,7 +500,9 @@ impl Exchange {
     }
 
     /// The request's terminal outcome: a response relayed to its end is `completed` only with a 2xx status, and a
-    /// request without one ended as its client left.
+    /// request without one ended as its client left. A forwarded request whose response had begun but that has no
+    /// outcome was cut by the process's exit at `drain_timeout_s`: every relay that ends records how it ended, so only
+    /// one dropped with the runtime leaves none, and the record says `drained`, never `completed`.
     fn terminal(&self) -> Outcome {
         match (self.outcome, self.status) {
             (Some(Outcome::Completed), Some(status)) if status.is_client_error() => {
@@ -503,6 +513,7 @@ impl Exchange {
             }
             (Some(outcome), _) => outcome,
             (None, None) => Outcome::Cancelled,
+            (None, Some(_)) if self.forwarded => Outcome::Drained,
             (None, Some(status)) if status.is_client_error() => Outcome::Invalid,
             (None, Some(status)) if status.is_success() => Outcome::Completed,
             (None, Some(_)) => Outcome::TransportError,

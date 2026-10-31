@@ -41,7 +41,9 @@ pub(crate) mod metrics;
 mod placement;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
+use std::sync::{
+    Arc, Mutex, OnceLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak,
+};
 use std::time::{Duration, Instant};
 
 use flatshare_proto::{EventKind, LifecycleEvent, SessionId, SloClass};
@@ -204,9 +206,9 @@ pub(crate) struct Nodes {
     /// Woken whenever a node may have stopped covering (the table or a node's availability changed) and when an
     /// agent's request ends: what the requests held back by a failover wait on.
     changed: Notify,
-    /// Set when the gateway hands its sockets to a successor ([`Nodes::close`]): a request it would hold back is
-    /// refused instead, to be sent to the successor.
-    closed: AtomicBool,
+    /// Set when the gateway hands its sockets to a successor or stops ([`Nodes::close`]): a request it would hold
+    /// back is refused instead, to be sent again.
+    closed: OnceLock<Closing>,
 }
 
 /// A request's place on its node, from its placement to its end: dropping it ends the request there.
@@ -248,8 +250,17 @@ pub(crate) enum NotReleased {
     Late(Timeout),
     /// The drain's cut.
     Cut,
-    /// The gateway handed its sockets to a successor while the request waited ([`Nodes::close`]).
-    Draining,
+    /// The gateway closed while the request waited, or before it would have ([`Nodes::close`]).
+    Closed(Closing),
+}
+
+/// Why a gateway holds no request back any more ([`Nodes::close`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Closing {
+    /// It handed its sockets to a successor, which places from then on.
+    HandedOver,
+    /// It stops, and no gateway serves after it.
+    Stopping,
 }
 
 impl Nodes {
@@ -355,7 +366,7 @@ impl Nodes {
             metrics: metrics.clone(),
             first_realtime,
             changed: Notify::new(),
-            closed: AtomicBool::new(false),
+            closed: OnceLock::new(),
         });
         for node in &nodes.list {
             if canary.is_some() {
@@ -557,8 +568,8 @@ impl Nodes {
                 self.count_in(placed);
                 return Ok(arrived.elapsed());
             }
-            if self.closed.load(Ordering::Acquire) {
-                return Err(NotReleased::Draining);
+            if let Some(&why) = self.closed.get() {
+                return Err(NotReleased::Closed(why));
             }
             if waiting.is_none() {
                 waiting = Some(GaugeGuard::new(placed.node.series.waiting.clone()));
@@ -576,11 +587,12 @@ impl Nodes {
         }
     }
 
-    /// Holds no request back any more: the gateway handed its sockets to a successor, which places from now on. A
-    /// request waiting in [`Nodes::hold`] is refused at once, and so is one that would wait from now on; one its node
-    /// can take still goes, as the requests already admitted run on.
-    pub fn close(&self) {
-        self.closed.store(true, Ordering::Release);
+    /// Holds no request back any more, `why`: the gateway handed its sockets to a successor, which places from now on,
+    /// or it stops with none. A request waiting in [`Nodes::hold`] is refused at once, and so is one that would wait
+    /// from now on; one its node can take still goes, as the requests already admitted run on. The first close's
+    /// reason stands.
+    pub fn close(&self, why: Closing) {
+        let _ = self.closed.set(why);
         self.changed.notify_waiters();
     }
 
@@ -1506,16 +1518,19 @@ mod tests {
         let waits = tokio::time::timeout(Duration::from_millis(50), &mut held).await;
         assert!(waits.is_err(), "b holds it back");
         // The gateway hands its sockets to a successor: the request is refused at once, to be sent there.
-        nodes.close();
+        nodes.close(Closing::HandedOver);
         let refused = tokio::time::timeout(Duration::from_secs(1), held).await;
         assert!(
-            matches!(refused, Ok(Err(NotReleased::Draining))),
+            matches!(refused, Ok(Err(NotReleased::Closed(Closing::HandedOver)))),
             "{refused:?}"
         );
         // So is a request that would wait from then on; a call, which no node holds back, still goes.
         let mut next = nodes.request(None, SloClass::Background, true).unwrap();
         let refused = nodes.hold(&mut next, deadline, &drain).await;
-        assert!(matches!(refused, Err(NotReleased::Draining)), "{refused:?}");
+        assert!(
+            matches!(refused, Err(NotReleased::Closed(Closing::HandedOver))),
+            "{refused:?}"
+        );
         let mut call = nodes
             .request(Some(key("call-1")), SloClass::Realtime, true)
             .unwrap();

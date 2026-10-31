@@ -27,7 +27,7 @@ use crate::harness::Admission;
 use crate::intake::{self, Intake};
 use crate::ledger::{self, Followed, Ledger};
 use crate::metrics::Metrics;
-use crate::nodes::{self, Nodes};
+use crate::nodes::{self, Closing, Nodes};
 use crate::routes;
 use crate::state::{App, Engines, Shared};
 use crate::systemd::Inherited;
@@ -226,6 +226,10 @@ impl Server {
             tracing::info!(
                 "handed over: admitting nothing more; the successor counts this gateway's requests until it exits"
             );
+        } else if let Some(nodes) = shared.nodes() {
+            // A stop: no gateway serves after this one, so a request a covering node holds back is answered now, to
+            // be sent again, rather than left waiting until the drain's timeout ends the process under it.
+            nodes.close(Closing::Stopping);
         }
         let drained = async { while serving.join_next().await.is_some() {} };
         let cut = async {
