@@ -75,7 +75,7 @@ The replay options are the fields of `flatshare-bench`'s `configs/agentic_replay
 - **the step terms and host time** by least squares on relative error over decode-only steps (the gaps between a request's tokens while every request in flight was decoding: 46,315 at the three fresh points), requests that ran alone (517) and E0's 14 GPU-hit and recompute cells, with E0's token-id requests given a host time of their own;
 - **the mixed-step extra** from 1,443 decode steps beside one long prefill (median excess);
 - **the host time per decoding request** from 92 GPU hits that arrived while only decodes ran (slope);
-- **the restore stall** from 36 restores of at least 2,000 tokens with only decodes beside them (median lost decode time over the transfer time; quartiles 0.74 and 1.01).
+- **the restore stall** from 36 restores of at least 2,000 tokens with only decodes beside them (median lost decode time over the transfer time; quartiles 0.74 and 0.94).
 
 The scheduler is synchronous otherwise: a GPU hit that arrives beside one decode waits about half a step in the measured runs, as here, not the step and a half that scheduling a step ahead would add.
 

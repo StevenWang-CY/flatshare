@@ -107,7 +107,7 @@ impl StepCost {
     /// - `host_per_decode_ms`: 92 GPU hits that arrived while only decodes ran, by how many decoded.
     /// - `restore_stall`: 36 restores of 2,000 tokens or more with only decodes beside them. Over each,
     ///   a request decoding across it fell behind the decode-step model by 0.80 of E0's transfer time
-    ///   (median; quartiles 0.74 and 1.01).
+    ///   (median; quartiles 0.74 and 0.94).
     pub const fn frozen_box() -> Self {
         Self {
             step_ms: 11.56,
