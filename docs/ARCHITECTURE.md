@@ -140,6 +140,7 @@ Where a second card is available, the arrangement puts each card in a `[[nodes]]
 - **Health.** A node is healthy while its whole pipeline is: its engine serving and ready, and its STT and TTS answering `/health`.
 - **Sessions stay on their node,** since KV never moves: a session whose node fails is placed again by its next request, and a realtime request whose node failed before its first content is sent once more on the other node.
 - **Covering.** The spare covers while it carries any call: its agents' requests wait (`failover_background_max_in_flight`, 0) until those calls end.
+- **Draining a node.** A node set `draining = true` takes no new session once a reload takes the key: its calls keep it until they end and its agents' sessions move by their next request, so that it empties without an error and `/nodes` says `"drained": true`; then it can be stopped, as for a rolling engine upgrade ([the gateway's Nodes](../crates/flatshare-gateway/README.md#nodes), [the runbook](../ops/RUNBOOK.md#drain-one-node)).
 
 ### 3.6 Releases
 

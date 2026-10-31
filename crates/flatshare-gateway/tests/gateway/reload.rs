@@ -12,7 +12,9 @@
 //! taking one as one ends; and with `[[nodes]]`, a successor that keeps every session's node and every call slot,
 //! sessions placed so that placing them anew would put them elsewhere, and ends a placement it took over by `DELETE
 //! /v1/sessions/{id}`, its slot free at once; and a request that a covering node holds back, refused with 503
-//! `draining` as the predecessor hands its sockets over.
+//! `draining` as the predecessor hands its sockets over. At a stop: a stream still running when `drain_timeout_s`
+//! passes, recorded as `drained` when the process exits under it, and a request that a covering node holds back,
+//! refused with 503 `draining` as the drain begins.
 
 use std::net::{SocketAddr, TcpListener};
 use std::os::fd::OwnedFd;
@@ -80,6 +82,15 @@ impl Unit {
 
     /// Starts the gateway on the sockets, as systemd starts the service.
     fn start(&self, tcp: TcpListener, unix: UnixListener) -> Child {
+        self.spawn(tcp, unix, Stdio::null())
+    }
+
+    /// The same, its log written to `log`.
+    fn start_logging(&self, tcp: TcpListener, unix: UnixListener, log: &Path) -> Child {
+        self.spawn(tcp, unix, std::fs::File::create(log).unwrap().into())
+    }
+
+    fn spawn(&self, tcp: TcpListener, unix: UnixListener, stdout: Stdio) -> Child {
         let mut command = Command::new(env!("CARGO_BIN_EXE_flatshare-gateway"));
         command
             .arg("--config")
@@ -87,7 +98,7 @@ impl Unit {
             .env("LISTEN_FDS", "2")
             .env_remove("LISTEN_PID")
             .env("NOTIFY_SOCKET", &self.manager_path)
-            .stdout(Stdio::null())
+            .stdout(stdout)
             .fd_mappings(vec![
                 FdMapping {
                     parent_fd: OwnedFd::from(tcp),
@@ -717,4 +728,104 @@ async fn a_reload_refuses_a_request_that_a_covering_node_holds_back() {
     let status = soon(wait(child)).await;
     assert!(status.success(), "{status}");
     stopped(second).await;
+}
+
+#[tokio::test]
+async fn a_stop_records_a_stream_it_cuts_at_the_drain_timeout_as_drained() {
+    let mock = Mock::start(Script::Endless {
+        chunk: Bytes::from_static(b"data: {}\n\n"),
+        gap: Duration::from_millis(50),
+    })
+    .await;
+    let (unit, tcp, unix) = Unit::new(
+        &mock.upstream,
+        "log_format = \"json\"\ndrain_timeout_s = 0.5\nbackground_drain_s = 0.3",
+    );
+    let log = unit.config.with_extension("log");
+    let child = unit.start_logging(tcp, unix, &log);
+    let first = Process(child.id());
+    assert_eq!(
+        unit.notified(Duration::from_secs(10)).await.as_deref(),
+        Some("READY=1")
+    );
+    // A voice turn, which the drain's cut never ends: only the drain's timeout, when the process exits under it.
+    let [_, unix_target] = unit.targets();
+    let turn = finish(begin(&unix_target, &[]).await);
+    first.signal(Signal::SIGTERM);
+    let (_, broken, _) = soon(turn).await.unwrap();
+    assert!(broken, "the stream breaks off without its end");
+    let status = soon(wait(child)).await;
+    assert!(status.success(), "{status}");
+    // Its record says that the drain cut it, not that it completed.
+    let text = std::fs::read_to_string(&log).unwrap();
+    let _ = std::fs::remove_file(&log);
+    let lines: Vec<serde_json::Value> = text
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .filter(|line: &serde_json::Value| line["target"] == "flatshare_gateway::request")
+        .collect();
+    assert_eq!(lines.len(), 1, "{text}");
+    assert_eq!(lines[0]["route"], "/v1/chat/completions", "{}", lines[0]);
+    assert_eq!(lines[0]["status"], 200, "{}", lines[0]);
+    assert_eq!(lines[0]["outcome"], "drained", "{}", lines[0]);
+}
+
+#[tokio::test]
+async fn a_stop_refuses_a_request_that_a_covering_node_holds_back() {
+    let a = TestNode::start("a", Script::Json("{}")).await;
+    let b = TestNode::start("b", Script::Json("{}")).await;
+    let nodes = format!(
+        "{}{}[placement]\nhealth_interval_s = 0.05\nunhealthy_after = 2\nhealthy_after = 2\ncalls = \"fill\"\n",
+        a.toml(UNBOUNDED),
+        b.toml(UNBOUNDED)
+    );
+    let (unit, tcp, unix) = Unit::with_nodes(&nodes);
+    let child = unit.start(tcp, unix);
+    let first = Process(child.id());
+    assert_eq!(
+        unit.notified(Duration::from_secs(10)).await.as_deref(),
+        Some("READY=1")
+    );
+    let [tcp_target, unix_target] = unit.targets();
+    let series =
+        |metric: &str, node: &str| format!("flatshare_gateway_node_{metric}{{node=\"{node}\"}}");
+    for node in ["a", "b"] {
+        metric_at(&unix_target, &series("healthy", node), 1.0).await;
+    }
+    // a fails before any call: the call goes to b, the spare, which then covers and holds its agents' requests back.
+    a.tts.set_healthy(false);
+    metric_at(&unix_target, &series("healthy", "a"), 0.0).await;
+    let body = r#"{"session_id":"call-1","class":"realtime"}"#;
+    let placed = call(&unix_target, "POST", "/v1/sessions", &[], body).await;
+    assert_eq!(placed.json()["node"], "b", "{:?}", placed.body);
+    metric_at(&unix_target, &series("covering", "b"), 1.0).await;
+    // An interactive request, which the drain's cut never ends, waits on b, its queue deadline 120 s away.
+    let waiting = tokio::spawn({
+        let target = tcp_target.clone();
+        async move {
+            let headers = [
+                AGENTS_AUTH,
+                ("x-session-id", "agent-1"),
+                ("x-flatshare-class", "interactive"),
+            ];
+            call(&target, "POST", "/v1/chat/completions", &headers, CHAT).await
+        }
+    });
+    metric_at(&unix_target, &series("failover_waiting", "b"), 1.0).await;
+
+    // A stop has no successor: the held request is refused as the drain begins, never having gone upstream, rather
+    // than left to wait the drain's 30 s timeout and end unanswered with the process.
+    first.signal(Signal::SIGTERM);
+    let refused = soon(waiting).await.unwrap();
+    assert_eq!(refused.status, 503, "{:?}", refused.body);
+    assert_eq!(refused.json()["error"]["code"], "draining");
+    let message = refused.json()["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(message.contains("stopping"), "{message}");
+    assert_eq!(refused.header("retry-after"), Some("1"));
+    assert_eq!(b.requests(), 0);
+    let status = soon(wait(child)).await;
+    assert!(status.success(), "{status}");
 }

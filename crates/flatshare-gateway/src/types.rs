@@ -73,8 +73,9 @@ pub(crate) enum Outcome {
     /// request.
     Shed,
     /// A draining gateway cut it: a background request still running `background_drain_s` into a drain (a
-    /// `draining` error event on a stream, or a 503 before the response), or one a gateway that handed its sockets
-    /// over did not admit.
+    /// `draining` error event on a stream, or a 503 before the response), or any request still running when the
+    /// process exits at `drain_timeout_s`; or one that a gateway that handed its sockets over, or stops, did not
+    /// admit.
     Drained,
     /// One of the request's deadlines passed ([`crate::deadline`]); the gateway cancelled the upstream request.
     TimeoutUpload,

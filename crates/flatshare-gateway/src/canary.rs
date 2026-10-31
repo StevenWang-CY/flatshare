@@ -12,8 +12,8 @@
 //! own), at the lowest class's priority, with `X-Flatshare-Canary: 1`, through the upstream's connection pool and
 //! outside every request bound and count. The canary runs only while nothing succeeds: when no inference succeeded
 //! within `interval_s`, and every second while warming (or every `interval_s`, if shorter), one at a time, each for
-//! `timeout_s` at most. While clients'
-//! requests succeed it sends nothing, so it never adds to an engine that real traffic shows serving. With the canary
+//! `timeout_s` at most. While clients' requests succeed it sends nothing, so it never adds to an engine that real
+//! traffic shows serving. With the canary
 //! off (`[canary] enabled = false`, as E2's runs set it) the engine is `serving` from the start, and `/ready` asks the
 //! engine's `/health` as it always did.
 //!

@@ -138,7 +138,7 @@ default_class = "background"
 # stt = "unix:/run/user/1007/flatshare/gray-stt.sock"
 # tts = "unix:/run/user/1007/flatshare/gray-tts.sock"
 #
-# As the serving arrangement runs them. A session keeps its node 150 s without a request (300 by default): a client
+# As the arrangement to deploy runs them. A session keeps its node 150 s without a request (300 by default): a client
 # that never ends its sessions holds an ended one's agent slot until then, and 150 s is just above the agents' replay's
 # 120 s cap on think times (benchmarks/results/2026-10-28-two-node-smoke). Each node is checked every second (a speech
 # server's /health within 1 s), unhealthy after 3 failed checks in a row and healthy again after 2 passed ones; a node

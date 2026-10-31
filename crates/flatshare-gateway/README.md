@@ -108,6 +108,7 @@ Every wait a request goes through has a deadline from its class's `[classes.<cla
 | A listener that cannot bind, or an inherited socket that no listener names | Stops the start | 1 |
 
 - **A background request cut by the drain.** A stream ends with the `draining` error event, `data: {"error": {..., "type": "draining", "param": null, "code": 503}}`, and an abort. A request without a response yet gets 503 `draining` with `Retry-After: 1`.
+- **When `drain_timeout_s` passes.** The process exits, and a realtime or interactive request still running ends with it: its stream breaks off without its end, and its record says `drained`. A request that a covering node holds back ([Nodes](#nodes)) is not left for that: as a stop's drain begins it gets 503 `draining` with `Retry-After: 1`, never having gone upstream, since no gateway serves after this one.
 - **The reload.** The gateway starts its successor from the binary at its own path and with its own arguments, so from the build and the configuration on disk, with its listening sockets from fd 3 on (`LISTEN_FDS`). The successor takes them instead of binding, tells systemd that it is the unit's main process and ready (`MAINPID=`, `READY=1`), and sends SIGTERM to its predecessor. Both accept on the same sockets until then, so no connection is refused or waits. [`deploy/bin/flatshare-gateway-reload`](../../deploy/bin/flatshare-gateway-reload) waits for the unit's main process to change.
 - **The listeners.** A reload keeps them: a change to `[[listen]]` takes a restart, with the socket unit's. Under socket activation (`flatshare-gateway.socket` on cyan) the sockets outlive a stop and a crash as well: the connections made until the next gateway serves wait in the backlog, for the drain on a restart and about a second after a crash, instead of being refused.
 - **One admission point over both processes** (`src/ledger.rs`). While a reload's predecessor drains, the two serve one engine. The predecessor admits nothing more once it hands its sockets over: a request still waiting at its admission point or held back by a node that covers, or reaching its intake, gets 503 `draining` with `Retry-After: 1`, never having gone upstream, for its client to send to the successor.
@@ -396,7 +397,9 @@ Every inference request is counted three times, with labels from fixed sets and 
 | `not_ready` | The engine was not ready: a request had found it broken and its `/health` had not answered since. With `[[nodes]]`, also a request no node could take: `no_healthy_node`, `no_call_slot`, `no_agent_slot` or `placement_full`, whose 503 names which |
 | `invalid` | The gateway refused it as malformed or unauthorized: 400, 401, 404, 405 or 413 |
 
-1. Kept out: a gateway that had handed its sockets over did not admit it.
+1. Cut: a background request still running `background_drain_s` into a drain, or any request still running when
+   `drain_timeout_s` passes and the process exits under it. Kept out: a gateway that had handed its sockets over, or
+   that stops, did not admit it, or a node that covered held it back until then.
 2. The gateway, its class or its tenant was at its `max_in_flight`, or the bodies' budget was full.
 
 The service level counts, by class, its valid requests and the good ones among them (`flatshare_gateway_sli_valid_total`, `flatshare_gateway_sli_good_total`), and `ops/prometheus/rules.yml`'s objective and burn-rate alerts read 1 − good/valid.
@@ -610,7 +613,8 @@ The unit tests, each beside the module it tests:
 
 | Area | Module | What it pins |
 |---|---|---|
-| The configuration rules | `src/config.rs` | Each policy's keys and defaults, the refused old names, the arm files over the deploy example |
+| The configuration rules | `src/config.rs` | The defaults, mistakes refused with their cause, every duration's bound, the arm files over the deploy example |
+| The admission policies' table | `src/harness/config.rs` | Each policy's keys and defaults, the lifecycle policy's switches, its old name refused |
 | The realtime sessions | `src/harness/realtime.rs` | Their states, timeouts and false alarms, and their place in the session table |
 | The session table | `src/harness/sessions.rs` | Its bound, its untrusted half and its tenants |
 | Bounds | `src/bounds.rs` | Each route's limit as vLLM reads it, refused fields and choices, the fixture's 380 cases |
