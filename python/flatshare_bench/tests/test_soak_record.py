@@ -42,10 +42,13 @@ def test_benchmarks_gives_the_records_table() -> None:
 
 @pytest.mark.parametrize("run", ["voice-alone", "serving-24h"])
 def test_each_summary_is_what_the_soak_tool_makes_of_its_record(run: str) -> None:
+    # summary.json, which table.py's tables (the README's and BENCHMARKS') and the report's Figure D2 read, and
+    # summary.md.
     data = load(RECORD / run)
     reference = (data.record.get("options") or {}).get("slo_reference_ms")
-    made = render_markdown(summarize(data, reference, 250.0))
-    assert made == (RECORD / run / "summary.md").read_text()
+    made = summarize(data, reference, 250.0)
+    assert made == json.loads((RECORD / run / "summary.json").read_text())
+    assert render_markdown(made) == (RECORD / run / "summary.md").read_text()
 
 
 def test_the_soak_is_held_to_voice_alones_p95() -> None:
