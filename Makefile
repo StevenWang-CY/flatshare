@@ -286,8 +286,8 @@ e2-gpus-figure:
 
 # The docs' diagrams, drawn by flatshare_bench.diagrams, each with its phone layout (NAME-narrow.svg): the README's
 # method figure, docs/figures/method.svg (the voice agent and the coding agents on one GPU, and the two scheduler rules
-# of #63350 and #63351), docs/ARCHITECTURE.md's figures of the serving path (architecture.svg, request-path.svg,
-# two-cards.svg, release.svg) and ops/RUNBOOK.md's triage.svg.
+# of #63350 and #63351), docs/ARCHITECTURE.md's overview.svg (the system at a glance) and its figures of the serving
+# path (architecture.svg, request-path.svg, two-cards.svg, release.svg), and ops/RUNBOOK.md's triage.svg.
 diagrams:
 	cd python/flatshare_bench && uv run -q python -m flatshare_bench.diagrams $(abspath docs/figures)
 
