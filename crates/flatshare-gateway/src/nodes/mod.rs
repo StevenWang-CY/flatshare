@@ -11,8 +11,8 @@
 //! - **Sticky placement.** A session is placed by its first request, or by `POST /v1/sessions`, on an available node
 //!   with its class's role (realtime for realtime sessions, background for interactive and background ones), and stays
 //!   there until it has gone `idle_s` without a request, or its tenant ends it, by `DELETE /v1/sessions/{id}` or by
-//!   a `session_closed` lifecycle event, as at a call's end ([`placement`]). A
-//!   realtime session takes one of its node's `max_calls` call slots, on the node with the fewest calls, or with
+//!   a `session_closed` lifecycle event, as at a call's end ([`placement`]). A realtime session takes one of its
+//!   node's `max_calls` call slots, on the node with the fewest calls, or with
 //!   `calls = "fill"` on the first in the configuration's order; an agent's takes one of its node's `max_agents` agent
 //!   slots, where the node has that bound, on the node with the fewest agents' sessions, then the fewest requests in
 //!   flight, so that its prefix cache stays on one engine. An agent's request that names no session takes no slot,
@@ -698,8 +698,8 @@ impl Nodes {
     }
 
     /// The node a new session of `class` goes to, not `exclude`: of the available nodes with its role that do not
-    /// drain, for a
-    /// realtime session, among those with a free call slot, the one with the fewest calls, then the fewest requests
+    /// drain, for a realtime session, among those with a free call slot, the one with the fewest calls, then the
+    /// fewest requests
     /// in flight (`calls = "spread"`), or the first (`"fill"`); and for an agent's, among those with a free agent slot
     /// (below their `max_agents`, if they have one), one that does not cover, then the one with the fewest agents'
     /// sessions, then the fewest requests in flight. Ties go to the earlier node. A request that names no session
@@ -1089,11 +1089,10 @@ async fn expire(nodes: Weak<Nodes>, idle: Duration) {
 /// own and agents go to the nodes that do not cover, and under `spread` no node's own calls making it cover; a
 /// draining node, after a reload, keeping its call (by its requests and `POST /v1/sessions`) while new calls and its
 /// agent's moved session go to the other node, out of `/ready` and model lists, and drained once the call ends, and a
-/// role whose every node drains placing nothing; a degraded
-/// node's engine asked every second where a lone engine's is asked every interval; `[[nodes]]`' and `[placement]`'s
-/// keys, defaults and refusals (`upstream` beside `[[nodes]]`, an admission policy, a name or an engine twice, roles,
-/// call slots, agents' bounds and a node with both roles that sets none, addresses, the rule for calls); the node
-/// exposition current, and the one engine's unlabeled series absent beside it.
+/// role whose every node drains placing nothing; a request a covering node holds back, refused when the gateway hands
+/// over. Elsewhere: a degraded node's engine asked every second where a lone engine's is asked every interval
+/// (`canary.rs`); `[[nodes]]`' and `[placement]`'s keys, defaults and refusals (`config.rs`); the node exposition
+/// current, and the one engine's unlabeled series absent beside it (`metrics.rs`).
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1462,7 +1461,7 @@ mod tests {
         };
         let nodes = started(&[("phastform", Some(4)), ("gray", Some(12))], placement);
         all_healthy(&nodes);
-        // Both calls on phastform, as the serving arrangement places them, three agents' sessions beside them and
+        // Both calls on phastform, as the arrangement to deploy places them, three agents' sessions beside them and
         // eight on gray.
         assert_eq!(
             place_new(&nodes, "call", 2, SloClass::Realtime),

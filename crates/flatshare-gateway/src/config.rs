@@ -673,8 +673,8 @@ fn validate_nodes(raw: Vec<RawNode>) -> Result<Vec<NodeConfig>, String> {
             ));
         }
         // A node with both roles and no bound runs its agents unbounded beside its calls, the measured failure (beside
-        // 24 session trees, 37 of 177 replies over the SLO: benchmarks/results/2026-10-28-rounds), so it names a bound
-        // or says that it runs none.
+        // 24 agent sessions, 37 of 177 replies over the SLO: benchmarks/results/2026-10-28-rounds), so it names a
+        // bound or says that it runs none.
         let max_agents = match node.max_agents {
             Some(_) if !background => {
                 return Err(format!(
@@ -1283,10 +1283,10 @@ pub(crate) fn seconds(key: &str, value: f64) -> Result<Duration, String> {
         .ok_or_else(|| format!("{key} must be a positive number of seconds"))
 }
 
-/// The tests: each admission policy's own keys and defaults; the lifecycle policy's switches, the mechanisms each of
-/// its keys needs on, and its old name refused; the realtime class's cap from before the classes' tables refused; every
-/// duration's bound of 1e9 s; every arm file's `[gateway]` table over the deploy example; and the checks of the cache
-/// salts' secret file.
+/// The tests: the realtime class's cap from before the classes' tables refused; every duration's bound of 1e9 s; every
+/// arm file's `[gateway]` table over the deploy example; and the checks of the cache salts' secret file. Each admission
+/// policy's own keys and defaults, the lifecycle policy's switches and its old name refused are tested beside their
+/// table, in `harness/config.rs`.
 #[cfg(test)]
 mod tests {
     use std::sync::LazyLock;

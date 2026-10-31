@@ -613,7 +613,8 @@ The unit tests, each beside the module it tests:
 
 | Area | Module | What it pins |
 |---|---|---|
-| The configuration rules | `src/config.rs` | Each policy's keys and defaults, the refused old names, the arm files over the deploy example |
+| The configuration rules | `src/config.rs` | The defaults, mistakes refused with their cause, every duration's bound, the arm files over the deploy example |
+| The admission policies' table | `src/harness/config.rs` | Each policy's keys and defaults, the lifecycle policy's switches, its old name refused |
 | The realtime sessions | `src/harness/realtime.rs` | Their states, timeouts and false alarms, and their place in the session table |
 | The session table | `src/harness/sessions.rs` | Its bound, its untrusted half and its tenants |
 | Bounds | `src/bounds.rs` | Each route's limit as vLLM reads it, refused fields and choices, the fixture's 380 cases |
