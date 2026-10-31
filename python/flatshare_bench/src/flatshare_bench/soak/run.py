@@ -434,7 +434,9 @@ class Soak:
         if self.stopping:
             self.ended_by = self.stopping
             return
-        start = time.time()
+        # To the millisecond, as series.jsonl stamps the scrape taken here: the window then begins at that scrape
+        # whichever way the clock rounds, and the counters' rise before it (the agents' start) stays out of the window.
+        start = round(time.time(), 3)
         self.window = (start, start + options.hours * 3600)
         self.record["window"] = {"start": start, "end": self.window[1], "hours": options.hours}
         self.record.event({"event": "window_started", "hours": options.hours})
