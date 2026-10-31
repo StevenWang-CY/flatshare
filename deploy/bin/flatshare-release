@@ -25,21 +25,23 @@ import argparse
 import contextlib
 import fcntl
 import fnmatch
+import functools
 import hashlib
 import http.client
 import json
 import os
 import re
 import shutil
+import signal
 import socket
 import stat
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 SCHEMA = 1
 """MANIFEST.json's format."""
@@ -397,6 +399,72 @@ def say(text: str) -> None:
     print(f"flatshare-release: {text}", flush=True)
 
 
+class Unbroken:
+    """The tool's output: the operator's terminal while it lasts, and the release log. deploy.sh runs the tool over ssh
+    without a terminal, so a dropped session (a Ctrl-C, a lost link, a laptop asleep) leaves it running with its output
+    gone, where a print would raise BrokenPipeError in the middle of a switch or of its switch-back. A write that fails
+    drops the terminal instead, and the log keeps every line for the operator to read after."""
+
+    def __init__(self, terminal: TextIO, log: TextIO | None) -> None:
+        self.terminal = terminal
+        self.log = log
+        self.gone = False
+
+    def write(self, text: str) -> int:
+        if self.log is not None:
+            with contextlib.suppress(OSError):
+                self.log.write(text)
+                self.log.flush()
+        if not self.gone:
+            try:
+                self.terminal.write(text)
+                self.terminal.flush()
+            except OSError:
+                self.gone = True
+                # What the stream still buffers must not fail either, when the interpreter flushes it at exit.
+                with contextlib.suppress(OSError, ValueError):
+                    os.dup2(os.open(os.devnull, os.O_WRONLY), self.terminal.fileno())
+        return len(text)
+
+    def flush(self) -> None:
+        """Each write is flushed as it is made."""
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.terminal, name)
+
+
+LOG_LIMIT = 1 << 20
+"""The release log's size past which the next run moves it to release.log.1."""
+
+
+@contextlib.contextmanager
+def outliving_the_terminal(layout: Layout, argv: list[str]) -> Iterator[None]:
+    """For a command that changes the host: its output to :class:`Unbroken`, and SIGHUP ignored (a dropped ssh session
+    with a terminal sends it), so that a switch, its switch-back or a drain runs to its end whatever happens to the
+    operator's session. Restored after."""
+    layout.releases.mkdir(parents=True, exist_ok=True)
+    with contextlib.suppress(OSError):
+        if layout.output.stat().st_size > LOG_LIMIT:
+            layout.output.replace(layout.output.with_name(layout.output.name + ".1"))
+    streams = sys.stdout, sys.stderr
+    hangup = signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    with contextlib.ExitStack() as stack:
+        try:
+            log: TextIO | None = stack.enter_context(layout.output.open("a"))
+        except OSError:
+            log = None
+        sys.stdout, sys.stderr = Unbroken(streams[0], log), Unbroken(streams[1], log)
+        if log is not None:
+            with contextlib.suppress(OSError):
+                log.write(f"== {stamp()} flatshare-release {' '.join(argv)} (pid {os.getpid()})\n")
+                log.flush()
+        try:
+            yield
+        finally:
+            sys.stdout, sys.stderr = streams
+            signal.signal(signal.SIGHUP, hangup)
+
+
 class Systemd:
     """The user manager, through systemctl --user."""
 
@@ -480,6 +548,8 @@ class Layout:
         self.previous = root / "previous"
         self.history = self.releases / "history.jsonl"
         self.running = self.releases / "running.json"
+        self.switching = self.releases / "switching.json"
+        self.output = self.releases / "release.log"
 
     def release(self, rid: str) -> Path:
         return self.releases / rid
@@ -534,6 +604,26 @@ class Layout:
     def log(self, **entry: Any) -> None:
         with self.history.open("a") as f:
             f.write(json.dumps({"at": stamp(), **entry}) + "\n")
+
+    def begin_switch(self, source: str | None, target: str, action: str) -> None:
+        """Record that a switch from ``source`` to ``target`` begins, until :meth:`end_switch`: a run killed in between
+        (SIGKILL, the host going down) leaves the record, and the next switch finishes it."""
+        staged = self.switching.with_name(f".{self.switching.name}.{os.getpid()}")
+        staged.write_text(
+            json.dumps({"source": source, "target": target, "action": action, "began": stamp()})
+            + "\n"
+        )
+        staged.replace(self.switching)
+
+    def end_switch(self) -> None:
+        self.switching.unlink(missing_ok=True)
+
+    def unfinished(self) -> dict[str, Any] | None:
+        """The switch an earlier run began and did not finish, if any."""
+        try:
+            return json.loads(self.switching.read_text())
+        except (OSError, ValueError):
+            return None
 
 
 def stamp(when: float | None = None) -> str:
@@ -1291,43 +1381,85 @@ def e2_point(root: Path) -> int | None:
     return pid
 
 
+E2_DROP_INS = {
+    "flatshare-gateway": ("e2-gateway",),
+    "flatshare-voice-worker": ("no-preemptive-generation", "no-events", "e2-node"),
+}
+"""The drop-ins of an E2 point (``variant-NAME.conf``), which ``flatshare-bench e2 reset`` removes: the gateway's
+turns its canary off and may set any admission policy, the worker's change how calls run. The soak refuses to start
+beside them (flatshare_bench.soak.run.E2_DROP_INS, held equal by a test), and so does a switch."""
+
+
+def e2_drop_ins(units_dir: Path) -> list[str]:
+    """The E2 point's drop-ins linked into ``units_dir``: with any, the host would not serve as deployed."""
+    return [
+        f"{unit}.service.d/variant-{name}.conf"
+        for unit, names in E2_DROP_INS.items()
+        for name in names
+        if (link := units_dir / f"{unit}.service.d" / f"variant-{name}.conf").exists()
+        or link.is_symlink()
+    ]
+
+
 def voice_files() -> tuple[Path, Path]:
     base = runtime_dir()
     return base / "voice-worker.json", base / "voice-worker.drain"
 
 
-def drain_voice(timeout: float, force: bool) -> bool:
-    """In serve mode, stop the voice worker taking calls and wait for those in progress to end. Returns whether it
-    drained (a bench-mode worker takes every call and has no drain: False)."""
-    status_path, drain = voice_files()
+DRAIN_PROGRESS_S = 10
+"""How often a drain says what it waits for."""
+
+
+def read_status(path: Path) -> dict[str, Any]:
     try:
-        status = json.loads(status_path.read_text())
+        status = json.loads(path.read_text())
     except (OSError, ValueError):
-        status = {}
-    if status.get("mode") != "serve":
+        return {}
+    return status if isinstance(status, dict) else {}
+
+
+def drain_voice(timeout: float, force: bool, worker_active: Callable[[], bool]) -> bool:
+    """In serve mode, stop the voice worker taking calls and wait for those in progress to end: until a status the
+    worker wrote after the drain began says that it admits no call and has none, or its unit is not active
+    (``worker_active()``). Returns whether it drained (a bench-mode worker takes every call and has no drain: False).
+
+    A status from before the drain may miss a call accepted in its last second, and a missing one tells nothing, so
+    neither ends the drain. A worker that restarts removes the drain file, so it is made again each second. Whatever
+    ends the wait early (a timeout, an interrupt, any error) takes the file with it, so that a drain never leaves the
+    worker refusing calls."""
+    status_path, drain = voice_files()
+    if read_status(status_path).get("mode") != "serve":
         say("the voice worker runs bench mode, which has no drain: its calls end with its restart")
         return False
-    drain.touch()
+    began = time.time()
     deadline = time.monotonic() + timeout
-    while True:
-        try:
-            calls = json.loads(status_path.read_text()).get("active_calls", 0)
-        except (OSError, ValueError):
-            calls = 0
-        if calls == 0:
-            say("the voice worker takes no new call and has none in progress")
-            return True
-        if time.monotonic() >= deadline:
-            if force:
-                say(
-                    f"the voice worker still has {calls} call(s) after {timeout:g} s; --force cuts them"
-                )
+    progress = time.monotonic() + DRAIN_PROGRESS_S
+    try:
+        while True:
+            drain.touch()
+            status = read_status(status_path)
+            fresh = status.get("updated", 0) > began and status.get("admitting") is False
+            calls = status.get("active_calls") if fresh else None
+            if calls == 0 or not worker_active():
+                say("the voice worker takes no new call and has none in progress")
                 return True
-            drain.unlink(missing_ok=True)
-            raise NotReady(
-                f"the voice worker still has {calls} call(s) after {timeout:g} s: nothing switched (--force cuts them)"
-            )
-        time.sleep(1)
+            known = f"{calls} call(s)" if calls is not None else "no status since the drain began"
+            if time.monotonic() >= deadline:
+                if force:
+                    say(
+                        f"the voice worker still has {known} after {timeout:g} s; --force cuts them"
+                    )
+                    return True
+                raise NotReady(
+                    f"the voice worker still has {known} after {timeout:g} s: nothing switched (--force cuts them)"
+                )
+            if time.monotonic() >= progress:
+                say(f"the voice worker drains: {known}, {deadline - time.monotonic():.0f} s left")
+                progress += DRAIN_PROGRESS_S
+            time.sleep(1)
+    except BaseException:
+        drain.unlink(missing_ok=True)
+        raise
 
 
 ENGINE_DRAIN_S = 60
@@ -1529,12 +1661,25 @@ def switch(
     keep: int,
     units_dir: Path,
 ) -> int:
-    """Switch the host to release ``rid``; on any failure, back to the release before. Returns the exit status."""
+    """Switch the host to release ``rid``; on any failure, back to the release before. Returns the exit status.
+
+    A switch that an earlier run began and did not finish (it was killed, or the host went down) is finished first:
+    which release each unit then runs is not known, so every active unit restarts, and the release to go back to is
+    the one that switch came from."""
     old = layout.target(layout.current)
+    unfinished = layout.unfinished()
+    if unfinished:
+        say(
+            f"the switch from {unfinished['source'] or 'nothing'} to {unfinished['target']} begun at "
+            f"{unfinished['began']} did not finish: every active unit restarts"
+        )
+        old = unfinished["source"] if unfinished["source"] != rid else None
     new = layout.manifest(rid)
     previous_link = layout.target(layout.previous)
     old_manifest = (
-        layout.manifest(old) if old and (layout.release(old) / "MANIFEST.json").is_file() else None
+        layout.manifest(old)
+        if old and not unfinished and (layout.release(old) / "MANIFEST.json").is_file()
+        else None
     )
     if old == rid:
         say(f"the host runs release {rid} already")
@@ -1555,44 +1700,55 @@ def switch(
         raise NotReady(
             f"an E2 point (pid {pid}) measures on this host: nothing switched (--force switches anyway)"
         )
-    drained = drain_voice(drain_timeout, force) if "voice" in cuts else False
-    if "engine" in cuts:
-        drain_engine(min(drain_timeout, ENGINE_DRAIN_S))
-    try:
-        apply(layout, spec, rid, steps, systemd)
-        result = health(layout, spec, steps.restart, systemd, settle_s)
-        if result.failed:
-            raise ReleaseError(", ".join(result.failed))
-    except (Exception, KeyboardInterrupt) as error:
-        # Whatever failed, a check, a command or this tool itself, the host goes back to what it ran.
-        why = str(error) if isinstance(error, ReleaseError) else repr(error)
-        say(f"release {rid} failed after the switch: {why}")
-        layout.log(action=action, source=old, target=rid, result=f"failed: {why}")
-        if not old:
-            say("there is no release before it to switch back to")
-            return 1
-        say(f"switching back to {old}")
-        try:
-            apply(layout, spec, old, steps, systemd)
-            back = health(layout, spec, steps.restart, systemd, settle_s)
-        except Exception as again:
-            back = Report([("switch back", False, str(again))])
-        finally:
-            if previous_link:
-                replace_link(layout.previous, f"releases/{previous_link}")
-            if drained:
-                voice_files()[1].unlink(missing_ok=True)
-        layout.log(
-            action="switch-back",
-            source=rid,
-            target=old,
-            result="ok" if not back.failed else f"failed: {back.failed}",
+    if not force and (left := e2_drop_ins(units_dir)):
+        raise NotReady(
+            f"the units carry an E2 point's drop-ins ({', '.join(left)}), so the host would not serve as deployed: "
+            "nothing switched (flatshare-bench e2 reset removes them; --force switches anyway)"
         )
-        if back.failed:
-            say(f"switching back to {old} failed too: {', '.join(back.failed)}")
-            return 3
-        say(f"the host runs {old} again")
-        return 1
+    voice = next((unit.name for unit in spec.units if unit.drain == "voice"), None)
+    drained = False
+    try:
+        if "voice" in cuts:
+            drained = drain_voice(drain_timeout, force, functools.partial(systemd.active, voice))
+        if "engine" in cuts:
+            drain_engine(min(drain_timeout, ENGINE_DRAIN_S))
+        layout.begin_switch(old, rid, action)
+        try:
+            apply(layout, spec, rid, steps, systemd)
+            result = health(layout, spec, steps.restart, systemd, settle_s)
+            if result.failed:
+                raise ReleaseError(", ".join(result.failed))
+        except (Exception, KeyboardInterrupt) as error:
+            # Whatever failed, a check, a command or this tool itself, the host goes back to what it ran.
+            why = str(error) if isinstance(error, ReleaseError) else repr(error)
+            say(f"release {rid} failed after the switch: {why}")
+            layout.log(action=action, source=old, target=rid, result=f"failed: {why}")
+            if not old:
+                say("there is no release before it to switch back to")
+                return 1
+            say(f"switching back to {old}")
+            try:
+                apply(layout, spec, old, steps, systemd)
+                back = health(layout, spec, steps.restart, systemd, settle_s)
+            except Exception as again:
+                back = Report([("switch back", False, str(again))])
+            finally:
+                if previous_link:
+                    replace_link(layout.previous, f"releases/{previous_link}")
+            layout.log(
+                action="switch-back",
+                source=rid,
+                target=old,
+                result="ok" if not back.failed else f"failed: {back.failed}",
+            )
+            if back.failed:
+                # The record stays: which release each unit runs is not known, so the next switch restarts them all.
+                say(f"switching back to {old} failed too: {', '.join(back.failed)}")
+                return 3
+            layout.end_switch()
+            say(f"the host runs {old} again")
+            return 1
+        layout.end_switch()
     finally:
         if drained:
             voice_files()[1].unlink(missing_ok=True)
@@ -1762,6 +1918,7 @@ def status(layout: Layout, as_json: bool, systemd: Systemd, spec: HostSpec | Non
     if current:
         with contextlib.suppress(NotReady):
             isolated = layout.manifest(current).get("isolation") or {}
+    unfinished = layout.unfinished()
     if as_json:
         print(
             json.dumps(
@@ -1771,11 +1928,17 @@ def status(layout: Layout, as_json: bool, systemd: Systemd, spec: HostSpec | Non
                     "releases": releases,
                     "running": running,
                     "isolation": isolated,
+                    "unfinished": unfinished,
                 },
                 indent=1,
             )
         )
         return 0
+    if unfinished:
+        print(
+            f"unfinished: the switch from {unfinished['source'] or 'nothing'} to {unfinished['target']} begun at "
+            f"{unfinished['began']}; the next switch restarts every active unit"
+        )
     for item in releases:
         mark = "current " if item["current"] else "previous" if item["previous"] else "        "
         print(
@@ -1866,6 +2029,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     layout = Layout(args.root.expanduser())
+    with contextlib.ExitStack() as stack:
+        if args.command in CHANGES_THE_HOST:
+            stack.enter_context(
+                outliving_the_terminal(layout, sys.argv[:1] + (argv or sys.argv[1:]))
+            )
+        return command(args, layout)
+
+
+CHANGES_THE_HOST = {"deploy", "rollback", "drain", "undrain", "prune", "adopt"}
+"""The commands whose output goes to the release log and that outlive the operator's terminal."""
+
+
+def command(args: argparse.Namespace, layout: Layout) -> int:
+    """Runs the command ``args`` name: the exit status."""
     systemd = Systemd()
     units_dir = Path.home() / ".config" / "systemd" / "user"
     try:
@@ -1875,7 +2052,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "status":
             return status(layout, args.json, systemd, None)
         if args.command == "drain":
-            return 0 if drain_voice(args.timeout, force=False) else 1
+            worker = functools.partial(systemd.active, "flatshare-voice-worker.service")
+            return 0 if drain_voice(args.timeout, False, worker) else 1
         if args.command == "undrain":
             voice_files()[1].unlink(missing_ok=True)
             say("the voice worker takes calls again")
