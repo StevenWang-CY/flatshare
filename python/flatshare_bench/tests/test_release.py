@@ -1165,6 +1165,8 @@ def test_a_release_prints_the_serving_profiles_configuration() -> None:
         "  priority, step cap 256/0, pool 36400 tokens (2275 blocks), CPU tier 20 GiB",
         "  make_room: max_preemptions_per_step 2, budget_cap true, budget_cap_tokens 48, reserve_tokens 0, "
         "retain_tokens 3584, retain_s 30",
+        "  just in time: the next batch 30 ms before the step in flight is due (step model step_ms 11.56, "
+        "us_per_token 47.99, ns_per_pair 14.17, ns_per_context 429.3, mixed_ms 7.6)",
         "  scheduler flatshare_make_room_serve.AsyncScheduler over flatshare_make_room_scheduler 9dc0f317cd079240",
         "  voice: serve mode, 2 calls at once, microphone audio",
         "  gateway: at most 4 agents' sessions beside a node's calls",

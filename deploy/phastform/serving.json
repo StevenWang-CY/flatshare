@@ -9,7 +9,7 @@
       "name": "flatshare_make_room_scheduler",
       "sha256": "9dc0f317cd079240f37919e1b9538e3e886af9c5425fc5b5647040b3399242ab"
     },
-    "serve_module_sha256": "392d7612aa592ef17c46e01c35b522545cb072ab2c9c24c840a459cd7e030a73",
+    "serve_module_sha256": "8736f31e37eee1953a4c2bb2a8e7e227a4a7e93381ff2f8ef3520923cabe5f61",
     "model": {
       "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
       "revision": "8591804019c8b22094c3b5b4454e0edc05dffc98",
@@ -47,6 +47,16 @@
       "reserve_tokens": 0,
       "retain_tokens": 3584,
       "retain_s": 30
+    },
+    "jit": {
+      "margin_ms": 30,
+      "step_cost": {
+        "step_ms": 11.56,
+        "us_per_token": 47.99,
+        "ns_per_pair": 14.17,
+        "ns_per_context": 429.3,
+        "mixed_ms": 7.6
+      }
     }
   },
   "patches": {

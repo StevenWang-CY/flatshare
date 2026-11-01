@@ -28,6 +28,20 @@ reserve_tokens = 0
 # (227 blocks); 3,584 keeps both calls up to 1,792 tokens each.
 retain_tokens = 3584
 retain_s = 30
+# Just-in-time scheduling of the next batch (python/flatshare_vllm/src/flatshare_vllm/serve/flatshare_jit.py): with a
+# batch in flight, the engine core waits to schedule the next one until the one in flight is due to finish, by this
+# card's step-time model, less jit_margin_ms, handling the requests that arrive meanwhile, so that a call arriving
+# during an agent's long-context prefill step joins the next batch instead of waiting behind one committed before it
+# arrived. The margin covers a schedule and a launch, a mixed step's piecewise launch on this host (25-26 ms)
+# included, so a decode-only step is never waited on; 0 turns it off. The model is crates/flatshare-core/src/step.rs's
+# StepCost::frozen_box, fitted on this card (a step's ms, µs a token, ns an attention pair, ns a token of context
+# read, ms a mixed step adds). Measured in benchmarks/results/2026-11-01-engine-points.
+jit_margin_ms = 30
+jit_step_ms = 11.56
+jit_us_per_token = 47.99
+jit_ns_per_pair = 14.17
+jit_ns_per_context = 429.3
+jit_mixed_ms = 7.6
 # The step cap the sweep chose for the change, with no long-prefill threshold (the records above): the variant passes
 # both over engine.yaml's, and serving.json holds the engine to them.
 max_num_batched_tokens = 256
