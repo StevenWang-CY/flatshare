@@ -1583,6 +1583,19 @@ def test_a_turn_that_does_not_fit_beside_the_other_retentions_is_not_retained(mo
     assert sched._num_retained_blocks == 4 and free_blocks(sched) == 28
 
 
+def test_retentions_that_share_blocks_take_the_room_of_their_union(module, model):
+    """A preemptive request LiveKit cancelled because the user went on speaking, and the turn that replaced it, share
+    the call's history of 3 blocks and end in a block each: retained, they take 5 blocks of room, not 8, so another
+    call's 3 still fit within 8."""
+    sched = retaining(module, model, {"retain_tokens": 8 * BLOCK})
+    history = [5] * (3 * BLOCK)
+    finish(sched, turn("a-preemptive", history + [1] * BLOCK))
+    finish(sched, turn("a-1", history + [2] * BLOCK, arrival=1))
+    assert (len(sched._retained), sched._num_retained_blocks, free_blocks(sched)) == (2, 5, 27)
+    finish(sched, turn("b-1", [7] * (3 * BLOCK), arrival=2))
+    assert (len(sched._retained), sched._num_retained_blocks, free_blocks(sched)) == (3, 8, 24)
+
+
 def test_a_retention_ends_after_retain_s(module, model, monkeypatch):
     """A conversation without a turn for retain_s has ended or paused: its retention ends at the next step."""
     sched = retaining(module, model, {"retain_tokens": 8 * BLOCK, "retain_s": 30})

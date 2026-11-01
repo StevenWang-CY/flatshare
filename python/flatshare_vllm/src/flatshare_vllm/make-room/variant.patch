@@ -6,9 +6,10 @@ The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
 
   5f96ab21c Leaseholder make-room variant: switches, reserve and log line
   e176b99fa Leaseholder make-room variant: keep realtime prefixes on the GPU between turns
+  15b66b572 Leaseholder make-room variant: count the retained blocks once
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
-index a4d4736b4..81c281483 100644
+index a4d4736b4..3f5295140 100644
 --- a/vllm/v1/core/sched/scheduler.py
 +++ b/vllm/v1/core/sched/scheduler.py
 @@ -86,6 +86,8 @@ from vllm.v1.structured_output.utils import strip_speculative_padding
@@ -52,7 +53,7 @@ index a4d4736b4..81c281483 100644
          # The step in which each KV load in flight was first seen: a load holds
          # lower-priority prefill back for its first budget cap tokens steps.
          self._load_hold_start: dict[Request, int] = {}
-@@ -422,6 +425,39 @@ class Scheduler(SchedulerInterface):
+@@ -422,6 +425,38 @@ class Scheduler(SchedulerInterface):
          self._num_prefill_held_tokens = 0
          self._prefill_held_step = -1
          self._prefill_held_step_tokens = 0
@@ -71,7 +72,7 @@ index a4d4736b4..81c281483 100644
 +        # nowhere. Each retention holds its blocks, its anchor (the last full
 +        # block of its prompt, which the next turn's prefix hit covers) and the
 +        # time it began; it ends when a later retention holds its anchor or after
-+        # retain_s, and all of them keep within retain_tokens.
++        # retain_s, and the distinct blocks they hold keep within retain_tokens.
 +        self.retain_blocks = cdiv(make_room["retain_tokens"], block_size)
 +        if self.retain_blocks and (
 +            self.retain_blocks + self.reserve_blocks + num_max_len_blocks
@@ -83,7 +84,6 @@ index a4d4736b4..81c281483 100644
 +            )
 +        self.retain_s = make_room["retain_s"]
 +        self._retained: list[tuple[float, KVCacheBlock, list[KVCacheBlock]]] = []
-+        self._num_retained_blocks = 0
 +        # The admissions the budget cap held back, for make-room's log line
 +        # beside the counts above (see _make_room_log).
 +        self.make_room_held_admissions = 0
@@ -92,7 +92,7 @@ index a4d4736b4..81c281483 100644
  
          self.has_mamba_layers = kv_cache_config.has_mamba_layers
          self.needs_kv_cache_zeroing = kv_cache_config.needs_kv_cache_zeroing
-@@ -707,6 +743,9 @@ class Scheduler(SchedulerInterface):
+@@ -707,6 +742,9 @@ class Scheduler(SchedulerInterface):
  
          # Priority policy: make room for the waiting request of the highest
          # priority first, so that no request scheduled in this step is preempted.
@@ -102,7 +102,7 @@ index a4d4736b4..81c281483 100644
          make_room_req = self._peek_make_room_request(defer_prefills)
          make_room_hit = (
              None if make_room_req is None else self._local_prefix_hit(make_room_req)
-@@ -1056,6 +1095,7 @@ class Scheduler(SchedulerInterface):
+@@ -1056,6 +1094,7 @@ class Scheduler(SchedulerInterface):
                  ):
                      # Nor does a prefill of a lower priority start meanwhile.
                      self._count_prefill_hold(0)
@@ -110,7 +110,7 @@ index a4d4736b4..81c281483 100644
                      if request_queue is self.kv_holding_waiting:
                          # Requests holding KV blocks are drained first, so the
                          # request whose first tokens are due may be behind it.
-@@ -1063,6 +1103,17 @@ class Scheduler(SchedulerInterface):
+@@ -1063,6 +1102,17 @@ class Scheduler(SchedulerInterface):
                          continue
                      break
  
@@ -128,7 +128,7 @@ index a4d4736b4..81c281483 100644
                  if (
                      request_queue is self.waiting
                      and self.max_priority_preemptions_per_step
-@@ -2896,6 +2947,8 @@ class Scheduler(SchedulerInterface):
+@@ -2896,6 +2946,8 @@ class Scheduler(SchedulerInterface):
          """Free the request's KV blocks, deferring the return to the block
          pool when an in-flight GPU step may still write them.
          """
@@ -137,7 +137,7 @@ index a4d4736b4..81c281483 100644
          if self._request_blocks_can_be_freed(request):
              self.kv_cache_manager.free(request)
              return
-@@ -2994,6 +3047,9 @@ class Scheduler(SchedulerInterface):
+@@ -2994,6 +3046,9 @@ class Scheduler(SchedulerInterface):
              # persistent batch in the model runner.
              self.prev_step_scheduled_req_ids.clear()
  
@@ -147,7 +147,7 @@ index a4d4736b4..81c281483 100644
          reset_successful = self.kv_cache_manager.reset_prefix_cache()
          if reset_running_requests and not reset_successful:
              raise RuntimeError(
-@@ -3220,6 +3276,132 @@ class Scheduler(SchedulerInterface):
+@@ -3220,6 +3275,141 @@ class Scheduler(SchedulerInterface):
              self._request_remaining_blocks(req) for req in self._inflight_prefills
          )
  
@@ -205,7 +205,10 @@ index a4d4736b4..81c281483 100644
 +        prefix there. A retention this one holds the anchor of is the same
 +        conversation's previous turn, and ends. A turn that does not fit in the
 +        room the other conversations' retentions leave within retain_tokens is
-+        not retained: theirs are the conversations that speak next."""
++        not retained: theirs are the conversations that speak next. Room is
++        counted in distinct blocks: retentions that share blocks (a turn and
++        the preemptive request it replaced, which share their history) take the
++        room of their union."""
 +        groups = self.kv_cache_manager.get_blocks(request.request_id).blocks
 +        num_prompt_blocks = request.num_prompt_tokens // self.block_size
 +        if not groups or not num_prompt_blocks or len(groups[0]) < num_prompt_blocks:
@@ -223,17 +226,24 @@ index a4d4736b4..81c281483 100644
 +        previous = [
 +            i for i, (_, other, _) in enumerate(self._retained) if id(other) in held
 +        ]
-+        others = self._num_retained_blocks - sum(
-+            len(self._retained[i][2]) for i in previous
-+        )
-+        fits = others + len(blocks) <= self.retain_blocks
++        kept = {
++            id(block)
++            for i, (_, _, other_blocks) in enumerate(self._retained)
++            if i not in previous
++            for block in other_blocks
++        }
++        fits = len(kept | held) <= self.retain_blocks
 +        if fits:
 +            self.kv_cache_manager.block_pool.touch(blocks)
 +        for i in reversed(previous):
 +            self._end_retention(i)
 +        if fits:
 +            self._retained.append((time.monotonic(), anchor, blocks))
-+            self._num_retained_blocks += len(blocks)
++
++    @property
++    def _num_retained_blocks(self) -> int:
++        """The distinct blocks the retentions hold."""
++        return len({id(block) for _, _, blocks in self._retained for block in blocks})
 +
 +    def _end_retention(self, index: int) -> None:
 +        """End the retention at `index`: its blocks lose the reference it held,
@@ -242,7 +252,6 @@ index a4d4736b4..81c281483 100644
 +        finished, and one whose last holder it was is in no scheduled request's
 +        blocks, so no step in flight reads it."""
 +        _, _, blocks = self._retained.pop(index)
-+        self._num_retained_blocks -= len(blocks)
 +        self.kv_cache_manager.block_pool.free_blocks(reversed(blocks))
 +
 +    def _expire_retentions(self) -> None:
@@ -280,7 +289,7 @@ index a4d4736b4..81c281483 100644
      def _peek_make_room_request(self, defer_prefills: bool) -> Request | None:
          """The waiting request of the highest priority that the waiting loop can
          schedule in this step, if a request of a lower priority runs or, with
-@@ -3497,13 +3679,15 @@ class Scheduler(SchedulerInterface):
+@@ -3497,13 +3687,15 @@ class Scheduler(SchedulerInterface):
          """Free blocks the waiting `request` lacks to be admitted with its whole
          remaining sequence, net of its prefix-cache hit `hit`, beside the
          watermark and what in-flight prefills still need, as an async KV load is
