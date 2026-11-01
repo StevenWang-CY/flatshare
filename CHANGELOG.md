@@ -5,6 +5,57 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.14](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.14) (2026-11-01): the code reviewed, and the FP8 crash found
+
+A review of the code's architecture, plane by plane, with what it found fixed, and the FP8 KV crash of 10-27 traced to
+its cause in vLLM and FlashInfer. E1's simulated cells at higher pressure change; no measured result does, and the
+soak's record now says what a harness restart added to it.
+
+- **The system at a glance.** [ARCHITECTURE.md](docs/ARCHITECTURE.md#at-a-glance) opens with a figure of the change and
+  the three planes around it, serving, measurement and operations, each part named with its home in the repository.
+- **The FP8 crash, found.** [The FP8 record](benchmarks/results/2026-10-31-fp8-crash/README.md) reproduces the
+  10-27 crash on stock vLLM 0.32.0 and 0.33.0rc3 with none of the change's code, and finds it in FlashInfer's
+  `plan()`, which refills one page-locked buffer per wrapper while its last copy to the GPU may still be queued
+  (vLLM #61239): it needs the CPU tier, asynchronous scheduling and FlashInfer, and the wait of vLLM #64165 closes it.
+  On this card the CPU tier's DMA holds the plan's copy back on the one host-to-GPU copy engine: without the CPU tier
+  no plan in 10,000 found its copy pending. A GPU core dump names the faulting kernel, FlashInfer's
+  `PersistentVariableLengthMergeStatesKernel`; XQA decode does not avoid the race, and vLLM main stalls too.
+  [`benchmarks/fp8`](benchmarks/fp8/README.md) is the harness. The serving profile keeps its BF16 cache.
+- **The gateway's drain.** When `drain_timeout_s` passed, the process exited under the relays still running, and their
+  records said `completed`, the only success; they now say `drained`. A stop also left a request that a covering node
+  holds back unanswered for the whole drain, logged `cancelled`; it now gets 503 `draining` with `Retry-After: 1` as the
+  drain begins, as at a handover. Two tests run the binary.
+- **Releases.** A dropped session no longer stops a release halfway: the tool's output drops the terminal when a write
+  fails and keeps every line in `releases/release.log`, and a switch records itself in `releases/switching.json`, so
+  that the next switch finishes one a killed run left, restarting every active unit. The voice drain trusts only a
+  status the worker wrote after it began and removes its drain file whenever it ends early. A release refuses while an
+  E2 point's drop-ins are linked into cyan's units, as the soak does.
+- **The simulator.** A prefetch paid for every block the CPU tier held, also those the pool had no room for, which it
+  never placed; it now pays for what fits when it begins. E1's prefetching arms change at 16 sessions and more (the
+  oracle at 24 sessions: +4.9% / −3.9% at p50 / p90, from −2.4% / −16.9%), and its conclusions hold: under 8% of the
+  median resume, 28–29% of the tail at low pressure, nothing from session history.
+- **The harness.** A soak's window starts on the millisecond its first scrape is stamped with, so the counters' rise
+  before it never falls in its first hour; neither committed soak changes, the day's having started on a millisecond
+  and voice alone's having no agents. A run of arriving calls lasts its whole time when its last call ends first:
+  voice alone's soak started its callers again 87 s before its end, a second draw that placed one call where the first
+  had placed none, and without it the day's replies over the SLO number 77, not 74, 1.5% either way (the soak's
+  record says so). Each soak's `summary.json` is held to what its record gives, and the record of E2 names the
+  two points whose summaries leave their failed turns out (the report recomputes every point's V2V from its turns).
+  A record that names an account's home directory fails the tests, since the records are copied from shared hosts.
+- **What the docs say.** A round's sample of the agents is a draw of where each session enters the same traces, since
+  AIPerf's sampler gives every round the same ones, and REPORT §9 states the limitation; serve mode's endpointing,
+  0.5 s at least and 3 s at most, is a pin, not LiveKit's default for its end-of-turn model; the kill drills' streams
+  ended 6–11, 10–14 and 53–57 ms after the kill command, as their records give them, where the docs began each range
+  at a median; #45558 preempts for KV as #40087 does (PRIOR-ART, REPORT §8 and #63350's description); the restore
+  stall's upper quartile is 0.94, as the simulator's fit computes it; and the bench suite takes four to five minutes.
+  The report is at version 1.14.
+- **The packages** are versioned 1.14.0, and are not published to a package index.
+- **Upgrading from v1.13.**
+  - No configuration changes. A request cut at the drain's timeout is counted `drained` in the request log and the
+    outcome series, where it was `completed`.
+  - A release writes `releases/release.log` and, while it switches, `releases/switching.json`, and it refuses while an
+    E2 point's drop-ins are linked on cyan: `flatshare-bench e2 reset` removes them, and `--force` releases anyway.
+
 ## [v1.13](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.13) (2026-10-30): the serving engine in a container
 
 The serving engine on vLLM's own image, verified on the box's GPU. No measured result changes.

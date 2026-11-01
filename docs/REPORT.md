@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.11, 30 October 2026. Code, records and figures at tag
-[v1.11](https://github.com/StevenWang-CY/flatshare/tree/v1.11) of
+Flatshare technical report, version 1.14, 1 November 2026. Code, records and figures at tag
+[v1.14](https://github.com/StevenWang-CY/flatshare/tree/v1.14) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -1490,7 +1490,7 @@ The repository's tests fail when a committed figure differs from what its record
 records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists every measurement run by run, and
 [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
-**Hosting.** Tag v1.11 holds the code, the records and this report. The raw records, the gateway's request logs and each
+**Hosting.** Tag v1.14 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in
 [v1.0](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.0), the A100 run's in
 [v1.1](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.1), the KV-sampling runs' in
@@ -1740,6 +1740,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.14 | 2026-11-01 | Added to §9: the FP8 crash's cause, stock vLLM's FlashInfer plan race, which vLLM #64165 closes, and what the rounds sample. Corrected: what a round's sample of the agents is, a draw of where each session enters the same traces (§1, §5.2, §5.5, Appendix B); the simulator's gain from knowing when each agent returns, after its prefetch paid only for the blocks it places (§6.5, §8); the kill drills' times, from the kill command (§7, Appendix D); §8 on #45558, which preempts for KV as #40087 does; the hosting line at the current tag |
 | 1.11 | 2026-10-30 | Preempt-resubmit named as the gateway policy it is, and Appendix A's hosting line at the current tag |
 | 1.10 | 2026-10-30 | Results at a glance and Table 1 with their long cells moved to notes under the tables |
 | 1.9 | 2026-10-30 | Its results at a glance in §1; the step cap, the 24-hour soak and the engine's starts as Figures 15, D2 and D1, and every chart with its phone layout; what a scheduler step costs as a table by situation, with Figure 7's caption cut to its claim; the gateway's cost measured on the deployed build; what lifecycle timing could do and what carries to other hardware, from METHODS, closing §6.5, §6.7 and Appendix E; the long paragraphs split at their ideas; and each rule and configuration under the one name GLOSSARY gives it |
