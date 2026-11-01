@@ -522,6 +522,8 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
         "budget_cap": True,
         "budget_cap_tokens": 48,
         "reserve_tokens": 0,
+        "retain_tokens": 3584,
+        "retain_s": 30,
     }
     # The scheduler: the serve module, over the module make-room's patches build, each by its hash.
     assert engine["scheduler_cls"] == "flatshare_make_room_serve.AsyncScheduler"

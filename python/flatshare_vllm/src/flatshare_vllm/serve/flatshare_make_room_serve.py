@@ -95,13 +95,16 @@ def effective(scheduler: Any) -> dict[str, Any]:
             "kv_role": _plain(transfer.kv_role),
             "kv_connector_extra_config": _plain(transfer.kv_connector_extra_config),
         },
-        # What the scheduler holds, and the reserve as the table gave it (it holds the reserve in blocks).
+        # What the scheduler holds, and the reserve and the retention as the table gave them (it holds both in blocks).
         "make_room": {
             "max_preemptions_per_step": scheduler.max_priority_preemptions_per_step,
             "budget_cap": scheduler.priority_prefill_budget_cap,
             "budget_cap_tokens": scheduler.priority_prefill_budget_cap_tokens,
             "reserve_tokens": switches["reserve_tokens"],
             "reserve_blocks": scheduler.reserve_blocks,
+            "retain_tokens": switches["retain_tokens"],
+            "retain_blocks": scheduler.retain_blocks,
+            "retain_s": scheduler.retain_s,
         },
         "additional_config": _plain(dict(config.additional_config)),
     }
