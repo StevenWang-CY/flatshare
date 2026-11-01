@@ -1,0 +1,14 @@
+name: r3-bf16-flashinfer-offload
+config: offload.yaml
+flags: --attention-backend FLASHINFER
+venv: ~/flatshare/venvs/engine
+env: 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-10-31T21:42:44Z
+healthy: 1 2026-10-31T21:45:41Z
+load: exit 0 2026-10-31T22:00:42Z
+verdict: SURVIVED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-10-31T22:00:50Z
+gpu after: 2 MiB

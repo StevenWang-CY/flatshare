@@ -1,0 +1,14 @@
+name: r5-fp8-offload-blocking
+config: offload.yaml
+flags: --kv-cache-dtype fp8
+venv: ~/flatshare/venvs/engine
+env: CUDA_LAUNCH_BLOCKING=1 FLASHINFER_WORKSPACE_BASE=~/flatshare/cache/flashinfer 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-11-01T01:42:13Z
+healthy: 1 2026-11-01T01:43:47Z
+load: exit 0 2026-11-01T01:53:49Z
+verdict: SURVIVED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-11-01T01:53:57Z
+gpu after: 2 MiB

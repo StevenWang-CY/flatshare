@@ -1,0 +1,27 @@
+2026-10-31T21:55:54Z
+2707165 2707020 Sl         13:09  5.1 1467516 vllm          ~/flatshare/envs/engine-6c4a3cfa2f56d385/bin/python ~/flatshare/venvs/engine/bin/vllm serve --config ~
+2707351 2707165 S          12:45  0.0 13904 python          ~/flatshare/envs/engine-6c4a3cfa2f56d385/bin/python -c from multiprocessing.resource_tracker import main;main(46)
+2707352 2707165 Sl         12:45 30.7 24063740 VLLM::EngineCor VLLM::EngineCore
+2708706 2707020 S          10:12  0.6 55332 python          ~/flatshare/venvs/engine/bin/python ~/fp8-investigation/load.py --uds $XDG_RUNTIME_DIR/fp8inv/r3-bf16-flashinfer-off
+Sat Oct 31 17:55:54 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.173.02             Driver Version: 580.173.02     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5060 Ti     On  |   00000000:81:00.0 Off |                  N/A |
+| 30%   40C    P1             43W /  180W |   11448MiB /  16311MiB |    100%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A         2707352      C   VLLM::EngineCore                      11398MiB |
++-----------------------------------------------------------------------------------------+
+== 2707352 wchan=futex_wait_queue_me threads=106
+2707352:VLLM::EngineCor:futex_wait_queue_me 2707363:python:futex_wait_queue_me 2707364:python:futex_wait_queue_me 2707365:python:futex_wait_queue_me 2707366:python:futex_wait_queue_me 2707367:python:futex_wait_queue_me 2707368:python:futex_wait_queue_me 2707369:python:futex_wait_queue_me 2707370:python:futex_wait_queue_me 2707371:python:futex_wait_queue_me 2707372:python:futex_wait_queue_me 2707373:python:futex_wait_queue_me 2707374:python:futex_wait_queue_me 2707375:python:futex_wait_queue_me 2707376:python:futex_wait_queue_me 2707377:python:futex_wait_queue_me 2707428:cuda00002000009:do_poll.constprop.0 2707436:python:futex_wait_queue_me 2707437:python:futex_wait_queue_me 2707438:python:futex_wait_queue_me 2707439:python:futex_wait_queue_me 2707440:python:futex_wait_queue_me 2707441:python:futex_wait_queue_me 2707442:python:futex_wait_queue_me 2707443:python:futex_wait_queue_me 2707444:python:futex_wait_queue_me 2707445:python:futex_wait_queue_me 2707446:python:futex_wait_queue_me 2707447:python:futex_wait_queue_me 2707448:python:futex_wait_queue_me 2707449:python:futex_wait_queue_me 2707450:python:futex_wait_queue_me 2707456:python:futex_wait_queue_me 2707457:python:futex_wait_queue_me 2707458:python:futex_wait_queue_me 2707459:python:futex_wait_queue_me 2707460:python:futex_wait_queue_me 2707461:python:futex_wait_queue_me 2707462:python:futex_wait_queue_me 2707463:python:futex_wait_queue_me 2707464:python:futex_wait_queue_me 2707465:python:futex_wait_queue_me 2707466:python:futex_wait_queue_me 2707467:python:futex_wait_queue_me 2707468:python:futex_wait_queue_me 2707469:python:futex_wait_queue_me 2707470:python:futex_wait_queue_me 2707508:pt_nccl_watchdg:futex_wait_queue_me 2707509:pt_nccl_heartbt:futex_wait_queue_me 2707510:pt_nccl_watchdg:futex_wait_queue_me 2707511:pt_nccl_heartbt:futex_wait_queue_me 2707512:gloo_tcp_loop:ep_poll 2707513:pt_gloo_runloop:futex_wait_queue_me 2707514:pt_gloo_runloop:futex_wait_queue_me 2707515:pt_nccl_watchdg:futex_wait_queue_me 2707516:pt_nccl_heartbt:futex_wait_queue_me 2707517:gloo_tcp_loop:ep_poll 2707518:pt_gloo_runloop:futex_wait_queue_me 2707519:pt_gloo_runloop:futex_wait_queue_me 2707520:pt_nccl_watchdg:futex_wait_queue_me 

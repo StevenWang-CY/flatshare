@@ -1,0 +1,16 @@
+{
+ "cycles": 50000000000,
+ "flags": "skip_nonrelocated_elf_images,skip_global_memory,skip_shared_memory,skip_local_memory,skip_constbank_memory",
+ "pipe_exists": true,
+ "requested": true,
+ "dump_s": 7.0,
+ "dump_files": [
+  "selftest.2785833.1793496825"
+ ],
+ "dump_bytes": 3258659,
+ "child_exit": -6,
+ "child_after": "",
+ "kernel": "#0  0x00007f82ff768470 in at::cuda::(anonymous namespace)::spin_kernel(long)<<<(1,1,1),(1,1,1)>>> ()",
+ "cuda_gdb_exit": 0,
+ "cuda_gdb": "Opening GPU coredump: ~/fp8-investigation/dumps/selftest.2785833.1793496825\n[Current focus set to CUDA kernel 0, grid 2, block (0,0,0), thread (0,0,0), device 0, sm 0, warp 1, lane 0]\n#0  0x00007f82ff768470 in at::cuda::(anonymous namespace)::spin_kernel(long)<<<(1,1,1),(1,1,1)>>> ()\n  Kernel Parent Dev Grid Status     SMs Mask GridDim BlockDim Invocation                                     \n*      0      -   0    2 Active 0x0000000001 (1,1,1)  (1,1,1) at::cuda::(anonymous namespace)::spin_kernel() \n"
+}

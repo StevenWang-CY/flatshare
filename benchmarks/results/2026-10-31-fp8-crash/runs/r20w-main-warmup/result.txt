@@ -1,0 +1,14 @@
+name: r20w-main-warmup
+config: offload.yaml
+flags: --kv-cache-dtype fp8
+venv: ~/fp8-investigation/venv-main
+env: FLASHINFER_WORKSPACE_BASE=~/fp8-investigation/cache/flashinfer-rc3 
+versions: 0.33.0rc1.dev444+g564ac0de1 2.14.0+cu130 0.7.2.post1
+started: 2026-11-01T01:54:23Z
+healthy: 1 2026-11-01T02:01:06Z
+load: exit 0 2026-11-01T02:04:07Z
+verdict: SURVIVED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-11-01T02:04:17Z
+gpu after: 2 MiB

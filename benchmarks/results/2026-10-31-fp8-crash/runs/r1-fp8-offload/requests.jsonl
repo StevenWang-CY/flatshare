@@ -1,0 +1,105 @@
+{"kind": "agent", "session": 0, "prompt_tokens": 11160, "max_tokens": 267, "status": 200, "error": null, "seconds": 13.662, "ttft": null, "t": 14.799}
+{"kind": "agent", "session": 9, "prompt_tokens": 11031, "max_tokens": 177, "status": 200, "error": null, "seconds": 11.297, "ttft": null, "t": 14.878}
+{"kind": "agent", "session": 19, "prompt_tokens": 11560, "max_tokens": 163, "status": 200, "error": null, "seconds": 11.375, "ttft": null, "t": 16.571}
+{"kind": "agent", "session": 1, "prompt_tokens": 9972, "max_tokens": 135, "status": 200, "error": null, "seconds": 10.784, "ttft": null, "t": 17.726}
+{"kind": "agent", "session": 22, "prompt_tokens": 8946, "max_tokens": 227, "status": 200, "error": null, "seconds": 16.368, "ttft": null, "t": 22.256}
+{"kind": "agent", "session": 15, "prompt_tokens": 11636, "max_tokens": 62, "status": 200, "error": null, "seconds": 15.515, "ttft": null, "t": 25.777}
+{"kind": "agent", "session": 11, "prompt_tokens": 9280, "max_tokens": 133, "status": 200, "error": null, "seconds": 17.456, "ttft": null, "t": 26.487}
+{"kind": "agent", "session": 21, "prompt_tokens": 9269, "max_tokens": 107, "status": 200, "error": null, "seconds": 18.933, "ttft": null, "t": 30.236}
+{"kind": "agent", "session": 14, "prompt_tokens": 10507, "max_tokens": 318, "status": 200, "error": null, "seconds": 24.657, "ttft": null, "t": 30.663}
+{"kind": "agent", "session": 7, "prompt_tokens": 9275, "max_tokens": 160, "status": 200, "error": null, "seconds": 21.856, "ttft": null, "t": 31.392}
+{"kind": "agent", "session": 5, "prompt_tokens": 13438, "max_tokens": 71, "status": 200, "error": null, "seconds": 18.68, "ttft": null, "t": 35.219}
+{"kind": "voice", "session": 0, "prompt_tokens": 1244, "max_tokens": 48, "status": 200, "error": null, "seconds": 5.652, "ttft": 3.575, "t": 36.605}
+{"kind": "voice", "session": 1, "prompt_tokens": 1244, "max_tokens": 48, "status": 200, "error": null, "seconds": 3.748, "ttft": 0.237, "t": 38.624}
+{"kind": "agent", "session": 10, "prompt_tokens": 10420, "max_tokens": 203, "status": 200, "error": null, "seconds": 28.511, "ttft": null, "t": 41.145}
+{"kind": "agent", "session": 23, "prompt_tokens": 11545, "max_tokens": 361, "status": 200, "error": null, "seconds": 34.22, "ttft": null, "t": 41.403}
+{"kind": "agent", "session": 12, "prompt_tokens": 8872, "max_tokens": 54, "status": 200, "error": null, "seconds": 16.232, "ttft": null, "t": 42.587}
+{"kind": "agent", "session": 17, "prompt_tokens": 11080, "max_tokens": 158, "status": 200, "error": null, "seconds": 25.205, "ttft": null, "t": 42.812}
+{"kind": "voice", "session": 0, "prompt_tokens": 1316, "max_tokens": 48, "status": 200, "error": null, "seconds": 4.749, "ttft": 0.915, "t": 45.16}
+{"kind": "voice", "session": 1, "prompt_tokens": 1338, "max_tokens": 48, "status": 200, "error": null, "seconds": 2.685, "ttft": 0.707, "t": 45.932}
+{"kind": "agent", "session": 8, "prompt_tokens": 8834, "max_tokens": 391, "status": 200, "error": null, "seconds": 34.197, "ttft": null, "t": 46.803}
+{"kind": "agent", "session": 6, "prompt_tokens": 10585, "max_tokens": 181, "status": 200, "error": null, "seconds": 22.473, "ttft": null, "t": 46.85}
+{"kind": "agent", "session": 4, "prompt_tokens": 9894, "max_tokens": 330, "status": 200, "error": null, "seconds": 32.422, "ttft": null, "t": 52.086}
+{"kind": "agent", "session": 18, "prompt_tokens": 10026, "max_tokens": 168, "status": 200, "error": null, "seconds": 24.856, "ttft": null, "t": 52.631}
+{"kind": "voice", "session": 0, "prompt_tokens": 1390, "max_tokens": 48, "status": 200, "error": null, "seconds": 2.716, "ttft": 1.393, "t": 52.738}
+{"kind": "agent", "session": 0, "prompt_tokens": 12205, "max_tokens": 185, "status": 200, "error": null, "seconds": 24.293, "ttft": null, "t": 53.121}
+{"kind": "voice", "session": 1, "prompt_tokens": 1456, "max_tokens": 48, "status": 200, "error": null, "seconds": 3.088, "ttft": 1.626, "t": 53.238}
+{"kind": "agent", "session": 16, "prompt_tokens": 11932, "max_tokens": 125, "status": 200, "error": null, "seconds": 28.648, "ttft": null, "t": 57.973}
+{"kind": "agent", "session": 3, "prompt_tokens": 13366, "max_tokens": 51, "status": 200, "error": null, "seconds": 28.972, "ttft": null, "t": 58.808}
+{"kind": "voice", "session": 0, "prompt_tokens": 1464, "max_tokens": 48, "status": 200, "error": null, "seconds": 2.549, "ttft": 1.265, "t": 58.911}
+{"kind": "voice", "session": 1, "prompt_tokens": 1539, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.966, "ttft": 0.683, "t": 58.912}
+{"kind": "agent", "session": 2, "prompt_tokens": 13419, "max_tokens": 318, "status": 200, "error": null, "seconds": 34.52, "ttft": null, "t": 60.071}
+{"kind": "agent", "session": 13, "prompt_tokens": 13151, "max_tokens": 176, "status": 200, "error": null, "seconds": 31.474, "ttft": null, "t": 61.05}
+{"kind": "voice", "session": 1, "prompt_tokens": 1629, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.412, "ttft": 0.226, "t": 63.091}
+{"kind": "voice", "session": 0, "prompt_tokens": 1563, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.382, "ttft": 0.221, "t": 64.004}
+{"kind": "agent", "session": 22, "prompt_tokens": 9895, "max_tokens": 240, "status": 200, "error": null, "seconds": 31.385, "ttft": null, "t": 65.356}
+{"kind": "agent", "session": 21, "prompt_tokens": 10027, "max_tokens": 226, "status": 200, "error": null, "seconds": 30.369, "ttft": null, "t": 66.212}
+{"kind": "agent", "session": 11, "prompt_tokens": 10484, "max_tokens": 266, "status": 200, "error": null, "seconds": 30.404, "ttft": null, "t": 67.307}
+{"kind": "voice", "session": 1, "prompt_tokens": 1752, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.73, "ttft": 0.231, "t": 67.908}
+{"kind": "voice", "session": 0, "prompt_tokens": 1676, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.748, "ttft": 0.219, "t": 68.229}
+{"kind": "agent", "session": 20, "prompt_tokens": 11166, "max_tokens": 371, "status": 200, "error": null, "seconds": 38.656, "ttft": null, "t": 68.471}
+{"kind": "agent", "session": 5, "prompt_tokens": 14317, "max_tokens": 116, "status": 200, "error": null, "seconds": 21.725, "ttft": null, "t": 69.677}
+{"kind": "agent", "session": 19, "prompt_tokens": 12201, "max_tokens": 294, "status": 200, "error": null, "seconds": 23.556, "ttft": null, "t": 70.863}
+{"kind": "agent", "session": 14, "prompt_tokens": 11780, "max_tokens": 320, "status": 200, "error": null, "seconds": 32.246, "ttft": null, "t": 70.977}
+{"kind": "voice", "session": 1, "prompt_tokens": 1841, "max_tokens": 48, "status": 200, "error": null, "seconds": 2.045, "ttft": 0.695, "t": 72.613}
+{"kind": "agent", "session": 17, "prompt_tokens": 12253, "max_tokens": 196, "status": 200, "error": null, "seconds": 17.416, "ttft": null, "t": 74.775}
+{"kind": "voice", "session": 0, "prompt_tokens": 1778, "max_tokens": 48, "status": 200, "error": null, "seconds": 3.314, "ttft": 2.195, "t": 76.083}
+{"kind": "agent", "session": 8, "prompt_tokens": 10152, "max_tokens": 235, "status": 200, "error": null, "seconds": 15.873, "ttft": null, "t": 78.778}
+{"kind": "voice", "session": 1, "prompt_tokens": 1964, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.498, "ttft": 0.223, "t": 79.068}
+{"kind": "voice", "session": 0, "prompt_tokens": 1852, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.501, "ttft": 0.36, "t": 80.399}
+{"kind": "agent", "session": 3, "prompt_tokens": 13722, "max_tokens": 53, "status": 200, "error": null, "seconds": 16.557, "ttft": null, "t": 80.498}
+{"kind": "agent", "session": 12, "prompt_tokens": 10347, "max_tokens": 360, "status": 200, "error": null, "seconds": 22.192, "ttft": null, "t": 80.605}
+{"kind": "agent", "session": 23, "prompt_tokens": 12980, "max_tokens": 399, "status": 200, "error": null, "seconds": 23.676, "ttft": null, "t": 81.133}
+{"kind": "agent", "session": 6, "prompt_tokens": 12071, "max_tokens": 381, "status": 200, "error": null, "seconds": 22.857, "ttft": null, "t": 82.437}
+{"kind": "agent", "session": 0, "prompt_tokens": 13011, "max_tokens": 385, "status": 200, "error": null, "seconds": 22.844, "ttft": null, "t": 83.003}
+{"kind": "agent", "session": 4, "prompt_tokens": 11344, "max_tokens": 57, "status": 200, "error": null, "seconds": 19.831, "ttft": null, "t": 84.078}
+{"kind": "voice", "session": 1, "prompt_tokens": 2048, "max_tokens": 48, "status": 200, "error": null, "seconds": 2.74, "ttft": 1.098, "t": 84.273}
+{"kind": "voice", "session": 0, "prompt_tokens": 1920, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.413, "ttft": 0.226, "t": 85.896}
+{"kind": "agent", "session": 11, "prompt_tokens": 10803, "max_tokens": 111, "status": 200, "error": null, "seconds": 17.627, "ttft": null, "t": 86.124}
+{"kind": "agent", "session": 2, "prompt_tokens": 14061, "max_tokens": 159, "status": 200, "error": null, "seconds": 18.899, "ttft": null, "t": 88.035}
+{"kind": "voice", "session": 1, "prompt_tokens": 2147, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.43, "ttft": 0.239, "t": 90.291}
+{"kind": "agent", "session": 1, "prompt_tokens": 11196, "max_tokens": 309, "status": 200, "error": null, "seconds": 27.097, "ttft": null, "t": 91.44}
+{"kind": "voice", "session": 0, "prompt_tokens": 2033, "max_tokens": 48, "status": 200, "error": null, "seconds": 2.74, "ttft": 1.565, "t": 91.673}
+{"kind": "agent", "session": 15, "prompt_tokens": 13074, "max_tokens": 119, "status": 200, "error": null, "seconds": 18.187, "ttft": null, "t": 91.839}
+{"kind": "agent", "session": 18, "prompt_tokens": 10787, "max_tokens": 326, "status": 200, "error": null, "seconds": 27.425, "ttft": null, "t": 92.085}
+{"kind": "agent", "session": 20, "prompt_tokens": 11955, "max_tokens": 230, "status": 200, "error": null, "seconds": 23.514, "ttft": null, "t": 93.632}
+{"kind": "agent", "session": 9, "prompt_tokens": 12138, "max_tokens": 365, "status": 200, "error": null, "seconds": 26.447, "ttft": null, "t": 93.894}
+{"kind": "voice", "session": 1, "prompt_tokens": 2221, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.877, "ttft": 0.306, "t": 95.44}
+{"kind": "voice", "session": 0, "prompt_tokens": 2110, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.395, "ttft": 0.222, "t": 95.837}
+{"kind": "agent", "session": 7, "prompt_tokens": 9822, "max_tokens": 391, "status": 200, "error": null, "seconds": 26.361, "ttft": null, "t": 96.33}
+{"kind": "agent", "session": 21, "prompt_tokens": 10660, "max_tokens": 262, "status": 200, "error": null, "seconds": 23.272, "ttft": null, "t": 100.289}
+{"kind": "agent", "session": 22, "prompt_tokens": 10401, "max_tokens": 222, "status": 200, "error": null, "seconds": 17.948, "ttft": null, "t": 100.585}
+{"kind": "agent", "session": 19, "prompt_tokens": 13439, "max_tokens": 146, "status": 200, "error": null, "seconds": 16.957, "ttft": null, "t": 100.874}
+{"kind": "voice", "session": 1, "prompt_tokens": 2309, "max_tokens": 48, "status": 200, "error": null, "seconds": 2.072, "ttft": 0.23, "t": 101.936}
+{"kind": "voice", "session": 0, "prompt_tokens": 2234, "max_tokens": 48, "status": 200, "error": null, "seconds": 2.239, "ttft": 0.232, "t": 102.242}
+{"kind": "agent", "session": 17, "prompt_tokens": 13099, "max_tokens": 51, "status": 200, "error": null, "seconds": 14.871, "ttft": null, "t": 102.924}
+{"kind": "agent", "session": 13, "prompt_tokens": 14152, "max_tokens": 320, "status": 200, "error": null, "seconds": 24.118, "ttft": null, "t": 104.691}
+{"kind": "agent", "session": 5, "prompt_tokens": 15553, "max_tokens": 367, "status": 200, "error": null, "seconds": 27.793, "ttft": null, "t": 104.783}
+{"kind": "agent", "session": 6, "prompt_tokens": 12793, "max_tokens": 99, "status": 200, "error": null, "seconds": 14.94, "ttft": null, "t": 106.363}
+{"kind": "voice", "session": 1, "prompt_tokens": 2409, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.913, "ttft": 0.218, "t": 107.961}
+{"kind": "voice", "session": 0, "prompt_tokens": 2321, "max_tokens": 48, "status": 200, "error": null, "seconds": 1.396, "ttft": 0.259, "t": 108.538}
+{"kind": "agent", "session": 14, "prompt_tokens": 12221, "max_tokens": 271, "status": 200, "error": null, "seconds": 23.984, "ttft": null, "t": 110.203}
+{"kind": "agent", "session": 11, "prompt_tokens": 12063, "max_tokens": 217, "status": 200, "error": null, "seconds": 19.302, "ttft": null, "t": 111.803}
+{"kind": "agent", "session": 15, "prompt_tokens": 14548, "max_tokens": 195, "status": 200, "error": null, "seconds": 17.362, "ttft": null, "t": 112.971}
+{"kind": "voice", "session": 1, "prompt_tokens": 2492, "max_tokens": 48, "status": 200, "error": null, "seconds": 6.456, "ttft": 6.455, "t": 119.219}
+{"kind": "voice", "session": 0, "prompt_tokens": 2419, "max_tokens": 48, "status": 200, "error": null, "seconds": 5.723, "ttft": 5.722, "t": 119.229}
+{"kind": "agent", "session": 10, "prompt_tokens": 11657, "max_tokens": 262, "status": 500, "error": "http 500", "seconds": 27.157, "ttft": null, "t": 119.23}
+{"kind": "agent", "session": 12, "prompt_tokens": 11228, "max_tokens": 260, "status": 500, "error": "http 500", "seconds": 26.257, "ttft": null, "t": 119.232}
+{"kind": "agent", "session": 1, "prompt_tokens": 12382, "max_tokens": 251, "status": 500, "error": "http 500", "seconds": 18.746, "ttft": null, "t": 119.236}
+{"kind": "agent", "session": 16, "prompt_tokens": 12988, "max_tokens": 278, "status": 500, "error": "http 500", "seconds": 18.567, "ttft": null, "t": 119.239}
+{"kind": "agent", "session": 0, "prompt_tokens": 13583, "max_tokens": 85, "status": 500, "error": "http 500", "seconds": 16.675, "ttft": null, "t": 119.243}
+{"kind": "agent", "session": 7, "prompt_tokens": 10242, "max_tokens": 325, "status": 500, "error": "http 500", "seconds": 16.019, "ttft": null, "t": 119.244}
+{"kind": "agent", "session": 2, "prompt_tokens": 15246, "max_tokens": 286, "status": 500, "error": "http 500", "seconds": 14.351, "ttft": null, "t": 119.25}
+{"kind": "agent", "session": 21, "prompt_tokens": 12134, "max_tokens": 397, "status": 500, "error": "http 500", "seconds": 12.676, "ttft": null, "t": 119.252}
+{"kind": "agent", "session": 20, "prompt_tokens": 12397, "max_tokens": 210, "status": 500, "error": "http 500", "seconds": 11.952, "ttft": null, "t": 119.254}
+{"kind": "agent", "session": 5, "prompt_tokens": 16619, "max_tokens": 258, "status": 500, "error": "http 500", "seconds": 10.614, "ttft": null, "t": 119.256}
+{"kind": "agent", "session": 9, "prompt_tokens": 12706, "max_tokens": 106, "status": 500, "error": "http 500", "seconds": 6.138, "ttft": null, "t": 119.258}
+{"kind": "agent", "session": 14, "prompt_tokens": 12862, "max_tokens": 60, "status": 500, "error": "http 500", "seconds": 4.096, "ttft": null, "t": 119.26}
+{"kind": "agent", "session": 22, "prompt_tokens": 11458, "max_tokens": 54, "status": 500, "error": "http 500", "seconds": 3.974, "ttft": null, "t": 119.262}
+{"kind": "agent", "session": 13, "prompt_tokens": 15621, "max_tokens": 340, "status": 500, "error": "http 500", "seconds": 3.729, "ttft": null, "t": 119.263}
+{"kind": "agent", "session": 6, "prompt_tokens": 13909, "max_tokens": 131, "status": "error", "error": "ConnectError: [Errno 111] Connection refused", "seconds": 0.004, "ttft": null, "t": 120.363}
+{"kind": "agent", "session": 17, "prompt_tokens": 13815, "max_tokens": 185, "status": "error", "error": "ConnectError: [Errno 111] Connection refused", "seconds": 0.004, "ttft": null, "t": 121.116}
+{"kind": "voice", "session": 1, "prompt_tokens": 2614, "max_tokens": 48, "status": "error", "error": "ConnectError: [Errno 111] Connection refused", "seconds": 0.002, "ttft": null, "t": 122.204}
+{"kind": "voice", "session": 0, "prompt_tokens": 2537, "max_tokens": 48, "status": "error", "error": "ConnectError: [Errno 111] Connection refused", "seconds": 0.002, "ttft": null, "t": 122.82}
+{"kind": "agent", "session": 14, "prompt_tokens": 13355, "max_tokens": 244, "status": "error", "error": "ConnectError: [Errno 111] Connection refused", "seconds": 0.003, "ttft": null, "t": 123.165}
+{"kind": "agent", "session": 20, "prompt_tokens": 13705, "max_tokens": 164, "status": "error", "error": "ConnectError: [Errno 111] Connection refused", "seconds": 0.004, "ttft": null, "t": 123.595}

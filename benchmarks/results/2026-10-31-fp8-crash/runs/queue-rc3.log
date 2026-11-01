@@ -1,0 +1,13 @@
+2026-11-01T00:02:34Z start copy-contention
+2026-11-01T00:02:45Z end copy-contention exit 0
+2026-11-01T00:02:46Z start r13w-rc3-warmup
+2026-11-01T00:14:44Z end r13w-rc3-warmup exit 0 verdict: CRASHED
+2026-11-01T00:14:44Z start r13-rc3-fp8-offload
+2026-11-01T00:20:09Z end r13-rc3-fp8-offload exit 0 verdict: CRASHED
+2026-11-01T00:20:10Z start r15-rc3-fp8-offload-fix
+2026-11-01T00:40:57Z end r15-rc3-fp8-offload-fix exit 0 verdict: SURVIVED
+2026-11-01T00:40:57Z start r14-rc3-fp8-offload-count
+2026-11-01T00:50:56Z end r14-rc3-fp8-offload-count exit 0 verdict: STALLED
+2026-11-01T00:50:56Z start r19-fp8-nooffload-count
+2026-11-01T01:10:59Z end r19-fp8-nooffload-count exit 0 verdict: SURVIVED
+2026-11-01T01:10:59Z queue done

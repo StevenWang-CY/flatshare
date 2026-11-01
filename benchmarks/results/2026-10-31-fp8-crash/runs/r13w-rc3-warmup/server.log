@@ -1,0 +1,869 @@
+W1031 20:03:04.182000 2753085 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1031 20:03:04.184000 2753085 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W1031 20:03:04.185000 2753085 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+(APIServer pid=2753085) INFO 10-31 20:03:21 [startup.py:38] 
+(APIServer pid=2753085) INFO 10-31 20:03:21 [startup.py:38]        █     █     █▄   ▄█
+(APIServer pid=2753085) INFO 10-31 20:03:21 [startup.py:38]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.33.0rc3.dev3+g4ba787ec9
+(APIServer pid=2753085) INFO 10-31 20:03:21 [startup.py:38]   █▄█▀ █     █     █     █  model   Qwen/Qwen3-4B-Instruct-2507-FP8
+(APIServer pid=2753085) INFO 10-31 20:03:21 [startup.py:38]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=2753085) INFO 10-31 20:03:21 [startup.py:38] 
+(APIServer pid=2753085) INFO 10-31 20:03:21 [startup.py:96] non-default args: {'enable_prompt_tokens_details': True, 'uds': '$XDG_RUNTIME_DIR/fp8inv/r13w-rc3-warmup.sock', 'disable_uvicorn_access_log': True, 'model': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'revision': '8591804019c8b22094c3b5b4454e0edc05dffc98', 'max_model_len': 32768, 'gpu_memory_utilization': 0.7, 'kv_cache_memory_bytes': 5368709120, 'kv_cache_dtype': 'fp8', 'enable_prefix_caching': True, 'kv_cache_metrics': True, 'kv_cache_metrics_sample': 0.05, 'max_num_batched_tokens': 512, 'long_prefill_token_threshold': 256, 'scheduling_policy': 'priority', 'kv_transfer_config': KVTransferConfig(kv_connector='OffloadingConnector', engine_id='aa049d7e-0071-41aa-aeeb-e65f756c67e9', kv_buffer_device='cuda', kv_role='kv_both', kv_port=14579, kv_connector_extra_config={'cpu_bytes_to_use': 21474836480, 'offload_prompt_only': False}, kv_connector_module_path=None, enable_permute_local_kv=False, kv_load_failure_policy='fail')}
+(APIServer pid=2753085) INFO 10-31 20:03:21 [arg_utils.py:941] HF_HUB_OFFLINE is True, replace model_id [Qwen/Qwen3-4B-Instruct-2507-FP8] to model_path [~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98]
+(APIServer pid=2753085) INFO 10-31 20:03:37 [model.py:744] Resolved architecture: Qwen3ForCausalLM
+(APIServer pid=2753085) INFO 10-31 20:03:37 [model.py:2170] Using max model len 32768
+(APIServer pid=2753085) INFO 10-31 20:03:41 [cache.py:484] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor
+(APIServer pid=2753085) INFO 10-31 20:03:41 [scheduler.py:310] Chunked prefill is enabled with max_num_batched_tokens=512.
+(APIServer pid=2753085) INFO 10-31 20:03:41 [kernel.py:480] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(APIServer pid=2753085) INFO 10-31 20:03:41 [compilation.py:317] Enabled custom fusions: norm_quant, act_quant
+W1031 20:03:53.612000 2753557 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1031 20:03:53.613000 2753557 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W1031 20:03:53.614000 2753557 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+(EngineCore pid=2753557) INFO 10-31 20:04:03 [core.py:139] Initializing a V1 LLM engine (v0.33.0rc3.dev3+g4ba787ec9) with config: model='~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98', speculative_config=None, tokenizer='~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98', skip_tokenizer_init=False, tokenizer_mode=auto, revision=8591804019c8b22094c3b5b4454e0edc05dffc98, tokenizer_revision=8591804019c8b22094c3b5b4454e0edc05dffc98, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=32768, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=fp8, quantization_config=None, enforce_eager=False, aux_output_config=AuxOutputConfig(enable_return_routed_experts=False, max_bytes=None), kv_cache_dtype=fp8, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, per_request_spec_decode_metrics='none', kv_cache_metrics=True, kv_cache_metrics_sample=0.05, custom_histogram_buckets=None, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['+quant_fp8', 'none', '+quant_fp8'], 'ir_enable_torch_wrap': True, 'splitting_ops': ['vllm::unified_attention_with_output', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::qwen4_exp_ple_short_conv', 'vllm::qwen4_exp_qsa_with_output', 'vllm::qwen4_exp_qsa_prepare_with_output', 'vllm::linear_attention', 'vllm::qwen_gdn_attention_core', 'vllm::qwen_gdn_attention_core_fused_norm_packed', 'vllm::gdn_attention_core_xpu', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::deepseek_v4_attention', 'vllm::hpc_rope_norm_forward', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'cudagraph_decoder_replay': True, 'decoder_replay_cudagraph_capture_sizes': [], 'decoder_replay_trim_threshold': 768, 'compile_sizes': [], 'compile_ranges_endpoints': [512], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 512, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native']), enable_flashinfer_autotune=True, enable_rocm_segmented_attn_autotune=False, enable_cutedsl_warmup=True, enable_jit_warmup=True, monokernel=False, moe_backend='auto', sparse_indexer_topk_backend='auto', linear_backend='auto', linear_backend_per_quant=None)
+(EngineCore pid=2753557) INFO 10-31 20:04:04 [parallel_state.py:1929] world_size=1 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_bb1b580c411847a0a76f953e06d4b1f1 backend=nccl
+(EngineCore pid=2753557) INFO 10-31 20:04:04 [parallel_state.py:2385] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, ETP rank 0, EP rank N/A, EPLB rank N/A
+(EngineCore pid=2753557) INFO 10-31 20:04:04 [gpu_worker.py:513] Using V2 Model Runner
+(EngineCore pid=2753557) WARNING 10-31 20:04:04 [flashinfer.py:143] FlashInfer's precompiled kernels are missing or do not match flashinfer-python 0.7.2.post1 (flashinfer-cubin not installed, flashinfer-jit-cache not installed). FlashInfer then downloads and compiles kernels at startup, which can take several minutes, or fails to import mismatched ones. Run `vllm download-kernels` in this Python environment to install them.
+(EngineCore pid=2753557) INFO 10-31 20:04:06 [model_runner.py:399] Loading model from scratch...
+(EngineCore pid=2753557) INFO 10-31 20:04:06 [__init__.py:778] Selected DeepGemmFp8BlockScaledMMKernel for Fp8LinearMethod
+(EngineCore pid=2753557) INFO 10-31 20:04:06 [deep_gemm.py:200] deep_gemm not found in site-packages, trying vendored vllm.third_party.deep_gemm
+(EngineCore pid=2753557) INFO 10-31 20:04:06 [deep_gemm.py:227] DeepGEMM PDL enabled on vllm.third_party.deep_gemm.
+(EngineCore pid=2753557) INFO 10-31 20:04:06 [deep_gemm.py:139] DeepGEMM E8M0 enabled on current platform.
+(EngineCore pid=2753557) INFO 10-31 20:04:07 [cuda.py:508] Using FLASHINFER attention backend out of potential backends: ['FLASHINFER', 'TRITON_ATTN'].
+(EngineCore pid=2753557) WARNING 10-31 20:04:07 [flashinfer.py:670] Failed to connect to NVIDIA artifactory: HTTPSConnectionPool(host='edge.urm.nvidia.com', port=443): Max retries exceeded with url: /artifactory/sw-kernelinferencelibrary-public-generic-local/ (Caused by NameResolutionError("HTTPSConnection(host='edge.urm.nvidia.com', port=443): Failed to resolve 'edge.urm.nvidia.com' ([Errno -2] Name or service not known)"))
+(EngineCore pid=2753557) INFO 10-31 20:04:08 [base_loader.py:82] Initializing model took 2.406469 seconds
+(EngineCore pid=2753557) INFO 10-31 20:04:08 [weight_utils.py:1144] Filesystem type for checkpoints: EXT4. Checkpoint size: 4.83 GiB. Available RAM: 160.08 GiB.
+(EngineCore pid=2753557) INFO 10-31 20:04:08 [weight_utils.py:1167] Auto-prefetch is disabled because the filesystem (EXT4) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+Loading safetensors checkpoint shards:   0% Completed | 0/1 [00:00<?, ?it/s]
+(EngineCore pid=2753557) WARNING 10-31 20:04:08 [utils.py:333] Attempted to load weight lm_head.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:08 [utils.py:333] Attempted to load weight embed_tokens.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.0.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.0.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.0.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.0.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.1.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.1.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.1.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.1.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.10.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.10.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.10.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.10.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.11.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.11.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.11.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.11.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.12.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.12.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.12.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.12.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.13.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.13.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.13.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.13.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.14.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.14.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.14.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.14.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.15.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.15.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.15.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.15.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.16.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.16.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.16.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.16.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.17.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.17.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.17.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.17.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.18.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.18.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.18.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.18.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.19.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.19.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.19.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.19.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.2.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.2.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.2.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.2.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.20.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.20.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.20.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.20.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.21.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.21.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.21.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.21.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.22.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.22.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.22.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.22.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.23.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.23.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.23.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.23.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.24.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.24.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.24.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.24.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.25.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.25.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.25.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.25.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.26.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.26.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.26.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.26.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.27.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.27.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.27.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.27.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.28.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.28.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:09 [utils.py:333] Attempted to load weight layers.28.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.28.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.29.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.29.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.29.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.29.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.3.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.3.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.3.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.3.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.30.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.30.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.30.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.30.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.31.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.31.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.31.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.31.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.32.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.32.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.32.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.32.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.33.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.33.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.33.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.33.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.34.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.34.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.34.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.34.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.35.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.35.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.35.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.35.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.4.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.4.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.4.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.4.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.5.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.5.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.5.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.5.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.6.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.6.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.6.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.6.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.7.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.7.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.7.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.7.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.8.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.8.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.8.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.8.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.9.input_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.9.post_attention_layernorm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.9.self_attn.k_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight layers.9.self_attn.q_norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+(EngineCore pid=2753557) WARNING 10-31 20:04:10 [utils.py:333] Attempted to load weight norm.weight with dtype torch.float16 into parameter with dtype torch.bfloat16
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:01<00:00,  1.82s/it]
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:01<00:00,  1.82s/it]
+
+(EngineCore pid=2753557) INFO 10-31 20:04:10 [default_loader.py:506] Loading weights took 2.05 seconds
+(EngineCore pid=2753557) WARNING 10-31 20:04:32 [kv_cache.py:148] Checkpoint does not provide a q scaling factor. Setting it to k_scale. This only matters for FP8 Attention backends (flash-attn or flashinfer).
+(EngineCore pid=2753557) WARNING 10-31 20:04:32 [kv_cache.py:165] Using KV cache scaling factor 1.0 for fp8_e4m3. If this is unintended, verify that k/v_scale scaling factors are properly set in the checkpoint.
+(EngineCore pid=2753557) WARNING 10-31 20:04:32 [kv_cache.py:203] Using uncalibrated q_scale 1.0 and/or prob_scale 1.0 with fp8 attention. This may cause accuracy issues. Please make sure q/prob scaling factors are available in the fp8 checkpoint.
+(EngineCore pid=2753557) INFO 10-31 20:04:37 [model_runner.py:428] Model loading took 4.29 GiB memory and 31.912714 seconds
+(EngineCore pid=2753557) INFO 10-31 20:04:37 [topk_topp_sampler.py:149] Using FlashInfer for top-p & top-k sampling.
+(EngineCore pid=2753557) INFO 10-31 20:04:37 [torch_utils.py:281] Reducing Torch threads from 16 to 1 for serving. Set OMP_NUM_THREADS in the external environment to override.
+(EngineCore pid=2753557) INFO 10-31 20:04:37 [utils.py:381] Using LBHNC KV cache layout.
+(EngineCore pid=2753557) INFO 10-31 20:04:37 [monitor.py:40] [backbone] Starting torch.compile
+(EngineCore pid=2753557) INFO 10-31 20:05:00 [backends.py:1125] [backbone] Using cache directory: ~/.cache/vllm/torch_compile_cache/c82865b95c/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore pid=2753557) INFO 10-31 20:05:00 [backends.py:1187] [backbone] Dynamo bytecode transform time: 22.47 s
+(EngineCore pid=2753557) INFO 10-31 20:05:27 [backends.py:417] [backbone] Compiling a graph for compile range (1, 512) takes 23.61 s
+(EngineCore pid=2753557) INFO 10-31 20:05:42 [backends.py:948] collected artifacts: 37 entries, 3 artifacts, 6209916 bytes total
+(EngineCore pid=2753557) INFO 10-31 20:05:42 [decorators.py:752] [backbone] saved AOT compiled function to ~/.cache/vllm/torch_compile_cache/torch_aot_compile/af34b64b6f899660017e24f69bf0f469f0beba2dd9b15d0a49799ba68bce11b3/rank_0_0/model
+(EngineCore pid=2753557) INFO 10-31 20:05:42 [monitor.py:62] [backbone] torch.compile took 64.63 s in total
+(EngineCore pid=2753557) INFO 10-31 20:05:59 [monitor.py:91] [backbone] Initial profiling/warmup run took 17.42 s
+2026-10-31 20:06:03,567 - INFO - core.py:594 - flashinfer.jit: Building JIT module sampling; this can take several minutes on first use.
+(EngineCore pid=2753557) INFO 10-31 20:08:51 [gpu_worker.py:676] Initial free memory 15.28 GiB, reserved 5.0 GiB memory for KV Cache as specified by kv_cache_memory_bytes config and skipped memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes config when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly.
+(EngineCore pid=2753557) INFO 10-31 20:08:51 [kv_cache_utils.py:1147] GPU KV cache size: 72,816 tokens, Maximum concurrency for 32,768 tokens per request: 2.22x
+(EngineCore pid=2753557) INFO 10-31 20:08:51 [factory.py:62] Creating v1 connector with name: OffloadingConnector and engine_id: aa049d7e-0071-41aa-aeeb-e65f756c67e9
+(EngineCore pid=2753557) WARNING 10-31 20:08:51 [base.py:220] Initializing KVConnectorBase_V1. This API is experimental and subject to change in the future as we iterate the design.
+(EngineCore pid=2753557) INFO 10-31 20:08:51 [factory.py:57] Creating offloading spec with name: CPUOffloadingSpec
+(EngineCore pid=2753557) INFO 10-31 20:08:51 [flashinfer.py:1106] FlashInfer resolved query dtypes: prefill=torch.bfloat16, decode=torch.bfloat16, decode_backend=flashinfer-native, kv_cache_dtype=torch.float8_e4m3fn, arch=sm120
+(EngineCore pid=2753557) INFO 10-31 20:08:51 [shared_offload_region.py:177] Created mmap file /dev/shm/vllm_offload_aa049d7e-0071-41aa-aeeb-e65f756c67e9.mmap (21.47 GB)
+(EngineCore pid=2753557) INFO 10-31 20:08:51 [shared_offload_region.py:198] Unlinked mmap file /dev/shm/vllm_offload_aa049d7e-0071-41aa-aeeb-e65f756c67e9.mmap
+(EngineCore pid=2753557) INFO 10-31 20:09:05 [gpu_worker.py:815] Allocating 36 CPU tensors...
+(EngineCore pid=2753557) INFO 10-31 20:09:05 [gpu_worker.py:232] Registering full CPU offload region rank=0 (row=1179648, slot=1179648 bytes): less than 3145728 bytes saved per row
+(EngineCore pid=2753557) INFO 10-31 20:09:06 [kernel_warmup.py:179] JIT kernel warmup starting.
+(EngineCore pid=2753557) INFO 10-31 20:09:06 [kernel_warmup.py:192] JIT kernel warmup finished in 0.00s.
+DeepGEMM warmup:   0%|          | 0/366 [00:00<?, ?it/s]DeepGEMM warmup:   0%|          | 1/366 [00:03<24:02,  3.95s/it]DeepGEMM warmup:   1%|          | 2/366 [00:07<23:23,  3.86s/it]DeepGEMM warmup:   1%|          | 3/366 [00:11<23:10,  3.83s/it]DeepGEMM warmup:   1%|          | 4/366 [00:15<22:58,  3.81s/it]DeepGEMM warmup:   1%|▏         | 5/366 [00:19<22:49,  3.79s/it]DeepGEMM warmup:   2%|▏         | 6/366 [00:22<22:47,  3.80s/it]DeepGEMM warmup:   2%|▏         | 7/366 [00:26<22:41,  3.79s/it]DeepGEMM warmup:   2%|▏         | 8/366 [00:30<23:35,  3.95s/it]DeepGEMM warmup:  29%|██▊       | 105/366 [00:34<00:33,  7.80it/s]DeepGEMM warmup:  29%|██▉       | 106/366 [00:39<00:47,  5.45it/s]DeepGEMM warmup:  29%|██▉       | 107/366 [00:43<01:07,  3.85it/s]DeepGEMM warmup:  30%|██▉       | 108/366 [00:47<01:33,  2.75it/s]DeepGEMM warmup:  30%|██▉       | 109/366 [00:51<02:09,  1.99it/s]DeepGEMM warmup:  30%|███       | 110/366 [00:55<02:58,  1.43it/s]DeepGEMM warmup:  30%|███       | 111/366 [00:59<04:04,  1.04it/s]DeepGEMM warmup:  45%|████▌     | 165/366 [01:03<00:43,  4.64it/s]DeepGEMM warmup:  45%|████▌     | 166/366 [01:07<00:59,  3.35it/s]DeepGEMM warmup:  46%|████▌     | 167/366 [01:11<01:21,  2.43it/s]DeepGEMM warmup:  46%|████▌     | 168/366 [01:16<01:52,  1.76it/s]DeepGEMM warmup:  46%|████▌     | 169/366 [01:20<02:32,  1.29it/s]DeepGEMM warmup:  46%|████▋     | 170/366 [01:24<03:22,  1.03s/it]DeepGEMM warmup:  47%|████▋     | 171/366 [01:28<04:17,  1.32s/it]DeepGEMM warmup:  47%|████▋     | 172/366 [01:33<05:24,  1.67s/it]DeepGEMM warmup:  47%|████▋     | 173/366 [01:37<06:29,  2.02s/it]DeepGEMM warmup:  48%|████▊     | 174/366 [01:41<07:35,  2.37s/it]DeepGEMM warmup:  48%|████▊     | 175/366 [01:45<08:44,  2.75s/it]DeepGEMM warmup:  48%|████▊     | 176/366 [01:49<09:36,  3.03s/it]DeepGEMM warmup:  48%|████▊     | 177/366 [01:53<10:30,  3.34s/it]DeepGEMM warmup:  84%|████████▍ | 307/366 [01:58<00:06,  9.49it/s]DeepGEMM warmup:  84%|████████▍ | 308/366 [02:02<00:08,  6.81it/s]DeepGEMM warmup:  84%|████████▍ | 309/366 [02:06<00:11,  4.88it/s]DeepGEMM warmup:  85%|████████▍ | 310/366 [02:10<00:15,  3.51it/s]DeepGEMM warmup:  85%|████████▍ | 311/366 [02:14<00:21,  2.54it/s]DeepGEMM warmup:  85%|████████▌ | 312/366 [02:18<00:29,  1.83it/s]DeepGEMM warmup:  86%|████████▌ | 313/366 [02:22<00:39,  1.34it/s]DeepGEMM warmup: 100%|██████████| 366/366 [02:22<00:00,  2.57it/s]
+(EngineCore pid=2753557) INFO 10-31 20:11:29 [kernel_warmup.py:485] Using FlashInfer managed autotune cache (root=flashinfer default). Pass --disable-flashinfer-autotune to skip autotuning.
+2026-10-31 20:11:29,708 - INFO - autotuner.py:1048 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+2026-10-31 20:11:30,509 - INFO - autotune_cache.py:495 - flashinfer.jit: [Autotuner]: Managed autotune cache attached for this process: ManagedAutotuneCache(env_dir='~/fp8-investigation/cache/flashinfer-rc3/.cache/flashinfer/autotune/v2/1ee8024fcb9e5df3', hits=0, misses=0)
+(EngineCore pid=2753557) INFO 10-31 20:11:30 [kernel_warmup.py:371] Running FlashInfer autotune with 512 tokens and token buckets (1, 2, 4, 8, 16, 32, 64, 128, 256, 512).
+2026-10-31 20:11:30,725 - INFO - core.py:594 - flashinfer.jit: Building JIT module batch_prefill_with_kv_cache_dtype_q_bf16_dtype_kv_e4m3_dtype_o_bf16_dtype_idx_i32_head_dim_qk_128_head_dim_vo_128_posenc_0_use_swa_False_use_logits_cap_False_f16qk_False_kv_stride_equal; this can take several minutes on first use.
+2026-10-31 20:12:06,664 - INFO - autotuner.py:1071 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(EngineCore pid=2753557) INFO 10-31 20:12:06 [kernel_warmup.py:295] Warming up FlashInfer attention.
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (PIECEWISE):   2%|▏         | 1/51 [00:00<00:07,  6.39it/s]Capturing CUDA graphs (PIECEWISE):   4%|▍         | 2/51 [00:00<00:07,  6.36it/s]Capturing CUDA graphs (PIECEWISE):   6%|▌         | 3/51 [00:00<00:07,  6.45it/s]Capturing CUDA graphs (PIECEWISE):   8%|▊         | 4/51 [00:00<00:07,  6.42it/s]Capturing CUDA graphs (PIECEWISE):  10%|▉         | 5/51 [00:00<00:07,  6.43it/s]Capturing CUDA graphs (PIECEWISE):  12%|█▏        | 6/51 [00:00<00:06,  6.45it/s]Capturing CUDA graphs (PIECEWISE):  14%|█▎        | 7/51 [00:01<00:06,  6.43it/s]Capturing CUDA graphs (PIECEWISE):  16%|█▌        | 8/51 [00:01<00:06,  6.42it/s]Capturing CUDA graphs (PIECEWISE):  18%|█▊        | 9/51 [00:01<00:06,  6.43it/s]Capturing CUDA graphs (PIECEWISE):  20%|█▉        | 10/51 [00:01<00:06,  6.45it/s]Capturing CUDA graphs (PIECEWISE):  22%|██▏       | 11/51 [00:01<00:06,  6.37it/s]Capturing CUDA graphs (PIECEWISE):  24%|██▎       | 12/51 [00:01<00:06,  6.37it/s]Capturing CUDA graphs (PIECEWISE):  25%|██▌       | 13/51 [00:02<00:05,  6.37it/s]Capturing CUDA graphs (PIECEWISE):  27%|██▋       | 14/51 [00:02<00:05,  6.34it/s]Capturing CUDA graphs (PIECEWISE):  29%|██▉       | 15/51 [00:02<00:05,  6.36it/s]Capturing CUDA graphs (PIECEWISE):  31%|███▏      | 16/51 [00:02<00:05,  6.39it/s]Capturing CUDA graphs (PIECEWISE):  33%|███▎      | 17/51 [00:02<00:05,  6.54it/s]Capturing CUDA graphs (PIECEWISE):  35%|███▌      | 18/51 [00:02<00:05,  6.56it/s]Capturing CUDA graphs (PIECEWISE):  37%|███▋      | 19/51 [00:02<00:04,  6.57it/s]Capturing CUDA graphs (PIECEWISE):  39%|███▉      | 20/51 [00:03<00:04,  6.58it/s]Capturing CUDA graphs (PIECEWISE):  41%|████      | 21/51 [00:03<00:04,  6.52it/s]Capturing CUDA graphs (PIECEWISE):  43%|████▎     | 22/51 [00:03<00:04,  6.53it/s]Capturing CUDA graphs (PIECEWISE):  45%|████▌     | 23/51 [00:03<00:04,  6.55it/s]Capturing CUDA graphs (PIECEWISE):  47%|████▋     | 24/51 [00:03<00:04,  6.50it/s]Capturing CUDA graphs (PIECEWISE):  49%|████▉     | 25/51 [00:03<00:04,  6.47it/s]Capturing CUDA graphs (PIECEWISE):  51%|█████     | 26/51 [00:04<00:03,  6.48it/s]Capturing CUDA graphs (PIECEWISE):  53%|█████▎    | 27/51 [00:04<00:03,  6.44it/s]Capturing CUDA graphs (PIECEWISE):  55%|█████▍    | 28/51 [00:04<00:03,  6.44it/s]Capturing CUDA graphs (PIECEWISE):  57%|█████▋    | 29/51 [00:04<00:03,  6.45it/s]Capturing CUDA graphs (PIECEWISE):  59%|█████▉    | 30/51 [00:04<00:03,  6.45it/s]Capturing CUDA graphs (PIECEWISE):  61%|██████    | 31/51 [00:04<00:03,  6.46it/s]Capturing CUDA graphs (PIECEWISE):  63%|██████▎   | 32/51 [00:04<00:02,  6.49it/s]Capturing CUDA graphs (PIECEWISE):  65%|██████▍   | 33/51 [00:05<00:02,  6.49it/s]Capturing CUDA graphs (PIECEWISE):  67%|██████▋   | 34/51 [00:05<00:02,  6.46it/s]Capturing CUDA graphs (PIECEWISE):  69%|██████▊   | 35/51 [00:05<00:02,  6.44it/s]Capturing CUDA graphs (PIECEWISE):  71%|███████   | 36/51 [00:05<00:02,  6.46it/s]Capturing CUDA graphs (PIECEWISE):  73%|███████▎  | 37/51 [00:05<00:02,  6.49it/s]Capturing CUDA graphs (PIECEWISE):  75%|███████▍  | 38/51 [00:05<00:02,  6.42it/s]Capturing CUDA graphs (PIECEWISE):  76%|███████▋  | 39/51 [00:06<00:01,  6.47it/s]Capturing CUDA graphs (PIECEWISE):  78%|███████▊  | 40/51 [00:06<00:01,  6.43it/s]Capturing CUDA graphs (PIECEWISE):  80%|████████  | 41/51 [00:06<00:01,  6.41it/s]Capturing CUDA graphs (PIECEWISE):  82%|████████▏ | 42/51 [00:06<00:01,  6.43it/s]Capturing CUDA graphs (PIECEWISE):  84%|████████▍ | 43/51 [00:06<00:01,  6.43it/s]Capturing CUDA graphs (PIECEWISE):  86%|████████▋ | 44/51 [00:06<00:01,  6.44it/s]Capturing CUDA graphs (PIECEWISE):  88%|████████▊ | 45/51 [00:06<00:00,  6.45it/s]Capturing CUDA graphs (PIECEWISE):  90%|█████████ | 46/51 [00:07<00:00,  6.47it/s]Capturing CUDA graphs (PIECEWISE):  92%|█████████▏| 47/51 [00:07<00:00,  6.50it/s]Capturing CUDA graphs (PIECEWISE):  94%|█████████▍| 48/51 [00:07<00:00,  6.50it/s]Capturing CUDA graphs (PIECEWISE):  96%|█████████▌| 49/51 [00:07<00:00,  6.53it/s]Capturing CUDA graphs (PIECEWISE):  98%|█████████▊| 50/51 [00:07<00:00,  6.62it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:07<00:00,  6.66it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:07<00:00,  6.47it/s]
+Capturing CUDA graphs (FULL):   0%|          | 0/35 [00:00<?, ?it/s]Capturing CUDA graphs (FULL):   3%|▎         | 1/35 [00:00<00:04,  7.96it/s]Capturing CUDA graphs (FULL):   6%|▌         | 2/35 [00:00<00:04,  8.07it/s]Capturing CUDA graphs (FULL):   9%|▊         | 3/35 [00:00<00:03,  8.01it/s]Capturing CUDA graphs (FULL):  11%|█▏        | 4/35 [00:00<00:03,  7.99it/s]Capturing CUDA graphs (FULL):  14%|█▍        | 5/35 [00:00<00:03,  7.97it/s]Capturing CUDA graphs (FULL):  17%|█▋        | 6/35 [00:00<00:03,  7.96it/s]Capturing CUDA graphs (FULL):  20%|██        | 7/35 [00:00<00:03,  8.01it/s]Capturing CUDA graphs (FULL):  23%|██▎       | 8/35 [00:01<00:03,  7.86it/s]Capturing CUDA graphs (FULL):  26%|██▌       | 9/35 [00:01<00:03,  7.93it/s]Capturing CUDA graphs (FULL):  29%|██▊       | 10/35 [00:01<00:03,  7.95it/s]Capturing CUDA graphs (FULL):  31%|███▏      | 11/35 [00:01<00:03,  8.00it/s]Capturing CUDA graphs (FULL):  34%|███▍      | 12/35 [00:01<00:02,  7.99it/s]Capturing CUDA graphs (FULL):  37%|███▋      | 13/35 [00:01<00:02,  7.99it/s]Capturing CUDA graphs (FULL):  40%|████      | 14/35 [00:01<00:02,  7.99it/s]Capturing CUDA graphs (FULL):  43%|████▎     | 15/35 [00:01<00:02,  8.03it/s]Capturing CUDA graphs (FULL):  46%|████▌     | 16/35 [00:02<00:02,  8.08it/s]Capturing CUDA graphs (FULL):  49%|████▊     | 17/35 [00:02<00:02,  8.07it/s]Capturing CUDA graphs (FULL):  51%|█████▏    | 18/35 [00:02<00:02,  8.05it/s]Capturing CUDA graphs (FULL):  54%|█████▍    | 19/35 [00:02<00:01,  8.09it/s]Capturing CUDA graphs (FULL):  57%|█████▋    | 20/35 [00:02<00:01,  8.07it/s]Capturing CUDA graphs (FULL):  60%|██████    | 21/35 [00:02<00:01,  8.08it/s]Capturing CUDA graphs (FULL):  63%|██████▎   | 22/35 [00:02<00:01,  8.08it/s]Capturing CUDA graphs (FULL):  66%|██████▌   | 23/35 [00:02<00:01,  8.10it/s]Capturing CUDA graphs (FULL):  69%|██████▊   | 24/35 [00:02<00:01,  8.06it/s]Capturing CUDA graphs (FULL):  71%|███████▏  | 25/35 [00:03<00:01,  8.05it/s]Capturing CUDA graphs (FULL):  74%|███████▍  | 26/35 [00:03<00:01,  8.08it/s]Capturing CUDA graphs (FULL):  77%|███████▋  | 27/35 [00:03<00:00,  8.06it/s]Capturing CUDA graphs (FULL):  80%|████████  | 28/35 [00:03<00:00,  8.07it/s]Capturing CUDA graphs (FULL):  83%|████████▎ | 29/35 [00:03<00:00,  8.12it/s]Capturing CUDA graphs (FULL):  86%|████████▌ | 30/35 [00:03<00:00,  8.14it/s]Capturing CUDA graphs (FULL):  89%|████████▊ | 31/35 [00:03<00:00,  8.04it/s]Capturing CUDA graphs (FULL):  91%|█████████▏| 32/35 [00:03<00:00,  8.16it/s]Capturing CUDA graphs (FULL):  94%|█████████▍| 33/35 [00:04<00:00,  8.13it/s]Capturing CUDA graphs (FULL):  97%|█████████▋| 34/35 [00:04<00:00,  8.17it/s]Capturing CUDA graphs (FULL): 100%|██████████| 35/35 [00:04<00:00,  8.24it/s]Capturing CUDA graphs (FULL): 100%|██████████| 35/35 [00:04<00:00,  8.06it/s]
+(EngineCore pid=2753557) INFO 10-31 20:12:23 [model_runner.py:1163] Graph capturing finished in 14 secs, took 0.72 GiB
+(EngineCore pid=2753557) INFO 10-31 20:12:25 [jit_monitor.py:84] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
+(EngineCore pid=2753557) INFO 10-31 20:12:26 [core.py:405] init engine (profile, create kv cache, warmup model) took 468.78 s (compilation: 64.63 s)
+(EngineCore pid=2753557) INFO 10-31 20:12:27 [factory.py:62] Creating v1 connector with name: OffloadingConnector and engine_id: aa049d7e-0071-41aa-aeeb-e65f756c67e9
+(EngineCore pid=2753557) WARNING 10-31 20:12:27 [base.py:220] Initializing KVConnectorBase_V1. This API is experimental and subject to change in the future as we iterate the design.
+(EngineCore pid=2753557) INFO 10-31 20:12:27 [factory.py:57] Creating offloading spec with name: CPUOffloadingSpec
+(EngineCore pid=2753557) INFO 10-31 20:12:27 [kernel.py:480] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(EngineCore pid=2753557) INFO 10-31 20:12:27 [compilation.py:317] Enabled custom fusions: norm_quant, act_quant
+(APIServer pid=2753085) INFO 10-31 20:12:27 [entry.py:135] Supported tasks: ['generate']
+(APIServer pid=2753085) INFO 10-31 20:12:28 [factories.py:105] Scale-out endpoints are disabled. Restart vllm serve with --enable-scale-out to enable them.
+(APIServer pid=2753085) INFO 10-31 20:12:28 [hf.py:736] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=2753085) WARNING 10-31 20:12:28 [model.py:1907] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 0.7, 'top_k': 20, 'top_p': 0.8}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(APIServer pid=2753085) INFO 10-31 20:12:28 [entry.py:139] Starting vLLM server on unix:$XDG_RUNTIME_DIR/fp8inv/r13w-rc3-warmup.sock
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:188] Available routes are:
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /openapi.json, Methods: HEAD, GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /docs, Methods: HEAD, GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /docs/oauth2-redirect, Methods: HEAD, GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /redoc, Methods: HEAD, GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /load, Methods: GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /version, Methods: GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /kv_event_sources, Methods: GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /health, Methods: GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /metrics, Methods: GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /tokenize, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /detokenize, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/models, Methods: GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/systemone, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/decisions, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /ping, Methods: GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /ping, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /invocations, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/responses, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/completions, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/messages, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /generative_scoring, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/chat/completions/render, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/messages/render, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/completions/render, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/responses/render, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/chat/completions/derender, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /v1/completions/derender, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /inference/v1/generate, Methods: POST
+(APIServer pid=2753085) INFO 10-31 20:12:28 [launcher.py:197] Route: /inference/v1/abort_requests, Methods: POST
+INFO:     Started server process [2753085]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+(APIServer pid=2753085) INFO 10-31 20:12:39 [loggers.py:335] Engine 000: Avg prompt throughput: 1831.8 tokens/s, Avg generation throughput: 12.0 tokens/s, Running: 4 reqs, Waiting: 3 reqs, GPU KV cache usage: 52.1%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 0.0%
+(APIServer pid=2753085) INFO 10-31 20:12:39 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_lookup_sync_delay_seconds_count=4, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.00019245781004428864, vllm:kv_offload_cpu_cache_usage_perc=0.005273566249176005, vllm:kv_offload_cpu_allocation_size_count=136, vllm:kv_offload_cpu_allocation_size_sum=2366, vllm:kv_offload_cpu_cache_write_usage_perc=0.005273566249176005, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_store_bytes=2677800960, vllm:kv_offload_store_time=0.377661600381136, vllm:kv_offload_store_size_count=129, vllm:kv_offload_store_size_sum=2677800960
+(APIServer pid=2753085) INFO 10-31 20:12:49 [loggers.py:335] Engine 000: Avg prompt throughput: 5026.0 tokens/s, Avg generation throughput: 91.7 tokens/s, Running: 5 reqs, Waiting: 6 reqs, GPU KV cache usage: 55.2%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 0.0%
+(APIServer pid=2753085) INFO 10-31 20:12:49 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_store_bytes=3441033216, vllm:kv_offload_store_time=0.4830479670166968, vllm:kv_offload_store_size_count=242, vllm:kv_offload_store_size_sum=3441033216, vllm:kv_offload_cpu_cache_usage_perc=0.005273566249176005, vllm:kv_offload_cpu_allocation_size_count=241, vllm:kv_offload_cpu_allocation_size_sum=2917, vllm:kv_offload_cpu_cache_write_usage_perc=0.005273566249176005, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_lookup_sync_delay_seconds_count=105, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.0041406964883208275
+(APIServer pid=2753085) INFO 10-31 20:12:59 [loggers.py:335] Engine 000: Avg prompt throughput: 5055.1 tokens/s, Avg generation throughput: 77.9 tokens/s, Running: 7 reqs, Waiting: 5 reqs, GPU KV cache usage: 86.7%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 0.0%
+(APIServer pid=2753085) INFO 10-31 20:12:59 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_store_bytes=3922329600, vllm:kv_offload_store_time=0.550676543071866, vllm:kv_offload_store_size_count=256, vllm:kv_offload_store_size_sum=3922329600, vllm:kv_offload_cpu_cache_usage_perc=0.005273566249176005, vllm:kv_offload_cpu_allocation_size_count=257, vllm:kv_offload_cpu_allocation_size_sum=3325, vllm:kv_offload_cpu_cache_write_usage_perc=0.005273566249176005, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_lookup_sync_delay_seconds_count=66, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.0022966861724853516
+(APIServer pid=2753085) INFO 10-31 20:13:09 [loggers.py:335] Engine 000: Avg prompt throughput: 4731.6 tokens/s, Avg generation throughput: 81.4 tokens/s, Running: 8 reqs, Waiting: 10 reqs, GPU KV cache usage: 97.6%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 0.0%
+(APIServer pid=2753085) INFO 10-31 20:13:09 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_store_bytes=3856269312, vllm:kv_offload_store_time=0.5417042569071052, vllm:kv_offload_store_size_count=257, vllm:kv_offload_store_size_sum=3856269312, vllm:kv_offload_cpu_cache_usage_perc=0.0052186332674137555, vllm:kv_offload_cpu_allocation_size_count=257, vllm:kv_offload_cpu_allocation_size_sum=3268, vllm:kv_offload_cpu_cache_write_usage_perc=0.0052186332674137555, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_lookup_sync_delay_seconds_count=64, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.0023379717022180557
+(APIServer pid=2753085) INFO 10-31 20:13:19 [loggers.py:335] Engine 000: Avg prompt throughput: 4413.9 tokens/s, Avg generation throughput: 126.9 tokens/s, Running: 6 reqs, Waiting: 7 reqs, GPU KV cache usage: 76.7%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 5.4%
+(APIServer pid=2753085) INFO 10-31 20:13:19 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_store_bytes=2787508224, vllm:kv_offload_store_time=0.3930906239598989, vllm:kv_offload_store_size_count=227, vllm:kv_offload_store_size_sum=2787508224, vllm:kv_offload_cpu_cache_usage_perc=0.005273566249176005, vllm:kv_offload_cpu_allocation_size_count=227, vllm:kv_offload_cpu_allocation_size_sum=2364, vllm:kv_offload_cpu_cache_write_usage_perc=0.005273566249176005, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_lookup_sync_delay_seconds_count=170, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.03747113421559334, vllm:kv_offload_load_bytes=1683357696, vllm:kv_offload_load_time=0.2723861427307129, vllm:kv_offload_load_size_count=4, vllm:kv_offload_load_size_sum=1683357696
+(APIServer pid=2753085) INFO 10-31 20:13:29 [loggers.py:335] Engine 000: Avg prompt throughput: 4998.6 tokens/s, Avg generation throughput: 76.4 tokens/s, Running: 7 reqs, Waiting: 8 reqs, Deferred: 1 reqs, KV fetch: 2 waiting to start, 0 in progress, 0 completed waiting, GPU KV cache usage: 91.5%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 9.6%
+(APIServer pid=2753085) INFO 10-31 20:13:29 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_store_bytes=3192127488, vllm:kv_offload_store_time=0.44847417534887785, vllm:kv_offload_store_size_count=219, vllm:kv_offload_store_size_sum=3192127488, vllm:kv_offload_cpu_cache_usage_perc=5.493298176225006e-05, vllm:kv_offload_cpu_allocation_size_count=213, vllm:kv_offload_cpu_allocation_size_sum=2611, vllm:kv_offload_cpu_cache_write_usage_perc=5.493298176225006e-05, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_lookup_sync_delay_seconds_count=85, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.015681098215281963, vllm:kv_offload_load_bytes=1177288704, vllm:kv_offload_load_time=0.1737578592300415, vllm:kv_offload_load_size_count=6, vllm:kv_offload_load_size_sum=1177288704
+(APIServer pid=2753085) INFO 10-31 20:13:39 [loggers.py:335] Engine 000: Avg prompt throughput: 738.2 tokens/s, Avg generation throughput: 202.3 tokens/s, Running: 6 reqs, Waiting: 10 reqs, KV fetch: 1 waiting to start, 0 in progress, 0 completed waiting, GPU KV cache usage: 88.4%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 26.8%
+(APIServer pid=2753085) INFO 10-31 20:13:39 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_lookup_sync_delay_seconds_count=332, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.3337293127551675, vllm:kv_offload_cpu_cache_usage_perc=0.0013733245440562514, vllm:kv_offload_cpu_cache_write_usage_perc=0.0013733245440562514, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_store_bytes=599261184, vllm:kv_offload_store_time=0.08511318410933019, vllm:kv_offload_store_size_count=153, vllm:kv_offload_store_size_sum=599261184, vllm:kv_offload_cpu_allocation_size_count=154, vllm:kv_offload_cpu_allocation_size_sum=532, vllm:kv_offload_load_bytes=5513674752, vllm:kv_offload_load_time=0.8338381767272951, vllm:kv_offload_load_size_count=11, vllm:kv_offload_load_size_sum=5513674752
+(APIServer pid=2753085) INFO 10-31 20:13:49 [loggers.py:335] Engine 000: Avg prompt throughput: 689.6 tokens/s, Avg generation throughput: 182.1 tokens/s, Running: 6 reqs, Waiting: 12 reqs, KV fetch: 1 waiting to start, 0 in progress, 0 completed waiting, GPU KV cache usage: 85.0%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 36.0%
+(APIServer pid=2753085) INFO 10-31 20:13:49 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_lookup_sync_delay_seconds_count=291, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.24218296818435192, vllm:kv_offload_store_bytes=670040064, vllm:kv_offload_store_time=0.09527711939811712, vllm:kv_offload_store_size_count=148, vllm:kv_offload_store_size_sum=670040064, vllm:kv_offload_cpu_cache_usage_perc=0.00010986596352450011, vllm:kv_offload_cpu_allocation_size_count=148, vllm:kv_offload_cpu_allocation_size_sum=545, vllm:kv_offload_cpu_cache_write_usage_perc=0.00010986596352450011, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_load_bytes=4220780544, vllm:kv_offload_load_time=0.6421271991729736, vllm:kv_offload_load_size_count=8, vllm:kv_offload_load_size_sum=4220780544
+(APIServer pid=2753085) INFO 10-31 20:13:59 [loggers.py:335] Engine 000: Avg prompt throughput: 751.7 tokens/s, Avg generation throughput: 178.5 tokens/s, Running: 5 reqs, Waiting: 7 reqs, Deferred: 1 reqs, KV fetch: 1 waiting to start, 1 in progress, 0 completed waiting, GPU KV cache usage: 88.7%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 48.0%
+(APIServer pid=2753085) INFO 10-31 20:13:59 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_lookup_sync_delay_seconds_count=308, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.219617729075253, vllm:kv_offload_store_bytes=680656896, vllm:kv_offload_store_time=0.09642095929384227, vllm:kv_offload_store_size_count=149, vllm:kv_offload_store_size_sum=680656896, vllm:kv_offload_cpu_cache_usage_perc=0.027081960008789277, vllm:kv_offload_cpu_allocation_size_count=147, vllm:kv_offload_cpu_allocation_size_sum=575, vllm:kv_offload_cpu_cache_write_usage_perc=0.0, vllm:kv_offload_cpu_cache_read_usage_perc=0.027081960008789277, vllm:kv_offload_load_bytes=7677149184, vllm:kv_offload_load_time=1.1492662677764893, vllm:kv_offload_load_size_count=12, vllm:kv_offload_load_size_sum=7677149184
+(APIServer pid=2753085) INFO 10-31 20:14:09 [loggers.py:335] Engine 000: Avg prompt throughput: 897.3 tokens/s, Avg generation throughput: 175.0 tokens/s, Running: 5 reqs, Waiting: 8 reqs, KV fetch: 1 waiting to start, 0 in progress, 0 completed waiting, GPU KV cache usage: 84.6%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 52.3%
+(APIServer pid=2753085) INFO 10-31 20:14:09 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_lookup_sync_delay_seconds_count=311, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.31456046737730503, vllm:kv_offload_cpu_cache_usage_perc=0.0, vllm:kv_offload_cpu_cache_write_usage_perc=0.0, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_cpu_allocation_size_count=147, vllm:kv_offload_cpu_allocation_size_sum=666, vllm:kv_offload_load_bytes=4672585728, vllm:kv_offload_load_time=0.7164546394348145, vllm:kv_offload_load_size_count=9, vllm:kv_offload_load_size_sum=4672585728, vllm:kv_offload_store_bytes=785645568, vllm:kv_offload_store_time=0.11088505610823629, vllm:kv_offload_store_size_count=147, vllm:kv_offload_store_size_sum=785645568
+(APIServer pid=2753085) INFO 10-31 20:14:19 [loggers.py:335] Engine 000: Avg prompt throughput: 1753.0 tokens/s, Avg generation throughput: 131.4 tokens/s, Running: 7 reqs, Waiting: 9 reqs, KV fetch: 1 waiting to start, 0 in progress, 0 completed waiting, GPU KV cache usage: 89.5%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 56.3%
+(APIServer pid=2753085) INFO 10-31 20:14:19 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_lookup_sync_delay_seconds_count=260, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.24867304880172014, vllm:kv_offload_cpu_cache_usage_perc=0.0, vllm:kv_offload_cpu_cache_write_usage_perc=0.0, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_cpu_allocation_size_count=156, vllm:kv_offload_cpu_allocation_size_sum=1172, vllm:kv_offload_store_bytes=1382547456, vllm:kv_offload_store_time=0.19803334388136862, vllm:kv_offload_store_size_count=156, vllm:kv_offload_store_size_sum=1382547456, vllm:kv_offload_load_bytes=5768478720, vllm:kv_offload_load_time=0.9267528800964355, vllm:kv_offload_load_size_count=10, vllm:kv_offload_load_size_sum=5768478720
+(APIServer pid=2753085) INFO 10-31 20:14:29 [loggers.py:335] Engine 000: Avg prompt throughput: 1806.8 tokens/s, Avg generation throughput: 132.6 tokens/s, Running: 5 reqs, Waiting: 7 reqs, KV fetch: 1 waiting to start, 0 in progress, 0 completed waiting, GPU KV cache usage: 91.9%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 58.7%
+(APIServer pid=2753085) INFO 10-31 20:14:29 [metrics.py:108] KV Transfer metrics: vllm:kv_offload_lookup_sync_delay_seconds_count=260, vllm:kv_offload_lookup_sync_delay_seconds_sum=0.1571871154010296, vllm:kv_offload_cpu_cache_usage_perc=5.493298176225006e-05, vllm:kv_offload_cpu_cache_write_usage_perc=5.493298176225006e-05, vllm:kv_offload_cpu_cache_read_usage_perc=0.0, vllm:kv_offload_cpu_allocation_size_count=157, vllm:kv_offload_cpu_allocation_size_sum=1207, vllm:kv_offload_store_bytes=1422655488, vllm:kv_offload_store_time=0.20226352035999298, vllm:kv_offload_store_size_count=156, vllm:kv_offload_store_size_sum=1422655488, vllm:kv_offload_load_bytes=5012324352, vllm:kv_offload_load_time=0.7672872924804688, vllm:kv_offload_load_size_count=7, vllm:kv_offload_load_size_sum=5012324352
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [dump_input.py:72] Dumping input data for V1 LLM engine (v0.33.0rc3.dev3+g4ba787ec9) with config: model='~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98', speculative_config=None, tokenizer='~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98', skip_tokenizer_init=False, tokenizer_mode=auto, revision=8591804019c8b22094c3b5b4454e0edc05dffc98, tokenizer_revision=8591804019c8b22094c3b5b4454e0edc05dffc98, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=32768, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=fp8, quantization_config=None, enforce_eager=False, aux_output_config=AuxOutputConfig(enable_return_routed_experts=False, max_bytes=None), kv_cache_dtype=fp8, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, per_request_spec_decode_metrics='none', kv_cache_metrics=True, kv_cache_metrics_sample=0.05, custom_histogram_buckets=None, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=~/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Instruct-2507-FP8/snapshots/8591804019c8b22094c3b5b4454e0edc05dffc98, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '~/.cache/vllm/torch_compile_cache/c82865b95c', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['+quant_fp8', 'none', '+quant_fp8', '+quant_fp8', '+quant_fp8'], 'ir_enable_torch_wrap': True, 'splitting_ops': ['vllm::unified_attention_with_output', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::qwen4_exp_ple_short_conv', 'vllm::qwen4_exp_qsa_with_output', 'vllm::qwen4_exp_qsa_prepare_with_output', 'vllm::linear_attention', 'vllm::qwen_gdn_attention_core', 'vllm::qwen_gdn_attention_core_fused_norm_packed', 'vllm::gdn_attention_core_xpu', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::deepseek_v4_attention', 'vllm::hpc_rope_norm_forward', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'cudagraph_decoder_replay': True, 'decoder_replay_cudagraph_capture_sizes': [], 'decoder_replay_trim_threshold': 768, 'compile_sizes': [], 'compile_ranges_endpoints': [512], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 512, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': '~/.cache/vllm/torch_compile_cache/c82865b95c/rank_0_0/backbone', 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native']), enable_flashinfer_autotune=True, enable_rocm_segmented_attn_autotune=False, enable_cutedsl_warmup=True, enable_jit_warmup=True, monokernel=False, moe_backend='auto', sparse_indexer_topk_backend='auto', linear_backend='auto', linear_backend_per_quant=None), 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [dump_input.py:79] Dumping scheduler output for model execution: SchedulerOutput(scheduled_new_reqs=[NewRequestData(req_id=cmpl-8b9af28bc46029ac-0-854624c7,prompt_token_ids_len=2741,prefill_token_ids_len=2741,mm_features=[],sampling_params=SamplingParams(n=1, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0, temperature=0.0, watermarking=False, top_p=1.0, top_k=0, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], thinking_token_budget=None, include_stop_str_in_output=False, ignore_eos=True, max_tokens=48, min_tokens=0, logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, structured_outputs=None, extra_args=None),block_ids=([3117, 2941, 3573, 3606, 3607, 3608, 3609, 3610, 3611, 3612, 3613, 4289, 4290, 4323, 4324, 4325, 4326, 4327, 4328, 4345, 4412, 4413, 4414, 4415, 4416, 4417, 4418, 4419, 4420, 4453, 4454, 4455, 4474, 4475, 4476, 4477, 4541, 4542, 4543, 4544, 4545, 4546, 4547, 4548, 4549, 1435, 1402, 1401, 1400, 1399, 1398, 1397, 1283, 1282, 1281, 1280, 1279, 1278, 1277, 1276, 1275, 1225, 1223, 1222, 1221, 1220, 1219, 1153, 1152, 1151, 1150, 1149, 1148, 1147, 1129, 1128, 1083, 1082, 1065, 1064, 1031, 1030, 1029, 900, 899, 898, 897, 896, 895, 894, 893, 892, 891, 807, 772, 771, 770, 399, 398, 397, 396, 395, 394, 393, 392, 391, 374, 306, 273, 272, 271, 270, 269, 138, 137, 136, 135, 134, 133, 116, 115, 114, 15, 14, 13, 12, 11, 10, 9, 2436, 2435, 2418, 2417, 2416, 2415, 2414, 2349, 2348, 2218, 2169, 4234, 2940, 2214, 2212, 1845, 1824, 2236, 3546, 3541, 3520, 3449, 4179, 407, 4106, 4072, 2325, 840, 800, 2666, 2665, 2664, 2663, 2662, 619, 620, 621, 622, 623, 624, 625, 626, 627],),num_computed_tokens=2608,lora_request=None,prompt_embeds_shape=None), NewRequestData(req_id=cmpl-9696012749c558e2-0-b1fbdd17,prompt_token_ids_len=16619,prefill_token_ids_len=16619,mm_features=[],sampling_params=SamplingParams(n=1, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0, temperature=0.0, watermarking=False, top_p=1.0, top_k=0, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], thinking_token_budget=None, include_stop_str_in_output=False, ignore_eos=True, max_tokens=258, min_tokens=0, logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, structured_outputs=None, extra_args=None),block_ids=([3154, 3155, 3156, 3173, 3174, 3175, 3176, 3177, 3178, 3179, 3180, 3181, 3182, 3215, 3216, 3217, 3218, 3219, 3220, 3236, 3237, 3238, 3239, 3240, 3241, 3242, 3243, 3244, 3245, 3278, 3279, 3280, 3281, 3282, 3283, 3301, 3302, 3303, 3304, 3305, 3306, 3307, 3308, 3309, 3310, 3342, 3343, 3344, 3345, 3346, 3347, 3348, 3364, 3365, 3366, 3367, 3368, 3369, 3370, 3371, 3372, 3405, 3406, 3407, 3408, 3409, 3410, 3411, 3428, 3429, 3430, 3431, 3432, 3433, 3434, 3435, 3436, 3469, 3470, 3471, 3472, 3473, 3474, 3475, 3493, 3494, 3495, 3496, 3497, 3498, 3499, 3500, 3501, 3535, 3536, 3537, 3538, 3539, 3540, 3557, 3558, 3559, 3560, 3561, 3562, 3563, 3564, 3565, 3566, 3598, 3599, 3600, 3601, 3602, 3603, 3604, 3620, 3621, 3622, 3623, 3624, 3625, 3626, 3627, 3628, 3662, 3663, 3664, 3665, 3666, 3667, 3668, 3685, 3686, 3687, 3688, 1736, 1825, 1787, 3548, 3543, 3522, 3451, 4152, 773, 4108, 4084, 4074, 565, 803, 2407, 2085, 1430, 184, 2588, 2658, 22, 2848, 999, 1274, 102, 1830, 1837, 1761, 1963, 1970, 2025, 3010, 2340, 326, 825, 1369, 4105, 3947, 3946, 3945, 3944, 3943, 3942, 3941, 3940, 3923, 3922, 3921, 3920, 3919, 3918, 3917, 3884, 3883, 3882, 3881, 1905, 1833, 2424, 561, 3861, 3894, 3895, 3896, 3897, 1420, 1421, 1422, 1423, 1440, 1441, 1473, 1474, 1475, 1476, 1477, 1478, 1479, 1481, 1482, 1483, 1484, 1485, 1486, 1487, 1491, 1508, 1509, 1510, 1511, 1512, 1513, 1514, 1515, 3900, 1516, 1517, 1518, 1519, 1520, 1521, 1522, 1523, 1540, 1541, 1542, 1543, 1544, 1545, 1546, 1612, 1613, 1614, 1615, 1616, 1617, 1618, 1635, 1636, 1668, 1669, 1670, 1671, 1672, 1673, 1674, 1740, 1741, 1742, 1743, 1744, 1745, 1746, 1764, 1796, 1797, 1798, 1799, 1800, 1801, 1802, 1803, 1867, 1868, 1869, 1870, 1871, 1872, 1906, 1923, 1924, 1925, 1926, 1927, 1928, 1929, 1969, 2024, 1305, 1301, 1300, 1299, 1298, 1297, 1296, 1295, 1294, 1293, 1292, 1291, 1258, 1241, 1240, 1239, 1238, 1237, 1236, 1235, 1234, 1233, 1232, 1231, 1230, 1229, 1228, 1227, 1196, 1195, 1194, 1178, 1177, 1176, 1175, 1174, 1173, 1172, 1171, 1170, 1169, 1168, 1167, 1166, 1132, 1131, 1130, 1113, 1112, 1111, 1110, 1109, 1108, 1107, 1106, 1105, 1104, 1103, 1102, 1069, 1068, 1067, 1066, 1049, 1048, 1047, 1046, 1045, 1044, 1043, 1042, 1041, 1040, 1039, 1038, 1005, 1004, 1003, 1002, 986, 985, 984, 983, 982, 981, 980, 979, 978, 977, 976, 943, 942, 941, 940, 939, 922, 921, 920, 919, 918, 917, 916, 915, 914, 913, 912, 877, 876, 875, 874, 857, 856, 855, 854, 853, 852, 851, 850, 849, 848, 847, 846, 811, 810, 809, 4456, 792, 791, 790, 789, 788, 787, 786, 785, 784, 783, 782, 748, 747, 746, 728, 727, 726, 725, 724, 723, 722, 721, 720, 719, 718, 717, 716, 696, 695, 694, 677, 676, 675, 674, 673, 672, 671, 670, 669, 668, 667, 666, 665, 1717, 1716, 1715, 1698, 1697, 1696, 1695, 1694, 1693, 1692, 1691, 1690, 1689, 1688, 1687, 1686, 1685, 1684, 1683, 1666, 1665, 1664, 1663, 1662, 1660, 1659, 1658, 1657, 1656, 1655, 1654, 1653, 1652, 1651, 1634, 1633, 1632, 1631, 1630, 1629, 1628, 1627, 1626, 1625, 1624, 1623, 1622, 1621, 1620, 1619, 1602, 1601, 1600, 1599, 1598, 1597, 1596, 1595, 1594, 1593, 1592, 1591, 1590, 1589, 1588, 1587, 1570, 1569, 1568, 1567, 1566, 1565, 1563, 1562, 1561, 1560, 1559, 1558, 1557, 1556, 1555, 1782, 2011, 2749, 3574, 3575, 3576, 3577, 3578, 3579, 3580, 3581, 3582, 2867, 1891, 3970, 3954, 3915, 3828, 3783, 2986, 4100, 595, 475, 375, 2058, 1199, 2510, 2511, 33, 2422, 4070, 4071, 4088, 4089, 4090, 4091, 4092, 4093, 4128, 4129, 4130, 4131, 4132, 4133, 4134, 4200, 4217, 4218, 4219, 4220, 4221, 4222, 4223, 4224, 4259, 4260, 4261, 4388, 4389, 4390, 4408, 4409, 4410, 4411, 4478, 4479, 4480, 4481, 4482, 4483, 4484, 4485, 4486, 1372, 1306, 1289, 1288, 1287, 1286, 1285, 1284, 1218, 1217, 1216, 1215, 1214, 1213, 1212, 1211, 1020, 938, 937, 936, 935, 902, 901, 769, 768, 767, 766, 745, 260, 2194, 3926, 2879, 177, 144, 143, 142, 141, 140, 139, 8, 7, 6, 2692, 2674, 2673, 2672, 2671, 2605, 1960, 1959, 1958, 1681, 1680, 1679, 1678, 1677, 1676, 1675, 1611, 1610, 60, 59, 58, 57, 55, 2693, 2642, 2641, 2640, 2639, 2638, 2637, 2636, 2635, 2573, 2571, 2570, 2533, 2532, 2515, 2628, 2629, 2631, 2632, 2633, 2634, 3991, 3997, 4003, 1549, 1550, 1551, 2087, 1956, 186, 2553, 2592, 1256, 2, 996, 2675, 2677, 2678, 3140, 3652, 2813, 2814, 2847, 2849, 2850, 2851, 2868, 2869, 2872, 2873, 2874, 2875, 2876, 2877, 2878, 4308, 4309, 4310, 2136, 2135, 2134, 2133, 2132, 3583, 3584, 3585, 3586, 3587, 3588, 3605, 3638, 3639, 3640, 3641, 3642, 3643, 3644, 3645, 238, 3669, 3670, 3703, 3704, 3705, 3706, 3707, 3708, 3709, 3710, 3711, 3714, 3715, 3716, 3733, 1377, 3766, 3767, 3768, 3770, 3771, 3772, 3773, 3774, 3775, 3776, 3777, 3778, 3779, 3796, 3830, 3831, 3832, 3833, 3834, 3835, 3836, 3837, 3838, 3839, 3840, 3841, 3842, 3843, 3844, 3595, 3632, 3634, 3718, 3719, 3720, 3721, 3722, 3724, 3725, 3758, 3759, 3760, 3889, 3890, 3891, 3908, 3909, 3971, 2667, 2668, 2669, 2670, 16, 17, 18, 19, 20, 21, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 81, 82, 83, 84, 101, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 145, 146, 147, 148, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 208, 209, 210, 211, 228, 229, 231, 232, 233, 234, 235, 236, 237, 239, 274, 275, 276, 296, 297, 298, 299, 300, 301, 302, 359, 3490, 2112, 2111, 2110, 2109, 2108, 2107, 2106, 2105, 2104, 2103, 2102, 2101, 2100, 2099, 2048, 2047, 2046, 2045, 2044, 2043, 2042, 2041, 2040, 2039, 2038, 2037, 2036, 2019, 2018, 2017, 1983, 1982, 1981, 1980, 1979, 1978, 1977, 1976, 1975, 1974, 1973, 1972, 1954, 1953, 1952, 1951, 1916, 1915, 1914, 1913, 1912, 1911, 1910, 1909, 1908, 1907, 1890, 1889, 1888, 1887, 1886, 1853, 1852, 1851, 1850, 1849, 1848, 1847, 1846, 2939, 628, 629, 630, 647, 648, 732, 733, 734, 735, 736, 737, 738, 739, 740, 741, 742],),num_computed_tokens=15552,lora_request=None,prompt_embeds_shape=None)], scheduled_cached_reqs=CachedRequestData(req_ids=['cmpl-8ff60c42ab2ebce5-0-b4f619cc', 'cmpl-9dee85e36efb3729-0-a2264af1', 'cmpl-8778e426ba70e5f7-0-8658cf5d'],resumed_req_ids=set(),new_token_ids_lens=[],all_token_ids_lens={},new_block_ids=[None, None, None],num_computed_tokens=[15460, 10387, 12154],num_output_tokens=[215, 146, 21]), num_scheduled_tokens={cmpl-8b9af28bc46029ac-0-854624c7: 133, cmpl-9dee85e36efb3729-0-a2264af1: 1, cmpl-8778e426ba70e5f7-0-8658cf5d: 1, cmpl-9696012749c558e2-0-b1fbdd17: 256, cmpl-8ff60c42ab2ebce5-0-b4f619cc: 1}, total_num_scheduled_tokens=392, scheduled_spec_decode_tokens={}, scheduled_encoder_inputs={}, finished_req_ids=[], free_encoder_mm_hashes=[], encoder_input_updates={}, scheduled_encoder_input_stats=null, preempted_req_ids=[], has_structured_output_requests=false, pending_structured_output_tokens=false, num_invalid_spec_tokens=null, kv_connector_metadata=OffloadingConnectorMetadata(load_jobs={}, store_jobs={2389: TransferJob(req_id='cmpl-8b9af28bc46029ac-0-854624c7', src_spec=GPULoadStoreSpec(block_ids=array([619, 620, 621, 622, 623, 624, 625, 626], dtype=int32), group_sizes=[8], block_indices=[163]), dst_spec=CPULoadStoreSpec(block_ids=array([15336, 15337, 15338, 15355, 15356, 15357, 15358, 15359],
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [dump_input.py:79]       dtype=int32)), sync=false), 2390: TransferJob(req_id='cmpl-9696012749c558e2-0-b1fbdd17', src_spec=GPULoadStoreSpec(block_ids=array([628, 629, 630, 647, 648, 732, 733, 734, 735, 736, 737, 738, 739,
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [dump_input.py:79]        740, 741, 742], dtype=int32), group_sizes=[16], block_indices=[972]), dst_spec=CPULoadStoreSpec(block_ids=array([15304, 15305, 15306, 15323, 15324, 15325, 15326, 15327, 15328,
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [dump_input.py:79]        15329, 15330, 15331, 15332, 15333, 15334, 15335], dtype=int32)), sync=false)}, jobs_to_flush=[]), has_sync_kv_loads=false, aux_output_connector_metadata=null, ec_connector_metadata=null, ec_manager_metadata=null, new_block_ids_to_zero=null, kv_cache_block_copies=null, kv_connector_block_state=null, num_spec_tokens_to_schedule=0, num_common_prefix_blocks=[], skip_drafts=false)
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [dump_input.py:81] Dumping scheduler stats: SchedulerStats(num_running_reqs=5, num_waiting_reqs=5, num_skipped_waiting_reqs=1, num_kv_fetch_reqs_by_stage={'waiting_to_start': 1, 'in_progress': 1, 'completed_waiting': 0}, step_counter=0, current_wave=0, kv_cache_usage=0.9474725274725275, iteration_details=None, prefix_cache_stats=PrefixCacheStats(reset=False, requests=0, queries=0, hits=0, preempted_requests=0, preempted_queries=0, preempted_hits=0, hits_by_source={}), connector_prefix_cache_stats=PrefixCacheStats(reset=False, requests=0, queries=0, hits=0, preempted_requests=0, preempted_queries=0, preempted_hits=0, hits_by_source={}), kv_cache_eviction_events=[], spec_decoding_stats=None, kv_connector_stats=None, ec_connector_stats=None, waiting_lora_adapters={}, running_lora_adapters={}, cudagraph_stats=None, perf_stats=None)
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586] EngineCore encountered a fatal error.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586] Traceback (most recent call last):
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1570, in run_engine_core
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     engine_core.run_busy_loop()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/fault_tolerance/engine_core_sentinel.py", line 213, in run_with_fault_tolerance
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     busy_loop_func(self)
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1629, in run_busy_loop
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     self._process_engine_step()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1683, in _process_engine_step
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     outputs, model_executed = self.step_fn()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]                               ^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 783, in step_with_batch_queue
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     model_output = future.result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]                    ^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 48, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     return super().result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]            ^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     return self.__get_result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     raise self._exception
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 44, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     output = self.async_output.get_output()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/worker/gpu/async_utils.py", line 175, in get_output
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     self.copy_event.synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/torch/cuda/streams.py", line 254, in synchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586]     super().synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuEventSynchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [core.py:1586] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Failed to synchronize transfer end event; skipping 1 remaining transfers
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Traceback (most recent call last):
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1588, in run_engine_core
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     raise e
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1570, in run_engine_core
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     engine_core.run_busy_loop()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/fault_tolerance/engine_core_sentinel.py", line 213, in run_with_fault_tolerance
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     busy_loop_func(self)
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1629, in run_busy_loop
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     self._process_engine_step()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1683, in _process_engine_step
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     outputs, model_executed = self.step_fn()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]                               ^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 783, in step_with_batch_queue
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     model_output = future.result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]                    ^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 48, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     return super().result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]            ^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     return self.__get_result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     raise self._exception
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 44, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     output = self.async_output.get_output()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/worker/gpu/async_utils.py", line 175, in get_output
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     self.copy_event.synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/torch/cuda/streams.py", line 254, in synchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     super().synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuEventSynchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] During handling of the above exception, another exception occurred:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Traceback (most recent call last):
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/gpu_worker.py", line 771, in shutdown
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     transfer.end_event.synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Sticky error detected
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuEventSynchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+[rank0]:[W1031 20:14:35.104765462 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104813317 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104835482 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104849802 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104862567 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104874880 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104887182 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104899111 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104911333 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104923672 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104937691 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.104950154 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [async_llm.py:943] AsyncLLM output_handler failed.
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [async_llm.py:943] Traceback (most recent call last):
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [async_llm.py:943]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 880, in output_handler
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [async_llm.py:943]     outputs = await engine_core.get_output_async()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [async_llm.py:943]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [async_llm.py:943]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 1278, in get_output_async
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [async_llm.py:943]     raise self._format_exception(outputs) from None
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [async_llm.py:943] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] Failed to shut down store offloading handler
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] Traceback (most recent call last):
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1588, in run_engine_core
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     raise e
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1570, in run_engine_core
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     engine_core.run_busy_loop()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/fault_tolerance/engine_core_sentinel.py", line 213, in run_with_fault_tolerance
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     busy_loop_func(self)
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1629, in run_busy_loop
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     self._process_engine_step()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1683, in _process_engine_step
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     outputs, model_executed = self.step_fn()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]                               ^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 783, in step_with_batch_queue
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     model_output = future.result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]                    ^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 48, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     return super().result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]            ^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     return self.__get_result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     raise self._exception
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 44, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     output = self.async_output.get_output()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/worker/gpu/async_utils.py", line 175, in get_output
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     self.copy_event.synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/torch/cuda/streams.py", line 254, in synchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     super().synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuEventSynchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] During handling of the above exception, another exception occurred:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] Traceback (most recent call last):
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/gpu_worker.py", line 909, in shutdown
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     self._store_handler.shutdown()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/gpu_worker.py", line 790, in shutdown
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     raise sync_error
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/gpu_worker.py", line 771, in shutdown
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911]     transfer.end_event.synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] Sticky error detected
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuEventSynchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:911] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Failed to synchronize transfer end event; skipping 0 remaining transfers
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Traceback (most recent call last):
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1588, in run_engine_core
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     raise e
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1570, in run_engine_core
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     engine_core.run_busy_loop()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/fault_tolerance/engine_core_sentinel.py", line 213, in run_with_fault_tolerance
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     busy_loop_func(self)
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1629, in run_busy_loop
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     self._process_engine_step()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1683, in _process_engine_step
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     outputs, model_executed = self.step_fn()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]                               ^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 783, in step_with_batch_queue
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     model_output = future.result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]                    ^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 48, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     return super().result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]            ^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     return self.__get_result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     raise self._exception
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 44, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     output = self.async_output.get_output()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/worker/gpu/async_utils.py", line 175, in get_output
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     self.copy_event.synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/torch/cuda/streams.py", line 254, in synchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     super().synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuEventSynchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] During handling of the above exception, another exception occurred:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Traceback (most recent call last):
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/gpu_worker.py", line 771, in shutdown
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773]     transfer.end_event.synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Sticky error detected
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuEventSynchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:773] 
+[rank0]:[W1031 20:14:35.108402350 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.108433880 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.108447325 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+[rank0]:[W1031 20:14:35.108459594 CUDAGuardImpl.h:144] Warning: CUDA warning: operation not supported on global/shared address space (function destroyEvent)
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] Failed to shut down load offloading handler
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] Traceback (most recent call last):
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1588, in run_engine_core
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     raise e
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1570, in run_engine_core
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     engine_core.run_busy_loop()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/fault_tolerance/engine_core_sentinel.py", line 213, in run_with_fault_tolerance
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     busy_loop_func(self)
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1629, in run_busy_loop
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     self._process_engine_step()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1683, in _process_engine_step
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     outputs, model_executed = self.step_fn()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]                               ^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 783, in step_with_batch_queue
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     model_output = future.result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]                    ^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 48, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     return super().result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]            ^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     return self.__get_result()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     raise self._exception
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 44, in result
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     output = self.async_output.get_output()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/worker/gpu/async_utils.py", line 175, in get_output
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     self.copy_event.synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/torch/cuda/streams.py", line 254, in synchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     super().synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuEventSynchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] During handling of the above exception, another exception occurred:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] Traceback (most recent call last):
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/gpu_worker.py", line 916, in shutdown
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     handler.shutdown()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/gpu_worker.py", line 790, in shutdown
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     raise sync_error
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/gpu_worker.py", line 771, in shutdown
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918]     transfer.end_event.synchronize()
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] Sticky error detected
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuEventSynchronize
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] 
+(EngineCore pid=2753557) ERROR 10-31 20:14:35 [gpu_worker.py:918] 
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] Device sync before mmap cleanup failed; proceeding with cleanup anyway
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] Traceback (most recent call last):
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1588, in run_engine_core
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     raise e
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1570, in run_engine_core
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     engine_core.run_busy_loop()
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/fault_tolerance/engine_core_sentinel.py", line 213, in run_with_fault_tolerance
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     busy_loop_func(self)
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1629, in run_busy_loop
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     self._process_engine_step()
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1683, in _process_engine_step
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     outputs, model_executed = self.step_fn()
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]                               ^^^^^^^^^^^^^^
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 783, in step_with_batch_queue
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     model_output = future.result()
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]                    ^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 48, in result
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     return super().result()
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]            ^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     return self.__get_result()
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     raise self._exception
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 44, in result
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     output = self.async_output.get_output()
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/worker/gpu/async_utils.py", line 175, in get_output
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     self.copy_event.synchronize()
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/torch/cuda/streams.py", line 254, in synchronize
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     super().synchronize()
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuEventSynchronize
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] 
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] 
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] 
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] During handling of the above exception, another exception occurred:
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] 
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] Traceback (most recent call last):
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/gpu_worker.py", line 924, in shutdown
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     torch.accelerator.synchronize()
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/torch/accelerator/__init__.py", line 271, in synchronize
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926]     torch._C._accelerator_synchronizeDevice(device_index)
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] torch.AcceleratorError: CUDA error: operation not supported on global/shared address space
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] Search for `cudaErrorInvalidAddressSpace' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] The CUDA driver logged these messages, which may provide useful details:
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] Sticky error detected
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] Returning 717 (CUDA_ERROR_INVALID_ADDRESS_SPACE) from cuCtxSynchronize_v2
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] 
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [gpu_worker.py:926] 
+(EngineCore pid=2753557) WARNING 10-31 20:14:35 [host_register.py:98] cudaHostUnregister failed (code=717)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555] Error in completion stream generator.
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555] Traceback (most recent call last):
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 326, in completion_stream_generator
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for prompt_idx, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/serve/utils/api_utils.py", line 197, in wrapper
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await func(*args, **kwargs)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/api_router.py", line 60, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     generator = await handler.create_completion(request, raw_request)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 127, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await self._with_kv_transfer_rejection_cleanup(
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/generate/base/serving.py", line 278, in _with_kv_transfer_rejection_cleanup
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await awaitable
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 247, in _create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for i, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/serve/utils/api_utils.py", line 197, in wrapper
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await func(*args, **kwargs)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/api_router.py", line 60, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     generator = await handler.create_completion(request, raw_request)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 127, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await self._with_kv_transfer_rejection_cleanup(
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/generate/base/serving.py", line 278, in _with_kv_transfer_rejection_cleanup
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await awaitable
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 247, in _create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for i, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/serve/utils/api_utils.py", line 197, in wrapper
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await func(*args, **kwargs)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/api_router.py", line 60, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     generator = await handler.create_completion(request, raw_request)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 127, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await self._with_kv_transfer_rejection_cleanup(
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/generate/base/serving.py", line 278, in _with_kv_transfer_rejection_cleanup
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await awaitable
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 247, in _create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for i, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/serve/utils/api_utils.py", line 197, in wrapper
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await func(*args, **kwargs)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/api_router.py", line 60, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     generator = await handler.create_completion(request, raw_request)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 127, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await self._with_kv_transfer_rejection_cleanup(
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/generate/base/serving.py", line 278, in _with_kv_transfer_rejection_cleanup
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await awaitable
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 247, in _create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for i, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/serve/utils/api_utils.py", line 197, in wrapper
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await func(*args, **kwargs)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/api_router.py", line 60, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     generator = await handler.create_completion(request, raw_request)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 127, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await self._with_kv_transfer_rejection_cleanup(
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/generate/base/serving.py", line 278, in _with_kv_transfer_rejection_cleanup
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await awaitable
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 247, in _create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for i, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/serve/utils/api_utils.py", line 197, in wrapper
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await func(*args, **kwargs)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/api_router.py", line 60, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     generator = await handler.create_completion(request, raw_request)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 127, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await self._with_kv_transfer_rejection_cleanup(
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/generate/base/serving.py", line 278, in _with_kv_transfer_rejection_cleanup
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await awaitable
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 247, in _create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for i, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/serve/utils/api_utils.py", line 197, in wrapper
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await func(*args, **kwargs)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/api_router.py", line 60, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     generator = await handler.create_completion(request, raw_request)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 127, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await self._with_kv_transfer_rejection_cleanup(
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/generate/base/serving.py", line 278, in _with_kv_transfer_rejection_cleanup
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await awaitable
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 247, in _create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for i, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/serve/utils/api_utils.py", line 197, in wrapper
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await func(*args, **kwargs)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/api_router.py", line 60, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     generator = await handler.create_completion(request, raw_request)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 127, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await self._with_kv_transfer_rejection_cleanup(
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/generate/base/serving.py", line 278, in _with_kv_transfer_rejection_cleanup
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await awaitable
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 247, in _create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for i, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/serve/utils/api_utils.py", line 197, in wrapper
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await func(*args, **kwargs)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/api_router.py", line 60, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     generator = await handler.create_completion(request, raw_request)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 127, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await self._with_kv_transfer_rejection_cleanup(
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/generate/base/serving.py", line 278, in _with_kv_transfer_rejection_cleanup
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await awaitable
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 247, in _create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for i, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/serve/utils/api_utils.py", line 197, in wrapper
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await func(*args, **kwargs)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/api_router.py", line 60, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     generator = await handler.create_completion(request, raw_request)
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 127, in create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await self._with_kv_transfer_rejection_cleanup(
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/generate/base/serving.py", line 278, in _with_kv_transfer_rejection_cleanup
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     return await awaitable
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]            ^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/entrypoints/openai/completion/serving.py", line 247, in _create_completion
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for i, res in result_generator:
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/utils/async_utils.py", line 104, in merge_async_iterators
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     async for item in iterator:  # type: ignore[union-attr]
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 795, in generate
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     out = q.get_nowait() or await q.get()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]                             ^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/output_processor.py", line 92, in get
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise output
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 880, in output_handler
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     outputs = await engine_core.get_output_async()
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]   File "~/fp8-investigation/venv-rc3/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 1278, in get_output_async
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555]     raise self._format_exception(outputs) from None
+(APIServer pid=2753085) ERROR 10-31 20:14:35 [serving.py:555] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2753085]
+(APIServer pid=2753085) INFO 10-31 20:14:35 [core_client.py:792] [shutdown] MPClient: start timeout=0s
+(APIServer pid=2753085) INFO 10-31 20:14:35 [core_client.py:794] [shutdown] MPClient: stopping engine manager
+(APIServer pid=2753085) INFO 10-31 20:14:35 [utils.py:628] [shutdown] Process manager: send sigterm to process EngineCore
+(APIServer pid=2753085) WARNING 10-31 20:14:35 [utils.py:648] [shutdown] Process manager: force killing remaining processes count=1
+(APIServer pid=2753085) WARNING 10-31 20:14:35 [utils.py:653] [shutdown] Process manager: force killing remaining process EngineCore pid 2753557
+(APIServer pid=2753085) INFO 10-31 20:14:35 [core_client.py:796] [shutdown] MPClient: engine manager stopped
+(APIServer pid=2753085) INFO 10-31 20:14:35 [core_client.py:797] [shutdown] MPClient: cleaning up background resources
+(APIServer pid=2753085) INFO 10-31 20:14:35 [core_client.py:799] [shutdown] MPClient: complete
+~/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

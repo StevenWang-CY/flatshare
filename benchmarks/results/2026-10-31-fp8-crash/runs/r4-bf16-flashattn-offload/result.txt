@@ -1,0 +1,14 @@
+name: r4-bf16-flashattn-offload
+config: offload.yaml
+flags: 
+venv: ~/flatshare/venvs/engine
+env: FLASHINFER_WORKSPACE_BASE=~/flatshare/cache/flashinfer 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-10-31T23:40:49Z
+healthy: 1 2026-10-31T23:42:20Z
+load: exit 0 2026-10-31T23:57:20Z
+verdict: SURVIVED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-10-31T23:57:28Z
+gpu after: 2 MiB

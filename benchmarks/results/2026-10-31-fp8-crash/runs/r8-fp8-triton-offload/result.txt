@@ -1,0 +1,14 @@
+name: r8-fp8-triton-offload
+config: offload.yaml
+flags: --kv-cache-dtype fp8 --attention-backend TRITON_ATTN
+venv: ~/flatshare/venvs/engine
+env: FLASHINFER_WORKSPACE_BASE=~/flatshare/cache/flashinfer 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-10-31T23:22:57Z
+healthy: 1 2026-10-31T23:25:30Z
+load: exit 0 2026-10-31T23:40:31Z
+verdict: SURVIVED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-10-31T23:40:39Z
+gpu after: 2 MiB

@@ -1,0 +1,63 @@
+[21:33:47.906900] coredump: Starting GPU coredump generation
+[21:33:47.909151] coredump: SM 1/36 has finished state collection
+[21:33:47.909190] coredump: SM 2/36 has finished state collection
+[21:33:47.909201] coredump: SM 3/36 has finished state collection
+[21:33:47.909211] coredump: SM 4/36 has finished state collection
+[21:33:47.909220] coredump: SM 5/36 has finished state collection
+[21:33:47.909229] coredump: SM 6/36 has finished state collection
+[21:33:47.909238] coredump: SM 7/36 has finished state collection
+[21:33:47.909247] coredump: SM 8/36 has finished state collection
+[21:33:47.909256] coredump: SM 9/36 has finished state collection
+[21:33:47.909265] coredump: SM 10/36 has finished state collection
+[21:33:47.909275] coredump: SM 11/36 has finished state collection
+[21:33:47.909284] coredump: SM 12/36 has finished state collection
+[21:33:47.909293] coredump: SM 13/36 has finished state collection
+[21:33:47.909302] coredump: SM 14/36 has finished state collection
+[21:33:47.909311] coredump: SM 15/36 has finished state collection
+[21:33:47.909321] coredump: SM 16/36 has finished state collection
+[21:33:47.909330] coredump: SM 17/36 has finished state collection
+[21:33:47.909339] coredump: SM 18/36 has finished state collection
+[21:33:47.909348] coredump: SM 19/36 has finished state collection
+[21:33:47.909357] coredump: SM 20/36 has finished state collection
+[21:33:47.909366] coredump: SM 21/36 has finished state collection
+[21:33:47.909375] coredump: SM 22/36 has finished state collection
+[21:33:47.909385] coredump: SM 23/36 has finished state collection
+[21:33:47.909394] coredump: SM 24/36 has finished state collection
+[21:33:47.909403] coredump: SM 25/36 has finished state collection
+[21:33:47.909412] coredump: SM 26/36 has finished state collection
+[21:33:47.909421] coredump: SM 27/36 has finished state collection
+[21:33:47.909430] coredump: SM 28/36 has finished state collection
+[21:33:47.909439] coredump: SM 29/36 has finished state collection
+[21:33:47.909448] coredump: SM 30/36 has finished state collection
+[21:33:47.909457] coredump: SM 31/36 has finished state collection
+[21:33:47.909466] coredump: SM 32/36 has finished state collection
+[21:33:47.909475] coredump: SM 33/36 has finished state collection
+[21:33:47.909484] coredump: SM 34/36 has finished state collection
+[21:33:47.909493] coredump: SM 35/36 has finished state collection
+[21:33:47.909503] coredump: SM 36/36 has finished state collection
+[21:33:47.909516] coredump: Device 1/1 has finished state collection
+[21:33:47.909661] coredump: Calculating ELF file layout
+[21:33:47.909750] coredump: ELF file layout calculated
+[21:33:47.909760] coredump: Writing ELF file to ~/fp8-investigation/dumps/selftest.2785833.1793496825
+[21:33:47.910820] coredump: Current working directory is ~/fp8-investigation
+[21:33:47.910936] coredump: Writing out global memory (0 bytes)
+[21:33:47.910950] coredump: Writing out device table
+[21:33:47.916083] coredump: Writing out metadata
+[21:33:47.916101] coredump: Finalizing
+[21:33:47.916135] coredump: Writing done
+[21:33:47.916147] coredump: All done (took 00s)
+{
+ "cycles": 50000000000,
+ "flags": "skip_nonrelocated_elf_images,skip_global_memory,skip_shared_memory,skip_local_memory,skip_constbank_memory",
+ "pipe_exists": true,
+ "requested": true,
+ "dump_s": 7.0,
+ "dump_files": [
+  "selftest.2785833.1793496825"
+ ],
+ "dump_bytes": 3258659,
+ "child_exit": -6,
+ "child_after": "",
+ "kernel": "#0  0x00007f82ff768470 in at::cuda::(anonymous namespace)::spin_kernel(long)<<<(1,1,1),(1,1,1)>>> ()",
+ "cuda_gdb_exit": 0
+}

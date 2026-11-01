@@ -1,0 +1,8 @@
+2026-11-01T01:33:42Z start dump-selftest
+2026-11-01T01:33:55Z end dump-selftest exit 0
+2026-11-01T01:33:55Z start r18-fp8-offload-coredump
+2026-11-01T01:42:02Z end r18-fp8-offload-coredump exit 0 verdict: CRASHED
+2026-11-01T01:42:02Z read dumps/r18.2786334.1793496884 exit 0
+2026-11-01T01:42:03Z start r5-fp8-offload-blocking
+2026-11-01T01:53:57Z end r5-fp8-offload-blocking exit 0 verdict: SURVIVED
+2026-11-01T01:53:57Z queue done

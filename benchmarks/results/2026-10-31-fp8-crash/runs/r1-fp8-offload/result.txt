@@ -1,0 +1,14 @@
+name: r1-fp8-offload
+config: offload.yaml
+flags: --kv-cache-dtype fp8
+venv: ~/flatshare/venvs/engine
+env: 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-10-31T21:19:25Z
+healthy: 1 2026-10-31T21:21:46Z
+load: exit 3 2026-10-31T21:23:51Z
+verdict: CRASHED
+server alive at the end: 1
+first fault line: (EngineCore pid=2699887) ERROR 10-31 17:23:46 [core.py:1512] EngineCore encountered a fatal error.
+server exit: 0 2026-10-31T21:23:55Z
+gpu after: 2 MiB

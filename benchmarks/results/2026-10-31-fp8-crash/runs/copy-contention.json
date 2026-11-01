@@ -1,0 +1,29 @@
+{
+ "device": "NVIDIA GeForce RTX 5060 Ti",
+ "torch": "2.13.0+cu130",
+ "async_engine_count": 2,
+ "can_use_host_pointer_for_registered_mem": 1,
+ "small_bytes": 65536,
+ "big_bytes": 1073741824,
+ "repeats": 20,
+ "small_alone_ms": {
+  "median": 0.04563899710774422,
+  "max": 0.07564574480056763
+ },
+ "small_beside_big_h2d_ms": {
+  "median": 158.77653192728758,
+  "max": 159.0515449643135
+ },
+ "big_h2d_ms": {
+  "median": 158.90611267089844,
+  "gb_per_s": 6.757083198075374
+ },
+ "small_beside_big_d2h_ms": {
+  "median": 0.10314816609025002,
+  "max": 0.12103375047445297
+ },
+ "big_d2h_ms": {
+  "median": 149.93634033203125,
+  "gb_per_s": 7.161318074205483
+ }
+}
