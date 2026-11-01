@@ -1,0 +1,26 @@
+# The optimization program's rounds (U1-U3 of ~/.cache/kosa-dev/flatshare-opt), round 5 of 5, on a fresh sample of the
+# agents (seed 35): voice alone with two, four and six callers, for each count's SLO, and the configuration to deploy
+# at the serving profile's step cap of 256 against the same with the program's optimizations (the opt-*-ret arms),
+# paired: beside 24 session trees of the discriminating scenario with 2, 4 and 6 callers, and beside 16 sessions of the
+# whole corpus. The rounds alternate the nodes (odd rounds Phastform, even ones Gray), and each runs its engine groups
+# in an order rotated from the round before.
+#   FLATSHARE_GPU=NODE benchmarks/e2/campaign.sh --pause benchmarks/e2/opt-r5.campaign
+
+agents-seed 35
+
+# engine make-room (48-token window) --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+arms/sweep-disc-pr-ab48-b256-t0-s24.toml
+arms/opt-disc-b256-c4-s24.toml
+arms/opt-disc-b256-c6-s24.toml
+arms/opt-std-b256-s16.toml
+
+# engine make-room, the same with the program's optimizations
+arms/opt-disc-ret-s24.toml
+arms/opt-disc-ret-c4-s24.toml
+arms/opt-disc-ret-c6-s24.toml
+arms/opt-std-ret-s16.toml
+
+# engine frozen (voice alone)
+arms/w5-a1-voice.toml
+arms/w5-a1-voice-c4.toml
+arms/w5-a1-voice-c6.toml

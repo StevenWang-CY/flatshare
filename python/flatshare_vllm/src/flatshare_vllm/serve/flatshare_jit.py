@@ -17,11 +17,14 @@ scheduler, which ``install`` has the scheduler record.
 
 from __future__ import annotations
 
+import logging
 import queue
 import time
 from dataclasses import dataclass
 from typing import Any
 
+# Under vLLM's own logger names: its logging config covers those alone.
+logger = logging.getLogger("vllm.flatshare_jit")
 POLL_S = 0.002
 """How long the wait blocks on the input queue at a time, between looks at the step in flight."""
 STEP_COST = ("step_ms", "us_per_token", "ns_per_pair", "ns_per_context", "mixed_ms")
@@ -126,3 +129,8 @@ def install(core_cls: type, margin_s: float, cost: StepCost) -> None:
     step_with_batch_queue.flatshare_jit_original = original
     step_with_batch_queue.flatshare_jit = (margin_s, cost)
     core_cls.step_with_batch_queue = step_with_batch_queue
+    logger.info(
+        "flatshare_jit: the next batch is scheduled %.0f ms before the step in flight is due, by %s",
+        margin_s * 1e3,
+        cost,
+    )

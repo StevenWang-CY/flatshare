@@ -1,0 +1,16 @@
+# The optimization rounds (opt-rN.campaign): the configuration to deploy at the serving profile's step cap (256,
+# threshold 0), with the calls' prefixes kept on the GPU between their turns and the next batch scheduled just in time
+# (make_room.retain_tokens 3584, retain_s 30); its pair without them is sweep-disc-pr-ab48-b256-t0-s24.
+arm = "9-pr-ab48-b256-t0-ret"
+label = "the configuration to deploy, step cap 256, the calls' prefixes kept on the GPU, the next batch just in time, discriminating scenario, warm-up turn"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 24
+data = "weka-x32-long"
+
+[engine]
+variant = "make-room"
+flags = ["--additional-config.make_room.reserve_tokens", "0", "--additional-config.make_room.budget_cap_tokens", "48", "--max-num-batched-tokens", "256", "--long-prefill-token-threshold", "0", "--additional-config.make_room.retain_tokens", "3584", "--additional-config.make_room.retain_s", "30", "--scheduler-cls", "flatshare_make_room_serve.AsyncScheduler", "--additional-config.flatshare_jit.margin_ms", "30", "--additional-config.flatshare_jit.step_cost.step_ms", "11.56", "--additional-config.flatshare_jit.step_cost.us_per_token", "47.99", "--additional-config.flatshare_jit.step_cost.ns_per_pair", "14.17", "--additional-config.flatshare_jit.step_cost.ns_per_context", "429.3", "--additional-config.flatshare_jit.step_cost.mixed_ms", "7.6"]
