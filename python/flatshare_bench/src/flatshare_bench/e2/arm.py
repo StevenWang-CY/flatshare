@@ -44,6 +44,9 @@ class Voice:
     --warmup-turns``): a line and its reply, without an interruption."""
     preemptive_generation: bool = True
     """LiveKit's preemptive generation (``FLATSHARE_PREEMPTIVE_GENERATION`` of the voice worker)."""
+    turn_hints: bool = False
+    """Each turn announced to the engine when the user stops speaking (``FLATSHARE_TURN_HINTS`` of the voice worker),
+    for an engine whose make_room.hint_hold_ms holds agent prefill back for it."""
     events: bool = True
     """The voice worker's lifecycle events to the gateway (``FLATSHARE_EVENTS``)."""
 

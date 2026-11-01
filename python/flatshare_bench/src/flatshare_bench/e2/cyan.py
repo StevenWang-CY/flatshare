@@ -44,6 +44,7 @@ WORKER = "flatshare-voice-worker"
 E2_GATEWAY = "e2-gateway"
 NO_PREEMPTIVE = "no-preemptive-generation"
 NO_EVENTS = "no-events"
+TURN_HINTS = "turn-hints"
 """Drop-ins under deploy/cyan/variants/ that e2 run links into cyan's units as ``variant-NAME.conf``."""
 E2_NODE = "e2-node"
 """The voice worker's drop-in that e2 run writes, as ``variant-e2-node.conf``, for a point on a GPU node other than
@@ -256,7 +257,7 @@ def reach_node(node: Node, systemd: Systemd) -> dict[str, Any] | None:
 
 def reset_cyan(host: Host, systemd: Systemd) -> dict[str, Any]:
     """Undo what e2 run changes on cyan: SMG stopped, the gateway back on gateway.toml, preemptive
-    generation and lifecycle events on, and the worker back on the host's own GPU node. A tunnel to
+    generation and lifecycle events on, turn hints off, and the worker back on the host's own GPU node. A tunnel to
     another node that a point started stays up: nothing reaches the node through it once the gateway
     and the worker are back."""
     with exclusive(host):
@@ -339,6 +340,7 @@ def _apply(
     links = [
         _link(host, WORKER, NO_PREEMPTIVE, not voice.preemptive_generation),
         _link(host, WORKER, NO_EVENTS, not voice.events),
+        _link(host, WORKER, TURN_HINTS, voice.turn_hints),
         _write_drop_in(host, WORKER, E2_NODE, node_drop_in(node, env)),
     ]
     worker = any(links)
@@ -369,6 +371,7 @@ def _apply(
             "restarted": worker,
             "preemptive_generation": voice.preemptive_generation,
             "events": voice.events,
+            "turn_hints": voice.turn_hints,
         },
     }
 

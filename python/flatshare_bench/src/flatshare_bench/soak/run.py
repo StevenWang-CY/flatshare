@@ -91,7 +91,7 @@ AGENTS_OUTLAST_S = 300
 """How much longer than the window AIPerf is told to run: the soak stops it once the calls have ended."""
 E2_DROP_INS = {
     GATEWAY: ("e2-gateway",),
-    WORKER: ("no-preemptive-generation", "no-events", "e2-node"),
+    WORKER: ("no-preemptive-generation", "no-events", "turn-hints", "e2-node"),
 }
 """Drop-ins of an E2 point (``variant-NAME.conf``) that ``flatshare-bench e2 reset`` removes; a soak refuses to start
 beside them, since the box would not serve as deployed."""
