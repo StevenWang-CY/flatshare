@@ -1143,7 +1143,8 @@ def describe_serving(serving: dict) -> list[str]:
         f"  just in time: {scheduled}",
         f"  scheduler {engine['scheduler_cls']} over {engine['scheduler_module']['name']} "
         f"{engine['scheduler_module']['sha256'][:16]}",
-        f"  voice: {voice['mode']} mode, {voice['max_calls']} calls at once, {voice['audio']} audio",
+        f"  voice: {voice['mode']} mode, {voice['max_calls']} calls at once, {voice['audio']} audio"
+        + (", each turn announced when the user stops speaking" if voice["turn_hints"] else ""),
         f"  gateway: at most {serving['gateway']['max_agents']} agents' sessions beside a node's calls",
     ]
 
@@ -1391,7 +1392,7 @@ def e2_point(root: Path) -> int | None:
 
 E2_DROP_INS = {
     "flatshare-gateway": ("e2-gateway",),
-    "flatshare-voice-worker": ("no-preemptive-generation", "no-events", "e2-node"),
+    "flatshare-voice-worker": ("no-preemptive-generation", "no-events", "turn-hints", "e2-node"),
 }
 """The drop-ins of an E2 point (``variant-NAME.conf``), which ``flatshare-bench e2 reset`` removes: the gateway's
 turns its canary off and may set any admission policy, the worker's change how calls run. The soak refuses to start

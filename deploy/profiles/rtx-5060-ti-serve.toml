@@ -36,6 +36,13 @@ retain_s = 30
 # included, so a decode-only step is never waited on; 0 turns it off. The model is crates/flatshare-core/src/step.rs's
 # StepCost::frozen_box, fitted on this card (a step's ms, µs a token, ns an attention pair, ns a token of context
 # read, ms a mixed step adds). Measured in benchmarks/results/2026-11-01-engine-points.
+# A call's turn announced before its request (python/flatshare_voice's hints.py): the voice worker sends a realtime
+# request for one token when the user stops speaking, a speech recognition's round trip before the turn's request, and
+# the budget cap holds lower-priority prefill back for hint_hold_ms from its arrival, so that the turn arrives into
+# decode-only steps; 400 ms covers the recognition's round trip beside agents (its p95 under ~300 ms in the rounds).
+# Measured in benchmarks/results/2026-11-01-engine-points. 0, and turn_hints false, turn it off.
+hint_hold_ms = 400
+turn_hints = true
 jit_margin_ms = 30
 jit_step_ms = 11.56
 jit_us_per_token = 47.99
@@ -57,7 +64,7 @@ async_scheduling = true
 # engine built on 2026-10-27 (0d24d178977f3c1b), which the records above measured (make test-trace with
 # TRACE_REFERENCE set to that module finds every step the same); retention, which this profile turns on, is measured in
 # benchmarks/results/2026-11-01-engine-points.
-scheduler_module_sha256 = "9dc0f317cd079240f37919e1b9538e3e886af9c5425fc5b5647040b3399242ab"
+scheduler_module_sha256 = "35b30105cecc8ea20af2fc61cc1c375dca0452f2da48c0bee75f3c10f0d81e88"
 # The calls the voice worker takes at once in serve mode: two, the calls of E2's discriminating scenario, at which the
 # sweep's screens and the confirmation rounds measured this configuration (the records above).
 max_calls = 2

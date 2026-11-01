@@ -30,6 +30,7 @@ Flatshare's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §6.2](.
 | `FLATSHARE_LLM_TIMEOUT` | Seconds before an LLM request fails (default 30); a failed request is retried once, where LiveKit's default is three (note 1) |
 | `FLATSHARE_TURN_DETECTION` | `model` (default) or `vad` |
 | `FLATSHARE_PREEMPTIVE_GENERATION` | `true` (default) or `false` |
+| `FLATSHARE_TURN_HINTS` | `true`: announce each turn to the engine when the user stops speaking, a recognition's round trip before its request, so that the engine's scheduler holds agent prefill back for it ([`hints.py`](src/flatshare_voice/hints.py)); `false`. Serve mode's default is the serving profile's voice `turn_hints`, bench mode's `false` |
 | `FLATSHARE_EVENTS` | `on` (default): lifecycle events to the control plane through `FLATSHARE_LLM_UDS`, every one in bench mode and `session_closed` alone in serve mode ([Lifecycle events](#lifecycle-events-and-turn-lines)); `off` |
 | `FLATSHARE_LLM_MODEL` | The model the agent's requests name (default the box's, `Qwen/Qwen3-4B-Instruct-2507-FP8`) (note 2) |
 | `FLATSHARE_VOICE_MODE` | `bench` (default; the unit sets it): every call taken; or `serve`: call-capacity admission (below) |

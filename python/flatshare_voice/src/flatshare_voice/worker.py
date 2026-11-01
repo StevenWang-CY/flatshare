@@ -39,7 +39,9 @@ end-of-turn model waits up to the endpointing maximum (3 s) whenever it judges a
 which on synthesized callers happened on about one turn in six (W1) and would hide serving effects
 in the tail. ``FLATSHARE_PREEMPTIVE_GENERATION=false`` turns off LiveKit's preemptive generation, which
 starts the reply from the final transcript before the end of the turn is confirmed: one of E2's
-factors.
+factors. ``FLATSHARE_TURN_HINTS=true`` (the serving profile's voice ``turn_hints`` in serve mode)
+announces each turn to the engine when the user stops speaking, a recognition's round trip before
+the turn's request, so that its scheduler holds agent prefill back for it (hints.py).
 
 With node binding (``FLATSHARE_NODE_BINDING``, serve mode's default), a call starts by asking the
 gateway which GPU node it is on, binds its STT and TTS to that node's sockets and its LLM to the
@@ -68,6 +70,7 @@ a Unix socket each. The environment, set by ``flatshare-voice-worker.service``, 
 | ``FLATSHARE_LLM_TIMEOUT`` | Seconds before an LLM request fails (default 30: a cold prefill exceeds 10) |
 | ``FLATSHARE_TURN_DETECTION`` | ``model`` (default: the end-of-turn model) or ``vad`` (fixed endpointing, for experiments) |
 | ``FLATSHARE_PREEMPTIVE_GENERATION`` | ``true`` (default, LiveKit's) or ``false`` |
+| ``FLATSHARE_TURN_HINTS`` | ``true`` or ``false``: announce each turn when the user stops speaking (default: the serving profile's voice ``turn_hints`` in serve mode, ``false`` in bench mode) |
 | ``FLATSHARE_EVENTS`` | ``on`` (default: lifecycle events to the control plane, ``session_closed`` alone in serve mode) or ``off`` |
 | ``FLATSHARE_LLM_MODEL`` | The model the agent's requests name (default the box's, ``plugins.LLM_MODEL``) |
 | ``FLATSHARE_VOICE_MODE`` | ``bench`` (default: every call taken) or ``serve`` (call-capacity admission) |
@@ -115,7 +118,7 @@ from livekit.agents.utils.aio import ChanClosed
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import silero
 
-from . import events, nodes, plugins
+from . import events, hints, nodes, plugins
 from .admission import Admission, EngineProbe, Monitor
 from .protocol import AGENT_NAME, room_session_id
 
@@ -188,6 +191,9 @@ class Settings:
     llm_timeout: float = 30.0
     turn_detection: str = "model"
     preemptive_generation: bool = True
+    turn_hints: bool = False
+    """Announce each turn to the engine when the user stops speaking (hints.py): the serving profile's voice
+    turn_hints in serve mode, FLATSHARE_TURN_HINTS over it."""
     events: bool = True
     llm_model: str = plugins.LLM_MODEL
     mode: str = "bench"
@@ -217,6 +223,11 @@ class Settings:
         if audio not in AUDIO:
             raise ValueError(f"FLATSHARE_AUDIO must be {' or '.join(AUDIO)}, got {audio!r}")
         turn_detection = _choice(env, "FLATSHARE_TURN_DETECTION", ("model", "vad"))
+        hints = _choice(
+            env,
+            "FLATSHARE_TURN_HINTS",
+            ("true", "false") if serving.get("turn_hints") else ("false", "true"),
+        )
         if audio == "microphone" and turn_detection == "vad":
             raise ValueError(
                 "FLATSHARE_TURN_DETECTION=vad is the synthetic callers' fixed endpointing; the "
@@ -239,6 +250,7 @@ class Settings:
             llm_timeout=_seconds(env, "FLATSHARE_LLM_TIMEOUT", 30.0),
             turn_detection=turn_detection,
             preemptive_generation=preemptive == "true",
+            turn_hints=hints == "true",
             events=_choice(env, "FLATSHARE_EVENTS", ("on", "off")) == "on",
             llm_model=env.get("FLATSHARE_LLM_MODEL") or plugins.LLM_MODEL,
             mode=mode,
@@ -306,6 +318,7 @@ class Settings:
             "max_calls": self.max_calls,
             "audio": self.audio,
             "turn_detection": self.turn_detection,
+            "turn_hints": self.turn_hints,
             "serving_profile": self.serving_profile,
             "profile": self.serving.get("profile"),
             "node_binding": self.node_binding,
@@ -340,13 +353,21 @@ def _serving(env: Mapping[str, str]) -> dict[str, Any]:
         voice = profile["voice"]
         max_calls = voice["max_calls"]
         audio = voice["audio"]
+        turn_hints = voice.get("turn_hints", False)
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise ValueError(
             f"FLATSHARE_SERVING_PROFILE {path} is no serving profile's serving.json: {error!r}"
         ) from None
     if isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 1:
         raise ValueError(f"FLATSHARE_SERVING_PROFILE {path}: voice.max_calls must be 1 or more")
-    return {"max_calls": max_calls, "audio": audio, "profile": profile.get("profile")}
+    if not isinstance(turn_hints, bool):
+        raise ValueError(f"FLATSHARE_SERVING_PROFILE {path}: voice.turn_hints must be true or false")
+    return {
+        "max_calls": max_calls,
+        "audio": audio,
+        "turn_hints": turn_hints,
+        "profile": profile.get("profile"),
+    }
 
 
 def _choice(env: Mapping[str, str], name: str, choices: tuple[str, ...]) -> str:
@@ -512,6 +533,15 @@ async def entrypoint(ctx: JobContext) -> None:
         room_options=room_options,
         record=False,
     )
+    if settings.turn_hints:
+        # On the call's LLM path, as the LLM plugin reaches it: through the node binding where the call has one.
+        hint_client = plugins.openai_client(
+            BASE_URL,
+            uds=settings.llm_uds,
+            transport=None if binding is None else binding.transport("llm", plugins.LIMITS),
+        )
+        ctx.add_shutdown_callback(hint_client.close)
+        hints.attach(session, hint_client, model=settings.llm_model, session_id=session_id)
     # Nothing it reports can happen earlier: the caller's audio flows only once start() returns.
     events.observe(
         ctx, session, session_id, uds=settings.events_socket, turn_events=settings.turn_events

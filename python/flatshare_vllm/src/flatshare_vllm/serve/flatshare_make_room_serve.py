@@ -123,6 +123,7 @@ def effective(scheduler: Any) -> dict[str, Any]:
             "retain_tokens": switches["retain_tokens"],
             "retain_blocks": scheduler.retain_blocks,
             "retain_s": scheduler.retain_s,
+            "hint_hold_ms": switches["hint_hold_ms"],
         },
         # What the constructor installed on the engine core: off is a margin of 0, the profile's own way to say it.
         "jit": jit_settings(config) or {"margin_ms": 0, "step_cost": None},

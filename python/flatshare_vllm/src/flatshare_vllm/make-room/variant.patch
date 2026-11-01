@@ -8,9 +8,10 @@ The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
   e176b99fa Leaseholder make-room variant: keep realtime prefixes on the GPU between turns
   15b66b572 Leaseholder make-room variant: count the retained blocks once
   7ce8f3588 Leaseholder make-room variant: recompute a realtime request's short load
+  43e3f5a48 Leaseholder make-room variant: hold prefill from a call's announced turn
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
-index a4d4736b4..0b80608f3 100644
+index a4d4736b4..3847b3727 100644
 --- a/vllm/v1/core/sched/scheduler.py
 +++ b/vllm/v1/core/sched/scheduler.py
 @@ -86,6 +86,8 @@ from vllm.v1.structured_output.utils import strip_speculative_padding
@@ -54,7 +55,7 @@ index a4d4736b4..0b80608f3 100644
          # The step in which each KV load in flight was first seen: a load holds
          # lower-priority prefill back for its first budget cap tokens steps.
          self._load_hold_start: dict[Request, int] = {}
-@@ -422,6 +425,41 @@ class Scheduler(SchedulerInterface):
+@@ -422,6 +425,46 @@ class Scheduler(SchedulerInterface):
          self._num_prefill_held_tokens = 0
          self._prefill_held_step = -1
          self._prefill_held_step_tokens = 0
@@ -87,6 +88,11 @@ index a4d4736b4..0b80608f3 100644
 +        # A priority-0 request whose CPU-tier hit extends its GPU hit by at most
 +        # recompute_tokens recomputes the extension rather than load it.
 +        self.recompute_tokens = make_room["recompute_tokens"]
++        # A call's turn announced before it arrives: with the budget cap, a
++        # priority-0 request for one token holds lower-priority prefill back for
++        # hint_hold_ms from its arrival, until when _hint_until stands.
++        self.hint_hold_s = make_room["hint_hold_ms"] / 1e3
++        self._hint_until = 0.0
 +        self._retained: list[tuple[float, KVCacheBlock, list[KVCacheBlock]]] = []
 +        # The admissions the budget cap held back, for make-room's log line
 +        # beside the counts above (see _make_room_log).
@@ -96,7 +102,7 @@ index a4d4736b4..0b80608f3 100644
  
          self.has_mamba_layers = kv_cache_config.has_mamba_layers
          self.needs_kv_cache_zeroing = kv_cache_config.needs_kv_cache_zeroing
-@@ -707,6 +745,9 @@ class Scheduler(SchedulerInterface):
+@@ -707,6 +750,9 @@ class Scheduler(SchedulerInterface):
  
          # Priority policy: make room for the waiting request of the highest
          # priority first, so that no request scheduled in this step is preempted.
@@ -106,7 +112,7 @@ index a4d4736b4..0b80608f3 100644
          make_room_req = self._peek_make_room_request(defer_prefills)
          make_room_hit = (
              None if make_room_req is None else self._local_prefix_hit(make_room_req)
-@@ -1056,6 +1097,7 @@ class Scheduler(SchedulerInterface):
+@@ -1056,6 +1102,7 @@ class Scheduler(SchedulerInterface):
                  ):
                      # Nor does a prefill of a lower priority start meanwhile.
                      self._count_prefill_hold(0)
@@ -114,7 +120,7 @@ index a4d4736b4..0b80608f3 100644
                      if request_queue is self.kv_holding_waiting:
                          # Requests holding KV blocks are drained first, so the
                          # request whose first tokens are due may be behind it.
-@@ -1063,6 +1105,17 @@ class Scheduler(SchedulerInterface):
+@@ -1063,6 +1110,17 @@ class Scheduler(SchedulerInterface):
                          continue
                      break
  
@@ -132,7 +138,7 @@ index a4d4736b4..0b80608f3 100644
                  if (
                      request_queue is self.waiting
                      and self.max_priority_preemptions_per_step
-@@ -1153,6 +1206,19 @@ class Scheduler(SchedulerInterface):
+@@ -1153,6 +1211,19 @@ class Scheduler(SchedulerInterface):
                          else:
                              num_external_computed_tokens = ext_tokens
  
@@ -152,7 +158,19 @@ index a4d4736b4..0b80608f3 100644
                          if hit_diverged and num_external_computed_tokens == 0:
                              # No external tokens back the deeper local hit, so its
                              # resume boundary would have no valid Mamba state.
-@@ -2896,6 +2962,8 @@ class Scheduler(SchedulerInterface):
+@@ -2761,6 +2832,11 @@ class Scheduler(SchedulerInterface):
+                 request.streaming_queue = deque()
+             self._enqueue_waiting_request(request)
+             self.requests[request.request_id] = request
++            if self.hint_hold_s and request.priority == 0 and request.max_tokens == 1:
++                # A realtime request for one token announces a call's turn: the
++                # voice worker sends one when the user stops speaking, a speech
++                # recognition's round trip before the turn's own request.
++                self._hint_until = time.monotonic() + self.hint_hold_s
+             if self.spec_decode_metrics_level != "none":
+                 request.spec_decode_metrics = RequestSpecDecodeMetrics.new(
+                     self.num_spec_tokens
+@@ -2896,6 +2972,8 @@ class Scheduler(SchedulerInterface):
          """Free the request's KV blocks, deferring the return to the block
          pool when an in-flight GPU step may still write them.
          """
@@ -161,7 +179,7 @@ index a4d4736b4..0b80608f3 100644
          if self._request_blocks_can_be_freed(request):
              self.kv_cache_manager.free(request)
              return
-@@ -2994,6 +3062,9 @@ class Scheduler(SchedulerInterface):
+@@ -2994,6 +3072,9 @@ class Scheduler(SchedulerInterface):
              # persistent batch in the model runner.
              self.prev_step_scheduled_req_ids.clear()
  
@@ -171,7 +189,7 @@ index a4d4736b4..0b80608f3 100644
          reset_successful = self.kv_cache_manager.reset_prefix_cache()
          if reset_running_requests and not reset_successful:
              raise RuntimeError(
-@@ -3220,6 +3291,143 @@ class Scheduler(SchedulerInterface):
+@@ -3220,6 +3301,145 @@ class Scheduler(SchedulerInterface):
              self._request_remaining_blocks(req) for req in self._inflight_prefills
          )
  
@@ -186,6 +204,7 @@ index a4d4736b4..0b80608f3 100644
 +            "retain_tokens": 0,
 +            "retain_s": 30,
 +            "recompute_tokens": 0,
++            "hint_hold_ms": 0,
 +        }
 +        if not isinstance(make_room, dict):
 +            raise ValueError(f"make_room must be a table, not {make_room!r}")
@@ -221,6 +240,7 @@ index a4d4736b4..0b80608f3 100644
 +            or switches["reserve_tokens"]
 +            or switches["retain_tokens"]
 +            or switches["recompute_tokens"]
++            or switches["hint_hold_ms"]
 +        ):
 +            raise ValueError("make_room needs --scheduling-policy priority")
 +        return switches
@@ -315,7 +335,27 @@ index a4d4736b4..0b80608f3 100644
      def _peek_make_room_request(self, defer_prefills: bool) -> Request | None:
          """The waiting request of the highest priority that the waiting loop can
          schedule in this step, if a request of a lower priority runs or, with
-@@ -3497,13 +3705,15 @@ class Scheduler(SchedulerInterface):
+@@ -3326,7 +3546,8 @@ class Scheduler(SchedulerInterface):
+         in this step but only on budget the running loop leaves, and the ones
+         whose load is in flight, for its first
+         `priority_prefill_budget_cap_tokens` steps: a stuck load holds nothing
+-        after those."""
++        after those; and priority 0 for hint_hold_ms after a call's turn is
++        announced (a priority-0 request for one token)."""
+         if not self.priority_prefill_budget_cap:
+             return None
+         # Each load in flight and the step it was first seen in; the loads that
+@@ -3354,6 +3575,9 @@ class Scheduler(SchedulerInterface):
+                 for req, start in self._load_hold_start.items()
+                 if self.current_step - start < self.priority_prefill_budget_cap_tokens
+             )
++        if self._hint_until and time.monotonic() < self._hint_until:
++            # A call's turn is announced and its request on its way.
++            priorities.append(0)
+         return min(priorities, default=None)
+ 
+     def _first_tokens_priority(
+@@ -3497,13 +3721,15 @@ class Scheduler(SchedulerInterface):
          """Free blocks the waiting `request` lacks to be admitted with its whole
          remaining sequence, net of its prefix-cache hit `hit`, beside the
          watermark and what in-flight prefills still need, as an async KV load is

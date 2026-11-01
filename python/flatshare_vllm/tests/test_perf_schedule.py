@@ -380,6 +380,7 @@ def test_the_states_are_the_prs_tables_rows():
         "reserve_tokens": 0,
         "retain_tokens": 3584,
         "retain_s": 30,
+        "hint_hold_ms": 400,
     }
     assert [s.key for s in P.SERVING_STATES] == ["idle-R2", "hold-R2", "nofit-R16", "fire-R2"]
     assert all(s.serving for s in P.SERVING_STATES) and not any(s.serving for s in P.STATES)

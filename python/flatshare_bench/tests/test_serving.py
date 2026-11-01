@@ -524,6 +524,7 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
         "reserve_tokens": 0,
         "retain_tokens": 3584,
         "retain_s": 30,
+        "hint_hold_ms": 400,
     }
     # The scheduler: the serve module, over the module make-room's patches build, each by its hash.
     assert engine["scheduler_cls"] == "flatshare_make_room_serve.AsyncScheduler"
@@ -533,7 +534,15 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
         name: sha256(patches / name) for name in ("63350.patch", "63351.patch", "variant.patch")
     }
     assert re.fullmatch(r"[0-9a-f]{64}", engine["scheduler_module"]["sha256"])
-    assert SERVING["voice"] == {"mode": "serve", "max_calls": 2, "audio": "microphone"}
+    assert (
+        SERVING["voice"]
+        == {
+            "mode": "serve",
+            "max_calls": 2,
+            "audio": "microphone",
+            "turn_hints": True,  # the voice worker announces each turn, which make_room.hint_hold_ms holds prefill for
+        }
+    )
     # The card's envelope beside the calls in the rounds (benchmarks/results/2026-10-28-rounds): four session trees.
     assert SERVING["gateway"] == {"max_agents": 4}
 
@@ -908,6 +917,7 @@ def voice_status(**fields: object) -> dict:
         "mode": "serve",
         "max_calls": 2,
         "audio": "microphone",
+        "turn_hints": True,
         "active_calls": 0,
         "admitting": True,
     } | fields

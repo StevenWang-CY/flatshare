@@ -869,6 +869,8 @@ SERVING_KEYS = {
     "reserve_tokens": int,
     "retain_tokens": int,
     "retain_s": int,
+    "hint_hold_ms": int,
+    "turn_hints": bool,
     "jit_margin_ms": int,
     "jit_step_ms": float,
     "jit_us_per_token": float,
@@ -934,6 +936,12 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
         raise ProfileError(f"{name}: max_agents must be 1 or more")
     if serve["audio"] not in AUDIO:
         raise ProfileError(f"{name}: audio must be {' or '.join(AUDIO)}, not {serve['audio']!r}")
+    if serve["hint_hold_ms"] < 0:
+        raise ProfileError(f"{name}: hint_hold_ms must be 0 (off) or more")
+    if serve["turn_hints"] and not serve["hint_hold_ms"]:
+        raise ProfileError(
+            f"{name}: turn_hints announces turns that a hint_hold_ms of 0 would ignore"
+        )
     if serve["jit_margin_ms"] < 0:
         raise ProfileError(f"{name}: jit_margin_ms must be 0 (off) or more")
     if negative := [f"jit_{key}" for key in JIT_STEP_COST if serve[f"jit_{key}"] < 0]:
@@ -990,6 +998,7 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
                     "reserve_tokens",
                     "retain_tokens",
                     "retain_s",
+                    "hint_hold_ms",
                 )
             },
             # flatshare_jit's settings, as the serve module installs them (off at a margin of 0).
@@ -1001,7 +1010,12 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
         "patches": {
             patch: sha256(VLLM_PACKAGE / "make-room" / patch) for patch in make_room_patches()
         },
-        "voice": {"mode": "serve", "max_calls": serve["max_calls"], "audio": serve["audio"]},
+        "voice": {
+            "mode": "serve",
+            "max_calls": serve["max_calls"],
+            "audio": serve["audio"],
+            "turn_hints": serve["turn_hints"],
+        },
         "gateway": {"max_agents": serve["max_agents"]},
     }
 
