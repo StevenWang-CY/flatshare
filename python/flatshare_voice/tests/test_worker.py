@@ -217,6 +217,7 @@ def test_serve_mode_admits_the_calls_its_serving_profile_names(tmp_path: Path) -
         "max_calls": 2,
         "audio": "microphone",
         "turn_detection": "model",
+        "turn_hints": True,  # the profile's voice turn_hints
         "serving_profile": str(SERVING),
         "profile": "rtx-5060-ti-serve",
         "node_binding": True,  # serve mode asks the gateway for each call's node

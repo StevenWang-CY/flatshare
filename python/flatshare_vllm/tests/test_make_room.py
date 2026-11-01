@@ -1360,6 +1360,57 @@ def test_a_realtime_requests_short_load_is_recomputed(
     assert out.num_scheduled_tokens == ({} if loads else {req_id: 300})
 
 
+@pytest.mark.parametrize(
+    ("make_room", "priority", "max_tokens", "after_s", "held"),
+    [
+        (
+            {"hint_hold_ms": 400},
+            0,
+            1,
+            0.1,
+            True,
+        ),  # within the window from the hint: the agent's prefill sits out
+        ({"hint_hold_ms": 400}, 0, 1, 0.5, False),  # past it: the prefill runs
+        (
+            {},
+            0,
+            1,
+            0.1,
+            False,
+        ),  # the negative control: switched off, nothing is held once the hint is answered
+        (
+            {"hint_hold_ms": 400},
+            0,
+            2,
+            0.1,
+            False,
+        ),  # a request for more than one token announces nothing
+        ({"hint_hold_ms": 400}, 2, 1, 0.1, False),  # nor does a lower-priority one
+    ],
+)
+def test_an_announced_turn_holds_lower_priority_prefill_back(
+    module, model, monkeypatch, make_room, priority, max_tokens, after_s, held
+):
+    """The voice worker announces a call's turn when the user stops speaking, one speech recognition round trip
+    before the turn's request, with a priority-0 request for one token: with hint_hold_ms the budget cap holds
+    lower-priority prefill back for that long from the hint's arrival, past its answer, so that the turn arrives into
+    decode-only steps."""
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        400,
+        {"budget_cap": True, "budget_cap_tokens": 1} | make_room,
+        max_model_len=4096,
+    )
+    sched.add_request(request("agent", 3500, priority=2, arrival=0))
+    step(sched)  # the agent's long prefill starts
+    now = module.time.monotonic()
+    monkeypatch.setattr(module.time, "monotonic", lambda: now)
+    finish(sched, request("hint", 40, priority=priority, arrival=1, max_tokens=max_tokens, token=8))
+    monkeypatch.setattr(module.time, "monotonic", lambda: now + after_s)
+    assert ("agent" not in step(sched).num_scheduled_tokens) is held
+
+
 def test_the_module_logs_as_vllms_scheduler(module):
     """vLLM's logging config covers its own loggers only: under the generated module's name, the scheduler's info
     lines, make-room's among them, would be dropped."""

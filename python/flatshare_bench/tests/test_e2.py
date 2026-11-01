@@ -1529,6 +1529,20 @@ def record(cyan: Cyan, name: str) -> dict[str, Any]:
     return json.loads((cyan.host.root / "runs" / name / "run.json").read_text())
 
 
+def test_an_arm_with_turn_hints_links_the_workers_drop_in_and_reset_removes_it(cyan: Cyan) -> None:
+    """An arm whose calls announce their turns (turn_hints, off by default) runs the worker with the turn-hints drop-in,
+    which sets FLATSHARE_TURN_HINTS=true; e2 reset takes it away again, as it does the others."""
+    hinted = VOICE_ALONE + "\n[voice]\nturn_hints = true\n"
+    run(cyan, "a1-voice-hints", hinted)
+    worker = cyan.host.units / "flatshare-voice-worker.service.d"
+    assert {link.readlink().parts[-2] for link in worker.glob("variant-*.conf")} >= {"turn-hints"}
+    drop_in = REPO / "deploy" / "cyan" / "variants" / "turn-hints" / "flatshare-voice-worker.conf"
+    assert "Environment=FLATSHARE_TURN_HINTS=true" in drop_in.read_text().splitlines()
+    assert record(cyan, "a1-voice-hints")["cyan"]["worker"]["turn_hints"] is True
+    reset_cyan(cyan.host, cyan.systemd)
+    assert not list(worker.glob("variant-turn-hints.conf"))
+
+
 def test_voice_alone_runs_the_calls_against_the_box_as_it_is(cyan: Cyan) -> None:
     summary = run(cyan, "a1-voice", VOICE_ALONE)
     out = cyan.host.root / "runs" / "a1-voice"
@@ -1703,6 +1717,7 @@ def test_a_point_with_agents_configures_cyan_and_stops_aiperf_after_the_calls(
         "restarted": True,
         "preemptive_generation": False,
         "events": False,
+        "turn_hints": False,
     }
     assert "agents-key" not in (out / "run.json").read_text()
     assert run_json["cyan"]["gateway"]["config"]["tenants"]["agents"]["keys_sha256"] == [

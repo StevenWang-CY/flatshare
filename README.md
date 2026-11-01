@@ -166,7 +166,8 @@ PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-le
   --additional-config.make_room.max_preemptions_per_step 2 \
   --additional-config.make_room.budget_cap true --additional-config.make_room.budget_cap_tokens 48 \
   --additional-config.make_room.reserve_tokens 0 \
-  --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30
+  --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 \
+  --additional-config.make_room.hint_hold_ms 400
 . ~/vllm-0.32/bin/activate && python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
 ```
 
