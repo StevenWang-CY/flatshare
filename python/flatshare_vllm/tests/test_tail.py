@@ -322,3 +322,29 @@ def test_whole_replies_on_a_short_context(tail, monkeypatch, capsys):
     assert lines[-1].endswith("; agents: 0 of 13 stopped early") and engine.rejected == 0
     calls = [body for body in engine.bodies if "messages" in body]
     assert all(body["max_tokens"] == 40 and body["ignore_eos"] for body in calls)
+
+
+def test_a_hinted_run_announces_each_call_turn_with_the_conversation_so_far(
+    tail, monkeypatch, capsys
+):
+    """With --hint, each call turn is preceded by a priority-0 request of the conversation before the turn's user line,
+    for one token and marked as a hint, which the call does not wait for: as many hints as turns, each one's messages
+    a prefix of a turn's."""
+    from fake_engine import FakeEngine
+
+    engine = FakeEngine()
+    run(tail, monkeypatch, engine, 1.0, 1, False, None, 20)
+    assert capsys.readouterr().out.splitlines()[0].endswith("; each turn announced 20 ms ahead")
+    calls = [body for body in engine.bodies if "messages" in body]
+    hints = [body for body in calls if body.get("vllm_xargs") == {"flatshare": "turn-hint"}]
+    turns = [body for body in calls if body not in hints]
+    assert len(hints) == len(turns) >= 4
+    assert all(
+        (body["max_tokens"], body["priority"], "stream" in body) == (1, 0, False) for body in hints
+    )
+    for hint in hints:
+        assert any(
+            turn["messages"][: len(hint["messages"])] == hint["messages"]
+            and turn["messages"][len(hint["messages"])]["role"] == "user"
+            for turn in turns
+        )
