@@ -867,6 +867,8 @@ SERVING_KEYS = {
     "budget_cap": bool,
     "budget_cap_tokens": int,
     "reserve_tokens": int,
+    "retain_tokens": int,
+    "retain_s": int,
     "max_num_batched_tokens": int,
     "long_prefill_token_threshold": int,
     "block_size": int,
@@ -973,6 +975,8 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
                     "budget_cap",
                     "budget_cap_tokens",
                     "reserve_tokens",
+                    "retain_tokens",
+                    "retain_s",
                 )
             },
         },

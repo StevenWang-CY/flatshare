@@ -4,7 +4,8 @@ against a measured baseline.
 
 Stock vLLM is vLLM's own Scheduler, without the change. make-room's module is the one build.py generates at engine
 start (``--module`` times another generated module), its switches off or in the configuration to deploy:
-``max_preemptions_per_step 2``, ``budget_cap true``, ``budget_cap_tokens 48``, ``reserve_tokens 0``. They run in the
+``max_preemptions_per_step 2``, ``budget_cap true``, ``budget_cap_tokens 48``, ``reserve_tokens 0``,
+``retain_tokens 3584``, ``retain_s 30``. They run in the
 steady states the PRs' cost tables were measured in (#63350 and #63351), in which nothing is admitted or preempted for
 the measured steps, so that every step does the same work:
 
@@ -121,6 +122,8 @@ CONFIGS: dict[str, dict | None] = {
         "budget_cap": True,
         "budget_cap_tokens": 48,
         "reserve_tokens": 0,
+        "retain_tokens": 3584,
+        "retain_s": 30,
     },
 }
 # Each process times the off configuration twice, the second time as "off2": the baseline's noise, and a check's, as

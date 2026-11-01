@@ -28,7 +28,11 @@ CHECK = REPO / "deploy/bin/serving-check"
 BOX = json.loads((REPO / "deploy/phastform/serving.json").read_text())
 """The box's serving profile, rendered (deploy/profiles/rtx-5060-ti-serve.toml)."""
 SWITCHES = BOX["engine"]["make_room"]
-"""The switches it serves: 2 preemptions a step, the budget cap with a 48-token window, no reserve."""
+"""The switches it serves: 2 preemptions a step, the budget cap with a 48-token window, no reserve, and the calls'
+prefixes retained within 3,584 tokens for 30 s."""
+SUITE_SWITCHES = SWITCHES | {"retain_tokens": 8 * T.BLOCK}
+"""The same on the suite's pools of 48 and 64 blocks, which hold a request of max_model_len (24 blocks) beside a
+retention of 8 blocks, not of the box's 224."""
 
 
 @pytest.fixture(scope="session")
@@ -49,7 +53,7 @@ def scheduler(cls, model, num_blocks=48):
         cls,
         model,
         num_blocks,
-        dict(SWITCHES),
+        dict(SUITE_SWITCHES),
         max_num_batched_tokens=128,
         long_prefill_token_threshold=64,
         prefix_caching=True,
@@ -133,7 +137,7 @@ def test_it_writes_the_configuration_it_was_built_with(modules, written, tmp_pat
         "sha256": sha256(make_room.__file__),
     }
     assert written["serve_module_sha256"] == sha256(SERVE) == BOX["engine"]["serve_module_sha256"]
-    assert written["make_room"] == SWITCHES | {"reserve_blocks": 0}
+    assert written["make_room"] == SUITE_SWITCHES | {"reserve_blocks": 0, "retain_blocks": 8}
     sched = written["scheduler"]
     assert (
         sched["policy"],

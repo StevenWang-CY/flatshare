@@ -1163,8 +1163,9 @@ def test_a_release_prints_the_serving_profiles_configuration() -> None:
         "  model Qwen/Qwen3-4B-Instruct-2507-FP8@8591804019c8, tokenizer Qwen/Qwen3-4B-Instruct-2507-FP8@8591804019c8, "
         "context 32768",
         "  priority, step cap 256/0, pool 36400 tokens (2275 blocks), CPU tier 20 GiB",
-        "  make_room: max_preemptions_per_step 2, budget_cap true, budget_cap_tokens 48, reserve_tokens 0",
-        "  scheduler flatshare_make_room_serve.AsyncScheduler over flatshare_make_room_scheduler a5db4382ac5251aa",
+        "  make_room: max_preemptions_per_step 2, budget_cap true, budget_cap_tokens 48, reserve_tokens 0, "
+        "retain_tokens 3584, retain_s 30",
+        "  scheduler flatshare_make_room_serve.AsyncScheduler over flatshare_make_room_scheduler b5b78232a901865d",
         "  voice: serve mode, 2 calls at once, microphone audio",
         "  gateway: at most 4 agents' sessions beside a node's calls",
     ]

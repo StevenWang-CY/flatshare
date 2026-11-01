@@ -1,4 +1,5 @@
-"""tail.py ENGINE SECONDS [AGENTS] [fresh|grow] [--reply TOKENS]: the make-room variant's load check, the calls' tail.
+"""tail.py ENGINE SECONDS [AGENTS] [fresh|grow] [--reply TOKENS] [--hint MS]: the make-room variant's load check, the
+calls' tail.
 
 AGENTS closed-loop agent sessions at priority 2 beside two calls at priority 0, against one engine for SECONDS:
 - agents: 48 output tokens and 0-3 s of thought a turn; with ``fresh``, a new prompt of 6-30k tokens each turn, as
@@ -7,7 +8,9 @@ AGENTS closed-loop agent sessions at priority 2 beside two calls at priority 0, 
   its first failed request;
 - calls: a conversation that grows by about 30 tokens a turn, a turn every 4-8 s, 16 output tokens; with --reply
   TOKENS, whole replies of exactly TOKENS tokens, each also timed to its 16th and its last token, so that the budget
-  cap's window shows at the engine level.
+  cap's window shows at the engine level; with --hint MS, each turn is announced MS ms before it leaves, as the voice
+  worker announces it when the user stops speaking, one STT round trip ahead: a priority-0 request of the conversation
+  so far for one token, marked ``vllm_xargs: {"flatshare": "turn-hint"}``, whose answer the call does not wait for.
 The engine gives the model and its context (/v1/models) and its KV pool (its metrics). AGENTS, by default, keeps the
 frozen box's KV pressure: 12 agents on its pool of 36,400 tokens, and in proportion on another pool; on a context too
 short for a 30k prompt and its reply, the prompts shrink in proportion and the agents grow to match.
@@ -202,10 +205,12 @@ async def call(
     stop: float,
     turns: list[list[float | None]],
     reply: int | None = None,
+    hint: float | None = None,
 ) -> None:
     """Run a call until ``stop``, appending each turn's times in ms (to its first token, and with ``reply`` to its 16th
-    and last), None where the turn failed to reach one."""
+    and last), None where the turn failed to reach one; with ``hint``, announcing each turn ``hint`` ms before it."""
     rng = random.Random(seed)
+    hints: set[asyncio.Task] = set()
     marks = marks_for(reply)
     messages = [
         {
@@ -215,6 +220,11 @@ async def call(
     ]
     await asyncio.sleep(rng.uniform(*CALL_START_S))
     while time.time() < stop:
+        if hint is not None:
+            task = asyncio.create_task(announce(session, engine, list(messages)))
+            hints.add(task)
+            task.add_done_callback(hints.discard)
+            await asyncio.sleep(hint / 1000)
         messages.append({"role": "user", "content": " ".join(rng.choices(CALL.split(), k=20))})
         body = {
             "model": engine.model,
@@ -236,6 +246,23 @@ async def call(
         print(f"{at} call {seed} {timed(marks, times)}", flush=True)
         messages.append({"role": "assistant", "content": text})
         await asyncio.sleep(rng.uniform(*CALL_GAP_S))
+    await asyncio.gather(*hints)
+
+
+async def announce(session: aiohttp.ClientSession, engine: Engine, messages: list[dict]) -> None:
+    """A turn's hint: the conversation so far, one token, at priority 0; a failure only loses the hint."""
+    body = {
+        "model": engine.model,
+        "messages": messages,
+        "max_tokens": 1,
+        "priority": 0,
+        "vllm_xargs": {"flatshare": "turn-hint"},
+    }
+    try:
+        async with session.post(f"{engine.url}/v1/chat/completions", json=body) as response:
+            await response.read()
+    except aiohttp.ClientError:
+        pass
 
 
 def ms(value: float) -> str:
@@ -293,7 +320,12 @@ def connect(engine: str) -> tuple[aiohttp.ClientSession, str]:
 
 
 async def main(
-    address: str, seconds: float, agents: int | None, fresh: bool, reply: int | None = None
+    address: str,
+    seconds: float,
+    agents: int | None,
+    fresh: bool,
+    reply: int | None = None,
+    hint: float | None = None,
 ) -> None:
     turns: list[list[float | None]] = []
     done: list[int] = []
@@ -306,13 +338,14 @@ async def main(
         print(
             f"tail: {count} agents with {'fresh' if fresh else 'growing'} prompts of {prompts} tokens beside 2 calls"
             f" with {reply or FIRST_TOKENS}-token replies, for {seconds:.0f} s; {engine.model}, a context of"
-            f" {engine.max_model_len:,} tokens, a pool of {engine.pool_tokens:,}",
+            f" {engine.max_model_len:,} tokens, a pool of {engine.pool_tokens:,}"
+            + ("" if hint is None else f"; each turn announced {hint:.0f} ms ahead"),
             flush=True,
         )
         stop = time.time() + seconds
         agents_ran = await asyncio.gather(
             *(agent(session, engine, 100 + i, stop, fresh, done) for i in range(count)),
-            *(call(session, engine, i, stop, turns, reply) for i in (1, 2)),
+            *(call(session, engine, i, stop, turns, reply, hint) for i in (1, 2)),
         )
     marks = marks_for(reply)
     if marks:
@@ -348,5 +381,10 @@ if __name__ == "__main__":
     )
     parser.add_argument("mode", nargs="?", default="grow", choices=("fresh", "grow"))
     parser.add_argument("--reply", type=reply_tokens, metavar="TOKENS", help="whole call replies")
+    parser.add_argument(
+        "--hint", type=float, metavar="MS", help="announce each call turn MS ms ahead"
+    )
     args = parser.parse_args()
-    asyncio.run(main(args.engine, args.seconds, args.agents, args.mode == "fresh", args.reply))
+    asyncio.run(
+        main(args.engine, args.seconds, args.agents, args.mode == "fresh", args.reply, args.hint)
+    )

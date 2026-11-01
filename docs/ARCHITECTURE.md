@@ -203,7 +203,7 @@ Every measurement on the box runs one pinned configuration, with the audio model
 
 ### 5.2 Hosts
 
-Figure 2 shows the hosts. cyan has 48 threads and no GPU; Phastform and Gray each have an RTX 5060 Ti 16 GB and 188 GiB of RAM, and run the frozen box (§5.1). A measurement adds, in cyan's host network, AIPerf's agent replay on pinned cores, and in the voice plane's namespace the measurement callers (`livekit-rtc`) and SMG (arm 8b).
+Figure 2 shows the hosts. cyan has 48 threads and no GPU; Phastform and Gray each have an RTX 5060 Ti 16 GB (Phastform with 188 GiB of RAM, Gray with 62 GiB), and run the frozen box (§5.1). A measurement adds, in cyan's host network, AIPerf's agent replay on pinned cores, and in the voice plane's namespace the measurement callers (`livekit-rtc`) and SMG (arm 8b).
 
 - **Phastform**, the first GPU node: every E2 point but the A100 run's before the two-card rounds, which ran on it and Gray in turn, and the arrangement to deploy's first card. It is paused when idle.
 - **Gray**, a second, identical GPU node: the probes' booked windows, the second card of the two-card rounds, and the warm spare of the arrangement to deploy on two nodes. cyan reaches it through `flatshare-tunnel@gray`.
