@@ -1488,6 +1488,155 @@ def test_the_reserve_must_leave_room_for_a_full_length_request(module, model):
         scheduler(module.Scheduler, model, 33, {"reserve_tokens": 9 * BLOCK})
 
 
+# Retention
+
+
+def finish(sched, *requests: Request) -> None:
+    """Add ``requests`` and step until every one of them has finished."""
+    for req in requests:
+        sched.add_request(req)
+    for _ in range(60):
+        if all(req.is_finished() for req in requests):
+            return
+        step(sched)
+    raise AssertionError("the requests did not finish")
+
+
+def turn(req_id: str, history: list[int], new: int = 0, arrival: float = 0) -> Request:
+    """A call's turn: its conversation so far, then ``new`` tokens of its own, at priority 0, replying 4 tokens."""
+    return request(req_id, 0, priority=0, arrival=arrival, max_tokens=4, prompt=history + [3] * new)
+
+
+def retaining(module, model, make_room: dict):
+    """A pool of 32 blocks with prefix caching, which holds a request of max_model_len (24 blocks) beside a
+    retention of up to 8."""
+    return scheduler(module.Scheduler, model, 33, make_room, prefix_caching=True)
+
+
+def test_a_finished_call_keeps_its_prefix_for_its_next_turn(module, model):
+    """A call's first turn leaves 3 full blocks (a prompt of 3 and 4 decoded tokens), and agents of 20 and 11 blocks
+    arrive. Retained, the 3 blocks keep the second agent waiting and the call's next turn finds all of them;
+    otherwise the agents take two of them, the last in the free queue, and the next turn finds one."""
+
+    def next_turn_hit(make_room):
+        sched = retaining(module, model, make_room)
+        first = turn("call-1", [5] * (3 * BLOCK))
+        finish(sched, first)
+        agents = [
+            request("agent-1", blocks(20), priority=2, arrival=1),
+            request("agent-2", blocks(11), priority=2, arrival=2, token=8),
+        ]
+        for agent in agents:
+            sched.add_request(agent)
+        for _ in range(3):
+            step(sched)
+        second = turn("call-2", list(first.all_token_ids), new=8, arrival=3)
+        return agents[1].status, sched._local_prefix_hit(second)[1]
+
+    assert next_turn_hit({"retain_tokens": 8 * BLOCK}) == (RequestStatus.WAITING, 3 * BLOCK)
+    assert next_turn_hit({}) == (RequestStatus.RUNNING, BLOCK)
+
+
+def test_a_calls_next_turn_ends_its_previous_retention(module, model):
+    """Each turn retains its full blocks, and the next turn's retention holds the previous one's anchor (the last
+    full block of its prompt), which ends it: a conversation keeps one retention, its latest turn's."""
+    sched = retaining(module, model, {"retain_tokens": 8 * BLOCK})
+    first = turn("call-1", [5] * (3 * BLOCK))
+    finish(sched, first)
+    assert (len(sched._retained), sched._num_retained_blocks, free_blocks(sched)) == (1, 3, 29)
+    second = turn(
+        "call-2", list(first.all_token_ids), new=12, arrival=1
+    )  # 64 tokens: 4 full blocks
+    finish(sched, second)
+    assert (len(sched._retained), sched._num_retained_blocks, free_blocks(sched)) == (1, 4, 28)
+
+
+def test_another_calls_turn_keeps_a_retention(module, model):
+    """Two calls share a system prompt of 2 blocks. Each one's retention holds the shared blocks but its own anchor,
+    so the second call's turn leaves the first's retention, and the first call's next turn finds its whole prompt."""
+    sched = retaining(module, model, {"retain_tokens": 8 * BLOCK})
+    system = [5] * (2 * BLOCK)
+    first_a = turn("a-1", system + [1] * BLOCK)
+    finish(sched, first_a)
+    finish(sched, turn("b-1", system + [2] * BLOCK, arrival=1))
+    assert len(sched._retained) == 2
+    assert (
+        sched._local_prefix_hit(turn("a-2", list(first_a.all_token_ids), new=8, arrival=2))[1]
+        == 3 * BLOCK
+    )
+
+
+def test_a_turn_that_does_not_fit_beside_the_other_retentions_is_not_retained(module, model):
+    """With room for 4 blocks, one call's 3 retained blocks leave no room for another call's 3, which are not
+    retained: the first call speaks next. Its next turn finds its prefix, and that turn's 4 full blocks replace its
+    own retention; a turn of more blocks than the room is not retained either."""
+    sched = retaining(module, model, {"retain_tokens": 4 * BLOCK})
+    first = turn("a-1", [1] * (3 * BLOCK))
+    finish(sched, first)
+    finish(sched, turn("b-1", [2] * (3 * BLOCK), arrival=1))
+    assert (len(sched._retained), sched._num_retained_blocks, free_blocks(sched)) == (1, 3, 29)
+    second = turn("a-2", list(first.all_token_ids), new=12, arrival=2)
+    assert sched._local_prefix_hit(second)[1] == 3 * BLOCK
+    finish(sched, second)
+    assert (len(sched._retained), sched._num_retained_blocks, free_blocks(sched)) == (1, 4, 28)
+    finish(sched, turn("c-1", [4] * (5 * BLOCK), arrival=3))
+    assert sched._num_retained_blocks == 4 and free_blocks(sched) == 28
+
+
+def test_a_retention_ends_after_retain_s(module, model, monkeypatch):
+    """A conversation without a turn for retain_s has ended or paused: its retention ends at the next step."""
+    sched = retaining(module, model, {"retain_tokens": 8 * BLOCK, "retain_s": 30})
+    finish(sched, turn("call-1", [5] * (3 * BLOCK)))
+    now = module.time.monotonic()
+    monkeypatch.setattr(module.time, "monotonic", lambda: now + 29)
+    step(sched)
+    assert sched._retained
+    monkeypatch.setattr(module.time, "monotonic", lambda: now + 31)
+    step(sched)
+    assert not sched._retained and free_blocks(sched) == 32
+
+
+def test_a_retention_ends_at_once_with_a_step_in_flight(module, model, monkeypatch):
+    """Scheduling asynchronously, as the box does, a retention that ends returns its blocks at once, a step in flight:
+    they are full blocks, written before their request finished, and a block it was the last holder of is in no
+    scheduled request's blocks, so no step in flight reads it."""
+    sched = retaining(module, model, {"retain_tokens": 8 * BLOCK, "retain_s": 30})
+    pipelined = Pipelined(sched)
+    call = turn("call-1", [5] * (3 * BLOCK))
+    sched.add_request(call)
+    while not call.is_finished():
+        pipelined.step()
+    while pipelined.in_flight:
+        pipelined.process()
+    assert sched._num_retained_blocks == 3 and free_blocks(sched) == 29
+    now = module.time.monotonic()
+    monkeypatch.setattr(module.time, "monotonic", lambda: now + 31)
+    pipelined.schedule()
+    assert not sched._retained and free_blocks(sched) == 32
+
+
+def test_a_prefix_cache_reset_ends_every_retention(module, model):
+    sched = retaining(module, model, {"retain_tokens": 8 * BLOCK})
+    finish(sched, turn("call-1", [5] * (3 * BLOCK)))
+    assert sched.reset_prefix_cache()
+    assert not sched._retained and free_blocks(sched) == 32
+
+
+def test_the_retention_must_leave_room_for_a_full_length_request(module, model):
+    """A pool of 32 blocks holds a request of max_model_len (24 blocks) beside a retention of 8 blocks, or of 4 with
+    a reserve of 4, and not beside one more."""
+    scheduler(module.Scheduler, model, 33, {"retain_tokens": 8 * BLOCK})
+    scheduler(
+        module.Scheduler, model, 33, {"retain_tokens": 4 * BLOCK, "reserve_tokens": 4 * BLOCK}
+    )
+    with pytest.raises(ValueError, match="retain_tokens"):
+        scheduler(module.Scheduler, model, 33, {"retain_tokens": 9 * BLOCK})
+    with pytest.raises(ValueError, match="retain_tokens"):
+        scheduler(
+            module.Scheduler, model, 33, {"retain_tokens": 5 * BLOCK, "reserve_tokens": 4 * BLOCK}
+        )
+
+
 # The switches
 
 
@@ -1512,6 +1661,11 @@ def test_the_reserve_must_leave_room_for_a_full_length_request(module, model):
             {"reserve_tokens": -16},
             "make_room.reserve_tokens must be an integer of at least 0, not -16",
         ),
+        (
+            {"retain_tokens": -16},
+            "make_room.retain_tokens must be an integer of at least 0, not -16",
+        ),
+        ({"retain_s": 0}, "make_room.retain_s must be an integer of at least 1, not 0"),
     ],
 )
 def test_a_bad_switch_fails_the_engine_start_naming_it(module, model, make_room, message):
@@ -1535,8 +1689,14 @@ def test_the_switches_need_priority_scheduling(module, model):
     """Under FCFS, which would ignore them, a switch that is on fails the start; switches that are off are fine."""
     with pytest.raises(ValueError, match="make_room needs --scheduling-policy priority"):
         scheduler(module.Scheduler, model, 33, {"budget_cap": True}, policy="fcfs")
+    with pytest.raises(ValueError, match="make_room needs --scheduling-policy priority"):
+        scheduler(module.Scheduler, model, 33, {"retain_tokens": 64}, policy="fcfs")
     scheduler(
-        module.Scheduler, model, 33, {"budget_cap": False, "reserve_tokens": 0}, policy="fcfs"
+        module.Scheduler,
+        model,
+        33,
+        {"budget_cap": False, "reserve_tokens": 0, "retain_tokens": 0},
+        policy="fcfs",
     )
 
 
@@ -1586,7 +1746,15 @@ def trace(sched, steps: int = 160) -> list[tuple]:
     "policy, make_room",
     [
         ("priority", None),
-        ("priority", {"max_preemptions_per_step": 0, "budget_cap": False, "reserve_tokens": 0}),
+        (
+            "priority",
+            {
+                "max_preemptions_per_step": 0,
+                "budget_cap": False,
+                "reserve_tokens": 0,
+                "retain_tokens": 0,
+            },
+        ),
         ("fcfs", None),
         ("fcfs", {"max_preemptions_per_step": 0, "budget_cap": False, "budget_cap_tokens": 48}),
     ],

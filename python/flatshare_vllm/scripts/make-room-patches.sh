@@ -43,5 +43,6 @@ write() {  # write FILE BASE TIP DESCRIPTION
 write 63350.patch v0.32.0 "$kv" "vLLM #63350 (https://github.com/vllm-project/vllm/pull/63350), backported to v0.32.0."
 write 63351.patch "$kv" "$cap" "vLLM #63351 (https://github.com/vllm-project/vllm/pull/63351), backported to v0.32.0, on #63350."
 write variant.patch "$cap" "$variant" "What only Flatshare's make-room variant has, on #63350 and #63351: the switches from
---additional-config's make_room table, the reserve, and the log line of the PRs' counters and its own."
+--additional-config's make_room table, the reserve, the retention of realtime prefixes, and the log line of the PRs'
+counters and its own."
 ls -l "$out"/*.patch
