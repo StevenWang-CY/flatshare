@@ -1121,8 +1121,8 @@ existing engine's scheduler rather than build a new one.
 requests for the highest-priority waiting request from v0.6.2 until V0 was removed, but only with chunked prefill off
 and by recomputing the victims [[8](#ref-8)]. Priority scheduling in the V1 scheduler [[27](#ref-27)] preempts among
 running requests only [[7](#ref-7)]. Its open fixes preempt at the request-count cap [[18](#ref-18)], which does not
-bind when KV fills, and one of them also preempts lower-priority running requests, one at a time, when a waiting
-request's allocation fails, until it fits or none is left [[28](#ref-28)].
+bind when KV fills, and two of them also preempt lower-priority running requests, one at a time, when a waiting
+request's allocation fails, until it fits or none is left [[28](#ref-28), [61](#ref-61)].
 
 SGLang's priority preemption [[6](#ref-6)] stops when KV memory runs out, and an open pull request adds preemption on KV
 exhaustion with a best-effort keep of the victim's KV in its prefix cache [[29](#ref-29)]. Research systems preempt for
@@ -1136,8 +1136,8 @@ high-priority requests and migrates others away [[33](#ref-33)], and LayerKV tra
 blocks [[34](#ref-34)].
 
 The KV preemption is V0's rule in V1's scheduler, under chunked prefill and asynchronous scheduling, on vLLM's own CPU
-tier. Unlike the open fix that preempts for KV [[28](#ref-28)], it preempts only when at most N victims make room, and
-then as few as do.
+tier. Unlike the open fixes that preempt for KV [[28](#ref-28), [61](#ref-61)], it preempts only when at most N victims
+make room, and then as few as do.
 
 **Keeping prefill out of a priority request's way.** Chunked prefill bounds how long a decode waits behind a prefill
 [[12](#ref-12)], and disaggregated serving moves prefill to other GPUs altogether [[35](#ref-35), [36](#ref-36)], which
@@ -1437,6 +1437,8 @@ scheduler: preempt for the waiting turn, and keep background prefill out of its 
 <a name="ref-59"></a>[59] Z. Ye et al. [FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving](https://arxiv.org/abs/2501.01005). In *MLSys 2025*.
 
 <a name="ref-60"></a>[60] T. Dao. [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691). In *ICLR 2024*.
+
+<a name="ref-61"></a>[61] vLLM pull request #45558. [Priority-based preemption at max_num_seqs](https://github.com/vllm-project/vllm/pull/45558). Opened 2026-06-14, last pushed 2026-08-20, open on 2026-10-31.
 
 ## Appendices
 
