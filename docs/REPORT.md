@@ -1259,9 +1259,16 @@ background work has to check first that the model does that work.
 **The pool stays as it is.** Two ways to a larger KV pool on this card did not hold. An FP8 KV cache doubles the pool's
 tokens and cost no quality the gate's screen saw. Beside the CPU tier, though, the engine died both times it ran under
 the main scenario's load, on a CUDA fault at a step's output copy
-([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md)). On the CPU the speech servers would give their
-memory to the pool, but Kokoro's first audio took 991 ms with one call against 211–242 ms for the whole TTS stage on the
-GPU ([the CPU record](../benchmarks/results/2026-10-27-cpu-audio/README.md)).
+([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md)). The fault is stock vLLM's, with none of the
+change's code: under asynchronous scheduling FlashInfer's `plan()` refills its page-locked buffer while the previous
+step's copy of it may still be queued, and on this card the CPU tier's transfers to the GPU hold that copy back. Under
+the same load stock vLLM 0.32.0 and 0.33.0rc3 died within four minutes, and with the wait of vLLM #64165 0.32.0 ran 30
+minutes clean ([the FP8 record](../benchmarks/results/2026-10-31-fp8-crash/README.md)). The pool stays in BF16 until
+vLLM ships the wait.
+
+On the CPU the speech servers would give their memory to the pool, but Kokoro's first audio took 991 ms with one call
+against 211–242 ms for the whole TTS stage on the GPU
+([the CPU record](../benchmarks/results/2026-10-27-cpu-audio/README.md)).
 
 **Scaled traces.** The agents replay Claude Code traces scaled 32× in blocks of tokens, so that every request fits the
 32k context. The scaling keeps which requests share which prefixes and changes the traces' timing. It also sets the KV

@@ -102,3 +102,12 @@ engine had died, since its turns then failed one by one at the reply timeout, so
 
 An FP8 KV cache beside the CPU tier is therefore not deployable on vLLM 0.32.0 on this card, and the serving profile
 keeps its BF16 cache.
+
+**What caused it** ([the FP8 record](../2026-10-31-fp8-crash/README.md), 2026-10-31). Stock vLLM 0.32.0 and 0.33.0rc3,
+with none of the change's code, died the same way under a load of our own beside the CPU tier, and 0.32.0 ran clean
+without the CPU tier, without asynchronous scheduling, or on attention other than FlashInfer's. FlashInfer's `plan()`
+refills one page-locked buffer per wrapper while the previous step's copy of it may still be queued (vLLM #61239), and
+on this card the CPU tier's transfers to the GPU hold that copy back; with the wait of vLLM #64165 the same load ran 30
+minutes clean. The box's engine decodes on FlashInfer's native wrapper, which plans every step, because its network
+namespace hides NVIDIA's artifactory from vLLM; with XQA decode forced on, the engine stalled all the same, its prefill
+plans enough.

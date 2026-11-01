@@ -248,7 +248,7 @@ Measured in the same scenario, beside the 24 sessions; the p95s are medians of e
 | #63350 alone | 5,085 ms | The KV preemption without the budget cap gets the turn into the batch, and its reply then decodes beside agent prefill |
 | An FP8 KV cache beside the CPU tier (`--kv-cache-dtype fp8`), on vLLM 0.32.0 on this card | Twice the tokens in the same memory (72,816 against 36,400), and no quality lost in the gate's screen | Beside two calls and 24 agent sessions the engine died both times it ran, on a CUDA fault (note 1) |
 
-1. The fault came at a step's output copy, with a CPU-tier transfer in flight ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md#the-fp8-kv-cache)).
+1. The fault came at a step's output copy, with a CPU-tier transfer in flight ([the sweep's record](../benchmarks/results/2026-10-27-sweep/README.md#the-fp8-kv-cache)). It is stock vLLM's, 0.33.0rc3's too: under asynchronous scheduling FlashInfer's plan buffer is refilled while its previous copy to the GPU may still be queued, here behind the CPU tier's transfers, and the wait of the open vLLM #64165 closes it ([the FP8 record](../benchmarks/results/2026-10-31-fp8-crash/README.md)). Until vLLM ships the wait, keep the BF16 cache.
 
 - **The lifecycle policy's timing** came from the voice agent's turn events, which serve mode does not send.
 - **Development mode** runs only on a measured box, from the measurement drop-in (`variant.sh measure on`), for the harness's `/server_info` and cache resets.
