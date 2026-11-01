@@ -567,7 +567,8 @@ def profile_settings(engine: dict = SERVING["engine"]) -> dict:
 
 def served(measured: dict) -> dict:
     """A point's engine.json by serving.json's names: its model, scheduler, scheduler class, cache and CPU tier, and
-    make-room's switches, which vLLM keeps in its additional configuration."""
+    make-room's switches and the serve module's just-in-time scheduling, which vLLM keeps in its additional
+    configuration (an engine run without the latter has none)."""
     return {
         "scheduler_cls": measured["scheduler_config"]["scheduler_cls"],
         "model": measured["model_config"],
@@ -575,6 +576,7 @@ def served(measured: dict) -> dict:
         "cache": measured["cache_config"],
         "kv_transfer": measured["kv_transfer_config"],
         "make_room": measured["additional_config"]["make_room"],
+        "jit": measured["additional_config"].get("flatshare_jit"),
     }
 
 
@@ -645,7 +647,7 @@ def test_a_record_keeps_each_engine_setting_serving_json_pins_but_the_unrecorded
         "scheduler_config": engine["scheduler"] | {"scheduler_cls": engine["scheduler_cls"]},
         "cache_config": engine["cache"],
         "kv_transfer_config": engine["kv_transfer"],
-        "additional_config": {"make_room": engine["make_room"]},
+        "additional_config": {"make_room": engine["make_room"], "flatshare_jit": engine["jit"]},
     }
     kept = served(engine_settings(configured))
     dropped = [

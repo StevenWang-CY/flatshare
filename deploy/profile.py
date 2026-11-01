@@ -869,6 +869,12 @@ SERVING_KEYS = {
     "reserve_tokens": int,
     "retain_tokens": int,
     "retain_s": int,
+    "jit_margin_ms": int,
+    "jit_step_ms": float,
+    "jit_us_per_token": float,
+    "jit_ns_per_pair": float,
+    "jit_ns_per_context": float,
+    "jit_mixed_ms": float,
     "max_num_batched_tokens": int,
     "long_prefill_token_threshold": int,
     "block_size": int,
@@ -881,6 +887,9 @@ SERVING_KEYS = {
     "audio": str,
 }
 """A [serving] table's keys and their types: each is required, and no other is taken."""
+JIT_STEP_COST = ("step_ms", "us_per_token", "ns_per_pair", "ns_per_context", "mixed_ms")
+"""The step-time model's coefficients a [serving] table gives flatshare_jit (jit_ and each), as its StepCost names
+them."""
 AUDIO = ("microphone", "synthetic")
 """The voice worker's audio configurations (python/flatshare_voice's worker.py)."""
 
@@ -925,6 +934,10 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
         raise ProfileError(f"{name}: max_agents must be 1 or more")
     if serve["audio"] not in AUDIO:
         raise ProfileError(f"{name}: audio must be {' or '.join(AUDIO)}, not {serve['audio']!r}")
+    if serve["jit_margin_ms"] < 0:
+        raise ProfileError(f"{name}: jit_margin_ms must be 0 (off) or more")
+    if negative := [f"jit_{key}" for key in JIT_STEP_COST if serve[f"jit_{key}"] < 0]:
+        raise ProfileError(f"{name}: {', '.join(negative)} must be 0 or more")
     return {
         "profile": name,
         "node": values["profile.node"],
@@ -978,6 +991,11 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
                     "retain_tokens",
                     "retain_s",
                 )
+            },
+            # flatshare_jit's settings, as the serve module installs them (off at a margin of 0).
+            "jit": {
+                "margin_ms": serve["jit_margin_ms"],
+                "step_cost": {key: serve[f"jit_{key}"] for key in JIT_STEP_COST},
             },
         },
         "patches": {

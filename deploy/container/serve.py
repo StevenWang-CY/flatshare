@@ -46,6 +46,10 @@ def flags(serving: dict, config: Path = ENGINE_CONFIG) -> list[str]:
     ]
     for key, value in engine["make_room"].items():
         args += [f"--additional-config.make_room.{key}", json.dumps(value)]
+    jit = engine["jit"]
+    args += ["--additional-config.flatshare_jit.margin_ms", json.dumps(jit["margin_ms"])]
+    for key, value in jit["step_cost"].items():
+        args += [f"--additional-config.flatshare_jit.step_cost.{key}", json.dumps(value)]
     return args
 
 

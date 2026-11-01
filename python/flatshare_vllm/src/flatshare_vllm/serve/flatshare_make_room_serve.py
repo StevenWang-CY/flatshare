@@ -12,6 +12,11 @@ from inside it.
 
 The file is written whole or not at all (a temporary file renamed over it), and a write that fails fails the engine's
 start, which the check would fail anyway. Without FLATSHARE_ENGINE_EFFECTIVE nothing is written.
+
+One thing it adds beside the scheduling: where the engine's additional config holds ``flatshare_jit`` with a margin
+above 0 (the profile's jit_margin_ms and step-time model), its constructor installs flatshare_jit's just-in-time
+scheduling of the next batch on vLLM's engine core, before the core binds its step function, and the effective
+configuration records what it installed.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import flatshare_jit
 import flatshare_make_room_scheduler as make_room
 import vllm
 
@@ -44,6 +50,18 @@ def _plain(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return [_plain(item) for item in value]
     return _plain(value.value) if hasattr(value, "value") else str(value)
+
+
+def jit_settings(config: Any) -> dict[str, Any] | None:
+    """The just-in-time scheduling the engine's additional config asks for, as numbers (a margin in ms and the step
+    model's coefficients), or None where it asks for none or for a margin of 0."""
+    jit = (config.additional_config or {}).get("flatshare_jit")
+    if not jit or not jit.get("margin_ms"):
+        return None
+    return {
+        "margin_ms": int(jit["margin_ms"]),
+        "step_cost": {key: float(jit["step_cost"][key]) for key in flatshare_jit.STEP_COST},
+    }
 
 
 def effective(scheduler: Any) -> dict[str, Any]:
@@ -106,6 +124,8 @@ def effective(scheduler: Any) -> dict[str, Any]:
             "retain_blocks": scheduler.retain_blocks,
             "retain_s": scheduler.retain_s,
         },
+        # What the constructor installed on the engine core: off is a margin of 0, the profile's own way to say it.
+        "jit": jit_settings(config) or {"margin_ms": 0, "step_cost": None},
         "additional_config": _plain(dict(config.additional_config)),
     }
 
@@ -127,5 +147,10 @@ class AsyncScheduler(make_room.AsyncScheduler):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        if jit := jit_settings(self.vllm_config):
+            from vllm.v1.engine import core
+
+            cost = flatshare_jit.StepCost(**jit["step_cost"])
+            flatshare_jit.install(core.EngineCore, jit["margin_ms"] / 1e3, cost)
         if path := os.environ.get(ENV):
             write(path, effective(self))

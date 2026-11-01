@@ -41,6 +41,7 @@ def modules(tmp_path_factory):
     build = TR.load(TR.PACKAGE / "build.py", "flatshare_serve_build")
     path = build.build("make-room", tmp_path_factory.mktemp("make-room"), source_tree=True)
     make_room = TR.load(path, "flatshare_make_room_scheduler")
+    TR.load(SERVE.parent / "flatshare_jit.py", "flatshare_jit")  # beside it on the engine's PYTHONPATH
     return make_room, TR.load(SERVE, "flatshare_make_room_serve")
 
 
@@ -48,7 +49,20 @@ def sha256(path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def scheduler(cls, model, num_blocks=48):
+JIT = BOX["engine"]["jit"]
+"""Just-in-time scheduling as the box serves it: a 30 ms margin over the card's step-time model."""
+
+
+@pytest.fixture(autouse=True)
+def installed(modules, monkeypatch) -> list[tuple]:
+    """What the serve scheduler installs on vLLM's engine core, recorded instead: the suite's schedulers run without
+    one, and installing would patch the class for every test after."""
+    calls: list[tuple] = []
+    monkeypatch.setattr(modules[1].flatshare_jit, "install", lambda *args: calls.append(args))
+    return calls
+
+
+def scheduler(cls, model, num_blocks=48, jit=JIT):
     return T.scheduler(
         cls,
         model,
@@ -57,6 +71,7 @@ def scheduler(cls, model, num_blocks=48):
         max_num_batched_tokens=128,
         long_prefill_token_threshold=64,
         prefix_caching=True,
+        additional={"flatshare_jit": jit},
     )
 
 
@@ -138,6 +153,7 @@ def test_it_writes_the_configuration_it_was_built_with(modules, written, tmp_pat
     }
     assert written["serve_module_sha256"] == sha256(SERVE) == BOX["engine"]["serve_module_sha256"]
     assert written["make_room"] == SUITE_SWITCHES | {"reserve_blocks": 0, "retain_blocks": 8}
+    assert written["jit"] == JIT
     sched = written["scheduler"]
     assert (
         sched["policy"],
@@ -207,3 +223,19 @@ def test_serving_check_passes_the_schedulers_configuration_and_fails_one_that_di
     # A file another process wrote, as an earlier start leaves one, is no engine's account of itself.
     done = check(own, effective, tmp_path, "--pid", str(os.getpid() + 1_000_000))
     assert done.returncode == 2 and "a file of an earlier start" in done.stderr
+
+
+def test_it_installs_the_profiles_just_in_time_scheduling(modules, model, installed):
+    """With the profile's flatshare_jit, the constructor installs it on vLLM's engine core with the margin in seconds
+    and the step-time model; with a margin of 0, the negative control, it installs nothing and records it off."""
+    from vllm.v1.engine import core
+
+    serve = modules[1]
+    scheduler(serve.AsyncScheduler, model)
+    cost = serve.flatshare_jit.StepCost(**JIT["step_cost"])
+    assert installed == [(core.EngineCore, JIT["margin_ms"] / 1e3, cost)]
+    off = scheduler(
+        serve.AsyncScheduler, model, jit={"margin_ms": 0, "step_cost": JIT["step_cost"]}
+    )
+    assert len(installed) == 1
+    assert serve.effective(off)["jit"] == {"margin_ms": 0, "step_cost": None}

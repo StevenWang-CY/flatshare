@@ -1126,6 +1126,13 @@ def describe_serving(serving: dict) -> list[str]:
     model, sched, cache = engine["model"], engine["scheduler"], engine["cache"]
     tier = engine["kv_transfer"]["kv_connector_extra_config"]["cpu_bytes_to_use"]
     switches = ", ".join(f"{key} {json.dumps(value)}" for key, value in engine["make_room"].items())
+    jit = engine["jit"]
+    scheduled = (
+        f"the next batch {jit['margin_ms']} ms before the step in flight is due "
+        f"(step model {', '.join(f'{key} {value}' for key, value in jit['step_cost'].items())})"
+        if jit["margin_ms"]
+        else "the next batch as soon as the one before is launched (off)"
+    )
     return [
         f"serving profile {serving['profile']} (variant {serving['variant']}), vLLM {engine['vllm_version']}",
         f"  model {model['model']}@{model['revision'][:12]}, tokenizer {model['tokenizer']}@"
@@ -1133,6 +1140,7 @@ def describe_serving(serving: dict) -> list[str]:
         f"  {sched['policy']}, step cap {sched['max_num_batched_tokens']}/{sched['long_prefill_token_threshold']}, "
         f"pool {cache['pool_tokens']} tokens ({cache['num_gpu_blocks']} blocks), CPU tier {tier >> 30} GiB",
         f"  make_room: {switches}",
+        f"  just in time: {scheduled}",
         f"  scheduler {engine['scheduler_cls']} over {engine['scheduler_module']['name']} "
         f"{engine['scheduler_module']['sha256'][:16]}",
         f"  voice: {voice['mode']} mode, {voice['max_calls']} calls at once, {voice['audio']} audio",

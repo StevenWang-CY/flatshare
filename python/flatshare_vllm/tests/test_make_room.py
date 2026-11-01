@@ -125,8 +125,10 @@ def scheduler(
     lora_config: LoRAConfig | None = None,
     connector: Connector | None = None,
     encoder_decoder: bool = False,
+    additional: dict | None = None,
 ):
-    """A scheduler over a KV pool of ``num_blocks`` blocks of 16 tokens (one of them vLLM's null block). An
+    """A scheduler over a KV pool of ``num_blocks`` blocks of 16 tokens (one of them vLLM's null block), with
+    ``additional`` in the engine's additional config beside make-room's switches. An
     ``encoder_decoder`` one has a cross-attention group too and schedules as for such a model, patched in after
     construction as vLLM's own tests do: a real one would need the model's multimodal processor."""
     model_config = ModelConfig(
@@ -151,7 +153,8 @@ def scheduler(
         scheduler_config=scheduler_config,
         cache_config=cache_config,
         lora_config=lora_config,
-        additional_config={"make_room": make_room} if make_room is not None else {},
+        additional_config=({"make_room": make_room} if make_room is not None else {})
+        | (additional or {}),
     )
     shape = {"block_size": BLOCK, "num_kv_heads": 1, "head_size": 1, "dtype": torch.float32}
     groups = [KVCacheGroupSpec(["layer"], FullAttentionSpec(**shape))]
@@ -1312,6 +1315,49 @@ def test_with_every_running_slot_taken_a_completed_load_holds_nothing_back(modul
     assert len(sched.running) == 2
     assert step(sched).num_scheduled_tokens == {"decode": 1, "prefill": 256}
     assert voice.status == RequestStatus.WAITING_FOR_REMOTE_KVS
+
+
+@pytest.mark.parametrize(
+    ("make_room", "req_id", "priority", "matched", "loads"),
+    [
+        (
+            {"recompute_tokens": 256},
+            "call",
+            0,
+            BLOCK,
+            False,
+        ),  # an EAGLE drafter's dropped block: recomputed
+        ({"recompute_tokens": 256}, "call", 0, 256, False),  # within one step's budget: recomputed
+        ({}, "call", 0, BLOCK, True),  # the negative control: switched off, it loads
+        ({"recompute_tokens": 256}, "call", 0, 272, True),  # longer than the switch: it loads
+        (
+            {"recompute_tokens": 256},
+            "agent",
+            2,
+            BLOCK,
+            True,
+        ),  # an agent's short extension: it loads
+    ],
+)
+def test_a_realtime_requests_short_load_is_recomputed(
+    module, model, make_room, req_id, priority, matched, loads
+):
+    """A load costs a request two or three step boundaries however few its tokens, so a priority-0 request whose
+    CPU-tier hit extends its GPU hit by at most recompute_tokens computes the extension in its own step instead; a
+    longer one, or a lower-priority request's, is loaded as before."""
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        400,
+        make_room,
+        max_model_len=4096,
+        connector=Connector({req_id: matched}),
+    )
+    req = request(req_id, 300, priority=priority, arrival=0)
+    sched.add_request(req)
+    out = step(sched)
+    assert (req.status == RequestStatus.WAITING_FOR_REMOTE_KVS) is loads
+    assert out.num_scheduled_tokens == ({} if loads else {req_id: 300})
 
 
 def test_the_module_logs_as_vllms_scheduler(module):
