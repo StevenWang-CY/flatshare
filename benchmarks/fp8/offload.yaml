@@ -1,0 +1,22 @@
+# The box's engine settings (deploy/phastform/engine.yaml at v1.13, bench profile) minus the tool parser, served by
+# stock vLLM: a 5 GiB KV pool, priority scheduling, 512-token steps, prefix caching and vLLM's CPU offload of 20 GiB,
+# write-through. Runs add --kv-cache-dtype on the command line.
+model: Qwen/Qwen3-4B-Instruct-2507-FP8
+revision: 8591804019c8b22094c3b5b4454e0edc05dffc98
+max-model-len: 32768
+disable-uvicorn-access-log: true
+kv-cache-memory: 5368709120
+gpu-memory-utilization: 0.70
+enable-prefix-caching: true
+scheduling-policy: priority
+max-num-batched-tokens: 512
+long-prefill-token-threshold: 256
+enable-prompt-tokens-details: true
+kv-cache-metrics: true
+kv-cache-metrics-sample: 0.05
+kv-transfer-config:
+  kv_connector: OffloadingConnector
+  kv_role: kv_both
+  kv_connector_extra_config:
+    cpu_bytes_to_use: 21474836480
+    offload_prompt_only: false

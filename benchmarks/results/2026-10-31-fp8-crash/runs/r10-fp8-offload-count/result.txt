@@ -1,0 +1,14 @@
+name: r10-fp8-offload-count
+config: offload.yaml
+flags: --kv-cache-dtype fp8
+venv: ~/fp8-investigation/venv-fix
+env: FP8INV_PLAN_WAIT=count FLASHINFER_WORKSPACE_BASE=~/flatshare/cache/flashinfer 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-10-31T22:36:31Z
+healthy: 1 2026-10-31T22:38:12Z
+load: exit 4 2026-10-31T22:43:57Z
+verdict: STALLED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-10-31T22:44:12Z
+gpu after: 2 MiB

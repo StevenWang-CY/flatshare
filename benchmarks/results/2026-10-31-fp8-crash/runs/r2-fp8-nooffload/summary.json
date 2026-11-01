@@ -1,0 +1,19 @@
+{
+ "seconds": 900.1,
+ "server_died_at": null,
+ "counts": {
+  "agent:200": 211,
+  "voice:200": 194
+ },
+ "args": {
+  "uds": "$XDG_RUNTIME_DIR/fp8inv/r2-fp8-nooffload.sock",
+  "url": "http://localhost",
+  "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+  "duration": 900.0,
+  "out": "~/fp8-investigation/runs/r2-fp8-nooffload",
+  "agents": 24,
+  "voice": 2,
+  "ramp": 30.0,
+  "seed": 11
+ }
+}

@@ -1,0 +1,14 @@
+# offload.yaml without vLLM's CPU offload: the same pool, scheduling, steps and prefix caching, no KV connector.
+model: Qwen/Qwen3-4B-Instruct-2507-FP8
+revision: 8591804019c8b22094c3b5b4454e0edc05dffc98
+max-model-len: 32768
+disable-uvicorn-access-log: true
+kv-cache-memory: 5368709120
+gpu-memory-utilization: 0.70
+enable-prefix-caching: true
+scheduling-policy: priority
+max-num-batched-tokens: 512
+long-prefill-token-threshold: 256
+enable-prompt-tokens-details: true
+kv-cache-metrics: true
+kv-cache-metrics-sample: 0.05

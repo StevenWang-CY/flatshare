@@ -1,0 +1,21 @@
+{
+ "seconds": 900.1,
+ "server_died_at": null,
+ "stalled_at": null,
+ "counts": {
+  "agent:200": 169,
+  "voice:200": 235
+ },
+ "args": {
+  "uds": "$XDG_RUNTIME_DIR/fp8inv/r4-bf16-flashattn-offload.sock",
+  "url": "http://localhost",
+  "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+  "duration": 900.0,
+  "out": "~/fp8-investigation/runs/r4-bf16-flashattn-offload",
+  "agents": 24,
+  "voice": 2,
+  "ramp": 30.0,
+  "seed": 11,
+  "stall": 180.0
+ }
+}

@@ -1,0 +1,21 @@
+{
+ "seconds": 180.4,
+ "server_died_at": null,
+ "stalled_at": null,
+ "counts": {
+  "agent:200": 56,
+  "voice:200": 26
+ },
+ "args": {
+  "uds": "$XDG_RUNTIME_DIR/fp8inv/r20w-main-warmup.sock",
+  "url": "http://localhost",
+  "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+  "duration": 180.0,
+  "out": "~/fp8-investigation/runs/r20w-main-warmup",
+  "agents": 24,
+  "voice": 2,
+  "ramp": 30.0,
+  "seed": 11,
+  "stall": 180.0
+ }
+}

@@ -1,0 +1,14 @@
+name: r9-fp8-offload-fix
+config: offload.yaml
+flags: --kv-cache-dtype fp8
+venv: ~/fp8-investigation/venv-fix
+env: 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-10-31T22:01:04Z
+healthy: 1 2026-10-31T22:06:10Z
+load: exit 0 2026-10-31T22:36:11Z
+verdict: SURVIVED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-10-31T22:36:21Z
+gpu after: 2 MiB

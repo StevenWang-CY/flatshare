@@ -1,0 +1,15 @@
+2026-10-31T22:00:54Z start r9-fp8-offload-fix
+2026-10-31T22:36:21Z end r9-fp8-offload-fix exit 0 verdict: SURVIVED
+2026-10-31T22:36:21Z start r10-fp8-offload-count
+2026-10-31T22:44:12Z end r10-fp8-offload-count exit 0 verdict: STALLED
+2026-10-31T22:44:13Z start r12-bf16-flashinfer-offload-fix
+2026-10-31T23:01:48Z end r12-bf16-flashinfer-offload-fix exit 0 verdict: SURVIVED
+2026-10-31T23:01:48Z start r7-fp8-offload-noasync
+2026-10-31T23:22:47Z end r7-fp8-offload-noasync exit 0 verdict: SURVIVED
+2026-10-31T23:22:47Z start r8-fp8-triton-offload
+2026-10-31T23:40:39Z end r8-fp8-triton-offload exit 0 verdict: SURVIVED
+2026-10-31T23:40:39Z start r4-bf16-flashattn-offload
+2026-10-31T23:57:28Z end r4-bf16-flashattn-offload exit 0 verdict: SURVIVED
+2026-10-31T23:57:29Z start r1b-fp8-offload
+2026-11-01T00:02:26Z end r1b-fp8-offload exit 0 verdict: CRASHED
+2026-11-01T00:02:26Z queue done

@@ -1,0 +1,21 @@
+{
+ "seconds": 900.2,
+ "server_died_at": null,
+ "stalled_at": null,
+ "counts": {
+  "agent:200": 245,
+  "voice:200": 187
+ },
+ "args": {
+  "uds": "$XDG_RUNTIME_DIR/fp8inv/r8-fp8-triton-offload.sock",
+  "url": "http://localhost",
+  "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+  "duration": 900.0,
+  "out": "~/fp8-investigation/runs/r8-fp8-triton-offload",
+  "agents": 24,
+  "voice": 2,
+  "ramp": 30.0,
+  "seed": 11,
+  "stall": 180.0
+ }
+}

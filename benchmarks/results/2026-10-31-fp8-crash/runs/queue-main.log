@@ -1,0 +1,5 @@
+2026-11-01T01:54:17Z start r20w-main-warmup
+2026-11-01T02:04:17Z end r20w-main-warmup exit 0 verdict: SURVIVED
+2026-11-01T02:04:17Z start r20-main-fp8-offload
+2026-11-01T02:14:15Z end r20-main-fp8-offload exit 0 verdict: STALLED
+2026-11-01T02:14:15Z queue done

@@ -1,0 +1,14 @@
+name: r16-fp8-offload-xqa
+config: offload.yaml
+flags: --kv-cache-dtype fp8
+venv: ~/flatshare/venvs/engine
+env: VLLM_HAS_FLASHINFER_CUBIN=1 FLASHINFER_WORKSPACE_BASE=~/fp8-investigation/cache/flashinfer-xqa 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-11-01T01:11:14Z
+healthy: 1 2026-11-01T01:17:07Z
+load: exit 4 2026-11-01T01:22:46Z
+verdict: STALLED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-11-01T01:23:01Z
+gpu after: 2 MiB

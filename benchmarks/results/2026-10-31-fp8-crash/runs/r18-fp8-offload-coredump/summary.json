@@ -1,0 +1,24 @@
+{
+ "seconds": 184.4,
+ "server_died_at": 184.4,
+ "stalled_at": null,
+ "counts": {
+  "agent:200": 91,
+  "voice:200": 48,
+  "agent:500": 20,
+  "agent:error": 3,
+  "voice:error": 1
+ },
+ "args": {
+  "uds": "$XDG_RUNTIME_DIR/fp8inv/r18-fp8-offload-coredump.sock",
+  "url": "http://localhost",
+  "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
+  "duration": 900.0,
+  "out": "~/fp8-investigation/runs/r18-fp8-offload-coredump",
+  "agents": 24,
+  "voice": 2,
+  "ramp": 30.0,
+  "seed": 11,
+  "stall": 180.0
+ }
+}

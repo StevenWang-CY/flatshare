@@ -1,0 +1,14 @@
+name: r14-rc3-fp8-offload-count
+config: offload.yaml
+flags: --kv-cache-dtype fp8
+venv: ~/fp8-investigation/venv-rc3-fix
+env: FP8INV_PLAN_WAIT=count FLASHINFER_WORKSPACE_BASE=~/fp8-investigation/cache/flashinfer-rc3 
+versions: 0.33.0rc3.dev3+g4ba787ec9 2.14.0+cu130 0.7.2.post1
+started: 2026-11-01T00:41:07Z
+healthy: 1 2026-11-01T00:42:37Z
+load: exit 4 2026-11-01T00:50:43Z
+verdict: STALLED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-11-01T00:50:56Z
+gpu after: 2 MiB

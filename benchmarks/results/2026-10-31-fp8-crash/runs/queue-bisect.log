@@ -1,0 +1,4 @@
+2026-10-31T21:25:15Z start r2-fp8-nooffload
+2026-10-31T21:42:34Z end r2-fp8-nooffload exit 0 verdict: SURVIVED
+2026-10-31T21:42:34Z start r3-bf16-flashinfer-offload
+2026-10-31T21:59:32Z queue stopped after r3 (queue-fix.sh takes over)

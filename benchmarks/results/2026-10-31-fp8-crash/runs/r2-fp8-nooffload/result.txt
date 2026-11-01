@@ -1,0 +1,14 @@
+name: r2-fp8-nooffload
+config: nooffload.yaml
+flags: --kv-cache-dtype fp8
+venv: ~/flatshare/venvs/engine
+env: 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-10-31T21:25:25Z
+healthy: 1 2026-10-31T21:27:32Z
+load: exit 0 2026-10-31T21:42:32Z
+verdict: SURVIVED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-10-31T21:42:34Z
+gpu after: 2 MiB

@@ -1,0 +1,14 @@
+name: r18-fp8-offload-coredump
+config: offload.yaml
+flags: --kv-cache-dtype fp8
+venv: ~/flatshare/venvs/engine
+env: CUDA_COREDUMP_SHOW_PROGRESS=1 CUDA_ENABLE_USER_TRIGGERED_COREDUMP=1 CUDA_COREDUMP_GENERATION_FLAGS=skip_nonrelocated_elf_images,skip_global_memory,skip_shared_memory,skip_local_memory,skip_constbank_memory,skip_abort CUDA_ENABLE_COREDUMP_ON_EXCEPTION=1 FLASHINFER_WORKSPACE_BASE=~/flatshare/cache/flashinfer CUDA_COREDUMP_FILE=~/fp8-investigation/dumps/r18.%p.%t CUDA_ENABLE_CPU_COREDUMP_ON_EXCEPTION=0 CUDA_COREDUMP_PIPE=~/fp8-investigation/dumps/r18-pipe.%p 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-11-01T01:34:05Z
+healthy: 1 2026-11-01T01:38:53Z
+load: exit 3 2026-11-01T01:41:57Z
+verdict: CRASHED
+server alive at the end: 1
+first fault line: (EngineCore pid=2786334) ERROR 10-31 21:41:53 [core.py:1512] EngineCore encountered a fatal error.
+server exit: 0 2026-11-01T01:42:01Z
+gpu after: 2 MiB

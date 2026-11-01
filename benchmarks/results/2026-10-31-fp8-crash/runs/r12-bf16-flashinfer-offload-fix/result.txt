@@ -1,0 +1,14 @@
+name: r12-bf16-flashinfer-offload-fix
+config: offload.yaml
+flags: --attention-backend FLASHINFER
+venv: ~/fp8-investigation/venv-fix
+env: FP8INV_PLAN_WAIT=block FLASHINFER_WORKSPACE_BASE=~/flatshare/cache/flashinfer 
+versions: 0.32.0 2.13.0+cu130 0.7.0.post1
+started: 2026-10-31T22:44:22Z
+healthy: 1 2026-10-31T22:46:37Z
+load: exit 0 2026-10-31T23:01:40Z
+verdict: SURVIVED
+server alive at the end: 1
+first fault line: none
+server exit: 0 2026-10-31T23:01:48Z
+gpu after: 2 MiB

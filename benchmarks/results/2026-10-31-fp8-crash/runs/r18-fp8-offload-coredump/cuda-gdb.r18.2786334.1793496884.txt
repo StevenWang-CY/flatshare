@@ -1,0 +1,17 @@
+Opening GPU coredump: ~/fp8-investigation/dumps/r18.2786334.1793496884
+[Current focus set to CUDA kernel 0, grid 380123, block (120,0,0), thread (0,6,0), device 0, sm 2, warp 13, lane 0]
+
+CUDA Exception: Warp Illegal Address
+The exception was triggered at PC 0x7fe7171c3200  void flashinfer::PersistentVariableLengthMergeStatesKernel<8u, 16u, 8u, 4u, __nv_bfloat16, __nv_bfloat16, int>(__nv_bfloat16*, float*, int*, __nv_bfloat16*, float*, unsigned int, unsigned int*, unsigned int)
+#0  0x00007fe7171c2e20 in void flashinfer::PersistentVariableLengthMergeStatesKernel<8u, 16u, 8u, 4u, __nv_bfloat16, __nv_bfloat16, int>(__nv_bfloat16*, float*, int*, __nv_bfloat16*, float*, unsigned int, unsigned int*, unsigned int)<<<(144,1,1),(16,8,1)>>> ()
+  Kernel Parent Dev Grid Status     SMs Mask   GridDim BlockDim Invocation                                                                                                  
+*      0      -   0 380123 Active 0x0cf3ffffff (144,1,1) (16,8,1) flashinfer::PersistentVariableLengthMergeStatesKernel<8u, 16u, 8u, 4u, __nv_bfloat16, __nv_bfloat16, int>() 
+#0  0x00007fe7171c2e20 in void flashinfer::PersistentVariableLengthMergeStatesKernel<8u, 16u, 8u, 4u, __nv_bfloat16, __nv_bfloat16, int>(__nv_bfloat16*, float*, int*, __nv_bfloat16*, float*, unsigned int, unsigned int*, unsigned int)<<<(144,1,1),(16,8,1)>>> ()
+*> 0x7fe7171c3200 <_ZN10flashinfer41PersistentVariableLengthMergeStatesKernelILj8ELj16ELj8ELj4E13__nv_bfloat16S1_iEEvPT3_PfPT5_PT4_S4_jPjj+6144>:	Failed to spawn cuobjdump. cuobjdump does not exist in gdb path and posix_spawnp failed: No such file or directory
+=> 0x7fe7171c2e20 <_ZN10flashinfer41PersistentVariableLengthMergeStatesKernelILj8ELj16ELj8ELj4E13__nv_bfloat16S1_iEEvPT3_PfPT5_PT4_S4_jPjj+5152>:	Failed to spawn cuobjdump. cuobjdump does not exist in gdb path and posix_spawnp failed: No such file or directory
+  Wp Active Lanes Mask Divergent Lanes Mask          Active PC Kernel  BlockIdx First Active ThreadIdx 
+Device 0 SM 2
+  12        0xffffffff           0x00000000 0x00007fe7171c2e30      0 (120,0,0)                (0,4,0) 
+* 13        0xffffffff           0x00000000 0x00007fe7171c2e20      0 (120,0,0)                (0,6,0) 
+  14        0xffffffff           0x00000000 0x00007fe7171c2e30      0 (120,0,0)                (0,0,0) 
+  15        0xffffffff           0x00000000 0x00007fe7171c2e30      0 (120,0,0)                (0,2,0) 
