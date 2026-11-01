@@ -1455,6 +1455,22 @@ def test_make_room_counts_and_logs_what_it_holds_back(module, model, monkeypatch
     ]
 
 
+def test_make_room_logs_the_turns_announced_with_hints_on(module, model, monkeypatch):
+    """With hint_hold_ms, make-room's line also counts the calls' turns announced, so that a deployment shows its voice
+    worker's hints arriving; without it the line is as it was (the negative control above)."""
+    sched = scheduler(
+        module.Scheduler, model, 400, {"budget_cap": True, "hint_hold_ms": 400}, max_model_len=4096
+    )
+    lines = []
+    monkeypatch.setattr(
+        module, "logger", SimpleNamespace(info=lambda msg, *a: lines.append(msg % a))
+    )
+    finish(sched, request("hint", 40, priority=0, arrival=0, max_tokens=1))
+    sched._make_room_log_time -= 10
+    step(sched)
+    assert lines[-1].endswith("; 0 preemptions to make room; 1 turns announced")
+
+
 @pytest.mark.parametrize("threshold, held_tokens", [(128, 2 * 128), (384, 511)])
 def test_a_steps_held_tokens_are_at_most_what_its_budget_leaves(
     module, model, threshold, held_tokens
