@@ -9,7 +9,7 @@ Flatshare's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §6.2](.
 
 | Module | Contents |
 |---|---|
-| `flatshare_voice.worker` | The voice agent (`flatshare-voice-worker start`): Silero VAD, LiveKit's local end-of-turn model, STT/LLM/TTS over the voice plane's sockets, LiveKit's default turn handling |
+| `flatshare_voice.worker` | The voice agent (`flatshare-voice-worker start`): Silero VAD, LiveKit's local end-of-turn model, STT/LLM/TTS over the voice plane's sockets, LiveKit's turn handling with each audio configuration's settings (below) |
 | `flatshare_voice.events` | `Lifecycle`: a session's LiveKit signals as lifecycle events, and a log line per turn with its stage times; `EventSender`: their delivery to `/v1/events` |
 | `flatshare_voice.bots` | Measurement callers (`flatshare-voice bots`): voice-to-voice latency, barge-in to silence, and with `--save-audio` each call's audio |
 | `flatshare_voice.callers` | The caller corpus (`flatshare-voice render-callers`): scripted lines in six stock Kokoro voices, 16 kHz WAVs |
@@ -43,7 +43,7 @@ Flatshare's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §6.2](.
 
 1. A refused or reset connection gets a second try, and a timed-out request's retry starts after the callers' 30 s reply timeout has counted the turn, so it cannot hide a slow reply from E2.
 2. An engine that serves another model answers a request for any other with 404: the `qwen3-14b` worker variant names Qwen3-14B-FP8, for the A100 kit's optional arm C'.
-3. Each is set over the audio configuration's value, LiveKit's 0.5 by default for the delay and Silero's 0.55 by default for the silence: the endpointing sweep's settings ([`benchmarks/endpointing`](../../benchmarks/endpointing/sweep.sh)).
+3. Each is set over the audio configuration's value, or LiveKit's default for the turn detection for the delay (0.5 with VAD turns, 0.3 with the end-of-turn model) and Silero's 0.55 by default for the silence: the endpointing sweep's settings ([`benchmarks/endpointing`](../../benchmarks/endpointing/sweep.sh)).
 4. `on` is serve mode's default, and refused where `FLATSHARE_LLM_UDS` bypasses the gateway. `off` is bench mode's default; the `node-binding` variant (`deploy/cyan/variants/node-binding`) turns it on there.
 
 The worker reads these whenever it is to serve (`start`, which its unit runs, or `dev`, `console` or `connect`), before it registers with LiveKit: a socket that is not set, or a value its setting does not take, stops it with a line that names the setting (`journalctl --user -u flatshare-voice-worker`), so that no call reaches a worker that would fail it.
@@ -69,7 +69,7 @@ Bench mode, the default and what every measurement ran, takes every job LiveKit 
 
 `microphone`, serve mode's (the profile's), is for real callers and was not measured by any benchmark, whose callers are synthetic:
 
-- **The end of a turn.** LiveKit's end-of-turn model decides it, as people pause inside a sentence, and `FLATSHARE_TURN_DETECTION=vad` is refused with it (unlink the `vad-turns` variant to serve). Endpointing is LiveKit's default, 0.5 s at least and 3 s at most.
+- **The end of a turn.** LiveKit's end-of-turn model decides it, as people pause inside a sentence, and `FLATSHARE_TURN_DETECTION=vad` is refused with it (unlink the `vad-turns` variant to serve). Endpointing is pinned to 0.5 s at least and 3 s at most: LiveKit's defaults with VAD turns, which every E2 point ran, where LiveKit's own for the end-of-turn model are 0.3 s and 2.5 s, which no run measured.
 - **Speech and interruptions.** Silero needs an activation of 0.6 (against 0.5) and 0.1 s of speech (against 0.05) to count speech, and an interruption 0.6 s of it (against 0.5), so that a click or a door is no barge-in. An interruption that no transcript follows within 2 s is taken for a false one, and the agent resumes (LiveKit's default).
 - **Echo.** LiveKit's 3 s AEC warm-up stays on, so that a loudspeaker's echo of the agent does not cut its first reply.
 - **Noise and gain.** Noise suppression is the caller's client's, as a browser's WebRTC applies it: LiveKit's noise cancellation needs LiveKit Cloud, which the namespace cannot reach. The room input's gain control is LiveKit's default.

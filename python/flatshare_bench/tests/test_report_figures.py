@@ -1166,6 +1166,37 @@ def test_the_starts_are_the_drills_journals(drawn: dict[str, Path]) -> None:
     } <= texts
 
 
+def kill_ends(name: str) -> list[float]:
+    """When each stream of a drill's record ended, in ms after the drill's stamp of its event: the record's own, or in
+    W8's records, which keep none, the one drill.sh wrote to the directory's event file."""
+    record = json.loads((data.DRILLS / name / "drill.json").read_text())
+    event = record.get("event") or float((data.DRILLS / name / "event").read_text())
+    return sorted(1000 * (s["ended"] - event) for s in record["streams"])
+
+
+def test_the_docs_time_each_kills_streams_as_their_records_do() -> None:
+    # The docs give when a kill's streams ended, from the first to the last, "after the kill command": after the
+    # drill's stamp, which drill.sh takes just before its systemctl kill (for the engine kill on the GPU node, while
+    # cyan times the streams). They give the final build's kills, and BENCHMARKS W8's engine kill beside them.
+    def ended(name: str) -> str:
+        ends = kill_ends(name)
+        return f"{min(ends):.0f}\u2013{max(ends):.0f} ms"
+
+    engine, gateway, w8 = ended(data.KILL), ended("v0.3-295-gateway-kill"), ended("engine-kill")
+    assert (engine, gateway, w8) == ("6\u201311 ms", "10\u201314 ms", "53\u201357 ms")
+    quoted = {
+        REPORT: [engine, engine, gateway],
+        BENCHMARKS: [engine, w8, gateway],
+        REPO / "docs" / "ARCHITECTURE.md": [engine],
+        REPO / "docs" / "PRODUCTION.md": [engine],
+        REPO / "ops" / "RUNBOOK.md": [engine.replace("\u2013", " to ")],
+    }
+    for doc, ranges in quoted.items():
+        text = " ".join(doc.read_text().split())
+        found = re.findall(r"\d+(?:\u2013| to )\d+ ms after the kill(?: command)?", text)
+        assert found == [f"{r} after the kill command" for r in ranges], doc.name
+
+
 REPORT = REPO / "docs" / "REPORT.md"
 BENCHMARKS = REPO / "docs" / "BENCHMARKS.md"
 

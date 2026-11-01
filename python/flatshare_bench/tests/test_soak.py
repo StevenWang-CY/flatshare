@@ -1256,6 +1256,37 @@ def test_a_soak_runs_its_calls_and_agents_scrapes_the_service_and_writes_its_sum
     )  # stopped, and reaped
 
 
+class _LateClock:
+    """run.py's time module with its wall clock read 0.6 ms into each millisecond, so that every time series.jsonl
+    keeps of a scrape, rounded to the millisecond, rounds up."""
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(time, name)
+
+    @staticmethod
+    def time() -> float:
+        return math.floor(time.time() * 1000) / 1000 + 0.0006
+
+
+@needs_waitid
+def test_the_window_starts_at_its_scrape_whatever_the_clocks_fraction(
+    cyan: Cyan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The window starts at the time series.jsonl keeps of its scrape, so the counters' step from the scrape before
+    # the agents started to the window's, which spans their start, counts in no hour, though that time rounded up.
+    monkeypatch.setattr(soak_run, "time", _LateClock())
+    summary = soak(cyan)
+    out = cyan.host.root / "runs" / "s"
+    series = [json.loads(line) for line in (out / "series.jsonl").read_text().splitlines()]
+    window = series[1]
+    assert [s.get("label") for s in series[:2]] == ["before", "window"]
+    valid = 'flatshare_gateway_sli_valid_total{class="realtime"}'
+    since_window = series[-1]["gateway"][valid] - window["gateway"][valid]
+    [hour] = summary["hours"]
+    assert hour["gateway"]["realtime_sli"]["valid"] == since_window
+    assert record_of(cyan)["window"]["start"] == summary["window"]["start"] == window["at"]
+
+
 @needs_waitid
 def test_each_hours_summary_is_written_as_the_hour_ends(
     cyan: Cyan, monkeypatch: pytest.MonkeyPatch

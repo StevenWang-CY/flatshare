@@ -84,3 +84,9 @@ What it shows:
   ([its last lines](aiperf-end.txt)). The rounds' windows, the calls' first 240 s a minute into the replay
   ([the rounds' record](../2026-10-28-rounds/README.md)), sit in that start, so their agents' rates are the replay's
   first minutes, not a day's.
+- **Voice alone's callers started twice.** Its run of arriving calls ended with its last call, 87 s before its window
+  did, and the soak started the callers again, a fresh draw over the 77 s left that placed one more call, call 34, where
+  the first draw had placed none (the harness then did so; since v1.14 a run lasts its time). Without that call voice
+  alone's replies' p95 is 1,724 ms rather than 1,726, and the day's replies over the SLO number 77 rather than 74, 1.5%
+  either way. The day's callers ended 24 s before its window, under the minute a restart needs, so its calls are one
+  draw.

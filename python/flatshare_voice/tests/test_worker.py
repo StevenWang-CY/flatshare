@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 from livekit.agents import AgentServer, JobExecutorType, inference, ipc, utils
+from livekit.agents.voice import turn
 from livekit.protocol import agent
 
 from flatshare_voice import admission, plugins, worker
@@ -279,6 +280,17 @@ def test_the_microphone_configuration_is_not_the_synthetic_callers() -> None:
         "resume_false_interruption": True,
         "false_interruption_timeout": 2.0,
     }
+    # What LiveKit resolves from them: serve mode's pin holds the measured delays, where LiveKit's own defaults for the
+    # end-of-turn model are shorter; the synthetic callers with VAD turns, as E2 ran, get 0.5 and 3 s by default.
+    resolved = turn._resolve_endpointing(
+        handling["endpointing"], turn_detection=handling["turn_detection"]
+    )
+    assert (resolved["min_delay"], resolved["max_delay"]) == (0.5, worker.MAX_DELAY_S)
+    model = turn._resolve_endpointing(None, turn_detection=handling["turn_detection"])
+    assert (model["min_delay"], model["max_delay"]) == (0.3, 2.5)
+    vad_turns = settings(FLATSHARE_TURN_DETECTION="vad").turn_handling()
+    resolved = turn._resolve_endpointing(None, turn_detection=vad_turns["turn_detection"])
+    assert (resolved["min_delay"], resolved["max_delay"]) == (0.5, worker.MAX_DELAY_S)
     # Fixed endpointing is the synthetic callers': with a microphone it is refused, naming the drop-in to unlink.
     with pytest.raises(ValueError, match="unlink vad-turns"):
         settings(FLATSHARE_AUDIO="microphone", FLATSHARE_TURN_DETECTION="vad")

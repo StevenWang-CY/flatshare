@@ -12,6 +12,8 @@ Each point is `CAMPAIGN/POINT/`, as `flatshare-bench e2 export` writes it from t
 | `summary.json` | The point's E2 metrics, with the first bytes taken exactly from the gateway's request log and, where the campaign sampled the GPU, its median SM clock and highest temperature during the calls (`gpu`) |
 | `bots/summary.json`, `bots/turns.jsonl` | The callers' summary and their line per turn |
 
+`w2b/a5-queued8192-s16` and `w2c/disc-a5-queued8192-s24` ran before a failed turn was counted at the callers' 30 s reply timeout (b8e4004), so the V2V in their `summary.json` and `bots/summary.json` leaves their failed turns out; the report recomputes every point's V2V from `bots/turns.jsonl`, each failed turn at 30 s.
+
 The raw records, which the report does not need (the gateway's request log, AIPerf's exports, the metric snapshots, the voice worker's journal, the GPU's samples and the tools' logs), are an asset of the GitHub release v0.3.
 
 129 points, in the campaigns of [`benchmarks/e2`](../../e2/README.md), all on vLLM 0.32.0 and Qwen3-4B-Instruct-2507-FP8 on Phastform's RTX 5060 Ti:

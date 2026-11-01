@@ -73,11 +73,12 @@ from flatshare_bench.e2.report import (
     mark_frontier,
     read_dots,
     stage_waterfall,
+    v2v_samples,
     voice_slo,
     write_report,
 )
 from flatshare_bench.e2.run import BUSY
-from flatshare_stats import metric_samples
+from flatshare_stats import metric_samples, percentiles
 
 T0 = 1_800_000_000.0  # the calls run from T0 to T0 + 100 s
 REPO = Path(__file__).resolve().parents[3]
@@ -1494,6 +1495,27 @@ def test_a_committed_points_engine_json_reduces_to_itself() -> None:
         assert set(again) == set(kept), path
         for section, settings in kept.items():
             assert again[section] == settings, f"{path}: {section}"
+
+
+UNCENSORED = ("2026-10-23-e2/w2b/a5-queued8192-s16", "2026-10-23-e2/w2c/disc-a5-queued8192-s24")
+"""The points whose summary.json and callers' summary leave their failed turns out of V2V: they ran before a failed turn
+was counted at the reply timeout (b8e4004), as their record's README says."""
+
+
+def test_a_committed_points_v2v_is_what_the_report_recomputes_from_its_turns() -> None:
+    # The report recomputes each point's V2V from its callers' turns, a failed turn at the reply timeout. Every point
+    # with calls under benchmarks/results, in whichever record set, keeps the same in its summary.json, but the two
+    # that ran before a failed turn was counted, which their record's README names.
+    results = REPO / "benchmarks" / "results"
+    differ = []
+    for path in sorted(results.rglob("summary.json")):
+        point = path.parent
+        voice = json.loads(path.read_text()).get("voice") if (point / "run.json").exists() else None
+        if voice and voice["v2v_ms"] != percentiles(v2v_samples(point / "bots" / "turns.jsonl")):
+            differ.append(point.relative_to(results).as_posix())
+    assert differ == list(UNCENSORED)
+    readme = (RESULTS / "README.md").read_text()
+    assert all(f"`{point.split('/', 1)[1]}`" in readme for point in UNCENSORED)
 
 
 def test_each_campaigns_report_is_what_its_points_give(tmp_path: Path) -> None:

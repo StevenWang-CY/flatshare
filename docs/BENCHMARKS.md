@@ -335,7 +335,7 @@ Differences between configurations that ran the same sample of the agents' trace
 
 What W5's re-measure says:
 - **W5's fixes cost nothing measurable.** Round by round, the fixed module differs from v0.3's by −158 to +164 ms in V2V p95 (median +8 ms), −6 ms in the first byte and −24 tokens/s of the agents' token rate: within the run-to-run spread of either.
-- **The result holds over five samples of the agents' traces.** Over the campaigns tuned vLLM's p95 moves from 8.7 to 12.1 s from run to run; that of the configuration to deploy stays at 2.13–2.40 s, 98–363 ms over W5's SLO of 2,034 ms (202 ms at the median of its fifteen runs). Reply by reply that is 286 of its 885 replies over the SLO (32%), where the SLO allows 5%, against 532 of tuned vLLM's 590 (90%), and the p95 of the fifteen runs' replies pooled is 2,268 ms (`flatshare_bench.report.data`, `Configuration.over` and `pooled_p95`). The five samples of the agents are the same in the three campaigns, with the same callers: the fifteen runs are five workload samples measured three times. In every round of the PR campaign the configurations rank the same: tuned vLLM, the KV preemption alone, the change at 16 tokens, the configuration to deploy.
+- **The result holds over five samples of the agents.** Over the campaigns tuned vLLM's p95 moves from 8.7 to 12.1 s from run to run; that of the configuration to deploy stays at 2.13–2.40 s, 98–363 ms over W5's SLO of 2,034 ms (202 ms at the median of its fifteen runs). Reply by reply that is 286 of its 885 replies over the SLO (32%), where the SLO allows 5%, against 532 of tuned vLLM's 590 (90%), and the p95 of the fifteen runs' replies pooled is 2,268 ms (`flatshare_bench.report.data`, `Configuration.over` and `pooled_p95`). The five samples of the agents are the same in the three campaigns, with the same callers: the fifteen runs are five workload samples measured three times. In every round of the PR campaign the configurations rank the same: tuned vLLM, the KV preemption alone, the change at 16 tokens, the configuration to deploy.
 - **The campaigns agree.** Round by round, the p95 of the configuration to deploy differs between the PR campaign and W5's by −109 to +126 ms (median −17 ms) and between the extension and W5's by −166 to +82 ms (median −88 ms); tuned vLLM's differs between the first two by −637 to +2,333 ms (median +92 ms), its tail varying by seconds from run to run within either campaign.
 - **Aborting agent requests also makes room, at the agents' tail.** Preempt-resubmit reaches 2,522 ms (2,516–2,868), 488 ms over the SLO, and the configuration to deploy is lower in every round, by 223 to 723 ms (median 390 ms). Its agents keep their throughput (3,332 tokens/s over the first 240 s), but their TTFT p99 is 193 s (160–232 s) against 106 s for tuned vLLM and 111 s for the configuration to deploy.
 - **Nearly every whole reply fits the 48-token window.** W5's gateway logged 5,571 voice replies over its campaigns: 23 tokens at the median and 52 at most; 79% of them run past 16 tokens and one past 48. The window has to cover only a reply's first sentence, which the voice agent hands TTS whole.
@@ -775,14 +775,14 @@ Session 1 ran on the box's deployment of W5 (its servers on TCP; the same steps)
 
 **Provenance:** the drills, 2026-10-25, the build of that day beside W8's; the drills on two GPU nodes, 2026-10-28.
 
-The deployed box on the configuration to deploy (make-room with the pull requests' switches and a 48-token window), on 2026-10-25, from `ops/drills` ([RUNBOOK.md](../ops/RUNBOOK.md#drills) runs them): the build of that day (v0.3-295 on both hosts), and W8's, before W6's hardening, beside it. Each drill opens two realtime streams through the gateway's voice-plane socket and four background ones through its TCP port, each decoding up to 2,000 tokens, then breaks something once every stream has its first byte; from the event on it probes both planes every second, each probe on a new connection, until the streams have ended and a request succeeds. The records, with W6's and an intermediate build's, are in [`benchmarks/results/2026-10-25-drills`](../benchmarks/results/2026-10-25-drills/README.md).
+The deployed box on the configuration to deploy (make-room with the pull requests' switches and a 48-token window), on 2026-10-25, from `ops/drills` ([RUNBOOK.md](../ops/RUNBOOK.md#drills) runs them): the build of that day (v0.3-295 on both hosts), and W8's, before W6's hardening, beside it. Each drill opens two realtime streams through the gateway's voice-plane socket and four background ones through its TCP port, each decoding up to 2,000 tokens, then breaks something once every stream has its first byte; from the event on it probes both planes every second, each probe on a new connection, until the streams have ended and a request succeeds. Times after a kill count from the drill's stamp just before its `systemctl kill`, which for the engine kill is taken on the GPU node while cyan times the streams. The records, with W6's and an intermediate build's, are in [`benchmarks/results/2026-10-25-drills`](../benchmarks/results/2026-10-25-drills/README.md).
 
 | Drill | What the six streams saw | What the new requests got | W8, before W6 |
 |---|---|---|---|
-| The engine killed (SIGKILL to every process of `flatshare-engine`, mid-decode) | Each got vLLM's error event, `upstream_unavailable`, 8–11 ms after the kill | 210 of 212 probes failed at once, until one succeeded 106.2 s after the kill (note 1) | Every body cut 54–57 ms after the kill, with no error event; a request succeeded 112.3 s after it |
+| The engine killed (SIGKILL to every process of `flatshare-engine`, mid-decode) | Each got vLLM's error event, `upstream_unavailable`, 6–11 ms after the kill command | 210 of 212 probes failed at once, until one succeeded 106.2 s after the kill (note 1) | Every body cut 53–57 ms after the kill command, with no error event; a request succeeded 112.3 s after it |
 | The gateway reloaded (`systemctl --user reload flatshare-gateway`, a deploy's) | The realtime streams finished whole, 20.9 s after; the background ones ended 5.0 s after, with the `draining` error event | None of 42 probes failed or waited: the slowest was answered in 0.13 s | — (a deploy restarted the gateway) |
 | The gateway restarted (`systemctl --user restart flatshare-gateway`), 30 s after the reload | As the reload's: the realtime streams whole, 20.7 s after; the background ones `draining`, 5.0 s after | None of 42 failed; those sent during the drain waited in the socket's backlog (note 2) | Every stream finished, 22.4–23.2 s after, while the gateway refused new connections; the probe ran after the drain |
-| The gateway killed (SIGKILL; systemd starts it again a second later, its socket unit holding the listeners) | All broke 11–14 ms after | None of 4 failed; they waited for the gateway's start, the slowest 1.3 s | — |
+| The gateway killed (SIGKILL; systemd starts it again a second later, its socket unit holding the listeners) | All broke 10–14 ms after the kill command | None of 4 failed; they waited for the gateway's start, the slowest 1.3 s | — |
 
 1. Of the failed probes, 2 answered 502, then 503 `upstream_not_ready` without reaching for the engine.
 2. They were answered once the new gateway started, 20.7 s after the restart (the slowest in 19.8 s).
@@ -955,7 +955,7 @@ Measured in W0: AIPerf `agentic_replay` of the 32×-scaled Claude Code corpus, 1
 
 **Reading.**
 - Half of the evicted blocks (50.4%) had been idle no longer than the 90th-percentile reuse gap, so LRU evicts sessions that are coming back.
-- With the 4× write-through CPU tier, those misses cost a restore, not a recompute. W0 read the headroom on this configuration as GPU placement and prefetch timing, not CPU-tier retention; E1 has since superseded that reading: in the simulator even perfect knowledge of the returns buys under 9% of the median resume ([below](#agent-replay-at-three-loads-and-the-simulator-calibrated-on-it-w2)).
+- With the 4× write-through CPU tier, those misses cost a restore, not a recompute. W0 read the headroom on this configuration as GPU placement and prefetch timing, not CPU-tier retention; E1 has since superseded that reading: in the simulator even perfect knowledge of the returns buys under 8% of the median resume ([below](#agent-replay-at-three-loads-and-the-simulator-calibrated-on-it-w2)).
 - The reuse-gap histogram counts only blocks that survived until reuse, so it is biased short. This is a signal, and the simulator's clairvoyant reference is the measurement.
 
 <a id="agent-replay-at-three-loads-and-the-simulator-calibrated-on-it-w2"></a>
@@ -971,7 +971,7 @@ AIPerf `agentic_replay` of the 32× corpus against the frozen box (straight to t
 | 24 | 1,568 | 175 / 1,415 / 15,605 ms | 22.0 ms | 51.4 / 33.4 / 15.2% | 2 |
 
 - **Repeatability.** Three 16-session runs (W0's, one on a warm engine and the fresh one above) agree within 1.5 points on the split and range from 787 to 1,023 ms at TTFT p90. At 24 sessions a run on a warm engine was slower (TTFT p90 1,900 ms).
-- **The simulator against them.** `flatshare-sim` with the W2 contention model (the step loop and a fitted step time; [its README](../crates/flatshare-sim/README.md#the-contention-model)), fitted to E0's cells and these three operating points, reproduces resume TTFT p50 / p90 within 4–8% at 8 and 16 sessions, also when each point is left out of the fit, and request counts within 1%. At 24 sessions it is 18% / 30% fast, because restores take 163 ms longer there than modeled; the likely cause is store traffic, which the model omits.
+- **The simulator against them.** `flatshare-sim` with the W2 contention model (the step loop and a fitted step time; [its README](../crates/flatshare-sim/README.md#the-contention-model)), fitted to E0's cells and these three operating points, reproduces resume TTFT p50 / p90 within 3–8% at 8 and 16 sessions, and within 0–5% when each point is left out of the fit, and request counts within 1%. At 24 sessions it is 18% / 30% fast, because restores take 163 ms longer there than modeled; the likely cause is store traffic, which the model omits.
 
 <a id="e1-parking-in-the-simulator"></a>
 
@@ -985,14 +985,14 @@ AIPerf `agentic_replay` of the 32× corpus against the frozen box (straight to t
 
 | Agent sessions (KV pressure) | `lru-cpu` resume p50 / p90 | Oracle prefetch p50 / p90 | Clairvoyant reference p50 / p90 |
 |---|---|---|---|
-| 8 (1.6) | 86 / 267 ms | +3.4% / +28.0% | +1.4% / +15.5% |
-| 12 (2.4) | 103 / 299 ms | +3.3% / +28.8% | +0.5% / +8.0% |
-| 16 (3.2) | 139 / 895 ms | +8.2% (+10%) / +13.2% (−3%) | +1.7% / +9.4% |
-| 24 (4.4, outside the calibration) | 208 / 1,645 ms | −2.4% (−24%) / −16.9% (−24%) | +2.3% / +10.9% |
+| 8 (1.6) | 86 / 267 ms | +3.6% / +28.1% | +1.4% / +15.5% |
+| 12 (2.4) | 103 / 299 ms | +3.3% / +28.6% | +0.5% / +8.0% |
+| 16 (3.2) | 139 / 895 ms | +7.6% (+10%) / +15.3% (−1%) | +1.7% / +9.4% |
+| 24 (4.4, outside the calibration) | 208 / 1,645 ms | +4.9% (−2%) / −3.9% (−8%) | +2.3% / +10.9% |
 
-Even perfect knowledge buys under 9% of the median resume, which is already a GPU hit or a short restore. At the tail it buys 28% at low pressure (about 80–90 ms of the p90), more than the clairvoyant reference, because a prefetch hides a restore inside the pause; session history, the knowledge a deployment has, buys nothing.
+Even perfect knowledge buys under 8% of the median resume, which is already a GPU hit or a short restore. At the tail it buys 28–29% at low pressure (about 80–90 ms of the p90), more than the clairvoyant reference, because a prefetch hides a restore inside the pause; session history, the knowledge a deployment has, buys nothing.
 
-Read at p50, this is G-sim's negative branch ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)): the CPU-tier policy plugin stays off. The oracle's rows were corrected on 2026-10-24: its simulated prefetch had fired late for the turns AIPerf's idle cap sends early.
+Read at p50, this is G-sim's negative branch ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)): the CPU-tier policy plugin stays off. The oracle's rows were corrected on 2026-10-24: its simulated prefetch had fired late for the turns AIPerf's idle cap sends early. Every prefetching arm's were corrected again on 2026-10-31: a prefetch had paid for every block the CPU tier held, also those the pool had no room for, which it never placed; it now pays for what fits when it begins.
 
 The full regime map, with TraceLab's pauses, the history-level arms and the 2× and 8× tiers, is [below](#the-regime-map). So is the placement of an L4, an A100 and an H100 on the same map, from costs modeled on their published peaks and the kernel path vLLM takes on each ([Other hardware, modeled](../crates/flatshare-sim/README.md#other-hardware-modeled)); none of its numbers is measured, and one card has since been: [the A100 run](#the-a100-run-2026-10-26).
 
@@ -1003,40 +1003,40 @@ The full regime map, with TraceLab's pauses, the history-level arms and the 2× 
 | Pauses | Sessions | Pressure | π | `oracle-prefetch` | `history-prefetch` | `tokencake` | `ttl-30` | `clairvoyant` |
 |---|---|---|---|---|---|---|---|---|
 | trace | 5 | 1.3 | 27.0 | +2 / +13% | −1 / +0% | −5 / −9% | −1 / +2% | +1 / +7% |
-| trace | 8 | 1.8 | 29.6 | +3 / +40% | +1 / +11% | −6 / −8% | +1 / +4% | +1 / +27% |
-| trace | 12 | 2.6 | 21.4 | +5 / +32% | −1 / −6% | −10 / −21% | +0 / −2% | +0 / +7% |
-| trace | 16 | 3.6 | 23.4 | +15 / +10% | −11 / −27% | −27 / −22% | +2 / −5% | +2 / +8% |
-| trace | 24 | 4.7 | 23.9 | −25 / −14% | −31 / −22% | −60 / −23% | +5 / −3% | +3 / +8% |
-| trace | 32 | 6.2 | 23.5 | −48 / −24% | −40 / −17% | −37 / −11% | −7 / +1% | +3 / +2% |
-| trace | 40 | 7.5 | 22.9 | −55 / −27% | −46 / −29% | −47 / −22% | +4 / +6% | +1 / +1% |
-| tracelab | 5 | 1.2 | 3.2 | −0 / +1% | −0 / −2% | −5 / −7% | −1 / +1% | +0 / +1% |
-| tracelab | 8 | 1.8 | 2.9 | +1 / +6% | −2 / −3% | −6 / −14% | +0 / +3% | +1 / +4% |
-| tracelab | 12 | 2.4 | 2.7 | +2 / +7% | −3 / −9% | −13 / −18% | +0 / +0% | +0 / +7% |
-| tracelab | 16 | 3.4 | 2.6 | −29 / −51% | −39 / −42% | −30 / −41% | +7 / −2% | +4 / +2% |
-| tracelab | 24 | 4.7 | 2.9 | −81 / −25% | −80 / −27% | −86 / −27% | +13 / +1% | +2 / +0% |
-| tracelab | 32 | 6.1 | 3.3 | −30 / −21% | −30 / −26% | −32 / −27% | −0 / −0% | +1 / +1% |
-| tracelab | 40 | 7.3 | 2.8 | −11 / −4% | −20 / −3% | −14 / −4% | +0 / +0% | +1 / +1% |
+| trace | 8 | 1.8 | 29.6 | +3 / +40% | −0 / +12% | −6 / −10% | +1 / +4% | +1 / +27% |
+| trace | 12 | 2.6 | 21.4 | +5 / +32% | +1 / −8% | −11 / −21% | +0 / −2% | +0 / +7% |
+| trace | 16 | 3.6 | 23.4 | +9 / +2% | −9 / −9% | −24 / −18% | +2 / −5% | +2 / +8% |
+| trace | 24 | 4.7 | 23.9 | +2 / −5% | −19 / −17% | −36 / −17% | +5 / −3% | +3 / +8% |
+| trace | 32 | 6.2 | 23.5 | −5 / −23% | −24 / −11% | −27 / −5% | −7 / +1% | +3 / +2% |
+| trace | 40 | 7.5 | 22.9 | −25 / −21% | −10 / −6% | −10 / −3% | +4 / +6% | +1 / +1% |
+| tracelab | 5 | 1.2 | 3.2 | −0 / +1% | −0 / +0% | −3 / −4% | −1 / +1% | +0 / +1% |
+| tracelab | 8 | 1.8 | 2.9 | +2 / +4% | −2 / −1% | −4 / −10% | +0 / +3% | +1 / +4% |
+| tracelab | 12 | 2.4 | 2.7 | +1 / +9% | −0 / −0% | −10 / −8% | +0 / +0% | +0 / +7% |
+| tracelab | 16 | 3.4 | 2.6 | +17 / −11% | −9 / −13% | −18 / −18% | +7 / −2% | +4 / +2% |
+| tracelab | 24 | 4.7 | 2.9 | −14 / −10% | −19 / +0% | −36 / −1% | +13 / +1% | +2 / +0% |
+| tracelab | 32 | 6.1 | 3.3 | −13 / −3% | −11 / −12% | −12 / −13% | −0 / −0% | +1 / +1% |
+| tracelab | 40 | 7.3 | 2.8 | −1 / −1% | −6 / −1% | −4 / −1% | +0 / +0% | +1 / +1% |
 
 With trace pauses up to 24 sessions, `mori` loses 1–15% at p50 and 10–24% at p90 against `lru-cpu` (ranking by noisy predicted returns evicts sessions that come back), and `infercept` 18–36% at p50 (its swaps turn GPU hits into restores, and the pool has no use for the memory they free).
 
-**The realistic regime.** The frozen box with the traces' think times and the CPU tier at 4× (π about 23), over 20 seeds (11–30; `realistic.md`): gain over `lru-cpu`, the mean of the per-seed gains, their median (in parentheses) and range [in brackets], and the oracle's gain on the seeds' mean latencies:
+**The realistic regime.** The frozen box with the traces' think times and the CPU tier at 4× (π about 23), over 20 seeds (11–30; `realistic.md`; each seed a draw of where the sessions enter the same traces, as E2's samples are): gain over `lru-cpu`, the mean of the per-seed gains, their median (in parentheses) and range [in brackets], and the oracle's gain on the seeds' mean latencies:
 
 | Sessions | Pressure | π | `lru-cpu` resume p50 / p90 | `oracle-prefetch` p50 | p90 | `oracle-prefetch` on mean latencies, p50 / p90 | `clairvoyant` p50 / p90 | Best history arm, p90 |
 |---|---|---|---|---|---|---|---|---|
-| 8 | 1.6 | 28.6 | 86 / 267 ms | +3.4% (+3.2) [−3, +11] | +28.0% (+28.0) [+12, +48] | +3.5 / +29.3% | +1.4 / +15.5% | `history-prefetch` +3.6% |
-| 12 | 2.4 | 20.6 | 103 / 299 ms | +3.3% (+3.0) [−1, +9] | +28.8% (+29.4) [+16, +40] | +3.4 / +29.6% | +0.5 / +8.0% | `history-prefetch` −9.5% |
-| 16 | 3.2 | 21.3 | 139 / 895 ms | +8.2% (+6.5) [−0, +25] | +13.2% (+21.9) [−43, +50] | +10.4 / −2.9% | +1.7 / +9.4% | `infercept` −9.8% |
-| 24 | 4.4 | 23.3 | 208 / 1,645 ms | −2.4% (+5.9) [−103, +20] | −16.9% (−15.2) [−61, +21] | −24.4 / −23.7% | +2.3 / +10.9% | `infercept` −7.0% |
+| 8 | 1.6 | 28.6 | 86 / 267 ms | +3.6% (+3.4) [−3, +11] | +28.1% (+28.5) [+10, +48] | +3.7 / +29.4% | +1.4 / +15.5% | `history-prefetch` +3.9% |
+| 12 | 2.4 | 20.6 | 103 / 299 ms | +3.3% (+3.3) [−1, +8] | +28.6% (+30.8) [+15, +41] | +3.4 / +29.5% | +0.5 / +8.0% | `history-prefetch` −6.6% |
+| 16 | 3.2 | 21.3 | 139 / 895 ms | +7.6% (+5.3) [+1, +32] | +15.3% (+22.6) [−59, +41] | +9.7 / −0.7% | +1.7 / +9.4% | `infercept` −9.8% |
+| 24 | 4.4 | 23.3 | 208 / 1,645 ms | +4.9% (+6.2) [−41, +25] | −3.9% (−1.4) [−42, +26] | −2.3 / −8.2% | +2.3 / +10.9% | `infercept` −7.0% |
 
-**G-sim.** The gate is read at p50. There the oracle level closes under 9% of resume TTFT across the realistic regime by the mean of the per-seed gains, and 10% at W0's 16 sessions by the gain of the seeds' mean latencies: at the gate, not clearly under it. Below, gains are means of the per-seed gains, with the gain of the mean latencies in parentheses where the two differ by more than two points.
-- **p50.** +3% at 8 and 12 sessions, +8% at 16 (+10%: 139 to 125 ms) and −2% at 24 (−24%). The median resumed turn is a GPU hit or a short restore, and a restore turned into a hit saves only its transfer and the two steps it waits after it.
-- **p90.** +28% at 8 and 12 sessions (pressure 1.6–2.4: 78 and 88 ms of `lru-cpu`'s 267 and 299 ms) and +13% at W0's 16 sessions (−3%), whose seed range is wider than the effect (−43 to +50%). At 24 sessions (pressure 4.4) it is −17% (−24%): its loads queue with the demand restores on the one load stream and stall the step loop as they do.
+**G-sim.** The gate is read at p50. There the oracle level closes under 8% of resume TTFT across the realistic regime by the mean of the per-seed gains, and 10% at W0's 16 sessions by the gain of the seeds' mean latencies: at the gate, not clearly under it. Below, gains are means of the per-seed gains, with the gain of the mean latencies in parentheses where the two differ by more than two points.
+- **p50.** +4% and +3% at 8 and 12 sessions, +8% at 16 (+10%: 139 to 126 ms) and +5% at 24 (−2%). The median resumed turn is a GPU hit or a short restore, and a restore turned into a hit saves only its transfer and the two steps it waits after it.
+- **p90.** +28% and +29% at 8 and 12 sessions (pressure 1.6–2.4: 78 and 88 ms of `lru-cpu`'s 267 and 299 ms) and +15% at W0's 16 sessions (−1%), whose seed range is wider than the effect (−59 to +41%). At 24 sessions (pressure 4.4) it is −4% (−8%): its loads share the one load stream with the demand restores and stall the step loop as they do.
 - **The reference.** The clairvoyant gap itself is 0.5–2.3% at p50 and 8–16% at p90. The oracle passes it at 8 and 12 sessions at both percentiles: a prefetch hides a restore inside the pause, which no eviction order can.
-- **The history level**, the information a deployment has without tools that report when they will return, closes nothing: its best arm gains 3.6% at p90 at 8 sessions and loses 7–10% from 12 sessions on, its prefetches mistimed by heavy-tailed pauses. TTL holds are neutral.
-- **TraceLab's tool pauses** (π about 3, a pause about three restores long): the oracle gains at most 7% (p90, 12 sessions) and loses from 16 sessions on.
+- **The history level**, the information a deployment has without tools that report when they will return, closes nothing: its best arm gains 3.9% at p90 at 8 sessions and loses 7–10% from 12 sessions on, its prefetches mistimed by heavy-tailed pauses. TTL holds are neutral.
+- **TraceLab's tool pauses** (π about 3, a pause about three restores long): the oracle gains at most 9% at p90 (12 sessions) and loses at p90 from 16 sessions on, where it still gains 17% at p50.
 - **Caveat.** The model under-predicts restores at 24 sessions (above), and a dearer restore at high pressure would raise both what prefetching saves and what its loads cost.
-- **Both forms of the gate read the same way.** It was first written on the clairvoyant reference's headroom over LRU + CPU and changed to the oracle's gain ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)): at p50 the clairvoyant reference gains 0.5–2.3% and the oracle −2 to +8%, under the gate; at p90 the clairvoyant reference gains 8–16% (over 10% at 8 and 24 sessions) and the oracle up to 29%.
-- **Modeled on an L4, an A100 and an H100,** at their own scalings, lifecycle information buys at most 14%, 13% and 8% of resume TTFT p90.
+- **Both forms of the gate read the same way.** It was first written on the clairvoyant reference's headroom over LRU + CPU and changed to the oracle's gain ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)): at p50 the clairvoyant reference gains 0.5–2.3% and the oracle +3 to +8%, under the gate; at p90 the clairvoyant reference gains 8–16% (over 10% at 8 and 24 sessions) and the oracle up to 29%.
+- **Modeled on an L4, an A100 and an H100,** at their own scalings, lifecycle information buys at most 15%, 13% and 9% of resume TTFT p90.
 - **What follows.** The decision not to deploy a lease-aware policy rests on what a deployment can know: no client sends tool return times, and session history gains nothing. The lease-aware CPU-tier policy built for E1, `LeasePolicy`, was never switched on and was removed after v0.3 ([the plugins](#engine-plugins)): the tail gain needs each tool's return time ahead of the return. E1's regime map was posted as comments on vLLM #57103 and vllm-project/router #428, and corrected there on 2026-10-24 after a timing bug in the simulated oracle was fixed: its prefetch fired late for the turns AIPerf's idle cap sends early.
 
 ### Miss-ratio curves

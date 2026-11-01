@@ -303,7 +303,7 @@ The engine logs, at most every 10 s, the steps it held, the prefill tokens and a
 
 The gateway sends each event stream vLLM's error event, of type `upstream_unavailable`, before it aborts it, so a client that reads events learns why; the next request gets one 502, and the ones after it 503 `upstream_not_ready` with `Retry-After: 1` without reaching for the engine, until its `/health` answers. In serve mode the voice worker takes no new call meanwhile, as the gateway's `/ready` says.
 - **The restart.** systemd starts the unit RestartSec after its last process exits, so the delay is pure wait, and the units' `StartLimitBurst=3` in 30 minutes ends a crash loop whatever it is: the box's GPU servers wait 5 s.
-- **The drill** (SIGKILL to the engine's unit): each stream got the error event 8–11 ms after the kill; the main process was gone 0.13 s after it and the unit's last process 7.6 s after it (the GPU's teardown). The warm start listened 92.1 s after the restart, and the first request succeeded 106.2 s after the kill; on cold caches (a start after an upgrade) expect about nine minutes ([the drills](BENCHMARKS.md#failure-drills)).
+- **The drill** (SIGKILL to the engine's unit): each stream got the error event 6–11 ms after the kill command; the main process was gone 0.13 s after it and the unit's last process 7.6 s after it (the GPU's teardown). The warm start listened 92.1 s after the restart, and the first request succeeded 106.2 s after the kill; on cold caches (a start after an upgrade) expect about nine minutes ([the drills](BENCHMARKS.md#failure-drills)).
 
 ### The first of two cards fails
 

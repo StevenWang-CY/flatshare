@@ -202,10 +202,10 @@ threshold. Then read:
   ([the A100 run](docs/BENCHMARKS.md#the-a100-run-2026-10-26)).
 - **Voice-to-voice from waveforms.** Two LiveKit callers speak scripted lines, synthesized in six voices, to a stock
   LiveKit voice agent, and time the end of their speech to the agent's first audio. The agent logs each turn's stages.
-- **The agents.** AIPerf replays the 48 longest-context Claude Code sessions of SemiAnalysis' traces, block-scaled 32×,
-  with their think times, through the gateway at a lower priority.
-- **Rounds.** Every configuration runs in each round, in a rotated order, on the round's own sample of the agents, and
-  each call opens with an unmeasured warm-up turn. Baselines are configured as their documentation recommends.
+- **The agents.** AIPerf replays 24 sessions at once from the 48 longest-context Claude Code sessions of
+  SemiAnalysis' traces, block-scaled 32×, with their think times, through the gateway at a lower priority.
+- **Rounds.** Every configuration runs in each round, in a rotated order, on the round's own sample of the agents (a
+  draw of where each session enters the same traces), and each call opens with an unmeasured warm-up turn. Baselines are configured as their documentation recommends.
 - **Reproducibility.** `make reproduce-e2-w5` and `make reproduce-e2-a100` rebuild the table above and the A100's
   results from the committed records, the rounds' `gate.py` the step cap's and the two cards', and `make figures` every
   figure. Measured on v1.8 (c3b5007), the gateway adds +0.12 ms to a voice request's first token at the median, paired

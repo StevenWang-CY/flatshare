@@ -73,7 +73,7 @@ a Unix socket each. The environment, set by ``flatshare-voice-worker.service``, 
 | ``FLATSHARE_VOICE_MODE`` | ``bench`` (default: every call taken) or ``serve`` (call-capacity admission) |
 | ``FLATSHARE_SERVING_PROFILE`` | Serve mode: the serving profile's serving.json, whose ``voice`` table it runs |
 | ``FLATSHARE_AUDIO`` | ``synthetic`` (bench mode's default) or ``microphone`` (serve mode's: the profile's) |
-| ``FLATSHARE_ENDPOINTING_MIN_DELAY`` | Seconds after the end of speech before a turn may end, from 0 to 3, over the audio configuration's (LiveKit's 0.5 by default) |
+| ``FLATSHARE_ENDPOINTING_MIN_DELAY`` | Seconds after the end of speech before a turn may end, from 0 to 3, over the audio configuration's (or LiveKit's for the turn detection: 0.5 with VAD turns, 0.3 with the end-of-turn model) |
 | ``FLATSHARE_VAD_MIN_SILENCE`` | Seconds of silence that end speech for Silero VAD, above 0 and at most 3, over the audio configuration's (Silero's 0.55 by default) |
 | ``FLATSHARE_VOICE_STATUS`` | Serve mode: the file its state is written to every second |
 | ``FLATSHARE_VOICE_DRAIN`` | Serve mode: while this file exists, the worker takes no new call |
@@ -138,14 +138,17 @@ SERVES = frozenset({"start", "dev", "console", "connect"})
 """LiveKit's worker commands that run the agent's sessions, for which :func:`main` reads the settings."""
 
 MAX_DELAY_S = 3.0
-"""LiveKit's longest endpointing delay, its default ``max_delay``: the most a turn's end may wait, and so the most
-either of the endpointing settings may set."""
+"""The longest endpointing delay, LiveKit's default ``max_delay`` with VAD turns and serve mode's pin (with the
+end-of-turn model LiveKit's own is 2.5): the most a turn's end may wait, and so the most either of the endpointing
+settings may set."""
 
 AUDIO: dict[str, dict[str, Any]] = {
     # The measurement bots' audio, as every E2 point ran: files played into the room, so no echo and no room noise.
     "synthetic": {
         "vad": {},  # Silero's defaults: activation 0.5, 0.05 s of speech, 0.55 s of silence
-        "endpointing": None,  # LiveKit's: 0.5 s at least after speech, 3 s at most
+        # LiveKit's for the turn detection: with VAD turns, as every E2 point ran, 0.5 s at least after speech and 3 s
+        # at most (0.3 and 2.5 with the end-of-turn model).
+        "endpointing": None,
         "interruption": {"mode": "vad"},
         "aec_warmup_s": None,
     },
@@ -159,6 +162,7 @@ AUDIO: dict[str, dict[str, Any]] = {
     # the namespace cannot reach; the room input's gain control is LiveKit's default.
     "microphone": {
         "vad": {"activation_threshold": 0.6, "min_speech_duration": 0.1},
+        # The measured delays, pinned: LiveKit's defaults for the end-of-turn model (0.3 s, 2.5 s) were never run.
         "endpointing": {"mode": "fixed", "min_delay": 0.5, "max_delay": 3.0},
         "interruption": {
             "mode": "vad",
@@ -268,7 +272,8 @@ class Settings:
         }
         endpointing = dict(audio["endpointing"] or {})
         if self.endpointing_min_delay is not None:
-            # LiveKit keeps its defaults for the keys left out: the fixed mode and 3 s at most.
+            # LiveKit fills the keys left out with its defaults for the turn detection: the fixed mode, and 3 s at most
+            # with VAD turns (2.5 with the end-of-turn model).
             endpointing["min_delay"] = self.endpointing_min_delay
         if endpointing:
             handling["endpointing"] = endpointing

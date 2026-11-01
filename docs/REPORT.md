@@ -129,9 +129,9 @@ and both are off by default. They are proposed to vLLM as two stacked pull reque
 This report makes five contributions.
 
 - **It measures the failure end to end.** V2V is read from waveforms at the caller beside a replay of real coding-agent
-  traces. Tuned vLLM, preempt-resubmit and the configuration to deploy run in rotated rounds over five samples of the
-  traces, and every other configuration an operator can deploy in a single-sample campaign of one to five runs each (§5,
-  §6.1, §6.5).
+  traces. Tuned vLLM, preempt-resubmit and the configuration to deploy run in five rotated rounds, each entering the
+  same traces at start points of its own, and every other configuration an operator can deploy in a single-sample
+  campaign of one to five runs each (§5, §6.1, §6.5).
 - **It changes vLLM's priority scheduling** with two rules that run on vLLM 0.32 without modifying the installed engine
   (§3, §4). The first brings V0's preemption for a waiting request to the V1 scheduler under chunked prefill, with the
   CPU tier keeping the victims' KV. The second holds lower-priority prefill back only through a reply's first tokens, a
@@ -493,11 +493,12 @@ subagents and think times, the think times capped at 120 s. Each trace records a
 blocks. We shrink every block 32×, which shrinks each request and its output 32× while keeping which requests share
 which prefixes, so every request fits the 32k context.
 
-The main scenario runs 24 sessions drawn from the 48 traces with the longest contexts (a median request of 13.9k
-tokens), where running agents' KV fills the pool. A second scenario runs 16 sessions of the whole corpus (a median of
-7.9k tokens), where the pool has room (§6.6). The gateway sends voice requests at priority 0 and agent requests at
-priority 2. On tuned vLLM the agents are oversubscribed, with a median TTFT of 63 s, so their throughput measures what
-the GPU leaves them.
+The main scenario runs 24 sessions at once on the 48 traces with the longest contexts (a median request of 13.9k
+tokens), where running agents' KV fills the pool. A second scenario runs 16 on the whole corpus (a median of 7.9k
+tokens), where the pool has room (§6.6). In both, AIPerf's sequential sampler starts the sessions on the first traces by
+file name and gives a session that ends the next trace in order, the same in every run (§5.5). The gateway sends voice
+requests at priority 0 and agent requests at priority 2. On tuned vLLM the agents are oversubscribed, with a median TTFT
+of 63 s, so their throughput measures what the GPU leaves them.
 
 ### 5.3 Metrics and the SLO
 
@@ -540,11 +541,15 @@ preemption's cap on victims a step, and T the budget cap's window in output toke
 
 ### 5.5 Rounds and estimation
 
-In the main scenario each configuration runs in five rounds. Round n replays its own sample of the agents' traces, the
-same sample for every configuration, and runs the configurations in an order rotated from round to round, so that none
+In the main scenario each configuration runs in five rounds. Round n replays its own sample of the agents, the same
+sample for every configuration, and runs the configurations in an order rotated from round to round, so that none
 always runs at the same hour. Other comparisons run fewer: §6.5's single-sample campaign one to five times, the calls
 per GPU three rounds, and the A100's 2,048-token rows two. A configuration measured in more than one set of rounds is
 pooled over them, which gives 10 runs of tuned vLLM and 15 of the configuration to deploy.
+
+A sample is a draw of where each session enters its trace. The sampler gives every round the same traces in the same
+order, and the round's agent seed (10 + n) draws each session's start point in its trace, so the rounds vary which part
+of each trace runs beside the calls, not which traces run (§9).
 
 We report each configuration's median p95 over its runs, with their range, beside the share of its replies over the SLO
 and the p95 of its replies pooled. We compare configurations round by round on the same sample of the agents. The three
@@ -787,8 +792,8 @@ Timing by the conversation was the premise this work started from: a realtime ti
 when a caller starts to speak or an agent's tool returns. Neither side found a use for what a deployment knows. For the
 voice turn the headroom could not act, as above.
 
-In the repository's simulator, knowing exactly when each agent returns shortens the median resume by under 9%, since
-that resume is already a GPU hit or a short restore bound by the host link, and its p90 by up to 28%, about 80–90 ms,
+In the repository's simulator, knowing exactly when each agent returns shortens the median resume by under 8%, since
+that resume is already a GPU hit or a short restore bound by the host link, and its p90 by up to 29%, about 80–90 ms,
 only at low pressure, by hiding a restore inside the pause (§8). The session history a deployment has gains nothing.
 
 These runs do not show that such timing never helps. Where its mechanisms engage, as beside 24 sessions of the whole
@@ -1100,8 +1105,8 @@ agents' completed tokens a second and their p99 TTFT, where a preemption policy 
 **How it fails.** A voice turn that N preemptions cannot make room for waits as on vLLM, and load made only of realtime
 requests leaves nothing to preempt. Overlapping calls hold the background tier for longer, up to the limit of §6.6. An
 engine failure breaks every stream it serves. In the failure drills, each stream of a killed engine received an error
-event within 8–11 ms, and a request succeeded again 106 s after the kill, 92 s of it the engine's warm start. A gateway
-reload, as a deploy performs, failed none of 42 requests (Appendix D).
+event 6–11 ms after the kill command, and a request succeeded again 106 s after the kill, 92 s of it the engine's warm
+start. A gateway reload, as a deploy performs, failed none of 42 requests (Appendix D).
 
 ## 8. Related work
 
@@ -1116,8 +1121,8 @@ existing engine's scheduler rather than build a new one.
 requests for the highest-priority waiting request from v0.6.2 until V0 was removed, but only with chunked prefill off
 and by recomputing the victims [[8](#ref-8)]. Priority scheduling in the V1 scheduler [[27](#ref-27)] preempts among
 running requests only [[7](#ref-7)]. Its open fixes preempt at the request-count cap [[18](#ref-18)], which does not
-bind when KV fills, and one of them also preempts lower-priority running requests, one at a time, when a waiting
-request's allocation fails, until it fits or none is left [[28](#ref-28)].
+bind when KV fills, and two of them also preempt lower-priority running requests, one at a time, when a waiting
+request's allocation fails, until it fits or none is left [[28](#ref-28), [61](#ref-61)].
 
 SGLang's priority preemption [[6](#ref-6)] stops when KV memory runs out, and an open pull request adds preemption on KV
 exhaustion with a best-effort keep of the victim's KV in its prefix cache [[29](#ref-29)]. Research systems preempt for
@@ -1131,8 +1136,8 @@ high-priority requests and migrates others away [[33](#ref-33)], and LayerKV tra
 blocks [[34](#ref-34)].
 
 The KV preemption is V0's rule in V1's scheduler, under chunked prefill and asynchronous scheduling, on vLLM's own CPU
-tier. Unlike the open fix that preempts for KV [[28](#ref-28)], it preempts only when at most N victims make room, and
-then as few as do.
+tier. Unlike the open fixes that preempt for KV [[28](#ref-28), [61](#ref-61)], it preempts only when at most N victims
+make room, and then as few as do.
 
 **Keeping prefill out of a priority request's way.** Chunked prefill bounds how long a decode waits behind a prefill
 [[12](#ref-12)], and disaggregated serving moves prefill to other GPUs altogether [[35](#ref-35), [36](#ref-36)], which
@@ -1161,8 +1166,8 @@ that running requests hold.
 [[49](#ref-49)] and Pensieve [[50](#ref-50)] keep a conversation's KV between its turns, and on production prefix-cache
 traces LRU is hard to beat [[51](#ref-51)]. These systems decide which agent's KV stays. The change decides when a
 realtime request may take KV from them, and it uses vLLM's own eviction and CPU tier. In the repository's simulator,
-even knowing exactly when each agent returns from a tool call shortens the median resume by under 9% against LRU with
-the CPU tier, and its p90 by up to 28% at low pressure. The session history a deployment has gains nothing. The change
+even knowing exactly when each agent returns from a tool call shortens the median resume by under 8% against LRU with
+the CPU tier, and its p90 by up to 29% at low pressure. The session history a deployment has gains nothing. The change
 therefore leaves the agents' KV to vLLM.
 
 **Voice under contention.** LiveKit's preemptive generation, Endpoint Anticipation and PredGen start the LLM earlier in
@@ -1262,6 +1267,12 @@ GPU ([the CPU record](../benchmarks/results/2026-10-27-cpu-audio/README.md)).
 32k context. The scaling keeps which requests share which prefixes and changes the traces' timing. It also sets the KV
 pressure that the first wait depends on, and the scenario where the pool has room (§6.6) shows how much the result
 depends on that pressure.
+
+**What the rounds sample.** Every round enters the same traces: the main scenario's sessions start on the first 24 of
+the 48 by file name, and a session that ends takes the next in the same order. The rounds therefore sample where each
+session enters its trace, not which traces run, and the results generalize over those start points, not over the
+corpus's other traces. AIPerf's shuffle sampling would draw the traces too; it belongs to a campaign of its own, since
+it would break the pairing with every committed round.
 
 **What a resume recomputes.** A preempted request's KV is in the CPU tier when it is preempted, and on resume vLLM
 reloads what the tier still holds. vLLM 0.32's counters bound what resumes reload, at most the 117k tokens loaded beyond
@@ -1427,6 +1438,8 @@ scheduler: preempt for the waiting turn, and keep background prefill out of its 
 
 <a name="ref-60"></a>[60] T. Dao. [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691). In *ICLR 2024*.
 
+<a name="ref-61"></a>[61] vLLM pull request #45558. [Priority-based preemption at max_num_seqs](https://github.com/vllm-project/vllm/pull/45558). Opened 2026-06-14, last pushed 2026-08-20, open on 2026-10-31.
+
 ## Appendices
 
 ### A. Reproducing the results
@@ -1497,8 +1510,8 @@ in §6.1 measure that difference.
 
 ### B. Results by round
 
-Each round replays its own sample of the agents' traces, the same sample in every configuration and set of rounds, so a
-column compares configurations on the same agents. Table B1 gives every run behind Table 2.
+Each round replays its own sample of the agents (its start points in the same traces, §5.5), the same sample in every
+configuration and set of rounds, so a column compares configurations on the same agents. Table B1 gives every run behind Table 2.
 
 **Table B1. The p95 V2V of every run behind Table 2, and of the configuration to deploy on the code of 25 October, by
 round (ms).** Three sets of rounds replayed the same five samples. The first ran voice alone, tuned vLLM and the
@@ -1626,16 +1639,18 @@ measured on peacock.
 ### D. Failure drills
 
 The deployed configuration was broken on purpose while two voice streams and four agent streams were decoding, and each
-probe after the event used a new connection. Table D1 gives what the streams and the new requests saw.
+probe after the event used a new connection. Times after a kill count from the drill's stamp just before its
+`systemctl kill`, which for the engine kill is taken on the GPU node while cyan times the streams. Table D1 gives what
+the streams and the new requests saw.
 
 **Table D1. What a failure does to the streams in flight and to new requests.**
 
 | Drill | The six streams in flight | New requests |
 |---|---|---|
-| The engine killed mid-decode | Each received an error event 8–11 ms after the kill | Refused at once until the engine's warm start; a request succeeded 106.2 s after the kill |
+| The engine killed mid-decode | Each received an error event 6–11 ms after the kill command | Refused at once until the engine's warm start; a request succeeded 106.2 s after the kill |
 | The gateway reloaded, as a deploy does | The voice streams finished whole, 20.9 s later; the agents' streams ended after 5.0 s with a draining event | None of 42 failed or waited; the slowest was answered in 0.13 s |
 | The gateway restarted | As in the reload | None of 42 failed; those sent during the 20.7 s drain were answered once the new gateway started |
-| The gateway killed | All broke within 11–14 ms | None of 4 failed; the slowest waited 1.3 s for the gateway's restart |
+| The gateway killed | All broke 10–14 ms after the kill command | None of 4 failed; the slowest waited 1.3 s for the gateway's restart |
 
 The engine's recovery is mostly its warm start (Figure D1). Its last process exited 7.6 s after the kill, systemd
 started it again 5.1 s later, and it listened 92.1 s after that. On empty caches, as on a new host, the engine's first
