@@ -1,0 +1,1 @@
+spec: 52 turns, 28 tokens a reply; first token p50 63 ms, 16th token p50 181 ms (46 turns), 7.7 ms a token p50; 1.97 tokens a step

@@ -1,0 +1,7 @@
+venv=~/flatshare/venvs/engine
+--attention-backend
+TRITON_ATTN
+--compilation-config.cudagraph_mode
+FULL
+--kv-cache-dtype
+fp8

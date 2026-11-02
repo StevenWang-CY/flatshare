@@ -1,0 +1,4 @@
+venv=~/flatshare-opt/venv-fix
+--kv-cache-dtype
+fp8
+FP8INV_PLAN_WAIT=block

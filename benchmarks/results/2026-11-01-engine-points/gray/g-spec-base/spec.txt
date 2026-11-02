@@ -1,0 +1,1 @@
+spec: 52 turns, 27 tokens a reply; first token p50 47 ms, 16th token p50 233 ms (46 turns), 12.4 ms a token p50; no speculation

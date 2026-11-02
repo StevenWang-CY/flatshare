@@ -1,0 +1,2 @@
+--additional-config.make_room.retain_tokens
+3584
