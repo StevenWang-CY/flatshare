@@ -428,8 +428,8 @@ configuration to deploy on the code of 25 October, at T = 48 only, so Table 2's 
 that code would for most of its replies.
 
 **What a step costs.** The rules run on the host, inside `Scheduler.schedule()`, and Figure 7 times that call on vLLM
-0.32.0's real scheduler on a 2.1 GHz Xeon Silver 4110. That host runs the scheduler's kind of Python 1.63 times as fast
-as the GPU node's CPU (`bench_host.py`, 234 ms against 381; Appendix C).
+0.32.0's real scheduler on a 2.1 GHz Xeon Silver 4110. That host runs the scheduler's kind of Python 1.61 times as fast
+as the GPU node's CPU (`bench_host.py`, 236 ms against 381; Appendix C).
 
 The table gives what the change adds to a call in each situation, the first with its switches off and the rest with
 the deployed values, in the pull requests' 13 steady states and in the serving profile's 4, whose 256-token steps are
@@ -437,23 +437,23 @@ scheduled asynchronously as on the box.
 
 | Situation | The pull requests' 13 states | The serving profile's 4 states |
 |---|---|---|
-| Switches off | Nothing: what vLLM's call costs, within 1.5% | −2.0 to 4.4 µs in their short steps, at most 3.7% |
-| Only lower-priority work running | 42–160 µs, at most 18% of the call | 19 µs, beside agents alone |
-| Every running slot taken | 154–276 µs | – |
-| The budget cap and the decode hold keeping agents out of a reply's first steps | – | −56 µs |
-| A waiting high-priority request that two victims cannot make room for | 0.32–0.47 ms; 1.5 ms when its prefix-cache hit is 999 blocks long | 89 µs in each step that gives up on it |
-| The step that preempts for a voice turn | – | 0.48 ms, 3.5 times vLLM's step, on schedulers built afresh |
+| Switches off | Nothing: what vLLM's call costs, within 1.8% | 2.8 to 5.4 µs in their short steps, at most 4.6% |
+| Only lower-priority work running | 48–182 µs, at most 18% of the call | 20 µs, beside agents alone |
+| Every running slot taken | 158–299 µs | – |
+| The budget cap and the decode hold keeping agents out of a reply's first steps | – | −63 µs |
+| A waiting high-priority request that two victims cannot make room for | 0.33–0.49 ms; 1.5 ms when its prefix-cache hit is 999 blocks long | 78 µs in each step that gives up on it |
+| The step that preempts for a voice turn | – | 0.47 ms, 3.5 times vLLM's step, on schedulers built afresh |
 
 On the box's CPU that step takes 1.1 ms, against a voice reply's decode step of 12 ms with nothing beside it, 16–20 ms
 beside agent prefill that the budget cap keeps back, and the agents' 38 ms at 24 agent sessions.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-step-cost-narrow.svg">
-  <img src="figures/report-step-cost.svg" width="100%" alt="A dot plot of 17 scheduler states in two sets on a log axis from 0.02 to 20 ms of the host's time, with a second axis for the box's CPU, 1.63 times as long. In each state the change with its switches off sits on stock vLLM's ring. In the pull requests' states, the configuration to deploy adds 42 to 160 microseconds when only lower-priority work runs, 322 to 1,473 microseconds when a waiting turn needs more room than two victims free, and 154 to 276 microseconds with every running slot taken; in the serving profile's, 19 microseconds beside agents alone, 56 fewer while the budget cap and the decode hold keep agents back, 89 when a turn cannot fit, and 476 in the step that preempts. All sit far left of the box's steps: a reply's 12 ms alone, 16 to 20 ms beside held agent prefill, and the agents' 38 ms at 24 agent sessions.">
+  <img src="figures/report-step-cost.svg" width="100%" alt="A dot plot of 17 scheduler states in two sets on a log axis from 0.02 to 20 ms of the host's time, with a second axis for the box's CPU, 1.61 times as long. In each state the change with its switches off sits on stock vLLM's ring. In the pull requests' states, the configuration to deploy adds 48 to 182 microseconds when only lower-priority work runs, 326 to 1,491 microseconds when a waiting turn needs more room than two victims free, and 158 to 299 microseconds with every running slot taken; in the serving profile's, 20 microseconds beside agents alone, 63 fewer while the budget cap and the decode hold keep agents back, 78 when a turn cannot fit, and 471 in the step that preempts. All sit far left of the box's steps: a reply's 12 ms alone, 16 to 20 ms beside held agent prefill, and the agents' 38 ms at 24 agent sessions.">
 </picture>
 
 **Figure 7. With its switches off the scheduler costs what vLLM's does, and the deployed values change a scheduler call
-by −56 µs to 1.5 ms, far below the box's steps.** Each mark is a state's 10th-percentile `Scheduler.schedule()` call, on
+by −63 µs to 1.5 ms, far below the box's steps.** Each mark is a state's 10th-percentile `Scheduler.schedule()` call, on
 a log scale: a ring for vLLM 0.32, a small dot for the change with its switches off, and a blue dot, labeled with what
 it adds, for the configuration to deploy. On the second axis, the box's CPU, the dotted line is a voice reply's decode
 step with nothing beside it (12 ms), the shaded band its step beside agent prefill that the budget cap keeps back
