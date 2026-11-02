@@ -379,7 +379,7 @@ def test_the_states_are_the_prs_tables_rows():
         "budget_cap_tokens": 48,
         "reserve_tokens": 0,
         "take_reservations": True,
-        "decode_hold_tokens": 16,
+        "decode_hold_tokens": 48,
         "retain_tokens": 3584,
         "retain_s": 30,
         "hint_hold_ms": 400,

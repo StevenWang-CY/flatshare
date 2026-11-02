@@ -528,7 +528,7 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
         "budget_cap_tokens": 48,
         "reserve_tokens": 0,
         "take_reservations": True,
-        "decode_hold_tokens": 16,
+        "decode_hold_tokens": 48,
         "retain_tokens": 3584,
         "retain_s": 30,
         "hint_hold_ms": 400,

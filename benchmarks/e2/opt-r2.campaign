@@ -1,9 +1,8 @@
-# The optimization program's rounds (U1-U3 of ~/.cache/kosa-dev/flatshare-opt), round 2 of 5, on a fresh sample of the
-# agents (seed 32): voice alone with two, four and six callers, for each count's SLO, and the configuration to deploy
-# at the serving profile's step cap of 256 against the same with the program's optimizations (the opt-*-ret arms),
-# paired: beside 24 session trees of the discriminating scenario with 2, 4 and 6 callers, and beside 16 sessions of the
-# whole corpus. The rounds alternate the nodes (odd rounds Phastform, even ones Gray), and each runs its engine groups
-# in an order rotated from the round before.
+# Version 1.15's rounds, round 2 of 5, on a fresh sample of the agents (seed 32): voice alone with two, four and six
+# callers, for each count's SLO, and the configuration to deploy at the serving profile's step cap of 256 against the
+# same with the program's optimizations (the opt-*-ret arms), paired: beside 24 agent sessions of the discriminating
+# scenario with 2, 4 and 6 callers, and beside 16 agent sessions of the whole corpus. The rounds alternate the nodes
+# (odd rounds Phastform, even ones Gray), and each runs its engine groups in an order rotated from the round before.
 #   FLATSHARE_GPU=NODE benchmarks/e2/campaign.sh --pause benchmarks/e2/opt-r2.campaign
 
 agents-seed 32
