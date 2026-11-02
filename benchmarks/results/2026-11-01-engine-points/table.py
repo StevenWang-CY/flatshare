@@ -52,6 +52,7 @@ ARMS = {
     "s2rrhj-grow": "the turn announced and just in time, EAGLE-3 with 2 drafts, short loads recomputed",
     "s2rrhjt-grow": "the turn announced, just in time, the reservations taken, EAGLE-3 with 2 drafts, short loads recomputed",
     "s2rrhjtd-grow": "the same, the agents' decodes held from a call's first 16 tokens",
+    "s2rrhjtd48-grow": "the same, the decodes held from a call's first 48 tokens",
     # The controls.
     "r0hw-grow": "retention, the turns announced but nothing held",
     "r0hn-grow": "retention, the hint scheduler with no turn announced",
@@ -71,6 +72,7 @@ TABLES = {
     "alternatives": (
         "a1-grow", "r1-grow", "t0-grow", "t1-grow", "t0rj-grow", "tf0-grow", "f0-grow", "r0a2-grow",
         "s3r-grow", "s2r-grow", "s3rr-grow", "s2rr-grow", "s2rrhj-grow", "s2rrhjt-grow", "s2rrhjtd-grow",
+        "s2rrhjtd48-grow",
     ),
     "hold": ("r0hjt-grow", "r0hjtd-grow", "r0hjtd32-grow", "r0hjtd48-grow"),
     "controls": ("r0hw-grow", "r0hn-grow", "r0rr-grow", "r0t-grow"),
