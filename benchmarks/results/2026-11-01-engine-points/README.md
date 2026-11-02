@@ -17,12 +17,14 @@ rounds measure the result in the whole pipeline.
 | phastform | + the turn announced and just in time | 1 | 63 | 98 | 257 | 403 | 13.6 | 2,628 |
 | phastform | + the calls taking the agents' reservations | 2 | 64 (64-64) | 92 (91-94) | 261 (260-262) | 392 (391-392) | 13.6 | 2,625 |
 | phastform | + the agents' decodes held from a call's first 16 tokens | 2 | 64 (63-65) | 94 (92-95) | 258 (256-261) | 285 (284-286) | 13.8 | 2,615 |
+| phastform | the same, the decodes held from a call's first 48 tokens | 2 | 66 (65-66) | 88 (85-92) | 257 (257-257) | 284 (278-291) | 13.4 | 2,604 |
 | gray | v1.14's serving profile (asynchronous scheduling) | 2 | 182 (179-184) | 308 (299-316) | 400 (396-403) | 608 (591-624) | 13.8 | 2,682 |
 | gray | + the calls' prefixes kept on the GPU (retention) | 2 | 139 (136-142) | 256 (254-259) | 374 (373-376) | 502 (497-507) | 13.8 | 2,686 |
 | gray | + each turn announced (250 ms ahead, held 400 ms) | 2 | 72 (71-74) | 110 (109-110) | 270 (269-270) | 405 (404-406) | 13.7 | 2,606 |
 | gray | + the turn announced and just in time | 2 | 72 (71-72) | 111 (108-114) | 270 (270-270) | 438 (413-462) | 13.5 | 2,584 |
 | gray | + the calls taking the agents' reservations | 2 | 71 (71-71) | 106 (96-115) | 268 (266-269) | 402 (395-408) | 13.5 | 2,554 |
 | gray | + the agents' decodes held from a call's first 16 tokens | 1 | 72 | 108 | 268 | 300 | 13.8 | 2,569 |
+| gray | the same, the decodes held from a call's first 48 tokens | 2 | 74 (73-74) | 106 (103-109) | 267 (267-267) | 300 (299-301) | 13.3 | 2,600 |
 <!-- /table.py adopted -->
 
 - **The calls' prefixes kept on the GPU** (`make_room.retain_tokens 3584`, `retain_s 30`): a call's next turn finds
@@ -45,8 +47,9 @@ rounds measure the result in the whole pipeline.
   falls from 392 to 285 ms, its median and the agents unchanged. The serving profile holds them for 48 tokens, the
   budget cap's window ([how long the hold lasts](#how-long-the-hold-lasts)).
 
-With everything adopted, a call's first token is 64 ms at the median and 94 ms at p95 on Phastform, against v1.14's 175
-and 354 ms, and its first sentence comes at 258 ms and 285 ms at p95, against 408 and 597.
+With everything adopted, the agents' decodes held for 48 tokens, a call's first token is 66 ms at the median and 88 ms
+at p95 on Phastform, against v1.14's 175 and 354 ms; its 16th token, about a first sentence, comes at 257 ms and 284 ms
+at p95, against 408 and 597; and its 48th, the whole reply, at 688 and 722 ms, against 867 and 1,227.
 
 ## What was not
 
@@ -99,6 +102,7 @@ and 354 ms, and its first sentence comes at 258 ms and 285 ms at p95, against 40
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | phastform | + the calls taking the agents' reservations | 2 | 64 (64-64) | 92 (91-94) | 261 (260-262) | 392 (391-392) | 700 (696-705) | 998 (953-1043) | 2,625 |
 | phastform | + the agents' decodes held from a call's first 16 tokens | 2 | 64 (63-65) | 94 (92-95) | 258 (256-261) | 285 (284-286) | 704 (701-707) | 966 (948-983) | 2,615 |
+| phastform | the same, the decodes held from a call's first 48 tokens | 2 | 66 (65-66) | 88 (85-92) | 257 (257-257) | 284 (278-291) | 688 (687-690) | 722 (722-722) | 2,604 |
 | gray | + the calls taking the agents' reservations | 2 | 71 (71-71) | 106 (96-115) | 268 (266-269) | 402 (395-408) | 698 (698-699) | 1016 (989-1042) | 2,554 |
 | gray | + the agents' decodes held from a call's first 16 tokens | 1 | 72 | 108 | 268 | 300 | 714 | 980 | 2,569 |
 | gray | the same, the decodes held from a call's first 32 tokens | 2 | 72 (72-73) | 108 (108-108) | 264 (264-265) | 299 (298-300) | 701 (700-702) | 841 (838-844) | 2,582 |
@@ -108,9 +112,9 @@ and 354 ms, and its first sentence comes at 258 ms and 285 ms at p95, against 40
 - **At 16 tokens the hold covers a first sentence of 16 tokens**: the 16th token's p95 falls to 285-300 ms, but the
   48th token's barely moves, 966-980 ms against 998-1,016, since the agents' decodes return to the reply's steps after
   its 16th token.
-- **At 48 tokens, the budget cap's window, the whole reply comes out of the agents' way**: the 48th token's p95 is 735
-  ms on Gray, 44 ms over its median, against 1,016 without the hold and 841 at 32, with the first token, the 16th token
-  and the agents unchanged. The voice agent's first sentences run up to 39 tokens and its replies 23 at the median
+- **At 48 tokens, the budget cap's window, the whole reply comes out of the agents' way**: the 48th token's p95 is 722
+  ms on Phastform and 735 on Gray, within 50 ms of its median, against 966 and 980 at 16 and 998 and 1,016 without the
+  hold, with the first token, the 16th token and the agents unchanged. The voice agent's first sentences run up to 39 tokens and its replies 23 at the median
   ([the report's §3.3](../../../docs/REPORT.md#33-sizing-the-window)), and a hold ends with its reply, so the serving
   profile holds the agents' decodes for 48 tokens, as the budget cap holds their prefill.
 
@@ -229,6 +233,11 @@ replies, a turn every 4 to 8 s, beside 12 agents whose prompts grow from 6,000 t
 new each turn (`fresh`); with a hint, each call turn was announced 250 ms before it left. Gray's speculative points
 used the EAGLE-3 head taobao-mnn/Qwen3-4B-Instruct-2507-Eagle3 at a pool of the same 2,275 blocks.
 
+One run is left out of the tables, [`left-out/phastform/p-r0hjtd48-grow-1`](left-out/phastform/p-r0hjtd48-grow-1/tail.txt):
+its engine started while Phastform's host ran about 2.5 times slow, its CUDA graph capture taking 24 s against 9-11 s
+in every other start, and every measure of it moved with the host, the agents' tokens a second too (1,991 against
+2,604-2,625). The next two starts captured in 11 and 9 s, and those two runs are the table's.
+
 ## Files
 
 - `<node>/<point>/tail.txt`: tail.py's output; `flags.txt`: the point's engine flags; `stages.json`: the calls' first
@@ -236,4 +245,5 @@ used the EAGLE-3 head taobao-mnn/Qwen3-4B-Instruct-2507-Eagle3 at a pool of the 
   tokens a second, from the point's scheduler trace, which the record does not keep.
 - `gray/g-spec-*/spec.json`: each turn's first, 16th and last token, and the engine's speculative counters.
 - `phastform/p-agree-fa2/agree.json`, `gray/g-agree-fa2/agree.json`: every answer's token ids, computed and restored.
+- `left-out/`: the run the tables leave out, and why above.
 - `table.py`: the tables above (`python3 table.py NAME`).
