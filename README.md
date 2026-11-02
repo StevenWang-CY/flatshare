@@ -38,6 +38,8 @@ p95 to 2.24 s against an SLO of 2.03 s. The replies over the SLO fall from 90% t
 - **With v1.15's first four additions to the engine**, in five more rounds beside 24 sessions, 5.4%, 6.4% and 5.8% of
   the replies were over the SLO with two, four and six callers, against 18.6%, 18.5% and 18.0% for v1.14's
   configuration, at 1.6–4.9% of the agents' token rate.
+- **With the agents' decodes held too**, as v1.17 serves, two follow-up rounds put 16 of 720 replies over the SLO with
+  two, four and six callers, against 55 with the first four additions alone, for another 3.8% of the agents' token rate.
 - **On an A100** at the same KV pool and 512-token steps, the configuration to deploy takes the p95 from 4.99 s to
   1.63 s, under that card's SLO in each of five rounds.
 
@@ -121,7 +123,8 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
   [its record](benchmarks/results/2026-10-27-quality/README.md)). A deployment that shares a card for background work
   has to check first that the model can do that work.
 - **Still above the SLO's 5%.** Beside 24 sessions the configuration to deploy left 32% of the replies over the SLO at
-  512-token steps and 14.9% at 256; with v1.15's first four additions, 5.4% to 6.4% with two to six callers.
+  512-token steps and 14.9% at 256; with v1.15's first four additions, 5.4% to 6.4% with two to six callers; with the
+  decode hold too, 0.8% to 5.1% in two follow-up rounds, against 6.3% to 9.3% without it on the same samples.
 - **A pool with room.** At 16 sessions of the whole corpus, where the pool has room, the configuration to deploy met the
   SLO in one of five rounds. The serving profile's 256-token steps leave the pool room beside 24 sessions too: the
   engine preempted 0–4 requests a run there and none beside four, so at that cap the budget cap and the step cap do the

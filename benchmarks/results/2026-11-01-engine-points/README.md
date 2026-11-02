@@ -16,11 +16,15 @@ rounds measure the result in the whole pipeline.
 | phastform | + each turn announced (250 ms ahead, held 400 ms) | 2 | 64 (63-65) | 90 (83-96) | 258 (256-259) | 394 (388-401) | 13.7 | 2,637 |
 | phastform | + the turn announced and just in time | 1 | 63 | 98 | 257 | 403 | 13.6 | 2,628 |
 | phastform | + the calls taking the agents' reservations | 2 | 64 (64-64) | 92 (91-94) | 261 (260-262) | 392 (391-392) | 13.6 | 2,625 |
+| phastform | + the agents' decodes held from a call's first 16 tokens | 2 | 64 (63-65) | 94 (92-95) | 258 (256-261) | 285 (284-286) | 13.8 | 2,615 |
+| phastform | the same, the decodes held from a call's first 48 tokens | 2 | 66 (65-66) | 88 (85-92) | 257 (257-257) | 284 (278-291) | 13.4 | 2,604 |
 | gray | v1.14's serving profile (asynchronous scheduling) | 2 | 182 (179-184) | 308 (299-316) | 400 (396-403) | 608 (591-624) | 13.8 | 2,682 |
 | gray | + the calls' prefixes kept on the GPU (retention) | 2 | 139 (136-142) | 256 (254-259) | 374 (373-376) | 502 (497-507) | 13.8 | 2,686 |
 | gray | + each turn announced (250 ms ahead, held 400 ms) | 2 | 72 (71-74) | 110 (109-110) | 270 (269-270) | 405 (404-406) | 13.7 | 2,606 |
 | gray | + the turn announced and just in time | 2 | 72 (71-72) | 111 (108-114) | 270 (270-270) | 438 (413-462) | 13.5 | 2,584 |
 | gray | + the calls taking the agents' reservations | 2 | 71 (71-71) | 106 (96-115) | 268 (266-269) | 402 (395-408) | 13.5 | 2,554 |
+| gray | + the agents' decodes held from a call's first 16 tokens | 1 | 72 | 108 | 268 | 300 | 13.8 | 2,569 |
+| gray | the same, the decodes held from a call's first 48 tokens | 2 | 74 (73-74) | 106 (103-109) | 267 (267-267) | 300 (299-301) | 13.3 | 2,600 |
 <!-- /table.py adopted -->
 
 - **The calls' prefixes kept on the GPU** (`make_room.retain_tokens 3584`, `retain_s 30`): a call's next turn finds
@@ -37,12 +41,15 @@ rounds measure the result in the whole pipeline.
   4% of their tokens a second.
 - **The calls taking the agents' reservations** (`make_room.take_reservations`): see [The stalls](#the-stalls). It
   costs the calls nothing and the agents 1%, within the replicates' spread.
+- **The agents' decodes held from a call's first tokens** (`make_room.decode_hold_tokens`): with the agents' decodes
+  sitting out a call's first 16 tokens, the 16th token's p95 falls from 392 to 285 ms, its median and the agents
+  unchanged. The serving profile holds them for 48 tokens, the budget cap's window, from version 1.17 ([how long the
+  hold lasts](#how-long-the-hold-lasts)).
 
-With the four the serving profile adopted, a call's first token is 64 ms at the median and 92 ms at p95 on Phastform,
-against v1.14's 175 and 354 ms; its 16th token, about a first sentence, comes at 261 ms and 392 ms at p95, against 408
-and 597; and its 48th, the whole reply, at 700 and 998 ms, against 867 and 1,226. The agents' decodes held for 48 tokens
-take the 16th token's p95 to 284 ms and the 48th's to 722 ([the decode hold](#how-long-the-hold-lasts)), which the
-serving profile leaves off.
+With everything adopted, the agents' decodes held for 48 tokens, a call's first token is 66 ms at the median and 88 ms
+at p95 on Phastform, against v1.14's 175 and 354 ms; its 16th token, about a first sentence, comes at 257 ms and 284 ms
+at p95, against 408 and 597; and its 48th, the whole reply, at 688 and 722 ms, against 867 and 1,226. Without the hold,
+as versions 1.15 and 1.16 served, they are 64 and 92 ms, 261 and 392, and 700 and 998.
 
 ## What was not
 
@@ -118,10 +125,11 @@ under the budget cap.
   hold, with the first token, the 16th token and the agents unchanged. The voice agent's first sentences run up to 39
   tokens and its replies 23 at the median ([the report's §3.3](../../../docs/REPORT.md#33-sizing-the-window)), and a
   hold ends with its reply.
-- **Not in the serving profile.** The follow-up rounds measured the hold at 48 in the whole pipeline: it put 16 of 720
-  replies over the SLO beside 24 agent sessions against 55 without it, but cost the agents 3.8% of their token rate at
-  the median, past the 3% their rule allowed ([the rounds](../2026-11-02-opt-rounds/README.md)). It stays a switch,
-  off in the profile.
+- **In the serving profile from version 1.17.** The follow-up rounds measured the hold at 48 in the whole pipeline: it
+  put 16 of 720 replies over the SLO beside 24 agent sessions against 55 without it, but cost the agents 3.8% of their
+  token rate at the median, past the 3% their rule allowed ([the rounds](../2026-11-02-opt-rounds/README.md)), and
+  version 1.15's profile left it off. Version 1.17's holds the agents' decodes for 48 tokens, as the budget cap holds
+  their prefill, for the voice tail.
 
 ## Controls
 

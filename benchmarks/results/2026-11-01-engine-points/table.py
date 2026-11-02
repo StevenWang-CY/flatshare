@@ -68,7 +68,7 @@ ARMS = {
     "s3r-fresh": "retention, EAGLE-3 with 3 drafts",
 }
 TABLES = {
-    "adopted": ("a0-grow", "r0-grow", "r0j-grow", "r0h-grow", "r0hj-grow", "r0hjt-grow"),
+    "adopted": ("a0-grow", "r0-grow", "r0j-grow", "r0h-grow", "r0hj-grow", "r0hjt-grow", "r0hjtd-grow", "r0hjtd48-grow"),
     "alternatives": (
         "a1-grow", "r1-grow", "t0-grow", "t1-grow", "t0rj-grow", "tf0-grow", "f0-grow", "r0a2-grow",
         "s3r-grow", "s2r-grow", "s3rr-grow", "s2rr-grow", "s2rrhj-grow", "s2rrhjt-grow", "s2rrhjtd-grow",
