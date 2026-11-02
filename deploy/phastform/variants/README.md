@@ -94,6 +94,8 @@ The variant's own switches, each off by default:
 - `make_room.retain_tokens` and `retain_s` (30 by default): the calls' prefixes kept on the GPU between their turns;
 - `make_room.take_reservations`: a request leaves free only the block reservations of its own priority or a higher
   one; it needs the budget cap;
+- `make_room.decode_hold_tokens`: lower-priority decodes sit out the steps of a running request's first this many
+  output tokens; it needs the budget cap;
 - `make_room.recompute_tokens`: a realtime request's short load from the CPU tier is recomputed instead;
 - `make_room.hint_hold_ms`: a call's announced turn holds lower-priority prefill back that long.
 
@@ -106,6 +108,7 @@ The engine start fails on an unknown `make_room` key or a bad value (`budget_cap
 | `make_room.reserve_tokens` | none: the reserve is the variant's only |
 | `make_room.retain_tokens`, `make_room.retain_s` | none: the variant's only |
 | `make_room.take_reservations` | none: the variant's only |
+| `make_room.decode_hold_tokens` | none: the variant's only |
 | `make_room.recompute_tokens` | none: the variant's only |
 | `make_room.hint_hold_ms` | none: the variant's only |
 
