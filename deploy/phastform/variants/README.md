@@ -50,10 +50,12 @@ The variant removes that file before each start, and after the unit's wait for `
 An engine that runs anything else, a flag over the profile's or another module, fails its start, and the journal names each setting. A release runs the same check once it has restarted the engine ([`ops/RUNBOOK.md`](../../../ops/RUNBOOK.md#deploy)). To serve with it, on the box:
 
 ```sh
-deploy/phastform/variant.sh use make-room-serve     # the engine restarts; the unit's start runs the check
+deploy/phastform/variant.sh use make-room-serve     # the engine restarts; the
+                                                    # unit's start runs the check
 deploy/phastform/variant.sh measure off             # no development routes on a box that serves
 python3 ~/flatshare/src/deploy/bin/serving-check ~/flatshare/src/deploy/phastform/serving.json \
-  --engine $XDG_RUNTIME_DIR/flatshare/engine-effective.json --pid "$(systemctl --user show -p MainPID --value flatshare-engine)"
+  --engine $XDG_RUNTIME_DIR/flatshare/engine-effective.json \
+  --pid "$(systemctl --user show -p MainPID --value flatshare-engine)"
 ```
 
 E2 does not run it: no arm names the variant, and `flatshare-bench e2 run` checks a point's engine against its arm's.

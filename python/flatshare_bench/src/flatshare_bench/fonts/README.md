@@ -23,6 +23,9 @@ The SemiBold face, which sets only the wordmark, was trimmed to the text faces' 
 fontTools 4.67.0:
 
 ```sh
-fonttools subset STIXTwoText-SemiBold.ttf --unicodes="U+0020-007E,U+00A0-00FF,U+0100-017F,U+0370-03FF,U+2000-206F,U+2070-209F,U+20AC,U+2100-214F,U+2212" \
-  --no-hinting --layout-features='kern,liga,ccmp,locl' --name-IDs='*' --output-file=STIXTwoText-SemiBold.ttf
+latin="U+0020-007E,U+00A0-00FF,U+0100-017F"
+greek_and_symbols="U+0370-03FF,U+2000-206F,U+2070-209F,U+20AC,U+2100-214F,U+2212"
+fonttools subset STIXTwoText-SemiBold.ttf --unicodes="$latin,$greek_and_symbols" \
+  --no-hinting --layout-features='kern,liga,ccmp,locl' --name-IDs='*' \
+  --output-file=STIXTwoText-SemiBold.ttf
 ```

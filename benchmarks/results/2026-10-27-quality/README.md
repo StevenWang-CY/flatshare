@@ -179,7 +179,8 @@ Claude Opus through the `claude` CLI (2.1.311) on the subscription, never an API
 `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, in an empty directory:
 
 ```sh
-claude --print --model opus --output-format json --tools "" --setting-sources "" --strict-mcp-config \
+claude --print --model opus --output-format json --tools "" --setting-sources "" \
+  --strict-mcp-config \
   --no-session-persistence --exclude-dynamic-system-prompt-sections \
   --system-prompt "$RATER" --json-schema "$FORM" "$BATCH"
 ```
@@ -224,10 +225,13 @@ once it stopped. One request at a time.
 
 ```sh
 sh benchmarks/quality/fetch.sh DATA
-python benchmarks/quality/generate.py --engine unix:$XDG_RUNTIME_DIR/flatshare/engine.sock --data DATA \
+python benchmarks/quality/generate.py --engine unix:$XDG_RUNTIME_DIR/flatshare/engine.sock \
+  --data DATA \
   --sample benchmarks/quality/sample.json --out OUT          # the engine's venv has httpx
-python benchmarks/quality/score.py --data DATA --sample benchmarks/quality/sample.json --out OUT --items ITEMS.jsonl
-python benchmarks/quality/judge.py --items ITEMS.jsonl --rulings OUT/rulings.jsonl --workdir EMPTY_DIR
+python benchmarks/quality/score.py --data DATA --sample benchmarks/quality/sample.json --out OUT \
+  --items ITEMS.jsonl
+python benchmarks/quality/judge.py --items ITEMS.jsonl --rulings OUT/rulings.jsonl \
+  --workdir EMPTY_DIR
 python benchmarks/quality/gate.py OUT
 ```
 

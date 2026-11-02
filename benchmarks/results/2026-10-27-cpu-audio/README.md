@@ -42,5 +42,6 @@ The TTS server started on the CPU on a socket, as `cpu_audio.py`'s docstring say
 
 ```sh
 python benchmarks/audio/cpu_audio.py tts --tts unix:PATH --sentences SENTENCES --out DIR --rounds 6
-python benchmarks/audio/cpu_audio.py stt --model MODEL_DIR --corpus ~/flatshare/data/callers --out DIR --threads 8 --clips 20
+python benchmarks/audio/cpu_audio.py stt --model MODEL_DIR --corpus ~/flatshare/data/callers \
+  --out DIR --threads 8 --clips 20
 ```

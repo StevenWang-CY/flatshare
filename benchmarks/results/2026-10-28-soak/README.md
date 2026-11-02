@@ -102,5 +102,6 @@ The two journals' lines, as read:
 
 ```sh
 journalctl --user -u flatshare-engine -o short-unix --grep 'make-room: budget cap held'
-journalctl --user -u flatshare-voice-worker -o short-unix --grep 'marking as (un)?available|"process exiting"'
+journalctl --user -u flatshare-voice-worker -o short-unix \
+  --grep 'marking as (un)?available|"process exiting"'
 ```

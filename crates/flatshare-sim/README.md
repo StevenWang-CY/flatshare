@@ -12,18 +12,29 @@
 
 ```sh
 cargo build --release -p flatshare-sim
-flatshare-sim run DATA/weka-x32 --json w0.json --csv w0.csv                       # the W0 configuration, the stock arms
-flatshare-sim run DATA/weka-x32 --cpu-ratio 2,4,8 --arms lru-cpu,clairvoyant      # CPU tier at 2x, 4x and 8x the pool
-flatshare-sim run DATA/weka-x32 --service idle                                    # v0's idle-box service
+# the W0 configuration, the stock arms
+flatshare-sim run DATA/weka-x32 --json w0.json --csv w0.csv
+# CPU tier at 2x, 4x and 8x the pool
+flatshare-sim run DATA/weka-x32 --cpu-ratio 2,4,8 --arms lru-cpu,clairvoyant
+# v0's idle-box service
+flatshare-sim run DATA/weka-x32 --service idle
 flatshare-sim run DATA/weka-x32 --pauses tracelab --arms lru-cpu,oracle-prefetch
-flatshare-sim regime DATA/weka-x32 --csv regime.csv --markdown regime.md          # the regime map, seeds 11-13
-flatshare-sim regime DATA/weka-x32 --sessions 8,12,16,24 --cpu-ratio 4 --pause-sources trace --seeds $(seq 11 30 | paste -sd, -)
-flatshare-sim hardware DATA/weka-x32 --csv hw.csv --markdown hw.md                # other GPUs, modeled
-flatshare-sim hardware DATA/weka-x32 --fit --csv hw-fit.csv --markdown hw-fit.md  # each at its own scaling
-flatshare-sim forecast DATA/weka-x32 DATA/weka-x32-long --markdown forecast.md    # a GPU run's forecast (the A100's)
-flatshare-sim mrc DATA/weka-x32 --service idle --csv mrc.csv --markdown mrc.md    # miss-ratio curves (BENCHMARKS' table)
-flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl        # a measured run through the engine model
-flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl --timed --csv w0-timed.csv
+# the regime map, seeds 11-13
+flatshare-sim regime DATA/weka-x32 --csv regime.csv --markdown regime.md
+flatshare-sim regime DATA/weka-x32 --sessions 8,12,16,24 --cpu-ratio 4 --pause-sources trace \
+  --seeds $(seq 11 30 | paste -sd, -)
+# other GPUs, modeled
+flatshare-sim hardware DATA/weka-x32 --csv hw.csv --markdown hw.md
+# each at its own scaling
+flatshare-sim hardware DATA/weka-x32 --fit --csv hw-fit.csv --markdown hw-fit.md
+# a GPU run's forecast (the A100's)
+flatshare-sim forecast DATA/weka-x32 DATA/weka-x32-long --markdown forecast.md
+# miss-ratio curves (BENCHMARKS' table)
+flatshare-sim mrc DATA/weka-x32 --service idle --csv mrc.csv --markdown mrc.md
+# a measured run through the engine model
+flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl
+flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl --timed \
+  --csv w0-timed.csv
 ```
 
 The replay options are the fields of `flatshare-bench`'s `configs/agentic_replay.yaml`, but they default to the W0 settings, not to that file's (1,800 s plus a 120 s grace and a 600 s think-time cap): 16 lanes, 600 s plus a 60 s grace, a 120 s think-time cap, seed 11, start ratios 0 to 1, burst starts and a 10 s idle cap. Capacities default to the frozen box (`--pool-tokens 36400`, a 20 GiB CPU tier; `--cpu-ratio` or `--cpu-gib` change it), costs to the E0 fits (`--costs` takes the `summary.json` of `flatshare-bench tiers`; `--itl-ms` sets the idle service's decode rate) and the step-time model to the frozen box's fit (`--step-costs`). `run` writes a JSON summary (`--json`), one CSV row per arm and capacity (`--csv`) and one CSV row per request (`--requests`). `--token-scale 32` replays a 32× corpus at its original token counts.

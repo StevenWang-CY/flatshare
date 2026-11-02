@@ -35,12 +35,15 @@ Deploy from a workstation with SSH access to the hosts. The commands name the ho
 
 ```sh
 export FLATSHARE_SSH="ssh -F $HOME/.ssh/flatshare_config"   # your SSH command for the hosts
-deploy/deploy.sh phastform                       # release HEAD's commit to Phastform: prepare, verify, switch
-deploy/build-gateway.sh peacock                  # this commit's gateway, built on a Linux host with rustup
+deploy/deploy.sh phastform                       # release HEAD's commit to
+                                                 # Phastform: prepare, verify, switch
+deploy/build-gateway.sh peacock                  # this commit's gateway, built
+                                                 # on a Linux host with rustup
 deploy/deploy.sh cyan --gateway build/flatshare-gateway-<id>
 deploy/deploy.sh gray                            # the second GPU node
 deploy/deploy.sh phastform --status              # its releases, current and previous
-deploy/deploy.sh phastform --rollback            # back to the previous release (--to ID: another one)
+deploy/deploy.sh phastform --rollback            # back to the previous release
+                                                 # (--to ID: another one)
 ```
 
 **A release** is the commit `HEAD` names (`git archive`) and nothing else, no untracked, ignored or uncommitted file, with `DEPLOYED`, the commit's `git describe`, which every E2 point records: `deploy.sh` refuses a tree that has changes it would not carry. It uploads the release to the host and runs [`deploy/bin/flatshare-release`](../deploy/bin/flatshare-release) there (Python's standard library alone, for the host's `python3`, 3.10 or newer), which keeps the deployment under `~/flatshare`:
@@ -169,19 +172,24 @@ Nothing here needs a backup but `gateway.toml` and the tunnels' targets: the scr
 
 ```sh
 # Phastform
-systemctl --user start flatshare.target          # the three servers start at once; the box is ready when the engine is
+systemctl --user start flatshare.target          # the three servers start at once;
+                                                 # the box is ready when the engine is
 systemctl --user stop flatshare.target
 systemctl --user restart flatshare-engine        # one server; returns once /health answers
 systemctl --user list-units 'flatshare-*'
 journalctl --user -u flatshare-engine -f         # logs
 bash ~/flatshare/src/deploy/phastform/smoke.sh   # end-to-end voice turn, GPU memory, listener audit
-nsenter --target "$(systemctl --user show -p MainPID --value flatshare-engine)" --user --net --preserve-credentials \
-  ss -lntup                                      # what listens inside the engine's own network namespace
+nsenter --target "$(systemctl --user show -p MainPID --value flatshare-engine)" --user --net \
+  --preserve-credentials \
+  ss -lntup                                      # what listens inside the
+                                                 # engine's own network namespace
 
 # cyan
-systemctl --user start flatshare-tunnel@phastform flatshare-voicenet flatshare-livekit flatshare-gateway
+systemctl --user start flatshare-tunnel@phastform flatshare-voicenet flatshare-livekit \
+  flatshare-gateway
 socket_dir=unix:$XDG_RUNTIME_DIR/flatshare           # the tunnel's sockets
-bash ~/flatshare/src/deploy/phastform/smoke.sh $socket_dir/phastform-engine.sock $socket_dir/phastform-stt.sock \
+bash ~/flatshare/src/deploy/phastform/smoke.sh $socket_dir/phastform-engine.sock \
+  $socket_dir/phastform-stt.sock \
   $socket_dir/phastform-tts.sock
 python3 ~/flatshare/src/deploy/bin/audit-listeners   # no TCP listener of ours but the gateway's
 ~/flatshare/src/deploy/bin/in-voicenet ss -lntup     # what listens inside the voice-plane namespace
@@ -204,18 +212,24 @@ A unit counts as started only once its server answers its health endpoint (`wait
 - **A change to `[[listen]]`** takes a restart of both units, with `flatshare-gateway.socket`'s `ListenStream=` changed to match: the gateway refuses a socket that no `[[listen]]` entry names.
 
 ```sh
-systemctl --user reload flatshare-gateway           # a new binary or gateway.toml, without a gap; fails if the successor does not take over
-systemctl --user restart flatshare-gateway          # drains (background requests cut after 5 s), then starts; connections wait meanwhile
-systemctl --user show -p MainPID flatshare-gateway  # a reload changes it: the successor is the unit's main process
+systemctl --user reload flatshare-gateway           # a new binary or gateway.toml, without a gap;
+                                                    # fails if the successor does not take over
+systemctl --user restart flatshare-gateway          # drains (background requests cut after 5 s),
+                                                    # then starts; connections wait meanwhile
+systemctl --user show -p MainPID flatshare-gateway  # a reload changes it: the successor
+                                                    # is the unit's main process
 ```
 
 **Moving a gateway that binds its own sockets to the socket unit** (the first deploy of `flatshare-gateway.socket`) takes one stop and start, during which connections are refused: `systemctl --user daemon-reload`, `systemctl --user stop flatshare-gateway`, `systemctl --user enable --now flatshare-gateway.socket`, `systemctl --user start flatshare-gateway`. Do not start the socket unit while the old gateway runs: its port is taken. The gateway's `[[listen]]` entries in `gateway.toml` stay as they are (`deploy/cyan/gateway.example.toml`'s).
 
 ```sh
 curl -s 127.0.0.1:18080/health                    # the process is up
-curl -s 127.0.0.1:18080/ready                     # 200 while the engine serves and its /health answers; else 503 and why
-curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/metrics | grep -E 'flatshare_gateway_(requests_terminal|upstream_errors)_total'
-journalctl --user -u flatshare-gateway -f         # one JSON line per request and per lifecycle event
+curl -s 127.0.0.1:18080/ready                     # 200 while the engine serves and its
+                                                  # /health answers; else 503 and why
+curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/metrics | grep \
+  -E 'flatshare_gateway_(requests_terminal|upstream_errors)_total'
+journalctl --user -u flatshare-gateway -f         # one JSON line per request
+                                                  # and per lifecycle event
 ```
 
 E2 reads each point's request lines from this journal, so `gateway.toml` keeps `log_format = "json"`, as the example does.
@@ -252,9 +266,11 @@ What is checked, and what is not:
 | `flatshare-voice-worker` | `flatshare-voice-worker start` (LiveKit Agents) in the namespace | Agent `flatshare-voice`. STT and TTS through `%t/flatshare/phastform-{stt,tts}.sock`, the LLM through `%t/flatshare/gateway.sock` |
 
 ```sh
-systemctl --user start flatshare-tunnel@phastform flatshare-gateway flatshare-voicenet flatshare-livekit \
+systemctl --user start flatshare-tunnel@phastform flatshare-gateway flatshare-voicenet \
+  flatshare-livekit \
   flatshare-voice-worker
-journalctl --user -u flatshare-voice-worker -f          # JSON logs; "registered worker" means it is ready
+journalctl --user -u flatshare-voice-worker -f          # JSON logs; "registered
+                                                        # worker" means it is ready
 ```
 
 **Bench and serve modes.** The worker's unit runs bench mode, what every measurement ran: every call taken. The `serve` variant is the serving configuration: serve mode admits the serving profile's calls at once (two), with LiveKit's load threshold at 1 so that a full worker gets no job, takes no new call while the gateway's `/ready` says the engine does not serve or while a release drains it (the drain file, `$XDG_RUNTIME_DIR/flatshare/voice-worker.drain`), and writes its state every second to `$XDG_RUNTIME_DIR/flatshare/voice-worker.json`; its audio is the real-microphone configuration ([the modes](../python/flatshare_voice/README.md#bench-and-serve-modes)). To serve, unlink `vad-turns` (the microphone configuration refuses fixed endpointing) and link `serve`; `flatshare-bench e2 run` refuses a worker in serve mode. With `[[nodes]]`, the last two commands hold the gateway's nodes to the profile's envelope, as a release does after its switch.
@@ -262,11 +278,14 @@ journalctl --user -u flatshare-voice-worker -f          # JSON logs; "registered
 ```sh
 units=~/.config/systemd/user/flatshare-voice-worker.service.d
 rm $units/variant-vad-turns.conf
-ln -s ~/flatshare/src/deploy/cyan/variants/serve/flatshare-voice-worker.conf $units/variant-serve.conf
+ln -s ~/flatshare/src/deploy/cyan/variants/serve/flatshare-voice-worker.conf \
+  $units/variant-serve.conf
 systemctl --user daemon-reload && systemctl --user restart flatshare-voice-worker
 python3 ~/flatshare/src/deploy/bin/serving-check ~/flatshare/src/deploy/phastform/serving.json \
-  --voice $XDG_RUNTIME_DIR/flatshare/voice-worker.json --voice-pid "$(systemctl --user show -p MainPID --value flatshare-voice-worker)"
-curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/nodes > $XDG_RUNTIME_DIR/flatshare/gateway-nodes.json
+  --voice $XDG_RUNTIME_DIR/flatshare/voice-worker.json \
+  --voice-pid "$(systemctl --user show -p MainPID --value flatshare-voice-worker)"
+curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/nodes > \
+  $XDG_RUNTIME_DIR/flatshare/gateway-nodes.json
 python3 ~/flatshare/src/deploy/bin/serving-check ~/flatshare/src/deploy/phastform/serving.json \
   --nodes $XDG_RUNTIME_DIR/flatshare/gateway-nodes.json
 ```
@@ -285,11 +304,14 @@ python3 ~/flatshare/src/deploy/bin/serving-check ~/flatshare/src/deploy/phastfor
 **Measurement callers.** Render the corpus once with the TTS server. The callers run inside the namespace:
 
 ```sh
-~/flatshare/venvs/voice/bin/flatshare-voice render-callers ~/flatshare/data/callers --tts-url http://localhost/v1 \
+~/flatshare/venvs/voice/bin/flatshare-voice render-callers ~/flatshare/data/callers \
+  --tts-url http://localhost/v1 \
   --uds $XDG_RUNTIME_DIR/flatshare/phastform-tts.sock
 set -a; . ~/.config/flatshare/livekit.env; set +a
-taskset -c 24-31 ~/flatshare/src/deploy/bin/in-voicenet ~/flatshare/venvs/voice/bin/flatshare-voice bots \
-  --corpus ~/flatshare/data/callers --callers 2 --turns 25 --barge-in 0.25 --out ~/flatshare/runs/<run>/bots
+taskset -c 24-31 ~/flatshare/src/deploy/bin/in-voicenet \
+  ~/flatshare/venvs/voice/bin/flatshare-voice bots \
+  --corpus ~/flatshare/data/callers --callers 2 --turns 25 --barge-in 0.25 \
+  --out ~/flatshare/runs/<run>/bots
 ```
 
 ## Engine variants
@@ -316,8 +338,10 @@ The gateway can front two GPU nodes (Phastform and Gray), as dedicated roles or 
 `gateway.toml` then has a `[[nodes]]` entry per node in place of `upstream`, each with its engine, roles, `max_calls`, `max_agents` (which a node with both roles must set, to a count or `"unbounded"`), and speech servers, no `[admission]` table, and optionally `[placement]` (`deploy/cyan/gateway.example.toml` has both nodes; [the gateway's README](../crates/flatshare-gateway/README.md#nodes) every key). A reload takes the change, and the successor keeps every session's node. Lowering `max_agents` or `max_calls` takes effect for new sessions; placed ones keep their nodes until they end.
 
 ```sh
-curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/nodes | jq   # each node's verdict, components, calls and agents, and the placement
-curl -s 127.0.0.1:18080/ready                                                       # 200 while each role has an available node
+# each node's verdict, components, calls and agents, and the placement
+curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/nodes | jq
+# 200 while each role has an available node
+curl -s 127.0.0.1:18080/ready
 ```
 
 - **Health.** A node is healthy while its engine serves (its own canary, idle-only) and is ready, and its STT and TTS answer `/health`: checked every second, unhealthy after 3 failed checks in a row, healthy again after 2 passed ones. A node whose engine a request found broken is passed over at once. `flatshare_gateway_node_healthy`, `node_component_healthy` and `engine_state{node=...}` show it, and `/nodes` says which component failed.
@@ -347,7 +371,8 @@ curl -s 127.0.0.1:18080/ready                                                   
 2. Wait until it is drained, when its last call has ended and no request is in flight there:
 
    ```sh
-   curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/nodes | jq '.nodes[] | {name, draining, drained, sessions}'
+   curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/nodes | jq \
+     '.nodes[] | {name, draining, drained, sessions}'
    ```
 
    A call ends at its `DELETE /v1/sessions/{id}`, which the voice worker sends when the caller hangs up, or `idle_s` after its last turn.
@@ -388,7 +413,8 @@ A soak, from the first one's setup to its committed record, is in [E2's README](
   - on Phastform, the audit with the three sockets expected finds the servers listening on them and none of the box's units on TCP, but for the SGLang variant's engine on loopback:
 
     ```sh
-    python3 ~/flatshare/src/deploy/bin/audit-listeners --expect $XDG_RUNTIME_DIR/flatshare/engine.sock \
+    python3 ~/flatshare/src/deploy/bin/audit-listeners \
+      --expect $XDG_RUNTIME_DIR/flatshare/engine.sock \
       --expect $XDG_RUNTIME_DIR/flatshare/stt.sock --expect $XDG_RUNTIME_DIR/flatshare/tts.sock
     ```
 
@@ -403,7 +429,8 @@ Gray runs Ubuntu 24.04 with `kernel.apparmor_restrict_unprivileged_userns=1`, an
 - The servers then run in the host's network namespace and serve only their Unix sockets in `$XDG_RUNTIME_DIR/flatshare` (0700). The listener audit, with the three sockets expected, accepts there only the loopback TCP listeners of vLLM's engine cores on ephemeral ports (torch's gloo groups) and CUDA's abstract sockets, counted apart, which the host's other users can reach, and fails on anything else of theirs:
 
   ```sh
-  python3 ~/flatshare/src/deploy/bin/audit-listeners --expect $XDG_RUNTIME_DIR/flatshare/engine.sock \
+  python3 ~/flatshare/src/deploy/bin/audit-listeners \
+    --expect $XDG_RUNTIME_DIR/flatshare/engine.sock \
     --expect $XDG_RUNTIME_DIR/flatshare/stt.sock --expect $XDG_RUNTIME_DIR/flatshare/tts.sock
   ```
 

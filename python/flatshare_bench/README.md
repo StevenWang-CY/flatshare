@@ -59,7 +59,9 @@ main-agent requests and does not filter subagents, and `--max-context-length 327
 trace. Instead, `scale-traces` shrinks the tokens per block and leaves the hash ids alone:
 
 ```text
-block_size -> block_size / factor      in -> len(hash_ids) * new block_size      out -> ceil(out / factor)
+block_size -> block_size / factor
+in         -> len(hash_ids) * new block_size
+out        -> ceil(out / factor)
 ```
 
 Prefix identity, subagent forks and the cache hit rate are preserved exactly, and every request
@@ -74,7 +76,8 @@ as recorded; there is no length cap.
 | 64 (`block_size` 1) | 16k | 15,572 | Smaller KV pools |
 
 ```sh
-flatshare-bench scale-traces traces.jsonl weka-x32 --factor 32    # the HF JSONL or a directory of *.json
+flatshare-bench scale-traces traces.jsonl weka-x32 --factor 32    # the HF JSONL or a
+                                                                  # directory of *.json
 flatshare-bench scale-traces traces.jsonl weka-sub --ids ids.txt  # a subset; or --limit N
 ```
 
@@ -198,7 +201,8 @@ Every command that reaches a server takes its address as the gateway's `upstream
 ```sh
 flatshare-bench tiers --reps 5 --out runs/e0-idle
 flatshare-bench tiers --lengths 1024,4096,16384 --background decode:1024x8 --out runs/e0-decode
-flatshare-bench voice-turn --audio turn.wav --reps 30 --background prefill:8192x1 --out runs/voice-x1
+flatshare-bench voice-turn --audio turn.wav --reps 30 --background prefill:8192x1 \
+  --out runs/voice-x1
 ```
 
 ## KV block lifecycle (`flatshare-bench kv-metrics`)
@@ -206,7 +210,8 @@ flatshare-bench voice-turn --audio turn.wav --reps 30 --background prefill:8192x
 Snapshot an engine's `/metrics` around a run, then compare vLLM's sampled KV block histograms over it. The engine needs `--kv-cache-metrics`. The histograms are `vllm:kv_block_reuse_gap_seconds`, `vllm:kv_block_idle_before_evict_seconds` and `vllm:kv_block_lifetime_seconds`.
 
 ```sh
-engine=unix:$XDG_RUNTIME_DIR/flatshare/phastform-engine.sock  # on cyan: the engine through its tunnel
+engine=unix:$XDG_RUNTIME_DIR/flatshare/phastform-engine.sock  # on cyan: the engine
+                                                              # through its tunnel
 flatshare-bench kv-metrics snapshot $engine before.prom
 # ... run the load ...
 flatshare-bench kv-metrics snapshot $engine after.prom
@@ -230,17 +235,27 @@ When evicted blocks were idle for less time than blocks typically wait between r
 `flatshare-bench e2 run ARM.toml --out DIR` measures one point of E2 on cyan: the measurement calls beside the AIPerf agentic replay, through the gateway, on the engine the GPU node runs. [`benchmarks/e2`](../../benchmarks/e2/README.md) holds the arm files and `campaign.sh`, which measures a list of them from a workstation and switches the GPU node's engine between them.
 
 ```sh
-flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/a1-voice.toml --out ~/flatshare/runs/e2/w2/a1-voice
-flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/disc-a9-s24.toml --out ~/flatshare/runs/e2/demo/disc-a9-s24 \
-  --save-audio                               # the callers save each call's audio, for the demo video
-flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/a1-voice.toml --out ~/flatshare/runs/e2/rg-gray/a1-voice \
-  --node gray --gpu-source gray=v1.6      # on Gray, through flatshare-tunnel@gray; campaign.sh passes both
-flatshare-bench e2 engine a2-stock-s16.toml  # the engine an arm needs, as variant.sh use takes it
-flatshare-bench e2 report ~/flatshare/runs/e2/w2/{a1-voice,a2-stock-s16} --out ~/flatshare/runs/e2/first
+flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/a1-voice.toml \
+  --out ~/flatshare/runs/e2/w2/a1-voice
+# the callers save each call's audio, for the demo video
+flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/disc-a9-s24.toml \
+  --out ~/flatshare/runs/e2/demo/disc-a9-s24 \
+  --save-audio
+# on Gray, through flatshare-tunnel@gray; campaign.sh passes both
+flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/a1-voice.toml \
+  --out ~/flatshare/runs/e2/rg-gray/a1-voice \
+  --node gray --gpu-source gray=v1.6
+# the engine an arm needs, as variant.sh use takes it
+flatshare-bench e2 engine a2-stock-s16.toml
+flatshare-bench e2 report ~/flatshare/runs/e2/w2/{a1-voice,a2-stock-s16} \
+  --out ~/flatshare/runs/e2/first
+# repeats across rounds; two configurations' waterfall
 flatshare-bench e2 report ~/flatshare/runs/e2/{w2c,a9,r1,r2}/disc-* --out ~/flatshare/runs/e2/disc \
-  --waterfall disc-frozen-s24 --waterfall disc-a9-s24   # repeats across rounds; two configurations' waterfall
-flatshare-bench e2 export ~/flatshare/runs/e2/w2b/* --out benchmarks/results/2026-10-23-e2   # compact records
-flatshare-bench e2 reset                     # cyan's units as gateway.toml and the worker's defaults have them
+  --waterfall disc-frozen-s24 --waterfall disc-a9-s24
+# compact records
+flatshare-bench e2 export ~/flatshare/runs/e2/w2b/* --out benchmarks/results/2026-10-23-e2
+# cyan's units as gateway.toml and the worker's defaults have them
+flatshare-bench e2 reset
 ```
 
 **The GPU node.** A point measures on one GPU node, `--node NODE`, which `run.json` names (`node`) beside the node's deployed revision (`versions.gpu_source`; `--gpu-source`, when given, must name the node):
@@ -405,11 +420,15 @@ The raw run directories (the gateway's request log, AIPerf's exports, the metric
 `flatshare-bench soak run --hours H --out DIR` loads the box as it serves for hours, on cyan: calls arriving on a schedule against the voice worker in serve mode ([`flatshare-voice arrivals`](../flatshare_voice/README.md#arriving-calls-a-soaks)), AIPerf's agentic replay through the gateway as E2 runs it, a scrape of the service every minute and a guard on the GPUs. [docs/EXPERIMENTS.md](../../docs/EXPERIMENTS.md#the-soak-the-production-path-for-hours) says what it measures and [benchmarks/e2/README.md](../../benchmarks/e2/README.md#soaks) how to run one; `soak report DIR` prints its summary from its directory or its compact record, and `soak export DIR --out RECORD` writes the record to commit.
 
 ```sh
-flatshare-bench soak run --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref     # voice alone: the reference
-flatshare-bench soak report ~/flatshare/runs/soak/ref                                       # once it has ended: its p95 is P95
+# voice alone: the reference
+flatshare-bench soak run --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref
+# once it has ended: its p95 is P95
+flatshare-bench soak report ~/flatshare/runs/soak/ref
+# 20 calls an hour; 14 agents' trees, under two nodes' 4 + 12 (the runbook's Soaks)
 flatshare-bench soak run --hours 24 --slo-reference P95 --agents-sessions 14 \
-  --out ~/flatshare/runs/soak/day        # 20 calls an hour; 14 agents' trees, under two nodes' 4 + 12 (the runbook's Soaks)
-flatshare-bench soak report ~/flatshare/runs/soak/day                                       # the hours' table
+  --out ~/flatshare/runs/soak/day
+# the hours' table
+flatshare-bench soak report ~/flatshare/runs/soak/day
 flatshare-bench soak export ~/flatshare/runs/soak/day --out benchmarks/results/2026-10-28-soak
 ```
 
@@ -502,11 +521,14 @@ curl -sSL --fail -o cc-traces-weka-062126/traces.jsonl --create-dirs \
 flatshare-bench scale-traces cc-traces-weka-062126/traces.jsonl weka-x32 --factor 32
 flatshare-bench scale-traces cc-traces-weka-062126/traces.jsonl weka-x64 --factor 64
 # A quick-check subset; sub16.ids lists 16 short traces, one id per line (8 with subagents)
-flatshare-bench scale-traces cc-traces-weka-062126/traces.jsonl weka-x32-sub16 --factor 32 --ids sub16.ids
+flatshare-bench scale-traces cc-traces-weka-062126/traces.jsonl weka-x32-sub16 --factor 32 \
+  --ids sub16.ids
 
-# Mock on loopback (keep clear of cyan's deployed ports, the gateway's 18080 and LiveKit's 17880-17882)
+# Mock on loopback (keep clear of cyan's deployed ports, the gateway's 18080 and LiveKit's
+# 17880-17882)
 mkdir -p ~/flatshare/runs/w0-e2e && cd ~/flatshare/runs/w0-e2e
-setsid nohup flatshare-bench mock-server --port 19180 --log $PWD/mock-aiperf.jsonl < /dev/null > mock.out 2>&1 &
+setsid nohup flatshare-bench mock-server --port 19180 \
+  --log $PWD/mock-aiperf.jsonl < /dev/null > mock.out 2>&1 &
 echo $! > mock.pid
 ss -lntp | grep 19180          # 127.0.0.1:19180 only
 
@@ -514,14 +536,16 @@ ss -lntp | grep 19180          # 127.0.0.1:19180 only
 cd ~/flatshare/src/python/flatshare_bench
 . configs/aiperf.env
 FLATSHARE_BENCH_URL=http://127.0.0.1:19180/v1/chat/completions \
-FLATSHARE_BENCH_DATA=$HOME/flatshare/data/weka-x32-sub16 FLATSHARE_BENCH_SESSIONS=8 FLATSHARE_BENCH_DURATION=60 \
+FLATSHARE_BENCH_DATA=$HOME/flatshare/data/weka-x32-sub16 FLATSHARE_BENCH_SESSIONS=8 \
+FLATSHARE_BENCH_DURATION=60 \
 FLATSHARE_BENCH_GRACE=15 FLATSHARE_BENCH_THINK_CAP=3 FLATSHARE_BENCH_RAW=true \
 FLATSHARE_BENCH_ARTIFACTS=$HOME/flatshare/runs/w0-e2e/aiperf \
   aiperf profile --config configs/agentic_replay.yaml
 
 # What reached the server
-python -c 'import json,sys; r=json.loads(open(sys.argv[1]).readlines()[-1]); print(r["headers"], r["body"])' \
-  ~/flatshare/runs/w0-e2e/mock-aiperf.jsonl
+python -c 'import json, sys
+r = json.loads(open(sys.argv[1]).readlines()[-1])
+print(r["headers"], r["body"])' ~/flatshare/runs/w0-e2e/mock-aiperf.jsonl
 kill $(cat ~/flatshare/runs/w0-e2e/mock.pid)
 ```
 

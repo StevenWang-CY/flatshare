@@ -310,10 +310,11 @@ the request fit, with no cap, but only with chunked prefill off and by recomputi
 the rule to V1, under chunked prefill and asynchronous scheduling, with a cap of N a step and the victims' KV kept.
 
 ```text
-Algorithm 1. The KV preemption, before the running loop of each scheduler step (at most N victims a step).
+Algorithm 1. The KV preemption, in each scheduler step, before its running loop (at most N victims).
 p(x) is a request's priority, and a lower value is served first.
 
- 1  if prefills are deferred, new requests are paused, or the KV connector has block frees pending: return
+ 1  if prefills are deferred, new requests are paused, or the KV connector has block frees
+        pending: return
  2  r ← the highest-priority waiting request that the waiting loop can schedule in this step
  3  if r is none, or no running request has p > p(r), or room was made for r and the waiting loop
         has not tried r since, or (with the budget cap) h < p(r) in Algorithm 2: return

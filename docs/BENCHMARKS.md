@@ -898,8 +898,10 @@ The host is measured by [`bench_host.py`](../benchmarks/a100/bench_host.py), wit
 The run of 2026-10-26 had an A100 SXM4 80 GB on a Colab runtime with high RAM: a container (Ubuntu 24.04, root, no systemd user manager) with 12 vCPUs of a 2.20 GHz Xeon (Cascade Lake), 167 GiB of RAM, an 82 GiB `/dev/shm`, driver 580.82.07 and CUDA 13.0's toolkit. Colab's command-line client ([google-colab-cli](https://github.com/googlecolab/google-colab-cli), its `colab` command, signed in once) makes the runtime and reaches it:
 
 ```sh
-colab new -s a100 --gpu A100 --high-mem   # the runtime, billed in compute units from here to `colab stop -s a100`
-colab usage                               # the balance and the rate (6.77 units an hour for this runtime)
+colab new -s a100 --gpu A100 --high-mem   # the runtime, billed in compute units
+                                          # from here to `colab stop -s a100`
+colab usage                               # the balance and the rate (6.77
+                                          # units an hour for this runtime)
 ```
 
 An SSH host entry whose `ProxyCommand` is `colab ssh --proxy-mode -s a100` carries `push.sh`, `pull.sh` and every command (`FLATSHARE_SSH="ssh -F <that file>"`). Four things differ from the hosts the kit was rehearsed on:

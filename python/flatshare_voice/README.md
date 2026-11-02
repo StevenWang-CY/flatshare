@@ -164,7 +164,8 @@ With `--in-order` each caller plays the corpus's turn lines in order rather than
 A turn fails when the agent does not answer within the reply timeout (30 s), or does not stop speaking. Its line in `turns.jsonl` has an `error` and keeps what the turn measured before it. A turn draws its interruption with its line, so a failed turn leaves the turns after it as they were: a point with failures plays the same calls as the others. In `summary.json` a sample the timeout cut short counts at the timeout, censored (`censored` gives how many), never as missing: a turn that was never answered raises the percentiles instead of leaving them.
 
 ```sh
-flatshare-voice render-callers ~/flatshare/data/callers --tts-url http://localhost/v1 --uds $XDG_RUNTIME_DIR/flatshare/phastform-tts.sock
+flatshare-voice render-callers ~/flatshare/data/callers --tts-url http://localhost/v1 \
+  --uds $XDG_RUNTIME_DIR/flatshare/phastform-tts.sock
 set -a; . ~/.config/flatshare/livekit.env; set +a
 ~/flatshare/src/deploy/bin/in-voicenet flatshare-voice bots --corpus ~/flatshare/data/callers \
   --callers 2 --turns 25 --barge-in 0.25 --out ~/flatshare/runs/<run>/bots
@@ -265,7 +266,8 @@ The integration test (the W0 barge-in and header findings) runs on cyan. It need
 ```sh
 cd ~/flatshare/src/python/flatshare_voice
 export UV_PROJECT_ENVIRONMENT=~/flatshare/venvs/voice
-LIVEKIT_SERVER_BIN=~/flatshare/bin/livekit-server uv run --locked --extra test pytest -m integration -v
+LIVEKIT_SERVER_BIN=~/flatshare/bin/livekit-server uv run --locked --extra test pytest \
+  -m integration -v
 ```
 
 A run takes about 35 s and prints the measured latencies at the end. Logs and a JSON
@@ -304,7 +306,10 @@ Namespace commands, as the test runs them:
 
 ```sh
 # holder: prints "ready", then keeps the namespace alive
-unshare --user --map-root-user --net -- sh -c 'ip link set lo up && ip link add flatshare0 type dummy && ip link set flatshare0 addrgenmode none && ip addr add 10.255.0.1/32 dev flatshare0 && ip link set flatshare0 up && echo ready && exec sleep infinity'
+unshare --user --map-root-user --net -- sh -c 'ip link set lo up &&
+  ip link add flatshare0 type dummy && ip link set flatshare0 addrgenmode none &&
+  ip addr add 10.255.0.1/32 dev flatshare0 && ip link set flatshare0 up &&
+  echo ready && exec sleep infinity'
 # every other process
 nsenter --target=<holder pid> --user --net --preserve-credentials -- <command>
 ```

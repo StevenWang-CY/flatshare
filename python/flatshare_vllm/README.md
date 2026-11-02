@@ -3,18 +3,23 @@
 The engine variants that run the change inside vLLM. `make-room` runs the scheduler diff of pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) (stacked on #63350; proposed to vLLM, open, with no maintainer review as of 2026-11-02) on vLLM 0.32.0, the version E2 measured, and on 0.33.0 ([below](#vllm-0330)). `pr54530` is vLLM [#54530](https://github.com/vllm-project/vllm/pull/54530) ported to 0.32.0, a baseline. A variant is a scheduler module that `build.py` writes at each engine start from the installed vLLM's own scheduler, which it never modifies. [ARCHITECTURE.md §2](../../docs/ARCHITECTURE.md#2-the-change-63350-and-63351) states the rules, and the variants' systemd drop-ins are in [`deploy/phastform/variants`](../../deploy/phastform/variants/README.md).
 
 ```text
-src/flatshare_vllm/build.py      writes a variant's module: its patches, applied exactly, and the stock AsyncScheduler
-src/flatshare_vllm/make-room/    63350.patch and 63351.patch, the pull requests' scheduler diff backported to v0.32.0;
-                                 variant.patch, what only the variant has; probe.py, tail.py and knee.sh, its GPU checks;
-                                 v0.33.0/, the three patches on v0.33.0
+src/flatshare_vllm/build.py      writes a variant's module: its patches, applied exactly, and the
+                                 stock AsyncScheduler
+src/flatshare_vllm/make-room/    63350.patch and 63351.patch, the pull requests' scheduler diff
+                                 backported to v0.32.0; variant.patch, what only the variant has;
+                                 probe.py, tail.py and knee.sh, its GPU checks; v0.33.0/, the three
+                                 patches on v0.33.0
 src/flatshare_vllm/pr54530/      pr54530.patch, #54530 ported to v0.32.0 by hand; probe.py
-src/flatshare_vllm/serve/        flatshare_make_room_serve.py, the serving variant's scheduler class: make-room's,
-                                 which writes the configuration the engine runs as it starts
-scripts/make-room-patches.sh     rewrites make-room's patches from the backport's branches, in a clone of the fork
-scripts/compat_upstream.py       make compat-upstream: the pull requests against vLLM's main, the backport against
-                                 their heads, the patches against vLLM's newest release
-tests/                           the build, make-room's behavior, make-room traced against the pull requests, its cost
-                                 per step
+src/flatshare_vllm/serve/        flatshare_make_room_serve.py, the serving variant's scheduler
+                                 class: make-room's, which writes the configuration the engine runs
+                                 as it starts
+scripts/make-room-patches.sh     rewrites make-room's patches from the backport's branches, in a
+                                 clone of the fork
+scripts/compat_upstream.py       make compat-upstream: the pull requests against vLLM's main, the
+                                 backport against their heads, the patches against vLLM's newest
+                                 release
+tests/                           the build, make-room's behavior, make-room traced against the pull
+                                 requests, its cost per step
 ```
 
 ## The build
@@ -116,7 +121,8 @@ A stand-in KV connector loads a request's KV asynchronously or delays it. `tests
 tools=~/flatshare/cache/testtools
 [[ -d $tools/pytest ]] || ~/.local/bin/uv pip install -q --target "$tools" pytest
 cd ~/flatshare/src/python/flatshare_vllm
-VLLM_TARGET_DEVICE=cpu PYTHONPATH=$tools ~/flatshare/venvs/engine/bin/python -m pytest -q -p no:cacheprovider tests/test_make_room.py tests/test_trace.py
+VLLM_TARGET_DEVICE=cpu PYTHONPATH=$tools ~/flatshare/venvs/engine/bin/python -m pytest -q \
+  -p no:cacheprovider tests/test_make_room.py tests/test_trace.py
 ```
 
 Elsewhere, an environment with CPU torch 2.13 and vLLM 0.32.0's Python dependencies runs them on the source checkout instead, from the repository's root: `make test-make-room TORCH_PYTHON=<its python>`, and `make test-trace TORCH_PYTHON=<its python>` (`TRACE_SEEDS=100` runs the random workloads at 100 seeds, where the default is 20). Both first check that the interpreter imports pytest, torch and vLLM's scheduler, and fail if it does not, rather than let pytest skip the suites. `make test-make-room-ci` runs both as CI's `make-room` job does. It runs them in the environment that `requirements-cpu.txt` pins: Python 3.12 on Linux x86_64, CPU torch 2.13.0, and vLLM's dependencies at the engine environment's versions (`requirements-cpu.in`, compiled by the command in its header). uv builds that environment in `build/cpu-env` (`CPU_ENV`), and the target sets `FLATSHARE_NO_SKIPS=1`, under which any skipped test fails the session (`tests/conftest.py`).

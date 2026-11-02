@@ -27,9 +27,13 @@ Two features of the kit exist for the rehearsal, and `check` refuses a checkout 
 2. **The box's units are stopped, and you note which were active**, so that you can start them again after:
 
    ```sh
-   pssh phastform 'systemctl --user list-units --state=active --no-legend --plain "flatshare*"'   # note these
-   pssh phastform 'systemctl --user stop flatshare.target flatshare-engine.service flatshare-stt.service flatshare-tts.service flatshare-engine-proxy.socket flatshare-mps.service;
-     systemctl --user list-units --all --no-legend --plain "flatshare*"'                         # every one inactive
+   # note these
+   pssh phastform 'systemctl --user list-units --state=active --no-legend --plain "flatshare*"'
+   pssh phastform 'systemctl --user stop flatshare.target flatshare-engine.service \
+       flatshare-stt.service flatshare-tts.service flatshare-engine-proxy.socket \
+       flatshare-mps.service;
+     systemctl --user list-units --all --no-legend --plain \
+       "flatshare*"'                         # every one inactive
    ```
 
    `pssh` stands for the SSH command that reaches the host (`REHEARSAL_SSH`).
@@ -44,12 +48,16 @@ Two features of the kit exist for the rehearsal, and `check` refuses a checkout 
 From this directory on the workstation, in bash (macOS's 3.2 is enough); the rehearsal's own state, logs and records go to `REHEARSAL_WORK`, `~/flatshare/rehearsal`. The workstation also needs `git`, `rsync`, `tar` and a `python3` that runs, for the `data` step's `long_traces.py`. On a Mac, `/usr/bin/git` and `/usr/bin/python3` need Xcode's developer tools, their licence accepted; another `git` or `python3` first on `PATH` serves as well.
 
 ```sh
-bash rehearse.sh all                       # every step not done yet, in order; stops at the first that fails
-bash rehearse.sh status                    # each step: done or not; each host step: running, done STATUS
+bash rehearse.sh all                       # every step not done yet, in order;
+                                           # stops at the first that fails
+bash rehearse.sh status                    # each step: done or not; each
+                                           # host step: running, done STATUS
 bash rehearse.sh STEP                      # one step; the steps before it must be done
-bash rehearse.sh --redo STEP STEP          # a step again, although done (on the host too: a block's blocks/N.done goes)
+bash rehearse.sh --redo STEP STEP          # a step again, although done (on the
+                                           # host too: a block's blocks/N.done goes)
 bash rehearse.sh abort                     # stop what runs on the host, then cleanup
-bash rehearse.sh --purge cleanup           # cleanup, again if done, and remove ~/a100-rehearsal on the host
+bash rehearse.sh --purge cleanup           # cleanup, again if done, and remove
+                                           # ~/a100-rehearsal on the host
 ```
 
 **Resumable.** A step done leaves `state/STEP.done` and is skipped from then on.

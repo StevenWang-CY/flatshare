@@ -9,9 +9,12 @@ A line in a campaign file can also set, for all of its points:
 - `save-audio`: the callers save each call's audio, for [the demo video](#the-demo-video) (`flatshare-bench e2 run --save-audio`).
 
 ```sh
-export FLATSHARE_SSH="ssh -F $HOME/.ssh/flatshare_config"             # your SSH command for the hosts, as for deploy.sh
-benchmarks/e2/campaign.sh --dry-run benchmarks/e2/w2.campaign   # check every arm file; list the points and engines
-benchmarks/e2/campaign.sh --pause benchmarks/e2/w2.campaign     # measure, then pause the GPU node
+# your SSH command for the hosts, as for deploy.sh
+export FLATSHARE_SSH="ssh -F $HOME/.ssh/flatshare_config"
+# check every arm file; list the points and engines
+benchmarks/e2/campaign.sh --dry-run benchmarks/e2/w2.campaign
+# measure, then pause the GPU node
+benchmarks/e2/campaign.sh --pause benchmarks/e2/w2.campaign
 ```
 
 For each point whose run directory on cyan is not complete, `campaign.sh`:
@@ -44,8 +47,10 @@ Gray needs, once:
 [`gray-smoke.campaign`](gray-smoke.campaign) checks Gray end to end on W5's round-1 sample of the agents: voice alone on the frozen box, then the agents alone on a dedicated card ([`rg-disc-agents-only-s24`](arms/rg-disc-agents-only-s24.toml), which stops the card's speech servers) and on the shared card's engine ([`rg-disc-agents-pr-ab48-s24`](arms/rg-disc-agents-pr-ab48-s24.toml), the configuration to deploy as W5 ran it, which starts them again):
 
 ```sh
-FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --dry-run benchmarks/e2/gray-smoke.campaign   # the points and engines
-FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --pause benchmarks/e2/gray-smoke.campaign     # measure on Gray, then pause it
+# the points and engines
+FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --dry-run benchmarks/e2/gray-smoke.campaign
+# measure on Gray, then pause it
+FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --pause benchmarks/e2/gray-smoke.campaign
 ```
 
 **Points without calls.** An arm file with `[voice] callers = 0` and agent sessions measures the agents alone, as a card that serves no call runs them: no callers and no worker journal, its window `[agents] window_s` after the warm-up (355 s by default, the median length of a two-caller point's calls in W5's records), its agents' token rate the point's measure. With `[engine] variant = "agents-only"` the card runs without its speech servers, the engine's KV pool grown into their memory under vLLM's own scheduling for the card ([the variant](../../deploy/phastform/variants/README.md#a-card-for-the-agents-alone)): the resource gate's best practical dedicated card. Its controlled counterpart is the same point on the shared card's engine, the speech servers resident and idle. The report gives such points a workload of their own, without a frontier or a figure.
@@ -255,13 +260,20 @@ A soak loads the box as it serves for hours and keeps every attempt and every sc
 
 ```sh
 bench=~/flatshare/venvs/bench/bin/flatshare-bench
-soak() { systemd-run --user --unit flatshare-soak --collect -p KillMode=mixed -p TimeoutStopSec=900 $bench soak run "$@"; }
-soak --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref-voice-alone   # the reference, first
-$bench soak report ~/flatshare/runs/soak/ref-voice-alone                         # once it has ended: its p95 is P95
-soak --hours 24 --slo-reference P95 --calls-per-hour 20 --turns 10 --agents-sessions 14 --agents-data weka-x32-long \
-  --out ~/flatshare/runs/soak/NAME     # two nodes bounding agents at 4 + 12: a few under the bounds (the runbook's Two GPU nodes, Sizing)
-journalctl --user -u flatshare-soak -f      # its progress: each tool's run, each hour's line
-systemctl --user stop flatshare-soak        # ends it early, its summary written
+soak() { systemd-run --user --unit flatshare-soak --collect -p KillMode=mixed \
+  -p TimeoutStopSec=900 $bench soak run "$@"; }
+# the reference, first
+soak --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref-voice-alone
+# once it has ended: its p95 is P95
+$bench soak report ~/flatshare/runs/soak/ref-voice-alone
+# two nodes bounding agents at 4 + 12: a few under the bounds (the runbook's Two GPU nodes, Sizing)
+soak --hours 24 --slo-reference P95 --calls-per-hour 20 --turns 10 --agents-sessions 14 \
+  --agents-data weka-x32-long \
+  --out ~/flatshare/runs/soak/NAME
+# its progress: each tool's run, each hour's line
+journalctl --user -u flatshare-soak -f
+# ends it early, its summary written
+systemctl --user stop flatshare-soak
 ```
 
 The nodes are the gateway's: its `[[nodes]]`, or the node its `upstream` socket names (`phastform-engine.sock`), each guarded over SSH unless `--guard` says otherwise. At the window's end no call arrives any more, the calls in progress play their turns (for `--drain-s`, 600 s, at most) and AIPerf stops. SIGINT or SIGTERM ends a soak the same way, each call with its current turn; a second one hangs the calls up. A tool that ends early starts again, after a backoff if it keeps ending (10 s, then up to 10 minutes). While a guarded GPU holds another's process, or cannot be read three minutes in a row, the soak stops its calls and AIPerf, and starts them again once every GPU has been clear for five minutes (`--guard-clear-s`): the gateway places the load, so a pause stops all of it.

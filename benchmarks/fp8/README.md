@@ -29,13 +29,16 @@ caches beside itself. The GPU must be idle: `run.sh` refuses beside another proc
 ```sh
 # The fix: the engine's lock synced afresh into a scratch environment, then patched
 uv venv -p 3.12 venv-fix
-uv pip sync --python venv-fix/bin/python ~/flatshare/src/deploy/phastform/requirements/engine.txt --torch-backend cu130
+uv pip sync --python venv-fix/bin/python ~/flatshare/src/deploy/phastform/requirements/engine.txt \
+  --torch-backend cu130
 venv-fix/bin/python patch_plan_wait.py venv-fix
 # vLLM 0.33.0rc3
 uv venv -p 3.12 venv-rc3
 uv pip install --python venv-rc3/bin/python "vllm==0.33.0rc3.dev3+g4ba787ec9" \
-  --extra-index-url https://wheels.vllm.ai/4ba787ec9959e566d3b587a796dff07673324da5/cu130 --torch-backend=cu130
-# vLLM main: the nightly wheel of 564ac0de1 (0.33.0rc3's flashinfer.py, unchanged on main) into venv-main
+  --extra-index-url https://wheels.vllm.ai/4ba787ec9959e566d3b587a796dff07673324da5/cu130 \
+  --torch-backend=cu130
+# vLLM main: the nightly wheel of 564ac0de1 (0.33.0rc3's flashinfer.py, unchanged on main) into
+# venv-main
 ./install-main.sh
 ```
 
