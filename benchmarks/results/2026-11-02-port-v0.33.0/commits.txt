@@ -1,0 +1,27 @@
+commit    source    vs-source on-0.32.0 vs-0.32.0 subject
+fbeebe127 569183d93 same      0c08194ed differs   [Core] Priority scheduling: preempt for a waiting request under KV pressure
+8f12b6431 44937b87a same      145ba6331 same      [Core] Priority scheduling: give up on room before counting growth
+fa13f4741 0b02a8964 same      062a47231 same      [Core] Priority scheduling: count the decodes' growth once without deferred frees
+6e7d4de39 705e18140 same      dd79faa77 same      [Core] Priority scheduling: release nothing without victims or deferred frees
+4cfaa2880 df5e162f0 same      35033bf22 same      [Core] Priority scheduling: skip the prefix lookup when nothing can be preempted
+ea32e4686 63e9db63e same      6ea23d221 same      [Core] Priority scheduling: take the first waiting request without iterating
+8cae2b0f2 e87503f22 same      7d1db90ca same      [Core] Priority scheduling: check a fit against a bound before counting growth
+ac0ca6ff5 e2a6975d7 differs   58ca55361 same      [Core] Priority scheduling: count make-room's preemptions in scheduler stats
+9895edec1 80ad6e752 -         608d1ed98 -         [Core] Priority scheduling: test make-room with drafts and a sliding window
+a1c02c37b ee4bd6ae3 -         15348de02 -         [Core] Priority scheduling: test that a request of the same priority is no victim
+72dcbbb78 f1afbfd68 same      560d53bd2 same      [Core] Priority scheduling: count the blocks a preemption releases in one pass
+faad77d39 dbe86f3d8 same      39022a5da same      [Core] Priority scheduling: hold lower-priority prefill for first tokens
+c5b4e25e9 d0102c343 differs   6511bc916 same      [Core] Priority scheduling: skip the prefix lookup when the cap would hold nothing
+3207f1a4c 685fdbcf3 differs   f1614decc same      [Core] Priority scheduling: count the budget cap's holds in scheduler stats
+97873f5c0 d1399e208 -         8438e5d0b -         [Doc] Priority scheduling: the budget cap's limit
+ef8206dcd 9013ed433 same      e40d7c135 same      [Core] Priority scheduling: count a request's first tokens in flight
+95b7872b9 5f96ab21c same      5f96ab21c same      Leaseholder make-room variant: switches, reserve and log line
+26ded9b28 e176b99fa same      e176b99fa same      Leaseholder make-room variant: keep realtime prefixes on the GPU between turns
+be0a58031 15b66b572 same      15b66b572 same      Leaseholder make-room variant: count the retained blocks once
+fbaeadb0c 7ce8f3588 differs   7ce8f3588 differs   Leaseholder make-room variant: recompute a realtime request's short load
+78aeecff3 43e3f5a48 same      43e3f5a48 same      Leaseholder make-room variant: hold prefill from a call's announced turn
+e67729349 27a501075 same      27a501075 same      Leaseholder make-room variant: log the turns announced
+812a1f513 95e8f4617 same      95e8f4617 same      Leaseholder make-room variant: keep the log line as it was without hints
+508380a71 225b2e800 same      225b2e800 same      Leaseholder make-room variant: let a request take a lower priority's reservations
+cdf09973a 9040a6895 same      9040a6895 same      Leaseholder make-room variant: name the switch in the reservations' comment
+3c9f927de 68e75d034 same      68e75d034 same      Leaseholder make-room variant: hold lower-priority decodes from a request's first tokens

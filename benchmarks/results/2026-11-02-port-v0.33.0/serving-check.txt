@@ -1,0 +1,46 @@
+serving-check: 2 setting(s) differ from rtx-5060-ti-serve's: engine.vllm_version, engine.scheduler_module.sha256
+serving-check: rtx-5060-ti-serve's engine, against the configuration the engine wrote (pid 3441669, 2026-11-02T13:47:51Z):
+  engine.vllm_version                                               "0.32.0"  DIFFERS: runs "0.33.0"
+  engine.scheduler_cls                                              "flatshare_make_room_serve.AsyncScheduler"
+  engine.scheduler_module.name                                      "flatshare_make_room_scheduler"
+  engine.scheduler_module.sha256                                    "7fda82b068c057a1ede8ce6ad09f5a25fafa6d7c0f5e21125dbddfce1a57cf12"  DIFFERS: runs "e4f7aba39d34e5c90e14861d3f39440c88053273d5e9d772502e6cbcf3fa4d4e"
+  engine.serve_module_sha256                                        "c4e9b6d3310ec8e081d1a4c0f18abc0a2369b8c861c5526e92f4dac15d5bbfaa"
+  engine.model.model                                                "Qwen/Qwen3-4B-Instruct-2507-FP8"
+  engine.model.revision                                             "8591804019c8b22094c3b5b4454e0edc05dffc98"
+  engine.model.tokenizer                                            "Qwen/Qwen3-4B-Instruct-2507-FP8"
+  engine.model.tokenizer_revision                                   "8591804019c8b22094c3b5b4454e0edc05dffc98"
+  engine.model.max_model_len                                        32768
+  engine.scheduler.policy                                           "priority"
+  engine.scheduler.max_num_batched_tokens                           256
+  engine.scheduler.long_prefill_token_threshold                     0
+  engine.scheduler.max_num_seqs                                     256
+  engine.scheduler.async_scheduling                                 true
+  engine.cache.block_size                                           16
+  engine.cache.num_gpu_blocks                                       2275
+  engine.cache.pool_tokens                                          36400
+  engine.cache.kv_cache_memory_bytes                                5368709120
+  engine.cache.gpu_memory_utilization                               0.7
+  engine.cache.enable_prefix_caching                                true
+  engine.kv_transfer.kv_connector                                   "OffloadingConnector"
+  engine.kv_transfer.kv_role                                        "kv_both"
+  engine.kv_transfer.kv_connector_extra_config.cpu_bytes_to_use     21474836480
+  engine.kv_transfer.kv_connector_extra_config.offload_prompt_only  false
+  engine.make_room.max_preemptions_per_step                         2
+  engine.make_room.budget_cap                                       true
+  engine.make_room.budget_cap_tokens                                48
+  engine.make_room.reserve_tokens                                   0
+  engine.make_room.take_reservations                                true
+  engine.make_room.decode_hold_tokens                               0
+  engine.make_room.retain_tokens                                    3584
+  engine.make_room.retain_s                                         30
+  engine.make_room.hint_hold_ms                                     400
+  engine.jit.margin_ms                                              30
+  engine.jit.step_cost.step_ms                                      11.56
+  engine.jit.step_cost.us_per_token                                 47.99
+  engine.jit.step_cost.ns_per_pair                                  14.17
+  engine.jit.step_cost.ns_per_context                               429.3
+  engine.jit.step_cost.mixed_ms                                     7.6
+serving-check: rtx-5060-ti-serve's make-room patches, against the release's in ~/qs-tree-033/python/flatshare_vllm/src/flatshare_vllm/make-room:
+  patches.63350.patch    "98b96f663fbff69a069a0dce64492e02618d595c3bfd2f5df57ee3ad093cf09f"
+  patches.63351.patch    "8d227e79fc55c596e7e1de63d901f015d8d79b71ce6b0472e950959ae4577ca5"
+  patches.variant.patch  "e4e1188f17672700764cec0dab03087c80572ac38de4210ceedc79716f4f1460"
