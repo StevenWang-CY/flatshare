@@ -24,7 +24,9 @@ def test_the_readmes_tables_are_what_the_records_give() -> None:
     table = _table()
     readme = (RECORD / "README.md").read_text()
     for name in table.TABLES:
-        found = re.search(rf"<!-- table.py {name} -->\n(.*?)\n<!-- /table.py {name} -->", readme, re.S)
+        found = re.search(
+            rf"<!-- table.py {name} -->\n(.*?)\n<!-- /table.py {name} -->", readme, re.S
+        )
         assert found is not None, name
         assert found.group(1) == table.table(name)
 
@@ -35,3 +37,9 @@ def test_every_point_the_tables_name_is_in_the_record() -> None:
     ran = {arm for _, arm in table.points()}
     for name, arms in table.TABLES.items():
         assert set(arms) <= ran, (name, sorted(set(arms) - ran))
+
+
+def test_benchmarks_gives_the_adopted_table_as_the_record_does() -> None:
+    # BENCHMARKS.md's ledger of the serving engine's additions is the record's own table of them, row for row.
+    benchmarks = (REPO / "docs" / "BENCHMARKS.md").read_text()
+    assert _table().table("adopted") in benchmarks

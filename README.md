@@ -35,6 +35,9 @@ p95 to 2.24 s against an SLO of 2.03 s. The replies over the SLO fall from 90% t
 
 - **At the 256-token step cap the deployment runs**, 44 of 295 replies were over their round's SLO in five rounds on
   new samples of the agents, against 94 of 295 at 512 tokens and 261 of 295 on tuned vLLM.
+- **With v1.15's first four additions to the engine**, in five more rounds beside 24 sessions, 5.4%, 6.4% and 5.8% of
+  the replies were over the SLO with two, four and six callers, against 18.6%, 18.5% and 18.0% for v1.14's
+  configuration, at 1.6–4.9% of the agents' token rate.
 - **On an A100** at the same KV pool and 512-token steps, the configuration to deploy takes the p95 from 4.99 s to
   1.63 s, under that card's SLO in each of five rounds.
 
@@ -73,6 +76,10 @@ tokens.
 - **At the 256-token step cap**, in the five rounds on new samples, the median p95 of the configuration to deploy was
   2,098 ms, against 2,246 ms at 512 tokens and 12,010 ms on tuned vLLM
   ([§6.9](docs/REPORT.md#69-a-256-token-step-cap-halves-the-changes-replies-over-the-slo-beside-24-sessions)).
+- **With the serving engine's additions** (v1.15), in five rounds on new samples, the first four put 16 of 295 replies
+  over the SLO beside 24 sessions with two callers, against 55 for v1.14's configuration to deploy, and fewer in every
+  round of four scenarios; beside 24 sessions the LLM's first token at p95 fell from 314–334 ms to 136–139 ms
+  ([§6.10](docs/REPORT.md#610-the-serving-engines-additions-cut-the-replies-over-the-slo-by-more-than-half)).
 - **On the A100**, at the RTX 5060 Ti's KV pool and 512-token step cap, the p95 of the configuration to deploy was
   7–60 ms under that card's SLO of 1.67 s, with the agents at 8,651 tokens a second against tuned vLLM's 8,633
   ([§6.7](docs/REPORT.md#67-the-rules-carry-to-an-a100)).
@@ -114,13 +121,15 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
   [its record](benchmarks/results/2026-10-27-quality/README.md)). A deployment that shares a card for background work
   has to check first that the model can do that work.
 - **Still above the SLO's 5%.** Beside 24 sessions the configuration to deploy left 32% of the replies over the SLO at
-  512-token steps and 14.9% at 256.
+  512-token steps and 14.9% at 256; with v1.15's first four additions, 5.4% to 6.4% with two to six callers.
 - **A pool with room.** At 16 sessions of the whole corpus, where the pool has room, the configuration to deploy met the
   SLO in one of five rounds. The serving profile's 256-token steps leave the pool room beside 24 sessions too: the
   engine preempted 0–4 requests a run there and none beside four, so at that cap the budget cap and the step cap do the
   work ([§6.9](docs/REPORT.md#69-a-256-token-step-cap-halves-the-changes-replies-over-the-slo-beside-24-sessions)).
 - **Many calls.** Overlapping replies hold agent prefill for longer, and with 4 and 6 callers the p95 of the
   configuration to deploy exceeded each count's SLO in every round ([how it fails](docs/PRODUCTION.md#how-it-fails)).
+  With v1.15's first four additions it stays 41 and 33 ms over at the rounds' median, and the agents give up 3.7% and
+  4.9% of their token rate for them ([§6.10](docs/REPORT.md#610-the-serving-engines-additions-cut-the-replies-over-the-slo-by-more-than-half)).
 - **The agents pay through the budget cap**, which keeps their prefill out of 33% of the engine's steps during the
   calls, and the 256-token steps cost them 7% of their token rate against 512. No vLLM 0.32 counter shows what a
   preempted request recomputes when it resumes

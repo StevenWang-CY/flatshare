@@ -109,6 +109,8 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
             "cards-narrow",
             "step-cap",
             "step-cap-narrow",
+            "opt-rounds",
+            "opt-rounds-narrow",
             "soak",
             "soak-narrow",
             "starts",
@@ -1078,6 +1080,44 @@ def test_the_step_cap_is_its_rounds_as_gate_py_counts_them(drawn: dict[str, Path
     assert {f"{c.tokens:,.0f}" for c in caps} <= set(text_of(drawn["report-step-cap.svg"]))
 
 
+def test_the_opt_rounds_are_their_records_rounds(drawn: dict[str, Path]) -> None:
+    table = data.opt_rounds_table()
+    scenarios = data.opt_rounds()
+    assert [c.name for c in scenarios] == [name for name, _, _ in table.SCENARIOS]
+    # Each configuration's replies over the SLO, pooled, as the record's slo table gives them, and its agents' median
+    # as its agents table gives it.
+    slo, agents = table.slo().splitlines(), table.agents().splitlines()
+    for c in scenarios:
+        for config, rounds in zip(table.CONFIGURATIONS, (c.before, c.after), strict=True):
+            over, replies = sum(r.over for r in rounds), sum(r.replies for r in rounds)
+            [line] = [line for line in slo if line.startswith(f"| {c.name} | {config} |")]
+            assert f"| {over} of {replies} ({100 * over / replies:.1f}%) |" in line, line
+            [line] = [line for line in agents if line.startswith(f"| {c.name} | {config} |")]
+            tokens = statistics.median(r.tokens for r in rounds)
+            assert line.split("|")[3].strip().startswith(f"{tokens:,.0f}"), line
+    assert [[r.round for r in rounds] for c in scenarios for rounds in (c.before, c.after)] == [
+        [1, 2, 3, 4, 5]
+    ] * 8
+    assert figures.REQUIREMENT == 0.05
+    # The claim its caption opens with: in every scenario the first four additions put fewer than half as many of the
+    # pooled replies over the SLO, and beside 16 sessions they were within the requirement.
+    assert all(
+        2 * sum(r.over for r in c.after) * sum(r.replies for r in c.before)
+        < sum(r.over for r in c.before) * sum(r.replies for r in c.after)
+        for c in scenarios
+    )
+    [sixteen] = [c for c in scenarios if c.name.startswith("16 ")]
+    assert sum(r.over for r in sixteen.after) <= figures.REQUIREMENT * sum(
+        r.replies for r in sixteen.after
+    )
+    shares = {
+        f"{sum(r.over for r in rounds) / sum(r.replies for r in rounds):.1%}"
+        for c in scenarios
+        for rounds in (c.before, c.after)
+    }
+    assert shares <= set(text_of(drawn["report-opt-rounds.svg"]))
+
+
 def soak_table() -> ModuleType:
     """The soak record's own table.py, loaded from its file."""
     spec = importlib.util.spec_from_file_location("soak_table", data.SOAK.parents[1] / "table.py")
@@ -1273,6 +1313,7 @@ FIGURES_ABOVE_TABLES = {
     "report-cards": "| Arrangement | Sessions (shared + second card) |",
     "report-a100": "| Agents' sample (seed) | Voice alone | Tuned vLLM, the box's 512/256 |",
     "report-step-cap": "| Configuration | Rounds | V2V p95: median of the rounds / pooled |",
+    "report-opt-rounds": "| Scenario | Configuration | Rounds | Replies over the SLO |",
     "report-starts": "| Start | Unit start to ready | Where the time goes |",
     "report-soak": "| Run | Hours | Calls (accepted, refused, failed) |",
 }
@@ -1321,6 +1362,12 @@ def test_the_deployed_results_figures_say_what_their_records_do(drawn: dict[str,
             f"(a) Each round's share of its {per_round} replies over that round's SLO, beside "
             f"{sessions.pop()} coding-agent sessions; the dashed line is the requirement.",
         ),
+        "report-opt-rounds": (
+            "Figure 16",
+            "In every scenario the first four additions put fewer than half as many of the pooled replies over the "
+            f"SLO, and beside 16 sessions they met the {requirement} requirement.",
+            "(a) Each round's share of its replies over that round's SLO and the five rounds pooled",
+        ),
         "report-starts": (
             "Figure D1",
             "The engine's recovery from a kill is mostly its warm start, and on empty caches a start takes "
@@ -1365,11 +1412,13 @@ def test_the_campaign_map_is_its_records() -> None:
         "SW",
         "RG",
         "The soak",
+        "OR",
+        "OS",
     ]
     assert found["W2"].points + found["W3\u2013W4"].points == 129 and found["W5"].points == 72
     five, rounds = (
         (11, 12, 13, 14, 15),
-        {"W3\u2013W4": 5, "W5": 18, "FB": 5, "The A100 run": 5, "RS": 5, "RG": 5},
+        {"W3\u2013W4": 5, "W5": 18, "FB": 5, "The A100 run": 5, "RS": 5, "RG": 5, "OR": 5, "OS": 2},
     )
     expected = {
         "W2": ((11,), ("419e181", "03af728")),
@@ -1381,6 +1430,8 @@ def test_the_campaign_map_is_its_records() -> None:
         "SW": ((11,), ("v1.5",)),
         "RG": ((21, 22, 23, 24, 25), ("v1.6-7-g0993991",)),
         "The soak": ((26,), ("v1.6-15-ga31eab2",)),
+        "OR": ((31, 32, 33, 34, 35), ("v1.14-5-gfa69919",)),
+        "OS": ((36, 37), ("v1.14-10-g51b5a02",)),
     }
     assert {code: (c.seeds, c.revisions) for code, c in found.items()} == expected
     # The map names each campaign's code by its release, from those revisions (the exact ones stay in the records).
@@ -1394,6 +1445,8 @@ def test_the_campaign_map_is_its_records() -> None:
         "SW": ("v1.5",),
         "RG": ("after v1.6",),
         "The soak": ("after v1.6",),
+        "OR": ("after v1.14",),
+        "OS": ("after v1.14",),
     }
     assert {code: c.rounds for code, c in found.items() if c.rounds} == rounds
     assert found["The soak"].hours == (2.0, 24.0)
@@ -1404,7 +1457,7 @@ def test_the_campaign_map_is_its_records() -> None:
     ]
     assert [r["versions"]["source"] for r in failed] == ["v1.6-5-gaabb3c6"]
     assert found["RG"].start == min(r["started"] for r in failed)
-    # The campaigns follow one another, each within the map's eight days.
+    # The campaigns follow one another, each within the map's twelve days.
     spans = [(c.start, c.end) for c in found.values()]
     assert all(a[1] <= b[0] for a, b in itertools.pairwise(spans))
     end = figures.MAP_START + figures.MAP_DAYS * figures.DAY
@@ -1417,8 +1470,10 @@ def test_experiments_shows_the_campaign_map_over_its_table(drawn: dict[str, Path
     experiments = REPO / "docs" / "EXPERIMENTS.md"
     alt, caption = shown(experiments, "report-campaigns")
     assert alt == ET.parse(drawn["report-campaigns.svg"]).getroot().find(f"{SVG}desc").text
-    assert caption.startswith("**Nine campaigns from 23 to 29 October 2026 measured the results")
-    assert len(data.campaigns()) == 9
+    assert caption.startswith(
+        "**Eleven campaigns from 23 October to 2 November 2026 measured the results"
+    )
+    assert len(data.campaigns()) == 11
     header = "| Campaign | Ran, UTC | Points | Rounds and samples | Code | Records |"
     after = experiments.read_text().split('<img src="figures/report-campaigns.svg"', 1)[1]
     assert next(line for line in after.splitlines() if line.startswith("|")) == header

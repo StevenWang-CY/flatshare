@@ -77,6 +77,7 @@ at p95, against 408 and 597; and its 48th, the whole reply, at 688 and 722 ms, a
 | gray | the turn announced and just in time, EAGLE-3 with 2 drafts, short loads recomputed | 2 | 76 (75-76) | 137 (136-138) | 171 (166-176) | 387 (381-393) | 7.6 | 2,572 |
 | gray | the turn announced, just in time, the reservations taken, EAGLE-3 with 2 drafts, short loads recomputed | 2 | 78 (76-79) | 130 (115-144) | 194 (191-197) | 400 (368-432) | 9.1 | 2,527 |
 | gray | the same, the agents' decodes held from a call's first 16 tokens | 2 | 78 (78-78) | 140 (136-143) | 182 (177-186) | 260 (259-262) | 9.6 | 2,519 |
+| gray | the same, the decodes held from a call's first 48 tokens | 2 | 78 (77-79) | 135 (130-140) | 182 (181-182) | 250 (248-253) | 7.3 | 2,531 |
 <!-- /table.py alternatives -->
 
 - **Synchronous scheduling** gives the first token earlier, but each later token takes 16.5 to 18 ms instead of 13.7,
@@ -93,7 +94,8 @@ at p95, against 408 and 597; and its 48th, the whole reply, at 688 and 722 ms, a
   the loads. On top of the announced turn and just in time, it brings the first sentence from 270 to 166-176 ms on
   Gray, at 4 ms more on the first token's median and 26 ms more at its p95. The decode hold keeps its effect beside
   it: the 16th token's p95 259-262 ms against 368-432 without the hold, the first token and the agents within the
-  runs' spread. It is measured in the whole pipeline before it is adopted.
+  runs' spread. Held for 48 tokens, the whole reply's p95 is 556-566 ms against 790-899 without the hold and 735 with
+  the hold and no speculation. It is measured in the whole pipeline before it is adopted.
 
 ## How long the hold lasts
 

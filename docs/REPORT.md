@@ -33,6 +33,12 @@ background work than dedicated cards within the SLO's allowance. Tuned vLLM, con
 more, so most of the gain is the arrangement's. At the 256-token step cap we deploy, 44 of 295 replies were over the SLO
 in five more rounds, against 94 of 295 at 512.
 
+Version 1.15 adds five things to the engine around the rules, each found in the scheduler's own traces and measured
+against the configuration before it. Beside 12 agents they take a call's first token from 354 to 88 ms at p95 and its
+whole reply from 1,226 to 722 ms. In five rounds the first four put 5.4% of the replies over the SLO beside 24 sessions
+with two callers, against 18.6% without them, and fewer in every round of four scenarios, for 1.6–4.9% of the agents'
+token rate.
+
 ## Contents
 
 1. [Introduction](#1-introduction)
@@ -123,10 +129,11 @@ and both are off by default. They are proposed to vLLM as two stacked pull reque
 | Consolidation on two RTX 5060 Ti cards under a resource gate (note 1) | 34% more background work than dedicated roles, a card for the calls and one for the agents, within the SLO's 5% allowance | §6.8 |
 | Most of that gain is the arrangement's: tuned vLLM's shared card qualifies at two sessions | 27% more | §6.8 |
 | The 256-token step cap we deploy, in five rounds on new samples | 44 of 295 replies over the SLO, against 94 of 295 at 512 | §6.9 |
+| The serving engine's first four additions (v1.15), in five rounds on new samples | 5.4%, 6.4% and 5.8% of the replies over the SLO with 2, 4 and 6 callers, against 18.6%, 18.5% and 18.0%; the LLM's first token at p95 136–139 ms, against 314–334 | §6.10 |
 
 1. Consolidation puts both calls and four agent sessions on one card, beside a card of agents alone.
 
-This report makes five contributions.
+This report makes six contributions.
 
 - **It measures the failure end to end.** V2V is read from waveforms at the caller beside a replay of real coding-agent
   traces. Tuned vLLM, preempt-resubmit and the configuration to deploy run in five rotated rounds, each entering the
@@ -144,6 +151,10 @@ This report makes five contributions.
 - **It measures what sharing a card buys** over dedicated roles on two cards, under a resource gate, and finds most of
   the gain in the arrangement rather than in the scheduler: the rules' own share is the two agent sessions more that the
   shared card carries within the SLO (§6.8).
+- **It optimizes the serving engine around the rules** from the scheduler's own traces: five additions, each measured
+  against the configuration before it with a control, take a call's first token from 354 to 88 ms at p95 beside 12
+  agents and its reply's 48th token from 1,226 to 722 ms, and five rounds measure the first four in the whole pipeline
+  (§6.10).
 
 ## 2. Background and motivation
 
@@ -1069,6 +1080,97 @@ round's SLO, and the replies over it are pooled over the rounds and given by rou
 | The configuration to deploy, 512-token steps | 2,246 ms | 2,259 ms | 94 / 295 | 16, 29, 25, 9, 15 | 3,303 | 78 / 117 s |
 | **The configuration to deploy, 256-token steps** | **2,098 ms** | 2,151 ms | **44 / 295** | 10, 17, 10, 4, 3 | 3,067 | 85 / 120 s |
 
+### 6.10 The serving engine's additions cut the replies over the SLO by more than half
+
+Version 1.15 adds five things to the engine around the two rules. Each came from the scheduler's own traces on the box
+and was measured there against the configuration before it, two runs or more with a control
+([the engine points](../benchmarks/results/2026-11-01-engine-points/README.md)), and each is a switch of make-room or
+of the serve module that the serving profile sets:
+
+1. **The calls' prefixes kept on the GPU** (`retain_tokens` 3,584, `retain_s` 30). A finished call turn's blocks stay
+   referenced until the conversation's next turn takes them. Without it about half the turns reload their prefix from
+   the CPU tier, 59–69 ms of the first token at the mean over all turns, since a load costs two or three steps however
+   small it is.
+2. **The next batch just in time** (`flatshare_jit`, a 30 ms margin). Asynchronous scheduling commits the next step
+   before the one in flight ends, so a call that arrives meanwhile waits for both. The serve module schedules it when
+   the step in flight is due to end, by the card's step-time model, and the call joins it.
+3. **Each turn announced** (`hint_hold_ms` 400, the voice worker's `turn_hints`). When the caller stops speaking, the
+   voice worker sends a realtime request for one token with the conversation so far, and the budget cap holds the
+   agents' prefill back for 400 ms from it: the turn arrives into short steps, and speech to text runs on a GPU without
+   agent prefill.
+4. **A call never waits behind an agent's reservations** (`take_reservations`). Calls waited 1.4–4.5 s for their first
+   step while agents' prefix loads held the free blocks in reservation: vLLM admits a load only beside every in-flight
+   prefill's reservation, and its waiting loop stops at the first request holding KV that it cannot admit. A request now
+   counts only the reservations of its own priority or higher, and the KV preemption makes room for the rest.
+5. **The agents' decodes held through the budget cap's window** (`decode_hold_tokens` 48). A step that decodes an agent
+   at 15–16k tokens of context beside the reply takes 18–20 ms against 13 ms alone, which put the reply's first
+   sentence's p95 108–135 ms late. Lower-priority decodes now sit out a reply's first 48 tokens, as their prefill does:
+   beside 12 agents the 48th token's p95 falls from 998 to 722 ms on Phastform (966 held for 16 tokens) and from 1,016
+   to 735 ms on Gray (980 for 16, 841 for 32).
+
+Table 9 gives the engine points in the order the profile gained them: two calls of 48-token replies beside 12
+closed-loop agents whose prompts grow from 6,000 to 30,000 tokens, two runs a row but one, on Phastform. Together the
+additions take a reply's first token from 354 to 88 ms at p95 and its 48th token, the whole reply, from 1,226 to 722
+ms, and the agents give up 4% of their token rate (2,604 against 2,718 tokens a second).
+
+**Table 9. The serving engine's additions at the engine level, beside 12 agents on Phastform.** Medians of the runs,
+from the calls' own clocks; the agents' computed tokens a second from the scheduler's trace. The announced turn's row
+adds it to retention; the next row adds just in time to both.
+
+| Configuration | First token p50 / p95 | 16th token p50 / p95 | 48th token p95 | Agents' tokens/s |
+|---|---:|---:|---:|---:|
+| v1.14's serving profile | 175 / 354 ms | 408 / 597 ms | 1,226 ms | 2,718 |
+| + the calls' prefixes kept on the GPU | 122 / 230 | 354 / 502 | 1,136 | 2,761 |
+| + the next batch just in time | 98 / 185 | 323 / 449 | 1,050 | 2,675 |
+| retention + each turn announced | 64 / 90 | 258 / 394 | 1,004 | 2,637 |
+| + just in time too | 63 / 98 | 257 / 403 | 982 | 2,628 |
+| + the agents' reservations taken | 64 / 92 | 261 / 392 | 998 | 2,625 |
+| + their decodes held for 16 tokens | 64 / 94 | 258 / 285 | 966 | 2,615 |
+| + held for 48 tokens, the window: the profile | 66 / 88 | 257 / 284 | 722 | 2,604 |
+
+Five rounds then ran v1.14's configuration to deploy beside the same with the first four additions, on new samples of
+the agents, in four scenarios: 24 agent sessions with two, four and six callers, and 16 agent sessions of the whole
+corpus (Figure 16, Table 10).
+
+The first four additions had fewer replies over the SLO in every round of every scenario. Pooled, 5.4%, 6.4% and 5.8% of
+them were over beside 24 sessions with two, four and six callers, against 18.6%, 18.5% and 18.0% at v1.14 (14.9% with
+two callers in §6.9's rounds, on other samples), and 3.4% beside 16 sessions, within the 5% allowance, against 7.5%.
+Beside 24 sessions the LLM's first token at p95 fell from 314–334 ms to 136–139 ms and the rounds' median V2V p95 by
+153–169 ms, while the agents gave up 1.6–4.9% of their token rate, the most with six callers. Speech to text, about 0.82
+s from the end of the caller's speech, is now more than twice the LLM's first sentence.
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-opt-rounds-narrow.svg">
+  <img src="figures/report-opt-rounds.svg" width="100%" alt="In panel a, each scenario's replies over their round's SLO in 5 rounds, v1.14's configuration to deploy and the same with the first four of version 1.15's additions to the engine, each round a tick and the rounds pooled a marker, against the requirement of at most 5%, and in panel b the agents' tokens a second over the calls' first 240 s, each round a tick and their median a marker: 24 agent sessions, 2 callers, v1.14's configuration to deploy 10, 13, 10, 6, 16 by round, 55 of 295 in all, at 3,010 agents' tokens a second, the same with the first four additions 7, 1, 4, 4, 0 by round, 16 of 295 in all, at 2,933 agents' tokens a second; 24 agent sessions, 4 callers, v1.14's configuration to deploy 19, 25, 29, 12, 25 by round, 110 of 595 in all, at 2,753 agents' tokens a second, the same with the first four additions 5, 10, 9, 6, 8 by round, 38 of 595 in all, at 2,754 agents' tokens a second; 24 agent sessions, 6 callers, v1.14's configuration to deploy 23, 56, 27, 29, 29 by round, 164 of 910 in all, at 2,580 agents' tokens a second, the same with the first four additions 3, 20, 10, 9, 11 by round, 53 of 910 in all, at 2,476 agents' tokens a second; 16 agent sessions of the whole corpus, 2 callers, v1.14's configuration to deploy 5, 3, 3, 9, 2 by round, 22 of 295 in all, at 4,948 agents' tokens a second, the same with the first four additions 2, 2, 1, 5, 0 by round, 10 of 295 in all, at 4,900 agents' tokens a second.">
+</picture>
+
+**Figure 16. In every scenario the first four additions put fewer than half as many of the pooled replies over the SLO,
+and beside 16 sessions they met the 5% requirement.** (a) Each round's share of its replies over that round's SLO and
+the five rounds pooled, beside 24 coding-agent sessions with two, four and six callers and beside 16 sessions of the
+whole corpus; the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s, each
+round a tick and the median a marker.
+
+**Table 10. v1.14's configuration to deploy and the same with the first four additions, in five rounds on new
+samples of the agents.** Each reply is held to its round's SLO, voice alone with as many callers plus 250 ms, and the
+replies over it are pooled over the rounds and given by round. Medians over the rounds otherwise.
+
+| Scenario | Configuration | Replies over the SLO | By round | Median p95 V2V | LLM first token p95 | Agents' tokens/s |
+|---|---|---:|---|---:|---:|---:|
+| 24 agent sessions, 2 callers | v1.14's configuration to deploy | 55 / 295 (18.6%) | 10, 13, 10, 6, 16 | 2,176 ms | 314 ms | 3,010 |
+| 24 agent sessions, 2 callers | + the first four additions | **16 / 295 (5.4%)** | 7, 1, 4, 4, 0 | 2,023 ms | 136 ms | 2,933 |
+| 24 agent sessions, 4 callers | v1.14's configuration to deploy | 110 / 595 (18.5%) | 19, 25, 29, 12, 25 | 2,274 ms | 334 ms | 2,753 |
+| 24 agent sessions, 4 callers | + the first four additions | **38 / 595 (6.4%)** | 5, 10, 9, 6, 8 | 2,106 ms | 139 ms | 2,754 |
+| 24 agent sessions, 6 callers | v1.14's configuration to deploy | 164 / 910 (18.0%) | 23, 56, 27, 29, 29 | 2,320 ms | 325 ms | 2,580 |
+| 24 agent sessions, 6 callers | + the first four additions | **53 / 910 (5.8%)** | 3, 20, 10, 9, 11 | 2,152 ms | 139 ms | 2,476 |
+| 16 agent sessions of the whole corpus, 2 callers | v1.14's configuration to deploy | 22 / 295 (7.5%) | 5, 3, 3, 9, 2 | 2,012 ms | 255 ms | 4,948 |
+| 16 agent sessions of the whole corpus, 2 callers | + the first four additions | **10 / 295 (3.4%)** | 2, 2, 1, 5, 0 | 1,916 ms | 125 ms | 4,900 |
+
+What was measured and not adopted: synchronous scheduling, whose shorter load path is spent on slower later tokens
+(the agents lose 11–18%); full CUDA graphs through Triton attention, whose long-context prefill is 1.2 times FlashAttention
+2's (the agents lose 15–22%); FP8 KV, which plans every step on the host through FlashInfer (+23 ms to a call's step,
+the agents −23%) and costs the agents 41–43% through Triton; and a second API server, which changes nothing
+([the engine points](../benchmarks/results/2026-11-01-engine-points/README.md#what-was-not)).
+
 ## 7. Operating the change
 
 **The configuration.** The change runs on vLLM with priority scheduling, prefix caching, and a CPU KV tier about four
@@ -1077,6 +1179,13 @@ runs with N = 2 and the budget cap with T = 48. The evaluation of §6.1–§6.7 
 request, and the serving profile runs the cap the sweep chose for the change, 256 tokens a step without a per-request
 threshold (§6.9). The gateway sets voice requests to priority 0 and background work to 2 from each client's identity, so
 that a background client cannot raise its own priority.
+
+**The engine's additions.** Version 1.15's serving profile adds the switches of §6.10: the calls' prefixes kept on the
+GPU (`retain_tokens` 3,584, `retain_s` 30), the next batch scheduled just in time (the serve module, a 30 ms margin),
+each turn announced (`hint_hold_ms` 400 with the voice worker's `turn_hints`), the agents' reservations taken
+(`take_reservations`) and their decodes held through the budget cap's window (`decode_hold_tokens` 48). The last two
+need the budget cap, and make-room refuses them without it; the announced turn holds the agents' prefill through it;
+each is off by default.
 
 **Two cards.** The arrangement to deploy on two cards is consolidation with a warm spare (§6.8). The first card carries
 both calls and at most four agent sessions, the envelope measured beside them, and the second runs agents on the same
@@ -1099,8 +1208,9 @@ flight, so a faster GPU can take a larger cap where its voice tail stays under t
 2,048-token cap did not (§6.7).
 
 **What to watch.** The voice tier's p95 V2V and its time to first token at p95. The engine's KV usage, running and
-waiting requests, and preemptions, whose count lags. The budget cap's counters of held steps and prefill tokens. The
-agents' completed tokens a second and their p99 TTFT, where a preemption policy moves its cost.
+waiting requests, and preemptions, whose count lags. The budget cap's counters of held steps and prefill tokens, and
+with v1.15's switches the turns announced and the decodes held. The agents' completed tokens a second and their p99
+TTFT, where a preemption policy moves its cost.
 
 **How it fails.** A voice turn that N preemptions cannot make room for waits as on vLLM, and load made only of realtime
 requests leaves nothing to preempt. Overlapping calls hold the background tier for longer, up to the limit of §6.6. An
@@ -1221,8 +1331,9 @@ attention by 1.8 times.
 
 **A few calls per GPU.** The headline runs two callers. The budget cap's share of the engine's steps grows with the
 calls, from 33% with two to 64% with six, and with 4 and 6 callers the configuration to deploy misses each SLO in every
-round, by 0.26–0.27 s at the median. Replies whose windows overlap without a gap would stop the agents' prefill
-altogether (§6.6).
+round, by 0.26–0.27 s at the median. Version 1.15's first four additions bring that to 41 and 33 ms over the rounds'
+median SLO, with 6.4% and 5.8% of the replies over (§6.10). Replies whose windows overlap without a gap would stop the
+agents' prefill altogether (§6.6).
 
 **Two cards in three rounds.** The two-card comparison rests on three rounds, each on a new sample of the agents, and
 measured the consolidated card at 2, 4, 8, 12 and 24 sessions only, so the envelope lies between four and eight sessions
@@ -1316,7 +1427,8 @@ With them the voice tail on a consumer GPU comes to 2.24 s, 0.20 s over a strict
 over it, while the agents keep 97% of their token rate. On an A100 at the same pool and step cap it meets that card's
 SLO in each of five rounds, by 7–60 ms. The gain shrinks where the pool has room, the tail grows as calls overlap, and
 the step cap sets how much of the agents' throughput a tail under the SLO costs. The 256-token cap we deploy leaves
-fewer than half as many replies over the SLO beside 24 sessions as the 512-token cap.
+fewer than half as many replies over the SLO beside 24 sessions as the 512-token cap, and version 1.15's additions to
+the engine, found in the scheduler's own traces, leave fewer than half as many again.
 
 With two cards, the larger gain is the arrangement: both calls and a few agents on one card, and the other card full of
 agents. What then limits the shared card is the speech servers' share of the GPU, which no scheduling inside the engine
@@ -1479,6 +1591,8 @@ its tests where Table A1 says so. Table A1 maps each part of the report to its r
 | The first sentences' tokens (§6.3) | [`2026-10-27-first-sentence`](../benchmarks/results/2026-10-27-first-sentence) | [`first_sentence.py`](../benchmarks/replies/first_sentence.py) |
 | §6.8, Figure 14 and Tables 6 and 7 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds) | its `gate.py`, `make figures` |
 | §6.9, Figure 15 and Table 8 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds), and the screens in [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep) | `gate.py`'s sweep, the screens' `table.py`, `make figures` |
+| §6.10 and Table 9 | [`2026-11-01-engine-points`](../benchmarks/results/2026-11-01-engine-points) | its `table.py` |
+| §6.10, Figure 16 and Table 10 | [`2026-11-02-opt-rounds`](../benchmarks/results/2026-11-02-opt-rounds) | its `table.py`, `make figures` |
 | The endpointing sweep (§9) | [`2026-10-28-endpointing`](../benchmarks/results/2026-10-28-endpointing) | [`summary.py`](../benchmarks/endpointing/summary.py) |
 | The drills on two GPU nodes (Appendix D) | [`2026-10-28-node-failover`](../benchmarks/results/2026-10-28-node-failover) | its README |
 | The 24-hour soak (§7, Appendix D, Figure D2) | [`2026-10-28-soak`](../benchmarks/results/2026-10-28-soak) | its `table.py`, `flatshare-bench soak report`, `make figures` |

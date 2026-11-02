@@ -28,6 +28,12 @@ GIT = os.environ.get("GIT", "git")
 ISOLATED = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 VLLM_SRC = os.environ.get("VLLM_SRC")
 SCHED = "vllm/v1/core/sched"
+HUNKS = sum(
+    line.startswith("@@ ")
+    for patch in compat_upstream.PATCHES
+    for line in patch.read_text().splitlines()
+)
+"""make-room's hunks, the patches' in order, as the patch files give them: what git apply must place each of."""
 
 
 def git_version() -> tuple[int, ...]:
@@ -442,16 +448,16 @@ def test_the_patches_apply_to_the_pinned_release_and_a_shifted_one_names_its_hun
         "does not match the scheduler at its line 53); its scheduler.py against v0.32.0: "
         "1 file changed, 2 insertions(+)." in proc.stdout
     )
-    # And every hunk as git apply finds it: each of the 24 two lines down, with 3 lines of context as with 1.
+    # And every hunk as git apply finds it: each of them two lines down, with 3 lines of context as with 1.
     assert (
         "  each hunk by git apply, the patches in order, with 3 lines of context and with 1: "
-        "24 and 24 of 24 apply\n" in proc.stdout
+        f"{HUNKS} and {HUNKS} of {HUNKS} apply\n" in proc.stdout
     )
     assert (
         "    63350.patch #1 @@ -53,6 +53,12 @@: -C3 at 55 (offset 2 lines); -C1 at 55 (offset 2 lines)\n"
         in proc.stdout
     )
-    assert proc.stdout.count(" (offset 2 lines); -C1 at ") == 24
+    assert proc.stdout.count(" (offset 2 lines); -C1 at ") == HUNKS
 
 
 @needs_merge_tree
@@ -467,7 +473,7 @@ def test_patches_that_do_not_apply_to_the_pinned_release_fail(tmp_path, upstream
         "make-room's patches on v0.32.0, the pinned version: FAIL: make-room: 63350.patch"
         in proc.stdout
     )
-    assert "with 1: 24 and 24 of 24 apply\n" in proc.stdout
+    assert f"with 1: {HUNKS} and {HUNKS} of {HUNKS} apply\n" in proc.stdout
 
 
 def unified(before: list[str], after: list[str]) -> str:

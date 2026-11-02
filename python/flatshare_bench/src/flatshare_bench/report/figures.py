@@ -10,6 +10,7 @@ the axis says it is logarithmic.
 
 from __future__ import annotations
 
+import datetime
 import math
 import statistics
 import sys
@@ -2506,6 +2507,188 @@ def _step_cap_narrow(caps: Sequence[data.StepCap], path: Path, description: str)
     return s.save(path)
 
 
+# The optimization rounds -------------------------------------------------------------------------------------------
+
+OPT_ROWS = (
+    ("v1.14's configuration to deploy", "sky"),
+    ("the same with the first four additions", "blue"),
+)
+"""The optimization rounds' two configurations, a scenario's two rows in order: v1.14's configuration to deploy, and
+the same with the first four of version 1.15's additions to the engine (the fifth, the decode hold, is the follow-up
+rounds'); each its name and hue."""
+OPT_SHARE_STEP = 0.05
+"""Panel a's ticks; its scale ends at the first tick past the worst round, and at 25% or more."""
+OPT_TOKENS_STEP = 5000
+"""Panel b's ticks; its scale ends at the first tick past the busiest round, since the 16 sessions' samples of the
+whole corpus differ far more from round to round than the 24 sessions' do."""
+OPT_PITCH, OPT_GAP = 30, 34
+"""A configuration's row, and the space between scenarios."""
+
+
+def _opt_pooled(rounds: Sequence[data.StepCapRound]) -> tuple[int, int]:
+    return sum(r.over for r in rounds), sum(r.replies for r in rounds)
+
+
+def _opt_lines(name: str) -> tuple[str, str]:
+    """A scenario's name as a row's two lines: its agent sessions, then the rest (the corpus, the callers)."""
+    agents, callers = name.rsplit(", ", 1)
+    head, _, corpus = agents.partition(" of ")
+    return head, f"{corpus}, {callers}" if corpus else callers
+
+
+def _opt_share_top(scenarios: Sequence[data.OptScenario]) -> float:
+    worst = max(r.share for c in scenarios for rounds in (c.before, c.after) for r in rounds)
+    return max(0.25, math.ceil(worst / OPT_SHARE_STEP + 1e-9) * OPT_SHARE_STEP)
+
+
+def _opt_tokens_top(scenarios: Sequence[data.OptScenario]) -> float:
+    busiest = max(r.tokens for c in scenarios for rounds in (c.before, c.after) for r in rounds)
+    return math.ceil(busiest / OPT_TOKENS_STEP + 1e-9) * OPT_TOKENS_STEP
+
+
+def _opt_description(scenarios: Sequence[data.OptScenario]) -> str:
+    rows = []
+    for c in scenarios:
+        cells = []
+        for (name, _), rounds in zip(OPT_ROWS, (c.before, c.after), strict=True):
+            over, replies = _opt_pooled(rounds)
+            cells.append(
+                f"{name} {', '.join(str(r.over) for r in rounds)} by round, {over} of {replies} in all, at "
+                f"{data._median(r.tokens for r in rounds):,.0f} agents' tokens a second"
+            )
+        rows.append(f"{c.name}, {', '.join(cells)}")
+    return (
+        f"In panel a, each scenario's replies over their round's SLO in {len(scenarios[0].after)} rounds, v1.14's "
+        "configuration to deploy and the same with the first four of version 1.15's additions to the engine, each round "
+        "a tick and the rounds pooled a marker, against the requirement "
+        f"of {ALLOWED}, and in panel b the agents' tokens a second over the calls' first 240 s, each round a tick and "
+        f"their median a marker: {'; '.join(rows)}."
+    )
+
+
+def opt_rounds(out: Path) -> list[Path]:
+    """report-opt-rounds.svg and its phone layout: v1.14's configuration to deploy against the same with the first
+    four of version 1.15's additions, in five rounds. (a) Each
+    scenario's replies over their round's SLO, each round and pooled, against the requirement. (b) The agents' tokens a
+    second, each round and their median."""
+    scenarios = data.opt_rounds()
+    description = _opt_description(scenarios)
+    return [
+        _opt_wide(scenarios, out / "report-opt-rounds.svg", description),
+        _opt_narrow(scenarios, out / "report-opt-rounds-narrow.svg", description),
+    ]
+
+
+def _opt_share(s: Chart, rounds: Sequence[data.StepCapRound], row: int, a: Scale, y: float) -> None:
+    """A configuration's replies over the SLO: each round a tick, the rounds pooled a marker with its share, which
+    stands clear of the requirement's rule."""
+    _, hue = OPT_ROWS[row]
+    over, replies = _opt_pooled(rounds)
+    xs = [a(r.share) for r in rounds]
+    rug(s, xs, y, hue, median=a(over / replies), half=RUN_HALF)
+    label = f"{over / replies:.1%}"
+    x = max([*xs, a(over / replies)]) + 12
+    if x - 4 <= a(REQUIREMENT) <= x + measure(label, NOTE) + 4:
+        x = a(REQUIREMENT) + 8
+    s.text(x, y + 6, label, size=NOTE, halo=True)
+
+
+def _opt_tokens(
+    s: Chart, rounds: Sequence[data.StepCapRound], row: int, b: Scale, y: float
+) -> None:
+    """A configuration's agents' tokens a second: each round a tick, their median a marker with its value."""
+    _, hue = OPT_ROWS[row]
+    median = data._median(r.tokens for r in rounds)
+    xs = [b(r.tokens) for r in rounds]
+    rug(s, xs, y, hue, median=b(median), half=RUN_HALF)
+    s.text(max(xs) + 12, y + 6, f"{median:,.0f}", size=NOTE, halo=True)
+
+
+def _opt_keys() -> list[tuple[Key, str]]:
+    return [(mark_key(hue, filled=True), name) for name, hue in OPT_ROWS]
+
+
+def _opt_wide(scenarios: Sequence[data.OptScenario], path: Path, description: str) -> Path:
+    s = Chart(WIDTH, 700, "The serving engine's additions in five rounds", description)
+    names = 286  # the scenarios' names end here
+    top_share = _opt_share_top(scenarios)
+    a = Scale(0, top_share, 312, 690)
+    top_tokens = _opt_tokens_top(scenarios)
+    b = Scale(0, top_tokens, 800, 1060)
+    s.text(24, 30, "(a) Replies over the SLO", size=LABEL)
+    s.text(24, 54, "each round a tick, the rounds pooled a marker", size=NOTE, cls="soft")
+    key = legend_columns(s, 24, 88, _opt_keys(), columns=2, column=330)
+    top = key + 30
+    rows = []
+    y = top + 16
+    for c in scenarios:
+        rows.append((y, c))
+        y += 2 * OPT_PITCH + OPT_GAP
+    bottom = y - OPT_GAP + 8
+    marks = [k * OPT_SHARE_STEP for k in range(round(top_share / OPT_SHARE_STEP) + 1)]
+    x_axis(s, a, marks, [pct(m) for m in marks], top, bottom, title="share of the round's replies")
+    s.vrule(a(REQUIREMENT), top, bottom, "slo")
+    s.text(a(REQUIREMENT) + 6, top - 6, ALLOWED, size=NOTE, cls="orange tint", halo=True)
+    s.text(b.start, 30, "(b) Agents' tokens/s", size=LABEL)
+    s.text(b.start, 54, "each round a tick, their median a marker", size=NOTE, cls="soft")
+    ticks, labels = linear_ticks(top_tokens, OPT_TOKENS_STEP)
+    last = x_axis(s, b, ticks, labels, top, bottom, title=TOKENS_TITLE)
+    for row_y, c in rows:
+        head, note = _opt_lines(c.name)
+        s.text(names, row_y + 6, head, size=VALUE, anchor="end")
+        s.text(names, row_y + OPT_PITCH + 6, note, size=NOTE, anchor="end", cls="soft")
+        for k, rounds in enumerate((c.before, c.after)):
+            _opt_share(s, rounds, k, a, row_y + k * OPT_PITCH)
+            _opt_tokens(s, rounds, k, b, row_y + k * OPT_PITCH)
+    s.height = last + 14
+    return s.save(path)
+
+
+def _opt_narrow(scenarios: Sequence[data.OptScenario], path: Path, description: str) -> Path:
+    s = Chart(NARROW, 1400, "The serving engine's additions in five rounds", description)
+    x0 = 18
+    s.text(x0, 30, "(a) Replies over the SLO", size=LABEL)
+    s.text(x0, 54, "each round a tick, pooled a marker", size=NOTE, cls="soft")
+    yy = legend_columns(s, x0, 88, _opt_keys(), columns=1, column=0)
+    top_share = _opt_share_top(scenarios)
+    a = Scale(0, top_share, x0 + 6, NARROW - 70)
+    marks = [
+        k * 2 * OPT_SHARE_STEP for k in range(int(top_share / (2 * OPT_SHARE_STEP) + 1e-9) + 1)
+    ]
+    yy += 18
+    for c in scenarios:
+        band = yy + 24
+        band += _row_label(s, x0, band, *_opt_lines(c.name), NARROW - x0, gap=7)
+        # The requirement's rule runs down each scenario's rows, under its name.
+        s.vrule(a(REQUIREMENT), band + 34 - 16, band + 34 + OPT_PITCH + 16, "slo")
+        for k, rounds in enumerate((c.before, c.after)):
+            row_y = band + 34 + k * OPT_PITCH
+            band_grid(s, a, marks, row_y - 12, row_y + 12)
+            _opt_share(s, rounds, k, a, row_y)
+        yy = band + 34 + OPT_PITCH + 22
+    last = x_axis(s, a, marks, [pct(m) for m in marks], None, yy - 8)
+    s.text(a(REQUIREMENT) + 6, last + 28, ALLOWED, size=NOTE, cls="orange tint")
+    top_tokens = _opt_tokens_top(scenarios)
+    b = Scale(0, top_tokens, x0 + 6, NARROW - 80)
+    yy = last + 80
+    s.text(x0, yy, "(b) Agents' tokens/s", size=LABEL)
+    marks_b, labels_b = linear_ticks(top_tokens, OPT_TOKENS_STEP)
+    for c in scenarios:
+        band = yy + 34
+        band += _row_label(s, x0, band, *_opt_lines(c.name), NARROW - x0, gap=7)
+        for k, rounds in enumerate((c.before, c.after)):
+            row_y = band + 34 + k * OPT_PITCH
+            band_grid(s, b, marks_b, row_y - 12, row_y + 12)
+            _opt_tokens(s, rounds, k, b, row_y)
+        yy = band + 34 + OPT_PITCH + 12
+    last = x_axis(s, b, marks_b, labels_b, None, yy)
+    for line in wrap(TOKENS_TITLE, NARROW - 36, NOTE):
+        last += 25
+        s.text(x0, last, line, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
+
+
 # The 24-hour soak ---------------------------------------------------------------------------------------------------
 
 SOAK_SHARE_TOP = 0.06
@@ -2804,17 +2987,25 @@ def _starts_layout(
 # The campaign map -------------------------------------------------------------------------------------------------
 
 MAP_START = 1792627200.0  # 2026-10-22 00:00 UTC
-MAP_DAYS = 8
-"""The campaign map's axis: 22 October 2026 to the end of the 29th, UTC, a day a band."""
+MAP_DAYS = 12
+"""The campaign map's axis: 22 October 2026 to the end of 2 November, UTC, a day a band."""
 DAY = 86400.0
+
+
+def _at(t: float) -> datetime.datetime:
+    return datetime.datetime.fromtimestamp(t, datetime.UTC)
 
 
 def _when(t: float) -> tuple[str, str]:
     """A moment as its day ("23 October") and its time of day ("08:59"), UTC."""
-    import datetime
+    at = _at(t)
+    return f"{at.day} {at:%B}", at.strftime("%H:%M")
 
-    at = datetime.datetime.fromtimestamp(t, datetime.UTC)
-    return f"{at.day} October", at.strftime("%H:%M")
+
+def _map_span() -> str:
+    """The map's axis in prose: "22 October to 2 November 2026"."""
+    first, last = _at(MAP_START), _at(MAP_START + (MAP_DAYS - 1) * DAY)
+    return f"{first.day} {first:%B} to {last.day} {last:%B} {last.year}"
 
 
 def _span(c: data.Campaign) -> str:
@@ -2865,7 +3056,7 @@ def _campaigns_description(found: Sequence[data.Campaign]) -> str:
         for c in found
     )
     return (
-        "A timeline of 22 to 29 October 2026, UTC, a bar for each campaign from its first run's start to its last "
+        f"A timeline of {_map_span()}, UTC, a bar for each campaign from its first run's start to its last "
         f"run's end, with what it measured, its rounds and samples, and the code it ran: {rows}."
     )
 
@@ -2897,7 +3088,7 @@ def _campaigns_layout(
     )
     nights = [MAP_START + k * DAY for k in range(MAP_DAYS + 1)]
     noons = [MAP_START + (k + 0.5) * DAY for k in range(MAP_DAYS)]
-    days = [str(22 + k) for k in range(MAP_DAYS)]
+    days = [str(_at(noon).day) for noon in noons]
     thick, line = 16.0, 22.0
     y = 16.0
     rows = []
@@ -2930,7 +3121,8 @@ def _campaigns_layout(
             s.text(x0, at, text, size=NOTE, cls="mute")
     last = x_axis(s, x, noons, days, None, bottom)
     s.rule(x.start, x.end, bottom)
-    title = "Day of October 2026, UTC"
+    months = list(dict.fromkeys(f"{_at(noon):%B}" for noon in noons))
+    title = f"Day of {' and '.join(months)} {_at(MAP_START).year}, UTC"
     if wide:
         s.text((x.start + x.end) / 2, last + 27, title, size=NOTE, anchor="middle", cls="soft")
         last += 27
@@ -2960,6 +3152,7 @@ FIGURES = (
     a100,
     cards,
     step_cap,
+    opt_rounds,
     soak,
     starts,
     campaigns,

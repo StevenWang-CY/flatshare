@@ -91,6 +91,12 @@ VLLM_SRC=~/src/vllm-v0.32.0 uv run --extra test pytest      # in python/flatshar
 - **The KV preemption** for a waiting higher-priority request under KV pressure: the request chosen, the victims and their order, shared prefixes, the per-step cap, deferred block frees, LoRA adapters, a request the waiting loop skips.
 - **The budget cap:** lower-priority prefill sits out a request's first tokens from the step it fits or its KV load is done, and the first steps of a load only, and not for a request that does not fit; its window holds as many steps under asynchronous scheduling, a step in flight counted, as without.
 - **The reserve**, the switches' validation, and stock behavior with the switches off.
+- **The variant's other switches:** the calls' prefixes kept between their turns (a call's next turn ends its
+  retention, another call's does not, a turn that does not fit beside the others, shared blocks counted once, `retain_s`,
+  a prefix cache reset, room left for a full-length request); a call taking a lower priority's block reservations, in
+  both of the stall's shapes; lower-priority decodes held from a request's first tokens and none of its own priority; a
+  realtime request's short load recomputed; an announced turn holding lower-priority prefill back; and make-room's log
+  line with each switch's count.
 
 A stand-in KV connector loads a request's KV asynchronously or delays it. `tests/test_trace.py` is the trace above. The scheduler needs torch and vLLM's dependencies, which `make test-vllm`'s environment lacks, so there these tests skip; CI's `make-room` job runs them in a CPU environment of their own (below). On the GPU node they run against the engine environment with pytest beside it, and `VLLM_TARGET_DEVICE=cpu` keeps them off the GPU:
 

@@ -1,0 +1,15 @@
+# The optimization rounds (opt-rN.campaign): the configuration to deploy at the serving profile's step cap
+# (256, threshold 0), in the standard scenario beside 16 sessions; its pair with the calls' prefixes kept on the GPU
+# is opt-std-ret-s16.
+arm = "9-pr-ab48-b256-t0"
+label = "the configuration to deploy, step cap 256, standard scenario, warm-up turn"
+
+[voice]
+warmup_turns = 1
+
+[agents]
+sessions = 16
+
+[engine]
+variant = "make-room"
+flags = ["--additional-config.make_room.reserve_tokens", "0", "--additional-config.make_room.budget_cap_tokens", "48", "--max-num-batched-tokens", "256", "--long-prefill-token-threshold", "0"]

@@ -434,7 +434,9 @@ def test_the_quick_start_fill_reads_each_run_and_refuses_what_it_cannot_quote(
         "([stock](record/stock-kv.log), [make-room](record/make-room-kv.log), [the record](record/README.md))."
     )
     # A record whose environment names its host gives it.
-    (record / "environment.txt").write_text("box: Gray; GPU, driver and memory in use at the start: ...\n")
+    (record / "environment.txt").write_text(
+        "box: Gray; GPU, driver and memory in use at the start: ...\n"
+    )
     assert "On Gray, with the card's own KV pool" in " ".join(
         quick_start.block(stock, make_room, tmp_path / "README.md").split()
     )

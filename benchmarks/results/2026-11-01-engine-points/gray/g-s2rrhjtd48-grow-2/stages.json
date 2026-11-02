@@ -1,0 +1,100 @@
+{
+ "turns": 71,
+ "agent_tokens_per_s": 2524.3,
+ "first_token_ms": {
+  "input": {
+   "mean": 24.5,
+   "p50": 23.8,
+   "p90": 35.4,
+   "p95": 44.4
+  },
+  "load": {
+   "mean": 0.0,
+   "p50": 0.0,
+   "p90": 0.0,
+   "p95": 0.0
+  },
+  "queue": {
+   "mean": 0.1,
+   "p50": 0.1,
+   "p90": 0.1,
+   "p95": 0.2
+  },
+  "prep": {
+   "mean": 25.6,
+   "p50": 25.7,
+   "p90": 29.3,
+   "p95": 30.8
+  },
+  "gpu": {
+   "mean": 6.6,
+   "p50": 4.9,
+   "p90": 11.8,
+   "p95": 17.2
+  },
+  "own": {
+   "mean": 16.4,
+   "p50": 7.7,
+   "p90": 43.0,
+   "p95": 44.3
+  },
+  "ttft": {
+   "mean": 73.1,
+   "p50": 68.3,
+   "p90": 113.5,
+   "p95": 130.7
+  }
+ },
+ "turns_loaded_from_the_cpu_tier": 0,
+ "turns_with_make_room_preemptions": 0,
+ "steps": {
+  "agent-prefill": {
+   "steps": 3324,
+   "ms": {
+    "mean": 72.4,
+    "p50": 70.8,
+    "p90": 106.8,
+    "p95": 115.4
+   },
+   "model_ratio_p50": 1.07
+  },
+  "agent-prefill+call": {
+   "steps": 8,
+   "ms": {
+    "mean": 60.0,
+    "p50": 66.9,
+    "p90": 90.7,
+    "p95": 90.7
+   },
+   "model_ratio_p50": 0.92
+  },
+  "call+decodes": {
+   "steps": 1584,
+   "ms": {
+    "mean": 16.9,
+    "p50": 15.7,
+    "p90": 19.2,
+    "p95": 29.2
+   },
+   "model_ratio_p50": 1.27
+  },
+  "decodes": {
+   "steps": 1341,
+   "ms": {
+    "mean": 41.1,
+    "p50": 38.2,
+    "p90": 48.0,
+    "p95": 51.1
+   },
+   "model_ratio_p50": 1.77
+  }
+ },
+ "host_ms_a_step": {
+  "mean": 16.5,
+  "p50": 19.6,
+  "p90": 29.0,
+  "p95": 30.7
+ },
+ "gpu_idle_s": 0.4,
+ "steps_s": 323.0
+}
