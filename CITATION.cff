@@ -11,7 +11,7 @@ abstract: >-
   turn cannot take KV cache from running agent requests and agent prefill
   shares every step of its reply. Two scheduler rules, proposed to vLLM as pull
   requests #63350 and #63351 (both open, with no maintainer review as of
-  2026-10-29), let a waiting higher-priority request preempt lower-priority work
+  2026-11-02), let a waiting higher-priority request preempt lower-priority work
   for KV and keep lower-priority prefill out of the steps of its first tokens.
   They bring the p95 to 2.24 s, 0.20 s over an SLO of voice alone plus 250 ms,
   while the agents keep 97% of their throughput; on an A100 SXM4 80 GB with the

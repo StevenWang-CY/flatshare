@@ -35,7 +35,7 @@ which use it retires.
   **Its window** is how many first tokens it covers (`--priority-prefill-budget-cap-tokens`, 16 by default; 48 in the
   configuration to deploy), which the technical report writes T. The name is the flag's, and #63351's title says what it
   does: "hold lower-priority prefill for first tokens".
-- **The change**: the two pull requests proposed to vLLM (open, with no maintainer review as of 2026-10-29) that change
+- **The change**: the two pull requests proposed to vLLM (open, with no maintainer review as of 2026-11-02) that change
   priority scheduling, [#63350](https://github.com/vllm-project/vllm/pull/63350) for a full KV cache and
   [#63351](https://github.com/vllm-project/vllm/pull/63351) for prefill beside a priority request's first tokens.
   [ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351) states their rules. **The pull requests** are the
