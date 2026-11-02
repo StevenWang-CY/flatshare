@@ -598,15 +598,15 @@ def test_the_step_costs_are_the_baselines_cells() -> None:
         assert c.added == pytest.approx(
             cell["change_us"], abs=0.11
         )  # the cells round each to 0.1 µs
-    # Switched off, the change costs what stock vLLM does, within 1.8% in the PRs' states and 4.6% in the serving
+    # Switched off, the change costs what stock vLLM does, within 1.7% in the PRs' states and 4.4% in the serving
     # profile's; deployed, it adds tens to hundreds of µs a step, 1.5 ms where a voice turn too large for two victims
-    # waits behind a 999-block hit, and it takes 63 µs off the step in which the budget cap and the decode hold keep
-    # the agents back.
-    assert max(c.off_ratio for c in costs.values() if not c.serving) < 0.018
-    assert max(c.off_ratio for c in costs.values() if c.serving) < 0.046
-    assert max(c.added for c in costs.values() if c.scenario == "A") == pytest.approx(182.0)
+    # waits behind a 999-block hit, and it takes 32 µs off the step in which the budget cap keeps the agents' prefill
+    # back.
+    assert max(c.off_ratio for c in costs.values() if not c.serving) < 0.017
+    assert max(c.off_ratio for c in costs.values() if c.serving) < 0.045
+    assert max(c.added for c in costs.values() if c.scenario == "A") == pytest.approx(151.2)
     assert sorted(round(c.added) for c in costs.values()) == [
-        -63, 20, 48, 54, 60, 78, 96, 158, 182, 187, 299, 326, 361, 471, 485, 491, 1491,
+        -32, 18, 33, 38, 54, 81, 83, 151, 152, 177, 238, 319, 361, 437, 461, 465, 1473,
     ]  # fmt: skip
     assert (costs["B64-hit999"].variant, costs["B256-W10"].variant) == (
         "a 999-block prefix hit",
@@ -617,16 +617,16 @@ def test_the_step_costs_are_the_baselines_cells() -> None:
 
 
 def test_the_step_costs_stand_beside_the_boxs_cpu_and_steps(tmp_path: Path) -> None:
-    """The box's CPU takes 1.61 times as long as the host's at bench_host.py's workload, by its median against the
+    """The box's CPU takes 1.62 times as long as the host's at bench_host.py's workload, by its median against the
     median of the host's as the baseline's rounds ended; a reply's step on the box alone is W6's median token gap, and
     the agents' at 24 session trees their mean token gap at the median of the three rounds that the two-card verdict
     counts (38.07, 38.23 and 30.49 ms; the sweep's other two rounds measured 37.26 and 34.61)."""
     box = json.loads(data.BOX_HOST.read_text())["python_ms"]["p50"]
     host = [load["python_ms"]["p50"] for load in json.loads(data.STEP_COSTS.read_text())["load"]]
     assert data.box_cpu() == box / statistics.median(host) and box == pytest.approx(381.1, abs=0.01)
-    assert f"{data.box_cpu():.2f}" == "1.61"
+    assert f"{data.box_cpu():.2f}" == "1.62"
     # Its top axis says it is a scaling of the host's, in both layouts.
-    scaled = "the box's CPU (ms), scaled: the host's time \N{MULTIPLICATION SIGN} 1.61"
+    scaled = "the box's CPU (ms), scaled: the host's time \N{MULTIPLICATION SIGN} 1.62"
     for path in figures.step_cost(tmp_path):
         assert scaled in text_of(path), path.name
     assert data.voice_step_ms() == 12.08
