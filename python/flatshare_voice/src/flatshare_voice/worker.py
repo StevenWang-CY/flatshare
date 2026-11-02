@@ -361,7 +361,9 @@ def _serving(env: Mapping[str, str]) -> dict[str, Any]:
     if isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 1:
         raise ValueError(f"FLATSHARE_SERVING_PROFILE {path}: voice.max_calls must be 1 or more")
     if not isinstance(turn_hints, bool):
-        raise ValueError(f"FLATSHARE_SERVING_PROFILE {path}: voice.turn_hints must be true or false")
+        raise ValueError(
+            f"FLATSHARE_SERVING_PROFILE {path}: voice.turn_hints must be true or false"
+        )
     return {
         "max_calls": max_calls,
         "audio": audio,

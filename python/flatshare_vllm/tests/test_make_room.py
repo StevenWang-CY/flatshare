@@ -969,16 +969,22 @@ def test_lower_priority_decodes_sit_out_a_requests_first_tokens_with_the_decode_
     tokens are the turn's alone, and then the decode resumes. A call's first sentence then decodes in steps that read no
     agent's long context, which made its slowest first sentences 100 ms slower on the box (the engine points)."""
     sched = scheduler(
-        module.Scheduler, model, 400, make_room, long_prefill_token_threshold=256, max_model_len=4096
+        module.Scheduler,
+        model,
+        400,
+        make_room,
+        long_prefill_token_threshold=256,
+        max_model_len=4096,
     )
     run(sched, request("decode", 40, priority=2, arrival=0, max_tokens=400))
     sched.add_request(request("voice", 100, priority=0, arrival=1))
     steps = [step(sched).num_scheduled_tokens for _ in range(6)]
 
     if held:
-        assert steps == [{"decode": 1, "voice": 100}] + [{"voice": 1}] * 3 + [
-            {"decode": 1, "voice": 1}
-        ] * 2
+        assert (
+            steps
+            == [{"decode": 1, "voice": 100}] + [{"voice": 1}] * 3 + [{"decode": 1, "voice": 1}] * 2
+        )
     else:
         assert steps == [{"decode": 1, "voice": 100}] + [{"decode": 1, "voice": 1}] * 5
 
@@ -1398,7 +1404,13 @@ TAKE = CAP | {"take_reservations": True}
         (CAP | {"max_preemptions_per_step": 2}, "call", 0, True, {"hog"}),
         (CAP, "call", 0, False, set()),
         ({}, "call", 0, False, set()),
-        (TAKE, "agent2", 2, False, set()),  # equal priorities still leave each other's reservations free
+        (
+            TAKE,
+            "agent2",
+            2,
+            False,
+            set(),
+        ),  # equal priorities still leave each other's reservations free
     ],
 )
 def test_a_lower_priority_loads_reservation_keeps_no_call_waiting(
@@ -1421,7 +1433,9 @@ def test_a_lower_priority_loads_reservation_keeps_no_call_waiting(
 
 
 @pytest.mark.parametrize(("make_room", "runs"), [(TAKE, True), (CAP, False), ({}, False)])
-def test_a_lower_priority_load_that_cannot_be_promoted_keeps_no_call_waiting(module, model, make_room, runs):
+def test_a_lower_priority_load_that_cannot_be_promoted_keeps_no_call_waiting(
+    module, model, make_room, runs
+):
     """The waiting loop drains the requests holding KV first and stops at the first it cannot admit: an agent whose
     load is done but whose prompt's 172 remaining blocks no longer fit, as the decode took room it counted on, stops
     it every step, ahead of a call that needs 13 free blocks and no load (the engine points' traces: 3.0 s and 4.5 s).

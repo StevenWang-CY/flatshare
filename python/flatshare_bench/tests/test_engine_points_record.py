@@ -24,7 +24,9 @@ def test_the_readmes_tables_are_what_the_records_give() -> None:
     table = _table()
     readme = (RECORD / "README.md").read_text()
     for name in table.TABLES:
-        found = re.search(rf"<!-- table.py {name} -->\n(.*?)\n<!-- /table.py {name} -->", readme, re.S)
+        found = re.search(
+            rf"<!-- table.py {name} -->\n(.*?)\n<!-- /table.py {name} -->", readme, re.S
+        )
         assert found is not None, name
         assert found.group(1) == table.table(name)
 

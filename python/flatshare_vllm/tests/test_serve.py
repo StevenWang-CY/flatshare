@@ -42,7 +42,9 @@ def modules(tmp_path_factory):
     build = TR.load(TR.PACKAGE / "build.py", "flatshare_serve_build")
     path = build.build("make-room", tmp_path_factory.mktemp("make-room"), source_tree=True)
     make_room = TR.load(path, "flatshare_make_room_scheduler")
-    TR.load(SERVE.parent / "flatshare_jit.py", "flatshare_jit")  # beside it on the engine's PYTHONPATH
+    TR.load(
+        SERVE.parent / "flatshare_jit.py", "flatshare_jit"
+    )  # beside it on the engine's PYTHONPATH
     return make_room, TR.load(SERVE, "flatshare_make_room_serve")
 
 
