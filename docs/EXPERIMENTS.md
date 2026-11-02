@@ -9,6 +9,7 @@ How Flatshare's measurements were designed and run, for a reader who wants to au
 | E3 | **The background tier's cost of make-room** | What does make-room take from the agents, and through which rule: the budget cap or the KV preemption? (note 3) | On W5's points, from the engine's own counts ([BENCHMARKS.md](BENCHMARKS.md#what-does-the-change-take-from-the-agents)) |
 | E1 | **Parking** | How much of the gap between LRU plus CPU offload and a clairvoyant reference does each level of lifecycle information close, on resume latency? | In the simulator ([BENCHMARKS.md](BENCHMARKS.md#does-knowing-when-an-agent-returns-help)) |
 | Soak | **The production path for hours** | Does the box, as it serves, keep its voice SLO, admission and background service over a day of arriving calls and agents? (note 4) | Once, for 24 hours of the arrangement to deploy on two GPU nodes, 2026-10-28 to 29 ([BENCHMARKS.md](BENCHMARKS.md#does-the-arrangement-to-deploy-keep-its-slo-over-a-day); [the record](../benchmarks/results/2026-10-28-soak/README.md)) |
+| Engine points | **A call's reply inside the engine** | Where does a call's time go inside the engine beside closed-loop agents, and what does each change to the engine do to it and to the agents? | On both GPU nodes, 2026-11-01 and 02 ([BENCHMARKS.md](BENCHMARKS.md#what-do-the-serving-engines-additions-do-to-a-voice-turn); [the record](../benchmarks/results/2026-11-01-engine-points/README.md)) |
 
 1. E2 also asks: what does each mechanism of arm 9 (make-room with the lifecycle policy) contribute?
 2. Also on two cards in v1.7's rounds, each card's part of an arrangement a run of its own ([the rounds](../benchmarks/results/2026-10-28-rounds/README.md)); no point fronted two nodes at once ([below](#e2-voice-under-agent-load)).
@@ -140,6 +141,24 @@ E2 measures a fixed point for a few minutes on a box switched into its bench mod
 **Its summary**, per hour and overall: calls attempted, accepted, refused (by reason) and failed; measured turns and failed ones; the replies' pooled p50, p95 and p99, and the share over the SLO, against a voice-alone reference given on the command line (its p95 plus 250 ms, [SLO.md](SLO.md)); replies with a pause over 500 ms; the gateway's realtime service level from its counters; background requests offered, admitted, completed and failed, and their tokens a second; each engine's preemptions and KV use; errors, restarts and the guard's pauses. An attempt belongs to the hour it was due in, a turn to the hour it ended in, a counter's increase to the hour of its later scrape.
 
 **What it cannot say.** The callers are synthetic: the same 40 lines, in fixed voices, with no echo and no room noise; a serving worker's microphone configuration (the end-of-turn model, LiveKit's AEC warm-up) adds its own endpointing to every V2V, so the SLO's reference is a voice-alone soak of the same configuration (`--agents-sessions 0`), not E2's. The agents replay traces; they do no task. A week of real use, the audit's other step, needs real callers.
+
+## The engine points: a call's reply inside the engine
+
+E2 measures a reply at the caller's ear; the engine points measure it inside the engine, where a change to the engine
+acts, quickly enough to try one change at a time ([the record](../benchmarks/results/2026-11-01-engine-points/README.md)).
+- **A point** starts one engine on a GPU node from the box's `engine.yaml`, with the serving profile's make-room switches
+  and the point's own flags, and runs [`tail.py`](../python/flatshare_vllm/src/flatshare_vllm/make-room/tail.py)
+  against it for 240 s: two calls of 48-token replies, a turn every 4 to 8 s, beside 12 closed-loop agents whose
+  prompts grow from 6,000 to 30,000 tokens a turn. With a hint, each call turn is announced 250 ms before it leaves, as
+  the voice worker announces it when the caller stops speaking.
+- **Measures.** The calls' first, 16th and 48th tokens on their own clocks, p50 and p95 over a point's turns; the
+  agents' computed tokens a second from the scheduler's trace, which also splits the first token by stage: the way in,
+  the CPU tier's load, the queue, the host's preparation, the step in flight and its own step.
+- **Repeats and controls.** Each change runs against the point before it, two runs a point on each node but where the
+  record says otherwise, and each mechanism has a control: a hint sent with nothing held, the hint's scheduler with no
+  hint, the reservations taken without a hint. A run on a slow host is left out with its reason.
+- **What it cannot say.** The calls are requests sent straight to the engine, without speech, the voice pipeline or the
+  gateway: what a change does to V2V and to the replies over the SLO is E2's to measure, in rounds (OR in the map above).
 
 ## How runs are made
 
