@@ -175,7 +175,7 @@ PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-le
   --additional-config.make_room.max_preemptions_per_step 2 \
   --additional-config.make_room.budget_cap true --additional-config.make_room.budget_cap_tokens 48 \
   --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.take_reservations true \
-  --additional-config.make_room.decode_hold_tokens 48 \
+  --additional-config.make_room.decode_hold_tokens 0 \
   --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 \
   --additional-config.make_room.hint_hold_ms 400
 . ~/vllm-0.32/bin/activate && python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
@@ -186,17 +186,17 @@ long (`retain_s`), and the probe sizes its load for an empty pool.
 
 <!-- quick-start probe -->
 The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On Phastform, with the card's own KV
-pool, it was 1,543–1,556 ms on stock vLLM and 173–179 ms with make-room, in four runs each
+pool, it was 1,544–1,547 ms on stock vLLM and 272–277 ms with make-room, in four runs each
 ([stock](benchmarks/results/2026-11-02-quick-start/stock-kv.log),
 [make-room](benchmarks/results/2026-11-02-quick-start/make-room-kv.log),
 [the record](benchmarks/results/2026-11-02-quick-start/README.md)).
 <!-- /quick-start probe -->
 
 Both ran at the serving profile's step cap, 256 tokens a step without a per-request threshold, and make-room in the
-configuration to deploy: the KV preemption at 2 a step, the budget cap with a 48-token window and no reserve, the agents'
-reservations taken and their decodes held from a voice reply's first 48 tokens, and the calls' prefixes kept within
-3,584 tokens for 30 s, with a 400 ms hold for an announced turn. `probe.py` sizes its requests from the engine's KV pool
-and context length, so the check runs unchanged on another card.
+configuration to deploy: the KV preemption at 2 a step, the budget cap with a 48-token window and no reserve, the
+agents' reservations taken, no decode hold, and the calls' prefixes kept within 3,584 tokens for 30 s, with a 400 ms
+hold for an announced turn. `probe.py` sizes its requests from the engine's KV pool and context length, so the check
+runs unchanged on another card.
 
 To serve beside agents, send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV
 tier from [`engine.yaml`](deploy/phastform/engine.yaml), which holds the box's 32k context and fixed KV pool too. The

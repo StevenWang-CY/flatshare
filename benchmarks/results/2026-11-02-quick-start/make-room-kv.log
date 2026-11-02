@@ -1,4 +1,4 @@
-kv: priority-0 TTFT 179 ms, 16 tokens 368 ms, for 751 prompt tokens, sent with 3 priority-2 requests of 22367 tokens running and 5 of 4218 blocks free; after it, 3 running and 1 waiting
-kv: priority-0 TTFT 175 ms, 16 tokens 361 ms, for 748 prompt tokens, sent with 3 priority-2 requests of 22367 tokens running and 5 of 4218 blocks free; after it, 3 running and 1 waiting
-kv: priority-0 TTFT 173 ms, 16 tokens 360 ms, for 747 prompt tokens, sent with 3 priority-2 requests of 22367 tokens running and 5 of 4218 blocks free; after it, 3 running and 1 waiting
-kv: priority-0 TTFT 176 ms, 16 tokens 362 ms, for 749 prompt tokens, sent with 3 priority-2 requests of 22367 tokens running and 5 of 4218 blocks free; after it, 3 running and 1 waiting
+kv: priority-0 TTFT 272 ms, 16 tokens 700 ms, for 748 prompt tokens, sent with 3 priority-2 requests of 22367 tokens running and 5 of 4218 blocks free; after it, 3 running and 1 waiting
+kv: priority-0 TTFT 274 ms, 16 tokens 698 ms, for 749 prompt tokens, sent with 3 priority-2 requests of 22367 tokens running and 5 of 4218 blocks free; after it, 3 running and 1 waiting
+kv: priority-0 TTFT 277 ms, 16 tokens 701 ms, for 745 prompt tokens, sent with 3 priority-2 requests of 22367 tokens running and 5 of 4218 blocks free; after it, 3 running and 1 waiting
+kv: priority-0 TTFT 276 ms, 16 tokens 700 ms, for 747 prompt tokens, sent with 3 priority-2 requests of 22367 tokens running and 5 of 4218 blocks free; after it, 3 running and 1 waiting
