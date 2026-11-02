@@ -5,6 +5,27 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.16](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.16) (2026-11-02): make-room on vLLM 0.33.0
+
+make-room ported to vLLM 0.33.0, released the same day: the change builds and passes its suites there, and the quick
+start's probe and the serving variant's engine ran on the card. The serving profile stays on 0.32.0, which the rounds
+measured.
+
+- **make-room on vLLM 0.33.0.** `make-room/v0.33.0` holds the three patches: the same 26 commits cherry-picked onto
+  v0.33.0, on the fork's `v0.33.0-*` branches. Two needed resolving, against 0.33.0's local prefill cadence and its cap
+  of the external hit for auxiliary outputs, and by patch ID every other commit's change to the scheduler is its
+  source's. `build.py` takes the installed vLLM's release from its metadata, and a source checkout's from the one
+  release whose patches apply to it (`--release` names one).
+- **Its checks.** The build's tests (`make test-vllm VLLM_REF=v0.33.0`), the behavior suite, the serve module and the
+  trace against the pull requests' diff on 0.33.0's real scheduler (`make test-make-room-ci VLLM_REF=v0.33.0`, 570 and
+  1,081 passed in `requirements-cpu-v0.33.0.txt`'s environment), and `make compat-upstream`, which now holds a ported
+  release to its own patches. On Phastform the quick start's probe gave the voice turn's first token in 264–267 ms with
+  make-room against 1,779–1,792 ms on stock 0.33.0, and the serving variant's engine ran there, serving-check finding
+  only the release and the module changed ([the record](benchmarks/results/2026-11-02-port-v0.33.0/README.md)).
+- **The packages** are versioned 1.16.0, and are not published to a package index.
+- **Upgrading from v1.15.** No configuration changes: the serving profile still runs vLLM 0.32.0. An operator who moves
+  to 0.33.0 installs it and builds make-room as before, and `build.py` takes 0.33.0's patches.
+
 ## [v1.15](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.15) (2026-11-02): the serving engine optimized
 
 What the engine adds to v1.14's serving profile, each piece chosen on the box from its scheduler's traces and measured
