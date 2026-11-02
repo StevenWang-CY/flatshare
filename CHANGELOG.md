@@ -5,6 +5,34 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.17](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.17) (2026-11-02): the decode hold in the serving profile
+
+The serving profile holds the agents' decodes out of a voice reply's first 48 tokens, the budget cap's window, for the
+voice tail. In two follow-up rounds beside 24 agent sessions the hold put 16 of 720 replies over the SLO against 55
+without it, fewer in five of the six rounds and caller counts, for 3.8% of the agents' token rate at the median: past
+the 3% a rule fixed before the rounds allowed, so that v1.15 left it off. v1.17 takes it for the voice tail.
+
+- **The profile.** `decode_hold_tokens` goes from 0 to 48 in `rtx-5060-ti-serve.toml`, and with it `serving.json`, the
+  `make-room-serve` variant, the README's quick start and PRODUCTION's row; `serving-check` holds the engine to it.
+- **Its records.** The quick start on Phastform with the hold: make-room answered the voice turn in 173–179 ms against
+  1,543–1,556 ms on stock vLLM, where without the hold it took 272–277 ms ([the
+  record](benchmarks/results/2026-11-02-quick-start/README.md)). On vLLM 0.33.0, run again: 167–207 ms against
+  1,778–1,788 ms, where without the hold it took 264–267 ms, and the serving variant's own engine 170–175 ms against
+  208–211 ([the port's record](benchmarks/results/2026-11-02-port-v0.33.0/README.md)). Each record's test now holds the
+  switches its engine logged to the commands it gives.
+- **The scheduler's cost a step** comes from the baseline measured for this configuration, at a tolerance of 4%: the
+  step the hold keeps clear costs 63 µs less, and a step with only lower-priority work running 48–182 µs more, against
+  33–151 µs without the hold (REPORT §4, Figure 7). On peacock the check passes in all 17 states, and its negative
+  controls fail by 17–88%.
+- **The docs.** REPORT §6.10 and §7, BENCHMARKS, GLOSSARY, ARCHITECTURE and the engine points' and follow-up rounds'
+  records say the profile holds the decodes, and the follow-up rounds' verdicts stand as measured. Beside 12 agents the
+  five additions take a call's first token from 354 to 88 ms at p95 and its whole reply from 1,226 to 722 ms, for 4% of
+  the agents' token rate (Table 9).
+- **The packages** are versioned 1.17.0, and are not published to a package index.
+- **Upgrading from v1.16.** A release renders the engine's new flag, `--additional-config.make_room.decode_hold_tokens
+  48`, and `serving-check` expects it. An operator who prefers the agents' rate sets `decode_hold_tokens = 0` in the
+  profile and renders it again (`make profiles UPDATE=1`).
+
 ## [v1.16](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.16) (2026-11-02): make-room on vLLM 0.33.0
 
 make-room ported to vLLM 0.33.0, released the same day: the change builds and passes its suites there, and the quick
