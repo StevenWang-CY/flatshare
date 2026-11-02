@@ -44,18 +44,28 @@ Neither mechanism is specific to the card, though what each costs is: the first 
 
 ## 2. The change: #63350 and #63351
 
-The variant `make-room` ([`python/flatshare_vllm`](../python/flatshare_vllm/README.md)) is built at each engine start from the installed vLLM 0.32.0's scheduler, without modifying vLLM: `build.py` applies the pull requests' scheduler diff, backported to 0.32.0, and the variant's own patch, every hunk where it must be, and the engine loads the module with `--scheduler-cls`. It adds three switches to priority scheduling, each a key of `--additional-config` and off by default:
+The variant `make-room` ([`python/flatshare_vllm`](../python/flatshare_vllm/README.md)) is built at each engine start from the installed vLLM 0.32.0's scheduler, without modifying vLLM: `build.py` applies the pull requests' scheduler diff, backported to 0.32.0, and the variant's own patch, every hunk where it must be, and the engine loads the module with `--scheduler-cls`. It adds these switches to priority scheduling, each a key of `--additional-config` and off by default:
 
 | Switch | Variant key | Upstream |
 |---|---|---|
 | The KV preemption | `make_room.max_preemptions_per_step` | `--max-priority-preemptions-per-step` ([#63350](https://github.com/vllm-project/vllm/pull/63350)) |
 | The budget cap | `make_room.budget_cap`, `make_room.budget_cap_tokens` | `--priority-prefill-budget-cap`, `--priority-prefill-budget-cap-tokens` ([#63351](https://github.com/vllm-project/vllm/pull/63351)) |
 | The reserve | `make_room.reserve_tokens` | none: carried in the variant only |
+| A lower priority's reservations taken | `make_room.take_reservations` | none: carried in the variant only |
+| The calls' prefixes kept on the GPU | `make_room.retain_tokens`, `make_room.retain_s` | none: carried in the variant only |
+| A realtime request's short load recomputed | `make_room.recompute_tokens` | none: carried in the variant only |
+| A call's announced turn held for | `make_room.hint_hold_ms` | none: carried in the variant only |
+| The next batch scheduled just in time | `flatshare_jit.margin_ms` and the card's step-time model (the serve module, not the scheduler) | none: the serving profile's |
 
 Each switch in a sentence; [REPORT §3](REPORT.md#3-design) gives the two rules in full, with its Figure 5 and Algorithms 1 and 2:
 - **The KV preemption.** When the highest-priority waiting request lacks KV for its whole sequence, the scheduler preempts running requests of a strictly lower priority through vLLM's own path, the lowest priority and then the latest arrival first, as few as make it fit, at most N a step and none if N would not suffice, their KV kept in the CPU tier ([§3.1](REPORT.md#31-make-room)).
 - **The budget cap.** Lower-priority prefill sits out the steps of a request's first `budget_cap_tokens` output tokens (16 by default), from the step in which the request fits, and decodes are never cut ([§3.2](REPORT.md#32-the-prefill-hold)).
 - **The reserve.** Requests of a positive priority value are admitted only while their whole sequences leave the reserve free: a class-aware watermark, where `--watermark` is class-blind.
+- **The reservations taken.** vLLM admits a load from the CPU tier only beside every in-flight prefill's reservation, the blocks its prompt still needs, and the waiting loop stops at the first request holding KV that it cannot admit; an agent's 20,000-token prompt reserves a thousand blocks, so a call's turn waited seconds behind the agents' loads. With this switch, under the budget cap, a request leaves free only the reservations of its own priority or a higher one, and the cap holds the lower ones' prefill back in the step it is admitted in.
+- **Retention.** A finished priority-0 request's full blocks keep one more reference until its conversation's next turn takes them as a prefix hit, `retain_s` passes or a reset ends it, within `retain_tokens` counted in distinct blocks: a call's next turn finds its prefix on the GPU, not in the CPU tier, whose load costs two or three steps however small it is.
+- **The short load recomputed.** A priority-0 request whose CPU-tier hit extends its GPU hit by at most `recompute_tokens` recomputes the extension in its own step instead of loading it: the block an EAGLE drafter drops from every prefix hit, for one.
+- **The announced turn.** The voice worker sends a realtime request for one token when the user stops speaking, a speech recognition's round trip before the turn's request; the budget cap holds lower-priority prefill back for `hint_hold_ms` from it, so that the turn arrives into decode-only steps. Only the realtime class gets priority 0 from the gateway, so no agent can announce one.
+- **Just in time.** With a batch in flight, the engine core schedules the next one when the one in flight is due to end, by the card's step-time model, less the margin, handling arrivals meanwhile, so that a call arriving during a long agent step joins the next batch; installed by the serve module (`flatshare_jit.py`), outside the scheduler.
 
 What E2 found ([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2)): the budget cap is necessary, and either the KV preemption or the reserve does the rest. The window has to cover the reply's first sentence: this voice agent's replies run 23 tokens at the median and 52 at most, their first sentences 15 tokens at the median and 39 at most ([the first-sentence record](../benchmarks/results/2026-10-27-first-sentence)), and at 16 tokens full replies decode beside agent prefill again (3,094 ms at p95 in W5), where 48 tokens covers all but one of them (2,236 ms). The configuration to deploy is the pull requests' switches with a 48-token window and no reserve.
 
