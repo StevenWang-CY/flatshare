@@ -50,7 +50,10 @@ needs_merge_tree = pytest.mark.skipif(
     git_version() < (2, 38),
     reason="needs git 2.38 or newer (merge-tree --write-tree); GIT names one",
 )
-needs_vllm_src = pytest.mark.skipif(not VLLM_SRC, reason="needs VLLM_SRC, a vLLM v0.32.0 checkout")
+needs_vllm_src = pytest.mark.skipif(
+    not VLLM_SRC or os.environ.get("VLLM_REF", "v0.32.0") != "v0.32.0",
+    reason="needs VLLM_SRC, a vLLM v0.32.0 checkout: the pinned release's patches are checked on its scheduler",
+)
 
 
 @pytest.fixture(scope="module")
@@ -474,6 +477,27 @@ def test_patches_that_do_not_apply_to_the_pinned_release_fail(tmp_path, upstream
         in proc.stdout
     )
     assert f"with 1: {HUNKS} and {HUNKS} of {HUNKS} apply\n" in proc.stdout
+
+
+@needs_merge_tree
+@needs_vllm_src
+def test_a_release_with_patches_of_its_own_must_take_them(tmp_path, upstream):
+    # make-room is ported to v0.33.0, so a v0.33.0 tag is checked with make-room/v0.33.0's patches, and a scheduler
+    # they do not match fails the check: here v0.32.0's, which only v0.32.0's patches take.
+    base = upstream.commit(None, BASE | scheduler_files(real=True), "v0.32.0")
+    later = upstream.commit(base, {"vllm/later.py": "x = 1\n"}, "v0.33.0, with v0.32.0's scheduler")
+    on_kv, on_cap = heads(scheduler_files(real=True)[f"{SCHED}/scheduler.py"])
+    kv = upstream.commit(base, {"vllm/kv.py": "k = 1\n"} | on_kv)
+    cap = upstream.commit(kv, on_cap)
+    proc = run(
+        tmp_path,
+        upstream.serve(later, {63350: kv, 63351: cap}, {"v0.32.0": base, "v0.33.0": later}),
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert (
+        "make-room's patches for v0.33.0 on v0.33.0: FAIL: make-room: 63350.patch: hunk"
+        in proc.stdout
+    )
 
 
 def unified(before: list[str], after: list[str]) -> str:

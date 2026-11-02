@@ -1,8 +1,9 @@
-"""The engine variants' build (src/flatshare_vllm/build.py) against vLLM v0.32.0's scheduler source: each variant's
-patches apply as git applies them, the module compiles and is the patched scheduler and the stock AsyncScheduler, a
-source the patches do not match fails the build naming the hunk, and the build refuses a vLLM other than 0.32.0.
-tests/test_make_room.py checks make-room's behavior on the real scheduler, and tests/test_trace.py that it schedules
-as the PRs do."""
+"""The engine variants' build (src/flatshare_vllm/build.py) against the scheduler source of the vLLM release in
+VLLM_SRC (VLLM_REF names it: v0.32.0, or v0.33.0 for make-room's port): each variant's patches for it apply as git
+applies them, the module compiles and is the patched scheduler and the stock AsyncScheduler, a source the patches do
+not match fails the build naming the hunk, a source checkout is the release whose patches apply to it, and the build
+refuses a vLLM no patches are written against. tests/test_make_room.py checks make-room's behavior on the real
+scheduler, and tests/test_trace.py that it schedules as the PRs do."""
 
 import errno
 import hashlib
@@ -19,9 +20,15 @@ import pytest
 BUILD = Path(__file__).resolve().parents[1] / "src/flatshare_vllm/build.py"
 REPO = Path(__file__).resolve().parents[3]
 VLLM_SRC = os.environ.get("VLLM_SRC")
+RELEASE = os.environ.get("VLLM_REF", "v0.32.0").removeprefix("v")
+"""The release VLLM_SRC checks out, as make passes it."""
 MODULES = {"make-room": "flatshare_make_room_scheduler", "pr54530": "flatshare_pr54530_scheduler"}
+BUILT = {"0.32.0": ("make-room", "pr54530"), "0.33.0": ("make-room",)}
+"""The variants written against each release."""
 
-needs_vllm_src = pytest.mark.skipif(not VLLM_SRC, reason="needs VLLM_SRC, a vLLM v0.32.0 checkout")
+needs_vllm_src = pytest.mark.skipif(
+    not VLLM_SRC, reason="needs VLLM_SRC, a vLLM checkout of VLLM_REF"
+)
 
 
 @pytest.fixture(scope="module")
@@ -67,6 +74,8 @@ def git_applied(tmp_path: Path, patches: list[Path]) -> str:
 def test_build_applies_the_patches_and_appends_the_stock_async_scheduler(
     tmp_path, builder, variant
 ):
+    if variant not in BUILT[RELEASE]:
+        pytest.skip(f"{variant} is not written against vLLM {RELEASE}")
     assert build(tmp_path, variant, "--source-tree").returncode == 0
     module = (tmp_path / f"{MODULES[variant]}.py").read_text()
     compile(module, f"{MODULES[variant]}.py", "exec")
@@ -74,7 +83,7 @@ def test_build_applies_the_patches_and_appends_the_stock_async_scheduler(
     assert header.startswith('"""vLLM v1 Scheduler and AsyncScheduler with ')
     scheduler, async_scheduler = body.split("\n\n# SPDX-License-Identifier: Apache-2.0\n", 1)
 
-    patches = [BUILD.parent / variant / name for name in builder.VARIANTS[variant][0]]
+    patches = builder.patch_paths(variant, RELEASE)
     assert scheduler == git_applied(tmp_path, patches)
     stock_async = (Path(str(VLLM_SRC)) / "vllm/v1/core/sched/async_scheduler.py").read_text()
     # Its import of the stock Scheduler, and its logger, which would rebind the module's to its own name.
@@ -115,6 +124,9 @@ def test_the_serving_profile_names_the_module_make_room_builds(tmp_path):
     v0.32.0's scheduler, by its SHA-256 (deploy/profiles/rtx-5060-ti-serve.toml; deploy/bin/serving-check holds the
     engine's to it): a change to a patch changes the module, and the profile must name the new one."""
     profile = tomllib.loads((REPO / "deploy/profiles/rtx-5060-ti-serve.toml").read_text())
+    served = profile["serving"]["vllm_version"]
+    if served != RELEASE:
+        pytest.skip(f"the serving profile runs vLLM {served}, not {RELEASE}")
     assert build(tmp_path, "make-room", "--source-tree").returncode == 0
     module = (tmp_path / f"{MODULES['make-room']}.py").read_bytes()
     assert hashlib.sha256(module).hexdigest() == profile["serving"]["scheduler_module_sha256"]
@@ -122,7 +134,10 @@ def test_the_serving_profile_names_the_module_make_room_builds(tmp_path):
 
 @needs_vllm_src
 def test_a_source_the_patches_do_not_match_fails_the_build_naming_the_hunk(tmp_path):
-    """A moved line fails loudly: here 0.32.0's scheduler with one context line of #63350's first hunk edited."""
+    """A moved line fails loudly: here 0.32.0's scheduler with one context line of #63350's first hunk edited, which
+    no release's patches then match, each named with its hunk."""
+    if RELEASE != "0.32.0":
+        pytest.skip("the edited line and its hunk are 0.32.0's")
     fake = tmp_path / "src/vllm"
     shutil.copytree(Path(str(VLLM_SRC)) / "vllm/v1/core/sched", fake / "v1/core/sched")
     (fake / "__init__.py").write_text("")
@@ -142,30 +157,70 @@ def test_a_source_the_patches_do_not_match_fails_the_build_naming_the_hunk(tmp_p
         text=True,
     )
     assert result.returncode != 0
-    assert "make-room: 63350.patch: hunk @@ -371,6 +377,34 @@" in result.stderr
+    assert "make-room: the source's scheduler takes the patches of no release" in result.stderr
+    assert "0.32.0: 63350.patch: hunk @@ -371,6 +377,34 @@" in result.stderr
     assert "does not match the scheduler at its line 371" in result.stderr
+    assert "0.33.0: 63350.patch: hunk" in result.stderr
+    # Built for 0.32.0 as named, the build names the hunk alone, as compat_upstream.py reads it.
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(BUILD),
+            "make-room",
+            str(tmp_path / "out"),
+            "--source-tree",
+            "--release",
+            "0.32.0",
+        ],
+        env=os.environ | {"PYTHONPATH": str(tmp_path / "src")},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "build.py: make-room: 63350.patch: hunk @@ -371,6 +377,34 @@" in result.stderr
     assert not (tmp_path / "out").exists()
 
 
 @needs_vllm_src
+def test_a_source_checkout_is_the_release_whose_patches_apply(tmp_path, builder):
+    """A checkout has no package metadata: its release is the one whose patches apply to its scheduler, here
+    VLLM_REF's. Another release's patches fail on it (the negative control), so exactly one applies."""
+    sched = Path(str(VLLM_SRC)) / "vllm/v1/core/sched"
+    assert builder.source_release("make-room", sched) == RELEASE
+    source = (sched / "scheduler.py").read_text()
+    for other in builder.RELEASES["make-room"]:
+        if other != RELEASE:
+            with pytest.raises(builder.PatchError):
+                for patch in builder.patch_paths("make-room", other):
+                    source = builder.apply_patch(source, patch.read_text(), patch.name)
+
+
+@needs_vllm_src
 def test_build_refuses_another_installed_vllm(tmp_path):
-    """The patches match 0.32.0's source: another installed version fails the build, even if every hunk still
-    applies, as they do in VLLM_SRC here; 0.32.0 builds."""
+    """Each release's patches match its source: an installed version no patches are written against fails the
+    build, even if every hunk of one release's still applies, as they do in VLLM_SRC here; VLLM_REF's release builds
+    each variant written against it."""
     result = build(tmp_path / "out", "make-room", path=(installed(tmp_path / "other", "0.31.0"),))
     assert result.returncode != 0
-    assert "written against vLLM 0.32.0, and vLLM 0.31.0 is installed" in result.stderr
+    assert (
+        "make-room is written against vLLM 0.32.0 and 0.33.0, and vLLM 0.31.0 is installed"
+        in result.stderr
+    )
+    result = build(tmp_path / "out", "pr54530", path=(installed(tmp_path / "later", "0.33.0"),))
+    assert result.returncode != 0
+    assert "pr54530 is written against vLLM 0.32.0, and vLLM 0.33.0 is installed" in result.stderr
     assert not (tmp_path / "out").exists()
-    for variant in MODULES:
-        result = build(tmp_path / "ok", variant, path=(installed(tmp_path / variant, "0.32.0"),))
+    for variant in BUILT[RELEASE]:
+        result = build(tmp_path / "ok", variant, path=(installed(tmp_path / variant, RELEASE),))
         assert result.returncode == 0, result.stderr
 
 
 @needs_vllm_src
 def test_build_needs_source_tree_for_a_checkout(tmp_path):
     """A source checkout has no package metadata to check: only --source-tree builds from one."""
-    result = build(tmp_path / "out", "pr54530")
+    result = build(tmp_path / "out", "make-room")
     assert result.returncode != 0 and "--source-tree builds from a source checkout" in result.stderr
-    assert build(tmp_path / "out", "pr54530", "--source-tree").returncode == 0
+    assert build(tmp_path / "out", "make-room", "--source-tree").returncode == 0
 
 
 @needs_vllm_src
@@ -173,7 +228,7 @@ def test_a_build_cut_short_leaves_the_previous_module_whole(tmp_path, builder, m
     """The engine imports the module at every start: a build that fails as it writes (a full disk, say) leaves the
     previous module as it was and nothing of its own, and the next build replaces the module whole."""
     sched = Path(str(VLLM_SRC)) / "vllm/v1/core/sched"
-    monkeypatch.setattr(builder, "sched_dir", lambda source_tree: sched)
+    monkeypatch.setattr(builder, "sched_dir", lambda variant, source_tree: (sched, None))
     target = tmp_path / f"{MODULES['make-room']}.py"
     target.write_text("# the previous build\n")
     write = Path.write_text
@@ -198,7 +253,16 @@ def test_build_names_its_variants(tmp_path):
         [sys.executable, str(BUILD), "make_room", str(tmp_path)], capture_output=True, text=True
     )
     assert result.returncode != 0
-    assert "usage: build.py {make-room,pr54530} OUT_DIR [--source-tree]" in result.stderr
+    assert (
+        "usage: build.py {make-room,pr54530} OUT_DIR [--source-tree [--release R]]" in result.stderr
+    )
+    # --release names a source checkout's release, so it comes with --source-tree alone.
+    result = subprocess.run(
+        [sys.executable, str(BUILD), "make-room", str(tmp_path), "--release", "0.32.0"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0 and "usage: build.py" in result.stderr
 
 
 DIFF = "diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py\n"

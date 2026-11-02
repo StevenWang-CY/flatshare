@@ -67,7 +67,7 @@ $(VLLM_SRC):
 	git -C $@ sparse-checkout set vllm
 
 test-vllm: $(VLLM_SRC)
-	cd python/flatshare_vllm && VLLM_SRC=$(VLLM_SRC) uv run -q --extra test pytest -q
+	cd python/flatshare_vllm && VLLM_SRC=$(VLLM_SRC) VLLM_REF=$(VLLM_REF) uv run -q --extra test pytest -q
 
 # The CPU suites' imports, checked before pytest runs: without one of them pytest would skip a suite, not fail it.
 CPU_SUITE_IMPORTS = cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -c \
@@ -81,8 +81,8 @@ CPU_SUITE_IMPORTS = cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPAT
 test-make-room: $(VLLM_SRC)
 	@test -n "$(TORCH_PYTHON)" || { echo "usage: make test-make-room TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies>" >&2; exit 2; }
 	@$(CPU_SUITE_IMPORTS)
-	cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
-	  tests/test_make_room.py tests/test_perf_schedule.py tests/test_gateway_caps.py tests/test_serve.py
+	cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu VLLM_REF=$(VLLM_REF) PYTHONPATH=$(VLLM_SRC) $(TORCH_PYTHON) -m pytest -q \
+	  -p no:cacheprovider tests/test_make_room.py tests/test_perf_schedule.py tests/test_gateway_caps.py tests/test_serve.py
 
 # make-room against the PRs' own patches, step for step, on the same CPU environment (python/flatshare_vllm/README.md):
 # the trace that keeps the variant equal to #63350 and #63351, with the PRs' one-line mutants as its negative control.
@@ -91,14 +91,17 @@ TRACE_SEEDS ?= 20
 test-trace: $(VLLM_SRC)
 	@test -n "$(TORCH_PYTHON)" || { echo "usage: make test-trace TORCH_PYTHON=<a python with CPU torch 2.13 and vLLM 0.32.0's dependencies> [TRACE_SEEDS=100]" >&2; exit 2; }
 	@$(CPU_SUITE_IMPORTS)
-	cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) TRACE_SEEDS=$(TRACE_SEEDS) $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider \
-	  tests/test_trace.py
+	cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu VLLM_REF=$(VLLM_REF) PYTHONPATH=$(VLLM_SRC) TRACE_SEEDS=$(TRACE_SEEDS) \
+	  $(TORCH_PYTHON) -m pytest -q -p no:cacheprovider tests/test_trace.py
 
 # Both CPU suites as CI's make-room job runs them: in the environment python/flatshare_vllm/requirements-cpu.txt pins
 # (Python 3.12 on Linux x86_64, CPU torch), which uv builds in CPU_ENV, and with every test required to run
-# (FLATSHARE_NO_SKIPS: a skip fails the session, tests/conftest.py).
-CPU_ENV ?= build/cpu-env
-$(CPU_ENV)/synced: python/flatshare_vllm/requirements-cpu.txt
+# (FLATSHARE_NO_SKIPS: a skip fails the session, tests/conftest.py). VLLM_REF=v0.33.0 runs them on vLLM 0.33.0's
+# scheduler, in the environment requirements-cpu-v0.33.0.txt pins (build/cpu-env-v0.33.0).
+CPU_REF := $(if $(filter v0.32.0,$(VLLM_REF)),,-$(VLLM_REF))
+CPU_REQUIREMENTS ?= python/flatshare_vllm/requirements-cpu$(CPU_REF).txt
+CPU_ENV ?= build/cpu-env$(CPU_REF)
+$(CPU_ENV)/synced: $(CPU_REQUIREMENTS)
 	uv venv -q --allow-existing --python 3.12 $(CPU_ENV)
 	uv pip sync -q --python $(CPU_ENV)/bin/python --torch-backend cpu $<
 	@touch $@

@@ -118,10 +118,12 @@ def load(path: Path, name: str):
 
 
 def prs_source(build) -> str:
-    """The PRs' module: their two patches, their SchedulerConfig fields read from additional_config["make_room"]."""
-    sched = build.sched_dir(source_tree=True)
-    patches = [PACKAGE / "make-room" / name for name in ("63350.patch", "63351.patch")]
-    source = build.module_source(sched, patches)
+    """The PRs' module: their two patches for the checkout's release, their SchedulerConfig fields read from
+    additional_config["make_room"]."""
+    sched, _ = build.sched_dir("make-room", source_tree=True)
+    patches = build.patch_paths("make-room", build.source_release("make-room", sched))
+    assert [patch.name for patch in patches[:2]] == ["63350.patch", "63351.patch"]
+    source = build.module_source(sched, patches[:2])
     for field, key, default in FIELDS:
         old = f"self.scheduler_config.{field}\n"
         assert source.count(old) == 1, field

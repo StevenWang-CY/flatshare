@@ -1,6 +1,6 @@
-"""Build vLLM 0.32.0's scheduler with an engine variant's change, as an importable module for ``--scheduler-cls``.
+"""Build vLLM's scheduler with an engine variant's change, as an importable module for ``--scheduler-cls``.
 
-``python build.py VARIANT OUT_DIR [--source-tree]`` reads the installed vLLM's ``vllm/v1/core/sched/scheduler.py`` and
+``python build.py VARIANT OUT_DIR [--source-tree [--release R]]`` reads the installed vLLM's ``vllm/v1/core/sched/scheduler.py`` and
 ``async_scheduler.py``, applies the variant's patches to the scheduler, appends the stock ``AsyncScheduler``, and
 writes ``OUT_DIR/flatshare_<variant>_scheduler.py``. The engine then runs with ``PYTHONPATH=OUT_DIR`` and
 ``--scheduler-cls flatshare_<variant>_scheduler.AsyncScheduler``; the installed vLLM is never modified. Each variant's
@@ -14,13 +14,15 @@ The variants, one directory of patches each beside this file:
   variant has (``variant.patch``): the switches from ``--additional-config``'s ``make_room`` table, the reserve, and
   the counters' log line. Each patch is the ``scheduler.py`` part of a branch of commits on v0.32.0 in a vLLM clone,
   the PRs' commits cherry-picked and, where v0.32.0 needs it, adapted; ``scripts/make-room-patches.sh`` writes them,
-  and a patch's header names its commits and says how any was adapted.
+  and a patch's header names its commits and says how any was adapted. ``make-room/v0.33.0`` holds the same commits
+  cherry-picked onto v0.33.0, for vLLM 0.33.0.
 - ``pr54530``: vLLM PR #54530, ported to v0.32.0 by hand (``pr54530.patch``).
 
-Every hunk must apply at its stated line, with its context and removed lines exactly as they are there: the patches
-match 0.32.0's source line for line, so the build refuses any other installed version, and a source that differs
-fails it, naming the hunk. ``--source-tree`` lets the tests build from a v0.32.0 source checkout, which has no package
-metadata to check.
+Every hunk must apply at its stated line, with its context and removed lines exactly as they are there: a release's
+patches match its source line for line, so the build refuses an installed version that no patches are written
+against, and a source that differs fails it, naming the hunk. ``--source-tree`` lets the tests build from a source
+checkout, which has no package metadata to check: the release is the one whose patches apply to it, and exactly one
+must, or ``--release`` names it.
 
 The change targets ``Scheduler.schedule``, which vLLM's ``AsyncScheduler`` inherits, and the frozen box schedules
 asynchronously (vLLM's default for its configuration). So the module also defines ``AsyncScheduler``: the stock class,
@@ -42,6 +44,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 VLLM_VERSION = "0.32.0"
+"""The release the serving profile runs, whose patches are in each variant's directory."""
 SCHEDULER = "vllm/v1/core/sched/scheduler.py"
 HERE = Path(__file__).resolve().parent
 
@@ -53,6 +56,19 @@ VARIANTS: dict[str, tuple[tuple[str, ...], str]] = {
     ),
     "pr54530": (("pr54530.patch",), "vLLM PR #54530 ported to v0.32.0"),
 }
+RELEASES: dict[str, tuple[str, ...]] = {
+    "make-room": (VLLM_VERSION, "0.33.0"),
+    "pr54530": (VLLM_VERSION,),
+}
+"""The vLLM releases each variant's patches are written against."""
+
+
+def patch_paths(variant: str, release: str) -> list[Path]:
+    """``variant``'s patches for vLLM ``release``, in the order they apply: in its directory for VLLM_VERSION, in a
+    subdirectory named for any other release (``make-room/v0.33.0``)."""
+    where = HERE / variant if release == VLLM_VERSION else HERE / variant / f"v{release}"
+    return [where / name for name in VARIANTS[variant][0]]
+
 
 # The stock AsyncScheduler, appended after the patched Scheduler, extends it instead of importing the stock one, and
 # keeps the scheduler's logger, which its own would rebind to the module's name, outside vLLM's logging config.
@@ -123,12 +139,14 @@ def apply_patch(source: str, patch: str, name: str) -> str:
     return "".join(out + lines[pos:])
 
 
-def sched_dir(source_tree: bool) -> Path:
-    """The scheduler package of the vLLM this interpreter finds, without importing vLLM (which needs a GPU stack): an
-    installed vLLM 0.32.0, or with ``source_tree``, a source checkout, which has no package metadata to check."""
+def sched_dir(variant: str, source_tree: bool) -> tuple[Path, str | None]:
+    """The scheduler package of the vLLM this interpreter finds, without importing vLLM (which needs a GPU stack), and
+    its release: an installed vLLM that ``variant`` is written against, or with ``source_tree``, a source checkout,
+    which has no package metadata to check (None)."""
     spec = importlib.util.find_spec("vllm")
     if spec is None or not spec.submodule_search_locations:
         sys.exit("build.py: vllm is not installed in this interpreter")
+    version = None
     try:
         version = importlib.metadata.version("vllm")
     except importlib.metadata.PackageNotFoundError:
@@ -137,11 +155,34 @@ def sched_dir(source_tree: bool) -> Path:
                 "build.py: vllm has no package metadata; --source-tree builds from a source checkout"
             )
     else:
-        if version != VLLM_VERSION:
+        if version not in RELEASES[variant]:
             sys.exit(
-                f"build.py: the change is written against vLLM {VLLM_VERSION}, and vLLM {version} is installed"
+                f"build.py: {variant} is written against vLLM {' and '.join(RELEASES[variant])}, and vLLM "
+                f"{version} is installed"
             )
-    return Path(next(iter(spec.submodule_search_locations))) / "v1" / "core" / "sched"
+    return Path(next(iter(spec.submodule_search_locations))) / "v1" / "core" / "sched", version
+
+
+def source_release(variant: str, sched: Path) -> str:
+    """The release of a source checkout's scheduler package ``sched``: the one whose patches of ``variant`` apply to
+    its scheduler.py. None or more than one exits, with each release's reason."""
+    source = (sched / "scheduler.py").read_text()
+    fits, reasons = [], []
+    for release in RELEASES[variant]:
+        try:
+            text = source
+            for patch in patch_paths(variant, release):
+                text = apply_patch(text, patch.read_text(), patch.name)
+        except PatchError as error:
+            reasons.append(f"{release}: {error}")
+        else:
+            fits.append(release)
+    if len(fits) != 1:
+        sys.exit(
+            f"build.py: {variant}: the source's scheduler takes the patches of "
+            f"{' and '.join(fits) or 'no release'} ({'; '.join(reasons) or 'each applies'})"
+        )
+    return fits[0]
 
 
 def module_source(sched: Path, patches: Iterable[Path]) -> str:
@@ -160,11 +201,21 @@ def module_source(sched: Path, patches: Iterable[Path]) -> str:
     return source + "\n\n" + async_source
 
 
-def build(variant: str, out_dir: Path, source_tree: bool = False) -> Path:
-    patches, what = VARIANTS[variant]
+def build(
+    variant: str, out_dir: Path, source_tree: bool = False, release: str | None = None
+) -> Path:
+    """``variant``'s module in ``out_dir``. ``release``, with ``source_tree``, names the checkout's release instead of
+    finding it: the build then fails, naming the hunk, where that release's patches do not apply."""
+    what = VARIANTS[variant][1]
     name = f"flatshare_{variant.replace('-', '_')}_scheduler"
+    sched, installed = sched_dir(variant, source_tree)
+    if release is not None and (installed is not None or release not in RELEASES[variant]):
+        sys.exit(
+            f"build.py: --release names one of {', '.join(RELEASES[variant])} for a source checkout"
+        )
+    release = installed or release or source_release(variant, sched)
     try:
-        source = module_source(sched_dir(source_tree), (HERE / variant / p for p in patches))
+        source = module_source(sched, patch_paths(variant, release))
     except PatchError as error:
         sys.exit(f"build.py: {variant}: {error}")
     header = (
@@ -190,6 +241,11 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     source_tree = "--source-tree" in args
     args = [arg for arg in args if arg != "--source-tree"]
-    if len(args) != 2 or args[0] not in VARIANTS:
-        sys.exit(f"usage: build.py {{{','.join(VARIANTS)}}} OUT_DIR [--source-tree]")
-    print(build(args[0], Path(args[1]), source_tree))
+    release = None
+    if "--release" in args and args.index("--release") + 1 < len(args):
+        at = args.index("--release")
+        release = args[at + 1]
+        del args[at : at + 2]
+    if len(args) != 2 or args[0] not in VARIANTS or (release is not None and not source_tree):
+        sys.exit(f"usage: build.py {{{','.join(VARIANTS)}}} OUT_DIR [--source-tree [--release R]]")
+    print(build(args[0], Path(args[1]), source_tree, release))
