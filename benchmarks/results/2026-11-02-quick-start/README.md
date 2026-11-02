@@ -7,22 +7,22 @@ times with make-room in the configuration to deploy.
 <!-- table.py table -->
 | Run | Stock vLLM | make-room |
 |---:|---:|---:|
-| 1 | 1,560 ms | 173 ms |
-| 2 | 1,545 ms | 173 ms |
-| 3 | 1,546 ms | 176 ms |
-| 4 | 1,550 ms | 211 ms |
+| 1 | 1,556 ms | 179 ms |
+| 2 | 1,543 ms | 175 ms |
+| 3 | 1,545 ms | 173 ms |
+| 4 | 1,553 ms | 176 ms |
 
-The voice turn's time to its first token. Every run sent the turn, 746–750 tokens, with 3 agent requests of 22,367
+The voice turn's time to its first token. Every run sent the turn, 746–751 tokens, with 3 agent requests of 22,367
 tokens running and 5 of the pool's 4,218 blocks free.
 <!-- /table.py table -->
 
-- **make-room answered the voice turn in 173–211 ms**, against 1,545–1,560 ms on stock vLLM, in four runs each.
+- **make-room answered the voice turn in 173–179 ms**, against 1,543–1,556 ms on stock vLLM, in four runs each.
 - **The pool was the card's own, 67,504 tokens**, where the deployment fixes 36,400
   ([`engine.yaml`](../../../deploy/phastform/engine.yaml)): the quick start sets none, so vLLM sizes it from the card's
   memory, and the probe sizes its load from the pool it finds.
 - **Both engines served twice from the one install.** The first time vLLM's start-up profile left stock vLLM 9.27 GiB
-  for its pool and make-room 8.65 GiB, pools of 67,504 and 62,992 tokens, so the probe sent each a different load; the
-  second time both had 67,504, and these are those runs. The first time's: 1,549–1,557 ms against 170–197 ms.
+  for its pool and make-room 8.65 GiB, pools of 67,504 and 62,992 tokens, so the probe sent each a different load;
+  the second time both had 67,504, and these are those runs. The first time's: 1,548–1,558 ms against 168–172 ms.
 - **Each run started 31 s after the last.** The configuration to deploy keeps a finished voice turn's prefix on the GPU
   for 30 s (`retain_s`), and the probe sizes its load for an empty pool: a run within 30 s of the last would find the
   turn's blocks held, and its third agent request would no longer fit.
@@ -35,8 +35,8 @@ tokens running and 5 of the pool's 4,218 blocks free.
 |---|---|
 | The box | Phastform: one RTX 5060 Ti 16 GB, driver 580.173.02, nothing else on the GPU |
 | Software | vLLM 0.32.0, torch 2.13.0+cu130 (CUDA 13.0), nvcc 13.0, Python 3.12.13 from uv |
-| The tree | v1.14-29-g4f7bd2f |
-| Settings | The serving profile's step cap, 256 tokens a step without a per-request threshold; make-room in the configuration to deploy: the KV preemption at 2 a step, the budget cap with a 48-token window, no reserve, the agents' reservations taken and their decodes held from the voice reply's first 16 tokens, the calls' prefixes kept within 3,584 tokens for 30 s, and a 400 ms hold for an announced turn |
+| The tree | v1.14-35-g9c32554 |
+| Settings | The serving profile's step cap, 256 tokens a step without a per-request threshold; make-room in the configuration to deploy: the KV preemption at 2 a step, the budget cap with a 48-token window, no reserve, the agents' reservations taken and their decodes held through the window, the voice reply's first 48 tokens, the calls' prefixes kept within 3,584 tokens for 30 s, and a 400 ms hold for an announced turn |
 | One change | `--host 127.0.0.1` on each `vllm serve`, so that the shared host's network could not reach the engine |
 
 [The quick start of 2026-10-29](../2026-10-29-quick-start/README.md) ran the pull requests' configuration on the same
