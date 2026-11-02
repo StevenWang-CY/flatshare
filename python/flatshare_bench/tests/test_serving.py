@@ -31,10 +31,10 @@ DEPLOY = REPO / "deploy"
 BOX = DEPLOY / "phastform"
 CHECK = DEPLOY / "bin" / "serving-check"
 SERVING = json.loads((BOX / "serving.json").read_text())
-MEASURED = REPO / "benchmarks/results/2026-11-02-opt-rounds/opt-s1/opt-disc-ret-s24/engine.json"
+MEASURED = REPO / "benchmarks/results/2026-11-02-opt-rounds/opt-s1/opt-disc-hold-s24/engine.json"
 """The record of the engine's configuration in the follow-up rounds' point of the serving profile's configuration, the
-change at the step cap the sweep chose with the first four of version 1.15's additions: what engine_settings keeps of
-the /server_info it gave."""
+change at the step cap the sweep chose with version 1.15's additions and the decode hold at 48: what engine_settings
+keeps of the /server_info it gave."""
 SWEEP = (
     REPO
     / "benchmarks/results/2026-10-27-sweep/sweep-screen/sweep-disc-pr-ab48-b256-t0-s24/engine.json"
@@ -533,7 +533,7 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
         "budget_cap_tokens": 48,
         "reserve_tokens": 0,
         "take_reservations": True,
-        "decode_hold_tokens": 0,
+        "decode_hold_tokens": 48,
         "retain_tokens": 3584,
         "retain_s": 30,
         "hint_hold_ms": 400,
@@ -630,8 +630,8 @@ def test_the_serving_profile_is_the_configuration_the_rounds_measured() -> None:
         engine["model"]["tokenizer_revision"],
     )
     # The sweep's point of the PRs' configuration at the step cap it chose differs from it in make-room's switches
-    # alone, those version 1.15 added; W5's point of it in those and the step cap, which was the frozen box's.
-    added = {"take_reservations", "retain_tokens", "retain_s", "hint_hold_ms"}
+    # alone, those versions 1.15 and 1.17 added; W5's point of it in those and the step cap, which was the frozen box's.
+    added = {"take_reservations", "retain_tokens", "retain_s", "hint_hold_ms", "decode_hold_tokens"}
     sweep = measured_settings(json.loads(SWEEP.read_text()))
     assert sorted(key for key, value in profile_settings().items() if sweep[key] != value) == [
         "make_room"

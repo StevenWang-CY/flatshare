@@ -28,11 +28,12 @@ reserve_tokens = 0
 # agents' loads. The budget cap holds the agents' prefill back in the step the call is admitted in. Measured in
 # benchmarks/results/2026-11-01-engine-points.
 take_reservations = true
-# Off (0). Above 0, lower-priority decodes sit out the steps of a call's first decode_hold_tokens output tokens, as
-# their prefill does under the budget cap. At 48 the follow-up rounds (benchmarks/results/2026-11-02-opt-rounds) put
-# 16 of 720 replies over the SLO beside 24 agent sessions against 55 without it, but cost the agents 3.8% of their
-# token rate at the median, past the 3% the rounds' rule allowed: an operator who prefers the voice tail sets 48.
-decode_hold_tokens = 0
+# Lower-priority decodes sit out the steps of a call's first decode_hold_tokens output tokens, the budget cap's
+# window, as their prefill already does: a step that also decodes an agent at 15,000 tokens of context takes 18-20 ms
+# against 13 alone. The follow-up rounds (benchmarks/results/2026-11-02-opt-rounds) put 16 of 720 replies over the SLO
+# beside 24 agent sessions against 55 without it, but cost the agents 3.8% of their token rate at the median, past the
+# 3% the rounds' rule allowed: the profile takes it for the voice tail anyway (v1.17). 0 turns it off.
+decode_hold_tokens = 48
 # The calls' prefixes kept on the GPU between their turns, so that no turn reloads its own prefix from the CPU tier
 # (a load costs a call two or three steps however small it is): up to retain_tokens tokens for both calls, each for
 # retain_s seconds without a next turn. With max_model_len 32,768 on this pool, retain_tokens may be at most 3,632
