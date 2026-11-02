@@ -22,13 +22,15 @@ release tags into it, and reports:
   and a PR's test run that takes longer fails its files. An interpreter that cannot import main's scheduler is
   reported as such, and runs nothing;
 - make-room's patches on a sparse checkout of the newest release, and of a newer release candidate if there is one
-  (``build.py make-room OUT --source-tree``): they apply, or the first hunk that does not; and then, as build.py
-  takes a hunk only exactly at its line, each hunk's fit as ``git apply`` finds it, the patches in order, with all
-  three lines of its context (``-C3``) and with one (``-C1``): the line it applies at and its offset, any context git
-  left out, or that git rejects it, which leaves the hunks after it to apply to the rest.
+  (``build.py make-room OUT --source-tree --release 0.32.0``): they apply, or the first hunk that does not; and then, as
+  build.py takes a hunk only exactly at its line, each hunk's fit as ``git apply`` finds it, the patches in order,
+  with all three lines of its context (``-C3``) and with one (``-C1``): the line it applies at and its offset, any
+  context git left out, or that git rejects it, which leaves the hunks after it to apply to the rest. A release that
+  has patches of its own (``make-room/v0.33.0``) is checked with those, and must take them.
 
 Exit status 1 for a conflict, a failed test, a backport that differs from the PRs' heads in a line no Backport
-paragraph names, or patches that do not apply to v0.32.0, the pinned version; 2 when it could not check (no network,
+paragraph names, or patches that do not apply to v0.32.0, the pinned version, or to a release with patches of its
+own; 2 when it could not check (no network,
 an older git, an interpreter that cannot import main's scheduler or collect its tests, a PR none of whose tests ran);
 0 otherwise, also when a newer release does not take the patches: the variant is written against 0.32.0, the pinned
 and deployed version, and says so.
@@ -357,12 +359,21 @@ def newest(tags: list[str]) -> list[str]:
     return [final[1]] + ([max(newer)[2]] if newer else [])
 
 
-def builds(git: Git, tag: str) -> str | None:
-    """None if make-room builds on ``tag``'s scheduler, or build.py's reason: the first hunk that does not apply."""
+def builds(git: Git, tag: str, release: str = PINNED.removeprefix("v")) -> str | None:
+    """None if make-room builds on ``tag``'s scheduler from ``release``'s patches, or build.py's reason: the first hunk
+    that does not apply."""
     tree = worktree(git, "release", tag, ["vllm/v1/core/sched"])
     with tempfile.TemporaryDirectory() as out:
         proc = subprocess.run(
-            [sys.executable, str(BUILD), "make-room", out, "--source-tree"],
+            [
+                sys.executable,
+                str(BUILD),
+                "make-room",
+                out,
+                "--source-tree",
+                "--release",
+                release,
+            ],
             env=os.environ | {"PYTHONPATH": str(tree)},
             capture_output=True,
             text=True,
@@ -611,6 +622,16 @@ def check(
     if not tags:
         raise CannotCheck("no release tag fetched")
     for tag in tags:
+        own = tag.removeprefix("v")
+        if tag != PINNED and own in build.RELEASES["make-room"]:
+            # A release make-room is ported to: its own patches must apply, as the pinned version's must.
+            why = builds(git, tag, own)
+            print(
+                f"make-room's patches for {tag} on {tag}: "
+                + ("they apply" if why is None else f"FAIL: {why}")
+            )
+            failed |= why is not None
+            continue
         why = builds(git, tag)
         what = f"make-room's patches on {tag}"
         if tag == PINNED:
