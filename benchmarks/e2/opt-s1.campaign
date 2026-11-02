@@ -1,7 +1,7 @@
 # Version 1.15's follow-up rounds, round 1 of 2, on Phastform, on a fresh sample of the agents (seed 36): voice
-# alone with two and four callers, for each count's SLO, and the configuration the rounds measured, the same with the
+# alone with two, four and six callers, for each count's SLO, and the configuration the rounds measured, the same with the
 # agents' decodes held from a call's first 48 tokens (the opt-*-hold arms), and that with speculative decoding too
-# (the opt-*-spec arms), beside 24 agent sessions of the discriminating scenario with 2 and 4 callers.
+# (the opt-*-spec arms), beside 24 agent sessions of the discriminating scenario with 2, 4 and 6 callers.
 #   FLATSHARE_GPU=NODE benchmarks/e2/campaign.sh --pause benchmarks/e2/opt-s1.campaign
 
 agents-seed 36
@@ -9,11 +9,15 @@ agents-seed 36
 # engine frozen (voice alone)
 arms/w5-a1-voice.toml
 arms/w5-a1-voice-c4.toml
+arms/w5-a1-voice-c6.toml
 
 # engine make-room, the program's optimizations; then the decode hold; then speculative decoding too
 arms/opt-disc-ret-s24.toml
 arms/opt-disc-ret-c4-s24.toml
+arms/opt-disc-ret-c6-s24.toml
 arms/opt-disc-hold-s24.toml
 arms/opt-disc-hold-c4-s24.toml
+arms/opt-disc-hold-c6-s24.toml
 arms/opt-disc-spec-s24.toml
 arms/opt-disc-spec-c4-s24.toml
+arms/opt-disc-spec-c6-s24.toml
