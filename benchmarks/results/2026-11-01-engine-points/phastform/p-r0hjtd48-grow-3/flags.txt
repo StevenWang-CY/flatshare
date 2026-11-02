@@ -1,0 +1,12 @@
+venv=~/flatshare/venvs/engine
+--additional-config.make_room.retain_tokens
+3584
+--additional-config.make_room.take_reservations
+true
+--additional-config.make_room.decode_hold_tokens
+48
+--scheduler-cls
+opt_hint.AsyncScheduler
+OPT_JIT=1
+OPT_JIT_MARGIN_MS=30
+tail.py --hint 250
