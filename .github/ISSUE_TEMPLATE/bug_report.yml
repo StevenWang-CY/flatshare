@@ -27,7 +27,7 @@ body:
     attributes:
       label: Version or commit
       description: The release, or `git describe --always` of your checkout.
-      placeholder: v1.16
+      placeholder: v1.17
     validations:
       required: true
   - type: textarea
