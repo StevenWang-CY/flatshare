@@ -1,5 +1,5 @@
 box: Phastform; GPU, driver and memory in use at the start: NVIDIA GeForce RTX 5060 Ti, 580.173.02, 2 MiB
-tree: v1.14-50-g09d3baa, 09d3baaf4cca5e518f5093287ec2bb7b0e475fe4 (its git archive: the files a clone at that commit has)
+tree: v1.14-35-g9c32554, 9c32554fdc6d7c6713e70a2a6bb26678db20fc83 (its git archive: the files a clone at that commit has)
 uv: uv 0.11.27 (x86_64-unknown-linux-gnu)
 vllm 0.32.0, torch 2.13.0+cu130, CUDA 13.0
 nvcc: Build cuda_13.0.r13.0/compiler.36424714_0
@@ -10,5 +10,5 @@ nvidia-cuda-nvcc 13.0.88
 nvidia-cuda-runtime 13.0.96
 stock: non-default args: {'model_tag': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'host': '127.0.0.1', 'model': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'max_model_len': 32768, 'max_num_batched_tokens': 256, 'max_num_seqs': 256, 'scheduling_policy': 'priority'}
 stock: GPU KV cache size: 67,504 tokens, Maximum concurrency for 32,768 tokens per request: 2.06x
-make-room: non-default args: {'model_tag': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'host': '127.0.0.1', 'model': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'max_model_len': 32768, 'max_num_batched_tokens': 256, 'max_num_seqs': 256, 'scheduling_policy': 'priority', 'scheduler_cls': 'flatshare_make_room_scheduler.AsyncScheduler', 'additional_config': {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': True, 'budget_cap_tokens': 48, 'reserve_tokens': 0, 'take_reservations': True, 'decode_hold_tokens': 0, 'retain_tokens': 3584, 'retain_s': 30, 'hint_hold_ms': 400}}}
+make-room: non-default args: {'model_tag': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'host': '127.0.0.1', 'model': 'Qwen/Qwen3-4B-Instruct-2507-FP8', 'max_model_len': 32768, 'max_num_batched_tokens': 256, 'max_num_seqs': 256, 'scheduling_policy': 'priority', 'scheduler_cls': 'flatshare_make_room_scheduler.AsyncScheduler', 'additional_config': {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': True, 'budget_cap_tokens': 48, 'reserve_tokens': 0, 'take_reservations': True, 'decode_hold_tokens': 48, 'retain_tokens': 3584, 'retain_s': 30, 'hint_hold_ms': 400}}}
 make-room: GPU KV cache size: 67,504 tokens, Maximum concurrency for 32,768 tokens per request: 2.06x
