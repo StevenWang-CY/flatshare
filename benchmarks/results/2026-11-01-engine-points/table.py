@@ -4,7 +4,7 @@ spec.json (speculative decoding with the calls alone) and agree.json (the CPU ti
 
 An arm is a point's name less its node letter and its replicate number. For each node and arm: the calls' first
 token as tail.py measured it, p50 and p95 (the median over the replicates, with their range); their 16th token, about
-a first sentence (p50); the calls' later tokens (ms a token from the 16th to the 48th, p50 over every turn); the
+a first sentence (p50 and p95); the calls' later tokens (ms a token from the 16th to the 48th, p50 over every turn); the
 agents' computed tokens a second (the median over the replicates); and in the stages table the engine's first token
 by stage (means over every turn of the replicates). `python3 table.py NAME` prints one table, NAME one of TABLES.
 """
@@ -31,6 +31,7 @@ ARMS = {
     "r0h-grow": "+ each turn announced (250 ms ahead, held 400 ms)",
     "r0hj-grow": "+ the turn announced and just in time",
     "r0hjt-grow": "+ the calls taking the agents' reservations",
+    "r0hjtd-grow": "+ the agents' decodes held from a call's first 16 tokens",
     # The alternatives.
     "a1-grow": "synchronous scheduling",
     "r1-grow": "synchronous scheduling, retention",
@@ -45,6 +46,7 @@ ARMS = {
     "s3rr-grow": "retention, EAGLE-3 with 3 drafts, short loads recomputed",
     "s2rr-grow": "retention, EAGLE-3 with 2 drafts, short loads recomputed",
     "s2rrhj-grow": "the turn announced and just in time, EAGLE-3 with 2 drafts, short loads recomputed",
+    "s2rrhjt-grow": "the turn announced, just in time, the reservations taken, EAGLE-3 with 2 drafts, short loads recomputed",
     # The controls.
     "r0hw-grow": "retention, the turns announced but nothing held",
     "r0hn-grow": "retention, the hint scheduler with no turn announced",
@@ -60,10 +62,10 @@ ARMS = {
     "s3r-fresh": "retention, EAGLE-3 with 3 drafts",
 }
 TABLES = {
-    "adopted": ("a0-grow", "r0-grow", "r0j-grow", "r0h-grow", "r0hj-grow", "r0hjt-grow"),
+    "adopted": ("a0-grow", "r0-grow", "r0j-grow", "r0h-grow", "r0hj-grow", "r0hjt-grow", "r0hjtd-grow"),
     "alternatives": (
         "a1-grow", "r1-grow", "t0-grow", "t1-grow", "t0rj-grow", "tf0-grow", "f0-grow", "r0a2-grow",
-        "s3r-grow", "s2r-grow", "s3rr-grow", "s2rr-grow", "s2rrhj-grow",
+        "s3r-grow", "s2r-grow", "s3rr-grow", "s2rr-grow", "s2rrhj-grow", "s2rrhjt-grow",
     ),
     "controls": ("r0hw-grow", "r0hn-grow", "r0rr-grow", "r0t-grow"),
     "fresh": ("a0-fresh", "r0-fresh", "r0j-fresh", "r0h-fresh", "a1-fresh", "r1-fresh", "s3r-fresh"),
@@ -82,12 +84,12 @@ def points() -> dict[tuple[str, str], list[Path]]:
     return groups
 
 
-def client(run: Path) -> tuple[float, float, float]:
-    """The calls' first token p50 and p95 and their 16th token p50, as tail.py printed them."""
+def client(run: Path) -> tuple[float, float, float, float]:
+    """The calls' first token p50 and p95 and their 16th token p50 and p95, as tail.py printed them."""
     text = (run / "tail.txt").read_text()
     calls = CALLS.search(text.split("\ncalls: ", 1)[1])
     sentence = SENTENCE.search(text.split("\nreplies: ", 1)[1])
-    return float(calls[1]), float(calls[3]), float(sentence[1])
+    return float(calls[1]), float(calls[3]), float(sentence[1]), float(sentence[3])
 
 
 def later_tokens(run: Path) -> list[float]:
@@ -107,8 +109,8 @@ def spread(values: list[float]) -> str:
 
 def outcomes(name: str) -> str:
     rows = [
-        "| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | Later tokens, ms each | Agents' tokens/s |",
-        "|---|---|---:|---:|---:|---:|---:|---:|",
+        "| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | p95 | Later tokens, ms each | Agents' tokens/s |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     groups = points()
     for node in NODES:
@@ -121,7 +123,7 @@ def outcomes(name: str) -> str:
             later = [ms for run in runs for ms in later_tokens(run)]
             rows.append(
                 f"| {node} | {ARMS[arm]} | {len(runs)} | {spread([s[0] for s in seen])} | "
-                f"{spread([s[1] for s in seen])} | {spread([s[2] for s in seen])} | "
+                f"{spread([s[1] for s in seen])} | {spread([s[2] for s in seen])} | {spread([s[3] for s in seen])} | "
                 f"{statistics.median(later):.1f} | {statistics.median(agents):,.0f} |"
             )
     return "\n".join(rows)
