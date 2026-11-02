@@ -1,8 +1,10 @@
 # flatshare-gateway
 
-`flatshare-gateway` is the serving control plane in front of one vLLM engine, or of several GPU nodes ([ADR-0007](../../docs/adr/0007-the-gateway-is-the-serving-control-plane.md)). It carries Flatshare's request contract: who a request belongs to, which session and SLO class it has, and which engine inputs a client may not set. It relays responses byte for byte, cancels the engine request when the client leaves, and ingests lifecycle events. Its admission point runs `flatshare-core`'s admission policies: the E2 baselines it emulates, and the lifecycle policy (`policy = "lifecycle"`), which E2's arm 9 runs with make-room: KV headroom timed by lifecycle events, a prefill budget in the critical window, a realtime class that is never shed and degrades instead. What E2 measured of it is [below](#the-lifecycle-policy), and what its lifecycle timing could and could not do in [the report's §6.5](../../docs/REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work). A deployment can cap each class's replies, and every request's choices, without a policy ([Bounds](#bounds)).
+`flatshare-gateway` is the serving control plane in front of one vLLM engine, or of several GPU nodes ([ADR-0007](../../docs/adr/0007-the-gateway-is-the-serving-control-plane.md)). It carries Flatshare's request contract: who a request belongs to, which session and SLO class it has, and which engine inputs a client may not set. It bounds, times and accounts every request, relays responses byte for byte, cancels the engine request when the client leaves, and ingests lifecycle events. [ARCHITECTURE.md §3.3](../../docs/ARCHITECTURE.md#33-the-gateway) places it in the deployment.
 
-It is the control plane of one control host, not a general-purpose router: one upstream, or several GPU nodes with sticky sessions ([Nodes](#nodes)), loopback listeners, and nothing a stock proxy would not need besides the contract above. Its cost is measured below. The configuration to deploy runs it without an admission policy, which only E2's harness configures: the gateway sets each request's priority from its SLO class ([PRODUCTION.md](../../docs/PRODUCTION.md#the-priorities)), and bounds, times and accounts every request.
+It is the control plane of one control host, not a general-purpose router: one upstream, or several GPU nodes with sticky sessions ([Nodes](#nodes)), loopback listeners, and nothing a stock proxy would not need besides the contract above. The configuration to deploy runs it without an admission policy: the gateway sets each request's priority from its SLO class ([PRODUCTION.md](../../docs/PRODUCTION.md#the-priorities)), and can cap each class's replies, and every request's choices, without a policy ([Bounds](#bounds)). Its cost is measured [below](#overhead).
+
+Its admission point, which only E2's harness configures, runs `flatshare-core`'s admission policies ([Admission](#admission)): the E2 baselines it emulates, and the lifecycle policy (`policy = "lifecycle"`), which E2's arm 9 runs with make-room: KV headroom timed by lifecycle events, a prefill budget in the critical window, and a realtime class that is never shed and degrades instead. What its lifecycle timing could and could not do is in [the report's §6.5](../../docs/REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work).
 
 ## Running
 
@@ -16,7 +18,7 @@ flatshare-gateway --config ~/.config/flatshare/gateway.toml
 
 - **Routes.** `POST /v1/chat/completions`, `/v1/completions`, `/v1/responses`, and the Anthropic Messages API's `/v1/messages` and `/v1/messages/count_tokens`, which vLLM 0.32 serves and Claude Code sends, are proxied with session, class and sanitization, each the same way. Any other path is 404, and a wrong method 405, both in OpenAI error format.
   - *Claude Code* reaches them with `ANTHROPIC_BASE_URL` set to the gateway and the tenant's key in `ANTHROPIC_AUTH_TOKEN`, which it sends as a bearer token; a key in `x-api-key` is neither read nor forwarded.
-  - *The Responses API's `background`* passes: vLLM 0.32 refuses it unless the engine runs with `VLLM_ENABLE_RESPONSES_API_STORE=1`, which the frozen box does not set, and with that set a background response would run detached, outside the admission point and the cancellation of a request whose client leaves.
+  - *The Responses API's `background`* passes: vLLM 0.32 refuses it unless the engine runs with `VLLM_ENABLE_RESPONSES_API_STORE=1`, which neither the frozen box nor the serving profile sets, and with that set a background response would run detached, outside the admission point and the cancellation of a request whose client leaves.
   - *Models, events and sessions.* `GET /v1/models` is proxied with sanitized headers. `POST /v1/events` takes lifecycle events, and with `[[nodes]]`, `POST /v1/sessions` places a session, `DELETE /v1/sessions/{id}` ends its placement and `GET /nodes` shows the nodes ([Nodes](#nodes)).
   - *The gateway's own.* `GET /health` and `/ready` are the gateway's own and need no key. `GET /metrics` (the gateway's metrics) and `GET /metrics/engine` (its engine's own `/metrics`, relayed, so that a scraper needs no route to the engine; with `[[nodes]]`, `?node=NAME`'s) need the metrics key on a TCP listener and nothing on a Unix socket ([Metrics and logs](#metrics-and-logs)).
 - **Listeners.** Any number of loopback TCP ports and Unix sockets; a TCP address beyond loopback is refused at start. A Unix listener may name a tenant for requests without a known key. TCP listeners may not, because every user of the host can reach loopback.
@@ -294,7 +296,7 @@ The first four policies are E2's baselines, the simple answers an operator would
 
 ### The lifecycle policy
 
-**The lifecycle policy** (`policy = "lifecycle"`) is what E2's arm 9 runs with make-room. Realtime requests go upstream at once and are never queued or refused ([ADR-0003](../../docs/adr/0003-realtime-is-never-shed.md)); background requests yield to the realtime sessions' turns; interactive requests are not held. `flatshare-core` decides from how many realtime sessions are in each state of their turn; the gateway keeps the states and the clocks.
+The lifecycle policy (`policy = "lifecycle"`) is what E2's arm 9 runs with make-room. Realtime requests go upstream at once and are never queued or refused ([ADR-0003](../../docs/adr/0003-realtime-is-never-shed.md)); background requests yield to the realtime sessions' turns; interactive requests are not held. `flatshare-core` decides from how many realtime sessions are in each state of their turn; the gateway keeps the states and the clocks.
 - **Realtime sessions.** Accepted lifecycle events move a session, keyed by its session id, through `idle`, `user_speaking` (`user_speech_started`), `critical` (`user_turn_ended`), `playback` (`playback_started`, the reply's first audio) and back to `idle` (`playback_ended`). `interrupted` is the user speaking again, and `session_closed` forgets the session. A realtime request also puts its session in `critical`: LiveKit's preemptive generation sends it before the end of turn is decided.
   - *Lost or reordered events.* An event moves its session to the event's state whatever the state was, in the order the gateway receives events, and every state but `idle` ends after `state_timeout_s` without an event or a request, counted. A lost event holds a session at most that long.
   - *Without events.* A session that has posted none (its client sends none, or the voice worker's events are off) is `critical` while a realtime request of it is in flight, and the request's end ends it; with events, the reply's first audio does.
@@ -306,7 +308,7 @@ The first four policies are E2's baselines, the simple answers an operator would
 - **What each switch ablates in E2.** `headroom = false`: no KV headroom in the gateway, as with only the engine's class-aware reserve (the make-room variant) or none; `trigger = "request"`: the headroom from the end of the turn instead of from speech onset; `throttle = false`: background prefill unbudgeted in the critical window; `degrade = false`: realtime replies never capped. With all three off the policy holds nothing back and only follows the sessions.
 - **What it counts.** Background requests deferred, by what held them back when they arrived (the headroom first, then the critical window), and how long they waited; aged admissions, oversize ones apart; degraded replies; sessions by state, and state timeouts. And *false alarms*: armings of the headroom that no realtime request of the session followed before the session left the armed states (by an event, a timeout or its close), with the token-seconds of background work the headroom held back meanwhile, the estimated tokens of the background requests waiting for it integrated over time. While other sessions are armed as well, that cost is an upper bound.
 - **What it leaves out.** Interactive requests are not held. The headroom works from the gateway's estimate of the background requests' KV, as token-reservation does (their prompts, not their decode growth, with shared prefixes counted for each request), where the engine's own reserve counts blocks exactly. No event says that speech ended without a turn, so a false alarm keeps its headroom until `state_timeout_s`.
-- **What E2 measured** (2026-10-23, its discriminating scenario). With the change, arm 9 without the headroom, the throttle or the events, or with `trigger = "request"`, lands within the spread of arm 9's own runs, and on the stock engine this policy leaves voice where stock vLLM does; why its mechanisms could not act there is in [the report's §6.5](../../docs/REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work). The tail depends on degrade, since the engine's budget cap protects only a reply's first 16 tokens ([EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)).
+- **What E2 measured** (2026-10-23, its discriminating scenario). With the change, arm 9 without the headroom, the throttle or the events, or with `trigger = "request"`, lands within the spread of arm 9's own runs, and on the stock engine this policy leaves voice where stock vLLM does; why its mechanisms could not act there is in [the report's §6.5](../../docs/REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work). The tail depends on degrade there, since arm 9's budget cap, at its 16-token window, protects only a reply's first 16 tokens ([EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)).
 
 ## Nodes
 
@@ -357,12 +359,12 @@ Responses from the engine pass through unchanged. The gateway's own errors come 
 | Status | `code` | When |
 |---|---|---|
 | 400 | `invalid_class`, `invalid_json`, `invalid_event`, `invalid_session`, `unreadable_body` | An unknown `X-Flatshare-Class`; a body that is not a JSON object, or that cannot be read; an invalid lifecycle event or session (note 1) |
-| 400, 404 | `node_required`, `unknown_node` | With `[[nodes]]`, `GET /metrics/engine` without `?node=NAME`, or naming no node |
-| 408 | `upload_timeout` | The body did not arrive within its class's `upload_timeout_s` (or its `total_timeout_s`) |
 | 400 | `duplicate_field`, `invalid_reply_limit`, `invalid_choices`, `too_many_choices` | A body that sets a limit or choice field twice, or to anything but null or a whole number; one over `max_choices` (note 2) |
+| 400, 404 | `node_required`, `unknown_node` | With `[[nodes]]`, `GET /metrics/engine` without `?node=NAME`, or naming no node |
 | 401 | `invalid_api_key` | No known key, on a listener without a tenant; for `/metrics` and `/metrics/engine` on a TCP listener, no metrics key |
 | 403 | `untrusted_tenant` | Lifecycle events, `POST /v1/sessions` or `DELETE /v1/sessions/{id}` from an untrusted tenant |
 | 404, 405 | `not_found`, `method_not_allowed` | Any other route or method |
+| 408 | `upload_timeout` | The body did not arrive within its class's `upload_timeout_s` (or its `total_timeout_s`) |
 | 413 | `body_too_large` | A body over `max_body_bytes` |
 | 429 | `queue_full`, `shed` | A full queue at the admission point, with `Retry-After: 1`; a background request shed by flow control before its response began (note 3) |
 | 429 | `tenant_in_flight_limit` | The tenant has its `max_in_flight` requests in flight, with `Retry-After: 1`, before the body is read |
@@ -518,21 +520,21 @@ Where a name says first byte, it times the first content, the response body's fi
 
 `cargo run --release -p flatshare-gateway --example overhead` measures the latency the gateway adds and its CPU time. A mock engine that answers at once, the client and two proxies run in one process, each on its own tokio runtime with 4 worker threads, over loopback TCP with pooled keep-alive connections. Each scenario runs direct to the engine, through a bare reverse proxy on the same stack (axum server, hyper-util client, bodies passed through untouched: the HTTP hop alone), and through `flatshare-gateway` with a trusted tenant, a key, `X-Session-ID`, `X-Flatshare-Class` and a `prompt_cache_key` body. The gateway formats its per-request log line, as in production. "Added" is the gateway's quantile minus the direct one, as measured: negative where the gateway's came out lower. CPU is the busy time of the proxy runtime's workers, system calls included, per request (per 8-chunk stream for the streaming rows), which is also milliseconds per 1,000 requests.
 
-cyan (2× Xeon Silver 4310 at 2.1 GHz, Linux 5.15), the process pinned to 16 logical CPUs (`taskset -c 0-15`), release build, 2026-10-22. Microseconds, p50 / p99:
+cyan (2× Xeon Silver 4310 at 2.1 GHz, Linux 5.15), the process pinned to 16 logical CPUs (`taskset -c 0-15`), release build, 2026-10-22, p50 / p99:
 
-| Scenario | Concurrency | Samples | Direct | Bare proxy | flatshare-gateway | Added by flatshare-gateway | CPU per request, bare / flatshare-gateway |
+| Scenario | Clients | Samples | Direct, µs | Bare proxy, µs | Gateway, µs | Added, µs | CPU per request, bare / gateway, µs |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Non-streaming, 2 KiB body | 1 | 5000 | 44 / 54 | 156 / 171 | 270 / 306 | 226 / 251 | 80 / 191 |
-| Non-streaming, 2 KiB body | 8 | 40000 | 43 / 123 | 107 / 212 | 125 / 395 | 81 / 271 | 27 / 57 |
-| Non-streaming, 2 KiB body | 64 | 40000 | 243 / 481 | 690 / 1405 | 927 / 2400 | 684 / 1919 | 40 / 55 |
-| Non-streaming, 64 KiB body | 1 | 1000 | 36 / 44 | 71 / 80 | 381 / 433 | 345 / 389 | 32 / 254 |
-| Non-streaming, 64 KiB body | 8 | 8000 | 106 / 178 | 153 / 321 | 206 / 527 | 100 / 349 | 41 / 109 |
+| Non-streaming, 2 KiB body | 1 | 5,000 | 44 / 54 | 156 / 171 | 270 / 306 | 226 / 251 | 80 / 191 |
+| Non-streaming, 2 KiB body | 8 | 40,000 | 43 / 123 | 107 / 212 | 125 / 395 | 81 / 271 | 27 / 57 |
+| Non-streaming, 2 KiB body | 64 | 40,000 | 243 / 481 | 690 / 1,405 | 927 / 2,400 | 684 / 1,919 | 40 / 55 |
+| Non-streaming, 64 KiB body | 1 | 1,000 | 36 / 44 | 71 / 80 | 381 / 433 | 345 / 389 | 32 / 254 |
+| Non-streaming, 64 KiB body | 8 | 8,000 | 106 / 178 | 153 / 321 | 206 / 527 | 100 / 349 | 41 / 109 |
 | Streaming, first byte | 1 | 500 | 95 / 129 | 199 / 258 | 270 / 357 | 175 / 228 | 300 / 508 |
-| Streaming, per chunk | 1 | 3500 | 31 / 40 | 61 / 71 | 65 / 85 | 34 / 45 | 300 / 508 |
-| Streaming, first byte | 8 | 4000 | 97 / 156 | 230 / 342 | 303 / 421 | 206 / 265 | 302 / 452 |
-| Streaming, per chunk | 8 | 28000 | 44 / 81 | 92 / 158 | 94 / 162 | 51 / 82 | 302 / 452 |
-| Streaming, first byte | 64 | 4000 | 143 / 404 | 422 / 1865 | 440 / 1874 | 296 / 1469 | 247 / 292 |
-| Streaming, per chunk | 64 | 28000 | 72 / 223 | 210 / 775 | 234 / 893 | 163 / 670 | 247 / 292 |
+| Streaming, per chunk | 1 | 3,500 | 31 / 40 | 61 / 71 | 65 / 85 | 34 / 45 | 300 / 508 |
+| Streaming, first byte | 8 | 4,000 | 97 / 156 | 230 / 342 | 303 / 421 | 206 / 265 | 302 / 452 |
+| Streaming, per chunk | 8 | 28,000 | 44 / 81 | 92 / 158 | 94 / 162 | 51 / 82 | 302 / 452 |
+| Streaming, first byte | 64 | 4,000 | 143 / 404 | 422 / 1,865 | 440 / 1,874 | 296 / 1,469 | 247 / 292 |
+| Streaming, per chunk | 64 | 28,000 | 72 / 223 | 210 / 775 | 234 / 893 | 163 / 670 | 247 / 292 |
 
 The gateway's own histogram over the same run: mean 32 µs from the end of the body to the upstream write; 94.3% of requests within 100 µs, 99.6% within 500 µs, 99.99% within 2 ms.
 
@@ -543,7 +545,7 @@ What the numbers say:
 - **Streamed chunks cost about the same as the bare hop:** 65 against 61 µs at p50 for one stream.
 - **The same benchmark on an Apple M5 Max** (18 cores, macOS 26.6) adds 39 µs at one client, and 0.82 ms at most at p99. cyan's 2.1 GHz Xeon costs several times more per request.
 
-**In place on cyan** ([BENCHMARKS](../../docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)):
+**In place on cyan** ([BENCHMARKS.md](../../docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)):
 - on the W1 build (2026-10-22, before the admission policies), with the voice agent and the agent replay as clients, the gateway's own time was 0.13 ms on average for voice requests;
 - paired against the engine's own socket, the gateway added 0.38 ms to a voice request's first token on the W1 build, and 0.29 ms on the final transport (W6, 2026-10-25: every server on a Unix socket, the gateway's upstream the tunnel's engine socket; [the records](../../benchmarks/results/2026-10-25-w6-transport/README.md)). On v1.8 (5a7e31c), the build deployed on 2026-10-29, it added +0.12 ms at the median over 80 pairs ([its record](../../benchmarks/results/2026-10-29-gateway-window/README.md)).
 
@@ -551,7 +553,7 @@ What the numbers say:
 
 | Policy | Own time, mean | CPU per request over `none`, 1 / 8 / 64 clients | p50 over `none`, 1 / 8 / 64 clients |
 |---|---:|---:|---:|
-| `none` | 33 µs | | |
+| `none` | 33 µs | — | — |
 | `static-cap` | 35 µs | 1 / 2 / 2 µs | 1 / 2 / 28 µs |
 | `token-reservation` | 36 µs | 1 / 2 / 2 µs | 1 / 2 / 30 µs |
 | `flow-control` | 36 µs | 1 / 3 / 3 µs | 1 / 2 / 34 µs |
@@ -566,7 +568,7 @@ What the numbers say:
 
 | Policy | Own time, mean | CPU over `none`, background 1 / 8 / 64 clients | p50 over `none`, background 1 / 8 / 64 clients | CPU over `none`, realtime 1 / 8 clients | p50 over `none`, realtime 1 / 8 clients |
 |---|---:|---:|---:|---:|---:|
-| `none` | 28 µs | | | | |
+| `none` | 28 µs | — | — | — | — |
 | `static-cap` | 34 µs | 2 / 10 / 4 µs | 0 / 21 / 67 µs | 2 / 4 µs | 0 / 10 µs |
 | `token-reservation` | 36 µs | 0 / 12 / 8 µs | 0 / 27 / 106 µs | 4 / 2 µs | 6 / 12 µs |
 | `flow-control` | 36 µs | 0 / 10 / 8 µs | 0 / 22 / 92 µs | 7 / 4 µs | 12 / 6 µs |

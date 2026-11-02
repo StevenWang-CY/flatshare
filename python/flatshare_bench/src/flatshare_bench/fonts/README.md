@@ -3,7 +3,7 @@
 These files set the text of Flatshare's generated figures ([`figure_style.py`](../figure_style.py)) and of its logo and
 social preview ([`brand.py`](../brand.py), which outlines its glyphs to paths). They are [STIX
 Two](https://github.com/stipub/stixfonts) 2.13 b171, from the static TTFs of its official release (`fonts/static_ttf/`
-in the `v2.13b171` tag's archive), licensed under the SIL Open Font License 1.1 ([OFL.txt](OFL.txt)); the license
+in the `v2.13b171` tag's archive), licensed under the SIL Open Font License 1.1 ([OFL.txt](OFL.txt)); the licence
 reserves the name "TM Math" only.
 
 | File | Source |

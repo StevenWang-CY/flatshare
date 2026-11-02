@@ -162,20 +162,20 @@ The configurations the docs' tables report, by the arm file each ran from and th
 |---|---|---|---|
 | Voice alone, the SLO's reference | `a1-voice`: w2, s1, s2, r3, r4 | `w5-a1-voice`: w5-r1 to w5-r5 | fb-r1 to fb-r5 |
 | Tuned vLLM | `disc-frozen-s24`: w2c, r1 to r4 | `w5-disc-frozen-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5 | fb-r1 to fb-r5, rs-r1 to rs-r5 |
-| Step cap 1,024, no threshold | `disc-a4-b1024-t0-s24`: w2c, r1 to r4 | | |
-| Static reservation, 2,048 tokens | `disc-a6-reserve2048-s24`: w2c, r1 to r4 | | |
-| SGLang with HiCache | `disc-a7b-sglang-hicache-s24`: w2c, r1 to r4 | | |
-| Preempt-resubmit before the first byte | `disc-a8c-resubmit-s24`: w2c, r1 to r4 | `w5-disc-a8c-resubmit-s24`: w5-ext-r1 to w5-ext-r5 | |
-| Arm 9 | `disc-a9-s24`: a9, r1 to r4 | | |
-| #63350 alone (KV preemption) | `disc-pr-a-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-a-s24`: w5-pr-r1 to w5-pr-r5 | |
-| #63350 + #63351 (the budget cap, 16 tokens) | `disc-pr-ab-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab-s24`: w5-pr-r1 to w5-pr-r5 | |
+| Step cap 1,024, no threshold | `disc-a4-b1024-t0-s24`: w2c, r1 to r4 | — | — |
+| Static reservation, 2,048 tokens | `disc-a6-reserve2048-s24`: w2c, r1 to r4 | — | — |
+| SGLang with HiCache | `disc-a7b-sglang-hicache-s24`: w2c, r1 to r4 | — | — |
+| Preempt-resubmit before the first byte | `disc-a8c-resubmit-s24`: w2c, r1 to r4 | `w5-disc-a8c-resubmit-s24`: w5-ext-r1 to w5-ext-r5 | — |
+| Arm 9 | `disc-a9-s24`: a9, r1 to r4 | — | — |
+| #63350 alone (KV preemption) | `disc-pr-a-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-a-s24`: w5-pr-r1 to w5-pr-r5 | — |
+| #63350 + #63351 (the budget cap, 16 tokens) | `disc-pr-ab-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab-s24`: w5-pr-r1 to w5-pr-r5 | — |
 | #63350 + #63351, a 48-token window | `disc-pr-ab48-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab48-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5, w5-ext-r1 to w5-ext-r5 | fb-r1 to fb-r5, rs-r1 to rs-r5 |
-| The same on make-room as v0.3 built it (W5's control) | | `w5-disc-pr-ab48-v03-s24`: w5-r1 to w5-r5 | |
-| Standard scenario (16 agent sessions): tuned vLLM | `a4-b512-t256-s16`: w2, s1, s2 | `w5-std-frozen-s16`: w5-ext-r1 to w5-ext-r5 | |
-| Standard scenario: arm 9 | `a9-s16`: a9-standard, s1, s2 | | |
-| Standard scenario: #63350 + #63351, a 48-token window | | `w5-std-pr-ab48-s16`: w5-ext-r1 to w5-ext-r5 | |
-| 4 and 6 callers: #63350 + #63351, a 48-token window | | `w5-disc-pr-ab48-c4-s24`, `w5-disc-pr-ab48-c6-s24`: w5-cap-r1 to w5-cap-r3 | |
-| 4 and 6 callers: voice alone | | `w5-a1-voice-c4`, `w5-a1-voice-c6`: w5-cap-r1 to w5-cap-r3 | |
+| The same on make-room as v0.3 built it (W5's control) | — | `w5-disc-pr-ab48-v03-s24`: w5-r1 to w5-r5 | — |
+| Standard scenario (16 agent sessions): tuned vLLM | `a4-b512-t256-s16`: w2, s1, s2 | `w5-std-frozen-s16`: w5-ext-r1 to w5-ext-r5 | — |
+| Standard scenario: arm 9 | `a9-s16`: a9-standard, s1, s2 | — | — |
+| Standard scenario: #63350 + #63351, a 48-token window | — | `w5-std-pr-ab48-s16`: w5-ext-r1 to w5-ext-r5 | — |
+| 4 and 6 callers: #63350 + #63351, a 48-token window | — | `w5-disc-pr-ab48-c4-s24`, `w5-disc-pr-ab48-c6-s24`: w5-cap-r1 to w5-cap-r3 | — |
+| 4 and 6 callers: voice alone | — | `w5-a1-voice-c4`, `w5-a1-voice-c6`: w5-cap-r1 to w5-cap-r3 | — |
 
 The points on two GPU nodes (a voice node and an agent node, against two pooled nodes on tuned vLLM and two running arm 9, make-room with the lifecycle policy; [EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)) never ran: no second GPU was free before v1.0. Their arm files and campaigns, with the code that ran them there (that branch's `[nodes]` and `[placement]` in the gateway, the voice worker's `FLATSHARE_NODES`, `flatshare-bench e2 run`'s points on several nodes and `campaign.sh`'s several GPU nodes), are on the `two-node` branch; the main line's gateway places sessions on several nodes with `[[nodes]]` and a `[placement]` of its own ([Nodes](../../crates/flatshare-gateway/README.md#nodes)).
 
@@ -213,7 +213,7 @@ benchmarks/e2/campaign.sh benchmarks/e2/demo.campaign
 
 By hand on cyan, with the GPU node already on the arm's engine and the measurement drop-in on (`variant.sh measure on`), a demo point is `~/flatshare/venvs/bench/bin/flatshare-bench e2 run ARM --out ~/flatshare/runs/e2/demo/POINT --save-audio`. Each caller writes `call-<i>.wav` and `call-<i>.json` beside its turns.
 
-Then, on a workstation with the two run directories fetched into one directory, `make demo-video` renders the video to `build/flatshare-demo.mp4` (`DEMO_OUT`) and the README's animation to `docs/figures/e2-demo.webp`, with its dark theme and its phone layout (`e2-demo-dark.webp`, `e2-demo-narrow.webp`, `e2-demo-narrow-dark.webp`; `uv` installs the script's pinned numpy, matplotlib, Pillow, fontTools and imageio-ffmpeg, whose ffmpeg encodes; the video and the four animations take seven minutes on an Apple M5 Max laptop):
+Then, on a workstation with the two run directories fetched into one directory, `make demo-video` renders the video to `build/flatshare-demo.mp4` (`DEMO_OUT`) and the README's animation to `docs/figures/e2-demo.webp`, with its dark theme and its phone layout (`e2-demo-dark.webp`, `e2-demo-narrow.webp`, `e2-demo-narrow-dark.webp`). `uv` installs the script's pinned numpy, matplotlib, Pillow, fontTools and imageio-ffmpeg, whose ffmpeg encodes, and the video and the four animations take seven minutes on an Apple M5 Max laptop:
 
 ```sh
 make demo-video DEMO=$FLATSHARE_E2_RESULTS/demo

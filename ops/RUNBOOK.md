@@ -1,6 +1,6 @@
 # Runbook
 
-How to deploy, check, operate and recover the Flatshare hosts, for whoever operates the box and its control host. On other hardware, or on one host, [HARDWARE.md](../docs/HARDWARE.md) renders a node and runs the measurement kit, which is not a deployment: nothing of it starts at boot, and the releases, rollback and serving check below reach only phastform, gray and cyan ([PRODUCTION.md](../docs/PRODUCTION.md#checking-it-on-your-hardware)). Every service runs as a `systemd --user` unit. Lingering is enabled on each host, so units survive logout and start at boot.
+How to deploy, check, operate and recover the Flatshare hosts, for whoever operates the box and its control host. On other hardware, or on one host, [HARDWARE.md](../docs/HARDWARE.md) renders a node and runs the measurement kit, which is not a deployment: nothing of it starts at boot, and the releases, rollback and serving check below reach only Phastform, Gray and cyan ([PRODUCTION.md](../docs/PRODUCTION.md#checking-it-on-your-hardware)). Every service runs as a `systemd --user` unit. Lingering is enabled on each host, so units survive logout and start at boot.
 
 | Host | Units | Listeners |
 |---|---|---|
@@ -12,11 +12,11 @@ Figure 2 of [ARCHITECTURE.md](../docs/ARCHITECTURE.md#3-the-serving-path) draws 
 
 Notes on the table:
 
-- **Phastform, listeners:** No TCP: the engine, STT and TTS on Unix sockets in `/run/user/$UID/flatshare/` (`engine.sock`, `stt.sock`, `tts.sock`), a directory only the deployment's user may enter. Variant `sglang` serves 127.0.0.1:8000 too, behind `engine.sock` (`flatshare-engine-proxy.socket`).
-- **Gray, host:** Gray (second GPU node on a shared host, used in windows when no other user's work holds its GPU: the two-card rounds' second card and the arrangement to deploy's warm spare).
-- **Gray, units:** The same units as Phastform, with Gray's drop-ins (`deploy/gray/systemd/`: the CUDA compiler from the engine venv, the engine on cores 0–7 of NUMA node 0, the GPU's, and the audio servers on cores 8–15 of node 1), and `deploy/gray/private-net-host.conf` in all three: Gray's kernel refuses unprivileged user namespaces, so its install runs the servers in the host's network namespace ([below](#a-gpu-node-without-user-namespaces-gray)). `flatshare.target` is not enabled at boot.
-- **cyan, units:** `flatshare-tunnel@phastform`, `flatshare-gateway`, `flatshare-voicenet`, `flatshare-livekit`, `flatshare-voice-worker`; `flatshare-smg` for E2 arm 8b only; `flatshare-tunnel@gray`, which `install.sh` enables at boot while `gateway.toml` reaches Gray's sockets and cyan has its target (`tunnel-gray.env`), and E2 points on Gray start otherwise.
-- **cyan, listeners:** The gateway's 127.0.0.1:18080, the only TCP listener in the host's network. Unix sockets in `/run/user/$UID/flatshare/` (0700): the gateway's `gateway.sock`, and the GPU node's through its tunnel, `phastform-engine.sock`, `phastform-stt.sock` and `phastform-tts.sock`. LiveKit 17880 (TCP) and 17882 (UDP), SMG 18090 and its metrics 18091 (arm 8b), inside the voice-plane namespace only; the gateway reaches SMG at `smg.sock`.
+- **Phastform's sockets** are `engine.sock`, `stt.sock` and `tts.sock`, in a directory only the deployment's user may enter. The `sglang` variant serves 127.0.0.1:8000 too, behind `engine.sock` (`flatshare-engine-proxy.socket`).
+- **Gray** is on a shared host, used in windows when no other user's work holds its GPU: the two-card rounds' second card and the arrangement to deploy's warm spare.
+- **Gray's drop-ins** (`deploy/gray/systemd/`) take the CUDA compiler from the engine venv and put the engine on cores 0–7 of NUMA node 0, the GPU's, and the audio servers on cores 8–15 of node 1. `deploy/gray/private-net-host.conf` is in all three: Gray's kernel refuses unprivileged user namespaces, so its install runs the servers in the host's network namespace ([below](#a-gpu-node-without-user-namespaces-gray)).
+- **cyan's occasional units** are `flatshare-smg`, for E2's arm 8b only, and `flatshare-tunnel@gray`, which `install.sh` enables at boot while `gateway.toml` reaches Gray's sockets and cyan has its target (`tunnel-gray.env`), and which E2 points on Gray start otherwise.
+- **cyan's sockets** in `/run/user/$UID/flatshare/` (0700) are the gateway's `gateway.sock` and the GPU node's through its tunnel, `phastform-engine.sock`, `phastform-stt.sock` and `phastform-tts.sock`. LiveKit's 17880 (TCP) and 17882 (UDP), and SMG's 18090 and its metrics' 18091 (arm 8b), listen inside the voice-plane namespace only; the gateway reaches SMG at `smg.sock`.
 
 **Cores on cyan** (48 threads):
 
@@ -159,7 +159,7 @@ What each restart keeps:
 | LiveKit's API key and secret | cyan, `~/.config/flatshare/livekit.env` (`bootstrap.sh` makes it once) | `bootstrap.sh` makes new ones | Remove the file, run `bootstrap.sh`, then restart LiveKit and the worker in a drain window, which ends the calls |
 | The tunnels' keys | cyan, `~/.ssh/flatshare_tunnel_{engine,stt,tts}_ed25519` | `bootstrap.sh` makes new ones | Remove them, run `bootstrap.sh`, run `deploy/authorize-tunnel.sh cyan NODE` for each node (it replaces the old entries), then restart `flatshare-tunnel@NODE` |
 | Each tunnel's target | cyan, `~/.config/flatshare/tunnel-NODE.env` | Written by hand | Edit, then restart `flatshare-tunnel@NODE` |
-| Which engine variant a node runs | The node, `~/.config/systemd/user/flatshare-engine.service.d/` | `deploy/phastform/variant.sh use make-room-serve` | |
+| Which engine variant a node runs | The node, `~/.config/systemd/user/flatshare-engine.service.d/` | `deploy/phastform/variant.sh use make-room-serve` | — |
 
 Prometheus reads the metrics key's file (`credentials_file`) at each scrape, so it needs no reload, and a scrape between the file's replacement and the gateway's reload gets 401.
 
@@ -297,7 +297,7 @@ taskset -c 24-31 ~/flatshare/src/deploy/bin/in-voicenet ~/flatshare/venvs/voice/
 The frozen box is `deploy/phastform/engine.yaml` and the units in `deploy/phastform/systemd/`. `deploy/phastform/variant.sh use NAME|frozen [FLAG...]` makes the box run exactly one variant plus engine flags, restarting only what changes; `variant.sh use frozen` restores the frozen box. The variants, the flags the E2 arms use and how each was checked are in [`deploy/phastform/variants/README.md`](../deploy/phastform/variants/README.md):
 - **Flags** go on the engine's command line through `FLATSHARE_ENGINE_FLAGS`, set by a generated drop-in (`variant-flags.conf`); vLLM takes the command line over `engine.yaml`.
 - **`pr54530`**: vLLM #54530 ported to 0.32.0, generated at each start by `build.py` and loaded with `--scheduler-cls`.
-- **`make-room-serve`**: the box's serving configuration, rendered from the serving profile `deploy/profiles/rtx-5060-ti-serve.toml`: `make-room` in the configuration to deploy (2 preemptions a step, the budget cap with a 48-token window, no reserve) and the step cap the sweep chose (256 tokens, no long-prefill threshold, over `engine.yaml`'s) in its drop-in, under a scheduler class that writes the configuration the engine runs to `$XDG_RUNTIME_DIR/flatshare/engine-effective.json`. Each start holds it to the profile's `serving.json` (`deploy/bin/serving-check`, after the wait for `/health`) and fails on any difference. Serve with it as `variant.sh use make-room-serve` and `variant.sh measure off` ([the serving profile](../deploy/phastform/variants/README.md#the-serving-profile)).
+- **`make-room-serve`**: the box's serving configuration, rendered from the serving profile `deploy/profiles/rtx-5060-ti-serve.toml`: `make-room` in the configuration to deploy (2 preemptions a step, the budget cap with a 48-token window, no reserve) with the engine's additions (the agents' reservations taken and their decodes held, the calls' prefixes kept, an announced turn's hold, just-in-time scheduling), and the step cap the sweep chose (256 tokens, no long-prefill threshold, over `engine.yaml`'s), in its drop-in, under a scheduler class that writes the configuration the engine runs to `$XDG_RUNTIME_DIR/flatshare/engine-effective.json`. Each start holds it to the profile's `serving.json` (`deploy/bin/serving-check`, after the wait for `/health`) and fails on any difference. Serve with it as `variant.sh use make-room-serve` and `variant.sh measure off` ([the serving profile](../deploy/phastform/variants/README.md#the-serving-profile)).
 - **`make-room`**: the change for #40004 on vLLM 0.32.0, arm 9's engine side, generated and loaded the same way: KV preemption for a waiting request of a higher priority, the budget cap that keeps lower-priority prefill out of its first tokens, and a reserve ([ARCHITECTURE.md §2](../docs/ARCHITECTURE.md#2-the-change-63350-and-63351) states the rules). Its switches are `--additional-config.make_room.*` keys: its unit sets arm 9's values, and an arm's engine flags override one. `/server_info` reports them under `additional_config`. `probe.py` measures a priority-0 request's first token behind two long priority-2 requests in a full pool (`kv`, with the reserve off), and its first and 16th tokens behind three agent prefills (`prefill`); `tail.py` measures the calls' first-token tail beside closed-loop agents.
 - **`sglang`**: SGLang 0.5.22 in the engine's place, on 127.0.0.1:8000 behind the engine's socket (`flatshare-engine-proxy.socket`). Build its environment once with `bash ~/flatshare/src/deploy/phastform/variants/sglang/install.sh`. Its unit counts as started only after one sampled request, because the first one compiles FlashInfer's kernels for minutes.
 - **`mps`**: the three servers as clients of one CUDA MPS daemon (`flatshare-mps.service`); the frozen box uses time-slicing ([BENCHMARKS.md](../docs/BENCHMARKS.md#voice-on-the-shared-gpu)).
@@ -455,9 +455,9 @@ A severity "after" a time is the rule's `for`: its condition held that long.
 
 Notes on the table:
 
-- **The first-byte budget's burns, likely cause:** The voice turns' LLM requests fail, are refused, time out or wait over 250 ms for their first content: agents' KV filling the calls' node (more agents than its envelope, or longer contexts than measured), an engine that does not serve, or a node down and its calls on the survivor.
-- **The first-byte budget's burns, action:** `flatshare:requests_terminal:rate5m` by outcome says which. Then `/nodes`, the dashboard's KV and waiting panels for the calls' node, and its engine's journal. Agents beyond the envelope: lower that node's `max_agents` and reload the gateway.
-- **The overhead budget's burns, likely cause:** The gateway's own leg, from the end of a request's body to its upstream write, is slow: its cores (0–7 on cyan) are taken by other work, or an admission policy's decisions are slow.
+- **The first-byte budget's burns, likely cause:** Agents' KV filling the calls' node (more agents than its envelope, or longer contexts than measured), an engine that does not serve, or a node down and its calls on the survivor.
+- **The first-byte budget's burns, action:** With agents beyond the envelope, lower that node's `max_agents` and reload the gateway.
+- **The overhead budget's burns, likely cause:** The gateway's cores (0–7 on cyan) taken by other work, or an admission policy's slow decisions.
 
 ### Gateway
 
@@ -471,23 +471,24 @@ Notes on the table:
 | `flatshare-gateway` exits at start: "inherited sockets that no [[listen]] entry names" | `flatshare-gateway.socket`'s `ListenStream=` and `gateway.toml`'s `[[listen]]` disagree | Make them name the same addresses (`%t` is `/run/user/$UID`), then `systemctl --user daemon-reload` and restart both units |
 | `systemctl --user reload flatshare-gateway` fails: "its successor did not take over" | The successor exited at start or was not ready within 10 s; the old process serves on | `journalctl --user -u flatshare-gateway -n 50` says why ("reload failed: ..."); fix and reload again |
 | `flatshare-gateway.socket` failed with `service-start-limit-hit`, and connections are refused | The gateway crashed five times within 10 s, so systemd stopped it, and the socket unit with it | `journalctl --user -u flatshare-gateway -n 200`, fix, `systemctl --user reset-failed flatshare-gateway flatshare-gateway.socket`, start both |
-| The gateway answers 429 `queue_full` or 503 `queue_timeout` | An `[admission]` policy's queue is full (`queue_limit`), its queues together hold `max_queued`, or a wait ran out (the policy's `queue_timeout_s`, or the class's) | Expected under the E2 policies, and counted in `flatshare_gateway_admission_refused_total` by reason |
+| The gateway answers 429 `queue_full` or 503 `queue_timeout` | An `[admission]` policy's queue is full (`queue_limit`), its queues together hold `max_queued`, or a wait ran out (the policy's `queue_timeout_s`, or the class's) | Expected under the E2 policies, which count each refusal by its reason |
 
 Notes on the table:
 
-- **`FlatshareRequestsRefusedForCapacity`, likely cause:** The gateway, a class or a tenant has its `max_in_flight` requests in flight, or the bodies it holds would pass `max_buffered_body_bytes`; during a reload the old process's requests count too.
-- **`FlatshareRequestsRefusedForCapacity`, action:** `flatshare_gateway_in_flight` by class, `flatshare_gateway_predecessor_in_flight` and `flatshare_gateway_buffered_body_bytes`. One tenant's flood gets 429 and leaves the others room; if the load is real, raise the bound in `gateway.toml` and reload.
-- **`FlatshareDeadlinesMissed`, likely cause:** The engine sent no headers, first content or next frame within the class's deadlines, or a request ran past its total; a 408 is a client too slow to upload.
-- **`FlatshareDeadlinesMissed`, action:** The request's log line names the deadline (`error`: "… within classes.CLASS.KEY (N s)"); the engine's waiting requests and KV usage. Raise the class's deadline in `gateway.toml` only for work that is that long.
-- **"another process is accepting on this socket", action:** Stop the other process, or start the gateway with `systemctl --user start flatshare-gateway`, which passes it the socket unit's sockets; a socket file left by a crash is replaced automatically.
-- **A reload whose successor did not take over, likely cause:** The successor exited at start (a broken `gateway.toml`, a binary that does not run) or was not ready within 10 s; the old process serves on.
+- **`FlatshareRequestsRefusedForCapacity`, likely cause:** During a reload the old process's requests count too.
+- **`FlatshareRequestsRefusedForCapacity`, action:** Read `flatshare_gateway_predecessor_in_flight` and `flatshare_gateway_buffered_body_bytes` too. One tenant's flood gets 429 and leaves the others room.
+- **`FlatshareDeadlinesMissed`, likely cause:** A 408 is a client too slow to upload.
+- **`FlatshareDeadlinesMissed`, action:** The log line's `error` reads "… within classes.CLASS.KEY (N s)". Raise the class's deadline in `gateway.toml` only for work that is that long.
+- **"another process is accepting on this socket", action:** A socket file left by a crash is replaced automatically.
+- **A reload whose successor did not take over, likely cause:** A successor that exits at start has a broken `gateway.toml` or a binary that does not run.
+- **`queue_full` or `queue_timeout`, action:** `flatshare_gateway_admission_refused_total` counts the refusals by reason.
 
 ### Engine and GPU servers
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| <a id="flatshareenginenotready"></a>The gateway answers 502 `upstream_unavailable`, or `/ready` is 503 `upstream not ready` (alert `FlatshareEngineNotReady`, a page) | The tunnel or the engine is down | `curl --unix-socket $XDG_RUNTIME_DIR/flatshare/phastform-engine.sock localhost/health`; see the tunnel's row in [Tunnels and keys](#tunnels-and-keys). An engine restarts by itself in about two minutes |
-| <a id="flatshareenginemetricsdown"></a>`FlatshareEngineMetricsDown` (a ticket): Prometheus cannot read an engine's metrics through the gateway | The engine or its tunnel is down, as above, or the engine does not answer the gateway's `/metrics/engine` relay within 10 s (502) | As the row above; on cyan, `curl -s --unix-socket $XDG_RUNTIME_DIR/flatshare/gateway.sock localhost/metrics/engine` (with `?node=NODE` under `[[nodes]]`) |
+| <a id="flatshareenginenotready"></a>The gateway answers 502 `upstream_unavailable`, or `/ready` is 503 `upstream not ready` (alert `FlatshareEngineNotReady`, a page) | The tunnel or the engine is down | In `$XDG_RUNTIME_DIR/flatshare` on cyan, `curl --unix-socket phastform-engine.sock localhost/health`; see the tunnel's row in [Tunnels and keys](#tunnels-and-keys). An engine restarts by itself in about two minutes |
+| <a id="flatshareenginemetricsdown"></a>`FlatshareEngineMetricsDown` (a ticket): Prometheus cannot read an engine's metrics through the gateway | The engine or its tunnel is down, as above, or the engine does not answer the gateway's `/metrics/engine` relay within 10 s (502) | As the row above; in `$XDG_RUNTIME_DIR/flatshare` on cyan, `curl -s --unix-socket gateway.sock localhost/metrics/engine` (with `?node=NODE` under `[[nodes]]`) |
 | <a id="flatsharestreamsbroken"></a>`FlatshareStreamsBroken` (a ticket): streams ended with the `upstream_unavailable` error event | The engine or its tunnel broke off streams while they ran: an engine that died or restarted, or a tunnel that dropped | The engine's and the tunnel's journals at those times |
 | <a id="flatshareenginedegraded"></a>`/ready` is 503 `engine degraded` (alert `FlatshareEngineDegraded`) | The engine answers `/health`, but its inference fails or hangs: the canary failed three times in a row and no request succeeded between | The engine's journal on the GPU node, and the canaries' counter; any success serves it again, else restart the engine |
 | <a id="flatshareenginewarming"></a>`/ready` is 503 `engine warming` for minutes (alert `FlatshareEngineWarming` after 15) | No inference has succeeded since the gateway started: the engine is still starting, or it fails every request | Wait for the engine's start; if it has started, as for `engine degraded` |
@@ -504,16 +505,16 @@ Notes on the table:
 
 Notes on the table:
 
-- **`FlatshareEngineNotReady`, symptom:** The gateway answers 502 `upstream_unavailable`, or `/ready` is 503 `upstream not ready` (alert `FlatshareEngineNotReady`, a page; with `[[nodes]]` the down node's sessions move, and a request gets 503 `no_healthy_node` only when no node of its role is ready).
-- **`FlatshareEngineDegraded`, action:** The engine's journal on the GPU node (`journalctl --user -u flatshare-engine -n 200`); `flatshare_gateway_canary_probes_total`, and the gateway's journal at `log_level = "debug"` for each canary's cause. Any success serves it again; restart the engine if none comes.
-- **`FlatshareEngineWarming`, likely cause:** No inference has succeeded since the gateway started: the engine is still starting (531.8 s with cold compile caches, 88.8 s warm; [the hardware notes](../docs/HARDWARE.md)), or it fails every request.
-- **`FlatshareKvPoolFullWithWaiting`, likely cause:** Agents' KV fills the pool: the regime where a voice turn waits for KV unless the engine runs the change ([Is your deployment in this regime?](../docs/PRODUCTION.md#is-your-deployment-in-this-regime)).
-- **`flatshare-stt` failing at start, likely cause:** The three servers start at once, and the STT's check caught the engine above its steady state (its profiling pass or its graph capture) or above its budget.
-- **`systemd-oomd` killing the engine, likely cause:** A host-wide memory stall (swap full, `/proc/pressure/memory` high) held the user manager's memory pressure above its `ManagedOOMMemoryPressure=kill` limit (50% on these hosts), and `systemd-oomd` killed a cgroup under it: the engine, which holds the 20 GiB CPU tier in `/dev/shm`. Our units set no memory limit, and the host can have plenty of memory free.
-- **`systemd-oomd` killing the engine, action:** The unit restarts by itself (`Restart=on-failure`). A point measured across the kill fails: run its campaign again once `/proc/pressure/memory` is back near 0, and it resumes from that point.
-- **"unshare failed", likely cause:** The kernel refuses unprivileged user namespaces (Ubuntu 24.04 restricts them), and `in-private-net` runs no server in the host's network namespace unless the host's units say so.
-- **"unshare failed", action:** Allow them (`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`) and restart the unit; on Gray, run its install again (`bash ~/flatshare/src/deploy/gray/install.sh`, or any release), which marks all three servers `FLATSHARE_PRIVATE_NET=host` where the check refuses ([Gray](#a-gpu-node-without-user-namespaces-gray)); or, on a single host, run its `bootstrap.sh stage` again: its preflight then renders the degraded path, `FLATSHARE_PRIVATE_NET=host` in the servers' drop-ins. In the host's namespace their engine cores' loopback listeners and CUDA's abstract sockets are any local user's to reach.
-- **`serving-check` failing the start, likely cause:** The engine runs another configuration than the serving profile's: engine flags over the variant (`variant.sh use make-room-serve FLAG…`), a module or patch the profile does not name, another vLLM. The lines above the verdict name each setting and what the engine runs.
+- **`FlatshareEngineNotReady`, symptom:** With `[[nodes]]` the down node's sessions move, and a request gets 503 `no_healthy_node` only when no node of its role is ready.
+- **`FlatshareEngineDegraded`, action:** `journalctl --user -u flatshare-engine -n 200` on the node, `flatshare_gateway_canary_probes_total`, and the gateway's journal at `log_level = "debug"` for each canary's cause.
+- **`FlatshareEngineWarming`, likely cause:** An engine starts in 531.8 s with cold compile caches and 88.8 s warm ([HARDWARE.md's preflight](../docs/HARDWARE.md#the-preflight)).
+- **`FlatshareKvPoolFullWithWaiting`, likely cause:** [PRODUCTION.md](../docs/PRODUCTION.md#is-your-deployment-in-this-regime) says when a deployment is in this regime.
+- **`flatshare-stt` failing at start, likely cause:** The engine is above its steady state during its profiling pass and its graph capture.
+- **`systemd-oomd` killing the engine, likely cause:** The stall shows as swap full and `/proc/pressure/memory` high. The limit is 50% on these hosts, and `systemd-oomd` kills a cgroup under it: the engine, which holds the 20 GiB CPU tier in `/dev/shm`. The units set no memory limit, and the host can have plenty of memory free.
+- **`systemd-oomd` killing the engine, action:** Run the campaign again once `/proc/pressure/memory` is back near 0: it resumes from the point that failed.
+- **"unshare failed", likely cause:** Ubuntu 24.04 restricts unprivileged user namespaces.
+- **"unshare failed", action:** To allow them, `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. Gray's install (`bash ~/flatshare/src/deploy/gray/install.sh`, or any release) marks all three servers `FLATSHARE_PRIVATE_NET=host` where the check refuses ([Gray](#a-gpu-node-without-user-namespaces-gray)), and a single host's `bootstrap.sh stage` renders the same degraded path in the servers' drop-ins. In the host's namespace their engine cores' loopback listeners and CUDA's abstract sockets are any local user's to reach.
+- **`serving-check` failing the start, likely cause:** Engine flags over the variant (`variant.sh use make-room-serve FLAG…`), a module or patch the profile does not name, or another vLLM.
 
 ### Tunnels and keys
 
@@ -527,7 +528,7 @@ Notes on the table:
 
 Notes on the table:
 
-- **The tunnel down, action:** `flatshare-tunnel@phastform` opens its SSH connections again after 1 to 30 s, or within 1 s while a connection waits for one, which it does up to 10 s before it connects on its own, and restarts itself 5 s after it exits; `journalctl --user -u flatshare-tunnel@phastform` says why each one ended. On the node, `ls -l /run/user/$UID/flatshare/` lists the servers' sockets.
+- **The tunnel down, action:** While a connection waits for the tunnel, which it does up to 10 s before it connects on its own, the tunnel opens its SSH connections again within 1 s. `journalctl --user -u flatshare-tunnel@phastform` says why each one ended, and on the node `ls -l /run/user/$UID/flatshare/` lists the servers' sockets.
 
 ### Two nodes
 
@@ -540,10 +541,10 @@ Notes on the table:
 
 Notes on the table:
 
-- **`FlatshareNodeCovering`, likely cause:** It carries calls moved to it from a failed node, or, as the warm spare, calls placed on it while the first node was down: it covers until those calls end, whether or not the other node is healthy again.
-- **`FlatshareCallsRefused`, action:** `/nodes` shows each node's calls; bring the failed node back, or admit fewer calls at the worker. A call slot frees when the call ends (the worker's `DELETE /v1/sessions/{id}`), or `idle_s` after its last turn.
-- **503 `no_agent_slot`, likely cause:** Every available node with the background role has `max_agents` agents' sessions: more agents than the bounds hold, or a node down and the survivor at its bound; a request that names no session also finds no room on a bounded node that carries a call.
-- **503 `no_agent_slot`, action:** `/nodes` shows each node's `max_agents` and its agents' `sessions`; the agents' next requests try again. A slot frees when its client ends the session (`DELETE /v1/sessions/{id}` or `session_closed`), or `idle_s` after its last request; a node whose `max_agents` is `"unbounded"`, or one with the background role alone that sets none, takes any number.
+- **`FlatshareNodeCovering`, likely cause:** A warm spare's calls are those placed on it while the first node was down. It covers until those calls end, whether or not the other node is healthy again.
+- **`FlatshareCallsRefused`, action:** A call slot frees when the call ends (the worker's `DELETE /v1/sessions/{id}`), or `idle_s` after its last turn.
+- **503 `no_agent_slot`, likely cause:** More agents than the bounds hold, or a node down and the survivor at its bound. A request that names no session also finds no room on a bounded node that carries a call.
+- **503 `no_agent_slot`, action:** A slot frees when its client ends the session (`DELETE /v1/sessions/{id}` or `session_closed`), or `idle_s` after its last request. A node whose `max_agents` is `"unbounded"`, or one with the background role alone that sets none, takes any number.
 
 ### Voice plane
 
@@ -559,7 +560,7 @@ Notes on the table:
 
 Notes on the table:
 
-- **Callers getting no agent in serve mode, likely cause:** "2 of 2 calls in progress": the box is full, as the serving profile admits; "the engine does not serve: …": the gateway's `/ready` fails (the engine starts, is down, or the tunnel is); "draining: … exists": a release or `flatshare-release drain` holds calls off, as it should while one runs; a drain the tool ended early removes its file, so one left behind is a manual `drain` not undone.
+- **Callers getting no agent in serve mode, likely cause:** `/ready` fails while the engine starts or is down, or while the tunnel is. A drain file is a release's or `flatshare-release drain`'s, and a drain the tool ended early removes its file, so one left behind is a manual `drain` not undone.
 
 ### Releases
 
@@ -577,10 +578,10 @@ Notes on the table:
 
 Notes on the table:
 
-- **`deploy.sh` exiting 1 with nothing switched, likely cause:** A check of step 2 failed: the lines before it say which (`FAIL files`, an environment's imports, a binary's version, the scheduler module, a drop-in the release lacks, a model or tool the units need).
-- **`deploy.sh` exiting 1 after the switch, likely cause:** A restarted unit did not stay active, or a check after the switch failed; the host switched back and restarted the same units on the release before.
-- **`deploy.sh cyan` outside the envelope, likely cause:** `gateway.toml`'s `[[nodes]]` run outside the profile's envelope: a realtime node whose `max_calls` is not the worker's calls, the node that carries calls with a larger `max_agents` than the profile's, or a larger `failover_background_max_in_flight`; cyan switched back.
-- **`deploy.sh cyan` outside the envelope, action:** Set the named key to what the check prints (`max_calls = 2` on every realtime node, `max_agents` 4 or fewer on the one that carries calls, `failover_background_max_in_flight` 4 or fewer), `systemctl --user reload flatshare-gateway`, then release again.
+- **`deploy.sh` exiting 1 with nothing switched, likely cause:** The failed check is one of `FAIL files`, an environment's imports, a binary's version, the scheduler module, a drop-in the release lacks, or a model or tool the units need.
+- **`deploy.sh` exiting 1 after the switch, likely cause:** Switching back restarted the same units on the release before.
+- **`deploy.sh cyan` outside the envelope, likely cause:** A realtime node whose `max_calls` is not the worker's calls, the node that carries calls with a larger `max_agents` than the profile's, or a larger `failover_background_max_in_flight`.
+- **`deploy.sh cyan` outside the envelope, action:** The check prints `max_calls = 2` on every realtime node, `max_agents` 4 or fewer on the one that carries calls, and `failover_background_max_in_flight` 4 or fewer.
 
 ### E2's harness
 
@@ -588,4 +589,4 @@ A point's errors from `flatshare-bench e2 run` are in [E2's README](../benchmark
 
 ## Pausing
 
-Nothing should hold the shared GPU while idle. To pause the GPU node, run `systemctl --user stop flatshare.target flatshare-engine flatshare-stt flatshare-tts`, which returns once the units are down (stopping the target alone returns while they still stop); restart it with `systemctl --user start flatshare.target`. The target stays enabled, so a reboot brings the frozen box back. With `[[nodes]]`, a node paused while `gateway.toml` names it is unhealthy to the gateway, and pages (`FlatshareNodeUnhealthy`) unless it drains: drain it first ([Drain one node](#drain-one-node)), or reload the gateway without it, as a window's end does ([Two GPU nodes](#two-gpu-nodes)). Gray is on a shared host: outside the arrangement to deploy, start it only for a booked window (`gpu-guard` refuses while another process holds the GPU) and stop it after; as the arrangement's warm spare it runs while the arrangement serves. The engine takes about 20 s to stop, releasing its pinned CPU tier.
+Nothing should hold the shared GPU while idle. To pause the GPU node, run `systemctl --user stop flatshare.target flatshare-engine flatshare-stt flatshare-tts`, which returns once the units are down (stopping the target alone returns while they still stop); restart it with `systemctl --user start flatshare.target`. The target stays enabled, so a reboot starts the box again, on the variant it ran. With `[[nodes]]`, a node paused while `gateway.toml` names it is unhealthy to the gateway, and pages (`FlatshareNodeUnhealthy`) unless it drains: drain it first ([Drain one node](#drain-one-node)), or reload the gateway without it, as a window's end does ([Two GPU nodes](#two-gpu-nodes)). Gray is on a shared host: outside the arrangement to deploy, start it only for a booked window (`gpu-guard` refuses while another process holds the GPU) and stop it after; as the arrangement's warm spare it runs while the arrangement serves. The engine takes about 20 s to stop, releasing its pinned CPU tier.

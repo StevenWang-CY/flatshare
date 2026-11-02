@@ -31,7 +31,6 @@ In scope:
 - **The deploy scripts and units** ([`deploy/`](deploy)): what they leave listening on a host and with what file
   modes, the SSH tunnel keys' `restrict` entries and forced commands, the network namespaces of the GPU servers and
   the voice plane, the listener audit, and the secrets the install scripts write.
-
 - **The serving engine's build** ([`python/flatshare_vllm`](python/flatshare_vllm/README.md)): the module `build.py`
   writes from make-room's patches, the serve module that the `make-room-serve` variant loads, and
   `deploy/bin/serving-check`, which holds the engine to the serving profile.
@@ -49,7 +48,7 @@ These limits are stated in the documents and are not vulnerabilities in this sen
 - The engine's Unix sockets keep the hosts' other users out, not other processes of the deploying user, and the
   voice plane's processes keep that user's uid ([ADR-0005](docs/adr/0005-loopback-services-and-node-sticky-kv.md#unix-sockets-end-to-end-w6-2026-10-25)).
 - The `sglang` engine variant listens on 127.0.0.1:8000, and a host without unprivileged user namespaces runs its GPU
-  servers in the host's network namespace ([ARCHITECTURE.md §4](docs/ARCHITECTURE.md#33-network-and-security)).
+  servers in the host's network namespace ([ARCHITECTURE.md §4](docs/ARCHITECTURE.md#4-network-and-security)).
 - The measurement drop-in turns on vLLM's development routes, which the serving variant turns off again, so a production
   box runs without them ([the drop-in](deploy/phastform/variants/README.md#the-measurement-drop-in)).
 - The gateway does not terminate TLS: every listener binds loopback or a private socket. It bounds the requests in
@@ -73,7 +72,8 @@ Flatshare uses or pins it is reported here, as above.
 A fix in a pinned dependency ships as a Flatshare release that moves the pin. Like any release, it goes through CI
 and the release tool, whose checks hold the box to it ([PRODUCTION.md](docs/PRODUCTION.md#releasing-a-change)):
 - **A fix on the pinned line**, such as a vLLM 0.32.x, needs make-room's patches to apply to the new version first.
-- **A fix only in a later line** needs make-room's patches rebased onto that line first.
+- **A fix only in a later line** needs make-room's patches rebased onto that line first, as `make-room/v0.33.0` holds
+  them for vLLM 0.33.0.
   - `make compat-upstream` says whether they still apply
     ([the engine's upkeep](python/flatshare_vllm/README.md#upkeep-the-changes-cost-and-its-fit-upstream)).
   - The rebased engine must pass the same checks before a release moves to it.

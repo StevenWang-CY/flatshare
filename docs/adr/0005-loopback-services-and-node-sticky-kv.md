@@ -1,6 +1,6 @@
 # ADR-0005: Loopback-only services, SSH tunnels, a private network for voice, and node-sticky KV
 
-- **Status:** accepted, 2026-10-22
+- **Status:** accepted, 2026-10-22; W6 replaced its loopback ports and TCP tunnels with Unix sockets end to end on 2026-10-25 ([below](#unix-sockets-end-to-end-w6-2026-10-25))
 - **Deciders:** Chuyue Wang
 
 ## Context

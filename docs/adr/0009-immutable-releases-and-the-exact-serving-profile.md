@@ -36,3 +36,7 @@ The external audit of 2026-10-27 found that what a box would deploy was not what
 - **A change to serving.json restarts the units that read it**: both engines and the voice worker.
 - **Deploys run in attended windows.** A release drains the voice worker's calls and the engine's requests before the restarts it needs (about 100 s for an engine).
 - **What the release does not cover** is host state outside the repository. Examples are the tunnels' targets and the tenants' keys, which stay in `~/.config/flatshare`. The gateway's `[[nodes]]` are the same, held to the profile's envelope at each release (ADR-0008).
+
+## Later
+
+- **The engine's additions** (2026-11-02, v1.15 and v1.17). The profile also sets the serving engine's additions: the calls' prefixes kept on the GPU, the next batch scheduled just in time, each turn announced, a lower priority's reservations taken and, from v1.17, the agents' decodes held. A test now holds it to the follow-up rounds' point, which ran all of them, and the sweep's point differs from that only in the make-room switches those versions added ([ARCHITECTURE.md §3.1](../ARCHITECTURE.md#31-the-serving-profile)).
