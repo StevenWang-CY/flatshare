@@ -1,0 +1,13 @@
+# The optimization program's speculative rounds (O3 of ~/.cache/kosa-dev/flatshare-opt), round 2 of 2, on Gray, on a
+# fresh sample of the agents (seed 37): the configuration to deploy with the program's optimizations against the same
+# with speculative decoding (the opt-*-spec arms), paired, beside 24 session trees of the discriminating scenario with 2
+# and 4 callers.
+#   FLATSHARE_GPU=NODE benchmarks/e2/campaign.sh --pause benchmarks/e2/opt-s2.campaign
+
+agents-seed 37
+
+# engine make-room, the program's optimizations, then with speculative decoding
+arms/opt-disc-spec-c4-s24.toml
+arms/opt-disc-ret-c4-s24.toml
+arms/opt-disc-spec-s24.toml
+arms/opt-disc-ret-s24.toml
