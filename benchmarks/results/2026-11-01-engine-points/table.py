@@ -23,6 +23,7 @@ NODES = ("phastform", "gray")
 STAGES = ("input", "load", "queue", "prep", "gpu", "own")
 CALLS = re.compile(r"TTFT p50 (\d+) p90 (\d+) p95 (\d+) max (\d+)")
 SENTENCE = re.compile(r"16 tokens p50 (\d+) p90 (\d+) p95 (\d+)")
+REPLY = re.compile(r"48 tokens p50 (\d+) p90 (\d+) p95 (\d+)")
 ARMS = {
     # What was adopted, in the order the serving profile gained it.
     "a0-grow": "v1.14's serving profile (asynchronous scheduling)",
@@ -32,6 +33,9 @@ ARMS = {
     "r0hj-grow": "+ the turn announced and just in time",
     "r0hjt-grow": "+ the calls taking the agents' reservations",
     "r0hjtd-grow": "+ the agents' decodes held from a call's first 16 tokens",
+    # How long the decode hold lasts.
+    "r0hjtd32-grow": "the same, the decodes held from a call's first 32 tokens",
+    "r0hjtd48-grow": "the same, the decodes held from a call's first 48 tokens",
     # The alternatives.
     "a1-grow": "synchronous scheduling",
     "r1-grow": "synchronous scheduling, retention",
@@ -47,6 +51,7 @@ ARMS = {
     "s2rr-grow": "retention, EAGLE-3 with 2 drafts, short loads recomputed",
     "s2rrhj-grow": "the turn announced and just in time, EAGLE-3 with 2 drafts, short loads recomputed",
     "s2rrhjt-grow": "the turn announced, just in time, the reservations taken, EAGLE-3 with 2 drafts, short loads recomputed",
+    "s2rrhjtd-grow": "the same, the agents' decodes held from a call's first 16 tokens",
     # The controls.
     "r0hw-grow": "retention, the turns announced but nothing held",
     "r0hn-grow": "retention, the hint scheduler with no turn announced",
@@ -65,8 +70,9 @@ TABLES = {
     "adopted": ("a0-grow", "r0-grow", "r0j-grow", "r0h-grow", "r0hj-grow", "r0hjt-grow", "r0hjtd-grow"),
     "alternatives": (
         "a1-grow", "r1-grow", "t0-grow", "t1-grow", "t0rj-grow", "tf0-grow", "f0-grow", "r0a2-grow",
-        "s3r-grow", "s2r-grow", "s3rr-grow", "s2rr-grow", "s2rrhj-grow", "s2rrhjt-grow",
+        "s3r-grow", "s2r-grow", "s3rr-grow", "s2rr-grow", "s2rrhj-grow", "s2rrhjt-grow", "s2rrhjtd-grow",
     ),
+    "hold": ("r0hjt-grow", "r0hjtd-grow", "r0hjtd32-grow", "r0hjtd48-grow"),
     "controls": ("r0hw-grow", "r0hn-grow", "r0rr-grow", "r0t-grow"),
     "fresh": ("a0-fresh", "r0-fresh", "r0j-fresh", "r0h-fresh", "a1-fresh", "r1-fresh", "s3r-fresh"),
     "stages": ("a0-grow", "r0-grow", "r0j-grow", "r0h-grow", "a1-grow", "t0-grow", "f0-grow", "s2r-grow", "s2rr-grow"),
@@ -125,6 +131,31 @@ def outcomes(name: str) -> str:
                 f"| {node} | {ARMS[arm]} | {len(runs)} | {spread([s[0] for s in seen])} | "
                 f"{spread([s[1] for s in seen])} | {spread([s[2] for s in seen])} | {spread([s[3] for s in seen])} | "
                 f"{statistics.median(later):.1f} | {statistics.median(agents):,.0f} |"
+            )
+    return "\n".join(rows)
+
+
+def hold() -> str:
+    """How long the decode hold lasts: the calls' first token, their 16th token and their 48th, the whole reply (p50
+    and p95, the median over the replicates), and the agents' computed tokens a second."""
+    rows = [
+        "| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | p95 | 48th token p50 | p95 | Agents' tokens/s |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    groups = points()
+    for node in NODES:
+        for arm in TABLES["hold"]:
+            runs = groups.get((node, arm))
+            if not runs:
+                continue
+            seen = [client(run) for run in runs]
+            reply = [REPLY.search((run / "tail.txt").read_text().split("\nreplies: ", 1)[1]) for run in runs]
+            agents = [json.loads((run / "stages.json").read_text())["agent_tokens_per_s"] for run in runs]
+            rows.append(
+                f"| {node} | {ARMS[arm]} | {len(runs)} | {spread([s[0] for s in seen])} | "
+                f"{spread([s[1] for s in seen])} | {spread([s[2] for s in seen])} | {spread([s[3] for s in seen])} | "
+                f"{spread([float(r[1]) for r in reply])} | {spread([float(r[3]) for r in reply])} | "
+                f"{statistics.median(agents):,.0f} |"
             )
     return "\n".join(rows)
 
@@ -205,6 +236,8 @@ def table(name: str) -> str:
         return speculation()
     if name == "restore":
         return restore()
+    if name == "hold":
+        return hold()
     return outcomes(name)
 
 

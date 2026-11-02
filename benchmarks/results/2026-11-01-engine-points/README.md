@@ -21,7 +21,8 @@ rounds measure the result in the whole pipeline.
 | gray | + the calls' prefixes kept on the GPU (retention) | 2 | 139 (136-142) | 256 (254-259) | 374 (373-376) | 502 (497-507) | 13.8 | 2,686 |
 | gray | + each turn announced (250 ms ahead, held 400 ms) | 2 | 72 (71-74) | 110 (109-110) | 270 (269-270) | 405 (404-406) | 13.7 | 2,606 |
 | gray | + the turn announced and just in time | 2 | 72 (71-72) | 111 (108-114) | 270 (270-270) | 438 (413-462) | 13.5 | 2,584 |
-| gray | + the calls taking the agents' reservations | 1 | 71 | 115 | 269 | 408 | 13.5 | 2,566 |
+| gray | + the calls taking the agents' reservations | 2 | 71 (71-71) | 106 (96-115) | 268 (266-269) | 402 (395-408) | 13.5 | 2,554 |
+| gray | + the agents' decodes held from a call's first 16 tokens | 1 | 72 | 108 | 268 | 300 | 13.8 | 2,569 |
 <!-- /table.py adopted -->
 
 - **The calls' prefixes kept on the GPU** (`make_room.retain_tokens 3584`, `retain_s 30`): a call's next turn finds
@@ -38,10 +39,11 @@ rounds measure the result in the whole pipeline.
   4% of their tokens a second.
 - **The calls taking the agents' reservations** (`make_room.take_reservations`): see [The stalls](#the-stalls). It
   costs the calls nothing and the agents 1%, within the replicates' spread.
-- **The agents' decodes held from a call's first 16 tokens** (`make_room.decode_hold_tokens 16`): a step that also
-  decodes an agent at 15,000 tokens of context takes 18-20 ms against 13 alone, and in one turn in twenty such steps
-  added 108-135 ms to the first sentence. With the agents' decodes sitting out those steps, the 16th token's p95 falls
-  from 392 to 285 ms, its median and the agents unchanged.
+- **The agents' decodes held from a call's first tokens** (`make_room.decode_hold_tokens`): a step that also decodes
+  an agent at 15,000 tokens of context takes 18-20 ms against 13 alone, and in one turn in twenty such steps added
+  108-135 ms to the first sentence. With the agents' decodes sitting out a call's first 16 tokens, the 16th token's p95
+  falls from 392 to 285 ms, its median and the agents unchanged. The serving profile holds them for 48 tokens, the
+  budget cap's window ([how long the hold lasts](#how-long-the-hold-lasts)).
 
 With everything adopted, a call's first token is 64 ms at the median and 94 ms at p95 on Phastform, against v1.14's 175
 and 354 ms, and its first sentence comes at 258 ms and 285 ms at p95, against 408 and 597.
@@ -70,7 +72,8 @@ and 354 ms, and its first sentence comes at 258 ms and 285 ms at p95, against 40
 | gray | retention, EAGLE-3 with 3 drafts, short loads recomputed | 1 | 160 | 261 | 298 | 453 | 9.8 | 2,618 |
 | gray | retention, EAGLE-3 with 2 drafts, short loads recomputed | 1 | 160 | 293 | 303 | 587 | 8.3 | 2,578 |
 | gray | the turn announced and just in time, EAGLE-3 with 2 drafts, short loads recomputed | 2 | 76 (75-76) | 137 (136-138) | 171 (166-176) | 387 (381-393) | 7.6 | 2,572 |
-| gray | the turn announced, just in time, the reservations taken, EAGLE-3 with 2 drafts, short loads recomputed | 1 | 76 | 115 | 191 | 368 | 8.9 | 2,512 |
+| gray | the turn announced, just in time, the reservations taken, EAGLE-3 with 2 drafts, short loads recomputed | 2 | 78 (76-79) | 130 (115-144) | 194 (191-197) | 400 (368-432) | 9.1 | 2,527 |
+| gray | the same, the agents' decodes held from a call's first 16 tokens | 2 | 78 (78-78) | 140 (136-143) | 182 (177-186) | 260 (259-262) | 9.6 | 2,519 |
 <!-- /table.py alternatives -->
 
 - **Synchronous scheduling** gives the first token earlier, but each later token takes 16.5 to 18 ms instead of 13.7,
@@ -85,8 +88,31 @@ and 354 ms, and its first sentence comes at 258 ms and 285 ms at p95, against 40
   its drafter drops the last block of every prefix hit, so 68 of 71 turns loaded that block from the CPU tier and the
   first token rose to 219-226 ms. Recomputing a call's short loads instead (`make_room.recompute_tokens 256`) removes
   the loads. On top of the announced turn and just in time, it brings the first sentence from 270 to 166-176 ms on
-  Gray, at 4 ms more on the first token's median and 26 ms more at its p95. It is measured in the whole pipeline before
-  it is adopted.
+  Gray, at 4 ms more on the first token's median and 26 ms more at its p95. The decode hold keeps its effect beside
+  it: the 16th token's p95 259-262 ms against 368-432 without the hold, the first token and the agents within the
+  runs' spread. It is measured in the whole pipeline before it is adopted.
+
+## How long the hold lasts
+
+<!-- table.py hold -->
+| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | p95 | 48th token p50 | p95 | Agents' tokens/s |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| phastform | + the calls taking the agents' reservations | 2 | 64 (64-64) | 92 (91-94) | 261 (260-262) | 392 (391-392) | 700 (696-705) | 998 (953-1043) | 2,625 |
+| phastform | + the agents' decodes held from a call's first 16 tokens | 2 | 64 (63-65) | 94 (92-95) | 258 (256-261) | 285 (284-286) | 704 (701-707) | 966 (948-983) | 2,615 |
+| gray | + the calls taking the agents' reservations | 2 | 71 (71-71) | 106 (96-115) | 268 (266-269) | 402 (395-408) | 698 (698-699) | 1016 (989-1042) | 2,554 |
+| gray | + the agents' decodes held from a call's first 16 tokens | 1 | 72 | 108 | 268 | 300 | 714 | 980 | 2,569 |
+| gray | the same, the decodes held from a call's first 32 tokens | 2 | 72 (72-73) | 108 (108-108) | 264 (264-265) | 299 (298-300) | 701 (700-702) | 841 (838-844) | 2,582 |
+| gray | the same, the decodes held from a call's first 48 tokens | 2 | 74 (73-74) | 106 (103-109) | 267 (267-267) | 300 (299-301) | 693 (692-694) | 735 (734-736) | 2,600 |
+<!-- /table.py hold -->
+
+- **At 16 tokens the hold covers a first sentence of 16 tokens**: the 16th token's p95 falls to 285-300 ms, but the
+  48th token's barely moves, 966-980 ms against 998-1,016, since the agents' decodes return to the reply's steps after
+  its 16th token.
+- **At 48 tokens, the budget cap's window, the whole reply comes out of the agents' way**: the 48th token's p95 is 735
+  ms on Gray, 44 ms over its median, against 1,016 without the hold and 841 at 32, with the first token, the 16th token
+  and the agents unchanged. The voice agent's first sentences run up to 39 tokens and its replies 23 at the median
+  ([the report's §3.3](../../../docs/REPORT.md#33-sizing-the-window)), and a hold ends with its reply, so the serving
+  profile holds the agents' decodes for 48 tokens, as the budget cap holds their prefill.
 
 ## Controls
 
