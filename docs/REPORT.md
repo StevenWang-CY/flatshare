@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.17, 2 November 2026. Code, records and figures at tag
-[v1.17](https://github.com/StevenWang-CY/flatshare/tree/v1.17) of
+Flatshare technical report, version 1.18, 2 November 2026. Code, records and figures at tag
+[v1.18](https://github.com/StevenWang-CY/flatshare/tree/v1.18) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -1621,7 +1621,7 @@ The repository's tests fail when a committed figure differs from what its record
 records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists the campaigns' measurements run by run, the records' READMEs the
 probes and checks around them, and [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
-**Hosting.** Tag v1.17 holds the code, the records and this report. The raw records, the gateway's request logs and each
+**Hosting.** Tag v1.18 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in
 [v1.0](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.0), the A100 run's in
 [v1.1](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.1), the KV-sampling runs' in
@@ -1871,6 +1871,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.18 | 2026-11-02 | Appendix A: BENCHMARKS lists the campaigns' measurements and the records' READMEs the probes and checks around them, where it said BENCHMARKS lists every measurement; the tables' empty cells as em dashes |
 | 1.17 | 2026-11-02 | §6.10 and §7: the serving profile holds the agents' decodes through the budget cap's window, past the follow-up rounds' rule on the agents' rate (Table 9's profile row, its sums, the abstract and the results at a glance follow); §4's step cost and Figure 7 from the baseline measured with the hold |
 | 1.16 | 2026-11-02 | §9's one vLLM version: make-room rebased onto vLLM 0.33.0, which no round measured; every measurement of §6 named as 0.32.0's |
 | 1.15 | 2026-11-02 | Added §6.10, the serving engine's five additions, measured at the engine (Table 9), the four the profile adopted in five rounds of the whole pipeline (Figure 16, Table 10), and the fifth and speculative decoding in two more, which turned both down; with a sixth contribution, the abstract's last paragraph, a row of the results at a glance, §7's engine additions and what to watch, §9's calls per GPU, the conclusion's sentence and Table A1's rows. Corrected: §4's cost of a scheduler step and Figure 7, from the newest baseline with the serving profile's switches; the pull requests' state dated 2026-11-02 |
