@@ -186,7 +186,7 @@ long (`retain_s`), and the probe sizes its load for an empty pool.
 
 <!-- quick-start probe -->
 The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On Phastform, with the card's own KV
-pool, it was 1,543–1,556 ms on stock vLLM and 173–179 ms with make-room, in four runs each
+pool, it was 1,544–1,547 ms on stock vLLM and 272–277 ms with make-room, in four runs each
 ([stock](benchmarks/results/2026-11-02-quick-start/stock-kv.log),
 [make-room](benchmarks/results/2026-11-02-quick-start/make-room-kv.log),
 [the record](benchmarks/results/2026-11-02-quick-start/README.md)).
