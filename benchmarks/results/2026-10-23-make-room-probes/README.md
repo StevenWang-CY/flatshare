@@ -1,10 +1,22 @@
-# make-room probe records (2026-10-23)
+# The make-room probes on Gray (2026-10-23)
 
-The outputs behind [BENCHMARKS](../../../docs/BENCHMARKS.md#the-kv-case-make-room)' three probe tables (the KV case, the prefill case and the calls' first-token tail), which vLLM [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) cite. Every run was on Gray, the second RTX 5060 Ti, with the frozen box's units, pins and pool (vLLM 0.32.0, Qwen3-4B-Instruct-2507-FP8, 2,274 blocks of 16 tokens), on 2026-10-23, with [`probe.py`](../../../python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py) and [`tail.py`](../../../python/flatshare_vllm/src/flatshare_vllm/make-room/tail.py).
+The outputs behind [BENCHMARKS](../../../docs/BENCHMARKS.md#the-kv-case-make-room)' three probe tables, the KV case,
+the prefill case and the calls' first-token tail, run on Gray, the second RTX 5060 Ti, before W5's fixes to make-room.
+vLLM [#63350](https://github.com/vllm-project/vllm/pull/63350) and
+[#63351](https://github.com/vllm-project/vllm/pull/63351) cited them at the time; as of 2026-11-02 they cite
+[W5's probes on Phastform](../2026-10-24-w5-probes/README.md).
 
-`python3 check.py` recomputes every row of the three tables from these files: each run of a row, or its median and range from four runs on, and for a tail, tail.py's summary line, recomputed from the run's per-turn lines (within their 1 ms rounding; the check fails otherwise). None of the tails had a failed call turn.
+## How it ran
 
-The drivers' logs under `logs/` give, for each run, the revision Gray had deployed (its `DEPLOYED` line) and the engine's `additional_config` as `/server_info` read it back. The switches are `make-room`'s: the KV preemption (at most 2 victims a step; #63350), the budget cap (#63351) and the 2,048-token reserve (arm 9 only).
+| | |
+|---|---|
+| The engine | The frozen box's units, pins and pool on Gray: vLLM 0.32.0, Qwen3-4B-Instruct-2507-FP8, 2,274 blocks of 16 tokens |
+| The probes | [`probe.py`](../../../python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py) and [`tail.py`](../../../python/flatshare_vllm/src/flatshare_vllm/make-room/tail.py), on 2026-10-23 |
+| The switches | `make-room`'s: the KV preemption (at most 2 victims a step; #63350), the budget cap (#63351) and the 2,048-token reserve (arm 9 only) |
+| The revisions | The drivers' logs under `logs/` give, for each run, the revision Gray had deployed (its `DEPLOYED` line) and the engine's `additional_config` as `/server_info` read it back. The revisions after the KV-load rule schedule these probes alike: e19fba5's module and 6967456's differ by 1460bfc only, which holds nothing back when every running slot is taken, 256 requests, and no probe comes near it; d307801's module is 6967456's |
+| The check | `python3 check.py` recomputes every row of the three tables from these files: each run of a row, or its median and range from four runs on, and for a tail, tail.py's summary line, recomputed from the run's per-turn lines (within their 1 ms rounding; the check fails otherwise). None of the tails had a failed call turn |
+
+## Files
 
 | File | Engine | Revision | Rows |
 |---|---|---|---|
@@ -24,5 +36,3 @@ The drivers' logs under `logs/` give, for each run, the revision Gray had deploy
 | `tail/v2b-fresh.out`, `tail/tailprobe.out` | Arm 9's configuration, on a module that logged the scheduler's state each step a priority-0 request had waited over 0.3 s (`tail/*-engine.log`: every such request was in `WAITING_FOR_REMOTE_KVS`). tail.py before it was committed, as `tailprobe.py`, the same code; fresh and growing prompts | 77ea7dd and the logging | The tail, before the KV-load rule |
 | `pr-probes/ab-tail-fresh.out`, `-grow.out` | The KV preemption and the budget cap | 6967456 | The tail, #63350 and #63351 |
 | `final-probes/makeroom-tail-fresh.out`, `-grow.out` | Arm 9's configuration | e19fba5 | The tail, arm 9 |
-
-The revisions after the KV-load rule schedule these probes alike. e19fba5's module and 6967456's differ by 1460bfc only, which holds nothing back when every running slot is taken; that is 256 requests, and no probe comes near it. d307801's module is 6967456's.

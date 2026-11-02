@@ -1,11 +1,6 @@
 # flatshare-voice
 
-Flatshare's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §6.2](../../docs/ARCHITECTURE.md#42-the-voice-pipeline)), for a reader who runs or changes the voice agent or the measurement callers. The package holds:
-- the voice agent the deployment runs;
-- the lifecycle events it posts to the control plane, and its per-turn stage times;
-- the measurement callers that read voice-to-voice latency from waveforms;
-- the headers the agent sends to the control plane;
-- a factory for the stock OpenAI STT, LLM and TTS plugins, pointed at OpenAI-compatible servers over TCP or a Unix socket.
+Flatshare's realtime voice plane on LiveKit Agents 1.8.8, for a reader who runs or changes the voice agent or the measurement callers ([ARCHITECTURE.md §3.4](../../docs/ARCHITECTURE.md#34-the-voice-worker) places the worker in the deployment, and [§6.2](../../docs/ARCHITECTURE.md#62-the-voice-pipeline-in-measurement) in the measurements). It holds the voice agent the deployment runs, with the lifecycle events and per-turn stage times it reports, and the measurement callers that read voice-to-voice latency from waveforms:
 
 | Module | Contents |
 |---|---|
@@ -14,8 +9,8 @@ Flatshare's realtime voice plane on LiveKit Agents 1.8.8 ([ARCHITECTURE §6.2](.
 | `flatshare_voice.bots` | Measurement callers (`flatshare-voice bots`): voice-to-voice latency, barge-in to silence, and with `--save-audio` each call's audio |
 | `flatshare_voice.callers` | The caller corpus (`flatshare-voice render-callers`): scripted lines in six stock Kokoro voices, 16 kHz WAVs |
 | `flatshare_voice.audio` | A real-time microphone track, the agent's speech spans and a recording of both, on one clock |
-| `flatshare_voice.protocol` | The agent name `flatshare-voice`, the `X-Session-ID` and `X-Flatshare-Class` names, `room_session_id(room_sid)`, `realtime_headers(session_id)` |
-| `flatshare_voice.plugins` | `make_stt`, `make_llm`, `make_tts`, `openai_client` |
+| `flatshare_voice.protocol` | The headers the agent sends to the control plane: the agent name `flatshare-voice`, the `X-Session-ID` and `X-Flatshare-Class` names, `room_session_id(room_sid)`, `realtime_headers(session_id)` |
+| `flatshare_voice.plugins` | A factory for the stock OpenAI STT, LLM and TTS plugins, pointed at OpenAI-compatible servers over TCP or a Unix socket: `make_stt`, `make_llm`, `make_tts`, `openai_client` |
 
 ## The voice agent
 
@@ -168,8 +163,9 @@ With `--in-order` each caller plays the corpus's turn lines in order rather than
 
 A turn fails when the agent does not answer within the reply timeout (30 s), or does not stop speaking. Its line in `turns.jsonl` has an `error` and keeps what the turn measured before it. A turn draws its interruption with its line, so a failed turn leaves the turns after it as they were: a point with failures plays the same calls as the others. In `summary.json` a sample the timeout cut short counts at the timeout, censored (`censored` gives how many), never as missing: a turn that was never answered raises the percentiles instead of leaving them.
 
-```bash
-flatshare-voice render-callers ~/flatshare/data/callers --tts-url http://localhost/v1 --uds $XDG_RUNTIME_DIR/flatshare/phastform-tts.sock
+```sh
+flatshare-voice render-callers ~/flatshare/data/callers --tts-url http://localhost/v1 \
+  --uds $XDG_RUNTIME_DIR/flatshare/phastform-tts.sock
 set -a; . ~/.config/flatshare/livekit.env; set +a
 ~/flatshare/src/deploy/bin/in-voicenet flatshare-voice bots --corpus ~/flatshare/data/callers \
   --callers 2 --turns 25 --barge-in 0.25 --out ~/flatshare/runs/<run>/bots
@@ -209,7 +205,7 @@ Every attempt gets a line in `attempts.jsonl` as it ends, with when it was due a
 
 `turns.jsonl` gets each turn's line as `bots` writes it, with the run's number (`run`) and when the turn ended on the wall clock (`at`); `run.json` the configuration (no secret) and the run's start and end; `summary.json`, at the end, the attempts by outcome and reason, how the accepted calls ended, and the measured turns with their voice-to-voice percentiles and replies (`flatshare_stats.replies`, as `bots`' summary has them). No call arrives after `--duration`, and the calls in progress play their turns to the end. SIGINT or SIGTERM ends a run early: no call arrives after it, and each call in progress ends with its current turn; a second one hangs every call up at once. Either way the run writes its summary and exits 0.
 
-```bash
+```sh
 set -a; . ~/.config/flatshare/livekit.env; set +a
 ~/flatshare/src/deploy/bin/in-voicenet flatshare-voice arrivals --corpus ~/flatshare/data/callers \
   --calls-per-hour 20 --turns 10 --duration 3600 --out ~/flatshare/runs/<run>/calls
@@ -240,7 +236,7 @@ The `phastform-*.sock` files are the tunnel's Unix-socket forwards (`deploy/cyan
 
 Unit tests need no network. CI runs them with `make test-python`:
 
-```bash
+```sh
 uv run --extra test pytest -m "not integration"      # in python/flatshare_voice
 ```
 
@@ -267,10 +263,11 @@ uv run --extra test pytest -m "not integration"      # in python/flatshare_voice
 The integration test (the W0 barge-in and header findings) runs on cyan. It needs Linux with unprivileged user namespaces,
 `unshare`, `nsenter`, `setpriv`, `ip` and `ss`, and `livekit-server` 1.13.10:
 
-```bash
+```sh
 cd ~/flatshare/src/python/flatshare_voice
 export UV_PROJECT_ENVIRONMENT=~/flatshare/venvs/voice
-LIVEKIT_SERVER_BIN=~/flatshare/bin/livekit-server uv run --locked --extra test pytest -m integration -v
+LIVEKIT_SERVER_BIN=~/flatshare/bin/livekit-server uv run --locked --extra test pytest \
+  -m integration -v
 ```
 
 A run takes about 35 s and prints the measured latencies at the end. Logs and a JSON
@@ -307,9 +304,12 @@ What the test does:
 
 Namespace commands, as the test runs them:
 
-```bash
+```sh
 # holder: prints "ready", then keeps the namespace alive
-unshare --user --map-root-user --net -- sh -c 'ip link set lo up && ip link add flatshare0 type dummy && ip link set flatshare0 addrgenmode none && ip addr add 10.255.0.1/32 dev flatshare0 && ip link set flatshare0 up && echo ready && exec sleep infinity'
+unshare --user --map-root-user --net -- sh -c 'ip link set lo up &&
+  ip link add flatshare0 type dummy && ip link set flatshare0 addrgenmode none &&
+  ip addr add 10.255.0.1/32 dev flatshare0 && ip link set flatshare0 up &&
+  echo ready && exec sleep infinity'
 # every other process
 nsenter --target=<holder pid> --user --net --preserve-credentials -- <command>
 ```
@@ -338,7 +338,7 @@ nsenter --target=<holder pid> --user --net --preserve-credentials -- <command>
 mock seeing the client disconnect, over 10 runs:
 
 | Interruption handling | Median | Range | Bound in the test |
-|---|---|---|---|
+|---|---:|---:|---:|
 | Stock (`resume_false_interruption=True`) | 2.19 s | 2.17–2.20 s | 3.0 s |
 | `resume_false_interruption=False` | 0.58 s | 0.57–0.62 s | 1.0 s |
 
@@ -387,7 +387,7 @@ disconnect.
 - `AgentServer` defaults matter:
   - `host=""` puts its health server on all interfaces;
   - in production mode, `num_idle_processes` defaults to the CPU count (48 on cyan);
-  - in production mode, the worker refuses jobs above 70 % host CPU load.
+  - in production mode, the worker refuses jobs above 70% host CPU load.
 
 **Other 1.8.8 defaults, and what the worker and the test set.**
 - `aec_warmup_duration` defaults to 3.0 s, which ignores barge-ins during the first 3 s of

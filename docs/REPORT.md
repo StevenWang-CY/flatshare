@@ -310,10 +310,11 @@ the request fit, with no cap, but only with chunked prefill off and by recomputi
 the rule to V1, under chunked prefill and asynchronous scheduling, with a cap of N a step and the victims' KV kept.
 
 ```text
-Algorithm 1. The KV preemption, before the running loop of each scheduler step (at most N victims a step).
+Algorithm 1. The KV preemption, in each scheduler step, before its running loop (at most N victims).
 p(x) is a request's priority, and a lower value is served first.
 
- 1  if prefills are deferred, new requests are paused, or the KV connector has block frees pending: return
+ 1  if prefills are deferred, new requests are paused, or the KV connector has block frees
+        pending: return
  2  r ← the highest-priority waiting request that the waiting loop can schedule in this step
  3  if r is none, or no running request has p > p(r), or room was made for r and the waiting loop
         has not tried r since, or (with the budget cap) h < p(r) in Algorithm 2: return
@@ -453,10 +454,10 @@ scheduled asynchronously as on the box.
 |---|---|---|
 | Switches off | Nothing: what vLLM's call costs, within 1.8% | 2.8 to 5.4 µs in their short steps, at most 4.6% |
 | Only lower-priority work running | 48–182 µs, at most 18% of the call | 20 µs, beside agents alone |
-| Every running slot taken | 158–299 µs | – |
-| The budget cap and the decode hold keeping agents out of a reply's first steps | – | −63 µs |
+| Every running slot taken | 158–299 µs | — |
+| The budget cap and the decode hold keeping agents out of a reply's first steps | — | −63 µs |
 | A waiting high-priority request that two victims cannot make room for | 0.33–0.49 ms; 1.5 ms when its prefix-cache hit is 999 blocks long | 78 µs in each step that gives up on it |
-| The step that preempts for a voice turn | – | 0.47 ms, 3.5 times vLLM's step, on schedulers built afresh |
+| The step that preempts for a voice turn | — | 0.47 ms, 3.5 times vLLM's step, on schedulers built afresh |
 
 On the box's CPU that step takes 1.1 ms, against a voice reply's decode step of 12 ms with nothing beside it, 16–20 ms
 beside agent prefill that the budget cap keeps back, and the agents' 38 ms at 24 agent sessions.
@@ -613,7 +614,7 @@ over the calls' first 240 s, and are nearly all prompt tokens (§6.4).
 
 | Configuration | Runs | p95 V2V | Pooled p95 | Replies over the SLO | Agents' tokens/s | Agents' TTFT p50 / p99 |
 |---|---:|---:|---:|---:|---:|---:|
-| Voice alone | 5 | 1,784 ms (1,764–1,819) | 1,796 ms | 1 / 295 (0.3%) | – | – |
+| Voice alone | 5 | 1,784 ms (1,764–1,819) | 1,796 ms | 1 / 295 (0.3%) | — | — |
 | Tuned vLLM | 10 | 10,477 ms (8,686–12,115) | 10,609 ms | 532 / 590 (90%) | 3,305 | 63 / 106 s |
 | Preempt-resubmit | 5 | 2,522 ms (2,516–2,868) | 2,717 ms | 130 / 295 (44%) | 3,332 | 32 / 193 s |
 | The KV preemption | 5 | 5,085 ms (4,693–6,261) | 5,290 ms | 263 / 295 (89%) | 3,414 | 67 / 112 s |
@@ -716,8 +717,8 @@ scheduling, and the loads are the tokens the CPU tier loaded beyond those, the v
 
 | Configuration | Steps held | KV preemptions | vLLM's preemptions | CPU-tier loads | Agents' tokens/s | TTFT p50 / p99 |
 |---|---:|---:|---:|---:|---:|---:|
-| Tuned vLLM | – | – | 31 | 212,630 | 3,305 | 63 / 106 s |
-| Preempt-resubmit | – | – | 7 | 273,461 | 3,332 | 32 / 193 s |
+| Tuned vLLM | — | — | 31 | 212,630 | 3,305 | 63 / 106 s |
+| Preempt-resubmit | — | — | 7 | 273,461 | 3,332 | 32 / 193 s |
 | The KV preemption | 0% | 34 | 51 | 171,736 | 3,414 | 67 / 112 s |
 | The change (T = 16) | 25% | 32 | 47 | 117,049 | 3,298 | 71 / 105 s |
 | **The configuration to deploy** (T = 48) | 33% | 31 | 46 | 117,044 | 3,203 | 72 / 111 s |
@@ -882,7 +883,7 @@ the first two samples of the agents only.
 
 | Configuration | Runs | p95 V2V | Over the SLO | Agents' tokens/s | Agents' TTFT p50 / p99 |
 |---|---:|---:|---:|---:|---:|
-| Voice alone | 5 | 1,419 ms (1,391–1,445) | – | – | – |
+| Voice alone | 5 | 1,419 ms (1,391–1,445) | — | — | — |
 | Tuned vLLM, 512-token steps | 5 | 4,986 ms (4,163–5,710) | +3,317 ms | 8,633 | 12 / 26 s |
 | **The configuration to deploy**, 512-token steps | 5 | **1,634 ms** (1,609–1,663) | −35 ms | 8,651 | 14 / 26 s |
 | Tuned vLLM, 2,048-token steps | 2 | 3,663 ms (3,289–4,036) | +1,994 ms | 14,536 | 1.5 / 14 s |
@@ -980,8 +981,8 @@ of their cards' runs. The shared card's sessions are given first, then the secon
 
 | Arrangement | Agent sessions | Replies over the SLO | Agents' tokens/s | Over the best dedicated | Agents' TTFT p50 / p99 |
 |---|---:|---:|---:|---:|---:|
-| Dedicated roles, controlled | 0 + 12 | 0 / 177 | 6,302 | – | 4.4 / 31.0 s |
-| **Dedicated roles, best practical** | 0 + 14 | 0 / 177 | **7,893** | – | 5.1 / 41.0 s |
+| Dedicated roles, controlled | 0 + 12 | 0 / 177 | 6,302 | — | 4.4 / 31.0 s |
+| **Dedicated roles, best practical** | 0 + 14 | 0 / 177 | **7,893** | — | 5.1 / 41.0 s |
 | Pooling, tuned vLLM | 12 + 12 | 53 / 87 | 13,188 | does not qualify | 4.7 / 29.2 s |
 | Pooling, the change | 12 + 12 | 24 / 87 | 12,111 | does not qualify | 4.8 / 37.2 s |
 | Consolidation, tuned vLLM | 4 + 14 | 18 / 177 | 10,596 | does not qualify | 0.6 / 10.4 s |
@@ -1617,8 +1618,8 @@ its tests where Table A1 says so. Table A1 maps each part of the report to its r
 | The next vLLM release (§9) | [`2026-10-27-compat`](../benchmarks/results/2026-10-27-compat) | `make compat-upstream` |
 
 The repository's tests fail when a committed figure differs from what its records give, so the figures here are the
-records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists every measurement run by run, and
-[EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
+records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists the campaigns' measurements run by run, the records' READMEs the
+probes and checks around them, and [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
 **Hosting.** Tag v1.17 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in
@@ -1676,10 +1677,10 @@ two callers, and the 24 sessions beside four and six callers, against each calle
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 16 sessions, tuned vLLM | 2,147 | 3,832 | 3,067 | 2,300 | 2,516 | 2,516 | 2,034 |
 | 16 sessions, the configuration to deploy | 2,038 | 2,419 | 2,122 | 2,050 | 2,021 | 2,050 | 2,034 |
-| 4 callers, voice alone | 1,894 | 1,794 | 1,780 | | | 1,794 | |
-| 4 callers, the configuration to deploy | 2,313 | 2,415 | 2,250 | | | 2,313 | 2,044 |
-| 6 callers, voice alone | 1,885 | 1,885 | 1,878 | | | 1,885 | |
-| 6 callers, the configuration to deploy | 2,392 | 2,360 | 2,468 | | | 2,392 | 2,135 |
+| 4 callers, voice alone | 1,894 | 1,794 | 1,780 | — | — | 1,794 | — |
+| 4 callers, the configuration to deploy | 2,313 | 2,415 | 2,250 | — | — | 2,313 | 2,044 |
+| 6 callers, voice alone | 1,885 | 1,885 | 1,878 | — | — | 1,885 | — |
+| 6 callers, the configuration to deploy | 2,392 | 2,360 | 2,468 | — | — | 2,392 | 2,135 |
 
 **Table B3. Every configuration measured beside the 24 sessions on a single sample of the agents' traces.** Medians over
 each configuration's runs, with the range of the p95 V2V. Voice alone's p95 was 1,767 ms over five runs, so the SLO is
@@ -1729,12 +1730,12 @@ but the policy's twelve ablations.
 | Voice alone | 1,445 | 1,414 | 1,419 | 1,391 | 1,424 | 1,419 |
 | Tuned vLLM, 512-token steps | 4,163 | 4,783 | 4,986 | 5,169 | 5,710 | 4,986 |
 | The configuration to deploy, 512-token steps | 1,663 | 1,658 | 1,611 | 1,634 | 1,609 | 1,634 |
-| Tuned vLLM, 2,048-token steps | 4,036 | 3,289 | | | | 3,663 |
-| The configuration to deploy, 2,048-token steps | 1,810 | 1,843 | | | | 1,826 |
+| Tuned vLLM, 2,048-token steps | 4,036 | 3,289 | — | — | — | 3,663 |
+| The configuration to deploy, 2,048-token steps | 1,810 | 1,843 | — | — | — | 1,826 |
 | Agents' tokens/s, tuned vLLM, 512 | 10,749 | 9,820 | 8,398 | 8,633 | 8,312 | 8,633 |
 | Agents' tokens/s, the configuration to deploy, 512 | 10,125 | 10,851 | 8,025 | 8,651 | 7,922 | 8,651 |
-| Agents' tokens/s, tuned vLLM, 2,048 | 15,082 | 13,990 | | | | 14,536 |
-| Agents' tokens/s, the configuration to deploy, 2,048 | 15,124 | 14,145 | | | | 14,635 |
+| Agents' tokens/s, tuned vLLM, 2,048 | 15,082 | 13,990 | — | — | — | 14,536 |
+| Agents' tokens/s, the configuration to deploy, 2,048 | 15,124 | 14,145 | — | — | — | 14,635 |
 
 ### C. Configurations
 

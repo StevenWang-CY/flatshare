@@ -1,31 +1,40 @@
 # flatshare-sim
 
-`flatshare-sim` replays the SemiAnalysis Claude Code traces as AIPerf 0.13.0's `agentic_replay` sends them, through a model of vLLM 0.32's GPU prefix cache and OffloadingConnector CPU tier, served by a model of vLLM's step loop on the frozen box (`flatshare-core`'s step-time model; E0's idle-box cost model is its zero-load limit).
+`flatshare-sim` replays the SemiAnalysis Claude Code traces as AIPerf 0.13.0's `agentic_replay` sends them, through a model of vLLM 0.32's GPU prefix cache and OffloadingConnector CPU tier, served by a model of vLLM's step loop on the frozen box (`flatshare-core`'s step-time model; E0's idle-box cost model is its zero-load limit). This README is for a reader who runs the simulator, checks its calibration, or reads E1's tables and the modeled hardware ([ARCHITECTURE.md §6.4](../../docs/ARCHITECTURE.md#64-the-simulator-e1) places it in the system).
 
 - **For each cache policy** it reports where prompt tokens came from (the GPU pool, the CPU tier, or computation), what that costs in time to first token and PCIe traffic, and where the run sits in the regime coordinates E1 is plotted in.
 - **A clairvoyant reference** gives the gap each policy leaves, and the E1 arms measure how much of it each level of information about a session's return closes.
 - **Other GPUs** are placed on the same map with costs modeled from their published peaks.
 
-This README is for a reader who runs the simulator, checks its calibration, or reads E1's tables and the modeled hardware.
-
 ## Usage
 
-`DATA/weka-x32` is the 32× corpus: SemiAnalysis's traces as `flatshare-bench scale-traces` writes them ([how](../../python/flatshare_bench/README.md#trace-scaling); the download is in its quickstart). It stays outside the repository.
+`DATA/weka-x32` is the 32× corpus: SemiAnalysis's traces as `flatshare-bench scale-traces` writes them ([how](../../python/flatshare_bench/README.md#trace-scaling); the download is in its [quick start](../../python/flatshare_bench/README.md#quick-start-cyan)). It stays outside the repository.
 
 ```sh
 cargo build --release -p flatshare-sim
-flatshare-sim run DATA/weka-x32 --json w0.json --csv w0.csv                       # the W0 configuration, the stock arms
-flatshare-sim run DATA/weka-x32 --cpu-ratio 2,4,8 --arms lru-cpu,clairvoyant      # CPU tier at 2x, 4x and 8x the pool
-flatshare-sim run DATA/weka-x32 --service idle                                    # v0's idle-box service
+# the W0 configuration, the stock arms
+flatshare-sim run DATA/weka-x32 --json w0.json --csv w0.csv
+# CPU tier at 2x, 4x and 8x the pool
+flatshare-sim run DATA/weka-x32 --cpu-ratio 2,4,8 --arms lru-cpu,clairvoyant
+# v0's idle-box service
+flatshare-sim run DATA/weka-x32 --service idle
 flatshare-sim run DATA/weka-x32 --pauses tracelab --arms lru-cpu,oracle-prefetch
-flatshare-sim regime DATA/weka-x32 --csv regime.csv --markdown regime.md          # the regime map, seeds 11-13
-flatshare-sim regime DATA/weka-x32 --sessions 8,12,16,24 --cpu-ratio 4 --pause-sources trace --seeds $(seq 11 30 | paste -sd, -)
-flatshare-sim hardware DATA/weka-x32 --csv hw.csv --markdown hw.md                # other GPUs, modeled
-flatshare-sim hardware DATA/weka-x32 --fit --csv hw-fit.csv --markdown hw-fit.md  # each at its own scaling
-flatshare-sim forecast DATA/weka-x32 DATA/weka-x32-long --markdown forecast.md    # a GPU run's forecast (the A100's)
-flatshare-sim mrc DATA/weka-x32 --service idle --csv mrc.csv --markdown mrc.md    # miss-ratio curves (BENCHMARKS' table)
-flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl        # a measured run through the engine model
-flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl --timed --csv w0-timed.csv
+# the regime map, seeds 11-13
+flatshare-sim regime DATA/weka-x32 --csv regime.csv --markdown regime.md
+flatshare-sim regime DATA/weka-x32 --sessions 8,12,16,24 --cpu-ratio 4 --pause-sources trace \
+  --seeds $(seq 11 30 | paste -sd, -)
+# other GPUs, modeled
+flatshare-sim hardware DATA/weka-x32 --csv hw.csv --markdown hw.md
+# each at its own scaling
+flatshare-sim hardware DATA/weka-x32 --fit --csv hw-fit.csv --markdown hw-fit.md
+# a GPU run's forecast (the A100's)
+flatshare-sim forecast DATA/weka-x32 DATA/weka-x32-long --markdown forecast.md
+# miss-ratio curves (BENCHMARKS' table)
+flatshare-sim mrc DATA/weka-x32 --service idle --csv mrc.csv --markdown mrc.md
+# a measured run through the engine model
+flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl
+flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl --timed \
+  --csv w0-timed.csv
 ```
 
 The replay options are the fields of `flatshare-bench`'s `configs/agentic_replay.yaml`, but they default to the W0 settings, not to that file's (1,800 s plus a 120 s grace and a 600 s think-time cap): 16 lanes, 600 s plus a 60 s grace, a 120 s think-time cap, seed 11, start ratios 0 to 1, burst starts and a 10 s idle cap. Capacities default to the frozen box (`--pool-tokens 36400`, a 20 GiB CPU tier; `--cpu-ratio` or `--cpu-gib` change it), costs to the E0 fits (`--costs` takes the `summary.json` of `flatshare-bench tiers`; `--itl-ms` sets the idle service's decode rate) and the step-time model to the frozen box's fit (`--step-costs`). `run` writes a JSON summary (`--json`), one CSV row per arm and capacity (`--csv`) and one CSV row per request (`--requests`). `--token-scale 32` replays a 32× corpus at its original token counts.
@@ -137,8 +146,8 @@ Three operating points on the frozen box, each on a freshly started engine: AIPe
 
 `make reproduce-calibration EXPORTS=<dir> CORPUS=DATA/weka-x32` writes every number of this section and the next, and BENCHMARKS' table of the three points, to `build/reproduce-calibration/calibration.md` (`scripts/calibration.py`). It needs six runs' AIPerf `profile_export.jsonl` and the engine's `/metrics` before and after: the three points, W0, and the 16- and 24-session repeats on a warm engine. They are an asset of the [v0.3 release](https://github.com/StevenWang-CY/flatshare/releases/tag/v0.3), `leaseholder-calibration-exports-2026-10-24.tar.gz` (named before the project's rename), and EXPORTS is its unpacked directory.
 
-| Point | | Requests | Resume TTFT p50 / p90 / p99 (ms) | GPU / CPU / computed (%) |
-|---|---|---|---|---|
+| Point | Source | Requests | Resume TTFT p50 / p90 / p99, ms | GPU / CPU / computed, % |
+|---|---|---:|---:|---:|
 | 8 sessions | measured | 408 | 83 / 400 / 1,463 | 66.6 / 29.0 / 4.4 |
 | | idle (v0) | 410 (+0.5%) | 67 / 200 / 563 (−19 / −50 / −61%) | 67.6 / 28.1 / 4.3 |
 | | contention | 405 (−0.7%) | 81 / 382 / 1,749 (−3 / −5 / +20%) | 66.1 / 29.5 / 4.4 |
@@ -165,8 +174,8 @@ Leave-one-out refits every coefficient on the other two points and predicts the 
 
 W0 replayed the full 32× corpus against the frozen box: AIPerf's sequential sampler gave its 16 lanes the first 16 traces in name order, and its 10 recycled plays the next 10. The simulator runs the same configuration with seed 11, here with `--service idle`. `replay-log` feeds the engine model W0's own requests at their measured start and end times, which separates the cache model from the replay timing.
 
-| | W0, measured | Engine model on W0's timeline | Full simulation |
-|---|---|---|---|
+| Measure | W0, measured | Engine model on W0's timeline | Full simulation |
+|---|---:|---:|---:|
 | Profiling requests | 688 | 688 | 685 |
 | Session plays, warmup requests | 26, 16 | — | 26, 16 |
 | Prompt tokens | 3,268,924 | 3,122,538 | 3,113,792 |
@@ -207,13 +216,23 @@ The box's profile gives `StepCost::frozen_box()` and `TierCost::frozen_box()` ba
 
 The 11 GiB is the box's 9,288 MiB of non-KV footprint (14,408 MiB in use with the three servers idle, less the 5 GiB pool) and 1,976 MiB of headroom of its 16 GiB (`nvidia-smi` shows 16,311 MiB, 1,903 MiB of them free). The formula gives the box's 36,400 tokens back. The memory is what each card leaves with the ECC it ships with: 22.5 GiB of the L4's 24, and all of the box's, the A100s' and the H100's (below). The CPU tier is 4× each pool, as in E1's realistic regime.
 
-| GPU | Costs | Memory | Bandwidth | Dense FP8 / BF16 | Linear layers | Host link, each way | Pool | Step: fixed | per token | per pair | per KV token read | Restore | Cold prefill |
-|---|---|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---|---|
-| RTX 5060 Ti 16 GB | measured | 16 GiB | 448 GB/s | 189.8 / 47.4 TFLOPS | FP8 W8A8 | PCIe 3.0 x8, 7.9 GB/s | 36,400 tokens | 11.56 ms | 47.99 µs | 14.17 ns | 429.3 ns | 10.3 ms + 23.64 µs/token | 47.8 ms + 63.11 µs/token + 8.126 ns/token² |
-| L4 24 GB | modeled | 22.5 GiB | 300 GB/s | 242.5 / 121.0 TFLOPS | Marlin W8A16, 1.42× a BF16 GEMM | PCIe 4.0 x16, 31.5 GB/s | 83,728 tokens | 17.26 ms | 106.58 µs | 5.56 ns | 641.1 ns | 10.3 ms + 5.91 µs/token | 53.5 ms + 134.38 µs/token + 3.798 ns/token² |
-| A100 40 GB | modeled | 40 GiB | 1,555 GB/s | none / 312.0 TFLOPS | Marlin W8A16, 1.42× a BF16 GEMM | PCIe 4.0 x16, 31.5 GB/s | 211,168 tokens | 3.33 ms | 41.33 µs | 2.15 ns | 123.7 ns | 10.3 ms + 5.91 µs/token | 35.2 ms + 47.47 µs/token + 1.340 ns/token² |
-| A100 SXM4 80 GB | modeled | 80 GiB | 2,039 GB/s | none / 312.0 TFLOPS | Marlin W8A16, 1.42× a BF16 GEMM | PCIe 4.0 x16, 31.5 GB/s | 502,432 tokens | 2.54 ms | 41.33 µs | 2.15 ns | 94.3 ns | 10.3 ms + 5.91 µs/token | 34.9 ms + 46.00 µs/token + 1.307 ns/token² |
-| H100 SXM 80 GB | modeled | 80 GiB | 3,350 GB/s | 1,979.0 / 989.5 TFLOPS | FP8 W8A8 | PCIe 5.0 x16, 63.0 GB/s | 502,432 tokens | 1.55 ms | 4.60 µs | 0.68 ns | 57.4 ns | 10.3 ms + 2.96 µs/token | 27.4 ms + 9.57 µs/token + 0.440 ns/token² |
+| GPU | Memory, GiB | Bandwidth, GB/s | Dense FP8 / BF16, TFLOPS | Linear layers | Host link, each way | Pool, tokens |
+|---|---:|---:|---:|---|---|---:|
+| RTX 5060 Ti 16 GB | 16 | 448 | 189.8 / 47.4 | FP8 W8A8 | PCIe 3.0 x8, 7.9 GB/s | 36,400 |
+| L4 24 GB | 22.5 | 300 | 242.5 / 121.0 | Marlin W8A16, 1.42× a BF16 GEMM | PCIe 4.0 x16, 31.5 GB/s | 83,728 |
+| A100 40 GB | 40 | 1,555 | none / 312.0 | Marlin W8A16, 1.42× a BF16 GEMM | PCIe 4.0 x16, 31.5 GB/s | 211,168 |
+| A100 SXM4 80 GB | 80 | 2,039 | none / 312.0 | Marlin W8A16, 1.42× a BF16 GEMM | PCIe 4.0 x16, 31.5 GB/s | 502,432 |
+| H100 SXM 80 GB | 80 | 3,350 | 1,979.0 / 989.5 | FP8 W8A8 | PCIe 5.0 x16, 63.0 GB/s | 502,432 |
+
+The step-time model's terms on each, and E0's restore and cold-prefill fits, measured on the box and modeled on the others:
+
+| GPU | Costs | Fixed step, ms | Per token, µs | Per pair, ns | Per KV token read, ns | Restore | Cold prefill |
+|---|---|---:|---:|---:|---:|---|---|
+| RTX 5060 Ti 16 GB | measured | 11.56 | 47.99 | 14.17 | 429.3 | 10.3 ms + 23.64 µs/token | 47.8 ms + 63.11 µs/token + 8.126 ns/token² |
+| L4 24 GB | modeled | 17.26 | 106.58 | 5.56 | 641.1 | 10.3 ms + 5.91 µs/token | 53.5 ms + 134.38 µs/token + 3.798 ns/token² |
+| A100 40 GB | modeled | 3.33 | 41.33 | 2.15 | 123.7 | 10.3 ms + 5.91 µs/token | 35.2 ms + 47.47 µs/token + 1.340 ns/token² |
+| A100 SXM4 80 GB | modeled | 2.54 | 41.33 | 2.15 | 94.3 | 10.3 ms + 5.91 µs/token | 34.9 ms + 46.00 µs/token + 1.307 ns/token² |
+| H100 SXM 80 GB | modeled | 1.55 | 4.60 | 0.68 | 57.4 | 10.3 ms + 2.96 µs/token | 27.4 ms + 9.57 µs/token + 0.440 ns/token² |
 
 The peaks come from NVIDIA: the [RTX 5060 family page](https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5060-family/) and [50-series comparison](https://www.nvidia.com/en-us/geforce/graphics-cards/compare/), the [RTX Blackwell whitepaper](https://images.nvidia.com/aem-dam/Solutions/geforce/blackwell/nvidia-rtx-blackwell-gpu-architecture.pdf), and the [L4](https://www.nvidia.com/en-us/data-center/l4/), [A100](https://nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf) and [H100](https://www.nvidia.com/en-us/data-center/h100/) (SXM) datasheets.
 - **The box's tensor throughput.** NVIDIA quotes it only as 759 AI TOPS, FP4 with sparsity, which is 379.5 dense FP4 TFLOPS. The 5060 Ti is not in the whitepaper's tables; its rates follow by the ratios every GeForce Blackwell card there has: half its FP4 rate in FP8 with FP16 accumulate, and a quarter of that in BF16, whose only rate is with FP32 accumulate. FP8 with FP32 accumulate runs at half rate on these cards, and E0's recompute cell says the box's linear layers beat that rate: at 4,096 tokens, 437 ms less the 48 ms fixed part leaves 389 ms, where the linear layers alone at the FP32-accumulate peak (94.9 TFLOPS) would take 314 ms and attention at 47.4 TFLOPS about 104 ms more, 418 ms. At the FP16-accumulate peak they take 157 ms, which fits, so FP16 accumulate is the peak of the same kind.
@@ -235,7 +254,7 @@ So the L4's linear layers take 106.6 µs a token, against the box's 48.0 and the
 **Checks against published vLLM measurements.**
 - **Restores.** The Gen4 x16 term gives 34.5, 58.7 and 107.1 ms for 4k, 8k and 16k tokens. vLLM 0.29 measured 34, 65 and 104 ms for Qwen3-4B's CPU-tier restores on an L20, also PCIe Gen4 ([#57103](https://github.com/vllm-project/vllm/issues/57103#issuecomment-5733975478)), so the box's 79% of its link carries over to Gen4 within 10%. Nothing checks it on Gen5.
 - **The fixed step.** vLLM 0.30 decoding Qwen3-4B in BF16 at batch 1 on an H100 SXM takes 4.29 ms a step ([decode-decoded](https://github.com/zhebrak/decode-decoded), `results/cells.csv`): 2.45 ms of it is the weight read at the datasheet's bandwidth, and 1.8 ms the rest (launches, kernel excess, bandwidth short of the datasheet's). The box's fixed term has about the same 1.7 ms beyond its weight read, and bandwidth scaling shrinks that to 0.23 ms. So the H100's 1.55 ms is a floor: with the overhead kept it would be 3.0 ms, and the A100's 4.55 ms against 3.33.
-- **The L4 and the A100.** No published vLLM decode measurement of a model this size on either was found. FlashAttention 2's forward pass reaches 50-73% of the A100's peak ([its paper](https://arxiv.org/abs/2307.08691)), where the box's attention term carries 88% of the box's: the A100's attention is modeled at the box's efficiency here and over FlashAttention 2's range in the forecast.
+- **The L4 and the A100.** No published vLLM decode measurement of a model this size on either was found. FlashAttention 2's forward pass reaches 50–73% of the A100's peak ([its paper](https://arxiv.org/abs/2307.08691)), where the box's attention term carries 88% of the box's: the A100's attention is modeled at the box's efficiency here and over FlashAttention 2's range in the forecast.
 
 **Checked on an A100.** The A100 run (2026-10-26) fitted the step model on its calibration point ([`a100.md`](../../benchmarks/results/2026-10-26-a100/a100.md)): the per-token term, Marlin's linear layers, came in at 41.36 µs against the 41.33 modeled, and every other term above the model's: the fixed step at 4.5 ms against 2.54 (3.88 with the box's overhead kept), 4.07 ns a pair against 2.15, and 171.9 ns a KV token read against 94.3, its decode attention reading KV at 42% of the card's bandwidth where the box's reaches 77% ([BENCHMARKS.md](../../docs/BENCHMARKS.md#what-it-measured-2026-10-26)).
 
@@ -249,75 +268,145 @@ The original-scale corpus (`cc-traces-weka-062126`) fits no GPU (`--fit` says so
 - **Working set:** the time the agents' live working set leaves less than 2,048 tokens of the pool free. A voice turn's KV then displaces cached agent KV, which vLLM evicts for it; the agents pay for that when they resume.
 - **Running:** the time the KV of running agent requests leaves less than that free. A voice turn then waits for blocks, as vLLM 0.32 preempts no running request for a waiting one: #40004's KV-blocking regime, where tuned vLLM fails. Otherwise a voice turn meets compute interference alone, which the step cap and priority bound: it waits behind steps carrying the agents' prefill chunks. The chunk column gives one 512-token chunk at the median prompt; on the box a decode step alone takes about 14 ms.
 
-Means over seeds 11, 12 and 13, trace pauses. Pressure is mean / peak; the voice KV shares are working set / running; resume TTFT p50 / p90 is in ms; gains are against `lru-cpu` at p50 / p90. The box's rows are the E1 map's cells. On the 32× replay:
+Means over seeds 11, 12 and 13, with the traces' pauses. Pressure is mean / peak, and the voice KV shares are working set / running. The box's rows are the E1 map's cells. On the 32× replay, the regime:
 
-| GPU | Sessions | Pressure | π | ρ | Voice KV short | Chunk | `lru-cpu` | `clairvoyant` | `oracle-prefetch` | `history-prefetch` | `tokencake` |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| RTX 5060 Ti 16 GB (measured), 32× | 5 | 1.3 / 1.5 | 27.0 | 0.26 | 94 / 0% | 64 | 90 / 243 | +1 / +7% | +2 / +13% | −1 / +0% | −5 / −9% |
-|  | 8 | 1.8 / 2.0 | 29.6 | 0.27 | 100 / 0% | 56 | 86 / 355 | +1 / +27% | +3 / +40% | −0 / +12% | −6 / −10% |
-|  | 12 | 2.6 / 3.1 | 21.4 | 0.25 | 100 / 1% | 64 | 113 / 340 | +0 / +7% | +5 / +32% | +1 / −8% | −11 / −21% |
-|  | 16 | 3.6 / 4.1 | 23.4 | 0.25 | 100 / 4% | 66 | 180 / 1,399 | +2 / +8% | +9 / +2% | −9 / −9% | −24 / −18% |
-|  | 24 | 4.7 / 5.4 | 23.9 | 0.26 | 100 / 12% | 61 | 364 / 2,334 | +3 / +8% | +2 / −5% | −19 / −17% | −36 / −17% |
-|  | 32 | 6.2 / 6.8 | 23.5 | 0.26 | 100 / 25% | 64 | 1,849 / 9,109 | +3 / +2% | −5 / −23% | −24 / −11% | −27 / −5% |
-|  | 40 | 7.5 / 8.1 | 22.9 | 0.26 | 100 / 33% | 63 | 8,216 / 19,336 | +1 / +1% | −25 / −21% | −10 / −6% | −10 / −3% |
-| L4 24 GB (modeled), 32× | 5 | 0.5 / 0.7 | 78.0 | 0.06 | 0 / 0% | 85 | 101 / 212 | +0 / +0% | +0 / +0% | +0 / +0% | −5 / −6% |
-|  | 8 | 0.8 / 0.9 | 83.2 | 0.06 | 0 / 0% | 81 | 97 / 205 | +0 / +0% | +0 / +0% | +0 / +0% | −4 / −12% |
-|  | 12 | 1.1 / 1.3 | 62.3 | 0.06 | 83 / 0% | 85 | 127 / 249 | +0 / +3% | +2 / +7% | +2 / +2% | −7 / −12% |
-|  | 16 | 1.5 / 1.8 | 70.4 | 0.05 | 100 / 1% | 85 | 156 / 325 | +0 / +5% | +3 / +8% | +1 / −4% | −12 / −13% |
-|  | 24 | 2.0 / 2.3 | 68.4 | 0.06 | 100 / 1% | 83 | 158 / 354 | +0 / +3% | +2 / +14% | −2 / −1% | −21 / −14% |
-|  | 32 | 2.7 / 3.0 | 71.0 | 0.05 | 100 / 3% | 85 | 224 / 640 | +0 / +1% | +10 / +12% | −8 / −5% | −25 / −5% |
-|  | 40 | 3.3 / 3.6 | 70.3 | 0.05 | 100 / 7% | 85 | 377 / 2,054 | +1 / +3% | +16 / +8% | −7 / −4% | −15 / −7% |
-|  | 64 | 5.5 / 5.8 | 77.7 | 0.06 | 100 / 23% | 84 | 10,851 / 26,546 | +0 / +2% | −1 / −0% | −7 / −0% | −4 / −1% |
-| A100 40 GB (modeled), 32× | 5 | 0.2 / 0.3 | 81.9 | 0.14 | 0 / 0% | 29 | 69 / 155 | +0 / +0% | +0 / +0% | +0 / +0% | −6 / −3% |
-|  | 8 | 0.3 / 0.4 | 76.5 | 0.16 | 0 / 0% | 28 | 63 / 133 | +0 / +0% | +0 / +0% | +0 / +0% | −4 / −11% |
-|  | 12 | 0.4 / 0.5 | 66.2 | 0.14 | 0 / 0% | 29 | 75 / 141 | +0 / +0% | +0 / +0% | +0 / +0% | −9 / −13% |
-|  | 16 | 0.6 / 0.7 | 71.7 | 0.14 | 0 / 0% | 29 | 81 / 180 | +0 / +0% | −0 / +0% | −0 / +0% | −10 / −14% |
-|  | 24 | 0.8 / 0.9 | 72.4 | 0.15 | 1 / 0% | 28 | 79 / 171 | +0 / +1% | +0 / +1% | −0 / +1% | −12 / −13% |
-|  | 32 | 1.1 / 1.2 | 72.4 | 0.14 | 85 / 0% | 29 | 96 / 243 | +1 / +2% | +1 / +5% | +1 / −0% | −17 / −9% |
-|  | 40 | 1.3 / 1.4 | 72.1 | 0.14 | 100 / 0% | 29 | 103 / 298 | +1 / +3% | +3 / +4% | +1 / −0% | −21 / −9% |
-|  | 64 | 2.2 / 2.3 | 85.7 | 0.15 | 100 / 0% | 29 | 135 / 735 | +1 / +1% | +5 / +3% | −2 / −6% | −25 / −14% |
-|  | 96 | 3.1 / 3.3 | 79.5 | 0.15 | 100 / 0% | 28 | 270 / 2,231 | +2 / +1% | −3 / −3% | −23 / −10% | −44 / −10% |
-|  | 128 | 4.1 / 4.3 | 86.1 | 0.15 | 100 / 1% | 28 | 5,876 / 9,281 | +1 / +1% | −25 / −22% | −25 / −20% | −23 / −13% |
-|  | 192 | 6.2 / 6.4 | 108.7 | 0.15 | 100 / 0% | 28 | 51,789 / 81,315 | +0 / +0% | −62 / −5% | −10 / −3% | −11 / −5% |
-| H100 SXM 80 GB (modeled), 32× | 5 | 0.1 / 0.1 | 124.4 | 0.32 | 0 / 0% | 5 | 62 / 133 | +0 / +0% | +0 / +0% | +0 / +0% | −2 / −12% |
-|  | 8 | 0.1 / 0.1 | 102.8 | 0.33 | 0 / 0% | 5 | 54 / 126 | +0 / +0% | +0 / +0% | +0 / +0% | −8 / −7% |
-|  | 12 | 0.2 / 0.2 | 100.0 | 0.31 | 0 / 0% | 5 | 65 / 127 | +0 / +0% | +0 / +0% | +0 / +0% | −7 / −9% |
-|  | 16 | 0.3 / 0.3 | 109.4 | 0.31 | 0 / 0% | 5 | 70 / 164 | +0 / +0% | +0 / +0% | +0 / +0% | −10 / −10% |
-|  | 24 | 0.3 / 0.4 | 106.2 | 0.32 | 0 / 0% | 5 | 67 / 143 | +0 / +0% | +0 / +0% | +0 / +0% | −11 / −11% |
-|  | 32 | 0.5 / 0.5 | 108.6 | 0.31 | 0 / 0% | 5 | 81 / 205 | +0 / +0% | +0 / +0% | +0 / +0% | −14 / −6% |
-|  | 40 | 0.5 / 0.6 | 108.1 | 0.31 | 0 / 0% | 5 | 84 / 251 | +0 / +0% | +0 / +0% | +0 / +0% | −15 / −7% |
-|  | 64 | 0.9 / 1.0 | 126.8 | 0.32 | 0 / 0% | 5 | 102 / 566 | +1 / +1% | +2 / +1% | +0 / −0% | −14 / −5% |
-|  | 96 | 1.3 / 1.4 | 116.4 | 0.32 | 100 / 0% | 5 | 158 / 1,419 | +1 / +0% | +2 / +1% | +0 / +1% | −14 / +0% |
-|  | 128 | 1.7 / 1.8 | 120.1 | 0.32 | 100 / 0% | 5 | 481 / 2,996 | +1 / +0% | +1 / +1% | −3 / −0% | −33 / −10% |
-|  | 192 | 2.6 / 2.8 | 131.3 | 0.32 | 100 / 0% | 5 | 4,756 / 7,599 | +0 / +0% | −2 / −4% | −8 / −5% | −12 / −10% |
-|  | 256 | 3.5 / 3.6 | 129.4 | 0.32 | 100 / 0% | 5 | 12,192 / 13,843 | +0 / +0% | −6 / −7% | −5 / −6% | −9 / −12% |
+| GPU | Sessions | Pressure | π | ρ | Voice KV short | Chunk, ms |
+|---|---:|---:|---:|---:|---:|---:|
+| RTX 5060 Ti 16 GB (measured) | 5 | 1.3 / 1.5 | 27.0 | 0.26 | 94 / 0% | 64 |
+|  | 8 | 1.8 / 2.0 | 29.6 | 0.27 | 100 / 0% | 56 |
+|  | 12 | 2.6 / 3.1 | 21.4 | 0.25 | 100 / 1% | 64 |
+|  | 16 | 3.6 / 4.1 | 23.4 | 0.25 | 100 / 4% | 66 |
+|  | 24 | 4.7 / 5.4 | 23.9 | 0.26 | 100 / 12% | 61 |
+|  | 32 | 6.2 / 6.8 | 23.5 | 0.26 | 100 / 25% | 64 |
+|  | 40 | 7.5 / 8.1 | 22.9 | 0.26 | 100 / 33% | 63 |
+| L4 24 GB (modeled) | 5 | 0.5 / 0.7 | 78.0 | 0.06 | 0 / 0% | 85 |
+|  | 8 | 0.8 / 0.9 | 83.2 | 0.06 | 0 / 0% | 81 |
+|  | 12 | 1.1 / 1.3 | 62.3 | 0.06 | 83 / 0% | 85 |
+|  | 16 | 1.5 / 1.8 | 70.4 | 0.05 | 100 / 1% | 85 |
+|  | 24 | 2.0 / 2.3 | 68.4 | 0.06 | 100 / 1% | 83 |
+|  | 32 | 2.7 / 3.0 | 71.0 | 0.05 | 100 / 3% | 85 |
+|  | 40 | 3.3 / 3.6 | 70.3 | 0.05 | 100 / 7% | 85 |
+|  | 64 | 5.5 / 5.8 | 77.7 | 0.06 | 100 / 23% | 84 |
+| A100 40 GB (modeled) | 5 | 0.2 / 0.3 | 81.9 | 0.14 | 0 / 0% | 29 |
+|  | 8 | 0.3 / 0.4 | 76.5 | 0.16 | 0 / 0% | 28 |
+|  | 12 | 0.4 / 0.5 | 66.2 | 0.14 | 0 / 0% | 29 |
+|  | 16 | 0.6 / 0.7 | 71.7 | 0.14 | 0 / 0% | 29 |
+|  | 24 | 0.8 / 0.9 | 72.4 | 0.15 | 1 / 0% | 28 |
+|  | 32 | 1.1 / 1.2 | 72.4 | 0.14 | 85 / 0% | 29 |
+|  | 40 | 1.3 / 1.4 | 72.1 | 0.14 | 100 / 0% | 29 |
+|  | 64 | 2.2 / 2.3 | 85.7 | 0.15 | 100 / 0% | 29 |
+|  | 96 | 3.1 / 3.3 | 79.5 | 0.15 | 100 / 0% | 28 |
+|  | 128 | 4.1 / 4.3 | 86.1 | 0.15 | 100 / 1% | 28 |
+|  | 192 | 6.2 / 6.4 | 108.7 | 0.15 | 100 / 0% | 28 |
+| H100 SXM 80 GB (modeled) | 5 | 0.1 / 0.1 | 124.4 | 0.32 | 0 / 0% | 5 |
+|  | 8 | 0.1 / 0.1 | 102.8 | 0.33 | 0 / 0% | 5 |
+|  | 12 | 0.2 / 0.2 | 100.0 | 0.31 | 0 / 0% | 5 |
+|  | 16 | 0.3 / 0.3 | 109.4 | 0.31 | 0 / 0% | 5 |
+|  | 24 | 0.3 / 0.4 | 106.2 | 0.32 | 0 / 0% | 5 |
+|  | 32 | 0.5 / 0.5 | 108.6 | 0.31 | 0 / 0% | 5 |
+|  | 40 | 0.5 / 0.6 | 108.1 | 0.31 | 0 / 0% | 5 |
+|  | 64 | 0.9 / 1.0 | 126.8 | 0.32 | 0 / 0% | 5 |
+|  | 96 | 1.3 / 1.4 | 116.4 | 0.32 | 100 / 0% | 5 |
+|  | 128 | 1.7 / 1.8 | 120.1 | 0.32 | 100 / 0% | 5 |
+|  | 192 | 2.6 / 2.8 | 131.3 | 0.32 | 100 / 0% | 5 |
+|  | 256 | 3.5 / 3.6 | 129.4 | 0.32 | 100 / 0% | 5 |
 
-At each GPU's own scaling (`--fit`; the box's rows are those above):
+Resume TTFT in the same cells: `lru-cpu`'s p50 / p90, and each arm's gain over it at p50 / p90:
 
-| GPU | Sessions | Pressure | π | ρ | Voice KV short | Chunk | `lru-cpu` | `clairvoyant` | `oracle-prefetch` | `history-prefetch` | `tokencake` |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| L4 24 GB (modeled), 16× | 5 | 1.1 / 1.2 | 52.7 | 0.04 | 70 / 0% | 99 | 173 / 456 | +2 / +0% | +4 / +5% | −3 / +0% | −7 / −2% |
-|  | 8 | 1.6 / 1.8 | 51.4 | 0.05 | 100 / 1% | 90 | 175 / 510 | +1 / +3% | +5 / +15% | +2 / −4% | −6 / −10% |
-|  | 12 | 2.3 / 2.6 | 38.3 | 0.05 | 100 / 2% | 95 | 237 / 788 | +0 / +1% | +6 / +10% | +2 / −2% | −10 / −2% |
-|  | 16 | 3.1 / 3.5 | 38.6 | 0.04 | 100 / 9% | 97 | 2,019 / 10,927 | +1 / +0% | +4 / −5% | +5 / −2% | −3 / −2% |
-|  | 24 | 4.2 / 4.6 | 38.4 | 0.05 | 100 / 22% | 94 | 7,432 / 22,720 | +1 / +1% | +2 / −0% | −2 / −4% | +4 / +3% |
-|  | 32 | 5.3 / 5.6 | 40.9 | 0.05 | 100 / 19% | 93 | 27,550 / 59,576 | +1 / +1% | −4 / −1% | −1 / −1% | −3 / −1% |
-|  | 40 | 6.4 / 6.6 | 56.0 | 0.05 | 100 / 11% | 92 | 81,713 / 136,552 | +0 / +0% | −1 / −0% | −0 / −0% | −0 / −0% |
-| A100 40 GB (modeled), 8× | 5 | 0.9 / 1.0 | 27.1 | 0.10 | 11 / 0% | 42 | 193 / 536 | +1 / +1% | −0 / −1% | −2 / −3% | −6 / −5% |
-|  | 8 | 1.2 / 1.4 | 29.3 | 0.11 | 100 / 0% | 37 | 188 / 646 | +1 / +10% | +3 / +13% | +3 / +4% | −0 / +2% |
-|  | 12 | 1.8 / 2.1 | 20.9 | 0.10 | 100 / 0% | 41 | 251 / 715 | +0 / +4% | +7 / +11% | +4 / −1% | −5 / −12% |
-|  | 16 | 2.5 / 2.8 | 21.8 | 0.10 | 100 / 2% | 43 | 456 / 3,403 | +1 / +1% | −2 / −3% | −11 / −5% | −11 / −14% |
-|  | 24 | 3.3 / 3.6 | 23.3 | 0.10 | 100 / 8% | 40 | 2,402 / 6,573 | +2 / +1% | −14 / −34% | −0 / −6% | −12 / −8% |
-|  | 32 | 4.2 / 4.5 | 21.3 | 0.10 | 100 / 10% | 39 | 9,380 / 26,816 | +1 / +1% | −5 / −6% | −1 / −4% | +3 / −3% |
-|  | 40 | 5.2 / 5.5 | 24.0 | 0.10 | 100 / 10% | 39 | 28,145 / 49,509 | +1 / +1% | −6 / −2% | −6 / +1% | −5 / +0% |
-| H100 SXM 80 GB (modeled), 4× | 5 | 0.7 / 0.8 | 29.1 | 0.14 | 0 / 0% | 16 | 327 / 1,017 | +0 / +1% | +0 / +0% | +0 / +0% | −3 / −1% |
-|  | 8 | 1.0 / 1.2 | 30.5 | 0.18 | 69 / 0% | 12 | 288 / 1,095 | +0 / +3% | −0 / +5% | +1 / +1% | −1 / −1% |
-|  | 12 | 1.5 / 1.8 | 21.5 | 0.15 | 100 / 1% | 14 | 426 / 1,321 | +0 / +2% | +1 / +9% | +0 / +5% | −1 / +3% |
-|  | 16 | 2.1 / 2.3 | 21.1 | 0.15 | 100 / 2% | 15 | 1,223 / 8,026 | +1 / +0% | +4 / +7% | +3 / +3% | −9 / +3% |
-|  | 24 | 2.8 / 3.0 | 21.6 | 0.16 | 100 / 6% | 14 | 4,531 / 14,102 | +1 / +0% | −5 / −4% | −10 / −0% | −10 / +0% |
-|  | 32 | 3.6 / 3.8 | 21.5 | 0.16 | 100 / 7% | 13 | 11,191 / 29,027 | +0 / +0% | −3 / −5% | −3 / −10% | +0 / −12% |
-|  | 40 | 4.3 / 4.6 | 25.3 | 0.16 | 100 / 6% | 13 | 30,759 / 50,569 | +0 / +0% | −11 / −7% | −13 / −5% | −9 / −4% |
-|  | 64 | 7.2 / 7.4 | 43.3 | 0.14 | 100 / 1% | 16 | 266,358 / 329,898 | +0 / +0% | −1 / −1% | −1 / −1% | −2 / −1% |
+| GPU | Sessions | `lru-cpu`, ms | `clairvoyant` | `oracle-prefetch` | `history-prefetch` | `tokencake` |
+|---|---:|---:|---:|---:|---:|---:|
+| RTX 5060 Ti 16 GB (measured) | 5 | 90 / 243 | +1 / +7% | +2 / +13% | −1 / +0% | −5 / −9% |
+|  | 8 | 86 / 355 | +1 / +27% | +3 / +40% | −0 / +12% | −6 / −10% |
+|  | 12 | 113 / 340 | +0 / +7% | +5 / +32% | +1 / −8% | −11 / −21% |
+|  | 16 | 180 / 1,399 | +2 / +8% | +9 / +2% | −9 / −9% | −24 / −18% |
+|  | 24 | 364 / 2,334 | +3 / +8% | +2 / −5% | −19 / −17% | −36 / −17% |
+|  | 32 | 1,849 / 9,109 | +3 / +2% | −5 / −23% | −24 / −11% | −27 / −5% |
+|  | 40 | 8,216 / 19,336 | +1 / +1% | −25 / −21% | −10 / −6% | −10 / −3% |
+| L4 24 GB (modeled) | 5 | 101 / 212 | +0 / +0% | +0 / +0% | +0 / +0% | −5 / −6% |
+|  | 8 | 97 / 205 | +0 / +0% | +0 / +0% | +0 / +0% | −4 / −12% |
+|  | 12 | 127 / 249 | +0 / +3% | +2 / +7% | +2 / +2% | −7 / −12% |
+|  | 16 | 156 / 325 | +0 / +5% | +3 / +8% | +1 / −4% | −12 / −13% |
+|  | 24 | 158 / 354 | +0 / +3% | +2 / +14% | −2 / −1% | −21 / −14% |
+|  | 32 | 224 / 640 | +0 / +1% | +10 / +12% | −8 / −5% | −25 / −5% |
+|  | 40 | 377 / 2,054 | +1 / +3% | +16 / +8% | −7 / −4% | −15 / −7% |
+|  | 64 | 10,851 / 26,546 | +0 / +2% | −1 / −0% | −7 / −0% | −4 / −1% |
+| A100 40 GB (modeled) | 5 | 69 / 155 | +0 / +0% | +0 / +0% | +0 / +0% | −6 / −3% |
+|  | 8 | 63 / 133 | +0 / +0% | +0 / +0% | +0 / +0% | −4 / −11% |
+|  | 12 | 75 / 141 | +0 / +0% | +0 / +0% | +0 / +0% | −9 / −13% |
+|  | 16 | 81 / 180 | +0 / +0% | −0 / +0% | −0 / +0% | −10 / −14% |
+|  | 24 | 79 / 171 | +0 / +1% | +0 / +1% | −0 / +1% | −12 / −13% |
+|  | 32 | 96 / 243 | +1 / +2% | +1 / +5% | +1 / −0% | −17 / −9% |
+|  | 40 | 103 / 298 | +1 / +3% | +3 / +4% | +1 / −0% | −21 / −9% |
+|  | 64 | 135 / 735 | +1 / +1% | +5 / +3% | −2 / −6% | −25 / −14% |
+|  | 96 | 270 / 2,231 | +2 / +1% | −3 / −3% | −23 / −10% | −44 / −10% |
+|  | 128 | 5,876 / 9,281 | +1 / +1% | −25 / −22% | −25 / −20% | −23 / −13% |
+|  | 192 | 51,789 / 81,315 | +0 / +0% | −62 / −5% | −10 / −3% | −11 / −5% |
+| H100 SXM 80 GB (modeled) | 5 | 62 / 133 | +0 / +0% | +0 / +0% | +0 / +0% | −2 / −12% |
+|  | 8 | 54 / 126 | +0 / +0% | +0 / +0% | +0 / +0% | −8 / −7% |
+|  | 12 | 65 / 127 | +0 / +0% | +0 / +0% | +0 / +0% | −7 / −9% |
+|  | 16 | 70 / 164 | +0 / +0% | +0 / +0% | +0 / +0% | −10 / −10% |
+|  | 24 | 67 / 143 | +0 / +0% | +0 / +0% | +0 / +0% | −11 / −11% |
+|  | 32 | 81 / 205 | +0 / +0% | +0 / +0% | +0 / +0% | −14 / −6% |
+|  | 40 | 84 / 251 | +0 / +0% | +0 / +0% | +0 / +0% | −15 / −7% |
+|  | 64 | 102 / 566 | +1 / +1% | +2 / +1% | +0 / −0% | −14 / −5% |
+|  | 96 | 158 / 1,419 | +1 / +0% | +2 / +1% | +0 / +1% | −14 / +0% |
+|  | 128 | 481 / 2,996 | +1 / +0% | +1 / +1% | −3 / −0% | −33 / −10% |
+|  | 192 | 4,756 / 7,599 | +0 / +0% | −2 / −4% | −8 / −5% | −12 / −10% |
+|  | 256 | 12,192 / 13,843 | +0 / +0% | −6 / −7% | −5 / −6% | −9 / −12% |
+
+At each GPU's own scaling (`--fit`; the box's rows are those above), the regime:
+
+| GPU | Sessions | Pressure | π | ρ | Voice KV short | Chunk, ms |
+|---|---:|---:|---:|---:|---:|---:|
+| L4 24 GB (modeled), 16× | 5 | 1.1 / 1.2 | 52.7 | 0.04 | 70 / 0% | 99 |
+|  | 8 | 1.6 / 1.8 | 51.4 | 0.05 | 100 / 1% | 90 |
+|  | 12 | 2.3 / 2.6 | 38.3 | 0.05 | 100 / 2% | 95 |
+|  | 16 | 3.1 / 3.5 | 38.6 | 0.04 | 100 / 9% | 97 |
+|  | 24 | 4.2 / 4.6 | 38.4 | 0.05 | 100 / 22% | 94 |
+|  | 32 | 5.3 / 5.6 | 40.9 | 0.05 | 100 / 19% | 93 |
+|  | 40 | 6.4 / 6.6 | 56.0 | 0.05 | 100 / 11% | 92 |
+| A100 40 GB (modeled), 8× | 5 | 0.9 / 1.0 | 27.1 | 0.10 | 11 / 0% | 42 |
+|  | 8 | 1.2 / 1.4 | 29.3 | 0.11 | 100 / 0% | 37 |
+|  | 12 | 1.8 / 2.1 | 20.9 | 0.10 | 100 / 0% | 41 |
+|  | 16 | 2.5 / 2.8 | 21.8 | 0.10 | 100 / 2% | 43 |
+|  | 24 | 3.3 / 3.6 | 23.3 | 0.10 | 100 / 8% | 40 |
+|  | 32 | 4.2 / 4.5 | 21.3 | 0.10 | 100 / 10% | 39 |
+|  | 40 | 5.2 / 5.5 | 24.0 | 0.10 | 100 / 10% | 39 |
+| H100 SXM 80 GB (modeled), 4× | 5 | 0.7 / 0.8 | 29.1 | 0.14 | 0 / 0% | 16 |
+|  | 8 | 1.0 / 1.2 | 30.5 | 0.18 | 69 / 0% | 12 |
+|  | 12 | 1.5 / 1.8 | 21.5 | 0.15 | 100 / 1% | 14 |
+|  | 16 | 2.1 / 2.3 | 21.1 | 0.15 | 100 / 2% | 15 |
+|  | 24 | 2.8 / 3.0 | 21.6 | 0.16 | 100 / 6% | 14 |
+|  | 32 | 3.6 / 3.8 | 21.5 | 0.16 | 100 / 7% | 13 |
+|  | 40 | 4.3 / 4.6 | 25.3 | 0.16 | 100 / 6% | 13 |
+|  | 64 | 7.2 / 7.4 | 43.3 | 0.14 | 100 / 1% | 16 |
+
+Resume TTFT in the same cells: `lru-cpu`'s p50 / p90, and each arm's gain over it at p50 / p90:
+
+| GPU | Sessions | `lru-cpu`, ms | `clairvoyant` | `oracle-prefetch` | `history-prefetch` | `tokencake` |
+|---|---:|---:|---:|---:|---:|---:|
+| L4 24 GB (modeled), 16× | 5 | 173 / 456 | +2 / +0% | +4 / +5% | −3 / +0% | −7 / −2% |
+|  | 8 | 175 / 510 | +1 / +3% | +5 / +15% | +2 / −4% | −6 / −10% |
+|  | 12 | 237 / 788 | +0 / +1% | +6 / +10% | +2 / −2% | −10 / −2% |
+|  | 16 | 2,019 / 10,927 | +1 / +0% | +4 / −5% | +5 / −2% | −3 / −2% |
+|  | 24 | 7,432 / 22,720 | +1 / +1% | +2 / −0% | −2 / −4% | +4 / +3% |
+|  | 32 | 27,550 / 59,576 | +1 / +1% | −4 / −1% | −1 / −1% | −3 / −1% |
+|  | 40 | 81,713 / 136,552 | +0 / +0% | −1 / −0% | −0 / −0% | −0 / −0% |
+| A100 40 GB (modeled), 8× | 5 | 193 / 536 | +1 / +1% | −0 / −1% | −2 / −3% | −6 / −5% |
+|  | 8 | 188 / 646 | +1 / +10% | +3 / +13% | +3 / +4% | −0 / +2% |
+|  | 12 | 251 / 715 | +0 / +4% | +7 / +11% | +4 / −1% | −5 / −12% |
+|  | 16 | 456 / 3,403 | +1 / +1% | −2 / −3% | −11 / −5% | −11 / −14% |
+|  | 24 | 2,402 / 6,573 | +2 / +1% | −14 / −34% | −0 / −6% | −12 / −8% |
+|  | 32 | 9,380 / 26,816 | +1 / +1% | −5 / −6% | −1 / −4% | +3 / −3% |
+|  | 40 | 28,145 / 49,509 | +1 / +1% | −6 / −2% | −6 / +1% | −5 / +0% |
+| H100 SXM 80 GB (modeled), 4× | 5 | 327 / 1,017 | +0 / +1% | +0 / +0% | +0 / +0% | −3 / −1% |
+|  | 8 | 288 / 1,095 | +0 / +3% | −0 / +5% | +1 / +1% | −1 / −1% |
+|  | 12 | 426 / 1,321 | +0 / +2% | +1 / +9% | +0 / +5% | −1 / +3% |
+|  | 16 | 1,223 / 8,026 | +1 / +0% | +4 / +7% | +3 / +3% | −9 / +3% |
+|  | 24 | 4,531 / 14,102 | +1 / +0% | −5 / −4% | −10 / −0% | −10 / +0% |
+|  | 32 | 11,191 / 29,027 | +0 / +0% | −3 / −5% | −3 / −10% | +0 / −12% |
+|  | 40 | 30,759 / 50,569 | +0 / +0% | −11 / −7% | −13 / −5% | −9 / −4% |
+|  | 64 | 266,358 / 329,898 | +0 / +0% | −1 / −1% | −1 / −1% | −2 / −1% |
 
 Rows whose resume TTFT runs to seconds are saturated, and there the running share falls, as requests queue before admission. The modeled GPUs saturate at these points:
 - **The L4** saturates its compute from 64 sessions at 32× (resume TTFT p50 10.9 s) and from 16 sessions at 16× (2.0 s).
@@ -388,7 +477,7 @@ Without `--host`, the card's API server runs at the box's CPU's speed and its re
 Release builds on the full corpus (393 traces, 98,827 requests, 1.7 GB of JSON), on an Apple M5 Max. Times are the whole process's CPU time (user and system), with the wall time on 18 threads and the peak memory for the runs that use every core; each time is the lower of two runs, each peak the higher. Other work loaded the machine while they were measured (load average 15 to 49), and that moved even CPU time by up to a quarter between two runs. The full-corpus runs use `--duration 100000000 --grace 0 --max-sessions 393 --start-max 0`, so every trace plays once from its start.
 
 | Run | Contention | Idle |
-|---|---|---|
+|---|---:|---:|
 | The W0 configuration, the three stock arms | 0.22 s | 0.22 s |
 | The W0 configuration, `lru-cpu`, the E1 arms and the reference | 0.33 s | — |
 | Every trace through 16 recycling lanes, the three stock arms | 13.2 s | 13.5 s |

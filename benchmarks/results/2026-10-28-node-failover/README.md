@@ -1,11 +1,9 @@
 # The two-node failover drills (2026-10-28)
 
-The serving arrangement on two GPU nodes ([PRODUCTION.md](../../../docs/PRODUCTION.md#two-cards)): both calls on
-Phastform beside at most four agents' sessions, and Gray a warm spare on the same engine, its speech servers resident,
-with at most 12 agents' sessions; `[placement] calls = "fill"` and `idle_s = 150`. With the hosts at v1.6-15-ga31eab2,
-[`ops/drills/node-failover.sh`](../../../ops/drills/node-failover.sh), at 627b204, placed two calls with `POST
-/v1/sessions`, as the voice worker does, ran a streaming turn of each every 3 s (at most 32 tokens) beside two agents'
-streams, and after five whole turns of each call broke Phastform's engine:
+The serving arrangement on two GPU nodes ([PRODUCTION.md](../../../docs/PRODUCTION.md#two-cards)), both calls on
+Phastform beside at most four agents' sessions and Gray a warm spare on the same engine, its speech servers resident,
+with at most 12 agents' sessions, broken twice: after five whole turns of each of two calls, the drill broke
+Phastform's engine.
 
 - `node-kill-1`: SIGKILL to every process of the engine's unit, as a crash would end it, and systemd started it again;
 - `node-stop-1`: `systemctl --user stop flatshare-engine`, the engine down until the drill's end.
@@ -15,13 +13,7 @@ streams, and after five whole turns of each call broke Phastform's engine:
 | kill | 10 of 10 | 148 of 148 | +0.7 s | 0 | +0.10 s / +2.1 s / +101.0 s | 238 s |
 | stop | 10 of 10 | 152 of 152 | +1.9 s | 0 | +1.3 s / +3.3 s / down to the end | 244 s |
 
-Times are from the event. Each directory keeps the drill's client (`client.sh`) and what it recorded (`turns.tsv` and
-`agents.tsv`, a line a request: when it began, the session, the node before and after it, the status, the first byte
-and the total in seconds, and how its stream ended; `nodes.jsonl`, each `/nodes` answer, stamped), the event's time,
-the gateway's journal and the failed node's engine journal from the event on, the last response bodies, and the report
-the drill printed (`report.txt`, and `drill-output.log` with the drill's own log). Home directories are written as `~`.
-
-What they show:
+Times are from the event.
 
 - **The calls moved within a turn.** Both calls' next turn went to Gray 0.7 s after the kill and 1.9 s after the stop,
   and no turn failed after the move. No turn was in flight at either event, the calls being between turns, so none was
@@ -33,6 +25,26 @@ What they show:
 - **The killed engine was back in 101 s,** systemd's restart and its warm start; from then new calls would go to
   Phastform again, while the moved calls stayed on Gray to their end.
 
-A first run of the kill drill, on the same arrangement, found the drill's client reading the engine's model id wrong:
-every request it sent got 404, before the event as after it, and the drill broke the node all the same. 627b204
-fixed the client and made the event wait for whole turns; these are the first runs after it.
+## How it ran
+
+| | |
+|---|---|
+| The arrangement | `[placement] calls = "fill"` and `idle_s = 150`, with the hosts at v1.6-15-ga31eab2 |
+| The drill | [`ops/drills/node-failover.sh`](../../../ops/drills/node-failover.sh), at 627b204, placed two calls with `POST /v1/sessions`, as the voice worker does, and ran a streaming turn of each every 3 s (at most 32 tokens) beside two agents' streams |
+| A first run | A first run of the kill drill, on the same arrangement, found the drill's client reading the engine's model id wrong: every request it sent got 404, before the event as after it, and the drill broke the node all the same. 627b204 fixed the client and made the event wait for whole turns; these are the first runs after it |
+
+## Files
+
+Each drill's directory keeps:
+
+| File | What it holds |
+|---|---|
+| `client.sh` | The drill's client |
+| `turns.tsv`, `agents.tsv` | What it recorded, a line a request: when it began, the session, the node before and after it, the status, the first byte and the total in seconds, and how its stream ended |
+| `nodes.jsonl` | Each `/nodes` answer, stamped |
+| `event` | The event's time |
+| `gateway-journal.txt`, `engine-journal.txt` | The gateway's journal and the failed node's engine journal from the event on |
+| `*.body` | The last response bodies |
+| `report.txt`, `drill-output.log` | The report the drill printed, and the drill's own log |
+
+Home directories are written as `~`.

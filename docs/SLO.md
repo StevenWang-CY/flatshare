@@ -3,7 +3,7 @@
 This page defines the service classes, the indicators measured for each, the voice SLO with its reference in each campaign, and the production objectives, for a reader interpreting an SLO figure anywhere in the documents. Three classes share the GPU, matching the tiers API providers sell as priority, standard and flex. A gateway maps each tenant to a class, capped by the tenant's `max_class`, and sends the class's priority to the engine, where a lower value is served first.
 
 | Class | Traffic | Engine priority | Indicators |
-|---|---|---|---|
+|---|---|---:|---|
 | `realtime` | Voice turns | 0 | Voice V2V, the voice turn's stages, the realtime first byte |
 | `interactive` | Agent loops with a person waiting | 1 | None measured: no E2 arm runs this class |
 | `background` | Batch agents, trace replays | 2 | The agents' token rate and their time to first token |
@@ -66,15 +66,17 @@ What each measures:
 | RG: round 4, Gray (the sweep's confirmation only) | 2 | 1,830 ms | the round's own run | 2,080 ms |
 | RG: round 5, Phastform (the sweep's confirmation only) | 2 | 1,842 ms | the round's own run | 2,092 ms |
 | The 24-hour soak, serve mode | 2 at once, 20 an hour | 1,726 ms | two hours of voice alone with the same calls | 1,976 ms |
+| OR: the serving engine's additions, five rounds | 2 / 4 / 6 | — | each round's own run with as many callers; the SLO's median over the rounds | 2,010 / 2,065 / 2,119 ms |
+| OS: the decode hold, two rounds | 2 / 4 / 6 | — | each round's own run with as many callers ([the record](../benchmarks/results/2026-11-02-opt-rounds/README.md)) | — |
 
-Not computed: the interactive class's resume target, and the cache-contract honor rate, which went with leases. The plan's continuity indicator, audio gaps of 100 ms or more, is read from v1.6 and v1.7 as the pauses inside a reply, the concealed audio and the agent's playout above.
+Not computed: the interactive class's resume target, and the cache-contract honor rate, which went with leases. Audio gaps of 100 ms or more, the original plan's continuity indicator, are read from v1.6 and v1.7 as the pauses inside a reply, the concealed audio and the agent's playout above.
 
 ## The production objectives
 
 The production alerts burn on two objectives, both read in the gateway, over a 30-day budget. An alert fires when both windows of its pair burn the budget faster than its rate ([`ops/prometheus/rules.yml`](../ops/prometheus/rules.yml)):
 
 | Objective | Target | Windows | Burn rate | Severity | Alert |
-|---|---|---|---:|---|---|
+|---|---:|---|---:|---|---|
 | First byte: the realtime class's valid requests good | 95% | 1 h and 5 min | 14.4 | page | `FlatshareRealtimeFirstByteBudgetBurn` |
 | First byte | 95% | 6 h and 30 min | 6 | page | `FlatshareRealtimeFirstByteBudgetBurn` |
 | First byte | 95% | 3 d and 6 h | 1 | ticket | `FlatshareRealtimeFirstByteBudgetSlowBurn` |

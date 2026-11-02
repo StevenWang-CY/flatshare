@@ -1,6 +1,6 @@
 # The gateway's cost on the deployed build (2026-10-29)
 
-What the gateway adds to a voice request, measured on the build the deployment runs: version 1.8 (c3b5007), on
+What the gateway adds to a voice request, measured on the build the deployment ran then: version 1.8 (c3b5007), on
 2026-10-29 at 19:30Z. cyan's gateway served one GPU node, and Phastform's engine and TTS server were reached through
 the tunnel's sockets. No call was in progress.
 
@@ -49,6 +49,8 @@ it changes no unit, configuration or release.
 
 ## Files
 
-- `results.json`: the run's output as written.
-- `window.py`: the script as run. It was written for version 1.7's window, as `rv3_window.py`; the run used version 1.8.
-- `table.py`: the tables above, from `results.json` (`python3 table.py`).
+| File | What it holds |
+|---|---|
+| `results.json` | The run's output as written |
+| `window.py` | The script as run. It was written for version 1.7's window, as `rv3_window.py`; the run used version 1.8 |
+| `table.py` | The tables above, from `results.json` (`python3 table.py`); `python/flatshare_bench/tests/test_gateway_window_record.py` holds this README to it |

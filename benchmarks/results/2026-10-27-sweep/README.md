@@ -1,32 +1,12 @@
 # The step-cap and window sweep's screens (2026-10-27)
 
-W5 measured the change at the box's step cap of 512 tokens, where stock vLLM had done better at 1,024 and the change
-never ran ([BENCHMARKS](../../../docs/BENCHMARKS.md)). The sweep runs the change, and stock vLLM beside it, over the
-step cap, the long-prefill threshold, the first-tokens window and the gateway's static cap on background requests, first
-as two screens on the sample of the agents that W5 tuned on (seed 11), then on fresh samples in five rounds
-([`rg-r1`](../../e2/rg-r1.campaign) to [`rg-r5`](../../e2/rg-r5.campaign)), which confirm or overturn what the screens
-pick. These are the screens' records, kept as [W5's](../2026-10-24-e2-w5) keep each point, as
-`flatshare-bench e2 export` writes it: `run.json`, `arm.toml`, `engine.json`, `summary.json` and the callers'
-`bots/summary.json` and `bots/turns.jsonl`, with the first screen's report (`sweep-screen/report`).
-
-Both screens ran on Phastform's RTX 5060 Ti with vLLM 0.32.0 and Qwen3-4B-Instruct-2507-FP8, Phastform and cyan at
-v1.5 (`versions` in each `run.json`), one run a point: two callers, each call opening with a warm-up turn, beside 24
-session trees of the discriminating scenario (`weka-x32-long`). [`sweep-screen`](sweep-screen) ran from 20:54 to 22:45
-UTC, [`sweep-screen2`](sweep-screen2) from 22:46 to 00:10 UTC. Each campaign's `campaign.log` names its arm files'
-revision at every start. Each began with a dry run; the first screen then ran at v1.5-1-g7ad6d00 and, after the
-workstation's SSH connections failed at 21:52 UTC, resumed at v1.5-5-g265e8ea with its complete points kept; the second
-ran at v1.5-10-g715c39e, after a dry run from a tree with changes not yet committed. Each point's `arm.toml` is the arm
-it ran.
-
-The settings: the step cap (`--max-num-batched-tokens`) at 256, at the box's 512 (W5's configuration, `w5-disc-pr-ab48-s24`)
-and at 1,024, with a long-prefill threshold of 0 or 256; the change's window at 48 tokens, or 96 (W5 measured 16, which a
-whole reply outruns: [BENCHMARKS](../../../docs/BENCHMARKS.md)); stock vLLM, the frozen box, at step caps of 1,024 and 256; and the gateway's static cap of 1, 2,
-4 or 8 background requests in flight (`policy = "static-cap"`), on the frozen box and on the change, alone and with
-the step cap of 256.
-
-[`table.py`](table.py) gives the table from these records (`cd python/flatshare_bench && uv run python
-../../benchmarks/results/2026-10-27-sweep/table.py`), and `python/flatshare_bench/tests/test_sweep_record.py` fails
-while this README's table is not what it gives:
+W5 measured the change at the box's step cap of the time, 512 tokens, where stock vLLM had done better at 1,024 and the
+change never ran ([BENCHMARKS](../../../docs/BENCHMARKS.md)). The sweep runs the change, and stock vLLM beside it, over
+the step cap, the long-prefill threshold, the first-tokens window and the gateway's static cap on background requests,
+first as two screens on the sample of the agents that W5 tuned on (seed 11), then on fresh samples in five rounds
+([`rg-r1`](../../e2/rg-r1.campaign) to [`rg-r5`](../../e2/rg-r5.campaign),
+[their record](../2026-10-28-rounds/README.md)), which confirm or overturn what the screens pick. These are the
+screens' records.
 
 <!-- table.py -->
 W5's SLO 2,034.3 ms; the screen's own 2,001.2 ms (its voice alone's p95 1,751.2 ms plus 250)
@@ -49,7 +29,7 @@ W5's SLO 2,034.3 ms; the screen's own 2,001.2 ms (its voice alone's p95 1,751.2 
 | sweep-disc-pr-ab48-cap4-s24 | 1 | 2,194 | 2,194 | 15/59 (25%) | 20/59 (34%) | 3,421 | 15.9 | 72/102 |
 | sweep-disc-pr-ab48-cap8-s24 | 1 | 2,230 | 2,230 | 19/59 (32%) | 23/59 (39%) | 3,454 | 16.2 | 71/99 |
 | sweep-disc-pr-ab96-b1024-t0-s24 | 1 | 2,415 | 2,415 | 33/59 (56%) | 36/59 (61%) | 3,767 | 16.7 | 63/89 |
-| w5-a1-voice | 1 | 1,751 | 1,751 | 0/59 (0%) | 0/59 (0%) | - | - | - |
+| w5-a1-voice | 1 | 1,751 | 1,751 | 0/59 (0%) | 0/59 (0%) | — | — | — |
 | w5-disc-pr-ab48-s24 | 1 | 2,236 | 2,236 | 24/59 (41%) | 26/59 (44%) | 3,355 | 16.3 | 71/100 |
 <!-- /table.py -->
 
@@ -60,8 +40,8 @@ The points' names say their settings: `pr-ab48` is the change with the PRs' swit
 What the screens say, each from one run on one sample, for the rounds to confirm:
 
 - **The step cap moves the change most.** At a cap of 256, 9 of its 59 replies were over W5's SLO (15%), against 24
-  at the box's 512 (41%) and 33 at 1,024 (56%); the agents did 3,158 tokens a second over the first 240 s, against
-  3,355 and 3,832.
+  at W5's 512 (41%) and 33 at 1,024 (56%); the agents did 3,158 tokens a second over the first 240 s, against 3,355
+  and 3,832.
 - **Stock vLLM fails at every setting**: 41 to 58 of 59 replies over the SLO (69% to 98%), at either step cap and every
   static cap. Its best, one background request in flight, had a pooled p95 of 4.4 s.
 - **The gateway's static cap does less for the change than the step cap**: 10 to 19 replies over (17% to 32%) at caps
@@ -73,15 +53,15 @@ What the screens say, each from one run on one sample, for the rounds to confirm
 
 The FP8 point of the second screen (`sweep-screen2/sweep-disc-pr-ab48-fp8-s24`, the change with an FP8 KV cache in the
 same 5 GiB) has a `run.json` and no summary: its engine died a second into the calls, a minute after the agents' replay
-began profiling, and the point was stopped ([below](#the-fp8-kv-cache)). The campaign stopped there, so
+began profiling, and the point was stopped ([the FP8 KV cache](#the-fp8-kv-cache)). The campaign stopped there, so
 `sweep-disc-pr-ab48-b256-fp8-s24` never ran.
 
 ## The FP8 KV cache
 
 An FP8 KV cache (`--kv-cache-dtype fp8`) holds 72,816 tokens in the box's 5 GiB, against 36,400 in BF16, and moves
 attention to FlashInfer, since FlashAttention 2 has no FP8 KV cache on this card; the quality gate's screen saw no
-quality it costs ([2026-10-27-quality](../2026-10-27-quality)). Under E2's load, beside vLLM's CPU tier (the
-`OffloadingConnector`, 20 GiB), the change's engine died both times it ran:
+quality it costs ([its record](../2026-10-27-quality/README.md#with-an-fp8-kv-cache)). Under E2's load, beside vLLM's
+CPU tier (the `OffloadingConnector`, 20 GiB), the change's engine died both times it ran:
 
 | Run | Phastform | The calls began | The engine died |
 |---|---|---|---|
@@ -111,3 +91,21 @@ on this card the CPU tier's transfers to the GPU hold that copy back; with the w
 minutes clean. The box's engine decodes on FlashInfer's native wrapper, which plans every step, because its network
 namespace hides NVIDIA's artifactory from vLLM; with XQA decode forced on, the engine stalled all the same, its prefill
 plans enough.
+
+## How it ran
+
+| | |
+|---|---|
+| The screens | Both on Phastform's RTX 5060 Ti with vLLM 0.32.0 and Qwen3-4B-Instruct-2507-FP8, Phastform and cyan at v1.5 (`versions` in each `run.json`), one run a point: two callers, each call opening with a warm-up turn, beside 24 session trees of the discriminating scenario (`weka-x32-long`). [`sweep-screen`](sweep-screen) ran from 20:54 to 22:45 UTC, [`sweep-screen2`](sweep-screen2) from 22:46 to 00:10 UTC |
+| The revisions | Each campaign's `campaign.log` names its arm files' revision at every start. Each began with a dry run; the first screen then ran at v1.5-1-g7ad6d00 and, after the workstation's SSH connections failed at 21:52 UTC, resumed at v1.5-5-g265e8ea with its complete points kept; the second ran at v1.5-10-g715c39e, after a dry run from a tree with changes not yet committed. Each point's `arm.toml` is the arm it ran |
+| The settings | The step cap (`--max-num-batched-tokens`) at 256, at 512 (W5's configuration, `w5-disc-pr-ab48-s24`) and at 1,024, with a long-prefill threshold of 0 or 256; the change's window at 48 tokens, or 96 (W5 measured 16, which a whole reply outruns: [BENCHMARKS](../../../docs/BENCHMARKS.md)); stock vLLM, the frozen box, at step caps of 1,024 and 256; and the gateway's static cap of 1, 2, 4 or 8 background requests in flight (`policy = "static-cap"`), on the frozen box and on the change, alone and with the step cap of 256 |
+
+## Files
+
+| File | What it holds |
+|---|---|
+| `sweep-screen/POINT/`, `sweep-screen2/POINT/` | Each point as [W5's records](../2026-10-24-e2-w5/README.md) keep it, as `flatshare-bench e2 export` writes it: `run.json`, `arm.toml`, `engine.json`, `summary.json` and the callers' `bots/summary.json` and `bots/turns.jsonl`; each campaign's `campaign.log` |
+| `sweep-screen/report/` | The first screen's report |
+| `fp8-repro/` | The FP8 point's second run, without a summary, and its `campaign.log` |
+| `fp8-journal-1.txt`, `fp8-journal-2.txt` | The engine's lines from its start to its death in each FP8 run |
+| [`table.py`](table.py) | The table above from these records (`cd python/flatshare_bench && uv run python ../../benchmarks/results/2026-10-27-sweep/table.py`); `python/flatshare_bench/tests/test_sweep_record.py` fails while this README's table is not what it gives |

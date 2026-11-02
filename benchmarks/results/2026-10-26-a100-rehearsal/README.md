@@ -17,25 +17,22 @@ without it under GNU rsync. flatshare-svc's two fixes after that run (a start's 
 each write under a lock; a start whose command is missing fails, as systemd's does) are in the kit this run checked; the
 candidate's run measured the same first start within 2.3 s.
 
-Home paths are cut to `~` (the box's login home; the rehearsal's own is `~/a100-rehearsal`), the workstation's to
-`$REHEARSAL_WORK` and `$REHEARSAL_REPO`, the account name to `USER`, the hosts' domain names to their SSH aliases, and
-LiveKit's key is redacted as its secret is.
+## The box's numbers through the kit
 
-| File | What |
-|---|---|
-| `steps.log` | `rehearse.sh`'s log of the run: each step's start and end, UTC |
-| `node/` | the node's facts and resolved values (`host.json`, `node.json`, `staged.json`), `bootstrap.sh`'s log, the preflight (`preflight.json`), the warm starts (`warm.json`) and FlashInfer's JIT check |
-| `blocks.log`, `run.log` | `run.sh`'s blocks 0, 1 and 4 |
-| `block0/` | `smoke.sh` with the listener audit, and a 2-turn call |
-| `block1/` | E0 on the frozen engine (`frozen-e0`, 3 repetitions) and the probes: the KV case and the prefill case three times each, the calls' tail twice |
-| `e2/a100-r1/` | round 1's first point, the PRs' 48-token configuration, as `flatshare-bench e2 export` keeps it, with the campaign's log and its report |
-| `a100.md` | `make reproduce-a100` over these records |
+- **The probes (block 1), frozen engine:** the KV case's priority-0 first token after 4,853–4,929 ms (3 runs; Gray's,
+  the second 5060 Ti, 4,923–5,077 ms); the prefill case's token gap 61–64 ms (3 runs; Gray's 69 ms); the calls'
+  first-token p95 beside 12 agents 7,643 and 7,631 ms over two 240 s tails of 44 turns each, none failed.
+- **E2 (block 4):** the PRs' 48-token configuration on W5's round-1 sample of the agents, with the control plane on
+  the GPU node's own 16 CPUs: V2V p50 1,950 ms, p95 2,333 ms, none of 50 turns failed, the agents' goodput 3,425
+  tokens/s. The box's two-host deployment measured this configuration at a p95 of 2,132–2,397 ms over W5's fifteen
+  runs.
+- **block 0's call:** two turns, V2V 1,911 and 1,351 ms.
 
-## The steps
+## How it ran
 
 The minutes of each step, from `steps.log`:
 
-| Step | Minutes | |
+| Step | Minutes | What it did |
 |---|---:|---|
 | `check`, `init`, `data` | 1.3 | Kokoro copied from the box's checkout; weka-x32 and the callers' clips copied from cyan, the long traces made |
 | `push` | 1.7 | the source and 2.7 GB of data as files |
@@ -53,13 +50,18 @@ autotuning 125; of the engine's 617.5 s, torch.compile 82.4 s, FlashInfer's auto
 178. Each later configuration, its engine alone restarted, compiled its own graphs over the warm kernel caches in
 153–177 s.
 
-## The box's numbers through the kit
+## Files
 
-- **The probes (block 1), frozen engine:** the KV case's priority-0 first token after 4,853–4,929 ms (3 runs; Gray's,
-  the second 5060 Ti, 4,923–5,077 ms); the prefill case's token gap 61–64 ms (3 runs; Gray's 69 ms); the calls'
-  first-token p95 beside 12 agents 7,643 and 7,631 ms over two 240 s tails of 44 turns each, none failed.
-- **E2 (block 4):** the PRs' 48-token configuration on W5's round-1 sample of the agents, with the control plane on
-  the GPU node's own 16 CPUs: V2V p50 1,950 ms, p95 2,333 ms, none of 50 turns failed, the agents' goodput 3,425
-  tokens/s. The box's two-host deployment measured this configuration at a p95 of 2,132–2,397 ms over W5's fifteen
-  runs.
-- **block 0's call:** two turns, V2V 1,911 and 1,351 ms.
+| File | What it holds |
+|---|---|
+| `steps.log` | `rehearse.sh`'s log of the run: each step's start and end, UTC |
+| `node/` | The node's facts and resolved values (`host.json`, `node.json`, `staged.json`), `bootstrap.sh`'s log, the preflight (`preflight.json`), the warm starts (`warm.json`) and FlashInfer's JIT check |
+| `blocks.log`, `run.log` | `run.sh`'s blocks 0, 1 and 4 |
+| `block0/` | `smoke.sh` with the listener audit, and a 2-turn call |
+| `block1/` | E0 on the frozen engine (`frozen-e0`, 3 repetitions) and the probes: the KV case and the prefill case three times each, the calls' tail twice |
+| `e2/a100-r1/` | Round 1's first point, the PRs' 48-token configuration, as `flatshare-bench e2 export` keeps it, with the campaign's log and its report |
+| `a100.md` | `make reproduce-a100` over these records |
+
+Home paths are cut to `~` (the box's login home; the rehearsal's own is `~/a100-rehearsal`), the workstation's to
+`$REHEARSAL_WORK` and `$REHEARSAL_REPO`, the account name to `USER`, the hosts' domain names to their SSH aliases, and
+LiveKit's key is redacted as its secret is.

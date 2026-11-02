@@ -3,16 +3,16 @@
 Flatshare's benchmark toolchain, for a reader who runs or changes a measurement: block-scaled agent
 traces, AIPerf plugins, latency probes, E2's harness and report, the failure drills' client and the soak. It
 replays the SemiAnalysis Claude Code traces (`semianalysisai/cc-traces-weka-062126`: 393 sessions,
-98,827 requests, subagents, think times) against a 16-32k context, with Flatshare's per-session
+98,827 requests, subagents, think times) against a 16–32k context, with Flatshare's per-session
 metadata on every request, and measures the tier cost model (E0), server-side voice turns and E2's
-points.
+points ([ARCHITECTURE.md §6.3](../../docs/ARCHITECTURE.md#63-e2s-harness) places E2's harness in the system).
 
 | Piece | Module | Purpose |
 |---|---|---|
-| `flatshare-bench scale-traces` | `traces.py` | Shrinks every request of the corpus by 32x or 64x while keeping its prefix structure |
+| `flatshare-bench scale-traces` | `traces.py` | Shrinks every request of the corpus by 32× or 64× while keeping its prefix structure |
 | AIPerf loader `weka_trace_scaled` | `aiperf_plugin.py` | AIPerf's Weka loader, fixed to read each trace's own block size |
 | AIPerf endpoint `flatshare_chat` | `aiperf_plugin.py` | Chat completions plus `X-Session-ID`, `X-Flatshare-Class`, `prompt_cache_key` and `priority` |
-| `configs/agentic_replay.yaml`, `configs/aiperf.env` | | AIPerf `agentic_replay` run: steady-state agent sessions with recycling |
+| `configs/agentic_replay.yaml`, `configs/aiperf.env` | — | AIPerf `agentic_replay` run: steady-state agent sessions with recycling |
 | `flatshare-bench mock-server` | `mock_server.py` | Recording OpenAI-compatible mock on 127.0.0.1 for CPU-only dry runs |
 | `flatshare-bench tiers` | `tiers.py` | E0: time to first token from the GPU pool, the CPU tier and recompute, verified per sample by vLLM's prefix-cache counters; optional background load |
 | `flatshare-bench voice-turn` | `voice_turn.py` | One server-side voice turn timed per stage (STT, LLM first sentence, TTS first audio); optional background load |
@@ -20,7 +20,7 @@ points.
 | `flatshare-bench e2` | `e2/` (`arm.py`, `run.py`, `engine.py`, `cyan.py`, `tools.py`, `record.py`, `report.py`, `figures.py`) | E2 points: one measured from its arm file on cyan (`run`), the frontier across points (`report`), and their compact records (`export`) (note 1) |
 | `flatshare-bench drill` | `drills.py` | The client side of the failure drills (`ops/drills`): `streams`, `report`, `cpu-tier` and `start` (note 2) |
 | `flatshare-bench soak` | `soak/` (`run.py`, `scrape.py`, `guard.py`, `summary.py`, `command.py`) | The production path for hours on cyan (`run`), its summary per hour and overall (`report`) and its compact record (`export`) (note 3) |
-| background load | `load.py` | `prefill:<tokens>x<n>` (cold prefills) or `decode:<tokens>x<n>` (long decodes) beside a probe |
+| Background load | `load.py` | `prefill:<tokens>x<n>` (cold prefills) or `decode:<tokens>x<n>` (long decodes) beside a probe |
 | `python -m flatshare_bench.quick_start` | `quick_start.py` | The README's quick-start result from the probe's logs, printed or written between its markers (`--write README.md`) |
 
 1. `e2 run` measures a point with the engine check, cyan's units and the tools' processes
@@ -42,14 +42,14 @@ both AIPerf plugins through the `aiperf.plugins` entry point; `aiperf plugins en
 `flatshare_chat`. On cyan, `deploy/cyan/bootstrap.sh` builds `~/flatshare/venvs/bench` from
 `uv.lock`, with the test extra; for development:
 
-```bash
+```sh
 uv sync --python 3.12 --extra test      # in python/flatshare_bench: its own .venv, from uv.lock
 ```
 
 On macOS, use Python 3.13 (`--python 3.13`): `flatshare-bench e2 run` needs `os.waitid`, which macOS has from
 3.13 on. On 3.12 it refuses to start, and its tests skip with that reason.
 
-[The quickstart](#quickstart-cyan) replays a subset of the traces through AIPerf to the mock server.
+[The quick start](#quick-start-cyan) replays a subset of the traces through AIPerf to the mock server.
 
 ## Trace scaling
 
@@ -58,7 +58,11 @@ prompt is 254k tokens. AIPerf's own caps do not help: `--synthesis-max-isl 32768
 main-agent requests and does not filter subagents, and `--max-context-length 32768` keeps no
 trace. Instead, `scale-traces` shrinks the tokens per block and leaves the hash ids alone:
 
-    block_size -> block_size / factor      in -> len(hash_ids) * new block_size      out -> ceil(out / factor)
+```text
+block_size -> block_size / factor
+in         -> len(hash_ids) * new block_size
+out        -> ceil(out / factor)
+```
 
 Prefix identity, subagent forks and the cache hit rate are preserved exactly, and every request
 shrinks by the same factor, outputs included, so a cache miss keeps its cost relative to decode
@@ -71,8 +75,9 @@ as recorded; there is no length cap.
 | 32 (`block_size` 2) | 32k | 31,144 | Default. Main-agent context p50 7.9k, p90 20.3k |
 | 64 (`block_size` 1) | 16k | 15,572 | Smaller KV pools |
 
-```bash
-flatshare-bench scale-traces traces.jsonl weka-x32 --factor 32    # the HF JSONL or a directory of *.json
+```sh
+flatshare-bench scale-traces traces.jsonl weka-x32 --factor 32    # the HF JSONL or a
+                                                                  # directory of *.json
 flatshare-bench scale-traces traces.jsonl weka-sub --ids ids.txt  # a subset; or --limit N
 ```
 
@@ -109,7 +114,7 @@ as the request's session id and ignores `prompt_cache_key`; the control plane st
 
 AIPerf 0.13.0 registers `weka_trace` with `default_block_size: 64` and passes that value to the
 loader as an override, so the stock loader ignores a trace file's own `block_size`. On a scaled
-trace it decodes 64 tokens per block from the first 1/32 of each request's hash ids. On the 32x
+trace it decodes 64 tokens per block from the first 1/32 of each request's hash ids. On the 32×
 corpus it reproduced about 77% of the shared prefix, with prompts 22% short at the median and
 no assistant turns. `weka_trace_scaled` is the same loader class with that override dropped;
 on the wire it reproduced the shared prefix to within 20 tokens. `tests/test_loader.py` runs
@@ -142,7 +147,7 @@ when it loads the file:
    sessions and classes uses the `agents` key.
 
 Source `configs/aiperf.env` first. It turns AIPerf's dataset cache on, keeps the session-id override
-off, and raises the dataset timeouts that the full corpus (about 300 s to load and 17-22 GB of RAM)
+off, and raises the dataset timeouts that the full corpus (about 300 s to load and 17–22 GB of RAM)
 exceeds. AIPerf takes these settings only from the environment. The dataset cache:
 
 - **Reuse.** The cache keeps the memory-mapped dataset a run builds, under
@@ -193,18 +198,20 @@ Both take `--background prefill:8192x1` or `decode:1024x8` to measure under agen
 
 Every command that reaches a server takes its address as the gateway's `upstream` is written: `http://host:port`, or `unix:` and the absolute path of its socket (`transport.py`); it refuses one that is neither before it runs, naming the flag. On cyan the defaults are the GPU node's servers through its tunnel's sockets, `unix:$XDG_RUNTIME_DIR/flatshare/phastform-engine.sock`, `-stt.sock` and `-tts.sock`; a request's path starts at the server's root (`/v1/...`, `/metrics`).
 
-```bash
+```sh
 flatshare-bench tiers --reps 5 --out runs/e0-idle
 flatshare-bench tiers --lengths 1024,4096,16384 --background decode:1024x8 --out runs/e0-decode
-flatshare-bench voice-turn --audio turn.wav --reps 30 --background prefill:8192x1 --out runs/voice-x1
+flatshare-bench voice-turn --audio turn.wav --reps 30 --background prefill:8192x1 \
+  --out runs/voice-x1
 ```
 
 ## KV block lifecycle (`flatshare-bench kv-metrics`)
 
 Snapshot an engine's `/metrics` around a run, then compare vLLM's sampled KV block histograms over it. The engine needs `--kv-cache-metrics`. The histograms are `vllm:kv_block_reuse_gap_seconds`, `vllm:kv_block_idle_before_evict_seconds` and `vllm:kv_block_lifetime_seconds`.
 
-```bash
-engine=unix:$XDG_RUNTIME_DIR/flatshare/phastform-engine.sock  # on cyan: the engine through its tunnel
+```sh
+engine=unix:$XDG_RUNTIME_DIR/flatshare/phastform-engine.sock  # on cyan: the engine
+                                                              # through its tunnel
 flatshare-bench kv-metrics snapshot $engine before.prom
 # ... run the load ...
 flatshare-bench kv-metrics snapshot $engine after.prom
@@ -227,18 +234,28 @@ When evicted blocks were idle for less time than blocks typically wait between r
 
 `flatshare-bench e2 run ARM.toml --out DIR` measures one point of E2 on cyan: the measurement calls beside the AIPerf agentic replay, through the gateway, on the engine the GPU node runs. [`benchmarks/e2`](../../benchmarks/e2/README.md) holds the arm files and `campaign.sh`, which measures a list of them from a workstation and switches the GPU node's engine between them.
 
-```bash
-flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/a1-voice.toml --out ~/flatshare/runs/e2/w2/a1-voice
-flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/disc-a9-s24.toml --out ~/flatshare/runs/e2/demo/disc-a9-s24 \
-  --save-audio                               # the callers save each call's audio, for the demo video
-flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/a1-voice.toml --out ~/flatshare/runs/e2/rg-gray/a1-voice \
-  --node gray --gpu-source gray=v1.6      # on Gray, through flatshare-tunnel@gray; campaign.sh passes both
-flatshare-bench e2 engine a2-stock-s16.toml  # the engine an arm needs, as variant.sh use takes it
-flatshare-bench e2 report ~/flatshare/runs/e2/w2/{a1-voice,a2-stock-s16} --out ~/flatshare/runs/e2/first
+```sh
+flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/a1-voice.toml \
+  --out ~/flatshare/runs/e2/w2/a1-voice
+# the callers save each call's audio, for the demo video
+flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/disc-a9-s24.toml \
+  --out ~/flatshare/runs/e2/demo/disc-a9-s24 \
+  --save-audio
+# on Gray, through flatshare-tunnel@gray; campaign.sh passes both
+flatshare-bench e2 run ~/flatshare/src/benchmarks/e2/arms/a1-voice.toml \
+  --out ~/flatshare/runs/e2/rg-gray/a1-voice \
+  --node gray --gpu-source gray=v1.6
+# the engine an arm needs, as variant.sh use takes it
+flatshare-bench e2 engine a2-stock-s16.toml
+flatshare-bench e2 report ~/flatshare/runs/e2/w2/{a1-voice,a2-stock-s16} \
+  --out ~/flatshare/runs/e2/first
+# repeats across rounds; two configurations' waterfall
 flatshare-bench e2 report ~/flatshare/runs/e2/{w2c,a9,r1,r2}/disc-* --out ~/flatshare/runs/e2/disc \
-  --waterfall disc-frozen-s24 --waterfall disc-a9-s24   # repeats across rounds; two configurations' waterfall
-flatshare-bench e2 export ~/flatshare/runs/e2/w2b/* --out benchmarks/results/2026-10-23-e2   # compact records
-flatshare-bench e2 reset                     # cyan's units as gateway.toml and the worker's defaults have them
+  --waterfall disc-frozen-s24 --waterfall disc-a9-s24
+# compact records
+flatshare-bench e2 export ~/flatshare/runs/e2/w2b/* --out benchmarks/results/2026-10-23-e2
+# cyan's units as gateway.toml and the worker's defaults have them
+flatshare-bench e2 reset
 ```
 
 **The GPU node.** A point measures on one GPU node, `--node NODE`, which `run.json` names (`node`) beside the node's deployed revision (`versions.gpu_source`; `--gpu-source`, when given, must name the node):
@@ -402,12 +419,16 @@ The raw run directories (the gateway's request log, AIPerf's exports, the metric
 
 `flatshare-bench soak run --hours H --out DIR` loads the box as it serves for hours, on cyan: calls arriving on a schedule against the voice worker in serve mode ([`flatshare-voice arrivals`](../flatshare_voice/README.md#arriving-calls-a-soaks)), AIPerf's agentic replay through the gateway as E2 runs it, a scrape of the service every minute and a guard on the GPUs. [docs/EXPERIMENTS.md](../../docs/EXPERIMENTS.md#the-soak-the-production-path-for-hours) says what it measures and [benchmarks/e2/README.md](../../benchmarks/e2/README.md#soaks) how to run one; `soak report DIR` prints its summary from its directory or its compact record, and `soak export DIR --out RECORD` writes the record to commit.
 
-```bash
-flatshare-bench soak run --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref     # voice alone: the reference
-flatshare-bench soak report ~/flatshare/runs/soak/ref                                       # once it has ended: its p95 is P95
+```sh
+# voice alone: the reference
+flatshare-bench soak run --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref
+# once it has ended: its p95 is P95
+flatshare-bench soak report ~/flatshare/runs/soak/ref
+# 20 calls an hour; 14 agents' trees, under two nodes' 4 + 12 (the runbook's Soaks)
 flatshare-bench soak run --hours 24 --slo-reference P95 --agents-sessions 14 \
-  --out ~/flatshare/runs/soak/day        # 20 calls an hour; 14 agents' trees, under two nodes' 4 + 12 (the runbook's Soaks)
-flatshare-bench soak report ~/flatshare/runs/soak/day                                       # the hours' table
+  --out ~/flatshare/runs/soak/day
+# the hours' table
+flatshare-bench soak report ~/flatshare/runs/soak/day
 flatshare-bench soak export ~/flatshare/runs/soak/day --out benchmarks/results/2026-10-28-soak
 ```
 
@@ -487,9 +508,9 @@ Each request appends one JSON line to the log: arrival and end times, every head
 field except `messages`, a role/size digest of the messages, and `cached_tokens` (the longest
 prefix shared with one of the session's recent prompts, also returned in `usage`).
 
-## Quickstart (cyan)
+## Quick start (cyan)
 
-```bash
+```sh
 # Environment: the venv that deploy/cyan/bootstrap.sh builds
 export PATH=$HOME/flatshare/venvs/bench/bin:$PATH
 
@@ -500,11 +521,14 @@ curl -sSL --fail -o cc-traces-weka-062126/traces.jsonl --create-dirs \
 flatshare-bench scale-traces cc-traces-weka-062126/traces.jsonl weka-x32 --factor 32
 flatshare-bench scale-traces cc-traces-weka-062126/traces.jsonl weka-x64 --factor 64
 # A quick-check subset; sub16.ids lists 16 short traces, one id per line (8 with subagents)
-flatshare-bench scale-traces cc-traces-weka-062126/traces.jsonl weka-x32-sub16 --factor 32 --ids sub16.ids
+flatshare-bench scale-traces cc-traces-weka-062126/traces.jsonl weka-x32-sub16 --factor 32 \
+  --ids sub16.ids
 
-# Mock on loopback (keep clear of cyan's deployed ports, the gateway's 18080 and LiveKit's 17880-17882)
+# Mock on loopback (keep clear of cyan's deployed ports, the gateway's 18080 and LiveKit's
+# 17880-17882)
 mkdir -p ~/flatshare/runs/w0-e2e && cd ~/flatshare/runs/w0-e2e
-setsid nohup flatshare-bench mock-server --port 19180 --log $PWD/mock-aiperf.jsonl < /dev/null > mock.out 2>&1 &
+setsid nohup flatshare-bench mock-server --port 19180 \
+  --log $PWD/mock-aiperf.jsonl < /dev/null > mock.out 2>&1 &
 echo $! > mock.pid
 ss -lntp | grep 19180          # 127.0.0.1:19180 only
 
@@ -512,14 +536,16 @@ ss -lntp | grep 19180          # 127.0.0.1:19180 only
 cd ~/flatshare/src/python/flatshare_bench
 . configs/aiperf.env
 FLATSHARE_BENCH_URL=http://127.0.0.1:19180/v1/chat/completions \
-FLATSHARE_BENCH_DATA=$HOME/flatshare/data/weka-x32-sub16 FLATSHARE_BENCH_SESSIONS=8 FLATSHARE_BENCH_DURATION=60 \
+FLATSHARE_BENCH_DATA=$HOME/flatshare/data/weka-x32-sub16 FLATSHARE_BENCH_SESSIONS=8 \
+FLATSHARE_BENCH_DURATION=60 \
 FLATSHARE_BENCH_GRACE=15 FLATSHARE_BENCH_THINK_CAP=3 FLATSHARE_BENCH_RAW=true \
 FLATSHARE_BENCH_ARTIFACTS=$HOME/flatshare/runs/w0-e2e/aiperf \
   aiperf profile --config configs/agentic_replay.yaml
 
 # What reached the server
-python -c 'import json,sys; r=json.loads(open(sys.argv[1]).readlines()[-1]); print(r["headers"], r["body"])' \
-  ~/flatshare/runs/w0-e2e/mock-aiperf.jsonl
+python -c 'import json, sys
+r = json.loads(open(sys.argv[1]).readlines()[-1])
+print(r["headers"], r["body"])' ~/flatshare/runs/w0-e2e/mock-aiperf.jsonl
 kill $(cat ~/flatshare/runs/w0-e2e/mock.pid)
 ```
 
@@ -533,7 +559,7 @@ Results on 2026-10-22, against the mock:
 
 The tests are offline and take four to five minutes, more than half of it in the last six suites below, which test the deployment, its releases and the A100 run's kit: those scripts have no package of their own, so their tests live here. CI runs them with `make test-python`:
 
-```bash
+```sh
 uv run --extra test pytest      # in python/flatshare_bench
 ```
 

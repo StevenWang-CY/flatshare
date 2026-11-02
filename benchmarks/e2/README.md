@@ -9,9 +9,12 @@ A line in a campaign file can also set, for all of its points:
 - `save-audio`: the callers save each call's audio, for [the demo video](#the-demo-video) (`flatshare-bench e2 run --save-audio`).
 
 ```sh
-export FLATSHARE_SSH="ssh -F $HOME/.ssh/flatshare_config"             # your SSH command for the hosts, as for deploy.sh
-benchmarks/e2/campaign.sh --dry-run benchmarks/e2/w2.campaign   # check every arm file; list the points and engines
-benchmarks/e2/campaign.sh --pause benchmarks/e2/w2.campaign     # measure, then pause the GPU node
+# your SSH command for the hosts, as for deploy.sh
+export FLATSHARE_SSH="ssh -F $HOME/.ssh/flatshare_config"
+# check every arm file; list the points and engines
+benchmarks/e2/campaign.sh --dry-run benchmarks/e2/w2.campaign
+# measure, then pause the GPU node
+benchmarks/e2/campaign.sh --pause benchmarks/e2/w2.campaign
 ```
 
 For each point whose run directory on cyan is not complete, `campaign.sh`:
@@ -44,8 +47,10 @@ Gray needs, once:
 [`gray-smoke.campaign`](gray-smoke.campaign) checks Gray end to end on W5's round-1 sample of the agents: voice alone on the frozen box, then the agents alone on a dedicated card ([`rg-disc-agents-only-s24`](arms/rg-disc-agents-only-s24.toml), which stops the card's speech servers) and on the shared card's engine ([`rg-disc-agents-pr-ab48-s24`](arms/rg-disc-agents-pr-ab48-s24.toml), the configuration to deploy as W5 ran it, which starts them again):
 
 ```sh
-FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --dry-run benchmarks/e2/gray-smoke.campaign   # the points and engines
-FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --pause benchmarks/e2/gray-smoke.campaign     # measure on Gray, then pause it
+# the points and engines
+FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --dry-run benchmarks/e2/gray-smoke.campaign
+# measure on Gray, then pause it
+FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --pause benchmarks/e2/gray-smoke.campaign
 ```
 
 **Points without calls.** An arm file with `[voice] callers = 0` and agent sessions measures the agents alone, as a card that serves no call runs them: no callers and no worker journal, its window `[agents] window_s` after the warm-up (355 s by default, the median length of a two-caller point's calls in W5's records), its agents' token rate the point's measure. With `[engine] variant = "agents-only"` the card runs without its speech servers, the engine's KV pool grown into their memory under vLLM's own scheduling for the card ([the variant](../../deploy/phastform/variants/README.md#a-card-for-the-agents-alone)): the resource gate's best practical dedicated card. Its controlled counterpart is the same point on the shared card's engine, the speech servers resident and idle. The report gives such points a workload of their own, without a frontier or a figure.
@@ -162,20 +167,20 @@ The configurations the docs' tables report, by the arm file each ran from and th
 |---|---|---|---|
 | Voice alone, the SLO's reference | `a1-voice`: w2, s1, s2, r3, r4 | `w5-a1-voice`: w5-r1 to w5-r5 | fb-r1 to fb-r5 |
 | Tuned vLLM | `disc-frozen-s24`: w2c, r1 to r4 | `w5-disc-frozen-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5 | fb-r1 to fb-r5, rs-r1 to rs-r5 |
-| Step cap 1,024, no threshold | `disc-a4-b1024-t0-s24`: w2c, r1 to r4 | | |
-| Static reservation, 2,048 tokens | `disc-a6-reserve2048-s24`: w2c, r1 to r4 | | |
-| SGLang with HiCache | `disc-a7b-sglang-hicache-s24`: w2c, r1 to r4 | | |
-| Preempt-resubmit before the first byte | `disc-a8c-resubmit-s24`: w2c, r1 to r4 | `w5-disc-a8c-resubmit-s24`: w5-ext-r1 to w5-ext-r5 | |
-| Arm 9 | `disc-a9-s24`: a9, r1 to r4 | | |
-| #63350 alone (KV preemption) | `disc-pr-a-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-a-s24`: w5-pr-r1 to w5-pr-r5 | |
-| #63350 + #63351 (the budget cap, 16 tokens) | `disc-pr-ab-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab-s24`: w5-pr-r1 to w5-pr-r5 | |
+| Step cap 1,024, no threshold | `disc-a4-b1024-t0-s24`: w2c, r1 to r4 | — | — |
+| Static reservation, 2,048 tokens | `disc-a6-reserve2048-s24`: w2c, r1 to r4 | — | — |
+| SGLang with HiCache | `disc-a7b-sglang-hicache-s24`: w2c, r1 to r4 | — | — |
+| Preempt-resubmit before the first byte | `disc-a8c-resubmit-s24`: w2c, r1 to r4 | `w5-disc-a8c-resubmit-s24`: w5-ext-r1 to w5-ext-r5 | — |
+| Arm 9 | `disc-a9-s24`: a9, r1 to r4 | — | — |
+| #63350 alone (KV preemption) | `disc-pr-a-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-a-s24`: w5-pr-r1 to w5-pr-r5 | — |
+| #63350 + #63351 (the budget cap, 16 tokens) | `disc-pr-ab-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab-s24`: w5-pr-r1 to w5-pr-r5 | — |
 | #63350 + #63351, a 48-token window | `disc-pr-ab48-s24`: upstream, upstream-r1, upstream-r2 | `w5-disc-pr-ab48-s24`: w5-r1 to w5-r5, w5-pr-r1 to w5-pr-r5, w5-ext-r1 to w5-ext-r5 | fb-r1 to fb-r5, rs-r1 to rs-r5 |
-| The same on make-room as v0.3 built it (W5's control) | | `w5-disc-pr-ab48-v03-s24`: w5-r1 to w5-r5 | |
-| Standard scenario (16 agent sessions): tuned vLLM | `a4-b512-t256-s16`: w2, s1, s2 | `w5-std-frozen-s16`: w5-ext-r1 to w5-ext-r5 | |
-| Standard scenario: arm 9 | `a9-s16`: a9-standard, s1, s2 | | |
-| Standard scenario: #63350 + #63351, a 48-token window | | `w5-std-pr-ab48-s16`: w5-ext-r1 to w5-ext-r5 | |
-| 4 and 6 callers: #63350 + #63351, a 48-token window | | `w5-disc-pr-ab48-c4-s24`, `w5-disc-pr-ab48-c6-s24`: w5-cap-r1 to w5-cap-r3 | |
-| 4 and 6 callers: voice alone | | `w5-a1-voice-c4`, `w5-a1-voice-c6`: w5-cap-r1 to w5-cap-r3 | |
+| The same on make-room as v0.3 built it (W5's control) | — | `w5-disc-pr-ab48-v03-s24`: w5-r1 to w5-r5 | — |
+| Standard scenario (16 agent sessions): tuned vLLM | `a4-b512-t256-s16`: w2, s1, s2 | `w5-std-frozen-s16`: w5-ext-r1 to w5-ext-r5 | — |
+| Standard scenario: arm 9 | `a9-s16`: a9-standard, s1, s2 | — | — |
+| Standard scenario: #63350 + #63351, a 48-token window | — | `w5-std-pr-ab48-s16`: w5-ext-r1 to w5-ext-r5 | — |
+| 4 and 6 callers: #63350 + #63351, a 48-token window | — | `w5-disc-pr-ab48-c4-s24`, `w5-disc-pr-ab48-c6-s24`: w5-cap-r1 to w5-cap-r3 | — |
+| 4 and 6 callers: voice alone | — | `w5-a1-voice-c4`, `w5-a1-voice-c6`: w5-cap-r1 to w5-cap-r3 | — |
 
 The points on two GPU nodes (a voice node and an agent node, against two pooled nodes on tuned vLLM and two running arm 9, make-room with the lifecycle policy; [EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)) never ran: no second GPU was free before v1.0. Their arm files and campaigns, with the code that ran them there (that branch's `[nodes]` and `[placement]` in the gateway, the voice worker's `FLATSHARE_NODES`, `flatshare-bench e2 run`'s points on several nodes and `campaign.sh`'s several GPU nodes), are on the `two-node` branch; the main line's gateway places sessions on several nodes with `[[nodes]]` and a `[placement]` of its own ([Nodes](../../crates/flatshare-gateway/README.md#nodes)).
 
@@ -213,7 +218,7 @@ benchmarks/e2/campaign.sh benchmarks/e2/demo.campaign
 
 By hand on cyan, with the GPU node already on the arm's engine and the measurement drop-in on (`variant.sh measure on`), a demo point is `~/flatshare/venvs/bench/bin/flatshare-bench e2 run ARM --out ~/flatshare/runs/e2/demo/POINT --save-audio`. Each caller writes `call-<i>.wav` and `call-<i>.json` beside its turns.
 
-Then, on a workstation with the two run directories fetched into one directory, `make demo-video` renders the video to `build/flatshare-demo.mp4` (`DEMO_OUT`) and the README's animation to `docs/figures/e2-demo.webp`, with its dark theme and its phone layout (`e2-demo-dark.webp`, `e2-demo-narrow.webp`, `e2-demo-narrow-dark.webp`; `uv` installs the script's pinned numpy, matplotlib, Pillow, fontTools and imageio-ffmpeg, whose ffmpeg encodes; the video and the four animations take seven minutes on an Apple M5 Max laptop):
+Then, on a workstation with the two run directories fetched into one directory, `make demo-video` renders the video to `build/flatshare-demo.mp4` (`DEMO_OUT`) and the README's animation to `docs/figures/e2-demo.webp`, with its dark theme and its phone layout (`e2-demo-dark.webp`, `e2-demo-narrow.webp`, `e2-demo-narrow-dark.webp`). `uv` installs the script's pinned numpy, matplotlib, Pillow, fontTools and imageio-ffmpeg, whose ffmpeg encodes, and the video and the four animations take seven minutes on an Apple M5 Max laptop:
 
 ```sh
 make demo-video DEMO=$FLATSHARE_E2_RESULTS/demo
@@ -255,13 +260,20 @@ A soak loads the box as it serves for hours and keeps every attempt and every sc
 
 ```sh
 bench=~/flatshare/venvs/bench/bin/flatshare-bench
-soak() { systemd-run --user --unit flatshare-soak --collect -p KillMode=mixed -p TimeoutStopSec=900 $bench soak run "$@"; }
-soak --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref-voice-alone   # the reference, first
-$bench soak report ~/flatshare/runs/soak/ref-voice-alone                         # once it has ended: its p95 is P95
-soak --hours 24 --slo-reference P95 --calls-per-hour 20 --turns 10 --agents-sessions 14 --agents-data weka-x32-long \
-  --out ~/flatshare/runs/soak/NAME     # two nodes bounding agents at 4 + 12: a few under the bounds (the runbook's Two GPU nodes, Sizing)
-journalctl --user -u flatshare-soak -f      # its progress: each tool's run, each hour's line
-systemctl --user stop flatshare-soak        # ends it early, its summary written
+soak() { systemd-run --user --unit flatshare-soak --collect -p KillMode=mixed \
+  -p TimeoutStopSec=900 $bench soak run "$@"; }
+# the reference, first
+soak --hours 2 --agents-sessions 0 --out ~/flatshare/runs/soak/ref-voice-alone
+# once it has ended: its p95 is P95
+$bench soak report ~/flatshare/runs/soak/ref-voice-alone
+# two nodes bounding agents at 4 + 12: a few under the bounds (the runbook's Two GPU nodes, Sizing)
+soak --hours 24 --slo-reference P95 --calls-per-hour 20 --turns 10 --agents-sessions 14 \
+  --agents-data weka-x32-long \
+  --out ~/flatshare/runs/soak/NAME
+# its progress: each tool's run, each hour's line
+journalctl --user -u flatshare-soak -f
+# ends it early, its summary written
+systemctl --user stop flatshare-soak
 ```
 
 The nodes are the gateway's: its `[[nodes]]`, or the node its `upstream` socket names (`phastform-engine.sock`), each guarded over SSH unless `--guard` says otherwise. At the window's end no call arrives any more, the calls in progress play their turns (for `--drain-s`, 600 s, at most) and AIPerf stops. SIGINT or SIGTERM ends a soak the same way, each call with its current turn; a second one hangs the calls up. A tool that ends early starts again, after a backoff if it keeps ending (10 s, then up to 10 minutes). While a guarded GPU holds another's process, or cannot be read three minutes in a row, the soak stops its calls and AIPerf, and starts them again once every GPU has been clear for five minutes (`--guard-clear-s`): the gateway places the load, so a pause stops all of it.

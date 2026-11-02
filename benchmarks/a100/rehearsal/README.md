@@ -27,9 +27,13 @@ Two features of the kit exist for the rehearsal, and `check` refuses a checkout 
 2. **The box's units are stopped, and you note which were active**, so that you can start them again after:
 
    ```sh
-   pssh phastform 'systemctl --user list-units --state=active --no-legend --plain "flatshare*"'   # note these
-   pssh phastform 'systemctl --user stop flatshare.target flatshare-engine.service flatshare-stt.service flatshare-tts.service flatshare-engine-proxy.socket flatshare-mps.service;
-     systemctl --user list-units --all --no-legend --plain "flatshare*"'                         # every one inactive
+   # note these
+   pssh phastform 'systemctl --user list-units --state=active --no-legend --plain "flatshare*"'
+   pssh phastform 'systemctl --user stop flatshare.target flatshare-engine.service \
+       flatshare-stt.service flatshare-tts.service flatshare-engine-proxy.socket \
+       flatshare-mps.service;
+     systemctl --user list-units --all --no-legend --plain \
+       "flatshare*"'                         # every one inactive
    ```
 
    `pssh` stands for the SSH command that reaches the host (`REHEARSAL_SSH`).
@@ -41,15 +45,19 @@ Two features of the kit exist for the rehearsal, and `check` refuses a checkout 
 
 ## The commands
 
-From this directory on the workstation, in bash (macOS's 3.2 is enough); the rehearsal's own state, logs and records go to `REHEARSAL_WORK`, `~/flatshare/rehearsal`. The workstation also needs `git`, `rsync`, `tar` and a `python3` that runs, for the `data` step's `long_traces.py`. On a Mac, `/usr/bin/git` and `/usr/bin/python3` need Xcode's developer tools, their license accepted; another `git` or `python3` first on `PATH` serves as well.
+From this directory on the workstation, in bash (macOS's 3.2 is enough); the rehearsal's own state, logs and records go to `REHEARSAL_WORK`, `~/flatshare/rehearsal`. The workstation also needs `git`, `rsync`, `tar` and a `python3` that runs, for the `data` step's `long_traces.py`. On a Mac, `/usr/bin/git` and `/usr/bin/python3` need Xcode's developer tools, their licence accepted; another `git` or `python3` first on `PATH` serves as well.
 
 ```sh
-bash rehearse.sh all                       # every step not done yet, in order; stops at the first that fails
-bash rehearse.sh status                    # each step: done or not; each host step: running, done STATUS
+bash rehearse.sh all                       # every step not done yet, in order;
+                                           # stops at the first that fails
+bash rehearse.sh status                    # each step: done or not; each
+                                           # host step: running, done STATUS
 bash rehearse.sh STEP                      # one step; the steps before it must be done
-bash rehearse.sh --redo STEP STEP          # a step again, although done (on the host too: a block's blocks/N.done goes)
+bash rehearse.sh --redo STEP STEP          # a step again, although done (on the
+                                           # host too: a block's blocks/N.done goes)
 bash rehearse.sh abort                     # stop what runs on the host, then cleanup
-bash rehearse.sh --purge cleanup           # cleanup, again if done, and remove ~/a100-rehearsal on the host
+bash rehearse.sh --purge cleanup           # cleanup, again if done, and remove
+                                           # ~/a100-rehearsal on the host
 ```
 
 **Resumable.** A step done leaves `state/STEP.done` and is skipped from then on.
@@ -156,13 +164,13 @@ box's models in its hub cache, `push` and `stage` took a fraction of their plan.
 | `check` | host, read-only | box units stopped, GPU idle, ports free, disk, the box's models at the profile's revisions in its hub cache, Kokoro, tools, user namespaces, logind's `KillUserProcesses` | 1 | 0.0 |
 | `init` | host | `~/a100-rehearsal`, `rehearsal.env`, the sudo shim, Kokoro copied, the box's state recorded | 2 | 0.1 |
 | `data` | workstation | `FLATSHARE_DATA` (above) | 1, plus cyan's callers | 1.2 |
-| `push` | workstation | `push.sh`: the source (15 MB) and the data (2.7 GB as files) into the rehearsal's home | 7 to 18 at 20 to 50 Mbit/s up | 1.7 |
-| `stage` | host | `bootstrap.sh stage` | 45 to 60 | 9.1 |
+| `push` | workstation | `push.sh`: the source (15 MB) and the data (2.7 GB as files) into the rehearsal's home | 7–18 at 20–50 Mbit/s up | 1.7 |
+| `stage` | host | `bootstrap.sh stage` | 45–60 | 9.1 |
 | `gpu` | host | `bootstrap.sh gpu` | 5 | 1.4 |
-| `warm` | host | `bootstrap.sh warm`: one engine start per compile configuration (`host.py`'s `WARM`) | 15 to 20 | 28.8 |
-| `block0` | host | `run.sh 0`: `bootstrap.sh gpu`, the warm check, the frozen engine, `smoke.sh` and its listener audit, a 2-turn call | 5 to 10 | 4.1 |
-| `block1` | host | `run.sh 1`: E0 with `--reps 3`; the KV case x3, the prefill case x3, the tail x2 | 25 | 16.1 |
-| `block4` | host | `run.sh --until <17 min on> --estimate 4=15 4` | 16 to 17 | 13.3 |
+| `warm` | host | `bootstrap.sh warm`: one engine start per compile configuration (`host.py`'s `WARM`) | 15–20 | 28.8 |
+| `block0` | host | `run.sh 0`: `bootstrap.sh gpu`, the warm check, the frozen engine, `smoke.sh` and its listener audit, a 2-turn call | 5–10 | 4.1 |
+| `block1` | host | `run.sh 1`: E0 with `--reps 3`; the KV case ×3, the prefill case ×3, the tail ×2 | 25 | 16.1 |
+| `block4` | host | `run.sh --until <17 min on> --estimate 4=15 4` | 16–17 | 13.3 |
 | `pull` | workstation | `pull.sh --once` into `hosts/phastform` | 2 | 0.1 |
 | `reproduce` | peacock | `make reproduce-a100 RECORDS=<the pulled records> CORPUS=<peacock's weka-x32>`; the report into `reproduce/` | 5 | 0.1 (1.4 with the corpus's first copy) |
 | `cleanup` | host | the rehearsal's units stopped, its processes ended, the box compared | 2 | 0.4 |

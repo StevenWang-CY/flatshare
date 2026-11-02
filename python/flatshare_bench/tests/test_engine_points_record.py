@@ -28,7 +28,7 @@ def test_the_readmes_tables_are_what_the_records_give() -> None:
             rf"<!-- table.py {name} -->\n(.*?)\n<!-- /table.py {name} -->", readme, re.S
         )
         assert found is not None, name
-        assert found.group(1) == table.table(name)
+        assert found.group(1) == table.compact(table.table(name))
 
 
 def test_every_point_the_tables_name_is_in_the_record() -> None:
@@ -42,4 +42,6 @@ def test_every_point_the_tables_name_is_in_the_record() -> None:
 def test_benchmarks_gives_the_adopted_table_as_the_record_does() -> None:
     # BENCHMARKS.md's ledger of the serving engine's additions is the record's own table of them, row for row.
     benchmarks = (REPO / "docs" / "BENCHMARKS.md").read_text()
-    assert _table().table("adopted") in benchmarks
+    # It prints each median over its range, two lines a cell: the record's table, set for the page.
+    table = _table()
+    assert table.compact(table.table("adopted")) in benchmarks

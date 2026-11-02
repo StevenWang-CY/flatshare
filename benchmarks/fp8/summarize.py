@@ -1,6 +1,7 @@
-"""The FP8 runs as one Markdown table, a row a run, from what each run wrote: result.txt (the build, the flags, run.sh's
-verdict), summary.json and requests.jsonl (load.py's), and server.log (the attention backend vLLM chose, and the plan
-counters of patch_plan_wait.py).
+"""The FP8 runs as two Markdown tables, a row a run in the order the runs started: how each was set up, and what it
+did. Both come from what each run wrote: result.txt (the build, the flags, run.sh's verdict), summary.json and
+requests.jsonl (load.py's), and server.log (the attention backend vLLM chose, and the plan counters of
+patch_plan_wait.py). Two tables, since one of eleven columns ran off GitHub's page.
 
 A run from before load.py could detect a stall (its summary has no stalled_at) is held to load.py's rule after the
 fact: requests failed and none was answered in its last 180 s means it stalled, whatever run.sh's verdict said. A
@@ -100,39 +101,58 @@ def row(run):
         backends[-1] if backends else "?",
         "yes" if result["config"] == "offload.yaml" else "no",
         verdict,
-        f"{summary['args']['duration']:.0f}",
-        f"{len(answered)} / {failed}",
-        f"{last:.0f}",
-        f"{counted[0]:,} of {counted[1]:,}" if counted else "",
+        f"{summary['args']['duration']:,.0f}",
+        f"{len(answered):,} / {failed:,}",
+        f"{last:,.0f}",
+        f"{counted[0]:,} of {counted[1]:,}" if counted else "\u2014",
     ]
 
 
-def main():
-    runs = sorted(
+SETUP = ("Run", "vLLM", "Build", "KV cache", "Attention", "CPU tier")
+"""The first table's columns: how each run was set up."""
+OUTCOME = (
+    "Verdict",
+    "Load planned, s",
+    "Answered / failed",
+    "Last answer, s",
+    "Plans finding the last copy pending",
+)
+"""The second table's columns after the run's name: what it did; all but the verdict are counts, set right."""
+
+
+def runs_in(path):
+    """The run directories under path, in the order the runs started."""
+    return sorted(
         (
             p
-            for p in Path(sys.argv[1]).iterdir()
+            for p in Path(path).iterdir()
             if (p / "result.txt").is_file() and (p / "summary.json").is_file()
         ),
         key=lambda p: fields(p / "result.txt")["started"],
     )
-    head = [
-        "Run",
-        "vLLM",
-        "Build",
-        "KV cache",
-        "Attention",
-        "CPU tier",
-        "Verdict",
-        "Load planned, s",
-        "Answered / failed",
-        "Last answer, s",
-        "Plans finding the last copy pending",
-    ]
-    print("| " + " | ".join(head) + " |")
-    print("|" + "|".join("---" for _ in head) + "|")
-    for run in runs:
-        print("| " + " | ".join(row(run)) + " |")
+
+
+def markdown(head, rows, right=()):
+    """A Markdown table of rows under head; the columns named in right set to the right."""
+    lines = ["| " + " | ".join(head) + " |"]
+    lines.append("|" + "|".join("---:" if h in right else "---" for h in head) + "|")
+    lines += ["| " + " | ".join(r) + " |" for r in rows]
+    return "\n".join(lines)
+
+
+def tables(path):
+    """The runs under path as the two tables: how each was set up, and what it did."""
+    rows = [row(run) for run in runs_in(path)]
+    setup = markdown(SETUP, [r[: len(SETUP)] for r in rows])
+    outcome = markdown(("Run", *OUTCOME), [[r[0], *r[len(SETUP) :]] for r in rows], OUTCOME[1:])
+    return setup, outcome
+
+
+def main():
+    setup, outcome = tables(sys.argv[1])
+    print(setup)
+    print()
+    print(outcome)
 
 
 if __name__ == "__main__":

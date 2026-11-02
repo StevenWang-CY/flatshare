@@ -19,7 +19,7 @@ which use it retires.
 | The two proposals on GitHub: their diff, branches and state | the pull requests, or #63350 and #63351 | the PRs |
 | #63350's rule | the KV preemption | make-room (for the rule), KV make-room |
 | #63351's rule, and how many first tokens it covers | the budget cap, and its window | the prefill hold, the hold |
-| The engine variant that runs the change on vLLM 0.32.0 | make-room | the generated scheduler |
+| The engine variant that runs the change on vLLM 0.32.0 and 0.33.0 | make-room | the generated scheduler |
 | Both rules at the budget cap's default window of 16 tokens | the change at its 16-token window | make-room and the hold |
 | Both rules at two preemptions a step, a 48-token window and no reserve | the configuration to deploy | the PRs' configuration, the PRs' values |
 | Stock vLLM with the box's tuning, the baseline of a comparison | tuned vLLM | the frozen box (for the baseline), the frozen engine, frozen |
@@ -80,7 +80,7 @@ which use it retires.
 - **cyan**: the control host, CPU only: the gateway, LiveKit, the voice agent and the callers, and AIPerf.
 - **The frozen box**: the one pinned configuration every experiment on the box runs: vLLM 0.32.0 with
   Qwen3-4B-Instruct-2507-FP8, priority scheduling, a 512-token step cap and a 20 GiB CPU KV tier, beside Whisper (STT)
-  and Kokoro (TTS) on the same GPU ([ARCHITECTURE.md §5.1](ARCHITECTURE.md#31-the-frozen-box)). Beside other
+  and Kokoro (TTS) on the same GPU ([ARCHITECTURE.md §5.1](ARCHITECTURE.md#51-the-frozen-box)). Beside other
   configurations its engine is tuned vLLM, which the A100 run's records label *frozen* on whatever card it runs.
 - **Gray**: the second GPU node, identical to Phastform: the probes' booked windows (the first make-room probes ran on
   it on 2026-10-23), the second card of the two-card rounds and the arrangement to deploy's warm spare.
@@ -107,9 +107,9 @@ which use it retires.
 - **Arm**: one engine and gateway configuration of E2, numbered by family: 1, voice alone; 2 to 5, stock vLLM and its
   own knobs; 6, static answers in the gateway; 7, what engines ship; 8, what routers ship; 9, make-room with the
   lifecycle policy; 10, MPS, planned and not run ([EXPERIMENTS.md](EXPERIMENTS.md#e2-voice-under-agent-load)).
-- **Campaign**: a set of rounds, or of runs, under one code: W2, W3–W4, W5, FB, the A100 run, RS, SW, RG and the
-  soak. [The campaign map](EXPERIMENTS.md#which-campaign-measured-what-on-which-code) gives each one's code, what it
-  measured, when it ran, its rounds and its samples of the agents' traces, and the code it ran.
+- **Campaign**: a set of rounds, or of runs, under one code: W2, W3–W4, W5, FB, the A100 run, RS, SW, RG, the soak, OR
+  and OS. [The campaign map](EXPERIMENTS.md#which-campaign-measured-what-on-which-code) gives what each one measured,
+  when it ran, its rounds and its samples of the agents' traces, and the release its code belonged to.
 - **The discriminating scenario**: 24 agent sessions of the 48 traces with the longest contexts, whose KV fills the
   pool.
 - **E0**: the tier cost model, what resuming an agent turn costs from the GPU cache, from host memory and by

@@ -27,7 +27,23 @@ def _over(replies: dict[str, Any]) -> str:
     return "the reference" if share is None else f"{replies['over_slo']} ({share:.1%})"
 
 
-def _row(label: str, cell: dict[str, Any], hours: str) -> str:
+MEASURES = (
+    "Hours",
+    "Calls (accepted, refused, failed)",
+    "Turns (failed)",
+    "Replies",
+    "Over the SLO",
+    "Replies p95, ms",
+    "Realtime SLI",
+    "Background tokens/s",
+    "Restarts",
+    "Guard pauses",
+)
+"""What the table gives each run, a row each: with two runs and ten measures the table reads down and fits the page."""
+
+
+def _column(cell: dict[str, Any], hours: str) -> list[str]:
+    """A run's figure for each of MEASURES."""
     calls, turns, gateway = cell["calls"], cell["turns"], cell["gateway"]
     replies = turns["replies"]
     # As the summary's own table counts them: a unit's failures and the restarts systemd scheduled.
@@ -35,23 +51,25 @@ def _row(label: str, cell: dict[str, Any], hours: str) -> str:
         c.get("failed", 0) + c.get("restart_scheduled", 0)
         for c in cell["restarts"]["units"].values()
     )
-    return (
-        f"| {label} | {hours} | {calls['attempted']:,} ({calls['accepted']:,}, {calls['refused']:,}, {calls['failed']:,}) | "
-        f"{turns['measured']:,} ({turns['failed']:,}) | {replies['n']:,} | {_over(replies)} | {replies['p95']:,.0f} | "
-        f"{gateway['realtime_sli']['good_share']:.3f} | {gateway['background']['tokens_per_s']:,.0f} | "
-        f"{restarts} | {cell['guard']['pauses']} |"
-    )
+    return [
+        hours,
+        f"{calls['attempted']:,} ({calls['accepted']:,}, {calls['refused']:,}, {calls['failed']:,})",
+        f"{turns['measured']:,} ({turns['failed']:,})",
+        f"{replies['n']:,}",
+        _over(replies),
+        f"{replies['p95']:,.0f}",
+        f"{gateway['realtime_sli']['good_share']:.3f}",
+        f"{gateway['background']['tokens_per_s']:,.0f}",
+        f"{restarts}",
+        f"{cell['guard']['pauses']}",
+    ]
 
 
 def table(root: Path = HERE) -> str:
-    lines = [
-        "| Run | Hours | Calls (accepted, refused, failed) | Turns (failed) | Replies | Over the SLO | Replies p95, ms | "
-        "Realtime SLI | Background tokens/s | Restarts | Guard pauses |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-    ]
-    for label, run in RUNS:
-        summary = _summary(run, root)
-        lines.append(_row(label, summary["overall"], f"{summary['window']['hours']:g}"))
+    runs = [(label, _summary(run, root)) for label, run in RUNS]
+    columns = [_column(summary["overall"], f"{summary['window']['hours']:g}") for _, summary in runs]
+    lines = ["| Measure | " + " | ".join(label for label, _ in runs) + " |", "|---|" + "---:|" * len(runs)]
+    lines += [f"| {measure} | " + " | ".join(c[k] for c in columns) + " |" for k, measure in enumerate(MEASURES)]
     return "\n".join(lines)
 
 

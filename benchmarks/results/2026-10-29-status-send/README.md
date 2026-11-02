@@ -22,23 +22,23 @@ seconds.
 - **After: 44 ms.** It learned of it 44 ms after (the median of 43 exits; 60 ms at most), and no call was turned away
   with a line free. 53 of the 233 calls got an agent, against 51 before.
 
-## The runs
+A refusal counts as made with a line free when the last status the worker had sent LiveKit was `full` and a call's
+process had exited since: LiveKit dispatches no call to a worker it holds full, so its calls could only fall.
 
-| | Both runs |
+## How it ran
+
+| | |
 |---|---|
-| Load | Voice alone on Phastform's card, in the serving profile; Gray paused (its engine's scrapes fail in both records) |
-| Calls | 720 an hour for 20 minutes, each 2 measured turns after 1 warm-up turn; the callers' seed the same |
+| Load | Both runs: voice alone on Phastform's card, in the serving profile; Gray paused (its engine's scrapes fail in both records) |
+| Calls | Both runs: 720 an hour for 20 minutes, each 2 measured turns after 1 warm-up turn; the callers' seed the same |
 | Skipped | The soak tool dials no call while 8 are open, and a call no agent takes waits out its 15 s dispatch timeout: 10 in each run, left out of the table |
 | `before` | v1.6-15-ga31eab2, the 24-hour soak's build (version 1.7's worker) |
 | `after` | v1.7-16-gac9f2c3, the build whose worker version 1.8 ships |
 
-## The files
+## Files
 
-Each directory is a compact soak record (`flatshare-bench soak export`;
-[the runbook's Soaks](../../../ops/RUNBOOK.md#soaks) says what each file holds). `worker-events-RUN.tsv` holds the
-voice worker's events over its run, as [the soak record](../2026-10-28-soak/README.md) keeps them: each status it sent
-LiveKit when it changed, `full` or `available` with the load, and each exit of a call's job process (`exit`).
-
-[`table.py`](table.py) gives the table, and `python/flatshare_bench/tests/test_status_send_record.py` holds it to the
-records. A refusal counts as made with a line free when the last status the worker had sent LiveKit was `full` and a
-call's process had exited since: LiveKit dispatches no call to a worker it holds full, so its calls could only fall.
+| File | What it holds |
+|---|---|
+| `before/`, `after/` | Each a compact soak record (`flatshare-bench soak export`; [the runbook's Soaks](../../../ops/RUNBOOK.md#soaks) says what each file holds) |
+| `worker-events-before.tsv`, `worker-events-after.tsv` | The voice worker's events over its run, as [the soak record](../2026-10-28-soak/README.md) keeps them: each status it sent LiveKit when it changed, `full` or `available` with the load, and each exit of a call's job process (`exit`) |
+| [`table.py`](table.py) | The table above, which `python/flatshare_bench/tests/test_status_send_record.py` holds to the records |

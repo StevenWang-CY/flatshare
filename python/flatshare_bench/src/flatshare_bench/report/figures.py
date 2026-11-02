@@ -3045,7 +3045,7 @@ def _campaign_detail(c: data.Campaign) -> str:
 def campaign_row(c: data.Campaign) -> tuple[str, str, str, str, str]:
     """A campaign's row in EXPERIMENTS' table under the map: its code, when it ran, its points, its rounds and
     samples, and the release its code was (BENCHMARKS and the records name the exact revision)."""
-    points = "\u2013" if c.hours else f"{c.points:,}"
+    points = "\u2014" if c.hours else f"{c.points:,}"
     return c.code, _span(c), points, _rounds_and_samples(c), " and ".join(c.releases)
 
 

@@ -10,7 +10,7 @@ make schema    # cargo run -p flatshare-proto --bin flatshare-proto-schema
 
 A session is one conversation, scoped to a tenant: the key by which the gateway places a request on a GPU node, follows a call's turns and names the request to the engine. The gateway resolves it from the first of these that is present:
 
-1. `X-Session-ID`, from a trusted tenant only. The voice worker sends `voice-<room SID>`, one per LiveKit room;
+1. `X-Session-ID`, from a trusted tenant only (the voice worker sends `voice-<room SID>`, one per LiveKit room);
 2. `X-Claude-Code-Session-ID`;
 3. the OpenAI `prompt_cache_key`;
 4. otherwise a minted id, `m-` and 32 random hex digits.
@@ -45,7 +45,8 @@ Each tenant's `cache_salt` is the first 32 hex digits of HMAC-SHA-256 of the ten
 
 ## Lifecycle events
 
-The voice worker tells the gateway where each call is: in bench mode with every voice event below, which E2's lifecycle policy reads, and in serve mode with `session_closed` alone, which a gateway without an admission policy acts on only with `[[nodes]]`, where it ends the session's placement; with one upstream it is accepted and changes nothing.
+The voice worker tells the gateway where each call is. In bench mode it sends every voice event below, which E2's lifecycle policy reads. In serve mode it sends `session_closed` alone, which a gateway without an admission policy acts on only with `[[nodes]]`: there it ends the session's placement, and with one upstream it is accepted and changes nothing.
+
 - **Delivery.** Trusted callers `POST` events to `/v1/events`, as one JSON object or an array of them, and get 202 `{"accepted": n, "duplicates": m}`. The voice worker posts over the gateway's Unix socket, where the voice tenant needs no key, from one background task per session, with a 1 s timeout and no retry: a late timing signal would mislead.
 - **Idempotency.** Events are idempotent by `(tenant, source, event_id)` within a window (by default 100,000 ids for 10 minutes): a repeat is acknowledged and ignored.
 - **Unknowns.** Unknown fields are ignored; an unknown `type` is rejected with 400, and so is the whole batch that contains it.
@@ -63,7 +64,7 @@ The voice worker tells the gateway where each call is: in bench mode with every 
 | `source` | `voice-worker`, `agentic-api` or `client` |
 | `type` | The event type, below |
 
-Under the lifecycle policy, the gateway keeps each realtime session's turn state from the voice events ([ARCHITECTURE.md §7](ARCHITECTURE.md#6-tested-and-not-adopted)). Every state but idle times out after `state_timeout_s` without an event, so a lost event holds a session at most that long, and a realtime request opens its session's critical window too. Under any other policy it keeps no turn state: the events are accepted and counted, and change no decision.
+Under the lifecycle policy, the gateway keeps each realtime session's turn state from the voice events ([ARCHITECTURE.md §7](ARCHITECTURE.md#7-designs-measured-and-dropped)). Every state but idle times out after `state_timeout_s` without an event, so a lost event holds a session at most that long, and a realtime request opens its session's critical window too. Under any other policy it keeps no turn state: the events are accepted and counted, and change no decision.
 
 | `type` | Extra fields | Sent by | Under the lifecycle policy |
 |---|---|---|---|
@@ -85,4 +86,4 @@ With `[[nodes]]`, `POST /v1/sessions` from a trusted tenant places a session on 
 
 ## Removed after v0.3
 
-An engine lease hint (a key of `kv_transfer_params`), recompute-ledger rows and a header that marked synthetic requests were built for the lease and ledger design that was dropped ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)). Nothing sent or wrote them, and they were removed after v0.3, whose tree keeps them. The gateway still strips `kv_transfer_params` and every `x-flatshare-` header from client requests.
+An engine lease hint (a key of `kv_transfer_params`), recompute-ledger rows and a header that marked synthetic requests were built for the lease and ledger design that was dropped ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)). Nothing sent or wrote them, and they were removed after v0.3, whose tree keeps them.

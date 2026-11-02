@@ -1,20 +1,25 @@
 # flatshare-vllm
 
-The change on vLLM 0.32.0, the version E2 measured: pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) (stacked on #63350), proposed to vLLM (open, with no maintainer review as of 2026-11-02); this package runs their scheduler diff on 0.32.0, and on 0.33.0 ([below](#vllm-0330)), as Flatshare's `make-room` variant, beside `pr54530`, vLLM [#54530](https://github.com/vllm-project/vllm/pull/54530) ported to 0.32.0 as a baseline. A variant is a scheduler module that `build.py` writes at each engine start from the installed vLLM's own scheduler, which it never modifies. The variants' systemd drop-ins are in [`deploy/phastform/variants`](../../deploy/phastform/variants/README.md).
+The engine variants that run the change inside vLLM. `make-room` runs the scheduler diff of pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) (stacked on #63350; proposed to vLLM, open, with no maintainer review as of 2026-11-02) on vLLM 0.32.0, the version E2 measured, and on 0.33.0 ([below](#vllm-0330)). `pr54530` is vLLM [#54530](https://github.com/vllm-project/vllm/pull/54530) ported to 0.32.0, a baseline. A variant is a scheduler module that `build.py` writes at each engine start from the installed vLLM's own scheduler, which it never modifies. [ARCHITECTURE.md §2](../../docs/ARCHITECTURE.md#2-the-change-63350-and-63351) states the rules, and the variants' systemd drop-ins are in [`deploy/phastform/variants`](../../deploy/phastform/variants/README.md).
 
 ```text
-src/flatshare_vllm/build.py      writes a variant's module: its patches, applied exactly, and the stock AsyncScheduler
-src/flatshare_vllm/make-room/    63350.patch and 63351.patch, the pull requests' scheduler diff backported to v0.32.0;
-                                 variant.patch, what only the variant has; probe.py, tail.py and knee.sh, its GPU checks;
-                                 v0.33.0/, the three patches on v0.33.0
+src/flatshare_vllm/build.py      writes a variant's module: its patches, applied exactly, and the
+                                 stock AsyncScheduler
+src/flatshare_vllm/make-room/    63350.patch and 63351.patch, the pull requests' scheduler diff
+                                 backported to v0.32.0; variant.patch, what only the variant has;
+                                 probe.py, tail.py and knee.sh, its GPU checks; v0.33.0/, the three
+                                 patches on v0.33.0
 src/flatshare_vllm/pr54530/      pr54530.patch, #54530 ported to v0.32.0 by hand; probe.py
-src/flatshare_vllm/serve/        flatshare_make_room_serve.py, the serving variant's scheduler class: make-room's,
-                                 which writes the configuration the engine runs as it starts
-scripts/make-room-patches.sh     rewrites make-room's patches from the backport's branches, in a clone of the fork
-scripts/compat_upstream.py       make compat-upstream: the pull requests against vLLM's main, the backport against
-                                 their heads, the patches against vLLM's newest release
-tests/                           the build, make-room's behavior, make-room traced against the pull requests, its cost
-                                 per step
+src/flatshare_vllm/serve/        flatshare_make_room_serve.py, the serving variant's scheduler
+                                 class: make-room's, which writes the configuration the engine runs
+                                 as it starts
+scripts/make-room-patches.sh     rewrites make-room's patches from the backport's branches, in a
+                                 clone of the fork
+scripts/compat_upstream.py       make compat-upstream: the pull requests against vLLM's main, the
+                                 backport against their heads, the patches against vLLM's newest
+                                 release
+tests/                           the build, make-room's behavior, make-room traced against the pull
+                                 requests, its cost per step
 ```
 
 ## The build
@@ -44,7 +49,7 @@ The pull requests are the change's only source. A change is made on their branch
 
 ## vLLM 0.33.0
 
-make-room is ported to vLLM 0.33.0, released on 2 November 2026. `make-room/v0.33.0` holds its three patches, the `scheduler.py` diffs of three branches of v0.33.0 that the fork publishes (`v0.33.0-priority-make-room-kv`, `v0.33.0-priority-prefill-budget-cap` and `v0.33.0-leaseholder-make-room`): the same 26 commits cherry-picked onto v0.33.0, which `BASE=v0.33.0 scripts/make-room-patches.sh CLONE` writes. They add the same 849 lines to `scheduler.py` as 0.32.0's.
+make-room is ported to vLLM 0.33.0, released 2026-11-02. `make-room/v0.33.0` holds its three patches, the `scheduler.py` diffs of three branches of v0.33.0 that the fork publishes (`v0.33.0-priority-make-room-kv`, `v0.33.0-priority-prefill-budget-cap` and `v0.33.0-leaseholder-make-room`): the same 26 commits cherry-picked onto v0.33.0, which `BASE=v0.33.0 scripts/make-room-patches.sh CLONE` writes. They add the same 849 lines to `scheduler.py` as 0.32.0's.
 
 - **What 0.33.0 changed under them.** Two commits needed resolving. #63350's first calls make-room after 0.33.0's local prefill cadence (#54627), which can defer a step's prefill, as on main, so that there it is the pull request's own commit; the variant's short-load rule follows 0.33.0's cap of the external hit for auxiliary outputs, so that it judges the load that is left. By patch ID, every other commit's change to `scheduler.py` is its source's, but for the three that 0.32.0 needed adapted too, whose "Backport:" paragraphs now name 0.33.0.
 - **What checks it.** `make test-vllm VLLM_REF=v0.33.0`, the build on 0.33.0's source (118 passed; the tests of 0.32.0's own patches skip). `make test-make-room-ci VLLM_REF=v0.33.0`, the behavior suite and the serve module on 0.33.0's real scheduler (570 passed) and the trace against the pull requests' diff on 0.33.0 (1,081 passed), in the environment `requirements-cpu-v0.33.0.txt` pins, with CPU torch 2.14 and no test skipped. `make compat-upstream`, in which v0.33.0 must take its own patches. CI runs 0.32.0's.
@@ -55,7 +60,7 @@ make-room is ported to vLLM 0.33.0, released on 2 November 2026. `make-room/v0.3
 
 `make perf-make-room TORCH_PYTHON=<CPU torch 2.13 with vLLM 0.32.0's dependencies>` answers whether the change still costs a scheduler step what the pull requests' tables say, with its switches off and in the configuration to deploy. The environment `make test-make-room-ci` builds is one, and the checked-in baseline was measured in it: from the repository's root, `make build/cpu-env/synced`, then `TORCH_PYTHON=$PWD/build/cpu-env/bin/python` (an absolute path, since the recipe runs it from `python/flatshare_vllm`).
 
-- **What it times.** `tests/perf_schedule.py` times `Scheduler.schedule()` in the 13 steady states of the pull requests' cost tables, for stock vLLM's own scheduler and for make-room's module with its switches off and in the configuration to deploy (two preemptions a step, the budget cap's 48-token window, no reserve, the reservations taken, the decodes held from a call's first 16 tokens, retention within 3,584 tokens for 30 s, a 400 ms hold for an announced turn).
+- **What it times.** `tests/perf_schedule.py` times `Scheduler.schedule()` in the 13 steady states of the pull requests' cost tables, for stock vLLM's own scheduler and for make-room's module with its switches off and in the configuration to deploy (two preemptions a step, the budget cap's 48-token window, no reserve, the reservations taken, the agents' decodes held for a reply's first 48 tokens, retention within 3,584 tokens for 30 s, a 400 ms hold for an announced turn).
 - **How it times a state.** A process times one state: two schedulers of each configuration, and two more of off for the noise, take turns, and a configuration's cost is its cheaper scheduler's 10th-percentile step (inclusive). What else runs on the machine slows the schedulers alike, and one scheduler that runs slower than its twin all along, as their places in memory differ, does not count.
 - **The serving profile's states.** It times four states of the serving profile as well, in the configuration that `deploy/phastform/serving.json` gives (256-token steps without a long-prefill threshold, 256 request slots, 2,275 blocks), with asynchronous scheduling as the box does, a step in flight and block frees deferred, against vLLM's `AsyncScheduler`:
   - `idle-R2`: agents only;
@@ -116,7 +121,8 @@ A stand-in KV connector loads a request's KV asynchronously or delays it. `tests
 tools=~/flatshare/cache/testtools
 [[ -d $tools/pytest ]] || ~/.local/bin/uv pip install -q --target "$tools" pytest
 cd ~/flatshare/src/python/flatshare_vllm
-VLLM_TARGET_DEVICE=cpu PYTHONPATH=$tools ~/flatshare/venvs/engine/bin/python -m pytest -q -p no:cacheprovider tests/test_make_room.py tests/test_trace.py
+VLLM_TARGET_DEVICE=cpu PYTHONPATH=$tools ~/flatshare/venvs/engine/bin/python -m pytest -q \
+  -p no:cacheprovider tests/test_make_room.py tests/test_trace.py
 ```
 
 Elsewhere, an environment with CPU torch 2.13 and vLLM 0.32.0's Python dependencies runs them on the source checkout instead, from the repository's root: `make test-make-room TORCH_PYTHON=<its python>`, and `make test-trace TORCH_PYTHON=<its python>` (`TRACE_SEEDS=100` runs the random workloads at 100 seeds, where the default is 20). Both first check that the interpreter imports pytest, torch and vLLM's scheduler, and fail if it does not, rather than let pytest skip the suites. `make test-make-room-ci` runs both as CI's `make-room` job does. It runs them in the environment that `requirements-cpu.txt` pins: Python 3.12 on Linux x86_64, CPU torch 2.13.0, and vLLM's dependencies at the engine environment's versions (`requirements-cpu.in`, compiled by the command in its header). uv builds that environment in `build/cpu-env` (`CPU_ENV`), and the target sets `FLATSHARE_NO_SKIPS=1`, under which any skipped test fails the session (`tests/conftest.py`).

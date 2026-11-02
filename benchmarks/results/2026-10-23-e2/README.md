@@ -1,22 +1,9 @@
 # E2 records (2026-10-23)
 
-The compact records of E2's points ([E2](../../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)), from which `make reproduce-e2` regenerates the report into `build/reproduce-e2` (`E2_REPORT=DIR` to choose): `frontier.md`, `frontier.csv`, a frontier figure per workload (`frontier.svg` for the standard scenario, `frontier-weka-x32-long.svg` for the discriminating one, `frontier-4-callers.svg` and `frontier-6-callers.svg` for the calls-per-GPU points) and `waterfall.svg`, each configuration's voice turn by stage. [The report](../../../python/flatshare_bench/README.md#e2-points) gives the same tables and figures, byte for byte, from these records as from the points' run directories. [`report/`](report) holds the report these records give, every file of it ([`frontier.md`](report/frontier.md) for the tables): `make reproduce-e2 E2_REPORT=benchmarks/results/2026-10-23-e2/report` rewrites it, and the bench's tests fail while it is not what the records give, so that a change to the report's code shows in review by what it changes there.
-
-Each point is `CAMPAIGN/POINT/`, as `flatshare-bench e2 export` writes it from the run directory that [`campaign.sh`](../../e2/README.md) fetched:
-
-| File | Contents |
-|---|---|
-| `run.json` | The point's record: the arm as read, versions, the engine and its checked flags, what cyan ran, the window of the calls. Its `flatshare_bench` version is 0.1.0 in every record: cyan's editable install kept its metadata from before the packages' 0.3.0 version (fcb0c88), while the code it ran is the revision in `source`; `flatshare-bench e2 run` now refuses such an install |
-| `arm.toml` | The arm file as run |
-| `engine.json` | The engine the point ran on, from its `/server_info`: the model and its revision, the context, dtype and quantization, the KV cache and pool, the scheduler settings the arms' flags set, the CPU tier's connector and `additional_config` (for SGLang the same of its server arguments), with home paths written from `~` |
-| `summary.json` | The point's E2 metrics, with the first bytes taken exactly from the gateway's request log and, where the campaign sampled the GPU, its median SM clock and highest temperature during the calls (`gpu`) |
-| `bots/summary.json`, `bots/turns.jsonl` | The callers' summary and their line per turn |
-
-`w2b/a5-queued8192-s16` and `w2c/disc-a5-queued8192-s24` ran before a failed turn was counted at the callers' 30 s reply timeout (b8e4004), so the V2V in their `summary.json` and `bots/summary.json` leaves their failed turns out; the report recomputes every point's V2V from `bots/turns.jsonl`, each failed turn at 30 s.
-
-The raw records, which the report does not need (the gateway's request log, AIPerf's exports, the metric snapshots, the voice worker's journal, the GPU's samples and the tools' logs), are an asset of the GitHub release v0.3.
-
-129 points, in the campaigns of [`benchmarks/e2`](../../e2/README.md), all on vLLM 0.32.0 and Qwen3-4B-Instruct-2507-FP8 on Phastform's RTX 5060 Ti:
+The compact records of E2's points ([E2](../../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)): 129 points in the
+campaigns of [`benchmarks/e2`](../../e2/README.md), all on vLLM 0.32.0 and Qwen3-4B-Instruct-2507-FP8 on Phastform's
+RTX 5060 Ti. [The report](../../../python/flatshare_bench/README.md#e2-points) gives the same tables and figures, byte
+for byte, from these records as from the points' run directories.
 
 | Campaign | Points | What |
 |---|---:|---|
@@ -31,4 +18,41 @@ The raw records, which the report does not need (the gateway's request log, AIPe
 | [`a9-window`](a9-window) | 1 | Arm 9 without degrade, with a 48-token first-tokens window |
 | [`upstream`](upstream), [`upstream-r1`](upstream-r1), [`upstream-r2`](upstream-r2) | 3, 4, 4 | The engine as vLLM #63350 and #63351 propose it, and arm 9's 48-token window, three rounds |
 
-To add a campaign's points: `flatshare-bench e2 export $FLATSHARE_E2_RESULTS/CAMPAIGN/* --out benchmarks/results/2026-10-23-e2`, then rewrite `report/` from them.
+## The report
+
+[`report/`](report) holds the report these records give, every file of it ([`frontier.md`](report/frontier.md) for
+the tables). `make reproduce-e2 E2_REPORT=benchmarks/results/2026-10-23-e2/report` rewrites it, and the bench's tests
+fail while it is not what the records give, so that a change to the report's code shows in review by what it changes
+there. `make reproduce-e2` alone writes it into `build/reproduce-e2` (`E2_REPORT=DIR` to choose): `frontier.md`,
+`frontier.csv`, a frontier figure per workload (`frontier.svg` for the standard scenario, `frontier-weka-x32-long.svg`
+for the discriminating one, `frontier-4-callers.svg` and `frontier-6-callers.svg` for the calls-per-GPU points) and
+`waterfall.svg`, each configuration's voice turn by stage.
+
+## How it ran
+
+| | |
+|---|---|
+| The points | E2's, each as `flatshare-bench e2 export` writes it from the run directory that [`campaign.sh`](../../e2/README.md) fetched |
+| Failed turns | `w2b/a5-queued8192-s16` and `w2c/disc-a5-queued8192-s24` ran before a failed turn was counted at the callers' 30 s reply timeout (b8e4004), so the V2V in their `summary.json` and `bots/summary.json` leaves their failed turns out; the report recomputes every point's V2V from `bots/turns.jsonl`, each failed turn at 30 s |
+| The bench's version | `flatshare_bench` is 0.1.0 in every record: cyan's editable install kept its metadata from before the packages' 0.3.0 version (fcb0c88), while the code it ran is the revision in `source`; `flatshare-bench e2 run` now refuses such an install |
+
+## Files
+
+Each point is `CAMPAIGN/POINT/`:
+
+| File | What it holds |
+|---|---|
+| `run.json` | The point's record: the arm as read, versions, the engine and its checked flags, what cyan ran, the window of the calls |
+| `arm.toml` | The arm file as run |
+| `engine.json` | The engine the point ran on, from its `/server_info`: the model and its revision, the context, dtype and quantization, the KV cache and pool, the scheduler settings the arms' flags set, the CPU tier's connector and `additional_config` (for SGLang the same of its server arguments), with home paths written from `~` |
+| `summary.json` | The point's E2 metrics, with the first bytes taken exactly from the gateway's request log and, where the campaign sampled the GPU, its median SM clock and highest temperature during the calls (`gpu`) |
+| `bots/summary.json`, `bots/turns.jsonl` | The callers' summary and their line per turn |
+
+The raw records, which the report does not need (the gateway's request log, AIPerf's exports, the metric snapshots,
+the voice worker's journal, the GPU's samples and the tools' logs), are the v0.3 release's asset
+`leaseholder-e2-runs-2026-10-24.tar.gz`, the raw run directories of every E2 point. To add a campaign's points, then
+rewrite `report/` from them:
+
+```sh
+flatshare-bench e2 export $FLATSHARE_E2_RESULTS/CAMPAIGN/* --out benchmarks/results/2026-10-23-e2
+```

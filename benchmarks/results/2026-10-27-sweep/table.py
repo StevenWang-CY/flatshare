@@ -72,7 +72,7 @@ def table(root: Path = HERE, campaigns: tuple[str, ...] = SCREENS) -> str:
         )
         agents = [r for r in rows if r["sessions"]]
         if not agents:
-            lines.append(head + " - | - | - |")
+            lines.append(head + " — | — | — |")
             continue
         generated = [
             json.loads((r["dir"] / "summary.json").read_text())["background"][

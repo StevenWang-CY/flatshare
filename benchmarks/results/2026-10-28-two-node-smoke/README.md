@@ -1,13 +1,8 @@
 # The two-node smokes (2026-10-28)
 
 Two 15-minute soaks of the serving arrangement before its 24-hour soak: both calls on Phastform beside at most four
-agents' sessions and Gray a warm spare with at most 12 ([PRODUCTION.md](../../../docs/PRODUCTION.md#two-cards)),
-`[placement] calls = "fill"`, the voice worker in serve mode with the rounds' synthetic audio and fixed endpointing, and
-16 of the discriminating scenario's session trees for the agents (AIPerf, seed 26), the hosts at v1.6-15-ga31eab2.
-Each directory is a compact soak record (`flatshare-bench soak export`;
-[the runbook's Soaks](../../../ops/RUNBOOK.md#soaks) says what each file holds), `flatshare-bench soak report DIR`
-gives its summary, and [`table.py`](table.py) gives this table, which
-`python/flatshare_bench/tests/test_two_node_smoke_record.py` holds to the records:
+agents' sessions and Gray a warm spare with at most 12 ([PRODUCTION.md](../../../docs/PRODUCTION.md#two-cards)), at
+two settings of the placement's `idle_s`, the time an agent's session keeps its slot without a request.
 
 <!-- table.py -->
 | Placement `idle_s` | Calls (accepted, refused, failed) | Turns (failed) | Replies p95, ms | Realtime SLI | Background requests: offered / completed / refused for an agent slot | Background tokens/s | Phastform / Gray: prompt tokens/s, requests running |
@@ -31,3 +26,18 @@ What they show:
   2,017 ms and the realtime service level fell from 1.000 to 0.964, one run of each: what the 24-hour soak measures at
   length. The serving arrangement keeps `idle_s` at 150 s, and the 24-hour soak offers 14 trees, so that two slots
   hold the trees that have ended until they idle out.
+
+## How it ran
+
+| | |
+|---|---|
+| The arrangement | `[placement] calls = "fill"`, the hosts at v1.6-15-ga31eab2 |
+| The calls | The voice worker in serve mode with the rounds' synthetic audio and fixed endpointing |
+| The agents | 16 of the discriminating scenario's session trees (AIPerf, seed 26) |
+
+## Files
+
+| File | What it holds |
+|---|---|
+| `idle-300/`, `idle-150/` | Each a compact soak record (`flatshare-bench soak export`; [the runbook's Soaks](../../../ops/RUNBOOK.md#soaks) says what each file holds), with its summary (`summary.md`, `flatshare-bench soak report DIR`) |
+| [`table.py`](table.py) | The table above, which `python/flatshare_bench/tests/test_two_node_smoke_record.py` holds to the records |
