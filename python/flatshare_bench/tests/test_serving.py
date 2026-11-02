@@ -380,7 +380,7 @@ def swapped(text: str) -> str:
     "edit",
     [
         lambda text: re.sub(
-            r"(it was\s+)(\d)", lambda m: m[1] + str(int(m[2]) % 9 + 1), text, count=1
+            r"(it\s+was\s+)(\d)", lambda m: m[1] + str(int(m[2]) % 9 + 1), text, count=1
         ),
         lambda text: re.sub(r"in\s+\w+\s+runs?\s+each", "in eleven runs each", text),
         lambda text: re.sub(r"(\[make-room\]\([^)\s]+)\)", r"\1.missing)", text),
@@ -432,6 +432,11 @@ def test_the_quick_start_fill_reads_each_run_and_refuses_what_it_cannot_quote(
     )
     assert text.endswith(
         "([stock](record/stock-kv.log), [make-room](record/make-room-kv.log), [the record](record/README.md))."
+    )
+    # A record whose environment names its host gives it.
+    (record / "environment.txt").write_text("box: Gray; GPU, driver and memory in use at the start: ...\n")
+    assert "On Gray, with the card's own KV pool" in " ".join(
+        quick_start.block(stock, make_room, tmp_path / "README.md").split()
     )
     assert [quick_start.runs(n) for n in (1, 4, 9, 10)] == [
         "one run",
@@ -523,6 +528,7 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
         "budget_cap_tokens": 48,
         "reserve_tokens": 0,
         "take_reservations": True,
+        "decode_hold_tokens": 16,
         "retain_tokens": 3584,
         "retain_s": 30,
         "hint_hold_ms": 400,
