@@ -36,7 +36,16 @@ STAGES = (
     ("llm_first_sentence_ms", "LLM first sentence"),
     ("tts_first_audio_ms", "TTS first audio"),
 )
-TABLES = ("slo", "voice", "agents", "stages")
+FOLLOW_ROUNDS = ("opt-s1", "opt-s2")
+"""The follow-up rounds, Phastform then Gray, each a fresh sample of the agents (seeds 36 and 37)."""
+FOLLOW = (
+    # (the scenario, the first four additions' point, + the decode hold, + the hold and speculative decoding)
+    ("24 agent sessions, 2 callers", "opt-disc-ret-s24", "opt-disc-hold-s24", "opt-disc-spec-s24"),
+    ("24 agent sessions, 4 callers", "opt-disc-ret-c4-s24", "opt-disc-hold-c4-s24", "opt-disc-spec-c4-s24"),
+    ("24 agent sessions, 6 callers", "opt-disc-ret-c6-s24", "opt-disc-hold-c6-s24", "opt-disc-spec-c6-s24"),
+)
+FOLLOW_CONFIGURATIONS = ("The first four additions", "+ the decode hold", "+ the hold and speculation")
+TABLES = ("slo", "voice", "agents", "stages", "follow")
 
 
 def points(rounds: tuple[str, ...] = ROUNDS) -> dict[tuple[str, str], dict]:
@@ -178,8 +187,48 @@ def stages() -> str:
     return "\n".join(out)
 
 
+def follow() -> str:
+    """The follow-up rounds: the first four additions, with the decode hold, and with speculative decoding on top,
+    each reply against its round's SLO, pooled over the rounds."""
+    rows = points(FOLLOW_ROUNDS)
+    out = [
+        "| Scenario | Configuration | Rounds | Replies over the SLO | V2V p95, ms | LLM first token p95 | First sentence"
+        " p50 | p95 | Agents' tokens/s | Against the first four additions |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for scenario, *trio in FOLLOW:
+        base = {name: rows[name, trio[0]] for name in ran(rows, FOLLOW_ROUNDS) if (name, trio[0]) in rows}
+        for config, point in zip(FOLLOW_CONFIGURATIONS, trio, strict=True):
+            over = total = 0
+            by_round = {}
+            for name in ran(rows, FOLLOW_ROUNDS):
+                row = rows.get((name, point))
+                threshold = None if row is None else slo_ms(rows, name, row["callers"])
+                if threshold is None:
+                    continue
+                over += sum(s > threshold for s in row["v2v_samples"])
+                total += len(row["v2v_samples"])
+                by_round[name] = row
+            ratios = [
+                100 * (row["background_tokens_per_s"] / base[name]["background_tokens_per_s"] - 1)
+                for name, row in by_round.items()
+                if name in base and point != trio[0]
+            ]
+            share = f"{over} of {total} ({100 * over / total:.1f}%)" if total else "–"
+            got = list(by_round.values())
+            out.append(
+                f"| {scenario} | {config} | {len(got)} | {share} | {spread([r['v2v_p95_ms'] for r in got])} | "
+                f"{spread([r['llm_ttft_p95_ms'] for r in got])} | "
+                f"{spread([r['llm_first_sentence_p50_ms'] for r in got])} | "
+                f"{spread([r['llm_first_sentence_p95_ms'] for r in got])} | "
+                f"{spread([r['background_tokens_per_s'] for r in got])} | "
+                f"{spread(ratios, '{:+.1f}%') if ratios else '–'} |"
+            )
+    return "\n".join(out)
+
+
 def table(name: str) -> str:
-    return {"slo": slo, "voice": voice, "agents": agents, "stages": stages}[name]()
+    return {"slo": slo, "voice": voice, "agents": agents, "stages": stages, "follow": follow}[name]()
 
 
 if __name__ == "__main__":

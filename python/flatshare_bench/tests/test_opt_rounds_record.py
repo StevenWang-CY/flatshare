@@ -34,8 +34,8 @@ def test_the_readmes_tables_are_what_the_records_give() -> None:
 
 def test_every_round_ran_its_campaigns_points() -> None:
     table = _table()
-    rows = table.points(table.ROUNDS)
-    for name in table.ROUNDS:
+    rows = table.points(table.ROUNDS + table.FOLLOW_ROUNDS)
+    for name in table.ROUNDS + table.FOLLOW_ROUNDS:
         listed = re.findall(
             r"^arms/(\S+)\.toml$", (REPO / "benchmarks/e2" / f"{name}.campaign").read_text(), re.M
         )

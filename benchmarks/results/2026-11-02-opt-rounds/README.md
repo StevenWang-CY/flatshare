@@ -6,7 +6,7 @@ serving profile's step cap of 256) runs beside the same with the first four addi
 GPU, the next batch scheduled just in time, each turn announced when the user stops speaking, and the calls taking the
 agents' block reservations, beside 24 agent sessions with 2, 4 and 6 callers and beside 16 agent sessions of the whole
 corpus. [The engine points](../2026-11-01-engine-points/README.md) chose each addition; the fifth, the agents' decodes
-held through the budget cap's window, came after the rounds began, and two follow-up rounds measure it next.
+held through the budget cap's window, came after the rounds began, and the follow-up rounds measure it.
 
 ## The SLO
 
@@ -93,6 +93,39 @@ sentence.
   the end of their speech, more than twice the LLM's first sentence, 344–352 ms, which the first four additions took
   from 474–483 ms.
 
+## The decode hold and speculative decoding
+
+<!-- table.py follow -->
+| Scenario | Configuration | Rounds | Replies over the SLO | V2V p95, ms | LLM first token p95 | First sentence p50 | p95 | Agents' tokens/s | Against the first four additions |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 24 agent sessions, 2 callers | The first four additions | 2 | 11 of 118 (9.3%) | 2,048 (2,034–2,061) | 127 (118–135) | 340 (302–378) | 596 (559–634) | 3,034 (2,838–3,231) | – |
+| 24 agent sessions, 2 callers | + the decode hold | 2 | 6 of 118 (5.1%) | 1,939 (1,907–1,972) | 130 (125–135) | 311 (309–312) | 455 (449–461) | 2,897 (2,770–3,024) | -4.4% (-6.4%–-2.4%) |
+| 24 agent sessions, 2 callers | + the hold and speculation | 2 | 1 of 118 (0.8%) | 1,828 (1,825–1,830) | 168 (155–181) | 225 (222–228) | 345 (337–352) | 2,758 (2,566–2,951) | -9.1% (-9.6%–-8.7%) |
+| 24 agent sessions, 4 callers | The first four additions | 2 | 15 of 238 (6.3%) | 2,157 (2,143–2,172) | 142 (129–155) | 331 (323–340) | 606 (580–631) | 2,710 (2,500–2,919) | – |
+| 24 agent sessions, 4 callers | + the decode hold | 2 | 2 of 238 (0.8%) | 1,955 (1,879–2,030) | 138 (138–139) | 304 (292–316) | 433 (419–447) | 2,609 (2,385–2,834) | -3.8% (-4.6%–-2.9%) |
+| 24 agent sessions, 4 callers | + the hold and speculation | 2 | 4 of 238 (1.7%) | 1,915 (1,892–1,938) | 177 (167–186) | 237 (236–238) | 377 (372–382) | 2,568 (2,343–2,793) | -5.3% (-6.3%–-4.3%) |
+| 24 agent sessions, 6 callers | The first four additions | 2 | 29 of 364 (8.0%) | 2,156 (2,118–2,195) | 141 (138–145) | 323 (319–327) | 641 (623–658) | 2,464 (2,294–2,633) | – |
+| 24 agent sessions, 6 callers | + the decode hold | 2 | 8 of 364 (2.2%) | 2,000 (1,985–2,016) | 136 (134–138) | 306 (302–310) | 459 (454–464) | 2,390 (2,272–2,507) | -2.9% (-4.8%–-1.0%) |
+| 24 agent sessions, 6 callers | + the hold and speculation | 2 | 7 of 364 (1.9%) | 1,991 (1,980–2,002) | 172 (161–184) | 235 (230–240) | 371 (357–385) | 2,328 (2,189–2,467) | -5.4% (-6.3%–-4.6%) |
+<!-- /table.py follow -->
+
+Two follow-up rounds, Phastform then Gray, on new samples of the agents: the first four additions, the same with the
+agents' decodes held from a reply's first 48 tokens, the budget cap's window, and that with speculative decoding too
+(EAGLE-3, two drafts a step, the calls' short loads recomputed, the KV pool kept at 2,275 blocks beside the drafter),
+beside 24 agent sessions with 2, 4 and 6 callers, and voice alone with as many callers for each round's SLO.
+
+- **The decode hold cut the replies over the SLO by more than two thirds**: 16 of 720 against 55 for the first four
+  additions over the two rounds and three caller counts, fewer in five of the six and as many in the sixth, its first
+  sentence's p95 433–459 ms against 596–641. It cost the agents 3.8% of their token rate at the median of the six,
+  2.9–4.4% by caller count.
+- **Speculative decoding on top** put 12 of 720 over against the hold's 16, fewer in three of the six, its first
+  sentence's p95 345–377 ms but its first token's 168–177 ms against 130–138, at 9.1% of the agents' token rate with two
+  callers and 5.3–5.4% with four and six against the first four additions.
+- **Neither is in the serving profile**, by rules stated before these rounds ran: the decode hold was to stay if it had
+  no more replies over the SLO and cost the agents no more than 3% at the median of the six, and speculative decoding
+  was to come in only with fewer replies over the SLO than the hold, pooled and in at least five of the six. Both stay
+  switches an operator can set (`make_room.decode_hold_tokens 48`; EAGLE-3 as `opt-disc-spec-*` runs it).
+
 ## How it ran
 
 | | |
@@ -101,11 +134,12 @@ sentence.
 | The release | v1.14-17-g157f6b7 on cyan, Phastform and Gray for every round |
 | v1.14's configuration | `sweep-disc-pr-ab48-b256-t0-s24`, `opt-disc-b256-c4-s24`, `opt-disc-b256-c6-s24`, `opt-std-b256-s16` |
 | The first four additions | `opt-disc-ret-s24`, `opt-disc-ret-c4-s24`, `opt-disc-ret-c6-s24`, `opt-std-ret-s16`: the same with `make_room.retain_tokens 3584`, `retain_s 30`, `hint_hold_ms 400`, `take_reservations true`, the serve module's scheduler with a 30 ms margin, and the voice worker's `turn_hints` |
+| The follow-up rounds | [`opt-s1.campaign`](../../e2/opt-s1.campaign) and [`opt-s2.campaign`](../../e2/opt-s2.campaign), seeds 36 and 37, on v1.14-42-g51a6d45 on cyan, Phastform and Gray: `opt-disc-ret-*`, `opt-disc-hold-*` (+ `make_room.decode_hold_tokens 48`) and `opt-disc-spec-*` (+ EAGLE-3 with 2 drafts, `make_room.recompute_tokens 256`, `--kv-cache-memory 5517000000`), at 2, 4 and 6 callers, with voice alone at each count |
 | The SLO | A reply is over it when its voice-to-voice time exceeds the same round's voice alone with as many callers, plus 250 ms ([RESOURCE-GATE.md](../../quality/RESOURCE-GATE.md)) |
 
 ## Files
 
-- `opt-rN/<point>/`: each point as `flatshare-bench e2 export` writes it (`run.json`, `arm.toml`, `engine.json`,
+- `opt-rN/<point>/`, `opt-sN/<point>/`: each point as `flatshare-bench e2 export` writes it (`run.json`, `arm.toml`, `engine.json`,
   `summary.json`, the callers' `bots/summary.json` and `bots/turns.jsonl`), home directories as `~`; each round's
   `campaign.log`.
 - `table.py`: the tables above (`cd python/flatshare_bench && uv run python

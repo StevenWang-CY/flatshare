@@ -1413,11 +1413,12 @@ def test_the_campaign_map_is_its_records() -> None:
         "RG",
         "The soak",
         "OR",
+        "OS",
     ]
     assert found["W2"].points + found["W3\u2013W4"].points == 129 and found["W5"].points == 72
     five, rounds = (
         (11, 12, 13, 14, 15),
-        {"W3\u2013W4": 5, "W5": 18, "FB": 5, "The A100 run": 5, "RS": 5, "RG": 5, "OR": 5},
+        {"W3\u2013W4": 5, "W5": 18, "FB": 5, "The A100 run": 5, "RS": 5, "RG": 5, "OR": 5, "OS": 2},
     )
     expected = {
         "W2": ((11,), ("419e181", "03af728")),
@@ -1430,6 +1431,7 @@ def test_the_campaign_map_is_its_records() -> None:
         "RG": ((21, 22, 23, 24, 25), ("v1.6-27-gea7efd0",)),
         "The soak": ((26,), ("v1.6-56-g885a874",)),
         "OR": ((31, 32, 33, 34, 35), ("v1.14-17-g157f6b7",)),
+        "OS": ((36, 37), ("v1.14-42-g51a6d45",)),
     }
     assert {code: (c.seeds, c.revisions) for code, c in found.items()} == expected
     # The map names each campaign's code by its release, from those revisions (the exact ones stay in the records).
@@ -1444,6 +1446,7 @@ def test_the_campaign_map_is_its_records() -> None:
         "RG": ("after v1.6",),
         "The soak": ("after v1.6",),
         "OR": ("after v1.14",),
+        "OS": ("after v1.14",),
     }
     assert {code: c.rounds for code, c in found.items() if c.rounds} == rounds
     assert found["The soak"].hours == (2.0, 24.0)
@@ -1468,9 +1471,9 @@ def test_experiments_shows_the_campaign_map_over_its_table(drawn: dict[str, Path
     alt, caption = shown(experiments, "report-campaigns")
     assert alt == ET.parse(drawn["report-campaigns.svg"]).getroot().find(f"{SVG}desc").text
     assert caption.startswith(
-        "**Ten campaigns from 23 October to 2 November 2026 measured the results"
+        "**Eleven campaigns from 23 October to 2 November 2026 measured the results"
     )
-    assert len(data.campaigns()) == 10
+    assert len(data.campaigns()) == 11
     header = "| Campaign | Ran, UTC | Points | Rounds and samples | Code | Records |"
     after = experiments.read_text().split('<img src="figures/report-campaigns.svg"', 1)[1]
     assert next(line for line in after.splitlines() if line.startswith("|")) == header

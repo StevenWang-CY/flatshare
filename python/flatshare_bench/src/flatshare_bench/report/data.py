@@ -1514,6 +1514,13 @@ CAMPAIGNS = (
         r"opt-r\d",
         r"opt-r\d",
     ),
+    (
+        "OS",
+        "The decode hold and speculative decoding on the four additions",
+        "2026-11-02-opt-rounds",
+        r"opt-s\d",
+        r"opt-s\d",
+    ),
 )
 """Each campaign of the map: its code, the question it measured, its record and the directories of its runs and of
 its rounds (a pattern each), in the order the campaigns ran. The soak's runs are its soak.json files."""

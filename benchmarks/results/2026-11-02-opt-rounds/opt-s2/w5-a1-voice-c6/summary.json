@@ -1,0 +1,198 @@
+{
+  "name": "w5-a1-voice-c6",
+  "arm": "1-calls",
+  "label": "frozen box, 6 callers, voice alone, a warm-up turn opening each call",
+  "window_s": 348.1,
+  "voice": {
+    "turns": 150,
+    "errors": 0,
+    "v2v_ms": {
+      "n": 182,
+      "p50": 1611.6,
+      "p95": 1829.0,
+      "p99": 1949.6
+    },
+    "barge_in_to_silence_ms": {
+      "n": 29,
+      "p50": 503.6,
+      "p95": 695.8,
+      "p99": 710.8
+    },
+    "barge_ins": 32,
+    "replies": {
+      "n": 150,
+      "ended_by_state": 150,
+      "audio_ms": {
+        "n": 150,
+        "p50": 4126.6,
+        "p95": 6635.4,
+        "p99": 8607.6
+      },
+      "with_a_pause": 118,
+      "with_a_pause_over_500_ms": 61,
+      "with_a_pause_of_quiet_s": 0,
+      "longest_pause_ms": {
+        "n": 150,
+        "p50": 479.4,
+        "p95": 605.4,
+        "p99": 689.6
+      },
+      "concealed_share": 0.0
+    }
+  },
+  "worker": {
+    "sessions": 6,
+    "turns": 182,
+    "waterfall": {
+      "transcript_ms": {
+        "n": 180,
+        "mean": 780.35,
+        "p10": 756.58,
+        "p50": 770.15,
+        "p90": 828.25,
+        "p95": 836.08,
+        "p99": 852.06
+      },
+      "end_of_turn_ms": {
+        "n": 180,
+        "mean": 785.17,
+        "p10": 762.55,
+        "p50": 775.35,
+        "p90": 830.79,
+        "p95": 839.91,
+        "p99": 854.35
+      },
+      "llm_ttft_ms": {
+        "n": 182,
+        "mean": 81.77,
+        "p10": 63.22,
+        "p50": 82.3,
+        "p90": 100.15,
+        "p95": 104.98,
+        "p99": 121.14
+      },
+      "llm_first_sentence_ms": {
+        "n": 182,
+        "mean": 307.94,
+        "p10": 209.27,
+        "p50": 304.75,
+        "p90": 404.78,
+        "p95": 436.19,
+        "p99": 522.71
+      },
+      "turn_to_first_sentence_ms": {
+        "n": 180,
+        "mean": 314.67,
+        "p10": 212.87,
+        "p50": 308.05,
+        "p90": 410.04,
+        "p95": 440.35,
+        "p99": 525.88
+      },
+      "tts_first_audio_ms": {
+        "n": 182,
+        "mean": 142.5,
+        "p10": 109.21,
+        "p50": 133.5,
+        "p90": 183.74,
+        "p95": 210.88,
+        "p99": 245.91
+      },
+      "e2e_ms": {
+        "n": 180,
+        "mean": 1243.18,
+        "p10": 1116.5,
+        "p50": 1234.25,
+        "p90": 1393.64,
+        "p95": 1428.56,
+        "p99": 1478.97
+      }
+    },
+    "events": {
+      "sent": 777,
+      "dropped": 0,
+      "failed": 0
+    },
+    "playout": {
+      "replies": 182,
+      "stalled": 0,
+      "stalls_ms": {
+        "n": 0
+      },
+      "fell_behind": 59,
+      "inventory_low_ms": {
+        "n": 59,
+        "mean": 2972.86,
+        "p10": 1541.8,
+        "p50": 2807.6,
+        "p90": 4315.82,
+        "p95": 5047.23,
+        "p99": 5862.05
+      },
+      "audio_s": 872.4,
+      "played_s": 776.7
+    }
+  },
+  "background": null,
+  "gateway": {
+    "realtime_first_byte_ms": {
+      "n": 195,
+      "mean": 57.61,
+      "p50": 57.0,
+      "p95": 77.3,
+      "p99": 88.58,
+      "source": "log"
+    },
+    "background_first_byte_ms": {
+      "n": 0,
+      "source": "log"
+    },
+    "shed": null,
+    "refused": null,
+    "resubmitted": null,
+    "discarded_tokens": null,
+    "background_tokens_per_s": 0.0,
+    "counters": {
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_turn_ended\"}": 195,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"interrupted\"}": 36,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_ended\"}": 157,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"session_closed\"}": 5,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_speech_started\"}": 195,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_started\"}": 188,
+      "flatshare_gateway_request_outcomes_total{class=\"realtime\",outcome=\"cancelled\"}": 2,
+      "flatshare_gateway_request_outcomes_total{class=\"realtime\",outcome=\"completed\"}": 193,
+      "flatshare_gateway_requests_admitted_total{admission=\"none\",class=\"realtime\",route=\"/v1/chat/completions\",tenant=\"voice\"}": 195,
+      "flatshare_gateway_requests_offered_total{class=\"realtime\",route=\"/v1/chat/completions\",tenant=\"voice\"}": 195,
+      "flatshare_gateway_requests_terminal_total{class=\"realtime\",outcome=\"completed\",route=\"/v1/chat/completions\",tenant=\"voice\"}": 193,
+      "flatshare_gateway_requests_terminal_total{class=\"realtime\",outcome=\"cancelled\",route=\"/v1/chat/completions\",tenant=\"voice\"}": 2,
+      "flatshare_gateway_requests_total{class=\"\",route=\"/v1/events\",status=\"202\",tenant=\"voice\"}": 776,
+      "flatshare_gateway_requests_total{class=\"\",route=\"/v1/models\",status=\"200\",tenant=\"voice\"}": 6,
+      "flatshare_gateway_requests_total{class=\"realtime\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"voice\"}": 195,
+      "flatshare_gateway_sli_good_total{class=\"realtime\"}": 195,
+      "flatshare_gateway_sli_valid_total{class=\"realtime\"}": 195,
+      "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"completion\"}": 3959,
+      "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"cached\"}": 120032,
+      "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"prompt\"}": 124974
+    }
+  },
+  "engine": {
+    "preemptions": 0,
+    "prompt_tokens_by_source": {
+      "local_compute": 4995,
+      "local_cache_hit": 120720,
+      "external_kv_transfer": 0
+    },
+    "refused": {
+      "max_num_queued_reqs": 0,
+      "max_num_queued_tokens": 0
+    },
+    "kv_offload_load_bytes": null,
+    "kv_offload_store_bytes": 1094713344
+  },
+  "kv": null,
+  "gpu": {
+    "sm_clock_p50_mhz": 2715,
+    "temperature_max_c": 68,
+    "name": "NVIDIA GeForce RTX 5060 Ti"
+  }
+}
