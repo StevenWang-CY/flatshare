@@ -12,6 +12,7 @@ row's figures are the median over the rounds, with their range; the replies over
 
 from __future__ import annotations
 
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -45,7 +46,7 @@ FOLLOW = (
     ("24 agent sessions, 6 callers", "opt-disc-ret-c6-s24", "opt-disc-hold-c6-s24", "opt-disc-spec-c6-s24"),
 )
 FOLLOW_CONFIGURATIONS = ("The first four additions", "+ the decode hold", "+ the hold and speculation")
-TABLES = ("slo", "voice", "agents", "stages", "follow")
+TABLES = ("slo", "voice", "agents", "stages", "follow", "follow-agents")
 
 
 def points(rounds: tuple[str, ...] = ROUNDS) -> dict[tuple[str, str], dict]:
@@ -65,12 +66,17 @@ def ran(rows: dict, rounds: tuple[str, ...] = ROUNDS) -> tuple[str, ...]:
 
 
 def spread(values: list[float], fmt: str = "{:,.0f}") -> str:
+    """The median of values and, for more than one, their range: an en dash between two ends, or "to" where an end
+    is signed, so that a range of negatives reads "\u22124.3% to \u22120.5%"; a minus sign, not a hyphen."""
     if not values:
-        return "–"
-    mid = fmt.format(statistics.median(values))
+        return "\u2014"
+    def show(value: float) -> str:
+        return fmt.format(value).replace("-", "\u2212")
+    mid = show(statistics.median(values))
     if len(values) == 1:
         return mid
-    return f"{mid} ({fmt.format(min(values))}–{fmt.format(max(values))})"
+    between = " to " if "+" in fmt else "\u2013"
+    return f"{mid} ({show(min(values))}{between}{show(max(values))})"
 
 
 def slo_ms(rows: dict, name: str, callers: int) -> float | None:
@@ -116,7 +122,7 @@ def slo() -> str:
                 p50.append(row["v2v_p50_ms"])
                 p95.append(row["v2v_p95_ms"])
                 slos.append(threshold)
-            share = f"{over} of {total} ({100 * over / total:.1f}%)" if total else "–"
+            share = f"{over} of {total} ({100 * over / total:.1f}%)" if total else "\u2014"
             out.append(
                 f"| {scenario} | {config} | {len(p95)} | {share} | {spread(p50)} | {spread(p95)} | {spread(slos)} |"
             )
@@ -161,7 +167,7 @@ def agents() -> str:
             ]
             out.append(
                 f"| {scenario} | {config} | {spread([r['background_tokens_per_s'] for r in got.values()])} | "
-                f"{spread([100 * x for x in ratios], '{:+.1f}%') if ratios else '–'} | "
+                f"{spread([100 * x for x in ratios], '{:+.1f}%') if ratios else '\u2014'} | "
                 f"{spread([r['agent_ttft_p50_ms'] / 1e3 for r in got.values()], '{:.1f}')} | "
                 f"{spread([r['agent_ttft_p99_ms'] / 1e3 for r in got.values()], '{:.1f}')} |"
             )
@@ -182,20 +188,17 @@ def stages() -> str:
             for key, _ in STAGES:
                 pairs = [r["stage_means"][key] for r in got if key in r["stage_means"]]
                 n = sum(count for count, _ in pairs)
-                cells.append(f"{sum(count * mean for count, mean in pairs) / n:,.0f}" if n else "–")
+                cells.append(f"{sum(count * mean for count, mean in pairs) / n:,.0f}" if n else "\u2014")
             out.append(f"| {scenario} | {config} | " + " | ".join(cells) + " |")
     return "\n".join(out)
 
 
-def follow() -> str:
-    """The follow-up rounds: the first four additions, with the decode hold, and with speculative decoding on top,
-    each reply against its round's SLO, pooled over the rounds."""
+def followed() -> list[tuple[str, str, list[dict], str, list[float]]]:
+    """The follow-up rounds: the first four additions, with the decode hold, and with speculative decoding on top. Each
+    scenario and configuration: its rounds' rows, its replies over their round's SLO pooled over the rounds, and the
+    agents' token rate against the first four additions' in each round, in percent."""
     rows = points(FOLLOW_ROUNDS)
-    out = [
-        "| Scenario | Configuration | Rounds | Replies over the SLO | V2V p95, ms | LLM first token p95 | First sentence"
-        " p50 | p95 | Agents' tokens/s | Against the first four additions |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
-    ]
+    found = []
     for scenario, *trio in FOLLOW:
         base = {name: rows[name, trio[0]] for name in ran(rows, FOLLOW_ROUNDS) if (name, trio[0]) in rows}
         for config, point in zip(FOLLOW_CONFIGURATIONS, trio, strict=True):
@@ -214,21 +217,74 @@ def follow() -> str:
                 for name, row in by_round.items()
                 if name in base and point != trio[0]
             ]
-            share = f"{over} of {total} ({100 * over / total:.1f}%)" if total else "–"
-            got = list(by_round.values())
-            out.append(
-                f"| {scenario} | {config} | {len(got)} | {share} | {spread([r['v2v_p95_ms'] for r in got])} | "
-                f"{spread([r['llm_ttft_p95_ms'] for r in got])} | "
-                f"{spread([r['llm_first_sentence_p50_ms'] for r in got])} | "
-                f"{spread([r['llm_first_sentence_p95_ms'] for r in got])} | "
-                f"{spread([r['background_tokens_per_s'] for r in got])} | "
-                f"{spread(ratios, '{:+.1f}%') if ratios else '–'} |"
-            )
+            share = f"{over} of {total} ({100 * over / total:.1f}%)" if total else "\u2014"
+            found.append((scenario, config, list(by_round.values()), share, ratios))
+    return found
+
+
+def follow() -> str:
+    """The follow-up rounds' voice turns: the replies over the SLO, the V2V p95 and the LLM's part."""
+    out = [
+        "| Scenario | Configuration | Rounds | Replies over the SLO | V2V p95, ms | LLM first token p95 | First sentence"
+        " p50 | p95 |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for scenario, config, got, share, _ in followed():
+        out.append(
+            f"| {scenario} | {config} | {len(got)} | {share} | {spread([r['v2v_p95_ms'] for r in got])} | "
+            f"{spread([r['llm_ttft_p95_ms'] for r in got])} | "
+            f"{spread([r['llm_first_sentence_p50_ms'] for r in got])} | "
+            f"{spread([r['llm_first_sentence_p95_ms'] for r in got])} |"
+        )
+    return "\n".join(out)
+
+
+def follow_agents() -> str:
+    """The follow-up rounds' agents: their tokens a second over the calls' first 240 s, and against the first four
+    additions in the same round."""
+    out = [
+        "| Scenario | Configuration | Agents' tokens/s | Against the first four additions |",
+        "|---|---|---:|---:|",
+    ]
+    for scenario, config, got, _, ratios in followed():
+        out.append(
+            f"| {scenario} | {config} | {spread([r['background_tokens_per_s'] for r in got])} | "
+            f"{spread(ratios, '{:+.1f}%') if ratios else '\u2014'} |"
+        )
     return "\n".join(out)
 
 
 def table(name: str) -> str:
-    return {"slo": slo, "voice": voice, "agents": agents, "stages": stages, "follow": follow}[name]()
+    return {
+        "slo": slo,
+        "voice": voice,
+        "agents": agents,
+        "stages": stages,
+        "follow": follow,
+        "follow-agents": follow_agents,
+    }[name]()
+
+
+RANGED = re.compile(r"^([\u2212+]?[\d,.]+%?) \(([\u2212+]?[\d,.]+%?(?:\u2013| to )[\u2212+]?[\d,.]+%?)\)$")
+"""A cell that holds a median and its range: "1,744 (1,709\u20131,800)"."""
+
+
+def unbroken(span: str) -> str:
+    """A range kept on one line: word joiners (U+2060) around its en dash, no-break spaces around its "to"."""
+    return span.replace("\u2013", "\u2060\u2013\u2060").replace(" to ", "\u00a0to\u00a0")
+
+
+def compact(text: str) -> str:
+    """A table of text with each median-and-range cell set on two lines, the range under the median in small type:
+    the copy the README and BENCHMARKS.md print, where a page-wide table of ranges would wrap each cell over three
+    lines. The delimiter row, which opens with no space, stays as it is."""
+    rows = []
+    for row in text.split("\n"):
+        if row.startswith("| ") and row.endswith(" |"):
+            cells = (RANGED.sub(lambda m: f"{m[1]}<br><sub>{unbroken(m[2])}</sub>", c) for c in row[2:-2].split(" | "))
+            row = f"| {' | '.join(cells)} |"
+        rows.append(row)
+    return "\n".join(rows)
 
 
 if __name__ == "__main__":

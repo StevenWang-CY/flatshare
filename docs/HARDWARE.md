@@ -1,8 +1,8 @@
 # Running Flatshare on other hardware
 
-This page is for an operator who moves the deployment to another GPU or to a single host, where it runs as a measurement kit and not as a deployment: nothing of it starts at boot, and releases, rollback and the release's serving check reach only this lab's hosts, phastform, gray and cyan ([PRODUCTION.md](PRODUCTION.md#checking-it-on-your-hardware)). It says what the deployment needs from a GPU node, how a node's files come from a hardware profile, what changes on a card or a host that is not the box's, and how one host runs both the GPU servers and the control plane.
+This page is for an operator who moves the deployment to another GPU or to a single host, where it runs as a measurement kit and not as a deployment: nothing of it starts at boot, and releases, rollback and the release's serving check reach only this lab's hosts, Phastform, Gray and cyan ([PRODUCTION.md](PRODUCTION.md#checking-it-on-your-hardware)). It says what the deployment needs from a GPU node, how a node's files come from a hardware profile, what changes on a card or a host that is not the box's, and how one host runs both the GPU servers and the control plane.
 
-Every measurement before 2026-10-26 ran on one RTX 5060 Ti 16 GB, the frozen box, with Gray, a second one, for the first make-room probes; that day an A100 SXM4 80 GB on Google Colab ran E2's core like for like ([what it measured](BENCHMARKS.md#what-it-measured-2026-10-26)). How the A100 run was laid out and what it measured are in [BENCHMARKS.md](BENCHMARKS.md#the-a100-run-2026-10-26).
+The measurements ran on the frozen box's RTX 5060 Ti 16 GB in Phastform and on Gray, the second RTX 5060 Ti node, and on 2026-10-26 an A100 SXM4 80 GB on Google Colab ran E2's core like for like ([BENCHMARKS.md](BENCHMARKS.md#the-a100-run-2026-10-26) gives how the run was laid out and what it measured).
 
 A number here is measured (on the box, Gray or the A100, with its source), modeled (flatshare-sim's forecasts, [`forecast.md`](../benchmarks/a100/forecast.md) for the A100 40 GB and [`forecast-80gb.md`](../benchmarks/a100/forecast-80gb.md) for the A100 SXM4 80 GB) or an estimate, and says which.
 
@@ -88,31 +88,31 @@ The profile's "auto" values, in `deploy/profile.py`:
 
 | Check | Degraded, and what it changes | Refused |
 |---|---|---|
-| Compute capability and precision path | sm75-sm89: W8A16 through Marlin at the BF16 rate; comparisons across cards only in regime coordinates (note 1) | below sm75 |
-| BF16 | sm75: FP16 activations; numerics differ from the box | |
-| Attention backend and KV layout | not FlashAttention or FlashInfer on LBHNC (the engine log): attention's cost | |
+| Compute capability and precision path | sm75–sm89: W8A16 through Marlin at the BF16 rate; comparisons across cards only in regime coordinates (note 1) | below sm75 |
+| BF16 | sm75: FP16 activations; numerics differ from the box | — |
+| Attention backend and KV layout | not FlashAttention or FlashInfer on LBHNC (the engine log): attention's cost | — |
 | Driver and install path | cu130 with the compatibility libraries, or the cu129 lock: another CUDA runtime under the same vLLM and torch | the venv's build is not the one the driver needs; or a GPU unit cannot reach the driver's libraries (note 2) |
-| torch on the GPU (`--gpu`) | | `torch.cuda.init()` fails with the engine's environment (errors 803, 804; or no driver, where the engine's environment does not reach the driver's `libcuda.so.1`) |
-| FlashInfer's JIT | | its sampler does not build, or was built for another compiler or card than the units name now (note 3) |
-| Host compilers | | no `cc` or `c++`: Triton builds its launchers with a C compiler, `nvcc` needs a C++ one |
-| Python headers | | the engine venv's Python has no `Python.h`, which Triton compiles its launcher against at the engine's first start (note 4) |
+| torch on the GPU (`--gpu`) | — | `torch.cuda.init()` fails with the engine's environment (errors 803, 804; or no driver, where the engine's environment does not reach the driver's `libcuda.so.1`) |
+| FlashInfer's JIT | — | its sampler does not build, or was built for another compiler or card than the units name now (note 3) |
+| Host compilers | — | no `cc` or `c++`: Triton builds its launchers with a C compiler, `nvcc` needs a C++ one |
+| Python headers | — | the engine venv's Python has no `Python.h`, which Triton compiles its launcher against at the engine's first start (note 4) |
 | Compile and JIT caches | cold, on tmpfs, or under 10 GiB free [estimate] (note 5) | under 2 GiB free |
 | CPU tier and `/dev/shm` | below four times the pool: fewer restores, more recompute; the ratio is in every record | another tier than `stage` rendered (`staged.json`) (note 6) |
-| Pinned memory | `cudaHostRegister` failed: a pageable tier, slower restores | |
-| Host RAM | the GPU's NUMA node short of the tier: a remote tier (the box measured one within 1% of pinned bandwidth) | |
-| Async scheduling, block size | synchronous scheduling; another block size: make-room's token counts round to it | |
-| Engine starts | | a start failed (warm.json keeps its log lines) |
-| GPU | | several GPUs and none named, or `FLATSHARE_GPU_ID` naming none of them (note 7) |
-| GPU exclusive (`--gpu`) | | another process holds the lent GPU (`deploy/bin/gpu-guard`) |
-| Compute mode | | anything but Default (note 8) |
+| Pinned memory | `cudaHostRegister` failed: a pageable tier, slower restores | — |
+| Host RAM | the GPU's NUMA node short of the tier: a remote tier (the box measured one within 1% of pinned bandwidth) | — |
+| Async scheduling, block size | synchronous scheduling; another block size: make-room's token counts round to it | — |
+| Engine starts | — | a start failed (warm.json keeps its log lines) |
+| GPU | — | several GPUs and none named, or `FLATSHARE_GPU_ID` naming none of them (note 7) |
+| GPU exclusive (`--gpu`) | — | another process holds the lent GPU (`deploy/bin/gpu-guard`) |
+| Compute mode | — | anything but Default (note 8) |
 | MIG | one slice with `FLATSHARE_ALLOW_MIG=1`: a smaller card, on which the forecast does not hold (note 9) | MIG on: one slice (the profile's budgets and the forecast are the whole card's), none or several |
 | systemd `--user` and lingering | none, or `FLATSHARE_SUPERVISOR=flatshare-svc`: `deploy/bin/flatshare-svc` runs the units; nothing changes in the measurements | `env.sh` keeps systemd from an earlier stage, but lingering is off now: the units would stop with the last session |
-| Socket paths | | the runtime directory (`%t`) too long for vLLM's ZMQ sockets: the engine would fail at its first start (note 10) |
-| One supervisor | | units under the other supervisor too, an earlier stage's (a split control plane: the gateway's port held by one, its journal read from the other) |
-| User namespaces | the kernel refuses them: the voice plane and the GPU servers run in the host's network namespace (note 11) | |
-| Listener audit | | no `ss` (iproute2), which `smoke.sh`'s audit ([`deploy/bin/audit-listeners`](../deploy/bin/audit-listeners)) reads; `bootstrap.sh` installs it where apt works as root or with sudo |
-| Cores | below 17: the warning of R7 | |
-| Control plane, models, corpus and callers, binaries, disk | | down or missing; a corpus with no traces, or one that does not resolve to a file this user can read (note 12) |
+| Socket paths | — | the runtime directory (`%t`) too long for vLLM's ZMQ sockets: the engine would fail at its first start (note 10) |
+| One supervisor | — | units under the other supervisor too, an earlier stage's (a split control plane: the gateway's port held by one, its journal read from the other) |
+| User namespaces | the kernel refuses them: the voice plane and the GPU servers run in the host's network namespace (note 11) | — |
+| Listener audit | — | no `ss` (iproute2), which `smoke.sh`'s audit ([`deploy/bin/audit-listeners`](../deploy/bin/audit-listeners)) reads; `bootstrap.sh` installs it where apt works as root or with sudo |
+| Cores | below 17: the warning of R7 | — |
+| Control plane, models, corpus and callers, binaries, disk | — | down or missing; a corpus with no traces, or one that does not resolve to a file this user can read (note 12) |
 
 1. The per-token cost is the BF16 path's. The row names the kernel the engine's first start selected (before it, the one expected): another than Marlin below sm90 is named as such.
 2. They are in a directory the linker does not search, and a GPU unit does not name it on `LD_LIBRARY_PATH`.

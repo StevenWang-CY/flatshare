@@ -1,6 +1,6 @@
-# One GPU, two clocks: a voice agent beside coding agents
+# Methods
 
-This page told the measurements' story from one to the next, and repeated the report. Each of its parts now has one home, which the links below give: [REPORT.md](REPORT.md) has the reasoning and the results, [EXPERIMENTS.md](EXPERIMENTS.md) each experiment's design, and [BENCHMARKS.md](BENCHMARKS.md) every run.
+The methods live in three documents: [REPORT.md](REPORT.md) gives the reasoning and the results, [EXPERIMENTS.md](EXPERIMENTS.md) each experiment's design, and [BENCHMARKS.md](BENCHMARKS.md) every run. This page maps each part of the former methods page to its home.
 
 <a id="the-box"></a>
 

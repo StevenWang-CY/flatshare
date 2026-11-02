@@ -112,7 +112,9 @@ def later_tokens(run: Path) -> list[float]:
 
 def spread(values: list[float]) -> str:
     mid = statistics.median(values)
-    return f"{mid:.0f}" if len(values) == 1 else f"{mid:.0f} ({min(values):.0f}-{max(values):.0f})"
+    if len(values) == 1:
+        return f"{mid:,.0f}"
+    return f"{mid:,.0f} ({min(values):,.0f}\u2013{max(values):,.0f})"
 
 
 def outcomes(name: str) -> str:
@@ -130,7 +132,7 @@ def outcomes(name: str) -> str:
             agents = [json.loads((run / "stages.json").read_text())["agent_tokens_per_s"] for run in runs]
             later = [ms for run in runs for ms in later_tokens(run)]
             rows.append(
-                f"| {node} | {ARMS[arm]} | {len(runs)} | {spread([s[0] for s in seen])} | "
+                f"| {node.capitalize()} | {ARMS[arm]} | {len(runs)} | {spread([s[0] for s in seen])} | "
                 f"{spread([s[1] for s in seen])} | {spread([s[2] for s in seen])} | {spread([s[3] for s in seen])} | "
                 f"{statistics.median(later):.1f} | {statistics.median(agents):,.0f} |"
             )
@@ -154,7 +156,7 @@ def hold() -> str:
             reply = [REPLY.search((run / "tail.txt").read_text().split("\nreplies: ", 1)[1]) for run in runs]
             agents = [json.loads((run / "stages.json").read_text())["agent_tokens_per_s"] for run in runs]
             rows.append(
-                f"| {node} | {ARMS[arm]} | {len(runs)} | {spread([s[0] for s in seen])} | "
+                f"| {node.capitalize()} | {ARMS[arm]} | {len(runs)} | {spread([s[0] for s in seen])} | "
                 f"{spread([s[1] for s in seen])} | {spread([s[2] for s in seen])} | {spread([s[3] for s in seen])} | "
                 f"{spread([float(r[1]) for r in reply])} | {spread([float(r[3]) for r in reply])} | "
                 f"{statistics.median(agents):,.0f} |"
@@ -183,7 +185,7 @@ def stages() -> str:
 
             loaded = sum(s["turns_loaded_from_the_cpu_tier"] for s in stage)
             rows.append(
-                f"| {node} | {ARMS[arm]} | {mean('ttft'):.0f} | "
+                f"| {node.capitalize()} | {ARMS[arm]} | {mean('ttft'):.0f} | "
                 + " | ".join(f"{mean(key):.0f}" for key in STAGES)
                 + f" | {loaded} of {turns} |"
             )
@@ -225,7 +227,7 @@ def restore() -> str:
             data = json.loads((run / "agree.json").read_text())
             same = sum(a == b for a, b in zip(data["documents"], data["restored"], strict=True))
             rows.append(
-                f"| {node} | {len(data['conversations'])} | {len(data['documents'])} | "
+                f"| {node.capitalize()} | {len(data['conversations'])} | {len(data['documents'])} | "
                 f"{same} of {len(data['restored'])} |"
             )
     return "\n".join(rows)
@@ -241,6 +243,28 @@ def table(name: str) -> str:
     if name == "hold":
         return hold()
     return outcomes(name)
+
+
+RANGED = re.compile(r"^([\u2212+]?[\d,.]+%?) \(([\u2212+]?[\d,.]+%?(?:\u2013| to )[\u2212+]?[\d,.]+%?)\)$")
+"""A cell that holds a median and its range: "1,744 (1,709\u20131,800)"."""
+
+
+def unbroken(span: str) -> str:
+    """A range kept on one line: word joiners (U+2060) around its en dash, no-break spaces around its "to"."""
+    return span.replace("\u2013", "\u2060\u2013\u2060").replace(" to ", "\u00a0to\u00a0")
+
+
+def compact(text: str) -> str:
+    """A table of text with each median-and-range cell set on two lines, the range under the median in small type:
+    the copy the README and BENCHMARKS.md print, where a page-wide table of ranges would wrap each cell over three
+    lines. The delimiter row, which opens with no space, stays as it is."""
+    rows = []
+    for row in text.split("\n"):
+        if row.startswith("| ") and row.endswith(" |"):
+            cells = (RANGED.sub(lambda m: f"{m[1]}<br><sub>{unbroken(m[2])}</sub>", c) for c in row[2:-2].split(" | "))
+            row = f"| {' | '.join(cells)} |"
+        rows.append(row)
+    return "\n".join(rows)
 
 
 if __name__ == "__main__":

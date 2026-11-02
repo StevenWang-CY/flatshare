@@ -1281,8 +1281,8 @@ def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) 
     )
     _, caption = shown(benchmarks, "report-deployable")
     assert caption.startswith(
-        "Only the configurations that run the change come within 0.2 s of the SLO, at the median of their "
-        "runs; every other configuration an operator can deploy stays 0.5 s or more over it."
+        "**Only the configurations that run the change come within 0.2 s of the SLO, at the median of their "
+        "runs; every other configuration an operator can deploy stays 0.5 s or more over it.**"
     )
     cells = data.stages(data.w4_rows(), data.W4_STAGES)
     for stage in ("endpointing", "tts", "transport"):
@@ -1290,7 +1290,7 @@ def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) 
         assert max(values) - min(values) < 100, stage
     assert max(c.wait + c.decode for c in cells) - min(c.wait + c.decode for c in cells) > 3000
     assert shown(benchmarks, "report-deployable-stages")[1].startswith(
-        "Only the reply to its first sentence changes from row to row: endpointing, TTS and transport stay within"
+        "**Only the reply to its first sentence changes from row to row: endpointing, TTS and transport stay within"
     )
     # Each chart sits right above the table it draws: its caption, then the table.
     text = benchmarks.read_text()

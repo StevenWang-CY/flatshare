@@ -29,7 +29,7 @@ def test_the_readmes_tables_are_what_the_records_give() -> None:
             rf"<!-- table.py {name} -->\n(.*?)\n<!-- /table.py {name} -->", readme, re.S
         )
         assert found is not None, name
-        assert found.group(1) == table.table(name)
+        assert found.group(1) == table.compact(table.table(name))
 
 
 def test_every_round_ran_its_campaigns_points() -> None:
@@ -59,8 +59,8 @@ def test_benchmarks_gives_the_rounds_tables_as_the_record_does() -> None:
     # BENCHMARKS.md's ledger of the rounds is the record's own tables of them, row for row.
     table = _table()
     benchmarks = (REPO / "docs" / "BENCHMARKS.md").read_text()
-    for name in ("slo", "voice", "agents", "follow"):
-        assert table.table(name) in benchmarks, name
+    for name in ("slo", "voice", "agents", "follow", "follow-agents"):
+        assert table.compact(table.table(name)) in benchmarks, name
 
 
 def test_production_gives_the_two_callers_rounds_as_the_record_does() -> None:
@@ -126,10 +126,10 @@ def test_the_docs_give_the_follow_up_rounds_verdicts_as_the_record_does() -> Non
             "the six where the rule asked for five",
         ),
         "docs/BENCHMARKS.md": (
-            f"**The decode hold** put {hold} of {replies} replies over the SLO against {four}, fewer in "
+            f"**The decode hold put {hold} of {replies} replies over the SLO against {four}**, fewer in "
             f"{WORDS[hold_fewer]} of the six",
             f"at {cost:.1f}% of the agents' token rate at the median of the six",
-            f"**Speculative decoding on top** put {spec} over against the hold's {hold}, fewer in "
+            f"**Speculative decoding on top put {spec} over against the hold's {hold}**, fewer in "
             f"{WORDS[spec_fewer]} of the six",
         ),
         "benchmarks/results/2026-11-02-opt-rounds/README.md": (
