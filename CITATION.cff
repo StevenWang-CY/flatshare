@@ -23,8 +23,8 @@ abstract: >-
 authors:
   - family-names: Wang
     given-names: Chuyue
-version: 1.14.0
-date-released: 2026-11-01
+version: 1.15.0
+date-released: 2026-11-02
 license: Apache-2.0
 repository-code: "https://github.com/StevenWang-CY/flatshare"
 url: "https://github.com/StevenWang-CY/flatshare"
