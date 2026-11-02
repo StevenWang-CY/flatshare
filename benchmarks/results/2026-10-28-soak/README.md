@@ -1,30 +1,11 @@
 # The 24-hour soak (2026-10-28)
 
 The serving arrangement for 24 hours, every attempt counted ([PRODUCTION.md](../../../docs/PRODUCTION.md#two-cards)):
-both calls on Phastform beside at most four agents' sessions and Gray a warm spare with at most 12,
-`[placement] calls = "fill"` with `idle_s` at 150 s, the voice worker in serve mode with the rounds' synthetic audio and
-fixed endpointing, and 14 of the discriminating scenario's session trees for the agents (AIPerf, seed 26), the hosts at
-v1.6-56-g885a874. Calls arrived as a Poisson process at 20 an hour, each with ten measured turns after a warm-up turn
-and a quarter of the turns interrupted, as in [the smokes](../2026-10-28-two-node-smoke/README.md). Before it, two hours
-of voice alone with the same calls set its SLO: their replies' p95, 1,726 ms, plus 250 ms. How it would be read was
-fixed before it started: after four hours, more than 7.5% of the replies over the SLO would have stopped it and lowered
-Phastform's bound to three sessions for another 24 hours. Of the first four hours' 827 replies 5 were over (0.6%), and
-it ran its 24 hours.
-
-Each directory is a compact soak record (`flatshare-bench soak export`;
-[the runbook's Soaks](../../../ops/RUNBOOK.md#soaks) says what each file holds), and `flatshare-bench soak report DIR`
-gives its summary, hour by hour. [`make-room.tsv`](make-room.tsv) holds each GPU node's make-room totals as its engine
-journaled them every 10 s while they moved
-(`journalctl --user -u flatshare-engine -o short-unix --grep 'make-room: budget cap held'`), a line each with only its
-numbers: the time, the engine's process, the steps the budget cap held lower-priority prefill back, the prefill tokens
-and admissions held, and the preemptions to make room, each cumulative over the process.
-[`worker-events.tsv`](worker-events.tsv) holds the voice worker's events that tell what LiveKit knew of it, from its
-journal
-(`journalctl --user -u flatshare-voice-worker -o short-unix --grep 'marking as (un)?available|"process exiting"'`,
-LiveKit Agents 1.8.8's own lines), a line each with the time and the worker's process: each status it sent LiveKit when
-it changed, `full` or `available`, with the load it was set from, and each exit of a call's job process (`exit`).
-[`table.py`](table.py) gives these four tables, which `python/flatshare_bench/tests/test_soak_record.py` holds to the
-records:
+both calls on Phastform beside at most four agents' sessions and Gray a warm spare with at most 12. Before it, two
+hours of voice alone with the same calls set its SLO: their replies' p95, 1,726 ms, plus 250 ms. How it would be read
+was fixed before it started: after four hours, more than 7.5% of the replies over the SLO would have stopped it and
+lowered Phastform's bound to three sessions for another 24 hours. Of the first four hours' 827 replies 5 were over
+(0.6%), and it ran its 24 hours.
 
 <!-- table.py table -->
 | Run | Hours | Calls (accepted, refused, failed) | Turns (failed) | Replies | Over the SLO | Replies p95, ms | Realtime SLI | Background tokens/s | Restarts | Guard pauses |
@@ -90,3 +71,28 @@ What it shows:
   alone's replies' p95 is 1,724 ms rather than 1,726, and the day's replies over the SLO number 77 rather than 74, 1.5%
   either way. The day's callers ended 24 s before its window, under the minute a restart needs, so its calls are one
   draw.
+
+## How it ran
+
+| | |
+|---|---|
+| The arrangement | `[placement] calls = "fill"` with `idle_s` at 150 s, the hosts at v1.6-56-g885a874 |
+| The calls | A Poisson process at 20 an hour, each call with ten measured turns after a warm-up turn and a quarter of the turns interrupted, as in [the smokes](../2026-10-28-two-node-smoke/README.md); the voice worker in serve mode with the rounds' synthetic audio and fixed endpointing |
+| The agents | 14 of the discriminating scenario's session trees (AIPerf, seed 26) |
+
+## Files
+
+| File | What it holds |
+|---|---|
+| `voice-alone/`, `serving-24h/` | Each a compact soak record (`flatshare-bench soak export`; [the runbook's Soaks](../../../ops/RUNBOOK.md#soaks) says what each file holds), with its summary hour by hour (`summary.md`, `flatshare-bench soak report DIR`) |
+| [`make-room.tsv`](make-room.tsv) | Each GPU node's make-room totals as its engine journaled them every 10 s while they moved, a line each with only its numbers: the time, the engine's process, the steps the budget cap held lower-priority prefill back, the prefill tokens and admissions held, and the preemptions to make room, each cumulative over the process |
+| [`worker-events.tsv`](worker-events.tsv) | The voice worker's events that tell what LiveKit knew of it (LiveKit Agents 1.8.8's own lines), a line each with the time and the worker's process: each status it sent LiveKit when it changed, `full` or `available`, with the load it was set from, and each exit of a call's job process (`exit`) |
+| `aiperf-start.txt`, `aiperf-end.txt` | AIPerf's log at its start, and its last lines |
+| [`table.py`](table.py) | The four tables above, which `python/flatshare_bench/tests/test_soak_record.py` holds to the records |
+
+The two journals' lines, as read:
+
+```sh
+journalctl --user -u flatshare-engine -o short-unix --grep 'make-room: budget cap held'
+journalctl --user -u flatshare-voice-worker -o short-unix --grep 'marking as (un)?available|"process exiting"'
+```

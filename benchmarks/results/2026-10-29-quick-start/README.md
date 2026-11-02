@@ -1,8 +1,9 @@
 # The quick start on the box (2026-10-29)
 
-The README's [quick start](../../../README.md#quick-start), run as written on Phastform, the box, from a fresh
-environment: vLLM 0.32.0 installed, make-room built, then the probe four times on stock vLLM and four times with
-make-room.
+The README's [quick start](../../../README.md#quick-start) as it stood at version 1.8, run as written on Phastform, the
+box, from a fresh environment: vLLM 0.32.0 installed, make-room built, then the probe four times on stock vLLM and four
+times with make-room. The README now quotes [the run of 2026-11-02](../2026-11-02-quick-start/README.md), with
+make-room in the configuration to deploy.
 
 <!-- table.py table -->
 | Run | Stock vLLM | make-room |
@@ -50,4 +51,4 @@ Each line answers what stopped an attempt before this run, on this box:
 | `stock-kv.log`, `make-room-kv.log` | probe.py's output, one line a run |
 | `commands.sh` | The commands as run |
 | `environment.txt` | The box, the versions, the tree, and each engine's settings and KV pool as it logged them |
-| `table.py` | The table above (`python3 table.py`); `python/flatshare_bench/tests/test_quick_start_record.py` holds this README to it |
+| `table.py` | The table above (`python3 table.py`) |

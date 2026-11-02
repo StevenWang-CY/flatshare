@@ -5,24 +5,6 @@ Most of a voice turn's floor on this box is endpointing: the voice agent ends a 
 0.55 s and 0.5 s by default. A shorter setting answers sooner, and takes a pause inside a line for its end more often.
 These records measure both, for the synthetic callers every E2 point uses.
 
-## How it ran
-
-[`benchmarks/endpointing/sweep.sh`](../../endpointing/sweep.sh) ran four settings on 2026-10-28, from 13:29 to 14:04
-UTC, with cyan and Phastform at v1.6-56-g885a874 (each `setting.json` names the release, 885a87483ccc). For each setting
-it restarted the voice worker with `FLATSHARE_VAD_MIN_SILENCE` and `FLATSHARE_ENDPOINTING_MIN_DELAY` set, in bench mode
-with E2's fixed endpointing, and one caller then played every line of the caller corpus once, in order: 40 lines after a
-warm-up turn, with no interruptions, voice alone on Phastform's serving profile. Each setting's directory keeps
-`setting.json` (the two values, the worker's start, the release), the caller's `bots/` (`turns.jsonl`, `summary.json`)
-and `bots.log`, and `voice-worker.log`, the worker's journal while the caller ran; `sweep.log` is the sweep's own log.
-Home directories are written as `~`.
-
-[`summary.py`](../../endpointing/summary.py) gives the table from these records (`cd python/flatshare_bench && uv run
-python ../../benchmarks/endpointing/summary.py ../../benchmarks/results/2026-10-28-endpointing`), and
-`python/flatshare_bench/tests/test_endpointing_record.py` fails while this README's table is not what it gives. The
-endpointing column is the worker's own time from the end of speech to its end-of-turn decision (its turn lines'
-`end_of_turn_ms`); the last column names the lines whose answer began before they had ended (the caller's
-`spoke_during_turn`).
-
 <!-- summary.py -->
 | VAD silence, s | Endpointing delay, s | Turns (failed) | V2V p50 / p95, ms | Endpointing p50 / p95, ms | Lines answered before they ended |
 |---:|---:|---:|---:|---:|---|
@@ -32,7 +14,9 @@ endpointing column is the worker's own time from the end of speech to its end-of
 | 0.3 | 0.2 | 40 (0) | 1,346 / 1,502 | 492 / 510 | 1: turn-22 |
 <!-- /summary.py -->
 
-## What it says
+The endpointing column is the worker's own time from the end of speech to its end-of-turn decision (its turn lines'
+`end_of_turn_ms`); the last column names the lines whose answer began before they had ended (the caller's
+`spoke_during_turn`).
 
 - **The VAD's silence is the lever, not the delay.** The worker ended each turn about 0.2 s after the VAD's silence had
   run out, at every delay tried: 747 ms at the median with 0.55 s of silence and a 0.5 s delay, 753 with 0.55 and 0.2,
@@ -49,3 +33,24 @@ endpointing column is the worker's own time from the end of speech to its end-of
   the comparisons share one floor, and the serving profile's real callers get LiveKit's end-of-turn model instead,
   which this sweep does not measure. Fixed endpointing at 0.3 to 0.4 s of silence would take 0.17 to 0.27 s off the
   median reply for callers who do not pause inside a request; these synthetic lines pause less than people do.
+
+## How it ran
+
+| | |
+|---|---|
+| The sweep | [`benchmarks/endpointing/sweep.sh`](../../endpointing/sweep.sh), four settings on 2026-10-28 from 13:29 to 14:04 UTC, with cyan and Phastform at v1.6-56-g885a874 (each `setting.json` names the release, 885a87483ccc) |
+| Each setting | The voice worker restarted with `FLATSHARE_VAD_MIN_SILENCE` and `FLATSHARE_ENDPOINTING_MIN_DELAY` set, in bench mode with E2's fixed endpointing; one caller then played every line of the caller corpus once, in order: 40 lines after a warm-up turn, with no interruptions, voice alone on Phastform's serving profile |
+
+## Files
+
+| File | What it holds |
+|---|---|
+| `silence-S-delay-D/setting.json` | The setting's two values, the worker's start and the release |
+| `silence-S-delay-D/bots/`, `bots.log` | The caller's `turns.jsonl` and `summary.json`, and its log |
+| `silence-S-delay-D/voice-worker.log` | The worker's journal while the caller ran |
+| `sweep.log` | The sweep's own log |
+
+[`summary.py`](../../endpointing/summary.py) gives the table from these records (`cd python/flatshare_bench && uv run
+python ../../benchmarks/endpointing/summary.py ../../benchmarks/results/2026-10-28-endpointing`), and
+`python/flatshare_bench/tests/test_endpointing_record.py` fails while this README's table is not what it gives. Home
+directories are written as `~`.

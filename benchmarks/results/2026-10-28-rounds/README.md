@@ -2,54 +2,11 @@
 
 [RESOURCE-GATE.md](../../quality/RESOURCE-GATE.md) asks, before any two-card arrangement was measured, which
 arrangement of the box's two RTX 5060 Ti cards does the most background work at the same foreground service, and
-whether sharing a card is worth its complexity. The sweep's screens ([2026-10-27-sweep](../2026-10-27-sweep)) picked
-the change at a step cap of 256 and found no setting that kept 24 session trees within the foreground requirement. These
+whether sharing a card is worth its complexity. [The sweep's screens](../2026-10-27-sweep/README.md) picked the
+change at a step cap of 256 and found no setting that kept 24 session trees within the foreground requirement. These
 records answer both: three rounds of each card's part of every arrangement (`rg-r1` to `rg-r3`), and two more rounds
 of the sweep's configurations at 24 session trees (`rg-r4`, `rg-r5`), which with the first three confirm the step cap
 on five fresh samples of the agents.
-
-## How they ran
-
-- **The rounds** ([`benchmarks/e2`](../../e2): `rg-r1.campaign` to `rg-r5.campaign`), each on a fresh sample of the
-  agents' traces (seeds 21 to 25), each on one GPU node, the nodes swapped from round to round: Gray in rounds 2 and 4;
-  Phastform in rounds 1, 3 and 5. Each round runs its engine groups in an order rotated from the round before. Every
-  point is E2's: two callers (one, for a pooled card), 25 turns each after a warm-up turn, beside the session trees of
-  the discriminating scenario (`weka-x32-long`), on vLLM 0.32.0 with Qwen3-4B-Instruct-2507-FP8. Every host ran the
-  release of v1.6-27-gea7efd0 (`versions` in each `run.json`).
-- **The cards.** Each card's part of an arrangement is a point of its own:
-  - voice alone with two callers (`w5-a1-voice`) and with one (`rg-voice-c1`), the dedicated arrangement's voice card
-    and each round's SLO (its p95 plus 250 ms);
-  - the agents alone, on the frozen box with its speech servers idle (`rg-disc-agents-frozen-s24` and `-s12`, the
-    controlled dedicated card) and on the agents-only card (`rg-disc-agents-only-s24`, `-s20`, `-s16`, `-s14` and
-    `-s12`: no speech servers, a pool of 61,152 tokens in their memory, FCFS at a step cap of 2,048, the best practical
-    dedicated card and consolidation's second card). Each arrangement runs a dedicated card at the number of session
-    trees at which it does the most, the highest median over the rounds: how many agents a card runs at once is part of
-    the scheduling that gives them the most. The counts below 24 were added with the envelope's, once round 1 had shown
-    the agents-only card at 24 doing 4,232 tokens/s over the calls' first 240 s, with a median time to first token of
-    48 s, where its pool thrashes, and a pooled card on the frozen box, one call beside 12 session trees, doing 6,617;
-  - one caller beside 12 session trees, a pooled card: on the frozen box (`rg-disc-frozen-c1-s12`, stock pooling) and
-    on the change at a step cap of 256 (`rg-disc-pr-ab48-b256-c1-s12`, Flatshare pooling);
-  - two callers beside 24, 12, 8, 4 and 2 session trees, a consolidated card, whose envelope is the most of these
-    at which it qualifies: on the change at 256 (`sweep-disc-pr-ab48-b256-t0-s24`, `rg-disc-pr-ab48-b256-s12`,
-    `-s8`, `-s4`, `-s2`), on the frozen box (`w5-disc-frozen-s24`, `rg-disc-frozen-s12`, `-s8`, `-s4`, `-s2`), and
-    at 24 on W5's 48-token configuration (`w5-disc-pr-ab48-s24`). The points at 8, 4 and 2 were added once round
-    1's first eleven had put 7 of 59 replies over the SLO on the change's card at 12 and 20 of 59 on stock vLLM's.
-    Round 1 ran them after its first eleven points, in two more sittings: from 97c48b4 (the envelope and the
-    dedicated card at 20, 16 and 12) and from 91de180 (the agents-only card at 14, once 12 had been its busiest short
-    of saturation, and the spare below), each adding only arm files to the harness its first sitting ran
-    (ea7efd0); rounds 2 and 3 ran every point inside their engine groups.
-  - beside the gate, a warm spare's card: the agents alone on the change at 256 with its speech servers idle
-    (`rg-disc-agents-pr-ab48-b256-s16` and `-s12`), the second card when it must be able to take the calls.
-- **The records** are kept as W5's are, as `flatshare-bench e2 export` writes a point (`run.json`, `arm.toml`,
-  `engine.json`, `summary.json`, the callers' `bots/summary.json` and `bots/turns.jsonl`), with each campaign's
-  `campaign.log` and report, home directories written as `~`. A point that did not complete is kept beside the one that
-  did (`run.json` names its status): the one here is round 1's first voice alone
-  (`rg-r1/w5-a1-voice.incomplete-20261028T020909Z`), stopped at its first turns on v1.6-21-ga4e6676, whose callers
-  waited out every reply to 60 s, misreading the agent's state; the release the rounds ran fixed it.
-
-[`gate.py`](gate.py) gives the gate's verdict and the sweep's table from these records
-(`cd python/flatshare_bench && uv run python ../../benchmarks/results/2026-10-28-rounds/gate.py`), and
-`python/flatshare_bench/tests/test_rounds_record.py` fails while this README's tables are not what it gives.
 
 ## The two-card comparison
 
@@ -109,6 +66,7 @@ Beside the gate, which counts no spare as a resource benefit: the second card as
 <!-- /gate.py -->
 
 The gate's verdict:
+
 - **Sharing has resource value, by consolidation.** One card running both calls and four session trees on the change,
   beside the agents-only card, did 34.2% more background work than the best dedicated arrangement, the calls on a card
   of their own and the agents-only card at 14 session trees: past the 20% hurdle. Four trees is the change's envelope:
@@ -210,9 +168,54 @@ Replies over the round's SLO, by round:
 <!-- /gate.py sweep -->
 
 Two callers beside 24 session trees in all five rounds, each held to its own round's SLO. The change at the step cap
-of 256 without a per-request threshold had fewer replies over the SLO than W5's configuration (the box's step cap of
-512 with a threshold of 256) in each of the five rounds, 44 of 295 against 94 (14.9% against 31.9%), with a pooled p95
+of 256 without a per-request threshold had fewer replies over the SLO than W5's configuration (the box's step cap then,
+512, with a threshold of 256) in each of the five rounds, 44 of 295 against 94 (14.9% against 31.9%), with a pooled p95
 of 2,151 ms against 2,259; stock vLLM had 261 of 295 over (88.5%). The agents pay for it: 3,067 tokens a second over the
 calls' first 240 s against 3,303 at the median, 7% less, and a median time to first token of 85 s against 78. The
 screens' choice stands, and the serving profile runs 256 without a threshold. No step cap keeps 24 session trees within
-the requirement of at most 5% over; the change's consolidated card meets it at four ([above](#the-two-card-comparison)).
+the requirement of at most 5% over; the change's consolidated card meets it at four
+([the two-card comparison](#the-two-card-comparison)).
+
+## How it ran
+
+- **The rounds** ([`benchmarks/e2`](../../e2): `rg-r1.campaign` to `rg-r5.campaign`), each on a fresh sample of the
+  agents' traces (seeds 21 to 25), each on one GPU node, the nodes swapped from round to round: Gray in rounds 2 and 4;
+  Phastform in rounds 1, 3 and 5. Each round runs its engine groups in an order rotated from the round before. Every
+  point is E2's: two callers (one, for a pooled card), 25 turns each after a warm-up turn, beside the session trees of
+  the discriminating scenario (`weka-x32-long`), on vLLM 0.32.0 with Qwen3-4B-Instruct-2507-FP8. Every host ran the
+  release of v1.6-27-gea7efd0 (`versions` in each `run.json`).
+- **The cards.** Each card's part of an arrangement is a point of its own:
+  - voice alone with two callers (`w5-a1-voice`) and with one (`rg-voice-c1`), the dedicated arrangement's voice card
+    and each round's SLO (its p95 plus 250 ms);
+  - the agents alone, on the frozen box with its speech servers idle (`rg-disc-agents-frozen-s24` and `-s12`, the
+    controlled dedicated card) and on the agents-only card (`rg-disc-agents-only-s24`, `-s20`, `-s16`, `-s14` and
+    `-s12`: no speech servers, a pool of 61,152 tokens in their memory, FCFS at a step cap of 2,048, the best practical
+    dedicated card and consolidation's second card). Each arrangement runs a dedicated card at the number of session
+    trees at which it does the most, the highest median over the rounds: how many agents a card runs at once is part of
+    the scheduling that gives them the most. The counts below 24 were added with the envelope's, once round 1 had shown
+    the agents-only card at 24 doing 4,232 tokens/s over the calls' first 240 s, with a median time to first token of
+    48 s, where its pool thrashes, and a pooled card on the frozen box, one call beside 12 session trees, doing 6,617;
+  - one caller beside 12 session trees, a pooled card: on the frozen box (`rg-disc-frozen-c1-s12`, stock pooling) and
+    on the change at a step cap of 256 (`rg-disc-pr-ab48-b256-c1-s12`, Flatshare pooling);
+  - two callers beside 24, 12, 8, 4 and 2 session trees, a consolidated card, whose envelope is the most of these
+    at which it qualifies: on the change at 256 (`sweep-disc-pr-ab48-b256-t0-s24`, `rg-disc-pr-ab48-b256-s12`,
+    `-s8`, `-s4`, `-s2`), on the frozen box (`w5-disc-frozen-s24`, `rg-disc-frozen-s12`, `-s8`, `-s4`, `-s2`), and
+    at 24 on W5's 48-token configuration (`w5-disc-pr-ab48-s24`). The points at 8, 4 and 2 were added once round
+    1's first eleven had put 7 of 59 replies over the SLO on the change's card at 12 and 20 of 59 on stock vLLM's.
+    Round 1 ran them after its first eleven points, in two more sittings: from 97c48b4 (the envelope and the
+    dedicated card at 20, 16 and 12) and from 91de180 (the agents-only card at 14, once 12 had been its busiest short
+    of saturation, and the spare below), each adding only arm files to the harness its first sitting ran
+    (ea7efd0); rounds 2 and 3 ran every point inside their engine groups.
+  - beside the gate, a warm spare's card: the agents alone on the change at 256 with its speech servers idle
+    (`rg-disc-agents-pr-ab48-b256-s16` and `-s12`), the second card when it must be able to take the calls.
+
+## Files
+
+| File | What it holds |
+|---|---|
+| `rg-rN/POINT/` | Each point as [W5's records](../2026-10-24-e2-w5/README.md) keep it, as `flatshare-bench e2 export` writes it: `run.json`, `arm.toml`, `engine.json`, `summary.json`, the callers' `bots/summary.json` and `bots/turns.jsonl` |
+| `rg-rN/campaign.log`, `rg-rN/report/` | Each campaign's log and report |
+| `rg-r1/w5-a1-voice.incomplete-20261028T020909Z/` | The one point that did not complete, kept beside the one that did (`run.json` names its status): round 1's first voice alone, stopped at its first turns on v1.6-21-ga4e6676, whose callers waited out every reply to 60 s, misreading the agent's state; the release the rounds ran fixed it |
+| [`gate.py`](gate.py) | The gate's verdict and the README's tables from these records (`cd python/flatshare_bench && uv run python ../../benchmarks/results/2026-10-28-rounds/gate.py`); `python/flatshare_bench/tests/test_rounds_record.py` fails while this README's tables are not what it gives |
+
+Home directories are written as `~`.

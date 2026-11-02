@@ -8,15 +8,6 @@ decode kernel. It then tested the cause with the wait of vLLM [#64165](https://g
 with a counter of the plans that find their buffer's last copy still pending, on vLLM 0.33.0rc3 and main, with blocking
 launches, and with a GPU core dump.
 
-**The box and the build.** An RTX 5060 Ti 16 GB (sm_120), driver 580.173.02 (CUDA 13.0), on a PCIe 3.0 x8 link (6.8 GB/s
-to the GPU and 7.2 GB/s back, measured below). vLLM 0.32.0 from PyPI, with torch 2.13.0+cu130 and FlashInfer 0.7.0.post1
-(JIT), the box's engine environment; vLLM 0.33.0rc3 and main (the nightly build of 564ac0de1) with torch 2.14.0 and
-FlashInfer 0.7.2.post1. Qwen3-4B-Instruct-2507-FP8 at the box's engine settings ([`offload.yaml`](../../fp8/offload.yaml)):
-a 5 GiB pool, priority scheduling, 512-token steps with a 256-token long-prefill threshold, prefix caching, asynchronous
-scheduling (vLLM's default) and the `OffloadingConnector` with 20 GiB, write-through. [`load.py`](../../fp8/load.py) runs
-24 agent sessions that resend 8k–24k-token contexts growing each turn, with pauses, so that the pool overflows into the
-CPU tier and resumed sessions load their prefixes back, beside two streams of short priority-0 turns.
-
 ## The runs
 
 | Run | vLLM | Build | KV cache | Attention | CPU tier | Verdict | Load planned, s | Answered / failed | Last answer, s | Plans finding the last copy pending |
@@ -54,7 +45,7 @@ named `w` was a warm-up, to compile the version's kernels before its measured ru
 
 ## What they show
 
-- **The crash is stock vLLM's.** On 0.32.0, r1, r1b and r18 died at 124, 194 and 184 s with the 10-27 signature: an
+- **The crash is stock vLLM's.** On 0.32.0, r1, r1b and r18 died at 124, 194 and 184 s with the 2026-10-27 signature: an
   illegal memory access raised at `async_utils.py:174` (`copy_event.synchronize()`), and the offload worker's "Failed
   to synchronize transfer end event". vLLM 0.33.0rc3 died the same way twice, at 128 s with the sweep's other error,
   "operation not supported on global/shared address space", and at 214 s. Main (the nightly build of 564ac0de1) stalled in
@@ -68,8 +59,8 @@ named `w` was a warm-up, to compile the version's kernels before its measured ru
   finishes instead of a fault, the GPU busy at 43 W and the engine core blocked at the same `synchronize()`. FP8 meets
   it because an FP8 cache moves this card's attention to FlashInfer, FlashAttention 2 having no FP8 KV cache here.
 - **The kernel that faults.** A GPU core dump of a stock crash (r18, `CUDA_ENABLE_COREDUMP_ON_EXCEPTION=1` with
-  `skip_abort`, read with cuda-gdb 13.0: [`cuda-gdb.r18.2786334.1793496884.txt`](runs/r18-fp8-offload-coredump/cuda-gdb.r18.2786334.1793496884.txt))
-  names it: a warp's illegal address in `flashinfer::PersistentVariableLengthMergeStatesKernel`, which merges split-KV
+  `skip_abort`, read with cuda-gdb 13.0:
+  [`cuda-gdb.r18.2786334.1793496884.txt`](runs/r18-fp8-offload-coredump/cuda-gdb.r18.2786334.1793496884.txt)) names it: a warp's illegal address in `flashinfer::PersistentVariableLengthMergeStatesKernel`, which merges split-KV
   partial outputs at indices the plan gives. #61239's commenter found the same kernel in dumps on two RTX 3090s.
 - **#64165's wait closes it,** on 0.32.0 and 0.33.0rc3. With the wait neither FP8 (r9, 1,800 s) nor BF16 (r12) crashed or
   stalled on 0.32.0, nor FP8 on rc3 (r15). Its counters: 376 of 30,000, 160 of 20,000 and 223 of 15,000 plans found the
@@ -117,16 +108,35 @@ plans were enough (r16, r17).
 ## What it changes
 
 The serving profile keeps its BF16 cache (REPORT §9): stock vLLM crashes or stalls beside the CPU tier on 0.32.0,
-0.33.0rc3 and main, the fix is an open pull request, and an FP8 profile would ship an unreviewed patch to the engine. When vLLM ships
-the wait, an FP8 pool is the 0.33 port's first measurement. These runs are the data point given on #64165.
+0.33.0rc3 and main, the fix is a pull request, open as of 2026-11-02, and an FP8 profile would ship an unreviewed patch
+to the engine. vLLM 0.33.0 (2026-11-02) does not ship the wait; when a release does, an FP8 pool is the first
+measurement on it. These runs are the data point given on #64165.
 
-## The files
+## How it ran
 
-Each run's directory keeps what `run.sh` wrote: `result.txt` (the versions, the environment, the verdict and the first
-fault line), `server.log`, `requests.jsonl` (a line a request), `summary.json` and `load.out`; a stalled run also keeps
-the GPU's state at the stall (`stall-snapshot.txt` or `stall-nvidia-smi.txt`), with the engine core's stacks at the end
-of its `server.log` (all but r20's: main's engine core left none, though the hook answers in main's interpreter), and
-r18 cuda-gdb's reading of its dump (the 202 MB dump itself is not kept). The `queue-*.log` files
-give the order the runs ran in, `copy-contention.json` the copy engines' measurement and `dump-selftest.json` the dump's
-positive control. Home directories are written as `~` and the runtime directory as `$XDG_RUNTIME_DIR`.
-`python benchmarks/fp8/summarize.py benchmarks/results/2026-10-31-fp8-crash/runs` prints the table.
+| | |
+|---|---|
+| The box | An RTX 5060 Ti 16 GB (sm_120), driver 580.173.02 (CUDA 13.0), on a PCIe 3.0 x8 link (6.8 GB/s to the GPU and 7.2 GB/s back, in [`copy-contention.json`](runs/copy-contention.json)) |
+| The builds | vLLM 0.32.0 from PyPI, with torch 2.13.0+cu130 and FlashInfer 0.7.0.post1 (JIT), the box's engine environment; vLLM 0.33.0rc3 and main (the nightly build of 564ac0de1) with torch 2.14.0 and FlashInfer 0.7.2.post1 |
+| The engine | Qwen3-4B-Instruct-2507-FP8 at the box's engine settings ([`offload.yaml`](../../fp8/offload.yaml)): a 5 GiB pool, priority scheduling, 512-token steps with a 256-token long-prefill threshold, prefix caching, asynchronous scheduling (vLLM's default) and the `OffloadingConnector` with 20 GiB, write-through |
+| The load | [`load.py`](../../fp8/load.py): 24 agent sessions that resend 8k–24k-token contexts growing each turn, with pauses, so that the pool overflows into the CPU tier and resumed sessions load their prefixes back, beside two streams of short priority-0 turns |
+
+## Files
+
+Each run's directory, `runs/RUN/`, keeps what `run.sh` wrote:
+
+| File | What it holds |
+|---|---|
+| `result.txt` | The versions, the environment, the verdict and the first fault line |
+| `server.log` | The server's log; a stalled run's ends with the engine core's stacks (all but r20's: main's engine core left none, though the hook answers in main's interpreter) |
+| `requests.jsonl`, `summary.json`, `load.out` | The load's requests, a line a request, its summary and its output |
+| `stall-snapshot.txt` or `stall-nvidia-smi.txt` | A stalled run's GPU state at the stall |
+| `cuda-gdb.*.txt` | r18's: cuda-gdb's reading of its dump (the 202 MB dump itself is not kept) |
+
+Beside them, the `runs/queue-*.log` files give the order the runs ran in, `runs/copy-contention.json` the copy engines'
+measurement and `runs/dump-selftest.json` the dump's positive control. Home directories are written as `~` and the
+runtime directory as `$XDG_RUNTIME_DIR`. [`summarize.py`](../../fp8/summarize.py) prints the table:
+
+```sh
+python benchmarks/fp8/summarize.py benchmarks/results/2026-10-31-fp8-crash/runs
+```
