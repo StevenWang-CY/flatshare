@@ -8,10 +8,18 @@ lowered Phastform's bound to three sessions for another 24 hours. Of the first f
 (0.6%), and it ran its 24 hours.
 
 <!-- table.py table -->
-| Run | Hours | Calls (accepted, refused, failed) | Turns (failed) | Replies | Over the SLO | Replies p95, ms | Realtime SLI | Background tokens/s | Restarts | Guard pauses |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Voice alone | 2 | 35 (31, 4, 0) | 310 (0) | 395 | the reference | 1,726 | 1.000 | 0 | 0 | 0 |
-| The serving arrangement | 24 | 476 (402, 74, 0) | 4,020 (0) | 5,058 | 74 (1.5%) | 1,828 | 0.996 | 3,529 | 0 | 0 |
+| Measure | Voice alone | The serving arrangement |
+|---|---:|---:|
+| Hours | 2 | 24 |
+| Calls (accepted, refused, failed) | 35 (31, 4, 0) | 476 (402, 74, 0) |
+| Turns (failed) | 310 (0) | 4,020 (0) |
+| Replies | 395 | 5,058 |
+| Over the SLO | the reference | 74 (1.5%) |
+| Replies p95, ms | 1,726 | 1,828 |
+| Realtime SLI | 1.000 | 0.996 |
+| Background tokens/s | 0 | 3,529 |
+| Restarts | 0 | 0 |
+| Guard pauses | 0 | 0 |
 <!-- /table.py table -->
 
 <!-- table.py hours -->

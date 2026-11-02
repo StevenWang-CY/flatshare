@@ -1138,14 +1138,18 @@ def test_the_soak_is_its_summarys_hours(drawn: dict[str, Path]) -> None:
         "3,529",
         "1,976",
     )
-    # The record's own tables: the day's row, and the least and the most of the hours.
-    [day] = [
-        line
-        for line in table.table().splitlines()
-        if line.startswith("| The serving arrangement |")
-    ]
-    assert f"| {soak.replies:,} | {soak.over} ({soak.share:.1%}) |" in day, day
-    assert f"| {soak.tokens:,.0f} |" in day, day
+    # The record's own tables: the day's column, and the least and the most of the hours.
+    head, _, *measures = table.table().splitlines()
+    runs = [cell.strip() for cell in head.strip("|").split("|")]
+    day = {
+        cells[0]: cells[runs.index("The serving arrangement")]
+        for cells in ([cell.strip() for cell in line.strip("|").split("|")] for line in measures)
+    }
+    assert (day["Replies"], day["Over the SLO"], day["Background tokens/s"]) == (
+        f"{soak.replies:,}",
+        f"{soak.over} ({soak.share:.1%})",
+        f"{soak.tokens:,.0f}",
+    ), day
     rows = {
         line.split("|")[1].strip(): line
         for line in table.hours().splitlines()
@@ -1315,7 +1319,7 @@ FIGURES_ABOVE_TABLES = {
     "report-step-cap": "| Configuration | Rounds | V2V p95: median of the rounds / pooled |",
     "report-opt-rounds": "| Scenario | Configuration | Rounds | Replies over the SLO |",
     "report-starts": "| Start | Unit start to ready | Where the time goes |",
-    "report-soak": "| Run | Hours | Calls (accepted, refused, failed) |",
+    "report-soak": "| Measure | Voice alone | The serving arrangement |",
 }
 """The report's charts that BENCHMARKS shows, by the first line of the table each draws."""
 

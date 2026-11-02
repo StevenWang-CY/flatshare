@@ -10,35 +10,63 @@ launches, and with a GPU core dump.
 
 ## The runs
 
-| Run | vLLM | Build | KV cache | Attention | CPU tier | Verdict | Load planned, s | Answered / failed | Last answer, s | Plans finding the last copy pending |
-|---|---|---|---|---|---|---|---|---|---|---|
-| r1-fp8-offload | 0.32.0 | stock | FP8 | FLASHINFER | yes | CRASHED at 124 s | 1200 | 85 / 20 | 119 |  |
-| r2-fp8-nooffload | 0.32.0 | stock | FP8 | FLASHINFER | no | SURVIVED | 900 | 405 / 0 | 898 |  |
-| r3-bf16-flashinfer-offload | 0.32.0 | stock | BF16 | FLASHINFER | yes | STALLED (by its requests; run.sh said SURVIVED) | 900 | 117 / 26 | 226 |  |
-| r9-fp8-offload-fix | 0.32.0 | + #64165 | FP8 | FLASHINFER | yes | SURVIVED | 1800 | 811 / 0 | 1799 | 376 of 30,000 |
-| r10-fp8-offload-count | 0.32.0 | + #64165, counting only | FP8 | FLASHINFER | yes | STALLED at 345 s | 900 | 128 / 0 | 164 | 20 of 1,477 |
-| r12-bf16-flashinfer-offload-fix | 0.32.0 | + #64165 | BF16 | FLASHINFER | yes | SURVIVED | 900 | 425 / 0 | 900 | 160 of 20,000 |
-| r7-fp8-offload-noasync | 0.32.0 | stock, async scheduling off | FP8 | FLASHINFER | yes | SURVIVED | 900 | 432 / 0 | 900 |  |
-| r8-fp8-triton-offload | 0.32.0 | stock | FP8 | TRITON_ATTN | yes | SURVIVED | 900 | 432 / 0 | 898 |  |
-| r4-bf16-flashattn-offload | 0.32.0 | stock | BF16 | FLASH_ATTN | yes | SURVIVED | 900 | 404 / 0 | 895 |  |
-| r1b-fp8-offload | 0.32.0 | stock | FP8 | FLASHINFER | yes | CRASHED at 194 s | 600 | 85 / 30 | 189 |  |
-| r13w-rc3-warmup | 0.33.0rc3 | stock | FP8 | FLASHINFER | yes | CRASHED at 128 s | 180 | 94 / 17 | 124 |  |
-| r13-rc3-fp8-offload | 0.33.0rc3 | stock | FP8 | FLASHINFER | yes | CRASHED at 214 s | 900 | 158 / 24 | 209 |  |
-| r15-rc3-fp8-offload-fix | 0.33.0rc3 | + #64165 | FP8 | FLASHINFER | yes | SURVIVED | 900 | 449 / 0 | 897 | 223 of 15,000 |
-| r14-rc3-fp8-offload-count | 0.33.0rc3 | + #64165, counting only | FP8 | FLASHINFER | yes | STALLED at 485 s | 900 | 209 / 0 | 304 | 117 of 5,000 |
-| r19-fp8-nooffload-count | 0.32.0 | + #64165, counting only | FP8 | FLASHINFER | no | SURVIVED | 900 | 405 / 0 | 898 | 0 of 10,000 |
-| r16-fp8-offload-xqa | 0.32.0 | stock, XQA decode | FP8 | FLASHINFER | yes | STALLED at 339 s | 900 | 121 / 0 | 159 |  |
-| r17-fp8-offload-xqa-count | 0.32.0 | + #64165, counting only, XQA decode | FP8 | FLASHINFER | yes | STALLED at 309 s | 900 | 94 / 0 | 127 | 7 of 847 |
-| r18-fp8-offload-coredump | 0.32.0 | stock, core dump | FP8 | FLASHINFER | yes | CRASHED at 184 s | 900 | 139 / 24 | 180 |  |
-| r5-fp8-offload-blocking | 0.32.0 | stock, blocking launches | FP8 | FLASHINFER | yes | SURVIVED | 600 | 317 / 0 | 601 |  |
-| r20w-main-warmup | main (564ac0de1) | stock | FP8 | FLASHINFER | yes | SURVIVED (no answer in its last 67 s) | 180 | 82 / 0 | 114 |  |
-| r20-main-fp8-offload | main (564ac0de1) | stock | FP8 | FLASHINFER | yes | STALLED at 481 s | 900 | 202 / 0 | 300 |  |
+How each run was set up, in the order the runs started:
+
+| Run | vLLM | Build | KV cache | Attention | CPU tier |
+|---|---|---|---|---|---|
+| r1-fp8-offload | 0.32.0 | stock | FP8 | FLASHINFER | yes |
+| r2-fp8-nooffload | 0.32.0 | stock | FP8 | FLASHINFER | no |
+| r3-bf16-flashinfer-offload | 0.32.0 | stock | BF16 | FLASHINFER | yes |
+| r9-fp8-offload-fix | 0.32.0 | + #64165 | FP8 | FLASHINFER | yes |
+| r10-fp8-offload-count | 0.32.0 | + #64165, counting only | FP8 | FLASHINFER | yes |
+| r12-bf16-flashinfer-offload-fix | 0.32.0 | + #64165 | BF16 | FLASHINFER | yes |
+| r7-fp8-offload-noasync | 0.32.0 | stock, async scheduling off | FP8 | FLASHINFER | yes |
+| r8-fp8-triton-offload | 0.32.0 | stock | FP8 | TRITON_ATTN | yes |
+| r4-bf16-flashattn-offload | 0.32.0 | stock | BF16 | FLASH_ATTN | yes |
+| r1b-fp8-offload | 0.32.0 | stock | FP8 | FLASHINFER | yes |
+| r13w-rc3-warmup | 0.33.0rc3 | stock | FP8 | FLASHINFER | yes |
+| r13-rc3-fp8-offload | 0.33.0rc3 | stock | FP8 | FLASHINFER | yes |
+| r15-rc3-fp8-offload-fix | 0.33.0rc3 | + #64165 | FP8 | FLASHINFER | yes |
+| r14-rc3-fp8-offload-count | 0.33.0rc3 | + #64165, counting only | FP8 | FLASHINFER | yes |
+| r19-fp8-nooffload-count | 0.32.0 | + #64165, counting only | FP8 | FLASHINFER | no |
+| r16-fp8-offload-xqa | 0.32.0 | stock, XQA decode | FP8 | FLASHINFER | yes |
+| r17-fp8-offload-xqa-count | 0.32.0 | + #64165, counting only, XQA decode | FP8 | FLASHINFER | yes |
+| r18-fp8-offload-coredump | 0.32.0 | stock, core dump | FP8 | FLASHINFER | yes |
+| r5-fp8-offload-blocking | 0.32.0 | stock, blocking launches | FP8 | FLASHINFER | yes |
+| r20w-main-warmup | main (564ac0de1) | stock | FP8 | FLASHINFER | yes |
+| r20-main-fp8-offload | main (564ac0de1) | stock | FP8 | FLASHINFER | yes |
+
+What each run did:
+
+| Run | Verdict | Load planned, s | Answered / failed | Last answer, s | Plans finding the last copy pending |
+|---|---|---:|---:|---:|---:|
+| r1-fp8-offload | CRASHED at 124 s | 1,200 | 85 / 20 | 119 | — |
+| r2-fp8-nooffload | SURVIVED | 900 | 405 / 0 | 898 | — |
+| r3-bf16-flashinfer-offload | STALLED (by its requests; run.sh said SURVIVED) | 900 | 117 / 26 | 226 | — |
+| r9-fp8-offload-fix | SURVIVED | 1,800 | 811 / 0 | 1,799 | 376 of 30,000 |
+| r10-fp8-offload-count | STALLED at 345 s | 900 | 128 / 0 | 164 | 20 of 1,477 |
+| r12-bf16-flashinfer-offload-fix | SURVIVED | 900 | 425 / 0 | 900 | 160 of 20,000 |
+| r7-fp8-offload-noasync | SURVIVED | 900 | 432 / 0 | 900 | — |
+| r8-fp8-triton-offload | SURVIVED | 900 | 432 / 0 | 898 | — |
+| r4-bf16-flashattn-offload | SURVIVED | 900 | 404 / 0 | 895 | — |
+| r1b-fp8-offload | CRASHED at 194 s | 600 | 85 / 30 | 189 | — |
+| r13w-rc3-warmup | CRASHED at 128 s | 180 | 94 / 17 | 124 | — |
+| r13-rc3-fp8-offload | CRASHED at 214 s | 900 | 158 / 24 | 209 | — |
+| r15-rc3-fp8-offload-fix | SURVIVED | 900 | 449 / 0 | 897 | 223 of 15,000 |
+| r14-rc3-fp8-offload-count | STALLED at 485 s | 900 | 209 / 0 | 304 | 117 of 5,000 |
+| r19-fp8-nooffload-count | SURVIVED | 900 | 405 / 0 | 898 | 0 of 10,000 |
+| r16-fp8-offload-xqa | STALLED at 339 s | 900 | 121 / 0 | 159 | — |
+| r17-fp8-offload-xqa-count | STALLED at 309 s | 900 | 94 / 0 | 127 | 7 of 847 |
+| r18-fp8-offload-coredump | CRASHED at 184 s | 900 | 139 / 24 | 180 | — |
+| r5-fp8-offload-blocking | SURVIVED | 600 | 317 / 0 | 601 | — |
+| r20w-main-warmup | SURVIVED (no answer in its last 67 s) | 180 | 82 / 0 | 114 | — |
+| r20-main-fp8-offload | STALLED at 481 s | 900 | 202 / 0 | 300 | — |
 
 r3 ran before `load.py` could detect a stall, so `run.sh` said it survived; no request was answered after 226 s of its
 900, and its snapshot at 21:55:54 UTC ([`stall-snapshot.txt`](runs/r3-bf16-flashinfer-offload/stall-snapshot.txt))
 shows the GPU at 100% and 43 W, the engine core waiting. [`summarize.py`](../../fp8/summarize.py) holds it to
 `load.py`'s rule after the fact. r20w, main's 180 s warm-up, ended in 67 s without an answer, too short a silence for
-that rule, with the GPU at 100% and 44 W as it ended (read by hand at 02:04:04 UTC); the table says so and leaves its
+that rule, with the GPU at 100% and 44 W as it ended (read by hand at 02:04:04 UTC); its row says so and leaves its
 verdict. Times are from the load's start, a stalled run's from its last answer; "plans" counts
 the builds of FlashInfer's plans that found the previous one's copy to the GPU still pending, as last logged. A run
 named `w` was a warm-up, to compile the version's kernels before its measured run.
@@ -135,7 +163,7 @@ Each run's directory, `runs/RUN/`, keeps what `run.sh` wrote:
 
 Beside them, the `runs/queue-*.log` files give the order the runs ran in, `runs/copy-contention.json` the copy engines'
 measurement and `runs/dump-selftest.json` the dump's positive control. Home directories are written as `~` and the
-runtime directory as `$XDG_RUNTIME_DIR`. [`summarize.py`](../../fp8/summarize.py) prints the table:
+runtime directory as `$XDG_RUNTIME_DIR`. [`summarize.py`](../../fp8/summarize.py) prints the two tables:
 
 ```sh
 python benchmarks/fp8/summarize.py benchmarks/results/2026-10-31-fp8-crash/runs

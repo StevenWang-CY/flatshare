@@ -157,9 +157,9 @@ What each restart keeps:
 | The metrics key | cyan, `~/.config/flatshare/metrics-key` (`install.sh` makes it once) | `install.sh` makes a new one | Replace the file, then reload the gateway; Prometheus needs none (below) |
 | The cache-salt secret | cyan, `~/.config/flatshare/cache-salt-secret` (`install.sh` makes it once) | `install.sh` makes a new one | Replace the file and reload. Every tenant's salt changes, so every prefix cache starts cold |
 | LiveKit's API key and secret | cyan, `~/.config/flatshare/livekit.env` (`bootstrap.sh` makes it once) | `bootstrap.sh` makes new ones | Remove the file, run `bootstrap.sh`, then restart LiveKit and the worker in a drain window, which ends the calls |
-| The tunnels' keys | cyan, `~/.ssh/flatshare_tunnel_{engine,stt,tts}_ed25519` | `bootstrap.sh` makes new ones | Remove them, run `bootstrap.sh`, run `deploy/authorize-tunnel.sh cyan NODE` for each node (it replaces the old entries), then restart `flatshare-tunnel@NODE` |
+| The tunnels' keys | cyan, `~/.ssh/flatshare_tunnel_*_ed25519`, where `*` is `engine`, `stt` or `tts` | `bootstrap.sh` makes new ones | Remove them, run `bootstrap.sh`, run `deploy/authorize-tunnel.sh cyan NODE` for each node (it replaces the old entries), then restart `flatshare-tunnel@NODE` |
 | Each tunnel's target | cyan, `~/.config/flatshare/tunnel-NODE.env` | Written by hand | Edit, then restart `flatshare-tunnel@NODE` |
-| Which engine variant a node runs | The node, `~/.config/systemd/user/flatshare-engine.service.d/` | `deploy/phastform/variant.sh use make-room-serve` | — |
+| Which engine variant a node runs | The node, `flatshare-engine.service.d/` in `~/.config/systemd/user/` | `variant.sh use make-room-serve` in `deploy/phastform/` | — |
 
 Prometheus reads the metrics key's file (`credentials_file`) at each scrape, so it needs no reload, and a scrape between the file's replacement and the gateway's reload gets 401.
 

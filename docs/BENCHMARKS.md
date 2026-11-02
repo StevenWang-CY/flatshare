@@ -405,27 +405,40 @@ W5, 2026-10-25: voice alone and the configuration to deploy with 4 and with 6 ca
 
 **Provenance:** E3, on W5's points, 2026-10-24 to 25.
 
-The cost to the agents by its mechanism, over W5's points ([EXPERIMENTS.md](EXPERIMENTS.md#e3-the-background-tiers-cost-of-make-room) has the counters and their limits). The table gives the median of each configuration's runs.
+The cost to the agents by its mechanism, over W5's points ([EXPERIMENTS.md](EXPERIMENTS.md#e3-the-background-tiers-cost-of-make-room) has the counters and their limits). The tables give the median of each configuration's runs: what the budget cap held back, and what the preemptions cost.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-agents-narrow.svg">
   <img src="figures/report-agents.svg" width="100%" alt="For each configuration beside 24 agent sessions, each run and the median of the agents' TTFT p99, of the share of the engine's steps over the calls in which the budget cap kept agent prefill out, and of make-room's own preemptions over the calls: Tuned vLLM (the baseline, 10 runs): TTFT p99 106 s (96 to 129), no budget cap, no make-room; Preempt-resubmit (before the first byte, 5 runs): TTFT p99 193 s (160 to 232), no budget cap, no make-room; The KV preemption (#63350, 5 runs): TTFT p99 112 s (98 to 131), agent prefill held in 0% of the steps, 34 preemptions by make-room; The change (16-token window, 5 runs): TTFT p99 105 s (99 to 130), agent prefill held in 25% of the steps, 32 preemptions by make-room; The configuration to deploy (48-token window, 15 runs): TTFT p99 111 s (94 to 132), agent prefill held in 33% of the steps, 31 preemptions by make-room.">
 </picture>
 
-**The agents' first-token tail stays at tuned vLLM's with the configuration to deploy and nearly doubles with preempt-resubmit.** The report's Figure 10 ([§6.4](REPORT.md#64-the-agents-pay-through-the-budget-cap-not-through-the-preemptions)); its TTFT p99 is the W5 table's, and its held steps and preemptions are the table below's.
+**The agents' first-token tail stays at tuned vLLM's with the configuration to deploy and nearly doubles with preempt-resubmit.** The report's Figure 10 ([§6.4](REPORT.md#64-the-agents-pay-through-the-budget-cap-not-through-the-preemptions)); its TTFT p99 is the W5 table's, and its held steps and preemptions are those of the tables below.
 
-| Configuration | Runs | Engine steps over the calls | Steps the cap held agent prefill back in (share) | Prefill tokens held back (an upper bound) | make-room's preemptions | vLLM's preemptions | Tokens loaded beyond first scheduling | Agents' tokens/s, first 240 s |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Tuned vLLM | 10 | 5,778 | — | — | — | 31 | 212,630 | 3,305 |
-| Preempt-resubmit (arm 8c) | 5 | 5,390 | — | — | — | 7 | 273,461 | 3,332 |
-| The KV preemption | 5 | 5,430 | 0 (0%) | 0 | 34 | 51 | 171,736 | 3,414 |
-| The change, 16-token window | 5 | 5,161 | 1,310 (25%) | 325,689 | 32 | 47 | 117,049 | 3,298 |
-| **The configuration to deploy** | 15 | 5,404 | 1,778 (33%) | 382,720 | 31 | 46 | 117,044 | 3,203 |
-| The same on v0.3's module | 5 | 4,939 | — | — | — | 41 | 123,193 | 3,132 |
-| Standard scenario: tuned vLLM | 5 | 10,755 | — | — | — | 0 | −74 | 7,131 |
-| Standard scenario: the configuration to deploy | 5 | 10,988 | 505 (4%) | 31,520 | 1 | 1 | 115 | 6,815 |
-| 4 callers: the configuration to deploy | 3 | 6,349 | 3,321 (53%) | 747,879 | 54 | 65 | 111,679 | 3,055 |
-| 6 callers: the configuration to deploy | 3 | 6,727 | 4,332 (64%) | 1,067,013 | 64 | 70 | 82,548 | 2,716 |
+| Configuration | Runs | Engine steps over the calls | Steps the cap held agent prefill back in (share) | Prefill tokens held back (an upper bound) | Agents' tokens/s, first 240 s |
+|---|---:|---:|---:|---:|---:|
+| Tuned vLLM | 10 | 5,778 | — | — | 3,305 |
+| Preempt-resubmit (arm 8c) | 5 | 5,390 | — | — | 3,332 |
+| The KV preemption | 5 | 5,430 | 0 (0%) | 0 | 3,414 |
+| The change, 16-token window | 5 | 5,161 | 1,310 (25%) | 325,689 | 3,298 |
+| **The configuration to deploy** | 15 | 5,404 | 1,778 (33%) | 382,720 | 3,203 |
+| The same on v0.3's module | 5 | 4,939 | — | — | 3,132 |
+| Standard scenario: tuned vLLM | 5 | 10,755 | — | — | 7,131 |
+| Standard scenario: the configuration to deploy | 5 | 10,988 | 505 (4%) | 31,520 | 6,815 |
+| 4 callers: the configuration to deploy | 3 | 6,349 | 3,321 (53%) | 747,879 | 3,055 |
+| 6 callers: the configuration to deploy | 3 | 6,727 | 4,332 (64%) | 1,067,013 | 2,716 |
+
+| Configuration | make-room's preemptions | vLLM's preemptions | Tokens loaded beyond first scheduling |
+|---|---:|---:|---:|
+| Tuned vLLM | — | 31 | 212,630 |
+| Preempt-resubmit (arm 8c) | — | 7 | 273,461 |
+| The KV preemption | 34 | 51 | 171,736 |
+| The change, 16-token window | 32 | 47 | 117,049 |
+| **The configuration to deploy** | 31 | 46 | 117,044 |
+| The same on v0.3's module | — | 41 | 123,193 |
+| Standard scenario: tuned vLLM | — | 0 | −74 |
+| Standard scenario: the configuration to deploy | 1 | 1 | 115 |
+| 4 callers: the configuration to deploy | 54 | 65 | 111,679 |
+| 6 callers: the configuration to deploy | 64 | 70 | 82,548 |
 
 - **The agents pay through the budget cap.** At 48 tokens the cap held lower-priority prefill back in a third of the engine's steps over the calls (33%; 25% at 16 tokens). The KV preemption alone holds nothing, and there the agents' token rate is 3% above tuned vLLM's.
 - **The KV preemption's victims are few.** make-room preempted about 31 requests a run at 48 tokens and 34 with the KV preemption alone, against a pool the agents fill; vLLM's own count of every preemption, tuned vLLM's growth preemptions included, is 46 against tuned vLLM's 31. The tokens loaded from the CPU tier beyond the requests' first scheduling, the victims' restores among them, are 117,044 at 48 tokens against tuned vLLM's 212,630 and preempt-resubmit's 273,461.
@@ -686,10 +699,18 @@ The soak ran the arrangement to deploy for 24 hours ([PRODUCTION.md](PRODUCTION.
 
 **Over the 24 hours 1.5% of the replies were over the SLO, and only hour 4, at 5.5%, went over the 5% requirement.** The report's Figure D2 ([Appendix D](REPORT.md#d-failure-drills)). (a) Each hour's share of its replies over the SLO, the requirement dashed and the day's share dotted. (b) The agents' tokens a second by hour, the day's dotted: 9,300 in hour 0, as AIPerf resumes its 14 sessions at once.
 
-| Run | Hours | Calls (accepted, refused, failed) | Turns (failed) | Replies | Over the SLO | Replies p95, ms | Realtime SLI | Background tokens/s | Restarts | Guard pauses |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Voice alone | 2 | 35 (31, 4, 0) | 310 (0) | 395 | the reference | 1,726 | 1.000 | 0 | 0 | 0 |
-| The serving arrangement | 24 | 476 (402, 74, 0) | 4,020 (0) | 5,058 | 74 (1.5%) | 1,828 | 0.996 | 3,529 | 0 | 0 |
+| Measure | Voice alone | The serving arrangement |
+|---|---:|---:|
+| Hours | 2 | 24 |
+| Calls (accepted, refused, failed) | 35 (31, 4, 0) | 476 (402, 74, 0) |
+| Turns (failed) | 310 (0) | 4,020 (0) |
+| Replies | 395 | 5,058 |
+| Over the SLO | the reference | 74 (1.5%) |
+| Replies p95, ms | 1,726 | 1,828 |
+| Realtime SLI | 1.000 | 0.996 |
+| Background tokens/s | 0 | 3,529 |
+| Restarts | 0 | 0 |
+| Guard pauses | 0 | 0 |
 
 - **The calls kept the SLO over the day.** 74 of the 5,058 replies were over the SLO, 1.5%, inside the contract's 5% ([SLO.md](SLO.md)). The worst hour, hour 4, put 14 of 254 over (5.5%); 30 calls arrived in it, and 9 of them got no agent, both lines being busy. Of the day's 476 calls the worker answered 402 and 74 got no agent: 72 with both lines busy and 2 while a line was free (below); none failed, dropped or was cut, and none of the 4,020 turns failed.
 - **Two calls found no agent with a line free.** Calls 262 and 386 came 1.0 and 1.2 s after a call's process had exited, while the last status the worker had sent LiveKit was still full ([`worker-events.tsv`](../benchmarks/results/2026-10-28-soak/worker-events.tsv)), so the server dispatched them to no worker, and it dispatches a room once; the worker sent `available` 1.5 and 0.8 s after they came. LiveKit Agents 1.8.8 reads the worker's load every 0.5 s and sends the server its status only every 2.5 s: over the day LiveKit learned of a line freed from a full worker 1.6 s after the call's process exited, at the median of the 173 such exits, and 3.0 s at most. The soak counts 386 as `no_agent` and 262 as refused for capacity, as its reason reads the worker's status file, which showed both lines busy when its caller gave up 15 s later.
