@@ -28,8 +28,9 @@ CHECK = REPO / "deploy/bin/serving-check"
 BOX = json.loads((REPO / "deploy/phastform/serving.json").read_text())
 """The box's serving profile, rendered (deploy/profiles/rtx-5060-ti-serve.toml)."""
 SWITCHES = BOX["engine"]["make_room"]
-"""The switches it serves: 2 preemptions a step, the budget cap with a 48-token window, no reserve, and the calls'
-prefixes retained within 3,584 tokens for 30 s."""
+"""The switches it serves: 2 preemptions a step, the budget cap with a 48-token window, no reserve, the agents'
+reservations taken and their decodes held from a call's first 16 tokens, the calls' prefixes retained within 3,584
+tokens for 30 s, and a 400 ms hold for an announced turn."""
 SUITE_SWITCHES = SWITCHES | {"retain_tokens": 8 * T.BLOCK}
 """The same on the suite's pools of 48 and 64 blocks, which hold a request of max_model_len (24 blocks) beside a
 retention of 8 blocks, not of the box's 224."""

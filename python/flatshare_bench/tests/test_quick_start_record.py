@@ -1,4 +1,4 @@
-"""The quick start on Gray (benchmarks/results/2026-11-02-quick-start): the README's table against table.py, its
+"""The quick start on Phastform (benchmarks/results/2026-11-02-quick-start): the README's table against table.py, its
 findings against the probe's logs, and the commands that ran against the repository README's quick start."""
 
 from __future__ import annotations

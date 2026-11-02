@@ -176,16 +176,18 @@ To run the probe again on make-room, wait 30 s first: the engine keeps the last 
 long (`retain_s`), and the probe sizes its load for an empty pool.
 
 <!-- quick-start probe -->
-The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On Gray, with the card's own KV pool, it
-was 2,217–2,236 ms on stock vLLM and 300–317 ms with make-room, in four runs each
+The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On Phastform, with the card's own KV
+pool, it was 1,545–1,560 ms on stock vLLM and 173–211 ms with make-room, in four runs each
 ([stock](benchmarks/results/2026-11-02-quick-start/stock-kv.log),
 [make-room](benchmarks/results/2026-11-02-quick-start/make-room-kv.log),
 [the record](benchmarks/results/2026-11-02-quick-start/README.md)).
 <!-- /quick-start probe -->
 
 Both ran at the serving profile's step cap, 256 tokens a step without a per-request threshold, and make-room in the
-configuration to deploy: the KV preemption at 2 a step and the budget cap with a 48-token window, no reserve. `probe.py`
-sizes its requests from the engine's KV pool and context length, so the check runs unchanged on another card.
+configuration to deploy: the KV preemption at 2 a step, the budget cap with a 48-token window and no reserve, the agents'
+reservations taken and their decodes held from a voice reply's first 16 tokens, and the calls' prefixes kept within
+3,584 tokens for 30 s, with a 400 ms hold for an announced turn. `probe.py` sizes its requests from the engine's KV pool
+and context length, so the check runs unchanged on another card.
 
 To serve beside agents, send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV
 tier from [`engine.yaml`](deploy/phastform/engine.yaml), which holds the box's 32k context and fixed KV pool too. The
