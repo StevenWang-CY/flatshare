@@ -1,0 +1,10 @@
+venv=~/flatshare/venvs/engine
+--attention-backend
+TRITON_ATTN
+--compilation-config.cudagraph_mode
+FULL
+--additional-config.make_room.retain_tokens
+3584
+--scheduler-cls
+opt_jit.AsyncScheduler
+OPT_JIT_MARGIN_MS=6

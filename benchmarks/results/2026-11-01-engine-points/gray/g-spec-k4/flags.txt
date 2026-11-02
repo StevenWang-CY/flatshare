@@ -1,0 +1,11 @@
+venv=~/flatshare/venvs/engine
+--additional-config.make_room.retain_tokens
+3584
+--speculative-config.method
+eagle3
+--speculative-config.model
+taobao-mnn/Qwen3-4B-Instruct-2507-Eagle3
+--kv-cache-memory
+5517000000
+--speculative-config.num_speculative_tokens
+4
