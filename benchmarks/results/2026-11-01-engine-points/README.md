@@ -8,18 +8,20 @@ rounds measure the result in the whole pipeline.
 ## What was adopted
 
 <!-- table.py adopted -->
-| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | Later tokens, ms each | Agents' tokens/s |
-|---|---|---:|---:|---:|---:|---:|---:|
-| phastform | v1.14's serving profile (asynchronous scheduling) | 2 | 175 (170-180) | 354 (339-368) | 408 (407-409) | 13.7 | 2,718 |
-| phastform | + the calls' prefixes kept on the GPU (retention) | 2 | 122 (118-127) | 230 (223-236) | 354 (349-359) | 13.9 | 2,761 |
-| phastform | + the next batch just in time (30 ms margin) | 2 | 98 (94-101) | 185 (170-200) | 323 (320-326) | 13.8 | 2,675 |
-| phastform | + each turn announced (250 ms ahead, held 400 ms) | 2 | 64 (63-65) | 90 (83-96) | 258 (256-259) | 13.7 | 2,637 |
-| phastform | + the turn announced and just in time | 1 | 63 | 98 | 257 | 13.6 | 2,628 |
-| phastform | + the calls taking the agents' reservations | 1 | 64 | 94 | 260 | 13.6 | 2,601 |
-| gray | v1.14's serving profile (asynchronous scheduling) | 2 | 182 (179-184) | 308 (299-316) | 400 (396-403) | 13.8 | 2,682 |
-| gray | + the calls' prefixes kept on the GPU (retention) | 2 | 139 (136-142) | 256 (254-259) | 374 (373-376) | 13.8 | 2,686 |
-| gray | + each turn announced (250 ms ahead, held 400 ms) | 2 | 72 (71-74) | 110 (109-110) | 270 (269-270) | 13.7 | 2,606 |
-| gray | + the turn announced and just in time | 2 | 72 (71-72) | 111 (108-114) | 270 (270-270) | 13.5 | 2,584 |
+| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | p95 | Later tokens, ms each | Agents' tokens/s |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| phastform | v1.14's serving profile (asynchronous scheduling) | 2 | 175 (170-180) | 354 (339-368) | 408 (407-409) | 597 (594-600) | 13.7 | 2,718 |
+| phastform | + the calls' prefixes kept on the GPU (retention) | 2 | 122 (118-127) | 230 (223-236) | 354 (349-359) | 502 (495-508) | 13.9 | 2,761 |
+| phastform | + the next batch just in time (30 ms margin) | 2 | 98 (94-101) | 185 (170-200) | 323 (320-326) | 449 (448-450) | 13.8 | 2,675 |
+| phastform | + each turn announced (250 ms ahead, held 400 ms) | 2 | 64 (63-65) | 90 (83-96) | 258 (256-259) | 394 (388-401) | 13.7 | 2,637 |
+| phastform | + the turn announced and just in time | 1 | 63 | 98 | 257 | 403 | 13.6 | 2,628 |
+| phastform | + the calls taking the agents' reservations | 2 | 64 (64-64) | 92 (91-94) | 261 (260-262) | 392 (391-392) | 13.6 | 2,625 |
+| phastform | + the agents' decodes held from a call's first 16 tokens | 2 | 64 (63-65) | 94 (92-95) | 258 (256-261) | 285 (284-286) | 13.8 | 2,615 |
+| gray | v1.14's serving profile (asynchronous scheduling) | 2 | 182 (179-184) | 308 (299-316) | 400 (396-403) | 608 (591-624) | 13.8 | 2,682 |
+| gray | + the calls' prefixes kept on the GPU (retention) | 2 | 139 (136-142) | 256 (254-259) | 374 (373-376) | 502 (497-507) | 13.8 | 2,686 |
+| gray | + each turn announced (250 ms ahead, held 400 ms) | 2 | 72 (71-74) | 110 (109-110) | 270 (269-270) | 405 (404-406) | 13.7 | 2,606 |
+| gray | + the turn announced and just in time | 2 | 72 (71-72) | 111 (108-114) | 270 (270-270) | 438 (413-462) | 13.5 | 2,584 |
+| gray | + the calls taking the agents' reservations | 1 | 71 | 115 | 269 | 408 | 13.5 | 2,566 |
 <!-- /table.py adopted -->
 
 - **The calls' prefixes kept on the GPU** (`make_room.retain_tokens 3584`, `retain_s 30`): a call's next turn finds
@@ -36,34 +38,39 @@ rounds measure the result in the whole pipeline.
   4% of their tokens a second.
 - **The calls taking the agents' reservations** (`make_room.take_reservations`): see [The stalls](#the-stalls). It
   costs the calls nothing and the agents 1%, within the replicates' spread.
+- **The agents' decodes held from a call's first 16 tokens** (`make_room.decode_hold_tokens 16`): a step that also
+  decodes an agent at 15,000 tokens of context takes 18-20 ms against 13 alone, and in one turn in twenty such steps
+  added 108-135 ms to the first sentence. With the agents' decodes sitting out those steps, the 16th token's p95 falls
+  from 392 to 285 ms, its median and the agents unchanged.
 
 With everything adopted, a call's first token is 64 ms at the median and 94 ms at p95 on Phastform, against v1.14's 175
-and 354 ms, and its first sentence is 148 ms earlier.
+and 354 ms, and its first sentence comes at 258 ms and 285 ms at p95, against 408 and 597.
 
 ## What was not
 
 <!-- table.py alternatives -->
-| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | Later tokens, ms each | Agents' tokens/s |
-|---|---|---:|---:|---:|---:|---:|---:|
-| phastform | synchronous scheduling | 2 | 114 (112-117) | 210 (197-224) | 380 (380-381) | 16.5 | 2,374 |
-| phastform | synchronous scheduling, retention | 2 | 87 (85-89) | 164 (151-177) | 372 (369-376) | 16.6 | 2,465 |
-| phastform | Triton attention, full CUDA graphs | 1 | 189 | 333 | 433 | 13.2 | 2,301 |
-| phastform | Triton, full graphs, synchronous | 1 | 139 | 265 | 458 | 16.2 | 1,950 |
-| phastform | Triton, full graphs, retention, just in time (6 ms) | 1 | 93 | 177 | 351 | 13.0 | 2,227 |
-| phastform | Triton, full graphs, FP8 KV | 1 | 283 | 539 | 709 | 17.3 | 1,609 |
-| phastform | FlashInfer, FP8 KV (#64165's wait) | 1 | 244 | 397 | 511 | 14.9 | 2,084 |
-| phastform | retention, two API servers | 1 | 121 | 234 | 364 | 13.9 | 2,792 |
-| gray | synchronous scheduling | 2 | 130 (122-138) | 211 (211-211) | 427 (426-428) | 18.0 | 2,193 |
-| gray | synchronous scheduling, retention | 2 | 93 (91-95) | 181 (171-191) | 376 (375-378) | 18.1 | 2,208 |
-| gray | Triton attention, full CUDA graphs | 1 | 224 | 372 | 453 | 13.1 | 2,086 |
-| gray | Triton, full graphs, synchronous | 1 | 133 | 250 | 459 | 17.8 | 1,863 |
-| gray | Triton, full graphs, FP8 KV | 1 | 245 | 581 | 725 | 24.9 | 1,531 |
-| gray | FlashInfer, FP8 KV (#64165's wait) | 1 | 250 | 431 | 484 | 14.0 | 2,061 |
-| gray | retention, EAGLE-3 with 3 drafts | 1 | 219 | 390 | 329 | 10.8 | 2,576 |
-| gray | retention, EAGLE-3 with 2 drafts | 1 | 226 | 374 | 342 | 8.4 | 2,587 |
-| gray | retention, EAGLE-3 with 3 drafts, short loads recomputed | 1 | 160 | 261 | 298 | 9.8 | 2,618 |
-| gray | retention, EAGLE-3 with 2 drafts, short loads recomputed | 1 | 160 | 293 | 303 | 8.3 | 2,578 |
-| gray | the turn announced and just in time, EAGLE-3 with 2 drafts, short loads recomputed | 2 | 76 (75-76) | 137 (136-138) | 171 (166-176) | 7.6 | 2,572 |
+| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | p95 | Later tokens, ms each | Agents' tokens/s |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| phastform | synchronous scheduling | 2 | 114 (112-117) | 210 (197-224) | 380 (380-381) | 562 (553-572) | 16.5 | 2,374 |
+| phastform | synchronous scheduling, retention | 2 | 87 (85-89) | 164 (151-177) | 372 (369-376) | 480 (478-483) | 16.6 | 2,465 |
+| phastform | Triton attention, full CUDA graphs | 1 | 189 | 333 | 433 | 768 | 13.2 | 2,301 |
+| phastform | Triton, full graphs, synchronous | 1 | 139 | 265 | 458 | 775 | 16.2 | 1,950 |
+| phastform | Triton, full graphs, retention, just in time (6 ms) | 1 | 93 | 177 | 351 | 616 | 13.0 | 2,227 |
+| phastform | Triton, full graphs, FP8 KV | 1 | 283 | 539 | 709 | 1088 | 17.3 | 1,609 |
+| phastform | FlashInfer, FP8 KV (#64165's wait) | 1 | 244 | 397 | 511 | 690 | 14.9 | 2,084 |
+| phastform | retention, two API servers | 1 | 121 | 234 | 364 | 527 | 13.9 | 2,792 |
+| gray | synchronous scheduling | 2 | 130 (122-138) | 211 (211-211) | 427 (426-428) | 586 (584-588) | 18.0 | 2,193 |
+| gray | synchronous scheduling, retention | 2 | 93 (91-95) | 181 (171-191) | 376 (375-378) | 534 (526-541) | 18.1 | 2,208 |
+| gray | Triton attention, full CUDA graphs | 1 | 224 | 372 | 453 | 818 | 13.1 | 2,086 |
+| gray | Triton, full graphs, synchronous | 1 | 133 | 250 | 459 | 817 | 17.8 | 1,863 |
+| gray | Triton, full graphs, FP8 KV | 1 | 245 | 581 | 725 | 1151 | 24.9 | 1,531 |
+| gray | FlashInfer, FP8 KV (#64165's wait) | 1 | 250 | 431 | 484 | 683 | 14.0 | 2,061 |
+| gray | retention, EAGLE-3 with 3 drafts | 1 | 219 | 390 | 329 | 572 | 10.8 | 2,576 |
+| gray | retention, EAGLE-3 with 2 drafts | 1 | 226 | 374 | 342 | 607 | 8.4 | 2,587 |
+| gray | retention, EAGLE-3 with 3 drafts, short loads recomputed | 1 | 160 | 261 | 298 | 453 | 9.8 | 2,618 |
+| gray | retention, EAGLE-3 with 2 drafts, short loads recomputed | 1 | 160 | 293 | 303 | 587 | 8.3 | 2,578 |
+| gray | the turn announced and just in time, EAGLE-3 with 2 drafts, short loads recomputed | 2 | 76 (75-76) | 137 (136-138) | 171 (166-176) | 387 (381-393) | 7.6 | 2,572 |
+| gray | the turn announced, just in time, the reservations taken, EAGLE-3 with 2 drafts, short loads recomputed | 1 | 76 | 115 | 191 | 368 | 8.9 | 2,512 |
 <!-- /table.py alternatives -->
 
 - **Synchronous scheduling** gives the first token earlier, but each later token takes 16.5 to 18 ms instead of 13.7,
@@ -84,14 +91,14 @@ and 354 ms, and its first sentence is 148 ms earlier.
 ## Controls
 
 <!-- table.py controls -->
-| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | Later tokens, ms each | Agents' tokens/s |
-|---|---|---:|---:|---:|---:|---:|---:|
-| phastform | retention, the turns announced but nothing held | 1 | 119 | 218 | 336 | 13.8 | 2,692 |
-| phastform | retention, the hint scheduler with no turn announced | 1 | 126 | 253 | 371 | 13.9 | 2,763 |
-| phastform | retention, the agents' reservations taken, no turn announced | 1 | 121 | 224 | 360 | 13.9 | 2,746 |
-| gray | retention, the turns announced but nothing held | 1 | 140 | 239 | 356 | 13.8 | 2,646 |
-| gray | retention, the hint scheduler with no turn announced | 1 | 148 | 279 | 406 | 13.9 | 2,660 |
-| gray | retention, short loads recomputed, no speculation | 1 | 142 | 251 | 384 | 13.8 | 2,669 |
+| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | p95 | Later tokens, ms each | Agents' tokens/s |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| phastform | retention, the turns announced but nothing held | 1 | 119 | 218 | 336 | 485 | 13.8 | 2,692 |
+| phastform | retention, the hint scheduler with no turn announced | 1 | 126 | 253 | 371 | 540 | 13.9 | 2,763 |
+| phastform | retention, the agents' reservations taken, no turn announced | 1 | 121 | 224 | 360 | 484 | 13.9 | 2,746 |
+| gray | retention, the turns announced but nothing held | 1 | 140 | 239 | 356 | 516 | 13.8 | 2,646 |
+| gray | retention, the hint scheduler with no turn announced | 1 | 148 | 279 | 406 | 553 | 13.9 | 2,660 |
+| gray | retention, short loads recomputed, no speculation | 1 | 142 | 251 | 384 | 501 | 13.8 | 2,669 |
 <!-- /table.py controls -->
 
 The turns announced with nothing held keep only the prefix they warm (the load stage), and the hint's scheduler with no
@@ -101,20 +108,20 @@ as retention alone.
 ## With fresh agent prompts
 
 <!-- table.py fresh -->
-| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | Later tokens, ms each | Agents' tokens/s |
-|---|---|---:|---:|---:|---:|---:|---:|
-| phastform | v1.14's serving profile | 1 | 173 | 269 | 390 | 13.7 | 3,082 |
-| phastform | retention | 1 | 131 | 259 | 378 | 13.8 | 3,101 |
-| phastform | retention, just in time | 1 | 95 | 197 | 324 | 13.7 | 3,063 |
-| phastform | retention, each turn announced | 1 | 63 | 86 | 256 | 13.6 | 2,968 |
-| phastform | synchronous scheduling | 1 | 100 | 164 | 371 | 16.6 | 2,679 |
-| phastform | synchronous scheduling, retention | 1 | 90 | 150 | 367 | 16.6 | 2,687 |
-| gray | v1.14's serving profile | 1 | 174 | 268 | 392 | 13.8 | 3,010 |
-| gray | retention | 1 | 149 | 269 | 381 | 13.8 | 3,032 |
-| gray | retention, each turn announced | 1 | 74 | 102 | 267 | 13.6 | 2,908 |
-| gray | synchronous scheduling | 1 | 104 | 167 | 395 | 18.0 | 2,520 |
-| gray | synchronous scheduling, retention | 1 | 110 | 171 | 410 | 17.9 | 2,521 |
-| gray | retention, EAGLE-3 with 3 drafts | 1 | 208 | 337 | 308 | 10.6 | 2,974 |
+| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | p95 | Later tokens, ms each | Agents' tokens/s |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| phastform | v1.14's serving profile | 1 | 173 | 269 | 390 | 547 | 13.7 | 3,082 |
+| phastform | retention | 1 | 131 | 259 | 378 | 481 | 13.8 | 3,101 |
+| phastform | retention, just in time | 1 | 95 | 197 | 324 | 431 | 13.7 | 3,063 |
+| phastform | retention, each turn announced | 1 | 63 | 86 | 256 | 347 | 13.6 | 2,968 |
+| phastform | synchronous scheduling | 1 | 100 | 164 | 371 | 477 | 16.6 | 2,679 |
+| phastform | synchronous scheduling, retention | 1 | 90 | 150 | 367 | 487 | 16.6 | 2,687 |
+| gray | v1.14's serving profile | 1 | 174 | 268 | 392 | 541 | 13.8 | 3,010 |
+| gray | retention | 1 | 149 | 269 | 381 | 506 | 13.8 | 3,032 |
+| gray | retention, each turn announced | 1 | 74 | 102 | 267 | 392 | 13.6 | 2,908 |
+| gray | synchronous scheduling | 1 | 104 | 167 | 395 | 545 | 18.0 | 2,520 |
+| gray | synchronous scheduling, retention | 1 | 110 | 171 | 410 | 552 | 17.9 | 2,521 |
+| gray | retention, EAGLE-3 with 3 drafts | 1 | 208 | 337 | 308 | 531 | 10.6 | 2,974 |
 <!-- /table.py fresh -->
 
 The same with agents whose every turn is a new prompt, as E2's discriminating replay computes about 95% of its prompt

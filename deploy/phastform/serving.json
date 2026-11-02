@@ -7,9 +7,9 @@
     "scheduler_cls": "flatshare_make_room_serve.AsyncScheduler",
     "scheduler_module": {
       "name": "flatshare_make_room_scheduler",
-      "sha256": "32db2c089548974d0c23b4bdbce624c64a838f9aef0fa9f49d239c1c2b9dc8b3"
+      "sha256": "7fda82b068c057a1ede8ce6ad09f5a25fafa6d7c0f5e21125dbddfce1a57cf12"
     },
-    "serve_module_sha256": "74d352a92a3525bc39fc3995e070054bcb1797b7fadfcb4752e9f84073d48fea",
+    "serve_module_sha256": "c4e9b6d3310ec8e081d1a4c0f18abc0a2369b8c861c5526e92f4dac15d5bbfaa",
     "model": {
       "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
       "revision": "8591804019c8b22094c3b5b4454e0edc05dffc98",
@@ -46,6 +46,7 @@
       "budget_cap_tokens": 48,
       "reserve_tokens": 0,
       "take_reservations": true,
+      "decode_hold_tokens": 16,
       "retain_tokens": 3584,
       "retain_s": 30,
       "hint_hold_ms": 400
@@ -64,7 +65,7 @@
   "patches": {
     "63350.patch": "98b96f663fbff69a069a0dce64492e02618d595c3bfd2f5df57ee3ad093cf09f",
     "63351.patch": "8d227e79fc55c596e7e1de63d901f015d8d79b71ce6b0472e950959ae4577ca5",
-    "variant.patch": "d26d1cafef684e7b64630736364c7aeae121eed5f52d3219d5f580a962699ffe"
+    "variant.patch": "e4e1188f17672700764cec0dab03087c80572ac38de4210ceedc79716f4f1460"
   },
   "voice": {
     "mode": "serve",

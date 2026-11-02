@@ -87,12 +87,20 @@ def block(stock_log: Path, make_room_log: Path, readme: Path = README) -> str:
         return Path(os.path.relpath(Path(path).resolve(), base)).as_posix()
 
     text = (
-        "The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On the box, with the "
+        f"The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On {host(record)}, with the "
         f"card's own KV pool, it was {span(stock)} ms on stock vLLM and {span(make_room)} ms with make-room, in "
         f"{runs(len(stock))} each ([stock]({link(stock_log)}), [make-room]({link(make_room_log)}), "
         f"[the record]({link(record / 'README.md')}))."
     )
     return wrap(text)
+
+
+def host(record: Path) -> str:
+    """The host a record's runs ran on, as its environment.txt's first line names it (``box: NAME; ...``), or the box
+    where it names none."""
+    environment = Path(record) / "environment.txt"
+    found = re.match(r"box: ([^;\n]+);", environment.read_text()) if environment.is_file() else None
+    return found[1] if found else "the box"
 
 
 def wrap(text: str) -> str:

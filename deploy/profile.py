@@ -868,6 +868,7 @@ SERVING_KEYS = {
     "budget_cap_tokens": int,
     "reserve_tokens": int,
     "take_reservations": bool,
+    "decode_hold_tokens": int,
     "retain_tokens": int,
     "retain_s": int,
     "hint_hold_ms": int,
@@ -941,6 +942,10 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
         raise ProfileError(
             f"{name}: take_reservations needs budget_cap, which holds the lower priorities' prefill back meanwhile"
         )
+    if serve["decode_hold_tokens"] < 0:
+        raise ProfileError(f"{name}: decode_hold_tokens must be 0 (off) or more")
+    if serve["decode_hold_tokens"] and not serve["budget_cap"]:
+        raise ProfileError(f"{name}: decode_hold_tokens needs budget_cap, whose first tokens it extends to decodes")
     if serve["hint_hold_ms"] < 0:
         raise ProfileError(f"{name}: hint_hold_ms must be 0 (off) or more")
     if serve["turn_hints"] and not serve["hint_hold_ms"]:
@@ -1002,6 +1007,7 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
                     "budget_cap_tokens",
                     "reserve_tokens",
                     "take_reservations",
+                    "decode_hold_tokens",
                     "retain_tokens",
                     "retain_s",
                     "hint_hold_ms",

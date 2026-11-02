@@ -1,4 +1,4 @@
-"""The quick start on the box (benchmarks/results/2026-10-29-quick-start): the README's table against table.py, its
+"""The quick start on Gray (benchmarks/results/2026-11-02-quick-start): the README's table against table.py, its
 findings against the probe's logs, and the commands that ran against the repository README's quick start."""
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from pathlib import Path
 from types import ModuleType
 
 REPO = Path(__file__).resolve().parents[3]
-RECORD = REPO / "benchmarks" / "results" / "2026-10-29-quick-start"
+RECORD = REPO / "benchmarks" / "results" / "2026-11-02-quick-start"
 MAKE_ROOM = "PYTHONPATH=~/make-room vllm serve"
 SWITCHES = ("--scheduler-cls", "--additional-config.")
 """make-room's arguments, each followed by its value."""

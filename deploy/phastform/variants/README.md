@@ -88,7 +88,16 @@ E2 does not run it: no arm names the variant, and `flatshare-bench e2 run` check
 
 The frozen box schedules asynchronously (vLLM's default here), so `pr54530` and `make-room` load the stock `AsyncScheduler` over their patched `Scheduler`: with and without each change differ by the change alone. `python/flatshare_vllm/tests/test_build.py` builds both modules from vLLM v0.32.0's source and checks that; `test_make_room.py` checks `make-room`'s behavior on the real scheduler, and `test_trace.py` that it schedules as the pull requests' own patches do, step for step.
 
-`make-room`'s three switches are keys of vLLM's `--additional-config`, read once at engine start: `make_room.max_preemptions_per_step` (0 is off), `make_room.budget_cap` (with `make_room.budget_cap_tokens`, 16) and `make_room.reserve_tokens` (0 is off). Its `flatshare-engine.conf` sets arm 9's values, and an arm file ablates one with engine flags, which come after the variant's and win (vLLM warns of the duplicate key): `flags = ["--additional-config.make_room.reserve_tokens", "0"]`. The engine reports them under `additional_config` in `/server_info`, so each point's `engine.json` records them; `flatshare-bench e2 run` checks them: the engine's `additional_config` must be exactly what the variant's and the arm's flags build, and its scheduler class the one the variant loads.
+`make-room`'s switches are keys of vLLM's `--additional-config`, read once at engine start: `make_room.max_preemptions_per_step` (0 is off), `make_room.budget_cap` (with `make_room.budget_cap_tokens`, 16) and `make_room.reserve_tokens` (0 is off). Its `flatshare-engine.conf` sets arm 9's values, and an arm file ablates one with engine flags, which come after the variant's and win (vLLM warns of the duplicate key): `flags = ["--additional-config.make_room.reserve_tokens", "0"]`. The engine reports them under `additional_config` in `/server_info`, so each point's `engine.json` records them; `flatshare-bench e2 run` checks them: the engine's `additional_config` must be exactly what the variant's and the arm's flags build, and its scheduler class the one the variant loads.
+
+The variant's own switches, each off by default:
+- `make_room.retain_tokens` and `retain_s` (30 by default): the calls' prefixes kept on the GPU between their turns;
+- `make_room.take_reservations`: a request leaves free only the block reservations of its own priority or a higher
+  one; it needs the budget cap;
+- `make_room.decode_hold_tokens`: lower-priority decodes sit out the steps of a running request's first this many
+  output tokens; it needs the budget cap;
+- `make_room.recompute_tokens`: a realtime request's short load from the CPU tier is recomputed instead;
+- `make_room.hint_hold_ms`: a call's announced turn holds lower-priority prefill back that long.
 
 The engine start fails on an unknown `make_room` key or a bad value (`budget_cap` takes true or false in any case, or 1 or 0; the others an integer, `budget_cap_tokens` at least 1), and on a switch under a policy other than priority; for an encoder-decoder model the room counts a request's cross-attention blocks. `build.py` refuses an installed vLLM other than 0.32.0. The pull requests name the same switches as engine flags:
 
@@ -97,6 +106,11 @@ The engine start fails on an unknown `make_room` key or a bad value (`budget_cap
 | `make_room.max_preemptions_per_step` | `--max-priority-preemptions-per-step` ([#63350](https://github.com/vllm-project/vllm/pull/63350)) |
 | `make_room.budget_cap`, `make_room.budget_cap_tokens` | `--priority-prefill-budget-cap`, `--priority-prefill-budget-cap-tokens` ([#63351](https://github.com/vllm-project/vllm/pull/63351)) |
 | `make_room.reserve_tokens` | none: the reserve is the variant's only |
+| `make_room.retain_tokens`, `make_room.retain_s` | none: the variant's only |
+| `make_room.take_reservations` | none: the variant's only |
+| `make_room.decode_hold_tokens` | none: the variant's only |
+| `make_room.recompute_tokens` | none: the variant's only |
+| `make_room.hint_hold_ms` | none: the variant's only |
 
 ## A card for the agents alone
 

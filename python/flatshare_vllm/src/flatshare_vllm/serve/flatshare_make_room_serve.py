@@ -121,6 +121,7 @@ def effective(scheduler: Any) -> dict[str, Any]:
             "reserve_tokens": switches["reserve_tokens"],
             "reserve_blocks": scheduler.reserve_blocks,
             "take_reservations": scheduler.take_reservations,
+            "decode_hold_tokens": scheduler.decode_hold_tokens,
             "retain_tokens": switches["retain_tokens"],
             "retain_blocks": scheduler.retain_blocks,
             "retain_s": scheduler.retain_s,
