@@ -364,9 +364,9 @@ ENGINE_ROWS = {
     "+ the next batch just in time": "r0j-grow",
     "retention + each turn announced": "r0h-grow",
     "+ just in time too": "r0hj-grow",
-    "+ the agents' reservations taken": "r0hjt-grow",
+    "+ the agents' reservations taken: the profile": "r0hjt-grow",
     "+ their decodes held for 16 tokens": "r0hjtd-grow",
-    "+ held for 48 tokens, the window: the profile": "r0hjtd48-grow",
+    "+ held for 48 tokens, the window": "r0hjtd48-grow",
 }
 """Table 9's rows (§6.10), by their first cell, and the engine points' arm each reports, on Phastform."""
 
@@ -393,7 +393,7 @@ def engine_row(arm: str) -> dict[str, float]:
 
 def test_the_reports_engine_table_and_its_sums_are_the_engine_points_record() -> None:
     # Table 9 (§6.10), cell by cell, from the engine points' runs on Phastform, its first row with the unit; and the
-    # sums §6.10 draws from its first and last rows.
+    # sums §6.10 draws from its first row, the profile's and the last.
     rows = rows_of(REPORT, "| Configuration | First token p50 / p95 |")
     assert [label for label, *_ in rows] == list(ENGINE_ROWS)
     for k, (label, first, sixteenth, last, agents) in enumerate(rows):
@@ -402,13 +402,15 @@ def test_the_reports_engine_table_and_its_sums_are_the_engine_points_record() ->
         assert sixteenth == f"{m['16th p50']:,.0f} / {m['16th p95']:,.0f}{unit}", label
         assert last == f"{m['48th p95']:,.0f}{unit}", label
         assert agents == f"{m['agents']:,.0f}", label
-    before, after = engine_row("a0-grow"), engine_row("r0hjtd48-grow")
+    before, after = engine_row("a0-grow"), engine_row("r0hjt-grow")
+    held = engine_row("r0hjtd48-grow")
     prose = passage(REPORT, "Table 9 gives the engine points", "**Table 9.")
     for phrase in (
         f"from {before['first p95']:,.0f} to {after['first p95']:,.0f} ms at p95",
         f"from {before['48th p95']:,.0f} to {after['48th p95']:,.0f} ms",
         f"give up {1 - after['agents'] / before['agents']:.0%} of their token rate",
         f"({after['agents']:,.0f} against {before['agents']:,.0f} tokens a second)",
+        f"would take the 48th token to {held['48th p95']:,.0f} ms",
     ):
         assert phrase in prose, phrase
 

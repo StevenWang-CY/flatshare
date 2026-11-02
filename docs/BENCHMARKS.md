@@ -475,13 +475,13 @@ RG's five rounds (agent seeds 21–25, Phastform and Gray in turn, below) then r
 
 ## What do the serving engine's additions do to a voice turn?
 
-**Provenance:** the engine points, 2026-11-01 and 02; OR, 2026-11-02.
+**Provenance:** the engine points, 2026-11-01 and 02; OR, 2026-11-02; OS, 2026-11-02.
 
 **The engine points** ran the serving profile's engine as a process of its own on Phastform and on Gray, two calls of
 the voice agent's turns beside 12 closed-loop coding agents for 240 s, the scheduler traced step by step
 ([the record](../benchmarks/results/2026-11-01-engine-points/README.md), whose `table.py` gives every point, the
 alternatives not adopted and the controls among them). Each addition ran against the point before it, two runs a row
-but the two that ran once:
+but the one that ran once:
 
 | Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | p95 | Later tokens, ms each | Agents' tokens/s |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
@@ -491,15 +491,11 @@ but the two that ran once:
 | phastform | + each turn announced (250 ms ahead, held 400 ms) | 2 | 64 (63-65) | 90 (83-96) | 258 (256-259) | 394 (388-401) | 13.7 | 2,637 |
 | phastform | + the turn announced and just in time | 1 | 63 | 98 | 257 | 403 | 13.6 | 2,628 |
 | phastform | + the calls taking the agents' reservations | 2 | 64 (64-64) | 92 (91-94) | 261 (260-262) | 392 (391-392) | 13.6 | 2,625 |
-| phastform | + the agents' decodes held from a call's first 16 tokens | 2 | 64 (63-65) | 94 (92-95) | 258 (256-261) | 285 (284-286) | 13.8 | 2,615 |
-| phastform | the same, the decodes held from a call's first 48 tokens | 2 | 66 (65-66) | 88 (85-92) | 257 (257-257) | 284 (278-291) | 13.4 | 2,604 |
 | gray | v1.14's serving profile (asynchronous scheduling) | 2 | 182 (179-184) | 308 (299-316) | 400 (396-403) | 608 (591-624) | 13.8 | 2,682 |
 | gray | + the calls' prefixes kept on the GPU (retention) | 2 | 139 (136-142) | 256 (254-259) | 374 (373-376) | 502 (497-507) | 13.8 | 2,686 |
 | gray | + each turn announced (250 ms ahead, held 400 ms) | 2 | 72 (71-74) | 110 (109-110) | 270 (269-270) | 405 (404-406) | 13.7 | 2,606 |
 | gray | + the turn announced and just in time | 2 | 72 (71-72) | 111 (108-114) | 270 (270-270) | 438 (413-462) | 13.5 | 2,584 |
 | gray | + the calls taking the agents' reservations | 2 | 71 (71-71) | 106 (96-115) | 268 (266-269) | 402 (395-408) | 13.5 | 2,554 |
-| gray | + the agents' decodes held from a call's first 16 tokens | 1 | 72 | 108 | 268 | 300 | 13.8 | 2,569 |
-| gray | the same, the decodes held from a call's first 48 tokens | 2 | 74 (73-74) | 106 (103-109) | 267 (267-267) | 300 (299-301) | 13.3 | 2,600 |
 
 - **Retention** takes the call's prefix load off its first token: the engine's load stage falls from 69 to 12 ms a
   turn on Phastform, and the first token from 175 to 122 ms at the median.
@@ -510,7 +506,9 @@ but the two that ran once:
 - **The reservations taken** remove the 1.4–4.5 s stalls of three Gray points, at no cost
   ([the stalls](../benchmarks/results/2026-11-01-engine-points/README.md#the-stalls)).
 - **The decode hold**, through the budget cap's 48 tokens, takes the 16th token's p95 from 392 to 284 ms and the
-  48th's, the whole reply, from 998 to 722 ms, the first token and the agents unchanged.
+  48th's, the whole reply, from 998 to 722 ms, the first token and the agents unchanged
+  ([how long it lasts](../benchmarks/results/2026-11-01-engine-points/README.md#how-long-the-hold-lasts)). In the whole
+  pipeline it cost the agents more (OS, below), and the serving profile leaves it off.
 
 **OR's five rounds** (agent seeds 31–35, Phastform and Gray in turn) ran v1.14's configuration to deploy beside the
 same with the first four additions, each round against its own SLO, voice alone with as many callers plus 250 ms
@@ -566,6 +564,30 @@ round a tick and the median a marker. Medians over the rounds below, with their 
   136–139 ms and its first sentence at p95 from 706–787 ms to 557–580 ms.
 - **The agents give up 1.6% of their token rate with two callers, 3.7% with four and 4.9% with six**, at the median of
   each round's pair.
+
+**OS's two rounds** (agent seeds 36 and 37, Phastform then Gray) set the decode hold at 48, and speculative decoding
+on top of it, against the first four additions with two, four and six callers, each round against its own SLO
+([the rounds' record](../benchmarks/results/2026-11-02-opt-rounds/README.md)):
+
+| Scenario | Configuration | Rounds | Replies over the SLO | V2V p95, ms | LLM first token p95 | First sentence p50 | p95 | Agents' tokens/s | Against the first four additions |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 24 agent sessions, 2 callers | The first four additions | 2 | 11 of 118 (9.3%) | 2,048 (2,034–2,061) | 127 (118–135) | 340 (302–378) | 596 (559–634) | 3,034 (2,838–3,231) | – |
+| 24 agent sessions, 2 callers | + the decode hold | 2 | 6 of 118 (5.1%) | 1,939 (1,907–1,972) | 130 (125–135) | 311 (309–312) | 455 (449–461) | 2,897 (2,770–3,024) | -4.4% (-6.4%–-2.4%) |
+| 24 agent sessions, 2 callers | + the hold and speculation | 2 | 1 of 118 (0.8%) | 1,828 (1,825–1,830) | 168 (155–181) | 225 (222–228) | 345 (337–352) | 2,758 (2,566–2,951) | -9.1% (-9.6%–-8.7%) |
+| 24 agent sessions, 4 callers | The first four additions | 2 | 15 of 238 (6.3%) | 2,157 (2,143–2,172) | 142 (129–155) | 331 (323–340) | 606 (580–631) | 2,710 (2,500–2,919) | – |
+| 24 agent sessions, 4 callers | + the decode hold | 2 | 2 of 238 (0.8%) | 1,955 (1,879–2,030) | 138 (138–139) | 304 (292–316) | 433 (419–447) | 2,609 (2,385–2,834) | -3.8% (-4.6%–-2.9%) |
+| 24 agent sessions, 4 callers | + the hold and speculation | 2 | 4 of 238 (1.7%) | 1,915 (1,892–1,938) | 177 (167–186) | 237 (236–238) | 377 (372–382) | 2,568 (2,343–2,793) | -5.3% (-6.3%–-4.3%) |
+| 24 agent sessions, 6 callers | The first four additions | 2 | 29 of 364 (8.0%) | 2,156 (2,118–2,195) | 141 (138–145) | 323 (319–327) | 641 (623–658) | 2,464 (2,294–2,633) | – |
+| 24 agent sessions, 6 callers | + the decode hold | 2 | 8 of 364 (2.2%) | 2,000 (1,985–2,016) | 136 (134–138) | 306 (302–310) | 459 (454–464) | 2,390 (2,272–2,507) | -2.9% (-4.8%–-1.0%) |
+| 24 agent sessions, 6 callers | + the hold and speculation | 2 | 7 of 364 (1.9%) | 1,991 (1,980–2,002) | 172 (161–184) | 235 (230–240) | 371 (357–385) | 2,328 (2,189–2,467) | -5.4% (-6.3%–-4.6%) |
+
+- **The decode hold** put 16 of 720 replies over the SLO against 55, fewer in five of the six rounds and caller counts
+  and as many in the sixth, at 3.8% of the agents' token rate at the median of the six.
+- **Speculative decoding on top** put 12 over against the hold's 16, fewer in three of the six, its first token's p95
+  168–177 ms against 130–138.
+- **Neither is in the serving profile**, by rules stated before the rounds ran: the hold was to cost the agents no more
+  than 3% at the median, and speculative decoding was to have fewer replies over the SLO than the hold in at least five
+  of the six.
 
 <a id="two-cards-rg"></a>
 
