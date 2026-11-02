@@ -42,7 +42,7 @@ preferred-citation:
   authors:
     - family-names: Wang
       given-names: Chuyue
-  version: "1.14"
-  date-published: 2026-11-01
-  url: "https://github.com/StevenWang-CY/flatshare/blob/v1.14/docs/REPORT.md"
+  version: "1.15"
+  date-published: 2026-11-02
+  url: "https://github.com/StevenWang-CY/flatshare/blob/v1.15/docs/REPORT.md"
   repository-code: "https://github.com/StevenWang-CY/flatshare"
