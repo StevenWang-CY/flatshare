@@ -1677,10 +1677,10 @@ two callers, and the 24 sessions beside four and six callers, against each calle
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 16 sessions, tuned vLLM | 2,147 | 3,832 | 3,067 | 2,300 | 2,516 | 2,516 | 2,034 |
 | 16 sessions, the configuration to deploy | 2,038 | 2,419 | 2,122 | 2,050 | 2,021 | 2,050 | 2,034 |
-| 4 callers, voice alone | 1,894 | 1,794 | 1,780 | | | 1,794 | |
-| 4 callers, the configuration to deploy | 2,313 | 2,415 | 2,250 | | | 2,313 | 2,044 |
-| 6 callers, voice alone | 1,885 | 1,885 | 1,878 | | | 1,885 | |
-| 6 callers, the configuration to deploy | 2,392 | 2,360 | 2,468 | | | 2,392 | 2,135 |
+| 4 callers, voice alone | 1,894 | 1,794 | 1,780 | — | — | 1,794 | — |
+| 4 callers, the configuration to deploy | 2,313 | 2,415 | 2,250 | — | — | 2,313 | 2,044 |
+| 6 callers, voice alone | 1,885 | 1,885 | 1,878 | — | — | 1,885 | — |
+| 6 callers, the configuration to deploy | 2,392 | 2,360 | 2,468 | — | — | 2,392 | 2,135 |
 
 **Table B3. Every configuration measured beside the 24 sessions on a single sample of the agents' traces.** Medians over
 each configuration's runs, with the range of the p95 V2V. Voice alone's p95 was 1,767 ms over five runs, so the SLO is
@@ -1730,12 +1730,12 @@ but the policy's twelve ablations.
 | Voice alone | 1,445 | 1,414 | 1,419 | 1,391 | 1,424 | 1,419 |
 | Tuned vLLM, 512-token steps | 4,163 | 4,783 | 4,986 | 5,169 | 5,710 | 4,986 |
 | The configuration to deploy, 512-token steps | 1,663 | 1,658 | 1,611 | 1,634 | 1,609 | 1,634 |
-| Tuned vLLM, 2,048-token steps | 4,036 | 3,289 | | | | 3,663 |
-| The configuration to deploy, 2,048-token steps | 1,810 | 1,843 | | | | 1,826 |
+| Tuned vLLM, 2,048-token steps | 4,036 | 3,289 | — | — | — | 3,663 |
+| The configuration to deploy, 2,048-token steps | 1,810 | 1,843 | — | — | — | 1,826 |
 | Agents' tokens/s, tuned vLLM, 512 | 10,749 | 9,820 | 8,398 | 8,633 | 8,312 | 8,633 |
 | Agents' tokens/s, the configuration to deploy, 512 | 10,125 | 10,851 | 8,025 | 8,651 | 7,922 | 8,651 |
-| Agents' tokens/s, tuned vLLM, 2,048 | 15,082 | 13,990 | | | | 14,536 |
-| Agents' tokens/s, the configuration to deploy, 2,048 | 15,124 | 14,145 | | | | 14,635 |
+| Agents' tokens/s, tuned vLLM, 2,048 | 15,082 | 13,990 | — | — | — | 14,536 |
+| Agents' tokens/s, the configuration to deploy, 2,048 | 15,124 | 14,145 | — | — | — | 14,635 |
 
 ### C. Configurations
 

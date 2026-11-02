@@ -247,7 +247,7 @@ The `[admission]` table sets the admission policy. A key that belongs to other p
 
 | Key | Default | Policies | Meaning |
 |---|---|---|---|
-| `policy` | `"none"` | | `"none"` (every request goes upstream at once), `"static-cap"`, `"token-reservation"`, `"flow-control"`, `"preempt-resubmit"` or `"lifecycle"` |
+| `policy` | `"none"` | — | `"none"` (every request goes upstream at once), `"static-cap"`, `"token-reservation"`, `"flow-control"`, `"preempt-resubmit"` or `"lifecycle"` |
 | `background_max_in_flight` | required | `static-cap` | Background requests in flight at most |
 | `pool_tokens` | 36400 | `token-reservation`; `lifecycle` with `headroom` or `degrade` | The KV pool in tokens; the default is the frozen box's |
 | `reserved_tokens` | required | `token-reservation` | Pool tokens background requests leave free; less than `pool_tokens` |
@@ -450,10 +450,10 @@ An inference succeeds when a client's request gets a 2xx response's first conten
 | `flatshare_gateway_duration_seconds` | `class` | Receipt to the end of the upstream response |
 | `flatshare_gateway_streams_active` | `class` | Responses being relayed |
 | `flatshare_gateway_in_flight` | `class` | Inference requests past the intake and not yet ended: reading their bodies, waiting at the admission point or relayed ([Bounds](#bounds)) |
-| `flatshare_gateway_buffered_body_bytes` | | Bytes of request bodies the gateway holds, which `max_buffered_body_bytes` bounds |
-| `flatshare_gateway_predecessor_in_flight` | | A reload's predecessor's requests in flight, which the gateway counts with its own until the predecessor exits; 0 otherwise |
+| `flatshare_gateway_buffered_body_bytes` | — | Bytes of request bodies the gateway holds, which `max_buffered_body_bytes` bounds |
+| `flatshare_gateway_predecessor_in_flight` | — | A reload's predecessor's requests in flight, which the gateway counts with its own until the predecessor exits; 0 otherwise |
 | `flatshare_gateway_sanitized_total` | `field` | Inputs removed because clients may not set them |
-| `flatshare_gateway_class_clamped_total` | | Requests whose class was stricter than their tenant's `max_class` |
+| `flatshare_gateway_class_clamped_total` | — | Requests whose class was stricter than their tenant's `max_class` |
 | `flatshare_gateway_upstream_errors_total` | `kind` | `connect`, `request`, `timeout` (note 3), `body` |
 | `flatshare_gateway_error_events_total` | `class`, `type` | Event streams that got an error event before their abort, by its type (note 4) |
 | `flatshare_gateway_events_total` | `type`, `source`, `duplicate` | Lifecycle events received |
@@ -467,15 +467,15 @@ An inference succeeds when a client's request gets a 2xx response's first conten
 | `flatshare_gateway_admission_deferred_total` | `reason` | Background requests the lifecycle policy deferred, by what held them back when they arrived: `headroom` or `critical` (note 7) |
 | `flatshare_gateway_admission_deferral_seconds` | `reason` | Arrival to admission of those requests |
 | `flatshare_gateway_admission_aged_total` | `oversize` | Deferred requests admitted regardless after `max_defer_s`; `oversize="true"`: their estimate alone was more than the headroom leaves |
-| `flatshare_gateway_admission_degraded_total` | | Realtime requests whose reply was capped at `degrade_max_tokens` |
-| `flatshare_gateway_admission_false_alarms_total` | | Armings of the headroom that no realtime request of their session followed |
-| `flatshare_gateway_admission_false_alarm_token_seconds_total` | | Estimated background tokens the headroom held back during false alarms, times how long |
+| `flatshare_gateway_admission_degraded_total` | — | Realtime requests whose reply was capped at `degrade_max_tokens` |
+| `flatshare_gateway_admission_false_alarms_total` | — | Armings of the headroom that no realtime request of their session followed |
+| `flatshare_gateway_admission_false_alarm_token_seconds_total` | — | Estimated background tokens the headroom held back during false alarms, times how long |
 | `flatshare_gateway_realtime_sessions` | `state` | Realtime sessions the lifecycle policy follows, by state: `idle`, `user_speaking`, `critical`, `playback` |
 | `flatshare_gateway_realtime_state_timeouts_total` | `state` | Sessions that stayed in a state for `state_timeout_s` without an event, by the state: lost or missing events |
-| `flatshare_gateway_node_ready` | | 1 while the engine is ready; 0 while a request has found it broken and its `/health` has not answered since (note 8) |
+| `flatshare_gateway_node_ready` | — | 1 while the engine is ready; 0 while a request has found it broken and its `/health` has not answered since (note 8) |
 | `flatshare_gateway_engine_state` | `state` | 1 for the engine's state as inference finds it, 0 for the others: `warming`, `serving`, `degraded`, `drained` ([The engine's state](#the-engines-state)) |
 | `flatshare_gateway_canary_probes_total` | `result` | Inference canaries, by `success` or `failure` |
-| `flatshare_gateway_canary_seconds` | | The time a canary took, to its answer's end or its failure |
+| `flatshare_gateway_canary_seconds` | — | The time a canary took, to its answer's end or its failure |
 
 1. It counts `completed` only for a 2xx response relayed to its end. E2's records and the soak's scrapes read it, and so do the outcome alerts, since its series exist from the start and a class's first refusal or missed deadline counts; the dashboard reads `requests_terminal_total`.
 2. It covers parse, sanitization, resolution, admission and connection checkout, without the time a request waits for admission. It is the number behind the 2 ms SLO; its buckets start from 50 µs, with 2 ms as a bound.
