@@ -867,6 +867,7 @@ SERVING_KEYS = {
     "budget_cap": bool,
     "budget_cap_tokens": int,
     "reserve_tokens": int,
+    "take_reservations": bool,
     "retain_tokens": int,
     "retain_s": int,
     "hint_hold_ms": int,
@@ -936,6 +937,10 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
         raise ProfileError(f"{name}: max_agents must be 1 or more")
     if serve["audio"] not in AUDIO:
         raise ProfileError(f"{name}: audio must be {' or '.join(AUDIO)}, not {serve['audio']!r}")
+    if serve["take_reservations"] and not serve["budget_cap"]:
+        raise ProfileError(
+            f"{name}: take_reservations needs budget_cap, which holds the lower priorities' prefill back meanwhile"
+        )
     if serve["hint_hold_ms"] < 0:
         raise ProfileError(f"{name}: hint_hold_ms must be 0 (off) or more")
     if serve["turn_hints"] and not serve["hint_hold_ms"]:
@@ -996,6 +1001,7 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
                     "budget_cap",
                     "budget_cap_tokens",
                     "reserve_tokens",
+                    "take_reservations",
                     "retain_tokens",
                     "retain_s",
                     "hint_hold_ms",
