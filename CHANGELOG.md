@@ -5,6 +5,52 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.15](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.15) (2026-11-02): the serving engine optimized
+
+What the engine adds to v1.14's serving profile, each piece chosen on the box from its scheduler's traces and measured
+against the configuration before it. Beside 12 agents a call's first token goes from 175 to 64 ms at the median and from
+354 to 92 ms at p95, and its whole 48-token reply's p95 from 1,226 to 998 ms. In five rounds of the whole pipeline the
+four additions cut the replies over the SLO beside 24 sessions from 18.6%, 18.5% and 18.0% to 5.4%, 6.4% and 5.8% with
+two, four and six callers, fewer in every round, and beside 16 sessions from 7.5% to 3.4%, for 1.6–4.9% of the agents'
+token rate. Two more rounds turned down a fifth, the agents' decodes held, and speculative decoding, by rules fixed
+before they ran.
+
+- **The calls' prefixes kept on the GPU.** A finished call turn's blocks stay referenced until the conversation's next
+  turn takes them (`make_room.retain_tokens`, `retain_s`), counted in distinct blocks, as LiveKit's preemptive
+  generation retains a cancelled request beside its replacement.
+- **The next batch just in time.** The serve module schedules the next batch when the step in flight is due to end, by
+  the card's step-time model, so a call arriving during an agent's long step joins the next batch.
+- **Each turn announced.** The voice worker sends a realtime request for one token when the user stops speaking, and the
+  budget cap holds the agents' prefill back for 400 ms from it.
+- **A call never waits behind an agent's reservations.** A call's turn could wait 1.4–4.5 s while agents' prefix
+  loads held the pool's free blocks in reservation: the load admission counted every in-flight reservation, and the
+  waiting loop stopped at the first completed load it could not admit. With `make_room.take_reservations` a request
+  counts only the reservations of its own priority or higher, and make-room preempts for the rest.
+- **What was measured and not adopted.** The agents' decodes held through the budget cap's window
+  (`make_room.decode_hold_tokens` 48): in the engine points it took the 48th token's p95 from 998–1,016 to 722–735 ms,
+  and in two follow-up rounds it put 16 of 720 replies over the SLO against 55, but for 3.8% of the agents' token rate
+  at the median, past the 3% its rule allowed. Speculative decoding on top, EAGLE-3 with two drafts and the calls' short
+  loads recomputed (`make_room.recompute_tokens`), put 12 over against the hold's 16, fewer in three of the six rounds
+  and caller counts where its rule asked for five ([the follow-up
+  rounds](benchmarks/results/2026-11-02-opt-rounds/README.md#the-decode-hold-and-speculative-decoding)). Both stay
+  switches, off. Nor were synchronous scheduling, Triton with full CUDA graphs, FP8 KV and two API servers ([the engine
+  points](benchmarks/results/2026-11-01-engine-points/README.md#what-was-not)).
+- **The records.** [The engine points](benchmarks/results/2026-11-01-engine-points/README.md), 82 runs on both nodes
+  with each addition against the point before it; [the rounds](benchmarks/results/2026-11-02-opt-rounds/README.md), five
+  of the four additions against v1.14's configuration and two follow-up rounds; [the quick
+  start](benchmarks/results/2026-11-02-quick-start/README.md) again, 272–277 ms against 1,544–1,547 ms on stock vLLM,
+  and 173–179 ms while the profile held the agents' decodes; the scheduler's cost a step in the profile's configuration,
+  measured again, a baseline whose 7% tolerance its negative controls exceed by 17–84%.
+- **The packages** are versioned 1.15.0, and are not published to a package index.
+- **Upgrading from v1.14.**
+  - The serving profile's engine adds make-room's `retain_tokens` 3584, `retain_s` 30, `hint_hold_ms` 400 and
+    `take_reservations` true, with `decode_hold_tokens` 0, and runs the serve module's scheduler,
+    `flatshare_make_room_serve.AsyncScheduler`, with `flatshare_jit` at a 30 ms margin and the card's step-time model: a
+    release renders them, and `serving-check` holds the engine to every one.
+  - In serve mode the voice worker announces each turn (the profile's voice `turn_hints`, `FLATSHARE_TURN_HINTS` over
+    it). The engine's log line counts the turns announced: a count that stays at 0 while calls run means the hints do
+    not reach the engine.
+
 ## [v1.14](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.14) (2026-11-01): the code reviewed, and the FP8 crash found
 
 A review of the code's architecture, plane by plane, with what it found fixed, and the FP8 KV crash of 10-27 traced to

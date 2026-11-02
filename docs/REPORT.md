@@ -2,15 +2,15 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.14, 1 November 2026. Code, records and figures at tag
-[v1.14](https://github.com/StevenWang-CY/flatshare/tree/v1.14) of
+Flatshare technical report, version 1.15, 2 November 2026. Code, records and figures at tag
+[v1.15](https://github.com/StevenWang-CY/flatshare/tree/v1.15) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
 > [!NOTE]
 > The change this report measures is proposed to vLLM as pull requests
 > [#63350](https://github.com/vllm-project/vllm/pull/63350) and
-> [#63351](https://github.com/vllm-project/vllm/pull/63351), open, with no maintainer review as of 2026-10-29. Flatshare
+> [#63351](https://github.com/vllm-project/vllm/pull/63351), open, with no maintainer review as of 2026-11-02. Flatshare
 > is an independent project and is not affiliated with vLLM.
 
 ## Abstract
@@ -1463,9 +1463,9 @@ scheduler: preempt for the waiting turn, and keep background prefill out of its 
 
 <a name="ref-8"></a>[8] vLLM pull request #5958. [Adding priority scheduling](https://github.com/vllm-project/vllm/pull/5958). Merged 2024-09-25, in vLLM v0.6.2 to v0.10.2.
 
-<a name="ref-9"></a>[9] C. Wang. vLLM pull request #63350. [Priority scheduling: preempt for a waiting request under KV pressure](https://github.com/vllm-project/vllm/pull/63350). Opened 2026-10-23, open, with no maintainer review as of 2026-10-29.
+<a name="ref-9"></a>[9] C. Wang. vLLM pull request #63350. [Priority scheduling: preempt for a waiting request under KV pressure](https://github.com/vllm-project/vllm/pull/63350). Opened 2026-10-23, open, with no maintainer review as of 2026-11-02.
 
-<a name="ref-10"></a>[10] C. Wang. vLLM pull request #63351. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/63351). Opened 2026-10-23, open, with no maintainer review as of 2026-10-29.
+<a name="ref-10"></a>[10] C. Wang. vLLM pull request #63351. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/63351). Opened 2026-10-23, open, with no maintainer review as of 2026-11-02.
 
 <a name="ref-11"></a>[11] SemiAnalysis. [Claude Code traces (cc-traces-weka-062126)](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126). Hugging Face dataset.
 
@@ -1614,7 +1614,7 @@ The repository's tests fail when a committed figure differs from what its record
 records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists every measurement run by run, and
 [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
-**Hosting.** Tag v1.14 holds the code, the records and this report. The raw records, the gateway's request logs and each
+**Hosting.** Tag v1.15 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in
 [v1.0](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.0), the A100 run's in
 [v1.1](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.1), the KV-sampling runs' in
@@ -1864,6 +1864,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.15 | 2026-11-02 | Added §6.10, the serving engine's five additions, measured at the engine (Table 9), the four the profile adopted in five rounds of the whole pipeline (Figure 16, Table 10), and the fifth and speculative decoding in two more, which turned both down; with a sixth contribution, the abstract's last paragraph, a row of the results at a glance, §7's engine additions and what to watch, §9's calls per GPU, the conclusion's sentence and Table A1's rows. Corrected: §4's cost of a scheduler step and Figure 7, from the newest baseline with the serving profile's switches; the pull requests' state dated 2026-11-02 |
 | 1.14 | 2026-11-01 | Added to §9: the FP8 crash's cause, stock vLLM's FlashInfer plan race, which vLLM #64165 closes, and what the rounds sample. Corrected: what a round's sample of the agents is, a draw of where each session enters the same traces (§1, §5.2, §5.5, Appendix B); the simulator's gain from knowing when each agent returns, after its prefetch paid only for the blocks it places (§6.5, §8); the kill drills' times, from the kill command (§7, Appendix D); §8 on #45558, which preempts for KV as #40087 does; the hosting line at the current tag |
 | 1.11 | 2026-10-30 | Preempt-resubmit named as the gateway policy it is, and Appendix A's hosting line at the current tag |
 | 1.10 | 2026-10-30 | Results at a glance and Table 1 with their long cells moved to notes under the tables |
