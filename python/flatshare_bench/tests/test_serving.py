@@ -31,12 +31,15 @@ DEPLOY = REPO / "deploy"
 BOX = DEPLOY / "phastform"
 CHECK = DEPLOY / "bin" / "serving-check"
 SERVING = json.loads((BOX / "serving.json").read_text())
-MEASURED = (
+MEASURED = REPO / "benchmarks/results/2026-11-02-opt-rounds/opt-s1/opt-disc-ret-s24/engine.json"
+"""The record of the engine's configuration in the follow-up rounds' point of the serving profile's configuration, the
+change at the step cap the sweep chose with the first four of version 1.15's additions: what engine_settings keeps of
+the /server_info it gave."""
+SWEEP = (
     REPO
     / "benchmarks/results/2026-10-27-sweep/sweep-screen/sweep-disc-pr-ab48-b256-t0-s24/engine.json"
 )
-"""The record of the engine's configuration in the sweep's point of the PRs' configuration at the step cap it chose:
-what engine_settings keeps of the /server_info it gave."""
+"""The same in the sweep's point of the PRs' configuration at the step cap it chose."""
 W5 = REPO / "benchmarks/results/2026-10-24-e2-w5/w5-ext-r1/w5-disc-pr-ab48-s24/engine.json"
 """The same in a W5 point of the PRs' configuration, at the frozen box's step cap."""
 STEP_CAP = ("max_num_batched_tokens", "long_prefill_token_threshold")
@@ -530,7 +533,7 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
         "budget_cap_tokens": 48,
         "reserve_tokens": 0,
         "take_reservations": True,
-        "decode_hold_tokens": 48,
+        "decode_hold_tokens": 0,
         "retain_tokens": 3584,
         "retain_s": 30,
         "hint_hold_ms": 400,
@@ -572,14 +575,18 @@ make-room's switches."""
 
 
 def profile_settings(engine: dict = SERVING["engine"]) -> dict:
-    """serving.json's engine settings that a point's engine.json records, by their dotted names."""
+    """serving.json's engine settings that a point's engine.json records, by their dotted names. make-room's switches
+    at 0 or false count as not passed, as make-room's own defaults are: serving.json names every switch, and an arm
+    passes only those it sets."""
     return {
         **{
             f"{table}.{key}": engine[table][key] for table, keys in COMPARED.items() for key in keys
         },
         "kv_transfer.kv_connector": engine["kv_transfer"]["kv_connector"],
         "kv_transfer.kv_connector_extra_config": engine["kv_transfer"]["kv_connector_extra_config"],
-        "make_room": engine["make_room"],
+        "make_room": {
+            key: value for key, value in engine["make_room"].items() if value not in (0, False)
+        },
     }
 
 
@@ -605,13 +612,15 @@ def measured_settings(measured: dict) -> dict:
     return profile_settings(served(measured) | {"model": model})
 
 
-def test_the_serving_profile_is_the_configuration_the_sweep_chose() -> None:
-    # The PRs' configuration at the step cap the sweep chose, as its screen ran it, from the engine's own /server_info:
-    # the same model, revision, step cap, pool, CPU tier, policy, request slots and switches. Only the scheduler's
-    # module differs, then make-room's, now the serve module over it.
+def test_the_serving_profile_is_the_configuration_the_rounds_measured() -> None:
+    # The follow-up rounds' point of the profile's configuration, from the engine's own /server_info: the same model,
+    # revision, step cap, pool, CPU tier, policy, request slots and switches, under the serve module with the
+    # profile's just-in-time scheduling.
     measured = json.loads(MEASURED.read_text())
     engine = SERVING["engine"]
     assert measured_settings(measured) == profile_settings()
+    assert served(measured)["scheduler_cls"] == engine["scheduler_cls"]
+    assert served(measured)["jit"] == engine["jit"]
     assert (
         measured["scheduler_config"]["async_scheduling"] is engine["scheduler"]["async_scheduling"]
     )
@@ -620,12 +629,23 @@ def test_the_serving_profile_is_the_configuration_the_sweep_chose() -> None:
         engine["model"]["tokenizer"],
         engine["model"]["tokenizer_revision"],
     )
-    # W5's point of the same configuration differs from it in the step cap alone, which was the frozen box's.
+    # The sweep's point of the PRs' configuration at the step cap it chose differs from it in make-room's switches
+    # alone, those version 1.15 added; W5's point of it in those and the step cap, which was the frozen box's.
+    added = {"take_reservations", "retain_tokens", "retain_s", "hint_hold_ms"}
+    sweep = measured_settings(json.loads(SWEEP.read_text()))
+    assert sorted(key for key, value in profile_settings().items() if sweep[key] != value) == [
+        "make_room"
+    ]
+    assert sweep["make_room"] == {
+        key: value for key, value in profile_settings()["make_room"].items() if key not in added
+    }
     w5 = measured_settings(json.loads(W5.read_text()))
     assert sorted(key for key, value in profile_settings().items() if w5[key] != value) == [
+        "make_room",
         "scheduler.long_prefill_token_threshold",
         "scheduler.max_num_batched_tokens",
     ]
+    assert w5["make_room"] == sweep["make_room"]
     frozen = profile.load("rtx-5060-ti")["engine"]
     assert (
         w5["scheduler.max_num_batched_tokens"],
