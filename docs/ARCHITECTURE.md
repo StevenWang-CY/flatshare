@@ -44,7 +44,7 @@ Neither mechanism is specific to the card, though what each costs is: the first 
 
 ## 2. The change: #63350 and #63351
 
-The variant `make-room` ([`python/flatshare_vllm`](../python/flatshare_vllm/README.md)) is built at each engine start from the installed vLLM 0.32.0's scheduler, without modifying vLLM: `build.py` applies the pull requests' scheduler diff, backported to 0.32.0, and the variant's own patch, every hunk where it must be, and the engine loads the module with `--scheduler-cls`. It adds these switches to priority scheduling, each a key of `--additional-config` and off by default:
+The variant `make-room` ([`python/flatshare_vllm`](../python/flatshare_vllm/README.md)) is built at each engine start from the installed vLLM's scheduler, 0.32.0's or 0.33.0's, without modifying vLLM: `build.py` applies the pull requests' scheduler diff, backported to that release, and the variant's own patch, every hunk where it must be, and the engine loads the module with `--scheduler-cls`. The serving profile runs 0.32.0, which every measurement ran on. It adds these switches to priority scheduling, each a key of `--additional-config` and off by default:
 
 | Switch | Variant key | Upstream |
 |---|---|---|

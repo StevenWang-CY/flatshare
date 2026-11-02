@@ -58,11 +58,11 @@ which use it retires.
 - **The KV preemption** (#63350): a waiting request of a higher priority that lacks KV preempts running requests of a
   lower priority, at most N a step (`--max-priority-preemptions-per-step`; in make-room,
   `make_room.max_preemptions_per_step`).
-- **make-room**: the engine variant that builds vLLM 0.32.0's scheduler at each start from the pull requests' scheduler
-  diff, backported to 0.32.0, and a patch of its own (its switches, the reserve and its counters), and loads it with
-  `--scheduler-cls` ([python/flatshare_vllm](../python/flatshare_vllm/README.md)). The name is the variant's only:
-  #63350's rule is the KV preemption. E2 measured the change as make-room with the pull requests' switch values, to
-  which their diff, ported to 0.32.0, schedules identically.
+- **make-room**: the engine variant that builds the installed vLLM's scheduler, 0.32.0's or 0.33.0's, at each start from
+  the pull requests' scheduler diff, backported to that release, and a patch of its own (its switches, the reserve and
+  its counters), and loads it with `--scheduler-cls` ([python/flatshare_vllm](../python/flatshare_vllm/README.md)). The
+  name is the variant's only: #63350's rule is the KV preemption. E2 measured the change as make-room with the pull
+  requests' switch values, to which their diff, ported to 0.32.0, schedules identically.
   - `tests/test_trace.py` runs both on the same request traces and requires every step to be equal. It finds the module
     W5's points loaded equal but for its held-token count, which it overstated
     ([E3](BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)), and for the budget cap's last held step under

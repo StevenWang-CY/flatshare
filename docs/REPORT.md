@@ -1411,11 +1411,14 @@ not on the voice tier's latency.
 switch values. The trace test holds it and the pull requests' diff, ported to 0.32.0, to the same schedules, but the
 branches on vLLM's main ran only in their CPU tests.
 
-**One vLLM version.** Every measurement ran on vLLM 0.32.0, the latest release when the results were taken. On
+**One vLLM version.** Every measurement of §6 ran on vLLM 0.32.0, the latest release when the results were taken. On
 2026-10-27 both pull requests still merged cleanly into vLLM's main in a local merge and passed their tests there on the
 CPU, and make-room's patches did not apply to the next release candidate, v0.33.0rc0, whose scheduler no longer matches
-their first hunk, so an upgrade starts by rebasing them
-([the check's record](../benchmarks/results/2026-10-27-compat/README.md)).
+their first hunk, so an upgrade starts by rebasing them ([the check's
+record](../benchmarks/results/2026-10-27-compat/README.md)). Version 1.16 rebased them onto 0.33.0, released on 2
+November: there make-room passes the same CPU suites and schedules as the pull requests do, and the quick start's probe
+ran on the card ([the port's record](../benchmarks/results/2026-11-02-port-v0.33.0/README.md)), but no round measured
+it, and the serving profile stays on 0.32.0.
 
 **One cap on victims.** Every run with the KV preemption used N = 2, so how the results depend on N is not measured.
 
