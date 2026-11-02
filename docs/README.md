@@ -4,7 +4,7 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 
 ## Start here
 
-- [REPORT.md](REPORT.md): Why does a voice turn wait seconds beside coding agents on one GPU, what do the two scheduler rules recover, at what cost to the agents, and what carries to other hardware?
+- [REPORT.md](REPORT.md): Why does a voice turn wait seconds beside coding agents on one GPU, what do the two scheduler rules and the serving engine's additions recover, at what cost to the agents, and what carries to other hardware?
 - [ARCHITECTURE.md](ARCHITECTURE.md): How is the deployed system built, from the change inside vLLM's scheduler to the gateway, the voice worker, two cards with a warm spare and releases that roll back, and what was measured and dropped?
 - [GLOSSARY.md](GLOSSARY.md): What does a term or a record's label mean (the frozen box, arm 9, W0 to W8, the project's former names)?
 
@@ -15,6 +15,7 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 - [SLO.md](SLO.md): Which service classes share the GPU, which indicators are measured for each, and what is each campaign's SLO?
 - [PROTOCOL.md](PROTOCOL.md): What does the gateway accept from callers and send to the engine: sessions, headers and lifecycle events?
 - [ops/RUNBOOK.md](../ops/RUNBOOK.md): How are the hosts deployed, checked, operated and recovered, and how are the failure drills run?
+- [deploy/container](../deploy/container/README.md): How does the serving engine run from vLLM's own container image, with make-room's scheduler at the serving profile's settings?
 
 ## The evidence
 
@@ -22,6 +23,7 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 - [EXPERIMENTS.md](EXPERIMENTS.md): How was each experiment (E0 to E3) designed and run, and which campaign measured what, on which code (the campaign map)?
 - [benchmarks/quality/GATE.md](../benchmarks/quality/GATE.md): Can the served model do both jobs of a useful pair: answer a caller's questions on private documents, and enrich new documents into searchable records in the background?
 - [benchmarks/quality/RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md): At the same service to the calls, which arrangement of two cards does the most background work, and is sharing them worth its complexity?
+- [benchmarks/fp8](../benchmarks/fp8/README.md): What crashed the engine with an FP8 KV cache beside the CPU tier, and how is the crash reproduced on stock vLLM?
 - [PRIOR-ART.md](PRIOR-ART.md): How does Flatshare differ from the engines, routers and papers that co-serve latency classes, and what does it not claim?
 - [benchmarks/results](../benchmarks/results): Where are the committed records behind each number, one directory per campaign or probe, each with its README?
 - [REVISIONS.md](REVISIONS.md): Which commit of this history holds each revision the records name, since the history was rewritten on 2026-10-27?
@@ -44,7 +46,7 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 - [crates/flatshare-core](../crates/flatshare-core/README.md): What do the cost, step and KV models and the admission policies compute?
 - [crates/flatshare-proto](../crates/flatshare-proto/README.md): Which wire types and JSON Schemas do the components share?
 - [crates/flatshare-sim](../crates/flatshare-sim/README.md): How does the simulator model vLLM's KV cache and step loop, how was it calibrated, and what does it place on other GPUs?
-- [python/flatshare_vllm](../python/flatshare_vllm/README.md): How is the change built on vLLM 0.32.0, held equal to the pull requests, tested, and checked for cost and fit?
+- [python/flatshare_vllm](../python/flatshare_vllm/README.md): How is the change built on vLLM 0.32.0 and 0.33.0, held equal to the pull requests, tested, and checked for cost and fit?
 - [python/flatshare_bench](../python/flatshare_bench/README.md): How are the traces scaled and replayed, what do the probes measure, and what does an E2 point record?
 - [python/flatshare_voice](../python/flatshare_voice/README.md): How does the voice agent run, which lifecycle events does it post, and how do the callers measure voice-to-voice latency?
 - [python/flatshare_stats](../python/flatshare_stats/README.md): How is each published statistic defined?

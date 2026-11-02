@@ -1,6 +1,6 @@
 # Architecture
 
-Flatshare runs a realtime voice agent beside background LLM work on one GPU, or on two. Its central part is a change to vLLM's scheduler: a waiting realtime request can take KV from running background requests, and background prefill sits out the realtime reply's first tokens. It is proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) (open, with no maintainer review as of 2026-11-02), and runs on vLLM 0.32 as the engine variant `make-room` (§2). Around it are:
+Flatshare runs a realtime voice agent beside background LLM work on one GPU, or on two. Its central part is a change to vLLM's scheduler: a waiting realtime request can take KV from running background requests, and background prefill sits out the realtime reply's first tokens. It is proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) (open, with no maintainer review as of 2026-11-02), and runs on vLLM 0.32 as the engine variant `make-room` (§2), which builds on 0.33 too. Around it are:
 - the serving path the deployment runs (§3): one GPU node, or two cards with a warm spare where a second card is available;
 - its network and security (§4);
 - the configuration and hosts it was measured on (§5);
@@ -9,7 +9,7 @@ Flatshare runs a realtime voice agent beside background LLM work on one GPU, or 
 
 The designs that were measured and dropped are in §7, failure handling in §8 and testing in §9.
 
-This document describes what is built, as of v1.14, for a reader who wants to know how the parts work and fit together before reading or changing the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers, [PRIOR-ART.md](PRIOR-ART.md) what is new here and what is prior work, the [ADRs](README.md#decisions) the decisions, and [GLOSSARY.md](GLOSSARY.md) the terms.
+This document describes what is built, as of v1.17, for a reader who wants to know how the parts work and fit together before reading or changing the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers, [PRIOR-ART.md](PRIOR-ART.md) what is new here and what is prior work, the [ADRs](README.md#decisions) the decisions, and [GLOSSARY.md](GLOSSARY.md) the terms.
 
 ## At a glance
 
@@ -24,7 +24,7 @@ Flatshare is one change to vLLM's scheduler and three planes around it (Figure 1
 
 | Plane | Part | In the repository | Here |
 |---|---|---|---|
-| Serving | The change on vLLM 0.32: the pull requests as patches, the build, probes and tests | [`python/flatshare_vllm`](../python/flatshare_vllm/README.md) | §2 |
+| Serving | The change on vLLM 0.32 and 0.33: the pull requests as patches, the build, probes and tests | [`python/flatshare_vllm`](../python/flatshare_vllm/README.md) | §2 |
 | Serving | The gateway, and the wire types it speaks | [`crates/flatshare-gateway`](../crates/flatshare-gateway/README.md), [`crates/flatshare-proto`](../crates/flatshare-proto) | §3.3 |
 | Serving | The voice worker, and the callers that measure it | [`python/flatshare_voice`](../python/flatshare_voice/README.md) | §3.4 |
 | Serving | A GPU node's units and the engine's variants | [`deploy/phastform`](../deploy/phastform) | §3.2 |
@@ -76,7 +76,7 @@ What E2 found ([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2)): the bu
 - the KV shortfall counted the blocks of a request's cached prefix as needed, so the reserve and the in-flight gate could refuse a request that stock vLLM admits;
 - victims were sized before the next step's decode growth, so a turn could need a second preemption a step later.
 
-**Tests.** CPU tests run the variant on vLLM's real scheduler with CPU torch, and trace it against the pull requests' own patches step for step. CI builds the generated module from v0.32.0's source, and its make-room job runs both suites on Linux x86-64 (`make test-make-room-ci`). GPU probes measure the KV case, the prefill case and closed-loop agents beside calls ([`probe.py`, `tail.py`](../python/flatshare_vllm/src/flatshare_vllm/make-room)).
+**Tests.** CPU tests run the variant on vLLM's real scheduler with CPU torch, and trace it against the pull requests' own patches step for step. CI builds the generated module from v0.32.0's source, and its make-room job runs both suites on Linux x86-64 (`make test-make-room-ci`; `VLLM_REF=v0.33.0` runs them on 0.33.0's scheduler). GPU probes measure the KV case, the prefill case and closed-loop agents beside calls ([`probe.py`, `tail.py`](../python/flatshare_vllm/src/flatshare_vllm/make-room)).
 
 ## 3. The serving path
 
@@ -302,7 +302,7 @@ Two mechanisms were built, measured and not adopted, and the rest of the origina
 - **`flatshare-core`**: the cost model against E0's cells, the KV geometry, the step-time model; each admission policy's decisions on hand-made sequences of requests and turns.
 - **`flatshare-sim`**: the AIPerf port against AIPerf's own plan; the step loop on hand-made sequences; the clairvoyant tiers against exhaustive search; every arm end to end on a 16-trace subset; `make reproduce-e1` regenerates E1's tables (not in CI: the corpus stays outside the repository).
 - **`flatshare-gateway`**, against in-process mock engines and speech servers: disconnects, backpressure, sanitization and tenant-scoped sessions, the intake's bounds, every deadline, the accounting and the engine's state, the nodes' placement, failover and covering, event idempotency, every admission policy, the reload and its drain; the proxy's overhead in process.
-- **Engine**: the generated `make-room` module built from v0.32.0's source; its behavior on vLLM's real scheduler with CPU torch, and its trace against the pull requests' own patches; the GPU probes.
+- **Engine**: the generated `make-room` module built from v0.32.0's source, and from v0.33.0's; its behavior on vLLM's real scheduler with CPU torch, and its trace against the pull requests' own patches; the GPU probes.
 - **Voice**: a hermetic LiveKit test in the voice-plane namespace (barge-in, headers, lifecycle events in order); unit tests of the event delivery, serve mode's admission and the node binding.
 - **Deploy and ops**: the serving profile's rendering and `serving-check` against an engine that differs; the release tool's prepare, switch, switch-back and rollback on stand-in hosts; the units, install scripts and listener audit; the alert rules under promtool.
 - **E2**: the report, its figures and the demo renderer on synthetic points; `make reproduce-e2` and `make figures` rebuild them from the committed records (not in CI).

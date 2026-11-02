@@ -33,16 +33,6 @@ Two scheduler rules, proposed to vLLM as pull requests [#63350](https://github.c
 p95 to 2.24 s against an SLO of 2.03 s. The replies over the SLO fall from 90% to 32% (286 of 885), and the agents keep
 97% of their token rate.
 
-- **At the 256-token step cap the deployment runs**, 44 of 295 replies were over their round's SLO in five rounds on
-  new samples of the agents, against 94 of 295 at 512 tokens and 261 of 295 on tuned vLLM.
-- **With v1.15's first four additions to the engine**, in five more rounds beside 24 sessions, 5.4%, 6.4% and 5.8% of
-  the replies were over the SLO with two, four and six callers, against 18.6%, 18.5% and 18.0% for v1.14's
-  configuration, at 1.6–4.9% of the agents' token rate.
-- **With the agents' decodes held too**, as v1.17 serves, two follow-up rounds put 16 of 720 replies over the SLO with
-  two, four and six callers, against 55 with the first four additions alone, for another 3.8% of the agents' token rate.
-- **On an A100** at the same KV pool and 512-token steps, the configuration to deploy takes the p95 from 4.99 s to
-  1.63 s, under that card's SLO in each of five rounds.
-
 <picture>
   <source media="(max-width: 767px) and (prefers-color-scheme: dark)" srcset="docs/figures/e2-demo-narrow-dark.webp">
   <source media="(max-width: 767px)" srcset="docs/figures/e2-demo-narrow.webp">
@@ -54,6 +44,23 @@ p95 to 2.24 s against an SLO of 2.03 s. The replies over the SLO fall from 90% t
 after 9.6 s, and the two changes after 1.9 s
 ([the video](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.2)).*
 
+Further rounds measure the deployment as it runs:
+
+- **At the 256-token step cap the deployment runs**, 44 of 295 replies were over their round's SLO in five rounds on
+  new samples of the agents, against 94 of 295 at 512 tokens and 261 of 295 on tuned vLLM
+  ([§6.9](docs/REPORT.md#69-a-256-token-step-cap-halves-the-changes-replies-over-the-slo-beside-24-sessions)).
+- **The serving engine's additions** (v1.15) took the replies over the SLO beside 24 sessions from 18.6%, 18.5% and
+  18.0% to 5.4%, 6.4% and 5.8% with two, four and six callers, and the LLM's first token at p95 from 314–334 ms to
+  136–139 ms, for 1.6–4.9% of the agents' token rate
+  ([§6.10](docs/REPORT.md#610-the-serving-engines-additions-cut-the-replies-over-the-slo-by-more-than-half)).
+- **The agents' decodes held for a reply's first 48 tokens** (v1.17) put 16 of 720 replies over the SLO in two more
+  rounds, against 55 without the hold, for another 3.8% of the agents' token rate.
+- **On an A100** at the same KV pool and 512-token steps, the configuration to deploy takes the p95 from 4.99 s to
+  1.63 s, under that card's SLO in each of five rounds ([§6.7](docs/REPORT.md#67-the-rules-carry-to-an-a100)).
+- **On two RTX 5060 Ti cards**, both calls and four agent sessions on one card and agents alone on the other did 34%
+  more background work than dedicated roles, with 5 of 177 replies over the SLO; tuned vLLM's arrangement did 27% more
+  ([§6.8](docs/REPORT.md#68-on-two-cards-consolidating-both-calls-on-one-does-34-more-background-work-most-of-it-without-the-change)).
+
 ## Results
 
 <picture>
@@ -61,34 +68,20 @@ after 9.6 s, and the two changes after 1.9 s
   <img src="docs/figures/e2-voice-p95-gpus.svg" width="100%" alt="Three panels, rows in three groups beside 24 coding-agent sessions, each group against its card's SLO, under the claim that the configuration to deploy brings the voice tail within 0.21 s of each card's SLO: the voice-to-voice p95, median of its runs, the agents' tokens a second with each one's share of its group's first row, and the agents' time to first token at the 99th percentile. RTX 5060 Ti 16 GB, SLO 2.03 s: tuned vLLM 10.48 s at 3,305 tokens/s and a TTFT p99 of 106 s, preempt-resubmit, which aborts agent requests before their first byte and resubmits them, 2.52 s at 101% and 193 s, the configuration to deploy, #63350 and #63351 with a 48-token window, 2.24 s at 97% and 111 s. A100 at 512-token steps, SLO 1.67 s: tuned vLLM with the RTX 5060 Ti's tuning 4.99 s at 8,633 tokens/s and 26 s, the configuration to deploy 1.63 s at 100% and 26 s. A100 at 2,048-token steps: tuned vLLM, the card's best, 3.66 s at 14,536 tokens/s and 14 s, the configuration to deploy 1.83 s at 101% and 15 s">
 </picture>
 
-| Two calls beside 24 coding-agent sessions that fill one RTX 5060 Ti's KV pool | Voice p95 | Over the SLO | Replies over the SLO | Agents' tokens/s | Agents' TTFT p50 | Agents' TTFT p99 |
+| Two calls beside 24 coding-agent sessions | Voice p95, ms | Over the SLO, ms | Replies over the SLO | Agents' tokens/s | Agents' TTFT p50, s | Agents' TTFT p99, s |
 |---|---:|---:|---:|---:|---:|---:|
-| Voice alone, the SLO's reference | 1,784 ms | — | 0.3% | — | — | — |
-| vLLM 0.32, tuned: priority scheduling, a 512-token step cap, a CPU KV tier | 10,477 ms | +8,443 ms | 90% | 3,305 | 63 s | 106 s |
-| Tuned, with preempt-resubmit: a gateway policy that aborts agent requests before their first byte and resubmits them | 2,522 ms | +488 ms | 44% | 3,332 | 32 s | 193 s |
-| + #63350: a waiting request preempts lower-priority work for KV | 5,085 ms | +3,051 ms | 89% | 3,414 | 67 s | 112 s |
-| + #63351: agent prefill sits out the reply's first 16 tokens | 3,094 ms | +1,060 ms | 43% | 3,298 | 71 s | 105 s |
-| + #63351 with a 48-token window: **the configuration to deploy** | **2,236 ms** | +202 ms | 32% | 3,203 | 72 s | 111 s |
+| Voice alone, the SLO's reference | 1,784 | — | 0.3% | — | — | — |
+| vLLM 0.32, tuned | 10,477 | +8,443 | 90% | 3,305 | 63 | 106 |
+| Tuned, with preempt-resubmit | 2,522 | +488 | 44% | 3,332 | 32 | 193 |
+| + #63350: a waiting request preempts for KV | 5,085 | +3,051 | 89% | 3,414 | 67 | 112 |
+| + #63351: agent prefill held for 16 tokens | 3,094 | +1,060 | 43% | 3,298 | 71 | 105 |
+| + #63351 with a 48-token window: **the configuration to deploy** | **2,236** | +202 | 32% | 3,203 | 72 | 111 |
 
-Medians of five runs, or 10 for tuned vLLM and 15 for the last row
-([the runs](docs/BENCHMARKS.md#the-discriminating-scenario-after-w5s-fixes-w5)). The SLO is voice alone's p95 plus
-250 ms and allows 5% of the replies over it. The agents' tokens/s count the calls' first 240 s and are nearly all prompt
-tokens.
-
-- **At the 256-token step cap**, in the five rounds on new samples, the median p95 of the configuration to deploy was
-  2,098 ms, against 2,246 ms at 512 tokens and 12,010 ms on tuned vLLM
-  ([§6.9](docs/REPORT.md#69-a-256-token-step-cap-halves-the-changes-replies-over-the-slo-beside-24-sessions)).
-- **With the serving engine's additions** (v1.15), in five rounds on new samples, the first four put 16 of 295 replies
-  over the SLO beside 24 sessions with two callers, against 55 for v1.14's configuration to deploy, and fewer in every
-  round of four scenarios; beside 24 sessions the LLM's first token at p95 fell from 314–334 ms to 136–139 ms
-  ([§6.10](docs/REPORT.md#610-the-serving-engines-additions-cut-the-replies-over-the-slo-by-more-than-half)).
-- **On the A100**, at the RTX 5060 Ti's KV pool and 512-token step cap, the p95 of the configuration to deploy was
-  7–60 ms under that card's SLO of 1.67 s, with the agents at 8,651 tokens a second against tuned vLLM's 8,633
-  ([§6.7](docs/REPORT.md#67-the-rules-carry-to-an-a100)).
-- **On two RTX 5060 Ti cards**, both calls and four agent sessions on one card with the configuration to deploy, and
-  agents alone on the other, did 34% more background work than dedicated roles, with 5 of 177 replies over the SLO. On
-  tuned vLLM the same arrangement, with two sessions, did 27% more, so most of the gain is the arrangement's
-  ([the rounds](benchmarks/results/2026-10-28-rounds/README.md); [the deployment](docs/PRODUCTION.md#two-cards)).
+The agents fill one RTX 5060 Ti's KV pool. Medians of five runs, or 10 for tuned vLLM and 15 for the last row
+([the runs](docs/BENCHMARKS.md#the-discriminating-scenario-after-w5s-fixes-w5)). Tuned vLLM runs priority scheduling, a
+512-token step cap and a CPU KV tier; preempt-resubmit is a gateway policy that aborts agent requests before their first
+byte and resubmits them. The SLO is voice alone's p95 plus 250 ms and allows 5% of the replies over it. The agents'
+tokens/s count the calls' first 240 s and are nearly all prompt tokens.
 
 ## How it works
 
@@ -122,17 +115,19 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
   against 80% for each. Qwen3-8B-FP8 on a card of its own failed too ([the gate](benchmarks/quality/GATE.md);
   [its record](benchmarks/results/2026-10-27-quality/README.md)). A deployment that shares a card for background work
   has to check first that the model can do that work.
-- **Still above the SLO's 5%.** Beside 24 sessions the configuration to deploy left 32% of the replies over the SLO at
-  512-token steps and 14.9% at 256; with v1.15's first four additions, 5.4% to 6.4% with two to six callers; with the
-  decode hold too, 0.8% to 5.1% in two follow-up rounds, against 6.3% to 9.3% without it on the same samples.
+- **The SLO's 5% allowance beside 24 sessions.** The two rules leave 32% of the replies over the SLO at 512-token steps
+  and 14.9% at 256. The engine's additions bring that to 5.4–6.4% with two to six callers, and the decode hold to
+  0.8–5.1% in two follow-up rounds, against 6.3–9.3% without it on the same samples: within the allowance with four and
+  six callers, and 0.1 points over it with two.
 - **A pool with room.** At 16 sessions of the whole corpus, where the pool has room, the configuration to deploy met the
   SLO in one of five rounds. The serving profile's 256-token steps leave the pool room beside 24 sessions too: the
   engine preempted 0–4 requests a run there and none beside four, so at that cap the budget cap and the step cap do the
   work ([§6.9](docs/REPORT.md#69-a-256-token-step-cap-halves-the-changes-replies-over-the-slo-beside-24-sessions)).
 - **Many calls.** Overlapping replies hold agent prefill for longer, and with 4 and 6 callers the p95 of the
   configuration to deploy exceeded each count's SLO in every round ([how it fails](docs/PRODUCTION.md#how-it-fails)).
-  With v1.15's first four additions it stays 41 and 33 ms over at the rounds' median, and the agents give up 3.7% and
-  4.9% of their token rate for them ([§6.10](docs/REPORT.md#610-the-serving-engines-additions-cut-the-replies-over-the-slo-by-more-than-half)).
+  With v1.15's first four additions it stays 41 and 33 ms over at the rounds' median, for 3.7% and 4.9% of the agents'
+  token rate, and with the decode hold too 0.8% and 2.2% of the replies were over the SLO
+  ([§6.10](docs/REPORT.md#610-the-serving-engines-additions-cut-the-replies-over-the-slo-by-more-than-half)).
 - **The agents pay through the budget cap**, which keeps their prefill out of 33% of the engine's steps during the
   calls, and the 256-token steps cost them 7% of their token rate against 512. No vLLM 0.32 counter shows what a
   preempted request recomputes when it resumes
@@ -150,10 +145,14 @@ without modifying the installation. On a host with a GPU that vLLM 0.32.0 suppor
 ([uv](https://docs.astral.sh/uv/) fetches Python 3.12 where the host's is older):
 
 ```sh
-uv venv --python 3.12 --seed ~/vllm-0.32 && . ~/vllm-0.32/bin/activate   # vLLM 0.32.0 needs Python 3.11 to 3.14
-pip install vllm==0.32.0 'cuda-toolkit[nvcc]==13.0.3.0'   # CUDA 13.0's compiler, matching torch's runtime headers
-export CUDA_HOME=$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cu13   # vLLM compiles its FP8 kernels at start with it
-export FLASHINFER_EXTRA_LDFLAGS=-L$CUDA_HOME/lib && ln -sf libcudart.so.13 $CUDA_HOME/lib/libcudart.so   # FlashInfer links -lcudart
+# vLLM 0.32.0 needs Python 3.11 to 3.14
+uv venv --python 3.12 --seed ~/vllm-0.32 && . ~/vllm-0.32/bin/activate
+# CUDA 13.0's compiler, matching torch's headers: vLLM compiles its FP8 kernels with it at start
+pip install vllm==0.32.0 'cuda-toolkit[nvcc]==13.0.3.0'
+export CUDA_HOME=$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cu13
+# FlashInfer's JIT links -lcudart
+export FLASHINFER_EXTRA_LDFLAGS=-L$CUDA_HOME/lib && \
+  ln -sf libcudart.so.13 $CUDA_HOME/lib/libcudart.so
 git clone https://github.com/StevenWang-CY/flatshare && cd flatshare
 python python/flatshare_vllm/src/flatshare_vllm/build.py make-room ~/make-room
 ```
@@ -162,17 +161,20 @@ Serve stock vLLM with the serving profile's settings. Once it is up, run the pro
 sends a voice turn behind long agent requests that fill the KV pool.
 
 ```sh
-# Without --max-model-len vLLM takes the model's 262,144 tokens, which no 16 GB card holds, and without --max-num-seqs
-# 1,024 request slots on a card of 70 GiB or more whose name lacks "a100", more than the step cap, which vLLM refuses.
+# Without --max-model-len vLLM takes the model's 262,144 tokens, which no 16 GB card holds; without
+# --max-num-seqs, 1,024 request slots on a card of 70 GiB or more, more than the step cap allows.
 vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-len 32768 --max-num-seqs 256 \
   --scheduling-policy priority --max-num-batched-tokens 256 --long-prefill-token-threshold 0
-. ~/vllm-0.32/bin/activate && python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
+# In a second shell, in the clone, once the engine is up:
+. ~/vllm-0.32/bin/activate && \
+  python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
 ```
 
 Stop the engine, then serve the same settings with make-room and run the probe again:
 
 ```sh
-PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-len 32768 --max-num-seqs 256 \
+PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 \
+  --max-model-len 32768 --max-num-seqs 256 \
   --scheduling-policy priority --max-num-batched-tokens 256 --long-prefill-token-threshold 0 \
   --scheduler-cls flatshare_make_room_scheduler.AsyncScheduler \
   --additional-config.make_room.max_preemptions_per_step 2 \
@@ -181,7 +183,8 @@ PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-le
   --additional-config.make_room.decode_hold_tokens 48 \
   --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 \
   --additional-config.make_room.hint_hold_ms 400
-. ~/vllm-0.32/bin/activate && python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
+. ~/vllm-0.32/bin/activate && \
+  python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
 ```
 
 To run the probe again on make-room, wait 30 s first: the engine keeps the last voice turn's prefix on the GPU that
@@ -279,7 +282,7 @@ crates/flatshare-proto/   wire types and their JSON Schemas
 crates/flatshare-core/    cost and step-time models, KV geometry, the admission policies E2 compares
 crates/flatshare-gateway/ the serving control plane, with E2's admission policies as its harness
 crates/flatshare-sim/     the KV cache simulator behind E1
-python/flatshare_vllm/    the change on vLLM 0.32: the pull requests as patches, the build, probes and tests
+python/flatshare_vllm/    make-room: the patches for vLLM 0.32.0 and 0.33.0, the build and its tests
 python/flatshare_bench/   the E2 harness, trace conversion, probes, drills, figures and the logo
 python/flatshare_voice/   the voice agent and the measurement callers
 python/flatshare_stats/   the statistics the measurements publish, each defined once
@@ -291,8 +294,8 @@ benchmarks/replies/       how many tokens the voice agent's first sentences take
 benchmarks/audio/         speech to text and text to speech on the CPU
 benchmarks/perf/          the baseline of the scheduler step's cost on CPU
 benchmarks/results/       the committed records, one directory per campaign or probe
-deploy/                   per-host bootstrap, hardware profiles, systemd units, the engine variants' drop-ins, tunnels,
-                          single-host mode, the serving engine's container image
+deploy/                   per-host bootstrap, hardware profiles, systemd units, the engine variants'
+                          drop-ins, tunnels, single-host mode, the serving engine's container image
 ops/                      the runbook, the failure drills, Prometheus rules and a Grafana dashboard
 docs/                     the documents above, ADRs, figures and the logo
 ```
@@ -303,20 +306,20 @@ Development needs Rust 1.98, uv, Python 3.12 and GNU Make 3.81 or newer (macOS's
 
 ```sh
 make check                           # lint and the tests of CI's main job
-make test-make-room-ci               # CI's make-room job (Linux x86-64): the change's behavior suite and its trace
-                                     # against the pull requests' patches, on vLLM's real scheduler
-make perf-make-room TORCH_PYTHON=PY  # the change's cost a scheduler step on CPU, its switches off against stock vLLM
-                                     # and on against off, against benchmarks/perf's baseline (PY: an absolute path)
-make compat-upstream                 # the pull requests against vLLM's main and the backport against their heads,
-                                     # make-room's patches against vLLM's newest release, hunk by hunk
+make test-make-room-ci               # CI's make-room job (Linux x86-64): the change's behavior
+                                     # suite and its trace on vLLM's real scheduler
+make perf-make-room TORCH_PYTHON=PY  # the change's cost a scheduler step on CPU, off against stock
+                                     # and on against off, against benchmarks/perf's baseline
+make compat-upstream                 # the pull requests against vLLM's main, the backport against
+                                     # their heads, make-room against vLLM's newest release
 make reproduce-e2                    # E2's tables and figures from the committed records (W4)
 make reproduce-e2-w5                 # the same for W5's records
 make reproduce-e2-a100               # the same for the A100 run's records
 make reproduce-a100 RECORDS=DIR CORPUS=DIR
                                      # the A100 run's analysis from its raw records (v1.1's asset)
 make reproduce-e1 CORPUS=DIR         # E1's tables with flatshare-sim, from the 32x corpus
-make forecast-a100 CORPUS=DIR        # flatshare-sim's forecast for the A100 run, benchmarks/a100/forecast.md
-make figures brand                   # the docs' figures, and the logo and social preview, from their generators
+make forecast-a100 CORPUS=DIR        # flatshare-sim's forecast for the A100 run (benchmarks/a100)
+make figures brand                   # the docs' figures, the logo and the social preview
 ```
 
 ## Acknowledgments
@@ -349,7 +352,7 @@ If you use Flatshare or its measurements, please cite the repository ([CITATION.
 }
 ```
 
-## Name and license
+## Name and licence
 
 The project was called Leaseholder through v1.1, after its first design, in which the gateway held leases on sessions'
 KV. E1 and E2 showed that the engine had to carry the realtime tier, and that design was dropped

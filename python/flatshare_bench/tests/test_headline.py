@@ -48,16 +48,16 @@ ROWS = {
 }
 """Each headline row, by the start of its first cell, and the points (campaign:point) whose runs it reports."""
 README_COLUMNS = [
-    "Voice p95",
-    "Over the SLO",
+    "Voice p95, ms",
+    "Over the SLO, ms",
     "Replies over the SLO",
     "Agents' tokens/s",
-    "Agents' TTFT p50",
-    "Agents' TTFT p99",
+    "Agents' TTFT p50, s",
+    "Agents' TTFT p99, s",
 ]
 """The README's headline table's columns after the configuration's, in the order the test reads them."""
 NONE = "\u2014"  # an empty cell's dash
-REPORT_NONE = "\u2013"  # an empty cell's dash in the report's tables
+REPORT_NONE = "\u2014"  # an empty cell's dash in the report's tables, as everywhere
 GOODPUT = "agents' tokens/s, first 240 s"
 MINUS = "\u2212"  # a negative difference's sign, as the docs print it
 STEP_CAPS = {
@@ -206,15 +206,15 @@ def test_the_readmes_headline_table_is_the_records_medians() -> None:
     for label, p95, over, replies, goodput, p50, p99 in rows:
         runs = summaries(points_of(label))
         voice = median(runs, "V2V p95")
-        assert p95 == f"{voice:,.0f} ms", label
+        assert p95 == f"{voice:,.0f}", label
         assert replies == share(*over_slo(label)), label
         if points_of(label) == ALONE:
             assert (over, goodput, p50, p99) == (NONE,) * 4, label
             continue
-        assert over == f"{voice - slo():+,.0f} ms".replace("-", MINUS), label
+        assert over == f"{voice - slo():+,.0f}".replace("-", MINUS), label
         assert goodput == f"{median(runs, GOODPUT):,.0f}", label
-        assert p50 == f"{median(runs, 'agent TTFT p50') / 1000:.0f} s", label
-        assert p99 == f"{median(runs, 'agent TTFT p99') / 1000:.0f} s", label
+        assert p50 == f"{median(runs, 'agent TTFT p50') / 1000:.0f}", label
+        assert p99 == f"{median(runs, 'agent TTFT p99') / 1000:.0f}", label
 
 
 def test_the_readmes_opening_and_the_reports_abstract_are_the_records() -> None:
@@ -249,7 +249,7 @@ def test_the_readmes_opening_and_the_reports_abstract_are_the_records() -> None:
         f"from {a100_tuned.p95 / 1000:.2f} s to {a100_change.p95 / 1000:.2f} s, under that card's SLO in each of "
         f"{WORDS[len(a100_change.runs)]} rounds",
     ]
-    readme = passage(REPO / "README.md", "Flatshare runs a self-hosted", "<picture>")
+    readme = passage(REPO / "README.md", "Flatshare runs a self-hosted", "## Results")
     for phrase in [*both, f"to {tuned:.1f} s", caps["Tuned vLLM, 512-token steps"]]:
         assert phrase in readme, phrase
     abstract = passage(REPORT, "## Abstract", "## Contents")

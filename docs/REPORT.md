@@ -453,10 +453,10 @@ scheduled asynchronously as on the box.
 |---|---|---|
 | Switches off | Nothing: what vLLM's call costs, within 1.8% | 2.8 to 5.4 µs in their short steps, at most 4.6% |
 | Only lower-priority work running | 48–182 µs, at most 18% of the call | 20 µs, beside agents alone |
-| Every running slot taken | 158–299 µs | – |
-| The budget cap and the decode hold keeping agents out of a reply's first steps | – | −63 µs |
+| Every running slot taken | 158–299 µs | — |
+| The budget cap and the decode hold keeping agents out of a reply's first steps | — | −63 µs |
 | A waiting high-priority request that two victims cannot make room for | 0.33–0.49 ms; 1.5 ms when its prefix-cache hit is 999 blocks long | 78 µs in each step that gives up on it |
-| The step that preempts for a voice turn | – | 0.47 ms, 3.5 times vLLM's step, on schedulers built afresh |
+| The step that preempts for a voice turn | — | 0.47 ms, 3.5 times vLLM's step, on schedulers built afresh |
 
 On the box's CPU that step takes 1.1 ms, against a voice reply's decode step of 12 ms with nothing beside it, 16–20 ms
 beside agent prefill that the budget cap keeps back, and the agents' 38 ms at 24 agent sessions.
@@ -613,7 +613,7 @@ over the calls' first 240 s, and are nearly all prompt tokens (§6.4).
 
 | Configuration | Runs | p95 V2V | Pooled p95 | Replies over the SLO | Agents' tokens/s | Agents' TTFT p50 / p99 |
 |---|---:|---:|---:|---:|---:|---:|
-| Voice alone | 5 | 1,784 ms (1,764–1,819) | 1,796 ms | 1 / 295 (0.3%) | – | – |
+| Voice alone | 5 | 1,784 ms (1,764–1,819) | 1,796 ms | 1 / 295 (0.3%) | — | — |
 | Tuned vLLM | 10 | 10,477 ms (8,686–12,115) | 10,609 ms | 532 / 590 (90%) | 3,305 | 63 / 106 s |
 | Preempt-resubmit | 5 | 2,522 ms (2,516–2,868) | 2,717 ms | 130 / 295 (44%) | 3,332 | 32 / 193 s |
 | The KV preemption | 5 | 5,085 ms (4,693–6,261) | 5,290 ms | 263 / 295 (89%) | 3,414 | 67 / 112 s |
@@ -716,8 +716,8 @@ scheduling, and the loads are the tokens the CPU tier loaded beyond those, the v
 
 | Configuration | Steps held | KV preemptions | vLLM's preemptions | CPU-tier loads | Agents' tokens/s | TTFT p50 / p99 |
 |---|---:|---:|---:|---:|---:|---:|
-| Tuned vLLM | – | – | 31 | 212,630 | 3,305 | 63 / 106 s |
-| Preempt-resubmit | – | – | 7 | 273,461 | 3,332 | 32 / 193 s |
+| Tuned vLLM | — | — | 31 | 212,630 | 3,305 | 63 / 106 s |
+| Preempt-resubmit | — | — | 7 | 273,461 | 3,332 | 32 / 193 s |
 | The KV preemption | 0% | 34 | 51 | 171,736 | 3,414 | 67 / 112 s |
 | The change (T = 16) | 25% | 32 | 47 | 117,049 | 3,298 | 71 / 105 s |
 | **The configuration to deploy** (T = 48) | 33% | 31 | 46 | 117,044 | 3,203 | 72 / 111 s |
@@ -882,7 +882,7 @@ the first two samples of the agents only.
 
 | Configuration | Runs | p95 V2V | Over the SLO | Agents' tokens/s | Agents' TTFT p50 / p99 |
 |---|---:|---:|---:|---:|---:|
-| Voice alone | 5 | 1,419 ms (1,391–1,445) | – | – | – |
+| Voice alone | 5 | 1,419 ms (1,391–1,445) | — | — | — |
 | Tuned vLLM, 512-token steps | 5 | 4,986 ms (4,163–5,710) | +3,317 ms | 8,633 | 12 / 26 s |
 | **The configuration to deploy**, 512-token steps | 5 | **1,634 ms** (1,609–1,663) | −35 ms | 8,651 | 14 / 26 s |
 | Tuned vLLM, 2,048-token steps | 2 | 3,663 ms (3,289–4,036) | +1,994 ms | 14,536 | 1.5 / 14 s |
@@ -980,8 +980,8 @@ of their cards' runs. The shared card's sessions are given first, then the secon
 
 | Arrangement | Agent sessions | Replies over the SLO | Agents' tokens/s | Over the best dedicated | Agents' TTFT p50 / p99 |
 |---|---:|---:|---:|---:|---:|
-| Dedicated roles, controlled | 0 + 12 | 0 / 177 | 6,302 | – | 4.4 / 31.0 s |
-| **Dedicated roles, best practical** | 0 + 14 | 0 / 177 | **7,893** | – | 5.1 / 41.0 s |
+| Dedicated roles, controlled | 0 + 12 | 0 / 177 | 6,302 | — | 4.4 / 31.0 s |
+| **Dedicated roles, best practical** | 0 + 14 | 0 / 177 | **7,893** | — | 5.1 / 41.0 s |
 | Pooling, tuned vLLM | 12 + 12 | 53 / 87 | 13,188 | does not qualify | 4.7 / 29.2 s |
 | Pooling, the change | 12 + 12 | 24 / 87 | 12,111 | does not qualify | 4.8 / 37.2 s |
 | Consolidation, tuned vLLM | 4 + 14 | 18 / 177 | 10,596 | does not qualify | 0.6 / 10.4 s |
@@ -1617,8 +1617,8 @@ its tests where Table A1 says so. Table A1 maps each part of the report to its r
 | The next vLLM release (§9) | [`2026-10-27-compat`](../benchmarks/results/2026-10-27-compat) | `make compat-upstream` |
 
 The repository's tests fail when a committed figure differs from what its records give, so the figures here are the
-records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists every measurement run by run, and
-[EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
+records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists the campaigns' measurements run by run, the records' READMEs the
+probes and checks around them, and [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
 **Hosting.** Tag v1.17 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in

@@ -56,6 +56,8 @@ VENV = "~/vllm-0.32"
 """The environment README.md's quick start makes and activates, which `pip install` then fills."""
 PROBE_LINE = f". {VENV}/bin/activate && python {PROBE} http://127.0.0.1:8000 kv"
 """The quick start's probe, in the KV case at vLLM's default address, from a shell that activates the environment."""
+PROBE_BLOCK = f". {VENV}/bin/activate && \\\n  python {PROBE} http://127.0.0.1:8000 kv"
+"""The probe as the README writes it, continued on a second line so that it fits a code block's width."""
 ENGINE_REQUIREMENTS = BOX / "requirements" / "engine.txt"
 """The deployment's engine environment, every package pinned, its CUDA compiler among them."""
 PIN = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9,._-]+\])?==([^\s;#]+)")
@@ -267,18 +269,21 @@ def test_the_readmes_quick_start_serves_the_profiles_engine_settings_on_both_eng
     [
         ("budget_cap_tokens 48", "budget_cap_tokens 16"),
         (
-            "--max-num-batched-tokens 256 --long-prefill-token-threshold 0\n.",
-            "--max-num-batched-tokens 512 --long-prefill-token-threshold 0\n.",
+            "--max-num-batched-tokens 256 --long-prefill-token-threshold 0\n#",
+            "--max-num-batched-tokens 512 --long-prefill-token-threshold 0\n#",
         ),
         ("vllm==0.32.0", "vllm==0.33.0"),
         ("--python 3.12", "--python 3.10"),
-        ("nvidia/cu13 ", "nvidia/cu12 "),
+        ("nvidia/cu13\n", "nvidia/cu12\n"),
         ("-L$CUDA_HOME/lib ", "-L$CUDA_HOME/lib64 "),
         ("ln -sf libcudart.so.13 ", "ln -sf libcudart.so.12 "),
         ("export FLASHINFER_EXTRA_LDFLAGS=", "# export FLASHINFER_EXTRA_LDFLAGS="),
         ("PYTHONPATH=~/make-room", "PYTHONPATH=~/elsewhere"),
-        (f"\n{PROBE_LINE}\n```\n\nStop", "\n```\n\nStop"),
-        (f"\n{PROBE_LINE}\n```\n\nStop", f"\npython {PROBE} http://127.0.0.1:8000 kv\n```\n\nStop"),
+        (f"\n{PROBE_BLOCK}\n```\n\nStop", "\n```\n\nStop"),
+        (
+            f"\n{PROBE_BLOCK}\n```\n\nStop",
+            f"\npython {PROBE} http://127.0.0.1:8000 kv\n```\n\nStop",
+        ),
     ],
     ids=[
         "another window",
