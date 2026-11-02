@@ -49,7 +49,7 @@ rounds measure the result in the whole pipeline.
 
 With everything adopted, the agents' decodes held for 48 tokens, a call's first token is 66 ms at the median and 88 ms
 at p95 on Phastform, against v1.14's 175 and 354 ms; its 16th token, about a first sentence, comes at 257 ms and 284 ms
-at p95, against 408 and 597; and its 48th, the whole reply, at 688 and 722 ms, against 867 and 1,227.
+at p95, against 408 and 597; and its 48th, the whole reply, at 688 and 722 ms, against 867 and 1,226.
 
 ## What was not
 
