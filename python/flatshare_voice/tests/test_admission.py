@@ -236,7 +236,13 @@ def test_the_status_file_says_what_the_worker_runs_and_passes_the_profiles_check
     calls = Calls(1)
     admission = Admission(2, calls, probe=EngineProbe(path, "/ready"), drain=tmp_path / "drain")
     status = tmp_path / "voice-worker.json"
-    describe = {"mode": "serve", "max_calls": 2, "audio": "microphone", "turn_detection": "model"}
+    describe = {
+        "mode": "serve",
+        "max_calls": 2,
+        "audio": "microphone",
+        "turn_detection": "model",
+        "turn_hints": True,
+    }
     monitor = Monitor(admission, status, describe)
     monitor.tick()
     written = json.loads(status.read_text())
