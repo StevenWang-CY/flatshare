@@ -198,6 +198,11 @@ agents' reservations taken, no decode hold, and the calls' prefixes kept within 
 hold for an announced turn. `probe.py` sizes its requests from the engine's KV pool and context length, so the check
 runs unchanged on another card.
 
+make-room builds on vLLM 0.33.0 too, from that release's patches (`make-room/v0.33.0`): with `vllm==0.33.0` and the CUDA
+toolkit its torch was built with in the install line, the same commands ran on Phastform ([the port's
+record](benchmarks/results/2026-11-02-port-v0.33.0/README.md)). The serving profile runs 0.32.0, which the rounds
+measured.
+
 To serve beside agents, send `priority` with each request, 0 for voice and 2 for background work, and add the CPU KV
 tier from [`engine.yaml`](deploy/phastform/engine.yaml), which holds the box's 32k context and fixed KV pool too. The
 sweep chose that step cap for the change, and the two-card results ran it. The Results table ran 512 with a 256-token
@@ -336,7 +341,7 @@ If you use Flatshare or its measurements, please cite the repository ([CITATION.
   author  = {Wang, Chuyue},
   title   = {Flatshare},
   year    = {2026},
-  version = {1.15.0},
+  version = {1.16.0},
   url     = {https://github.com/StevenWang-CY/flatshare}
 }
 ```

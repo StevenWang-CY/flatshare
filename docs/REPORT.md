@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.15, 2 November 2026. Code, records and figures at tag
-[v1.15](https://github.com/StevenWang-CY/flatshare/tree/v1.15) of
+Flatshare technical report, version 1.16, 2 November 2026. Code, records and figures at tag
+[v1.16](https://github.com/StevenWang-CY/flatshare/tree/v1.16) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -1411,11 +1411,14 @@ not on the voice tier's latency.
 switch values. The trace test holds it and the pull requests' diff, ported to 0.32.0, to the same schedules, but the
 branches on vLLM's main ran only in their CPU tests.
 
-**One vLLM version.** Every measurement ran on vLLM 0.32.0, the latest release when the results were taken. On
+**One vLLM version.** Every measurement of §6 ran on vLLM 0.32.0, the latest release when the results were taken. On
 2026-10-27 both pull requests still merged cleanly into vLLM's main in a local merge and passed their tests there on the
 CPU, and make-room's patches did not apply to the next release candidate, v0.33.0rc0, whose scheduler no longer matches
-their first hunk, so an upgrade starts by rebasing them
-([the check's record](../benchmarks/results/2026-10-27-compat/README.md)).
+their first hunk, so an upgrade starts by rebasing them ([the check's
+record](../benchmarks/results/2026-10-27-compat/README.md)). Version 1.16 rebased them onto 0.33.0, released on 2
+November: there make-room passes the same CPU suites and schedules as the pull requests do, and the quick start's probe
+ran on the card ([the port's record](../benchmarks/results/2026-11-02-port-v0.33.0/README.md)), but no round measured
+it, and the serving profile stays on 0.32.0.
 
 **One cap on victims.** Every run with the KV preemption used N = 2, so how the results depend on N is not measured.
 
@@ -1614,7 +1617,7 @@ The repository's tests fail when a committed figure differs from what its record
 records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists every measurement run by run, and
 [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
-**Hosting.** Tag v1.15 holds the code, the records and this report. The raw records, the gateway's request logs and each
+**Hosting.** Tag v1.16 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in
 [v1.0](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.0), the A100 run's in
 [v1.1](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.1), the KV-sampling runs' in
@@ -1864,6 +1867,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.16 | 2026-11-02 | §9's one vLLM version: make-room rebased onto vLLM 0.33.0, which no round measured; every measurement of §6 named as 0.32.0's |
 | 1.15 | 2026-11-02 | Added §6.10, the serving engine's five additions, measured at the engine (Table 9), the four the profile adopted in five rounds of the whole pipeline (Figure 16, Table 10), and the fifth and speculative decoding in two more, which turned both down; with a sixth contribution, the abstract's last paragraph, a row of the results at a glance, §7's engine additions and what to watch, §9's calls per GPU, the conclusion's sentence and Table A1's rows. Corrected: §4's cost of a scheduler step and Figure 7, from the newest baseline with the serving profile's switches; the pull requests' state dated 2026-11-02 |
 | 1.14 | 2026-11-01 | Added to §9: the FP8 crash's cause, stock vLLM's FlashInfer plan race, which vLLM #64165 closes, and what the rounds sample. Corrected: what a round's sample of the agents is, a draw of where each session enters the same traces (§1, §5.2, §5.5, Appendix B); the simulator's gain from knowing when each agent returns, after its prefetch paid only for the blocks it places (§6.5, §8); the kill drills' times, from the kill command (§7, Appendix D); §8 on #45558, which preempts for KV as #40087 does; the hosting line at the current tag |
 | 1.11 | 2026-10-30 | Preempt-resubmit named as the gateway policy it is, and Appendix A's hosting line at the current tag |
