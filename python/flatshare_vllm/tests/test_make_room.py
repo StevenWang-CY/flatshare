@@ -1317,6 +1317,84 @@ def test_with_every_running_slot_taken_a_completed_load_holds_nothing_back(modul
     assert voice.status == RequestStatus.WAITING_FOR_REMOTE_KVS
 
 
+def beside_a_load(module, model, make_room, hog_tokens: int):
+    """A priority-2 agent loading the first 256 of its 3,000 prompt tokens from the CPU tier, which reserves the 172
+    blocks its prompt still needs, and a priority-2 decode of ``hog_tokens`` admitted while it loads, which takes room
+    the reservation counted on (vLLM checks reservations for loads alone)."""
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        400,
+        make_room,
+        long_prefill_token_threshold=256,
+        max_model_len=4096,
+        connector=Connector({"agent": 256, "call": BLOCK, "agent2": BLOCK}),
+    )
+    agent = request("agent", 3000, priority=2, arrival=0)
+    sched.add_request(agent)
+    step(sched)
+    assert agent.status == RequestStatus.WAITING_FOR_REMOTE_KVS
+    assert sched._request_remaining_blocks(agent) == 172
+    run(sched, request("hog", hog_tokens, priority=2, arrival=1, max_tokens=400))
+    return sched, agent
+
+
+CAP = {"budget_cap": True, "budget_cap_tokens": 4}
+TAKE = CAP | {"take_reservations": True}
+
+
+@pytest.mark.parametrize(
+    ("make_room", "req_id", "priority", "admitted", "victims"),
+    [
+        (TAKE | {"max_preemptions_per_step": 2}, "call", 0, True, set()),  # the serving profile's
+        (TAKE, "call", 0, True, set()),
+        # Switched off, make-room preempts the decode for the agent's reservation, or with no preemptions the call
+        # waits; stock vLLM (the negative control) keeps it waiting too.
+        (CAP | {"max_preemptions_per_step": 2}, "call", 0, True, {"hog"}),
+        (CAP, "call", 0, False, set()),
+        ({}, "call", 0, False, set()),
+        (TAKE, "agent2", 2, False, set()),  # equal priorities still leave each other's reservations free
+    ],
+)
+def test_a_lower_priority_loads_reservation_keeps_no_call_waiting(
+    module, model, make_room, req_id, priority, admitted, victims
+):
+    """vLLM admits a load from the CPU tier only if its prompt fits beside every in-flight prefill's reservation, the
+    blocks those prompts still need. On the box an agent's reservation is a thousand blocks of a 20,000-token prompt,
+    so a call whose turn loads its last reply's few blocks waited seconds behind agents' loads (the engine points'
+    traces: 1.8 s at 1,151 free blocks). With take_reservations, as the budget cap holds the agents' prefill back in
+    the step the call is admitted in, the call leaves free only the reservations of its own priority or a higher one:
+    it loads beside the agent, preempting nothing. Here fewer blocks are free than the agent's 172."""
+    sched, _ = beside_a_load(module, model, make_room, hog_tokens=3392)
+    assert free_blocks(sched) < sched._inflight_prefill_reserved_blocks() == 172
+    req = request(req_id, 300, priority=priority, arrival=2)
+    sched.add_request(req)
+    out = step(sched)
+
+    assert (req.status == RequestStatus.WAITING_FOR_REMOTE_KVS) is admitted
+    assert preempted(out) == victims
+
+
+@pytest.mark.parametrize(("make_room", "runs"), [(TAKE, True), (CAP, False), ({}, False)])
+def test_a_lower_priority_load_that_cannot_be_promoted_keeps_no_call_waiting(module, model, make_room, runs):
+    """The waiting loop drains the requests holding KV first and stops at the first it cannot admit: an agent whose
+    load is done but whose prompt's 172 remaining blocks no longer fit, as the decode took room it counted on, stops
+    it every step, ahead of a call that needs 13 free blocks and no load (the engine points' traces: 3.0 s and 4.5 s).
+    With take_reservations the call leaves the agent's reservation free, so it fits: the agent sits out its first
+    tokens and the call runs in the same step. Switched off, or on stock vLLM (the negative control), the call waits
+    behind the agent."""
+    sched, agent = beside_a_load(module, model, make_room, hog_tokens=3392)
+    step(sched, finished_recving={"agent"})
+    step(sched)
+    assert agent in sched.kv_holding_waiting and 13 <= free_blocks(sched) < 172
+    sched.add_request(request("voice", 200, priority=0, arrival=2))
+
+    tokens = step(sched).num_scheduled_tokens
+
+    assert tokens == ({"hog": 1, "voice": 200} if runs else {"hog": 1})
+    assert agent in sched.kv_holding_waiting
+
+
 @pytest.mark.parametrize(
     ("make_room", "req_id", "priority", "matched", "loads"),
     [
@@ -1453,6 +1531,22 @@ def test_make_room_counts_and_logs_what_it_holds_back(module, model, monkeypatch
         "make-room: budget cap held lower-priority prefill back in 4 steps (1024 prefill "
         "tokens and 3 admissions, summed over the steps); 0 preemptions to make room"
     ]
+
+
+def test_make_room_logs_the_turns_announced_with_hints_on(module, model, monkeypatch):
+    """With hint_hold_ms, make-room's line also counts the calls' turns announced, so that a deployment shows its voice
+    worker's hints arriving; without it the line is as it was (the negative control above)."""
+    sched = scheduler(
+        module.Scheduler, model, 400, {"budget_cap": True, "hint_hold_ms": 400}, max_model_len=4096
+    )
+    lines = []
+    monkeypatch.setattr(
+        module, "logger", SimpleNamespace(info=lambda msg, *a: lines.append(msg % a))
+    )
+    finish(sched, request("hint", 40, priority=0, arrival=0, max_tokens=1))
+    sched._make_room_log_time -= 10
+    step(sched)
+    assert lines[-1].endswith("; 0 preemptions to make room; 1 turns announced")
 
 
 @pytest.mark.parametrize("threshold, held_tokens", [(128, 2 * 128), (384, 511)])
@@ -1776,6 +1870,14 @@ def test_the_retention_must_leave_room_for_a_full_length_request(module, model):
             "make_room.retain_tokens must be an integer of at least 0, not -16",
         ),
         ({"retain_s": 0}, "make_room.retain_s must be an integer of at least 1, not 0"),
+        (
+            {"take_reservations": "yes"},
+            "make_room.take_reservations must be true or false, not 'yes'",
+        ),
+        (
+            {"take_reservations": True},
+            "make_room.take_reservations needs make_room.budget_cap",
+        ),
     ],
 )
 def test_a_bad_switch_fails_the_engine_start_naming_it(module, model, make_room, message):
@@ -1801,6 +1903,8 @@ def test_the_switches_need_priority_scheduling(module, model):
         scheduler(module.Scheduler, model, 33, {"budget_cap": True}, policy="fcfs")
     with pytest.raises(ValueError, match="make_room needs --scheduling-policy priority"):
         scheduler(module.Scheduler, model, 33, {"retain_tokens": 64}, policy="fcfs")
+    with pytest.raises(ValueError, match="make_room needs --scheduling-policy priority"):
+        scheduler(module.Scheduler, model, 33, {"take_reservations": True}, policy="fcfs")
     scheduler(
         module.Scheduler,
         model,
