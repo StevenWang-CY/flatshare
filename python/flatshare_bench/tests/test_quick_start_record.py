@@ -3,8 +3,10 @@ findings against the probe's logs, and the commands that ran against the reposit
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import re
+from itertools import pairwise
 from pathlib import Path
 from types import ModuleType
 
@@ -41,6 +43,25 @@ def _without_switches(words: list[str]) -> list[str]:
         if not word.startswith(SWITCHES) and not previous.startswith(SWITCHES):
             kept.append(word)
     return kept
+
+
+def _switches(words: list[str]) -> dict[str, object]:
+    """make-room's switches in a command's words, each ``--additional-config.make_room.NAME`` with its value as the
+    engine parses it: true and false as booleans, digits as integers."""
+    prefix = "--additional-config.make_room."
+    found: dict[str, object] = {}
+    for flag, value in pairwise(words):
+        if flag.startswith(prefix):
+            parsed = int(value) if value.isdigit() else value
+            found[flag.removeprefix(prefix)] = {"true": True, "false": False}.get(value, parsed)
+    return found
+
+
+def _logged(environment: str, engine: str) -> dict[str, object]:
+    """The make_room table among the non-default arguments ``engine`` logged at its start."""
+    line = re.search(rf"^{engine}: non-default args: (.*)$", environment, re.M)
+    assert line is not None, engine
+    return ast.literal_eval(line.group(1))["additional_config"]["make_room"]
 
 
 def test_the_readmes_table_is_what_the_logs_give() -> None:
@@ -90,3 +111,11 @@ def test_the_environment_is_the_one_the_readme_gives() -> None:
         for n in re.findall(r"GPU KV cache size: ([\d,]+) tokens", environment)
     }
     assert len(pool) == 1 and f"{pool.pop():,} tokens" in readme
+
+
+def test_the_engine_ran_the_switches_the_commands_give() -> None:
+    # environment.txt holds the engine's own log of its arguments, and commands.sh what the record says ran: the
+    # switches must be the same, every one, so that a run with other values cannot pass for the command.
+    ran = _switches(_command((RECORD / "commands.sh").read_text(), MAKE_ROOM))
+    assert len(ran) == 9
+    assert _logged((RECORD / "environment.txt").read_text(), "make-room") == ran

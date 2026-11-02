@@ -121,10 +121,11 @@ beside 24 agent sessions with 2, 4 and 6 callers, and voice alone with as many c
 - **Speculative decoding on top** put 12 of 720 over against the hold's 16, fewer in three of the six, its first
   sentence's p95 345–377 ms but its first token's 168–177 ms against 130–138, at 9.1% of the agents' token rate with two
   callers and 5.3–5.4% with four and six against the first four additions.
-- **Neither is in the serving profile**, by rules stated before these rounds ran: the decode hold was to stay if it had
-  no more replies over the SLO and cost the agents no more than 3% at the median of the six, and speculative decoding
-  was to come in only with fewer replies over the SLO than the hold, pooled and in at least five of the six. Both stay
-  switches an operator can set (`make_room.decode_hold_tokens 48`; EAGLE-3 as `opt-disc-spec-*` runs it).
+- **The rules stated before these rounds ran turned both down**: the decode hold was to stay if it had no more replies
+  over the SLO and cost the agents no more than 3% at the median of the six, and speculative decoding was to come in
+  only with fewer replies over the SLO than the hold, pooled and in at least five of the six. Version 1.17's serving
+  profile takes the decode hold all the same, for the voice tail (`make_room.decode_hold_tokens 48`); speculative
+  decoding stays a switch an operator can set (EAGLE-3 as `opt-disc-spec-*` runs it).
 
 ## How it ran
 

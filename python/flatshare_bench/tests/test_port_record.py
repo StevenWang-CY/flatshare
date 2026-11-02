@@ -3,8 +3,10 @@ findings against the probe's logs, the engine it ran, and its make-room command 
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import re
+from itertools import pairwise
 from pathlib import Path
 from types import ModuleType
 
@@ -30,6 +32,25 @@ def _command(text: str, start: str) -> list[str]:
         if not line.rstrip().endswith("\\"):
             return words
     raise AssertionError(f"{start!r}: the command does not end")
+
+
+def _switches(words: list[str]) -> dict[str, object]:
+    """make-room's switches in a command's words, each ``--additional-config.make_room.NAME`` with its value as the
+    engine parses it: true and false as booleans, digits as integers."""
+    prefix = "--additional-config.make_room."
+    found: dict[str, object] = {}
+    for flag, value in pairwise(words):
+        if flag.startswith(prefix):
+            parsed = int(value) if value.isdigit() else value
+            found[flag.removeprefix(prefix)] = {"true": True, "false": False}.get(value, parsed)
+    return found
+
+
+def _logged(environment: str, engine: str) -> dict[str, object]:
+    """The make_room table among the non-default arguments ``engine`` logged at its start."""
+    line = re.search(rf"^{engine}: non-default args: (.*)$", environment, re.M)
+    assert line is not None, engine
+    return ast.literal_eval(line.group(1))["additional_config"]["make_room"]
 
 
 def test_the_readmes_table_is_what_the_logs_give() -> None:
@@ -68,3 +89,25 @@ def test_the_record_ran_the_readmes_make_room_switches() -> None:
     readme = _command((REPO / "README.md").read_text(), "PYTHONPATH=~/make-room vllm serve")
     assert ran[-2:] == ["--host", "127.0.0.1"]
     assert ran[1:-2] == readme[1:]
+
+
+def test_the_engine_ran_the_switches_the_commands_give() -> None:
+    # environment.txt holds the engine's own log of its arguments, and commands.sh what the record says ran: the
+    # switches must be the same, every one, so that a run with other values cannot pass for the command.
+    ran = _switches(
+        _command((RECORD / "commands.sh").read_text(), "PYTHONPATH=~/make-room-033 vllm serve")
+    )
+    assert len(ran) == 9
+    assert _logged((RECORD / "environment.txt").read_text(), "make-room") == ran
+
+
+def test_serving_check_found_only_what_0_33_0_changes() -> None:
+    # The serving variant's engine against serving.json: every setting the profile serves, make-room's switches among
+    # them, as the profile has it, but the release and the scheduler module built for it.
+    first = (RECORD / "serving-check.txt").read_text().splitlines()[0]
+    differ = re.fullmatch(
+        r"serving-check: (\d+) setting\(s\) differ from rtx-5060-ti-serve's: (.*)", first
+    )
+    assert differ is not None, first
+    assert differ.group(2).split(", ") == ["engine.vllm_version", "engine.scheduler_module.sha256"]
+    assert int(differ.group(1)) == 2

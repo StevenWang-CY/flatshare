@@ -33,10 +33,12 @@ background work than dedicated cards within the SLO's allowance. Tuned vLLM, con
 more, so most of the gain is the arrangement's. At the 256-token step cap we deploy, 44 of 295 replies were over the SLO
 in five more rounds, against 94 of 295 at 512.
 
-Version 1.15 adds four things to the engine around the rules, each found in the scheduler's own traces and measured
-against the configuration before it. Beside 12 agents they take a call's first token from 354 to 92 ms at p95. In five
-rounds they put 5.4% of the replies over the SLO beside 24 sessions with two callers, against 18.6% without them, and
-fewer in every round of four scenarios, for 1.6–4.9% of the agents' token rate.
+Version 1.15 adds five things to the engine around the rules, each found in the scheduler's own traces and measured
+against the configuration before it. Beside 12 agents they take a call's first token from 354 to 88 ms at p95 and its
+whole reply from 1,226 to 722 ms. In five rounds the first four put 5.4% of the replies over the SLO beside 24 sessions
+with two callers, against 18.6% without them, and fewer in every round of four scenarios, for 1.6–4.9% of the agents'
+token rate. In two more the fifth, which version 1.17 serves, cut the replies over the SLO from 55 of 720 to 16, for
+another 3.8% of the agents' token rate.
 
 ## Contents
 
@@ -129,6 +131,7 @@ and both are off by default. They are proposed to vLLM as two stacked pull reque
 | Most of that gain is the arrangement's: tuned vLLM's shared card qualifies at two sessions | 27% more | §6.8 |
 | The 256-token step cap we deploy, in five rounds on new samples | 44 of 295 replies over the SLO, against 94 of 295 at 512 | §6.9 |
 | The serving engine's first four additions (v1.15), in five rounds on new samples | 5.4%, 6.4% and 5.8% of the replies over the SLO with 2, 4 and 6 callers, against 18.6%, 18.5% and 18.0%; the LLM's first token at p95 136–139 ms, against 314–334 | §6.10 |
+| The fifth, the agents' decodes held through the budget cap's window (v1.17), in two more rounds | 16 of 720 replies over the SLO with 2, 4 and 6 callers, against 55 with the first four, for 3.8% of the agents' token rate | §6.10 |
 
 1. Consolidation puts both calls and four agent sessions on one card, beside a card of agents alone.
 
@@ -150,10 +153,11 @@ This report makes six contributions.
 - **It measures what sharing a card buys** over dedicated roles on two cards, under a resource gate, and finds most of
   the gain in the arrangement rather than in the scheduler: the rules' own share is the two agent sessions more that the
   shared card carries within the SLO (§6.8).
-- **It optimizes the serving engine around the rules** from the scheduler's own traces: four additions, each measured
-against the configuration before it with a control, take a call's first token from 354 to 92 ms at p95 beside 12 agents,
-and five rounds measure them in the whole pipeline; two more turn down a fifth and speculative decoding by rules fixed
-before they ran (§6.10).
+- **It optimizes the serving engine around the rules** from the scheduler's own traces: five additions, each measured
+  against the configuration before it with a control, take a call's first token from 354 to 88 ms at p95 beside 12
+  agents and its whole reply from 1,226 to 722 ms. Five rounds measure the first four in the whole pipeline, and two
+  more the fifth, which costs the agents more than a rule fixed before them allowed, and speculative decoding, which its
+  rule turns down (§6.10).
 
 ## 2. Background and motivation
 
@@ -1081,10 +1085,10 @@ round's SLO, and the replies over it are pooled over the rounds and given by rou
 
 ### 6.10 The serving engine's additions cut the replies over the SLO by more than half
 
-Version 1.15 measured five additions to the engine around the two rules and adopted four. Each came from the scheduler's
-own traces on the box and was measured there against the configuration before it, two runs or more with a control ([the
-engine points](../benchmarks/results/2026-11-01-engine-points/README.md)), and each is a switch of make-room or of the
-serve module, which the serving profile sets but for the fifth:
+Version 1.15 measured five additions to the engine around the two rules and adopted four, and version 1.17 the fifth.
+Each came from the scheduler's own traces on the box and was measured there against the configuration before it, two
+runs or more with a control ([the engine points](../benchmarks/results/2026-11-01-engine-points/README.md)), and each is
+a switch of make-room or of the serve module that the serving profile sets:
 
 1. **The calls' prefixes kept on the GPU** (`retain_tokens` 3,584, `retain_s` 30). A finished call turn's blocks stay
    referenced until the conversation's next turn takes them. Without it about half the turns reload their prefix from
@@ -1106,18 +1110,17 @@ serve module, which the serving profile sets but for the fifth:
    sentence's p95 108–135 ms late. Lower-priority decodes now sit out a reply's first 48 tokens, as their prefill does:
    beside 12 agents the 48th token's p95 falls from 998 to 722 ms on Phastform (966 held for 16 tokens) and from 1,016
    to 735 ms on Gray (980 for 16, 841 for 32). In the whole pipeline it cost the agents more than its rule allowed, and
-   the serving profile leaves it off (below).
+   the serving profile takes it from version 1.17, for the voice tail (below).
 
 Table 9 gives the engine points in the order the additions came: two calls of 48-token replies beside 12
 closed-loop agents whose prompts grow from 6,000 to 30,000 tokens, two runs a row but one, on Phastform. Together the
-four the profile adopted take a reply's first token from 354 to 92 ms at p95 and its 48th token, the whole reply, from
-1,226 to 998 ms, and the agents give up 3% of their token rate (2,625 against 2,718 tokens a second); held for 48
-tokens, the agents' decodes would take the 48th token to 722 ms.
+additions take a reply's first token from 354 to 88 ms at p95 and its 48th token, the whole reply, from 1,226 to 722
+ms, and the agents give up 4% of their token rate (2,604 against 2,718 tokens a second); without the decode hold, as
+versions 1.15 and 1.16 served, the 48th token is 998 ms.
 
 **Table 9. The serving engine's additions at the engine level, beside 12 agents on Phastform.** Medians of the runs,
 from the calls' own clocks; the agents' computed tokens a second from the scheduler's trace. The announced turn's row
-adds it to retention, the next row adds just in time to both, and the last two add the decode hold, which the profile
-leaves off.
+adds it to retention, the next row adds just in time to both, and the last two add the decode hold.
 
 | Configuration | First token p50 / p95 | 16th token p50 / p95 | 48th token p95 | Agents' tokens/s |
 |---|---:|---:|---:|---:|
@@ -1126,9 +1129,9 @@ leaves off.
 | + the next batch just in time | 98 / 185 | 323 / 449 | 1,050 | 2,675 |
 | retention + each turn announced | 64 / 90 | 258 / 394 | 1,004 | 2,637 |
 | + just in time too | 63 / 98 | 257 / 403 | 982 | 2,628 |
-| + the agents' reservations taken: the profile | 64 / 92 | 261 / 392 | 998 | 2,625 |
+| + the agents' reservations taken | 64 / 92 | 261 / 392 | 998 | 2,625 |
 | + their decodes held for 16 tokens | 64 / 94 | 258 / 285 | 966 | 2,615 |
-| + held for 48 tokens, the window | 66 / 88 | 257 / 284 | 722 | 2,604 |
+| + held for 48 tokens, the window: the profile | 66 / 88 | 257 / 284 | 722 | 2,604 |
 
 Five rounds then ran v1.14's configuration to deploy beside the same with the first four additions, on new samples of
 the agents, in four scenarios: 24 agent sessions with two, four and six callers, and 16 agent sessions of the whole
@@ -1170,9 +1173,9 @@ replies over it are pooled over the rounds and given by round. Medians over the 
 Two more rounds set the decode hold at 48, and speculative decoding on top of it, against the first four additions with
 two, four and six callers. The hold put 16 of 720 replies over the SLO against 55, fewer in five of the six rounds and
 caller counts, but cost the agents 3.8% of their token rate at the median of the six, past the 3% that a rule fixed
-before the rounds allowed. Speculative decoding put 12 over against the hold's 16, fewer in three of the six where the
-rule asked for five. Neither is in the profile, and both stay switches
-([the rounds](../benchmarks/results/2026-11-02-opt-rounds/README.md)).
+before the rounds allowed: version 1.15 left it out of the profile by that rule, and version 1.17 takes it for the
+voice tail. Speculative decoding put 12 over against the hold's 16, fewer in three of the six where the rule asked for
+five, and stays a switch ([the rounds](../benchmarks/results/2026-11-02-opt-rounds/README.md)).
 
 What was measured and not adopted: synchronous scheduling, whose shorter load path is spent on slower later tokens
 (the agents lose 11–18%); full CUDA graphs through Triton attention, whose long-context prefill is 1.2 times FlashAttention
@@ -1189,13 +1192,13 @@ request, and the serving profile runs the cap the sweep chose for the change, 25
 threshold (§6.9). The gateway sets voice requests to priority 0 and background work to 2 from each client's identity, so
 that a background client cannot raise its own priority.
 
-**The engine's additions.** Version 1.15's serving profile adds four of the switches of §6.10: the calls' prefixes kept
-on the GPU (`retain_tokens` 3,584, `retain_s` 30), the next batch scheduled just in time (the serve module, a 30 ms
-margin), each turn announced (`hint_hold_ms` 400 with the voice worker's `turn_hints`), and the agents' reservations
-taken (`take_reservations`). The fifth, the agents' decodes held through the budget cap's window (`decode_hold_tokens`),
-stays off: in the follow-up rounds it cost the agents more than its rule allowed. The reservations taken and the decode
-hold need the budget cap, and make-room refuses them without it; the announced turn holds the agents' prefill through
-it; each is off by default.
+**The engine's additions.** The serving profile adds the switches of §6.10: the calls' prefixes kept on the GPU
+(`retain_tokens` 3,584, `retain_s` 30), the next batch scheduled just in time (the serve module, a 30 ms margin), each
+turn announced (`hint_hold_ms` 400 with the voice worker's `turn_hints`) and the agents' reservations taken
+(`take_reservations`) from version 1.15, and their decodes held through the budget cap's window (`decode_hold_tokens`
+48) from version 1.17, for the voice tail at 3.8% of the agents' token rate. The reservations taken and the decode hold
+need the budget cap, and make-room refuses them without it; the announced turn holds the agents' prefill through it;
+each is off by default.
 
 **Two cards.** The arrangement to deploy on two cards is consolidation with a warm spare (§6.8). The first card carries
 both calls and at most four agent sessions, the envelope measured beside them, and the second runs agents on the same
@@ -1219,8 +1222,8 @@ flight, so a faster GPU can take a larger cap where its voice tail stays under t
 
 **What to watch.** The voice tier's p95 V2V and its time to first token at p95. The engine's KV usage, running and
 waiting requests, and preemptions, whose count lags. The budget cap's counters of held steps and prefill tokens, and
-with v1.15's switches the turns announced. The agents' completed tokens a second and their p99 TTFT, where a preemption
-policy moves its cost.
+with the engine's additions the turns announced and the decodes held. The agents' completed tokens a second and their
+p99 TTFT, where a preemption policy moves its cost.
 
 **How it fails.** A voice turn that N preemptions cannot make room for waits as on vLLM, and load made only of realtime
 requests leaves nothing to preempt. Overlapping calls hold the background tier for longer, up to the limit of §6.6. An

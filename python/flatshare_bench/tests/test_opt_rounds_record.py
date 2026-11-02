@@ -114,7 +114,8 @@ def test_the_docs_give_the_follow_up_rounds_verdicts_as_the_record_does() -> Non
     hold_fewer = sum(pair[1][0] < pair[0][0] for pair in pairs)
     spec_fewer = sum(pair[2][0] < pair[1][0] for pair in pairs)
     cost = -100 * statistics.median(pair[1][2] / pair[0][2] - 1 for pair in pairs)
-    assert hold <= four and cost > 3  # the hold off: it cost the agents more than 3%
+    # The rule turns the hold down, its cost to the agents past 3%; version 1.17 serves it anyway.
+    assert hold <= four and cost > 3
     assert not (spec < hold and spec_fewer >= 5)  # speculative decoding not adopted
     phrases = {
         "docs/REPORT.md": (
