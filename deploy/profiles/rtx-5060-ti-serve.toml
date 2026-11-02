@@ -28,6 +28,11 @@ reserve_tokens = 0
 # agents' loads. The budget cap holds the agents' prefill back in the step the call is admitted in. Measured in
 # benchmarks/results/2026-11-01-engine-points.
 take_reservations = true
+# Lower-priority decodes sit out the steps of a call's first decode_hold_tokens output tokens, its first sentence, as
+# its prefill already does under the budget cap: a step that also decodes an agent at 15,000 tokens of context takes
+# 18-20 ms against 13 alone, which made a call's slowest first sentences about 100 ms slower. Measured in
+# benchmarks/results/2026-11-01-engine-points. 0 turns it off.
+decode_hold_tokens = 16
 # The calls' prefixes kept on the GPU between their turns, so that no turn reloads its own prefix from the CPU tier
 # (a load costs a call two or three steps however small it is): up to retain_tokens tokens for both calls, each for
 # retain_s seconds without a next turn. With max_model_len 32,768 on this pool, retain_tokens may be at most 3,632
@@ -70,7 +75,7 @@ async_scheduling = true
 # engine built on 2026-10-27 (0d24d178977f3c1b), which the records above measured (make test-trace with
 # TRACE_REFERENCE set to that module finds every step the same); retention, which this profile turns on, is measured in
 # benchmarks/results/2026-11-01-engine-points.
-scheduler_module_sha256 = "32db2c089548974d0c23b4bdbce624c64a838f9aef0fa9f49d239c1c2b9dc8b3"
+scheduler_module_sha256 = "7fda82b068c057a1ede8ce6ad09f5a25fafa6d7c0f5e21125dbddfce1a57cf12"
 # The calls the voice worker takes at once in serve mode: two, the calls of E2's discriminating scenario, at which the
 # sweep's screens and the confirmation rounds measured this configuration (the records above).
 max_calls = 2

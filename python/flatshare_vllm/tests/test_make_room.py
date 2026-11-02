@@ -954,6 +954,51 @@ def test_the_budget_cap_never_cuts_a_decode(module, model):
     assert step(sched).num_scheduled_tokens == {"decode": 1, "voice": 256}
 
 
+@pytest.mark.parametrize(
+    ("make_room", "held"),
+    [
+        ({"budget_cap": True, "decode_hold_tokens": 4}, True),
+        ({"budget_cap": True}, False),  # the negative control: the budget cap never cuts a decode
+    ],
+)
+def test_lower_priority_decodes_sit_out_a_requests_first_tokens_with_the_decode_hold(
+    module, model, make_room, held
+):
+    """With decode_hold_tokens, here 4, a priority-2 decode sits out the steps of a running priority-0 request's first 4
+    output tokens: the turn's prefill step, from the waiting loop, still carries it, the steps of the turn's next three
+    tokens are the turn's alone, and then the decode resumes. A call's first sentence then decodes in steps that read no
+    agent's long context, which made its slowest first sentences 100 ms slower on the box (the engine points)."""
+    sched = scheduler(
+        module.Scheduler, model, 400, make_room, long_prefill_token_threshold=256, max_model_len=4096
+    )
+    run(sched, request("decode", 40, priority=2, arrival=0, max_tokens=400))
+    sched.add_request(request("voice", 100, priority=0, arrival=1))
+    steps = [step(sched).num_scheduled_tokens for _ in range(6)]
+
+    if held:
+        assert steps == [{"decode": 1, "voice": 100}] + [{"voice": 1}] * 3 + [
+            {"decode": 1, "voice": 1}
+        ] * 2
+    else:
+        assert steps == [{"decode": 1, "voice": 100}] + [{"decode": 1, "voice": 1}] * 5
+
+
+def test_the_decode_hold_holds_no_decode_of_the_same_priority(module, model):
+    """Another call's decode, of the same priority, keeps its steps while a turn decodes its first tokens."""
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        400,
+        {"budget_cap": True, "decode_hold_tokens": 4},
+        long_prefill_token_threshold=256,
+        max_model_len=4096,
+    )
+    run(sched, request("call", 40, priority=0, arrival=0, max_tokens=400))
+    sched.add_request(request("voice", 100, priority=0, arrival=1))
+    steps = [step(sched).num_scheduled_tokens for _ in range(3)]
+    assert steps == [{"call": 1, "voice": 100}] + [{"call": 1, "voice": 1}] * 2
+
+
 def test_a_waiting_request_that_does_not_fit_holds_nothing_back(module, model):
     """Without KV make-room, a priority-0 request of 10 blocks does not fit beside the priority-2 prefill in flight,
     which still needs 10 of the 12 free blocks: the prefill, whose blocks it waits for, goes on."""
@@ -1549,6 +1594,29 @@ def test_make_room_logs_the_turns_announced_with_hints_on(module, model, monkeyp
     assert lines[-1].endswith("; 0 preemptions to make room; 1 turns announced")
 
 
+def test_make_room_logs_the_decodes_held_with_the_decode_hold_on(module, model, monkeypatch):
+    """With decode_hold_tokens, make-room's line also counts the lower-priority decode slots held back."""
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        400,
+        {"budget_cap": True, "decode_hold_tokens": 4},
+        long_prefill_token_threshold=256,
+        max_model_len=4096,
+    )
+    lines = []
+    monkeypatch.setattr(
+        module, "logger", SimpleNamespace(info=lambda msg, *a: lines.append(msg % a))
+    )
+    run(sched, request("decode", 40, priority=2, arrival=0, max_tokens=400))
+    sched.add_request(request("voice", 100, priority=0, arrival=1))
+    for _ in range(4):
+        step(sched)
+    sched._make_room_log_time -= 10
+    step(sched)
+    assert lines[-1].endswith("; 0 preemptions to make room; 3 decodes held")
+
+
 @pytest.mark.parametrize("threshold, held_tokens", [(128, 2 * 128), (384, 511)])
 def test_a_steps_held_tokens_are_at_most_what_its_budget_leaves(
     module, model, threshold, held_tokens
@@ -1878,6 +1946,11 @@ def test_the_retention_must_leave_room_for_a_full_length_request(module, model):
             {"take_reservations": True},
             "make_room.take_reservations needs make_room.budget_cap",
         ),
+        ({"decode_hold_tokens": 16}, "make_room.decode_hold_tokens needs make_room.budget_cap"),
+        (
+            {"decode_hold_tokens": -1},
+            "make_room.decode_hold_tokens must be an integer of at least 0, not -1",
+        ),
     ],
 )
 def test_a_bad_switch_fails_the_engine_start_naming_it(module, model, make_room, message):
@@ -1905,6 +1978,8 @@ def test_the_switches_need_priority_scheduling(module, model):
         scheduler(module.Scheduler, model, 33, {"retain_tokens": 64}, policy="fcfs")
     with pytest.raises(ValueError, match="make_room needs --scheduling-policy priority"):
         scheduler(module.Scheduler, model, 33, {"take_reservations": True}, policy="fcfs")
+    with pytest.raises(ValueError, match="make_room needs --scheduling-policy priority"):
+        scheduler(module.Scheduler, model, 33, {"decode_hold_tokens": 16}, policy="fcfs")
     scheduler(
         module.Scheduler,
         model,
