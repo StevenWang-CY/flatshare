@@ -28,11 +28,12 @@ reserve_tokens = 0
 # agents' loads. The budget cap holds the agents' prefill back in the step the call is admitted in. Measured in
 # benchmarks/results/2026-11-01-engine-points.
 take_reservations = true
-# Lower-priority decodes sit out the steps of a call's first decode_hold_tokens output tokens, its first sentence, as
-# its prefill already does under the budget cap: a step that also decodes an agent at 15,000 tokens of context takes
-# 18-20 ms against 13 alone, which made a call's slowest first sentences about 100 ms slower. Measured in
+# Lower-priority decodes sit out the steps of a call's first decode_hold_tokens output tokens, the budget cap's
+# window, as their prefill already does: a step that also decodes an agent at 15,000 tokens of context takes 18-20 ms
+# against 13 alone, which made a reply's slowest first sentences 100-300 ms slower. At 48 the 48th token's p95 was
+# 734-736 ms beside 12 agents on Gray, against 989-1,042 without the hold and 980 at 16. Measured in
 # benchmarks/results/2026-11-01-engine-points. 0 turns it off.
-decode_hold_tokens = 16
+decode_hold_tokens = 48
 # The calls' prefixes kept on the GPU between their turns, so that no turn reloads its own prefix from the CPU tier
 # (a load costs a call two or three steps however small it is): up to retain_tokens tokens for both calls, each for
 # retain_s seconds without a next turn. With max_model_len 32,768 on this pool, retain_tokens may be at most 3,632
