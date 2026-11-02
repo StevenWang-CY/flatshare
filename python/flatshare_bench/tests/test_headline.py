@@ -1,15 +1,17 @@
 """The headline tables against the committed records: every number of README.md's table and of docs/PRODUCTION.md's
 "What it buys" table, as printed, from the medians of the W5 runs its row reports, pooled over the campaigns that ran
 it as benchmarks/results/2026-10-24-e2-w5/compare.py pools them; the headline numbers of the README's opening and of
-docs/REPORT.md's abstract, from the W5, A100 and two-card records, and the one date both give the pull requests' state;
-the report's Tables 6 and 8 and §6.9's comparison, from the two-card record's own gate.py; and BENCHMARKS.md's FB, RS,
-transport and window-sweep tables, from those records' own compare.py, running_share.py, ab.py and table.py. New
-records, or a table edited by hand, cannot leave a stale headline: the commit that changes either fails here."""
+docs/REPORT.md's abstract, from the W5, A100 and two-card records, and the one date both give the pull requests'
+state; the report's Tables 6 and 8 and §6.9's comparison, from the two-card record's own gate.py; its Table 9 and
+§6.10's sums, from the engine points' table.py; and BENCHMARKS.md's FB, RS, transport and window-sweep tables, from
+those records' own compare.py, running_share.py, ab.py and table.py. New records, or a table edited by hand, cannot
+leave a stale headline: the commit that changes either fails here."""
 
 from __future__ import annotations
 
 import functools
 import importlib.util
+import json
 import re
 import statistics
 import subprocess
@@ -350,6 +352,104 @@ def test_the_reports_step_cap_table_and_its_comparison_are_the_rounds_records() 
         f"from {at512['ttft'][0]:.0f} s to {at256['ttft'][0]:.0f} s",
     ):
         assert phrase in prose, phrase
+
+
+ENGINE_POINTS = REPO / "benchmarks" / "results" / "2026-11-01-engine-points"
+_spec = importlib.util.spec_from_file_location("engine_points_table", ENGINE_POINTS / "table.py")
+engine_points = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(engine_points)
+ENGINE_ROWS = {
+    "v1.14's serving profile": "a0-grow",
+    "+ the calls' prefixes kept on the GPU": "r0-grow",
+    "+ the next batch just in time": "r0j-grow",
+    "retention + each turn announced": "r0h-grow",
+    "+ just in time too": "r0hj-grow",
+    "+ the agents' reservations taken": "r0hjt-grow",
+    "+ their decodes held for 16 tokens": "r0hjtd-grow",
+    "+ held for 48 tokens, the window: the profile": "r0hjtd48-grow",
+}
+"""Table 9's rows (§6.10), by their first cell, and the engine points' arm each reports, on Phastform."""
+
+
+def engine_row(arm: str) -> dict[str, float]:
+    """An arm's Phastform runs as the engine points' table.py reads them: the medians over its runs of the calls'
+    first token and 16th token (p50 and p95), their 48th token's p95, and the agents' computed tokens a second."""
+    runs = engine_points.points()[("phastform", arm)]
+    seen = [engine_points.client(run) for run in runs]
+    replies = [
+        engine_points.REPLY.search((run / "tail.txt").read_text().split("\nreplies: ", 1)[1])
+        for run in runs
+    ]
+    tokens = [json.loads((run / "stages.json").read_text())["agent_tokens_per_s"] for run in runs]
+    return {
+        "first p50": statistics.median(s[0] for s in seen),
+        "first p95": statistics.median(s[1] for s in seen),
+        "16th p50": statistics.median(s[2] for s in seen),
+        "16th p95": statistics.median(s[3] for s in seen),
+        "48th p95": statistics.median(float(r[3]) for r in replies),
+        "agents": statistics.median(tokens),
+    }
+
+
+def test_the_reports_engine_table_and_its_sums_are_the_engine_points_record() -> None:
+    # Table 9 (§6.10), cell by cell, from the engine points' runs on Phastform, its first row with the unit; and the
+    # sums §6.10 draws from its first and last rows.
+    rows = rows_of(REPORT, "| Configuration | First token p50 / p95 |")
+    assert [label for label, *_ in rows] == list(ENGINE_ROWS)
+    for k, (label, first, sixteenth, last, agents) in enumerate(rows):
+        m, unit = engine_row(ENGINE_ROWS[label]), " ms" if k == 0 else ""
+        assert first == f"{m['first p50']:,.0f} / {m['first p95']:,.0f}{unit}", label
+        assert sixteenth == f"{m['16th p50']:,.0f} / {m['16th p95']:,.0f}{unit}", label
+        assert last == f"{m['48th p95']:,.0f}{unit}", label
+        assert agents == f"{m['agents']:,.0f}", label
+    before, after = engine_row("a0-grow"), engine_row("r0hjtd48-grow")
+    prose = passage(REPORT, "Table 9 gives the engine points", "**Table 9.")
+    for phrase in (
+        f"from {before['first p95']:,.0f} to {after['first p95']:,.0f} ms at p95",
+        f"from {before['48th p95']:,.0f} to {after['48th p95']:,.0f} ms",
+        f"give up {1 - after['agents'] / before['agents']:.0%} of their token rate",
+        f"({after['agents']:,.0f} against {before['agents']:,.0f} tokens a second)",
+    ):
+        assert phrase in prose, phrase
+
+
+OPT_ROUNDS = data.opt_rounds_table()
+"""The optimization rounds' own table.py (benchmarks/results/2026-11-02-opt-rounds), whose functions count §6.10's
+rounds."""
+OPT_CONFIGURATIONS = {
+    "v1.14's configuration to deploy": 0,
+    "+ the first four additions": 1,
+}
+"""Table 10's configurations (§6.10), by their cell, and their place in each of the record's scenarios."""
+
+
+def test_the_reports_rounds_table_is_the_opt_rounds_record() -> None:
+    # Table 10 (§6.10), cell by cell, as the optimization rounds' table.py counts each scenario's five rounds: the
+    # replies over each round's SLO pooled and by round, and the medians over the rounds of the V2V p95, the LLM's first
+    # token at p95 and the agents' tokens a second.
+    rows = rows_of(REPORT, "| Scenario | Configuration | Replies over the SLO |")
+    points = OPT_ROUNDS.points()
+    expected = []
+    for scenario, *pair in OPT_ROUNDS.SCENARIOS:
+        for configuration, k in OPT_CONFIGURATIONS.items():
+            point = pair[k]
+            rounds = OPT_ROUNDS.by_round(point, points)
+            over, replies = sum(r[1] for r in rounds), sum(r[2] for r in rounds)
+            got = [
+                points[name, point] for name in OPT_ROUNDS.ran(points) if (name, point) in points
+            ]
+            expected.append(
+                [
+                    scenario,
+                    configuration,
+                    f"{over} / {replies} ({tenths(over, replies)})",
+                    ", ".join(str(r[1]) for r in rounds),
+                    f"{statistics.median(r['v2v_p95_ms'] for r in got):,.0f} ms",
+                    f"{statistics.median(r['llm_ttft_p95_ms'] for r in got):,.0f} ms",
+                    f"{statistics.median(r['background_tokens_per_s'] for r in got):,.0f}",
+                ]
+            )
+    assert rows == expected
 
 
 KNEE = REPO / "benchmarks" / "results" / "2026-10-25-window-knee"

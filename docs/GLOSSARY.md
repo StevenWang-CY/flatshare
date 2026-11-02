@@ -45,6 +45,15 @@ which use it retires.
   48-token window and no reserve, at the serving profile's step cap of 256 tokens without a per-request threshold
   ([PRODUCTION.md](PRODUCTION.md#the-configuration)). W5's evaluation ran the same switches on the frozen box's engine,
   at 512 tokens a step with a 256-token threshold.
+- **The engine's additions** (version 1.15): five switches of make-room and of the serve module that the serving profile
+  sets around the two rules ([the report's
+  §6.10](REPORT.md#610-the-serving-engines-additions-cut-the-replies-over-the-slo-by-more-than-half)). **Retention**
+  (`make_room.retain_tokens`, `retain_s`) keeps the calls' prefixes on the GPU between their turns; **just in time**
+  (the serve module's `flatshare_jit`) schedules the next batch when the step in flight is due to end; **the announced
+  turn** (`make_room.hint_hold_ms`, the voice worker's `turn_hints`) holds agent prefill from the user's end of speech;
+  **the reservations taken** (`make_room.take_reservations`) let a call leave free only its own class's block
+  reservations; **the decode hold** (`make_room.decode_hold_tokens`) keeps lower-priority decodes out of a reply's first
+  tokens, as the budget cap keeps their prefill. The decode hold is not the budget cap, which is never "the hold".
 - **The KV preemption** (#63350): a waiting request of a higher priority that lacks KV preempts running requests of a
   lower priority, at most N a step (`--max-priority-preemptions-per-step`; in make-room,
   `make_room.max_preemptions_per_step`).

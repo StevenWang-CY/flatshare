@@ -37,3 +37,9 @@ def test_every_point_the_tables_name_is_in_the_record() -> None:
     ran = {arm for _, arm in table.points()}
     for name, arms in table.TABLES.items():
         assert set(arms) <= ran, (name, sorted(set(arms) - ran))
+
+
+def test_benchmarks_gives_the_adopted_table_as_the_record_does() -> None:
+    # BENCHMARKS.md's ledger of the serving engine's additions is the record's own table of them, row for row.
+    benchmarks = (REPO / "docs" / "BENCHMARKS.md").read_text()
+    assert _table().table("adopted") in benchmarks

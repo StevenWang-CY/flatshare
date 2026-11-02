@@ -17,6 +17,7 @@ The numbers come from the frozen box ([`deploy/phastform`](../deploy/phastform))
 - [What does the change take from the agents?](#what-does-the-change-take-from-the-agents)
 - [How often do running agents leave two calls short of KV?](#how-often-do-running-agents-leave-two-calls-short-of-kv)
 - [Which step cap should the change run at?](#which-step-cap-should-the-change-run-at)
+- [What do the serving engine's additions do to a voice turn?](#what-do-the-serving-engines-additions-do-to-a-voice-turn)
 - [Which arrangement of two cards does the most background work?](#which-arrangement-of-two-cards-does-the-most-background-work)
 - [Does the arrangement to deploy keep its SLO over a day?](#does-the-arrangement-to-deploy-keep-its-slo-over-a-day)
 - [Do the rules carry to a datacenter card?](#do-the-rules-carry-to-a-datacenter-card)
@@ -471,6 +472,100 @@ RG's five rounds (agent seeds 21–25, Phastform and Gray in turn, below) then r
 
 - **The screens' choice stands.** At 256 tokens a step without a threshold the configuration to deploy had fewer replies over the SLO than at W5's 512/256 in each of the five rounds, half as many pooled, and the serving profile runs it. The agents pay 7% of their token rate for it (3,067 against 3,303 tokens/s) and their median TTFT rises from 78 to 85 s.
 - **Still over the requirement at 24 sessions.** 14.9% of the replies were over, where the SLO allows 5%; the two-card comparison below finds the shared card within it at four sessions. Each round's SLO is in [SLO.md](SLO.md#the-slos-reference-campaign-by-campaign), and the record's `gate.py` gives this table.
+
+## What do the serving engine's additions do to a voice turn?
+
+**Provenance:** the engine points, 2026-11-01 and 02; OR, 2026-11-02.
+
+**The engine points** ran the serving profile's engine as a process of its own on Phastform and on Gray, two calls of
+the voice agent's turns beside 12 closed-loop coding agents for 240 s, the scheduler traced step by step
+([the record](../benchmarks/results/2026-11-01-engine-points/README.md), whose `table.py` gives every point, the
+alternatives not adopted and the controls among them). Each addition ran against the point before it, two runs a row
+but the two that ran once:
+
+| Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | p95 | Later tokens, ms each | Agents' tokens/s |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| phastform | v1.14's serving profile (asynchronous scheduling) | 2 | 175 (170-180) | 354 (339-368) | 408 (407-409) | 597 (594-600) | 13.7 | 2,718 |
+| phastform | + the calls' prefixes kept on the GPU (retention) | 2 | 122 (118-127) | 230 (223-236) | 354 (349-359) | 502 (495-508) | 13.9 | 2,761 |
+| phastform | + the next batch just in time (30 ms margin) | 2 | 98 (94-101) | 185 (170-200) | 323 (320-326) | 449 (448-450) | 13.8 | 2,675 |
+| phastform | + each turn announced (250 ms ahead, held 400 ms) | 2 | 64 (63-65) | 90 (83-96) | 258 (256-259) | 394 (388-401) | 13.7 | 2,637 |
+| phastform | + the turn announced and just in time | 1 | 63 | 98 | 257 | 403 | 13.6 | 2,628 |
+| phastform | + the calls taking the agents' reservations | 2 | 64 (64-64) | 92 (91-94) | 261 (260-262) | 392 (391-392) | 13.6 | 2,625 |
+| phastform | + the agents' decodes held from a call's first 16 tokens | 2 | 64 (63-65) | 94 (92-95) | 258 (256-261) | 285 (284-286) | 13.8 | 2,615 |
+| phastform | the same, the decodes held from a call's first 48 tokens | 2 | 66 (65-66) | 88 (85-92) | 257 (257-257) | 284 (278-291) | 13.4 | 2,604 |
+| gray | v1.14's serving profile (asynchronous scheduling) | 2 | 182 (179-184) | 308 (299-316) | 400 (396-403) | 608 (591-624) | 13.8 | 2,682 |
+| gray | + the calls' prefixes kept on the GPU (retention) | 2 | 139 (136-142) | 256 (254-259) | 374 (373-376) | 502 (497-507) | 13.8 | 2,686 |
+| gray | + each turn announced (250 ms ahead, held 400 ms) | 2 | 72 (71-74) | 110 (109-110) | 270 (269-270) | 405 (404-406) | 13.7 | 2,606 |
+| gray | + the turn announced and just in time | 2 | 72 (71-72) | 111 (108-114) | 270 (270-270) | 438 (413-462) | 13.5 | 2,584 |
+| gray | + the calls taking the agents' reservations | 2 | 71 (71-71) | 106 (96-115) | 268 (266-269) | 402 (395-408) | 13.5 | 2,554 |
+| gray | + the agents' decodes held from a call's first 16 tokens | 1 | 72 | 108 | 268 | 300 | 13.8 | 2,569 |
+| gray | the same, the decodes held from a call's first 48 tokens | 2 | 74 (73-74) | 106 (103-109) | 267 (267-267) | 300 (299-301) | 13.3 | 2,600 |
+
+- **Retention** takes the call's prefix load off its first token: the engine's load stage falls from 69 to 12 ms a
+  turn on Phastform, and the first token from 175 to 122 ms at the median.
+- **Just in time**, the next batch scheduled when the step in flight is due to end, brings it to 98 ms, with no idle
+  time added to the GPU.
+- **The turn announced** brings the first token to 64 ms at the median and the 16th, about a first sentence, from 408
+  to 258 ms, at 4% of the agents' token rate.
+- **The reservations taken** remove the 1.4–4.5 s stalls of three Gray points, at no cost
+  ([the stalls](../benchmarks/results/2026-11-01-engine-points/README.md#the-stalls)).
+- **The decode hold**, through the budget cap's 48 tokens, takes the 16th token's p95 from 392 to 284 ms and the
+  48th's, the whole reply, from 998 to 722 ms, the first token and the agents unchanged.
+
+**OR's five rounds** (agent seeds 31–35, Phastform and Gray in turn) ran v1.14's configuration to deploy beside the
+same with the first four additions, each round against its own SLO, voice alone with as many callers plus 250 ms
+([the rounds' record](../benchmarks/results/2026-11-02-opt-rounds/README.md), whose `table.py` gives these tables):
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-opt-rounds-narrow.svg">
+  <img src="figures/report-opt-rounds.svg" width="100%" alt="In panel a, each scenario's replies over their round's SLO in 5 rounds, v1.14's configuration to deploy and the same with the first four of version 1.15's additions to the engine, each round a tick and the rounds pooled a marker, against the requirement of at most 5%, and in panel b the agents' tokens a second over the calls' first 240 s, each round a tick and their median a marker: 24 agent sessions, 2 callers, v1.14's configuration to deploy 10, 13, 10, 6, 16 by round, 55 of 295 in all, at 3,010 agents' tokens a second, the same with the first four additions 7, 1, 4, 4, 0 by round, 16 of 295 in all, at 2,933 agents' tokens a second; 24 agent sessions, 4 callers, v1.14's configuration to deploy 19, 25, 29, 12, 25 by round, 110 of 595 in all, at 2,753 agents' tokens a second, the same with the first four additions 5, 10, 9, 6, 8 by round, 38 of 595 in all, at 2,754 agents' tokens a second; 24 agent sessions, 6 callers, v1.14's configuration to deploy 23, 56, 27, 29, 29 by round, 164 of 910 in all, at 2,580 agents' tokens a second, the same with the first four additions 3, 20, 10, 9, 11 by round, 53 of 910 in all, at 2,476 agents' tokens a second; 16 agent sessions of the whole corpus, 2 callers, v1.14's configuration to deploy 5, 3, 3, 9, 2 by round, 22 of 295 in all, at 4,948 agents' tokens a second, the same with the first four additions 2, 2, 1, 5, 0 by round, 10 of 295 in all, at 4,900 agents' tokens a second.">
+</picture>
+
+**In every scenario the first four additions put fewer than half as many of the pooled replies over the SLO, and beside
+16 sessions they met the 5% requirement.** (a) Each round's share of its replies over that round's SLO and the five
+rounds pooled; the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s, each
+round a tick and the median a marker. Medians over the rounds below, with their range.
+
+| Scenario | Configuration | Rounds | Replies over the SLO | V2V p50, ms | V2V p95 | The SLO |
+|---|---|---:|---:|---:|---:|---:|
+| 24 agent sessions, 2 callers | v1.14 | 5 | 55 of 295 (18.6%) | 1,894 (1,853–1,934) | 2,176 (2,066–2,215) | 2,010 (1,976–2,051) |
+| 24 agent sessions, 2 callers | The first four additions | 5 | 16 of 295 (5.4%) | 1,712 (1,692–1,765) | 2,023 (1,927–2,139) | 2,010 (1,976–2,051) |
+| 24 agent sessions, 4 callers | v1.14 | 5 | 110 of 595 (18.5%) | 1,897 (1,849–1,934) | 2,274 (2,126–2,299) | 2,065 (2,046–2,142) |
+| 24 agent sessions, 4 callers | The first four additions | 5 | 38 of 595 (6.4%) | 1,744 (1,709–1,800) | 2,106 (2,015–2,168) | 2,065 (2,046–2,142) |
+| 24 agent sessions, 6 callers | v1.14 | 5 | 164 of 910 (18.0%) | 1,913 (1,890–1,944) | 2,320 (2,260–2,361) | 2,119 (2,047–2,174) |
+| 24 agent sessions, 6 callers | The first four additions | 5 | 53 of 910 (5.8%) | 1,754 (1,729–1,778) | 2,152 (2,062–2,172) | 2,119 (2,047–2,174) |
+| 16 agent sessions of the whole corpus, 2 callers | v1.14 | 5 | 22 of 295 (7.5%) | 1,661 (1,635–1,801) | 2,012 (1,931–2,322) | 2,010 (1,976–2,051) |
+| 16 agent sessions of the whole corpus, 2 callers | The first four additions | 5 | 10 of 295 (3.4%) | 1,675 (1,641–1,708) | 1,916 (1,820–2,049) | 2,010 (1,976–2,051) |
+
+| Scenario | Configuration | LLM first token p50, ms | p95 | First sentence p50 | p95 | E2E p95 |
+|---|---|---:|---:|---:|---:|---:|
+| 24 agent sessions, 2 callers | v1.14 | 220 (204–237) | 314 (290–345) | 464 (443–484) | 706 (653–718) | 1,783 (1,680–1,815) |
+| 24 agent sessions, 2 callers | The first four additions | 94 (86–102) | 136 (124–139) | 327 (307–332) | 560 (470–623) | 1,643 (1,526–1,720) |
+| 24 agent sessions, 4 callers | v1.14 | 210 (198–225) | 334 (329–340) | 456 (430–487) | 787 (608–816) | 1,898 (1,707–1,965) |
+| 24 agent sessions, 4 callers | The first four additions | 95 (92–103) | 139 (128–145) | 324 (308–368) | 580 (505–672) | 1,740 (1,585–1,785) |
+| 24 agent sessions, 6 callers | v1.14 | 206 (199–232) | 325 (312–346) | 437 (425–496) | 737 (686–861) | 1,939 (1,889–1,953) |
+| 24 agent sessions, 6 callers | The first four additions | 95 (88–99) | 139 (129–166) | 316 (298–339) | 557 (535–593) | 1,692 (1,684–1,753) |
+| 16 agent sessions of the whole corpus, 2 callers | v1.14 | 102 (88–150) | 255 (188–303) | 329 (302–402) | 570 (494–822) | 1,635 (1,534–1,959) |
+| 16 agent sessions of the whole corpus, 2 callers | The first four additions | 90 (84–94) | 125 (112–145) | 305 (272–337) | 458 (438–627) | 1,517 (1,496–1,684) |
+
+| Scenario | Configuration | Agents' tokens/s | Against v1.14 | Agents' TTFT p50, s | p99 |
+|---|---|---:|---:|---:|---:|
+| 24 agent sessions, 2 callers | v1.14 | 3,010 (2,720–3,275) | – | 100.5 (74.9–116.4) | 125.2 (112.2–138.7) |
+| 24 agent sessions, 2 callers | The first four additions | 2,933 (2,692–3,221) | -1.6% (-4.3%–-0.5%) | 105.0 (74.5–120.2) | 125.9 (111.7–141.9) |
+| 24 agent sessions, 4 callers | v1.14 | 2,753 (2,548–3,062) | – | 112.2 (79.8–130.0) | 130.7 (116.0–147.8) |
+| 24 agent sessions, 4 callers | The first four additions | 2,754 (2,508–2,947) | -3.7% (-4.3%–+0.0%) | 121.6 (87.0–135.4) | 139.8 (117.1–153.4) |
+| 24 agent sessions, 6 callers | v1.14 | 2,580 (2,415–2,888) | – | 124.7 (88.8–137.6) | 142.1 (118.6–154.0) |
+| 24 agent sessions, 6 callers | The first four additions | 2,476 (2,215–2,780) | -4.9% (-8.3%–-2.1%) | 131.8 (95.5–145.0) | 148.3 (129.6–160.5) |
+| 16 agent sessions of the whole corpus, 2 callers | v1.14 | 4,948 (4,633–8,364) | – | 0.1 (0.1–0.2) | 6.6 (1.2–7.7) |
+| 16 agent sessions of the whole corpus, 2 callers | The first four additions | 4,900 (4,666–9,034) | -1.0% (-2.3%–+8.0%) | 0.1 (0.1–0.2) | 7.3 (2.9–8.2) |
+
+- **Fewer replies over the SLO in every round of every scenario**, 20 of 20, and fewer than half as many pooled. Beside
+  24 sessions the first four additions met the 5% allowance in 5 of the 15 rounds and caller counts, v1.14 in none;
+  beside 16 sessions they met it pooled.
+- **The LLM's part of the turn comes sooner**: beside 24 sessions its first token at p95 falls from 314–334 ms to
+  136–139 ms and its first sentence at p95 from 706–787 ms to 557–580 ms.
+- **The agents give up 1.6% of their token rate with two callers, 3.7% with four and 4.9% with six**, at the median of
+  each round's pair.
 
 <a id="two-cards-rg"></a>
 

@@ -1099,12 +1099,16 @@ def test_the_opt_rounds_are_their_records_rounds(drawn: dict[str, Path]) -> None
         [1, 2, 3, 4, 5]
     ] * 8
     assert figures.REQUIREMENT == 0.05
-    # The claim its caption opens with: in every scenario the first four additions put fewer of the pooled replies
-    # over the SLO.
+    # The claim its caption opens with: in every scenario the first four additions put fewer than half as many of the
+    # pooled replies over the SLO, and beside 16 sessions they were within the requirement.
     assert all(
-        sum(r.over for r in c.after) * sum(r.replies for r in c.before)
+        2 * sum(r.over for r in c.after) * sum(r.replies for r in c.before)
         < sum(r.over for r in c.before) * sum(r.replies for r in c.after)
         for c in scenarios
+    )
+    [sixteen] = [c for c in scenarios if c.name.startswith("16 ")]
+    assert sum(r.over for r in sixteen.after) <= figures.REQUIREMENT * sum(
+        r.replies for r in sixteen.after
     )
     shares = {
         f"{sum(r.over for r in rounds) / sum(r.replies for r in rounds):.1%}"
@@ -1309,6 +1313,7 @@ FIGURES_ABOVE_TABLES = {
     "report-cards": "| Arrangement | Sessions (shared + second card) |",
     "report-a100": "| Agents' sample (seed) | Voice alone | Tuned vLLM, the box's 512/256 |",
     "report-step-cap": "| Configuration | Rounds | V2V p95: median of the rounds / pooled |",
+    "report-opt-rounds": "| Scenario | Configuration | Rounds | Replies over the SLO |",
     "report-starts": "| Start | Unit start to ready | Where the time goes |",
     "report-soak": "| Run | Hours | Calls (accepted, refused, failed) |",
 }
@@ -1356,6 +1361,12 @@ def test_the_deployed_results_figures_say_what_their_records_do(drawn: dict[str,
             f"round, and no configuration met the {requirement} requirement in any.",
             f"(a) Each round's share of its {per_round} replies over that round's SLO, beside "
             f"{sessions.pop()} coding-agent sessions; the dashed line is the requirement.",
+        ),
+        "report-opt-rounds": (
+            "Figure 16",
+            "In every scenario the first four additions put fewer than half as many of the pooled replies over the "
+            f"SLO, and beside 16 sessions they met the {requirement} requirement.",
+            "(a) Each round's share of its replies over that round's SLO and the five rounds pooled",
         ),
         "report-starts": (
             "Figure D1",
