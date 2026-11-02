@@ -9,7 +9,7 @@ Flatshare runs a realtime voice agent beside background LLM work on one GPU, or 
 
 The designs that were measured and dropped are in §7, failure handling in §8 and testing in §9.
 
-This document describes what is built, as of v1.17, for a reader who wants to know how the parts work and fit together before reading or changing the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers, [PRIOR-ART.md](PRIOR-ART.md) what is new here and what is prior work, the [ADRs](README.md#decisions) the decisions, and [GLOSSARY.md](GLOSSARY.md) the terms.
+This document describes what is built, as of v1.18, for a reader who wants to know how the parts work and fit together before reading or changing the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers, [PRIOR-ART.md](PRIOR-ART.md) what is new here and what is prior work, the [ADRs](README.md#decisions) the decisions, and [GLOSSARY.md](GLOSSARY.md) the terms.
 
 ## At a glance
 

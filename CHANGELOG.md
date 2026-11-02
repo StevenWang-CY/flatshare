@@ -5,6 +5,38 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.18](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.18) (2026-11-02): the documents made current and consistent
+
+The documents, as GitHub renders them, follow one form and say where v1.17 stands: the README, the report, the method,
+operations and decision documents, and the packages' and the records' READMEs. No measured number changed, and the code
+that serves is v1.17's.
+
+- **The README** gives each further result one bullet with its section of the report, sets the demo figure after the
+  opening, and puts its Results table's units in the header, so that no cell wraps. Its limits give v1.17's decode hold
+  (beside 24 sessions, 0.8–5.1% of the replies over the SLO in two rounds), and its code blocks fit the page.
+- **The report, version 1.18,** corrects Appendix A, which said BENCHMARKS lists every measurement: it lists the
+  campaigns' measurements, and the records' READMEs the probes and checks around them. Its tables' empty cells are em
+  dashes, as every other document's are.
+- **BENCHMARKS and the method documents** give each question one layout: provenance, how it ran, figure, caption, table,
+  findings. The tables BENCHMARKS shares with the engine points' and the rounds' records set each median over its range,
+  as those records now print them too. PRIOR-ART says the configuration to deploy ends 0.20 s over the SLO, where it
+  said within 0.2 s, and that vLLM 0.33.0 includes #61976 and #54627.
+- **Every table and code block fits the page** at github.com's width, as Chrome measures GitHub's rendering of each
+  file: BENCHMARKS' costs to the agents by mechanism and the follow-up rounds' are two tables each, the soak's reads
+  down, and the FP8 crash's runs are two tables, which `summarize.py` prints and a test holds to the runs' files; long
+  commands are cut into continuation lines and their comments wrapped, the commands themselves unchanged. The tools' own
+  summaries stay as their tools write them.
+- **The records' READMEs** share one skeleton, and what they say in the present tense is dated or brought up to date:
+  vllm-project/agentic-api#478 merged on 2026-10-26, vLLM 0.33.0 is out and make-room ported to it, and vLLM #64165 is
+  open as of 2026-11-02.
+- **The packages', operations' and decision records' documents** share one skeleton and name make-room's two vLLM
+  releases and the profile's decode hold. flatshare-sim's two tables that ran off the page are two each, and ADR-0006
+  and ADR-0009 gain dated notes under Later.
+- **A test holds every relative link** of the repository's Markdown, its images and anchors too, to its target as GitHub
+  resolves it.
+- **The packages** are versioned 1.18.0, and are not published to a package index.
+- **Upgrading from v1.17** needs no change on a host: the code that serves and the serving profile are v1.17's.
+
 ## [v1.17](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.17) (2026-11-02): the decode hold in the serving profile
 
 The serving profile holds the agents' decodes out of a voice reply's first 48 tokens, the budget cap's window, for the
