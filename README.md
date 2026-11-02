@@ -171,12 +171,15 @@ PYTHONPATH=~/make-room vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --max-model-le
 . ~/vllm-0.32/bin/activate && python python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py http://127.0.0.1:8000 kv
 ```
 
+To run the probe again on make-room, wait 30 s first: the engine keeps the last voice turn's prefix on the GPU that
+long (`retain_s`), and the probe sizes its load for an empty pool.
+
 <!-- quick-start probe -->
-The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On the box, with the card's own KV pool,
-it was 1,963–1,967 ms on stock vLLM and 258–292 ms with make-room, in four runs each
-([stock](benchmarks/results/2026-10-29-quick-start/stock-kv.log),
-[make-room](benchmarks/results/2026-10-29-quick-start/make-room-kv.log),
-[the record](benchmarks/results/2026-10-29-quick-start/README.md)).
+The probe prints the voice turn's time to its first token as `priority-0 TTFT`. On an RTX 5060 Ti (Gray), with the
+card's own KV pool, it was 2,217–2,236 ms on stock vLLM and 300–317 ms with make-room in the configuration to deploy,
+in four runs each ([stock](benchmarks/results/2026-11-02-quick-start/stock-kv.log),
+[make-room](benchmarks/results/2026-11-02-quick-start/make-room-kv.log),
+[the record](benchmarks/results/2026-11-02-quick-start/README.md)).
 <!-- /quick-start probe -->
 
 Both ran at the serving profile's step cap, 256 tokens a step without a per-request threshold, and make-room in the
