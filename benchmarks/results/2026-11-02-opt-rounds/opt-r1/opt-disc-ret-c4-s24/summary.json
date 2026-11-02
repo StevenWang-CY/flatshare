@@ -1,0 +1,261 @@
+{
+  "name": "opt-disc-ret-c4-s24",
+  "arm": "9-pr-ab48-b256-t0-ret-calls",
+  "label": "the configuration to deploy, step cap 256, the calls' prefixes kept on the GPU, the next batch just in time, each turn announced, 4 callers, discriminating scenario, warm-up turn",
+  "window_s": 345.1,
+  "voice": {
+    "turns": 100,
+    "errors": 0,
+    "v2v_ms": {
+      "n": 119,
+      "p50": 1727.6,
+      "p95": 2014.6,
+      "p99": 2184.2
+    },
+    "barge_in_to_silence_ms": {
+      "n": 18,
+      "p50": 407.4,
+      "p95": 674.5,
+      "p99": 683.4
+    },
+    "barge_ins": 19,
+    "replies": {
+      "n": 100,
+      "ended_by_state": 100,
+      "audio_ms": {
+        "n": 100,
+        "p50": 4575.4,
+        "p95": 7348.7,
+        "p99": 7581.8
+      },
+      "with_a_pause": 73,
+      "with_a_pause_over_500_ms": 47,
+      "with_a_pause_of_quiet_s": 0,
+      "longest_pause_ms": {
+        "n": 100,
+        "p50": 490.0,
+        "p95": 630.7,
+        "p99": 670.3
+      },
+      "concealed_share": 0.0
+    }
+  },
+  "worker": {
+    "sessions": 4,
+    "turns": 119,
+    "waterfall": {
+      "transcript_ms": {
+        "n": 116,
+        "mean": 810.48,
+        "p10": 759.1,
+        "p50": 812.3,
+        "p90": 854.15,
+        "p95": 863.88,
+        "p99": 937.01
+      },
+      "end_of_turn_ms": {
+        "n": 116,
+        "mean": 814.9,
+        "p10": 762.95,
+        "p50": 816.65,
+        "p90": 858.75,
+        "p95": 868.45,
+        "p99": 941.69
+      },
+      "llm_ttft_ms": {
+        "n": 119,
+        "mean": 94.21,
+        "p10": 68.4,
+        "p50": 92.1,
+        "p90": 119.7,
+        "p95": 143.87,
+        "p99": 159.52
+      },
+      "llm_first_sentence_ms": {
+        "n": 119,
+        "mean": 328.84,
+        "p10": 210.86,
+        "p50": 308.5,
+        "p90": 467.06,
+        "p95": 525.08,
+        "p99": 636.89
+      },
+      "turn_to_first_sentence_ms": {
+        "n": 116,
+        "mean": 335.94,
+        "p10": 215.25,
+        "p50": 312.8,
+        "p90": 473.8,
+        "p95": 528.85,
+        "p99": 640.36
+      },
+      "tts_first_audio_ms": {
+        "n": 119,
+        "mean": 221.66,
+        "p10": 193.34,
+        "p50": 209.6,
+        "p90": 267.46,
+        "p95": 306.2,
+        "p99": 356.28
+      },
+      "e2e_ms": {
+        "n": 116,
+        "mean": 1373.88,
+        "p10": 1213.65,
+        "p50": 1350.75,
+        "p90": 1566.95,
+        "p95": 1628.35,
+        "p99": 1867.12
+      }
+    },
+    "events": {
+      "sent": 508,
+      "dropped": 0,
+      "failed": 0
+    },
+    "playout": {
+      "replies": 119,
+      "stalled": 0,
+      "stalls_ms": {
+        "n": 0
+      },
+      "fell_behind": 57,
+      "inventory_low_ms": {
+        "n": 57,
+        "mean": 2988.08,
+        "p10": 1963.3,
+        "p50": 2797.5,
+        "p90": 4106.28,
+        "p95": 4739.76,
+        "p99": 5386.47
+      },
+      "audio_s": 593.8,
+      "played_s": 528.4
+    }
+  },
+  "background": {
+    "requests": 73,
+    "errors": 0,
+    "without_usage": 0,
+    "requests_per_s": 0.212,
+    "prompt_tokens_per_s": 2742.7,
+    "completion_tokens_per_s": 11.3,
+    "tokens_per_s": 2754.0,
+    "ttft_ms": {
+      "n": 73,
+      "mean": 118721.22,
+      "p10": 93540.13,
+      "p50": 122868.81,
+      "p90": 141254.5,
+      "p95": 143151.78,
+      "p99": 145343.28
+    },
+    "itl_ms": {
+      "n": 71,
+      "mean": 29.12,
+      "p10": 17.92,
+      "p50": 24.98,
+      "p90": 45.09,
+      "p95": 55.92,
+      "p99": 62.57
+    },
+    "fixed_window": {
+      "seconds": 240.0,
+      "requests": 46,
+      "requests_per_s": 0.192,
+      "tokens_per_s": 2608.3
+    }
+  },
+  "gateway": {
+    "realtime_first_byte_ms": {
+      "n": 255,
+      "mean": 94.52,
+      "p50": 77.96,
+      "p95": 196.75,
+      "p99": 251.74,
+      "source": "log"
+    },
+    "background_first_byte_ms": {
+      "n": 73,
+      "mean": 118719.9,
+      "p50": 122866.73,
+      "p95": 143150.31,
+      "p99": 145341.89,
+      "source": "log"
+    },
+    "shed": null,
+    "refused": null,
+    "resubmitted": null,
+    "discarded_tokens": null,
+    "background_tokens_per_s": 2754.0,
+    "counters": {
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"session_closed\"}": 3,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_speech_started\"}": 128,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_started\"}": 123,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"user_turn_ended\"}": 128,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"playback_ended\"}": 104,
+      "flatshare_gateway_events_total{duplicate=\"false\",source=\"voice-worker\",type=\"interrupted\"}": 21,
+      "flatshare_gateway_request_outcomes_total{class=\"background\",outcome=\"completed\"}": 73,
+      "flatshare_gateway_request_outcomes_total{class=\"realtime\",outcome=\"completed\"}": 253,
+      "flatshare_gateway_request_outcomes_total{class=\"realtime\",outcome=\"cancelled\"}": 3,
+      "flatshare_gateway_requests_admitted_total{admission=\"none\",class=\"realtime\",route=\"/v1/chat/completions\",tenant=\"voice\"}": 256,
+      "flatshare_gateway_requests_admitted_total{admission=\"none\",class=\"background\",route=\"/v1/chat/completions\",tenant=\"agents\"}": 68,
+      "flatshare_gateway_requests_offered_total{class=\"background\",route=\"/v1/chat/completions\",tenant=\"agents\"}": 68,
+      "flatshare_gateway_requests_offered_total{class=\"realtime\",route=\"/v1/chat/completions\",tenant=\"voice\"}": 256,
+      "flatshare_gateway_requests_terminal_total{class=\"realtime\",outcome=\"completed\",route=\"/v1/chat/completions\",tenant=\"voice\"}": 253,
+      "flatshare_gateway_requests_terminal_total{class=\"background\",outcome=\"completed\",route=\"/v1/chat/completions\",tenant=\"agents\"}": 73,
+      "flatshare_gateway_requests_terminal_total{class=\"realtime\",outcome=\"cancelled\",route=\"/v1/chat/completions\",tenant=\"voice\"}": 3,
+      "flatshare_gateway_requests_total{class=\"\",route=\"/v1/models\",status=\"200\",tenant=\"voice\"}": 4,
+      "flatshare_gateway_requests_total{class=\"background\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"agents\"}": 73,
+      "flatshare_gateway_requests_total{class=\"realtime\",route=\"/v1/chat/completions\",status=\"200\",tenant=\"voice\"}": 256,
+      "flatshare_gateway_requests_total{class=\"\",route=\"/v1/events\",status=\"202\",tenant=\"voice\"}": 507,
+      "flatshare_gateway_sanitized_total{field=\"priority\"}": 68,
+      "flatshare_gateway_sanitized_total{field=\"x-request-id\"}": 68,
+      "flatshare_gateway_sli_good_total{class=\"realtime\"}": 252,
+      "flatshare_gateway_sli_good_total{class=\"background\"}": 73,
+      "flatshare_gateway_sli_valid_total{class=\"background\"}": 73,
+      "flatshare_gateway_sli_valid_total{class=\"realtime\"}": 255,
+      "flatshare_gateway_usage_tokens_total{class=\"background\",kind=\"prompt\"}": 946468,
+      "flatshare_gateway_usage_tokens_total{class=\"background\",kind=\"completion\"}": 3896,
+      "flatshare_gateway_usage_tokens_total{class=\"background\",kind=\"cached\"}": 7488,
+      "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"completion\"}": 2799,
+      "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"cached\"}": 156688,
+      "flatshare_gateway_usage_tokens_total{class=\"realtime\",kind=\"prompt\"}": 161235
+    }
+  },
+  "engine": {
+    "preemptions": 0,
+    "prompt_tokens_by_source": {
+      "local_compute": 943565,
+      "local_cache_hit": 152336,
+      "external_kv_transfer": 12768
+    },
+    "refused": {
+      "max_num_queued_reqs": 0,
+      "max_num_queued_tokens": 0
+    },
+    "kv_offload_load_bytes": 1882718208,
+    "kv_offload_store_bytes": 136473477120
+  },
+  "kv": {
+    "samples": 691,
+    "running_share": 0.0072,
+    "free_blocks": {
+      "p50": 1118,
+      "min": 64
+    },
+    "running": {
+      "p50": 1.0,
+      "max": 5.0
+    },
+    "waiting": {
+      "p50": 24.0,
+      "max": 28.0
+    }
+  },
+  "gpu": {
+    "sm_clock_p50_mhz": 2730,
+    "temperature_max_c": 67,
+    "name": "NVIDIA GeForce RTX 5060 Ti"
+  }
+}

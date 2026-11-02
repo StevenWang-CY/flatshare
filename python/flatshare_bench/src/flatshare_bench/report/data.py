@@ -1257,6 +1257,51 @@ def step_caps(root: Path = TWO_CARDS) -> list[StepCap]:
     return found
 
 
+# The optimization rounds ---------------------------------------------------------------------------------------------
+
+OPT_ROUNDS = RESULTS / "2026-11-02-opt-rounds"
+"""Version 1.15's rounds: v1.14's configuration to deploy beside the same with the first four of the serving engine's
+additions, in four scenarios, five rounds on new samples of the agents. Its table.py is the record's single source of
+truth."""
+
+
+def opt_rounds_table(root: Path = OPT_ROUNDS) -> ModuleType:
+    """The record's table.py, loaded from its file as a module: its scenarios and each point's rounds."""
+    spec = importlib.util.spec_from_file_location("opt_rounds_table", root / "table.py")
+    if spec is None or spec.loader is None:
+        raise ValueError(f"no table.py under {root}")
+    table = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(table)
+    return table
+
+
+@dataclass(frozen=True)
+class OptScenario:
+    """One scenario of the optimization rounds: its name, and each configuration's rounds, v1.14's and the optimized
+    one's (StepCapRound's fields: a round's replies over its SLO, its replies, the agents' tokens a second)."""
+
+    name: str
+    before: tuple[StepCapRound, ...]
+    after: tuple[StepCapRound, ...]
+
+
+def opt_rounds(root: Path = OPT_ROUNDS) -> list[OptScenario]:
+    """Each scenario of table.py's SCENARIOS with both configurations' rounds, as its by_round gives them."""
+    table = opt_rounds_table(root)
+    rows = table.points()
+    found = []
+    for name, before, after in table.SCENARIOS:
+        pair = [
+            tuple(
+                StepCapRound(r, over, replies, tokens)
+                for r, over, replies, tokens in table.by_round(point, rows)
+            )
+            for point in (before, after)
+        ]
+        found.append(OptScenario(name, *pair))
+    return found
+
+
 # The 24-hour soak ---------------------------------------------------------------------------------------------------
 
 SOAK = RESULTS / "2026-10-28-soak" / "serving-24h" / "summary.json"
@@ -1462,6 +1507,13 @@ CAMPAIGNS = (
         r"rg-r\d",
     ),
     ("The soak", "The arrangement to deploy, serving for a day", "2026-10-28-soak", None, None),
+    (
+        "OR",
+        "The serving engine's additions against v1.14's configuration",
+        "2026-11-02-opt-rounds",
+        r"opt-r\d",
+        r"opt-r\d",
+    ),
 )
 """Each campaign of the map: its code, the question it measured, its record and the directories of its runs and of
 its rounds (a pattern each), in the order the campaigns ran. The soak's runs are its soak.json files."""

@@ -1,0 +1,176 @@
+{
+  "kind": "e2-point",
+  "name": "opt-std-ret-s16",
+  "status": "complete",
+  "host": "cyan",
+  "node": "phastform",
+  "started": 1793605869.2064164,
+  "arm": {
+    "name": "opt-std-ret-s16",
+    "arm": "9-pr-ab48-b256-t0-ret",
+    "label": "the configuration to deploy, step cap 256, the calls' prefixes kept on the GPU, the next batch just in time, each turn announced, standard scenario, warm-up turn",
+    "voice": {
+      "callers": 2,
+      "turns": 25,
+      "barge_in": 0.25,
+      "seed": 0,
+      "warmup_turns": 1,
+      "preemptive_generation": true,
+      "turn_hints": true,
+      "events": true
+    },
+    "agents": {
+      "sessions": 16,
+      "think_cap": 120.0,
+      "warmup": 60.0,
+      "data": "weka-x32",
+      "seed": 11
+    },
+    "gateway": {},
+    "engine": {
+      "variant": "make-room",
+      "flags": [
+        "--additional-config.make_room.reserve_tokens",
+        "0",
+        "--additional-config.make_room.budget_cap_tokens",
+        "48",
+        "--max-num-batched-tokens",
+        "256",
+        "--long-prefill-token-threshold",
+        "0",
+        "--additional-config.make_room.retain_tokens",
+        "3584",
+        "--additional-config.make_room.retain_s",
+        "30",
+        "--additional-config.make_room.hint_hold_ms",
+        "400",
+        "--additional-config.make_room.take_reservations",
+        "true",
+        "--scheduler-cls",
+        "flatshare_make_room_serve.AsyncScheduler",
+        "--additional-config.flatshare_jit.margin_ms",
+        "30",
+        "--additional-config.flatshare_jit.step_cost.step_ms",
+        "11.56",
+        "--additional-config.flatshare_jit.step_cost.us_per_token",
+        "47.99",
+        "--additional-config.flatshare_jit.step_cost.ns_per_pair",
+        "14.17",
+        "--additional-config.flatshare_jit.step_cost.ns_per_context",
+        "429.3",
+        "--additional-config.flatshare_jit.step_cost.mixed_ms",
+        "7.6"
+      ]
+    },
+    "router": null
+  },
+  "versions": {
+    "source": "v1.14-17-g157f6b7",
+    "gpu_source": {
+      "phastform": "v1.14-17-g157f6b7"
+    },
+    "flatshare_bench": "1.14.0",
+    "aiperf": "0.13.0",
+    "flatshare_gateway": "flatshare-gateway 1.14.0"
+  },
+  "save_audio": false,
+  "agents_seed": 35,
+  "kv_sample_s": 0.5,
+  "profile": "rtx-5060-ti",
+  "engine": {
+    "server": "vllm",
+    "version": "0.32.0",
+    "pool_tokens": 36400,
+    "flags": {
+      "checked": [
+        "--scheduling-policy",
+        "--max-num-batched-tokens",
+        "--long-prefill-token-threshold",
+        "--model",
+        "--revision",
+        "--max-model-len",
+        "--scheduler-cls",
+        "--additional-config.make_room.max_preemptions_per_step",
+        "--additional-config.make_room.budget_cap",
+        "--additional-config.make_room.reserve_tokens",
+        "--additional-config.make_room.budget_cap_tokens",
+        "--additional-config.make_room.retain_tokens",
+        "--additional-config.make_room.retain_s",
+        "--additional-config.make_room.hint_hold_ms",
+        "--additional-config.make_room.take_reservations",
+        "--additional-config.flatshare_jit.margin_ms",
+        "--additional-config.flatshare_jit.step_cost.step_ms",
+        "--additional-config.flatshare_jit.step_cost.us_per_token",
+        "--additional-config.flatshare_jit.step_cost.ns_per_pair",
+        "--additional-config.flatshare_jit.step_cost.ns_per_context",
+        "--additional-config.flatshare_jit.step_cost.mixed_ms"
+      ],
+      "unchecked": []
+    }
+  },
+  "cyan": {
+    "router": null,
+    "gateway": {
+      "restarted": false,
+      "config": {
+        "upstream": "unix:/run/user/1007/flatshare/phastform-engine.sock",
+        "upstream_idle_timeout_s": 55,
+        "log_format": "json",
+        "cache_salt_secret_file": "~/.config/flatshare/cache-salt-secret",
+        "metrics_key_file": "~/.config/flatshare/metrics-key",
+        "listen": [
+          {
+            "tcp": "127.0.0.1:18080"
+          },
+          {
+            "unix": "/run/user/1007/flatshare/gateway.sock",
+            "tenant": "voice"
+          }
+        ],
+        "tenants": {
+          "voice": {
+            "trusted": true,
+            "default_class": "realtime",
+            "max_class": "realtime"
+          },
+          "agents": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "trusted": true,
+            "default_class": "background",
+            "max_class": "interactive"
+          },
+          "bench": {
+            "keys_sha256": [
+              "<redacted>"
+            ],
+            "default_class": "interactive"
+          }
+        },
+        "canary": {
+          "enabled": false
+        }
+      }
+    },
+    "worker": {
+      "restarted": false,
+      "preemptive_generation": true,
+      "events": true,
+      "turn_hints": true
+    },
+    "llm_path": "/run/user/1007/flatshare/gateway.sock"
+  },
+  "window": {
+    "start": 1793605955.505257,
+    "end": 1793606287.579981
+  },
+  "aiperf": {
+    "exit_status": 0
+  },
+  "gateway_log": {
+    "request_lines": 687,
+    "requests_ended": 687
+  },
+  "finished": 1793606289.9637887
+}

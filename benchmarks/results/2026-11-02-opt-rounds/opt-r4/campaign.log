@@ -1,0 +1,166 @@
+[2026-11-02T05:12:29Z] campaign opt-r4: 11 points, arm files at v1.14-17-g157f6b7, the agents' seed 34
+[2026-11-02T05:12:30Z] w5-a1-voice: pending, engine frozen
+[2026-11-02T05:12:31Z] w5-a1-voice-c4: pending, engine frozen
+[2026-11-02T05:12:31Z] w5-a1-voice-c6: pending, engine frozen
+[2026-11-02T05:12:32Z] sweep-disc-pr-ab48-b256-t0-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T05:12:32Z] opt-disc-b256-c4-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T05:12:33Z] opt-disc-b256-c6-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T05:12:33Z] opt-std-b256-s16: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T05:12:33Z] opt-disc-ret-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T05:12:34Z] opt-disc-ret-c4-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T05:12:34Z] opt-disc-ret-c6-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T05:12:35Z] opt-std-ret-s16: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T05:12:35Z] w5-a1-voice: gray runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-11-02T05:13:52Z] w5-a1-voice: gray has v1.14-17-g157f6b7
+[2026-11-02T05:13:52Z] w5-a1-voice: measuring
+[05:13:53Z] gray through flatshare-tunnel@gray.service
+[05:13:55Z] configuring cyan for w5-a1-voice on gray
+[05:14:00Z] calls: 2 callers, 25 turns each after 1 warm-up
+[05:19:38Z] w5-a1-voice: V2V p50/p95/p99 1598.4/1760.5/1866.6 ms, 0 of 50 turns failed
+w5-a1-voice: V2V p50/p95/p99 1598.4/1760.5/1866.6 ms, 0 of 50 turns failed
+[2026-11-02T05:19:40Z] w5-a1-voice-c4: gray runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-11-02T05:19:41Z] w5-a1-voice-c4: gray has v1.14-17-g157f6b7
+[2026-11-02T05:19:41Z] w5-a1-voice-c4: measuring
+[05:19:41Z] gray through flatshare-tunnel@gray.service
+[05:19:41Z] configuring cyan for w5-a1-voice-c4 on gray
+[05:19:41Z] calls: 4 callers, 25 turns each after 1 warm-up
+w5-a1-voice-c4: V2V p50/p95/p99 1586.2/1795.9/1952.7 ms, 0 of 100 turns failed
+[05:25:23Z] w5-a1-voice-c4: V2V p50/p95/p99 1586.2/1795.9/1952.7 ms, 0 of 100 turns failed
+[2026-11-02T05:25:24Z] w5-a1-voice-c6: gray runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-11-02T05:25:25Z] w5-a1-voice-c6: gray has v1.14-17-g157f6b7
+[2026-11-02T05:25:25Z] w5-a1-voice-c6: measuring
+[05:25:26Z] gray through flatshare-tunnel@gray.service
+[05:25:26Z] configuring cyan for w5-a1-voice-c6 on gray
+[05:25:26Z] calls: 6 callers, 25 turns each after 1 warm-up
+w5-a1-voice-c6: V2V p50/p95/p99 1627.8/1846.8/1970.0 ms, 0 of 150 turns failed
+[05:31:16Z] w5-a1-voice-c6: V2V p50/p95/p99 1627.8/1846.8/1970.0 ms, 0 of 150 turns failed
+[2026-11-02T05:31:18Z] sweep-disc-pr-ab48-b256-t0-s24: gray runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-11-02T05:32:39Z] sweep-disc-pr-ab48-b256-t0-s24: gray has v1.14-17-g157f6b7
+[2026-11-02T05:32:39Z] sweep-disc-pr-ab48-b256-t0-s24: measuring
+[05:32:40Z] gray through flatshare-tunnel@gray.service
+[05:32:42Z] configuring cyan for sweep-disc-pr-ab48-b256-t0-s24 on gray
+[05:32:43Z] AIPerf: 24 session trees through the gateway, seed 34
+[05:35:59Z] AIPerf is profiling; 60 s of warm-up
+[05:36:59Z] calls: 2 callers, 25 turns each after 1 warm-up
+[05:42:37Z] stopping AIPerf
+[05:42:39Z] sweep-disc-pr-ab48-b256-t0-s24: V2V p50/p95/p99 1852.6/2066.1/2128.0 ms, 0 of 50 turns failed; background 0.231 requests/s, 3,010 tokens/s, agent TTFT p50/p99 100516.9/125187.06 ms
+sweep-disc-pr-ab48-b256-t0-s24: V2V p50/p95/p99 1852.6/2066.1/2128.0 ms, 0 of 50 turns failed; background 0.231 requests/s, 3,010 tokens/s, agent TTFT p50/p99 100516.9/125187.06 ms
+[2026-11-02T05:42:41Z] opt-disc-b256-c4-s24: gray runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T05:42:42Z] opt-disc-b256-c4-s24: gray has v1.14-17-g157f6b7
+[2026-11-02T05:42:42Z] opt-disc-b256-c4-s24: measuring
+[05:42:42Z] gray through flatshare-tunnel@gray.service
+[05:42:42Z] configuring cyan for opt-disc-b256-c4-s24 on gray
+[05:42:42Z] AIPerf: 24 session trees through the gateway, seed 34
+[05:44:14Z] AIPerf is profiling; 60 s of warm-up
+[05:45:15Z] calls: 4 callers, 25 turns each after 1 warm-up
+[05:51:10Z] stopping AIPerf
+opt-disc-b256-c4-s24: V2V p50/p95/p99 1849.4/2125.6/2462.6 ms, 0 of 100 turns failed; background 0.203 requests/s, 2,728 tokens/s, agent TTFT p50/p99 112248.56/130718.61 ms
+[05:51:12Z] opt-disc-b256-c4-s24: V2V p50/p95/p99 1849.4/2125.6/2462.6 ms, 0 of 100 turns failed; background 0.203 requests/s, 2,728 tokens/s, agent TTFT p50/p99 112248.56/130718.61 ms
+[2026-11-02T05:51:14Z] opt-disc-b256-c6-s24: gray runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T05:51:15Z] opt-disc-b256-c6-s24: gray has v1.14-17-g157f6b7
+[2026-11-02T05:51:15Z] opt-disc-b256-c6-s24: measuring
+[05:51:15Z] gray through flatshare-tunnel@gray.service
+[05:51:15Z] configuring cyan for opt-disc-b256-c6-s24 on gray
+[05:51:15Z] AIPerf: 24 session trees through the gateway, seed 34
+[05:52:47Z] AIPerf is profiling; 60 s of warm-up
+[05:53:47Z] calls: 6 callers, 25 turns each after 1 warm-up
+[05:59:49Z] stopping AIPerf
+opt-disc-b256-c6-s24: V2V p50/p95/p99 1889.7/2320.3/2512.0 ms, 0 of 150 turns failed; background 0.191 requests/s, 2,567 tokens/s, agent TTFT p50/p99 124724.84/142061.86 ms
+[05:59:51Z] opt-disc-b256-c6-s24: V2V p50/p95/p99 1889.7/2320.3/2512.0 ms, 0 of 150 turns failed; background 0.191 requests/s, 2,567 tokens/s, agent TTFT p50/p99 124724.84/142061.86 ms
+[2026-11-02T05:59:53Z] opt-std-b256-s16: gray runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T05:59:53Z] opt-std-b256-s16: gray has v1.14-17-g157f6b7
+[2026-11-02T05:59:53Z] opt-std-b256-s16: measuring
+[05:59:54Z] gray through flatshare-tunnel@gray.service
+[05:59:54Z] configuring cyan for opt-std-b256-s16 on gray
+[05:59:54Z] AIPerf: 16 session trees through the gateway, seed 34
+[06:04:11Z] AIPerf is profiling; 60 s of warm-up
+[06:05:11Z] calls: 2 callers, 25 turns each after 1 warm-up
+[06:11:12Z] stopping AIPerf
+opt-std-b256-s16: V2V p50/p95/p99 1800.7/2322.0/2457.5 ms, 0 of 50 turns failed; background 1.375 requests/s, 8,364 tokens/s, agent TTFT p50/p99 155.28/6585.53 ms
+[06:11:14Z] opt-std-b256-s16: V2V p50/p95/p99 1800.7/2322.0/2457.5 ms, 0 of 50 turns failed; background 1.375 requests/s, 8,364 tokens/s, agent TTFT p50/p99 155.28/6585.53 ms
+[2026-11-02T06:11:16Z] opt-disc-ret-s24: gray runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-11-02T06:12:40Z] opt-disc-ret-s24: gray has v1.14-17-g157f6b7
+[2026-11-02T06:12:40Z] opt-disc-ret-s24: measuring
+[06:12:41Z] gray through flatshare-tunnel@gray.service
+[06:12:44Z] configuring cyan for opt-disc-ret-s24 on gray
+[06:12:49Z] AIPerf: 24 session trees through the gateway, seed 34
+[06:14:20Z] AIPerf is profiling; 60 s of warm-up
+[06:15:20Z] calls: 2 callers, 25 turns each after 1 warm-up
+[06:21:05Z] stopping AIPerf
+[06:21:07Z] opt-disc-ret-s24: V2V p50/p95/p99 1691.6/2022.6/2181.4 ms, 0 of 50 turns failed; background 0.217 requests/s, 2,933 tokens/s, agent TTFT p50/p99 104972.33/125935.61 ms
+opt-disc-ret-s24: V2V p50/p95/p99 1691.6/2022.6/2181.4 ms, 0 of 50 turns failed; background 0.217 requests/s, 2,933 tokens/s, agent TTFT p50/p99 104972.33/125935.61 ms
+[2026-11-02T06:21:09Z] opt-disc-ret-c4-s24: gray runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T06:21:10Z] opt-disc-ret-c4-s24: gray has v1.14-17-g157f6b7
+[2026-11-02T06:21:10Z] opt-disc-ret-c4-s24: measuring
+[06:21:11Z] gray through flatshare-tunnel@gray.service
+[06:21:11Z] configuring cyan for opt-disc-ret-c4-s24 on gray
+[06:21:11Z] AIPerf: 24 session trees through the gateway, seed 34
+[06:22:43Z] AIPerf is profiling; 60 s of warm-up
+[06:23:43Z] calls: 4 callers, 25 turns each after 1 warm-up
+[06:29:43Z] stopping AIPerf
+[06:29:45Z] opt-disc-ret-c4-s24: V2V p50/p95/p99 1708.8/2032.0/2196.3 ms, 0 of 100 turns failed; background 0.194 requests/s, 2,612 tokens/s, agent TTFT p50/p99 121619.12/139847.15 ms
+opt-disc-ret-c4-s24: V2V p50/p95/p99 1708.8/2032.0/2196.3 ms, 0 of 100 turns failed; background 0.194 requests/s, 2,612 tokens/s, agent TTFT p50/p99 121619.12/139847.15 ms
+[2026-11-02T06:29:47Z] opt-disc-ret-c6-s24: gray runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T06:29:48Z] opt-disc-ret-c6-s24: gray has v1.14-17-g157f6b7
+[2026-11-02T06:29:48Z] opt-disc-ret-c6-s24: measuring
+[06:29:49Z] gray through flatshare-tunnel@gray.service
+[06:29:49Z] configuring cyan for opt-disc-ret-c6-s24 on gray
+[06:29:49Z] AIPerf: 24 session trees through the gateway, seed 34
+[06:31:21Z] AIPerf is profiling; 60 s of warm-up
+[06:32:21Z] calls: 6 callers, 25 turns each after 1 warm-up
+[06:38:23Z] stopping AIPerf
+opt-disc-ret-c6-s24: V2V p50/p95/p99 1729.0/2077.4/2239.6 ms, 0 of 150 turns failed; background 0.185 requests/s, 2,476 tokens/s, agent TTFT p50/p99 131822.32/148265.67 ms
+[06:38:26Z] opt-disc-ret-c6-s24: V2V p50/p95/p99 1729.0/2077.4/2239.6 ms, 0 of 150 turns failed; background 0.185 requests/s, 2,476 tokens/s, agent TTFT p50/p99 131822.32/148265.67 ms
+[2026-11-02T06:38:27Z] opt-std-ret-s16: gray runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T06:38:29Z] opt-std-ret-s16: gray has v1.14-17-g157f6b7
+[2026-11-02T06:38:29Z] opt-std-ret-s16: measuring
+[06:38:29Z] gray through flatshare-tunnel@gray.service
+[06:38:29Z] configuring cyan for opt-std-ret-s16 on gray
+[06:38:30Z] AIPerf: 16 session trees through the gateway, seed 34
+[06:39:08Z] AIPerf is profiling; 60 s of warm-up
+[06:40:08Z] calls: 2 callers, 25 turns each after 1 warm-up
+[06:45:26Z] stopping AIPerf
+opt-std-ret-s16: V2V p50/p95/p99 1707.9/2048.8/2185.5 ms, 0 of 50 turns failed; background 1.481 requests/s, 9,034 tokens/s, agent TTFT p50/p99 183.5/7276.16 ms
+[06:45:28Z] opt-std-ret-s16: V2V p50/p95/p99 1707.9/2048.8/2185.5 ms, 0 of 50 turns failed; background 1.481 requests/s, 9,034 tokens/s, agent TTFT p50/p99 183.5/7276.16 ms
+[2026-11-02T06:45:29Z] the frontier of opt-r4
+flatshare/runs/e2/opt-r4/report/frontier.csv
+flatshare/runs/e2/opt-r4/report/frontier.md
+flatshare/runs/e2/opt-r4/report/frontier.svg
+flatshare/runs/e2/opt-r4/report/frontier-4-callers.svg
+flatshare/runs/e2/opt-r4/report/frontier-6-callers.svg
+flatshare/runs/e2/opt-r4/report/frontier-weka-x32-long.svg
+flatshare/runs/e2/opt-r4/report/frontier-weka-x32-long-4-callers.svg
+flatshare/runs/e2/opt-r4/report/frontier-weka-x32-long-6-callers.svg
+flatshare/runs/e2/opt-r4/report/waterfall.svg
+gateway: restarted
+worker: restarted
+[2026-11-02T06:45:43Z] gray is paused; start it again with systemctl --user start flatshare.target
+[2026-11-02T06:45:43Z] done: ~/flatshare/runs/e2/opt-r4/report/frontier.md

@@ -1,0 +1,155 @@
+[2026-11-02T03:41:19Z] campaign opt-r3: 11 points, arm files at v1.14-17-g157f6b7, the agents' seed 33
+[2026-11-02T03:41:20Z] opt-disc-ret-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T03:41:20Z] opt-disc-ret-c4-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T03:41:20Z] opt-disc-ret-c6-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T03:41:21Z] opt-std-ret-s16: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T03:41:21Z] w5-a1-voice: pending, engine frozen
+[2026-11-02T03:41:22Z] w5-a1-voice-c4: pending, engine frozen
+[2026-11-02T03:41:22Z] w5-a1-voice-c6: pending, engine frozen
+[2026-11-02T03:41:23Z] sweep-disc-pr-ab48-b256-t0-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T03:41:23Z] opt-disc-b256-c4-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T03:41:24Z] opt-disc-b256-c6-s24: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T03:41:24Z] opt-std-b256-s16: pending, engine make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T03:41:25Z] opt-disc-ret-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-11-02T03:42:52Z] opt-disc-ret-s24: phastform has v1.14-17-g157f6b7
+[2026-11-02T03:42:52Z] opt-disc-ret-s24: measuring
+[03:42:55Z] configuring cyan for opt-disc-ret-s24
+[03:43:00Z] AIPerf: 24 session trees through the gateway, seed 33
+[03:45:58Z] AIPerf is profiling; 60 s of warm-up
+[03:46:58Z] calls: 2 callers, 25 turns each after 1 warm-up
+[03:52:37Z] stopping AIPerf
+opt-disc-ret-s24: V2V p50/p95/p99 1765.4/2138.8/2248.1 ms, 0 of 50 turns failed; background 0.339 requests/s, 3,221 tokens/s, agent TTFT p50/p99 74542.21/118150.32 ms
+[03:52:39Z] opt-disc-ret-s24: V2V p50/p95/p99 1765.4/2138.8/2248.1 ms, 0 of 50 turns failed; background 0.339 requests/s, 3,221 tokens/s, agent TTFT p50/p99 74542.21/118150.32 ms
+[2026-11-02T03:52:42Z] opt-disc-ret-c4-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T03:52:42Z] opt-disc-ret-c4-s24: phastform has v1.14-17-g157f6b7
+[2026-11-02T03:52:42Z] opt-disc-ret-c4-s24: measuring
+[03:52:43Z] configuring cyan for opt-disc-ret-c4-s24
+[03:52:43Z] AIPerf: 24 session trees through the gateway, seed 33
+[03:53:53Z] AIPerf is profiling; 60 s of warm-up
+[03:54:53Z] calls: 4 callers, 25 turns each after 1 warm-up
+[04:00:37Z] stopping AIPerf
+[04:00:40Z] opt-disc-ret-c4-s24: V2V p50/p95/p99 1776.1/2105.8/2458.3 ms, 0 of 100 turns failed; background 0.299 requests/s, 2,947 tokens/s, agent TTFT p50/p99 86997.53/117103.06 ms
+opt-disc-ret-c4-s24: V2V p50/p95/p99 1776.1/2105.8/2458.3 ms, 0 of 100 turns failed; background 0.299 requests/s, 2,947 tokens/s, agent TTFT p50/p99 86997.53/117103.06 ms
+[2026-11-02T04:00:41Z] opt-disc-ret-c6-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T04:00:42Z] opt-disc-ret-c6-s24: phastform has v1.14-17-g157f6b7
+[2026-11-02T04:00:42Z] opt-disc-ret-c6-s24: measuring
+[04:00:42Z] configuring cyan for opt-disc-ret-c6-s24
+[04:00:42Z] AIPerf: 24 session trees through the gateway, seed 33
+[04:01:52Z] AIPerf is profiling; 60 s of warm-up
+[04:02:53Z] calls: 6 callers, 25 turns each after 1 warm-up
+[04:09:03Z] stopping AIPerf
+opt-disc-ret-c6-s24: V2V p50/p95/p99 1753.5/2151.7/2491.5 ms, 0 of 150 turns failed; background 0.292 requests/s, 2,780 tokens/s, agent TTFT p50/p99 95455.74/132553.4 ms
+[04:09:05Z] opt-disc-ret-c6-s24: V2V p50/p95/p99 1753.5/2151.7/2491.5 ms, 0 of 150 turns failed; background 0.292 requests/s, 2,780 tokens/s, agent TTFT p50/p99 95455.74/132553.4 ms
+[2026-11-02T04:09:07Z] opt-std-ret-s16: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0 --additional-config.make_room.retain_tokens 3584 --additional-config.make_room.retain_s 30 --additional-config.make_room.hint_hold_ms 400 --additional-config.make_room.take_reservations true --scheduler-cls flatshare_make_room_serve.AsyncScheduler --additional-config.flatshare_jit.margin_ms 30 --additional-config.flatshare_jit.step_cost.step_ms 11.56 --additional-config.flatshare_jit.step_cost.us_per_token 47.99 --additional-config.flatshare_jit.step_cost.ns_per_pair 14.17 --additional-config.flatshare_jit.step_cost.ns_per_context 429.3 --additional-config.flatshare_jit.step_cost.mixed_ms 7.6
+[2026-11-02T04:09:07Z] opt-std-ret-s16: phastform has v1.14-17-g157f6b7
+[2026-11-02T04:09:07Z] opt-std-ret-s16: measuring
+[04:09:08Z] configuring cyan for opt-std-ret-s16
+[04:09:08Z] AIPerf: 16 session trees through the gateway, seed 33
+[04:13:19Z] AIPerf is profiling; 60 s of warm-up
+[04:14:19Z] calls: 2 callers, 25 turns each after 1 warm-up
+[04:20:03Z] stopping AIPerf
+[04:20:05Z] opt-std-ret-s16: V2V p50/p95/p99 1675.4/1916.3/2036.3 ms, 0 of 50 turns failed; background 0.974 requests/s, 4,900 tokens/s, agent TTFT p50/p99 132.27/6154.13 ms
+opt-std-ret-s16: V2V p50/p95/p99 1675.4/1916.3/2036.3 ms, 0 of 50 turns failed; background 0.974 requests/s, 4,900 tokens/s, agent TTFT p50/p99 132.27/6154.13 ms
+[2026-11-02T04:20:07Z] w5-a1-voice: phastform runs frozen
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-11-02T04:21:46Z] w5-a1-voice: phastform has v1.14-17-g157f6b7
+[2026-11-02T04:21:46Z] w5-a1-voice: measuring
+[04:21:49Z] configuring cyan for w5-a1-voice
+[04:21:54Z] calls: 2 callers, 25 turns each after 1 warm-up
+w5-a1-voice: V2V p50/p95/p99 1607.2/1801.0/1868.7 ms, 0 of 50 turns failed
+[04:27:38Z] w5-a1-voice: V2V p50/p95/p99 1607.2/1801.0/1868.7 ms, 0 of 50 turns failed
+[2026-11-02T04:27:39Z] w5-a1-voice-c4: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-11-02T04:27:40Z] w5-a1-voice-c4: phastform has v1.14-17-g157f6b7
+[2026-11-02T04:27:40Z] w5-a1-voice-c4: measuring
+[04:27:41Z] configuring cyan for w5-a1-voice-c4
+[04:27:41Z] calls: 4 callers, 25 turns each after 1 warm-up
+[04:33:41Z] w5-a1-voice-c4: V2V p50/p95/p99 1622.5/1819.1/1865.9 ms, 0 of 100 turns failed
+w5-a1-voice-c4: V2V p50/p95/p99 1622.5/1819.1/1865.9 ms, 0 of 100 turns failed
+[2026-11-02T04:33:43Z] w5-a1-voice-c6: phastform runs frozen
+variant: the measurement drop-in is already on
+variant: the box already runs frozen 
+[2026-11-02T04:33:44Z] w5-a1-voice-c6: phastform has v1.14-17-g157f6b7
+[2026-11-02T04:33:44Z] w5-a1-voice-c6: measuring
+[04:33:44Z] configuring cyan for w5-a1-voice-c6
+[04:33:44Z] calls: 6 callers, 25 turns each after 1 warm-up
+w5-a1-voice-c6: V2V p50/p95/p99 1648.0/1898.7/2006.1 ms, 0 of 150 turns failed
+[04:39:26Z] w5-a1-voice-c6: V2V p50/p95/p99 1648.0/1898.7/2006.1 ms, 0 of 150 turns failed
+[2026-11-02T04:39:27Z] sweep-disc-pr-ab48-b256-t0-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+active
+active
+active
+[2026-11-02T04:41:02Z] sweep-disc-pr-ab48-b256-t0-s24: phastform has v1.14-17-g157f6b7
+[2026-11-02T04:41:02Z] sweep-disc-pr-ab48-b256-t0-s24: measuring
+[04:41:05Z] configuring cyan for sweep-disc-pr-ab48-b256-t0-s24
+[04:41:05Z] AIPerf: 24 session trees through the gateway, seed 33
+[04:42:14Z] AIPerf is profiling; 60 s of warm-up
+[04:43:14Z] calls: 2 callers, 25 turns each after 1 warm-up
+[04:49:03Z] stopping AIPerf
+sweep-disc-pr-ab48-b256-t0-s24: V2V p50/p95/p99 1934.4/2175.7/2394.8 ms, 0 of 50 turns failed; background 0.344 requests/s, 3,275 tokens/s, agent TTFT p50/p99 74897.05/113605.99 ms
+[04:49:06Z] sweep-disc-pr-ab48-b256-t0-s24: V2V p50/p95/p99 1934.4/2175.7/2394.8 ms, 0 of 50 turns failed; background 0.344 requests/s, 3,275 tokens/s, agent TTFT p50/p99 74897.05/113605.99 ms
+[2026-11-02T04:49:07Z] opt-disc-b256-c4-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T04:49:08Z] opt-disc-b256-c4-s24: phastform has v1.14-17-g157f6b7
+[2026-11-02T04:49:08Z] opt-disc-b256-c4-s24: measuring
+[04:49:08Z] configuring cyan for opt-disc-b256-c4-s24
+[04:49:09Z] AIPerf: 24 session trees through the gateway, seed 33
+[04:50:18Z] AIPerf is profiling; 60 s of warm-up
+[04:51:18Z] calls: 4 callers, 25 turns each after 1 warm-up
+[04:57:07Z] stopping AIPerf
+opt-disc-b256-c4-s24: V2V p50/p95/p99 1923.9/2294.7/2433.8 ms, 0 of 100 turns failed; background 0.315 requests/s, 3,062 tokens/s, agent TTFT p50/p99 79763.32/116725.41 ms
+[04:57:09Z] opt-disc-b256-c4-s24: V2V p50/p95/p99 1923.9/2294.7/2433.8 ms, 0 of 100 turns failed; background 0.315 requests/s, 3,062 tokens/s, agent TTFT p50/p99 79763.32/116725.41 ms
+[2026-11-02T04:57:11Z] opt-disc-b256-c6-s24: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T04:57:11Z] opt-disc-b256-c6-s24: phastform has v1.14-17-g157f6b7
+[2026-11-02T04:57:11Z] opt-disc-b256-c6-s24: measuring
+[04:57:12Z] configuring cyan for opt-disc-b256-c6-s24
+[04:57:12Z] AIPerf: 24 session trees through the gateway, seed 33
+[04:58:21Z] AIPerf is profiling; 60 s of warm-up
+[04:59:21Z] calls: 6 callers, 25 turns each after 1 warm-up
+[05:05:09Z] stopping AIPerf
+[05:05:12Z] opt-disc-b256-c6-s24: V2V p50/p95/p99 1906.7/2320.8/2520.7 ms, 0 of 150 turns failed; background 0.287 requests/s, 2,839 tokens/s, agent TTFT p50/p99 88762.76/118562.86 ms
+opt-disc-b256-c6-s24: V2V p50/p95/p99 1906.7/2320.8/2520.7 ms, 0 of 150 turns failed; background 0.287 requests/s, 2,839 tokens/s, agent TTFT p50/p99 88762.76/118562.86 ms
+[2026-11-02T05:05:13Z] opt-std-b256-s16: phastform runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+variant: the measurement drop-in is already on
+variant: the box already runs make-room --additional-config.make_room.reserve_tokens 0 --additional-config.make_room.budget_cap_tokens 48 --max-num-batched-tokens 256 --long-prefill-token-threshold 0
+[2026-11-02T05:05:14Z] opt-std-b256-s16: phastform has v1.14-17-g157f6b7
+[2026-11-02T05:05:14Z] opt-std-b256-s16: measuring
+[05:05:14Z] configuring cyan for opt-std-b256-s16
+[05:05:14Z] AIPerf: 16 session trees through the gateway, seed 33
+[05:05:41Z] AIPerf is profiling; 60 s of warm-up
+[05:06:42Z] calls: 2 callers, 25 turns each after 1 warm-up
+[05:12:16Z] stopping AIPerf
+opt-std-b256-s16: V2V p50/p95/p99 1661.0/2011.8/2188.2 ms, 0 of 50 turns failed; background 0.979 requests/s, 4,948 tokens/s, agent TTFT p50/p99 133.43/5002.33 ms
+[05:12:18Z] opt-std-b256-s16: V2V p50/p95/p99 1661.0/2011.8/2188.2 ms, 0 of 50 turns failed; background 0.979 requests/s, 4,948 tokens/s, agent TTFT p50/p99 133.43/5002.33 ms
+[2026-11-02T05:12:19Z] the frontier of opt-r3
+flatshare/runs/e2/opt-r3/report/frontier.csv
+flatshare/runs/e2/opt-r3/report/frontier.md
+flatshare/runs/e2/opt-r3/report/frontier.svg
+flatshare/runs/e2/opt-r3/report/frontier-4-callers.svg
+flatshare/runs/e2/opt-r3/report/frontier-6-callers.svg
+flatshare/runs/e2/opt-r3/report/frontier-weka-x32-long.svg
+flatshare/runs/e2/opt-r3/report/frontier-weka-x32-long-4-callers.svg
+flatshare/runs/e2/opt-r3/report/frontier-weka-x32-long-6-callers.svg
+flatshare/runs/e2/opt-r3/report/waterfall.svg
+gateway: restarted
+worker: unchanged
+[2026-11-02T05:12:29Z] phastform is paused; start it again with systemctl --user start flatshare.target
+[2026-11-02T05:12:29Z] done: ~/flatshare/runs/e2/opt-r3/report/frontier.md
