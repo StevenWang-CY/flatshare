@@ -59,7 +59,7 @@ def test_benchmarks_gives_the_rounds_tables_as_the_record_does() -> None:
     # BENCHMARKS.md's ledger of the rounds is the record's own tables of them, row for row.
     table = _table()
     benchmarks = (REPO / "docs" / "BENCHMARKS.md").read_text()
-    for name in ("slo", "voice", "agents"):
+    for name in ("slo", "voice", "agents", "follow"):
         assert table.table(name) in benchmarks, name
 
 
@@ -86,3 +86,67 @@ def test_production_gives_the_two_callers_rounds_as_the_record_does() -> None:
             f"{p50:.0f} / {p99:.0f} s |"
         )
         assert row in production, row
+
+
+WORDS = ("none", "one", "two", "three", "four", "five", "six")
+
+
+def test_the_docs_give_the_follow_up_rounds_verdicts_as_the_record_does() -> None:
+    # The follow-up rounds' rules, fixed before they ran: the decode hold stays with no more replies over the SLO than
+    # the first four additions, pooled over the six rounds and caller counts, for at most 3% of the agents' token rate
+    # at the median of the six; speculative decoding comes in with fewer than the hold, pooled and in five of the six.
+    # The verdicts follow from the record, and the docs that give them give its counts.
+    table = _table()
+    rows = table.points(table.FOLLOW_ROUNDS)
+    pairs = []  # each round and caller count: (replies over the SLO, replies, agents' tokens a second) a configuration
+    for _, *trio in table.FOLLOW:
+        for name in table.ran(rows, table.FOLLOW_ROUNDS):
+            pair = []
+            for point in trio:
+                row = rows[name, point]
+                threshold = table.slo_ms(rows, name, row["callers"])
+                over = sum(s > threshold for s in row["v2v_samples"])
+                pair.append((over, len(row["v2v_samples"]), row["background_tokens_per_s"]))
+            pairs.append(pair)
+    assert len(pairs) == 6
+    four, hold, spec = (sum(pair[k][0] for pair in pairs) for k in range(3))
+    replies = sum(pair[0][1] for pair in pairs)
+    hold_fewer = sum(pair[1][0] < pair[0][0] for pair in pairs)
+    spec_fewer = sum(pair[2][0] < pair[1][0] for pair in pairs)
+    cost = -100 * statistics.median(pair[1][2] / pair[0][2] - 1 for pair in pairs)
+    assert hold <= four and cost > 3  # the hold off: it cost the agents more than 3%
+    assert not (spec < hold and spec_fewer >= 5)  # speculative decoding not adopted
+    phrases = {
+        "docs/REPORT.md": (
+            f"The hold put {hold} of {replies} replies over the SLO against {four}, fewer in "
+            f"{WORDS[hold_fewer]} of the six",
+            f"cost the agents {cost:.1f}% of their token rate at the median of the six",
+            f"Speculative decoding put {spec} over against the hold's {hold}, fewer in {WORDS[spec_fewer]} of "
+            "the six where the rule asked for five",
+        ),
+        "docs/BENCHMARKS.md": (
+            f"**The decode hold** put {hold} of {replies} replies over the SLO against {four}, fewer in "
+            f"{WORDS[hold_fewer]} of the six",
+            f"at {cost:.1f}% of the agents' token rate at the median of the six",
+            f"**Speculative decoding on top** put {spec} over against the hold's {hold}, fewer in "
+            f"{WORDS[spec_fewer]} of the six",
+        ),
+        "benchmarks/results/2026-11-02-opt-rounds/README.md": (
+            f"{hold} of {replies} against {four} for the first four additions",
+            f"fewer in {WORDS[hold_fewer]} of the six",
+            f"It cost the agents {cost:.1f}% of their token rate at the median of the six",
+            f"put {spec} of {replies} over against the hold's {hold}, fewer in {WORDS[spec_fewer]} of the six",
+        ),
+        "docs/PRODUCTION.md": (
+            f"it put {hold} of {replies} replies over the SLO against {four} but cost the agents {cost:.1f}% of their "
+            "token rate at the median",
+        ),
+        "deploy/profiles/rtx-5060-ti-serve.toml": (
+            f"put {hold} of {replies} replies over the SLO beside 24 agent sessions against {four} without it, but "
+            f"cost the agents {cost:.1f}% of their token rate at the median",
+        ),
+    }
+    for path, expected in phrases.items():
+        text = " ".join((REPO / path).read_text().replace("\n#", "\n").split())
+        for phrase in expected:
+            assert phrase in text, (path, phrase)
