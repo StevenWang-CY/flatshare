@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.18, 2 November 2026. Code, records and figures at tag
-[v1.18](https://github.com/StevenWang-CY/flatshare/tree/v1.18) of
+Flatshare technical report, version 1.19, 3 November 2026. Code, records and figures at tag
+[v1.19](https://github.com/StevenWang-CY/flatshare/tree/v1.19) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -1624,7 +1624,7 @@ The repository's tests fail when a committed figure differs from what its record
 records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists the campaigns' measurements run by run, the records' READMEs the
 probes and checks around them, and [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
-**Hosting.** Tag v1.18 holds the code, the records and this report. The raw records, the gateway's request logs and each
+**Hosting.** Tag v1.19 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in
 [v1.0](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.0), the A100 run's in
 [v1.1](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.1), the KV-sampling runs' in
@@ -1874,6 +1874,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.19 | 2026-11-03 | The note, §4 and references [9] and [10]: the change's pull requests are #65282 and #65283, which succeed #63350 and #63351 with the same change on vLLM's main; §2.4: a voice reply's first sentence takes a step for each of its tokens, 15 at the median and 39 at most, where it said a voice reply needs a few dozen steps |
 | 1.18 | 2026-11-02 | Appendix A: BENCHMARKS lists the campaigns' measurements and the records' READMEs the probes and checks around them, where it said BENCHMARKS lists every measurement; the tables' empty cells as em dashes |
 | 1.17 | 2026-11-02 | §6.10 and §7: the serving profile holds the agents' decodes through the budget cap's window, past the follow-up rounds' rule on the agents' rate (Table 9's profile row, its sums, the abstract and the results at a glance follow); §4's step cost and Figure 7 from the baseline measured with the hold |
 | 1.16 | 2026-11-02 | §9's one vLLM version: make-room rebased onto vLLM 0.33.0, which no round measured; every measurement of §6 named as 0.32.0's |
