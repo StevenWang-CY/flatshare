@@ -5,6 +5,31 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.19](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.19) (2026-11-03): the change's pull requests as #65282 and #65283
+
+The change is proposed to vLLM as #65282 and #65283, which succeed #63350 and #63351: the same change, rebased onto
+vLLM's main as one commit each. make-room's patches now come from the new pull requests and build v1.18's code. No
+measured number changed.
+
+- **The pull requests.** #65282 carries the KV preemption and #65283, stacked on it, the budget cap; #63350 and #63351
+  are closed, each with a pointer to its successor. Every link and every statement of their state names the new ones,
+  open with no maintainer review as of 2026-11-03, while the records, tables and figures keep the first numbers, as
+  the glossary says. ARCHITECTURE's §2 is "The change", without the numbers.
+- **make-room's patches** come from the fork's new backport branches, `v0.32.0-priority-kv-preemption`,
+  `v0.32.0-priority-prefill-hold` and `v0.32.0-flatshare-make-room`, and their v0.33.0 counterparts, with each pull
+  request's part one commit; they keep their names, `63350.patch` and `63351.patch`. The module they build on 0.32.0
+  and on 0.33.0 has v1.18's code, its syntax tree equal but for docstrings, and `make test-trace` against the module
+  Phastform's engine built on 2026-10-27 finds every step the same. Its comments, docstrings and header differ, so the
+  serving profile pins its new hash.
+- **`make compat-upstream`** checks #65282 and #65283 against vLLM's main, each with its patch (`PATCH`), and its
+  check of the backport against the pull requests' heads names the new backport commits.
+- **The report, version 1.19,** names the new pull requests in its note, §4 and references [9] and [10], and corrects
+  §2.4, which said a voice reply needs a few dozen steps before it can be spoken: its first sentence takes a step for
+  each of its tokens, 15 at the median and 39 at most (§6.3).
+- **The packages** are versioned 1.19.0, and are not published to a package index.
+- **Upgrading from v1.18.** A deploy drains and restarts the engine, whose patches changed; it builds the new module
+  at its start, and `serving-check` expects the new hash. The engine schedules as v1.18's.
+
 ## [v1.18](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.18) (2026-11-02): the documents made current and consistent
 
 The documents, as GitHub renders them, follow one form and say where v1.17 stands: the README, the report, the method,
