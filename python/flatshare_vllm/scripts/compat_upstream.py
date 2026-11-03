@@ -1,4 +1,4 @@
-"""Whether the engine change still fits vLLM upstream: #63350 and #63351 against vLLM's moving main, make-room's
+"""Whether the engine change still fits vLLM upstream: #65282 and #65283 against vLLM's moving main, make-room's
 backport of them against their heads, and its patches against vLLM's newest release.
 
     python scripts/compat_upstream.py [--clone DIR] [--python TORCH_PYTHON] [--git GIT] [--remote URL]
@@ -50,7 +50,10 @@ from collections import Counter
 from pathlib import Path
 
 REMOTE = "https://github.com/vllm-project/vllm"
-PRS = (63350, 63351)
+PRS = (65282, 65283)
+# Each PR's patch keeps the name of the pull request it was first written for: #65282 and #65283 superseded #63350 and
+# #63351 on 2026-11-03.
+PATCH = {65282: "63350.patch", 65283: "63351.patch"}
 PINNED = "v0.32.0"
 SCHEDULER = "vllm/v1/core/sched/scheduler.py"
 BUILD = Path(__file__).resolve().parents[1] / "src/flatshare_vllm/build.py"
@@ -62,41 +65,25 @@ PATCHES = [BUILD.parent / "make-room" / name for name in build.VARIANTS["make-ro
 ADAPTED = {
     "63350.patch": {
         # v0.32.0's SchedulerStats has no field for make-room's preemptions: the scheduler counts them.
-        "58ca55361": (
+        "1f3ac8dd4": (
             (
-                "# Requests preempted to make room since the last scheduler stats.",
+                "# Running requests preempted to make room, since the last stats.",
                 "num_priority_preemptions = self._num_priority_preemptions",
                 "num_priority_preemptions=num_priority_preemptions,",
                 "self._num_priority_preemptions = 0",
             ),
-            ("# Requests preempted to make room.",),
+            ("# Running requests preempted to make room.",),
         ),
     },
     "63351.patch": {
-        # v0.32.0's request queues stay stock: the queues' new method is the scheduler's _has_lower_priority_than.
-        "6511bc916": (
-            ("queue.has_lower_priority_than(request.priority)",),
+        # v0.32.0's request queues stay stock: the queues' new method is the scheduler's _has_lower_priority_than. Nor
+        # does its SchedulerStats have fields for the budget cap's holds: the scheduler counts them too.
+        "8875d37d3": (
             (
-                "PriorityRequestQueue,",
-                "self._has_lower_priority_than(queue, request.priority)",
-                "@staticmethod",
-                "def _has_lower_priority_than(queue: RequestQueue, priority: int) -> bool:",
-                '"""Whether a request in `queue` has a lower priority, a larger value,',
-                "than `priority`: a priority queue's largest requests are among its",
-                'heap\'s leaves, its second half."""',
-                "if isinstance(queue, PriorityRequestQueue):",
-                "heap = queue._heap",
-                "return any(req.priority > priority for req in heap[len(heap) // 2 :])",
-                "return any(req.priority > priority for req in queue)",
-            ),
-        ),
-        # Nor for the budget cap's holds: the scheduler counts them too.
-        "f1614decc": (
-            (
-                "# The budget cap's holds since the last scheduler stats: the steps in",
-                "# which it held lower-priority prefill back, and the prefill tokens it",
-                "# held back in them; and the last such step, with the tokens held back in",
-                "# it so far.",
+                "queue.has_lower_priority_than(request.priority)",
+                "# Since the last stats, the steps in which the budget cap held prefill",
+                "# back and the prefill tokens it held; and the last such step, with the",
+                "# tokens held in it so far.",
                 "num_prefill_held_steps = self._num_prefill_held_steps",
                 "num_prefill_held_steps=num_prefill_held_steps,",
                 "num_prefill_held_tokens = self._num_prefill_held_tokens",
@@ -105,9 +92,20 @@ ADAPTED = {
                 "self._num_prefill_held_tokens = 0",
             ),
             (
-                "# The budget cap's holds: the steps in which it held lower-priority",
-                "# prefill back, and the prefill tokens it held back in them; and the last",
-                "# such step, with the tokens held back in it so far.",
+                "PriorityRequestQueue,",
+                "self._has_lower_priority_than(queue, request.priority)",
+                "@staticmethod",
+                "def _has_lower_priority_than(queue: RequestQueue, priority: int) -> bool:",
+                '"""Whether a request in `queue` has a lower priority (a larger value)',
+                "than `priority`. A priority queue's largest requests are among its",
+                'heap\'s leaves, the second half of the list."""',
+                "if isinstance(queue, PriorityRequestQueue):",
+                "heap = queue._heap",
+                "return any(req.priority > priority for req in heap[len(heap) // 2 :])",
+                "return any(req.priority > priority for req in queue)",
+                "# The steps in which the budget cap held prefill back and the prefill",
+                "# tokens it held; and the last such step, with the tokens held in it so",
+                "# far.",
             ),
         ),
     },
@@ -478,7 +476,7 @@ def against_heads(git: Git) -> bool:
     patches = {patch.name: patch for patch in PATCHES}
     base, unnamed, adapted = "origin/main", 0, [0, 0]
     for pr in PRS:
-        head, name = f"origin/pull/{pr}", f"{pr}.patch"
+        head, name = f"origin/pull/{pr}", PATCH[pr]
         if base != "origin/main" and git.run("merge-base", "--is-ancestor", base, head).returncode:
             base = "origin/main"  # rebased off the PR before it
         start = git("merge-base", base, head).strip()

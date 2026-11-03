@@ -6,10 +6,12 @@
 # on top, and each patch is the scheduler.py part of one branch's commits. Its header names the commits that change
 # scheduler.py and, under a commit that the release made differ from its PR commit, the paragraph of its message that
 # says how ("Backport: ..."):
-#   v0.32.0-priority-make-room-kv        v0.32.0 + #63350's commits, cherry-picked                 -> 63350.patch
-#   v0.32.0-priority-prefill-budget-cap  v0.32.0-priority-make-room-kv + #63351's commits          -> 63351.patch
-#   v0.32.0-leaseholder-make-room        v0.32.0-priority-prefill-budget-cap + the variant's commit -> variant.patch
-# A change to the PRs is made on their branches (the fork's priority-make-room-kv and priority-prefill-budget-cap, on
+#   v0.32.0-priority-kv-preemption   v0.32.0 + #65282's commit, cherry-picked                   -> 63350.patch
+#   v0.32.0-priority-prefill-hold    v0.32.0-priority-kv-preemption + #65283's own commit        -> 63351.patch
+#   v0.32.0-flatshare-make-room      v0.32.0-priority-prefill-hold + the variant's commits       -> variant.patch
+# (The patches keep the names of the pull requests they were first written for, #63350 and #63351, which #65282
+# and #65283 superseded on 2026-11-03.)
+# A change to the PRs is made on their branches (the fork's priority-kv-preemption and priority-prefill-hold, on
 # vLLM main), cherry-picked onto these and pushed to the fork, and the patches rewritten here from the clone's copies
 # of the fork's branches (origin/...). KV_REF, CAP_REF and VARIANT_REF name other branches. BASE names another release
 # (BASE=v0.33.0: the fork's v0.33.0-* branches, the same commits cherry-picked onto v0.33.0), whose patches are written
@@ -17,9 +19,9 @@
 set -euo pipefail
 clone=${1:?usage: make-room-patches.sh VLLM_CLONE (a clone of https://github.com/StevenWang-CY/vllm)}
 base=${BASE:-v0.32.0}
-kv=${KV_REF:-origin/$base-priority-make-room-kv}
-cap=${CAP_REF:-origin/$base-priority-prefill-budget-cap}
-variant=${VARIANT_REF:-origin/$base-leaseholder-make-room}
+kv=${KV_REF:-origin/$base-priority-kv-preemption}
+cap=${CAP_REF:-origin/$base-priority-prefill-hold}
+variant=${VARIANT_REF:-origin/$base-flatshare-make-room}
 out=$(cd "$(dirname "$0")/../src/flatshare_vllm/make-room" && pwd)
 [[ $base == v0.32.0 ]] || { out=$out/$base; mkdir -p "$out"; }
 scheduler=vllm/v1/core/sched/scheduler.py
@@ -44,9 +46,9 @@ write() {  # write FILE FROM TIP DESCRIPTION: the scheduler.py part of the commi
   } >"$out/$file"
 }
 
-write 63350.patch "$base" "$kv" "vLLM #63350 (https://github.com/vllm-project/vllm/pull/63350), backported to $base."
-write 63351.patch "$kv" "$cap" "vLLM #63351 (https://github.com/vllm-project/vllm/pull/63351), backported to $base, on #63350."
-write variant.patch "$cap" "$variant" "What only Flatshare's make-room variant has, on #63350 and #63351: the switches from
+write 63350.patch "$base" "$kv" "vLLM #65282 (https://github.com/vllm-project/vllm/pull/65282; first #63350), backported to $base."
+write 63351.patch "$kv" "$cap" "vLLM #65283 (https://github.com/vllm-project/vllm/pull/65283; first #63351), backported to $base, on #65282."
+write variant.patch "$cap" "$variant" "What only Flatshare's make-room variant has, on #65282 and #65283: the switches from
 --additional-config's make_room table, the reserve, the retention of realtime prefixes, and the log line of the PRs'
 counters and its own."
 ls -l "$out"/*.patch

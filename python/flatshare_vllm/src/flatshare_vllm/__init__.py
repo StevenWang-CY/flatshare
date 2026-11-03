@@ -1,4 +1,4 @@
-"""The engine change on vLLM 0.32.0: Flatshare's make-room variant, vLLM #63350 and #63351 backported as patches with
+"""The engine change on vLLM 0.32.0: Flatshare's make-room variant, vLLM #65282 and #65283 (first #63350 and #63351) backported as patches with
 the variant's own, and the pr54530 baseline. build.py writes a variant's scheduler module at engine start; it and the
 probes beside the patches run as scripts, with the standard library only.
 

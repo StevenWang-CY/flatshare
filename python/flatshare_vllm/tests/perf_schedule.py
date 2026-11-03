@@ -6,7 +6,7 @@ Stock vLLM is vLLM's own Scheduler, without the change. make-room's module is th
 start (``--module`` times another generated module), its switches off or in the configuration to deploy:
 ``max_preemptions_per_step 2``, ``budget_cap true``, ``budget_cap_tokens 48``, ``reserve_tokens 0``,
 ``take_reservations true``, ``decode_hold_tokens 48``, ``retain_tokens 3584``, ``retain_s 30``, ``hint_hold_ms 400``. They run in the
-steady states the PRs' cost tables were measured in (#63350 and #63351), in which nothing is admitted or preempted for
+steady states the PRs' cost tables were measured in (#65282 and #65283), in which nothing is admitted or preempted for
 the measured steps, so that every step does the same work:
 
   A  R running priority-2 decodes; the waiting head is a priority-2 request that does not fit the free KV (the

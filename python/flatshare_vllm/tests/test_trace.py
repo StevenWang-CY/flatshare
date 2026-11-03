@@ -1,5 +1,5 @@
-"""make-room against the PRs, step for step, on vLLM 0.32.0's real scheduler, on CPU: what E2 measured is what #63350
-and #63351 propose.
+"""make-room against the PRs, step for step, on vLLM 0.32.0's real scheduler, on CPU: what E2 measured is what #65282
+and #65283 propose.
 
 The PRs' module is v0.32.0's scheduler with the PRs' two patches alone (src/flatshare_vllm/make-room), their three
 SchedulerConfig fields read from the variant's ``make_room`` keys; the variant's has its own patch on top. Both run the
@@ -103,7 +103,7 @@ COUNTERS = (
     ("make_room_held_admissions", "make_room_held_admissions"),
 )
 HELD_TOKENS = 2
-# Whether the reference bounds a step's held tokens by the step's budget, as #63351 does.
+# Whether the reference bounds a step's held tokens by the step's budget, as #65283 does.
 REFERENCE_BOUNDS_HELD = (
     bool(REFERENCE) and "_prefill_held_step_tokens" in Path(REFERENCE).read_text()
 )
