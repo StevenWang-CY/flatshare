@@ -7,7 +7,7 @@
     "scheduler_cls": "flatshare_make_room_serve.AsyncScheduler",
     "scheduler_module": {
       "name": "flatshare_make_room_scheduler",
-      "sha256": "7e1672b9c22ee2540115b7803ad5843cb46c1fc5738e73fd0599a7e70b704fba"
+      "sha256": "d7e7e6763b4b400607597d40c43bedbdc62b31548779e1649a3771bddde096a4"
     },
     "serve_module_sha256": "c4e9b6d3310ec8e081d1a4c0f18abc0a2369b8c861c5526e92f4dac15d5bbfaa",
     "model": {
@@ -64,8 +64,8 @@
   },
   "patches": {
     "63350.patch": "75d22ba5fa9e26b0ec176999bf68212633ce3360615134ebbdb3769900fc9f14",
-    "63351.patch": "fb588e77d42d302f783355604abdf61689a5358ec904046b5a63e27d344a19ca",
-    "variant.patch": "24af82bbe9e8f093ca1422c97af50e895e5bce5e57aa3b6820daa203144252bd"
+    "63351.patch": "dd2d575d4bcc339b8ac770e092b3f7ee611adbb4a0c2915745f44f7d692ab9b0",
+    "variant.patch": "7661e377e0cb78b76181b31b0756711041c47bde01f992c4efcddfbadbda7e22"
   },
   "voice": {
     "mode": "serve",

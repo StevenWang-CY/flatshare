@@ -2,14 +2,14 @@ vLLM #65283 (https://github.com/vllm-project/vllm/pull/65283; first #63351), bac
 
 The scheduler.py part of these commits on vLLM v0.33.0 (4ba787ec9):
 
-  207ed95f1 [Core] Priority scheduling: hold lower-priority prefill for first tokens (cherry-picked from 20af4e098)
+  8d1010b30 [Core] Priority scheduling: hold lower-priority prefill for first tokens (cherry-picked from 8c753658a)
     Backport: v0.33.0's request queues stay stock, so the queue method is
     the scheduler's _has_lower_priority_than here, with the same answer; and
     v0.33.0's SchedulerStats and Prometheus logger have no field for the budget
     cap's holds, so the scheduler counts them and make_stats leaves them.
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
-index b69bd492f..39d59dc5b 100644
+index b69bd492f..6a350a1f8 100644
 --- a/vllm/v1/core/sched/scheduler.py
 +++ b/vllm/v1/core/sched/scheduler.py
 @@ -50,6 +50,7 @@ from vllm.v1.core.sched.output import (
@@ -75,7 +75,7 @@ index b69bd492f..39d59dc5b 100644
  
          # First, schedule the RUNNING requests.
          req_index = 0
-@@ -870,6 +901,26 @@ class Scheduler(SchedulerInterface):
+@@ -870,6 +901,30 @@ class Scheduler(SchedulerInterface):
                  req_index += 1
                  continue
  
@@ -83,6 +83,10 @@ index b69bd492f..39d59dc5b 100644
 +                first_tokens_priority is not None
 +                and request.is_prefill_chunk
 +                and request.priority > first_tokens_priority
++                # A prefill with encoder outputs in the cache goes on: only its
++                # progress frees them, and the request awaiting its first
++                # tokens may need the space.
++                and not self.encoder_cache_manager.get_cached_input_ids(request)
 +            ):
 +                # A higher-priority request awaits its first tokens: this step
 +                # is for it and the decodes.
@@ -102,7 +106,7 @@ index b69bd492f..39d59dc5b 100644
              if (
                  self.ec_connector is not None
                  and request.mm_features
-@@ -1150,6 +1201,19 @@ class Scheduler(SchedulerInterface):
+@@ -1150,6 +1205,19 @@ class Scheduler(SchedulerInterface):
                      skip_request(request_queue)
                      continue
  
@@ -122,7 +126,7 @@ index b69bd492f..39d59dc5b 100644
                  if (
                      request_queue is self.waiting
                      and self.max_priority_preemptions_per_step
-@@ -3504,10 +3568,14 @@ class Scheduler(SchedulerInterface):
+@@ -3504,10 +3572,14 @@ class Scheduler(SchedulerInterface):
  
      def _peek_make_room_request(self, defer_prefills: bool) -> Request | None:
          """The highest-priority waiting request that the waiting loop can
@@ -140,7 +144,7 @@ index b69bd492f..39d59dc5b 100644
              or defer_prefills
              or self._pause_state != PauseState.UNPAUSED
          ):
-@@ -3531,13 +3599,31 @@ class Scheduler(SchedulerInterface):
+@@ -3531,13 +3603,31 @@ class Scheduler(SchedulerInterface):
              for queue in (self.kv_holding_waiting, self.waiting)
          )
          request = min((req for req in heads if req is not None), default=None)
@@ -175,7 +179,7 @@ index b69bd492f..39d59dc5b 100644
      def _first_schedulable(
          self, queue: RequestQueue, loras: set[int]
      ) -> Request | None:
-@@ -3576,6 +3662,87 @@ class Scheduler(SchedulerInterface):
+@@ -3576,6 +3666,87 @@ class Scheduler(SchedulerInterface):
              and request.lora_request.lora_int_id not in loras
          )
  
