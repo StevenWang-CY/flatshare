@@ -78,7 +78,7 @@ ADAPTED = {
     "63351.patch": {
         # v0.32.0's request queues stay stock: the queues' new method is the scheduler's _has_lower_priority_than. Nor
         # does its SchedulerStats have fields for the budget cap's holds: the scheduler counts them too.
-        "8875d37d3": (
+        "a3a23bca2": (
             (
                 "queue.has_lower_priority_than(request.priority)",
                 "# Since the last stats, the steps in which the budget cap held prefill",
