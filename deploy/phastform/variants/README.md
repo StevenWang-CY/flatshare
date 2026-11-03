@@ -68,7 +68,7 @@ E2 does not run it: no arm names the variant, and `flatshare-bench e2 run` check
 | [`mps`](mps) | engine, STT, TTS | The three servers run as clients of one CUDA MPS daemon (`flatshare-mps.service`) instead of time-slicing (note 1) | the MPS factor |
 | [`pr54530`](pr54530) | engine | vLLM PR [#54530](https://github.com/vllm-project/vllm/pull/54530) ported to 0.32.0: a waiting request preempts the lowest-priority running one once the running queue is full (note 2) | 7a (with the PR) |
 | [`sglang`](sglang) | engine | SGLang 0.5.22 in the engine's place, with the same model and step cap (note 3) | 7b |
-| [`make-room`](make-room) | engine | The change for the KV case of vLLM [#40004](https://github.com/vllm-project/vllm/issues/40004), proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) without the reserve (note 4) | 9, engine side |
+| [`make-room`](make-room) | engine | The change for the KV case of vLLM [#40004](https://github.com/vllm-project/vllm/issues/40004), proposed to vLLM as pull requests [#65282](https://github.com/vllm-project/vllm/pull/65282) and [#65283](https://github.com/vllm-project/vllm/pull/65283) without the reserve (note 4) | 9, engine side |
 | [`make-room-serve`](make-room-serve) | engine | The box's serving configuration, rendered from the serving profile [`rtx-5060-ti-serve`](../../profiles/rtx-5060-ti-serve.toml) ([above](#the-serving-profile)) (note 5) | none: the configuration to deploy, which the sweep's `9-pr-ab48-b256-t0` point measured, and W5's `9-pr-ab48` points at the frozen box's step cap |
 | [`agents-only`](agents-only) | engine, STT, TTS | A dedicated background card, the resource gate's best practical dedicated arrangement ([RESOURCE-GATE.md](../../../benchmarks/quality/RESOURCE-GATE.md)) (note 6) | the agents-only points of the resource gate |
 | [`make-room-v03`](make-room-v03) | engine | W5's control: `make-room` as the v0.3 tag built it (note 7) | 9, W5's control (`9-pr-ab48-v03`) |
@@ -76,8 +76,8 @@ E2 does not run it: no arm names the variant, and `flatshare-bench e2 run` check
 1. `mps` has not run since the servers moved into network namespaces of their own (`deploy/bin/in-private-net`), where each client is root in its user namespace and reaches the daemon through its pipe directory: run it once before measuring with it.
 2. `pr54530` acts under priority scheduling. At each start [`build.py`](../../../python/flatshare_vllm) applies the port, a patch of 0.32.0's scheduler, the engine loads the module with `--scheduler-cls flatshare_pr54530_scheduler.AsyncScheduler`, and `--max-num-seqs 12` lets the queue fill, since the PR acts on the request count, never on KV pressure. [`probe.py`](../../../python/flatshare_vllm/src/flatshare_vllm/pr54530/probe.py) is the check.
 3. `sglang` serves on its loopback port 8000 behind the engine's socket: SGLang serves no Unix socket, so `flatshare-engine-proxy.socket` proxies the socket to the port while the variant runs, and the host's other users can reach the port meanwhile. Its step cap is `--chunked-prefill-size 512`, without vLLM's 256-token threshold per request. It has a KV pool asked for at 36,400 tokens, which SGLang's static memory fraction brings to 33,683–34,679, and priority scheduling that preempts on any priority gap. Its environment is built once with `install.sh`.
-4. `make-room`: the pull requests are open, with no maintainer review as of 2026-11-02.
-   - **The rules.** Under priority scheduling, the highest-priority waiting request the scheduler can serve preempts running requests of a lower priority when it lacks KV (the KV preemption), lower-priority prefill sits out the steps of its first tokens (the budget cap), and lower classes leave a KV reserve free for priority 0. [ARCHITECTURE.md §2](../../../docs/ARCHITECTURE.md#2-the-change-63350-and-63351) states the rules.
+4. `make-room`: the pull requests are open, with no maintainer review as of 2026-11-03.
+   - **The rules.** Under priority scheduling, the highest-priority waiting request the scheduler can serve preempts running requests of a lower priority when it lacks KV (the KV preemption), lower-priority prefill sits out the steps of its first tokens (the budget cap), and lower classes leave a KV reserve free for priority 0. [ARCHITECTURE.md §2](../../../docs/ARCHITECTURE.md#2-the-change) states the rules.
    - **Its unit** runs arm 9's values: 2 preemptions a step, a 16-token window and a 2,048-token reserve.
    - **Its module.** At each start [`build.py`](../../../python/flatshare_vllm) applies the pull requests' scheduler diff, backported to 0.32.0, and the variant's own patch, and the engine loads the module with `--scheduler-cls flatshare_make_room_scheduler.AsyncScheduler`; `--max-num-seqs` stays the frozen box's.
    - **Its checks.** [`probe.py`](../../../python/flatshare_vllm/src/flatshare_vllm/make-room/probe.py) checks a voice turn in a full KV pool (`kv`) and behind agent prefills (`prefill`), `tail.py` the calls' first-token tail beside closed-loop agents (both sized from the engine's pool and context), and [`knee.sh`](../../../python/flatshare_vllm/src/flatshare_vllm/make-room/knee.sh) sweeps the budget cap's window against whole replies.
@@ -105,8 +105,8 @@ The engine start fails on an unknown `make_room` key or a bad value (`budget_cap
 
 | Variant key | The pull requests' flag |
 |---|---|
-| `make_room.max_preemptions_per_step` | `--max-priority-preemptions-per-step` ([#63350](https://github.com/vllm-project/vllm/pull/63350)) |
-| `make_room.budget_cap`, `make_room.budget_cap_tokens` | `--priority-prefill-budget-cap`, `--priority-prefill-budget-cap-tokens` ([#63351](https://github.com/vllm-project/vllm/pull/63351)) |
+| `make_room.max_preemptions_per_step` | `--max-priority-preemptions-per-step` ([#65282](https://github.com/vllm-project/vllm/pull/65282)) |
+| `make_room.budget_cap`, `make_room.budget_cap_tokens` | `--priority-prefill-budget-cap`, `--priority-prefill-budget-cap-tokens` ([#65283](https://github.com/vllm-project/vllm/pull/65283)) |
 | `make_room.reserve_tokens` | none: the reserve is the variant's only |
 | `make_room.retain_tokens`, `make_room.retain_s` | none: the variant's only |
 | `make_room.take_reservations` | none: the variant's only |
@@ -145,6 +145,6 @@ Each flag was checked against vLLM v0.32.0 (`vllm/engine/arg_utils.py`, `vllm/co
 1. The step cap of 2,048 tokens is the API server's default below 70 GiB of GPU memory. Nothing signals priority (the gateway's `upstream_priority = []`).
 2. A threshold at or above B never binds (each request's share of a step is capped by B anyway), so the grid has five distinct cells.
 3. `--max-num-queued-tokens` applies to every class, voice included, and each 503 counts as `vllm:admission_rejections_total`.
-4. These are the change as #63350 and #63351 propose it. The `make-room-serve` variant runs the configuration to deploy with its own switches, at the step cap the sweep chose ([the serving profile](#the-serving-profile)).
+4. These are the change as #65282 and #65283 propose it. The `make-room-serve` variant runs the configuration to deploy with its own switches, at the step cap the sweep chose ([the serving profile](#the-serving-profile)).
 
 vLLM 0.32's FCFS scheduler ignores request priorities rather than rejecting them: nothing in 0.32.0 enforces the "will raise an error" of the OpenAI protocol's `priority` description. Arm 2 sends none so that it is the engine out of the box.

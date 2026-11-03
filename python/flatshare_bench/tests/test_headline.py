@@ -263,12 +263,12 @@ def test_the_readmes_opening_and_the_reports_abstract_are_the_records() -> None:
     ]:
         assert phrase in abstract, phrase
     # The pull requests' state in one wording and under one date: the README's opening, the report's note and its two
-    # references.
+    # references, which name the pull requests that succeeded #63350 and #63351.
     state = r"open, with no maintainer review as of (\d{4}-\d{2}-\d{2})"
-    [date] = set(re.findall(rf"\({state}\)", readme))
+    [date] = set(re.findall(rf"\({state}[;)]", readme))
     text = REPORT.read_text()
     [noted] = re.findall(rf"(?m)^> .*\b{state}\.", text)
-    listed = re.findall(rf"pull request #6335[01]\. .*?, {state}\.", text)
+    listed = re.findall(rf"pull request #6528[23]\. .*?, {state}; it succeeds #6335[01],", text)
     assert noted == date
     assert listed == [date, date]
 

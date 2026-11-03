@@ -1,6 +1,6 @@
 # Architecture
 
-Flatshare runs a realtime voice agent beside background LLM work on one GPU, or on two. Its central part is a change to vLLM's scheduler: a waiting realtime request can take KV from running background requests, and background prefill sits out the realtime reply's first tokens. It is proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) (open, with no maintainer review as of 2026-11-02), and runs on vLLM 0.32 as the engine variant `make-room` (§2), which builds on 0.33 too. Around it are:
+Flatshare runs a realtime voice agent beside background LLM work on one GPU, or on two. Its central part is a change to vLLM's scheduler: a waiting realtime request can take KV from running background requests, and background prefill sits out the realtime reply's first tokens. It is proposed to vLLM as pull requests [#65282](https://github.com/vllm-project/vllm/pull/65282) and [#65283](https://github.com/vllm-project/vllm/pull/65283) (open, with no maintainer review as of 2026-11-03; first #63350 and #63351, the numbers this page and its figures use), and runs on vLLM 0.32 as the engine variant `make-room` (§2), which builds on 0.33 too. Around it are:
 - the serving path the deployment runs (§3): one GPU node, or two cards with a warm spare where a second card is available;
 - its network and security (§4);
 - the configuration and hosts it was measured on (§5);
@@ -13,7 +13,7 @@ This document describes what is built, as of v1.18, for a reader who wants to kn
 
 ## At a glance
 
-Flatshare is one change to vLLM's scheduler and three planes around it (Figure 1). The serving plane carries a voice turn and the agents' requests through one GPU: callers reach the voice worker and coding agents reach the gateway, which gives each client its class and priority and places it on a GPU node, and vLLM with [#63350](https://github.com/vllm-project/vllm/pull/63350) and [#63351](https://github.com/vllm-project/vllm/pull/63351) schedules both over the GPU's KV pool and the CPU tier, beside the speech servers. The measurement plane made every number the report gives, and the operations plane holds production to the measured configuration and decides what a failure does.
+Flatshare is one change to vLLM's scheduler and three planes around it (Figure 1). The serving plane carries a voice turn and the agents' requests through one GPU: callers reach the voice worker and coding agents reach the gateway, which gives each client its class and priority and places it on a GPU node, and vLLM with #63350 and #63351 schedules both over the GPU's KV pool and the CPU tier, beside the speech servers. The measurement plane made every number the report gives, and the operations plane holds production to the measured configuration and decides what a failure does.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/overview-narrow.svg">
@@ -42,14 +42,14 @@ A voice turn on a GPU shared with coding agents loses its time in the LLM's firs
 
 Neither mechanism is specific to the card, though what each costs is: the first appears wherever agents' contexts are long against the pool, which the card's memory sets, the second wherever background prefill runs beside a realtime decode ([the report's §6.7](REPORT.md#67-the-rules-carry-to-an-a100) places other GPUs by a model, and the A100 run measured one).
 
-## 2. The change: #63350 and #63351
+## 2. The change
 
 The variant `make-room` ([`python/flatshare_vllm`](../python/flatshare_vllm/README.md)) is built at each engine start from the installed vLLM's scheduler, 0.32.0's or 0.33.0's, without modifying vLLM: `build.py` applies the pull requests' scheduler diff, backported to that release, and the variant's own patch, every hunk where it must be, and the engine loads the module with `--scheduler-cls`. The serving profile runs 0.32.0, which every measurement ran on. It adds these switches to priority scheduling, each a key of `--additional-config` and off by default:
 
 | Switch | Variant key | Upstream |
 |---|---|---|
-| The KV preemption | `make_room.max_preemptions_per_step` | `--max-priority-preemptions-per-step` ([#63350](https://github.com/vllm-project/vllm/pull/63350)) |
-| The budget cap | `make_room.budget_cap`, `make_room.budget_cap_tokens` | `--priority-prefill-budget-cap`, `--priority-prefill-budget-cap-tokens` ([#63351](https://github.com/vllm-project/vllm/pull/63351)) |
+| The KV preemption | `make_room.max_preemptions_per_step` | `--max-priority-preemptions-per-step` ([#65282](https://github.com/vllm-project/vllm/pull/65282)) |
+| The budget cap | `make_room.budget_cap`, `make_room.budget_cap_tokens` | `--priority-prefill-budget-cap`, `--priority-prefill-budget-cap-tokens` ([#65283](https://github.com/vllm-project/vllm/pull/65283)) |
 | The reserve | `make_room.reserve_tokens` | none: carried in the variant only |
 | A lower priority's reservations taken | `make_room.take_reservations` | none: carried in the variant only |
 | Lower-priority decodes held from a call's first tokens | `make_room.decode_hold_tokens` | none: carried in the variant only |

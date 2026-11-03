@@ -17,10 +17,10 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
 ## Decision
 
 - **The engine carries the realtime tier.** It runs priority scheduling with two changes:
-  - [#63350](https://github.com/vllm-project/vllm/pull/63350): a waiting request of a higher priority preempts running lower-priority work for KV, at most two requests a step;
-  - [#63351](https://github.com/vllm-project/vllm/pull/63351): lower-priority prefill sits out the request's first tokens, with a window long enough for the reply's first sentence (48 tokens for this voice agent).
+  - [#65282](https://github.com/vllm-project/vllm/pull/65282): a waiting request of a higher priority preempts running lower-priority work for KV, at most two requests a step;
+  - [#65283](https://github.com/vllm-project/vllm/pull/65283): lower-priority prefill sits out the request's first tokens, with a window long enough for the reply's first sentence (48 tokens for this voice agent).
 
-  There is no reserve. The pull requests are proposed to vLLM (open, with no maintainer review as of 2026-11-02); the `make-room` variant runs the same change on vLLM 0.32.0 meanwhile.
+  There is no reserve. The pull requests are proposed to vLLM (open, with no maintainer review as of 2026-11-03; first #63350 and #63351); the `make-room` variant runs the same change on vLLM 0.32.0 meanwhile.
 - **The priority comes from the caller's identity.** A gateway maps each tenant to a class and caps it, so a client cannot raise its own priority.
 - **No admission policy in front.** `flatshare-gateway` stays the experiment harness: its baselines and the lifecycle policy remain E2's arms, and the measured configuration ran without either.
 - **Not pursued:**
@@ -35,7 +35,7 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
   - ADR-0003's decision stands, with the room made in the engine;
   - a window that covers the reply's first sentence makes degrade unnecessary.
 - **The v0 lease and ledger code is removed after v0.3:** `flatshare-proto`'s lease hint and ledger rows, the header that marked synthetic requests, and `flatshare_vllm`'s `LeasePolicy` and `LeaseConnector`. Done on 2026-10-24; the v0.3 tree keeps them.
-- **The change's known gaps** ([ARCHITECTURE.md §2](../ARCHITECTURE.md#2-the-change-63350-and-63351)) were open in the v0.3 variant and in both pull requests as first opened, and E2 measured the change with them. W5 fixed them, with the further defects its review found, in the variant (main, up to b656c25); the pull requests carry the same fixes.
+- **The change's known gaps** ([ARCHITECTURE.md §2](../ARCHITECTURE.md#2-the-change)) were open in the v0.3 variant and in both pull requests as first opened, and E2 measured the change with them. W5 fixed them, with the further defects its review found, in the variant (main, up to b656c25); the pull requests carry the same fixes.
 
 ## Later
 

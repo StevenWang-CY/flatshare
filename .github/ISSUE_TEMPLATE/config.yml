@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/StevenWang-CY/flatshare/security/advisories/new
     about: Report it privately through a security advisory, as SECURITY.md describes.
   - name: The scheduler change in vLLM
-    url: https://github.com/vllm-project/vllm/pull/63350
-    about: The two rules are proposed to vLLM as pull requests #63350 and #63351, under review there.
+    url: https://github.com/vllm-project/vllm/pull/65282
+    about: The two rules are proposed to vLLM as pull requests #65282 and #65283, under review there.
