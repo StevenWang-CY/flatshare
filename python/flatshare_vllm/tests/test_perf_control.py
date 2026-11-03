@@ -1,5 +1,5 @@
 """The perf check's negative control, which make perf-make-room runs after the check (FLATSHARE_PERF=1): make-room built
-with two of #63350's optimizations undone fails the check against the checked-in baseline in the states where that work
+with two of #65282's optimizations undone fails the check against the checked-in baseline in the states where that work
 runs, make-room built with a cost on its switches-off path fails it against stock vLLM, make-room that counts the blocks
 a preemption releases as it did before it counted them in one pass fails it in the serving profile's state that runs the
 count every step, and make-room itself passes it in those states, each timed in one process per state (a state that
@@ -96,7 +96,7 @@ def test_a_module_made_slower_fails_the_check(real, tmp_path):
     failures = check(mutant(real, SLOWER, tmp_path / "slower"), tmp_path / "slower.json", STATES)
     assert sorted(failure.split(":")[0] for failure in failures) == sorted(STATES), failures
     assert all(" on/off " in failure for failure in failures), failures
-    print("\nthe negative control, make-room with two of #63350's optimizations undone, fails:")
+    print("\nthe negative control, make-room with two of #65282's optimizations undone, fails:")
     print("\n".join(f"  {failure}" for failure in failures))
 
 

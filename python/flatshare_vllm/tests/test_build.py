@@ -101,7 +101,7 @@ def test_make_room_is_the_prs_and_the_variants_own_parts(tmp_path):
     assert build(tmp_path, "make-room", "--source-tree").returncode == 0
     module = (tmp_path / "flatshare_make_room_scheduler.py").read_text()
     for line in (
-        # #63350's and #63351's.
+        # #65282's and #65283's.
         "make_room_req = self._peek_make_room_request(defer_prefills)",
         "make_room_preempted_reqs = self._make_room(",
         "first_tokens_priority = self._first_tokens_priority(",
@@ -134,8 +134,8 @@ def test_the_serving_profile_names_the_module_make_room_builds(tmp_path):
 
 @needs_vllm_src
 def test_a_source_the_patches_do_not_match_fails_the_build_naming_the_hunk(tmp_path):
-    """A moved line fails loudly: here 0.32.0's scheduler with one context line of #63350's first hunk edited, which
-    no release's patches then match, each named with its hunk."""
+    """A moved line fails loudly: here 0.32.0's scheduler with one context line of 63350.patch's first hunk edited,
+    which no release's patches then match, each named with its hunk."""
     if RELEASE != "0.32.0":
         pytest.skip("the edited line and its hunk are 0.32.0's")
     fake = tmp_path / "src/vllm"

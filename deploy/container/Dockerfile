@@ -1,4 +1,4 @@
-# The serving engine on vLLM's own image: vLLM 0.32.0 with make-room's scheduler (vllm-project/vllm#63350 and #63351,
+# The serving engine on vLLM's own image: vLLM 0.32.0 with make-room's scheduler (vllm-project/vllm#65282 and #65283,
 # as python/flatshare_vllm builds them) at the serving profile's settings, held to that profile once it starts, as the
 # box's unit holds it. deploy/container/README.md says how to build, run and check it. From the repository's root:
 #

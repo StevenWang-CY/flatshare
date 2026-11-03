@@ -12,4 +12,4 @@
 - [ ] No file under `benchmarks/results` is edited; a new measurement has a dated directory of its own.
 - [ ] A changed wire type or metric is regenerated (`make schema`, `make metrics`).
 - [ ] A changed number in a document cites the record, test or script it comes from.
-- [ ] A change to make-room's scheduler patches comes from #63350 or #63351, as `python/flatshare_vllm/README.md` describes.
+- [ ] A change to make-room's scheduler patches comes from #65282 or #65283, as `python/flatshare_vllm/README.md` describes.

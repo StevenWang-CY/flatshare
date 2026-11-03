@@ -16,7 +16,7 @@ which use it retires.
 | Concept | Use | Never |
 |---|---|---|
 | #63350 and #63351 together, as a change to vLLM's priority scheduling | the change | the PRs, the engine change, the scheduler change |
-| The two proposals on GitHub: their diff, branches and state | the pull requests, or #63350 and #63351 | the PRs |
+| The two proposals on GitHub: their diff, branches and state | the pull requests, or #65282 and #65283 (#63350 and #63351 until 2026-11-03) | the PRs |
 | #63350's rule | the KV preemption | make-room (for the rule), KV make-room |
 | #63351's rule, and how many first tokens it covers | the budget cap, and its window | the prefill hold, the hold |
 | The engine variant that runs the change on vLLM 0.32.0 and 0.33.0 | make-room | the generated scheduler |
@@ -35,12 +35,14 @@ which use it retires.
   **Its window** is how many first tokens it covers (`--priority-prefill-budget-cap-tokens`, 16 by default; 48 in the
   configuration to deploy), which the technical report writes T. The name is the flag's, and #63351's title says what it
   does: "hold lower-priority prefill for first tokens".
-- **The change**: the two pull requests proposed to vLLM (open, with no maintainer review as of 2026-11-02) that change
-  priority scheduling, [#63350](https://github.com/vllm-project/vllm/pull/63350) for a full KV cache and
-  [#63351](https://github.com/vllm-project/vllm/pull/63351) for prefill beside a priority request's first tokens.
-  [ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change-63350-and-63351) states their rules. **The pull requests** are the
-  proposals themselves, their diff, branches and state. In a figure *the change* is both rules at the budget cap's
-  default 16-token window.
+- **The change**: the two pull requests proposed to vLLM (open, with no maintainer review as of 2026-11-03) that change
+  priority scheduling, [#65282](https://github.com/vllm-project/vllm/pull/65282) for a full KV cache and
+  [#65283](https://github.com/vllm-project/vllm/pull/65283) for prefill beside a priority request's first tokens. They
+  were opened as #63350 and #63351 on 2026-10-23 and superseded on 2026-11-03 by these two, the same change rebased onto
+  vLLM's main as one commit each; the records, tables and figures name the change by the first numbers.
+  [ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change) states their rules. **The pull requests** are the proposals
+  themselves, their diff, branches and state. In a figure *the change* is both rules at the budget cap's default
+  16-token window.
 - **The configuration to deploy**: the change's switches, the KV preemption at 2 a step and the budget cap with a
   48-token window and no reserve, at the serving profile's step cap of 256 tokens without a per-request threshold
   ([PRODUCTION.md](PRODUCTION.md#the-configuration)). W5's evaluation ran the same switches on the frozen box's engine,

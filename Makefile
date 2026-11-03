@@ -85,7 +85,7 @@ test-make-room: $(VLLM_SRC)
 	  -p no:cacheprovider tests/test_make_room.py tests/test_perf_schedule.py tests/test_gateway_caps.py tests/test_serve.py
 
 # make-room against the PRs' own patches, step for step, on the same CPU environment (python/flatshare_vllm/README.md):
-# the trace that keeps the variant equal to #63350 and #63351, with the PRs' one-line mutants as its negative control.
+# the trace that keeps the variant equal to #65282 and #65283, with the PRs' one-line mutants as its negative control.
 # TRACE_SEEDS sets the random workloads' seeds; TRACE_REFERENCE, a generated module, replaces the PRs' as the other side.
 TRACE_SEEDS ?= 20
 test-trace: $(VLLM_SRC)
@@ -137,7 +137,7 @@ perf-make-room: $(VLLM_SRC)
 	cd python/flatshare_vllm && FLATSHARE_PERF=1 FLATSHARE_PERF_BASELINE=$(abspath $(PERF_BASELINE)) VLLM_TARGET_DEVICE=cpu PYTHONPATH=$(VLLM_SRC) \
 	  $(TORCH_PYTHON) -m pytest -q -s -p no:cacheprovider tests/test_perf_control.py
 
-# Whether #63350 and #63351 merge into vLLM's main and, with TORCH_PYTHON (an interpreter for vLLM main's scheduler and
+# Whether #65282 and #65283 merge into vLLM's main and, with TORCH_PYTHON (an interpreter for vLLM main's scheduler and
 # tests), pass their tests there on CPU; and whether make-room's patches apply to vLLM's newest release. It keeps a
 # blobless vLLM clone in VLLM_UPSTREAM, and needs the network and git 2.38 or newer (GIT names one).
 VLLM_UPSTREAM ?= $(HOME)/.cache/flatshare/vllm-upstream

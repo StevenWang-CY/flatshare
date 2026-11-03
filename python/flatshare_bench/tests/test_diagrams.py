@@ -239,11 +239,13 @@ def test_the_overviews_parts_are_the_repositorys() -> None:
     # Each serving part is a directory of the repository, drawn by its last name.
     for _, directory in diagrams.SERVING_PARTS:
         assert (REPO / directory).is_dir(), directory
-    # The engine carries the two pull requests the README proposes.
-    readme = (REPO / "README.md").read_text()
-    assert {"63350", "63351"} <= set(
+    # The engine carries the two pull requests the README proposes, which the figure names by their first numbers, as
+    # the README says the measurements do.
+    readme = " ".join((REPO / "README.md").read_text().split())
+    assert {"65282", "65283"} <= set(
         re.findall(r"github\.com/vllm-project/vllm/pull/(\d+)", readme)
     )
+    assert "the measurements name them by their first numbers, #63350 and #63351" in readme
     assert diagrams.SERVING_PARTS[2][0][0] == "vLLM 0.32 + #63350, #63351"
     # The operations plane's parts exist: the profile's check, the release tool, the drills and the container.
     assert (DEPLOY / "bin" / "serving-check").is_file()

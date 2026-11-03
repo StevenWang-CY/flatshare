@@ -10,12 +10,12 @@ without torch or a GPU.
 
 The variants, one directory of patches each beside this file:
 
-- ``make-room``: vLLM #63350 and #63351 backported to v0.32.0 (``63350.patch``, ``63351.patch``), then what only the
-  variant has (``variant.patch``): the switches from ``--additional-config``'s ``make_room`` table, the reserve, and
-  the counters' log line. Each patch is the ``scheduler.py`` part of a branch of commits on v0.32.0 in a vLLM clone,
-  the PRs' commits cherry-picked and, where v0.32.0 needs it, adapted; ``scripts/make-room-patches.sh`` writes them,
-  and a patch's header names its commits and says how any was adapted. ``make-room/v0.33.0`` holds the same commits
-  cherry-picked onto v0.33.0, for vLLM 0.33.0.
+- ``make-room``: vLLM #65282 and #65283 backported to v0.32.0 (``63350.patch``, ``63351.patch``, named for their
+  first numbers, #63350 and #63351), then what only the variant has (``variant.patch``): the switches from
+  ``--additional-config``'s ``make_room`` table, the reserve, and the counters' log line. Each patch is the
+  ``scheduler.py`` part of a branch of commits on v0.32.0 in a vLLM clone, the PRs' commits cherry-picked and, where
+  v0.32.0 needs it, adapted; ``scripts/make-room-patches.sh`` writes them, and a patch's header names its commits and
+  says how any was adapted. ``make-room/v0.33.0`` holds the same commits cherry-picked onto v0.33.0, for vLLM 0.33.0.
 - ``pr54530``: vLLM PR #54530, ported to v0.32.0 by hand (``pr54530.patch``).
 
 Every hunk must apply at its stated line, with its context and removed lines exactly as they are there: a release's
@@ -52,7 +52,7 @@ HERE = Path(__file__).resolve().parent
 VARIANTS: dict[str, tuple[tuple[str, ...], str]] = {
     "make-room": (
         ("63350.patch", "63351.patch", "variant.patch"),
-        "Flatshare's make-room (#63350, #63351)",
+        "Flatshare's make-room (#65282, #65283)",
     ),
     "pr54530": (("pr54530.patch",), "vLLM PR #54530 ported to v0.32.0"),
 }

@@ -9,9 +9,10 @@ F](#f-revision-history).
 
 > [!NOTE]
 > The change this report measures is proposed to vLLM as pull requests
-> [#63350](https://github.com/vllm-project/vllm/pull/63350) and
-> [#63351](https://github.com/vllm-project/vllm/pull/63351), open, with no maintainer review as of 2026-11-02. Flatshare
-> is an independent project and is not affiliated with vLLM.
+> [#65282](https://github.com/vllm-project/vllm/pull/65282) and
+> [#65283](https://github.com/vllm-project/vllm/pull/65283), open, with no maintainer review as of 2026-11-03. They
+> succeed #63350 and #63351, the numbers the measurements use. Flatshare is an independent project and is not affiliated
+> with vLLM.
 
 ## Abstract
 
@@ -226,7 +227,8 @@ turn to the preemption that frees half the pool. (b) Each agent request's output
 In the prefill case, three priority-2 requests of 10,000 prompt tokens prefill side by side with room left in the pool.
 The priority-0 request is admitted at once, but every step of its reply carries their prefill chunks, so its tokens come
 60–66 ms apart. With the budget cap its steps carry no agent prefill, and its tokens come 16–20 ms apart (Figure 3b). A
-step cap bounds the tokens in a step, not its time, and a voice reply needs a few dozen steps before it can be spoken.
+step cap bounds the tokens in a step, not its time, and a voice reply's first sentence, which the agent hands to text to
+speech, takes a step for each of its tokens: 15 at the median and 39 at most (§6.3).
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-isolation-narrow.svg">
@@ -419,8 +421,9 @@ The rules share four properties that bear on deploying them.
 
 ## 4. Implementation
 
-The rules are proposed to vLLM as two stacked pull requests. #63350 adds the KV preemption as
-`--max-priority-preemptions-per-step N` [[9](#ref-9)], and #63351 adds the budget cap, named after its flag
+The rules are proposed to vLLM as two stacked pull requests, first as #63350 and #63351 and since 2026-11-03 as #65282
+and #65283, the same change on vLLM's main. #65282 adds the KV preemption as
+`--max-priority-preemptions-per-step N` [[9](#ref-9)], and #65283 adds the budget cap, named after its flag
 `--priority-prefill-budget-cap`, with `--priority-prefill-budget-cap-tokens T`, 16 tokens by default [[10](#ref-10)].
 Both pull requests carry tests that run vLLM's real scheduler on CPU, and the budget cap adds counters for the steps it
 held and the prefill tokens it held back in them.
@@ -1470,9 +1473,9 @@ scheduler: preempt for the waiting turn, and keep background prefill out of its 
 
 <a name="ref-8"></a>[8] vLLM pull request #5958. [Adding priority scheduling](https://github.com/vllm-project/vllm/pull/5958). Merged 2024-09-25, in vLLM v0.6.2 to v0.10.2.
 
-<a name="ref-9"></a>[9] C. Wang. vLLM pull request #63350. [Priority scheduling: preempt for a waiting request under KV pressure](https://github.com/vllm-project/vllm/pull/63350). Opened 2026-10-23, open, with no maintainer review as of 2026-11-02.
+<a name="ref-9"></a>[9] C. Wang. vLLM pull request #65282. [Priority scheduling: preempt lower-priority requests for KV cache space](https://github.com/vllm-project/vllm/pull/65282). Opened 2026-11-03, open, with no maintainer review as of 2026-11-03; it succeeds #63350, opened 2026-10-23.
 
-<a name="ref-10"></a>[10] C. Wang. vLLM pull request #63351. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/63351). Opened 2026-10-23, open, with no maintainer review as of 2026-11-02.
+<a name="ref-10"></a>[10] C. Wang. vLLM pull request #65283. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/65283). Opened 2026-11-03, open, with no maintainer review as of 2026-11-03; it succeeds #63351, opened 2026-10-23.
 
 <a name="ref-11"></a>[11] SemiAnalysis. [Claude Code traces (cc-traces-weka-062126)](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126). Hugging Face dataset.
 

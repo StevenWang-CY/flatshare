@@ -1718,9 +1718,9 @@ def test_a_shared_prefix_counts_once_against_the_reserve(module, model):
 
 def test_the_inflight_gate_never_holds_back_a_request_holding_kv(module, model):
     """KV make-room holds back a waiting request short of blocks while a prefill of a higher priority is in flight,
-    but not one that holds its KV, as vLLM PR #63350's test of the same name has it: here a priority-2 streaming
-    session's next chunk, which needs 6 more blocks with 16 free while a priority-0 prefill in flight still needs
-    12."""
+    but not one that holds its KV, as vLLM PR #65282's test_a_request_holding_kv_blocks_is_not_held_back has it: here
+    a priority-2 streaming session's next chunk, which needs 6 more blocks with 16 free while a priority-0 prefill in
+    flight still needs 12."""
 
     def session(num_tokens, max_tokens):
         return Request(

@@ -28,10 +28,10 @@ On vLLM 0.32 with 24 coding-agent sessions on one RTX 5060 Ti, the voice agent's
 1.78 s, with voice alone, to 10.5 s. The time is lost in vLLM's scheduler: a waiting voice turn cannot take KV cache
 from running agent requests, and once it runs, agent prefill shares every step of its reply.
 
-Two scheduler rules, proposed to vLLM as pull requests [#63350](https://github.com/vllm-project/vllm/pull/63350) and
-[#63351](https://github.com/vllm-project/vllm/pull/63351) (open, with no maintainer review as of 2026-11-02), bring that
-p95 to 2.24 s against an SLO of 2.03 s. The replies over the SLO fall from 90% to 32% (286 of 885), and the agents keep
-97% of their token rate.
+Two scheduler rules, proposed to vLLM as pull requests [#65282](https://github.com/vllm-project/vllm/pull/65282) and
+[#65283](https://github.com/vllm-project/vllm/pull/65283) (open, with no maintainer review as of 2026-11-03; the
+measurements name them by their first numbers, #63350 and #63351), bring that p95 to 2.24 s against an SLO of 2.03 s.
+The replies over the SLO fall from 90% to 32% (286 of 885), and the agents keep 97% of their token rate.
 
 <picture>
   <source media="(max-width: 767px) and (prefers-color-scheme: dark)" srcset="docs/figures/e2-demo-narrow-dark.webp">
@@ -250,7 +250,7 @@ used:
 | read the work as one paper: the problem, the change, the results and their limits | [docs/REPORT.md](docs/REPORT.md), the technical report |
 | see the whole system at a glance: the change, and the planes that measure it and run it | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#at-a-glance) |
 | deploy the change and watch it | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
-| see how it works in vLLM's scheduler | [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-the-change-63350-and-63351), then the two pull requests' diffs |
+| see how it works in vLLM's scheduler | [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-the-change), then the two pull requests' diffs |
 | see every number, with its runs and ranges | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
 | know how each experiment was designed and run | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) |
 | compare with llm-d, Dynamo, SMG, SGLang and published work | [docs/PRIOR-ART.md](docs/PRIOR-ART.md) |

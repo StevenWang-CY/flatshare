@@ -1,8 +1,8 @@
 # The serving engine in a container
 
 The box's engine as an image: vLLM 0.32.0's own image, `docker.io/vllm/vllm-openai:v0.32.0`, with make-room's
-scheduler (the proposed pull requests [vllm-project/vllm#63350](https://github.com/vllm-project/vllm/pull/63350) and
-[#63351](https://github.com/vllm-project/vllm/pull/63351), as [`python/flatshare_vllm`](../../python/flatshare_vllm)
+scheduler (the proposed pull requests [vllm-project/vllm#65282](https://github.com/vllm-project/vllm/pull/65282) and
+[#65283](https://github.com/vllm-project/vllm/pull/65283), as [`python/flatshare_vllm`](../../python/flatshare_vllm)
 builds them) at the serving profile's settings. It is for a stack that runs vLLM's image rather than the box's
 systemd units. The box itself keeps its units ([`deploy/phastform`](../phastform)), and both run the same engine.
 
