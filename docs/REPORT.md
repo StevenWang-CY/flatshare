@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.19, 3 November 2026. Code, records and figures at tag
-[v1.19](https://github.com/StevenWang-CY/flatshare/tree/v1.19) of
+Flatshare technical report, version 1.20, 3 November 2026. Code, records and figures at tag
+[v1.20](https://github.com/StevenWang-CY/flatshare/tree/v1.20) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -350,7 +350,7 @@ scheduling. In a held step, running lower-priority prefill chunks are skipped an
 admitted, while every decode proceeds. A held request that already holds KV blocks is skipped rather than allowed to
 block the queue, so the requests behind it are still considered.
 
-Two bounds keep the budget cap from stalling the engine. A waiting request or a KV load holds nothing while the engine
+Three bounds keep the budget cap from stalling the engine. A waiting request or a KV load holds nothing while the engine
 already runs as many requests as it may (its running slots), since neither could be promoted and holding prefill would
 only stall the running requests.
 
@@ -360,6 +360,10 @@ completes holds nothing after T steps. In a closed-loop probe at T = 16, a build
 calls' first token 125–131 ms later at the median than the version measured before the main evaluation, which held
 through them (§6.5). The load's completion is seen only at a step boundary, and agent prefill makes those steps about
 three times longer.
+
+A prefill whose encoder outputs are cached, as a multimodal model's can be, is never held: the encoder cache frees
+them only as that prefill consumes them, and the request awaiting its first tokens may need the space. The voice
+agent's model takes no encoder inputs.
 
 The budget cap covers a reply's first tokens and not its whole decode. A voice agent speaks once its first sentence is
 complete, so protecting the rest of the reply buys the caller nothing and costs the agents prefill steps.
@@ -375,7 +379,8 @@ Algorithm 2. The budget cap, in each scheduler step (window T, in output tokens)
         h ← min(h, p(r))
  3  if h is none: schedule the step as vLLM does
  4  running loop: for each running request q
- 5      if q is prefilling and p(q) > h: skip q      ▹ its chunk sits out this step
+ 5      if q is prefilling, p(q) > h and q has no encoder output cached:
+            skip q                                   ▹ its chunk sits out this step
  6      else schedule q as vLLM does                 ▹ every decode runs
  7  waiting loop: for each waiting request q, in vLLM's order
  8      if p(q) > h: skip q if it already holds KV blocks, else stop
@@ -414,8 +419,8 @@ The rules share four properties that bear on deploying them.
 - **Counted, not timed.** No rule reads a clock or models the hardware. The step cap, which the rules leave to the
   operator, decides what a held step costs on a given GPU (§6.7).
 - **Bounded.** The KV preemption takes at most N victims a step and none that would not make room. The budget cap never
-  cuts a decode, holds nothing for a waiting request or a KV load while every running slot is taken, and ends after T
-  output tokens, or after T steps of a load that never completes.
+  cuts a decode or holds a prefill whose encoder outputs are cached, holds nothing for a waiting request or a KV load
+  while every running slot is taken, and ends after T output tokens, or after T steps of a load that never completes.
 - **Narrow.** Scheduling among requests of equal priority, preemption for a running request's growth, and the order of
   decodes are vLLM's.
 
@@ -1624,7 +1629,7 @@ The repository's tests fail when a committed figure differs from what its record
 records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists the campaigns' measurements run by run, the records' READMEs the
 probes and checks around them, and [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
-**Hosting.** Tag v1.19 holds the code, the records and this report. The raw records, the gateway's request logs and each
+**Hosting.** Tag v1.20 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in
 [v1.0](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.0), the A100 run's in
 [v1.1](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.1), the KV-sampling runs' in
@@ -1874,6 +1879,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.20 | 2026-11-03 | §3.2 and Algorithm 2: the budget cap never holds a prefill whose encoder outputs are cached, which only its progress frees (#65283, after a review found the stall) |
 | 1.19 | 2026-11-03 | The note, §4 and references [9] and [10]: the change's pull requests are #65282 and #65283, which succeed #63350 and #63351 with the same change on vLLM's main; §2.4: a voice reply's first sentence takes a step for each of its tokens, 15 at the median and 39 at most, where it said a voice reply needs a few dozen steps |
 | 1.18 | 2026-11-02 | Appendix A: BENCHMARKS lists the campaigns' measurements and the records' READMEs the probes and checks around them, where it said BENCHMARKS lists every measurement; the tables' empty cells as em dashes |
 | 1.17 | 2026-11-02 | §6.10 and §7: the serving profile holds the agents' decodes through the budget cap's window, past the follow-up rounds' rule on the agents' rate (Table 9's profile row, its sums, the abstract and the results at a glance follow); §4's step cost and Figure 7 from the baseline measured with the hold |
