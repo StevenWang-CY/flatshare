@@ -5,6 +5,24 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.20](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.20) (2026-11-03): no hold on a prefill whose encoder outputs are cached
+
+A review of #65283 found that its budget cap could stall a multimodal model. A lower-priority prefill midway through an
+image, whose encoder output filled the encoder cache, was held back while the higher-priority request it was held for
+waited for that space, which only the held prefill's progress frees. #65283 now holds back no prefill whose encoder
+outputs are cached, and make-room's patches carry it. The voice agent's model takes no encoder inputs, so the engine
+schedules as v1.19's.
+
+- **The budget cap** holds back no prefill whose encoder outputs are cached: #65283's commit 8c753658a, with a
+  regression test. The fork's `v0.32.0-priority-prefill-hold` and `v0.32.0-flatshare-make-room` branches and their
+  v0.33.0 counterparts carry it, and make-room's patches are written from them.
+- **The module** built on 0.32.0 differs from v1.19's by that clause alone, and `make test-trace` against the module
+  Phastform's engine built on 2026-10-27 finds every step the same; the serving profile pins its new hash.
+- **The report, version 1.20,** gives the bound in §3.2 and Algorithm 2.
+- **The packages** are versioned 1.20.0, and are not published to a package index.
+- **Upgrading from v1.19.** A deploy drains and restarts the engine, whose patches changed; it builds the new module
+  at its start, and `serving-check` expects the new hash.
+
 ## [v1.19](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.19) (2026-11-03): the change's pull requests as #65282 and #65283
 
 The change is proposed to vLLM as #65282 and #65283, which succeed #63350 and #63351: the same change, rebased onto
