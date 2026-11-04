@@ -104,7 +104,7 @@ def test_make_room_is_the_prs_and_the_variants_own_parts(tmp_path):
         # #65282's and #65283's.
         "make_room_req = self._peek_make_room_request(defer_prefills)",
         "make_room_preempted_reqs = self._make_room(",
-        "first_tokens_priority = self._first_tokens_priority(",
+        "holders = self._first_tokens_holders()",
         "self._make_room_untried.discard(request)",
         "self._num_priority_preemptions += len(victims)",
         "self._count_prefill_hold(0)",

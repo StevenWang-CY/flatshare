@@ -218,7 +218,7 @@ def test_clean_merges_run_the_tests_the_prs_add(tmp_path, upstream, python):
     assert f"#{A}: tests/test_pr.py: 1 passed" in proc.stdout
     assert f"#{B}: tests/test_pr.py: 1 passed" in proc.stdout  # #65283's diff holds #65282's
     assert (
-        "backport = the PRs' heads but for 14 adapted lines of theirs and 15 of its own, which the patches' "
+        "backport = the PRs' heads but for 23 adapted lines of theirs and 18 of its own, which the patches' "
         "headers name\n" in proc.stdout
     )
     # Its stand-in scheduler is not v0.32.0's: reported, and no failure.
@@ -624,8 +624,8 @@ def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, up
     proc = run(tmp_path / "pushed", upstream.serve(main, {A: kv, B: pushed}, {"v0.40.0": base}))
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert (
-        f"  #{B} and 63351.patch: 158 of #{B}'s 169 lines are the backport's; its other 10 and 14 of the "
-        "backport's 173 are adapted (a3a23bca2); it DIFFERS in 2 lines no Backport paragraph names:\n"
+        f"  #{B} and 63351.patch: 215 of #{B}'s 226 lines are the backport's; its other 10 and 14 of the "
+        "backport's 230 are adapted (60b4ef9b8); it DIFFERS in 2 lines no Backport paragraph names:\n"
         f"    #{B}'s: {old.replace(' < ', ' <= ')}"
         f"    63351.patch's: {old}"
     ) in proc.stdout
@@ -635,8 +635,8 @@ def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, up
     )
     proc = run(tmp_path / "adopted", upstream.serve(main, {A: kv, B: adopted}, {"v0.40.0": base}))
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "(a3a23bca2); 2 of the lines named as adapted no longer differ\n" in proc.stdout
+    assert "(60b4ef9b8); 2 of the lines named as adapted no longer differ\n" in proc.stdout
     assert (
-        "backport = the PRs' heads but for 13 adapted lines of theirs and 14 of its own"
+        "backport = the PRs' heads but for 22 adapted lines of theirs and 17 of its own"
         in proc.stdout
     )
