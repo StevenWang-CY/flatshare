@@ -353,12 +353,13 @@ way. Lower-priority prefill sits out the steps of a higher-priority request's fi
 hold starts in the step in which the highest-priority waiting request fits, its victims' frees counted, continues while
 that request prefills, and ends once it has T output tokens, counting a step still in flight under asynchronous
 scheduling as one, since its draft tokens may be rejected. In a held step, running lower-priority prefill chunks are
-skipped and no waiting lower-priority request is admitted, while every decode proceeds. A waiting request is held after
-its prefix-cache and KV connector lookups, so a load of its KV from the CPU tier starts meanwhile, and a request with
-one token left to compute samples like a decode and is never held. A lower-priority request that already holds KV blocks
-is skipped rather than allowed to block the queue, and only while a request of its priority or a lower one runs: while
-it waits, preemption cannot reach its blocks, and the higher-priority request could otherwise preempt only itself for
-them.
+skipped and no waiting lower-priority request is admitted, while every decode proceeds.
+
+A waiting request is held after its prefix-cache and KV connector lookups, so a load of its KV from the CPU tier starts
+meanwhile, and a request with one token left to compute samples like a decode and is never held. A lower-priority
+request that already holds KV blocks is skipped rather than allowed to block the queue, and only while a request of its
+priority or a lower one runs: while it waits, preemption cannot reach its blocks, and the higher-priority request could
+otherwise preempt only itself for them.
 
 Four bounds keep the budget cap from stalling the engine. A waiting request or a KV load holds nothing while the engine
 already runs as many requests as it may (its running slots), since neither could be promoted and holding prefill would
