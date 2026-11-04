@@ -5,6 +5,19 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.22](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.22) (2026-11-04): the pull requests rebased on vLLM's main
+
+#65282 and #65283 are rebased on vLLM's main after two changes landed there: #65319's queue of requests waiting to
+start an async KV load, and #65300's weak reference from a KV cache block to its pool. Neither is in v0.32.0 or
+v0.33.0, so the backport's code and the module stay as v1.21's.
+
+- **The pull requests** dereference a block's pool in the count of the blocks preempting frees, and take the requests
+  waiting to start an async KV load into make-room's target scan, its in-flight gate, the budget cap's scan of lower
+  priorities and its waiting hold, each with a test that fails without it.
+- **The backport's commits** are remade with the same trees on the fork's `v0.32.0-` and `v0.33.0-` branches: their
+  Backport paragraphs say how the releases differ, and make-room's six patches change in their headers alone.
+- **compat-upstream** names the rebased heads' new lines as adapted under those commits.
+
 ## [v1.21](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.21) (2026-11-04): the pull requests' revision of 3 November
 
 A fresh review of #65282 and #65283 found cases where the KV preemption could make room a request would not get, and
