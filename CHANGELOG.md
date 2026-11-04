@@ -22,10 +22,13 @@ revised, each with regression tests that fail before the fix, and make-room's pa
   priority 0 to the hold beside the new holders, and counts a step in flight as one token in its decode hold. The
   fork's `v0.32.0-` and `v0.33.0-` branches carry the revision, and make-room's patches are written from them.
 - **The module** built on 0.32.0 schedules as v1.20's wherever the budget cap is off (`make test-trace` against the
-  module Phastform's engine built on 2026-10-27: none of 777 configurations differ) and differs with it on (1,106 of
+  module Phastform's engine built on 2026-10-27: none of 772 configurations differ) and differs with it on (1,106 of
   1,264); the serving profile pins its new hash.
 - **The report, version 1.21,** gives the revised rules in §3.1, §3.2, Algorithms 1 and 2 and §3.4, and §4 discloses
   that the evaluation predates them.
+- **The probes** the pull requests cite, rerun on the revision in one session with stock vLLM as the control
+  (`benchmarks/results/2026-11-04-r3-probes`): the KV case's first token after 284 ms against 4,976 ms on stock, and the
+  prefill case's 16th token after 560 ms against 1,374 ms, as with the earlier code.
 - **The packages** are versioned 1.21.0, and are not published to a package index.
 - **Upgrading from v1.20.** A deploy drains and restarts the engine, whose patches changed; it builds the new module
   at its start, and `serving-check` expects the new hash.

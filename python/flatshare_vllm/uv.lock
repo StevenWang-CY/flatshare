@@ -186,7 +186,7 @@ wheels = [
 
 [[package]]
 name = "flatshare-vllm"
-version = "1.20.0"
+version = "1.21.0"
 source = { editable = "." }
 
 [package.optional-dependencies]

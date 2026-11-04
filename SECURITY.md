@@ -8,8 +8,8 @@ Fixes go into the latest release and `main`. At v1.21 that is:
 
 | Version | Supported |
 |---|---|
-| 1.20 (the latest release) and `main` | Yes |
-| 1.19 and earlier, including the releases named Leaseholder | No |
+| 1.21 (the latest release) and `main` | Yes |
+| 1.20 and earlier, including the releases named Leaseholder | No |
 
 ## Reporting a vulnerability
 

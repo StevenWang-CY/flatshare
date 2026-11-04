@@ -353,12 +353,13 @@ way. Lower-priority prefill sits out the steps of a higher-priority request's fi
 hold starts in the step in which the highest-priority waiting request fits, its victims' frees counted, continues while
 that request prefills, and ends once it has T output tokens, counting a step still in flight under asynchronous
 scheduling as one, since its draft tokens may be rejected. In a held step, running lower-priority prefill chunks are
-skipped and no waiting lower-priority request is admitted, while every decode proceeds. A waiting request is held after
-its prefix-cache and KV connector lookups, so a load of its KV from the CPU tier starts meanwhile, and a request with
-one token left to compute samples like a decode and is never held. A lower-priority request that already holds KV blocks
-is skipped rather than allowed to block the queue, and only while a request of its priority or a lower one runs: while
-it waits, preemption cannot reach its blocks, and the higher-priority request could otherwise preempt only itself for
-them.
+skipped and no waiting lower-priority request is admitted, while every decode proceeds.
+
+A waiting request is held after its prefix-cache and KV connector lookups, so a load of its KV from the CPU tier starts
+meanwhile, and a request with one token left to compute samples like a decode and is never held. A lower-priority
+request that already holds KV blocks is skipped rather than allowed to block the queue, and only while a request of its
+priority or a lower one runs: while it waits, preemption cannot reach its blocks, and the higher-priority request could
+otherwise preempt only itself for them.
 
 Four bounds keep the budget cap from stalling the engine. A waiting request or a KV load holds nothing while the engine
 already runs as many requests as it may (its running slots), since neither could be promoted and holding prefill would
@@ -473,7 +474,7 @@ held request's KV load start, holds a lower-priority request that already holds 
 priority or a lower one runs, counts a step in flight as one token, and narrows the encoder exemption; the KV preemption
 bounds its prefix-cache hit as the waiting loop does and keeps a streaming session's next chunk out of the room it
 makes. make-room's trace test against the module the evaluation ran (0d24d178977f3c1b) finds the revision's schedules
-the same in all 777 configurations with the budget cap off, and different in 1,106 of the 1,264 with it on.
+the same in all 772 configurations with the budget cap off, and different in 1,106 of the 1,264 with it on.
 
 **What a step costs.** The rules run on the host, inside `Scheduler.schedule()`, and Figure 7 times that call on vLLM
 0.32.0's real scheduler on a 2.1 GHz Xeon Silver 4110. That host runs the scheduler's kind of Python 1.61 times as fast
