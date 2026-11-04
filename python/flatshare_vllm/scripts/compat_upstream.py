@@ -64,21 +64,36 @@ spec.loader.exec_module(build)
 PATCHES = [BUILD.parent / "make-room" / name for name in build.VARIANTS["make-room"][0]]
 ADAPTED = {
     "63350.patch": {
-        # v0.32.0's SchedulerStats has no field for make-room's preemptions: the scheduler counts them.
-        "1f3ac8dd4": (
+        # v0.32.0's SchedulerStats has no field for make-room's preemptions: the scheduler counts them. And v0.32.0's
+        # waiting loop bounds a prefix-cache hit at num_tokens - 1 only, so make-room's hit keeps that bound.
+        "44a970268": (
             (
                 "# Running requests preempted to make room, since the last stats.",
                 "num_priority_preemptions = self._num_priority_preemptions",
                 "num_priority_preemptions=num_priority_preemptions,",
                 "self._num_priority_preemptions = 0",
+                "get_computed_blocks finds, bounded as the waiting loop bounds it, without",
+                "emitting KV events. None if the request does not look up the prefix",
+                'cache."""',
+                "max_cache_hit_length = request.get_max_cache_hit_length(",
+                "self.aux_output_connector.max_cache_hit(request)",
+                "if self.aux_output_connector is not None",
+                "else None",
+                ")",
+                "request.block_hashes, max_cache_hit_length",
             ),
-            ("# Running requests preempted to make room.",),
+            (
+                "# Running requests preempted to make room.",
+                "get_computed_blocks finds, without emitting KV events. None if the",
+                'request does not look up the prefix cache."""',
+                "request.block_hashes, request.num_tokens - 1",
+            ),
         ),
     },
     "63351.patch": {
         # v0.32.0's request queues stay stock: the queues' new method is the scheduler's _has_lower_priority_than. Nor
         # does its SchedulerStats have fields for the budget cap's holds: the scheduler counts them too.
-        "a3a23bca2": (
+        "60b4ef9b8": (
             (
                 "queue.has_lower_priority_than(request.priority)",
                 "# Since the last stats, the steps in which the budget cap held prefill",

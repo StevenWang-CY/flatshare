@@ -4,7 +4,7 @@ How to report a vulnerability in Flatshare, and which parts of the repository th
 
 ## Supported versions
 
-Fixes go into the latest release and `main`. At v1.20 that is:
+Fixes go into the latest release and `main`. At v1.21 that is:
 
 | Version | Supported |
 |---|---|

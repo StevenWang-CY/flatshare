@@ -2,15 +2,18 @@ vLLM #65282 (https://github.com/vllm-project/vllm/pull/65282; first #63350), bac
 
 The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
 
-  1f3ac8dd4 [Core] Priority scheduling: preempt lower-priority requests for KV cache space (cherry-picked from 0c3b6541e)
+  44a970268 [Core] Priority scheduling: preempt lower-priority requests for KV cache space (cherry-picked from 361b2a81b)
     Backported to v0.32.0: the make-room call follows 0.32.0's long prefill
-    threshold, as v0.32.0 has no local prefill cadence; tests/v1/core/utils.py
-    keeps v0.32.0's create_scheduler signature; and v0.32.0's SchedulerStats
-    and Prometheus logger have no field for the preemptions, so the scheduler
-    counts them and make_stats leaves them.
+    threshold, as v0.32.0 has no local prefill cadence;
+    tests/v1/core/utils.py keeps v0.32.0's create_scheduler signature;
+    v0.32.0's SchedulerStats and Prometheus logger have no field for the
+    preemptions, so the scheduler counts them and make_stats leaves them;
+    and v0.32.0's waiting loop bounds a prefix cache hit at num_tokens - 1
+    only, as make-room does, so the test of main's prompt-scoring bound is
+    left out.
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
-index cec96d2a4..e5c223d80 100644
+index cec96d2a4..033627eb5 100644
 --- a/vllm/v1/core/sched/scheduler.py
 +++ b/vllm/v1/core/sched/scheduler.py
 @@ -53,6 +53,12 @@ from vllm.v1.core.sched.request_queue import (
@@ -61,7 +64,7 @@ index cec96d2a4..e5c223d80 100644
  
          self.has_mamba_layers = kv_cache_config.has_mamba_layers
          self.needs_kv_cache_zeroing = kv_cache_config.needs_kv_cache_zeroing
-@@ -654,6 +688,17 @@ class Scheduler(SchedulerInterface):
+@@ -654,6 +688,25 @@ class Scheduler(SchedulerInterface):
                  long_prefill_token_threshold, input_budget // num_eligible_reqs
              )
  
@@ -75,11 +78,19 @@ index cec96d2a4..e5c223d80 100644
 +                self._local_prefix_hit(make_room_req),
 +                scheduled_timestamp,
 +            )
++        # The waiting loop drains the requests holding KV blocks first. In the
++        # step room is made, a lower-priority one whose remaining blocks are not
++        # reserved (a streaming session's next chunk) would take that room.
++        make_room_priority = (
++            make_room_req.priority
++            if make_room_req is not None and make_room_preempted_reqs
++            else None
++        )
 +
          # First, schedule the RUNNING requests.
          req_index = 0
          while req_index < len(self.running) and token_budget > 0:
-@@ -925,6 +970,10 @@ class Scheduler(SchedulerInterface):
+@@ -925,6 +978,18 @@ class Scheduler(SchedulerInterface):
  
                  request = request_queue.peek_request()
                  request_id = request.request_id
@@ -87,10 +98,18 @@ index cec96d2a4..e5c223d80 100644
 +                    # Preempted to make room: resuming it now would take back the
 +                    # blocks just freed.
 +                    break
++                if (
++                    make_room_priority is not None
++                    and request.priority > make_room_priority
++                    and request_queue is self.kv_holding_waiting
++                    and request not in self._inflight_prefills
++                ):
++                    skip_request(request_queue)
++                    continue
  
                  ready_to_schedule = self._handle_blocked_waiting_request(request)
                  if not ready_to_schedule:
-@@ -951,6 +1000,22 @@ class Scheduler(SchedulerInterface):
+@@ -951,6 +1016,22 @@ class Scheduler(SchedulerInterface):
                      skip_request(request_queue)
                      continue
  
@@ -113,7 +132,7 @@ index cec96d2a4..e5c223d80 100644
                  num_external_computed_tokens = 0
                  load_kv_async = False
                  connector_prefix_cache_queries, connector_prefix_cache_hits = 0, 0
-@@ -1253,6 +1318,8 @@ class Scheduler(SchedulerInterface):
+@@ -1253,6 +1334,8 @@ class Scheduler(SchedulerInterface):
                  # Replayed tokens are already counted in the adopted hit; a
                  # chunk that ends inside the replayed range needs no new slots.
                  num_tokens_past_hit = max(num_new_tokens - num_replay_tokens, 0)
@@ -122,7 +141,7 @@ index cec96d2a4..e5c223d80 100644
                  new_blocks = self.kv_cache_manager.allocate_slots(
                      request,
                      num_tokens_past_hit,
-@@ -3091,6 +3158,294 @@ class Scheduler(SchedulerInterface):
+@@ -3091,6 +3174,294 @@ class Scheduler(SchedulerInterface):
              self._request_remaining_blocks(req) for req in self._inflight_prefills
          )
  

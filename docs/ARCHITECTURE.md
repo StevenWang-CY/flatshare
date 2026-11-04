@@ -1,6 +1,6 @@
 # Architecture
 
-Flatshare runs a realtime voice agent beside background LLM work on one GPU, or on two. Its central part is a change to vLLM's scheduler: a waiting realtime request can take KV from running background requests, and background prefill sits out the realtime reply's first tokens. It is proposed to vLLM as pull requests [#65282](https://github.com/vllm-project/vllm/pull/65282) and [#65283](https://github.com/vllm-project/vllm/pull/65283) (open, with no maintainer review as of 2026-11-03; first #63350 and #63351, the numbers this page and its figures use), and runs on vLLM 0.32 as the engine variant `make-room` (§2), which builds on 0.33 too. Around it are:
+Flatshare runs a realtime voice agent beside background LLM work on one GPU, or on two. Its central part is a change to vLLM's scheduler: a waiting realtime request can take KV from running background requests, and background prefill sits out the realtime reply's first tokens. It is proposed to vLLM as pull requests [#65282](https://github.com/vllm-project/vllm/pull/65282) and [#65283](https://github.com/vllm-project/vllm/pull/65283) (open, with no maintainer review as of 2026-11-04; first #63350 and #63351, the numbers this page and its figures use), and runs on vLLM 0.32 as the engine variant `make-room` (§2), which builds on 0.33 too. Around it are:
 - the serving path the deployment runs (§3): one GPU node, or two cards with a warm spare where a second card is available;
 - its network and security (§4);
 - the configuration and hosts it was measured on (§5);
@@ -9,7 +9,7 @@ Flatshare runs a realtime voice agent beside background LLM work on one GPU, or 
 
 The designs that were measured and dropped are in §7, failure handling in §8 and testing in §9.
 
-This document describes what is built, as of v1.20, for a reader who wants to know how the parts work and fit together before reading or changing the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers, [PRIOR-ART.md](PRIOR-ART.md) what is new here and what is prior work, the [ADRs](README.md#decisions) the decisions, and [GLOSSARY.md](GLOSSARY.md) the terms.
+This document describes what is built, as of v1.21, for a reader who wants to know how the parts work and fit together before reading or changing the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers, [PRIOR-ART.md](PRIOR-ART.md) what is new here and what is prior work, the [ADRs](README.md#decisions) the decisions, and [GLOSSARY.md](GLOSSARY.md) the terms.
 
 ## At a glance
 
