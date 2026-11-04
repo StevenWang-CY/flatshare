@@ -26,6 +26,9 @@ revised, each with regression tests that fail before the fix, and make-room's pa
   1,264); the serving profile pins its new hash.
 - **The report, version 1.21,** gives the revised rules in §3.1, §3.2, Algorithms 1 and 2 and §3.4, and §4 discloses
   that the evaluation predates them.
+- **The probes** the pull requests cite, rerun on the revision in one session with stock vLLM as the control
+  (`benchmarks/results/2026-11-04-r3-probes`): the KV case's first token after 284 ms against 4,976 ms on stock, and the
+  prefill case's 16th token after 560 ms against 1,374 ms, as with the earlier code.
 - **The packages** are versioned 1.21.0, and are not published to a package index.
 - **Upgrading from v1.20.** A deploy drains and restarts the engine, whose patches changed; it builds the new module
   at its start, and `serving-check` expects the new hash.

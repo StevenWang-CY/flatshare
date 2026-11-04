@@ -6,6 +6,9 @@ the GPU numbers vLLM [#63350](https://github.com/vllm-project/vllm/pull/63350) a
 probes of stock vLLM, #63350 alone and both PRs in one session. The earlier probes, on Gray before W5's fixes, are in
 [`2026-10-23-make-room-probes`](../2026-10-23-make-room-probes/README.md).
 
+#65282 and #65283 cite these until their revision of 3 November; since 2026-11-04 they cite the probes on that
+revision, [`2026-11-04-r3-probes`](../2026-11-04-r3-probes/README.md).
+
 ## `gpu-check/`: the fixed module beside v0.3's
 
 The GPU check of make-room after W5's fixes, in the PRs' configuration: two preemptions a step, the budget cap with its

@@ -1,0 +1,45 @@
+01:10:48Z start; DEPLOYED v1.20-2-g80a9aea; module sha256 of the make-room patches: c20f6ac16a250fc1; GPU NVIDIA GeForce RTX 5060 Ti, 13698 MiB, 32; GPU processes: 3971495, ~/flatshare/envs/tts-0ea3376db7b26bce/bin/python, 812 MiB;3971878, VLLM::EngineCore, 2440 MiB;3972215, VLLM::EngineCore, 10386 MiB;
+01:10:48Z block stock: variant.sh use frozen
+active
+active
+active
+01:12:29Z stock: engine ready; scheduler_cls None additional_config {}; GPU 13698 MiB, 35; GPU processes: 3971495, ~/flatshare/envs/tts-0ea3376db7b26bce/bin/python, 812 MiB;3971878, VLLM::EngineCore, 2440 MiB;3974798, VLLM::EngineCore, 10386 MiB;
+01:12:29Z stock kv 1
+01:12:42Z stock kv 2
+01:12:56Z stock kv 3
+01:13:09Z stock kv 4
+01:13:22Z stock prefill 1
+01:13:27Z stock prefill 2
+01:13:32Z stock prefill 3
+01:13:37Z stock prefill 4
+01:13:41Z stock: done; engine make-room lines: 0, errors: 0
+01:13:41Z block a: variant.sh use make-room --additional-config.make_room.budget_cap false --additional-config.make_room.reserve_tokens 0
+active
+active
+active
+01:15:22Z a: engine ready; scheduler_cls flatshare_make_room_scheduler.AsyncScheduler additional_config {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': False, 'reserve_tokens': 0}}; GPU 13698 MiB, 39; GPU processes: 3971495, ~/flatshare/envs/tts-0ea3376db7b26bce/bin/python, 812 MiB;3971878, VLLM::EngineCore, 2440 MiB;3976088, VLLM::EngineCore, 10386 MiB;
+01:15:22Z a kv 1
+01:15:31Z a kv 2
+01:15:39Z a kv 3
+01:15:48Z a kv 4
+01:15:57Z a prefill 1
+01:16:02Z a prefill 2
+01:16:06Z a prefill 3
+01:16:11Z a prefill 4
+01:16:15Z a: done; engine make-room lines: 4, errors: 0
+01:16:15Z block ab: variant.sh use make-room --additional-config.make_room.reserve_tokens 0
+active
+active
+active
+01:17:58Z ab: engine ready; scheduler_cls flatshare_make_room_scheduler.AsyncScheduler additional_config {'make_room': {'max_preemptions_per_step': 2, 'budget_cap': True, 'reserve_tokens': 0}}; GPU 13698 MiB, 39; GPU processes: 3971495, ~/flatshare/envs/tts-0ea3376db7b26bce/bin/python, 812 MiB;3971878, VLLM::EngineCore, 2440 MiB;3977422, VLLM::EngineCore, 10386 MiB;
+01:17:58Z ab kv 1
+01:18:07Z ab kv 2
+01:18:16Z ab kv 3
+01:18:24Z ab kv 4
+01:18:33Z ab prefill 1
+01:18:37Z ab prefill 2
+01:18:41Z ab prefill 3
+01:18:45Z ab prefill 4
+01:18:48Z ab: done; engine make-room lines: 5, errors: 0
+01:18:48Z box stopped (restart: systemctl --user start flatshare.target); GPU 13686 MiB
+01:18:48Z done

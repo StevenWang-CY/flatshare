@@ -229,9 +229,9 @@ W5 fixed make-room's rules ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change))
 
 <a id="the-probes-the-pull-requests-cite-in-one-session-w5"></a>
 
-### The probes the pull requests cite, in one session (2026-10-25)
+### The probes the pull requests cited, in one session (2026-10-25)
 
-The probes #65282 and #65283 cite, as #63350 and #63351 did, on Phastform on 2026-10-25, after the PR campaign and on the make-room it ran: stock vLLM 0.32.0 on the frozen box, the KV preemption alone, and the change at the budget cap's default 16-token window, two preemptions a step and no reserve. Each block ran the KV case and the prefill case four times and `tail.py` with fresh and with growing prompts twice ([`pr-probes/`](../benchmarks/results/2026-10-24-w5-probes)); a tail cell pools both runs' turns, none failed, at inclusive percentiles.
+The probes #65282 and #65283 cited until their revision of 3 November, as #63350 and #63351 did, on Phastform on 2026-10-25, after the PR campaign and on the make-room it ran: stock vLLM 0.32.0 on the frozen box, the KV preemption alone, and the change at the budget cap's default 16-token window, two preemptions a step and no reserve. Each block ran the KV case and the prefill case four times and `tail.py` with fresh and with growing prompts twice ([`pr-probes/`](../benchmarks/results/2026-10-24-w5-probes)); a tail cell pools both runs' turns, none failed, at inclusive percentiles.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-isolation-narrow.svg">
@@ -255,6 +255,19 @@ The probes #65282 and #65283 cite, as #63350 and #63351 did, on Phastform on 202
 
 - **The KV case is #63350's.** The voice turn has its first token after 0.22–0.29 s instead of 4.9–5.0 s, and the budget cap changes nothing there. In one run with both, the reply ended before its 16th token; this case measures the first.
 - **The prefill case and the tail are #63351's.** With #63350 alone, which finds KV to spare in the prefill case, the reply's tokens still come 60–65 ms apart behind the agents' chunks and the calls' p95 stays at 1.1–4.1 s; with the budget cap they come 16–20 ms apart and the p95 is under 0.4 s.
+
+### The probes on the pull requests' revision of 3 November (2026-11-04)
+
+The probes #65282 and #65283 cite since their revision of 3 November, rerun on that code (Phastform's release 80a9aea, v1.21's engine) in one session with stock vLLM 0.32.0 as the control: the KV case and the prefill case four times each, without the tails ([records](../benchmarks/results/2026-11-04-r3-probes/README.md)).
+
+| Engine | KV case TTFT | Prefill case TTFT / 16th token |
+|---|---:|---:|
+| Stock vLLM 0.32.0, priority scheduling | 4,976 ms (4,906–4,981) | 420 (325–541) / 1,374 (1,236–1,514) ms |
+| #65282 alone (the KV preemption) | 284 ms (198–298) | 328 (257–470) / 1,242 (1,164–1,429) ms |
+| #65282 and #65283 (the budget cap, 16 tokens) | 274 ms (198–299) | 292 (232–325) / 560 (518–582) ms |
+
+- **The control matches the session of 2026-10-25**: 4,906–4,981 ms for stock's first token in the KV case, against 4,900–4,971.
+- **The revision schedules these probes as the earlier code did.** The KV preemption gives the voice turn its first token after 0.2–0.3 s, and the budget cap its 16th after 0.52–0.58 s instead of 1.2–1.5 s, the tokens 17–20 ms apart instead of 60–66.
 
 <a id="after-w5-the-first-tokens-in-flight"></a>
 
