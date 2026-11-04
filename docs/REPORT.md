@@ -474,7 +474,7 @@ held request's KV load start, holds a lower-priority request that already holds 
 priority or a lower one runs, counts a step in flight as one token, and narrows the encoder exemption; the KV preemption
 bounds its prefix-cache hit as the waiting loop does and keeps a streaming session's next chunk out of the room it
 makes. make-room's trace test against the module the evaluation ran (0d24d178977f3c1b) finds the revision's schedules
-the same in all 777 configurations with the budget cap off, and different in 1,106 of the 1,264 with it on.
+the same in all 772 configurations with the budget cap off, and different in 1,106 of the 1,264 with it on.
 
 **What a step costs.** The rules run on the host, inside `Scheduler.schedule()`, and Figure 7 times that call on vLLM
 0.32.0's real scheduler on a 2.1 GHz Xeon Silver 4110. That host runs the scheduler's kind of Python 1.61 times as fast

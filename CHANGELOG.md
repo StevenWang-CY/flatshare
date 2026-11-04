@@ -22,7 +22,7 @@ revised, each with regression tests that fail before the fix, and make-room's pa
   priority 0 to the hold beside the new holders, and counts a step in flight as one token in its decode hold. The
   fork's `v0.32.0-` and `v0.33.0-` branches carry the revision, and make-room's patches are written from them.
 - **The module** built on 0.32.0 schedules as v1.20's wherever the budget cap is off (`make test-trace` against the
-  module Phastform's engine built on 2026-10-27: none of 777 configurations differ) and differs with it on (1,106 of
+  module Phastform's engine built on 2026-10-27: none of 772 configurations differ) and differs with it on (1,106 of
   1,264); the serving profile pins its new hash.
 - **The report, version 1.21,** gives the revised rules in §3.1, §3.2, Algorithms 1 and 2 and §3.4, and §4 discloses
   that the evaluation predates them.

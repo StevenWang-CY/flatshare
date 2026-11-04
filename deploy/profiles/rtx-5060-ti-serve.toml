@@ -75,7 +75,7 @@ async_scheduling = true
 # test_build.py builds it from v0.32.0's source. With retention off it schedules as the one Phastform's engine built on
 # 2026-10-27 (0d24d178977f3c1b), which the records above measured, wherever the budget cap is off; with it on, the PRs'
 # revision of 3 November 2026 changes the schedule (make test-trace with TRACE_REFERENCE set to that module: 1,106 of
-# 1,264 configurations differ, and none of 777 with the cap off; REPORT §4). Retention, which this profile turns on, is
+# 1,264 configurations differ, and none of 772 with the cap off; REPORT §4). Retention, which this profile turns on, is
 # measured in benchmarks/results/2026-11-01-engine-points.
 scheduler_module_sha256 = "ffd3a196014a8b7ac07c3c958059bb1a02021b0a4119d89bdf24ca4eaa1084f2"
 # The calls the voice worker takes at once in serve mode: two, the calls of E2's discriminating scenario, at which the
