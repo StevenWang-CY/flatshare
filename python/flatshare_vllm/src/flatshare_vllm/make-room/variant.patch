@@ -4,16 +4,16 @@ counters and its own.
 
 The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
 
-  d2c0153f3 Leaseholder make-room variant: switches, reserve and log line
-  71a0cfc92 Leaseholder make-room variant: keep realtime prefixes on the GPU between turns
-  d96d54a37 Leaseholder make-room variant: count the retained blocks once
-  f5d7f27c3 Leaseholder make-room variant: recompute a realtime request's short load
-  6b0aca660 Leaseholder make-room variant: hold prefill from a call's announced turn
-  5c7e74fae Leaseholder make-room variant: log the turns announced
-  20dc17449 Leaseholder make-room variant: keep the log line as it was without hints
-  25f989d01 Leaseholder make-room variant: let a request take a lower priority's reservations
-  038359e85 Leaseholder make-room variant: name the switch in the reservations' comment
-  402a9bcbf Leaseholder make-room variant: hold lower-priority decodes from a request's first tokens
+  f6571e04c Leaseholder make-room variant: switches, reserve and log line
+  c2f4d968e Leaseholder make-room variant: keep realtime prefixes on the GPU between turns
+  ec927fdbc Leaseholder make-room variant: count the retained blocks once
+  8a02db5c3 Leaseholder make-room variant: recompute a realtime request's short load
+  169547b67 Leaseholder make-room variant: hold prefill from a call's announced turn
+  91fb8da80 Leaseholder make-room variant: log the turns announced
+  5a64895b1 Leaseholder make-room variant: keep the log line as it was without hints
+  0e3299abe Leaseholder make-room variant: let a request take a lower priority's reservations
+  ea3519708 Leaseholder make-room variant: name the switch in the reservations' comment
+  c3064525b Leaseholder make-room variant: hold lower-priority decodes from a request's first tokens
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
 index 602a325e4..bef7810ac 100644

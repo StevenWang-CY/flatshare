@@ -4,18 +4,18 @@ counters and its own.
 
 The scheduler.py part of these commits on vLLM v0.33.0 (4ba787ec9):
 
-  8eac26be2 Leaseholder make-room variant: switches, reserve and log line (cherry-picked from 5f96ab21c)
-  8c430ab9c Leaseholder make-room variant: keep realtime prefixes on the GPU between turns (cherry-picked from e176b99fa)
-  32da6aecb Leaseholder make-room variant: count the retained blocks once (cherry-picked from 15b66b572)
-  afd41079f Leaseholder make-room variant: recompute a realtime request's short load (cherry-picked from 7ce8f3588)
+  9448da905 Leaseholder make-room variant: switches, reserve and log line (cherry-picked from 5f96ab21c)
+  aa5f54725 Leaseholder make-room variant: keep realtime prefixes on the GPU between turns (cherry-picked from e176b99fa)
+  d02a8414b Leaseholder make-room variant: count the retained blocks once (cherry-picked from 15b66b572)
+  400a3806e Leaseholder make-room variant: recompute a realtime request's short load (cherry-picked from 7ce8f3588)
     Backported to v0.33.0: the rule follows 0.33.0's cap of the external hit
     for auxiliary outputs, so that it judges the load that is left.
-  6128e363e Leaseholder make-room variant: hold prefill from a call's announced turn (cherry-picked from 43e3f5a48)
-  c601ce6c4 Leaseholder make-room variant: log the turns announced (cherry-picked from 27a501075)
-  4b5559ac6 Leaseholder make-room variant: keep the log line as it was without hints (cherry-picked from 95e8f4617)
-  a83173b39 Leaseholder make-room variant: let a request take a lower priority's reservations (cherry-picked from 225b2e800)
-  eef4ad73b Leaseholder make-room variant: name the switch in the reservations' comment (cherry-picked from 9040a6895)
-  d1d1c68e1 Leaseholder make-room variant: hold lower-priority decodes from a request's first tokens (cherry-picked from 68e75d034)
+  56a6249ed Leaseholder make-room variant: hold prefill from a call's announced turn (cherry-picked from 43e3f5a48)
+  effe71dc4 Leaseholder make-room variant: log the turns announced (cherry-picked from 27a501075)
+  8efa013b4 Leaseholder make-room variant: keep the log line as it was without hints (cherry-picked from 95e8f4617)
+  e58554187 Leaseholder make-room variant: let a request take a lower priority's reservations (cherry-picked from 225b2e800)
+  65310855a Leaseholder make-room variant: name the switch in the reservations' comment (cherry-picked from 9040a6895)
+  0f53f1dcf Leaseholder make-room variant: hold lower-priority decodes from a request's first tokens (cherry-picked from 68e75d034)
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
 index 614592fa3..4d5761d60 100644

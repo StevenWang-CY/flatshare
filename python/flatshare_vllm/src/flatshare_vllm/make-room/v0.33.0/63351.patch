@@ -2,12 +2,15 @@ vLLM #65283 (https://github.com/vllm-project/vllm/pull/65283; first #63351), bac
 
 The scheduler.py part of these commits on vLLM v0.33.0 (4ba787ec9):
 
-  24878b13a [Core] Priority scheduling: hold lower-priority prefill for first tokens (cherry-picked from 5aae512d0)
+  9fb3785ca [Core] Priority scheduling: hold lower-priority prefill for first tokens (cherry-picked from 4960575fe)
     Backport: v0.33.0's request queues stay stock, so the queue method is
     the scheduler's _has_lower_priority_than here, with the same answer; and
     v0.33.0's SchedulerStats and Prometheus logger have no field for the
     budget cap's holds, so the scheduler counts them and make_stats leaves
-    them.
+    them; and v0.33.0 has no queue of requests waiting to start an async KV
+    load, so the budget cap's scan of lower priorities covers its two
+    waiting queues and the waiting hold tests request_queue is self.waiting,
+    with the tests of that queue left out.
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
 index 39088c408..614592fa3 100644
