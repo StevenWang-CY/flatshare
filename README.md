@@ -29,7 +29,7 @@ On vLLM 0.32 with 24 coding-agent sessions on one RTX 5060 Ti, the voice agent's
 from running agent requests, and once it runs, agent prefill shares every step of its reply.
 
 Two scheduler rules, proposed to vLLM as pull requests [#65282](https://github.com/vllm-project/vllm/pull/65282) and
-[#65283](https://github.com/vllm-project/vllm/pull/65283) (open, with no maintainer review as of 2026-11-03; the
+[#65283](https://github.com/vllm-project/vllm/pull/65283) (open, with no maintainer review as of 2026-11-04; the
 measurements name them by their first numbers, #63350 and #63351), bring that p95 to 2.24 s against an SLO of 2.03 s.
 The replies over the SLO fall from 90% to 32% (286 of 885), and the agents keep 97% of their token rate.
 
@@ -347,7 +347,7 @@ If you use Flatshare or its measurements, please cite the repository ([CITATION.
   author  = {Wang, Chuyue},
   title   = {Flatshare},
   year    = {2026},
-  version = {1.20.0},
+  version = {1.21.0},
   url     = {https://github.com/StevenWang-CY/flatshare}
 }
 ```
