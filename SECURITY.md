@@ -4,12 +4,12 @@ How to report a vulnerability in Flatshare, and which parts of the repository th
 
 ## Supported versions
 
-Fixes go into the latest release and `main`. At v1.21 that is:
+Fixes go into the latest release and `main`. At v1.22 that is:
 
 | Version | Supported |
 |---|---|
-| 1.21 (the latest release) and `main` | Yes |
-| 1.20 and earlier, including the releases named Leaseholder | No |
+| 1.22 (the latest release) and `main` | Yes |
+| 1.21 and earlier, including the releases named Leaseholder | No |
 
 ## Reporting a vulnerability
 
