@@ -2,12 +2,18 @@ vLLM #65282 (https://github.com/vllm-project/vllm/pull/65282; first #63350), bac
 
 The scheduler.py part of these commits on vLLM v0.33.0 (4ba787ec9):
 
-  566bf1604 [Core] Priority scheduling: preempt lower-priority requests for KV cache space (cherry-picked from 361b2a81b)
+  f37580cfd [Core] Priority scheduling: preempt lower-priority requests for KV cache space (cherry-picked from 3b02e71c0)
     Backport: v0.33.0's SchedulerStats and Prometheus logger have no field
     for the preemptions, so the scheduler counts them and make_stats leaves
     them; and v0.33.0's waiting loop bounds a prefix cache hit by the aux-
     output connector alone, so make-room does too, and the test of main's
-    prompt-scoring bound is left out.
+    prompt-scoring bound is left out; and v0.33.0 has no queue of requests
+    waiting to start an async KV load (main's async_kv_waiting), so
+    make-room's target scan and the in-flight gate cover its two waiting
+    queues, the gate testing request_queue is self.waiting, with the tests
+    of that queue left out, and its KV cache blocks hold their pool, not a
+    weak reference to it, so the released-blocks count compares the pool
+    itself.
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
 index d35b7dfac..39088c408 100644

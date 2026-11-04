@@ -64,9 +64,11 @@ spec.loader.exec_module(build)
 PATCHES = [BUILD.parent / "make-room" / name for name in build.VARIANTS["make-room"][0]]
 ADAPTED = {
     "63350.patch": {
-        # v0.32.0's SchedulerStats has no field for make-room's preemptions: the scheduler counts them. And v0.32.0's
-        # waiting loop bounds a prefix-cache hit at num_tokens - 1 only, so make-room's hit keeps that bound.
-        "44a970268": (
+        # v0.32.0's SchedulerStats has no field for make-room's preemptions: the scheduler counts them. v0.32.0's
+        # waiting loop bounds a prefix-cache hit at num_tokens - 1 only, so make-room's hit keeps that bound. And
+        # v0.32.0 has no queue of requests waiting to start an async KV load (main's async_kv_waiting), and its blocks
+        # hold their pool itself, not a weak reference to it: make-room scans two queues and compares the pool.
+        "da364fb98": (
             (
                 "# Running requests preempted to make room, since the last stats.",
                 "num_priority_preemptions = self._num_priority_preemptions",
@@ -81,21 +83,35 @@ ADAPTED = {
                 "else None",
                 ")",
                 "request.block_hashes, max_cache_hit_length",
+                "block.pool is None",
+                "or block.pool() is not block_pool",
+                "for queue in (self.kv_holding_waiting, self.waiting, self.async_kv_waiting)",
+                "request_queue is not self.kv_holding_waiting",
             ),
             (
                 "# Running requests preempted to make room.",
                 "get_computed_blocks finds, without emitting KV events. None if the",
                 'request does not look up the prefix cache."""',
                 "request.block_hashes, request.num_tokens - 1",
+                "block.pool is not block_pool",
+                "for queue in (self.kv_holding_waiting, self.waiting)",
+                "request_queue is self.waiting",
             ),
         ),
     },
     "63351.patch": {
         # v0.32.0's request queues stay stock: the queues' new method is the scheduler's _has_lower_priority_than. Nor
-        # does its SchedulerStats have fields for the budget cap's holds: the scheduler counts them too.
-        "60b4ef9b8": (
+        # does its SchedulerStats have fields for the budget cap's holds: the scheduler counts them too. And with no
+        # queue of requests waiting to start an async KV load, the cap scans two queues and the waiting hold tests one.
+        "bdbacf4a8": (
             (
                 "queue.has_lower_priority_than(request.priority)",
+                "for queue in (",
+                "self.kv_holding_waiting,",
+                "self.waiting,",
+                "self.async_kv_waiting,",
+                ")",
+                "and request_queue is not self.kv_holding_waiting",
                 "# Since the last stats, the steps in which the budget cap held prefill",
                 "# back and the prefill tokens it held; and the last such step, with the",
                 "# tokens held in it so far.",
@@ -121,6 +137,8 @@ ADAPTED = {
                 "# The steps in which the budget cap held prefill back and the prefill",
                 "# tokens it held; and the last such step, with the tokens held in it so",
                 "# far.",
+                "for queue in (self.kv_holding_waiting, self.waiting)",
+                "and request_queue is self.waiting",
             ),
         ),
     },
