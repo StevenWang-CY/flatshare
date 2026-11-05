@@ -7,7 +7,7 @@
     "scheduler_cls": "flatshare_make_room_serve.AsyncScheduler",
     "scheduler_module": {
       "name": "flatshare_make_room_scheduler",
-      "sha256": "ffd3a196014a8b7ac07c3c958059bb1a02021b0a4119d89bdf24ca4eaa1084f2"
+      "sha256": "f418fb10d4e5804de4e268a32b966ad09c0a9ff2bd6533a8d07d4acd5898d88b"
     },
     "serve_module_sha256": "c4e9b6d3310ec8e081d1a4c0f18abc0a2369b8c861c5526e92f4dac15d5bbfaa",
     "model": {
@@ -63,9 +63,9 @@
     }
   },
   "patches": {
-    "63350.patch": "1d96d0d19d490ae50f9bcb5146bc7299bb8ed70f038fb7e8c0516261d2d0a337",
-    "63351.patch": "bb17465cbe028afc0930cdb33004e4a54f40e74f92c6e7e2e8cd969e6882d60f",
-    "variant.patch": "475205d2892578286e1c6a7d0cc72d3dcb8ec08928e252cc3219b1fc7e3d3af9"
+    "63350.patch": "0bbc88328c64dab18d09d38029b8d8fe973e9de2ae684948f41c07ba9effaac4",
+    "63351.patch": "baff4f111b7cc1d8a43c283152adce1e3b20939856d4130ed69f8d3b17683896",
+    "variant.patch": "87894ca4f7735672362419007798e540fb99a8e49921dd42c161c02d76103e90"
   },
   "voice": {
     "mode": "serve",
