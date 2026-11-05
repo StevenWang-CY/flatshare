@@ -106,7 +106,7 @@ VLLM_SRC=~/src/vllm-v0.32.0 uv run --extra test pytest      # in python/flatshar
 `tests/test_make_room.py` checks the `make-room` variant's behavior on vLLM's real v1 scheduler, on CPU, with hand-made requests and no model, as vLLM's own `tests/v1/core` do:
 
 - **The KV preemption** for a waiting higher-priority request under KV pressure: the request chosen, the victims and their order, shared prefixes, the per-step cap, deferred block frees, LoRA adapters, a request the waiting loop skips.
-- **The budget cap:** lower-priority prefill sits out a request's first tokens from the step it fits or its KV load is done, and the first steps of a load only, and not for a request that does not fit; its window holds as many steps under asynchronous scheduling, a step in flight counted, as without.
+- **The budget cap:** lower-priority prefill sits out a request's first tokens from the step it fits or its KV load is done, for at most its window's steps in a row in which the request computes nothing, and the first steps of a load only, and not for a request that does not fit; its window holds as many steps under asynchronous scheduling, a step in flight counted, as without.
 - **The reserve**, the switches' validation, and stock behavior with the switches off.
 - **The variant's other switches:** the calls' prefixes kept between their turns (a call's next turn ends its
   retention, another call's does not, a turn that does not fit beside the others, shared blocks counted once, `retain_s`,

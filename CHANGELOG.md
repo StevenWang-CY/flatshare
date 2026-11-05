@@ -5,6 +5,30 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.23](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.23) (2026-11-05): the pull requests' revision of 5 November
+
+A review of #65283 and then a fresh one of both found stalls on the real scheduler, where a request that waits for what
+it holds back stops the engine: a request whose KV load is done, behind a request that fails its allocation, and a running
+prefill scheduled nothing. The serving profile loads a call's turn from the CPU tier, so the engine could reach the first.
+Both pull requests are revised, each with regression tests that fail before the fix, and make-room's patches carry them.
+
+- **The budget cap** bounds every request whose first tokens are due by the steps it computes nothing: at most T in a
+  row, which its progress resets. A load in flight keeps its T steps from its start. A request a higher priority's hold
+  keeps out does not count those steps, and a running request with one token left is no longer held.
+- **The KV preemption's gate** waits only on a higher-priority prefill that gets a chunk in the step, so a KV load in flight
+  or a prefill scheduled nothing keeps no request out, and room is made for it again if it needs more.
+- **A search for stalls of this kind**
+  ([the record](benchmarks/results/2026-11-05-liveness/README.md)) runs 400,000 random workloads on the pull
+  requests, and 200,000 on the module with the serving profile's switches, each with the options off and on.
+  None stalls because of the options, where the same search finds 241 and 153 on the
+  code before. A state that vLLM's main cannot leave either remains, with nothing running.
+- **The pull requests** are rebased on vLLM's main at 0b3a608dd, where #54625's fields landed beside make-room's, and make-room's
+  six patches, the module's pin and compat-upstream carry the new heads.
+- **make-room's trace** against the module the evaluation ran: with the budget cap off, the same but for 98 of the
+  320 configurations with a KV connector, where the gate's change shows; with it on, different in 1,080 of
+  1,264. Against v1.22's module, the revision
+  changes 426 of 2,036 configurations, 329 of them with a KV connector.
+
 ## [v1.22](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.22) (2026-11-04): the pull requests rebased on vLLM's main
 
 #65282 and #65283 are rebased on vLLM's main after two changes landed there: #65319's queue of requests waiting to

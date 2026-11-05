@@ -294,6 +294,7 @@ It verifies the release before it switches (the files, each environment's import
 | Only realtime work | Nothing to preempt: the engine schedules it by priority and arrival, as stock | — |
 | Many calls at once | The budget cap holds lower-priority prefill while any realtime request's first tokens are due, so replies that overlap hold it continuously | Watch the engine's log of what it held ([below](#many-calls-at-once)) |
 | A KV load that never completes | It holds lower-priority prefill for its first `budget_cap_tokens` steps, then nothing | — |
+| A request that computes nothing, such as a KV load that is done behind a request whose allocation fails | It holds lower-priority prefill for at most `budget_cap_tokens` steps in a row, so that the prefill it may be waiting for can run | — |
 | The engine dies (an out-of-memory kill, a crash) | Every stream it serves breaks at once, and voice is down for all of it: one GPU node has no standby | systemd restarts it: a request succeeded 106.2 s after a kill ([below](#the-engine-dies)) |
 | The first of two cards fails | Its calls move to the spare by their next turn; the spare's agents wait while it carries any call | The moved calls stay on the spare until they end ([below](#the-first-of-two-cards-fails)) |
 | The gateway restarts | A reload refuses nothing and makes no request wait; background streams are cut after 5 s | Clients may send the cut background requests again ([below](#the-gateway-restarts)) |
