@@ -68,7 +68,7 @@ ADAPTED = {
         # waiting loop bounds a prefix-cache hit at num_tokens - 1 only, so make-room's hit keeps that bound. And
         # v0.32.0 has no queue of requests waiting to start an async KV load (main's async_kv_waiting), and its blocks
         # hold their pool itself, not a weak reference to it: make-room scans two queues and compares the pool.
-        "da364fb98": (
+        "d6c48e3c4": (
             (
                 "# Running requests preempted to make room, since the last stats.",
                 "num_priority_preemptions = self._num_priority_preemptions",
@@ -103,7 +103,7 @@ ADAPTED = {
         # v0.32.0's request queues stay stock: the queues' new method is the scheduler's _has_lower_priority_than. Nor
         # does its SchedulerStats have fields for the budget cap's holds: the scheduler counts them too. And with no
         # queue of requests waiting to start an async KV load, the cap scans two queues and the waiting hold tests one.
-        "bdbacf4a8": (
+        "1da34e963": (
             (
                 "queue.has_lower_priority_than(request.priority)",
                 "for queue in (",

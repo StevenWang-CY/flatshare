@@ -1,0 +1,22 @@
+{
+ "fix": {
+  "seeds": 60000,
+  "caused": 0,
+  "not_caused": 88,
+  "not_caused_running": 6,
+  "errors": 0,
+  "long_idle": 21,
+  "off_stuck": 814,
+  "on_stuck": 811
+ },
+ "ctl": {
+  "seeds": 60000,
+  "caused": 100,
+  "not_caused": 73,
+  "not_caused_running": 4,
+  "errors": 0,
+  "long_idle": 35,
+  "off_stuck": 814,
+  "on_stuck": 866
+ }
+}

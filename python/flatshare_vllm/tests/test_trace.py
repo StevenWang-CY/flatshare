@@ -63,7 +63,8 @@ MUTANTS = {
     "no-untried": ("and make_room_req not in self._make_room_untried\n", "and True\n"),
     # Room is made while the budget cap holds the request back.
     "no-cap-gate": (
-        "and (hold_priority is None or make_room_req.priority <= hold_priority)\n",
+        "# Nor while the budget cap holds it back.\n"
+        "            and (hold_priority is None or make_room_req.priority <= hold_priority)\n",
         "and True\n",
     ),
     # With deferred frees, the decodes' growth is counted for one step only.

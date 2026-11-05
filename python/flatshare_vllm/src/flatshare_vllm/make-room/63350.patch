@@ -2,7 +2,7 @@ vLLM #65282 (https://github.com/vllm-project/vllm/pull/65282; first #63350), bac
 
 The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
 
-  da364fb98 [Core] Priority scheduling: preempt lower-priority requests for KV cache space (cherry-picked from 3b02e71c0)
+  d6c48e3c4 [Core] Priority scheduling: preempt lower-priority requests for KV cache space (cherry-picked from 7f048ee9e)
     Backported to v0.32.0: the make-room call follows 0.32.0's long prefill
     threshold, as v0.32.0 has no local prefill cadence;
     tests/v1/core/utils.py keeps v0.32.0's create_scheduler signature;
@@ -18,7 +18,7 @@ The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
     the released-blocks count compares the pool itself.
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
-index cec96d2a4..033627eb5 100644
+index cec96d2a4..f03f9af68 100644
 --- a/vllm/v1/core/sched/scheduler.py
 +++ b/vllm/v1/core/sched/scheduler.py
 @@ -53,6 +53,12 @@ from vllm.v1.core.sched.request_queue import (
@@ -114,7 +114,7 @@ index cec96d2a4..033627eb5 100644
  
                  ready_to_schedule = self._handle_blocked_waiting_request(request)
                  if not ready_to_schedule:
-@@ -951,6 +1016,22 @@ class Scheduler(SchedulerInterface):
+@@ -951,6 +1016,25 @@ class Scheduler(SchedulerInterface):
                      skip_request(request_queue)
                      continue
  
@@ -123,21 +123,24 @@ index cec96d2a4..033627eb5 100644
 +                    and self.max_priority_preemptions_per_step
 +                    and any(
 +                        req.priority < request.priority
++                        and req.request_id in num_scheduled_tokens
 +                        for req in self._inflight_prefills
 +                    )
 +                    and self._num_blocks_short(request, self._local_prefix_hit(request))
 +                    > 0
 +                ):
-+                    # While a higher-priority prefill is in flight, admit only
++                    # While a higher-priority prefill is scheduled, admit only
 +                    # what fits beside the blocks in-flight prefills still need,
 +                    # or a request preempted for it could reclaim its cached
-+                    # blocks.
++                    # blocks. A KV load, or a prefill scheduled nothing, may take
++                    # long or wait for this request to finish: it keeps nothing
++                    # out, and room is made for it again if it needs more.
 +                    break
 +
                  num_external_computed_tokens = 0
                  load_kv_async = False
                  connector_prefix_cache_queries, connector_prefix_cache_hits = 0, 0
-@@ -1253,6 +1334,8 @@ class Scheduler(SchedulerInterface):
+@@ -1253,6 +1337,8 @@ class Scheduler(SchedulerInterface):
                  # Replayed tokens are already counted in the adopted hit; a
                  # chunk that ends inside the replayed range needs no new slots.
                  num_tokens_past_hit = max(num_new_tokens - num_replay_tokens, 0)
@@ -146,7 +149,7 @@ index cec96d2a4..033627eb5 100644
                  new_blocks = self.kv_cache_manager.allocate_slots(
                      request,
                      num_tokens_past_hit,
-@@ -3091,6 +3174,294 @@ class Scheduler(SchedulerInterface):
+@@ -3091,6 +3177,294 @@ class Scheduler(SchedulerInterface):
              self._request_remaining_blocks(req) for req in self._inflight_prefills
          )
  

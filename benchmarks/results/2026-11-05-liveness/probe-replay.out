@@ -1,0 +1,9 @@
+kv load 0: same on both modules: True; steps 231; 24 blocks free at the turn's arrival; load from step None, completed: False; voice computed 813, output 64; control (no switches) differs: True
+kv load 2: same on both modules: True; steps 231; 24 blocks free at the turn's arrival; load from step 1, completed: True; voice computed 813, output 64; control (no switches) differs: True
+kv load 8: same on both modules: True; steps 231; 24 blocks free at the turn's arrival; load from step 1, completed: True; voice computed 813, output 64; control (no switches) differs: True
+kv load 32: same on both modules: True; steps 231; 24 blocks free at the turn's arrival; load from step 1, completed: True; voice computed 813, output 64; control (no switches) differs: True
+prefill load 0: same on both modules: True; steps 200; 1008 blocks free at the turn's arrival; load from step None, completed: False; voice computed 813, output 64; control (no switches) differs: True
+prefill load 2: same on both modules: True; steps 200; 1008 blocks free at the turn's arrival; load from step 0, completed: True; voice computed 813, output 64; control (no switches) differs: True
+prefill load 8: same on both modules: True; steps 200; 1008 blocks free at the turn's arrival; load from step 0, completed: True; voice computed 813, output 64; control (no switches) differs: True
+prefill load 32: same on both modules: True; steps 200; 1008 blocks free at the turn's arrival; load from step 0, completed: True; voice computed 813, output 64; control (no switches) differs: True
+ok

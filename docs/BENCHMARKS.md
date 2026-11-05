@@ -256,6 +256,23 @@ The probes #65282 and #65283 cited until their revision of 3 November, as #63350
 - **The KV case is #63350's.** The voice turn has its first token after 0.22–0.29 s instead of 4.9–5.0 s, and the budget cap changes nothing there. In one run with both, the reply ended before its 16th token; this case measures the first.
 - **The prefill case and the tail are #63351's.** With #63350 alone, which finds KV to spare in the prefill case, the reply's tokens still come 60–65 ms apart behind the agents' chunks and the calls' p95 stays at 1.1–4.1 s; with the budget cap they come 16–20 ms apart and the p95 is under 0.4 s.
 
+### The search for stalls (2026-11-05)
+
+A random search for stalls of the budget cap and the KV preemption, after reviews of #65282 and #65283 found them: workloads on small KV pools on the real scheduler, on CPU, each run with the options off and on ([the record](../benchmarks/results/2026-11-05-liveness/README.md)). A stall the options cause is one that ends when both are turned off at the stalled step.
+
+| Code | Workloads | Stalls the options cause | Workloads stuck, options off / on |
+|---|---:|---:|---:|
+| #65283 before the fix | 400,000 | 241 | 5,578 / 5,225 |
+| #65283 | 400,000 | 0 | 5,578 / 5,287 |
+| #65282 alone | 400,000 | 0 | 5,578 / 5,634 |
+| The make-room module of v1.22, the serving profile's switches | 200,000 | 153 | 2,830 / 2,156 |
+| The make-room module of v1.23, the serving profile's switches | 200,000 | 0 | 2,830 / 2,071 |
+
+- **What remains is not the options'.** Every stall left has nothing running and stays stuck with the options off: a request at the head of the queue of requests holding KV blocks cannot get the blocks it needs or start its load, and the requests behind it hold what it waits for. vLLM's main reaches that state too.
+- **What it cannot show.** The workloads are small and short, on a mock KV connector with the model's output faked, so this says which schedules can stall, not how often a real engine meets one.
+- **Beyond these profiles.** A third search, of 60,000 workloads over LoRA limits, connector lookups answered later, grammars, pause windows, sliding-window groups and `--disable-chunked-mm-input`, finds 100 stalls the options cause on the revision before and none on #65283, whose 88 other stalls also stay stuck with the options off, 6 of them with a running request at an image longer than the long prefill threshold.
+- **The GPU tables.** No GPU rerun: both probes' cases, as new and with a KV load of 2, 8 or 32 steps, replayed on CPU on the card's pool, step cap and threshold ([`probe_replay.py`](../benchmarks/results/2026-11-05-liveness/probe_replay.py)), schedule step for step as on v1.22's module, with a control without the switches that differs.
+
 ### The probes on the pull requests' revision of 3 November (2026-11-04)
 
 The probes #65282 and #65283 cite since their revision of 3 November, rerun on that code (Phastform's release 4c1d1f6, v1.21's engine) in one session with stock vLLM 0.32.0 as the control: the KV case and the prefill case four times each, without the tails ([records](../benchmarks/results/2026-11-04-r3-probes/README.md)).

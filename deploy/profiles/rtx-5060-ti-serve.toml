@@ -77,7 +77,7 @@ async_scheduling = true
 # revision of 3 November 2026 changes the schedule (make test-trace with TRACE_REFERENCE set to that module: 1,106 of
 # 1,264 configurations differ, and none of 772 with the cap off; REPORT §4). Retention, which this profile turns on, is
 # measured in benchmarks/results/2026-11-01-engine-points.
-scheduler_module_sha256 = "ffd3a196014a8b7ac07c3c958059bb1a02021b0a4119d89bdf24ca4eaa1084f2"
+scheduler_module_sha256 = "f418fb10d4e5804de4e268a32b966ad09c0a9ff2bd6533a8d07d4acd5898d88b"
 # The calls the voice worker takes at once in serve mode: two, the calls of E2's discriminating scenario, at which the
 # sweep's screens and the confirmation rounds measured this configuration (the records above).
 max_calls = 2

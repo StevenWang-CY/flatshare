@@ -1,0 +1,64 @@
+{
+ "old base": {
+  "seeds": 100000,
+  "errors": 0,
+  "off_stuck": 184,
+  "on_stuck": 219,
+  "only_on_stuck": 149,
+  "only_off_stuck": 114,
+  "caused": 90,
+  "repeated": 149,
+  "probed": 149,
+  "over_window": 7,
+  "shapes": {
+   "running / ends with the options off": 90,
+   "nothing running / stays stuck": 59
+  }
+ },
+ "old ext": {
+  "seeds": 100000,
+  "errors": 0,
+  "off_stuck": 2646,
+  "on_stuck": 1937,
+  "only_on_stuck": 293,
+  "only_off_stuck": 1002,
+  "caused": 63,
+  "repeated": 293,
+  "probed": 293,
+  "over_window": 54,
+  "shapes": {
+   "nothing running / stays stuck": 230,
+   "running / ends with the options off": 63
+  }
+ },
+ "new base": {
+  "seeds": 100000,
+  "errors": 0,
+  "off_stuck": 184,
+  "on_stuck": 156,
+  "only_on_stuck": 74,
+  "only_off_stuck": 102,
+  "caused": 0,
+  "repeated": 74,
+  "probed": 74,
+  "over_window": 9,
+  "shapes": {
+   "nothing running / stays stuck": 74
+  }
+ },
+ "new ext": {
+  "seeds": 100000,
+  "errors": 0,
+  "off_stuck": 2646,
+  "on_stuck": 1915,
+  "only_on_stuck": 249,
+  "only_off_stuck": 980,
+  "caused": 0,
+  "repeated": 249,
+  "probed": 249,
+  "over_window": 51,
+  "shapes": {
+   "nothing running / stays stuck": 249
+  }
+ }
+}

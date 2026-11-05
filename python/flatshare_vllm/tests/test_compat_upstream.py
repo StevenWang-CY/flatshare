@@ -624,8 +624,8 @@ def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, up
     proc = run(tmp_path / "pushed", upstream.serve(main, {A: kv, B: pushed}, {"v0.40.0": base}))
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert (
-        f"  #{B} and 63351.patch: 213 of #{B}'s 230 lines are the backport's; its other 16 and 16 of the "
-        "backport's 230 are adapted (bdbacf4a8); it DIFFERS in 2 lines no Backport paragraph names:\n"
+        f"  #{B} and 63351.patch: 227 of #{B}'s 244 lines are the backport's; its other 16 and 16 of the "
+        "backport's 244 are adapted (1da34e963); it DIFFERS in 2 lines no Backport paragraph names:\n"
         f"    #{B}'s: {old.replace(' < ', ' <= ')}"
         f"    63351.patch's: {old}"
     ) in proc.stdout
@@ -635,7 +635,7 @@ def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, up
     )
     proc = run(tmp_path / "adopted", upstream.serve(main, {A: kv, B: adopted}, {"v0.40.0": base}))
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "(bdbacf4a8); 2 of the lines named as adapted no longer differ\n" in proc.stdout
+    assert "(1da34e963); 2 of the lines named as adapted no longer differ\n" in proc.stdout
     assert (
         "backport = the PRs' heads but for 32 adapted lines of theirs and 22 of its own"
         in proc.stdout

@@ -1340,6 +1340,140 @@ def test_a_completed_load_holds_prefill_back_while_a_request_that_does_not_fit_w
     assert big.status == RequestStatus.WAITING and free_blocks(sched) < 38
 
 
+@pytest.mark.parametrize(
+    "switches",
+    [
+        {"budget_cap_tokens": 1},
+        {"budget_cap_tokens": 4},
+        {"budget_cap_tokens": 16},
+        # As the serving profile takes the budget cap, with a window these steps cover.
+        {"budget_cap_tokens": 4, "take_reservations": True, "decode_hold_tokens": 4},
+    ],
+)
+def test_a_completed_load_the_waiting_loop_cannot_reach_stops_holding(module, model, switches):
+    """A priority-0 and a priority-1 request each load 4 blocks, and a priority-2 prefill has computed 5 of its 6 when
+    both loads are done. With one block free, the priority-0 request, which needs two, fails its allocation and ends
+    the waiting loop, so the priority-1 request is not promoted though its load is done. The prefill it holds back is
+    what would free the blocks: it sits out the first T steps only, and then all three finish (vLLM #65283's review
+    found the stall without that bound)."""
+    window = switches["budget_cap_tokens"]
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        15,
+        {"budget_cap": True, **switches},
+        max_num_batched_tokens=BLOCK,
+        max_num_seqs=3,
+        connector=Connector({"hi": 4 * BLOCK, "load": 4 * BLOCK}),
+    )
+    requests = (
+        request("hi", 6 * BLOCK, priority=0, arrival=0, max_tokens=2, token=1),
+        request("load", 65, priority=1, arrival=1, max_tokens=2, token=2),
+        request("prefill", 6 * BLOCK, priority=2, arrival=2, max_tokens=1, token=3),
+    )
+    hi, load, prefill = requests
+    for req in requests:
+        sched.add_request(req)
+    # The loads' first steps hold the prefill back, then it runs up to 4 of its 6 blocks.
+    for _ in range(window + 5):
+        step(sched)
+    assert prefill.num_computed_tokens == 4 * BLOCK
+    step(sched, finished_recving={"hi", "load"})
+    assert free_blocks(sched) == 1
+
+    assert [step(sched).num_scheduled_tokens for _ in range(window)] == [{}] * window
+    assert hi.status == RequestStatus.WAITING
+    assert load.status == RequestStatus.WAITING_FOR_REMOTE_KVS
+    assert step(sched).num_scheduled_tokens == {"prefill": BLOCK}
+    for _ in range(10):
+        step(sched)
+    assert all(req.is_finished() for req in requests)
+
+
+def test_a_kv_load_in_flight_keeps_no_lower_priority_request_out(module, model):
+    """A priority-0 request of 6 blocks loads its first, and reserves the other 5 with 8 free. The priority-2 request
+    of 4 blocks fits in those 8, though not beside the reservation: it is admitted as on stock, and finishes, however
+    long the load takes (a review of vLLM #65282 found it waiting for as long as the load lasted)."""
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        10,
+        {"max_preemptions_per_step": 2},
+        max_num_batched_tokens=64,
+        max_num_seqs=4,
+        connector=Connector({"load": BLOCK}),
+    )
+    load = request("load", 6 * BLOCK, priority=0, arrival=0, token=1)
+    low = request("low", 4 * BLOCK, priority=2, arrival=1, max_tokens=2, token=2)
+    sched.add_request(load)
+    sched.add_request(low)
+    assert step(sched).num_scheduled_tokens == {"low": 4 * BLOCK}
+    for _ in range(3):
+        step(sched)
+    assert low.is_finished()
+    assert load.status == RequestStatus.WAITING_FOR_REMOTE_KVS
+
+
+def test_a_waiting_request_held_back_keeps_its_window(module, model):
+    """A priority-1 request that fits waits behind a priority-0 request's first tokens. Those steps do not count
+    against its own window, though they outlast it: it then holds the priority-2 prefill back in the step it is
+    admitted, and that one has had no chunk since the priority-0 request arrived."""
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        64,
+        {"budget_cap": True, "budget_cap_tokens": 4},
+        max_num_batched_tokens=BLOCK,
+        max_model_len=40 * BLOCK,
+    )
+    low = request("low", 10 * BLOCK, priority=2, arrival=0, max_tokens=2, token=3)
+    sched.add_request(low)
+    step(sched)
+    sched.add_request(request("hi", 2 * BLOCK, priority=0, arrival=1, max_tokens=4, token=1))
+    sched.add_request(request("mid", 8, priority=1, arrival=2, max_tokens=4, token=2))
+    steps = [step(sched).num_scheduled_tokens for _ in range(6)]
+    assert steps == [{"hi": BLOCK}, {"hi": BLOCK}, {"hi": 1}, {"hi": 1}, {"hi": 1}, {"mid": 8}]
+    assert low.num_computed_tokens == BLOCK
+
+
+def test_the_budget_cap_never_holds_a_running_request_with_one_token_left(module, model):
+    """A priority-2 request has one token left to compute when a priority-0 request arrives: it samples like a decode
+    and is not held."""
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        33,
+        {"budget_cap": True, "budget_cap_tokens": 4},
+        max_num_batched_tokens=BLOCK,
+    )
+    sched.add_request(request("low", BLOCK + 1, priority=2, arrival=0, token=2))
+    step(sched)
+    sched.add_request(request("hi", 8, priority=0, arrival=1, token=1))
+    assert step(sched).num_scheduled_tokens == {"low": 1, "hi": 8}
+
+
+def test_each_chunk_of_a_session_holds_as_its_first_tokens_are_due(module, model):
+    """A session's chunks of one output token are admitted and finished within a step each. The steps of one chunk do
+    not count against the next: each holds the priority-2 prefill back in the step it is admitted."""
+    sched = scheduler(
+        module.Scheduler,
+        model,
+        80,
+        {"budget_cap": True, "budget_cap_tokens": 2},
+        max_num_batched_tokens=64,
+        long_prefill_token_threshold=BLOCK,
+        max_model_len=64 * BLOCK,
+    )
+    sched.add_request(request("low", 40 * BLOCK, priority=2, arrival=0, max_tokens=1, token=2))
+    step(sched)
+    for _ in range(4):
+        sched.add_request(
+            request("session", 8, priority=0, arrival=0, max_tokens=1, token=1, resumable=True)
+        )
+        assert step(sched).num_scheduled_tokens == {"session": 8}
+        assert "low" in step(sched).num_scheduled_tokens
+
+
 def test_with_every_running_slot_taken_a_completed_load_holds_nothing_back(module, model):
     """A request whose load is done needs a running slot to be promoted. With both slots taken by priority-2
     requests, admitted while it loaded (past the load's first 4 steps), it holds nothing back: otherwise the running
