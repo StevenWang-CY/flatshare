@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.21, 4 November 2026. Code, records and figures at tag
-[v1.21](https://github.com/StevenWang-CY/flatshare/tree/v1.21) of
+Flatshare technical report, version 1.23, 5 November 2026. Code, records and figures at tag
+[v1.23](https://github.com/StevenWang-CY/flatshare/tree/v1.23) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -304,7 +304,7 @@ prefills still need, so admitting r cannot leave a running prefill short.
 Preemptions do not cascade. The rule makes no room for r again until the waiting loop has tried to allocate it, and a
 victim is not resumed in the step that preempted it. In that step a lower-priority request that holds KV blocks but no
 reservation for the rest, such as a streaming session's next chunk, waits too, since the waiting loop drains such
-requests first and it would take the room. While a higher-priority prefill is in flight, the waiting loop stops at the
+requests first and it would take the room. In a step that schedules a higher-priority prefill, the waiting loop stops at the
 first lower-priority request that holds no KV and would take blocks in-flight prefills still need, so a victim cannot
 take its own blocks back.
 
@@ -335,8 +335,8 @@ p(x) is a request's priority, and a lower value is served first.
 10  preempt each request in V through vLLM's preemption path ▹ its KV is in the CPU tier
 11  mark r untried, and in this step's waiting loop stop at a request in V and skip each q with
         p(q) > p(r) that holds KV blocks but no reservation for the rest
-12  in every step's waiting loop, over requests holding no KV: while a prefill x is in flight, stop
-        at the first q with p(q) > p(x) that would take blocks in-flight prefills still need
+12  in every step's waiting loop, over requests holding no KV: if a prefill x gets a chunk in this
+        step, stop at the first q with p(q) > p(x) that would take blocks in-flight prefills still need
 
 freed(X): the blocks whose every holder is in X or has a free deferred, less those r takes as its
           prefix-cache hit, plus the blocks that in-flight prefills in X still reserve.
@@ -355,23 +355,26 @@ that request prefills, and ends once it has T output tokens, counting a step sti
 scheduling as one, since its draft tokens may be rejected. In a held step, running lower-priority prefill chunks are
 skipped and no waiting lower-priority request is admitted, while every decode proceeds.
 
-A waiting request is held after its prefix-cache and KV connector lookups, so a load of its KV from the CPU tier starts
-meanwhile, and a request with one token left to compute samples like a decode and is never held. A lower-priority
-request that already holds KV blocks is skipped rather than allowed to block the queue, and only while a request of its
-priority or a lower one runs: while it waits, preemption cannot reach its blocks, and the higher-priority request could
-otherwise preempt only itself for them.
+The first waiting request in line is held after its prefix-cache and KV connector lookups, so a load of its KV from the
+CPU tier starts meanwhile, and a request with one token left to compute samples like a decode and is never held. A
+lower-priority request that already holds KV blocks is skipped rather than allowed to block the queue, and only while a
+request of its priority or a lower one runs: while it waits, preemption cannot reach its blocks, and the higher-priority
+request could otherwise preempt only itself for them.
 
 Four bounds keep the budget cap from stalling the engine. A waiting request or a KV load holds nothing while the engine
 already runs as many requests as it may (its running slots), since neither could be promoted and holding prefill would
-only stall the running requests. A waiting request that fits but that the waiting loop does not admit, for instance
-while its KV connector lookup is pending, holds for at most T steps.
+only stall the running requests. A request whose first tokens are due holds for at most T steps in a row in which it
+computes nothing: one that fits but that the waiting loop does not admit, for instance while its KV connector lookup is
+pending; one whose KV load is done but whom the loop does not reach, as it ends at the first failed allocation; and a
+running one that is scheduled nothing. What it waits for may be what it holds back: without this bound, the engine stops
+there. The steps in which a higher priority's hold keeps a waiting request out do not count.
 
 A voice turn whose prefix was evicted between turns reloads it from the CPU tier over several steps. The load holds
-lower-priority prefill for its first T steps and again from the step in which it completes, so a load that never
-completes holds nothing after T steps. In a closed-loop probe at T = 16, a build that held nothing during loads made the
-calls' first token 125–131 ms later at the median than the version measured before the main evaluation, which held
-through them (§6.5). The load's completion is seen only at a step boundary, and agent prefill makes those steps about
-three times longer.
+lower-priority prefill for its first T steps and again, for at most T steps, from the step in which it completes, so a
+load that never completes holds nothing after T steps. In a closed-loop probe at T = 16, a build that held nothing
+during loads made the calls' first token 125–131 ms later at the median than the version measured before the main
+evaluation, which held through them (§6.5). The load's completion is seen only at a step boundary, and agent prefill
+makes those steps about three times longer.
 
 A prefill midway through an encoder input whose output is cached, as a multimodal model's can be, goes on while a
 request it is held for needs encoder cache space: the encoder cache frees that output only as the prefill consumes it.
@@ -386,13 +389,16 @@ Algorithm 2. The budget cap, in each scheduler step (window T, in output tokens)
 
  1  H ← the requests whose first tokens are due: running requests with fewer than T output
         tokens, a step in flight counted as one, and, while a running slot is free, requests
-        whose KV load is done or began fewer than T steps ago
- 2  if r (Algorithm 1) fits once the victims' frees land, a running slot is free, and r has
-        been held for fewer than T steps unadmitted: add r to H
+        whose KV load is done or began fewer than T steps ago; but for a load in flight,
+        none that has computed nothing for T steps in a row
+ 2  if r (Algorithm 1) fits once the victims' frees land, a running slot is free, no request
+        in H has a priority above r's, and r has computed nothing for fewer than T steps:
+        add r to H
  3  if H is empty: schedule the step as vLLM does; else h ← the highest priority in H
  4  running loop: for each running request q
- 5      if q is prefilling, p(q) > h, and not (q is midway through a cached encoder input
-            and a request in H of a priority above p(q) needs encoder input):
+ 5      if q is prefilling with more than one token left, p(q) > h, and not (q is midway
+            through a cached encoder input and a request in H of a priority above p(q) needs
+            encoder input):
             skip q                                   ▹ its chunk sits out this step
  6      else schedule q as vLLM does                 ▹ every decode runs
  7  waiting loop: for each waiting request q, in vLLM's order
@@ -475,6 +481,17 @@ priority or a lower one runs, counts a step in flight as one token, and narrows 
 bounds its prefix-cache hit as the waiting loop does and keeps a streaming session's next chunk out of the room it
 makes. make-room's trace test against the module the evaluation ran (0d24d178977f3c1b) finds the revision's schedules
 the same in all 772 configurations with the budget cap off, and different in 1,106 of the 1,264 with it on.
+
+Since then, two reviews found the engine stopping where a holder waited for what it held back, and the revision of 5
+November bounds every holder by the steps it computes nothing; the KV preemption's gate waits only on a prefill that
+gets a chunk, so a load in flight keeps nothing out. A search of 400,000 random workloads on small KV pools on the pull
+requests, and of 200,000 on this module with the serving profile's switches, finds no stall the options cause, where it
+finds 241 and 153 on the code before ([the record](../benchmarks/results/2026-11-05-liveness/README.md)).
+
+Against the module the evaluation ran, its schedules are the same with the budget cap off but for 98 of the 320
+configurations with a KV connector, where the gate's change shows, and different in 1,080 of the 1,264 with the cap on.
+Against v1.22's module, the revision changes 426 of make-room's 2,036 traced configurations, 329 of them with a KV
+connector, and neither of the two probes' cases, replayed on CPU.
 
 **What a step costs.** The rules run on the host, inside `Scheduler.schedule()`, and Figure 7 times that call on vLLM
 0.32.0's real scheduler on a 2.1 GHz Xeon Silver 4110. That host runs the scheduler's kind of Python 1.61 times as fast
@@ -1655,7 +1672,7 @@ The repository's tests fail when a committed figure differs from what its record
 records' figures. [BENCHMARKS.md](BENCHMARKS.md) lists the campaigns' measurements run by run, the records' READMEs the
 probes and checks around them, and [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design.
 
-**Hosting.** Tag v1.21 holds the code, the records and this report. The raw records, the gateway's request logs and each
+**Hosting.** Tag v1.23 holds the code, the records and this report. The raw records, the gateway's request logs and each
 run's directory, are release assets: the main evaluation's in
 [v1.0](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.0), the A100 run's in
 [v1.1](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.1), the KV-sampling runs' in
@@ -1906,6 +1923,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 | Version | Date | What changed |
 |---|---|---|
 | 1.20 | 2026-11-03 | §3.2 and Algorithm 2: the budget cap never holds a prefill whose encoder outputs are cached, which only its progress frees (#65283, after a review found the stall) |
+| 1.23 | 2026-11-05 | §3.1, §3.2, Algorithms 1 and 2 and §4: the pull requests' revision of 5 November, after two reviews found stalls: every holder bounded by the steps it computes nothing, the KV preemption's gate only on a prefill that gets a chunk, and the search for stalls of that kind |
 | 1.21 | 2026-11-04 | §3.1, §3.2, Algorithms 1 and 2, §3.4 and §4: the pull requests' revision of 3 November 2026, after a fresh review of both: the budget cap's bounds for a request that is not admitted, a request with one token left and a request that holds KV blocks, a held request's KV load, a step in flight counted as one token, the narrower encoder exemption, and the KV preemption's bounded hit and room |
 | 1.19 | 2026-11-03 | The note, §4 and references [9] and [10]: the change's pull requests are #65282 and #65283, which succeed #63350 and #63351 with the same change on vLLM's main; §2.4: a voice reply's first sentence takes a step for each of its tokens, 15 at the median and 39 at most, where it said a voice reply needs a few dozen steps |
 | 1.18 | 2026-11-02 | Appendix A: BENCHMARKS lists the campaigns' measurements and the records' READMEs the probes and checks around them, where it said BENCHMARKS lists every measurement; the tables' empty cells as em dashes |
