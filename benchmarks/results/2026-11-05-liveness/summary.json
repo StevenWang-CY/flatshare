@@ -1,0 +1,100 @@
+{
+ "base #65283": {
+  "seeds": 200000,
+  "errors": 0,
+  "off_stuck": 354,
+  "on_stuck": 271,
+  "only_on_stuck": 90,
+  "only_off_stuck": 173,
+  "caused": 0,
+  "repeated": 90,
+  "probed": 90,
+  "with_session": 90,
+  "over_window": 0,
+  "shapes": {
+   "nothing running / stays stuck": 90
+  }
+ },
+ "base #65283 before the fix": {
+  "seeds": 200000,
+  "errors": 0,
+  "off_stuck": 354,
+  "on_stuck": 325,
+  "only_on_stuck": 176,
+  "only_off_stuck": 205,
+  "caused": 104,
+  "repeated": 176,
+  "probed": 176,
+  "with_session": 136,
+  "over_window": 0,
+  "shapes": {
+   "running / ends with the options off": 104,
+   "nothing running / stays stuck": 72
+  }
+ },
+ "base #65282": {
+  "seeds": 200000,
+  "errors": 0,
+  "off_stuck": 354,
+  "on_stuck": 357,
+  "only_on_stuck": 59,
+  "only_off_stuck": 56,
+  "caused": 0,
+  "repeated": 59,
+  "probed": 59,
+  "with_session": 59,
+  "over_window": 0,
+  "shapes": {
+   "nothing running / stays stuck": 59
+  }
+ },
+ "ext #65283": {
+  "seeds": 200000,
+  "errors": 0,
+  "off_stuck": 5224,
+  "on_stuck": 5016,
+  "only_on_stuck": 592,
+  "only_off_stuck": 800,
+  "caused": 0,
+  "repeated": 592,
+  "probed": 592,
+  "with_session": 239,
+  "over_window": 118,
+  "shapes": {
+   "nothing running / stays stuck": 592
+  }
+ },
+ "ext #65283 before the fix": {
+  "seeds": 200000,
+  "errors": 0,
+  "off_stuck": 5224,
+  "on_stuck": 4900,
+  "only_on_stuck": 650,
+  "only_off_stuck": 974,
+  "caused": 137,
+  "repeated": 650,
+  "probed": 650,
+  "with_session": 248,
+  "over_window": 141,
+  "shapes": {
+   "nothing running / stays stuck": 513,
+   "running / ends with the options off": 137
+  }
+ },
+ "ext #65282": {
+  "seeds": 200000,
+  "errors": 0,
+  "off_stuck": 5224,
+  "on_stuck": 5277,
+  "only_on_stuck": 349,
+  "only_off_stuck": 296,
+  "caused": 0,
+  "repeated": 349,
+  "probed": 349,
+  "with_session": 127,
+  "over_window": 71,
+  "shapes": {
+   "nothing running / stays stuck": 349
+  }
+ }
+}

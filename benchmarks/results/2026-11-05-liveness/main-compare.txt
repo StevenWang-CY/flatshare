@@ -1,0 +1,9 @@
+fix shard 0: 5078 workloads, stuck on the head's off side 90, same on main 5078, different 0
+fix shard 2: 5078 workloads, stuck on the head's off side 83, same on main 5078, different 0
+fix shard 3: 5077 workloads, stuck on the head's off side 92, same on main 5077, different 0
+fix shard 1: 5078 workloads, stuck on the head's off side 89, same on main 5078, different 0
+xfix shard 0: 6174 workloads, stuck on the head's off side 1298, same on main 6174, different 0
+xfix shard 2: 6174 workloads, stuck on the head's off side 1295, same on main 6174, different 0
+xfix shard 1: 6174 workloads, stuck on the head's off side 1309, same on main 6174, different 0
+xfix shard 3: 6174 workloads, stuck on the head's off side 1322, same on main 6174, different 0
+xfix shard 0: 1019 workloads, stuck on the head's off side 650, same on main 438, different 581
