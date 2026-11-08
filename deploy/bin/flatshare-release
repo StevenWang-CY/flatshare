@@ -1074,6 +1074,7 @@ def prepare(
             "patches": serving["patches"],
             "module": serving["engine"]["scheduler_module"],
             "serve_module_sha256": serving["engine"]["serve_module_sha256"],
+            "serve_modules_sha256": serving["engine"]["serve_modules_sha256"],
         },
         "serving": serving,
         "units": unit_digests(spec, files, envs),
@@ -1133,6 +1134,17 @@ def describe_serving(serving: dict) -> list[str]:
         if jit["margin_ms"]
         else "the next batch as soon as the one before is launched (off)"
     )
+    queue, copy = engine["queue"], engine["copy"]
+    waiting = (
+        f"the agents by the prefill each has left net of the cache, any first after {queue['max_wait_s']} s"
+        if queue["max_wait_s"]
+        else "first come first served (off)"
+    )
+    loads = (
+        f"SM copy kernel, {copy['sm_load_programs']} programs"
+        if copy["sm_load_programs"]
+        else "vLLM's choice (off)"
+    )
     return [
         f"serving profile {serving['profile']} (variant {serving['variant']}), vLLM {engine['vllm_version']}",
         f"  model {model['model']}@{model['revision'][:12]}, tokenizer {model['tokenizer']}@"
@@ -1141,6 +1153,7 @@ def describe_serving(serving: dict) -> list[str]:
         f"pool {cache['pool_tokens']} tokens ({cache['num_gpu_blocks']} blocks), CPU tier {tier >> 30} GiB",
         f"  make_room: {switches}",
         f"  just in time: {scheduled}",
+        f"  waiting queue: {waiting}; CPU tier's loads: {loads}",
         f"  scheduler {engine['scheduler_cls']} over {engine['scheduler_module']['name']} "
         f"{engine['scheduler_module']['sha256'][:16]}",
         f"  voice: {voice['mode']} mode, {voice['max_calls']} calls at once, {voice['audio']} audio"

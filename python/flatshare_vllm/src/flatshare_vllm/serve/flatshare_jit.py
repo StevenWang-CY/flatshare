@@ -74,7 +74,14 @@ class StepCost:
 
 def finished(future: Any) -> bool:
     """Whether the step behind ``future`` is done, without waiting for it: the in-process executor's future completes
-    only when read, so its output's copy-ready CUDA event is queried."""
+    only when read, so its output's copy-ready CUDA event is queried.
+
+    That event is Model Runner V1's (``async_copy_ready_event``). The box runs Model Runner V2, whose output names its
+    event ``copy_event``, so there this returns False until the future is read and the core waits for the step model's
+    deadline, as every measurement of the serving profile ran. Reading V2's event as well, the early finish, measured
+    no gain beside 24 agent sessions, where the steps are prefill-bound and the deadline sits near the real step time:
+    the agents' token rate +3.5%, the calls' V2V p95 -4 ms, their first sentence's p95 +39 ms, each within one run's
+    noise (benchmarks/results/2026-11-08-envelope, round 2's pair). So it stays as measured."""
     if future.done():
         return True
     output = getattr(future, "async_output", None)

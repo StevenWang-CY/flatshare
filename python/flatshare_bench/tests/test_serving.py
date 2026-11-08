@@ -546,6 +546,14 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
     # The scheduler: the serve module, over the module make-room's patches build, each by its hash.
     assert engine["scheduler_cls"] == "flatshare_make_room_serve.AsyncScheduler"
     assert engine["serve_module_sha256"] == sha256(profile.SERVE_MODULE)
+    # The modules it installs from, each by its hash, and what it installs: the cache-aware waiting queue with its
+    # 120 s bound and the CPU tier's loads through the SM copy kernel with 4 programs.
+    assert engine["serve_modules_sha256"] == {
+        name: sha256(profile.SERVE_MODULE.parent / name)
+        for name in ("flatshare_copy.py", "flatshare_jit.py", "flatshare_queue.py")
+    }
+    assert engine["queue"] == {"max_wait_s": 120}
+    assert engine["copy"] == {"sm_load_programs": 4}
     patches = REPO / "python/flatshare_vllm/src/flatshare_vllm/make-room"
     assert SERVING["patches"] == {
         name: sha256(patches / name) for name in ("63350.patch", "63351.patch", "variant.patch")
@@ -597,8 +605,8 @@ def profile_settings(engine: dict = SERVING["engine"]) -> dict:
 
 def served(measured: dict) -> dict:
     """A point's engine.json by serving.json's names: its model, scheduler, scheduler class, cache and CPU tier, and
-    make-room's switches and the serve module's just-in-time scheduling, which vLLM keeps in its additional
-    configuration (an engine run without the latter has none)."""
+    make-room's switches and what the serve module installs (the just-in-time scheduling, the waiting queue, the CPU
+    tier's load path), which vLLM keeps in its additional configuration (an engine run without one has none)."""
     return {
         "scheduler_cls": measured["scheduler_config"]["scheduler_cls"],
         "model": measured["model_config"],
@@ -607,6 +615,8 @@ def served(measured: dict) -> dict:
         "kv_transfer": measured["kv_transfer_config"],
         "make_room": measured["additional_config"]["make_room"],
         "jit": measured["additional_config"].get("flatshare_jit"),
+        "queue": measured["additional_config"].get("flatshare_queue"),
+        "copy": measured["additional_config"].get("flatshare_copy"),
     }
 
 
@@ -667,6 +677,9 @@ UNRECORDED = {
     "versions), from which build.py writes the module",
     "engine.scheduler_module.sha256": "the same",
     "engine.serve_module_sha256": "the same",
+    "engine.serve_modules_sha256.flatshare_copy.py": "the same",
+    "engine.serve_modules_sha256.flatshare_jit.py": "the same",
+    "engine.serve_modules_sha256.flatshare_queue.py": "the same",
     "engine.cache.pool_tokens": "the blocks times their size, as run.json's engine gives it",
     "engine.cache.gpu_memory_utilization": "where kv_cache_memory_bytes fixes the pool, as every profile does, vLLM "
     "sizes nothing by it and only checks that this share of the card is free at start",
@@ -690,7 +703,12 @@ def test_a_record_keeps_each_engine_setting_serving_json_pins_but_the_unrecorded
         "scheduler_config": engine["scheduler"] | {"scheduler_cls": engine["scheduler_cls"]},
         "cache_config": engine["cache"],
         "kv_transfer_config": engine["kv_transfer"],
-        "additional_config": {"make_room": engine["make_room"], "flatshare_jit": engine["jit"]},
+        "additional_config": {
+            "make_room": engine["make_room"],
+            "flatshare_jit": engine["jit"],
+            "flatshare_queue": engine["queue"],
+            "flatshare_copy": engine["copy"],
+        },
     }
     kept = served(engine_settings(configured))
     dropped = [

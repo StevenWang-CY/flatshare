@@ -50,6 +50,8 @@ def flags(serving: dict, config: Path = ENGINE_CONFIG) -> list[str]:
     args += ["--additional-config.flatshare_jit.margin_ms", json.dumps(jit["margin_ms"])]
     for key, value in jit["step_cost"].items():
         args += [f"--additional-config.flatshare_jit.step_cost.{key}", json.dumps(value)]
+    args += ["--additional-config.flatshare_queue.max_wait_s", json.dumps(engine["queue"]["max_wait_s"])]
+    args += ["--additional-config.flatshare_copy.sm_load_programs", json.dumps(engine["copy"]["sm_load_programs"])]
     return args
 
 

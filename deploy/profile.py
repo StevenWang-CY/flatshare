@@ -92,6 +92,11 @@ drop-in, is not silently left out of other nodes: it fails the test until it is 
 VLLM_PACKAGE = REPO / "python" / "flatshare_vllm" / "src" / "flatshare_vllm"
 SERVE_MODULE = VLLM_PACKAGE / "serve" / "flatshare_make_room_serve.py"
 """The scheduler class the serving variant loads: make-room's, which writes the configuration the engine runs."""
+SERVE_HELPERS = tuple(
+    VLLM_PACKAGE / "serve" / f"{name}.py" for name in ("flatshare_copy", "flatshare_jit", "flatshare_queue")
+)
+"""The modules the serve module installs from (the just-in-time schedule, the waiting queue, the CPU tier's load
+path), which serving.json pins beside it."""
 SCHEDULER_MODULE = "flatshare_make_room_scheduler"
 """The module build.py writes for make-room, which the serve module extends."""
 
@@ -879,6 +884,8 @@ SERVING_KEYS = {
     "jit_ns_per_pair": float,
     "jit_ns_per_context": float,
     "jit_mixed_ms": float,
+    "queue_max_wait_s": int,
+    "sm_load_programs": int,
     "max_num_batched_tokens": int,
     "long_prefill_token_threshold": int,
     "block_size": int,
@@ -958,6 +965,14 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
         raise ProfileError(f"{name}: jit_margin_ms must be 0 (off) or more")
     if negative := [f"jit_{key}" for key in JIT_STEP_COST if serve[f"jit_{key}"] < 0]:
         raise ProfileError(f"{name}: {', '.join(negative)} must be 0 or more")
+    if serve["queue_max_wait_s"] < 0:
+        raise ProfileError(f"{name}: queue_max_wait_s must be 0 (off) or more")
+    if serve["sm_load_programs"] < 0:
+        raise ProfileError(f"{name}: sm_load_programs must be 0 (off) or more")
+    if serve["sm_load_programs"] and not int(values["engine.cpu_bytes_to_use"]):
+        raise ProfileError(
+            f"{name}: sm_load_programs routes the CPU tier's loads, and the profile gives the engine no CPU tier"
+        )
     return {
         "profile": name,
         "node": values["profile.node"],
@@ -1020,6 +1035,12 @@ def serving_config(profile: dict, values: dict[str, str]) -> dict:
                 "margin_ms": serve["jit_margin_ms"],
                 "step_cost": {key: serve[f"jit_{key}"] for key in JIT_STEP_COST},
             },
+            # The waiting queue the serve module installs (flatshare_queue; vLLM's own at a bound of 0) and the CPU
+            # tier's load path (flatshare_copy; vLLM's choice at 0 programs).
+            "queue": {"max_wait_s": serve["queue_max_wait_s"]},
+            "copy": {"sm_load_programs": serve["sm_load_programs"]},
+            # The modules the serve module installs from, which the engine imports beside it.
+            "serve_modules_sha256": {path.name: sha256(path) for path in SERVE_HELPERS},
         },
         "patches": {
             patch: sha256(VLLM_PACKAGE / "make-room" / patch) for patch in make_room_patches()

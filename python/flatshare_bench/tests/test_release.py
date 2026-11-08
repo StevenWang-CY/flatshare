@@ -1167,6 +1167,8 @@ def test_a_release_prints_the_serving_profiles_configuration() -> None:
         "take_reservations true, decode_hold_tokens 48, retain_tokens 3584, retain_s 30, hint_hold_ms 400",
         "  just in time: the next batch 30 ms before the step in flight is due (step model step_ms 11.56, "
         "us_per_token 47.99, ns_per_pair 14.17, ns_per_context 429.3, mixed_ms 7.6)",
+        "  waiting queue: the agents by the prefill each has left net of the cache, any first after 120 s; "
+        "CPU tier's loads: SM copy kernel, 4 programs",
         "  scheduler flatshare_make_room_serve.AsyncScheduler over flatshare_make_room_scheduler f418fb10d4e5804d",
         "  voice: serve mode, 2 calls at once, microphone audio, each turn announced when the user stops speaking",
         "  gateway: at most 4 agents' sessions beside a node's calls",

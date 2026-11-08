@@ -1,11 +1,13 @@
-"""make-room as the box serves it: the make-room module's AsyncScheduler, unchanged, that says what the engine runs.
+"""make-room as the box serves it: the make-room module's AsyncScheduler, with what the profile installs, that says what
+the engine runs.
 
 The serving profile's variant, ``make-room-serve`` (deploy/phastform/variants), runs the engine with
 ``--scheduler-cls flatshare_make_room_serve.AsyncScheduler`` and this directory on PYTHONPATH beside the make-room
-module that build.py writes. The class adds nothing to the scheduling: its constructor runs make-room's, then, where
-FLATSHARE_ENGINE_EFFECTIVE names a file, writes the configuration the scheduler was built with to it, in the engine
-core's process: the scheduler's switches as it parsed them and its policy, step cap and pool, the model, its revisions
-and context, the KV connector, the vLLM version, and the SHA-256 of the scheduler module it extends and of this file.
+module that build.py writes. Its constructor runs make-room's, installs what the engine's additional config asks for
+(below), then, where FLATSHARE_ENGINE_EFFECTIVE names a file, writes the configuration the scheduler was built with to
+it, in the engine core's process: the scheduler's switches as it parsed them and its policy, step cap and pool, the
+model, its revisions and context, the KV connector, what it installed, the vLLM version, and the SHA-256 of the
+scheduler module it extends, of this file and of the modules it installs from.
 deploy/bin/serving-check compares that with the serving profile's serving.json, because a production box serves no
 /server_info (vLLM's development mode, the measurement drop-in's): the engine's own account of what it runs, read
 from inside it.
@@ -13,10 +15,16 @@ from inside it.
 The file is written whole or not at all (a temporary file renamed over it), and a write that fails fails the engine's
 start, which the check would fail anyway. Without FLATSHARE_ENGINE_EFFECTIVE nothing is written.
 
-One thing it adds beside the scheduling: where the engine's additional config holds ``flatshare_jit`` with a margin
-above 0 (the profile's jit_margin_ms and step-time model), its constructor installs flatshare_jit's just-in-time
-scheduling of the next batch on vLLM's engine core, before the core binds its step function, and the effective
-configuration records what it installed.
+What it installs, each where the engine's additional config asks for it, and each recorded in the effective
+configuration (off as the profile writes off, 0):
+- ``flatshare_jit`` with a margin above 0 (the profile's jit_margin_ms and step-time model): flatshare_jit's
+  just-in-time scheduling of the next batch on vLLM's engine core, before the core binds its step function.
+- ``flatshare_queue.max_wait_s`` above 0 (the profile's queue_max_wait_s): flatshare_queue's waiting queue, the agents
+  ordered by the prefill each has left net of what the GPU pool and the CPU tier hold, in place of first come first
+  served, which over an LRU tier recomputes nearly every agent's prompt under load; schedule() fixes its order at the
+  start of each step.
+- ``flatshare_copy.sm_load_programs`` above 0 (the profile's sm_load_programs): flatshare_copy's CPU-tier loads through
+  vLLM's SM copy kernel, so that a load does not hold a concurrent step's inputs on the copy engine.
 """
 
 from __future__ import annotations
@@ -28,9 +36,14 @@ import time
 from pathlib import Path
 from typing import Any
 
+import flatshare_copy
 import flatshare_jit
 import flatshare_make_room_scheduler as make_room
+import flatshare_queue
 import vllm
+
+HELPERS = (flatshare_copy, flatshare_jit, flatshare_queue)
+"""The modules this one installs from, whose SHA-256 the effective configuration gives beside this file's."""
 
 SCHEMA = 1
 """The effective configuration's format; deploy/bin/serving-check refuses another."""
@@ -79,6 +92,7 @@ def effective(scheduler: Any) -> dict[str, Any]:
         "scheduler_cls": f"{type(scheduler).__module__}.{type(scheduler).__qualname__}",
         "scheduler_module": {"name": make_room.__name__, "sha256": sha256(make_room.__file__)},
         "serve_module_sha256": sha256(__file__),
+        "serve_modules_sha256": {Path(module.__file__).name: sha256(module.__file__) for module in HELPERS},
         "model": {
             "model": model.model,
             "revision": model.revision,
@@ -129,6 +143,15 @@ def effective(scheduler: Any) -> dict[str, Any]:
         },
         # What the constructor installed on the engine core: off is a margin of 0, the profile's own way to say it.
         "jit": jit_settings(config) or {"margin_ms": 0, "step_cost": None},
+        # The waiting queue the constructor installed (vLLM's own is a bound of 0) and the CPU tier's load path it
+        # installed (vLLM's choice is 0 programs), as installed, not as asked.
+        "queue": {
+            "max_wait_s": scheduler.waiting.max_wait_s
+            if isinstance(scheduler.waiting, flatshare_queue.CacheAwareQueue)
+            else 0,
+            "waiting_queue": f"{type(scheduler.waiting).__module__}.{type(scheduler.waiting).__qualname__}",
+        },
+        "copy": scheduler.flatshare_copy or {"sm_load_programs": 0},
         "additional_config": _plain(dict(config.additional_config)),
     }
 
@@ -146,7 +169,8 @@ def write(path: str, report: dict[str, Any]) -> None:
 
 
 class AsyncScheduler(make_room.AsyncScheduler):
-    """make-room's AsyncScheduler, which writes the configuration it runs with once it is built."""
+    """make-room's AsyncScheduler with what the additional config installs, which writes the configuration it runs
+    with once it is built."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -155,5 +179,16 @@ class AsyncScheduler(make_room.AsyncScheduler):
 
             cost = flatshare_jit.StepCost(**jit["step_cost"])
             flatshare_jit.install(core.EngineCore, jit["margin_ms"] / 1e3, cost)
+        if max_wait_s := flatshare_queue.max_wait_s(self.vllm_config):
+            # Before any request arrives: the queue make-room built is empty.
+            self.waiting = flatshare_queue.CacheAwareQueue(self, max_wait_s)
+        self.flatshare_copy = None
+        if programs := flatshare_copy.programs(self.vllm_config):
+            self.flatshare_copy = flatshare_copy.install(programs)
         if path := os.environ.get(ENV):
             write(path, effective(self))
+
+    def schedule(self, *args: Any, **kwargs: Any) -> Any:
+        if isinstance(self.waiting, flatshare_queue.CacheAwareQueue):
+            self.waiting.begin_step()
+        return super().schedule(*args, **kwargs)

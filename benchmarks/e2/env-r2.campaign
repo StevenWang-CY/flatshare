@@ -1,0 +1,14 @@
+# Version 1.24's envelope rounds, round 2 of 3, on Gray, the agents' seed 22: voice alone for the round's SLO (its p95
+# plus 250 ms), the serving profile through version 1.23 at its envelope (4 session trees), and the same with the serve
+# module's waiting queue and the CPU tier's loads through the SM copy kernel at 12 and 24 trees (the queue-disc arms). A
+# configuration qualifies when at most 5% of its replies, pooled over the three rounds, are over their round's SLO, and
+# the order rotates from round to round (benchmarks/quality/RESOURCE-GATE.md). benchmarks/results/2026-11-08-envelope
+# holds the record.
+#   FLATSHARE_GPU=gray benchmarks/e2/campaign.sh benchmarks/e2/env-r2.campaign
+
+agents-seed 22
+
+arms/queue-disc-s24.toml
+arms/w5-a1-voice.toml
+arms/opt-disc-hold-s4.toml
+arms/queue-disc-s12.toml

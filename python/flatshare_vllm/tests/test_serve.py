@@ -31,6 +31,8 @@ SWITCHES = BOX["engine"]["make_room"]
 """The switches it serves: 2 preemptions a step, the budget cap with a 48-token window, no reserve, the agents'
 reservations taken and their decodes held from a call's first 48 tokens, the calls' prefixes retained within 3,584
 tokens for 30 s, and a 400 ms hold for an announced turn."""
+HELPERS = ("flatshare_copy", "flatshare_jit", "flatshare_queue")
+"""The modules the serve module installs from."""
 SUITE_SWITCHES = SWITCHES | {"retain_tokens": 8 * T.BLOCK}
 """The same on the suite's pools of 48 and 64 blocks, which hold a request of max_model_len (24 blocks) beside a
 retention of 8 blocks, not of the box's 224."""
@@ -42,9 +44,8 @@ def modules(tmp_path_factory):
     build = TR.load(TR.PACKAGE / "build.py", "flatshare_serve_build")
     path = build.build("make-room", tmp_path_factory.mktemp("make-room"), source_tree=True)
     make_room = TR.load(path, "flatshare_make_room_scheduler")
-    TR.load(
-        SERVE.parent / "flatshare_jit.py", "flatshare_jit"
-    )  # beside it on the engine's PYTHONPATH
+    for helper in HELPERS:  # beside it on the engine's PYTHONPATH
+        TR.load(SERVE.parent / f"{helper}.py", helper)
     return make_room, TR.load(SERVE, "flatshare_make_room_serve")
 
 
@@ -82,14 +83,16 @@ def scheduler(cls, model, num_blocks=48, jit=JIT):
 @pytest.mark.parametrize("workload", ["suite", "pressure"])
 def test_it_schedules_as_make_rooms_async_scheduler(modules, model, workload, num_blocks):
     make_room, serve = modules
-    # The class defines its constructor and nothing else: every other method is make-room's.
+    # The class defines its constructor and schedule(), which fixes flatshare_queue's order where the profile installs
+    # it and is make-room's otherwise: every other method is make-room's. Without flatshare_queue and flatshare_copy,
+    # as here, it schedules as make-room's step for step.
     assert serve.AsyncScheduler.__mro__[1] is make_room.AsyncScheduler
     defined = [
         name
         for name, value in vars(serve.AsyncScheduler).items()
         if callable(value) or isinstance(value, staticmethod | classmethod | property)
     ]
-    assert defined == ["__init__"]
+    assert defined == ["__init__", "schedule"]
     requests = {"suite": T.workload, "pressure": TR.pressure_workload}[workload]
     seen = [
         TR.trace(scheduler(cls, model, num_blocks), requests(), sync=False)
@@ -155,6 +158,12 @@ def test_it_writes_the_configuration_it_was_built_with(modules, written, tmp_pat
         "sha256": sha256(make_room.__file__),
     }
     assert written["serve_module_sha256"] == sha256(SERVE) == BOX["engine"]["serve_module_sha256"]
+    assert written["serve_modules_sha256"] == BOX["engine"]["serve_modules_sha256"] == {
+        f"{helper}.py": sha256(SERVE.parent / f"{helper}.py") for helper in HELPERS
+    }
+    # The suite's scheduler asks for neither: vLLM's queue, vLLM's copy.
+    assert written["queue"] == {"max_wait_s": 0, "waiting_queue": "vllm.v1.core.sched.request_queue.PriorityRequestQueue"}
+    assert written["copy"] == {"sm_load_programs": 0}
     assert written["make_room"] == SUITE_SWITCHES | {"reserve_blocks": 0, "retain_blocks": 8}
     assert written["jit"] == JIT
     sched = written["scheduler"]
