@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.23, 5 November 2026. Code, records and figures at tag
-[v1.23](https://github.com/StevenWang-CY/flatshare/tree/v1.23) of
+Flatshare technical report, version 1.24, 8 November 2026. Code, records and figures at tag
+[v1.24](https://github.com/StevenWang-CY/flatshare/tree/v1.24) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -40,6 +40,13 @@ whole reply from 1,226 to 722 ms. In five rounds the first four put 5.4% of the 
 with two callers, against 18.6% without them, and fewer in every round of four scenarios, for 1.6–4.9% of the agents'
 token rate. In two more the fifth, which version 1.17 serves, cut the replies over the SLO from 55 of 720 to 16, for
 another 3.8% of the agents' token rate.
+
+Beside 24 agent sessions, first come first served over the LRU CPU tier recomputes 89.5% of the prompt tokens, nearly all of them the agents':
+each request waits longer than the tier keeps its session's prefix. Version 1.24 orders the agents' waiting queue by the
+prefill each has left net of what is cached, and loads the tier through the SM copy kernel, since on PCIe 3.0 x8 a load
+on the copy engine holds a concurrent step's inputs until it ends. In three rounds the card then qualifies beside both
+calls with 24 sessions, 3 of 177 replies over the SLO, at 2.2 times the agents' token rate of its envelope of four
+before.
 
 ## Contents
 
@@ -1235,6 +1242,67 @@ What was measured and not adopted: synchronous scheduling, whose shorter load pa
 the agents −23%) and costs the agents 41–43% through Triton; and a second API server, which changes nothing
 ([the engine points](../benchmarks/results/2026-11-01-engine-points/README.md#what-was-not)).
 
+### 6.11 Ordering the agents by what they have left raises the card's envelope from 4 sessions to 24
+
+Beside 24 agent sessions the CPU tier stops working as a cache. Each session's next turn is its context so far plus a
+little, and the waiting queue takes requests in arrival order. Under load a request waits longer than the 20 GiB tier,
+which evicts the least recently used chunks, keeps its session's prefix, so it computes the whole context again, which
+makes the next request wait longer: the tier's cyclic worst case. On Gray 89.5% of the prompt tokens, nearly all of them the agents', were
+computed at their first schedule, nearly all of them computed a turn before, and the agents' time to first token was
+77 s at the median. A 30 GiB tier does not leave the cycle (68.0% computed, the agents' token rate 7% lower).
+
+Version 1.24's serve module orders the waiting queue within a priority by the prefill each request has left, net of what
+the GPU pool and the CPU tier hold now (`queue_max_wait_s` 120). The sessions whose prefix is still cached go first,
+which keeps it cached. A request that has waited 120 s goes ahead of the rest, the longest waiting first, so no long
+prompt starves; the rounds measured that bound. The calls are priority 0 and
+keep their arrival order. Each step refreshes at most two requests' counts, and none while a call waits or runs, since a
+count costs the host 1.0–2.5 ms at 20–30k tokens and every one of 24 at once 24–60 ms. The count of the tier's part is vLLM's own lookup: the chunks from the one
+the GPU hit ends in up to the first miss.
+
+The queue alone took the agents' token rate on Gray from 3,173 to 7,270 a second and their median time to first token to
+4.5 s, with 20% of the prompt tokens computed, but put the calls' V2V p95 at 2,025 ms against 1,843. It loads far more
+from the tier, 307 GB in a point against 2.2, and both boxes' cards are on PCIe 3.0 x8 links.
+
+On the bare card a step's small input copy waits for a concurrent tier load on the copy engine to end, up to 192–209 ms beside a 1.46 GB load, at
+any page size and from any thread. vLLM's own Triton kernel for small pages moves the same load at 6.1 GB/s with 4
+programs and leaves the step beside it at 6.1 ms against 5.7 ms alone. The serve module sends the tier's loads through
+it (`sm_load_programs` 4), its size threshold lifted for the box's 64 KiB pages. With both, the agents' token rate rose
+by 150–154% against the same window's control on one sample of the agents, and the V2V p95, 1,924 and 1,927 ms, was
+9–12 ms above the highest of the three windows' controls (1,835–1,915 ms) ([the record](../benchmarks/results/2026-11-08-envelope/README.md)).
+
+Three rounds then measured the card's envelope beside both calls by the resource gate's rule, Phastform, Gray and
+Phastform on new samples of the agents (Table 11). The serving profile through version 1.23 ran at its envelope of 4
+sessions, and the queue and the copy at 12 and 24.
+
+**Table 11. The card's envelope beside both calls, three rounds.** Each reply is held to its round's SLO, voice alone's
+p95 plus 250 ms, and the replies over it are pooled over the rounds; a configuration qualifies at 5% or fewer. Medians
+over the rounds otherwise; the agents' tokens a second over the calls' first 240 s.
+
+| Configuration | Agents' sessions | Replies over the SLO | V2V p95 | Agents' tokens/s | Agents' TTFT p50 / p99 |
+|---|---:|---:|---:|---:|---:|
+| The serving profile through v1.23 | 4 | 4 / 177 (2.3%) | 1,934 ms | 3,278 | 0.3 / 8 s |
+| + the queue and the copy | 12 | 4 / 177 (2.3%) | 1,905 ms | 6,906 | 2.3 / 24 s |
+| + the queue and the copy | **24** | **3 / 177 (1.7%)** | 1,872 ms | **7,253** | 4.3 / 133 s |
+
+Beside 24 sessions the queue and the copy qualify, with 2.2 times the agents' token rate of the profile at 4, so version
+1.24 sets the envelope, `max_agents`, to 24. The cost is the agents' tail: at 24 sessions a request can wait out the
+120 s bound, and their p99 time to first token is 133 s against 8 s beside 4 sessions and 24 s beside 12. Beside 24 their
+token rate also varied more between rounds, 4,490–8,094 a second against 5,949–7,090 beside 12, for 5% more at the
+median. A gateway node may hold fewer than the profile's bound.
+
+A review of the trial's code before these rounds found that its count of the tier's part bisected the chunks, on the
+assumption that the tier holds a prefix's head whenever it holds its tail. vLLM's LRU does not keep that: a turn that
+finds part of its prefix on the GPU refreshes only the chunks it loads or stores, so a hole opens in the prefix's middle
+while its tail stays, and the bisection counted to the tail's end. The rounds above ran the fixed count. On the trial's
+round with the same sample and card, the fixed count put 3 replies over the SLO beside 24 sessions against 5, for 4.8%
+more of the agents' token rate.
+
+What was measured and not adopted: shorter endpointing (VAD silence 0.2 s, commit delay 0.65 s) cut V2V by about 300 ms
+at p50 and p95 beside the agents, but only the benchmark's fixed endpointing measures it, and the serving mode's
+end-of-turn model was not; Parakeet TDT 0.6B v3 in place of Whisper cut the transcript by 26–51 ms and V2V by 44–106 ms
+beside the agents with a lower word error rate, but needs a packaged plugin; flatshare_jit's early finish, which never
+fired on Model Runner V2, measured no gain when made to.
+
 ## 7. Operating the change
 
 **The configuration.** The change runs on vLLM with priority scheduling, prefix caching, and a CPU KV tier about four
@@ -1253,7 +1321,8 @@ need the budget cap, and make-room refuses them without it; the announced turn h
 each is off by default.
 
 **Two cards.** The arrangement to deploy on two cards is consolidation with a warm spare (§6.8). The first card carries
-both calls and at most four agent sessions, the envelope measured beside them, and the second runs agents on the same
+both calls and at most four agent sessions, the envelope measured beside them through version 1.23 (24 from version
+1.24, §6.11), and the second runs agents on the same
 engine with its speech servers resident, so that it can take the calls. The gateway places each call on the first card
 with a free call slot, in its configured order, and each agent session on the card with the fewest, up to each card's
 bound (`max_agents`); a session beyond every bound gets 503 `no_agent_slot` and tries again with its next request.
@@ -1404,7 +1473,15 @@ agents' prefill altogether (§6.6).
 measured the consolidated card at 2, 4, 8, 12 and 24 sessions only, so the envelope lies between four and eight sessions
 with the configuration to deploy and between two and four with tuned vLLM. Each card's part of an arrangement ran as a
 run of its own, and the sums assume that one card's work does not slow the other's, as with the cards on two hosts that
-share only the control plane.
+share only the control plane. The two-card rounds ran version 1.23; version 1.24's envelope of 24 sessions (§6.11) was
+measured on one card beside both calls, at 12 and 24 sessions only, beside version 1.23's configuration at 4, and no
+two-card round ran it.
+
+**The queue's agents.** Version 1.24's waiting queue serves the agents whose prefixes are cached first, which is what
+raises their token rate, and a request that keeps losing that order waits out the 120 s bound: beside 24 sessions the
+agents' time to first token is 4.3 s at the median and 133 s at p99. The rounds count tokens, not agents' tasks done, so
+whether that tail matters to an agent's task is unmeasured; a deployment can hold a card's sessions below the profile's
+bound.
 
 At the envelope the agents' work is the traces' own pace, so the background measure there counts the load offered, not
 what the shared card could do. Their window, the calls' first 240 s a minute into the replay, holds its start, when
@@ -1922,6 +1999,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.24 | 2026-11-08 | Added §6.11, the agents' waiting queue ordered by the prefill each has left net of what is cached and the CPU tier loaded through the SM copy kernel, which raise the card's envelope beside both calls from 4 sessions to 24 in three rounds (Table 11); with the abstract's last paragraph, §7's two cards, §9's two cards and the queue's agents |
 | 1.20 | 2026-11-03 | §3.2 and Algorithm 2: the budget cap never holds a prefill whose encoder outputs are cached, which only its progress frees (#65283, after a review found the stall) |
 | 1.23 | 2026-11-05 | §3.1, §3.2, Algorithms 1 and 2 and §4: the pull requests' revision of 5 November, after two reviews found stalls: every holder bounded by the steps it computes nothing, the KV preemption's gate only on a prefill that gets a chunk, and the search for stalls of that kind |
 | 1.21 | 2026-11-04 | §3.1, §3.2, Algorithms 1 and 2, §3.4 and §4: the pull requests' revision of 3 November 2026, after a fresh review of both: the budget cap's bounds for a request that is not admitted, a request with one token left and a request that holds KV blocks, a held request's KV load, a step in flight counted as one token, the narrower encoder exemption, and the KV preemption's bounded hit and room |

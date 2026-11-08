@@ -9,7 +9,7 @@
       "name": "flatshare_make_room_scheduler",
       "sha256": "f418fb10d4e5804de4e268a32b966ad09c0a9ff2bd6533a8d07d4acd5898d88b"
     },
-    "serve_module_sha256": "7824a708dddca2132bd84a286e7efb695fde7f32970c050a2cc2d4a266ced893",
+    "serve_module_sha256": "456ac7740f002b4c222793a1bccc9f10f020ec053f4a115c8ce4cbfa205cebee",
     "model": {
       "model": "Qwen/Qwen3-4B-Instruct-2507-FP8",
       "revision": "8591804019c8b22094c3b5b4454e0edc05dffc98",
@@ -68,9 +68,9 @@
       "sm_load_programs": 4
     },
     "serve_modules_sha256": {
-      "flatshare_copy.py": "8fe56ad015877ba0ee4cd39c1ca3f3b59754388d1f973e7fc02577c06208273f",
-      "flatshare_jit.py": "b4093ef5cbbc9316af4876279e34417d851ad571e999478e1fca8d27c7fa474d",
-      "flatshare_queue.py": "b5962fd60258d4f51b4fce0f8f983e9dc2a9621bad6ad05026a0582e702dabf4"
+      "flatshare_copy.py": "e826e6471019bca563c8af1b8929195bb1409b65d768ff06eb4e21167c2d9bb2",
+      "flatshare_jit.py": "beb2553def52a4ef167fcb3b0bcd7c29b87615046edaf4ec0737808da942fac3",
+      "flatshare_queue.py": "65aaf9f4f3466e491df74439dedf797f31bf2345ab2031ec5617e783cbea63ec"
     }
   },
   "patches": {
@@ -85,6 +85,6 @@
     "turn_hints": true
   },
   "gateway": {
-    "max_agents": 4
+    "max_agents": 24
   }
 }

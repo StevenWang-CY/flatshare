@@ -38,9 +38,10 @@ The serving profile's engine, 256 tokens a step without a per-request threshold,
 | One card beside 24 sessions, five rounds on new samples | 24 | 44 / 295 (14.9%) | 3,067 | 85 / 120 s |
 | v1.14's engine beside 24 sessions, five more rounds on new samples | 24 | 55 / 295 (18.6%) | 3,010 | 101 / 125 s |
 | **The same with v1.15's first four additions** | 24 | 16 / 295 (5.4%) | 2,933 | 105 / 126 s |
+| **One card with version 1.24's queue and SM copy**, three rounds on new samples | 24 | 3 / 177 (1.7%) | 7,253 | 4.3 / 133 s |
 
 - **The soak's day.** Its worst hour put 5.5% of its replies over the SLO, no call failed and nothing restarted. The agents ran at 9,300 tokens a second in its first hour, where the replay resumes every session at once and the rounds' windows sit, and at 582–5,402 in each hour after, at their traces' own pace.
-- **Beside 24 sessions**, past the card's envelope, 256-token steps put 44 of 295 replies over each round's SLO against 94 at 512 tokens a step with a 256-token threshold, at 7% less of the agents' token rate, and tuned vLLM put 261 over ([the step cap](BENCHMARKS.md#the-step-cap-screened-and-confirmed-sw-rg)).
+- **Beside 24 sessions**, past the card's envelope through version 1.23, 256-token steps put 44 of 295 replies over each round's SLO against 94 at 512 tokens a step with a 256-token threshold, at 7% less of the agents' token rate, and tuned vLLM put 261 over ([the step cap](BENCHMARKS.md#the-step-cap-screened-and-confirmed-sw-rg)).
 - **v1.15's engine.** In five more rounds on new samples, its first four additions put 16 of 295 replies over each round's SLO beside 24 sessions with two callers, against 55 for v1.14's engine, and 38 of 595 and 53 of 910 with four and six callers, against 110 and 164, for 1.6–4.9% of the agents' token rate ([the rounds](../benchmarks/results/2026-11-02-opt-rounds/README.md)).
 - **v1.17's engine.** In two follow-up rounds on new samples, the decode hold put 16 of 720 replies over each round's SLO beside 24 sessions with two, four and six callers, against 55 for v1.15's first four additions, for 3.8% of the agents' token rate at the median ([the rounds](../benchmarks/results/2026-11-02-opt-rounds/README.md#the-decode-hold-and-speculative-decoding)).
 
@@ -61,7 +62,7 @@ These rows ran the box's step cap, 512 tokens a step with a 256-token threshold;
 
 On stock vLLM the shared GPU leaves the voice p95 at over five times its SLO: a waiting voice turn cannot take KV from running agents ([vLLM #40004](https://github.com/vllm-project/vllm/issues/40004)), and once it runs, agent prefill chunks share every step of its reply.
 
-With the configuration to deploy the tail comes within about 0.2 s of the SLO (202 ms at the median), the agents keep 97% of their token rate over the calls' first 240 s, and their TTFT p99 stays within the runs' spread. The SLO is still missed: it allows 5% of the replies over its threshold, and 32% of its replies are over it, against 90% on tuned vLLM. A deployment that must meet it admits less background work beside the calls: on the serving profile, four of this scenario's sessions beside two calls, the envelope that [Two cards](#two-cards) gives. Without the change, a card that carries both calls meets the SLO beside at most two of these sessions ([Two cards](#two-cards)).
+With the configuration to deploy the tail comes within about 0.2 s of the SLO (202 ms at the median), the agents keep 97% of their token rate over the calls' first 240 s, and their TTFT p99 stays within the runs' spread. The SLO is still missed: it allows 5% of the replies over its threshold, and 32% of its replies are over it, against 90% on tuned vLLM. A deployment that must meet it admits less background work beside the calls: on the serving profile, 24 of this scenario's sessions beside two calls from version 1.24 and four through 1.23, the envelopes that [the envelope from version 1.24](#the-envelope-from-version-124) and [Two cards](#two-cards) give. Without the change, a card that carries both calls meets the SLO beside at most two of these sessions ([Two cards](#two-cards)).
 
 On an A100 SXM4 80 GB held to the box's pool, model and agents, the same configuration took the voice p95 from 4,986 to 1,634 ms, under that card's SLO of 1,669 ms in each of five rounds, and the agents' throughput held ([the A100 run](BENCHMARKS.md#what-it-measured-2026-10-26)).
 
@@ -225,6 +226,18 @@ The envelope is the most agents' sessions beside both calls at which a card qual
 
 At 500 ms the card qualifies with the configuration to deploy at every count measured, up to 24 sessions, and with tuned vLLM still only at two.
 
+### The envelope from version 1.24
+
+Version 1.24's serve module orders the agents' waiting queue by the prefill each request has left, net of what the GPU pool and the CPU tier hold, and loads the CPU tier through the SM copy kernel (`queue_max_wait_s = 120`, `sm_load_programs = 4`; [the report, §6.11](REPORT.md#611-ordering-the-agents-by-what-they-have-left-raises-the-cards-envelope-from-4-sessions-to-24)). Three rounds of the card beside both calls, by the same gate ([the record](../benchmarks/results/2026-11-08-envelope/README.md)):
+
+| One card beside both calls | Agents' sessions | Replies over the SLO | Agents' tokens/s, first 240 s | Agents' TTFT p50 / p99 |
+|---|---:|---:|---:|---:|
+| The serving profile through version 1.23 | 4 | 4 / 177 (2.3%) | 3,278 | 0.3 / 8 s |
+| Version 1.24's | 12 | 4 / 177 (2.3%) | 6,906 | 2.3 / 24 s |
+| **Version 1.24's** | **24** | **3 / 177 (1.7%)** | **7,253** | 4.3 / 133 s |
+
+The card qualifies beside 24 sessions, the most the rounds measured, and the profile's `max_agents` is 24 from version 1.24. Its cost is the agents' tail: a request can wait out the queue's 120 s bound. And beside 24 the agents' token rate varied more between rounds (4,490–8,094 against 5,949–7,090 at 12), for 5% more at the median. A node may hold fewer than the profile's bound: at 12 the agents' p99 is 24 s. The two-card arrangement above was measured at version 1.23, four sessions beside the calls.
+
 ### Setting it up
 
 In `gateway.toml` ([`deploy/cyan/gateway.example.toml`](../deploy/cyan/gateway.example.toml) has it in its `[[nodes]]` blocks):
@@ -232,12 +245,12 @@ In `gateway.toml` ([`deploy/cyan/gateway.example.toml`](../deploy/cyan/gateway.e
 | Key | Value | Why |
 |---|---|---|
 | `[[nodes]]` | an entry per card, both with the realtime and background roles and `max_calls = 2` | Each card can carry both calls, so that the spare can take them |
-| `max_agents` | 4 on the first, 12 on the spare | The envelope beside both calls, and the spare's busiest count |
+| `max_agents` | 4 on the first, 12 on the spare | The first card's count in the two-card rounds, the envelope through version 1.23 (up to 24 from 1.24, [above](#the-envelope-from-version-124)), and the spare's busiest count |
 | `[placement] calls` | `"fill"` | Each call goes on the first node with a free call slot in the file's order |
 
 A node with both roles must say how many agents' sessions it takes beside its calls, a count or `"unbounded"`: the gateway refuses to start without it.
 
-Each release on cyan holds the running gateway's nodes to the serving profile's envelope (`serving-check --nodes`): every node has `max_calls = 2`, the worker's calls, the first at most four agents' sessions beside them, and a covering node at most four agents' requests in flight; a release that finds otherwise fails and switches back ([Releasing a change](#releasing-a-change)). The runbook's [Two GPU nodes](../ops/RUNBOOK.md#two-gpu-nodes) says what each key does, and how the nodes' health, placement and failover work.
+Each release on cyan holds the running gateway's nodes to the serving profile's envelope (`serving-check --nodes`): every node has `max_calls = 2`, the worker's calls, the first at most the profile's `max_agents` sessions beside them (24 from version 1.24), and a covering node at most as many agents' requests in flight; a release that finds otherwise fails and switches back ([Releasing a change](#releasing-a-change)). The runbook's [Two GPU nodes](../ops/RUNBOOK.md#two-gpu-nodes) says what each key does, and how the nodes' health, placement and failover work.
 
 ## What not to deploy
 
@@ -295,6 +308,8 @@ It verifies the release before it switches (the files, each environment's import
 | Many calls at once | The budget cap holds lower-priority prefill while any realtime request's first tokens are due, so replies that overlap hold it continuously | Watch the engine's log of what it held ([below](#many-calls-at-once)) |
 | A KV load that never completes | It holds lower-priority prefill for its first `budget_cap_tokens` steps, then nothing | — |
 | A request that computes nothing, such as a KV load that is done behind a request whose allocation fails | It holds lower-priority prefill for at most `budget_cap_tokens` steps in a row, so that the prefill it may be waiting for can run | — |
+| An agent's long prompt beside agents whose prefixes are cached | The waiting queue takes the agents with the least prefill left first, so the long prompt waits, until it has waited 120 s and goes ahead of the rest | The agents' time to first token at p99 grows with the sessions: 133 s beside 24 ([the envelope](#the-envelope-from-version-124)) |
+| The SM copy kernel cannot take the CPU tier's loads (host memory not pinned, no Triton, pages not of whole words) | The engine refuses to start: the serve module installs it at the scheduler's construction and checks its bytes first | Set `sm_load_programs = 0` for vLLM's copy engine, which holds a step beside each load on PCIe 3.0 x8 |
 | The engine dies (an out-of-memory kill, a crash) | Every stream it serves breaks at once, and voice is down for all of it: one GPU node has no standby | systemd restarts it: a request succeeded 106.2 s after a kill ([below](#the-engine-dies)) |
 | The first of two cards fails | Its calls move to the spare by their next turn; the spare's agents wait while it carries any call | The moved calls stay on the spare until they end ([below](#the-first-of-two-cards-fails)) |
 | The gateway restarts | A reload refuses nothing and makes no request wait; background streams are cut after 5 s | Clients may send the cut background requests again ([below](#the-gateway-restarts)) |

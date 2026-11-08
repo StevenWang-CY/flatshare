@@ -1,0 +1,12 @@
+# opt2_dma_probe.py on Gray's bare card, 2026-11-07 (UTC), the engine's own environment (vLLM 0.32.0).
+17:10:21Z
+alone: steps before p50 6.8 ms; during n=40 p50/p95/max 6.8/9.6/10.1 ms; after p50 6.8
+load 1.46 GB, one batch: steps before p50 6.5 ms; during n=1 p50/p95/max 79.1/79.1/79.1 ms; after p50 6.8; load 1.46 GB in 1 batch(es) of 32 KiB pages: 299 ms, 4.9 GB/s
+load 3.4 GB, one batch: steps before p50 5.8 ms; during n=1 p50/p95/max 82.4/82.4/82.4 ms; after p50 6.0; load 3.40 GB in 1 batch(es) of 32 KiB pages: 520 ms, 6.5 GB/s
+load 1.46 GB, 23 batches of 64 MB: steps before p50 6.0 ms; during n=1 p50/p95/max 125.7/125.7/125.7 ms; after p50 5.9; load 1.46 GB in 23 batch(es) of 32 KiB pages: 217 ms, 6.7 GB/s
+load 1.46 GB, triton 16 KiB pages: steps before p50 5.9 ms; during n=11 p50/p95/max 6.7/7.9/7.9 ms; after p50 7.8; load 1.46 GB in 1 batch(es) of 16 KiB pages: 2478 ms, 0.6 GB/s
+alone again: steps before p50 6.8 ms; during n=40 p50/p95/max 6.9/9.6/10.3 ms; after p50 6.8
+NVIDIA GeForce RTX 5060 Ti max memory 5.4969940185546875 GiB
+3, 8
+17:10:41Z
+exit 0

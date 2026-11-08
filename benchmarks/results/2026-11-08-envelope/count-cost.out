@@ -1,0 +1,32 @@
+# python/flatshare_vllm/tests/bench_queue_count.py on peacock (a shared CPU host), 2026-11-08, vLLM 0.32.0's scheduler on CPU
+# torch: one count of a waiting request's cached tokens, and all 24 at once in one begin_step, 24 requests waiting on one
+# prefix of BLOCKS 16-token blocks held by the GPU pool or by a stand-in CPU tier. Four runs; the first was slower than the
+# other three.
+# run 1
+blocks 250, held on the gpu: one count 0.51 ms; all 24 in one step 12.3 ms
+blocks 250, held on the tier: one count 0.16 ms; all 24 in one step 3.6 ms
+blocks 1250, held on the gpu: one count 2.50 ms; all 24 in one step 60.3 ms
+blocks 1250, held on the tier: one count 0.42 ms; all 24 in one step 17.2 ms
+blocks 1875, held on the gpu: one count 1.69 ms; all 24 in one step 41.3 ms
+blocks 1875, held on the tier: one count 0.46 ms; all 24 in one step 10.3 ms
+# run 2
+blocks 250, held on the gpu: one count 0.21 ms; all 24 in one step 5.0 ms
+blocks 250, held on the tier: one count 0.06 ms; all 24 in one step 1.4 ms
+blocks 1250, held on the gpu: one count 1.05 ms; all 24 in one step 24.7 ms
+blocks 1250, held on the tier: one count 0.31 ms; all 24 in one step 6.8 ms
+blocks 1875, held on the gpu: one count 1.54 ms; all 24 in one step 36.9 ms
+blocks 1875, held on the tier: one count 0.46 ms; all 24 in one step 10.2 ms
+# run 3
+blocks 250, held on the gpu: one count 0.22 ms; all 24 in one step 5.8 ms
+blocks 250, held on the tier: one count 0.07 ms; all 24 in one step 1.5 ms
+blocks 1250, held on the gpu: one count 1.05 ms; all 24 in one step 25.1 ms
+blocks 1250, held on the tier: one count 0.30 ms; all 24 in one step 6.7 ms
+blocks 1875, held on the gpu: one count 1.52 ms; all 24 in one step 37.0 ms
+blocks 1875, held on the tier: one count 0.46 ms; all 24 in one step 10.1 ms
+# run 4
+blocks 250, held on the gpu: one count 0.21 ms; all 24 in one step 4.9 ms
+blocks 250, held on the tier: one count 0.06 ms; all 24 in one step 1.6 ms
+blocks 1250, held on the gpu: one count 1.02 ms; all 24 in one step 24.1 ms
+blocks 1250, held on the tier: one count 0.31 ms; all 24 in one step 6.8 ms
+blocks 1875, held on the gpu: one count 1.52 ms; all 24 in one step 36.7 ms
+blocks 1875, held on the tier: one count 0.46 ms; all 24 in one step 10.1 ms

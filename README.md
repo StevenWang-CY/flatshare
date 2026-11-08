@@ -55,6 +55,10 @@ Further rounds measure the deployment as it runs:
   ([§6.10](docs/REPORT.md#610-the-serving-engines-additions-cut-the-replies-over-the-slo-by-more-than-half)).
 - **The agents' decodes held for a reply's first 48 tokens** (v1.17) put 16 of 720 replies over the SLO in two more
   rounds, against 55 without the hold, for another 3.8% of the agents' token rate.
+- **The agents' waiting queue ordered by what each has left to compute, with the CPU tier loaded through the SM copy
+  kernel** (v1.24), raised the card's envelope beside both calls from 4 agent sessions to 24: 3 of 177 replies over the
+  SLO in three rounds, at 2.2 times the agents' token rate, for a p99 time to first token of 133 s
+  ([§6.11](docs/REPORT.md#611-ordering-the-agents-by-what-they-have-left-raises-the-cards-envelope-from-4-sessions-to-24)).
 - **On an A100** at the same KV pool and 512-token steps, the configuration to deploy takes the p95 from 4.99 s to
   1.63 s, under that card's SLO in each of five rounds ([§6.7](docs/REPORT.md#67-the-rules-carry-to-an-a100)).
 - **On two RTX 5060 Ti cards**, both calls and four agent sessions on one card and agents alone on the other did 34%
@@ -347,7 +351,7 @@ If you use Flatshare or its measurements, please cite the repository ([CITATION.
   author  = {Wang, Chuyue},
   title   = {Flatshare},
   year    = {2026},
-  version = {1.23.0},
+  version = {1.24.0},
   url     = {https://github.com/StevenWang-CY/flatshare}
 }
 ```

@@ -5,6 +5,30 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.24](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.24) (2026-11-08): the card's envelope from 4 agent sessions to 24
+
+Beside 24 agent sessions, first come first served over the LRU CPU tier recomputed 89.5% of the prompt tokens, nearly all of them the agents':
+each request waited longer than the tier kept its session's prefix. The serve module now orders the agents' waiting
+queue by what each has left to compute, and loads the tier through vLLM's SM copy kernel. In three rounds on new samples
+the card qualifies beside both calls with 24 sessions, where the profile through v1.23 qualified at four
+([the record](benchmarks/results/2026-11-08-envelope/README.md); [REPORT §6.11](docs/REPORT.md#611-ordering-the-agents-by-what-they-have-left-raises-the-cards-envelope-from-4-sessions-to-24)).
+
+- **The cache-aware queue** (`queue_max_wait_s = 120`, `serve/flatshare_queue.py`): within a priority, the waiting
+  request with the least prefill left, net of what the GPU pool and the CPU tier hold, goes first. One that has waited
+  120 s goes ahead of the rest, and the calls keep their arrival order. Each step refreshes at most two counts, and none
+  beside a call. The tier's part is counted as vLLM's own lookup counts it.
+- **The SM copy** (`sm_load_programs = 4`, `serve/flatshare_copy.py`): on the box's PCIe 3.0 x8 links, a CPU-tier load on
+  the copy engine holds a concurrent step's inputs until the load ends, about 200 ms per 1.46 GB. The tier's loads now go
+  through vLLM's own Triton kernel, its size threshold lifted, which moves 6.1 GB/s and leaves the step alone. Both of
+  the kernel's specializations are compiled and checked before the first load.
+- **The envelope** (`max_agents = 24`): 3 of 177 replies over the SLO beside 24 sessions and 4 of 177 beside 12, at 7,253
+  and 6,906 agents' tokens a second against 3,278 at four. The agents' TTFT p99 is 133 s at 24 sessions against 24 s at
+  12, so a node may hold fewer.
+- **serving.json** pins the modules the serve module installs from (flatshare_jit, flatshare_queue, flatshare_copy)
+  beside the serve module, and the effective configuration records what was installed.
+- **flatshare_jit's early finish** never fired on Model Runner V2, the box's runner, which names its event otherwise.
+  Made to fire, it measured no gain, so its docstring says so and the behaviour stays as measured.
+
 ## [v1.23](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.23) (2026-11-05): the pull requests' revision of 5 November
 
 A review of #65283 and then a fresh one of both found stalls on the real scheduler, where a request that waits for what

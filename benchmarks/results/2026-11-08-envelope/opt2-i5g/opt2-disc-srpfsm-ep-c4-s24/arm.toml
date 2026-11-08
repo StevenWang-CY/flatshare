@@ -1,0 +1,23 @@
+# Optimization room, round 2, whole rounds (I5): opt2-disc-srpfsm-c4-s24 with the endpointing of the sweep's better setting, 0.2 s of VAD
+# silence and a 0.65 s delay (C3), in place of the worker's 0.55 and 0.5.
+# Optimization room, round 2, whole rounds (I5): opt2-disc-srpfsm-s24 with 4 callers; its pair is opt-disc-hold-c4-s24.
+# Optimization room, round 2: opt-disc-hold-s24 with the waiting queue of opt2_srpf, a request ahead of the rest after 120 s, the CPU tier's loads through the SM copy kernel (opt2_copy, 4 programs).
+# The optimization program's follow-up rounds (opt-sN.campaign): opt-disc-ret-s24, the configuration the rounds measured,
+# plus the agents' decodes held from a call's first 48 tokens (make_room.decode_hold_tokens 48), as the serving
+# profile now runs it; its pair is opt-disc-ret-s24.
+arm = "9-pr-ab48-b256-t0-ret-hold-srpf-sm4-calls-ep"
+label = "the configuration to deploy, the agents ordered by shortest remaining prefill net of what is cached, step cap 256, the CPU tier's loads through the SM copy kernel, the calls' prefixes kept on the GPU, the next batch just in time, each turn announced, the agents' decodes held from its first 48 tokens, 4 callers, discriminating scenario, warm-up turn, VAD silence 0.2 s and endpointing delay 0.65 s"
+
+[voice]
+turn_hints = true
+endpointing = "0.2/0.65"
+warmup_turns = 1
+callers = 4
+
+[agents]
+sessions = 24
+data = "weka-x32-long"
+
+[engine]
+variant = "make-room"
+flags = ["--additional-config.make_room.reserve_tokens", "0", "--additional-config.make_room.budget_cap_tokens", "48", "--max-num-batched-tokens", "256", "--long-prefill-token-threshold", "0", "--additional-config.make_room.retain_tokens", "3584", "--additional-config.make_room.retain_s", "30", "--additional-config.make_room.hint_hold_ms", "400", "--additional-config.make_room.take_reservations", "true", "--additional-config.make_room.decode_hold_tokens", "48", "--scheduler-cls", "opt2_srpf.AsyncScheduler", "--additional-config.opt2.srpf_max_wait_s", "120", "--additional-config.opt2.sm_load_programs", "4", "--additional-config.flatshare_jit.margin_ms", "30", "--additional-config.flatshare_jit.step_cost.step_ms", "11.56", "--additional-config.flatshare_jit.step_cost.us_per_token", "47.99", "--additional-config.flatshare_jit.step_cost.ns_per_pair", "14.17", "--additional-config.flatshare_jit.step_cost.ns_per_context", "429.3", "--additional-config.flatshare_jit.step_cost.mixed_ms", "7.6"]

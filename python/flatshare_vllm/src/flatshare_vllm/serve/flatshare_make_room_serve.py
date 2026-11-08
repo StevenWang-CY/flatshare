@@ -92,7 +92,9 @@ def effective(scheduler: Any) -> dict[str, Any]:
         "scheduler_cls": f"{type(scheduler).__module__}.{type(scheduler).__qualname__}",
         "scheduler_module": {"name": make_room.__name__, "sha256": sha256(make_room.__file__)},
         "serve_module_sha256": sha256(__file__),
-        "serve_modules_sha256": {Path(module.__file__).name: sha256(module.__file__) for module in HELPERS},
+        "serve_modules_sha256": {
+            Path(module.__file__).name: sha256(module.__file__) for module in HELPERS
+        },
         "model": {
             "model": model.model,
             "revision": model.revision,

@@ -1171,7 +1171,7 @@ def test_a_release_prints_the_serving_profiles_configuration() -> None:
         "CPU tier's loads: SM copy kernel, 4 programs",
         "  scheduler flatshare_make_room_serve.AsyncScheduler over flatshare_make_room_scheduler f418fb10d4e5804d",
         "  voice: serve mode, 2 calls at once, microphone audio, each turn announced when the user stops speaking",
-        "  gateway: at most 4 agents' sessions beside a node's calls",
+        "  gateway: at most 24 agents' sessions beside a node's calls",
     ]
 
 
@@ -1210,7 +1210,9 @@ def test_a_serving_hosts_release_holds_the_gateways_nodes_to_the_envelope(
         answer.write_text(json.dumps(view))
         assert release.gateway_nodes(serving, check)[:2] == (what, True)
         # A hand-written gateway.toml that runs the calls' node past the envelope fails the release, naming it.
-        view["nodes"][0]["max_agents"] = 12
+        view["nodes"][0]["max_agents"] = (
+            json.loads(serving.read_text())["gateway"]["max_agents"] + 1
+        )
         answer.write_text(json.dumps(view))
         _, ok, detail = release.gateway_nodes(serving, check)
         assert not ok and detail.endswith("nodes.phastform.max_agents"), detail

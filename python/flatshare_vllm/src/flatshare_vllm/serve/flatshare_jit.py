@@ -80,8 +80,8 @@ def finished(future: Any) -> bool:
     event ``copy_event``, so there this returns False until the future is read and the core waits for the step model's
     deadline, as every measurement of the serving profile ran. Reading V2's event as well, the early finish, measured
     no gain beside 24 agent sessions, where the steps are prefill-bound and the deadline sits near the real step time:
-    the agents' token rate +3.5%, the calls' V2V p95 -4 ms, their first sentence's p95 +39 ms, each within one run's
-    noise (benchmarks/results/2026-11-08-envelope, round 2's pair). So it stays as measured."""
+    the agents' token rate +3.5%, the calls' V2V p95 -4 ms, their first sentence's p95 +38 ms, each within one run's
+    noise (benchmarks/results/2026-11-08-envelope, the pair in the trial's round on Gray, opt2-env-r2). So it stays as measured."""
     if future.done():
         return True
     output = getattr(future, "async_output", None)

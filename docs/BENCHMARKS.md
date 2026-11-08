@@ -20,6 +20,7 @@ Some probes are reported in the document that uses them, each with its record: t
 - [How often do running agents leave two calls short of KV?](#how-often-do-running-agents-leave-two-calls-short-of-kv)
 - [Which step cap should the change run at?](#which-step-cap-should-the-change-run-at)
 - [What do the serving engine's additions do to a voice turn?](#what-do-the-serving-engines-additions-do-to-a-voice-turn)
+- [How many agents' sessions does one card take beside both calls?](#how-many-agents-sessions-does-one-card-take-beside-both-calls)
 - [Which arrangement of two cards does the most background work?](#which-arrangement-of-two-cards-does-the-most-background-work)
 - [Does the arrangement to deploy keep its SLO over a day?](#does-the-arrangement-to-deploy-keep-its-slo-over-a-day)
 - [Do the rules carry to a datacenter card?](#do-the-rules-carry-to-a-datacenter-card)
@@ -670,6 +671,54 @@ range beneath each:
   median, and speculative decoding was to have fewer replies over the SLO than the hold in at least five of the six.
   The serving profile takes the hold all the same from version 1.17, for the voice tail; speculative decoding stays a
   switch.
+
+## How many agents' sessions does one card take beside both calls?
+
+Provenance: Gray's windows of 2026-11-07 and 08 (opt2-w1g, opt2-w1g-fix, opt2-w2g, opt2-i5g, one sample of the agents,
+seed 36), the copy probes on Gray's bare card, and version 1.24's three envelope rounds (env-r1 to env-r3, Phastform,
+Gray, Phastform, seeds 21, 22 and 23) ([the record](../benchmarks/results/2026-11-08-envelope/README.md); [the report,
+§6.11](REPORT.md#611-ordering-the-agents-by-what-they-have-left-raises-the-cards-envelope-from-4-sessions-to-24)).
+
+Beside 24 sessions, first come first served over the LRU CPU tier is the tier's cyclic worst case: 89.5% of the prompt
+tokens, nearly all of them the agents', are computed at their first schedule. Version 1.24's serve module orders the agents' waiting queue by the
+prefill each has left, net of what the GPU pool and the CPU tier hold, any of them first once it has waited 120 s, and
+loads the tier through vLLM's SM copy kernel, since on these PCIe 3.0 x8 links a load on the copy engine holds a
+concurrent step's inputs until it ends. Each window's points against its own control:
+
+| Window | Point | Agents' tokens/s | Against the control | Computed | Loaded from the CPU tier, GB | Agents' TTFT p50, s | Calls' first byte p95, ms | LLM first sentence p95 | V2V p50 | V2V p95 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Gray, window 1 (11-07) | v1.23, the control | 3,173 | — | 89.5% | 2.2 | 76.8 | 202 | 403 | 1,711 | 1,843 |
+| Gray, window 1 (11-07) | a 30 GiB CPU tier | 2,958 | −7% | 68.0% | 37.7 | 76.7 | 255 | 456 | 1,700 | 1,840 |
+| Gray, window 1 (11-07) | the queue, every count refreshed each step | 7,144 | +125% | 23.5% | 274.2 | 4.7 | 301 | 630 | 1,787 | 2,051 |
+| Gray, window 1 (11-07) | the queue, two counts a step, none beside a call | 7,270 | +129% | 20.2% | 306.5 | 4.5 | 324 | 471 | 1,664 | 2,025 |
+| Gray, window 1 (11-07) | the queue (every count) and a 30 GiB tier | 8,622 | +172% | 11.7% | 368.0 | 4.6 | 405 | 825 | 1,762 | 2,226 |
+| Gray, window 2 (11-08) | v1.23, the control | 3,089 | — | 89.8% | 2.0 | 76.2 | 239 | 437 | 1,694 | 1,835 |
+| Gray, window 2 (11-08) | the queue and the SM copy | 7,849 | +154% | 20.3% | 324.1 | 4.6 | 183 | 454 | 1,742 | 1,924 |
+| Gray, window 2 (11-08) | the queue, the SM copy and a 30 GiB tier | 9,537 | +209% | 12.4% | 399.7 | 3.6 | 200 | 506 | 1,737 | 1,994 |
+| Gray, the whole points (11-08) | v1.23, the control | 3,113 | — | 89.9% | 2.4 | 75.8 | 232 | 408 | 1,669 | 1,915 |
+| Gray, the whole points (11-08) | the queue and the SM copy | 7,777 | +150% | 21.3% | 286.4 | 4.1 | 211 | 462 | 1,700 | 1,927 |
+| Gray, the whole points (11-08) | endpointing 0.2/0.65 s alone (not in the profile) | 2,932 | −6% | 88.8% | 2.4 | 78.0 | 225 | 477 | 1,342 | 1,615 |
+| Gray, the whole points (11-08) | the queue, the SM copy and endpointing 0.2/0.65 s | 7,912 | +154% | 22.6% | 303.2 | 3.7 | 179 | 435 | 1,343 | 1,582 |
+| Gray, the whole points (11-08) | v1.23, 4 callers | 2,643 | — | 84.0% | 3.4 | 84.9 | 234 | 516 | 1,723 | 2,016 |
+| Gray, the whole points (11-08) | the queue, the SM copy and endpointing 0.2/0.65 s, 4 callers | 5,876 | +122% | 24.6% | 252.2 | 5.7 | 247 | 479 | 1,385 | 1,649 |
+
+The rounds, by the resource gate's rule: a configuration qualifies when at most 5% of its replies, pooled over the rounds,
+are over each round's SLO, voice alone's p95 plus 250 ms. The medians over the rounds, with their range beneath each:
+
+| Configuration | Session trees | Rounds | Replies over the SLO | Qualifies | V2V p50, ms | V2V p95 | Agents' tokens/s | Agents' TTFT p50, s | p99 | Computed |
+|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|
+| The serving profile through v1.23 | 4 | 3 | 4 of 177 (2.3%) | yes | 1,635<br><sub>1,618⁠–⁠1,642</sub> | 1,934<br><sub>1,852⁠–⁠2,008</sub> | 3,278<br><sub>2,703⁠–⁠3,598</sub> | 0.3<br><sub>0.3⁠–⁠0.7</sub> | 8<br><sub>6⁠–⁠8</sub> | 2.4%<br><sub>2.0%⁠–⁠3.1%</sub> |
+| The queue and the SM copy | 12 | 3 | 4 of 177 (2.3%) | yes | 1,753<br><sub>1,659⁠–⁠1,765</sub> | 1,905<br><sub>1,876⁠–⁠1,959</sub> | 6,906<br><sub>5,949⁠–⁠7,090</sub> | 2.3<br><sub>0.5⁠–⁠2.9</sub> | 24<br><sub>19⁠–⁠73</sub> | 14.2%<br><sub>13.1%⁠–⁠14.7%</sub> |
+| The queue and the SM copy | 24 | 3 | 3 of 177 (1.7%) | yes | 1,690<br><sub>1,674⁠–⁠1,712</sub> | 1,872<br><sub>1,865⁠–⁠1,887</sub> | 7,253<br><sub>4,490⁠–⁠8,094</sub> | 4.3<br><sub>3.8⁠–⁠4.5</sub> | 133<br><sub>132⁠–⁠182</sub> | 26.1%<br><sub>22.8%⁠–⁠42.7%</sub> |
+
+- **The card qualifies beside 24 sessions** with the queue and the copy, the most the rounds measured, at 2.2 times
+  the agents' token rate of the profile's envelope of four before; the profile's `max_agents` is 24 from version 1.24.
+- **The agents' tail.** At 24 sessions a request can wait out the queue's 120 s bound: the agents' TTFT p99 is 133 s,
+  against 24 s at 12 sessions and 8 s at the old envelope, and their token rate varied more between rounds
+  (4,490–8,094 against 5,949–7,090 at 12), for 5% more at the median.
+- **Not adopted**, from the same windows: a 30 GiB tier alone (no gain), shorter endpointing (about 300 ms of V2V, but
+  the serving mode's end-of-turn model is unmeasured), Parakeet in place of Whisper (44–106 ms of V2V, its plugin not
+  packaged), and flatshare_jit's early finish on Model Runner V2 (no measurable gain).
 
 <a id="two-cards-rg"></a>
 

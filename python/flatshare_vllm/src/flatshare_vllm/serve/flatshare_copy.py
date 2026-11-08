@@ -53,7 +53,9 @@ def install(programs: int) -> dict[str, Any]:
 
     worker, handler = load_handler()
     if handler is None:
-        raise RuntimeError("flatshare_copy: no CPU-tier load handler in this process: it needs the CPU tier and the uni executor")
+        raise RuntimeError(
+            "flatshare_copy: no CPU-tier load handler in this process: it needs the CPU tier and the uni executor"
+        )
     region = getattr(worker, "_mmap_region", None)
     pinned = gpu_worker.PIN_MEMORY and (region is None or region.is_pinned)
     threshold = gpu_worker.THRESHOLD_BYTES
@@ -71,7 +73,11 @@ def install(programs: int) -> dict[str, Any]:
     pages = sorted({ref.page_size_bytes for group in handler.layer_refs_per_group for ref in group})
     warm(copy, pages[-1])
     handler._swap_blocks_batch = copy
-    report = {"sm_load_programs": programs, "bytes_per_chunk": copy.keywords["bytes_per_chunk"], "page_bytes": pages}
+    report = {
+        "sm_load_programs": programs,
+        "bytes_per_chunk": copy.keywords["bytes_per_chunk"],
+        "page_bytes": pages,
+    }
     logger.info("flatshare_copy: the CPU tier's loads copy through the SM kernel: %s", report)
     return report
 

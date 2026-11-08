@@ -41,6 +41,10 @@ SWEEP = (
 )
 """The same in the sweep's point of the PRs' configuration at the step cap it chose."""
 W5 = REPO / "benchmarks/results/2026-10-24-e2-w5/w5-ext-r1/w5-disc-pr-ab48-s24/engine.json"
+ENVELOPE_POINTS = sorted(
+    (REPO / "benchmarks/results/2026-11-08-envelope").glob("env-r*/queue-disc-s24/engine.json")
+)
+"""Version 1.24's envelope rounds' points of the profile's configuration, the waiting queue and the copy with it."""
 """The same in a W5 point of the PRs' configuration, at the frozen box's step cap."""
 STEP_CAP = ("max_num_batched_tokens", "long_prefill_token_threshold")
 """The step cap's two settings, the [serving] table's own."""
@@ -568,8 +572,8 @@ def test_serving_json_holds_every_effective_setting_and_its_required_revisions()
             "turn_hints": True,  # the voice worker announces each turn, which make_room.hint_hold_ms holds prefill for
         }
     )
-    # The card's envelope beside the calls in the rounds (benchmarks/results/2026-10-28-rounds): four session trees.
-    assert SERVING["gateway"] == {"max_agents": 4}
+    # The card's envelope beside the calls from version 1.24 (benchmarks/results/2026-11-08-envelope): 24 session trees.
+    assert SERVING["gateway"] == {"max_agents": 24}
 
 
 COMPARED = {
@@ -636,6 +640,15 @@ def test_the_serving_profile_is_the_configuration_the_rounds_measured() -> None:
     assert measured_settings(measured) == profile_settings()
     assert served(measured)["scheduler_cls"] == engine["scheduler_cls"]
     assert served(measured)["jit"] == engine["jit"]
+    # The waiting queue and the copy, which that point ran without: version 1.24's envelope rounds' points of the profile's
+    # configuration ran them with the profile's settings, and every other setting as above.
+    assert ENVELOPE_POINTS, "no point of the envelope rounds"
+    for queued in ENVELOPE_POINTS:
+        point = json.loads(queued.read_text())
+        assert (
+            served(point)["queue"] == engine["queue"] and served(point)["copy"] == engine["copy"]
+        ), queued
+        assert measured_settings(point) == profile_settings(), queued
     assert (
         measured["scheduler_config"]["async_scheduling"] is engine["scheduler"]["async_scheduling"]
     )
@@ -851,6 +864,13 @@ def test_serving_check_passes_an_engine_that_runs_the_profile(tmp_path: Path) ->
         (("model", "revision"), "main", '"main"'),
         (("scheduler_module", "sha256"), "0" * 64, f'"{"0" * 64}"'),
         (("vllm_version", None), "0.33.0", '"0.33.0"'),
+        (("queue", "max_wait_s"), 0, "0"),  # vLLM's own waiting queue
+        (("copy", "sm_load_programs"), 0, "0"),  # the copy engine
+        (
+            ("serve_modules_sha256", "flatshare_queue.py"),
+            "0" * 64,
+            f'"{"0" * 64}"',
+        ),  # another queue module
     ],
 )
 def test_serving_check_fails_an_engine_that_differs_in_any_setting(
@@ -1036,20 +1056,23 @@ def test_serving_check_holds_the_gateways_nodes_to_the_profiles_envelope(tmp_pat
         "serving-check: ok: gateway's nodes and patches as rtx-5060-ti-serve names them"
         in done.stdout
     )
-    assert re.search(r"nodes\.phastform\.max_agents +at most 4\n", done.stdout)
+    envelope = SERVING["gateway"]["max_agents"]
+    assert re.search(rf"nodes\.phastform\.max_agents +at most {envelope}\n", done.stdout)
     # With fill the spare's twelve sessions wait while it carries calls; it is not held to the envelope, its cover is.
     assert "nodes.gray.max_agents" not in done.stdout
     for answer, setting in [
-        (gateway_nodes(phastform={"max_agents": 12}), "nodes.phastform.max_agents"),
+        (gateway_nodes(phastform={"max_agents": envelope + 1}), "nodes.phastform.max_agents"),
         (gateway_nodes(phastform={"max_agents": None}), "nodes.phastform.max_agents"),
-        # Spread, every realtime node carries calls beside its own agents.
-        (gateway_nodes("spread"), "nodes.gray.max_agents"),
+        # Spread, every realtime node carries calls beside its own agents, and each is held to the envelope.
+        (gateway_nodes("spread", gray={"max_agents": envelope + 1}), "nodes.gray.max_agents"),
         # A node that cannot take every call the worker admits loses one when the other fails.
         (gateway_nodes(gray={"max_calls": 1}), "nodes.gray.max_calls"),
-        (gateway_nodes(cover=8), "placement.failover_background_max_in_flight"),
+        (gateway_nodes(cover=envelope + 1), "placement.failover_background_max_in_flight"),
     ]:
         done = check(answer)
         assert done.returncode == 1 and done.stderr.endswith(f"{setting}\n"), done.stderr
+    # Spread with the spare's twelve, within the envelope from version 1.24.
+    assert check(gateway_nodes("spread")).returncode == 0
     # A spare that takes no calls is no call node, and one node alone has no cover to hold.
     alone = gateway_nodes(gray={"roles": ["background"], "max_calls": 0})
     assert check(alone).returncode == 0

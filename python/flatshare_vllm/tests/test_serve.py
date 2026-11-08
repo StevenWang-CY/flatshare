@@ -158,11 +158,16 @@ def test_it_writes_the_configuration_it_was_built_with(modules, written, tmp_pat
         "sha256": sha256(make_room.__file__),
     }
     assert written["serve_module_sha256"] == sha256(SERVE) == BOX["engine"]["serve_module_sha256"]
-    assert written["serve_modules_sha256"] == BOX["engine"]["serve_modules_sha256"] == {
-        f"{helper}.py": sha256(SERVE.parent / f"{helper}.py") for helper in HELPERS
-    }
+    assert (
+        written["serve_modules_sha256"]
+        == BOX["engine"]["serve_modules_sha256"]
+        == {f"{helper}.py": sha256(SERVE.parent / f"{helper}.py") for helper in HELPERS}
+    )
     # The suite's scheduler asks for neither: vLLM's queue, vLLM's copy.
-    assert written["queue"] == {"max_wait_s": 0, "waiting_queue": "vllm.v1.core.sched.request_queue.PriorityRequestQueue"}
+    assert written["queue"] == {
+        "max_wait_s": 0,
+        "waiting_queue": "vllm.v1.core.sched.request_queue.PriorityRequestQueue",
+    }
     assert written["copy"] == {"sm_load_programs": 0}
     assert written["make_room"] == SUITE_SWITCHES | {"reserve_blocks": 0, "retain_blocks": 8}
     assert written["jit"] == JIT

@@ -1,0 +1,15 @@
+# opt2_dma_probe3.py on Gray's bare card, 2026-11-07 (UTC), on a clean card.
+17:12:44Z
+warm-up of the Triton kernel
+(a) Triton SM copy, 32 KiB pages, 1.46 GB
+   12 programs: steps before p50 5.7; during n=31 p50/p95/max 6.2/6.2/19.2 ms; copy 360 ms, 4.1 GB/s
+   4 programs: steps before p50 5.7; during n=22 p50/p95/max 6.1/6.1/6.1 ms; copy 241 ms, 6.1 GB/s
+   24 programs: steps before p50 5.7; during n=21 p50/p95/max 6.4/6.5/6.5 ms; copy 237 ms, 6.2 GB/s
+(b) DMA in jobs on chained streams, 1.46 GB
+   1 job: steps before p50 5.7; during n=2 p50/p95/max 5.8/74.2/74.2 ms; copy 267 ms, 5.5 GB/s
+   23 jobs of 64 MB: steps before p50 5.7; during n=4 p50/p95/max 32.5/151.7/151.7 ms; copy 217 ms, 6.7 GB/s
+   92 jobs of 16 MB: steps before p50 5.7; during n=4 p50/p95/max 47.9/135.9/135.9 ms; copy 214 ms, 6.8 GB/s
+alone again: 5.7 ms p50
+4 MiB
+17:12:56Z
+exit 0

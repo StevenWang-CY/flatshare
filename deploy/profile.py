@@ -93,7 +93,8 @@ VLLM_PACKAGE = REPO / "python" / "flatshare_vllm" / "src" / "flatshare_vllm"
 SERVE_MODULE = VLLM_PACKAGE / "serve" / "flatshare_make_room_serve.py"
 """The scheduler class the serving variant loads: make-room's, which writes the configuration the engine runs."""
 SERVE_HELPERS = tuple(
-    VLLM_PACKAGE / "serve" / f"{name}.py" for name in ("flatshare_copy", "flatshare_jit", "flatshare_queue")
+    VLLM_PACKAGE / "serve" / f"{name}.py"
+    for name in ("flatshare_copy", "flatshare_jit", "flatshare_queue")
 )
 """The modules the serve module installs from (the just-in-time schedule, the waiting queue, the CPU tier's load
 path), which serving.json pins beside it."""

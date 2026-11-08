@@ -1,0 +1,18 @@
+# The envelope rounds of version 1.24 (env-rN.campaign): opt-disc-hold-s24 with the serve module's waiting queue, the
+# agents by the prefill each has left net of what the GPU pool and the CPU tier hold, any first after 120 s
+# (flatshare_queue.max_wait_s 120), and the CPU tier's loads through the SM copy kernel with 4 programs
+# (flatshare_copy.sm_load_programs 4), as the serving profile runs them from version 1.24, with 12 session trees.
+arm = "9-pr-ab48-b256-t0-ret-hold-queue-sm4"
+label = "the configuration to deploy, the agents ordered by the prefill left net of the cache, the CPU tier's loads through the SM copy kernel, step cap 256, the calls' prefixes kept on the GPU, the next batch just in time, each turn announced, the agents' decodes held from its first 48 tokens, 12 session trees of the discriminating scenario, warm-up turn"
+
+[voice]
+turn_hints = true
+warmup_turns = 1
+
+[agents]
+sessions = 12
+data = "weka-x32-long"
+
+[engine]
+variant = "make-room"
+flags = ["--additional-config.make_room.reserve_tokens", "0", "--additional-config.make_room.budget_cap_tokens", "48", "--max-num-batched-tokens", "256", "--long-prefill-token-threshold", "0", "--additional-config.make_room.retain_tokens", "3584", "--additional-config.make_room.retain_s", "30", "--additional-config.make_room.hint_hold_ms", "400", "--additional-config.make_room.take_reservations", "true", "--additional-config.make_room.decode_hold_tokens", "48", "--scheduler-cls", "flatshare_make_room_serve.AsyncScheduler", "--additional-config.flatshare_jit.margin_ms", "30", "--additional-config.flatshare_jit.step_cost.step_ms", "11.56", "--additional-config.flatshare_jit.step_cost.us_per_token", "47.99", "--additional-config.flatshare_jit.step_cost.ns_per_pair", "14.17", "--additional-config.flatshare_jit.step_cost.ns_per_context", "429.3", "--additional-config.flatshare_jit.step_cost.mixed_ms", "7.6", "--additional-config.flatshare_queue.max_wait_s", "120", "--additional-config.flatshare_copy.sm_load_programs", "4"]

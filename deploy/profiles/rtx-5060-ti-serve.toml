@@ -65,10 +65,10 @@ jit_mixed_ms = 7.6
 # request with the least prefill left net of what the GPU pool and the CPU tier hold now goes first, in place of first
 # come first served, and one that has waited queue_max_wait_s seconds goes ahead of the rest, the longest waiting first,
 # so that no long prompt starves. First come first served over the LRU tier is its cyclic worst case: under load a
-# session's next request waits longer than the tier keeps its prefix, so on the card 89.5% of the agents' prompt tokens
-# were computed again, nearly all of them computed a turn before; the queue keeps the sessions whose prefix is cached
-# cached. A bound of 120 s keeps most of the gain in the simulator's sweep, and 30 s is first come first served again.
-# The calls are priority 0 and keep their own order. Measured in benchmarks/results/2026-11-08-envelope. 0 turns it off.
+# session's next request waits longer than the tier keeps its prefix, so on the card 89.5% of the prompt tokens beside
+# 24 agent sessions, nearly all of them the agents', were computed again although they had been computed a turn before;
+# the queue keeps the sessions whose prefix is cached cached. The rounds measured a bound of 120 s. The calls are
+# priority 0 and keep their own order. Measured in benchmarks/results/2026-11-08-envelope. 0 turns it off.
 queue_max_wait_s = 120
 # The CPU tier's loads through vLLM's own SM copy kernel with this many programs
 # (python/flatshare_vllm/src/flatshare_vllm/serve/flatshare_copy.py) instead of the copy engine, which vLLM 0.32.0
@@ -99,10 +99,13 @@ scheduler_module_sha256 = "f418fb10d4e5804de4e268a32b966ad09c0a9ff2bd6533a8d07d4
 # sweep's screens and the confirmation rounds measured this configuration (the records above).
 max_calls = 2
 # The agents' sessions a node that carries the calls runs beside them at most: the card's envelope on this
-# configuration in the rounds, 5 of 177 replies over the SLO beside 4 session trees and 31 beside 8
-# (benchmarks/results/2026-10-28-rounds). The gateway's [[nodes]] hold a node to theirs (max_agents), and each release
-# holds the running gateway to this one (deploy/bin/serving-check --nodes).
-max_agents = 4
+# configuration, the most session trees at which at most 5% of the calls' replies, pooled over three rounds, are over
+# each round's SLO. With the waiting queue and the SM copy above, 3 of 177 replies were over beside 24 trees, the most
+# the rounds measured, and 4 of 177 beside 12, where the profile through version 1.23 qualified at 4 (5 of 177; 31 of
+# 177 beside 8) (benchmarks/results/2026-11-08-envelope, 2026-10-28-rounds). At 24 the agents' time to first token at
+# p99 is 133 s, the queue's bound and more; a node may hold fewer. The gateway's [[nodes]] hold a node to theirs
+# (max_agents), and each release holds the running gateway to this one (deploy/bin/serving-check --nodes).
+max_agents = 24
 # The voice worker's audio configuration in serve mode: real callers' microphones, which the benchmark's synthetic
 # callers do not measure (python/flatshare_voice/README.md).
 audio = "microphone"

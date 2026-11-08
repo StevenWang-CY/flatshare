@@ -109,8 +109,9 @@ default_class = "background"
 # once. No [admission] table goes with [[nodes]]. For two mixed replicas that must each carry both calls when
 # the other fails, each node's max_calls is 2 and the worker admits two calls in all. A node that carries calls holds
 # its agents' sessions (interactive and background together) to max_agents, the serving profile's envelope: the most
-# agents its card serves beside both calls within the voice SLO, as measured for the card, 4 for an RTX 5060 Ti on the
-# serving profile. An agent's session that finds every node at its bound gets 503 no_agent_slot. A node with both roles
+# agents its card serves beside both calls within the voice SLO, as measured for the card, 24 for an RTX 5060 Ti on the
+# serving profile from version 1.24 (4 through 1.23). The blocks below keep 4, the count at which the two-card rounds
+# and the failover drills ran this arrangement; a node may take up to the profile's bound. An agent's session that finds every node at its bound gets 503 no_agent_slot. A node with both roles
 # must set max_agents, or max_agents = "unbounded" to run its agents without one (the gateway refuses to start
 # otherwise); one with the background role alone has no bound unless it sets one. An agent's request that names no
 # session takes no slot, so a node with a count takes it only while it holds no call. The blocks below are the serving

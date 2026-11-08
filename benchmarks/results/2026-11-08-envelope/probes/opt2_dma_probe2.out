@@ -1,0 +1,18 @@
+# opt2_dma_probe2.py on Gray's bare card, 2026-11-07 (UTC). The second line is a foreign compute app's pid, seen
+# and gone before the probe's steps (14 s); probe 3 ran on a clean card.
+17:11:25Z
+768270
+(1) host time of one call, then the copy's own time
+   0.06 GB in 1953 descriptors of 32 KiB: host 1.9 ms (0.96 us each), copy 11 ms
+   0.37 GB in 11291 descriptors of 32 KiB: host 8.9 ms (0.78 us each), copy 63 ms
+   1.46 GB in 44555 descriptors of 32 KiB: host 106.1 ms (2.38 us each), copy 231 ms
+   1.46 GB in 22277 descriptors of 64 KiB: host 23.1 ms (1.04 us each), copy 226 ms
+   1.46 GB in 696 descriptors of 2048 KiB: host 0.8 ms (1.21 us each), copy 213 ms
+(2) the load from a second thread, the main thread stepping
+   1.46 GB one batch, 32 KiB: steps before p50 5.7; during n=2 p50/p95/max 68.3/192.1/192.1 ms; submit host 186 ms, copy 260 ms, wall 271 ms
+   1.46 GB in 23 batches: steps before p50 5.7; during n=2 p50/p95/max 22.6/191.9/191.9 ms; submit host 96 ms, copy 216 ms, wall 227 ms
+   1.46 GB, 2 MiB pages: steps before p50 5.7; during n=2 p50/p95/max 5.8/208.8/208.8 ms; submit host 2 ms, copy 214 ms, wall 225 ms
+alone again: 5.7 ms p50
+4 MiB
+17:11:38Z
+exit 0
