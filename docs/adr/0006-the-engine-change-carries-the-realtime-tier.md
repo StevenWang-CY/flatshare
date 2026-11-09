@@ -20,7 +20,7 @@ E2 measured two calls beside 24 coding-agent sessions whose contexts fill the GP
   - [#65282](https://github.com/vllm-project/vllm/pull/65282): a waiting request of a higher priority preempts running lower-priority work for KV, at most two requests a step;
   - [#65283](https://github.com/vllm-project/vllm/pull/65283): lower-priority prefill sits out the request's first tokens, with a window long enough for the reply's first sentence (48 tokens for this voice agent).
 
-  There is no reserve. The pull requests are proposed to vLLM (open, with no maintainer review as of 2026-11-04; first #63350 and #63351); the `make-room` variant runs the same change on vLLM 0.32.0 meanwhile.
+  There is no reserve. The pull requests are proposed to vLLM (open, with no maintainer review as of 2026-11-09; first #63350 and #63351); the `make-room` variant runs the same change on vLLM 0.32.0 meanwhile.
 - **The priority comes from the caller's identity.** A gateway maps each tenant to a class and caps it, so a client cannot raise its own priority.
 - **No admission policy in front.** `flatshare-gateway` stays the experiment harness: its baselines and the lifecycle policy remain E2's arms, and the measured configuration ran without either.
 - **Not pursued:**

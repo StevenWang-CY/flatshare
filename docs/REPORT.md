@@ -10,9 +10,9 @@ F](#f-revision-history).
 > [!NOTE]
 > The change this report measures is proposed to vLLM as pull requests
 > [#65282](https://github.com/vllm-project/vllm/pull/65282) and
-> [#65283](https://github.com/vllm-project/vllm/pull/65283), open, with no maintainer review as of 2026-11-04. They
-> succeed #63350 and #63351, the numbers the measurements use. Flatshare is an independent project and is not affiliated
-> with vLLM.
+> [#65283](https://github.com/vllm-project/vllm/pull/65283), open, with no maintainer review as of 2026-11-09. They
+> succeed #63350 and #63351, the numbers the measurements use. Version 1.24's queue and copy (§6.11) are proposed as
+> [#66558](https://github.com/vllm-project/vllm/pull/66558) and [#66527](https://github.com/vllm-project/vllm/pull/66527). Flatshare is an independent project and is not affiliated with vLLM.
 
 ## Abstract
 
@@ -1302,7 +1302,9 @@ Beside 24 sessions the queue and the copy qualify, with 2.2 times the agents' to
 1.24 sets the envelope, `max_agents`, to 24. The cost is the agents' tail: at 24 sessions a request can wait out the
 120 s bound, and their p99 time to first token is 133 s against 8 s beside 4 sessions and 24 s beside 12. Beside 24 their
 token rate also varied more between rounds, 4,490–8,094 a second against 5,949–7,090 beside 12, for 5% more at the
-median. A gateway node may hold fewer than the profile's bound.
+median. A gateway node may hold fewer than the profile's bound. Both parts are proposed to vLLM in its own terms:
+cache-aware admission that counts the CPU tier's hits [[64](#ref-64)], and the tier's loads through the Triton kernel
+[[65](#ref-65)].
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-envelope-narrow.svg">
@@ -1438,6 +1440,13 @@ realtime request may take KV from them, and it uses vLLM's own eviction and CPU 
 even knowing exactly when each agent returns from a tool call shortens the median resume by under 8% against LRU with
 the CPU tier, and its p90 by up to 29% at low pressure. The session history a deployment has gains nothing. The change
 therefore leaves the agents' KV to vLLM.
+
+**Ordering by what is cached, and the copy path.** SGLang orders its waiting requests by the longest cached prefix
+[[5](#ref-5)], and since 4 November vLLM's main reorders a bounded window of its first-come-first-served queue by the
+GPU prefix cache's hits alone [[62](#ref-62)], which cannot see what a CPU tier holds, where the cycle of §6.11 forms.
+Version 1.24's queue counts the tier's hits too, within each priority. vLLM moves pages under 28 KiB with a Triton kernel and the rest on
+the copy engine, and an open issue and its pull requests calibrate that cutoff per device [[63](#ref-63)]. §6.11 measures what the cutoff
+leaves out: on PCIe 3.0 x8 a load on the copy engine holds a concurrent step's inputs until it ends.
 
 **Voice under contention.** LiveKit's preemptive generation, Endpoint Anticipation and PredGen start the LLM earlier in
 the turn [[13](#ref-13), [52](#ref-52), [53](#ref-53)]. Unmute and NVIDIA's single-GPU voice agent document the cost of
@@ -1623,9 +1632,9 @@ scheduler: preempt for the waiting turn, and keep background prefill out of its 
 
 <a name="ref-8"></a>[8] vLLM pull request #5958. [Adding priority scheduling](https://github.com/vllm-project/vllm/pull/5958). Merged 2024-09-25, in vLLM v0.6.2 to v0.10.2.
 
-<a name="ref-9"></a>[9] C. Wang. vLLM pull request #65282. [Priority scheduling: preempt lower-priority requests for KV cache space](https://github.com/vllm-project/vllm/pull/65282). Opened 2026-11-03, open, with no maintainer review as of 2026-11-04; it succeeds #63350, opened 2026-10-23.
+<a name="ref-9"></a>[9] C. Wang. vLLM pull request #65282. [Priority scheduling: preempt lower-priority requests for KV cache space](https://github.com/vllm-project/vllm/pull/65282). Opened 2026-11-03, open, with no maintainer review as of 2026-11-09; it succeeds #63350, opened 2026-10-23.
 
-<a name="ref-10"></a>[10] C. Wang. vLLM pull request #65283. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/65283). Opened 2026-11-03, open, with no maintainer review as of 2026-11-04; it succeeds #63351, opened 2026-10-23.
+<a name="ref-10"></a>[10] C. Wang. vLLM pull request #65283. [Priority scheduling: hold lower-priority prefill for first tokens](https://github.com/vllm-project/vllm/pull/65283). Opened 2026-11-03, open, with no maintainer review as of 2026-11-09; it succeeds #63351, opened 2026-10-23.
 
 <a name="ref-11"></a>[11] SemiAnalysis. [Claude Code traces (cc-traces-weka-062126)](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126). Hugging Face dataset.
 
@@ -1728,6 +1737,14 @@ scheduler: preempt for the waiting turn, and keep background prefill out of its 
 <a name="ref-60"></a>[60] T. Dao. [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691). In *ICLR 2024*.
 
 <a name="ref-61"></a>[61] vLLM pull request #45558. [Priority-based preemption at max_num_seqs](https://github.com/vllm-project/vllm/pull/45558). Opened 2026-06-14, last pushed 2026-08-20, open on 2026-10-31.
+
+<a name="ref-62"></a>[62] vLLM pull request #54625. [Add cache-aware admission ordering](https://github.com/vllm-project/vllm/pull/54625). Merged 2026-11-04.
+
+<a name="ref-63"></a>[63] vLLM issue #57555. [KV offload: DMA/Triton load threshold needs per-device profiling](https://github.com/vllm-project/vllm/issues/57555). Opened 2026-09-18, open as of 2026-11-09, with its pull requests #66510 and #66511 (reopened that day from #57343 and #57569).
+
+<a name="ref-64"></a>[64] vLLM pull request #66558. [[Core] Count KV connector hits in cache-aware admission](https://github.com/vllm-project/vllm/pull/66558). Opened 2026-11-09 as a draft.
+
+<a name="ref-65"></a>[65] vLLM pull request #66527. [[Perf][KV Offload] Load pages of any size through the Triton kernel (opt-in)](https://github.com/vllm-project/vllm/pull/66527). Opened 2026-11-09 as a draft.
 
 ## Appendices
 

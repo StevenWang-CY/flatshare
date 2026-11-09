@@ -29,7 +29,7 @@ On vLLM 0.32 with 24 coding-agent sessions on one RTX 5060 Ti, the voice agent's
 from running agent requests, and once it runs, agent prefill shares every step of its reply.
 
 Two scheduler rules, proposed to vLLM as pull requests [#65282](https://github.com/vllm-project/vllm/pull/65282) and
-[#65283](https://github.com/vllm-project/vllm/pull/65283) (open, with no maintainer review as of 2026-11-04; the
+[#65283](https://github.com/vllm-project/vllm/pull/65283) (open, with no maintainer review as of 2026-11-09; the
 measurements name them by their first numbers, #63350 and #63351), bring that p95 to 2.24 s against an SLO of 2.03 s.
 The replies over the SLO fall from 90% to 32% (286 of 885), and the agents keep 97% of their token rate.
 
@@ -59,6 +59,8 @@ Further rounds measure the deployment as it runs:
   kernel** (v1.24), raised the card's envelope beside both calls from 4 agent sessions to 24: 3 of 177 replies over the
   SLO in three rounds, at 2.2 times the agents' token rate, for a p99 time to first token of 133 s
   ([§6.11](docs/REPORT.md#611-ordering-the-agents-by-what-they-have-left-raises-the-cards-envelope-from-4-sessions-to-24)).
+  Both are proposed to vLLM in its own terms, as drafts until they run on a GPU: [#66558](https://github.com/vllm-project/vllm/pull/66558) lets its cache-aware admission
+  (first come first served) count what the CPU tier holds, and [#66527](https://github.com/vllm-project/vllm/pull/66527) lets the tier's loads take its Triton copy kernel.
 - **On an A100** at the same KV pool and 512-token steps, the configuration to deploy takes the p95 from 4.99 s to
   1.63 s, under that card's SLO in each of five rounds ([§6.7](docs/REPORT.md#67-the-rules-carry-to-an-a100)).
 - **On two RTX 5060 Ti cards**, both calls and four agent sessions on one card and agents alone on the other did 34%
