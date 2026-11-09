@@ -2,7 +2,7 @@ vLLM #65282 (https://github.com/vllm-project/vllm/pull/65282; first #63350), bac
 
 The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
 
-  d6c48e3c4 [Core] Priority scheduling: preempt lower-priority requests for KV cache space (cherry-picked from 7f048ee9e)
+  60ec745f4 [Core] Priority scheduling: preempt lower-priority requests for KV cache space (cherry-picked from f1a1003f8)
     Backported to v0.32.0: the make-room call follows 0.32.0's long prefill
     threshold, as v0.32.0 has no local prefill cadence;
     tests/v1/core/utils.py keeps v0.32.0's create_scheduler signature;
@@ -15,7 +15,15 @@ The scheduler.py part of these commits on vLLM v0.32.0 (5df63a720):
     in-flight gate cover its two waiting queues, the gate testing
     request_queue is self.waiting, with the tests of that queue left out,
     and its KV cache blocks hold their pool, not a weak reference to it, so
-    the released-blocks count compares the pool itself.
+    the released-blocks count compares the pool itself; and v0.32.0 keeps an
+    async KV load among the in-flight prefills while it loads, as it has no
+    cache of parked loads' reservations (main's #65285), so the room and the
+    streaming-session check read the in-flight prefills alone, with the two
+    tests of HiSparse, for which v0.32.0 has no test scheduler, left out;
+    and its SchedulerConfig hashes two fields of its own rather than every
+    field it does not ignore (main's compile_factors), so the option is not
+    listed, with the test of that left out; and its ModelRunnerOutput keeps
+    req_id_to_index, which the test helper passes.
 
 diff --git a/vllm/v1/core/sched/scheduler.py b/vllm/v1/core/sched/scheduler.py
 index cec96d2a4..f03f9af68 100644

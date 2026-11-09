@@ -67,8 +67,10 @@ ADAPTED = {
         # v0.32.0's SchedulerStats has no field for make-room's preemptions: the scheduler counts them. v0.32.0's
         # waiting loop bounds a prefix-cache hit at num_tokens - 1 only, so make-room's hit keeps that bound. And
         # v0.32.0 has no queue of requests waiting to start an async KV load (main's async_kv_waiting), and its blocks
-        # hold their pool itself, not a weak reference to it: make-room scans two queues and compares the pool.
-        "d6c48e3c4": (
+        # hold their pool itself, not a weak reference to it: make-room scans two queues and compares the pool. Nor
+        # does it cache parked async KV loads' reservations (main's #65285): its loads stay among the in-flight
+        # prefills, which the room and the streaming-session check read alone.
+        "60ec745f4": (
             (
                 "# Running requests preempted to make room, since the last stats.",
                 "num_priority_preemptions = self._num_priority_preemptions",
@@ -87,6 +89,12 @@ ADAPTED = {
                 "or block.pool() is not block_pool",
                 "for queue in (self.kv_holding_waiting, self.waiting, self.async_kv_waiting)",
                 "request_queue is not self.kv_holding_waiting",
+                "and request not in self._parked_reservations",
+                "# A prefill in flight, or a parked async KV load, counts there already.",
+                "if (",
+                "request not in self._inflight_prefills",
+                "and request not in self._parked_reservations",
+                "):",
             ),
             (
                 "# Running requests preempted to make room.",
@@ -96,6 +104,7 @@ ADAPTED = {
                 "block.pool is not block_pool",
                 "for queue in (self.kv_holding_waiting, self.waiting)",
                 "request_queue is self.waiting",
+                "if request not in self._inflight_prefills:",
             ),
         ),
     },
@@ -103,7 +112,7 @@ ADAPTED = {
         # v0.32.0's request queues stay stock: the queues' new method is the scheduler's _has_lower_priority_than. Nor
         # does its SchedulerStats have fields for the budget cap's holds: the scheduler counts them too. And with no
         # queue of requests waiting to start an async KV load, the cap scans two queues and the waiting hold tests one.
-        "1da34e963": (
+        "0c136dd5c": (
             (
                 "queue.has_lower_priority_than(request.priority)",
                 "for queue in (",

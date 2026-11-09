@@ -218,7 +218,7 @@ def test_clean_merges_run_the_tests_the_prs_add(tmp_path, upstream, python):
     assert f"#{A}: tests/test_pr.py: 1 passed" in proc.stdout
     assert f"#{B}: tests/test_pr.py: 1 passed" in proc.stdout  # #65283's diff holds #65282's
     assert (
-        "backport = the PRs' heads but for 33 adapted lines of theirs and 23 of its own, which the patches' "
+        "backport = the PRs' heads but for 39 adapted lines of theirs and 24 of its own, which the patches' "
         "headers name\n" in proc.stdout
     )
     # Its stand-in scheduler is not v0.32.0's: reported, and no failure.
@@ -604,7 +604,7 @@ def test_each_adaptation_is_under_a_backport_paragraph_of_its_patch(compat):
 def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, upstream):
     """#65283 pushed again with a line the backport does not have fails the comparison, which names the line on each
     side. A head that took the backport's own form of an adapted line is no failure: the adaptation is stale."""
-    old = "if self.current_step - start < self.priority_prefill_budget_cap_tokens\n"
+    old = "if self.current_step - start <= window\n"
     assert old in pr_lines(B)
     base = upstream.commit(None, BASE | scheduler_files(real=False), "base")
     main = upstream.commit(base, {"vllm/main_only.py": "m = 1\n"}, "main moves on")
@@ -614,7 +614,7 @@ def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, up
             kv, {f"{SCHED}/scheduler.py": CAP[f"{SCHED}/scheduler.py"].replace(*change)}
         )
         for change in (
-            (old, old.replace(" < ", " <= ")),
+            (old, old.replace(" <= ", " < ")),
             (
                 "queue.has_lower_priority_than(request.priority)\n",
                 "self._has_lower_priority_than(queue, request.priority)\n",
@@ -624,9 +624,9 @@ def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, up
     proc = run(tmp_path / "pushed", upstream.serve(main, {A: kv, B: pushed}, {"v0.40.0": base}))
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert (
-        f"  #{B} and 63351.patch: 227 of #{B}'s 244 lines are the backport's; its other 16 and 16 of the "
-        "backport's 244 are adapted (1da34e963); it DIFFERS in 2 lines no Backport paragraph names:\n"
-        f"    #{B}'s: {old.replace(' < ', ' <= ')}"
+        f"  #{B} and 63351.patch: 236 of #{B}'s 253 lines are the backport's; its other 16 and 16 of the "
+        "backport's 253 are adapted (0c136dd5c); it DIFFERS in 2 lines no Backport paragraph names:\n"
+        f"    #{B}'s: {old.replace(' <= ', ' < ')}"
         f"    63351.patch's: {old}"
     ) in proc.stdout
     assert (
@@ -635,8 +635,8 @@ def test_a_head_the_backport_does_not_follow_fails_naming_its_lines(tmp_path, up
     )
     proc = run(tmp_path / "adopted", upstream.serve(main, {A: kv, B: adopted}, {"v0.40.0": base}))
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "(1da34e963); 2 of the lines named as adapted no longer differ\n" in proc.stdout
+    assert "(0c136dd5c); 2 of the lines named as adapted no longer differ\n" in proc.stdout
     assert (
-        "backport = the PRs' heads but for 32 adapted lines of theirs and 22 of its own"
+        "backport = the PRs' heads but for 38 adapted lines of theirs and 23 of its own"
         in proc.stdout
     )

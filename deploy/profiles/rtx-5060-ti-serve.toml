@@ -94,7 +94,7 @@ async_scheduling = true
 # to that module: 1,080 of 1,264 configurations differ with the cap on, and 98 of 772 with it off, all with a
 # KV connector; REPORT §4). Retention, which this profile turns on, is
 # measured in benchmarks/results/2026-11-01-engine-points.
-scheduler_module_sha256 = "f418fb10d4e5804de4e268a32b966ad09c0a9ff2bd6533a8d07d4acd5898d88b"
+scheduler_module_sha256 = "ebdeef5ed5072979c70923f3c20347446b23f7ac18a982069ab328dd85c8c399"
 # The calls the voice worker takes at once in serve mode: two, the calls of E2's discriminating scenario, at which the
 # sweep's screens and the confirmation rounds measured this configuration (the records above).
 max_calls = 2
