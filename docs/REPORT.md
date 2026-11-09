@@ -1249,7 +1249,7 @@ little, and the waiting queue takes requests in arrival order. Under load a requ
 which evicts the least recently used chunks, keeps its session's prefix, so it computes the whole context again, which
 makes the next request wait longer: the tier's cyclic worst case. On Gray 89.5% of the prompt tokens, nearly all of them the agents', were
 computed at their first schedule, nearly all of them computed a turn before, and the agents' time to first token was
-77 s at the median. A 30 GiB tier does not leave the cycle (68.0% computed, the agents' token rate 7% lower).
+77 s at the median (Figure 17a). A 30 GiB tier does not leave the cycle (68.0% computed, the agents' token rate 7% lower).
 
 Version 1.24's serve module orders the waiting queue within a priority by the prefill each request has left, net of what
 the GPU pool and the CPU tier hold now (`queue_max_wait_s` 120). The sessions whose prefix is still cached go first,
@@ -1263,12 +1263,26 @@ The queue alone took the agents' token rate on Gray from 3,173 to 7,270 a second
 4.5 s, with 20% of the prompt tokens computed, but put the calls' V2V p95 at 2,025 ms against 1,843. It loads far more
 from the tier, 307 GB in a point against 2.2, and both boxes' cards are on PCIe 3.0 x8 links.
 
-On the bare card a step's small input copy waits for a concurrent tier load on the copy engine to end, up to 192–209 ms beside a 1.46 GB load, at
-any page size and from any thread. vLLM's own Triton kernel for small pages moves the same load at 6.1 GB/s with 4
-programs and leaves the step beside it at 6.1 ms against 5.7 ms alone. The serve module sends the tier's loads through
+On the bare card a step's small input copy waits for a concurrent tier load on the copy engine to end: beside a 1.46 GB
+load submitted from another thread, the slowest sampled step took 192–209 ms with 32 KiB or 2 MiB pages, and 136–152 ms
+with the load cut into chained jobs. vLLM's own Triton kernel for small pages moves the same load at 6.1 GB/s with 4
+programs and leaves the step beside it at 6.1 ms against 5.7 ms alone (Figure 17b). The serve module sends the tier's loads through
 it (`sm_load_programs` 4), its size threshold lifted for the box's 64 KiB pages. With both, the agents' token rate rose
 by 150–154% against the same window's control on one sample of the agents, and the V2V p95, 1,924 and 1,927 ms, was
 9–12 ms above the highest of the three windows' controls (1,835–1,915 ms) ([the record](../benchmarks/results/2026-11-08-envelope/README.md)).
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-tier-narrow.svg">
+  <img src="figures/report-tier.svg" width="100%" alt="In panel a, where vLLM found the prompt tokens at their first schedule beside 24 agent sessions on Gray, as shares of them, with the agents' tokens a second over the calls' first 240 s and their median time to first token: first come first served over a 20 GiB CPU tier, 9.1% found in the GPU pool, 1.5% loaded from the CPU tier and 89.5% computed, at 3,173 agents' tokens a second and a median time to first token of 76.8 s; first come first served over a 30 GiB CPU tier, 8.3%, 23.7% and 68.0%, at 2,958 and 76.7 s; and the queue over a 20 GiB CPU tier, 5.9%, 73.9% and 20.2%, at 7,270 and 4.5 s; in panel b, a step's time beside one 1.46 GB load from the CPU tier on Gray's bare card, 5.7 ms alone at the median of the steps before each load, and the longest during it 192 ms on the copy engine in one batch of 32 KiB pages, 209 ms in one of 2 MiB pages, 152 ms in 23 jobs of 64 MB, 136 ms in 92 jobs of 16 MB on chained streams, and 6.1 ms through vLLM's Triton kernel with 4 programs.">
+</picture>
+
+**Figure 17. First come first served computed most of the prompt tokens and the queue a fifth, and beside a load from
+the CPU tier a step took up to 209 ms on the copy engine and 6.1 ms through the SM copy.** (a) Where vLLM found the
+prompt tokens at their first schedule beside 24 agent sessions on Gray, in one window on one sample of the agents;
+beside each bar, the agents' tokens a second over the calls' first 240 s and their median time to first token. (b) A
+step's time beside one 1.46 GB load from the tier on Gray's bare card, in 32 KiB pages but where marked: alone, the
+median of the ten steps before each load; on the copy engine, the longest of the two (one batch) or four (chained jobs)
+steps during the load; through vLLM's Triton kernel, the longest of 22.
 
 Three rounds then measured the card's envelope beside both calls by the resource gate's rule, Phastform, Gray and
 Phastform on new samples of the agents (Table 11). The serving profile through version 1.23 ran at its envelope of 4
@@ -1284,11 +1298,22 @@ over the rounds otherwise; the agents' tokens a second over the calls' first 240
 | + the queue and the copy | 12 | 4 / 177 (2.3%) | 1,905 ms | 6,906 | 2.3 / 24 s |
 | + the queue and the copy | **24** | **3 / 177 (1.7%)** | 1,872 ms | **7,253** | 4.3 / 133 s |
 
-Beside 24 sessions the queue and the copy qualify, with 2.2 times the agents' token rate of the profile at 4, so version
+Beside 24 sessions the queue and the copy qualify, with 2.2 times the agents' token rate of the profile at 4 (Figure 18), so version
 1.24 sets the envelope, `max_agents`, to 24. The cost is the agents' tail: at 24 sessions a request can wait out the
 120 s bound, and their p99 time to first token is 133 s against 8 s beside 4 sessions and 24 s beside 12. Beside 24 their
 token rate also varied more between rounds, 4,490–8,094 a second against 5,949–7,090 beside 12, for 5% more at the
 median. A gateway node may hold fewer than the profile's bound.
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-envelope-narrow.svg">
+  <img src="figures/report-envelope.svg" width="100%" alt="In panel a, each configuration's replies over their round's SLO in version 1.24's 3 envelope rounds, each round a tick and the rounds pooled a marker, against the requirement of at most 5%, in panel b the agents' tokens a second over the calls' first 240 s and in panel c their time to first token at p99, each round a tick and their median a marker: the serving profile through v1.23 beside 4 agent sessions, 0, 2, 2 by round, 4 of 177 in all, its agents at 3,278 tokens a second (2,703 to 3,598) and a p99 of 8 s (6 to 8); the queue and the copy beside 12 agent sessions, 2, 2, 0 by round, 4 of 177 in all, its agents at 6,906 tokens a second (5,949 to 7,090) and a p99 of 24 s (19 to 73); and beside 24, 0, 3, 0 by round, 3 of 177 in all, its agents at 7,253 tokens a second (4,490 to 8,094) and a p99 of 133 s (132 to 182).">
+</picture>
+
+**Figure 18. Beside 24 sessions the queue and the copy kept the pooled replies over the SLO within the 5% requirement,
+at 2.2 times the agents' token rate of the serving profile at 4, and the agents' first-token tail carries the cost.**
+(a) Each round's share of its replies over that round's SLO, voice alone's p95 plus 250 ms, and the three rounds
+pooled; the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s and (c) their
+time to first token at p99, each round a tick and the median a marker.
 
 A review of the trial's code before these rounds found that its count of the tier's part bisected the chunks, on the
 assumption that the tier holds a prefix's head whenever it holds its tail. vLLM's LRU does not keep that: a turn that
@@ -1738,6 +1763,7 @@ its tests where Table A1 says so. Table A1 maps each part of the report to its r
 | §6.9, Figure 15 and Table 8 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds), and the screens in [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep) | `gate.py`'s sweep, the screens' `table.py`, `make figures` |
 | §6.10 and Table 9 | [`2026-11-01-engine-points`](../benchmarks/results/2026-11-01-engine-points) | its `table.py` |
 | §6.10, Figure 16 and Table 10 | [`2026-11-02-opt-rounds`](../benchmarks/results/2026-11-02-opt-rounds) | its `table.py`, `make figures` |
+| §6.11, Figures 17 and 18 and Table 11 | [`2026-11-08-envelope`](../benchmarks/results/2026-11-08-envelope) | its `table.py`, `make figures` |
 | The endpointing sweep (§9) | [`2026-10-28-endpointing`](../benchmarks/results/2026-10-28-endpointing) | [`summary.py`](../benchmarks/endpointing/summary.py) |
 | The drills on two GPU nodes (Appendix D) | [`2026-10-28-node-failover`](../benchmarks/results/2026-10-28-node-failover) | its README |
 | The 24-hour soak (§7, Appendix D, Figure D2) | [`2026-10-28-soak`](../benchmarks/results/2026-10-28-soak) | its `table.py`, `flatshare-bench soak report`, `make figures` |

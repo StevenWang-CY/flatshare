@@ -23,6 +23,8 @@ What vLLM 0.32.0 runs for the box's checkpoint, Qwen3-4B-Instruct-2507-FP8 (bloc
 
 The KV layout follows the CPU tier's connector, not the card: vLLM's `OffloadingConnector` requires LBHNC, so every CUDA card with the tier runs it. What changes in what the results mean is in [the preflight](#the-preflight): within one card, tuned vLLM against make-room compares as on the box; across cards, only in the regime's coordinates and each card's distance to its own SLO.
 
+The CPU tier's loads follow the card's link. On the box's and Gray's PCIe 3.0 x8 links (6.8 GB/s) a load on the copy engine holds a concurrent step's input copy until the load ends (the slowest sampled step took 192–209 ms beside a 1.46 GB load), so the serving profile loads the tier through vLLM's own Triton copy kernel on 4 programs (`sm_load_programs = 4`), which leaves the step beside it at 6.1 ms against 5.7 ms alone ([the probes](../benchmarks/results/2026-11-08-envelope/README.md#the-voice-tail-the-copy-engine-on-pcie-30-x8)). No other link was measured: on another card, the record's probes say which path a profile should take.
+
 ## The hardware profile
 
 A GPU node's deployment is a function of a few inputs: the card (its memory, compute capability, driver), the host (CPUs by NUMA node, RAM, `/dev/shm`, systemd), the model and the rules below. [`deploy/profiles/`](../deploy/profiles) holds one profile per node type, and [`deploy/profile.py`](../deploy/profile.py) (Python's standard library only, so that a bare host runs it before any venv exists, from 3.11 for `tomllib`: on Ubuntu 22.04, whose `python3` is 3.10, uv's Python 3.12 runs it, as `bootstrap.sh` does) writes a node's directory from one:

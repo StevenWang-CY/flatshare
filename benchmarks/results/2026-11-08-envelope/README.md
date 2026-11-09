@@ -70,12 +70,16 @@ PCIe 3.0 x8 links (6.8 GB/s). Probes on Gray's bare card with the engine's own p
 script with its output), a step (a 64 KiB input copy, a 5.7 ms kernel, a 64 B output copy) beside one 1.46 GB load as
 vLLM 0.32.0 issues it (`swap_blocks_batch`, one `cuMemcpyBatchAsync`):
 
-- the step waits for the load's copy to end before its own input reaches the card: up to 192 ms with 32 KiB pages and
-  209 ms with 2 MiB ones, with the load submitted from another thread in 2 ms, so the wait is the copy engine's, not the
-  host's; the load cut into 64 MB or 16 MB jobs on chained streams still holds the step for up to 152 and 136 ms;
+- the step waits for the load's copy to end before its own input reaches the card: the slower of the two steps sampled
+  during each load took 192 ms with 32 KiB pages and 209 ms with 2 MiB ones, the load submitted from another thread. The
+  host submitted the 2 MiB load in 2 ms (the 32 KiB one in 186 ms), so that wait is the copy engine's, not the host's;
+  the load cut into 64 MB or 16 MB jobs on chained streams still held the slowest of four sampled steps for 152 and
+  136 ms;
 - the same load through vLLM's own Triton kernel for small pages (its path for pages under 28 KiB, which the box's 64 KiB
-  pages do not take) with 4 programs moves 6.1 GB/s, and the steps beside it take 6.1 ms against 5.7 alone; with 12
-  programs a step took up to 19.2 ms.
+  pages do not take) with 4 programs moves 6.1 GB/s, and the steps beside it take 6.1 ms against 5.7 alone. A run with
+  12 programs took up to 19.2 ms a step and 360 ms for the load, the kernel's first call at the load's 44,555 jobs after a
+  warm-up of 4,096, so probably while Triton compiled a second variant of it; that run is not counted as 12 programs'
+  cost.
 
 `flatshare_copy` routes the tier's loads through that kernel with 4 programs. With it the calls' first byte p95 fell to
 183 ms beside the queue (window 2), and the agents' token rate rose further, as steps no longer stall behind loads.

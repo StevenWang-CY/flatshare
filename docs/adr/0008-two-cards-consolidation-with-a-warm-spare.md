@@ -1,6 +1,6 @@
 # ADR-0008: Two cards: consolidation with a warm spare
 
-- **Status:** accepted, 2026-10-28
+- **Status:** accepted, 2026-10-28; the bound on the first card's agents is the serving profile's envelope, which version 1.24 raised from 4 to 24 ([the envelope](../PRODUCTION.md#the-envelope-from-version-124)), where the two-card rounds below measured 4
 - **Deciders:** Chuyue Wang
 
 ## Context

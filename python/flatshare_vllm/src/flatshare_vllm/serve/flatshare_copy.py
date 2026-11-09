@@ -2,10 +2,10 @@
 
 On the box (an RTX 5060 Ti on PCIe 3.0 x8, 6.8 GB/s) vLLM 0.32.0 loads a request's prefix from the CPU tier with one
 cuMemcpyBatchAsync over its pages, and a step that runs meanwhile waits for that copy to end before its own inputs reach
-the card: 192-209 ms beside a 1.46 GB load, whatever the page size or the size of the jobs it is cut into. Beside
-flatshare_queue's loads that was the calls' slow first tokens. vLLM's own Triton kernel for small pages copies through
-the SMs instead: with 4 programs it moved the same 1.46 GB at 6.1 GB/s while the step beside it took 6.1 ms against 5.7
-alone (benchmarks/results/2026-11-08-envelope).
+the card: the slowest sampled step took 192-209 ms beside a 1.46 GB load of 32 KiB or 2 MiB pages, and 136-152 ms with
+the load cut into chained jobs. Beside flatshare_queue's loads that was the calls' slow first tokens. vLLM's own Triton
+kernel for small pages copies through the SMs instead: with 4 programs it moved the same 1.46 GB at 6.1 GB/s while the
+step beside it took 6.1 ms against 5.7 alone (benchmarks/results/2026-11-08-envelope).
 
 The serve module (flatshare_make_room_serve) installs it at the scheduler's construction where the engine's additional
 config gives ``flatshare_copy.sm_load_programs`` above 0 (the serving profile's sm_load_programs); on the uni executor

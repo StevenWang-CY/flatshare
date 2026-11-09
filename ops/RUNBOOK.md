@@ -608,7 +608,7 @@ Notes on the table:
 - **`deploy.sh` exiting 1 with nothing switched, likely cause:** The failed check is one of `FAIL files`, an environment's imports, a binary's version, the scheduler module, a drop-in the release lacks, or a model or tool the units need.
 - **`deploy.sh` exiting 1 after the switch, likely cause:** Switching back restarted the same units on the release before.
 - **`deploy.sh cyan` outside the envelope, likely cause:** A realtime node whose `max_calls` is not the worker's calls, the node that carries calls with a larger `max_agents` than the profile's, or a larger `failover_background_max_in_flight`.
-- **`deploy.sh cyan` outside the envelope, action:** The check prints `max_calls = 2` on every realtime node, `max_agents` 4 or fewer on the one that carries calls, and `failover_background_max_in_flight` 4 or fewer.
+- **`deploy.sh cyan` outside the envelope, action:** The check prints `max_calls = 2` on every realtime node, `max_agents` at most the profile's on the one that carries calls (24 from version 1.24, 4 through 1.23), and `failover_background_max_in_flight` at most as many.
 
 ### E2's harness
 

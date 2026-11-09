@@ -2689,6 +2689,450 @@ def _opt_narrow(scenarios: Sequence[data.OptScenario], path: Path, description: 
     return s.save(path)
 
 
+# The CPU tier's two failures -----------------------------------------------------------------------------------------
+
+TIER_TITLE = "The CPU tier's two failures"
+SOURCES = (
+    ("found in the GPU pool", "mid"),
+    ("loaded from the CPU tier", "lo"),
+    ("computed", "open"),
+)
+"""Panel a's sources of the prompt tokens, in their order from the axis, each its name in the key and its bar fill:
+figure_style's mid and pale gray, the nearer the cache the stronger against the page in either theme, and its open bar
+for what neither held."""
+INSIDE_FILLS = ("lo", "open")
+"""The fills a share's value sits inside where it fits: ink clears 4.5:1 on them in both themes, and on the mid gray only
+in the light one, so a share there stands over its bar."""
+TIER_NAMES = ("First come first served", "First come first served", "The queue")
+"""Panel a's rows' names, data.TIER_POINTS' in order: v1.23's waiting queue, in arrival order within a priority, at
+its 20 GiB tier and at 30 GiB, and the queue by what each request has left; each row's note names its tier."""
+LOAD_ROWS = (
+    (None, "The step alone", None, "lo", None),
+    (
+        "The copy engine, one batch",
+        "32 KiB pages",
+        "one batch, 32 KiB",
+        "orange",
+        "on the copy engine in one batch of 32 KiB pages",
+    ),
+    (None, "2 MiB pages", "one batch, 2 MiB", "orange", "in one of 2 MiB pages"),
+    (
+        "The copy engine, in chained jobs",
+        "23 jobs of 64 MB",
+        "jobs of 64 MB",
+        "orange",
+        "in 23 jobs of 64 MB",
+    ),
+    (None, "92 jobs of 16 MB", "jobs of 16 MB", "orange", "in 92 jobs of 16 MB on chained streams"),
+    (
+        "The SM copy, vLLM's Triton kernel",
+        "4 programs",
+        "SM copy, 4 programs",
+        "soft",
+        "through vLLM's Triton kernel with 4 programs",
+    ),
+)
+"""Panel b's rows from the top: each the heading it opens (or none), its name, its load (a key of data.STEP_LOADS; none
+for the step alone), its bar's fill and the load in the description's prose: the comparison's pale gray for the step
+alone, TIER_CSS's orange for a load on the copy engine, and the change's pale blue for the SM copy that version 1.24
+serves."""
+LOADS_TOP = 250
+"""Panel b's scale in ms, past the longest step beside a load on the copy engine (208.8 ms)."""
+LOADS_SUBTITLE = "its longest during the load; alone, its median"
+LOADS_TITLE = "ms \N{BULLET} lower is better"
+TIER_CSS = ".g-orange{fill:var(--orange-w);stroke:var(--bar-line);stroke-width:1.1}"
+"""A load on the copy engine's bar: pale in the orange of the charts' adverse marks (the SLO's rule, the wait for
+room's area), as a chart's bars are pale in their hue."""
+
+
+class TierChart(Chart):
+    """A chart whose style also holds the copy engine's bar fill (TIER_CSS)."""
+
+    def render(self) -> str:
+        return super().render().replace("</style>", TIER_CSS + "</style>", 1)
+
+    def sources(
+        self, scale: Scale, y: float, thick: float, shares: Sequence[float]
+    ) -> list[tuple[float, float]]:
+        """A bar of the prompt tokens' shares by source (SOURCES) from the axis, its top at ``y`` and its free end
+        rounded, each segment a cover a label may sit in. Returns each segment's ends."""
+        spans, at = [], 0.0
+        for k, ((source, fill), share) in enumerate(zip(SOURCES, shares, strict=True)):
+            x0, x1 = scale(at), scale(at + share)
+            self._hpath(x0, y, x1 - x0, thick, f"g-{fill}", 3.0 if k == len(SOURCES) - 1 else 0.0)
+            self.covers.append((Box(x0, y, x1, y + thick, source), len(self.items) - 1))
+            spans.append((x0, x1))
+            at += share
+        return spans
+
+    def load(self, x: float, y: float, length: float, thick: float, fill: str, name: str) -> None:
+        """A load's bar from the axis at ``x``, its top at ``y``, in a figure_style bar fill or TIER_CSS's orange, a mark
+        no label may cover."""
+        self._hpath(x, y, length, thick, f"g-{fill}", 3.0)
+        self.marks.append(Box(x, y, x + length, y + thick, name))
+
+
+def _ms(value: float) -> str:
+    """A step's time as panel b prints it and the record's README states it: whole ms from 100 up, else to a tenth."""
+    return f"{value:,.0f} ms" if value >= 100 else f"{value:.1f} ms"
+
+
+def _tier_note(src: data.TokenSources) -> str:
+    """A panel a row's note: its CPU tier's size."""
+    return f"a {src.tier_gib:.0f} GiB CPU tier"
+
+
+def _tier_description(sources: Sequence[data.TokenSources], loads: data.StepLoads) -> str:
+    rows = []
+    for k, (name, src) in enumerate(zip(TIER_NAMES, sources, strict=True)):
+        gpu, cpu, computed = (f"{share:.1%}" for share in src.shares)
+        what = f"{data.in_prose(name)} over {_tier_note(src)}"
+        rows.append(
+            f"{what}, {gpu} found in the GPU pool, {cpu} loaded from the CPU tier and {computed} computed, at "
+            f"{src.tokens:,.0f} agents' tokens a second and a median time to first token of {src.ttft_p50:.1f} s"
+            if k == 0
+            else f"{what}, {gpu}, {cpu} and {computed}, at {src.tokens:,.0f} and {src.ttft_p50:.1f} s"
+        )
+    steps = [f"{_ms(loads.loads[key].longest)} {prose}" for _, _, key, _, prose in LOAD_ROWS if key]
+    return (
+        "In panel a, where vLLM found the prompt tokens at their first schedule beside 24 agent sessions on Gray, as "
+        "shares of them, with the agents' tokens a second over the calls' first 240 s and their median time to first "
+        f"token: {'; '.join(rows[:-1])}; and {rows[-1]}; in panel b, a step's time beside one 1.46 GB load from the "
+        f"CPU tier on Gray's bare card, {_ms(loads.alone)} alone at the median of the steps before each load, and the "
+        f"longest during it {', '.join(steps[:-1])}, and {steps[-1]}."
+    )
+
+
+def tier(out: Path) -> list[Path]:
+    """report-tier.svg and its phone layout: the CPU tier's two failures beside 24 agent sessions. (a) Where the prompt
+    tokens came from at their first schedule, under first come first served at the 20 GiB tier and at 30 GiB and under
+    the queue, beside each one's agents' tokens a second and median time to first token. (b) A step's time beside one
+    1.46 GB load from the tier on Gray's bare card, by the load's path: the copy engine, however it is cut, and vLLM's
+    Triton kernel with 4 programs."""
+    sources, loads = data.token_sources(), data.step_loads()
+    description = _tier_description(sources, loads)
+    return [
+        _tier_wide(sources, loads, out / "report-tier.svg", description),
+        _tier_narrow(sources, loads, out / "report-tier-narrow.svg", description),
+    ]
+
+
+def _source_keys() -> list[tuple[Key, str]]:
+    def key(fill: str) -> Key:
+        def draw(s: Chart, x: float, baseline: float) -> None:
+            s._hpath(x, baseline - 0.66 * NOTE, 22, 0.7 * NOTE, f"g-{fill}", 2.0)
+
+        return Key(22, draw)
+
+    return [(key(fill), name) for name, fill in SOURCES]
+
+
+def _shares(s: TierChart, x: Scale, y: float, thick: float, src: data.TokenSources) -> None:
+    """A row's bar of its prompt tokens by source, each share's value inside its segment, centred, where it fits on a
+    fill ink reads on (INSIDE_FILLS), else over the bar, centred on its segment but right of the value before it and of
+    the axis."""
+    spans = s.sources(x, y, thick, src.shares)
+    over = x.start + CLEAR
+    for (x0, x1), (_, fill), share in zip(spans, SOURCES, src.shares, strict=True):
+        text = f"{share:.1%}"
+        width = measure(text, NOTE)
+        if fill in INSIDE_FILLS and width + 16 <= x1 - x0:
+            s.text((x0 + x1) / 2, y + thick / 2 + 6, text, size=NOTE, anchor="middle")
+            continue
+        left = max((x0 + x1) / 2 - width / 2, over)
+        s.text(left, y - 8, text, size=NOTE, halo=True)
+        over = left + width + 10
+
+
+def _load_value(loads: data.StepLoads, key: str | None) -> float:
+    return loads.alone if key is None else loads.loads[key].longest
+
+
+def _tier_wide(
+    sources: Sequence[data.TokenSources], loads: data.StepLoads, path: Path, description: str
+) -> Path:
+    s = TierChart(WIDTH, 1000, TIER_TITLE, description)
+    right = 288  # the rows' names end here
+    # (a) The prompt tokens by source, a bar a point, its agents' tokens a second and TTFT beside it.
+    a = Scale(0, 1, 312, 772)
+    s.text(24, 30, "(a) Where the prompt tokens came from", size=LABEL)
+    s.text(
+        24, 54, "beside 24 agent sessions on Gray, at their first schedule", size=NOTE, cls="soft"
+    )
+    legend(s, 24, 88, _source_keys(), width=WIDTH - 48)
+    top, pitch, thick = 104, 64, 24
+    ys = [top + 36 + pitch * k for k in range(len(sources))]
+    bottom = ys[-1] + thick + 14
+    marks = [0.0, 0.25, 0.5, 0.75, 1.0]
+    last = x_axis(
+        s, a, marks, [pct(m) for m in marks], top, bottom, title="share of the prompt tokens"
+    )
+    tokens_x, ttft_x = 905, 1040
+    s.text(tokens_x, ys[0] - 12, "agents' tokens/s", size=NOTE, anchor="end", cls="soft")
+    s.text(ttft_x, ys[0] - 12, "their TTFT p50", size=NOTE, anchor="end", cls="soft")
+    for y, name, src in zip(ys, TIER_NAMES, sources, strict=True):
+        middle = y + thick / 2
+        s.text(right, middle - 3, name, size=VALUE, anchor="end")
+        s.text(right, middle + 19, _tier_note(src), size=NOTE, anchor="end", cls="soft")
+        _shares(s, a, y, thick, src)
+        s.text(tokens_x, middle + 6, f"{src.tokens:,.0f}", size=NOTE, anchor="end")
+        s.text(ttft_x, middle + 6, f"{src.ttft_p50:.1f} s", size=NOTE, anchor="end")
+    # (b) A step beside a load, by the load's path, under each path's heading.
+    b = Scale(0, LOADS_TOP, 312, 1012)
+    yb = last + 66
+    s.text(24, yb, "(b) A step beside one 1.46 GB load from the CPU tier", size=LABEL)
+    s.text(24, yb + 24, LOADS_SUBTITLE, size=NOTE, cls="soft")
+    top_b, thick_b = yb + 44, 20
+    y, rows = top_b + 8, []
+    for heading, name, key, fill, _ in LOAD_ROWS:
+        if heading:
+            s.text(24, y + 18, heading, size=NOTE, cls="mute")
+            y += 26
+        rows.append((y + 20, name, key, fill))
+        y += 40
+    ticks, labels = linear_ticks(LOADS_TOP, 50)
+    last = x_axis(s, b, ticks, labels, top_b, y + 4, title=LOADS_TITLE)
+    for middle, name, key, fill in rows:
+        value = _load_value(loads, key)
+        s.text(right, middle + 7, name, size=VALUE, anchor="end")
+        s.load(b.start, middle - thick_b / 2, b(value) - b.start, thick_b, fill, name)
+        s.text(b(value) + 8, middle + 6, _ms(value), size=NOTE, halo=True)
+    s.height = last + 14
+    return s.save(path)
+
+
+def _tier_narrow(
+    sources: Sequence[data.TokenSources], loads: data.StepLoads, path: Path, description: str
+) -> Path:
+    s = TierChart(NARROW, 2000, TIER_TITLE, description)
+    x0 = 18
+    # (a)
+    yy = 30
+    s.text(x0, yy, "(a) Where the prompt tokens came from", size=LABEL)
+    for line in wrap(
+        "beside 24 agent sessions on Gray, at their first schedule", NARROW - 2 * x0, NOTE
+    ):
+        yy += 24
+        s.text(x0, yy, line, size=NOTE, cls="soft")
+    yy = legend(s, x0, yy + 34, _source_keys(), width=NARROW - 2 * x0, pitch=25)
+    a = Scale(0, 1, x0, NARROW - 26)
+    thick = 22
+    for name, src in zip(TIER_NAMES, sources, strict=True):
+        band = yy + 34
+        band += _row_label(s, x0, band, name, _tier_note(src), NARROW - x0, gap=7)
+        top = band + 38
+        _shares(s, a, top, thick, src)
+        yy = top + thick + 24
+        s.text(
+            x0,
+            yy,
+            f"{src.tokens:,.0f} agents' tokens/s, their TTFT p50 {src.ttft_p50:.1f} s",
+            size=NOTE,
+            cls="soft",
+        )
+    marks = [0.0, 0.5, 1.0]
+    last = x_axis(s, a, marks, [pct(m) for m in marks], None, yy + 14)
+    for line in wrap("share of the prompt tokens", NARROW - 2 * x0, NOTE):
+        last += 25
+        s.text(x0, last, line, size=NOTE, cls="soft")
+    # (b)
+    yy = last + 34
+    for line in ("(b) A step beside one 1.46 GB load", "from the CPU tier"):
+        yy += 26
+        s.text(x0, yy, line, size=LABEL)
+    for line in wrap(LOADS_SUBTITLE, NARROW - 2 * x0, NOTE):
+        yy += 24
+        s.text(x0, yy, line, size=NOTE, cls="soft")
+    b = Scale(0, LOADS_TOP, x0, NARROW - 80)
+    ticks = [0, 100, 200]
+    thick = 20
+    yy += 10
+    for heading, name, key, fill, _ in LOAD_ROWS:
+        if heading:
+            yy += 28
+            s.text(x0, yy, heading, size=NOTE, cls="mute")
+        yy += 26
+        s.text(x0, yy, name, size=VALUE)
+        band = yy + 10
+        band_grid(s, b, ticks, band - 2, band + thick + 2)
+        value = _load_value(loads, key)
+        s.load(b.start, band, b(value) - b.start, thick, fill, name)
+        s.text(b(value) + 8, band + thick / 2 + 6, _ms(value), size=NOTE, halo=True)
+        yy = band + thick + 4
+    last = x_axis(s, b, ticks, [str(t) for t in ticks], None, yy + 2)
+    for line in wrap(LOADS_TITLE, NARROW - 2 * x0, NOTE):
+        last += 25
+        s.text(x0, last, line, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
+
+
+# The card's envelope beside both calls --------------------------------------------------------------------------------
+
+ENVELOPE_TITLE = "The card's envelope beside both calls"
+ENVELOPE_ROWS = {
+    ("The serving profile through v1.23", 4): ("The serving profile through v1.23", "sky"),
+    ("The queue and the SM copy", 12): ("+ the queue and the copy", "blue"),
+    ("The queue and the SM copy", 24): ("+ the queue and the copy", "blue"),
+}
+"""Each configuration of the envelope's gate by its name in table.py's GATE and its agent sessions: its name as Table 11
+gives it, and its hue, the change's pale blue for the profile before version 1.24, a sibling of the one to deploy, and
+its saturated blue for version 1.24's at both counts."""
+ENVELOPE_PANELS = (
+    (
+        "share",
+        "(a) Replies over the SLO",
+        "each round a tick, pooled a marker",
+        0.10,
+        0.05,
+        "{:.1%}",
+    ),
+    ("tokens", "(b) Agents' tokens/s", "the median a marker", 10000, 5000, "{:,.0f}"),
+    ("ttft_p99", "(c) Agents' TTFT p99", "the median a marker", 200, 100, "{:.0f}"),
+)
+"""Each panel: the field of data.Envelope and its rounds it plots, its title and subtitle, its scale's top and step and
+its value's format. The tops stand past the worst round's 3 of 59 replies over the SLO (5.1%), the busiest round's 8,094
+tokens a second and the slowest round's p99 of 182 s."""
+ENVELOPE_TITLES = {
+    "share": "share of the round's replies",
+    "tokens": TOKENS_TITLE,
+    "ttft_p99": "seconds \N{BULLET} lower is better",
+}
+"""Each panel's axis title."""
+ENVELOPE_PITCH = 56
+"""A configuration's row in the wide layout, its name over its note."""
+
+
+def _envelope_description(rows: Sequence[data.Envelope]) -> str:
+    cells = []
+    for k, c in enumerate(rows):
+        name, _ = ENVELOPE_ROWS[(c.name, c.sessions)]
+        named = k == 0 or name != ENVELOPE_ROWS[(rows[k - 1].name, rows[k - 1].sessions)][0]
+        what = (
+            f"{data.in_prose(name.removeprefix('+ '))} beside {c.sessions} agent sessions"
+            if named
+            else f"beside {c.sessions}"
+        )
+        tokens, ttft = ([r.tokens for r in c.rounds], [r.ttft_p99 for r in c.rounds])
+        cells.append(
+            f"{what}, {', '.join(str(r.over) for r in c.rounds)} by round, {c.over} of {c.replies} in all, its agents "
+            f"at {c.tokens:,.0f} tokens a second ({min(tokens):,.0f} to {max(tokens):,.0f}) and a p99 of "
+            f"{c.ttft_p99:.0f} s ({min(ttft):.0f} to {max(ttft):.0f})"
+        )
+    return (
+        f"In panel a, each configuration's replies over their round's SLO in version 1.24's {len(rows[0].rounds)} "
+        "envelope rounds, each round a tick and the rounds pooled a marker, against the requirement of "
+        f"{ALLOWED}, in panel b the agents' tokens a second over the calls' first 240 s and in panel c their time to "
+        f"first token at p99, each round a tick and their median a marker: {'; '.join(cells[:-1])}; and "
+        f"{cells[-1]}."
+    )
+
+
+def envelope(out: Path) -> list[Path]:
+    """report-envelope.svg and its phone layout: the card's envelope beside both calls in version 1.24's three rounds,
+    the serving profile through v1.23 at its envelope of 4 agent sessions and the queue and the copy at 12 and 24. (a)
+    Each configuration's replies over their round's SLO, each round and pooled, against the requirement. (b) The
+    agents' tokens a second, each round and their median. (c) The agents' time to first token at p99, each round and
+    their median."""
+    rows = data.envelope()
+    description = _envelope_description(rows)
+    return [
+        _envelope_wide(rows, out / "report-envelope.svg", description),
+        _envelope_narrow(rows, out / "report-envelope-narrow.svg", description),
+    ]
+
+
+def _envelope_axis(field: str, top: float, step: float) -> tuple[list[float], list[str]]:
+    marks, labels = linear_ticks(top, step)
+    return marks, [pct(m) for m in marks] if field == "share" else labels
+
+
+def _envelope_marks(
+    s: Chart, c: data.Envelope, field: str, value: str, scale: Scale, y: float
+) -> None:
+    """A configuration's rounds in one panel at ``y``, each a tick, and the rounds pooled (its share over the SLO) or
+    their median a marker, its value after the rightmost and clear of the requirement's rule."""
+    _, hue = ENVELOPE_ROWS[(c.name, c.sessions)]
+    xs, at = [scale(getattr(r, field)) for r in c.rounds], scale(getattr(c, field))
+    rug(s, xs, y, hue, median=at, half=RUN_HALF)
+    label = value.format(getattr(c, field))
+    x = max([*xs, at]) + 12
+    if (
+        field == "share"
+        and x - 2 * CLEAR <= scale(REQUIREMENT) <= x + measure(label, NOTE) + 2 * CLEAR
+    ):
+        x = scale(REQUIREMENT) + 2 * CLEAR
+    s.text(x, y + 6, label, size=NOTE, halo=True)
+
+
+def _envelope_wide(rows: Sequence[data.Envelope], path: Path, description: str) -> Path:
+    s = Chart(WIDTH, 600, ENVELOPE_TITLE, description)
+    names = 286  # the configurations' names end here
+    spans = ((312, 520), (604, 784), (874, 1040))
+    top = 96
+    ys = [top + 34 + ENVELOPE_PITCH * k for k in range(len(rows))]
+    bottom = ys[-1] + 30
+    for y, c in zip(ys, rows, strict=True):
+        name, _ = ENVELOPE_ROWS[(c.name, c.sessions)]
+        s.text(names, y - 3, name, size=VALUE, anchor="end")
+        s.text(names, y + 19, f"{c.sessions} agent sessions", size=NOTE, anchor="end", cls="soft")
+    last = bottom
+    for (field, title, subtitle, high, step, value), span in zip(
+        ENVELOPE_PANELS, spans, strict=True
+    ):
+        scale = Scale(0, high, *span)
+        s.text(scale.start, 30, title, size=LABEL)
+        s.text(scale.start, 54, subtitle, size=NOTE, cls="soft")
+        marks, labels = _envelope_axis(field, high, step)
+        last = max(last, x_axis(s, scale, marks, labels, top, bottom, title=ENVELOPE_TITLES[field]))
+        if field == "share":
+            s.vrule(scale(REQUIREMENT), top, bottom, "slo")
+            s.text(
+                scale(REQUIREMENT) + 6, top - 6, ALLOWED, size=NOTE, cls="orange tint", halo=True
+            )
+        for y, c in zip(ys, rows, strict=True):
+            _envelope_marks(s, c, field, value, scale, y)
+    s.height = last + 14
+    return s.save(path)
+
+
+def _envelope_narrow(rows: Sequence[data.Envelope], path: Path, description: str) -> Path:
+    s = Chart(NARROW, 2000, ENVELOPE_TITLE, description)
+    x0 = 18
+    last = 0.0
+    for field, title, subtitle, high, step, value in ENVELOPE_PANELS:
+        scale = Scale(0, high, x0 + 6, NARROW - (80 if field == "tokens" else 70))
+        marks, labels = _envelope_axis(field, high, step)
+        yy = last + 56 if last else 30
+        s.text(x0, yy, title, size=LABEL)
+        # A panel stands apart from the others here, and its subtitle says what a tick is.
+        ticks = subtitle if subtitle.startswith("each round") else f"each round a tick, {subtitle}"
+        s.text(x0, yy + 24, ticks, size=NOTE, cls="soft")
+        yy += 24
+        for c in rows:
+            name, _ = ENVELOPE_ROWS[(c.name, c.sessions)]
+            band = yy + 34
+            band += _row_label(
+                s, x0, band, name, f"{c.sessions} agent sessions", NARROW - x0, gap=7
+            )
+            row_y = band + 30
+            band_grid(s, scale, marks, row_y - 12, row_y + 12)
+            if field == "share":
+                s.vrule(scale(REQUIREMENT), row_y - 16, row_y + 16, "slo")
+            _envelope_marks(s, c, field, value, scale, row_y)
+            yy = row_y + 6
+        last = x_axis(s, scale, marks, labels, None, yy + 12)
+        if field == "share":
+            last += 28
+            s.text(scale(REQUIREMENT) + 6, last, ALLOWED, size=NOTE, cls="orange tint")
+        else:
+            for line in wrap(ENVELOPE_TITLES[field], NARROW - 2 * x0, NOTE):
+                last += 25
+                s.text(x0, last, line, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
+
+
 # The 24-hour soak ---------------------------------------------------------------------------------------------------
 
 SOAK_SHARE_TOP = 0.06
@@ -3153,6 +3597,8 @@ FIGURES = (
     cards,
     step_cap,
     opt_rounds,
+    tier,
+    envelope,
     soak,
     starts,
     campaigns,

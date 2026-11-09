@@ -35,6 +35,14 @@ which use it retires.
   **Its window** is how many first tokens it covers (`--priority-prefill-budget-cap-tokens`, 16 by default; 48 in the
   configuration to deploy), which the technical report writes T. The name is the flag's, and #63351's title says what it
   does: "hold lower-priority prefill for first tokens".
+- **The cache-aware queue and the SM copy** (version 1.24): two parts of the serve module that the serving profile
+  turns on ([the report's
+  §6.11](REPORT.md#611-ordering-the-agents-by-what-they-have-left-raises-the-cards-envelope-from-4-sessions-to-24)).
+  **The cache-aware queue** (`queue_max_wait_s = 120`, the serve module's `flatshare_queue.max_wait_s`) takes first,
+  within a priority, the waiting request with the least prefill left, net of what the GPU pool and the CPU tier hold,
+  and a request that has waited 120 s ahead of the rest. **The SM copy** (`sm_load_programs = 4`,
+  `flatshare_copy.sm_load_programs`) loads the CPU tier through vLLM's Triton copy kernel on 4 programs, where the
+  copy engine would hold the steps beside each load.
 - **The change**: the two pull requests proposed to vLLM (open, with no maintainer review as of 2026-11-04) that change
   priority scheduling, [#65282](https://github.com/vllm-project/vllm/pull/65282) for a full KV cache and
   [#65283](https://github.com/vllm-project/vllm/pull/65283) for prefill beside a priority request's first tokens. They
@@ -56,6 +64,9 @@ which use it retires.
   **the reservations taken** (`make_room.take_reservations`) let a call leave free only its own class's block
   reservations; **the decode hold** (`make_room.decode_hold_tokens`) keeps lower-priority decodes out of a reply's first
   tokens, as the budget cap keeps their prefill. The decode hold is not the budget cap, which is never "the hold".
+- **The envelope**: the most agent sessions a card holds beside both calls by the resource gate's rule
+  ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)), the serving profile's `max_agents`: 24 on one card
+  from version 1.24, 4 through version 1.23. The two cards' arrangement keeps its own measured 4 and 12.
 - **The KV preemption** (#63350): a waiting request of a higher priority that lacks KV preempts running requests of a
   lower priority, at most N a step (`--max-priority-preemptions-per-step`; in make-room,
   `make_room.max_preemptions_per_step`).

@@ -65,6 +65,16 @@ Further rounds measure the deployment as it runs:
   more background work than dedicated roles, with 5 of 177 replies over the SLO; tuned vLLM's arrangement did 27% more
   ([§6.8](docs/REPORT.md#68-on-two-cards-consolidating-both-calls-on-one-does-34-more-background-work-most-of-it-without-the-change)).
 
+<picture>
+  <source media="(max-width: 767px)" srcset="docs/figures/report-envelope-narrow.svg">
+  <img src="docs/figures/report-envelope.svg" width="100%" alt="In panel a, each configuration's replies over their round's SLO in version 1.24's 3 envelope rounds, each round a tick and the rounds pooled a marker, against the requirement of at most 5%, in panel b the agents' tokens a second over the calls' first 240 s and in panel c their time to first token at p99, each round a tick and their median a marker: the serving profile through v1.23 beside 4 agent sessions, 0, 2, 2 by round, 4 of 177 in all, its agents at 3,278 tokens a second (2,703 to 3,598) and a p99 of 8 s (6 to 8); the queue and the copy beside 12 agent sessions, 2, 2, 0 by round, 4 of 177 in all, its agents at 6,906 tokens a second (5,949 to 7,090) and a p99 of 24 s (19 to 73); and beside 24, 0, 3, 0 by round, 3 of 177 in all, its agents at 7,253 tokens a second (4,490 to 8,094) and a p99 of 133 s (132 to 182).">
+</picture>
+
+*Version 1.24's envelope beside both calls, three rounds on new samples of the agents: with the cache-aware queue and
+the SM copy, one card holds 24 agent sessions within the SLO's 5% allowance, at 2.2 times the agents' token rate of
+four, and the agents' slowest requests pay
+([the report's Figure 18](docs/REPORT.md#611-ordering-the-agents-by-what-they-have-left-raises-the-cards-envelope-from-4-sessions-to-24)).*
+
 ## Results
 
 <picture>
@@ -109,6 +119,11 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
 4. **A control plane in front of the engine can make room only by aborting work.** Only the engine can take KV from a
    decoding request, so preempt-resubmit, which aborts and resubmits agent requests, reaches 2.52 s at the agents'
    expense.
+5. **Beside 24 sessions the CPU tier needs the agents served by what they have left.** In arrival order, each agent
+   request waits longer than the LRU tier keeps its session's prefix, so it computes its whole context again: 89.5% of
+   the prompt tokens. Ordered by the prefill each has left, net of what is cached, 20.2% are computed. The tier's loads
+   then go through vLLM's Triton copy kernel, since on the box's PCIe 3.0 x8 links a load on the copy engine holds the
+   next step's inputs until it ends, about 200 ms for 1.46 GB ([§6.11](docs/REPORT.md#611-ordering-the-agents-by-what-they-have-left-raises-the-cards-envelope-from-4-sessions-to-24)).
 
 ## Limits and costs
 
@@ -122,7 +137,8 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
 - **The SLO's 5% allowance beside 24 sessions.** The two rules leave 32% of the replies over the SLO at 512-token steps
   and 14.9% at 256. The engine's additions bring that to 5.4–6.4% with two to six callers, and the decode hold to
   0.8–5.1% in two follow-up rounds, against 6.3–9.3% without it on the same samples: within the allowance with four and
-  six callers, and 0.1 points over it with two.
+  six callers, and 0.1 points over it with two. Version 1.24's three rounds, with two callers, put 3 of 177 over it
+  (1.7%).
 - **A pool with room.** At 16 sessions of the whole corpus, where the pool has room, the configuration to deploy met the
   SLO in one of five rounds. The serving profile's 256-token steps leave the pool room beside 24 sessions too: the
   engine preempted 0–4 requests a run there and none beside four, so at that cap the budget cap and the step cap do the
@@ -136,6 +152,11 @@ in the reply's first steps (c). Blocks and steps are illustrative.*
   calls, and the 256-token steps cost them 7% of their token rate against 512. No vLLM 0.32 counter shows what a
   preempted request recomputes when it resumes
   ([the agents' cost](docs/BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)).
+- **The agents' tail beside 24 sessions.** The cache-aware queue serves first the requests with the least left to
+  compute, so a long prompt can wait out its 120 s bound: the agents' time to first token at p99 is 133 s beside 24
+  sessions, against 24 s beside 12 and 8 s beside four, and their token rate varied more between rounds (4,490–8,094 a
+  second). A node may hold fewer than the profile's 24
+  ([the envelope](docs/PRODUCTION.md#the-envelope-from-version-124)).
 - **Other GPUs.** On the A100 the 512-token step cap costs the agents 30% of their throughput, and at the card's own
   best, 2,048-token steps, the configuration to deploy leaves the voice p95 0.14–0.17 s over the SLO
   ([§6.7](docs/REPORT.md#67-the-rules-carry-to-an-a100)). Other cards are placed only by the simulator, whose costs

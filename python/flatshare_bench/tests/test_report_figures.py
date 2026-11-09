@@ -21,6 +21,7 @@ from types import ModuleType
 
 import pytest
 
+from flatshare_bench import figure_style as style
 from flatshare_bench.report import charts, data, figures
 
 REPO = Path(__file__).resolve().parents[3]
@@ -111,6 +112,10 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
             "step-cap-narrow",
             "opt-rounds",
             "opt-rounds-narrow",
+            "tier",
+            "tier-narrow",
+            "envelope",
+            "envelope-narrow",
             "soak",
             "soak-narrow",
             "starts",
@@ -1118,6 +1123,160 @@ def test_the_opt_rounds_are_their_records_rounds(drawn: dict[str, Path]) -> None
     assert shares <= set(text_of(drawn["report-opt-rounds.svg"]))
 
 
+def test_the_tier_is_its_records_first_window_and_its_probes(drawn: dict[str, Path]) -> None:
+    table = data.envelope_table()
+    rows = table.points()
+    sources = data.token_sources()
+    # Panel a: three points of Gray's first window, beside 24 agent sessions and two callers; each one's computed share,
+    # agents' tokens a second and median TTFT as the record's windows table gives them, and its tier as its engine had it.
+    windows = {
+        line.split("|")[2].strip(): [cell.strip() for cell in line.strip("|").split("|")]
+        for line in table.table("windows").splitlines()
+        if line.startswith("| Gray, window 1 ")
+    }
+    assert [s.about for s in sources] == [
+        "v1.23, the control",
+        "a 30 GiB CPU tier",
+        "the queue, two counts a step, none beside a call",
+    ]
+    for key, s in zip(data.TIER_POINTS, sources, strict=True):
+        assert (rows[key]["sessions"], rows[key]["callers"], rows[key]["node"]) == (24, 2, "gray")
+        cells = windows[s.about]
+        assert (cells[2], cells[4], cells[6]) == (
+            f"{s.tokens:,.0f}",
+            f"{s.shares[2]:.1%}",
+            f"{s.ttft_p50:.1f}",
+        ), cells
+        assert sum(s.shares) == pytest.approx(1)
+    assert [s.tier_gib for s in sources] == [20, 30, 20]
+    shares = [[f"{share:.1%}" for share in s.shares] for s in sources]
+    assert shares == [
+        ["9.1%", "1.5%", "89.5%"],
+        ["8.3%", "23.7%", "68.0%"],
+        ["5.9%", "73.9%", "20.2%"],
+    ]
+    # Panel b: each load's longest step as its probe printed it and the record's README states it, beside the step alone,
+    # the median of the ten steps before each load; each load 1.46 GB in 44,555 pages of 32 KiB, or in 2 MiB pages.
+    loads = data.step_loads()
+    longest = {name: figures._ms(load.longest) for name, load in loads.loads.items()}
+    assert longest == {
+        "one batch, 32 KiB": "192 ms",
+        "one batch, 2 MiB": "209 ms",
+        "jobs of 64 MB": "152 ms",
+        "jobs of 16 MB": "136 ms",
+        "SM copy, 4 programs": "6.1 ms",
+    }
+    assert figures._ms(loads.alone) == "5.7 ms"
+    readme = " ".join((data.ENVELOPE / "README.md").read_text().split())
+    for stated in (
+        "took 192 ms with 32 KiB pages and 209 ms with 2 MiB ones",
+        "still held the slowest of four sampled steps for 152 and 136 ms",
+        "the steps beside it take 6.1 ms against 5.7 alone",
+    ):
+        assert stated in readme, stated
+    probes = data.ENVELOPE / "probes"
+    assert "1.46 GB in 44555 descriptors of 32 KiB" in (probes / "opt2_dma_probe2.out").read_text()
+    assert int(1.46e9) // 32768 == 44555
+    for script in ("opt2_dma_probe2.py", "opt2_dma_probe3.py"):
+        assert "before = [step() for _ in range(10)]" in (probes / script).read_text(), script
+    # Probe 3's 12-program load stays out: the kernel was warmed on 4,096 jobs, and that first timed load of 44,555,
+    # not a multiple of 16, compiled it again while it ran, as its copy's time against 4 and 24 programs' shows.
+    found = data.copy_probes()
+    copy = {
+        n: float(re.search(r"copy (\d+) ms", found["opt2_dma_probe3", f"{n} programs"].rest)[1])
+        for n in (4, 12, 24)
+    }
+    assert copy[12] - max(copy[4], copy[24]) > 100, copy
+    assert "st.swap_blocks_batch(src[:4096]" in (probes / "opt2_dma_probe3.py").read_text()
+    assert ("opt2_dma_probe3", "12 programs") not in data.STEP_LOADS.values()
+    # The claim its caption opens with: first come first served computed most of the prompt tokens and the queue a
+    # fifth, and beside a load a step took up to 209 ms on the copy engine and 6.1 ms through the SM copy.
+    assert all(s.shares[2] > 0.5 for s in sources[:2]) and f"{sources[2].shares[2]:.0%}" == "20%"
+    sm = loads.loads["SM copy, 4 programs"]
+    assert max(load.longest for load in loads.loads.values() if load is not sm) == 208.8
+    for name in ("report-tier.svg", "report-tier-narrow.svg"):
+        texts = set(text_of(drawn[name]))
+        assert {*itertools.chain(*shares), *longest.values(), "5.7 ms"} <= texts, name
+        assert not any("19.2" in text for text in texts), name
+        assert ".g-orange{" in drawn[name].read_text(), name
+    assert {"3,173", "2,958", "7,270", "76.8 s", "76.7 s", "4.5 s"} <= set(
+        text_of(drawn["report-tier.svg"])
+    )
+
+
+def test_a_shares_value_sits_inside_only_a_fill_ink_reads_on() -> None:
+    # Figure 17a sets a share's value inside its segment on the pale gray and the open fill alone, where ink clears 4.5:1
+    # in both themes; on the mid gray it does not in the dark one, and those values stand over the bar.
+    def luminance(color: str) -> float:
+        channels = [int(color[k : k + 2], 16) / 255 for k in (1, 3, 5)]
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    def contrast(a: str, b: str) -> float:
+        high, low = sorted((luminance(a), luminance(b)), reverse=True)
+        return (high + 0.05) / (low + 0.05)
+
+    fills = {"lo": "bar-lo", "mid": "bar-mid", "open": "page"}
+    assert set(figures.INSIDE_FILLS) < {fill for _, fill in figures.SOURCES}
+    for palette in (style.LIGHT, style.DARK):
+        for fill in figures.INSIDE_FILLS:
+            assert contrast(palette["ink"], palette[fills[fill]]) >= 4.5, fill
+    assert contrast(style.DARK["ink"], style.DARK["bar-mid"]) < 4.5
+
+
+def test_the_envelope_is_its_records_rounds(drawn: dict[str, Path]) -> None:
+    table = data.envelope_table()
+    found = data.envelope()
+    assert [(c.name, c.sessions) for c in found] == [(n, s) for n, s, _ in table.GATE]
+    # Each configuration's replies over the SLO, pooled, and its agents' median tokens a second and TTFT p99, as the
+    # record's gate table gives them, and each round's as its rounds table does.
+    for c, line in zip(found, table.table("gate").splitlines()[2:], strict=True):
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        assert cells[3] == f"{c.over} of {c.replies} ({c.share:.1%})", cells
+        assert cells[7].startswith(f"{c.tokens:,.0f}<br>"), cells
+        assert cells[9].startswith(f"{c.ttft_p99:.0f}<br>"), cells
+    rounds = {
+        line.split("|")[1].strip(): [cell.strip() for cell in line.strip("|").split("|")]
+        for line in table.table("rounds").splitlines()[2:]
+    }
+    for k, c in enumerate(found):
+        assert [r.round for r in c.rounds] == [1, 2, 3]
+        for r in c.rounds:
+            cells = rounds[f"env-r{r.round}"]
+            assert (cells[1], cells[4 + k]) == (
+                r.node,
+                f"{r.over} of {r.replies}, {r.tokens:,.0f} tokens/s",
+            )
+    # The report's Table 11 gives what the figure draws.
+    caption_and_table = REPORT.read_text().split("**Table 11.", 1)[1].split("\n\n")
+    table11 = [
+        [cell.strip().strip("*") for cell in line.strip("|").split("|")]
+        for line in caption_and_table[1].splitlines()[2:]
+    ]
+    assert len(table11) == len(found)
+    for c, cells in zip(found, table11, strict=True):
+        assert (cells[1], cells[2], cells[4]) == (
+            str(c.sessions),
+            f"{c.over} / {c.replies} ({c.share:.1%})",
+            f"{c.tokens:,.0f}",
+        ), cells
+        assert cells[5].endswith(f" / {c.ttft_p99:.0f} s"), cells
+    # The claim its caption opens with: beside 24 sessions the pooled replies within the requirement, at 2.2 times the
+    # agents' token rate of the profile at 4, and the agents' first-token tail carries the cost.
+    four, twelve, twenty_four = found
+    assert all(c.share <= figures.REQUIREMENT for c in found)
+    assert (four.sessions, twenty_four.sessions) == (4, 24)
+    assert f"{twenty_four.tokens / four.tokens:.1f}" == "2.2"
+    assert four.ttft_p99 < twelve.ttft_p99 < twenty_four.ttft_p99
+    for name in ("report-envelope.svg", "report-envelope-narrow.svg"):
+        assert {
+            *(f"{c.share:.1%}" for c in found),
+            *(f"{c.tokens:,.0f}" for c in found),
+            *(f"{c.ttft_p99:.0f}" for c in found),
+            figures.ALLOWED,
+        } <= set(text_of(drawn[name])), name
+
+
 def soak_table() -> ModuleType:
     """The soak record's own table.py, loaded from its file."""
     spec = importlib.util.spec_from_file_location("soak_table", data.SOAK.parents[1] / "table.py")
@@ -1318,6 +1477,7 @@ FIGURES_ABOVE_TABLES = {
     "report-a100": "| Agents' sample (seed) | Voice alone | Tuned vLLM, the box's 512/256 |",
     "report-step-cap": "| Configuration | Rounds | V2V p95: median of the rounds / pooled |",
     "report-opt-rounds": "| Scenario | Configuration | Rounds | Replies over the SLO |",
+    "report-envelope": "| Configuration | Session trees | Rounds | Replies over the SLO |",
     "report-starts": "| Start | Unit start to ready | Where the time goes |",
     "report-soak": "| Measure | Voice alone | The serving arrangement |",
 }
@@ -1395,6 +1555,56 @@ def test_the_deployed_results_figures_say_what_their_records_do(drawn: dict[str,
             assert key.lower() in caption.lower(), (doc.name, caption)
         # Besides its caption, the report's text and its Table A1 name each.
         assert len(re.findall(rf"{number}\b", report)) >= 3, number
+
+
+def test_section_6_11s_figures_say_what_their_records_do(drawn: dict[str, Path]) -> None:
+    # REPORT §6.11 and BENCHMARKS show Figures 17 and 18 with the drawing's own description as the alt text, under a
+    # caption that opens with its claim, in the numbers the records give (the tests above hold the claims against the
+    # records), and whose key gives the samples each bar of panel 17b stands for; the report's text and Table A1 name
+    # both. BENCHMARKS sets Figure 17 under the windows' table, and Figure 18 over the gate's (FIGURES_ABOVE_TABLES).
+    loads, found = data.step_loads(), data.envelope()
+    sm = loads.loads["SM copy, 4 programs"]
+    copy_engine = max(load.longest for load in loads.loads.values() if load is not sm)
+    [batch] = {loads.loads[k].n for k in ("one batch, 32 KiB", "one batch, 2 MiB")}
+    [jobs] = {loads.loads[k].n for k in ("jobs of 64 MB", "jobs of 16 MB")}
+    count = {2: "two", 4: "four"}
+    four, twenty_four = found[0], found[-1]
+    figures_shown = {
+        "report-tier": (
+            "Figure 17",
+            "First come first served computed most of the prompt tokens and the queue a fifth, and beside a load from "
+            f"the CPU tier a step took up to {figures._ms(copy_engine)} on the copy engine and "
+            f"{figures._ms(sm.longest)} through the SM copy.",
+            "alone, the median of the ten steps before each load; on the copy engine, the longest of the "
+            f"{count[batch]} (one batch) or {count[jobs]} (chained jobs) steps during the load; through vLLM's Triton "
+            f"kernel, the longest of {sm.n}.",
+        ),
+        "report-envelope": (
+            "Figure 18",
+            f"Beside {twenty_four.sessions} sessions the queue and the copy kept the pooled replies over the SLO within "
+            f"the {figures.REQUIREMENT:.0%} requirement, at {twenty_four.tokens / four.tokens:.1f} times the agents' "
+            f"token rate of the serving profile at {four.sessions}, and the agents' first-token tail carries the cost.",
+            "(a) Each round's share of its replies over that round's SLO, voice alone's p95 plus 250 ms, and the three "
+            "rounds pooled; the dashed line is the requirement.",
+        ),
+    }
+    report = REPORT.read_text()
+    for name, (number, claim, key) in figures_shown.items():
+        description = ET.parse(drawn[f"{name}.svg"]).getroot().find(f"{SVG}desc").text
+        for doc, opening in ((REPORT, f"**{number}. {claim}** "), (BENCHMARKS, f"**{claim}** ")):
+            alt, caption = shown(doc, name)
+            assert alt == description, (doc.name, name)
+            assert caption.startswith(opening), (doc.name, caption)
+            assert key in caption, (doc.name, caption)
+    for reference in ("(Figure 17a)", "(Figure 17b)", "(Figure 18)"):
+        assert reference in " ".join(report.split()), reference
+    assert (
+        "| §6.11, Figures 17 and 18 and Table 11 | [`2026-11-08-envelope`](../benchmarks/results/2026-11-08-envelope) |"
+        in report
+    )
+    before = BENCHMARKS.read_text().split('<img src="figures/report-tier.svg"', 1)[0]
+    last = [line for line in before.splitlines() if line.startswith("|")][-1]
+    assert last == data.envelope_table().table("windows").splitlines()[-1]
 
 
 # The campaign map ---------------------------------------------------------------------------------------------------

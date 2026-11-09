@@ -4,14 +4,14 @@ A map of Flatshare's documentation for a reader new to the project, in the order
 
 ## Start here
 
-- [REPORT.md](REPORT.md): Why does a voice turn wait seconds beside coding agents on one GPU, what do the two scheduler rules and the serving engine's additions recover, at what cost to the agents, and what carries to other hardware?
+- [REPORT.md](REPORT.md): Why does a voice turn wait seconds beside coding agents on one GPU, what do the two scheduler rules and the serving engine's additions recover, how many agent sessions does one card then hold beside the calls, at what cost to the agents, and what carries to other hardware?
 - [ARCHITECTURE.md](ARCHITECTURE.md): How is the deployed system built, from the change inside vLLM's scheduler to the gateway, the voice worker, two cards with a warm spare and releases that roll back, and what was measured and dropped?
 - [GLOSSARY.md](GLOSSARY.md): What does a term or a record's label mean (the frozen box, arm 9, W0 to W8, the project's former names)?
 
 ## Deploy and operate
 
-- [PRODUCTION.md](PRODUCTION.md): How do I deploy the change beside a voice agent, is my deployment in the regime where it pays, what should I watch, and how does it fail?
-- [HARDWARE.md](HARDWARE.md): What does the deployment need from another GPU or a single host, and how is a node rendered there?
+- [PRODUCTION.md](PRODUCTION.md): How do I deploy the change beside a voice agent, how many agent sessions does a card hold beside the calls, is my deployment in the regime where it pays, what should I watch, and how does it fail?
+- [HARDWARE.md](HARDWARE.md): What does the deployment need from another GPU or a single host, which path should its CPU tier's loads take, and how is a node rendered there?
 - [SLO.md](SLO.md): Which service classes share the GPU, which indicators are measured for each, and what is each campaign's SLO?
 - [PROTOCOL.md](PROTOCOL.md): What does the gateway accept from callers and send to the engine: sessions, headers and lifecycle events?
 - [ops/RUNBOOK.md](../ops/RUNBOOK.md): How are the hosts deployed, checked, operated and recovered, and how are the failure drills run?

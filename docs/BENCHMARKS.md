@@ -702,6 +702,32 @@ concurrent step's inputs until it ends. Each window's points against its own con
 | Gray, the whole points (11-08) | v1.23, 4 callers | 2,643 | — | 84.0% | 3.4 | 84.9 | 234 | 516 | 1,723 | 2,016 |
 | Gray, the whole points (11-08) | the queue, the SM copy and endpointing 0.2/0.65 s, 4 callers | 5,876 | +122% | 24.6% | 252.2 | 5.7 | 247 | 479 | 1,385 | 1,649 |
 
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-tier-narrow.svg">
+  <img src="figures/report-tier.svg" width="100%" alt="In panel a, where vLLM found the prompt tokens at their first schedule beside 24 agent sessions on Gray, as shares of them, with the agents' tokens a second over the calls' first 240 s and their median time to first token: first come first served over a 20 GiB CPU tier, 9.1% found in the GPU pool, 1.5% loaded from the CPU tier and 89.5% computed, at 3,173 agents' tokens a second and a median time to first token of 76.8 s; first come first served over a 30 GiB CPU tier, 8.3%, 23.7% and 68.0%, at 2,958 and 76.7 s; and the queue over a 20 GiB CPU tier, 5.9%, 73.9% and 20.2%, at 7,270 and 4.5 s; in panel b, a step's time beside one 1.46 GB load from the CPU tier on Gray's bare card, 5.7 ms alone at the median of the steps before each load, and the longest during it 192 ms on the copy engine in one batch of 32 KiB pages, 209 ms in one of 2 MiB pages, 152 ms in 23 jobs of 64 MB, 136 ms in 92 jobs of 16 MB on chained streams, and 6.1 ms through vLLM's Triton kernel with 4 programs.">
+</picture>
+
+**First come first served computed most of the prompt tokens and the queue a fifth, and beside a load from the CPU tier
+a step took up to 209 ms on the copy engine and 6.1 ms through the SM copy.** The report's Figure 17
+([§6.11](REPORT.md#611-ordering-the-agents-by-what-they-have-left-raises-the-cards-envelope-from-4-sessions-to-24)). (a)
+Where vLLM found the prompt tokens at their first schedule in Gray's first window; beside each bar, the agents' tokens a
+second over the calls' first 240 s and their median time to first token. (b) A step's time beside one 1.46 GB load from
+the tier on Gray's bare card, in 32 KiB pages but where marked: alone, the median of the ten steps before each load; on
+the copy engine, the longest of the two (one batch) or four (chained jobs) steps during the load; through vLLM's Triton
+kernel, the longest of 22.
+
+<picture>
+  <source media="(max-width: 767px)" srcset="figures/report-envelope-narrow.svg">
+  <img src="figures/report-envelope.svg" width="100%" alt="In panel a, each configuration's replies over their round's SLO in version 1.24's 3 envelope rounds, each round a tick and the rounds pooled a marker, against the requirement of at most 5%, in panel b the agents' tokens a second over the calls' first 240 s and in panel c their time to first token at p99, each round a tick and their median a marker: the serving profile through v1.23 beside 4 agent sessions, 0, 2, 2 by round, 4 of 177 in all, its agents at 3,278 tokens a second (2,703 to 3,598) and a p99 of 8 s (6 to 8); the queue and the copy beside 12 agent sessions, 2, 2, 0 by round, 4 of 177 in all, its agents at 6,906 tokens a second (5,949 to 7,090) and a p99 of 24 s (19 to 73); and beside 24, 0, 3, 0 by round, 3 of 177 in all, its agents at 7,253 tokens a second (4,490 to 8,094) and a p99 of 133 s (132 to 182).">
+</picture>
+
+**Beside 24 sessions the queue and the copy kept the pooled replies over the SLO within the 5% requirement, at 2.2 times
+the agents' token rate of the serving profile at 4, and the agents' first-token tail carries the cost.** The report's
+Figure 18 ([§6.11](REPORT.md#611-ordering-the-agents-by-what-they-have-left-raises-the-cards-envelope-from-4-sessions-to-24)).
+(a) Each round's share of its replies over that round's SLO, voice alone's p95 plus 250 ms, and the three rounds pooled;
+the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s and (c) their time to
+first token at p99, each round a tick and the median a marker.
+
 The rounds, by the resource gate's rule: a configuration qualifies when at most 5% of its replies, pooled over the rounds,
 are over each round's SLO, voice alone's p95 plus 250 ms. The medians over the rounds, with their range beneath each:
 

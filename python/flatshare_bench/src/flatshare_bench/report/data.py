@@ -1302,6 +1302,250 @@ def opt_rounds(root: Path = OPT_ROUNDS) -> list[OptScenario]:
     return found
 
 
+# The envelope rounds, and the windows and the copy probes before them -----------------------------------------------
+
+ENVELOPE = RESULTS / "2026-11-08-envelope"
+"""Version 1.24's envelope rounds, and Gray's windows and copy probes before them. Its table.py is the record's single
+source of truth for the rounds and the windows; the probes are read from the lines they printed (probes/*.out)."""
+
+
+def envelope_table(root: Path = ENVELOPE) -> ModuleType:
+    """The record's table.py, loaded from its file as a module: its points, each round's SLO, the gate's
+    configurations and the windows' points."""
+    spec = importlib.util.spec_from_file_location("envelope_table", root / "table.py")
+    if spec is None or spec.loader is None:
+        raise ValueError(f"no table.py under {root}")
+    table = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(table)
+    return table
+
+
+@dataclass(frozen=True)
+class TokenSources:
+    """One point of Gray's first window beside 24 agent sessions: its prompt tokens by where vLLM found them at their
+    first schedule (``vllm:prompt_tokens_by_source_total``), in the GPU pool, in the CPU tier or in neither, so
+    computed; the agents' tokens a second over the calls' first 240 s and their median time to first token, in
+    seconds; and its CPU tier's size in GiB, as its engine.json gives it. ``about`` is the windows table's name for the
+    point."""
+
+    about: str
+    gpu: int
+    cpu: int
+    computed: int
+    tokens: float
+    ttft_p50: float
+    tier_gib: float
+
+    @property
+    def shares(self) -> tuple[float, float, float]:
+        """The GPU pool's, the CPU tier's and the computed share of the prompt tokens, as table.py's computed() takes
+        its share."""
+        total = self.gpu + self.cpu + self.computed
+        return self.gpu / total, self.cpu / total, self.computed / total
+
+
+TIER_POINTS = (
+    ("opt2-w1g", "opt-disc-hold-s24"),
+    ("opt2-w1g", "opt2-disc-t30-s24"),
+    ("opt2-w1g-fix", "opt2-disc-srpf-s24"),
+)
+"""The points of Gray's first window (table.py's WINDOWS) whose prompt tokens Figure 17a splits by source: v1.23, the
+control, first come first served over the 20 GiB tier; the same over a 30 GiB tier; and the queue as the window ran it
+after its fix, two counts a step and none beside a call. Each ran against the same control, on one sample of the
+agents."""
+
+
+def token_sources(root: Path = ENVELOPE) -> list[TokenSources]:
+    """TIER_POINTS' prompt tokens by source, from the rows table.py reads, each named as its windows table names it."""
+    table = envelope_table(root)
+    rows = table.points()
+    _, _, entries = table.WINDOWS[0]
+    about = {(campaign, point): name for campaign, point, name in entries}
+    found = []
+    for key in TIER_POINTS:
+        if key not in about:
+            raise ValueError(f"{key}: not a point of the record's first window")
+        row = rows[key]
+        engine = json.loads((root / key[0] / key[1] / "engine.json").read_text())
+        tier = engine["kv_transfer_config"]["kv_connector_extra_config"]["cpu_bytes_to_use"]
+        found.append(
+            TokenSources(
+                about[key],
+                row["first_schedule_gpu_hit_tokens"],
+                row["first_schedule_cpu_hit_tokens"],
+                row["first_schedule_computed_tokens"],
+                row["fixed_window_tokens_per_s"],
+                row["agent_ttft_p50_ms"] / 1000,
+                tier / 2**30,
+            )
+        )
+    return found
+
+
+PROBE_STEPS = re.compile(
+    r"^\s*(?P<label>[^:]+): steps before p50 (?P<before>[\d.]+)(?: ms)?; during n=(?P<n>\d+) "
+    r"p50/p95/max (?P<p50>[\d.]+)/(?P<p95>[\d.]+)/(?P<longest>[\d.]+) ms; (?P<rest>.+)$"
+)
+"""A copy probe's line of a step's times: the median of the ten steps before a load, then the steps that ran during it
+(how many, their median, p95 and longest), then the load's own times; probe 1's rows "alone" time steps beside no
+load."""
+
+
+@dataclass(frozen=True)
+class CopyProbe:
+    """A step's time beside one of the copy probes' loads, in ms, as its line prints it: the median of the steps before
+    the load, and the steps that ran during it, their count, median, p95 and longest; and the rest of the line, the
+    load's submission and copy times."""
+
+    probe: str
+    label: str
+    before: float
+    n: int
+    p50: float
+    p95: float
+    longest: float
+    rest: str
+
+
+def copy_probes(root: Path = ENVELOPE / "probes") -> dict[tuple[str, str], CopyProbe]:
+    """Every line of the probes' outputs that times steps (PROBE_STEPS), by (probe, label): the probe its script's name,
+    the label as its line prints it. A label twice in one output is an error."""
+    found: dict[tuple[str, str], CopyProbe] = {}
+    for path in sorted(root.glob("*.out")):
+        for line in path.read_text().splitlines():
+            if (m := PROBE_STEPS.match(line)) is None:
+                continue
+            key = (path.stem, m["label"].strip())
+            if key in found:
+                raise ValueError(f"{path.name}: {key[1]!r} twice")
+            found[key] = CopyProbe(
+                path.stem,
+                key[1],
+                float(m["before"]),
+                int(m["n"]),
+                float(m["p50"]),
+                float(m["p95"]),
+                float(m["longest"]),
+                m["rest"],
+            )
+    return found
+
+
+STEP_LOADS = {
+    "one batch, 32 KiB": ("opt2_dma_probe2", "1.46 GB one batch, 32 KiB"),
+    "one batch, 2 MiB": ("opt2_dma_probe2", "1.46 GB, 2 MiB pages"),
+    "jobs of 64 MB": ("opt2_dma_probe3", "23 jobs of 64 MB"),
+    "jobs of 16 MB": ("opt2_dma_probe3", "92 jobs of 16 MB"),
+    "SM copy, 4 programs": ("opt2_dma_probe3", "4 programs"),
+}
+"""The loads Figure 17b sets a step beside, each 1.46 GB from pinned host pages, submitted from a second thread while
+the first stepped (probes 2 and 3): on the copy engine as vLLM issues it, one batch of 32 KiB pages and one of 2 MiB
+pages, and the 32 KiB pages cut into 23 and 92 jobs on chained streams; and through vLLM's Triton kernel with 4
+programs, as version 1.24 serves it. Probe 3's 12-program load is not among them: the kernel was warmed on 4,096 jobs
+and that first timed load of 44,555 compiled a second specialization of it during the measurement (Triton specializes
+the job count on its divisibility by 16; flatshare_copy's WARM_JOBS), which its copy's 360 ms, against 241 and 237 at 4
+and 24 programs, shows. Probe 1 submitted from the stepping thread itself, and probe 4 timed the copy engine on the
+legacy default stream."""
+
+
+@dataclass(frozen=True)
+class StepLoads:
+    """A step beside STEP_LOADS: its median before each of them, the same before every one (``alone``), and each load's
+    line, in STEP_LOADS' order."""
+
+    alone: float
+    loads: Mapping[str, CopyProbe]
+
+
+def step_loads(root: Path = ENVELOPE / "probes") -> StepLoads:
+    """STEP_LOADS' lines from the probes' outputs. The step alone is the median of the steps before each load; loads
+    whose steps before differ are an error, since one bar stands for them."""
+    found = copy_probes(root)
+    loads = {name: found[key] for name, key in STEP_LOADS.items()}
+    before = {load.before for load in loads.values()}
+    if len(before) != 1:
+        raise ValueError(f"the steps before the loads differ: {sorted(before)} ms")
+    return StepLoads(before.pop(), loads)
+
+
+@dataclass(frozen=True)
+class EnvelopeRound:
+    """One configuration in one of version 1.24's envelope rounds: the round, the node it ran on, its replies over that
+    round's SLO and its replies, the agents' tokens a second over the calls' first 240 s, and their time to first token
+    at p99, in seconds."""
+
+    round: int
+    node: str
+    over: int
+    replies: int
+    tokens: float
+    ttft_p99: float
+
+    @property
+    def share(self) -> float:
+        return self.over / self.replies
+
+
+@dataclass(frozen=True)
+class Envelope:
+    """A configuration of the envelope's gate (table.py's GATE) at its agent sessions, and its rounds in table.py's
+    order."""
+
+    name: str
+    sessions: int
+    rounds: tuple[EnvelopeRound, ...]
+
+    @property
+    def over(self) -> int:
+        return sum(r.over for r in self.rounds)
+
+    @property
+    def replies(self) -> int:
+        return sum(r.replies for r in self.rounds)
+
+    @property
+    def share(self) -> float:
+        """The share of its replies over their round's SLO, the rounds pooled: what the gate's requirement bounds."""
+        return self.over / self.replies
+
+    @property
+    def tokens(self) -> float:
+        return _median(r.tokens for r in self.rounds)
+
+    @property
+    def ttft_p99(self) -> float:
+        return _median(r.ttft_p99 for r in self.rounds)
+
+
+def envelope(root: Path = ENVELOPE) -> list[Envelope]:
+    """table.py's GATE over its ROUNDS, each reply held to its round's SLO (table.py's slos), counted as its gate and
+    rounds tables count them."""
+    table = envelope_table(root)
+    rows = table.points()
+    slo = table.slos(rows)
+    found = []
+    for name, sessions, point in table.GATE:
+        cells = []
+        for campaign in table.ROUNDS:
+            row = rows[campaign, point]
+            if row["sessions"] != sessions:
+                raise ValueError(
+                    f"{campaign}/{point}: {row['sessions']} agent sessions, not {sessions}"
+                )
+            cells.append(
+                EnvelopeRound(
+                    _round(campaign),
+                    row["node"],
+                    sum(v > slo[campaign] for v in row["v2v_samples"]),
+                    len(row["v2v_samples"]),
+                    row["fixed_window_tokens_per_s"],
+                    row["agent_ttft_p99_ms"] / 1000,
+                )
+            )
+        found.append(Envelope(name, sessions, tuple(cells)))
+    return found
+
+
 # The 24-hour soak ---------------------------------------------------------------------------------------------------
 
 SOAK = RESULTS / "2026-10-28-soak" / "serving-24h" / "summary.json"
