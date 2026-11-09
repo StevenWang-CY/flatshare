@@ -5,6 +5,33 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.25](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.25) (2026-11-09): §6.11 drawn, the pull requests rebased, and the queue and the copy proposed to vLLM
+
+Version 1.24's envelope is drawn and stated where operators read, the pull requests are rebased on vLLM's main at
+821851eab, and version 1.24's two parts are proposed to vLLM as drafts. Nothing the boxes serve changes schedule: they
+stay on v1.24 until a release is deployed.
+
+- **The report's §6.11** gains two figures from the record: Figure 17, where the agents' prompt tokens came from under
+  first come first served and under the cache-aware queue, and a step's time beside a 1.46 GB CPU-tier load by copy
+  path; and Figure 18, the card's envelope in three rounds at 4, 12 and 24 sessions, which the README shows too.
+- **The copy probes** are stated as what they sampled: beside a load submitted from another thread, the slowest of two
+  to four steps took 192–209 ms in one batch and 136–152 ms in chained jobs, and the 12-program run's 19.2 ms, the
+  kernel's first call at the load's job count, is not counted as that program count's cost (the record, §6.11, the
+  hardware guide, flatshare_copy's docstring and serving.json's pin of it).
+- **The documents** state the envelope of 24 where operators read it: the README's mechanism and the agents' tail beside
+  24 sessions, the runbook's envelope check, ADR-0008's status, the glossary, and the hardware guide's copy path on
+  PCIe 3.0 x8.
+- **The pull requests** are rebased on vLLM's main at 821851eab (#65282 f1a1003f8, #65283 fe4720517), where #65285
+  keeps a parked async KV load's reservation apart from the in-flight prefills: the room and the streaming check read
+  both, and the first-tokens hold records a parked load's first step where it is parked, so finding the holders takes
+  0.6 µs a step beside 4,096 parked loads instead of 0.70 ms. The options are in `SchedulerConfig`'s `ignored_factors`
+  (#65652). make-room's six patches, compat-upstream's adapted lines and the module carry the new heads; the module
+  schedules as v1.23's on all 2,036 traced configurations.
+- **Upstream proposals**, drafts until they run on a GPU: [#66558](https://github.com/vllm-project/vllm/pull/66558) lets vLLM's cache-aware admission (#54625),
+  under first come first served, count what the CPU tier holds, and [#66527](https://github.com/vllm-project/vllm/pull/66527) loads the tier through vLLM's
+  Triton copy kernel. PRIOR-ART and the report's §8 place them beside SGLang's cache-aware scheduling, #54625, issue
+  #53277, issue #57555 and #66511.
+
 ## [v1.24](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.24) (2026-11-08): the card's envelope from 4 agent sessions to 24
 
 Beside 24 agent sessions, first come first served over the LRU CPU tier recomputed 89.5% of the prompt tokens, nearly all of them the agents':

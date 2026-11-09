@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.24, 8 November 2026. Code, records and figures at tag
-[v1.24](https://github.com/StevenWang-CY/flatshare/tree/v1.24) of
+Flatshare technical report, version 1.25, 9 November 2026. Code, records and figures at tag
+[v1.25](https://github.com/StevenWang-CY/flatshare/tree/v1.25) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 F](#f-revision-history).
 
@@ -2042,6 +2042,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.25 | 2026-11-09 | Added Figures 17 and 18 to §6.11, and §8's paragraph on ordering by what is cached and on the copy path (references 62–65); §6.11's copy probes stated as the sampled steps they were; the pull requests' state dated 2026-11-09, rebased on vLLM's main at 821851eab, and version 1.24's two parts proposed to vLLM as drafts (#66558, #66527) |
 | 1.24 | 2026-11-08 | Added §6.11, the agents' waiting queue ordered by the prefill each has left net of what is cached and the CPU tier loaded through the SM copy kernel, which raise the card's envelope beside both calls from 4 sessions to 24 in three rounds (Table 11); with the abstract's last paragraph, §7's two cards, §9's two cards and the queue's agents |
 | 1.20 | 2026-11-03 | §3.2 and Algorithm 2: the budget cap never holds a prefill whose encoder outputs are cached, which only its progress frees (#65283, after a review found the stall) |
 | 1.23 | 2026-11-05 | §3.1, §3.2, Algorithms 1 and 2 and §4: the pull requests' revision of 5 November, after two reviews found stalls: every holder bounded by the steps it computes nothing, the KV preemption's gate only on a prefill that gets a chunk, and the search for stalls of that kind |
