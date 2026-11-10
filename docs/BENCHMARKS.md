@@ -7,7 +7,7 @@ numbers, [EXPERIMENTS.md](EXPERIMENTS.md) gives each experiment's design and
 [GLOSSARY.md](GLOSSARY.md#experiments-and-how-they-are-counted) the terms.
 
 Unless a section says otherwise, the numbers come from vLLM 0.32.0 serving Qwen3-4B-Instruct-2507-FP8 on
-[the frozen box](#the-frozen-box), the RTX 5060 Ti in Phastform or its twin node Gray, with clients on cyan reaching it
+[the frozen box](#how-is-the-frozen-box-set-up), the RTX 5060 Ti in Phastform or its twin node Gray, with clients on cyan reaching it
 through an SSH tunnel. The change is make-room, built from pull requests #65282 and #65283 proposed to vLLM (first
 #63350 and #63351), which are open and rebased, with no maintainer review as of 2026-11-09
 ([GLOSSARY.md](GLOSSARY.md#the-change-and-its-parts)). It now builds on vLLM 0.33.0, which
@@ -37,8 +37,6 @@ through an SSH tunnel. The change is make-room, built from pull requests #65282 
 - [Does knowing when an agent returns help?](#does-knowing-when-an-agent-returns-help)
 - [How closely does the replay follow the traces?](#how-closely-does-the-replay-follow-the-traces)
 
-<a id="the-frozen-box"></a>
-
 ## How is the frozen box set up?
 
 The engine's KV pool is fixed at 5 GiB, 36,400 tokens, beside a 20 GiB CPU tier in host RAM, and the three servers leave
@@ -54,8 +52,6 @@ under [failures](#what-does-a-failure-do-to-the-calls-and-the-agents).
 | GPU memory, stress peak (LLM c=16, 30k prefill, STT c=4, TTS c=4) | 14,086 / 16,311 MiB, with no OOM or preemption |
 
 1. A remote NUMA node cost at most 1% of pinned bandwidth.
-
-<a id="tier-cost-model-resuming-an-agent-turn-e0"></a>
 
 ## What does resuming an agent turn cost?
 
@@ -88,8 +84,6 @@ parentheses:
 Background load slows every path. On the box, eight decode streams add about 85 ms to a hit and a restore alike, so PCIe
 is not the bottleneck. Behind a stream of cold 8k prefills even a cached 1k prompt waits about 250 ms, and recompute
 slows 1.6–2.5×.
-
-<a id="voice-on-the-shared-gpu"></a>
 
 ## What does agent load do to a voice turn on the same GPU?
 
@@ -167,8 +161,6 @@ preempted only for each other's growth. These runs are Gray's, on 2026-10-23.
 calls' tail, with arm 9's reserve.
 
 <a id="w5-the-fixed-make-room-on-phastform"></a>
-
-<a id="the-prs-configuration-in-one-session-w5"></a>
 
 ### What does each rule remove?
 
@@ -275,8 +267,6 @@ draws the replies of W5's points, and panels b and c the table.
 the table gives the medians in ms ([the record](../benchmarks/results/2026-10-25-window-knee/README.md)).
 [PRODUCTION.md](PRODUCTION.md#the-replys-first-tokens) sets the window from it.
 
-<a id="voice-under-agent-load-e2"></a>
-
 ## How is a point of voice under agent load measured?
 
 Two callers, 25 turns each with a barge-in on 9 of the 50, call the stock voice agent through LiveKit, beside AIPerf's
@@ -292,8 +282,6 @@ replay of the 32× Claude Code corpus through `flatshare-gateway`
 The SLO is V2V p95 at most 250 ms above voice alone with as many callers, measured in each campaign and, from
 2026-10-28 on, in each round ([SLO.md](SLO.md#the-slos-reference-campaign-by-campaign)). With 59 replies a point, a p95
 lies between the third- and fourth-slowest, so single runs differ by a few hundred milliseconds.
-
-<a id="the-discriminating-scenario-after-w5s-fixes-w5"></a>
 
 ## How close does each configuration bring the voice tail to its SLO?
 
@@ -370,8 +358,6 @@ step past the window, which met 81% (248 of 305) of the replies in W5's 16-token
 | The configuration to deploy | 5 | 2,250 (2,175–2,307) | 2,268 (2,246–2,343) | +77, +71, −45, +19, +36 | 3,156 / 3,252 |
 
 No turn failed ([FB's record](../benchmarks/results/2026-10-25-e2-fb), whose `compare.py` prints the table).
-
-<a id="the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4"></a>
 
 ## Does any configuration without the change reach the SLO?
 
@@ -477,8 +463,6 @@ Over the calls' first 240 s, arm 9 kept 94.5% of tuned vLLM's 3,552 agents' toke
 94.7% and preempt-resubmit 101.2%. [W2–W4's record](../benchmarks/results/2026-10-23-e2/README.md) holds all 129 points
 (`make reproduce-e2`).
 
-<a id="the-standard-scenario-in-five-rounds-w5"></a>
-
 ## What changes where the pool has room, and with more calls?
 
 The change helps less where the pool has room, and overlapping calls hold the agents' prefill for longer. Beside 16
@@ -498,8 +482,6 @@ Where the pool has room the configuration to deploy was lower by 109–1,413 ms,
 second. It met W5's SLO in one round and tuned vLLM in none. Five rounds resolve the direction, not the size, since
 without a difference they would agree in sign one time in sixteen.
 
-<a id="calls-per-gpu-w5"></a>
-
 With 4 and 6 callers beside the 24 sessions, three rounds each, every round was over its SLO. Overlapping replies held
 agent prefill in 53% and 64% of the steps, against 33% with two callers on the same samples, and the agents' rate fell
 to 3,055 and 2,716 tokens a second, from 3,156.
@@ -513,8 +495,6 @@ to 3,055 and 2,716 tokens a second, from 3,156.
 
 These are W5's runs of 2026-10-25, each count held to voice alone with as many callers plus 250 ms
 ([W5's record](../benchmarks/results/2026-10-24-e2-w5)).
-
-<a id="e3-what-make-room-takes-from-the-agents"></a>
 
 ## What does the change take from the agents?
 
@@ -585,8 +565,6 @@ of the same number, as the A100's core did. Medians of the five rounds, with the
 The simulator places the box at 17% and the A100 at 10% [modeled]. What sets the cards' tails apart is how long a turn
 waits once KV is short, 4.9–5.0 s on the box and 1.72–1.75 s on the A100 in the KV case. No turn of the 500 failed
 ([the record](../benchmarks/results/2026-10-26-e2-rs), whose `running_share.py` prints the table).
-
-<a id="the-step-cap-screened-and-confirmed-sw-rg"></a>
 
 ## Which step cap should the change run at?
 
@@ -934,10 +912,6 @@ resumes its 14 sessions at once.
 
 [The soak's record](../benchmarks/results/2026-10-28-soak/README.md)'s `table.py` prints the table.
 
-<a id="the-a100-run-2026-10-26"></a>
-
-<a id="what-it-measured-2026-10-26"></a>
-
 ## Do the rules carry to a datacenter card?
 
 Yes. On an A100 SXM4 80 GB at the box's pool and step cap, beside the same 24 sessions, the configuration to deploy met
@@ -1017,22 +991,6 @@ At a datacenter batch, 256 requests of 48 prompt and 64 output tokens in flight,
 With its switches off make-room made 1.018 times vLLM's output tokens a second, so the code path costs nothing. With the
 deployed values priority 0's p99 TTFT fell from 574 to 177 ms and priority 2's rose 7.3 times, the cost of the budget
 cap's holds.
-
-<a id="how-the-run-was-laid-out"></a>
-
-<a id="the-core-block-by-block"></a>
-
-<a id="the-optional-arms"></a>
-
-<a id="the-analysis"></a>
-
-<a id="on-google-colab"></a>
-
-<a id="the-kit-rehearsed-on-the-box"></a>
-
-<a id="the-marlin-dry-run-on-the-box"></a>
-
-<a id="what-it-measured-2026-10-25"></a>
 
 [The A100 run's record](../benchmarks/results/2026-10-26-a100/README.md) gives each block of the run, its time and the
 Colab host, and [`a100.md`](../benchmarks/results/2026-10-26-a100/a100.md) reads it against the forecast
@@ -1176,8 +1134,6 @@ minutes with think times capped at 120 s. The prompt-token split is vLLM's own c
 [v0.3 release](https://github.com/StevenWang-CY/flatshare/releases/tag/v0.3)
 ([the simulator's calibration](../crates/flatshare-sim/README.md#calibration-against-the-gpu-operating-points)).
 
-<a id="e1-parking-in-the-simulator"></a>
-
 ## Does knowing when an agent returns help?
 
 Little at the median, and only with knowledge no deployment has. In the simulator even an oracle that knows each return
@@ -1205,8 +1161,6 @@ about 23), over 20 seeds, each cell gives the mean of the per-seed gains over `l
 - **The gate's first form, on the clairvoyant reference's headroom, reads the same**, at 0.5–2.3% at p50.
 - **On an L4, an A100 and an H100**, modeled at their own scalings, lifecycle information buys at most 15%, 13% and 9%
   of resume TTFT p90 ([other hardware, modeled](../crates/flatshare-sim/README.md#other-hardware-modeled)).
-
-<a id="the-regime-map"></a>
 
 ### Where does knowing the returns help most?
 

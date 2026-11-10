@@ -9,7 +9,7 @@ RTX 5060 Ti node, against tuned vLLM and what engines and routers already ship.
 | # | Experiment | Question | Its numbers |
 |---|---|---|---|
 | E0 | **The tier cost model** | What does resuming an agent turn cost from the GPU cache, from host RAM and recomputed? | [BENCHMARKS.md](BENCHMARKS.md#what-does-resuming-an-agent-turn-cost) |
-| E2 | **Voice under agent load** | How close does each configuration an operator can deploy bring the voice tail to its SLO, and at what cost to the agents? | [BENCHMARKS.md](BENCHMARKS.md#how-close-does-each-configuration-bring-the-voice-tail-to-its-slo), and [on an A100](BENCHMARKS.md#the-a100-run-2026-10-26) |
+| E2 | **Voice under agent load** | How close does each configuration an operator can deploy bring the voice tail to its SLO, and at what cost to the agents? | [BENCHMARKS.md](BENCHMARKS.md#how-close-does-each-configuration-bring-the-voice-tail-to-its-slo), and [on an A100](BENCHMARKS.md#do-the-rules-carry-to-a-datacenter-card) |
 | E3 | **The background tier's cost of make-room** | Through which rule does make-room cost the agents, the budget cap or the KV preemption? | [BENCHMARKS.md](BENCHMARKS.md#what-does-the-change-take-from-the-agents) |
 | E1 | **Parking** | How much of the gap to a clairvoyant reference does each level of lifecycle information close? | [BENCHMARKS.md](BENCHMARKS.md#does-knowing-when-an-agent-returns-help) |
 | Soak | **The production path for hours** | Does the box, as it serves, keep its SLO, admission and background service over a day? | [BENCHMARKS.md](BENCHMARKS.md#does-the-arrangement-to-deploy-keep-its-slo-over-a-day) |
@@ -79,7 +79,7 @@ which tried each addition on v1.14's serving profile.
 1. Preempt-resubmit aborts background work before its first byte and resubmits it.
 
 Arm 10, MPS with an active-thread split, did not run, since W1 had shown that the interference that matters is inside
-the engine ([BENCHMARKS.md](BENCHMARKS.md#voice-on-the-shared-gpu)).
+the engine ([BENCHMARKS.md](BENCHMARKS.md#what-does-agent-load-do-to-a-voice-turn-on-the-same-gpu)).
 
 **Arm 9** ([`disc-a9-s24.toml`](../benchmarks/e2/arms/disc-a9-s24.toml)) combines three parts:
 - **The engine** runs the `make-room` variant ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change)), with at most two
@@ -121,7 +121,7 @@ and from W5 on a warm-up turn opens each call. The callers record how late they 
 rejected for it ([the replay's fidelity](BENCHMARKS.md#how-closely-does-the-replay-follow-the-traces)).
 
 **Other hardware and two nodes.** E2's core ran like for like on an A100 SXM4 80 GB
-([BENCHMARKS.md](BENCHMARKS.md#the-a100-run-2026-10-26)). No point fronts two GPU nodes at once, and the two-node arm
+([BENCHMARKS.md](BENCHMARKS.md#do-the-rules-carry-to-a-datacenter-card)). No point fronts two GPU nodes at once, and the two-node arm
 files stay on the `two-node` branch. RG compared arrangements of two cards instead, each card's part a run of its own
 ([BENCHMARKS.md](BENCHMARKS.md#which-arrangement-of-two-cards-does-the-most-background-work)), and the gateway's
 placement of sessions on several nodes ships ([Nodes](../crates/flatshare-gateway/README.md#nodes)).

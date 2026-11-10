@@ -218,8 +218,6 @@ KV preemption takes agent B instead, whose KV is in the CPU tier. (c) Engine ste
 Without the budget cap every step also carries an agent's prefill chunk, and the reply decodes 14 tokens in the span.
 With it the reply's first 48 tokens run beside decodes only. Blocks and steps are illustrative.
 
-<a id="31-make-room"></a>
-
 ### 3.1 The KV preemption
 
 At the start of each step, before the running loop, the KV preemption finds r, the highest-priority waiting request that
@@ -262,8 +260,6 @@ freed(X): the blocks whose every holder is in X or has a free deferred, less tho
 growth(X): the blocks the requests in X would take until the frees land, over one step, or two with
            deferred frees.
 ```
-
-<a id="32-the-prefill-hold"></a>
 
 ### 3.2 The budget cap
 
@@ -509,8 +505,6 @@ began within a given V2V, on a log scale, each line pooling a configuration's re
 preempt-resubmit, 590 for tuned vLLM, 885 for the configuration to deploy). The dashed line is the SLO, and the thin
 line the 95th percentile.
 
-<a id="62-make-room-removes-the-wait-for-kv-and-the-hold-removes-agent-prefill-from-the-turns-steps"></a>
-
 ### 6.2 The KV preemption removes the wait for KV, and the budget cap removes agent prefill from the turn's steps
 
 Of the 3.68 s that sharing the GPU adds to the mean turn on tuned vLLM, 3.58 s fall between the end-of-turn decision and
@@ -551,8 +545,6 @@ Asked again for 320 of its replies to the callers' lines, the engine took 15 tok
 first sentence, 29 at the 95th percentile and 39 at most ([the
 record](../benchmarks/results/2026-10-27-first-sentence/README.md)). A 48-token window covers every first sentence, and
 a 16-token window 56% of them.
-
-<a id="64-the-agents-pay-through-the-hold-not-through-the-preemptions"></a>
 
 ### 6.4 The agents pay through the budget cap, not through the preemptions
 
@@ -638,7 +630,7 @@ can preempt a decoding request and keep its work, or keep agent prefill out of a
 
 Knowing what the conversation will do next found no use on either side. For the voice turn the headroom could not act.
 In the repository's simulator, knowing exactly when each agent returns shortens its median resume by under 8%, and its
-p90 by up to 29% only at low pressure ([the simulator's result](BENCHMARKS.md#e1-parking-in-the-simulator)).
+p90 by up to 29% only at low pressure ([the simulator's result](BENCHMARKS.md#does-knowing-when-an-agent-returns-help)).
 
 ### 6.6 The gain shrinks where the pool has room, and the tail grows as calls overlap
 
@@ -703,8 +695,6 @@ the first two samples of the agents only.
 | **The configuration to deploy**, 512-token steps | 5 | **1,634 ms** (1,609–1,663) | −35 ms | 8,651 | 14 / 26 s |
 | Tuned vLLM, 2,048-token steps | 2 | 3,663 ms (3,289–4,036) | +1,994 ms | 14,536 | 1.5 / 14 s |
 | The configuration to deploy, 2,048-token steps | 2 | 1,826 ms (1,810–1,843) | +157 ms | 14,635 | 1.5 / 15 s |
-
-<a id="e-the-forecast-for-the-a100"></a>
 
 The cards differ in how long a turn waits once KV is short, more than in how often. Beside tuned vLLM the engine's free
 KV was under two calls' 2,048 tokens 5.7% of the time on the A100 and 8.1% on the RTX 5060 Ti, but in the KV case the
@@ -1292,10 +1282,10 @@ records' READMEs the probes and checks around them, and [EXPERIMENTS.md](EXPERIM
 | The probes (Figures 2–4) | [`2026-10-23-make-room-probes`](../benchmarks/results/2026-10-23-make-room-probes) and [`2026-10-24-w5-probes`](../benchmarks/results/2026-10-24-w5-probes) | the probes' `check.py`, `make figures` |
 | The window (Figure 6) | [`2026-10-25-window-knee`](../benchmarks/results/2026-10-25-window-knee) and [`replies.tsv`](../benchmarks/results/2026-10-24-e2-w5/replies.tsv) | their `table.py` and `replies.py`, `make figures` |
 | A step's cost (Figure 7) | [`make-room-schedule.json`](../benchmarks/perf/make-room-schedule.json) | `make perf-make-room`, `make figures` |
-| A prompt's cost recomputed, restored or hit (§2.2) | [The tier cost table](BENCHMARKS.md#tier-cost-model-resuming-an-agent-turn-e0), kept in [`cost.rs`](../crates/flatshare-core/src/cost.rs) | `flatshare-bench tiers` on the GPU node |
+| A prompt's cost recomputed, restored or hit (§2.2) | [The tier cost table](BENCHMARKS.md#what-does-resuming-an-agent-turn-cost), kept in [`cost.rs`](../crates/flatshare-core/src/cost.rs) | `flatshare-bench tiers` on the GPU node |
 | The gateway's overhead (§5.1) | [`2026-10-29-gateway-window`](../benchmarks/results/2026-10-29-gateway-window) | its `table.py` |
 | The search for stalls (§4) | [`2026-11-05-liveness`](../benchmarks/results/2026-11-05-liveness) | its README |
-| The simulator's results (§6.5, §6.7), modeled | [Its tables in BENCHMARKS.md](BENCHMARKS.md#e1-parking-in-the-simulator) and [other hardware, modeled](../crates/flatshare-sim/README.md#other-hardware-modeled) | `make reproduce-e1`, `flatshare-sim hardware` |
+| The simulator's results (§6.5, §6.7), modeled | [Its tables in BENCHMARKS.md](BENCHMARKS.md#does-knowing-when-an-agent-returns-help) and [other hardware, modeled](../crates/flatshare-sim/README.md#other-hardware-modeled) | `make reproduce-e1`, `flatshare-sim hardware` |
 | Replies whose windows overlap (§6.6) | The test of overlapping replies in [`test_make_room.py`](../python/flatshare_vllm/tests/test_make_room.py) | `make test-make-room` |
 | The first sentences' tokens (§6.3) | [`2026-10-27-first-sentence`](../benchmarks/results/2026-10-27-first-sentence) | [`first_sentence.py`](../benchmarks/replies/first_sentence.py) |
 | §6.8, Figure 14 and Table 6 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds) | its `gate.py`, `make figures` |
@@ -1416,8 +1406,6 @@ never fired ([the record](../benchmarks/results/2026-10-28-soak/README.md)).
 **Figure D2. Over the 24 hours 1.5% of the replies were over the SLO, and only hour 4, at 5.5%, went over the 5%
 requirement.** (a) Each hour's share of its replies over the SLO, the requirement dashed and the day's share dotted. (b)
 The agents' tokens a second by hour, the day's dotted: 9,300 in hour 0, as AIPerf resumes its 14 sessions at once.
-
-<a id="f-revision-history"></a>
 
 ### E. Revision history
 

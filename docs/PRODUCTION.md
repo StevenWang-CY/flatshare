@@ -86,7 +86,7 @@ The change matters when background KV fills the pool, with agent contexts of 10k
 holds a few of them. On stock vLLM the signs are KV cache usage near 1 (`vllm:kv_cache_usage_perc`) while requests wait
 (`vllm:num_requests_waiting`), and a realtime time to first token of seconds at p95. Where the pool has room the change
 does less. At 16 agent sessions of the whole corpus the configuration to deploy had the lower p95 in each of five
-rounds, but met the SLO in one ([BENCHMARKS.md](BENCHMARKS.md#the-standard-scenario-in-five-rounds-w5)).
+rounds, but met the SLO in one ([BENCHMARKS.md](BENCHMARKS.md#what-changes-where-the-pool-has-room-and-with-more-calls)).
 
 ### Can the served model do the background work?
 
@@ -111,7 +111,7 @@ The serving profile ([`rtx-5060-ti-serve.toml`](../deploy/profiles/rtx-5060-ti-s
 | `--scheduling-policy` | `priority` | Voice at priority 0 runs before agents at 2 |
 | `--enable-prefix-caching` | on | The agents' requests share long prefixes |
 | `--kv-cache-memory` | 5 GiB, 36,400 tokens | The pool depends neither on the profiler nor on the audio servers' memory at start |
-| `--kv-transfer-config` | `OffloadingConnector`, 20 GiB, written through | A preempted agent reloads its KV: 509 ms against 3.26 s recomputed for a 16k-token context ([its cost](BENCHMARKS.md#tier-cost-model-resuming-an-agent-turn-e0)) |
+| `--kv-transfer-config` | `OffloadingConnector`, 20 GiB, written through | A preempted agent reloads its KV: 509 ms against 3.26 s recomputed for a 16k-token context ([its cost](BENCHMARKS.md#what-does-resuming-an-agent-turn-cost)) |
 | `--max-num-batched-tokens`, `--long-prefill-token-threshold` | `256`, `0` | The step cap, which bounds how long a decode waits behind a prefill chunk ([the sweep](../benchmarks/results/2026-10-27-sweep/README.md)) |
 | `make_room.max_preemptions_per_step` | `2` | The KV preemption: a waiting higher-priority request that lacks KV preempts lower-priority ones |
 | `make_room.budget_cap`, `make_room.budget_cap_tokens` | `true`, `48` | The budget cap: lower-priority prefill sits out a reply's first 48 tokens ([the window](#the-replys-first-tokens)) |
@@ -132,7 +132,7 @@ The serving profile ([`rtx-5060-ti-serve.toml`](../deploy/profiles/rtx-5060-ti-s
   serve module's, and each is off at 0 ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change)).
 - **The step cap's trade.** A voice turn that arrives with steps in flight waits for them. On an A100, vLLM's default
   2,048/0 gave the agents 1.4 times the tokens a second of 512/256 but left the voice p95 0.14–0.17 s over its SLO,
-  where 512/256 kept it under ([the A100 run](BENCHMARKS.md#what-it-measured-2026-10-26)). Pick the cap by the voice
+  where 512/256 kept it under ([the A100 run](BENCHMARKS.md#do-the-rules-carry-to-a-datacenter-card)). Pick the cap by the voice
   SLO's margin.
 - **The build.** On vLLM 0.32.0 or 0.33.0, `build.py` writes make-room's module from the installed release without
   modifying it (`python python/flatshare_vllm/src/flatshare_vllm/build.py make-room OUT_DIR`), and the engine loads it
@@ -182,7 +182,7 @@ binds its STT and TTS to the node that answers ([Nodes](../crates/flatshare-gate
 The budget cap protects a reply for its first T tokens, its window. The caller hears nothing until the reply's first
 complete sentence reaches TTS, so T must cover the first sentence, not the first token. The rest of a longer sentence
 decodes beside agent prefill again, its tokens 60–65 ms apart instead of 16–20 ms
-([the prefill case](BENCHMARKS.md#the-prs-configuration-in-one-session-w5)).
+([the prefill case](BENCHMARKS.md#what-does-each-rule-remove)).
 
 Choose T to cover your agent's first sentence at its longest. This voice agent's first sentences run 15 tokens at the
 median and 39 at most ([the first sentences](../benchmarks/results/2026-10-27-first-sentence/README.md)), and at T = 16
@@ -231,7 +231,7 @@ decides consent.
 ### The audio models
 
 Whisper and Kokoro share the GPU by time-slicing. MPS does not help, since the interference that matters is inside the
-LLM engine ([Voice on the shared GPU](BENCHMARKS.md#voice-on-the-shared-gpu)). Pin each server to its own CPU cores,
+LLM engine ([Voice on the shared GPU](BENCHMARKS.md#what-does-agent-load-do-to-a-voice-turn-on-the-same-gpu)). Pin each server to its own CPU cores,
 the engine on the GPU's NUMA node and the audio servers off it. Keep the audio models on the GPU. On the CPU, Kokoro's
 first audio took 991 ms with one call and 2,736 ms with two, against 211–242 ms for the GPU's whole TTS stage
 ([the CPU record](../benchmarks/results/2026-10-27-cpu-audio/README.md)).
@@ -276,7 +276,7 @@ how health, placement and failover work.
 
 Each p95 is the median of its configuration's runs beside the same 24 sessions. The row of #63350 alone comes from
 [the main evaluation's rounds](BENCHMARKS.md#how-close-does-each-configuration-bring-the-voice-tail-to-its-slo), and
-the others from [the campaigns before them](BENCHMARKS.md#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4), on
+the others from [the campaigns before them](BENCHMARKS.md#does-any-configuration-without-the-change-reach-the-slo), on
 one sample of the agents' traces.
 
 | Don't deploy | Measured | Why not |
@@ -309,7 +309,7 @@ steps ([the runbook](../ops/RUNBOOK.md#deploy); [ARCHITECTURE.md §3.6](ARCHITEC
   voice agent's stage times split a slow turn into endpointing, the LLM's first sentence and TTS (Figure 2).
 - **The engine.** KV usage, running and waiting requests, and preemptions. `vllm:num_preemptions_total` counts a
   victim when its next output reaches the frontend, so it lags, and no vLLM 0.32 counter shows what a preempted request
-  recomputes ([what the agents pay](BENCHMARKS.md#e3-what-make-room-takes-from-the-agents)).
+  recomputes ([what the agents pay](BENCHMARKS.md#what-does-the-change-take-from-the-agents)).
 - **What the engine held.** At most every 10 s the engine logs the steps it held, the prefill and admissions it held
   back, its preemptions, the turns announced and the decodes held. Turns announced that stay at 0 while calls run mean
   the voice worker's hints do not reach the engine at priority 0.
@@ -348,7 +348,7 @@ The budget cap holds lower-priority prefill while any realtime request's first t
 stops once each reply's window overlaps the next. On vLLM's real scheduler on CPU, beside six agents, that came at one
 48-token reply every 40 steps ([the test](../python/flatshare_vllm/tests/test_make_room.py)). At the 16–20 ms a step
 the box measures under the cap, it is about one realtime reply a second, some six calls turning every 6 s. The
-evaluation measured up to six callers ([calls per GPU](BENCHMARKS.md#calls-per-gpu-w5)).
+evaluation measured up to six callers ([calls per GPU](BENCHMARKS.md#what-changes-where-the-pool-has-room-and-with-more-calls)).
 
 ### The engine dies
 
@@ -357,7 +357,7 @@ request gets one 502, and later ones 503 `upstream_not_ready` with `Retry-After:
 answers. systemd starts the unit 5 s after its last process exits, and `StartLimitBurst=3` in 30 minutes ends a crash
 loop. In the drill each stream got the error event 6–11 ms after the kill command. A request succeeded 106.2 s after
 the kill, most of it the engine's warm start, and on cold caches after an upgrade a start takes about nine minutes
-([the drills](BENCHMARKS.md#failure-drills)).
+([the drills](BENCHMARKS.md#what-does-a-failure-do-to-the-calls-and-the-agents)).
 
 ### The first of two cards fails
 
@@ -374,7 +374,7 @@ successor that serves at once, and drains. Realtime and interactive requests in 
 background ones are cut after `background_drain_s` (5 s) with a `draining` error event or a 503 with `Retry-After`.
 `flatshare-gateway.socket` holds the sockets across a restart or a crash, so new connections wait rather than fail. In
 the drills a reload and a restart failed none of 42 requests, and a kill none
-([the drills](BENCHMARKS.md#failure-drills)).
+([the drills](BENCHMARKS.md#what-does-a-failure-do-to-the-calls-and-the-agents)).
 
 ## Checking it on your hardware
 

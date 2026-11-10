@@ -50,7 +50,7 @@ scheduler cause it:
 - **A waiting request cannot take KV.** vLLM 0.32 preempts only so that a running request can grow, and its waiting
   loop stops at the first request it cannot allocate ([#40004](https://github.com/vllm-project/vllm/issues/40004)).
   When running agents hold the pool, a voice turn waits for one of them to finish
-  ([the KV case](BENCHMARKS.md#the-kv-case-make-room); [vLLM's former V0 scheduler](PRIOR-ART.md#vllm-0320-2026-10-18)).
+  ([the KV case](BENCHMARKS.md#why-does-a-voice-turn-wait-beside-agents); [vLLM's former V0 scheduler](PRIOR-ART.md#vllm-0320-2026-10-18)).
 - **Prefill shares the reply's steps.** Once the turn runs, every step of its reply also carries agent prefill chunks,
   up to about 270 ms each after a 30k-token context, so the first sentence decodes slowly.
 
@@ -84,9 +84,9 @@ What each does ([REPORT §3](REPORT.md#3-design) gives the two rules in full):
 - **The KV preemption.** When the highest-priority waiting request lacks KV for its whole sequence, the scheduler
   preempts running requests of a strictly lower priority, the lowest priority and the latest arrival first, as few as
   make it fit. It takes at most N a step, none if N would not suffice, and their KV stays in the CPU tier
-  ([§3.1](REPORT.md#31-make-room)).
+  ([§3.1](REPORT.md#31-the-kv-preemption)).
 - **The budget cap.** Lower-priority prefill sits out the steps of a request's first `budget_cap_tokens` output tokens
-  (16 by default), and decodes are never cut ([§3.2](REPORT.md#32-the-prefill-hold)).
+  (16 by default), and decodes are never cut ([§3.2](REPORT.md#32-the-budget-cap)).
 - **The reserve.** Requests of a positive priority value are admitted only while they leave the reserve free, a
   class-aware watermark.
 - **The reservations taken.** vLLM admits a load from the CPU tier only beside every in-flight prefill's reservation.
@@ -110,7 +110,7 @@ What each does ([REPORT §3](REPORT.md#3-design) gives the two rules in full):
   box's PCIe 3.0 x8 link holds a concurrent step's input copy until the whole load ends. Stores keep the copy engine.
 
 E2 found the budget cap necessary, and either the KV preemption or the reserve enough for the rest
-([BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2)). The window has to cover the reply's first sentence, 39
+([BENCHMARKS.md](BENCHMARKS.md#how-is-a-point-of-voice-under-agent-load-measured)). The window has to cover the reply's first sentence, 39
 tokens at most for this voice agent ([the first sentences](../benchmarks/results/2026-10-27-first-sentence/README.md)),
 so the configuration to deploy is the pull requests' switches with a 48-token window and no reserve.
 
@@ -240,8 +240,6 @@ overhead, each have a fast and a slow burn-rate alert ([SLO.md](SLO.md)), and he
 dashboard shows the same ([`ops/grafana`](../ops/grafana/flatshare.json)), and
 [PRODUCTION.md](PRODUCTION.md#what-to-watch) says what to watch.
 
-<a id="33-network-and-security"></a>
-
 ## 4. Network and security
 
 The services keep off the hosts' networks ([ADR-0005](adr/0005-loopback-services-and-node-sticky-kv.md)):
@@ -271,12 +269,10 @@ The services keep off the hosts' networks ([ADR-0005](adr/0005-loopback-services
 
 ## 5. The measurement configuration
 
-<a id="31-the-frozen-box"></a>
-
 ### 5.1 The frozen box
 
 Every measurement on the box runs one pinned configuration, with the audio models on the same GPU
-([`deploy/phastform`](../deploy/phastform); measured values in [BENCHMARKS.md](BENCHMARKS.md#the-frozen-box)). The
+([`deploy/phastform`](../deploy/phastform); measured values in [BENCHMARKS.md](BENCHMARKS.md#how-is-the-frozen-box-set-up)). The
 serving profile is the same box, running the change at its own step cap (§3.1):
 
 | Component | Configuration | GPU memory |
@@ -293,7 +289,7 @@ serving profile is the same box, running the change at its own step cap (§3.1):
 - **NUMA and environment.** vLLM runs on the GPU's node (node 1, cores 8–15) and the audio servers on node 0. vLLM
   0.32.0 runs on torch 2.13.0+cu130 and Kokoro on torch 2.8.0+cu128, pinned in `deploy/phastform/requirements/`.
 - **Time-slicing, not MPS.** As MPS clients STT and TTS gain a little, but the LLM stage and its tail get worse
-  ([BENCHMARKS.md](BENCHMARKS.md#voice-on-the-shared-gpu)).
+  ([BENCHMARKS.md](BENCHMARKS.md#what-does-agent-load-do-to-a-voice-turn-on-the-same-gpu)).
 - **Engine variants** are drop-ins that `deploy/phastform/variant.sh` switches
   ([the variants](../deploy/phastform/variants/README.md)). Besides `make-room` they include vLLM #54530 ported to
   0.32.0, SGLang 0.5.22, MPS, `agents-only` (the speech servers' 3.4 GiB in the KV pool), and an arm file's flags.
@@ -308,7 +304,7 @@ and runs the simulator.
 
 Another GPU node's files come from a hardware profile (`deploy/profiles/`, rendered by `deploy/profile.py`). A host
 without cyan beside it runs the GPU servers and the control plane together, on loopback ([HARDWARE.md](HARDWARE.md)),
-as the A100 run did in a Google Colab container ([the A100 run](BENCHMARKS.md#on-google-colab)).
+as the A100 run did in a Google Colab container ([the A100 run](BENCHMARKS.md#do-the-rules-carry-to-a-datacenter-card)).
 
 ## 6. The measurement harness and the simulator
 
@@ -320,8 +316,6 @@ E2's baselines (a background cap, a token reservation, llm-d-style flow control 
 and the lifecycle policy (§7), and the gateway refuses them beside `[[nodes]]`. They live in `flatshare-core`, pure
 code with no I/O and no clock, beside the models of the frozen box that `flatshare-sim` runs: the E0 tier cost model,
 KV geometry and a step-time model.
-
-<a id="42-the-voice-pipeline"></a>
 
 ### 6.2 The voice pipeline in measurement
 
@@ -347,8 +341,6 @@ two-tier prefix cache and its step loop, with a step time fitted to the box. Its
 CPU tier to a clairvoyant reference (Belady's MIN in each tier). `flatshare-sim hardware` places an L4, an A100 40 GB
 and an H100 SXM on the same regime map, labeled as modeled, and `flatshare-sim forecast` wrote the A100 run's forecast
 before it ran ([`forecast-80gb.md`](../benchmarks/a100/forecast-80gb.md)).
-
-<a id="6-tested-and-not-adopted"></a>
 
 ## 7. Designs measured and dropped
 
@@ -384,7 +376,7 @@ Two mechanisms were built, measured and not adopted, and the rest of the origina
 | Another user's GPU work | `gpu-guard` refuses to start the box; a point measured beside foreign GPU work is measured again | [RUNBOOK.md](../ops/RUNBOOK.md#checks-before-heavy-work-on-a-shared-host) |
 
 1. Each stream got the error event 6–11 ms after the kill command, and a request succeeded 106.2 s after it, most of
-   that the engine's warm start ([the drills](BENCHMARKS.md#failure-drills);
+   that the engine's warm start ([the drills](BENCHMARKS.md#what-does-a-failure-do-to-the-calls-and-the-agents);
    [PRODUCTION.md](PRODUCTION.md#how-it-fails)).
 2. The reload tests send a request every 20 ms through a reload, all answered. In the gateway drills a reload and a
    restart failed none of 42 requests, and a kill none of 4.

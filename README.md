@@ -58,7 +58,7 @@ marker the median of a configuration's runs. The dashed line is the SLO, voice a
 
 The KV preemption's row runs the first pull request alone and the change's rows run both; the measurements name them by
 their first numbers, #63350 and #63351. Each row is the median of five runs, or 10 for tuned vLLM and 15 for the last
-([the runs](docs/BENCHMARKS.md#the-discriminating-scenario-after-w5s-fixes-w5)). Tuned vLLM runs priority scheduling, a
+([the runs](docs/BENCHMARKS.md#how-close-does-each-configuration-bring-the-voice-tail-to-its-slo)). Tuned vLLM runs priority scheduling, a
 512-token step cap and a CPU KV tier. The SLO allows 5% of the replies over it. The configuration's agents waited 72 s
 for their first token at the median, against tuned vLLM's 63 s ([every
 measure](docs/REPORT.md#61-the-two-rules-bring-the-voice-tail-to-224-s-while-the-agents-keep-97-of-their-throughput)).
@@ -97,10 +97,10 @@ The deployment's serving profile adds to the two rules, measured in rounds on ne
 
 1. **vLLM 0.32 cannot preempt for a waiting request.** It preempts only so that a running request can grow. Behind two
    18k-token agent requests in a full pool, a 750-token voice turn waits 4.9–5.0 s for its first token, and 219–290 ms
-   with #63350 ([the KV case](docs/BENCHMARKS.md#the-prs-configuration-in-one-session-w5)).
+   with #63350 ([the KV case](docs/BENCHMARKS.md#what-does-each-rule-remove)).
 2. **Admitting the turn is not enough.** Beside three agent prefills the reply's tokens arrive 60–65 ms apart with
    #63350 alone, and 16–20 ms apart once #63351 holds the prefill back
-   ([the prefill case](docs/BENCHMARKS.md#w5-the-fixed-make-room-on-phastform)).
+   ([the prefill case](docs/BENCHMARKS.md#what-does-each-rule-remove)).
 3. **The budget cap's window must cover the reply's first sentence**, which the voice agent hands to text to speech
    whole. Its first sentences run 15 tokens at the median and 39 at most. A 16-token window leaves the p95 at 3.1 s, and
    48 tokens cover them all ([the first sentences](benchmarks/results/2026-10-27-first-sentence/README.md)).
