@@ -1,380 +1,293 @@
 # Prior art
 
-*Checked against primary sources on 2026-10-22, some of them later ([the dates](#dates)). Dates are UTC.*
+This page is for an engineer asking how Flatshare differs from an engine, router or paper that co-serves latency
+classes. It states what Flatshare claims, where each mechanism already exists, and what Flatshare does not claim. Each
+source was checked against its primary source, a paper, thread, release note, documentation or code, between 2026-10-22
+and 2026-11-09, and vLLM's threads and Flatshare's pull requests on 2026-11-09.
 
-This page is for engineers asking "how is this different from X?". Flatshare serves a realtime tier that no admission policy sheds (voice turns, bounded only by the calls the box admits and the gateway's own limits: [ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)) beside a best-effort tier that is harvested (background agents), on one vLLM replica.
+## What Flatshare claims
 
-It was built to time the protection from lifecycle events: speech onset, end of turn and barge-in for voice, and tool waits for agents. In E2's discriminating scenario that protection could not act from a control plane in front, while the change in the engine (#63350 and #63351) takes the voice tail from 10.5 s to 2.24 s, 0.20 s over the SLO, and on an A100 SXM4 80 GB at the same pool from 4.99 s to 1.63 s, under that card's SLO.
+Flatshare serves a realtime tier, voice turns, beside a best-effort tier, background coding agents, on one vLLM replica.
+It applies published co-serving and KV-tiering mechanisms to a workload pair that no published system we found measures
+together. Three things are its own, as [the report's §8](REPORT.md#8-related-work) also argues.
 
-In the simulator (E1), knowing when agents return bought under 8% of the median resume latency, and session history bought nothing even at the tail.
+1. **A change to vLLM's V1 scheduler, measured end to end.** It is proposed to vLLM as pull requests
+   [#65282](https://github.com/vllm-project/vllm/pull/65282) and [#65283](https://github.com/vllm-project/vllm/pull/65283),
+   first opened as #63350 and #63351. Both are open and rebased, with no maintainer review as of 2026-11-09.
+   - **The KV preemption** (#65282) brings V0's preemption for a waiting request to V1, extended to chunked prefill and
+     to the CPU tier. The tier keeps the victim's KV when the offloading connector offloads generated tokens too
+     (`offload_prompt_only: false`, which Flatshare sets). It preempts only when at most N victims make room, and then
+     as few as do. The open fixes #40087 and #45558 preempt one victim at a time until the request fits, so they can
+     preempt without making room.
+   - **The budget cap** (#65283) holds lower-priority prefill out of a priority request's first tokens, a window sized
+     to cover the first sentence the voice agent hands to text to speech. Semantic Scheduling holds prefill through an
+     urgent request's whole decode, and VoxServe holds steady streams until a new request's first audio chunk. We found
+     no hold bounded to a reply's first tokens.
+   - **The measurement.** In E2's discriminating scenario the change takes the voice tail from 10.5 s to 2.24 s, 0.20 s
+     over the SLO. On an A100 SXM4 80 GB at the same pool it takes it from 4.99 s to 1.63 s, under that card's SLO
+     ([§6.1](REPORT.md#61-the-two-rules-bring-the-voice-tail-to-224-s-while-the-agents-keep-97-of-their-throughput),
+     [§6.7](REPORT.md#67-the-rules-carry-to-an-a100)).
+2. **Headroom timed by voice events, a measured negative result.** KV room for the next voice turn is held from speech
+   onset or end of turn, before the request exists, by deferring new background requests. We found no system that times
+   headroom from a voice event. In E2's discriminating scenario it could not act, since running agents held the KV.
+   Arm 9 with its headroom left out, or armed only by the request, stayed within the spread of its own runs. A control
+   plane in front of the engine makes room only by aborting admitted work
+   ([§6.5](REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work)).
+3. **The workload pair, measured.** A cascaded voice pipeline beside long-context agents on one GPU, with voice-to-voice
+   latency read from waveforms, against the configurations an operator can deploy. The co-serving systems below serve
+   online and offline LLM requests, and the voice systems measure voice alone.
 
-## Positioning
+E1, the simulator's study, measures what lifecycle information adds to the parking mechanisms of Tokencake, KVFlow,
+MORI and Ask the Tool. Knowing when agents return bought under 8% of the median resume latency, and session history
+nothing ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)).
 
-> Flatshare applies known co-serving and KV-tiering mechanisms to a workload pair that no published system we found measures together, a cascaded voice pipeline beside long-context agents on one GPU. It does so in two forms: a change to vLLM's V1 scheduler, measured end to end against what an operator can deploy today, and lifecycle timing in a control plane, which in E2's discriminating scenario could not act.
-
-**Claimed.** Two parts, argued in [What is distinctive](#what-is-distinctive):
-1. **The change.**
-   - #63350 brings vLLM V0's preemption for a waiting request to V1's scheduler, extended to chunked prefill and to the CPU tier, which keeps the victim's KV for its resume (how much a resume restores and how much it recomputes, no vLLM 0.32 counter shows).
-   - #63351 holds lower-priority prefill out of the request's first tokens, a window that must cover the first sentence the voice agent hands to text to speech; E2 found that part necessary, and the KV preemption, or a class-aware KV reserve in its place, does the rest.
-   - Both ideas are published, and two open pull requests, #40087 from April and #45558 from June, also preempt for a waiting request in V1's scheduler, one victim at a time until it fits; what is ours is the change to V1's scheduler that preempts only when at most N victims make room, the budget cap bounded to the reply's first tokens and sized to its first sentence, and their measurement end to end.
-2. **Lifecycle-timed headroom: a measured negative result.** GPU room for the next realtime turn is held before the request exists, from speech onset or end of turn, counted in KV tokens and held by deferring new background requests (parking sessions in host RAM was the lease design, which was dropped). In E2's discriminating scenario it could not act, and room came from the change (1.); a control plane can make room only by aborting admitted work ([REPORT.md §6.5](REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work)).
-
-**Dropped:** a recompute ledger that attributes every recomputed prompt token to a cause, checked by injecting causes, which went with leases ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)).
-
-Everything else is a baseline or a reference: [At a glance](#at-a-glance) lists each mechanism and where it exists, and [What we do not claim](#what-we-do-not-claim) gathers them.
-
-In the tables, **Relation** says how an item bears on Flatshare:
-- **baseline**: E1 or E2 must be compared against it;
-- **pre-empts**: it ships or publishes a mechanism, so Flatshare does not claim that mechanism;
-- **complement**: an input, a venue for upstream work, or evidence for the problem.
+Flatshare also proposed version 1.24's cache-aware queue and SM copy to vLLM, as drafts
+[#66558](https://github.com/vllm-project/vllm/pull/66558) and [#66527](https://github.com/vllm-project/vllm/pull/66527).
+E1's negative result went to vLLM #57103 and [vllm-project/router#428](https://github.com/vllm-project/router/issues/428)
+as comments, and a lifecycle-event sink to [agentic-api#364](https://github.com/vllm-project/agentic-api/issues/364).
 
 ## At a glance
 
-| Mechanism | Where it exists on 2026-10-22 | Flatshare |
+| Mechanism | Where it exists | Flatshare |
 |---|---|---|
 | A latency class co-served with best-effort work | ConServe, HyGen, BROS, Niyama, Chiron, Echo, ProServe; Valve in production on 8,054 GPUs | Not claimed |
-| Priority classes, budgets, aging, queue TTLs, in-flight eviction | llm-d v1.0 flow control, SMG, Dynamo, AIBrix | Not claimed; llm-d flow control (emulated) and SMG are E2 baselines |
-| Headroom held back for priority work | Static: SMG reserved slots, llm-d holdback ceilings, vLLM `watermark` (class-blind) | An equal-size static reservation is a baseline |
-| Engine priority preemption | vLLM V1 (0.32) among running requests; SGLang at the request cap | Baseline; the KV-full case on V1's scheduler, preempting only victims that make room, is the claimed fix |
-| Preempting for a waiting request, the victim's KV kept in host memory | TokenFlow (written through), ConServe (checkpointed token by token), Chiron, ProServe, FastServe | Not claimed; #63350 is its form in vLLM V1's scheduler, on vLLM's own CPU tier |
-| Holding other work back for a priority request's output | Semantic Scheduling and VoxServe; class-blind: SLOWeave, vLLM #56848 (closed) | Claimed in one form: the budget cap (#63351) holds lower-priority prefill back through a reply's first tokens, sized to its first sentence |
+| Priority classes, budgets, aging, queue TTLs, in-flight eviction | llm-d v1.0's flow control, SMG, Dynamo, AIBrix | Not claimed; llm-d's flow control (emulated) and SMG are E2 baselines |
+| Headroom held back for priority work | Static: SMG's reserved slots, llm-d's holdback, vLLM's class-blind `watermark`. For a running request: Llumnix. From load or the agent graph: Valve, Echo, Tokencake | Not claimed; an equal-size static reservation is a baseline |
+| Headroom timed from a voice event, before the request exists | Not found | A measured negative result; in E2 it could not act |
+| Engine priority preemption | vLLM V1 among running requests; SGLang at the request cap | Baseline; the KV-full case in V1's scheduler is the claimed fix |
+| Preempting for a waiting request, the victim's KV kept in host memory | vLLM V0 (its victims recomputed), TokenFlow, ConServe, Chiron, ProServe, FastServe | Not claimed; #65282 is its form in vLLM V1's scheduler, on vLLM's own CPU tier |
+| Holding other work back for a priority request's output | Semantic Scheduling, VoxServe; class-blind: SLOWeave, vLLM #56848 (closed) | Claimed in one form, the budget cap (#65283), bounded to a reply's first tokens |
 | Parking KV during a tool call, prefetching before the return | Tokencake, KVFlow, CacheScout, MORI; proposed for vLLM (#57103, #58198) | Not claimed; E1 measures what lifecycle information adds |
-| TTL holds and leases | Continuum, TensorRT-LLM retention, vLLM #37003, llm-d-router #2273, AIBrix #2814 | Not claimed; Continuum's TTL hold is an E1 baseline |
-| Program- or session-level admission | Autellix, Parrot, ThunderAgent, vllm-project/router Progress-TTL | Not claimed |
-| Starting the LLM before the turn ends | LiveKit preemptive generation (on by default), Endpoint Anticipation, PredGen | Triggers to compare, not claimed |
-| Ordering waiting requests by what is cached (checked 2026-11-09) | SGLang's cache-aware scheduling, the longest cached prefix first; vLLM's main since 2026-11-04 ([#54625](https://github.com/vllm-project/vllm/pull/54625)): a bounded window of the first-come-first-served queue, by the GPU prefix cache's hits alone; shortest remaining prefill first with aging, proposed ([#58420](https://github.com/vllm-project/vllm/pull/58420)) | Not claimed; version 1.24's queue counts the CPU tier's hits too, within each priority, and [#66558](https://github.com/vllm-project/vllm/pull/66558) proposes that count for #54625's admission |
-| The copy path of KV loads from host memory (checked 2026-11-09) | vLLM's Triton kernel for pages under 28 KiB, the copy engine above; a per-device cutoff asked in [#57555](https://github.com/vllm-project/vllm/issues/57555) and calibrated on an idle GPU by [#66511](https://github.com/vllm-project/vllm/pull/66511) (open; #66510 for canonical layouts) | Not claimed; measured: on PCIe 3.0 x8 a load on the copy engine holds a concurrent step's inputs until it ends, and [#66527](https://github.com/vllm-project/vllm/pull/66527) proposes the kernel for the tier's loads |
-| Gap between LRU and Belady on prefix caches | "When Fancy Eviction Fails", LPC | Not claimed; E1 reports the gap closed per level of information |
-| Recomputed tokens attributed to causes | Not found | Not claimed: dropped with leases |
+| TTL holds and leases | Continuum, TensorRT-LLM, vLLM #37003, llm-d-router #2273, AIBrix #2814 | Not claimed; Continuum's TTL hold is an E1 baseline |
+| Program- or session-level admission | Autellix, Parrot, ThunderAgent, vllm-project/router's Progress-TTL | Not claimed |
+| Starting the LLM before the turn ends | LiveKit's preemptive generation (on by default), Endpoint Anticipation, PredGen | Not claimed; triggers to compare |
+| Ordering waiting requests by what is cached | SGLang, by the longest cached prefix; vLLM's main since 2026-11-04 ([#54625](https://github.com/vllm-project/vllm/pull/54625)), in a bounded window, by the GPU prefix cache's hits alone | Not claimed; version 1.24's queue also counts the CPU tier's hits, within each priority (#66558) |
+| The copy path of KV loads from host memory | vLLM: a Triton kernel for pages under 28 KiB, the copy engine above, with a per-device cutoff asked in [#57555](https://github.com/vllm-project/vllm/issues/57555) and proposed in [#66511](https://github.com/vllm-project/vllm/pull/66511) | Not claimed; on PCIe 3.0 x8 a load on the copy engine holds a concurrent step's inputs until it ends (measured), and #66527 loads the tier through the kernel |
+| A priority tier that degrades instead of failing | Gemini's Priority overflow, OpenAI's Fast mode, Niyama's relegation | Not claimed |
+| A gap between LRU and Belady on prefix caches | "When Fancy Eviction Fails", LPC | Not claimed; E1 reports the gap closed per level of information |
 | Cascaded voice beside long-context agents on one GPU, measured | Not found; NVIDIA's single-GPU voice-agent profile documents the regression | The measured workload |
 
-Notes on the table:
-
-- **Headroom held back for priority work** is also tied to a running request (Llumnix), or sized from load or the agent graph (Valve, Echo, Tokencake). Timing it from voice events was measured too: in E2 it could not act, since running agents held the KV.
-- **Engine priority preemption for a waiting request** existed in vLLM V0, on its path without chunked prefill (#5958, v0.6.2 to v0.10.2). It is proposed for V1 when a waiting request's allocation fails, one victim at a time (#40087), and for SGLang when KV runs out, the victim's KV kept best-effort in its GPU prefix cache (#45686).
-- **Holding other work back for a priority request** takes two forms: Semantic Scheduling holds lower-priority prefill while the most urgent request decodes, and VoxServe puts newly admitted requests ahead of steady streams until their first audio chunk.
+The sections below give each source, and their Relation column says how it bears on Flatshare. A **baseline** is
+compared against in E1 or E2. **Prior** marks a mechanism that the source published or shipped before Flatshare, which
+does not claim it. A **complement** is an input, a venue for upstream work, or evidence for the problem.
 
 ## Co-serving latency-critical and best-effort work
 
-The table also holds the engine scheduling the two rules sit beside: preemption for waiting or arriving requests, from Andes on, and prefill held back for decodes, from Sarathi-Serve on.
-
 | Work | Venue, date | What it does | Relation |
 |---|---|---|---|
-| [ConServe](https://arxiv.org/abs/2410.01228) | ICML 2026 ([poster](https://icml.cc/virtual/2026/poster/62686)); arXiv 2024-10-02 | Co-serves online and offline tasks on vLLM: 2.2× throughput and 2.9× lower online tail latency on average | Pre-empts harvest-and-protect, resuming the victim from KV in host memory |
-| [HyGen](https://arxiv.org/abs/2501.14808) | NeurIPS 2025 | A latency predictor and SLO-aware offline scheduling co-locate online and offline requests; up to 3.9–5.8× throughput while meeting latency SLOs | Pre-empts the co-location goal |
-| [BROS](https://arxiv.org/abs/2504.09590) | arXiv 2025-04-13 | Real-time and best-effort requests in one engine, with dynamic priorities and bidirectional KV sharing between the classes | Pre-empts two classes in one engine sharing KV |
-| [Niyama](https://arxiv.org/abs/2503.22562) | arXiv 2025-03-28 | Fine-grained QoS classes on shared infrastructure: dynamic chunking, hybrid prioritization, selective relegation under overload; 32% more capacity than siloed deployments | Pre-empts class-aware admission with graceful degradation |
-| [Valve](https://arxiv.org/abs/2604.07874) | arXiv 2026-04-09 | Online–offline colocation on 8,054 GPUs: +34.6% cluster utilization, under 5% TTFT increase | Pre-empts co-location at fleet scale; the closest production analogue of E2 |
-| [Chiron](https://arxiv.org/abs/2501.08090) | arXiv 2025-01-14 | Autoscales instances for interactive and batch requests by their SLOs | Pre-empts evicting batch work for interactive requests with the victim's KV kept in host memory |
-| [Echo](https://arxiv.org/abs/2504.03651) | arXiv 2025-03-01 | Co-schedules online and offline tasks on vLLM 0.6.3: up to 3.3× offline throughput within the online SLOs | Pre-empts online work preempting offline work on vLLM's V0 scheduler, and a reserve sized from load |
-| [ProServe](https://arxiv.org/abs/2512.12928) | arXiv 2025-12-15 (rev. 2026-06-12) | Multi-priority scheduling for service gain, on xLLM with Ascend 910B NPUs | Pre-empts priority preemption with the victim's KV copied to host memory ahead of it |
-| [QLLM](https://arxiv.org/abs/2503.09304) | EuroMLSys 2025 | Latency-sensitive and best-effort jobs in MoE inference: preemption at any layer, down to an expert, defers best-effort work | Complement: class preemption inside a step, for MoE models |
-| [Agent.xpu](https://arxiv.org/abs/2506.24045) | arXiv 2025-06-30 (rev. 2026-01-06) | Reactive (foreground) and proactive (background) agent LLM flows on a heterogeneous SoC, with fine-grained preemption and slack-aware piggybacking; reactive latency at least 91% lower | Complement: two classes of agent work on one device, an SoC rather than a GPU |
-| [Llumnix](https://www.usenix.org/conference/osdi24/presentation/sun-biao) | OSDI 2024 | Live migration of requests between instances | Pre-empts class KV headroom. Its headroom belongs to a running request; Flatshare's is held before the request arrives |
-| [SLOs-Serve](https://arxiv.org/abs/2504.08784) | arXiv 2025-04-05 | Allocates tokens per SLO by dynamic programming over chunked prefill and speculative decoding | Pre-empts per-class token budgets |
-| [QLM](https://arxiv.org/abs/2407.00047) | SoCC 2024 | Holds batch and interactive requests in one queue, ordered by estimated waiting time, with eviction and model swapping | Pre-empts SLO-ordered queueing |
-| [Aladdin](https://arxiv.org/abs/2405.06856) | arXiv 2024-05-11 | SLO-aware query placement and worker scaling | Complement: the cluster-scale question |
-| [Andes](https://arxiv.org/abs/2404.16283) | arXiv 2024-04-25 | Preemptive token-level scheduling for quality of experience in text streaming | Complement: the text analogue of pacing decode to audio playback |
-| [TokenFlow](https://arxiv.org/abs/2510.02758) | EuroSys 2026 | Preemptive scheduling for text streaming on SGLang, ranked by clients' token buffers and consumption rates | Pre-empts preemption for a waiting request with a write-through CPU tier; its priorities come from the clients' buffers, not from classes |
-| [FastServe](https://www.usenix.org/conference/nsdi26/presentation/wu-bingyang) | NSDI 2026 | Iteration-level preemption with a skip-join multi-level feedback queue | Pre-empts preemption for new work with proactive KV offload; its priority is a job's size |
-| ["Beyond Prediction"](https://arxiv.org/abs/2606.18431) (UNIBOOST) | ICML 2026 | Soft priority boosting from lightweight statistics in place of output-length prediction | Complement: preemption on arrival that prices KV movement, by job size |
-| [Semantic Scheduling](https://arxiv.org/abs/2506.12204) | arXiv 2025-06-13 | Priorities from a request's urgency | Pre-empts both rules' ideas, in a prototype. Its hold lasts the urgent request's whole decode; the budget cap's ends with a reply's first tokens |
+| [ConServe](https://arxiv.org/abs/2410.01228) | ICML 2026 | Co-serves online and offline tasks on vLLM, preempting offline requests for online ones, their KV checkpointed to host memory token by token | Prior: harvest-and-protect with resume from host memory; E2's preempt-resubmit approximates it from outside the engine |
+| [HyGen](https://arxiv.org/abs/2501.14808) | NeurIPS 2025 | A latency predictor co-locates online and offline requests within latency SLOs | Prior: the co-location goal |
+| [BROS](https://arxiv.org/abs/2504.09590) | arXiv 2025-04-13 | Real-time and best-effort requests in one engine, with dynamic priorities and KV shared between the classes | Prior: two classes sharing KV in one engine |
+| [Niyama](https://arxiv.org/abs/2503.22562) | arXiv 2025-03-28 | QoS classes on shared infrastructure that relegate work under overload | Prior: class-aware admission with graceful degradation |
+| [Valve](https://arxiv.org/abs/2604.07874) | arXiv 2026-04-09 | Online–offline colocation on 8,054 GPUs, with sub-millisecond compute preemption and dynamic memory reservation | Prior: co-location at fleet scale; the closest production analogue of E2 |
+| [Chiron](https://arxiv.org/abs/2501.08090) | arXiv 2025-01-14 | Autoscales instances by SLO; interactive requests evict batch ones, whose KV moves to CPU memory for a fast restart | Prior: eviction with the victim's KV kept in host memory |
+| [Echo](https://arxiv.org/abs/2504.03651) | arXiv 2025-03-01 | On vLLM V0's priority scheduling, online tasks preempt offline ones, which recompute, beside a KV reserve sized from load | Prior: preemption on V0's scheduler, and a reserve sized from load |
+| [ProServe](https://arxiv.org/abs/2512.12928) | arXiv 2025-12-15 | Multi-priority scheduling that preempts even in decode, the victims' KV copied to host memory ahead of need | Prior: priority preemption with the victim's KV kept |
+| [TokenFlow](https://arxiv.org/abs/2510.02758) | EuroSys 2026 | Preempts running requests for waiting ones on SGLang, ranked by clients' token buffers, with KV written through to host memory | Prior: preemption for a waiting request with KV kept; its priorities come from buffers, not classes |
+| [FastServe](https://www.usenix.org/conference/nsdi26/presentation/wu-bingyang) | NSDI 2026 | Iteration-level preemption with a skip-join multi-level feedback queue, swapping KV to host memory ahead of need | Prior: preemption with proactive offload; its priority is a job's size |
+| [Semantic Scheduling](https://arxiv.org/abs/2506.12204) | arXiv 2025-06-13 | In vLLM, an urgent request preempts less urgent ones until it fits, and new prefills sit out while the most urgent request decodes | Prior: both rules' ideas; its hold lasts the whole decode, the budget cap's a reply's first tokens |
+| [Llumnix](https://www.usenix.org/conference/osdi24/presentation/sun-biao) | OSDI 2024 | Migrates requests between instances, keeping memory headroom for high-priority ones | Prior: class headroom, held for a running request where Flatshare's is held before the request arrives |
+| [SLOs-Serve](https://arxiv.org/abs/2504.08784) | arXiv 2025-04-05 | Allocates tokens per SLO over chunked prefill and speculative decoding | Prior: per-class token budgets |
+| [QLM](https://arxiv.org/abs/2407.00047) | SoCC 2024 | Holds batch and interactive requests in one queue, ordered by estimated waiting time, with eviction and model swapping | Prior: SLO-ordered queueing |
 | [Sarathi-Serve](https://arxiv.org/abs/2403.02310) | OSDI 2024 | Chunked prefill and stall-free batching | Baseline: vLLM's chunked prefill, swept in the tuned-engine arms |
-| [FlowPrefill](https://arxiv.org/abs/2602.16603) | arXiv 2026-02-18 | Preempts running prefill at operator boundaries, scheduling on arrivals and completions, so that a long prefill does not delay a higher-priority request's first token | Complement: prefill preempted for another request's prefill (TTFT), where the budget cap protects a reply's decode steps |
-| [SLOWeave](https://arxiv.org/abs/2609.07883) | arXiv 2026-09-07 | Sizes each prefill chunk to the largest predicted to finish before the earliest active decode deadline, for every decode alike | Complement: the class-blind, time-budgeted way of keeping prefill out of the decodes' way |
-| [AgentServe](https://arxiv.org/abs/2603.10342) | arXiv 2026-03-11 | Agents on one consumer GPU: prefills isolated from decodes, resume prefills budgeted, the GPU partitioned | Complement: the same contention among agents alone, on one consumer GPU |
-| [DLFP](https://arxiv.org/abs/2609.38386) | arXiv 2026-09-29 | Sizes prefill chunks by feedback from the interval between the host's scheduler calls, for every decode alike | Lesson: an adaptive window or step cap must time the device's steps, not the host's scheduling rhythm |
-| [LayerKV](https://arxiv.org/abs/2410.00428) | arXiv 2024-10-01 | Finds the rise of TTFT with context length "predominantly driven by queuing delays" for KV blocks; layer-wise KV allocation and offloading | Complement: the wait for KV that E2's KV case measures |
-
-Notes on the table:
-
-- **ConServe** schedules at token level, sizing offline batches to the online latency target; layer-wise preemption yields to online spikes, and incremental KV management preempts and resumes offline requests at near-zero cost. It preempts offline requests when an online one lacks GPU memory, checkpointing each new token's KV to host memory as it is generated, and also throttles offline work. Its "Preemptive" baseline is vLLM with chunked prefill, preempting offline requests when online ones arrive. E2's preempt-resubmit baseline approximates its preempt-and-resume from outside the engine.
-- **BROS** cut real-time latency by up to 74.2% against vLLM and TGI.
-- **Valve** preempts compute in under a millisecond, at most once per online request, reclaims memory at a bounded rate and reserves it dynamically.
-- **Chiron** runs on vLLM, with A100s: on mixed instances "interactive requests can evict out batch requests", and the evicted requests' KV is migrated to CPU memory for a fast restart. Its first author, Archit Patke, also wrote QLM and vLLM V0's priority scheduling (#5958).
-- **Echo** is "founded on" vLLM V0's priority scheduling (#5958), which "allows the scheduler to preempt offline tasks to accommodate online tasks". Its victims recompute, and it reserves KV for online bursts at the past hour's mean plus two standard deviations.
-- **ProServe** preempts even in decode: low-priority requests "may be preempted by later high-priority requests even during the decode phase". Their KV is copied to host memory every few new blocks, more often for lower priorities, so that an eviction drops their device blocks at once, and it is reloaded layer by layer.
-- **QLLM** lowered latency-sensitive TTFT 65.5× on average, on one A100.
-- **Llumnix** adds a memory headroom to a high-priority request's "virtual usage", and migrates normal requests away when it runs short.
-- **TokenFlow** preempts running requests so that waiting ones run, and writes KV through to host memory as it is generated ("we continuously synchronize the generated KV cache to host memory"), so a preemption's offload is "nearly instantaneous": up to 82.5% more effective throughput and 80.2% lower P99 TTFT (RTX 4090, A6000, H200).
-- **FastServe** holds that blocking new jobs when memory is full "reintroduces the head-of-line blocking" and that killing low-priority jobs loses their state, so it swaps low-priority jobs' KV to host memory ahead of need and back before they resume: up to 6.1× vLLM's throughput.
-- **UNIBOOST** lets a newly arrived higher-priority request preempt the running one only past a hysteresis margin, and its MEMGUARD quantizes priorities so that preemptions amortize KV movement: P99 time to last token 35–50% lower than SRPT with perfect lengths.
-- **Semantic Scheduling** has an urgent request preempt running work of lower urgency, evicting it (discarded or offloaded to CPU, whichever is cheaper) until it fits, and keeps new prefills out of the batch while the most urgent request decodes. It is implemented in vLLM for its real-data runs, Qwen1.5 on A100 and A5000.
-- **AgentServe** schedules cold prefills, resume prefills (tool output appended to a cached context) and short decodes, and partitions the GPU with CUDA Green Contexts.
-- **DLFP** cut a 0.6B model's p99 inter-token latency by 27.7% on vLLM 0.17.1 and raised its p99 TTFT by 34.8%, and did not carry over to Qwen3-8B or 32B or to two-GPU tensor parallelism: the interval is only a proxy for when the GPU completed a step.
+| [FlowPrefill](https://arxiv.org/abs/2602.16603) | arXiv 2026-02-18 | Preempts running prefill at operator boundaries, so a long prefill does not delay a higher-priority first token | Complement: it protects a first token, where the budget cap protects a reply's decode steps |
+| [SLOWeave](https://arxiv.org/abs/2609.07883) | arXiv 2026-09-07 | Sizes each prefill chunk to finish before the earliest decode deadline, for every decode alike | Complement: prefill held back for every decode alike, by a time budget |
+| [Andes](https://arxiv.org/abs/2404.16283) | arXiv 2024-04-25 | Preemptive token-level scheduling for the quality of experience of streamed text | Complement: the text analogue of pacing decode to audio playback |
+| ["Beyond Prediction"](https://arxiv.org/abs/2606.18431) (UNIBOOST) | ICML 2026 | Boosts priorities softly from lightweight statistics instead of predicting output lengths | Complement: preemption on arrival that prices KV movement, by job size |
+| [QLLM](https://arxiv.org/abs/2503.09304) | EuroMLSys 2025 | In MoE inference, preempts best-effort jobs for latency-sensitive ones at any layer, down to an expert | Complement: class preemption inside a step, for MoE models |
+| [AgentServe](https://arxiv.org/abs/2603.10342) | arXiv 2026-03-11 | Agents on one consumer GPU: prefills isolated from decodes, resume prefills budgeted, the GPU partitioned with CUDA Green Contexts | Complement: the same contention among agents alone |
+| [Agent.xpu](https://arxiv.org/abs/2506.24045) | arXiv 2025-06-30 | Reactive and proactive agent flows on a heterogeneous SoC, with fine-grained preemption and slack-aware piggybacking | Complement: two classes of agent work on one device, an SoC rather than a GPU |
+| [Aladdin](https://arxiv.org/abs/2405.06856) | arXiv 2024-05-11 | SLO-aware query placement and worker scaling | Complement: the cluster-scale question |
+| [DLFP](https://arxiv.org/abs/2609.38386) | arXiv 2026-09-29 | Sizes prefill chunks from the interval between the host's scheduler calls; it did not carry over to 8B or 32B models | Lesson: an adaptive cap must time the device's steps, not the host's rhythm |
+| [LayerKV](https://arxiv.org/abs/2410.00428) | arXiv 2024-10-01 | Traces the rise of TTFT with context to queueing for KV blocks; allocates and offloads KV layer by layer | Complement: the wait for KV that E2's KV case measures |
 
 ## Routers and gateways
 
-These ship classes, admission and eviction today.
+Routers and gateways ship classes, admission and eviction today, and act in front of the engine.
 
 | Stack (release) | Classes and admission | Making room | Capacity held for a class | Relation |
 |---|---|---|---|---|
-| [llm-d](https://github.com/llm-d/llm-d/releases/tag/v1.0.0) v1.0.0 (2026-10-20); [llm-d-router](https://github.com/llm-d/llm-d-router/releases/tag/v1.0.0) v1.0.0 (2026-10-16) | Flow control, off by default behind a feature gate: priority bands, fairness policies, queue TTLs, SLO-deadline ordering, a latency-SLO admitter | In-flight eviction (merged 2026-08-11), off by default (`flowControl.enableEviction`) | [`priority-holdback-policy`](https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/framework/plugins/flowcontrol/usagelimits/priorityholdback/README.md) (beta in v1.0) lowers the admission ceiling of low priorities as saturation rises | Baseline: flow control with holdback and eviction, emulated in `flatshare-core` and labeled as such |
-| [Gateway API Inference Extension](https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/tag/v1.6.2) v1.6.2 (2026-09-17) | v1.6.0 (2026-08-17) moved its Endpoint Picker and the `InferenceObjective` priority API to llm-d, where `InferenceObjective` is now `llm-d.ai/v1`; GAIE keeps the specification, CRDs and conformance | — | — | Pre-empts the priority API; its policy lives in llm-d |
-| [SMG](https://github.com/smg-project/smg) v1.13.0 (2026-10-15), Rust | Four classes from an `x-smg-priority` header, capped per tenant; per-class queues (429 when full, 408 on timeout); strict priority with starvation promotion ([docs](https://github.com/smg-project/smg/pull/1583)) | Preempts a lower-class request only before its first response byte; the victim gets a 503 | Reserved slots per class, as floors, counted in concurrency rather than tokens | Baseline: run as shipped (`smg launch --worker-urls`) in front of vLLM |
-| [Dynamo](https://github.com/ai-dynamo/dynamo/releases/tag/v1.6.1) v1.6.1 (2026-10-27) | Router queue keyed by `(strict_priority, due_at, policy)` for every request since v1.6.0; a soft `priority` forwarded to vLLM and SGLang | Strict priority "does not preempt admitted work" | Priority "does not reserve capacity for high-priority requests" | Pre-empts priority queueing at the router |
-| [AIBrix](https://github.com/vllm-project/aibrix/releases/tag/v0.8.0) v0.8.0 (2026-10-13) | Queues by SLO tier at the gateway; [#2787](https://github.com/vllm-project/aibrix/pull/2787) (merged 2026-09-24) passes the tier to vLLM as the request priority | Through engine priority only | None found | Pre-empts SLO tiers mapped onto engine priority |
-| [production-stack](https://github.com/vllm-project/production-stack/blob/main/src/vllm_router/routers/routing_logic.py) | `PriorityRouter` sends high-priority requests to the least-loaded engine, so "no engine is ever reserved and left idle" | No | No | Pre-empts priority-aware routing |
-| [vllm-project/router](https://github.com/vllm-project/router) v0.1.16 (2026-10-09), Rust | Program scheduling with Progress-TTL (merged 2026-09-24): admission against logical KV capacity, with no physical eviction, offload or prefetch | No | Program capacity | Pre-empts active-session admission; complement: E1's negative result goes to its RFC #428 (below) |
+| [llm-d](https://github.com/llm-d/llm-d/releases/tag/v1.0.0) v1.0.0 and [llm-d-router](https://github.com/llm-d/llm-d-router/releases/tag/v1.0.0) v1.0.0 | [Flow control](https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/flowcontrol/README.md), off by default: priority bands, fairness, queue TTLs, SLO-deadline ordering, a latency-SLO admitter | [In-flight eviction](https://github.com/llm-d/llm-d-router/pull/2093), off by default: sheddable streams end with a 429 | [`priority-holdback-policy`](https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/framework/plugins/flowcontrol/usagelimits/priorityholdback/README.md) (beta) lowers low priorities' admission ceiling as saturation rises | Baseline: flow control with holdback and eviction, emulated in `flatshare-core` and labeled as such |
+| [Gateway API Inference Extension](https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/tag/v1.6.2) v1.6.2 | Moved its Endpoint Picker and the `InferenceObjective` priority API to llm-d in v1.6.0 | — | — | Prior: the priority API; its policy lives in llm-d |
+| [SMG](https://github.com/smg-project/smg) v1.13.0 | Four classes from an `x-smg-priority` header, per-class queues, strict priority with starvation promotion | Preempts a lower class only before its first byte, with a 503 | Reserved slots per class, in concurrency rather than tokens | Baseline: run as shipped in front of vLLM |
+| [Dynamo](https://github.com/ai-dynamo/dynamo/releases/tag/v1.6.1) v1.6.1 | A router queue ordered by strict priority and deadline; a soft `priority` forwarded to vLLM and SGLang | Does "not preempt admitted work" | Does "not reserve capacity for high-priority requests" | Prior: priority queueing at the router |
+| [AIBrix](https://github.com/vllm-project/aibrix/releases/tag/v0.8.0) v0.8.0 | SLO tiers at the gateway, passed to vLLM as the request priority | Through engine priority only | None found | Prior: SLO tiers mapped onto engine priority |
+| [production-stack](https://github.com/vllm-project/production-stack/blob/main/src/vllm_router/routers/routing_logic.py) | `PriorityRouter` sends high priority to the least-loaded engine, so "no engine is ever reserved and left idle" | No | No | Prior: priority-aware routing |
+| [vllm-project/router](https://github.com/vllm-project/router) v0.1.16 | Program scheduling with [Progress-TTL](https://github.com/vllm-project/router/pull/286): admission against logical KV capacity, with no physical eviction, offload or prefetch | No | Program capacity | Prior: active-session admission |
 
-Notes on the table:
-
-- **llm-d's [flow control](https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/flowcontrol/README.md)** orders by [SLO deadline](https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/framework/plugins/flowcontrol/ordering/slodeadline/README.md) from an `x-llm-d-slo-ttft-ms` header, and its [latency-SLO admitter](https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/framework/plugins/requestcontrol/admitter/latencyslo/README.md) rejects sheddable requests no endpoint can serve in time.
-- **llm-d's [in-flight eviction](https://github.com/llm-d/llm-d-router/pull/2093)** ends sheddable (priority < 0) streams with HTTP 429 when higher-priority requests are blocked by saturation. Partial eviction, which would offload the KV and resume the request on retry, is not built: [#1119](https://github.com/llm-d/llm-d-router/issues/1119) closed with the eviction MVP on 2026-09-15, leaving improvements to issues of their own, and none for it was found on 2026-10-29.
-- **Dynamo's router queue**, through which [v1.6.0](https://github.com/ai-dynamo/dynamo/releases/tag/v1.6.0) (2026-10-22) sends every request, orders by deadline, with classifiers that may defer a request, override its scheduling inputs or suggest a worker ([docs](https://github.com/ai-dynamo/dynamo/blob/v1.6.1/docs/fern/pages/use-cases/agents/priority-scheduling.md)).
-- **vllm-project/router's [Progress-TTL](https://github.com/vllm-project/router/pull/286)** covers an agent Program's tool gaps with an acting TTL, capped at 10 s by default. Per its [docs](https://github.com/vllm-project/router/blob/main/docs/program_scheduling.md), it "protects KV indirectly by controlling request admission. Physical eviction, offload, and prefetch are not executed".
-
-- **llm-d turn priority is not a voice baseline.** Its [turn-priority guide](https://github.com/llm-d/llm-d/blob/main/guides/turn-priority-fairness/README.md) (Beta) scores queued requests as `turnNumber + 0.05 × headWaitSeconds` and sheds new sessions with a 429 under sustained contention. It ranks agent turns for fairness; the voice-relevant llm-d policy is flow control.
-- **Flow control's stated limit.** Red Hat's [write-up](https://www.redhat.com/en/blog/shared-gpus-without-shared-latency-priority-aware-serving-in-red-hat-ai) of priority-aware serving on llm-d flow control (2026-10-20) ran four tiers on one H100 serving gpt-oss-20b, 95% of premium requests reaching their first token within half a second, and names the limit: "When responses run to thousands of tokens, requests already past the gate dominate latency while they generate, so flow control can no longer guarantee premium protection." Relation: complement; a gate cannot act on admitted requests, which is where E2's voice turn waits.
-- **vllm-project/router RFCs, all opened 2026-10-22.**
-  - [#427](https://github.com/vllm-project/router/issues/427), engine-confirmed KV retention: "A Router-side TTL or reservation is only a logical hint". It asks to keep logical session TTL, requested retention, acknowledged retention and observed residency apart.
-  - [#428](https://github.com/vllm-project/router/issues/428): workflow output-length hints that produce a bounded prefetch or offload hint before a tool returns, acknowledged by the backend and evaluated in shadow mode first.
-  - [#435](https://github.com/vllm-project/router/issues/435): worker overload admission, bounded backpressure and load shedding.
-
-  Relation: complement. E1's gate G-sim was negative, so Flatshare proposes no agent-side lease or prefetch policy here; E1's regime map and negative result were posted on #428 instead ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)). `LeaseConnector`'s per-request hit receipts, in v0.3, were one form of the acknowledgement #427 asks for.
+- **A gate cannot act on admitted requests.** Red Hat's
+  [write-up](https://www.redhat.com/en/blog/shared-gpus-without-shared-latency-priority-aware-serving-in-red-hat-ai)
+  of llm-d's flow control, four tiers on one H100, names the limit. "When responses run to thousands of tokens, requests
+  already past the gate dominate latency while they generate, so flow control can no longer guarantee premium
+  protection." That is where E2's voice turn waits. llm-d's partial eviction, which would keep the victim's KV for a
+  retry, is not built ([#1119](https://github.com/llm-d/llm-d-router/issues/1119)).
+- **llm-d's turn priority is not a voice baseline.** Its
+  [guide](https://github.com/llm-d/llm-d/blob/main/guides/turn-priority-fairness/README.md) ranks agent turns by
+  `turnNumber + 0.05 × headWaitSeconds` for fairness. The voice-relevant llm-d policy is flow control.
 
 ## Engines
 
 ### vLLM 0.32.0 (2026-10-18)
 
-Checked in the v0.32.0 source:
-- **Priority preempts among running requests, not for waiting ones.** Under `--scheduling-policy priority`, a running request that cannot grow preempts the lowest-priority running request. The waiting loop stops when `allocate_slots` fails or the running set is full, so a waiting request never preempts running work ([`scheduler.py`](https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/v1/core/sched/scheduler.py)).
-- **The open fixes cover the request cap, and two of them KV too.**
-  - [#40004](https://github.com/vllm-project/vllm/issues/40004) asks for waiting-request preemption; it has been open since 2026-04-16, with 22 comments.
-  - [#54530](https://github.com/vllm-project/vllm/pull/54530) (opened 2026-08-31, needs a rebase) and [#45561](https://github.com/vllm-project/vllm/pull/45561) add it at `max_num_seqs`.
-  - [#45558](https://github.com/vllm-project/vllm/pull/45558) (opened 2026-06-14, last pushed 2026-08-20), which #54530 supersedes, adds it there and, when `allocate_slots` fails for a waiting request, preempts the lowest-priority running request if its priority is strictly lower, retrying the allocation until it succeeds or none is left, as #40087 does. #54530 states that it leaves this KV-pressure path out.
-  - [#40087](https://github.com/vllm-project/vllm/pull/40087) (opened 2026-04-17, last pushed 2026-07-14) adds it at `max_num_seqs` and, when `allocate_slots` fails for a waiting request, preempts running requests of a strictly lower priority one at a time, retrying the allocation until it succeeds or none is left, so it can preempt without making room.
-  - [#61976](https://github.com/vllm-project/vllm/pull/61976) (opened 2026-10-16) fixes a priority self-preemption bug: after a running request preempts itself, the scheduler now goes on to the higher-priority runners behind it in that step. It merged on 2026-10-25, after v0.32.0, and is in v0.33.0, so stock vLLM's priority baseline may do slightly better there, which no round measured.
-- **Scheduling policies under review do not preempt.** The SLO-aware policy [#53571](https://github.com/vllm-project/vllm/pull/53571) "only reorders waiting requests, does not preempt running requests". [#58420](https://github.com/vllm-project/vllm/pull/58420) adds shortest-remaining-prefill-first with aging.
-- **Class-blind knobs** ([`config/scheduler.py`](https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/scheduler.py)):
-  - `watermark`: a fraction of KV blocks kept free when admitting waiting or preempted requests (default 0, off);
-  - `max_num_queued_tokens`: a "TTFT QoS mechanism" that rejects new requests with HTTP 503 once the prefill backlog reaches the limit;
-  - `long_prefill_token_threshold_adaptive`: floors the long-prefill threshold at a fair share of the token budget;
-  - `prefill_schedule_interval`: in v0.32.0 only the data-parallel MoE engine applies it, admitting new prefill requests once every N engine steps. [#54627](https://github.com/vllm-project/vllm/pull/54627), merged 2026-10-15 after v0.32.0's branch was cut and in v0.33.0 ([the port's record](../benchmarks/results/2026-11-02-port-v0.33.0/README.md)), applies it to a single engine too, and a deferred step then carries no prefill at all, chunks of a prompt already admitted included.
-- **Holding prefill back for decodes was proposed class-blind.** [#56848](https://github.com/vllm-project/vllm/pull/56848) proposed `--decode-priority-cadence N`: while any decode runs, admit prefill only every N steps. Its author closed it unmerged on 2026-09-17, three days after opening it. [#53277](https://github.com/vllm-project/vllm/issues/53277) (open since 2026-08-21) asks for cooperative prefill preemption, pausing a cold prefill so that a cache-warm request reaches its first token sooner.
-- **Priority does not reach retention.** [#47802](https://github.com/vllm-project/vllm/issues/47802) (open) reports that priority is not reflected in KV retention under cache pressure.
+- **Priority preempts among running requests, never for a waiting one.** Under `--scheduling-policy priority`, a running
+  request that cannot grow preempts the lowest-priority running request. The waiting loop stops when `allocate_slots`
+  fails or the running set is full
+  ([`scheduler.py`](https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/v1/core/sched/scheduler.py)).
+- **The open fixes.** Issue [#40004](https://github.com/vllm-project/vllm/issues/40004), open since 2026-04-16, asks for
+  waiting-request preemption. [#54530](https://github.com/vllm-project/vllm/pull/54530) and
+  [#45561](https://github.com/vllm-project/vllm/pull/45561) add it at `max_num_seqs`, which does not bind when KV fills.
+  [#45558](https://github.com/vllm-project/vllm/pull/45558) and [#40087](https://github.com/vllm-project/vllm/pull/40087)
+  also preempt lower-priority running requests when a waiting request's allocation fails, one at a time, until it fits
+  or none is left.
+- **A self-preemption fix came after 0.32.0.** [#61976](https://github.com/vllm-project/vllm/pull/61976) is in v0.33.0,
+  so stock vLLM's priority baseline may do slightly better there, which no round measured.
+- **Scheduling policies under review do not preempt.** The SLO-aware [#53571](https://github.com/vllm-project/vllm/pull/53571)
+  "only reorders waiting requests", and #58420 adds shortest remaining prefill first with aging.
+- **Class-blind knobs**, from [`config/scheduler.py`](https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/scheduler.py):
+  - `watermark`, a fraction of KV blocks kept free when admitting, off by default;
+  - `max_num_queued_tokens`, which rejects new requests with a 503 once the prefill backlog reaches a limit;
+  - `prefill_schedule_interval`, which admits new prefill only every N steps. In v0.32.0 only the data-parallel MoE
+    engine applies it. [#54627](https://github.com/vllm-project/vllm/pull/54627), in v0.33.0, applies it to a single
+    engine, and a deferred step then carries no prefill at all.
+- **Holding prefill back for decodes was proposed class-blind.**
+  [#56848](https://github.com/vllm-project/vllm/pull/56848)'s `--decode-priority-cadence N` was closed unmerged, and
+  [#53277](https://github.com/vllm-project/vllm/issues/53277) asks for cooperative prefill preemption.
 
-**V0 preempted for a waiting request.** [#5958](https://github.com/vllm-project/vllm/pull/5958) (merged 2024-09-25, in v0.6.2 to v0.10.2) gave the V0 scheduler priority scheduling with a forced preemption: when the highest-priority waiting request could not be allocated KV or did not fit the step's budget, running requests of a lower priority were preempted, the lowest priority and then the latest arrival first, until it fit or none was left ([`_schedule_priority_preemption`](https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/core/scheduler.py#L959)). It ran only with chunked prefill off, and V0 turned chunked prefill on by default for contexts over 32K tokens. Its victims were recomputed: under `--preemption-mode swap` it drops the swap-out list it builds, so the copy to host memory is never issued. V1's priority scheduling, [#19057](https://github.com/vllm-project/vllm/pull/19057) (merged 2025-06-23), describes preempting "the actual lowest-priority running request when space is needed for higher-priority or new requests", but its scheduler preempts only in the running loop, and v0.11.0 (2025-10-02) removed V0. Echo (above) is built on #5958.
+**V0 preempted for a waiting request.** [#5958](https://github.com/vllm-project/vllm/pull/5958), in v0.6.2 to v0.10.2,
+preempted lower-priority running requests for the highest-priority waiting request, the lowest priority and the latest
+arrival first, until it fit ([`_schedule_priority_preemption`](https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/core/scheduler.py#L959)).
+It ran only with chunked prefill off, and its victims were recomputed, since under `--preemption-mode swap` it dropped
+the swap-out list it built. V1's priority scheduling, [#19057](https://github.com/vllm-project/vllm/pull/19057),
+preempts only in the running loop, and v0.11.0 removed V0.
 
-**Relation.** Baselines: priority scheduling with the step cap, `watermark`, `max_num_queued_tokens`, `prefill_schedule_interval` on a build that includes #54627, and vLLM with #54530 applied. The KV-full case on V1's scheduler is the claimed fix, proposed to vLLM as pull request [#65282](https://github.com/vllm-project/vllm/pull/65282) under #40004 (open, with no maintainer review as of 2026-11-09; first #63350, opened 2026-10-23): V0's waiting-request preemption brought to V1, extended to chunked prefill and to the CPU tier. It keeps or offloads the victim's KV, and preempts at most N a step and none that would not make room. The budget cap is in [#65283](https://github.com/vllm-project/vllm/pull/65283) (first #63351), stacked on it.
+**Relation.** Baselines: priority scheduling with the step cap, `watermark`, `max_num_queued_tokens`,
+`prefill_schedule_interval` on a build with #54627, and vLLM with #54530 applied. The KV-full case is the claimed fix.
 
 ### SGLang 0.5.22 (2026-10-19)
 
-- **Priority preemption ships.** It came in [#8746](https://github.com/sgl-project/sglang/pull/8746) (merged 2025-09-17) and [#17026](https://github.com/sgl-project/sglang/pull/17026) (merged 2026-03-04) ([flags](https://github.com/sgl-project/sglang/blob/v0.5.22/python/sglang/srt/arg_groups/fields/schedule.py)):
-  - with `--enable-priority-scheduling`, an incoming request may preempt running ones whose priority is lower by at least `--priority-scheduling-preemption-threshold` (default 10);
-  - `--disable-priority-preemption` turns this off;
-  - `--retraction-policy priority` retracts lower-priority decodes first when the KV cache is full.
-- **But not when KV memory runs out.** Pull request [#45686](https://github.com/sgl-project/sglang/pull/45686) (opened 2026-10-21) states that the admission loop tries preemption only when the running batch reaches its request cap; when KV memory runs out, "the loop stops". It adds preemption on KV exhaustion, and `--preempt-keep-kv`, which inserts the victim's KV, decoded tokens included, into the radix tree as a best-effort keep.
-- **Relation.** Baseline: SGLang priority preemption, on the same model. #45686 proposes the SGLang counterpart of #63350.
+- **Priority preemption ships** ([#8746](https://github.com/sgl-project/sglang/pull/8746),
+  [#17026](https://github.com/sgl-project/sglang/pull/17026),
+  [flags](https://github.com/sgl-project/sglang/blob/v0.5.22/python/sglang/srt/arg_groups/fields/schedule.py)). With
+  `--enable-priority-scheduling` an incoming request preempts running ones whose priority is lower by at least a
+  threshold, 10 by default, and `--retraction-policy priority` retracts lower-priority decodes first when KV is full.
+- **But not when KV memory runs out.** The admission loop tries preemption only at the request cap.
+  [#45686](https://github.com/sgl-project/sglang/pull/45686), open, adds preemption on KV exhaustion, with
+  `--preempt-keep-kv` keeping the victim's KV best-effort in the radix tree. It is SGLang's counterpart of #65282.
+- **Relation.** Baseline: SGLang's priority preemption, on the same model.
 
-### TensorRT-LLM
+### TensorRT-LLM and DeepInfer
 
-- [`KvCacheRetentionConfig`](https://nvidia.github.io/TensorRT-LLM/1.2.1/features/kvcache.html) gives token ranges a priority from 0 to 100 (default 35) with an optional duration, after which the priority reverts. Lower priorities are evicted first, and blocks below a threshold are not offloaded to host memory.
-- Through Dynamo, per-request engine priority for TensorRT-LLM is "not currently exposed".
-- Request priority in its LLM API ([#12362](https://github.com/NVIDIA/TensorRT-LLM/pull/12362), merged 2026-03-27) serves the PyTorch executor's waiting queue in descending priority.
-- **Relation.** Pre-empts retention priority with expiry inside an engine. Not a baseline, since Flatshare targets vLLM.
+TensorRT-LLM's [`KvCacheRetentionConfig`](https://nvidia.github.io/TensorRT-LLM/1.2.1/features/kvcache.html) gives
+token ranges a retention priority with an optional duration, and its LLM API serves waiting requests by priority
+([#12362](https://github.com/NVIDIA/TensorRT-LLM/pull/12362)). It is prior art for retention priority with expiry inside
+an engine, and is not a baseline, since Flatshare targets vLLM.
 
-### DeepInfer (released 2026-10-16)
-
-[deepseek-ai/DeepInfer](https://github.com/deepseek-ai/DeepInfer) (Apache-2.0) is DeepSeek's engine for DeepSeek-V4.1-Flash, a C++ scheduler under a Python worker. Read in full at 9bd9cf2 (2026-10-21):
-- **No latency tiers.**
-  - There is no priority field.
-  - Prefill is first come, first served, and a blocked head blocks the queue.
-  - A step is all prefill or all decode.
-  - Prefill is attempted only while KV usage is at or below 90% (`scheduler.hpp:80, 313`).
-  - A prompt's first chunk reserves KV for the whole prompt (`scheduler.hpp:386, 518-520`).
-  - Latency control is left outside the engine, to prefill/decode disaggregation and load balancers.
-- **Preemption recomputes or stops.** Decode engines stop a preempted request, and a layer above resubmits it. There is no swap and no CPU tier (`scheduler.hpp:766-790`). The victim is the request with the longest output, meant as the one "occupying the most KV cache" (`sequence.hpp:56`).
-- **Steps are budgeted by measured time.** Each decode CUDA-graph size is timed at startup and the curve is cached (`model_runner.py:561-631`, `decode_perf_cache.py`). The speculative-verification scheduler picks the step size with the most expected accepted tokens per millisecond (`mtp_varlen.hpp:228-258`).
-- **Relation.** Not a baseline: it serves one model on many GPUs and has no tiers. Flatshare takes two of its mechanisms and makes them class-aware:
-  - the critical-window throttle budgets background prefill in predicted time;
-  - a KV reserve for the realtime class is the class-aware form of the 90% watermark.
-
-  DeepInfer's victim is the request with the longest output, meant as the one holding the most KV; v0.3's make-room also took the most KV first, and since W5 it preempts in vLLM's own order instead, the lowest priority and then the latest arrival ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change)). DeepInfer frees a preempted request's blocks only after their copy completes. vLLM 0.32's stock preemption path already does this, and the patch reuses that path.
+[DeepInfer](https://github.com/deepseek-ai/DeepInfer), DeepSeek's engine for DeepSeek-V4.1-Flash, has no latency
+tiers. It admits prefill first come, first served and only while KV use is at most 90%, recomputes a preempted request,
+and budgets steps by their measured time. It serves one model on many GPUs and is not a baseline. Flatshare makes two of
+its mechanisms class-aware: the critical-window throttle budgets background prefill in predicted time, and a KV reserve
+for the realtime class is the class-aware form of its 90% watermark.
 
 ## KV across tool calls and turns
 
-### Research
+Parking KV during a tool call and prefetching it before the return is published, and E1 does not claim it. E1 measures
+how much of the gap to a clairvoyant reference each level of lifecycle information closes (none, session history, a
+progress oracle), per regime.
 
 | Work | Venue, date | What it does | Relation |
 |---|---|---|---|
-| [InferCept](https://proceedings.mlr.press/v235/abhyankar24a.html) | ICML 2024 | At each tool interception, preserves, discards or swaps the KV to minimize wasted GPU resources. Recompute had been 37–40% of model forward time; 1.6–2× throughput | Pre-empts per-pause retention choices; its min-waste policy is an E1 baseline |
-| [CachedAttention](https://arxiv.org/abs/2403.19708) | USENIX ATC 2024 | Multi-turn KV in host memory and disk, layer-wise preloading, and fetching and eviction guided by hints from the job scheduler; TTFT up to 87% lower | Pre-empts prefetch from a known future |
-| [Pensieve](https://arxiv.org/abs/2312.05516) | EuroSys 2025 | Conversation state cached across GPU and CPU memory; 1.14–3.0× the throughput of vLLM and TensorRT-LLM | Pre-empts multi-turn parking |
-| [HCache](https://arxiv.org/abs/2410.05004) | EuroSys 2025 | Restores state from cached intermediate activations instead of KV or tokens; up to 1.93× lower TTFT than KV offload | Complement: a third restore path |
-| [KVFlow](https://arxiv.org/abs/2507.07400) | NeurIPS 2025 | Steps-to-execution eviction and overlapped CPU→GPU prefetch for the agents scheduled next | Pre-empts prefetch timed by predicted activation |
-| [Tokencake](https://arxiv.org/abs/2510.18586) | EuroSys '27 (arXiv v5, 2026-09-28) | Offloads idle KV during function calls and uploads it predictively; up to 47% lower end-to-end latency than vLLM | Pre-empts "park in host RAM, return before the tool does"; E1 baseline. Its first author, Zhuohang Bian, also wrote vLLM RFC #57103 |
-| [Continuum](https://arxiv.org/abs/2511.02230) | ICLR 2026 workshop poster ([Lifelong Agents](https://iclr.cc/virtual/2026/10012473)); arXiv v7, 2026-09-08 | Pins KV in GPU memory after a tool-calling turn, with a TTL; over 8× lower average job completion time | Pre-empts TTL holds; E1 baseline |
-| [Autellix](https://arxiv.org/abs/2502.13965) | arXiv 2025-02-19 | Program-level preemptive scheduling of LLM calls; 4–15× program throughput at equal latency | Pre-empts program-level scheduling |
-| [Parrot](https://arxiv.org/abs/2405.19888) | OSDI 2024 | Semantic Variables expose application structure to the serving system | Pre-empts application hints to the server |
-| [ThunderAgent](https://arxiv.org/abs/2602.13692) | ICML 2026 ([poster](https://icml.cc/virtual/2026/poster/62040)) | Pauses LLM Programs under memory pressure and resumes them where capacity exists | Pre-empts active-session admission |
-| [MORI](https://arxiv.org/abs/2606.00866) | arXiv 2026-05-30 | Ranks programs by idleness between HBM and DRAM: 20–71% more throughput, 18–43% lower TTFT than the best offloading baseline | Pre-empts idleness-ranked parking; E1 baseline and the closest work to E1 |
-| [CacheWise](https://arxiv.org/abs/2606.16824) | arXiv 2026-06-15 | Reuse-aware eviction from tool-call metadata, in vLLM; up to 2–2.6× fewer evictions | Pre-empts eviction from history |
-| [CacheScout](https://arxiv.org/abs/2608.14624) | arXiv 2026-07-16 | Learns agent execution transitions online to drive eviction and prefetch, in vLLM; 18–45% lower mean TTFT | Pre-empts prefetch from history |
-| [Ask the Tool](https://arxiv.org/abs/2609.18849) | arXiv 2026-09-16 | Tools report their progress while running; p90 TTFT after a tool call 20.7% (HBM) and 20.8% (HBM + DRAM) lower than LRU, "close to an oracle" | Complement: defines E1's oracle level, and the number E1 is compared with |
-| [Adaptive KV retention](https://arxiv.org/abs/2608.30830) | arXiv 2026-08-31 | Prices retention in GPU opportunity cost for waits of minutes to hours (human approval); 23–51% more goodput than vLLM baselines, ahead of MORI and Continuum | Pre-empts retention for the think-time regime |
-| [Leyline](https://arxiv.org/abs/2606.01065) | arXiv 2026-05-31 | KV directives for agent context edits (retries, dropped tool output) without re-prefilling the rest; +11.2 pp replay cache hits | Complement: it removes a cause of recompute, context edits, that Flatshare does not address |
+| [InferCept](https://proceedings.mlr.press/v235/abhyankar24a.html) | ICML 2024 | At each tool interception, preserves, discards or swaps the KV to waste the least GPU time | Prior: per-pause retention choices; its min-waste policy is an E1 baseline |
+| [CachedAttention](https://arxiv.org/abs/2403.19708) | USENIX ATC 2024 | Multi-turn KV in host memory and disk, preloaded layer by layer from the job scheduler's hints | Prior: prefetch from a known future |
+| [Pensieve](https://arxiv.org/abs/2312.05516) | EuroSys 2025 | Conversation state cached across GPU and CPU memory | Prior: multi-turn parking |
+| [HCache](https://arxiv.org/abs/2410.05004) | EuroSys 2025 | Restores state from cached intermediate activations instead of KV or tokens | Complement: a third restore path |
+| [KVFlow](https://arxiv.org/abs/2507.07400) | NeurIPS 2025 | Evicts by steps to execution and prefetches for the agents scheduled next | Prior: prefetch timed by predicted activation |
+| [Tokencake](https://arxiv.org/abs/2510.18586) | EuroSys '27 | Offloads idle KV during function calls and uploads it predictively | Prior: "park in host RAM, return before the tool does"; E1 baseline |
+| [Continuum](https://arxiv.org/abs/2511.02230) | ICLR 2026 workshop | Pins KV in GPU memory after a tool-calling turn, with a TTL set from reload cost and queueing delay | Prior: TTL holds; E1 baseline |
+| [Autellix](https://arxiv.org/abs/2502.13965) | arXiv 2025-02-19 | Program-level preemptive scheduling of LLM calls | Prior: program-level scheduling |
+| [Parrot](https://arxiv.org/abs/2405.19888) | OSDI 2024 | Semantic Variables expose application structure to the server | Prior: application hints to the server |
+| [ThunderAgent](https://arxiv.org/abs/2602.13692) | ICML 2026 | Pauses LLM programs under memory pressure and resumes them where capacity exists | Prior: active-session admission |
+| [MORI](https://arxiv.org/abs/2606.00866) | arXiv 2026-05-30 | Places programs between HBM and DRAM by how idle they are | Prior: idleness-ranked parking; E1 baseline and the closest work to E1 |
+| [CacheWise](https://arxiv.org/abs/2606.16824) | arXiv 2026-06-15 | Evicts by expected reuse, read from tool-call metadata, in vLLM | Prior: eviction from history |
+| [CacheScout](https://arxiv.org/abs/2608.14624) | arXiv 2026-07-16 | Learns agents' execution transitions online to drive eviction and prefetch, in vLLM | Prior: prefetch from history |
+| [Adaptive KV retention](https://arxiv.org/abs/2608.30830) | arXiv 2026-08-31 | Prices retention in GPU opportunity cost for waits of minutes to hours, such as a human's approval | Prior: retention for the think-time regime |
+| [Ask the Tool](https://arxiv.org/abs/2609.18849) | arXiv 2026-09-16 | Tools report their progress, and p90 TTFT after a tool call falls about 21% against LRU, "close to an oracle" | Complement: defines E1's oracle level, and the number E1 is compared with |
+| [Leyline](https://arxiv.org/abs/2606.01065) | arXiv 2026-05-31 | KV directives for an agent's context edits, such as retries and dropped tool output, without prefilling the rest again | Complement: it removes a cause of recompute, context edits, that Flatshare does not address |
 | [Strata](https://www.usenix.org/conference/osdi26/presentation/xie-zhiqiang) | OSDI 2026 | Hierarchical context caching across HBM, host memory and SSD, with GPU-assisted I/O and a cache-aware scheduler, in SGLang | Complement: restore engineering |
 
-Notes on the table:
-
-- **KVFlow** gains up to 1.83× (single workflows) and 2.19× (many concurrent workflows) over SGLang's hierarchical radix cache.
-- **Tokencake** also partitions GPU memory to keep room for critical-path agents.
-- **Continuum** sets its TTL from reload cost and queueing delay, and schedules programs first come, first served.
-- **ThunderAgent** gains 1.5–3.6× serving throughput, and ships as an llm-d-router plugin (v1.0) and an experimental Dynamo router (v1.3.0).
-- **MORI** keeps the busiest programs in HBM and the most idle in DRAM, moving the boundary to match capacity; its gains are on Claude Code workloads.
-
-**Verdict.** Parking KV during a tool call and prefetching it before the return is published. E1 does not claim the mechanism. It measures how much of the gap to a clairvoyant reference each level of lifecycle information closes (none, session history, a progress oracle), per regime.
-
-### Engine and router threads
-
-| Thread | Status on 2026-10-22 | Relation |
+| Thread | Status | Relation |
 |---|---|---|
-| vLLM [#57103](https://github.com/vllm-project/vllm/issues/57103), Programmable KV Cache RFC, and draft [#62382](https://github.com/vllm-project/vllm/pull/62382) | RFC open since 2026-09-16; the draft (2026-10-19) needs a rebase. Composable Retain, Pin, Prefetch and Demote directives, under which "TokenCake-like algorithms can integrate" | Complement: the upstream path of Tokencake's mechanism, and where E1 data goes |
-| vLLM [#58198](https://github.com/vllm-project/vllm/pull/58198), request-free CPU→GPU prefetch | Draft since 2026-09-22, no reviews | Complement: the primitive an agent-side prefetch policy would use; E1 measured what such a policy gains ([EXPERIMENTS.md](EXPERIMENTS.md#e1-parking)), and Flatshare proposes none |
-| vLLM [#37003](https://github.com/vllm-project/vllm/issues/37003), retention API RFC, and [#38514](https://github.com/vllm-project/vllm/pull/38514) | RFC open since 2026-03-13; the implementation (token-range priority with a duration) open since 2026-03-30, with no approving review | Complement: engine retention that Flatshare would adopt if it lands |
-| vLLM merged plumbing | The pieces the note lists, from `session_id` (2026-08-03) on | Complement: the gateway sets each request's `session_id` (as `X-Session-ID`, [PROTOCOL.md](PROTOCOL.md#sessions)); Flatshare uses none of the others |
-| vLLM [#61478](https://github.com/vllm-project/vllm/issues/61478) and [#62855](https://github.com/vllm-project/vllm/issues/62855) | Open: TTL-based eviction requested (2026-10-13); the Responses API ignores `prompt_cache_retention` and `prompt_cache_options` (2026-10-21) | Complement: vLLM has no TTL contract today |
-| SGLang [session radix cache](https://github.com/sgl-project/sglang/pull/29173) and retention | Merged 2026-08-02, "soft protection, not memory pins". The HiCache TTL pin was reverted ([#21884](https://github.com/sgl-project/sglang/pull/21884), 2026-04-01); soft retention by priority decay is open ([#27970](https://github.com/sgl-project/sglang/pull/27970)) | Pre-empts session-aware retention in an engine |
-| Dynamo | `nvext.cache_control` TTL pinning was added ([#6213](https://github.com/ai-dynamo/dynamo/pull/6213), 2026-02-27) and removed in [v1.1.0](https://github.com/ai-dynamo/dynamo/releases/tag/v1.1.0) because "SGLang upstream chose a different direction" | Pre-empts next-turn prefill; supports building on vLLM's native CPU tier |
-| llm-d-router [#2273](https://github.com/llm-d/llm-d-router/issues/2273), KV leases | Umbrella open since 2026-08-04 | Pre-empts the agent-side lease design (unbuilt) |
-| AIBrix [#2814](https://github.com/vllm-project/aibrix/issues/2814) | RFC open since 2026-09-25, no code: `agent_hints`, and session pinning in L1 with a TTL, driven by `open`, `heartbeat` and `close` signals | Pre-empts pinning driven by lifecycle signals |
+| vLLM [#57103](https://github.com/vllm-project/vllm/issues/57103), the Programmable KV Cache RFC, and draft [#62382](https://github.com/vllm-project/vllm/pull/62382) | Open: Retain, Pin, Prefetch and Demote directives | Complement: the upstream path of Tokencake's mechanism, and where E1's data went |
+| vLLM [#58198](https://github.com/vllm-project/vllm/pull/58198), request-free CPU→GPU prefetch | Draft, no reviews | Complement: the primitive an agent-side prefetch policy would use; E1 measured what one gains, and Flatshare proposes none |
+| vLLM [#37003](https://github.com/vllm-project/vllm/issues/37003), the retention API RFC, and [#38514](https://github.com/vllm-project/vllm/pull/38514) | Open, with no approving review | Complement: engine retention that Flatshare would adopt if it lands |
+| vLLM's `session_id` ([#48048](https://github.com/vllm-project/vllm/pull/48048)), session ids on KV events, `KvHintsEnvelope` ([#53423](https://github.com/vllm-project/vllm/pull/53423)) | Merged | Complement: the gateway sets each request's `session_id` ([PROTOCOL.md](PROTOCOL.md#sessions)) and uses none of the others |
+| SGLang's [session radix cache](https://github.com/sgl-project/sglang/pull/29173) | Merged, "soft protection, not memory pins"; the HiCache TTL pin was reverted ([#21884](https://github.com/sgl-project/sglang/pull/21884)) | Prior: session-aware retention in an engine |
+| Dynamo's `agent_hints` | `speculative_prefill` warms the predicted next-turn prefix; TTL pinning was removed in [v1.1.0](https://github.com/ai-dynamo/dynamo/releases/tag/v1.1.0) | Prior: next-turn prefill |
+| llm-d-router [#2273](https://github.com/llm-d/llm-d-router/issues/2273), KV leases | Open umbrella: an advisory "evict last until time T", renewed by every turn | Prior: the agent-side lease design, which Flatshare never built |
+| AIBrix [#2814](https://github.com/vllm-project/aibrix/issues/2814) | RFC, no code: session pinning with a TTL, driven by `open`, `heartbeat` and `close` signals | Prior: pinning driven by lifecycle signals |
 
-Notes on the table:
-
-- **vLLM #58198** helped in its author's [measurement](https://github.com/vllm-project/vllm/issues/57103#issuecomment-5733975478) on one L20 with Qwen3-4B: prefetch during the tool wait recovered 52–57% of resume TTFT, prefetching at pause kept 95–100% of the oracle's gain, and an unfinished prefetch was worse than none.
-- **vLLM's merged plumbing** comprises `session_id` ([#48048](https://github.com/vllm-project/vllm/pull/48048), 2026-08-03); session id on KV events ([#51381](https://github.com/vllm-project/vllm/pull/51381), 2026-09-04); `KvHintsEnvelope` ([#53423](https://github.com/vllm-project/vllm/pull/53423), 2026-09-21); request context for the offload `CachePolicy` ([#47744](https://github.com/vllm-project/vllm/pull/47744), 2026-07-08); NIXL lease renewal for P/D ([#41383](https://github.com/vllm-project/vllm/pull/41383), 2026-05-11).
-- **Dynamo's `agent_hints.speculative_prefill`** warms the predicted next-turn prefix. [v1.5.0](https://github.com/ai-dynamo/dynamo/releases/tag/v1.5.0) deprecated KVBM in favour of "the engine's native KV offloading", with its removal targeted for v1.7.0 (v1.6.1 still ships it). Prefetch hooks for tool returns are being built ([blog](https://github.com/ai-dynamo/dynamo/blob/main/docs/fern/pages/blog/2026/agentic-inference-optimizations.mdx), 2026-10-02).
-- **llm-d-router #2273** proposes an advisory "evict last until time T" on a session's offloaded blocks, renewed by every turn (300 s default, 900 s cap), and a deferred prefetch verb that would act before a request exists; its lease child issue is still a placeholder.
-
-Mooncake Store uses "lease" for something else: a short lease that protects an object while it is read, plus a soft pin ([design](https://github.com/kvcache-ai/Mooncake/blob/main/docs/source/design/store/mooncake-store.md)); standalone soft-pin controls were proposed in [#4858](https://github.com/kvcache-ai/Mooncake/pull/4858) on 2026-10-22. LMCache has an open L2 prefetch deadline with recompute fallback ([#5255](https://github.com/LMCache/LMCache/pull/5255)), the same restore-or-recompute choice E1 measures.
-
-### Tool timing data
-
-[TraceLab](https://github.com/uw-syfi/TraceLab) ([paper](https://arxiv.org/abs/2606.30560), 2026-06-29) is a corpus of Claude Code and Codex sessions; v0.0.2 (2026-07-24) holds 665,453 agent steps. Each tool call carries `tool_name`, `emitted_at`, `result_at` and `tool_wall_latency_ms`, and the dataset is CC BY 4.0. It supplies the pause distributions for E1's history level.
+[TraceLab](https://github.com/uw-syfi/TraceLab) ([paper](https://arxiv.org/abs/2606.30560)), a CC BY 4.0 corpus of 665,453
+steps of Claude Code and Codex sessions with each tool call timed, supplies the pause distributions for E1's history
+level.
 
 ## Voice under contention
 
+We found no system that schedules cascaded voice turns beside a background agent class in one engine while managing KV
+for both. VoxServe schedules speech streams alone, by their phase. Starting the LLM before the turn ends is published
+and shipped at the application layer, and Flatshare compares those signals as triggers.
+
 | Work | Venue, date | What it does | Relation |
 |---|---|---|---|
-| [LiveKit preemptive generation](https://docs.livekit.io/agents/multimodality/audio.md) | Shipping; on by default in LiveKit Agents 1.8.8 (2026-10-15) | Starts the LLM request on a final transcript, before the end of turn is confirmed | Baseline: an E2 factor, on and off; its transcript is one of the headroom triggers compared |
-| [Endpoint Anticipation](https://arxiv.org/abs/2606.13450) | Interspeech 2026 | Forecasts the end of a turn up to 2.56 s ahead; in Unmute, 505 ms lower average latency for 28.4% more speculative compute | Complement: an earlier trigger |
-| [PredGen](https://arxiv.org/abs/2506.15556) | arXiv 2025-06-18 | Generates candidate responses while the user is still speaking; about 2× lower latency in simulation | Pre-empts input-time speculation |
-| [Unmute](https://github.com/kyutai-labs/unmute) (Kyutai) | Open source, 2025 | STT, an LLM on vLLM and TTS. TTS latency is about 750 ms with everything on one L40S and about 450 ms on separate GPUs | Complement: practitioner evidence of the co-location cost; the shipped fix is separate GPUs |
-| [Voice-Light](https://arxiv.org/abs/2609.20995) | arXiv 2026-09-17 | A full-duplex cascaded agent; 758 ms median from the final VAD endpoint to first server audio, over 36 turns | Complement: small-sample practice data |
-| [Realtime voice agents from scratch](https://arxiv.org/abs/2603.05413) (Salesforce AI Research) | arXiv 2026-03-05 (rev. 2026-03-17) | A tutorial cascade (Deepgram STT, vLLM, ElevenLabs TTS) sending each complete sentence to TTS; 755 ms measured to first audio | Complement: practice data, and the first-sentence handoff the budget cap's window must cover |
-| [Metronome](https://arxiv.org/abs/2607.02640) | arXiv 2026-07-02 | On one GPU, full-duplex models collapse metastably when session KV fills the pool; its KV window prevents it | Complement: E2 reports outcomes per run, not only means |
-| [VoxServe](https://arxiv.org/abs/2602.00269) | arXiv 2026-01-30 | Serves speech language models for streaming | Complement: the nearest idea to the budget cap's window, protecting a request until its first audio |
-| [llmovoice](https://arxiv.org/abs/2609.04288) | SOSP 2026 | Context-management middleware for voice: speaking rate, background noise and packet loss become explicit context; false interruptions under packet loss fall from 46.0% to 0.9% | Complement: voice serving above the engine |
-| [NVIDIA Nemotron Voice Agent](https://github.com/NVIDIA-AI-Blueprints/nemotron-voice-agent) blueprint | Active on 2026-10-22 | Single-GPU profiles (workstation, DGX Spark, Jetson Thor) run ASR, the LLM and TTS on one GPU, with streaming-input LLM prefill | Complement: the edge pattern E2 reproduces |
-| [LiveKit Inference](https://livekit.com/blog/latency-optimized-inference-gemma-4-on-livekit) | 2026-07-02 | Serves Gemma behind SGLang with more headroom than a throughput-maximized deployment would | Complement: the headroom that E2's frontier prices |
-| vLLM realtime | Shipping | A WebSocket `/v1/realtime` endpoint for streaming ASR ([example](https://docs.vllm.ai/en/latest/examples/speech_to_text/realtime/)), on session-based streaming input ([#28973](https://github.com/vllm-project/vllm/pull/28973), merged 2026-01-24) | Complement: a KV-holding realtime session inside vLLM, and a candidate fix on the realtime path |
-
-Notes on the table:
-
-- **LiveKit preemptive generation** regenerates if the context changes, and TTS waits unless `preemptive_tts` is set.
-- **Realtime voice agents from scratch** sends "each complete sentence" to TTS "while the LLM continues generating", from a sentence buffer.
-- **Metronome** saw 14 of 20 runs collapse without its KV window, and 0 of 20 with it.
-- **VoxServe** prioritizes newly admitted requests "until their first audio chunk is produced", within a bounded concurrency so that steady streams do not starve, then gives them soft deadlines from their chunks' durations: 10–20× the throughput of existing implementations at comparable latency, on one H100. It schedules one class of speech streams, with no background tier.
-- **NVIDIA's Nemotron Voice Agent** runs a Talker and a Thinker on the same weights in its [frontend/backend agent](https://github.com/NVIDIA-AI-Blueprints/nemotron-voice-agent/blob/main/src/examples/frontend_backend_agent/README.md), and lists a known limitation: the single-GPU profile "shows a conversational-experience regression ... including longer backend-planning pauses".
-- **LiveKit Inference** keeps its headroom because "queueing delay is very noticeable" to people speaking to agents, and its client marks evaluation judges `low` so they do not "land in the same lane as live voice traffic" ([livekit/agents#6794](https://github.com/livekit/agents/pull/6794), 2026-08-11).
-- **vLLM realtime** has an open bug, [#60137](https://github.com/vllm-project/vllm/issues/60137) (2026-10-05): paused streaming sessions keep their KV and deadlock the scheduler when the KV cache is full; the fix attempt [#62439](https://github.com/vllm-project/vllm/pull/62439) closed unmerged on 2026-10-22.
-
-**Verdict.** We found no system that schedules cascaded voice turns beside a background agent class in one engine while managing KV for both; VoxServe schedules speech streams alone, by their phase. Starting the LLM before the turn ends is published and shipped at the application layer; Flatshare compares those signals as triggers.
+| [LiveKit preemptive generation](https://docs.livekit.io/agents/multimodality/audio.md) | On by default in LiveKit Agents 1.8.8 | Starts the LLM request on a final transcript, before the end of turn is confirmed, and regenerates if the context changes | Baseline: an E2 factor, on and off; its transcript is one of the headroom triggers compared |
+| [Endpoint Anticipation](https://arxiv.org/abs/2606.13450) | Interspeech 2026 | Forecasts a turn's end up to 2.56 s ahead | Complement: an earlier trigger |
+| [PredGen](https://arxiv.org/abs/2506.15556) | arXiv 2025-06-18 | Generates candidate responses while the user is still speaking | Prior: input-time speculation |
+| [Unmute](https://github.com/kyutai-labs/unmute) (Kyutai) | Open source, 2025 | STT, an LLM on vLLM and TTS; TTS latency about 750 ms on one L40S, about 450 ms on separate GPUs | Complement: the co-location cost in practice, fixed by separate GPUs |
+| [Voice-Light](https://arxiv.org/abs/2609.20995) | arXiv 2026-09-17 | A full-duplex cascaded agent, 758 ms at the median from the final VAD endpoint to the first audio, over 36 turns | Complement: practice data, from a small sample |
+| [Realtime voice agents from scratch](https://arxiv.org/abs/2603.05413) | arXiv 2026-03-05 | A tutorial cascade that sends each complete sentence to TTS while the LLM generates | Complement: the first-sentence handoff the budget cap's window must cover |
+| [Metronome](https://arxiv.org/abs/2607.02640) | arXiv 2026-07-02 | Full-duplex models on one GPU collapse when session KV fills the pool, 14 of 20 runs without its KV window and none with it | Complement: why E2 reports outcomes per run, not only means |
+| [VoxServe](https://arxiv.org/abs/2602.00269) | arXiv 2026-01-30 | Serves speech language models, prioritizing new requests until their first audio chunk, within a bounded concurrency | Complement: the nearest idea to the budget cap's window |
+| [llmovoice](https://arxiv.org/abs/2609.04288) | SOSP 2026 | Context-management middleware that makes a call's speaking rate, background noise and packet loss explicit context | Complement: voice serving above the engine |
+| [NVIDIA Nemotron Voice Agent](https://github.com/NVIDIA-AI-Blueprints/nemotron-voice-agent) | Blueprint | Single-GPU profiles run ASR, the LLM and TTS on one GPU, and list "a conversational-experience regression" as a known limitation | Complement: the edge pattern E2 reproduces |
+| [LiveKit Inference](https://livekit.com/blog/latency-optimized-inference-gemma-4-on-livekit) | 2026-07-02 | Serves Gemma behind SGLang with more headroom than a throughput-maximized deployment would, since "queueing delay is very noticeable" | Complement: the headroom E2's frontier prices |
+| vLLM realtime | Shipping | A WebSocket `/v1/realtime` endpoint for streaming ASR, on session-based streaming input ([#28973](https://github.com/vllm-project/vllm/pull/28973)) | Complement: a KV-holding realtime session inside vLLM |
 
 ## Simulators and eviction bounds
 
 | Work | Venue, date | What it shows | Relation |
 |---|---|---|---|
-| ["When Fancy Eviction Fails"](https://arxiv.org/abs/2609.28870) (Liu, Yu, Yang) | arXiv 2026-09-24 | On two companies' production traces, 14 eviction policies give little benefit over LRU | The main risk to E1: gains must come from information, not from a cleverer policy. E1's question is set against it |
-| [LPC](https://neurips.cc/virtual/2025/poster/117662) (Learned Prefix Caching) | NeurIPS 2025 | LRU "has a large gap to the optimal algorithm"; a learned policy needs 18–47% less cache for the same hit ratio | The opposite reading of the same gap |
-| [KVSET](https://arxiv.org/abs/2609.27746) | arXiv 2026-09-23 | Computes the KV working set from LRU stack distances (the Mattson algorithm) | Complement: miss-ratio curves for block-scaled traces |
-| [Vidur](https://arxiv.org/abs/2405.05465) | MLSys 2024 | A serving simulator built from profiled operators; under 9% latency error | Complement |
-| [LLMServingSim 2.0](https://arxiv.org/abs/2602.23036) | arXiv 2026-02-26 | Batching, routing, offloading and memory in one runtime loop; 0.95% average error against real deployments | Complement |
-| ["Where Should the KV Cache Live?"](https://arxiv.org/abs/2609.16215) | arXiv 2026-09-14 | Simulated GPU, CPU and SSD placement | Not the E1 risk |
+| ["When Fancy Eviction Fails"](https://arxiv.org/abs/2609.28870) | arXiv 2026-09-24 | On two companies' production traces, 14 eviction policies give "little benefit over LRU" despite "a large gap to Belady", because recency is unusually predictive | The main risk to E1: gains must come from information, not a cleverer policy |
+| [LPC](https://neurips.cc/virtual/2025/poster/117662) | NeurIPS 2025 | A learned policy needs 18–47% less cache than LRU for the same hit ratio | The opposite reading of the same gap |
+| [KVSET](https://arxiv.org/abs/2609.27746) | arXiv 2026-09-23 | The KV working set from LRU stack distances | Complement: miss-ratio curves for block-scaled traces |
+| [Vidur](https://arxiv.org/abs/2405.05465) | MLSys 2024 | A serving simulator built from profiled operators comes within 9% of measured latency | Complement |
+| [LLMServingSim 2.0](https://arxiv.org/abs/2602.23036) | arXiv 2026-02-26 | Batching, routing, offloading and memory simulated in one runtime loop come within 0.95% of real deployments on average | Complement |
+| ["Where Should the KV Cache Live?"](https://arxiv.org/abs/2609.16215) | arXiv 2026-09-14 | Gains come from tier capacity, not placement, and an oracle never beats no prefetch on migration traffic | Not the E1 risk: its verdict is on migration traffic, which prefetch cannot reduce, and E1's objective is resume latency |
 
-Notes on the table:
-
-- **"When Fancy Eviction Fails"** finds "little benefit over LRU" despite "a large gap to Belady", because recency is unusually predictive.
-- **"Where Should the KV Cache Live?"** finds gains from tier capacity, not placement policy, and that "even an oracle with knowledge of future requests never beats no prefetch on migration traffic". That verdict is stated on migration traffic, which prefetching cannot reduce by construction, in a setup where decode is compute-bound at batch size one; E1's objective is resume latency.
-
-**Theory relevant to E1:**
-- integrated prefetching and caching: Cao et al. (SIGMETRICS 1995); Albers, Garg and Leonardi (JACM 2000), where the optimal stall time is computable offline;
-- bounds for variable-size objects: Berger et al. (SIGMETRICS 2018);
-- scaled-down miss-ratio curves: SHARDS (FAST 2015) and miniature simulations (USENIX ATC 2017);
-- TTL-cache models: Jung et al. (INFOCOM 2003).
-
-Belady's MIN over fixed-size blocks is exact only for single-tier hit counts. With a CPU tier, prefetch and a PCIe limit, E1 calls it a clairvoyant reference rather than an optimum.
+E1 also rests on the theory of prefetching and caching: Cao et al. (SIGMETRICS 1995), Albers, Garg and Leonardi (JACM
+2000), Berger et al. on variable-size objects (SIGMETRICS 2018), SHARDS (FAST 2015) and Jung et al. on TTL caches
+(INFOCOM 2003). Belady's MIN is exact only for single-tier hit counts, so with a CPU tier, prefetch and a PCIe limit E1
+calls it a clairvoyant reference, not an optimum.
 
 ## Commercial cache contracts and latency tiers
 
+Providers sell the two tiers Flatshare runs on one replica, and they harvest the cheap one by shedding it and having
+clients retry. Their cache TTLs are billing terms, not residency promises, and the gateway relays only the engine's
+OpenAI-compatible API.
+
 | Provider | Latency tier | Best-effort tier | Cache contract |
 |---|---|---|---|
-| Anthropic | [Priority Tier](https://platform.claude.com/docs/en/api/service-tiers): "capacity commitments are no longer available for purchase" | Batch | [`cache_control`](https://platform.claude.com/docs/en/build-with-claude/prompt-caching): 5 minutes by default, "refreshed for no additional cost each time the cached content is used", or `ttl: "1h"` |
-| OpenAI | [Fast mode](https://developers.openai.com/api/docs/guides/fast-mode) (`service_tier: "fast"`, or `"priority"`) | [Flex](https://developers.openai.com/api/docs/guides/flex-processing) (beta): Batch API rates, "slower response times and occasional resource unavailability" (429). Batch API | `prompt_cache_options.ttl` of `"30m"` (default) or `"12h"` on GPT-5.6 and later, governing cache-read pricing eligibility |
-| Google Gemini | [Priority](https://blog.google/innovation-and-ai/technology/developers-tools/introducing-flex-and-priority-inference/) (2026-04-02), at a premium; overflow is "automatically served at the Standard tier instead of failing" | [Flex](https://ai.google.dev/gemini-api/docs/flex-inference): 50% off, on "sheddable" capacity | [Implicit caching](https://ai.google.dev/gemini-api/docs/caching) is on by default for Gemini 2.5 and later, with no hit guarantee |
-| AWS Bedrock | [Priority](https://aws.amazon.com/about-aws/whats-new/2025/11/amazon-bedrock-priority-flex-inference-service-tiers) (2025-11-18): up to 25% better output tokens per second, at a premium | Flex, at a discount, for workloads that tolerate longer latency | — |
-
-Notes on the table:
-
-- **Anthropic's Priority Tier** targets 99.5% uptime for existing commitments, which overflow to Standard. Its [Fast mode](https://platform.claude.com/docs/en/build-with-claude/fast-mode) (`speed: "fast"`) gives up to 2.5× output tokens per second at premium prices, generally available on Claude Opus 5.5.
-- **Anthropic's `cache_control`** charges writes 1.25× (5 min) or 2× (1 h) the base input price and reads 0.1× (less on some models), and its page states no residency guarantee.
-- **OpenAI's Fast mode** was Priority processing until 2026-07-30: up to 2.5× faster on `gpt-5.6-sol`, and a fast ramp can be served at standard speed.
-- **OpenAI's [`prompt_cache_options.ttl`](https://developers.openai.com/api/docs/guides/prompt-caching)** "governs eligibility for cache-read pricing" and "does not guarantee that every request reuses stored KV tensors"; `prompt_cache_key` influences routing but does not pin a machine.
-- **Gemini Flex** requests "may be preempted or evicted to ensure capacity for high-priority users", with a 1–15 minute target; clients retry with backoff.
-
-**Relation.** Complement. Providers sell the two tiers Flatshare runs on one replica, and they harvest the cheap tier by shedding it and having clients retry. Their cache TTLs are billing terms, not residency promises. Flatshare's lease design would have mapped Anthropic `cache_control` TTLs to lease floors and reported the honor rate inside the TTL; it was dropped with leases ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)), and the gateway relays only the engine's OpenAI-compatible API.
-
-## What is distinctive
-
-Each point below rests on the sources above, as of 2026-10-22, or 2026-10-26 for what the novelty check added.
-1. **The change.**
-   - vLLM's V1 scheduler (0.32) preempts among running requests but never for a waiting one (#40004, open since 2026-04-16); its open fixes cover the `max_num_seqs` cap, and two, #40087 and #45558, also preempt lower-priority running requests one at a time when a waiting request's allocation fails, until it fits or none is left. Its V0 scheduler did preempt for the highest-priority waiting request, from v0.6.2 to v0.10.2 (#5958): only with chunked prefill off, with no cap, and recomputing the victims. V1's priority scheduling (#19057) left it out, and v0.11.0 removed V0.
-   - SGLang's priority preemption does not fire when KV memory runs out; a fix was opened on 2026-10-21 (#45686).
-   - Research systems preempt for a waiting or arriving request and keep the victim's KV in host memory: TokenFlow writes it through as it is generated, ConServe checkpoints each new token's KV, Chiron migrates it to CPU memory, and ProServe and FastServe copy it there ahead of need. ConServe is built atop vLLM, and Echo, which recomputes its victims, on V0's #5958.
-   - Flatshare's version is proposed to vLLM as pull request [#65282](https://github.com/vllm-project/vllm/pull/65282) under #40004 (open, with no maintainer review as of 2026-11-09; first #63350): V0's waiting-request preemption brought to V1's scheduler, extended to chunked prefill and to the CPU tier, where a victim's KV is kept when an offloading connector offloads generated tokens as well as the prompt's (`offload_prompt_only: false`, which Flatshare sets; vLLM's default offloads the prompt's alone). Unlike #40087 and #45558, it preempts only when at most N victims make room, and then as few as do. Preempting work and resuming it from kept KV is published (ConServe, TokenFlow); the contribution is the change to vLLM's scheduler, not the idea.
-   - [#65283](https://github.com/vllm-project/vllm/pull/65283) (first #63351) holds lower-priority prefill out of the request's first tokens. Holding other work back for a priority request is published too: Semantic Scheduling keeps new prefills out of the batch while its most urgent request decodes, and VoxServe prioritizes newly admitted requests until their first audio chunk. We did not find a hold bounded to a reply's first tokens and sized to the first sentence a voice agent hands to text to speech, which is what E2 found the window must cover.
-2. **Headroom timed by voice lifecycle events: a measured negative result.**
-   - Capacity held back for priority work exists. It is static (SMG reserved slots, llm-d holdback ceilings, vLLM `watermark`), tied to a running request (Llumnix), or sized from load or the agent graph (Valve's dynamic memory reservation; Echo's KV reserve for online bursts; Tokencake, which keeps GPU memory for critical-path agents).
-   - llm-d's in-flight eviction reacts to demand that is already queued, and Dynamo's priority "does not reserve capacity".
-   - In shipping systems, making room means ending background work (llm-d's 429 eviction, SMG's cancel before the first byte, Gemini Flex's preemption with client retries) or engine preemption that frees the victim's blocks. Keeping the victim's KV is published (ConServe, TokenFlow, Chiron, ProServe, FastServe) and proposed for SGLang (`--preempt-keep-kv` in #45686, best-effort in its GPU prefix cache) and llm-d (deferred partial eviction).
-   - We found no system that holds KV headroom for a realtime turn from a voice event that precedes the request, such as speech onset or end of turn. The claim is about timing, and in E2's discriminating scenario the mechanism could not act (degrade capped every reply; [REPORT.md §6.5](REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work)), so arm 9's ablations (headroom armed from speech onset, armed only by the request, or left out) land within the spread of its own runs. Where the mechanism engages, it was not isolated.
-
-Two measurements carry the rest:
-- **The workload pair.** We found no published system that measures a cascaded voice pipeline beside long-context agent traffic on one GPU, with voice-to-voice latency taken from waveforms. ConServe, HyGen, BROS, Niyama, Chiron, Echo, ProServe and Valve co-serve online and offline LLM requests. Metronome, Voice-Light, Unmute and VoxServe measure voice workloads alone, and AgentServe agents alone on one consumer GPU. NVIDIA's single-GPU profile documents the regression.
-- **The parking information ladder.** E1 measures how much of the gap to a clairvoyant reference each level of lifecycle information closes, per regime. The mechanisms are Tokencake's, KVFlow's, MORI's and Ask the Tool's.
-
-One lifecycle-event schema for both workloads is an engineering choice with little standalone value. Adopting it means mapping it onto existing envelopes: vLLM's `KvHintsEnvelope`, Dynamo's `agent_hints` and llm-d's headers.
+| Anthropic | [Priority Tier](https://platform.claude.com/docs/en/api/service-tiers), overflowing to Standard; [Fast mode](https://platform.claude.com/docs/en/build-with-claude/fast-mode), up to 2.5× output speed | Batch | [`cache_control`](https://platform.claude.com/docs/en/build-with-claude/prompt-caching): 5 minutes, refreshed on each use, or 1 hour, with no residency guarantee stated |
+| OpenAI | [Fast mode](https://developers.openai.com/api/docs/guides/fast-mode) (`service_tier: "fast"`) | [Flex](https://developers.openai.com/api/docs/guides/flex-processing), with "occasional resource unavailability"; Batch | [`prompt_cache_options.ttl`](https://developers.openai.com/api/docs/guides/prompt-caching) "governs eligibility for cache-read pricing" and "does not guarantee" reuse |
+| Google Gemini | [Priority](https://blog.google/innovation-and-ai/technology/developers-tools/introducing-flex-and-priority-inference/), whose overflow is "served at the Standard tier instead of failing" | [Flex](https://ai.google.dev/gemini-api/docs/flex-inference), on "sheddable" capacity that "may be preempted or evicted" | [Implicit caching](https://ai.google.dev/gemini-api/docs/caching), on by default, with no hit guarantee |
+| AWS Bedrock | [Priority](https://aws.amazon.com/about-aws/whats-new/2025/11/amazon-bedrock-priority-flex-inference-service-tiers), up to 25% more output tokens a second | Flex, at a discount | — |
 
 ## What we do not claim
 
-- **That any of these mechanisms is new:**
-  - co-serving a latency class with best-effort work (ConServe, HyGen, BROS, Niyama, Chiron, Echo, ProServe, Valve);
-  - class headroom (Llumnix), reserved capacity per class (SMG, llm-d) or dynamic memory reservation (Valve, Tokencake, Echo);
-  - preempting running work for a waiting request (vLLM V0's #5958, TokenFlow, ConServe, Chiron, ProServe, FastServe, Semantic Scheduling; proposed for V1 in #40087 and #45558) and resuming it from KV kept in host memory (ConServe, TokenFlow, Chiron, ProServe, FastServe) or, best-effort, in the GPU prefix cache (proposed in SGLang #45686);
-  - holding other work back for a priority request (Semantic Scheduling's lower-priority prefill, and VoxServe's steady streams until a new request's first audio chunk);
-  - priority classes, budgets, aging, queue TTLs and in-flight eviction (llm-d, SMG, Dynamo, AIBrix);
-  - a priority tier that degrades instead of failing (Gemini Priority overflow, OpenAI Fast mode, Niyama's relegation);
-  - parking KV in host RAM and prefetching it before a tool returns (Pensieve, CachedAttention, KVFlow, Tokencake, CacheScout, MORI, vLLM #58198);
-  - TTL holds and leases (Continuum, vLLM #37003, llm-d-router #2273, AIBrix #2814, TensorRT-LLM);
-  - program- or session-level admission (Autellix, ThunderAgent, Progress-TTL);
-  - starting the LLM before the turn ends (LiveKit preemptive generation, Endpoint Anticipation, PredGen);
-  - a gap between LRU and Belady on prefix caches ("When Fancy Eviction Fails", LPC);
-  - ordering waiting requests by their cached prefix (SGLang, vLLM #54625, issue #53277), or choosing a KV load's copy path by its pages (vLLM's Triton kernel, #57555, #66511).
-- **A cache residency guarantee.** Providers promise billing eligibility, not residency, and Flatshare makes no cache promise: the honor rate it planned to report went with leases.
-- **A better router.** `flatshare-gateway` is the serving control plane of one or two GPU nodes without Kubernetes, not a fleet router
-  ([ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)), and `flatshare-core`'s lifecycle policy has run inside it since W3. What Flatshare proposed to other projects: the change, as vLLM pull requests #65282 and #65283 (opened 2026-11-03 as the successors of #63350 and #63351 of 2026-10-23; open, with no maintainer review as of 2026-11-09), version 1.24's queue and copy as #66558 and #66527, and E1's negative result for an agent-side lease and prefetch policy, as comments on vLLM #57103 and vllm-project/router #428. The lifecycle-event sink proposed to agentic-api (vllm-project/agentic-api#364) is separate from both.
-- **Measured results beyond the two cards measured.** E2 ran on one 16 GB consumer GPU with a 4B model and traces block-scaled 32×, and its core ran like for like on one A100 SXM4 80 GB, held to the box's pool ([the A100 run](BENCHMARKS.md#what-it-measured-2026-10-26)). Other cards, and the A100 at its own pool, are placed on E1's map in dimensionless terms (KV pressure, pause over restore time, restore over recompute time) by `flatshare-sim`, from modeled cost fits, labeled as modeled.
-- **Precedence.** Nothing here claims to be first or the only one. This page is a positioning statement, and each comparison rests on the sources cited.
-
-## Dates
-
-Each status is as of its date:
-
-- **2026-10-22:** every source, checked against the primary ones: papers, issue and PR threads, release notes, documentation and code.
-- **2026-10-23:** Flatshare's own proposals to vLLM, pull requests #63350 and #63351, opened that day, and a comment with Flatshare's data on #40004.
-- **2026-10-26:** what a novelty check added, vLLM's V0 scheduler (#5958, #19057) and the papers beside it.
-- **2026-10-29:** Dynamo's and GAIE's releases, vLLM #61976 and llm-d #1119, rechecked.
-- **2026-11-02:** the state of #63350 and #63351, and what vLLM 0.33.0, released that day, holds (#61976, #54627).
-- **2026-11-03:** #63350 and #63351 superseded by #65282 and #65283, the same change rebased onto vLLM's main as one commit each, and their state.
-- **2026-11-09:** vLLM's main and threads for version 1.24's queue and copy (#54625, #53277, #58420, #57555, and #66510 and #66511, reopened that day from #57343 and #57569), #65282 and #65283 rebased onto main and their state, and Flatshare's two later proposals, #66558 and #66527, opened as drafts.
+- **That any mechanism marked "Not claimed" is new.** Each is published or shipped ([at a glance](#at-a-glance)).
+- **A cache residency guarantee.** Providers promise billing eligibility, not residency, and Flatshare makes no cache
+  promise.
+- **A better router.** `flatshare-gateway` is the serving control plane of one or two GPU nodes without Kubernetes, not
+  a fleet router ([ADR-0007](adr/0007-the-gateway-is-the-serving-control-plane.md)).
+- **Results beyond the two cards measured.** E2 ran on one 16 GB consumer GPU with a 4B model and traces block-scaled
+  32×, and its core ran like for like on one A100 SXM4 80 GB at the box's pool
+  ([the A100 run](BENCHMARKS.md#do-the-rules-carry-to-a-datacenter-card)). Other cards, and the A100 at its own pool,
+  are placed on E1's map by `flatshare-sim` from modeled cost fits, labeled as modeled.
+- **Precedence.** Nothing here claims to be first or the only one. Each comparison rests on the sources cited.
