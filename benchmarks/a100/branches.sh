@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# branches.sh stage BASE HEAD | run [--flags "FLAG..."]: the A100 run's optional arm 2 (docs/BENCHMARKS.md, the optional
-# arms, P-1's pair), on this host: the PRs' own code, vLLM at HEAD (the stacked PRs' tip) with their switches on against
-# vLLM at BASE (main, where the PRs branch off) as it is, where the core measured make-room, their port onto vLLM
-# 0.32.0.
+# branches.sh stage BASE HEAD | run [--flags "FLAG..."]: the A100 run's optional arm 2 (run.sh, the optional arms), on
+# this host: the PRs' own code, vLLM at HEAD (the stacked PRs' tip) with their switches on against vLLM at BASE (main,
+# where the PRs branch off) as it is, where the core measured make-room, their port onto vLLM 0.32.0.
 #   stage  before the billed clock: a clone of the fork (StevenWang-CY/vllm, which carries the PR branches) at
 #          ~/flatshare/vendor/vllm, a worktree of each commit, and a venv of each, venvs/branch-base and
 #          venvs/branch-head: a Python-only install over the precompiled binaries of its upstream merge base

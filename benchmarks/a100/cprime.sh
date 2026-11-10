@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# cprime.sh [--sessions N] [--rounds N] [--cap TOKENS]: the A100 run's optional arm 1, C' (docs/BENCHMARKS.md, the
-# optional arms), on this host after the core: Qwen3-14B-FP8 at the card's own pool
-# (deploy/profiles/a100-40gb-qwen3-14b.toml, rendered into ~/flatshare/node-14b), at N sessions (40, the forecast's
-# largest running share for it), in N rounds (3) of tuned stock against the PRs' values, the first with the 14B's own
-# voice alone for its own SLO. Tuned stock is P-1's rule: of the stock step-cap settings blocks 1 and 2 measured on the
-# 4B (512/256, 2,048/0, the time-equivalent cap --cap), the one with the lowest calls' first-token p95 (probe_results.py
-# pick-stock). In order:
+# cprime.sh [--sessions N] [--rounds N] [--cap TOKENS]: the A100 run's optional arm 1, C' (run.sh, the optional arms),
+# on this host after the core: Qwen3-14B-FP8 at the card's own pool (deploy/profiles/a100-40gb-qwen3-14b.toml, rendered
+# into ~/flatshare/node-14b), at N sessions (40, the forecast's largest running share for it), in N rounds (3) of tuned
+# stock against the PRs' values, the first with the 14B's own voice alone for its own SLO. Tuned stock is P-1's rule: of
+# the stock step-cap settings blocks 1 and 2 measured on the 4B (512/256, 2,048/0, the time-equivalent cap --cap), the
+# one with the lowest calls' first-token p95 (probe_results.py pick-stock). In order:
 #   1. the 14B's node rendered with this host's facts, its weights at their pin (bootstrap.sh stage fetches them
 #      with FLATSHARE_MODELS; here if it did not);
 #   2. the host switched to it: the GPU units stopped, the 14B node's units in place of the core's, the agent's

@@ -37,7 +37,13 @@ def test_the_readmes_tables_are_what_the_records_give(block: str) -> None:
 
 
 def test_benchmarks_gives_the_records_table() -> None:
-    assert _table().table() in (REPO / "docs" / "BENCHMARKS.md").read_text()
+    # Row for row, its serving column named as GLOSSARY names the arrangement.
+    table = _table().table()
+    assert table.count("| The serving arrangement |") == 1
+    benchmarks = (REPO / "docs" / "BENCHMARKS.md").read_text()
+    assert (
+        table.replace("| The serving arrangement |", "| The arrangement to deploy |") in benchmarks
+    )
 
 
 @pytest.mark.parametrize("run", ["voice-alone", "serving-24h"])

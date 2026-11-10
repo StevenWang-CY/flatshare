@@ -1477,9 +1477,9 @@ FIGURES_ABOVE_TABLES = {
     "report-a100": "| Agents' sample (seed) | Voice alone | Tuned vLLM, the box's 512/256 |",
     "report-step-cap": "| Configuration | Rounds | V2V p95: median of the rounds / pooled |",
     "report-opt-rounds": "| Scenario | Configuration | Rounds | Replies over the SLO |",
-    "report-envelope": "| Configuration | Session trees | Rounds | Replies over the SLO |",
+    "report-envelope": "| Configuration | Agent sessions | Rounds | Replies over the SLO |",
     "report-starts": "| Start | Unit start to ready | Where the time goes |",
-    "report-soak": "| Measure | Voice alone | The serving arrangement |",
+    "report-soak": "| Measure | Voice alone | The arrangement to deploy |",
 }
 """The report's charts that BENCHMARKS shows, by the first line of the table each draws."""
 
@@ -1602,9 +1602,10 @@ def test_section_6_11s_figures_say_what_their_records_do(drawn: dict[str, Path])
         "| §6.11, Figures 17 and 18 and Table 11 | [`2026-11-08-envelope`](../benchmarks/results/2026-11-08-envelope) |"
         in report
     )
+    # BENCHMARKS splits the windows' table by window, without the window's column (test_envelope_record).
     before = BENCHMARKS.read_text().split('<img src="figures/report-tier.svg"', 1)[0]
     last = [line for line in before.splitlines() if line.startswith("|")][-1]
-    assert last == data.envelope_table().table("windows").splitlines()[-1]
+    assert last == "|" + data.envelope_table().table("windows").splitlines()[-1].split("|", 2)[2]
 
 
 # The campaign map ---------------------------------------------------------------------------------------------------

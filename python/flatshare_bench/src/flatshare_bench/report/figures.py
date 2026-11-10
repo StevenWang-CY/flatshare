@@ -99,8 +99,8 @@ def stages(out: Path) -> list[Path]:
 
 
 def deployable_stages(out: Path) -> list[Path]:
-    """report-deployable-stages.svg and its phone layout: the same stages for W4's configurations of
-    docs/BENCHMARKS.md's stage table (data.W4_STAGES), from W4's records."""
+    """report-deployable-stages.svg and its phone layout: the voice turn's stages for W4's configurations
+    (data.W4_STAGES), from W4's records."""
     cells = data.stages(data.w4_rows(), data.W4_STAGES)
     description = _stage_description(cells)
     title = "Where the voice turn's seconds go on what an operator can deploy"

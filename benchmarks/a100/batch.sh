@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# batch.sh [--rounds N]: the A100 run's optional arm 4 (docs/BENCHMARKS.md, the optional arms, P-1's slot S-7), on this
-# host: the scheduler's cost at a datacenter batch. vllm bench serve keeps 256 requests in flight on the core's engine,
-# 26 of them (10%) at priority 0 and 230 at priority 2 (two clients side by side, each its requests' priority in
-# --extra-body), N rounds (20) of each client's concurrency, on three engines in turn: frozen (stock vLLM 0.32.0),
-# make-room with its switches off (its code path, nothing it does), and make-room with the PRs' values. Each request
-# holds its KV beside the 255 others' in the pool: random 48-token prompts and 64 output tokens, 112 tokens, 7 blocks
-# of 16 (8 where a prompt re-tokenizes a few tokens longer), so 256 take 2,048 of the core pool's 2,275 blocks (5 GiB)
-# and the whole batch runs at once: the arm measures the scheduler's per-step cost at a batch of 256, not a queue
-# behind the KV, which 1,024-token prompts would have made of it (36,400 tokens hold about 28 of them). Before each
-# engine's clients it reads the engine's KV geometry (vllm:cache_config_info) and refuses a pool that would not hold
-# the batch; while they run it samples the engine's running and waiting requests once a second (ENGINE-running.txt),
-# and ENGINE-running.json keeps their median and maximum, so that the record shows the batch formed. Each client's
-# result (vllm bench serve's JSON: request and output throughput, TTFT, TPOT and ITL percentiles) goes to
+# batch.sh [--rounds N]: the A100 run's optional arm 4 (run.sh, the optional arms), on this host: the scheduler's cost
+# at a datacenter batch. vllm bench serve keeps 256 requests in flight on the core's engine, 26 of them (10%) at
+# priority 0 and 230 at priority 2 (two clients side by side, each its requests' priority in --extra-body), N rounds
+# (20) of each client's concurrency, on three engines in turn: frozen (stock vLLM 0.32.0), make-room with its switches
+# off (its code path, nothing it does), and make-room with the PRs' values. Each request holds its KV beside the 255
+# others' in the pool: random 48-token prompts and 64 output tokens, 112 tokens, 7 blocks of 16 (8 where a prompt
+# re-tokenizes a few tokens longer), so 256 take 2,048 of the core pool's 2,275 blocks (5 GiB) and the whole batch runs
+# at once: the arm measures the scheduler's per-step cost at a batch of 256, not a queue behind the KV, which
+# 1,024-token prompts would have made of it (36,400 tokens hold about 28 of them). Before each engine's clients it reads
+# the engine's KV geometry (vllm:cache_config_info) and refuses a pool that would not hold the batch; while they run it
+# samples the engine's running and waiting requests once a second (ENGINE-running.txt), and ENGINE-running.json keeps
+# their median and maximum, so that the record shows the batch formed. Each client's result (vllm bench serve's JSON:
+# request and output throughput, TTFT, TPOT and ITL percentiles) goes to
 # ~/flatshare/runs/a100/batch/ENGINE-pPRIORITY.json; a result already there is kept.
 # vllm bench serve speaks TCP and the engine serves on its socket only: the clients reach it through
 # deploy/bin/flatshare-forward, from a loopback port (FLATSHARE_FORWARD_PORT, 18000) to the socket, on their own cores,

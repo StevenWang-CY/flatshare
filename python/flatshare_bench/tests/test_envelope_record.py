@@ -101,12 +101,35 @@ def test_the_record_names_home_directories_as_a_tilde() -> None:
     assert not leaked, leaked
 
 
+def _without_first_cell(line: str) -> str:
+    """A Markdown table line without its first cell."""
+    return "|" + line.split("|", 2)[2]
+
+
 def test_benchmarks_gives_the_records_tables() -> None:
-    # BENCHMARKS.md's ledger of the windows and the rounds is the record's own tables, row for row.
+    # BENCHMARKS.md's ledger of the rounds is the record's own gate table, row for row, its sessions column named as
+    # GLOSSARY names them. Its ledger of Gray's windows is the record's windows table split by window, in the
+    # windows' order, each window's rows as the record gives them but for the window's own column.
     table = _table()
     benchmarks = (REPO / "docs" / "BENCHMARKS.md").read_text()
-    for name in ("windows", "gate"):
-        assert table.table(name) in benchmarks, name
+    gate = table.table("gate")
+    assert gate.count("| Session trees |") == 1
+    assert gate.replace("| Session trees |", "| Agent sessions |") in benchmarks
+    head, rule, *rows = table.table("windows").splitlines()
+    windows: dict[str, list[str]] = {}
+    for row in rows:
+        windows.setdefault(row.split("|", 2)[1].strip(), []).append(_without_first_cell(row))
+    assert list(windows) == [window for window, _, _ in table.WINDOWS]
+    at = 0
+    for window, lines in windows.items():
+        # Each window a table of its own: its rows and no others.
+        part = (
+            "\n\n"
+            + "\n".join([_without_first_cell(head), _without_first_cell(rule), *lines])
+            + "\n\n"
+        )
+        assert part in benchmarks[at:], window
+        at = benchmarks.index(part, at) + len(part) - 2
 
 
 def test_production_gives_the_cards_envelope_as_the_record_does() -> None:

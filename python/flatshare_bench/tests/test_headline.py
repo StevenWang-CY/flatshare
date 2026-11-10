@@ -486,14 +486,30 @@ def test_the_window_knees_tables_are_its_records_medians() -> None:
 FB = REPO / "benchmarks" / "results" / "2026-10-25-e2-fb"
 
 
+GLOSSARY_NAMES = {
+    "| The frozen box |": "| Tuned vLLM |",
+    "| #63350 + #63351, a 48-token window |": "| The configuration to deploy |",
+}
+"""The configurations as the records' scripts label their rows, and as BENCHMARKS.md names them (docs/GLOSSARY.md)."""
+
+
+def glossary_names(table: str) -> str:
+    """A table a record's script printed, its rows' labels as BENCHMARKS.md gives them, each label once."""
+    for label, name in GLOSSARY_NAMES.items():
+        assert table.count(label) == 1, label
+        table = table.replace(label, name)
+    return table
+
+
 def test_fbs_table_is_its_records_against_w5s() -> None:
-    # BENCHMARKS.md's FB table is what FB's records' compare.py prints first, from FB's records and W5's.
+    # BENCHMARKS.md's FB table is what FB's records' compare.py prints first, from FB's records and W5's, row for row
+    # under GLOSSARY's names.
     printed = subprocess.run(
         [sys.executable, str(FB / "compare.py")], capture_output=True, text=True, check=True
     ).stdout
     first = printed.split("\n\n")[0].strip()
     assert first.count("\n") == 4  # the header, its rule and three configurations
-    assert first in (REPO / "docs" / "BENCHMARKS.md").read_text()
+    assert glossary_names(first) in (REPO / "docs" / "BENCHMARKS.md").read_text()
 
 
 RS = REPO / "benchmarks" / "results" / "2026-10-26-e2-rs"
@@ -501,7 +517,7 @@ RS = REPO / "benchmarks" / "results" / "2026-10-26-e2-rs"
 
 def test_rss_table_is_its_records_beside_the_a100s() -> None:
     # BENCHMARKS.md's RS table is what RS's records' running_share.py prints first, from RS's records and the A100
-    # core's, every round of both counted.
+    # core's, every round of both counted, row for row under GLOSSARY's names.
     printed = subprocess.run(
         [sys.executable, str(RS / "running_share.py")], capture_output=True, text=True, check=True
     ).stdout
@@ -509,7 +525,7 @@ def test_rss_table_is_its_records_beside_the_a100s() -> None:
     assert first.count("\n") == 3  # the header, its rule and two configurations
     # Each configuration's five rounds on the box.
     assert all(row.split(" | ")[1] == "5" for row in first.splitlines()[2:])
-    assert first in (REPO / "docs" / "BENCHMARKS.md").read_text()
+    assert glossary_names(first) in (REPO / "docs" / "BENCHMARKS.md").read_text()
 
 
 TRANSPORT = REPO / "benchmarks" / "results" / "2026-10-25-w6-transport"

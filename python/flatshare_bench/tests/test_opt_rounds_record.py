@@ -56,11 +56,16 @@ def test_the_record_names_home_directories_as_a_tilde() -> None:
 
 
 def test_benchmarks_gives_the_rounds_tables_as_the_record_does() -> None:
-    # BENCHMARKS.md's ledger of the rounds is the record's own tables of them, row for row.
+    # BENCHMARKS.md's ledger of the rounds is the record's own tables of them, row for row, the decode hold named as
+    # GLOSSARY names it.
     table = _table()
     benchmarks = (REPO / "docs" / "BENCHMARKS.md").read_text()
     for name in ("slo", "voice", "agents", "follow", "follow-agents"):
-        assert table.compact(table.table(name)) in benchmarks, name
+        compact = table.compact(table.table(name))
+        compact = compact.replace(
+            "| + the hold and speculation |", "| + the decode hold and speculation |"
+        )
+        assert compact in benchmarks, name
 
 
 WORDS = ("none", "one", "two", "three", "four", "five", "six")
@@ -104,7 +109,7 @@ def test_the_docs_give_the_follow_up_rounds_verdicts_as_the_record_does() -> Non
             f"**The decode hold put {hold} of {replies} replies over the SLO against {four}**, fewer in "
             f"{WORDS[hold_fewer]} of the six",
             f"at {cost:.1f}% of the agents' token rate at the median of the six",
-            f"**Speculative decoding on top put {spec} over against the hold's {hold}**, fewer in "
+            f"**Speculative decoding on top put {spec} over against the decode hold's {hold}**, fewer in "
             f"{WORDS[spec_fewer]} of the six",
         ),
         "benchmarks/results/2026-11-02-opt-rounds/README.md": (

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # calibration.sh [--sessions N] [--seed S]: one of flatshare-sim's calibration points on this host (block 5 of the A100
-# run, docs/BENCHMARKS.md, the core block by block; the box's are W2's, crates/flatshare-sim/README.md): on a freshly
-# started frozen engine, AIPerf's agentic_replay of the whole 32x corpus (~/flatshare/data/weka-x32) straight to the
-# engine at N sessions (16), 600 s plus 60 s of grace, a 120 s think cap, seed S (11), burst starts, with the engine's
-# /metrics before and after. The engine serves on its socket only and AIPerf speaks TCP only, so AIPerf reaches it
-# through deploy/bin/flatshare-forward, from a loopback port (FLATSHARE_FORWARD_PORT, 18000) to the socket, on AIPerf's
-# cores, as the box's calibration points reached their engine through the tunnel's TCP forward. It writes
+# run's core, run.sh; the box's are W2's, crates/flatshare-sim/README.md): on a freshly started frozen engine, AIPerf's
+# agentic_replay of the whole 32x corpus (~/flatshare/data/weka-x32) straight to the engine at N sessions (16), 600 s
+# plus 60 s of grace, a 120 s think cap, seed S (11), burst starts, with the engine's /metrics before and after. The
+# engine serves on its socket only and AIPerf speaks TCP only, so AIPerf reaches it through
+# deploy/bin/flatshare-forward, from a loopback port (FLATSHARE_FORWARD_PORT, 18000) to the socket, on AIPerf's cores,
+# as the box's calibration points reached their engine through the tunnel's TCP forward. It writes
 # ~/flatshare/runs/a100/calibration-sN as crates/flatshare-sim/scripts/calibration.py reads a run: before.prom,
 # aiperf/profile_export.jsonl and after.prom, and a point already there is not measured again.
 set -euo pipefail

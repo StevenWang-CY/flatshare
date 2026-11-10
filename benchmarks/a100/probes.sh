@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# probes.sh BLOCK [--cap TOKENS]: one of the A100 run's probe blocks (docs/BENCHMARKS.md, the core block by block) on
-# this host, the GPU node rendered at ~/flatshare/node (FLATSHARE_NODE_DIR another): engine-level runs on one engine
-# configuration at a time, E0's cells (flatshare-bench tiers), make-room's KV and prefill cases (probe.py) and the
-# calls' tail beside agents (tail.py with whole 40-token replies, at the box's KV pressure for the pool). Each run
-# writes ~/flatshare/runs/a100/blockN/NAME: a .txt of the probe's output, renamed from .partial once the probe has
-# exited 0, or E0's directory with its summary.json; a run already there is skipped, so a block run again resumes where
-# it stopped.
+# probes.sh BLOCK [--cap TOKENS]: one of the A100 run's probe blocks (run.sh, the core) on this host, the GPU node
+# rendered at ~/flatshare/node (FLATSHARE_NODE_DIR another): engine-level runs on one engine configuration at a time,
+# E0's cells (flatshare-bench tiers), make-room's KV and prefill cases (probe.py) and the calls' tail beside agents
+# (tail.py with whole 40-token replies, at the box's KV pressure for the pool). Each run writes
+# ~/flatshare/runs/a100/blockN/NAME: a .txt of the probe's output, renamed from .partial once the probe has exited 0, or
+# E0's directory with its summary.json; a run already there is skipped, so a block run again resumes where it stopped.
 #   1  frozen, the box's flags: E0 (--reps 3), kv x3, prefill x3, tail x2
 #   2  stock at vLLM's default here, 2,048/0: kv x3, tail x2; then stock at the time-equivalent step cap (R4; --cap,
 #      1,536 by default, the threshold at half): kv x1, tail x2, its runs named by cap and threshold (stock1536-768-*),

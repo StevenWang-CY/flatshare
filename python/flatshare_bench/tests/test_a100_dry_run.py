@@ -1,10 +1,10 @@
-"""The A100 run's core on a CPU, end to end (docs/BENCHMARKS.md, the core block by block): benchmarks/a100/run.sh runs
-blocks 1 to 10 on a single host whose node is rendered from the A100's profile, with the real probes.sh,
-calibration.sh (and its flatshare-forward from a loopback port to the engine's socket), campaign.sh --local and the
-core's campaign files, against stand-ins for the engine (its endpoints here, on its Unix socket; its probes' result
-lines from fakes/a100/python), flatshare-bench, AIPerf, nvidia-smi, systemctl and the node's variant.sh. A probe that
-dies and an E2 point that fails each stop the run, and each rerun resumes where it stopped, measuring nothing twice;
-then pull.sh copies the host's records, and analysis.py reads them back."""
+"""The A100 run's core on a CPU, end to end (benchmarks/a100/run.sh, the core): benchmarks/a100/run.sh runs blocks 1 to
+10 on a single host whose node is rendered from the A100's profile, with the real probes.sh, calibration.sh (and its
+flatshare-forward from a loopback port to the engine's socket), campaign.sh --local and the core's campaign files,
+against stand-ins for the engine (its endpoints here, on its Unix socket; its probes' result lines from
+fakes/a100/python), flatshare-bench, AIPerf, nvidia-smi, systemctl and the node's variant.sh. A probe that dies and an
+E2 point that fails each stop the run, and each rerun resumes where it stopped, measuring nothing twice; then pull.sh
+copies the host's records, and analysis.py reads them back."""
 
 from __future__ import annotations
 

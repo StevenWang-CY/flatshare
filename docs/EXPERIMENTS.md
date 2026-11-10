@@ -1,26 +1,25 @@
 # Experiments
 
-How Flatshare's measurements were designed and run, for a reader who wants to audit an experiment or repeat it: each experiment's question, arms, scenarios, metrics, repeats and builds. The experiments run the frozen box's configuration (the same model, precision, memory split and SLO) on Phastform or on Gray, its second RTX 5060 Ti node, E1 in a simulator calibrated on it and E2's core on an A100 SXM4 80 GB as well, and compare against tuned vLLM and against what engines and routers already ship. The numbers are in [BENCHMARKS.md](BENCHMARKS.md), what they rule in and out in [the report](REPORT.md#6-results), and the terms (arms, campaigns, W0 to W8) in [GLOSSARY.md](GLOSSARY.md).
+How Flatshare's measurements were designed, for a reader who wants to audit an experiment or repeat it: each
+experiment's question, arms, scenarios, metrics and repeats, and which campaign ran on which code. The numbers are in
+[BENCHMARKS.md](BENCHMARKS.md), what they rule in and out in [the report](REPORT.md#6-results), and the terms in
+[GLOSSARY.md](GLOSSARY.md). Every experiment runs the frozen box's configuration, on Phastform or on Gray, its second
+RTX 5060 Ti node, against tuned vLLM and what engines and routers already ship.
 
-| # | Experiment | Question | Ran, and where its numbers are |
+| # | Experiment | Question | Its numbers |
 |---|---|---|---|
-| E0 | **The tier cost model** | What does resuming an agent turn cost from the GPU cache, from host RAM and recomputed? | On the frozen box, 2026-10-22 ([BENCHMARKS.md](BENCHMARKS.md#what-does-resuming-an-agent-turn-cost)); `flatshare-core` carries the fits |
-| E2 | **Voice under agent load** | How close does each configuration an operator can deploy bring the voice tail to its SLO, at what cost to background agents? (note 1) | On one GPU node a point, from W2 to OS ([BENCHMARKS.md](BENCHMARKS.md#how-close-does-each-configuration-bring-the-voice-tail-to-its-slo)), and its core again on an A100 SXM4 80 GB ([BENCHMARKS.md](BENCHMARKS.md#what-it-measured-2026-10-26)) (note 2) |
-| E3 | **The background tier's cost of make-room** | What does make-room take from the agents, and through which rule: the budget cap or the KV preemption? (note 3) | On W5's points, from the engine's own counts ([BENCHMARKS.md](BENCHMARKS.md#what-does-the-change-take-from-the-agents)) |
-| E1 | **Parking** | How much of the gap between LRU plus CPU offload and a clairvoyant reference does each level of lifecycle information close, on resume latency? | In the simulator ([BENCHMARKS.md](BENCHMARKS.md#does-knowing-when-an-agent-returns-help)) |
-| Soak | **The production path for hours** | Does the box, as it serves, keep its voice SLO, admission and background service over a day of arriving calls and agents? (note 4) | Once, for 24 hours of the arrangement to deploy on two GPU nodes, 2026-10-28 to 29 ([BENCHMARKS.md](BENCHMARKS.md#does-the-arrangement-to-deploy-keep-its-slo-over-a-day); [the record](../benchmarks/results/2026-10-28-soak/README.md)) |
-| Engine points | **A call's reply inside the engine** | Where does a call's time go inside the engine beside closed-loop agents, and what does each change to the engine do to it and to the agents? | On both GPU nodes, 2026-11-01 to 02 ([BENCHMARKS.md](BENCHMARKS.md#what-do-the-serving-engines-additions-do-to-a-voice-turn); [the record](../benchmarks/results/2026-11-01-engine-points/README.md)) |
-
-1. E2 also asks: what does each mechanism of arm 9 (make-room with the lifecycle policy) contribute?
-2. RG's rounds measured two cards' arrangements, each card's part a run of its own ([the rounds](../benchmarks/results/2026-10-28-rounds/README.md)); no point fronted two nodes at once ([below](#e2-voice-under-agent-load)).
-3. The budget cap's hold on the agents' prefill, or the KV preemption's victims and their restores.
-4. The soak also asks what fails, restarts or is refused meanwhile.
-
-The original E3, a recompute ledger validated by injected causes with cache contracts as an SLI, was dropped with leases ([ADR-0006](adr/0006-the-engine-change-carries-the-realtime-tier.md)).
+| E0 | **The tier cost model** | What does resuming an agent turn cost from the GPU cache, from host RAM and recomputed? | [BENCHMARKS.md](BENCHMARKS.md#what-does-resuming-an-agent-turn-cost) |
+| E2 | **Voice under agent load** | How close does each configuration an operator can deploy bring the voice tail to its SLO, and at what cost to the agents? | [BENCHMARKS.md](BENCHMARKS.md#how-close-does-each-configuration-bring-the-voice-tail-to-its-slo), and [on an A100](BENCHMARKS.md#the-a100-run-2026-10-26) |
+| E3 | **The background tier's cost of make-room** | Through which rule does make-room cost the agents, the budget cap or the KV preemption? | [BENCHMARKS.md](BENCHMARKS.md#what-does-the-change-take-from-the-agents) |
+| E1 | **Parking** | How much of the gap to a clairvoyant reference does each level of lifecycle information close? | [BENCHMARKS.md](BENCHMARKS.md#does-knowing-when-an-agent-returns-help) |
+| Soak | **The production path for hours** | Does the box, as it serves, keep its SLO, admission and background service over a day? | [BENCHMARKS.md](BENCHMARKS.md#does-the-arrangement-to-deploy-keep-its-slo-over-a-day) |
+| Engine points | **A call's reply inside the engine** | What does each change to the engine do to a call's reply beside closed-loop agents? | [BENCHMARKS.md](BENCHMARKS.md#what-do-the-serving-engines-additions-do-to-a-voice-turn) |
 
 ## Which campaign measured what, on which code
 
-Each result in [BENCHMARKS.md](BENCHMARKS.md) names the campaign that measured it. The map gives what each campaign measured, when it ran, its rounds and its samples of the agents' traces, and the release its code belonged to, from its record's `run.json` files, which name the exact revision ([REVISIONS.md](REVISIONS.md) gives each one's commit in this history).
+Each result in [BENCHMARKS.md](BENCHMARKS.md) names the campaign that measured it. The map gives each campaign's span,
+rounds, samples of the agents' traces and the release its code belonged to. Each record's `run.json` files name the
+exact revision, and [REVISIONS.md](REVISIONS.md) resolves the older names to commits.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-campaigns-narrow.svg">
@@ -43,15 +42,24 @@ Each result in [BENCHMARKS.md](BENCHMARKS.md) names the campaign that measured i
 | OR | 2 November 00:32 to 08:18 | 55 | 5 rounds, 5 samples | after v1.14 | [`2026-11-02-opt-rounds`](../benchmarks/results/2026-11-02-opt-rounds/README.md) |
 | OS | 2 November 08:21 to 11:46 | 24 | 2 rounds, 2 samples | after v1.14 | [`2026-11-02-opt-rounds`](../benchmarks/results/2026-11-02-opt-rounds/README.md) |
 
+The map leaves out [the engine points](../benchmarks/results/2026-11-01-engine-points/README.md) of 1 and 2 November,
+which tried each addition on v1.14's serving profile, and
+[version 1.24's windows and rounds](../benchmarks/results/2026-11-08-envelope/README.md) of 7 and 8 November, on code of
+v1.23 and after.
+
 ## E2: voice under agent load
 
 **A point** is one run of an arm file ([`benchmarks/e2`](../benchmarks/e2/README.md)):
-- **Voice.** Two callers (`flatshare-voice bots`) call the voice agent through LiveKit, 25 turns each, 50 a point, with scripted lines of known end times and a barge-in on 9 of the 50 (each turn's chance a quarter). V2V runs from the end of the caller's speech to the agent's first audio, read from waveforms on one clock, with fixed endpointing.
-- **Agents.** AIPerf replays the SemiAnalysis Claude Code traces closed-loop through the gateway as background requests, block-scaled 32× so that every request fits the 32k context, with their subagents and think times capped at 120 s.
-- **Scenarios.**
-  - The standard scenario replays the whole corpus at 8, 16 and 24 agent sessions.
-  - The discriminating scenario replays the 48 traces with the largest contexts (13.9k tokens at the median request, against 7.9k for the whole corpus) at 24 agent sessions. Their KV fills the pool, the regime where a waiting voice turn cannot take KV from running work.
-- **Before each point** the engine's prefix cache is reset (`POST /reset_prefix_cache?reset_external=true`), and the harness checks the engine and each flag it reports against the arm file.
+- **Voice.** Two callers (`flatshare-voice bots`) call the voice agent through LiveKit, 25 turns each, with scripted
+  lines of known end times and a barge-in on 9 of the 50 turns. V2V runs from the end of the caller's speech to the
+  agent's first audio, read from waveforms on one clock, with fixed endpointing.
+- **Agents.** AIPerf replays the SemiAnalysis Claude Code traces closed-loop through the gateway as background requests,
+  block-scaled 32× so that every request fits the 32k context, with think times capped at 120 s.
+- **Scenarios.** The standard scenario replays the whole corpus at 8, 16 and 24 agent sessions. The discriminating
+  scenario replays the 48 traces with the largest contexts, 13.9k tokens at the median request against 7.9k, at 24
+  sessions, so that their KV fills the pool.
+- **Before each point** the engine's prefix cache is reset, and the harness checks the engine and each flag it reports
+  against the arm file.
 
 **The arms**, as run:
 
@@ -69,102 +77,138 @@ Each result in [BENCHMARKS.md](BENCHMARKS.md) names the campaign that measured i
 
 1. Preempt-resubmit aborts background work before its first byte and resubmits it.
 
-Arm 10 of E2's original plan (MPS with an active-thread split, audio off the GPU) was not run: W1's MPS comparison had already shown that the interference that matters is inside the engine ([BENCHMARKS.md](BENCHMARKS.md#voice-on-the-shared-gpu)).
+Arm 10, MPS with an active-thread split, did not run, since W1 had shown that the interference that matters is inside
+the engine ([BENCHMARKS.md](BENCHMARKS.md#voice-on-the-shared-gpu)).
 
-**Arm 9** ([`disc-a9-s24.toml`](../benchmarks/e2/arms/disc-a9-s24.toml)):
-- **The engine** runs the `make-room` variant ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change)): at most two preemptions a step for a waiting request that lacks KV, the budget cap with a 16-token window, and a 2,048-token reserve. The budget cap changed twice before the repeat rounds ([BENCHMARKS.md](BENCHMARKS.md#the-discriminating-scenario-in-rounds-with-arm-9-and-the-change-w4) says why), and the earlier versions' points are kept apart and not placed on the frontier.
-- **The gateway** runs the lifecycle policy (`policy = "lifecycle"`; [ARCHITECTURE.md §7](ARCHITECTURE.md#7-designs-measured-and-dropped)): 1,024 tokens of KV headroom per armed call, armed from speech onset; 150 ms of predicted background prefill per critical window; replies capped at 16 tokens when the headroom was not there (degrade); aging after 10 s.
+**Arm 9** ([`disc-a9-s24.toml`](../benchmarks/e2/arms/disc-a9-s24.toml)) combines three parts:
+- **The engine** runs the `make-room` variant ([ARCHITECTURE.md §2](ARCHITECTURE.md#2-the-change)), with at most two
+  preemptions a step for a waiting request that lacks KV, the budget cap at a 16-token window and a 2,048-token reserve.
+- **The gateway** runs the lifecycle policy ([ARCHITECTURE.md §7](ARCHITECTURE.md#7-designs-measured-and-dropped)). It
+  holds 1,024 tokens of KV headroom for each call from speech onset, allows 150 ms of predicted agent prefill per
+  critical window, and caps a reply at 16 tokens when the headroom is not there (degrade).
 - **The voice worker** posts its lifecycle events.
-- **Ablations**, each arm 9 without one part: the throttle, the headroom, degrade, the events, the gateway policy (the engine only), the change (the gateway only), and each engine switch. The headroom is also armed by the request instead of speech onset, and the throttle's budget run at 0 and 500 ms.
-- **Beyond the original plan:**
-  - arm 9 without degrade but with a 48-token window;
-  - the engine as the pull requests propose it (no reserve, no gateway policy), with the KV preemption alone, with the budget cap, and with a 48-token window;
-  - arm 9 and tuned vLLM in the standard scenario.
 
-**Factors**, at 16 agent sessions in the standard scenario: LiveKit's preemptive generation off (on by default), and four and six callers.
+Each ablation removes one part or engine switch, and two vary the headroom's arming and the throttle's budget. Also run
+were the engine as the pull requests propose it, without the reserve or a gateway policy, at each of its steps: the KV
+preemption alone, then the budget cap at 16 tokens and at 48. Arm 9 and tuned vLLM also ran in the standard scenario.
+The factors, at 16 sessions there, were LiveKit's preemptive generation off and four and six callers.
 
-**Metrics** the report computes, per point:
-- **Voice.** V2V p50, p95 and p99, and failed turns, each counted as a sample censored at the callers' 30 s reply timeout. Barge-in to silence.
-- **The voice worker's stage times** (endpointing, the reply's first sentence, TTS's first audio, transport and playout) and the realtime first byte, exact from the gateway's request log.
-- **Agents.** Their token rate and their TTFT p50 and p99 ([SLO.md](SLO.md#indicators) defines both).
-- **The engine.** Prompt tokens by source (computed, cached, restored from the CPU tier) and preemptions.
-- **The gateway.** Its decisions: deferrals by reason, degraded replies and resubmissions, and the headroom's false alarms, which no E2 run had.
-- **The GPU.** Its clocks and temperature.
+**Metrics**, per point:
+- **voice**: V2V p50, p95 and p99, with failed turns at the callers' 30 s timeout, and barge-in to silence;
+- **the voice worker's stages** and the realtime first byte, from the gateway's request log;
+- **agents**: their token rate and TTFT p50 and p99 ([SLO.md](SLO.md#indicators) defines both);
+- **the engine**: prompt tokens by source and preemptions;
+- **the gateway**: its deferrals by reason, degraded replies and resubmissions.
 
-The original plan's abort latency, wasted tokens and cost per token are not computed, and its audio gaps are read as [SLO.md's](SLO.md#indicators) pauses inside a reply, concealed audio and playout.
+**Rounds and samples**, each campaign's in [the map](#which-campaign-measured-what-on-which-code):
+- **W2 to W4** replay one sample of the agents' traces (agent seed 11), so their ranges measure timing noise only. W2
+  measured each baseline once, and W3–W4 repeated the discriminating scenario in rounds, rotating the engine groups so
+  that no configuration always runs at the same hour.
+- **W5's rounds** each replay a sample of their own, agent seed 10 + N in round N of every campaign, which draws where
+  each session enters its trace. The order rotates from round to round, and every call opens with an unmeasured warm-up
+  turn.
+- **From RG on** each round has a new sample, the rounds alternate Phastform and Gray, and each is held to its own voice
+  alone with as many callers.
+- **Builds.** W2's first two batches ran the W2 gateway and voice worker, everything else the W3 build. The change's
+  configurations ran the make-room variant on vLLM 0.32.0 with the pull requests' switch values. The pull requests'
+  revisions of 3 and 5 November change how make-room schedules, so every campaign up to 2 November measured it as it
+  was before them ([the report's §4](REPORT.md#4-implementation)).
 
-**How the campaigns ran.** [The map](#which-campaign-measured-what-on-which-code) gives each campaign's rounds, samples and code; [BENCHMARKS.md](BENCHMARKS.md) what each one measured, and with which configurations.
-- **Rounds.** W2 measured each baseline once (50 turns). W3–W4 repeated the discriminating scenario in rounds, rotating the order of the engine groups so that no configuration always runs at the same hour. Each headline configuration has five runs (250 turns); each ablation and PR configuration has three (150). Every run of W2–W4 replays the same workload sample (agent seed 11, caller seed 0), so their ranges measure timing noise only.
-- **W5's rounds.** W5 ran three campaigns of five rounds and a fourth, of three, of calls per GPU. Round N of each replays a sample of the agents of its own (agent seed 10 + N, the same in every campaign), which draws where each session enters its trace: AIPerf's sequential sampler gives every round the same traces in the same order. The rounds of the first three campaigns run their configurations in an order rotated from round to round; the calls-per-GPU rounds alternate it (`w5-cap-r1` to `r3`: an order, its reverse, the order). Every call opens with an unmeasured warm-up turn, and each point checked the engine's scheduler class and switches before it started. W5's records are kept apart from W2–W4's ([`benchmarks/results/2026-10-24-e2-w5`](../benchmarks/results/2026-10-24-e2-w5)).
-- **From RG on.** Each round runs on a new sample of the agents (seeds 21–25 in RG, 31–35 in OR, 36 and 37 in OS), the rounds alternate Phastform and Gray, and each round is held to its own voice alone with as many callers.
-- **Builds.** W2's first two campaigns (`w2`, `w2b`) ran the W2 gateway and voice worker; everything else ran the W3 build, with lifecycle events, and later versions of the variant where noted. The change's configurations ran as the make-room variant on vLLM 0.32.0 with the pull requests' switch values; ported to 0.32.0, the pull requests' diff schedules identically to it ([GLOSSARY.md](GLOSSARY.md#the-change-and-its-parts)).
+**Measurement rules.** The SLO's reference is each campaign's own voice alone with as many callers, plus 250 ms
+([SLO.md](SLO.md#the-slos-reference-campaign-by-campaign)). Every turn counts in W2–W4, the first of each call included,
+and from W5 on a warm-up turn opens each call. The callers record how late they play their lines, and no point is
+rejected for it ([the replay's fidelity](BENCHMARKS.md#how-closely-does-the-replay-follow-the-traces)).
 
-**Measurement rules.**
-- **The SLO's reference** is each campaign's own voice alone with as many callers, plus 250 ms ([SLO.md](SLO.md#the-slos-reference-campaign-by-campaign) gives each campaign's).
-- **Every turn counts** in W2–W4, the first of each call included (W5's calls open with a warm-up turn the report leaves out). Under load the first turn is slower than the rest, which raises the standard scenario's p95 and leaves the discriminating scenario's where it is; [BENCHMARKS.md](BENCHMARKS.md#voice-under-agent-load-e2) gives both with and without it.
-- **The token rate has two windows.** The agents' token rate is counted over the calls, whose length differs by configuration, and over their first 240 s, the same for every point ([the instrument notes](BENCHMARKS.md#instrument-notes-w2-to-w4)).
-- **Load generator health.** The callers record how late they play their lines ([BENCHMARKS.md](BENCHMARKS.md#how-closely-does-the-replay-follow-the-traces)), and the report does not use it to reject points.
-
-**Other hardware.** E2 runs on the frozen box, and its core ran like for like on an A100 SXM4 80 GB on 2026-10-26. [The report's §6.7](REPORT.md#67-the-rules-carry-to-an-a100) says what transfers to another card and what does not, [HARDWARE.md](HARDWARE.md) how a node of another card is deployed, and [BENCHMARKS.md](BENCHMARKS.md#the-a100-run-2026-10-26) how the A100 run was laid out and what it measured.
-
-**Two GPU nodes.** Three configurations of two GPU nodes were planned: a voice node and an agent node (dedicate); two mixed nodes with least-loaded placement; and two mixed nodes with Flatshare's placement, which sends a new call to the node with the fewest calls and a new agent session to the node holding the least background KV. None ran in E2, while another user's work held the second card from 2026-10-23; their arm files and the harness's points that front two nodes at once stay on the `two-node` branch ([`benchmarks/e2`](../benchmarks/e2/README.md)).
-
-RG's rounds compared dedicated roles, pooling and consolidation on two cards instead, each card's part of an arrangement a run of its own ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md), [BENCHMARKS.md](BENCHMARKS.md#two-cards-rg)). The gateway's placement of sessions on several nodes, which keeps each on its node, ships ([Nodes](../crates/flatshare-gateway/README.md#nodes)).
+**Other hardware and two nodes.** E2's core ran like for like on an A100 SXM4 80 GB
+([BENCHMARKS.md](BENCHMARKS.md#the-a100-run-2026-10-26)). No point fronts two GPU nodes at once, and the two-node arm
+files stay on the `two-node` branch. RG compared arrangements of two cards instead, each card's part a run of its own
+([BENCHMARKS.md](BENCHMARKS.md#which-arrangement-of-two-cards-does-the-most-background-work)), and the gateway's
+placement of sessions on several nodes ships ([Nodes](../crates/flatshare-gateway/README.md#nodes)).
 
 ## E3: the background tier's cost of make-room
 
-E2 prices make-room by the agents' token rate and first-token latency; E3 says where the cost comes from. It uses no new infrastructure: every W5 point's record keeps the engine's counters over the calls, and the engine's own lines add make-room's counts.
-- **The budget cap's hold.** make-room logs its running totals at most every 10 s: the steps in which the budget cap held lower-priority prefill back, the prefill tokens and admissions it held back in them (summed over the steps) and the requests it preempted to make room. Over a point's calls they are the difference of the totals at its two ends, read from the engine's journal (`e3_counters.py` in W5's records; up to 10 s of moves at either end can fall outside). The engine's step count over the calls, from its metrics at their start and end, gives the budget cap's share of the steps.
-- **The victims.** The engine's count of every preemption (`vllm:num_preemptions_total`, which counts a victim when its next output reaches the frontend), make-room's own count, and the CPU tier's loads beyond the requests' first scheduling: its load bytes less its hits at first scheduling, which are the victims' restores, give or take the requests in flight at the window's edges.
-- **What it cannot see.** What a victim recomputes when it resumes: vLLM 0.32 counts a request's computed prompt tokens, and its steps' tokens, at its first scheduling only. The steps' tokens less the decoded ones equal the prompt tokens computed at first scheduling at every point, so they are no second instrument.
+E2 prices make-room by the agents' token rate and first-token latency, and E3 says where the cost comes from, from the
+counters every W5 point's record keeps.
+- **The budget cap's hold.** make-room logs its running totals at most every 10 s: the steps in which the budget cap
+  held lower-priority prefill back, the prefill tokens and admissions it held back, and the requests it preempted. Over
+  a point's calls they are the difference of the totals at its two ends, so up to 10 s of moves at either end can fall
+  outside. The engine's step count over the calls gives the cap's share of the steps.
+- **The victims.** The engine counts every preemption when the victim's next output reaches the frontend, and make-room
+  counts its own. The CPU tier's loads beyond the requests' first scheduling are the victims' restores, give or take the
+  requests in flight at the window's edges.
+- **What it cannot see** is what a victim recomputes when it resumes, since vLLM 0.32 counts a request's computed prompt
+  tokens at its first scheduling only.
 
 ## E1: parking
 
-Parking KV during a tool call and prefetching it before the return is published ([PRIOR-ART.md](PRIOR-ART.md)), so E1 measures how much of the gap between LRU plus CPU offload and a clairvoyant reference each level of lifecycle information closes (none, session history, an oracle), per regime, with resume latency as the objective. It runs in the simulator first, and the GPU runs only the arms the simulator says matter.
+Prior work parks KV during a tool call and prefetches it before the return ([PRIOR-ART.md](PRIOR-ART.md)). E1 measures
+how much of the gap between LRU with CPU offload and a clairvoyant reference each level of lifecycle information closes:
+none, session history, an oracle. It runs in the simulator, so that the GPU runs only the arms the simulator says
+matter.
+- **Workload.** The block-scaled Claude Code traces as AIPerf's `agentic_replay` sends them, with recorded think times
+  capped at 120 s, or TraceLab's tool latencies, at KV pressures of 1–8× with the CPU tier at 2×, 4× and 8× the pool.
+- **Arms.** GPU-only LRU, LRU with the CPU tier, a fixed-TTL hold (Continuum), prefetch timed by session history and by
+  an oracle, and simplified Tokencake, MORI and InferCept. Belady's MIN in each tier, replayed on the LRU timeline, is
+  the clairvoyant reference, not a bound.
+- **Metrics.** Resume TTFT p50, p90 and p99 by source tier, stalls, avoidable recompute and PCIe bytes.
+- **The gate (G-sim).** If even the oracle closes under about 10% of resume TTFT in the realistic regime, the traces'
+  think times with the CPU tier at 4×, no lease-aware policy runs on the GPU. The gate names no percentile, and was read
+  at p50. It was first written on the clairvoyant reference's headroom, and changed to the oracle's gain in the commit
+  that reported the result ([how both forms read](BENCHMARKS.md#does-knowing-when-an-agent-returns-help)).
 
-- **Workload.** The block-scaled Claude Code traces, replayed as AIPerf's `agentic_replay` sends them, with recorded think times capped at 120 s, as in W0 and W2, or TraceLab's tool latencies. Session counts are swept to KV pressures of 1–8×, with the CPU tier at 2×, 4× and 8× the GPU pool.
-- **Arms.** GPU-only LRU; LRU + CPU tier; a fixed-TTL hold (Continuum); prefetch timed by session history and by an oracle; simplified Tokencake, MORI and InferCept; the clairvoyant reference (Belady's MIN in each tier, replayed on the LRU + CPU timeline: a reference, not a bound).
-- **Metrics.** Resume TTFT p50, p90 and p99 by source tier, and stalls; avoidable recompute; PCIe bytes.
-- **The gate (G-sim).** If even the oracle closes under about 10% of resume TTFT over LRU + CPU in the realistic regime (the traces' think times, the CPU tier at 4×), E1 is a regime map with a negative result, and no lease-aware policy runs on the GPU. The gate names no percentile; it was read at p50, and the p90 result is stated beside it. It was first written (affb8f0, 2026-10-22) on the clairvoyant reference's headroom over LRU + CPU, and changed to the oracle's gain in the commit that reported the result (ceb0d67). [BENCHMARKS.md](BENCHMARKS.md#does-knowing-when-an-agent-returns-help) gives how both forms of it read.
-
-**Reproduce.** `make reproduce-e1 CORPUS=DIR` regenerates its tables from the 32× corpus in about a minute; `make reproduce-calibration EXPORTS=DIR CORPUS=DIR` recomputes the calibration's from the six measured runs' exports, an asset of the [v0.3 release](https://github.com/StevenWang-CY/flatshare/releases/tag/v0.3).
+`make reproduce-e1 CORPUS=DIR` regenerates its tables from the 32× corpus in about two minutes on 16 threads, and `make
+reproduce-calibration EXPORTS=DIR CORPUS=DIR` the calibration's from the measured runs' exports, an asset of the [v0.3
+release](https://github.com/StevenWang-CY/flatshare/releases/tag/v0.3).
 
 ## The soak: the production path for hours
 
-E2 measures a fixed point for a few minutes on a box switched into its bench mode: the engine's development routes on, its prefix cache emptied before each point, the gateway's canary off, and a voice worker that takes every call. A soak measures the box as it serves and changes nothing on it, for `--hours` (24 in the soak that ran), so that what only time shows is counted: refusals at the call limit, restarts, a slow leak, an engine that degrades, the tail of a day rather than of 50 turns ([`flatshare-bench soak`](../python/flatshare_bench/README.md#soaks), [E2's README](../benchmarks/e2/README.md#soaks)).
+E2 measures a fixed point for minutes, on a box in its bench mode. A soak measures the box as it serves, changing
+nothing on it, for `--hours`, so that what only time shows is counted: refusals at the call limit, restarts, a slow
+leak, a day's tail ([`flatshare-bench soak`](../python/flatshare_bench/README.md#soaks),
+[how to run one](../benchmarks/e2/README.md#soaks)).
+- **Calls.** Synthetic callers arrive as a Poisson process (`--calls-per-hour`, 20 by default), each for a warm-up turn
+  and `--turns` measured turns (10), against the voice worker in serve mode. Such calls last 2.5 to 3.5 minutes, so 20
+  an hour offer the worker's two call slots 0.79 to 1.12 Erlang, and by the Erlang B formula one call in seven to one in
+  four finds them taken. Every attempt is recorded, with a refusal's reason.
+- **Agents.** AIPerf's agentic replay as E2 runs it, through the gateway, at `--agents-sessions` (16) for the whole
+  window.
+- **The service's own counts**, every minute, as a production scraper reads them, and every start, stop, failure and
+  restart of the units. A guard stops the load while another's process holds a GPU the soak loads.
 
-- **Calls.** Synthetic callers (`flatshare-voice arrivals`, the measurement callers' turns unchanged) arrive as a Poisson process (`--calls-per-hour`, 20 by default), each for a warm-up turn and `--turns` measured turns (10) with the callers' think times, against the voice worker in serve mode, whose admission takes at most its serving profile's `max_calls`. Calls of 11 turns last about two and a half to three and a half minutes at E2's pace (W5's two-caller calls of 26 turns lasted 336 to 476 s), so 20 an hour offer the worker's two call slots 0.79 to 1.12 Erlang, and by the Erlang B formula about one call in seven to one in four finds them taken (`python/flatshare_bench/tests/test_soak.py`). Every attempt is recorded: accepted, refused (and why: the worker full, no GPU node to place it on, the engine not serving, a drain, a dispatch LiveKit lost) or failed to connect.
-- **Agents.** AIPerf's agentic replay as E2 runs it (the same corpus, seed and think-time cap), through the gateway as the agents tenant, at `--agents-sessions` (16), for the whole window; a run that ends early is recorded and started again.
-- **The service's own counts**, every minute, as a production scraper reads them: the gateway's offered, admitted and ended requests by outcome, its failure-inclusive service level by class, its tokens, in-flight requests and engine states (per node with `[[nodes]]`, with each node's health and placements), each engine's preemptions, KV use and tokens through the gateway's relay, the voice worker's status, and every start, stop, failure and restart of the flatshare units, cyan's and, through the guard, the GPU nodes'. No development route and no `/server_info`.
-- **A guard.** A node's GPU is read every minute, with its units' journal lines since the last check (`node-report`, over SSH with a key that may run nothing else); while another's process holds a GPU the soak loads, its load stops, and that is an event of the record.
-
-**Its summary**, per hour and overall: calls attempted, accepted, refused (by reason) and failed; measured turns and failed ones; the replies' pooled p50, p95 and p99, and the share over the SLO, against a voice-alone reference given on the command line (its p95 plus 250 ms, [SLO.md](SLO.md)); replies with a pause over 500 ms; the gateway's realtime service level from its counters; background requests offered, admitted, completed and failed, and their tokens a second; each engine's preemptions and KV use; errors, restarts and the guard's pauses. An attempt belongs to the hour it was due in, a turn to the hour it ended in, a counter's increase to the hour of its later scrape.
-
-**What it cannot say.** The callers are synthetic: the same 40 lines, in fixed voices, with no echo and no room noise; a serving worker's microphone configuration (the end-of-turn model, LiveKit's AEC warm-up) adds its own endpointing to every V2V, so the SLO's reference is a voice-alone soak of the same configuration (`--agents-sessions 0`), not E2's. The agents replay traces; they do no task. A week of real use needs real callers.
+**Its summary**, per hour and overall, gives the calls by outcome, the turns, the replies' percentiles and share over
+the SLO, the realtime service level, the agents' tokens a second, and errors, restarts and pauses. The SLO's reference
+is a voice-alone soak of the same configuration (`--agents-sessions 0`), since a serving worker adds its own endpointing
+to every V2V. The callers are synthetic, the same 40 lines in fixed voices, and the agents replay traces without doing a
+task, so a week of real use needs real callers.
 
 ## The engine points: a call's reply inside the engine
 
-E2 measures a reply at the caller's ear; the engine points measure it inside the engine, where a change to the engine
-acts, quickly enough to try one change at a time ([the record](../benchmarks/results/2026-11-01-engine-points/README.md)).
-- **A point** starts one engine on a GPU node from the box's `engine.yaml`, with the serving profile's make-room switches
-  and the point's own flags, and runs [`tail.py`](../python/flatshare_vllm/src/flatshare_vllm/make-room/tail.py)
-  against it for 240 s: two calls of 48-token replies, a turn every 4 to 8 s, beside 12 closed-loop agents whose
-  prompts grow from 6,000 to 30,000 tokens a turn. With a hint, each call turn is announced 250 ms before it leaves, as
-  the voice worker announces it when the caller stops speaking.
-- **Measures.** The calls' first, 16th and 48th tokens on their own clocks, p50 and p95 over a point's turns; the
-  agents' computed tokens a second from the scheduler's trace, which also splits the first token by stage: the way in,
-  the CPU tier's load, the queue, the host's preparation, the step in flight and its own step.
-- **Repeats and controls.** Each change runs against the point before it, two runs a point on each node but where the
-  record says otherwise, and each mechanism has a control: a hint sent with nothing held, the hint's scheduler with no
-  hint, the reservations taken without a hint. A run on a slow host is left out with its reason.
-- **What it cannot say.** The calls are requests sent straight to the engine, without speech, the voice pipeline or the
-  gateway: what a change does to V2V and to the replies over the SLO is E2's to measure, in rounds (OR and OS in the map above).
+E2 measures a reply at the caller's ear, and the engine points inside the engine, quickly enough to try one change at a
+time ([the record](../benchmarks/results/2026-11-01-engine-points/README.md)).
+- **A point** starts one engine from the box's `engine.yaml`, with the serving profile's make-room switches and the
+  point's own flags, and runs [`tail.py`](../python/flatshare_vllm/src/flatshare_vllm/make-room/tail.py) for 240 s. Two
+  calls of 48-token replies turn every 4 to 8 s beside 12 closed-loop agents whose prompts grow from 6,000 to
+  30,000 tokens. With a hint, each call turn is announced 250 ms ahead, as the voice worker does when the caller stops
+  speaking.
+- **Measures.** The calls' first, 16th and 48th tokens at p50 and p95, and the agents' computed tokens a second from the
+  scheduler's trace, which also splits the first token by stage.
+- **Repeats and controls.** Each change runs against the point before it, two runs a point on each node, and each
+  mechanism has a control, such as a hint sent with nothing held.
+- **What it cannot say** is what a change does to V2V, since the calls go straight to the engine. OR's and OS's rounds
+  of E2 measure that.
 
 ## How runs are made
 
-- **The frozen box's configuration** for every experiment ([`deploy/phastform`](../deploy/phastform)), on Phastform, and on Gray for the first make-room probes and from RG on. Engine variants are drop-ins ([RUNBOOK.md](../ops/RUNBOOK.md#engine-variants)), and runs are grouped by engine, because a restart costs minutes.
-- **Campaigns** list arm files. [`campaign.sh`](../benchmarks/e2/campaign.sh) measures them in order from a workstation and fetches each run directory, and a stopped campaign resumes at its first incomplete point. While a campaign measures, only the box's own units may hold the GPU; a point measured beside another process is measured again ([RUNBOOK.md](../ops/RUNBOOK.md#checks-before-heavy-work-on-a-shared-host)).
-- **Records.** Each run directory holds the arm file as run, the engine's `/server_info`, the gateway's request log, AIPerf's exports, the worker's journal, the GPU's samples and the metrics around the calls. A compact record of each point (`flatshare-bench e2 export`) is committed under [`benchmarks/results`](../benchmarks/results/2026-10-23-e2/README.md), from which `make reproduce-e2` rebuilds the report (`make reproduce-e2-w5` W5's).
-- **Reproduce.** `make reproduce-e2` rebuilds the report, its tables, frontiers and waterfall from the compact records of W2–W4's 129 points, `make reproduce-e2-w5` W5's from its 72 and `make reproduce-e2-a100` the A100 run's, and `make figures` the figures; `make reproduce-e1` rebuilds E1's tables from the 32× corpus, and `make reproduce-calibration` the simulator's calibration from its runs' exports. The raw records are release assets: the calibration exports and W2–W4's run directories in v0.3, W5's, FB's and the demo's in v1.0, the A100 run's in v1.1 and RS's in v1.3.
-- **The demo video**, in v1.2, plays two calls side by side, on tuned vLLM and on the configuration to deploy, measured again for it with the calls' audio saved: a V2V p95 of 11,232 and 2,213 ms over both calls, not in the tables ([the demo video](../benchmarks/e2/README.md#the-demo-video)).
-- **Reporting.** Each configuration is reported per run, with the median and the range of its runs, never as a mean alone.
+- **The frozen box's configuration** for every experiment ([`deploy/phastform`](../deploy/phastform)). Engine variants
+  are drop-ins ([RUNBOOK.md](../ops/RUNBOOK.md#engine-variants)), and runs are grouped by engine, because a restart
+  costs minutes.
+- **Campaigns** list arm files. [`campaign.sh`](../benchmarks/e2/campaign.sh) measures them in order from a workstation,
+  fetches each run directory, and resumes a stopped campaign at its first incomplete point. While a campaign measures,
+  only the box's own units may hold the GPU ([RUNBOOK.md](../ops/RUNBOOK.md#checks-before-heavy-work-on-a-shared-host)).
+- **Records.** A compact record of each point (`flatshare-bench e2 export`) is committed under
+  [`benchmarks/results`](../benchmarks/results/2026-10-23-e2/README.md). The raw run directories are release assets: the
+  calibration exports and W2–W4's in v0.3, W5's and FB's in v1.0, the A100 run's in v1.1 and RS's in v1.3.
+- **Reproduce.** `make reproduce-e2` rebuilds the report of W2–W4's 129 points from their compact records,
+  `make reproduce-e2-w5` W5's 72 and `make reproduce-e2-a100` the A100 run's, and `make figures` the figures.
+- **Reporting.** Each configuration is reported per run, with the median and the range of its runs, never as a mean
+  alone.

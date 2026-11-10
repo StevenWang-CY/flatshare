@@ -103,7 +103,7 @@ W4_STAGES = (
     "disc-a9-s24",
     "disc-pr-ab48-s24",
 )
-"""The configurations whose voice turn docs/BENCHMARKS.md's stage table gives from W4's records, but for the change at
+"""The configurations whose voice turn docs/BENCHMARKS.md's stage figure draws from W4's records, but for the change at
 its 16-token window: voice alone, tuned vLLM, the static reservation, preempt-resubmit, the lifecycle policy over
 make-room and the change with a 48-token window."""
 
