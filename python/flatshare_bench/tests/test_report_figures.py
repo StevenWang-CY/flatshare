@@ -1247,14 +1247,14 @@ def test_the_envelope_is_its_records_rounds(drawn: dict[str, Path]) -> None:
                 r.node,
                 f"{r.over} of {r.replies}, {r.tokens:,.0f} tokens/s",
             )
-    # The report's Table 11 gives what the figure draws.
-    caption_and_table = REPORT.read_text().split("**Table 11.", 1)[1].split("\n\n")
-    table11 = [
+    # The report's Table 10 gives what the figure draws.
+    caption_and_table = REPORT.read_text().split("**Table 10.", 1)[1].split("\n\n")
+    table10 = [
         [cell.strip().strip("*") for cell in line.strip("|").split("|")]
         for line in caption_and_table[1].splitlines()[2:]
     ]
-    assert len(table11) == len(found)
-    for c, cells in zip(found, table11, strict=True):
+    assert len(table10) == len(found)
+    for c, cells in zip(found, table10, strict=True):
         assert (cells[1], cells[2], cells[4]) == (
             str(c.sessions),
             f"{c.over} / {c.replies} ({c.share:.1%})",
@@ -1599,7 +1599,7 @@ def test_section_6_11s_figures_say_what_their_records_do(drawn: dict[str, Path])
     for reference in ("(Figure 17a)", "(Figure 17b)", "(Figure 18)"):
         assert reference in " ".join(report.split()), reference
     assert (
-        "| §6.11, Figures 17 and 18 and Table 11 | [`2026-11-08-envelope`](../benchmarks/results/2026-11-08-envelope) |"
+        "| §6.11, Figures 17 and 18 and Table 10 | [`2026-11-08-envelope`](../benchmarks/results/2026-11-08-envelope) |"
         in report
     )
     # BENCHMARKS splits the windows' table by window, without the window's column (test_envelope_record).

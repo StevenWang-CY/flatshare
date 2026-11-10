@@ -99,11 +99,11 @@ def test_the_docs_give_the_follow_up_rounds_verdicts_as_the_record_does() -> Non
     assert not (spec < hold and spec_fewer >= 5)  # speculative decoding not adopted
     phrases = {
         "docs/REPORT.md": (
-            f"The hold put {hold} of {replies} replies over the SLO against {four}, fewer in "
+            f"The decode hold put {hold} of {replies} replies over the SLO against {four}, fewer in "
             f"{WORDS[hold_fewer]} of the six",
             f"cost the agents {cost:.1f}% of their token rate at the median of the six",
-            f"Speculative decoding put {spec} over against the hold's {hold}, fewer in {WORDS[spec_fewer]} of "
-            "the six where the rule asked for five",
+            f"Speculative decoding put {spec} over against the decode hold's {hold}, fewer in "
+            f"{WORDS[spec_fewer]} of the six where the rule asked for five",
         ),
         "docs/BENCHMARKS.md": (
             f"**The decode hold put {hold} of {replies} replies over the SLO against {four}**, fewer in "

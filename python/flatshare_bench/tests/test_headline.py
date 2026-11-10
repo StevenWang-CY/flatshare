@@ -2,8 +2,8 @@
 of the W5 runs its row reports, pooled over the campaigns that ran it as benchmarks/results/2026-10-24-e2-w5/compare.py
 pools them, and docs/PRODUCTION.md's line of the same and its row of the two cards; the headline numbers of the
 README's opening and of docs/REPORT.md's abstract, from the W5, A100 and two-card records, and the one date both give
-the pull requests' state; the report's Tables 6 and 8 and §6.9's comparison, from the two-card record's own gate.py;
-its Table 9 and §6.10's sums, from the engine points' table.py; and BENCHMARKS.md's FB, RS, transport and window-sweep
+the pull requests' state; the report's Tables 6 and 7 and §6.9's comparison, from the two-card record's own gate.py;
+its Table 8 and §6.10's sums, from the engine points' table.py; and BENCHMARKS.md's FB, RS, transport and window-sweep
 tables, from those records' own compare.py, running_share.py, ab.py and table.py. New records, or a table edited by
 hand, cannot leave a stale headline: the commit that changes either fails here."""
 
@@ -65,7 +65,7 @@ STEP_CAPS = {
     "The configuration to deploy, 512-token steps": "w5-disc-pr-ab48-s24",
     "The configuration to deploy, 256-token steps": "sweep-disc-pr-ab48-b256-t0-s24",
 }
-"""Table 8's rows (§6.9), by their first cell, and the point of the two-card record each reports (gate.py's SWEEP)."""
+"""Table 7's rows (§6.9), by their first cell, and the point of the two-card record each reports (gate.py's SWEEP)."""
 VOICE_CARD = ("w5-a1-voice", 1)  # the calls alone on a card
 AGENTS_CARD = ("rg-disc-agents-only-s14", 1)  # the agents alone, the best practical dedicated card
 TWO_CARDS = {
@@ -75,12 +75,18 @@ TWO_CARDS = {
     ("Dedicated roles, controlled", "0 + 12"): (VOICE_CARD, ("rg-disc-agents-frozen-s12", 1)),
     ("Dedicated roles, best practical", "0 + 14"): (VOICE_CARD, AGENTS_CARD),
     ("Pooling, tuned vLLM", "12 + 12"): (("rg-disc-frozen-c1-s12", 2),),
-    ("Pooling, the change", "12 + 12"): (("rg-disc-pr-ab48-b256-c1-s12", 2),),
+    ("Pooling, the configuration to deploy", "12 + 12"): (("rg-disc-pr-ab48-b256-c1-s12", 2),),
     ("Consolidation, tuned vLLM", "4 + 14"): (("rg-disc-frozen-s4", 1), AGENTS_CARD),
     ("Consolidation, tuned vLLM", "2 + 14"): (("rg-disc-frozen-s2", 1), AGENTS_CARD),
-    ("Consolidation, the change", "8 + 14"): (("rg-disc-pr-ab48-b256-s8", 1), AGENTS_CARD),
-    ("Consolidation, the change", "4 + 14"): (("rg-disc-pr-ab48-b256-s4", 1), AGENTS_CARD),
-    ("Consolidation, the change, with a warm spare", "4 + 12"): (
+    ("Consolidation, the configuration to deploy", "8 + 14"): (
+        ("rg-disc-pr-ab48-b256-s8", 1),
+        AGENTS_CARD,
+    ),
+    ("Consolidation, the configuration to deploy", "4 + 14"): (
+        ("rg-disc-pr-ab48-b256-s4", 1),
+        AGENTS_CARD,
+    ),
+    ("Consolidation, the configuration to deploy, with a warm spare", "4 + 12"): (
         ("rg-disc-pr-ab48-b256-s4", 1),
         ("rg-disc-agents-pr-ab48-b256-s12", 1),
     ),
@@ -291,7 +297,7 @@ def test_productions_headline_and_two_card_row_are_the_records() -> None:
     # Its row of the arrangement to deploy, as the two-card record's gate.py counts Table 6's row (§6.8).
     gate, campaigns = ROUNDS_GATE, ROUNDS_GATE.ROUNDS
     points, slos = rounds(campaigns)
-    cards = TWO_CARDS["Consolidation, the change, with a warm spare", "4 + 12"]
+    cards = TWO_CARDS["Consolidation, the configuration to deploy, with a warm spare", "4 + 12"]
     over, replies = gate.foreground(points, slos, cards, campaigns)
     work, _ = gate.background(points, cards, campaigns)
     row = (
@@ -335,7 +341,7 @@ def test_the_reports_two_card_table_is_the_rounds_records() -> None:
 
 
 def test_the_reports_step_cap_table_and_its_comparison_are_the_rounds_records() -> None:
-    # Table 8 (§6.9), cell by cell, and §6.9's comparison of the step caps, as the two-card record's gate.py counts
+    # Table 7 (§6.9), cell by cell, and §6.9's comparison of the step caps, as the two-card record's gate.py counts
     # the sweep's five rounds.
     rows = rows_of(REPORT, "| Configuration | Median p95 V2V |")
     assert [label for label, *_ in rows] == list(STEP_CAPS)
@@ -349,7 +355,7 @@ def test_the_reports_step_cap_table_and_its_comparison_are_the_rounds_records() 
     tuned, at512, at256 = (step_caps()[point] for point in STEP_CAPS.values())
     # Fewer replies over the SLO at 256 than at 512 in each of the five rounds.
     assert all(a < b for a, b in zip(at256["by round"], at512["by round"], strict=True))
-    prose = passage(REPORT, "### 6.9", "**Table 8.")
+    prose = passage(REPORT, "### 6.9", "**Table 7.")
     for phrase in (
         "{} of {} against {}".format(*at256["replies"], at512["replies"][0]),
         f"({tenths(*at256['replies'])} against {tenths(*at512['replies'])})",
@@ -376,7 +382,7 @@ ENGINE_ROWS = {
     "+ their decodes held for 16 tokens": "r0hjtd-grow",
     "+ held for 48 tokens, the window: the profile": "r0hjtd48-grow",
 }
-"""Table 9's rows (§6.10), by their first cell, and the engine points' arm each reports, on Phastform."""
+"""Table 8's rows (§6.10), by their first cell, and the engine points' arm each reports, on Phastform."""
 
 
 def engine_row(arm: str) -> dict[str, float]:
@@ -400,7 +406,7 @@ def engine_row(arm: str) -> dict[str, float]:
 
 
 def test_the_reports_engine_table_and_its_sums_are_the_engine_points_record() -> None:
-    # Table 9 (§6.10), cell by cell, from the engine points' runs on Phastform, its first row with the unit; and the
+    # Table 8 (§6.10), cell by cell, from the engine points' runs on Phastform, its first row with the unit; and the
     # sums §6.10 draws from its first row, the profile's (the last) and the one before the decode hold.
     rows = rows_of(REPORT, "| Configuration | First token p50 / p95 |")
     assert [label for label, *_ in rows] == list(ENGINE_ROWS)
@@ -412,13 +418,13 @@ def test_the_reports_engine_table_and_its_sums_are_the_engine_points_record() ->
         assert agents == f"{m['agents']:,.0f}", label
     before, after = engine_row("a0-grow"), engine_row("r0hjtd48-grow")
     unheld = engine_row("r0hjt-grow")
-    prose = passage(REPORT, "Table 9 gives the engine points", "**Table 9.")
+    prose = passage(REPORT, "Table 8 gives the engine points", "**Table 8.")
     for phrase in (
         f"from {before['first p95']:,.0f} to {after['first p95']:,.0f} ms at p95",
         f"from {before['48th p95']:,.0f} to {after['48th p95']:,.0f} ms",
         f"give up {1 - after['agents'] / before['agents']:.0%} of their token rate",
         f"({after['agents']:,.0f} against {before['agents']:,.0f} tokens a second)",
-        f"without the decode hold, as versions 1.15 and 1.16 served, the 48th token is {unheld['48th p95']:,.0f} ms",
+        f"Without the decode hold the 48th token is {unheld['48th p95']:,.0f} ms",
     ):
         assert phrase in prose, phrase
 
@@ -430,11 +436,11 @@ OPT_CONFIGURATIONS = {
     "v1.14's configuration to deploy": 0,
     "+ the first four additions": 1,
 }
-"""Table 10's configurations (§6.10), by their cell, and their place in each of the record's scenarios."""
+"""Table 9's configurations (§6.10), by their cell, and their place in each of the record's scenarios."""
 
 
 def test_the_reports_rounds_table_is_the_opt_rounds_record() -> None:
-    # Table 10 (§6.10), cell by cell, as the optimization rounds' table.py counts each scenario's five rounds: the
+    # Table 9 (§6.10), cell by cell, as the optimization rounds' table.py counts each scenario's five rounds: the
     # replies over each round's SLO pooled and by round, and the medians over the rounds of the V2V p95, the LLM's first
     # token at p95 and the agents' tokens a second.
     rows = rows_of(REPORT, "| Scenario | Configuration | Replies over the SLO |")
