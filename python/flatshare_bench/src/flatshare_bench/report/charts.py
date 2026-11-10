@@ -2,13 +2,18 @@
 markers in the shapes that tell gray comparators apart, rugs of runs, ECDF steps, stacked stage bars, bars that a
 requirement hatches, and legends.
 
-The report's figures keep one encoding per meaning. Gray is vLLM without the change, tuned or stock, and every
-comparator; blue is the change, saturated for the configuration to deploy and pale ("sky") for a sibling of it; ink is
-voice alone; orange is the SLO, a dashed rule. A run is an open marker, or a thin tick where runs crowd within a few
-units, and a configuration's median a short thick tick or a filled marker. The stage bars stack the voice turn's stages in their order, the two the engine's scheduler sets in
-violet (the wait for the LLM's first token) and green (the decode of the reply's first sentence), the rest in grays of
-distinct lightness, so that neighbours stay apart in grayscale and for a color-blind reader. A bar is pale in its hue,
-or hatched in it on the page where what it measures misses the requirement it is read against.
+The report's figures keep one encoding per meaning. A configuration has one hue, one marker and one fill in every
+figure, flatshare_bench.labels' MARKS: gray is vLLM without the change, tuned or stock, and every comparator; blue is
+the change, saturated for the configuration to deploy and its sky sibling for the change's other configurations; ink is
+voice alone; orange is the SLO, a dashed rule. Tuned vLLM, stock vLLM and preempt-resubmit are open markers and the
+change's filled, so that the gray and the blue, of one lightness, stay apart in grayscale. A run is a thin tick, or a
+small marker where a figure plots two measures of a run against each other, and a median the configuration's marker
+over its runs. The stage bars stack the voice
+turn's stages in their order, the two the engine's scheduler sets in violet (the wait for the LLM's first token) and
+green (the decode of the reply's first sentence), the rest in grays of distinct lightness, so that neighbours stay apart
+in grayscale and for a color-blind reader. A bar is pale in its hue, or hatched in it on the page where what it
+measures misses the requirement it is read against. Titles, axis titles and a key's entries are set in sentence case,
+and a panel's title names its quantity; what a mark means and what a figure covers is its caption's.
 
 :class:`Chart` adds these parts' classes to the figure's style and, to :meth:`Figure.check`'s refusals, a label over a
 data mark.
@@ -40,17 +45,18 @@ TICK_HALF = 11.0
 STAGES = ("endpointing", "wait", "decode", "tts", "transport")
 """The voice turn's stages from the end of the caller's speech, in their order, each a stacked bar's segment."""
 PALETTE = {
-    "sky": ("#6fa1e3", "#3b69a6"),
+    "sky": ("#5a8fd6", "#3b69a6"),
     "stage-endpointing": ("#dde1e7", "#2d333b"),
     "stage-wait": ("#9d87d8", "#6a56ad"),
     "stage-decode": ("#a4dac1", "#245c45"),
     "stage-tts": ("#8a929e", "#7d8692"),
     "stage-transport": ("#f3f4f6", "#1a1f26"),
 }
-"""The colors the charts add to figure_style's palette, light and dark. Sky is the change's pale blue as a marker or
-a line carries it (figure_style's pale blue is a fill, too faint for a marker's outline on the page). Each pair of
-neighbouring stages clears a ΔE (OKLab) of 15 for every reader and under simulated deuteranopia and protanopia; ink
-sets a stage's value inside the violet at 5:1 or more in both themes."""
+"""The colors the charts add to figure_style's palette, light and dark. Sky is the change's sibling blue as a marker
+or a line carries it (figure_style's pale blue is a fill, too faint for a marker's outline on the page): fainter than
+the saturated blue against the page in either theme, and at 3:1 or more on it, as a mark must be (WCAG 1.4.11). Each
+pair of neighbouring stages clears a ΔE (OKLab) of 15 for every reader and under simulated deuteranopia and
+protanopia; ink sets a stage's value inside the violet at 5:1 or more in both themes."""
 HUES = ("gray", "blue", "sky", "ink", "orange")
 """The hues a mark takes: figure_style's gray, blue and orange, and the charts' sky and ink."""
 
@@ -426,12 +432,13 @@ def rug(
     *,
     median: float,
     half: float = 10.0,
+    filled: bool = True,
 ) -> None:
     """A row's runs at canvas positions ``xs`` as thin ticks across the row, and their ``median`` (a canvas position)
-    as a filled marker over them: a form that keeps runs within a few units of each other apart from a row's
-    height."""
+    as a marker over them, ``filled`` or open as the configuration's mark is (flatshare_bench.labels' MARKS): a form
+    that keeps runs within a few units of each other apart from a row's height."""
     runs(s, xs, y, hue, half=half)
-    s.mark(median, y, hue, "circle" if shape == "dot" else shape, filled=True, r=5.2)
+    s.mark(median, y, hue, "circle" if shape == "dot" else shape, filled=filled, r=5.2)
 
 
 def runs(s: Chart, xs: Sequence[float], y: float, hue: str, *, half: float = 10.0) -> None:

@@ -1,217 +1,300 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1590" viewBox="0 0 420 1590" font-size="21" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1358" viewBox="0 0 420 1358" font-size="21" role="img" aria-labelledby="title desc">
 <title id="title">Which campaign measured what, on which code</title>
-<desc id="desc">A timeline of 22 October to 2 November 2026, UTC, a bar for each campaign from its first run's start to its last run's end, with what it measured, its rounds and samples, and the code it ran: W2, every arm an operator can deploy, once each, 23 October 00:13 to 08:59, one run a point, one sample, on code before v0.1; W3–W4, the headline configurations, the lifecycle policy and the change, 23 October 10:57 to 24 October 01:35, 5 rounds, one sample, on code before v0.1; W5, the fixed make-room and the configuration to deploy, 24 October 18:56 to 25 October 09:57, 18 rounds, 5 samples, on code after v0.3; FB, the configuration to deploy on the code of 25 October, 25 October 12:47 to 15:22, 5 rounds, 5 samples, on code after v0.3; the A100 run, the main comparison like for like on an A100, 26 October 04:42 to 09:05, 5 rounds and its arms, 5 samples, on v1.0; RS, how often two calls find KV short, 26 October 20:11 to 21:57, 5 rounds, 5 samples, on v1.2; SW, the step cap, the threshold and the window, screened, 27 October 20:56 to 28 October 00:10, one run a setting, one sample, on v1.5; RG, two cards' arrangements, and the step cap confirmed, 28 October 01:41 to 13:19, 5 rounds, 5 samples, on code after v1.6; the soak, the arrangement to deploy, serving for a day, 28 October 15:20 to 29 October 17:24, 2 hours of voice alone, then 24 hours serving, on code after v1.6; OR, the serving engine's additions against v1.14's configuration, 2 November 00:32 to 08:18, 5 rounds, 5 samples, on code after v1.14; OS, the decode hold and speculative decoding on the four additions, 2 November 08:21 to 11:46, 2 rounds, 2 samples, on code after v1.14.</desc>
+<desc id="desc">A timeline of 22 October to 8 November 2026, UTC, a bar for each campaign from its first run's start to its last run's end, with what it measured: W2, every arm an operator can deploy, once each, 23 October 00:13 to 08:59; W3–W4, the headline configurations, the lifecycle policy and the change, 23 October 10:57 to 24 October 01:35; W5, the fixed make-room and the configuration to deploy, 24 October 18:56 to 25 October 09:57; FB, the configuration to deploy on the code of 25 October, 25 October 12:47 to 15:22; the A100 run, the main comparison like for like on an A100, 26 October 04:42 to 09:05; RS, how often two calls find KV short, 26 October 20:11 to 21:57; SW, the step cap, the threshold and the window, screened, 27 October 20:56 to 28 October 00:10; RG, two cards' arrangements, and the step cap confirmed, 28 October 01:41 to 13:19; the soak, the arrangement to deploy, serving for a day, 28 October 15:20 to 29 October 17:24; OR, the serving engine's additions against v1.14's configuration, 2 November 00:32 to 08:18; OS, the decode hold and speculative decoding on the four additions, 2 November 08:21 to 11:46; the envelope, the cache-aware queue and the SM copy, and the card's envelope, 7 November 16:03 to 8 November 17:51.</desc>
 <!-- Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 (python/flatshare_bench/src/flatshare_bench/fonts/OFL.txt). -->
-<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}svg{--sky:#6fa1e3;--stage-endpointing:#dde1e7;--stage-wait:#9d87d8;--stage-decode:#a4dac1;--stage-tts:#8a929e;--stage-transport:#f3f4f6}@media(prefers-color-scheme:dark){svg{--sky:#3b69a6;--stage-endpointing:#2d333b;--stage-wait:#6a56ad;--stage-decode:#245c45;--stage-tts:#7d8692;--stage-transport:#1a1f26}}.sky{--c:var(--sky);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}.mark{fill:var(--page);stroke:var(--c);stroke-width:1.4}.mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.2}.cross{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round}.trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}.trace.thick{stroke-width:2.4}.trace.dashed{stroke-dasharray:8 5}.trace.dotted{stroke-width:2.6;stroke-dasharray:0 5.5;stroke-linecap:round}.median{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.hair{fill:none;stroke:var(--axis);stroke-width:1}.ref{fill:none;stroke:var(--c);stroke-width:1.5}.range{fill:none;stroke:var(--c);stroke-width:1.4}.run{fill:none;stroke:var(--c);stroke-width:1.5;stroke-linecap:butt}.band{fill:var(--a)}.arrow{fill:none;stroke:var(--c);stroke-width:1.6}.arrow-head{fill:var(--c)}.s-endpointing{fill:var(--stage-endpointing);stroke:var(--bar-line);stroke-width:1.1}.s-wait{fill:var(--stage-wait);stroke:var(--bar-line);stroke-width:1.1}.s-decode{fill:var(--stage-decode);stroke:var(--bar-line);stroke-width:1.1}.s-tts{fill:var(--stage-tts);stroke:var(--bar-line);stroke-width:1.1}.s-transport{fill:var(--stage-transport);stroke:var(--bar-line);stroke-width:1.1}</style>
-<rect class="page" width="420" height="1590"/>
-<text x="18" y="36" font-size="20">W2</text>
-<text x="18" y="58" class="soft" font-size="18">Every arm an operator can deploy, once each</text>
-<path d="M18 68V92" class="axis"/>
-<path d="M50 68V92" class="grid"/>
-<path d="M82 68V92" class="grid"/>
-<path d="M114 68V92" class="grid"/>
-<path d="M146 68V92" class="grid"/>
-<path d="M178 68V92" class="grid"/>
-<path d="M210 68V92" class="grid"/>
-<path d="M242 68V92" class="grid"/>
-<path d="M274 68V92" class="grid"/>
-<path d="M306 68V92" class="grid"/>
-<path d="M338 68V92" class="grid"/>
-<path d="M370 68V92" class="grid"/>
-<path d="M402 68V92" class="grid"/>
-<path d="M50.3 72H58.98Q61.98 72 61.98 75V85Q61.98 88 58.98 88H50.3Z" class="g-lo"/>
-<text x="18" y="114" class="mute" font-size="18">one run a point, one sample, on code before v0.1</text>
-<text x="18" y="158" font-size="20">W3–W4</text>
-<text x="18" y="180" class="soft" font-size="18">The headline configurations, the</text>
-<text x="18" y="202" class="soft" font-size="18">lifecycle policy and the change</text>
-<path d="M18 212V236" class="axis"/>
-<path d="M50 212V236" class="grid"/>
-<path d="M82 212V236" class="grid"/>
-<path d="M114 212V236" class="grid"/>
-<path d="M146 212V236" class="grid"/>
-<path d="M178 212V236" class="grid"/>
-<path d="M210 212V236" class="grid"/>
-<path d="M242 212V236" class="grid"/>
-<path d="M274 212V236" class="grid"/>
-<path d="M306 212V236" class="grid"/>
-<path d="M338 212V236" class="grid"/>
-<path d="M370 212V236" class="grid"/>
-<path d="M402 212V236" class="grid"/>
-<path d="M64.61 216H81.12Q84.12 216 84.12 219V229Q84.12 232 81.12 232H64.61Z" class="g-lo"/>
-<text x="18" y="258" class="mute" font-size="18">5 rounds, one sample, on code before v0.1</text>
-<text x="18" y="302" font-size="20">W5</text>
-<text x="18" y="324" class="soft" font-size="18">The fixed make-room and</text>
-<text x="18" y="346" class="soft" font-size="18">the configuration to deploy</text>
-<path d="M18 356V380" class="axis"/>
-<path d="M50 356V380" class="grid"/>
-<path d="M82 356V380" class="grid"/>
-<path d="M114 356V380" class="grid"/>
-<path d="M146 356V380" class="grid"/>
-<path d="M178 356V380" class="grid"/>
-<path d="M210 356V380" class="grid"/>
-<path d="M242 356V380" class="grid"/>
-<path d="M274 356V380" class="grid"/>
-<path d="M306 356V380" class="grid"/>
-<path d="M338 356V380" class="grid"/>
-<path d="M370 356V380" class="grid"/>
-<path d="M402 356V380" class="grid"/>
-<path d="M107.25 360H124.28Q127.28 360 127.28 363V373Q127.28 376 124.28 376H107.25Z" class="g-lo"/>
-<text x="18" y="402" class="mute" font-size="18">18 rounds, 5 samples, on code after v0.3</text>
-<text x="18" y="446" font-size="20">FB</text>
-<text x="18" y="468" class="soft" font-size="18">The configuration to deploy</text>
-<text x="18" y="490" class="soft" font-size="18">on the code of 25 October</text>
-<path d="M18 500V524" class="axis"/>
-<path d="M50 500V524" class="grid"/>
-<path d="M82 500V524" class="grid"/>
-<path d="M114 500V524" class="grid"/>
-<path d="M146 500V524" class="grid"/>
-<path d="M178 500V524" class="grid"/>
-<path d="M210 500V524" class="grid"/>
-<path d="M242 500V524" class="grid"/>
-<path d="M274 500V524" class="grid"/>
-<path d="M306 500V524" class="grid"/>
-<path d="M338 500V524" class="grid"/>
-<path d="M370 500V524" class="grid"/>
-<path d="M402 500V524" class="grid"/>
-<path d="M131.07 504H132.78Q134.49 504 134.49 505.71V518.29Q134.49 520 132.78 520H131.07Z" class="g-lo"/>
-<text x="18" y="546" class="mute" font-size="18">5 rounds, 5 samples, on code after v0.3</text>
-<text x="18" y="590" font-size="20">The A100 run</text>
-<text x="18" y="612" class="soft" font-size="18">The main comparison like for like on an A100</text>
-<path d="M18 622V646" class="axis"/>
-<path d="M50 622V646" class="grid"/>
-<path d="M82 622V646" class="grid"/>
-<path d="M114 622V646" class="grid"/>
-<path d="M146 622V646" class="grid"/>
-<path d="M178 622V646" class="grid"/>
-<path d="M210 622V646" class="grid"/>
-<path d="M242 622V646" class="grid"/>
-<path d="M274 622V646" class="grid"/>
-<path d="M306 622V646" class="grid"/>
-<path d="M338 622V646" class="grid"/>
-<path d="M370 622V646" class="grid"/>
-<path d="M402 622V646" class="grid"/>
-<path d="M152.28 626H155.2Q158.12 626 158.12 628.92V639.08Q158.12 642 155.2 642H152.28Z" class="g-lo"/>
-<text x="18" y="668" class="mute" font-size="18">5 rounds and its arms, 5 samples, on v1.0</text>
-<text x="18" y="712" font-size="20">RS</text>
-<text x="18" y="734" class="soft" font-size="18">How often two calls find KV short</text>
-<path d="M18 744V768" class="axis"/>
-<path d="M50 744V768" class="grid"/>
-<path d="M82 744V768" class="grid"/>
-<path d="M114 744V768" class="grid"/>
-<path d="M146 744V768" class="grid"/>
-<path d="M178 744V768" class="grid"/>
-<path d="M210 744V768" class="grid"/>
-<path d="M242 744V768" class="grid"/>
-<path d="M274 744V768" class="grid"/>
-<path d="M306 744V768" class="grid"/>
-<path d="M338 744V768" class="grid"/>
-<path d="M370 744V768" class="grid"/>
-<path d="M402 744V768" class="grid"/>
-<path d="M172.91 748H174.41Q175.91 748 175.91 749.5V762.5Q175.91 764 174.41 764H172.91Z" class="g-lo"/>
-<text x="18" y="790" class="mute" font-size="18">5 rounds, 5 samples, on v1.2</text>
-<text x="18" y="834" font-size="20">SW</text>
-<text x="18" y="856" class="soft" font-size="18">The step cap, the threshold</text>
-<text x="18" y="878" class="soft" font-size="18">and the window, screened</text>
-<path d="M18 888V912" class="axis"/>
-<path d="M50 888V912" class="grid"/>
-<path d="M82 888V912" class="grid"/>
-<path d="M114 888V912" class="grid"/>
-<path d="M146 888V912" class="grid"/>
-<path d="M178 888V912" class="grid"/>
-<path d="M210 888V912" class="grid"/>
-<path d="M242 888V912" class="grid"/>
-<path d="M274 888V912" class="grid"/>
-<path d="M306 888V912" class="grid"/>
-<path d="M338 888V912" class="grid"/>
-<path d="M370 888V912" class="grid"/>
-<path d="M402 888V912" class="grid"/>
-<path d="M205.93 892H208.08Q210.23 892 210.23 894.15V905.85Q210.23 908 208.08 908H205.93Z" class="g-lo"/>
-<text x="18" y="934" class="mute" font-size="18">one run a setting, one sample, on v1.5</text>
-<text x="18" y="978" font-size="20">RG</text>
-<text x="18" y="1000" class="soft" font-size="18">Two cards' arrangements,</text>
-<text x="18" y="1022" class="soft" font-size="18">and the step cap confirmed</text>
-<path d="M18 1032V1056" class="axis"/>
-<path d="M50 1032V1056" class="grid"/>
-<path d="M82 1032V1056" class="grid"/>
-<path d="M114 1032V1056" class="grid"/>
-<path d="M146 1032V1056" class="grid"/>
-<path d="M178 1032V1056" class="grid"/>
-<path d="M210 1032V1056" class="grid"/>
-<path d="M242 1032V1056" class="grid"/>
-<path d="M274 1032V1056" class="grid"/>
-<path d="M306 1032V1056" class="grid"/>
-<path d="M338 1032V1056" class="grid"/>
-<path d="M370 1032V1056" class="grid"/>
-<path d="M402 1032V1056" class="grid"/>
-<path d="M212.27 1036H224.77Q227.77 1036 227.77 1039V1049Q227.77 1052 224.77 1052H212.27Z" class="g-lo"/>
-<text x="18" y="1078" class="mute" font-size="18">5 rounds, 5 samples, on code after v1.6</text>
-<text x="18" y="1122" font-size="20">The soak</text>
-<text x="18" y="1144" class="soft" font-size="18">The arrangement to deploy, serving for a day</text>
-<path d="M18 1154V1178" class="axis"/>
-<path d="M50 1154V1178" class="grid"/>
-<path d="M82 1154V1178" class="grid"/>
-<path d="M114 1154V1178" class="grid"/>
-<path d="M146 1154V1178" class="grid"/>
-<path d="M178 1154V1178" class="grid"/>
-<path d="M210 1154V1178" class="grid"/>
-<path d="M242 1154V1178" class="grid"/>
-<path d="M274 1154V1178" class="grid"/>
-<path d="M306 1154V1178" class="grid"/>
-<path d="M338 1154V1178" class="grid"/>
-<path d="M370 1154V1178" class="grid"/>
-<path d="M402 1154V1178" class="grid"/>
-<path d="M230.45 1158H262.21Q265.21 1158 265.21 1161V1171Q265.21 1174 262.21 1174H230.45Z" class="g-lo"/>
-<text x="18" y="1200" class="mute" font-size="18">2 hours of voice alone, then 24</text>
-<text x="18" y="1222" class="mute" font-size="18">hours serving, on code after v1.6</text>
-<text x="18" y="1266" font-size="20">OR</text>
-<text x="18" y="1288" class="soft" font-size="18">The serving engine's additions</text>
-<text x="18" y="1310" class="soft" font-size="18">against v1.14's configuration</text>
-<path d="M18 1320V1344" class="axis"/>
-<path d="M50 1320V1344" class="grid"/>
-<path d="M82 1320V1344" class="grid"/>
-<path d="M114 1320V1344" class="grid"/>
-<path d="M146 1320V1344" class="grid"/>
-<path d="M178 1320V1344" class="grid"/>
-<path d="M210 1320V1344" class="grid"/>
-<path d="M242 1320V1344" class="grid"/>
-<path d="M274 1320V1344" class="grid"/>
-<path d="M306 1320V1344" class="grid"/>
-<path d="M338 1320V1344" class="grid"/>
-<path d="M370 1320V1344" class="grid"/>
-<path d="M402 1320V1344" class="grid"/>
-<path d="M370.73 1324H378.08Q381.08 1324 381.08 1327V1337Q381.08 1340 378.08 1340H370.73Z" class="g-lo"/>
-<text x="18" y="1366" class="mute" font-size="18">5 rounds, 5 samples, on code after v1.14</text>
-<text x="18" y="1410" font-size="20">OS</text>
-<text x="18" y="1432" class="soft" font-size="18">The decode hold and speculative</text>
-<text x="18" y="1454" class="soft" font-size="18">decoding on the four additions</text>
-<path d="M18 1464V1488" class="axis"/>
-<path d="M50 1464V1488" class="grid"/>
-<path d="M82 1464V1488" class="grid"/>
-<path d="M114 1464V1488" class="grid"/>
-<path d="M146 1464V1488" class="grid"/>
-<path d="M178 1464V1488" class="grid"/>
-<path d="M210 1464V1488" class="grid"/>
-<path d="M242 1464V1488" class="grid"/>
-<path d="M274 1464V1488" class="grid"/>
-<path d="M306 1464V1488" class="grid"/>
-<path d="M338 1464V1488" class="grid"/>
-<path d="M370 1464V1488" class="grid"/>
-<path d="M402 1464V1488" class="grid"/>
-<path d="M381.14 1468H383.42Q385.71 1468 385.71 1470.28V1481.72Q385.71 1484 383.42 1484H381.14Z" class="g-lo"/>
-<text x="18" y="1510" class="mute" font-size="18">2 rounds, 2 samples, on code after v1.14</text>
-<text x="34" y="1549" text-anchor="middle" class="mute" font-size="18">22</text>
-<text x="66" y="1549" text-anchor="middle" class="mute" font-size="18">23</text>
-<text x="98" y="1549" text-anchor="middle" class="mute" font-size="18">24</text>
-<text x="130" y="1549" text-anchor="middle" class="mute" font-size="18">25</text>
-<text x="162" y="1549" text-anchor="middle" class="mute" font-size="18">26</text>
-<text x="194" y="1549" text-anchor="middle" class="mute" font-size="18">27</text>
-<text x="226" y="1549" text-anchor="middle" class="mute" font-size="18">28</text>
-<text x="258" y="1549" text-anchor="middle" class="mute" font-size="18">29</text>
-<text x="290" y="1549" text-anchor="middle" class="mute" font-size="18">30</text>
-<text x="322" y="1549" text-anchor="middle" class="mute" font-size="18">31</text>
-<text x="354" y="1549" text-anchor="middle" class="mute" font-size="18">1</text>
-<text x="386" y="1549" text-anchor="middle" class="mute" font-size="18">2</text>
-<path d="M18 1526H402" class="axis"/>
-<path d="M18 1526H402" class="axis"/>
-<text x="18" y="1576" class="soft" font-size="18">Day of October and November 2026, UTC</text>
+<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}svg{--sky:#5a8fd6;--stage-endpointing:#dde1e7;--stage-wait:#9d87d8;--stage-decode:#a4dac1;--stage-tts:#8a929e;--stage-transport:#f3f4f6}@media(prefers-color-scheme:dark){svg{--sky:#3b69a6;--stage-endpointing:#2d333b;--stage-wait:#6a56ad;--stage-decode:#245c45;--stage-tts:#7d8692;--stage-transport:#1a1f26}}.sky{--c:var(--sky);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}.mark{fill:var(--page);stroke:var(--c);stroke-width:1.4}.mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.2}.cross{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round}.trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}.trace.thick{stroke-width:2.4}.trace.dashed{stroke-dasharray:8 5}.trace.dotted{stroke-width:2.6;stroke-dasharray:0 5.5;stroke-linecap:round}.median{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.hair{fill:none;stroke:var(--axis);stroke-width:1}.ref{fill:none;stroke:var(--c);stroke-width:1.5}.range{fill:none;stroke:var(--c);stroke-width:1.4}.run{fill:none;stroke:var(--c);stroke-width:1.5;stroke-linecap:butt}.band{fill:var(--a)}.arrow{fill:none;stroke:var(--c);stroke-width:1.6}.arrow-head{fill:var(--c)}.s-endpointing{fill:var(--stage-endpointing);stroke:var(--bar-line);stroke-width:1.1}.s-wait{fill:var(--stage-wait);stroke:var(--bar-line);stroke-width:1.1}.s-decode{fill:var(--stage-decode);stroke:var(--bar-line);stroke-width:1.1}.s-tts{fill:var(--stage-tts);stroke:var(--bar-line);stroke-width:1.1}.s-transport{fill:var(--stage-transport);stroke:var(--bar-line);stroke-width:1.1}</style>
+<rect class="page" width="420" height="1358"/>
+<text x="28.67" y="36" text-anchor="middle" class="mute" font-size="18">22</text>
+<text x="71.33" y="36" text-anchor="middle" class="mute" font-size="18">24</text>
+<text x="114" y="36" text-anchor="middle" class="mute" font-size="18">26</text>
+<text x="156.67" y="36" text-anchor="middle" class="mute" font-size="18">28</text>
+<text x="199.33" y="36" text-anchor="middle" class="mute" font-size="18">30</text>
+<text x="242" y="36" text-anchor="middle" class="mute" font-size="18">1</text>
+<text x="284.67" y="36" text-anchor="middle" class="mute" font-size="18">3</text>
+<text x="327.33" y="36" text-anchor="middle" class="mute" font-size="18">5</text>
+<text x="370" y="36" text-anchor="middle" class="mute" font-size="18">7</text>
+<text x="18" y="66" font-size="20">W2</text>
+<text x="18" y="88" class="soft" font-size="18">Every arm an operator can deploy, once each</text>
+<path d="M18 98V122" class="axis"/>
+<path d="M39.33 98V122" class="grid"/>
+<path d="M60.67 98V122" class="grid"/>
+<path d="M82 98V122" class="grid"/>
+<path d="M103.33 98V122" class="grid"/>
+<path d="M124.67 98V122" class="grid"/>
+<path d="M146 98V122" class="grid"/>
+<path d="M167.33 98V122" class="grid"/>
+<path d="M188.67 98V122" class="grid"/>
+<path d="M210 98V122" class="grid"/>
+<path d="M231.33 98V122" class="grid"/>
+<path d="M252.67 98V122" class="grid"/>
+<path d="M274 98V122" class="grid"/>
+<path d="M295.33 98V122" class="grid"/>
+<path d="M316.67 98V122" class="grid"/>
+<path d="M338 98V122" class="grid"/>
+<path d="M359.33 98V122" class="grid"/>
+<path d="M380.67 98V122" class="grid"/>
+<path d="M402 98V122" class="grid"/>
+<path d="M39.53 102H44.32Q47.32 102 47.32 105V115Q47.32 118 44.32 118H39.53Z" class="g-lo"/>
+<text x="18" y="156" font-size="20">W3–W4</text>
+<text x="18" y="178" class="soft" font-size="18">The headline configurations, the</text>
+<text x="18" y="200" class="soft" font-size="18">lifecycle policy and the change</text>
+<path d="M18 210V234" class="axis"/>
+<path d="M39.33 210V234" class="grid"/>
+<path d="M60.67 210V234" class="grid"/>
+<path d="M82 210V234" class="grid"/>
+<path d="M103.33 210V234" class="grid"/>
+<path d="M124.67 210V234" class="grid"/>
+<path d="M146 210V234" class="grid"/>
+<path d="M167.33 210V234" class="grid"/>
+<path d="M188.67 210V234" class="grid"/>
+<path d="M210 210V234" class="grid"/>
+<path d="M231.33 210V234" class="grid"/>
+<path d="M252.67 210V234" class="grid"/>
+<path d="M274 210V234" class="grid"/>
+<path d="M295.33 210V234" class="grid"/>
+<path d="M316.67 210V234" class="grid"/>
+<path d="M338 210V234" class="grid"/>
+<path d="M359.33 210V234" class="grid"/>
+<path d="M380.67 210V234" class="grid"/>
+<path d="M402 210V234" class="grid"/>
+<path d="M49.07 214H59.08Q62.08 214 62.08 217V227Q62.08 230 59.08 230H49.07Z" class="g-lo"/>
+<text x="18" y="268" font-size="20">W5</text>
+<text x="18" y="290" class="soft" font-size="18">The fixed make-room and</text>
+<text x="18" y="312" class="soft" font-size="18">the configuration to deploy</text>
+<path d="M18 322V346" class="axis"/>
+<path d="M39.33 322V346" class="grid"/>
+<path d="M60.67 322V346" class="grid"/>
+<path d="M82 322V346" class="grid"/>
+<path d="M103.33 322V346" class="grid"/>
+<path d="M124.67 322V346" class="grid"/>
+<path d="M146 322V346" class="grid"/>
+<path d="M167.33 322V346" class="grid"/>
+<path d="M188.67 322V346" class="grid"/>
+<path d="M210 322V346" class="grid"/>
+<path d="M231.33 322V346" class="grid"/>
+<path d="M252.67 322V346" class="grid"/>
+<path d="M274 322V346" class="grid"/>
+<path d="M295.33 322V346" class="grid"/>
+<path d="M316.67 322V346" class="grid"/>
+<path d="M338 322V346" class="grid"/>
+<path d="M359.33 322V346" class="grid"/>
+<path d="M380.67 322V346" class="grid"/>
+<path d="M402 322V346" class="grid"/>
+<path d="M77.5 326H87.86Q90.86 326 90.86 329V339Q90.86 342 87.86 342H77.5Z" class="g-lo"/>
+<text x="18" y="380" font-size="20">FB</text>
+<text x="18" y="402" class="soft" font-size="18">The configuration to deploy</text>
+<text x="18" y="424" class="soft" font-size="18">on the code of 25 October</text>
+<path d="M18 434V458" class="axis"/>
+<path d="M39.33 434V458" class="grid"/>
+<path d="M60.67 434V458" class="grid"/>
+<path d="M82 434V458" class="grid"/>
+<path d="M103.33 434V458" class="grid"/>
+<path d="M124.67 434V458" class="grid"/>
+<path d="M146 434V458" class="grid"/>
+<path d="M167.33 434V458" class="grid"/>
+<path d="M188.67 434V458" class="grid"/>
+<path d="M210 434V458" class="grid"/>
+<path d="M231.33 434V458" class="grid"/>
+<path d="M252.67 434V458" class="grid"/>
+<path d="M274 434V458" class="grid"/>
+<path d="M295.33 434V458" class="grid"/>
+<path d="M316.67 434V458" class="grid"/>
+<path d="M338 434V458" class="grid"/>
+<path d="M359.33 434V458" class="grid"/>
+<path d="M380.67 434V458" class="grid"/>
+<path d="M402 434V458" class="grid"/>
+<path d="M93.38 438H94.88Q96.38 438 96.38 439.5V452.5Q96.38 454 94.88 454H93.38Z" class="g-lo"/>
+<text x="18" y="492" font-size="20">The A100 run</text>
+<text x="18" y="514" class="soft" font-size="18">The main comparison like for like on an A100</text>
+<path d="M18 524V548" class="axis"/>
+<path d="M39.33 524V548" class="grid"/>
+<path d="M60.67 524V548" class="grid"/>
+<path d="M82 524V548" class="grid"/>
+<path d="M103.33 524V548" class="grid"/>
+<path d="M124.67 524V548" class="grid"/>
+<path d="M146 524V548" class="grid"/>
+<path d="M167.33 524V548" class="grid"/>
+<path d="M188.67 524V548" class="grid"/>
+<path d="M210 524V548" class="grid"/>
+<path d="M231.33 524V548" class="grid"/>
+<path d="M252.67 524V548" class="grid"/>
+<path d="M274 524V548" class="grid"/>
+<path d="M295.33 524V548" class="grid"/>
+<path d="M316.67 524V548" class="grid"/>
+<path d="M338 524V548" class="grid"/>
+<path d="M359.33 524V548" class="grid"/>
+<path d="M380.67 524V548" class="grid"/>
+<path d="M402 524V548" class="grid"/>
+<path d="M107.52 528H109.47Q111.41 528 111.41 529.94V542.06Q111.41 544 109.47 544H107.52Z" class="g-lo"/>
+<text x="18" y="582" font-size="20">RS</text>
+<text x="18" y="604" class="soft" font-size="18">How often two calls find KV short</text>
+<path d="M18 614V638" class="axis"/>
+<path d="M39.33 614V638" class="grid"/>
+<path d="M60.67 614V638" class="grid"/>
+<path d="M82 614V638" class="grid"/>
+<path d="M103.33 614V638" class="grid"/>
+<path d="M124.67 614V638" class="grid"/>
+<path d="M146 614V638" class="grid"/>
+<path d="M167.33 614V638" class="grid"/>
+<path d="M188.67 614V638" class="grid"/>
+<path d="M210 614V638" class="grid"/>
+<path d="M231.33 614V638" class="grid"/>
+<path d="M252.67 614V638" class="grid"/>
+<path d="M274 614V638" class="grid"/>
+<path d="M295.33 614V638" class="grid"/>
+<path d="M316.67 614V638" class="grid"/>
+<path d="M338 614V638" class="grid"/>
+<path d="M359.33 614V638" class="grid"/>
+<path d="M380.67 614V638" class="grid"/>
+<path d="M402 614V638" class="grid"/>
+<path d="M121.28 618H122.78Q124.28 618 124.28 619.5V632.5Q124.28 634 122.78 634H121.28Z" class="g-lo"/>
+<text x="18" y="672" font-size="20">SW</text>
+<text x="18" y="694" class="soft" font-size="18">The step cap, the threshold</text>
+<text x="18" y="716" class="soft" font-size="18">and the window, screened</text>
+<path d="M18 726V750" class="axis"/>
+<path d="M39.33 726V750" class="grid"/>
+<path d="M60.67 726V750" class="grid"/>
+<path d="M82 726V750" class="grid"/>
+<path d="M103.33 726V750" class="grid"/>
+<path d="M124.67 726V750" class="grid"/>
+<path d="M146 726V750" class="grid"/>
+<path d="M167.33 726V750" class="grid"/>
+<path d="M188.67 726V750" class="grid"/>
+<path d="M210 726V750" class="grid"/>
+<path d="M231.33 726V750" class="grid"/>
+<path d="M252.67 726V750" class="grid"/>
+<path d="M274 726V750" class="grid"/>
+<path d="M295.33 726V750" class="grid"/>
+<path d="M316.67 726V750" class="grid"/>
+<path d="M338 726V750" class="grid"/>
+<path d="M359.33 726V750" class="grid"/>
+<path d="M380.67 726V750" class="grid"/>
+<path d="M402 726V750" class="grid"/>
+<path d="M143.29 730H144.79Q146.29 730 146.29 731.5V744.5Q146.29 746 144.79 746H143.29Z" class="g-lo"/>
+<text x="18" y="784" font-size="20">RG</text>
+<text x="18" y="806" class="soft" font-size="18">Two cards' arrangements,</text>
+<text x="18" y="828" class="soft" font-size="18">and the step cap confirmed</text>
+<path d="M18 838V862" class="axis"/>
+<path d="M39.33 838V862" class="grid"/>
+<path d="M60.67 838V862" class="grid"/>
+<path d="M82 838V862" class="grid"/>
+<path d="M103.33 838V862" class="grid"/>
+<path d="M124.67 838V862" class="grid"/>
+<path d="M146 838V862" class="grid"/>
+<path d="M167.33 838V862" class="grid"/>
+<path d="M188.67 838V862" class="grid"/>
+<path d="M210 838V862" class="grid"/>
+<path d="M231.33 838V862" class="grid"/>
+<path d="M252.67 838V862" class="grid"/>
+<path d="M274 838V862" class="grid"/>
+<path d="M295.33 838V862" class="grid"/>
+<path d="M316.67 838V862" class="grid"/>
+<path d="M338 838V862" class="grid"/>
+<path d="M359.33 838V862" class="grid"/>
+<path d="M380.67 838V862" class="grid"/>
+<path d="M402 838V862" class="grid"/>
+<path d="M147.51 842H154.85Q157.85 842 157.85 845V855Q157.85 858 154.85 858H147.51Z" class="g-lo"/>
+<text x="18" y="896" font-size="20">The soak</text>
+<text x="18" y="918" class="soft" font-size="18">The arrangement to deploy, serving for a day</text>
+<path d="M18 928V952" class="axis"/>
+<path d="M39.33 928V952" class="grid"/>
+<path d="M60.67 928V952" class="grid"/>
+<path d="M82 928V952" class="grid"/>
+<path d="M103.33 928V952" class="grid"/>
+<path d="M124.67 928V952" class="grid"/>
+<path d="M146 928V952" class="grid"/>
+<path d="M167.33 928V952" class="grid"/>
+<path d="M188.67 928V952" class="grid"/>
+<path d="M210 928V952" class="grid"/>
+<path d="M231.33 928V952" class="grid"/>
+<path d="M252.67 928V952" class="grid"/>
+<path d="M274 928V952" class="grid"/>
+<path d="M295.33 928V952" class="grid"/>
+<path d="M316.67 928V952" class="grid"/>
+<path d="M338 928V952" class="grid"/>
+<path d="M359.33 928V952" class="grid"/>
+<path d="M380.67 928V952" class="grid"/>
+<path d="M402 928V952" class="grid"/>
+<path d="M159.63 932H179.8Q182.8 932 182.8 935V945Q182.8 948 179.8 948H159.63Z" class="g-lo"/>
+<text x="18" y="986" font-size="20">OR</text>
+<text x="18" y="1008" class="soft" font-size="18">The serving engine's additions</text>
+<text x="18" y="1030" class="soft" font-size="18">against v1.14's configuration</text>
+<path d="M18 1040V1064" class="axis"/>
+<path d="M39.33 1040V1064" class="grid"/>
+<path d="M60.67 1040V1064" class="grid"/>
+<path d="M82 1040V1064" class="grid"/>
+<path d="M103.33 1040V1064" class="grid"/>
+<path d="M124.67 1040V1064" class="grid"/>
+<path d="M146 1040V1064" class="grid"/>
+<path d="M167.33 1040V1064" class="grid"/>
+<path d="M188.67 1040V1064" class="grid"/>
+<path d="M210 1040V1064" class="grid"/>
+<path d="M231.33 1040V1064" class="grid"/>
+<path d="M252.67 1040V1064" class="grid"/>
+<path d="M274 1040V1064" class="grid"/>
+<path d="M295.33 1040V1064" class="grid"/>
+<path d="M316.67 1040V1064" class="grid"/>
+<path d="M338 1040V1064" class="grid"/>
+<path d="M359.33 1040V1064" class="grid"/>
+<path d="M380.67 1040V1064" class="grid"/>
+<path d="M402 1040V1064" class="grid"/>
+<path d="M253.15 1044H257.05Q260.05 1044 260.05 1047V1057Q260.05 1060 257.05 1060H253.15Z" class="g-lo"/>
+<text x="18" y="1098" font-size="20">OS</text>
+<text x="18" y="1120" class="soft" font-size="18">The decode hold and speculative</text>
+<text x="18" y="1142" class="soft" font-size="18">decoding on the four additions</text>
+<path d="M18 1152V1176" class="axis"/>
+<path d="M39.33 1152V1176" class="grid"/>
+<path d="M60.67 1152V1176" class="grid"/>
+<path d="M82 1152V1176" class="grid"/>
+<path d="M103.33 1152V1176" class="grid"/>
+<path d="M124.67 1152V1176" class="grid"/>
+<path d="M146 1152V1176" class="grid"/>
+<path d="M167.33 1152V1176" class="grid"/>
+<path d="M188.67 1152V1176" class="grid"/>
+<path d="M210 1152V1176" class="grid"/>
+<path d="M231.33 1152V1176" class="grid"/>
+<path d="M252.67 1152V1176" class="grid"/>
+<path d="M274 1152V1176" class="grid"/>
+<path d="M295.33 1152V1176" class="grid"/>
+<path d="M316.67 1152V1176" class="grid"/>
+<path d="M338 1152V1176" class="grid"/>
+<path d="M359.33 1152V1176" class="grid"/>
+<path d="M380.67 1152V1176" class="grid"/>
+<path d="M402 1152V1176" class="grid"/>
+<path d="M260.1 1156H261.62Q263.14 1156 263.14 1157.52V1170.48Q263.14 1172 261.62 1172H260.1Z" class="g-lo"/>
+<text x="18" y="1210" font-size="20">The envelope</text>
+<text x="18" y="1232" class="soft" font-size="18">The cache-aware queue and the</text>
+<text x="18" y="1254" class="soft" font-size="18">SM copy, and the card's envelope</text>
+<path d="M18 1264V1288" class="axis"/>
+<path d="M39.33 1264V1288" class="grid"/>
+<path d="M60.67 1264V1288" class="grid"/>
+<path d="M82 1264V1288" class="grid"/>
+<path d="M103.33 1264V1288" class="grid"/>
+<path d="M124.67 1264V1288" class="grid"/>
+<path d="M146 1264V1288" class="grid"/>
+<path d="M167.33 1264V1288" class="grid"/>
+<path d="M188.67 1264V1288" class="grid"/>
+<path d="M210 1264V1288" class="grid"/>
+<path d="M231.33 1264V1288" class="grid"/>
+<path d="M252.67 1264V1288" class="grid"/>
+<path d="M274 1264V1288" class="grid"/>
+<path d="M295.33 1264V1288" class="grid"/>
+<path d="M316.67 1264V1288" class="grid"/>
+<path d="M338 1264V1288" class="grid"/>
+<path d="M359.33 1264V1288" class="grid"/>
+<path d="M380.67 1264V1288" class="grid"/>
+<path d="M402 1264V1288" class="grid"/>
+<path d="M373.61 1268H393.55Q396.55 1268 396.55 1271V1281Q396.55 1284 393.55 1284H373.61Z" class="g-lo"/>
+<text x="28.67" y="1317" text-anchor="middle" class="mute" font-size="18">22</text>
+<text x="71.33" y="1317" text-anchor="middle" class="mute" font-size="18">24</text>
+<text x="114" y="1317" text-anchor="middle" class="mute" font-size="18">26</text>
+<text x="156.67" y="1317" text-anchor="middle" class="mute" font-size="18">28</text>
+<text x="199.33" y="1317" text-anchor="middle" class="mute" font-size="18">30</text>
+<text x="242" y="1317" text-anchor="middle" class="mute" font-size="18">1</text>
+<text x="284.67" y="1317" text-anchor="middle" class="mute" font-size="18">3</text>
+<text x="327.33" y="1317" text-anchor="middle" class="mute" font-size="18">5</text>
+<text x="370" y="1317" text-anchor="middle" class="mute" font-size="18">7</text>
+<path d="M18 1294H402" class="axis"/>
+<path d="M18 1294H402" class="axis"/>
+<text x="18" y="1344" class="soft" font-size="18">Day of October and November 2026, UTC</text>
 </svg>

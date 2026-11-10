@@ -26,9 +26,10 @@ A frame is the dashboard the v1.0 demo drew, a panel a call side by side. In eac
 call is doing, the wait's clock, which counts from the end of the caller's line to the reply's
 first audio and then gives the V2V the caller measured, and that wait against the SLO; each reply's
 V2V as a bar that grows while the caller waits, on one scale for both panels; the turn under way on
-its time axis, the caller's line above it and the agent's reply below as their waveforms, drawn as
-they play, with the wait between them as a bar; and the agents' tokens/s over the calls' first
-240 s, the README's measure, on one scale for both. ``--summary`` is a report's frontier.csv
+its time axis, the caller's line above it and the voice agent's reply below as their waveforms,
+drawn as they play, with the wait between them as a bar; and the agents' tokens/s over the calls'
+first 240 s, the README's measure, on one scale for both, the featured call's as a share of the
+baseline's, which the share names as the baseline's panel does. ``--summary`` is a report's frontier.csv
 (``flatshare-bench e2 report``): the voice SLO is the report's, 250 ms above voice alone's median V2V
 p95 with as many callers, drawn as a dashed rule against each wait and each bar; and a closing card
 gives both configurations (by their points' names) over all the report's runs, the median of their
@@ -40,7 +41,8 @@ calls and the engines (``--heading`` is its heading).
 The soundtrack is one call at a time, the caller and the agent mixed: the baseline's for the first
 half of the turns and the featured configuration's for the rest, and the panel heard is marked. The
 excerpt (``--excerpt PREFIX``, a README's animation) is the same dashboard, silent and looping:
-``--excerpt-turns`` turns from the first, without the cards, as animated lossless WebPs in each
+``--excerpt-turns`` turns from the first, without the cards and without the frame's title and
+subtitle, which the README's caption gives, as animated lossless WebPs in each
 theme, the panels side by side and, for a phone, one above the other 420 units across
 (PREFIX.webp, PREFIX-dark.webp, PREFIX-narrow.webp, PREFIX-narrow-dark.webp).
 
@@ -86,6 +88,10 @@ assert _spec is not None and _spec.loader is not None
 style = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = style  # its dataclasses look their module up
 _spec.loader.exec_module(style)
+_spec = importlib.util.spec_from_file_location("demo_labels", PACKAGE / "labels.py")
+assert _spec is not None and _spec.loader is not None
+labels = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(labels)  # the figures' names, and how a name reads inside a sentence
 
 W = 1120.0
 """The layout's width in units, a README figure's; 1920 pixels make 1.71 of them a unit."""
@@ -828,13 +834,14 @@ def _subtitle(timeline: Timeline) -> str:
 
 
 def wide_panels(timeline: Timeline) -> Panels:
-    """The README's animation, 1120 by 612 units: the calls' panels side by side under the title."""
-    top, height = 100.0, 488.0
+    """The README's animation, 1120 by 512 units: the calls' panels side by side. It draws no title
+    or subtitle, which the README's caption gives, as no figure in the docs does."""
+    top, height = 12.0, 488.0
     return Panels(
         across=W,
-        down=top + height + 24,
-        title=[(46.0, headings(timeline)[0])],
-        subtitle=[(72.0, _subtitle(timeline))],
+        down=top + height + 12,
+        title=[],
+        subtitle=[],
         boxes=((24.0, top, 548.0, top + height), (572.0, top, 1096.0, top + height)),
         pad=24.0,
         name=40.0,
@@ -874,26 +881,10 @@ def video_panels(timeline: Timeline) -> Panels:
 
 
 def narrow_panels(timeline: Timeline) -> Panels:
-    """The README's phone layout, 420 units across like the figures' phone layouts: the title and
-    subtitle broken evenly, then the calls' panels one above the other."""
-    title, _, _ = headings(timeline)
-    subtitle = _subtitle(timeline)
+    """The README's phone layout, 420 units across like the figures' phone layouts: the calls'
+    panels one above the other, with no title or subtitle, as the wide form."""
     left, right = 12.0, 408.0
-    width = right - left - 8
-    y = 32.0
-    titles = []
-    for line in style.wrap(title, width, style.TITLE):
-        titles.append((y, line))
-        y += 29
-    y += 2
-    subtitles = []
-    head, _, note = subtitle.partition(" \N{BULLET} ")
-    where, _, when = head.rpartition(", ")
-    lines = [head] if style.measure(head, style.NOTE) <= width else [f"{where},", when]
-    for line in [*lines, note]:  # broken before the date, never inside the GPU's name
-        subtitles.append((y, line))
-        y += 23
-    top, height, gap = y + 4, 424.0, 16.0
+    top, height, gap = 12.0, 424.0, 16.0
     boxes = (
         (left, top, right, top + height),
         (left, top + height + gap, right, top + 2 * height + gap),
@@ -901,8 +892,8 @@ def narrow_panels(timeline: Timeline) -> Panels:
     return Panels(
         across=420.0,
         down=boxes[1][3] + 12,
-        title=titles,
-        subtitle=subtitles,
+        title=[],
+        subtitle=[],
         boxes=boxes,
         pad=18.0,
         name=36.0,
@@ -1068,11 +1059,12 @@ class Dashboard:
         # The bars keep clear of the SLO's name at the plot's right end.
         clear = plot_x1 - (style.measure("SLO", style.NOTE) + 14 if self.slo is not None else 0)
         bars = self._bars(side, plot_x0, clear, plot_base, room)
-        # The turn's time axis: the caller's line above its middle, the agent's reply below.
+        # The turn's time axis: the caller's line above its middle, the voice agent's reply below, each lane named
+        # by what it plays, so that "agent" stays the coding agents' word.
         a, b = x0 + lay.lanes[0], x0 + lay.lanes[1]
         top, bottom = y0 + lay.lanes[2], y0 + lay.lanes[3]
         mid = (top + bottom) / 2
-        names = (("caller", (top + mid) / 2 + 6), ("agent", (mid + bottom) / 2 + 6))
+        names = (("caller", (top + mid) / 2 + 6), ("reply", (mid + bottom) / 2 + 6))
         for name, baseline in names:
             board.text(x0 + pad, baseline, name, style.NOTE, "mute", room=room)
         marks = [float(s) for s in range(0, int(self.axis_s) + 1, _time_step(self.axis_s))]
@@ -1163,7 +1155,7 @@ class Dashboard:
 
     def _agents(self, side: int, left: float, top: float, right: float, room: Box) -> list[Any]:
         """The agents' tokens/s over the calls' first 240 s: a bar on one scale for both panels,
-        and the featured call's share of the baseline's."""
+        and the featured call's share of the baseline's, which the share names as its panel does."""
         board, lay, calls = self.board, self.layout, self.timeline.calls
         label_y, bar_top, bar_bottom = (top + v for v in lay.agents)
         label = "the agents' tokens/s over the calls' first 240 s"
@@ -1172,12 +1164,13 @@ class Dashboard:
         if value is None:
             return [board.text(left, bar_bottom, "\N{EN DASH}", style.NOTE, "soft", room=room)]
         text = f"{value:,.0f}"
-        share = f"{value / baseline:.0%} of the baseline's" if side and baseline else ""
+        of = f"of {labels.in_prose(calls[0].label)}'s"
+        share = f"{value / baseline:.0%} {of}" if side and baseline else ""
         # One scale for both panels: the longest bar leaves room for the widest value and share.
         widest = max(
             style.measure(f"{c.tokens:,.0f}", style.NOTE)
             + (
-                16 + style.measure(f"{c.tokens / baseline:.0%} of the baseline's", style.NOTE)
+                16 + style.measure(f"{c.tokens / baseline:.0%} {of}", style.NOTE)
                 if k and baseline
                 else 0
             )
@@ -1413,9 +1406,10 @@ def closing_card(
     ax0, bx0, blen = right + 24.0, 764.0, 200.0
     alen = 682.0 - ax0
     heads = top + 84
+    reference = labels.in_prose(calls[0].label)  # the shares' reference, named as its rows name it
     panels = (
         (ax0 + alen / 2, "Voice-to-voice p95", "seconds, median of the runs"),
-        (bx0 + blen / 2 + 24, "Agents' throughput", "tokens/s, % of the baseline"),
+        (bx0 + blen / 2 + 24, "Agents' throughput", f"tokens/s, % of {reference}'s"),
     )
     for (cx, head, sub_text), better in zip(panels, ("Lower", "Higher"), strict=True):
         board.text(cx, heads, head, style.LABEL, ha="center")

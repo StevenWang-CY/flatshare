@@ -18,7 +18,7 @@ LABELS = {
     "cap-8": ("A static cap", "8 agent requests in flight"),
     "pr-54530": ("vLLM with #54530", "at most 12 sequences"),
     "sglang": ("SGLang 0.5.22", "priority with preemption"),
-    "hicache": ("SGLang with HiCache", "4x, write-through"),
+    "hicache": ("SGLang with HiCache", "4\N{MULTIPLICATION SIGN}, write-through"),
     "flow": ("llm-d's flow control", "emulated"),
     "smg": ("SMG 1.13.0", "as shipped"),
     "resubmit": ("Preempt-resubmit", "before the first byte"),
@@ -29,6 +29,7 @@ LABELS = {
     "change": ("The change", "16-token window"),
     "switches-off": ("The change, its switches off", ""),
     "deploy": ("The configuration to deploy", "48-token window"),
+    "profile": ("The serving profile", "make-room's nine switches"),
 }
 """Every configuration a figure names, by its key: its name, in docs/GLOSSARY.md's terms, and the note a row gives
 under or beside it. Each figure takes its configurations' labels from here, so that a configuration reads the same in
@@ -37,6 +38,43 @@ only; a figure whose rows differ in a setting the figure is about (the step cap'
 setting as the note instead. The change is the two pull requests at the budget cap's default 16-token window; the
 configuration to deploy is their switches with a 48-token window (docs/PRODUCTION.md), which W5 ran at the frozen
 box's 512-token steps and the deployment runs at 256."""
+MARKS = {
+    "voice": ("ink", "dot", True),
+    "stock": ("gray", "circle", False),
+    "tuned": ("gray", "circle", False),
+    "steps-1024": ("gray", "circle", True),
+    "watermark": ("gray", "circle", True),
+    "queued": ("gray", "circle", True),
+    "reservation": ("gray", "diamond", True),
+    "cap-2": ("gray", "diamond", True),
+    "cap-8": ("gray", "diamond", True),
+    "pr-54530": ("gray", "cross", True),
+    "sglang": ("gray", "cross", True),
+    "hicache": ("gray", "cross", True),
+    "flow": ("gray", "triangle", True),
+    "smg": ("gray", "triangle", True),
+    "resubmit": ("gray", "square", False),
+    "lifecycle": ("gray", "diamond", False),
+    "lifecycle-reserve": ("sky", "diamond", False),
+    "kv-preemption": ("sky", "circle", True),
+    "change": ("sky", "circle", True),
+    "switches-off": ("gray", "dot", True),
+    "deploy": ("blue", "circle", True),
+    "profile": ("blue", "circle", True),
+}
+"""Every configuration's mark, by its key in LABELS: its hue, its marker's shape and whether the marker is filled, the
+same in every chart that draws it, so that no caption has to say what a color means in one figure. The configuration to
+deploy is the saturated blue, in every version and at every step cap; the change's other configurations (the KV
+preemption alone, the change at its 16-token window and the lifecycle policy over make-room) are its sky sibling; every
+configuration without the change is gray, and voice alone ink. Tuned vLLM, stock vLLM and preempt-resubmit are open, so
+that beside the configuration to deploy's filled blue, where gray and blue are of one lightness, the two stay apart in
+grayscale; a shape names a comparator's family (tuned vLLM's settings a circle, the operator's static answers and a
+gateway's policy a diamond, another engine a cross, a router a triangle, preempt-resubmit a square, voice alone a small
+dot). Where a figure sets the configuration to deploy at two step caps, or in two versions, side by side with no rows to
+name them, the one the deployment runs keeps its circle and the other is a square (OTHER_SETTING)."""
+OTHER_SETTING = "square"
+"""The configuration to deploy's marker at a step cap or in a version the deployment does not run, where a figure sets
+it beside the one it runs with no rows to name them."""
 POINTS = {
     "a1-voice": "voice",
     "a1-voice-c4": "voice",
@@ -79,6 +117,17 @@ def label(point: str) -> tuple[str, str]:
             f"no label for {point}: add its configuration to flatshare_bench.labels' POINTS"
         )
     return LABELS[key]
+
+
+def mark(point: str) -> tuple[str, str, bool]:
+    """The mark of the configuration that ``point`` (an E2 point, or a key of LABELS) runs: its hue, its marker's shape
+    and whether the marker is filled (MARKS)."""
+    key = POINTS.get(point.removeprefix("w5-"), point)
+    if key not in MARKS:
+        raise ValueError(
+            f"no mark for {point}: add its configuration to flatshare_bench.labels' MARKS"
+        )
+    return MARKS[key]
 
 
 def in_prose(name: str) -> str:

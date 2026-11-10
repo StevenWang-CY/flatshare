@@ -5,20 +5,19 @@ animation, which make demo-video draws from recorded calls outside the tree."""
 
 from __future__ import annotations
 
+import html
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
 
 from flatshare_bench import diagrams
 from flatshare_bench import figure_style as style
-from flatshare_bench.e2.report import load_points, read_dots, write_report
 from flatshare_bench.report import figures as report_figures
 
 REPO = Path(__file__).resolve().parents[3]
 DOCS = REPO / "docs" / "figures"
-W5 = REPO / "benchmarks" / "results" / "2026-10-24-e2-w5"
-A100 = REPO / "benchmarks" / "results" / "2026-10-26-a100"
 SIZES = {style.TITLE, style.LABEL, style.VALUE, style.NOTE}
 """The type's sizes, one per role; a sub- or superscript sets its role's size at 72%."""
 
@@ -113,26 +112,13 @@ def test_every_ink_clears_four_and_a_half_to_one_on_every_ground(palette: dict[s
 
 @pytest.fixture(scope="module")
 def drawn(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
-    """Every figure `make figures` copies into docs/figures, drawn afresh, by the name it takes there."""
+    """Every figure `make figures` writes into docs/figures, drawn afresh, by the name it takes there."""
     out = tmp_path_factory.mktemp("figures")
-    # make e2-gpus-figure: the rows the A100's figure.toml names, from W5's records and the A100's core, tuned vLLM's
-    # and the PRs' values' at its step cap.
-    a100 = sorted(
-        run.parent
-        for campaign in ("a100-r", "a100-tuned-r", "a100-prtuned-r")
-        for run in A100.glob(f"e2/{campaign}[0-9]/*/run.json")
-    )
-    rows, incomplete = load_points(sorted(run.parent for run in W5.glob("*/*/run.json")) + a100)
-    assert rows and not incomplete
-    write_report(rows, out / "gpus", dots=read_dots(A100 / "figure.toml"))
     # make diagrams: the method figure and the system diagrams.
     drawn = diagrams.render(out / "diagrams")
     # make report-figures: the technical report's, each from the records it cites.
     report = report_figures.main(out / "report")
-    return {
-        "e2-voice-p95-gpus.svg": out / "gpus" / "voice-p95.svg",
-        "e2-voice-p95-gpus-narrow.svg": out / "gpus" / "voice-p95-narrow.svg",
-    } | {path.name: path for path in (*drawn, *report)}
+    return {path.name: path for path in (*drawn, *report)}
 
 
 def test_every_svg_under_docs_figures_is_what_its_generator_draws(drawn: dict[str, Path]) -> None:
@@ -186,25 +172,6 @@ def test_the_readme_animation_is_a_looping_webp_in_each_theme_and_layout() -> No
     assert max(spans) - min(spans) <= 20 and min(spans) > 5_000, spans  # within a frame at 60 fps
 
 
-def test_the_readme_figure_labels_its_rows_from_the_report_label_table(
-    drawn: dict[str, Path],
-) -> None:
-    # The README's figure names each configuration as every chart of the report does (report.data.LABELS): its rows'
-    # figure.toml gives none, and a note only where the A100's card calls for one.
-    from flatshare_bench.report import data
-
-    groups = read_dots(A100 / "figure.toml")
-    assert not any("label" in row for g in groups for row in g["rows"])
-    expected = {data.label(row["point"])[0] for g in groups for row in g["rows"]}
-    assert expected == {"Tuned vLLM", "Preempt-resubmit", "The configuration to deploy"}
-    notes = [row["note"] for g in groups for row in g["rows"] if "note" in row]
-    assert notes == ["for the RTX 5060 Ti", "the card's best"]
-    for name in ("e2-voice-p95-gpus.svg", "e2-voice-p95-gpus-narrow.svg"):
-        words = " ".join(re.findall(r">([^<]+)</text>", drawn[name].read_text()))
-        assert all(label in words for label in expected), name
-        assert "#63350 and #63351" not in words and "A router" not in words, name
-
-
 def test_the_figures_set_their_type_in_its_sizes_and_never_in_bold(drawn: dict[str, Path]) -> None:
     allowed = SIZES | {round(size * 0.72, 2) for size in SIZES}
     for name, path in drawn.items():
@@ -215,7 +182,7 @@ def test_the_figures_set_their_type_in_its_sizes_and_never_in_bold(drawn: dict[s
         # Each paints its own page, under prefers-color-scheme's palette.
         assert '<rect class="page"' in svg and "prefers-color-scheme:dark" in svg, name
         # Orange text clears 4.5:1 on the page alone, not on a panel's ground: the diagrams set none.
-        if not name.startswith(("e2-", "report-")):
+        if not name.startswith("report-"):
             assert 'class="orange tint' not in svg, name
 
 
@@ -242,3 +209,32 @@ def test_every_figure_names_each_concept_as_the_glossary_does(drawn: dict[str, P
         text = " ".join(re.sub(r"<[^>]+>", " ", svg).split())
         for old in retired:
             assert not re.search(rf"(?<![\w-]){re.escape(old)}s?(?![\w-])", text, re.I), (name, old)
+
+
+SHOWN_IN = ("README.md", "docs", "ops", "crates", "python", "deploy")
+"""Where the hand-written documents that show the figures live; the records under benchmarks/results keep their own."""
+SKIPPED = {".venv", "node_modules", "target", "build"}
+
+
+def test_every_figure_the_docs_show_has_its_drawings_description_as_its_alt_text() -> None:
+    # A reader who cannot see a figure reads what its generator states from the records, word for word, in every
+    # document that shows it: the alt text of each <img> of a figure under docs/figures is that SVG's <desc>.
+    image = re.compile(r'<img src="[^"]*figures/([a-z0-9-]+)\.svg"[^>]*? alt="([^"]*)"')
+    docs = [REPO / "README.md"] + [
+        doc
+        for top in SHOWN_IN[1:]
+        for doc in sorted((REPO / top).rglob("*.md"))
+        if not SKIPPED & set(doc.relative_to(REPO).parts)
+    ]
+    shown = 0
+    for doc in docs:
+        for name, alt in image.findall(doc.read_text()):
+            desc = (
+                ET.parse(DOCS / f"{name}.svg")
+                .getroot()
+                .find("{http://www.w3.org/2000/svg}desc")
+                .text
+            )
+            assert html.unescape(alt) == desc, (doc.relative_to(REPO).as_posix(), name)
+            shown += 1
+    assert shown >= 50, shown

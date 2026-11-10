@@ -25,8 +25,8 @@ holds production to the measured configuration.
 </picture>
 
 **Figure 1. The change sits in the serving plane, and the measurement and operations planes stand beside it.** Blue is
-the change, white a component, and a dashed outline the engine's KV memory. Each part's home in the repository and the
-section that describes it:
+the change, white a component, and the small dashed box under the engine its KV memory. Each part's home in the
+repository and the section that describes it:
 
 | Plane | Part | In the repository | Here |
 |---|---|---|---|
@@ -121,7 +121,7 @@ commands. Figure 2 shows its hosts and the sockets between them.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/architecture-narrow.svg">
-  <img src="figures/architecture.svg" width="100%" alt="Three hosts as dashed groups. On cyan, the control host, the callers, the LiveKit server and the voice worker sit in the voice plane's network namespace, which has no route out. The worker sends its LLM requests to the gateway through gateway.sock and its speech to the tunnel to Phastform through stt.sock and tts.sock; the coding agents reach the gateway through 127.0.0.1:18080, TCP with a tenant's key; the gateway sends its engine requests through engine.sock to the tunnel to Phastform, and, dashed, to the tunnel to Gray. Each tunnel carries SSH sessions to its node's three servers: vLLM 0.32 with make-room on engine.sock, shaded as the change, Whisper STT on stt.sock and Kokoro TTS on tts.sock. On Phastform, an RTX 5060 Ti, each server has a network namespace of its own; Gray, a second card when present, is drawn dashed, its servers in the host's namespace.">
+  <img src="figures/architecture.svg" width="100%" alt="Hosts as dashed groups, each unit a box on its Unix socket: on cyan, the control host, the callers, LiveKit and the voice worker run in the voice plane's network namespace, which has no route out; the worker reaches the gateway through gateway.sock, and the coding agents reach it through 127.0.0.1:18080 with a tenant's key, the one TCP listener; a tunnel per GPU node carries the gateway's engine requests and the worker's speech over SSH, a key per socket, to the node's three servers: vLLM 0.32 with make-room on engine.sock, Whisper on stt.sock and Kokoro on tts.sock, on Phastform each in a network namespace of its own; Gray, drawn dashed, is a second card when present, its servers in the host's namespace.">
 </picture>
 
 **Figure 2. Outside the voice plane the units meet only at Unix sockets, which SSH bridges between hosts, and the
@@ -157,7 +157,7 @@ and the Anthropic Messages API, through which Claude Code connects. A request ta
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/request-path-narrow.svg">
-  <img src="figures/request-path.svg" width="100%" alt="A column of seven steps, each step's main refusals leaving to its right with their status and code. Authenticate, on no known key or an unknown class: 401 invalid_api_key, 400 invalid_class. Bound, on a bound full or a body too large: 503 in_flight_limit, 429 tenant_in_flight_limit, 413 body_too_large. Sanitize, on a body that is no JSON object or asks too many choices: 400 invalid_json, 400 too_many_choices. Place, with no engine ready or no free slot: 503 upstream_not_ready, no_healthy_node, no_call_slot, no_agent_slot. Forward, on no answer or no headers in time: 502 upstream_unavailable, 504 upstream_timeout. Relay, on a stream cut short: an error event of type upstream_unavailable, upstream_timeout or draining. Account records one outcome for every request. The gateway's error table lists every code.">
+  <img src="figures/request-path.svg" width="100%" alt="A column of seven steps a request takes through the gateway, each step's main refusals leaving to its right, which the gateway's error table gives in full: authenticate (401 invalid_api_key, 400 invalid_class), bound (503 in_flight_limit, 429 tenant_in_flight_limit, 413 body_too_large), sanitize (400 invalid_json, 400 too_many_choices), place (503 upstream_not_ready, no_healthy_node, no_call_slot or no_agent_slot), forward (502 upstream_unavailable, 504 upstream_timeout), relay (an error event of type upstream_unavailable, upstream_timeout or draining once a stream has begun), and account, which records one outcome for every request.">
 </picture>
 
 **Figure 3. A request is refused at the first step it fails, and the first four refuse it before the engine sees it.**
@@ -200,7 +200,7 @@ the failover.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/two-cards-narrow.svg">
-  <img src="figures/two-cards.svg" width="100%" alt="Two panels of two cards, each with a row of two call slots and a row of agents' slots, four on Phastform and twelve on Gray. (a) In service: both calls fill Phastform's call slots beside its four agents' slots, and Gray, the warm spare, runs agents only, its call slots empty, under calls = fill. (b) The first card failed: Phastform's engine is down and its slots empty; both calls take Gray's call slots at their next turn, 0.7 s after a kill and 1.9 s after a stop, and Gray, covering, holds its twelve agents' slots, hatched, under a bracket that reads held until the calls end.">
+  <img src="figures/two-cards.svg" width="100%" alt="Two panels of the two cards' slots as the gateway bounds them, two call slots each and up to 4 agents' sessions on Phastform and 12 on Gray: in panel a, in service, both calls fill Phastform and Gray, the warm spare, runs agents only; in panel b, Phastform's engine failed, both calls take Gray's call slots at their next turn, 0.7 s after a kill and 1.9 s after a stop in the drills, and Gray holds its agents' requests until the moved calls end.">
 </picture>
 
 **Figure 4. Calls fill the first card in the file's order, and a failed card's calls are placed again on the other by
@@ -224,7 +224,7 @@ Figure 5. The drain is of what the switch would cut, the worker's calls and the 
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/release-narrow.svg">
-  <img src="figures/release.svg" width="100%" alt="A column of a release's states from deploy.sh HOST: prepare, verify, drain, switch, restart, check and serving. Prepare exits 2 with nothing switched when the host is locked or the upload changed; verify exits 1 with nothing switched when a check fails; drain exits 2 with nothing switched when calls do not end or an E2 point runs. A failure in the switch, the restart or the check leads to switch back, which exits 1 with the release before running again, or 3 when switching back failed too. Serving exits 0, and --rollback enters at verify.">
+  <img src="figures/release.svg" width="100%" alt="A column of the release's states, prepare, verify, drain, switch, restart, check and serving: a host that is locked or an upload that changed exits 2, a failed verification exits 1 and a drain whose calls do not end exits 2, each with nothing switched; any failure from the switch through the check switches back, which exits 1 with the release before running again or 3 when switching back fails too; a release that passes its checks serves and exits 0, and a rollback enters at the verification with the previous release.">
 </picture>
 
 **Figure 5. A release switches nothing until it has verified and drained, and switches back by itself when anything

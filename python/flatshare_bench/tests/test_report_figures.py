@@ -102,6 +102,8 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
             "frontier-narrow",
             "deployable",
             "deployable-narrow",
+            "ablations",
+            "ablations-narrow",
             "margin",
             "margin-narrow",
             "a100",
@@ -110,6 +112,8 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
             "cards-narrow",
             "step-cap",
             "step-cap-narrow",
+            "engine-points",
+            "engine-points-narrow",
             "opt-rounds",
             "opt-rounds-narrow",
             "tier",
@@ -187,6 +191,7 @@ def test_a_log_scale_says_so_on_its_axis(drawn: dict[str, Path]) -> None:
         "report-frontier",
         "report-deployable.svg",
         "report-deployable-narrow",
+        "report-ablations",
         "report-step-cost",
         "report-tail",
     )
@@ -255,6 +260,31 @@ def test_a_charts_style_holds_its_parts_and_both_themes() -> None:
         assert f"--{name}:{day}" in light and f"--{name}:{night}" in dark, name
 
 
+def test_every_marks_hue_clears_three_to_one_on_the_page() -> None:
+    # A mark is a graphical object (WCAG 1.4.11): each hue a mark takes clears 3:1 on the page in both themes, the
+    # sibling blue among them, which stays fainter than the saturated blue it stands beside.
+    def luminance(color: str) -> float:
+        channels = [int(color[k : k + 2], 16) / 255 for k in (1, 3, 5)]
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    def contrast(a: str, b: str) -> float:
+        high, low = sorted((luminance(a), luminance(b)), reverse=True)
+        return (high + 0.05) / (low + 0.05)
+
+    for theme, palette in enumerate((style.LIGHT, style.DARK)):
+        hues = {hue: palette.get(hue) or charts.PALETTE[hue][theme] for hue in charts.HUES}
+        for hue, color in hues.items():
+            assert contrast(color, palette["page"]) >= 3, (theme, hue)
+        assert contrast(hues["sky"], palette["page"]) < contrast(hues["blue"], palette["page"]), (
+            theme
+        )
+    # Every configuration a figure names has its mark, in a hue a mark may take.
+    assert set(data.MARKS) == set(data.LABELS)
+    assert {hue for hue, _, _ in data.MARKS.values()} <= set(charts.HUES)
+    assert {shape for _, shape, _ in data.MARKS.values()} <= set(charts.SHAPES)
+
+
 def test_a_lines_key_is_a_level_stroke_in_the_lines_classes() -> None:
     s = chart()
     last = charts.legend(
@@ -285,7 +315,9 @@ def pooled(runs: list[dict], stage: str) -> float:
 STAGE_CAMPAIGNS = {
     data.VOICE_ALONE: ("w5-r",),
     data.TUNED: ("w5-r", "w5-pr-r"),
+    data.ROUTER: ("w5-ext-r",),
     data.MAKE_ROOM: ("w5-pr-r",),
+    data.HOLD_16: ("w5-pr-r",),
     data.CHANGE: ("w5-r", "w5-pr-r", "w5-ext-r"),
 }
 
@@ -295,9 +327,13 @@ def test_the_stages_are_the_summaries_pooled_over_each_configurations_replies() 
         # endpointing, the wait for the LLM's first token, the decode, TTS, transport; the mean V2V; runs, replies
         data.VOICE_ALONE: ((756, 85, 218, 211, 352), 1623, 5, 295),
         data.TUNED: ((825, 2815, 1066, 250, 343), 5299, 10, 590),
+        data.ROUTER: ((822, 283, 390, 232, 357), 2084, 5, 295),
         data.MAKE_ROOM: ((820, 783, 1207, 250, 356), 3415, 5, 295),
+        data.HOLD_16: ((822, 299, 439, 236, 355), 2151, 5, 295),
         data.CHANGE: ((822, 289, 262, 242, 355), 1971, 15, 885),
     }
+    # The headline's six configurations, in its order: the report's Table 3 rows, row for row.
+    assert [cell.point for cell in data.stages()] == list(expected)
     for cell in data.stages():
         parts, v2v, runs, replies = expected[cell.point]
         assert (tuple(round(p) for p in cell.parts), round(cell.v2v), cell.runs, cell.replies) == (
@@ -630,10 +666,17 @@ def test_the_step_costs_stand_beside_the_boxs_cpu_and_steps(tmp_path: Path) -> N
     host = [load["python_ms"]["p50"] for load in json.loads(data.STEP_COSTS.read_text())["load"]]
     assert data.box_cpu() == box / statistics.median(host) and box == pytest.approx(381.1, abs=0.01)
     assert f"{data.box_cpu():.2f}" == "1.61"
-    # Its top axis says it is a scaling of the host's, in both layouts.
-    scaled = "the box's CPU (ms), scaled: the host's time \N{MULTIPLICATION SIGN} 1.61"
+    # One axis, the host's: the band of the box's steps is named as scaled to it, in both layouts, its ends and the
+    # factor given by the drawing's description and the report's caption, and no second axis is drawn.
     for path in figures.step_cost(tmp_path):
-        assert scaled in text_of(path), path.name
+        texts = text_of(path)
+        assert "The box's steps, scaled to the host" in texts, path.name
+        assert not any("the box's CPU" in text for text in texts[:-2]), path.name
+        description = texts[-1]
+        assert "alone (12 ms; " in description and "(38 ms), each divided by 1.61," in description
+    caption = " ".join(REPORT.read_text().split("**Figure 7.", 1)[1].split("\n\n", 1)[0].split())
+    for stated in ("alone (12 ms)", "sessions (38 ms)", "divided by 1.61"):
+        assert stated in caption, stated
     assert data.voice_step_ms() == 12.08
     assert data.agents_step_ms() == 38.07
 
@@ -872,9 +915,9 @@ def test_the_margin_is_the_standard_scenarios_rounds_and_the_calls_per_gpu() -> 
     rounds = data.standard_rounds(rows)
     assert [r for r, _, _ in rounds] == [1, 2, 3, 4, 5]
     assert [round(change - tuned) for _, tuned, change in rounds] == [-109, -1413, -945, -250, -496]
-    # Panel a's axis starts at 1.5 s, under every round's p95 and the SLO.
-    assert min(min(tuned, change) for _, tuned, change in rounds) > figures.MARGIN_FLOOR
-    assert data.slo_ms(rows) > figures.MARGIN_FLOOR
+    # Panel a's axis runs from zero, as every latency scale does, past every round's p95 and the SLO.
+    assert max(max(tuned, change) for _, tuned, change in rounds) < figures.MARGIN_TOP
+    assert data.slo_ms(rows) < figures.MARGIN_TOP
     counts = data.e3_counts()
     # Every caller count on the samples the four- and six-caller rounds used, the first three.
     seeds = {r["agents_seed"] for (_, p), r in counts.items() if p == data.CALLS[4][1]}
@@ -1023,7 +1066,7 @@ def test_the_two_cards_are_their_gates_verdict(drawn: dict[str, Path]) -> None:
     assert [a.tokens > cards.threshold for a in shared] == [True, True, True]
     assert sum("meets the 20% hurdle" in line for line in printed) == 2
     # Panel b's scale holds every round. Each layout hatches the three that miss the requirement, each in its
-    # engine's hue, says so in a key under panel b's subtitle, a gray hatched bar, and prints every median.
+    # engine's hue, says so in a key under panel b's title, a gray hatched bar, and prints every median.
     assert max(r for a in cards.arrangements for r in a.rounds) == pytest.approx(14352.2)
     assert max(r for a in cards.arrangements for r in a.rounds) < figures.CARD_TOKENS.hi
     missed = [a.engine for a in cards.arrangements if not a.qualifies]
@@ -1032,7 +1075,7 @@ def test_the_two_cards_are_their_gates_verdict(drawn: dict[str, Path]) -> None:
         svg, texts = drawn[name].read_text(), set(text_of(drawn[name]))
         assert svg.count('class="gray hatch"') == missed.count("stock") + 1, name
         assert svg.count('class="blue hatch"') == missed.count("change"), name
-        assert f"misses the {cards.requirement:.0%} requirement" in texts, name
+        assert f"Misses the {cards.requirement:.0%} requirement" in texts, name
         assert {f"{a.tokens:,.0f}" for a in cards.arrangements} <= texts, name
 
 
@@ -1121,6 +1164,38 @@ def test_the_opt_rounds_are_their_records_rounds(drawn: dict[str, Path]) -> None
         for rounds in (c.before, c.after)
     }
     assert shares <= set(text_of(drawn["report-opt-rounds.svg"]))
+
+
+def test_the_engine_points_are_their_records_adopted_table(drawn: dict[str, Path]) -> None:
+    # Each point the serving profile adopted, on the box, in table.py's order: its first and 16th token at p50 and p95,
+    # each the median of its runs, as the record's own "adopted" table prints them, and each value the figure prints.
+    table = data.engine_points_table()
+    printed = {}
+    for line in table.outcomes("adopted").splitlines()[2:]:
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if cells[0] == "Phastform":
+            printed[cells[1]] = [cell.split(" (")[0] for cell in cells[3:7]]
+    points = data.engine_points()
+    assert [p.arm for p in points] == list(table.TABLES["adopted"])
+    assert [p.name for p in points] == list(printed)
+    for p in points:
+        values = [f"{v:,.0f}" for v in (p.first_p50, p.first_p95, p.sixteenth_p50, p.sixteenth_p95)]
+        assert values == printed[p.name], p.name
+    # The claims the docs draw from it: retention, just in time and an announced turn take the first token from 175 to
+    # 122, 98 and 64 ms at the median, and the decode hold the 16th token's p95 from 392 to 284 ms.
+    assert [round(p.first_p50) for p in points[:4]] == [175, 122, 98, 64]
+    assert (round(points[5].sixteenth_p95), round(points[-1].sixteenth_p95)) == (392, 284)
+    # The figure's caption quotes the row with all three of retention, an announced turn and just in time: 63 ms.
+    assert (points[4].arm, round(points[4].first_p50)) == ("r0hj-grow", 63)
+    # Its rows are named as the report's table of the engine points names them, row for row.
+    header = "| Configuration | First token p50 / p95 | 16th token p50 / p95 |"
+    lines = REPORT.read_text().split(header, 1)[1].split("\n\n", 1)[0].splitlines()[2:]
+    named = [figures.ADDITION_NAMES[p.arm] for p in points]
+    assert [line.split("|")[1].strip() for line in lines] == named
+    for name in ("report-engine-points.svg", "report-engine-points-narrow.svg"):
+        texts = set(text_of(drawn[name]))
+        assert {value for p in points for value in printed[p.name]} <= texts, name
+        assert set(named) <= texts, name
 
 
 def test_the_tier_is_its_records_first_window_and_its_probes(drawn: dict[str, Path]) -> None:
@@ -1272,7 +1347,7 @@ def test_the_envelope_is_its_records_rounds(drawn: dict[str, Path]) -> None:
         assert {
             *(f"{c.share:.1%}" for c in found),
             *(f"{c.tokens:,.0f}" for c in found),
-            *(f"{c.ttft_p99:.0f}" for c in found),
+            *(f"{c.ttft_p99:.0f} s" for c in found),
             figures.ALLOWED,
         } <= set(text_of(drawn[name])), name
 
@@ -1444,8 +1519,9 @@ def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) 
     )
     _, caption = shown(benchmarks, "report-deployable")
     assert caption.startswith(
-        "**Only the configurations that run the change come within 0.2 s of the SLO, at the median of their "
-        "runs; every other configuration an operator can deploy stays 0.5 s or more over it.**"
+        "**Only the configuration to deploy and the lifecycle policy over make-room, both on the change, come within "
+        "0.2 s of the SLO at the median of their runs; every other configuration an operator can deploy stays 0.5 s or "
+        "more over it.**"
     )
     cells = data.stages(data.w4_rows(), data.W4_STAGES)
     for stage in ("endpointing", "tts", "transport"):
@@ -1453,7 +1529,7 @@ def test_the_deployable_figures_say_what_w4s_records_do(drawn: dict[str, Path]) 
         assert max(values) - min(values) < 100, stage
     assert max(c.wait + c.decode for c in cells) - min(c.wait + c.decode for c in cells) > 3000
     assert shown(benchmarks, "report-deployable-stages")[1].startswith(
-        "**Only the reply to its first sentence changes from row to row: endpointing, TTS and transport stay within"
+        "**Only the reply to its first sentence changes from row to row, and endpointing, TTS and transport stay within"
     )
     # Each chart sits right above the table it draws: its caption, then the table.
     text = benchmarks.read_text()
@@ -1575,9 +1651,9 @@ def test_section_6_11s_figures_say_what_their_records_do(drawn: dict[str, Path])
             "First come first served computed most of the prompt tokens and the queue a fifth, and beside a load from "
             f"the CPU tier a step took up to {figures._ms(copy_engine)} on the copy engine and "
             f"{figures._ms(sm.longest)} through the SM copy.",
-            "alone, the median of the ten steps before each load; on the copy engine, the longest of the "
-            f"{count[batch]} (one batch) or {count[jobs]} (chained jobs) steps during the load; through vLLM's Triton "
-            f"kernel, the longest of {sm.n}.",
+            "Alone is the median of the ten steps before each load, the copy engine the longest of the "
+            f"{count[batch]} (one batch) or {count[jobs]} (chained jobs) steps during it, and vLLM's Triton kernel the "
+            f"longest of {sm.n}.",
         ),
         "report-envelope": (
             "Figure 18",
@@ -1608,6 +1684,41 @@ def test_section_6_11s_figures_say_what_their_records_do(drawn: dict[str, Path])
     assert last == "|" + data.envelope_table().table("windows").splitlines()[-1].split("|", 2)[2]
 
 
+def test_the_ablations_are_arm_9s_rows_of_w4s_records(drawn: dict[str, Path]) -> None:
+    # BENCHMARKS shows the lifecycle policy over make-room with all its parts and with each removed or changed, W4's arm
+    # 9 and its ablations, above the table it draws, with the drawing's own description as its alt text; each row's
+    # median p95 and range are the table's, and the claim its caption opens with holds for every row.
+    found = data.ablations()
+    slo = data.slo_ms(data.w4_rows())
+    alt, caption = shown(BENCHMARKS, "report-ablations")
+    assert alt == ET.parse(drawn["report-ablations.svg"]).getroot().find(f"{SVG}desc").text
+    after = BENCHMARKS.read_text().split('<img src="figures/report-ablations.svg"', 1)[1]
+    header = "| Arm 9 | Its part | V2V p95 | Range |"
+    assert next(line for line in after.splitlines() if line.startswith("|")) == header
+    rows = after.split(header, 1)[1].split("\n\n", 1)[0].splitlines()[2:]
+    cells = [[cell.strip().split(" / ") for cell in row.split("|")[3:5]] for row in rows]
+    printed = sorted(
+        pair for medians, spreads in cells for pair in zip(medians, spreads, strict=True)
+    )
+    expected = sorted(
+        (f"{a.p95:,.0f}", f"{min(a.p95s):,.0f}\u2013{max(a.p95s):,.0f}")
+        for arm, a in found.items()
+        if arm != "9"
+    )
+    assert printed == expected
+    assert len(found["9"].p95s) == 5
+    assert {len(a.p95s) for arm, a in found.items() if arm != "9"} == {3}
+    over = {arm: a.p95 - slo for arm, a in found.items()}
+    far = {"9-no-degrade", "9-engine-only", "9-no-budget-cap", "9-gateway-only"}
+    assert min(over[arm] for arm in far) >= 1800
+    assert max(v for arm, v in over.items() if arm not in far) < 200
+    assert caption.startswith(
+        "**Removing degrade, the gateway policy, the budget cap or the change puts the p95 1.8 s or more over the "
+        "SLO; removing or changing any other part, or replacing degrade with a 48-token window, keeps it within 0.2 s.**"
+    )
+    assert f"the SLO, {charts.seconds(slo)} s" in caption
+
+
 # The campaign map ---------------------------------------------------------------------------------------------------
 
 
@@ -1615,8 +1726,10 @@ def test_the_campaign_map_is_its_records() -> None:
     # Each bar is its record's runs, as their run.json files (the soak's soak.json) give them: W2 to W4's 129 points
     # and W5's 72, the counts make reproduce-e2 and reproduce-e2-w5 rebuild from; each campaign's rounds, its samples
     # of the agents' traces and the code it ran. RG's one failed point, a voice-alone run stopped at its first turns
-    # on v1.6-21, counts in its span and not in its points or its code.
+    # on v1.6-21, counts in its span and not in its points or its code. The envelope spans its Gray windows and its
+    # three rounds; the engine points, whose runs left no run.json, have no bar.
     found = {c.code: c for c in data.campaigns()}
+    assert found["The envelope"].points == 33
     assert list(found) == [
         "W2",
         "W3\u2013W4",
@@ -1629,11 +1742,22 @@ def test_the_campaign_map_is_its_records() -> None:
         "The soak",
         "OR",
         "OS",
+        "The envelope",
     ]
     assert found["W2"].points + found["W3\u2013W4"].points == 129 and found["W5"].points == 72
     five, rounds = (
         (11, 12, 13, 14, 15),
-        {"W3\u2013W4": 5, "W5": 18, "FB": 5, "The A100 run": 5, "RS": 5, "RG": 5, "OR": 5, "OS": 2},
+        {
+            "W3\u2013W4": 5,
+            "W5": 18,
+            "FB": 5,
+            "The A100 run": 5,
+            "RS": 5,
+            "RG": 5,
+            "OR": 5,
+            "OS": 2,
+            "The envelope": 3,
+        },
     )
     expected = {
         "W2": ((11,), ("419e181", "03af728")),
@@ -1647,6 +1771,16 @@ def test_the_campaign_map_is_its_records() -> None:
         "The soak": ((26,), ("v1.6-15-ga31eab2",)),
         "OR": ((31, 32, 33, 34, 35), ("v1.14-5-gfa69919",)),
         "OS": ((36, 37), ("v1.14-10-g51b5a02",)),
+        "The envelope": (
+            (21, 22, 23, 36),
+            (
+                "v1.23",
+                "v1.23-7-gf6cf391",
+                "v1.23-9-g1bfe96e",
+                "v1.23-1-gc445329",
+                "v1.23-8-g254bc895",
+            ),
+        ),
     }
     assert {code: (c.seeds, c.revisions) for code, c in found.items()} == expected
     # The map names each campaign's code by its release, from those revisions (the exact ones stay in the records).
@@ -1662,6 +1796,7 @@ def test_the_campaign_map_is_its_records() -> None:
         "The soak": ("after v1.6",),
         "OR": ("after v1.14",),
         "OS": ("after v1.14",),
+        "The envelope": ("v1.23", "after v1.23"),
     }
     assert {code: c.rounds for code, c in found.items() if c.rounds} == rounds
     assert found["The soak"].hours == (2.0, 24.0)
@@ -1672,7 +1807,7 @@ def test_the_campaign_map_is_its_records() -> None:
     ]
     assert [r["versions"]["source"] for r in failed] == ["v1.6-5-gaabb3c6"]
     assert found["RG"].start == min(r["started"] for r in failed)
-    # The campaigns follow one another, each within the map's twelve days.
+    # The campaigns follow one another, each within the map's eighteen days.
     spans = [(c.start, c.end) for c in found.values()]
     assert all(a[1] <= b[0] for a, b in itertools.pairwise(spans))
     end = figures.MAP_START + figures.MAP_DAYS * figures.DAY
@@ -1686,9 +1821,9 @@ def test_experiments_shows_the_campaign_map_over_its_table(drawn: dict[str, Path
     alt, caption = shown(experiments, "report-campaigns")
     assert alt == ET.parse(drawn["report-campaigns.svg"]).getroot().find(f"{SVG}desc").text
     assert caption.startswith(
-        "**Eleven campaigns from 23 October to 2 November 2026 measured the results"
+        "**Figure 1. Twelve campaigns from 23 October to 8 November 2026 measured the results"
     )
-    assert len(data.campaigns()) == 11
+    assert len(data.campaigns()) == 12
     header = "| Campaign | Ran, UTC | Points | Rounds and samples | Code | Records |"
     after = experiments.read_text().split('<img src="figures/report-campaigns.svg"', 1)[1]
     assert next(line for line in after.splitlines() if line.startswith("|")) == header

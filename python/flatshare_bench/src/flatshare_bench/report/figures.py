@@ -3,15 +3,19 @@
     python -m flatshare_bench.report.figures OUT_DIR
 
 Each figure is 1120 units wide, as the README's are, and shows at about 840 CSS pixels; a figure with a phone layout
-has it at 420 units. No figure draws a title: the report's caption under it states its claim and its key. Every
-number a figure prints is a record's, as docs/BENCHMARKS.md's tables give it, and latency scales start at zero unless
-the axis says it is logarithmic.
+has it at 420 units. No figure draws a title or a subtitle: the report's caption under it states its claim, its key
+and its scope, a panel's title names what it plots, and its axis's title the quantity and unit as figure_style's
+grammar has it. Every number a figure prints is a record's, as docs/BENCHMARKS.md's tables give it, and latency and
+throughput scales start at zero unless the axis says it is logarithmic. Each figure has one axis a dimension: none
+draws a second scale beside its first. A threshold is named once: a horizontal one at the plot's right end, outside it,
+on its line (THRESHOLD_GAP), and a vertical one over the plot's top, centred on it.
 """
 
 from __future__ import annotations
 
 import datetime
 import math
+import re
 import statistics
 import sys
 from collections.abc import Sequence
@@ -19,6 +23,8 @@ from pathlib import Path
 
 from flatshare_bench.e2.record import REPLY_TIMEOUT_MS
 from flatshare_bench.figure_style import LABEL, NARROW, NOTE, VALUE, WIDTH, Box, fmt, measure, wrap
+from flatshare_bench.labels import OTHER_SETTING
+from flatshare_bench.labels import mark as config_mark
 from flatshare_bench.report import data
 from flatshare_bench.report.charts import (
     STAGES,
@@ -57,6 +63,34 @@ def _row_label(
         return 0.0
     s.text(x, baseline + 22, note, size=NOTE, cls="soft")
     return 22.0
+
+
+def _sentence(name: str) -> str:
+    """A key's entry in sentence case: its first letter upper case, unless it opens with a version ("v1.14's")."""
+    return name if re.match(r"v\d", name) else name[0].upper() + name[1:]
+
+
+THRESHOLD_GAP = 10.0
+"""Between a plot's right end and the name of a horizontal threshold across it, which stands outside it on the line."""
+
+
+def _h_threshold(s: Chart, x0: float, x1: float, y: float, text: str) -> Box:
+    """A horizontal threshold (an SLO, a requirement) across a plot from ``x0`` to ``x1`` at ``y``: a dashed rule,
+    named once at the plot's right end, outside it, on its line."""
+    s.rule(x0, x1, y, "slo")
+    return s.text(x1 + THRESHOLD_GAP, y + 6, text, size=NOTE, cls="orange tint")
+
+
+def _h_room(text: str) -> float:
+    """What a horizontal threshold's name takes right of its plot: a phone layout ends its plot short by as much."""
+    return THRESHOLD_GAP + measure(text, NOTE) + 2
+
+
+def _v_threshold(s: Chart, x: float, top: float, bottom: float, text: str) -> Box:
+    """A vertical threshold across a plot from ``top`` to ``bottom`` at ``x``: a dashed rule, named once over the
+    plot's top, centred on it."""
+    s.vrule(x, top, bottom, "slo")
+    return s.text(x, top - 8, text, size=NOTE, anchor="middle", cls="orange tint", halo=True)
 
 
 # The voice turn by stage ------------------------------------------------------------------------------------------
@@ -209,9 +243,9 @@ def _decoding(samples: Sequence[data.PoolSample], k: int) -> list[data.PoolSampl
 
 def kv_timeline(out: Path) -> list[Path]:
     """report-kv-timeline.svg and its phone layout: why a waiting request finds no room on vLLM 0.32. (a) The KV
-    pool's blocks in use as the KV case's two agent requests prefill and decode, the moments the pool is full, the KV
-    case would send its voice turn and vLLM preempts one request, the wait between the last two shaded. (b) Each
-    request's output tokens on the same time axis, the wait shaded there too."""
+    pool's blocks in use as the KV case's two agent requests prefill and decode, the moment the KV case would send its
+    voice turn marked, and the wait from it to the preemption shaded. (b) Each request's output tokens on the same
+    time axis, the wait shaded there too."""
     samples = data.kv_timeline()
     m = data.kv_moments(samples)
     description = _kv_description(samples, m)
@@ -242,7 +276,7 @@ def _kv_layout(
         a_top = 82
     else:
         x = Scale(KV_TICKS[0], KV_TICKS[-1], 64, width - 22)
-        a_top = 30 + 26 * len(titles[0]) + 56  # the moments' two lines over the plot
+        a_top = 30 + 26 * len(titles[0]) + 34  # the moment's line over the plot
     a = Scale(0, 1, a_top + (140 if wide else 190), a_top)
     b_title = a.start + (44 if wide else 50)
     b_top = b_title + 26 * (len(titles[1]) - 1) + 30
@@ -266,7 +300,7 @@ def _kv_layout(
     for t in KV_TICKS[1:-1]:
         for scale in (a, b):
             s.vrule(x(t), scale.end, scale.start, "grid")
-    title = "Seconds since the two agent requests were sent"
+    title = "Time since the two agent requests were sent (s)"
     if wide:
         last = x_axis(s, x, KV_TICKS, [str(t) for t in KV_TICKS], None, b.start, title=title)
     else:
@@ -274,38 +308,23 @@ def _kv_layout(
         for line in wrap(title, width - 2 * x0, NOTE):
             last += 25
             s.text(x0, last, line, size=NOTE, cls="soft")
-    # (a): the pool, its moments above it, the wait and the preemption inside it.
+    # (a): the pool, the moment the voice turn arrives above it, the wait and the preemption inside it. The pool's
+    # line shows where it fills; the caption says what the shaded span is.
     s.trace([(x(p.t), a(p.usage)) for p in samples], "gray trace")
-    sends = (
-        ["the KV case sends its voice turn"] if wide else ["the KV case sends", "its voice turn"]
-    )
-    for moment, lines, anchor in ((m.full, ["the pool full"], "end"), (m.send, sends, "start")):
-        at = x(moment.t)
-        first = a.end - 20 - 22 * (len(lines) - 1)
-        s.trace([(at, a.end - 12), (at, a(moment.usage) - 4)], "hair")
-        for k, line in enumerate(lines):
-            s.text(
-                at + (-6 if anchor == "end" else 6), first + 22 * k, line, size=NOTE, anchor=anchor
-            )
+    at = x(m.send.t)
+    s.trace([(at, a.end - 12), (at, a(m.send.usage) - 4)], "hair")
+    s.text(at + 6, a.end - 20, "voice turn sent", size=NOTE)
     middle = (x(m.send.t) + x(m.before.t)) / 2
     # The wait's label, under the full pool's line; on a phone, where the shaded wait is narrower than the label,
     # higher, clear of the pool's line on either side of it.
     low = a(0) - 34 if wide else a(0.3)
     s.text(middle, low, "no room for", size=NOTE, anchor="middle", halo=True)
     s.text(middle, low + 22, "a waiting request", size=NOTE, anchor="middle", halo=True)
-    if wide:
-        s.text(
-            x(m.after.t) + 14,
-            a(0.75) + 6,
-            "agent B preempted so that agent A can grow",
-            size=NOTE,
-            halo=True,
-        )
-    else:  # over the pool's line, which runs at half the pool after the preemption
-        for k, line in enumerate(("agent B preempted", "so that agent A", "can grow")):
-            s.text(x(m.after.t) + 20, a(0.9) + 6 + 22 * k, line, size=NOTE, halo=True)
+    # Over the pool's line, which runs at half the pool after the preemption.
+    s.text(
+        x(m.after.t) + (14 if wide else 20), a(0.75) + 6, "agent B preempted", size=NOTE, halo=True
+    )
     # (b): each request's output tokens, named at their ends; in the wait the two lines run as one.
-    s.text(middle, b(600) + 5, "both decoding", size=NOTE, anchor="middle", halo=True)
     for k, (name, cls) in enumerate(KV_LINES):
         points = [(x(p.t), b(p.tokens[k])) for p in _decoding(samples, k)]
         s.trace(points, cls)
@@ -319,8 +338,8 @@ def _kv_layout(
 
 # The two waits in isolation ---------------------------------------------------------------------------------------
 
-PROBE_ROWS = {"stock": ("stock", "gray"), "a": ("kv-preemption", "sky"), "ab": ("change", "blue")}
-"""Each probe block's row: its configuration's label (data.LABELS) and its hue."""
+PROBE_ROWS = {"stock": "stock", "a": "kv-preemption", "ab": "change"}
+"""Each probe block's row: its configuration's key in data.LABELS, whose name and mark (labels.MARKS) it takes."""
 RUN_PITCH = 11.0
 """Between a row's runs, each on a line of its own in the order they ran."""
 
@@ -335,7 +354,7 @@ def _probe_description(
     def spread(values: list[int]) -> str:
         return f"{min(values):,}\N{EN DASH}{max(values):,} ms"
 
-    names = {engine: data.in_prose(data.label(PROBE_ROWS[engine][0])[0]) for engine in data.ENGINES}
+    names = {engine: data.in_prose(data.label(PROBE_ROWS[engine])[0]) for engine in data.ENGINES}
     first = "; ".join(f"{names[e]} {spread([r.ttft for r in runs])}" for e, runs in kv.items())
     sixteenth = "; ".join(
         f"{names[e]} {spread([r.t16 for r in runs if r.t16])}" for e, runs in prefill.items()
@@ -353,7 +372,7 @@ def isolation(out: Path) -> list[Path]:
     configuration. (a) The KV case: the turn's first token, sent into a pool two agent requests fill. (b) The prefill
     case: each run's first token to its 16th, sent beside three agent prefills."""
     kv, prefill = data.probes("kv"), data.probes("prefill")
-    # The panels' subtitles state what each case's turn was sent beside: every run's line must say it.
+    # The description states what each case's turn was sent beside: every run's line must say it.
     for case, runs_by_engine, beside in (("kv", kv, (2, 17999)), ("prefill", prefill, (3, 10000))):
         sent = {(r.agents, r.agent_tokens) for runs in runs_by_engine.values() for r in runs}
         if sent != {beside}:
@@ -366,17 +385,10 @@ def isolation(out: Path) -> list[Path]:
 
 
 ISOLATION_PANELS = (
-    (
-        "(a) The KV case",
-        "two agent requests of 18k tokens fill the pool",
-        "Time to the first token (ms)",
-    ),
-    (
-        "(b) The prefill case",
-        "three agent prefills of 10k tokens run",
-        "Time from the request (ms)",
-    ),
+    ("(a) The KV case", "Time to the first token (ms)"),
+    ("(b) The prefill case", "Time from the request (ms)"),
 )
+"""Each panel's title and its axis's title; the caption says what each case sends its turn beside."""
 
 
 def _kv_runs(s: Chart, a: Scale, y: float, runs: Sequence[data.Probe], hue: str) -> None:
@@ -406,8 +418,8 @@ def _prefill_runs(
 
 
 ISOLATION_KEY = [
-    (mark_key("gray"), "a run's first token"),
-    (mark_key("gray", filled=True), "its 16th token"),
+    (mark_key("gray"), "A run's first token"),
+    (mark_key("gray", filled=True), "Its 16th token"),
 ]
 
 
@@ -421,18 +433,18 @@ def _isolation_wide(
     right = 236
     a = Scale(0, 6000, 262, 640)
     b = Scale(0, 2000, 692, 1070)
-    for scale, (title, note, _) in zip((a, b), ISOLATION_PANELS, strict=True):
+    for scale, (title, _) in zip((a, b), ISOLATION_PANELS, strict=True):
         s.text(scale.start, 30, title, size=LABEL)
-        s.text(scale.start, 54, note, size=NOTE, cls="soft")
-    top, pitch = 80, 64
+    top, pitch = 56, 64
     rows = [top + 34 + pitch * k for k in range(len(data.ENGINES))]
     bottom = rows[-1] + 34
     marks_a, labels_a = linear_ticks(6000, 2000)
     marks_b, labels_b = linear_ticks(2000, 500)
-    last = x_axis(s, a, marks_a, labels_a, top, bottom, title=ISOLATION_PANELS[0][2])
-    x_axis(s, b, marks_b, labels_b, top, bottom, title=ISOLATION_PANELS[1][2])
+    last = x_axis(s, a, marks_a, labels_a, top, bottom, title=ISOLATION_PANELS[0][1])
+    x_axis(s, b, marks_b, labels_b, top, bottom, title=ISOLATION_PANELS[1][1])
     for y, engine in zip(rows, data.ENGINES, strict=True):
-        key, hue = PROBE_ROWS[engine]
+        key = PROBE_ROWS[engine]
+        hue = config_mark(key)[0]
         name, note = data.label(key)
         s.text(right, y - 4, name, size=VALUE, anchor="end")
         s.text(right, y + 19, note, size=NOTE, anchor="end", cls="soft")
@@ -457,17 +469,15 @@ def _isolation_narrow(
     scales = (Scale(0, 6000, x0, NARROW - 62), Scale(0, 2000, x0, NARROW - 62))
     ticks = (linear_ticks(6000, 2000), linear_ticks(2000, 1000))
     last = y
-    for k, ((title, note, axis), scale, (marks, labels)) in enumerate(
+    for k, ((title, axis), scale, (marks, labels)) in enumerate(
         zip(ISOLATION_PANELS, scales, ticks, strict=True)
     ):
         y = last + (48 if k else 8)
         s.text(x0, y, title, size=LABEL)
-        for line in wrap(note, NARROW - 2 * x0, NOTE):
-            y += 24
-            s.text(x0, y, line, size=NOTE, cls="soft")
-        y += 12
+        y += 6
         for engine in data.ENGINES:
-            key, hue = PROBE_ROWS[engine]
+            key = PROBE_ROWS[engine]
+            hue = config_mark(key)[0]
             name, row_note = data.label(key)
             band = y + 58 + _row_label(s, x0, y + 20, name, row_note, NARROW - x0)
             band_grid(s, scale, marks, band - 26, band + 26)
@@ -487,16 +497,24 @@ def _isolation_narrow(
 # Both waits beside closed-loop agents -------------------------------------------------------------------------------
 
 TAIL_LINES = {
-    "stock": ("stock", "on", "gray trace"),
-    "a": ("kv-preemption", "with", "sky trace"),
-    "ab": ("change", "with", "blue trace thick"),
+    "stock": ("stock", "on", "trace"),
+    "a": ("kv-preemption", "with", "trace dashed"),
+    "ab": ("change", "with", "trace thick"),
 }
-"""Each probe block's line: its configuration's label (data.LABELS), the word the description puts before its name,
-and its stroke."""
+"""Each probe block's line: its configuration's key in data.LABELS, whose name and hue (labels.MARKS) it takes, the
+word the description puts before its name, and its stroke. The KV preemption and the change share the change's sibling
+blue, the one dashed and the other thick; stock vLLM's gray reads darker than that blue in grayscale, and lighter on the
+dark page: the three stay apart in either."""
 
 
 def _tail_name(engine: str) -> str:
     return data.label(TAIL_LINES[engine][0])[0]
+
+
+def _tail_cls(engine: str) -> str:
+    """A probe block's line's classes: its configuration's hue and its stroke."""
+    key, _, stroke = TAIL_LINES[engine]
+    return f"{config_mark(key)[0]} {stroke}"
 
 
 TAIL_PANELS = {
@@ -541,8 +559,8 @@ def _tail_lines(s: Chart, tails, mode: str, x: Scale, y: Scale) -> None:
     """A panel's p95 rule and each scheduler's ECDF."""
     s.rule(x.start, x.end, y(0.95), "rule")
     s.text(x.start + 10, y(0.95) + 22, "p95", size=NOTE, cls="soft", halo=True)
-    for engine, (_, _, cls) in TAIL_LINES.items():
-        s.trace(ecdf(tails[mode][engine].turns, x, y, cap=data.TAIL_TIMEOUT_MS), cls)
+    for engine in TAIL_LINES:
+        s.trace(ecdf(tails[mode][engine].turns, x, y, cap=data.TAIL_TIMEOUT_MS), _tail_cls(engine))
 
 
 def _tail_wide(tails, path: Path, description: str) -> Path:
@@ -556,7 +574,7 @@ def _tail_wide(tails, path: Path, description: str) -> Path:
         s,
         24,
         30,
-        [(line_key(cls), _tail_name(engine)) for engine, (_, _, cls) in TAIL_LINES.items()],
+        [(line_key(_tail_cls(engine)), _tail_name(engine)) for engine in TAIL_LINES],
         width=WIDTH - 48,
     )
     s.text(24, 102, "Share of the calls' turns", size=NOTE, cls="soft")
@@ -598,7 +616,7 @@ def _tail_narrow(tails, path: Path, description: str) -> Path:
         s,
         x0,
         30,
-        [(line_key(cls), _tail_name(engine)) for engine, (_, _, cls) in TAIL_LINES.items()],
+        [(line_key(_tail_cls(engine)), _tail_name(engine)) for engine in TAIL_LINES],
         width=NARROW - 2 * x0,
         pitch=25,
     )
@@ -657,7 +675,7 @@ def window(out: Path) -> list[Path]:
 
 WINDOW_LINES = (
     ("t40_p95", "blue trace", "40th token"),
-    ("ttft_p95", "blue trace dashed", "first token"),
+    ("ttft_p95", "blue trace dashed", "First token"),
 )
 """Panel b's lines: the field each draws, its stroke and its name."""
 
@@ -756,10 +774,12 @@ def _window_layout(tokens: Sequence[int], runs, path: Path, description: str, wi
 
 DECODE_STEP_MS = (16, 20)
 """A voice reply's decode step on the RTX 5060 Ti beside agent prefill that the budget cap keeps back, from the gaps between
-its tokens (the prefill case's 16-20 ms a token, docs/BENCHMARKS.md): one of the box's steps against which the figure
-sets the scheduler's cost, with a reply's step alone (W6) and the agents' at 24 agent sessions (the rounds)."""
-BOX_TICKS = (100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000)
-"""The box's CPU's axis, in µs."""
+its tokens (the prefill case's 16-20 ms a token, docs/BENCHMARKS.md): one of the box's steps, between a reply's step
+alone (W6) and the agents' at 24 agent sessions (the rounds), which the figure's band of the box's steps spans."""
+STEP_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+"""The host's axis, in µs, labelled in ms."""
+STEP_NARROW_TICKS = [20, 100, 1000, 10000]
+"""The phone layout's ticks on the host's axis, its decades: the wide figure's ten would crowd it."""
 
 
 def _step_row(cost: data.StepCost) -> str:
@@ -768,29 +788,64 @@ def _step_row(cost: data.StepCost) -> str:
 
 STEP_SETS = {
     False: "In the pull requests' cost tables",
-    True: "In the serving profile: 256-token steps, scheduled asynchronously",
+    True: "In the serving profile",
 }
-"""The two sets of states, each under its heading: the PRs' tables' steady states, and the box's configuration."""
+"""The two sets of states, each under its heading: the PRs' tables' steady states, and the box's configuration (its
+256-token steps scheduled asynchronously, which the caption says)."""
+STEP_AXIS = "Time of a scheduler call on the host (ms, log scale)"
+
+
+def _box_steps(box: float) -> tuple[float, float]:
+    """The band of the box's steps on the host's axis, in µs: from a voice reply's step alone to the agents' at 24
+    agent sessions, each divided by how many times as long the box's CPU takes, so that a scheduler call stands
+    against them as it would on the box."""
+    return data.voice_step_ms() * 1000 / box, data.agents_step_ms() * 1000 / box
+
+
+BAND = "gray wash"
+"""The box's band of steps: the gray's cell fill, which stands off the page in either theme (1.3:1 on the light page and
+1.7:1 on the dark), where its area tint all but vanished."""
+BAND_NAME = "The box's steps, scaled to the host"
+"""The band's name in the key; the caption gives its ends and the factor it is divided by."""
+
+
+def _signed(us: float) -> str:
+    """A change to a call in µs with its sign, a true minus for a saving."""
+    return f"{us:+,.0f}".replace("-", "\N{MINUS SIGN}")
 
 
 def _step_description(costs: Sequence[data.StepCost]) -> str:
+    """The figure in one sentence: its states' cost, the switches off against stock vLLM, and what the configuration to
+    deploy adds in each scenario of each set, the least to the most."""
     worst = max(costs, key=lambda c: c.off_ratio)
-    rows = "; ".join(
-        f"{'in the serving profile, ' if c.serving else ''}{data.SCENARIOS[c.scenario]}, {_step_row(c)}: "
-        f"{c.stock:,.0f}, {c.off:,.0f} and {c.on:,.0f} µs"
-        for c in costs
-    )
-    least, most = (
-        f"{f(c.added for c in costs):+,.0f}".replace("-", "\N{MINUS SIGN}") for f in (min, max)
-    )
+    sets = []
+    for serving in (False, True):
+        scenarios: dict[str, list[data.StepCost]] = {}
+        for c in costs:
+            if c.serving == serving:
+                scenarios.setdefault(c.scenario, []).append(c)
+        cells = []
+        for scenario, states in scenarios.items():
+            least, most = min(c.added for c in states), max(c.added for c in states)
+            span = (
+                f"{_signed(least)} µs"
+                if len(states) == 1
+                else f"{_signed(least)} to {_signed(most)} µs"
+            )
+            cells.append(f"{data.SCENARIOS[scenario]} ({span})")
+        where = "in the serving profile" if serving else "in the pull requests' cost tables"
+        sets.append(f"{where}: {', '.join(cells[:-1])} and {cells[-1]}")
     lo, hi = DECODE_STEP_MS
+    edge = _box_steps(data.box_cpu())[0]
+    slowest = max(c.on for c in costs)
     return (
-        "The wall time of one call of vLLM 0.32.0's Scheduler.schedule() on the host's CPU in each state, on a "
-        f"log scale whose second axis is the box's CPU, {data.box_cpu():.2f} times as long, beside the box's steps "
-        f"(a voice reply's alone, {data.voice_step_ms():.0f} ms; beside held agent prefill, {lo} to {hi} ms; the "
-        f"agents' at 24 agent sessions, {data.agents_step_ms():.0f} ms), for stock vLLM, the change with its switches "
-        f"off (within {worst.off_ratio:.1%} of stock's in every state) and the configuration to deploy (its change to "
-        f"the step from {least} to {most} µs): {rows}."
+        f"The wall time of one call of vLLM 0.32.0's Scheduler.schedule() on the host's CPU in {len(costs)} states, on "
+        f"a log scale, beside a band of the box's steps from a voice reply's alone ({data.voice_step_ms():.0f} ms; "
+        f"beside held agent prefill, {lo} to {hi} ms) to the agents' at 24 agent sessions "
+        f"({data.agents_step_ms():.0f} ms), each divided by {data.box_cpu():.2f}, how many times as long the box's CPU "
+        f"takes: the change with its switches off within {worst.off_ratio:.1%} of stock vLLM in every state, and the "
+        f"serving profile's change to the call in each scenario, {'; '.join(sets)}, its slowest call "
+        f"{slowest:,.0f} µs against the band's lower edge at {edge:,.0f} µs."
     )
 
 
@@ -798,7 +853,7 @@ def _band_key() -> Key:
     """The box's band of steps in a legend: a short stretch of it."""
 
     def draw(s: Chart, x: float, baseline: float) -> None:
-        s.rect(x, baseline - 0.75 * NOTE, 22, 0.9 * NOTE, "gray band")
+        s.rect(x, baseline - 0.75 * NOTE, 22, 0.9 * NOTE, BAND)
 
     return Key(22, draw)
 
@@ -822,12 +877,12 @@ def _beside(
 
 
 def step_cost(out: Path) -> list[Path]:
-    """report-step-cost.svg: the rules' cost per scheduler step on the host, a row per state under its scenario, the
-    PRs' tables' steady states and then the serving profile's: stock vLLM's step, the change's with its switches off
-    (on stock's, within a few percent), and the configuration to deploy's, with what it adds, on a log scale that also
-    holds a decode step on the RTX 5060 Ti. Its second axis is the box's CPU, the host's times bench_host.py's factor
-    between them, on which the box's own steps stand: a voice reply's alone and beside held agent prefill, and the
-    agents' at 24 agent sessions."""
+    """report-step-cost.svg and its phone layout: the rules' cost per scheduler step on the host, a row per state under
+    its scenario, the PRs' tables' steady states and then the serving profile's: stock vLLM's step, the change's with
+    its switches off (on stock's, within a few percent), and the serving profile's, with what it adds, on one
+    log scale of the host's time. A band stands for the box's steps, from a voice reply's alone to the agents' at 24
+    agent sessions, each divided by bench_host.py's factor between the box's CPU and the host's, so that a call stands
+    against them as it would on the box: one axis, where the figure had drawn the box's CPU as a second."""
     costs = data.step_costs()
     paths = [
         _step_cost_wide(costs, out / "report-step-cost.svg"),
@@ -836,25 +891,29 @@ def step_cost(out: Path) -> list[Path]:
     return paths
 
 
-def _step_keys(alone: float, agents: float) -> list[tuple[Key, str]]:
-    lo, hi = DECODE_STEP_MS
-    return [
-        (mark_key("gray"), data.label("stock")[0]),
-        (mark_key("gray", "dot", filled=True), data.label("switches-off")[0]),
-        (mark_key("blue", filled=True), data.label("deploy")[0]),
-        (line_key("gray trace dotted"), f"a reply's step on the box alone, {alone:.0f} ms"),
-        (_band_key(), f"beside held agent prefill, {lo}\N{EN DASH}{hi} ms"),
-        (line_key("gray trace dashed"), f"the agents' step at 24 agent sessions, {agents:.0f} ms"),
-    ]
+STEP_KEYS = ("stock", "switches-off", "profile")
+"""The configurations a state's row marks, by their keys in data.LABELS: stock vLLM's ring, the change's with its
+switches off, and the serving profile's."""
+
+
+def _step_keys() -> list[tuple[Key, str]]:
+    keys = []
+    for key in STEP_KEYS:
+        hue, shape, filled = config_mark(key)
+        keys.append((mark_key(hue, shape, filled=filled), data.label(key)[0]))
+    return [*keys, (_band_key(), BAND_NAME)]
 
 
 def _step_marks(s: Chart, x: Scale, cost, row_y: float, rules: Sequence[float]) -> None:
-    """A state's marks: stock vLLM's ring, the change's with its switches off and the configuration to deploy's,
+    """A state's marks: stock vLLM's ring, the change's with its switches off and the serving profile's,
     joined, and what it adds beside them."""
     s.trace([(x(cost.off), row_y), (x(cost.on), row_y)], "blue trace", wire=False)
-    s.mark(x(cost.stock), row_y, "gray", r=6.5)
-    s.mark(x(cost.off), row_y, "gray", "dot", filled=True)
-    s.mark(x(cost.on), row_y, "blue", filled=True)
+    # Stock vLLM's ring a size larger than the others' marks, so that the switches-off dot shows inside it.
+    for key, value, r in zip(
+        STEP_KEYS, (cost.stock, cost.off, cost.on), (6.5, 5.0, 5.0), strict=True
+    ):
+        hue, shape, filled = config_mark(key)
+        s.mark(x(value), row_y, hue, shape, filled=filled, r=r)
     # What the change adds, right of the row's marks: the budget cap's is a saving, the deployed mark left of stock's.
     sign = "+" if cost.added >= 0 else "\N{MINUS SIGN}"
     label = f"{sign}{abs(cost.added):,.0f} µs"
@@ -862,40 +921,33 @@ def _step_marks(s: Chart, x: Scale, cost, row_y: float, rules: Sequence[float]) 
     _beside(s, marks, row_y + 6, label, rules)
 
 
-STEP_NARROW_TICKS = [20, 100, 1000, 10000]
-"""The phone layout's ticks on the host's axis, its decades: the wide figure's ten would crowd it."""
+def _step_band(s: Chart, x: Scale, top: float, bottom: float, box: float) -> list[float]:
+    """The band of the box's steps from ``top`` to ``bottom``; returns its edges, which no value label crosses."""
+    lo, hi = (x(v) for v in _box_steps(box))
+    s.rect(lo, top, hi - lo, bottom - top, BAND)
+    return [lo, hi]
 
 
 def _step_cost_narrow(costs, path: Path) -> Path:
-    """The phone layout: the key, the box's axis, then each state's name over its marks under its set's and its
-    scenario's headings, and the host's axis."""
+    """The phone layout: the key, then each state's name over its marks under its set's and its scenario's headings,
+    and the host's axis."""
     box = data.box_cpu()
-    alone, agents = data.voice_step_ms(), data.agents_step_ms()
-    lo, hi = DECODE_STEP_MS
     s = Chart(NARROW, 2600, "The rules' cost per scheduler step", _step_description(costs))
     x0 = 18
     x = Scale(
         20, 30000, x0 + 10, NARROW - 22, log=True
     )  # its first tick's label clear of the canvas's edge
-    last = legend(s, x0, 30, _step_keys(alone, agents), width=NARROW - 2 * x0, pitch=25)
-    title = f"the box's CPU (ms), scaled: the host's time \N{MULTIPLICATION SIGN} {box:.2f}"
-    y = last + 16
-    for line in wrap(title, NARROW - 2 * x0, NOTE):
-        y += 25
-        s.text(x0, y, line, size=NOTE, cls="soft")
-    top = y + 44
-    for tick in (100, 1000, 10000):
-        if x.lo <= tick / box <= x.hi:
-            s.vrule(x(tick / box), top - 5, top, "axis")
-            s.text(
-                x(tick / box), top - 12, f"{tick / 1000:g}", size=NOTE, anchor="middle", cls="mute"
-            )
-    s.rule(x.start, x.end, top)
+    last = legend(s, x0, 30, _step_keys(), width=NARROW - 2 * x0, pitch=25)
+    # The axis's ticks over the column too, under the key: on a phone its foot is a screen and a half below.
+    ticks_y = last + 40
+    for t in STEP_NARROW_TICKS:
+        s.text(x(t), ticks_y, f"{t / 1000:g}", size=NOTE, anchor="middle", cls="mute")
+    top = ticks_y + 12
     layout = []
     y = top + 4
     scenario = serving = None
-    # The headings and the states' names end short of the box's reference lines, which run the whole column.
-    room = x(alone * 1000 / box) - 10 - x0
+    # The headings and the states' names end short of the band of the box's steps, which runs the whole column.
+    room = x(_box_steps(box)[0]) - 10 - x0
     for cost in costs:
         if cost.serving != serving:
             serving = cost.serving
@@ -919,21 +971,14 @@ def _step_cost_narrow(costs, path: Path) -> Path:
         layout.append((y + 44, cost))
         y += 66
     bottom = y + 6
-    s.rect(
-        x(lo * 1000 / box), top, x(hi * 1000 / box) - x(lo * 1000 / box), bottom - top, "gray band"
-    )
-    s.vrule(x(alone * 1000 / box), top, bottom, "gray trace dotted")
-    s.vrule(x(agents * 1000 / box), top, bottom, "gray trace dashed")
-    rules = [x(alone * 1000 / box), x(agents * 1000 / box)]
+    rules = _step_band(s, x, top, bottom, box)
     for row_y, cost in layout:
         band_grid(s, x, STEP_NARROW_TICKS, row_y - 14, row_y + 14)
         _step_marks(s, x, cost, row_y, rules)
     last = x_axis(
         s, x, STEP_NARROW_TICKS, [f"{t / 1000:g}" for t in STEP_NARROW_TICKS], None, bottom
     )
-    for line in wrap(
-        "Scheduler.schedule()'s wall time a step on the host (ms, log scale)", NARROW - 2 * x0, NOTE
-    ):
+    for line in wrap(STEP_AXIS, NARROW - 2 * x0, NOTE):
         last += 25
         s.text(x0, last, line, size=NOTE, cls="soft")
     s.height = last + 14
@@ -942,28 +987,11 @@ def _step_cost_narrow(costs, path: Path) -> Path:
 
 def _step_cost_wide(costs, path: Path) -> Path:
     box = data.box_cpu()
-    alone, agents = data.voice_step_ms(), data.agents_step_ms()
-    lo, hi = DECODE_STEP_MS
     s = Chart(WIDTH, 600, "The rules' cost per scheduler step", _step_description(costs))
     right = 372
     x = Scale(20, 30000, 400, 1090, log=True)
-    last = legend(s, x.start, 30, _step_keys(alone, agents), width=x.end - x.start)
-    top = last + 80
-    for tick in BOX_TICKS:
-        if x.lo <= tick / box <= x.hi:
-            s.vrule(x(tick / box), top - 5, top, "axis")
-            s.text(
-                x(tick / box), top - 12, f"{tick / 1000:g}", size=NOTE, anchor="middle", cls="mute"
-            )
-    s.text(
-        (x.start + x.end) / 2,
-        top - 40,
-        f"the box's CPU (ms), scaled: the host's time \N{MULTIPLICATION SIGN} {box:.2f}",
-        size=NOTE,
-        anchor="middle",
-        cls="soft",
-    )
-    s.rule(x.start, x.end, top)
+    last = legend(s, x.start, 30, _step_keys(), width=x.end - x.start)
+    top = last + 26
     layout = []
     y = top + 4
     scenario = serving = None
@@ -987,40 +1015,22 @@ def _step_cost_wide(costs, path: Path) -> Path:
         layout.append((y + 14, cost))
         y += 30
     bottom = y + 6
-    s.rect(
-        x(lo * 1000 / box), top, x(hi * 1000 / box) - x(lo * 1000 / box), bottom - top, "gray band"
-    )
-    s.vrule(x(alone * 1000 / box), top, bottom, "gray trace dotted")
-    s.vrule(x(agents * 1000 / box), top, bottom, "gray trace dashed")
-    ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+    rules = _step_band(s, x, top, bottom, box)
     last = x_axis(
-        s,
-        x,
-        ticks,
-        [f"{t / 1000:g}" for t in ticks],
-        top,
-        bottom,
-        title="Scheduler.schedule()'s wall time a step on the host (ms, log scale)",
+        s, x, STEP_TICKS, [f"{t / 1000:g}" for t in STEP_TICKS], top, bottom, title=STEP_AXIS
     )
     for row_y, cost in layout:
         s.text(right, row_y + 6, _step_row(cost), size=VALUE, anchor="end")
-        _step_marks(s, x, cost, row_y, [x(alone * 1000 / box), x(agents * 1000 / box)])
+        _step_marks(s, x, cost, row_y, rules)
     s.height = last + 14
     return s.save(path)
 
 
 # The headline -----------------------------------------------------------------------------------------------------
+#
+# The headline's configurations, each labelled as data.LABELS names it and marked as labels.MARKS does, voice alone,
+# the reference, first: figure.toml orders them.
 
-HEADLINE_ROWS = {
-    data.VOICE_ALONE: ("ink", "dot"),
-    data.TUNED: ("gray", "circle"),
-    data.ROUTER: ("gray", "square"),
-    data.MAKE_ROOM: ("sky", "circle"),
-    data.HOLD_16: ("sky", "circle"),
-    data.CHANGE: ("blue", "circle"),
-}
-"""Each configuration's row, labelled as data.LABELS names it: its hue and its runs' marker. figure.toml orders them,
-voice alone, the reference, first."""
 V2V_TICKS = [1000, 2000, 5000, 10000, 20000]
 """A V2V p95 axis's ticks on a log scale of 1 to 20 s, wide enough for every run of tuned vLLM's tail."""
 
@@ -1040,19 +1050,19 @@ def _headline_description(configurations: Sequence[data.Configuration], slo: flo
         name, note = data.label(c.point)
         p95s = [run.p95 for run in c.runs]
         text = (
-            f"{name}, {note}: V2V p95 {seconds(c.p95)} s at the median of {_runs_of(c)} "
+            f"{data.in_prose(name)}, {note}: {seconds(c.p95)} s at the median of {_runs_of(c)} "
             f"({seconds(min(p95s))} to {seconds(max(p95s))} s)"
         )
         if c.tokens is not None and base:
             text += (
-                f", the agents' {c.tokens:,.0f} tokens/s ({c.tokens / base:.0%} of tuned vLLM's)"
+                f", its agents at {c.tokens:,.0f} tokens/s, {c.tokens / base:.0%} of tuned vLLM's"
             )
         rows.append(text)
     return (
         f"Each run's voice-to-voice p95 on a log scale against the SLO of {seconds(slo)} s, and the agents' tokens a "
         "second over the calls' first 240 s, with each configuration's median: "
-        + "; ".join(rows)
-        + "."
+        + "; ".join(rows[:-1])
+        + f"; and {rows[-1]}."
     )
 
 
@@ -1093,36 +1103,26 @@ def _place_value(
 def _v2v_row(s: Chart, c: data.Configuration, a: Scale, y: float, slo_x: float) -> None:
     """A configuration's runs' V2V p95 at ``y`` as a rug under their median's marker, the median's value beside
     them."""
-    hue, shape = HEADLINE_ROWS[c.point]
+    hue, shape, filled = config_mark(c.point)
     xs = [a(r.p95) for r in c.runs]
-    rug(s, xs, y, hue, shape, median=a(c.p95), half=RUN_HALF)
+    rug(s, xs, y, hue, shape, median=a(c.p95), half=RUN_HALF, filled=filled)
     _place_value(s, xs, y, f"{seconds(c.p95)} s", slo=slo_x, floor=a.start)
 
 
 def _tokens_row(s: Chart, c: data.Configuration, b: Scale, y: float, base: float) -> None:
-    hue, shape = HEADLINE_ROWS[c.point]
+    hue, shape, filled = config_mark(c.point)
     assert c.tokens is not None
     xs = [b(r.tokens) for r in c.runs if r.tokens is not None]
-    rug(s, xs, y, hue, shape, median=b(c.tokens), half=RUN_HALF)
+    rug(s, xs, y, hue, shape, median=b(c.tokens), half=RUN_HALF, filled=filled)
     box = s.text(max(xs) + 12, y + 6, f"{c.tokens:,.0f}", size=NOTE, halo=True)
     s.text(box.x1 + 7, y + 6, f"{c.tokens / base:.0%}", size=NOTE, cls="soft", halo=True)
 
 
-def _slo_rule(s: Chart, x: float, top: float, bottom: float, slo: float) -> None:
-    s.vrule(x, top, bottom, "slo")
-    s.text(
-        x,
-        top - 8,
-        f"SLO {seconds(slo)} s",
-        size=NOTE,
-        anchor="middle",
-        cls="orange tint",
-        halo=True,
-    )
-
-
-V2V_TITLE = "seconds, log scale \N{BULLET} lower is better"
-TOKENS_TITLE = "first 240 s of the calls \N{BULLET} higher is better"
+V2V_TITLE = "Time (s, log scale)"
+"""A V2V p95 axis's title under a panel titled "Voice-to-voice p95" (figure_style's grammar: the axis names its kind
+where the panel names the measure)."""
+TOKENS_TITLE = "Tokens/s over the calls' first 240 s"
+"""The agents' token rate's axis title, over the window every figure of the report gives it in."""
 
 
 def _headline_wide(
@@ -1142,7 +1142,7 @@ def _headline_wide(
     )
     marks_b, labels_b = linear_ticks(4000, 2000)
     x_axis(s, b, marks_b, labels_b, top, bottom, title=TOKENS_TITLE)
-    _slo_rule(s, a(slo), top, bottom, slo)
+    _v_threshold(s, a(slo), top, bottom, f"SLO {seconds(slo)} s")
     base = configurations[1].tokens
     for y, c in zip(ys, configurations, strict=True):
         name, note = data.label(c.point)
@@ -1215,8 +1215,11 @@ CDF_LINES = {
     data.CHANGE: "blue trace thick",
 }
 """Each configuration's line, named as data.LABELS names it: its stroke."""
-CDF_TICKS = [1000, 2000, 5000, 10000, 20000, 30000]
-"""The ECDF's log axis, from 1 s, under every turn measured (the fastest took 1.38 s), to the reply timeout."""
+CDF_TICKS = [1500, 2000, 3000, 5000, 10000, 20000]
+CDF_START = 1200
+"""The ECDF's log axis, from 1.2 s, under every turn measured (the fastest took 1.38 s), to 20 s, past the slowest
+(18.62 s), so that on a phone the curves near the SLO keep two fifths of it; a turn that got no reply, which counts at
+the reply timeout, would pass its end, and draws no figure."""
 
 
 def _cdf_description(configurations: Sequence[data.Configuration], slo: float) -> str:
@@ -1231,9 +1234,8 @@ def _cdf_description(configurations: Sequence[data.Configuration], slo: float) -
         )
     return (
         "The cumulative share of every measured turn's voice-to-voice time, pooled over each configuration's runs, on "
-        f"a log scale from 1 to 30 s with the SLO of {seconds(slo)} s and the 95th percentile marked: "
-        + "; ".join(rows)
-        + "."
+        f"a log scale from {CDF_START / 1000:g} to {CDF_TICKS[-1] / 1000:g} s with the SLO of {seconds(slo)} s and "
+        "the 95th percentile marked: " + "; ".join(rows) + "."
     )
 
 
@@ -1244,6 +1246,9 @@ def cdf(out: Path) -> list[Path]:
     rows = data.w5_rows()
     configurations = [c for c in data.headline(rows) if c.point in CDF_LINES]
     slo = data.slo_ms(rows)
+    slowest = max(v for c in configurations for v in c.samples())
+    if slowest > CDF_TICKS[-1]:
+        raise ValueError(f"a turn took {slowest:,.0f} ms, past the ECDF's axis: extend CDF_TICKS")
     description = _cdf_description(configurations, slo)
     return [
         _cdf_layout(configurations, slo, out / "report-cdf.svg", description, WIDTH),
@@ -1262,18 +1267,20 @@ def _cdf_layout(
     s = Chart(width, 900, "Every turn's voice-to-voice time", description)
     title = "Voice-to-voice time of a reply (s, log scale)"
     if wide:
-        x = Scale(CDF_TICKS[0], CDF_TICKS[-1], 96, 1040, log=True)
+        x = Scale(
+            CDF_START, CDF_TICKS[-1], 96, 1000, log=True
+        )  # room after it for the slowest tail's name
         y = Scale(0, 1, 420, 70)
         s.text(24, 34, "Share of replies", size=NOTE, cls="soft")
     else:  # the lines named in a key over the plot, where a phone's plot has no room after their ends
         keys = [(line_key(cls), data.label(point)[0]) for point, cls in CDF_LINES.items()]
         last_key = legend(s, 18, 30, keys, width=width - 36, pitch=25)
         s.text(18, last_key + 40, "Share of replies", size=NOTE, cls="soft")
-        x = Scale(CDF_TICKS[0], CDF_TICKS[-1], 64, width - 22, log=True)
+        x = Scale(CDF_START, CDF_TICKS[-1], 64, width - 22, log=True)
         y = Scale(0, 1, last_key + 80 + 300, last_key + 80)
     marks = [0.0, 0.25, 0.5, 0.75, 1.0]
     y_axis(s, y, marks, [pct(m) for m in marks], x.start, x.end)
-    for tick in CDF_TICKS[1:]:
+    for tick in CDF_TICKS:
         s.vrule(x(tick), y.end, y.start, "grid")
     labels = [f"{t / 1000:g}" for t in CDF_TICKS]
     if wide:
@@ -1284,11 +1291,8 @@ def _cdf_layout(
             last += 25
             s.text(18, last, line, size=NOTE, cls="soft")
     s.rule(x.start, x.end, y(0.95), "rule")
-    s.text(x.start + 10, y(0.95) + 22, "p95", size=NOTE, cls="soft")
-    s.vrule(x(slo), y.start, y.end, "slo")
-    s.text(
-        x(slo), y.end - 10, f"SLO {seconds(slo)} s", size=NOTE, anchor="middle", cls="orange tint"
-    )
+    s.text(x.start + 10, y(0.95) + 22, "p95", size=NOTE, cls="soft", halo=True)
+    _v_threshold(s, x(slo), y.end, y.start, f"SLO {seconds(slo)} s")
     lines = {}
     for c in configurations:
         name, cls = data.label(c.point)[0], CDF_LINES[c.point]
@@ -1321,11 +1325,15 @@ def _quantile(samples: Sequence[float], share: float) -> float:
 # What the agents pay ----------------------------------------------------------------------------------------------
 
 AGENT_PANELS = (
-    ("(a) Agents' TTFT p99", "seconds \N{BULLET} lower is better"),
-    ("(b) Steps held", "of the engine's steps"),
-    ("(c) Preemptions", "make-room's own count"),
+    ("(a) Agents' TTFT p99", "Time (s)"),
+    ("(b) Steps held", "Share of the engine's steps"),
+    ("(c) KV preemptions", "Preemptions in a run"),
 )
-"""Each panel's title and its axis's title."""
+"""Each panel's title and its axis's title: the agents' first-token tail, and what each rule did, the budget cap's
+steps held and the KV preemption's preemptions as make-room counts them."""
+AGENT_NONE = ("no budget cap", "no KV preemption")
+"""What panels b and c give a configuration that runs neither rule, in the wide layout's row; the phone layout leaves
+its row out of both, which the caption says."""
 
 
 def _agents_description(runs: dict[str, list[data.AgentRun]]) -> str:
@@ -1336,24 +1344,24 @@ def _agents_description(runs: dict[str, list[data.AgentRun]]) -> str:
         shares = [r.held_share for r in cells if r.held_share is not None]
         preemptions = [r.preemptions for r in cells if r.preemptions is not None]
         text = (
-            f"{name} ({note}, {_runs_of_count(len(cells))}): TTFT p99 {statistics.median(p99s):.0f} s "
-            f"({min(p99s):.0f} to {max(p99s):.0f})"
+            f"{data.in_prose(name)} ({note}, {_runs_of_count(len(cells))}): TTFT p99 "
+            f"{statistics.median(p99s):.0f} s ({min(p99s):.0f} to {max(p99s):.0f})"
         )
         text += (
             f", agent prefill held in {statistics.median(shares):.0%} of the steps"
             if shares
-            else ", no budget cap"
+            else f", {AGENT_NONE[0]}"
         )
         text += (
             f", {statistics.median(preemptions):.0f} preemptions by make-room"
             if preemptions
-            else ", no make-room"
+            else f", {AGENT_NONE[1]}"
         )
         rows.append(text)
     return (
         "For each configuration beside 24 agent sessions, each run and the median of the agents' TTFT p99, of the "
         "share of the engine's steps over the calls in which the budget cap kept agent prefill out, and of "
-        "make-room's own preemptions over the calls: " + "; ".join(rows) + "."
+        "make-room's own preemptions over the calls: " + "; ".join(rows[:-1]) + f"; and {rows[-1]}."
     )
 
 
@@ -1366,9 +1374,9 @@ def _agent_row(
     value: str,
 ) -> None:
     """A configuration's runs at ``y`` as a rug under their median's marker, the median's ``value`` after them."""
-    hue, shape = HEADLINE_ROWS[point]
+    hue, shape, filled = config_mark(point)
     xs = [scale(v) for v in values]
-    rug(s, xs, y, hue, shape, median=scale(statistics.median(values)), half=RUN_HALF)
+    rug(s, xs, y, hue, shape, median=scale(statistics.median(values)), half=RUN_HALF, filled=filled)
     s.text(max(xs) + 12, y + 6, value, size=NOTE, halo=True)
 
 
@@ -1395,6 +1403,12 @@ AGENT_TOPS = (250, 0.5, 50)
 (46)."""
 
 
+def _runs_rule(cells: Sequence[data.AgentRun], k: int) -> bool:
+    """Whether a configuration's runs have panel ``k``'s count: steps held (1) or preemptions (2)."""
+    field = "held_share" if k == 1 else "preemptions"
+    return any(getattr(r, field) is not None for r in cells)
+
+
 def _agent_cell(s: Chart, k: int, scale: Scale, y: float, point: str, cells) -> None:
     """Panel ``k``'s mark of a configuration's runs at ``y``, or what it has not."""
     if k == 0:
@@ -1405,13 +1419,13 @@ def _agent_cell(s: Chart, k: int, scale: Scale, y: float, point: str, cells) -> 
         if shares:
             _agent_row(s, shares, scale, y, point, pct(statistics.median(shares)))
         else:
-            s.text(scale.start + 10, y + 6, "no budget cap", size=NOTE, cls="mute", halo=True)
+            s.text(scale.start + 10, y + 6, AGENT_NONE[0], size=NOTE, cls="mute", halo=True)
     else:
         preemptions = [r.preemptions for r in cells if r.preemptions is not None]
         if preemptions:
             _agent_row(s, preemptions, scale, y, point, f"{statistics.median(preemptions):.0f}")
         else:
-            s.text(scale.start + 10, y + 6, "no make-room", size=NOTE, cls="mute", halo=True)
+            s.text(scale.start + 10, y + 6, AGENT_NONE[1], size=NOTE, cls="mute", halo=True)
 
 
 def _agents_wide(runs: dict[str, list[data.AgentRun]], path: Path, description: str) -> Path:
@@ -1457,6 +1471,8 @@ def _agents_narrow(runs: dict[str, list[data.AgentRun]], path: Path, description
         s.text(x0, y, title, size=LABEL)
         y += 10
         for point, cells in runs.items():
+            if k and not _runs_rule(cells, k):
+                continue  # it runs neither rule, which the caption says: no row, rather than a note under a name
             name, note = data.label(point)
             detail = f"{note}, {_runs_of_count(len(cells))}"
             band = y + 50 + _row_label(s, x0, y + 20, name, detail, NARROW - x0)
@@ -1472,21 +1488,6 @@ def _agents_narrow(runs: dict[str, list[data.AgentRun]], path: Path, description
 
 # Every configuration ---------------------------------------------------------------------------------------------
 
-FAMILY_MARKS = {
-    "tuned": ("gray", "circle", True),
-    "operator": ("gray", "diamond", True),
-    "engine": ("gray", "cross", True),
-    "router": ("gray", "triangle", True),
-    "resubmit": ("gray", "square", True),
-    "lifecycle": ("gray", "diamond", False),
-    "change": ("blue", "circle", True),
-    "lifecycle-change": ("sky", "diamond", False),
-}
-"""Each family's marker (data.FAMILIES): its hue, its shape and whether it is filled. Every configuration's row is
-labelled as data.LABELS names it."""
-SIBLINGS = {"9-pr-a", "9-pr-ab"}
-"""The change's configurations other than the one to deploy, in the pale blue: the KV preemption alone, and the change
-at its 16-token window."""
 FRONTIER_HEADINGS = (
     ("vLLM tuned by its own settings", ("tuned",)),
     ("The operator's static answers", ("operator",)),
@@ -1496,35 +1497,59 @@ FRONTIER_HEADINGS = (
     ("The change", ("change",)),
 )
 """The figure's headings, each over the families (data.FAMILIES) whose configurations it names."""
-FRONTIER_TOKENS = (3000, 6000)
-"""Panel b's scale, past the most any configuration did (5,584 tokens a second)."""
+FRONTIER_TOKENS = (0, 6000)
+"""Panel b's scale, from zero as every tokens/s axis is, past the most any configuration did (5,584 tokens a
+second)."""
 FRONTIER_MARK = 5.6
+FRONTIER_NEAR = {False: 1000.0, True: 200.0}
+"""How near the SLO the description counts a configuration's p95, in ms, as its figure's caption does: within a
+second for Figure 11, and within 0.2 s for what an operator can deploy, every other configuration there 0.5 s or more
+over it."""
 
 
-def _frontier_hue(point: data.FrontierPoint) -> str:
-    return "sky" if point.arm in SIBLINGS else FAMILY_MARKS[point.family][0]
+def _frontier_name(p: data.FrontierPoint, points: Sequence[data.FrontierPoint]) -> str:
+    """A configuration's name in prose: with its note after it where the note goes on from the name ("the lifecycle
+    policy over make-room"), in parentheses where another configuration of ``points`` has the same name ("a static cap
+    (2 agent requests in flight)"), and alone otherwise."""
+    name, note = data.label(p.point)
+    if note.split(" ", 1)[0] in ("over", "on"):
+        return f"{data.in_prose(name)} {note}"
+    if any(data.label(q.point)[0] == name for q in points if q.point != p.point):
+        return f"{data.in_prose(name)} ({note})"
+    return data.in_prose(name)
 
 
 def _frontier_description(
     points: Sequence[data.FrontierPoint], slo: float, calls: bool = False
 ) -> str:
+    """The figure in one sentence: which configurations come near the SLO, as its caption counts them
+    (FRONTIER_NEAR), and every configuration's median p95 and agents' tokens a second."""
     over = "the calls" if calls else "the calls' first 240 s"
+    near = FRONTIER_NEAR[calls]
+    close = [p for p in points if not p.failed_turns and p.p95 - slo < near]
+    if calls and min(p.p95 - slo for p in points if p not in close) < 500:
+        raise ValueError(
+            "a deployable configuration's p95 is within 0.5 s of the SLO: the caption says otherwise"
+        )
+    named = [_frontier_name(p, points) for p in close]
+    names = ", ".join(named[:-1]) + f" and {named[-1]}" if len(named) > 1 else named[0]
     parts = []
     for p in points:
-        name, note = data.label(p.point)
         p95 = (
-            f"at least {REPLY_TIMEOUT_MS / 1000:.0f} s, {p.failed_turns} turns failed"
+            f"at least {REPLY_TIMEOUT_MS / 1000:.0f} s, {p.failed_turns} turns failed,"
             if p.failed_turns
-            else (f"{seconds(p.p95)} s")
+            else f"{seconds(p.p95)} s"
         )
         tokens = p.calls_tokens if calls else p.tokens
-        parts.append(f"{data.in_prose(name)}, {note}, {p95} at {tokens:,.0f} tokens/s")
+        parts.append(f"{_frontier_name(p, points)} {p95} at {tokens:,.0f} tokens/s")
+    rest = ", every other 0.5 s or more over it" if calls else ""
     return (
         f"Each of {len(points)} configurations beside 24 agent sessions of the traces with the largest contexts, a row "
         "under its family, in panel a its voice-to-voice p95 on a log scale against the SLO of "
         f"{seconds(slo)} s, the median of its runs and their range, and in panel b the agents' tokens a second over "
-        f"{over}, only the change and preempt-resubmit coming "
-        "near the SLO: " + "; ".join(parts) + "."
+        f"{over}, only {names} within {near / 1000:g} s of the SLO{rest}: "
+        + "; ".join(parts[:-1])
+        + f"; and {parts[-1]}."
     )
 
 
@@ -1594,8 +1619,7 @@ def _frontier_rows(
 def _frontier_p95(s: Chart, a: Scale, y: float, p: data.FrontierPoint) -> None:
     """Panel a's marks of a configuration: its runs' range and its median p95 (at the reply timeout where turns
     failed), with its value right of them, or left where it would pass the scale's end."""
-    _, shape, filled = FAMILY_MARKS[p.family]
-    hue = _frontier_hue(p)
+    hue, shape, filled = config_mark(p.point)
     p95 = min(p.p95, REPLY_TIMEOUT_MS)
     low, high = min(p.p95s), min(max(p.p95s), REPLY_TIMEOUT_MS)
     if len(p.p95s) > 1:
@@ -1625,12 +1649,12 @@ def _frontier_tokens(
 ) -> None:
     """Panel b's mark of a configuration: its median tokens a second, over the calls' first 240 s or over the whole
     calls, with its value."""
-    _, shape, filled = FAMILY_MARKS[p.family]
+    hue, shape, filled = config_mark(p.point)
     tokens = p.calls_tokens if calls else p.tokens
     s.mark(
         b(tokens),
         y,
-        _frontier_hue(p),
+        hue,
         shape,
         filled=filled,
         r=FRONTIER_MARK,
@@ -1641,6 +1665,19 @@ def _frontier_tokens(
 
 FRONTIER_TICKS = [1500, 2000, 3000, 5000, 10000, 20000, 30000]
 """Panel a's log axis of p95, from 1.5 s, under every configuration's fastest run, to the reply timeout."""
+
+
+FRONTIER_CALLS_TITLE = "Tokens/s over the whole calls"
+"""Panel b's axis title in what an operator can deploy, over the window docs/BENCHMARKS.md's W4 table gives."""
+
+
+def _tick_labels(
+    s: Chart, scale: Scale, marks: Sequence[float], labels: Sequence[str], y: float
+) -> None:
+    """A scale's tick labels alone at baseline ``y``, centred on their marks: a phone layout repeats its axes' labels
+    over its rows, so that no row stands a screen from its scale."""
+    for mark, label in zip(marks, labels, strict=True):
+        s.text(scale(mark), y, label, size=NOTE, anchor="middle", cls="mute")
 
 
 def _frontier_layout(
@@ -1654,28 +1691,19 @@ def _frontier_layout(
     calls: bool = False,
 ) -> Path:
     """Figure 11's layout, its panel b over the calls' first 240 s, or with ``calls`` over the whole calls."""
-    wide = width == WIDTH
     s = Chart(width, 2400, title, description)
-    b_title = (
-        "over the calls" if calls else "first 240 s of the calls"
-    ) + " \N{BULLET} higher is better"
+    b_title = FRONTIER_CALLS_TITLE if calls else TOKENS_TITLE
     rows = _frontier_rows(points)
-    if wide:
+    marks_b, labels_b = linear_ticks(FRONTIER_TOKENS[1], 2000)
+    labels_a = [f"{t / 1000:g}" for t in FRONTIER_TICKS]
+    slo_name = f"SLO {seconds(slo)} s"
+    if width == WIDTH:
         right = 330
         a = Scale(1500, 30000, 352, 760, log=True)
         b = Scale(*FRONTIER_TOKENS, 830, 1040)
-        heads = (a.start, b.start)
-        s.text(heads[0], 30, "(a) Voice-to-voice p95 (s, log scale)", size=LABEL)
-        s.text(heads[1], 30, "(b) Agents' tokens/s", size=LABEL)
-        top = 56
-    else:
-        # The scales start in from the canvas's edge, so that their first ticks' labels stay on it.
-        a = Scale(1500, 30000, 34, width - 64, log=True)
-        b = Scale(*FRONTIER_TOKENS, 34, width - 64)
-    marks_b, labels_b = linear_ticks(FRONTIER_TOKENS[1], 1000)
-    marks_b, labels_b = marks_b[3:], labels_b[3:]
-    labels_a = [f"{t / 1000:g}" for t in FRONTIER_TICKS]
-    if wide:
+        s.text(a.start, 30, "(a) Voice-to-voice p95", size=LABEL)
+        s.text(b.start, 30, "(b) Agents' tokens/s", size=LABEL)
+        top = 82  # the SLO's name over the plot, clear of the panels' titles, as in the headline
         y = top + 14
         placed = []
         for heading, members in rows:
@@ -1688,80 +1716,219 @@ def _frontier_layout(
                 placed.append((y + 18, p))
                 y += 50
         bottom = y + 2
-        last = x_axis(s, a, FRONTIER_TICKS, labels_a, top, bottom, title="lower is better")
-        x_axis(
-            s,
-            b,
-            marks_b,
-            labels_b,
-            top,
-            bottom,
-            title=b_title,
-        )
-        s.vrule(a(slo), top, bottom, "slo")
-        s.text(
-            a(slo),
-            top - 6,
-            f"SLO {seconds(slo)} s",
-            size=NOTE,
-            anchor="middle",
-            cls="orange tint",
-            halo=True,
-        )
+        last = x_axis(s, a, FRONTIER_TICKS, labels_a, top, bottom, title=V2V_TITLE)
+        x_axis(s, b, marks_b, labels_b, top, bottom, title=b_title)
+        _v_threshold(s, a(slo), top, bottom, slo_name)
         for row_y, p in placed:
             _frontier_p95(s, a, row_y, p)
             _frontier_tokens(s, b, row_y, p, calls)
         s.height = last + 14
         return s.save(path)
-    # The phone layout: panel a, then panel b, each configuration's name over its marks under its heading.
-    last = 0.0
-    for k, (head, scale, ticks, labels, axis_title) in enumerate(
-        (
-            (
-                "(a) Voice-to-voice p95 (s, log scale)",
-                a,
-                FRONTIER_TICKS,
-                labels_a,
-                "lower is better",
-            ),
-            ("(b) Agents' tokens/s", b, marks_b, labels_b, b_title),
-        )
+    # The phone layout: each configuration's name over two strips, its p95 on panel a's scale and its agents' tokens a
+    # second on panel b's under it, both panels' titles and ticks over the rows and both axes under them.
+    x0 = 18
+    # The scales start in from the canvas's edge, so that their first ticks' labels stay on it.
+    a = Scale(1500, 30000, 34, width - 64, log=True)
+    b = Scale(*FRONTIER_TOKENS, 34, width - 64)
+    y = 30.0
+    for head, scale, marks, labels in (
+        ("(a) Voice-to-voice p95", a, FRONTIER_TICKS, labels_a),
+        ("(b) Agents' tokens/s", b, marks_b, labels_b),
     ):
-        y = last + (48 if k else 30)
-        s.text(18, y, head, size=LABEL)
-        if k == 0:
-            y += 26
-            s.text(
-                a(slo), y, f"SLO {seconds(slo)} s", size=NOTE, anchor="middle", cls="orange tint"
-            )
-        y += 8
-        for heading, members in rows:
-            s.text(18, y + 18, heading, size=NOTE, cls="mute")
-            y += 26
-            for p in members:
-                name, note = data.label(p.point)[0], _frontier_note(p)
-                band = y + 46 + _row_label(s, 18, y + 20, name, note, width - 18)
-                band_grid(s, scale, ticks, band - 14, band + 14)
-                if k == 0:
-                    s.vrule(a(slo), band - 14, band + 14, "slo")
-                    _frontier_p95(s, a, band, p)
-                else:
-                    _frontier_tokens(s, b, band, p, calls)
-                y = band + 20
-        last = x_axis(s, scale, ticks, labels, None, y)
+        s.text(x0, y, head, size=LABEL)
+        _tick_labels(s, scale, marks, labels, y + 26)
+        y += 66
+    s.text(a(slo), y, slo_name, size=NOTE, anchor="middle", cls="orange tint")
+    y += 2
+    for heading, members in rows:
+        s.text(x0, y + 22, heading, size=NOTE, cls="mute")
+        y += 30
+        for p in members:
+            name, note = data.label(p.point)[0], _frontier_note(p)
+            strip_a = y + 20 + _row_label(s, x0, y + 20, name, note, width - x0) + 24
+            strip_b = strip_a + 22
+            # Each strip its axis's line and no gridlines, which two scales would interleave: every mark has its value.
+            band_grid(s, a, [a.lo], strip_a - 10, strip_a + 10)
+            s.vrule(a(slo), strip_a - 10, strip_a + 10, "slo")
+            _frontier_p95(s, a, strip_a, p)
+            band_grid(s, b, [b.lo], strip_b - 10, strip_b + 10)
+            _frontier_tokens(s, b, strip_b, p, calls)
+            y = strip_b + 10
+    last = y
+    # Under the rows, far from the panels' titles, each axis names its measure.
+    for scale, marks, labels, axis_title in (
+        (a, FRONTIER_TICKS, labels_a, "Voice-to-voice p95 (s, log scale)"),
+        (b, marks_b, labels_b, "Agents' " + b_title[0].lower() + b_title[1:]),
+    ):
+        last = x_axis(s, scale, marks, labels, None, last + 4)
+        for line in wrap(axis_title, width - 2 * x0, NOTE):
+            last += 25
+            s.text(x0, last, line, size=NOTE, cls="soft")
+        last += 20
+    s.height = last - 20 + 14
+    return s.save(path)
+
+
+# What each part of the lifecycle policy over make-room does ----------------------------------------------------------
+
+ABLATION_GROUPS = (
+    ("The lifecycle policy over make-room", (("9", "With all its parts"),)),
+    (
+        "Its gateway policy",
+        (
+            ("9-no-throttle", "Without the critical-window throttle"),
+            ("9-no-headroom", "Without the headroom"),
+            ("9-trigger-request", "The headroom armed by the request"),
+            ("9-budget0", "The throttle's budget at 0 ms"),
+            ("9-budget500", "The throttle's budget at 500 ms"),
+            ("9-no-events", "Without the lifecycle events"),
+            ("9-no-degrade", "Without degrade"),
+            ("9-window48", "Without degrade, with a 48-token window"),
+            ("9-engine-only", "Without the gateway policy"),
+        ),
+    ),
+    (
+        "The engine under it",
+        (
+            ("9-no-kv-makeroom", "Without the KV preemption"),
+            ("9-no-reserve", "Without the reserve"),
+            ("9-no-budget-cap", "Without the budget cap"),
+            ("9-gateway-only", "Without the change"),
+        ),
+    ),
+)
+"""Arm 9 and its ablations, each under the heading of the part it removes or changes, in docs/BENCHMARKS.md's order and
+named as its arm-9 table names them: each its arm and its row's name."""
+ABLATION_MARKS = {"9-engine-only": "change", "9-gateway-only": "lifecycle"}
+"""The ablations marked as another configuration of labels.MARKS, by what they leave: the engine alone is the change's
+(make-room at its 16-token window), and the gateway alone the lifecycle policy alone on tuned vLLM; every other row is
+the lifecycle policy over make-room's."""
+
+
+def _ablation_mark(arm: str) -> tuple[str, str, bool]:
+    return config_mark(ABLATION_MARKS.get(arm, "lifecycle-reserve"))
+
+
+def _ablation_rows(
+    found: dict[str, data.Ablation],
+) -> list[tuple[str, list[tuple[data.Ablation, str]]]]:
+    """The groups' rows with their records' points, refusing an ablation the records have and the table does not."""
+    named = {arm for _, rows in ABLATION_GROUPS for arm, _ in rows}
+    if named != set(found):
+        raise ValueError(
+            f"arm 9's ablations differ from the figure's: {sorted(named ^ set(found))}"
+        )
+    return [
+        (heading, [(found[arm], name) for arm, name in rows]) for heading, rows in ABLATION_GROUPS
+    ]
+
+
+def _ablations_description(found: dict[str, data.Ablation], slo: float) -> str:
+    full = found["9"]
+    groups = []
+    for heading, rows in _ablation_rows(found)[1:]:
+        cells = ", ".join(
+            f"{name[0].lower() + name[1:]} {seconds(a.p95)} s ({seconds(min(a.p95s))} to {seconds(max(a.p95s))} s)"
+            for a, name in rows
+        )
+        groups.append(f"in {heading[0].lower() + heading[1:]}, {cells}")
+    return (
+        "The voice-to-voice p95 on a log scale against the SLO of "
+        f"{seconds(slo)} s, beside 24 agent sessions of the traces with the largest contexts, of the lifecycle policy "
+        f"over make-room with all its parts, {seconds(full.p95)} s at the median of {_runs_of_count(len(full.p95s))} "
+        f"({seconds(min(full.p95s))} to {seconds(max(full.p95s))} s), and with one part removed or changed, the median "
+        f"of three runs and their range: {'; '.join(groups)}."
+    )
+
+
+def ablations(out: Path) -> list[Path]:
+    """report-ablations.svg and its phone layout, docs/BENCHMARKS.md's: what each part of the lifecycle policy over
+    make-room (W4's arm 9) does, its V2V p95 with all its parts and with each removed or changed in turn, the median of
+    the runs and their range on Figure 11's log axis, against the SLO."""
+    found = data.ablations()
+    slo = data.slo_ms(data.w4_rows())
+    description = _ablations_description(found, slo)
+    return [
+        _ablations_layout(found, slo, out / "report-ablations.svg", description, WIDTH),
+        _ablations_layout(found, slo, out / "report-ablations-narrow.svg", description, NARROW),
+    ]
+
+
+def _ablation_marks(s: Chart, a: Scale, y: float, ablation: data.Ablation) -> None:
+    """A row's runs' range and their median p95, with its value right of them."""
+    hue, shape, filled = _ablation_mark(ablation.arm)
+    low, high = min(ablation.p95s), max(ablation.p95s)
+    s.path(f"M{fmt(a(low))} {fmt(y)}H{fmt(a(high))}", f"{hue} range")
+    s.mark(a(ablation.p95), y, hue, shape, filled=filled, r=FRONTIER_MARK, name=ablation.point)
+    right = max(a(high), a(ablation.p95) + FRONTIER_MARK) + 10
+    s.text(right, y + 6, f"{seconds(ablation.p95)} s", size=NOTE, halo=True)
+
+
+ABLATION_AXIS = "Voice-to-voice p95 (s, log scale)"
+"""The figure's one axis, which names its measure: no panel's title does."""
+
+
+def _ablations_layout(
+    found: dict[str, data.Ablation], slo: float, path: Path, description: str, width: float
+) -> Path:
+    """Each row under its part's heading, the rows' names right of a column (wide) or over their strips (a phone)."""
+    s = Chart(
+        width, 1600, "What each part of the lifecycle policy over make-room does", description
+    )
+    groups = _ablation_rows(found)
+    labels_a = [f"{t / 1000:g}" for t in FRONTIER_TICKS]
+    slo_name = f"SLO {seconds(slo)} s"
+    if width == WIDTH:
+        right = 400
+        a = Scale(1500, 30000, 430, 1040, log=True)
+        top = 40
+        y = top + 4
+        placed = []
+        for heading, rows in groups:
+            s.text(24, y + 22, heading, size=NOTE, cls="mute")
+            y += 30
+            for ablation, name in rows:
+                s.text(right, y + 22, name, size=VALUE, anchor="end")
+                placed.append((y + 15, ablation))
+                y += 34
+        bottom = y + 4
+        last = x_axis(s, a, FRONTIER_TICKS, labels_a, top, bottom, title=ABLATION_AXIS)
+        _v_threshold(s, a(slo), top, bottom, slo_name)
+        for row_y, ablation in placed:
+            _ablation_marks(s, a, row_y, ablation)
+        s.height = last + 14
+        return s.save(path)
+    x0 = 18
+    a = Scale(1500, 30000, 34, width - 64, log=True)
+    _tick_labels(s, a, FRONTIER_TICKS, labels_a, 30)
+    y = 62.0
+    s.text(a(slo), y, slo_name, size=NOTE, anchor="middle", cls="orange tint")
+    for heading, rows in groups:
+        s.text(x0, y + 26, heading, size=NOTE, cls="mute")
+        y += 34
+        for ablation, name in rows:
+            s.text(x0, y + 20, name, size=VALUE)
+            strip = y + 42
+            band_grid(s, a, FRONTIER_TICKS, strip - 12, strip + 12)
+            s.vrule(a(slo), strip - 12, strip + 12, "slo")
+            _ablation_marks(s, a, strip, ablation)
+            y = strip + 14
+    last = x_axis(s, a, FRONTIER_TICKS, labels_a, None, y + 4)
+    for line in wrap(ABLATION_AXIS, width - 2 * x0, NOTE):
         last += 25
-        s.text(18, last, axis_title, size=NOTE, cls="soft")
+        s.text(x0, last, line, size=NOTE, cls="soft")
     s.height = last + 14
     return s.save(path)
 
 
-def _pair_key(s: Chart, x: float, baseline: float, width: float, *, filled: bool = False) -> float:
-    """The key of a figure that sets tuned vLLM beside the configuration to deploy: each one's marker, in its hue, and
-    its name, in rows that break where ``width`` runs out. Returns the last row's baseline."""
-    entries = [
-        (mark_key(hue, filled=filled), data.label(key)[0])
-        for key, hue in (("tuned", "gray"), ("deploy", "blue"))
-    ]
+def _pair_key(s: Chart, x: float, baseline: float, width: float) -> float:
+    """The key of a figure that sets tuned vLLM beside the configuration to deploy in one plot: each one's mark as
+    labels.MARKS has it, tuned vLLM's open and the configuration to deploy's filled, so that the two stay apart in
+    grayscale, and its name, in rows that break where ``width`` runs out. Returns the last row's baseline."""
+    entries = []
+    for key in ("tuned", "deploy"):
+        hue, shape, filled = config_mark(key)
+        entries.append((mark_key(hue, shape, filled=filled), data.label(key)[0]))
     return legend(s, x, baseline, entries, width=width)
 
 
@@ -1778,19 +1945,20 @@ def _margin_description(
         f"{statistics.median(c.held):.0%} of the steps, the agents at {statistics.median(c.tokens):,.0f} tokens/s"
         for c in calls
     )
+    deploy = data.in_prose(data.label("deploy")[0])
     return (
         "In panel a, with 16 agent sessions of the whole corpus, where the pool has room, tuned vLLM's V2V p95 and "
-        f"the change's in each of five rounds against the SLO of {seconds(slo)} s ({paired}); in panels b to d, the "
-        "change with two, four and six calls beside 24 agent sessions, on the same three samples of the agents, each "
-        "run's p95 over that many callers' SLO, "
-        "the share of the engine's steps in which the budget cap held agent prefill, and the agents' tokens a "
-        f"second over the calls' first 240 s ({counts})."
+        f"{deploy}'s in each of five rounds against the SLO of {seconds(slo)} s ({paired}); in panels b to d, "
+        f"{deploy} with two, four and six callers beside 24 agent sessions, on the same three samples of the agents, "
+        "each run's p95 over that many callers' SLO, the share of the engine's steps in which the budget cap held "
+        f"agent prefill, and the agents' tokens a second over the calls' first 240 s ({counts})."
     )
 
 
-MARGIN_FLOOR = 1500
-"""Where Figure 12a's axis of p95 starts, in ms: its dumbbells encode position, and every round's two p95s lie between
-2.0 and 3.9 s, so an axis from zero would leave half the panel empty and squeeze the gaps at the SLO."""
+MARGIN_TOP = 4000
+"""Figure 12a's axis of p95 in ms, from zero, as every latency scale is, past the slowest round's 3.83 s."""
+MARGIN_A = "(a) 16 sessions of the whole corpus"
+"""Panel a's title: what its rounds ran beside; the caption says that the pool has room there."""
 
 
 def margin(out: Path) -> list[Path]:
@@ -1811,61 +1979,63 @@ def margin(out: Path) -> list[Path]:
 
 MARGIN_PANELS = (
     ("(b) p95 over the SLO (ms)", (0, 400), [0, 200, 400], "over", "{:+,.0f}"),
-    ("(c) Steps holding agent prefill", (0, 1), [0, 0.5, 1], "held", "{:.0%}"),
-    ("(d) Agents' tokens/s, first 240 s", (0, 4000), [0, 2000, 4000], "tokens", "{:,.0f}"),
+    ("(c) Steps held", (0, 1), [0, 0.5, 1], "held", "{:.0%}"),
+    (
+        "(d) Agents' tokens/s over the calls' first 240 s",
+        (0, 4000),
+        [0, 2000, 4000],
+        "tokens",
+        "{:,.0f}",
+    ),
 )
-"""Panels b to d: each one's title, its scale's range, its ticks, the field it draws and its values' format."""
+"""Panels b to d: each one's title, which names its vertical axis's quantity and unit, its scale's range, its ticks,
+the field it draws and its values' format. Panel c's steps held are the budget cap's, as Figure 10's are, a share of
+the engine's steps."""
+MARGIN_V2V = "Voice-to-voice p95 (s)"
+"""Panel a's vertical axis, as Figures 8 and 11 name the measure."""
+MARGIN_CALLERS = "Callers beside 24 agent sessions"
+"""Panels b to d's axis, by the callers the caption and the text count."""
+
+
+def _pair_marks(s: Chart, x: float, tuned: float, deploy: float, r: float = 5.0) -> None:
+    """Tuned vLLM's mark and the configuration to deploy's at ``x``, each as labels.MARKS has it."""
+    for key, y in (("tuned", tuned), ("deploy", deploy)):
+        hue, shape, filled = config_mark(key)
+        s.mark(x, y, hue, shape, filled=filled, r=r)
 
 
 def _margin_round(s: Chart, a_x: Scale, a_y: Scale, rounds, slo: float) -> None:
     """Panel a's marks: the SLO's rule, and each round's two p95s joined, the key over the panel naming them."""
-    s.rule(a_x.start, a_x.end, a_y(slo), "slo")
-    s.text(
-        a_x.start + 6,
-        a_y(slo) + 22,
-        f"SLO {seconds(slo)} s",
-        size=NOTE,
-        cls="orange tint",
-        halo=True,
-    )
+    _h_threshold(s, a_x.start, a_x.end, a_y(slo), f"SLO {seconds(slo)} s")
     for k, tuned, change in rounds:
         s.trace([(a_x(k), a_y(tuned)), (a_x(k), a_y(change))], "hair", wire=False)
-        s.mark(a_x(k), a_y(tuned), "gray")
-        s.mark(a_x(k), a_y(change), "blue")
+        _pair_marks(s, a_x(k), a_y(tuned), a_y(change))
 
 
 def _margin_calls(s: Chart, calls, x: Scale, y: Scale, field: str, text: str) -> None:
-    """A panel of b to d: each caller count's runs and their median, with its value; in b each count's SLO."""
+    """A panel of b to d: each caller count's runs and their median, with its value; in b the SLO, each count's own,
+    the line its p95 is over, which the caption gives the values of."""
     if field == "over":
-        s.rule(x.start, x.end, y(0), "slo")
+        _h_threshold(s, x.start, x.end, y(0), "SLO")
     for c in calls:
         values = list(getattr(c, field))
         middle = statistics.median(values)
         column_rug(s, x(c.callers), [y(v) for v in values], "blue", median=y(middle))
         s.text(x(c.callers) + 18, y(middle) + 6, text.format(middle), size=NOTE, halo=True)
-        if field == "over":
-            s.text(
-                x(c.callers) + 18,
-                y(0) - 7,
-                f"SLO {seconds(c.slo)} s",
-                size=NOTE,
-                cls="orange tint",
-                halo=True,
-            )
 
 
 def _margin_narrow(rounds, calls, slo: float, path: Path, description: str) -> Path:
-    """The phone layout: panel a, then b to d one above the other on the same axis of callers."""
+    """The phone layout: panel a, then b to d one above the other on the same axis of callers, each plot ending short
+    of the canvas by its threshold's name."""
     s = Chart(NARROW, 1600, "Where the pool has room, and as calls overlap", description)
     x0 = 18
-    s.text(x0, 30, "(a) Where the pool has room", size=LABEL)
-    s.text(x0, 56, "16 agent sessions of the whole corpus", size=NOTE, cls="soft")
-    key = _pair_key(s, x0, 86, NARROW - 2 * x0)
-    s.text(x0, key + 40, "V2V p95 (s)", size=NOTE, cls="soft")
-    a_x = Scale(0.5, len(rounds) + 0.5, 64, NARROW - 24)
-    a_y = Scale(MARGIN_FLOOR, 4000, key + 344, key + 74)
-    marks = [m / 2 for m in range(int(MARGIN_FLOOR / 500), 9)]
-    y_axis(s, a_y, [m * 1000 for m in marks], [f"{m:g}" for m in marks], a_x.start, a_x.end)
+    s.text(x0, 30, MARGIN_A, size=LABEL)
+    key = _pair_key(s, x0, 60, NARROW - 2 * x0)
+    s.text(x0, key + 40, MARGIN_V2V, size=NOTE, cls="soft")
+    a_x = Scale(0.5, len(rounds) + 0.5, 64, NARROW - x0 - _h_room(f"SLO {seconds(slo)} s"))
+    a_y = Scale(0, MARGIN_TOP, key + 344, key + 74)
+    marks, labels = linear_ticks(MARGIN_TOP / 1000, 1)
+    y_axis(s, a_y, [m * 1000 for m in marks], labels, a_x.start, a_x.end)
     last = x_axis(
         s,
         a_x,
@@ -1876,20 +2046,20 @@ def _margin_narrow(rounds, calls, slo: float, path: Path, description: str) -> P
         title="Round",
     )
     _margin_round(s, a_x, a_y, rounds, slo)
-    x = Scale(1, 7.8, 54, NARROW - 30)  # room right of six for its labels
+    x = Scale(1, 7.8, 54, NARROW - x0 - _h_room("SLO"))  # room right of six for its labels
     callers = [c.callers for c in calls]
     y = last + 30
     for title, (lo, hi), ticks, field, text in MARGIN_PANELS:
-        y += 40
-        s.text(x0, y, title, size=LABEL)
+        y += 14
+        for line in wrap(title, NARROW - 2 * x0, LABEL):
+            y += 26
+            s.text(x0, y, line, size=LABEL)
         scale = Scale(lo, hi, y + 140, y + 36)
         labels = [f"{t:.0%}" if field == "held" else f"{t:,.0f}" for t in ticks]
         y_axis(s, scale, ticks, labels, x.start, x.end, axis=field != "over")
         _margin_calls(s, calls, x, scale, field, text)
         y = scale.start
-    last = x_axis(
-        s, x, callers, [str(n) for n in callers], None, y, title="Calls beside 24 agent sessions"
-    )
+    last = x_axis(s, x, callers, [str(n) for n in callers], None, y, title=MARGIN_CALLERS)
     s.height = last + 14
     return s.save(path)
 
@@ -1901,16 +2071,15 @@ def _margin_wide(rounds, calls, slo: float, path: Path, description: str) -> Pat
         "Where the pool has room, and as calls overlap",
         description,
     )
-
+    bottom = 536  # both plots' foot, so that their axes share a line
     # (a) The standard scenario, round by round.
     a_x = Scale(0.5, len(rounds) + 0.5, 96, 440)
-    a_y = Scale(MARGIN_FLOOR, 4000, 548, 136)
-    s.text(24, 30, "(a) Where the pool has room", size=LABEL)
-    s.text(24, 54, "16 agent sessions of the whole corpus", size=NOTE, cls="soft")
-    _pair_key(s, 24, 82, 416)
-    s.text(24, 110, "V2V p95 (s)", size=NOTE, cls="soft")
-    marks = [m / 2 for m in range(int(MARGIN_FLOOR / 500), 9)]
-    y_axis(s, a_y, [m * 1000 for m in marks], [f"{m:g}" for m in marks], a_x.start, a_x.end)
+    a_y = Scale(0, MARGIN_TOP, bottom, 136)
+    s.text(24, 30, MARGIN_A, size=LABEL)
+    _pair_key(s, 24, 62, 416)
+    s.text(24, 110, MARGIN_V2V, size=NOTE, cls="soft")
+    marks, labels = linear_ticks(MARGIN_TOP / 1000, 1)
+    y_axis(s, a_y, [m * 1000 for m in marks], labels, a_x.start, a_x.end)
     x_axis(
         s,
         a_x,
@@ -1922,28 +2091,24 @@ def _margin_wide(rounds, calls, slo: float, path: Path, description: str) -> Pat
     )
     _margin_round(s, a_x, a_y, rounds, slo)
 
-    # (b) to (d) As calls overlap, on one axis of callers, with room right of six for its labels.
-    x = Scale(1, 7.5, 640, 1100)
+    # (b) to (d) As calls overlap, on one axis of callers, with room right of six for its labels and right of the plot
+    # for the SLO's name; panel b's title on panel a's line.
+    x = Scale(1, 7.5, 640, 1120 - 24 - _h_room("SLO"))
     callers = [c.callers for c in calls]
+    height, pitch = 116, 182
     panels = [
-        (title, Scale(lo, hi, start, start - 110), ticks, field, text)
-        for (title, (lo, hi), ticks, field, text), start in zip(
-            MARGIN_PANELS, (220, 384, 548), strict=True
-        )
+        (title, Scale(lo, hi, 56 + height + pitch * k, 56 + pitch * k), ticks, field, text)
+        for k, (title, (lo, hi), ticks, field, text) in enumerate(MARGIN_PANELS)
     ]
+    if panels[-1][1].start != bottom:
+        raise ValueError(f"panel d's foot is {panels[-1][1].start}, not the figure's {bottom}")
     for title, y, ticks, field, text in panels:
-        s.text(560, y.end - 22, title, size=LABEL)
+        s.text(560, y.end - 26, title, size=LABEL)
         labels = [f"{t:.0%}" if field == "held" else f"{t:,.0f}" for t in ticks]
         y_axis(s, y, ticks, labels, x.start, x.end, axis=field != "over")
         _margin_calls(s, calls, x, y, field, text)
     last = x_axis(
-        s,
-        x,
-        callers,
-        [str(n) for n in callers],
-        None,
-        panels[-1][1].start,
-        title="Calls beside 24 agent sessions",
+        s, x, callers, [str(n) for n in callers], None, panels[-1][1].start, title=MARGIN_CALLERS
     )
     s.height = last + 14
     return s.save(path)
@@ -1960,23 +2125,26 @@ def _a100_description(
         f"{seconds(t.p95)} and {seconds(c.p95)} s"
         for t, c in zip(tuned.runs, change.runs, strict=True)
     )
+    deploy = data.in_prose(data.label("deploy")[0])
     caps = "; ".join(
-        f"at {cap:,}-token steps tuned vLLM {seconds(t.p95)} s at {t.tokens:,.0f} tokens/s, the change "
+        f"at {cap:,}-token steps tuned vLLM {seconds(t.p95)} s at {t.tokens:,.0f} tokens/s, {deploy} "
         f"{seconds(c.p95)} s at {c.tokens:,.0f} tokens/s, medians of {len(t.runs)} runs each"
         for cap, (t, c) in pairs.items()
     )
     return (
         "On the A100 beside 24 agent sessions: in panel a, at the RTX 5060 Ti's 512-token steps, tuned vLLM's V2V "
-        f"p95 and the change's in each of five rounds against the card's SLO of {seconds(slo)} s ({by_round}); in "
+        f"p95 and {deploy}'s in each of five rounds against the card's SLO of {seconds(slo)} s ({by_round}); in "
         "panel b, the agents' tokens a second over the calls' first 240 s against the V2V p95, each run and the "
-        f"medians, an arrow from tuned vLLM's median to the change's at the same step cap ({caps})."
+        f"medians, an arrow from tuned vLLM's median to {deploy}'s at the same step cap ({caps})."
     )
 
 
 def a100(out: Path) -> list[Path]:
-    """report-a100.svg: the A100. (a) At 512-token steps, tuned vLLM's p95 and the change's by round, joined per
-    round, against the card's SLO. (b) The trade-off at both step caps: the agents' tokens a second against the
-    p95, each run open, the medians filled, an arrow from tuned vLLM's median to the change's."""
+    """report-a100.svg: the A100. (a) At 512-token steps, tuned vLLM's p95 and the configuration to deploy's by round,
+    joined per round, against the card's SLO. (b) The trade-off at both step caps: the agents' tokens a second against
+    the p95, each run a small marker and each median a large one, an arrow from tuned vLLM's median to the
+    configuration to deploy's. Each configuration's marks are as labels.MARKS has them: tuned vLLM's open, the
+    configuration to deploy's filled."""
     rows = data.a100_rows()
     pairs = data.a100(rows)
     slo = data.slo_ms(rows)
@@ -1987,11 +2155,17 @@ def a100(out: Path) -> list[Path]:
     ]
 
 
+A100_RUN, A100_MEDIAN = 4.2, 7.0
+"""Panel b's markers' radii: a run's, and a median's, which the arrow joins."""
+
+
 def _a100_layout(pairs, slo: float, path: Path, description: str, width: float) -> Path:
-    """Panels a and b side by side, or on a phone one above the other."""
+    """Panels a and b side by side, or on a phone one above the other, each plot ending short of the canvas's or the
+    next panel's edge by the SLO's name, which stands outside it."""
     wide = width == WIDTH
     s = Chart(width, 1000, "The rules on an A100", description)
     y_top = 6000
+    slo_name = f"SLO {seconds(slo)} s"
 
     # (a) By round, at 512-token steps.
     tuned, change = pairs[512]
@@ -1999,8 +2173,12 @@ def _a100_layout(pairs, slo: float, path: Path, description: str, width: float) 
     s.text(x0, 30, "(a) Each round, 512-token steps", size=LABEL)
     # The key under the title, and on a phone, where it takes two rows, the plot under it.
     shift = max(0.0, _pair_key(s, x0, 58, 452 if wide else width - 2 * x0) + 26 - 84)
-    s.text(x0, 84 + shift, "V2V p95 (s)", size=NOTE, cls="soft")
-    a_x = Scale(0.5, len(tuned.runs) + 0.5, 96, 400) if wide else Scale(0.5, 5.5, 64, width - 24)
+    s.text(x0, 84 + shift, MARGIN_V2V, size=NOTE, cls="soft")
+    a_x = (
+        Scale(0.5, len(tuned.runs) + 0.5, 96, 400)
+        if wide
+        else Scale(0.5, 5.5, 64, width - x0 - _h_room(slo_name))
+    )
     y = (
         Scale(0, y_top, 450 + shift, 104 + shift)
         if wide
@@ -2010,31 +2188,28 @@ def _a100_layout(pairs, slo: float, path: Path, description: str, width: float) 
     y_axis(s, y, [m * 1000 for m in marks], labels, a_x.start, a_x.end)
     rounds = [run.round for run in tuned.runs]
     a_bottom = x_axis(s, a_x, rounds, [str(r) for r in rounds], None, y.start, title="Round")
-    s.rule(a_x.start, a_x.end, y(slo), "slo")
-    s.text(
-        a_x.start + 6, y(slo) + 22, f"SLO {seconds(slo)} s", size=NOTE, cls="orange tint", halo=True
-    )
+    _h_threshold(s, a_x.start, a_x.end, y(slo), slo_name)
     for t, c in zip(tuned.runs, change.runs, strict=True):
         if t.round != c.round:
             raise ValueError(
-                f"round {t.round} of tuned vLLM pairs with round {c.round} of the change"
+                f"round {t.round} of tuned vLLM pairs with round {c.round} of the configuration to deploy"
             )
         s.trace([(a_x(t.round), y(t.p95)), (a_x(c.round), y(c.p95))], "hair", wire=False)
-        s.mark(a_x(t.round), y(t.p95), "gray")
-        s.mark(a_x(c.round), y(c.p95), "blue")
+        _pair_marks(s, a_x(t.round), y(t.p95), y(c.p95))
 
     # (b) The trade-off at both step caps: beside (a), or on a phone under it, on the same scale of p95.
     if wide:
-        b_x = Scale(0, 16000, 580, 1040)
+        b_x = Scale(0, 16000, 580, WIDTH - 24 - _h_room(slo_name))
         s.text(500, 30, "(b) The agents' throughput against the voice tail", size=LABEL)
+        s.text(500, 84 + shift, MARGIN_V2V, size=NOTE, cls="soft")
     else:
-        b_x = Scale(0, 16000, 64, width - 32)  # its last tick's label on the canvas
+        b_x = Scale(0, 16000, 64, width - x0 - _h_room(slo_name))
         lines = wrap("(b) The agents' throughput against the voice tail", width - 36, LABEL)
         for k, line in enumerate(lines):
             s.text(18, a_bottom + 56 + 26 * k, line, size=LABEL)
         # Its own key under its title: on a phone it sits far under panel a's.
         top = _pair_key(s, 18, a_bottom + 56 + 26 * len(lines) + 4, width - 36) + 34
-        s.text(18, top - 4, "V2V p95 (s)", size=NOTE, cls="soft")
+        s.text(18, top - 4, MARGIN_V2V, size=NOTE, cls="soft")
         y = Scale(0, y_top, top + 20 + 346, top + 20)
     y_axis(s, y, [m * 1000 for m in marks], labels, b_x.start, b_x.end)
     ticks = [0, 4000, 8000, 12000, 16000]
@@ -2047,20 +2222,20 @@ def _a100_layout(pairs, slo: float, path: Path, description: str, width: float) 
         [f"{t:,}" for t in ticks],
         None,
         y.start,
-        title="Agents' tokens/s, first 240 s of the calls",
+        title="Agents' tokens/s over the calls' first 240 s",
     )
-    s.rule(b_x.start, b_x.end, y(slo), "slo")
-    s.text(
-        b_x.start + 6, y(slo) + 22, f"SLO {seconds(slo)} s", size=NOTE, cls="orange tint", halo=True
-    )
+    _h_threshold(s, b_x.start, b_x.end, y(slo), slo_name)
     for cap, (t, c) in pairs.items():
-        for config, hue in ((t, "gray"), (c, "blue")):
+        # Each run small and each median large, each configuration's marks as in (a).
+        for key, config in (("tuned", t), ("deploy", c)):
+            hue, shape, filled = config_mark(key)
             for run in config.runs:
-                s.mark(b_x(run.tokens), y(run.p95), hue)
+                s.mark(b_x(run.tokens), y(run.p95), hue, shape, filled=filled, r=A100_RUN)
         start, end = (b_x(t.tokens), y(t.p95)), (b_x(c.tokens), y(c.p95))
-        s.arrow(start, end, "blue")
-        s.mark(*start, "gray", filled=True, r=5.6)
-        s.mark(*end, "blue", filled=True, r=5.6)
+        s.arrow(start, end, config_mark("deploy")[0], gap=A100_MEDIAN + 3)
+        for key, at in (("tuned", start), ("deploy", end)):
+            hue, shape, filled = config_mark(key)
+            s.mark(*at, hue, shape, filled=filled, r=A100_MEDIAN)
         centre = statistics.mean(b_x(run.tokens) for run in (*t.runs, *c.runs))
         name = f"{cap:,}-token steps"
         if wide:
@@ -2082,12 +2257,13 @@ def _a100_layout(pairs, slo: float, path: Path, description: str, width: float) 
 
 # Two cards --------------------------------------------------------------------------------------------------------
 
+CARD_KEYS = {"stock": "tuned", "change": "deploy"}
+"""Each engine's configuration, by its key in data.LABELS: the rounds' stock engine runs the frozen box's flags, tuned
+vLLM, and the change runs the configuration to deploy."""
 CARD_ENGINES = {
-    "stock": (data.label("tuned")[0], "gray"),
-    "change": (data.label("deploy")[0], "blue"),
+    engine: (data.label(key)[0], config_mark(key)[0]) for engine, key in CARD_KEYS.items()
 }
-"""Each engine's name and hue: the rounds' stock engine runs the frozen box's flags, tuned vLLM, and the change runs
-the configuration to deploy."""
+"""Each engine's name and hue, as data.LABELS and labels.MARKS give its configuration's."""
 CARD_KINDS = {
     "dedicated": "Dedicated roles",
     "consolidation": "Consolidation",
@@ -2097,8 +2273,14 @@ CARD_KINDS = {
 CARD_DODGE = {"stock": -6.0, "change": 6.0}
 """Each engine's offset from its number of sessions in panel a, so that two shares a percentage point apart, as at
 two sessions, stay apart."""
-CARD_TOKENS = Scale(0, 15000, 712, 1040)
+CARD_SESSIONS = (0, 26, [0, 4, 8, 12, 16, 20, 24])
+"""Panel a's axis of agent sessions, linear, so that the step from 12 to 24 sessions is as long as it is: its range,
+past 24 sessions, and its ticks."""
+CARD_TOKENS = Scale(0, 15000, 744, 1040)
 """Panel b's agents' tokens a second, past the most any round did (14,352)."""
+CARDS_B = "(b) Agents' tokens/s over both cards"
+"""Panel b's title: an arrangement's agents' tokens a second, summed over its two cards; the caption says that a bar is
+the median of the rounds and a tick a round, and that panel a pools the consolidated card's rounds."""
 
 
 def _cards_and(items: Sequence[str]) -> str:
@@ -2146,8 +2328,8 @@ def _cards_description(c: data.TwoCards, sessions: Sequence[int]) -> str:
 
 
 def _cards_key(s: Chart, c: data.TwoCards, x: float, baseline: float) -> None:
-    """Panel b's key under its subtitle: a hatched bar is an arrangement that misses the requirement."""
-    entry = [(hatch_key(), f"misses the {c.requirement:.0%} requirement")]
+    """Panel b's key under its title: a hatched bar is an arrangement that misses the requirement."""
+    entry = [(hatch_key(), f"Misses the {c.requirement:.0%} requirement")]
     legend(s, x, baseline, entry, width=legend_width(entry))
 
 
@@ -2180,11 +2362,11 @@ def cards(out: Path) -> list[Path]:
 def _cards_lines(s: Chart, c: data.TwoCards, a_x: Scale, a_y: Scale) -> None:
     """Panel a's lines: each engine's consolidated card by its sessions, the key over the panel naming them."""
     for engine, cells in c.consolidated.items():
-        _, hue = CARD_ENGINES[engine]
-        points = [(a_x(k) + CARD_DODGE[engine], a_y(cell.share)) for k, cell in enumerate(cells)]
+        hue, shape, filled = config_mark(CARD_KEYS[engine])
+        points = [(a_x(cell.sessions) + CARD_DODGE[engine], a_y(cell.share)) for cell in cells]
         s.trace(points, f"{hue} trace")
         for px, py in points:
-            s.mark(px, py, hue, filled=True)
+            s.mark(px, py, hue, shape, filled=filled)
 
 
 def _cards_bar(
@@ -2204,43 +2386,29 @@ def _cards_narrow(c: data.TwoCards, sessions: Sequence[int], path: Path, descrip
     s = Chart(NARROW, 1600, "What sharing two cards buys", description)
     x0 = 18
     s.text(x0, 30, "(a) Replies over the SLO", size=LABEL)
-    s.text(x0, 54, f"the consolidated card, {len(c.rounds)} rounds pooled", size=NOTE, cls="soft")
-    shift = _pair_key(s, x0, 80, NARROW - 2 * x0, filled=True) - 65
-    a_x = Scale(-0.5, len(sessions) - 0.5, 64, NARROW - 112)
+    shift = _pair_key(s, x0, 60, NARROW - 2 * x0) - 65
+    lo, hi, ticks_a = CARD_SESSIONS
+    a_x = Scale(lo, hi, 64, NARROW - x0 - _h_room(ALLOWED))
     a_y = Scale(0, 1, 340 + shift, 90 + shift)
     marks = [0.0, 0.25, 0.5, 0.75, 1.0]
     y_axis(s, a_y, marks, [pct(m) for m in marks], a_x.start, a_x.end)
     last = x_axis(
         s,
         a_x,
-        list(range(len(sessions))),
-        [str(n) for n in sessions],
+        ticks_a,
+        [str(n) for n in ticks_a],
         None,
         a_y.start,
         title="Agent sessions beside both calls",
     )
-    s.rule(a_x.start, a_x.end, a_y(c.requirement), "slo")
-    s.text(
-        a_x.end + 10,
-        a_y(c.requirement) + 6,
-        f"at most {c.requirement:.0%}",
-        size=NOTE,
-        cls="orange tint",
-    )
+    _h_threshold(s, a_x.start, a_x.end, a_y(c.requirement), f"at most {c.requirement:.0%}")
     _cards_lines(s, c, a_x, a_y)
     # (b) Each arrangement's agents' tokens a second, against the hurdle, under its kind's heading.
     y = last + 56
-    s.text(x0, y, "(b) Agents' tokens/s", size=LABEL)
-    s.text(
-        x0,
-        y + 24,
-        f"summed over both cards, median of {len(c.rounds)} rounds",
-        size=NOTE,
-        cls="soft",
-    )
-    _cards_key(s, c, x0, y + 50)
+    s.text(x0, y, CARDS_B, size=LABEL)
+    _cards_key(s, c, x0, y + 30)
     b = Scale(CARD_TOKENS.lo, CARD_TOKENS.hi, x0, NARROW - 80)
-    top = y + 96
+    top = y + 76
     y = top + 4
     thick = 18
     ticks, labels = linear_ticks(b.hi, 5000)
@@ -2251,17 +2419,17 @@ def _cards_narrow(c: data.TwoCards, sessions: Sequence[int], path: Path, descrip
         s.text(x0, y + 18, heading, size=NOTE, cls="mute")
         y += 26
         for a in members:
-            band = y + 46 + _row_label(s, x0, y + 20, _card_row(a), _card_sessions(a), NARROW - x0)
+            name = _sentence(_card_row(a))
+            band = y + 46 + _row_label(s, x0, y + 20, name, _card_sessions(a), NARROW - x0)
             band_grid(s, b, ticks, band - 16, band + 16)
             _cards_bar(s, c, a, b, band, thick)
             # The hurdle's rule across each band, over its bar as in the wide layout, clear of the names over them.
             s.vrule(b(c.threshold), band - 16, band + 16, "slo")
             y = band + 22
     bottom = y + 4
-    hurdle = b(c.threshold)
     s.text(
-        hurdle,
-        top - 10,
+        b(c.threshold),
+        top - 8,
         f"{c.hurdle:.0%} over the best dedicated, {c.threshold:,.0f}",
         size=NOTE,
         anchor="middle",
@@ -2278,8 +2446,11 @@ def _cards_narrow(c: data.TwoCards, sessions: Sequence[int], path: Path, descrip
 def _cards_wide(c: data.TwoCards, sessions: Sequence[int], path: Path, description: str) -> Path:
     s = Chart(WIDTH, 660, "What sharing two cards buys", description)
     b = CARD_TOKENS
-    left, right = 498, b.start - 16  # panel b's titles and headings, and its rows' names
-    top, heading, pitch, thick = 92, 28, 50, 20
+    left, right = (
+        470,
+        b.start - 16,
+    )  # panel b's titles and headings, and its rows' names, each on one line
+    top, heading, pitch, thick = 74, 28, 50, 20
 
     # (b)'s rows, under their kinds' headings, which set the plot's height: a name that would pass the headings' edge
     # breaks over two lines, its row a line taller.
@@ -2293,55 +2464,35 @@ def _cards_wide(c: data.TwoCards, sessions: Sequence[int], path: Path, descripti
         s.text(left, y + 16, name, size=NOTE, cls="mute")
         y += heading
         for a in members:
-            lines = wrap(_card_row(a), right - left, VALUE)
+            lines = wrap(_sentence(_card_row(a)), right - left, VALUE)
             extra = 22 * (len(lines) - 1)
             rows.append((y + extra + pitch / 2, a, lines))
             y += pitch + extra
     bottom = y + 4
 
     # (a) The consolidated card's replies over the SLO, on one axis of sessions.
-    a_x = Scale(-0.5, len(sessions) - 0.5, 96, 392)
+    lo, hi, ticks_a = CARD_SESSIONS
+    a_x = Scale(lo, hi, 96, 360)
     a_y = Scale(0, 1, bottom, top + 18)
     s.text(24, 30, "(a) Replies over the SLO", size=LABEL)
-    s.text(
-        24,
-        54,
-        f"the consolidated card, {len(c.rounds)} rounds pooled",
-        size=NOTE,
-        cls="soft",
-    )
-    _pair_key(s, 24, top - 10, left - 48, filled=True)
+    _pair_key(s, 24, top - 10, left - 48)
     marks = [0.0, 0.25, 0.5, 0.75, 1.0]
     y_axis(s, a_y, marks, [pct(m) for m in marks], a_x.start, a_x.end)
     last = x_axis(
         s,
         a_x,
-        list(range(len(sessions))),
-        [str(n) for n in sessions],
+        ticks_a,
+        [str(n) for n in ticks_a],
         None,
         a_y.start,
         title="Agent sessions beside both calls",
     )
-    s.rule(a_x.start, a_x.end, a_y(c.requirement), "slo")
-    s.text(
-        a_x.end + 10,
-        a_y(c.requirement) + 6,
-        f"at most {c.requirement:.0%}",
-        size=NOTE,
-        cls="orange tint",
-    )
+    _h_threshold(s, a_x.start, a_x.end, a_y(c.requirement), f"at most {c.requirement:.0%}")
     _cards_lines(s, c, a_x, a_y)
 
     # (b) Each arrangement's agents' tokens a second, against the hurdle: its bar the median of the rounds, over
     # each round's tick, which reaches past the bar so that it shows on the hatching too.
-    s.text(left, 30, "(b) Agents' tokens/s", size=LABEL)
-    s.text(
-        left,
-        54,
-        f"summed over both cards, median of {len(c.rounds)} rounds",
-        size=NOTE,
-        cls="soft",
-    )
+    s.text(left, 30, CARDS_B, size=LABEL)
     _cards_key(s, c, left, top - 10)
     ticks, labels = linear_ticks(b.hi, 5000)
     x_axis(s, b, ticks, labels, top, bottom, title=TOKENS_TITLE)
@@ -2350,15 +2501,12 @@ def _cards_wide(c: data.TwoCards, sessions: Sequence[int], path: Path, descripti
             s.text(right, y - 3 - 22 * (len(lines) - 1 - k), line, size=VALUE, anchor="end")
         s.text(right, y + 19, _card_sessions(a), size=NOTE, anchor="end", cls="soft")
         _cards_bar(s, c, a, b, y, thick)
-    hurdle = b(c.threshold)
-    s.vrule(hurdle, top, bottom, "slo")
-    s.text(
-        hurdle,
-        top - 10,
+    _v_threshold(
+        s,
+        b(c.threshold),
+        top,
+        bottom,
         f"{c.hurdle:.0%} over the best dedicated, {c.threshold:,.0f}",
-        size=NOTE,
-        anchor="middle",
-        cls="orange tint",
     )
     s.height = last + 14
     return s.save(path)
@@ -2366,13 +2514,21 @@ def _cards_wide(c: data.TwoCards, sessions: Sequence[int], path: Path, descripti
 
 # The step cap's five rounds ----------------------------------------------------------------------------------------
 
-STEP_CAP_ROWS = {
-    ("tuned", 512): (data.label("tuned")[0], "512-token steps", "gray", "circle", False),
-    ("change", 512): (data.label("deploy")[0], "512-token steps", "sky", "circle", False),
-    ("change", 256): (data.label("deploy")[0], "256-token steps", "blue", "circle", True),
-}
-"""Each configuration of the step cap's comparison by (engine, step cap): its name (data.LABELS), its step cap as the
-note under it, its hue, its marker and whether the marker is filled (the deployment's own step cap)."""
+STEP_CAP_KEYS = {("tuned", 512): "tuned", ("change", 512): "deploy", ("change", 256): "deploy"}
+"""Each configuration of the step cap's comparison by (engine, step cap): its key in data.LABELS."""
+
+
+def _step_cap_row(c: data.StepCap) -> tuple[str, str, str, str, bool]:
+    """A configuration's name (data.LABELS), its step cap as the note under it, and its mark as labels.MARKS has it:
+    tuned vLLM's open circle, and the configuration to deploy's filled blue circle at the deployment's 256-token steps
+    and, at the 512 W5 ran, labels.OTHER_SETTING's square, so that all three stay apart in grayscale."""
+    key = STEP_CAP_KEYS[(c.engine, c.cap)]
+    hue, shape, filled = config_mark(key)
+    if key == "deploy" and c.cap != 256:
+        shape = OTHER_SETTING
+    return data.label(key)[0], f"{c.cap}-token steps", hue, shape, filled
+
+
 REQUIREMENT = 0.05
 """The share of a run's replies the SLO allows over its threshold (docs/SLO.md, the two-card gate's requirement): the
 line the step cap's rounds and the soak's hours are read against."""
@@ -2380,7 +2536,7 @@ ALLOWED = f"at most {REQUIREMENT:.0%}"
 
 
 def _step_cap_name(c: data.StepCap) -> str:
-    name, note, _, _, _ = STEP_CAP_ROWS[(c.engine, c.cap)]
+    name, note, _, _, _ = _step_cap_row(c)
     return f"{name}, {note}"
 
 
@@ -2411,65 +2567,73 @@ def step_cap(out: Path) -> list[Path]:
 
 
 def _step_cap_rounds(s: Chart, caps: Sequence[data.StepCap], x: Scale, y: Scale) -> None:
-    """Panel a's marks: in each round the three configurations' shares over the SLO, joined by a hair."""
+    """Panel a's marks: in each round the three configurations' shares over the SLO, joined by a hair, and the share
+    nearest the requirement named over its marker, where the eye cannot tell the marker from the requirement's line."""
+    nearest = min((c.rounds[k].share, k) for c in caps for k in range(len(c.rounds)))
     for k in range(len(caps[0].rounds)):
         shares = [c.rounds[k].share for c in caps]
         at = x(caps[0].rounds[k].round)
         s.trace([(at, y(min(shares))), (at, y(max(shares)))], "hair", wire=False)
         for c in caps:
-            _, _, hue, shape, filled = STEP_CAP_ROWS[(c.engine, c.cap)]
-            s.mark(at, y(c.rounds[k].share), hue, shape, filled=filled)
+            _, _, hue, shape, filled = _step_cap_row(c)
+            share = c.rounds[k].share
+            s.mark(at, y(share), hue, shape, filled=filled)
+            if (share, k) == nearest:
+                s.text(at, y(share) - 11, f"{share:.1%}", size=NOTE, anchor="middle", halo=True)
 
 
 def _step_cap_keys(caps: Sequence[data.StepCap]) -> list[tuple[Key, str]]:
     """Panel a's key: each configuration's marker and its name with its step cap."""
     entries = []
     for c in caps:
-        name, note, hue, shape, filled = STEP_CAP_ROWS[(c.engine, c.cap)]
+        name, note, hue, shape, filled = _step_cap_row(c)
         entries.append((mark_key(hue, shape, filled=filled), f"{name}, {note}"))
     return entries
 
 
 def _step_cap_requirement(s: Chart, x: Scale, y: Scale) -> None:
-    s.rule(x.start, x.end, y(REQUIREMENT), "slo")
-    s.text(x.start + 6, y(REQUIREMENT) - 8, ALLOWED, size=NOTE, cls="orange tint", halo=True)
+    _h_threshold(s, x.start, x.end, y(REQUIREMENT), ALLOWED)
 
 
 def _step_cap_tokens(s: Chart, c: data.StepCap, b: Scale, y: float) -> None:
     """A configuration's agents' tokens a second, each round a tick, their median a marker with its value."""
-    _, _, hue, shape, _ = STEP_CAP_ROWS[(c.engine, c.cap)]
+    _, _, hue, shape, filled = _step_cap_row(c)
     xs = [b(r.tokens) for r in c.rounds]
-    rug(s, xs, y, hue, shape, median=b(c.tokens), half=RUN_HALF)
+    rug(s, xs, y, hue, shape, median=b(c.tokens), half=RUN_HALF, filled=filled)
     s.text(max(xs) + 12, y + 6, f"{c.tokens:,.0f}", size=NOTE, halo=True)
 
 
 def _step_cap_wide(caps: Sequence[data.StepCap], path: Path, description: str) -> Path:
     s = Chart(WIDTH, 620, "The step cap that ships", description)
     rounds = [r.round for r in caps[0].rounds]
-    s.text(24, 30, "(a) Replies over the SLO, each round", size=LABEL)
-    key = legend_columns(s, 24, 62, _step_cap_keys(caps), columns=1, column=0)
-    s.text(24, key + 40, "Share of the round's replies", size=NOTE, cls="soft")
+    # The key over both panels, which name their configurations by it; then the panels' titles on one line, and their
+    # plots between one top and one baseline, set by (b)'s rows.
+    key = legend(s, 24, 30, _step_cap_keys(caps), width=WIDTH - 48)
+    titles = key + 48
+    s.text(24, titles, "(a) Replies over the SLO, each round", size=LABEL)
+    s.text(24, titles + 30, "Share of the round's replies", size=NOTE, cls="soft")
+    b = Scale(0, 4000, 840, 1040)
+    right = b.start - 24
+    s.text(660, titles, "(b) Agents' tokens/s", size=LABEL)
+    top, pitch = titles + 56, 76
+    ys = [top + 40 + pitch * k for k in range(len(caps))]
+    bottom = ys[-1] + 40
     x = Scale(0.5, len(rounds) + 0.5, 96, 420)
-    y = Scale(0, 1, key + 416, key + 66)
+    y = Scale(0, 1, bottom, top)
     marks = [0.0, 0.25, 0.5, 0.75, 1.0]
     y_axis(s, y, marks, [pct(m) for m in marks], x.start, x.end)
     x_axis(s, x, rounds, [str(r) for r in rounds], None, y.start, title="Round")
     _step_cap_requirement(s, x, y)
     _step_cap_rounds(s, caps, x, y)
     # (b) The agents' tokens a second, a row a configuration.
-    b = Scale(0, 4000, 840, 1040)
-    right = b.start - 24
-    s.text(660, 30, "(b) Agents' tokens/s", size=LABEL)
-    top, pitch = 90, 64
-    ys = [top + 34 + pitch * k for k in range(len(caps))]
     ticks, labels = linear_ticks(4000, 2000)
-    last = x_axis(s, b, ticks, labels, top, ys[-1] + 34, title=TOKENS_TITLE)
+    last = x_axis(s, b, ticks, labels, top, bottom, title=TOKENS_TITLE)
     for row_y, c in zip(ys, caps, strict=True):
-        name, note, _, _, _ = STEP_CAP_ROWS[(c.engine, c.cap)]
+        name, note, _, _, _ = _step_cap_row(c)
         s.text(right, row_y - 4, name, size=VALUE, anchor="end")
         s.text(right, row_y + 19, note, size=NOTE, anchor="end", cls="soft")
         _step_cap_tokens(s, c, b, row_y)
-    s.height = max(last, y.start + 50) + 14
+    s.height = last + 14
     return s.save(path)
 
 
@@ -2477,11 +2641,13 @@ def _step_cap_narrow(caps: Sequence[data.StepCap], path: Path, description: str)
     s = Chart(NARROW, 1000, "The step cap that ships", description)
     x0 = 18
     rounds = [r.round for r in caps[0].rounds]
-    s.text(x0, 30, "(a) Replies over the SLO, each round", size=LABEL)
-    baseline = legend_columns(s, x0, 62, _step_cap_keys(caps), columns=1, column=0)
-    s.text(x0, baseline + 40, "Share of the round's replies", size=NOTE, cls="soft")
-    x = Scale(0.5, len(rounds) + 0.5, 64, NARROW - 24)
-    y = Scale(0, 1, baseline + 360, baseline + 70)
+    # The key over both panels, as in the wide layout.
+    key = legend_columns(s, x0, 30, _step_cap_keys(caps), columns=1, column=0)
+    s.text(x0, key + 44, "(a) Replies over the SLO, each round", size=LABEL)
+    baseline = key + 44
+    s.text(x0, baseline + 30, "Share of the round's replies", size=NOTE, cls="soft")
+    x = Scale(0.5, len(rounds) + 0.5, 64, NARROW - x0 - _h_room(ALLOWED))
+    y = Scale(0, 1, baseline + 336, baseline + 56)
     marks = [0.0, 0.25, 0.5, 0.75, 1.0]
     y_axis(s, y, marks, [pct(m) for m in marks], x.start, x.end)
     last = x_axis(s, x, rounds, [str(r) for r in rounds], None, y.start, title="Round")
@@ -2494,7 +2660,7 @@ def _step_cap_narrow(caps: Sequence[data.StepCap], path: Path, description: str)
     yy += 12
     marks_b = [0, 2000, 4000]
     for c in caps:
-        name, note, _, _, _ = STEP_CAP_ROWS[(c.engine, c.cap)]
+        name, note, _, _, _ = _step_cap_row(c)
         band = yy + 40 + _row_label(s, x0, yy + 18, name, note, NARROW - x0, gap=7)
         band_grid(s, b, marks_b, band - 12, band + 12)
         _step_cap_tokens(s, c, b, band)
@@ -2510,12 +2676,14 @@ def _step_cap_narrow(caps: Sequence[data.StepCap], path: Path, description: str)
 # The optimization rounds -------------------------------------------------------------------------------------------
 
 OPT_ROWS = (
-    ("v1.14's configuration to deploy", "sky"),
-    ("the same with the first four additions", "blue"),
+    ("v1.14's configuration to deploy", OTHER_SETTING),
+    ("the same with the first four additions", "circle"),
 )
 """The optimization rounds' two configurations, a scenario's two rows in order: v1.14's configuration to deploy, and
 the same with the first four of version 1.15's additions to the engine (the fifth, the decode hold, is the follow-up
-rounds'); each its name and hue."""
+rounds'); each its name and its marker. Both are the configuration to deploy, in its blue (labels.MARKS); the version
+the deployment runs keeps its circle, and v1.14's is labels.OTHER_SETTING's square, as the rows have no names."""
+OPT_HUE = config_mark("deploy")[0]
 OPT_SHARE_STEP = 0.05
 """Panel a's ticks; its scale ends at the first tick past the worst round, and at 25% or more."""
 OPT_TOKENS_STEP = 5000
@@ -2523,6 +2691,8 @@ OPT_TOKENS_STEP = 5000
 whole corpus differ far more from round to round than the 24 sessions' do."""
 OPT_PITCH, OPT_GAP = 30, 34
 """A configuration's row, and the space between scenarios."""
+OPT_SHARE_TITLE = "Share of the round's replies"
+"""Panel a's axis title."""
 
 
 def _opt_pooled(rounds: Sequence[data.StepCapRound]) -> tuple[int, int]:
@@ -2582,10 +2752,10 @@ def opt_rounds(out: Path) -> list[Path]:
 def _opt_share(s: Chart, rounds: Sequence[data.StepCapRound], row: int, a: Scale, y: float) -> None:
     """A configuration's replies over the SLO: each round a tick, the rounds pooled a marker with its share, which
     stands clear of the requirement's rule."""
-    _, hue = OPT_ROWS[row]
+    _, shape = OPT_ROWS[row]
     over, replies = _opt_pooled(rounds)
     xs = [a(r.share) for r in rounds]
-    rug(s, xs, y, hue, median=a(over / replies), half=RUN_HALF)
+    rug(s, xs, y, OPT_HUE, shape, median=a(over / replies), half=RUN_HALF)
     label = f"{over / replies:.1%}"
     x = max([*xs, a(over / replies)]) + 12
     if x - 4 <= a(REQUIREMENT) <= x + measure(label, NOTE) + 4:
@@ -2597,18 +2767,20 @@ def _opt_tokens(
     s: Chart, rounds: Sequence[data.StepCapRound], row: int, b: Scale, y: float
 ) -> None:
     """A configuration's agents' tokens a second: each round a tick, their median a marker with its value."""
-    _, hue = OPT_ROWS[row]
+    _, shape = OPT_ROWS[row]
     median = data._median(r.tokens for r in rounds)
     xs = [b(r.tokens) for r in rounds]
-    rug(s, xs, y, hue, median=b(median), half=RUN_HALF)
+    rug(s, xs, y, OPT_HUE, shape, median=b(median), half=RUN_HALF)
     s.text(max(xs) + 12, y + 6, f"{median:,.0f}", size=NOTE, halo=True)
 
 
 def _opt_keys() -> list[tuple[Key, str]]:
-    return [(mark_key(hue, filled=True), name) for name, hue in OPT_ROWS]
+    """The key's entries, each name in sentence case."""
+    return [(mark_key(OPT_HUE, shape, filled=True), _sentence(name)) for name, shape in OPT_ROWS]
 
 
 def _opt_wide(scenarios: Sequence[data.OptScenario], path: Path, description: str) -> Path:
+    """Each scenario's name over its two rows, which the key names: a scenario is one heading, as on a phone."""
     s = Chart(WIDTH, 700, "The serving engine's additions in five rounds", description)
     names = 286  # the scenarios' names end here
     top_share = _opt_share_top(scenarios)
@@ -2616,27 +2788,24 @@ def _opt_wide(scenarios: Sequence[data.OptScenario], path: Path, description: st
     top_tokens = _opt_tokens_top(scenarios)
     b = Scale(0, top_tokens, 800, 1060)
     s.text(24, 30, "(a) Replies over the SLO", size=LABEL)
-    s.text(24, 54, "each round a tick, the rounds pooled a marker", size=NOTE, cls="soft")
-    key = legend_columns(s, 24, 88, _opt_keys(), columns=2, column=330)
+    key = legend_columns(s, 24, 64, _opt_keys(), columns=2, column=330)
     top = key + 30
     rows = []
-    y = top + 16
+    y = top
     for c in scenarios:
-        rows.append((y, c))
-        y += 2 * OPT_PITCH + OPT_GAP
-    bottom = y - OPT_GAP + 8
+        head, note = _opt_lines(c.name)
+        baseline = y + 26
+        baseline += _row_label(s, 24, baseline, head, note, names)
+        rows.append((baseline + 26, c))  # the scenario's first row, under its name
+        y = baseline + 26 + OPT_PITCH + 14
+    bottom = y
     marks = [k * OPT_SHARE_STEP for k in range(round(top_share / OPT_SHARE_STEP) + 1)]
-    x_axis(s, a, marks, [pct(m) for m in marks], top, bottom, title="share of the round's replies")
-    s.vrule(a(REQUIREMENT), top, bottom, "slo")
-    s.text(a(REQUIREMENT) + 6, top - 6, ALLOWED, size=NOTE, cls="orange tint", halo=True)
+    x_axis(s, a, marks, [pct(m) for m in marks], top, bottom, title=OPT_SHARE_TITLE)
+    _v_threshold(s, a(REQUIREMENT), top, bottom, ALLOWED)
     s.text(b.start, 30, "(b) Agents' tokens/s", size=LABEL)
-    s.text(b.start, 54, "each round a tick, their median a marker", size=NOTE, cls="soft")
     ticks, labels = linear_ticks(top_tokens, OPT_TOKENS_STEP)
     last = x_axis(s, b, ticks, labels, top, bottom, title=TOKENS_TITLE)
     for row_y, c in rows:
-        head, note = _opt_lines(c.name)
-        s.text(names, row_y + 6, head, size=VALUE, anchor="end")
-        s.text(names, row_y + OPT_PITCH + 6, note, size=NOTE, anchor="end", cls="soft")
         for k, rounds in enumerate((c.before, c.after)):
             _opt_share(s, rounds, k, a, row_y + k * OPT_PITCH)
             _opt_tokens(s, rounds, k, b, row_y + k * OPT_PITCH)
@@ -2648,14 +2817,15 @@ def _opt_narrow(scenarios: Sequence[data.OptScenario], path: Path, description: 
     s = Chart(NARROW, 1400, "The serving engine's additions in five rounds", description)
     x0 = 18
     s.text(x0, 30, "(a) Replies over the SLO", size=LABEL)
-    s.text(x0, 54, "each round a tick, pooled a marker", size=NOTE, cls="soft")
-    yy = legend_columns(s, x0, 88, _opt_keys(), columns=1, column=0)
+    yy = legend_columns(s, x0, 64, _opt_keys(), columns=1, column=0)
     top_share = _opt_share_top(scenarios)
     a = Scale(0, top_share, x0 + 6, NARROW - 70)
     marks = [
         k * 2 * OPT_SHARE_STEP for k in range(int(top_share / (2 * OPT_SHARE_STEP) + 1e-9) + 1)
     ]
-    yy += 18
+    # The requirement named once, over the scenarios, where its rule runs down each one's rows.
+    yy += 36
+    s.text(a(REQUIREMENT), yy, ALLOWED, size=NOTE, anchor="middle", cls="orange tint")
     for c in scenarios:
         band = yy + 24
         band += _row_label(s, x0, band, *_opt_lines(c.name), NARROW - x0, gap=7)
@@ -2667,7 +2837,8 @@ def _opt_narrow(scenarios: Sequence[data.OptScenario], path: Path, description: 
             _opt_share(s, rounds, k, a, row_y)
         yy = band + 34 + OPT_PITCH + 22
     last = x_axis(s, a, marks, [pct(m) for m in marks], None, yy - 8)
-    s.text(a(REQUIREMENT) + 6, last + 28, ALLOWED, size=NOTE, cls="orange tint")
+    last += 25
+    s.text(x0, last, OPT_SHARE_TITLE, size=NOTE, cls="soft")
     top_tokens = _opt_tokens_top(scenarios)
     b = Scale(0, top_tokens, x0 + 6, NARROW - 80)
     yy = last + 80
@@ -2685,6 +2856,132 @@ def _opt_narrow(scenarios: Sequence[data.OptScenario], path: Path, description: 
     for line in wrap(TOKENS_TITLE, NARROW - 36, NOTE):
         last += 25
         s.text(x0, last, line, size=NOTE, cls="soft")
+    s.height = last + 14
+    return s.save(path)
+
+
+# The serving engine's additions inside the engine ---------------------------------------------------------------------
+
+ADDITION_PANELS = (
+    ("(a) A call's first token", "first_p50", "first_p95", 400, 100),
+    ("(b) Its 16th token", "sixteenth_p50", "sixteenth_p95", 800, 200),
+)
+"""Each panel: its title, the fields of data.EnginePoint it draws at p50 and at p95, its scale's top in ms and its
+ticks' step. The tops stand past the slowest point, v1.14's 354 and 597 ms at p95, with room for its value."""
+ADDITIONS_AXIS = "Time (ms)"
+ADDITIONS_KEY = [(mark_key("blue", filled=True), "p50"), (mark_key("blue"), "p95")]
+"""The key: each point's p50 a filled marker, its p95 an open one, the two joined."""
+ADDITION_PITCH = 44
+"""A point's row in the wide layout, its name on one line."""
+ADDITION_NAMES = {
+    "a0-grow": "v1.14's serving profile",
+    "r0-grow": "+ the calls' prefixes kept on the GPU",
+    "r0j-grow": "+ the next batch just in time",
+    "r0h-grow": "retention + each turn announced",
+    "r0hj-grow": "+ just in time too",
+    "r0hjt-grow": "+ the agents' reservations taken",
+    "r0hjtd-grow": "+ their decodes held for 16 tokens",
+    "r0hjtd48-grow": "+ held for 48 tokens, the window: the profile",
+}
+"""Each adopted point's row, by its arm in the record's table.py, named as docs/REPORT.md's table of the engine points
+names it: each row adds to the one before it, but the announced turn's, which adds it to retention alone, and the next,
+which adds just in time to both."""
+
+
+def _addition_name(point: data.EnginePoint) -> str:
+    """A point's row's name (ADDITION_NAMES)."""
+    if point.arm not in ADDITION_NAMES:
+        raise ValueError(
+            f"no row name for {point.arm}: add the report's name for it to ADDITION_NAMES"
+        )
+    return ADDITION_NAMES[point.arm]
+
+
+def _additions_description(points: Sequence[data.EnginePoint]) -> str:
+    rows = "; ".join(
+        f"{_addition_name(p)}, {_runs_of_count(p.runs)}: the first token {p.first_p50:,.0f} and "
+        f"{p.first_p95:,.0f} ms, the 16th {p.sixteenth_p50:,.0f} and {p.sixteenth_p95:,.0f} ms"
+        for p in points
+    )
+    return (
+        "On the box, two calls beside 12 closed-loop agents, the calls' first token and their 16th token at p50 and "
+        "p95, each the median of the runs, as the serving profile gained each addition it adopted, each row adding to "
+        "the one before it but the announced turn's, which adds it to retention, and the next, which adds just in "
+        f"time to both: {rows}."
+    )
+
+
+def additions(out: Path) -> list[Path]:
+    """report-engine-points.svg and its phone layout: the serving engine's additions inside the engine, on the box, in
+    the order the serving profile gained them (the engine points record's table.py, its "adopted" table): each
+    point's p50 and p95 of (a) the calls' first token and (b) their 16th token, joined, the medians of its runs."""
+    points = data.engine_points()
+    description = _additions_description(points)
+    return [
+        _additions_wide(points, out / "report-engine-points.svg", description),
+        _additions_narrow(points, out / "report-engine-points-narrow.svg", description),
+    ]
+
+
+def _addition_marks(s: Chart, scale: Scale, y: float, p50: float, p95: float) -> None:
+    """A point's p50 and p95 joined on one row, the p50's value left of it and the p95's right of it."""
+    s.trace([(scale(p50), y), (scale(p95), y)], "blue range", wire=False)
+    s.mark(scale(p50), y, "blue", filled=True)
+    s.mark(scale(p95), y, "blue")
+    s.text(scale(p50) - 12, y + 6, f"{p50:,.0f}", size=NOTE, anchor="end", halo=True)
+    s.text(scale(p95) + 12, y + 6, f"{p95:,.0f}", size=NOTE, halo=True)
+
+
+def _additions_wide(points: Sequence[data.EnginePoint], path: Path, description: str) -> Path:
+    s = Chart(WIDTH, 800, "The serving engine's additions inside the engine", description)
+    right = 404  # the points' names end here, each on one line
+    spans = ((440, 730), (800, 1070))
+    legend(s, spans[0][0], 30, ADDITIONS_KEY, width=400)
+    top = 84
+    rows = []
+    for k, point in enumerate(points):
+        name = _addition_name(point)
+        if measure(name, VALUE) > right - 24:
+            raise ValueError(f"{name!r} does not fit its line")
+        rows.append((top + 30 + ADDITION_PITCH * k, name))
+    bottom = rows[-1][0] + 26
+    last = bottom
+    for (title, low, high, top_ms, step), span in zip(ADDITION_PANELS, spans, strict=True):
+        scale = Scale(0, top_ms, *span)
+        s.text(scale.start, 66, title, size=LABEL)
+        marks, labels = linear_ticks(top_ms, step)
+        last = max(last, x_axis(s, scale, marks, labels, top, bottom, title=ADDITIONS_AXIS))
+        for (row_y, _), point in zip(rows, points, strict=True):
+            _addition_marks(s, scale, row_y, getattr(point, low), getattr(point, high))
+    for row_y, name in rows:
+        s.text(right, row_y + 7, name, size=VALUE, anchor="end")
+    s.height = last + 14
+    return s.save(path)
+
+
+def _additions_narrow(points: Sequence[data.EnginePoint], path: Path, description: str) -> Path:
+    s = Chart(NARROW, 2400, "The serving engine's additions inside the engine", description)
+    x0 = 18
+    y = legend(s, x0, 30, ADDITIONS_KEY, width=NARROW - 2 * x0)
+    last = y
+    for k, (title, low, high, top_ms, step) in enumerate(ADDITION_PANELS):
+        scale = Scale(0, top_ms, x0 + 40, NARROW - 60)
+        marks, labels = linear_ticks(top_ms, step)
+        y = last + (56 if k else 44)
+        s.text(x0, y, title, size=LABEL)
+        y += 8
+        for point in points:
+            for line in wrap(_addition_name(point), NARROW - 2 * x0, VALUE):
+                y += 24
+                s.text(x0, y, line, size=VALUE)
+            band = y + 26
+            band_grid(s, scale, marks, band - 12, band + 12)
+            _addition_marks(s, scale, band, getattr(point, low), getattr(point, high))
+            y = band + 12
+        last = x_axis(s, scale, marks, labels, None, y + 4)
+        for line in wrap(ADDITIONS_AXIS, NARROW - 2 * x0, NOTE):
+            last += 25
+            s.text(x0, last, line, size=NOTE, cls="soft")
     s.height = last + 14
     return s.save(path)
 
@@ -2738,8 +3035,7 @@ alone, TIER_CSS's orange for a load on the copy engine, and the change's pale bl
 serves."""
 LOADS_TOP = 250
 """Panel b's scale in ms, past the longest step beside a load on the copy engine (208.8 ms)."""
-LOADS_SUBTITLE = "its longest during the load; alone, its median"
-LOADS_TITLE = "ms \N{BULLET} lower is better"
+LOADS_TITLE = "Time (ms)"
 TIER_CSS = ".g-orange{fill:var(--orange-w);stroke:var(--bar-line);stroke-width:1.1}"
 """A load on the copy engine's bar: pale in the orange of the charts' adverse marks (the SLO's rule, the wait for
 room's area), as a chart's bars are pale in their hue."""
@@ -2795,10 +3091,12 @@ def _tier_description(sources: Sequence[data.TokenSources], loads: data.StepLoad
         )
     steps = [f"{_ms(loads.loads[key].longest)} {prose}" for _, _, key, _, prose in LOAD_ROWS if key]
     return (
-        "In panel a, where vLLM found the prompt tokens at their first schedule beside 24 agent sessions on Gray, as "
+        "In panel a, where vLLM found the prompt tokens at their first schedule beside 24 agent sessions on the "
+        "second GPU node, as "
         "shares of them, with the agents' tokens a second over the calls' first 240 s and their median time to first "
         f"token: {'; '.join(rows[:-1])}; and {rows[-1]}; in panel b, a step's time beside one 1.46 GB load from the "
-        f"CPU tier on Gray's bare card, {_ms(loads.alone)} alone at the median of the steps before each load, and the "
+        f"CPU tier on that node's bare card, {_ms(loads.alone)} alone at the median of the steps before each load, "
+        "and the "
         f"longest during it {', '.join(steps[:-1])}, and {steps[-1]}."
     )
 
@@ -2807,8 +3105,8 @@ def tier(out: Path) -> list[Path]:
     """report-tier.svg and its phone layout: the CPU tier's two failures beside 24 agent sessions. (a) Where the prompt
     tokens came from at their first schedule, under first come first served at the 20 GiB tier and at 30 GiB and under
     the queue, beside each one's agents' tokens a second and median time to first token. (b) A step's time beside one
-    1.46 GB load from the tier on Gray's bare card, by the load's path: the copy engine, however it is cut, and vLLM's
-    Triton kernel with 4 programs."""
+    1.46 GB load from the tier on that node's bare card, by the load's path: the copy engine, however it is cut, and
+    vLLM's Triton kernel with 4 programs. The figure names no host: the second GPU node, Gray, ran both."""
     sources, loads = data.token_sources(), data.step_loads()
     description = _tier_description(sources, loads)
     return [
@@ -2824,7 +3122,7 @@ def _source_keys() -> list[tuple[Key, str]]:
 
         return Key(22, draw)
 
-    return [(key(fill), name) for name, fill in SOURCES]
+    return [(key(fill), _sentence(name)) for name, fill in SOURCES]
 
 
 def _shares(s: TierChart, x: Scale, y: float, thick: float, src: data.TokenSources) -> None:
@@ -2856,20 +3154,17 @@ def _tier_wide(
     # (a) The prompt tokens by source, a bar a point, its agents' tokens a second and TTFT beside it.
     a = Scale(0, 1, 312, 772)
     s.text(24, 30, "(a) Where the prompt tokens came from", size=LABEL)
-    s.text(
-        24, 54, "beside 24 agent sessions on Gray, at their first schedule", size=NOTE, cls="soft"
-    )
-    legend(s, 24, 88, _source_keys(), width=WIDTH - 48)
-    top, pitch, thick = 104, 64, 24
+    legend(s, 24, 64, _source_keys(), width=WIDTH - 48)
+    top, pitch, thick = 80, 64, 24
     ys = [top + 36 + pitch * k for k in range(len(sources))]
     bottom = ys[-1] + thick + 14
     marks = [0.0, 0.25, 0.5, 0.75, 1.0]
     last = x_axis(
-        s, a, marks, [pct(m) for m in marks], top, bottom, title="share of the prompt tokens"
+        s, a, marks, [pct(m) for m in marks], top, bottom, title="Share of the prompt tokens"
     )
     tokens_x, ttft_x = 905, 1040
-    s.text(tokens_x, ys[0] - 12, "agents' tokens/s", size=NOTE, anchor="end", cls="soft")
-    s.text(ttft_x, ys[0] - 12, "their TTFT p50", size=NOTE, anchor="end", cls="soft")
+    s.text(tokens_x, ys[0] - 12, "Agents' tokens/s", size=NOTE, anchor="end", cls="soft")
+    s.text(ttft_x, ys[0] - 12, "TTFT p50", size=NOTE, anchor="end", cls="soft")
     for y, name, src in zip(ys, TIER_NAMES, sources, strict=True):
         middle = y + thick / 2
         s.text(right, middle - 3, name, size=VALUE, anchor="end")
@@ -2881,8 +3176,7 @@ def _tier_wide(
     b = Scale(0, LOADS_TOP, 312, 1012)
     yb = last + 66
     s.text(24, yb, "(b) A step beside one 1.46 GB load from the CPU tier", size=LABEL)
-    s.text(24, yb + 24, LOADS_SUBTITLE, size=NOTE, cls="soft")
-    top_b, thick_b = yb + 44, 20
+    top_b, thick_b = yb + 22, 20
     y, rows = top_b + 8, []
     for heading, name, key, fill, _ in LOAD_ROWS:
         if heading:
@@ -2909,11 +3203,6 @@ def _tier_narrow(
     # (a)
     yy = 30
     s.text(x0, yy, "(a) Where the prompt tokens came from", size=LABEL)
-    for line in wrap(
-        "beside 24 agent sessions on Gray, at their first schedule", NARROW - 2 * x0, NOTE
-    ):
-        yy += 24
-        s.text(x0, yy, line, size=NOTE, cls="soft")
     yy = legend(s, x0, yy + 34, _source_keys(), width=NARROW - 2 * x0, pitch=25)
     a = Scale(0, 1, x0, NARROW - 26)
     thick = 22
@@ -2932,7 +3221,7 @@ def _tier_narrow(
         )
     marks = [0.0, 0.5, 1.0]
     last = x_axis(s, a, marks, [pct(m) for m in marks], None, yy + 14)
-    for line in wrap("share of the prompt tokens", NARROW - 2 * x0, NOTE):
+    for line in wrap("Share of the prompt tokens", NARROW - 2 * x0, NOTE):
         last += 25
         s.text(x0, last, line, size=NOTE, cls="soft")
     # (b)
@@ -2940,9 +3229,6 @@ def _tier_narrow(
     for line in ("(b) A step beside one 1.46 GB load", "from the CPU tier"):
         yy += 26
         s.text(x0, yy, line, size=LABEL)
-    for line in wrap(LOADS_SUBTITLE, NARROW - 2 * x0, NOTE):
-        yy += 24
-        s.text(x0, yy, line, size=NOTE, cls="soft")
     b = Scale(0, LOADS_TOP, x0, NARROW - 80)
     ticks = [0, 100, 200]
     thick = 20
@@ -2971,34 +3257,29 @@ def _tier_narrow(
 
 ENVELOPE_TITLE = "The card's envelope beside both calls"
 ENVELOPE_ROWS = {
-    ("The serving profile through v1.23", 4): ("The serving profile through v1.23", "sky"),
-    ("The queue and the SM copy", 12): ("+ the queue and the copy", "blue"),
-    ("The queue and the SM copy", 24): ("+ the queue and the copy", "blue"),
+    ("The serving profile through v1.23", 4): "The serving profile through v1.23",
+    ("The queue and the SM copy", 12): "+ the queue and the copy",
+    ("The queue and the SM copy", 24): "+ the queue and the copy",
 }
-"""Each configuration of the envelope's gate by its name in table.py's GATE and its agent sessions: its name as Table 11
-gives it, and its hue, the change's pale blue for the profile before version 1.24, a sibling of the one to deploy, and
-its saturated blue for version 1.24's at both counts."""
+"""Each configuration of the envelope's gate by its name in table.py's GATE and its agent sessions: its name as Table 10
+gives it. Each is a version of the configuration to deploy, in its blue and its circle (labels.MARKS): the rows' names
+tell them apart."""
+ENVELOPE_HUE = config_mark("deploy")[0]
 ENVELOPE_PANELS = (
-    (
-        "share",
-        "(a) Replies over the SLO",
-        "each round a tick, pooled a marker",
-        0.10,
-        0.05,
-        "{:.1%}",
-    ),
-    ("tokens", "(b) Agents' tokens/s", "the median a marker", 10000, 5000, "{:,.0f}"),
-    ("ttft_p99", "(c) Agents' TTFT p99", "the median a marker", 200, 100, "{:.0f}"),
+    ("share", "(a) Replies over the SLO", 0.10, 0.05, "{:.1%}"),
+    ("tokens", "(b) Agents' tokens/s", 10000, 5000, "{:,.0f}"),
+    ("ttft_p99", "(c) Agents' TTFT p99", 200, 100, "{:.0f} s"),
 )
-"""Each panel: the field of data.Envelope and its rounds it plots, its title and subtitle, its scale's top and step and
-its value's format. The tops stand past the worst round's 3 of 59 replies over the SLO (5.1%), the busiest round's 8,094
-tokens a second and the slowest round's p99 of 182 s."""
+"""Each panel: the field of data.Envelope and its rounds it plots, its title, its scale's top and step and its value's
+format, a latency's with its unit as every chart prints one. The tops stand past the worst round's 3 of 59 replies over
+the SLO (5.1%), the busiest round's 8,094 tokens a second and the slowest round's p99 of 182 s. The caption says what a
+tick and a marker are."""
 ENVELOPE_TITLES = {
-    "share": "share of the round's replies",
+    "share": "Share of the round's replies",
     "tokens": TOKENS_TITLE,
-    "ttft_p99": "seconds \N{BULLET} lower is better",
+    "ttft_p99": "Time (s)",
 }
-"""Each panel's axis title."""
+"""Each panel's axis title, under a panel title that names its measure."""
 ENVELOPE_PITCH = 56
 """A configuration's row in the wide layout, its name over its note."""
 
@@ -3006,8 +3287,8 @@ ENVELOPE_PITCH = 56
 def _envelope_description(rows: Sequence[data.Envelope]) -> str:
     cells = []
     for k, c in enumerate(rows):
-        name, _ = ENVELOPE_ROWS[(c.name, c.sessions)]
-        named = k == 0 or name != ENVELOPE_ROWS[(rows[k - 1].name, rows[k - 1].sessions)][0]
+        name = ENVELOPE_ROWS[(c.name, c.sessions)]
+        named = k == 0 or name != ENVELOPE_ROWS[(rows[k - 1].name, rows[k - 1].sessions)]
         what = (
             f"{data.in_prose(name.removeprefix('+ '))} beside {c.sessions} agent sessions"
             if named
@@ -3051,45 +3332,36 @@ def _envelope_marks(
     s: Chart, c: data.Envelope, field: str, value: str, scale: Scale, y: float
 ) -> None:
     """A configuration's rounds in one panel at ``y``, each a tick, and the rounds pooled (its share over the SLO) or
-    their median a marker, its value after the rightmost and clear of the requirement's rule."""
-    _, hue = ENVELOPE_ROWS[(c.name, c.sessions)]
+    their median a marker, its value after the rightmost; a share, whose rounds end near the requirement's rule, at the
+    plot's right end, where it reads as the row's and not as the rule's name."""
     xs, at = [scale(getattr(r, field)) for r in c.rounds], scale(getattr(c, field))
-    rug(s, xs, y, hue, median=at, half=RUN_HALF)
+    rug(s, xs, y, ENVELOPE_HUE, median=at, half=RUN_HALF)
     label = value.format(getattr(c, field))
-    x = max([*xs, at]) + 12
-    if (
-        field == "share"
-        and x - 2 * CLEAR <= scale(REQUIREMENT) <= x + measure(label, NOTE) + 2 * CLEAR
-    ):
-        x = scale(REQUIREMENT) + 2 * CLEAR
-    s.text(x, y + 6, label, size=NOTE, halo=True)
+    if field == "share":
+        s.text(scale.end, y + 6, label, size=NOTE, anchor="end", halo=True)
+        return
+    s.text(max([*xs, at]) + 12, y + 6, label, size=NOTE, halo=True)
 
 
 def _envelope_wide(rows: Sequence[data.Envelope], path: Path, description: str) -> Path:
     s = Chart(WIDTH, 600, ENVELOPE_TITLE, description)
     names = 286  # the configurations' names end here
     spans = ((312, 520), (604, 784), (874, 1040))
-    top = 96
+    top = 76
     ys = [top + 34 + ENVELOPE_PITCH * k for k in range(len(rows))]
     bottom = ys[-1] + 30
     for y, c in zip(ys, rows, strict=True):
-        name, _ = ENVELOPE_ROWS[(c.name, c.sessions)]
+        name = ENVELOPE_ROWS[(c.name, c.sessions)]
         s.text(names, y - 3, name, size=VALUE, anchor="end")
         s.text(names, y + 19, f"{c.sessions} agent sessions", size=NOTE, anchor="end", cls="soft")
     last = bottom
-    for (field, title, subtitle, high, step, value), span in zip(
-        ENVELOPE_PANELS, spans, strict=True
-    ):
+    for (field, title, high, step, value), span in zip(ENVELOPE_PANELS, spans, strict=True):
         scale = Scale(0, high, *span)
         s.text(scale.start, 30, title, size=LABEL)
-        s.text(scale.start, 54, subtitle, size=NOTE, cls="soft")
         marks, labels = _envelope_axis(field, high, step)
         last = max(last, x_axis(s, scale, marks, labels, top, bottom, title=ENVELOPE_TITLES[field]))
         if field == "share":
-            s.vrule(scale(REQUIREMENT), top, bottom, "slo")
-            s.text(
-                scale(REQUIREMENT) + 6, top - 6, ALLOWED, size=NOTE, cls="orange tint", halo=True
-            )
+            _v_threshold(s, scale(REQUIREMENT), top, bottom, ALLOWED)
         for y, c in zip(ys, rows, strict=True):
             _envelope_marks(s, c, field, value, scale, y)
     s.height = last + 14
@@ -3100,17 +3372,16 @@ def _envelope_narrow(rows: Sequence[data.Envelope], path: Path, description: str
     s = Chart(NARROW, 2000, ENVELOPE_TITLE, description)
     x0 = 18
     last = 0.0
-    for field, title, subtitle, high, step, value in ENVELOPE_PANELS:
+    for field, title, high, step, value in ENVELOPE_PANELS:
         scale = Scale(0, high, x0 + 6, NARROW - (80 if field == "tokens" else 70))
         marks, labels = _envelope_axis(field, high, step)
         yy = last + 56 if last else 30
         s.text(x0, yy, title, size=LABEL)
-        # A panel stands apart from the others here, and its subtitle says what a tick is.
-        ticks = subtitle if subtitle.startswith("each round") else f"each round a tick, {subtitle}"
-        s.text(x0, yy + 24, ticks, size=NOTE, cls="soft")
-        yy += 24
+        if field == "share":  # the requirement named once, over the rows its rule runs down
+            yy += 30
+            s.text(scale(REQUIREMENT), yy, ALLOWED, size=NOTE, anchor="middle", cls="orange tint")
         for c in rows:
-            name, _ = ENVELOPE_ROWS[(c.name, c.sessions)]
+            name = ENVELOPE_ROWS[(c.name, c.sessions)]
             band = yy + 34
             band += _row_label(
                 s, x0, band, name, f"{c.sessions} agent sessions", NARROW - x0, gap=7
@@ -3122,13 +3393,9 @@ def _envelope_narrow(rows: Sequence[data.Envelope], path: Path, description: str
             _envelope_marks(s, c, field, value, scale, row_y)
             yy = row_y + 6
         last = x_axis(s, scale, marks, labels, None, yy + 12)
-        if field == "share":
-            last += 28
-            s.text(scale(REQUIREMENT) + 6, last, ALLOWED, size=NOTE, cls="orange tint")
-        else:
-            for line in wrap(ENVELOPE_TITLES[field], NARROW - 2 * x0, NOTE):
-                last += 25
-                s.text(x0, last, line, size=NOTE, cls="soft")
+        for line in wrap(ENVELOPE_TITLES[field], NARROW - 2 * x0, NOTE):
+            last += 25
+            s.text(x0, last, line, size=NOTE, cls="soft")
     s.height = last + 14
     return s.save(path)
 
@@ -3189,7 +3456,7 @@ def soak(out: Path) -> list[Path]:
 def _soak_layout(soak: data.Soak, path: Path, description: str, width: float) -> Path:
     wide = width == WIDTH
     s = Chart(width, 800, "The 24-hour soak", description)
-    x0, x1 = (96.0, WIDTH - 190.0) if wide else (64.0, NARROW - 24.0)
+    x0, x1 = (96.0, WIDTH - 190.0) if wide else (64.0, NARROW - 18 - _h_room(ALLOWED))
     x = Scale(-0.5, 23.5, x0, x1)
     column = (x(1) - x(0)) * 0.62
     worst = max(soak.hours, key=lambda h: h.share)
@@ -3201,19 +3468,7 @@ def _soak_layout(soak: data.Soak, path: Path, description: str, width: float) ->
     ticks = [0.0, 0.02, 0.04, 0.06]
     y_axis(s, a, ticks, [pct(v) for v in ticks], x.start, x.end)
     _columns(s, [h.share for h in soak.hours], x, a, column)
-    s.rule(x.start, x.end, a(REQUIREMENT), "slo")
-    if wide:
-        s.text(x.end + 10, a(REQUIREMENT) + 6, ALLOWED, size=NOTE, cls="orange tint")
-    else:
-        s.text(
-            x.end,
-            a(REQUIREMENT) - 8,
-            ALLOWED,
-            size=NOTE,
-            anchor="end",
-            cls="orange tint",
-            halo=True,
-        )
+    _h_threshold(s, x.start, x.end, a(REQUIREMENT), ALLOWED)
     s.text(
         x(worst.hour) + column / 2 + 6,
         a(worst.share) + 2,
@@ -3247,7 +3502,7 @@ def _soak_layout(soak: data.Soak, path: Path, description: str, width: float) ->
         [str(h) for h in hour_ticks],
         None,
         b.start,
-        title="Hours since the soak began",
+        title="Time since the soak began (h)",
     )
     s.height = last + 14
     return s.save(path)
@@ -3256,10 +3511,10 @@ def _soak_layout(soak: data.Soak, path: Path, description: str, width: float) ->
 # The engine's starts and the kill drill ------------------------------------------------------------------------------
 
 PHASES = (
-    ("load", "process, weights"),
-    ("kv", "compile, KV cache"),
-    ("graphs", "kernels, CUDA graphs"),
-    ("serve", "until it serves"),
+    ("load", "Process, weights"),
+    ("kv", "Compile, KV cache"),
+    ("graphs", "Kernels, CUDA graphs"),
+    ("serve", "Until it serves"),
 )
 """The phases of a start's bar, each its key and its name in the legend, from the unit's start
 (flatshare_bench.drills.START_PHASES): the engine's process until its weights are loaded, torch.compile and the
@@ -3388,7 +3643,7 @@ def _starts_layout(
 ) -> Path:
     s = Phases(width, 800, "The engine's starts and its recovery", description)
     entries = [(_phase_key(key), name) for key, name in PHASES]
-    title = "Seconds from the kill, or from the unit's start"
+    title = "Time from the kill, or from the unit's start (s)"
     if width == WIDTH:
         legend(s, 24, 30, entries, width=WIDTH - 48)
         x = Scale(0, STARTS_TOP, 300, 976)
@@ -3431,8 +3686,8 @@ def _starts_layout(
 # The campaign map -------------------------------------------------------------------------------------------------
 
 MAP_START = 1792627200.0  # 2026-10-22 00:00 UTC
-MAP_DAYS = 12
-"""The campaign map's axis: 22 October 2026 to the end of 2 November, UTC, a day a band."""
+MAP_DAYS = 18
+"""The campaign map's axis: 22 October 2026 to the end of 8 November, UTC, a day a band."""
 DAY = 86400.0
 
 
@@ -3476,16 +3731,6 @@ def _rounds_and_samples(c: data.Campaign) -> str:
     return f"{runs}, {_count(len(c.seeds), 'sample', 'samples')}"
 
 
-def _releases(c: data.Campaign) -> str:
-    """The code a campaign ran, as the release it belongs to: "v1.0", "code after v0.3", "code before v0.1"."""
-    return " and ".join(r if r.startswith("v") else f"code {r}" for r in c.releases)
-
-
-def _campaign_detail(c: data.Campaign) -> str:
-    """What a campaign's bar carries beside its question: its rounds and samples, and the release its code was."""
-    return f"{_rounds_and_samples(c)}, on {_releases(c)}"
-
-
 def campaign_row(c: data.Campaign) -> tuple[str, str, str, str, str]:
     """A campaign's row in EXPERIMENTS' table under the map: its code, when it ran, its points, its rounds and
     samples, and the release its code was (BENCHMARKS and the records name the exact revision)."""
@@ -3496,19 +3741,19 @@ def campaign_row(c: data.Campaign) -> tuple[str, str, str, str, str]:
 def _campaigns_description(found: Sequence[data.Campaign]) -> str:
     rows = "; ".join(
         f"{c.code[0].lower() + c.code[1:] if c.code.startswith('The ') else c.code}, "
-        f"{c.question[0].lower() + c.question[1:]}, {_span(c)}, {_campaign_detail(c)}"
+        f"{c.question[0].lower() + c.question[1:]}, {_span(c)}"
         for c in found
     )
     return (
         f"A timeline of {_map_span()}, UTC, a bar for each campaign from its first run's start to its last "
-        f"run's end, with what it measured, its rounds and samples, and the code it ran: {rows}."
+        f"run's end, with what it measured: {rows}."
     )
 
 
 def campaigns(out: Path) -> list[Path]:
     """report-campaigns.svg and its phone layout: the campaign map. Each campaign a bar on one time axis, from its
-    first run's start to its last run's end, its code and question beside it, then its rounds, its samples of the
-    agents' traces and the code it ran, all from its record's run.json files (data.campaigns)."""
+    first run's start to its last run's end, its code and question beside it, all from its record's run.json files
+    (data.campaigns); EXPERIMENTS' table under the map gives each one's rounds, samples and code."""
     found = data.campaigns()
     description = _campaigns_description(found)
     return [
@@ -3531,23 +3776,26 @@ def _campaigns_layout(
         WIDTH - 24.0 if wide else NARROW - x0,
     )
     nights = [MAP_START + k * DAY for k in range(MAP_DAYS + 1)]
-    noons = [MAP_START + (k + 0.5) * DAY for k in range(MAP_DAYS)]
+    # Every day named on the wide axis, and every other one on a phone's, where 18 two-digit days would touch.
+    noons = [MAP_START + (k + 0.5) * DAY for k in range(0, MAP_DAYS, 1 if wide else 2)]
     days = [str(_at(noon).day) for noon in noons]
     thick, line = 16.0, 22.0
     y = 16.0
+    if not wide:  # the days over the first campaign too: on a phone the axis is a screen below it
+        _tick_labels(s, x, noons, days, y + 20)
+        y += 30
     rows = []
     for c in found:
         question = wrap(c.question, column, NOTE)
-        detail = wrap(_campaign_detail(c), column, NOTE)
-        rows.append((c, question, detail, y))
+        rows.append((c, question, y))
         if wide:
-            y += 20 + line * (len(question) + len(detail)) + 20
+            y += 20 + line * len(question) + 18
         else:
-            y += 20 + line * len(question) + 14 + thick + 8 + line * len(detail) + 20
+            y += 20 + line * len(question) + 14 + thick + 18
     bottom = y - 8
     if wide:
         band_grid(s, x, nights, 8, bottom)
-    for c, question, detail, top in rows:
+    for c, question, top in rows:
         s.text(x0, top + 20, c.code, size=VALUE)
         at = top + 20
         for text in question:
@@ -3558,11 +3806,7 @@ def _campaigns_layout(
         else:
             band = at + 14
             band_grid(s, x, nights, band - 4, band + thick + 4)
-            at = band + thick + 4
         s.bar(x(c.start), band, max(x(c.end) - x(c.start), 3.0), thick, "gray", name=c.code)
-        for text in detail:
-            at += line
-            s.text(x0, at, text, size=NOTE, cls="mute")
     last = x_axis(s, x, noons, days, None, bottom)
     s.rule(x.start, x.end, bottom)
     months = list(dict.fromkeys(f"{_at(noon):%B}" for noon in noons))
@@ -3592,10 +3836,12 @@ FIGURES = (
     agents,
     frontier,
     deployable,
+    ablations,
     margin,
     a100,
     cards,
     step_cap,
+    additions,
     opt_rounds,
     tier,
     envelope,

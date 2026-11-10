@@ -1,119 +1,117 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="420" height="826" viewBox="0 0 420 826" font-size="21" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="766" viewBox="0 0 420 766" font-size="21" role="img" aria-labelledby="title desc">
 <title id="title">The two waits in isolation</title>
 <desc id="desc">Four probe runs on the RTX 5060 Ti for each of stock vLLM, the KV preemption and the change at its 16-token window: in panel a, the KV case, the voice turn's first token while two agent requests of 18k tokens hold the pool (stock vLLM 4,900–4,971 ms; the KV preemption 219–290 ms; the change 216–294 ms); in panel b, the prefill case, its first token to its 16th while three agent prefills of 10k tokens run, the 16th at stock vLLM 1,220–1,529 ms; the KV preemption 1,211–1,528 ms; the change 536–615 ms.</desc>
 <!-- Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 (python/flatshare_bench/src/flatshare_bench/fonts/OFL.txt). -->
-<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}svg{--sky:#6fa1e3;--stage-endpointing:#dde1e7;--stage-wait:#9d87d8;--stage-decode:#a4dac1;--stage-tts:#8a929e;--stage-transport:#f3f4f6}@media(prefers-color-scheme:dark){svg{--sky:#3b69a6;--stage-endpointing:#2d333b;--stage-wait:#6a56ad;--stage-decode:#245c45;--stage-tts:#7d8692;--stage-transport:#1a1f26}}.sky{--c:var(--sky);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}.mark{fill:var(--page);stroke:var(--c);stroke-width:1.4}.mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.2}.cross{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round}.trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}.trace.thick{stroke-width:2.4}.trace.dashed{stroke-dasharray:8 5}.trace.dotted{stroke-width:2.6;stroke-dasharray:0 5.5;stroke-linecap:round}.median{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.hair{fill:none;stroke:var(--axis);stroke-width:1}.ref{fill:none;stroke:var(--c);stroke-width:1.5}.range{fill:none;stroke:var(--c);stroke-width:1.4}.run{fill:none;stroke:var(--c);stroke-width:1.5;stroke-linecap:butt}.band{fill:var(--a)}.arrow{fill:none;stroke:var(--c);stroke-width:1.6}.arrow-head{fill:var(--c)}.s-endpointing{fill:var(--stage-endpointing);stroke:var(--bar-line);stroke-width:1.1}.s-wait{fill:var(--stage-wait);stroke:var(--bar-line);stroke-width:1.1}.s-decode{fill:var(--stage-decode);stroke:var(--bar-line);stroke-width:1.1}.s-tts{fill:var(--stage-tts);stroke:var(--bar-line);stroke-width:1.1}.s-transport{fill:var(--stage-transport);stroke:var(--bar-line);stroke-width:1.1}</style>
-<rect class="page" width="420" height="826"/>
+<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}svg{--sky:#5a8fd6;--stage-endpointing:#dde1e7;--stage-wait:#9d87d8;--stage-decode:#a4dac1;--stage-tts:#8a929e;--stage-transport:#f3f4f6}@media(prefers-color-scheme:dark){svg{--sky:#3b69a6;--stage-endpointing:#2d333b;--stage-wait:#6a56ad;--stage-decode:#245c45;--stage-tts:#7d8692;--stage-transport:#1a1f26}}.sky{--c:var(--sky);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}.mark{fill:var(--page);stroke:var(--c);stroke-width:1.4}.mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.2}.cross{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round}.trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}.trace.thick{stroke-width:2.4}.trace.dashed{stroke-dasharray:8 5}.trace.dotted{stroke-width:2.6;stroke-dasharray:0 5.5;stroke-linecap:round}.median{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.hair{fill:none;stroke:var(--axis);stroke-width:1}.ref{fill:none;stroke:var(--c);stroke-width:1.5}.range{fill:none;stroke:var(--c);stroke-width:1.4}.run{fill:none;stroke:var(--c);stroke-width:1.5;stroke-linecap:butt}.band{fill:var(--a)}.arrow{fill:none;stroke:var(--c);stroke-width:1.6}.arrow-head{fill:var(--c)}.s-endpointing{fill:var(--stage-endpointing);stroke:var(--bar-line);stroke-width:1.1}.s-wait{fill:var(--stage-wait);stroke:var(--bar-line);stroke-width:1.1}.s-decode{fill:var(--stage-decode);stroke:var(--bar-line);stroke-width:1.1}.s-tts{fill:var(--stage-tts);stroke:var(--bar-line);stroke-width:1.1}.s-transport{fill:var(--stage-transport);stroke:var(--bar-line);stroke-width:1.1}</style>
+<rect class="page" width="420" height="766"/>
 <path d="M20 24.24A5 5 0 1 0 30 24.24A5 5 0 1 0 20 24.24Z" class="gray mark"/>
-<text x="40" y="30" font-size="18">a run's first token</text>
-<path d="M198.95 24.24A5 5 0 1 0 208.95 24.24A5 5 0 1 0 198.95 24.24Z" class="gray mark-fill"/>
-<text x="218.95" y="30" font-size="18">its 16th token</text>
+<text x="40" y="30" font-size="18">A run's first token</text>
+<path d="M203.23 24.24A5 5 0 1 0 213.23 24.24A5 5 0 1 0 203.23 24.24Z" class="gray mark-fill"/>
+<text x="223.23" y="30" font-size="18">Its 16th token</text>
 <text x="18" y="68">(a) The KV case</text>
-<text x="18" y="92" class="soft" font-size="18">two agent requests of 18k tokens fill the pool</text>
-<text x="18" y="124" font-size="20">Stock vLLM</text>
-<text x="128.04" y="124" class="soft" font-size="18">priority scheduling</text>
-<path d="M18 136V188" class="axis"/>
-<path d="M131.33 136V188" class="grid"/>
-<path d="M244.67 136V188" class="grid"/>
-<path d="M358 136V188" class="grid"/>
-<path d="M299.49 138V186" class="gray median"/>
-<path d="M290.67 145.5A5 5 0 1 0 300.67 145.5A5 5 0 1 0 290.67 145.5Z" class="gray mark"/>
-<path d="M294.69 156.5A5 5 0 1 0 304.69 156.5A5 5 0 1 0 294.69 156.5Z" class="gray mark"/>
-<path d="M294.58 167.5A5 5 0 1 0 304.58 167.5A5 5 0 1 0 294.58 167.5Z" class="gray mark"/>
-<path d="M294.41 178.5A5 5 0 1 0 304.41 178.5A5 5 0 1 0 294.41 178.5Z" class="gray mark"/>
-<text x="313.69" y="168" class="halo" font-size="18">4,968 ms</text>
-<text x="18" y="212" font-size="20">The KV preemption</text>
-<text x="194.4" y="212" class="soft" font-size="18">#63350</text>
-<path d="M18 224V276" class="axis"/>
-<path d="M131.33 224V276" class="grid"/>
-<path d="M244.67 224V276" class="grid"/>
-<path d="M358 224V276" class="grid"/>
-<path d="M34.41 226V274" class="sky median"/>
-<path d="M25.41 233.5A5 5 0 1 0 35.41 233.5A5 5 0 1 0 25.41 233.5Z" class="sky mark"/>
-<path d="M29.38 244.5A5 5 0 1 0 39.38 244.5A5 5 0 1 0 29.38 244.5Z" class="sky mark"/>
-<path d="M29.43 255.5A5 5 0 1 0 39.43 255.5A5 5 0 1 0 29.43 255.5Z" class="sky mark"/>
-<path d="M29.43 266.5A5 5 0 1 0 39.43 266.5A5 5 0 1 0 29.43 266.5Z" class="sky mark"/>
-<text x="48.43" y="256" class="halo" font-size="18">290 ms</text>
-<text x="18" y="300" font-size="20">The change</text>
-<text x="124.12" y="300" class="soft" font-size="18">16-token window</text>
-<path d="M18 312V364" class="axis"/>
-<path d="M131.33 312V364" class="grid"/>
-<path d="M244.67 312V364" class="grid"/>
-<path d="M358 312V364" class="grid"/>
-<path d="M34.41 314V362" class="blue median"/>
-<path d="M25.24 321.5A5 5 0 1 0 35.24 321.5A5 5 0 1 0 25.24 321.5Z" class="blue mark"/>
-<path d="M29.43 332.5A5 5 0 1 0 39.43 332.5A5 5 0 1 0 29.43 332.5Z" class="blue mark"/>
-<path d="M29.66 343.5A5 5 0 1 0 39.66 343.5A5 5 0 1 0 29.66 343.5Z" class="blue mark"/>
-<path d="M29.38 354.5A5 5 0 1 0 39.38 354.5A5 5 0 1 0 29.38 354.5Z" class="blue mark"/>
-<text x="48.66" y="344" class="halo" font-size="18">290 ms</text>
-<text x="18" y="391" text-anchor="middle" class="mute" font-size="18">0</text>
-<text x="131.33" y="391" text-anchor="middle" class="mute" font-size="18">2,000</text>
-<text x="244.67" y="391" text-anchor="middle" class="mute" font-size="18">4,000</text>
-<text x="358" y="391" text-anchor="middle" class="mute" font-size="18">6,000</text>
-<path d="M18 368H358" class="axis"/>
-<text x="18" y="416" class="soft" font-size="18">Time to the first token (ms)</text>
-<text x="18" y="464">(b) The prefill case</text>
-<text x="18" y="488" class="soft" font-size="18">three agent prefills of 10k tokens run</text>
-<text x="18" y="520" font-size="20">Stock vLLM</text>
-<text x="128.04" y="520" class="soft" font-size="18">priority scheduling</text>
-<path d="M18 532V584" class="axis"/>
-<path d="M188 532V584" class="grid"/>
-<path d="M358 532V584" class="grid"/>
-<path d="M273.08 534V582" class="gray median"/>
-<path d="M112.86 541.5H277.93" class="gray trace"/>
-<path d="M107.86 541.5A5 5 0 1 0 117.86 541.5A5 5 0 1 0 107.86 541.5Z" class="gray mark"/>
-<path d="M272.93 541.5A5 5 0 1 0 282.93 541.5A5 5 0 1 0 272.93 541.5Z" class="gray mark-fill"/>
-<path d="M105.72 552.5H273.17" class="gray trace"/>
-<path d="M100.72 552.5A5 5 0 1 0 110.72 552.5A5 5 0 1 0 100.72 552.5Z" class="gray mark"/>
-<path d="M268.17 552.5A5 5 0 1 0 278.17 552.5A5 5 0 1 0 268.17 552.5Z" class="gray mark-fill"/>
-<path d="M71.21 563.5H225.4" class="gray trace"/>
-<path d="M66.21 563.5A5 5 0 1 0 76.21 563.5A5 5 0 1 0 66.21 563.5Z" class="gray mark"/>
-<path d="M220.4 563.5A5 5 0 1 0 230.4 563.5A5 5 0 1 0 220.4 563.5Z" class="gray mark-fill"/>
-<path d="M110.14 574.5H273" class="gray trace"/>
-<path d="M105.14 574.5A5 5 0 1 0 115.14 574.5A5 5 0 1 0 105.14 574.5Z" class="gray mark"/>
-<path d="M268 574.5A5 5 0 1 0 278 574.5A5 5 0 1 0 268 574.5Z" class="gray mark-fill"/>
-<text x="291.93" y="564" class="halo" font-size="18">1,500 ms</text>
-<text x="18" y="608" font-size="20">The KV preemption</text>
-<text x="194.4" y="608" class="soft" font-size="18">#63350</text>
-<path d="M18 620V672" class="axis"/>
-<path d="M188 620V672" class="grid"/>
-<path d="M358 620V672" class="grid"/>
-<path d="M247.41 622V670" class="sky median"/>
-<path d="M112.52 629.5H277.76" class="sky trace"/>
-<path d="M107.52 629.5A5 5 0 1 0 117.52 629.5A5 5 0 1 0 107.52 629.5Z" class="sky mark"/>
-<path d="M272.76 629.5A5 5 0 1 0 282.76 629.5A5 5 0 1 0 272.76 629.5Z" class="sky mark-fill"/>
-<path d="M69.68 640.5H223.87" class="sky trace"/>
-<path d="M64.68 640.5A5 5 0 1 0 74.68 640.5A5 5 0 1 0 64.68 640.5Z" class="sky mark"/>
-<path d="M218.87 640.5A5 5 0 1 0 228.87 640.5A5 5 0 1 0 218.87 640.5Z" class="sky mark-fill"/>
-<path d="M70.02 651.5H224.38" class="sky trace"/>
-<path d="M65.02 651.5A5 5 0 1 0 75.02 651.5A5 5 0 1 0 65.02 651.5Z" class="sky mark"/>
-<path d="M219.38 651.5A5 5 0 1 0 229.38 651.5A5 5 0 1 0 219.38 651.5Z" class="sky mark-fill"/>
-<path d="M107.42 662.5H270.45" class="sky trace"/>
-<path d="M102.42 662.5A5 5 0 1 0 112.42 662.5A5 5 0 1 0 102.42 662.5Z" class="sky mark"/>
-<path d="M265.45 662.5A5 5 0 1 0 275.45 662.5A5 5 0 1 0 265.45 662.5Z" class="sky mark-fill"/>
-<text x="291.76" y="652" class="halo" font-size="18">1,350 ms</text>
-<text x="18" y="696" font-size="20">The change</text>
-<text x="124.12" y="696" class="soft" font-size="18">16-token window</text>
-<path d="M18 708V760" class="axis"/>
-<path d="M188 708V760" class="grid"/>
-<path d="M358 708V760" class="grid"/>
-<path d="M115.75 710V758" class="blue median"/>
-<path d="M72.06 717.5H122.55" class="blue trace"/>
-<path d="M67.06 717.5A5 5 0 1 0 77.06 717.5A5 5 0 1 0 67.06 717.5Z" class="blue mark"/>
-<path d="M117.55 717.5A5 5 0 1 0 127.55 717.5A5 5 0 1 0 117.55 717.5Z" class="blue mark-fill"/>
-<path d="M67.64 728.5H109.12" class="blue trace"/>
-<path d="M62.64 728.5A5 5 0 1 0 72.64 728.5A5 5 0 1 0 62.64 728.5Z" class="blue mark"/>
-<path d="M104.12 728.5A5 5 0 1 0 114.12 728.5A5 5 0 1 0 104.12 728.5Z" class="blue mark-fill"/>
-<path d="M68.49 739.5H109.97" class="blue trace"/>
-<path d="M63.49 739.5A5 5 0 1 0 73.49 739.5A5 5 0 1 0 63.49 739.5Z" class="blue mark"/>
-<path d="M104.97 739.5A5 5 0 1 0 114.97 739.5A5 5 0 1 0 104.97 739.5Z" class="blue mark-fill"/>
-<path d="M71.04 750.5H121.53" class="blue trace"/>
-<path d="M66.04 750.5A5 5 0 1 0 76.04 750.5A5 5 0 1 0 66.04 750.5Z" class="blue mark"/>
-<path d="M116.53 750.5A5 5 0 1 0 126.53 750.5A5 5 0 1 0 116.53 750.5Z" class="blue mark-fill"/>
-<text x="136.55" y="740" class="halo" font-size="18">575 ms</text>
-<text x="18" y="787" text-anchor="middle" class="mute" font-size="18">0</text>
-<text x="188" y="787" text-anchor="middle" class="mute" font-size="18">1,000</text>
-<text x="358" y="787" text-anchor="middle" class="mute" font-size="18">2,000</text>
-<path d="M18 764H358" class="axis"/>
-<text x="18" y="812" class="soft" font-size="18">Time from the request (ms)</text>
+<text x="18" y="94" font-size="20">Stock vLLM</text>
+<text x="128.04" y="94" class="soft" font-size="18">priority scheduling</text>
+<path d="M18 106V158" class="axis"/>
+<path d="M131.33 106V158" class="grid"/>
+<path d="M244.67 106V158" class="grid"/>
+<path d="M358 106V158" class="grid"/>
+<path d="M299.49 108V156" class="gray median"/>
+<path d="M290.67 115.5A5 5 0 1 0 300.67 115.5A5 5 0 1 0 290.67 115.5Z" class="gray mark"/>
+<path d="M294.69 126.5A5 5 0 1 0 304.69 126.5A5 5 0 1 0 294.69 126.5Z" class="gray mark"/>
+<path d="M294.58 137.5A5 5 0 1 0 304.58 137.5A5 5 0 1 0 294.58 137.5Z" class="gray mark"/>
+<path d="M294.41 148.5A5 5 0 1 0 304.41 148.5A5 5 0 1 0 294.41 148.5Z" class="gray mark"/>
+<text x="313.69" y="138" class="halo" font-size="18">4,968 ms</text>
+<text x="18" y="182" font-size="20">The KV preemption</text>
+<text x="194.4" y="182" class="soft" font-size="18">#63350</text>
+<path d="M18 194V246" class="axis"/>
+<path d="M131.33 194V246" class="grid"/>
+<path d="M244.67 194V246" class="grid"/>
+<path d="M358 194V246" class="grid"/>
+<path d="M34.41 196V244" class="sky median"/>
+<path d="M25.41 203.5A5 5 0 1 0 35.41 203.5A5 5 0 1 0 25.41 203.5Z" class="sky mark"/>
+<path d="M29.38 214.5A5 5 0 1 0 39.38 214.5A5 5 0 1 0 29.38 214.5Z" class="sky mark"/>
+<path d="M29.43 225.5A5 5 0 1 0 39.43 225.5A5 5 0 1 0 29.43 225.5Z" class="sky mark"/>
+<path d="M29.43 236.5A5 5 0 1 0 39.43 236.5A5 5 0 1 0 29.43 236.5Z" class="sky mark"/>
+<text x="48.43" y="226" class="halo" font-size="18">290 ms</text>
+<text x="18" y="270" font-size="20">The change</text>
+<text x="124.12" y="270" class="soft" font-size="18">16-token window</text>
+<path d="M18 282V334" class="axis"/>
+<path d="M131.33 282V334" class="grid"/>
+<path d="M244.67 282V334" class="grid"/>
+<path d="M358 282V334" class="grid"/>
+<path d="M34.41 284V332" class="sky median"/>
+<path d="M25.24 291.5A5 5 0 1 0 35.24 291.5A5 5 0 1 0 25.24 291.5Z" class="sky mark"/>
+<path d="M29.43 302.5A5 5 0 1 0 39.43 302.5A5 5 0 1 0 29.43 302.5Z" class="sky mark"/>
+<path d="M29.66 313.5A5 5 0 1 0 39.66 313.5A5 5 0 1 0 29.66 313.5Z" class="sky mark"/>
+<path d="M29.38 324.5A5 5 0 1 0 39.38 324.5A5 5 0 1 0 29.38 324.5Z" class="sky mark"/>
+<text x="48.66" y="314" class="halo" font-size="18">290 ms</text>
+<text x="18" y="361" text-anchor="middle" class="mute" font-size="18">0</text>
+<text x="131.33" y="361" text-anchor="middle" class="mute" font-size="18">2,000</text>
+<text x="244.67" y="361" text-anchor="middle" class="mute" font-size="18">4,000</text>
+<text x="358" y="361" text-anchor="middle" class="mute" font-size="18">6,000</text>
+<path d="M18 338H358" class="axis"/>
+<text x="18" y="386" class="soft" font-size="18">Time to the first token (ms)</text>
+<text x="18" y="434">(b) The prefill case</text>
+<text x="18" y="460" font-size="20">Stock vLLM</text>
+<text x="128.04" y="460" class="soft" font-size="18">priority scheduling</text>
+<path d="M18 472V524" class="axis"/>
+<path d="M188 472V524" class="grid"/>
+<path d="M358 472V524" class="grid"/>
+<path d="M273.08 474V522" class="gray median"/>
+<path d="M112.86 481.5H277.93" class="gray trace"/>
+<path d="M107.86 481.5A5 5 0 1 0 117.86 481.5A5 5 0 1 0 107.86 481.5Z" class="gray mark"/>
+<path d="M272.93 481.5A5 5 0 1 0 282.93 481.5A5 5 0 1 0 272.93 481.5Z" class="gray mark-fill"/>
+<path d="M105.72 492.5H273.17" class="gray trace"/>
+<path d="M100.72 492.5A5 5 0 1 0 110.72 492.5A5 5 0 1 0 100.72 492.5Z" class="gray mark"/>
+<path d="M268.17 492.5A5 5 0 1 0 278.17 492.5A5 5 0 1 0 268.17 492.5Z" class="gray mark-fill"/>
+<path d="M71.21 503.5H225.4" class="gray trace"/>
+<path d="M66.21 503.5A5 5 0 1 0 76.21 503.5A5 5 0 1 0 66.21 503.5Z" class="gray mark"/>
+<path d="M220.4 503.5A5 5 0 1 0 230.4 503.5A5 5 0 1 0 220.4 503.5Z" class="gray mark-fill"/>
+<path d="M110.14 514.5H273" class="gray trace"/>
+<path d="M105.14 514.5A5 5 0 1 0 115.14 514.5A5 5 0 1 0 105.14 514.5Z" class="gray mark"/>
+<path d="M268 514.5A5 5 0 1 0 278 514.5A5 5 0 1 0 268 514.5Z" class="gray mark-fill"/>
+<text x="291.93" y="504" class="halo" font-size="18">1,500 ms</text>
+<text x="18" y="548" font-size="20">The KV preemption</text>
+<text x="194.4" y="548" class="soft" font-size="18">#63350</text>
+<path d="M18 560V612" class="axis"/>
+<path d="M188 560V612" class="grid"/>
+<path d="M358 560V612" class="grid"/>
+<path d="M247.41 562V610" class="sky median"/>
+<path d="M112.52 569.5H277.76" class="sky trace"/>
+<path d="M107.52 569.5A5 5 0 1 0 117.52 569.5A5 5 0 1 0 107.52 569.5Z" class="sky mark"/>
+<path d="M272.76 569.5A5 5 0 1 0 282.76 569.5A5 5 0 1 0 272.76 569.5Z" class="sky mark-fill"/>
+<path d="M69.68 580.5H223.87" class="sky trace"/>
+<path d="M64.68 580.5A5 5 0 1 0 74.68 580.5A5 5 0 1 0 64.68 580.5Z" class="sky mark"/>
+<path d="M218.87 580.5A5 5 0 1 0 228.87 580.5A5 5 0 1 0 218.87 580.5Z" class="sky mark-fill"/>
+<path d="M70.02 591.5H224.38" class="sky trace"/>
+<path d="M65.02 591.5A5 5 0 1 0 75.02 591.5A5 5 0 1 0 65.02 591.5Z" class="sky mark"/>
+<path d="M219.38 591.5A5 5 0 1 0 229.38 591.5A5 5 0 1 0 219.38 591.5Z" class="sky mark-fill"/>
+<path d="M107.42 602.5H270.45" class="sky trace"/>
+<path d="M102.42 602.5A5 5 0 1 0 112.42 602.5A5 5 0 1 0 102.42 602.5Z" class="sky mark"/>
+<path d="M265.45 602.5A5 5 0 1 0 275.45 602.5A5 5 0 1 0 265.45 602.5Z" class="sky mark-fill"/>
+<text x="291.76" y="592" class="halo" font-size="18">1,350 ms</text>
+<text x="18" y="636" font-size="20">The change</text>
+<text x="124.12" y="636" class="soft" font-size="18">16-token window</text>
+<path d="M18 648V700" class="axis"/>
+<path d="M188 648V700" class="grid"/>
+<path d="M358 648V700" class="grid"/>
+<path d="M115.75 650V698" class="sky median"/>
+<path d="M72.06 657.5H122.55" class="sky trace"/>
+<path d="M67.06 657.5A5 5 0 1 0 77.06 657.5A5 5 0 1 0 67.06 657.5Z" class="sky mark"/>
+<path d="M117.55 657.5A5 5 0 1 0 127.55 657.5A5 5 0 1 0 117.55 657.5Z" class="sky mark-fill"/>
+<path d="M67.64 668.5H109.12" class="sky trace"/>
+<path d="M62.64 668.5A5 5 0 1 0 72.64 668.5A5 5 0 1 0 62.64 668.5Z" class="sky mark"/>
+<path d="M104.12 668.5A5 5 0 1 0 114.12 668.5A5 5 0 1 0 104.12 668.5Z" class="sky mark-fill"/>
+<path d="M68.49 679.5H109.97" class="sky trace"/>
+<path d="M63.49 679.5A5 5 0 1 0 73.49 679.5A5 5 0 1 0 63.49 679.5Z" class="sky mark"/>
+<path d="M104.97 679.5A5 5 0 1 0 114.97 679.5A5 5 0 1 0 104.97 679.5Z" class="sky mark-fill"/>
+<path d="M71.04 690.5H121.53" class="sky trace"/>
+<path d="M66.04 690.5A5 5 0 1 0 76.04 690.5A5 5 0 1 0 66.04 690.5Z" class="sky mark"/>
+<path d="M116.53 690.5A5 5 0 1 0 126.53 690.5A5 5 0 1 0 116.53 690.5Z" class="sky mark-fill"/>
+<text x="136.55" y="680" class="halo" font-size="18">575 ms</text>
+<text x="18" y="727" text-anchor="middle" class="mute" font-size="18">0</text>
+<text x="188" y="727" text-anchor="middle" class="mute" font-size="18">1,000</text>
+<text x="358" y="727" text-anchor="middle" class="mute" font-size="18">2,000</text>
+<path d="M18 704H358" class="axis"/>
+<text x="18" y="752" class="soft" font-size="18">Time from the request (ms)</text>
 </svg>

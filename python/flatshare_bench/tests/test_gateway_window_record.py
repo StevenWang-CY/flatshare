@@ -28,8 +28,12 @@ def _results() -> dict:
     return json.loads((RECORD / "results.json").read_text())
 
 
-def _first_token() -> str:
-    return f"{_results()['a']['paired_gateway_minus_direct_ms']['first_ms']['p50']:+.2f} ms"
+def _first_token() -> tuple[str, ...]:
+    """The record's first-token figure as a doc gives it: the paired difference with its sign, or, where the gateway
+    adds time, what it adds or added."""
+    p50 = _results()["a"]["paired_gateway_minus_direct_ms"]["first_ms"]["p50"]
+    signed = f"{p50:+.2f} ms"
+    return (signed, f"adds {p50:.2f} ms", f"added {p50:.2f} ms") if p50 > 0 else (signed,)
 
 
 def test_the_readmes_tables_are_what_the_results_give() -> None:
@@ -81,6 +85,6 @@ def test_the_run_is_the_one_the_readme_describes() -> None:
     "doc", ["README.md", "docs/SLO.md", "docs/REPORT.md", "crates/flatshare-gateway/README.md"]
 )
 def test_each_doc_that_cites_the_record_gives_its_first_token_figure(doc: str) -> None:
-    text = (REPO / doc).read_text()
+    text = " ".join((REPO / doc).read_text().split())
     assert "benchmarks/results/2026-10-29-gateway-window" in text
-    assert _first_token() in text
+    assert any(figure in text for figure in _first_token()), doc

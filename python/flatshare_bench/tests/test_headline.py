@@ -47,16 +47,6 @@ ROWS = {
     "Shared, the configuration to deploy": AB48,
 }
 """Each headline row, by the start of its first cell, and the points (campaign:point) whose runs it reports."""
-README_COLUMNS = [
-    "Voice p95, ms",
-    "Over the SLO, ms",
-    "Replies over the SLO",
-    "Agents' tokens/s",
-    "Agents' TTFT p50, s",
-    "Agents' TTFT p99, s",
-]
-"""The README's headline table's columns after the configuration's, in the order the test reads them."""
-NONE = "\u2014"  # an empty cell's dash
 REPORT_NONE = "\u2014"  # an empty cell's dash in the report's tables, as everywhere
 GOODPUT = "agents' tokens/s, first 240 s"
 MINUS = "\u2212"  # a negative difference's sign, as the docs print it
@@ -121,12 +111,6 @@ def rows_of(path: Path, header: str) -> list[list[str]]:
         body.append([cell.strip().replace("**", "") for cell in line.strip().strip("|").split("|")])
     assert body, f"{path}: no rows under {header!r}"
     return body
-
-
-def columns_of(path: Path, header: str) -> list[str]:
-    """The cells of the Markdown table header row that starts with ``header``."""
-    [line] = [line for line in path.read_text().splitlines() if line.startswith(header)]
-    return [cell.strip() for cell in line.strip().strip("|").split("|")]
 
 
 def passage(path: Path, start: str, end: str) -> str:
@@ -204,23 +188,26 @@ def step_caps() -> dict[str, dict]:
     return found
 
 
-def test_the_readmes_headline_table_is_the_records_medians() -> None:
-    header = "| Two calls beside 24 coding-agent sessions"
-    assert columns_of(REPO / "README.md", header)[1:] == README_COLUMNS
-    rows = rows_of(REPO / "README.md", header)
-    assert len(rows) == 6
-    for label, p95, over, replies, goodput, p50, p99 in rows:
-        runs = summaries(points_of(label))
-        voice = median(runs, "V2V p95")
-        assert p95 == f"{voice:,.0f}", label
-        assert replies == share(*over_slo(label)), label
-        if points_of(label) == ALONE:
-            assert (over, goodput, p50, p99) == (NONE,) * 4, label
-            continue
-        assert over == f"{voice - slo():+,.0f}".replace("-", MINUS), label
-        assert goodput == f"{median(runs, GOODPUT):,.0f}", label
-        assert p50 == f"{median(runs, 'agent TTFT p50') / 1000:.0f}", label
-        assert p99 == f"{median(runs, 'agent TTFT p99') / 1000:.0f}", label
+def test_the_readmes_headline_figure_and_its_text_are_the_records() -> None:
+    # The README shows the report's Figure 8, drawn from W5's records, with the report's alt text, and its caption and
+    # the paragraph under it give the voice tail over the SLO and the agents' token rate and first tokens from the same
+    # medians. The replies over the SLO are the opening's (the test below).
+    image = re.compile(r'figures/report-headline\.svg" width="100%"\s+alt="([^"]*)"')
+    readme, report = (
+        image.search(path.read_text()).group(1) for path in (REPO / "README.md", REPORT)
+    )
+    assert readme == report
+    tuned, change = (median(summaries(points), "V2V p95") for points in (FROZEN, AB48))
+    kept = median(summaries(AB48), GOODPUT) / median(summaries(FROZEN), GOODPUT)
+    text = passage(REPO / "README.md", "## Results", "The card serves")
+    for phrase in [
+        f"to {(change - slo()) / 1000:.2f} s over the SLO",
+        f"where tuned vLLM is {(tuned - slo()) / 1000:.1f} s over",
+        f"keep {kept:.0%} of their token rate",
+        f"waited {median(summaries(AB48), 'agent TTFT p50') / 1000:.0f} s for their first token",
+        f"against tuned vLLM's {median(summaries(FROZEN), 'agent TTFT p50') / 1000:.0f} s",
+    ]:
+        assert phrase in text, phrase
 
 
 def test_the_readmes_opening_and_the_reports_abstract_are_the_records() -> None:
@@ -257,7 +244,8 @@ def test_the_readmes_opening_and_the_reports_abstract_are_the_records() -> None:
         f"{WORDS[len(a100_change.runs)]} rounds",
     ]
     readme = passage(REPO / "README.md", "Flatshare runs a self-hosted", "## How it works")
-    for phrase in [*both, f"to {tuned:.1f} s", caps["Tuned vLLM, 512-token steps"]]:
+    replies = f"The replies over the SLO fall from {share(*tuned_over)} to {share(*change_over)}"
+    for phrase in [*both, replies, f"to {tuned:.1f} s", caps["Tuned vLLM, 512-token steps"]]:
         assert phrase in readme, phrase
     abstract = passage(REPORT, "## Abstract", "## Contents")
     for phrase in [

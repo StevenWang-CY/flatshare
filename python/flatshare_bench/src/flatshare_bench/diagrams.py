@@ -5,8 +5,9 @@
 The method figure, docs/figures/method.svg and method-narrow.svg, the README's and the report's: a voice agent and
 coding agents on one GPU, and the two scheduler rules of vLLM #63350 and #63351. (a) is a stage strip: a caller's turn
 through speech to text, vLLM's scheduler and text to speech, beside the coding agents' requests, the KV pool the
-scheduler allocates from below it. Its dashed outlines zoom into the panels below: the pool into (b), #63350's
-make-room, and the scheduler into (c), #63351's hold on agent prefill.
+scheduler allocates from below it. Its dashed outlines zoom into the panels below, each named by its rule as the report
+names it, and by its number: the pool into (b), the KV preemption (#63350), and the scheduler into (c), the budget cap
+(#63351).
 
 The blocks and steps are illustrative, and obey the rules they show (docs/REPORT.md §3). Make-room
 preempts lower-priority running requests in vLLM's own order, the latest arrival first, as few as make the
@@ -56,6 +57,10 @@ DECODE_MS, SHARED_MS = 18.0, 62.0
 middles of the recorded 16-20 ms and 60-65 ms gaps between the reply's tokens."""
 RESUMED = 2
 """Steps drawn after the window, where agent prefill shares the steps again."""
+STEPS_AXIS = "Engine steps from the reply's first token"
+"""(c)'s time axis: one box a step."""
+PANEL_H = 384.0
+"""(b) and (c)'s height, side by side and stacked: each panel's rows and its last labels, and its pad."""
 
 
 def make_room(free: int, holders: tuple[tuple[str, int], ...], need: int) -> list[str]:
@@ -115,7 +120,7 @@ def make_room_panel(
         for k, kind in enumerate(preempted)
     ]
 
-    s.panel(x, y, w, h, "#63350: make room for KV", "b", ground=ground)
+    s.panel(x, y, w, h, "The KV preemption, #63350", "b", ground=ground)
     x0 = x + 26
     pitch = min(26.0, (w - 52 - 30) / (POOL + TURN))
     height = 24
@@ -125,7 +130,7 @@ def make_room_panel(
     def span(a: int, b: int) -> tuple[float, float]:
         return col[a], col[b] - 4
 
-    # Stock vLLM: the pool is full; the turn waits beside it.
+    # Stock vLLM: the pool is full; the turn waits beside it, as the word over it says (the caption says until when).
     y1 = y + 84
     s.text(x0, y1 - 14, "vLLM 0.32", size=VALUE)
     _pool(s, x0, y1, before, pitch, height)
@@ -135,16 +140,12 @@ def make_room_panel(
         s.bracket(*span(a, b), y1 + height + 12, name)
     s.bracket(*span(held, POOL), y1 + height + 12, "free")
     s.bracket(turn_x, turn_x + pitch * TURN - 4, y1 + height + 12, "voice turn")
-    s.text(
-        x0,
-        y1 + height + 62,
-        "The turn waits until agent blocks are freed.",
-        size=NOTE,
-        cls="soft",
-    )
-    # #63350: the latest agent request is preempted, then the turn takes its blocks.
-    y2 = y1 + 160
-    s.text(x0, y2 - 14, "#63350", size=VALUE)
+    # Its state over it, as the victim's is over its blocks in the row under it.
+    s.text(turn_x + (pitch * TURN - 4) / 2, y1 - 12, "waiting", size=NOTE, anchor="middle")
+    # The KV preemption: the latest agent request is preempted, then the turn takes its blocks. The row's name stands a
+    # line over the victim's bracket, so that the two never read as one label.
+    y2 = y1 + 134
+    s.text(x0, y2 - 42, "The KV preemption", size=VALUE)
     _pool(s, x0, y2, preempted, pitch, height)
     for k in range(TURN):
         _cell(s, turn_x + pitch * k, y2, pitch - 4, height, VOICE)
@@ -164,20 +165,17 @@ def make_room_panel(
     )
     s.bracket(*span(taken[0], taken[-1] + 1), y3 + height + 12, "voice turn")
     s.bracket(*span(taken[-1] + 1, POOL), y3 + height + 12, "free")
-    # Where the victim went (docs/ARCHITECTURE.md §2): its KV is in the CPU tier when it is preempted.
-    note = f"{victims[0][0].upper()}{victims[0][1:]} waits; its KV is in the CPU tier."
-    for k, line in enumerate(wrap(note, w - 52, NOTE)):
-        s.text(x0, y3 + height + 64 + 22 * k, line, size=NOTE, cls="mute")
+    # Where the victim went (docs/ARCHITECTURE.md §2), its KV in the CPU tier when it is preempted, is the caption's.
 
 
 def hold_prefill_panel(
     s: Figure, x: float, y: float, w: float, h: float, *, ground: str = "b"
 ) -> None:
-    """(c): the engine's steps on a time axis from the reply's first: without #63351 (on stock vLLM, or with
-    #63350 alone, whose gaps the steps are drawn from) each carries an agent's prefill chunk beside the
-    reply's token; with #63351 the window's steps carry the reply alone, at decode speed, and agent prefill
+    """(c): the engine's steps on a time axis from the reply's first: on vLLM 0.32 (or with the KV preemption
+    alone, whose gaps the steps are drawn from) each carries an agent's prefill chunk beside the reply's
+    token; with the budget cap the window's steps carry the reply alone, at decode speed, and agent prefill
     resumes after it."""
-    s.panel(x, y, w, h, "#63351: hold agent prefill", "c", ground=ground)
+    s.panel(x, y, w, h, "The budget cap, #63351", "c", ground=ground)
     x0 = x + 26
     length = w - 52
     span_ms = WINDOW * DECODE_MS + RESUMED * SHARED_MS
@@ -186,8 +184,8 @@ def hold_prefill_panel(
     # The panel's key: what a step holds, on one line where it fits.
     ky = y + 72
     s.rect(x0, ky - 13, 14, 16, f"{VOICE} cell")
-    first = s.text(x0 + 22, ky, "the reply's token", size=NOTE)
-    second = "an agent's prefill chunk"
+    first = s.text(x0 + 22, ky, "The reply's token", size=NOTE)
+    second = "An agent's prefill chunk"
     kx = first.x1 + 22
     if kx + 38 + measure(second, NOTE) > x + w - 18:
         kx, ky = x0, ky + 26
@@ -206,10 +204,10 @@ def hold_prefill_panel(
             s.rect(left + decode, row_y, width - decode, height, f"{AGENT} cell")
         return at + ms
 
-    # Without #63351 (stock vLLM, or #63350 alone, whose gaps the steps are drawn from): every step shares
-    # the reply's token with an agent's prefill chunk.
+    # vLLM 0.32, as panel b's first row (or the KV preemption alone, whose gaps the steps are drawn from): every step
+    # shares the reply's token with an agent's prefill chunk.
     y1 = y + 122 + shift
-    s.text(x0, y1 - 12, "without #63351", size=VALUE)
+    s.text(x0, y1 - 12, "vLLM 0.32", size=VALUE)
     at, steps = 0.0, 0
     while at + SHARED_MS <= span_ms + 1e-9:
         at = step(at, y1, True)
@@ -217,9 +215,9 @@ def hold_prefill_panel(
     window_ms = WINDOW * DECODE_MS
     in_window = round(window_ms / SHARED_MS)
     s.bracket(x0, x0 + in_window * SHARED_MS * unit - 1.2, y1 + height + 12, f"{in_window} tokens")
-    # With #63351: the window's steps carry the reply alone; agent prefill resumes after it.
+    # The budget cap: the window's steps carry the reply alone; agent prefill resumes after it.
     y2 = y1 + 100
-    s.text(x0, y2 - 12, "with #63351", size=VALUE)
+    s.text(x0, y2 - 12, "The budget cap", size=VALUE)
     at = 0.0
     for _ in range(WINDOW):
         at = step(at, y2, False)
@@ -229,11 +227,10 @@ def hold_prefill_panel(
         x0, x0 + window_ms * unit - 1.2, y2 + height + 12, f"the reply's first {WINDOW} tokens"
     )
     s.bracket(x0 + window_ms * unit, x0 + span_ms * unit - 1.2, y2 + height + 12, "resumed")
-    # The time axis, from the reply's first token.
+    # The time axis, from the reply's first token: a box a step, which the key's boxes name.
     ay = y2 + height + 62
     s.time_axis(x0, x0 + length, ay)
-    caption = "time, one box per engine step, from the reply's first token"
-    for k, line in enumerate(wrap(caption, length, NOTE)):
+    for k, line in enumerate(wrap(STEPS_AXIS, length, NOTE)):
         s.text(x0, ay + 24 + 22 * k, line, size=NOTE, cls="mute")
 
 
@@ -432,11 +429,12 @@ SERVERS = (
 which runs the change (variant make-room-serve), the STT and the TTS."""
 NODES = (
     ("Phastform", "RTX 5060 Ti", "each server in its own namespace", False),
-    ("Gray", "a second card, when present", "servers in the host's namespace", True),
+    ("Gray", "RTX 5060 Ti", "servers in the host's namespace", True),
 )
 """The GPU nodes: the name, the card, where its servers' network namespaces are (Phastform's each the server's own,
 deploy/bin/in-private-net; Gray's the host's, deploy/gray/private-net-host.conf), and whether it is drawn as the
-second card of the two-card arrangement (ADR-0008), dashed, which the gateway reaches only with [[nodes]]."""
+second card of the two-card arrangement (ADR-0008), dashed, which the gateway reaches only with [[nodes]]: its dashes,
+and the caption, say that it is there only when present."""
 KEY = "TCP, a tenant's key"
 """How the coding agents reach the gateway: its one TCP listener, where every request needs a tenant's key, since other
 users of cyan reach loopback (deploy/cyan/gateway.example.toml; the agents' tenant is [tenants.agents])."""
@@ -538,14 +536,15 @@ def _architecture_wide(path: Path, title: str) -> Path:
     s = Diagram(WIDTH, 700, title, ARCHITECTURE_DESCRIPTION)
     nx, nw = 752.0, WIDTH - 24 - 752.0
     names = [[unit] for unit, _, _ in SERVERS]
-    node_h = 76 + len(SERVERS) * (UNIT_H + 22)
+    node_h = 88 + len(SERVERS) * (UNIT_H + 22)
     middles = []
     y = 12.0
     for name, card, spaces, second in NODES:
         baseline = _host(s, nx, y, nw, node_h, name, second=second)
         s.text(nx + nw - 18, baseline, card, size=NOTE, anchor="end", cls="soft")
-        s.text(nx + 18, y + 62, spaces, size=NOTE, cls="mute")
-        middles.append(_node_units(s, nx + 36, y + 76, nw - 72, names, not second, second))
+        s.text(nx + 18, y + 60, spaces, size=NOTE, cls="mute")
+        # The servers a line under the note, so that it stands clear of their namespaces' outlines.
+        middles.append(_node_units(s, nx + 36, y + 88, nw - 72, names, not second, second))
         y += node_h + 24
     bottom = y - 24
     # cyan, left: the voice plane, the gateway, the agents and a tunnel per node.
@@ -664,7 +663,7 @@ def _architecture_narrow(path: Path, title: str) -> Path:
     ]
     units_h = sum(UNIT_H + 22 * (len(lines) - 1) + 22 for lines in names)
     notes = [[*_lines(card, nw - 36), *_lines(spaces, nw - 36)] for _, card, spaces, _ in NODES]
-    top = ny + 62 + LINE * max(len(lines) for lines in notes)
+    top = ny + 70 + LINE * max(len(lines) for lines in notes)
     bottom = top + units_h - 2
     for k, ((name, card, _, second), tx) in enumerate(zip(NODES, (left, right), strict=True)):
         nx = x0 + k * (nw + 16)
@@ -940,10 +939,13 @@ def _card(
     calls: int,
     agents: str | None,
     note: str,
-) -> tuple[list[float], tuple[float, float]]:
+    calls_last: bool = False,
+) -> tuple[list[float], tuple[float, float], tuple[float, float]]:
     """A card: its name and ``note``, its call slots, ``calls`` of them taken, and its agents' slots, running
-    (``agents`` "run"), held back ("held", hatched) or none (None). The slots share one pitch, the most at which
-    the most slots fit the card. Returns its call slots' centres and its agents' row's left and right edges."""
+    (``agents`` "run"), held back ("held", hatched) or none (None); the call slots on the top row, or with
+    ``calls_last`` on the bottom one, which faces the other card. The slots share one pitch, the most at which the most
+    slots fit the card. Returns its call slots' centres, their top and bottom, and its agents' row's left and right
+    edges."""
     name, max_calls, max_agents = card
     s.rect(x, y, w, CARD_H, "box")
     s.text(x + 16, y + 30, name)
@@ -951,13 +953,13 @@ def _card(
     left = x + 86
     pitch = min(26.0, (x + w - 16 - left) / max(c[2] for c in CARDS))
     slot = round(pitch * 0.77)
-    centres = []
-    for row, (label, count, taken, hue) in enumerate(
-        (
-            ("calls", max_calls, calls, VOICE),
-            ("agents", max_agents, max_agents if agents else 0, AGENT),
-        )
-    ):
+    centres: list[float] = []
+    edges = (0.0, 0.0)
+    rows = [
+        ("calls", max_calls, calls, VOICE),
+        ("agents", max_agents, max_agents if agents else 0, AGENT),
+    ]
+    for row, (label, count, taken, hue) in enumerate(rows[::-1] if calls_last else rows):
         top = y + 52 + 38 * row
         s.text(x + 16, top + 15, label, size=NOTE, cls="mute")
         cells: list[str | None] = [hue] * taken + [None] * (count - taken)
@@ -968,11 +970,14 @@ def _card(
             cell=slot,
             height=slot,
             gap=pitch - slot,
-            hatched=frozenset(range(count)) if agents == "held" and row == 1 else frozenset(),
+            hatched=frozenset(range(count))
+            if agents == "held" and label == "agents"
+            else frozenset(),
         )
-        if row == 0:
+        if label == "calls":
             centres = [left + k * pitch + slot / 2 for k in range(count)]
-    return centres, (left, left + (max_agents - 1) * pitch + slot)
+            edges = (top + (20 - slot) / 2, top + (20 + slot) / 2)
+    return centres, edges, (left, left + (max_agents - 1) * pitch + slot)
 
 
 def two_cards(out: Path) -> list[Path]:
@@ -991,28 +996,50 @@ def two_cards(out: Path) -> list[Path]:
         ):
             px = 24 + k * (panel_w + 24) if wide else 16.0
             py = 12.0 if wide else bottom + (20 if k else 0)
-            first, second = py + 56, py + 56 + CARD_H + 84
+            # The cards a gap apart that holds (b)'s moved calls; stacked, (a) has nothing there and closes it.
+            gap = 84 if wide or letter == "b" else 32
+            first, second = py + 56, py + 56 + CARD_H + gap
             # Side by side, the panels share a height; stacked, only (b) holds the bracket under its spare.
             ph = second + CARD_H + 20 + (HELD_H if wide or letter == "b" else 0) - py
             s.panel(px, py, panel_w, ph, heading, letter, ground="b")
             cx = px + 20
             between = first + CARD_H + 48
+            # The first card's call slots on its bottom row and the spare's on its top, facing each other across the gap
+            # the moved calls cross: an arrow leaves the call slot it moves from, never another row.
             if letter == "a":
-                _card(s, cx, first, card_w, CARDS[0], calls=2, agents="run", note="the calls")
-                _card(s, cx, second, card_w, CARDS[1], calls=0, agents="run", note="warm spare")
-                s.text(cx, between, 'calls = "fill"', size=NOTE, cls="soft")
-            else:
-                taken, _ = _card(
-                    s, cx, first, card_w, CARDS[0], calls=0, agents=None, note="engine down"
+                _card(
+                    s,
+                    cx,
+                    first,
+                    card_w,
+                    CARDS[0],
+                    calls=2,
+                    agents="run",
+                    note="the calls",
+                    calls_last=True,
                 )
-                spare, (held_x0, held_x1) = _card(
+                _card(s, cx, second, card_w, CARDS[1], calls=0, agents="run", note="warm spare")
+                # The placement's key, calls = "fill", is the caption's: a configuration key is no label.
+            else:
+                taken, (_, from_y), _ = _card(
+                    s,
+                    cx,
+                    first,
+                    card_w,
+                    CARDS[0],
+                    calls=0,
+                    agents=None,
+                    note="engine down",
+                    calls_last=True,
+                )
+                spare, (to_y, _), (held_x0, held_x1) = _card(
                     s, cx, second, card_w, CARDS[1], calls=2, agents="held", note="covering"
                 )
                 s.bracket(held_x0, held_x1, second + CARD_H + 9, HELD)
                 for a, b in zip(
                     taken, spare, strict=True
-                ):  # from the card, clear of its agents' slots
-                    s.flow([(a, first + CARD_H), (b, second + 52)], hue=VOICE, radius=0)
+                ):  # from each call's own slot to its new one
+                    s.flow([(a, from_y), (b, to_y)], hue=VOICE, radius=0)
                 for j, line in enumerate(MOVED):
                     s.text(taken[-1] + 24, between - 12 + LINE * j, line, size=NOTE, cls="soft")
             bottom = py + ph
@@ -1203,23 +1230,24 @@ def render(out_dir: Path) -> list[Path]:
 
 
 DESCRIPTION = (
-    "Panel a: a caller's speech goes to speech to text, then to vLLM 0.32's scheduler, which carries the "
-    "two changes, then to text to speech and back to the caller; 24 coding-agent sessions send their "
-    "requests to the same scheduler at priority 2, the voice turn's at priority 0; the scheduler allocates "
-    "from the KV pool beneath it. Panel b, #63350, a pool of 12 KV blocks: two agent requests hold 5 each and "
-    f"2 are free, while a voice turn that needs {TURN} waits beside the pool; on vLLM 0.32 it waits until an "
-    "agent request frees its blocks, while #63350 preempts the latest agent request, agent B, and the turn takes "
-    "4 of its blocks; agent B waits, its KV in the CPU tier. Panel c, #63351, the "
-    "engine's steps in time, one box a step, from the reply's first token: without #63351 each step of the reply also "
-    f"carries an agent's prefill chunk, so in the time #63351 gives the reply its first {WINDOW} tokens the "
-    "reply gets 14 without it; after the window, agent prefill resumes. Blocks and steps are illustrative."
+    "Panel a: a caller's speech goes to speech to text, then to vLLM 0.32's scheduler, which carries #63350 "
+    "and #63351, then to text to speech and back to the caller; 24 coding-agent sessions send their requests "
+    "to the same scheduler at priority 2, the voice turn's at priority 0; the scheduler allocates from the KV "
+    "pool beneath it. Panel b, the KV preemption, #63350: in a pool of "
+    f"{POOL} KV blocks, two agent requests hold 5 each and 2 are free, fewer than the {TURN} a waiting voice "
+    "turn needs; on vLLM 0.32 the turn keeps waiting, while the KV preemption preempts the latest agent "
+    f"request, agent B, and the turn takes {TURN} of its blocks. Panel c, the budget cap, #63351: the engine's "
+    "steps in time, one box a step, from the reply's first token: on vLLM 0.32 each step of the reply also "
+    "carries an agent's prefill chunk, so in the time the budget cap gives the reply its first "
+    f"{WINDOW} tokens the reply gets 14 without it; after the window, agent prefill resumes. Blocks and steps "
+    "are illustrative."
 )
 
 
 def _wide(path: Path) -> Path:
     s = Figure(WIDTH, 760, "How #63350 and #63351 make room for a voice turn", DESCRIPTION)
     zooms = strip(s, 8)
-    py, ph = 330, 440
+    py, ph = 330, PANEL_H
     bx, bw = 24.0, 532.0
     cx = bx + bw + 32
     cw = WIDTH - 24 - cx
@@ -1283,10 +1311,10 @@ def _narrow(path: Path) -> Path:
     s.flow([(agents_x, sched_top + sched_h), (agents_x, tts_y - 22)], arrow=False)
     s.flow([(col, tts_y + h / 2), (col, back_y - h / 2)])
     py = back_y + h / 2 + 40
-    make_room_panel(s, x0, py, w, 464)
-    py += 464 + 24
-    hold_prefill_panel(s, x0, py, w, 440)
-    s.height = py + 440 + 12
+    make_room_panel(s, x0, py, w, PANEL_H)
+    py += PANEL_H + 24
+    hold_prefill_panel(s, x0, py, w, PANEL_H)
+    s.height = py + PANEL_H + 12
     return s.save(path)
 
 

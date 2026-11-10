@@ -251,7 +251,8 @@ def test_the_agents_tokens_are_on_one_scale(timeline: Any, summary: Any) -> None
     lengths = [np.ptp(bar.get_xy()[:, 0]) for bar in (slow_bar, fast_bar)]
     assert lengths[1] / lengths[0] == pytest.approx(880 / 900, abs=1e-6)
     assert (slow_value.get_text(), fast_value.get_text()) == ("900", "880")
-    assert share.get_text() == "98% of the baseline's"
+    # The share names the baseline as its panel does, in a sentence's case.
+    assert share.get_text() == "98% of tuned vLLM's"
 
 
 def test_no_text_leaves_its_room_or_overlaps_another(
@@ -293,7 +294,12 @@ def test_the_excerpt_loops_silently(timeline: Any, summary: Any) -> None:
     assert narrow.board.across == 420 and narrow.draw(1.0).shape[1] == 340
     assert narrow.layout.boxes[1][1] > narrow.layout.boxes[0][3]  # one panel above the other
     frames = demo.Dashboard(timeline, summary, width=320)
-    assert frames.draw(1.0).shape == (174, 320, 3)  # 1120 by 612 units
+    assert frames.draw(1.0).shape == (
+        146,
+        320,
+        3,
+    )  # 1120 by 512 units: no title, which the README's caption gives
+    assert not frames.layout.title and not frames.layout.subtitle and not narrow.layout.title
     assert all(side.heard is None for side in frames.sides)  # silent: no call is marked as heard
     frames.update(0.0)
     assert all(slot.artist.get_alpha() == 0.0 for slot in frames.slots if slot.loop_end)

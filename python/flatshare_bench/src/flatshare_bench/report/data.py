@@ -34,6 +34,7 @@ from flatshare_bench.e2.report import (
 
 # The label table's one home is flatshare_bench.labels; the report's readers find its names here too.
 from flatshare_bench.labels import LABELS as LABELS
+from flatshare_bench.labels import MARKS as MARKS
 from flatshare_bench.labels import POINTS as POINTS
 from flatshare_bench.labels import in_prose as in_prose
 from flatshare_bench.labels import label as label
@@ -184,13 +185,18 @@ def _pooled(runs: Iterable[Mapping[str, Any]], stage: str) -> float:
     return sum(n * mean for n, mean in counted) / sum(n for n, _ in counted)
 
 
+STAGE_POINTS = (VOICE_ALONE, TUNED, ROUTER, MAKE_ROOM, HOLD_16, CHANGE)
+"""The stage figure's rows: the headline's configurations in its order (W5's figure.toml), voice alone first, so that
+the voice turn's stages and its tail read row for row."""
+
+
 def stages(
     rows: Sequence[Mapping[str, Any]] | None = None,
-    points: Sequence[str] = (VOICE_ALONE, TUNED, MAKE_ROOM, CHANGE),
+    points: Sequence[str] = STAGE_POINTS,
 ) -> list[Stages]:
-    """Each of ``points``, by default W5's voice alone, tuned vLLM, the KV preemption and the configuration to deploy,
-    pooled over its runs as the stage waterfall pools them (:func:`flatshare_bench.e2.report.stage_waterfall`): over
-    the runs with turn lines and without voice errors."""
+    """Each of ``points``, by default the headline's configurations (STAGE_POINTS), pooled over its runs as the stage
+    waterfall pools them (:func:`flatshare_bench.e2.report.stage_waterfall`): over the runs with turn lines and without
+    voice errors."""
     rows = w5_rows() if rows is None else rows
     found = []
     for point in points:
@@ -818,6 +824,42 @@ def frontier(rows: Sequence[Mapping[str, Any]] | None = None) -> list[FrontierPo
     ]
 
 
+@dataclass(frozen=True)
+class Ablation:
+    """Arm 9, the lifecycle policy over make-room, or one of its ablations in W4's discriminating scenario: its arm,
+    its point and its runs' V2V p95."""
+
+    arm: str
+    point: str
+    p95s: tuple[float, ...]
+
+    @property
+    def p95(self) -> float:
+        return _median(self.p95s)
+
+
+def ablations(rows: Sequence[Mapping[str, Any]] | None = None) -> dict[str, Ablation]:
+    """Arm 9 and each of its ablations, arm 9 with one part removed or changed, in W4's discriminating scenario, by arm
+    (the change's own points, 9-pr-*, are its family's in FAMILIES, not arm 9's). Each turn of each was answered, so
+    that every p95 is a measured one."""
+    rows = w4_rows() if rows is None else rows
+    found = {}
+    for group in configurations(rows):
+        arm = group["arm"]
+        if group["workload"] != DISCRIMINATING or not (arm == "9" or arm.startswith("9-")):
+            continue
+        if arm.startswith("9-pr"):
+            continue
+        if group["failed_turns"]:
+            raise ValueError(
+                f"{group['point']} failed {group['failed_turns']} turns: its p95 is censored"
+            )
+        found[arm] = Ablation(
+            arm, group["point"], tuple(run["v2v_p95_ms"] for run in group["runs"])
+        )
+    return found
+
+
 # Where the margin narrows -------------------------------------------------------------------------------------------
 
 
@@ -1240,7 +1282,7 @@ class StepCap:
 
 def step_caps(root: Path = TWO_CARDS) -> list[StepCap]:
     """gate.py's SWEEP over its SWEEP_ROUNDS, each reply held to its round's SLO, by gate.py's own functions (as
-    Table 8 counts them)."""
+    Table 7 counts them)."""
     gate = two_cards_gate(root)
     rounds = gate.SWEEP_ROUNDS
     points = gate.rows(root, rounds)
@@ -1299,6 +1341,59 @@ def opt_rounds(root: Path = OPT_ROUNDS) -> list[OptScenario]:
             for point in (before, after)
         ]
         found.append(OptScenario(name, *pair))
+    return found
+
+
+# The engine points ----------------------------------------------------------------------------------------------------
+
+ENGINE_POINTS = RESULTS / "2026-11-01-engine-points"
+"""The serving engine's additions at the engine level: two calls beside 12 closed-loop agents for 240 s, each addition
+against the point before it. Its table.py is the record's single source of truth."""
+
+
+def engine_points_table(root: Path = ENGINE_POINTS) -> ModuleType:
+    """The record's table.py, loaded from its file as a module: its arms, its tables' rows and each run's lines."""
+    spec = importlib.util.spec_from_file_location("engine_points_table", root / "table.py")
+    if spec is None or spec.loader is None:
+        raise ValueError(f"no table.py under {root}")
+    table = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(table)
+    return table
+
+
+@dataclass(frozen=True)
+class EnginePoint:
+    """One addition's point on a node: its arm (table.py's key), its name there, its runs, and the calls' first and
+    16th token at p50 and p95 in ms, each the median over the runs, as table.py's outcomes table gives them."""
+
+    arm: str
+    name: str
+    runs: int
+    first_p50: float
+    first_p95: float
+    sixteenth_p50: float
+    sixteenth_p95: float
+
+
+def engine_points(node: str = "phastform", root: Path = ENGINE_POINTS) -> list[EnginePoint]:
+    """The additions the serving profile adopted, in the order it gained them (table.py's "adopted" table), on
+    ``node``: the box's own by default."""
+    table = engine_points_table(root)
+    groups = table.points()
+    found = []
+    for arm in table.TABLES["adopted"]:
+        runs = groups.get((node, arm))
+        if not runs:
+            raise ValueError(f"no run of {arm} on {node} under {root}")
+        seen = [table.client(run) for run in runs]
+        found.append(
+            EnginePoint(
+                arm,
+                table.ARMS[arm],
+                len(runs),
+                *(statistics.median(s[k] for s in seen) for k in range(4)),
+            )
+        )
     return found
 
 
@@ -1765,9 +1860,17 @@ CAMPAIGNS = (
         r"opt-s\d",
         r"opt-s\d",
     ),
+    (
+        "The envelope",
+        "The cache-aware queue and the SM copy, and the card's envelope",
+        "2026-11-08-envelope",
+        r"opt2-.+|env-r\d",
+        r"env-r\d",
+    ),
 )
 """Each campaign of the map: its code, the question it measured, its record and the directories of its runs and of
-its rounds (a pattern each), in the order the campaigns ran. The soak's runs are its soak.json files."""
+its rounds (a pattern each), in the order the campaigns ran. The soak's runs are its soak.json files. The engine points
+(2026-11-01-engine-points) are no campaign of the map: their runs left no run.json, only times of day."""
 
 
 def first_release(changelog: Path = REPO / "CHANGELOG.md") -> str:

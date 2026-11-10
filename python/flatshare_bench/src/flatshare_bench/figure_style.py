@@ -17,10 +17,18 @@ The conventions, which every figure here keeps:
   comes from position, hue and size. Text is ink; the soft gray sets secondary text such as a
   subtitle, and the mute gray ticks and axis words. All three clear 4.5:1 on the page in both
   themes.
-- One tint, one meaning. In the charts the configuration to deploy is the saturated blue, a sibling
-  configuration of the same change pale blue, and every comparison gray; orange marks the SLO, the
-  margin a result is read against. In the method figure each component is white, the change's own
-  are pale blue with a blue outline, and dataflow runs on steel-blue arrows of one weight.
+- Axis titles. An axis's title names its quantity and its unit, the unit in parentheses with
+  ", log scale" where the scale is logarithmic: "Time to the first token (ms)", "Voice-to-voice
+  p95 (s)". Where a panel's title names the measure, the axis names its kind: "Time (s, log
+  scale)" under "(a) Voice-to-voice p95", "Tokens/s over the calls' first 240 s" under "(b)
+  Agents' tokens/s". A share's percent signs and a count's numbers need no unit. No axis says
+  which way is better: the quantity says it, and the caption's claim says what to read.
+- One tint, one meaning. In the charts a configuration keeps one hue, one marker and one fill in
+  every figure (flatshare_bench.labels' MARKS): the configuration to deploy the saturated blue,
+  the change's other configurations its sibling blue, every comparison gray; orange marks the
+  SLO, the margin a result is read against. In the method figure each component is white, the
+  change's own are pale blue with a blue outline, and dataflow runs on steel-blue arrows of one
+  weight.
 - Figures follow the reader's theme through ``prefers-color-scheme`` and paint their own page, so
   a figure stays legible where the system's theme and the page's differ.
 """

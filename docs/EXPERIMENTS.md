@@ -23,10 +23,12 @@ exact revision, and [REVISIONS.md](REVISIONS.md) resolves the older names to com
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-campaigns-narrow.svg">
-  <img src="figures/report-campaigns.svg" width="100%" alt="A timeline of 22 October to 2 November 2026, UTC, a bar for each campaign from its first run's start to its last run's end, with what it measured, its rounds and samples, and the code it ran: W2, every arm an operator can deploy, once each, 23 October 00:13 to 08:59, one run a point, one sample, on code before v0.1; W3–W4, the headline configurations, the lifecycle policy and the change, 23 October 10:57 to 24 October 01:35, 5 rounds, one sample, on code before v0.1; W5, the fixed make-room and the configuration to deploy, 24 October 18:56 to 25 October 09:57, 18 rounds, 5 samples, on code after v0.3; FB, the configuration to deploy on the code of 25 October, 25 October 12:47 to 15:22, 5 rounds, 5 samples, on code after v0.3; the A100 run, the main comparison like for like on an A100, 26 October 04:42 to 09:05, 5 rounds and its arms, 5 samples, on v1.0; RS, how often two calls find KV short, 26 October 20:11 to 21:57, 5 rounds, 5 samples, on v1.2; SW, the step cap, the threshold and the window, screened, 27 October 20:56 to 28 October 00:10, one run a setting, one sample, on v1.5; RG, two cards' arrangements, and the step cap confirmed, 28 October 01:41 to 13:19, 5 rounds, 5 samples, on code after v1.6; the soak, the arrangement to deploy, serving for a day, 28 October 15:20 to 29 October 17:24, 2 hours of voice alone, then 24 hours serving, on code after v1.6; OR, the serving engine's additions against v1.14's configuration, 2 November 00:32 to 08:18, 5 rounds, 5 samples, on code after v1.14; OS, the decode hold and speculative decoding on the four additions, 2 November 08:21 to 11:46, 2 rounds, 2 samples, on code after v1.14.">
+  <img src="figures/report-campaigns.svg" width="100%" alt="A timeline of 22 October to 8 November 2026, UTC, a bar for each campaign from its first run's start to its last run's end, with what it measured: W2, every arm an operator can deploy, once each, 23 October 00:13 to 08:59; W3–W4, the headline configurations, the lifecycle policy and the change, 23 October 10:57 to 24 October 01:35; W5, the fixed make-room and the configuration to deploy, 24 October 18:56 to 25 October 09:57; FB, the configuration to deploy on the code of 25 October, 25 October 12:47 to 15:22; the A100 run, the main comparison like for like on an A100, 26 October 04:42 to 09:05; RS, how often two calls find KV short, 26 October 20:11 to 21:57; SW, the step cap, the threshold and the window, screened, 27 October 20:56 to 28 October 00:10; RG, two cards' arrangements, and the step cap confirmed, 28 October 01:41 to 13:19; the soak, the arrangement to deploy, serving for a day, 28 October 15:20 to 29 October 17:24; OR, the serving engine's additions against v1.14's configuration, 2 November 00:32 to 08:18; OS, the decode hold and speculative decoding on the four additions, 2 November 08:21 to 11:46; the envelope, the cache-aware queue and the SM copy, and the card's envelope, 7 November 16:03 to 8 November 17:51.">
 </picture>
 
-**Eleven campaigns from 23 October to 2 November 2026 measured the results, each on code its records name.** Each bar runs from a campaign's first run to its last, UTC; a round runs each of a campaign's configurations once, on a sample of the agents' traces of its own.
+**Figure 1. Twelve campaigns from 23 October to 8 November 2026 measured the results, each on code its records name.**
+Each bar runs from a campaign's first run to its last, UTC; a round runs each of a campaign's configurations once, on a
+sample of the agents' traces of its own. The table under it gives each campaign's rounds, samples and code.
 
 | Campaign | Ran, UTC | Points | Rounds and samples | Code | Records |
 |---|---|---:|---|---|---|
@@ -41,11 +43,10 @@ exact revision, and [REVISIONS.md](REVISIONS.md) resolves the older names to com
 | The soak | 28 October 15:20 to 29 October 17:24 | — | 2 hours of voice alone, then 24 hours serving | after v1.6 | [`2026-10-28-soak`](../benchmarks/results/2026-10-28-soak/README.md) |
 | OR | 2 November 00:32 to 08:18 | 55 | 5 rounds, 5 samples | after v1.14 | [`2026-11-02-opt-rounds`](../benchmarks/results/2026-11-02-opt-rounds/README.md) |
 | OS | 2 November 08:21 to 11:46 | 24 | 2 rounds, 2 samples | after v1.14 | [`2026-11-02-opt-rounds`](../benchmarks/results/2026-11-02-opt-rounds/README.md) |
+| The envelope | 7 November 16:03 to 8 November 17:51 | 33 | 3 rounds, 4 samples | v1.23 and after v1.23 | [`2026-11-08-envelope`](../benchmarks/results/2026-11-08-envelope/README.md) |
 
 The map leaves out [the engine points](../benchmarks/results/2026-11-01-engine-points/README.md) of 1 and 2 November,
-which tried each addition on v1.14's serving profile, and
-[version 1.24's windows and rounds](../benchmarks/results/2026-11-08-envelope/README.md) of 7 and 8 November, on code of
-v1.23 and after.
+which tried each addition on v1.14's serving profile.
 
 ## E2: voice under agent load
 
