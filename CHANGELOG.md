@@ -5,6 +5,28 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.26](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.26) (2026-11-10): the documents cut to what each reader needs, and every figure in one grammar
+
+A documentation release: no record, no measurement and nothing the boxes serve changes. The hand-written documents
+shrink from about 211,000 words to about 125,000. Each names its reader in its first paragraph, answers before it shows
+the evidence, and gives each number one home, in BENCHMARKS or a record, with one statement of it in the report's
+argument. Statements that a fresh read found stale or unscoped were checked against the code and the records.
+
+- **The report** makes one argument in about 20,000 words, from 31,000: each results section opens on its claim, then
+  its figure or table, then the record. Campaign chronology, restated limits and the tables that repeated a figure are
+  gone, the tables after the dropped Table 7 are renumbered, and the revision history is a compact appendix.
+- **BENCHMARKS** answers one question a section, in about 18,000 words from 34,000, with the configurations named as
+  the glossary names them, and EXPERIMENTS keeps each experiment's design and the campaign map.
+- **The README** shows its results as the report's headline figure, whose caption carries the voice tail and the
+  agents' token rate. PRODUCTION, ARCHITECTURE, the runbook, PRIOR-ART and the component READMEs keep their reader's
+  job: the contract and every key, how the system is built, the operator's steps in the order they run, the related
+  work, and each component's commands and settings.
+- **Every figure** follows one grammar: no title or note drawn in, axes that name their quantity and unit, and one
+  colour and marker per configuration in every chart, legible in grayscale. Figure 7 loses its second axis,
+  BENCHMARKS gains two charts, the serving engine's additions and arm 9's ablations, and the chart of both GPUs, which
+  no document showed, is retired.
+- **Links** reach the new headings. The anchors that records and the alert rules name stay where they were.
+
 ## [v1.25](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.25) (2026-11-09): §6.11 drawn, the pull requests rebased, and the queue and the copy proposed to vLLM
 
 Version 1.24's envelope is drawn and stated where operators read, the pull requests are rebased on vLLM's main at

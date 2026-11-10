@@ -11,7 +11,7 @@ abstract: >-
   turn cannot take KV cache from running agent requests and agent prefill shares
   every step of its reply. Two scheduler rules, proposed to vLLM as pull
   requests #65282 and #65283 (both open, with no maintainer review as of
-  2026-11-04; first #63350 and #63351), let a waiting higher-priority request
+  2026-11-09; first #63350 and #63351), let a waiting higher-priority request
   preempt lower-priority work for KV and keep lower-priority prefill out of the
   steps of its first tokens. They bring the p95 to 2.24 s, 0.20 s over an SLO of
   voice alone plus 250 ms, while the agents keep 97% of their throughput; on an
@@ -23,8 +23,8 @@ abstract: >-
 authors:
   - family-names: Wang
     given-names: Chuyue
-version: 1.25.0
-date-released: 2026-11-09
+version: 1.26.0
+date-released: 2026-11-10
 license: Apache-2.0
 repository-code: "https://github.com/StevenWang-CY/flatshare"
 url: "https://github.com/StevenWang-CY/flatshare"
@@ -42,7 +42,7 @@ preferred-citation:
   authors:
     - family-names: Wang
       given-names: Chuyue
-  version: "1.25"
-  date-published: 2026-11-09
-  url: "https://github.com/StevenWang-CY/flatshare/blob/v1.25/docs/REPORT.md"
+  version: "1.26"
+  date-published: 2026-11-10
+  url: "https://github.com/StevenWang-CY/flatshare/blob/v1.26/docs/REPORT.md"
   repository-code: "https://github.com/StevenWang-CY/flatshare"

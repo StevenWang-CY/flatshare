@@ -23,6 +23,6 @@ body:
     id: version
     attributes:
       label: Version or commit
-      placeholder: v1.25
+      placeholder: v1.26
     validations:
       required: false
