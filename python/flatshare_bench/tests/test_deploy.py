@@ -705,7 +705,7 @@ def test_variant_sh_runs_the_agents_only_card_without_its_speech_servers_and_res
 
 
 def test_the_agents_only_cards_pool_takes_the_speech_servers_memory_and_fits_the_card() -> None:
-    # Its pool is the box's 5 GiB and the 3.4 GiB the STT and the TTS hold (ARCHITECTURE.md 3.1: about 2.4 and 1.0),
+    # Its pool is the box's 5 GiB and the 3.4 GiB the STT and the TTS hold (ARCHITECTURE.md 5.1: about 2.4 and 1.0),
     # 3,822 blocks of 16 tokens at Qwen3-4B's 144 KiB a token; the engine, about 10.6 GiB with the box's pool, then
     # takes 14.0 GiB of the card, a budget of 0.88 under R2's ceiling, which vLLM wants free at the start and which a
     # card with the speech servers resident does not have.

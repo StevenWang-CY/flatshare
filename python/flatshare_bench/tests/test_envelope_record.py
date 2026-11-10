@@ -1,11 +1,12 @@
 """The envelope rounds' record (benchmarks/results/2026-11-08-envelope): its README's tables are what its table.py makes of
 the points, every one of version 1.24's rounds ran every point its campaign lists, the record names no home directory,
-and the serving profile's envelope is the gate's verdict."""
+the serving profile's envelope is the gate's verdict, and the docs that give the gate's rows give the record's."""
 
 from __future__ import annotations
 
 import importlib.util
 import re
+import statistics
 import tomllib
 from pathlib import Path
 from types import ModuleType
@@ -106,3 +107,29 @@ def test_benchmarks_gives_the_records_tables() -> None:
     benchmarks = (REPO / "docs" / "BENCHMARKS.md").read_text()
     for name in ("windows", "gate"):
         assert table.table(name) in benchmarks, name
+
+
+def test_production_gives_the_cards_envelope_as_the_record_does() -> None:
+    # PRODUCTION.md's rows of one card with the queue and the SM copy, beside 24 and 12 agent sessions: the replies over
+    # each round's SLO, pooled over the three rounds, and the medians over the rounds of the agents' token rate and of
+    # their TTFT p50 and p99, as the record's gate counts them.
+    table = _table()
+    rows = table.points()
+    slo = table.slos(rows)
+    production = (REPO / "docs" / "PRODUCTION.md").read_text()
+    labels = {
+        24: "| **One card from version 1.24**, three rounds | 24 |",
+        12: "| The same card with fewer agents, three rounds | 12 |",
+    }
+    for _, trees, point in table.GATE[1:]:
+        found = [(c, rows[c, point]) for c in table.ROUNDS]
+        over = sum(sum(v > slo[c] for v in row["v2v_samples"]) for c, row in found)
+        total = sum(len(row["v2v_samples"]) for _, row in found)
+        tokens = statistics.median(row["fixed_window_tokens_per_s"] for _, row in found)
+        p50 = statistics.median(row["agent_ttft_p50_ms"] for _, row in found) / 1e3
+        p99 = statistics.median(row["agent_ttft_p99_ms"] for _, row in found) / 1e3
+        line = (
+            f"{labels[trees]} {over} / {total} ({100 * over / total:.1f}%) | {tokens:,.0f} | "
+            f"{p50:.1f} / {p99:.0f} s |"
+        )
+        assert line in production, line

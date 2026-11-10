@@ -1,7 +1,8 @@
 """CITATION.cff against the CHANGELOG and the report: the software's version and release date are the newest
-release's, and the preferred citation, the technical report, names the report's own version, date and tag. The citation
-once gave 2026-10-27 for 1.7.0, released on 2026-10-29, and its preferred citation stayed at the report of 1.8 through
-1.10; a release that moves one file and not the other fails here."""
+release's, the preferred citation, the technical report, names the report's own version, date and tag, and the README's
+BibTeX entry names the software's version. The citation once gave 2026-10-27 for 1.7.0, released on 2026-10-29, its
+preferred citation stayed at the report of 1.8 through 1.10, and the README's entry named 1.24.0 at 1.25; a release that
+moves one file and not the other fails here."""
 
 from __future__ import annotations
 
@@ -51,3 +52,9 @@ def test_the_preferred_citation_is_the_report_as_it_stands() -> None:
     assert preferred(cff, "version") == version
     assert preferred(cff, "date-published") == datetime.strptime(day, "%d %B %Y").date().isoformat()
     assert preferred(cff, "url").endswith(f"/blob/v{version}/docs/REPORT.md")
+
+
+def test_the_readmes_bibtex_entry_is_the_citations_version() -> None:
+    readme = (REPO / "README.md").read_text()
+    [version] = re.findall(r"^  version = \{([^}]+)\},$", readme, re.MULTILINE)
+    assert version == top_level((REPO / "CITATION.cff").read_text(), "version")

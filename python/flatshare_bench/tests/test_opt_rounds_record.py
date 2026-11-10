@@ -63,31 +63,6 @@ def test_benchmarks_gives_the_rounds_tables_as_the_record_does() -> None:
         assert table.compact(table.table(name)) in benchmarks, name
 
 
-def test_production_gives_the_two_callers_rounds_as_the_record_does() -> None:
-    # PRODUCTION.md's rows of the rounds beside 24 sessions with two callers: each configuration's replies over the SLO,
-    # pooled, and the medians over the rounds of the agents' token rate and their TTFT p50 and p99.
-    table = _table()
-    rows = table.points()
-    production = (REPO / "docs" / "PRODUCTION.md").read_text()
-    labels = (
-        "| v1.14's engine beside 24 sessions, five more rounds on new samples | 24 |",
-        "| **The same with v1.15's first four additions** | 24 |",
-    )
-    [(_, before, after)] = [s for s in table.SCENARIOS if s[0] == "24 agent sessions, 2 callers"]
-    for label, point in zip(labels, (before, after), strict=True):
-        rounds = table.by_round(point, rows)
-        over, replies = sum(r[1] for r in rounds), sum(r[2] for r in rounds)
-        got = [rows[name, point] for name in table.ran(rows) if (name, point) in rows]
-        tokens = statistics.median(r["background_tokens_per_s"] for r in got)
-        p50 = statistics.median(r["agent_ttft_p50_ms"] for r in got) / 1e3
-        p99 = statistics.median(r["agent_ttft_p99_ms"] for r in got) / 1e3
-        row = (
-            f"{label} {over} / {replies} ({100 * over / replies:.1f}%) | {tokens:,.0f} | "
-            f"{p50:.0f} / {p99:.0f} s |"
-        )
-        assert row in production, row
-
-
 WORDS = ("none", "one", "two", "three", "four", "five", "six")
 
 

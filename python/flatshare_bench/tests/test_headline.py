@@ -1,11 +1,11 @@
-"""The headline tables against the committed records: every number of README.md's table and of docs/PRODUCTION.md's
-"What it buys" table, as printed, from the medians of the W5 runs its row reports, pooled over the campaigns that ran
-it as benchmarks/results/2026-10-24-e2-w5/compare.py pools them; the headline numbers of the README's opening and of
-docs/REPORT.md's abstract, from the W5, A100 and two-card records, and the one date both give the pull requests'
-state; the report's Tables 6 and 8 and §6.9's comparison, from the two-card record's own gate.py; its Table 9 and
-§6.10's sums, from the engine points' table.py; and BENCHMARKS.md's FB, RS, transport and window-sweep tables, from
-those records' own compare.py, running_share.py, ab.py and table.py. New records, or a table edited by hand, cannot
-leave a stale headline: the commit that changes either fails here."""
+"""The headline tables against the committed records: every number of README.md's table, as printed, from the medians
+of the W5 runs its row reports, pooled over the campaigns that ran it as benchmarks/results/2026-10-24-e2-w5/compare.py
+pools them, and docs/PRODUCTION.md's line of the same and its row of the two cards; the headline numbers of the
+README's opening and of docs/REPORT.md's abstract, from the W5, A100 and two-card records, and the one date both give
+the pull requests' state; the report's Tables 6 and 8 and §6.9's comparison, from the two-card record's own gate.py;
+its Table 9 and §6.10's sums, from the engine points' table.py; and BENCHMARKS.md's FB, RS, transport and window-sweep
+tables, from those records' own compare.py, running_share.py, ab.py and table.py. New records, or a table edited by
+hand, cannot leave a stale headline: the commit that changes either fails here."""
 
 from __future__ import annotations
 
@@ -219,7 +219,8 @@ def test_the_readmes_headline_table_is_the_records_medians() -> None:
 
 def test_the_readmes_opening_and_the_reports_abstract_are_the_records() -> None:
     # The headline numbers both openings state, each from its record: W5's medians and replies over the SLO, the step
-    # cap's five rounds (§6.9), the A100's (§6.7) and the two cards' (§6.8).
+    # cap's five rounds (§6.9), the A100's (§6.7) and the two cards' (§6.8). The README's opening runs through its
+    # Results, which give the step cap's and the A100's rounds under the headline table.
     alone, tuned, router, change = (
         median(summaries(points), "V2V p95") / 1000 for points in (ALONE, FROZEN, RESUBMIT, AB48)
     )
@@ -249,7 +250,7 @@ def test_the_readmes_opening_and_the_reports_abstract_are_the_records() -> None:
         f"from {a100_tuned.p95 / 1000:.2f} s to {a100_change.p95 / 1000:.2f} s, under that card's SLO in each of "
         f"{WORDS[len(a100_change.runs)]} rounds",
     ]
-    readme = passage(REPO / "README.md", "Flatshare runs a self-hosted", "## Results")
+    readme = passage(REPO / "README.md", "Flatshare runs a self-hosted", "## How it works")
     for phrase in [*both, f"to {tuned:.1f} s", caps["Tuned vLLM, 512-token steps"]]:
         assert phrase in readme, phrase
     abstract = passage(REPORT, "## Abstract", "## Contents")
@@ -273,25 +274,32 @@ def test_the_readmes_opening_and_the_reports_abstract_are_the_records() -> None:
     assert listed == [date, date]
 
 
-def test_productions_headline_table_is_the_records_medians() -> None:
+def test_productions_headline_and_two_card_row_are_the_records() -> None:
+    # PRODUCTION.md's line of what the two rules buy beside 24 sessions, from W5's medians: tuned vLLM's p95 and the
+    # configuration to deploy's, the SLO, the agents' token rate kept and the replies still over the SLO.
     path = REPO / "docs" / "PRODUCTION.md"
-    assert f"the SLO is voice alone plus 250 ms at p95, {slo():,.0f} ms" in path.read_text()
-    rows = rows_of(path, "| Configuration | Runs | V2V p95 |")
-    assert len(rows) == 4
-    for label, count, p95, replies, goodput, ttft in rows:
-        runs = summaries(points_of(label))
-        p95s = [compare.value(s, compare.METRICS["V2V p95"]) for s in runs]
-        assert count == str(len(runs)), label
-        assert replies == "{} / {}".format(*over_slo(label)), label
-        assert (
-            p95
-            == f"{statistics.median(p95s):,.0f} ms ({min(p95s):,.0f}{compare.DASH}{max(p95s):,.0f})"
-        ), label
-        if points_of(label) == ALONE:
-            assert (goodput, ttft) == (NONE, NONE), label
-            continue
-        assert goodput == f"{median(runs, GOODPUT):,.0f}", label
-        assert ttft == f"{median(runs, 'agent TTFT p99') / 1000:.0f} s", label
+    text = " ".join(path.read_text().split())
+    tuned, change = (median(summaries(points), "V2V p95") for points in (FROZEN, AB48))
+    kept = median(summaries(AB48), GOODPUT) / median(summaries(FROZEN), GOODPUT)
+    for phrase in (
+        f"from {tuned:,.0f} ms on tuned vLLM to {change:,.0f} ms",
+        f"the SLO is voice alone plus 250 ms at p95, {slo():,.0f} ms",
+        f"keep {kept:.0%} of their token rate",
+        f"{share(*over_slo('+ #63351 with a 48-token window'))} of the replies are still over it",
+    ):
+        assert phrase in text, phrase
+    # Its row of the arrangement to deploy, as the two-card record's gate.py counts Table 6's row (§6.8).
+    gate, campaigns = ROUNDS_GATE, ROUNDS_GATE.ROUNDS
+    points, slos = rounds(campaigns)
+    cards = TWO_CARDS["Consolidation, the change, with a warm spare", "4 + 12"]
+    over, replies = gate.foreground(points, slos, cards, campaigns)
+    work, _ = gate.background(points, cards, campaigns)
+    row = (
+        "| **Two cards, consolidation with a warm spare**, three rounds | 4 + 12 | "
+        f"{over} / {replies} ({100 * over / replies:.1f}%) | {work:,.0f} | "
+        f"{gate.ttft(points, cards, campaigns).replace('/', ' / ')} s |"
+    )
+    assert row in path.read_text(), row
 
 
 def test_the_reports_two_card_table_is_the_rounds_records() -> None:
