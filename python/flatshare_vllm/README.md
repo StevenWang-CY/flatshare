@@ -1,121 +1,139 @@
 # flatshare-vllm
 
-The engine variants that run the change inside vLLM. `make-room` runs the scheduler diff of pull requests [#65282](https://github.com/vllm-project/vllm/pull/65282) and [#65283](https://github.com/vllm-project/vllm/pull/65283) (stacked on #65282; proposed to vLLM, open, with no maintainer review as of 2026-11-09; first #63350 and #63351) on vLLM 0.32.0, the version E2 measured, and on 0.33.0 ([below](#vllm-0330)). `pr54530` is vLLM [#54530](https://github.com/vllm-project/vllm/pull/54530) ported to 0.32.0, a baseline. A variant is a scheduler module that `build.py` writes at each engine start from the installed vLLM's own scheduler, which it never modifies. [ARCHITECTURE.md §2](../../docs/ARCHITECTURE.md#2-the-change) states the rules, and the variants' systemd drop-ins are in [`deploy/phastform/variants`](../../deploy/phastform/variants/README.md).
+The change inside vLLM, for a developer who builds, tests or maintains it. The engine variant `make-room` runs the
+scheduler diff of pull requests [#65282](https://github.com/vllm-project/vllm/pull/65282) and
+[#65283](https://github.com/vllm-project/vllm/pull/65283), stacked on #65282, on vLLM 0.32.0, which the rounds measured,
+and on 0.33.0. Both are proposed to vLLM, open and rebased, with no maintainer review as of 2026-11-09. The serving
+engine's agent queue and CPU-tier copy are proposed in vLLM's own terms as the drafts
+[#66558](https://github.com/vllm-project/vllm/pull/66558) and [#66527](https://github.com/vllm-project/vllm/pull/66527).
+The variant `pr54530`, vLLM [#54530](https://github.com/vllm-project/vllm/pull/54530) ported to 0.32.0, is a baseline.
+[ARCHITECTURE.md §2](../../docs/ARCHITECTURE.md#2-the-change) states the rules, and
+[`deploy/phastform/variants`](../../deploy/phastform/variants/README.md) holds the systemd drop-ins that run them.
 
 ```text
-src/flatshare_vllm/build.py      writes a variant's module: its patches, applied exactly, and the
-                                 stock AsyncScheduler
-src/flatshare_vllm/make-room/    63350.patch and 63351.patch, the pull requests' scheduler diff
-                                 backported to v0.32.0; variant.patch, what only the variant has;
-                                 probe.py, tail.py and knee.sh, its GPU checks; v0.33.0/, the three
-                                 patches on v0.33.0
-src/flatshare_vllm/pr54530/      pr54530.patch, #54530 ported to v0.32.0 by hand; probe.py
-src/flatshare_vllm/serve/        flatshare_make_room_serve.py, the serving variant's scheduler
-                                 class: make-room's, which writes the configuration the engine runs
-                                 as it starts
-scripts/make-room-patches.sh     rewrites make-room's patches from the backport's branches, in a
-                                 clone of the fork
-scripts/compat_upstream.py       make compat-upstream: the pull requests against vLLM's main, the
-                                 backport against their heads, the patches against vLLM's newest
-                                 release
-tests/                           the build, make-room's behavior, make-room traced against the pull
-                                 requests, its cost per step
+src/flatshare_vllm/build.py      writes a variant's module at each engine start
+src/flatshare_vllm/make-room/    the patches, 0.33.0's in v0.33.0/, and probe.py, tail.py and knee.sh
+src/flatshare_vllm/pr54530/      the port of #54530 and its probe
+src/flatshare_vllm/serve/        the serving variant's scheduler class and the parts it installs
 ```
 
 ## The build
 
-`python src/flatshare_vllm/build.py make-room OUT_DIR` (or `pr54530`) reads the scheduler of the vLLM the interpreter finds, applies the variant's patches in order, appends the stock `AsyncScheduler`, which then extends the patched `Scheduler`, and writes `OUT_DIR/flatshare_make_room_scheduler.py`. The engine runs it with `PYTHONPATH=OUT_DIR` and `--scheduler-cls flatshare_make_room_scheduler.AsyncScheduler`. The build needs only the standard library and finds vLLM without importing it, so the engine's own Python runs it from this source tree, with no install.
+```sh
+python src/flatshare_vllm/build.py make-room OUT_DIR      # or pr54530
+```
 
-Every hunk must apply at its stated line, its context and removed lines as they are there: the build takes the installed vLLM's release from its package metadata and refuses one that no patches are written against (`make-room` has 0.32.0's and 0.33.0's, `pr54530` 0.32.0's), and a source the patches do not match fails it, naming the hunk. `--source-tree` builds from a source checkout, which has no package metadata to check: its release is the one whose patches apply to it, and exactly one must, or `--release R` names it.
+`build.py` reads the scheduler of the vLLM that the interpreter finds, applies the variant's patches in order, appends
+the stock `AsyncScheduler` and writes `OUT_DIR/flatshare_make_room_scheduler.py`. The engine loads it with
+`PYTHONPATH=OUT_DIR` and `--scheduler-cls flatshare_make_room_scheduler.AsyncScheduler`, and the installed vLLM is never
+modified. The build needs only the standard library and finds vLLM without importing it, so the engine's own Python
+runs it from this source tree.
 
-The serving variant, `make-room-serve` ([`deploy/phastform/variants`](../../deploy/phastform/variants/README.md#the-serving-profile)), loads `flatshare_make_room_serve.AsyncScheduler` from `src/flatshare_vllm/serve` over the module `build.py` writes for `make-room`: make-room's `AsyncScheduler`, whose constructor installs what the engine's additional config asks for (`flatshare_jit`'s next batch just in time, `flatshare_queue`'s waiting queue, whose order its `schedule()` fixes at each step, and `flatshare_copy`'s CPU-tier loads through the SM copy kernel, each off at 0) and then writes the configuration the scheduler was built with (its switches, policy, step cap, pool, the model and its revisions, the KV connector, what it installed, the vLLM version, and the SHA-256 of the module it extends, of its own file and of the three it installs from) to the file `FLATSHARE_ENGINE_EFFECTIVE` names, whole. `deploy/bin/serving-check` holds that to the serving profile.
+- **Every hunk applies exactly or the build fails.** A hunk must apply at its stated line, with its context and removed
+  lines as they are there, and the failure names the hunk.
+- **Patches are per release.** The build reads the installed vLLM's release from its package metadata and refuses one
+  that no patches are written against. `make-room` has 0.32.0's and 0.33.0's, and `pr54530` has 0.32.0's.
+  `--source-tree` builds from a source checkout, whose release is the one whose patches apply to it. Exactly one must
+  apply, or `--release R` names it.
 
-`make-room`'s patches apply in order:
-- `63350.patch` and `63351.patch`, named for the pull requests they were first written for: the two pull requests' changes to `vllm/v1/core/sched/scheduler.py`, backported to v0.32.0 and adapted where 0.32.0 needs it, as each patch's header says under the commit: #65282 calls make-room after 0.32.0's long-prefill threshold, since 0.32.0 has no local prefill cadence; the pull requests' counters of make-room's preemptions and of the budget cap's held steps and prefill tokens stay in the scheduler, since 0.32.0's `SchedulerStats` has no fields for them; #65283's check of a waiting queue for a lower priority is the scheduler's own, since the request queues stay stock; and #65282's prefix-cache hit keeps the bound `num_tokens - 1`, which is 0.32.0's waiting loop's.
-- `variant.patch`: what only the variant has. Its switches are keys of `--additional-config`'s `make_room` table, validated at engine start, instead of the pull requests' `SchedulerConfig` fields; it adds the reserve, which requests of a positive priority value leave free, the calls' prefixes kept on the GPU between their turns, a request taking a lower priority's block reservations, lower-priority decodes held from a request's first tokens, a realtime request's short load recomputed and the hold of a call's announced turn, each a switch off by default, and logs the pull requests' counters, with its own of the admissions the budget cap holds back, at most every 10 s ([`deploy/phastform/variants`](../../deploy/phastform/variants/README.md) has the keys).
+`make-room` applies three patches in order:
+
+- **`63350.patch` and `63351.patch`** hold the two pull requests' changes to `vllm/v1/core/sched/scheduler.py`,
+  backported to v0.32.0. They are named for #63350 and #63351, the numbers the pull requests were first opened under.
+  Each header says where 0.32.0 made the backport differ:
+  - #65282 calls make-room after 0.32.0's long-prefill threshold, since 0.32.0 has no local prefill cadence;
+  - the counters of make-room's preemptions and of the budget cap's held steps and tokens stay in the scheduler, since
+    0.32.0's `SchedulerStats` has no fields for them;
+  - #65283's check of the waiting queue for a lower priority is the scheduler's own, since the request queues stay
+    stock;
+  - #65282's prefix-cache hit keeps 0.32.0's bound, `num_tokens - 1`.
+- **`variant.patch`** is what only the variant has. Its switches are keys of `--additional-config`'s `make_room` table,
+  validated at engine start, where the pull requests have `SchedulerConfig` fields. It adds six switches, each off by
+  default, and logs the rules' counts at most every 10 s.
+  [The variants' switch table](../../deploy/phastform/variants/README.md#the-switches) lists every key and the pull
+  requests' flag for each.
+
+The serving variant, `make-room-serve`, loads `flatshare_make_room_serve.AsyncScheduler` from `src/flatshare_vllm/serve`
+over make-room's module. Its constructor installs what the engine's additional config asks for, each part off at 0:
+
+- `flatshare_jit`, which schedules the next batch just in time;
+- `flatshare_queue`, the cache-aware queue, which orders the agents by the prefill each has left;
+- `flatshare_copy`, which loads the CPU tier through the SM copy kernel.
+
+It then writes the configuration the scheduler runs, with the SHA-256 of each module it builds on, to the file that
+`FLATSHARE_ENGINE_EFFECTIVE` names. `deploy/bin/serving-check` holds that file to
+[the serving profile](../../deploy/phastform/variants/README.md#the-serving-profile).
 
 ## One source for the change
 
-The pull requests are the change's only source. A change is made on their branches, on vLLM main (`priority-kv-preemption` and `priority-prefill-hold` on the fork [StevenWang-CY/vllm](https://github.com/StevenWang-CY/vllm)), and cherry-picked onto the backport: three branches of v0.32.0 that the fork publishes, `v0.32.0-priority-kv-preemption` (#65282's commit), `v0.32.0-priority-prefill-hold` (#65283's own on top) and `v0.32.0-flatshare-make-room` (the variant's commits on top). The branches before 2026-11-03, for #63350 and #63351, stay on the fork as they were. `scripts/make-room-patches.sh CLONE`, in a clone of the fork with vLLM's `v0.32.0` tag fetched into it, then rewrites the three patches from them, each the `scheduler.py` diff of one branch's commits, with the commits named in its header.
+The pull requests are the change's only source. A change is made on their branches on vLLM's main,
+`priority-kv-preemption` and `priority-prefill-hold` on the fork
+[StevenWang-CY/vllm](https://github.com/StevenWang-CY/vllm), and cherry-picked onto three branches of v0.32.0 that the
+fork publishes:
 
-`make compat-upstream` (below) holds the backport to the pull requests' heads: the lines each pull request adds to `scheduler.py` are its patch's, but for those that `ADAPTED` in `scripts/compat_upstream.py` names, each under the commit whose "Backport:" paragraph in the patch's header says how v0.32.0 made it differ: the counters, the queue method and the hit's bound that [the build](#the-build) lists, and what v0.32.0 lacks of main's: the queue of requests waiting to start an async KV load, the blocks' weak reference to their pool and the cache of parked KV loads' reservations; 39 lines of the pull requests' and 24 of the backport's.
+- `v0.32.0-priority-kv-preemption`, with #65282's commit;
+- `v0.32.0-priority-prefill-hold`, with #65283's on top;
+- `v0.32.0-flatshare-make-room`, with the variant's commits on top.
 
-`tests/test_trace.py` keeps the variant and the pull requests from drifting:
+In a clone of the fork with vLLM's `v0.32.0` tag fetched, `scripts/make-room-patches.sh CLONE` rewrites the three
+patches from these branches. Each patch is the `scheduler.py` diff of one branch's commits, and its header names them.
+Two checks keep the variant equal to the pull requests:
 
-- **What it compares.** It builds the variant, and a module from the pull requests' two patches alone, their `SchedulerConfig` fields read from the variant's keys. Both run the same request traces on vLLM's real scheduler, and every step's scheduled tokens by request, preempted, new, cached and resumed requests and free blocks must be equal.
-- **Where.** In each switch set E2 ran (with the reserve off), synchronous and asynchronous, at watermarks 0 and 0.07, over four workloads: the behavior suite's; KV pressure, where make-room preempts under the budget cap and past two victims; random ones with shared prefixes; random ones with a KV connector's asynchronous loads, "not yet" lookups and pending frees.
-- **Its negative control.** One-line mutants of the pull requests' module, each of which must diverge.
-- **Against another module.** `TRACE_REFERENCE=<a generated module>` compares the variant with that module instead, the reserve and the counters included: before a change lands, the module it replaces against the new one. Before #63351 bounded a step's held tokens by its budget, a module counted each of the step's held chunks against the whole budget; against such a module (W5's), the variant's held tokens need only be at most the module's.
+- **The trace** (`tests/test_trace.py`) builds the variant and a module of the pull requests' two patches alone, and
+  runs both over the same request traces on vLLM's real scheduler. Every step's scheduled tokens by request, its
+  preempted, new, cached and resumed requests and its free blocks must be equal. It covers each switch set E2 ran with
+  the reserve off, synchronous and asynchronous, at watermarks 0 and 0.07. Its four workloads are the behavior suite's,
+  KV pressure where make-room preempts under the budget cap and past two victims, and random ones with shared prefixes
+  or with a KV connector's asynchronous loads. One-line mutants of the pull requests' module, its negative control,
+  must each diverge. `TRACE_REFERENCE=<a generated module>` compares the variant with that module instead.
+- **The backport against the pull requests' heads**, in `make compat-upstream` ([below](#fit-with-vllms-main)). The
+  lines each pull request adds to `scheduler.py` must be its patch's, except those that `ADAPTED` in
+  `scripts/compat_upstream.py` names under a commit whose "Backport:" paragraph says why. They are 39 lines of the
+  pull requests' and 24 of the backport's, for the counters, the queue check and the hit's bound above and for three
+  parts of main that v0.32.0 lacks. These are the queue of requests waiting to start an async KV load, the blocks' weak
+  reference to their pool and the cache of parked KV loads' reservations.
 
 ## vLLM 0.33.0
 
-make-room is ported to vLLM 0.33.0, released 2026-11-02. `make-room/v0.33.0` holds its three patches, the `scheduler.py` diffs of three branches of v0.33.0 that the fork publishes (`v0.33.0-priority-kv-preemption`, `v0.33.0-priority-prefill-hold` and `v0.33.0-flatshare-make-room`): the same 12 commits cherry-picked onto v0.33.0, which `BASE=v0.33.0 scripts/make-room-patches.sh CLONE` writes. They add 941 lines to `scheduler.py`: 0.32.0's 935, but for #65282's prefix-cache hit, which takes the bound of v0.33.0's waiting loop, the aux-output connector's.
+make-room builds on vLLM 0.33.0, released 2026-11-02, from that release's own patches in `make-room/v0.33.0`.
+`BASE=v0.33.0 scripts/make-room-patches.sh CLONE` writes them from three branches of v0.33.0 that the fork publishes,
+`v0.33.0-priority-kv-preemption`, `v0.33.0-priority-prefill-hold` and `v0.33.0-flatshare-make-room`, which hold the same
+12 commits. Every line they add to `scheduler.py` is one that 0.32.0's patches add, except for #65282's prefix-cache
+hit, which takes the bound of v0.33.0's waiting loop.
 
-- **What 0.33.0 changed under them.** Two places needed resolving. #65282's make-room call follows 0.33.0's local prefill cadence (#54627), which can defer a step's prefill, as on main, so that there it is the pull request's own; the variant's short-load rule follows 0.33.0's cap of the external hit for auxiliary outputs, so that it judges the load that is left. The resolutions place lines rather than change them: every line the patches add to `scheduler.py` is one 0.32.0's add, and the adaptations' "Backport:" paragraphs name 0.33.0.
-- **What checks it.** `make test-vllm VLLM_REF=v0.33.0`, the build on 0.33.0's source (118 passed; the tests of 0.32.0's own patches skip). `make test-make-room-ci VLLM_REF=v0.33.0`, the behavior suite and the serve module on 0.33.0's real scheduler (570 passed) and the trace against the pull requests' diff on 0.33.0 (1,081 passed), in the environment `requirements-cpu-v0.33.0.txt` pins, with CPU torch 2.14 and no test skipped. `make compat-upstream`, in which v0.33.0 must take its own patches. CI runs 0.32.0's.
-- **On the card.** On Phastform the README's quick start on `vllm==0.33.0` gave the voice turn's first token in 167–207 ms with make-room against 1,778–1,788 ms on stock 0.33.0, and the serving variant's own engine ran there, the serve module and just in time with it, serving-check finding only the release and the module changed ([the record](../../benchmarks/results/2026-11-02-port-v0.33.0/README.md)).
-- **What serves.** The serving profile stays on 0.32.0, which the rounds measured: 0.33.0 is for an operator who upgrades, and measures it first.
-
-## Upkeep: the change's cost and its fit upstream
-
-`make perf-make-room TORCH_PYTHON=<CPU torch 2.13 with vLLM 0.32.0's dependencies>` answers whether the change still costs a scheduler step what the pull requests' tables say, with its switches off and in the configuration to deploy. The environment `make test-make-room-ci` builds is one, and the checked-in baseline was measured in it: from the repository's root, `make build/cpu-env/synced`, then `TORCH_PYTHON=$PWD/build/cpu-env/bin/python` (an absolute path, since the recipe runs it from `python/flatshare_vllm`).
-
-- **What it times.** `tests/perf_schedule.py` times `Scheduler.schedule()` in the 13 steady states of the pull requests' cost tables, for stock vLLM's own scheduler and for make-room's module with its switches off and in the configuration to deploy (two preemptions a step, the budget cap's 48-token window, no reserve, the reservations taken, the agents' decodes held for a reply's first 48 tokens, retention within 3,584 tokens for 30 s, a 400 ms hold for an announced turn).
-- **How it times a state.** A process times one state: two schedulers of each configuration, and two more of off for the noise, take turns, and a configuration's cost is its cheaper scheduler's 10th-percentile step (inclusive). What else runs on the machine slows the schedulers alike, and one scheduler that runs slower than its twin all along, as their places in memory differ, does not count.
-- **The serving profile's states.** It times four states of the serving profile as well, in the configuration that `deploy/phastform/serving.json` gives (256-token steps without a long-prefill threshold, 256 request slots, 2,275 blocks), with asynchronous scheduling as the box does, a step in flight and block frees deferred, against vLLM's `AsyncScheduler`:
-  - `idle-R2`: agents only;
-  - `hold-R2`: a reply's first tokens while an agent that fits waits, which make-room holds back;
-  - `nofit-R16`: a voice turn that two victims cannot make room for, which make-room gives up on every step;
-  - `fire-R2`: the step in which make-room preempts for a voice turn. A process times it on 12 schedulers of each configuration built afresh, a configuration's cost their 10th-percentile step.
-- **The machine's own pace.** Each round ends with `benchmarks/a100/bench_host.py`'s Python workload, the machine's time at the scheduler's kind of work. Figure 7 sets the costs against the box's CPU (`crates/flatshare-sim/testdata/box-host.json`) by the workload's median over a baseline's rounds.
-- **What it checks.** A state has two ratios, each the median over its processes of each one's own: off/stock - 1, what the change costs a step with its switches off, which the pull requests measured as main's; and on/off - 1, what it costs in the configuration to deploy. On peacock, off/stock is 0.0% to 1.8% in the pull requests' states and 2.3% to 4.6% in the serving profile's, whose steps are short: 3 to 5 µs a step. The check prints a table of each, writes `build/perf-make-room.json`, and fails a state whose ratio exceeds the one in `benchmarks/perf/make-room-schedule.json` by more than that baseline's tolerance, measured again over six more processes first. A cost common to off and on, which on/off cannot see, fails off/stock. A ratio that fell below the baseline's by more than the tolerance passes, with a note: the baseline no longer describes the code.
-- **The tolerance.** 4% for the baseline measured on peacock, a shared 2.1 GHz Xeon: twice the worst difference there between two measurements of something unchanged, rounded up. Those are off against off, the median over a state's processes (at most 1.4%, in idle-R2), and the baseline's two halves, 3 rounds each: at most 1.7% in on/off, in B16, and 1.8% in off/stock, in B256. Its baselines there have given 4% to 9%.
-- **What "ok" means.** That the change's cost a step grew by less than the tolerance of the step it adds to: the step with the switches on for on/off, and with them off for off/stock. Each table's "fails past" column gives that in µs for each state: a small share of the change's own cost where it costs much (the B states) and a large one where it costs little (the A states). The 10th-percentile step does not see work added to fewer than about 9 steps in 10 (each state's on/off by the median step is kept in the JSON, unchecked).
-- **Its negative control** (`tests/test_perf_control.py`) runs after the check. make-room with two of #63350's optimizations undone (giving up on room before counting the decodes' growth, checking a fit against a bound first) must fail on/off at B64 and C256; make-room that looks the waiting head's prefix-cache hit up with its switches off, as it does with them on, must fail off/stock at B16 and C16; make-room that counts the blocks a preemption releases through a map of every block's holders, as it did before it counted them in one pass, must fail on/off at nofit-R16; and make-room must pass in all five. On peacock they fail by 17% to 87%.
-- **A busy machine.** A run whose 1-minute load went past the baseline's highest by half prints a warning beside its verdict, since a state that fails under such load may fail for it.
-- **Another machine.** A ratio does not move on a machine that is uniformly faster or slower, but a different CPU weights the change's code differently: on an M5 Max, on/off came within 1.3% of peacock's in 11 of the 17 states, 2.0% above it in A16 and nofit-R16, 2.5% and 3.3% above it in B16 and C16, and 5.0% and 5.6% below it in hold-R2 and fire-R2, and off/stock within 2.1% in all 17. So the check compares this machine's CPU, Python and torch with the baseline's before it times anything, and refuses a difference (exit 2; the script's `--any-machine` checks anyway, with a warning). On another machine, measure its own baseline first, into a file of its own rather than over the tracked one (`make perf-make-room UPDATE=1 PERF_BASELINE=build/perf-baseline.json PERF_BESIDE=<what else ran on the machine>`, two halves of 3 rounds, each round every state once), and check against that (`PERF_BASELINE=build/perf-baseline.json`); the negative control then runs against it too.
-- **Exit status.** `tests/perf_schedule.py` exits 0 when every state is within the tolerance, 1 when one costs more, and 2 when it could not measure: no torch or vLLM's scheduler, a baseline missing, unreadable or measured otherwise, or a measuring process that failed or left its steady state. make exits 2 for any failed recipe, so a job that needs to tell them apart runs the script itself (`cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=<VLLM_SRC> <TORCH_PYTHON> tests/perf_schedule.py check <baseline>`).
-
-`make compat-upstream [TORCH_PYTHON=<an interpreter for vLLM main's scheduler and tests>]` answers whether the pull requests still fit vLLM's moving main, whether the backport is still their heads, and whether make-room fits a newer release. `scripts/compat_upstream.py` fetches vLLM's main, the pull requests' heads and the release tags into a blobless clone in `~/.cache/flatshare/vllm-upstream`, and then checks:
-
-- **Each pull request against main.** Whether main holds it already (vLLM squash-merges, so a commit of main whose subject ends with the pull request's number, a true merge, or a merge that would change nothing), and otherwise whether it merges into main cleanly (`git merge-tree --write-tree`, git 2.38 or newer) or which files conflict. A pull request stacked on one main holds by its own changes alone (`--merge-base`, git 2.40).
-- **The pull requests' tests.** Given an interpreter, it runs the test files each pull request adds or changes on its merge, on CPU: each step that runs it within `--timeout` seconds, 900 by default, or its files fail.
-- **make-room on newer releases.** It builds make-room from 0.32.0's patches (`build.py make-room OUT --source-tree --release 0.32.0`) on the newest release and on a newer release candidate if there is one, and a release make-room is ported to, v0.33.0, from its own patches.
-- **The backport against the pull requests' heads.** It compares the lines each pull request adds to `scheduler.py` (#65282's from where it leaves main, #65283's from #65282's head) with those its patch adds, each net of those it removes. Every line that differs must be one that `ADAPTED` in the script names under a commit whose "Backport:" paragraph in the patch's header says how v0.32.0 made it differ. It prints both sides of any other, and notes an adapted line that no longer differs.
-
-What it answers:
-
-- **Exit 1** for a conflict or a failing test, a test that fails on main too being reported as main's, for a backport that differs from the pull requests' heads in a line no Backport paragraph names, and for patches that do not apply to v0.32.0, or to a release make-room is ported to.
-- **Exit 2** when it could not check: no network, an older git, an interpreter that cannot import main's scheduler or collect its tests, said as such rather than blamed on the pull requests, or a pull request none of whose tests ran (every one skipped is no evidence). **Exit 0** otherwise.
-- **A newer release.** 0.32.0's patches that do not apply to it are reported with the first hunk that fails and the size of that release's change to `scheduler.py`, and exit 0: until make-room is ported to it, it is written against 0.32.0, the pinned and deployed version, on which they must apply.
-- **Each hunk's fit.** Since `build.py` takes a hunk only exactly at its line and stops at the first it cannot, the report then gives every hunk's fit as `git apply` finds it, the patches in order, with all three lines of its context (`-C3`) and with one (`-C1`): the line it applies at and its offset, any context git left out, or that git rejects it.
-- **Reading a rejected hunk.** A hunk rejected at `-C3` is one a rebase re-anchors by hand, and one rejected at `-C1` as well is one whose own lines, or the line beside them, changed; a hunk whose context is a rejected one's lines is rejected with it.
+- **What 0.33.0 changed under the patches.** Two places needed resolving, and the resolutions move lines without
+  changing them. #65282's make-room call follows 0.33.0's local prefill cadence (#54627), as on main. The variant's
+  short-load rule follows 0.33.0's cap of the external hit for auxiliary outputs, so that it judges the load that is
+  left.
+- **What checks it.** `make test-vllm VLLM_REF=v0.33.0` and `make test-make-room-ci VLLM_REF=v0.33.0` run the build,
+  the scheduler suites and the trace on 0.33.0, the latter in the environment that `requirements-cpu-v0.33.0.txt`
+  pins with CPU torch 2.14. `make compat-upstream` requires v0.33.0 to take its own patches. CI runs 0.32.0's.
+- **What serves.** The serving profile stays on 0.32.0, which the rounds measured. On Phastform the repository's quick
+  start on 0.33.0 gave the voice turn's first token in 167–207 ms with make-room, against 1,778–1,788 ms on stock
+  0.33.0, and the serving variant's engine ran there
+  ([the port's record](../../benchmarks/results/2026-11-02-port-v0.33.0/README.md)).
 
 ## Tests
 
-`tests/test_build.py` builds both variants from a vLLM v0.32.0 source checkout's scheduler and checks that each module is the scheduler with its patches as `git apply` applies them, then the stock `AsyncScheduler`; that a source the patches do not match, or another installed vLLM, fails the build; that a checkout's release is the one whose patches apply; and how hunks are matched. It needs no GPU, torch or installed vLLM. CI runs it with `make test-vllm`, which makes a sparse checkout in `~/.cache/flatshare/vllm-v0.32.0` on first use, and `make test-vllm VLLM_REF=v0.33.0` runs it on 0.33.0's (`make-room` alone); `VLLM_SRC` points it at another checkout, and its build tests skip without one:
+`make test-vllm`, which CI runs, needs no GPU, torch or installed vLLM. On first use it makes a sparse checkout of
+vLLM v0.32.0 in `~/.cache/flatshare/vllm-v0.32.0`, and `VLLM_SRC` points it at another checkout. The scheduler suites
+need torch and vLLM's dependencies, so they skip there and run under their own targets:
 
 ```sh
-VLLM_SRC=~/src/vllm-v0.32.0 uv run --extra test pytest      # in python/flatshare_vllm
+make test-vllm                               # the build, the probes, the upkeep checks' own tests
+make test-vllm VLLM_REF=v0.33.0              # the build on 0.33.0's source (make-room alone)
+make test-make-room TORCH_PYTHON=PY          # the scheduler suites on vLLM's real scheduler, on CPU
+make test-trace TORCH_PYTHON=PY              # the trace; TRACE_SEEDS=100 for 100 random seeds, not 20
+make test-make-room-ci                       # both, as CI's make-room job runs them
 ```
 
-`test_build.py` also holds the serving profile's SHA-256 of the module (`deploy/profiles/rtx-5060-ti-serve.toml`) to the one it builds, so that a change to a patch changes the profile with it.
+In the package's directory, `VLLM_SRC=~/src/vllm-v0.32.0 uv run --extra test pytest` runs the first target's tests on a
+checkout of your own. `TORCH_PYTHON` is an absolute path to a Python with CPU torch 2.13 and vLLM 0.32.0's Python
+dependencies, and both targets fail if it cannot import them. `make test-make-room-ci` builds that environment in
+`build/cpu-env` from `requirements-cpu.txt` (Python 3.12, Linux x86_64), and with `FLATSHARE_NO_SKIPS=1` a skipped test
+fails the session.
 
-`tests/test_serve.py` checks the serving variant's scheduler on vLLM's real v1 scheduler, on CPU, in the environment of `tests/test_make_room.py` (`make test-make-room` runs them, with `tests/test_queue.py` and `tests/test_copy.py`): without the queue and the copy it schedules as make-room's `AsyncScheduler` step for step on the behavior suite's workload and the trace suite's KV pressure, it writes every setting the box's `serving.json` names, and `deploy/bin/serving-check` passes a profile of its own values and fails one that differs. `tests/test_queue.py` checks the waiting queue it installs (its order net of the GPU pool and a stand-in CPU tier, the bound, the refresh, make-room's preemption, and, past its bound, vLLM's own queue step for step), and `tests/test_copy.py` the CPU tier's copy (vLLM's selection with only its size threshold lifted, and its refusals).
-
-`tests/test_make_room.py` checks the `make-room` variant's behavior on vLLM's real v1 scheduler, on CPU, with hand-made requests and no model, as vLLM's own `tests/v1/core` do:
-
-- **The KV preemption** for a waiting higher-priority request under KV pressure: the request chosen, the victims and their order, shared prefixes, the per-step cap, deferred block frees, LoRA adapters, a request the waiting loop skips.
-- **The budget cap:** lower-priority prefill sits out a request's first tokens from the step it fits or its KV load is done, for at most its window's steps in a row in which the request computes nothing, and the first steps of a load only, and not for a request that does not fit; its window holds as many steps under asynchronous scheduling, a step in flight counted, as without.
-- **The reserve**, the switches' validation, and stock behavior with the switches off.
-- **The variant's other switches:** the calls' prefixes kept between their turns (a call's next turn ends its
-  retention, another call's does not, a turn that does not fit beside the others, shared blocks counted once, `retain_s`,
-  a prefix cache reset, room left for a full-length request); a call taking a lower priority's block reservations, in
-  both of the stall's shapes; lower-priority decodes held from a request's first tokens and none of its own priority; a
-  realtime request's short load recomputed; an announced turn holding lower-priority prefill back; and make-room's log
-  line with each switch's count.
-
-A stand-in KV connector loads a request's KV asynchronously or delays it. `tests/test_trace.py` is the trace above. The scheduler needs torch and vLLM's dependencies, which `make test-vllm`'s environment lacks, so there these tests skip; CI's `make-room` job runs them in a CPU environment of their own (below). On the GPU node they run against the engine environment with pytest beside it, and `VLLM_TARGET_DEVICE=cpu` keeps them off the GPU:
+On a GPU node the suites run against the engine environment with pytest beside it, kept off the GPU:
 
 ```sh
 tools=~/flatshare/cache/testtools
@@ -125,16 +143,105 @@ VLLM_TARGET_DEVICE=cpu PYTHONPATH=$tools ~/flatshare/venvs/engine/bin/python -m 
   -p no:cacheprovider tests/test_make_room.py tests/test_trace.py
 ```
 
-Elsewhere, an environment with CPU torch 2.13 and vLLM 0.32.0's Python dependencies runs them on the source checkout instead, from the repository's root: `make test-make-room TORCH_PYTHON=<its python>`, and `make test-trace TORCH_PYTHON=<its python>` (`TRACE_SEEDS=100` runs the random workloads at 100 seeds, where the default is 20). Both first check that the interpreter imports pytest, torch and vLLM's scheduler, and fail if it does not, rather than let pytest skip the suites. `make test-make-room-ci` runs both as CI's `make-room` job does. It runs them in the environment that `requirements-cpu.txt` pins: Python 3.12 on Linux x86_64, CPU torch 2.13.0, and vLLM's dependencies at the engine environment's versions (`requirements-cpu.in`, compiled by the command in its header). uv builds that environment in `build/cpu-env` (`CPU_ENV`), and the target sets `FLATSHARE_NO_SKIPS=1`, under which any skipped test fails the session (`tests/conftest.py`).
+| Test | What it checks | Run by |
+|---|---|---|
+| `test_build.py` | Each module is its patches as `git apply` applies them, then the stock `AsyncScheduler`, and the serving profile's hash is the build's | `make test-vllm` |
+| `test_make_room.py` | make-room's rules on vLLM's real v1 scheduler, with hand-made requests and no model | `make test-make-room` |
+| `test_trace.py` | make-room against the pull requests, step for step ([above](#one-source-for-the-change)) | `make test-trace` |
+| `test_serve.py`, `test_queue.py`, `test_copy.py` | The serving variant: its scheduling, the configuration it writes, its queue and its copy | `make test-make-room` |
+| `test_gateway_caps.py` | The gateway's reply caps as vLLM's request models read them | `make test-make-room` |
+| `test_jit.py` | Just-in-time scheduling on a stand-in engine core | `make test-vllm` |
+| `test_probe.py`, `test_tail.py`, `test_knee.py` | The checks on a GPU ([PRODUCTION.md](../../docs/PRODUCTION.md#checking-it-on-your-hardware) runs the probes), against stand-ins such as `tests/fake_engine.py` | `make test-vllm` |
+| `test_perf_schedule.py`, `test_perf_control.py` | The perf check's arithmetic and states, and its negative control | `make test-vllm` and `make test-make-room`; the control, `make perf-make-room` |
+| `test_compat_upstream.py` | `compat_upstream.py` against a fake upstream | `make test-vllm` |
+| `test_container.py` | [The container's](../../deploy/container/README.md) entrypoint against the serving drop-in | `make test-vllm` |
 
-The probes take their statistics from flatshare-stats (`python/flatshare_stats`), which they load from the source tree by path, so the engine's environment runs them without an install. The make-room probes' tests run in CI, with aiohttp from the test extra (the engine environment has it too), against `tests/fake_engine.py`, a stand-in for vLLM's server with a pool, a context and a fixed pace:
+Each test file's docstring says what it holds.
 
-- `tests/test_probe.py`: `probe.py`'s requests sized from the engine's pool and context, the frozen box's sizes unchanged, and its result line as the committed outputs' check and the renderer of the pull requests' bodies parse it, on a loopback port and on a Unix socket.
-- `tests/test_tail.py`: `tail.py`'s accounting of failed call turns and stopped agents, its agents and their prompts (the frozen box's unchanged, others from the pool and context), whole replies, a run's lines and an engine on its Unix socket.
-- `tests/test_knee.py`: `knee.sh`, the budget cap's window sweep, against stand-ins for `variant.sh`, the engine, `journalctl` and `tail.py`.
+## Upkeep: the change's cost and its fit upstream
 
-The upkeep checks' own tests:
+Run both checks, which `make check` leaves out, before changing the engine's code or moving off vLLM 0.32.0.
 
-- `tests/test_perf_schedule.py`: the perf check's arithmetic (the ratios, the tolerance, the check, its notes and its measuring again, the tables), its exit statuses, the checked-in baseline's numbers against its rule, and, with torch and vLLM's scheduler, that each of the 16 steady states, the pull requests' 13 and the serving profile's three, is steady for stock vLLM's scheduler as for make-room's and runs the path it is named for, and that in the step that preempts make-room alone preempts and admits the voice turn a step later. `make test-vllm` runs its arithmetic, and `make test-make-room` all of it.
-- `tests/test_perf_control.py`: the perf check's negative control, which times the scheduler, so only `make perf-make-room` runs it (`FLATSHARE_PERF=1`); elsewhere it skips.
-- `tests/test_compat_upstream.py`: `scripts/compat_upstream.py` against a fake upstream that it builds without the developer's git config: clean, conflicting, squash-merged and stacked pull requests, with tests that pass, fail, all skip or hang, an older git, no network; each hunk's fit as `git apply` finds it, on small patches of its own; and the backport against pull requests' heads whose lines in the scheduler are the backport's but for the adaptations, one that a push moved from it, and one that took an adapted line's backport form. `make test-vllm` runs it; its 15 tests that merge need git 2.38 or newer and skip with an older one, and two need `VLLM_SRC`.
+### The cost of a scheduler step
+
+```sh
+make build/cpu-env/synced                                      # from the repository's root
+make perf-make-room TORCH_PYTHON=$PWD/build/cpu-env/bin/python
+```
+
+`tests/perf_schedule.py` times `Scheduler.schedule()` for stock vLLM's scheduler and for make-room's module with its
+switches off and at the serving profile's values. It covers the 13 steady states of the pull requests' cost tables,
+and four states of the serving profile at `serving.json`'s settings with asynchronous scheduling:
+
+- `idle-R2`, agents only;
+- `hold-R2`, a reply's first tokens while an agent that fits waits;
+- `nofit-R16`, a voice turn that two victims cannot make room for;
+- `fire-R2`, the step in which make-room preempts for a voice turn.
+
+A configuration's cost is its cheaper scheduler's 10th-percentile step, with two schedulers of each configuration
+taking turns in one process, so that other work on the machine slows them alike. A run takes about 18 minutes on a
+2.1 GHz Xeon, and a new baseline about 30. The tracked baseline, `benchmarks/perf/make-room-schedule.json`, was
+measured on peacock in the environment above, and [the report's Figure 7](../../docs/REPORT.md#4-implementation) draws
+it.
+
+- **Two ratios a state.** off/stock − 1 is what the change costs with its switches off, which the pull requests
+  measured on main. on/off − 1 is what it costs with them at the profile's values. Each is the median over the state's
+  processes. On peacock off/stock is 0.0% to 1.8% in the pull requests' states, and 2.3% to 4.5% in the serving
+  profile's, where the steps are short and the cost is 3 to 5 µs a step.
+- **The verdict.** A state fails when a ratio exceeds the baseline's by more than its tolerance, 4%, after six more
+  processes measure it again. The tolerance is twice the worst difference between two measurements of unchanged code
+  on peacock, rounded up. A ratio that fell by more than the tolerance passes with a note that the baseline no longer
+  describes the code. The table's "fails past" column gives each tolerance in µs.
+- **Its negative control.** `tests/test_perf_control.py` then times three mutants of make-room, each with work added
+  where the change avoids it, which must fail in the states where that work runs, and make-room itself, which must
+  pass. On peacock the mutants fail by 17% to 87%.
+- **What it cannot see.** The 10th-percentile step misses work added to fewer than about 9 steps in 10. A run whose
+  1-minute load passes 1.5 times the baseline's highest prints a warning beside its verdict.
+- **Another machine.** A different CPU weights the change's code differently. On an M5 Max on/off came within 1.3% of
+  peacock's in 11 of the 17 states and 2.0% to 5.6% from it in the other six, and off/stock within 2.1% in all 17. So
+  the check refuses a machine whose CPU, Python or torch differs from the baseline's, unless the script's
+  `--any-machine` overrides it with a warning. Measure that machine's own baseline into a file of its own, then check
+  against it:
+
+  ```sh
+  make perf-make-room TORCH_PYTHON=PY UPDATE=1 PERF_BASELINE=build/perf-baseline.json PERF_BESIDE="<what else runs>"
+  make perf-make-room TORCH_PYTHON=PY PERF_BASELINE=build/perf-baseline.json
+  ```
+
+`tests/perf_schedule.py` exits 0 when every state is within its tolerance, 1 when one costs more, and 2 when it could
+not measure, as with a baseline from another machine. The make target exits 2 for any failure, so a job that must tell
+them apart runs the script itself.
+
+```sh
+cd python/flatshare_vllm && VLLM_TARGET_DEVICE=cpu PYTHONPATH=<VLLM_SRC> <TORCH_PYTHON> tests/perf_schedule.py check <baseline>
+```
+
+### Fit with vLLM's main
+
+```sh
+make compat-upstream [TORCH_PYTHON=<an interpreter for vLLM main's scheduler and tests>]
+```
+
+`scripts/compat_upstream.py` fetches vLLM's main, the pull requests' heads and the release tags into a blobless clone
+in `~/.cache/flatshare/vllm-upstream`, and checks four things:
+
+- **Each pull request against main.** Main may hold it already, as a squash-merged commit whose subject ends with its
+  number, as a true merge, or as a merge that would change nothing. Otherwise it must merge cleanly
+  (`git merge-tree --write-tree`, git 2.38 or newer, and 2.40 for #65283 once main holds #65282), or the report names
+  the files that conflict.
+- **Their tests.** Given an interpreter, it runs on CPU the test files each pull request adds or changes, on its merge.
+  Each run has `--timeout` seconds, 900 by default, or its files fail.
+- **make-room on newer releases.** It builds make-room from 0.32.0's patches on the newest release and on a newer
+  release candidate if there is one, and on v0.33.0 from its own patches.
+- **The backport against the pull requests' heads**, as [above](#one-source-for-the-change). It prints both sides of
+  any line that differs without an adaptation, and notes an adapted line that no longer differs.
+
+It exits 1 for a conflict, a failing test that main does not fail too, a backport line that differs without an
+adaptation, or patches that do not apply to v0.32.0 or v0.33.0. It exits 2 when it could not check, as with no
+network, an older git, or a pull request none of whose tests ran, and 0 otherwise. A newer release that 0.32.0's
+patches do not fit still exits 0, with the first hunk that fails, since make-room is written against 0.32.0 until it
+is ported.
+
+**Reading a hunk's fit.** `build.py` takes a hunk only exactly at its line, so the report gives every hunk's fit as
+`git apply` finds it, with all three lines of context (`-C3`) and with one (`-C1`). A hunk rejected at `-C3` is one a
+rebase re-anchors by hand. One rejected at `-C1` too is one whose own lines, or the line beside them, changed.

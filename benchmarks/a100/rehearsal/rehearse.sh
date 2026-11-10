@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # rehearse.sh [--redo STEP]... [--purge] STEP...|all|status|abort: the A100 run's single-host rehearsal on the box
-# (Phastform), from this workstation: docs/HARDWARE.md's "Running on another GPU, step by step" on real hardware,
-# beside the box's deployment and leaving it as it was found (README.md beside this file: the commands, what each step
-# prints and takes, how to abort and restore). The steps, in order:
+# (Phastform), from this workstation: docs/HARDWARE.md's "Running on another GPU, step by step" on real hardware, beside
+# the box's deployment and leaving it as it was found (README.md beside this file: the commands, each step and its
+# check, how to abort and restore). The steps, in order:
 #   check      read-only: the box's units stopped, the GPU idle, the ports free, the disk, the models, Kokoro, logind
 #   init       the rehearsal's home on the host (~/a100-rehearsal): its environment, Kokoro, the box's state recorded
 #   data       FLATSHARE_DATA on this workstation: weka-x32, weka-x32-long (long_traces.py), callers (cyan's)

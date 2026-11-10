@@ -1,55 +1,91 @@
 # flatshare-gateway
 
-`flatshare-gateway` is the serving control plane in front of one vLLM engine, or of several GPU nodes ([ADR-0007](../../docs/adr/0007-the-gateway-is-the-serving-control-plane.md)). It carries Flatshare's request contract: who a request belongs to, which session and SLO class it has, and which engine inputs a client may not set. It bounds, times and accounts every request, relays responses byte for byte, cancels the engine request when the client leaves, and ingests lifecycle events. [ARCHITECTURE.md §3.3](../../docs/ARCHITECTURE.md#33-the-gateway) places it in the deployment.
+`flatshare-gateway` is the serving control plane in front of one vLLM engine, or of several GPU nodes
+([ADR-0007](../../docs/adr/0007-the-gateway-is-the-serving-control-plane.md)). This README is its reference for
+integrators and operators: what it does to a request, its configuration, errors and metrics, and what it costs.
+[ARCHITECTURE.md §3.3](../../docs/ARCHITECTURE.md#33-the-gateway) places it in the deployment, and
+[the runbook](../../ops/RUNBOOK.md#the-gateway) installs and operates it.
 
-It is the control plane of one control host, not a general-purpose router: one upstream, or several GPU nodes with sticky sessions ([Nodes](#nodes)), loopback listeners, and nothing a stock proxy would not need besides the contract above. The configuration to deploy runs it without an admission policy: the gateway sets each request's priority from its SLO class ([PRODUCTION.md](../../docs/PRODUCTION.md#the-priorities)), and can cap each class's replies, and every request's choices, without a policy ([Bounds](#bounds)). Its cost is measured [below](#overhead).
-
-Its admission point, which only E2's harness configures, runs `flatshare-core`'s admission policies ([Admission](#admission)): the E2 baselines it emulates, and the lifecycle policy (`policy = "lifecycle"`), which E2's arm 9 runs with make-room: KV headroom timed by lifecycle events, a prefill budget in the critical window, and a realtime class that is never shed and degrades instead. What its lifecycle timing could and could not do is in [the report's §6.5](../../docs/REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work).
-
-## Running
+The gateway carries Flatshare's request contract: who a request belongs to, its session and SLO class, and which
+engine inputs a client may not set. It bounds, times and accounts every request, relays responses byte for byte, and
+cancels the engine's request when the client leaves. It serves one upstream, or several GPU nodes with sticky sessions,
+on loopback listeners. The configuration to deploy sets each request's priority from its class
+([PRODUCTION.md](../../docs/PRODUCTION.md#the-priorities)) and runs no admission policy, which only E2's harness
+configures ([Admission](#admission)).
 
 ```sh
 flatshare-gateway --config ~/.config/flatshare/gateway.toml
 ```
 
-[`deploy/cyan/gateway.example.toml`](../../deploy/cyan/gateway.example.toml) is the configuration for cyan, [`deploy/cyan/systemd/flatshare-gateway.service`](../../deploy/cyan/systemd/flatshare-gateway.service) its unit, and [`flatshare-gateway.socket`](../../deploy/cyan/systemd/flatshare-gateway.socket) the socket unit that holds its listeners. The [runbook](../../ops/RUNBOOK.md#the-gateway) covers installing and checking it.
+[`deploy/cyan/gateway.example.toml`](../../deploy/cyan/gateway.example.toml) is cyan's configuration,
+[`flatshare-gateway.service`](../../deploy/cyan/systemd/flatshare-gateway.service) its unit, and
+[`flatshare-gateway.socket`](../../deploy/cyan/systemd/flatshare-gateway.socket) the socket unit that holds its
+listeners.
 
 ## What it does
 
-- **Routes.** `POST /v1/chat/completions`, `/v1/completions`, `/v1/responses`, and the Anthropic Messages API's `/v1/messages` and `/v1/messages/count_tokens`, which vLLM 0.32 serves and Claude Code sends, are proxied with session, class and sanitization, each the same way. Any other path is 404, and a wrong method 405, both in OpenAI error format.
-  - *Claude Code* reaches them with `ANTHROPIC_BASE_URL` set to the gateway and the tenant's key in `ANTHROPIC_AUTH_TOKEN`, which it sends as a bearer token; a key in `x-api-key` is neither read nor forwarded.
-  - *The Responses API's `background`* passes: vLLM 0.32 refuses it unless the engine runs with `VLLM_ENABLE_RESPONSES_API_STORE=1`, which neither the frozen box nor the serving profile sets, and with that set a background response would run detached, outside the admission point and the cancellation of a request whose client leaves.
-  - *Models, events and sessions.* `GET /v1/models` is proxied with sanitized headers. `POST /v1/events` takes lifecycle events, and with `[[nodes]]`, `POST /v1/sessions` places a session, `DELETE /v1/sessions/{id}` ends its placement and `GET /nodes` shows the nodes ([Nodes](#nodes)).
-  - *The gateway's own.* `GET /health` and `/ready` are the gateway's own and need no key. `GET /metrics` (the gateway's metrics) and `GET /metrics/engine` (its engine's own `/metrics`, relayed, so that a scraper needs no route to the engine; with `[[nodes]]`, `?node=NAME`'s) need the metrics key on a TCP listener and nothing on a Unix socket ([Metrics and logs](#metrics-and-logs)).
-- **Listeners.** Any number of loopback TCP ports and Unix sockets; a TCP address beyond loopback is refused at start. A Unix listener may name a tenant for requests without a known key. TCP listeners may not, because every user of the host can reach loopback.
-  - *Inherited sockets.* The sockets systemd passes (`LISTEN_FDS`, socket activation; `flatshare-gateway.socket` on cyan) are served instead of new ones: each is matched to the `[[listen]]` entry of its address, an entry without one is bound as below, and a socket that no entry names stops the start before anything is bound, since nothing would accept on it. An inherited socket's file is the socket unit's, which removes it.
-  - *Its own Unix sockets.* A Unix socket the gateway binds itself is created with mode 0600 and removed at exit; a socket file that nobody accepts on (left by a crash) is replaced at start, while a live socket or a file that is not a socket is an error. Its directory must be the gateway's user's and closed to others (mode 700, as the units' `%t/flatshare`), or the start fails: bind() creates the file with the process's umask before its mode can be set, and meanwhile only the directory keeps other users from connecting.
-  - *Ready.* Once it has its listeners and is about to serve, the gateway sends `READY=1` to `NOTIFY_SOCKET` (sd_notify; its unit is `Type=notify`).
-- **Tenants and keys.** `Authorization: Bearer <key>` is hashed with SHA-256 and compared with every configured digest in constant time; the loop never exits early, so timing reveals neither which key matched nor how much of a digest did. A known key selects its tenant, on any listener. Otherwise the request belongs to the listener's tenant, or gets 401. The voice worker's OpenAI client sends a placeholder key, so on the voice socket an unknown key also means the socket's tenant.
-- **Sanitization.** From every request: the engine-control headers (`X-Vllm-Priority`, `X-SMG-Priority`, `X-data-parallel-rank`, and `X-Session-ID` unless the tenant is trusted), `X-Request-Id`, every `X-Flatshare-` header, `X-Claude-Code-Session-ID`, `Authorization`, and hop-by-hop headers, including those named in `Connection`. From every JSON body: vLLM 0.32's `session_id`, `priority`, `kv_transfer_params`, `ec_transfer_params`, `cache_salt`, `request_id` and `vllm_xargs`, and SGLang 0.5.22's `rid`, `extra_key`, `session_params`, `custom_labels` and routing fields (`routed_dp_rank`, `data_parallel_rank`, `disagg_prefill_dp_rank`, `bootstrap_host`, `bootstrap_port`, `bootstrap_room`) (`flatshare_proto::headers`). Only the top level of the body is parsed; values are copied through as raw JSON, and keys are compared after unescaping. Each removal of an input the client may not control is counted in `flatshare_gateway_sanitized_total`.
-- **Bounds** on what a request asks for, its reply's tokens and its choices, and on the work it holds, its place in flight and its body's bytes, with or without an admission policy ([Bounds](#bounds)).
-- **What it sets.** `X-Session-ID` (the resolved session), `X-Request-Id` (a fresh id, also returned to the client), the body `cache_salt` (the first 32 hex digits of HMAC-SHA-256 of the tenant's name, keyed by the secret in `cache_salt_secret_file`), and the class's priority in the signals `upstream_priority` lists: `X-Vllm-Priority` by default (realtime 0, interactive 1, background 2, as vLLM's priority scheduling reads it), the same number as the body's `priority` (SGLang's), or `X-SMG-Priority` (`system`, `interactive` and `bulk`, for SMG's priority scheduler). Every proxied inference response carries `X-Flatshare-Session-ID`.
-- **Sessions.** The first present source in [PROTOCOL.md](../../docs/PROTOCOL.md#sessions) order: a trusted tenant's `X-Session-ID`, `X-Claude-Code-Session-ID`, the body's `prompt_cache_key`. A trusted tenant's valid session id is used as it is. Any other value becomes `h-<first 32 hex of SHA-256(tenant, NUL, value)>`: every source of an untrusted tenant, so that it cannot name another tenant's session (its token estimates, its turn state, the session id the engine sees), and a value that is not a valid session id. With no source the gateway mints `m-<32 random hex>`.
-- **Classes.** A trusted tenant may ask for one with `X-Flatshare-Class` (an unknown value is 400); otherwise the tenant's `default_class` applies. A class stricter than the tenant's `max_class` is clamped to it and counted.
-- **Admission.** Under an `[admission]` policy, a request whose session and class are resolved waits there until the policy admits it, and is refused when its queue is full or its wait reaches `queue_timeout_s` ([Admission](#admission)). Nothing polls: a waiting request learns of its admission on a channel. An admitted request holds its place until its response ends or its client leaves; a client that leaves while it waits gives its place up at once. Under the lifecycle policy the admission point also follows each realtime session's turn, from lifecycle events and from the session's realtime requests.
-- **An engine that restarts.** A request that finds the upstream broken (no connection, or one that closes before the response headers) gets 502 `upstream_unavailable` and starts a probe of the engine's `/health`: at once, then every second until it answers. While the probe fails, requests get 503 `upstream_not_ready` with `Retry-After: 1` at once, without going upstream, and `/ready` answers 503; the probe that answers lets requests go upstream again.
-  - *What clients see.* An engine restart (106 s from the kill to the first success in the drill of 2026-10-25, on v0.3-295, 92 s of it the engine's warm start; [the drills](../../docs/BENCHMARKS.md#failure-drills)) is then one 502 and a stream of cheap 503s that tell clients to come back, instead of a 502 per request that each reached for a dead engine (and, through the tunnel, opened a session on its node).
-  - *No probe, no wait.* One connection that breaks on an engine that serves makes no request wait: the probe answers at once. A timeout is no reason to probe: the engine is slow, not gone.
-- **Several GPU nodes** (`[[nodes]]`): each node's engine and speech servers judged as one pipeline, sessions placed on the nodes stickily with call slots and, where set, a bound on each node's agents, calls spread over the nodes or filling them in order, and failover: a session whose node fails moves by its next request, a realtime request whose node fails before its first content is sent once more elsewhere, and a node that carries calls moved to it defers its agents' requests until those calls end ([Nodes](#nodes)). Without `[[nodes]]` the one `upstream` is served as it always was.
-- **Relay.** A pump task reads the upstream body into a bounded channel (`stream_buffer_frames`, 64 by default) that the client's response body drains.
-  - *A slow client.* A full channel stops the pump from reading the upstream, so a slow client slows the engine's socket, not the gateway's memory. If the channel stays full for `stall_timeout_s`, the pump aborts the upstream request and the client's response ends with an error.
-  - *A client that leaves.* When the client leaves, its response body is dropped, the pump sees the channel close and drops the upstream body at once, which closes the upstream connection; vLLM aborts a request whose client disconnects. A client that leaves before the response headers is handled the same way: hyper drops the handler, and with it the upstream request.
-  - *A response cut short*, by a stall, by the upstream, by a shed or by a drain, never ends cleanly, so the client cannot mistake it for a complete one.
-  - *A broken event stream.* When the upstream breaks off an event stream (the engine died, or its connection broke), the gateway first sends the error event of vLLM's own streams, `data: {"error": {"message": "the upstream stream broke off: ...", "type": "upstream_unavailable", "param": null, "code": 502}}`, after a blank line that ends any partial event, and then aborts the stream, so that a client that reads events learns why and one that ignores them still sees a broken stream. hyper drops the bytes it has not written when a body errors, so the abort waits one poll after the last frame.
-- **Deadlines** for every wait a request goes through, from its body's upload to its response's end, each from its class's table ([Deadlines](#deadlines)).
-- **Accounting** of every inference request, failures included: offered, admitted and ended once each, with one outcome, and a service level of good over valid requests by class, which a failure, a refusal for capacity, a timeout and a hang lower ([Accounting](#accounting)); and **the engine's state** as inference finds it, warming, serving, degraded or drained, from the requests' successes and an idle-only canary of one token, which `/ready` answers by ([The engine's state](#the-engines-state)).
-- **Usage.** Token usage is read from non-streaming JSON bodies and from SSE `data:` lines, for every API it routes (`prompt_tokens`/`input_tokens`, `completion_tokens`/`output_tokens`, `cached_tokens`). The Messages API counts the cache's reads and writes apart from its `input_tokens`, so its prompt is the three together and its cached tokens are the reads, as for chat, and its `stop_reason` is recorded as the matching `finish_reason` (`max_tokens` as `length`). Only lines that carry a non-null `usage`, `finish_reason` or `stop_reason` are parsed. The stream itself is never rewritten.
-- **Lifecycle events.** `POST /v1/events` accepts one `flatshare_proto::LifecycleEvent` or a JSON array of them, from trusted tenants only (403 otherwise). A batch is validated in full before any of it is recorded; an unknown `type` is 400 with the event's index. Events are deduplicated by `(tenant, source, event_id)` within a window of `event_dedup_capacity` ids and `event_dedup_ttl_s`. New events go to the admission point, where the lifecycle policy follows the realtime sessions' turns by them, and then to an `EventSink`; the `LogSink` writes one log line per event. The answer is 202 `{"accepted": n, "duplicates": m}`.
-- **Stop, reload and exit.** A stop drains, a reload hands the listening sockets to a successor without a gap, and a configuration error stops the start ([Stop, reload and exit](#stop-reload-and-exit)).
+<picture>
+  <source media="(max-width: 767px)" srcset="../../docs/figures/request-path-narrow.svg">
+  <img src="../../docs/figures/request-path.svg" width="100%" alt="A column of seven steps a request takes through the gateway, each step's main refusals leaving to its right, which the gateway's error table gives in full: authenticate (401 invalid_api_key, 400 invalid_class), bound (503 in_flight_limit, 429 tenant_in_flight_limit, 413 body_too_large), sanitize (400 invalid_json, 400 too_many_choices), place (503 upstream_not_ready, no_healthy_node, no_call_slot or no_agent_slot), forward (502 upstream_unavailable, 504 upstream_timeout), relay (an error event of type upstream_unavailable, upstream_timeout or draining once a stream has begun), and account, which records one outcome for every request.">
+</picture>
+
+**A request is refused at the first step it fails, and the first four refuse it before the engine sees it.** Once a
+stream has begun, a refusal ends it with an error event instead ([Errors](#errors)).
+
+- **Routes.** `POST /v1/chat/completions`, `/v1/completions`, `/v1/responses`, and the Anthropic Messages API's
+  `/v1/messages` and `/v1/messages/count_tokens` are proxied with session, class and sanitization, and `GET /v1/models`
+  with sanitized headers. `POST /v1/events` takes lifecycle events, and `/v1/sessions` and `/nodes` serve
+  [Nodes](#nodes). `GET /health` and `/ready` need no key, and `GET /metrics` and `/metrics/engine` (the engine's own,
+  relayed) need the metrics key on a TCP listener. Other paths are 404 and wrong methods 405.
+- **Claude Code** reaches it with `ANTHROPIC_BASE_URL` set to the gateway and the tenant's key in
+  `ANTHROPIC_AUTH_TOKEN`, sent as a bearer token. A key in `x-api-key` is neither read nor forwarded.
+- **Listeners** are loopback TCP ports and Unix sockets, and a TCP address beyond loopback is refused at start. Only a
+  Unix listener may name a tenant for requests without a known key, since every user of the host reaches loopback.
+  Sockets systemd passes (`LISTEN_FDS`) are matched to their `[[listen]]` entries, and one that no entry names stops
+  the start. The gateway's own Unix sockets get mode 0600, in a directory that must be closed to other users (mode 700).
+- **Tenants and keys.** `Authorization: Bearer <key>` is hashed with SHA-256 and compared with every digest in constant
+  time. A known key selects its tenant on any listener, and otherwise the request is the listener's tenant's or gets
+  401.
+- **Sanitization.** Every request loses the engine-control headers (`X-Vllm-Priority`, `X-SMG-Priority`,
+  `X-data-parallel-rank`, and `X-Session-ID` unless the tenant is trusted), `X-Request-Id`, every `X-Flatshare-`
+  header, `X-Claude-Code-Session-ID`, `Authorization` and the hop-by-hop headers, those `Connection` names among
+  them. Every JSON body loses vLLM 0.32's `session_id`, `priority`, `kv_transfer_params`, `ec_transfer_params`,
+  `cache_salt`, `request_id` and `vllm_xargs`, and SGLang 0.5.22's `rid`, `extra_key`, `session_params`,
+  `custom_labels`, `routed_dp_rank`, `data_parallel_rank`, `disagg_prefill_dp_rank`, `bootstrap_host`,
+  `bootstrap_port` and `bootstrap_room`. Only the body's top level is parsed, its keys compared after unescaping, and
+  `flatshare_gateway_sanitized_total` counts each removal.
+- **What it sets.** `X-Session-ID` carries the resolved session, and `X-Request-Id` a fresh id that the client gets
+  too. The body's `cache_salt` is the first 32 hex digits of HMAC-SHA-256 of the tenant's name, keyed by
+  `cache_salt_secret_file`'s secret. The class's priority goes in the signals `upstream_priority` lists:
+  `X-Vllm-Priority` by default (realtime 0, interactive 1, background 2), the body's `priority`, or `X-SMG-Priority`
+  (`system`, `interactive`, `bulk`). Each inference response carries `X-Flatshare-Session-ID`.
+- **Sessions.** The session is the first present source in [PROTOCOL.md](../../docs/PROTOCOL.md#sessions) order: a
+  trusted tenant's `X-Session-ID`, `X-Claude-Code-Session-ID`, the body's `prompt_cache_key`. A trusted tenant's valid
+  id is used as it is. Any other value becomes `h-<first 32 hex of SHA-256(tenant, NUL, value)>`, so no tenant can name
+  another's session, and with no source the gateway mints `m-<32 random hex>`.
+- **Classes.** A trusted tenant may choose one with `X-Flatshare-Class`, an unknown value being 400. Otherwise the
+  tenant's `default_class` applies, and a class stricter than its `max_class` is clamped.
+- **An engine that restarts.** A request that finds the upstream broken, with no connection or one closed before the
+  response headers, gets 502 `upstream_unavailable` and starts a probe of the engine's `/health`. Until it answers,
+  requests get 503 `upstream_not_ready` with `Retry-After: 1` without going upstream. A timeout starts no probe, since
+  the engine is slow, not gone.
+- **Relay.** A pump reads the upstream body into a bounded channel (`stream_buffer_frames`), so a slow client slows
+  the engine's socket rather than filling memory. A channel full for `stall_timeout_s` aborts the request. A client that
+  leaves drops the upstream request, which vLLM aborts. A stream the upstream breaks off gets vLLM's own error event,
+  `data: {"error": {..., "type": "upstream_unavailable", "param": null, "code": 502}}`, then an abort, never a clean
+  end.
+- **Usage** is read from JSON bodies and SSE `data:` lines for every route: `prompt_tokens` or `input_tokens`,
+  `completion_tokens` or `output_tokens`, and `cached_tokens`. The Messages API's prompt includes its cache reads and
+  writes, and its `stop_reason` is logged as the matching `finish_reason`. The stream is never rewritten.
+- **Lifecycle events.** `POST /v1/events` takes one `flatshare_proto::LifecycleEvent` or an array, from trusted tenants
+  only (403 otherwise), validated in full before any is recorded. Events are deduplicated by
+  `(tenant, source, event_id)` within `event_dedup_capacity` ids and `event_dedup_ttl_s`. The answer is 202
+  `{"accepted": n, "duplicates": m}`.
 
 ### Bounds
 
-Each bound holds with or without an admission policy. A request beyond one is answered at once and never queued, so that a flood of requests, bodies that never come among them, costs the gateway neither memory nor a wait.
+Each bound holds with or without an admission policy. A request beyond one is answered at once and never queued, so a
+flood costs the gateway neither memory nor a wait.
 
 | Bound | Key | Default | Beyond it |
 |---|---|---|---|
@@ -62,8 +98,6 @@ Each bound holds with or without an admission policy. A request beyond one is an
 | The bytes of every body held | `max_buffered_body_bytes` | 256 MiB | 503 `body_budget_exhausted` |
 | Requests waiting at the admission point | `max_queued` | 256 | 429 `queue_full` |
 
-Each route's engine reads its own limit fields, and vLLM 0.32's request models keep the fields they do not know as extras that nothing reads:
-
 | Route | The limit vLLM 0.32 reads | A capped body gets |
 |---|---|---|
 | Chat Completions | `max_completion_tokens`, or `max_tokens` when that is null or absent | Both, at the same value |
@@ -71,18 +105,21 @@ Each route's engine reads its own limit fields, and vLLM 0.32's request models k
 | Responses | `max_output_tokens` alone | `max_output_tokens` |
 | Messages | `max_tokens`, which it requires; count_tokens none, since it generates nothing | `max_tokens` |
 
-- **The reply cap.** A capped body gets its route's own fields, first, at the lower of the client's limit and the cap, and the fields its route does not read are removed: a chat body with only `max_output_tokens` once went uncapped. An uncapped body keeps its limits as they are.
-- **Malformed limits.** A body that sets one of the five fields twice (Python's `json` keeps the last, which the gateway would not), or one of them to anything but null or a whole number (`"64"` and `64.0`, which vLLM's models read as 64, included), is refused with 400 and the field as the error's `param`, capped or not.
-- **Choices.** A request's choices are its `n`, which with `use_beam_search` is the beam's width, and its `best_of`, which vLLM 0.32 no longer reads but other engines do.
-- **The fixture.** [`tests/fixtures/reply-caps.json`](tests/fixtures/reply-caps.json) holds what the gateway makes of 380 bodies, which its tests keep current (`make gateway-fixtures` writes it anew). `python/flatshare_vllm/tests/test_gateway_caps.py` parses each with vLLM 0.32.0's own request models and derives the limit and choices its serving layer would schedule (`make test-make-room`): never over the cap or `max_choices`, the limit the gateway wrote, an uncapped body's meaning unchanged, and every refused body one vLLM would have run over its bounds, refused itself, or not read.
-- **A place in flight** (`src/intake.rs`) is taken as soon as a request's tenant and class are known, before a byte of its body is read, and held until its end, whatever ends it. The tenant's bound is checked first. The classes' defaults keep room for each other under the gateway's: interactive and background together reach 768 of its 1,024, so a flood of them cannot take realtime's 128.
-- **The body budget** takes a declared length all at once before anything is read, and the rest chunk by chunk as it arrives, and gives the bytes back when the request ends. A batch of lifecycle events takes from the same budget.
-- **Under an admission policy** its queues hold `max_queued` requests in all, whatever their classes, beside each class's `queue_limit`.
-- **The defaults never refuse a recorded workload.** E2's heaviest point held about 30 requests in flight (24 agent sessions and the calls), and its bodies about 130 KB each.
+- **The reply cap** writes its route's fields at the lower of the client's limit and the cap, and removes those its
+  route does not read. A limit or choice field set twice, or to anything but null or a whole number, is a 400 naming
+  the field.
+- **A place in flight** is taken before the body is read and held to the request's end. The class defaults keep room for
+  each other, since interactive and background together reach 768 of the gateway's 1,024 and leave realtime its 128.
+- **The defaults never refuse a recorded workload.** E2's heaviest point held about 30 requests in flight, with bodies
+  of about 130 KB.
+- **[`tests/fixtures/reply-caps.json`](tests/fixtures/reply-caps.json)** holds 380 bodies as the gateway caps them,
+  which `python/flatshare_vllm/tests/test_gateway_caps.py` checks against vLLM 0.32.0's own request models
+  (`make test-make-room`). `make gateway-fixtures` writes it anew.
 
 ### Deadlines
 
-Every wait a request goes through has a deadline from its class's `[classes.<class>]` table (`src/deadline.rs`). Each wait ends at the earliest deadline that applies, which is the request's outcome (`timeout_upload` and so on).
+Every wait a request goes through has a deadline from its class's `[classes.<class>]` table, and each wait ends at the
+earliest that applies (`src/deadline.rs`).
 
 | Wait | Key | Default | Then |
 |---|---|---|---|
@@ -93,11 +130,12 @@ Every wait a request goes through has a deadline from its class's `[classes.<cla
 | Each frame after the first | `idle_timeout_s` | realtime 30 s, the others 600 s | The error event and an abort |
 | The whole request, from its receipt to its response's end | `total_timeout_s` | realtime 300 s, interactive 1,800 s, background 3,600 s | 504 `upstream_timeout`, or the error event once the response has begun |
 
-- **A passed deadline** drops the upstream request, which closes its connection and aborts the engine's work, gives the request's place and bytes back, and is recorded once. Behind a 503 `queue_timeout`, the engine never saw the request, or saw only a dropped attempt.
-- **Once an event stream has begun**, the client gets the error event of vLLM's streams, `data: {"error": {..., "type": "upstream_timeout", "param": null, "code": 504}}`, then an abort, so that the stream never ends cleanly and never with `[DONE]`. A JSON body is aborted. The engine's request ends first, at the deadline: a client whose buffer is full gets the event if it reads again within `stall_timeout_s`.
-- **Logical deadlines.** The first content and the total count from the request's receipt: a request that preempt-resubmit sends again keeps them, so a retry never buys it more time, and a retry comes only before the client has seen anything.
-- **A slow reader** costs the engine no time against `idle_timeout_s`, which counts from the moment the relay turns back to the upstream.
-- **The defaults** are a few times what the recorded runs took at most, so that none ends a request they made: background first bytes ran to 232 s at p99 behind preemptions (W5's resubmitting arm), realtime ones to 13.4 s (the worst arm's p99), and no run met the 600 s headers timeout.
+- **A passed deadline** aborts the engine's work, gives back the request's place, and is recorded once. A stream that
+  has begun gets the error event of type `upstream_timeout` and an abort, never `[DONE]`.
+- **The first content and the total count from the receipt**, so a retry never buys more time.
+- **The defaults are a few times the slowest recorded p99s.** Background first bytes ran to 232 s at p99 behind
+  preemptions, in W5's resubmitting arm, realtime ones to 13.4 s in the worst arm, and no run met the 600 s headers
+  timeout.
 
 ### Stop, reload and exit
 
@@ -109,418 +147,431 @@ Every wait a request goes through has a deadline from its class's `[classes.<cla
 | A configuration error | Stops the start, naming the file and the cause | 2 |
 | A listener that cannot bind, or an inherited socket that no listener names | Stops the start | 1 |
 
-- **A background request cut by the drain.** A stream ends with the `draining` error event, `data: {"error": {..., "type": "draining", "param": null, "code": 503}}`, and an abort. A request without a response yet gets 503 `draining` with `Retry-After: 1`.
-- **When `drain_timeout_s` passes.** The process exits, and a realtime or interactive request still running ends with it: its stream breaks off without its end, and its record says `drained`. A request that a covering node holds back ([Nodes](#nodes)) is not left for that: as a stop's drain begins it gets 503 `draining` with `Retry-After: 1`, never having gone upstream, since no gateway serves after this one.
-- **The reload.** The gateway starts its successor from the binary at its own path and with its own arguments, so from the build and the configuration on disk, with its listening sockets from fd 3 on (`LISTEN_FDS`). The successor takes them instead of binding, tells systemd that it is the unit's main process and ready (`MAINPID=`, `READY=1`), and sends SIGTERM to its predecessor. Both accept on the same sockets until then, so no connection is refused or waits. [`deploy/bin/flatshare-gateway-reload`](../../deploy/bin/flatshare-gateway-reload) waits for the unit's main process to change.
-- **The listeners.** A reload keeps them: a change to `[[listen]]` takes a restart, with the socket unit's. Under socket activation (`flatshare-gateway.socket` on cyan) the sockets outlive a stop and a crash as well: the connections made until the next gateway serves wait in the backlog, for the drain on a restart and about a second after a crash, instead of being refused.
-- **One admission point over both processes** (`src/ledger.rs`). While a reload's predecessor drains, the two serve one engine. The predecessor admits nothing more once it hands its sockets over: a request still waiting at its admission point or held back by a node that covers, or reaching its intake, gets 503 `draining` with `Retry-After: 1`, never having gone upstream, for its client to send to the successor.
-- **What the predecessor still holds.** Each time that changes, it tells the successor through a Unix socket in a directory of its own (mode 700, its path in the successor's environment): its requests in flight in all, by class and by tenant, their bodies' bytes, and its admission point's admitted requests, background tokens, realtime requests without a first byte and armed sessions. The successor counts them with its own, in its bounds and in its policy's decisions, until the predecessor exits (`flatshare_gateway_predecessor_in_flight`).
-- **No request reaches both.** The successor serves only once the predecessor says that it admits nothing more (2 s at most). The predecessor keeps its realtime and interactive requests, and its background ones for `background_drain_s` at most. A successor from a build before the ledger, or one that cannot reach it, counts only its own.
+- **The drain** cuts a background stream with the `draining` error event, and answers a request without a response
+  503 `draining` with `Retry-After: 1`. Requests still running when `drain_timeout_s` passes end with the process.
+- **The reload** starts the successor from the binary at the gateway's path, with its arguments and listening sockets.
+  The successor tells systemd it is the main process and ready (`MAINPID=`, `READY=1`), then sends its predecessor
+  SIGTERM, and both accept until then.
+  [`deploy/bin/flatshare-gateway-reload`](../../deploy/bin/flatshare-gateway-reload) waits for the main process to
+  change.
+- **One admission point over both processes** (`src/ledger.rs`). The predecessor admits nothing more once it hands its
+  sockets over, and answers what still waits there 503 `draining`. The successor counts what the predecessor still
+  holds in its own bounds until it exits (`flatshare_gateway_predecessor_in_flight`), and serves only once the
+  predecessor admits nothing more, 2 s at most. No request reaches both.
+- **The listeners outlive the process.** A change to `[[listen]]` takes a restart. Under socket activation, connections
+  wait in the backlog until the next gateway serves.
 
 ## What it does not do
 
-- Leases, prefetch or a recompute ledger: the lease design was not pursued ([ADR-0006](../../docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)). Nor admission for interactive requests by predicted time to first token: the lifecycle policy does not hold interactive requests.
-- Retries, but for a realtime request whose node fails before its first content, sent once more on another node ([Nodes](#nodes)); or balancing single requests over several engines: with `[[nodes]]` a session is placed once and stays on the node that holds its KV, and KV never moves between nodes. Nor admission policies with `[[nodes]]`: each engine would need an admission point of its own, as the parked two-node design gave it (the `two-node` branch).
-- TLS. Every listener binds loopback or a private socket, and the upstream is a tunnel's socket or a loopback port.
-- Inferring `turn_started` and `turn_finished` from traffic. The finish reason is logged per request.
-- The Responses API's stop reasons (its usage is read).
-- What it leaves to the deployment:
-  - a bound on its connections: it bounds the requests in flight and the bodies they hold, not the idle connections clients keep open;
-  - a client that resends: a draining gateway closes its idle keep-alive connections, as every HTTP/1.1 server does, and a request sent on one at the moment it closes gets no answer. It never reached the gateway, so sending it again on a new connection is safe: the voice worker's LLM requests get one more try (LiveKit's `max_retry=1`, `flatshare_voice.worker`), and a client without one sees the error.
+- **Leases, prefetch or a recompute ledger.** The lease design was not pursued
+  ([ADR-0006](../../docs/adr/0006-the-engine-change-carries-the-realtime-tier.md)).
+- **Retries or per-request balancing.** Only a realtime request whose node fails before its first content is sent
+  again ([Nodes](#nodes)). A session stays on the node that holds its KV, and no admission policy runs with
+  `[[nodes]]`.
+- **TLS.** Every listener binds loopback or a private socket, and the upstream is a tunnel's socket or a loopback port.
+- **Turns from traffic, or the Responses API's stop reasons.** `turn_started` and `turn_finished` come only from
+  lifecycle events.
+- **A Responses API `background` request.** vLLM 0.32 refuses it unless `VLLM_ENABLE_RESPONSES_API_STORE=1`, which no
+  Flatshare configuration sets, since such a response would run outside the gateway's bounds.
+- **A bound on idle connections**, or an answer to a request sent on a keep-alive connection that a draining gateway
+  closes. That request never reached the gateway, so a client may resend it, as the voice worker does once.
 
 ## Configuration
 
-Unknown keys are errors, so a misspelled setting fails at start instead of silently taking its default. So does a
-duration (a key that ends in `_s`) over 1e9 seconds, about 32 years.
+Unknown keys are errors, so a misspelled setting fails at start instead of taking its default, and so is a duration
+(a key that ends in `_s`) over 1e9 seconds.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `upstream` | required without `[[nodes]]` | The engine: `http://host:port`, or `unix:` and the absolute path of its socket, such as a tunnel's (`unix:/run/user/1007/flatshare/phastform-engine.sock`) (note 1) |
-| `upstream_idle_timeout_s` | 4 | How long an idle upstream connection is kept for reuse; keep it below the engine's keep-alive (note 2) |
-| `upstream_priority` | `["vllm-header"]` | Where the class's priority goes upstream: any of `"vllm-header"`, `"body"` and `"smg-header"` (note 3) |
-| `cache_salt_secret_file` | required | An absolute path: a file of 32 random bytes in hex that only its owner may open (mode 600) (note 4) |
-| `metrics_key_file` | required with a TCP listener | An absolute path: a file of one key on one line that only its owner may open (note 5) |
-| `max_body_bytes` | 33554432 (32 MiB) | Larger request bodies get 413 |
-| `max_buffered_body_bytes` | 268435456 (256 MiB) | The bytes of request bodies the gateway holds at most, in all, from their first chunk to their request's end (note 6) |
-| `max_in_flight` | 1024 | The inference requests in flight at most, from their headers to their end; one more gets 503 `in_flight_limit` before its body is read (note 7) |
-| `max_queued` | 256 | The requests waiting at the admission point at most, in all its queues and whatever their classes; one more gets 429 `queue_full` (note 8) |
-| `max_choices` | 1 | The choices a request may ask for at most: its `n` and its `best_of`; one more is 400 `too_many_choices` (note 9) |
+| `upstream` | required without `[[nodes]]` | The engine, `http://host:port` or `unix:` and its socket's absolute path, over HTTP/1.1 with pooled connections |
+| `upstream_idle_timeout_s` | 4 | How long an idle upstream connection is kept, below the engine's keep-alive (`VLLM_HTTP_TIMEOUT_KEEP_ALIVE`, 5 s by default). On cyan it is 55 s, with the engine's at 60 s, so that voice turns reuse their connections ([BENCHMARKS.md](../../docs/BENCHMARKS.md#what-does-the-gateway-add-to-a-request)) |
+| `upstream_priority` | `["vllm-header"]` | Where the class's priority goes: any of `"vllm-header"`, `"body"` and `"smg-header"`, or none (`[]`) |
+| `cache_salt_secret_file` | required | 32 random bytes in hex that key every tenant's `cache_salt` (note 1) |
+| `metrics_key_file` | required with a TCP listener | The key `/metrics` and `/metrics/engine` ask for on a TCP listener (note 1) |
+| `max_body_bytes` | 33554432 (32 MiB) | [Bounds](#bounds) |
+| `max_buffered_body_bytes` | 268435456 (256 MiB) | [Bounds](#bounds), at least `max_body_bytes` |
+| `max_in_flight` | 1024 | [Bounds](#bounds), Envoy's circuit breakers' default |
+| `max_queued` | 256 | [Bounds](#bounds), in all the admission point's queues |
+| `max_choices` | 1 | [Bounds](#bounds): `n`, the beam's width with `use_beam_search`, and `best_of`. vLLM runs every choice, each a reply's worth of decode and KV |
 | `stream_buffer_frames` | 64 | Frames buffered between the upstream and a client |
 | `stall_timeout_s` | 30 | How long that buffer may stay full before the stream is aborted |
-| `headers_timeout_s` | 600 | Every class's default `headers_timeout_s` (below): how long an attempt waits for the upstream's response headers before 504 (note 10) |
-| `drain_timeout_s` | 30 | How long a shutdown waits for in-flight requests |
-| `background_drain_s` | 5 | How far into a drain background requests go on, from 0 (cut as the drain starts) to `drain_timeout_s` (note 11) |
+| `headers_timeout_s` | 600 | Every class's default `headers_timeout_s`. Its old name, `first_byte_timeout_s`, is refused |
+| `drain_timeout_s` | 30 | How long a stop waits for requests in flight |
+| `background_drain_s` | 5 | How far into a drain background requests go on, from 0 to `drain_timeout_s` |
 | `event_dedup_capacity` | 100000 | Lifecycle-event ids remembered for deduplication |
 | `event_dedup_ttl_s` | 600 | How long an event id is remembered |
 | `log_format` | `"text"` | `"text"` or `"json"` (one object per line) |
 | `log_level` | `"info"` | `error`, `warn`, `info`, `debug` or `trace` |
 
-1. Either is spoken to over HTTP/1.1 with pooled connections. Several GPU nodes are `[[nodes]]` entries instead (below), and then `upstream` is not set.
-2. The engine's keep-alive is `VLLM_HTTP_TIMEOUT_KEEP_ALIVE`, 5 s by default. Unless the gateway's is below it, a request can go out on a connection the engine is closing.
-3. The empty list sends none, as a plain client does: E2's stock arm. vLLM 0.32's FCFS scheduler ignores priorities rather than rejecting them.
-4. `deploy/cyan/install.sh` writes the file once. It keys every tenant's `cache_salt`, so that a client which reaches the engine directly cannot compute another tenant's salt from its name. A missing or unreadable file, one other users may open, or one that holds anything else stops the gateway at start. A new secret changes every salt, which orphans every tenant's prefix cache.
-5. `deploy/cyan/install.sh` writes the file once. `GET /metrics` and `/metrics/engine` on a TCP listener need it as `Authorization: Bearer <key>` (401 otherwise): every user of the host reaches loopback, and the metrics name the tenants and their traffic. The gateway keeps its SHA-256 and compares in constant time, as for tenants' keys. On a Unix socket, whose file mode keeps other users out, no key is asked for.
-6. A body that would pass it gets 503 `body_budget_exhausted` (at once for a declared length). It must be at least `max_body_bytes` ([Bounds](#bounds)).
-7. 1024 is Envoy's circuit breakers' default.
-8. Without an `[admission]` policy nothing waits.
-9. With `use_beam_search`, a request's `n` is its beam's width. vLLM runs every choice it is asked for (it took `n = 8`), each a reply's worth of decode and KV.
-10. Its old name, `first_byte_timeout_s`, is refused at start with this one.
-11. Past it, a background stream ends with the `draining` error event and an abort, and a background request without a response yet, or still waiting at the admission point, gets 503 `draining` with `Retry-After: 1`, so that its client sends it again to the gateway that serves next. Realtime and interactive requests have the whole `drain_timeout_s`.
+1. An absolute path to a file that `deploy/cyan/install.sh` writes once, mode 600. A missing file, one other users may
+   open, or one that holds anything else stops the start. The secret keeps a client that reaches the engine directly
+   from computing another tenant's salt, and a new one orphans every tenant's prefix cache.
 
-Each `[classes.<class>]` table (`realtime`, `interactive`, `background`; any of them, or none) sets what the requests of one class may ask for:
+Each `[classes.<class>]` table (`realtime`, `interactive`, `background`) sets:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `max_reply_tokens` | none | The cap on the class's replies, in tokens, with or without an admission policy (note 1) |
-| `max_in_flight` | realtime 128, interactive 256, background 512 | The class's inference requests in flight at most; one more gets 503 `class_in_flight_limit` before its body is read |
-| `upload_timeout_s` | 60 | The request body's upload, from the receipt of its headers: then 408 `upload_timeout` |
-| `queue_timeout_s` | 120 | Each wait at the admission point, the first and one after a preemption: then 503 `queue_timeout` with `Retry-After: 1` (note 2) |
-| `headers_timeout_s` | the top-level `headers_timeout_s` | Each attempt's wait for the upstream's response headers: then 504 `upstream_timeout` (note 3) |
-| `first_content_timeout_s` | realtime 60, interactive 600, background 600 | The first body frame, from the request's receipt, whatever its attempts: then 504, or the `upstream_timeout` error event once the response has begun |
-| `idle_timeout_s` | realtime 30, interactive 600, background 600 | Each wait for a body frame after the first: then the error event and an abort (note 4) |
-| `total_timeout_s` | realtime 300, interactive 1800, background 3600 | The whole request, from its receipt to its response's end; it bounds every wait above |
-| `first_content_objective_s` | realtime 0.25, the others none | The class's objective in the service level ([Accounting](#accounting)), for its first content (note 5) |
+| `max_reply_tokens` | none | The cap on the class's replies, in tokens ([Bounds](#bounds)) |
+| `max_in_flight` | realtime 128, interactive 256, background 512 | [Bounds](#bounds) |
+| `upload_timeout_s`, `queue_timeout_s`, `headers_timeout_s`, `first_content_timeout_s`, `idle_timeout_s`, `total_timeout_s` | As in [Deadlines](#deadlines) | [Deadlines](#deadlines) |
+| `first_content_objective_s` | realtime 0.25, the others none | The class's objective in the service level ([Accounting](#accounting)). None: completing is enough |
 
-1. A body gets its route's own limit at the lower of the client's limit and the cap ([Bounds](#bounds)), as degrade caps a reply. Under the lifecycle policy a degraded reply gets the lower of the two caps.
-2. The `[admission]` policy's own `queue_timeout_s` (60 s) or `max_defer_s` (10 s) comes first by default.
-3. vLLM sends a stream's headers at once and a JSON body's at the end of its generation.
-4. The wait counts from the moment the relay turns back to the upstream.
-5. A valid request is good when it completes with its first content within this, from its receipt. None: completing is enough. Realtime's is docs/SLO.md's 250 ms.
-
-The `[canary]` table sets the inference canary, which finds the engine's state by its inference ([The engine's state](#the-engines-state)):
+The `[canary]` table sets the inference canary ([The engine's state](#the-engines-state)):
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled` | `true` | `false` sends no canary and leaves the engine `serving` from the start (note 1) |
-| `interval_s` | 30 | How long no inference may succeed before the canary asks, from the later of the last success and the last canary (note 2) |
-| `timeout_s` | 60 | How long one canary may take, to its answer's end; then it failed. It waits at the lowest class's priority, behind every class's prefill |
-| `degraded_after` | 3 | The canaries failed in a row, with no inference succeeding between them, that make a serving engine `degraded` |
+| `enabled` | `true` | `false` sends none and leaves the engine `serving`, as E2's points run |
+| `interval_s` | 30 | How long no inference may succeed before the canary asks; every second while the engine warms |
+| `timeout_s` | 60 | How long one canary may take, at the lowest class's priority |
+| `degraded_after` | 3 | The canaries failed in a row, with no success between, that make the engine `degraded` |
 
-1. With it off, `/ready` asks only the engine's `/health`, as before the canary. E2's points run with it off (`flatshare-bench e2 run`). The other keys may stay set while it is off.
-2. While the engine warms, the canary asks every second, or every `interval_s` if that is shorter.
-
-Each `[[nodes]]` entry is a GPU node behind the gateway ([Nodes](#nodes)), its engine and speech servers as cyan's tunnels reach them; with any, `upstream` is not set and no `[admission]` policy may be, and some node must take each role:
+Each `[[nodes]]` entry is a GPU node ([Nodes](#nodes)). With any, `upstream` and `[admission]` are not set, and some
+node must take each role:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `name` | required | The node's name, from `[A-Za-z0-9._-]`: the metrics' `node` label, `/nodes` and `POST /v1/sessions`' answers |
-| `upstream` | required | Its engine, as the top-level `upstream` is written: `unix:/run/user/1007/flatshare/gray-engine.sock` |
-| `roles` | `["realtime", "background"]` | The sessions it takes: `realtime` (calls), `background` (agents: interactive and background requests), or both |
-| `max_calls` | 2 | The realtime sessions placed on it at most, a call each; one more that no other node takes gets 503 `no_call_slot` (note 1) |
-| `max_agents` | required with both roles | The agents' sessions placed on it at most, interactive and background together; one more that no other node takes gets 503 `no_agent_slot` (note 2) |
-| `stt`, `tts` | none | Its speech servers, as `upstream` is written (`unix:/run/user/1007/flatshare/gray-stt.sock`) (note 3) |
-| `draining` | false | Whether it drains: it takes no new session, keeps its calls until they end, and its agents' sessions move by their next request ([Nodes](#nodes)) |
+| `name` | required | From `[A-Za-z0-9._-]`, the metrics' `node` label |
+| `upstream` | required | Its engine, as the top-level `upstream`: `unix:/run/user/1007/flatshare/gray-engine.sock` |
+| `roles` | `["realtime", "background"]` | `realtime` takes calls, `background` the agents' interactive and background requests |
+| `max_calls` | 2 | The calls placed on it at most, positive with the realtime role |
+| `max_agents` | required with both roles | The agents' sessions placed on it at most, a positive count or `"unbounded"`. A background-only node takes any number unless it sets one |
+| `stt`, `tts` | none | Its speech servers, as `upstream`. Its health needs their `/health` |
+| `draining` | false | Whether it [drains](#nodes) |
 
-1. E2 measured two calls on one card. It must be positive with the realtime role.
-2. On a node that carries calls, it is the agents its card serves beside them within the voice SLO: a node with both roles sets it, or `"unbounded"` to run its agents without a bound, and a gateway with one that does neither refuses to start. A node with the background role alone takes agents without a bound unless it sets one. It must be positive or `"unbounded"`, and is only for the background role.
-3. The node's health needs their `/health`, and `POST /v1/sessions` names them for the call to bind. A node without them is judged by its engine alone.
-
-The `[placement]` table, which needs `[[nodes]]`, sets how sessions are placed and when a node is healthy:
+The `[placement]` table, which needs `[[nodes]]`, sets:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `idle_s` | 300 | How long a session keeps its node without a request; its next request is placed again (note 1) |
-| `health_interval_s` | 1 | How often each node is checked: its engine serving and ready, its STT and TTS answering `/health` |
+| `idle_s` | 300 | How long a session keeps its node without a request |
+| `health_interval_s` | 1 | How often each node is checked |
 | `health_timeout_s` | 1 | How long a speech server's `/health` may take |
-| `unhealthy_after` | 3 | The failed checks in a row that make a healthy node unhealthy |
-| `healthy_after` | 2 | The passed checks in a row that make an unhealthy node healthy again |
-| `failover_background_max_in_flight` | 0 | The interactive and background requests in flight at most on a node that covers ([Nodes](#nodes)); 0 defers them all (note 2) |
-| `calls` | `"spread"` | Which of the available realtime nodes with a free call slot a new or moved call goes to: `"spread"` or `"fill"` (note 3) |
+| `unhealthy_after` | 3 | The failed checks in a row that make a node unhealthy |
+| `healthy_after` | 2 | The passed checks in a row that make it healthy again |
+| `failover_background_max_in_flight` | 0 | The interactive and background requests in flight on a node that covers; 0 defers them all |
+| `calls` | `"spread"` | Where a call goes: `"spread"` to the node with the fewest calls, `"fill"` to the first in the file's order with a free slot |
 
-1. The default is the minutes a prefix cache is worth keeping a session for; a call's session ends with the call (`DELETE /v1/sessions/{id}`, or its `session_closed` event).
-2. A node covers while it carries realtime sessions moved to it from another node, or, with `calls = "fill"`, while it is a realtime node after the first and carries any call. The interactive and background requests beyond the bound wait, as at an admission point, until those calls end.
-3. `"spread"`: the one with the fewest calls, then the fewest requests in flight. `"fill"`: the first in the file's order, so that a later node takes calls only while the earlier ones are full or not available, a warm spare, which covers while it carries any call.
-
-Each `[[listen]]` entry sets exactly one of `tcp = "127.0.0.1:18080"`, a loopback address, or `unix = "/absolute/path.sock"`, and a Unix entry may set `tenant`. Each `[tenants.<name>]` table (names from `[A-Za-z0-9._-]`) sets:
+Each `[[listen]]` entry sets exactly one of `tcp = "127.0.0.1:18080"`, a loopback address, or
+`unix = "/absolute/path.sock"`, and a Unix entry may set `tenant`. Each `[tenants.<name>]` table (names from
+`[A-Za-z0-9._-]`) sets:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `keys_sha256` | `[]` | Hex SHA-256 digests of the tenant's API keys, which never appear in the file. A tenant with no keys must be named by a listener |
-| `trusted` | `false` | May set `X-Session-ID` and `X-Flatshare-Class`, post lifecycle events, and with `[[nodes]]` place and end sessions (`POST /v1/sessions`, `DELETE /v1/sessions/{id}`) |
-| `default_class` | `"interactive"` | The class of requests that do not choose one |
+| `keys_sha256` | `[]` | Hex SHA-256 digests of the tenant's API keys. A tenant with no keys must be named by a listener |
+| `trusted` | `false` | May set `X-Session-ID` and `X-Flatshare-Class`, post lifecycle events, and place and end sessions |
+| `default_class` | `"interactive"` | The class of requests that choose none |
 | `max_class` | `default_class` | The strictest class the tenant may use |
-| `max_in_flight` | 512 | The tenant's inference requests in flight at most; one more gets 429 `tenant_in_flight_limit` before its body is read (note 1) |
+| `max_in_flight` | 512 | [Bounds](#bounds), half the gateway's, so that one tenant's flood leaves the others room |
 
-1. The default is half of `max_in_flight`'s, so that one tenant's flood leaves the others room.
-
-The `[admission]` table sets the admission policy. A key that belongs to other policies than the chosen one is an error, like an unknown key, and so, under `lifecycle`, is a key that no mechanism switched on reads.
-
-| Key | Default | Policies | Meaning |
-|---|---|---|---|
-| `policy` | `"none"` | — | `"none"` (every request goes upstream at once), `"static-cap"`, `"token-reservation"`, `"flow-control"`, `"preempt-resubmit"` or `"lifecycle"` |
-| `background_max_in_flight` | required | `static-cap` | Background requests in flight at most |
-| `pool_tokens` | 36400 | `token-reservation`; `lifecycle` with `headroom` or `degrade` | The KV pool in tokens; the default is the frozen box's |
-| `reserved_tokens` | required | `token-reservation` | Pool tokens background requests leave free; less than `pool_tokens` |
-| `ceilings` | required | `flow-control` | `{ realtime = 16, interactive = 12, background = 8 }`: each class is dispatched while fewer requests than its ceiling are in flight. The ceilings must not increase from realtime to background |
-| `headroom` | `true` | `lifecycle` | Keep KV headroom free for the armed realtime sessions |
-| `headroom_tokens` | required with `headroom` or `degrade` | `lifecycle` with `headroom` or `degrade` | The KV of one realtime turn, its prompt and its reply (note 1) |
-| `trigger` | `"onset"` | `lifecycle` with `headroom` | What arms the headroom: `"onset"` or `"request"` (note 2) |
-| `throttle` | `true` | `lifecycle` | Budget the background prefill admitted in a critical window |
-| `critical_prefill_budget_ms` | required with `throttle` | `lifecycle` with `throttle` | The predicted prefill time the background requests admitted in one critical window may take in all; 0 admits none |
-| `max_num_batched_tokens` | 512 | `lifecycle` with `throttle` | The engine's `--max-num-batched-tokens`, in whose steps the throttle prices a prefill |
-| `degrade` | `true` | `lifecycle` | Cap the reply of a realtime request that finds less than `headroom_tokens` free |
-| `degrade_max_tokens` | required with `degrade` | `lifecycle` with `degrade` | That cap, in tokens |
-| `max_defer_s` | 10 | `lifecycle` with `headroom` or `throttle` | How long a background request may be deferred; it is then admitted regardless. Longer than an E2 caller's turn is armed, about 4 s |
-| `state_timeout_s` | 10 | `lifecycle` | How long a realtime session stays in a state of its turn that no event moves it on from (note 3) |
-| `queue_limit` | 1024 | all but `none`; `lifecycle` with `headroom` or `throttle` | Requests each class's queue holds; one more gets 429. The lifecycle policy queues only background requests |
-| `queue_timeout_s` | 60 | all but `none` and `lifecycle` | How long a request may wait before it gets 503. The lifecycle policy refuses no request for its wait |
-
-1. It is the headroom kept per armed session, and what a realtime request must find free not to be degraded. It must be less than `pool_tokens`.
-2. `"onset"`: the user's speech onset, until the reply's first audio. `"request"`: the critical window alone, from the end of the user's turn or the realtime request, whichever comes first.
-3. The default is longer than any state of an E2 caller's turn.
-
-## Admission
-
-The admission point, the policies it runs, the realtime sessions' turns that the lifecycle policy follows, and their configuration and metrics are E2's harness (`src/harness/`): a gateway without an `[admission]` policy runs none of it, and the proxy reaches it only through a request's admission ticket. The classes' reply caps (`max_reply_tokens`) and `max_choices` are not the harness's: the proxy applies them, with or without a policy.
-
-- **Where it sits.** The admission point is between resolving a request (tenant, sanitization, session, class) and the upstream request.
-- **Who decides.** `flatshare_core::admission` decides, from the order of events alone: a request's arrival, its response's first byte, its departure, and under the lifecycle policy the realtime sessions' turns and the end of a deferral. The gateway does the waiting, its timeouts and the cancellation.
-- **In what order.** A policy holds some classes; requests of the others go upstream at once. Within a class, waiting requests are admitted in arrival order, and none goes ahead of a waiting request of a stricter class.
-
-The first four policies are E2's baselines, the simple answers an operator would try and what routers ship, run here so that every arm has the same engine, clients and measurement; the fifth is [the lifecycle policy](#the-lifecycle-policy). The emulations of routers say what they reproduce and what they do not.
-
-- **`static-cap`** (E2 arm 6): at most `background_max_in_flight` background requests in flight; the rest wait. Realtime and interactive requests are not held. It is a background concurrency limit, as an operator would put one in front of the engine.
-- **`token-reservation`** (E2 arm 6, the equal-size static reservation): a background request is admitted while the estimated tokens of the background requests in flight, its own and `reserved_tokens` fit in `pool_tokens`, so that the reservation stays free for realtime and interactive requests, which are not held. A request too large to fit beside the reservation is admitted once no other background request is in flight, so it cannot hold up the queue for good.
-  - *The estimate.* There is no tokenizer. A request's prompt tokens are its session's last reported `prompt_tokens` plus the growth of the body since that request (an agent's next turn resends the conversation and adds to it), at 4 bytes per token. A body smaller than the session's last is another conversation (a subagent shares its parent's session) or a compacted one, and is estimated as for a session without a report: its whole body at 4 bytes per token. The body is the one sent upstream, after sanitization. A session is its tenant's: two tenants that name the same session id have a session each.
-  - *The sessions remembered.* The admission point keeps what it knows of a session, its last report and, under the lifecycle policy, its turn, in one table of at most 4,096 sessions. A new session that finds the table full takes the place of the session seen longest ago that is not in a turn, and is not remembered only while every session is in one. Untrusted tenants' sessions take at most half the table: each `prompt_cache_key` of an untrusted tenant is a session of its own, and a flood of them takes the places of the trusted tenants' sessions seen longest ago only until untrusted sessions hold half, so the trusted tenants keep up to half the table.
-  - *Its error on the replay.* On the W2 operating points, the agent replay at 8, 16 and 24 agent sessions (415 to 1,521 requests), the estimate is off by 0.4 to 0.5% of all prompt tokens, against 1.9 to 2.2% for bytes / 4 alone. Of the requests of 1,000 tokens or more, 90% are within 1.3 to 1.6% (bytes / 4: 3.4 to 4.5%), 99% within 4.1 to 5.8% (4.5 to 6.5%) and all within 9.4% (8.2%). AIPerf's synthetic prompts run at 3.9 to 4.0 bytes per token, close to the estimate's 4; the session's report leaves only a turn's growth to that rate, so text further from it moves the estimate less than it moves bytes / 4. `cargo run --release -p flatshare-core --example estimate_error -- RUN/aiperf/profile_export.jsonl...` replays an export as the gateway would see it; its byte counts are AIPerf's, headers included, where the gateway counts the body alone.
-  - *What it leaves out.* The estimate counts a request's prompt, not the KV it holds as it decodes, and requests that share a prefix share its blocks in the engine. The sum is a proxy for the pool's use, not a measurement of it.
-- **`flow-control`** (E2 arm 8, llm-d's flow control, emulated): each class is a priority band, and the bands are dispatched strictly, a stricter band's waiting requests always first. `ceilings` holds the bands back: a request goes upstream while the requests in flight, of every class, are fewer than its class's ceiling, and since the ceilings fall from realtime to background, background is held back first as the engine fills. Within a band, requests go in arrival order.
-  - *Shedding.* A realtime or interactive request blocked by its ceiling sheds the newest background requests in flight, as many as it takes, if that is enough to let it in. Their upstream requests are cancelled at once, and their clients get 429 `shed`, or an error that ends a stream already begun. When shedding is not enough, because realtime and interactive requests fill the ceiling, a realtime request waits like any other and can be refused at the queue limit or timeout, which the lifecycle policy never does to realtime ([ADR-0003](../../docs/adr/0003-realtime-is-never-shed.md)).
-  - *What it reproduces.* llm-d v1.0's flow control with its priority-holdback usage limit and in-flight eviction (`flowControl.enableEviction`): strict priority bands, a ceiling per band that holds the lower priorities back as utilization rises, and the eviction of sheddable requests in flight when stricter demand is blocked, which their clients see as HTTP 429.
-  - *What it does not.* Utilization is the number of requests in flight, where llm-d reads a saturation detector over the engine's metrics, so the ceilings are counts rather than fractions of saturation. llm-d orders a band by an SLO deadline from the `x-llm-d-slo-ttft-ms` header; here the requests of a band share one class, and with one target per class, earliest deadline first is arrival order. Eviction takes effect at once and picks the newest background request, the one with the least work done, where llm-d paces evictions behind a confirmation gate (the evicted streams end, then a grace period; at most 2 per decision). Fairness between the flows of a band, and llm-d's limits on queued bytes, are left out.
-- **`preempt-resubmit`** (E2 arm 8, a router's way to abort and resubmit background work on a voice turn, with SMG's rule that only a request without a first byte may be preempted): a realtime arrival preempts the background requests in flight that have no first body byte yet. Their upstream requests are dropped, which aborts them in the engine, and they wait at the front of the queue; background requests that arrive meanwhile wait behind them. Once every realtime request has its first byte, or has ended, they are all sent again.
-  - *What the client sees.* Since a background request can be preempted until its first byte, the gateway holds its response back until then: the client sees nothing of a dropped attempt and gets one response, whose first byte comes later. For a streaming response this delays only the headers. Each attempt waits for its headers by `headers_timeout_s`, and for its first byte by the request's first-content deadline ([Deadlines](#deadlines)). A response already streaming is never preempted, and interactive requests are not held.
-  - *What it counts.* Resubmissions, and the prompt tokens of the dropped attempts, estimated as for token-reservation: an upper bound on the prefill they discarded, since an attempt may be dropped while it still waits in the engine, and the blocks it finished stay in the prefix cache for its resubmission.
-  - *What it does not reproduce.* SMG preempts to free a concurrency slot for a higher class, and answers the preempted request 503 with `Retry-After`, leaving the retry to the client; E2 runs SMG itself for that (arm 8b). This emulation preempts to clear the voice turn's prefill whatever the slots, and resubmits on the client's behalf.
-
-### The lifecycle policy
-
-The lifecycle policy (`policy = "lifecycle"`) is what E2's arm 9 runs with make-room. Realtime requests go upstream at once and are never queued or refused ([ADR-0003](../../docs/adr/0003-realtime-is-never-shed.md)); background requests yield to the realtime sessions' turns; interactive requests are not held. `flatshare-core` decides from how many realtime sessions are in each state of their turn; the gateway keeps the states and the clocks.
-- **Realtime sessions.** Accepted lifecycle events move a session, keyed by its session id, through `idle`, `user_speaking` (`user_speech_started`), `critical` (`user_turn_ended`), `playback` (`playback_started`, the reply's first audio) and back to `idle` (`playback_ended`). `interrupted` is the user speaking again, and `session_closed` forgets the session. A realtime request also puts its session in `critical`: LiveKit's preemptive generation sends it before the end of turn is decided.
-  - *Lost or reordered events.* An event moves its session to the event's state whatever the state was, in the order the gateway receives events, and every state but `idle` ends after `state_timeout_s` without an event or a request, counted. A lost event holds a session at most that long.
-  - *Without events.* A session that has posted none (its client sends none, or the voice worker's events are off) is `critical` while a realtime request of it is in flight, and the request's end ends it; with events, the reply's first audio does.
-  - The sessions' turns are kept in the admission point's table of sessions ([the sessions remembered](#admission)), which forgets no session in a turn: a new session takes the place of the idle one seen longest ago, and is not followed only while every session is in a turn.
-- **Headroom** (`headroom`, `headroom_tokens`, `trigger`). While sessions are armed, a background request goes upstream only if the estimated tokens of the background requests in flight and its own leave `headroom_tokens` of the pool free for each armed session. The others wait: deferring new background turns lets the running ones finish, and their KV parks in the write-through CPU tier. A session is armed from speech onset to the reply's first audio (`user_speaking` and `critical`) with `trigger = "onset"`, and in its critical window alone with `"request"`. The estimate is token-reservation's.
-- **Critical-window throttle** (`throttle`, `critical_prefill_budget_ms`, `max_num_batched_tokens`). From the first session's entry into `critical` until no session is, the background requests admitted share `critical_prefill_budget_ms` of predicted prefill time, and the rest wait for the window to end. A request's prefill is priced by `flatshare-core`'s step model: the steps a lone prefill of its new tokens (those beyond its session's last reported prompt) takes after the rest of the prompt, in steps of `max_num_batched_tokens`. On the frozen box, 512 tokens after a 30,000-token context take 269 ms and after none 38 ms, a difference a token budget cannot see. The fit is compiled in: the gateway always prices by the frozen box's (`flatshare_core::StepCost::frozen_box`), and no configuration key takes another, so a different engine or GPU needs a fit of its own, from `flatshare-sim`'s `scripts/fit_step_cost.py`, built into `flatshare-core`.
-- **Degrade** (`degrade`, `degrade_max_tokens`). A realtime request that arrives while the background requests in flight leave less than `headroom_tokens` of the pool free is still admitted at once, with its reply capped. Its body gets its route's own limit fields at the lower of its limit and the cap, as under a class's cap ([Bounds](#bounds)): both of `max_completion_tokens` and `max_tokens` for Chat Completions, `max_tokens` for Completions, `max_output_tokens` for Responses. With the realtime class's `max_reply_tokens` set too, a degraded reply gets the lower cap.
-- **Aging** (`max_defer_s`). A background request deferred that long is admitted regardless, so agents are never starved. It is also what admits a request whose estimate alone is more than the headroom leaves (`oversize`): an agent context near 32k tokens while several sessions are armed, which the 36,400-token pool holds only at 90% occupancy.
-- **What each switch ablates in E2.** `headroom = false`: no KV headroom in the gateway, as with only the engine's class-aware reserve (the make-room variant) or none; `trigger = "request"`: the headroom from the end of the turn instead of from speech onset; `throttle = false`: background prefill unbudgeted in the critical window; `degrade = false`: realtime replies never capped. With all three off the policy holds nothing back and only follows the sessions.
-- **What it counts.** Background requests deferred, by what held them back when they arrived (the headroom first, then the critical window), and how long they waited; aged admissions, oversize ones apart; degraded replies; sessions by state, and state timeouts. And *false alarms*: armings of the headroom that no realtime request of the session followed before the session left the armed states (by an event, a timeout or its close), with the token-seconds of background work the headroom held back meanwhile, the estimated tokens of the background requests waiting for it integrated over time. While other sessions are armed as well, that cost is an upper bound.
-- **What it leaves out.** Interactive requests are not held. The headroom works from the gateway's estimate of the background requests' KV, as token-reservation does (their prompts, not their decode growth, with shared prefixes counted for each request), where the engine's own reserve counts blocks exactly. No event says that speech ended without a turn, so a false alarm keeps its headroom until `state_timeout_s`.
-- **What E2 measured** (2026-10-23, its discriminating scenario). With the change, arm 9 without the headroom, the throttle or the events, or with `trigger = "request"`, lands within the spread of arm 9's own runs, and on the stock engine this policy leaves voice where stock vLLM does; why its mechanisms could not act there is in [the report's §6.5](../../docs/REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work). The tail depends on degrade there, since arm 9's budget cap, at its 16-token window, protects only a reply's first 16 tokens ([EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)).
+The `[admission]` table, which only E2's harness sets, is in [Admission](#admission).
 
 ## Nodes
 
-With `[[nodes]]` the gateway fronts several GPU nodes, each an engine and its speech servers behind cyan's tunnels (`src/nodes/`). KV never moves between them, so each session is placed on one node and stays there. A gateway with one `upstream` places nothing, and everything above works as it always has.
+With `[[nodes]]` the gateway fronts several GPU nodes, each an engine and its speech servers behind cyan's tunnels
+(`src/nodes/`). KV never moves between them, so each session is placed on one node and stays there.
 
-- **Whole-pipeline health.** A node is checked every `health_interval_s`, and at once when its engine's state or readiness changes. A check passes when its engine is serving (its own idle-only canary, [The engine's state](#the-engines-state), and a degraded node's engine is asked every second, since it takes no requests that could show it serving) and ready (no request has found it broken without its `/health` answering since), and its STT and TTS servers answer `/health` within `health_timeout_s`. A node starts unknown and is healthy after its first passed check; `unhealthy_after` failed checks in a row make it unhealthy, and `healthy_after` passed ones healthy again. A node is available while it is healthy and its engine is ready: one whose engine a request found broken is passed over at once, before it has failed enough checks to be unhealthy, as a lone upstream's requests are answered 503 at once.
-- **Sticky placement.** A session is keyed by its tenant and its id, and placed by its first request, or by `POST /v1/sessions`, on an available node with its class's role: realtime sessions on nodes with the realtime role, interactive and background ones on nodes with the background role. Ties go to the earlier node, for calls and agents alike. At most 4,096 sessions are remembered, the untrusted tenants' at most half, as the admission point's table bounds them.
-  - *Calls.* A realtime session takes one of its node's `max_calls` call slots, on the node with the fewest calls, then the fewest requests in flight, or, with `calls = "fill"`, on the first node in the configuration's order that has a free one: a later node then takes calls only while the earlier ones are full or not available, a warm spare, which covers while it carries any call (below).
-  - *Agents.* An agent's goes to a node that does not cover, then the one with the fewest agents' sessions, then the fewest requests in flight, so that the agents spread over the nodes and each keeps its prefix cache.
-  - *How long.* A session stays on its node until it has gone `idle_s` without a request, or its tenant ends it, by `DELETE /v1/sessions/{id}` (below) or a `session_closed` event, as the voice worker does at a call's end.
-  - *A request that names no session* is placed on its own and not remembered: it takes no call or agent slot. So a node with a count of agents (`max_agents = N`) takes an agent's request that names no session only while it holds no call and is below its count, which cannot count the request beside the calls, and a node without one (`"unbounded"`, or the background role alone and no `max_agents`) takes it as any agent's, beside its calls too. It is refused, as a session would be, when no node has room.
-- **Agents beside calls.** A node with `max_agents` holds at most that many agents' sessions, interactive and background together, as the placement table counts them: each from its placement until it idles out or its tenant ends it (`DELETE /v1/sessions/{id}` or a `session_closed` event). Sessions already placed keep their node, and calls do not count.
-  - *At the bound.* An agent's session, new or moved because its node is not available, is placed only on a node below its bound or without one, in the order above; when every available node with the background role is at its bound, the request gets 503 `no_agent_slot` with `Retry-After: 1` (`flatshare_gateway_placements_refused_total{reason="no_agent_slot"}`), and the session's next request tries again.
-  - *Why a bound.* With `[[nodes]]` no admission policy holds agents back ([Admission](#admission)), and one card meets the voice SLO with its calls only beside a bounded number of agents: on a node that carries calls, `max_agents` is that number, which a node with both roles must give, or say `"unbounded"`. Without a bound, beside 24 agent sessions, 37 of the calls' 177 replies were over the SLO on the serving profile ([the rounds](../../benchmarks/results/2026-10-28-rounds/README.md#beside-the-gate-the-margin)).
-- **Failover.** A node that is not available takes no new session, and a session placed on it is placed again by its next request, or by its next `POST /v1/sessions`: a move, counted (`flatshare_gateway_placements_total{reason="moved"}`), its KV left behind.
-  - *Refusals.* Realtime load must fit the nodes that serve: a realtime session that finds no available realtime node with a free call slot, new or moved, gets 503 `no_call_slot` with `Retry-After: 1`, an agent's that finds no available background node with a free agent slot 503 `no_agent_slot`, and a session whose role no available node takes 503 `no_healthy_node`.
-  - *Covering.* A node that carries realtime sessions moved to it from another node covers: its interactive and background requests in flight are held to `failover_background_max_in_flight`, 0 by default, and the others wait, within their class's `queue_timeout_s` (then 503 `queue_timeout` with `Retry-After: 1`), until the moved calls end, by their `DELETE /v1/sessions/{id}` or `session_closed`, or `idle_s` after their last turn, whether or not the node they came from is available again: a recovery does not leave them beside the survivor's whole agent load.
-  - *A warm spare.* With `calls = "fill"`, a realtime node after the first in the configuration's order covers too while it carries any call, moved there or placed there new (a new call while the nodes before it were full or not available): a warm spare runs its agents only while it carries no call. The first realtime node never covers for its own calls; its agents are bounded by `max_agents` alone.
-  - *What a covering node already holds.* Requests already in flight on a node when it starts to cover run on, and agents' sessions placed on it stay there and wait.
-- **Draining.** A node set `draining = true` takes no new session once a reload takes the key; the successor keeps the placements handed over. Its calls keep it until they end, by `DELETE /v1/sessions/{id}`, a `session_closed` event or `idle_s`, and its agents' sessions move by their next request, counted as moves, so that it empties without an error.
-  - *Readiness.* `/ready` does not count a draining node for its roles, and a request that names no session goes to a node that does not drain, if one is available.
-  - *Empty.* `/nodes` says `"drained": true` once the node holds no session and no request in flight. `flatshare_gateway_node_draining` is 1 while it drains, which keeps `FlatshareNodeUnhealthy` quiet for it, so that it can be stopped and brought back, as for a rolling engine upgrade, without a page ([the runbook's steps](../../ops/RUNBOOK.md#drain-one-node)).
-  - *Its share of the calls* goes to the other realtime nodes. With `calls = "fill"`, a warm spare that takes them covers, as in a failover.
-- **Interrupted turns.** A realtime request placed on a node is held back until its first body frame, as preempt-resubmit holds one back.
-  - *Before the first frame.* If its node fails before that frame (no connection, one that closes before the response headers, or a body that breaks off before its first frame), the attempt is dropped, which closes its connection and aborts the engine's work, the node's engine is probed, and the request is sent once more on another available realtime node, where its session moves (`reason="retried"`), within the deadlines of its receipt: a retry never buys it more time. A request no other node takes gets the failure, 502 `upstream_unavailable`.
-  - *After the first content.* Once its first content has reached the client a request is never sent again: the stream ends with the `upstream_unavailable` error event and an abort, never `[DONE]`, so that a voice reply is never a second generation appended to half-delivered audio, and the voice worker must not start one.
-  - *A slow engine* is no failure: a deadline ends the request ([Deadlines](#deadlines)).
-  - *Interactive and background requests* are not sent again; their next request is placed anew if their node is not available.
-- **`POST /v1/sessions`**, from a trusted tenant, places a session ahead of its first request, and is the voice worker's way to bind a call's STT and TTS to its node.
-  - *The answer.* `{"session_id": "voice-RM_a1B2c3", "class": "realtime"}` gets 200 `{"session_id": "voice-RM_a1B2c3", "class": "realtime", "node": "gray", "stt": "unix:/run/user/1007/flatshare/gray-stt.sock", "tts": "unix:/run/user/1007/flatshare/gray-tts.sock"}`, the speech servers as configured (`null` for one the node has not). `class` defaults to the tenant's `default_class` and is clamped to its `max_class`, as for a request.
-  - *Asking again* answers the same node while the placement holds, and changes nothing, so a call that asks at the start of each turn learns of a move and binds its speech servers anew; its LLM requests move by themselves.
-  - *Refusals.* An untrusted tenant gets 403, a body without a valid `session_id` or with an unknown class 400 `invalid_session`, a call with no slot 503 `no_call_slot`, an agent's session with none 503 `no_agent_slot`, a session whose role no available node takes 503 `no_healthy_node`, and one that finds every session in the table with a request in flight 503 `placement_full`, each 503 with `Retry-After: 1`: the voice worker's admission refuses the call.
-- **`DELETE /v1/sessions/{id}`**, from a trusted tenant, ends the placement of its session `id`, as its `session_closed` event or its idle expiry does: the session's call or agent slot is free at once, and a node that covered for it covers no more. A session is its tenant's: another tenant's of the same id is another session.
-  - *The answer.* It answers 200 `{"session_id": "voice-RM_a1B2c3", "ended": true}`, or `"ended": false` for a session without a placement (never placed, ended already, or idled out), so that ending a session twice, or after its `session_closed`, succeeds. An untrusted tenant gets 403 `untrusted_tenant`, and an id that is no session id 400 `invalid_session`.
-  - *Who ends placements.* The voice worker ends each call it placed so, at the call's end, whatever ends it and whether or not its lifecycle events are on, and, in serve mode, a call its admission placed whose job does not run after all (refused, or an accept that failed), so that no slot waits out `idle_s` for a call that has ended or never began. A reload's successor ends a placement it took over as its own.
-- **`GET /nodes`**, under the metrics' rule (the metrics key on a TCP listener, nothing on a Unix socket), answers `{"nodes": [...], "sessions": n, "placement": {...}}`: for each node, its `name`, `roles`, `verdict` (`unknown`, `healthy` or `unhealthy`) and whether it is `available`, its `engine` (`address`, `state`, `ready` and its last `check`), its `stt` and `tts` (`address` and last `check`, or `null`), `max_calls` and `max_agents` (`null` without a bound), whether it is `covering`, whether it is `draining` and, if so, `drained` (no session and no request in flight), and its `sessions` and `in_flight` by class; and the placement's `calls` (`spread` or `fill`) and `failover_background_max_in_flight`, which say which nodes carry calls beside their own agents and what holds a covering node's, as the release checks them against the serving profile (`deploy/bin/serving-check --nodes`).
-- **Readiness, the engines' metrics and reloads.** `GET /ready` answers 200 while each role is taken by an available node that does not drain, and 503 `no healthy node for realtime` (or `background`) otherwise, or `gateway drained` once it drains. `GET /metrics/engine?node=NAME` relays that node's engine's `/metrics`; without `node` it is 400 `node_required`, and an unknown one 404 `unknown_node`. A model list goes to the first available node that does not drain, or the first available one. A reload's successor takes over its predecessor's placements and nodes' verdicts from the ledger's closing line ([`src/ledger.rs`](src/ledger.rs)), before it serves, so that a reload moves no session and finds its nodes as they were.
+- **Whole-pipeline health.** A node passes a check while its engine serves by its own idle-only canary and is ready,
+  and its STT and TTS answer `/health`. `unhealthy_after` failed checks make it unhealthy and `healthy_after` passed
+  ones healthy again. A node whose engine a request found broken is passed over at once.
+- **Sticky placement.** A session is placed by its first request, or by `POST /v1/sessions`, on an available node with
+  its class's role. A call takes one of the node's `max_calls` slots, as `[placement] calls` chooses. An agent's
+  session goes to a node that does not cover, then to the one with the fewest agents' sessions. A session stays until
+  it has gone `idle_s` without a request, or its tenant ends it by `DELETE /v1/sessions/{id}` or `session_closed`. At
+  most 4,096 sessions are remembered, the untrusted tenants' at most half.
+- **Agents beside calls.** No admission policy holds agents back with `[[nodes]]`, and one card meets the voice SLO
+  beside its calls only with a bounded number of agents, [the profile's
+  envelope](../../docs/PRODUCTION.md#the-envelope-from-version-124). So a node with `max_agents` holds at most that
+  many agents' sessions. An agent's session that finds every available background node at its bound gets 503
+  `no_agent_slot`, and its next request tries again. A request that names no session takes no slot, and a bounded
+  node takes it only while it carries no call and is below its bound.
+- **Failover.** A node that is not available takes no new session, and a session placed on it moves by its next
+  request, its KV left behind (`reason="moved"`). A session that finds no available node of its role with a free slot
+  gets 503 `no_call_slot`, `no_agent_slot` or `no_healthy_node`.
+- **Covering.** A node that carries realtime sessions moved to it covers. Its interactive and background requests in
+  flight are held to `failover_background_max_in_flight`, 0 by default, and the others wait within their class's
+  `queue_timeout_s` until the moved calls end. They wait even once the failed node is back, so that the calls never run
+  beside the survivor's whole agent load. With `calls = "fill"` a later realtime node also covers while it carries any
+  call, a warm spare.
+- **Interrupted turns.** A realtime request is held back until its first body frame. If its node fails before then, it
+  is sent once more on another realtime node within its original deadlines (`reason="retried"`), or answered 502
+  `upstream_unavailable`. After its first content it is never sent again, so a voice reply is never a second generation
+  appended to half-delivered audio.
+- **Draining.** A node set `draining = true` takes no new session once a reload takes the key. Its calls stay until
+  they end and its agents' sessions move. `/nodes` says `"drained": true` once it holds no session and no request, and
+  `flatshare_gateway_node_draining` keeps `FlatshareNodeUnhealthy` quiet
+  ([the runbook's steps](../../ops/RUNBOOK.md#drain-one-node)).
+- **Readiness.** `GET /ready` answers 200 while each role has an available node that does not drain, else 503
+  `no healthy node for realtime` (or `background`), or `gateway drained`. `GET /metrics/engine?node=NAME` relays one
+  node's engine.
+- **A reload** moves no session, since the successor takes the placements from the ledger
+  ([`src/ledger.rs`](src/ledger.rs)).
+
+| Route, from a trusted tenant | Answer |
+|---|---|
+| `POST /v1/sessions` with `{"session_id": "voice-RM_a1B2c3", "class": "realtime"}` | 200 `{"session_id": "voice-RM_a1B2c3", "class": "realtime", "node": "gray", "stt": "unix:/run/user/1007/flatshare/gray-stt.sock", "tts": "unix:/run/user/1007/flatshare/gray-tts.sock"}`, the node's speech servers or `null`. `class` defaults to the tenant's `default_class`. Asking again answers the same node while the placement holds, so a call that asks each turn learns of a move |
+| `DELETE /v1/sessions/{id}` | 200 `{"session_id": "voice-RM_a1B2c3", "ended": true}`, or `"ended": false` for a session without a placement, so ending one twice succeeds. The slot frees at once, and a node that covered for it covers no more |
+| `GET /nodes`, under the metrics' rule | `{"nodes": [...], "sessions": n, "placement": {...}}`. Each node gives its `name`, `roles`, `verdict` (`unknown`, `healthy` or `unhealthy`), `available`, `engine` (`address`, `state`, `ready`, last `check`), `stt`, `tts`, `max_calls`, `max_agents`, `covering`, `draining` and `drained`, and its `sessions` and `in_flight` by class. The placement gives `calls` and `failover_background_max_in_flight`, which a release checks (`deploy/bin/serving-check --nodes`) |
+
+The voice worker places each call before it speaks, binds its STT and TTS to the node's sockets, and ends the
+placement when the call ends or its job does not run, so that no slot waits out `idle_s`.
 
 ## Errors
 
-Responses from the engine pass through unchanged. The gateway's own errors come in two shapes, which name the failure in different fields:
+Responses from the engine pass through unchanged. The gateway's own errors come in two shapes:
 
-- **An answer**, sent before any response has begun, has OpenAI's format, `{"error": {"message", "type", "code"}}`, and carries `X-Request-Id`. Its `code` names the failure, as in the table below, and its `type` is the status's OpenAI class.
-- **An error event** ends an event stream that has begun ([Relay](#what-it-does)), in vLLM's own shape, `data: {"error": {"message", "type", "param", "code"}}`. Its `type` names the failure (`upstream_unavailable`, `upstream_timeout` or `draining`), and its `code` is the status.
+- **An answer**, sent before any response has begun, has OpenAI's format, `{"error": {"message", "type", "code"}}`,
+  and carries `X-Request-Id`. Its `code` names the failure, and its `type` is the status's OpenAI class.
+- **An error event** ends an event stream that has begun, in vLLM's own shape,
+  `data: {"error": {"message", "type", "param", "code"}}`. Its `type` names the failure (`upstream_unavailable`,
+  `upstream_timeout` or `draining`), and its `code` is the status.
 
-[`tests/fixtures/errors.json`](tests/fixtures/errors.json) holds the errors the voice worker reads in both shapes, as the gateway sends them.
+[`tests/fixtures/errors.json`](tests/fixtures/errors.json) holds the errors the voice worker reads in both shapes.
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `invalid_class`, `invalid_json`, `invalid_event`, `invalid_session`, `unreadable_body` | An unknown `X-Flatshare-Class`; a body that is not a JSON object, or that cannot be read; an invalid lifecycle event or session (note 1) |
-| 400 | `duplicate_field`, `invalid_reply_limit`, `invalid_choices`, `too_many_choices` | A body that sets a limit or choice field twice, or to anything but null or a whole number; one over `max_choices` (note 2) |
+| 400 | `invalid_class`, `invalid_json`, `invalid_event`, `invalid_session`, `unreadable_body` | An unknown `X-Flatshare-Class`, a body that is no JSON object or cannot be read, or an invalid lifecycle event or session |
+| 400 | `duplicate_field`, `invalid_reply_limit`, `invalid_choices`, `too_many_choices` | A limit or choice field set twice, or to anything but null or a whole number; more choices than `max_choices` |
 | 400, 404 | `node_required`, `unknown_node` | With `[[nodes]]`, `GET /metrics/engine` without `?node=NAME`, or naming no node |
-| 401 | `invalid_api_key` | No known key, on a listener without a tenant; for `/metrics` and `/metrics/engine` on a TCP listener, no metrics key |
-| 403 | `untrusted_tenant` | Lifecycle events, `POST /v1/sessions` or `DELETE /v1/sessions/{id}` from an untrusted tenant |
+| 401 | `invalid_api_key` | No known key on a listener without a tenant, or no metrics key for `/metrics` on a TCP listener |
+| 403 | `untrusted_tenant` | Lifecycle events or the sessions routes from an untrusted tenant |
 | 404, 405 | `not_found`, `method_not_allowed` | Any other route or method |
-| 408 | `upload_timeout` | The body did not arrive within its class's `upload_timeout_s` (or its `total_timeout_s`) |
+| 408 | `upload_timeout` | The body did not arrive within its class's `upload_timeout_s` or `total_timeout_s` |
 | 413 | `body_too_large` | A body over `max_body_bytes` |
-| 429 | `queue_full`, `shed` | A full queue at the admission point, with `Retry-After: 1`; a background request shed by flow control before its response began (note 3) |
-| 429 | `tenant_in_flight_limit` | The tenant has its `max_in_flight` requests in flight, with `Retry-After: 1`, before the body is read |
-| 502 | `upstream_unavailable` | The engine could not be reached, or closed the connection before answering; for `/metrics/engine`, it did not answer within 10 s |
-| 503 | `queue_timeout`, `upstream_not_ready` | Not admitted in time (note 4); the engine is not ready (note 5); each with `Retry-After: 1` |
-| 503 | `no_healthy_node`, `no_call_slot`, `no_agent_slot`, `placement_full` | With `[[nodes]]`, no available node can take the session (note 6). Each with `Retry-After: 1` |
-| 503 | `in_flight_limit`, `class_in_flight_limit`, `body_budget_exhausted`, `draining` | The gateway or the class has its `max_in_flight` requests in flight; the body would pass `max_buffered_body_bytes`; the gateway drains (note 7). Each with `Retry-After: 1` |
-| 504 | `upstream_timeout` | No response headers within the class's `headers_timeout_s`, or no first content or no end in time, before a response began (note 8) |
-
-1. An invalid session is a `POST /v1/sessions` body without a valid session id, or with an unknown class, or a `DELETE /v1/sessions/{id}` whose id is no session id.
-2. The fields are `max_tokens`, `max_completion_tokens`, `max_output_tokens`, `n` and `best_of`. A reply limit that is not null or a whole number is `invalid_reply_limit`, and an `n` or `best_of` that is not null or a whole number from 1 is `invalid_choices`. The error's `param` names the field ([Bounds](#bounds)).
-3. The full queue is the request's class queue (`queue_limit`), or its queues together (`max_queued`). The `type` is `rate_limit_error`.
-4. `queue_timeout`: not admitted within the policy's `queue_timeout_s`, or by the class's `queue_timeout_s`, `first_content_timeout_s` or `total_timeout_s` while it waited (a preempted request's second wait among them).
-5. `upstream_not_ready`: a request found the engine broken and its `/health` has not answered since.
-6. `no_healthy_node`: no available node takes the session's role. `no_call_slot`: every available realtime node has `max_calls` calls. `no_agent_slot`: every available background node has `max_agents` agents' sessions. `placement_full`: `POST /v1/sessions` finds every session in the table with a request in flight.
-7. The in-flight bounds answer before the body is read. `draining`: a gateway that handed its sockets to a successor (or that drains) admits nothing more.
-8. The class's `headers_timeout_s` is the top-level `headers_timeout_s` by default. The first content and the end are due by the request's `first_content_timeout_s` and `total_timeout_s`, from its receipt.
+| 429 | `queue_full`, `shed` | A full admission queue, with `Retry-After: 1`; a background request shed by flow control |
+| 429 | `tenant_in_flight_limit` | The tenant has its `max_in_flight` requests in flight, with `Retry-After: 1` |
+| 502 | `upstream_unavailable` | The engine could not be reached or closed the connection before answering, or `/metrics/engine` got no answer in 10 s |
+| 503 | `queue_timeout`, `upstream_not_ready` | Not admitted in time; the engine found broken and its `/health` silent since. Each with `Retry-After: 1` |
+| 503 | `no_healthy_node`, `no_call_slot`, `no_agent_slot`, `placement_full` | With `[[nodes]]`, no node of the session's role available, no free slot, or a full session table. Each with `Retry-After: 1` |
+| 503 | `in_flight_limit`, `class_in_flight_limit`, `body_budget_exhausted`, `draining` | The gateway or class at its `max_in_flight`, the body budget full, or a draining gateway. Each with `Retry-After: 1` |
+| 504 | `upstream_timeout` | No response headers, first content or end in time, before a response began |
 
 ## Accounting
 
-Every inference request is counted three times, with labels from fixed sets and the configuration: offered once, when its tenant and class are known, or at its end with what is known of it (`flatshare_gateway_requests_offered_total`; an unauthorized request's tenant and class are empty); admitted once, when it is sent upstream past the intake, the admission point and the readiness check (`flatshare_gateway_requests_admitted_total`, `admission="policy"` when an admission policy decided when, `none` otherwise); and ended once, with one outcome (`flatshare_gateway_requests_terminal_total` by tenant, route and class, `flatshare_gateway_request_outcomes_total` by class). Offered less ended is what is in flight. Admitted over offered is the admission coverage, which `ops/`'s dashboard shows beside the latencies of the admitted requests: a gateway that refuses or times out requests before they go upstream keeps those latencies low by serving fewer.
+Every inference request is counted three times, as offered when its tenant and class are known, as admitted when it
+goes upstream, and as ended with its one outcome. Admitted over offered is the admission coverage, which the
+dashboard shows beside the admitted requests' latencies, since refusing requests would keep those latencies low.
 
 | Outcome | How the request ended |
 |---|---|
 | `completed` | A 2xx response relayed to its end: the only success |
-| `upstream_client_error`, `upstream_server_error` | A response relayed to its end with a 4xx status (the request's own fault, such as a prompt over the context), or with another status |
-| `transport_error` | The upstream failed: no connection, one that closed before the response headers, or a body that broke off |
+| `upstream_client_error`, `upstream_server_error` | A response relayed to its end with a 4xx status, such as a prompt over the context, or with another status |
+| `transport_error` | The upstream failed: no connection, one closed before the response headers, or a body that broke off |
 | `cancelled`, `stalled` | The client left first; it stopped reading for `stall_timeout_s` |
-| `shed`, `drained` | An admission policy gave its place to a stricter class; a drain cut it, or kept it out (note 1) |
-| `timeout_upload`, `timeout_queue`, `timeout_headers`, `timeout_first_content`, `timeout_idle`, `timeout_total` | One of its deadlines passed ([Deadlines](#deadlines)) |
-| `refused_in_flight`, `refused_class`, `refused_tenant`, `refused_body_bytes`, `refused_queue` | The intake refused it before reading its body (note 2), or the admission point's queues were full |
-| `not_ready` | The engine was not ready: a request had found it broken and its `/health` had not answered since. With `[[nodes]]`, also a request no node could take: `no_healthy_node`, `no_call_slot`, `no_agent_slot` or `placement_full`, whose 503 names which |
-| `invalid` | The gateway refused it as malformed or unauthorized: 400, 401, 404, 405 or 413 |
+| `shed`, `drained` | A policy gave its place to a stricter class; a drain cut it or kept it out |
+| `timeout_upload`, `timeout_queue`, `timeout_headers`, `timeout_first_content`, `timeout_idle`, `timeout_total` | One of its [deadlines](#deadlines) passed |
+| `refused_in_flight`, `refused_class`, `refused_tenant`, `refused_body_bytes`, `refused_queue` | A bound or the admission queues refused it before its body was read |
+| `not_ready` | The engine was not ready or, with `[[nodes]]`, no node could take it |
+| `invalid` | Refused as malformed or unauthorized: 400, 401, 404, 405 or 413 |
 
-1. Cut: a background request still running `background_drain_s` into a drain, or any request still running when
-   `drain_timeout_s` passes and the process exits under it. Kept out: a gateway that had handed its sockets over, or
-   that stops, did not admit it, or a node that covered held it back until then.
-2. The gateway, its class or its tenant was at its `max_in_flight`, or the bodies' budget was full.
+The service level counts, by class, the valid requests and the good ones, and `ops/prometheus/rules.yml`'s objective
+reads 1 − good/valid.
 
-The service level counts, by class, its valid requests and the good ones among them (`flatshare_gateway_sli_valid_total`, `flatshare_gateway_sli_good_total`), and `ops/prometheus/rules.yml`'s objective and burn-rate alerts read 1 − good/valid.
-- **Valid** is every request that ended, but for the client's faults: `invalid`, `upstream_client_error`, `timeout_upload`, `refused_tenant` (a tenant over its own bound) and `stalled`.
-- **Good** is `completed` with its first content within the class's `first_content_objective_s`, or `completed` alone for a class without one. So a request that fails, is refused for capacity, times out or hangs until its deadline counts as a miss.
-- **A client's cancellation** is judged by what the service had done by then: in a class with an objective, a request cancelled after its first content is good or bad by that first content, one cancelled without it is bad once the objective had passed and not valid before; a class without one leaves its cancellations out.
-
-The error ratio used to read the first byte's histogram, which has no sample of a request that never got a first byte, so an engine that failed every request left it without data.
+- **Valid** is every request that ended, but for the client's faults: `invalid`, `upstream_client_error`,
+  `timeout_upload`, `refused_tenant` and `stalled`.
+- **Good** is `completed` with its first content within the class's `first_content_objective_s`, so a request that
+  fails, is refused for capacity, times out or hangs is a miss.
+- **A cancellation** in a class with an objective is good or bad by its first content if it had one, and otherwise bad
+  once the objective has passed and not valid before. A class without an objective leaves its cancellations out.
 
 ## The engine's state
 
-vLLM 0.32's `/health` answers 200 while its API server and engine core live, and runs no inference, so an engine whose generation stalls or fails looks healthy to it. The gateway keeps the engine's state as inference finds it (`src/canary.rs`), which `flatshare_gateway_engine_state` exports (1 for the current state) and `GET /ready` answers by:
+vLLM 0.32's `/health` answers while its processes live and runs no inference, so an engine whose generation stalls
+looks healthy to it. The gateway keeps the engine's state as inference finds it (`src/canary.rs`):
 
 - `warming` from the gateway's start until an inference succeeds;
 - `serving` once one has, and again after any success;
-- `degraded` once the canary has failed `degraded_after` times in a row with nothing succeeding between (a failure while warming keeps the engine warming: it never served);
+- `degraded` once the canary has failed `degraded_after` times in a row with nothing succeeding between;
 - `drained` from the start of the gateway's drain.
 
-An inference succeeds when a client's request gets a 2xx response's first content, or is relayed to its end, and when the canary does. Requests go upstream in every state: the state changes `/ready` and the alerts, not the proxy.
-
-- **The canary** is a completion of one token (`POST /v1/completions`, `"prompt": "ping"`, `max_tokens` 1, temperature 0 and no model, so the engine's own), at the background class's priority in the signals `upstream_priority` lists, with `X-Flatshare-Canary: 1` and a request id of its own for the engine's logs, read to its end within `timeout_s`.
-- **Outside the accounting.** It goes through the upstream's connection pool and outside every bound, count and outcome above; `flatshare_gateway_canary_probes_total` and `flatshare_gateway_canary_seconds` count it.
-- **Idle-only.** The canary asks, one at a time, only when no inference succeeded within `interval_s` of the last success or canary, so while clients' requests succeed it sends nothing, and an engine that real traffic shows serving gets no load from it.
-- **Off.** With `[canary] enabled = false` the engine is `serving` from the start.
+`GET /ready` answers 200 only while the engine is `serving` and its `/health` answered within the last second, and
+otherwise 503 with `engine warming`, `engine degraded` or `engine drained`, or with `upstream not ready` while its
+`/health` is silent or a request has found it broken. Requests go upstream in every state. An inference succeeds when a
+2xx response's first content arrives or the canary answers. The canary is a one-token completion at the background
+class's priority, with `X-Flatshare-Canary: 1`, sent only when no inference succeeded within `interval_s`, and outside
+every bound, count and outcome above. A gateway that has just started or reloaded sends its first canary at once, so it
+is ready as soon as that succeeds.
 
 ## Metrics and logs
 
-- **`GET /metrics`** serves the OpenMetrics text format from a registry the gateway owns; on a TCP listener it needs the metrics key (`metrics_key_file`), on a Unix socket nothing.
-- **`GET /metrics/engine`** relays the engine's own `/metrics` under the same rule, with its status and content type, within 10 s (502 when the engine does not answer), for a scraper that has no route to the engine: the deployment's engines listen on Unix sockets.
-- **The exposition.** [`metrics.txt`](metrics.txt) is the exposition of a gateway under the lifecycle policy before any traffic, every family the gateway exports, with each family's series sorted by their labels and one series at zero for each family that has none before traffic (requests by status, lifecycle events, and requests offered, admitted and ended): a test keeps it current, `make metrics` writes it anew, and the checks of `ops/`'s dashboards and alerts read the gateway's names from it.
-- **The series.** Label values come from fixed sets or from the configuration, so the number of series is bounded. Every series exists from the start, at zero, but those that traffic makes, which appear at their first count: requests by status (`flatshare_gateway_requests_total`), lifecycle events (`flatshare_gateway_events_total`), and requests offered, admitted and ended, by tenant and route (`flatshare_gateway_requests_offered_total`, `_admitted_total` and `_terminal_total`).
-- **The policies' series.** The admission point's, `flatshare_gateway_admission_*` and `flatshare_gateway_realtime_*`, exist only with an `[admission]` policy, and the lifecycle policy's only under it: a gateway without one exports none of them, and one under another policy none of the lifecycle policy's, so that a count it does not keep reads as absent rather than zero.
+`GET /metrics` serves the OpenMetrics text format, and `GET /metrics/engine` relays the engine's own within 10 s.
+Label values come from fixed sets or the configuration, and every series exists from the start at zero, but for
+requests by status, lifecycle events and the requests offered, admitted and ended. [`metrics.txt`](metrics.txt) is
+what a gateway under the lifecycle policy exports before any traffic, which a test keeps current (`make metrics`
+writes it) and the checks of `ops/` read.
 
 | Metric | Labels | Meaning |
 |---|---|---|
-| `flatshare_gateway_requests_total` | `tenant`, `route`, `class`, `status` | API requests. `tenant` is empty when unauthenticated, `class` for routes without one; status 499 means the client left before any response |
-| `flatshare_gateway_request_outcomes_total` | `class`, `outcome` | Inference requests with a class, by outcome, one a request ([Accounting](#accounting)) (note 1) |
-| `flatshare_gateway_requests_offered_total` | `tenant`, `route`, `class` | Inference requests received, each once ([Accounting](#accounting)) |
-| `flatshare_gateway_requests_admitted_total` | `tenant`, `route`, `class`, `admission` | Inference requests sent upstream, each once: `admission` is `policy` when an admission policy decided when, `none` otherwise |
+| `flatshare_gateway_requests_total` | `tenant`, `route`, `class`, `status` | API requests; 499 means the client left before any response |
+| `flatshare_gateway_request_outcomes_total` | `class`, `outcome` | Inference requests with a class, one outcome each, which the outcome alerts read |
+| `flatshare_gateway_requests_offered_total` | `tenant`, `route`, `class` | Inference requests received, each once |
+| `flatshare_gateway_requests_admitted_total` | `tenant`, `route`, `class`, `admission` | Inference requests sent upstream, each once |
 | `flatshare_gateway_requests_terminal_total` | `tenant`, `route`, `class`, `outcome` | Inference requests ended, each once, by outcome |
-| `flatshare_gateway_sli_valid_total` | `class` | The requests the service level counts: every one that ended, but for the client's faults and its cancellations before the class's objective passed |
-| `flatshare_gateway_sli_good_total` | `class` | The valid requests that met their class's objective: completed, with their first content within `first_content_objective_s` |
-| `flatshare_gateway_overhead_seconds` | `route` | The end of a request's body to the moment hyper writes the request to an upstream connection (note 2) |
-| `flatshare_gateway_request_body_seconds` | `route` | Receipt of a request's headers to the end of its body: the client's upload, which a direct call to the engine waits for too |
+| `flatshare_gateway_sli_valid_total` | `class` | The requests the service level counts |
+| `flatshare_gateway_sli_good_total` | `class` | The valid requests that met their class's objective |
+| `flatshare_gateway_overhead_seconds` | `route` | The end of a request's body to its write upstream: parsing, sanitization, admission and connection checkout, without an admission wait. Its buckets start at 50 µs |
+| `flatshare_gateway_request_body_seconds` | `route` | Receipt of a request's headers to the end of its body |
 | `flatshare_gateway_first_byte_seconds` | `class` | Receipt to the first response body byte from the upstream |
 | `flatshare_gateway_duration_seconds` | `class` | Receipt to the end of the upstream response |
 | `flatshare_gateway_streams_active` | `class` | Responses being relayed |
-| `flatshare_gateway_in_flight` | `class` | Inference requests past the intake and not yet ended: reading their bodies, waiting at the admission point or relayed ([Bounds](#bounds)) |
-| `flatshare_gateway_buffered_body_bytes` | — | Bytes of request bodies the gateway holds, which `max_buffered_body_bytes` bounds |
-| `flatshare_gateway_predecessor_in_flight` | — | A reload's predecessor's requests in flight, which the gateway counts with its own until the predecessor exits; 0 otherwise |
+| `flatshare_gateway_in_flight` | `class` | Inference requests past the intake and not yet ended |
+| `flatshare_gateway_buffered_body_bytes` | — | Bytes of request bodies held |
+| `flatshare_gateway_predecessor_in_flight` | — | A reload's predecessor's requests in flight |
 | `flatshare_gateway_sanitized_total` | `field` | Inputs removed because clients may not set them |
-| `flatshare_gateway_class_clamped_total` | — | Requests whose class was stricter than their tenant's `max_class` |
-| `flatshare_gateway_upstream_errors_total` | `kind` | `connect`, `request`, `timeout` (note 3), `body` |
-| `flatshare_gateway_error_events_total` | `class`, `type` | Event streams that got an error event before their abort, by its type (note 4) |
+| `flatshare_gateway_class_clamped_total` | — | Requests whose class was clamped to their tenant's `max_class` |
+| `flatshare_gateway_upstream_errors_total` | `kind` | `connect`, `request`, `timeout`, `body` |
+| `flatshare_gateway_error_events_total` | `class`, `type` | Event streams that got an error event, by its type |
 | `flatshare_gateway_events_total` | `type`, `source`, `duplicate` | Lifecycle events received |
 | `flatshare_gateway_usage_tokens_total` | `class`, `kind` | `prompt`, `completion` and `cached` tokens from response usage |
-| `flatshare_gateway_admission_admitted_total` | `class` | Requests the admission point let go upstream, whether they waited or not, and those of classes the policy does not hold (note 5) |
+| `flatshare_gateway_admission_admitted_total` | `class` | Requests the admission point let go upstream (note 1) |
 | `flatshare_gateway_admission_waiting` | `class` | Requests waiting at the admission point |
 | `flatshare_gateway_admission_wait_seconds` | `class` | Arrival at the admission point to admission |
-| `flatshare_gateway_admission_refused_total` | `class`, `reason` | Requests the admission point refused: `queue_full` (429, the class's queue), `max_queued` (429, its queues together), `timeout` (503) or `draining` (note 6) |
-| `flatshare_gateway_admission_resubmits_total` | `class` | Requests sent upstream again after a preemption dropped their attempt |
-| `flatshare_gateway_admission_discarded_tokens_total` | `class` | Estimated prompt tokens of the attempts preemptions dropped: at most the prefill they discarded |
-| `flatshare_gateway_admission_deferred_total` | `reason` | Background requests the lifecycle policy deferred, by what held them back when they arrived: `headroom` or `critical` (note 7) |
-| `flatshare_gateway_admission_deferral_seconds` | `reason` | Arrival to admission of those requests |
-| `flatshare_gateway_admission_aged_total` | `oversize` | Deferred requests admitted regardless after `max_defer_s`; `oversize="true"`: their estimate alone was more than the headroom leaves |
-| `flatshare_gateway_admission_degraded_total` | — | Realtime requests whose reply was capped at `degrade_max_tokens` |
-| `flatshare_gateway_admission_false_alarms_total` | — | Armings of the headroom that no realtime request of their session followed |
-| `flatshare_gateway_admission_false_alarm_token_seconds_total` | — | Estimated background tokens the headroom held back during false alarms, times how long |
-| `flatshare_gateway_realtime_sessions` | `state` | Realtime sessions the lifecycle policy follows, by state: `idle`, `user_speaking`, `critical`, `playback` |
-| `flatshare_gateway_realtime_state_timeouts_total` | `state` | Sessions that stayed in a state for `state_timeout_s` without an event, by the state: lost or missing events |
-| `flatshare_gateway_node_ready` | — | 1 while the engine is ready; 0 while a request has found it broken and its `/health` has not answered since (note 8) |
-| `flatshare_gateway_engine_state` | `state` | 1 for the engine's state as inference finds it, 0 for the others: `warming`, `serving`, `degraded`, `drained` ([The engine's state](#the-engines-state)) |
+| `flatshare_gateway_admission_refused_total` | `class`, `reason` | `queue_full` and `max_queued` (429), `timeout` and `draining` (503) |
+| `flatshare_gateway_admission_resubmits_total` | `class` | Requests sent again after a preemption dropped their attempt |
+| `flatshare_gateway_admission_discarded_tokens_total` | `class` | Estimated prompt tokens of the dropped attempts |
+| `flatshare_gateway_admission_deferred_total` | `reason` | Background requests the lifecycle policy deferred: `headroom` or `critical` (note 1) |
+| `flatshare_gateway_admission_deferral_seconds` | `reason` | Their arrival to admission |
+| `flatshare_gateway_admission_aged_total` | `oversize` | Deferred requests admitted after `max_defer_s` |
+| `flatshare_gateway_admission_degraded_total` | — | Realtime replies capped at `degrade_max_tokens` |
+| `flatshare_gateway_admission_false_alarms_total` | — | Armings of the headroom that no realtime request followed |
+| `flatshare_gateway_admission_false_alarm_token_seconds_total` | — | Background tokens held back during false alarms, times how long |
+| `flatshare_gateway_realtime_sessions` | `state` | Realtime sessions by state |
+| `flatshare_gateway_realtime_state_timeouts_total` | `state` | Sessions that stayed in a state for `state_timeout_s` |
+| `flatshare_gateway_node_ready` | — | 1 while the engine is ready, 0 while it answers requests 503 |
+| `flatshare_gateway_engine_state` | `state` | 1 for the engine's state, 0 for the others |
 | `flatshare_gateway_canary_probes_total` | `result` | Inference canaries, by `success` or `failure` |
-| `flatshare_gateway_canary_seconds` | — | The time a canary took, to its answer's end or its failure |
+| `flatshare_gateway_canary_seconds` | — | The time a canary took |
 
-1. It counts `completed` only for a 2xx response relayed to its end. E2's records and the soak's scrapes read it, and so do the outcome alerts, since its series exist from the start and a class's first refusal or missed deadline counts; the dashboard reads `requests_terminal_total`.
-2. It covers parse, sanitization, resolution, admission and connection checkout, without the time a request waits for admission. It is the number behind the 2 ms SLO; its buckets start from 50 µs, with 2 ms as a bound.
-3. `timeout`: a deadline passed while the gateway waited on the upstream: its headers, its first content, a frame after one, or the request's total.
-4. `upstream_unavailable`: the upstream broke the stream off (`body` errors). `draining`: a draining gateway cut a background stream. `upstream_timeout`: a deadline passed while it streamed.
-5. This and the series below exist with an `[admission]` policy only.
-6. `draining` is a 503, as the admission point closed for a reload's successor.
-7. This and the series below exist under the lifecycle policy only.
-8. While it is 0, the engine's requests get 503.
+1. The admission series exist only with an `[admission]` policy, and the lifecycle policy's, `admission_deferred_total`
+   through `realtime_state_timeouts_total`, only under it, so that a count a gateway does not keep reads as absent
+   rather than zero.
 
-With `[[nodes]]`, the one engine's four families above (`node_ready`, `engine_state`, `canary_probes_total`, `canary_seconds`) are exported by node instead, under the same names with a `node` label first, and the nodes add theirs; [`metrics-nodes.txt`](metrics-nodes.txt) is what a gateway of two nodes exports in their place, kept current as `metrics.txt` is:
+With `[[nodes]]` the engine's four families, `node_ready`, `engine_state`, `canary_probes_total` and `canary_seconds`,
+carry a `node` label, and the nodes add theirs. [`metrics-nodes.txt`](metrics-nodes.txt) is what a gateway of two nodes
+exports.
 
 | Metric | Labels | Meaning |
 |---|---|---|
-| `flatshare_gateway_node_healthy` | `node` | 1 while the node is healthy (its verdict), 0 while unknown or unhealthy |
-| `flatshare_gateway_node_component_healthy` | `node`, `component` | Each component's last check: `engine` (serving and ready), `stt`, `tts` (answering `/health`) |
-| `flatshare_gateway_node_sessions` | `node`, `class` | The sessions placed on the node, by the class they were placed with |
+| `flatshare_gateway_node_healthy` | `node` | 1 while the node is healthy |
+| `flatshare_gateway_node_component_healthy` | `node`, `component` | Each component's last check: `engine`, `stt`, `tts` |
+| `flatshare_gateway_node_sessions` | `node`, `class` | The sessions placed on the node |
 | `flatshare_gateway_node_in_flight` | `node`, `class` | Its inference requests in flight |
-| `flatshare_gateway_node_covering` | `node` | 1 while it covers, its agents' requests held to `failover_background_max_in_flight` (note 1) |
-| `flatshare_gateway_node_failover_waiting` | `node` | Its agents' requests waiting for that bound |
-| `flatshare_gateway_node_draining` | `node` | 1 while the node drains, as its `draining` key sets it |
-| `flatshare_gateway_placements_total` | `node`, `class`, `reason` | Sessions placed on the node, by reason: `new`, `moved` or `retried` (note 2) |
+| `flatshare_gateway_node_covering` | `node` | 1 while it covers |
+| `flatshare_gateway_node_failover_waiting` | `node` | Its agents' requests waiting while it covers |
+| `flatshare_gateway_node_draining` | `node` | 1 while it drains |
+| `flatshare_gateway_placements_total` | `node`, `class`, `reason` | Sessions placed: `new`, `moved` or `retried` |
 | `flatshare_gateway_placements_refused_total` | `class`, `reason` | Sessions no node took: `no_node`, `no_call_slot`, `no_agent_slot`, `table_full` |
-| `flatshare_gateway_node_retries_total` | `node` | Realtime requests sent again on another node after this node failed before their first content |
+| `flatshare_gateway_node_retries_total` | `node` | Realtime requests sent elsewhere after this node failed before their first content |
 
-1. A node covers while it carries realtime sessions moved to it from another node, until they end, or, with `calls = "fill"`, while it is a realtime node after the first and carries any call.
-2. `new`: no node yet, or idled out. `moved`: its node was not available. `retried`: its realtime request was sent again here after its node failed before the first content.
+**Each request logs one line at its end**, under `flatshare_gateway::request` and at level `warn` for 5xx,
+`transport_error`, `stalled` and the upstream's deadlines. It gives `request_id`, `tenant`, `session`, `node`,
+`class`, `route`, `status`, `outcome`, `first_byte_ms`, `total_ms`, the token counts and `finish_reason`, and where
+they apply `admission_wait_ms`, `deferred`, `aged`, `degraded`, `resubmits`, `retries` and `error`.
 
-Each request writes one log line at its end (target `flatshare_gateway::request`, level `warn` for 5xx, `transport_error`, `stalled` and the upstream's deadlines, `timeout_headers`, `timeout_first_content`, `timeout_idle` and `timeout_total`): `request_id`, `tenant`, `session`, `node` (with `[[nodes]]`), `class`, `route`, `status`, `outcome`, `admission_wait_ms` (under an admission policy, or when a covering node held the request back), `deferred` (what held a deferred request back under the lifecycle policy: `headroom` or `critical`), `aged` (when aging admitted it), `degraded` (a realtime request whose reply degrade capped), `resubmits` (when preempted), `retries` (when sent again on another node), `first_byte_ms`, `total_ms`, `prompt_tokens`, `completion_tokens`, `cached_tokens`, `finish_reason` and, for the gateway's own errors, `error`. Lifecycle events log under `flatshare_gateway::events`, and an engine found broken or ready again, or degraded or serving again, a node that becomes healthy or unhealthy, and a session that moves log a line.
+Where a name says first byte, it times the first content, the response body's first frame from the request's receipt:
+`flatshare_gateway_first_byte_seconds`, `first_byte_ms` and `ops/`'s `FlatshareRealtimeFirstByteBudget*` alerts. It is
+the moment `first_content_timeout_s` bounds and `first_content_objective_s` judges. The names stay, since records, the
+dashboard and the runbook's anchors read them.
 
-Where a name says first byte, it times the first content, the response body's first frame from the request's receipt: `flatshare_gateway_first_byte_seconds`, the request line's `first_byte_ms` and `ops/`'s `FlatshareRealtimeFirstByteBudget*` alerts. It is the moment `first_content_timeout_s` bounds and `first_content_objective_s` judges. The names stay: records, the dashboard and the runbook's anchors read them.
+## Admission
 
-`GET /health` answers 200 while the process runs. `GET /ready` answers 200 while the engine is `serving` ([The engine's state](#the-engines-state)) and its `/health` answered within the last second, asking it again otherwise. It answers 503 with `engine warming`, `engine degraded` or `engine drained` in the other states, 503 if the engine's `/health` does not answer, and 503 at once while the engine is not ready ([An engine that restarts](#what-it-does)). So a gateway that has just started, a reload's successor among them, is ready with its first inference that succeeds: its first canary, sent at once, on an engine that serves.
+The admission point and its policies are E2's harness (`src/harness/`), and a gateway without an `[admission]` table
+runs none of it. It sits between resolving a request and the upstream request. `flatshare_core::admission` decides
+from the order of events alone, and the gateway does the waiting, the timeouts and the cancellation. A policy holds
+some classes and lets the others go at once. Within a class requests go in arrival order, behind any waiting request
+of a stricter class.
 
-## Design notes
+The `[admission]` table sets the admission policy. A key of another policy than the chosen one is an error, and so,
+under `lifecycle`, is a key that no switched-on mechanism reads.
 
-- **Upstream client: hyper-util's pooled client rather than reqwest.** The request is already an `http::Request` with a sanitized `HeaderMap`, so it goes upstream without conversion, and the response body is hyper's `Incoming`, read frame by frame. reqwest wraps the same client and would add a URL parse, header conversions and redirect handling per request, none of which a fixed loopback upstream needs. Idle upstream connections close after `upstream_idle_timeout_s`, before the engine's keep-alive closes them under a request. With vLLM's default of 5 s, a voice call, whose turns are often more than 4 s apart, opens a new upstream connection for most turns; on cyan the engine keeps connections for 60 s and the gateway for 55 s. A `unix:` upstream is the same client with a connector that opens the socket for every new connection; the pool, its idle timeout and the headers timeout are the same as over TCP.
-- **Request ids** are a random 64-bit prefix chosen at start and a counter. They need to be unique, not unpredictable (a client cannot set them), and they cost no system call. Minted session ids use 128 random bits.
-- **The overhead metric starts when the request body is complete and ends at the first poll of the upstream request body,** which hyper does on a checked-out connection as it writes the request, so connection checkout is included. The body's arrival is timed separately (`flatshare_gateway_request_body_seconds`): a client that sends its body some time after its headers would otherwise have its own delay counted as the gateway's.
+| Key | Default | Policies | Meaning |
+|---|---|---|---|
+| `policy` | `"none"` | — | `"none"`, `"static-cap"`, `"token-reservation"`, `"flow-control"`, `"preempt-resubmit"` or `"lifecycle"` |
+| `background_max_in_flight` | required | `static-cap` | Background requests in flight at most |
+| `pool_tokens` | 36400 | `token-reservation`; `lifecycle` with `headroom` or `degrade` | The KV pool in tokens, the frozen box's by default |
+| `reserved_tokens` | required | `token-reservation` | Pool tokens background requests leave free |
+| `ceilings` | required | `flow-control` | `{ realtime = 16, interactive = 12, background = 8 }`, not increasing from realtime to background |
+| `headroom` | `true` | `lifecycle` | Keep KV headroom for the armed realtime sessions |
+| `headroom_tokens` | required with `headroom` or `degrade` | `lifecycle` | The KV of one realtime turn, prompt and reply |
+| `trigger` | `"onset"` | `lifecycle` with `headroom` | What arms the headroom: `"onset"` or `"request"` |
+| `throttle` | `true` | `lifecycle` | Budget the background prefill admitted in a critical window |
+| `critical_prefill_budget_ms` | required with `throttle` | `lifecycle` | That budget, in predicted prefill time; 0 admits none |
+| `max_num_batched_tokens` | 512 | `lifecycle` with `throttle` | The engine's `--max-num-batched-tokens`, in whose steps a prefill is priced |
+| `degrade` | `true` | `lifecycle` | Cap the reply of a realtime request that finds less than `headroom_tokens` free |
+| `degrade_max_tokens` | required with `degrade` | `lifecycle` | That cap, in tokens |
+| `max_defer_s` | 10 | `lifecycle` with `headroom` or `throttle` | How long a background request may be deferred before it is admitted regardless |
+| `state_timeout_s` | 10 | `lifecycle` | How long a realtime session stays in a state of its turn that no event moves on |
+| `queue_limit` | 1024 | all but `none`; `lifecycle` with `headroom` or `throttle` | Requests each class's queue holds; one more gets 429 |
+| `queue_timeout_s` | 60 | all but `none` and `lifecycle` | How long a request may wait before it gets 503 |
+
+The first four policies are E2's baselines, what an operator would try and what routers ship, run so that every arm
+has the same engine, clients and measurement:
+
+| Policy | E2 arm | What it holds | What it reproduces, and what it does not |
+|---|---|---|---|
+| `static-cap` | 6 | At most `background_max_in_flight` background requests in flight | An operator's background concurrency limit |
+| `token-reservation` | 6 | A background request goes while the estimated background tokens in flight, its own and `reserved_tokens` fit in `pool_tokens` | The equal-size static reservation |
+| `flow-control` | 8 | Strict priority bands, each dispatched while fewer requests than its ceiling are in flight. A blocked realtime or interactive request sheds the newest background ones in flight, which get 429 `shed` | llm-d v1.0's flow control with eviction (`flowControl.enableEviction`), its utilization a count of requests and its eviction immediate, without pacing, fairness or byte limits |
+| `preempt-resubmit` | 8 | A realtime arrival drops the background requests without a first byte, which go again once every realtime request has its first byte | A router's abort and resubmit with SMG's rule. SMG itself (arm 8b) answers the preempted request 503 instead |
+
+- **When shedding is not enough**, a realtime request waits like any other and can be refused, which the lifecycle
+  policy never does ([ADR-0003](../../docs/adr/0003-realtime-is-never-shed.md)).
+- **A preempted request's client** sees one response, whose first byte comes later.
+- **The token estimate** is a session's last reported `prompt_tokens` plus the body's growth since, at 4 bytes per
+  token, with no tokenizer, and a body smaller than the session's last is estimated whole. It counts prompts, not
+  decode growth, so it is a proxy for the pool's use.
+- **Its error.** On W2's agent replay at 8, 16 and 24 sessions (415 to 1,521 requests) it was off by 0.4 to 0.5% of all
+  prompt tokens, against 1.9 to 2.2% for bytes / 4. Of the requests of 1,000 tokens or more, 90% were within 1.3 to 1.6%
+  (bytes / 4: 3.4 to 4.5%) and all within 9.4% (bytes / 4: 8.2%). AIPerf's synthetic prompts run at 3.9 to 4.0 bytes a
+  token, near the estimate's rate. `cargo run --release -p flatshare-core --example estimate_error --
+  RUN/aiperf/profile_export.jsonl...` replays an export.
+- **The session table** keeps at most 4,096 sessions, the untrusted tenants' at most half, and replaces the one seen
+  longest ago that is not in a turn.
+
+### The lifecycle policy
+
+`policy = "lifecycle"` is what E2's arm 9 runs with make-room. Realtime requests go upstream at once and are never
+queued or refused, background requests yield to the realtime sessions' turns, and interactive requests are not held.
+
+Accepted lifecycle events move a realtime session through `idle`, `user_speaking` (`user_speech_started`), `critical`
+(`user_turn_ended`), `playback` (`playback_started`) and back to `idle` (`playback_ended`). `interrupted` is the user
+speaking again, and `session_closed` forgets the session. A realtime request also puts its session in `critical`. Every
+state but `idle` ends after `state_timeout_s` without an event or a request.
+
+| Switch | Keys | What it does |
+|---|---|---|
+| Headroom | `headroom`, `headroom_tokens`, `trigger` | While sessions are armed, a background request goes only if the estimated background tokens in flight and its own leave `headroom_tokens` free for each. A session is armed from speech onset to the reply's first audio, or in its critical window alone with `trigger = "request"` |
+| Critical-window throttle | `throttle`, `critical_prefill_budget_ms`, `max_num_batched_tokens` | While any session is `critical`, the background requests admitted share `critical_prefill_budget_ms` of predicted prefill time |
+| Degrade | `degrade`, `degrade_max_tokens` | A realtime request that finds less than `headroom_tokens` free is still admitted at once, its reply capped at the lower of `degrade_max_tokens` and its class's cap |
+| Aging | `max_defer_s` | A background request deferred that long is admitted regardless, `oversize` when its estimate alone exceeds what the headroom leaves |
+
+- **The step model** prices a prefill by the steps it takes alone. On the frozen box 512 tokens take 269 ms after a
+  30,000-token context and 38 ms after none, a difference a token budget cannot see. The fit is compiled in
+  (`flatshare_core::StepCost::frozen_box`) and no key changes it, so another engine or GPU needs its own, from
+  `flatshare-sim`'s `scripts/fit_step_cost.py`, built into `flatshare-core`.
+- **It counts** deferrals, aged and degraded admissions, sessions by state, state timeouts, and false alarms, armings
+  of the headroom that no realtime request followed.
+- **What it leaves out.** Its headroom works from the gateway's estimate, where the engine's own reserve counts blocks
+  exactly. No event says that speech ended without a turn, so a false alarm keeps its headroom until
+  `state_timeout_s`.
+- **What E2 measured.** In a campaign of 2026-10-23 on one sample of the agents' traces, arm 9 with the change landed
+  within the spread of its own runs without the headroom, the throttle or the events, or with `trigger = "request"`,
+  while without degrade's reply cap its p95 rose from 2.06 to 3.84 s. On the stock engine the policy left voice where
+  stock vLLM does
+  ([why](../../docs/REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work);
+  [EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)).
 
 ## Overhead
 
-`cargo run --release -p flatshare-gateway --example overhead` measures the latency the gateway adds and its CPU time. A mock engine that answers at once, the client and two proxies run in one process, each on its own tokio runtime with 4 worker threads, over loopback TCP with pooled keep-alive connections. Each scenario runs direct to the engine, through a bare reverse proxy on the same stack (axum server, hyper-util client, bodies passed through untouched: the HTTP hop alone), and through `flatshare-gateway` with a trusted tenant, a key, `X-Session-ID`, `X-Flatshare-Class` and a `prompt_cache_key` body. The gateway formats its per-request log line, as in production. "Added" is the gateway's quantile minus the direct one, as measured: negative where the gateway's came out lower. CPU is the busy time of the proxy runtime's workers, system calls included, per request (per 8-chunk stream for the streaming rows), which is also milliseconds per 1,000 requests.
+**On a deployed build, version 1.8, the gateway added about a tenth of a millisecond.** Paired against the engine's
+own socket on cyan, it added +0.12 ms to a voice request's first token at the median over 80 pairs (p95 +1.22 ms).
+None of 82 requests spent over 2 ms in its own leg
+([the record](../../benchmarks/results/2026-10-29-gateway-window/README.md);
+[BENCHMARKS.md](../../docs/BENCHMARKS.md#what-does-the-gateway-add-to-a-request)).
 
-cyan (2× Xeon Silver 4310 at 2.1 GHz, Linux 5.15), the process pinned to 16 logical CPUs (`taskset -c 0-15`), release build, 2026-10-22, p50 / p99:
+`cargo run --release -p flatshare-gateway --example overhead` measures its latency and CPU in one process: a mock engine
+that answers at once, the client and two proxies, each on 4 tokio worker threads, over loopback TCP. Each scenario runs
+direct, through a bare reverse proxy on the same stack (the HTTP hop alone), and through the gateway with a key, a
+session and its log line. "Added" is the gateway's quantile minus the direct one, and CPU is the proxy's busy time per
+request or 8-chunk stream. On 16 logical CPUs of cyan's two Xeon Silver 4310 at 2.1 GHz, on 2026-10-22, p50 / p99:
 
 | Scenario | Clients | Samples | Direct, µs | Bare proxy, µs | Gateway, µs | Added, µs | CPU per request, bare / gateway, µs |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -536,93 +587,21 @@ cyan (2× Xeon Silver 4310 at 2.1 GHz, Linux 5.15), the process pinned to 16 log
 | Streaming, first byte | 64 | 4,000 | 143 / 404 | 422 / 1,865 | 440 / 1,874 | 296 / 1,469 | 247 / 292 |
 | Streaming, per chunk | 64 | 28,000 | 72 / 223 | 210 / 775 | 234 / 893 | 163 / 670 | 247 / 292 |
 
-The gateway's own histogram over the same run: mean 32 µs from the end of the body to the upstream write; 94.3% of requests within 100 µs, 99.6% within 500 µs, 99.99% within 2 ms.
-
-What the numbers say:
-- **The SLO holds, without much room at the extreme.** The largest added p99 is 1.92 ms, for 64 concurrent non-streaming requests in a process that also runs the client and the engine. The gateway's own time stays within 2 ms for 99.99% of requests.
-- **At one client, the hop and the gateway's work cost about the same.** The bare proxy adds 112 µs at p50 and the gateway 114 µs more. Per request, the gateway's CPU falls from 191 µs at one client to 55 µs at 64; the bare proxy's falls from 80 to 40 µs. So under load the gateway's own work costs about 15 µs of CPU per request beyond the hop.
-- **Large bodies cost a parse and a copy.** A 64 KiB body adds 345 µs at one client: one validating pass over the JSON and one copy. Agent prompts are that size, so they pay a few hundred microseconds against times to first token of 100 ms and more.
-- **Streamed chunks cost about the same as the bare hop:** 65 against 61 µs at p50 for one stream.
-- **The same benchmark on an Apple M5 Max** (18 cores, macOS 26.6) adds 39 µs at one client, and 0.82 ms at most at p99. cyan's 2.1 GHz Xeon costs several times more per request.
-
-**In place on cyan** ([BENCHMARKS.md](../../docs/BENCHMARKS.md#the-control-plane-flatshare-gateway-in-front-of-the-engine)):
-- on the W1 build (2026-10-22, before the admission policies), with the voice agent and the agent replay as clients, the gateway's own time was 0.13 ms on average for voice requests;
-- paired against the engine's own socket, the gateway added 0.38 ms to a voice request's first token on the W1 build, and 0.29 ms on the final transport (W6, 2026-10-25: every server on a Unix socket, the gateway's upstream the tunnel's engine socket; [the records](../../benchmarks/results/2026-10-25-w6-transport/README.md)). On v1.8 (c3b5007), the build deployed on 2026-10-29, it added +0.12 ms at the median over 80 pairs ([its record](../../benchmarks/results/2026-10-29-gateway-window/README.md)).
-
-**Admission policies.** The benchmark's second table prices each policy: background requests, which every policy holds, through one gateway per policy, with limits the runs never reach so that a policy adds its bookkeeping and never a wait, and through a gateway without a policy, which runs the same requests just before. Each gateway's own histogram follows the table. On the M5 Max only (not on cyan), the medians of eight runs on 2026-10-22, with the machine busy with other work, for the 2 KiB non-streaming rows:
-
-| Policy | Own time, mean | CPU per request over `none`, 1 / 8 / 64 clients | p50 over `none`, 1 / 8 / 64 clients |
-|---|---:|---:|---:|
-| `none` | 33 µs | — | — |
-| `static-cap` | 35 µs | 1 / 2 / 2 µs | 1 / 2 / 28 µs |
-| `token-reservation` | 36 µs | 1 / 2 / 2 µs | 1 / 2 / 30 µs |
-| `flow-control` | 36 µs | 1 / 3 / 3 µs | 1 / 2 / 34 µs |
-| `preempt-resubmit` | 50 µs | −2 / −1 / −2 µs | −5 / −7 / −31 µs |
-
-What the numbers say:
-- **The bookkeeping costs a few microseconds.** `static-cap`, `token-reservation` and `flow-control` take the admission lock as a request arrives and as it leaves: 3 to 4 µs of own time and up to 3 µs of CPU per request. `flow-control` also watches every streamed frame for a shed, about 1 µs of CPU per frame. At 64 clients the gateway's 4 workers are saturated, 16 requests to a worker, so a request's latency is about 16 times its CPU, and 2 to 3 µs of CPU show as about 30 µs at p50.
-- **`preempt-resubmit` costs no CPU, and its own time is higher.** It takes the lock a third time, at the first byte, yet its CPU and latency are at or below `none`'s: it holds a background response until the first frame, and answers with the headers and that frame together. Holding the response is what raises its own time, by 10 to 21 µs: forced onto the other policies' requests in an experiment, it raised theirs by 13 to 15 µs.
-- **Every policy keeps 99.96% of requests within 2 ms of own time.** The p99 differences between policies are the machine's: single runs show spikes of 0.1 to 1.7 ms at p99, each time in another policy, `none`'s among them.
-
-**The lifecycle policy.** Since W3 the policy table has realtime rows, voice requests, which flow control, preempt-resubmit and `lifecycle` hold, and runs `lifecycle` twice: alone, where no realtime session is in a turn, and with events, while a task posts a lifecycle event every millisecond (four voice sessions in turn, through speech onset, end of turn, playback and its end), so that requests are decided beside sessions that speak and are in their critical windows. The poster's own CPU counts as the gateway's. The policy table's gateways have a voice tenant as well, one more key digest to compare per request. A third table times `POST /v1/events`. Medians of six runs on the M5 Max on 2026-10-23, the machine busy with other work; CPU and p50 over `none` are the medians of the differences within each run:
-
-| Policy | Own time, mean | CPU over `none`, background 1 / 8 / 64 clients | p50 over `none`, background 1 / 8 / 64 clients | CPU over `none`, realtime 1 / 8 clients | p50 over `none`, realtime 1 / 8 clients |
-|---|---:|---:|---:|---:|---:|
-| `none` | 28 µs | — | — | — | — |
-| `static-cap` | 34 µs | 2 / 10 / 4 µs | 0 / 21 / 67 µs | 2 / 4 µs | 0 / 10 µs |
-| `token-reservation` | 36 µs | 0 / 12 / 8 µs | 0 / 27 / 106 µs | 4 / 2 µs | 6 / 12 µs |
-| `flow-control` | 36 µs | 0 / 10 / 8 µs | 0 / 22 / 92 µs | 7 / 4 µs | 12 / 6 µs |
-| `preempt-resubmit` | 52 µs | −4 / 5 / 4 µs | −10 / 6 / 74 µs | 9 / 4 µs | 15 / 3 µs |
-| `lifecycle` | 37 µs | −1 / 4 / 8 µs | −4 / 6 / 115 µs | 10 / 6 µs | 22 / 9 µs |
-| `lifecycle`, with events | 37 µs | 2 / 7 / 8 µs | −4 / 12 / 138 µs | 9 / 9 µs | 13 / 15 µs |
-
-| `POST /v1/events` | Concurrency | Events per POST | Latency p50 / p99 | CPU per POST | Events per second |
-|---|---:|---:|---:|---:|---:|
-| `none` | 1 | 1 | 63 / 160 µs | 26 µs | 15,200 |
-| `lifecycle` | 1 | 1 | 62 / 155 µs | 26 µs | 15,000 |
-| `none` | 8 | 1 | 115 / 245 µs | 32 µs | 64,200 |
-| `lifecycle` | 8 | 1 | 115 / 216 µs | 34 µs | 66,400 |
-| `none` | 8 | 4 | 134 / 247 µs | 50 µs | 225,400 |
-| `lifecycle` | 8 | 4 | 132 / 242 µs | 50 µs | 230,600 |
-
-What the numbers say:
-- **`lifecycle` costs what the simple baselines cost.** Its own time is 9 µs over `none`'s, where `static-cap`, `token-reservation` and `flow-control` take 6 to 8 µs. A background request pays up to 8 µs of CPU over `none`, and a voice request 6 to 10 µs, as under flow control and preempt-resubmit: the policy takes the lock as a voice request arrives and as it leaves, and moves its session each time. The 64-client rows are those of saturated workers, where the spread between runs is widest.
-- **The event path's cost is the HTTP hop and the JSON, not the policy.** A one-event POST takes 62 to 63 µs at p50 and 26 µs of CPU with or without the policy; following the sessions adds at most 2 µs per POST. One connection posts 15,000 events a second, eight post 65,000, and eight with batches of four 225,000 to 230,000; a call posts about one a second.
-- **Events beside requests cost their own CPU and little more.** With an event every millisecond, as from hundreds of calls, the requests' CPU over `none` moves by a few microseconds and their own time not at all. Over a longer run, as with eight 8 ms streams at a time, the poster's own CPU, about 30 µs an event, comes to some 25 µs per stream.
-- **Every policy keeps all its requests within 2 ms of own time** (100.00% in every run).
+- **Its own time meets the 2 ms objective with room, and the latency it adds stays under 2 ms at p99.** Its own time
+  averaged 32 µs, with 94.3% of requests within 100 µs, 99.6% within 500 µs and 99.99% within 2 ms. The largest added
+  p99 is 1.92 ms, at 64 concurrent non-streaming requests in a process that also runs the client and the engine.
+- **At one client the hop and the gateway's work cost about the same.** The bare proxy adds 112 µs at p50 and the
+  gateway 114 µs more. Under load its own work costs about 15 µs of CPU per request beyond the hop.
+- **A 64 KiB body adds 345 µs at one client**, a validating parse and a copy, against agents' times to first token of
+  100 ms and more. A streamed chunk costs 65 µs at p50, near the bare hop's 61 µs.
+- **On an Apple M5 Max** (18 cores) it adds 39 µs at one client, and 0.82 ms at most at p99.
+- **An admission policy adds 6 to 24 µs to the gateway's own time.** On the M5 Max, in the medians of six runs on
+  2026-10-23, the own time averaged 28 µs without a policy, and `lifecycle` added 9 µs. Every policy kept all its
+  requests within 2 ms. A one-event `POST /v1/events` took 62 to 63 µs at p50 with or without the policy, and one
+  connection posted 15,000 events a second.
 
 ## Tests
 
-`cargo test -p flatshare-gateway` runs in a few seconds and needs only loopback. The integration tests (`tests/gateway/`) put the gateway between a raw HTTP/1.1 client and an in-process mock engine that records each request, streams SSE with set delays, holds a request's answer until the test releases it, and reports when its response body (or a pending handler) is dropped. Each file's module doc lists what its tests check.
-
-| Suite | File | What it holds to |
-|---|---|---|
-| The request contract | `proxy.rs` | Sanitization, priorities, sessions, classes, salts, and 401, 400, 413, 404 and 405 |
-| Bounds | `proxy.rs` | Each class's reply cap in each route's fields; refused limits and choices |
-| The Messages API | `messages.rs` | Chat's tenants, classes and sessions; a client's priority, salt and transfer fields stripped; the realtime cap on `max_tokens`; streams byte for byte; count_tokens uncapped |
-| The relay | `streams.rs` | Byte-exact SSE, clients that leave, stalled readers, broken streams, 502 and 504 |
-| The upstream | `upstream.rs` | An engine on a Unix socket, an engine that restarts, a broken connection |
-| Events and metrics | `events.rs`, `metrics.rs` | Events; the exposition, each policy's series and none without one |
-| The intake | `intake.rs` | Each in-flight bound and the body budget, refusing before a body is read |
-| Deadlines | `deadlines.rs` | Each deadline's answer, the engine's request dropped, one outcome, the place back |
-| Accounting and the engine's state | `accounting.rs` | Valid and good requests, every outcome, and the canary's states |
-| Nodes | `nodes.rs` | Placement, call slots, agents' bounds, failover, covering, a drain, ends of placements, retries |
-| Sockets and the process | `streams.rs`, `drain.rs`, `sockets.rs`, `reload.rs` | The Unix socket, the drain, inherited sockets, the unit's binary and its reload |
-| The admission point's baselines | `admission.rs` | The static cap, token reservation, flow control and preempt-resubmit |
-| The lifecycle policy | `lifecycle.rs` | Deferral, the window's budget, aging, degrade, false alarms, a full session table |
-
-The unit tests, each beside the module it tests:
-
-| Area | Module | What it pins |
-|---|---|---|
-| The configuration rules | `src/config.rs` | The defaults, mistakes refused with their cause, every duration's bound, the arm files over the deploy example |
-| The admission policies' table | `src/harness/config.rs` | Each policy's keys and defaults, the lifecycle policy's switches, its old name refused |
-| The realtime sessions | `src/harness/realtime.rs` | Their states, timeouts and false alarms, and their place in the session table |
-| The session table | `src/harness/sessions.rs` | Its bound, its untrusted half and its tenants |
-| Bounds | `src/bounds.rs` | Each route's limit as vLLM reads it, refused fields and choices, the fixture's 380 cases |
-| Nodes | `src/nodes/` | The verdict, the placement table, agents' bounds, calls, covering, a drain, the keys |
-| The intake and the ledger | `src/intake.rs`, `src/ledger.rs` | Each bound, one body budget, a predecessor's requests, the ledger's lines |
-| The engine's state | `src/canary.rs` | Its states, the canary's schedule and keys, the classes' objectives |
-| Deadlines | `src/deadline.rs` | The earliest deadline, retries, every class's defaults, the renamed key refused |
-| The relay | `src/relay.rs` | A passed deadline and a broken upstream let the upstream go before the error event waits for a client whose buffer is full |
-| The rest | `src/auth.rs`, `src/config.rs`, `src/sanitize.rs`, `src/events.rs`, `src/usage.rs`, `src/metrics.rs` | Cache salts and their secret's file, hashed session ids, the key match, the dedup window, the SSE scanner, the metric series |
+`cargo test -p flatshare-gateway` runs in a few seconds on loopback alone. The unit tests sit beside their modules,
+and the integration tests (`tests/gateway/`) put the gateway between a raw HTTP/1.1 client and an in-process mock
+engine. Each test file's module doc lists what it checks.

@@ -42,7 +42,8 @@
 
   The gateway's README says how ([What it does](../../crates/flatshare-gateway/README.md#what-it-does)).
 - **No admission policy serves.** The gateway refuses an `[admission]` policy beside `[[nodes]]`, and the arrangement
-  to deploy runs none with one upstream either. The change makes the room ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)).
+  to deploy runs none with one upstream either. The change makes the room
+  ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)).
 - **E2's admission policies stay in the same binary, as its harness** (`src/harness/`). The proxy reaches them only
   through a request's admission ticket. A gateway without `[admission]` runs none of their code and exports none of
   their metric families, and the reproduction of E2's records needs them.

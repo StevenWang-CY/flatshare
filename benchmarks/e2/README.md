@@ -1,12 +1,10 @@
 # E2 campaigns
 
-How E2 is run, for a reader who measures a campaign or adds an arm. An E2 point is one arm file in [`arms/`](arms): the calls, the agent replay beside them, the gateway's configuration and the engine ([the arm-file reference](../../python/flatshare_bench/README.md#e2-points)). `flatshare-bench e2 run` measures one point on cyan. A campaign file lists arm files, and `campaign.sh` measures them in order from a workstation with SSH to the hosts, the way `deploy/deploy.sh` deploys.
-
-A line in a campaign file can also set, for all of its points:
-
-- `agents-seed N`: AIPerf's seed, in place of each arm file's `[agents] seed`, so that each round of a repeated campaign replays a sample of the agents of its own while its points stay paired: the seed draws where each session enters its trace, and AIPerf's sequential sampler gives every round the same traces in the same order.
-- `kv-sample-s SECONDS`: `flatshare-bench e2 run --kv-sample-s`, how often an agent point samples the engine's KV use and requests for the measured running share (0.5 s by default, on one connection to the engine that it keeps for the calls). `kv-sample-s 0` samples nothing, as W5's points ran, the sampler having come after them, so that a campaign read against W5's matches its instrumentation (the Marlin dry run's point, `benchmarks/a100/marlin-dry.campaign`).
-- `save-audio`: the callers save each call's audio, for [the demo video](#the-demo-video) (`flatshare-bench e2 run --save-audio`).
+How E2 is run, for a reader who measures a campaign or adds an arm. An E2 point is one arm file in [`arms/`](arms): the
+calls, the agent replay beside them, the gateway's configuration and the engine
+([the arm file](../../python/flatshare_bench/README.md#e2-points)). `flatshare-bench e2 run` measures one point on cyan.
+A campaign file lists arm files, and `campaign.sh` measures them in order from a workstation with SSH to the hosts, as
+`deploy/deploy.sh` deploys.
 
 ```sh
 # your SSH command for the hosts, as for deploy.sh
@@ -17,71 +15,98 @@ benchmarks/e2/campaign.sh --dry-run benchmarks/e2/w2.campaign
 benchmarks/e2/campaign.sh --pause benchmarks/e2/w2.campaign
 ```
 
+A line of a campaign file can also set, for all its points:
+
+- **`agents-seed N`** replaces each arm file's AIPerf seed, so that each round of a repeated campaign replays a sample
+  of the agents of its own while its points stay paired.
+- **`kv-sample-s SECONDS`** sets how often an agent point samples the engine's KV use, 0.5 s by default, or 0 to match
+  W5's instrumentation.
+- **`save-audio`** has the callers save each call's audio, for [the demo video](#the-demo-video).
+
+## How a campaign runs
+
 For each point whose run directory on cyan is not complete, `campaign.sh`:
 
-1. switches the GPU node to the arm's engine with [`variant.sh use`](../../deploy/phastform/variants/README.md), which restarts only what changes and returns once the engine answers `/health`;
-2. runs `flatshare-bench e2 run` on cyan, into `~/flatshare/runs/e2/CAMPAIGN/POINT`, with the GPU node's deployed revision, its `~/flatshare/src/DEPLOYED` read over SSH as the point starts, which `run.json` keeps beside cyan's (`--gpu-source`). Meanwhile it samples the GPU node's `nvidia-smi` once a second (SM and memory clocks, temperature, power and clock event reasons, timestamps in UTC, and the GPU's name, so that a record says which card it ran on), because a consumer card's boost clock follows its temperature, and puts the samples into that directory as `gpu.csv` when the point ends, failed or not;
-3. fetches that directory into `$FLATSHARE_E2_RESULTS/CAMPAIGN/POINT` (default `~/flatshare/runs/e2`), without AIPerf's `inputs.json`.
-
-For the campaign as a whole:
+1. switches the GPU node to the arm's engine with [`variant.sh use`](../../deploy/phastform/variants/README.md), which
+   restarts only what changes and returns once the engine answers `/health`;
+2. runs `flatshare-bench e2 run` on cyan, into `~/flatshare/runs/e2/CAMPAIGN/POINT`, passing the GPU node's deployed
+   revision, while it samples the node's `nvidia-smi` once a second into `gpu.csv`, since a consumer card's boost clock
+   follows its temperature;
+3. fetches the run directory into `$FLATSHARE_E2_RESULTS/CAMPAIGN/POINT` (default `~/flatshare/runs/e2`).
 
 - **Resuming.** A complete point is skipped, so running a stopped campaign again resumes it.
-- **A failure.** The first failure stops the campaign, with the partial run directory fetched and its `run.json` saying what failed.
-- **The end.** `flatshare-bench e2 report` writes the frontier of the campaign's points (fetched into `CAMPAIGN/report`: `frontier.md`, `frontier.csv` and a figure per workload, `frontier.svg` for the arm files' own) and `flatshare-bench e2 reset` puts cyan's units back. `--pause` then stops the GPU node's units, which nothing should hold while idle.
-- **A failure after the switch.** A campaign that fails once it has switched the node does both on its way out too, unless a point may still be running on cyan, which a reset or a pause would spoil: its lock is held, or the connection to cyan was lost (ssh's exit status 255, which `campaign.sh` reports as such rather than as the answer of the probe it cut). It then leaves cyan's units and the node as they are, and says so.
+- **Failing.** The first failure stops the campaign, with the partial run directory fetched and its `run.json` saying
+  what failed.
+- **The end.** `flatshare-bench e2 report` writes the campaign's frontier into `CAMPAIGN/report`, and
+  `flatshare-bench e2 reset` puts cyan's units back. `--pause` then stops the GPU node's units. A campaign that fails
+  after switching the node does both too, unless a point may still be running on cyan, and then says so.
 - **The log.** `campaign.log` beside the points keeps every step.
 
-Points that share an engine go together in a campaign file: a switch restarts the engine, about 2 minutes with warm caches. A point takes about 12 minutes: AIPerf builds its dataset for about 4, then a minute of warm-up and the calls. AIPerf's cache keeps that dataset for the campaign's later points that replay the same corpus with the same seed, and they load it instead (`configs/aiperf.env`): on peacock, over the 48 long traces, AIPerf's profiling phase began 143 s after its start when it built their dataset and 9 s after when it loaded it, where each of the A100 run's points built it for 135 s.
+Points that share an engine go together in a campaign file, since a switch restarts the engine, about 2 minutes with
+warm caches. A point takes about 12 minutes, about 4 of them for AIPerf to build its dataset, then a minute of warm-up
+and the calls. Later points that replay the same corpus with the same seed load the cached dataset instead. On peacock,
+over the long traces, profiling then began 9 s after AIPerf's start rather than 143 s.
 
-**On Gray.** `FLATSHARE_GPU` names the campaign's one GPU node, Phastform by default. With `FLATSHARE_GPU=gray` the campaign switches Gray's engine, samples Gray's GPU and passes `--node gray` with Gray's revision to every point. Each one reads Gray's engine through `flatshare-tunnel@gray` on cyan (started when it is not running), with cyan's gateway and voice worker pointed at Gray's sockets for the campaign's points (`gray-engine.sock`, `gray-stt.sock`, `gray-tts.sock`) and put back by the reset at its end. Every record names the node it ran on beside the node's deployed revision ([the GPU node](../../python/flatshare_bench/README.md#e2-points)).
+**On Gray.** `FLATSHARE_GPU` names the campaign's one GPU node, Phastform by default. With `FLATSHARE_GPU=gray` the
+campaign switches and samples Gray, and passes `--node gray` to every point. A campaign's run directories hold one
+node's points, so each node's rounds are campaign files of their own. Gray needs, once:
 
-A campaign's run directories on cyan hold one node's points: run on Gray, a campaign whose directory already holds a point measured on Phastform stops at that point rather than fetch it as Gray's, so each node's rounds are campaign files of their own (`rg-r1-gray.campaign` beside `rg-r1-phastform.campaign`, say).
-
-Gray needs, once:
-
-- its release (`deploy/deploy.sh gray`; it runs its servers in the host's network namespace, its kernel refusing unprivileged user namespaces, [the runbook](../../ops/RUNBOOK.md#a-gpu-node-without-user-namespaces-gray));
-- its models (`bash ~/flatshare/src/deploy/gray/bootstrap.sh`);
-- cyan's tunnel keys on it (`deploy/authorize-tunnel.sh cyan gray`);
+- its release (`deploy/deploy.sh gray`), which runs its servers in the host's network namespace
+  ([the runbook](../../ops/RUNBOOK.md#a-gpu-node-without-user-namespaces-gray));
+- its models (`bash ~/flatshare/src/deploy/gray/bootstrap.sh`) and cyan's tunnel keys
+  (`deploy/authorize-tunnel.sh cyan gray`);
 - on cyan, `~/.config/flatshare/tunnel-gray.env` with `FLATSHARE_TUNNEL_TARGET=<user>@<gray's host>`.
 
-[`gray-smoke.campaign`](gray-smoke.campaign) checks Gray end to end on W5's round-1 sample of the agents: voice alone on the frozen box, then the agents alone on a dedicated card ([`rg-disc-agents-only-s24`](arms/rg-disc-agents-only-s24.toml), which stops the card's speech servers) and on the shared card's engine ([`rg-disc-agents-pr-ab48-s24`](arms/rg-disc-agents-pr-ab48-s24.toml), the configuration to deploy as W5 ran it, which starts them again):
+[`gray-smoke.campaign`](gray-smoke.campaign) checks Gray end to end, run as
+`FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --pause benchmarks/e2/gray-smoke.campaign`.
 
-```sh
-# the points and engines
-FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --dry-run benchmarks/e2/gray-smoke.campaign
-# measure on Gray, then pause it
-FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --pause benchmarks/e2/gray-smoke.campaign
-```
+**Points without calls.** An arm file with `[voice] callers = 0` and agent sessions measures the agents alone, as a card
+that serves no call runs them, over `[agents] window_s` after the warm-up. With `[engine] variant = "agents-only"` the
+card runs without its speech servers, the engine's pool grown into their memory
+([the variant](../../deploy/phastform/variants/README.md#a-card-for-the-agents-alone)). The report gives such points a
+workload of their own, without a frontier or a figure.
 
-**Points without calls.** An arm file with `[voice] callers = 0` and agent sessions measures the agents alone, as a card that serves no call runs them: no callers and no worker journal, its window `[agents] window_s` after the warm-up (355 s by default, the median length of a two-caller point's calls in W5's records), its agents' token rate the point's measure. With `[engine] variant = "agents-only"` the card runs without its speech servers, the engine's KV pool grown into their memory under vLLM's own scheduling for the card ([the variant](../../deploy/phastform/variants/README.md#a-card-for-the-agents-alone)): the resource gate's best practical dedicated card. Its controlled counterpart is the same point on the shared card's engine, the speech servers resident and idle. The report gives such points a workload of their own, without a frontier or a figure.
+**On one host.** `campaign.sh --local` runs a campaign on a single host that is both cyan and the GPU node
+([HARDWARE.md](../../docs/HARDWARE.md#single-host-mode)). Every step runs there, so a dropped workstation link stops
+nothing, and the results go to `~/flatshare/results/e2`, which `deploy/a100/pull.sh HOST` copies to the workstation.
 
-**On one host.** `campaign.sh --local` runs a campaign on a single host that is cyan and the GPU node at once ([docs/HARDWARE.md](../../docs/HARDWARE.md#single-host-mode)): every step runs there (`deploy/bin/flatshare-local` in place of ssh, so a dropped workstation link does not stop it), the node is `localhost`, its engine switches through `$FLATSHARE_NODE_DIR/variant.sh` (a node rendered from a hardware profile has its own, `FLATSHARE_NODE_DIR=flatshare/node`), and the results go to `~/flatshare/results/e2`, which `deploy/a100/pull.sh HOST` copies to the workstation every two minutes.
+**A deadline.** `--until HH:MM` (UTC) or `--until-epoch SECONDS` starts no point that would end after then. A point is
+budgeted by the longest of its kind measured on the host (`durations.tsv`), and until one is, by W5's: 13 minutes with
+agents, 7 without, and 2 more for an engine switch. A campaign stopped by its deadline exits 0, as a complete one does,
+and `campaign.sh --points CAMPAIGN` lists its points to tell them apart.
 
-**A deadline.** `--until HH:MM` (UTC; tomorrow's once today's has passed) starts no point that would end after then; the frontier and the reset follow as usual.
-
-- **The budget.** A point is budgeted by the longest of its kind, and of an engine switch, measured on this host (`durations.tsv` beside the campaigns' results), and until one is, by W5's durations: 13 minutes for a point with agents, 7 without, and 2 more for an engine switch.
-- **An absolute time.** `--until-epoch SECONDS` sets the deadline as an absolute time, which has no tomorrow: `benchmarks/a100/run.sh` hands its one deadline as an epoch to every campaign of a run and to `cprime.sh`, so that a campaign that starts after HH:MM is not given a deadline a day away.
-- **The exit status.** A campaign stopped by its deadline exits 0 as a complete one does. The two scripts tell them apart by the campaign's points, which `campaign.sh --points CAMPAIGN` prints, one a line, as it reads the file, without reaching a host.
-
-**Stopping.** One point runs at a time on cyan. Ctrl-C stops `campaign.sh` and its sampling of the GPU, but a point already running on cyan goes on to its end: closing its SSH session does not stop it. To stop it as well, send SIGINT to its pid, which `~/flatshare/runs/.flatshare-bench-e2.lock` holds on cyan; `flatshare-bench e2 run` then stops AIPerf and the callers and marks the point failed. While a point runs, `campaign.sh` refuses to switch the engine under it.
+**Stopping.** Ctrl-C stops `campaign.sh`, but a point already running on cyan goes on to its end. To stop it too, send
+SIGINT to the pid in `~/flatshare/runs/.flatshare-bench-e2.lock` on cyan, and the point is marked failed.
 
 ## Before the first campaign
 
-- Deploy both hosts (`deploy/deploy.sh`): each release builds or links the host's environments from their locks, cyan's `venvs/bench` and `venvs/smg` among them ([the runbook](../../ops/RUNBOOK.md#deploy)).
-- cyan: the `vad-turns` worker variant is linked and the worker runs bench mode, not the `serve` variant (`flatshare-bench e2 run` refuses to measure otherwise); `~/.config/flatshare/gateway-keys.env` has `FLATSHARE_GATEWAY_AGENTS_KEY`, the key of the `agents` tenant; `~/flatshare/data/weka-x32` (`flatshare-bench scale-traces`) and `~/flatshare/data/callers` (`flatshare-voice render-callers`) exist; `flatshare-gateway` is a build that knows every key the arms' `[gateway]` tables set (`upstream_priority`, `[admission]`).
-- Phastform, for arm 7b: `bash ~/flatshare/src/deploy/phastform/variants/sglang/install.sh` builds SGLang's environment once.
+- Deploy both hosts (`deploy/deploy.sh`), which builds cyan's `venvs/bench` and `venvs/smg` among the environments
+  ([the runbook](../../ops/RUNBOOK.md#deploy)).
+- On cyan, the worker runs bench mode with the `vad-turns` variant linked, not `serve`, and
+  `~/.config/flatshare/gateway-keys.env` has `FLATSHARE_GATEWAY_AGENTS_KEY`, the `agents` tenant's key.
+  `~/flatshare/data/weka-x32` (`flatshare-bench scale-traces`) and `~/flatshare/data/callers`
+  (`flatshare-voice render-callers`) exist, and the gateway build knows every key the arms' `[gateway]` tables set.
+- On Phastform, for arm 7b, `bash ~/flatshare/src/deploy/phastform/variants/sglang/install.sh` builds SGLang once.
 
 ## A point on cyan
 
 What a point changes on cyan, and how to undo it:
 
-- **The gateway.** Every point runs the gateway from `~/.config/flatshare/gateway-e2.toml` through the `e2-gateway` drop-in: `gateway.toml` with the inference canary off (`[canary] enabled = false`, so that the engine serves only the point's requests and `/ready` answers as for the recorded campaigns) and the arm's `[gateway]` table merged in.
-- **The worker.** `preemptive_generation = false` links the `no-preemptive-generation` worker drop-in, and `[voice] events = false` the `no-events` one.
-- **The GPU node.** A point on another node than Phastform (`flatshare-bench e2 run --node gray`, which `FLATSHARE_GPU=gray benchmarks/e2/campaign.sh` passes) starts that node's tunnel when it is not running (`flatshare-tunnel@gray`, which needs `~/.config/flatshare/tunnel-gray.env` and its keys authorized on Gray), sets the gateway's `upstream` to `gray-engine.sock` in `gateway-e2.toml`, and gives the worker the drop-in `variant-e2-node.conf` with `gray-stt.sock` and `gray-tts.sock`; `run.json` names the node.
-- **SMG.** An arm with `router = "smg"` starts `flatshare-smg`, and every other arm stops it. SMG takes only http:// workers and listens on TCP only, so it runs in the voice-plane namespace between two proxies (`deploy/cyan/smg.sh`): the gateway reaches it at `$XDG_RUNTIME_DIR/flatshare/smg.sock`, and it reaches the engine at the namespace's 127.0.0.1:18000, the tunnel's socket. No other user of cyan reaches either port.
-- **Undo.** `~/flatshare/venvs/bench/bin/flatshare-bench e2 reset` puts the gateway back on `gateway.toml`, preemptive generation and the events on, the worker back on Phastform's sockets, and SMG stopped; a tunnel a point started to another node stays up. A campaign runs it at its end.
+- **The gateway** runs from `~/.config/flatshare/gateway-e2.toml` through the `e2-gateway` drop-in, which is
+  `gateway.toml` with the inference canary off, so that the engine serves only the point's requests, and the arm's
+  `[gateway]` table merged in.
+- **The worker.** `[voice] preemptive_generation = false` links the `no-preemptive-generation` drop-in,
+  `turn_hints = true` the `turn-hints` one and `events = false` the `no-events` one.
+- **Another GPU node.** A point on Gray starts its tunnel when it is not running, sets the gateway's `upstream` to
+  `gray-engine.sock`, and gives the worker the drop-in `variant-e2-node.conf` with Gray's speech sockets.
+- **SMG.** An arm with `router = "smg"` starts `flatshare-smg`, and every other arm stops it. SMG takes only http://
+  workers and listens on TCP only, so it runs in the voice-plane namespace between two proxies (`deploy/cyan/smg.sh`).
+- **Undo.** `~/flatshare/venvs/bench/bin/flatshare-bench e2 reset` puts the gateway back on `gateway.toml`, preemptive
+  generation and the events on, the turn hints off, the worker back on Phastform's sockets, and SMG stopped. A tunnel a
+  point started stays up, and a campaign resets at its end.
 
-Beside AIPerf's and the callers' records, each point keeps the gateway's request lines (`gateway.jsonl`, the exact first bytes), the worker's journal (`voice-worker.log`: turn lines and event counts) and the GPU's clocks and temperature (`gpu.csv`, which `campaign.sh` samples over SSH once a second while the point runs). The [`flatshare-bench` README](../../python/flatshare_bench/README.md#e2-points) lists every file.
+Each point keeps the gateway's request lines, the worker's journal and the GPU's samples
+([the run directory](../../python/flatshare_bench/README.md#e2-points)).
 
 ## When a point fails
 
@@ -92,76 +117,74 @@ Beside AIPerf's and the callers' records, each point keeps the gateway's request
 | `flatshare-bench e2 run`: "another flatshare-bench e2 run or reset holds" the lock | A point is still running, or one was interrupted | The pid is in `~/flatshare/runs/.flatshare-bench-e2.lock`; stop it with SIGINT, or wait |
 | The gateway does not start for a point, and `run.json` quotes its log | The arm's `[gateway]` table sets a key this gateway build does not know | Deploy a gateway build that has it, or fix the arm; `flatshare-bench e2 reset` restores `gateway.toml` |
 
-## Points
+## Arms and campaigns
 
-[`w2.campaign`](w2.campaign) holds the points that depend on no other arm's result:
+By default a point runs 2 callers × 25 turns with barge-in on a quarter of them, beside AIPerf's replay of the 32×
+corpus with think times capped at 120 s, through the gateway as the `agents` tenant. The gateway "as configured" is
+`~/.config/flatshare/gateway.toml`, which sends each class's priority as `X-Vllm-Priority`. [`w2.campaign`](w2.campaign)
+holds the arms that depend on no other arm's result:
 
 | Arm | Points | Engine | Gateway |
 |---|---|---|---|
 | 1 | `a1-voice`: the calls alone | frozen | as configured |
 | 2 | `a2-stock-s{8,16,24}` | FCFS, step cap 2,048, no long-prefill threshold | `upstream_priority = []` |
 | 3 | `a3-priority-s{8,16,24}` | priority, step cap 2,048, no long-prefill threshold | as configured |
-| 4 | `a4-b512-t256-s16` (tuned vLLM), `a4-b512-t0-s16`, `a4-b1024-t256-s16`, `a4-b1024-t512-s16`, `a4-b1024-t0-s16` | priority with each step cap B and long-prefill threshold T; T at or above B does not bind, so B × T has five distinct cells | as configured |
+| 4 | `a4-b512-t256-s16` (tuned vLLM), `a4-b512-t0-s16`, `a4-b1024-t256-s16`, `a4-b1024-t512-s16`, `a4-b1024-t0-s16` | priority with each step cap B and threshold T; T at or above B does not bind, so B × T has five distinct cells | as configured |
 | 7a | `a7a-seqs12-s16`, `a7a-pr54530-s16` | priority, `--max-num-seqs 12`, without and with vLLM #54530 | as configured |
 | 7b | `a7b-sglang-s{8,16}` | SGLang 0.5.22 | `upstream_priority = ["body"]` |
 
-The gateway "as configured" is `~/.config/flatshare/gateway.toml`, which sends each class's priority as `X-Vllm-Priority`, with its inference canary off, as every point runs it ([`flatshare-bench`'s README](../../python/flatshare_bench/README.md)). Every point runs 2 callers × 25 turns with barge-in on a quarter of them, beside AIPerf's agentic replay of the 32× corpus (think times capped at 120 s) through the gateway as the `agents` tenant.
+The other arms start from a winner's arm file, with their own `arm` and `label`, and add:
 
-The other arms take an earlier arm's winner, so their files are written from its results. Each starts from the winning arm file, with its own `arm` and `label`:
-
-| Arm | Add to the winner's arm file |
+| Arm | Added to the winner's arm file |
 |---|---|
-| 4, best two at 8 and 24 sessions | `[agents] sessions = 8` (and 24) |
-| 5, best arm 4 + headroom | `"--watermark", "0.05"` (0.1, 0.2) in `[engine] flags`; or `"--max-num-queued-tokens", "N"` (note 1) |
-| 6, best arm 5 + an operator's cap | `[gateway.admission]` with `policy = "static-cap"` and `background_max_in_flight = 2` (4, 8); or `policy = "token-reservation"` and `reserved_tokens` set to one voice turn's KV (note 2) |
-| 8a, best stock + llm-d's flow control | `[gateway.admission]` with `policy = "flow-control"` and `ceilings = { realtime = …, interactive = …, background = … }` |
-| 8b, best stock + SMG | `router = "smg"`, and `[gateway]` with `upstream = "unix:/run/user/1007/flatshare/smg.sock"` and `upstream_priority = ["smg-header"]` (note 3) |
-| 8c, best stock + preempt-resubmit | `[gateway.admission]` with `policy = "preempt-resubmit"` |
-| factor, frozen and best stock | `[voice] preemptive_generation = false`, `arm = "<arm>-no-preemptive"` |
-| calls, best stock | `[voice] callers = 4` (6), at 0 and 16 sessions, `arm = "<arm>-calls"` |
-| discriminating scenario | `[agents] sessions = 24` and `data` naming a corpus with longer contexts (`flatshare-bench scale-traces` with a smaller factor) |
+| 5, headroom | `"--watermark", "0.1"` in `[engine] flags`, or `"--max-num-queued-tokens", "8192"`, which answers new requests 503 while the prefill exceeds it, voice included |
+| 6, an operator's cap | `[gateway.admission]` with `policy = "static-cap"` and `background_max_in_flight` 2 or 8, or `policy = "token-reservation"` with `reserved_tokens = 2048`, two voice turns at their longest |
+| 8a, llm-d's flow control | `[gateway.admission]` with `policy = "flow-control"` and `ceilings` 6/6/6 |
+| 8b, SMG | `router = "smg"`, with the gateway's `upstream` at SMG's socket and `upstream_priority = ["smg-header"]` |
+| 8c, preempt-resubmit | `[gateway.admission]` with `policy = "preempt-resubmit"` |
+| A factor | `[voice] preemptive_generation = false`, or `[voice] callers = 4` (6) |
+| The discriminating scenario | `[agents] sessions = 24` and `data = "weka-x32-long"` |
 
-1. `--max-num-queued-tokens` answers new requests 503 while the prompt tokens in prefill exceed N, voice requests included. vLLM sizes N as the TTFT target times the prefill throughput.
-2. One voice turn's KV: the realtime class's prompt and completion tokens per completed request, from arm 1's `summary.json` (`gateway.counters`).
-3. SMG runs in the voice-plane namespace between two proxies (`deploy/cyan/smg.sh`), since it takes only http:// workers and listens on TCP only.
+W2's second batch ([`w2b.campaign`](w2b.campaign)) takes tuned vLLM, within noise of the best step-cap cell at 16
+sessions, as the engine of arms 5, 6 and 8. The admission arms wait at most 240 s, below the replay's 300 s request
+timeout. SMG 1.13.0 as shipped sizes its pool at 64 slots behind a vLLM worker and leaves 2 for the bulk class, where
+background requests go, so arm 8b caps the agents at 2 requests in flight.
 
-[`w2b.campaign`](w2b.campaign) holds W2's second batch, written from the first batch's results. At 16 sessions the best arm 4 cells, step cap 1024 with no long-prefill threshold and tuned vLLM (512/256), were within noise of each other (V2V p95 2,167 and 2,215 ms over 50 turns, the agents' token rate within 4%), so both are measured again at 24 sessions, and tuned vLLM, the configuration every earlier result was measured on, is the engine of the other points: arm 5 (`--watermark 0.1`; `--max-num-queued-tokens 8192`, about 1.6 s of prefill at the step cap), arm 6 (caps of 2 and 8; a reservation of 2,048 tokens, two concurrent voice turns at their longest), arms 8a–8c (flow-control ceilings 6/6/6, so that background fills at most 6 and a realtime request sheds), preemptive generation off, and 4 and 6 callers. The admission arms wait at most 240 s, below the replay's 300 s request timeout.
+**The discriminating scenario** replays only the 48 traces whose main agent has the largest median input, so that agents
+fill the KV pool while voice turns keep arriving. Their median request holds 13,927 tokens, against 7,940 in the whole
+corpus. [`long_traces.py`](long_traces.py) links them:
 
-**The discriminating scenario** replays only the traces with the largest contexts, so that agents fill the KV pool while voice turns keep arriving. `weka-x32-long` on cyan holds the 48 traces of `weka-x32` whose main agent has the largest median input (the median trace's median is 13,326 tokens against 4,784 for the whole corpus; per request, 13,927 tokens against 7,940; 23,848 main-agent requests), linked by [`long_traces.py`](long_traces.py): `python benchmarks/e2/long_traces.py ~/flatshare/data/weka-x32 ~/flatshare/data/weka-x32-long 48`. Its points are named `disc-*`.
+```sh
+python benchmarks/e2/long_traces.py ~/flatshare/data/weka-x32 ~/flatshare/data/weka-x32-long 48
+```
 
-[`w2c.campaign`](w2c.campaign) holds W2's third batch: arms 4 to 8 in the discriminating scenario, one run each (the arm files `disc-<arm>-s24.toml` are the 16- or 24-session arms with `sessions = 24` and `data = "weka-x32-long"`), and SGLang with its host tier (`--enable-hierarchical-cache --hicache-ratio 4 --hicache-write-policy write_through`) at 8 and 16 sessions, for parity with vLLM's write-through CPU tier. W4 repeats the best of each arm beside arm 9. [`a9.campaign`](a9.campaign) holds arm 9 in the same scenario: the gateway's lifecycle policy (`[gateway.admission]` with `policy = "lifecycle"`: 1,024 tokens of KV headroom per armed session, a 150 ms critical-window budget of predicted background prefill, a 16-token reply cap when the headroom was not kept), the engine's `make-room` variant and the voice worker's lifecycle events; its knob, the critical-window budget at 0 and 500 ms; and one run of each single-mechanism ablation (`disc-a9-no-*`, `trigger-request`, `gateway-only`, `engine-only`). A switched-off mechanism's keys are left out: the gateway refuses them.
+Each campaign file opens with what it measures, and
+[EXPERIMENTS.md](../../docs/EXPERIMENTS.md#which-campaign-measured-what-on-which-code) gives the dates of the campaigns
+from W2 to OS. By campaign:
 
-[`r1.campaign`](r1.campaign) to [`r4.campaign`](r4.campaign) repeat the discriminating scenario in rounds, so that each headline configuration has five runs (w2c and a9 are round 0) and each of arm 9's ablations three (rounds 1 and 2). The headline configurations are the best of each arm in round 0: tuned vLLM and the best step-cap cell (`disc-a4-b1024-t0-s24`), the static reservation, preempt-resubmit, SGLang with its host tier, and arm 9. A round groups its points by engine, and the groups' order rotates from round to round, so that no configuration always runs at the same hour of a campaign that takes hours.
+| Campaign | Its files | What they measure | Records |
+|---|---|---|---|
+| W2 | `w2`, `w2b`, `w2c` | Every arm once in the standard scenario, then arms 4 to 8 in the discriminating one | [`2026-10-23-e2`](../results/2026-10-23-e2/README.md) |
+| W3–W4 | `a9`, `r1` to `r4`, `a9-standard`, `s1`, `s2`, `a9-window`, `upstream`, `upstream-r1`, `upstream-r2` | Arm 9 and its ablations, rounds of the headline configurations, arm 9 in the standard scenario, and the engine as the pull requests propose it | [`2026-10-23-e2`](../results/2026-10-23-e2/README.md) |
+| W5 | `w5-r1` to `w5-r5`, `w5-pr-r*`, `w5-ext-r*`, `w5-cap-r1` to `w5-cap-r3` | The configuration to deploy beside its control, the change's configurations, preempt-resubmit and the standard scenario, and 4 and 6 callers, each round on a sample of its own | [`2026-10-24-e2-w5`](../results/2026-10-24-e2-w5/README.md) |
+| FB | `fb-r1` to `fb-r5` | Voice alone, tuned vLLM and the configuration to deploy on the code of 25 October | [`2026-10-25-e2-fb`](../results/2026-10-25-e2-fb/README.md) |
+| RS | `rs-r1` to `rs-r5` | Tuned vLLM and the configuration to deploy on v1.2, with the KV sampler | [`2026-10-26-e2-rs`](../results/2026-10-26-e2-rs/README.md) |
+| SW | `sweep-screen`, `sweep-screen2`, `fp8-repro` | The step cap, the window and the gateway's cap, screened | [`2026-10-27-sweep`](../results/2026-10-27-sweep/README.md) |
+| RG | `rg-r1` to `rg-r5` | Two cards' arrangements, and the step cap confirmed | [`2026-10-28-rounds`](../results/2026-10-28-rounds/README.md) |
+| OR, OS | `opt-r1` to `opt-r5`, `opt-s1`, `opt-s2` | The serving engine's additions, then the decode hold and speculative decoding | [`2026-11-02-opt-rounds`](../results/2026-11-02-opt-rounds/README.md) |
+| The envelope | `env-r1` to `env-r3` | Version 1.24's envelope, at 4, 12 and 24 agent sessions | [`2026-11-08-envelope`](../results/2026-11-08-envelope/README.md) |
+| — | `gray-smoke`, `demo` | Gray end to end, and the demo video's two points | — |
 
-Rounds 3 and 4 and both standard rounds (below) also measure voice alone (`a1-voice`), the reference every point's SLO is read against, which W2 measured once: arm 9's runs land just above that SLO, by about the spread of one point's p95, with degrade capping every reply, so the reference itself needs repeats.
-
-[`a9-standard.campaign`](a9-standard.campaign) puts arm 9 in the standard scenario at 8, 16 and 24 agent sessions, as W2 measured arms 2 to 8, so that its frontier stands beside theirs. [`s1.campaign`](s1.campaign) and [`s2.campaign`](s2.campaign) repeat the realistic operating point, 16 agent sessions, for tuned vLLM and arm 9, so that each has three runs there.
-
-[`a9-window.campaign`](a9-window.campaign) measures arm 9 without degrade and with make-room's first-tokens window at 48 tokens, after `s2`: without degrade, a reply's first sentence can outrun the default 16-token window, and degrade's 16-token cap, which keeps it inside, capped every reply in the discriminating scenario.
-
-[`upstream.campaign`](upstream.campaign) measures the engine as the pull requests propose it, without the reserve and behind the gateway without an admission policy: the KV preemption alone, with the budget cap, and with a 48-token window. [`upstream-r1.campaign`](upstream-r1.campaign) and [`upstream-r2.campaign`](upstream-r2.campaign) repeat these three and arm 9's 48-token window, so that each has three runs, as each of arm 9's ablations has: a configuration that misses the SLO moved by up to 1.9 s in p95 from round to round.
-
-[`w5-r1.campaign`](w5-r1.campaign) to [`w5-r5.campaign`](w5-r5.campaign) re-measure, after W5's fixes to make-room, the configuration to deploy (`arms/w5-disc-pr-ab48-s24.toml`) beside its control, the same on make-room as v0.3 built it (`w5-disc-pr-ab48-v03-s24.toml`, on the `make-room-v03` variant: v0.3's `build.py` and `flatshare-engine.conf`, its module renamed), and beside voice alone and tuned vLLM (`w5-a1-voice.toml`, `w5-disc-frozen-s24.toml`) in the same rounds. Each arm file is its W4 one with each call opening with an unmeasured warm-up turn (`[voice] warmup_turns = 1`). Each round replays a sample of the agents of its own (`agents-seed` 11 to 15) and runs the four in an order rotated by one from round to round, so that each runs in each place. The control's module is `flatshare_make_room_v03_scheduler`, so that `flatshare-bench e2 run`'s engine check, which reads the engine's scheduler class back, fails a point on the other module before it starts.
-
-[`w5-pr-r1.campaign`](w5-pr-r1.campaign) to [`w5-pr-r5.campaign`](w5-pr-r5.campaign) re-measure the change's configurations in rounds of their own: the KV preemption alone (`arms/w5-disc-pr-a-s24.toml`) and the change at the budget cap's default 16-token window (`w5-disc-pr-ab-s24.toml`), beside tuned vLLM and the configuration to deploy of W5's campaign, so that every configuration the pull requests cite has its runs in the same rounds. Round N replays w5-rN's sample of the agents and runs the four in an order rotated by one from round to round; tuned vLLM and the configuration to deploy, measured in both campaigns, show how far the two sessions differ.
-
-[`w5-ext-r1.campaign`](w5-ext-r1.campaign) to [`w5-ext-r5.campaign`](w5-ext-r5.campaign) extend W5's re-measure over the same five samples of the agents: preempt-resubmit, the best arm without the change, beside the configuration to deploy in the discriminating scenario (`arms/w5-disc-a8c-resubmit-s24.toml`, `w5-disc-pr-ab48-s24.toml`), and tuned vLLM and the configuration to deploy in the standard scenario, 16 agent sessions of the whole corpus (`w5-std-frozen-s16.toml`, `w5-std-pr-ab48-s16.toml`), each call opening with a warm-up turn. Each round runs three engine groups in an order rotated by one group from round to round; the two points on the change share their engine.
-
-[`w5-cap-r1.campaign`](w5-cap-r1.campaign) to [`w5-cap-r3.campaign`](w5-cap-r3.campaign) measure calls per GPU: the configuration to deploy with 4 and with 6 callers beside the discriminating scenario (`arms/w5-disc-pr-ab48-c4-s24.toml`, `w5-disc-pr-ab48-c6-s24.toml`), and voice alone with as many callers, the SLO's references (`w5-a1-voice-c4.toml`, `w5-a1-voice-c6.toml`), over three of W5's samples of the agents. Each round swaps the order of its two engine groups, and of the caller counts within each.
-
-[`fb-r1.campaign`](fb-r1.campaign) to [`fb-r5.campaign`](fb-r5.campaign) are FB's rounds: voice alone, tuned vLLM and the configuration to deploy again, on the final code, with W5's arm files, W5's five samples of the agents (seeds 11 to 15) and no KV sampler, as W5's points ran, so that each round compares with W5's of the same seed. Each round rotates the three by one place. Their records are in [`benchmarks/results/2026-10-25-e2-fb`](../results/2026-10-25-e2-fb/README.md), whose `compare.py` sets each round beside W5's.
-
-[`rs-r1.campaign`](rs-r1.campaign) to [`rs-r5.campaign`](rs-r5.campaign) are RS's rounds: tuned vLLM and the configuration to deploy on v1.2, with W5's arm files, W5's five samples of the agents (seeds 11 to 15) and the KV sampler every 0.5 s, so that the box's running share is measured as the A100 run measured its own. Odd rounds run tuned vLLM first, even rounds the configuration to deploy. Their records are in [`benchmarks/results/2026-10-26-e2-rs`](../results/2026-10-26-e2-rs/README.md), whose `running_share.py` sets each round beside the A100 core's of the same seed.
-
-The `[admission]` keys are those of `flatshare-gateway`'s configuration ([its README](../../crates/flatshare-gateway/README.md)); `flatshare-bench e2 run` passes the `[gateway]` table through as it is.
-
-`FLATSHARE_PROFILE` names the GPU node's hardware profile ([`deploy/profiles`](../../deploy/profiles)) when it is not the frozen box's: `flatshare-bench e2 run --profile` then holds the engine to that profile's model and scheduler settings, and the report gives the points a workload of their own, by the GPU and the model their records name.
-
-**SMG as shipped (arm 8b).** `flatshare-smg.service` runs SMG 1.13.0's priority scheduler with its defaults. A vLLM worker behind its `openai` backend reports no capacity, so SMG sizes its pool at 64 slots, and its built-in reservations (system 32, interactive at least 128, default 10%) do not fit: it scales them down to system 19, interactive 39 and default 4, which leaves 2 slots for the bulk class, where the gateway sends background requests. Measured against `flatshare-bench mock-server`, 40 concurrent bulk requests went through 2 at a time, and the others wait in SMG's bulk queue (1,024 deep, 503 after 300 s). As shipped, arm 8b therefore caps the agents at 2 requests in flight; reservations that fit the pool take a `--priority-scheduler-config` file.
+Rounds rotate their engine groups, so that no configuration always runs at the same hour. The A100 run's campaigns are
+in [`benchmarks/a100`](../a100), its records in [`2026-10-26-a100`](../results/2026-10-26-a100/README.md).
+`FLATSHARE_PROFILE` names the GPU node's hardware profile ([`deploy/profiles`](../../deploy/profiles)) when it is not
+the frozen box's, and the report then gives the points a workload of their own.
 
 ## The headline configurations
 
-The configurations the docs' tables report, by the arm file each ran from and the campaigns whose records hold its runs, in the discriminating scenario unless the row says otherwise. W4's records are in [`benchmarks/results/2026-10-23-e2`](../results/2026-10-23-e2/README.md) and W5's re-measure in [`benchmarks/results/2026-10-24-e2-w5`](../results/2026-10-24-e2-w5/README.md), each W5 arm file its W4 one with a warm-up turn opening each call. FB re-measured three of them on the final code with W5's arm files ([`benchmarks/results/2026-10-25-e2-fb`](../results/2026-10-25-e2-fb/README.md)). The A100 run's campaigns, in [`benchmarks/a100`](../a100), ran W5's three arm files for its core on an A100 SXM4 80 GB and arm files of their own for the arms after it ([BENCHMARKS.md](../../docs/BENCHMARKS.md#the-optional-arms); the records are in [`benchmarks/results/2026-10-26-a100`](../results/2026-10-26-a100/README.md)).
+The configurations the docs' tables report, by arm file and the campaigns whose records hold their runs, in the
+discriminating scenario unless the row says otherwise. Each W5 arm file is its W4 one with a warm-up turn opening each
+call.
 
 | Configuration | W4: arm file, campaigns | W5: arm file, campaigns | FB and RS: campaigns, W5's arm files |
 |---|---|---|---|
@@ -182,23 +205,26 @@ The configurations the docs' tables report, by the arm file each ran from and th
 | 4 and 6 callers: #63350 + #63351, a 48-token window | — | `w5-disc-pr-ab48-c4-s24`, `w5-disc-pr-ab48-c6-s24`: w5-cap-r1 to w5-cap-r3 | — |
 | 4 and 6 callers: voice alone | — | `w5-a1-voice-c4`, `w5-a1-voice-c6`: w5-cap-r1 to w5-cap-r3 | — |
 
-The points on two GPU nodes (a voice node and an agent node, against two pooled nodes on tuned vLLM and two running arm 9, make-room with the lifecycle policy; [EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)) never ran: no second GPU was free before v1.0. Their arm files and campaigns, with the code that ran them there (that branch's `[nodes]` and `[placement]` in the gateway, the voice worker's `FLATSHARE_NODES`, `flatshare-bench e2 run`'s points on several nodes and `campaign.sh`'s several GPU nodes), are on the `two-node` branch; the main line's gateway places sessions on several nodes with `[[nodes]]` and a `[placement]` of its own ([Nodes](../../crates/flatshare-gateway/README.md#nodes)).
-
-The resource gate's comparison ([RESOURCE-GATE.md](../quality/RESOURCE-GATE.md)) measures each card's part of an arrangement as a point of its own, on one node at a time (`FLATSHARE_GPU=gray` for Gray's), the agents-only parts as points without calls; the voice worker binds each call to the node the gateway places it on where the gateway fronts several ([the worker's nodes](../../python/flatshare_voice/README.md#nodes)).
+W5's control runs on the `make-room-v03` variant, whose module name differs, so that the engine check fails a point on
+the other module before it starts. No point fronts two GPU nodes at once. The points written for two nodes never ran,
+and their arm files and code are on the `two-node` branch, while the main line's gateway places sessions on several
+nodes itself ([Nodes](../../crates/flatshare-gateway/README.md#nodes)). The resource gate
+([RESOURCE-GATE.md](../quality/RESOURCE-GATE.md)) measures each card's part of an arrangement as a point of its own, on
+one node at a time, and the voice worker binds each call to its node
+([the worker's nodes](../../python/flatshare_voice/README.md#nodes)).
 
 ## Results
 
-`flatshare-bench e2 report RUN_DIR... --out DIR` builds a frontier from any set of run directories, across campaigns too.
+`flatshare-bench e2 report RUN_DIR... --out DIR` builds a frontier from any set of run directories or records, across
+campaigns too ([its rules](../../python/flatshare_bench/README.md#e2-points)). The discriminating scenario and the
+calls-per-GPU points each get their own section of `frontier.md` and their own figure. W5's
+[`figure.toml`](../results/2026-10-24-e2-w5/figure.toml) names the rows of [REPORT.md](../../docs/REPORT.md)'s headline
+figures, and `--dots FILE` draws the rows such a file names. A figure of several GPUs gives each its rows under a
+`[[group]]` table with a `title`.
 
-- **Workloads.** It compares points only within a workload: the agents' corpus and the number of callers, the GPU and the model where they are not the frozen box's, and the warm-up turns that open each call where the points differ in them (W4's records with W5's).
-- **Sections and figures.** The discriminating scenario (`weka-x32-long`) and the calls-per-GPU points (4 and 6 callers) each get their own section of `frontier.md`, with the voice SLO they are read against (250 ms above voice alone with as many callers and warm-up turns), and their own figure (`frontier-weka-x32-long.svg`, `frontier-4-callers.svg`), beside `frontier.svg` for the standard one ([the figures](../../python/flatshare_bench/README.md#e2-points)).
-- **Repeated points.** A point measured in several campaigns (W4's rounds of the discriminating scenario reuse w2c's and a9's arm files) is one configuration: the report keeps each run, gives the configuration's median and range, and places it on the frontier at its medians.
-- **The waterfall.** `waterfall.svg` splits each configuration's voice turn into its stages (endpointing, the reply to its first sentence, TTS first audio, transport and playout), stacked to its mean V2V; `--waterfall POINT` picks the configurations it draws.
-- **The dots chart.** `--dots FILE` adds a chart, `voice-p95.svg` and its phone layout: the configurations a TOML file names, each its V2V p95 against its workload's SLO beside the agents' tokens/s over the calls' first 240 s, with each one's share of the first row's. A row that names no label takes its point's name from the report's label table, as every chart does.
-- **Several GPUs.** A figure of several GPUs gives each its rows under a `[[group]]` table with a `title`, and the `gpu` its points ran on where the GPUs ran the same arm files (`gpu = "A100-SXM4-80GB"`, as the figure names it), on one scale, each against its own voice alone's SLO.
-- **The figures' points.** `make e2-gpus-figure` draws the README's figure, of both GPUs, from the A100 run's [`figure.toml`](../results/2026-10-26-a100/figure.toml); W5's [`figure.toml`](../results/2026-10-24-e2-w5/figure.toml) names the rows of the report's Figures 8 and 9.
-
-The repository keeps a compact record of each point, not its run directory: `flatshare-bench e2 export RUN_DIR... --out DIR` writes the few small files the report reads (about 15 kB a point, no credential and no home path) into `DIR/CAMPAIGN/POINT`, and the report gives the same tables and figures from them as from the run directories ([the compact record](../../python/flatshare_bench/README.md#e2-points)). E2's records are in [`benchmarks/results/2026-10-23-e2`](../results/2026-10-23-e2/README.md), and `make reproduce-e2` regenerates the report from them into `build/reproduce-e2` (`E2_REPORT=DIR` to choose), with the bench venv; `make reproduce-e2-w5` does the same for W5's records and `make reproduce-e2-a100` for the A100 run's:
+The repository keeps a compact record of each point, about 15 kB with no credential and no home path, and the report
+gives the same tables and figures from records as from run directories. `make reproduce-e2` regenerates the report of
+W2–W4's records into `build/reproduce-e2`, `make reproduce-e2-w5` W5's and `make reproduce-e2-a100` the A100 run's:
 
 ```sh
 python/flatshare_bench/.venv/bin/flatshare-bench e2 export $FLATSHARE_E2_RESULTS/w2c/* \
@@ -206,57 +232,64 @@ python/flatshare_bench/.venv/bin/flatshare-bench e2 export $FLATSHARE_E2_RESULTS
 make reproduce-e2
 ```
 
-The run directories themselves, with the raw records the report does not need (the gateway's request log, AIPerf's exports, the metric snapshots, the worker's journal, the GPU's samples, the tools' logs), are an asset of the v0.3 release; W5's and FB's are the v1.0 release's `leaseholder-raw-records-w5.tar.gz` and `leaseholder-raw-records-fb.tar.gz`, named before the project's rename, and RS's the v1.3 release's `flatshare-raw-records-rs.tar.gz`.
+The run directories, with the raw records the report does not need, are release assets: W2–W4's in v0.3, W5's and FB's
+in v1.0 (`leaseholder-raw-records-w5.tar.gz`, `leaseholder-raw-records-fb.tar.gz`, named before the project's rename),
+and RS's in v1.3 (`flatshare-raw-records-rs.tar.gz`).
 
 ## The demo video
 
-The same caller on two engines while coding agents run: [`demo.py`](demo.py) renders two points measured with `flatshare-bench e2 run --save-audio`, which has the callers save each call's audio and the times of its turns ([`flatshare-voice bots --save-audio`](../../python/flatshare_voice/README.md#measurement-callers)). [`demo.campaign`](demo.campaign) measures two such points with its `save-audio` line: tuned vLLM and the configuration to deploy in the discriminating scenario, on W5's round-1 sample of the agents:
+The same caller on two engines while coding agents run. [`demo.campaign`](demo.campaign) measures tuned vLLM and the
+configuration to deploy in the discriminating scenario with its `save-audio` line, and [`demo.py`](demo.py) renders them
+from the calls' audio and turn times
+([`flatshare-voice bots --save-audio`](../../python/flatshare_voice/README.md#measurement-callers)). On a workstation,
+with the two run directories fetched into one directory:
 
 ```sh
 benchmarks/e2/campaign.sh benchmarks/e2/demo.campaign
-```
-
-By hand on cyan, with the GPU node already on the arm's engine and the measurement drop-in on (`variant.sh measure on`), a demo point is `~/flatshare/venvs/bench/bin/flatshare-bench e2 run ARM --out ~/flatshare/runs/e2/demo/POINT --save-audio`. Each caller writes `call-<i>.wav` and `call-<i>.json` beside its turns.
-
-Then, on a workstation with the two run directories fetched into one directory, `make demo-video` renders the video to `build/flatshare-demo.mp4` (`DEMO_OUT`) and the README's animation to `docs/figures/e2-demo.webp`, with its dark theme and its phone layout (`e2-demo-dark.webp`, `e2-demo-narrow.webp`, `e2-demo-narrow-dark.webp`). `uv` installs the script's pinned numpy, matplotlib, Pillow, fontTools and imageio-ffmpeg, whose ffmpeg encodes, and the video and the four animations take seven minutes on an Apple M5 Max laptop:
-
-```sh
 make demo-video DEMO=$FLATSHARE_E2_RESULTS/demo
 ```
 
-It names the two configurations as the README's chart does, and reads W5's report (`benchmarks/results/2026-10-24-e2-w5/report/frontier.csv`) for the voice SLO and the closing card, and the A100's (`benchmarks/results/2026-10-26-a100/report/frontier.csv`, `--also`) for the card's second group, the same two configurations on the A100. The v1.0 release's `leaseholder-raw-records-demo.tar.gz` has the run directories of `demo.campaign`'s two points, measured on 2026-10-25 at v0.3-274 (`w5-disc-frozen-s24` and `w5-disc-pr-ab48-s24`, V2V p95 11,232 and 2,213 ms over both calls; they are not in the tables), the calls' audio among their files. The v1.0 release's 170-second video and the v0.3 release's 75-second one came from earlier versions of the renderer.
+`make demo-video` renders the video to `build/flatshare-demo.mp4` (`DEMO_OUT`), and
+[the repository README](../../README.md)'s animation to `docs/figures/e2-demo.webp` with its dark theme and phone
+layout, in seven minutes on an Apple M5 Max. It reads W5's report for the voice SLO, and the A100's for the same two
+configurations there. The v1.0 release's `leaseholder-raw-records-demo.tar.gz` holds the two points' run directories,
+which are not in the tables.
 
-**What it shows.** An opening card names the calls and the engines (`--heading` is its heading). Then each frame is the dashboard the v1.0 demo drew, a panel for each call side by side: the baseline's call on the left in gray, the featured configuration's on the right in blue, each the point's first call (`--caller`).
+**What it shows.** Each frame shows a panel per call, the baseline's in gray and the configuration to deploy's in blue.
+A clock counts each wait against the SLO, voice alone's median V2V p95 plus 250 ms (2.03 s), bars give each reply's V2V,
+and the agents' tokens a second stand at the foot. Both calls play the same turns from the same moment, and only a
+caller's pause between turns is stretched, never a measured wait.
 
-- **The clock.** In each panel, a clock counts the wait from the end of the caller's speech to the reply's first audio and then gives the V2V the caller measured, with the wait against the SLO under it: the report's, voice alone's median V2V p95 with as many callers plus 250 ms (2.03 s), "over" it in orange as soon as the clock passes it.
-- **The bars.** Beside the clock, each reply's V2V is a bar that grows while the caller waits, against the SLO's dashed rule, on one scale for both panels; the latest V2V stands over its bar.
-- **The turn under way.** Under them, the turn under way runs on its time axis: the caller's line above the axis and the agent's reply below it, as their waveforms drawn as they play, the wait between them as a bar, and the SLO as a dashed rule after the end of the line.
-- **The agents.** At the foot, the agents' tokens/s over the calls' first 240 s, the README's measure, on one scale for both panels, the featured one's as a share of the baseline's.
-- **The turns.** Both calls play the same turns from `--first-turn` (by default the first measured one, after the call's warm-up turns): `--turns` of them, by default as many as fit in `--seconds` (180). Turn k of both starts at the same moment, so the same line is heard on both at once, and the call that is ahead waits in silence: only a caller's pause between turns is stretched, never a measured wait.
-- **The soundtrack.** The soundtrack is one call at a time, the caller and the agent mixed, the left call until the turn whose start is nearest the middle and the right call from it; the call heard is marked "sound on".
-- **The closing card.** A closing card gives both configurations over all the report's runs, the median of their V2V p95 and of the agents' tokens/s, as the README's chart draws them.
-
-**How it is drawn.**
-
-- **The style.** The frames follow the docs' figures: STIX Two at the figures' four sizes, and the clock at twice a label's, on a layout 1120 units wide; the README's palette in `--theme` (light by default, or dark); the panels on the figures' gray ground inside dashed borders; the configuration to deploy in the saturated blue and the baseline in a comparison's gray. Each frame is drawn at twice its size and halved by a box filter, so type and hairlines stay crisp.
-- **The motion** follows the calls: the playhead, the waveforms, the clock and the growing bars move linearly with their time. A text that changes leaves (ease-in-out, `cubic-bezier(0.77, 0, 0.175, 1)`, 0.24 s) before its successor arrives (ease-out, `cubic-bezier(0.23, 1, 0.32, 1)`, 0.4 s, from 0.96 of its size), a V2V once given holds at least 1.2 s, a turn's drawing leaves before the next turn starts, and nothing else moves.
-- **The video** is 1920×1080 at 60 frames a second, H.264 (yuv420p, CRF 18, BT.709) with AAC sound.
-- **The README's animation** (`--excerpt PREFIX`) is the same dashboard for the first `--excerpt-turns` turns (one), without the cards: silent, looping, every drawing leaving before the loop restarts, an animated lossless WebP at `--excerpt-fps` frames a second (60).
-- **Its layouts.** It comes in each theme and in two layouts: the panels side by side, `--excerpt-width` pixels wide (1680, twice the 840 the README shows it at), and for a phone the panels one above the other, 420 units across like the figures' phone layouts (680 pixels, twice the 340 a phone shows it at). The README's `<picture>` shows the one of the reader's theme and screen.
-
-`python/flatshare_bench/tests/test_demo.py` runs the renderer on a synthetic pair of calls, tones in the files `--save-audio` writes, and a report's frontier.csv: in CI the turns, the soundtrack, the summary, the motion's curves, and frames drawn headless at a low resolution, their size and count, the V2V each holds, and that no text leaves its room or overlaps another at any moment the calls change, with the bench venv's numpy, matplotlib and Pillow; and, marked integration since it fetches the script's dependencies, the script itself through `uv run` to an MP4 and the four WebPs (`uv run --extra test pytest -m integration tests/test_demo.py` in `python/flatshare_bench`). `tests/test_figures.py` checks the README's four WebPs: animated and looping, the same frames in each, the same size in both themes, each under 8 MB.
+The frames follow the docs' figures, in STIX Two and their palette. The video is 1920×1080 at 60 frames a second, H.264
+with AAC sound, and the animation is the first turn alone, silent and looping, as lossless WebP.
+`python/flatshare_bench/tests/test_demo.py` checks the renderer on a synthetic pair of calls, and `test_figures.py`
+beside it the four WebPs.
 
 ## Soaks
 
-A soak loads the box as it serves for hours and keeps every attempt and every scrape ([EXPERIMENTS.md](../../docs/EXPERIMENTS.md#the-soak-the-production-path-for-hours) says what it measures). It runs on cyan, takes the lock of E2's points and the drills (it does not start while one holds it, and none starts while it runs), and changes nothing on the box: no unit restarted, no drop-in linked, no development route asked. It refuses to start on a box that does not serve as deployed, and says what to fix.
+A soak loads the box as it serves for hours and keeps every attempt and every scrape.
+[EXPERIMENTS.md](../../docs/EXPERIMENTS.md#the-soak-the-production-path-for-hours) says what it measures, and
+[`flatshare-bench soak`](../../python/flatshare_bench/README.md#soaks) gives its options and files. It runs on cyan and
+takes the lock of E2's points and the drills. It changes nothing on the box, and refuses to start on a box that does not
+serve as deployed, saying what to fix.
 
 **Before the first soak**, once:
 
-- **The arrangement to deploy.** The voice worker in serve mode ([the voice plane](../../ops/RUNBOOK.md#the-voice-plane)): `variant-vad-turns.conf` unlinked, the `serve` drop-in linked as `variant-serve.conf`, and the worker restarted. Its audio is then the profile's, real microphones (the end-of-turn model and LiveKit's AEC warm-up), which refuses fixed endpointing. To keep E2's fixed endpointing for the synthetic callers instead, leave `vad-turns` linked beside `serve` and add a drop-in with `Environment=FLATSHARE_AUDIO=synthetic`; the soak records which audio the worker ran. The GPU node on its serving profile (`make-room-serve`), the measurement drop-in off (`variant.sh measure off`). With two nodes, `gateway.toml` with both `[[nodes]]` and `flatshare-tunnel@gray` running ([Two GPU nodes](../../ops/RUNBOOK.md#two-gpu-nodes)). No E2 drop-in left on cyan (`flatshare-bench e2 reset`).
-- **The guard key.** cyan has no SSH to the GPU nodes but its tunnel's keys, which reach a socket each. From a workstation, `deploy/authorize-guard.sh cyan phastform` (and `cyan gray`) makes cyan's `~/.ssh/flatshare_guard_ed25519` and lets it run one command on the node, `deploy/bin/node-report`, under `restrict`: the GPU's compute processes (`gpu-guard --list`, each the box's own or another's) and the user manager's lines about the node's flatshare units since a time the session names; the soak reaches the node at its tunnel's target. A node can go unguarded with `--guard NODE=off`, which the record says.
-- **The reference.** The SLO is voice alone's p95 with the same calls, in the same worker configuration, plus 250 ms: a voice-alone soak gives it, `--agents-sessions 0` for two hours, its summary's overall p95 (`flatshare-bench soak report DIR`).
+- **The arrangement to deploy.** The voice worker in serve mode
+  ([the voice plane](../../ops/RUNBOOK.md#the-voice-plane)): `variant-vad-turns.conf` unlinked, the `serve` drop-in
+  linked as `variant-serve.conf`, and the worker restarted. To keep E2's fixed endpointing for the synthetic callers
+  instead, leave `vad-turns` linked beside `serve` with a drop-in setting `FLATSHARE_AUDIO=synthetic`. The GPU node runs
+  its serving profile (`make-room-serve`) with the measurement drop-in off (`variant.sh measure off`). With two nodes,
+  `gateway.toml` has both `[[nodes]]` and `flatshare-tunnel@gray` runs
+  ([Two GPU nodes](../../ops/RUNBOOK.md#two-gpu-nodes)). No E2 drop-in is left on cyan.
+- **The guard key.** cyan reaches the GPU nodes only through its tunnel's keys. From a workstation,
+  `deploy/authorize-guard.sh cyan phastform` (and `cyan gray`) makes cyan's `~/.ssh/flatshare_guard_ed25519` and lets it
+  run one command on the node, `deploy/bin/node-report`, which lists the GPU's processes and the node's unit lines.
+  `--guard NODE=off` leaves a node unguarded, which the record says.
+- **The reference.** The SLO is voice alone's p95 with the same calls and worker configuration, plus 250 ms, and a
+  two-hour voice-alone soak gives it (`--agents-sessions 0`).
 
-**Run one** on cyan, under a transient unit, so that it outlives the SSH session and stops cleanly (SIGTERM to the soak alone, then the time its drain needs):
+**Run one** on cyan under a transient unit, so that it outlives the SSH session and stops cleanly:
 
 ```sh
 bench=~/flatshare/venvs/bench/bin/flatshare-bench
@@ -276,38 +309,18 @@ journalctl --user -u flatshare-soak -f
 systemctl --user stop flatshare-soak
 ```
 
-The nodes are the gateway's: its `[[nodes]]`, or the node its `upstream` socket names (`phastform-engine.sock`), each guarded over SSH unless `--guard` says otherwise. At the window's end no call arrives any more, the calls in progress play their turns (for `--drain-s`, 600 s, at most) and AIPerf stops. SIGINT or SIGTERM ends a soak the same way, each call with its current turn; a second one hangs the calls up. A tool that ends early starts again, after a backoff if it keeps ending (10 s, then up to 10 minutes). While a guarded GPU holds another's process, or cannot be read three minutes in a row, the soak stops its calls and AIPerf, and starts them again once every GPU has been clear for five minutes (`--guard-clear-s`): the gateway places the load, so a pause stops all of it.
+While a guarded GPU holds another's process, or cannot be read three minutes in a row, the soak stops its load until
+every GPU has been clear for five minutes. A 24-hour soak leaves about 40 MB on cyan, beside AIPerf's export.
 
-**What it records**, in the soak directory:
+**Read the summary** (`flatshare-bench soak report DIR`) per hour and overall:
 
-- `soak.json`: the options, the versions, how the box served (the worker's settings and status, the serving profile, the gateway's configuration without key digests, the nodes and their guards), each run of the callers and of AIPerf, the pauses and how it ended;
-- `soak.log`;
-- `events.jsonl`: each tool's runs, the guard's episodes, failed scrapes, counters that went down, units whose state changed;
-- `calls/run-NNN/`: `attempts.jsonl`, a line an attempt, and `turns.jsonl`, a line a turn;
-- `agents/run-NNN/`: AIPerf's log and exports;
-- `series.jsonl`: the kept series of every scrape;
-- `scrapes/HOUR.gz`: every scrape whole;
-- `units.jsonl`: the user managers' lines about the flatshare units, cyan's and the guarded GPU nodes', a failure's with the unit's own last lines;
-- `guard.jsonl`: every check;
-- `summary.json` with `summary.md`, written as each hour ends.
+- **calls** refused by `capacity` mean admission working, by `placement` the gateway placing a call on no GPU node, and
+  `no_agent` a dispatch LiveKit lost;
+- **replies** over the SLO should stay within 5% ([SLO.md](../../docs/SLO.md));
+- **restarts** count the units' failures and restarts and the counters that went down, beside the guard's pauses.
 
-A 24-hour soak leaves about 40 MB on cyan (half of it the raw scrapes, half `series.jsonl`) beside AIPerf's per-request export, a few KB a request.
+An hour that differs from the rest points at `events.jsonl` and `units.jsonl` for the same hour. A GPU node's units are
+named `NODE:UNIT` (`phastform:flatshare-engine.service`).
 
-**Reading the summary** (`flatshare-bench soak report DIR`, per hour and overall):
-
-- **calls** attempted, accepted, failed, and refused by reason:
-  - `capacity`: the worker was full, which is admission working;
-  - `placement`: with node binding, the gateway placed the call on no GPU node, which its `placements_refused` counts too;
-  - `engine` and `draining`;
-  - `no_agent`: a dispatch LiveKit lost;
-- **turns** measured and failed;
-- **replies**, their pooled p95 and the share over the SLO, which should stay within 5% ([SLO.md](../../docs/SLO.md));
-- **pauses over 500 ms**;
-- the gateway's **realtime SLI**, good over valid from its own counters;
-- **background** requests offered, admitted, completed and failed, and their tokens a second;
-- each engine's preemptions and KV use;
-- **restarts** (the units' failures, scheduled restarts and starts, counters that went down) and the guard's pauses.
-
-An hour that differs from the rest points at `events.jsonl` and `units.jsonl` for the same hour. A GPU node's units come through its guard, named `NODE:UNIT` (`phastform:flatshare-engine.service`); an unguarded node's are not read.
-
-**Commit it** as a compact record: `flatshare-bench soak export DIR --out benchmarks/results/DATE-soak` writes `soak.json`, `attempts.jsonl`, `turns.csv`, `series.csv` (a column a kept series), `events.jsonl`, `units.jsonl`, `guard.csv` and the summary, a few MB for 24 hours, with no raw scrape, AIPerf export, request log or credential, every path under a home directory written from `~` and the login such a path names written as `USER` wherever else it appears (the export refuses a record that still names either); `soak report` gives the same summary from it.
+**Commit it** as a compact record with `flatshare-bench soak export DIR --out benchmarks/results/DATE-soak`, a few MB
+for 24 hours, which `soak report` reads as it reads the directory.

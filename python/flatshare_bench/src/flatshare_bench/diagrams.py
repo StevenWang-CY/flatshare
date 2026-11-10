@@ -917,7 +917,7 @@ CARD_H = 124.0
 HELD = "held until the calls end"
 """What the spare's hatched agents' slots mean in (b): a node that covers holds its agents' requests to
 failover_background_max_in_flight, 0 in deploy/cyan/gateway.example.toml, until the moved calls end
-(crates/flatshare-gateway/README.md, Failover)."""
+(crates/flatshare-gateway/README.md, Nodes)."""
 HELD_H = 28.0
 """The bracket under the spare's agents in (b) and its name, below the card."""
 CARDS_DESCRIPTION = (

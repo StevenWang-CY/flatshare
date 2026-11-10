@@ -1,6 +1,7 @@
 # flatshare-stats
 
-The statistics Flatshare's measurements publish, each defined once, in the standard library only:
+The statistics Flatshare's measurements publish, each defined once and with the standard library only, for a reader
+who checks how a published number was computed:
 
 | Function | What it gives |
 |---|---|
@@ -11,10 +12,16 @@ The statistics Flatshare's measurements publish, each defined once, in the stand
 | `replies(turns, quiet_ms=1000)` | The replies the callers heard to their end, from the same lines (note 1): the callers' summary and the soak's |
 | `metric_samples(exposition, names=None)` | Every sample of a Prometheus text exposition, as `(name, labels, value)`, or with `names` only those metrics' samples, parsing no other line |
 
-1. `replies` gives how many ended by the agent's state, their audio's length, those with a pause, one over 500 ms and one of `quiet_ms` or more, the longest pause's percentiles and the concealed share.
+1. `replies` gives how many ended by the agent's state, their audio's length, those with a pause, one over 500 ms and
+   one of `quiet_ms` or more, the longest pause's percentiles and the concealed share.
 
-[flatshare-bench](../flatshare_bench/README.md) and [flatshare-voice](../flatshare_voice/README.md) depend on it. The make-room probes, `probe.py` and `tail.py`, run in the engine's environment on the GPU node, from the deployed source tree, and flatshare-sim's `scripts/calibration.py` runs with no project: they load the module from this directory by path.
+[flatshare-bench](../flatshare_bench/README.md) and [flatshare-voice](../flatshare_voice/README.md) depend on it. The
+make-room probes, `probe.py` and `tail.py`, and flatshare-sim's `scripts/calibration.py` run without an install, and
+load the module from this directory by path.
 
 ## Tests
 
-`tests/test_stats.py` checks the percentiles against linear interpolation between ranks over random samples (and that they are not the exclusive method's), a single sample and none, the summaries' rounding and censored counts, the V2V samples of turns with barge-ins and replies that never came, the replies' summary of turns with and without pauses and receiver counts, the samples an exposition holds, and those of the metrics a reader names. `make test-python` runs them.
+`tests/test_stats.py`, which `make test-python` runs, checks the percentiles against linear interpolation between
+ranks over random samples, and that they differ from the exclusive method's. It also covers a single sample and none,
+the summaries' rounding and censored counts, and the V2V samples of barge-ins and of replies that never came. The
+replies' pauses and receiver counts, and the samples of an exposition or of the metrics a reader names, complete it.

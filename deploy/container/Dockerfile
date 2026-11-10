@@ -9,7 +9,8 @@ FROM ${VLLM_IMAGE}
 # The repository's files the engine needs, at their own paths, as a release lays them out on the box, so that
 # serving-check finds make-room's patches where it finds them there. .dockerignore lets in these and nothing else.
 COPY . /opt/flatshare/
-# make-room's module, written once from the patches against the image's vLLM: build.py refuses any other version.
+# make-room's module, written once from the patches against the image's vLLM; each start holds the engine to
+# serving.json's vLLM 0.32.0 and module hash (deploy/container/README.md).
 RUN python3 /opt/flatshare/python/flatshare_vllm/src/flatshare_vllm/build.py make-room /opt/flatshare/make-room
 
 ENV PYTHONPATH=/opt/flatshare/make-room:/opt/flatshare/python/flatshare_vllm/src/flatshare_vllm/serve \

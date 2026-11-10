@@ -1,6 +1,8 @@
 # flatshare-proto
 
-The wire types every Flatshare component shares: what crosses a process boundary is defined here once ([ADR-0002](../../docs/adr/0002-one-lifecycle-event-schema.md); [PROTOCOL.md](../../docs/PROTOCOL.md) gives the contract).
+The wire types every Flatshare component shares, for a developer who changes what crosses a process boundary. Each is
+defined here once ([ADR-0002](../../docs/adr/0002-one-lifecycle-event-schema.md)), and
+[PROTOCOL.md](../../docs/PROTOCOL.md) gives the contract.
 
 | Module | What it defines |
 |---|---|
@@ -10,8 +12,11 @@ The wire types every Flatshare component shares: what crosses a process boundary
 
 ## JSON Schemas
 
-`schema/` holds the schemas generated from these types, the reference for the Python components, and `make schema` regenerates them. The voice worker's `tests/test_events.py` reads the lifecycle event's, and the benchmark's and the voice worker's `tests/test_protocol.py` the SLO class's.
+`schema/` holds the schemas generated from these types, the reference for the Python components, and `make schema`
+regenerates them. The voice worker's `tests/test_events.py` reads the lifecycle event's, and the benchmark's and the
+voice worker's `tests/test_protocol.py` the SLO class's.
 
 ## Tests
 
-`cargo test -p flatshare-proto` runs `tests/wire.rs`, which pins the wire format with the examples in `testdata/events.jsonl`, and `tests/schema.rs`, which fails when the schemas fall behind the code.
+`cargo test -p flatshare-proto` runs `tests/wire.rs`, which pins the wire format with the examples in
+`testdata/events.jsonl`, and `tests/schema.rs`, which fails when the schemas fall behind the code.

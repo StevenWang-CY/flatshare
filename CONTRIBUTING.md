@@ -7,7 +7,7 @@ questions go. Contributions are under the project's [Apache-2.0](LICENSE) licenc
 ## Build and test
 
 You need Rust 1.98 (`rust-toolchain.toml` pins it), [uv](https://docs.astral.sh/uv/), Python 3.12, git and GNU Make
-3.81 or newer: CI runs Ubuntu 24.04's 4.3, and the 3.81 that macOS ships reads the Makefile too. Nothing CI runs needs a
+3.81 or newer. CI runs Ubuntu 24.04's 4.3, and the 3.81 that macOS ships reads the Makefile too. Nothing CI runs needs a
 GPU.
 
 | Command | What it runs | What it needs |
@@ -20,7 +20,7 @@ GPU.
 | `make compat-upstream` | Whether #65282 and #65283 still merge into vLLM's main, and how make-room's patches fit vLLM's newest release, hunk by hunk (note 2) | The network and git 2.38 or newer |
 | `make schema`, `make metrics` | Regenerate the wire types' JSON Schemas and the gateway's metrics exposition; a test fails until a changed type or metric is regenerated | — |
 | `make reproduce-e2`, `make reproduce-e2-w5`, `make reproduce-e2-a100` | Rebuild E2's reports from the committed records | — |
-| `make figures` | Regenerate the documents' figures from the records | — |
+| `make figures` | Regenerate the documents' figures, the charts from the records and the diagrams from their code | — |
 
 1. `make lint` runs rustfmt, clippy with warnings as errors, and ruff's check and format. `make test` runs every Rust
    test, the engine variants' build tests against vLLM v0.32.0's source, and each Python package's unit tests.
@@ -29,13 +29,13 @@ GPU.
 
 What CI does not run:
 
-- **A GPU node with the deployment** for the probes (`probe.py`, `tail.py`, `knee.sh`), E0, E2 points and the failure
-  drills. [ops/RUNBOOK.md](ops/RUNBOOK.md) deploys the box's hosts, and [docs/HARDWARE.md](docs/HARDWARE.md) another
-  GPU or a single host.
+- **A GPU node with the deployment**, for the probes, E0, E2 points and the failure drills.
+  [ops/RUNBOOK.md](ops/RUNBOOK.md) deploys the box's hosts, and [docs/HARDWARE.md](docs/HARDWARE.md) another GPU or a
+  single host.
 - **The integration tests** (`pytest -m integration`), which need a LiveKit server on Linux with unprivileged user
   namespaces, or fetch their own dependencies.
-- **The corpus**: `make reproduce-e1 CORPUS=DIR` and `make forecast-a100 CORPUS=DIR` need the 32× agent traces, which
-  stay outside the repository ([how to make them](python/flatshare_bench/README.md#quick-start-cyan)).
+- **The corpus** of 32× agent traces, which `make reproduce-e1 CORPUS=DIR` and `make forecast-a100 CORPUS=DIR` need.
+  It stays outside the repository ([how to make it](python/flatshare_bench/README.md#quick-start-cyan)).
 
 ## Changes
 
@@ -47,22 +47,21 @@ What CI does not run:
   the command that recomputes its tables. After release only two parts of a record change: its `report/`, which that
   command rewrites when the report's code changes, and its `figure.toml`, which names the points a figure draws, with
   that figure.
-- **Documents.** A number comes from a record, a test or a script, and says which; a term is the one
-  [the glossary](docs/GLOSSARY.md) gives; [docs/README.md](docs/README.md) says which document a fact belongs in.
+- **Documents.** A number comes from a record, a test or a script, and says which. A term is the one
+  [the glossary](docs/GLOSSARY.md) gives, and [docs/README.md](docs/README.md) says which document a fact belongs in.
 
 ## Versions and compatibility
 
-Releases are numbered vMAJOR.MINOR, and every package of a release carries its version: 1.17.0 at v1.17.
+Releases are numbered vMAJOR.MINOR, and every package of a release carries its version, such as 1.17.0 at v1.17.
 
 - **What a minor release may change.** What an operator configures and reads: configuration keys, what is refused,
-  and outcome names. In v1.6 the gateway began to refuse a request whose `n` exceeds `max_choices`, 1 by default, and
-  the outcome `error` became `transport_error`. In v1.8 it refuses to start with a node that has both roles and no
-  `max_agents`.
+  and outcome names. In v1.6, for one, the gateway began to refuse a request whose `n` exceeds `max_choices`, and the
+  outcome `error` became `transport_error`.
 - **Where each change is listed.** In [CHANGELOG.md](CHANGELOG.md), under "Upgrading from" the release before it, with
   what to change in a configuration or a client that relied on the old behavior.
 - **How a renamed key is refused.** Its old name is refused at start, as an unknown key is, and the message names the
-  key that replaces it: for `first_byte_timeout_s`, `headers_timeout_s`. The gateway exits 2 with the file and the
-  cause, so a configuration written for the release before never runs with a default in the renamed key's place.
+  key that replaces it, such as `headers_timeout_s` for `first_byte_timeout_s`. The gateway exits 2 with the file and
+  the cause, so a configuration written for the release before never runs with a default in the renamed key's place.
 
 ## Commits and pull requests
 

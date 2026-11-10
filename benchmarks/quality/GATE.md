@@ -5,7 +5,8 @@ question is the one an operator asks first: does one resident model, the one the
 and the background task of a useful pair well enough to deploy, before any contention is measured. The pair is
 private-document question answering in a call, beside background enrichment of new documents into searchable
 records. Both screens use public sets labeled by people independent of this project, and a judge independent of the
-model under test.
+model under test. The screen ran once with the box's engine as it then served, on 2026-10-27, and
+[its record](../results/2026-10-27-quality/README.md) gives the verdict, FAIL.
 
 ## The model and its settings
 

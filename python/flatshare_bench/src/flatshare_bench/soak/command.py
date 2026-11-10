@@ -123,7 +123,7 @@ def add_soak(commands: argparse._SubParsersAction) -> None:
         description="Load the box as it serves, for hours, and record every attempt and every scrape: calls arriving "
         "on a schedule against the voice worker in serve mode, AIPerf's agentic replay through the gateway, the "
         "gateway's and engines' metrics every minute, cyan's units' restarts and failures, and a guard that stops "
-        "the load while another's process holds a GPU (ops/RUNBOOK.md, Soaks).",
+        "the load while another's process holds a GPU (benchmarks/e2/README.md, Soaks).",
     )
     actions = soak.add_subparsers(dest="action", required=True)
     run = actions.add_parser(

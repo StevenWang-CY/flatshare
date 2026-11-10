@@ -1,4 +1,4 @@
-"""make-room against the PRs, step for step, on vLLM 0.32.0's real scheduler, on CPU: what E2 measured is what #65282
+"""make-room against the PRs, step for step, on vLLM 0.32.0's real scheduler, on CPU: the variant schedules as #65282
 and #65283 propose.
 
 The PRs' module is v0.32.0's scheduler with the PRs' two patches alone (src/flatshare_vllm/make-room), their three

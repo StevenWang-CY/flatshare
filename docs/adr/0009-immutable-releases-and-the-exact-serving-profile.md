@@ -40,3 +40,4 @@ The external audit of 2026-10-27 found that what a box would deploy was not what
 ## Later
 
 - **The engine's additions** (2026-11-02, v1.15 and v1.17). The profile also sets the serving engine's additions: the calls' prefixes kept on the GPU, the next batch scheduled just in time, each turn announced, a lower priority's reservations taken and, from v1.17, the agents' decodes held. A test now holds it to the follow-up rounds' point, which ran all of them, and the sweep's point differs from that only in the make-room switches those versions added ([ARCHITECTURE.md §3.1](../ARCHITECTURE.md#31-the-serving-profile)).
+- **The queue, the copy and the envelope** (2026-11-08, v1.24). The profile also sets the agents' cache-aware queue and the CPU tier's SM copy, held to the envelope rounds' point, and 24 agent sessions beside both calls ([the envelope](../PRODUCTION.md#the-envelope-from-version-124)).

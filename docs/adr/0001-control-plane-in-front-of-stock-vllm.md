@@ -8,7 +8,7 @@
 One 16 GB GPU has to serve realtime voice turns and many tool-using coding agents. Stock vLLM 0.32 schedules everything from one queue:
 - priority scheduling orders the waiting queue and picks which running request to preempt when one cannot grow, but never preempts running work to admit a waiting request;
 - prefix-cache eviction is LRU, with no notion of when a session will be back;
-- a 16k-token agent turn costs 0.18 s from the GPU cache, 0.57 s from host RAM and 4.75 s recomputed (measured on this card on 2026-10-21 with BF16 weights; [BENCHMARKS.md](../BENCHMARKS.md#tier-cost-model-resuming-an-agent-turn-e0) has the frozen box's W1 values).
+- a 16k-token agent turn costs 0.18 s from the GPU cache, 0.57 s from host RAM and 4.75 s recomputed (measured on this card on 2026-10-21 with BF16 weights; [BENCHMARKS.md](../BENCHMARKS.md#what-does-resuming-an-agent-turn-cost) has the frozen box's W1 values).
 
 There are three ways to add session awareness:
 1. patch or fork the vLLM scheduler;
@@ -35,4 +35,4 @@ Build option 3: a Rust service (tokio, hyper/axum, tower).
 
 - **No trait** (2026-10-23). The policies are variants of one enum in `flatshare_core::admission`, driven by a pure state machine (arrivals, first bytes, departures and the realtime sessions' turns) that the gateway feeds and whose waits it carries out.
 - **The simulator** (2026-10-24). `flatshare-sim` shares `flatshare-core`'s cost and step-time models, not its policies: only the gateway runs those.
-- **The change** (2026-10-23/24). The consequence that the control plane compensates with admission and headroom did not hold: in E2 only an engine change moved the voice tail. It runs as the generated `make-room` variant on vLLM 0.32.0 and is proposed to vLLM as pull requests #65282 and #65283, open, with no maintainer review as of 2026-11-09 (first #63350 and #63351; [ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)).
+- **The change** (2026-10-23/24). The consequence that the control plane compensates with admission and headroom did not hold: in E2 only an engine change moved the voice tail. It runs as the generated `make-room` variant on vLLM 0.32.0 and is proposed to vLLM as pull requests #65282 and #65283, first opened as #63350 and #63351 ([ADR-0006](0006-the-engine-change-carries-the-realtime-tier.md)).

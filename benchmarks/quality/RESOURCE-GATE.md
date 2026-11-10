@@ -4,7 +4,9 @@ Fixed before any two-card arrangement is measured. The box has two RTX 5060 Ti 1
 and Gray). The workload is the one E2 measures: two calls of the voice agent, beside coding agents replayed as
 background work (until the useful-workload pilot, when the quality gate passes, replaces the replay with accepted
 enrichment records). The question an operator asks: at the same foreground service, which arrangement of the two cards
-does the most background work, and is sharing worth its complexity.
+does the most background work, and is sharing worth its complexity. The rounds of 2026-10-28, before the cache-aware
+queue and the SM copy, applied this gate: sharing had resource value by consolidation, and Flatshare's own value missed
+the 20% hurdle ([the record](../results/2026-10-28-rounds/README.md)).
 
 ## The foreground requirement
 

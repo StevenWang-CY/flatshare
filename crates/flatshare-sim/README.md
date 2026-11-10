@@ -1,99 +1,134 @@
 # flatshare-sim
 
-`flatshare-sim` replays the SemiAnalysis Claude Code traces as AIPerf 0.13.0's `agentic_replay` sends them, through a model of vLLM 0.32's GPU prefix cache and OffloadingConnector CPU tier, served by a model of vLLM's step loop on the frozen box (`flatshare-core`'s step-time model; E0's idle-box cost model is its zero-load limit). This README is for a reader who runs the simulator, checks its calibration, or reads E1's tables and the modeled hardware ([ARCHITECTURE.md §6.4](../../docs/ARCHITECTURE.md#64-the-simulator-e1) places it in the system).
-
-- **For each cache policy** it reports where prompt tokens came from (the GPU pool, the CPU tier, or computation), what that costs in time to first token and PCIe traffic, and where the run sits in the regime coordinates E1 is plotted in.
-- **A clairvoyant reference** gives the gap each policy leaves, and the E1 arms measure how much of it each level of information about a session's return closes.
-- **Other GPUs** are placed on the same map with costs modeled from their published peaks.
+`flatshare-sim` replays the SemiAnalysis Claude Code traces as AIPerf 0.13.0's `agentic_replay` sends them, through a
+model of vLLM 0.32's GPU prefix cache, its OffloadingConnector CPU tier and its step loop on the frozen box. It is for a
+reader who runs the simulator, checks its calibration, or reads its placements of other GPUs. For each cache policy a
+run reports where prompt tokens came from, what that costs in time to first token and PCIe traffic, and where the run
+sits in E1's regime coordinates. A clairvoyant reference gives the gap each policy leaves. E1's results are in
+[BENCHMARKS.md](../../docs/BENCHMARKS.md#does-knowing-when-an-agent-returns-help), and
+[ARCHITECTURE.md §6.4](../../docs/ARCHITECTURE.md#64-the-simulator-e1) places the simulator in the system.
 
 ## Usage
 
-`DATA/weka-x32` is the 32× corpus: SemiAnalysis's traces as `flatshare-bench scale-traces` writes them ([how](../../python/flatshare_bench/README.md#trace-scaling); the download is in its [quick start](../../python/flatshare_bench/README.md#quick-start-cyan)). It stays outside the repository.
+`DATA/weka-x32` is the 32× corpus, SemiAnalysis's traces as `flatshare-bench scale-traces` writes them
+([scaling](../../python/flatshare_bench/README.md#trace-scaling), and the download in its
+[quick start](../../python/flatshare_bench/README.md#quick-start-cyan)). It stays outside the repository.
 
 ```sh
 cargo build --release -p flatshare-sim
-# the W0 configuration, the stock arms
+# the W0 configuration, the stock arms; then the CPU tier at 2x, 4x and 8x the pool
 flatshare-sim run DATA/weka-x32 --json w0.json --csv w0.csv
-# CPU tier at 2x, 4x and 8x the pool
 flatshare-sim run DATA/weka-x32 --cpu-ratio 2,4,8 --arms lru-cpu,clairvoyant
-# v0's idle-box service
-flatshare-sim run DATA/weka-x32 --service idle
-flatshare-sim run DATA/weka-x32 --pauses tracelab --arms lru-cpu,oracle-prefetch
-# the regime map, seeds 11-13
+# the regime map, seeds 11-13; then BENCHMARKS' realistic regime over 20 seeds
 flatshare-sim regime DATA/weka-x32 --csv regime.csv --markdown regime.md
 flatshare-sim regime DATA/weka-x32 --sessions 8,12,16,24 --cpu-ratio 4 --pause-sources trace \
   --seeds $(seq 11 30 | paste -sd, -)
-# other GPUs, modeled
-flatshare-sim hardware DATA/weka-x32 --csv hw.csv --markdown hw.md
-# each at its own scaling
-flatshare-sim hardware DATA/weka-x32 --fit --csv hw-fit.csv --markdown hw-fit.md
-# a GPU run's forecast (the A100's)
+# other GPUs, modeled: on the 32x replay, and each at its own scaling
+flatshare-sim hardware DATA/weka-x32 --markdown hw.md
+flatshare-sim hardware DATA/weka-x32 --fit --markdown hw-fit.md
+# a GPU run's forecast; miss-ratio curves
 flatshare-sim forecast DATA/weka-x32 DATA/weka-x32-long --markdown forecast.md
-# miss-ratio curves (BENCHMARKS' table)
-flatshare-sim mrc DATA/weka-x32 --service idle --csv mrc.csv --markdown mrc.md
-# a measured run through the engine model
-flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl
-flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl --timed \
-  --csv w0-timed.csv
+flatshare-sim mrc DATA/weka-x32 --service idle --markdown mrc.md
+# a measured run through the cache model, then served by the step loop
+flatshare-sim replay-log DATA/weka-x32 runs/w0/aiperf/profile_export.jsonl --timed --csv w0-timed.csv
 ```
 
-The replay options are the fields of `flatshare-bench`'s `configs/agentic_replay.yaml`, but they default to the W0 settings, not to that file's (1,800 s plus a 120 s grace and a 600 s think-time cap): 16 lanes, 600 s plus a 60 s grace, a 120 s think-time cap, seed 11, start ratios 0 to 1, burst starts and a 10 s idle cap. Capacities default to the frozen box (`--pool-tokens 36400`, a 20 GiB CPU tier; `--cpu-ratio` or `--cpu-gib` change it), costs to the E0 fits (`--costs` takes the `summary.json` of `flatshare-bench tiers`; `--itl-ms` sets the idle service's decode rate) and the step-time model to the frozen box's fit (`--step-costs`). `run` writes a JSON summary (`--json`), one CSV row per arm and capacity (`--csv`) and one CSV row per request (`--requests`). `--token-scale 32` replays a 32× corpus at its original token counts.
+`make reproduce-e1 CORPUS=DATA/weka-x32` writes every E1 table, BENCHMARKS' and this README's other hardware, to
+`build/reproduce-e1`. `flatshare-sim COMMAND --help` lists every option with its default.
 
-`regime` runs `lru-cpu`, the E1 arms and the reference in every cell of `--sessions` (5, 8, 12, 16, 24, 32, 40), `--cpu-ratio` (2, 4, 8) and `--pause-sources` (trace, tracelab), at each of `--seeds` (11, 12, 13), on `--jobs` threads (default: every core). It writes one CSV row per cell, seed and arm (`--csv`), with the share of the clairvoyant gap each arm closes, `(lru − arm) / (lru − clairvoyant)`, left empty where the reference is less than 5% faster than `lru-cpu`. The Markdown (`--markdown`) is the regime map ([BENCHMARKS.md](../../docs/BENCHMARKS.md#the-regime-map)), one table per CPU tier: per cell, the coordinates and each arm's gain over `lru-cpu`, the mean over the seeds. With several seeds a table per pause source and tier gives their spread, as BENCHMARKS' realistic regime does. `make reproduce-e1 CORPUS=DATA/weka-x32` writes every E1 table, BENCHMARKS' and this README's other hardware, to `build/reproduce-e1`.
+| Command | What it runs, by default |
+|---|---|
+| `run` | `gpu-lru`, `lru-cpu` and `clairvoyant`, or the arms of `--arms`, at each CPU tier size |
+| `regime` | `lru-cpu`, the E1 arms and the reference at 5–40 sessions, CPU tiers of 2, 4 and 8× the pool, both pause sources and seeds 11–13: the regime map |
+| `hardware` | The same on four GPUs at 5–256 sessions, with the CPU tier 4× each pool and a realtime tier of two calls ([below](#other-hardware-modeled)) |
+| `forecast` | A run on another GPU, before it runs ([below](#a-gpu-runs-forecast)) |
+| `mrc` | Miss-ratio curves of the GPU tier: LRU from Mattson stack distances, MIN at 0.25 to 8 times the pool |
+| `replay-log` | A measured run's requests through the cache model at their measured times; with `--timed`, served by the step loop |
 
-`hardware` runs the same arms on each of `--gpus` over `--sessions` and `--seeds` (11, 12, 13), with the CPU tier at `--cpu-ratio` (4) times each GPU's pool and a realtime tier of `--calls` (2) voice calls:
-- **The GPUs:** `rtx-5060-ti`, the frozen box with its measured costs; `l4`, `a100-40gb` and `h100-sxm`, modeled: see [Other hardware, modeled](#other-hardware-modeled); `a100-80gb`, modeled, is not in the default.
-- **The sessions** are the regime map's and 64, 96, 128, 192 and 256, of which a GPU whose pool holds r times the box's, in the replay's tokens, runs those up to 40·r: the box runs 5 to 40.
-- **The scaling.** Every GPU replays the corpus at `--token-scale`, which unlike `regime`'s scales no pool, or with `--fit` at its own scaling.
-- **The outputs.** It writes one CSV row per cell and arm (`--csv`: `regime`'s columns, after the GPU, its costs' label, the token scale, the pool and the seed, and before the peak pressure, the median prompt, the realtime tier's two shares and the chunk) and the GPUs' costs and placements (`--markdown`), each cell the mean over the seeds.
+In `regime`'s CSV each arm closes `(lru − arm) / (lru − clairvoyant)` of the clairvoyant gap, left empty where the
+reference is less than 5% faster than `lru-cpu`. The replay's options default to W0's settings, not to those of
+`flatshare-bench`'s `configs/agentic_replay.yaml`:
 
-`replay-log` sends a measured run's requests at their measured start and end times through the engine model, which separates the cache model from the replay timing; with `--timed` it sends each at its measured start and serves it with the step loop, open loop, which separates the service model from the closed loop's feedback, and adds the measured and simulated TTFT to the CSV.
+| Option | Default | Meaning |
+|---|---|---|
+| `--concurrency` | 16 | Live agent sessions, AIPerf's lanes |
+| `--duration`, `--grace` | 600, 60 | The profiling phase and the grace after it, in seconds |
+| `--think-cap`, `--idle-cap` | 120, 10 | Caps in seconds on each think time and on the engine's idle gaps; 0 for none |
+| `--seed`, `--start-min`, `--start-max` | 11, 0, 1 | AIPerf's seed, and where in its trace a lane may start |
+| `--token-scale` | 1 | 32 replays a 32× corpus at its original token counts |
+| `--pauses` | `trace` | A turn's pause: the trace's think time, or `tracelab`'s tool wait |
+| `--pool-tokens`, `--cpu-ratio` or `--cpu-gib` | 36,400 tokens, 20 GiB | The GPU pool, and the CPU tier as multiples of it or in GiB |
+| `--service` | `contention` | vLLM's step loop, or `idle`: v0's idle-box cost per request |
+| `--costs`, `--step-costs` | the frozen box's | E0's fits (`flatshare-bench tiers`' `summary.json`) and the step-time model (`scripts/fit_step_cost.py`'s JSON) |
 
 ## The replay
 
-- **Traces.** A directory of `<trace id>.json` as `flatshare-bench scale-traces` writes it, or the original JSONL. A prompt is `len(hash_ids) × block_size` tokens, which is the trace's `in` on every request of the corpus (98,827 of 98,827).
-- **AIPerf's structure, ported.** The Weka loader's chain detection splits each trace into the main agent, flattened agent chains and subagent chains, with their think-time delays (`useThinkTimeOnly`, capped at `interTurnDelayCapSeconds`), SPAWN branches and joins, and the cross-stream replay barriers. `TrajectorySource` gives each lane its start instant `t*` (SHA-256 of seed, trace and lane, then numpy's PCG64) and the streams live at `t*`. `scripts/aiperf_reference.py` dumps AIPerf's own plan with prompt synthesis stubbed out, and `flatshare-sim aiperf-plan` dumps the port's: they agree field for field on the full 32× corpus (9,843 conversations, 98,827 turns) for 393 lanes with seed 11 and for 450 lanes with seed 7, start ratios 0.25–0.75 and a 30 s cap. The test subset's plan is pinned in `testdata/aiperf-0.13.0-sub16.json`.
-- **Dispatch.** `concurrency` lanes take traces from AIPerf's sequential sampler.
-  - *The start.* Every stream live at `t*` first sends its last earlier request with `max_tokens = 1`, all at once; profiling starts when the last of these returns. Each lane then sends its earliest live turn at once and the others at their recorded offsets.
-  - *Turns.* A turn's successor goes its delay after the turn returns; a root turn spawns its children when it returns (when it is sent, if the recorded spawn overlapped the request), each at its recorded offset from the spawn; a joining turn waits for its children; a turn whose replay predecessors have not completed is held.
-  - *Recycling.* A lane whose agent session has drained starts the next trace from its first turn, under a fresh KV namespace (AIPerf's cache-bust marker).
-  - *The end and idle gaps.* No request is sent after the duration, requests still running at the end of the grace period are dropped, and when nothing is in flight the pending think-time timers are pulled forward so the engine idles at most `systemIdleGapCapSeconds`.
-- **Pauses.** A turn's delay is the trace's think time (`--pauses trace`, the default), or, with `--pauses tracelab`, a TraceLab tool wait drawn in its place and capped the same way: a tool by its share of TraceLab's tool rounds, then a wait from that tool's percentiles (`data/tracelab-pauses.tsv`, below). Every arm draws the same pause for the same turn.
-- **Service.** Under contention (`--service contention`, the default) a request reaches vLLM's step loop after its host time and shares every step with the requests beside it (the contention model below). `--service idle` is v0: a request's time to first token is E0's cost for its hit pattern after any wait for free blocks, then it decodes at a constant inter-token latency, with no queueing behind other requests; it reproduces v0's outputs exactly (the tests pin v0's subset run).
+- **AIPerf's structure, ported.** A prompt is `len(hash_ids) × block_size` tokens. The Weka loader's chain detection
+  splits each trace into the main agent and its agent and subagent chains, with their think times, spawns and joins.
+  `scripts/aiperf_reference.py` dumps AIPerf's own plan and `flatshare-sim aiperf-plan` the port's. On the full 32×
+  corpus, 9,843 conversations and 98,827 turns, they agree field for field for 393 lanes at seed 11, and for 450 at
+  seed 7 with start ratios 0.25–0.75 and a 30 s cap.
+- **Dispatch.** Every stream live at a lane's start first sends its last earlier request with `max_tokens = 1`, and
+  profiling starts once these return. A turn's successor goes its delay after the turn returns, and a drained lane
+  starts the next trace under a fresh KV namespace, AIPerf's cache-bust marker. Requests still running after the grace
+  are dropped.
+- **Pauses.** A turn's delay is the trace's think time, or with `--pauses tracelab` a TraceLab tool wait capped the same
+  way, drawn from that tool's percentiles (`data/tracelab-pauses.tsv`). Every arm draws the same pause for a turn.
+- **Service.** The contention model, the default, sends a request to the step loop after its host time, where it
+  shares every step with the requests beside it. The idle service is v0, its zero-load limit, which charges E0's cost
+  for the request's hit pattern and then a constant inter-token latency, with no queueing.
 
-## The engine model
+## The cache
 
-- **Blocks.** Prompts are cut into 16-token blocks. A block's identity is its exact prefix: the trace's hash-id trie node its last token falls in, its offset inside that hash block, and the session play. Two prompts share a block iff they share every token up to its end, which is vLLM's chained block hashing without collisions. Every request goes to one served model, as in an AIPerf replay, so requests the traces sent to different models share KV.
-- **GPU pool.** 2,275 blocks (36,400 tokens) on the frozen box, one of them vLLM's null block. A request takes the longest cached prefix of its full blocks, at most `⌊(L − 1) / 16⌋` blocks, because vLLM always computes the last prompt token. Running requests pin their blocks (reference counted, shared by common prefixes). A finished request frees its blocks in reverse order: cached blocks join the back of the free queue, so the end of a prefix is evicted before its start, and the partial last block joins the front. A block recomputed while a copy is cached is cached a second time, as vLLM keeps every block per hash. A hit takes a copy that running requests already pin when there is one, where vLLM takes the first copy cached; the two differ only for such recomputed blocks, and the clairvoyant pass relies on the rule (see below).
-- **CPU tier.** 9,102 blocks (20 GiB at 144 KiB per token) on the frozen box, or a ratio of the pool. After the GPU hit, the tier extends it with the following blocks it holds; they are restored into new GPU blocks. When a request finishes, every full block it holds, prompt and output (`offload_prompt_only: false`), is offered to the tier: from the start of the prompt, or from past the restored blocks when it restored any (vLLM's chunk-level store index). LRU follows vLLM's `LRUCachePolicy`: blocks become most recent when stored and when a request that used them finishes, in reverse prefix order. A store never evicts a block it offers, and stores nothing when it cannot make room.
-- **Output KV.** Output tokens take blocks and are written through, but they are never reused: AIPerf synthesizes each turn's history from the trace, not from what the model generated.
-- **Admission.** A request needs blocks for `L + out − 1` tokens. It waits when the free blocks, less the free cached blocks its hit takes, cannot hold the blocks it must allocate; waiting requests are admitted in order as blocks free up, and the first that does not fit holds back those behind it, as in vLLM's scheduler. Each wait is a stall. A request larger than the whole pool is an error, as vLLM refuses to start with `max_model_len` above its pool.
-- **Retention.** For the E1 arms the engine can hold the pool's cached start of a prompt (pin it), prefetch the rest from the CPU tier into free blocks and hold it, and demote free cached blocks to be reused first. Holds give way: a request that does not fit releases holds, oldest first, before it waits, so no arm makes a request wait for memory vLLM would give it.
+- **Blocks.** Prompts are cut into 16-token blocks whose identity is their exact prefix, so two prompts share a block
+  iff they share every token up to its end, as vLLM's chained block hashing does without collisions.
+- **The GPU pool** is 2,275 blocks (36,400 tokens) on the frozen box. A request takes the longest cached prefix of its
+  full blocks, at most `⌊(L − 1) / 16⌋`, since vLLM always computes the last prompt token. A finished request frees its
+  blocks in reverse order to the back of the free queue, so a prefix's end is evicted before its start.
+- **The CPU tier** is 9,102 blocks (20 GiB at 144 KiB a token) on the frozen box, or a ratio of the pool. It extends a
+  GPU hit with the following blocks it holds, and a finished request offers it every full block under vLLM's
+  `LRUCachePolicy`. Output KV is never reused, since AIPerf synthesizes each turn's history from the trace.
+- **Admission.** A request needs blocks for `L + out − 1` tokens and waits while the free blocks cannot hold them, and
+  the first waiting request that does not fit holds back those behind it, as in vLLM's scheduler. Each wait is a stall.
+- **Retention.** For the E1 arms the engine can pin a prompt's cached start, prefetch the rest from the CPU tier and
+  hold it, and demote free cached blocks. A request that does not fit releases holds, oldest first, before it waits.
 
-## The contention model
+## The step loop
 
-`scheduler.rs` is vLLM 0.32's step loop on the frozen box (`Scheduler.schedule()` in `v1/core/sched`, async scheduling on):
+`scheduler.rs` is vLLM 0.32's `Scheduler.schedule()` on the frozen box, with async scheduling:
 
-- **Host.** A request reaches the scheduler after its host time: the API server, the tunnel, rendering, tokenization and block hashing, `29.6 ms + 7.994 µs` per prompt token, plus 6.5 ms for every request decoding when it is sent. The API server prepares one request at a time in the order they are sent (its renderer pool has `--renderer-num-workers` threads, 1 by default), so a burst of sends queues there.
-- **Budget.** A step carries at most 512 tokens (`max_num_batched_tokens`). Running requests come first, in admission order: a decode takes one token, a prefill the rest of its prompt, at most 256 per step (`long_prefill_token_threshold`) when more than one request is running or waiting; alone, a request takes the whole budget. A request reached with the budget spent waits, decodes included.
-- **Waiting requests** follow, first come first served (the replay sends every request with the background class's priority), after those whose restore has finished. A request is admitted into the cache model when it is first reached with budget left; one that does not fit stops the loop. A prompt found whole recomputes its last token.
-- **Restores.** A request with blocks in the CPU tier waits for their load without taking budget. The load starts once the step that admitted it has run and the loads before it have finished (the connector issues loads one after another on one stream), and takes E0's restore term (`10.3 ms + 23.64 µs` per token). The step loop stalls for 0.80 of it, charged to the first step that starts during the load. The engine learns that a load has finished from the output of the step in flight and has already scheduled the next step, so the request computes from the second step that starts after its load, or at once when nothing else runs. A prefetch is a load that no request waits for.
-- **Step time.** A step that computes `T` tokens takes `11.56 ms + 47.99 µs·T + 14.17 ns·P + 429.3 ns·K`, plus 7.6 ms when it carries both a prefill chunk and a decode, where `P` is the attention pairs (each computed token times the tokens it attends to) and `K` the KV tokens every scheduled request reads. `K`'s coefficient is 147,456 bytes per token read at 343 GB/s (the card's memory bandwidth is 448 GB/s); `P`'s is within 13% of twice E0's quadratic recompute term; the mixed-step extra is measured, not derived. Each output token comes out at the end of a step; a request with all its tokens finishes and frees its blocks.
+- **Host.** A request reaches the scheduler `29.6 ms + 7.994 µs` a prompt token after it is sent, plus 6.5 ms for every
+  request then decoding. The API server prepares one request at a time, so a burst queues there.
+- **Budget.** A step carries at most 512 tokens (`max_num_batched_tokens`). Running requests come first, a decode taking
+  one token and a prefill at most 256 (`long_prefill_token_threshold`) while another request runs or waits. Waiting
+  requests follow, first come first served, since the replay sends every request at the background priority.
+- **Restores.** A request with blocks in the CPU tier waits for their load without taking budget. Loads run one after
+  another, each taking E0's restore term (`10.3 ms + 23.64 µs` a token) and stalling the step loop for 0.80 of it, and
+  the request computes from the second step after its load. A prefetch is a load no request waits for.
+- **Step time.** A step that computes `T` tokens takes `11.56 ms + 47.99 µs·T + 14.17 ns·P + 429.3 ns·K`, plus 7.6 ms
+  when it carries both a prefill chunk and a decode. `P` is the attention pairs and `K` the KV tokens the scheduled
+  requests read, its coefficient 147,456 bytes a token at 343 GB/s against the card's 448 GB/s.
 
-`scripts/fit_step_cost.py` fits every coefficient from AIPerf exports and their `replay-log` CSVs, each term from its own data, and `--step-costs` takes the JSON it writes:
-- **the step terms and host time** by least squares on relative error over decode-only steps (the gaps between a request's tokens while every request in flight was decoding: 46,315 at the three fresh points), requests that ran alone (517) and E0's 14 GPU-hit and recompute cells, with E0's token-id requests given a host time of their own;
-- **the mixed-step extra** from 1,443 decode steps beside one long prefill (median excess);
-- **the host time per decoding request** from 92 GPU hits that arrived while only decodes ran (slope);
-- **the restore stall** from 36 restores of at least 2,000 tokens with only decodes beside them (median lost decode time over the transfer time; quartiles 0.74 and 0.94).
+`scripts/fit_step_cost.py` fits each term from its own data in AIPerf exports and their `replay-log` CSVs:
 
-The scheduler is synchronous otherwise: a GPU hit that arrives beside one decode waits about half a step in the measured runs, as here, not the step and a half that scheduling a step ahead would add.
+| Term | Fitted on |
+|---|---|
+| The step terms and the host time | 46,315 decode-only steps at [the three operating points](#calibration-against-the-gpu-operating-points), 517 lone requests and E0's 14 cells, by least squares on relative error |
+| The mixed-step extra | The median excess of 1,443 decode steps beside one long prefill |
+| The host time per decoding request | The slope over 92 GPU hits that arrived while only decodes ran |
+| The restore stall | The median lost decode time over the transfer time of 36 restores of 2,000 tokens or more |
 
 ## Simplifications
 
-- **Whole footprint at admission.** A request reserves its prompt and output blocks when it is admitted, where vLLM reserves the prompt (`scheduler_reserve_full_isl`) and allocates output blocks as it decodes; so nothing is preempted (the operating points saw 0 to 3 preemptions per run).
-- **Transfers.** Loads take E0's restore term each, one after another, and stall the step loop by a fixed share; stores happen when a request finishes, take no time and never delay a block's reuse. vLLM 0.32 stores as a request computes, and when the scheduler reallocates a block whose store is still pending the worker waits for that store before the step (the connector's `jobs_to_flush`); with the pool full this is likely what the model misses at 24 sessions (see the calibration).
-- **Fixed step costs.** The step-time terms are fitted per step, not per kernel: CUDA-graph and chunk-shape effects are folded into the coefficients and the measured mixed-step extra.
-- **Corpus tokens.** Prompts have no chat-template or cache-bust-marker tokens: the engine counted 4.7% more prompt tokens than the corpus holds for the same requests at W0.
+- **Whole footprint at admission.** A request reserves its prompt and output blocks when admitted, where vLLM allocates
+  output blocks as it decodes, so nothing is preempted. The operating points saw 0 to 3 preemptions a run.
+- **Transfers.** Stores happen when a request finishes, take no time and never delay a block's reuse. But vLLM 0.32
+  stores as a request computes, and waits for a pending store before it reallocates the block. That is likely what the
+  model misses at 24 sessions ([the calibration](#calibration-against-the-gpu-operating-points)).
+- **Per-step costs.** The terms are fitted per step, not per kernel, so CUDA-graph and chunk-shape effects are folded
+  into the coefficients.
+- **Corpus tokens.** Prompts hold no chat-template or cache-bust tokens, so at W0 the engine counted 4.7% more prompt
+  tokens than the corpus holds.
 
 ## Arms
 
@@ -109,398 +144,366 @@ The scheduler is synchronous otherwise: a GPU hit that arrives beside one decode
 | `mori` | the free block expected back last | LRU | nothing |
 | `infercept` | LRU | LRU | hold it or offload it, by minimum waste |
 
-`run` runs the first three by default; `--arms` picks any, and `regime` runs `lru-cpu`, the E1 arms and the reference.
+**The clairvoyant reference** runs twice. The first pass runs `lru-cpu` and records the order in which requests were
+admitted and finished. The second replays that order with farthest-next-use eviction in each tier, keeps the first
+pass's waits, and re-prices each request's time to first token from its new hit pattern. It is a reference, not a bound,
+since a block's hit counts only when its whole prefix hits, a CPU copy is worth nothing while the GPU holds the block,
+and faster service would change which requests overlap. `flatshare-sim mrc` reports the case where MIN is a bound.
 
-The **clairvoyant reference** runs in two passes:
-1. **The first** runs the reference arm (`lru-cpu` unless `--reference` says otherwise) and records the order in which the engine admitted and finished requests.
-2. **The second** replays that fixed order with farthest-next-use eviction in each tier: the pool reuses the free block whose next use is farthest, and the CPU tier keeps the blocks with the nearest next uses, declining to store a block whose next use is farther than every block it holds. A block's next use is the next request whose prompt holds it, whichever tier serves that request.
+**The E1 arms** (`retention.rs`) act on a session's latest prompt while it pauses, from a turn's return to its
+successor's admission. Their information is none (`lru-cpu` and the TTLs), history or the oracle, the exact time of the
+next turn. History is an EWMA, α = 0.5, of the session's own pauses, per tool where they name one. Each arm simplifies
+its paper:
 
-Waits for free blocks, and so the whole timeline, are the reference arm's; time to first token is re-priced from the new hit pattern (under contention, the reference run's queueing stays and each request's own service, as it would take alone, is re-priced). Under any eviction policy a request takes the blocks its footprint needs minus those it shares with running requests (because a hit takes a pinned copy when one exists), so every admission of the first pass fits in the second.
+- **Continuum** ([arXiv 2511.02230](https://arxiv.org/abs/2511.02230)) picks a TTL per tool call, and here a fixed TTL
+  is swept.
+- **The prefetches** load the session's blocks from the CPU tier to end 1 ms before the predicted or exact return. The
+  oracle is Ask the Tool's progress-reporting level ([arXiv 2609.18849](https://arxiv.org/abs/2609.18849)).
+- **Tokencake** ([arXiv 2510.18586](https://arxiv.org/abs/2510.18586)) offloads at a function call, here by demoting the
+  session's free blocks, and uploads by the history prefetch. Its space scheduling is not modeled.
+- **MORI** ([arXiv 2606.00866](https://arxiv.org/abs/2606.00866)) keeps only its ranking, as the pool's eviction order,
+  so that the free block whose session is expected back last goes first.
+- **InferCept** (Abhyankar et al., ICML 2024) chooses by minimum waste in memory × time. Preserving holds the blocks,
+  swapping demotes them, and discarding never wins with a CPU tier, since ρ < 1.
 
-It is a reference, not a bound. MIN per tier is optimal only for the hit count of one tier over a fixed sequence of unit-size blocks; here a block's hit counts only when its whole prefix hits, a CPU copy is worth nothing while the GPU holds the block, faster service would change which requests overlap, and PCIe has limits. `flatshare-sim mrc` reports the case where MIN is a bound.
+A hold ends once its session is later than twice its predicted pause. A prefetch moves only the blocks the pool can take
+when it begins, and runs on the load stream like any restore.
 
-**The E1 arms** (`retention.rs`, and `replay/retain.rs` in the replay) act on a session's KV, its latest prompt, while the session pauses between turns: from when a turn returns to when its successor, due after a delay, is admitted. Turns sent at once, or gated on children, are not pauses. The information levels are none (`lru-cpu`, and the fixed TTLs), history (an EWMA, α = 0.5, of the session's own pauses, per tool when the pauses name one, falling back to the same mean of its pauses after any tool, then of every session's pauses) and the oracle (the exact time the next turn is sent). Each arm simplifies its paper to this engine:
+## What a run reports
 
-- **Continuum** ([arXiv 2511.02230](https://arxiv.org/abs/2511.02230)) pins a paused agent's KV with a TTL it picks per tool call; here a fixed TTL is swept.
-- **history-prefetch** and **oracle-prefetch** start a load of the session's blocks that the CPU tier holds a whole context's restore time, plus 1 ms, before the predicted (exact) return, so that it ends by then (earlier by the transfer time of what is already on the GPU), and hold them until the turn is admitted; the oracle is Ask the Tool's progress-reporting level ([arXiv 2609.18849](https://arxiv.org/abs/2609.18849)).
-- **Tokencake** ([arXiv 2510.18586](https://arxiv.org/abs/2510.18586)) offloads an agent's KV at the start of a function call and uploads it before the predicted completion. The CPU tier already has a write-through copy, so offloading demotes the session's free blocks; the upload is the history prefetch. Its space scheduling across agents is not modeled.
-- **MORI** ([arXiv 2606.00866](https://arxiv.org/abs/2606.00866)) splits KV between HBM and DRAM by idleness; here only its ranking, as the pool's eviction order: the free block whose session is expected back last (by history) goes first. Its proactive moves are not modeled.
-- **InferCept** (Abhyankar et al., ICML 2024) chooses per interception among preserving, discarding and swapping the KV by minimum waste in memory × time: preserving wastes the context for the predicted pause, swapping wastes the running batch for the step-loop stall of the restore (0.80 of E0's restore term), discarding wastes it for the recompute. Discarding never wins with a CPU tier here (ρ < 1). Preserving holds the blocks; swapping demotes them.
+- **Tokens.** The shares of prompt tokens served from the GPU pool, restored from the CPU tier and computed, the
+  computed ones split into cold first turns, new context and recomputed blocks, the avoidable recompute.
+- **Latency and traffic.** Time to first token p50, p90 and p99, overall and for resumed turns, and the PCIe bytes
+  restored, prefetched and stored, with evictions and stalls.
+- **The regime.** KV pressure is the live working set over the pool, as a time-weighted mean and a peak. π is the median
+  pause over the median prompt's restore time, E0's restore extra over a GPU hit, and ρ that restore time over the
+  median prompt's recompute time.
 
-A hold also ends once its session is later than twice its predicted pause. A prefetch takes only free blocks: it moves, and pays for, only the blocks the pool can take when it begins, beside the cached start it pins, as a connector that allocates its destination first does. It runs on the load stream like any restore: it delays the restores queued behind it and stalls the step loop as they do.
-
-## Results per arm
-
-- **Tokens.** Requests and prompt tokens, and the shares served from the GPU pool, restored from the CPU tier and computed. Computed tokens split into cold first turns of conversations, new context (blocks the run had not seen), and recomputed blocks (seen before, since evicted from every tier, plus the last block of a fully cached block-aligned prompt): the avoidable recompute.
-- **Latency.** Time to first token p50/p90/p99, overall and for resumed turns.
-- **Traffic.** PCIe bytes restored, prefetched and stored, GPU and CPU evictions, and stalls (requests that waited for free blocks, and the total wait). Under contention `engine` also counts the steps run, their tokens and their total time.
-- **Regime.** KV pressure, the live working set (distinct blocks in the latest prompt of every live stream) over the pool, as a time-weighted mean and a peak; π, the median pause (over the turns that pause: a turn sent at once has no pause) over the restore time of the median prompt (E0's restore extra over a GPU hit); ρ, that restore time over the recompute time of the median prompt.
-
-Shares, latencies, restored bytes and stalls cover the profiling requests that completed, as AIPerf's results do; store, prefetch and eviction counts cover the whole run.
+Shares and latencies cover the profiling requests that completed, as AIPerf's results do.
 
 ## Calibration against the GPU operating points
 
-Three operating points on the frozen box, each on a freshly started engine: AIPerf `agentic_replay` at 8, 16 and 24 sessions (the 32× corpus, 120 s think cap, 600 s plus 60 s grace, seed 11, burst starts, straight to the engine as W0). The simulator runs `flatshare-sim run DATA/weka-x32 --arms lru-cpu --concurrency N`.
-- **Shares.** Measured shares are the engine's `prompt_tokens_cached_by_source` counters over the profiling phase (the counters' deltas less the warm-up requests' own tokens); simulated shares cover the profiling requests.
-- **Resume TTFT** covers profiling requests after a conversation's first turn. Percentiles interpolate between ranks.
-
-`make reproduce-calibration EXPORTS=<dir> CORPUS=DATA/weka-x32` writes every number of this section and the next, and BENCHMARKS' table of the three points, to `build/reproduce-calibration/calibration.md` (`scripts/calibration.py`). It needs six runs' AIPerf `profile_export.jsonl` and the engine's `/metrics` before and after: the three points, W0, and the 16- and 24-session repeats on a warm engine. They are an asset of the [v0.3 release](https://github.com/StevenWang-CY/flatshare/releases/tag/v0.3), `leaseholder-calibration-exports-2026-10-24.tar.gz` (named before the project's rename), and EXPORTS is its unpacked directory.
+The contention model meets its targets at 8 and 16 sessions and is 18–35% fast at 24, where restores take longer than it
+models. Three operating points ran on the frozen box, each on a freshly started engine, as AIPerf's `agentic_replay` at
+8, 16 and 24 sessions with W0's settings, straight to the engine. The simulator runs
+`flatshare-sim run DATA/weka-x32 --arms lru-cpu --concurrency N`. Measured shares are the engine's
+`prompt_tokens_cached_by_source` counters over the profiling phase, and resume TTFT covers the requests after a
+conversation's first turn.
 
 | Point | Source | Requests | Resume TTFT p50 / p90 / p99, ms | GPU / CPU / computed, % |
 |---|---|---:|---:|---:|
 | 8 sessions | measured | 408 | 83 / 400 / 1,463 | 66.6 / 29.0 / 4.4 |
-| | idle (v0) | 410 (+0.5%) | 67 / 200 / 563 (−19 / −50 / −61%) | 67.6 / 28.1 / 4.3 |
 | | contention | 405 (−0.7%) | 81 / 382 / 1,749 (−3 / −5 / +20%) | 66.1 / 29.5 / 4.4 |
 | | leave-one-out | 405 | 83 / 400 / 1,772 (−0 / −0 / +21%) | 66.1 / 29.5 / 4.4 |
 | 16 sessions | measured | 686 | 132 / 743 / 8,102 | 57.4 / 36.0 / 6.6 |
-| | idle (v0) | 685 (−0.1%) | 79 / 317 / 4,287 (−40 / −57 / −47%) | 62.8 / 31.1 / 6.1 |
 | | contention | 691 (+0.7%) | 127 / 685 / 7,776 (−4 / −8 / −4%) | 58.8 / 34.3 / 6.9 |
 | | leave-one-out | 690 | 125 / 751 / 7,830 (−5 / +1 / −3%) | 59.1 / 33.9 / 7.0 |
 | 24 sessions | measured | 1,568 | 173 / 1,345 / 15,172 | 52.9 / 34.3 / 12.9 |
-| | idle (v0) | 1,756 (+12.0%) | 71 / 272 / 4,766 (−59 / −80 / −69%) | 59.5 / 28.6 / 11.9 |
 | | contention | 1,649 (+5.2%) | 142 / 942 / 9,896 (−18 / −30 / −35%) | 55.9 / 32.4 / 11.7 |
 | | leave-one-out | 1,646 | 137 / 826 / 9,931 (−21 / −39 / −35%) | 55.9 / 32.9 / 11.2 |
 
-Leave-one-out refits every coefficient on the other two points and predicts the third. The repeats give the measurements' own spread: three 16-session runs (fresh, after the 8-session run, and W0) measured 132–140 ms at p50, 743–966 ms at p90 and 8,102–8,456 ms at p99, against which the model is −4 to −9%, −8 to −29% and −4 to −8%. The 24-session run after the 16-session one measured 213 / 1,798 / 18,403 ms (−33 / −48 / −46%): the starting state matters more there.
+Leave-one-out refits every coefficient on the other two points and predicts the third. The idle service (v0) is 19–80%
+fast at p50 and p90 at every point.
 
-- **The cache model.** On each point's own timeline (`replay-log`) the engine model's GPU share is within 0.7, 0.3 and 1.8 points of the counters' at 8, 16 and 24 sessions, and its per-request cached share within 0.6, 1.3 and 2.0 points on average: about half of the closed loop's +3.0-point GPU share at 24 sessions is the cache model's.
-- **8 and 16 sessions meet the targets** (p50 and p90 within 10%, shares within 2.1 points, requests within 1%) in sample and out of sample. p99 at 8 sessions is four requests; it moves 20% with one of them.
-- **24 sessions does not**, and the evidence points at transfers.
-  - *Open loop* (`replay-log --timed`), the model is −17 / −47 / −56% at 24 sessions against +1 / −2 / −33% at 8 and −6 / −19 / +18% at 16.
-  - *Restores.* Hits match at every point (median residual 0, 0 and −5 ms) and so do computed prompts at 8 and 16 sessions (+12, +11 ms), but restores take 163 ms longer than modeled at 24 sessions (15 ms at 8, 31 ms at 16), the more so the more other restores overlap their measured wait: 41 ms with none, 102 ms with one, 163 ms with three, 1.2 s with six or more.
-  - *Stores.* The model gives each load E0's transfer time and never delays a block's reuse for a store; vLLM 0.32 stores as requests compute and, when it reallocates a block whose store is pending, waits for the store before the step, which happens most when the pool is full. Modeling store traffic is left for when E1 or E2 needs the 24-session regime.
+- **8 and 16 sessions meet the targets**, p50 and p90 within 10%, shares within 2.1 points and requests within 1%, in
+  sample and out of sample. p99 at 8 sessions is four requests, and moves 20% with one of them.
+- **The measurements spread too.** Three 16-session runs measured 132–140 ms at p50 and 743–966 ms at p90. A 24-session
+  run on a warm engine measured 213 / 1,798 / 18,403 ms, so the starting state matters more there.
+- **The cache model** on each point's own timeline (`replay-log`) is within 0.7, 0.3 and 1.8 points of the counters' GPU
+  share, and its per-request cached share within 0.6, 1.3 and 2.0 points on average.
+- **24 sessions misses on transfers.** Open loop (`replay-log --timed`) the model is −17 / −47 / −56% there, against +1
+  / −2 / −33% at 8 sessions and −6 / −19 / +18% at 16. Hits match at every point, but restores take 163 ms longer than
+  modeled at 24 sessions, against 15 ms at 8 and 31 ms at 16. The excess grows with the other restores that overlap a
+  restore's wait: 41 ms with none, 163 ms with three and 1.2 s with six or more.
 
-## Validation against W0 (v0, the idle service)
+`make reproduce-calibration EXPORTS=<dir> CORPUS=DATA/weka-x32` writes every number of this section and the next, and
+BENCHMARKS' table of the three points, to `build/reproduce-calibration/calibration.md`. EXPORTS is the unpacked
+`leaseholder-calibration-exports-2026-10-24.tar.gz` of the
+[v0.3 release](https://github.com/StevenWang-CY/flatshare/releases/tag/v0.3), named before the project's rename, which
+holds six runs' AIPerf exports and `/metrics` snapshots.
 
-W0 replayed the full 32× corpus against the frozen box: AIPerf's sequential sampler gave its 16 lanes the first 16 traces in name order, and its 10 recycled plays the next 10. The simulator runs the same configuration with seed 11, here with `--service idle`. `replay-log` feeds the engine model W0's own requests at their measured start and end times, which separates the cache model from the replay timing.
+## Validation against W0
 
-| Measure | W0, measured | Engine model on W0's timeline | Full simulation |
-|---|---:|---:|---:|
-| Profiling requests | 688 | 688 | 685 |
-| Session plays, warmup requests | 26, 16 | — | 26, 16 |
-| Prompt tokens | 3,268,924 | 3,122,538 | 3,113,792 |
-| From the GPU pool | 56.54% | 56.96% (+0.42) | 62.84% (+6.30) |
-| Restored from the CPU tier | 36.90% | 37.31% (+0.41) | 31.05% (−5.85) |
-| Computed | 6.56% | 5.73% (−0.83) | 6.11% (−0.45) |
-| TTFT p50 / p90 / p99 | 135 / 815 / 8,501 ms | — | 79 / 322 / 4,420 ms |
+On W0's own timeline the cache model is within half a point of the measured GPU and CPU shares. W0 replayed the full 32×
+corpus at 16 sessions against the frozen box, and the simulator runs the same configuration at seed 11.
 
-The measured split is the engine's `prompt_tokens_cached_by_source` counters over the run, less the warm-up's requests: the profiling phase's; its cached share agrees with the per-request `cached_tokens` (93.44%).
-
-- **The cache model.** On W0's timeline the engine model is within half a point of the measured GPU and CPU shares, and its per-request cached share is within 1.35 points on average.
-- **The timeline.** At the idle box's speed the full simulation's sessions return sooner than W0's (a mean modeled time to first token of 237 ms and service time of 783 ms, where W0 measured 541 ms and 1,269 ms), so fewer blocks pass through the pool between a session's turns and more prompts still hit the GPU. The contention model closes the gap: 58.8 / 34.3 / 6.9% against W0's 56.5 / 36.9 / 6.6% (profiling phase), and resume TTFT within 10% (above).
-- **Prompt length.** The engine counted chat-template and cache-bust tokens the corpus does not hold (4.7% more).
-- **Spread.** The seed sets where each lane starts in its trace, so it changes the workload itself. Seeds 11–15 give 639–955 requests and 60.9–72.2% / 21.8–32.5% / 4.4–7.4% (GPU / CPU / computed): one 10-minute, 16-lane run is a small sample.
-- **The 16-trace subset** in `testdata/` is not W0's trace pool. Replayed the same way it is a lighter workload (559 requests, 0.74 M prompt tokens, KV pressure 0.9 against 3.3; 72.4 / 13.3 / 14.3% with seed 11), and it serves as the end-to-end test.
-
-## The E1 regime map
-
-E1's results, the regime map over its arms and the miss-ratio curves, are in
-[BENCHMARKS.md](../../docs/BENCHMARKS.md#e1-parking-in-the-simulator), from `make reproduce-e1` (its `regime.md` and
-`mrc.md`).
+- **The cache model** gives 56.96 / 37.31 / 5.73% (GPU / CPU / computed) on W0's timeline, against the measured 56.54 /
+  36.90 / 6.56%, and its per-request cached share is within 1.35 points on average.
+- **The full simulation** gives 58.8 / 34.3 / 6.9% under contention. The idle service gives 62.8 / 31.1 / 6.1%, because
+  at the idle box's speed sessions return sooner, a mean TTFT of 237 ms against W0's 541, so more prompts still hit.
+- **The seed** sets where each lane starts, so it changes the workload. Under the idle service seeds 11–15 give 639–955
+  requests and 60.9–72.2% / 21.8–32.5% / 4.4–7.4%, so one 10-minute run is a small sample.
 
 ## Other hardware, modeled
 
-Every cost above is measured on one RTX 5060 Ti. `flatshare-sim hardware` places other GPUs on the same map with costs modeled from their published specifications and the path vLLM 0.32.0 takes for the box's checkpoint on them. The box's rows use its measured costs (its placement is simulated like the others'); every other row is labeled modeled. `flatshare-sim forecast` writes the forecast for a run on one of them ([below](#a-gpu-runs-forecast)), and the A100 run of 2026-10-26 measured one, an A100 SXM4 80 GB, against its forecast ([BENCHMARKS.md](../../docs/BENCHMARKS.md#what-it-measured-2026-10-26)).
+On the L4 and the A100 40 GB, modeled from their published peaks, running agents leave two calls short of KV at most 1%
+of the time up to 24 sessions of the 32× replay. On the H100 SXM they never do. At its own scaling each card reaches the
+box's KV pressure, and lifecycle information buys at most 15%, 13% and 9% of resume TTFT p90 there. Every cost is
+measured on one RTX 5060 Ti and scaled. The A100 run of 2026-10-26 measured an A100 SXM4 80 GB against its forecast
+([BENCHMARKS.md](../../docs/BENCHMARKS.md#do-the-rules-carry-to-a-datacenter-card)).
 
-**Costs.** A GPU's profile is its published peaks (memory, memory bandwidth, dense FP8 and BF16 tensor throughput, the host link) and the kernel path its linear layers take. The peaks are used only as ratios to the box's: each measured cost term is divided by the ratio of the published peaks of the kind that bounds it (bandwidth to bandwidth, the linear layers' rate to the box's FP8 rate, link to link), so the box's measured efficiency carries over.
-- **Memory bandwidth** scales the fixed step term and the KV reads. The fixed term is mostly the weight read: Qwen3-4B-FP8 reads 4.41 GB a step (3.63 G FP8 linear weights and the 0.78 GB BF16 embedding, tied to the LM head), 9.8 ms of the 11.56 ms at 448 GB/s.
-- **The linear layers' rate** scales the per-token term, **BF16** the per-pair term (attention over the BF16 cache), and **the link** the restore's transfer; the restore's fixed 10.3 ms stays. The linear layers run at the FP8 rate where vLLM serves the box's block-FP8 checkpoint W8A8 (DeepGEMM or CUTLASS: the box, the H100), and at the BF16 rate over Marlin's slowdown where it serves it W8A16 through Marlin (the L4, the A100; [below](#the-linear-layers-path)).
-- **E0's cold-prefill fit**, which gives ρ, is the box's fit times how much longer the scaled step loop takes a lone prefill than the box's step loop does, at each prompt length from 1k to 249k tokens (with E0's host time), refitted as a quadratic. It keeps, on every card, the relation it has on the box to the box's own loop (2% below it at 4k and 8k tokens, 14% above at 1k), within the refit's 5%.
-- **Unchanged**, as the host's and the software's: the API server's host time and its extra per decoding request, the mixed-step extra, the restore stall, and the 512/256 step budget. `flatshare-sim forecast --host` takes the host's from a measured host instead ([below](#a-gpu-runs-forecast)).
+### How a GPU is modeled
 
-The box's profile gives `StepCost::frozen_box()` and `TierCost::frozen_box()` back exactly.
+A GPU's profile is its published peaks and the kernel path its linear layers take. Each of the box's measured cost terms
+is divided by the ratio of the peaks of the kind that bounds it, so the box's measured efficiency carries over.
+Bandwidth scales the KV reads and the fixed step term, which is mostly the weight read of 4.41 GB a step, 9.8 ms of the
+11.56 ms. The linear layers' rate scales the per-token term, the BF16 rate the per-pair term, and the link the restore's
+transfer. E0's cold-prefill fit, which gives ρ, follows the scaled step loop. The host's and the software's terms stay:
+the API server's time, the mixed-step extra, the restore stall and the 512/256 step budget.
 
-**The pool.** Each GPU keeps beside its pool what the box keeps beside its own (the edge pattern: the engine's weights, activations and CUDA graphs, and STT and TTS on the same card), and the box's headroom:
-
-`pool tokens = 16 · ⌊(memory − 11 GiB) / (16 · 144 KiB)⌋`
-
-The 11 GiB is the box's 9,288 MiB of non-KV footprint (14,408 MiB in use with the three servers idle, less the 5 GiB pool) and 1,976 MiB of headroom of its 16 GiB (`nvidia-smi` shows 16,311 MiB, 1,903 MiB of them free). The formula gives the box's 36,400 tokens back. The memory is what each card leaves with the ECC it ships with: 22.5 GiB of the L4's 24, and all of the box's, the A100s' and the H100's (below). The CPU tier is 4× each pool, as in E1's realistic regime.
+Each GPU keeps beside its pool what the box keeps, from the weights to STT and TTS on the same card, and the box's
+headroom, so its pool is `16 · ⌊(memory − 11 GiB) / (16 · 144 KiB)⌋` tokens. The 11 GiB is the box's 9,288 MiB of non-KV
+footprint and its 1,976 MiB of headroom, and the formula gives the box's 36,400 tokens back. The CPU tier is 4× each
+pool.
 
 | GPU | Memory, GiB | Bandwidth, GB/s | Dense FP8 / BF16, TFLOPS | Linear layers | Host link, each way | Pool, tokens |
 |---|---:|---:|---:|---|---|---:|
 | RTX 5060 Ti 16 GB | 16 | 448 | 189.8 / 47.4 | FP8 W8A8 | PCIe 3.0 x8, 7.9 GB/s | 36,400 |
 | L4 24 GB | 22.5 | 300 | 242.5 / 121.0 | Marlin W8A16, 1.42× a BF16 GEMM | PCIe 4.0 x16, 31.5 GB/s | 83,728 |
 | A100 40 GB | 40 | 1,555 | none / 312.0 | Marlin W8A16, 1.42× a BF16 GEMM | PCIe 4.0 x16, 31.5 GB/s | 211,168 |
-| A100 SXM4 80 GB | 80 | 2,039 | none / 312.0 | Marlin W8A16, 1.42× a BF16 GEMM | PCIe 4.0 x16, 31.5 GB/s | 502,432 |
 | H100 SXM 80 GB | 80 | 3,350 | 1,979.0 / 989.5 | FP8 W8A8 | PCIe 5.0 x16, 63.0 GB/s | 502,432 |
-
-The step-time model's terms on each, and E0's restore and cold-prefill fits, measured on the box and modeled on the others:
 
 | GPU | Costs | Fixed step, ms | Per token, µs | Per pair, ns | Per KV token read, ns | Restore | Cold prefill |
 |---|---|---:|---:|---:|---:|---|---|
 | RTX 5060 Ti 16 GB | measured | 11.56 | 47.99 | 14.17 | 429.3 | 10.3 ms + 23.64 µs/token | 47.8 ms + 63.11 µs/token + 8.126 ns/token² |
 | L4 24 GB | modeled | 17.26 | 106.58 | 5.56 | 641.1 | 10.3 ms + 5.91 µs/token | 53.5 ms + 134.38 µs/token + 3.798 ns/token² |
 | A100 40 GB | modeled | 3.33 | 41.33 | 2.15 | 123.7 | 10.3 ms + 5.91 µs/token | 35.2 ms + 47.47 µs/token + 1.340 ns/token² |
-| A100 SXM4 80 GB | modeled | 2.54 | 41.33 | 2.15 | 94.3 | 10.3 ms + 5.91 µs/token | 34.9 ms + 46.00 µs/token + 1.307 ns/token² |
 | H100 SXM 80 GB | modeled | 1.55 | 4.60 | 0.68 | 57.4 | 10.3 ms + 2.96 µs/token | 27.4 ms + 9.57 µs/token + 0.440 ns/token² |
 
-The peaks come from NVIDIA: the [RTX 5060 family page](https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5060-family/) and [50-series comparison](https://www.nvidia.com/en-us/geforce/graphics-cards/compare/), the [RTX Blackwell whitepaper](https://images.nvidia.com/aem-dam/Solutions/geforce/blackwell/nvidia-rtx-blackwell-gpu-architecture.pdf), and the [L4](https://www.nvidia.com/en-us/data-center/l4/), [A100](https://nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf) and [H100](https://www.nvidia.com/en-us/data-center/h100/) (SXM) datasheets.
-- **The box's tensor throughput.** NVIDIA quotes it only as 759 AI TOPS, FP4 with sparsity, which is 379.5 dense FP4 TFLOPS. The 5060 Ti is not in the whitepaper's tables; its rates follow by the ratios every GeForce Blackwell card there has: half its FP4 rate in FP8 with FP16 accumulate, and a quarter of that in BF16, whose only rate is with FP32 accumulate. FP8 with FP32 accumulate runs at half rate on these cards, and E0's recompute cell says the box's linear layers beat that rate: at 4,096 tokens, 437 ms less the 48 ms fixed part leaves 389 ms, where the linear layers alone at the FP32-accumulate peak (94.9 TFLOPS) would take 314 ms and attention at 47.4 TFLOPS about 104 ms more, 418 ms. At the FP16-accumulate peak they take 157 ms, which fits, so FP16 accumulate is the peak of the same kind.
-- **The others.** The L4's, A100's and H100's throughputs are quoted with sparsity and halved. The A100 has no FP8.
-- **The A100 80 GB.** The datasheet's A100 80GB SXM has 80 GB of HBM2e at 2,039 GB/s (its PCIe card 1,935), and the 40 GB card's BF16 rate, sm80 and host link, so its profile is the 40 GB card's with the memory and the bandwidth changed: its costs differ in the bandwidth terms alone, and its pool is the H100's. The A100 run drew one; the map below does not place it, and `flatshare-sim forecast --gpu a100-80gb` forecast the run on it before it ran ([`benchmarks/a100/forecast-80gb.md`](../../benchmarks/a100/forecast-80gb.md)).
-- **The links.** The box's link is what both of its hosts negotiate (`nvidia-smi`'s `pcie.link.gen.hostmax` 3, width 8), not the card's PCIe 5.0. Each rate is the line rate with 128b/130b encoding.
-- **ECC.** The L4's 24 GB are GDDR6 with ECC enabled by default ([product brief](https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/l4/PB-11316-001_v01.pdf), tables 2 and 3), and with ECC on, GDDR memory keeps its check bits in 6.25% of itself ([CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#theoretical-bandwidth-calculation), 9.2.1). That leaves 22.5 GiB, of which `nvidia-smi` shows 23,034 MiB ([TensorRT-LLM #1823](https://github.com/NVIDIA/TensorRT-LLM/issues/1823)), as it shows 16,311 MiB of the box's 16 GiB, from which the box's headroom is counted. HBM has resources of its own for ECC (the guide, of HBM2): an H100 SXM with ECC on shows 81,559 MiB ([an HGX H100's `nvidia-smi`](https://www.icc-usa.com/blog/hgx-8x-h100-benchmarks)), more than a sixteenth less would leave, as do the box's 16,311 MiB, an A100-SXM4-40GB shows 40,960 MiB ([NVIDIA's forum](https://forums.developer.nvidia.com/t/a100-sxm4-40gb-shows-in-nvidia-smi-but-not-accessible-in-cuda/322730)) and an A100-SXM4-80GB 81,920 MiB ([NVIDIA's DCGM #93](https://github.com/NVIDIA/DCGM/issues/93)).
+The peaks are NVIDIA's: the
+[RTX 5060 family page](https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5060-family/), the
+[50-series comparison](https://www.nvidia.com/en-us/geforce/graphics-cards/compare/), the
+[RTX Blackwell whitepaper](https://images.nvidia.com/aem-dam/Solutions/geforce/blackwell/nvidia-rtx-blackwell-gpu-architecture.pdf),
+and the [L4](https://www.nvidia.com/en-us/data-center/l4/),
+[A100](https://nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf)
+and [H100](https://www.nvidia.com/en-us/data-center/h100/) (SXM) datasheets, whose sparse throughputs are halved.
+
+- **The box's tensor rate.** NVIDIA quotes only 759 AI TOPS, FP4 with sparsity. Every GeForce Blackwell card in the
+  whitepaper runs FP8 with FP16 accumulate at half its FP4 rate and BF16 at a quarter of that. E0's recompute cell rules
+  out FP8 with FP32 accumulate, at half that rate. At 4,096 tokens the linear layers and attention would take 418 ms at
+  it, more than the 389 ms the cell leaves beyond its fixed part.
+- **The A100 SXM4 80 GB**, the card the A100 run drew, is the 40 GB card with 80 GB of HBM2e at 2,039 GB/s. That gives
+  it a fixed step of 2.54 ms, 94.3 ns a KV token read and the H100's pool. The map leaves it out, and
+  `forecast --gpu a100-80gb` forecast the run on it ([`forecast-80gb.md`](../../benchmarks/a100/forecast-80gb.md)).
+- **The links** are line rates with 128b/130b encoding. The box's is what its hosts negotiate, not the card's PCIe 5.0.
+- **ECC.** The L4's GDDR6 runs with ECC on
+  ([product brief](https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/l4/PB-11316-001_v01.pdf)), its check
+  bits taking 6.25% of the memory
+  ([CUDA guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#theoretical-bandwidth-calculation),
+  9.2.1) and leaving 22.5 GiB. HBM keeps its own resources for ECC, so the A100s and the H100 keep all their memory, as
+  `nvidia-smi` shows on an [H100 SXM](https://www.icc-usa.com/blog/hgx-8x-h100-benchmarks), an
+  [A100-SXM4-40GB](https://forums.developer.nvidia.com/t/a100-sxm4-40gb-shows-in-nvidia-smi-but-not-accessible-in-cuda/322730)
+  and an [A100-SXM4-80GB](https://github.com/NVIDIA/DCGM/issues/93).
 
 ### The linear layers' path
 
-Qwen3-4B-Instruct-2507-FP8 quantizes its weights in 128×128 blocks with dynamic activations. For such a checkpoint vLLM 0.32.0's `Fp8LinearMethod` takes the block-FP8 kernel list, and the first kernel in it that supports the card serves every linear layer (`model_executor/kernels/linear/__init__.py:478-488, 743-755` at v0.32.0).
+Qwen3-4B-Instruct-2507-FP8 quantizes its weights in 128×128 blocks, and vLLM 0.32.0's `Fp8LinearMethod` serves every
+linear layer with the first block-FP8 kernel that supports the card
+(`model_executor/kernels/linear/__init__.py:478-488, 743-755` at v0.32.0). On sm75 to sm89 every kernel ahead of
+`MarlinFP8ScaledMMLinearKernel` refuses the card, so the L4 (sm89) and the A100 (sm80) run Marlin, which is weight-only
+W8A16 at the BF16 tensor rate. The box (sm120) runs `DeepGemmFp8BlockScaledMMKernel`, as its engine log shows, and the
+H100 (sm90) DeepGEMM, both W8A8.
 
-- **The L4 and the A100 run Marlin.** On sm75 to sm89 every kernel ahead of `MarlinFP8ScaledMMLinearKernel` refuses the card (DeepGEMM needs sm90 or the sm100 or sm120 families, CUTLASS's block kernel sm90 or newer, B12x the sm120 family), so the L4 (sm89) and the A100 (sm80) run Marlin, which is weight-only: FP8 weights, BF16 activations, at the BF16 tensor rate.
-- **The box and the H100 run W8A8.** The box (sm120) runs `DeepGemmFp8BlockScaledMMKernel` (its engine log), the H100 (sm90) DeepGEMM or FlashInfer's DeepGEMM kernel, both W8A8.
-- **What Marlin costs.** [vLLM PR #61224](https://github.com/vllm-project/vllm/pull/61224) observed it on an L4 ("vLLM logs 'Your GPU does not have native support for FP8 computation'") and measured Qwen3-8B's four linear layers at the step cap's 512 tokens 1.42× slower on Marlin than in BF16 (5,046.9 µs against 3,563.7, the sums of its medians). The model uses that factor on both cards; nothing published measured Marlin's FP8 path on an A100 before the A100 run (below).
+[vLLM PR #61224](https://github.com/vllm-project/vllm/pull/61224) measured Qwen3-8B's four linear layers on an L4 at 512
+tokens, 1.42× slower on Marlin than in BF16 (5,046.9 against 3,563.7 µs). The model uses that factor on both cards, so
+the L4's linear layers take 106.6 µs a token, against the box's 48.0, and the A100's 41.3.
 
-So the L4's linear layers take 106.6 µs a token, against the box's 48.0 and the 37.5 its FP8 rate would give; the A100's 41.3.
+### Checks against measurements
 
-**Checks against published vLLM measurements.**
-- **Restores.** The Gen4 x16 term gives 34.5, 58.7 and 107.1 ms for 4k, 8k and 16k tokens. vLLM 0.29 measured 34, 65 and 104 ms for Qwen3-4B's CPU-tier restores on an L20, also PCIe Gen4 ([#57103](https://github.com/vllm-project/vllm/issues/57103#issuecomment-5733975478)), so the box's 79% of its link carries over to Gen4 within 10%. Nothing checks it on Gen5.
-- **The fixed step.** vLLM 0.30 decoding Qwen3-4B in BF16 at batch 1 on an H100 SXM takes 4.29 ms a step ([decode-decoded](https://github.com/zhebrak/decode-decoded), `results/cells.csv`): 2.45 ms of it is the weight read at the datasheet's bandwidth, and 1.8 ms the rest (launches, kernel excess, bandwidth short of the datasheet's). The box's fixed term has about the same 1.7 ms beyond its weight read, and bandwidth scaling shrinks that to 0.23 ms. So the H100's 1.55 ms is a floor: with the overhead kept it would be 3.0 ms, and the A100's 4.55 ms against 3.33.
-- **The L4 and the A100.** No published vLLM decode measurement of a model this size on either was found. FlashAttention 2's forward pass reaches 50–73% of the A100's peak ([its paper](https://arxiv.org/abs/2307.08691)), where the box's attention term carries 88% of the box's: the A100's attention is modeled at the box's efficiency here and over FlashAttention 2's range in the forecast.
+- **Restores on PCIe Gen4.** The Gen4 x16 term gives 34.5, 58.7 and 107.1 ms for 4k, 8k and 16k tokens, where vLLM 0.29
+  measured 34, 65 and 104 ms for Qwen3-4B's CPU-tier restores on an L20
+  ([#57103](https://github.com/vllm-project/vllm/issues/57103#issuecomment-5733975478)). So the box's 79% of its link
+  carries over to Gen4 within 10%, and nothing checks Gen5.
+- **The fixed step is a floor.** vLLM 0.30 decoding Qwen3-4B in BF16 at batch 1 on an H100 SXM takes 4.29 ms a step
+  ([decode-decoded](https://github.com/zhebrak/decode-decoded)), 2.45 ms of it the weight read and 1.8 ms the rest. The
+  box's fixed term has about as much beyond its weight read, 1.7 ms, which bandwidth scaling shrinks to 0.23 ms. Kept,
+  it would put the H100's fixed step at 3.0 ms, not 1.55, and the A100's at 4.55, not 3.33.
+- **Attention.** FlashAttention 2's forward pass reaches 50–73% of the A100's peak
+  ([its paper](https://arxiv.org/abs/2307.08691)), where the box's attention term carries 88% of the box's. The map
+  keeps the box's efficiency, and the forecast takes FlashAttention 2's range.
+- **The A100 run** fitted the step model on its calibration point
+  ([`a100.md`](../../benchmarks/results/2026-10-26-a100/a100.md)). Marlin's per-token term came in at 41.36 µs against
+  41.33 modeled. Every other term came in above the model: the fixed step at 4.5 ms against 2.54, 4.07 ns a pair against
+  2.15, and 171.9 ns a KV token read against 94.3. Its decode attention read KV at 42% of the card's bandwidth.
 
-**Checked on an A100.** The A100 run (2026-10-26) fitted the step model on its calibration point ([`a100.md`](../../benchmarks/results/2026-10-26-a100/a100.md)): the per-token term, Marlin's linear layers, came in at 41.36 µs against the 41.33 modeled, and every other term above the model's: the fixed step at 4.5 ms against 2.54 (3.88 with the box's overhead kept), 4.07 ns a pair against 2.15, and 171.9 ns a KV token read against 94.3, its decode attention reading KV at 42% of the card's bandwidth where the box's reaches 77% ([BENCHMARKS.md](../../docs/BENCHMARKS.md#what-it-measured-2026-10-26)).
+### Where each GPU sits on the map
 
-**Workloads.** The 32× scaling was chosen for the box's pool, so the GPUs are placed twice:
-- **The 32× replay**, the same on every GPU.
-- **Each GPU's own scaling** (`--fit`): the least power-of-two scaling whose longest request fits both the pool and Qwen3-4B's 262,144-token context, as the 32× corpus fits the box's. The box replays 32×, the L4 16×, the A100 8× and the H100 4×; on the H100 the model's context binds before its pool does.
+The 32× scaling was chosen for the box's pool, so each GPU is placed twice: on the same 32× replay, and at its own
+scaling (`--fit`). That is the least power of two whose longest request fits both its pool and Qwen3-4B's 262,144-token
+context: 16× on the L4, 8× on the A100 and 4× on the H100. A GPU whose pool holds r times the box's runs the session
+counts up to 40·r. Each cell is the mean over seeds 11–13 with the traces' pauses.
 
-The original-scale corpus (`cc-traces-weka-062126`) fits no GPU (`--fit` says so): its median prompt is 142k tokens, and its longest request has 996,579 tokens of prompt and output. Of its requests, 88% exceed the box's pool, 68% the L4's and 12% the H100's, and 30% exceed Qwen3-4B's context.
+The realtime tier is two calls of 1,024 tokens of KV each, as in E2's discriminating scenario. The running share is the
+time the KV of running agent requests leaves less than 2,048 tokens of the pool free. A voice turn then waits for
+blocks, since vLLM 0.32 preempts no running request for a waiting one, the KV-blocking regime of vLLM issue
+[#40004](https://github.com/vllm-project/vllm/issues/40004). Otherwise a voice turn meets compute interference alone,
+behind steps that carry a 512-token prefill chunk at the median prompt. π, ρ and that chunk hardly move with the
+sessions on a card:
 
-**The realtime tier** is two voice calls, as in E2's discriminating scenario, at 1,024 tokens of KV each: a voice turn's prompt and reply came to about 680 tokens in the W2 runs on the box. The replay measures two shares of its window:
-- **Working set:** the time the agents' live working set leaves less than 2,048 tokens of the pool free. A voice turn's KV then displaces cached agent KV, which vLLM evicts for it; the agents pay for that when they resume.
-- **Running:** the time the KV of running agent requests leaves less than that free. A voice turn then waits for blocks, as vLLM 0.32 preempts no running request for a waiting one: #40004's KV-blocking regime, where tuned vLLM fails. Otherwise a voice turn meets compute interference alone, which the step cap and priority bound: it waits behind steps carrying the agents' prefill chunks. The chunk column gives one 512-token chunk at the median prompt; on the box a decode step alone takes about 14 ms.
+| GPU | Scaling | π | ρ | Chunk, ms |
+|---|---|---:|---:|---:|
+| RTX 5060 Ti 16 GB, measured | 32× | 21–30 | 0.25–0.27 | 56–66 |
+| L4 24 GB, modeled | 32× | 62–83 | 0.05–0.06 | 81–85 |
+| | 16× | 38–56 | 0.04–0.05 | 90–99 |
+| A100 40 GB, modeled | 32× | 66–109 | 0.14–0.16 | 28–29 |
+| | 8× | 21–29 | 0.10–0.11 | 37–43 |
+| H100 SXM 80 GB, modeled | 32× | 100–131 | 0.31–0.33 | 5 |
+| | 4× | 21–43 | 0.14–0.18 | 12–16 |
 
-Means over seeds 11, 12 and 13, with the traces' pauses. Pressure is mean / peak, and the voice KV shares are working set / running. The box's rows are the E1 map's cells. On the 32× replay, the regime:
+The box's cells are [E1's map](../../docs/BENCHMARKS.md#where-does-knowing-the-returns-help-most), where its running
+share is 0, 0, 1, 4, 12, 25 and 33% at 5 to 40 sessions. On the 32× replay:
 
-| GPU | Sessions | Pressure | π | ρ | Voice KV short | Chunk, ms |
-|---|---:|---:|---:|---:|---:|---:|
-| RTX 5060 Ti 16 GB (measured) | 5 | 1.3 / 1.5 | 27.0 | 0.26 | 94 / 0% | 64 |
-|  | 8 | 1.8 / 2.0 | 29.6 | 0.27 | 100 / 0% | 56 |
-|  | 12 | 2.6 / 3.1 | 21.4 | 0.25 | 100 / 1% | 64 |
-|  | 16 | 3.6 / 4.1 | 23.4 | 0.25 | 100 / 4% | 66 |
-|  | 24 | 4.7 / 5.4 | 23.9 | 0.26 | 100 / 12% | 61 |
-|  | 32 | 6.2 / 6.8 | 23.5 | 0.26 | 100 / 25% | 64 |
-|  | 40 | 7.5 / 8.1 | 22.9 | 0.26 | 100 / 33% | 63 |
-| L4 24 GB (modeled) | 5 | 0.5 / 0.7 | 78.0 | 0.06 | 0 / 0% | 85 |
-|  | 8 | 0.8 / 0.9 | 83.2 | 0.06 | 0 / 0% | 81 |
-|  | 12 | 1.1 / 1.3 | 62.3 | 0.06 | 83 / 0% | 85 |
-|  | 16 | 1.5 / 1.8 | 70.4 | 0.05 | 100 / 1% | 85 |
-|  | 24 | 2.0 / 2.3 | 68.4 | 0.06 | 100 / 1% | 83 |
-|  | 32 | 2.7 / 3.0 | 71.0 | 0.05 | 100 / 3% | 85 |
-|  | 40 | 3.3 / 3.6 | 70.3 | 0.05 | 100 / 7% | 85 |
-|  | 64 | 5.5 / 5.8 | 77.7 | 0.06 | 100 / 23% | 84 |
-| A100 40 GB (modeled) | 5 | 0.2 / 0.3 | 81.9 | 0.14 | 0 / 0% | 29 |
-|  | 8 | 0.3 / 0.4 | 76.5 | 0.16 | 0 / 0% | 28 |
-|  | 12 | 0.4 / 0.5 | 66.2 | 0.14 | 0 / 0% | 29 |
-|  | 16 | 0.6 / 0.7 | 71.7 | 0.14 | 0 / 0% | 29 |
-|  | 24 | 0.8 / 0.9 | 72.4 | 0.15 | 1 / 0% | 28 |
-|  | 32 | 1.1 / 1.2 | 72.4 | 0.14 | 85 / 0% | 29 |
-|  | 40 | 1.3 / 1.4 | 72.1 | 0.14 | 100 / 0% | 29 |
-|  | 64 | 2.2 / 2.3 | 85.7 | 0.15 | 100 / 0% | 29 |
-|  | 96 | 3.1 / 3.3 | 79.5 | 0.15 | 100 / 0% | 28 |
-|  | 128 | 4.1 / 4.3 | 86.1 | 0.15 | 100 / 1% | 28 |
-|  | 192 | 6.2 / 6.4 | 108.7 | 0.15 | 100 / 0% | 28 |
-| H100 SXM 80 GB (modeled) | 5 | 0.1 / 0.1 | 124.4 | 0.32 | 0 / 0% | 5 |
-|  | 8 | 0.1 / 0.1 | 102.8 | 0.33 | 0 / 0% | 5 |
-|  | 12 | 0.2 / 0.2 | 100.0 | 0.31 | 0 / 0% | 5 |
-|  | 16 | 0.3 / 0.3 | 109.4 | 0.31 | 0 / 0% | 5 |
-|  | 24 | 0.3 / 0.4 | 106.2 | 0.32 | 0 / 0% | 5 |
-|  | 32 | 0.5 / 0.5 | 108.6 | 0.31 | 0 / 0% | 5 |
-|  | 40 | 0.5 / 0.6 | 108.1 | 0.31 | 0 / 0% | 5 |
-|  | 64 | 0.9 / 1.0 | 126.8 | 0.32 | 0 / 0% | 5 |
-|  | 96 | 1.3 / 1.4 | 116.4 | 0.32 | 100 / 0% | 5 |
-|  | 128 | 1.7 / 1.8 | 120.1 | 0.32 | 100 / 0% | 5 |
-|  | 192 | 2.6 / 2.8 | 131.3 | 0.32 | 100 / 0% | 5 |
-|  | 256 | 3.5 / 3.6 | 129.4 | 0.32 | 100 / 0% | 5 |
+| GPU, modeled | Sessions | Pressure | Running share | `lru-cpu` resume p50, ms | `oracle-prefetch` gain, p50 / p90 |
+|---|---:|---:|---:|---:|---:|
+| L4 24 GB | 5 | 0.5 | 0% | 101 | +0 / +0% |
+| | 8 | 0.8 | 0% | 97 | +0 / +0% |
+| | 12 | 1.1 | 0% | 127 | +2 / +7% |
+| | 16 | 1.5 | 1% | 156 | +3 / +8% |
+| | 24 | 2.0 | 1% | 158 | +2 / +14% |
+| | 32 | 2.7 | 3% | 224 | +10 / +12% |
+| | 40 | 3.3 | 7% | 377 | +16 / +8% |
+| | 64 | 5.5 | 23% | 10,851 | −1 / −0% |
+| A100 40 GB | 5 | 0.2 | 0% | 69 | +0 / +0% |
+| | 8 | 0.3 | 0% | 63 | +0 / +0% |
+| | 12 | 0.4 | 0% | 75 | +0 / +0% |
+| | 16 | 0.6 | 0% | 81 | −0 / +0% |
+| | 24 | 0.8 | 0% | 79 | +0 / +1% |
+| | 32 | 1.1 | 0% | 96 | +1 / +5% |
+| | 40 | 1.3 | 0% | 103 | +3 / +4% |
+| | 64 | 2.2 | 0% | 135 | +5 / +3% |
+| | 96 | 3.1 | 0% | 270 | −3 / −3% |
+| | 128 | 4.1 | 1% | 5,876 | −25 / −22% |
+| | 192 | 6.2 | 0% | 51,789 | −62 / −5% |
+| H100 SXM 80 GB | 5 | 0.1 | 0% | 62 | +0 / +0% |
+| | 8 | 0.1 | 0% | 54 | +0 / +0% |
+| | 12 | 0.2 | 0% | 65 | +0 / +0% |
+| | 16 | 0.3 | 0% | 70 | +0 / +0% |
+| | 24 | 0.3 | 0% | 67 | +0 / +0% |
+| | 32 | 0.5 | 0% | 81 | +0 / +0% |
+| | 40 | 0.5 | 0% | 84 | +0 / +0% |
+| | 64 | 0.9 | 0% | 102 | +2 / +1% |
+| | 96 | 1.3 | 0% | 158 | +2 / +1% |
+| | 128 | 1.7 | 0% | 481 | +1 / +1% |
+| | 192 | 2.6 | 0% | 4,756 | −2 / −4% |
+| | 256 | 3.5 | 0% | 12,192 | −6 / −7% |
 
-Resume TTFT in the same cells: `lru-cpu`'s p50 / p90, and each arm's gain over it at p50 / p90:
+At each GPU's own scaling:
 
-| GPU | Sessions | `lru-cpu`, ms | `clairvoyant` | `oracle-prefetch` | `history-prefetch` | `tokencake` |
-|---|---:|---:|---:|---:|---:|---:|
-| RTX 5060 Ti 16 GB (measured) | 5 | 90 / 243 | +1 / +7% | +2 / +13% | −1 / +0% | −5 / −9% |
-|  | 8 | 86 / 355 | +1 / +27% | +3 / +40% | −0 / +12% | −6 / −10% |
-|  | 12 | 113 / 340 | +0 / +7% | +5 / +32% | +1 / −8% | −11 / −21% |
-|  | 16 | 180 / 1,399 | +2 / +8% | +9 / +2% | −9 / −9% | −24 / −18% |
-|  | 24 | 364 / 2,334 | +3 / +8% | +2 / −5% | −19 / −17% | −36 / −17% |
-|  | 32 | 1,849 / 9,109 | +3 / +2% | −5 / −23% | −24 / −11% | −27 / −5% |
-|  | 40 | 8,216 / 19,336 | +1 / +1% | −25 / −21% | −10 / −6% | −10 / −3% |
-| L4 24 GB (modeled) | 5 | 101 / 212 | +0 / +0% | +0 / +0% | +0 / +0% | −5 / −6% |
-|  | 8 | 97 / 205 | +0 / +0% | +0 / +0% | +0 / +0% | −4 / −12% |
-|  | 12 | 127 / 249 | +0 / +3% | +2 / +7% | +2 / +2% | −7 / −12% |
-|  | 16 | 156 / 325 | +0 / +5% | +3 / +8% | +1 / −4% | −12 / −13% |
-|  | 24 | 158 / 354 | +0 / +3% | +2 / +14% | −2 / −1% | −21 / −14% |
-|  | 32 | 224 / 640 | +0 / +1% | +10 / +12% | −8 / −5% | −25 / −5% |
-|  | 40 | 377 / 2,054 | +1 / +3% | +16 / +8% | −7 / −4% | −15 / −7% |
-|  | 64 | 10,851 / 26,546 | +0 / +2% | −1 / −0% | −7 / −0% | −4 / −1% |
-| A100 40 GB (modeled) | 5 | 69 / 155 | +0 / +0% | +0 / +0% | +0 / +0% | −6 / −3% |
-|  | 8 | 63 / 133 | +0 / +0% | +0 / +0% | +0 / +0% | −4 / −11% |
-|  | 12 | 75 / 141 | +0 / +0% | +0 / +0% | +0 / +0% | −9 / −13% |
-|  | 16 | 81 / 180 | +0 / +0% | −0 / +0% | −0 / +0% | −10 / −14% |
-|  | 24 | 79 / 171 | +0 / +1% | +0 / +1% | −0 / +1% | −12 / −13% |
-|  | 32 | 96 / 243 | +1 / +2% | +1 / +5% | +1 / −0% | −17 / −9% |
-|  | 40 | 103 / 298 | +1 / +3% | +3 / +4% | +1 / −0% | −21 / −9% |
-|  | 64 | 135 / 735 | +1 / +1% | +5 / +3% | −2 / −6% | −25 / −14% |
-|  | 96 | 270 / 2,231 | +2 / +1% | −3 / −3% | −23 / −10% | −44 / −10% |
-|  | 128 | 5,876 / 9,281 | +1 / +1% | −25 / −22% | −25 / −20% | −23 / −13% |
-|  | 192 | 51,789 / 81,315 | +0 / +0% | −62 / −5% | −10 / −3% | −11 / −5% |
-| H100 SXM 80 GB (modeled) | 5 | 62 / 133 | +0 / +0% | +0 / +0% | +0 / +0% | −2 / −12% |
-|  | 8 | 54 / 126 | +0 / +0% | +0 / +0% | +0 / +0% | −8 / −7% |
-|  | 12 | 65 / 127 | +0 / +0% | +0 / +0% | +0 / +0% | −7 / −9% |
-|  | 16 | 70 / 164 | +0 / +0% | +0 / +0% | +0 / +0% | −10 / −10% |
-|  | 24 | 67 / 143 | +0 / +0% | +0 / +0% | +0 / +0% | −11 / −11% |
-|  | 32 | 81 / 205 | +0 / +0% | +0 / +0% | +0 / +0% | −14 / −6% |
-|  | 40 | 84 / 251 | +0 / +0% | +0 / +0% | +0 / +0% | −15 / −7% |
-|  | 64 | 102 / 566 | +1 / +1% | +2 / +1% | +0 / −0% | −14 / −5% |
-|  | 96 | 158 / 1,419 | +1 / +0% | +2 / +1% | +0 / +1% | −14 / +0% |
-|  | 128 | 481 / 2,996 | +1 / +0% | +1 / +1% | −3 / −0% | −33 / −10% |
-|  | 192 | 4,756 / 7,599 | +0 / +0% | −2 / −4% | −8 / −5% | −12 / −10% |
-|  | 256 | 12,192 / 13,843 | +0 / +0% | −6 / −7% | −5 / −6% | −9 / −12% |
+| GPU, modeled | Sessions | Pressure | Running share | `lru-cpu` resume p50, ms | `oracle-prefetch` gain, p50 / p90 |
+|---|---:|---:|---:|---:|---:|
+| L4 24 GB | 5 | 1.1 | 0% | 173 | +4 / +5% |
+| | 8 | 1.6 | 1% | 175 | +5 / +15% |
+| | 12 | 2.3 | 2% | 237 | +6 / +10% |
+| | 16 | 3.1 | 9% | 2,019 | +4 / −5% |
+| | 24 | 4.2 | 22% | 7,432 | +2 / −0% |
+| | 32 | 5.3 | 19% | 27,550 | −4 / −1% |
+| | 40 | 6.4 | 11% | 81,713 | −1 / −0% |
+| A100 40 GB | 5 | 0.9 | 0% | 193 | −0 / −1% |
+| | 8 | 1.2 | 0% | 188 | +3 / +13% |
+| | 12 | 1.8 | 0% | 251 | +7 / +11% |
+| | 16 | 2.5 | 2% | 456 | −2 / −3% |
+| | 24 | 3.3 | 8% | 2,402 | −14 / −34% |
+| | 32 | 4.2 | 10% | 9,380 | −5 / −6% |
+| | 40 | 5.2 | 10% | 28,145 | −6 / −2% |
+| H100 SXM 80 GB | 5 | 0.7 | 0% | 327 | +0 / +0% |
+| | 8 | 1.0 | 0% | 288 | −0 / +5% |
+| | 12 | 1.5 | 1% | 426 | +1 / +9% |
+| | 16 | 2.1 | 2% | 1,223 | +4 / +7% |
+| | 24 | 2.8 | 6% | 4,531 | −5 / −4% |
+| | 32 | 3.6 | 7% | 11,191 | −3 / −5% |
+| | 40 | 4.3 | 6% | 30,759 | −11 / −7% |
+| | 64 | 7.2 | 1% | 266,358 | −1 / −1% |
 
-At each GPU's own scaling (`--fit`; the box's rows are those above), the regime:
+- **The working set** leaves two calls short, displacing cached agent KV, 0–11% of the time up to a pressure of 0.9,
+  69–85% at 1.0–1.1 and 94–100% from 1.2, on every GPU and the box.
+- **The other arms.** The clairvoyant reference gains at most 2% at p50, and at p90 at most 5% on the 32× replay and 10%
+  at the GPUs' own scalings. Session history and Tokencake gain at most 5% anywhere, and lose up to 25% and 44%.
+- **Saturation.** Rows whose `lru-cpu` p50 runs to seconds are saturated, and there the running share falls as requests
+  queue before admission. The H100 saturates on attention at 4× from 16 sessions, and at 32× from 128 sessions at the
+  modeled API server, its GPU 61–73% busy.
 
-| GPU | Sessions | Pressure | π | ρ | Voice KV short | Chunk, ms |
-|---|---:|---:|---:|---:|---:|---:|
-| L4 24 GB (modeled), 16× | 5 | 1.1 / 1.2 | 52.7 | 0.04 | 70 / 0% | 99 |
-|  | 8 | 1.6 / 1.8 | 51.4 | 0.05 | 100 / 1% | 90 |
-|  | 12 | 2.3 / 2.6 | 38.3 | 0.05 | 100 / 2% | 95 |
-|  | 16 | 3.1 / 3.5 | 38.6 | 0.04 | 100 / 9% | 97 |
-|  | 24 | 4.2 / 4.6 | 38.4 | 0.05 | 100 / 22% | 94 |
-|  | 32 | 5.3 / 5.6 | 40.9 | 0.05 | 100 / 19% | 93 |
-|  | 40 | 6.4 / 6.6 | 56.0 | 0.05 | 100 / 11% | 92 |
-| A100 40 GB (modeled), 8× | 5 | 0.9 / 1.0 | 27.1 | 0.10 | 11 / 0% | 42 |
-|  | 8 | 1.2 / 1.4 | 29.3 | 0.11 | 100 / 0% | 37 |
-|  | 12 | 1.8 / 2.1 | 20.9 | 0.10 | 100 / 0% | 41 |
-|  | 16 | 2.5 / 2.8 | 21.8 | 0.10 | 100 / 2% | 43 |
-|  | 24 | 3.3 / 3.6 | 23.3 | 0.10 | 100 / 8% | 40 |
-|  | 32 | 4.2 / 4.5 | 21.3 | 0.10 | 100 / 10% | 39 |
-|  | 40 | 5.2 / 5.5 | 24.0 | 0.10 | 100 / 10% | 39 |
-| H100 SXM 80 GB (modeled), 4× | 5 | 0.7 / 0.8 | 29.1 | 0.14 | 0 / 0% | 16 |
-|  | 8 | 1.0 / 1.2 | 30.5 | 0.18 | 69 / 0% | 12 |
-|  | 12 | 1.5 / 1.8 | 21.5 | 0.15 | 100 / 1% | 14 |
-|  | 16 | 2.1 / 2.3 | 21.1 | 0.15 | 100 / 2% | 15 |
-|  | 24 | 2.8 / 3.0 | 21.6 | 0.16 | 100 / 6% | 14 |
-|  | 32 | 3.6 / 3.8 | 21.5 | 0.16 | 100 / 7% | 13 |
-|  | 40 | 4.3 / 4.6 | 25.3 | 0.16 | 100 / 6% | 13 |
-|  | 64 | 7.2 / 7.4 | 43.3 | 0.14 | 100 / 1% | 16 |
+What each regime means for a realtime tier beside agents:
 
-Resume TTFT in the same cells: `lru-cpu`'s p50 / p90, and each arm's gain over it at p50 / p90:
+- **On the box** a voice turn meets compute interference up to 16 sessions. From 24 it is in #40004's regime an eighth
+  to a third of the time, where E2 needed the budget cap as well as the KV preemption
+  ([the report's §6.2](../../docs/REPORT.md#62-the-kv-preemption-removes-the-wait-for-kv-and-the-budget-cap-removes-agent-prefill-from-the-turns-steps)).
+- **The L4** has 2.3× the box's pool but two thirds of its bandwidth, and Marlin layers at 2.2× the box's FP8 time, so
+  at its own 16× its compute runs out at 12 to 16 sessions, before KV does.
+- **The H100 SXM** at its own 4× has two calls blocked 0–7% of the time, but a realtime tier sized like the box's, 28
+  calls, would be blocked 25% of the time at 16 sessions and 49–65% at 24–32.
 
-| GPU | Sessions | `lru-cpu`, ms | `clairvoyant` | `oracle-prefetch` | `history-prefetch` | `tokencake` |
-|---|---:|---:|---:|---:|---:|---:|
-| L4 24 GB (modeled), 16× | 5 | 173 / 456 | +2 / +0% | +4 / +5% | −3 / +0% | −7 / −2% |
-|  | 8 | 175 / 510 | +1 / +3% | +5 / +15% | +2 / −4% | −6 / −10% |
-|  | 12 | 237 / 788 | +0 / +1% | +6 / +10% | +2 / −2% | −10 / −2% |
-|  | 16 | 2,019 / 10,927 | +1 / +0% | +4 / −5% | +5 / −2% | −3 / −2% |
-|  | 24 | 7,432 / 22,720 | +1 / +1% | +2 / −0% | −2 / −4% | +4 / +3% |
-|  | 32 | 27,550 / 59,576 | +1 / +1% | −4 / −1% | −1 / −1% | −3 / −1% |
-|  | 40 | 81,713 / 136,552 | +0 / +0% | −1 / −0% | −0 / −0% | −0 / −0% |
-| A100 40 GB (modeled), 8× | 5 | 193 / 536 | +1 / +1% | −0 / −1% | −2 / −3% | −6 / −5% |
-|  | 8 | 188 / 646 | +1 / +10% | +3 / +13% | +3 / +4% | −0 / +2% |
-|  | 12 | 251 / 715 | +0 / +4% | +7 / +11% | +4 / −1% | −5 / −12% |
-|  | 16 | 456 / 3,403 | +1 / +1% | −2 / −3% | −11 / −5% | −11 / −14% |
-|  | 24 | 2,402 / 6,573 | +2 / +1% | −14 / −34% | −0 / −6% | −12 / −8% |
-|  | 32 | 9,380 / 26,816 | +1 / +1% | −5 / −6% | −1 / −4% | +3 / −3% |
-|  | 40 | 28,145 / 49,509 | +1 / +1% | −6 / −2% | −6 / +1% | −5 / +0% |
-| H100 SXM 80 GB (modeled), 4× | 5 | 327 / 1,017 | +0 / +1% | +0 / +0% | +0 / +0% | −3 / −1% |
-|  | 8 | 288 / 1,095 | +0 / +3% | −0 / +5% | +1 / +1% | −1 / −1% |
-|  | 12 | 426 / 1,321 | +0 / +2% | +1 / +9% | +0 / +5% | −1 / +3% |
-|  | 16 | 1,223 / 8,026 | +1 / +0% | +4 / +7% | +3 / +3% | −9 / +3% |
-|  | 24 | 4,531 / 14,102 | +1 / +0% | −5 / −4% | −10 / −0% | −10 / +0% |
-|  | 32 | 11,191 / 29,027 | +0 / +0% | −3 / −5% | −3 / −10% | +0 / −12% |
-|  | 40 | 30,759 / 50,569 | +0 / +0% | −11 / −7% | −13 / −5% | −9 / −4% |
-|  | 64 | 266,358 / 329,898 | +0 / +0% | −1 / −1% | −1 / −1% | −2 / −1% |
+So the KV-blocking regime follows the agents' context lengths against the pool, and the realtime tier's share of it, not
+the consumer card.
 
-Rows whose resume TTFT runs to seconds are saturated, and there the running share falls, as requests queue before admission. The modeled GPUs saturate at these points:
-- **The L4** saturates its compute from 64 sessions at 32× (resume TTFT p50 10.9 s) and from 16 sessions at 16× (2.0 s).
-- **The A100** from 128 sessions at 32× (5.9 s) and from 24 sessions at 8× (2.4 s).
-- **The H100 at 4×** saturates its compute from 16 sessions (90% busy), on attention over contexts of 20–30k tokens.
-- **The H100 at 32×, from 128 sessions,** queues at the modeled API server instead (one request at a time, at the box's host cost per token and per decoding request), with its GPU 61–73% busy.
+**What the assumptions could move.** Each assumption was varied with the H100 at 4× and the L4 at 16×, over seeds 11–13.
+These runs predate the L4's Marlin path and the refitted cold prefill, so the L4's sizes come from its earlier FP8
+model.
 
-**What each GPU's regime means for a realtime tier beside agents.**
-- **RTX 5060 Ti (measured costs).** From 8 sessions the agents' working set leaves less than two calls' KV free all the time, so a voice turn's KV always displaces cached agent KV. Running agents hold the pool against a voice turn 0–4% of the time up to the box's 16-session operating point, 12% at 24 sessions and 25–33% at 32–40.
-  - Up to 16 sessions, a realtime tier on the box meets compute interference. It waits behind a 56–66 ms prefill chunk, which the step cap bounds and priority orders.
-  - From 24 sessions, it is in #40004's regime an eighth to a third of the time, where it needs KV freed for it. In E2's discriminating scenario (24 agent sessions of the longest-context traces), freeing KV was not enough: the engine also had to keep lower-priority prefill out of the turn's first tokens (make-room's budget cap; [EXPERIMENTS.md](../../docs/EXPERIMENTS.md#e2-voice-under-agent-load)). What headroom held ahead of the turn could not do there is in [the report's §6.5](../../docs/REPORT.md#65-a-control-plane-in-front-of-the-engine-makes-room-only-by-aborting-agent-work).
-  - π is 21–30 and ρ 0.25–0.27. Lifecycle information buys 13% at p90 at pressure 1.3, 32–40% at 1.8–2.6 and 2% at 3.6, and it loses from 4.7 (the E1 map).
-- **L4 (modeled).** Against the box it has 2.3× the pool, a 4× faster link and 2.6× the BF16 throughput, but it runs the box's checkpoint through Marlin, whose linear layers take 2.2× the box's FP8 time, and it has two thirds of the memory bandwidth: its decode steps and its prefill are both slower.
-  - On the 32× replay, running agents block two calls at most 1% of the time up to 24 sessions. π rises to 62–83 (restores four times cheaper per token) and ρ falls to 0.05–0.06, so restoring beats recomputing about twenty to one.
-  - At its own 16×, it sits where the box sits at fewer sessions: pressure 1.1–3.1 at 5–16 sessions, π 38–53. Its compute runs out first (resume TTFT p50 0.2 s at 12 sessions, 2.0 s at 16), where running agents block two calls 9% of the time.
-  - A realtime tier on an L4 meets compute interference behind chunks longer than the box's (81–99 ms) until the agents saturate the card, from 12 to 16 sessions.
-- **A100 40 GB (modeled).** Against the box it has 5.8× the pool, 3.5× the bandwidth, a 4× faster link and 6.6× the BF16 throughput, and its Marlin linear layers are slightly faster than the box's FP8 ones (41.3 against 48.0 µs a token).
-  - **The 32× replay barely fills it.** Pressure stays under 1.5 up to 40 sessions, and running agents block two calls at most 1% of the time at any count to 192. The chunk is 28–29 ms, half the box's, π 66–109 and ρ 0.14–0.16.
-  - **At its own 8×**, its π (21–29) is the box's and its ρ lower (0.10–0.11). Running agents block two calls 2–10% of the time from 16 to 40 sessions, and its compute saturates from 24 sessions, at pressure 3.3.
-  - Lifecycle information buys up to 13% at p90 at 8× (`oracle-prefetch` at 8 sessions).
-  - The A100 run (2026-10-26) measured the box's discriminating scenario on an A100 SXM4 80 GB at the box's pool, which these cells do not place; its forecast is [`benchmarks/a100/forecast-80gb.md`](../../benchmarks/a100/forecast-80gb.md), and what it measured is in [BENCHMARKS.md](../../docs/BENCHMARKS.md#what-it-measured-2026-10-26).
-- **H100 SXM (modeled).**
-  - **The 32× replay cannot fill it.** Pressure stays under 1 up to 64 sessions, and running agents never block two calls (nor 28) at any count. The chunk is 5 ms, π 100–131 and ρ 0.31–0.33, and the clairvoyant reference gains at most 1%: lifecycle information has nothing to buy.
-  - **At its own 4×**, its π (21–31 up to 40 sessions) is near the box's and its ρ lower (0.14–0.18). Long recomputes are dear in attention while the Gen5 link keeps restores cheap. Its compute saturates from 16 sessions, at pressure 2.
-  - **A small realtime tier** meets compute interference with 12–16 ms chunks, a quarter of the box's; running agents block two calls 0–7% of the time.
-  - **A realtime tier sized like the box's** (28 calls, the 5.6% of the pool that two calls are of the box's) is blocked 25% of the time at 16 sessions and 49–65% at 24–32, more often than on the box.
-  - So the KV-blocking regime follows the agents' context lengths against the pool, and the realtime tier's share of it, not the consumer card.
-
-**Assumptions, by how much they could move a placement.** Each was rerun with the H100 at 4× and the L4 at 16× (seeds 11–13), except where the size is given otherwise. The reruns predate the L4's Marlin path and the refitted cold prefill: their L4 sizes are those of the L4's earlier FP8 model.
-1. **The scaling of the workload.** On the H100, 4× against 32× multiplies pressure by 8 at equal sessions (the working set is in tokens), roughly halves ρ (from 0.32–0.34 to 0.15–0.19) and nearly triples the chunk (from 5 to 12–16 ms). At the box's share of the pool, it takes the running share from 0% to 25–65%; hence the two workloads. `--fit` is bounded by Qwen3-4B's context: a model with a 1M-token context would put the H100 at 2×, with longer contexts and more pressure.
-2. **The realtime tier's size** (two calls of 1,024 tokens). Given the box's share of the pool (5 calls on the L4, 28 on the H100), the running share rises from 9–21% to 23–44% on the L4 at 16–32 sessions, and from 2–7% to 25–65% on the H100 at 16–40.
-3. **The restore's efficiency on the link** (the box's 79% of the line rate; checked within 10% on Gen4, not on Gen5). Restores 1.6× slower would cut π by a third and raise ρ by half on both GPUs, and move nothing else on the map.
-4. **Attention scaling with the box's BF16 peak** (FP32 accumulate, 47.4 TFLOPS). If the box's attention were bound by a rate twice that, the modeled GPUs' attention would run half as fast. ρ would fall by a third on the H100 and a fifth on the L4, and the chunk would lengthen by 60–70% and 25–35%.
-5. **The footprint and headroom** (the box's absolute 9,288 and 1,976 MiB on every card). A headroom of the box's 12% of memory would shrink the L4's pool by 7% and the H100's by 11%, raising pressure as much and the running share by up to 3 points.
-6. **The fixed step** (scaled by bandwidth; the H100 measurement above says this is a floor). Keeping the box's 1.7 ms of overhead (3.0 ms on the H100) moves no coordinate beyond the seeds' noise. It adds 1–2 ms to the chunk and up to 7 points of GPU busy at 4×, and on the 32× replay 2 ms and up to 17 points; on the L4 it is 5% shorter than modeled.
-7. **The host** (the box's API server: one request at a time, 29.6 ms + 8 µs a token and 6.5 ms per decoding request, from a 1.7 GHz Xeon through a tunnel). A host three times faster cuts low-load resume TTFT by 40–60%. It moves the H100's saturation on the 32× replay from about 128 to past 192 sessions (TTFT p50 4.8 s to 59 ms at 192), and no coordinate beyond the seeds' noise.
-8. **Not varied:**
-   - the mixed-step extra (7.6 ms), the restore stall (0.8) and the 512/256 step budget;
-   - a CPU tier of 4× (276 GiB of host RAM per H100);
-   - Qwen3-4B-FP8 on every card (an H100 would serve a larger model, with more KV per token);
-   - the L4's bandwidth with ECC on: its datasheet's 300 GB/s, where the CUDA guide above puts ECC's cost on a GDDR card at about 20% of effective bandwidth, more for some access patterns;
-   - the calibration's caveat: stores are not modeled, so restores at high pressure are optimistic on every GPU.
+1. **The workload's scaling.** On the H100, 4× against 32× multiplies pressure by 8 at equal sessions, roughly halves ρ
+   and nearly triples the chunk.
+2. **The realtime tier's size.** Sized at the box's share of the pool, 5 calls on the L4 and 28 on the H100, it raises
+   the running share from 9–21% to 23–44% on the L4 at 16–32 sessions. On the H100 at 16–40 it rises from 2–7% to
+   25–65%.
+3. **The restore's efficiency**, the box's 79% of the line rate. Restores 1.6× slower would cut π by a third and raise ρ
+   by half.
+4. **Attention at the box's BF16 peak.** If the box's attention were bound by twice that rate, the modeled GPUs'
+   attention would run half as fast. ρ would fall by a third on the H100 and a fifth on the L4, and the chunk lengthen
+   by 60–70% and 25–35%.
+5. **The headroom.** A headroom of 12% of memory, the box's share, would shrink the L4's pool by 7% and the H100's by
+   11%, raising the running share by up to 3 points.
+6. **The fixed step and the host.** Keeping the box's 1.7 ms of step overhead, or a host three times faster, moves no
+   coordinate beyond the seeds' noise. The faster host cuts low-load resume TTFT by 40–60%.
+7. **Not varied:** the mixed-step extra, the restore stall, the step budget, the 4× CPU tier, Qwen3-4B-FP8 on every card
+   and the L4's bandwidth with ECC on. Stores are not modeled, so restores at high pressure are optimistic on every GPU.
 
 ## A GPU run's forecast
 
-`flatshare-sim forecast WHOLE LONG --gpu a100-40gb` writes the forecast for a run on another GPU, before the run: the 32× corpus (`WHOLE`) and its 48 traces with the largest contexts (`LONG`, E2's discriminating corpus, which `benchmarks/e2/long_traces.py` links). `make forecast-a100 CORPUS=DATA/weka-x32` writes the A100 40 GB's to [`benchmarks/a100/forecast.md`](../../benchmarks/a100/forecast.md), and with `GPU=a100-80gb` the A100 SXM4 80 GB's to [`benchmarks/a100/forecast-80gb.md`](../../benchmarks/a100/forecast-80gb.md). Everything in it for the card is modeled from the box's measured costs; where the box has a measurement of the same thing, the forecast is that measurement times the modeled ratio of the two cards, so that what the box's model misses of its own measurement does not carry over. It gives:
-- **The costs in three settings**, besides the E1 map's: **low**, the peaks' ratios alone with Marlin as fast as a BF16 GEMM; **central**, with the box's 1.7 ms of step overhead kept (the H100 measurement above), Marlin as on the L4, and attention at FlashAttention 2's best published efficiency on the card where one is published (73% on the A100); **high**, with FlashAttention 2 at its worst published (50%). For Qwen3-14B-FP8 too, scaled by its bytes and FLOPs (`Model`): 14.77 GB read a step, 26.4 GFLOP a token, 819,200 FLOPs an attention pair, 160 KiB of KV a token.
-- **E0's cells**, the box's measured p50s times the ratio of the two cards' modeled lone requests (GPU hit, restore, recompute).
-- **The engine probes' cases**: the KV case's stock wait (two 18k-token decodes into the last free blocks, on Gray 4.9–5.1 s, by the ratio of the two cards' decode steps), make-room's first token there (225 and 297 ms on Gray), the reply's token gaps behind agent chunks and with the budget cap (69 and 17 ms on Gray); and the **time-equivalent step cap**, the largest multiple of 256 tokens whose chunk takes the card no longer than the box's 512-token chunk takes the box, at the discriminating scenario's median context (13.9k tokens) and the whole corpus's (7.9k).
-- **E2's scenarios on the regime map**, `lru-cpu` (the stock engine's policy) with a realtime tier of two calls, over seeds 11 to 15 (E2's rounds' agent samples): the core (the discriminating scenario at the box's pool and 24 sessions, with the box's own cells beside it), the calibration point (the whole corpus at 16 sessions), Qwen3-14B-FP8 at the card's own pool, twice the box's pool and sessions, and Qwen3-4B at the card's own pool. The table adds the share of time the card's steps run (busy) and the requests that waited for free blocks (stalled) to the map's coordinates.
+`flatshare-sim forecast WHOLE LONG --gpu a100-40gb` forecasts a run on another GPU before it runs, from the 32× corpus
+and its 48 traces with the largest contexts, E2's discriminating corpus (`benchmarks/e2/long_traces.py` links them).
+`make forecast-a100 CORPUS=DATA/weka-x32` writes [`forecast.md`](../../benchmarks/a100/forecast.md) for the A100 40 GB,
+and with `GPU=a100-80gb` [`forecast-80gb.md`](../../benchmarks/a100/forecast-80gb.md) for the A100 SXM4 80 GB. Where the
+box measured the same thing, the forecast is that measurement times the modeled ratio of the two cards, so that the box
+model's own error does not carry over. It gives:
 
-Once the run has measured the card, `--costs SUMMARY --step-costs STEPS` (both or neither, read as `run` reads them: the card's E0 `summary.json` and the step-time model `scripts/fit_step_cost.py` fits on its calibration point) add a section after the scenario table with the card's fitted costs: the calibration point, to read the fitted model against the measured point, and the core at the box's pool at each of `--fitted-sessions` (24 to 40 by default), with the count whose running share comes closest to the box's in the core, the count to run A' at. The other tables do not change. `make forecast-fitted CORPUS=DATA/weka-x32 COSTS=SUMMARY STEPS=STEPS` writes it for the A100 SXM4 80 GB to `build/forecast-fitted.md` (`GPU` and `OUT` change them).
+- **The costs in three settings**, for Qwen3-4B-FP8 and Qwen3-14B-FP8. *Low* is the peaks' ratios alone, with Marlin as
+  fast as BF16. *Central* keeps the box's 1.7 ms of step overhead, runs Marlin as on the L4, and puts attention at
+  FlashAttention 2's best published efficiency on the card. *High* takes FlashAttention 2's worst.
+- **E0's cells and the engine probes' cases**, and the time-equivalent step cap, the largest multiple of 256 tokens
+  whose chunk takes the card no longer than the box's 512-token chunk takes the box.
+- **E2's scenarios on the regime map** over seeds 11–15, among them the core, the discriminating scenario at the box's
+  pool and 24 sessions.
 
-Without `--host`, the card's API server runs at the box's CPU's speed and its restores at its datasheet's link. The A100 run showed both to be the host's:
-- **The API server.** Its host's API server took 14.2 ms + 4.971 µs a prompt token (`scripts/fit_step_cost.py` on its calibration point) where the box's takes 29.6 ms + 7.994, and E0's GPU hit grew with the prompt by 1.80 µs a token there against the box's 3.79 (least squares over E0's seven lengths).
-- **The restores.** Its restores moved 11.46 GB/s of KV, 12.86 µs a token beyond the GPU hit, where the forecast took 25 GB/s from the card's PCIe Gen4 x16 (5.91 µs): the host's Cascade Lake CPU has PCIe 3.0 root ports, so the card's Gen4 link to its switch is not the host's.
+**Fitted costs.** Once a run has measured the card, `--costs` and `--step-costs` take its E0 `summary.json` and the step
+model `scripts/fit_step_cost.py` fits on its calibration point. They place the core at each of `--fitted-sessions` and
+name the count whose running share comes closest to the box's, the count to run A' at.
+`make forecast-fitted CORPUS=DATA/weka-x32 COSTS=SUMMARY STEPS=STEPS` writes it to `build/forecast-fitted.md`, for the
+A100 SXM4 80 GB unless `GPU` names another card.
 
-`--host HOST_JSON` places the card on a host as `benchmarks/a100/bench_host.py` measured it (its `host.json`, refused without `python_ms.p50` or the link's `h2d` row of one copy):
-- **The API server's time**, on a prompt and for each request decoding, and E0's are then the box's over how many times faster the host's CPU runs the script's Python workload (the box's Xeon E5-2609 v4 at 1.70 GHz takes 381.1 ms).
-- **A restore's transfer** is a token's KV at the host's one-copy rate times 0.92, the share of its own the box's E0 restore reaches (6.24 GB/s of 6.76).
-- **What stays.** The restore's fixed part stays the connector's, and the mixed-step extra and the restore stall the software's: one is a step's, the other a share of the transfer.
-- **The report** names the host in its introduction, adds the card's costs on it to each costs table (`central, on this host`), and places E0's cells and the card's scenario cells there.
-
-`make forecast-a100` and `make forecast-fitted` take it as `HOST_JSON=<host.json>`; `make forecast-a100` then writes the forecast beside the one made before the run, with `-on-host` in its name.
+**A measured host.** Without `--host` the card's API server runs at the box's CPU speed and its restores at the
+datasheet's link. The A100 run showed both to be the host's. Its API server took 14.2 ms + 4.971 µs a prompt token
+against the box's 29.6 ms + 7.994 µs, and its restores moved 11.46 GB/s, not 25, through PCIe 3.0 root ports.
+`--host HOST_JSON` takes the `host.json` that `benchmarks/a100/bench_host.py` writes on the host, and
+`make forecast-a100 HOST_JSON=<host.json>` writes the forecast on it beside the one made before the run.
 
 ## Runtime
 
-Release builds on the full corpus (393 traces, 98,827 requests, 1.7 GB of JSON), on an Apple M5 Max. Times are the whole process's CPU time (user and system), with the wall time on 18 threads and the peak memory for the runs that use every core; each time is the lower of two runs, each peak the higher. Other work loaded the machine while they were measured (load average 15 to 49), and that moved even CPU time by up to a quarter between two runs. The full-corpus runs use `--duration 100000000 --grace 0 --max-sessions 393 --start-max 0`, so every trace plays once from its start.
-
-| Run | Contention | Idle |
-|---|---:|---:|
-| The W0 configuration, the three stock arms | 0.22 s | 0.22 s |
-| The W0 configuration, `lru-cpu`, the E1 arms and the reference | 0.33 s | — |
-| Every trace through 16 recycling lanes, the three stock arms | 13.2 s | 13.5 s |
-| `regime` at one seed on one thread, 42 cells × 10 arms | 13.6 s | — |
-| `regime`, 42 cells × 3 seeds × 10 arms | 89 s (9.7 s on 18 threads, 2.2 GB) | — |
-| The realistic regime, 4 cells × 20 seeds × 10 arms | 41 s (4.0 s on 18 threads, 2.2 GB) | — |
-| `hardware`, the 32× replay on four GPUs, 114 cells × 10 arms, on peacock | 207 s (53 s on 16 threads, 3.2 GB) | — |
-| `hardware --fit`, 87 cells × 10 arms, on peacock | 236 s (51 s on 16 threads, 1.7 GB) | — |
-
-The two `hardware` rows were measured on peacock (Xeon Silver 4110 at 2.1 GHz, 16 threads, Linux) once the A100 joined the profiles, one run each; there `make reproduce-e1` ran all five tables in 2 min 18 s. W1 measured the idle runs on cyan (Xeon Silver 4310 at 2.1 GHz, Linux) too, with identical results: 0.53 s for the W0 configuration and 29.7 s through 16 recycling lanes, then with four stock arms.
+On an Apple M5 Max, in CPU time, a run of the W0 configuration takes 0.22 s with the stock arms and 0.33 s with the E1
+arms, and every trace through 16 recycling lanes 13.2 s. `regime`'s 42 cells × 3 seeds × 10 arms take 89 s, or 9.7 s on
+18 threads in 2.2 GB. On peacock, a 16-thread Xeon Silver 4110, `make reproduce-e1` ran all five tables in 2 min 18 s.
 
 ## Tests
 
-`cargo test -p flatshare-sim` checks, grouped by what each part holds to:
+`cargo test -p flatshare-sim` holds the KV model, both clairvoyant tiers and MIN against exhaustive search, the step
+loop against hand-computed schedules, the GPU profiles (the box's gives its measured costs back exactly) and the
+forecast (the box forecasts its own measurements). `tests/subset.rs` runs the 16-trace subset end to end, the plan
+against AIPerf's and every arm. The subset is a lighter workload than W0's, 559 requests at a KV pressure of 0.9 against
+3.3.
 
-- **The KV model:** block identity and namespacing; LRU tail-first freeing, pinning, recomputed copies, CPU write-through and restore; holds, their release under pressure, prefetch, demotion and the idleness ranking.
-- **The references:** both clairvoyant tiers and MIN against exhaustive search on small sequences; Mattson stack distances against a direct LRU simulation.
-- **The step loop**, against hand-computed schedules: budget and cap, decodes behind prefills, head-of-line blocking, restore loads, stalls and the two-step lag, mixed steps, the serialized host.
-- **The replay scheduler:** the order of its pending events and the idle cap's shift; on small synthetic traces, the think-time and idle caps, concurrent subagents and joins, recycling, the TTL hold and the prefetches on a paused session, and the time a realtime tier is short of KV.
-- **The policies' inputs:** the history predictor and InferCept's choice; the TraceLab table and its draws; the regime map and its spread over seeds.
-- **The GPU profiles** and their tables: the box's gives its measured costs and pool back exactly under every scaling; each peak scales only its own step terms and cheapens the cold prefill; the L4's and the A100's linear layers run through Marlin at the BF16 rate; the A100's three settings; a second model's bytes, FLOPs and pool; the L4's ECC keeps a sixteenth of its memory; the modeled cold prefill keeps the box's relation to the scaled step loop; the quadratic refit, the fitted scales and the session counts; a host's file and its refusals, the box's own host giving every card the box's CPU and measured link and the box its measured costs, and a host's CPU scaling only the API server's time and E0's, its link only the restore's transfer.
-- **The forecast:** the box forecasts its own measurements, on its own host too; the A100's probe cases and time-equivalent caps; the scenarios' cells and the tables; the fitted cells, their section and the count closest to the box's running share, the lower on a tie; on a host, the card's cells and rows, which say so, and the report naming the host.
-- **The command line**, which refuses a value that describes no run by its option's name, and AIPerf's seed derivation against numpy.
-- **On the 16-trace subset** (`tests/subset.rs`): the plan against AIPerf's; every stock arm end to end; v0's run under the idle service; the E1 arms under TraceLab pauses, twice, with identical results; the box placed by `hardware` exactly as `regime` runs it; the forecast's cells placed as `run` places them; `forecast` byte for byte as before it took fitted costs, and with the box's own costs as the card's fitted ones, which give the box's rows; `forecast` on the box's own host, the same but for the introduction, the costs tables' rows on it, E0's restores and the card's scenario cells; `replay-log` on a record of AIPerf's own and on a simulated run written as AIPerf's export, where every request finds the sources the simulation gave it.
-
-`testdata/aiperf-0.13.0-record.jsonl` is one record of W0's AIPerf export, on a trace of the subset. `testdata/forecast-a100-80gb-sub16.md` is `forecast`'s report on the subset, for the A100 80 GB at seed 11 in 120 s replays, as it was before the fitted costs (the test that reads it gives the command that rewrites it). `testdata/box-host.json` is `benchmarks/a100/bench_host.py`'s `host.json` on the box (Phastform, 2026-10-26), whose figures the box's host constants hold. `testdata/weka-x32-sub16` holds 16 traces of [semianalysisai/cc-traces-weka-062126](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126) (Apache-2.0), block-scaled 32× by `flatshare-bench scale-traces`. To regenerate the pinned AIPerf plan, see `scripts/aiperf_reference.py`. `data/tracelab-pauses.tsv` holds the percentiles of the wait between a coding agent's tool calls and their results, per tool, derived by `scripts/tracelab_pauses.py` from the [TraceLab](https://github.com/uw-syfi/TraceLab) public coding-agent trace dataset v0.0.2 (CC BY 4.0); the dataset itself is not in the repository.
+**Test data.** `testdata/weka-x32-sub16` holds 16 traces of
+[semianalysisai/cc-traces-weka-062126](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-062126)
+(Apache-2.0), block-scaled 32×, and `testdata/aiperf-0.13.0-sub16.json` AIPerf's plan for them, which
+`scripts/aiperf_reference.py` regenerates. Beside them are a record of W0's AIPerf export, the box's `host.json` from
+`benchmarks/a100/bench_host.py` and `forecast`'s report on the subset, whose test gives the command that rewrites it.
+`data/tracelab-pauses.tsv` holds per-tool percentiles of the wait between a coding agent's tool calls and their
+results, derived by `scripts/tracelab_pauses.py` from the [TraceLab](https://github.com/uw-syfi/TraceLab) public
+coding-agent trace dataset v0.0.2 (CC BY 4.0), which is not in the repository.
