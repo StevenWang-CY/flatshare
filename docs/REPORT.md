@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.26, 10 November 2026. Code, records and figures at tag
-[v1.26](https://github.com/StevenWang-CY/flatshare/tree/v1.26) of
+Flatshare technical report, version 1.27, 10 November 2026. Code, records and figures at tag
+[v1.27](https://github.com/StevenWang-CY/flatshare/tree/v1.27) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 E](#e-revision-history). The report is for engineers who serve a voice agent and background LLM work from one GPU, and
 argues for two rules in vLLM's scheduler from the measurements behind them.
@@ -1444,6 +1444,7 @@ new version, and [CHANGELOG.md](../CHANGELOG.md) lists what each release changed
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.27 | 2026-11-10 | Every figure redrawn as one set: four colors with one meaning each, values on flat marks; Figure 19 (the two cards) added; captions and alt text describe the marks drawn |
 | 1.26 | 2026-11-10 | Cut to one argument and its evidence; Tables 8–11 renumbered 7–10; every figure in one grammar, Figure 1 with all six configurations and Figure 7 on one axis |
 | 1.25 | 2026-11-09 | Figures 17 and 18, §8 on ordering by what is cached and on the copy path |
 | 1.24 | 2026-11-08 | §6.11, the queue and the copy |

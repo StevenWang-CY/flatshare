@@ -18,7 +18,7 @@
   <a href="docs/BENCHMARKS.md"><b>Benchmarks</b></a> |
   <a href="docs/PRODUCTION.md"><b>Deployment</b></a> |
   <a href="docs/ARCHITECTURE.md"><b>Architecture</b></a> |
-  <a href="https://github.com/StevenWang-CY/flatshare/releases/tag/v1.2"><b>Demo video</b></a> |
+  <a href="https://github.com/StevenWang-CY/flatshare/releases/tag/v1.27"><b>Demo video</b></a> |
   <a href="docs/README.md"><b>Docs</b></a>
 </p>
 
@@ -43,7 +43,7 @@ p95 to 2.24 s against an SLO of 2.03 s. The replies over the SLO fall from 90% t
 *The same caller's first measured turn on each engine, beside the same 24 agent sessions on one RTX 5060 Ti, recorded
 2026-10-25. Tuned vLLM answers after 9.6 s, and the configuration to deploy after 1.9 s, its agents at 98% of tuned
 vLLM's token rate in this run. This turn is within the SLO; the 2.24 s above is the p95 of 885 replies, and in
-[the video](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.2) of the whole call the fourth turn is over it.*
+[the video](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.27) of the whole call the fourth turn is over it.*
 
 ## Results
 
@@ -224,7 +224,7 @@ If you use Flatshare or its measurements, please cite the repository ([CITATION.
   author  = {Wang, Chuyue},
   title   = {Flatshare},
   year    = {2026},
-  version = {1.26.0},
+  version = {1.27.0},
   url     = {https://github.com/StevenWang-CY/flatshare}
 }
 ```

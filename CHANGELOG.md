@@ -5,6 +5,38 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.27](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.27) (2026-11-10): every figure redrawn in four colors, each with one meaning
+
+A figure release: no record, no measurement and nothing the boxes serve changes. Every figure, the README's animation
+and the demo video are redrawn as one set, and each caption and alt text describes the marks now drawn.
+
+- **Four colors, one meaning each.** Blue is the change: saturated for the row a figure argues for, most often the
+  configuration to deploy, and softer for the change's other configurations. Green is the voice turn, gray is everything
+  else, and red is what the voice loses: the SLO's dashed rule, a wait, a miss. v1.26's orange and violet are gone.
+- **A quantity is a flat mark with its value on it.** The log-scale dot plots are bars from zero on a linear axis, the
+  runs' range is one capped line at a bar's end, and a row carries its name, so that a key remains only where marks
+  share a row. A bar that ran out of the test's time is cut by two breaks and says so, and a p95 within a second of the
+  SLO is followed, in red, by its time over it.
+- **The report's charts.** Figure 2 fills the KV pool and turns it red while the voice turn waits, Figure 3 is bars at
+  the runs' median, and Figure 4 stacks its two workloads on one time axis. Figures 10 and 11 are bars from zero, Figure
+  11's with the SLO's rule through them. Figures 12 to 16 draw each round's, or each load's, configurations as bars one
+  under the other from the same zero. Figure 17 shows where the prompt tokens came from as shares of one bar, Figure 18
+  the pooled share with the rounds' range, Figure D1 the engine's time down as its one red segment, with the cold
+  start's phases named under it, and Figure D2 the one hour over the requirement as its one red column.
+- **A list stays a table.** EXPERIMENTS' campaign map loses its figure and gains each campaign's question as a column,
+  and ARCHITECTURE's overview draws the serving path alone, with each plane's parts in the table under it.
+- **The diagrams** share one grammar: a box holds text, a hairline frame is a host or a namespace, and a flat cell is a
+  KV block, an engine step or a slot. The method figure reads vLLM 0.32 above each rule, the release path runs left to
+  right over "nothing switched", and the two cards, drawn at their slots' sizes, join the report as Figure 19.
+- **The animation and the demo video** play a turn as the README chart's two rows on one time axis: the caller's line as
+  a gray waveform, the wait as a flat bar in its configuration's color, the reply as a green waveform, and the SLO's red
+  dashed rule through both rows, with the agents' tokens a second as bars beside them. The video adds each reply's
+  voice-to-voice time by turn against the SLO, and its closing card is the headline's rows for both GPUs. Asset:
+  `flatshare-demo.mp4`, which the README now links.
+- **The records' own figures** are redrawn in the same hand: each row names its agent sessions, a bar past the scale's
+  end is cut, a configuration off its arm's frontier recedes to the palest step of its color, and no panel stands empty.
+  The brand marks take the palette. The records and their tables are byte-identical.
+
 ## [v1.26](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.26) (2026-11-10): the documents cut to what each reader needs, and every figure in one grammar
 
 A documentation release: no record, no measurement and nothing the boxes serve changes. The hand-written documents

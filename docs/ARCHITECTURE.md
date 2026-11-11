@@ -1,7 +1,7 @@
 # Architecture
 
 Flatshare runs a realtime voice agent beside background LLM work on one GPU, or on two. This document describes what
-is built, as of v1.26, for a reader who wants to know how the parts work and fit together before reading or changing
+is built, as of v1.27, for a reader who wants to know how the parts work and fit together before reading or changing
 the code. [PRODUCTION.md](PRODUCTION.md) gives the configuration to deploy, [BENCHMARKS.md](BENCHMARKS.md) the numbers,
 [PRIOR-ART.md](PRIOR-ART.md) what is prior work, the [ADRs](README.md#decisions) the decisions, and
 [GLOSSARY.md](GLOSSARY.md) the terms.
