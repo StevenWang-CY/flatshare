@@ -4,6 +4,12 @@ the stage waterfall, and the README's voice-p95.svg with its phone layout.
 
 Every number a figure prints is a record's, as the report's tables give it: a configuration's
 median over its runs, or a stage's mean over the replies of its runs. Latency scales start at zero.
+
+The frontier figure and the waterfall are set as the main report's figures are, on its chart parts
+(:mod:`flatshare_bench.report.charts`): a row's name in a column at the left, then its agent
+sessions, the table's own column, which parts the rows of one configuration at several loads; a
+panel's title in semibold at its left and its unit under its axis; keys over the plot and
+definitions under it. A hue has one meaning in every figure (:func:`_hue`).
 """
 
 from __future__ import annotations
@@ -11,6 +17,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,14 +25,27 @@ from flatshare_bench import labels
 from flatshare_bench.e2.groups import STACKED, arm_order, configurations
 from flatshare_bench.e2.record import REPLY_TIMEOUT_MS
 from flatshare_bench.figure_style import (
+    LABEL,
     NARROW,
     NOTE,
     TITLE,
     VALUE,
     WIDTH,
+    Box,
     Figure,
     measure,
     wrap,
+)
+from flatshare_bench.report.charts import (
+    BAR_FILLS,
+    Chart,
+    Key,
+    Scale,
+    cut_breaks,
+    cut_key,
+    legend,
+    stage_key,
+    x_axis,
 )
 from flatshare_stats import quantiles
 
@@ -41,20 +61,75 @@ FAMILIES = (
 groups its rows under them."""
 CHANGE_FAMILY = 9
 """The family of the engine change: make-room and the PRs' configurations, drawn in blue."""
-TO_DEPLOY = "9-pr-ab48"
-"""The configuration to deploy (docs/PRODUCTION.md): the two PRs with a 48-token window, the one
-configuration a frontier figure draws in the saturated blue."""
+CHANGE_ENGINE = "make-room"
+"""What the variant of an engine with the change begins with: an arm of the change's family on
+another engine (the gateway's policy on tuned vLLM) is a comparator, and gray."""
+DEPLOY_ARMS = re.compile(r"9-pr-ab48(?:-b256)?(?:-t0)?(?:-(?:calls|[cs]\d+))*")
+"""The arms that run the configuration to deploy (docs/PRODUCTION.md): the two PRs with a 48-token
+window and no gateway policy, at the box's own step cap or at 256 tokens a step, with any number
+of callers and of agent sessions. An arm that adds a gateway's static cap, another window, another
+step cap or another build is a configuration of its own."""
+DEPLOY_ENGINE = {
+    "--additional-config.make_room.reserve_tokens": "0",
+    "--additional-config.make_room.budget_cap_tokens": "48",
+}
+"""The engine's flags the configuration to deploy sets: no reserve, the budget cap at 48 tokens."""
+STEP_FLAGS = ("--max-num-batched-tokens", "--long-prefill-token-threshold")
+"""The engine's flags that set its step cap and its long-prefill threshold."""
+STEP_CAP_SHIPS, STEP_CAP_BOX = 256, 512
+"""The step cap the serving profile ships (256 tokens a step, no long-prefill threshold), and the
+one an engine started without STEP_FLAGS runs: its box's own, 512 with a threshold of 256."""
 WORKLOAD_CLAUSES = re.compile(
     r", (?:discriminating|standard) scenario(?: \(large contexts\))?"
     r"|, a warm-up turn opening each call|, \d+ callers"
 )
 """The clauses of a configuration's label that name its workload, which every row of a figure
-shares and the figure's title gives once."""
+shares and the figure's first line gives once."""
 NUMBERS = ("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten")
+
+MARGIN = 24.0
+"""The figure's left and right margins."""
+BAR = 24.0
+"""A bar's thickness, the main report's."""
+VALUE_GAP = 9.0
+"""Between a bar's end and its value."""
+GROUP_HEAD, GROUP_GAP = 30.0, 8.0
+"""A heading's line over its rows, and the gap after a heading's last row."""
+ROW_HEIGHTS = (48.0, 58.0, 80.0)
+"""A row's height by its lines of text, a name's and a note's: one, two, three."""
+NAME_PITCH, NOTE_PITCH = 25.0, 22.0
+"""From a name's line to its next, and from its last line to the note under it."""
+NAMES_MIN, NAMES_MAX, NAMES_WIDE = 240.0, 406.0, 540.0
+"""The names' column: its least width, and the most a name's line takes beside two panels and
+beside one. A name stands in as few lines as that lets it, and the column is as wide as its
+widest line."""
+SESSIONS_GAP, PLOT_GAP = 20.0, 16.0
+"""Between a name and its row's sessions, and between the last column and the plot."""
+PANEL_GAP = 28.0
+"""Between the widest value after panel (a) and panel (b)."""
+PANEL_SHARE = 0.62
+"""Panel (a)'s share of the two panels' length."""
+HEAD = 46.0
+"""From a panel's title to its plot's top, with the SLO's name between them."""
+SLO_CLEAR = 12.0
+"""The least from the plot's start to the SLO's name, which stands over its rule on the line of
+the sessions' head: a rule near the scale's start has its name beside that head, not against
+it."""
+RECEDED = {"gray": "pale", "ink": "pale", "sky": "blue-pale", "blue": "blue-pale"}
+"""The fill of a receded bar (a configuration off its arm's frontier): the palest step of its
+hue, a stacked bar's part (figure_style's SEGMENTS)."""
+SESSIONS = "Sessions"
+"""The head of the column of each row's agent sessions: the tables' own word."""
+DEPLOY_KEY = "The configuration to deploy"
+BOLD_NOTE = "Bold: the configuration to deploy."
+"""What the semibold says in a figure whose bars' fills are its stages, so that no bar is the
+saturated one a key could name."""
+RECEDED_KEY = "Off its arm's frontier"
+CUT_KEY = "Runs past the scale's end"
 
 
 def label(text: str) -> str:
-    """A configuration's label as a figure names it, under its workload's title or heading:
+    """A configuration's label as a figure names it, under its workload's line or heading:
     without the clauses that name the workload, and a first word in lower case capitalized
     ("Frozen box", but "vLLM #63350")."""
     text = WORKLOAD_CLAUSES.sub("", text)
@@ -81,6 +156,14 @@ def tick_text(value: float, step: float) -> str:
     """A tick's value, with as many decimals as its step needs, the same for every tick."""
     digits = next(d for d in range(4) if abs(step * 10**d - round(step * 10**d)) < 1e-9)
     return f"{value:,.{digits}f}"
+
+
+def _marks(top: float, length: float) -> tuple[list[float], list[str]]:
+    """:func:`ticks` to ``top`` and each one's label in its shortest form, as the main report's
+    axes give them: "0", "2.5", "5"; "5,000"."""
+    marks = ticks(top, length)
+    texts = [tick_text(mark, marks[1] - marks[0]) for mark in marks]
+    return marks, [t.rstrip("0").rstrip(".") if "." in t else t for t in texts]
 
 
 def _family(arm: str) -> tuple[int, str]:
@@ -114,31 +197,6 @@ def _seconds(ms: float) -> str:
     return f"{ms / 1000:.2f}"
 
 
-def _name(s: Figure, right: float, y: float, name: str, note: str) -> float:
-    """A row's name, right-aligned at ``right`` from the label column's left edge (24) in lines that
-    break evenly, and its ``note`` in the soft ink at the end of its last line: where it does not
-    fit there, the name breaks narrower to make room, at the cost of one more line at most, else
-    the note takes a line of its own. Returns the lines' height."""
-    width, room = right - 24, measure(note, NOTE) + 10
-    lines = wrap(name, width, VALUE)
-    joined = bool(note) and measure(lines[-1], VALUE) + room <= width
-    if note and not joined:
-        narrower = wrap(name, width - room, VALUE)
-        if len(narrower) <= len(lines) + 1 and measure(narrower[-1], VALUE) + room <= width:
-            lines, joined = narrower, True
-    for k, line in enumerate(lines):
-        last = k == len(lines) - 1
-        end = right - (room if last and joined else 0)
-        s.text(end, y + 15 + 22 * k, line, size=VALUE, anchor="end")
-    height = 22.0 * len(lines)
-    if joined:
-        s.text(right, y + 15 + height - 22, note, size=NOTE, anchor="end", cls="soft")
-    elif note:
-        s.text(right, y + 15 + height, note, size=NOTE, anchor="end", cls="soft")
-        height += 20
-    return height
-
-
 def _panel_heads(s: Figure, cx: float, y: float, title: str, subtitle: str) -> None:
     s.text(cx, y, title, anchor="middle")
     s.text(cx, y + 25, subtitle, size=NOTE, anchor="middle", cls="soft")
@@ -156,181 +214,509 @@ def _axis(s: Figure, x0: float, length: float, marks: list[float], y0: float, y1
     s.rule(x0, x0 + length, y1)
 
 
+# What a row is, and how its hue says it ----------------------------------------------------------
+
+
+def _deploy_cap(arm: str, engine: str) -> int | None:
+    """The step cap at which an arm (its id and its engine, the variant then its flags) runs the
+    configuration to deploy: STEP_CAP_SHIPS, STEP_CAP_BOX, or None for any other configuration."""
+    variant, *flags = engine.split()
+    settings = dict(zip(flags[::2], flags[1::2], strict=False))
+    if variant != CHANGE_ENGINE or len(flags) % 2 or not DEPLOY_ARMS.fullmatch(arm):
+        return None
+    if {flag: value for flag, value in settings.items() if flag not in STEP_FLAGS} != DEPLOY_ENGINE:
+        return None
+    step = tuple(settings.get(flag) for flag in STEP_FLAGS)
+    return {(None, None): STEP_CAP_BOX, (f"{STEP_CAP_SHIPS}", "0"): STEP_CAP_SHIPS}.get(step)
+
+
+def _deployed(arms: Sequence[tuple[str, str]]) -> list[bool]:
+    """Which of one workload's rows (each an arm's id and its engine) are the configuration to
+    deploy: the rows that run it at the step cap the profile ships, at every load they stand at;
+    where the workload has none, the rows that run it at the box's own step cap. Where both stand,
+    the one at the box's cap is one of the change's other configurations, as the main report's
+    step-cap figure draws the pair."""
+    caps = [_deploy_cap(arm, engine) for arm, engine in arms]
+    ships = STEP_CAP_SHIPS if STEP_CAP_SHIPS in caps else STEP_CAP_BOX
+    return [cap == ships for cap in caps]
+
+
+def _hue(arm: str, engine: str, sessions: int, deploy: bool) -> str:
+    """A row's hue (the charts' BAR_FILLS), by what the row is and nothing else in its figure:
+    voice alone, the reference, is ink (the stronger gray); the configuration to deploy is blue,
+    the saturated one; the change's other configurations (its family's arms on an engine with
+    the change) are sky, the softer blue; every other comparator is gray."""
+    if not sessions:
+        return "ink"
+    if deploy:
+        return "blue"
+    if arm_order(arm)[0] == CHANGE_FAMILY and engine.startswith(CHANGE_ENGINE):
+        return "sky"
+    return "gray"
+
+
+# Rows: names, notes and sessions at the left of a plot -------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Row:
+    """A row of a record's figure: its configuration's name in its lines, its note (its runs, its
+    failed turns), its agent sessions (none for voice alone), and how it is set: ``featured``,
+    the configuration to deploy, its name and value in semibold; ``receded``, a configuration
+    off its arm's frontier, its name and value in the soft ink."""
+
+    lines: tuple[str, ...]
+    note: str
+    sessions: int
+    hue: str = "gray"
+    featured: bool = False
+    receded: bool = False
+
+    @property
+    def height(self) -> float:
+        count = len(self.lines) + bool(self.note)
+        last = len(ROW_HEIGHTS)
+        return ROW_HEIGHTS[min(count, last) - 1] + NAME_PITCH * max(0, count - last)
+
+    @property
+    def ink(self) -> str:
+        return "soft" if self.receded else ""
+
+
+@dataclass(frozen=True)
+class _Columns:
+    """Where a figure's columns stand: the right edge of the names, the right edge of the sessions
+    (None without the column), and the plot's start."""
+
+    names: float
+    sessions: float | None
+    plot: float
+
+
+def _lines(name: str, bold: bool, width: float) -> tuple[str, ...]:
+    """A name in as few lines as fit ``width``, broken evenly, in the weight it is set in:
+    figure_style's wrap measures the regular weight, so a name in semibold is wrapped to a
+    narrower measure until its lines fit."""
+    lines = wrap(name, width, LABEL)
+    while bold and max(measure(line, LABEL, bold=True) for line in lines) > width:
+        narrower = wrap(name, max(measure(line, LABEL) for line in lines) - 0.5, LABEL)
+        if narrower == lines:
+            break
+        lines = narrower
+    return tuple(lines)
+
+
+def _names_limit(names: Sequence[tuple[str, bool]]) -> float:
+    """The most a name's line takes beside one panel, for names each with whether it is set in
+    semibold: NAMES_MAX, or as much more, up to NAMES_WIDE, as the longest of them needs to stand
+    in two lines."""
+    limit = NAMES_MAX
+    for name, bold in names:
+        if len(_lines(name, bold, limit)) <= 2:
+            continue
+        words = name.split()
+        halves = sorted(
+            max(measure(" ".join(part), LABEL, bold=bold) for part in (words[:k], words[k:]))
+            for k in range(1, len(words))
+        )
+        fits = (w for w in halves if w > limit and len(_lines(name, bold, w)) <= 2)
+        limit = min(math.ceil(next(fits, NAMES_WIDE)), NAMES_WIDE)
+    return limit
+
+
+def _columns(groups: Sequence[tuple[Sequence[str], Sequence[_Row]]]) -> _Columns:
+    """A figure's columns, from its groups (each its headings and its rows): the names' column as
+    wide as its widest line, at least NAMES_MIN; the sessions' column where a row has agents; and
+    a heading, which has no sessions, ends before the plot too."""
+    rows = [row for _, members in groups for row in members]
+    names = max(
+        NAMES_MIN,
+        *(measure(line, LABEL, bold=row.featured) for row in rows for line in row.lines),
+        *(measure(row.note, NOTE) for row in rows),
+    )
+    counts = [measure(f"{row.sessions}", VALUE) for row in rows if row.sessions]
+    column = SESSIONS_GAP + max(counts) if counts else 0.0
+    heads = max((measure(head, NOTE) for heads, _ in groups for head in heads), default=0.0)
+    names = math.ceil(max(names, heads - column))
+    end = MARGIN + names + column
+    return _Columns(MARGIN + names, end if counts else None, end + PLOT_GAP)
+
+
+def _set_rows(
+    s: Chart,
+    groups: Sequence[tuple[Sequence[str], Sequence[_Row]]],
+    columns: _Columns,
+    top: float,
+) -> tuple[list[float], float]:
+    """Each group's headings, a line each in the soft ink, then its rows from ``top`` down: a
+    row's name right-aligned in its column, its note under it as the main report sets a row's
+    second line, and its sessions in the values' ink, level with its bar, under the column's
+    head, which stands just over the plot's top. Returns each row's centre, where its bar and
+    its values stand, and the plot's bottom."""
+    if columns.sessions is not None:
+        s.text(columns.sessions, top - 8, SESSIONS, size=NOTE, anchor="end", cls="soft")
+    y = top
+    centres = []
+    for heads, members in groups:
+        for head in heads:
+            s.text(MARGIN, y + 21, head, size=NOTE, cls="soft")
+            y += GROUP_HEAD
+        for row in members:
+            centre = y + row.height / 2
+            block = NAME_PITCH * (len(row.lines) - 1) + (NOTE_PITCH - 2 if row.note else 0)
+            base = centre + 7 - block / 2
+            for k, line in enumerate(row.lines):
+                s.text(
+                    columns.names,
+                    base + NAME_PITCH * k,
+                    line,
+                    anchor="end",
+                    cls=row.ink,
+                    bold=row.featured,
+                )
+            if row.note:
+                last = base + NAME_PITCH * (len(row.lines) - 1)
+                s.text(
+                    columns.names, last + NOTE_PITCH, row.note, size=NOTE, anchor="end", cls="soft"
+                )
+            if row.sessions and columns.sessions is not None:
+                s.text(
+                    columns.sessions,
+                    centre + 7,
+                    f"{row.sessions}",
+                    size=VALUE,
+                    anchor="end",
+                    cls=row.ink,
+                )
+            centres.append(centre)
+            y += row.height
+        y += GROUP_GAP
+    return centres, y - GROUP_GAP + 2
+
+
+def _runs(count: int) -> list[str]:
+    """A row's note of its runs, where it has several."""
+    return [f"{count} runs"] if count > 1 else []
+
+
+def _fill_key(*fills: str) -> Key:
+    """Bars' fills in a key (figure_style's SEGMENTS): a short stretch of each, side by side."""
+    width, gap = 22.0, 4.0
+
+    def draw(s: Chart, x: float, baseline: float) -> None:
+        for k, fill in enumerate(fills):
+            s.segments(x + (width + gap) * k, baseline - 0.66 * NOTE, [(width, fill)], 0.7 * NOTE)
+
+    return Key((width + gap) * len(fills) - gap, draw)
+
+
+def _foot(s: Chart, last: float, notes: Sequence[str]) -> None:
+    """The definitions under a figure, a line each in the soft ink under its lowest baseline
+    ``last``, and the figure's height to fit them."""
+    for note in notes:
+        last += 30 if note is notes[0] else 24
+        s.text(MARGIN, last, note, size=NOTE, cls="soft")
+    s.height = last + 14
+
+
 # The frontier figure -----------------------------------------------------------------------------
+
+
+def _lead(names: Sequence[str], bold: Sequence[bool]) -> int:
+    """How many of their first words a heading states once for its rows' names (each with
+    whether it is set in semibold): the words every name begins with, where they are at least
+    three, end in a word (never a bare sign) and leave something of every name; of one name too
+    long for two lines, its first clause. Zero where the rows keep their whole names."""
+    words = [name.split() for name in names]
+    if len(names) == 1:
+        clause = next((k + 1 for k, word in enumerate(words[0]) if word.endswith(",")), 0)
+        long = len(_lines(names[0], bold[0], NAMES_MAX)) > 2
+        return clause if long and clause < len(words[0]) else 0
+    count = 0
+    while all(len(w) > count for w in words) and len({w[count].rstrip(",") for w in words}) == 1:
+        count += 1
+    while count and not any(c.isalnum() for c in words[0][count - 1]):
+        count -= 1
+    return count if count >= 3 and all(len(w) > count for w in words) else 0
+
+
+def _hoisted(
+    heading: str, names: Sequence[str], bold: Sequence[bool]
+) -> tuple[list[str], list[str]]:
+    """A family's heading and its rows' names (each with whether it is set in semibold), with
+    the words the names share (:func:`_lead`) stated once, after the heading where the line fits
+    before the plot and under it otherwise, in as many lines as keep it there, and each row
+    named by what differs."""
+    count = _lead(names, bold)
+    if not count:
+        return [heading], list(names)
+    lead = " ".join(names[0].split()[:count]).rstrip(",:;")
+    rest = [label(" ".join(name.split()[count:])) for name in names]
+    one = f"{heading}: {lead}"
+    limit = NAMES_MAX + SESSIONS_GAP
+    if measure(one, NOTE) <= limit:
+        return [one], rest
+    return [f"{heading}:", *wrap(lead, limit, NOTE)], rest
+
+
+def _row_bar(
+    s: Chart, x: float, centre: float, length: float, row: _Row, *, cut: bool = False
+) -> None:
+    """A row's bar of ``length`` from ``x``: in its hue's fill, or receded in the hue's palest
+    step; ``cut`` at the scale's end, with a square end where the fill is a bar's and the two
+    breaks before it."""
+    top = centre - BAR / 2
+    if row.receded:
+        s.segments(x, top, [(length, RECEDED[row.hue])], BAR)
+    else:
+        s.hbar(x, top, length, BAR, BAR_FILLS[row.hue], cut=cut)
+    if cut:
+        cut_breaks(s, x + length, top, top + BAR)
+    s.marks.append(Box(x, top, x + length, top + BAR, "a bar"))
 
 
 def plot(rows: Sequence[Mapping[str, Any]], path: Path, slo: float | None = None) -> Path:
     """A workload's frontier figure: a row per configuration, under its family's heading, with its
-    voice-to-voice p95 against the voice SLO (``slo`` ms) beside the agents' goodput over the
-    calls, each its median over the configuration's runs. A configuration on its arm's frontier has
-    a filled bar and one off it an open bar; the change's configurations are blue, the one to
-    deploy saturated, and the others gray. A configuration whose V2V p95 lies past the far
-    outliers' fence of the rest, or that failed turns (its V2V censored at the reply timeout), has
-    its bar cut at the scale's end, its value printed."""
+    agent sessions, its voice-to-voice p95 against the voice SLO (``slo`` ms) and, where a row of
+    the workload has agents, the agents' token rate over the calls beside it, each its median
+    over the configuration's runs. Voice alone is the stronger gray, the change's configurations
+    are blue, the one to deploy saturated and in semibold, and every other is gray (:func:`_hue`);
+    a configuration off its arm's frontier is receded, its bar pale and its name and values soft.
+    A configuration whose V2V p95 lies past the far outliers' fence of the rest, or that failed
+    turns (its V2V censored at the reply timeout), has its bar cut at the scale's end, broken
+    before it, and its value printed after it. No value stands across the SLO's rule: one that
+    would takes the rule's far side."""
     groups = configurations(rows)
     workload = rows[0]["workload"]
-    measured = [g["v2v_p95_ms"] for g in groups if g["v2v_p95_ms"] is not None]
+    deploy = _deployed([(g["arm"], g["runs"][0]["engine"]) for g in groups])
+
+    families: list[tuple[str, list[int]]] = []
+    for k, g in enumerate(groups):
+        heading = _family(g["arm"])[1]
+        if not families or families[-1][0] != heading:
+            families.append((heading, []))
+        families[-1][1].append(k)
+    blocks = []
+    for heading, members in families:
+        heads, names = _hoisted(
+            heading,
+            [label(groups[k]["runs"][0]["label"]) for k in members],
+            [deploy[k] for k in members],
+        )
+        block = []
+        for k, name in zip(members, names, strict=True):
+            g = groups[k]
+            first = g["runs"][0]
+            notes = _runs(len(g["runs"]))
+            if g["failed_turns"]:
+                notes.append(f"{g['failed_turns']} of {g['turns']} turns failed")
+            block.append(
+                _Row(
+                    _lines(name, deploy[k], NAMES_MAX),
+                    ", ".join(notes),
+                    first["sessions"],
+                    _hue(g["arm"], first["engine"], first["sessions"], deploy[k]),
+                    featured=deploy[k],
+                    receded=not g["frontier"] and not deploy[k],
+                )
+            )
+        blocks.append((heads, block))
+    placed = [row for _, block in blocks for row in block]
+    columns = _columns(blocks)
+    agents = columns.sessions is not None
+
+    # What each panel prints after its bars, which sets the room after its scale.
+    p95s = [g["v2v_p95_ms"] for g in groups]
+    times = [
+        None if p95 is None else ("≥" if p95 >= REPLY_TIMEOUT_MS else "") + f"{_seconds(p95)} s"
+        for p95 in p95s
+    ]
+    rates = [
+        f"{g['background_tokens_per_s']:,.0f}" if row.sessions else "no agents"
+        for g, row in zip(groups, placed, strict=True)
+    ]
+    room_a = VALUE_GAP + max(
+        (measure(t, VALUE, bold=r.featured) for t, r in zip(times, placed, strict=True) if t),
+        default=0.0,
+    )
+    room_b = (
+        VALUE_GAP
+        + max(
+            measure(t, VALUE, bold=r.featured)
+            for t, r in zip(rates, placed, strict=True)
+            if r.sessions
+        )
+        if agents
+        else 0.0
+    )
+    right = WIDTH - MARGIN
+    if agents:
+        length = right - columns.plot - room_a - PANEL_GAP - room_b
+        a_end = columns.plot + round(PANEL_SHARE * length)
+        b_start, b_end = a_end + room_a + PANEL_GAP, right - room_b
+    else:
+        a_end = b_start = b_end = right - room_a
+
+    measured = [p95 for p95 in p95s if p95 is not None]
     fence = _fence([g["v2v_p95_ms"] for g in groups if not g["failed_turns"]])
     shown = [v for v in measured if (fence is None or v <= fence) and v < REPLY_TIMEOUT_MS]
     top_ms = max([*shown, *([slo] if slo else []), 1000.0])
-    right, ax0, alen, bx0, blen = 388, 412, 344, 842, 176
-    marks_a = ticks(top_ms / 1000, alen)
-    top_a = marks_a[-1] * 1000
-    goodputs = [g["background_tokens_per_s"] for g in groups if g["runs"][0]["sessions"]]
-    marks_b = ticks(max([*goodputs, 1.0]), blen)
-    top_b = marks_b[-1]
-    pale = any(arm_order(g["arm"])[0] == CHANGE_FAMILY and g["arm"] != TO_DEPLOY for g in groups)
+    marks_a, labels_a = _marks(top_ms / 1000, a_end - columns.plot)
+    a = Scale(0, marks_a[-1] * 1000, columns.plot, a_end)
+    over = [p95 is not None and p95 > a.hi for p95 in p95s]
+    tokens = [
+        g["background_tokens_per_s"] for g, row in zip(groups, placed, strict=True) if row.sessions
+    ]
+    marks_b, labels_b = _marks(max([*tokens, 1.0]), b_end - b_start) if agents else ([0.0], ["0"])
+    b = Scale(0, marks_b[-1] or 1.0, b_start, b_end)
 
-    s = Figure(WIDTH, 400, f"Voice tail and the agents' goodput: {workload}", "")
-    s.text(
-        WIDTH / 2,
-        38,
-        f"Voice tail and the agents' goodput: {workload}",
-        size=TITLE,
-        anchor="middle",
-    )
-    _panel_heads(
-        s, ax0 + alen / 2, 92, "Voice-to-voice p95", "seconds, median of the runs • Lower is better"
-    )
-    _panel_heads(
-        s, bx0 + blen / 2, 92, "Agents' goodput", "tokens/s over the calls • Higher is better"
-    )
-    top = 160  # the SLO's label; the plot starts under it
-    y = top + 16
-    family = None
-    placed = []  # (y of the bar, configuration, lines' bottom)
-    for g in groups:
-        index, heading = _family(g["arm"])
-        if index != family:
-            family = index
-            y += 2 if placed else 0
-            s.text(24, y + 15, heading, size=NOTE, cls="mute")
-            y += 26
-        notes = []
-        if len(g["runs"]) > 1:
-            notes.append(f"{len(g['runs'])} runs")
-        if g["failed_turns"]:
-            notes.append(f"{g['failed_turns']} of {g['turns']} turns failed")
-        height = _name(s, right, y, label(g["runs"][0]["label"]), ", ".join(notes))
-        placed.append((y + max(height, 22) / 2 - 10, g))
-        y += max(height, 22) + 10
-    bottom = y + 2
-    _axis(s, ax0, alen, marks_a, top + 8, bottom)
-    _axis(s, bx0, blen, marks_b, top + 8, bottom)
-    cut = False
+    title = "Voice-to-voice p95 and the agents' token rate" if agents else "Voice-to-voice p95"
+    s = Chart(WIDTH, 400, f"{title}: {workload}", "")
+    y = 30.0
+    s.text(MARGIN, y, f"Workload: {workload}")
+    entries = []
+    if any(row.featured for row in placed):
+        entries.append((_fill_key(BAR_FILLS["blue"]), DEPLOY_KEY))
+    if any(row.receded for row in placed):
+        fills = dict.fromkeys(RECEDED[row.hue] for row in placed if row.receded)
+        entries.append((_fill_key(*fills), RECEDED_KEY))
+    if any(over):
+        entries.append((cut_key(), CUT_KEY))
+    if entries:
+        y = legend(s, MARGIN, y + 30, entries, width=WIDTH - 2 * MARGIN)
+    y += 42
+    s.text(a.start, y, "(a) Voice-to-voice p95" if agents else "Voice-to-voice p95", bold=True)
+    if agents:
+        s.text(b.start, y, "(b) Agents' token rate", bold=True)
+    top = y + HEAD
+    centres, bottom = _set_rows(s, blocks, columns, top)
+    last = x_axis(s, a, [m * 1000 for m in marks_a], labels_a, top, bottom, title="Time (s)")
+    if agents:
+        x_axis(s, b, marks_b, labels_b, top, bottom, title="Tokens/s over the calls")
+    slo_x = None if slo is None else a(slo)
     values = []
-    fills = set()
-    for bar_y, g in placed:
-        number = arm_order(g["arm"])[0]
-        bar = (
-            "open"
-            if not g["frontier"]
-            else "hi"
-            if g["arm"] == TO_DEPLOY
-            else "soft"
-            if number == CHANGE_FAMILY
-            else "mid"
-            if pale
-            else "lo"
-        )
-        fills.add(bar)
-        p95 = g["v2v_p95_ms"]
-        if p95 is not None:
-            over = p95 > top_a
-            cut |= over
-            s.hbar(ax0, bar_y, alen * min(p95, top_a) / top_a, 20, bar, cut=over)
-            text = ("≥" if p95 >= REPLY_TIMEOUT_MS else "") + _seconds(p95)
-            values.append((ax0 + alen * min(p95, top_a) / top_a + 7, bar_y + 15, text))
-        if g["runs"][0]["sessions"]:
-            tokens = g["background_tokens_per_s"]
-            s.hbar(bx0, bar_y, blen * tokens / top_b, 20, bar)
-            values.append((bx0 + blen * tokens / top_b + 7, bar_y + 15, f"{tokens:,.0f}"))
-        else:
-            values.append((bx0 + 7, bar_y + 15, "no agents"))
-    if slo:
-        x = ax0 + alen * slo / top_a
-        s.vrule(x, top + 8, bottom, "slo")
-        s.text(x, top, f"SLO {_seconds(slo)} s", size=NOTE, anchor="middle", cls="orange tint")
-    for x, baseline, text in values:
-        s.text(x, baseline, text, size=NOTE, halo=True, cls="soft" if text == "no agents" else "")
+    for k, (centre, row) in enumerate(zip(centres, placed, strict=True)):
+        if p95s[k] is not None:
+            end = a(min(p95s[k], a.hi))
+            _row_bar(s, a.start, centre, end - a.start, row, cut=over[k])
+            x = end + VALUE_GAP
+            if (
+                slo_x is not None
+                and x - 5 <= slo_x <= x + measure(times[k], VALUE, bold=row.featured) + 5
+            ):
+                x = slo_x + VALUE_GAP  # past the SLO's rule, never across it
+            values.append((x, centre, times[k], row, row.ink))
+        if row.sessions:
+            end = b(groups[k]["background_tokens_per_s"])
+            _row_bar(s, b.start, centre, end - b.start, row)
+            values.append((end + VALUE_GAP, centre, rates[k], row, row.ink))
+        elif agents:
+            values.append((b.start + VALUE_GAP, centre, rates[k], row, "soft"))
+    if slo_x is not None:
+        s.vrule(slo_x, top, bottom, "slo")
+        name = f"SLO {_seconds(slo)} s"
+        x = max(slo_x, a.start + SLO_CLEAR + measure(name, NOTE) / 2)
+        s.text(x, top - 8, name, size=NOTE, anchor="middle", cls="red tint", halo=True)
+    for x, centre, text, row, ink in values:
+        s.text(x, centre + 7, text, size=VALUE, cls=ink, halo=True, bold=row.featured)
     notes = []
-    if any(not g["frontier"] for g in groups):
-        notes.append("An open bar is a configuration off its arm's frontier.")
-    if {"hi", "soft"} <= fills:
-        notes.append(DEPLOY_NOTE)
-    if cut:
-        notes.append("A bar cut square runs past the scale's end; its value says how far.")
+    if any(len(g["runs"]) > 1 for g in groups):
+        notes.append("A row with several runs gives the median of its runs.")
     if slo is None:
         notes.append(f"No point of voice alone with {rows[0]['callers']} callers sets a voice SLO.")
     else:
         notes.append("The SLO is the p95 of voice alone with as many callers, plus 250 ms.")
-    y = bottom + 58
-    for note in notes:
-        s.text(24, y, note, size=NOTE, cls="soft")
-        y += 24
-    s.height = y - 6
+    _foot(s, last, notes)
     return s.save(path)
 
 
 # The stage waterfall -----------------------------------------------------------------------------
 
 STAGES = (*STACKED, ("transport_ms", "Transport and playout"))
-STAGE_FILLS = ("lo", "violet", "mid", "pale")
-"""Each stage's fill: the reply's first sentence, the LLM's stage and where a shared GPU loses
-its time, the one hue; the others grays of distinct lightness."""
+"""The record's stages from the end of the caller's speech, each its column and its name."""
+STAGE_FILLS = ("endpointing", "wait", "tts", "transport")
+"""Each stage's fill, the main report's stage figure's (the charts' STAGES): the reply's first
+sentence is the LLM's stage and where a shared GPU loses its time, in the red of that figure's
+wait for the first token, which it holds together with the decode the record does not part from
+it; endpointing, TTS and transport in their grays."""
 
 
 def plot_waterfall(cells: Sequence[Mapping[str, Any]], path: Path) -> Path:
     """waterfall.svg: a row per configuration whose bar stacks the means of its stages from the end
     of the caller's speech (STACKED, then transport and playout), so that its length is the mean
-    V2V, printed at its end; each run of rows of one workload under the workload's name."""
-    right, x0, length = 388, 412, 610
-    top_ms = max(c["v2v_mean_ms"] for c in cells)
-    marks = ticks(top_ms / 1000, length)
-    top = marks[-1] * 1000
-    s = Figure(WIDTH, 400, "The voice turn by stage", "")
-    s.text(WIDTH / 2, 38, "The voice turn by stage", size=TITLE, anchor="middle")
-    s.text(
-        WIDTH / 2,
-        64,
-        "Mean over the replies of each configuration's runs, seconds • Shorter is better",
-        size=NOTE,
-        anchor="middle",
-        cls="soft",
-    )
-    # The stages' swatches, centred under the subtitle.
-    widths = [30 + measure(name, NOTE) for _, name in STAGES]
-    x = (WIDTH - sum(widths) - 28 * (len(STAGES) - 1)) / 2
-    for (_, name), fill, width in zip(STAGES, STAGE_FILLS, widths, strict=True):
-        s.swatch(x, 98, fill, name)
-        x += width + 28
-    top_y = 132
-    y = top_y + 8
-    placed = []
-    workload = None
+    V2V, printed at its end; each run of rows of one workload under the workload's name, each row
+    with its agent sessions, and the configuration to deploy in semibold, which a note at the foot
+    says where a row is it."""
+    workloads: list[tuple[str, list[Mapping[str, Any]]]] = []
     for c in cells:
-        if c["workload"] != workload:  # each run of one workload's rows under its heading
-            workload = c["workload"]
-            y += 2 if placed else 0
-            # In the label column, clear of the gridlines: a GPU's name makes one wider than it.
-            lines = wrap(workload, right - 24, NOTE)
-            for k, line in enumerate(lines):
-                s.text(24, y + 15 + 20 * k, line, size=NOTE, cls="mute")
-            y += 26 + 20 * (len(lines) - 1)
-        height = _name(s, right, y, label(c["label"]), f"{c['runs']} runs" if c["runs"] > 1 else "")
-        placed.append((y + max(height, 22) / 2 - 10, c))
-        y += max(height, 22) + 10
-    bottom = y + 2
-    _axis(s, x0, length, marks, top_y, bottom)
-    for bar_y, c in placed:
+        if not workloads or workloads[-1][0] != c["workload"]:
+            workloads.append((c["workload"], []))
+        workloads[-1][1].append(c)
+    deploy = [
+        featured
+        for _, members in workloads
+        for featured in _deployed([(c["arm"], c["engine"]) for c in members])
+    ]
+    names = [label(c["label"]) for c in cells]
+    limit = _names_limit(list(zip(names, deploy, strict=True)))
+    placed = [
+        _Row(
+            _lines(name, featured, limit),
+            ", ".join(_runs(c["runs"])),
+            c["sessions"],
+            featured=featured,
+        )
+        for c, name, featured in zip(cells, names, deploy, strict=True)
+    ]
+    blocks, count = [], 0
+    for workload, members in workloads:
+        blocks.append(([workload], placed[count : count + len(members)]))
+        count += len(members)
+    columns = _columns(blocks)
+    totals = [f"{_seconds(c['v2v_mean_ms'])} s" for c in cells]
+    room = VALUE_GAP + max(
+        measure(t, VALUE, bold=row.featured) for t, row in zip(totals, placed, strict=True)
+    )
+    end = WIDTH - MARGIN - room
+    marks, texts = _marks(max(c["v2v_mean_ms"] for c in cells) / 1000, end - columns.plot)
+    scale = Scale(0, marks[-1] * 1000, columns.plot, end)
+
+    s = Chart(WIDTH, 400, "The voice turn by stage", "")
+    entries = [(stage_key(fill), name) for (_, name), fill in zip(STAGES, STAGE_FILLS, strict=True)]
+    legend(s, MARGIN, 30, entries, width=WIDTH - 2 * MARGIN)
+    top = 72.0
+    centres, bottom = _set_rows(s, blocks, columns, top)
+    last = x_axis(
+        s,
+        scale,
+        [m * 1000 for m in marks],
+        texts,
+        top,
+        bottom,
+        title="Mean time from the end of the caller's speech (s)",
+    )
+    for centre, c, total, row in zip(centres, cells, totals, placed, strict=True):
         parts = [
-            (length * max(0.0, c[key]) / top, fill)
+            (scale(max(0.0, c[key])) - scale.start, fill)
             for (key, _), fill in zip(STAGES, STAGE_FILLS, strict=True)
         ]
-        s.segments(x0, bar_y, parts, 20)
-        end = x0 + sum(width for width, _ in parts)
-        s.text(end + 7, bar_y + 15, _seconds(c["v2v_mean_ms"]), size=NOTE, halo=True)
-    s.height = bottom + 40
+        s.stack(scale.start, centre - BAR / 2, parts, BAR)
+        length = sum(width for width, _ in parts)
+        s.marks.append(
+            Box(scale.start, centre - BAR / 2, scale.start + length, centre + BAR / 2, "a bar")
+        )
+        s.text(
+            scale.start + length + VALUE_GAP,
+            centre + 7,
+            total,
+            size=VALUE,
+            halo=True,
+            bold=row.featured,
+        )
+    notes = ["Each bar is the mean over the replies of its row's runs."]
+    if any(row.featured for row in placed):
+        notes.append(BOLD_NOTE)
+    _foot(s, last, notes)
     return s.save(path)
 
 
@@ -411,7 +797,7 @@ def _bar(spec: Mapping[str, Any]) -> str:
     return "hi" if spec.get("featured") else "soft" if spec.get("change") else "mid"
 
 
-DEPLOY_NOTE = "The darker blue bar is the configuration to deploy."
+DEPLOY_NOTE = "The saturated blue bar is the configuration to deploy."
 """The note of a figure whose blue bars come in both tones: the configuration to deploy, and the change's others."""
 
 
@@ -543,7 +929,7 @@ def _voice_wide(groups, path, title, description, p95_top, tokens_top, ttft_top)
                 f"SLO {_seconds(g['slo'])} s",
                 size=NOTE,
                 anchor="middle",
-                cls="orange tint",
+                cls="red tint",
                 halo=True,
             )
     for x, baseline, text, cls in values:
@@ -589,7 +975,7 @@ def _voice_narrow(groups, path, title, description, p95_top, tokens_top, ttft_to
                     f"SLO {_seconds(slo)} s",
                     size=NOTE,
                     anchor="middle",
-                    cls="orange tint",
+                    cls="red tint",
                 )
                 y += 22
             for configuration, spec in g["rows"]:

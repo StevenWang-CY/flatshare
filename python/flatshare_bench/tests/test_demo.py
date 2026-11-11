@@ -36,6 +36,7 @@ assert _spec is not None and _spec.loader is not None
 demo = importlib.util.module_from_spec(_spec)
 sys.modules["demo"] = demo
 _spec.loader.exec_module(demo)
+style = demo.style  # the figures' kernel, as the script loads it
 
 NAMES = (LABELS["tuned"][0], LABELS["deploy"][0])
 """The two configurations the README's animation shows, named as every chart names them."""
@@ -208,51 +209,137 @@ def test_motion_follows_its_curves() -> None:
 
 def test_a_frame_shows_the_live_wait_and_each_reply(timeline: Any, summary: Any) -> None:
     frames = demo.Dashboard(timeline, summary, width=320, form="video")
-    first = timeline.waits(0)[0]
-    image = frames.draw(first.ended + 2.0)  # the baseline still waits; the other replied after 1 s
+    first, start = timeline.waits(0)[0], timeline.offsets[0]
+    t = first.ended + 2.0  # the baseline still waits; the other replied after 1 s
+    image = frames.draw(t)
     assert image.shape == (180, 320, 3) and image.dtype == np.uint8
     slow, fast = frames.sides
     assert (slow.status.get_text(), slow.clock.get_text()) == ("waiting for the reply", "2.0 s")
     assert (fast.status.get_text(), fast.clock.get_text()) == ("answered after", "1.0 s")
-    assert (slow.heard.get_text(), fast.heard.get_text()) == ("sound on", "")
+    # The soundtrack is the baseline's call: a speaker stands before that row's words, and no other.
+    assert (frames.heard(0, t), frames.heard(1, t)) == (1.0, 0.0)
+    assert all(part.get_alpha() == 1.0 for part, _, _ in slow.speaker)
+    assert all(part.get_alpha() == 0.0 for part, _, _ in fast.speaker)
+    words = frames.layout.rows[0].status[0] - style.measure("waiting for the reply", style.NOTE)
+    body = slow.speaker[0][0].get_xy()[:, 0]
+    assert body.min() == pytest.approx(words - demo.SPEAKER_GAP - demo.SPEAKER_W)
     # The SLO is 1.80 s: the baseline's clock has passed it, the other answered within it.
     assert slow.verdicts[0].get_text() == "over the 1.80 s SLO"
     assert fast.verdicts[1].get_text() == "within the 1.80 s SLO"
+    # Each lane holds its wait as a bar on the turn's time axis, a seam after the caller's line: the
+    # baseline's as far as the playhead, the other's to a seam before its reply.
+    waiting, answered = slow.bands[0].get_xy(), fast.bands[0].get_xy()
+    assert waiting[:, 0].min() == pytest.approx(frames.x_of(first.ended - start) + style.SEAM)
+    assert waiting[:, 0].max() == pytest.approx(frames.x_of(t - start))
+    reply = timeline.waits(1)[0].until
+    assert answered[:, 0].max() == pytest.approx(frames.x_of(reply - start) - style.SEAM)
+    assert np.ptp(waiting[:, 1]) == np.ptp(answered[:, 1]) == demo.BAR
+    assert [list(playhead.get_xdata()) for playhead in frames.playheads] == [
+        [pytest.approx(frames.x_of(t - start))] * 2
+    ]  # one playhead, through both lanes
+    # Under the lanes, each reply's V2V as a bar that grows while the caller waits.
     (_, bar, value, _), (_, _, fast_value, _) = slow.bars[0], fast.bars[0]
     assert bar.get_visible() and value.get_alpha() == 0.0  # still growing, no value yet
-    height = frames.layout.plot[3] - frames.layout.plot[1]
-    assert np.ptp(bar.get_xy()[:, 1]) == pytest.approx(height * 2.0 / frames.marks[-1], abs=0.1)
+    _, top, _, base = frames.layout.history
+    assert np.ptp(bar.get_xy()[:, 1]) == pytest.approx(
+        (base - top) * 2.0 / frames.marks[-1], abs=0.1
+    )
     assert fast_value.get_text() == "1.0" and fast_value.get_alpha() == 1.0
     assert not slow.bars[1][1].get_visible()  # the next turn's bar is not yet drawn
-    # The SLO rule stands 1.8 s after the line on the turn's time axis.
-    assert slow.rules[0].get_xdata()[0] == pytest.approx(frames.x_of(0, first.ended + 1.8))
-    frames.draw(timeline.seconds - 0.01)
+    # The SLO's rule stands 1.8 s after the line on the turn's time axis: both calls' lines end
+    # together, so it is one rule through both lanes, which rises over the upper one.
+    upper, lower = frames.layout.rows
+    shown = [rule for rule in frames.rules if rule.get_visible()]
+    assert len(shown) == 1
+    assert shown[0].get_xdata()[0] == pytest.approx(frames.x_of(first.ended - start + 1.8))
+    assert list(shown[0].get_ydata()) == [upper.lane[0] - demo.SLO_RISE, lower.lane[1]]
+    end = timeline.seconds - 0.01
+    frames.draw(end)
     assert slow.clock.get_text() == "4.0 s"
-    assert (slow.heard.get_text(), fast.heard.get_text()) == ("", "sound on")
-    # A V2V shows over its bar until the call's next wait: at the end, the last one alone.
+    assert (frames.heard(0, end), frames.heard(1, end)) == (0.0, 1.0)
+    assert all(part.get_alpha() == 0.0 for part, _, _ in slow.speaker)
+    assert all(part.get_alpha() == 1.0 for part, _, _ in fast.speaker)
+    # Each of the baseline's V2Vs stays over its bar. The other call's bars end about the SLO's
+    # rule, so its V2V shows until the call's next wait: at the end, the last one alone.
     values = [value for _, _, value, _ in slow.bars]
     assert [v.get_text() for v in values] == ["3.0", "2.5", "2.5", "4.0"]
+    assert frames.keeps and all(v.get_alpha() == 1.0 for v in values)
+    values = [value for _, _, value, _ in fast.bars]
+    assert [v.get_text() for v in values] == ["1.0", "0.8", "0.8", "1.2"]
     assert values[-1].get_alpha() == 1.0 and all(v.get_alpha() == 0.0 for v in values[:-1])
+
+
+def test_a_lane_reads_the_line_the_wait_and_the_reply_on_one_axis(
+    timeline: Any, summary: Any
+) -> None:
+    from matplotlib.colors import to_hex
+
+    assert max(np.diff(timeline.offsets)) == pytest.approx(12.7)
+    for theme, palette in (("light", style.LIGHT), ("dark", style.DARK)):
+        frames = demo.Dashboard(timeline, summary, width=320, theme=theme)
+        # One time axis for both rows, on the columns of the README's chart: it ends at the first
+        # of its marks that holds the longest turn.
+        assert frames.axis_s == 15.0
+        assert frames.layout.span == (demo.PLOT_START, demo.PLOT_END)
+        assert frames.x_of(frames.axis_s) == demo.PLOT_END
+        start = timeline.offsets[0]
+        frames.update(max(w.until for w in timeline.waits(0)[:1]) + 1.0)  # both replies play
+        for side, row in enumerate(frames.sides):
+            wait = timeline.waits(side)[0]
+            marks = [*row.waves, row.bands[0]]
+            assert all(mark.get_visible() for mark in marks)
+            # Flat marks in the set's fills: the caller's line gray, the reply the voice turn's
+            # green, the wait the row's own fill; none has an outline.
+            fills = [to_hex(mark.get_facecolor()) for mark in marks]
+            assert fills == [to_hex(palette[key]) for key in (*demo.WAVES, demo.BARS[side])]
+            assert all(mark.get_linewidth() == 0 for mark in marks)
+            # From left to right: the line, the wait, the reply, and nothing of one over another.
+            line, reply = (shape.get_path().vertices[:, 0] for shape in row.waves)
+            band = row.bands[0].get_xy()[:, 0]
+            assert line.max() < band.min() and band.max() < reply.min()
+            assert band.min() == pytest.approx(frames.x_of(wait.ended - start) + style.SEAM)
+            assert band.max() == pytest.approx(frames.x_of(wait.until - start) - style.SEAM)
+            # Each waveform lies about its lane's middle line, as high above it as below.
+            top, bottom = frames.layout.rows[side].lane
+            for shape in row.waves:
+                ys = shape.get_path().vertices[:, 1]
+                assert ys.min() + ys.max() == pytest.approx(top + bottom)
+                assert top <= ys.min() and ys.max() <= bottom
+            # What the caller's channel carries while the caller waits is not drawn.
+            quiet = frames.envelopes[side][0][round(wait.ended * 100) : round(wait.until * 100)]
+            assert len(quiet) and not quiet.any()
+    # The phone layout draws the SLO's rule and the playhead a lane, on the same axis.
+    narrow = demo.Dashboard(timeline, summary, width=340, form="narrow")
+    narrow.update(timeline.waits(0)[0].until + 1.0)
+    shown = [rule for rule in narrow.rules if rule.get_visible()]
+    assert len(shown) == len(narrow.playheads) == 2
+    assert shown[0].get_xdata()[0] == pytest.approx(shown[1].get_xdata()[0])
+    assert [tuple(rule.get_ydata())[1] for rule in shown] == [r.lane[1] for r in narrow.layout.rows]
 
 
 def test_each_v2v_holds_once_it_is_given(timeline: Any, summary: Any) -> None:
     frames = demo.Dashboard(timeline, summary, width=320, form="video")
-    for side, panel in enumerate(frames.sides):
+    for side, row in enumerate(frames.sides):
         for wait in timeline.waits(side):  # an interruption's among them, 1.4 s after its reply
             for t in (wait.until + 0.01, wait.until + demo.HOLD_S):
                 frames.update(t)
-                assert panel.clock.get_text() == f"{wait.seconds:.1f} s"
-                assert panel.clock.get_alpha() == 1.0
+                assert row.clock.get_text() == f"{wait.seconds:.1f} s"
+                assert row.clock.get_alpha() == 1.0
 
 
 def test_the_agents_tokens_are_on_one_scale(timeline: Any, summary: Any) -> None:
     frames = demo.Dashboard(timeline, summary, width=640)
-    (slow_bar, slow_value), (fast_bar, fast_value, share) = (s.agents for s in frames.sides)
+    (slow_bar, slow_value, whole), (fast_bar, fast_value, share) = (s.agents for s in frames.sides)
     lengths = [np.ptp(bar.get_xy()[:, 0]) for bar in (slow_bar, fast_bar)]
     assert lengths[1] / lengths[0] == pytest.approx(880 / 900, abs=1e-6)
     assert (slow_value.get_text(), fast_value.get_text()) == ("900", "880")
-    # The share names the baseline as its panel does, in a sentence's case.
-    assert share.get_text() == "98% of tuned vLLM's"
+    # Both bars start where the scale does, as thick as the figures' bars, each on its row's line.
+    for bar, row in zip((slow_bar, fast_bar), frames.layout.rows, strict=True):
+        xy = bar.get_xy()
+        assert xy[:, 0].min() == demo.AGENTS_START and np.ptp(xy[:, 1]) == demo.BAR
+        assert xy[:, 1].min() + xy[:, 1].max() == pytest.approx(sum(row.lane))
+    # Each row's share of the baseline's, as the README's chart gives it.
+    assert (whole.get_text(), share.get_text()) == ("100%", "98%")
 
 
 def test_no_text_leaves_its_room_or_overlaps_another(
@@ -276,6 +363,14 @@ def test_no_text_leaves_its_room_or_overlaps_another(
     assert demo.shown("NVIDIA H100 80GB HBM3") == "H100 80 GB HBM3"
     for theme in ("light", "dark"):
         demo.closing_card(summary, timeline, also=[a100], width=1280, theme=theme)
+    # A text is as wide as its metrics at every size, so the layouts hold at a low resolution too.
+    for width in (160, 320, 480):
+        demo.title_card(timeline, "A voice agent and coding agents", width=width)
+        demo.closing_card(summary, timeline, also=[a100], width=width)
+        for form in ("video", "wide"):
+            frames = demo.Dashboard(timeline, summary, width=width, form=form)
+            for t in frames.moments():
+                frames.check(t)
     # The check refuses a text out of its room.
     frames = demo.Dashboard(timeline, summary, width=640)
     artist, room = frames.board.texts[0]
@@ -292,36 +387,41 @@ def test_make_names_the_configurations_as_the_charts_do() -> None:
 def test_the_excerpt_loops_silently(timeline: Any, summary: Any) -> None:
     narrow = demo.Dashboard(timeline, summary, width=340, form="narrow")
     assert narrow.board.across == 420 and narrow.draw(1.0).shape[1] == 340
-    assert narrow.layout.boxes[1][1] > narrow.layout.boxes[0][3]  # one panel above the other
+    upper, lower = narrow.layout.rows
+    # One row above the other, each its name, its readout and then its lane across the width.
+    assert upper.name[1] < upper.lane[0] < upper.lane[1] < lower.name[1] < lower.lane[0]
+    assert narrow.layout.span == (18.0, 402.0)
     frames = demo.Dashboard(timeline, summary, width=320)
-    assert frames.draw(1.0).shape == (
-        146,
-        320,
-        3,
-    )  # 1120 by 512 units: no title, which the README's caption gives
+    # 1120 by 412 units: no title, which the README's caption gives
+    assert frames.draw(1.0).shape == (118, 320, 3)
     assert not frames.layout.title and not frames.layout.subtitle and not narrow.layout.title
-    assert all(side.heard is None for side in frames.sides)  # silent: no call is marked as heard
+    # Silent, and one turn at a time: no call is marked as heard, and no plot of every reply.
+    assert all(side.speaker == [] and side.bars == [] for side in frames.sides)
+    assert frames.layout.history is None
     frames.update(0.0)
     assert all(slot.artist.get_alpha() == 0.0 for slot in frames.slots if slot.loop_end)
     frames.update(timeline.seconds - 1e-3)  # every drawing leaves before the loop restarts
-    assert all(side.playhead.get_alpha() < 0.05 for side in frames.sides)
-    bars = [bar for side in frames.sides for _, bar, _, _ in side.bars]
-    assert bars and all(bar.get_alpha() < 0.05 for bar in bars)
+    assert all(playhead.get_alpha() < 0.05 for playhead in frames.playheads)
+    marks = [mark for side in frames.sides for mark in (*side.waves, *side.bands)]
+    drawn = [mark for mark in marks if mark.get_visible()]
+    assert len(drawn) >= 4 and all(mark.get_alpha() < 0.05 for mark in drawn)
 
 
 def test_the_excerpt_opens_on_the_first_turns_held_result(
     timeline: Any, summary: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A viewer that shows only an animation's first frame, or a poster of it, sees both replies and their V2V rather
-    # than two empty panels: the loop starts where the first turn's result holds and runs on through its own start.
+    # than two empty lanes: the loop starts where the first turn's result holds and runs on through its own start.
     held = demo.held_result(timeline)
     first = [w for side in (0, 1) for w in timeline.waits(side) if w.turn == 0]
     assert max(w.until for w in first) < held < timeline.offsets[1] - demo.TURN_EXIT_S
     frames = demo.Dashboard(timeline, summary, width=320)
     frames.update(held)
-    for side, panel in enumerate(frames.sides):
-        assert panel.clock.get_text() == f"{timeline.waits(side)[0].seconds:.1f} s"
-        assert panel.clock.get_alpha() == 1.0
+    for side, row in enumerate(frames.sides):
+        assert row.clock.get_text() == f"{timeline.waits(side)[0].seconds:.1f} s"
+        assert row.clock.get_alpha() == 1.0
+        # Both replies are drawn, each after its wait's bar.
+        assert all(mark.get_visible() for mark in (*row.waves, row.bands[0]))
     fps = 4
     drawn: list[np.ndarray] = []
     monkeypatch.setattr(demo, "_pipe", lambda command, frames_: drawn.extend(frames_))
@@ -336,9 +436,7 @@ def test_the_excerpt_opens_on_the_first_turns_held_result(
     assert np.array_equal(
         drawn[count - math.ceil(held * fps)], frames.draw(0.0)
     )  # then the loop runs on
-    assert not np.array_equal(
-        opening, frames.draw(0.0)
-    )  # not the empty dashboard the turn starts on
+    assert not np.array_equal(opening, frames.draw(0.0))  # not the empty lanes the turn starts on
 
 
 def test_the_video_is_its_planned_frames_each_its_size(timeline: Any, summary: Any) -> None:
@@ -408,5 +506,5 @@ def test_the_script_renders_a_video_and_an_excerpt(pair: tuple[Path, Path], tmp_
             assert image.format == "WEBP" and image.is_animated, name
             assert image.n_frames == round(9.3 * 10), name  # turn 1, the slower call's
             sizes[name] = image.size
-    assert sizes["demo"] == sizes["demo-dark"] == (320, 174)
+    assert sizes["demo"] == sizes["demo-dark"] == (320, 118)  # 1120 by 412 units
     assert sizes["demo-narrow"] == sizes["demo-narrow-dark"] and sizes["demo-narrow"][0] == 130

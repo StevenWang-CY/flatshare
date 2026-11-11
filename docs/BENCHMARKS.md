@@ -170,13 +170,14 @@ Phastform on 2026-10-25, the budget cap at its default 16-token window.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-isolation-narrow.svg">
-  <img src="figures/report-isolation.svg" width="100%" alt="Four probe runs on the RTX 5060 Ti for each of stock vLLM, the KV preemption and the change at its 16-token window: in panel a, the KV case, the voice turn's first token while two agent requests of 18k tokens hold the pool (stock vLLM 4,900–4,971 ms; the KV preemption 219–290 ms; the change 216–294 ms); in panel b, the prefill case, its first token to its 16th while three agent prefills of 10k tokens run, the 16th at stock vLLM 1,220–1,529 ms; the KV preemption 1,211–1,528 ms; the change 536–615 ms.">
+  <img src="figures/report-isolation.svg" width="100%" alt="Four probe runs on the RTX 5060 Ti for each of stock vLLM, the KV preemption and the change at its 16-token window, each time the runs' median and then their range: in panel a, the KV case, the voice turn's first token while two agent requests of 18k tokens hold the pool (stock vLLM 4,968 ms, 4,900–4,971; the KV preemption 290 ms, 219–290, 17 times sooner; the change 290 ms, 216–294); in panel b, the prefill case, its first token and then its 16th while three agent prefills of 10k tokens run, the 16th and the time a token between the two at stock vLLM 1,500 ms, 1,220–1,529, 60–66 ms/token; the KV preemption 1,350 ms, 1,211–1,528, 60–65 ms/token; the change 575 ms, 536–615, 16–20 ms/token.">
 </picture>
 
 **In isolation, a voice-sized request waits 5.0 s for KV on stock vLLM and 0.29 s with the KV preemption, and agent
 prefill slows its tokens three- to fourfold until the budget cap holds it back.** Four runs of each probe, the budget
-cap at a 16-token window. (a) The KV case's first token, each circle a run and the label the median. (b) The prefill
-case, each line from a run's first token to its 16th, the bar and label at the median 16th token.
+cap at a 16-token window; every bar and label is the runs' median, and a capped line the runs' range where it is wide
+enough to draw. (a) The KV case's first token. (b) The prefill case: each bar reaches the first token and then, in its
+softer fill, the 16th.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-tail-narrow.svg">
@@ -249,7 +250,7 @@ reply.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-window-narrow.svg">
-  <img src="figures/report-window.svg" width="100%" alt="In panel a, the cumulative share of 5,571 voice replies by their output tokens, 23 at the median and 52 at most, 21% ending within a 16-token window and all but 1 within a 48-token one; in panel b, the p95 of a 40-token reply's last token by the window, the median of two runs (16 tokens 3.76 s; 24 tokens 2.64 s; 32 tokens 1.85 s; 48 tokens 1.04 s; 64 tokens 1.02 s), its first token's staying between 326 and 448 ms; in panel c, the agents' prompt tokens a second, 3,483 at 16 tokens and 3,205 at 48, 8% less.">
+  <img src="figures/report-window.svg" width="100%" alt="In panel a, the cumulative share of 5,571 voice replies by their output tokens, 23 at the median and 52 at most, 21% ending within a 16-token window and all but 1 within a 48-token one; in panel b, the p95 of a 40-token reply's last token by the window, the median of two runs (16 tokens 3.76 s; 24 tokens 2.64 s; 32 tokens 1.85 s; 48 tokens 1.04 s; 64 tokens 1.02 s), its first token's staying between 326 and 448 ms; in panel c, the agents' prompt tokens a second by the window's tokens, 3,483 at 16, 3,443 at 24, 3,300 at 32, 3,205 at 48, 3,246 at 64, 8% less at 48 than at 16.">
 </picture>
 
 **A window that covers the replies keeps their tokens fast, and a longer one costs the agents nothing more.** Panel a
@@ -292,12 +293,13 @@ tuned vLLM's 10.4–10.5 s to 2.16–2.25 s, while the agents keep 97% of their 
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-headline-narrow.svg">
-  <img src="figures/report-headline.svg" width="100%" alt="Each run's voice-to-voice p95 on a log scale against the SLO of 2.03 s, and the agents' tokens a second over the calls' first 240 s, with each configuration's median: voice alone, no agents: 1.78 s at the median of 5 runs (1.76 to 1.82 s); tuned vLLM, the baseline: 10.48 s at the median of 10 runs (8.69 to 12.12 s), its agents at 3,305 tokens/s, 100% of tuned vLLM's; preempt-resubmit, before the first byte: 2.52 s at the median of 5 runs (2.52 to 2.87 s), its agents at 3,332 tokens/s, 101% of tuned vLLM's; the KV preemption, #63350: 5.09 s at the median of 5 runs (4.69 to 6.26 s), its agents at 3,414 tokens/s, 103% of tuned vLLM's; the change, 16-token window: 3.09 s at the median of 5 runs (2.87 to 3.19 s), its agents at 3,298 tokens/s, 100% of tuned vLLM's; and the configuration to deploy, 48-token window: 2.24 s at the median of 15 runs (2.13 to 2.40 s), its agents at 3,203 tokens/s, 97% of tuned vLLM's.">
+  <img src="figures/report-headline.svg" width="100%" alt="Each configuration's voice-to-voice p95 as a bar from zero against the SLO of 2.03 s, and its agents' tokens a second over the calls' first 240 s, each at the median of its runs with their spread: voice alone, no agents: 1.78 s at the median of 5 runs (1.76 to 1.82 s); tuned vLLM, the baseline: 10.48 s at the median of 10 runs (8.69 to 12.12 s), its agents at 3,305 tokens/s, 100% of tuned vLLM's; preempt-resubmit, before the first byte: 2.52 s at the median of 5 runs (2.52 to 2.87 s), its agents at 3,332 tokens/s, 101% of tuned vLLM's; the KV preemption, #63350: 5.09 s at the median of 5 runs (4.69 to 6.26 s), its agents at 3,414 tokens/s, 103% of tuned vLLM's; the change, 16-token window: 3.09 s at the median of 5 runs (2.87 to 3.19 s), its agents at 3,298 tokens/s, 100% of tuned vLLM's; and the configuration to deploy, 48-token window: 2.24 s at the median of 15 runs (2.13 to 2.40 s), 0.20 s over the SLO, its agents at 3,203 tokens/s, 97% of tuned vLLM's.">
 </picture>
 
 **The two rules bring the voice tail to 0.20 s over the SLO, and the agents keep most of their throughput.** (a) Each
-run's p95 V2V as a tick and each configuration's median as a marker and a label, on a log scale, against the SLO
-(dashed). (b) The agents' tokens a second, each run a tick, with each median's share of tuned vLLM's.
+configuration's p95 V2V as a bar from zero, at the median of its runs, with the runs' range as the capped line at the
+bar's end where it is wide enough to draw, against the SLO (dashed). (b) The agents' tokens a second over the calls'
+first 240 s, drawn the same way, with each median's share of tuned vLLM's.
 
 W5 ran three campaigns of five rounds on 2026-10-24 and 25, round N of each on the agents' sample of seed 10 + N, and
 voice alone gave 1,784 ms. Each ran the configuration to deploy beside its own comparisons. W5's own ran tuned vLLM and
@@ -371,13 +373,16 @@ change's rows ran an earlier make-room, after the rounds.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-deployable-narrow.svg">
-  <img src="figures/report-deployable.svg" width="100%" alt="Each of 7 configurations beside 24 agent sessions of the traces with the largest contexts, a row under its family, in panel a its voice-to-voice p95 on a log scale against the SLO of 2.02 s, the median of its runs and their range, and in panel b the agents' tokens a second over the calls, only the lifecycle policy over make-room and the configuration to deploy within 0.2 s of the SLO, every other 0.5 s or more over it: tuned vLLM 10.14 s at 3,710 tokens/s; 1,024-token steps 8.79 s at 4,097 tokens/s; a token reservation 5.67 s at 3,564 tokens/s; SGLang with HiCache 11.95 s at 4,723 tokens/s; preempt-resubmit 2.59 s at 3,630 tokens/s; the lifecycle policy over make-room 2.06 s at 3,411 tokens/s; and the configuration to deploy 2.19 s at 3,493 tokens/s.">
+  <img src="figures/report-deployable.svg" width="100%" alt="For each of 7 configurations beside 24 agent sessions of the traces with the largest contexts, at the median of its runs, its voice-to-voice p95 against the SLO of 2.02 s and the agents' tokens a second over the calls, only the lifecycle policy over make-room and the configuration to deploy within 0.2 s of the SLO, every other 0.5 s or more over it: tuned vLLM 10.14 s at 3,710 tokens/s; 1,024-token steps 8.79 s at 4,097 tokens/s; a token reservation 5.67 s at 3,564 tokens/s; SGLang with HiCache 11.95 s at 4,723 tokens/s; preempt-resubmit 2.59 s, 0.57 s over the SLO, at 3,630 tokens/s; the lifecycle policy over make-room 2.06 s, 0.04 s over the SLO, at 3,411 tokens/s; and the configuration to deploy 2.19 s, 0.18 s over the SLO, at 3,493 tokens/s.">
 </picture>
 
 **Only the configuration to deploy and the lifecycle policy over make-room, both on the change, come within 0.2 s of the
-SLO at the median of their runs; every other configuration an operator can deploy stays 0.5 s or more over it.** Panel b
-gives the agents' tokens a second over the whole calls, as the table does, and the table adds the KV preemption and the
-change at its 16-token window.
+SLO at the median of their runs; every other configuration an operator can deploy stays 0.5 s or more over it.** Each
+configuration is a row: (a) its p95 V2V as a bar from zero, at the median of its runs, with the runs' range as the
+capped line at the bar's end where it is wide enough to draw, against the SLO (dashed), and a p95 within a second of the
+SLO is followed in red by its time over it; (b) its agents' tokens a second over the whole calls, as the table gives
+them, drawn the same way. The table adds the KV preemption and the change at
+its 16-token window.
 
 | Configuration | Runs | V2V p50 / p95 / p99 | p95 range | First byte p95 | Background tokens/s | Agent TTFT p50 / p99 |
 |---|---:|---:|---:|---:|---:|---:|
@@ -401,13 +406,15 @@ Arm 9 is the lifecycle policy over make-room at a 16-token window, with a 2,048-
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-ablations-narrow.svg">
-  <img src="figures/report-ablations.svg" width="100%" alt="The voice-to-voice p95 on a log scale against the SLO of 2.02 s, beside 24 agent sessions of the traces with the largest contexts, of the lifecycle policy over make-room with all its parts, 2.06 s at the median of 5 runs (1.98 to 2.13 s), and with one part removed or changed, the median of three runs and their range: in its gateway policy, without the critical-window throttle 2.05 s (1.99 to 2.08 s), without the headroom 2.03 s (1.95 to 2.07 s), the headroom armed by the request 2.12 s (2.01 to 2.17 s), the throttle's budget at 0 ms 2.11 s (2.09 to 2.17 s), the throttle's budget at 500 ms 2.06 s (1.99 to 2.08 s), without the lifecycle events 2.04 s (2.01 to 2.05 s), without degrade 3.84 s (2.89 to 4.08 s), without degrade, with a 48-token window 2.20 s (2.10 to 2.29 s), without the gateway policy 4.03 s (2.98 to 4.06 s); in the engine under it, without the KV preemption 2.04 s (1.99 to 2.04 s), without the reserve 2.12 s (2.12 to 2.15 s), without the budget cap 5.29 s (5.06 to 6.11 s), without the change 10.99 s (10.03 to 11.96 s).">
+  <img src="figures/report-ablations.svg" width="100%" alt="The voice-to-voice p95 against the SLO of 2.02 s, beside 24 agent sessions of the traces with the largest contexts, of the lifecycle policy over make-room with all its parts, 2.06 s at the median of 5 runs (1.98 to 2.13 s), and with one part removed or changed, the median of three runs and their range: in its gateway policy, without the critical-window throttle 2.05 s (1.99 to 2.08 s), without the headroom 2.03 s (1.95 to 2.07 s), the headroom armed by the request 2.12 s (2.01 to 2.17 s), the throttle's budget at 0 ms 2.11 s (2.09 to 2.17 s), the throttle's budget at 500 ms 2.06 s (1.99 to 2.08 s), without the lifecycle events 2.04 s (2.01 to 2.05 s), without degrade 3.84 s (2.89 to 4.08 s), without degrade, with a 48-token window 2.20 s (2.10 to 2.29 s), without the gateway policy 4.03 s (2.98 to 4.06 s); in the engine under it, without the KV preemption 2.04 s (1.99 to 2.04 s), without the reserve 2.12 s (2.12 to 2.15 s), without the budget cap 5.29 s (5.06 to 6.11 s), without the change 10.99 s (10.03 to 11.96 s).">
 </picture>
 
 **Removing degrade, the gateway policy, the budget cap or the change puts the p95 1.8 s or more over the SLO; removing
-or changing any other part, or replacing degrade with a 48-token window, keeps it within 0.2 s.** Each row is the median
-p95 of its runs, five with all the parts and three with one removed or changed, a line over their range; the dashed line
-is the SLO, 2.02 s.
+or changing any other part, or replacing degrade with a 48-token window, keeps it within 0.2 s.** Each bar is the median
+p95 of a row's runs, from zero, five runs with all the parts and three with one removed or changed, with the runs' range
+as the capped line at the bar's end where it is wide enough to draw; the dashed line is the SLO, 2.02 s. The saturated
+blue is the lifecycle policy over make-room with all its parts, the softer blue the policy with a part removed or
+changed, and gray the row without the change.
 
 | Arm 9 | Its part | V2V p95 | Range |
 |---|---|---:|---:|
@@ -430,9 +437,11 @@ is the SLO, 2.02 s.
 </picture>
 
 **Only the reply to its first sentence changes from row to row, and endpointing, TTS and transport stay within 0.1 s in
-every configuration.** Mean stage times in seconds, the reply split at the LLM's first token into the wait (violet) and
-the first sentence's decode (green); the table gives them in ms and adds the change at its 16-token window. Voice alone
-has four runs, since its W2 run predates the worker's stage times.
+every configuration.** Mean stage times in seconds, the reply split at the LLM's first token into the wait (the
+saturated red) and the first sentence's decode (the soft red). The table gives the two together, in ms, as the reply to
+its first sentence, and the LLM's first token timed from its request, 5 to 25 ms under the wait drawn, which starts
+where endpointing ends; it adds the change at its 16-token window. Voice alone has four runs, since its W2 run predates
+the worker's stage times.
 
 | Configuration | Endpointing | Reply to first sentence | TTS first audio | Transport and playout | Mean V2V | LLM first token |
 |---|---:|---:|---:|---:|---:|---:|
@@ -471,7 +480,7 @@ against tuned vLLM's 2,516. With four or six callers its p95 stayed 257–269 ms
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-margin-narrow.svg">
-  <img src="figures/report-margin.svg" width="100%" alt="In panel a, with 16 agent sessions of the whole corpus, where the pool has room, tuned vLLM's V2V p95 and the configuration to deploy's in each of five rounds against the SLO of 2.03 s (2.15 and 2.04 s, 3.83 and 2.42 s, 3.07 and 2.12 s, 2.30 and 2.05 s, 2.52 and 2.02 s); in panels b to d, the configuration to deploy with two, four and six callers beside 24 agent sessions, on the same three samples of the agents, each run's p95 over that many callers' SLO, the share of the engine's steps in which the budget cap held agent prefill, and the agents' tokens a second over the calls' first 240 s (2 callers, +202 ms over their SLO of 2.03 s at the median of 9 runs (+98 to +267), agent prefill held in 33% of the steps, the agents at 3,156 tokens/s; 4 callers, +269 ms over their SLO of 2.04 s at the median of 3 runs (+206 to +370), agent prefill held in 53% of the steps, the agents at 3,055 tokens/s; 6 callers, +257 ms over their SLO of 2.13 s at the median of 3 runs (+226 to +333), agent prefill held in 64% of the steps, the agents at 2,716 tokens/s).">
+  <img src="figures/report-margin.svg" width="100%" alt="In panel a, with 16 agent sessions of the whole corpus, where the pool has room, tuned vLLM's V2V p95 and the configuration to deploy's in each of five rounds against the SLO of 2.03 s (2.15 and 2.04 s, 3.83 and 2.42 s, 3.07 and 2.12 s, 2.30 and 2.05 s, 2.52 and 2.02 s); in panels b to d, the configuration to deploy with two, four and six callers beside 24 agent sessions, on the same three samples of the agents, the median of the runs' p95 over that many callers' SLO, of the share of the engine's steps in which the budget cap held agent prefill, and of the agents' tokens a second over the calls' first 240 s, each with its runs' range (2 callers, +202 ms over their SLO of 2.03 s at the median of 9 runs (+98 to +267), agent prefill held in 33% of the steps, the agents at 3,156 tokens/s; 4 callers, +269 ms over their SLO of 2.04 s at the median of 3 runs (+206 to +370), agent prefill held in 53% of the steps, the agents at 3,055 tokens/s; 6 callers, +257 ms over their SLO of 2.13 s at the median of 3 runs (+226 to +333), agent prefill held in 64% of the steps, the agents at 2,716 tokens/s).">
 </picture>
 
 **The configuration to deploy helps less where the pool has room, and overlapping calls hold the agents' prefill for
@@ -504,12 +513,12 @@ while the agents' TTFT p99 stayed at tuned vLLM's.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-agents-narrow.svg">
-  <img src="figures/report-agents.svg" width="100%" alt="For each configuration beside 24 agent sessions, each run and the median of the agents' TTFT p99, of the share of the engine's steps over the calls in which the budget cap kept agent prefill out, and of make-room's own preemptions over the calls: tuned vLLM (the baseline, 10 runs): TTFT p99 106 s (96 to 129), no budget cap, no KV preemption; preempt-resubmit (before the first byte, 5 runs): TTFT p99 193 s (160 to 232), no budget cap, no KV preemption; the KV preemption (#63350, 5 runs): TTFT p99 112 s (98 to 131), agent prefill held in 0% of the steps, 34 preemptions by make-room; the change (16-token window, 5 runs): TTFT p99 105 s (99 to 130), agent prefill held in 25% of the steps, 32 preemptions by make-room; and the configuration to deploy (48-token window, 15 runs): TTFT p99 111 s (94 to 132), agent prefill held in 33% of the steps, 31 preemptions by make-room.">
+  <img src="figures/report-agents.svg" width="100%" alt="For each configuration beside 24 agent sessions, the median of its runs and their range for the agents' TTFT p99, for the share of the engine's steps over the calls in which the budget cap kept agent prefill out, and for make-room's own preemptions over the calls: tuned vLLM (the baseline, 10 runs): TTFT p99 106 s (96 to 129), no budget cap, no KV preemption; preempt-resubmit (before the first byte, 5 runs): TTFT p99 193 s (160 to 232), 181% of tuned vLLM's, no budget cap, no KV preemption; the KV preemption (#63350, 5 runs): TTFT p99 112 s (98 to 131), 105% of tuned vLLM's, agent prefill held in 0% of the steps (0% to 0%), 34 preemptions by make-room (24 to 46); the change (16-token window, 5 runs): TTFT p99 105 s (99 to 130), 99% of tuned vLLM's, agent prefill held in 25% of the steps (20% to 27%), 32 preemptions by make-room (22 to 35); and the configuration to deploy (48-token window, 15 runs): TTFT p99 111 s (94 to 132), 105% of tuned vLLM's, agent prefill held in 33% of the steps (26% to 38%), 31 preemptions by make-room (23 to 38).">
 </picture>
 
 **The agents' first-token tail stays at tuned vLLM's with the configuration to deploy and nearly doubles with
-preempt-resubmit.** Each run a tick and each median a marker and a label; tuned vLLM and preempt-resubmit run neither
-rule.
+preempt-resubmit.** Each bar is the median of a configuration's runs, with the runs' range as the capped line at its end
+where it is wide enough to draw; tuned vLLM and preempt-resubmit run neither rule, and their rows say so.
 
 | Configuration | Runs | Engine steps over the calls | Steps the cap held agent prefill back in (share) | Prefill tokens held back (an upper bound) | Agents' tokens/s, first 240 s |
 |---|---:|---:|---:|---:|---:|
@@ -574,13 +583,15 @@ token rate.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-step-cap-narrow.svg">
-  <img src="figures/report-step-cap.svg" width="100%" alt="In panel a, the share of each of five rounds' replies over that round's SLO beside 24 agent sessions, against the requirement of at most 5%, and in panel b each round's agents' tokens a second over the calls' first 240 s with their median: tuned vLLM, 512-token steps, 53, 55, 55, 54, 44 of 59 by round, 261 of 295 in all, at 3,399 agents' tokens a second; the configuration to deploy, 512-token steps, 16, 29, 25, 9, 15 of 59 by round, 94 of 295 in all, at 3,303 agents' tokens a second; the configuration to deploy, 256-token steps, 10, 17, 10, 4, 3 of 59 by round, 44 of 295 in all, at 3,067 agents' tokens a second.">
+  <img src="figures/report-step-cap.svg" width="100%" alt="In panel a, in each of five rounds beside 24 agent sessions, each configuration's share of the round's replies over that round's SLO, against the requirement of at most 5%, and in panel b each one's agents' tokens a second over the calls' first 240 s, the median of its rounds with their range: tuned vLLM, 512-token steps, 53, 55, 55, 54, 44 of 59 by round, 261 of 295 in all, at 3,399 agents' tokens a second (3,066 to 3,486); the configuration to deploy, 512-token steps, 16, 29, 25, 9, 15 of 59 by round, 94 of 295 in all, at 3,303 agents' tokens a second (2,843 to 3,337); the configuration to deploy, 256-token steps, 10, 17, 10, 4, 3 of 59 by round, 44 of 295 in all, at 3,067 agents' tokens a second (2,725 to 3,185); from 512- to 256-token steps the configuration to deploy's agents' tokens a second change by −7%.">
 </picture>
 
 **At 256 tokens a step the configuration to deploy had fewer replies over the SLO than at 512 in every round, and no
 configuration met the 5% requirement in any.** (a) Each round's share of its 59 replies over that round's SLO, beside 24
-coding-agent sessions; the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s,
-each round a tick and the median a marker.
+coding-agent sessions; the dashed line is the requirement. Each row has three bars, one under the other: tuned vLLM's in
+gray, the configuration to deploy's at 512-token steps in the softer blue and at 256 in the saturated blue. (b) The
+agents' tokens a second over the calls' first 240 s, each bar the median of the five rounds and the capped line their
+range.
 
 | Configuration | Rounds | V2V p95: median of the rounds / pooled | Replies over the SLO | By round | Agents' tokens/s, first 240 s | Agent TTFT p50 / p99 |
 |---|---:|---:|---:|---|---:|---:|
@@ -608,15 +619,16 @@ range beneath.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-engine-points-narrow.svg">
-  <img src="figures/report-engine-points.svg" width="100%" alt="On the box, two calls beside 12 closed-loop agents, the calls' first token and their 16th token at p50 and p95, each the median of the runs, as the serving profile gained each addition it adopted, each row adding to the one before it but the announced turn's, which adds it to retention, and the next, which adds just in time to both: v1.14's serving profile, 2 runs: the first token 175 and 354 ms, the 16th 408 and 597 ms; + the calls' prefixes kept on the GPU, 2 runs: the first token 122 and 230 ms, the 16th 354 and 502 ms; + the next batch just in time, 2 runs: the first token 98 and 185 ms, the 16th 323 and 449 ms; retention + each turn announced, 2 runs: the first token 64 and 90 ms, the 16th 258 and 394 ms; + just in time too, 1 run: the first token 63 and 98 ms, the 16th 257 and 403 ms; + the agents' reservations taken, 2 runs: the first token 64 and 92 ms, the 16th 261 and 392 ms; + their decodes held for 16 tokens, 2 runs: the first token 64 and 94 ms, the 16th 258 and 285 ms; + held for 48 tokens, the window: the profile, 2 runs: the first token 66 and 88 ms, the 16th 257 and 284 ms.">
+  <img src="figures/report-engine-points.svg" width="100%" alt="On the box, two calls beside 12 closed-loop agents, the calls' first token and their 16th token at p50 and p95, each the median of the runs, as the serving profile gained each addition it adopted, each row adding to the one before it but the announced turn's, which adds it to the kept prefixes in place of just in time, and the next, which has both: v1.14's serving profile, 2 runs: the first token 175 and 354 ms, the 16th 408 and 597 ms; + the calls' prefixes kept on the GPU, 2 runs: the first token 122 and 230 ms, the 16th 354 and 502 ms; + the next batch just in time, 2 runs: the first token 98 and 185 ms, the 16th 323 and 449 ms; or each turn announced, 2 runs: the first token 64 and 90 ms, the 16th 258 and 394 ms; + both, 1 run: the first token 63 and 98 ms, the 16th 257 and 403 ms; + the agents' reservations taken, 2 runs: the first token 64 and 92 ms, the 16th 261 and 392 ms; + their decodes held for 16 tokens, 2 runs: the first token 64 and 94 ms, the 16th 258 and 285 ms; + held for 48 tokens: the profile, 2 runs: the first token 66 and 88 ms, the 16th 257 and 284 ms.">
 </picture>
 
 **Retention, an announced turn and just in time took a call's first token from 175 to 63 ms at the median, and the
 decode hold took its 16th token's p95 from 392 to 284 ms.** The serving profile's engine on the box beside 12
-closed-loop agents, each addition against the point before it, in the order the profile gained them; the announced
-turn's row adds it to retention, and the next adds just in time to both. Each row's filled marker is the p50 and its
-open marker the p95 of (a) the calls' first token and (b) their 16th token, each the median of the row's runs. The table
-gives both nodes, with each median's range.
+closed-loop agents, in the order the profile gained its additions. Each row adds to the one before it, but the row
+that begins "or", which adds the announced turn to the kept prefixes (retention) in place of just in time; the next
+has both. A row's bar reaches the p50, and its extension in a softer fill the p95, of (a) the calls' first token and
+(b) their 16th token, each the median of the row's runs; the saturated row is the profile. The table gives both nodes,
+with each median's range.
 
 | Node | Arm | Runs | First token p50, ms | p95 | 16th token p50 | p95 | Later tokens, ms each | Agents' tokens/s |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
@@ -655,13 +667,14 @@ four and six callers and beside 16 of the whole corpus.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-opt-rounds-narrow.svg">
-  <img src="figures/report-opt-rounds.svg" width="100%" alt="In panel a, each scenario's replies over their round's SLO in 5 rounds, v1.14's configuration to deploy and the same with the first four of version 1.15's additions to the engine, each round a tick and the rounds pooled a marker, against the requirement of at most 5%, and in panel b the agents' tokens a second over the calls' first 240 s, each round a tick and their median a marker: 24 agent sessions, 2 callers, v1.14's configuration to deploy 10, 13, 10, 6, 16 by round, 55 of 295 in all, at 3,010 agents' tokens a second, the same with the first four additions 7, 1, 4, 4, 0 by round, 16 of 295 in all, at 2,933 agents' tokens a second; 24 agent sessions, 4 callers, v1.14's configuration to deploy 19, 25, 29, 12, 25 by round, 110 of 595 in all, at 2,753 agents' tokens a second, the same with the first four additions 5, 10, 9, 6, 8 by round, 38 of 595 in all, at 2,754 agents' tokens a second; 24 agent sessions, 6 callers, v1.14's configuration to deploy 23, 56, 27, 29, 29 by round, 164 of 910 in all, at 2,580 agents' tokens a second, the same with the first four additions 3, 20, 10, 9, 11 by round, 53 of 910 in all, at 2,476 agents' tokens a second; 16 agent sessions of the whole corpus, 2 callers, v1.14's configuration to deploy 5, 3, 3, 9, 2 by round, 22 of 295 in all, at 4,948 agents' tokens a second, the same with the first four additions 2, 2, 1, 5, 0 by round, 10 of 295 in all, at 4,900 agents' tokens a second.">
+  <img src="figures/report-opt-rounds.svg" width="100%" alt="In panel a, each scenario's replies over their round's SLO in 5 rounds, v1.14's configuration to deploy and the same with the first four of version 1.15's additions to the engine, the rounds pooled with the rounds' range, against the requirement of at most 5%, and in panel b the agents' tokens a second over the calls' first 240 s, the median of the rounds with their range: 24 agent sessions, 2 callers, v1.14's configuration to deploy 10, 13, 10, 6, 16 by round, 55 of 295 in all, at 3,010 agents' tokens a second (2,720 to 3,275), the same with the first four additions 7, 1, 4, 4, 0 by round, 16 of 295 in all, at 2,933 agents' tokens a second (2,692 to 3,221); 24 agent sessions, 4 callers, v1.14's configuration to deploy 19, 25, 29, 12, 25 by round, 110 of 595 in all, at 2,753 agents' tokens a second (2,548 to 3,062), the same with the first four additions 5, 10, 9, 6, 8 by round, 38 of 595 in all, at 2,754 agents' tokens a second (2,508 to 2,947); 24 agent sessions, 6 callers, v1.14's configuration to deploy 23, 56, 27, 29, 29 by round, 164 of 910 in all, at 2,580 agents' tokens a second (2,415 to 2,888), the same with the first four additions 3, 20, 10, 9, 11 by round, 53 of 910 in all, at 2,476 agents' tokens a second (2,215 to 2,780); 16 agent sessions of the whole corpus, 2 callers, v1.14's configuration to deploy 5, 3, 3, 9, 2 by round, 22 of 295 in all, at 4,948 agents' tokens a second (4,633 to 8,364), the same with the first four additions 2, 2, 1, 5, 0 by round, 10 of 295 in all, at 4,900 agents' tokens a second (4,666 to 9,034).">
 </picture>
 
 **In every scenario the first four additions put fewer than half as many of the pooled replies over the SLO, and beside
-16 sessions they met the 5% requirement.** (a) Each round's share of its replies over that round's SLO and the five
-rounds pooled; the dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s, each
-round a tick and the median a marker.
+16 sessions they met the 5% requirement.** (a) The share of the replies over their round's SLO, the five rounds pooled:
+v1.14's configuration to deploy, the softer blue, and the same with the first four additions, the saturated blue; each
+capped line is the range of the five rounds' shares, and the dashed line is the requirement. (b) The agents' tokens a
+second over the calls' first 240 s, each bar the median of the rounds and the capped line their range.
 
 The medians over the rounds, with their range beneath:
 
@@ -799,14 +812,15 @@ two (one batch) or four (chained jobs) steps during it, and vLLM's Triton kernel
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-envelope-narrow.svg">
-  <img src="figures/report-envelope.svg" width="100%" alt="In panel a, each configuration's replies over their round's SLO in version 1.24's 3 envelope rounds, each round a tick and the rounds pooled a marker, against the requirement of at most 5%, in panel b the agents' tokens a second over the calls' first 240 s and in panel c their time to first token at p99, each round a tick and their median a marker: the serving profile through v1.23 beside 4 agent sessions, 0, 2, 2 by round, 4 of 177 in all, its agents at 3,278 tokens a second (2,703 to 3,598) and a p99 of 8 s (6 to 8); the queue and the copy beside 12 agent sessions, 2, 2, 0 by round, 4 of 177 in all, its agents at 6,906 tokens a second (5,949 to 7,090) and a p99 of 24 s (19 to 73); and beside 24, 0, 3, 0 by round, 3 of 177 in all, its agents at 7,253 tokens a second (4,490 to 8,094) and a p99 of 133 s (132 to 182).">
+  <img src="figures/report-envelope.svg" width="100%" alt="In panel a, each configuration's replies over their round's SLO in version 1.24's 3 envelope rounds, by round and as a share of the rounds' replies pooled, against the requirement of at most 5%, in panel b the agents' tokens a second over the calls' first 240 s and in panel c their time to first token at p99, each the median of the rounds with their range: the serving profile through v1.23 beside 4 agent sessions, 0, 2, 2 by round, 4 of 177 in all, its agents at 3,278 tokens a second (2,703 to 3,598) and a p99 of 8 s (6 to 8); the queue and the copy beside 12 agent sessions, 2, 2, 0 by round, 4 of 177 in all, its agents at 6,906 tokens a second (5,949 to 7,090) and a p99 of 24 s (19 to 73); and beside 24, 0, 3, 0 by round, 3 of 177 in all, its agents at 7,253 tokens a second (4,490 to 8,094) and a p99 of 133 s (132 to 182).">
 </picture>
 
 **Beside 24 sessions the queue and the copy kept the pooled replies over the SLO within the 5% requirement, at 2.2 times
-the agents' token rate of the serving profile at 4, and the agents' first-token tail carries the cost.** (a) Each
-round's share of its replies over that round's SLO, voice alone's p95 plus 250 ms, and the three rounds pooled; the
-dashed line is the requirement. (b) The agents' tokens a second over the calls' first 240 s and (c) their time to first
-token at p99, each round a tick and the median a marker.
+the agents' token rate of the serving profile at 4, and the agents' first-token tail carries the cost.** (a) The share
+of the replies over their round's SLO, voice alone's p95 plus 250 ms, the three rounds pooled; each capped line is the
+range of the three rounds' shares, and the dashed line is the requirement. (b) The agents' tokens a second over the
+calls' first 240 s and (c) their time to first token at p99, each bar the median of the rounds and the capped line their
+range.
 
 Version 1.24's three envelope rounds, on samples 21–23, applied the resource gate's rule, under which a configuration
 qualifies when at most 5% of its replies, pooled over the rounds, are over each round's SLO. The medians over the
@@ -832,13 +846,15 @@ at two sessions and did 27.3% more.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-cards-narrow.svg">
-  <img src="figures/report-cards.svg" width="100%" alt="In panel a, the share of the consolidated card's replies over their round's SLO, the 3 rounds pooled, by its agent sessions beside both calls, against the requirement of at most 5%: at 2, 4, 8, 12 and 24 sessions, 2.3%, 10.2%, 39.0%, 53.7% and 92.1% on tuned vLLM and 1.1%, 2.8%, 17.5%, 18.6% and 20.9% on the configuration to deploy; in panel b, each arrangement's agents' tokens a second over the calls' first 240 s summed over both cards, at the median of the 3 rounds, against 9,471, 20% over the best dedicated arrangement: dedicated roles, best practical, 0 + 14 sessions: 7,893; dedicated roles, controlled, 0 + 12 sessions: 6,302; consolidation on tuned vLLM, 2 + 14 sessions: 10,051; consolidation on the configuration to deploy, 4 + 14 sessions: 10,596; consolidation on the configuration to deploy with a warm spare, 4 + 12 sessions: 9,652; consolidation on the configuration to deploy, 8 + 14 sessions: 13,537, missing the requirement; pooling on tuned vLLM, 12 + 12 sessions: 13,188, missing the requirement; pooling on the configuration to deploy, 12 + 12 sessions: 12,111, missing the requirement.">
+  <img src="figures/report-cards.svg" width="100%" alt="In panel a, the share of the consolidated card's replies over their round's SLO, the 3 rounds pooled, by its agent sessions beside both calls, against the requirement of at most 5%: at 2, 4, 8, 12 and 24 sessions, 2.3%, 10.2%, 39.0%, 53.7% and 92.1% on tuned vLLM and 1.1%, 2.8%, 17.5%, 18.6% and 20.9% on the configuration to deploy; in panel b, each arrangement's agents' tokens a second over the calls' first 240 s summed over both cards, at the median of the 3 rounds with their range, against a floor of at least 9,471, 20% over the best dedicated arrangement: dedicated roles, best practical, 0 + 14 sessions: 7,893; dedicated roles, controlled, 0 + 12 sessions: 6,302; consolidation on tuned vLLM, 2 + 14 sessions: 10,051, +27.3% over the best dedicated; consolidation on the configuration to deploy, 4 + 14 sessions: 10,596, +34.2% over the best dedicated; consolidation on the configuration to deploy with a warm spare, 4 + 12 sessions: 9,652, +22.3% over the best dedicated; consolidation on the configuration to deploy, 8 + 14 sessions: 13,537, missing the requirement; pooling on tuned vLLM, 12 + 12 sessions: 13,188, missing the requirement; pooling on the configuration to deploy, 12 + 12 sessions: 12,111, missing the requirement.">
 </picture>
 
 **On two cards, consolidating both calls on one card does the most background work within the SLO, on either engine.**
-(a) The consolidated card's replies over the SLO by its agent sessions, three rounds pooled, against the 5% requirement
-(dashed). (b) The agents' tokens a second summed over both cards, bars the median of the rounds and ticks the rounds;
-hatched arrangements miss the requirement, and the dashed line is 20% over the best dedicated one.
+(a) The consolidated card's replies over the SLO by its agent sessions, three rounds pooled: tuned vLLM's share, the
+gray bar, and the configuration to deploy's, the blue bar under it, against the 5% requirement (dashed). (b) The agents'
+tokens a second summed over both cards, each bar the median of the rounds and the capped line their range; hatched
+arrangements miss the requirement, and the dashed line in (b) is the floor to pass, at least 9,471 tokens a second, 20%
+over the best dedicated one.
 
 The resource gate's comparison ([RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md)) ran in three rounds on
 2026-10-28, each card's part of an arrangement a point of its own, the change at the serving profile's settings. Replies
@@ -883,12 +899,13 @@ the same calls, plus 250 ms.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-soak-narrow.svg">
-  <img src="figures/report-soak.svg" width="100%" alt="Each of the soak's 24 hours as a column: in panel a, the share of that hour's replies over the SLO of 1,976 ms against the requirement of at most 5%, 74 of 5,058 replies (1.5%) over the day, at most 14 of 254 (5.5%) in hour 4; in panel b, the agents' tokens a second, 3,529 over the day, 9,300 in hour 0 and 582 to 5,402 in each hour after.">
+  <img src="figures/report-soak.svg" width="100%" alt="The soak's 24 hours: in panel a, the share of each hour's replies over the SLO of 1,976 ms against the requirement of at most 5%, 74 of 5,058 replies (1.5%) over the day, at most 14 of 254 (5.5%) in hour 4; in panel b, the agents' tokens a second, 3,529 over the day, 9,300 in hour 0 and 582 to 5,402 in each hour after.">
 </picture>
 
 **Over the 24 hours 1.5% of the replies were over the SLO, and only hour 4, at 5.5%, went over the 5% requirement.** (a)
-Each hour's share of its replies over the SLO. (b) The agents' tokens a second by hour, with 9,300 in hour 0, as AIPerf
-resumes its 14 sessions at once.
+Each hour's share of its replies over the SLO, the requirement dashed, the day's share dotted and the one hour over the
+requirement in red. (b) The agents' tokens a second by hour, the day's dotted, with 9,300 in hour 0, as AIPerf resumes
+its 14 sessions at once.
 
 | Measure | Voice alone | The arrangement to deploy |
 |---|---:|---:|
@@ -920,14 +937,15 @@ carry is the length of a wait, 1.75 s in the KV case against the box's 4.9–5.0
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-a100-narrow.svg">
-  <img src="figures/report-a100.svg" width="100%" alt="On the A100 beside 24 agent sessions: in panel a, at the RTX 5060 Ti's 512-token steps, tuned vLLM's V2V p95 and the configuration to deploy's in each of five rounds against the card's SLO of 1.67 s (4.16 and 1.66 s, 4.78 and 1.66 s, 4.99 and 1.61 s, 5.17 and 1.63 s, 5.71 and 1.61 s); in panel b, the agents' tokens a second over the calls' first 240 s against the V2V p95, each run and the medians, an arrow from tuned vLLM's median to the configuration to deploy's at the same step cap (at 512-token steps tuned vLLM 4.99 s at 8,633 tokens/s, the configuration to deploy 1.63 s at 8,651 tokens/s, medians of 5 runs each; at 2,048-token steps tuned vLLM 3.66 s at 14,536 tokens/s, the configuration to deploy 1.83 s at 14,635 tokens/s, medians of 2 runs each).">
+  <img src="figures/report-a100.svg" width="100%" alt="On the A100 beside 24 agent sessions: in panel a, at the RTX 5060 Ti's 512-token steps, tuned vLLM's V2V p95 and the configuration to deploy's in each of five rounds against the card's SLO of 1.67 s (4.16 and 1.66 s, 4.78 and 1.66 s, 4.99 and 1.61 s, 5.17 and 1.63 s, 5.71 and 1.61 s); in panel b, at each step cap, each one's V2V p95 and its agents' tokens a second over the calls' first 240 s, the median of its runs with their range (at 512-token steps tuned vLLM 4.99 s at 8,633 tokens/s, the configuration to deploy 1.63 s at 8,651 tokens/s, medians of 5 runs each; at 2,048-token steps tuned vLLM 3.66 s at 14,536 tokens/s, the configuration to deploy 1.83 s at 14,635 tokens/s, medians of 2 runs each; from 512- to 2,048-token steps the configuration to deploy's p95 changes by +0.19 s and its agents' tokens a second by +69%).">
 </picture>
 
 **On an A100 the rules meet the card's SLO in every round at the RTX 5060 Ti's 512-token steps, and at 2,048-token steps
-they trade 0.19 s of the voice's tail for 69% more agent throughput.** (a) Each round's p95 V2V at 512-token steps,
-joined by round, against the card's SLO of 1.67 s. (b) The p95 V2V against the agents' tokens a second at 512- and
-2,048-token steps, small marks runs and large marks medians, an arrow joining tuned vLLM's median to the configuration
-to deploy's at each step cap; tuned vLLM's marks are open.
+they trade 0.19 s of the voice's tail for 69% more agent throughput.** (a) Each round's p95 V2V at 512-token steps on
+tuned vLLM, the gray bar, and with the configuration to deploy, the blue bar under it, against the card's SLO of 1.67 s.
+(b) The p95 V2V and the agents' tokens a second of both at 512- and 2,048-token steps, each bar the median of its runs
+and the capped line their range, where it is wide enough to draw. The notes on the last row give the configuration to
+deploy's change from its 512-token row.
 
 The A100 ran E2's core like for like on 2026-10-26, with the box's model, pool, steps and CPU tier and W5's arm files
 and samples. Only the card, its precision path and the host changed. The card has no FP8 units, so it runs the
@@ -1026,11 +1044,11 @@ succeeds. Times count from the drill's stamp just before its `systemctl kill`.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/report-starts-narrow.svg">
-  <img src="figures/report-starts.svg" width="100%" alt="Three bars of the engine's phases on one axis of seconds: killed mid-decode, it was down 12.7 s, its unit's last process gone 7.6 s after the kill and systemd's restart 5.1 s later, and its warm start listened 92.1 s after the restart, a request answered 106.2 s after the kill; a warm start was ready at 88.8 s, its weights loaded at 54.1 s and its CUDA graphs captured at 84.1 s; and a cold start, with empty caches, was ready at 531.8 s, its weights at 86.1 s, its KV cache at 189.3 s after compiling and profiling and its CUDA graphs at 526.6 s after the kernels' warmup and JIT builds.">
+  <img src="figures/report-starts.svg" width="100%" alt="The engine's phases in seconds after a kill and in two starts: killed mid-decode, it was down 12.7 s, its unit's last process gone 7.6 s after the kill and systemd's restart 5.1 s later, and its warm start listened 92.1 s after the restart, a request answered 106.2 s after the kill; a warm start was ready at 88.8 s, its weights loaded at 54.1 s and its CUDA graphs captured at 84.1 s; and a cold start, with empty caches, was ready at 531.8 s, its weights at 86.1 s, its KV cache at 189.3 s after compiling and profiling and its CUDA graphs at 526.6 s after the kernels' warmup and JIT builds.">
 </picture>
 
 **The engine's recovery from a kill is mostly its warm start, and on empty caches a start takes six times as long.**
-Each bar stacks a start's phases from its journal, in seconds from the kill or the unit's start, and the dashed box is
+Each bar stacks a start's phases from its journal, in seconds from the kill or the unit's start, and the red segment is
 the killed engine down, until systemd starts it again.
 
 | Start | Unit start to ready | Where the time goes |

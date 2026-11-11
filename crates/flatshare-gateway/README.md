@@ -26,7 +26,7 @@ listeners.
 
 <picture>
   <source media="(max-width: 767px)" srcset="../../docs/figures/request-path-narrow.svg">
-  <img src="../../docs/figures/request-path.svg" width="100%" alt="A column of seven steps a request takes through the gateway, each step's main refusals leaving to its right, which the gateway's error table gives in full: authenticate (401 invalid_api_key, 400 invalid_class), bound (503 in_flight_limit, 429 tenant_in_flight_limit, 413 body_too_large), sanitize (400 invalid_json, 400 too_many_choices), place (503 upstream_not_ready, no_healthy_node, no_call_slot or no_agent_slot), forward (502 upstream_unavailable, 504 upstream_timeout), relay (an error event of type upstream_unavailable, upstream_timeout or draining once a stream has begun), and account, which records one outcome for every request.">
+  <img src="../../docs/figures/request-path.svg" width="100%" alt="A column of seven steps a request takes through the gateway, each with its main refusals, which the gateway's error table gives in full: authenticate (401 invalid_api_key, 400 invalid_class), bound (503 in_flight_limit, 429 tenant_in_flight_limit, 413 body_too_large), sanitize (400 invalid_json, 400 too_many_choices), place (503 upstream_not_ready, no_healthy_node, no_call_slot or no_agent_slot), forward (502 upstream_unavailable, 504 upstream_timeout), then the engine, the one blue box, which sees no request that the first four steps refuse, relay (an error event of type upstream_unavailable, upstream_timeout or draining once a stream has begun), and account, which records one outcome for every request.">
 </picture>
 
 **A request is refused at the first step it fails, and the first four refuse it before the engine sees it.** Once a

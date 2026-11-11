@@ -124,8 +124,6 @@ def test_the_report_has_its_figures_and_the_phone_layouts_it_shows(drawn: dict[s
             "soak-narrow",
             "starts",
             "starts-narrow",
-            "campaigns",
-            "campaigns-narrow",
         )
     )
 
@@ -138,8 +136,6 @@ def text_of(path: Path) -> list[str]:
 
 def test_figure_text_names_configurations_as_the_report_does(drawn: dict[str, Path]) -> None:
     for name, path in drawn.items():
-        if name.startswith("report-campaigns"):
-            continue  # the campaign map is the codes' key: it names each campaign by its code, and only there
         for text in text_of(path):
             assert not CODES.search(text), (name, text)
 
@@ -186,12 +182,7 @@ def test_every_chart_labels_its_configurations_from_one_table(drawn: dict[str, P
 
 def test_a_log_scale_says_so_on_its_axis(drawn: dict[str, Path]) -> None:
     logarithmic = (
-        "report-headline",
         "report-cdf",
-        "report-frontier",
-        "report-deployable.svg",
-        "report-deployable-narrow",
-        "report-ablations",
         "report-step-cost",
         "report-tail",
     )
@@ -209,12 +200,12 @@ def chart() -> charts.Chart:
 
 def test_a_label_over_a_mark_is_refused() -> None:
     s = chart()
-    s.mark(110, 40, "blue")
+    s.mark(110, 40, "green")
     s.text(100, 46, "a label")
     with pytest.raises(ValueError, match="a label covers a mark: 'a label'"):
         s.render()
     with pytest.raises(ValueError, match="a mark's hue is one of"):
-        chart().mark(10, 10, "red")
+        chart().mark(10, 10, "pink")
     with pytest.raises(ValueError, match="a stage is one of"):
         chart().stack(10, 10, [(40, "queue")], 20)
 
@@ -262,7 +253,7 @@ def test_a_charts_style_holds_its_parts_and_both_themes() -> None:
 
 def test_every_marks_hue_clears_three_to_one_on_the_page() -> None:
     # A mark is a graphical object (WCAG 1.4.11): each hue a mark takes clears 3:1 on the page in both themes, the
-    # sibling blue among them, which stays fainter than the saturated blue it stands beside.
+    # softer blue among them, which stays fainter than the saturated blue it stands beside.
     def luminance(color: str) -> float:
         channels = [int(color[k : k + 2], 16) / 255 for k in (1, 3, 5)]
         linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
@@ -273,7 +264,7 @@ def test_every_marks_hue_clears_three_to_one_on_the_page() -> None:
         return (high + 0.05) / (low + 0.05)
 
     for theme, palette in enumerate((style.LIGHT, style.DARK)):
-        hues = {hue: palette.get(hue) or charts.PALETTE[hue][theme] for hue in charts.HUES}
+        hues = {hue: palette["blue-m" if hue == "sky" else hue] for hue in charts.HUES}
         for hue, color in hues.items():
             assert contrast(color, palette["page"]) >= 3, (theme, hue)
         assert contrast(hues["sky"], palette["page"]) < contrast(hues["blue"], palette["page"]), (
@@ -1071,12 +1062,36 @@ def test_the_two_cards_are_their_gates_verdict(drawn: dict[str, Path]) -> None:
     assert max(r for a in cards.arrangements for r in a.rounds) < figures.CARD_TOKENS.hi
     missed = [a.engine for a in cards.arrangements if not a.qualifies]
     assert sorted(missed) == ["change", "change", "stock"]
+    # The hurdle is a floor an arrangement must pass, where a red dashed rule is a limit to stay under: its rule is
+    # the neutral dashed one, its name in the soft ink gives its direction as the requirement's "at most" does, and
+    # the red rules are panel a's alone. Each qualifying shared arrangement's gain is drawn, and what it is over.
+    floor = f"at least {cards.threshold:,.0f}: {cards.hurdle:.0%} over the best dedicated"
+    assert floor == "at least 9,471: 20% over the best dedicated"
+    assert figures.FLOOR == "soft-ink trace dashed"
+    gains = {f"{a.tokens / cards.best.tokens - 1:+.1%}" for a in shared}
+    assert gains == {"+27.3%", "+34.2%", "+22.3%"}
+    sizes = len(cards.consolidated["stock"])
+    rules = {
+        # A layout's rules: the limit's red ones, then the floor's neutral ones. The wide layout draws each down its
+        # panel once; the phone layout a stub a row, and a sample in its key.
+        "report-cards.svg": (1, 1),
+        "report-cards-narrow.svg": (sizes + 1, len(cards.arrangements) + 1),
+    }
     for name in ("report-cards.svg", "report-cards-narrow.svg"):
         svg, texts = drawn[name].read_text(), set(text_of(drawn[name]))
         assert svg.count('class="gray hatch"') == missed.count("stock") + 1, name
         assert svg.count('class="blue hatch"') == missed.count("change"), name
         assert f"Misses the {cards.requirement:.0%} requirement" in texts, name
         assert {f"{a.tokens:,.0f}" for a in cards.arrangements} <= texts, name
+        assert (svg.count('class="slo"'), svg.count(f'class="{figures.FLOOR}"')) == rules[name], (
+            name
+        )
+        [named] = [t for t in ET.parse(drawn[name]).getroot().iter(f"{SVG}text") if t.text == floor]
+        assert "soft" in named.get("class", "").split() and "red" not in named.get("class", ""), (
+            name
+        )
+        assert all(any(text.startswith(gain) for text in texts) for gain in gains), name
+        assert sum(text.endswith("over the best dedicated") for text in texts) == 2, name
 
 
 def test_the_two_cards_read_only_the_rounds_their_gate_counts(tmp_path: Path) -> None:
@@ -1126,6 +1141,114 @@ def test_the_step_cap_is_its_rounds_as_gate_py_counts_them(drawn: dict[str, Path
     assert all(a.over > b.over > c.over for a, b, c in rounds)
     assert all(r.share > figures.REQUIREMENT for c in caps for r in c.rounds)
     assert {f"{c.tokens:,.0f}" for c in caps} <= set(text_of(drawn["report-step-cap.svg"]))
+
+
+def bold_of(path: Path) -> list[str]:
+    """The texts a figure sets in semibold, in the order it draws them."""
+    root = ET.parse(path).getroot()
+    return [
+        "".join(t.itertext()) for t in root.iter(f"{SVG}text") if "b" in t.get("class", "").split()
+    ]
+
+
+def follows(texts: list[str], run: list[str]) -> bool:
+    """Whether ``run`` stands in ``texts`` as it is, each text after the one before it."""
+    return any(texts[k : k + len(run)] == run for k in range(len(texts)))
+
+
+ROUNDS_DRAWN = {
+    # Each panel of rounds: its rows' names, and each row's values in words, from the comparator's to the featured
+    # configuration's.
+    "report-margin": (
+        "Round {}",
+        (1, 2, 3, 4, 5),
+        [
+            ["2.15 s", "2.04 s"],
+            ["3.83 s", "2.42 s"],
+            ["3.07 s", "2.12 s"],
+            ["2.30 s", "2.05 s"],
+            ["2.52 s", "2.02 s"],
+        ],
+    ),
+    "report-a100": (
+        "Round {}",
+        (1, 2, 3, 4, 5),
+        [
+            ["4.16 s", "1.66 s"],
+            ["4.78 s", "1.66 s"],
+            ["4.99 s", "1.61 s"],
+            ["5.17 s", "1.63 s"],
+            ["5.71 s", "1.61 s"],
+        ],
+    ),
+    "report-cards": (
+        "{} sessions",
+        (2, 4, 8, 12, 24),
+        [
+            ["2.3%", "1.1%"],
+            ["10.2%", "2.8%"],
+            ["39.0%", "17.5%"],
+            ["53.7%", "18.6%"],
+            ["92.1%", "20.9%"],
+        ],
+    ),
+    "report-step-cap": (
+        "Round {}",
+        (1, 2, 3, 4, 5),
+        [
+            ["89.8%", "27.1%", "16.9%"],
+            ["93.2%", "49.2%", "28.8%"],
+            ["93.2%", "42.4%", "16.9%"],
+            ["91.5%", "15.3%", "6.8%"],
+            ["74.6%", "25.4%", "5.1%"],
+        ],
+    ),
+}
+
+
+def test_a_panel_of_rounds_draws_each_configurations_bar_with_its_own_value(
+    drawn: dict[str, Path],
+) -> None:
+    # Figures 12a, 13a, 14a and 15a draw a round as a row of bars, one a configuration and each from the scale's zero
+    # to its own value, the comparator's first and the featured configuration's last, in the key's order. A bar's
+    # value stands after it, the featured configuration's in semibold, and no text gives a round as "a → b".
+    pair = [figures.config_mark(key)[0] for key in figures.PAIR_KEYS]
+    assert pair == ["gray", figures.FEATURED]
+    panels = {
+        "report-margin": (figures._p95_rounds(data.standard_rounds(data.w5_rows())), pair),
+        "report-a100": (
+            figures._p95_rounds(figures._a100_rounds(data.a100(data.a100_rows()))),
+            pair,
+        ),
+        "report-cards": (figures._card_rounds(data.two_cards()), pair),
+        "report-step-cap": (
+            figures._step_cap_rounds(data.step_caps()),
+            ["gray", "sky", figures.FEATURED],
+        ),
+    }
+    assert set(panels) == set(ROUNDS_DRAWN)
+    for stem, (rounds, hues) in panels.items():
+        named, numbers, values = ROUNDS_DRAWN[stem]
+        assert [name for name, _ in rounds] == [named.format(n) for n in numbers], stem
+        assert [[text for *_, text in bars] for _, bars in rounds] == values, stem
+        for _, bars in rounds:
+            # A bar a configuration, in its own fill, and each bar one value's: none holds another's as a part.
+            assert [hue for _, _, hue, _ in bars] == hues, stem
+            assert all(tuple(spread) == (value,) for value, spread, _, _ in bars), stem
+        featured = [row[-1] for row in values]
+        others = {text for row in values for text in row[:-1]}
+        for name in (f"{stem}.svg", f"{stem}-narrow.svg"):
+            svg, texts, bold = drawn[name].read_text(), text_of(drawn[name]), bold_of(drawn[name])
+            # A row's name, then its bars' values, in the order the bars stand in.
+            for (row, _), row_values in zip(rounds, values, strict=True):
+                assert follows(texts, [row, *row_values]), (name, row)
+            assert follows(bold, featured) and not others & set(bold), name
+            assert not any("→" in text for text in texts), name
+            # Every configuration has a bar a round or more, and no bar is a stack of parts: the figure's only
+            # segments are its key's swatches, one a configuration.
+            for hue in hues:
+                assert svg.count(f'class="g-{charts.BAR_FILLS[hue]}"') >= len(rounds), (name, hue)
+            assert len(re.findall(r'class="s-[\w-]+"', svg)) == len(hues), name
 
 
 def test_the_opt_rounds_are_their_records_rounds(drawn: dict[str, Path]) -> None:
@@ -1269,19 +1392,35 @@ def test_the_tier_is_its_records_first_window_and_its_probes(drawn: dict[str, Pa
     assert all(s.shares[2] > 0.5 for s in sources[:2]) and f"{sources[2].shares[2]:.0%}" == "20%"
     sm = loads.loads["SM copy, 4 programs"]
     assert max(load.longest for load in loads.loads.values() if load is not sm) == 208.8
+    # Panel b's bars speak as panel a's do: the step alone in the reference gray, the copy engine's four loads in the
+    # baseline gray, and the SM copy's the figure's one bar in the saturated blue.
+    hues = [(key, hue) for _, _, key, hue, _ in figures.LOAD_ROWS]
+    assert [key for key, hue in hues if hue == figures.FEATURED] == ["SM copy, 4 programs"]
+    assert [hue for key, hue in hues if key != "SM copy, 4 programs"] == ["ink", *["gray"] * 4]
+    bars = {"mid": 1, "lo": 4, "hi": 1}
+    assert bars == {
+        fill: sum(charts.BAR_FILLS[hue] == fill for _, hue in hues)
+        for fill in set(charts.BAR_FILLS.values()) & set(bars)
+    }
     for name in ("report-tier.svg", "report-tier-narrow.svg"):
         texts = set(text_of(drawn[name]))
         assert {*itertools.chain(*shares), *longest.values(), "5.7 ms"} <= texts, name
         assert not any("19.2" in text for text in texts), name
-        assert ".g-orange{" in drawn[name].read_text(), name
+        drawn_bars = re.findall(r'class="g-([\w-]+)"', drawn[name].read_text())
+        assert {fill: drawn_bars.count(fill) for fill in set(drawn_bars)} == bars, name
     assert {"3,173", "2,958", "7,270", "76.8 s", "76.7 s", "4.5 s"} <= set(
         text_of(drawn["report-tier.svg"])
     )
 
 
-def test_a_shares_value_sits_inside_only_a_fill_ink_reads_on() -> None:
-    # Figure 17a sets a share's value inside its segment on the pale gray and the open fill alone, where ink clears 4.5:1
-    # in both themes; on the mid gray it does not in the dark one, and those values stand over the bar.
+def test_what_was_computed_is_a_rows_strongest_tone_and_its_value_stands_inside(
+    drawn: dict[str, Path],
+) -> None:
+    # Figure 17a's tones run from the lightest to the strongest along a bar in either hue, and the strongest is what
+    # was computed, which the panel is drawn for. A share's value stands inside its segment wherever it fits there. On
+    # the fills where ink clears 4.5:1 in both themes, the baseline gray, the soft blue and the two washes, it stands
+    # on the fill; on the mid gray and the saturated blue it does not in one theme or the other, and there it stands
+    # on a halo of the page's color.
     def luminance(color: str) -> float:
         channels = [int(color[k : k + 2], 16) / 255 for k in (1, 3, 5)]
         linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
@@ -1291,12 +1430,56 @@ def test_a_shares_value_sits_inside_only_a_fill_ink_reads_on() -> None:
         high, low = sorted((luminance(a), luminance(b)), reverse=True)
         return (high + 0.05) / (low + 0.05)
 
-    fills = {"lo": "bar-lo", "mid": "bar-mid", "open": "page"}
-    assert set(figures.INSIDE_FILLS) < {fill for _, fill in figures.SOURCES}
+    def reads(fill: str) -> bool:
+        color = style.SEGMENTS[fill]
+        return all(contrast(p["ink"], p[color]) >= 4.5 for p in (style.LIGHT, style.DARK))
+
+    fills = {fill for _, *pair in figures.SOURCES for fill in pair}
+    assert set(figures.HALO_FILLS) < fills
+    assert {fill for fill in fills if not reads(fill)} == set(figures.HALO_FILLS)
+    assert contrast(style.DARK["ink"], style.DARK[style.SEGMENTS["mid"]]) < 4.5
+    assert contrast(style.LIGHT["ink"], style.LIGHT[style.SEGMENTS["hi"]]) < 4.5
+    # The sources in the bar's order, found, loaded, computed, and each hue's tones further from the page from each to
+    # the next in both themes: what was computed is the darkest gray, and in the queue's row the saturated blue.
+    assert [(name, gray, blue) for name, gray, blue in figures.SOURCES] == [
+        ("found in the GPU pool", "pale", "blue-pale"),
+        ("loaded from the CPU tier", "lo", "soft"),
+        ("computed", "mid", "hi"),
+    ]
     for palette in (style.LIGHT, style.DARK):
-        for fill in figures.INSIDE_FILLS:
-            assert contrast(palette["ink"], palette[fills[fill]]) >= 4.5, fill
-    assert contrast(style.DARK["ink"], style.DARK["bar-mid"]) < 4.5
+        for column in (1, 2):
+            stands = [
+                contrast(palette["page"], palette[style.SEGMENTS[source[column]]])
+                for source in figures.SOURCES
+            ]
+            assert stands == sorted(stands) and len(set(stands)) == len(stands), (column, stands)
+    # Each layout: the key in the bar's order, three grays and then the queue's row, which is the same in blue; what
+    # was computed inside its segment on a halo, the queue's in semibold; what was loaded inside on its own fill where
+    # it fits; and a share too short for its value over the bar.
+    sources = data.token_sources()
+    computed = [f"{s.shares[2]:.1%}" for s in sources]
+    loaded = [f"{s.shares[1]:.1%}" for s in sources]
+    found = [f"{s.shares[0]:.1%}" for s in sources]
+    assert (computed, loaded, found) == (
+        ["89.5%", "68.0%", "20.2%"],
+        ["1.5%", "23.7%", "73.9%"],
+        ["9.1%", "8.3%", "5.9%"],
+    )
+    key = ["Found in the GPU pool", "Loaded from the CPU tier", "Computed", figures.TIER_BLUES]
+    for name in ("report-tier.svg", "report-tier-narrow.svg"):
+        assert follows(text_of(drawn[name]), key), name
+        placed = {
+            t.text: (t.get("text-anchor"), t.get("class", ""))
+            for t in ET.parse(drawn[name]).getroot().iter(f"{SVG}text")
+        }
+        inside, over = ("middle", ""), (None, "halo")
+        assert [placed[text] for text in computed] == [
+            ("middle", "halo"),
+            ("middle", "halo"),
+            ("middle", "b halo"),
+        ], name
+        assert [placed[text] for text in loaded] == [over, inside, inside], name
+        assert [placed[text] for text in found] == [over] * 3, name
 
 
 def test_the_envelope_is_its_records_rounds(drawn: dict[str, Path]) -> None:
@@ -1436,13 +1619,43 @@ def test_the_starts_are_the_drills_journals(drawn: dict[str, Path]) -> None:
     # a warm one.
     assert (kill.first_success - kill.restarted) / kill.first_success > 0.5
     assert round(cold.at(figures.READY) / warm.at(figures.READY)) == 6
-    texts = set(text_of(drawn["report-starts.svg"]))
-    assert {
-        "a request answered, 106.2 s",
-        "ready, 88.8 s",
-        "ready, 531.8 s",
-        "down 12.7 s, then a warm start",
-    } <= texts
+    # After each bar its seconds, then what its end is: a request answered, or the unit ready.
+    for name in ("report-starts.svg", "report-starts-narrow.svg"):
+        texts = set(text_of(drawn[name]))
+        assert {
+            "106.2 s",
+            "a request answered",
+            "88.8 s",
+            "531.8 s",
+            "ready",
+            "down 12.7 s, then a warm start",
+        } <= texts, name
+    # The wide layout names the cold start's phases under their own segments, each with the seconds it took, which sum
+    # to the start's, a name longer than its segment on two lines; its key holds only the phase a start has not, the
+    # killed engine down. The phone layout, whose segments are shorter than their names, keys all five.
+    ends = [cold.at(phase) for phase in figures.PHASE_ENDS.values()]
+    took = [b - a for a, b in itertools.pairwise([0.0, *ends, cold.at(figures.READY)])]
+    assert [f"{t:.1f} s" for t in took] == ["86.1 s", "103.2 s", "337.3 s", "5.2 s"]
+    assert sum(took) == pytest.approx(cold.at(figures.READY))
+    names = [name for _, name, _ in figures.PHASES]
+    assert names[0] == "Down until restarted"
+    wide, phone = text_of(drawn["report-starts.svg"]), text_of(drawn["report-starts-narrow.svg"])
+    under = [
+        ["86.1 s", "Process,", "weights"],
+        ["103.2 s", "Compile,", "KV cache"],
+        ["337.3 s", "Kernels, CUDA graphs"],
+        ["5.2 s", "Until it serves"],
+    ]
+    assert [" ".join(lines[1:]) for lines in under] == names[1:]
+    assert follows(wide, list(itertools.chain(*under)))
+    assert wide[0] == names[0] and [wide.count(name) for name in names] == [1, 0, 0, 1, 1]
+    assert phone[: len(names)] == names and not {f"{t:.1f} s" for t in took} & set(phone)
+    # A start's phases take the gray's tones two steps apart or more from each to the next, so that no two neighbours
+    # are near tones in either theme, and the cold start's longest phase, its CUDA graphs', the strongest.
+    steps = [figures.PHASE_LADDER.index(cls) for _, _, cls in figures.PHASES[1:]]
+    assert sorted(steps) == [0, 1, 2, 3]
+    assert all(abs(a - b) >= 2 for a, b in itertools.pairwise(steps))
+    assert steps[took.index(max(took))] == len(figures.PHASE_LADDER) - 1
 
 
 def kill_ends(name: str) -> list[float]:
@@ -1606,13 +1819,13 @@ def test_the_deployed_results_figures_say_what_their_records_do(drawn: dict[str,
             "Figure 16",
             "In every scenario the first four additions put fewer than half as many of the pooled replies over the "
             f"SLO, and beside 16 sessions they met the {requirement} requirement.",
-            "(a) Each round's share of its replies over that round's SLO and the five rounds pooled",
+            "(a) The share of the replies over their round's SLO, the five rounds pooled",
         ),
         "report-starts": (
             "Figure D1",
             "The engine's recovery from a kill is mostly its warm start, and on empty caches a start takes "
             f"{times} times as long.",
-            "the dashed box is the killed engine down, until systemd starts it again.",
+            "the red segment is the killed engine down, until systemd starts it again.",
         ),
         "report-soak": (
             "Figure D2",
@@ -1660,8 +1873,8 @@ def test_section_6_11s_figures_say_what_their_records_do(drawn: dict[str, Path])
             f"Beside {twenty_four.sessions} sessions the queue and the copy kept the pooled replies over the SLO within "
             f"the {figures.REQUIREMENT:.0%} requirement, at {twenty_four.tokens / four.tokens:.1f} times the agents' "
             f"token rate of the serving profile at {four.sessions}, and the agents' first-token tail carries the cost.",
-            "(a) Each round's share of its replies over that round's SLO, voice alone's p95 plus 250 ms, and the three "
-            "rounds pooled; the dashed line is the requirement.",
+            "(a) The share of the replies over their round's SLO, voice alone's p95 plus 250 ms, the three rounds "
+            "pooled; each capped line is the range of the three rounds' shares, and the dashed line is the requirement.",
         ),
     }
     report = REPORT.read_text()
@@ -1723,11 +1936,11 @@ def test_the_ablations_are_arm_9s_rows_of_w4s_records(drawn: dict[str, Path]) ->
 
 
 def test_the_campaign_map_is_its_records() -> None:
-    # Each bar is its record's runs, as their run.json files (the soak's soak.json) give them: W2 to W4's 129 points
+    # Each row is its record's runs, as their run.json files (the soak's soak.json) give them: W2 to W4's 129 points
     # and W5's 72, the counts make reproduce-e2 and reproduce-e2-w5 rebuild from; each campaign's rounds, its samples
     # of the agents' traces and the code it ran. RG's one failed point, a voice-alone run stopped at its first turns
     # on v1.6-21, counts in its span and not in its points or its code. The envelope spans its Gray windows and its
-    # three rounds; the engine points, whose runs left no run.json, have no bar.
+    # three rounds; the engine points, whose runs left no run.json, have no row.
     found = {c.code: c for c in data.campaigns()}
     assert found["The envelope"].points == 33
     assert list(found) == [
@@ -1807,34 +2020,55 @@ def test_the_campaign_map_is_its_records() -> None:
     ]
     assert [r["versions"]["source"] for r in failed] == ["v1.6-5-gaabb3c6"]
     assert found["RG"].start == min(r["started"] for r in failed)
-    # The campaigns follow one another, each within the map's eighteen days.
+    # The campaigns follow one another, as the map lists them, each within the seventeen days it names.
     spans = [(c.start, c.end) for c in found.values()]
     assert all(a[1] <= b[0] for a, b in itertools.pairwise(spans))
-    end = figures.MAP_START + figures.MAP_DAYS * figures.DAY
-    assert spans[0][0] >= figures.MAP_START and spans[-1][1] <= end
-
-
-def test_experiments_shows_the_campaign_map_over_its_table(drawn: dict[str, Path]) -> None:
-    # EXPERIMENTS shows the map with the drawing's own description as its alt text, and right under it the table of
-    # its bars: each campaign's span, points, rounds and samples and code as the records give them, and its record.
-    experiments = REPO / "docs" / "EXPERIMENTS.md"
-    alt, caption = shown(experiments, "report-campaigns")
-    assert alt == ET.parse(drawn["report-campaigns.svg"]).getroot().find(f"{SVG}desc").text
-    assert caption.startswith(
-        "**Figure 1. Twelve campaigns from 23 October to 8 November 2026 measured the results"
+    assert figures._map_span(list(found.values())) == "23 October to 8 November 2026"
+    ran = [figures._span(c) for c in found.values()]
+    assert (ran[0], ran[1], ran[-1]) == (
+        "23 October 00:13 to 08:59",
+        "23 October 10:57 to 24 October 01:35",
+        "7 November 16:03 to 8 November 17:51",
     )
-    assert len(data.campaigns()) == 12
-    header = "| Campaign | Ran, UTC | Points | Rounds and samples | Code | Records |"
-    after = experiments.read_text().split('<img src="figures/report-campaigns.svg"', 1)[1]
-    assert next(line for line in after.splitlines() if line.startswith("|")) == header
+    # A row has its campaign's question, its points and its rounds and samples; the soak, which has no points, its
+    # hours.
+    rows = {c.code: figures.campaign_row(c) for c in found.values()}
+    assert rows["W2"] == (
+        "W2",
+        "Every arm an operator can deploy, once each",
+        "23 October 00:13 to 08:59",
+        "45",
+        "one run a point, one sample",
+        "before v0.1",
+    )
+    assert rows["The soak"][3:5] == ("\u2014", "2 hours of voice alone, then 24 hours serving")
+
+
+def test_experiments_campaign_map_is_the_table_of_its_records() -> None:
+    # EXPERIMENTS' campaign map is a table and nothing drawn: its section says how many campaigns ran and over which
+    # days, and each row is a campaign's question, span, points, rounds and samples and code as the records give them,
+    # and its record.
+    experiments = (REPO / "docs" / "EXPERIMENTS.md").read_text()
+    found = data.campaigns()
+    section = experiments.split("## Which campaign measured what, on which code", 1)[1].split(
+        "\n## ", 1
+    )[0]
+    assert "<picture>" not in section and "figures/" not in section
+    said = " ".join(section.split())
+    assert len(found) == 12
+    assert f"Twelve campaigns from {figures._map_span(list(found))} measured the results" in said
+    header = (
+        "| Campaign | What it measured | Ran, UTC | Points | Rounds and samples | Code | Records |"
+    )
+    assert next(line for line in section.splitlines() if line.startswith("|")) == header
     table = doc_table("EXPERIMENTS.md", header)
-    for c in data.campaigns():
+    for c in found:
         code, *cells = figures.campaign_row(c)
         assert table[code] == [
             *cells,
             f"[`{c.record}`](../benchmarks/results/{c.record}/README.md)",
         ], code
-    assert len(table) == len(data.campaigns())
+    assert len(table) == len(found)
 
 
 def test_a_campaigns_release_is_what_git_says_of_its_revision() -> None:

@@ -1,4 +1,4 @@
-"""The system diagrams (flatshare_bench.diagrams): each draws in both layouts with square corners, passes the style's
+"""The system diagrams (flatshare_bench.diagrams): each draws in both layouts with the style's corners, passes its
 checks and says the same in each, and what it shows is what the files it depicts say. The request path's steps run in
 the gateway's order with the refusals of its README's error table; the release's states and exits are the release
 tool's and the runbook's; the triage's rows are alerts whose runbook URLs open them; the two cards' bounds are the
@@ -22,6 +22,8 @@ SVG = "{http://www.w3.org/2000/svg}"
 GATEWAY = REPO / "crates" / "flatshare-gateway"
 DEPLOY = REPO / "deploy"
 RUNBOOK = REPO / "ops" / "RUNBOOK.md"
+RADII = {"2", "5", "8"}
+"""A cell's corner, a component's and a frame's (flatshare_bench.figure_style)."""
 
 
 def words(path: Path) -> set[str]:
@@ -32,7 +34,7 @@ def words(path: Path) -> set[str]:
 
 
 @pytest.mark.parametrize("diagram", diagrams.SYSTEM, ids=lambda d: d.__name__)
-def test_each_diagram_draws_both_layouts_square_and_says_the_same_in_each(
+def test_each_diagram_draws_both_layouts_and_says_the_same_in_each(
     diagram: Callable[[Path], list[Path]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Draft mode would write a figure that fails its checks; nothing but a person laying one out sets it.
@@ -46,16 +48,16 @@ def test_each_diagram_draws_both_layouts_square_and_says_the_same_in_each(
         # The alt text: a name, and one sentence that says what the figure shows.
         assert title and not title.endswith("."), title
         assert description.endswith(".") and not re.search(r"\. [A-Z]", description), description
-        # Square corners: no box, group, panel or cell is rounded.
-        assert " rx=" not in path.read_text(), path.name
+        # Corners take the style's three radii: a cell's, a component's, a frame's.
+        assert set(re.findall(r' rx="([\d.]+)"', path.read_text())) <= RADII, path.name
     # The phone layout breaks its lines elsewhere and drops no label.
     assert words(wide) == words(narrow), words(wide) ^ words(narrow)
 
 
-def test_the_method_figure_is_square_too(tmp_path: Path) -> None:
+def test_the_method_figure_rounds_its_corners_as_the_others_do(tmp_path: Path) -> None:
     method, narrow, *_ = diagrams.render(tmp_path)
     for path in (method, narrow):
-        assert " rx=" not in path.read_text(), path.name
+        assert set(re.findall(r' rx="([\d.]+)"', path.read_text())) <= RADII, path.name
 
 
 def error_table() -> set[tuple[str, str]]:
@@ -247,12 +249,22 @@ def test_the_overviews_parts_are_the_repositorys() -> None:
     )
     assert "the measurements name them by their first numbers, #63350 and #63351" in readme
     assert diagrams.SERVING_PARTS[2][0][0] == "vLLM 0.32 + #63350, #63351"
-    # The operations plane's parts exist: the profile's check, the release tool, the drills and the container.
-    assert (DEPLOY / "bin" / "serving-check").is_file()
-    assert (DEPLOY / "deploy.sh").is_file()
-    assert (DEPLOY / "container" / "Dockerfile").is_file()
-    assert "draining" in (GATEWAY / "README.md").read_text()
-    assert [name for name, _ in diagrams.PLANES] == [
-        "Measurement: how we know",
-        "Operations: how it runs",
+    # The figure is the serving path alone. The three planes' parts are the table under it: every home the table links
+    # is in the repository, and every part the figure draws has its row there.
+    table = [
+        [cell.strip() for cell in line.split("|")[1:5]]
+        for line in (REPO / "docs" / "ARCHITECTURE.md").read_text().splitlines()
+        if re.match(r"\| (Serving|Measurement|Operations) \|", line)
     ]
+    assert list(dict.fromkeys(plane for plane, *_ in table)) == [
+        "Serving",
+        "Measurement",
+        "Operations",
+    ]
+    homes = " ".join(home for _, _, home, _ in table)
+    links = re.findall(r"\]\(\.\./([^)]+)\)", homes)
+    assert len(links) >= len(table)
+    for link in links:
+        assert (REPO / link).exists(), link
+    for _, directory in diagrams.SERVING_PARTS:
+        assert f"`{directory}`" in homes, directory

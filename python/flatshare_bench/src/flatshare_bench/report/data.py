@@ -1780,7 +1780,7 @@ def kill(root: Path = DRILLS) -> Kill:
 
 @dataclass(frozen=True)
 class Campaign:
-    """One bar of the campaign map, from its record's runs: the code the documents give it, the question it measured,
+    """One row of the campaign map, from its record's runs: the code the documents give it, the question it measured,
     the span from its first run's start to its last run's end (Unix seconds), its complete points, its rounds (the
     directories of its rounds), the agents' samples its points replayed (their seeds) and the code it ran (its points'
     ``versions.source``, in the order they first ran), with the releases that code belongs to."""
@@ -1891,7 +1891,7 @@ def release(revision: str, first: str) -> str:
 
 
 def campaigns(root: Path = RESULTS) -> list[Campaign]:
-    """The campaign map's bars, from the records' run.json files (a soak's soak.json): each campaign's span over all
+    """The campaign map's rows, from the records' run.json files (a soak's soak.json): each campaign's span over all
     its runs, a failed point and the A100 run's probe blocks among them, and its points, samples and code from its
     complete E2 points."""
     found, first = [], first_release()

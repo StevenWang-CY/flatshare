@@ -37,23 +37,25 @@ p95 to 2.24 s against an SLO of 2.03 s. The replies over the SLO fall from 90% t
   <source media="(max-width: 767px) and (prefers-color-scheme: dark)" srcset="docs/figures/e2-demo-narrow-dark.webp">
   <source media="(max-width: 767px)" srcset="docs/figures/e2-demo-narrow.webp">
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/e2-demo-dark.webp">
-  <img src="docs/figures/e2-demo.webp" width="100%" alt="The same caller's first measured turn on two engines beside 24 coding-agent sessions on one RTX 5060 Ti, in two panels side by side as it plays. Each panel shows the wait's clock and the wait against the 2.03 s SLO, the reply's voice-to-voice as a bar against the SLO, the caller's line and the voice agent's reply as waveforms on the turn's time axis with the wait between them, and the agents' tokens a second over the calls' first 240 s. Tuned vLLM answers after 9.6 s, over the SLO; with the configuration to deploy the reply comes after 1.9 s, within it, and the agents make 3,355 tokens a second, 98% of tuned vLLM's 3,437">
+  <img src="docs/figures/e2-demo.webp" width="100%" alt="The same caller's first measured turn on two engines beside 24 coding-agent sessions on one RTX 5060 Ti, as two rows on one time axis of 20 s while it plays. In each row the caller's line is a gray waveform, the wait a flat bar and the voice agent's reply a green waveform, and a red dashed rule marks the SLO, 2.03 s after the caller's line. Tuned vLLM answers after 9.6 s, over the SLO; the configuration to deploy answers after 1.9 s, within it. At the right, the agents' tokens a second over the calls' first 240 s, as a bar a row: 3,437 with tuned vLLM, and 3,355 with the configuration to deploy, 98% of tuned vLLM's">
 </picture>
 
 *The same caller's first measured turn on each engine, beside the same 24 agent sessions on one RTX 5060 Ti, recorded
 2026-10-25. Tuned vLLM answers after 9.6 s, and the configuration to deploy after 1.9 s, its agents at 98% of tuned
-vLLM's token rate in this run ([the video](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.2)).*
+vLLM's token rate in this run. This turn is within the SLO; the 2.24 s above is the p95 of 885 replies, and in
+[the video](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.2) of the whole call the fourth turn is over it.*
 
 ## Results
 
 <picture>
   <source media="(max-width: 767px)" srcset="docs/figures/report-headline-narrow.svg">
-  <img src="docs/figures/report-headline.svg" width="100%" alt="Each run's voice-to-voice p95 on a log scale against the SLO of 2.03 s, and the agents' tokens a second over the calls' first 240 s, with each configuration's median: voice alone, no agents: 1.78 s at the median of 5 runs (1.76 to 1.82 s); tuned vLLM, the baseline: 10.48 s at the median of 10 runs (8.69 to 12.12 s), its agents at 3,305 tokens/s, 100% of tuned vLLM's; preempt-resubmit, before the first byte: 2.52 s at the median of 5 runs (2.52 to 2.87 s), its agents at 3,332 tokens/s, 101% of tuned vLLM's; the KV preemption, #63350: 5.09 s at the median of 5 runs (4.69 to 6.26 s), its agents at 3,414 tokens/s, 103% of tuned vLLM's; the change, 16-token window: 3.09 s at the median of 5 runs (2.87 to 3.19 s), its agents at 3,298 tokens/s, 100% of tuned vLLM's; and the configuration to deploy, 48-token window: 2.24 s at the median of 15 runs (2.13 to 2.40 s), its agents at 3,203 tokens/s, 97% of tuned vLLM's.">
+  <img src="docs/figures/report-headline.svg" width="100%" alt="Each configuration's voice-to-voice p95 as a bar from zero against the SLO of 2.03 s, and its agents' tokens a second over the calls' first 240 s, each at the median of its runs with their spread: voice alone, no agents: 1.78 s at the median of 5 runs (1.76 to 1.82 s); tuned vLLM, the baseline: 10.48 s at the median of 10 runs (8.69 to 12.12 s), its agents at 3,305 tokens/s, 100% of tuned vLLM's; preempt-resubmit, before the first byte: 2.52 s at the median of 5 runs (2.52 to 2.87 s), its agents at 3,332 tokens/s, 101% of tuned vLLM's; the KV preemption, #63350: 5.09 s at the median of 5 runs (4.69 to 6.26 s), its agents at 3,414 tokens/s, 103% of tuned vLLM's; the change, 16-token window: 3.09 s at the median of 5 runs (2.87 to 3.19 s), its agents at 3,298 tokens/s, 100% of tuned vLLM's; and the configuration to deploy, 48-token window: 2.24 s at the median of 15 runs (2.13 to 2.40 s), 0.20 s over the SLO, its agents at 3,203 tokens/s, 97% of tuned vLLM's.">
 </picture>
 
-*With two callers beside 24 coding-agent sessions on one RTX 5060 Ti, the two rules bring the voice tail to 0.20 s
-over the SLO, where tuned vLLM is 8.4 s over, and the agents keep 97% of their token rate. Each tick is a run and each
-marker the median of a configuration's runs. The dashed line is the SLO, voice alone's p95 plus 250 ms
+*With two callers beside 24 coding-agent sessions on one RTX 5060 Ti, the two rules bring the voice tail to 0.20 s over
+the SLO, where tuned vLLM is 8.4 s over, and the agents keep 97% of their token rate. Each bar is the median of a
+configuration's runs and the capped line their range where it is wide enough to draw. The dashed line is the SLO,
+voice alone's p95 plus 250 ms
 ([the report's Figure 8](docs/REPORT.md#61-the-two-rules-bring-the-voice-tail-to-224-s-while-the-agents-keep-97-of-their-throughput)).*
 
 The KV preemption's row runs the first pull request alone and the change's rows run both; the measurements name them by
@@ -89,7 +91,7 @@ The deployment's serving profile adds to the two rules, measured in rounds on ne
 
 <picture>
   <source media="(max-width: 767px)" srcset="docs/figures/method-narrow.svg">
-  <img src="docs/figures/method.svg" width="100%" alt="Panel a: a caller's speech goes to speech to text, then to vLLM 0.32's scheduler, which carries #63350 and #63351, then to text to speech and back to the caller; 24 coding-agent sessions send their requests to the same scheduler at priority 2, the voice turn's at priority 0; the scheduler allocates from the KV pool beneath it. Panel b, the KV preemption, #63350: in a pool of 12 KV blocks, two agent requests hold 5 each and 2 are free, fewer than the 4 a waiting voice turn needs; on vLLM 0.32 the turn keeps waiting, while the KV preemption preempts the latest agent request, agent B, and the turn takes 4 of its blocks. Panel c, the budget cap, #63351: the engine's steps in time, one box a step, from the reply's first token: on vLLM 0.32 each step of the reply also carries an agent's prefill chunk, so in the time the budget cap gives the reply its first 48 tokens the reply gets 14 without it; after the window, agent prefill resumes. Blocks and steps are illustrative.">
+  <img src="docs/figures/method.svg" width="100%" alt="Panel a: a caller's speech goes to speech to text, then to vLLM 0.32's scheduler, which carries #63350 and #63351, then to text to speech and back to the caller; 24 coding-agent sessions send their requests to the same scheduler at priority 2, the voice turn's at priority 0; the scheduler allocates from the KV pool beside it. Panel b, the KV preemption, #63350: in a pool of 12 KV blocks, two agent requests hold 5 each and 2 are free, fewer than the 4 a voice turn needs; on vLLM 0.32 the turn waits outside the pool, while the KV preemption preempts the latest agent request, agent B, which waits instead, and the turn takes 4 of its blocks. Panel c, the budget cap, #63351: the engine's steps in time, one green block a step, from the reply's first token: on vLLM 0.32 each step of the reply also carries an agent's prefill chunk, so in the time the budget cap gives the reply its first 48 tokens the reply gets 14 without it; after the window, agent prefill resumes. Blocks and steps are illustrative.">
 </picture>
 
 *The voice turn and the agents share vLLM's scheduler and KV pool (a). The KV preemption, #63350, makes room in the pool

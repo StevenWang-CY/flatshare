@@ -1,19 +1,17 @@
 """The chart parts the report's figures share, on :mod:`flatshare_bench.figure_style`: value scales and their axes,
-markers in the shapes that tell gray comparators apart, rugs of runs, ECDF steps, stacked stage bars, bars that a
-requirement hatches, and legends.
+flat bars with their runs' spread, stacked stage bars, filled dots, traces, ECDF steps and legends.
 
-The report's figures keep one encoding per meaning. A configuration has one hue, one marker and one fill in every
-figure, flatshare_bench.labels' MARKS: gray is vLLM without the change, tuned or stock, and every comparator; blue is
-the change, saturated for the configuration to deploy and its sky sibling for the change's other configurations; ink is
-voice alone; orange is the SLO, a dashed rule. Tuned vLLM, stock vLLM and preempt-resubmit are open markers and the
-change's filled, so that the gray and the blue, of one lightness, stay apart in grayscale. A run is a thin tick, or a
-small marker where a figure plots two measures of a run against each other, and a median the configuration's marker
-over its runs. The stage bars stack the voice
-turn's stages in their order, the two the engine's scheduler sets in violet (the wait for the LLM's first token) and
-green (the decode of the reply's first sentence), the rest in grays of distinct lightness, so that neighbours stay apart
-in grayscale and for a color-blind reader. A bar is pale in its hue, or hatched in it on the page where what it
-measures misses the requirement it is read against. Titles, axis titles and a key's entries are set in sentence case,
-and a panel's title names its quantity; what a mark means and what a figure covers is its caption's.
+The report's figures keep one encoding per meaning. A configuration has one hue in every figure,
+flatshare_bench.labels' MARKS: blue is the change, saturated for the configuration to deploy and soft for the change's
+other configurations; gray is vLLM without the change, tuned or stock, and every comparator; the stronger gray is voice
+alone, the reference; red is what the voice loses, the SLO's dashed rule and a turn's wait. A quantity is a flat
+mark with its value beside it: a bar from zero, a stacked bar's segment, a filled dot, or a line that carries its name
+at its end. The spread of a bar's runs is one thin capped line over the bar's end. A bar is hatched on the page where
+what it measures misses the requirement it is read against. The stage bars stack the voice turn's stages in their
+order, the two the engine's scheduler sets in red (the wait for the LLM's first token strong, the decode of the
+reply's first sentence pale) and the rest in grays of distinct lightness, so that neighbours stay apart in grayscale
+and for a color-blind reader. Titles, axis titles and a key's entries are set in sentence case, and a panel's title
+names its quantity; what a mark means and what a figure covers is its caption's.
 
 :class:`Chart` adds these parts' classes to the figure's style and, to :meth:`Figure.check`'s refusals, a label over a
 data mark.
@@ -27,7 +25,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from flatshare_bench.figure_style import (
-    BAR_LINE,
+    BAR_CORNER,
     NOTE,
     Box,
     Figure,
@@ -37,28 +35,29 @@ from flatshare_bench.figure_style import (
 )
 
 MARK = 5.0
-"""A run's open marker: its radius."""
+"""A dot's radius."""
 MARK_LINE = 1.4
 """An open marker's outline."""
-TICK_HALF = 11.0
-"""A median's tick: half its length across a row."""
+SPREAD_CAP = 3.5
+"""A spread's cap: half its length across the bar."""
+SPREAD_MIN = 8.0
+"""The least width at which a spread is drawn: under it the two caps close into one glyph, and the runs, which then
+agree to within a few percent of the axis, stand as the bar's end."""
 STAGES = ("endpointing", "wait", "decode", "tts", "transport")
 """The voice turn's stages from the end of the caller's speech, in their order, each a stacked bar's segment."""
 PALETTE = {
-    "sky": ("#5a8fd6", "#3b69a6"),
-    "stage-endpointing": ("#dde1e7", "#2d333b"),
-    "stage-wait": ("#9d87d8", "#6a56ad"),
-    "stage-decode": ("#a4dac1", "#245c45"),
-    "stage-tts": ("#8a929e", "#7d8692"),
-    "stage-transport": ("#f3f4f6", "#1a1f26"),
+    "stage-endpointing": ("#d1d5d9", "#40464d"),
+    "stage-wait": ("#e06a64", "#af3c3a"),
+    "stage-decode": ("#fdd0cb", "#652b28"),
+    "stage-tts": ("#b5bfcb", "#535c66"),
+    "stage-transport": ("#e4e6ea", "#30353b"),
 }
-"""The colors the charts add to figure_style's palette, light and dark. Sky is the change's sibling blue as a marker
-or a line carries it (figure_style's pale blue is a fill, too faint for a marker's outline on the page): fainter than
-the saturated blue against the page in either theme, and at 3:1 or more on it, as a mark must be (WCAG 1.4.11). Each
-pair of neighbouring stages clears a ΔE (OKLab) of 15 for every reader and under simulated deuteranopia and
-protanopia; ink sets a stage's value inside the violet at 5:1 or more in both themes."""
-HUES = ("gray", "blue", "sky", "ink", "orange")
-"""The hues a mark takes: figure_style's gray, blue and orange, and the charts' sky and ink."""
+"""The stage fills the charts add to figure_style's palette, light and dark, off the same ladder (tools: the wait is
+red's mark tone and the decode its wash; endpointing, TTS and transport are grays of three lightnesses). Ink sets a
+stage's value inside the wait at 4.5:1 or more in both themes."""
+HUES = ("gray", "blue", "sky", "green", "ink", "red")
+"""The hues a mark takes: figure_style's gray, blue, green and red, the charts' sky (the softer blue of the
+change's other configurations) and ink."""
 
 
 def _variables(theme: int) -> str:
@@ -67,24 +66,19 @@ def _variables(theme: int) -> str:
 
 CHART_CSS = (
     f"svg{{{_variables(0)}}}@media(prefers-color-scheme:dark){{svg{{{_variables(1)}}}}}"
-    ".sky{--c:var(--sky);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}"
+    ".sky{--c:var(--blue-m);--m:var(--blue-m);--w:var(--blue-w);--a:var(--blue-a)}"
+    ".ink{--c:var(--ink)}.soft-ink{--c:var(--soft)}"
     f".mark{{fill:var(--page);stroke:var(--c);stroke-width:{MARK_LINE}}}"
-    ".mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.2}"
-    ".cross{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round}"
+    ".mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.4}.gray.mark-fill{fill:var(--m)}"
     ".trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}"
-    ".trace.thick{stroke-width:2.4}.trace.dashed{stroke-dasharray:8 5}"
-    ".trace.dotted{stroke-width:2.6;stroke-dasharray:0 5.5;stroke-linecap:round}"
-    ".median{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}"
+    ".trace.thick{stroke-width:2.8}.trace.dashed{stroke-dasharray:7 5}"
+    ".trace.dotted{stroke-width:2.4;stroke-dasharray:0 5.5;stroke-linecap:round}"
     ".hair{fill:none;stroke:var(--axis);stroke-width:1}"
-    ".ref{fill:none;stroke:var(--c);stroke-width:1.5}"
-    ".range{fill:none;stroke:var(--c);stroke-width:1.4}"
-    ".run{fill:none;stroke:var(--c);stroke-width:1.5;stroke-linecap:butt}"
+    ".ref{fill:none;stroke:var(--c);stroke-width:1.4}"
+    ".range{fill:none;stroke:var(--c);stroke-width:1.4;stroke-linecap:round}"
     ".band{fill:var(--a)}"
-    ".arrow{fill:none;stroke:var(--c);stroke-width:1.6}.arrow-head{fill:var(--c)}"
-    + "".join(
-        f".s-{stage}{{fill:var(--stage-{stage});stroke:var(--bar-line);stroke-width:{BAR_LINE}}}"
-        for stage in STAGES
-    )
+    ".arrow{fill:none;stroke:var(--c);stroke-width:1.4}.arrow-head{fill:var(--c)}"
+    + "".join(f".s-{stage}{{fill:var(--stage-{stage})}}" for stage in STAGES)
 )
 
 
@@ -153,16 +147,16 @@ class Chart(Figure):
         hue: str,
         shape: str = "circle",
         *,
-        filled: bool = False,
+        filled: bool = True,
         r: float = MARK,
         name: str = "a mark",
     ) -> None:
-        """A marker centred at (x, y): open (a run), or ``filled`` (a configuration's median), in ``hue``; ``shape``
+        """A dot centred at (x, y) in ``hue``, ringed in the page's color so that two that touch stay two; ``shape``
         one of SHAPES. Its extent joins the marks no label may cover."""
         if hue not in HUES:
             raise ValueError(f"a mark's hue is one of {HUES}, not {hue!r}")
         draw, extent = SHAPES[shape]
-        cls = "cross" if shape == "cross" else "mark-fill" if filled else "mark"
+        cls = "mark-fill" if filled else "mark"
         self.path(draw(x, y, r), f"{hue} {cls}")
         half = extent * r + (MARK_LINE / 2 if not filled else 0.6)
         self.marks.append(
@@ -183,13 +177,6 @@ class Chart(Figure):
         self.path(d, cls)
         if wire:
             self.wires.append(([(float(x), float(y)) for x, y in points], ()))
-
-    def median(self, x: float, y: float, hue: str, *, half: float = TICK_HALF) -> None:
-        """A configuration's median across its row at ``y``: a short thick vertical tick."""
-        self.path(f"M{fmt(x)} {fmt(y - half)}V{fmt(y + half)}", f"{hue} median")
-        self.marks.append(
-            Box(x - 2, y - half - 2, x + 2, y + half + 2, f"a median at ({x:.0f}, {y:.0f})")
-        )
 
     def arrow(
         self, a: tuple[float, float], b: tuple[float, float], hue: str, *, gap: float = 9
@@ -222,10 +209,22 @@ class Chart(Figure):
             if stage not in STAGES:
                 raise ValueError(f"a stage is one of {STAGES}, not {stage!r}")
             starts.append(x)
-            self._hpath(x, y, length, thickness, f"s-{stage}", 3.0 if k == len(parts) - 1 else 0.0)
+            self._segment(x, y, length, thickness, f"s-{stage}", k, len(parts))
             self.covers.append((Box(x, y, x + length, y + thickness, stage), len(self.items) - 1))
             x += length
         return starts
+
+    def span(self, x0: float, x1: float, y: float, *, name: str = "a spread") -> None:
+        """The spread of a bar's runs, from the least to the greatest: one thin level line in ink over the bar's
+        end with a cap at each end, as an error bar is drawn, in place of a tick a run. Its extent joins the marks
+        no label may cover."""
+        cap = SPREAD_CAP
+        self.path(
+            f"M{fmt(x0)} {fmt(y - cap)}V{fmt(y + cap)}M{fmt(x0)} {fmt(y)}H{fmt(x1)}"
+            f"M{fmt(x1)} {fmt(y - cap)}V{fmt(y + cap)}",
+            "soft-ink range",
+        )
+        self.marks.append(Box(x0 - 1, y - cap - 1, x1 + 1, y + cap + 1, name))
 
     def bar(
         self,
@@ -249,10 +248,9 @@ class Chart(Figure):
         self.marks.append(Box(x, y, x + length, y + thickness, name))
 
 
-BAR_FILLS = {"gray": "lo", "blue": "soft"}
-"""A bar's fill by its hue: figure_style's pale gray for a comparator, its pale blue for the change."""
-BAR_CORNER = 3.0
-"""The radius of a bar's rounded free end, figure_style's."""
+BAR_FILLS = {"gray": "lo", "blue": "hi", "sky": "soft", "ink": "mid"}
+"""A bar's fill by its hue: the soft gray for a comparator, the saturated blue for the configuration to deploy, the
+soft blue for the change's other configurations, and the stronger gray for voice alone, the reference."""
 HATCH_STEP = 6.0
 """Between a hatched bar's lines, along it."""
 
@@ -283,46 +281,16 @@ def _circle(x: float, y: float, r: float) -> str:
     )
 
 
-def _polygon(points: Sequence[tuple[float, float]]) -> str:
-    return "M" + "L".join(f"{fmt(px)} {fmt(py)}" for px, py in points) + "Z"
-
-
-def _square(x: float, y: float, r: float) -> str:
-    h = 0.86 * r
-    return _polygon([(x - h, y - h), (x + h, y - h), (x + h, y + h), (x - h, y + h)])
-
-
-def _triangle(x: float, y: float, r: float) -> str:
-    # Equilateral and upright, about its centroid, a little larger than the circle so that their areas match.
-    c = 1.3 * r
-    return _polygon([(x, y - c), (x + c * 0.866, y + c / 2), (x - c * 0.866, y + c / 2)])
-
-
-def _diamond(x: float, y: float, r: float) -> str:
-    d = 1.2 * r
-    return _polygon([(x, y - d), (x + d, y), (x, y + d), (x - d, y)])
-
-
-def _cross(x: float, y: float, r: float) -> str:
-    d = 0.95 * r
-    return f"M{fmt(x - d)} {fmt(y - d)}L{fmt(x + d)} {fmt(y + d)}M{fmt(x - d)} {fmt(y + d)}L{fmt(x + d)} {fmt(y - d)}"
-
-
 def _dot(x: float, y: float, r: float) -> str:
     return _circle(x, y, 0.62 * r)
 
 
 SHAPES: dict[str, tuple[Callable[[float, float, float], str], float]] = {
     "circle": (_circle, 1.0),
-    "square": (_square, 0.86),
-    "triangle": (_triangle, 1.3),
-    "diamond": (_diamond, 1.2),
-    "cross": (_cross, 0.95),
     "dot": (_dot, 0.62),
 }
-"""Each marker's path at a radius, and its half extent in radii. A comparator's shape names its family in grayscale:
-tuned vLLM a circle, preempt-resubmit a square, the other routers a triangle, a gateway's policy a diamond,
-another engine a cross, voice alone a small dot."""
+"""Each marker's path at a radius, and its half extent in radii: a configuration's circle, and the smaller dot of
+the build with its switches off (labels.MARKS)."""
 
 
 # Scales and axes ------------------------------------------------------------------------------------------------
@@ -420,51 +388,7 @@ def pct(share: float) -> str:
     return f"{share:.0%}"
 
 
-# Runs, and steps -----------------------------------------------------------------------------------------------
-
-
-def rug(
-    s: Chart,
-    xs: Sequence[float],
-    y: float,
-    hue: str,
-    shape: str = "circle",
-    *,
-    median: float,
-    half: float = 10.0,
-    filled: bool = True,
-) -> None:
-    """A row's runs at canvas positions ``xs`` as thin ticks across the row, and their ``median`` (a canvas position)
-    as a marker over them, ``filled`` or open as the configuration's mark is (flatshare_bench.labels' MARKS): a form
-    that keeps runs within a few units of each other apart from a row's height."""
-    runs(s, xs, y, hue, half=half)
-    s.mark(median, y, hue, "circle" if shape == "dot" else shape, filled=filled, r=5.2)
-
-
-def runs(s: Chart, xs: Sequence[float], y: float, hue: str, *, half: float = 10.0) -> None:
-    """A row's runs at canvas positions ``xs`` as thin ticks across the row at ``y``, each ``half`` long either side
-    of it: a rug's, or over a bar whose length is their median."""
-    for x in xs:
-        s.path(f"M{fmt(x)} {fmt(y - half)}V{fmt(y + half)}", f"{hue} run")
-        s.marks.append(Box(x - 1, y - half, x + 1, y + half, f"a run at ({x:.0f}, {y:.0f})"))
-
-
-def column_rug(
-    s: Chart,
-    x: float,
-    ys: Sequence[float],
-    hue: str,
-    shape: str = "circle",
-    *,
-    median: float,
-    half: float = 10.0,
-) -> None:
-    """:func:`rug` turned upright: a column's runs at canvas heights ``ys`` as short horizontal ticks, and their
-    ``median`` (a canvas height) as a filled marker over them."""
-    for y in ys:
-        s.path(f"M{fmt(x - half)} {fmt(y)}H{fmt(x + half)}", f"{hue} run")
-        s.marks.append(Box(x - half, y - 1, x + half, y + 1, f"a run at ({x:.0f}, {y:.0f})"))
-    s.mark(x, median, hue, shape, filled=True, r=5.2)
+# Steps ---------------------------------------------------------------------------------------------------------
 
 
 def ecdf(
@@ -497,7 +421,7 @@ class Key:
     draw: Callable[[Chart, float, float], None]
 
 
-def mark_key(hue: str, shape: str = "circle", *, filled: bool = False, r: float = MARK) -> Key:
+def mark_key(hue: str, shape: str = "circle", *, filled: bool = True, r: float = MARK) -> Key:
     def draw(s: Chart, x: float, baseline: float) -> None:
         s.mark(
             x + r + 2, baseline - 0.32 * NOTE, hue, shape, filled=filled, r=r, name="a legend's key"
@@ -569,23 +493,33 @@ def legend(
     return baseline
 
 
-def legend_columns(
-    s: Chart,
-    x: float,
-    baseline: float,
-    entries: Sequence[tuple[Key, str]],
-    *,
-    columns: int,
-    column: float,
-    size: float = NOTE,
-    pitch: float = 26,
-    halo: bool = False,
-) -> float:
-    """Entries down ``columns`` columns ``column`` units apart from ``x``, the first column filled first, their
-    names on a halo where the legend sits in a plot. Returns the last row's baseline."""
-    rows = math.ceil(len(entries) / columns)
-    for k, (key, name) in enumerate(entries):
-        left, y = x + column * (k // rows), baseline + pitch * (k % rows)
-        key.draw(s, left, y)
-        s.text(left + key.width + KEY_GAP, y, name, size=size, halo=halo)
-    return baseline + pitch * (rows - 1)
+# --- v1.27 review fixes (packet FR) ---
+
+BREAK_WIDTH, BREAK_LEAN, BREAK_STEP, BREAK_TAIL = 2.5, 5.0, 6.5, 4.0
+"""A cut bar's two breaks: each one's width, how far it leans from its foot to its head, the pitch from one to the
+next, and the bar left after the last one, before the scale's end."""
+
+
+def cut_breaks(s: Figure, end: float, top: float, bottom: float) -> None:
+    """The two leaning breaks, in the page's color, that part a bar cut at ``end`` (the scale's end) near that end,
+    across the bar from ``top`` to ``bottom``: the bar runs on past the scale, and its value, set after it, says how
+    far."""
+    for k in range(2):
+        foot = end - BREAK_TAIL - BREAK_LEAN - BREAK_WIDTH - k * BREAK_STEP
+        s.path(
+            f"M{fmt(foot)} {fmt(bottom + 1)}L{fmt(foot + BREAK_LEAN)} {fmt(top - 1)}"
+            f"H{fmt(foot + BREAK_LEAN + BREAK_WIDTH)}L{fmt(foot + BREAK_WIDTH)} {fmt(bottom + 1)}Z",
+            "page",
+        )
+
+
+def cut_key(bar: str = "lo") -> Key:
+    """A cut bar's key: a short bar in the fill ``bar`` (figure_style's BARS) with a square end and the two breaks."""
+    width = 30.0
+
+    def draw(s: Chart, x: float, baseline: float) -> None:
+        top, thick = baseline - 0.66 * NOTE, 0.7 * NOTE
+        s.hbar(x, top, width, thick, bar, cut=True)
+        cut_breaks(s, x + width, top, top + thick)
+
+    return Key(width, draw)

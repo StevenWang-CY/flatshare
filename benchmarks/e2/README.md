@@ -251,14 +251,20 @@ make demo-video DEMO=$FLATSHARE_E2_RESULTS/demo
 
 `make demo-video` renders the video to `build/flatshare-demo.mp4` (`DEMO_OUT`), and
 [the repository README](../../README.md)'s animation to `docs/figures/e2-demo.webp` with its dark theme and phone
-layout, in seven minutes on an Apple M5 Max. It reads W5's report for the voice SLO, and the A100's for the same two
+layout, in about four minutes on an Apple M5 Max. It reads W5's report for the voice SLO, and the A100's for the same two
 configurations there. The v1.0 release's `leaseholder-raw-records-demo.tar.gz` holds the two points' run directories,
 which are not in the tables.
 
-**What it shows.** Each frame shows a panel per call, the baseline's in gray and the configuration to deploy's in blue.
-A clock counts each wait against the SLO, voice alone's median V2V p95 plus 250 ms (2.03 s), bars give each reply's V2V,
-and the agents' tokens a second stand at the foot. Both calls play the same turns from the same moment, and only a
-caller's pause between turns is stretched, never a measured wait.
+**What it shows.** Each frame is the README's chart of the two configurations with the turn under way in place of its
+first panel: a row per call, the baseline above in gray and the configuration to deploy below in blue. A row's lane is
+the turn on one time axis for both rows: the caller's line as a gray waveform, the wait as a flat bar in the row's
+color, and the voice agent's reply as a green waveform, each drawn as it plays. Beside the row's name a clock counts the
+wait against the SLO, voice alone's median V2V p95 plus 250 ms (2.03 s), which a red dashed rule marks that long after
+the caller's line. At the right stand the agents' tokens a second, each row's with its share of the baseline's.
+
+Under both rows the video draws each reply's V2V, a pair of bars per turn against the SLO, and a speaker marks the row
+whose call is heard. Both calls play the same turns from the same moment, and only a caller's pause between turns is
+stretched, never a measured wait.
 
 The frames follow the docs' figures, in STIX Two and their palette. The video is 1920×1080 at 60 frames a second, H.264
 with AAC sound, and the animation is the first turn alone, silent and looping, as lossless WebP.

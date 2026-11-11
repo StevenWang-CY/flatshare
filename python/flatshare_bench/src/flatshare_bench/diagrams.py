@@ -3,47 +3,53 @@
     python -m flatshare_bench.diagrams OUT_DIR
 
 The method figure, docs/figures/method.svg and method-narrow.svg, the README's and the report's: a voice agent and
-coding agents on one GPU, and the two scheduler rules of vLLM #63350 and #63351. (a) is a stage strip: a caller's turn
-through speech to text, vLLM's scheduler and text to speech, beside the coding agents' requests, the KV pool the
-scheduler allocates from below it. Its dashed outlines zoom into the panels below, each named by its rule as the report
-names it, and by its number: the pool into (b), the KV preemption (#63350), and the scheduler into (c), the budget cap
-(#63351).
+coding agents on one GPU, and the two scheduler rules of vLLM #63350 and #63351, in three panels one under another.
+(a) is the serving path: a caller's turn through speech to text, vLLM's scheduler and text to speech, on green
+flows, beside the coding agents' requests, and the KV pool the scheduler allocates from, a tray of blocks. (b) and
+(c) each compare vLLM 0.32 with one rule, named as the report names it and by its number, a row each under one
+column of names: (b), the KV preemption (#63350), in the pool's blocks, and (c), the budget cap (#63351), in the
+engine's steps along time.
 
 The blocks and steps are illustrative, and obey the rules they show (docs/REPORT.md §3). Make-room
 preempts lower-priority running requests in vLLM's own order, the latest arrival first, as few as make the
-waiting request fit; render() works out its victims with :func:`make_room` and draws what it returns. The
-budget cap holds lower-priority prefill from the step the turn fits until it has its first tokens, and never
-cuts a decode. A step's length is drawn in the ratio of the recorded gaps between a reply's tokens beside
-agent prefill and with it held (the README's "What it shows": 60-65 ms and 16-20 ms), at the middle of each.
+waiting request fit; (b) works out its victims with :func:`make_room` and draws what it returns. The
+budget cap keeps lower-priority prefill out of the steps from the one where the turn fits until it has its first
+tokens, and never cuts a decode. A step's length is drawn in the ratio of the recorded gaps between a reply's tokens
+beside agent prefill and without it (the README's "What it shows": 60-65 ms and 16-20 ms), at the middle of each.
 
-The system diagrams, square-cornered: docs/ARCHITECTURE.md's figures, overview.svg (the system at a glance: the
-engine change in the serving plane, and the measurement and operations planes beside it), then the serving path's,
-architecture.svg (the hosts, their units and the sockets between them), request-path.svg (a request's steps through the gateway and each one's
-refusals), two-cards.svg (the two-card arrangement's placement and its measured failover) and release.svg (a release's
-states and exits), and ops/RUNBOOK.md's triage.svg (five checks from a failing call to its runbook row). Each draws
-what the files it depicts say, which tests/test_diagrams.py holds it to.
+The system diagrams: docs/ARCHITECTURE.md's figures, overview.svg (the system at a glance: the engine that carries the change
+on the serving path, and what measures it and what runs it as two lists beside it), then the serving path's,
+architecture.svg (the hosts, their units and the sockets between them), request-path.svg (a request's steps through
+the gateway and each one's refusals), two-cards.svg (the two-card arrangement's placement and its measured failover)
+and release.svg (a release's states and exits), and ops/RUNBOOK.md's triage.svg (five checks from a failing call to
+its runbook row). Each draws what the files it depicts say, which tests/test_diagrams.py holds it to.
+
+One grammar for all of them (the design system's): a component is a box, pale inside a thin outline at corner 5,
+and the one that carries the change is the only blue one; a host or a namespace is a hairline frame at corner 8
+with its name inside its top left; KV blocks, steps and slots are flat cells at corner 2; the voice turn's path and
+blocks are green, everything else neutral; dashes mean a part that is there only with the second card.
 """
 
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from flatshare_bench.figure_style import (
+    CORNER,
     LABEL,
     NARROW,
     NOTE,
-    VALUE,
     WIDTH,
     Figure,
-    fmt,
     measure,
     wrap,
 )
 
 VOICE, AGENT = "green", "gray"
-"""The voice turn's hue and the agents' (blue is the change's own: its components)."""
+"""The voice turn's hue and the agents' (blue is the change's own: the component that carries it)."""
 POOL = 12
 """KV blocks in (b)'s pool."""
 HOLDERS = (("agent A", 5), ("agent B", 5))
@@ -51,16 +57,24 @@ HOLDERS = (("agent A", 5), ("agent B", 5))
 TURN = 4
 """The blocks the waiting voice turn needs for its whole sequence."""
 WINDOW = 48
-"""The reply's first tokens during which #63351 holds agent prefill: the configuration to deploy's."""
+"""The reply's first tokens during which #63351 keeps agent prefill out: the configuration to deploy's."""
 DECODE_MS, SHARED_MS = 18.0, 62.0
 """A step that carries only the reply's decode, and one that carries an agent's prefill chunk beside it: the
 middles of the recorded 16-20 ms and 60-65 ms gaps between the reply's tokens."""
 RESUMED = 2
 """Steps drawn after the window, where agent prefill shares the steps again."""
-STEPS_AXIS = "Engine steps from the reply's first token"
-"""(c)'s time axis: one box a step."""
-PANEL_H = 384.0
-"""(b) and (c)'s height, side by side and stacked: each panel's rows and its last labels, and its pad."""
+STEPS_AXIS = "Time from the reply's first token"
+"""(c)'s time axis: one green block a step."""
+EDGE = 24.0
+"""A wide figure's margin; a phone layout's is 16."""
+NAMES = 264.0
+"""Where (b)'s pool and (c)'s steps begin in the wide figure: right of the one column of their rows' names."""
+BLOCK = 32.0
+"""The height of a KV block in (b) and of a step in (c): one mark at one weight."""
+TRAY = 6.0
+"""The pool's tray around its blocks."""
+SPAN = 8.0
+"""From a row of blocks, or its tray, down to the bracket that names its spans."""
 
 
 def make_room(free: int, holders: tuple[tuple[str, int], ...], need: int) -> list[str]:
@@ -76,228 +90,389 @@ def make_room(free: int, holders: tuple[tuple[str, int], ...], need: int) -> lis
     return victims if room >= need else []
 
 
-def _cell(s: Figure, x: float, y: float, width: float, height: float, kind: str | None) -> None:
-    """One KV block: an agent's (gray), the voice turn's (green), preempted (an agent's, hatched) or free."""
-    if kind is None:
-        s.rect(x, y, width, height, "cell-empty")
-    elif kind == "preempted":
-        s.cells(x, y, [AGENT], cell=width, height=height, hatched=frozenset({0}))
-    else:
-        s.rect(x, y, width, height, f"{kind} cell")
+Spans = list[tuple[str, int, int]]
+"""The named runs of a row of blocks: a name, its first block and the one past its last."""
 
 
-def _pool(
-    s: Figure, x: float, y: float, kinds: list[str | None], pitch: float, height: float
-) -> float:
-    """The KV pool's blocks inside its dashed outline, from ``x``; returns the outline's right edge."""
-    s.memory(x - 6, y - 6, pitch * len(kinds) + 8, height + 12)
-    for k, kind in enumerate(kinds):
-        _cell(s, x + pitch * k, y, pitch - 4, height, kind)
-    return x - 6 + pitch * len(kinds) + 8
-
-
-def make_room_panel(
-    s: Figure, x: float, y: float, w: float, h: float, *, ground: str = "a"
-) -> None:
-    """(b): the pool full of two agent requests' blocks while a voice turn waits beside it, then make-room
-    preempting the latest of them, and the turn in its blocks."""
+def pool_states() -> tuple[list[str | None], Spans, list[str | None], Spans, str, int]:
+    """(b)'s two rows. On vLLM 0.32: the pool's blocks, the agents' and the free ones, and their spans, while the
+    turn waits. With the KV preemption: the pool after make-room's victim left it and the turn took its blocks.
+    Then the victim's name and how many blocks it held."""
     held = sum(blocks for _, blocks in HOLDERS)
     free = POOL - held
     victims = make_room(free, HOLDERS, TURN)
-    assert free < TURN and victims == ["agent B"], (free, victims)  # what the panel shows
-    spans, start = {}, 0
-    for name, blocks in HOLDERS:
-        spans[name] = (start, start + blocks)
-        start += blocks
+    # What the panel shows: the turn does not fit, and one request, the latest, makes room for it.
+    assert free < TURN and victims == [HOLDERS[-1][0]] == ["agent B"], (free, victims)
     before: list[str | None] = [AGENT] * held + [None] * free
-    preempted: list[str | None] = [
-        "preempted" if any(a <= k < b for v in victims for a, b in [spans[v]]) else kind
-        for k, kind in enumerate(before)
-    ]
-    taken = [k for k, kind in enumerate(preempted) if kind == "preempted"][:TURN]
-    after: list[str | None] = [
-        VOICE if k in taken else (None if kind == "preempted" else kind)
-        for k, kind in enumerate(preempted)
-    ]
-
-    s.panel(x, y, w, h, "The KV preemption, #63350", "b", ground=ground)
-    x0 = x + 26
-    pitch = min(26.0, (w - 52 - 30) / (POOL + TURN))
-    height = 24
-    col = [x0 + pitch * k for k in range(POOL + 1)]
-    turn_x = col[POOL] + 30  # the waiting turn's blocks, beside the pool
-
-    def span(a: int, b: int) -> tuple[float, float]:
-        return col[a], col[b] - 4
-
-    # Stock vLLM: the pool is full; the turn waits beside it, as the word over it says (the caption says until when).
-    y1 = y + 84
-    s.text(x0, y1 - 14, "vLLM 0.32", size=VALUE)
-    _pool(s, x0, y1, before, pitch, height)
-    for k in range(TURN):
-        _cell(s, turn_x + pitch * k, y1, pitch - 4, height, VOICE)
-    for name, (a, b) in spans.items():
-        s.bracket(*span(a, b), y1 + height + 12, name)
-    s.bracket(*span(held, POOL), y1 + height + 12, "free")
-    s.bracket(turn_x, turn_x + pitch * TURN - 4, y1 + height + 12, "voice turn")
-    # Its state over it, as the victim's is over its blocks in the row under it.
-    s.text(turn_x + (pitch * TURN - 4) / 2, y1 - 12, "waiting", size=NOTE, anchor="middle")
-    # The KV preemption: the latest agent request is preempted, then the turn takes its blocks. The row's name stands a
-    # line over the victim's bracket, so that the two never read as one label.
-    y2 = y1 + 134
-    s.text(x0, y2 - 42, "The KV preemption", size=VALUE)
-    _pool(s, x0, y2, preempted, pitch, height)
-    for k in range(TURN):
-        _cell(s, turn_x + pitch * k, y2, pitch - 4, height, VOICE)
-    (a, b), victim = spans[victims[0]], victims[0]
-    s.bracket(*span(a, b), y2 - 12, f"{victim}, preempted", below=False)
-    y3 = y2 + 88
-    _pool(s, x0, y3, after, pitch, height)
-    s.flow(
-        [
-            (turn_x + (pitch * TURN - 4) / 2, y2 + height + 3),
-            (turn_x + (pitch * TURN - 4) / 2, y2 + height + 28),
-            ((col[taken[0]] + col[taken[-1] + 1] - 4) / 2, y2 + height + 28),
-            ((col[taken[0]] + col[taken[-1] + 1] - 4) / 2, y3 - 6),
-        ],
-        hue=VOICE,
-        radius=6,
+    spans: Spans = []
+    start = 0
+    for name, blocks in HOLDERS:
+        spans.append((name, start, start + blocks))
+        start += blocks
+    (victim,) = victims
+    _, first, last = spans[-1]
+    after = [*before[:first], *[VOICE] * TURN, *[None] * (POOL - first - TURN)]
+    return (
+        before,
+        [*spans, ("free", held, POOL)],
+        after,
+        [*spans[:-1], ("voice turn", first, first + TURN), ("free", first + TURN, POOL)],
+        victim,
+        last - first,
     )
-    s.bracket(*span(taken[0], taken[-1] + 1), y3 + height + 12, "voice turn")
-    s.bracket(*span(taken[-1] + 1, POOL), y3 + height + 12, "free")
-    # Where the victim went (docs/ARCHITECTURE.md §2), its KV in the CPU tier when it is preempted, is the caption's.
 
 
-def hold_prefill_panel(
-    s: Figure, x: float, y: float, w: float, h: float, *, ground: str = "b"
-) -> None:
-    """(c): the engine's steps on a time axis from the reply's first: on vLLM 0.32 (or with the KV preemption
-    alone, whose gaps the steps are drawn from) each carries an agent's prefill chunk beside the reply's
-    token; with the budget cap the window's steps carry the reply alone, at decode speed, and agent prefill
-    resumes after it."""
-    s.panel(x, y, w, h, "The budget cap, #63351", "c", ground=ground)
-    x0 = x + 26
-    length = w - 52
-    span_ms = WINDOW * DECODE_MS + RESUMED * SHARED_MS
-    unit = length / span_ms
-    height = 24
-    # The panel's key: what a step holds, on one line where it fits.
-    ky = y + 72
-    s.rect(x0, ky - 13, 14, 16, f"{VOICE} cell")
-    first = s.text(x0 + 22, ky, "The reply's token", size=NOTE)
-    second = "An agent's prefill chunk"
-    kx = first.x1 + 22
-    if kx + 38 + measure(second, NOTE) > x + w - 18:
-        kx, ky = x0, ky + 26
-    s.rect(kx, ky - 13, 30, 16, f"{AGENT} cell")
-    s.text(kx + 38, ky, second, size=NOTE)
-    shift = ky - (y + 72)  # the rows start under the key
+def _fit(text: str, width: float, size: float, *, bold: bool = False) -> list[str]:
+    """``text`` in lines no wider than ``width``, broken at its spaces."""
+    lines, line = [], ""
+    for word in text.split(" "):
+        trial = f"{line} {word}".strip()
+        if line and measure(trial, size, bold=bold) > width:
+            lines.append(line)
+            line = word
+        else:
+            line = trial
+    return [*lines, line]
 
-    def step(at: float, row_y: float, shared: bool) -> float:
-        """One step from ``at`` ms: the reply's token, and beside it an agent's prefill chunk when
-        ``shared``; returns where the next step starts."""
-        ms = SHARED_MS if shared else DECODE_MS
-        left, width = x0 + at * unit, ms * unit - 1.2
-        decode = DECODE_MS * unit - 1.2
-        s.rect(left, row_y, decode, height, f"{VOICE} cell")
-        if shared:
-            s.rect(left + decode, row_y, width - decode, height, f"{AGENT} cell")
-        return at + ms
 
-    # vLLM 0.32, as panel b's first row (or the KV preemption alone, whose gaps the steps are drawn from): every step
-    # shares the reply's token with an agent's prefill chunk.
-    y1 = y + 122 + shift
-    s.text(x0, y1 - 12, "vLLM 0.32", size=VALUE)
-    at, steps = 0.0, 0
-    while at + SHARED_MS <= span_ms + 1e-9:
-        at = step(at, y1, True)
-        steps += 1
+def _title(s: Figure, x: float, y: float, letter: str, title: str) -> float:
+    """A panel's title with its letter, in the semibold from ``x``, its capitals' top at ``y``, on as many lines as
+    the figure's width asks. A panel of the method figure has no frame: its title and the space over it part it
+    from the one above. Returns the last line's baseline."""
+    baseline = y + 0.7 * LABEL
+    lines = _fit(f"({letter}) {title}", s.width - 2 * x, LABEL, bold=True)
+    for k, line in enumerate(lines):
+        s.text(x, baseline + 26 * k, line, bold=True)
+    return baseline + 26 * (len(lines) - 1)
+
+
+def _row_name(
+    s: Figure, x: float, y: float, name: str, note: str, *, ours: bool = False, right: float = 0
+) -> float:
+    """A row's name and under it, softer, what happens in the row; the change's own row (``ours``) in the semibold.
+    Beside the row (the wide figure), both end at ``x`` and stand about the row's middle, ``y``. Over the row (a
+    phone's, ``right`` its right edge), the name starts at ``x`` on the baseline ``y`` and the note ends at
+    ``right`` on the same line, or stands on a line of its own when the two do not fit. Returns the last baseline."""
+    if not right:
+        s.text(x, y - 4, name, anchor="end", bold=ours)
+        s.text(x, y + 18, note, size=NOTE, anchor="end", cls="soft")
+        return y + 18
+    box = s.text(x, y, name, bold=ours)
+    if box.x1 + 14 + measure(note, NOTE) <= right:
+        s.text(right, y, note, size=NOTE, anchor="end", cls="soft")
+        return y
+    s.text(x, y + 22, note, size=NOTE, cls="soft")
+    return y + 22
+
+
+def _blocks(
+    s: Figure,
+    x: float,
+    y: float,
+    pitch: float,
+    blocks: list[str | None],
+    spans: Spans,
+    *,
+    tray: bool = True,
+    taken: bool = False,
+) -> float:
+    """A row of KV blocks from ``x``, ``pitch`` apart, in the pool's ``tray`` or, waiting, outside it; ``taken``
+    hatches them, a preempted request's. A bracket under the row names each of its ``spans``. Returns the lowest
+    edge of the names."""
+    if tray:
+        s.memory(x - TRAY, y - TRAY, pitch * len(blocks) + 2 * TRAY, BLOCK + 2 * TRAY)
+    s.cells(
+        x,
+        y,
+        blocks,
+        cell=pitch,
+        height=BLOCK,
+        strong=(VOICE,),
+        hatched=frozenset(range(len(blocks))) if taken else frozenset(),
+    )
+    under = y + BLOCK + TRAY + SPAN
+    for name, a, b in spans:
+        s.bracket(x + pitch * a + 3, x + pitch * b - 3, under, name)
+    return under + 0.72 * NOTE + 6 + 0.24 * NOTE
+
+
+def make_room_panel(s: Figure, x: float, y: float, w: float, *, stacked: bool = False) -> float:
+    """(b): the pool's blocks on vLLM 0.32, full of two agent requests' while the voice turn waits outside it, and
+    with the KV preemption, where the latest agent request waits instead, preempted, and the turn has its blocks.
+    The rows' names stand in a column left of them, or, ``stacked`` (a phone's layout), over them, with what waits
+    under each pool. Returns the panel's lowest edge."""
+    before, before_spans, after, after_spans, victim, lost = pool_states()
+    base = _title(s, x, y, "b", "The KV preemption, #63350")
+    pool = f"KV pool, {POOL} blocks"
+    rows = (
+        ("vLLM 0.32", "the voice turn waits", False, before, before_spans),
+        ("The KV preemption", "the latest agent waits", True, after, after_spans),
+    )
+    waits = (
+        ([VOICE] * TURN, [("voice turn", 0, TURN)], False),
+        ([AGENT] * lost, [(f"{victim}, preempted", 0, lost)], True),
+    )
+    if not stacked:
+        pitch = 44.0
+        out = NAMES + pitch * POOL + TRAY + 64
+        s.text(NAMES, base + 34, pool, size=NOTE, cls="soft")
+        s.text(out, base + 34, "waiting", size=NOTE, cls="soft")
+        top = base + 34 + 18
+        low = top
+        for (name, note, ours, blocks, spans), (waiting, who, taken) in zip(
+            rows, waits, strict=True
+        ):
+            _row_name(s, NAMES - TRAY - 18, top + BLOCK / 2, name, note, ours=ours)
+            _blocks(s, NAMES, top, pitch, blocks, spans)
+            low = _blocks(s, out, top, pitch, waiting, who, tray=False, taken=taken)
+            if taken:  # the victim left the pool
+                mid = top + BLOCK / 2
+                s.flow([(NAMES + pitch * POOL + TRAY + 8, mid), (out - 4, mid)], hue=AGENT)
+            top = low + 22
+        return low
+    pitch = math.floor((w - 2 * TRAY) / POOL)
+    left = x + TRAY
+    top = base + 34
+    low = top
+    for k, ((name, note, ours, blocks, spans), (waiting, who, taken)) in enumerate(
+        zip(rows, waits, strict=True)
+    ):
+        top = _row_name(s, x, top, name, note, ours=ours, right=x + w) + 18
+        if not k:  # the tray's name, once, over the first
+            s.text(x, top + 10, pool, size=NOTE, cls="soft")
+            top += 28
+        low = _blocks(s, left, top, pitch, blocks, spans)
+        top = low + 14
+        low = _blocks(s, left, top, pitch, waiting, who, tray=False, taken=taken)
+        s.text(
+            left + pitch * len(waiting) + 12,
+            top + BLOCK / 2 + 0.33 * NOTE,
+            "waiting",
+            size=NOTE,
+            cls="soft",
+        )
+        top = low + 34
+    return low
+
+
+def _steps(s: Figure, x: float, y: float, unit: float, alone: int, shared: int) -> float:
+    """A row of the engine's steps from ``x``, ``unit`` a millisecond: ``alone`` steps that carry the reply's token
+    only, then ``shared`` ones that carry an agent's prefill chunk beside it. Returns the row's right edge."""
+    token, chunk = DECODE_MS * unit, (SHARED_MS - DECODE_MS) * unit
+    s.cells(x, y, [VOICE] * alone, cell=token, height=BLOCK, strong=(VOICE,))
+    at = x + token * alone
+    for _ in range(shared):
+        s.cells(at, y, [VOICE], cell=token, height=BLOCK, strong=(VOICE,))
+        s.cells(at + token, y, [AGENT], cell=chunk, height=BLOCK)
+        at += token + chunk
+    return at
+
+
+def hold_prefill_panel(s: Figure, x: float, y: float, w: float, *, stacked: bool = False) -> float:
+    """(c): the engine's steps on one time axis from the reply's first. On vLLM 0.32 (or with the KV preemption
+    alone, whose gaps the steps are drawn from) each carries an agent's prefill chunk beside the reply's token;
+    with the budget cap the window's steps carry the reply alone, at decode speed, and agent prefill resumes
+    after it. The rows' names stand in (b)'s column, or, ``stacked``, over the rows. Returns the panel's lowest
+    edge."""
+    base = _title(s, x, y, "c", "The budget cap, #63351")
     window_ms = WINDOW * DECODE_MS
-    in_window = round(window_ms / SHARED_MS)
-    s.bracket(x0, x0 + in_window * SHARED_MS * unit - 1.2, y1 + height + 12, f"{in_window} tokens")
-    # The budget cap: the window's steps carry the reply alone; agent prefill resumes after it.
-    y2 = y1 + 100
-    s.text(x0, y2 - 12, "The budget cap", size=VALUE)
-    at = 0.0
-    for _ in range(WINDOW):
-        at = step(at, y2, False)
-    for _ in range(RESUMED):
-        at = step(at, y2, True)
-    s.bracket(
-        x0, x0 + window_ms * unit - 1.2, y2 + height + 12, f"the reply's first {WINDOW} tokens"
+    capped_ms = window_ms + RESUMED * SHARED_MS
+    stock = round(capped_ms / SHARED_MS)  # the steps vLLM 0.32 takes in the time drawn
+    in_window = round(window_ms / SHARED_MS)  # and how many of them in the window's time
+    left = x if stacked else NAMES
+    # A phone's row ends short of the edge, so that the last bracket's name, wider than its steps, stays inside.
+    length = x + w - left - (22 if stacked else 0)
+    unit = length / max(capped_ms, stock * SHARED_MS)
+    # The key: what a step holds, on one line where it fits.
+    key = base + 34
+    kx = left
+    for hue, width, name in (
+        (VOICE, 16.0, "The reply's token"),
+        (AGENT, 34.0, "An agent's prefill chunk"),
+    ):
+        if kx > left and kx + width + 8 + measure(name, NOTE) > x + w:
+            kx, key = left, key + 26
+        s.cells(kx, key - 14, [hue], cell=width, height=16, strong=(VOICE,))
+        kx = s.text(kx + width + 8, key, name, size=NOTE).x1 + 28
+    rows = (
+        ("vLLM 0.32", "the reply shares its steps", False, 0, stock),
+        ("The budget cap", "agent prefill waits", True, WINDOW, RESUMED),
     )
-    s.bracket(x0 + window_ms * unit, x0 + span_ms * unit - 1.2, y2 + height + 12, "resumed")
-    # The time axis, from the reply's first token: a box a step, which the key's boxes name.
-    ay = y2 + height + 62
-    s.time_axis(x0, x0 + length, ay)
+    top = key + 18
+    low = top
+    for name, note, ours, alone, shared in rows:
+        if stacked:
+            top = _row_name(s, x, top + 22, name, note, ours=ours, right=x + w) + 14
+        else:
+            _row_name(s, NAMES - TRAY - 18, top + BLOCK / 2, name, note, ours=ours)
+        _steps(s, left, top, unit, alone, shared)
+        under = top + BLOCK + SPAN
+        if alone:
+            s.bracket(
+                left + 1, left + window_ms * unit - 1, under, f"the reply's first {WINDOW} tokens"
+            )
+            s.bracket(left + window_ms * unit + 1, left + capped_ms * unit - 1, under, "resumed")
+        else:
+            s.bracket(
+                left + 1, left + in_window * SHARED_MS * unit - 1, under, f"{in_window} tokens"
+            )
+        low = under + 0.72 * NOTE + 6 + 0.24 * NOTE
+        top = low + (10 if stacked else 22)
+    # The time axis, from the reply's first token: a green block a step.
+    axis = low + 16
+    s.time_axis(left, left + length, axis)
     for k, line in enumerate(wrap(STEPS_AXIS, length, NOTE)):
-        s.text(x0, ay + 24 + 22 * k, line, size=NOTE, cls="mute")
+        low = axis + 24 + 22 * k
+        s.text(left, low, line, size=NOTE, cls="mute")
+    return low + 0.24 * NOTE
 
 
-def strip(s: Figure, top: float) -> dict[str, tuple[float, float, float, float]]:
-    """(a), wide: returns the outlines that zoom into (b) and (c), as (left, top, right, bottom)."""
-    s.text(24, top + 26, "One GPU: a voice agent beside coding agents")
-    s.text(WIDTH - 24, top + 26, "(a)", anchor="end")
-    lane1, lane2, h = top + 96, top + 160, 46
-    pad = 28
+SCHEDULER = ["vLLM 0.32 scheduler", "with #63350, #63351"]
+"""(a)'s one blue component: the scheduler, which carries both rules."""
+STRIP_TITLE = "One GPU: a voice agent beside coding agents"
+
+
+def strip(s: Figure, y: float) -> float:
+    """(a), wide: the voice turn's path left to right on green flows, the agents' requests under it into the same
+    scheduler, and right of the scheduler the KV pool it allocates from, (b)'s first row in small. Returns the
+    panel's lowest edge."""
+    base = _title(s, EDGE, y, "a", STRIP_TITLE)
+    h, pad = 46.0, 28.0
+    lane1 = base + 24 + h / 2
+    lane2 = lane1 + h + 18
 
     def width(text: str) -> float:
         return max(104.0, measure(text, LABEL) + pad)
 
-    caller = (24.0, width("Caller"))
+    caller = (EDGE, width("Caller"))
     stt = (caller[0] + caller[1] + 48, width("Speech to text"))
-    sched_lines = ["vLLM 0.32 scheduler", "with #63350, #63351"]
-    sched_w = max(measure(line, VALUE) for line in sched_lines) + 2 * pad
+    sched_w = max(measure(line, LABEL) for line in SCHEDULER) + 2 * pad
     sched_x = stt[0] + stt[1] + 108
-    tts = (sched_x + sched_w + 8 + 104, width("Text to speech"))
-    back = (WIDTH - 24 - width("Caller"), width("Caller"))
-    agents = (24.0, stt[0] + stt[1] - 24)
+    back = (WIDTH - EDGE - width("Caller"), width("Caller"))
+    tts = (back[0] - 48 - width("Text to speech"), width("Text to speech"))
+    agents = (EDGE, stt[0] + stt[1] - EDGE)
+    assert tts[0] - (sched_x + sched_w) >= 100, (sched_x, sched_w, tts)  # room for the reply's flow
     s.box(caller[0], lane1 - h / 2, caller[1], h, "Caller")
     s.box(stt[0], lane1 - h / 2, stt[1], h, "Speech to text")
     s.box(agents[0], lane2 - h / 2, agents[1], h, "24 coding-agent sessions")
     s.box(tts[0], lane1 - h / 2, tts[1], h, "Text to speech")
     s.box(back[0], lane1 - h / 2, back[1], h, "Caller")
-    sched_top, sched_bottom = lane1 - h / 2, lane2 + h / 2
-    s.box(
-        sched_x, sched_top, sched_w, sched_bottom - sched_top, sched_lines, kind="ours", size=VALUE
+    top, bottom = lane1 - h / 2, lane2 + h / 2
+    s.box(sched_x, top, sched_w, bottom - top, SCHEDULER, kind="ours")
+    # The KV pool, the scheduler's memory, beside it: a tray of blocks, as (b) draws it.
+    pool_x = sched_x + sched_w + 48
+    pool_w = WIDTH - EDGE - pool_x
+    s.memory(pool_x, lane2 - h / 2, pool_w, h)
+    name = s.text(pool_x + 14, lane2 + 0.33 * LABEL, "KV pool")
+    pitch = math.floor((pool_x + pool_w - 11 - name.x1 - 14) / POOL)
+    s.cells(
+        pool_x + pool_w - 11 - pitch * POOL, lane2 - 12, pool_states()[0], cell=pitch, height=24
     )
-    zoom_c = (sched_x - 8, sched_top - 8, sched_x + sched_w + 8, sched_bottom + 8)
-    s.group(zoom_c[0], zoom_c[1], zoom_c[2] - zoom_c[0], zoom_c[3] - zoom_c[1])
-    # The KV pool, the scheduler's memory, under it.
-    pool_x, pool_w = sched_x + 16, sched_w - 64
-    pool_top = zoom_c[3] + 30
-    s.memory(pool_x, pool_top, pool_w, 40)
-    s.text(pool_x + pool_w / 2, pool_top + 26, "KV pool", size=VALUE, anchor="middle")
-    link_x = pool_x + pool_w / 2
-    s.flow([(link_x, sched_bottom), (link_x, pool_top)], arrow=False)
-    # Dataflow: the turn, the agents' requests, the reply.
-    s.flow([(caller[0] + caller[1], lane1), (stt[0], lane1)])
-    s.flow([(stt[0] + stt[1], lane1), (zoom_c[0], lane1)])
-    s.text(stt[0] + stt[1] + 12, lane1 - 10, "priority 0", size=NOTE, cls="mute")
-    s.flow([(agents[0] + agents[1], lane2), (zoom_c[0], lane2)])
-    s.text(agents[0] + agents[1] + 12, lane2 - 10, "priority 2", size=NOTE, cls="mute")
-    s.flow([(zoom_c[2], lane1), (tts[0], lane1)])
-    s.text(zoom_c[2] + 12, lane1 - 10, "the reply", size=NOTE, cls="mute")
-    s.flow([(tts[0] + tts[1], lane1), (back[0], lane1)])
-    return {"b": (pool_x, pool_top, pool_x + pool_w, pool_top + 40), "c": zoom_c}
+    s.flow([(sched_x + sched_w, lane2), (pool_x, lane2)], arrow=False)
+    # Dataflow: the turn and the reply, green, and the agents' requests.
+    s.flow([(caller[0] + caller[1], lane1), (stt[0], lane1)], hue=VOICE)
+    s.flow([(stt[0] + stt[1], lane1), (sched_x, lane1)], hue=VOICE)
+    s.text(stt[0] + stt[1] + 12, lane1 - 10, "priority 0", size=NOTE, cls="soft")
+    s.flow([(agents[0] + agents[1], lane2), (sched_x, lane2)])
+    s.text(agents[0] + agents[1] + 12, lane2 - 10, "priority 2", size=NOTE, cls="soft")
+    s.flow([(sched_x + sched_w, lane1), (tts[0], lane1)], hue=VOICE)
+    s.text(sched_x + sched_w + 12, lane1 - 10, "the reply", size=NOTE, cls="soft")
+    s.flow([(tts[0] + tts[1], lane1), (back[0], lane1)], hue=VOICE)
+    return bottom
+
+
+def strip_narrow(s: Figure, y: float) -> float:
+    """(a) on a phone: the voice turn's path down a column on green flows, the agents' requests beside it into the
+    same scheduler, and the KV pool under the scheduler's right. Returns the panel's lowest edge."""
+    x0, w = 16.0, NARROW - 32
+    base = _title(s, x0, y, "a", STRIP_TITLE)
+    h = 46.0
+    col, box_w = 104.0, 176.0  # the voice's column
+    side = (col + box_w / 2 + 34, NARROW - 16.0)  # the agents' and the pool's, beside it
+    mid = (side[0] + side[1]) / 2
+    caller = base + 24
+    stt = caller + h + 40
+    sched = stt + h + 62
+    sched_h = 72.0
+    tts = sched + sched_h + 62
+    back = tts + h + 40
+    s.box(col - box_w / 2, caller, box_w, h, "Caller")
+    s.box(col - box_w / 2, stt, box_w, h, "Speech to text")
+    s.box(side[0], stt - 6, side[1] - side[0], h + 12, ["24 coding-agent", "sessions"])
+    s.box(x0, sched, w, sched_h, SCHEDULER, kind="ours")
+    s.box(col - box_w / 2, tts, box_w, h, "Text to speech")
+    s.box(col - box_w / 2, back, box_w, h, "Caller")
+    pitch = math.floor((side[1] - side[0] - 12) / POOL)
+    tray_w = pitch * POOL + 12
+    tray = mid - tray_w / 2
+    s.memory(tray, tts, tray_w, h)
+    s.cells(tray + 6, tts + h / 2 - 12, pool_states()[0], cell=pitch, height=24)
+    s.text(mid, tts + h + 24, "KV pool", anchor="middle")
+    s.flow([(col, caller + h), (col, stt)], hue=VOICE)
+    s.flow([(col, stt + h), (col, sched)], hue=VOICE)
+    s.text(col + 10, stt + h + 36, "priority 0", size=NOTE, cls="soft")
+    s.flow([(mid, stt + h + 6), (mid, sched)])
+    s.text(mid + 10, stt + h + 36, "priority 2", size=NOTE, cls="soft")
+    s.flow([(col, sched + sched_h), (col, tts)], hue=VOICE)
+    s.text(col + 10, sched + sched_h + 36, "the reply", size=NOTE, cls="soft")
+    s.flow([(mid, sched + sched_h), (mid, tts)], arrow=False)
+    s.flow([(col, tts + h), (col, back)], hue=VOICE)
+    return back + h
 
 
 # The system diagrams ----------------------------------------------------------------------------------------------
 #
 # docs/ARCHITECTURE.md's figures of the serving path and ops/RUNBOOK.md's triage, each with a phone layout. They keep
-# the method figure's grammar, with square corners: a component is a box, the change's own pale blue; dataflow runs on
-# steel-blue arrows; a host or a namespace is a dashed group. In a process diagram the main path runs down a column of
-# steps, and each step's way out leaves to its right on a thin gray arrow to what it answers.
+# the method figure's grammar: a component is a box at the style's corner, and the engine, which carries the change,
+# is the only blue one; dataflow runs on the neutral flow, and the voice turn's own path on the green one; a host or
+# a namespace is a hairline frame with its name inside its top left; facts that are not on the serving path are text
+# under a heading, not boxes. In a process diagram the main path runs through its steps on dataflow, down a column
+# or, for the release, along a row, and each step's way out leaves it on a gray arrow to what it answers.
 
 STEP_H = 40.0
 """A step's box in a process diagram."""
 LINE = 22.0
 """Between the lines of what a step answers."""
 EXIT = "gray"
-"""The hue of a way out: thinner than dataflow, in a comparison's gray."""
+"""The hue of a way out: a comparison's gray, beside the main path's flow."""
 SECOND = "second"
-"""The flows to the second card: dataflow's color, thinner and dashed, as the paths the arrangement has only with
-it (DIAGRAM_CSS)."""
+"""The flows to the second card: dataflow's color, dashed, as the paths the arrangement has only with it
+(DIAGRAM_CSS)."""
+UNIT_H = 56.0
+"""A unit's box: its name, and under it a note, its socket or its directory."""
+HEAD = 36.0
+"""From a heading's top to what stands under it."""
+
+
+def _unit(
+    s: Figure,
+    x: float,
+    y: float,
+    w: float,
+    name: str | list[str],
+    note: str,
+    kind: str = "box",
+    *,
+    dashed: bool = False,
+    h: float | None = None,
+) -> float:
+    """A unit: a component's box, plain or the change's own (``kind`` "ours"), its outline ``dashed`` where the
+    arrangement has it only with a second card, its name on one line or several and under it its ``note``, smaller
+    and soft, the lines in the middle of a box taller than they need (``h``). Returns the box's height."""
+    lines = [name] if isinstance(name, str) else name
+    own = UNIT_H + 24 * (len(lines) - 1)
+    h = own if h is None else h
+    pad = (h - own) / 2
+    if dashed:
+        s.rect(x, y, w, h, f"{kind} dashed", rx=CORNER)
+    else:
+        s.box(x, y, w, h, [], kind=kind)
+    texts = [(line, y + pad + 24 + 24 * k, LABEL, "") for k, line in enumerate(lines)]
+    for text, baseline, size, cls in [*texts, (note, y + pad + own - 11, NOTE, "soft")]:
+        box = s.text(x + w / 2, baseline, text, size=size, anchor="middle", cls=cls)
+        if box.x0 < x + 6 or box.x1 > x + w - 6:
+            raise ValueError(f"{text!r} does not fit inside its box")
+    return h
 
 
 @dataclass(frozen=True)
@@ -311,6 +486,8 @@ class Step:
     answers: tuple[tuple[str, str], ...] = ()
     go: str = ""
     """The label of the main path out of the step, beside its arrow: a decision's other answer."""
+    kind: str = "box"
+    """The box's kind: "ours" for the one component that carries the change."""
 
 
 def _answers(
@@ -373,19 +550,26 @@ def _ladder(
     its box's right edge to ``exit_to``, where its answers begin, its label ``when`` above it, the rows one pitch
     apart; or, ``below`` (a phone's layout), an arrow down from the box's left part to its answers, its label beside
     it, while the main path runs down beside them, each row as tall as its answers. Beside the column the answers
-    may run in ``columns`` columns ``column_w`` apart. Returns each box's top, and the lowest baseline or box edge
-    drawn."""
+    may run in ``columns`` columns ``column_w`` apart. A step with no way out has its note beside its box, or under
+    it where the figure is too narrow. Returns each box's top, and the lowest baseline or box edge drawn."""
     main = x + (24 if below else width / 2)
     drop = x + 58
     label_w = s.width - 16 - drop - 12
     heights = [_row_height(step, below=below, label_w=label_w, columns=columns) for step in steps]
+    for k, step in enumerate(steps):  # a note with no room beside its box stands under it
+        if (
+            step.when
+            and not step.answers
+            and x + width + 14 + measure(step.when, NOTE) > s.width - 16
+        ):
+            heights[k] = STEP_H + 24 + LINE * (len(_lines(step.when, s.width - 16 - drop)) - 1) + 10
     pitch = max(max(heights) + 14, STEP_H + gap)
     y = top
     lowest = top
     tops = []
     for k, step in enumerate(steps):
         tops.append(y)
-        s.box(x, y, width, STEP_H, step.name)
+        s.box(x, y, width, STEP_H, step.name, kind=step.kind)
         mid = y + STEP_H / 2
         lowest = max(lowest, y + STEP_H)
         if step.answers and below:
@@ -418,15 +602,13 @@ def _ladder(
 
 # The serving architecture -----------------------------------------------------------------------------------------
 
-UNIT_H = 52.0
-"""A unit's box on a GPU node: its name, and under it its socket."""
 SERVERS = (
     ("vLLM 0.32 + make-room", "engine.sock", "ours"),
     ("Whisper STT", "stt.sock", "box"),
     ("Kokoro TTS", "tts.sock", "box"),
 )
 """A GPU node's servers (deploy/phastform/systemd), each on its Unix socket in $XDG_RUNTIME_DIR/flatshare: the engine,
-which runs the change (variant make-room-serve), the STT and the TTS."""
+which runs the change (variant make-room-serve) and is the blue one, the STT and the TTS."""
 NODES = (
     ("Phastform", "RTX 5060 Ti", "each server in its own namespace", False),
     ("Gray", "RTX 5060 Ti", "servers in the host's namespace", True),
@@ -441,10 +623,12 @@ users of cyan reach loopback (deploy/cyan/gateway.example.toml; the agents' tena
 DIAGRAM_CSS = (
     ".dashed{stroke-dasharray:6 4}.second{--c:var(--flow)}.second.line{stroke-dasharray:6 4}"
 )
-"""The system diagrams' additions to the figures' style: the dashed outline of a unit the arrangement has only with a
-second card, and its flows' dataflow color, dashed."""
+"""The system diagrams' additions to the figures' style: the dashed outline of a host, a unit or a tunnel the
+arrangement has only with a second card, and its flows' dataflow color, dashed."""
+FRAME = 8.0
+"""A frame's corner, the style's (Figure.group's)."""
 ARCHITECTURE_DESCRIPTION = (
-    "Hosts as dashed groups, each unit a box on its Unix socket: on cyan, the control host, the callers, LiveKit "
+    "Hosts as hairline frames, each unit a box on its Unix socket: on cyan, the control host, the callers, LiveKit "
     "and the voice worker run in the voice plane's network namespace, which has no route out; the worker reaches "
     "the gateway through gateway.sock, and the coding agents reach it through 127.0.0.1:18080 with a tenant's key, "
     "the one TCP listener; a tunnel per GPU node carries the gateway's engine requests and the worker's speech "
@@ -461,64 +645,54 @@ class Diagram(Figure):
         return super().render().replace("</style>", DIAGRAM_CSS + "</style>", 1)
 
 
-def _unit(
-    s: Figure,
-    x: float,
-    y: float,
-    w: float,
-    name: str | list[str],
-    socket: str,
-    kind: str = "box",
-) -> float:
-    """A unit: a square box, white or the change's own (``kind`` "ours"), dashed where ``kind`` says so (e.g. "ours
-    dashed"), its name on one line or several and under it its socket. Returns the box's height."""
-    lines = [name] if isinstance(name, str) else name
-    h = UNIT_H + 22 * (len(lines) - 1)
-    s.rect(x, y, w, h, kind)
-    texts = [(line, y + 22 + 22 * k, VALUE, "") for k, line in enumerate(lines)]
-    for text, baseline, size, cls in [*texts, (socket, y + h - 9, NOTE, "soft")]:
-        box = s.text(x + w / 2, baseline, text, size=size, anchor="middle", cls=cls)
-        if box.x0 < x + 6 or box.x1 > x + w - 6:
-            raise ValueError(f"{text!r} does not fit inside its box")
-    return h
-
-
-def _box(s: Figure, x: float, y: float, w: float, h: float, lines: list[str], cls: str) -> None:
-    """A square box of class ``cls`` (a unit, dashed where the arrangement has it only with a second card), its
-    ``lines`` centred inside at a category label's size."""
-    s.rect(x, y, w, h, cls)
-    first = y + h / 2 - 12 * (len(lines) - 1) + 0.33 * VALUE
+def _box(
+    s: Figure, x: float, y: float, w: float, h: float, lines: list[str], *, dashed: bool = False
+) -> None:
+    """A component's box with its ``lines`` centred inside, its outline ``dashed`` where the arrangement has it only
+    with a second card."""
+    if not dashed:
+        s.box(x, y, w, h, lines)
+        return
+    s.rect(x, y, w, h, "box dashed", rx=CORNER)
+    pitch = LABEL * 1.22
+    first = y + h / 2 - pitch * (len(lines) - 1) / 2 + 0.33 * LABEL
     for k, line in enumerate(lines):
-        box = s.text(x + w / 2, first + 24 * k, line, size=VALUE, anchor="middle")
+        box = s.text(x + w / 2, first + pitch * k, line, anchor="middle")
         if box.x0 < x + 6 or box.x1 > x + w - 6 or box.y0 < y + 3 or box.y1 > y + h - 3:
             raise ValueError(f"{line!r} does not fit inside its box")
 
 
-def _host(s: Figure, x: float, y: float, w: float, h: float, name: str, *, second: bool) -> float:
-    """A host: a dashed group on the gray ground with its name inside at the top left, or, for the second card, the
-    dashed outline alone. Returns the name's baseline."""
+def _host(
+    s: Figure, x: float, y: float, w: float, h: float, name: str, note: str, *, second: bool = False
+) -> float:
+    """A host: a hairline frame, dashed for the second card, with its name in the semibold inside its top left and
+    ``note``, what it is, at its top right. Returns the name's baseline."""
     if second:
-        s.group(x, y, w, h)
-        baseline = y + 14 + 0.7 * LABEL
-        s.text(x + 18, baseline, name)
-        return baseline
-    return s.panel(x, y, w, h, name, ground="b")
+        s.rect(x, y, w, h, "group dashed", rx=FRAME)
+        s.borders.append((x, y, w, h))
+        baseline = y + 16 + 0.7 * LABEL
+        s.text(x + 20, baseline, name, bold=True)
+    else:
+        baseline = s.panel(x, y, w, h, name)
+    if note:
+        s.text(x + w - 20, baseline, note, size=NOTE, anchor="end", cls="soft")
+    return baseline
+
+
+NODE_GAP = 14.0
+"""Between a GPU node's servers."""
 
 
 def _node_units(
-    s: Figure, x: float, top: float, w: float, names: list[list[str]], own: bool, second: bool
+    s: Figure, x: float, top: float, w: float, names: list[list[str]], second: bool
 ) -> list[float]:
-    """A GPU node's servers in a column from ``top``, each in a dashed namespace of its own where ``own``. Returns
-    each one's middle."""
+    """A GPU node's servers in a column from ``top``, dashed on the second card. Returns each one's middle."""
     middles = []
     y = top
     for lines, (_, socket, kind) in zip(names, SERVERS, strict=True):
-        h = UNIT_H + 22 * (len(lines) - 1)
-        if own:
-            s.group(x - 6, y - 6, w + 12, h + 12)
-        _unit(s, x, y, w, lines, socket, f"{kind} dashed" if second else kind)
+        h = _unit(s, x, y, w, lines, socket, kind, dashed=second)
         middles.append(y + h / 2)
-        y += h + 22
+        y += h + NODE_GAP
     return middles
 
 
@@ -532,154 +706,141 @@ def architecture(out: Path) -> list[Path]:
 
 
 def _architecture_wide(path: Path, title: str) -> Path:
-    """cyan left, the GPU nodes right, one above the other, each reached through its tunnel."""
-    s = Diagram(WIDTH, 700, title, ARCHITECTURE_DESCRIPTION)
-    nx, nw = 752.0, WIDTH - 24 - 752.0
+    """cyan left, the GPU nodes right, one above the other, each reached through its tunnel. The voice plane's own
+    flows are green; the gateway's, which carry both classes, and the tunnels' are neutral."""
+    s = Diagram(WIDTH, 800, title, ARCHITECTURE_DESCRIPTION)
+    nw = 296.0
+    nx = WIDTH - EDGE - nw
     names = [[unit] for unit, _, _ in SERVERS]
-    node_h = 88 + len(SERVERS) * (UNIT_H + 22)
+    head = 78.0
+    node_h = head + len(SERVERS) * (UNIT_H + NODE_GAP) - NODE_GAP + 20
     middles = []
-    y = 12.0
+    y = 16.0
     for name, card, spaces, second in NODES:
-        baseline = _host(s, nx, y, nw, node_h, name, second=second)
-        s.text(nx + nw - 18, baseline, card, size=NOTE, anchor="end", cls="soft")
-        s.text(nx + 18, y + 60, spaces, size=NOTE, cls="mute")
-        # The servers a line under the note, so that it stands clear of their namespaces' outlines.
-        middles.append(_node_units(s, nx + 36, y + 88, nw - 72, names, not second, second))
+        _host(s, nx, y, nw, node_h, name, card, second=second)
+        s.text(nx + 20, y + 60, spaces, size=NOTE, cls="soft")
+        middles.append(_node_units(s, nx + 20, y + head, nw - 40, names, second))
         y += node_h + 24
     bottom = y - 24
     # cyan, left: the voice plane, the gateway, the agents and a tunnel per node.
-    cyan_right = nx - 60
-    _host(s, 24, 12, cyan_right - 24, bottom - 12, "cyan", second=False)
-    s.text(
-        cyan_right - 18,
-        12 + 14 + 0.7 * LABEL,
-        "control host, CPU only",
-        size=NOTE,
-        anchor="end",
-        cls="soft",
-    )
-    tx, tw = 560.0, 116.0
+    cyan_right = nx - 52
+    _host(s, EDGE, 16, cyan_right - EDGE, bottom - 16, "cyan", "control host, CPU only")
+    tw = 112.0
+    tx = cyan_right - 16 - tw
     tunnels = []
     for rows, (name, _, _, second) in zip(middles, NODES, strict=True):
-        top, low = rows[0] - 26, rows[-1] + 26
+        top, low = rows[0] - UNIT_H / 2, rows[-1] + UNIT_H / 2
         tunnels.append((top, low))
-        _box(s, tx, top, tw, low - top, ["Tunnel to", name], "box dashed" if second else "box")
+        _box(s, tx, top, tw, low - top, ["Tunnel to", name], dashed=second)
         for mid in rows:
-            s.flow([(tx + tw, mid), (nx + 36, mid)], hue=SECOND if second else None)
+            s.flow([(tx + tw, mid), (nx + 20, mid)], hue=SECOND if second else None)
         s.text((cyan_right + nx) / 2, rows[0] - 9, "SSH", size=NOTE, anchor="middle", cls="soft")
-    # The gateway, under the first node's tunnel, so that the worker's speech beside it reaches that tunnel's side;
-    # its engine requests go to each node's tunnel.
-    gx, gw, gy = 364.0, 120.0, tunnels[0][1] + 16
-    s.box(gx, gy, gw, 44, "Gateway")
-    split = tx + tw / 2
-    s.flow([(gx + gw, gy + 22), (split, gy + 22), (split, tunnels[0][1])], radius=0)
-    s.flow([(split, gy + 22), (split, tunnels[1][0])], hue=SECOND, radius=0)
-    s.text(gx + gw + 10, gy + 13, "engine.sock", size=NOTE, cls="soft")
-    # The voice plane, in its namespace: the callers, LiveKit and the worker, whose LLM requests go to the gateway's
-    # socket and whose speech to the node's tunnel, each flow labelled right of the namespace's border.
-    vx, vw = 56.0, 160.0
-    space = (40.0, gy - 228, 200.0, 228 + 44 + 22)
+    # The voice plane, in its namespace: the callers, LiveKit and the worker in a column. The worker is level with
+    # the gateway, between the tunnels, so that its LLM requests run straight to the gateway's socket; its speech
+    # leaves its top and turns, under LiveKit, into the first node's tunnel.
+    gy = (tunnels[0][1] + tunnels[1][0]) / 2 - 22
+    vx, vw = EDGE + 32, 172.0
+    speech = tunnels[0][1] - 16
+    rows = [speech - 14 - 44 - 34 - 44, speech - 14 - 44, gy]
+    space = (EDGE + 16, rows[0] - 62, vw + 32, rows[-1] + 44 + 16 - (rows[0] - 62))
     s.group(*space)
-    label_x = space[0] + space[2] + 10
-    s.text(space[0] + 12, space[1] + 26, "voice-plane namespace", size=NOTE, cls="soft")
-    s.text(space[0] + 12, space[1] + 48, "no route out", size=NOTE, cls="mute")
-    s.box(vx, gy - 164, vw, 44, "Callers")
-    s.box(vx, gy - 82, vw, 44, "LiveKit server")
-    s.box(vx, gy, vw, 44, "Voice worker")
-    s.flow([(vx + 50, gy - 120), (vx + 50, gy - 82)])
-    s.text(vx + 62, gy - 95, "WebRTC", size=NOTE, cls="soft")
-    s.flow([(vx + 50, gy - 38), (vx + 50, gy)])
-    s.flow([(vx + vw, gy + 22), (gx, gy + 22)])
+    s.text(space[0] + 14, space[1] + 26, "voice-plane namespace", size=NOTE, cls="soft")
+    s.text(space[0] + 14, space[1] + 48, "no route out", size=NOTE, cls="mute")
+    for row, name in zip(rows, ("Callers", "LiveKit server", "Voice worker"), strict=True):
+        s.box(vx, row, vw, 44, name)
+    chain = vx + 56
+    s.flow([(chain, rows[0] + 44), (chain, rows[1])], hue=VOICE)
+    s.text(chain + 12, rows[0] + 44 + 17 + 0.33 * NOTE, "WebRTC", size=NOTE, cls="soft")
+    s.flow([(chain, rows[1] + 44), (chain, rows[2])], hue=VOICE)
+    label_x = space[0] + space[2] + 12
+    gx = label_x + measure("stt.sock, tts.sock", NOTE) + 14
+    gw = 120.0
+    s.box(gx, gy, gw, 44, "Gateway")
+    s.flow([(vx + vw, gy + 22), (gx, gy + 22)], hue=VOICE)
     s.text(label_x, gy + 13, "gateway.sock", size=NOTE, cls="soft")
-    speech = gy - 30
-    s.flow([(vx + vw - 16, gy), (vx + vw - 16, speech), (tx, speech)], radius=0)
+    s.flow([(vx + vw - 28, gy), (vx + vw - 28, speech), (tx, speech)], hue=VOICE)
     s.text(label_x, speech - 9, "stt.sock, tts.sock", size=NOTE, cls="soft")
+    # The gateway's engine requests, to each node's tunnel.
+    split = tx + tw / 2
+    s.flow([(gx + gw, gy + 22), (split, gy + 22), (split, tunnels[0][1])])
+    s.flow([(split, gy + 22), (split, tunnels[1][0])], hue=SECOND, radius=0)
+    s.text(gx + gw + 12, gy + 13, "engine.sock", size=NOTE, cls="soft")
     # The coding agents, in cyan's host network, through the one TCP listener.
-    ay = space[1] + space[3] + 70
+    ay = middles[1][1] - 22
     s.box(vx, ay, vw, 44, "Coding agents")
-    s.flow([(vx + vw, ay + 22), (gx + gw / 2, ay + 22), (gx + gw / 2, gy + 44)], radius=0)
-    s.text(label_x, ay + 13, "127.0.0.1:18080", size=NOTE)
-    s.text(label_x, ay + 45, KEY, size=NOTE, cls="mute")
+    s.flow([(vx + vw, ay + 22), (gx + gw / 2, ay + 22), (gx + gw / 2, gy + 44)])
+    s.text(label_x, ay + 13, "127.0.0.1:18080", size=NOTE, cls="soft")
+    s.text(label_x, ay + 22 + 23, KEY, size=NOTE, cls="mute")
     s.height = bottom + 12
     return s.save(path)
 
 
 def _architecture_narrow(path: Path, title: str) -> Path:
-    """The phone layout: cyan above, its units in a column and a tunnel either side of the gateway; the GPU nodes
-    under it, side by side, each reached through its tunnel."""
+    """The phone layout, read down: cyan above, the voice plane's column over the gateway, which the coding agents
+    reach from its side, and a tunnel per node under it; then the GPU nodes, side by side, each under its tunnel."""
     s = Diagram(NARROW, 1600, title, ARCHITECTURE_DESCRIPTION)
     x0, x1 = 16.0, NARROW - 16.0
-    # Where cyan's units go, which sets its panel's height: the voice plane's column, the gateway's row with a tunnel
-    # either side, and the coding agents under it.
-    space_top, vx, vw = 64.0, 112.0, 196.0
-    rows = [space_top + 64 + 84 * k for k in range(3)]
-    gy = rows[-1] + 44 + 96
-    tw, th, gw = 104.0, 64.0, 100.0
-    gx, left, right = (NARROW - gw) / 2, x0 + 16, x1 - 16 - tw
-    ay, line = gy + 44 + 120, gx + 16
-    cyan_bottom = ay + 44 + 24
-    _host(s, x0, 12, x1 - x0, cyan_bottom - 12, "cyan", second=False)
-    s.text(
-        x1 - 18,
-        12 + 14 + 0.7 * LABEL,
-        "control host, CPU only",
-        size=NOTE,
-        anchor="end",
-        cls="soft",
-    )
-    # The voice plane, its units in a column, each flow labelled on its right.
-    s.group(x0 + 16, space_top, x1 - x0 - 32, rows[-1] + 44 + 22 - space_top)
-    s.text(x0 + 28, space_top + 26, "voice-plane namespace", size=NOTE, cls="soft")
-    s.text(x1 - 28, space_top + 26, "no route out", size=NOTE, anchor="end", cls="mute")
+    mid = NARROW / 2
+    nw = (x1 - x0 - 16) / 2
+    drops = [x0 + nw / 2, x1 - nw / 2]
+    # The voice plane, its units in a column.
+    space_top, vw = 58.0, 168.0
+    vx = mid - vw / 2
+    rows = [space_top + 62 + 76 * k for k in range(3)]
+    space_bottom = rows[-1] + 44 + 18
+    s.group(x0 + 16, space_top, x1 - x0 - 32, space_bottom - space_top)
+    s.text(x0 + 30, space_top + 26, "voice-plane namespace", size=NOTE, cls="soft")
+    s.text(x0 + 30, space_top + 48, "no route out", size=NOTE, cls="mute")
     for row, name in zip(rows, ("Callers", "LiveKit server", "Voice worker"), strict=True):
         s.box(vx, row, vw, 44, name)
-    mid = vx + vw / 2
-    s.flow([(mid, rows[0] + 44), (mid, rows[1])])
-    s.text(mid + 10, rows[0] + 44 + 26, "WebRTC", size=NOTE, cls="soft")
-    s.flow([(mid, rows[1] + 44), (mid, rows[2])])
-    s.flow([(mid, rows[2] + 44), (mid, gy)])
-    s.text(mid + 10, rows[2] + 44 + 50, "gateway.sock", size=NOTE, cls="soft")
-    # The gateway between the tunnels, each node's beside it; the worker's speech to the first node's.
-    s.box(gx, gy, gw, 44, "Gateway")
-    for tx, (name, _, _, second) in zip((left, right), NODES, strict=True):
-        _box(s, tx, gy - 10, tw, th, ["Tunnel to", name], "box dashed" if second else "box")
-    s.flow([(gx, gy + 22), (left + tw, gy + 22)])
-    s.flow([(gx + gw, gy + 22), (right, gy + 22)], hue=SECOND)
-    s.text(gx + 54, gy + 44 + 26, "engine.sock", size=NOTE, cls="soft")
-    speech = left + tw / 2
-    s.flow([(vx, rows[2] + 22), (speech, rows[2] + 22), (speech, gy - 10)], radius=0)
-    s.text(speech + 10, rows[2] + 44 + 44, "stt.sock,", size=NOTE, cls="soft")
-    s.text(speech + 10, rows[2] + 44 + 66, "tts.sock", size=NOTE, cls="soft")
-    # The coding agents, under the gateway, through the one TCP listener.
-    s.box(gx - 20, ay, gw + 40, 44, "Coding agents")
-    s.flow([(line, ay), (line, gy + 44)])
-    s.text(line + 10, ay - 38, "127.0.0.1:18080", size=NOTE)
-    s.text(line + 10, ay - 16, KEY, size=NOTE, cls="mute")
-    # The GPU nodes, side by side, each reached through its tunnel: its name, its card, where its servers'
-    # namespaces are, and its servers, the engine's name on two lines.
-    nw, ny = (x1 - x0 - 16) / 2, cyan_bottom + 56
+    s.flow([(mid, rows[0] + 44), (mid, rows[1])], hue=VOICE)
+    s.text(mid + 12, rows[0] + 44 + 16 + 0.33 * NOTE, "WebRTC", size=NOTE, cls="soft")
+    s.flow([(mid, rows[1] + 44), (mid, rows[2])], hue=VOICE)
+    # Under it the gateway, which the worker reaches from above and the coding agents, through the one TCP
+    # listener, from its side; and under the gateway a tunnel per node, the worker's speech into the first node's.
+    gw, aw, tw, th = 92.0, 88.0, 150.0, 64.0
+    gy = space_bottom + 106
+    fork = gy + 44 + 40
+    ty = fork + 34
+    s.box(mid - gw / 2, gy, gw, 44, "Gateway")
+    s.flow([(mid, rows[2] + 44), (mid, gy)], hue=VOICE)
+    s.text(mid + 12, space_bottom + 24, "gateway.sock", size=NOTE, cls="soft")
+    s.box(x1 - 16 - aw, gy - 10, aw, 64, ["Coding", "agents"])
+    s.flow([(x1 - 16 - aw, gy + 22), (mid + gw / 2, gy + 22)])
+    s.text(x1 - 16, gy - 44, "127.0.0.1:18080", size=NOTE, anchor="end", cls="soft")
+    s.text(x1 - 16, gy - 22, KEY, size=NOTE, anchor="end", cls="mute")
+    for at, (name, _, _, second) in zip(drops, NODES, strict=True):
+        _box(s, at - tw / 2, ty, tw, th, ["Tunnel to", name], dashed=second)
+    s.flow([(mid, gy + 44), (mid, fork), (drops[0], fork), (drops[0], ty)])
+    s.flow([(mid, fork), (drops[1], fork), (drops[1], ty)], hue=SECOND)
+    s.text(mid + 12, gy + 44 + 24, "engine.sock", size=NOTE, cls="soft")
+    speech = drops[0] - tw / 2 + 24
+    s.flow([(vx, rows[2] + 22), (speech, rows[2] + 22), (speech, ty)], hue=VOICE)
+    s.text(speech + 12, space_bottom + 24, "stt.sock,", size=NOTE, cls="soft")
+    s.text(speech + 12, space_bottom + 46, "tts.sock", size=NOTE, cls="soft")
+    cyan_bottom = ty + th + 18
+    _host(s, x0, 12, x1 - x0, cyan_bottom - 12, "cyan", "control host, CPU only")
+    # The GPU nodes, side by side, each under its tunnel: its name, its card, where its servers' namespaces are, and
+    # its servers, the engine's name on two lines.
+    ny = cyan_bottom + 44
     names = [
         ["vLLM 0.32", "+ make-room"] if kind == "ours" else [unit] for unit, _, kind in SERVERS
     ]
-    units_h = sum(UNIT_H + 22 * (len(lines) - 1) + 22 for lines in names)
+    units_h = sum(UNIT_H + 24 * (len(lines) - 1) + NODE_GAP for lines in names) - NODE_GAP
     notes = [[*_lines(card, nw - 36), *_lines(spaces, nw - 36)] for _, card, spaces, _ in NODES]
     top = ny + 70 + LINE * max(len(lines) for lines in notes)
-    bottom = top + units_h - 2
-    for k, ((name, card, _, second), tx) in enumerate(zip(NODES, (left, right), strict=True)):
+    bottom = top + units_h + 18
+    for k, ((name, card, _, second), at) in enumerate(zip(NODES, drops, strict=True)):
         nx = x0 + k * (nw + 16)
-        _host(s, nx, ny, nw, bottom - ny, name, second=second)
+        _host(s, nx, ny, nw, bottom - ny, name, "", second=second)
         cards = len(_lines(card, nw - 36))
         for j, note in enumerate(notes[k]):
             s.text(
                 nx + 18, ny + 62 + LINE * j, note, size=NOTE, cls="soft" if j < cards else "mute"
             )
-        _node_units(s, nx + 18, top, nw - 36, names, not second, second)
-        s.flow(
-            [(tx + tw / 2, gy - 10 + th), (tx + tw / 2, ny)],
-            hue=SECOND if second else None,
-            radius=0,
-        )
-        s.text(tx + tw / 2 + 10, cyan_bottom + 34, "SSH", size=NOTE, cls="soft")
+        _node_units(s, nx + 18, top, nw - 36, names, second)
+        s.flow([(at, ty + th), (at, ny)], hue=SECOND if second else None)
+        s.text(at + 12, cyan_bottom + 28, "SSH", size=NOTE, cls="soft")
     s.height = bottom + 12
     return s.save(path)
 
@@ -693,133 +854,102 @@ SERVING_PARTS = (
 )
 """The serving plane's own parts, each with the directory it lives in, drawn by its last name: the voice worker, the
 gateway, and the engine with the change, its two rules named as the report names them (docs/REPORT.md §3)."""
-MEASUREMENT = (
-    ("Scripted callers", "V2V read from waveforms"),
-    ("AIPerf replay", "Claude Code traces"),
-    ("E2 harness", "rotated rounds"),
-    ("Probes and counters", "each wait on the GPU"),
-    ("Gates", "criteria fixed before runs"),
-    ("Cost model, simulator", "regime map, A100 forecast"),
-)
-"""The measurement plane: what made every number (docs/REPORT.md §5 and Appendix A)."""
-OPERATIONS = (
-    ("Serving profile", "serving-check at each start"),
-    ("Immutable releases", "switched back on failure"),
-    ("Two cards", "consolidation, warm spare"),
-    ("Drain and failover", "sessions placed again"),
-    ("Failure drills", "and a 24-hour soak"),
-    ("Container", "vLLM's image, caches kept"),
-)
-"""The operations plane: what holds production to the measured configuration and what it does when a part fails
-(docs/ARCHITECTURE.md §3, §8; docs/PRODUCTION.md)."""
-PLANES = (
-    ("Measurement: how we know", MEASUREMENT),
-    ("Operations: how it runs", OPERATIONS),
-)
 OVERVIEW_DESCRIPTION = (
-    "Three panels around one engine change: in the serving plane, callers reach the voice worker and coding agents "
-    "reach the gateway, which sends both to vLLM 0.32 with #63350 and #63351, the KV preemption and the budget cap, "
-    "over the GPU's KV pool and the CPU tier beside the speech servers; beside it the measurement plane, with the "
-    "scripted callers, AIPerf's replay of Claude Code traces, the E2 harness, probes and counters, gates, and the cost "
-    "model and simulator; and the operations plane, with the serving profile and its serving-check, immutable "
-    "releases, two cards with a warm spare, drain and failover, failure drills and a 24-hour soak, and the container."
+    "The serving path, each flow an arrow: callers reach the voice worker, and the voice worker and the coding "
+    "agents reach the gateway, which sends the voice turns at priority 0 and the agents' requests at priority 2 to "
+    "vLLM 0.32 with #63350 and #63351, the KV preemption and the budget cap, over the GPU's KV pool and the CPU "
+    "tier; under each part's name is its directory in the repository."
 )
 MEMORY = "GPU KV pool · CPU tier"
-SPEECH = "beside the STT and TTS servers"
-"""The engine's memory, under it, and where it runs: one GPU with the speech servers (docs/REPORT.md §5.1)."""
+"""The engine's memory, under it (docs/REPORT.md §5.1)."""
+PRIORITIES = ("priority 0", "priority 2")
+"""What the gateway gives the voice turns and the agents' requests (docs/ARCHITECTURE.md, At a glance)."""
+RISE = 32.0
+"""Between the serving path's boxes on a phone: a flow's length, and room for its label beside it."""
+HOP = 52.0
+"""Between the serving path's boxes in the wide layout: a flow's length."""
+TRAY_H = 44.0
+"""The engine's memory, a tray under it."""
 
 
 def overview(out: Path) -> list[Path]:
-    """overview.svg and its phone layout: the system at a glance."""
-    title = "The system at a glance"
+    """overview.svg and its phone layout: the serving path at a glance."""
+    title = "The serving path at a glance"
     return [
         _overview_wide(out / "overview.svg", title),
         _overview_narrow(out / "overview-narrow.svg", title),
     ]
 
 
-def _serving_height(engine: list[str]) -> float:
-    """The serving panel's height with an engine box of ``engine``'s lines, as _serving lays it out."""
-    return (
-        52 + 44 + 40 + UNIT_H + 40 + UNIT_H + 40 + (UNIT_H + 22 * (len(engine) - 1)) + 40 + 48 + 44
-    )
-
-
-def _serving(s: Figure, x: float, y: float, w: float, engine: list[str]) -> None:
-    """The serving plane's parts in its panel at ``y``: the callers and the coding agents, the voice worker under the
-    callers, the gateway, the engine with the change and its memory, each flow downward."""
-    half = (w - 36 - 16) / 2
-    left, right = x + 18, x + 18 + half + 16
-    top = y + 52
-    s.box(left, top, half, 44, "Callers")
-    s.box(right, top, half, 44, "Coding agents")
-    (worker, worker_dir), (gateway, gateway_dir), (_, engine_dir) = SERVING_PARTS
-    worker_y = top + 44 + 40
-    worker_h = _unit(s, left, worker_y, half, worker, Path(worker_dir).name)
-    gateway_y = worker_y + worker_h + 40
-    gateway_h = _unit(s, left, gateway_y, w - 36, gateway, Path(gateway_dir).name)
-    engine_y = gateway_y + gateway_h + 40
-    engine_h = _unit(s, left, engine_y, w - 36, engine, Path(engine_dir).name, "ours")
-    memory_y = engine_y + engine_h + 40
-    s.memory(left, memory_y, w - 36, 48)
-    s.text(x + w / 2, memory_y + 24 + 0.33 * VALUE, MEMORY, size=VALUE, anchor="middle")
-    s.text(x + w / 2, memory_y + 48 + 26, SPEECH, size=NOTE, anchor="middle", cls="soft")
-    mid_left, mid_right = left + half / 2, right + half / 2
-    s.flow([(mid_left, top + 44), (mid_left, worker_y)])
-    s.flow([(mid_left, worker_y + worker_h), (mid_left, gateway_y)])
-    s.flow([(mid_right, top + 44), (mid_right, gateway_y)])
-    s.flow([(x + w / 2, gateway_y + gateway_h), (x + w / 2, engine_y)])
-    s.flow([(x + w / 2, engine_y + engine_h), (x + w / 2, memory_y)])
-    assert memory_y + 48 + 44 == y + _serving_height(engine)
-
-
-def _plane(
-    s: Figure,
-    x: float,
-    y: float,
-    w: float,
-    title: str,
-    parts: tuple[tuple[str, str], ...],
-    gap: float,
-    h: float,
-) -> None:
-    """A side plane: its panel, ``h`` tall, on the gray ground and its parts in a column, each a box with its note."""
-    s.panel(x, y, w, h, title, ground="b")
-    y += 52
-    for name, note in parts:
-        y += _unit(s, x + 24, y, w - 48, name, note) + gap
+def _serving(s: Figure, x: float, y: float, w: float) -> float:
+    """The serving path from ``y``, each flow downward: the callers and under them the voice worker, on the voice
+    turn's green; the coding agents beside them; the gateway, which sends both on at their priorities; the engine
+    with the change, and its memory under it. Returns the path's lowest edge."""
+    half = (w - 16) / 2
+    left, right = x + half / 2, x + w - half / 2
+    (worker, worker_dir), (gateway, gateway_dir), (engine, engine_dir) = SERVING_PARTS
+    s.box(x, y, half, 44, "Callers")
+    s.box(x + w - half, y, half, 44, "Coding agents")
+    worker_y = y + 44 + RISE
+    gateway_y = worker_y + _unit(s, x, worker_y, half, worker, Path(worker_dir).name) + RISE
+    engine_y = gateway_y + _unit(s, x, gateway_y, w, gateway, Path(gateway_dir).name) + RISE
+    memory_y = engine_y + _unit(s, x, engine_y, w, engine, Path(engine_dir).name, "ours") + 16
+    s.memory(x, memory_y, w, TRAY_H)
+    s.text(x + w / 2, memory_y + TRAY_H / 2 + 0.33 * LABEL, MEMORY, anchor="middle")
+    s.flow([(left, y + 44), (left, worker_y)], hue=VOICE)
+    s.flow([(left, gateway_y - RISE), (left, gateway_y)], hue=VOICE)
+    s.flow([(right, y + 44), (right, gateway_y)])
+    for at, priority, hue in zip((left, right), PRIORITIES, (VOICE, None), strict=True):
+        s.flow([(at, engine_y - RISE), (at, engine_y)], hue=hue)
+        s.text(at + 12, engine_y - RISE / 2 + 0.33 * NOTE, priority, size=NOTE, cls="soft")
+    s.flow([(x + w / 2, memory_y - 16), (x + w / 2, memory_y)], arrow=False)
+    return memory_y + TRAY_H
 
 
 def _overview_wide(path: Path, title: str) -> Path:
-    """The serving plane in the middle, the measurement plane left of it and the operations plane right."""
-    s = Diagram(WIDTH, 600, title, OVERVIEW_DESCRIPTION)
-    side, gap = 300.0, 28.0
-    middle = WIDTH - 2 * side - 4 * 24
-    engine = SERVING_PARTS[2][0]
-    side_h = 52 + len(MEASUREMENT) * UNIT_H + (len(MEASUREMENT) - 1) * gap + 24
-    h = max(_serving_height(engine), side_h)
-    s.panel(24 + side + 24, 12, middle, h, "Serving: what runs")
-    _serving(s, 24 + side + 24, 12, middle, engine)
-    for (name, parts), x in zip(PLANES, (24.0, WIDTH - 24 - side), strict=True):
-        _plane(s, x, 12, side, name, parts, gap, h)
-    s.height = 12 + h + 12
+    """The serving path left to right across the page: the callers and the voice worker on the upper lane, on the
+    voice turn's green, and the coding agents on the lower; the gateway, as tall as both, which sends each on at its
+    priority; and the engine with the change, its memory under it, the two as tall as the gateway."""
+    s = Diagram(WIDTH, 400, title, OVERVIEW_DESCRIPTION)
+    (worker, worker_dir), (gateway, gateway_dir), (engine, engine_dir) = SERVING_PARTS
+    top = 16.0
+    engine_h = UNIT_H + 24 * (len(engine) - 1)
+    low = top + engine_h + 8 + TRAY_H
+    upper, lower = top + UNIT_H / 2, low - UNIT_H / 2
+    source_w = measure("Coding agents", LABEL) + 38
+    worker_w = max(measure(worker[0], LABEL), measure(Path(worker_dir).name, NOTE)) + 44
+    gateway_w = measure(Path(gateway_dir).name, NOTE) + 38
+    engine_w = max(measure(line, LABEL) for line in engine) + 48
+    engine_x = WIDTH - EDGE - engine_w
+    send = engine_x - (EDGE + source_w + HOP + worker_w + HOP + gateway_w)
+    worker_x = EDGE + source_w + HOP
+    gateway_x = worker_x + worker_w + HOP
+    assert send >= measure(PRIORITIES[0], NOTE) + 36, send  # room for a priority over its flow
+    s.box(EDGE, top, source_w, UNIT_H, "Callers")
+    s.box(EDGE, low - UNIT_H, source_w, UNIT_H, "Coding agents")
+    _unit(s, worker_x, top, worker_w, worker, Path(worker_dir).name)
+    _unit(s, gateway_x, top, gateway_w, gateway, Path(gateway_dir).name, h=low - top)
+    _unit(s, engine_x, top, engine_w, engine, Path(engine_dir).name, "ours")
+    s.memory(engine_x, low - TRAY_H, engine_w, TRAY_H)
+    s.text(engine_x + engine_w / 2, low - TRAY_H / 2 + 0.33 * LABEL, MEMORY, anchor="middle")
+    s.flow([(EDGE + source_w, upper), (worker_x, upper)], hue=VOICE)
+    s.flow([(worker_x + worker_w, upper), (gateway_x, upper)], hue=VOICE)
+    s.flow([(EDGE + source_w, lower), (gateway_x, lower)])
+    # The gateway sends both on into the engine: the voice turn level with its lane, its priority over its flow, and
+    # the agents' requests under it, theirs under their flow.
+    sent = ((upper, -10.0), (top + engine_h - 24, 10 + 0.7 * NOTE))
+    for (at, label), priority, hue in zip(sent, PRIORITIES, (VOICE, None), strict=True):
+        s.flow([(gateway_x + gateway_w, at), (engine_x, at)], hue=hue)
+        s.text(gateway_x + gateway_w + 12, at + label, priority, size=NOTE, cls="soft")
+    s.height = math.ceil(low + 16)
     return s.save(path)
 
 
 def _overview_narrow(path: Path, title: str) -> Path:
-    """The phone layout: the serving plane on top, then the measurement plane and the operations plane."""
-    s = Diagram(NARROW, 1800, title, OVERVIEW_DESCRIPTION)
-    x0, w, gap = 16.0, NARROW - 32, 16.0
-    engine = [SERVING_PARTS[2][0][0], "the KV preemption,", "the budget cap"]
-    h = _serving_height(engine)
-    s.panel(x0, 12, w, h, "Serving: what runs")
-    _serving(s, x0, 12, w, engine)
-    y = 12 + h + 24
-    for name, parts in PLANES:
-        plane_h = 52 + len(parts) * UNIT_H + (len(parts) - 1) * gap + 24
-        _plane(s, x0, y, w, name, parts, gap, plane_h)
-        y += plane_h + 24
-    s.height = y - 12
+    """The phone layout: the serving path down the page."""
+    s = Diagram(NARROW, 700, title, OVERVIEW_DESCRIPTION)
+    low = _serving(s, 16.0, 16.0, NARROW - 32.0)
+    s.height = math.ceil(low + 16)
     return s.save(path)
 
 
@@ -866,27 +996,34 @@ REQUEST_STEPS = (
 """The gateway's path for an inference request, in the order crates/flatshare-gateway/src/proxy.rs takes it, and
 each step's refusals as the gateway README's error table names them: the status and the code, or the error event's
 type once a stream has begun."""
+ENGINE = Step("Engine", "sees no request the first four steps refuse", kind="ours")
+"""Where the engine stands on the path, between the step that forwards to it and the step that relays its stream: the
+one blue box, and beside it what the four steps before the forwarding spare it."""
+FORWARDED = 5
+"""How many of REQUEST_STEPS come before the engine: all up to the forwarding."""
 REQUEST_DESCRIPTION = (
-    "A column of seven steps a request takes through the gateway, each step's main refusals leaving to its right, "
-    "which the gateway's error table gives in full: authenticate "
+    "A column of seven steps a request takes through the gateway, each with its main refusals, which the "
+    "gateway's error table gives in full: authenticate "
     "(401 invalid_api_key, 400 invalid_class), bound (503 in_flight_limit, 429 tenant_in_flight_limit, 413 "
     "body_too_large), sanitize (400 invalid_json, 400 too_many_choices), place (503 upstream_not_ready, "
     "no_healthy_node, no_call_slot or no_agent_slot), forward (502 upstream_unavailable, 504 upstream_timeout), "
-    "relay (an error event of type "
-    "upstream_unavailable, upstream_timeout or draining once a stream has begun), and account, which records one "
-    "outcome for every request."
+    "then the engine, the one blue box, which sees no request that the first four steps refuse, relay (an error "
+    "event of type upstream_unavailable, upstream_timeout or draining once a stream has begun), and account, which "
+    "records one outcome for every request."
 )
 
 
 def request_path(out: Path) -> list[Path]:
-    """request-path.svg and its phone layout: a request's path through the gateway, each step's refusals beside it."""
+    """request-path.svg and its phone layout: a request's path through the gateway, each step's refusals beside it,
+    and the engine where the path reaches it."""
     title = "A request's path through the gateway"
+    steps = (*REQUEST_STEPS[:FORWARDED], ENGINE, *REQUEST_STEPS[FORWARDED:])
     wide = Diagram(WIDTH, 800, title, REQUEST_DESCRIPTION)
     wide.text(24 + 100, 30, "a request", size=NOTE, anchor="middle", cls="soft")
     wide.flow([(124, 40), (124, 64)])
     _, lowest = _ladder(
         wide,
-        REQUEST_STEPS,
+        steps,
         x=24,
         top=64,
         width=200,
@@ -899,34 +1036,51 @@ def request_path(out: Path) -> list[Path]:
     narrow = Diagram(NARROW, 1200, title, REQUEST_DESCRIPTION)
     narrow.text(16, 30, "a request", size=NOTE, cls="soft")
     narrow.flow([(40, 40), (40, 64)])
-    narrow.height = (
-        _ladder(narrow, REQUEST_STEPS, x=16, top=64, width=200, lead_w=34, below=True)[1] + 24
-    )
+    narrow.height = _ladder(narrow, steps, x=16, top=64, width=200, lead_w=34, below=True)[1] + 24
     return [wide.save(out / "request-path.svg"), narrow.save(out / "request-path-narrow.svg")]
 
 
 # Two cards -------------------------------------------------------------------------------------------------------
 
 CARDS = (("Phastform", 2, 4), ("Gray", 2, 12))
-"""The serving arrangement's cards as deploy/cyan/gateway.example.toml's [[nodes]] give them, in placement order: the
-name, max_calls and max_agents. With calls = "fill" a call takes the first card with a free call slot."""
+"""The two cards as deploy/cyan/gateway.example.toml's [[nodes]] give them, in placement order: the name, max_calls
+and max_agents. With calls = "fill" a call takes the first card with a free call slot."""
+FILL = ("calls fill in this order",)
+"""What (a)'s arrow from the first card to the second says: with calls = "fill", the file's order."""
 MOVED = ("next turn: 0.7 s after a kill,", "1.9 s after a stop")
-"""When both calls reached the spare in the failover drills (benchmarks/results/2026-10-28-node-failover)."""
-CARD_H = 124.0
-"""A card's box: its name, then a row of call slots and a row of agents' slots."""
+"""When both calls reached the spare in the failover drills (benchmarks/results/2026-10-28-node-failover): what (b)'s
+arrow, the calls' own, says."""
 HELD = "held until the calls end"
 """What the spare's hatched agents' slots mean in (b): a node that covers holds its agents' requests to
 failover_background_max_in_flight, 0 in deploy/cyan/gateway.example.toml, until the moved calls end
 (crates/flatshare-gateway/README.md, Nodes)."""
-HELD_H = 28.0
-"""The bracket under the spare's agents in (b) and its name, below the card."""
-CARDS_DESCRIPTION = (
-    "Two panels of the two cards' slots as the gateway bounds them, two call slots each and up to 4 agents' "
-    "sessions on Phastform and 12 on Gray: in panel a, in service, both calls fill Phastform and Gray, the warm "
-    "spare, runs agents only; in panel b, Phastform's engine failed, both calls take Gray's call slots at their "
-    "next turn, 0.7 s after a kill and 1.9 s after a stop in the drills, and Gray holds its agents' requests until "
-    "the moved calls end."
+CARD_STATES = (
+    ("a", "In service", ((2, "run", "the calls"), (0, "run", "warm spare")), FILL, False),
+    (
+        "b",
+        "The first card failed",
+        ((0, None, "engine down"), (2, "held", "covering")),
+        MOVED,
+        True,
+    ),
 )
+"""The two panels: the letter, the title, each card's state (its calls, its agents' slots running, held or free,
+and its note), what the arrow between the cards says, and whether the arrow is the calls moving."""
+ROW_NAME = 66.0
+"""A card's column of row names, before its slots."""
+CARDS_DESCRIPTION = (
+    "Two panels of the two cards' slots as the gateway bounds them, a tray a card, two call slots each and up to 4 "
+    "agents' sessions on Phastform and 12 on Gray: in panel a, in service, both calls fill Phastform, the first "
+    "card in the file's order, and Gray, the warm spare, runs agents only; in panel b, Phastform's engine failed, "
+    "both calls take Gray's call slots at their next turn, 0.7 s after a kill and 1.9 s after a stop in the "
+    "drills, and Gray holds its agents' requests until the moved calls end."
+)
+
+
+def _card_size(card: tuple[str, int, int], pitch: float, slot: float) -> tuple[float, float]:
+    """A card's tray, across and down: its row names and its agents' slots at ``pitch``; its name, then two rows of
+    slots ``slot`` high."""
+    return 32 + ROW_NAME + card[2] * pitch - 2, 44 + 2 * slot + 10 + 16
 
 
 def _card(
@@ -935,117 +1089,108 @@ def _card(
     y: float,
     w: float,
     card: tuple[str, int, int],
+    state: tuple[int, str | None, str],
     *,
-    calls: int,
-    agents: str | None,
-    note: str,
-    calls_last: bool = False,
-) -> tuple[list[float], tuple[float, float], tuple[float, float]]:
-    """A card: its name and ``note``, its call slots, ``calls`` of them taken, and its agents' slots, running
-    (``agents`` "run"), held back ("held", hatched) or none (None); the call slots on the top row, or with
-    ``calls_last`` on the bottom one, which faces the other card. The slots share one pitch, the most at which the most
-    slots fit the card. Returns its call slots' centres, their top and bottom, and its agents' row's left and right
-    edges."""
+    pitch: float,
+    slot: float,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """A card: a tray with its name and its state's note, a row of its call slots, as many taken as the state says,
+    and a row of its agents' slots, running ("run"), held back ("held", hatched) or free (None). Returns the middle
+    of its call slots, across and down, and its agents' row's left and right edges."""
     name, max_calls, max_agents = card
-    s.rect(x, y, w, CARD_H, "box")
-    s.text(x + 16, y + 30, name)
-    s.text(x + w - 16, y + 30, note, size=NOTE, anchor="end", cls="soft")
-    left = x + 86
-    pitch = min(26.0, (x + w - 16 - left) / max(c[2] for c in CARDS))
-    slot = round(pitch * 0.77)
-    centres: list[float] = []
-    edges = (0.0, 0.0)
-    rows = [
+    calls, agents, note = state
+    s.memory(x, y, w, _card_size(card, pitch, slot)[1])
+    named = s.text(x + 16, y + 30, name)
+    s.text(named.x1 + 12, y + 30, note, size=NOTE, cls="soft")
+    left = x + 16 + ROW_NAME
+    rows = (
         ("calls", max_calls, calls, VOICE),
         ("agents", max_agents, max_agents if agents else 0, AGENT),
-    ]
-    for row, (label, count, taken, hue) in enumerate(rows[::-1] if calls_last else rows):
-        top = y + 52 + 38 * row
-        s.text(x + 16, top + 15, label, size=NOTE, cls="mute")
-        cells: list[str | None] = [hue] * taken + [None] * (count - taken)
+    )
+    for k, (label, count, taken, hue) in enumerate(rows):
+        top = y + 44 + (slot + 10) * k
+        s.text(x + 16, top + slot / 2 + 0.33 * NOTE, label, size=NOTE, cls="soft")
         s.cells(
             left,
-            top + (20 - slot) / 2,
-            cells,
-            cell=slot,
+            top,
+            [hue] * taken + [None] * (count - taken),
+            cell=pitch - 2,
             height=slot,
-            gap=pitch - slot,
-            hatched=frozenset(range(count))
-            if agents == "held" and label == "agents"
-            else frozenset(),
+            gap=2,
+            hatched=frozenset(range(count)) if agents == "held" and hue == AGENT else frozenset(),
+            strong=(VOICE,),
         )
-        if label == "calls":
-            centres = [left + k * pitch + slot / 2 for k in range(count)]
-            edges = (top + (20 - slot) / 2, top + (20 + slot) / 2)
-    return centres, edges, (left, left + (max_agents - 1) * pitch + slot)
+    return (left + max_calls * pitch / 2, y + 44 + slot / 2), (
+        left + 1,
+        left + max_agents * pitch - 3,
+    )
 
 
 def two_cards(out: Path) -> list[Path]:
-    """two-cards.svg and its phone layout: the serving arrangement's two cards, (a) in service and (b) after the first
-    failed, its calls on the spare."""
+    """two-cards.svg and its phone layout: the two cards, (a) in service and (b) after the first failed, its calls on
+    the spare."""
     title = "Two cards: placement and failover"
-    paths = []
-    for path, width in ((out / "two-cards.svg", WIDTH), (out / "two-cards-narrow.svg", NARROW)):
-        s = Diagram(width, 1200, title, CARDS_DESCRIPTION)
-        wide = width == WIDTH
-        panel_w = (WIDTH - 48 - 24) / 2 if wide else NARROW - 32
-        card_w = panel_w - 40
-        bottom = 12.0
-        for k, (letter, heading) in enumerate(
-            (("a", "In service"), ("b", "The first card failed"))
-        ):
-            px = 24 + k * (panel_w + 24) if wide else 16.0
-            py = 12.0 if wide else bottom + (20 if k else 0)
-            # The cards a gap apart that holds (b)'s moved calls; stacked, (a) has nothing there and closes it.
-            gap = 84 if wide or letter == "b" else 32
-            first, second = py + 56, py + 56 + CARD_H + gap
-            # Side by side, the panels share a height; stacked, only (b) holds the bracket under its spare.
-            ph = second + CARD_H + 20 + (HELD_H if wide or letter == "b" else 0) - py
-            s.panel(px, py, panel_w, ph, heading, letter, ground="b")
-            cx = px + 20
-            between = first + CARD_H + 48
-            # The first card's call slots on its bottom row and the spare's on its top, facing each other across the gap
-            # the moved calls cross: an arrow leaves the call slot it moves from, never another row.
-            if letter == "a":
-                _card(
-                    s,
-                    cx,
-                    first,
-                    card_w,
-                    CARDS[0],
-                    calls=2,
-                    agents="run",
-                    note="the calls",
-                    calls_last=True,
-                )
-                _card(s, cx, second, card_w, CARDS[1], calls=0, agents="run", note="warm spare")
-                # The placement's key, calls = "fill", is the caption's: a configuration key is no label.
-            else:
-                taken, (_, from_y), _ = _card(
-                    s,
-                    cx,
-                    first,
-                    card_w,
-                    CARDS[0],
-                    calls=0,
-                    agents=None,
-                    note="engine down",
-                    calls_last=True,
-                )
-                spare, (to_y, _), (held_x0, held_x1) = _card(
-                    s, cx, second, card_w, CARDS[1], calls=2, agents="held", note="covering"
-                )
-                s.bracket(held_x0, held_x1, second + CARD_H + 9, HELD)
-                for a, b in zip(
-                    taken, spare, strict=True
-                ):  # from each call's own slot to its new one
-                    s.flow([(a, from_y), (b, to_y)], hue=VOICE, radius=0)
-                for j, line in enumerate(MOVED):
-                    s.text(taken[-1] + 24, between - 12 + LINE * j, line, size=NOTE, cls="soft")
-            bottom = py + ph
-        s.height = bottom + 12
-        paths.append(s.save(path))
-    return paths
+    return [
+        _cards_wide(out / "two-cards.svg", title),
+        _cards_narrow(out / "two-cards-narrow.svg", title),
+    ]
+
+
+def _cards_wide(path: Path, title: str) -> Path:
+    """The panels one under another, each the two cards side by side in the file's order, a tray as wide as its
+    slots, and between them the arrow at the call slots' row with what it says under it."""
+    s = Diagram(WIDTH, 800, title, CARDS_DESCRIPTION)
+    pitch, slot = 38.0, 30.0
+    sizes = [_card_size(card, pitch, slot) for card in CARDS]
+    xs = (EDGE, WIDTH - EDGE - sizes[1][0])
+    y = 16.0
+    for letter, heading, states, lines, moved in CARD_STATES:
+        _title(s, EDGE, y, letter, heading)
+        top = y + HEAD
+        marks = [
+            _card(s, x, top, w, card, state, pitch=pitch, slot=slot)
+            for x, (w, _), card, state in zip(xs, sizes, CARDS, states, strict=True)
+        ]
+        (_, row), _ = marks[0]
+        a, b = xs[0] + sizes[0][0], xs[1]
+        s.flow([(a, row), (b, row)], hue=VOICE if moved else None)
+        for j, line in enumerate(lines):
+            s.text((a + b) / 2, row + 26 + LINE * j, line, size=NOTE, anchor="middle", cls="soft")
+        y = top + sizes[0][1]
+        if moved:
+            y = s.bracket(*marks[1][1], y + 10, HELD).y1
+        y += BETWEEN
+    s.height = math.ceil(y - BETWEEN + 12)
+    return s.save(path)
+
+
+def _cards_narrow(path: Path, title: str) -> Path:
+    """The phone layout: the panels one under another, each the two cards one under the other at the column's width,
+    and between them the arrow from the call slots with what it says beside it."""
+    s = Diagram(NARROW, 1400, title, CARDS_DESCRIPTION)
+    x, w, slot = 16.0, NARROW - 32.0, 26.0
+    pitch = float(math.floor((w - 32 - ROW_NAME) / max(card[2] for card in CARDS)))
+    h = _card_size(CARDS[0], pitch, slot)[1]
+    y = 16.0
+    for letter, heading, states, lines, moved in CARD_STATES:
+        _title(s, x, y, letter, heading)
+        gap = 28 + LINE * len(lines)
+        tops = (y + HEAD, y + HEAD + h + gap)
+        marks = [
+            _card(s, x, top, w, card, state, pitch=pitch, slot=slot)
+            for top, card, state in zip(tops, CARDS, states, strict=True)
+        ]
+        (at, _), _ = marks[0]
+        s.flow([(at, tops[0] + h), (at, tops[1])], hue=VOICE if moved else None)
+        first = tops[0] + h + gap / 2 - LINE * (len(lines) - 1) / 2 + 0.33 * NOTE
+        for j, line in enumerate(lines):
+            s.text(at + 14, first + LINE * j, line, size=NOTE, cls="soft")
+        y = tops[1] + h
+        if moved:
+            y = s.bracket(*marks[1][1], y + 10, HELD).y1
+        y += BETWEEN
+    s.height = math.ceil(y - BETWEEN + 12)
+    return s.save(path)
 
 
 # The release -----------------------------------------------------------------------------------------------------
@@ -1061,13 +1206,23 @@ RELEASE_STEPS = (
 """deploy/deploy.sh HOST's release, as deploy/bin/flatshare-release deploy takes it (ops/RUNBOOK.md's Deploy, steps 1
 to 7), and its exits before the switch: 2 for a host or an upload it cannot work with and a drain that does not end
 (NotReady), 1 for a check that fails (ReleaseError). From the switch on, any failure switches back."""
-SWITCH_BACK = (("exit 1", "the release before runs again"), ("exit 3", "switching back failed too"))
-"""What a switch back ends with: the release before up and checked, or not."""
+SWITCH_BACK = (
+    ("exit 1", "the previous release runs again"),
+    ("exit 3", "switching back failed too"),
+)
+"""What a switch back ends with: the previous release up and checked, or not."""
+ENTRIES = ("deploy.sh HOST", "--rollback")
+"""How a release is entered: a deploy at its first step, a rollback at the second, with the previous release."""
+SERVED = ("Serving", "exit 0")
+"""A release that passes its checks: its state and its exit."""
+FAILURE = "a failure"
+"""What takes a release from any of the three states after the switch to the switch back."""
 RELEASE_DESCRIPTION = (
-    "A column of the release's states, prepare, verify, drain, switch, restart, check and serving: a host that is "
-    "locked or an upload that changed exits 2, a failed verification exits 1 and a drain whose calls do not end exits "
-    "2, each with nothing switched; any failure from the switch through the check switches back, which exits 1 with "
-    "the release before running again or 3 when switching back fails too; a release that passes its checks serves "
+    "The release's states in order, prepare, verify, drain, switch, restart, check and serving: a host that is "
+    "locked or an upload that changed exits 2, a failed verification exits 1, and a drain whose calls do not end or "
+    "that meets a running E2 point exits 2, each with nothing switched; any failure from the switch through the check "
+    "switches back, which exits 1 with the previous release running again or 3 when switching back fails too; a "
+    "release that passes its checks serves "
     "and exits 0, and a rollback enters at the verification with the previous release."
 )
 
@@ -1075,77 +1230,98 @@ RELEASE_DESCRIPTION = (
 def release(out: Path) -> list[Path]:
     """release.svg and its phone layout: a release's states and its exits, the switch back by itself."""
     title = "A release and its exits"
-    paths = []
-    for path, width, below in (
-        (out / "release.svg", WIDTH, False),
-        (out / "release-narrow.svg", NARROW, True),
-    ):
-        s = Diagram(width, 1200, title, RELEASE_DESCRIPTION)
-        x, box_w = (200.0, 180.0) if not below else (16.0, 200.0)
-        main = x + (24 if below else box_w / 2)
-        s.text(
-            main if not below else x,
-            30,
-            "deploy.sh HOST",
-            size=NOTE,
-            anchor="start" if below else "middle",
-            cls="soft",
-        )
-        s.flow([(main, 40), (main, 64)])
-        tops, lowest = _ladder(
-            s, RELEASE_STEPS, x=x, top=64, width=box_w, exit_to=700, lead_w=46, below=below
-        )
-        switch, restart, check = tops[3:6]
-        # A rollback is the same path from the verification, to the previous release.
-        verify = tops[1] + STEP_H / 2
-        if below:
-            s.text(x + box_w + 30, verify - 9, "--rollback", size=NOTE, cls="soft")
-            s.flow([(NARROW - 16, verify), (x + box_w, verify)])
-        else:
-            s.text(24, verify - 9, "--rollback", size=NOTE, cls="soft")
-            s.flow([(24, verify), (x, verify)])
-        # Any failure from the switch through the check switches back.
-        edge = x + box_w
-        spine = edge + 16
-        s.path(
-            f"M{fmt(edge + 4)} {fmt(switch + STEP_H / 2)}H{fmt(spine)}V{fmt(check + STEP_H / 2)}"
-            f"H{fmt(edge + 4)}M{fmt(edge + 4)} {fmt(restart + STEP_H / 2)}H{fmt(spine)}",
-            "bracket",
-        )
-        s.wires.append(([(spine, switch + STEP_H / 2), (spine, check + STEP_H / 2)], ()))
-        back_w = 150.0
-        if below:
-            back_x, back_y = x + 104, check + STEP_H + 52
-            s.flow(
-                [
-                    (spine, check + STEP_H / 2),
-                    (spine, back_y - 22),
-                    (back_x + back_w / 2, back_y - 22),
-                    (back_x + back_w / 2, back_y),
-                ],
-                hue=EXIT,
-                radius=0,
+    return [
+        _release_wide(out / "release.svg", title),
+        _release_narrow(out / "release-narrow.svg", title),
+    ]
+
+
+def _release_wide(path: Path, title: str) -> Path:
+    """The states in a row, the main path left to right. Under the three before the switch, each one's way out, and
+    one bracket under all three for what they share; the three from the switch on join into the switch back."""
+    s = Diagram(WIDTH, 600, title, RELEASE_DESCRIPTION)
+    names = [step.name for step in RELEASE_STEPS] + [SERVED[0]]
+    gap = 30.0
+    before = [(k, step) for k, step in enumerate(RELEASE_STEPS) if step.answers]
+    reasons = [_lines(step.when, 160) for _, step in before]
+    # The margin that keeps the widest reason, centred under the first state, inside the figure's edge.
+    reach = max(measure(line, NOTE) for lines in reasons for line in lines)
+    room = WIDTH - gap * (len(names) - 1)
+    margin = max(EDGE, (EDGE + reach / 2 - room / (2 * len(names))) * len(names) / (len(names) - 1))
+    w = (room - 2 * margin) / len(names)
+    xs = [margin + (w + gap) * k for k in range(len(names))]
+    top = 64.0
+    mid, bottom = top + STEP_H / 2, top + STEP_H
+    for k, (x, name) in enumerate(zip(xs, names, strict=True)):
+        s.box(x, top, w, STEP_H, name)
+        if k:
+            s.flow([(xs[k - 1] + w, mid), (x, mid)])
+    for x, entry in zip(xs, ENTRIES, strict=False):
+        s.text(x + w / 2, 30, entry, size=NOTE, anchor="middle", cls="soft")
+        s.flow([(x + w / 2, 40), (x + w / 2, top)])
+    # Before the switch: each state's way out, and what all three leave behind.
+    code = bottom + DROP + 20 + LINE * max(len(lines) for lines in reasons) + 2
+    for (k, step), lines in zip(before, reasons, strict=True):
+        x = xs[k]
+        s.flow([(x + w / 2, bottom), (x + w / 2, bottom + DROP)], hue=EXIT)
+        for j, line in enumerate(lines):
+            s.text(
+                x + w / 2,
+                bottom + DROP + 20 + LINE * j,
+                line,
+                size=NOTE,
+                anchor="middle",
+                cls="soft",
             )
-            s.text(spine + 10, check + STEP_H / 2 + 22, "a failure", size=NOTE, cls="soft")
-            answers_x, baseline = x + 58, back_y + STEP_H + 44
-        else:
-            back_x, back_y = 520.0, restart
-            s.flow([(spine, restart + STEP_H / 2), (back_x, restart + STEP_H / 2)], hue=EXIT)
-            s.text(spine + 12, restart + STEP_H / 2 - 9, "a failure", size=NOTE, cls="soft")
-            s.flow([(back_x + back_w, restart + STEP_H / 2), (700, restart + STEP_H / 2)], hue=EXIT)
-            answers_x, baseline = 710.0, restart + STEP_H / 2 + 6
-        s.box(back_x, back_y, back_w, STEP_H, "Switch back")
-        if below:
-            s.flow([(back_x + 20, back_y + STEP_H), (back_x + 20, back_y + STEP_H + 26)], hue=EXIT)
-        last = _answers(s, answers_x, baseline, SWITCH_BACK, 46)
-        # Through the check, it serves.
-        serving = max(check + STEP_H + 30, (last + 24) if below else 0)
-        s.flow([(main, check + STEP_H), (main, serving)])
-        s.box(x, serving, box_w, STEP_H, "Serving")
-        s.text(x + box_w + 14, serving + STEP_H / 2 + 6, "exit 0", size=NOTE, cls="mute")
-        s.height = max(lowest, last, serving + STEP_H) + 24
-        paths.append(s.save(path))
-    return paths
+        s.text(x + w / 2, code, step.answers[0][0], size=NOTE, anchor="middle")
+    kept = s.bracket(xs[before[0][0]], xs[before[-1][0]] + w, code + 12, before[0][1].answers[0][1])
+    # From the switch on: any failure switches back.
+    switch, restart, check = (xs[k] + w / 2 for k in (3, 4, 5))
+    bus = bottom + 22
+    back = bus + 48
+    s.flow([(check, bottom), (check, bus), (switch, bus)], arrow=False, hue=EXIT)
+    s.flow([(restart, bottom), (restart, bus)], arrow=False, hue=EXIT)
+    s.flow([(switch, bottom), (switch, back)], hue=EXIT)
+    s.text(switch + 12, bus + 30, FAILURE, size=NOTE, cls="soft")
+    s.box(xs[3], back, w, STEP_H, "Switch back")
+    s.flow([(xs[3] + w, back + STEP_H / 2), (xs[4], back + STEP_H / 2)], hue=EXIT)
+    last = _answers(s, xs[4] + 8, back + STEP_H / 2 + 6, SWITCH_BACK, 46)
+    s.text(xs[6] + w / 2, bottom + 26, SERVED[1], size=NOTE, anchor="middle")
+    s.height = max(kept.y1, last + 6) + 22
+    return s.save(path)
+
+
+def _release_narrow(path: Path, title: str) -> Path:
+    """The states down a column, each way out under its state; the three from the switch on join at their right
+    into the switch back, and the main path runs on down the left to the last state."""
+    s = Diagram(NARROW, 1200, title, RELEASE_DESCRIPTION)
+    x, w = 16.0, 200.0
+    main = x + 24
+    s.text(x, 30, ENTRIES[0], size=NOTE, cls="soft")
+    s.flow([(main, 40), (main, 64)])
+    tops, lowest = _ladder(s, RELEASE_STEPS, x=x, top=64, width=w, lead_w=46, below=True)
+    verify = tops[1] + STEP_H / 2
+    tail = x + w + 48
+    s.flow([(tail, verify), (x + w, verify)])
+    s.text(tail + 8, verify + 6, ENTRIES[1], size=NOTE, cls="soft")
+    switch, restart, check = (tops[k] + STEP_H / 2 for k in (3, 4, 5))
+    spine = x + w + 22
+    back_w = 150.0
+    back = check + STEP_H / 2 + 58
+    s.flow([(x + w, switch), (spine, switch), (spine, back)], hue=EXIT)
+    s.flow([(x + w, restart), (spine, restart)], arrow=False, hue=EXIT)
+    s.flow([(x + w, check), (spine, check)], arrow=False, hue=EXIT)
+    s.text(spine + 12, check + STEP_H / 2 + 26, FAILURE, size=NOTE, cls="soft")
+    s.box(spine - back_w / 2, back, back_w, STEP_H, "Switch back")
+    drop = spine - back_w / 2 + 24
+    s.flow([(drop, back + STEP_H), (drop, back + STEP_H + 26)], hue=EXIT)
+    last = _answers(s, x + 58, back + STEP_H + 26 + 22, SWITCH_BACK, 46)
+    serving = last + 26
+    s.flow([(main, tops[5] + STEP_H), (main, serving)])
+    s.box(x, serving, w, STEP_H, SERVED[0])
+    s.text(x + w + 14, serving + STEP_H / 2 + 6, SERVED[1], size=NOTE)
+    s.height = max(lowest, serving + STEP_H) + 24
+    return s.save(path)
 
 
 # Triage ----------------------------------------------------------------------------------------------------------
@@ -1191,7 +1367,7 @@ the gateway, the gateway's /ready, its /nodes, its refusals by outcome (flatshar
 engines' KV pools with requests waiting; each check that finds its fault names the rows, by the alerts that open
 them (ops/prometheus/rules.yml), and what is left is the voice plane's."""
 TRIAGE_DESCRIPTION = (
-    "A column of five checks from a call that fails or waits, each leaving to its right for the runbook rows it "
+    "A column of five checks from a call that fails or waits, each leading to the runbook rows it "
     "names: the gateway down (FlatshareGatewayDown); /ready not 200, the engine not ready, degraded or warming "
     "(FlatshareEngineNotReady, FlatshareEngineDegraded, FlatshareEngineWarming); a node unhealthy or covering "
     "(FlatshareNodeUnhealthy, FlatshareNodeCovering); refusals for a full bound or no slot "
@@ -1208,7 +1384,7 @@ def triage(out: Path) -> list[Path]:
     wide.text(24 + 110, 30, "a call fails or waits", size=NOTE, anchor="middle", cls="soft")
     wide.flow([(134, 40), (134, 64)])
     wide.height = (
-        _ladder(wide, TRIAGE_STEPS, x=24, top=64, width=220, exit_to=600, lead_w=0)[1] + 24
+        _ladder(wide, TRIAGE_STEPS, x=24, top=64, width=220, exit_to=720, lead_w=0)[1] + 24
     )
     narrow = Diagram(NARROW, 1400, title, TRIAGE_DESCRIPTION)
     narrow.text(16, 30, "a call fails or waits", size=NOTE, cls="soft")
@@ -1229,92 +1405,41 @@ def render(out_dir: Path) -> list[Path]:
     ]
 
 
+METHOD_TITLE = "How #63350 and #63351 make room for a voice turn"
 DESCRIPTION = (
     "Panel a: a caller's speech goes to speech to text, then to vLLM 0.32's scheduler, which carries #63350 "
     "and #63351, then to text to speech and back to the caller; 24 coding-agent sessions send their requests "
     "to the same scheduler at priority 2, the voice turn's at priority 0; the scheduler allocates from the KV "
-    "pool beneath it. Panel b, the KV preemption, #63350: in a pool of "
-    f"{POOL} KV blocks, two agent requests hold 5 each and 2 are free, fewer than the {TURN} a waiting voice "
-    "turn needs; on vLLM 0.32 the turn keeps waiting, while the KV preemption preempts the latest agent "
-    f"request, agent B, and the turn takes {TURN} of its blocks. Panel c, the budget cap, #63351: the engine's "
-    "steps in time, one box a step, from the reply's first token: on vLLM 0.32 each step of the reply also "
-    "carries an agent's prefill chunk, so in the time the budget cap gives the reply its first "
-    f"{WINDOW} tokens the reply gets 14 without it; after the window, agent prefill resumes. Blocks and steps "
-    "are illustrative."
+    f"pool beside it. Panel b, the KV preemption, #63350: in a pool of {POOL} KV blocks, two agent requests "
+    f"hold 5 each and 2 are free, fewer than the {TURN} a voice turn needs; on vLLM 0.32 the turn waits outside "
+    "the pool, while the KV preemption preempts the latest agent request, agent B, which waits instead, and the "
+    f"turn takes {TURN} of its blocks. Panel c, the budget cap, #63351: the engine's steps in time, one green "
+    "block a step, from the reply's first token: on vLLM 0.32 each step of the reply also carries an agent's "
+    f"prefill chunk, so in the time the budget cap gives the reply its first {WINDOW} tokens the reply gets 14 "
+    "without it; after the window, agent prefill resumes. Blocks and steps are illustrative."
 )
+BETWEEN = 34.0
+"""Between the method figure's panels: from one's lowest edge to the next one's title."""
 
 
 def _wide(path: Path) -> Path:
-    s = Figure(WIDTH, 760, "How #63350 and #63351 make room for a voice turn", DESCRIPTION)
-    zooms = strip(s, 8)
-    py, ph = 330, PANEL_H
-    bx, bw = 24.0, 532.0
-    cx = bx + bw + 32
-    cw = WIDTH - 24 - cx
-    make_room_panel(s, bx, py, bw, ph)
-    hold_prefill_panel(s, cx, py, cw, ph)
-    # The zooms' leaders: the pool into (b), the scheduler into (c).
-    pool = zooms["b"]
-    s.leader([(pool[0] + 22, pool[3]), (pool[0] + 22, py)])
-    sched = zooms["c"]
-    x = (pool[2] + sched[2]) / 2  # between the pool's right edge and the scheduler's, over (c)
-    assert cx < x < cx + cw, (cx, x)
-    s.leader([(x, sched[3]), (x, py)])
-    s.height = py + ph + 12
+    """(a), (b) and (c) one under another, (b)'s and (c)'s rows named in one column."""
+    s = Figure(WIDTH, 900, METHOD_TITLE, DESCRIPTION)
+    low = strip(s, 16)
+    low = make_room_panel(s, EDGE, low + BETWEEN, WIDTH - 2 * EDGE)
+    low = hold_prefill_panel(s, EDGE, low + BETWEEN, WIDTH - 2 * EDGE)
+    s.height = math.ceil(low + 12)
     return s.save(path)
 
 
 def _narrow(path: Path) -> Path:
-    s = Figure(NARROW, 1400, "How #63350 and #63351 make room for a voice turn", DESCRIPTION)
+    """The phone layout: the same three panels, each row's name over it."""
+    s = Figure(NARROW, 1600, METHOD_TITLE, DESCRIPTION)
     x0, w = 16.0, NARROW - 32
-    s.text(x0, 30, "One GPU: a voice agent beside")
-    s.text(x0, 56, "coding agents")
-    s.text(NARROW - 16, 30, "(a)", anchor="end")
-    h = 44
-    col = 104.0  # the voice's column
-    rows = [92.0, 182.0, 0.0, 0.0, 0.0]
-    s.box(col - 82, rows[0] - h / 2, 164, h, "Caller")
-    s.box(col - 82, rows[1] - h / 2, 164, h, "Speech to text")
-    s.box(
-        230,
-        rows[1] - 28,
-        NARROW - 16 - 230,
-        56,
-        ["24 coding-agent", "sessions"],
-        size=VALUE,
-        pitch=22,
-    )
-    sched_top, sched_h = rows[1] + 100, 70
-    s.box(
-        x0,
-        sched_top,
-        w,
-        sched_h,
-        ["vLLM 0.32 scheduler", "with #63350, #63351"],
-        kind="ours",
-        size=VALUE,
-    )
-    tts_y = sched_top + sched_h + 96
-    s.box(col - 82, tts_y - h / 2, 164, h, "Text to speech")
-    s.memory(230, tts_y - 22, NARROW - 16 - 230, 44)
-    s.text((230 + NARROW - 16) / 2, tts_y + 7, "KV pool", size=VALUE, anchor="middle")
-    back_y = tts_y + 96
-    s.box(col - 82, back_y - h / 2, 164, h, "Caller")
-    s.flow([(col, rows[0] + h / 2), (col, rows[1] - h / 2)])
-    s.flow([(col, rows[1] + h / 2), (col, sched_top)])
-    s.text(col + 10, rows[1] + h / 2 + 32, "priority 0", size=NOTE, cls="mute")
-    agents_x = (230 + NARROW - 16) / 2
-    s.flow([(agents_x, rows[1] + 28), (agents_x, sched_top)])
-    s.text(agents_x + 10, rows[1] + h / 2 + 32, "priority 2", size=NOTE, cls="mute")
-    s.flow([(col, sched_top + sched_h), (col, tts_y - h / 2)])
-    s.text(col + 10, sched_top + sched_h + 32, "the reply", size=NOTE, cls="mute")
-    s.flow([(agents_x, sched_top + sched_h), (agents_x, tts_y - 22)], arrow=False)
-    s.flow([(col, tts_y + h / 2), (col, back_y - h / 2)])
-    py = back_y + h / 2 + 40
-    make_room_panel(s, x0, py, w, PANEL_H)
-    py += PANEL_H + 24
-    hold_prefill_panel(s, x0, py, w, PANEL_H)
-    s.height = py + PANEL_H + 12
+    low = strip_narrow(s, 16)
+    low = make_room_panel(s, x0, low + BETWEEN, w, stacked=True)
+    low = hold_prefill_panel(s, x0, low + BETWEEN, w, stacked=True)
+    s.height = math.ceil(low + 12)
     return s.save(path)
 
 

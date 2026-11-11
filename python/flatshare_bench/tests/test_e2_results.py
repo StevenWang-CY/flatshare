@@ -515,7 +515,11 @@ def test_each_workload_has_its_section_its_voice_slo_and_its_figure(tmp_path: Pa
     figures = ["frontier.svg", "frontier-4-callers.svg", "frontier-weka-x32-long.svg"]
     assert [p.name for p in written if p.suffix == ".svg"] == figures
     texts = {name: (out / name).read_text() for name in figures}
-    assert "Voice tail and the agents' goodput: weka-x32, 2 callers" in texts["frontier.svg"]
+    # A figure names its workload once, in its title and as its first line, in the glossary's words.
+    title = "Voice-to-voice p95 and the agents' token rate: weka-x32, 2 callers"
+    assert f'<title id="title">{title}</title>' in texts["frontier.svg"]
+    assert ">Workload: weka-x32, 2 callers<" in texts["frontier.svg"]
+    assert not any("goodput" in text for text in texts.values())
     assert ">SLO 2.01 s<" in texts["frontier-weka-x32-long.svg"]  # voice alone's 1,760 + 250 ms
     long = texts["frontier-weka-x32-long.svg"].lower()
     assert "a1-voice" not in long and "disc-a4 label" in long  # only its workload's points
@@ -950,7 +954,11 @@ def test_a_failed_turn_is_censored_and_keeps_its_configuration_off_the_frontier(
     figure = (out / "frontier.svg").read_text()
     # Its bar is cut at the scale's end, and its value says it is censored.
     assert ">A5-queued-s24 label<" in figure and ">48 of 50 turns failed<" in figure
-    assert ">≥30.00<" in figure and "A bar cut square runs past the scale's end" in figure
+    assert ">≥30.00 s<" in figure and ">Runs past the scale's end<" in figure
+    # Off its arm's frontier, the row is receded, which the key names: its two bars and the key's swatch are
+    # the palest gray, where an outline would be no mark of the set's.
+    assert ">Off its arm's frontier<" in figure and figure.count('class="s-pale"') == 3
+    assert 'class="g-open"' not in figure
 
 
 # The policy's name, the gateway's metrics and arm 9's label as the records from before the project's
@@ -1139,12 +1147,20 @@ def test_the_stage_waterfall_stacks_each_configurations_stages_to_its_mean_v2v(
     write_report(rows, out)
     figure = (out / "waterfall.svg").read_text()
     assert ">Disc-frozen label<" in figure and ">2 runs<" in figure and "A1-voice" not in figure
-    assert ">4.30<" in figure  # the mean V2V, the stacked bar's length
+    assert ">4.30 s<" in figure  # the mean V2V, the stacked bar's length, printed at its end
+    # Each row's agent sessions, in the table's column; and the stages' key in the bar's order, over the plot.
+    assert ">Sessions<" in figure and figure.count(">16<") == 2
+    key = [figure.index(f">{name}<") for _, name in STACKED] + [
+        figure.index(">Transport and playout<"),
+        figure.index(">weka-x32, 2 callers<"),
+    ]
+    assert key == sorted(key)
 
 
-def test_the_waterfall_wraps_a_heading_that_names_the_gpu(tmp_path: Path) -> None:
-    # A point off the box has the GPU in its workload's heading, wider than the label column: the
-    # heading wraps there, where one line would run across the gridlines and the figure refuse it.
+def test_the_waterfall_names_a_workload_with_its_gpu_on_one_line(tmp_path: Path) -> None:
+    # A point off the box has the GPU in its workload's heading, wider than its row's name: the heading
+    # stands on one line and the names' column is as wide as it needs, so that it ends before the plot,
+    # where a heading across the gridlines would have the figure refuse it.
     a100 = "NVIDIA A100-SXM4-80GB"
     pr = point(tmp_path / "a100-r1", "w5-disc-pr-ab48-s24", "9", 8800, 1800, data="weka-x32-long")
     samples = [named(T0 + 10, "1410 MHz", a100), named(T0 + 20, "1395 MHz", a100)]
@@ -1159,7 +1175,7 @@ def test_the_waterfall_wraps_a_heading_that_names_the_gpu(tmp_path: Path) -> Non
     rows, _ = load_points([pr])
     write_report(rows, tmp_path / "report")
     figure = (tmp_path / "report" / "waterfall.svg").read_text()
-    assert ">weka-x32-long, 2 callers,<" in figure and f">{a100}<" in figure
+    assert f">weka-x32-long, 2 callers, {a100}<" in figure
 
 
 SNAPSHOT = (
@@ -1535,6 +1551,39 @@ def test_each_campaigns_report_is_what_its_points_give(tmp_path: Path) -> None:
             assert path.read_bytes() == (committed / path.name).read_bytes(), committed / path.name
 
 
+NODE_TABLES = ("2026-10-26-a100-rehearsal",)
+"""The records whose campaign's tables are the node's own: they carry the GPU's clock and temperature, read from
+samples the record leaves out."""
+
+
+def test_each_campaign_under_e2_draws_and_keeps_the_figures_its_points_give(tmp_path: Path) -> None:
+    # A record that keeps its campaigns under e2/ (the A100's ten, and each rehearsal's one) keeps each
+    # campaign's report beside its points. Every one of them draws from its points, whichever names they
+    # carry; the tables are what the points give, but where the node's own are kept; and the figures a
+    # campaign keeps are the ones its points give now, so a change to the figures' code shows there.
+    results = REPO / "benchmarks" / "results"
+    reports = sorted(results.glob("*/e2/*/report"))
+    assert len(reports) == 12
+    figures = 0
+    for committed in reports:
+        rows, _ = load_points(sorted(run.parent for run in committed.parent.glob("*/run.json")))
+        record = committed.relative_to(results).parts[0]
+        written = write_report(rows, tmp_path / record / committed.parent.name)
+        kept = sorted(p.name for p in committed.iterdir())
+        drawn = [p for p in written if p.suffix == ".svg"]
+        if any(name.endswith(".svg") for name in kept):
+            assert sorted(p.name for p in written) == kept, committed
+            figures += len(drawn)
+        else:
+            assert sorted(p.name for p in written if p not in drawn) == kept and drawn, committed
+        for path in written:
+            if path.name in kept and not (record in NODE_TABLES and path not in drawn):
+                assert path.read_bytes() == (committed / path.name).read_bytes(), (
+                    committed / path.name
+                )
+    assert figures == 4
+
+
 @pytest.mark.parametrize(
     ("results", "points"),
     [(W5_RESULTS, 72), (FB_RESULTS, 15), (RS_RESULTS, 10), (MARLIN_RESULTS, 1)],
@@ -1660,12 +1709,167 @@ def test_a_frontier_figure_names_each_configuration_under_its_family(tmp_path: P
     assert figure.startswith("<svg") and ">Stock vLLM, arms 1\N{EN DASH}5<" in figure
     assert ">A2-s8 label<" in figure and ">A2-s16 label<" in figure
     assert ">no agents<" in figure and " runs<" not in figure  # voice alone; one run each
-    assert ">2.00<" in figure and ">2.60<" in figure and ">5,000<" in figure  # p95 s, tokens/s
+    assert ">2.00 s<" in figure and ">2.60 s<" in figure and ">5,000<" in figure  # p95, tokens/s
+    # Each row's agent sessions stand in the table's column, which parts the rows of one configuration at
+    # several loads; voice alone has none, and is the one row in the reference's gray.
+    assert ">Sessions<" in figure and figure.count(">16<") == 2
+    assert figure.count('class="g-mid"') == 1 and figure.count('class="g-lo"') == 4
+    assert ">(a) Voice-to-voice p95<" in figure and ">(b) Agents' token rate<" in figure
+    assert "is better" not in figure and 'text-anchor="middle" class="b"' not in figure
     repeated = point(tmp_path / "r1", "a2-s16", "2", 4000, 3000)
     rows, _ = load_points([*dirs, repeated])
     write_report(rows, tmp_path / "report")
     figure = (tmp_path / "report" / "frontier.svg").read_text()
-    assert ">2 runs<" in figure and ">2.80<" in figure and ">4,500<" in figure  # their medians
+    assert ">2 runs<" in figure and ">2.80 s<" in figure and ">4,500<" in figure  # their medians
+    assert ">A row with several runs gives the median of its runs.<" in figure
+
+
+def test_a_frontier_figure_without_agents_is_one_panel(tmp_path: Path) -> None:
+    # Where no row of a workload has agents there is no token rate to draw: the figure is the V2V panel
+    # alone, without the sessions' column, as small as its row needs.
+    rows, _ = load_points([point(tmp_path, "a1-voice", "1", None, 1760)])
+    write_report(rows, tmp_path / "report")
+    figure = (tmp_path / "report" / "frontier.svg").read_text()
+    assert '<title id="title">Voice-to-voice p95: weka-x32, 2 callers</title>' in figure
+    assert ">Voice-to-voice p95<" in figure and "token rate" not in figure
+    assert ">Sessions<" not in figure and ">no agents<" not in figure
+    assert ">1.76 s<" in figure and ">SLO 2.01 s<" in figure
+    assert float(re.search(r'<svg [^>]*height="([\d.]+)"', figure)[1]) < 400
+
+
+MAKE_ROOM_48 = [
+    *("--additional-config.make_room.reserve_tokens", "0"),
+    *("--additional-config.make_room.budget_cap_tokens", "48"),
+]
+STEP_CAP_256 = ["--max-num-batched-tokens", "256", "--long-prefill-token-threshold", "0"]
+
+
+def set_arm(run_dir: Path, **settings: Any) -> Path:
+    """A run directory whose run.json's arm takes ``settings``: its label, its engine."""
+    run = json.loads((run_dir / "run.json").read_text())
+    run["arm"].update(settings)
+    (run_dir / "run.json").write_text(json.dumps(run))
+    return run_dir
+
+
+def test_the_frontier_figure_saturates_the_configuration_to_deploy_and_nothing_else(
+    tmp_path: Path,
+) -> None:
+    # The two PRs with a 48-token window and no gateway policy are the configuration to deploy
+    # (docs/PRODUCTION.md). Where a workload has it at the step cap the profile ships, 256 tokens, that row is
+    # the saturated one, in semibold and named in the key, and the same engine at the box's own step cap is
+    # one of the change's other rows; where the workload has it at the box's cap alone, that row is it.
+    def engine(*flags: str) -> dict[str, Any]:
+        return {"variant": "make-room", "flags": list(flags)}
+
+    voice = point(tmp_path, "a1-voice", "1", None, 1760)
+    frozen = point(tmp_path, "frozen-s24", "2", 3700, 9000)
+    box = set_arm(
+        point(tmp_path, "pr-box-s24", "9-pr-ab48", 3500, 2200), engine=engine(*MAKE_ROOM_48)
+    )
+    ships = set_arm(
+        point(tmp_path, "pr-ships-s24", "9-pr-ab48-b256-t0", 3300, 2100),
+        engine=engine(*MAKE_ROOM_48, *STEP_CAP_256),
+    )
+    # Another window is a configuration of its own, and the gateway's policy on the frozen engine is a
+    # comparator: an arm of the change's family, in the comparators' gray.
+    wider = set_arm(
+        point(tmp_path, "pr-wider-s24", "9-pr-ab96", 3800, 2400),
+        engine=engine(*MAKE_ROOM_48[:3], "96"),
+    )
+    policy = point(tmp_path, "policy-s24", "9-gateway-only", 3600, 9500)
+    out = tmp_path / "report"
+
+    def figure(*dirs: Path) -> str:
+        rows, _ = load_points([voice, frozen, wider, policy, *dirs])
+        write_report(rows, out)
+        return (out / "frontier.svg").read_text()
+
+    both = figure(box, ships)
+    assert ">The configuration to deploy<" in both
+    assert 'class="b">Pr-ships-s24 label<' in both and 'class="b">Pr-box-s24 label<' not in both
+    assert 'class="b halo" font-size="20">2.10 s<' in both and ">2.20 s<" in both
+    # A row's two bars, its p95's and its token rate's: one row saturated, two of the change's others, two
+    # comparators, and voice alone's one bar.
+    fills = {fill: both.count(f'class="g-{fill}"') for fill in ("hi", "soft", "lo", "mid")}
+    assert fills == {"hi": 2, "soft": 4, "lo": 4, "mid": 1}
+    alone = figure(box)
+    assert 'class="b">Pr-box-s24 label<' in alone and alone.count('class="g-hi"') == 2
+    none = figure()
+    assert ">The configuration to deploy<" not in none and 'class="g-hi"' not in none
+
+
+def test_the_waterfall_sets_the_configuration_to_deploy_in_bold_and_says_so(tmp_path: Path) -> None:
+    # The waterfall's fills are its stages, so no bar of it is the saturated one: the configuration to deploy
+    # has its name and its total in semibold, and a note at the foot says what the bold is, where a row is it.
+    stages = {"end_of_turn_ms": 800, "turn_to_first_sentence_ms": 400, "tts_first_audio_ms": 200}
+    frozen = point(tmp_path, "frozen-s24", "2", 3700, 9000)
+    turn_lines(frozen, stages | {"turn_to_first_sentence_ms": 3000}, 2, answered(4300, 4500))
+    ships = set_arm(
+        point(tmp_path, "pr-ships-s24", "9-pr-ab48-b256-t0", 3300, 2100),
+        engine={"variant": "make-room", "flags": [*MAKE_ROOM_48, *STEP_CAP_256]},
+    )
+    turn_lines(ships, stages, 2, answered(1700, 1900))
+    out = tmp_path / "report"
+    rows, _ = load_points([frozen, ships])
+    write_report(rows, out)
+    figure = (out / "waterfall.svg").read_text()
+    assert 'class="b">Pr-ships-s24 label<' in figure and 'class="b">Frozen-s24 label<' not in figure
+    assert 'class="b halo" font-size="20">1.80 s<' in figure and ">4.40 s<" in figure
+    assert ">Bold: the configuration to deploy.<" in figure
+    rows, _ = load_points([frozen])
+    write_report(rows, out)
+    assert "Bold" not in (out / "waterfall.svg").read_text()
+
+
+def test_a_family_whose_rows_begin_alike_states_those_words_once(tmp_path: Path) -> None:
+    # Rows of one family whose names begin with the same words have those words once, after the family's
+    # heading, and are named by what differs; rows that share less keep their whole names.
+    caps = [
+        set_arm(
+            point(tmp_path, f"cap{n}-s24", "6", 3500 + n, 8000 + n),
+            label=f"frozen box + static cap, {n} background in flight, discriminating scenario",
+        )
+        for n in (2, 8)
+    ]
+    dirs = [
+        point(tmp_path, "a1-voice", "1", None, 1760),
+        point(tmp_path, "a2-s16", "2", 5000, 2600),
+    ]
+    rows, _ = load_points([*dirs, *caps])
+    write_report(rows, tmp_path / "report")
+    figure = (tmp_path / "report" / "frontier.svg").read_text()
+    assert ">Operator answers, arm 6: Frozen box + static cap<" in figure
+    assert ">2 background in flight<" in figure and ">8 background in flight<" in figure
+    assert "static cap, 2" not in figure and "scenario" not in figure
+    assert ">Stock vLLM, arms 1\N{EN DASH}5<" in figure and ">A2-s16 label<" in figure
+
+
+def test_a_first_clause_longer_than_the_names_column_is_wrapped_under_its_heading(
+    tmp_path: Path,
+) -> None:
+    # A figure of one long-named row gives the name's first clause to the family's heading. A clause longer
+    # than the names' column takes as many lines as keep it before the plot: on one line it widened the
+    # column until the two panels' titles met, and a campaign of one such point (the A100 record's
+    # a100-prtuned-r1) no longer drew.
+    name = (
+        "vLLM #63350 and #63351 with a 48-token window at default chunking (the largest step cap "
+        "the card's stock engine holds), no gateway policy"
+    )
+    only = set_arm(
+        point(tmp_path, "pr-s24", "9-pr-ab48", 15229, 1810),
+        label=name,
+        engine={"variant": "make-room", "flags": list(MAKE_ROOM_48)},
+    )
+    rows, _ = load_points([only])
+    write_report(rows, tmp_path / "report")
+    figure = (tmp_path / "report" / "frontier.svg").read_text()
+    lines = re.findall(r'<text x="24" y="[\d.]+" class="soft" font-size="18">([^<]+)<', figure)
+    assert lines[0] == "Make-room, arm 9:" and lines[-1].startswith("No point of voice alone")
+    clause = name.split(",")[0]
+    assert " ".join(lines[1:-1]) == clause and len(lines[1:-1]) > 1 and f">{clause}<" not in figure
+    assert ">No gateway policy<" in figure
+    assert ">(a) Voice-to-voice p95<" in figure and ">(b) Agents' token rate<" in figure
 
 
 def test_the_frontier_figure_groups_families_and_cuts_a_collapse_at_its_scale(
@@ -1692,9 +1896,18 @@ def test_the_frontier_figure_groups_families_and_cuts_a_collapse_at_its_scale(
         < figure.index(">A7b-s16 label<")
         < figure.index(">Routers, arm 8<")
     )
-    # The collapse is drawn, cut at the scale's end, with its value: 9.00 s on a scale to 3 s.
-    assert ">9.00<" in figure and "A bar cut square runs past the scale's end" in figure
-    assert ">SLO 2.01 s<" in figure and ">3.0<" in figure and ">3.5<" not in figure
+    # The collapse is drawn, cut at the scale's end, with its value: 9.00 s on a scale to 3 s. A cut bar is
+    # parted by two breaks in the page's color before its end, as the key's is, which says what it means.
+    assert ">9.00 s<" in figure and ">Runs past the scale's end<" in figure
+    assert figure.count('class="page"') == 1 + 2 + 2  # the page; the key's breaks; the bar's
+    # The ticks in their shortest form, the main report's.
+    assert ">SLO 2.01 s<" in figure and ">3<" in figure and ">3.5<" not in figure
+    assert ">0.0<" not in figure and ">3.0<" not in figure
+    # No value stands across the SLO's rule: voice alone's, which would after its bar, stands past the rule.
+    rule = float(re.search(r'<path d="M([\d.]+) [^"]*" class="slo"/>', figure)[1])
+    value = float(re.search(r'<text x="([\d.]+)"[^>]*>1\.76 s<', figure)[1])
+    bar = float(re.search(r'<path d="M[\d.]+ [\d.]+H([\d.]+)[^"]*" class="g-mid"/>', figure)[1])
+    assert bar < rule < value
 
 
 def test_the_voice_figure_draws_the_named_configurations_in_order(tmp_path: Path, capsys) -> None:

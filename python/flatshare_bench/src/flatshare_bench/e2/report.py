@@ -444,7 +444,10 @@ def stage_waterfall(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             {
                 "point": group["point"],
                 "workload": group["workload"],
+                "arm": group["arm"],
                 "label": runs[0]["label"],
+                "sessions": runs[0]["sessions"],
+                "engine": runs[0]["engine"],
                 "runs": len(runs),
                 "replies": v2v["n"],
                 **stages,

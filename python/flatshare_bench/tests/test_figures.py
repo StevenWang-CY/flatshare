@@ -66,7 +66,7 @@ def test_the_style_refuses_what_a_reader_would_trip_on() -> None:
     with pytest.raises(ValueError, match="text takes ink, soft, mute or a hue's tint"):
         figure().text(10, 40, "faint", cls="faint")
     with pytest.raises(ValueError, match="a bar is one of"):
-        figure().hbar(10, 10, 50, 20, "red")
+        figure().hbar(10, 10, 50, 20, "pink")
 
 
 def test_a_figure_is_the_same_bytes_every_time_and_embeds_only_its_glyphs() -> None:
@@ -79,7 +79,13 @@ def test_a_figure_is_the_same_bytes_every_time_and_embeds_only_its_glyphs() -> N
     first = draw()
     assert first == draw()
     assert first.count("@font-face") == 2  # the text's faces, regular and italic (p); no math glyph
-    assert "font-weight:400" in first and "600" not in first and "bold" not in first
+    assert not any("font-weight:600" in face for face in re.findall(r"@font-face\{[^}]*\}", first))
+    # The semibold is embedded only where a figure sets a title or its featured value in it.
+    s = figure()
+    s.text(10, 40, "A panel", bold=True)
+    s.text(10, 80, "a note")
+    faces = re.findall(r"@font-face\{[^}]*\}", s.render())
+    assert sorted("font-weight:600" in face for face in faces) == [False, True]
 
 
 def luminance(color: str) -> float:
@@ -95,19 +101,21 @@ def contrast(a: str, b: str) -> float:
 
 @pytest.mark.parametrize("palette", [style.LIGHT, style.DARK], ids=["light", "dark"])
 def test_every_ink_clears_four_and_a_half_to_one_on_every_ground(palette: dict[str, str]) -> None:
-    # Text is ink, soft or mute, or a hue that names an identity: the change's blue, the voice turn's green, and
-    # the SLO's orange, which only the charts set, on the page. A label sits on the page, a panel's ground or KV
-    # memory; a component's name is ink.
-    grounds = ("page", "ground-a", "ground-b", "memory")
+    # Text is ink, soft or mute, or a hue that names an identity: the voice's green, and the change's blue and the
+    # SLO's red, which only the charts set, on the page. A label sits on the page or in a plain component; a name inside a hue's
+    # pale fill is ink.
+    grounds = ("page", "box")
     for ink, on in [
-        *((ink, grounds) for ink in ("ink", "soft", "mute", "blue", "green")),
-        ("orange", ("page",)),
+        *((ink, grounds) for ink in ("ink", "soft", "mute", "green")),
+        ("blue", ("page",)),
+        ("red", ("page",)),
     ]:
         for ground in on:
             ratio = contrast(palette[ink], palette[ground])
             assert ratio >= 4.5, (ink, ground, round(ratio, 2))
-    for ground in ("box", "ours"):
-        assert contrast(palette["ink"], palette[ground]) >= 4.5, ground
+    for hue in style.HUES:
+        for tone in ("w", "a"):
+            assert contrast(palette["ink"], palette[f"{hue}-{tone}"]) >= 4.5, (hue, tone)
 
 
 @pytest.fixture(scope="module")
@@ -172,18 +180,23 @@ def test_the_readme_animation_is_a_looping_webp_in_each_theme_and_layout() -> No
     assert max(spans) - min(spans) <= 20 and min(spans) > 5_000, spans  # within a frame at 60 fps
 
 
-def test_the_figures_set_their_type_in_its_sizes_and_never_in_bold(drawn: dict[str, Path]) -> None:
+def test_the_figures_set_their_type_in_its_sizes_and_its_two_weights(
+    drawn: dict[str, Path],
+) -> None:
     allowed = SIZES | {round(size * 0.72, 2) for size in SIZES}
     for name, path in drawn.items():
         svg = path.read_text()
         sizes = {float(size) for size in re.findall(r'font-size="([\d.]+)"', svg)}
         assert sizes <= allowed, (name, sizes - allowed)
-        assert "font-weight:400" in svg and not re.search(r"font-weight:(?!400)|bold", svg), name
+        # Regular, and the semibold of a panel's title and a figure's featured value: no other weight, and none
+        # synthesized.
+        assert set(re.findall(r"font-weight:(\d+)", svg)) <= {"400", "600"}, name
+        assert "font-synthesis:none" in svg and not re.search(r"font-weight=|bold", svg), name
         # Each paints its own page, under prefers-color-scheme's palette.
         assert '<rect class="page"' in svg and "prefers-color-scheme:dark" in svg, name
-        # Orange text clears 4.5:1 on the page alone, not on a panel's ground: the diagrams set none.
+        # Red text clears 4.5:1 on the page alone, not on a panel's ground: the diagrams set none.
         if not name.startswith("report-"):
-            assert 'class="orange tint' not in svg, name
+            assert 'class="red tint' not in svg, name
 
 
 GLOSSARY = REPO / "docs" / "GLOSSARY.md"

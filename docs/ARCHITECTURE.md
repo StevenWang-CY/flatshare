@@ -14,19 +14,20 @@ and its figures name them by their first numbers, #63350 and #63351.
 
 ## At a glance
 
-Flatshare is one change to vLLM's scheduler and three planes around it (Figure 1). In the serving plane the gateway
+Flatshare is one change to vLLM's scheduler and three planes around it. In the serving plane (Figure 1) the gateway
 gives each client its class and priority and places it on a GPU node, where vLLM with #63350 and #63351 schedules
 voice and agents over one KV pool. The measurement plane made every number the report gives, and the operations plane
-holds production to the measured configuration.
+holds production to the measured configuration. The table under the figure names each plane's parts.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/overview-narrow.svg">
-  <img src="figures/overview.svg" width="100%" alt="Three panels around one engine change: in the serving plane, callers reach the voice worker and coding agents reach the gateway, which sends both to vLLM 0.32 with #63350 and #63351, the KV preemption and the budget cap, over the GPU's KV pool and the CPU tier beside the speech servers; beside it the measurement plane, with the scripted callers, AIPerf's replay of Claude Code traces, the E2 harness, probes and counters, gates, and the cost model and simulator; and the operations plane, with the serving profile and its serving-check, immutable releases, two cards with a warm spare, drain and failover, failure drills and a 24-hour soak, and the container.">
+  <img src="figures/overview.svg" width="100%" alt="The serving path, each flow an arrow: callers reach the voice worker, and the voice worker and the coding agents reach the gateway, which sends the voice turns at priority 0 and the agents' requests at priority 2 to vLLM 0.32 with #63350 and #63351, the KV preemption and the budget cap, over the GPU's KV pool and the CPU tier; under each part's name is its directory in the repository.">
 </picture>
 
-**Figure 1. The change sits in the serving plane, and the measurement and operations planes stand beside it.** Blue is
-the change, white a component, and the small dashed box under the engine its KV memory. Each part's home in the
-repository and the section that describes it:
+**Figure 1. Both loads reach one engine through the gateway, and the change sits in that engine.** Blue is the change,
+a green arrow the voice turn's path and a gray one the agents'. Under a part's name is its directory, and the tray
+under the engine is its KV memory. The engine is the variant `make-room` of §2 and Figure 2, and its GPU also runs the
+speech servers. Each plane's parts, their homes in the repository and the sections that describe them:
 
 | Plane | Part | In the repository | Here |
 |---|---|---|---|
@@ -121,13 +122,14 @@ commands. Figure 2 shows its hosts and the sockets between them.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/architecture-narrow.svg">
-  <img src="figures/architecture.svg" width="100%" alt="Hosts as dashed groups, each unit a box on its Unix socket: on cyan, the control host, the callers, LiveKit and the voice worker run in the voice plane's network namespace, which has no route out; the worker reaches the gateway through gateway.sock, and the coding agents reach it through 127.0.0.1:18080 with a tenant's key, the one TCP listener; a tunnel per GPU node carries the gateway's engine requests and the worker's speech over SSH, a key per socket, to the node's three servers: vLLM 0.32 with make-room on engine.sock, Whisper on stt.sock and Kokoro on tts.sock, on Phastform each in a network namespace of its own; Gray, drawn dashed, is a second card when present, its servers in the host's namespace.">
+  <img src="figures/architecture.svg" width="100%" alt="Hosts as hairline frames, each unit a box on its Unix socket: on cyan, the control host, the callers, LiveKit and the voice worker run in the voice plane's network namespace, which has no route out; the worker reaches the gateway through gateway.sock, and the coding agents reach it through 127.0.0.1:18080 with a tenant's key, the one TCP listener; a tunnel per GPU node carries the gateway's engine requests and the worker's speech over SSH, a key per socket, to the node's three servers: vLLM 0.32 with make-room on engine.sock, Whisper on stt.sock and Kokoro on tts.sock, on Phastform each in a network namespace of its own; Gray, drawn dashed, is a second card when present, its servers in the host's namespace.">
 </picture>
 
 **Figure 2. Outside the voice plane the units meet only at Unix sockets, which SSH bridges between hosts, and the
-gateway's port is the only TCP listener in cyan's host network.** Dashed groups are hosts and network namespaces, and
-the change's engine is blue. A tunnel per node serves the node's sockets on cyan as `NODE-engine.sock`,
-`NODE-stt.sock` and `NODE-tts.sock` (§4). Gray, dashed, is the second card (§3.5).
+gateway's port is the only TCP listener in cyan's host network.** Frames are hosts and network namespaces, the change's
+engine is blue, and green arrows carry the voice turn to the gateway and its speech to the tunnel. From the gateway
+on, the turn and the agents' requests share `engine.sock`, drawn gray. A tunnel per node serves the node's sockets on
+cyan as `NODE-engine.sock`, `NODE-stt.sock` and `NODE-tts.sock` (§4). Gray, dashed, is the second card (§3.5).
 
 ### 3.1 The serving profile
 
@@ -157,11 +159,11 @@ and the Anthropic Messages API, through which Claude Code connects. A request ta
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/request-path-narrow.svg">
-  <img src="figures/request-path.svg" width="100%" alt="A column of seven steps a request takes through the gateway, each step's main refusals leaving to its right, which the gateway's error table gives in full: authenticate (401 invalid_api_key, 400 invalid_class), bound (503 in_flight_limit, 429 tenant_in_flight_limit, 413 body_too_large), sanitize (400 invalid_json, 400 too_many_choices), place (503 upstream_not_ready, no_healthy_node, no_call_slot or no_agent_slot), forward (502 upstream_unavailable, 504 upstream_timeout), relay (an error event of type upstream_unavailable, upstream_timeout or draining once a stream has begun), and account, which records one outcome for every request.">
+  <img src="figures/request-path.svg" width="100%" alt="A column of seven steps a request takes through the gateway, each with its main refusals, which the gateway's error table gives in full: authenticate (401 invalid_api_key, 400 invalid_class), bound (503 in_flight_limit, 429 tenant_in_flight_limit, 413 body_too_large), sanitize (400 invalid_json, 400 too_many_choices), place (503 upstream_not_ready, no_healthy_node, no_call_slot or no_agent_slot), forward (502 upstream_unavailable, 504 upstream_timeout), then the engine, the one blue box, which sees no request that the first four steps refuse, relay (an error event of type upstream_unavailable, upstream_timeout or draining once a stream has begun), and account, which records one outcome for every request.">
 </picture>
 
 **Figure 3. A request is refused at the first step it fails, and the first four refuse it before the engine sees it.**
-Once a stream has begun, a refusal ends it with an error event instead
+The fifth, forward, fails only when the engine does not answer in time. Once a stream has begun, a refusal ends it with an error event instead
 ([every code](../crates/flatshare-gateway/README.md#errors)). A passed deadline, or a client that leaves, cancels the
 engine's work.
 
@@ -200,7 +202,7 @@ the failover.
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/two-cards-narrow.svg">
-  <img src="figures/two-cards.svg" width="100%" alt="Two panels of the two cards' slots as the gateway bounds them, two call slots each and up to 4 agents' sessions on Phastform and 12 on Gray: in panel a, in service, both calls fill Phastform and Gray, the warm spare, runs agents only; in panel b, Phastform's engine failed, both calls take Gray's call slots at their next turn, 0.7 s after a kill and 1.9 s after a stop in the drills, and Gray holds its agents' requests until the moved calls end.">
+  <img src="figures/two-cards.svg" width="100%" alt="Two panels of the two cards' slots as the gateway bounds them, a tray a card, two call slots each and up to 4 agents' sessions on Phastform and 12 on Gray: in panel a, in service, both calls fill Phastform, the first card in the file's order, and Gray, the warm spare, runs agents only; in panel b, Phastform's engine failed, both calls take Gray's call slots at their next turn, 0.7 s after a kill and 1.9 s after a stop in the drills, and Gray holds its agents' requests until the moved calls end.">
 </picture>
 
 **Figure 4. Calls fill the first card in the file's order, and a failed card's calls are placed again on the other by
@@ -224,7 +226,7 @@ Figure 5. The drain is of what the switch would cut, the worker's calls and the 
 
 <picture>
   <source media="(max-width: 767px)" srcset="figures/release-narrow.svg">
-  <img src="figures/release.svg" width="100%" alt="A column of the release's states, prepare, verify, drain, switch, restart, check and serving: a host that is locked or an upload that changed exits 2, a failed verification exits 1 and a drain whose calls do not end exits 2, each with nothing switched; any failure from the switch through the check switches back, which exits 1 with the release before running again or 3 when switching back fails too; a release that passes its checks serves and exits 0, and a rollback enters at the verification with the previous release.">
+  <img src="figures/release.svg" width="100%" alt="The release's states in order, prepare, verify, drain, switch, restart, check and serving: a host that is locked or an upload that changed exits 2, a failed verification exits 1, and a drain whose calls do not end or that meets a running E2 point exits 2, each with nothing switched; any failure from the switch through the check switches back, which exits 1 with the previous release running again or 3 when switching back fails too; a release that passes its checks serves and exits 0, and a rollback enters at the verification with the previous release.">
 </picture>
 
 **Figure 5. A release switches nothing until it has verified and drained, and switches back by itself when anything

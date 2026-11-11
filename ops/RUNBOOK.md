@@ -97,7 +97,7 @@ tree with changes it would not carry. On the host, [`deploy/bin/flatshare-releas
 
 <picture>
   <source media="(max-width: 767px)" srcset="../docs/figures/release-narrow.svg">
-  <img src="../docs/figures/release.svg" width="100%" alt="A column of the release's states, prepare, verify, drain, switch, restart, check and serving: a host that is locked or an upload that changed exits 2, a failed verification exits 1 and a drain whose calls do not end exits 2, each with nothing switched; any failure from the switch through the check switches back, which exits 1 with the release before running again or 3 when switching back fails too; a release that passes its checks serves and exits 0, and a rollback enters at the verification with the previous release.">
+  <img src="../docs/figures/release.svg" width="100%" alt="The release's states in order, prepare, verify, drain, switch, restart, check and serving: a host that is locked or an upload that changed exits 2, a failed verification exits 1, and a drain whose calls do not end or that meets a running E2 point exits 2, each with nothing switched; any failure from the switch through the check switches back, which exits 1 with the previous release running again or 3 when switching back fails too; a release that passes its checks serves and exits 0, and a rollback enters at the verification with the previous release.">
 </picture>
 
 **A release switches nothing until it has verified and drained, and switches back by itself when anything after the
@@ -516,7 +516,7 @@ A severity "after" a time is the rule's `for`, how long its condition held.
 
 <picture>
   <source media="(max-width: 767px)" srcset="../docs/figures/triage-narrow.svg">
-  <img src="../docs/figures/triage.svg" width="100%" alt="A column of five checks from a call that fails or waits, each leaving to its right for the runbook rows it names: the gateway down (FlatshareGatewayDown); /ready not 200, the engine not ready, degraded or warming (FlatshareEngineNotReady, FlatshareEngineDegraded, FlatshareEngineWarming); a node unhealthy or covering (FlatshareNodeUnhealthy, FlatshareNodeCovering); refusals for a full bound or no slot (FlatshareRequestsRefusedForCapacity, FlatshareCallsRefused, 503 no_agent_slot); a full KV pool with requests waiting (FlatshareKvPoolFullWithWaiting); and, when all five pass, the voice plane: the worker's journal and LiveKit's.">
+  <img src="../docs/figures/triage.svg" width="100%" alt="A column of five checks from a call that fails or waits, each leading to the runbook rows it names: the gateway down (FlatshareGatewayDown); /ready not 200, the engine not ready, degraded or warming (FlatshareEngineNotReady, FlatshareEngineDegraded, FlatshareEngineWarming); a node unhealthy or covering (FlatshareNodeUnhealthy, FlatshareNodeCovering); refusals for a full bound or no slot (FlatshareRequestsRefusedForCapacity, FlatshareCallsRefused, 503 no_agent_slot); a full KV pool with requests waiting (FlatshareKvPoolFullWithWaiting); and, when all five pass, the voice plane: the worker's journal and LiveKit's.">
 </picture>
 
 **Five checks lead from a call that fails or waits to its rows, the gateway first.** Each answer names the alerts whose

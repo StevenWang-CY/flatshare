@@ -1,203 +1,198 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1256" viewBox="0 0 420 1256" font-size="21" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1292" viewBox="0 0 420 1292" font-size="21" role="img" aria-labelledby="title desc">
 <title id="title">The serving engine's additions inside the engine</title>
-<desc id="desc">On the box, two calls beside 12 closed-loop agents, the calls' first token and their 16th token at p50 and p95, each the median of the runs, as the serving profile gained each addition it adopted, each row adding to the one before it but the announced turn's, which adds it to retention, and the next, which adds just in time to both: v1.14's serving profile, 2 runs: the first token 175 and 354 ms, the 16th 408 and 597 ms; + the calls' prefixes kept on the GPU, 2 runs: the first token 122 and 230 ms, the 16th 354 and 502 ms; + the next batch just in time, 2 runs: the first token 98 and 185 ms, the 16th 323 and 449 ms; retention + each turn announced, 2 runs: the first token 64 and 90 ms, the 16th 258 and 394 ms; + just in time too, 1 run: the first token 63 and 98 ms, the 16th 257 and 403 ms; + the agents' reservations taken, 2 runs: the first token 64 and 92 ms, the 16th 261 and 392 ms; + their decodes held for 16 tokens, 2 runs: the first token 64 and 94 ms, the 16th 258 and 285 ms; + held for 48 tokens, the window: the profile, 2 runs: the first token 66 and 88 ms, the 16th 257 and 284 ms.</desc>
+<desc id="desc">On the box, two calls beside 12 closed-loop agents, the calls' first token and their 16th token at p50 and p95, each the median of the runs, as the serving profile gained each addition it adopted, each row adding to the one before it but the announced turn's, which adds it to the kept prefixes in place of just in time, and the next, which has both: v1.14's serving profile, 2 runs: the first token 175 and 354 ms, the 16th 408 and 597 ms; + the calls' prefixes kept on the GPU, 2 runs: the first token 122 and 230 ms, the 16th 354 and 502 ms; + the next batch just in time, 2 runs: the first token 98 and 185 ms, the 16th 323 and 449 ms; or each turn announced, 2 runs: the first token 64 and 90 ms, the 16th 258 and 394 ms; + both, 1 run: the first token 63 and 98 ms, the 16th 257 and 403 ms; + the agents' reservations taken, 2 runs: the first token 64 and 92 ms, the 16th 261 and 392 ms; + their decodes held for 16 tokens, 2 runs: the first token 64 and 94 ms, the 16th 258 and 285 ms; + held for 48 tokens: the profile, 2 runs: the first token 66 and 88 ms, the 16th 257 and 284 ms.</desc>
 <!-- Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 (python/flatshare_bench/src/flatshare_bench/fonts/OFL.txt). -->
-<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}svg{--sky:#5a8fd6;--stage-endpointing:#dde1e7;--stage-wait:#9d87d8;--stage-decode:#a4dac1;--stage-tts:#8a929e;--stage-transport:#f3f4f6}@media(prefers-color-scheme:dark){svg{--sky:#3b69a6;--stage-endpointing:#2d333b;--stage-wait:#6a56ad;--stage-decode:#245c45;--stage-tts:#7d8692;--stage-transport:#1a1f26}}.sky{--c:var(--sky);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}.mark{fill:var(--page);stroke:var(--c);stroke-width:1.4}.mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.2}.cross{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round}.trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}.trace.thick{stroke-width:2.4}.trace.dashed{stroke-dasharray:8 5}.trace.dotted{stroke-width:2.6;stroke-dasharray:0 5.5;stroke-linecap:round}.median{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.hair{fill:none;stroke:var(--axis);stroke-width:1}.ref{fill:none;stroke:var(--c);stroke-width:1.5}.range{fill:none;stroke:var(--c);stroke-width:1.4}.run{fill:none;stroke:var(--c);stroke-width:1.5;stroke-linecap:butt}.band{fill:var(--a)}.arrow{fill:none;stroke:var(--c);stroke-width:1.6}.arrow-head{fill:var(--c)}.s-endpointing{fill:var(--stage-endpointing);stroke:var(--bar-line);stroke-width:1.1}.s-wait{fill:var(--stage-wait);stroke:var(--bar-line);stroke-width:1.1}.s-decode{fill:var(--stage-decode);stroke:var(--bar-line);stroke-width:1.1}.s-tts{fill:var(--stage-tts);stroke:var(--bar-line);stroke-width:1.1}.s-transport{fill:var(--stage-transport);stroke:var(--bar-line);stroke-width:1.1}</style>
-<rect class="page" width="420" height="1256"/>
-<path d="M20 24.24A5 5 0 1 0 30 24.24A5 5 0 1 0 20 24.24Z" class="blue mark-fill"/>
-<text x="40" y="30" font-size="18">p50</text>
-<path d="M93.49 24.24A5 5 0 1 0 103.49 24.24A5 5 0 1 0 93.49 24.24Z" class="blue mark"/>
-<text x="113.49" y="30" font-size="18">p95</text>
-<text x="18" y="74">(a) A call's first token</text>
-<text x="18" y="106" font-size="20">v1.14's serving profile</text>
-<path d="M58 120V144" class="axis"/>
-<path d="M133.5 120V144" class="grid"/>
-<path d="M209 120V144" class="grid"/>
-<path d="M284.5 120V144" class="grid"/>
-<path d="M360 120V144" class="grid"/>
-<path d="M190.12 132H324.89" class="blue range"/>
-<path d="M185.12 132A5 5 0 1 0 195.12 132A5 5 0 1 0 185.12 132Z" class="blue mark-fill"/>
-<path d="M319.89 132A5 5 0 1 0 329.89 132A5 5 0 1 0 319.89 132Z" class="blue mark"/>
-<text x="178.12" y="138" text-anchor="end" class="halo" font-size="18">175</text>
-<text x="336.89" y="138" class="halo" font-size="18">354</text>
-<text x="18" y="168" font-size="20">+ the calls' prefixes kept on the GPU</text>
-<path d="M58 182V206" class="axis"/>
-<path d="M133.5 182V206" class="grid"/>
-<path d="M209 182V206" class="grid"/>
-<path d="M284.5 182V206" class="grid"/>
-<path d="M360 182V206" class="grid"/>
-<path d="M150.49 194H231.27" class="blue range"/>
-<path d="M145.49 194A5 5 0 1 0 155.49 194A5 5 0 1 0 145.49 194Z" class="blue mark-fill"/>
-<path d="M226.27 194A5 5 0 1 0 236.27 194A5 5 0 1 0 226.27 194Z" class="blue mark"/>
-<text x="138.49" y="200" text-anchor="end" class="halo" font-size="18">122</text>
-<text x="243.27" y="200" class="halo" font-size="18">230</text>
-<text x="18" y="230" font-size="20">+ the next batch just in time</text>
-<path d="M58 244V268" class="axis"/>
-<path d="M133.5 244V268" class="grid"/>
-<path d="M209 244V268" class="grid"/>
-<path d="M284.5 244V268" class="grid"/>
-<path d="M360 244V268" class="grid"/>
-<path d="M131.61 256H197.68" class="blue range"/>
-<path d="M126.61 256A5 5 0 1 0 136.61 256A5 5 0 1 0 126.61 256Z" class="blue mark-fill"/>
-<path d="M192.68 256A5 5 0 1 0 202.68 256A5 5 0 1 0 192.68 256Z" class="blue mark"/>
-<text x="119.61" y="262" text-anchor="end" class="halo" font-size="18">98</text>
-<text x="209.68" y="262" class="halo" font-size="18">185</text>
-<text x="18" y="292" font-size="20">retention + each turn announced</text>
-<path d="M58 306V330" class="axis"/>
-<path d="M133.5 306V330" class="grid"/>
-<path d="M209 306V330" class="grid"/>
-<path d="M284.5 306V330" class="grid"/>
-<path d="M360 306V330" class="grid"/>
-<path d="M106.32 318H125.57" class="blue range"/>
-<path d="M101.32 318A5 5 0 1 0 111.32 318A5 5 0 1 0 101.32 318Z" class="blue mark-fill"/>
-<path d="M120.57 318A5 5 0 1 0 130.57 318A5 5 0 1 0 120.57 318Z" class="blue mark"/>
-<text x="94.32" y="324" text-anchor="end" class="halo" font-size="18">64</text>
-<text x="137.57" y="324" class="halo" font-size="18">90</text>
-<text x="18" y="354" font-size="20">+ just in time too</text>
-<path d="M58 368V392" class="axis"/>
-<path d="M133.5 368V392" class="grid"/>
-<path d="M209 368V392" class="grid"/>
-<path d="M284.5 368V392" class="grid"/>
-<path d="M360 368V392" class="grid"/>
-<path d="M105.56 380H131.99" class="blue range"/>
-<path d="M100.56 380A5 5 0 1 0 110.56 380A5 5 0 1 0 100.56 380Z" class="blue mark-fill"/>
-<path d="M126.99 380A5 5 0 1 0 136.99 380A5 5 0 1 0 126.99 380Z" class="blue mark"/>
-<text x="93.56" y="386" text-anchor="end" class="halo" font-size="18">63</text>
-<text x="143.99" y="386" class="halo" font-size="18">98</text>
-<text x="18" y="416" font-size="20">+ the agents' reservations taken</text>
-<path d="M58 430V454" class="axis"/>
-<path d="M133.5 430V454" class="grid"/>
-<path d="M209 430V454" class="grid"/>
-<path d="M284.5 430V454" class="grid"/>
-<path d="M360 430V454" class="grid"/>
-<path d="M106.32 442H127.84" class="blue range"/>
-<path d="M101.32 442A5 5 0 1 0 111.32 442A5 5 0 1 0 101.32 442Z" class="blue mark-fill"/>
-<path d="M122.84 442A5 5 0 1 0 132.84 442A5 5 0 1 0 122.84 442Z" class="blue mark"/>
-<text x="94.32" y="448" text-anchor="end" class="halo" font-size="18">64</text>
-<text x="139.84" y="448" class="halo" font-size="18">92</text>
-<text x="18" y="478" font-size="20">+ their decodes held for 16 tokens</text>
-<path d="M58 492V516" class="axis"/>
-<path d="M133.5 492V516" class="grid"/>
-<path d="M209 492V516" class="grid"/>
-<path d="M284.5 492V516" class="grid"/>
-<path d="M360 492V516" class="grid"/>
-<path d="M106.32 504H128.59" class="blue range"/>
-<path d="M101.32 504A5 5 0 1 0 111.32 504A5 5 0 1 0 101.32 504Z" class="blue mark-fill"/>
-<path d="M123.59 504A5 5 0 1 0 133.59 504A5 5 0 1 0 123.59 504Z" class="blue mark"/>
-<text x="94.32" y="510" text-anchor="end" class="halo" font-size="18">64</text>
-<text x="140.59" y="510" class="halo" font-size="18">94</text>
-<text x="18" y="540" font-size="20">+ held for 48 tokens, the window: the profile</text>
-<path d="M58 554V578" class="axis"/>
-<path d="M133.5 554V578" class="grid"/>
-<path d="M209 554V578" class="grid"/>
-<path d="M284.5 554V578" class="grid"/>
-<path d="M360 554V578" class="grid"/>
-<path d="M107.45 566H124.82" class="blue range"/>
-<path d="M102.45 566A5 5 0 1 0 112.45 566A5 5 0 1 0 102.45 566Z" class="blue mark-fill"/>
-<path d="M119.82 566A5 5 0 1 0 129.82 566A5 5 0 1 0 119.82 566Z" class="blue mark"/>
-<text x="95.45" y="572" text-anchor="end" class="halo" font-size="18">66</text>
-<text x="136.82" y="572" class="halo" font-size="18">88</text>
-<text x="58" y="605" text-anchor="middle" class="mute" font-size="18">0</text>
-<text x="133.5" y="605" text-anchor="middle" class="mute" font-size="18">100</text>
-<text x="209" y="605" text-anchor="middle" class="mute" font-size="18">200</text>
-<text x="284.5" y="605" text-anchor="middle" class="mute" font-size="18">300</text>
-<text x="360" y="605" text-anchor="middle" class="mute" font-size="18">400</text>
-<path d="M58 582H360" class="axis"/>
+<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,d09GRgABAAAAABbEAA4AAAAAIiwAAiFIAAAAAAAAAAAAAAAAAAAAAAAAAABHREVGAAAT/AAAABYAAAAWABAANUdQT1MAABQUAAABxQAABHYO8PRoR1NVQgAAFdwAAADmAAAB+P5g/A9PUy8yAAABtAAAAEYAAABgWvJhCGNtYXAAAAK0AAAAbAAAAIoCYQMgZ2FzcAAAE/QAAAAIAAAACAAAABBnbHlmAAADjAAADxsAABV0R72mJ2hlYWQAAAFEAAAANgAAADYayXwjaGhlYQAAAXwAAAAgAAAAJAbVAfxobXR4AAAB/AAAALgAAADUXzMFrWxvY2EAAAMgAAAAbAAAAGyZTJ7xbWF4cAAAAZwAAAAYAAAAIAA6AFRuYW1lAAASqAAAATYAAAJyNbVG8XBvc3QAABPgAAAAEwAAACD/tQAzAAEAAAACIUhj36xWXw889QAOA+gAAAAA2//GWwAAAADcyFF3/6H/FQM9AxEAAAAGAAIAAAAAAAB4nGNgZGBg+vVfiOEXc8j/hf8TmG0ZgCIowBQAqssG1XicY2BkYGAwZQhmYGEAAUYGNAAADl4Aj3icY2Bh0mWcwMDKwMDUxRTBwMDgDaEZ4xiMGHUYUAEjMic4xDOC4QCDAkMF06//Qgy/WMQZd8LUMN5kmgikFBiYAOVEC6wAAHicLc89agIBGIThd74UiiAB8Qd311+igqiFMUUiLKZNHbAQG89hZ5lT6DUEz+ANVLBLoSC2br4ixcMUAwNjczL8gu0Z2js9m/FsV/I60rYMae1oWEhDe5p6JaczBfukqAp1pZK1VQkUEjx9U7eJM5pW9n5JRT90NKZlH5R0Sm46JA+rsdDEdwZuRM5iIkUunWwsIlRAxJ1YK140pepqbHnTxbsLX67txi77n33XdQPX8R/xH+QoKB54nGNgYGBiYGBgBmIRIMkIplkYyoC0BIMAUISDQYFBk0GbQZ/BksGdIYAhlKEAKFvx/z9QhQKDOlBGj8EALBPCkMhQBJL5/xAox/n/+/9f/3f/3/x/w/+l/5f8Xww2W4wBG9AEmqMBAPl9G3IAAABSAFIAjwDPAPoBLgF7AbgB5gIoAlwClwMIA0sDfQO2A/4EIASBBMUE7wU3BW4FswXbBhAGQQaQBsgG/gc2B28HrAfMB/MINQhQCGYIcwiOCKgItQjiCQIJNQl6CZcJyAoBChkKawqiCrp4nH1Ye5Ab9X3f30on6fRerfapfa+0K+n0Xu2tdHfS6XwP+3w+n8/P+oFtjLEhBoxNsGPMyzxSMqEZ3NYFJiEtLZQECkkz6SSTdiYZdwLDlGRgmmmSDjHhYUignU4LGHBtqb9d6e5koPlHd9q73c/3+/l+v5/v57eIG/F3tqGbXBjiQrxIDqkhyICMyQOYjLlUs9p0mVVNVTxEnCSJuEdVzOqwUbF/D7sIr6J1v8K/oJsu/wCdvfwueOO1NKnIZK2Uy/oDiZixe115c1UulmSc50WOFYRvu35kXHrOtfHyS6w+VrWmC6OWSEVjOE4RM415cVU1t7Y1OiafFRlaTVK0hCAAqXQ+RJ9FH0OGYHQOqBOEURm2DELVegHaX2G0mmoaBLxAeDzg6F8+vuXPdlsTqWAo5OcV7MCGL9x68lBxQghq2kdZdvimwN//1eFHF2KxePT8/q1fv//RhznyhmQqJEl88bSYQlDICIJK6GlEsLFl2awMD5tY1caoCChkAVUVTbfZMVyV4S5XXowkwUz7bV0LpkqflLZPZ3Jzu8sRxYfl0sXFLQuLET7qE4VwJguey7FCJDlRGVkoxd3uZzLpIMiMb5uaRdH2eeCyM49A/DmIn1hBhxAer2rJlFpAVRWzscGP2+ey2XDLsuiAGEAzPjFAD9fGw9khITSUB6+TI9b3v2+NkG0xPxSCT413PkDPwacmu3w6CcmQNA+BOTyaKzxCIuMecOv9t+mjQIIYi4f2bQumsx8OpQN3BE9+FcimKgiRtNY+f/XBqw5eMq24IMTN6n8/8BXIntb5BLwKziN5xEIQyq5c02UtdZS6XEmiVz3K47HpVD0eywyjzsXHRhqpxuopNp8fonORxNDC8MapcDRM+SNMXpPJAbfa2pvfUElLFW+rlLY0NubLTVjJfIFiuIq0bv2bYiwciCZlRRa1a54MCCU9ZZcU8XUugHfQswiDpBEENzBjuNfX3RAwJ8ayiWNOmw07fCier7Audn2lMpdt3jDT2hKL8MHo18OldKnOxqslrYGebf9cMuv7J7bf1hT8aEXBUa790/a7mDC80yptMYfsisoQ+RnIiYggKcrpn+UpUpWCa7mXwSM4Xl4z3NxROnbD6sUsSYUjCbYxPTdfbvx5OL1KGzs0fexPmrk8pSjU9q07b03DrOTOxygKs5KRgsN3j2DKMHv5WIZdYIPwqiZkWYecY0vj81JtXmteP17KuyO8F78zQXLE3ZSbm3epJdZTKI6vn/SNHWxtOt6i75XjKKde/rZOJahpprgGjwGfWN615+BOm1kF5vc9mB+NSP0xkJQsoDaVFkzaZcDWVTwfjV1dq+8d2bjf3f5nkFudyRjJKB4rTf/wHKALSbPurx/esPnG4aPXT23PkSoR1sY1UE9NpNfaPMbgx0n0RSTTNxmm0USt4Z4k2XXsJkdAlejOidh+P6UG160DnlAw3qiWx2kMpwN+KsbFb7stmsvyIU0HRrbQyEFdSSokwYTDlDG+O9v+ma6FoEYSHQL8CmZXQWaQjcv5WWb/D0i4RegEuRSEp1tRRzVR51u3pWwO7PJbS8oB/+3HE3NCJk2oRTWZObAwXr57d4DZt0Bn4168PD1+7Uh58erD0eBfjM7KklFnPK50jrxOK1dLerHynmQkGEt3D6apxFgCJVaV5/6I8Q67BiIVbWajz+vPhchYsFKvTGfx17lUdJuQI1g+6Abgxerqxtqx8dZqm1cSFjEHe6gMeVUdXnvN73UoJOxrJrbST87kQC20c0Rzb6uCL6hn+JGUT1Le1EU+HsS+nHAV59JDJudPFPmwQD+bmc5wSvsiKwR5nsyiCBuG/dR+Jacp1oT4QlqCXWTLPkAfRwjYy0txYP1NDAW3b/0A8LrCe0nSH7mT9YnyzYwksqwociGJA5QUQXmufS8vBdG4QlGyTFEKTLLzeIdAnocYCUTvqZOTiXFlfnEP3gcUKNfpeIyKkVgqiiWCsXsSm3RGFhOsLL+ny3CHccTCBnBGJlwC1+aO3eJKrCAChIWwCcit2cvpCh4tR2Yc1Q2jXi8FI+mSXdV0XbXpBeDNPBNh/PQ9Cc8pVyTO/4pOaVa28l1aFIjfkJjX/ZgHUsxkwAcSjibU9uq7XVjQ7xOEQaaQyjyfYDw8P+D1htzfe0Sju/EAN4yH+P84Bu63ZcFL4SH8PmZQSvIhkQMXxCB89uW/4cWgnROslKsBJ2Jtf7/02qWbQP9Tia7QUsay8C//01KbOddQ7T+T0mBe1ScIvvCWxA8SRCB6B+3OrDOGzIg7sz49OuMVlTcUGJ1OC2NOdGFNfb41lIu3L2VZng+IAqATMZTnF9VyMZnJrt35kqhjPB/ThZ8USniGeF/RIt0M0CGYwR/q+P4cvP3Bo0PvJEVvIkulR0mflDxvt2E8FL6LAu7MbHFq1aAk2134D2Nj+FC83eGkEOd0JZPA7MiSpV1bfw4vLinnb2EcIbsuKz7H3kl6dwd1NQKg1x+vXTt58Hh9fyNT4ycn6zOr/feemL2xcffhzUdH0tquxV1H9+49fgg+k+wkwQX4zBRiwGd+queIT2091cnIWjEyAgrwy0U2xPjJOxlXci5XmRsa3T/GGaQ7mtVD5kyzlm6E/UL2VU7Mgv/iSThom7P5+rWrtpyYCEXulZTgq/uv27M9i7f/1y/ZHcfDlrkV/M6euM90XC+crmqutAKgLsri4GAiEr2ddmlWkucTWJSJebBcLJpJ8QGeA3gigXLCwZopsByLYVXhLVHyQzS98yG4GWZfhPOtG84qt0urL61cyrAMatlAUn1MeLMuNtq0tBJWKk61tre0Eg6wuCsRHSkoxeHxqTWF+fyQEUcJ39/NN0SVlqAdm7CaLWyQeHS1KSl8QUpO1op16Ecoe0pSsLY1dB/0G0tb315Xw7aB7S4ne+OncFyGTqZgqVDJjxzBeTqxI5pIxUcnwTBFzrW+lm2/bWbj9vOozgWUA+dsB2crl60RveVu73RbRq5c9eea04nMKdLQNUuQSw/SdNJ/FzmQXudfPPAvGQxwkfar62oKC7zpGPz9dI5MUPO67Vc673cugv8Bv7anZEB1wZ3VtddxUkQNq0+zPF4wWDoTirPkv/KUx70F9xBbgUdIfIcXIx5wQhQDPB8K+mOB18Yab7ixIOaHhdRthDb8eAMi1JdUsVpEVW93azrDZ1l6D9euEmVcgeql7B554xWW8I7H3RvhzDJPsQrzpeswmiV+WUowtLsYj2L0k4yGfeEkIXL8YMgfuFo9FqQ9Pi/PE/w3zjDsIM9RQT2bm+K4YCDE8Qz5wHMCZ0/lPli5S1AjcUR1plKHSn2FX9RX/GHX+wdaW/FYnnCxC5XyXK55o1keYeNmiSkog6GyHxrDM5EVn5jpWkOCC7bfjfE9X/Nv0NekrvA10Fx0hbN33uk3NUT7smNqojS/Z6w6i1f8FVO2lOPHo+lkz9DUF+VUio7OKTm2VWv23EwX6xT6U2caP4vlDKJj1PrAyPYlByyMx1tmuUVDunEK5+hnn+1Dm1PUdEomSUqgKuM7enA9vF+gP7M999L0fxrvs54N63SzI+I71kxsZCiS9g/KbLX+wgvhlMqFdBtxZL0iFfUswYgkGW1tWgUhtbSdoV3CLKze0PLGNT7lWYjPkXyAvKWLdgmLa3XHt5R+p4q2r+HqKa+k2qZla6TPsPD9toYWwkgXGQyA38C+6Vc6dXmzDtiblaC5e1hndUksiIq0Fmg/wEn2Xu38NXQnP4T3M5/nTbqP8QSvcCMCNCN9JuQhmUkH2vKxW+xo4PkRpSEPxSt56E6S/oc8B3I+z8bycc+pgWCc/zWT1K1s+TuMKMRfJaDh+IYnUYKGA90cgWZjIBIa9AGeH2SKn+c2bEbs00lkhRFjiQ3UZgMy7pNV22Sg6yNdgwGQZudj5AfIUSSwwoPdKScEXuJ4SfIpDJvSWEq1s0x2ngJ7YT/DozOlAmNXDQxY210C/IvQmYH6++9wtyID3q5ZpxyFAbXoidOnT0Rv3Lnzm1zz908+8U6DnX35zMOv2M8T4V317l2U3qXKcoa+GL1px46b7Dt/xK155eEzL8+yjXeeePL38B4TfII8CLN0w3OlLVE7tW3gkxdjUEkScBv9Ar0HwewtSMHJWnqR4ZwL+g4BH41trtLGNWsm9tUYc/Po6MR4c7TVCpi7vrRqz+mN86cPto7tGk5+7aFHTj905vRpiGkfiJ5G73J6TV7Z8d7eEgBPt/929UgYj7Sos/zYNCekwFMs5fPJ1uXfpmx2NHj/y+h9jteWTauJ9gyAvqJyXi9hOS9cwHfbxx6prJInR8rTHE3tn61vLadmzftmvpqWMF55xNi0uVqbzNb8sxuG5s3c4tbhOwZcyTxEGe28D/4JopSXz029tzhd+bTfqSy5HIjcLbOXsF+zeDzP5Et4HI/nK4xUS1Y2leK40spYxfwYS9Vvn9/cKKYn0+tuD2FMKMrRDGWV86tSmtJM58qZdOj++Xq1JbiC+Yn81FUFWAlbjF5H70f8vV6UTQCHgVBThIGp4OT29nug3DhwoP3iOfc3x8G32runZ93ARHo5/CN6zD69U8oVGRRQXcdlr+rtBvzcLQQe16ELaKRya6+qBJsgFn0vsemeuakToRrG0gzXrNamkmEQAQOLRz3Z7QvzB6v2vsl3PgAvol+G57Du2xnHBtqHZi+1pJLLveK8lwOutXvye751CJ354vqQVxzTN+47uLNSbzR5Q+LqwdmTsyee3u3m/TM3zwJBunnfgSPq/J6pXVQ119xr2TllOx/D6h9zJkzFnTWmWzLx9sJ/vMYJeFhMgzt9aN4vya5HYdoupAAj/An6x5AD531hdyrh4be/oT1LlXP1Tr9d49XnYi9sOyI0CoYZL2+1KgsFtlYcmeSOnMgVpuvFSWbCX0laJWN0LLh+Xdoqia6kZSmFVclkM52sDrGu5Nh4emETqKnj1cmWYUjV2iFholQxjUJ+3GZRh3U667Co2rPbRC3dcXbL7y89HryytLZhNFvQ6S/OBzzKqLZx36Hdc7uGdjxh5iYZK1duNEK8b+LIIhDFw9dce2Tt7WtPPbMVpMzW+F5r/d6ZbYijUb9E/xTN2wwOqJhsypiByYQMHlzTvgg8a4CnfTEDBqfAYPujKeT/AGAACPYAeJydkTtOw1AQRa/5FBRkAVQWFUgQSAoKuoCEFMlSCESINh/jGIUY+UNgV6yDFbAWKs4825EjOvT0PHfu3Pm8saRdXWlb3s6epE9uiT0d4JV4Sy19VXjfO9R3hVu68H50rUSv+lCqWJHmyuWrq3NOR6cOdUG+RsRC7D2or0fQDZlL9Bn4lvxEzyimrkJPBXYOl7r4kauc0ynTpc44Ef1MUWiiNlmJXmAzuBiVsbX3rqd1p+NG/5FW8GZDNLnusBGZC43pavPGrnc9p82eUCsnzxT2mlKxwE7xl3ihZjAFeAZOwfn65X0F2AHzmbZZOdiocALz4LIz+MRpO7zSrt+YbLNvPc1Yb9zYvWPC1yKralsWtb49DR3O2ab/Z7cZVVO3R9tZ202xwNrfiIgPqBD8L+sX9ldmvQAAeJxjYGYAg/+bGIwZsAAALJIB6AAAAQAB//8ADwABAAAADAAAAAAAAAACAAEAAAA0AAEAAHiclVO7TkJBED17eV/eiI+gMSaKSmf8AAtjiIWFMZY2aogFhOLGQhtrKysLv4A/sKGxoSb+gA0NDQ0NjcV6dtjLIwLG2ezs3tkzZ2Zn70ABcHGAIwRPymeXKNw+ejUU7rxKFYXa9X0dBQSJgdYwWFWteHVEzU5mEDF+OeTI8cuhLWPXBtcd8U3iGKe4wBVuUIOHZzzgifoFr8QkOQPEhRBHAmn6rzDmNoooGX7dI1tYd5HQA9m1uGvxJCEnCodIMbriyYC6SKvZ9wXbFy9ldUk3R1z0dd5Mds5nYJe55zBXdEd0dz6CpwNGMGtvAaY3xAzxsxGcfWFrL4o24fFt1/50Nti0u/dxrGkMJW/tH2OemTjf3mReHY6W3OXLWlvIm2x1W+wzqzTKYEF1/ifCFJpmF3HttHbdte8iefFm+ak80r/8JyU/Ea9jV5/Hj+DXsDGH4/zvu0gWBleWL8W/37EdEUaE3eVKZyTZGTksMeIyO2QVa8StYwNb7JU96RUH+0Sm6REQHlMHB1n6DiVmV2U6hPwRmBqmpJPH4qMygPSmYXXEHpaKKxmuZY2LDnAo0VGyBumbgnkH138Lkay9bfIHeMGT8AAAAHicY2BkYGDgYjBh8GJgcXHzCWGQS64symGQSi9KzWaQykksyWOQYwABFhDx/z8DSD1jTmZ6IgMHkMUK4jEwMTAD5bkYxBjUGMwY3BjCGNIYyhjaGKYxLGNgB6pjBGM2oNoZaPw1aPwDaPwraPwnSHyQS76g8T+g8d+g8b+h8T8BXQ7ygRAQS4BFWMEy3EDMAiRlgb6Xx1DDhqSGnYGXQYBBEKgGpoIBrIYdrEYWTQ2qORxwc5gY+Bj4MczgBMvLw+VBYSAM18MGVgtig2RZGGQYFBiUGVRQbASpEkHSIQwzCwDtvBxRAAA=) format('woff')}@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:600;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3f444b;--mute:#666c75;--page:#ffffff;--grid:#edeff1;--axis:#8f969f;--rule:#d6d9de;--flow:#6b747f;--box:#f6f8fa;--box-line:#a9b0ba;--bar-hi:#2669cd;--bar-soft:#98bcf4;--bar-lo:#b9bec4;--bar-mid:#8d949d;--green:#138159;--green-m:#5fa583;--green-s:#9ac7af;--green-w:#cce3d6;--green-a:#ecf5f0;--gray:#6b747f;--gray-m:#8d949d;--gray-s:#b9bec4;--gray-w:#e0e3e6;--gray-a:#f2f3f5;--red:#c3292e;--red-m:#e06a64;--red-s:#f4a29b;--red-w:#fdd0cb;--red-a:#feeeed;--blue:#2669cd;--blue-m:#6094e4;--blue-s:#98bcf4;--blue-w:#cbdefb;--blue-a:#ecf3fe}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#cbd0d6;--mute:#9399a1;--page:#0d1117;--grid:#1d2125;--axis:#6e757e;--rule:#31363c;--flow:#8c939c;--box:#181c21;--box-line:#4f565e;--bar-hi:#76abff;--bar-soft:#3e639d;--bar-lo:#565b62;--bar-mid:#7b8189;--green:#6fbe98;--green-m:#508f71;--green-s:#3d6f57;--green-w:#274838;--green-a:#17251e;--gray:#9199a3;--gray-m:#7b8189;--gray-s:#565b62;--gray-w:#3c4046;--gray-a:#1d1e20;--red:#ff7f77;--red-m:#c55b55;--red-s:#9a4541;--red-w:#632d2a;--red-a:#331917;--blue:#76abff;--blue-m:#5280c9;--blue-s:#3e639d;--blue-w:#284065;--blue-a:#172234}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.b{font-weight:600}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.green{--c:var(--green);--m:var(--green-m);--s:var(--green-s);--w:var(--green-w);--a:var(--green-a)}.gray{--c:var(--gray);--m:var(--gray-m);--s:var(--gray-s);--w:var(--gray-w);--a:var(--gray-a)}.red{--c:var(--red);--m:var(--red-m);--s:var(--red-s);--w:var(--red-w);--a:var(--red-a)}.blue{--c:var(--blue);--m:var(--blue-m);--s:var(--blue-s);--w:var(--blue-w);--a:var(--blue-a)}.tint{fill:var(--c)}.mid{fill:var(--m)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.0}.axis{fill:none;stroke:var(--axis);stroke-width:1.4}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi)}.g-soft{fill:var(--bar-soft)}.g-lo{fill:var(--bar-lo)}.g-mid{fill:var(--bar-mid)}.g-open{fill:var(--page);stroke:var(--bar-mid);stroke-width:1.4}.s-hi{fill:var(--bar-hi)}.s-soft{fill:var(--bar-soft)}.s-lo{fill:var(--bar-lo)}.s-mid{fill:var(--bar-mid)}.s-pale{fill:var(--gray-w)}.s-red{fill:var(--red-m)}.s-red-pale{fill:var(--red-w)}.s-green-pale{fill:var(--green-w)}.s-blue{fill:var(--blue-m)}.s-blue-pale{fill:var(--blue-w)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--red);stroke-width:1.4;stroke-dasharray:5 4}.panel{fill:none;stroke:var(--rule);stroke-width:1.0}.group{fill:none;stroke:var(--rule);stroke-width:1.0}.box{fill:var(--box);stroke:var(--box-line);stroke-width:1.4}.ours{fill:var(--blue-a);stroke:var(--blue);stroke-width:1.4}.obj{fill:var(--a);stroke:var(--c);stroke-width:1.4}.memory{fill:var(--box);stroke:var(--rule);stroke-width:1.0}.flow{fill:none;stroke:var(--flow);stroke-width:2.0;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:2.0;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--axis);stroke-width:1.0;stroke-dasharray:3 3}.bracket{fill:none;stroke:var(--axis);stroke-width:1.0;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--s)}.cell.strong{fill:var(--m)}.cell.taken{fill:var(--w)}.cell-empty{fill:var(--page);stroke:var(--box-line);stroke-width:1.0}svg{--stage-endpointing:#d1d5d9;--stage-wait:#e06a64;--stage-decode:#fdd0cb;--stage-tts:#b5bfcb;--stage-transport:#e4e6ea}@media(prefers-color-scheme:dark){svg{--stage-endpointing:#40464d;--stage-wait:#af3c3a;--stage-decode:#652b28;--stage-tts:#535c66;--stage-transport:#30353b}}.sky{--c:var(--blue-m);--m:var(--blue-m);--w:var(--blue-w);--a:var(--blue-a)}.ink{--c:var(--ink)}.soft-ink{--c:var(--soft)}.mark{fill:var(--page);stroke:var(--c);stroke-width:1.4}.mark-fill{fill:var(--c);stroke:var(--page);stroke-width:1.4}.gray.mark-fill{fill:var(--m)}.trace{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}.trace.thick{stroke-width:2.8}.trace.dashed{stroke-dasharray:7 5}.trace.dotted{stroke-width:2.4;stroke-dasharray:0 5.5;stroke-linecap:round}.hair{fill:none;stroke:var(--axis);stroke-width:1}.ref{fill:none;stroke:var(--c);stroke-width:1.4}.range{fill:none;stroke:var(--c);stroke-width:1.4;stroke-linecap:round}.band{fill:var(--a)}.arrow{fill:none;stroke:var(--c);stroke-width:1.4}.arrow-head{fill:var(--c)}.s-endpointing{fill:var(--stage-endpointing)}.s-wait{fill:var(--stage-wait)}.s-decode{fill:var(--stage-decode)}.s-tts{fill:var(--stage-tts)}.s-transport{fill:var(--stage-transport)}</style>
+<rect class="page" width="420" height="1292"/>
+<text x="18" y="30" class="b">(a) A call's first token</text>
+<path d="M18 46.12H38Q40 46.12 40 48.12V56.72Q40 58.72 38 58.72H18Z" class="s-soft"/>
+<text x="48" y="58" font-size="18">To the p50</text>
+<path d="M152.46 46.12H172.46Q174.46 46.12 174.46 48.12V56.72Q174.46 58.72 172.46 58.72H152.46Z" class="s-blue-pale"/>
+<text x="182.46" y="58" font-size="18">To the p95</text>
+<text x="18" y="90" font-size="20">v1.14's serving profile</text>
+<path d="M18 102V130" class="axis"/>
+<path d="M65.33 102V130" class="grid"/>
+<path d="M112.67 102V130" class="grid"/>
+<path d="M160 102V130" class="grid"/>
+<path d="M207.33 102V130" class="grid"/>
+<path d="M18 104H99.83V128H18Z" class="s-soft"/>
+<path d="M101.83 104H183.32Q185.32 104 185.32 106V126Q185.32 128 183.32 128H101.83Z" class="s-blue-pale"/>
+<text x="194.32" y="123" class="halo" font-size="20">175</text>
+<text x="229.02" y="123" class="soft halo" font-size="20">/</text>
+<text x="241.76" y="123" class="halo" font-size="20">354</text>
+<text x="18" y="154" font-size="20">+ the calls' prefixes kept on the GPU</text>
+<path d="M18 166V194" class="axis"/>
+<path d="M65.33 166V194" class="grid"/>
+<path d="M112.67 166V194" class="grid"/>
+<path d="M160 166V194" class="grid"/>
+<path d="M207.33 166V194" class="grid"/>
+<path d="M18 168H74.98V192H18Z" class="s-soft"/>
+<path d="M76.98 168H124.63Q126.63 168 126.63 170V190Q126.63 192 124.63 192H76.98Z" class="s-blue-pale"/>
+<text x="135.63" y="187" class="halo" font-size="20">122</text>
+<text x="170.33" y="187" class="soft halo" font-size="20">/</text>
+<text x="183.07" y="187" class="halo" font-size="20">230</text>
+<text x="18" y="218" font-size="20">+ the next batch just in time</text>
+<path d="M18 230V258" class="axis"/>
+<path d="M65.33 230V258" class="grid"/>
+<path d="M112.67 230V258" class="grid"/>
+<path d="M160 230V258" class="grid"/>
+<path d="M207.33 230V258" class="grid"/>
+<path d="M18 232H63.15V256H18Z" class="s-soft"/>
+<path d="M65.15 232H103.57Q105.57 232 105.57 234V254Q105.57 256 103.57 256H65.15Z" class="s-blue-pale"/>
+<text x="114.57" y="251" class="halo" font-size="20">98</text>
+<text x="139.37" y="251" class="soft halo" font-size="20">/</text>
+<text x="152.11" y="251" class="halo" font-size="20">185</text>
+<text x="18" y="282" font-size="20">or each turn announced</text>
+<path d="M18 294V322" class="axis"/>
+<path d="M65.33 294V322" class="grid"/>
+<path d="M112.67 294V322" class="grid"/>
+<path d="M160 294V322" class="grid"/>
+<path d="M207.33 294V322" class="grid"/>
+<path d="M18 296H47.29V320H18Z" class="s-soft"/>
+<path d="M49.29 296H58.36Q60.36 296 60.36 298V318Q60.36 320 58.36 320H49.29Z" class="s-blue-pale"/>
+<text x="69.36" y="315" class="halo" font-size="20">64</text>
+<text x="94.16" y="315" class="soft halo" font-size="20">/</text>
+<text x="106.9" y="315" class="halo" font-size="20">90</text>
+<text x="18" y="346" font-size="20">+ both</text>
+<path d="M18 358V386" class="axis"/>
+<path d="M65.33 358V386" class="grid"/>
+<path d="M112.67 358V386" class="grid"/>
+<path d="M160 358V386" class="grid"/>
+<path d="M207.33 358V386" class="grid"/>
+<path d="M18 360H46.82V384H18Z" class="s-soft"/>
+<path d="M48.82 360H62.39Q64.39 360 64.39 362V382Q64.39 384 62.39 384H48.82Z" class="s-blue-pale"/>
+<text x="73.39" y="379" class="halo" font-size="20">63</text>
+<text x="98.19" y="379" class="soft halo" font-size="20">/</text>
+<text x="110.93" y="379" class="halo" font-size="20">98</text>
+<text x="18" y="410" font-size="20">+ the agents' reservations taken</text>
+<path d="M18 422V450" class="axis"/>
+<path d="M65.33 422V450" class="grid"/>
+<path d="M112.67 422V450" class="grid"/>
+<path d="M160 422V450" class="grid"/>
+<path d="M207.33 422V450" class="grid"/>
+<path d="M18 424H47.29V448H18Z" class="s-soft"/>
+<path d="M49.29 424H59.78Q61.78 424 61.78 426V446Q61.78 448 59.78 448H49.29Z" class="s-blue-pale"/>
+<text x="70.78" y="443" class="halo" font-size="20">64</text>
+<text x="95.58" y="443" class="soft halo" font-size="20">/</text>
+<text x="108.32" y="443" class="halo" font-size="20">92</text>
+<text x="18" y="474" font-size="20">+ their decodes held for 16 tokens</text>
+<path d="M18 486V514" class="axis"/>
+<path d="M65.33 486V514" class="grid"/>
+<path d="M112.67 486V514" class="grid"/>
+<path d="M160 486V514" class="grid"/>
+<path d="M207.33 486V514" class="grid"/>
+<path d="M18 488H47.29V512H18Z" class="s-soft"/>
+<path d="M49.29 488H60.26Q62.26 488 62.26 490V510Q62.26 512 60.26 512H49.29Z" class="s-blue-pale"/>
+<text x="71.26" y="507" class="halo" font-size="20">64</text>
+<text x="96.06" y="507" class="soft halo" font-size="20">/</text>
+<text x="108.8" y="507" class="halo" font-size="20">94</text>
+<text x="18" y="538" class="b" font-size="20">+ held for 48 tokens: the profile</text>
+<path d="M18 550V578" class="axis"/>
+<path d="M65.33 550V578" class="grid"/>
+<path d="M112.67 550V578" class="grid"/>
+<path d="M160 550V578" class="grid"/>
+<path d="M207.33 550V578" class="grid"/>
+<path d="M18 552H48V576H18Z" class="s-hi"/>
+<path d="M50 552H57.89Q59.89 552 59.89 554V574Q59.89 576 57.89 576H50Z" class="s-soft"/>
+<text x="68.89" y="571" class="b halo" font-size="20">66</text>
+<text x="93.69" y="571" class="soft halo" font-size="20">/</text>
+<text x="106.43" y="571" class="b halo" font-size="20">88</text>
+<text x="18" y="605" text-anchor="middle" class="mute" font-size="18">0</text>
+<text x="65.33" y="605" text-anchor="middle" class="mute" font-size="18">100</text>
+<text x="112.67" y="605" text-anchor="middle" class="mute" font-size="18">200</text>
+<text x="160" y="605" text-anchor="middle" class="mute" font-size="18">300</text>
+<text x="207.33" y="605" text-anchor="middle" class="mute" font-size="18">400</text>
+<path d="M18 582H207.33" class="axis"/>
 <text x="18" y="630" class="soft" font-size="18">Time (ms)</text>
-<text x="18" y="686">(b) Its 16th token</text>
-<text x="18" y="718" font-size="20">v1.14's serving profile</text>
-<path d="M58 732V756" class="axis"/>
-<path d="M133.5 732V756" class="grid"/>
-<path d="M209 732V756" class="grid"/>
-<path d="M284.5 732V756" class="grid"/>
-<path d="M360 732V756" class="grid"/>
-<path d="M212.02 744H283.37" class="blue range"/>
-<path d="M207.02 744A5 5 0 1 0 217.02 744A5 5 0 1 0 207.02 744Z" class="blue mark-fill"/>
-<path d="M278.37 744A5 5 0 1 0 288.37 744A5 5 0 1 0 278.37 744Z" class="blue mark"/>
-<text x="200.02" y="750" text-anchor="end" class="halo" font-size="18">408</text>
-<text x="295.37" y="750" class="halo" font-size="18">597</text>
-<text x="18" y="780" font-size="20">+ the calls' prefixes kept on the GPU</text>
-<path d="M58 794V818" class="axis"/>
-<path d="M133.5 794V818" class="grid"/>
-<path d="M209 794V818" class="grid"/>
-<path d="M284.5 794V818" class="grid"/>
-<path d="M360 794V818" class="grid"/>
-<path d="M191.63 806H247.32" class="blue range"/>
-<path d="M186.63 806A5 5 0 1 0 196.63 806A5 5 0 1 0 186.63 806Z" class="blue mark-fill"/>
-<path d="M242.32 806A5 5 0 1 0 252.32 806A5 5 0 1 0 242.32 806Z" class="blue mark"/>
-<text x="179.63" y="812" text-anchor="end" class="halo" font-size="18">354</text>
-<text x="259.32" y="812" class="halo" font-size="18">502</text>
-<text x="18" y="842" font-size="20">+ the next batch just in time</text>
-<path d="M58 856V880" class="axis"/>
-<path d="M133.5 856V880" class="grid"/>
-<path d="M209 856V880" class="grid"/>
-<path d="M284.5 856V880" class="grid"/>
-<path d="M360 856V880" class="grid"/>
-<path d="M179.93 868H227.5" class="blue range"/>
-<path d="M174.93 868A5 5 0 1 0 184.93 868A5 5 0 1 0 174.93 868Z" class="blue mark-fill"/>
-<path d="M222.5 868A5 5 0 1 0 232.5 868A5 5 0 1 0 222.5 868Z" class="blue mark"/>
-<text x="167.93" y="874" text-anchor="end" class="halo" font-size="18">323</text>
-<text x="239.5" y="874" class="halo" font-size="18">449</text>
-<text x="18" y="904" font-size="20">retention + each turn announced</text>
-<path d="M58 918V942" class="axis"/>
-<path d="M133.5 918V942" class="grid"/>
-<path d="M209 918V942" class="grid"/>
-<path d="M284.5 918V942" class="grid"/>
-<path d="M360 918V942" class="grid"/>
-<path d="M155.21 930H206.92" class="blue range"/>
-<path d="M150.21 930A5 5 0 1 0 160.21 930A5 5 0 1 0 150.21 930Z" class="blue mark-fill"/>
-<path d="M201.92 930A5 5 0 1 0 211.92 930A5 5 0 1 0 201.92 930Z" class="blue mark"/>
-<text x="143.21" y="936" text-anchor="end" class="halo" font-size="18">258</text>
-<text x="218.92" y="936" class="halo" font-size="18">394</text>
-<text x="18" y="966" font-size="20">+ just in time too</text>
-<path d="M58 980V1004" class="axis"/>
-<path d="M133.5 980V1004" class="grid"/>
-<path d="M209 980V1004" class="grid"/>
-<path d="M284.5 980V1004" class="grid"/>
-<path d="M360 980V1004" class="grid"/>
-<path d="M155.02 992H210.13" class="blue range"/>
-<path d="M150.02 992A5 5 0 1 0 160.02 992A5 5 0 1 0 150.02 992Z" class="blue mark-fill"/>
-<path d="M205.13 992A5 5 0 1 0 215.13 992A5 5 0 1 0 205.13 992Z" class="blue mark"/>
-<text x="143.02" y="998" text-anchor="end" class="halo" font-size="18">257</text>
-<text x="222.13" y="998" class="halo" font-size="18">403</text>
-<text x="18" y="1028" font-size="20">+ the agents' reservations taken</text>
-<path d="M58 1042V1066" class="axis"/>
-<path d="M133.5 1042V1066" class="grid"/>
-<path d="M209 1042V1066" class="grid"/>
-<path d="M284.5 1042V1066" class="grid"/>
-<path d="M360 1042V1066" class="grid"/>
-<path d="M156.53 1054H205.79" class="blue range"/>
-<path d="M151.53 1054A5 5 0 1 0 161.53 1054A5 5 0 1 0 151.53 1054Z" class="blue mark-fill"/>
-<path d="M200.79 1054A5 5 0 1 0 210.79 1054A5 5 0 1 0 200.79 1054Z" class="blue mark"/>
-<text x="144.53" y="1060" text-anchor="end" class="halo" font-size="18">261</text>
-<text x="217.79" y="1060" class="halo" font-size="18">392</text>
-<text x="18" y="1090" font-size="20">+ their decodes held for 16 tokens</text>
-<path d="M58 1104V1128" class="axis"/>
-<path d="M133.5 1104V1128" class="grid"/>
-<path d="M209 1104V1128" class="grid"/>
-<path d="M284.5 1104V1128" class="grid"/>
-<path d="M360 1104V1128" class="grid"/>
-<path d="M155.58 1116H165.59" class="blue range"/>
-<path d="M150.58 1116A5 5 0 1 0 160.58 1116A5 5 0 1 0 150.58 1116Z" class="blue mark-fill"/>
-<path d="M160.59 1116A5 5 0 1 0 170.59 1116A5 5 0 1 0 160.59 1116Z" class="blue mark"/>
-<text x="143.58" y="1122" text-anchor="end" class="halo" font-size="18">258</text>
-<text x="177.59" y="1122" class="halo" font-size="18">285</text>
-<text x="18" y="1152" font-size="20">+ held for 48 tokens, the window: the profile</text>
-<path d="M58 1166V1190" class="axis"/>
-<path d="M133.5 1166V1190" class="grid"/>
-<path d="M209 1166V1190" class="grid"/>
-<path d="M284.5 1166V1190" class="grid"/>
-<path d="M360 1166V1190" class="grid"/>
-<path d="M155.02 1178H165.4" class="blue range"/>
-<path d="M150.02 1178A5 5 0 1 0 160.02 1178A5 5 0 1 0 150.02 1178Z" class="blue mark-fill"/>
-<path d="M160.4 1178A5 5 0 1 0 170.4 1178A5 5 0 1 0 160.4 1178Z" class="blue mark"/>
-<text x="143.02" y="1184" text-anchor="end" class="halo" font-size="18">257</text>
-<text x="177.4" y="1184" class="halo" font-size="18">284</text>
-<text x="58" y="1217" text-anchor="middle" class="mute" font-size="18">0</text>
-<text x="133.5" y="1217" text-anchor="middle" class="mute" font-size="18">200</text>
-<text x="209" y="1217" text-anchor="middle" class="mute" font-size="18">400</text>
-<text x="284.5" y="1217" text-anchor="middle" class="mute" font-size="18">600</text>
-<text x="360" y="1217" text-anchor="middle" class="mute" font-size="18">800</text>
-<path d="M58 1194H360" class="axis"/>
-<text x="18" y="1242" class="soft" font-size="18">Time (ms)</text>
+<text x="18" y="678" class="b">(b) Its 16th token</text>
+<path d="M18 694.12H38Q40 694.12 40 696.12V704.72Q40 706.72 38 706.72H18Z" class="s-soft"/>
+<text x="48" y="706" font-size="18">To the p50</text>
+<path d="M152.46 694.12H172.46Q174.46 694.12 174.46 696.12V704.72Q174.46 706.72 172.46 706.72H152.46Z" class="s-blue-pale"/>
+<text x="182.46" y="706" font-size="18">To the p95</text>
+<text x="18" y="738" font-size="20">v1.14's serving profile</text>
+<path d="M18 750V778" class="axis"/>
+<path d="M112.67 750V778" class="grid"/>
+<path d="M207.33 750V778" class="grid"/>
+<path d="M302 750V778" class="grid"/>
+<path d="M18 752H210.12V776H18Z" class="s-soft"/>
+<path d="M212.12 752H298.58Q300.58 752 300.58 754V774Q300.58 776 298.58 776H212.12Z" class="s-blue-pale"/>
+<text x="309.58" y="771" class="halo" font-size="20">408</text>
+<text x="344.28" y="771" class="soft halo" font-size="20">/</text>
+<text x="357.02" y="771" class="halo" font-size="20">597</text>
+<text x="18" y="802" font-size="20">+ the calls' prefixes kept on the GPU</text>
+<path d="M18 814V842" class="axis"/>
+<path d="M112.67 814V842" class="grid"/>
+<path d="M207.33 814V842" class="grid"/>
+<path d="M302 814V842" class="grid"/>
+<path d="M18 816H184.56V840H18Z" class="s-soft"/>
+<path d="M186.56 816H253.38Q255.38 816 255.38 818V838Q255.38 840 253.38 840H186.56Z" class="s-blue-pale"/>
+<text x="264.38" y="835" class="halo" font-size="20">354</text>
+<text x="299.08" y="835" class="soft halo" font-size="20">/</text>
+<text x="311.82" y="835" class="halo" font-size="20">502</text>
+<text x="18" y="866" font-size="20">+ the next batch just in time</text>
+<path d="M18 878V906" class="axis"/>
+<path d="M112.67 878V906" class="grid"/>
+<path d="M207.33 878V906" class="grid"/>
+<path d="M302 878V906" class="grid"/>
+<path d="M18 880H169.89V904H18Z" class="s-soft"/>
+<path d="M171.89 880H228.53Q230.53 880 230.53 882V902Q230.53 904 228.53 904H171.89Z" class="s-blue-pale"/>
+<text x="239.53" y="899" class="halo" font-size="20">323</text>
+<text x="274.23" y="899" class="soft halo" font-size="20">/</text>
+<text x="286.97" y="899" class="halo" font-size="20">449</text>
+<text x="18" y="930" font-size="20">or each turn announced</text>
+<path d="M18 942V970" class="axis"/>
+<path d="M112.67 942V970" class="grid"/>
+<path d="M207.33 942V970" class="grid"/>
+<path d="M302 942V970" class="grid"/>
+<path d="M18 944H138.88V968H18Z" class="s-soft"/>
+<path d="M140.88 944H202.73Q204.73 944 204.73 946V966Q204.73 968 202.73 968H140.88Z" class="s-blue-pale"/>
+<text x="213.73" y="963" class="halo" font-size="20">258</text>
+<text x="248.43" y="963" class="soft halo" font-size="20">/</text>
+<text x="261.17" y="963" class="halo" font-size="20">394</text>
+<text x="18" y="994" font-size="20">+ both</text>
+<path d="M18 1006V1034" class="axis"/>
+<path d="M112.67 1006V1034" class="grid"/>
+<path d="M207.33 1006V1034" class="grid"/>
+<path d="M302 1006V1034" class="grid"/>
+<path d="M18 1008H138.65V1032H18Z" class="s-soft"/>
+<path d="M140.65 1008H206.75Q208.75 1008 208.75 1010V1030Q208.75 1032 206.75 1032H140.65Z" class="s-blue-pale"/>
+<text x="217.75" y="1027" class="halo" font-size="20">257</text>
+<text x="252.45" y="1027" class="soft halo" font-size="20">/</text>
+<text x="265.19" y="1027" class="halo" font-size="20">403</text>
+<text x="18" y="1058" font-size="20">+ the agents' reservations taken</text>
+<path d="M18 1070V1098" class="axis"/>
+<path d="M112.67 1070V1098" class="grid"/>
+<path d="M207.33 1070V1098" class="grid"/>
+<path d="M302 1070V1098" class="grid"/>
+<path d="M18 1072H140.54V1096H18Z" class="s-soft"/>
+<path d="M142.54 1072H201.31Q203.31 1072 203.31 1074V1094Q203.31 1096 201.31 1096H142.54Z" class="s-blue-pale"/>
+<text x="212.31" y="1091" class="halo" font-size="20">261</text>
+<text x="247.01" y="1091" class="soft halo" font-size="20">/</text>
+<text x="259.75" y="1091" class="halo" font-size="20">392</text>
+<text x="18" y="1122" font-size="20">+ their decodes held for 16 tokens</text>
+<path d="M18 1134V1162" class="axis"/>
+<path d="M112.67 1134V1162" class="grid"/>
+<path d="M207.33 1134V1162" class="grid"/>
+<path d="M302 1134V1162" class="grid"/>
+<path d="M18 1136H139.36V1160H18Z" class="s-soft"/>
+<path d="M141.36 1136H150.9Q152.9 1136 152.9 1138V1158Q152.9 1160 150.9 1160H141.36Z" class="s-blue-pale"/>
+<text x="161.9" y="1155" class="halo" font-size="20">258</text>
+<text x="196.6" y="1155" class="soft halo" font-size="20">/</text>
+<text x="209.34" y="1155" class="halo" font-size="20">285</text>
+<text x="18" y="1186" class="b" font-size="20">+ held for 48 tokens: the profile</text>
+<path d="M18 1198V1226" class="axis"/>
+<path d="M112.67 1198V1226" class="grid"/>
+<path d="M207.33 1198V1226" class="grid"/>
+<path d="M302 1198V1226" class="grid"/>
+<path d="M18 1200H138.65V1224H18Z" class="s-hi"/>
+<path d="M140.65 1200H150.66Q152.66 1200 152.66 1202V1222Q152.66 1224 150.66 1224H140.65Z" class="s-soft"/>
+<text x="161.66" y="1219" class="b halo" font-size="20">257</text>
+<text x="196.34" y="1219" class="soft halo" font-size="20">/</text>
+<text x="209.08" y="1219" class="b halo" font-size="20">284</text>
+<text x="18" y="1253" text-anchor="middle" class="mute" font-size="18">0</text>
+<text x="112.67" y="1253" text-anchor="middle" class="mute" font-size="18">200</text>
+<text x="207.33" y="1253" text-anchor="middle" class="mute" font-size="18">400</text>
+<text x="302" y="1253" text-anchor="middle" class="mute" font-size="18">600</text>
+<path d="M18 1230H302" class="axis"/>
+<text x="18" y="1278" class="soft" font-size="18">Time (ms)</text>
 </svg>

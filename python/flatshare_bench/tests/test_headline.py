@@ -364,11 +364,11 @@ ENGINE_ROWS = {
     "v1.14's serving profile": "a0-grow",
     "+ the calls' prefixes kept on the GPU": "r0-grow",
     "+ the next batch just in time": "r0j-grow",
-    "retention + each turn announced": "r0h-grow",
-    "+ just in time too": "r0hj-grow",
+    "or each turn announced": "r0h-grow",
+    "+ both": "r0hj-grow",
     "+ the agents' reservations taken": "r0hjt-grow",
     "+ their decodes held for 16 tokens": "r0hjtd-grow",
-    "+ held for 48 tokens, the window: the profile": "r0hjtd48-grow",
+    "+ held for 48 tokens: the profile": "r0hjtd48-grow",
 }
 """Table 8's rows (§6.10), by their first cell, and the engine points' arm each reports, on Phastform."""
 

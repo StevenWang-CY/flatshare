@@ -1,5 +1,7 @@
-"""Type, palette and drawing primitives for Flatshare's figures: the README's and the report's
-charts (:mod:`.e2.figures`) and the method figure (:mod:`.diagrams`).
+"""Type, palette and drawing primitives for Flatshare's figures: the report's charts
+(:mod:`.report.figures`), a record's own (:mod:`.e2.figures`), the method figure and the system
+diagrams (:mod:`.diagrams`) and the brand marks (:mod:`.brand`). The README's animation
+(``benchmarks/e2/demo.py``) draws with the same palette and type.
 
 Every figure is a self-contained SVG whose labels stay selectable text. Text is set in STIX Two
 (SIL Open Font License 1.1, ``fonts/OFL.txt``), and each export embeds a WOFF subset of exactly the
@@ -10,25 +12,26 @@ a shaft.
 
 The conventions, which every figure here keeps:
 
-- A README figure is 1120 units wide and shows at about 840 CSS pixels (one unit is 0.75 px); its
-  phone layout is 420 units wide and shows at about 340.
+- A figure is 1120 units wide and shows at about 880 CSS pixels (one unit is about 0.8 px); its
+  phone layout is 420 units wide and shows at about 375.
 - Four type sizes, one per role: a chart's title 23, a panel's title and a label 21, a category
-  label 20, a note, a subtitle, a tick or a bar's value 18. Every glyph is regular weight; emphasis
-  comes from position, hue and size. Text is ink; the soft gray sets secondary text such as a
-  subtitle, and the mute gray ticks and axis words. All three clear 4.5:1 on the page in both
-  themes.
+  label and a bar's value 20, a note or a tick 18. Text is regular; the semibold sets only a panel's
+  title and the name and value of the one row a figure features. Text is ink; the soft gray sets secondary
+  text and the mute gray ticks and axis words. All three clear 4.5:1 on the page in both themes.
 - Axis titles. An axis's title names its quantity and its unit, the unit in parentheses with
   ", log scale" where the scale is logarithmic: "Time to the first token (ms)", "Voice-to-voice
-  p95 (s)". Where a panel's title names the measure, the axis names its kind: "Time (s, log
-  scale)" under "(a) Voice-to-voice p95", "Tokens/s over the calls' first 240 s" under "(b)
-  Agents' tokens/s". A share's percent signs and a count's numbers need no unit. No axis says
-  which way is better: the quantity says it, and the caption's claim says what to read.
-- One tint, one meaning. In the charts a configuration keeps one hue, one marker and one fill in
-  every figure (flatshare_bench.labels' MARKS): the configuration to deploy the saturated blue,
-  the change's other configurations its sibling blue, every comparison gray; orange marks the
-  SLO, the margin a result is read against. In the method figure each component is white, the
-  change's own are pale blue with a blue outline, and dataflow runs on steel-blue arrows of one
-  weight.
+  p95 (s)". Where a panel's title names the measure, the axis names its kind. A share's percent
+  signs and a count's numbers need no unit. No axis says which way is better.
+- Four colors, each with one meaning. Blue is the change: the configuration to deploy in the
+  saturated blue, the change's other configurations in a softer one, and the component that
+  carries it. Green is the voice turn itself: its KV blocks, its steps, its calls. Gray is
+  everything else: the agents, stock and tuned vLLM, every comparator. Red is what the
+  voice loses: the SLO a result is read against, the wait, a miss.
+- Marks are flat. A bar has no outline, a square end on its axis and a slightly rounded free
+  end, and its value beside it; a stacked bar's segments are parted by a seam of the page's
+  color. A component is a pale fill inside a thin outline of the same hue; a frame is a
+  hairline, and a dash means "not active". An arrow is green where it carries the voice turn and
+  gray everywhere else.
 - Figures follow the reader's theme through ``prefers-color-scheme`` and paint their own page, so
   a figure stays legible where the system's theme and the page's differ.
 """
@@ -58,21 +61,21 @@ NARROW = 420
 # Type, in canvas units.
 TITLE = 23  # a chart's title
 LABEL = 21  # a panel's title, a label, an operation
-VALUE = 20  # a category label, a row's name
-NOTE = 18  # a note, a subtitle, a tick, a bar's value
+VALUE = 20  # a category label, a row's name, a bar's value
+NOTE = 18  # a note, a subtitle, a tick
 
 # Strokes, in canvas units.
-HAIR = 1.0  # dividers, leaders
-THIN = 1.2  # axes, gridlines
-BAR_LINE = 1.1  # a bar's outline
-PANEL_LINE = 1.4  # a panel's dashed border
-OUTLINE = 1.7  # a component's outline
-FLOW = 3.4  # dataflow
-FLOW_HEAD = 8.0  # dataflow's head: its length
-FLOW_HALF = 4.8  # and its half width
+HAIR = 1.0  # gridlines, frames, dividers, leaders
+THIN = 1.4  # axes, a threshold, an open bar's outline
+SEAM = 2.0  # the page-colored gap between a stacked bar's segments, and between two cells
+BAR_CORNER = 2.0  # a bar's rounded free end, and a cell's corner
+OUTLINE = 1.4  # a component's outline, in its fill's hue
+CORNER = 5.0  # a component's corner
+FLOW = 2.0  # dataflow, and a line a chart traces
+FLOW_HEAD = 8.5  # dataflow's head: its length
+FLOW_HALF = 3.7  # and its half width
 FLOW_GAP = 2.5  # the clearance between a head and its target's edge
 MIN_SHAFT = 2.2  # an arrow's last segment, at least this many head lengths
-HUE_HEAD = 7.2  # a hued connector's head: its length (its half width is half that)
 
 FONT_NOTICE = (
     " Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 "
@@ -81,98 +84,111 @@ FONT_NOTICE = (
 TEXT_FAMILY = "Flatshare Text"
 MATH_FAMILY = "Flatshare Math"
 FACES = {
-    "regular": ("STIXTwoText-Regular.ttf", TEXT_FAMILY, "normal"),
-    "italic": ("STIXTwoText-Italic.ttf", TEXT_FAMILY, "italic"),
-    "math": ("STIXTwoMath-Regular.ttf", MATH_FAMILY, "normal"),
+    "regular": ("STIXTwoText-Regular.ttf", TEXT_FAMILY, "normal", 400),
+    "italic": ("STIXTwoText-Italic.ttf", TEXT_FAMILY, "italic", 400),
+    "bold": ("STIXTwoText-SemiBold.ttf", TEXT_FAMILY, "normal", 600),
+    "math": ("STIXTwoMath-Regular.ttf", MATH_FAMILY, "normal", 400),
 }
 
-# The README palette. Neutrals follow GitHub's, so a figure sits naturally in either theme. A hue
-# has a line, a cell fill strong enough to read as an object ("-w") and a pale area tint ("-a").
+# The palette. Ink and page are GitHub's, so a figure sits naturally in either theme. Every other
+# color comes off one ladder in OKLCH: each hue takes the same lightness at each of five steps, and
+# its chroma falls by the same share from step to step, so two hues at one step weigh the same.
+# A hue's own name is its line, which also sets text (4.5:1 on the page); "-m" is a mark beside it
+# (3:1); "-s" is the soft fill of a quantity that is not the featured one, a bar or a cell; "-w" is
+# a wash pale enough to hold ink; "-a" is the tint inside an object's outline.
 LIGHT = {
     "ink": "#1f2328",
-    "soft": "#3d444d",
-    "mute": "#656d76",
+    "soft": "#3f444b",
+    "mute": "#666c75",
     "page": "#ffffff",
-    "grid": "#e8ebef",
-    "axis": "#57606a",
-    "rule": "#d0d7de",
-    "outline": "#27334a",
-    "flow": "#a7bbd3",
-    "border": "#5c6675",
-    "ground-a": "#f4f2fa",
-    "ground-b": "#f3f5f7",
-    "box": "#ffffff",
-    "ours": "#dfeaf8",
-    "ours-line": "#2563b0",
-    "memory": "#f8f9fb",
-    "bar-hi": "#3a7bd5",
-    "bar-soft": "#c5d9f4",
-    "bar-lo": "#e3e7ee",
-    "bar-mid": "#b7bdc8",
-    "bar-line": "#2b3138",
-    "margin": "#fbeadf",
-    "blue": "#2563b0",
-    "blue-w": "#c0d6f2",
-    "blue-a": "#e5eefa",
-    "orange": "#bd5521",
-    "orange-w": "#f7d2bb",
-    "orange-a": "#fbeadf",
-    "green": "#257a58",
-    "green-w": "#c9e8da",
-    "green-a": "#e1f1e9",
-    "violet": "#6e52a3",
-    "violet-w": "#d3c8ea",
-    "violet-a": "#ede8f6",
-    "gray": "#57606a",
-    "gray-w": "#dde1e6",
-    "gray-a": "#f0f2f4",
+    "grid": "#edeff1",
+    "axis": "#8f969f",
+    "rule": "#d6d9de",
+    "flow": "#6b747f",
+    "box": "#f6f8fa",
+    "box-line": "#a9b0ba",
+    "bar-hi": "#2669cd",
+    "bar-soft": "#98bcf4",
+    "bar-lo": "#b9bec4",
+    "bar-mid": "#8d949d",
+    "green": "#138159",
+    "green-m": "#5fa583",
+    "green-s": "#9ac7af",
+    "green-w": "#cce3d6",
+    "green-a": "#ecf5f0",
+    "gray": "#6b747f",
+    "gray-m": "#8d949d",
+    "gray-s": "#b9bec4",
+    "gray-w": "#e0e3e6",
+    "gray-a": "#f2f3f5",
+    "red": "#c3292e",
+    "red-m": "#e06a64",
+    "red-s": "#f4a29b",
+    "red-w": "#fdd0cb",
+    "red-a": "#feeeed",
+    "blue": "#2669cd",
+    "blue-m": "#6094e4",
+    "blue-s": "#98bcf4",
+    "blue-w": "#cbdefb",
+    "blue-a": "#ecf3fe",
 }
 DARK = {
     "ink": "#e6edf3",
-    "soft": "#c9d1d9",
-    "mute": "#9198a1",
+    "soft": "#cbd0d6",
+    "mute": "#9399a1",
     "page": "#0d1117",
-    "grid": "#262c34",
-    "axis": "#8b949e",
-    "rule": "#3d444d",
-    "outline": "#c9d1d9",
-    "flow": "#506b8c",
-    "border": "#8b949e",
-    "ground-a": "#17151f",
-    "ground-b": "#151a21",
-    "box": "#0d1117",
-    "ours": "#17283f",
-    "ours-line": "#6fa8ee",
-    "memory": "#11161d",
-    "bar-hi": "#5b9bf0",
-    "bar-soft": "#24405f",
-    "bar-lo": "#3a414b",
-    "bar-mid": "#68717d",
-    "bar-line": "#d0d7de",
-    "margin": "#2a1b12",
-    "blue": "#6fa8ee",
-    "blue-w": "#203d5f",
-    "blue-a": "#131b25",
-    "orange": "#ef9a63",
-    "orange-w": "#65371a",
-    "orange-a": "#271911",
-    "green": "#5ec49a",
-    "green-w": "#2d5341",
-    "green-a": "#16221c",
-    "violet": "#b49ce6",
-    "violet-w": "#392a55",
-    "violet-a": "#1d1828",
-    "gray": "#8b949e",
-    "gray-w": "#343b44",
-    "gray-a": "#1a1f26",
+    "grid": "#1d2125",
+    "axis": "#6e757e",
+    "rule": "#31363c",
+    "flow": "#8c939c",
+    "box": "#181c21",
+    "box-line": "#4f565e",
+    "bar-hi": "#76abff",
+    "bar-soft": "#3e639d",
+    "bar-lo": "#565b62",
+    "bar-mid": "#7b8189",
+    "green": "#6fbe98",
+    "green-m": "#508f71",
+    "green-s": "#3d6f57",
+    "green-w": "#274838",
+    "green-a": "#17251e",
+    "gray": "#9199a3",
+    "gray-m": "#7b8189",
+    "gray-s": "#565b62",
+    "gray-w": "#3c4046",
+    "gray-a": "#1d1e20",
+    "red": "#ff7f77",
+    "red-m": "#c55b55",
+    "red-s": "#9a4541",
+    "red-w": "#632d2a",
+    "red-a": "#331917",
+    "blue": "#76abff",
+    "blue-m": "#5280c9",
+    "blue-s": "#3e639d",
+    "blue-w": "#284065",
+    "blue-a": "#172234",
 }
-HUES = ("blue", "orange", "green", "violet", "gray")
+HUES = ("green", "gray", "red", "blue")
 BARS = ("hi", "soft", "lo", "mid", "open")
-"""A chart's bar fills: the configuration to deploy, a sibling of it, a comparison, a comparison
-that stands beside a pale bar (mid gray, so three bars stay apart in grayscale), and an open bar,
-outlined on the page, for a configuration a figure shows but sets back (off its arm's frontier)."""
-SEGMENTS = {"lo": "bar-lo", "mid": "bar-mid", "violet": "violet-w", "pale": "gray-a"}
+"""A chart's bar fills: the configuration to deploy, a sibling of it, a comparison, the reference
+a figure measures from (voice alone, the darker gray, so three bars stay apart in grayscale), and
+an open bar, outlined on the page, which a chart hatches for an arrangement that misses its
+requirement."""
+SEGMENTS = {
+    "hi": "bar-hi",
+    "soft": "bar-soft",
+    "lo": "bar-lo",
+    "mid": "bar-mid",
+    "pale": "gray-w",
+    "red": "red-m",
+    "red-pale": "red-w",
+    "green-pale": "green-w",
+    "blue": "blue-m",
+    "blue-pale": "blue-w",
+}
 """The fills of a stacked bar's segments, each the palette's color it takes."""
+KINDS = ("box", "ours", *HUES)
+"""What a component is: a plain one, the change's own (blue), or one in a hue."""
 TEXT_CLASSES = {"", "soft", "mute", *(f"{hue} tint" for hue in HUES)}
 """The inks a label may take: the three neutrals, and a hue where the hue names an identity."""
 
@@ -188,44 +204,39 @@ BASE_CSS = (
     f"svg{{font-size:{LABEL}px}}"
     f"text{{font-family:'{TEXT_FAMILY}','{MATH_FAMILY}',serif;fill:var(--ink);"
     "font-synthesis:none;font-kerning:normal;white-space:pre}"
-    ".i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}"
-    + "".join(f".{h}{{--c:var(--{h});--w:var(--{h}-w);--a:var(--{h}-a)}}" for h in HUES)
-    + ".tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}"
+    ".i{font-style:italic}.b{font-weight:600}.soft{fill:var(--soft)}.mute{fill:var(--mute)}"
+    + "".join(
+        f".{h}{{--c:var(--{h});--m:var(--{h}-m);--s:var(--{h}-s);--w:var(--{h}-w);--a:var(--{h}-a)}}"
+        for h in HUES
+    )
+    + ".tint{fill:var(--c)}.mid{fill:var(--m)}.wash{fill:var(--w)}.area{fill:var(--a)}"
     ".page{fill:var(--page)}"
-    f".grid{{fill:none;stroke:var(--grid);stroke-width:{THIN}}}"
+    f".grid{{fill:none;stroke:var(--grid);stroke-width:{HAIR}}}"
     f".axis{{fill:none;stroke:var(--axis);stroke-width:{THIN}}}"
     ".axis-head{fill:var(--axis)}"
     f".rule{{fill:none;stroke:var(--rule);stroke-width:{HAIR}}}"
-    + "".join(
-        f".g-{bar}{{fill:var(--{'page' if bar == 'open' else 'bar-' + bar});"
-        f"stroke:var(--bar-line);stroke-width:{BAR_LINE}}}"
-        for bar in BARS
-    )
-    + "".join(
-        f".s-{name}{{fill:var(--{color});stroke:var(--bar-line);stroke-width:{BAR_LINE}}}"
-        for name, color in SEGMENTS.items()
-    )
-    + ".g-margin{fill:var(--margin)}"
-    ".halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}"
-    f".slo{{fill:none;stroke:var(--orange);stroke-width:{THIN};stroke-dasharray:5 4}}"
-    f".panel-a,.panel-b{{stroke:var(--border);stroke-width:{PANEL_LINE};stroke-dasharray:6 4}}"
-    ".panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}"
-    f".group{{fill:none;stroke:var(--border);stroke-width:{PANEL_LINE};stroke-dasharray:6 4}}"
-    f".box{{fill:var(--box);stroke:var(--outline);stroke-width:{OUTLINE}}}"
-    f".ours{{fill:var(--ours);stroke:var(--ours-line);stroke-width:{OUTLINE}}}"
-    f".memory{{fill:var(--memory);stroke:var(--border);stroke-width:{PANEL_LINE};"
-    "stroke-dasharray:4 3}"
+    + "".join(f".g-{bar}{{fill:var(--bar-{bar})}}" for bar in BARS if bar != "open")
+    + f".g-open{{fill:var(--page);stroke:var(--bar-mid);stroke-width:{THIN}}}"
+    + "".join(f".s-{name}{{fill:var(--{color})}}" for name, color in SEGMENTS.items())
+    + ".halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}"
+    f".slo{{fill:none;stroke:var(--red);stroke-width:{THIN};stroke-dasharray:5 4}}"
+    f".panel{{fill:none;stroke:var(--rule);stroke-width:{HAIR}}}"
+    f".group{{fill:none;stroke:var(--rule);stroke-width:{HAIR}}}"
+    f".box{{fill:var(--box);stroke:var(--box-line);stroke-width:{OUTLINE}}}"
+    f".ours{{fill:var(--blue-a);stroke:var(--blue);stroke-width:{OUTLINE}}}"
+    f".obj{{fill:var(--a);stroke:var(--c);stroke-width:{OUTLINE}}}"
+    f".memory{{fill:var(--box);stroke:var(--rule);stroke-width:{HAIR}}}"
     f".flow{{fill:none;stroke:var(--flow);stroke-width:{FLOW};stroke-linecap:round;"
     "stroke-linejoin:round}"
     ".flow-head{fill:var(--flow)}"
-    f".line{{fill:none;stroke:var(--c);stroke-width:{FLOW / 2};stroke-linecap:round;"
+    f".line{{fill:none;stroke:var(--c);stroke-width:{FLOW};stroke-linecap:round;"
     "stroke-linejoin:round}"
     ".line-head{fill:var(--c)}"
-    f".leader{{fill:none;stroke:var(--border);stroke-width:{PANEL_LINE};stroke-dasharray:6 4}}"
-    f".bracket{{fill:none;stroke:var(--axis);stroke-width:{THIN};stroke-linejoin:round}}"
+    f".leader{{fill:none;stroke:var(--axis);stroke-width:{HAIR};stroke-dasharray:3 3}}"
+    f".bracket{{fill:none;stroke:var(--axis);stroke-width:{HAIR};stroke-linejoin:round}}"
     f".hatch{{fill:none;stroke:var(--c);stroke-width:{HAIR}}}"
-    ".cell{fill:var(--w);stroke:var(--c);stroke-width:1}"
-    ".cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}"
+    ".cell{fill:var(--s)}.cell.strong{fill:var(--m)}.cell.taken{fill:var(--w)}"
+    f".cell-empty{{fill:var(--page);stroke:var(--box-line);stroke-width:{HAIR}}}"
 )
 
 # Function names that stay upright inside math, as in LaTeX's \operatorname.
@@ -373,12 +384,13 @@ def parse(markup: str) -> list[Span]:
     return merged
 
 
-def measure(markup: str, size: float) -> float:
-    """The advance width of ``markup`` at ``size``, from the embedded fonts' metrics."""
+def measure(markup: str, size: float, *, bold: bool = False) -> float:
+    """The advance width of ``markup`` at ``size``, from the embedded fonts' metrics; ``bold`` sets
+    its upright text in the semibold."""
     width = 0.0
     for span in parse(markup):
         for char in span.text:
-            face = _resolve(span.face, char)
+            face = _resolve("bold" if bold and span.face == "regular" else span.face, char)
             width += _advances(face)[0][ord(char)] * size * span.scale
     return width
 
@@ -497,18 +509,21 @@ class Figure:
         collide: bool = True,
         name: str | None = None,
         halo: bool = False,
+        bold: bool = False,
     ) -> Box:
         """A label at baseline ``y``. ``cls`` is its ink: "", "soft", "mute" or "<hue> tint".
-        ``halo`` sets it on a halo of the page's color, for a value that gridlines run behind."""
+        ``halo`` sets it on a halo of the page's color, for a value that gridlines run behind;
+        ``bold`` sets it in the semibold, for a panel's title and the value a figure is drawn for."""
         if cls not in TEXT_CLASSES:
             raise ValueError(f"text takes ink, soft, mute or a hue's tint, not {cls!r}")
         markup = str(markup)
         spans = parse(markup)
-        width = measure(markup, size)
+        width = measure(markup, size, bold=bold)
         parts, level = [], 0.0
         for span in spans:
             for char in span.text:
-                self.glyphs[_resolve(span.face, char)].add(char)
+                face = "bold" if bold and span.face == "regular" else span.face
+                self.glyphs[_resolve(face, char)].add(char)
             attrs = []
             if span.face == "italic":
                 attrs.append('class="i"')
@@ -520,7 +535,7 @@ class Figure:
             text = escape(span.text, quote=False)
             parts.append(f"<tspan {' '.join(attrs)}>{text}</tspan>" if attrs else text)
         anchor_attr = "" if anchor == "start" else f' text-anchor="{anchor}"'
-        classes = " ".join(c for c in (cls, "halo" if halo else "") if c)
+        classes = " ".join(c for c in (cls, "b" if bold else "", "halo" if halo else "") if c)
         cls_attr = f' class="{classes}"' if classes else ""
         size_attr = "" if size == LABEL else f' font-size="{fmt(size)}"'
         self.items.append(
@@ -587,21 +602,34 @@ class Figure:
         ``cut`` at the scale's end has a square end, and its value says how far it goes."""
         if bar not in BARS:
             raise ValueError(f"a bar is one of {BARS}, not {bar!r}")
-        self._hpath(x, y, length, thickness, f"g-{bar}", 0.0 if cut else 3.0)
+        self._hpath(x, y, length, thickness, f"g-{bar}", 0.0 if cut else BAR_CORNER)
 
     def segments(
         self, x: float, y: float, parts: list[tuple[float, str]], thickness: float
     ) -> list[float]:
         """A stacked horizontal bar: ``parts`` are (length, fill) from the axis at ``x``, each fill
-        one of SEGMENTS; the last segment's free end is rounded. Returns each segment's start."""
+        one of SEGMENTS, parted by a seam of the page's color; the last segment's free end is
+        rounded. Returns each segment's start."""
         starts = []
         for k, (length, fill) in enumerate(parts):
             if fill not in SEGMENTS:
                 raise ValueError(f"a segment is one of {tuple(SEGMENTS)}, not {fill!r}")
             starts.append(x)
-            self._hpath(x, y, length, thickness, f"s-{fill}", 3.0 if k == len(parts) - 1 else 0.0)
+            self._segment(x, y, length, thickness, f"s-{fill}", k, len(parts))
             x += length
         return starts
+
+    def _segment(
+        self, x: float, y: float, length: float, thickness: float, cls: str, k: int, count: int
+    ) -> None:
+        """A stacked bar's ``k``-th segment of ``count``: half a seam short on each side it shares
+        with a neighbour, so that the bar's length stays its value's; the last one's end rounded."""
+        left = SEAM / 2 if k else 0.0
+        right = SEAM / 2 if k < count - 1 else 0.0
+        if length - left - right < 0.6:  # too short to part: a sliver its full length
+            left = right = 0.0
+        corner = BAR_CORNER if k == count - 1 else 0.0
+        self._hpath(x + left, y, length - left - right, thickness, cls, corner)
 
     def _hpath(self, x: float, y: float, length: float, thickness: float, cls: str, r: float):
         r = min(r, length / 2, thickness / 2)
@@ -617,8 +645,8 @@ class Figure:
 
     def swatch(self, x: float, baseline: float, fill: str, name: str, *, size: float = NOTE):
         """A legend's entry: a small segment swatch and its name; returns the name's box."""
-        self._hpath(x, baseline - 0.62 * size, 22, 0.66 * size, f"s-{fill}", 2.0)
-        return self.text(x + 30, baseline, name, size=size)
+        self._hpath(x, baseline - 0.62 * size, 18, 0.66 * size, f"s-{fill}", 2.0)
+        return self.text(x + 26, baseline, name, size=size)
 
     # Method figures ---------------------------------------------------------------------------
 
@@ -631,23 +659,20 @@ class Figure:
         title: str,
         letter: str | None = None,
         *,
-        ground: str = "a",
-        rx: float = 0,
+        frame: bool = True,
+        rx: float = 8,
     ) -> float:
-        """A panel on the lavender ("a") or gray ("b") ground inside a dashed border, its corners
-        square unless ``rx`` rounds them, its title inside the top left and its letter at the top
-        right on the same baseline. Returns the title's baseline."""
-        self.rect(x, y, w, h, f"panel-{ground}", rx=rx)
-        self.borders.append((x, y, w, h))
-        baseline = y + 14 + 0.7 * LABEL
-        self.text(x + 18, baseline, title)
-        if letter:
-            self.text(x + w - 18, baseline, f"({letter})", anchor="end")
+        """A panel: a hairline frame, unless ``frame`` is off, with its letter and its title in
+        the semibold inside the top left. Returns the title's baseline."""
+        if frame:
+            self.rect(x, y, w, h, "panel", rx=rx)
+            self.borders.append((x, y, w, h))
+        baseline = y + 16 + 0.7 * LABEL
+        self.text(x + 20, baseline, f"({letter}) {title}" if letter else title, bold=True)
         return baseline
 
-    def group(self, x: float, y: float, w: float, h: float, *, rx: float = 0) -> None:
-        """A dashed container around components that act together, its corners square unless
-        ``rx`` rounds them."""
+    def group(self, x: float, y: float, w: float, h: float, *, rx: float = 8) -> None:
+        """A hairline container around components that act together."""
         self.rect(x, y, w, h, "group", rx=rx)
         self.borders.append((x, y, w, h))
 
@@ -662,14 +687,14 @@ class Figure:
         kind: str = "box",
         size: float = LABEL,
         pitch: float | None = None,
-        rx: float = 0,
+        rx: float = CORNER,
     ) -> None:
-        """A component: a box, white ("box") or the change's own ("ours"), its corners square unless
-        ``rx`` rounds them, its name centred inside on one line or several. A label that does not
-        fit inside is refused."""
-        if kind not in ("box", "ours"):
-            raise ValueError(f"a component is a box or ours, not {kind!r}")
-        self.rect(x, y, w, h, kind, rx=rx)
+        """A component: a pale fill inside a thin outline of its hue, plain ("box"), the change's
+        own ("ours") or in a hue, its name centred inside on one line or several. A label that
+        does not fit inside is refused."""
+        if kind not in KINDS:
+            raise ValueError(f"a component is one of {KINDS}, not {kind!r}")
+        self.rect(x, y, w, h, kind if kind in ("box", "ours") else f"{kind} obj", rx=rx)
         lines = [lines] if isinstance(lines, str) else lines
         pitch = pitch or size * 1.22
         first = y + h / 2 - pitch * (len(lines) - 1) / 2 + 0.33 * size
@@ -678,9 +703,9 @@ class Figure:
             if box.x0 < x + 6 or box.x1 > x + w - 6 or box.y0 < y + 3 or box.y1 > y + h - 3:
                 raise ValueError(f"{line!r} does not fit inside its box")
 
-    def memory(self, x: float, y: float, w: float, h: float, *, rx: float = 0) -> None:
-        """Physical KV memory: a dashed outline over a faint ground, its corners square unless
-        ``rx`` rounds them."""
+    def memory(self, x: float, y: float, w: float, h: float, *, rx: float = CORNER) -> None:
+        """Physical KV memory: the tray its blocks lie in, a component's shape in the faintest
+        neutral."""
         self.rect(x, y, w, h, "memory", rx=rx)
         self.borders.append((x, y, w, h))
 
@@ -694,22 +719,34 @@ class Figure:
         height: float,
         gap: float = 0,
         hatched: set[int] | frozenset[int] = frozenset(),
-        rx: float = 0,
+        strong: tuple[str, ...] = (),
+        rx: float = 2,
     ) -> None:
-        """A row of KV blocks: each a cell in its owner's hue, an empty cell where ``None``; a
-        hatched cell is one being taken. The cells are square unless ``rx`` rounds them."""
+        """A row of KV blocks, flat as a bar's segments are and parted by the same seam: each a
+        cell in its owner's soft tone, an outlined empty cell where ``None``; a hatched cell is
+        one being taken, paler under its hatch, and a hue in ``strong`` is filled in its mid
+        tone, for the blocks a figure follows."""
+        inset = SEAM / 2
         for k, hue in enumerate(hues):
             cx = x + k * (cell + gap)
             if hue is None:
-                self.rect(cx, y, cell, height, "cell-empty", rx=rx)
+                self.rect(
+                    cx + inset + 0.5, y + 0.5, cell - SEAM - 1, height - 1, "cell-empty", rx=rx
+                )
                 continue
-            self.rect(cx, y, cell, height, f"{hue} cell", rx=rx)
+            cls = f"{hue} cell strong" if hue in strong else f"{hue} cell"
+            if k in hatched:
+                cls += " taken"
+            self.rect(cx + inset, y, cell - SEAM, height, cls, rx=rx)
             if k in hatched:
                 step = 5.0
                 d = "".join(
-                    f"M{fmt(cx + max(0, o))} {fmt(y + height - max(0, -o))}"
-                    f"L{fmt(cx + min(cell, o + height))} {fmt(y + height - min(height, cell - o))}"
-                    for o in (j * step - height for j in range(int((cell + height) / step) + 1))
+                    f"M{fmt(cx + inset + max(0, o))} {fmt(y + height - max(0, -o))}"
+                    f"L{fmt(cx + inset + min(cell - SEAM, o + height))} "
+                    f"{fmt(y + height - min(height, cell - SEAM - o))}"
+                    for o in (
+                        j * step - height for j in range(int((cell - SEAM + height) / step) + 1)
+                    )
                 )
                 self.path(d, f"{hue} hatch")
 
@@ -723,12 +760,12 @@ class Figure:
         ignore: tuple[str, ...] = (),
         hue: str | None = None,
     ) -> None:
-        """Dataflow: a steel-blue polyline of one weight, rounded at its corners, its solid head
-        ending FLOW_GAP short of the last point, a target's edge. With ``hue``, a thinner line in
-        that hue, which carries that hue's values (the voice turn's blocks). An arrow whose last
-        segment is shorter than MIN_SHAFT head lengths is refused: it would read as a bare head."""
+        """Dataflow: a thin slate polyline of one weight, rounded at its corners, its swept head
+        ending FLOW_GAP short of the last point, a target's edge. With ``hue``, the line takes that
+        hue, and carries that hue's values (the voice turn's blocks). An arrow whose last segment
+        is shorter than MIN_SHAFT head lengths is refused: it would read as a bare head."""
         points = [(float(x), float(y)) for x, y in points]
-        head, half = (FLOW_HEAD, FLOW_HALF) if hue is None else (HUE_HEAD, HUE_HEAD / 2)
+        head, half = FLOW_HEAD, FLOW_HALF
         if arrow:
             (ax, ay), (bx, by) = points[-2], points[-1]
             length = math.hypot(bx - ax, by - ay)
@@ -739,8 +776,8 @@ class Figure:
                 )
             ux, uy = (bx - ax) / length, (by - ay) / length
             tip = (bx - ux * FLOW_GAP, by - uy * FLOW_GAP)
-            # The shaft ends inside the head, so its round cap never shows past the head's base.
-            draw = [*points[:-1], (tip[0] - ux * head * 0.6, tip[1] - uy * head * 0.6)]
+            # The shaft ends inside the head, so its round cap never shows past the head's notch.
+            draw = [*points[:-1], (tip[0] - ux * head * 0.5, tip[1] - uy * head * 0.5)]
         else:
             draw = points
         d = f"M{fmt(draw[0][0])} {fmt(draw[0][1])}"
@@ -759,9 +796,11 @@ class Figure:
             nx, ny = -uy, ux
             x, y = tip
             base = (x - ux * head, y - uy * head)
+            notch = (x - ux * head * 0.72, y - uy * head * 0.72)
             corners = [
                 (x, y),
                 (base[0] + nx * half, base[1] + ny * half),
+                notch,
                 (base[0] - nx * half, base[1] - ny * half),
             ]
             self.path(
@@ -821,7 +860,7 @@ class Figure:
         for face, chars in self.glyphs.items():
             if not chars:
                 continue
-            file, family, style = FACES[face]
+            file, family, style, weight = FACES[face]
             options = subset.Options()
             options.flavor = "woff"
             options.layout_features = ["kern", "liga"]
@@ -838,7 +877,7 @@ class Figure:
             font.save(buffer)
             data = base64.b64encode(buffer.getvalue()).decode()
             rules.append(
-                f"@font-face{{font-family:'{family}';font-style:{style};font-weight:400;"
+                f"@font-face{{font-family:'{family}';font-style:{style};font-weight:{weight};"
                 f"src:url(data:font/woff;base64,{data}) format('woff')}}"
             )
         return "".join(rules)

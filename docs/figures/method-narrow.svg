@@ -1,214 +1,217 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1410" viewBox="0 0 420 1410" font-size="21" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1419" viewBox="0 0 420 1419" font-size="21" role="img" aria-labelledby="title desc">
 <title id="title">How #63350 and #63351 make room for a voice turn</title>
-<desc id="desc">Panel a: a caller's speech goes to speech to text, then to vLLM 0.32's scheduler, which carries #63350 and #63351, then to text to speech and back to the caller; 24 coding-agent sessions send their requests to the same scheduler at priority 2, the voice turn's at priority 0; the scheduler allocates from the KV pool beneath it. Panel b, the KV preemption, #63350: in a pool of 12 KV blocks, two agent requests hold 5 each and 2 are free, fewer than the 4 a waiting voice turn needs; on vLLM 0.32 the turn keeps waiting, while the KV preemption preempts the latest agent request, agent B, and the turn takes 4 of its blocks. Panel c, the budget cap, #63351: the engine's steps in time, one box a step, from the reply's first token: on vLLM 0.32 each step of the reply also carries an agent's prefill chunk, so in the time the budget cap gives the reply its first 48 tokens the reply gets 14 without it; after the window, agent prefill resumes. Blocks and steps are illustrative.</desc>
+<desc id="desc">Panel a: a caller's speech goes to speech to text, then to vLLM 0.32's scheduler, which carries #63350 and #63351, then to text to speech and back to the caller; 24 coding-agent sessions send their requests to the same scheduler at priority 2, the voice turn's at priority 0; the scheduler allocates from the KV pool beside it. Panel b, the KV preemption, #63350: in a pool of 12 KV blocks, two agent requests hold 5 each and 2 are free, fewer than the 4 a voice turn needs; on vLLM 0.32 the turn waits outside the pool, while the KV preemption preempts the latest agent request, agent B, which waits instead, and the turn takes 4 of its blocks. Panel c, the budget cap, #63351: the engine's steps in time, one green block a step, from the reply's first token: on vLLM 0.32 each step of the reply also carries an agent's prefill chunk, so in the time the budget cap gives the reply its first 48 tokens the reply gets 14 without it; after the window, agent prefill resumes. Blocks and steps are illustrative.</desc>
 <!-- Text is set in subsets of STIX Two Text and STIX Two Math, SIL Open Font License 1.1 (python/flatshare_bench/src/flatshare_bench/fonts/OFL.txt). -->
-<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3d444d;--mute:#656d76;--page:#ffffff;--grid:#e8ebef;--axis:#57606a;--rule:#d0d7de;--outline:#27334a;--flow:#a7bbd3;--border:#5c6675;--ground-a:#f4f2fa;--ground-b:#f3f5f7;--box:#ffffff;--ours:#dfeaf8;--ours-line:#2563b0;--memory:#f8f9fb;--bar-hi:#3a7bd5;--bar-soft:#c5d9f4;--bar-lo:#e3e7ee;--bar-mid:#b7bdc8;--bar-line:#2b3138;--margin:#fbeadf;--blue:#2563b0;--blue-w:#c0d6f2;--blue-a:#e5eefa;--orange:#bd5521;--orange-w:#f7d2bb;--orange-a:#fbeadf;--green:#257a58;--green-w:#c9e8da;--green-a:#e1f1e9;--violet:#6e52a3;--violet-w:#d3c8ea;--violet-a:#ede8f6;--gray:#57606a;--gray-w:#dde1e6;--gray-a:#f0f2f4}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#c9d1d9;--mute:#9198a1;--page:#0d1117;--grid:#262c34;--axis:#8b949e;--rule:#3d444d;--outline:#c9d1d9;--flow:#506b8c;--border:#8b949e;--ground-a:#17151f;--ground-b:#151a21;--box:#0d1117;--ours:#17283f;--ours-line:#6fa8ee;--memory:#11161d;--bar-hi:#5b9bf0;--bar-soft:#24405f;--bar-lo:#3a414b;--bar-mid:#68717d;--bar-line:#d0d7de;--margin:#2a1b12;--blue:#6fa8ee;--blue-w:#203d5f;--blue-a:#131b25;--orange:#ef9a63;--orange-w:#65371a;--orange-a:#271911;--green:#5ec49a;--green-w:#2d5341;--green-a:#16221c;--violet:#b49ce6;--violet-w:#392a55;--violet-a:#1d1828;--gray:#8b949e;--gray-w:#343b44;--gray-a:#1a1f26}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.blue{--c:var(--blue);--w:var(--blue-w);--a:var(--blue-a)}.orange{--c:var(--orange);--w:var(--orange-w);--a:var(--orange-a)}.green{--c:var(--green);--w:var(--green-w);--a:var(--green-a)}.violet{--c:var(--violet);--w:var(--violet-w);--a:var(--violet-a)}.gray{--c:var(--gray);--w:var(--gray-w);--a:var(--gray-a)}.tint{fill:var(--c)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.2}.axis{fill:none;stroke:var(--axis);stroke-width:1.2}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi);stroke:var(--bar-line);stroke-width:1.1}.g-soft{fill:var(--bar-soft);stroke:var(--bar-line);stroke-width:1.1}.g-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.g-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.g-open{fill:var(--page);stroke:var(--bar-line);stroke-width:1.1}.s-lo{fill:var(--bar-lo);stroke:var(--bar-line);stroke-width:1.1}.s-mid{fill:var(--bar-mid);stroke:var(--bar-line);stroke-width:1.1}.s-violet{fill:var(--violet-w);stroke:var(--bar-line);stroke-width:1.1}.s-pale{fill:var(--gray-a);stroke:var(--bar-line);stroke-width:1.1}.g-margin{fill:var(--margin)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--orange);stroke-width:1.2;stroke-dasharray:5 4}.panel-a,.panel-b{stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.panel-a{fill:var(--ground-a)}.panel-b{fill:var(--ground-b)}.group{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.box{fill:var(--box);stroke:var(--outline);stroke-width:1.7}.ours{fill:var(--ours);stroke:var(--ours-line);stroke-width:1.7}.memory{fill:var(--memory);stroke:var(--border);stroke-width:1.4;stroke-dasharray:4 3}.flow{fill:none;stroke:var(--flow);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--border);stroke-width:1.4;stroke-dasharray:6 4}.bracket{fill:none;stroke:var(--axis);stroke-width:1.2;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--w);stroke:var(--c);stroke-width:1}.cell-empty{fill:var(--box);stroke:var(--rule);stroke-width:1}</style>
-<rect class="page" width="420" height="1410"/>
-<text x="16" y="30">One GPU: a voice agent beside</text>
-<text x="16" y="56">coding agents</text>
-<text x="404" y="30" text-anchor="end">(a)</text>
-<rect x="22" y="70" width="164" height="44" class="box"/>
-<text x="104" y="98.93" text-anchor="middle">Caller</text>
-<rect x="22" y="160" width="164" height="44" class="box"/>
-<text x="104" y="188.93" text-anchor="middle">Speech to text</text>
-<rect x="230" y="154" width="174" height="56" class="box"/>
-<text x="317" y="177.6" text-anchor="middle" font-size="20">24 coding-agent</text>
-<text x="317" y="199.6" text-anchor="middle" font-size="20">sessions</text>
-<rect x="16" y="282" width="388" height="70" class="ours"/>
-<text x="210" y="311.4" text-anchor="middle" font-size="20">vLLM 0.32 scheduler</text>
-<text x="210" y="335.8" text-anchor="middle" font-size="20">with #63350, #63351</text>
-<rect x="22" y="426" width="164" height="44" class="box"/>
-<text x="104" y="454.93" text-anchor="middle">Text to speech</text>
-<rect x="230" y="426" width="174" height="44" class="memory"/>
-<text x="317" y="455" text-anchor="middle" font-size="20">KV pool</text>
-<rect x="22" y="522" width="164" height="44" class="box"/>
-<text x="104" y="550.93" text-anchor="middle">Caller</text>
-<path d="M104 114L104 152.7" class="flow"/>
-<path d="M104 157.5L99.2 149.5L108.8 149.5Z" class="flow-head"/>
-<path d="M104 204L104 274.7" class="flow"/>
-<path d="M104 279.5L99.2 271.5L108.8 271.5Z" class="flow-head"/>
-<text x="114" y="236" class="mute" font-size="18">priority 0</text>
-<path d="M317 210L317 274.7" class="flow"/>
-<path d="M317 279.5L312.2 271.5L321.8 271.5Z" class="flow-head"/>
-<text x="327" y="236" class="mute" font-size="18">priority 2</text>
-<path d="M104 352L104 418.7" class="flow"/>
-<path d="M104 423.5L99.2 415.5L108.8 415.5Z" class="flow-head"/>
-<text x="114" y="384" class="mute" font-size="18">the reply</text>
-<path d="M317 352L317 426" class="flow"/>
-<path d="M104 470L104 514.7" class="flow"/>
-<path d="M104 519.5L99.2 511.5L108.8 511.5Z" class="flow-head"/>
-<rect x="16" y="606" width="388" height="384" class="panel-a"/>
-<text x="34" y="634.7">The KV preemption, #63350</text>
-<text x="386" y="634.7" text-anchor="end">(b)</text>
-<text x="42" y="676" font-size="20">vLLM 0.32</text>
-<rect x="36" y="684" width="237.5" height="36" class="memory"/>
-<rect x="42" y="690" width="15.12" height="24" class="gray cell"/>
-<rect x="61.12" y="690" width="15.12" height="24" class="gray cell"/>
-<rect x="80.25" y="690" width="15.12" height="24" class="gray cell"/>
-<rect x="99.38" y="690" width="15.12" height="24" class="gray cell"/>
-<rect x="118.5" y="690" width="15.12" height="24" class="gray cell"/>
-<rect x="137.62" y="690" width="15.12" height="24" class="gray cell"/>
-<rect x="156.75" y="690" width="15.12" height="24" class="gray cell"/>
-<rect x="175.88" y="690" width="15.12" height="24" class="gray cell"/>
-<rect x="195" y="690" width="15.12" height="24" class="gray cell"/>
-<rect x="214.12" y="690" width="15.12" height="24" class="gray cell"/>
-<rect x="233.25" y="690" width="15.12" height="24" class="cell-empty"/>
-<rect x="252.38" y="690" width="15.12" height="24" class="cell-empty"/>
-<rect x="301.5" y="690" width="15.12" height="24" class="green cell"/>
-<rect x="320.62" y="690" width="15.12" height="24" class="green cell"/>
-<rect x="339.75" y="690" width="15.12" height="24" class="green cell"/>
-<rect x="358.88" y="690" width="15.12" height="24" class="green cell"/>
-<path d="M42 720V726H133.62V720" class="bracket"/>
-<text x="87.81" y="744.96" text-anchor="middle" font-size="18">agent A</text>
-<path d="M137.62 720V726H229.25V720" class="bracket"/>
-<text x="183.44" y="744.96" text-anchor="middle" font-size="18">agent B</text>
-<path d="M233.25 720V726H267.5V720" class="bracket"/>
-<text x="250.38" y="744.96" text-anchor="middle" font-size="18">free</text>
-<path d="M301.5 720V726H374V720" class="bracket"/>
-<text x="337.75" y="744.96" text-anchor="middle" font-size="18">voice turn</text>
-<text x="337.75" y="678" text-anchor="middle" font-size="18">waiting</text>
-<text x="42" y="782" font-size="20">The KV preemption</text>
-<rect x="36" y="818" width="237.5" height="36" class="memory"/>
-<rect x="42" y="824" width="15.12" height="24" class="gray cell"/>
-<rect x="61.12" y="824" width="15.12" height="24" class="gray cell"/>
-<rect x="80.25" y="824" width="15.12" height="24" class="gray cell"/>
-<rect x="99.38" y="824" width="15.12" height="24" class="gray cell"/>
-<rect x="118.5" y="824" width="15.12" height="24" class="gray cell"/>
-<rect x="137.62" y="824" width="15.12" height="24" class="gray cell"/>
-<path d="M137.62 824L137.62 824M137.62 829L142.62 824M137.62 834L147.62 824M137.62 839L152.62 824M137.62 844L152.75 828.88M138.62 848L152.75 833.88M143.62 848L152.75 838.88M148.62 848L152.75 843.88" class="gray hatch"/>
-<rect x="156.75" y="824" width="15.12" height="24" class="gray cell"/>
-<path d="M156.75 824L156.75 824M156.75 829L161.75 824M156.75 834L166.75 824M156.75 839L171.75 824M156.75 844L171.88 828.88M157.75 848L171.88 833.88M162.75 848L171.88 838.88M167.75 848L171.88 843.88" class="gray hatch"/>
-<rect x="175.88" y="824" width="15.12" height="24" class="gray cell"/>
-<path d="M175.88 824L175.88 824M175.88 829L180.88 824M175.88 834L185.88 824M175.88 839L190.88 824M175.88 844L191 828.88M176.88 848L191 833.88M181.88 848L191 838.88M186.88 848L191 843.88" class="gray hatch"/>
-<rect x="195" y="824" width="15.12" height="24" class="gray cell"/>
-<path d="M195 824L195 824M195 829L200 824M195 834L205 824M195 839L210 824M195 844L210.12 828.88M196 848L210.12 833.88M201 848L210.12 838.88M206 848L210.12 843.88" class="gray hatch"/>
-<rect x="214.12" y="824" width="15.12" height="24" class="gray cell"/>
-<path d="M214.12 824L214.12 824M214.12 829L219.12 824M214.12 834L224.12 824M214.12 839L229.12 824M214.12 844L229.25 828.88M215.12 848L229.25 833.88M220.12 848L229.25 838.88M225.12 848L229.25 843.88" class="gray hatch"/>
-<rect x="233.25" y="824" width="15.12" height="24" class="cell-empty"/>
-<rect x="252.38" y="824" width="15.12" height="24" class="cell-empty"/>
-<rect x="301.5" y="824" width="15.12" height="24" class="green cell"/>
-<rect x="320.62" y="824" width="15.12" height="24" class="green cell"/>
-<rect x="339.75" y="824" width="15.12" height="24" class="green cell"/>
-<rect x="358.88" y="824" width="15.12" height="24" class="green cell"/>
-<path d="M137.62 818V812H229.25V818" class="bracket"/>
-<text x="183.44" y="804" text-anchor="middle" font-size="18">agent B, preempted</text>
-<rect x="36" y="906" width="237.5" height="36" class="memory"/>
-<rect x="42" y="912" width="15.12" height="24" class="gray cell"/>
-<rect x="61.12" y="912" width="15.12" height="24" class="gray cell"/>
-<rect x="80.25" y="912" width="15.12" height="24" class="gray cell"/>
-<rect x="99.38" y="912" width="15.12" height="24" class="gray cell"/>
-<rect x="118.5" y="912" width="15.12" height="24" class="gray cell"/>
-<rect x="137.62" y="912" width="15.12" height="24" class="green cell"/>
-<rect x="156.75" y="912" width="15.12" height="24" class="green cell"/>
-<rect x="175.88" y="912" width="15.12" height="24" class="green cell"/>
-<rect x="195" y="912" width="15.12" height="24" class="green cell"/>
-<rect x="214.12" y="912" width="15.12" height="24" class="cell-empty"/>
-<rect x="233.25" y="912" width="15.12" height="24" class="cell-empty"/>
-<rect x="252.38" y="912" width="15.12" height="24" class="cell-empty"/>
-<path d="M337.75 851L337.75 870Q337.75 876 331.75 876L179.88 876Q173.88 876 173.88 882L173.88 899.18" class="green line"/>
-<path d="M173.88 903.5L170.28 896.3L177.47 896.3Z" class="green line-head"/>
-<path d="M137.62 942V948H210.12V942" class="bracket"/>
-<text x="173.88" y="966.96" text-anchor="middle" font-size="18">voice turn</text>
-<path d="M214.12 942V948H267.5V942" class="bracket"/>
-<text x="240.81" y="966.96" text-anchor="middle" font-size="18">free</text>
-<rect x="16" y="1014" width="388" height="384" class="panel-b"/>
-<text x="34" y="1042.7">The budget cap, #63351</text>
-<text x="386" y="1042.7" text-anchor="end">(c)</text>
-<rect x="42" y="1073" width="14" height="16" class="green cell"/>
-<text x="64" y="1086" font-size="18">The reply's token</text>
-<rect x="42" y="1099" width="30" height="16" class="gray cell"/>
-<text x="80" y="1112" font-size="18">An agent's prefill chunk</text>
-<text x="42" y="1150" font-size="20">vLLM 0.32</text>
-<rect x="42" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="46.92" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="63.09" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="68.01" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="84.17" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="89.09" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="105.26" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="110.18" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="126.34" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="131.26" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="147.43" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="152.35" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="168.51" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="173.43" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="189.6" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="194.52" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="210.68" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="215.6" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="231.77" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="236.69" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="252.85" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="257.77" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="273.94" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="278.86" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="295.02" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="299.94" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="316.11" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="321.03" y="1162" width="14.96" height="24" class="gray cell"/>
-<rect x="337.19" y="1162" width="4.92" height="24" class="green cell"/>
-<rect x="342.11" y="1162" width="14.96" height="24" class="gray cell"/>
-<path d="M42 1192V1198H335.99V1192" class="bracket"/>
-<text x="189" y="1216.96" text-anchor="middle" font-size="18">14 tokens</text>
-<text x="42" y="1250" font-size="20">The budget cap</text>
-<rect x="42" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="48.12" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="54.24" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="60.36" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="66.49" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="72.61" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="78.73" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="84.85" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="90.97" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="97.09" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="103.21" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="109.34" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="115.46" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="121.58" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="127.7" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="133.82" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="139.94" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="146.06" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="152.19" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="158.31" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="164.43" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="170.55" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="176.67" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="182.79" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="188.91" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="195.04" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="201.16" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="207.28" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="213.4" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="219.52" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="225.64" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="231.77" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="237.89" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="244.01" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="250.13" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="256.25" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="262.37" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="268.49" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="274.62" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="280.74" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="286.86" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="292.98" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="299.1" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="305.22" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="311.34" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="317.47" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="323.59" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="329.71" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="335.83" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="340.75" y="1262" width="14.96" height="24" class="gray cell"/>
-<rect x="356.91" y="1262" width="4.92" height="24" class="green cell"/>
-<rect x="361.84" y="1262" width="14.96" height="24" class="gray cell"/>
-<path d="M42 1292V1298H334.63V1292" class="bracket"/>
-<text x="188.31" y="1316.96" text-anchor="middle" font-size="18">the reply's first 48 tokens</text>
-<path d="M335.83 1292V1298H376.8V1292" class="bracket"/>
-<text x="356.31" y="1316.96" text-anchor="middle" font-size="18">resumed</text>
-<path d="M42 1348H372" class="axis"/>
-<path d="M378 1348L371 1344.8L371 1351.2Z" class="axis-head"/>
-<text x="42" y="1372" class="mute" font-size="18">Engine steps from the reply's first token</text>
+<style>@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:400;src:url(data:font/woff;base64,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) format('woff')}@font-face{font-family:'Flatshare Text';font-style:normal;font-weight:600;src:url(data:font/woff;base64,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) format('woff')}svg{--ink:#1f2328;--soft:#3f444b;--mute:#666c75;--page:#ffffff;--grid:#edeff1;--axis:#8f969f;--rule:#d6d9de;--flow:#6b747f;--box:#f6f8fa;--box-line:#a9b0ba;--bar-hi:#2669cd;--bar-soft:#98bcf4;--bar-lo:#b9bec4;--bar-mid:#8d949d;--green:#138159;--green-m:#5fa583;--green-s:#9ac7af;--green-w:#cce3d6;--green-a:#ecf5f0;--gray:#6b747f;--gray-m:#8d949d;--gray-s:#b9bec4;--gray-w:#e0e3e6;--gray-a:#f2f3f5;--red:#c3292e;--red-m:#e06a64;--red-s:#f4a29b;--red-w:#fdd0cb;--red-a:#feeeed;--blue:#2669cd;--blue-m:#6094e4;--blue-s:#98bcf4;--blue-w:#cbdefb;--blue-a:#ecf3fe}@media(prefers-color-scheme:dark){svg{--ink:#e6edf3;--soft:#cbd0d6;--mute:#9399a1;--page:#0d1117;--grid:#1d2125;--axis:#6e757e;--rule:#31363c;--flow:#8c939c;--box:#181c21;--box-line:#4f565e;--bar-hi:#76abff;--bar-soft:#3e639d;--bar-lo:#565b62;--bar-mid:#7b8189;--green:#6fbe98;--green-m:#508f71;--green-s:#3d6f57;--green-w:#274838;--green-a:#17251e;--gray:#9199a3;--gray-m:#7b8189;--gray-s:#565b62;--gray-w:#3c4046;--gray-a:#1d1e20;--red:#ff7f77;--red-m:#c55b55;--red-s:#9a4541;--red-w:#632d2a;--red-a:#331917;--blue:#76abff;--blue-m:#5280c9;--blue-s:#3e639d;--blue-w:#284065;--blue-a:#172234}}svg{font-size:21px}text{font-family:'Flatshare Text','Flatshare Math',serif;fill:var(--ink);font-synthesis:none;font-kerning:normal;white-space:pre}.i{font-style:italic}.b{font-weight:600}.soft{fill:var(--soft)}.mute{fill:var(--mute)}.green{--c:var(--green);--m:var(--green-m);--s:var(--green-s);--w:var(--green-w);--a:var(--green-a)}.gray{--c:var(--gray);--m:var(--gray-m);--s:var(--gray-s);--w:var(--gray-w);--a:var(--gray-a)}.red{--c:var(--red);--m:var(--red-m);--s:var(--red-s);--w:var(--red-w);--a:var(--red-a)}.blue{--c:var(--blue);--m:var(--blue-m);--s:var(--blue-s);--w:var(--blue-w);--a:var(--blue-a)}.tint{fill:var(--c)}.mid{fill:var(--m)}.wash{fill:var(--w)}.area{fill:var(--a)}.page{fill:var(--page)}.grid{fill:none;stroke:var(--grid);stroke-width:1.0}.axis{fill:none;stroke:var(--axis);stroke-width:1.4}.axis-head{fill:var(--axis)}.rule{fill:none;stroke:var(--rule);stroke-width:1.0}.g-hi{fill:var(--bar-hi)}.g-soft{fill:var(--bar-soft)}.g-lo{fill:var(--bar-lo)}.g-mid{fill:var(--bar-mid)}.g-open{fill:var(--page);stroke:var(--bar-mid);stroke-width:1.4}.s-hi{fill:var(--bar-hi)}.s-soft{fill:var(--bar-soft)}.s-lo{fill:var(--bar-lo)}.s-mid{fill:var(--bar-mid)}.s-pale{fill:var(--gray-w)}.s-red{fill:var(--red-m)}.s-red-pale{fill:var(--red-w)}.s-green-pale{fill:var(--green-w)}.s-blue{fill:var(--blue-m)}.s-blue-pale{fill:var(--blue-w)}.halo{paint-order:stroke;stroke:var(--page);stroke-width:6px;stroke-linejoin:round}.slo{fill:none;stroke:var(--red);stroke-width:1.4;stroke-dasharray:5 4}.panel{fill:none;stroke:var(--rule);stroke-width:1.0}.group{fill:none;stroke:var(--rule);stroke-width:1.0}.box{fill:var(--box);stroke:var(--box-line);stroke-width:1.4}.ours{fill:var(--blue-a);stroke:var(--blue);stroke-width:1.4}.obj{fill:var(--a);stroke:var(--c);stroke-width:1.4}.memory{fill:var(--box);stroke:var(--rule);stroke-width:1.0}.flow{fill:none;stroke:var(--flow);stroke-width:2.0;stroke-linecap:round;stroke-linejoin:round}.flow-head{fill:var(--flow)}.line{fill:none;stroke:var(--c);stroke-width:2.0;stroke-linecap:round;stroke-linejoin:round}.line-head{fill:var(--c)}.leader{fill:none;stroke:var(--axis);stroke-width:1.0;stroke-dasharray:3 3}.bracket{fill:none;stroke:var(--axis);stroke-width:1.0;stroke-linejoin:round}.hatch{fill:none;stroke:var(--c);stroke-width:1.0}.cell{fill:var(--s)}.cell.strong{fill:var(--m)}.cell.taken{fill:var(--w)}.cell-empty{fill:var(--page);stroke:var(--box-line);stroke-width:1.0}</style>
+<rect class="page" width="420" height="1419"/>
+<text x="16" y="30.7" class="b">(a) One GPU: a voice agent beside coding</text>
+<text x="16" y="56.7" class="b">agents</text>
+<rect x="16" y="80.7" width="176" height="46" rx="5" class="box"/>
+<text x="104" y="110.63" text-anchor="middle">Caller</text>
+<rect x="16" y="166.7" width="176" height="46" rx="5" class="box"/>
+<text x="104" y="196.63" text-anchor="middle">Speech to text</text>
+<rect x="226" y="160.7" width="178" height="58" rx="5" class="box"/>
+<text x="315" y="183.82" text-anchor="middle">24 coding-agent</text>
+<text x="315" y="209.44" text-anchor="middle">sessions</text>
+<rect x="16" y="274.7" width="388" height="72" rx="5" class="ours"/>
+<text x="210" y="304.82" text-anchor="middle">vLLM 0.32 scheduler</text>
+<text x="210" y="330.44" text-anchor="middle">with #63350, #63351</text>
+<rect x="16" y="408.7" width="176" height="46" rx="5" class="box"/>
+<text x="104" y="438.63" text-anchor="middle">Text to speech</text>
+<rect x="16" y="494.7" width="176" height="46" rx="5" class="box"/>
+<text x="104" y="524.63" text-anchor="middle">Caller</text>
+<rect x="231" y="408.7" width="168" height="46" rx="5" class="memory"/>
+<rect x="238" y="419.7" width="11" height="24" rx="2" class="gray cell"/>
+<rect x="251" y="419.7" width="11" height="24" rx="2" class="gray cell"/>
+<rect x="264" y="419.7" width="11" height="24" rx="2" class="gray cell"/>
+<rect x="277" y="419.7" width="11" height="24" rx="2" class="gray cell"/>
+<rect x="290" y="419.7" width="11" height="24" rx="2" class="gray cell"/>
+<rect x="303" y="419.7" width="11" height="24" rx="2" class="gray cell"/>
+<rect x="316" y="419.7" width="11" height="24" rx="2" class="gray cell"/>
+<rect x="329" y="419.7" width="11" height="24" rx="2" class="gray cell"/>
+<rect x="342" y="419.7" width="11" height="24" rx="2" class="gray cell"/>
+<rect x="355" y="419.7" width="11" height="24" rx="2" class="gray cell"/>
+<rect x="368.5" y="420.2" width="10" height="23" rx="2" class="cell-empty"/>
+<rect x="381.5" y="420.2" width="10" height="23" rx="2" class="cell-empty"/>
+<text x="315" y="478.7" text-anchor="middle">KV pool</text>
+<path d="M104 126.7L104 159.95" class="green line"/>
+<path d="M104 164.2L100.3 155.7L104 158.08L107.7 155.7Z" class="green line-head"/>
+<path d="M104 212.7L104 267.95" class="green line"/>
+<path d="M104 272.2L100.3 263.7L104 266.08L107.7 263.7Z" class="green line-head"/>
+<text x="114" y="248.7" class="soft" font-size="18">priority 0</text>
+<path d="M315 218.7L315 267.95" class="flow"/>
+<path d="M315 272.2L311.3 263.7L315 266.08L318.7 263.7Z" class="flow-head"/>
+<text x="325" y="248.7" class="soft" font-size="18">priority 2</text>
+<path d="M104 346.7L104 401.95" class="green line"/>
+<path d="M104 406.2L100.3 397.7L104 400.08L107.7 397.7Z" class="green line-head"/>
+<text x="114" y="382.7" class="soft" font-size="18">the reply</text>
+<path d="M315 346.7L315 408.7" class="flow"/>
+<path d="M104 454.7L104 487.95" class="green line"/>
+<path d="M104 492.2L100.3 483.7L104 486.08L107.7 483.7Z" class="green line-head"/>
+<text x="16" y="589.4" class="b">(b) The KV preemption, #63350</text>
+<text x="16" y="623.4">vLLM 0.32</text>
+<text x="404" y="623.4" text-anchor="end" class="soft" font-size="18">the voice turn waits</text>
+<text x="16" y="651.4" class="soft" font-size="18">KV pool, 12 blocks</text>
+<rect x="16" y="663.4" width="384" height="44" rx="5" class="memory"/>
+<rect x="23" y="669.4" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="54" y="669.4" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="85" y="669.4" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="116" y="669.4" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="147" y="669.4" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="178" y="669.4" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="209" y="669.4" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="240" y="669.4" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="271" y="669.4" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="302" y="669.4" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="333.5" y="669.9" width="28" height="31" rx="2" class="cell-empty"/>
+<rect x="364.5" y="669.9" width="28" height="31" rx="2" class="cell-empty"/>
+<path d="M25 709.4V715.4H174V709.4" class="bracket"/>
+<text x="99.5" y="734.36" text-anchor="middle" font-size="18">agent A</text>
+<path d="M180 709.4V715.4H329V709.4" class="bracket"/>
+<text x="254.5" y="734.36" text-anchor="middle" font-size="18">agent B</text>
+<path d="M335 709.4V715.4H391V709.4" class="bracket"/>
+<text x="363" y="734.36" text-anchor="middle" font-size="18">free</text>
+<rect x="23" y="752.68" width="29" height="32" rx="2" class="green cell strong"/>
+<rect x="54" y="752.68" width="29" height="32" rx="2" class="green cell strong"/>
+<rect x="85" y="752.68" width="29" height="32" rx="2" class="green cell strong"/>
+<rect x="116" y="752.68" width="29" height="32" rx="2" class="green cell strong"/>
+<path d="M25 792.68V798.68H143V792.68" class="bracket"/>
+<text x="84" y="817.64" text-anchor="middle" font-size="18">voice turn</text>
+<text x="158" y="774.62" class="soft" font-size="18">waiting</text>
+<text x="16" y="855.96" class="b">The KV preemption</text>
+<text x="404" y="855.96" text-anchor="end" class="soft" font-size="18">the latest agent waits</text>
+<rect x="16" y="867.96" width="384" height="44" rx="5" class="memory"/>
+<rect x="23" y="873.96" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="54" y="873.96" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="85" y="873.96" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="116" y="873.96" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="147" y="873.96" width="29" height="32" rx="2" class="gray cell"/>
+<rect x="178" y="873.96" width="29" height="32" rx="2" class="green cell strong"/>
+<rect x="209" y="873.96" width="29" height="32" rx="2" class="green cell strong"/>
+<rect x="240" y="873.96" width="29" height="32" rx="2" class="green cell strong"/>
+<rect x="271" y="873.96" width="29" height="32" rx="2" class="green cell strong"/>
+<rect x="302.5" y="874.46" width="28" height="31" rx="2" class="cell-empty"/>
+<rect x="333.5" y="874.46" width="28" height="31" rx="2" class="cell-empty"/>
+<rect x="364.5" y="874.46" width="28" height="31" rx="2" class="cell-empty"/>
+<path d="M25 913.96V919.96H174V913.96" class="bracket"/>
+<text x="99.5" y="938.92" text-anchor="middle" font-size="18">agent A</text>
+<path d="M180 913.96V919.96H298V913.96" class="bracket"/>
+<text x="239" y="938.92" text-anchor="middle" font-size="18">voice turn</text>
+<path d="M304 913.96V919.96H391V913.96" class="bracket"/>
+<text x="347.5" y="938.92" text-anchor="middle" font-size="18">free</text>
+<rect x="23" y="957.24" width="29" height="32" rx="2" class="gray cell taken"/>
+<path d="M23 957.24L23 957.24M23 962.24L28 957.24M23 967.24L33 957.24M23 972.24L38 957.24M23 977.24L43 957.24M23 982.24L48 957.24M23 987.24L52 958.24M26 989.24L52 963.24M31 989.24L52 968.24M36 989.24L52 973.24M41 989.24L52 978.24M46 989.24L52 983.24M51 989.24L52 988.24" class="gray hatch"/>
+<rect x="54" y="957.24" width="29" height="32" rx="2" class="gray cell taken"/>
+<path d="M54 957.24L54 957.24M54 962.24L59 957.24M54 967.24L64 957.24M54 972.24L69 957.24M54 977.24L74 957.24M54 982.24L79 957.24M54 987.24L83 958.24M57 989.24L83 963.24M62 989.24L83 968.24M67 989.24L83 973.24M72 989.24L83 978.24M77 989.24L83 983.24M82 989.24L83 988.24" class="gray hatch"/>
+<rect x="85" y="957.24" width="29" height="32" rx="2" class="gray cell taken"/>
+<path d="M85 957.24L85 957.24M85 962.24L90 957.24M85 967.24L95 957.24M85 972.24L100 957.24M85 977.24L105 957.24M85 982.24L110 957.24M85 987.24L114 958.24M88 989.24L114 963.24M93 989.24L114 968.24M98 989.24L114 973.24M103 989.24L114 978.24M108 989.24L114 983.24M113 989.24L114 988.24" class="gray hatch"/>
+<rect x="116" y="957.24" width="29" height="32" rx="2" class="gray cell taken"/>
+<path d="M116 957.24L116 957.24M116 962.24L121 957.24M116 967.24L126 957.24M116 972.24L131 957.24M116 977.24L136 957.24M116 982.24L141 957.24M116 987.24L145 958.24M119 989.24L145 963.24M124 989.24L145 968.24M129 989.24L145 973.24M134 989.24L145 978.24M139 989.24L145 983.24M144 989.24L145 988.24" class="gray hatch"/>
+<rect x="147" y="957.24" width="29" height="32" rx="2" class="gray cell taken"/>
+<path d="M147 957.24L147 957.24M147 962.24L152 957.24M147 967.24L157 957.24M147 972.24L162 957.24M147 977.24L167 957.24M147 982.24L172 957.24M147 987.24L176 958.24M150 989.24L176 963.24M155 989.24L176 968.24M160 989.24L176 973.24M165 989.24L176 978.24M170 989.24L176 983.24M175 989.24L176 988.24" class="gray hatch"/>
+<path d="M25 997.24V1003.24H174V997.24" class="bracket"/>
+<text x="99.5" y="1022.2" text-anchor="middle" font-size="18">agent B, preempted</text>
+<text x="189" y="979.18" class="soft" font-size="18">waiting</text>
+<text x="16" y="1075.22" class="b">(c) The budget cap, #63351</text>
+<rect x="17" y="1095.22" width="14" height="16" rx="2" class="green cell strong"/>
+<text x="40" y="1109.22" font-size="18">The reply's token</text>
+<rect x="17" y="1121.22" width="32" height="16" rx="2" class="gray cell"/>
+<text x="58" y="1135.22" font-size="18">An agent's prefill chunk</text>
+<text x="16" y="1175.22">vLLM 0.32</text>
+<text x="404" y="1175.22" text-anchor="end" class="soft" font-size="18">the reply shares its steps</text>
+<rect x="17" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="23.64" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="39.88" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="46.52" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="62.75" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="69.39" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="85.62" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="92.27" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="108.5" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="115.14" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="131.38" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="138.02" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="154.25" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="160.89" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="177.12" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="183.77" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="200" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="206.64" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="222.88" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="229.52" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="245.75" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="252.39" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="268.62" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="275.27" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="291.5" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="298.14" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="314.38" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="321.02" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="337.25" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="343.89" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="360.12" y="1189.22" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="366.77" y="1189.22" width="14.23" height="32" rx="2" class="gray cell"/>
+<path d="M17 1223.22V1229.22H335.25V1223.22" class="bracket"/>
+<text x="176.12" y="1248.18" text-anchor="middle" font-size="18">14 tokens</text>
+<text x="16" y="1284.5" class="b">The budget cap</text>
+<text x="404" y="1284.5" text-anchor="end" class="soft" font-size="18">agent prefill waits</text>
+<rect x="17" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="23.64" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="30.28" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="36.92" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="43.56" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="50.21" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="56.85" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="63.49" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="70.13" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="76.77" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="83.41" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="90.05" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="96.69" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="103.33" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="109.98" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="116.62" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="123.26" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="129.9" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="136.54" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="143.18" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="149.82" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="156.46" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="163.1" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="169.75" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="176.39" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="183.03" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="189.67" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="196.31" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="202.95" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="209.59" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="216.23" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="222.88" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="229.52" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="236.16" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="242.8" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="249.44" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="256.08" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="262.72" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="269.36" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="276" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="282.65" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="289.29" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="295.93" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="302.57" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="309.21" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="315.85" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="322.49" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="329.13" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="335.77" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="342.42" y="1298.5" width="14.23" height="32" rx="2" class="gray cell"/>
+<rect x="358.65" y="1298.5" width="4.64" height="32" rx="2" class="green cell strong"/>
+<rect x="365.29" y="1298.5" width="14.23" height="32" rx="2" class="gray cell"/>
+<path d="M17 1332.5V1338.5H333.77V1332.5" class="bracket"/>
+<text x="175.39" y="1357.46" text-anchor="middle" font-size="18">the reply's first 48 tokens</text>
+<path d="M335.77 1332.5V1338.5H379.52V1332.5" class="bracket"/>
+<text x="357.65" y="1357.46" text-anchor="middle" font-size="18">resumed</text>
+<path d="M16 1377.78H376" class="axis"/>
+<path d="M382 1377.78L375 1374.58L375 1380.98Z" class="axis-head"/>
+<text x="16" y="1401.78" class="mute" font-size="18">Time from the reply's first token</text>
 </svg>
